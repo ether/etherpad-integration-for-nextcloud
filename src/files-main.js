@@ -12,6 +12,7 @@ import {
 	ocRequestToken,
 } from './lib/oc-compat.js'
 import { parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './lib/urls.js'
+import { isSingleFilePublicShare, schedulePublicSingleShareUiStateRefresh } from './files/public-single-share-ui.js'
 
 (function () {
 	const OPEN_ACTION = 'etherpad_nextcloud_open'
@@ -25,7 +26,6 @@ import { parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './li
 	let sidebarSyncStatusPollTimer = null
 	let sidebarSyncStatusPollFileId = null
 	let sidebarSyncRefreshToken = 0
-	let publicSingleShareUiRefreshToken = 0
 	let publicPadMenuApiRegistered = false
 	let publicPadMenuLegacyApiRegistered = false
 	let publicPadMenuLegacyPluginHooked = false
@@ -37,7 +37,6 @@ import { parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './li
 	const SIDEBAR_SYNC_STATUS_POLL_MAX_MS = 60000
 	const SIDEBAR_SYNC_STATUS_POLL_ERROR_MS = 15000
 	const SIDEBAR_SYNC_STATUS_POLL_STEP_MS = 8000
-	const PUBLIC_SINGLE_SHARE_ATTR = 'data-epnc-single-file-share'
 	const PUBLIC_PAD_MENU_ENTRY_ID = APP_ID + '_public_pad'
 	const PUBLIC_PAD_MENU_ICON_CLASS = 'icon-filetype-etherpad-nextcloud-pad'
 	const PUBLIC_PAD_MENU_ICON_SVG = '<svg xmlns="http://www.w3.org/2000/svg" xml:space="preserve" fill-rule="evenodd" stroke-linejoin="round" stroke-miterlimit="2" clip-rule="evenodd" viewBox="0 0 355 355"><path fill="#5ac395" d="M317 89v177c0 28-23 51-51 51H89c-28 0-51-23-51-51V89c0-28 23-51 51-51h177c28 0 51 23 51 51"/><path fill="#4aa57f" fill-rule="nonzero" d="M240 144q-4-3-8 0-6 6 0 9a36 36 0 0 1 0 52 6 6 0 0 0 3 12q3 0 5-3c19-18 19-50 0-70"/><path fill="#479a76" fill-rule="nonzero" d="M267 122q-4-5-9 0-4 4 0 10c25 26 25 68 0 93q-4 5 0 9 5 4 9 0c30-31 30-81 0-112"/><path fill="#fff" d="M192 130v2q-1 8-10 10H76q-9-2-11-10v-2q1-10 11-10h106q9 0 10 10m24 51v2q-1 11-12 11H78q-10 0-12-11v-2q2-10 12-11h126q12 1 12 11"/><path fill="#fff" d="M216 181v2q-1 11-12 11H78q-10 0-12-11v-2q2-10 12-11h126q12 1 12 11m-57 52v1q-1 11-10 11H76q-9 0-11-11v-1q1-10 11-11h73q9 1 10 11"/><path fill="#fff" d="M159 233v1q-1 11-10 11H76q-9 0-11-11v-1q1-10 11-11h73q9 1 10 11"/></svg>'
@@ -134,103 +133,6 @@ import { parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './li
 			token: pathMatch[1],
 			path: normalizeFilePath(dir, files),
 		}
-	}
-
-	const findPublicShareDownloadLink = (token) => {
-		if (!token) {
-			return null
-		}
-		const selector = 'a[href*="/s/' + token + '/download"],a[href*="/index.php/s/' + token + '/download"]'
-		const downloadLink = document.querySelector(selector)
-		return (downloadLink instanceof HTMLAnchorElement) ? downloadLink : null
-	}
-
-	const readPublicShareViewType = () => {
-		const field = document.getElementById('initial-state-files_sharing-view')
-		if (!(field instanceof HTMLInputElement)) {
-			return ''
-		}
-		const encoded = String(field.value || '').trim()
-		if (encoded === '') {
-			return ''
-		}
-		try {
-			const decoded = window.atob(encoded)
-			if (decoded.startsWith('"') || decoded.startsWith('{') || decoded.startsWith('[')) {
-				const parsed = JSON.parse(decoded)
-				return typeof parsed === 'string' ? parsed : ''
-			}
-			return decoded
-		} catch (error) {
-			return ''
-		}
-	}
-
-	const isSingleFilePublicShare = (token) => {
-		if (!token) {
-			return false
-		}
-		const downloadLink = findPublicShareDownloadLink(token)
-		if (!downloadLink) {
-			return false
-		}
-		let url
-		try {
-			url = new URL(downloadLink.getAttribute('href') || '', window.location.origin)
-		} catch (error) {
-			return false
-		}
-		const pathMatch = (url.pathname || '').match(/(?:\/index\.php)?\/s\/([^/]+)\/download\/?$/)
-		if (!pathMatch || pathMatch[1] !== token) {
-			return false
-		}
-		return !url.searchParams.has('files')
-	}
-
-	const applyPublicSingleShareUiState = () => {
-		const body = document.body
-		if (!(body instanceof HTMLElement)) {
-			return { retry: true }
-		}
-		const token = parsePublicShareTokenFromLocation()
-		if (!token) {
-			body.removeAttribute(PUBLIC_SINGLE_SHARE_ATTR)
-			return { retry: false }
-		}
-		const shareViewType = readPublicShareViewType()
-		if (shareViewType === 'public-file-share') {
-			body.setAttribute(PUBLIC_SINGLE_SHARE_ATTR, '1')
-			return { retry: false }
-		}
-		if (shareViewType === 'public-share') {
-			body.removeAttribute(PUBLIC_SINGLE_SHARE_ATTR)
-			return { retry: false }
-		}
-		const downloadLink = findPublicShareDownloadLink(token)
-		if (!downloadLink) {
-			body.removeAttribute(PUBLIC_SINGLE_SHARE_ATTR)
-			return { retry: true }
-		}
-		if (isSingleFilePublicShare(token)) {
-			body.setAttribute(PUBLIC_SINGLE_SHARE_ATTR, '1')
-			return { retry: false }
-		}
-		body.removeAttribute(PUBLIC_SINGLE_SHARE_ATTR)
-		return { retry: false }
-	}
-
-	const schedulePublicSingleShareUiStateRefresh = () => {
-		const currentToken = ++publicSingleShareUiRefreshToken
-		const run = (attempt) => {
-			if (currentToken !== publicSingleShareUiRefreshToken) {
-				return
-			}
-			const result = applyPublicSingleShareUiState()
-			if (result.retry && attempt < 30) {
-				window.setTimeout(() => run(attempt + 1), 180)
-			}
-		}
-		run(0)
 	}
 
 	const isPadName = (name) => typeof name === 'string' && name.toLowerCase().endsWith('.pad')
