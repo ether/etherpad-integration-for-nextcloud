@@ -223,6 +223,16 @@ import { parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './li
 					this.pageHideHandler = null
 				}
 			},
+			buildPadFrameSrcdoc(url) {
+				const escapedUrl = String(url || '')
+					.replace(/&/g, '&amp;')
+					.replace(/"/g, '&quot;')
+					.replace(/</g, '&lt;')
+					.replace(/>/g, '&gt;')
+				return '<!doctype html><html><head><meta charset="utf-8">'
+					+ '<style>html,body,iframe{width:100%;height:100%;margin:0;border:0;overflow:hidden}iframe{display:block}</style>'
+					+ '</head><body><iframe src="' + escapedUrl + '" title="Etherpad"></iframe></body></html>'
+			},
 			async resolveOpenUrl() {
 				const generation = ++this.resolveGeneration
 				const isCurrent = () => generation === this.resolveGeneration
@@ -411,8 +421,11 @@ import { parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './li
 			}
 
 			return createElement('div', { class: 'epnc-native-shell' }, [
+				// Nextcloud Viewer tries to inspect/focus direct iframe children during
+				// teardown. Keep the direct iframe same-origin via srcdoc, and put the
+				// cross-origin Etherpad frame one level deeper.
 				createElement('iframe', {
-					attrs: { src: this.iframeSrc },
+					attrs: { srcdoc: this.buildPadFrameSrcdoc(this.iframeSrc), title: 'Etherpad' },
 					on: { load: () => this.markLoaded(), error: () => this.markLoaded() },
 					class: 'epnc-native-iframe',
 				}),
