@@ -13,6 +13,12 @@ describe('pad frame srcdoc builder', () => {
 		expect(srcdoc).toContain('<iframe src="https://pad.example.test/p/demo" title="Etherpad"></iframe>')
 	})
 
+	it('allows http URLs for local or explicitly configured non-TLS pads', () => {
+		const srcdoc = buildPadFrameSrcdoc('http://localhost:9001/p/demo')
+
+		expect(srcdoc).toContain('src="http://localhost:9001/p/demo"')
+	})
+
 	it('escapes ampersands in query strings', () => {
 		const srcdoc = buildPadFrameSrcdoc('https://pad.example.test/p/demo?foo=1&bar=2')
 
@@ -36,5 +42,17 @@ describe('pad frame srcdoc builder', () => {
 		expect(buildPadFrameSrcdoc('')).toContain('src=""')
 		expect(buildPadFrameSrcdoc(null)).toContain('src=""')
 		expect(buildPadFrameSrcdoc(undefined)).toContain('src=""')
+	})
+
+	it('drops unsafe iframe URL schemes', () => {
+		expect(buildPadFrameSrcdoc('javascript:alert(1)')).toContain('src=""')
+		expect(buildPadFrameSrcdoc('data:text/html,<script>alert(1)</script>')).toContain('src=""')
+	})
+
+	it('adds a restrictive CSP for the wrapper document', () => {
+		const srcdoc = buildPadFrameSrcdoc('https://pad.example.test/p/demo')
+
+		expect(srcdoc).toContain('http-equiv="Content-Security-Policy"')
+		expect(srcdoc).toContain("default-src 'none'; frame-src http: https:; style-src 'unsafe-inline'")
 	})
 })

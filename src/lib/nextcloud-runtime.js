@@ -15,11 +15,23 @@ export const getFilesRouter = () => {
 	return router && typeof router.goToRoute === 'function' ? router : null
 }
 
+const isExpectedNavigationRedirect = (error) => {
+	const message = error instanceof Error ? error.message : String(error || '')
+	return message.includes('Redirected when going') && message.includes('navigation guard')
+}
+
 export const ignoreExpectedNavigationResult = (result) => {
 	if (!result || typeof result.then !== 'function') {
 		return
 	}
 	// Nextcloud's router/viewer can reject on expected navigation guard redirects.
-	// The route change still happened; we only attach a catch to avoid console noise.
-	Promise.resolve(result).catch(() => {})
+	// The route change still happened; only suppress that known Vue Router noise.
+	Promise.resolve(result).catch((error) => {
+		if (isExpectedNavigationRedirect(error)) {
+			return
+		}
+		if (window.console && typeof window.console.debug === 'function') {
+			window.console.debug('[etherpad_nextcloud] Unexpected navigation rejection', error)
+		}
+	})
 }
