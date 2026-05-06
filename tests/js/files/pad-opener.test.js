@@ -47,7 +47,7 @@ describe('pad opener', () => {
 		expect(router.goToRoute).toHaveBeenCalledWith(
 			null,
 			{ view: 'files', fileid: '42' },
-			{ dir: '/Folder', editing: 'false', openfile: 'true' }
+			{ dir: '/Folder' }
 		)
 		expect(window.OCA.Viewer.open).toHaveBeenCalledWith(expect.objectContaining({
 			path: '/Folder/Test.pad',
@@ -63,6 +63,38 @@ describe('pad opener', () => {
 			router.params,
 			{ dir: '/Folder' }
 		)
+	})
+
+	it('swallows expected Files router redirect rejections', async () => {
+		const router = installFilesRouter()
+		router.goToRoute.mockImplementation((route, params = {}, query = {}) => {
+			router.params = { ...params }
+			router.query = { ...query }
+			return Promise.reject(new Error('Redirected when going via a navigation guard.'))
+		})
+		const openPad = createPadOpener()
+
+		await openPad({ path: '/Folder/Test.pad', fileId: 42 })
+		await vi.advanceTimersByTimeAsync(120)
+		await Promise.resolve()
+
+		expect(window.OCA.Viewer.open).toHaveBeenCalledWith(expect.objectContaining({
+			path: '/Folder/Test.pad',
+		}))
+	})
+
+	it('swallows expected native viewer navigation rejections', async () => {
+		installFilesRouter()
+		window.OCA.Viewer.open.mockImplementation(() => Promise.reject(new Error('Redirected when going via a navigation guard.')))
+		const openPad = createPadOpener()
+
+		await openPad({ path: '/Folder/Test.pad', fileId: 42 })
+		await vi.advanceTimersByTimeAsync(120)
+		await Promise.resolve()
+
+		expect(window.OCA.Viewer.open).toHaveBeenCalledWith(expect.objectContaining({
+			path: '/Folder/Test.pad',
+		}))
 	})
 
 	it('deduplicates repeated open requests in a short window', async () => {

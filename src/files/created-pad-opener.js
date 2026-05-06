@@ -7,7 +7,12 @@ import {
 	ocDavFileSource,
 	ocEmitEvent,
 } from '../lib/oc-compat.js'
-import { hasNativeViewer, isFilesAppRoute } from '../lib/nextcloud-runtime.js'
+import {
+	getFilesRouter,
+	hasNativeViewer,
+	ignoreExpectedNavigationResult,
+	isFilesAppRoute,
+} from '../lib/nextcloud-runtime.js'
 
 const ROUTE_SETTLE_DELAY_MS = 120
 const VIEWER_NODE_REGISTRATION_DELAY_MS = 900
@@ -21,10 +26,11 @@ export const openCreatedPadInViewer = async (navigation, options = {}) => {
 				await waitForRouteSettle()
 			}
 			await notifyViewerAboutCreatedFile(navigation.path)
-			window.OCA.Viewer.open({
+			const result = window.OCA.Viewer.open({
 				path: navigation.path,
 				onClose: clearFilesViewerRoute,
 			})
+			ignoreExpectedNavigationResult(result)
 			return
 		} catch (e) {
 			// Fall through to the route-based opener below.
@@ -57,11 +63,11 @@ const waitForCreatedNodeRegistration = () => new Promise((resolve) => {
 })
 
 const pushViewerRouteForCreatedPad = (fileId, path, resolveOpenDir) => {
-	const router = window.OCP && window.OCP.Files && window.OCP.Files.Router
-	if (!router || typeof router.goToRoute !== 'function') {
+	const router = getFilesRouter()
+	if (!router) {
 		return
 	}
-	router.goToRoute(
+	ignoreExpectedNavigationResult(router.goToRoute(
 		null,
 		{
 			...(router.params || {}),
@@ -71,11 +77,9 @@ const pushViewerRouteForCreatedPad = (fileId, path, resolveOpenDir) => {
 		{
 			...(router.query || {}),
 			dir: resolveOpenDirForCreatedPad(path, resolveOpenDir),
-			editing: 'false',
-			openfile: 'true',
 		},
 		true
-	)
+	))
 }
 
 const resolveOpenDirForCreatedPad = (path, resolveOpenDir) => {
@@ -88,12 +92,12 @@ const resolveOpenDirForCreatedPad = (path, resolveOpenDir) => {
 }
 
 const clearFilesViewerRoute = () => {
-	const router = window.OCP && window.OCP.Files && window.OCP.Files.Router
-	if (!router || typeof router.goToRoute !== 'function') {
+	const router = getFilesRouter()
+	if (!router) {
 		return
 	}
 	const query = { ...(router.query || {}) }
 	delete query.openfile
 	delete query.editing
-	router.goToRoute(null, router.params || {}, query)
+	ignoreExpectedNavigationResult(router.goToRoute(null, router.params || {}, query))
 }

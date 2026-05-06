@@ -6,7 +6,12 @@ import {
 	apiResolvePadByFileId,
 	apiResolvePadByPath,
 } from '../lib/api-client.js'
-import { hasNativeViewer, isFilesAppRoute } from '../lib/nextcloud-runtime.js'
+import {
+	getFilesRouter,
+	hasNativeViewer,
+	ignoreExpectedNavigationResult,
+	isFilesAppRoute,
+} from '../lib/nextcloud-runtime.js'
 import {
 	filesUrlForFileId,
 	parseFileIdFromCurrentLocation,
@@ -24,14 +29,14 @@ const ROUTE_FALLBACK_DELAY_MS = 180
 const ROUTE_OPEN_DELAY_MS = 120
 
 const navigateFilesRouteAndOpen = (fileId, path) => {
-	const router = window.OCP && window.OCP.Files && window.OCP.Files.Router
-	if (!router || typeof router.goToRoute !== 'function') {
+	const router = getFilesRouter()
+	if (!router) {
 		return false
 	}
 	if (!fileId || !Number.isFinite(fileId)) {
 		return false
 	}
-	router.goToRoute(
+	ignoreExpectedNavigationResult(router.goToRoute(
 		null,
 		{
 			view: 'files',
@@ -39,16 +44,15 @@ const navigateFilesRouteAndOpen = (fileId, path) => {
 		},
 		{
 			dir: resolveOpenDir(path),
-			editing: 'false',
-			openfile: 'true',
 		}
-	)
+	))
 	window.setTimeout(() => {
 		try {
-			window.OCA.Viewer.open({
+			const result = window.OCA.Viewer.open({
 				path,
 				onClose: clearFilesViewerRoute,
 			})
+			ignoreExpectedNavigationResult(result)
 		} catch (e) {
 			// The route fallback below still lets Nextcloud handle viewer opening.
 		}
@@ -65,14 +69,14 @@ const navigateFilesRouteAndOpen = (fileId, path) => {
 }
 
 const clearFilesViewerRoute = () => {
-	const router = window.OCP && window.OCP.Files && window.OCP.Files.Router
-	if (!router || typeof router.goToRoute !== 'function') {
+	const router = getFilesRouter()
+	if (!router) {
 		return
 	}
 	const query = { ...(router.query || {}) }
 	delete query.openfile
 	delete query.editing
-	router.goToRoute(null, router.params || {}, query)
+	ignoreExpectedNavigationResult(router.goToRoute(null, router.params || {}, query))
 }
 
 export const createPadOpener = () => {
@@ -161,7 +165,8 @@ export const createPadOpener = () => {
 		}
 
 		try {
-			window.OCA.Viewer.open({ path })
+			const result = window.OCA.Viewer.open({ path })
+			ignoreExpectedNavigationResult(result)
 		} catch (e) {
 			fallbackOpen()
 		}
