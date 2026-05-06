@@ -7,8 +7,15 @@ import {
 	ocGenerateUrl,
 	ocImagePath,
 	ocPermissionRead,
-	ocRequestToken,
 } from './lib/oc-compat.js'
+import {
+	apiCreatePadFromUrl,
+	apiCreatePublicPad,
+	apiResolvePadByFileId,
+	apiResolvePadByPath,
+	apiSyncByFileId,
+	apiSyncStatusByFileId,
+} from './lib/api-client.js'
 import { hasNativeViewer, isFilesAppRoute } from './lib/nextcloud-runtime.js'
 import { parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './lib/urls.js'
 import { openCreatedPadInViewer } from './files/created-pad-opener.js'
@@ -22,7 +29,6 @@ import { isSingleFilePublicShare, schedulePublicSingleShareUiStateRefresh } from
 
 (function () {
 	const OPEN_ACTION = 'etherpad_nextcloud_open'
-	const RESOLVE_CACHE = new Map()
 	let booted = false
 	let sidebarSyncObserver = null
 	let lastOpenKey = null
@@ -125,58 +131,6 @@ import { isSingleFilePublicShare, schedulePublicSingleShareUiStateRefresh } from
 	}
 
 	const isPadName = (name) => typeof name === 'string' && name.toLowerCase().endsWith('.pad')
-
-	const apiResolvePadByFileId = async (fileId) => {
-		const cacheKey = String(fileId)
-		if (RESOLVE_CACHE.has(cacheKey)) {
-			return RESOLVE_CACHE.get(cacheKey)
-		}
-		const url = ocGenerateUrl('/apps/' + APP_ID + '/api/v1/pads/resolve') + '?fileId=' + encodeURIComponent(cacheKey)
-		const request = fetch(url, {
-			method: 'GET',
-			headers: { 'Accept': 'application/json' },
-			credentials: 'same-origin',
-		})
-			.then(async (response) => {
-				const data = await response.json().catch(() => ({}))
-				if (!response.ok) {
-					throw new Error((data && data.message) || 'Pad resolve failed.')
-				}
-				return data
-			})
-			.catch((error) => {
-				RESOLVE_CACHE.delete(cacheKey)
-				throw error
-			})
-		RESOLVE_CACHE.set(cacheKey, request)
-		return request
-	}
-
-	const apiResolvePadByPath = async (path) => {
-		const cacheKey = 'path:' + String(path)
-		if (RESOLVE_CACHE.has(cacheKey)) {
-			return RESOLVE_CACHE.get(cacheKey)
-		}
-		const url = ocGenerateUrl('/apps/' + APP_ID + '/api/v1/pads/resolve') + '?file=' + encodeURIComponent(path)
-		const request = fetch(url, {
-			method: 'GET',
-			headers: { 'Accept': 'application/json' },
-			credentials: 'same-origin',
-		})
-			.then(async (response) => {
-				const data = await response.json().catch(() => ({}))
-				if (!response.ok) {
-					throw new Error((data && data.message) || 'Pad resolve by path failed.')
-				}
-				return data
-			})
-			.catch((error) => {
-				RESOLVE_CACHE.delete(cacheKey)
-				throw error
-			})
-		RESOLVE_CACHE.set(cacheKey, request)
-		return request
-	}
 
 	const getDirFromPath = (path) => {
 		if (!path || typeof path !== 'string') {
@@ -592,42 +546,6 @@ import { isSingleFilePublicShare, schedulePublicSingleShareUiStateRefresh } from
 		return 'error'
 	}
 
-	const apiSyncStatusByFileId = async (fileId) => {
-		const endpoint = ocGenerateUrl('/apps/' + APP_ID + '/api/v1/pads/sync-status/' + encodeURIComponent(String(fileId)))
-		const response = await fetch(endpoint, {
-			method: 'GET',
-			headers: {
-				Accept: 'application/json',
-			},
-			credentials: 'same-origin',
-		})
-		const data = await response.json().catch(() => ({}))
-		if (!response.ok) {
-			throw new Error((data && data.message) || 'Sync status check failed.')
-		}
-		return data
-	}
-
-	const apiSyncByFileId = async (fileId, force) => {
-		let endpoint = ocGenerateUrl('/apps/' + APP_ID + '/api/v1/pads/sync/' + encodeURIComponent(String(fileId)))
-		if (force) {
-			endpoint += '?force=1'
-		}
-		const response = await fetch(endpoint, {
-			method: 'POST',
-			headers: {
-				Accept: 'application/json',
-				requesttoken: ocRequestToken(),
-			},
-			credentials: 'same-origin',
-		})
-		const data = await response.json().catch(() => ({}))
-		if (!response.ok) {
-			throw new Error((data && data.message) || 'Pad sync failed.')
-		}
-		return data
-	}
-
 	const clearSidebarSyncStatusPoll = () => {
 		if (sidebarSyncStatusPollTimer !== null) {
 			window.clearTimeout(sidebarSyncStatusPollTimer)
@@ -769,52 +687,6 @@ import { isSingleFilePublicShare, schedulePublicSingleShareUiStateRefresh } from
 			sidebarSyncRefreshTimer = null
 			void refreshSidebarSyncPanel()
 		}, Math.max(0, delayMs))
-	}
-
-	const apiCreatePadFromUrl = async (filePath, padUrl) => {
-		const endpoint = ocGenerateUrl('/apps/' + APP_ID + '/api/v1/pads/from-url')
-		const body = new URLSearchParams()
-		body.set('file', filePath)
-		body.set('padUrl', padUrl)
-
-		const response = await fetch(endpoint, {
-			method: 'POST',
-			headers: {
-				'Accept': 'application/json',
-				'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
-				requesttoken: ocRequestToken(),
-			},
-			credentials: 'same-origin',
-			body: body.toString(),
-		})
-		const data = await response.json().catch(() => ({}))
-		if (!response.ok) {
-			throw new Error((data && data.message) || 'Could not import public pad URL.')
-		}
-		return data
-	}
-
-	const apiCreatePublicPad = async (filePath) => {
-		const endpoint = ocGenerateUrl('/apps/' + APP_ID + '/api/v1/pads')
-		const body = new URLSearchParams()
-		body.set('file', filePath)
-		body.set('accessMode', 'public')
-
-		const response = await fetch(endpoint, {
-			method: 'POST',
-			headers: {
-				'Accept': 'application/json',
-				'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
-				requesttoken: ocRequestToken(),
-			},
-			credentials: 'same-origin',
-			body: body.toString(),
-		})
-		const data = await response.json().catch(() => ({}))
-		if (!response.ok) {
-			throw new Error((data && data.message) || 'Could not create public pad.')
-		}
-		return data
 	}
 
 	const createInternalPublicPad = async () => {
