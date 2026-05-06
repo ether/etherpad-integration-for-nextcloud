@@ -33,6 +33,17 @@ What it does:
   - public single-file share flow
   - external URL security checks
 
+Frontend checks are separate and should be run before release/deploy whenever
+`src/`, `package.json`, or Vite/Vitest config changed:
+
+```bash
+npm test
+npm run build
+```
+
+The Vite build writes runtime assets to `js/`; those built files must be present
+in the deployed app.
+
 Environment variables for E2E:
 
 - `NC_BASE_URL`
@@ -104,7 +115,8 @@ DEPLOY_APP_PATH="/var/www/virtual/user/html/apps/etherpad_nextcloud" \
 
 Notes:
 
-- Excludes by default: `.git/`, `vendor/`, `tests/`, `docs/`, `.phpunit.cache/`, `_copy_probe/`, `.DS_Store`, `ToDo.md`.
+- Excludes by default: `.git/`, `node_modules/`, `vendor/`, `tests/`, `docs/`, `.phpunit.cache/`, `_copy_probe/`, `.DS_Store`, `ToDo.md`.
+- `node_modules/` should not be deployed, but the built `js/` directory should be.
 - Set `RSYNC_DELETE=1` only when you explicitly want remote cleanup.
 
 ## 5) Server Log Verification (Recommended)

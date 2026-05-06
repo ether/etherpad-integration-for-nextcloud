@@ -38,6 +38,14 @@ This plugin lets you surface pads from an Etherpad instance inside Nextcloud and
 
 ## Install
 
+The repository contains Vite-built frontend assets in `js/`. If you change
+files in `src/`, rebuild before copying the app:
+
+```bash
+npm install
+npm run build
+```
+
 ### 1) Copy app into Nextcloud
 
 Place this repository as:
@@ -101,7 +109,18 @@ php occ maintenance:mimetype:update-js
 php occ maintenance:mimetype:update-db
 ```
 
-For deployment, copy the app to `apps/etherpad_nextcloud` and exclude development-only content such as `.git/`, `tests/`, `docs/`, `.phpunit.cache/`, and local temp files.
+For deployment, copy the app to `apps/etherpad_nextcloud` and exclude development-only content such as `.git/`, `node_modules/`, `tests/`, `docs/`, `.phpunit.cache/`, and local temp files. Keep the built `js/` assets in the deployed app.
+
+## Development Checks
+
+Frontend source lives in `src/` and is built into `js/` with Vite.
+
+```bash
+npm test
+npm run build
+```
+
+PHP checks and optional E2E checks are described in [docs/release-process.md](docs/release-process.md).
 
 ## Usage
 

@@ -44,6 +44,22 @@ Etherpad is the editing source of truth; the `.pad` file acts as binding storage
   - API for create/open/resolve/sync/trash/restore.
   - For protected pad opens, attaches explicit Etherpad `Set-Cookie` session header via response header.
 
+## Frontend Build
+
+Frontend code is authored as ES modules in `src/` and built with Vite into
+checked-in runtime assets in `js/`.
+
+- Build entrypoints are defined in `vite.config.js`:
+  - `src/files-main.js`
+  - `src/viewer-main.js`
+  - `src/embed-main.js`
+  - `src/embed-create-main.js`
+  - `src/admin-settings.js`
+- Shared browser/Nextcloud helpers live in `src/lib/`.
+- Files-app specific modules live in `src/files/`.
+- Nextcloud loads built assets from `js/` via `Util::addScript(...)`; blank embed templates load their built bundles explicitly.
+- After editing `src/`, run `npm test` and `npm run build` before deployment.
+
 ## Persistence Model
 
 - DB table `ep_pad_bindings` (migration: `lib/Migration/Version000001Date20260304222000.php`)
@@ -192,22 +208,37 @@ Primary flow (native viewer when available):
 2. Service scans DB/file metadata consistency.
 3. Returns aggregate counters and bounded sample lists for diagnostics.
 
-## Main Frontend Files
+## Main Frontend Modules
 
 - `src/files-main.js`
-  - Files/public-share open handling and viewer redirect.
-  - In authenticated files app routes, `.pad` open is handled via registered Nextcloud file action (`setDefault`) instead of global click interception.
-    - Reason: preserves native list interactions (checkbox selection, multi-select, row actions) without accidental auto-open.
-  - Global click interception is scoped to public-share routes only, where direct share download links must be remapped to the pad viewer.
-  - Public-share strategy: native viewer only.
-  - `+ Neu` integration for `Public pad` is API-only with runtime capability checks:
+  - Thin files-app entrypoint that wires the modules below.
+- `src/files/open-action.js`
+  - Registers the authenticated `.pad` default file action.
+  - Uses stable `fileId` from the Files action context whenever available.
+- `src/files/pad-opener.js`
+  - Opens authenticated `.pad` files through Nextcloud router with `fileid` + `openfile=true`.
+  - Target route: `/index.php/apps/files/files/{fileId}?dir=...&editing=false&openfile=true`.
+  - Falls back to hard navigation when the native viewer/router path cannot be used.
+- `src/files/created-pad-opener.js`
+  - Handles direct viewer open after creating a new public pad.
+  - Emits the Nextcloud Files creation event, waits briefly for SPA state registration, then calls native Viewer open.
+- `src/files/route-controller.js`
+  - Watches Files/public-share route changes.
+  - Normalizes stale `.pad` routes without `openfile=true` back to folder routes.
+  - Opens public-share pad links through the native viewer when available.
+- `src/files/public-pad-menu.js`
+  - `+ Neu` integration for `Public pad` with runtime capability checks:
     - modern API: `addNewFileMenuEntry` / `getNewFileMenu().registerEntry`
     - legacy API fallback: `OC.Plugins.register('OCA.Files.NewFileMenu', ...)`
-  - In files app, `.pad` is opened through Nextcloud router with `fileid` + `openfile=true`:
-    - Target route: `/index.php/apps/files/files/{fileId}?dir=...&editing=false&openfile=true`
-  - Router edge-case fallback: hard navigation to same files URL.
-  - Stale-route guard: `/apps/files/files/{fileId}?dir=...` without `openfile=true` is normalized to `/apps/files/files?dir=...` for `.pad`.
-  - New-pad menu integration.
+- `src/files/public-share-pad-links.js`
+  - Public-share click interception for download links that need remapping to the pad viewer.
+  - Authenticated Files routes intentionally do not use global click interception.
+- `src/files/public-single-share-ui.js`
+  - Public single-file share UI state refresh.
+- `src/files/public-pad-create-flow.js` and `src/files/pad-create-dialogs.js`
+  - Public pad creation flow and modal UI.
+- `src/files/sidebar-sync.js`
+  - Files sidebar sync status panel, manual snapshot action, polling, and public/external open-link affordance.
 - `src/viewer-main.js`
   - Registers Nextcloud viewer handler for MIME `application/x-etherpad-nextcloud`.
   - Open URL resolution via CSRF-protected `POST` endpoints:
@@ -224,6 +255,8 @@ Primary flow (native viewer when available):
   - Powers the minimal `/embed/create-by-parent/{parentFolderId}` launcher page.
   - Same-origin create flow via `POST /api/v1/pads/create-by-parent`.
   - Redirects to returned `embed_url` after successful creation.
+- `src/lib/*`
+  - Shared constants, URL builders/parsers, Nextcloud runtime helpers, OC compatibility helpers, DOM helpers, and API client code.
 
 ## Event Integration
 

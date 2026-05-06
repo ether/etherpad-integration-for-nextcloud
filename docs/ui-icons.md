@@ -24,7 +24,7 @@ This note describes how icons are wired in the `+ New` menu and in pad sync acti
 
 ### 2) Custom "Public pad" entry
 
-- File: `src/files-main.js`
+- File: `src/files/public-pad-menu.js`
 - Entry is injected dynamically into the menu.
 - Icon reuses the same file type class as `.pad`:
   - `icon-filetype-etherpad-nextcloud-pad`
@@ -47,7 +47,7 @@ Important after icon changes:
 - File: `src/viewer-main.js`
 - Registers the native `.pad` viewer component and handles pad open/sync lifecycle.
 
-- File: `src/files-main.js`
+- File: `src/files/sidebar-sync.js`
 - For authenticated Files routes, sync UI lives in the Files sidebar panel:
   - status icon (green when synced, dark/light monochrome when pending/out-of-sync)
   - `Pad in Datei speichern` manual sync button
@@ -59,7 +59,7 @@ Technical notes:
 - Sidebar panel root marker:
   - `data-epnc-sidebar-sync-panel="1"`
 - Sync icon state is rendered through:
-  - `syncIconNameForState(...)` in `src/files-main.js`
+  - `syncIconNameForState(...)` in `src/files/sidebar-sync.js`
 
 ## Translations
 

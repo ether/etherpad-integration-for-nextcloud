@@ -13,6 +13,7 @@ RSYNC_ARGS=(
 	--human-readable
 	--itemize-changes
 	--exclude=".git/"
+	--exclude="node_modules/"
 	--exclude="vendor/"
 	--exclude="tests/"
 	--exclude="docs/"

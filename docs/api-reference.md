@@ -281,20 +281,29 @@ Base: `/apps/etherpad_nextcloud`
 ## Frontend API Usage
 
 - `src/files-main.js`
+  - wires the Files/public-share frontend modules.
+- `src/files/open-action.js`
   - extracts `fileId` directly from the authenticated Files action context whenever available.
   - uses `GET /api/v1/pads/resolve` mainly as a fallback to convert file path -> `fileId` when no stable `fileId` is available.
+- `src/files/pad-opener.js`
   - opens in files view through Nextcloud router (`fileid`, `openfile=true`).
+  - clears `openfile`/`editing` again when the native viewer closes.
+- `src/files/public-pad-menu.js`
   - registers `Public pad` in `+ Neu` via API-only runtime capability checks:
     - modern: `addNewFileMenuEntry` / `getNewFileMenu().registerEntry`
     - legacy fallback: `OC.Plugins.register('OCA.Files.NewFileMenu', ...)`
-  - on authenticated files routes, open is triggered through Nextcloud's registered default file action for `.pad` (no global click hijack), so checkbox/multi-select behavior remains native.
+- `src/files/public-share-pad-links.js`
   - global click interception is only used on public-share routes to remap share download links to the pad viewer.
+- `src/files/route-controller.js`
+  - normalizes stale `.pad` Files routes without `openfile=true`.
+  - opens public-share pad links through the native viewer when available.
+- `src/files/sidebar-sync.js`
+  - exposes sync status UI in the Files sidebar panel.
 - `src/viewer-main.js`
   - prefers `POST /api/v1/pads/open-by-id` (`fileId`, requesttoken).
   - falls back to `POST /api/v1/pads/open` (`file`, requesttoken) only without `fileId`.
   - if open fails with missing frontmatter, calls `POST /api/v1/pads/initialize*` and retries open once.
   - uses `POST /api/v1/pads/sync/{fileId}` periodically and on unload.
-  - sync status UI is exposed in Files sidebar panel via `src/files-main.js`.
 - `src/embed-main.js`
   - powers the minimal `/embed/by-id/{fileId}` page.
   - uses same-origin `POST /api/v1/pads/open-by-id`.

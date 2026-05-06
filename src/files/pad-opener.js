@@ -18,6 +18,9 @@ import {
 
 const DEDUPE_OPEN_WINDOW_MS = 800
 const ROUTE_FALLBACK_DELAY_MS = 180
+// Debounce between route push and Viewer.open: Nextcloud's SPA needs a short
+// moment to settle the folder state, otherwise the viewer can render against
+// the previous folder context or fail to resolve the path.
 const ROUTE_OPEN_DELAY_MS = 120
 
 const navigateFilesRouteAndOpen = (fileId, path) => {
