@@ -12,11 +12,9 @@ import {
 	apiCreatePadFromUrl,
 	apiCreatePublicPad,
 	apiResolvePadByFileId,
-	apiResolvePadByPath,
 } from './lib/api-client.js'
 import { hasNativeViewer, isFilesAppRoute } from './lib/nextcloud-runtime.js'
 import {
-	filesUrlForFileId,
 	getCurrentDir,
 	isPadName,
 	normalizeFilePath,
@@ -26,10 +24,10 @@ import {
 	parsePublicSharePadFromHref,
 	parsePublicShareTokenFromLocation,
 	resolveOpenDir,
-	viewerUrlForPath,
 	viewerUrlForPublicShare,
 } from './lib/urls.js'
 import { openCreatedPadInViewer } from './files/created-pad-opener.js'
+import { createPadOpener } from './files/pad-opener.js'
 import { createSidebarSyncController } from './files/sidebar-sync.js'
 import { createPublicPadMenuRegistrar } from './files/public-pad-menu.js'
 import {
@@ -42,10 +40,9 @@ import { isSingleFilePublicShare, schedulePublicSingleShareUiStateRefresh } from
 (function () {
 	const OPEN_ACTION = 'etherpad_nextcloud_open'
 	let booted = false
-	let lastOpenKey = null
-	let lastOpenAt = 0
 	let lastRouteCheckKey = ''
 	const sidebarSync = createSidebarSyncController()
+	const openPadInNativeViewer = createPadOpener()
 
 	const parseNumericFileId = (value) => {
 		const id = Number(value)
@@ -213,125 +210,6 @@ import { isSingleFilePublicShare, schedulePublicSingleShareUiStateRefresh } from
 		}
 		if (choice === 'external') {
 			await promptAndCreatePadFromUrl()
-		}
-	}
-
-	const navigateFilesRouteAndOpen = (fileId, path) => {
-		const router = window.OCP && window.OCP.Files && window.OCP.Files.Router
-		if (!router || typeof router.goToRoute !== 'function') {
-			return false
-		}
-		if (!fileId || !Number.isFinite(fileId)) {
-			return false
-		}
-		router.goToRoute(
-			null,
-			{
-				view: 'files',
-				fileid: String(fileId),
-			},
-			{
-				dir: resolveOpenDir(path),
-				editing: 'false',
-				openfile: 'true',
-			}
-		)
-		window.setTimeout(() => {
-			const hasExpectedPath = (window.location.pathname || '').includes('/apps/files/files/' + String(fileId))
-			if (hasExpectedPath) {
-				return
-			}
-			const fallbackUrl = filesUrlForFileId(fileId, path)
-			window.location.assign(fallbackUrl)
-		}, 180)
-		return true
-	}
-
-	const openPadInNativeViewer = async (navigation) => {
-		const openKey = String(navigation.fileId ?? '') + '|' + String(navigation.path ?? '')
-		const now = Date.now()
-		if (lastOpenKey === openKey && (now - lastOpenAt) < 800) {
-			return
-		}
-		lastOpenKey = openKey
-		lastOpenAt = now
-
-		const publicShareToken = parsePublicShareTokenFromLocation()
-		const inPublicShareRoute = publicShareToken !== null && publicShareToken !== ''
-
-		const fallbackOpen = () => {
-			if (inPublicShareRoute) {
-				window.location.assign(viewerUrlForPublicShare(publicShareToken, navigation.path || ''))
-				return
-			}
-			if (isFilesAppRoute() && navigation.fileId !== null && navigation.fileId !== undefined && Number.isFinite(Number(navigation.fileId))) {
-				const fallbackPath = navigation.path || '/'
-				window.location.assign(filesUrlForFileId(Number(navigation.fileId), fallbackPath))
-				return
-			}
-			const routeFileId = isFilesAppRoute() ? parseFileIdFromCurrentLocation() : null
-			if ((navigation.fileId === null || navigation.fileId === undefined) && routeFileId) {
-				const fallbackPath = navigation.path || '/'
-				window.location.assign(filesUrlForFileId(routeFileId, fallbackPath))
-				return
-			}
-			if (navigation.fileId !== null && navigation.fileId !== undefined && Number.isFinite(Number(navigation.fileId))) {
-				const fallbackPath = navigation.path || '/'
-				window.location.assign(filesUrlForFileId(Number(navigation.fileId), fallbackPath))
-				return
-			}
-			if (navigation.path) {
-				window.location.assign(viewerUrlForPath(navigation.path))
-			}
-		}
-
-		if (!hasNativeViewer()) {
-			fallbackOpen()
-			return
-		}
-
-		let path = navigation.path || ''
-		let fileId = navigation.fileId ?? null
-		if (!path && navigation.fileId !== null && navigation.fileId !== undefined) {
-			try {
-				const resolvedPad = await apiResolvePadByFileId(navigation.fileId)
-				path = (resolvedPad && typeof resolvedPad.path === 'string') ? resolvedPad.path : ''
-				fileId = (resolvedPad && Number.isFinite(Number(resolvedPad.file_id))) ? Number(resolvedPad.file_id) : fileId
-			} catch (e) {
-				path = ''
-			}
-		}
-
-		if (!path) {
-			fallbackOpen()
-			return
-		}
-		if ((!fileId || !Number.isFinite(Number(fileId))) && path && !inPublicShareRoute) {
-			try {
-				const resolvedPad = await apiResolvePadByPath(path)
-				fileId = (resolvedPad && Number.isFinite(Number(resolvedPad.file_id))) ? Number(resolvedPad.file_id) : fileId
-			} catch (e) {
-				// resolve failure is handled by route fallback below
-			}
-		}
-		if ((!fileId || !Number.isFinite(Number(fileId))) && isFilesAppRoute()) {
-			const routeFileId = parseFileIdFromCurrentLocation()
-			if (routeFileId) {
-				fileId = routeFileId
-			}
-		}
-		if (isFilesAppRoute()) {
-			if (fileId && Number.isFinite(Number(fileId)) && navigateFilesRouteAndOpen(Number(fileId), path)) {
-				return
-			}
-			fallbackOpen()
-			return
-		}
-
-		try {
-			window.OCA.Viewer.open({ path })
-		} catch (e) {
-			fallbackOpen()
 		}
 	}
 
