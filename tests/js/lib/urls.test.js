@@ -167,4 +167,10 @@ describe('parsePadPathFromDavHref', () => {
 	it('ignores malformed hrefs', () => {
 		expect(parsePadPathFromDavHref('https://[invalid')).toBeNull()
 	})
+
+	it('ignores DAV hrefs with malformed percent encoding', () => {
+		const href = 'https://cloud.example.test/remote.php/dav/files/jacob/Folder/%E0%A4%A.pad'
+
+		expect(parsePadPathFromDavHref(href)).toBeNull()
+	})
 })

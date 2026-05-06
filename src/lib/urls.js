@@ -142,7 +142,12 @@ export const parsePadPathFromDavHref = (href) => {
 	} catch (error) {
 		return null
 	}
-	const pathname = decodeURIComponent(url.pathname || '')
+	let pathname
+	try {
+		pathname = decodeURIComponent(url.pathname || '')
+	} catch (error) {
+		return null
+	}
 	if (!pathname.endsWith('.pad')) {
 		return null
 	}
