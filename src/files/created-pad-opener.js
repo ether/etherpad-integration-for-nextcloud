@@ -7,8 +7,10 @@ import {
 	ocDavFileSource,
 	ocEmitEvent,
 } from '../lib/oc-compat.js'
+import { hasNativeViewer, isFilesAppRoute } from '../lib/nextcloud-runtime.js'
 
-const USE_NATIVE_VIEWER = true
+const ROUTE_SETTLE_DELAY_MS = 120
+const VIEWER_NODE_REGISTRATION_DELAY_MS = 900
 
 export const openCreatedPadInViewer = async (navigation, options = {}) => {
 	if (hasNativeViewer() && navigation.path) {
@@ -34,12 +36,8 @@ export const openCreatedPadInViewer = async (navigation, options = {}) => {
 	}
 }
 
-const hasNativeViewer = () => USE_NATIVE_VIEWER && Boolean(window.OCA && window.OCA.Viewer && typeof window.OCA.Viewer.open === 'function')
-
-const isFilesAppRoute = () => (window.location.pathname || '').includes('/apps/files')
-
 const waitForRouteSettle = () => new Promise((resolve) => {
-	window.setTimeout(resolve, 120)
+	window.setTimeout(resolve, ROUTE_SETTLE_DELAY_MS)
 })
 
 const notifyViewerAboutCreatedFile = async (path) => {
@@ -53,7 +51,9 @@ const notifyViewerAboutCreatedFile = async (path) => {
 }
 
 const waitForCreatedNodeRegistration = () => new Promise((resolve) => {
-	window.setTimeout(resolve, 900)
+	// Nextcloud's viewer reacts to editor:file:created by fetching the real Files node
+	// asynchronously. Shorter delays made the direct open race that store update.
+	window.setTimeout(resolve, VIEWER_NODE_REGISTRATION_DELAY_MS)
 })
 
 const pushViewerRouteForCreatedPad = (fileId, path, resolveOpenDir) => {

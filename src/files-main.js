@@ -9,6 +9,7 @@ import {
 	ocPermissionRead,
 	ocRequestToken,
 } from './lib/oc-compat.js'
+import { hasNativeViewer, isFilesAppRoute } from './lib/nextcloud-runtime.js'
 import { parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './lib/urls.js'
 import { openCreatedPadInViewer } from './files/created-pad-opener.js'
 import { createPublicPadMenuRegistrar } from './files/public-pad-menu.js'
@@ -31,7 +32,6 @@ import { isSingleFilePublicShare, schedulePublicSingleShareUiStateRefresh } from
 	let sidebarSyncStatusPollTimer = null
 	let sidebarSyncStatusPollFileId = null
 	let sidebarSyncRefreshToken = 0
-	const USE_NATIVE_VIEWER = true
 	const SIDEBAR_PANEL_ATTR = 'data-epnc-sidebar-sync-panel'
 	const SIDEBAR_PANEL_MOUNT_ATTR = 'data-epnc-sidebar-sync-mount'
 	const SIDEBAR_SYNC_STATUS_POLL_BASE_MS = 8000
@@ -57,8 +57,6 @@ import { isSingleFilePublicShare, schedulePublicSingleShareUiStateRefresh } from
 		params.set('openfile', 'true')
 		return base + '?' + params.toString()
 	}
-	const hasNativeViewer = () => USE_NATIVE_VIEWER && Boolean(window.OCA && window.OCA.Viewer && typeof window.OCA.Viewer.open === 'function')
-	const isFilesAppRoute = () => (window.location.pathname || '').includes('/apps/files')
 	const parseFileIdFromFilesHref = (href) => {
 		if (!href || typeof href !== 'string') {
 			return null
