@@ -408,8 +408,12 @@ import { parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './li
 			if (this.readonlySnapshotMode) {
 				return createElement('div', { class: 'epnc-native-snapshot' }, [
 					createElement('div', { class: 'epnc-native-snapshot__inner' }, [
-						createElement('div', { class: 'epnc-native-snapshot__title' }, translate('Read-only snapshot')),
-						createElement('div', { class: 'epnc-native-snapshot__message' }, translate('This share shows the last synced snapshot stored in the .pad file.')),
+						createElement('div', { class: 'epnc-native-snapshot__header' }, [
+							createElement('div', { class: 'epnc-native-snapshot__heading' }, [
+								createElement('div', { class: 'epnc-native-snapshot__title' }, translate('Read-only snapshot')),
+								createElement('div', { class: 'epnc-native-snapshot__message' }, translate('Read-only snapshot from the .pad file.')),
+							]),
+						]),
 						this.readonlySnapshotHtml.trim() !== ''
 							? createElement('div', {
 								class: 'epnc-native-snapshot__text epnc-native-snapshot__text--html',
