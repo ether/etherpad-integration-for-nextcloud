@@ -11,6 +11,7 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\Service;
 
 use OCA\EtherpadNextcloud\Exception\BindingStateConflictException;
+use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
 use OCA\EtherpadNextcloud\Exception\LifecycleException;
 use OCA\EtherpadNextcloud\Util\EtherpadErrorClassifier;
 use OCA\EtherpadNextcloud\Util\ExternalPadBindingId;
@@ -358,19 +359,27 @@ class LifecycleService {
 					$padOrigin = trim((string)($frontmatter['pad_origin'] ?? ''));
 					$remotePadId = trim((string)($frontmatter['remote_pad_id'] ?? ''));
 					$padUrl = $meta['pad_url'];
-				if ($accessMode !== BindingService::ACCESS_PUBLIC || $padOrigin === '' || $remotePadId === '' || $padUrl === '') {
-					return $this->buildSkippedResult('invalid_external_frontmatter', $fileId, $oldPadId);
-				}
+					if ($accessMode !== BindingService::ACCESS_PUBLIC || $padOrigin === '' || $remotePadId === '' || $padUrl === '') {
+						return $this->buildSkippedResult('invalid_external_frontmatter', $fileId, $oldPadId);
+					}
+					try {
+						$external = $this->etherpadClient->normalizeAndValidateExternalPublicPadUrl($padUrl);
+					} catch (EtherpadClientException) {
+						return $this->buildSkippedResult('invalid_external_frontmatter', $fileId, $oldPadId);
+					}
+					if ($external['origin'] !== $padOrigin || $external['pad_id'] !== $remotePadId) {
+						return $this->buildSkippedResult('invalid_external_frontmatter', $fileId, $oldPadId);
+					}
 
-				$newPadId = ExternalPadBindingId::build($padOrigin, $remotePadId, $fileId);
-				$updatedContent = $this->padFileService->withStateAndSnapshot(
-					$currentContent,
-					BindingService::STATE_ACTIVE,
-					$snapshot,
-					$newPadId,
-					null,
-					$padUrl,
-				);
+					$newPadId = ExternalPadBindingId::build($external['origin'], $external['pad_id'], $fileId);
+					$updatedContent = $this->padFileService->withStateAndSnapshot(
+						$currentContent,
+						BindingService::STATE_ACTIVE,
+						$snapshot,
+						$newPadId,
+						null,
+						$external['pad_url'],
+					);
 				$this->writeRestoredContent($file, $updatedContent);
 				$fileContentUpdated = true;
 				$this->bindingService->createBinding($fileId, $newPadId, BindingService::ACCESS_PUBLIC);
