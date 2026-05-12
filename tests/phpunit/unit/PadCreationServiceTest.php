@@ -120,16 +120,14 @@ class PadCreationServiceTest extends TestCase {
 		$rollbackService->method('buildExternalBindingPadId')->with('https://pad.remote.test', 'RemotePad', 321)->willReturn('ext.hash');
 
 		$etherpadClient = $this->createMock(EtherpadClient::class);
-		$etherpadClient->method('normalizeAndValidateExternalPublicPadUrl')
+		$etherpadClient->method('normalizeAndFetchExternalPublicPadText')
 			->with('https://pad.remote.test/p/RemotePad')
 			->willReturn([
 				'pad_url' => 'https://pad.remote.test/p/RemotePad',
 				'origin' => 'https://pad.remote.test',
 				'pad_id' => 'RemotePad',
+				'text' => "Initial snapshot\nfrom remote pad",
 			]);
-		$etherpadClient->expects($this->once())
-			->method('assertPublicPadAvailable')
-			->with('https://pad.remote.test/p/RemotePad');
 
 		$padFileService = $this->createMock(PadFileService::class);
 		$padFileService->expects($this->once())
@@ -145,6 +143,10 @@ class PadCreationServiceTest extends TestCase {
 					'remote_pad_id' => 'RemotePad',
 				]
 			)
+			->willReturn('external-empty-frontmatter');
+		$padFileService->expects($this->once())
+			->method('withExportSnapshot')
+			->with('external-empty-frontmatter', "Initial snapshot\nfrom remote pad", '', 0, false)
 			->willReturn('external-frontmatter');
 
 		$bindingService = $this->createMock(BindingService::class);
@@ -164,7 +166,7 @@ class PadCreationServiceTest extends TestCase {
 		], $result);
 	}
 
-	public function testCreateFromUrlRollsBackWhenPublicPadValidationFails(): void {
+	public function testCreateFromUrlRollsBackWhenInitialSnapshotFetchFails(): void {
 		$fileNode = $this->createMock(File::class);
 		$fileNode->method('getId')->willReturn(321);
 		$fileNode->expects($this->never())->method('putContent');
@@ -172,23 +174,14 @@ class PadCreationServiceTest extends TestCase {
 		$padPaths = $this->createMock(PadPathService::class);
 		$padPaths->method('normalizeCreatePath')->with('/External')->willReturn('/External.pad');
 		$fileCreator = $this->createMock(PadFileCreator::class);
-		$fileCreator->method('createUserFile')->with('alice', '/External.pad')->willReturn($fileNode);
+		$fileCreator->expects($this->once())->method('createUserFile')->with('alice', '/External.pad')->willReturn($fileNode);
 		$rollbackService = $this->createMock(PadCreateRollbackService::class);
-		$rollbackService->method('buildExternalBindingPadId')->with('https://pad.remote.test', 'RemotePad', 321)->willReturn('ext.hash');
 		$rollbackService->expects($this->once())
 			->method('rollbackExternalCreate')
 			->with('alice', '/External.pad', true);
 
 		$etherpadClient = $this->createMock(EtherpadClient::class);
-		$etherpadClient->method('normalizeAndValidateExternalPublicPadUrl')
-			->with('https://pad.remote.test/p/RemotePad')
-			->willReturn([
-				'pad_url' => 'https://pad.remote.test/p/RemotePad',
-				'origin' => 'https://pad.remote.test',
-				'pad_id' => 'RemotePad',
-			]);
-		$etherpadClient->expects($this->once())
-			->method('assertPublicPadAvailable')
+		$etherpadClient->method('normalizeAndFetchExternalPublicPadText')
 			->with('https://pad.remote.test/p/RemotePad')
 			->willThrowException(new EtherpadClientException('Remote pad unavailable.'));
 
