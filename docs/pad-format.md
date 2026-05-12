@@ -71,8 +71,9 @@ Notes:
 
 - Text is the primary restore snapshot.
 - HTML is an additional structure/format snapshot.
-- External pads (`pad_origin` + `remote_pad_id`) are synced as text only for security reasons; HTML section is omitted entirely.
+- External pads (`pad_origin` + `remote_pad_id`) are imported and synced as text only for security reasons; HTML sections are omitted when the app writes external snapshots.
 - The parser expects exact `[HTML-BEGIN] ... [HTML-END]` markers for the HTML part.
+- Viewer/API responses never expose stored HTML directly. `SnapshotExtractor` runs `SnapshotHtmlSanitizer`, which allowlists simple formatting tags only and drops every attribute before HTML reaches the frontend.
 
 ## Mode Variants
 
@@ -118,6 +119,7 @@ Snapshot write flow:
 - `PadFileService::withExportSnapshot(...)` builds the new `.pad` content after an Etherpad export.
 - `PadFileLockRetryService::putContentWithSyncLockRetry(...)` writes that content back to the Nextcloud file with bounded lock retry.
 - `SnapshotExtractor` is read-only: it extracts text + sanitized HTML for viewer responses and does not mutate `.pad` files.
+- External public pad create/sync paths use `EtherpadClient::normalizeAndFetchExternalPublicPadText(...)` / `getPublicTextFromPadUrl(...)`, which reuse the same validated, host-pinned public export fetch and store no HTML snapshot.
 
 ## Sync Semantics
 

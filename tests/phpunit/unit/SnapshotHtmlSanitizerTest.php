@@ -44,10 +44,24 @@ class SnapshotHtmlSanitizerTest extends TestCase {
 		);
 	}
 
+	public function testDropsUrlBearingAttributesFromFormattingTags(): void {
+		$this->assertSame(
+			'<p><strong>Bold</strong> <em>Italic</em></p>',
+			$this->sanitize('<p><strong formaction="https://evil.test">Bold</strong> <em background="javascript:alert(1)">Italic</em></p>')
+		);
+	}
+
 	public function testUnwrapsUnknownTagsButKeepsTextContent(): void {
 		$this->assertSame(
 			'<p>Before custom text after</p>',
 			$this->sanitize('<p>Before <custom-element data-x="1">custom <span>text</span></custom-element> after</p>')
+		);
+	}
+
+	public function testUnwrapsLinksButKeepsPlainText(): void {
+		$this->assertSame(
+			'<p>Read this link</p>',
+			$this->sanitize('<p>Read <a href="javascript:alert(1)" onclick="alert(2)">this link</a></p>')
 		);
 	}
 

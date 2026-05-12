@@ -595,13 +595,14 @@ class PadControllerTest extends TestCase {
 
 		$etherpadClient = $this->createMock(EtherpadClient::class);
 		$etherpadClient->expects($this->once())
-			->method('normalizeAndValidateExternalPublicPadUrl')
+			->method('normalizeAndFetchExternalPublicPadText')
 			->with('https://pad.example.test/p/public-pad')
-			->willReturn(['pad_url' => 'https://pad.example.test/p/public-pad']);
-		$etherpadClient->expects($this->once())
-			->method('getPublicTextFromPadUrl')
-			->with('https://pad.example.test/p/public-pad')
-			->willReturn('same text');
+			->willReturn([
+				'origin' => 'https://pad.example.test',
+				'pad_id' => 'public-pad',
+				'pad_url' => 'https://pad.example.test/p/public-pad',
+				'text' => 'same text',
+			]);
 
 		$controller = $this->buildController(
 			$request,

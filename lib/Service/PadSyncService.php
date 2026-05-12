@@ -146,11 +146,10 @@ class PadSyncService {
 		if ($padUrl === '') {
 			throw new EtherpadClientException('External pad URL metadata is missing or invalid.');
 		}
-		$normalized = $this->etherpadClient->normalizeAndValidateExternalPublicPadUrl($padUrl);
-
 		// External sync already performs a live upstream text fetch on every call.
 		// force=1 therefore only marks caller intent while preserving the no-blind-rewrite invariant.
-		$text = $this->etherpadClient->getPublicTextFromPadUrl($normalized['pad_url']);
+		$external = $this->etherpadClient->normalizeAndFetchExternalPublicPadText($padUrl);
+		$text = $external['text'];
 
 		$existingText = $this->padFileService->getTextSnapshotForRestore($currentContent);
 		if ($existingText === $text) {
