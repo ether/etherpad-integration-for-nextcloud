@@ -181,7 +181,7 @@ class AdminSettingsValidator {
 	private function normalizeApiVersion(string $rawVersion): string {
 		$version = trim($rawVersion);
 		if ($version === '') {
-			return '1.2.15';
+			return EtherpadClient::DEFAULT_API_VERSION;
 		}
 		if (preg_match('/^\d+\.\d+\.\d+$/', $version) !== 1) {
 			throw new AdminValidationException('etherpad_api_version', $this->l10n->t('Invalid Etherpad API version format.'));
@@ -222,7 +222,7 @@ class AdminSettingsValidator {
 				'host' => $host,
 				'exception' => $e,
 			]);
-			return '1.2.15';
+			return EtherpadClient::DEFAULT_API_VERSION;
 		}
 	}
 }

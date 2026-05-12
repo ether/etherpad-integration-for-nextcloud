@@ -2,20 +2,9 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  * Copyright (c) 2026 Jacob Bühler
  */
-import { parseFileIdFromCurrentLocation } from './urls.js'
-
 export const parseNumericFileId = (value) => {
 	const id = Number(value)
 	return Number.isFinite(id) && id > 0 ? id : null
-}
-
-export const parseFileIdFromRoute = () => {
-	const fromPath = parseFileIdFromCurrentLocation()
-	if (fromPath !== null) {
-		return fromPath
-	}
-	const params = new URLSearchParams(window.location.search || '')
-	return parseNumericFileId(params.get('fileid') || '')
 }
 
 export const isDarkMode = () => {

@@ -11,13 +11,13 @@ import {
 } from '../lib/api-client.js'
 import { isFilesAppRoute } from '../lib/nextcloud-runtime.js'
 import {
+	parseFileIdFromCurrentLocation,
 	parseFileIdFromFilesHref,
 	parsePublicShareTokenFromLocation,
 } from '../lib/urls.js'
 import {
 	isDarkMode,
 	isElementVisible,
-	parseFileIdFromRoute,
 	parseNumericFileId,
 } from '../lib/dom-helpers.js'
 
@@ -73,9 +73,14 @@ const findSidebarPanelMount = (sidebarRoot) => {
 }
 
 const resolveSidebarFileId = (sidebarRoot) => {
-	const routeFileId = parseFileIdFromRoute()
+	const routeFileId = parseFileIdFromCurrentLocation()
 	if (routeFileId !== null) {
 		return routeFileId
+	}
+	const params = new URLSearchParams(window.location.search || '')
+	const queryFileId = parseNumericFileId(params.get('fileid') || '')
+	if (queryFileId !== null) {
+		return queryFileId
 	}
 	if (!(sidebarRoot instanceof HTMLElement)) {
 		return null

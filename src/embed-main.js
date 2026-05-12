@@ -3,9 +3,9 @@
  * Copyright (c) 2026 Jacob Bühler
  */
 import { ocRequestToken } from './lib/oc-compat.js'
+import { fetchJsonWithTimeout as fetchJson } from './lib/fetch-helpers.js'
 
 (function () {
-	const REQUEST_TIMEOUT_MS = 10000
 	const IFRAME_REVEAL_DELAY_MS = 100
 
 	const root = document.getElementById('etherpad-nextcloud-embed')
@@ -320,31 +320,6 @@ import { ocRequestToken } from './lib/oc-compat.js'
 			}
 		}
 		window.addEventListener('message', messageHandler)
-	}
-
-	const fetchJson = async (url, init = {}) => {
-		const controller = new AbortController()
-		const timeoutId = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
-		const headers = Object.assign({ Accept: 'application/json' }, init.headers || {})
-		try {
-			const response = await fetch(url, Object.assign({
-				credentials: 'same-origin',
-				headers,
-				signal: controller.signal,
-			}, init))
-			const data = await response.json().catch(() => ({}))
-			if (!response.ok) {
-				throw new Error((data && data.message) || 'Request failed.')
-			}
-			return data
-		} catch (error) {
-			if (error && typeof error === 'object' && 'name' in error && error.name === 'AbortError') {
-				throw new Error('Request timed out.')
-			}
-			throw error
-		} finally {
-			window.clearTimeout(timeoutId)
-		}
 	}
 
 	const isMissingFrontmatterError = (error) => {

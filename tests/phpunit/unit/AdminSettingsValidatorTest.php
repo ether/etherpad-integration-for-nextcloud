@@ -262,7 +262,7 @@ class AdminSettingsValidatorTest extends TestCase {
 			'etherpad_api_key' => 'key',
 		], $this->stored());
 
-		$this->assertSame('1.2.15', $result->etherpadApiVersion);
+		$this->assertSame(EtherpadClient::DEFAULT_API_VERSION, $result->etherpadApiVersion);
 	}
 
 	private function buildValidator(?EtherpadClient $etherpadClient = null, ?LoggerInterface $logger = null): AdminSettingsValidator {

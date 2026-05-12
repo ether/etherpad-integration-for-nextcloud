@@ -27,7 +27,7 @@ export const ocRequestToken = (fallback = '') => {
 	return String((window.OC && window.OC.requestToken) || '')
 }
 
-export const ocCurrentUserId = () => {
+const ocCurrentUserId = () => {
 	if (window.OC && typeof window.OC.getCurrentUser === 'function') {
 		const user = window.OC.getCurrentUser()
 		return String((user && user.uid) || '').trim()

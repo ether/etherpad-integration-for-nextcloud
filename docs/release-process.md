@@ -115,7 +115,7 @@ DEPLOY_APP_PATH="/var/www/virtual/user/html/apps/etherpad_nextcloud" \
 
 Notes:
 
-- Excludes by default: `.git/`, `node_modules/`, `vendor/`, `tests/`, `docs/`, `.phpunit.cache/`, `_copy_probe/`, `.DS_Store`, `ToDo.md`.
+- Excludes by default: `.git/`, `node_modules/`, `vendor/`, `tests/`, `docs/`, `.phpunit.cache/`, `_copy_probe/`, `.DS_Store`.
 - `node_modules/` should not be deployed, but the built `js/` directory should be.
 - Set `RSYNC_DELETE=1` only when you explicitly want remote cleanup.
 

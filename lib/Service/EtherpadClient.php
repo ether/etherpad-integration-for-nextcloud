@@ -12,6 +12,8 @@ use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
 use OCP\IConfig;
 
 class EtherpadClient {
+	public const DEFAULT_API_VERSION = '1.2.15';
+
 	private const EXTERNAL_EXPORT_MAX_BYTES = 5242880; // 5 MiB
 	private const EXTERNAL_REQUEST_TIMEOUT_SECONDS = 15;
 
@@ -145,7 +147,7 @@ class EtherpadClient {
 	}
 
 	/** @return array{pad_count:int} */
-	public function healthCheck(string $host, string $apiKey, string $apiVersion = '1.2.15'): array {
+	public function healthCheck(string $host, string $apiKey, string $apiVersion = self::DEFAULT_API_VERSION): array {
 		$data = $this->apiCall('listAllPads', [], 'POST', $host, $apiKey, $apiVersion);
 		$padIds = $data['padIDs'] ?? [];
 		$padCount = is_array($padIds) ? count($padIds) : 0;
@@ -188,7 +190,7 @@ class EtherpadClient {
 	): array {
 		$apiVersion = $apiVersionOverride !== null && trim($apiVersionOverride) !== ''
 			? trim($apiVersionOverride)
-			: (string)$this->config->getAppValue('etherpad_nextcloud', 'etherpad_api_version', '1.2.15');
+			: (string)$this->config->getAppValue('etherpad_nextcloud', 'etherpad_api_version', self::DEFAULT_API_VERSION);
 		$host = $hostOverride !== null && trim($hostOverride) !== ''
 			? rtrim(trim($hostOverride), '/')
 			: $this->getApiHost();

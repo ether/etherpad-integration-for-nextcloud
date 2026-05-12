@@ -1,0 +1,2 @@
+const c=async(o,a={},r=1e4)=>{const n=new AbortController,s=window.setTimeout(()=>n.abort(),r),i=Object.assign({Accept:"application/json"},a.headers||{});try{const e=await fetch(o,Object.assign({},a,{credentials:"same-origin",headers:i,signal:n.signal})),t=await e.json().catch(()=>({}));if(!e.ok)throw new Error(t&&t.message||"Request failed.");return t}catch(e){throw e&&typeof e=="object"&&"name"in e&&e.name==="AbortError"?new Error("Request timed out."):e}finally{window.clearTimeout(s)}};export{c as f};
+//# sourceMappingURL=fetch-helpers-BwRFaHvm.chunk.mjs.map

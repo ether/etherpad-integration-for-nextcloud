@@ -70,20 +70,6 @@
 	word-break: break-word;
 }
 
-.epnc-native-preview {
-	margin: 16px 0 0 0;
-	padding: 14px 16px;
-	border-radius: 12px;
-	border: 1px solid var(--color-border, #d1d5db);
-	background: var(--color-background-darker, rgba(148, 163, 184, 0.08));
-	color: var(--color-main-text, #111827);
-	font: 14px/1.6 var(--font-face-monospace, ui-monospace, SFMono-Regular, Menlo, monospace);
-	white-space: pre-wrap;
-	word-break: break-word;
-	overflow: auto;
-	max-height: min(55vh, 560px);
-}
-
 .epnc-native-snapshot {
 	box-sizing: border-box;
 	width: 100%;

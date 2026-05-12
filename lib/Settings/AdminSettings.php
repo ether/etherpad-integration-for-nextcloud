@@ -10,6 +10,7 @@ namespace OCA\EtherpadNextcloud\Settings;
 
 use OCA\EtherpadNextcloud\AppInfo\Application;
 use OCA\EtherpadNextcloud\Service\AppConfigService;
+use OCA\EtherpadNextcloud\Service\EtherpadClient;
 use OCP\AppFramework\Http\TemplateResponse;
 use OCP\IConfig;
 use OCP\IL10N;
@@ -37,7 +38,7 @@ class AdminSettings implements ISettings {
 		$cookieDomain = $cookieDomainConfigured
 			? $storedCookieDomain
 			: $this->deriveCookieDomainFromKnownHosts($this->urlGenerator->getBaseUrl(), $etherpadHost);
-		$apiVersion = (string)$this->config->getAppValue(Application::APP_ID, 'etherpad_api_version', '1.2.15');
+		$apiVersion = (string)$this->config->getAppValue(Application::APP_ID, 'etherpad_api_version', EtherpadClient::DEFAULT_API_VERSION);
 		$syncInterval = (int)$this->config->getAppValue(Application::APP_ID, 'sync_interval_seconds', '120');
 		if ($syncInterval < 5) {
 			$syncInterval = 5;
