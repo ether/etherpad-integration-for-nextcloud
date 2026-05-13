@@ -47,6 +47,9 @@ class PadBootstrapService {
 		if (!$isEmptyFile && $legacyShortcut === null) {
 			throw new PadFileFormatException('Missing YAML frontmatter in .pad file.');
 		}
+		if ($legacyShortcut !== null) {
+			throw new PadFileFormatException('Legacy Ownpad .pad files cannot be auto-imported.');
+		}
 
 		$binding = $this->bindingService->findByFileId($fileId);
 		$createdNewBinding = false;
@@ -61,15 +64,6 @@ class PadBootstrapService {
 			if ($legacyShortcut !== null) {
 				$padUrl = (string)$legacyShortcut['url'];
 			}
-		} elseif ($legacyShortcut !== null) {
-			$padId = (string)$legacyShortcut['pad_id'];
-			$accessMode = $this->padFileService->inferAccessModeFromPadId($padId);
-			if ($accessMode === BindingService::ACCESS_PROTECTED) {
-				throw new PadFileFormatException('Legacy Ownpad protected pad links cannot be auto-imported.');
-			}
-			$padUrl = (string)$legacyShortcut['url'];
-			$this->bindingService->createBinding($fileId, $padId, $accessMode);
-			$createdNewBinding = true;
 		} else {
 			$padId = $this->provisionPadId(BindingService::ACCESS_PROTECTED);
 			$accessMode = BindingService::ACCESS_PROTECTED;

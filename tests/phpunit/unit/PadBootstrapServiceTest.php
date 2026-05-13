@@ -69,28 +69,22 @@ class PadBootstrapServiceTest extends TestCase {
 		$service->initializeMissingFrontmatter($file, '');
 	}
 
-	public function testInitializeMissingFrontmatterRejectsLegacyProtectedShortcut(): void {
+	public function testInitializeMissingFrontmatterRejectsLegacyShortcut(): void {
 		$fileId = 7;
 		$legacy = [
-			'url' => 'https://pad.example.test/p/g.oldgroup$oldpad',
-			'pad_id' => 'g.oldgroup$oldpad',
+			'url' => 'https://pad.example.test/p/public-pad',
+			'pad_id' => 'public-pad',
 		];
 
 		$bindingService = $this->createMock(BindingService::class);
-		$bindingService->expects($this->once())
-			->method('findByFileId')
-			->with($fileId)
-			->willReturn(null);
+		$bindingService->expects($this->never())->method('findByFileId');
 		$bindingService->expects($this->never())->method('createBinding');
 
 		$padFileService = $this->createMock(PadFileService::class);
 		$padFileService->expects($this->once())
 			->method('parseLegacyOwnpadShortcut')
 			->willReturn($legacy);
-		$padFileService->expects($this->once())
-			->method('inferAccessModeFromPadId')
-			->with('g.oldgroup$oldpad')
-			->willReturn(BindingService::ACCESS_PROTECTED);
+		$padFileService->expects($this->never())->method('inferAccessModeFromPadId');
 
 		$etherpadClient = $this->createMock(EtherpadClient::class);
 		$secureRandom = $this->createMock(ISecureRandom::class);
@@ -102,8 +96,8 @@ class PadBootstrapServiceTest extends TestCase {
 		$service = new PadBootstrapService($bindingService, $padFileService, $etherpadClient, $secureRandom, $logger);
 
 		$this->expectException(PadFileFormatException::class);
-		$this->expectExceptionMessage('Legacy Ownpad protected pad links cannot be auto-imported.');
-		$service->initializeMissingFrontmatter($file, "[InternetShortcut]\nURL=https://pad.example.test/p/g.oldgroup\$oldpad\n");
+		$this->expectExceptionMessage('Legacy Ownpad .pad files cannot be auto-imported.');
+		$service->initializeMissingFrontmatter($file, "[InternetShortcut]\nURL=https://pad.example.test/p/public-pad\n");
 	}
 
 	public function testInitializeMissingFrontmatterCleansUpWhenWriteFails(): void {

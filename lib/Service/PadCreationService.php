@@ -219,18 +219,7 @@ class PadCreationService {
 			function () use ($uid, $path, &$fileCreated): void {
 				$this->rollbackService->rollbackExternalCreate($uid, $path, $fileCreated);
 			},
-			function (\Throwable $e) use ($path, $padUrl, &$external): ?array {
-				if ($e instanceof BindingException) {
-					return [
-						'message' => 'External pad URL already linked',
-						'context' => [
-							'file' => $path,
-							'origin' => is_array($external) ? $external['origin'] : '',
-							'remotePadId' => is_array($external) ? $external['pad_id'] : '',
-						],
-					];
-				}
-
+			function (\Throwable $e) use ($path, $padUrl): ?array {
 				if ($e instanceof EtherpadClientException) {
 					return [
 						'message' => 'External pad URL validation failed',
