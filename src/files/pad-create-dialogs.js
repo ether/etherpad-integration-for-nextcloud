@@ -101,7 +101,11 @@ export const openInternalPublicPadDialog = ({ onSubmit }) => new Promise((resolv
 	createButton.className = 'primary'
 	createButton.textContent = t(APP_ID, 'Create')
 
+	let isPending = false
 	const close = (result) => {
+		if (isPending) {
+			return
+		}
 		overlay.remove()
 		resolve(result)
 	}
@@ -113,8 +117,10 @@ export const openInternalPublicPadDialog = ({ onSubmit }) => new Promise((resolv
 	})
 
 	const setPending = (pending) => {
+		isPending = pending
 		createButton.disabled = pending
 		nameInput.disabled = pending
+		closeButton.disabled = pending
 		createButton.textContent = pending ? t(APP_ID, 'Creating...') : t(APP_ID, 'Create')
 	}
 
@@ -129,6 +135,7 @@ export const openInternalPublicPadDialog = ({ onSubmit }) => new Promise((resolv
 		setPending(true)
 		try {
 			const result = await onSubmit(name)
+			setPending(false)
 			close(result)
 		} catch (e) {
 			setPending(false)
@@ -206,7 +213,11 @@ export const openExternalPublicPadDialog = ({ onSubmit }) => new Promise((resolv
 	createButton.className = 'primary'
 	createButton.textContent = t(APP_ID, 'Create')
 
+	let isPending = false
 	const close = (result) => {
+		if (isPending) {
+			return
+		}
 		overlay.remove()
 		resolve(result)
 	}
@@ -224,9 +235,11 @@ export const openExternalPublicPadDialog = ({ onSubmit }) => new Promise((resolv
 	})
 
 	const setPending = (pending) => {
+		isPending = pending
 		createButton.disabled = pending
 		urlInput.disabled = pending
 		nameInput.disabled = pending
+		closeButton.disabled = pending
 		createButton.textContent = pending ? t(APP_ID, 'Creating...') : t(APP_ID, 'Create')
 	}
 
@@ -247,6 +260,7 @@ export const openExternalPublicPadDialog = ({ onSubmit }) => new Promise((resolv
 		setPending(true)
 		try {
 			const result = await onSubmit({ padUrl, name })
+			setPending(false)
 			close(result)
 		} catch (e) {
 			setPending(false)

@@ -90,6 +90,25 @@ describe('openInternalPublicPadDialog', () => {
 		expect(onSubmit).not.toHaveBeenCalled()
 		document.body.querySelector('button[aria-label="Close"]').click()
 	})
+
+	it('ignores close while a submission is in flight', async () => {
+		let resolveSubmit
+		const onSubmit = vi.fn(() => new Promise((r) => { resolveSubmit = r }))
+
+		const pending = openInternalPublicPadDialog({ onSubmit })
+		document.body.querySelector('button.primary').click()
+		await flushMicrotasks()
+
+		// User impatiently clicks the close button mid-flight.
+		document.body.querySelector('button[aria-label="Close"]').click()
+		await flushMicrotasks()
+		// Dialog must still be in the DOM.
+		expect(document.body.querySelector('button.primary')).not.toBeNull()
+
+		resolveSubmit({ ok: true })
+		await flushMicrotasks()
+		await expect(pending).resolves.toEqual({ ok: true })
+	})
 })
 
 describe('openExternalPublicPadDialog', () => {
@@ -167,5 +186,23 @@ describe('openExternalPublicPadDialog', () => {
 		expect(document.body.querySelector('p').textContent).toBe('File name is required.')
 		expect(onSubmit).not.toHaveBeenCalled()
 		document.body.querySelector('button[aria-label="Close"]').click()
+	})
+
+	it('ignores close while a submission is in flight', async () => {
+		let resolveSubmit
+		const onSubmit = vi.fn(() => new Promise((r) => { resolveSubmit = r }))
+
+		const pending = openExternalPublicPadDialog({ onSubmit })
+		document.body.querySelector('input[type="url"]').value = 'https://pad.example.test/p/demo'
+		document.body.querySelector('button.primary').click()
+		await flushMicrotasks()
+
+		document.body.querySelector('button[aria-label="Close"]').click()
+		await flushMicrotasks()
+		expect(document.body.querySelector('button.primary')).not.toBeNull()
+
+		resolveSubmit({ ok: true })
+		await flushMicrotasks()
+		await expect(pending).resolves.toEqual({ ok: true })
 	})
 })

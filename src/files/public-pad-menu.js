@@ -197,34 +197,32 @@ export const createPublicPadMenuRegistrar = ({
 				continue
 			}
 			if (typeof menu.addMenuEntry === 'function') {
-				let anyRegistered = false
+				let allRegistered = true
 				for (const { legacy } of entries) {
 					try {
 						menu.addMenuEntry(legacy)
-						anyRegistered = true
 					} catch (error) {
-						if (isDuplicateError(error)) {
-							anyRegistered = true
+						if (!isDuplicateError(error)) {
+							allRegistered = false
 						}
 					}
 				}
-				if (anyRegistered) {
+				if (allRegistered) {
 					return true
 				}
 			}
 			if (typeof menu.registerEntry === 'function') {
-				let anyRegistered = false
+				let allRegistered = true
 				for (const { modern } of entries) {
 					try {
 						menu.registerEntry(modern)
-						anyRegistered = true
 					} catch (error) {
-						if (isDuplicateError(error)) {
-							anyRegistered = true
+						if (!isDuplicateError(error)) {
+							allRegistered = false
 						}
 					}
 				}
-				if (anyRegistered) {
+				if (allRegistered) {
 					return true
 				}
 			}
