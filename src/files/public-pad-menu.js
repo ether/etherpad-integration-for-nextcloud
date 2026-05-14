@@ -6,12 +6,14 @@
 import { APP_ID } from '../lib/constants.js'
 import { nextcloudMajorVersion, ocPermissionCreate } from '../lib/oc-compat.js'
 
-const PUBLIC_PAD_MENU_ENTRY_ID = APP_ID + '_public_pad'
-const PUBLIC_PAD_MENU_ICON_CLASS = 'icon-filetype-etherpad-nextcloud-pad'
-const PUBLIC_PAD_MENU_ICON_SVG = '<svg xmlns="http://www.w3.org/2000/svg" xml:space="preserve" fill-rule="evenodd" stroke-linejoin="round" stroke-miterlimit="2" clip-rule="evenodd" viewBox="0 0 355 355"><path fill="#5ac395" d="M317 89v177c0 28-23 51-51 51H89c-28 0-51-23-51-51V89c0-28 23-51 51-51h177c28 0 51 23 51 51"/><path fill="#4aa57f" fill-rule="nonzero" d="M240 144q-4-3-8 0-6 6 0 9a36 36 0 0 1 0 52 6 6 0 0 0 3 12q3 0 5-3c19-18 19-50 0-70"/><path fill="#479a76" fill-rule="nonzero" d="M267 122q-4-5-9 0-4 4 0 10c25 26 25 68 0 93q-4 5 0 9 5 4 9 0c30-31 30-81 0-112"/><path fill="#fff" d="M192 130v2q-1 8-10 10H76q-9-2-11-10v-2q1-10 11-10h106q9 0 10 10m24 51v2q-1 11-12 11H78q-10 0-12-11v-2q2-10 12-11h126q12 1 12 11"/><path fill="#fff" d="M216 181v2q-1 11-12 11H78q-10 0-12-11v-2q2-10 12-11h126q12 1 12 11m-57 52v1q-1 11-10 11H76q-9 0-11-11v-1q1-10 11-11h73q9 1 10 11"/><path fill="#fff" d="M159 233v1q-1 11-10 11H76q-9 0-11-11v-1q1-10 11-11h73q9 1 10 11"/></svg>'
-const PAD_MENU_ORDER = 98
-const PUBLIC_PAD_MENU_REGISTRATION_MAX_ATTEMPTS = 120
-const PUBLIC_PAD_MENU_REGISTRATION_RETRY_MS = 500
+const ENTRY_INTERNAL_ID = APP_ID + '_public_pad'
+const ENTRY_EXTERNAL_ID = APP_ID + '_public_pad_external'
+const ENTRY_ICON_CLASS = 'icon-filetype-etherpad-nextcloud-pad'
+const ENTRY_ICON_SVG = '<svg xmlns="http://www.w3.org/2000/svg" xml:space="preserve" fill-rule="evenodd" stroke-linejoin="round" stroke-miterlimit="2" clip-rule="evenodd" viewBox="0 0 355 355"><path fill="#5ac395" d="M317 89v177c0 28-23 51-51 51H89c-28 0-51-23-51-51V89c0-28 23-51 51-51h177c28 0 51 23 51 51"/><path fill="#4aa57f" fill-rule="nonzero" d="M240 144q-4-3-8 0-6 6 0 9a36 36 0 0 1 0 52 6 6 0 0 0 3 12q3 0 5-3c19-18 19-50 0-70"/><path fill="#479a76" fill-rule="nonzero" d="M267 122q-4-5-9 0-4 4 0 10c25 26 25 68 0 93q-4 5 0 9 5 4 9 0c30-31 30-81 0-112"/><path fill="#fff" d="M192 130v2q-1 8-10 10H76q-9-2-11-10v-2q1-10 11-10h106q9 0 10 10m24 51v2q-1 11-12 11H78q-10 0-12-11v-2q2-10 12-11h126q12 1 12 11"/><path fill="#fff" d="M216 181v2q-1 11-12 11H78q-10 0-12-11v-2q2-10 12-11h126q12 1 12 11m-57 52v1q-1 11-10 11H76q-9 0-11-11v-1q1-10 11-11h73q9 1 10 11"/><path fill="#fff" d="M159 233v1q-1 11-10 11H76q-9 0-11-11v-1q1-10 11-11h73q9 1 10 11"/></svg>'
+const ENTRY_ORDER_INTERNAL = 98
+const ENTRY_ORDER_EXTERNAL = 99
+const REGISTRATION_MAX_ATTEMPTS = 120
+const REGISTRATION_RETRY_MS = 500
 
 const supportsInlineNewFileMenuSvg = () => {
 	const major = nextcloudMajorVersion()
@@ -102,124 +104,167 @@ const resolveNewFileMenuApi = () => {
 	return null
 }
 
-export const createPublicPadMenuRegistrar = ({ isFilesAppRoute, onCreatePublicPad }) => {
-	let publicPadMenuApiRegistered = false
-	let publicPadMenuLegacyApiRegistered = false
-	let publicPadMenuLegacyPluginHooked = false
-	let publicPadMenuRegistrationToken = 0
+export const createPublicPadMenuRegistrar = ({
+	isFilesAppRoute,
+	onCreateInternalPublicPad,
+	onCreateExternalPublicPad,
+}) => {
+	let modernApiRegistered = false
+	let legacyApiRegistered = false
+	let legacyPluginHooked = false
+	let registrationToken = 0
 
-	const publicPadMenuHandler = () => {
-		void onCreatePublicPad()
+	const internalHandler = () => {
+		void onCreateInternalPublicPad()
+	}
+	const externalHandler = () => {
+		void onCreateExternalPublicPad()
 	}
 
-	const publicPadMenuEnabled = (...args) => canCreateFromMenuContext(...args)
+	const menuEnabled = (...args) => canCreateFromMenuContext(...args)
 
-	const buildPublicPadMenuEntry = () => ({
-		id: PUBLIC_PAD_MENU_ENTRY_ID,
+	const buildInternalEntry = () => ({
+		id: ENTRY_INTERNAL_ID,
 		displayName: t(APP_ID, 'Public pad'),
 		...(supportsInlineNewFileMenuSvg()
-			? { iconSvgInline: PUBLIC_PAD_MENU_ICON_SVG }
-			: { iconClass: PUBLIC_PAD_MENU_ICON_CLASS }),
-		order: PAD_MENU_ORDER,
-		enabled: publicPadMenuEnabled,
-		handler: publicPadMenuHandler,
+			? { iconSvgInline: ENTRY_ICON_SVG }
+			: { iconClass: ENTRY_ICON_CLASS }),
+		order: ENTRY_ORDER_INTERNAL,
+		enabled: menuEnabled,
+		handler: internalHandler,
 	})
 
-	const buildLegacyPublicPadMenuEntry = () => ({
-		id: PUBLIC_PAD_MENU_ENTRY_ID,
+	const buildExternalEntry = () => ({
+		id: ENTRY_EXTERNAL_ID,
+		displayName: t(APP_ID, 'Public pad from URL'),
+		...(supportsInlineNewFileMenuSvg()
+			? { iconSvgInline: ENTRY_ICON_SVG }
+			: { iconClass: ENTRY_ICON_CLASS }),
+		order: ENTRY_ORDER_EXTERNAL,
+		enabled: menuEnabled,
+		handler: externalHandler,
+	})
+
+	const buildInternalLegacyEntry = () => ({
+		id: ENTRY_INTERNAL_ID,
 		displayName: t(APP_ID, 'Public pad'),
-		templateName: t(APP_ID, 'Public pad'),
-		iconClass: PUBLIC_PAD_MENU_ICON_CLASS,
-		...(supportsInlineNewFileMenuSvg() ? { iconSvgInline: PUBLIC_PAD_MENU_ICON_SVG } : {}),
+		iconClass: ENTRY_ICON_CLASS,
+		...(supportsInlineNewFileMenuSvg() ? { iconSvgInline: ENTRY_ICON_SVG } : {}),
 		fileType: 'file',
-		order: PAD_MENU_ORDER,
-		actionHandler: publicPadMenuHandler,
+		order: ENTRY_ORDER_INTERNAL,
+		actionHandler: internalHandler,
 	})
 
-	const registerPublicPadEntryViaNewFileMenuApi = async () => {
+	const buildExternalLegacyEntry = () => ({
+		id: ENTRY_EXTERNAL_ID,
+		displayName: t(APP_ID, 'Public pad from URL'),
+		iconClass: ENTRY_ICON_CLASS,
+		...(supportsInlineNewFileMenuSvg() ? { iconSvgInline: ENTRY_ICON_SVG } : {}),
+		fileType: 'file',
+		order: ENTRY_ORDER_EXTERNAL,
+		actionHandler: externalHandler,
+	})
+
+	const tryRegisterViaModernApi = async () => {
 		const api = resolveNewFileMenuApi()
 		if (!api) {
 			return false
 		}
-
-		const entry = buildPublicPadMenuEntry()
-		try {
-			api.register(entry)
-			publicPadMenuApiRegistered = true
-			return true
-		} catch (error) {
-			if (isDuplicateError(error)) {
-				publicPadMenuApiRegistered = true
-				return true
+		for (const entry of [buildInternalEntry(), buildExternalEntry()]) {
+			try {
+				api.register(entry)
+			} catch (error) {
+				if (!isDuplicateError(error)) {
+					return false
+				}
 			}
-			return false
 		}
+		modernApiRegistered = true
+		return true
 	}
 
-	const registerPublicPadEntryViaLegacyPluginApi = () => {
-		if (publicPadMenuLegacyApiRegistered) {
+	const tryRegisterViaLegacyDirectMenu = () => {
+		const candidates = [
+			window.OCA && window.OCA.Files && window.OCA.Files.NewFileMenu,
+			window.OCA && window.OCA.Files && window.OCA.Files.newFileMenu,
+		]
+		const entries = [
+			{ legacy: buildInternalLegacyEntry(), modern: buildInternalEntry() },
+			{ legacy: buildExternalLegacyEntry(), modern: buildExternalEntry() },
+		]
+		for (const menu of candidates) {
+			if (!menu || typeof menu !== 'object') {
+				continue
+			}
+			if (typeof menu.addMenuEntry === 'function') {
+				let allRegistered = true
+				for (const { legacy } of entries) {
+					try {
+						menu.addMenuEntry(legacy)
+					} catch (error) {
+						if (!isDuplicateError(error)) {
+							allRegistered = false
+						}
+					}
+				}
+				if (allRegistered) {
+					return true
+				}
+			}
+			if (typeof menu.registerEntry === 'function') {
+				let allRegistered = true
+				for (const { modern } of entries) {
+					try {
+						menu.registerEntry(modern)
+					} catch (error) {
+						if (!isDuplicateError(error)) {
+							allRegistered = false
+						}
+					}
+				}
+				if (allRegistered) {
+					return true
+				}
+			}
+		}
+		return false
+	}
+
+	const tryRegisterViaLegacyPluginApi = () => {
+		if (legacyApiRegistered) {
 			return true
 		}
-		const legacyEntry = buildLegacyPublicPadMenuEntry()
-		const tryDirectLegacyMenu = () => {
-			const candidates = [
-				window.OCA && window.OCA.Files && window.OCA.Files.NewFileMenu,
-				window.OCA && window.OCA.Files && window.OCA.Files.newFileMenu,
-			]
-			for (const menu of candidates) {
-				if (!menu || typeof menu !== 'object') {
-					continue
-				}
-				if (typeof menu.addMenuEntry === 'function') {
-					try {
-						menu.addMenuEntry(legacyEntry)
-						return true
-					} catch (error) {
-						if (isDuplicateError(error)) {
-							return true
-						}
-					}
-				}
-				if (typeof menu.registerEntry === 'function') {
-					try {
-						menu.registerEntry(buildPublicPadMenuEntry())
-						return true
-					} catch (error) {
-						if (isDuplicateError(error)) {
-							return true
-						}
-					}
-				}
-			}
-			return false
-		}
 		try {
-			if (tryDirectLegacyMenu()) {
-				publicPadMenuLegacyApiRegistered = true
+			if (tryRegisterViaLegacyDirectMenu()) {
+				legacyApiRegistered = true
 				return true
 			}
-			if (!publicPadMenuLegacyPluginHooked && window.OC && window.OC.Plugins && typeof window.OC.Plugins.register === 'function') {
+			if (!legacyPluginHooked && window.OC && window.OC.Plugins && typeof window.OC.Plugins.register === 'function') {
+				const internalEntry = buildInternalLegacyEntry()
+				const externalEntry = buildExternalLegacyEntry()
 				window.OC.Plugins.register('OCA.Files.NewFileMenu', {
 					attach(menu) {
 						if (!menu || typeof menu.addMenuEntry !== 'function') {
 							return
 						}
-						try {
-							menu.addMenuEntry(legacyEntry)
-							publicPadMenuLegacyApiRegistered = true
-						} catch (error) {
-							if (isDuplicateError(error)) {
-								publicPadMenuLegacyApiRegistered = true
+						for (const entry of [internalEntry, externalEntry]) {
+							try {
+								menu.addMenuEntry(entry)
+							} catch (error) {
+								if (!isDuplicateError(error)) {
+									return
+								}
 							}
 						}
+						legacyApiRegistered = true
 					},
 				})
-				publicPadMenuLegacyPluginHooked = true
+				legacyPluginHooked = true
 			}
-			return publicPadMenuLegacyApiRegistered
+			return legacyApiRegistered
 		} catch (error) {
 			if (isDuplicateError(error)) {
-				publicPadMenuLegacyApiRegistered = true
+				legacyApiRegistered = true
 				return true
 			}
 			return false
@@ -230,24 +275,22 @@ export const createPublicPadMenuRegistrar = ({ isFilesAppRoute, onCreatePublicPa
 		if (!isFilesAppRoute()) {
 			return
 		}
-		if (publicPadMenuApiRegistered || publicPadMenuLegacyApiRegistered) {
+		if (modernApiRegistered || legacyApiRegistered) {
 			return
 		}
-		const token = ++publicPadMenuRegistrationToken
+		const token = ++registrationToken
 		const attempt = async (step) => {
-			if (token !== publicPadMenuRegistrationToken || publicPadMenuApiRegistered || publicPadMenuLegacyApiRegistered) {
+			if (token !== registrationToken || modernApiRegistered || legacyApiRegistered) {
 				return
 			}
-			const registered = await registerPublicPadEntryViaNewFileMenuApi()
-			if (registered) {
+			if (await tryRegisterViaModernApi()) {
 				return
 			}
-			const legacyRegistered = registerPublicPadEntryViaLegacyPluginApi()
-			if (legacyRegistered) {
+			if (tryRegisterViaLegacyPluginApi()) {
 				return
 			}
-			if (step < PUBLIC_PAD_MENU_REGISTRATION_MAX_ATTEMPTS) {
-				window.setTimeout(() => { void attempt(step + 1) }, PUBLIC_PAD_MENU_REGISTRATION_RETRY_MS)
+			if (step < REGISTRATION_MAX_ATTEMPTS) {
+				window.setTimeout(() => { void attempt(step + 1) }, REGISTRATION_RETRY_MS)
 			}
 		}
 		void attempt(0)

@@ -82,7 +82,7 @@ class PadControllerErrorMapper {
 			], Http::STATUS_SERVICE_UNAVAILABLE);
 		} catch (PadFileAlreadyExistsException) {
 			return new DataResponse([
-				'message' => '.pad file already exists.',
+				'message' => 'A file with this name already exists.',
 			], Http::STATUS_CONFLICT);
 		} catch (PadParentFolderNotWritableException) {
 			return new DataResponse([

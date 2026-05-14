@@ -51,11 +51,21 @@ class PadFileCreator {
 
 	/**
 	 * @throws \RuntimeException
+	 * @throws PadFileAlreadyExistsException
 	 */
 	public function createUserFileInFolder(Folder $parent, string $fileName): File {
+		// Pre-check first: some Nextcloud storage backends `newFile()` silently
+		// return the existing node instead of throwing when the target already
+		// exists, which historically let us overwrite the user's file. Detect
+		// the collision before we create anything.
+		if ($parent->nodeExists($fileName)) {
+			throw new PadFileAlreadyExistsException('Target .pad file already exists.');
+		}
+
 		try {
 			$node = $parent->newFile($fileName);
 		} catch (\Throwable $e) {
+			// Race: file appeared between the nodeExists check and newFile().
 			if ($parent->nodeExists($fileName)) {
 				throw new PadFileAlreadyExistsException('Target .pad file already exists.', 0, $e);
 			}

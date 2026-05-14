@@ -4,7 +4,6 @@
  */
 
 import { APP_ID } from '../lib/constants.js'
-import { ocImagePath } from '../lib/oc-compat.js'
 
 const suggestFileNameFromPadUrl = (padUrl) => {
 	try {
@@ -67,8 +66,18 @@ const createModalScaffold = (titleText) => {
 	return { overlay, dialog, closeButton }
 }
 
-export const openInternalPublicPadDialog = () => new Promise((resolve) => {
-	const { overlay, dialog, closeButton } = createModalScaffold(t(APP_ID, 'Internal public pad'))
+/**
+ * Dialog for creating an internal public pad. NC's NewFileMenu does not
+ * reliably trigger its own inline-rename UI for handler-based entries, so we
+ * own the name prompt here. The dialog stays open during submission and shows
+ * the backend error inline on failure.
+ *
+ * @param {object} options
+ * @param {(name: string) => Promise<*>} options.onSubmit
+ * @returns {Promise<*|null>}
+ */
+export const openInternalPublicPadDialog = ({ onSubmit }) => new Promise((resolve) => {
+	const { overlay, dialog, closeButton } = createModalScaffold(t(APP_ID, 'Public pad'))
 
 	const nameLabel = document.createElement('label')
 	nameLabel.textContent = t(APP_ID, 'File name')
@@ -92,7 +101,11 @@ export const openInternalPublicPadDialog = () => new Promise((resolve) => {
 	createButton.className = 'primary'
 	createButton.textContent = t(APP_ID, 'Create')
 
+	let isPending = false
 	const close = (result) => {
+		if (isPending) {
+			return
+		}
 		overlay.remove()
 		resolve(result)
 	}
@@ -102,19 +115,46 @@ export const openInternalPublicPadDialog = () => new Promise((resolve) => {
 			close(null)
 		}
 	})
-	nameInput.addEventListener('keydown', (event) => {
-		if (event.key === 'Enter') {
-			event.preventDefault()
-			createButton.click()
-		}
-	})
-	createButton.addEventListener('click', () => {
+
+	const setPending = (pending) => {
+		isPending = pending
+		createButton.disabled = pending
+		nameInput.disabled = pending
+		closeButton.disabled = pending
+		createButton.textContent = pending ? t(APP_ID, 'Creating...') : t(APP_ID, 'Create')
+	}
+
+	const submit = async () => {
 		const name = nameInput.value.trim()
 		if (name === '') {
 			error.textContent = t(APP_ID, 'File name is required.')
+			nameInput.focus()
 			return
 		}
-		close(name)
+		error.textContent = ''
+		setPending(true)
+		try {
+			const result = await onSubmit(name)
+			setPending(false)
+			close(result)
+		} catch (e) {
+			setPending(false)
+			error.textContent = e instanceof Error && e.message !== ''
+				? e.message
+				: t(APP_ID, 'Could not create public pad.')
+			nameInput.focus()
+			nameInput.select()
+		}
+	}
+
+	nameInput.addEventListener('keydown', (event) => {
+		if (event.key === 'Enter') {
+			event.preventDefault()
+			void submit()
+		}
+	})
+	createButton.addEventListener('click', () => {
+		void submit()
 	})
 
 	dialog.appendChild(nameLabel)
@@ -125,8 +165,18 @@ export const openInternalPublicPadDialog = () => new Promise((resolve) => {
 	nameInput.select()
 })
 
-export const openExternalPublicPadDialog = () => new Promise((resolve) => {
-	const { overlay, dialog, closeButton } = createModalScaffold(t(APP_ID, 'External public pad (URL)'))
+/**
+ * Dialog for importing an external public pad. Keeps the URL field, the name
+ * field, and shares the same loading-state + inline-error pattern.
+ *
+ * @param {object} options
+ * @param {(values: {padUrl: string, name: string}) => Promise<*>} options.onSubmit
+ *   called when the user confirms; resolves to close the dialog with its
+ *   value, rejects to keep the dialog open and show the error message inline.
+ * @returns {Promise<*|null>} the resolved onSubmit value, or null if the user cancelled.
+ */
+export const openExternalPublicPadDialog = ({ onSubmit }) => new Promise((resolve) => {
+	const { overlay, dialog, closeButton } = createModalScaffold(t(APP_ID, 'Public pad from URL'))
 
 	const urlLabel = document.createElement('label')
 	urlLabel.textContent = t(APP_ID, 'External pad URL')
@@ -163,7 +213,11 @@ export const openExternalPublicPadDialog = () => new Promise((resolve) => {
 	createButton.className = 'primary'
 	createButton.textContent = t(APP_ID, 'Create')
 
+	let isPending = false
 	const close = (result) => {
+		if (isPending) {
+			return
+		}
 		overlay.remove()
 		resolve(result)
 	}
@@ -179,32 +233,60 @@ export const openExternalPublicPadDialog = () => new Promise((resolve) => {
 			nameInput.value = suggestFileNameFromPadUrl(candidate)
 		}
 	})
-	const submit = () => {
+
+	const setPending = (pending) => {
+		isPending = pending
+		createButton.disabled = pending
+		urlInput.disabled = pending
+		nameInput.disabled = pending
+		closeButton.disabled = pending
+		createButton.textContent = pending ? t(APP_ID, 'Creating...') : t(APP_ID, 'Create')
+	}
+
+	const submit = async () => {
 		const padUrl = urlInput.value.trim()
 		const name = nameInput.value.trim()
 		if (padUrl === '') {
 			error.textContent = t(APP_ID, 'External pad URL is required.')
+			urlInput.focus()
 			return
 		}
 		if (name === '') {
 			error.textContent = t(APP_ID, 'File name is required.')
+			nameInput.focus()
 			return
 		}
-		close({ padUrl, name })
+		error.textContent = ''
+		setPending(true)
+		try {
+			const result = await onSubmit({ padUrl, name })
+			setPending(false)
+			close(result)
+		} catch (e) {
+			setPending(false)
+			error.textContent = e instanceof Error && e.message !== ''
+				? e.message
+				: t(APP_ID, 'Could not import public pad URL.')
+			nameInput.focus()
+			nameInput.select()
+		}
 	}
+
 	urlInput.addEventListener('keydown', (event) => {
 		if (event.key === 'Enter') {
 			event.preventDefault()
-			submit()
+			void submit()
 		}
 	})
 	nameInput.addEventListener('keydown', (event) => {
 		if (event.key === 'Enter') {
 			event.preventDefault()
-			submit()
+			void submit()
 		}
 	})
-	createButton.addEventListener('click', submit)
+	createButton.addEventListener('click', () => {
+		void submit()
+	})
 
 	dialog.appendChild(urlLabel)
 	dialog.appendChild(urlInput)
@@ -214,90 +296,4 @@ export const openExternalPublicPadDialog = () => new Promise((resolve) => {
 	dialog.appendChild(createButton)
 	urlInput.focus()
 	urlInput.select()
-})
-
-export const openPublicPadModeDialog = () => new Promise((resolve) => {
-	const overlay = document.createElement('div')
-	overlay.style.position = 'fixed'
-	overlay.style.inset = '0'
-	overlay.style.background = 'rgba(0, 0, 0, 0.45)'
-	overlay.style.display = 'flex'
-	overlay.style.alignItems = 'center'
-	overlay.style.justifyContent = 'center'
-	overlay.style.zIndex = '20000'
-
-	const dialog = document.createElement('div')
-	dialog.style.position = 'relative'
-	dialog.style.background = 'var(--color-main-background, #fff)'
-	dialog.style.borderRadius = '10px'
-	dialog.style.boxShadow = '0 10px 30px rgba(0, 0, 0, 0.25)'
-	dialog.style.padding = '18px'
-	dialog.style.width = 'min(420px, calc(100vw - 24px))'
-
-	const title = document.createElement('h3')
-	title.textContent = t(APP_ID, 'Create public pad')
-	title.style.margin = '0 26px 10px 0'
-	title.style.fontSize = '18px'
-
-	const closeButton = document.createElement('button')
-	closeButton.type = 'button'
-	closeButton.setAttribute('aria-label', t(APP_ID, 'Close'))
-	closeButton.textContent = '×'
-	closeButton.style.position = 'absolute'
-	closeButton.style.top = '8px'
-	closeButton.style.right = '10px'
-	closeButton.style.border = 'none'
-	closeButton.style.background = 'transparent'
-	closeButton.style.fontSize = '22px'
-	closeButton.style.cursor = 'pointer'
-	closeButton.style.lineHeight = '1'
-
-	const hint = document.createElement('p')
-	hint.textContent = t(APP_ID, 'Choose how you want to create the public pad.')
-	hint.style.margin = '0 0 14px 0'
-	hint.style.opacity = '0.8'
-
-	const actions = document.createElement('div')
-	actions.style.display = 'grid'
-	actions.style.gap = '8px'
-
-	const internalBtn = document.createElement('button')
-	internalBtn.type = 'button'
-	internalBtn.className = 'primary'
-	internalBtn.textContent = t(APP_ID, 'Internal public pad')
-
-	const externalBtn = document.createElement('button')
-	externalBtn.type = 'button'
-	externalBtn.textContent = t(APP_ID, 'External public pad (URL)')
-	const externalBtnIcon = ocImagePath(APP_ID, 'etherpad-icon-color')
-	if (externalBtnIcon !== '') {
-		externalBtn.style.backgroundImage = `url(${externalBtnIcon})`
-	}
-	externalBtn.style.backgroundRepeat = 'no-repeat'
-	externalBtn.style.backgroundPosition = '12px center'
-	externalBtn.style.backgroundSize = '16px 16px'
-	externalBtn.style.paddingLeft = '34px'
-
-	const close = (result) => {
-		overlay.remove()
-		resolve(result)
-	}
-
-	closeButton.addEventListener('click', () => close(null))
-	internalBtn.addEventListener('click', () => close('internal'))
-	externalBtn.addEventListener('click', () => close('external'))
-	overlay.addEventListener('click', (event) => {
-		if (event.target === overlay) {
-			close(null)
-		}
-	})
-
-	actions.appendChild(internalBtn)
-	actions.appendChild(externalBtn)
-	dialog.appendChild(closeButton)
-	dialog.appendChild(title)
-	dialog.appendChild(hint)
-	dialog.appendChild(actions)
-	overlay.appendChild(dialog)
-	document.body.appendChild(overlay)
 })

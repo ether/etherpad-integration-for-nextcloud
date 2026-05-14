@@ -52,7 +52,7 @@ class PadController extends Controller {
 			fn(array $result): DataResponse => new DataResponse($this->padResponses->withViewerUrl($result)),
 			[
 				'invalid_argument' => 'Invalid file path.',
-				'binding_message' => '.pad file already exists.',
+				'binding_message' => 'A file with this name already exists.',
 				'binding_status' => Http::STATUS_CONFLICT,
 				'generic' => 'Pad creation failed.',
 			],
@@ -72,7 +72,7 @@ class PadController extends Controller {
 			[
 				'invalid_argument' => 'Invalid pad name.',
 				'not_found' => 'Cannot resolve selected parent folder.',
-				'binding_message' => '.pad file already exists.',
+				'binding_message' => 'A file with this name already exists.',
 				'binding_status' => Http::STATUS_CONFLICT,
 				'generic' => 'Pad creation failed.',
 			],
@@ -86,8 +86,6 @@ class PadController extends Controller {
 			fn(array $result): DataResponse => new DataResponse($this->padResponses->withViewerUrl($result)),
 			[
 				'invalid_argument' => 'Invalid input.',
-				'binding_message' => 'Could not create external pad file.',
-				'binding_status' => Http::STATUS_CONFLICT,
 				'generic' => 'External pad create failed.',
 			],
 		);

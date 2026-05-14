@@ -5,7 +5,7 @@
 import { isFilesAppRoute } from './lib/nextcloud-runtime.js'
 import { registerOpenAction } from './files/open-action.js'
 import { createPadOpener } from './files/pad-opener.js'
-import { createPublicPadCreator } from './files/public-pad-create-flow.js'
+import { createPublicPadFlows } from './files/public-pad-create-flow.js'
 import { createSidebarSyncController } from './files/sidebar-sync.js'
 import { createPublicPadMenuRegistrar } from './files/public-pad-menu.js'
 import { registerPublicSharePadClickInterceptor } from './files/public-share-pad-links.js'
@@ -16,11 +16,12 @@ import { createRouteController } from './files/route-controller.js'
 	let booted = false
 	const sidebarSync = createSidebarSyncController()
 	const openPadInNativeViewer = createPadOpener()
-	const promptAndCreatePublicPad = createPublicPadCreator({ openPadInNativeViewer })
+	const publicPadFlows = createPublicPadFlows({ openPadInNativeViewer })
 
 	const ensurePublicPadMenuRegistration = createPublicPadMenuRegistrar({
 		isFilesAppRoute,
-		onCreatePublicPad: promptAndCreatePublicPad,
+		onCreateInternalPublicPad: publicPadFlows.createInternalPublicPad,
+		onCreateExternalPublicPad: publicPadFlows.createExternalPublicPad,
 	})
 	const routes = createRouteController({
 		ensurePublicPadMenuRegistration,

@@ -93,13 +93,13 @@ class PadControllerErrorMapperTest extends TestCase {
 			static fn(): array => throw new BindingException('duplicate'),
 			static fn(array $result): DataResponse => new DataResponse($result),
 			[
-				'binding_message' => '.pad file already exists.',
+				'binding_message' => 'A file with this name already exists.',
 				'binding_status' => Http::STATUS_CONFLICT,
 			],
 		);
 
 		$this->assertSame(Http::STATUS_CONFLICT, $response->getStatus());
-		$this->assertSame('.pad file already exists.', $response->getData()['message']);
+		$this->assertSame('A file with this name already exists.', $response->getData()['message']);
 	}
 
 	public function testRunMapsPadFileAlreadyExists(): void {
@@ -109,7 +109,7 @@ class PadControllerErrorMapperTest extends TestCase {
 		);
 
 		$this->assertSame(Http::STATUS_CONFLICT, $response->getStatus());
-		$this->assertSame('.pad file already exists.', $response->getData()['message']);
+		$this->assertSame('A file with this name already exists.', $response->getData()['message']);
 	}
 
 	public function testRunMapsParentFolderNotWritable(): void {

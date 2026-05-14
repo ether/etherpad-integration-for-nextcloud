@@ -2,7 +2,6 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  * Copyright (c) 2026 Jacob Bühler
  */
-import { APP_ID } from '../lib/constants.js'
 import {
 	apiCreatePadFromUrl,
 	apiCreatePublicPad,
@@ -17,7 +16,6 @@ import { openCreatedPadInViewer } from './created-pad-opener.js'
 import {
 	openExternalPublicPadDialog,
 	openInternalPublicPadDialog,
-	openPublicPadModeDialog,
 } from './pad-create-dialogs.js'
 
 const ensurePadExtension = (name) => isPadName(name) ? name : (name + '.pad')
@@ -27,7 +25,7 @@ const createdPadNavigation = (created, fallbackPath) => ({
 	fileId: created && Number.isFinite(Number(created.file_id)) ? Number(created.file_id) : null,
 })
 
-export const createPublicPadCreator = ({ openPadInNativeViewer }) => {
+export const createPublicPadFlows = ({ openPadInNativeViewer }) => {
 	const openCreatedPad = (created, fallbackPath) => openCreatedPadInViewer(
 		createdPadNavigation(created, fallbackPath),
 		{
@@ -36,49 +34,45 @@ export const createPublicPadCreator = ({ openPadInNativeViewer }) => {
 		}
 	)
 
+	/**
+	 * Called when the user picks the internal-public-pad NewFileMenu entry.
+	 * NC does not reliably trigger its own inline-rename UI for handler-based
+	 * entries, so we own the prompt here. The dialog stays open during the
+	 * create call and renders backend errors inline (including the 409
+	 * "A file with this name already exists." on the duplicate-name path).
+	 */
 	const createInternalPublicPad = async () => {
-		const inputName = await openInternalPublicPadDialog()
-		if (!inputName) {
-			return
-		}
-		const name = inputName.trim()
-		const filePath = normalizeFilePath(getCurrentDir(), ensurePadExtension(name))
-
-		try {
-			const created = await apiCreatePublicPad(filePath)
-			await openCreatedPad(created, filePath)
-		} catch (error) {
-			const message = error instanceof Error ? error.message : t(APP_ID, 'Could not create public pad.')
-			window.alert(message)
-		}
+		await openInternalPublicPadDialog({
+			onSubmit: async (name) => {
+				const filePath = normalizeFilePath(getCurrentDir(), ensurePadExtension(name.trim()))
+				const created = await apiCreatePublicPad(filePath)
+				await openCreatedPad(created, filePath)
+				return created
+			},
+		})
 	}
 
+	/**
+	 * Called when the user picks the external-public-pad NewFileMenu entry.
+	 * Opens a dialog for the URL + name. The dialog stays open while the
+	 * create call is in flight and surfaces backend errors (including the 409
+	 * "A file with this name already exists." message) inline so the user can
+	 * adjust the name without losing the URL.
+	 */
 	const createExternalPublicPad = async () => {
-		const values = await openExternalPublicPadDialog()
-		if (!values) {
-			return
-		}
-		const trimmedUrl = values.padUrl.trim()
-		const name = values.name.trim()
-		const filePath = normalizeFilePath(getCurrentDir(), ensurePadExtension(name))
-
-		try {
-			const created = await apiCreatePadFromUrl(filePath, trimmedUrl)
-			await openCreatedPad(created, filePath)
-		} catch (error) {
-			const message = error instanceof Error ? error.message : t(APP_ID, 'Could not import public pad URL.')
-			window.alert(message)
-		}
+		await openExternalPublicPadDialog({
+			onSubmit: async ({ padUrl, name }) => {
+				const trimmedUrl = padUrl.trim()
+				const filePath = normalizeFilePath(getCurrentDir(), ensurePadExtension(name.trim()))
+				const created = await apiCreatePadFromUrl(filePath, trimmedUrl)
+				await openCreatedPad(created, filePath)
+				return created
+			},
+		})
 	}
 
-	return async () => {
-		const choice = await openPublicPadModeDialog()
-		if (choice === 'internal') {
-			await createInternalPublicPad()
-			return
-		}
-		if (choice === 'external') {
-			await createExternalPublicPad()
-		}
+	return {
+		createInternalPublicPad,
+		createExternalPublicPad,
 	}
 }
