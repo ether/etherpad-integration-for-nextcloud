@@ -30,7 +30,31 @@ class PendingDeleteRetryService {
 	 */
 	public function retry(int $limit = 200): array {
 		$safeLimit = max(1, $limit);
-		$pendingResult = $this->retryPendingDeletes($safeLimit);
+		$pendingResult = $this->retryPendingDeleteRows(
+			$this->bindingService->findByState(BindingService::STATE_PENDING_DELETE, $safeLimit),
+		);
+
+		return [
+			'attempted' => $pendingResult['attempted'],
+			'resolved' => $pendingResult['resolved'],
+			'failed' => $pendingResult['failed'],
+			'remaining' => $this->countPendingDeletes(),
+		];
+	}
+
+	/**
+	 * @return array{
+	 *   attempted:int,
+	 *   resolved:int,
+	 *   failed:int,
+	 *   remaining:int
+	 * }
+	 */
+	public function retryByAge(int $minAgeSeconds, ?int $maxAgeSeconds, int $limit = 200): array {
+		$safeLimit = max(1, $limit);
+		$pendingResult = $this->retryPendingDeleteRows(
+			$this->bindingService->findPendingDeleteByAge($minAgeSeconds, $maxAgeSeconds, $safeLimit),
+		);
 
 		return [
 			'attempted' => $pendingResult['attempted'],
@@ -44,12 +68,14 @@ class PendingDeleteRetryService {
 		return $this->bindingService->countByState(BindingService::STATE_PENDING_DELETE);
 	}
 
-	/** @return array{attempted:int,resolved:int,failed:int} */
-	private function retryPendingDeletes(int $limit): array {
+	/**
+	 * @param array<int,array<string,mixed>> $pending
+	 * @return array{attempted:int,resolved:int,failed:int}
+	 */
+	private function retryPendingDeleteRows(array $pending): array {
 		$attempted = 0;
 		$resolved = 0;
 		$failed = 0;
-		$pending = $this->bindingService->findByState(BindingService::STATE_PENDING_DELETE, $limit);
 		foreach ($pending as $row) {
 			$fileId = (int)($row['file_id'] ?? 0);
 			$padId = (string)($row['pad_id'] ?? '');

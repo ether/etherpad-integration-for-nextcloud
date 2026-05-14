@@ -79,7 +79,10 @@ class Application extends App implements IBootstrap {
 
 	public function boot(IBootContext $context): void {
 		$context->injectFn(function (IJobList $jobList): void {
-			$jobList->add(\OCA\EtherpadNextcloud\BackgroundJob\RetryPendingDeleteJob::class);
+			$jobList->remove(\OCA\EtherpadNextcloud\BackgroundJob\RetryPendingDeleteJob::class);
+			$jobList->add(\OCA\EtherpadNextcloud\BackgroundJob\HotPendingDeleteRetryJob::class);
+			$jobList->add(\OCA\EtherpadNextcloud\BackgroundJob\WarmPendingDeleteRetryJob::class);
+			$jobList->add(\OCA\EtherpadNextcloud\BackgroundJob\ColdPendingDeleteRetryJob::class);
 		});
 	}
 }

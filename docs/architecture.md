@@ -17,9 +17,12 @@ Etherpad is the editing source of truth; the `.pad` file acts as binding storage
   - Trash/restore flow.
   - Snapshot on trash, re-provisioning on restore.
   - On Etherpad delete failures: `pending_delete` instead of blocking Nextcloud trash.
-- `lib/BackgroundJob/RetryPendingDeleteJob.php`
-  - Daily retry for deferred Etherpad deletions:
-    - unresolved `pending_delete`
+- `lib/BackgroundJob/*PendingDeleteRetryJob.php`
+  - Bucketed retry for deferred Etherpad deletions:
+    - hot rows: every 5 minutes for the first hour after trash (`deleted_at <= 1h ago`)
+    - warm rows: hourly from 1h to 24h after trash
+    - cold rows: daily after 24h
+  - The legacy `RetryPendingDeleteJob` class remains as a compatibility shim for existing queued jobs.
 - `lib/Service/EtherpadClient.php`
   - Adapter for Etherpad HTTP API (pad create/delete/session/read-only/export).
 - `lib/Service/PadFileService.php`
@@ -212,6 +215,7 @@ Primary flow (native viewer when available):
 - If Etherpad is unavailable during delete: switch state to `pending_delete`, keep Nextcloud trash successful.
 - Restore: provision a new pad from `.pad` frontmatter/snapshot when no binding row exists, or finish a `pending_delete` row if one remains.
 - External pads skip lifecycle side effects entirely. Trash/restore only affects the Nextcloud file; the remote Etherpad server is never mutated.
+- Pending-delete cleanup is retried in age buckets: first every 5 minutes, then hourly, then daily.
 
 ### 6) Admin Integrity Check (optional)
 
