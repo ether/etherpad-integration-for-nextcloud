@@ -12,6 +12,8 @@ namespace OCA\EtherpadNextcloud\Service;
 
 use OCA\EtherpadNextcloud\Exception\BindingStateConflictException;
 use OCA\EtherpadNextcloud\Exception\LifecycleException;
+use OCA\EtherpadNextcloud\Exception\NotAPadFileException;
+use OCA\EtherpadNextcloud\Exception\PadAlreadyHasBindingException;
 use OCA\EtherpadNextcloud\Util\EtherpadErrorClassifier;
 use OCP\Files\File;
 use OCP\IConfig;
@@ -316,6 +318,38 @@ class LifecycleService {
 			]);
 			throw new LifecycleException('Restore flow failed before completion.', 0, $e);
 		}
+	}
+
+	/**
+	 * Manual recovery entry point for `.pad` files that ended up without a
+	 * binding row (backup restore via WebDAV, `occ files:scan`, manual DB
+	 * intervention, or a file copy that never received a restore event).
+	 *
+	 * Reuses the same "frontmatter → fresh pad" path as the NodeRestoredEvent
+	 * flow but is guarded so it cannot replace an existing binding: the
+	 * caller has already verified the user owns the file, and the security
+	 * model demands we never reuse the `pad_id` from frontmatter.
+	 *
+	 * @return array{status: string, reason?: string, file_id: int, old_pad_id?: string, new_pad_id?: string}
+	 */
+	public function recoverFromSnapshot(File $file): array {
+		$fileId = (int)$file->getId();
+		if (!$this->isPadFile($file)) {
+			throw new NotAPadFileException('File is not a .pad file.');
+		}
+		$binding = $this->bindingService->findByFileId($fileId);
+		if ($binding !== null) {
+			throw new PadAlreadyHasBindingException('A binding already exists for this file.');
+		}
+		$result = $this->restoreWithoutBinding($file, $fileId);
+		if (($result['status'] ?? '') === self::RESULT_RESTORED) {
+			$this->logger->info('Pad recovered from snapshot.', [
+				'app' => 'etherpad_nextcloud',
+				'fileId' => $fileId,
+				'newPadId' => $result['new_pad_id'] ?? null,
+			]);
+		}
+		return $result;
 	}
 
 	/** @return array{status: string, reason?: string, file_id: int, old_pad_id?: string, new_pad_id?: string} */

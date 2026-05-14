@@ -70,6 +70,30 @@ class PadLifecycleOperationService {
 		];
 	}
 
+	/**
+	 * @return array{file_id:int,status:string,reason?:string,old_pad_id?:string,new_pad_id?:string}
+	 * @throws NotFoundException
+	 */
+	public function recoverByFileId(string $uid, int $fileId): array {
+		$node = $this->userNodeResolver->resolveUserFileNodeById($uid, $fileId);
+		$result = $this->lifecycleService->recoverFromSnapshot($node);
+
+		if (($result['status'] ?? '') === LifecycleService::RESULT_SKIPPED) {
+			return [
+				'file_id' => $fileId,
+				'status' => LifecycleService::RESULT_SKIPPED,
+				'reason' => (string)($result['reason'] ?? 'unknown'),
+			];
+		}
+
+		return [
+			'file_id' => $fileId,
+			'status' => LifecycleService::RESULT_RESTORED,
+			'old_pad_id' => (string)($result['old_pad_id'] ?? ''),
+			'new_pad_id' => (string)($result['new_pad_id'] ?? ''),
+		];
+	}
+
 	private function normalizeLifecyclePath(string $file): string {
 		$path = $this->padPaths->normalizeViewerFilePath($file);
 		if ($path === '') {

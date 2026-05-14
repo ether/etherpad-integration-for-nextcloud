@@ -6,6 +6,7 @@ namespace OCA\EtherpadNextcloud\Tests\Unit;
 
 use OCA\EtherpadNextcloud\Controller\PadController;
 use OCA\EtherpadNextcloud\Controller\PadControllerErrorMapper;
+use OCA\EtherpadNextcloud\Exception\PadAlreadyHasBindingException;
 use OCA\EtherpadNextcloud\Service\AppConfigService;
 use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\EtherpadNextcloud\Service\EtherpadClient;
@@ -617,6 +618,76 @@ class PadControllerTest extends TestCase {
 		$this->assertTrue($response->getData()['forced']);
 	}
 
+	public function testRecoverByFileIdReturnsUnauthorizedWhenNoUserSession(): void {
+		$userSession = $this->createMock(IUserSession::class);
+		$userSession->method('getUser')->willReturn(null);
+
+		$controller = $this->buildController($this->createMock(IRequest::class), $userSession);
+		$response = $controller->recoverByFileId(7);
+
+		$this->assertSame(Http::STATUS_UNAUTHORIZED, $response->getStatus());
+	}
+
+	public function testRecoverByFileIdRejectsInvalidFileId(): void {
+		$user = $this->createMock(IUser::class);
+		$userSession = $this->createMock(IUserSession::class);
+		$userSession->method('getUser')->willReturn($user);
+
+		$controller = $this->buildController($this->createMock(IRequest::class), $userSession);
+		$response = $controller->recoverByFileId(0);
+
+		$this->assertSame(Http::STATUS_BAD_REQUEST, $response->getStatus());
+		$this->assertSame('Invalid file ID.', $response->getData()['message']);
+	}
+
+	public function testRecoverByFileIdReturnsConflictWhenBindingAlreadyExists(): void {
+		$user = $this->createConfiguredMock(IUser::class, ['getUID' => 'alice']);
+		$userSession = $this->createMock(IUserSession::class);
+		$userSession->method('getUser')->willReturn($user);
+
+		$lifecycleOps = $this->createMock(PadLifecycleOperationService::class);
+		$lifecycleOps->method('recoverByFileId')
+			->willThrowException(new PadAlreadyHasBindingException('binding exists'));
+
+		$controller = $this->buildController(
+			$this->createMock(IRequest::class),
+			$userSession,
+			padLifecycleOperations: $lifecycleOps,
+		);
+		$response = $controller->recoverByFileId(42);
+
+		$this->assertSame(Http::STATUS_CONFLICT, $response->getStatus());
+		$this->assertSame('This .pad file is already linked to a pad.', $response->getData()['message']);
+	}
+
+	public function testRecoverByFileIdSurfacesRestoredResult(): void {
+		$user = $this->createConfiguredMock(IUser::class, ['getUID' => 'alice']);
+		$userSession = $this->createMock(IUserSession::class);
+		$userSession->method('getUser')->willReturn($user);
+
+		$lifecycleOps = $this->createMock(PadLifecycleOperationService::class);
+		$lifecycleOps->expects($this->once())
+			->method('recoverByFileId')
+			->with('alice', 99)
+			->willReturn([
+				'file_id' => 99,
+				'status' => LifecycleService::RESULT_RESTORED,
+				'old_pad_id' => 'orphan',
+				'new_pad_id' => 'fresh',
+			]);
+
+		$controller = $this->buildController(
+			$this->createMock(IRequest::class),
+			$userSession,
+			padLifecycleOperations: $lifecycleOps,
+		);
+		$response = $controller->recoverByFileId(99);
+
+		$this->assertSame(Http::STATUS_OK, $response->getStatus());
+		$this->assertSame(LifecycleService::RESULT_RESTORED, $response->getData()['status']);
+		$this->assertSame('fresh', $response->getData()['new_pad_id']);
+	}
+
 	private function buildController(
 		IRequest $request,
 		IUserSession $userSession,
@@ -624,6 +695,7 @@ class PadControllerTest extends TestCase {
 		?PadFileService $padFileService = null,
 		?BindingService $bindingService = null,
 		?EtherpadClient $etherpadClient = null,
+		?PadLifecycleOperationService $padLifecycleOperations = null,
 	): PadController {
 		$resolvedRootFolder = $rootFolder ?? $this->createMock(IRootFolder::class);
 		$resolvedEtherpadClient = $etherpadClient ?? $this->createMock(EtherpadClient::class);
@@ -646,7 +718,8 @@ class PadControllerTest extends TestCase {
 			$logger,
 		);
 		$padSyncService = new PadSyncService($resolvedPadFileService, $userNodeResolver, $lockRetryService, $resolvedBindingService, $resolvedEtherpadClient, $logger);
-		$padLifecycleOperations = new PadLifecycleOperationService($padPaths, $userNodeResolver, $this->createMock(LifecycleService::class));
+		$padLifecycleOperations = $padLifecycleOperations
+			?? new PadLifecycleOperationService($padPaths, $userNodeResolver, $this->createMock(LifecycleService::class));
 		$urlGenerator = $this->createMock(IURLGenerator::class);
 		$appConfigService = $this->createMock(AppConfigService::class);
 		$padResponseService = new PadResponseService($urlGenerator, $appConfigService);

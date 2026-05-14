@@ -100,6 +100,54 @@ class PadLifecycleOperationServiceTest extends TestCase {
 		], $result);
 	}
 
+	public function testRecoverByFileIdFormatsRestoredLifecycleResult(): void {
+		$file = $this->createMock(File::class);
+		$padPaths = $this->createMock(PadPathService::class);
+		$userNodeResolver = $this->createMock(UserNodeResolver::class);
+		$userNodeResolver->method('resolveUserFileNodeById')->with('alice', 42)->willReturn($file);
+
+		$lifecycleService = $this->createMock(LifecycleService::class);
+		$lifecycleService->method('recoverFromSnapshot')->with($file)->willReturn([
+			'status' => LifecycleService::RESULT_RESTORED,
+			'file_id' => 42,
+			'old_pad_id' => 'orphan',
+			'new_pad_id' => 'fresh',
+		]);
+
+		$result = (new PadLifecycleOperationService($padPaths, $userNodeResolver, $lifecycleService))
+			->recoverByFileId('alice', 42);
+
+		$this->assertSame([
+			'file_id' => 42,
+			'status' => LifecycleService::RESULT_RESTORED,
+			'old_pad_id' => 'orphan',
+			'new_pad_id' => 'fresh',
+		], $result);
+	}
+
+	public function testRecoverByFileIdFormatsSkippedLifecycleResult(): void {
+		$file = $this->createMock(File::class);
+		$padPaths = $this->createMock(PadPathService::class);
+		$userNodeResolver = $this->createMock(UserNodeResolver::class);
+		$userNodeResolver->method('resolveUserFileNodeById')->with('alice', 51)->willReturn($file);
+
+		$lifecycleService = $this->createMock(LifecycleService::class);
+		$lifecycleService->method('recoverFromSnapshot')->with($file)->willReturn([
+			'status' => LifecycleService::RESULT_SKIPPED,
+			'reason' => 'external_pad',
+			'file_id' => 51,
+		]);
+
+		$result = (new PadLifecycleOperationService($padPaths, $userNodeResolver, $lifecycleService))
+			->recoverByFileId('alice', 51);
+
+		$this->assertSame([
+			'file_id' => 51,
+			'status' => LifecycleService::RESULT_SKIPPED,
+			'reason' => 'external_pad',
+		], $result);
+	}
+
 	public function testTrashByPathRejectsEmptyPath(): void {
 		$padPaths = $this->createMock(PadPathService::class);
 		$padPaths->expects($this->once())

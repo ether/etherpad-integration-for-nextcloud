@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\Tests\Unit;
 
 use OCA\EtherpadNextcloud\Exception\BindingStateConflictException;
+use OCA\EtherpadNextcloud\Exception\NotAPadFileException;
+use OCA\EtherpadNextcloud\Exception\PadAlreadyHasBindingException;
 use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\EtherpadNextcloud\Service\EtherpadClient;
 use OCA\EtherpadNextcloud\Service\LifecycleService;
@@ -558,6 +560,121 @@ class LifecycleServiceTest extends TestCase {
 		$this->assertSame('external_pad', $result['reason']);
 		$this->assertSame($fileId, $result['file_id']);
 		$this->assertSame($oldPadId, $result['pad_id']);
+	}
+
+	public function testRecoverFromSnapshotProvisionsFreshPadWhenBindingMissing(): void {
+		$fileId = 701;
+		$oldPadId = 'orphaned-pad';
+		$newPadId = 'r-orphaned-pad-recover123abc';
+		$newPadUrl = 'https://pad.example.test/p/' . rawurlencode($newPadId);
+
+		$bindingService = $this->createMock(BindingService::class);
+		$bindingService->expects($this->once())
+			->method('findByFileId')
+			->with($fileId)
+			->willReturn(null);
+		$bindingService->expects($this->once())
+			->method('createBinding')
+			->with($fileId, $newPadId, BindingService::ACCESS_PUBLIC);
+
+		$padFileService = $this->createMock(PadFileService::class);
+		$padFileService->method('parsePadFile')->willReturn([
+			'frontmatter' => [
+				'pad_id' => $oldPadId,
+				'access_mode' => BindingService::ACCESS_PUBLIC,
+			],
+			'body' => '',
+		]);
+		$padFileService->method('extractPadMetadata')->willReturn([
+			'pad_id' => $oldPadId,
+			'access_mode' => BindingService::ACCESS_PUBLIC,
+			'pad_url' => 'https://pad.example.test/p/' . rawurlencode($oldPadId),
+		]);
+		$padFileService->method('isExternalFrontmatter')->willReturn(false);
+		$padFileService->method('getSnapshotPartsFromBody')->willReturn([
+			'text' => 'recovered content',
+			'html' => '',
+		]);
+		$padFileService->method('withStateAndSnapshot')->willReturn('doc-after');
+
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->expects($this->once())->method('createPad')->with($newPadId);
+		$etherpadClient->expects($this->once())->method('setText')->with($newPadId, 'recovered content');
+		$etherpadClient->method('buildPadUrl')->with($newPadId)->willReturn($newPadUrl);
+
+		$secureRandom = $this->createMock(ISecureRandom::class);
+		$secureRandom->method('generate')->willReturn('recover123abc');
+
+		$file = $this->createMock(File::class);
+		$file->method('getId')->willReturn($fileId);
+		$file->method('getName')->willReturn('Imported.pad');
+		$file->method('getContent')->willReturn('doc-before');
+		$file->expects($this->once())->method('putContent')->with('doc-after');
+
+		$result = (new LifecycleService(
+			$bindingService,
+			$padFileService,
+			$etherpadClient,
+			$this->buildDeleteOnTrashEnabledConfig(),
+			$this->createMock(LoggerInterface::class),
+			$secureRandom,
+		))->recoverFromSnapshot($file);
+
+		$this->assertSame(LifecycleService::RESULT_RESTORED, $result['status']);
+		$this->assertSame($fileId, $result['file_id']);
+		// Critical security property: the recovered pad ID is a fresh one,
+		// never the pad_id parroted back from the frontmatter.
+		$this->assertNotSame($oldPadId, $result['new_pad_id']);
+		$this->assertSame($newPadId, $result['new_pad_id']);
+	}
+
+	public function testRecoverFromSnapshotRefusesWhenBindingAlreadyExists(): void {
+		$fileId = 702;
+		$bindingService = $this->createMock(BindingService::class);
+		$bindingService->method('findByFileId')->with($fileId)->willReturn([
+			'pad_id' => 'already-linked',
+			'state' => BindingService::STATE_ACTIVE,
+			'access_mode' => BindingService::ACCESS_PUBLIC,
+		]);
+		$bindingService->expects($this->never())->method('createBinding');
+
+		$file = $this->createMock(File::class);
+		$file->method('getId')->willReturn($fileId);
+		$file->method('getName')->willReturn('Linked.pad');
+		$file->expects($this->never())->method('putContent');
+
+		$service = new LifecycleService(
+			$bindingService,
+			$this->createMock(PadFileService::class),
+			$this->createMock(EtherpadClient::class),
+			$this->buildDeleteOnTrashEnabledConfig(),
+			$this->createMock(LoggerInterface::class),
+			$this->createMock(ISecureRandom::class),
+		);
+
+		$this->expectException(PadAlreadyHasBindingException::class);
+		$service->recoverFromSnapshot($file);
+	}
+
+	public function testRecoverFromSnapshotRejectsNonPadFile(): void {
+		$bindingService = $this->createMock(BindingService::class);
+		$bindingService->expects($this->never())->method('findByFileId');
+
+		$file = $this->createMock(File::class);
+		$file->method('getId')->willReturn(703);
+		$file->method('getName')->willReturn('Notes.txt');
+
+		$service = new LifecycleService(
+			$bindingService,
+			$this->createMock(PadFileService::class),
+			$this->createMock(EtherpadClient::class),
+			$this->buildDeleteOnTrashEnabledConfig(),
+			$this->createMock(LoggerInterface::class),
+			$this->createMock(ISecureRandom::class),
+		);
+
+		$this->expectException(NotAPadFileException::class);
+		$service->recoverFromSnapshot($file);
 	}
 
 	private function buildDeleteOnTrashEnabledConfig(): IConfig {

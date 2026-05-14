@@ -229,6 +229,22 @@ class PadController extends Controller {
 	}
 
 	#[\OCP\AppFramework\Http\Attribute\NoAdminRequired]
+	public function recoverByFileId(int $fileId): DataResponse {
+		return $this->runForUser(
+			fn(IUser $user): array => $this->padLifecycleOperations->recoverByFileId($user->getUID(), $this->requireFileId($fileId)),
+			fn(array $result): DataResponse => $this->padResponses->lifecycleResponse($result),
+			[
+				'not_found' => 'Pad file not found.',
+				'generic' => 'Recovery failed.',
+				'on_throwable' => fn(\Throwable $e) => $this->logError('Pad recovery API failed', [
+					'fileId' => $fileId,
+					'exception' => $e,
+				]),
+			],
+		);
+	}
+
+	#[\OCP\AppFramework\Http\Attribute\NoAdminRequired]
 	public function restore(string $file): DataResponse {
 		return $this->runForUser(
 			fn(IUser $user): array => $this->padLifecycleOperations->restoreByPath($user->getUID(), $file),

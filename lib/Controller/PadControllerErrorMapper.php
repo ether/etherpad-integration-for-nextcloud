@@ -11,7 +11,9 @@ namespace OCA\EtherpadNextcloud\Controller;
 
 use OCA\EtherpadNextcloud\Exception\BindingException;
 use OCA\EtherpadNextcloud\Exception\ControllerBadRequestException;
+use OCA\EtherpadNextcloud\Exception\MissingBindingException;
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
+use OCA\EtherpadNextcloud\Exception\PadAlreadyHasBindingException;
 use OCA\EtherpadNextcloud\Exception\PadFileAlreadyExistsException;
 use OCA\EtherpadNextcloud\Exception\PadFileFormatException;
 use OCA\EtherpadNextcloud\Exception\PadParentFolderNotWritableException;
@@ -84,6 +86,10 @@ class PadControllerErrorMapper {
 			return new DataResponse([
 				'message' => 'A file with this name already exists.',
 			], Http::STATUS_CONFLICT);
+		} catch (PadAlreadyHasBindingException) {
+			return new DataResponse([
+				'message' => 'This .pad file is already linked to a pad.',
+			], Http::STATUS_CONFLICT);
 		} catch (PadParentFolderNotWritableException) {
 			return new DataResponse([
 				'message' => 'Selected parent folder is not writable.',
@@ -92,9 +98,16 @@ class PadControllerErrorMapper {
 			$message = isset($options['binding_message'])
 				? (string)$options['binding_message']
 				: $this->padResponses->bindingErrorMessage($e);
-			return new DataResponse([
-				'message' => $message,
-			], (int)($options['binding_status'] ?? Http::STATUS_BAD_REQUEST));
+			$payload = ['message' => $message];
+			if ($e instanceof MissingBindingException) {
+				// Surface a stable code so the UI can offer a recovery action
+				// instead of showing a dead-end error.
+				$payload['code'] = 'missing_binding';
+			}
+			return new DataResponse(
+				$payload,
+				(int)($options['binding_status'] ?? Http::STATUS_BAD_REQUEST),
+			);
 		} catch (PadFileFormatException|EtherpadClientException $e) {
 			return new DataResponse(['message' => $e->getMessage()], Http::STATUS_BAD_REQUEST);
 		} catch (\RuntimeException $e) {

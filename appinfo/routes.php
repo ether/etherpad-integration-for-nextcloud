@@ -22,6 +22,7 @@ return ['routes' => [
 	['name' => 'pad#syncById', 'url' => '/api/v1/pads/sync/{fileId}', 'verb' => 'POST'],
 	['name' => 'pad#trash', 'url' => '/api/v1/pads/trash', 'verb' => 'POST'],
 	['name' => 'pad#restore', 'url' => '/api/v1/pads/restore', 'verb' => 'POST'],
+	['name' => 'pad#recoverByFileId', 'url' => '/api/v1/pads/recover-from-snapshot/{fileId}', 'verb' => 'POST'],
 	['name' => 'admin#saveSettings', 'url' => '/api/v1/admin/settings', 'verb' => 'POST'],
 	['name' => 'admin#healthCheck', 'url' => '/api/v1/admin/health', 'verb' => 'POST'],
 	['name' => 'admin#consistencyCheck', 'url' => '/api/v1/admin/consistency-check', 'verb' => 'POST'],

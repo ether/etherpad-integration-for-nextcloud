@@ -6,8 +6,10 @@ namespace OCA\EtherpadNextcloud\Tests\Unit;
 
 use OCA\EtherpadNextcloud\Controller\PadControllerErrorMapper;
 use OCA\EtherpadNextcloud\Exception\BindingException;
+use OCA\EtherpadNextcloud\Exception\MissingBindingException;
 use OCA\EtherpadNextcloud\Exception\ControllerBadRequestException;
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
+use OCA\EtherpadNextcloud\Exception\PadAlreadyHasBindingException;
 use OCA\EtherpadNextcloud\Exception\PadFileAlreadyExistsException;
 use OCA\EtherpadNextcloud\Exception\PadFileFormatException;
 use OCA\EtherpadNextcloud\Exception\PadParentFolderNotWritableException;
@@ -110,6 +112,26 @@ class PadControllerErrorMapperTest extends TestCase {
 
 		$this->assertSame(Http::STATUS_CONFLICT, $response->getStatus());
 		$this->assertSame('A file with this name already exists.', $response->getData()['message']);
+	}
+
+	public function testRunMapsMissingBindingWithRecoveryCode(): void {
+		$response = $this->buildMapper()->run(
+			static fn(): array => throw new MissingBindingException('no binding'),
+			static fn(array $result): DataResponse => new DataResponse($result),
+		);
+
+		$this->assertSame(Http::STATUS_BAD_REQUEST, $response->getStatus());
+		$this->assertSame('missing_binding', $response->getData()['code']);
+	}
+
+	public function testRunMapsPadAlreadyHasBinding(): void {
+		$response = $this->buildMapper()->run(
+			static fn(): array => throw new PadAlreadyHasBindingException('already linked'),
+			static fn(array $result): DataResponse => new DataResponse($result),
+		);
+
+		$this->assertSame(Http::STATUS_CONFLICT, $response->getStatus());
+		$this->assertSame('This .pad file is already linked to a pad.', $response->getData()['message']);
 	}
 
 	public function testRunMapsParentFolderNotWritable(): void {
