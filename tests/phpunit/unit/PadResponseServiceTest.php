@@ -17,7 +17,7 @@ class PadResponseServiceTest extends TestCase {
 		$urlGenerator = $this->createMock(IURLGenerator::class);
 		$urlGenerator->method('linkToRoute')
 			->willReturnMap([
-				['files.view.index', [], '/apps/files/files'],
+				['files.view.index', [], '/apps/files'],
 				['etherpad_nextcloud.embed.showById', ['fileId' => 42], '/apps/etherpad/embed/by-id/42'],
 			]);
 
