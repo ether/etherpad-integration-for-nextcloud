@@ -294,8 +294,6 @@ Base: `/apps/etherpad_nextcloud`
 - `src/files/route-controller.js`
   - normalizes stale `.pad` Files routes without `openfile=true`.
   - opens public-share pad links through the native viewer when available.
-- `src/files/sidebar-sync.js`
-  - exposes sync status UI in the Files sidebar panel.
 - `src/viewer-main.js`
   - prefers `POST /api/v1/pads/open-by-id` (`fileId`, requesttoken).
   - falls back to `POST /api/v1/pads/open` (`file`, requesttoken) only without `fileId`.

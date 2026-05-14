@@ -21,7 +21,6 @@ export const createRouteController = ({
 	ensurePublicPadMenuRegistration,
 	openPadInNativeViewer,
 	schedulePublicSingleShareUiStateRefresh,
-	scheduleSidebarSyncPanelRefresh,
 }) => {
 	let lastRouteCheckKey = ''
 
@@ -126,7 +125,6 @@ export const createRouteController = ({
 		void maybeNormalizeStalePadFileRoute()
 		void maybeRedirectFromFilesRoute()
 		maybeRedirectFromPublicShareRoute()
-		scheduleSidebarSyncPanelRefresh(0)
 	}
 
 	const installRouteWatchers = () => {

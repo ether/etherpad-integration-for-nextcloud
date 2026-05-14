@@ -48,30 +48,6 @@ export const apiResolvePadByPath = async (path) => {
 	return request
 }
 
-export const apiSyncStatusByFileId = async (fileId) => {
-	const endpoint = ocGenerateUrl('/apps/' + APP_ID + '/api/v1/pads/sync-status/' + encodeURIComponent(String(fileId)))
-	return fetchJson(endpoint, {
-		method: 'GET',
-		headers: {
-			Accept: 'application/json',
-		},
-	}, 'Sync status check failed.')
-}
-
-export const apiSyncByFileId = async (fileId, force) => {
-	let endpoint = ocGenerateUrl('/apps/' + APP_ID + '/api/v1/pads/sync/' + encodeURIComponent(String(fileId)))
-	if (force) {
-		endpoint += '?force=1'
-	}
-	return fetchJson(endpoint, {
-		method: 'POST',
-		headers: {
-			Accept: 'application/json',
-			requesttoken: ocRequestToken(),
-		},
-	}, 'Pad sync failed.')
-}
-
 export const apiCreatePadFromUrl = async (filePath, padUrl) => {
 	const endpoint = ocGenerateUrl('/apps/' + APP_ID + '/api/v1/pads/from-url')
 	const body = new URLSearchParams()

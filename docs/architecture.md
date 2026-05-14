@@ -204,10 +204,10 @@ Primary flow (native viewer when available):
 6. Write-lock handling:
    - short bounded retry around `.pad` snapshot writes (`150ms`, `300ms`, `600ms`)
    - if still locked, API returns `status=locked` and `retryable=true`
-7. Files sidebar panel uses revision-based status:
+7. Revision-based status check is still exposed for programmatic use:
    - `GET /api/v1/pads/sync-status/{fileId}` compares `snapshot_rev` with `current_rev`.
-   - Sidebar shows `synced` vs `pending`.
-   - Manual action `Pad in Datei speichern` calls `syncById` with `force=1`.
+   - `POST /api/v1/pads/sync/{fileId}?force=1` can be invoked to trigger an immediate snapshot write.
+   - There is no UI affordance for either; the viewer drives sync automatically.
 
 ### 5) Trash/Restore
 
@@ -253,8 +253,6 @@ Primary flow (native viewer when available):
   - Public single-file share UI state refresh.
 - `src/files/public-pad-create-flow.js` and `src/files/pad-create-dialogs.js`
   - Public pad creation flow and modal UI.
-- `src/files/sidebar-sync.js`
-  - Files sidebar sync status panel, manual snapshot action, polling, and public/external open-link affordance.
 - `src/viewer-main.js`
   - Registers Nextcloud viewer handler for MIME `application/x-etherpad-nextcloud`.
   - Open URL resolution via CSRF-protected `POST` endpoints:

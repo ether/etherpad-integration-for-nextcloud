@@ -84,23 +84,6 @@ describe('api-client', () => {
 		)
 	})
 
-	it('forces sync with request token', async () => {
-		const { apiSyncByFileId } = await importClient()
-		fetch.mockResolvedValueOnce(jsonResponse({ status: 'updated' }))
-
-		await apiSyncByFileId(5, true)
-
-		expect(fetch).toHaveBeenCalledWith(
-			'/index.php/apps/etherpad_nextcloud/api/v1/pads/sync/5?force=1',
-			expect.objectContaining({
-				method: 'POST',
-				headers: expect.objectContaining({
-					requesttoken: 'token-123',
-				}),
-			})
-		)
-	})
-
 	it('creates external public pads as form requests', async () => {
 		const { apiCreatePadFromUrl } = await importClient()
 		fetch.mockResolvedValueOnce(jsonResponse({ file_id: 9 }))
@@ -142,11 +125,11 @@ describe('api-client', () => {
 	})
 
 	it('attaches the response code to thrown errors', async () => {
-		const { apiSyncStatusByFileId } = await importClient()
+		const { apiRecoverFromSnapshot } = await importClient()
 		fetch.mockResolvedValueOnce(jsonResponse({ message: 'no binding', code: 'missing_binding' }, false))
 
 		try {
-			await apiSyncStatusByFileId(99)
+			await apiRecoverFromSnapshot(99)
 			throw new Error('should have thrown')
 		} catch (error) {
 			expect(error.message).toBe('no binding')
@@ -155,12 +138,12 @@ describe('api-client', () => {
 	})
 
 	it('uses fallback messages for non-json errors', async () => {
-		const { apiSyncStatusByFileId } = await importClient()
+		const { apiRecoverFromSnapshot } = await importClient()
 		fetch.mockResolvedValueOnce({
 			ok: false,
 			json: () => Promise.reject(new Error('invalid json')),
 		})
 
-		await expect(apiSyncStatusByFileId(10)).rejects.toThrow('Sync status check failed.')
+		await expect(apiRecoverFromSnapshot(10)).rejects.toThrow('Recovery failed.')
 	})
 })

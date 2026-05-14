@@ -6,7 +6,6 @@ import { isFilesAppRoute } from './lib/nextcloud-runtime.js'
 import { registerOpenAction } from './files/open-action.js'
 import { createPadOpener } from './files/pad-opener.js'
 import { createPublicPadFlows } from './files/public-pad-create-flow.js'
-import { createSidebarSyncController } from './files/sidebar-sync.js'
 import { createPublicPadMenuRegistrar } from './files/public-pad-menu.js'
 import { registerPublicSharePadClickInterceptor } from './files/public-share-pad-links.js'
 import { schedulePublicSingleShareUiStateRefresh } from './files/public-single-share-ui.js'
@@ -14,7 +13,6 @@ import { createRouteController } from './files/route-controller.js'
 
 (function () {
 	let booted = false
-	const sidebarSync = createSidebarSyncController()
 	const openPadInNativeViewer = createPadOpener()
 	const publicPadFlows = createPublicPadFlows({ openPadInNativeViewer })
 
@@ -27,7 +25,6 @@ import { createRouteController } from './files/route-controller.js'
 		ensurePublicPadMenuRegistration,
 		openPadInNativeViewer,
 		schedulePublicSingleShareUiStateRefresh,
-		scheduleSidebarSyncPanelRefresh: sidebarSync.scheduleRefresh,
 	})
 
 	const boot = () => {
@@ -39,8 +36,6 @@ import { createRouteController } from './files/route-controller.js'
 		routes.evaluateCurrentRoute()
 		registerOpenAction({ openPadInNativeViewer })
 		registerPublicSharePadClickInterceptor({ openPadInNativeViewer })
-		sidebarSync.installObserver()
-		sidebarSync.scheduleRefresh(200)
 	}
 
 	if (document.readyState === 'loading') {

@@ -15,7 +15,6 @@ const createController = (overrides = {}) => createRouteController({
 	ensurePublicPadMenuRegistration: vi.fn(),
 	openPadInNativeViewer: vi.fn(),
 	schedulePublicSingleShareUiStateRefresh: vi.fn(),
-	scheduleSidebarSyncPanelRefresh: vi.fn(),
 	...overrides,
 })
 

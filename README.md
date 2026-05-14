@@ -138,8 +138,8 @@ PHP checks and optional E2E checks are described in [docs/release-process.md](do
 
 - One-way sync only: content is copied from Etherpad into the `.pad` file snapshot.
 - No automatic reverse sync from `.pad` file content back into Etherpad.
-- Automatic while viewer is open (interval from admin settings).
-- Manual via Files sidebar action `Pad in Datei speichern`.
+- Automatic while viewer is open (interval from admin settings) and on viewer hide / page unload.
+- Backend endpoint `POST /api/v1/pads/sync/{fileId}` remains available for programmatic syncs.
 
 ### Trash/Restore
 
