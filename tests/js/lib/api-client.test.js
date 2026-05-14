@@ -114,6 +114,46 @@ describe('api-client', () => {
 		expect(options.body).toBe('file=%2FFolder%2FImported.pad&padUrl=https%3A%2F%2Fpad.example.test%2Fp%2Ffoo')
 	})
 
+	it('posts a recovery request and invalidates the resolve cache on success', async () => {
+		const { apiRecoverFromSnapshot, apiResolvePadByFileId } = await importClient()
+		// Seed the resolve cache so we can verify it is dropped after recover.
+		fetch.mockResolvedValueOnce(jsonResponse({ is_pad: true, file_id: 42 }))
+		await apiResolvePadByFileId(42)
+
+		fetch.mockResolvedValueOnce(jsonResponse({ status: 'restored', new_pad_id: 'fresh' }))
+
+		const result = await apiRecoverFromSnapshot(42)
+
+		expect(result).toEqual({ status: 'restored', new_pad_id: 'fresh' })
+		expect(fetch).toHaveBeenLastCalledWith(
+			'/index.php/apps/etherpad_nextcloud/api/v1/pads/recover-from-snapshot/42',
+			expect.objectContaining({
+				method: 'POST',
+				headers: expect.objectContaining({
+					requesttoken: 'token-123',
+				}),
+			})
+		)
+
+		// Cache invalidated: the next resolve must hit fetch again.
+		fetch.mockResolvedValueOnce(jsonResponse({ is_pad: true, file_id: 42 }))
+		await apiResolvePadByFileId(42)
+		expect(fetch).toHaveBeenCalledTimes(3)
+	})
+
+	it('attaches the response code to thrown errors', async () => {
+		const { apiSyncStatusByFileId } = await importClient()
+		fetch.mockResolvedValueOnce(jsonResponse({ message: 'no binding', code: 'missing_binding' }, false))
+
+		try {
+			await apiSyncStatusByFileId(99)
+			throw new Error('should have thrown')
+		} catch (error) {
+			expect(error.message).toBe('no binding')
+			expect(error.code).toBe('missing_binding')
+		}
+	})
+
 	it('uses fallback messages for non-json errors', async () => {
 		const { apiSyncStatusByFileId } = await importClient()
 		fetch.mockResolvedValueOnce({

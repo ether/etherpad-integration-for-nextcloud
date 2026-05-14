@@ -85,6 +85,21 @@ export const apiCreatePadFromUrl = async (filePath, padUrl) => {
 	}, 'Could not import public pad URL.')
 }
 
+export const apiRecoverFromSnapshot = async (fileId) => {
+	const endpoint = ocGenerateUrl('/apps/' + APP_ID + '/api/v1/pads/recover-from-snapshot/' + encodeURIComponent(String(fileId)))
+	const result = await fetchJson(endpoint, {
+		method: 'POST',
+		headers: {
+			Accept: 'application/json',
+			requesttoken: ocRequestToken(),
+		},
+	}, 'Recovery failed.')
+	// A freshly recovered pad invalidates any cached resolve response: the
+	// old one carried a missing-binding marker that no longer applies.
+	RESOLVE_CACHE.delete(String(fileId))
+	return result
+}
+
 export const apiCreatePublicPad = async (filePath) => {
 	const endpoint = ocGenerateUrl('/apps/' + APP_ID + '/api/v1/pads')
 	const body = new URLSearchParams()
@@ -136,7 +151,12 @@ const fetchJson = async (url, options, fallbackMessage) => {
 	})
 	const data = await response.json().catch(() => ({}))
 	if (!response.ok) {
-		throw new Error((data && data.message) || fallbackMessage)
+		const error = new Error((data && data.message) || fallbackMessage)
+		if (data && typeof data.code === 'string') {
+			error.code = data.code
+		}
+		error.status = response.status
+		throw error
 	}
 	return data
 }
