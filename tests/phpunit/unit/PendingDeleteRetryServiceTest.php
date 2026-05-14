@@ -7,6 +7,7 @@ namespace OCA\EtherpadNextcloud\Tests\Unit;
 use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\EtherpadNextcloud\Service\EtherpadClient;
 use OCA\EtherpadNextcloud\Service\PendingDeleteRetryService;
+use OCP\AppFramework\Utility\ITimeFactory;
 use OCP\IDBConnection;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
@@ -63,6 +64,7 @@ class PendingDeleteRetryServiceTest extends TestCase {
 	private function buildBindingService(array $ageRows): BindingService {
 		return new class (
 			$this->createMock(IDBConnection::class),
+			$this->createMock(ITimeFactory::class),
 			$this->createMock(LoggerInterface::class),
 			$ageRows,
 		) extends BindingService {
@@ -73,10 +75,11 @@ class PendingDeleteRetryServiceTest extends TestCase {
 			/** @param array<int,array<string,mixed>> $ageRows */
 			public function __construct(
 				IDBConnection $db,
+				ITimeFactory $timeFactory,
 				LoggerInterface $logger,
 				private array $ageRows,
 			) {
-				parent::__construct($db, $logger);
+				parent::__construct($db, $timeFactory, $logger);
 			}
 
 			public function findPendingDeleteByAge(int $minAgeSeconds, ?int $maxAgeSeconds, int $limit = 100): array {

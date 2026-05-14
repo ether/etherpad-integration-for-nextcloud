@@ -13,6 +13,7 @@ use OCA\EtherpadNextcloud\Exception\BindingException;
 use OCA\EtherpadNextcloud\Exception\BindingStateConflictException;
 use OCA\EtherpadNextcloud\Exception\MissingBindingException;
 use OCP\DB\QueryBuilder\IQueryBuilder;
+use OCP\AppFramework\Utility\ITimeFactory;
 use OCP\IDBConnection;
 use Psr\Log\LoggerInterface;
 
@@ -25,6 +26,7 @@ class BindingService {
 
 	public function __construct(
 		private IDBConnection $db,
+		private ITimeFactory $timeFactory,
 		private LoggerInterface $logger,
 	) {
 	}
@@ -91,7 +93,7 @@ class BindingService {
 
 	/** @return array<int,array<string,mixed>> */
 	public function findPendingDeleteByAge(int $minAgeSeconds, ?int $maxAgeSeconds, int $limit = 100): array {
-		$now = time();
+		$now = $this->timeFactory->getTime();
 		$qb = $this->db->getQueryBuilder();
 		$qb->select('*')
 			->from(self::TABLE)
@@ -136,7 +138,7 @@ class BindingService {
 
 	public function createBinding(int $fileId, string $padId, string $accessMode): void {
 		$this->assertAccessMode($accessMode);
-		$now = time();
+		$now = $this->timeFactory->getTime();
 
 		$qb = $this->db->getQueryBuilder();
 		$qb->insert(self::TABLE)
@@ -186,7 +188,7 @@ class BindingService {
 			->set('pad_id', $qb->createNamedParameter($newPadId))
 			->set('state', $qb->createNamedParameter(self::STATE_ACTIVE))
 			->set('deleted_at', $qb->createNamedParameter(null, IQueryBuilder::PARAM_NULL))
-			->set('updated_at', $qb->createNamedParameter(time(), IQueryBuilder::PARAM_INT))
+			->set('updated_at', $qb->createNamedParameter($this->timeFactory->getTime(), IQueryBuilder::PARAM_INT))
 			->where($qb->expr()->eq('file_id', $qb->createNamedParameter($fileId, IQueryBuilder::PARAM_INT)))
 			->andWhere($qb->expr()->eq('state', $qb->createNamedParameter(self::STATE_PENDING_DELETE)));
 		$updated = $qb->executeStatement();
@@ -200,7 +202,7 @@ class BindingService {
 		$qb->update(self::TABLE)
 			->set('state', $qb->createNamedParameter(self::STATE_PENDING_DELETE))
 			->set('deleted_at', $qb->createNamedParameter($deletedAtTs, IQueryBuilder::PARAM_INT))
-			->set('updated_at', $qb->createNamedParameter(time(), IQueryBuilder::PARAM_INT))
+			->set('updated_at', $qb->createNamedParameter($this->timeFactory->getTime(), IQueryBuilder::PARAM_INT))
 			->where($qb->expr()->eq('file_id', $qb->createNamedParameter($fileId, IQueryBuilder::PARAM_INT)))
 			->andWhere($qb->expr()->eq('state', $qb->createNamedParameter(self::STATE_ACTIVE)));
 		$updated = $qb->executeStatement();
