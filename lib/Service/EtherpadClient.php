@@ -143,7 +143,6 @@ class EtherpadClient {
 		];
 	}
 
-	/** @return array{origin:string,pad_id:string,pad_url:string,text:string} */
 	/**
 	 * @return array{origin:string,pad_id:string,pad_url:string,text:string,snapshot_unavailable:bool}
 	 */
