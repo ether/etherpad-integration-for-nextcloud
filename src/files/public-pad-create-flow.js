@@ -2,6 +2,7 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  * Copyright (c) 2026 Jacob Bühler
  */
+import { APP_ID } from '../lib/constants.js'
 import {
 	apiCreatePadFromUrl,
 	apiCreatePublicPad,
@@ -65,10 +66,30 @@ export const createPublicPadFlows = ({ openPadInNativeViewer }) => {
 				const trimmedUrl = padUrl.trim()
 				const filePath = normalizeFilePath(getCurrentDir(), ensurePadExtension(name.trim()))
 				const created = await apiCreatePadFromUrl(filePath, trimmedUrl)
+				surfaceCreateWarnings(created)
 				await openCreatedPad(created, filePath)
 				return created
 			},
 		})
+	}
+
+	const surfaceCreateWarnings = (created) => {
+		if (!created || created.snapshot_warning_code !== 'remote_export_unavailable') {
+			return
+		}
+		const message = t(
+			APP_ID,
+			'Could not fetch the pad content from the remote server. The new file is empty for now — open the pad in the viewer to populate it.',
+		)
+		const oc = window.OC
+		if (oc && oc.Notification && typeof oc.Notification.showTemporary === 'function') {
+			oc.Notification.showTemporary(message, { type: 'warning' })
+		} else {
+			// Logged for debugging when running outside Nextcloud's notification
+			// runtime (tests, embed pages, etc.). The dialog already closed;
+			// dropping the warning entirely would be worse than logging.
+			window.console.warn('[etherpad_nextcloud] ' + message)
+		}
 	}
 
 	return {

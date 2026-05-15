@@ -144,12 +144,17 @@ class EtherpadClient {
 	}
 
 	/** @return array{origin:string,pad_id:string,pad_url:string,text:string} */
+	/**
+	 * @return array{origin:string,pad_id:string,pad_url:string,text:string,snapshot_unavailable:bool}
+	 */
 	public function normalizeAndFetchExternalPublicPadTextOrEmpty(string $padUrl): array {
 		$resolved = $this->resolveAndValidateExternalPublicPadUrl($padUrl);
+		$snapshotUnavailable = false;
 		try {
 			$text = $this->getPublicTextFromResolvedExternalPad($resolved);
 		} catch (ExternalPadExportNotFoundException) {
 			$text = '';
+			$snapshotUnavailable = true;
 		}
 
 		return [
@@ -157,6 +162,7 @@ class EtherpadClient {
 			'pad_id' => $resolved['pad_id'],
 			'pad_url' => $resolved['pad_url'],
 			'text' => $text,
+			'snapshot_unavailable' => $snapshotUnavailable,
 		];
 	}
 

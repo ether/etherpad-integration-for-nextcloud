@@ -212,13 +212,24 @@ class PadCreationService {
 				$content = $this->padFileService->withExportSnapshot($content, $external['text'], '', 0, false);
 				$fileNode->putContent($content);
 
-				return [
+				$result = [
 					'file' => $path,
 					'file_id' => $fileId,
 					'pad_id' => $externalPadId,
 					'access_mode' => BindingService::ACCESS_PUBLIC,
 					'pad_url' => $external['pad_url'],
 				];
+				if (!empty($external['snapshot_unavailable'])) {
+					// The pad URL itself validated, but the public-text export
+					// endpoint refused to serve content (404). Common causes:
+					// the remote Etherpad has authentication on /p/<id>/export,
+					// or the pad is restricted despite a public-looking URL.
+					// We keep the file (the viewer can still load the pad
+					// directly through the iframe) and surface a stable code
+					// the frontend translates into a toast.
+					$result['snapshot_warning_code'] = 'remote_export_unavailable';
+				}
+				return $result;
 			},
 			function () use ($uid, $path, &$fileCreated): void {
 				$this->rollbackService->rollbackExternalCreate($uid, $path, $fileCreated);

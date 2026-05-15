@@ -206,6 +206,46 @@ class PadCreationServiceTest extends TestCase {
 		], $result);
 	}
 
+	public function testCreateFromUrlSurfacesSnapshotWarningCodeWhenRemoteExportUnavailable(): void {
+		// Regression: a remote Etherpad whose /export endpoint 404s used to
+		// produce a silent empty-snapshot file. The frontend now needs a
+		// stable code to surface a toast to the user.
+		$fileNode = $this->createMock(File::class);
+		$fileNode->method('getId')->willReturn(322);
+		$fileNode->method('putContent')->willReturnSelf();
+
+		$padPaths = $this->createMock(PadPathService::class);
+		$padPaths->method('normalizeCreatePath')->willReturn('/External.pad');
+		$fileCreator = $this->createMock(PadFileCreator::class);
+		$fileCreator->method('createUserFile')->willReturn($fileNode);
+
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->method('normalizeAndFetchExternalPublicPadTextOrEmpty')
+			->willReturn([
+				'pad_url' => 'https://pad.remote.test/p/RemotePad',
+				'origin' => 'https://pad.remote.test',
+				'pad_id' => 'RemotePad',
+				'text' => '',
+				'snapshot_unavailable' => true,
+			]);
+
+		$padFileService = $this->createMock(PadFileService::class);
+		$padFileService->method('buildInitialDocument')->willReturn('frontmatter');
+		$padFileService->method('withExportSnapshot')->willReturn('frontmatter');
+
+		$result = $this->buildService(
+			$padFileService,
+			$padPaths,
+			$fileCreator,
+			null,
+			$this->createMock(PadCreateRollbackService::class),
+			$this->createMock(BindingService::class),
+			$etherpadClient,
+		)->createFromUrl('alice', '/External', 'https://pad.remote.test/p/RemotePad');
+
+		$this->assertSame('remote_export_unavailable', $result['snapshot_warning_code']);
+	}
+
 	public function testCreateFromUrlRollsBackWhenInitialSnapshotFetchFails(): void {
 		$fileNode = $this->createMock(File::class);
 		$fileNode->method('getId')->willReturn(321);
