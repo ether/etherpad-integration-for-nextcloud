@@ -17,11 +17,11 @@ namespace OCA\EtherpadNextcloud\Service;
  */
 class PadSyncStatus {
 	public function __construct(
-		public string $status,
-		public ?bool $inSync = null,
-		public ?int $snapshotRev = null,
-		public ?int $currentRev = null,
-		public ?string $reason = null,
+		public readonly string $status,
+		public readonly ?bool $inSync = null,
+		public readonly ?int $snapshotRev = null,
+		public readonly ?int $currentRev = null,
+		public readonly ?string $reason = null,
 	) {
 	}
 }

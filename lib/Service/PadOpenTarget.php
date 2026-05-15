@@ -18,17 +18,17 @@ namespace OCA\EtherpadNextcloud\Service;
  */
 class PadOpenTarget {
 	public function __construct(
-		public string $file,
-		public int $fileId,
-		public string $padId,
-		public string $accessMode,
-		public string $padUrl,
-		public bool $isExternal,
-		public string $originalPadUrl,
-		public string $snapshotText,
-		public string $snapshotHtml,
-		public string $url,
-		public string $cookieHeader,
+		public readonly string $file,
+		public readonly int $fileId,
+		public readonly string $padId,
+		public readonly string $accessMode,
+		public readonly string $padUrl,
+		public readonly bool $isExternal,
+		public readonly string $originalPadUrl,
+		public readonly string $snapshotText,
+		public readonly string $snapshotHtml,
+		public readonly string $url,
+		public readonly string $cookieHeader,
 	) {
 	}
 }

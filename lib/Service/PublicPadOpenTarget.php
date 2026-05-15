@@ -11,12 +11,12 @@ namespace OCA\EtherpadNextcloud\Service;
 
 class PublicPadOpenTarget {
 	public function __construct(
-		public string $url,
-		public string $originalPadUrl,
-		public string $cookieHeader,
-		public bool $isReadOnlySnapshot,
-		public string $snapshotText,
-		public string $snapshotHtml,
+		public readonly string $url,
+		public readonly string $originalPadUrl,
+		public readonly string $cookieHeader,
+		public readonly bool $isReadOnlySnapshot,
+		public readonly string $snapshotText,
+		public readonly string $snapshotHtml,
 	) {
 	}
 }

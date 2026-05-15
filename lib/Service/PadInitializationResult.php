@@ -17,11 +17,11 @@ namespace OCA\EtherpadNextcloud\Service;
  */
 class PadInitializationResult {
 	public function __construct(
-		public string $status,
-		public string $file,
-		public int $fileId,
-		public string $padId,
-		public string $accessMode,
+		public readonly string $status,
+		public readonly string $file,
+		public readonly int $fileId,
+		public readonly string $padId,
+		public readonly string $accessMode,
 	) {
 	}
 }

@@ -83,15 +83,17 @@ class PadResponseService {
 				$payload['file_id'] = $resolution->fileId;
 			}
 			if ($resolution->path !== null) {
-				$payload['path' ] = $resolution->path;
+				$payload['path'] = $resolution->path;
 			}
 			return $payload;
 		}
 		return $this->withViewerUrl([
 			'is_pad' => true,
 			'is_pad_mime' => $resolution->isPadMime,
-			'file_id' => (int)$resolution->fileId,
-			'path' => (string)$resolution->path,
+			'file_id' => $resolution->fileId
+				?? throw new \LogicException('PadResolution::fileId must be set when isPad is true.'),
+			'path' => $resolution->path
+				?? throw new \LogicException('PadResolution::path must be set when isPad is true.'),
 			'access_mode' => $resolution->accessMode,
 			'is_external' => $resolution->isExternal,
 			'public_open_url' => $resolution->publicOpenUrl,
@@ -105,14 +107,21 @@ class PadResponseService {
 		}
 		return $this->withViewerAndEmbedUrls([
 			'found' => true,
-			'file_id' => (int)$lookup->fileId,
-			'path' => (string)$lookup->path,
+			'file_id' => $lookup->fileId
+				?? throw new \LogicException('PadOriginalLookup::fileId must be set when found is true.'),
+			'path' => $lookup->path
+				?? throw new \LogicException('PadOriginalLookup::path must be set when found is true.'),
 		]);
 	}
 
 	/** @return array<string,mixed> */
 	public function syncStatusResponse(PadSyncStatus $status): array {
 		$payload = ['status' => $status->status];
+		// inSync is intentionally emitted unconditionally: the viewer's
+		// polling loop branches on `in_sync === null` to distinguish the
+		// "no revision available" status (external / unavailable) from the
+		// regular synced/out-of-sync states. Serializing null preserves
+		// that signal.
 		$payload['in_sync'] = $status->inSync;
 		if ($status->snapshotRev !== null) {
 			$payload['snapshot_rev'] = $status->snapshotRev;

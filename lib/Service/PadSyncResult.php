@@ -21,15 +21,15 @@ namespace OCA\EtherpadNextcloud\Service;
  */
 class PadSyncResult {
 	public function __construct(
-		public string $status,
-		public int $fileId,
-		public string $padId,
-		public bool $external,
-		public bool $forced,
-		public ?int $snapshotRev = null,
-		public ?int $currentRev = null,
-		public ?int $lockRetries = null,
-		public bool $retryable = false,
+		public readonly string $status,
+		public readonly int $fileId,
+		public readonly string $padId,
+		public readonly bool $external,
+		public readonly bool $forced,
+		public readonly ?int $snapshotRev = null,
+		public readonly ?int $currentRev = null,
+		public readonly ?int $lockRetries = null,
+		public readonly bool $retryable = false,
 	) {
 	}
 }
