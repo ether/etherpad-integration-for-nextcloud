@@ -185,6 +185,11 @@ class BindingService {
 		}
 	}
 
+	/**
+	 * Transitions `pending_delete → active` only. Any other state raises
+	 * `BindingStateConflictException` so concurrent restores can't double-flip.
+	 * For the no-binding-row recovery path use `createBinding` instead.
+	 */
 	public function markRestored(int $fileId, string $newPadId): void {
 		$qb = $this->db->getQueryBuilder();
 		$qb->update(self::TABLE)

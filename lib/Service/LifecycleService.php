@@ -61,9 +61,6 @@ class LifecycleService {
 			return $this->buildSkippedResult('binding_not_found', $fileId);
 		}
 		$padId = (string)$binding['pad_id'];
-		if (str_starts_with($padId, 'ext.')) {
-			return $this->buildSkippedResult('external_pad', $fileId, $padId);
-		}
 		if ((string)$binding['state'] !== BindingService::STATE_ACTIVE) {
 			return $this->buildSkippedResult('binding_not_active', $fileId, $padId);
 		}
@@ -92,11 +89,6 @@ class LifecycleService {
 			if ($canPersistSnapshotToFile && $currentContent !== '') {
 				$updatedContent = null;
 				try {
-					$parsed = $this->padFileService->parsePadFile($currentContent);
-					$frontmatter = $parsed['frontmatter'];
-					if ($this->padFileService->isExternalFrontmatter($frontmatter, $padId)) {
-						return $this->buildSkippedResult('external_pad', $fileId, $padId);
-					}
 					$snapshot = $this->etherpadClient->getText($padId);
 					$html = $this->etherpadClient->getHTML($padId);
 					$revision = $this->etherpadClient->getRevisionsCount($padId);
@@ -212,9 +204,6 @@ class LifecycleService {
 		}
 		$bindingState = (string)$binding['state'];
 		$oldPadId = (string)$binding['pad_id'];
-		if (str_starts_with($oldPadId, 'ext.')) {
-			return $this->buildSkippedResult('external_pad', $fileId, $oldPadId);
-		}
 		if ($bindingState !== BindingService::STATE_PENDING_DELETE) {
 			return $this->buildSkippedResult('binding_not_pending_delete', $fileId, $oldPadId);
 		}
@@ -233,22 +222,7 @@ class LifecycleService {
 			$snapshot = $this->padFileService->getTextSnapshotForRestore($currentContent);
 			$htmlSnapshot = $this->padFileService->getHtmlSnapshotForRestore($currentContent);
 
-			if (trim($htmlSnapshot) !== '') {
-				try {
-					$this->etherpadClient->setHTML($newPadId, $htmlSnapshot);
-				} catch (\Throwable $htmlRestoreError) {
-					$this->logger->warning('HTML restore failed, falling back to plain text snapshot.', [
-						'app' => 'etherpad_nextcloud',
-						'fileId' => $fileId,
-						'oldPadId' => $oldPadId,
-						'newPadId' => $newPadId,
-						'exception' => $htmlRestoreError,
-					]);
-					$this->etherpadClient->setText($newPadId, $snapshot);
-				}
-			} else {
-				$this->etherpadClient->setText($newPadId, $snapshot);
-			}
+			$this->restoreSnapshotToManagedPad($fileId, $oldPadId, $newPadId, $snapshot, $htmlSnapshot);
 
 			$updatedContent = $this->padFileService->withStateAndSnapshot(
 				$currentContent,
@@ -467,9 +441,12 @@ class LifecycleService {
 		return str_ends_with(strtolower($file->getName()), '.pad');
 	}
 
-	private function isExternalPadFile(File $file): bool {
+	/** Callers that already have `getContent()` can pass it to skip a re-read. */
+	private function isExternalPadFile(File $file, ?string $content = null): bool {
 		try {
-			$content = (string)$file->getContent();
+			if ($content === null) {
+				$content = (string)$file->getContent();
+			}
 			$parsed = $this->padFileService->parsePadFile($content);
 			$frontmatter = $parsed['frontmatter'];
 			$meta = $this->padFileService->extractPadMetadata($frontmatter);
