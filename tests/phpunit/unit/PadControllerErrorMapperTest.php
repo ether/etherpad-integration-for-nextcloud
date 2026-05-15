@@ -229,10 +229,13 @@ class PadControllerErrorMapperTest extends TestCase {
 	}
 
 	private function buildMapper(?LoggerInterface $logger = null): PadControllerErrorMapper {
+		$l10n = $this->createMock(\OCP\IL10N::class);
+		$l10n->method('t')->willReturnCallback(static fn (string $text, array $params = []): string => $text);
 		return new PadControllerErrorMapper(
 			new PadResponseService(
 				$this->createMock(IURLGenerator::class),
 				$this->createMock(AppConfigService::class),
+				$l10n,
 			),
 			$logger ?? $this->createMock(LoggerInterface::class),
 		);

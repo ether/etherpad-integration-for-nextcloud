@@ -124,6 +124,19 @@ describe('api-client', () => {
 		expect(fetch).toHaveBeenCalledTimes(3)
 	})
 
+	it('looks up the original pad by file ID with a GET request', async () => {
+		const { apiFindOriginalPad } = await importClient()
+		fetch.mockResolvedValueOnce(jsonResponse({ found: true, file_id: 42, viewer_url: '/x' }))
+
+		const result = await apiFindOriginalPad(700)
+
+		expect(result).toEqual({ found: true, file_id: 42, viewer_url: '/x' })
+		expect(fetch).toHaveBeenCalledWith(
+			'/index.php/apps/etherpad_nextcloud/api/v1/pads/find-original/700',
+			expect.objectContaining({ method: 'GET' })
+		)
+	})
+
 	it('attaches the response code to thrown errors', async () => {
 		const { apiRecoverFromSnapshot } = await importClient()
 		fetch.mockResolvedValueOnce(jsonResponse({ message: 'no binding', code: 'missing_binding' }, false))

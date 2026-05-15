@@ -171,7 +171,9 @@ class PadControllerTest extends TestCase {
 			new SnapshotExtractor($padFileService, new SnapshotHtmlSanitizer()),
 			$logger,
 		);
-		$padResponseService = new PadResponseService($urlGenerator, $appConfigService);
+		$l10n = $this->createMock(\OCP\IL10N::class);
+		$l10n->method('t')->willReturnCallback(static fn (string $text, array $params = []): string => $text);
+		$padResponseService = new PadResponseService($urlGenerator, $appConfigService, $l10n);
 
 		$controller = new PadController(
 			'etherpad_nextcloud',
@@ -301,7 +303,9 @@ class PadControllerTest extends TestCase {
 			new SnapshotExtractor($padFileService, new SnapshotHtmlSanitizer()),
 			$logger,
 		);
-		$padResponseService = new PadResponseService($urlGenerator, $appConfigService);
+		$l10n = $this->createMock(\OCP\IL10N::class);
+		$l10n->method('t')->willReturnCallback(static fn (string $text, array $params = []): string => $text);
+		$padResponseService = new PadResponseService($urlGenerator, $appConfigService, $l10n);
 
 		$controller = new PadController(
 			'etherpad_nextcloud',
@@ -618,6 +622,113 @@ class PadControllerTest extends TestCase {
 		$this->assertTrue($response->getData()['forced']);
 	}
 
+	public function testFindOriginalByFileIdReturnsUnauthorizedWhenNoUserSession(): void {
+		$userSession = $this->createMock(IUserSession::class);
+		$userSession->method('getUser')->willReturn(null);
+
+		$controller = $this->buildController($this->createMock(IRequest::class), $userSession);
+		$response = $controller->findOriginalByFileId(7);
+
+		$this->assertSame(Http::STATUS_UNAUTHORIZED, $response->getStatus());
+	}
+
+	public function testFindOriginalByFileIdRejectsInvalidFileId(): void {
+		$user = $this->createMock(IUser::class);
+		$userSession = $this->createMock(IUserSession::class);
+		$userSession->method('getUser')->willReturn($user);
+
+		$controller = $this->buildController($this->createMock(IRequest::class), $userSession);
+		$response = $controller->findOriginalByFileId(0);
+
+		$this->assertSame(Http::STATUS_BAD_REQUEST, $response->getStatus());
+	}
+
+	public function testFindOriginalByFileIdSurfacesViewerUrlOnHit(): void {
+		$user = $this->createConfiguredMock(IUser::class, ['getUID' => 'alice']);
+		$userSession = $this->createMock(IUserSession::class);
+		$userSession->method('getUser')->willReturn($user);
+
+		$padFileService = $this->createMock(PadFileService::class);
+		$padFileService->method('parsePadFile')->willReturn(['frontmatter' => ['pad_id' => 'orig']]);
+		$padFileService->method('extractPadMetadata')->willReturn(['pad_id' => 'orig']);
+
+		$bindingService = $this->createMock(BindingService::class);
+		$bindingService->method('findByPadId')
+			->with('orig', BindingService::STATE_ACTIVE)
+			->willReturn(['file_id' => 42, 'pad_id' => 'orig']);
+
+		$orphan = $this->createConfiguredMock(File::class, [
+			'getId' => 700,
+			'getName' => 'Copy.pad',
+			'getContent' => 'doc',
+		]);
+		$orphan->method('getPath')->willReturn('/alice/files/Copy.pad');
+		$original = $this->createConfiguredMock(File::class, [
+			'getId' => 42,
+			'getName' => 'Original.pad',
+			'getContent' => 'doc',
+			'getPath' => '/alice/files/Folder/Original.pad',
+		]);
+		$rootFolder = $this->createMock(IRootFolder::class);
+		$rootFolder->method('getById')->willReturnMap([
+			[700, [$orphan]],
+			[42, [$original]],
+		]);
+
+		$controller = $this->buildController(
+			$this->createMock(IRequest::class),
+			$userSession,
+			rootFolder: $rootFolder,
+			padFileService: $padFileService,
+			bindingService: $bindingService,
+		);
+		$response = $controller->findOriginalByFileId(700);
+
+		$this->assertSame(Http::STATUS_OK, $response->getStatus());
+		$data = $response->getData();
+		$this->assertTrue($data['found']);
+		$this->assertSame(42, $data['file_id']);
+		$this->assertSame('/Folder/Original.pad', $data['path']);
+		$this->assertNotEmpty($data['viewer_url']);
+		$this->assertNotEmpty($data['embed_url']);
+	}
+
+	public function testFindOriginalByFileIdReturnsFoundFalseUniformlyOnMiss(): void {
+		$user = $this->createConfiguredMock(IUser::class, ['getUID' => 'alice']);
+		$userSession = $this->createMock(IUserSession::class);
+		$userSession->method('getUser')->willReturn($user);
+
+		$bindingService = $this->createMock(BindingService::class);
+		$bindingService->method('findByPadId')->willReturn(null);
+
+		// Orphan resolves, no binding found → uniform miss.
+		$orphan = $this->createConfiguredMock(File::class, [
+			'getId' => 800,
+			'getName' => 'Copy.pad',
+			'getContent' => 'doc',
+			'getPath' => '/alice/files/Copy.pad',
+		]);
+		$rootFolder = $this->createMock(IRootFolder::class);
+		$rootFolder->method('getById')->with(800)->willReturn([$orphan]);
+
+		$padFileService = $this->createMock(PadFileService::class);
+		$padFileService->method('parsePadFile')->willReturn(['frontmatter' => ['pad_id' => 'orphan']]);
+		$padFileService->method('extractPadMetadata')->willReturn(['pad_id' => 'orphan']);
+
+		$controller = $this->buildController(
+			$this->createMock(IRequest::class),
+			$userSession,
+			rootFolder: $rootFolder,
+			padFileService: $padFileService,
+			bindingService: $bindingService,
+		);
+		$response = $controller->findOriginalByFileId(800);
+
+		$this->assertSame(Http::STATUS_OK, $response->getStatus());
+		// Critical: same payload shape as any other miss path.
+		$this->assertSame(['found' => false], $response->getData());
+	}
+
 	public function testRecoverByFileIdReturnsUnauthorizedWhenNoUserSession(): void {
 		$userSession = $this->createMock(IUserSession::class);
 		$userSession->method('getUser')->willReturn(null);
@@ -705,7 +816,7 @@ class PadControllerTest extends TestCase {
 		$padPaths = new PadPathService(new PathNormalizer());
 		$userNodeResolver = new UserNodeResolver($resolvedRootFolder);
 		$lockRetryService = $this->buildNoSleepLockRetryService();
-		$padMetadataService = new PadMetadataService($resolvedPadFileService, $padPaths, $userNodeResolver, $lockRetryService, $resolvedEtherpadClient, $logger);
+		$padMetadataService = new PadMetadataService($resolvedPadFileService, $padPaths, $userNodeResolver, $lockRetryService, $resolvedEtherpadClient, $resolvedBindingService, $logger);
 		$padOpenService = new PadOpenService(
 			$resolvedPadFileService,
 			$padPaths,
@@ -721,8 +832,21 @@ class PadControllerTest extends TestCase {
 		$padLifecycleOperations = $padLifecycleOperations
 			?? new PadLifecycleOperationService($padPaths, $userNodeResolver, $this->createMock(LifecycleService::class));
 		$urlGenerator = $this->createMock(IURLGenerator::class);
+		$urlGenerator->method('linkToRoute')->willReturnCallback(
+			static function (string $route, array $params = []): string {
+				if ($route === 'files.view.index') {
+					return '/apps/files';
+				}
+				if ($route === 'etherpad_nextcloud.embed.showById') {
+					return '/apps/etherpad_nextcloud/embed/by-id/' . ($params['fileId'] ?? '');
+				}
+				return '/' . $route;
+			}
+		);
 		$appConfigService = $this->createMock(AppConfigService::class);
-		$padResponseService = new PadResponseService($urlGenerator, $appConfigService);
+		$l10n = $this->createMock(\OCP\IL10N::class);
+		$l10n->method('t')->willReturnCallback(static fn (string $text, array $params = []): string => $text);
+		$padResponseService = new PadResponseService($urlGenerator, $appConfigService, $l10n);
 		return new PadController(
 			'etherpad_nextcloud',
 			$request,

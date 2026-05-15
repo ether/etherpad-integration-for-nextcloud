@@ -109,8 +109,11 @@ class ViewerController extends Controller {
 		if ($dir === '.' || $dir === '') {
 			$dir = '/';
 		}
+		// `files.view.index` resolves to '/apps/files'; the canonical URL
+		// the Files app routes to a specific file is
+		// `/apps/files/{view}/{fileid}` with `files` as the default view.
 		$base = rtrim($this->urlGenerator->linkToRoute('files.view.index'), '/');
-		return $base . '/' . rawurlencode((string)$fileId)
+		return $base . '/files/' . rawurlencode((string)$fileId)
 			. '?dir=' . rawurlencode($dir)
 			. '&editing=false&openfile=true';
 	}

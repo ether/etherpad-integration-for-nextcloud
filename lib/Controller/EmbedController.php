@@ -56,6 +56,14 @@ class EmbedController extends Controller {
 					$this->appName . '.pad.initializeById',
 					['fileId' => '__FILE_ID__']
 				),
+				'recover_url_template' => $this->urlGenerator->linkToRoute(
+					$this->appName . '.pad.recoverByFileId',
+					['fileId' => '__FILE_ID__']
+				),
+				'find_original_url_template' => $this->urlGenerator->linkToRoute(
+					$this->appName . '.pad.findOriginalByFileId',
+					['fileId' => '__FILE_ID__']
+				),
 				'l10n' => [
 					'loading' => $this->l10n->t('Loading pad...'),
 					'error_title' => $this->l10n->t('Unable to open pad'),
@@ -63,6 +71,12 @@ class EmbedController extends Controller {
 					'external_message' => $this->l10n->t('Read-only snapshot from the .pad file.'),
 					'external_empty' => $this->l10n->t('No synced snapshot is stored in this .pad file yet.'),
 					'external_link' => $this->l10n->t('Open original pad'),
+					'recovery_checking' => $this->l10n->t('Checking for the original pad...'),
+					'recovery_copy_body' => $this->l10n->t('This file looks like a copy of an existing .pad file in your account. Open the original to keep editing the linked pad, or create a new pad to fork the content stored in this file.'),
+					'recovery_orphan_body' => $this->l10n->t("We couldn't find a matching pad in this Nextcloud. You can create a new pad from the text stored in this file; from then on, opening this file will load the new pad."),
+					'recovery_open_original' => $this->l10n->t('Open the original .pad file'),
+					'recovery_create_new' => $this->l10n->t('Create new pad from this file'),
+					'recovery_creating' => $this->l10n->t('Creating new pad...'),
 				],
 			]),
 			errorTitle: $this->l10n->t('Unable to open pad'),

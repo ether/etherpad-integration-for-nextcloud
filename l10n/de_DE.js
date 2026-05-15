@@ -98,9 +98,12 @@ OC.L10N.register(
     "Sync status: unavailable": "Sync-Status: nicht verfügbar",
     "Unable to open pad": "Pad konnte nicht geöffnet werden",
     "This .pad file has no matching pad in this Nextcloud.": "Für diese .pad-Datei existiert in dieser Nextcloud kein passendes Pad.",
-    "This can happen if the .pad file was copied or duplicated. If you have the original .pad file, open that one — its pad will load normally. Otherwise you can create a new pad from the text stored in this file; from then on, opening this file will load the new pad.": "Das kann z. B. passieren, wenn die .pad-Datei kopiert oder dupliziert wurde. Wenn du die ursprüngliche .pad-Datei hast, öffne lieber diese — ihr Pad lädt normal. Ansonsten kannst du aus dem in dieser Datei gespeicherten Text ein neues Pad erstellen; ab dann öffnet diese Datei das neue Pad.",
+    "Checking for the original pad...": "Suche nach dem Original-Pad ...",
+    "This file looks like a copy of an existing .pad file in your account. Open the original to keep editing the linked pad, or create a new pad to fork the content stored in this file.": "Diese Datei sieht aus wie eine Kopie einer bereits vorhandenen .pad-Datei in deinem Konto. Öffne das Original, um am verknüpften Pad weiterzuarbeiten, oder erstelle aus dem in dieser Datei gespeicherten Inhalt ein neues Pad als eigene Kopie.",
+    "We couldn't find a matching pad in this Nextcloud. You can create a new pad from the text stored in this file; from then on, opening this file will load the new pad.": "Wir konnten in dieser Nextcloud kein zugehöriges Pad finden. Du kannst aus dem in dieser Datei gespeicherten Text ein neues Pad erstellen; ab dann öffnet diese Datei das neue Pad.",
     "Create new pad from this file": "Neues Pad aus dieser Datei erstellen",
-    "Creating new pad...": "Neues Pad wird erstellt ..."
+    "Creating new pad...": "Neues Pad wird erstellt ...",
+    "Open the original .pad file": "Originale .pad-Datei öffnen"
 },
 	"nplurals=2; plural=(n != 1);"
 );

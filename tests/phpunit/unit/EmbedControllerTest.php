@@ -175,6 +175,8 @@ class EmbedControllerTest extends TestCase {
 		$urlGenerator->method('linkToRoute')->willReturnMap([
 			['etherpad_nextcloud.pad.openById', [], '/open-by-id'],
 			['etherpad_nextcloud.pad.initializeById', ['fileId' => '__FILE_ID__'], '/initialize/__FILE_ID__'],
+			['etherpad_nextcloud.pad.recoverByFileId', ['fileId' => '__FILE_ID__'], '/recover/__FILE_ID__'],
+			['etherpad_nextcloud.pad.findOriginalByFileId', ['fileId' => '__FILE_ID__'], '/find-original/__FILE_ID__'],
 			['etherpad_nextcloud.pad.createByParent', [], '/create-by-parent'],
 		]);
 

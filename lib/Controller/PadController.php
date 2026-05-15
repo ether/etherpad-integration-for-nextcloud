@@ -229,6 +229,25 @@ class PadController extends Controller {
 	}
 
 	#[\OCP\AppFramework\Http\Attribute\NoAdminRequired]
+	#[\OCP\AppFramework\Http\Attribute\NoCSRFRequired]
+	public function findOriginalByFileId(int $fileId): DataResponse {
+		return $this->runForUser(
+			fn(IUser $user): array => $this->padMetadataService->findOriginalForCopy(
+				$user->getUID(),
+				$this->requireFileId($fileId),
+			),
+			fn(array $data): DataResponse => new DataResponse(
+				($data['found'] ?? false) === true
+					? $this->padResponses->withViewerAndEmbedUrls($data)
+					: $data
+			),
+			[
+				'generic' => 'Lookup failed.',
+			],
+		);
+	}
+
+	#[\OCP\AppFramework\Http\Attribute\NoAdminRequired]
 	public function recoverByFileId(int $fileId): DataResponse {
 		return $this->runForUser(
 			fn(IUser $user): array => $this->padLifecycleOperations->recoverByFileId($user->getUID(), $this->requireFileId($fileId)),

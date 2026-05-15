@@ -16,6 +16,8 @@ import { fetchJsonWithTimeout as fetchJson } from './lib/fetch-helpers.js'
 	const fileId = Number(root.getAttribute('data-file-id') || '')
 	const openByIdUrl = String(root.getAttribute('data-open-by-id-url') || '').trim()
 	const initializeByIdUrlTemplate = String(root.getAttribute('data-initialize-by-id-url-template') || '').trim()
+	const recoverUrlTemplate = String(root.getAttribute('data-recover-url-template') || '').trim()
+	const findOriginalUrlTemplate = String(root.getAttribute('data-find-original-url-template') || '').trim()
 	const templateRequestToken = String(root.getAttribute('data-request-token') || '').trim()
 	const trustedOrigins = String(root.getAttribute('data-trusted-origins') || '')
 		.split(/\s+/)
@@ -24,11 +26,21 @@ import { fetchJsonWithTimeout as fetchJson } from './lib/fetch-helpers.js'
 	const loadingNode = root.querySelector('[data-epnc-embed-loading]')
 	const errorNode = root.querySelector('[data-epnc-embed-error]')
 	const errorMessageNode = root.querySelector('[data-epnc-embed-error-message]')
+	const recoveryNode = root.querySelector('[data-epnc-embed-recovery]')
+	const recoveryMessageNode = root.querySelector('[data-epnc-embed-recovery-message]')
+	const recoveryBodyNode = root.querySelector('[data-epnc-embed-recovery-body]')
+	const recoveryActionsNode = root.querySelector('[data-epnc-embed-recovery-actions]')
 	const iframe = root.querySelector('[data-epnc-embed-iframe]')
 	const externalTitleText = String(root.getAttribute('data-l10n-external-title') || 'Pad from another server').trim()
 	const externalMessageText = String(root.getAttribute('data-l10n-external-message') || 'Read-only snapshot from the .pad file.').trim()
 	const externalEmptyText = String(root.getAttribute('data-l10n-external-empty') || 'No synced snapshot is stored in this .pad file yet.').trim()
 	const externalLinkText = String(root.getAttribute('data-l10n-external-link') || 'Open original pad').trim()
+	const recoveryCheckingText = String(root.getAttribute('data-l10n-recovery-checking') || 'Checking for the original pad...').trim()
+	const recoveryCopyBodyText = String(root.getAttribute('data-l10n-recovery-copy-body') || '').trim()
+	const recoveryOrphanBodyText = String(root.getAttribute('data-l10n-recovery-orphan-body') || '').trim()
+	const recoveryOpenOriginalText = String(root.getAttribute('data-l10n-recovery-open-original') || 'Open the original .pad file').trim()
+	const recoveryCreateNewText = String(root.getAttribute('data-l10n-recovery-create-new') || 'Create new pad from this file').trim()
+	const recoveryCreatingText = String(root.getAttribute('data-l10n-recovery-creating') || 'Creating new pad...').trim()
 	let syncUrl = ''
 	let syncIntervalMs = 120000
 	let syncPromise = null
@@ -356,6 +368,130 @@ import { fetchJsonWithTimeout as fetchJson } from './lib/fetch-helpers.js'
 		})
 	}
 
+	const hideAllPanels = () => {
+		if (loadingNode instanceof HTMLElement) loadingNode.hidden = true
+		if (errorNode instanceof HTMLElement) errorNode.hidden = true
+		if (recoveryNode instanceof HTMLElement) recoveryNode.hidden = true
+		if (iframe instanceof HTMLIFrameElement) {
+			iframe.hidden = true
+			iframe.removeAttribute('src')
+		}
+	}
+
+	const showRecoveryChecking = () => {
+		if (!(recoveryNode instanceof HTMLElement)) return
+		hideAllPanels()
+		recoveryNode.hidden = false
+		if (recoveryMessageNode instanceof HTMLElement) recoveryMessageNode.textContent = recoveryCheckingText
+		if (recoveryBodyNode instanceof HTMLElement) recoveryBodyNode.textContent = ''
+		if (recoveryActionsNode instanceof HTMLElement) recoveryActionsNode.replaceChildren()
+	}
+
+	const buildRecoveryButton = (label, onClick) => {
+		const button = document.createElement('button')
+		button.type = 'button'
+		button.className = 'epnc-embed__recovery-button'
+		button.textContent = label
+		button.addEventListener('click', onClick)
+		return button
+	}
+
+	const showRecoveryWithOriginal = (originalEmbedUrl, errorMessage) => {
+		if (!(recoveryNode instanceof HTMLElement)) return
+		hideAllPanels()
+		recoveryNode.hidden = false
+		if (recoveryMessageNode instanceof HTMLElement) recoveryMessageNode.textContent = errorMessage
+		if (recoveryBodyNode instanceof HTMLElement) recoveryBodyNode.textContent = recoveryCopyBodyText
+		if (recoveryActionsNode instanceof HTMLElement) {
+			const openLink = document.createElement('a')
+			openLink.className = 'epnc-embed__recovery-button epnc-embed__recovery-button--primary'
+			// Stay in embed mode: load the original's embed page in the same
+			// frame so a host iframe doesn't need to deal with a new tab.
+			openLink.href = originalEmbedUrl
+			openLink.textContent = recoveryOpenOriginalText
+			recoveryActionsNode.replaceChildren(
+				openLink,
+				buildRecoveryButton(recoveryCreateNewText, () => { void triggerRecovery() }),
+			)
+		}
+	}
+
+	const showRecoveryWithoutOriginal = (errorMessage) => {
+		if (!(recoveryNode instanceof HTMLElement)) return
+		hideAllPanels()
+		recoveryNode.hidden = false
+		if (recoveryMessageNode instanceof HTMLElement) recoveryMessageNode.textContent = errorMessage
+		if (recoveryBodyNode instanceof HTMLElement) recoveryBodyNode.textContent = recoveryOrphanBodyText
+		if (recoveryActionsNode instanceof HTMLElement) {
+			const button = buildRecoveryButton(recoveryCreateNewText, () => { void triggerRecovery() })
+			button.classList.add('epnc-embed__recovery-button--primary')
+			recoveryActionsNode.replaceChildren(button)
+		}
+	}
+
+	const setRecoveryActionsBusy = (busy) => {
+		if (!(recoveryActionsNode instanceof HTMLElement)) return
+		const buttons = recoveryActionsNode.querySelectorAll('button')
+		buttons.forEach((node) => {
+			node.disabled = busy
+			if (busy) {
+				node.dataset.originalLabel = node.dataset.originalLabel || node.textContent || ''
+				node.textContent = recoveryCreatingText
+			} else if (node.dataset.originalLabel) {
+				node.textContent = node.dataset.originalLabel
+				delete node.dataset.originalLabel
+			}
+		})
+	}
+
+	const triggerRecovery = async () => {
+		if (recoverUrlTemplate === '') {
+			showError('Recovery is not available in this embed.')
+			return
+		}
+		setRecoveryActionsBusy(true)
+		const url = recoverUrlTemplate.replace('__FILE_ID__', encodeURIComponent(String(fileId)))
+		try {
+			await fetchJson(url, {
+				method: 'POST',
+				headers: { requesttoken: requestToken() },
+			})
+			// Restart the open flow now that the binding exists.
+			hideAllPanels()
+			if (loadingNode instanceof HTMLElement) loadingNode.hidden = false
+			void run()
+		} catch (error) {
+			setRecoveryActionsBusy(false)
+			if (recoveryMessageNode instanceof HTMLElement) {
+				recoveryMessageNode.textContent = error instanceof Error && error.message
+					? error.message
+					: 'Recovery failed.'
+			}
+		}
+	}
+
+	const enterRecoveryFlow = async (initialError) => {
+		const errorMessage = initialError instanceof Error && initialError.message
+			? initialError.message
+			: 'Pad open failed.'
+		showRecoveryChecking()
+		if (findOriginalUrlTemplate === '') {
+			showRecoveryWithoutOriginal(errorMessage)
+			return
+		}
+		const lookupUrl = findOriginalUrlTemplate.replace('__FILE_ID__', encodeURIComponent(String(fileId)))
+		try {
+			const hint = await fetchJson(lookupUrl, { method: 'GET' })
+			if (hint && hint.found === true && typeof hint.embed_url === 'string' && hint.embed_url !== '') {
+				showRecoveryWithOriginal(hint.embed_url, errorMessage)
+				return
+			}
+		} catch {
+			// Silent: fall through to the no-match branch.
+		}
+		showRecoveryWithoutOriginal(errorMessage)
+	}
+
 	const run = async () => {
 		if (!Number.isFinite(fileId) || fileId <= 0 || openByIdUrl === '' || initializeByIdUrlTemplate === '') {
 			showError('Embed configuration is incomplete.')
@@ -392,6 +528,10 @@ import { fetchJsonWithTimeout as fetchJson } from './lib/fetch-helpers.js'
 			}
 			showIframe(data.url)
 		} catch (error) {
+			if (error && error.code === 'missing_binding') {
+				void enterRecoveryFlow(error)
+				return
+			}
 			showError(error instanceof Error ? error.message : 'Pad open failed.')
 		}
 	}

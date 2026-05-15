@@ -17,7 +17,12 @@ export const fetchJsonWithTimeout = async (url, init = {}, timeoutMs = DEFAULT_R
 		}))
 		const data = await response.json().catch(() => ({}))
 		if (!response.ok) {
-			throw new Error((data && data.message) || 'Request failed.')
+			const error = new Error((data && data.message) || 'Request failed.')
+			if (data && typeof data.code === 'string') {
+				error.code = data.code
+			}
+			error.status = response.status
+			throw error
 		}
 		return data
 	} catch (error) {

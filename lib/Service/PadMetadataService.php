@@ -21,8 +21,70 @@ class PadMetadataService {
 		private UserNodeResolver $userNodeResolver,
 		private PadFileLockRetryService $lockRetryService,
 		private EtherpadClient $etherpadClient,
+		private BindingService $bindingService,
 		private LoggerInterface $logger,
 	) {
+	}
+
+	/**
+	 * Looks up whether the frontmatter `pad_id` of an orphaned `.pad` file
+	 * points at another `.pad` in the requester's userspace. Used to offer
+	 * "Open the original" in the recovery UI when a copy was made.
+	 *
+	 * Authorization: the response is identical for every miss path — no
+	 * binding, binding for ext.* pad ID, binding owned by another user,
+	 * trashed / pending-delete binding, frontmatter unreadable. The presence
+	 * of the `found: true` payload itself is therefore the only signal, and
+	 * it is only emitted when the requester can already read the bound file
+	 * (gated by UserNodeResolver). This means a crafted frontmatter cannot
+	 * be used to probe for `.pad` files in other users' accounts.
+	 *
+	 * @return array{found:false}|array{found:true,file_id:int,path:string}
+	 */
+	public function findOriginalForCopy(string $uid, int $fileId): array {
+		try {
+			$node = $this->userNodeResolver->resolveUserFileNodeById($uid, $fileId);
+		} catch (NotFoundException) {
+			return ['found' => false];
+		}
+		if (!str_ends_with(strtolower($node->getName()), '.pad')) {
+			return ['found' => false];
+		}
+
+		$padId = '';
+		try {
+			$content = (string)$node->getContent();
+			$parsed = $this->padFileService->parsePadFile($content);
+			$meta = $this->padFileService->extractPadMetadata($parsed['frontmatter']);
+			$padId = (string)($meta['pad_id'] ?? '');
+		} catch (\Throwable) {
+			return ['found' => false];
+		}
+		if ($padId === '' || str_starts_with($padId, 'ext.')) {
+			return ['found' => false];
+		}
+
+		$binding = $this->bindingService->findByPadId($padId, BindingService::STATE_ACTIVE);
+		if ($binding === null) {
+			return ['found' => false];
+		}
+
+		$boundFileId = (int)$binding['file_id'];
+		if ($boundFileId <= 0 || $boundFileId === $fileId) {
+			return ['found' => false];
+		}
+
+		try {
+			$originalNode = $this->userNodeResolver->resolveUserFileNodeById($uid, $boundFileId);
+		} catch (NotFoundException) {
+			return ['found' => false];
+		}
+
+		return [
+			'found' => true,
+			'file_id' => $boundFileId,
+			'path' => $this->userNodeResolver->toUserAbsolutePath($uid, $originalNode),
+		];
 	}
 
 	/**

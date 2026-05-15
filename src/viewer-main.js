@@ -3,7 +3,7 @@
  * Copyright (c) 2026 Jacob Bühler
  */
 import { APP_ID, MIME, VIEWER_HANDLER_ID } from './lib/constants.js'
-import { apiRecoverFromSnapshot } from './lib/api-client.js'
+import { apiFindOriginalPad, apiRecoverFromSnapshot } from './lib/api-client.js'
 import { ocGenerateUrl, ocRequestToken, translate } from './lib/oc-compat.js'
 import { buildPadFrameSrcdoc } from './lib/pad-frame-srcdoc.js'
 import { parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './lib/urls.js'
@@ -28,6 +28,8 @@ import { parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './li
 				loadError: '',
 				canRecover: false,
 				isRecovering: false,
+				isCheckingOriginal: false,
+				originalPad: null,
 				externalOpenUrl: '',
 				externalOpenMessage: '',
 				snapshotMode: '',
@@ -236,6 +238,8 @@ import { parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './li
 				this.isLoading = true
 				this.loadError = ''
 				this.canRecover = false
+				this.isCheckingOriginal = false
+				this.originalPad = null
 				this.iframeSrc = ''
 				this.externalOpenUrl = ''
 				this.externalOpenMessage = ''
@@ -359,10 +363,40 @@ import { parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './li
 					this.canRecover = Boolean(error && error.code === 'missing_binding')
 						&& this.resolvedFileId !== null
 						&& !parsePublicShareTokenFromLocation()
+					if (this.canRecover) {
+						// Optional: check if this looks like a copy of a .pad we
+						// can already address; if so we'll offer 'Open the
+						// original' as the primary action. A miss is silent — no
+						// UI element rendered, no info leaked.
+						this.fetchOriginalPadHint(generation, isCurrent)
+					}
 					this.markLoaded()
 				} finally {
 					if (!isCurrent()) return
 					this.isLoading = false
+				}
+			},
+			async fetchOriginalPadHint(generation, isCurrent) {
+				if (this.resolvedFileId === null) {
+					return
+				}
+				this.isCheckingOriginal = true
+				try {
+					const hint = await apiFindOriginalPad(this.resolvedFileId)
+					if (!isCurrent()) return
+					if (hint && hint.found === true && typeof hint.viewer_url === 'string' && hint.viewer_url !== '') {
+						this.originalPad = {
+							viewerUrl: hint.viewer_url,
+							path: typeof hint.path === 'string' ? hint.path : '',
+						}
+					}
+				} catch {
+					// Silent: the recovery button stays available, we just
+					// don't surface the "Open the original" affordance.
+				} finally {
+					if (isCurrent()) {
+						this.isCheckingOriginal = false
+					}
 				}
 			},
 			async recoverFromSnapshot() {
@@ -428,15 +462,40 @@ import { parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './li
 					createElement('div', { class: 'epnc-native-error-message' }, this.loadError),
 				]
 				if (this.canRecover) {
-					cardChildren.push(
-						createElement('div', { class: 'epnc-native-error-message' },
-							translate('This can happen if the .pad file was copied or duplicated. If you have the original .pad file, open that one — its pad will load normally. Otherwise you can create a new pad from the text stored in this file; from then on, opening this file will load the new pad.')),
-						createElement('button', {
-							class: 'button primary',
-							attrs: { type: 'button', disabled: this.isRecovering },
-							on: { click: () => { void this.recoverFromSnapshot() } },
-						}, this.isRecovering ? translate('Creating new pad...') : translate('Create new pad from this file')),
-					)
+					if (this.isCheckingOriginal) {
+						// Don't render any action button while the lookup is in
+						// flight: a slow connection could otherwise let the user
+						// click 'Create new pad' before we know that opening the
+						// original is the better default.
+						cardChildren.push(
+							createElement('div', { class: 'epnc-native-error-message' },
+								translate('Checking for the original pad...')),
+						)
+					} else if (this.originalPad) {
+						cardChildren.push(
+							createElement('div', { class: 'epnc-native-error-message' },
+								translate('This file looks like a copy of an existing .pad file in your account. Open the original to keep editing the linked pad, or create a new pad to fork the content stored in this file.')),
+							createElement('a', {
+								class: 'button primary epnc-native-error-action',
+								attrs: { href: this.originalPad.viewerUrl },
+							}, translate('Open the original .pad file')),
+							createElement('button', {
+								class: 'button epnc-native-error-action',
+								attrs: { type: 'button', disabled: this.isRecovering },
+								on: { click: () => { void this.recoverFromSnapshot() } },
+							}, this.isRecovering ? translate('Creating new pad...') : translate('Create new pad from this file')),
+						)
+					} else {
+						cardChildren.push(
+							createElement('div', { class: 'epnc-native-error-message' },
+								translate("We couldn't find a matching pad in this Nextcloud. You can create a new pad from the text stored in this file; from then on, opening this file will load the new pad.")),
+							createElement('button', {
+								class: 'button primary epnc-native-error-action',
+								attrs: { type: 'button', disabled: this.isRecovering },
+								on: { click: () => { void this.recoverFromSnapshot() } },
+							}, this.isRecovering ? translate('Creating new pad...') : translate('Create new pad from this file')),
+						)
+					}
 				}
 				return createElement('div', { class: 'epnc-native-status epnc-native-status--error' }, [
 					createElement('div', { class: 'epnc-native-error-card' }, cardChildren),

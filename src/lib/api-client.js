@@ -61,6 +61,14 @@ export const apiCreatePadFromUrl = async (filePath, padUrl) => {
 	}, 'Could not import public pad URL.')
 }
 
+export const apiFindOriginalPad = async (fileId) => {
+	const endpoint = ocGenerateUrl('/apps/' + APP_ID + '/api/v1/pads/find-original/' + encodeURIComponent(String(fileId)))
+	return fetchJson(endpoint, {
+		method: 'GET',
+		headers: { Accept: 'application/json' },
+	}, 'Lookup failed.')
+}
+
 export const apiRecoverFromSnapshot = async (fileId) => {
 	const endpoint = ocGenerateUrl('/apps/' + APP_ID + '/api/v1/pads/recover-from-snapshot/' + encodeURIComponent(String(fileId)))
 	const result = await fetchJson(endpoint, {

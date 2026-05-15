@@ -35,7 +35,7 @@ class ViewerControllerTest extends TestCase {
 		$response = $controller->showPad('/Folder/Test.pad');
 
 		$this->assertInstanceOf(RedirectResponse::class, $response);
-		$this->assertSame('/apps/files/138?dir=%2FFolder&editing=false&openfile=true', $response->getRedirectURL());
+		$this->assertSame('/apps/files/files/138?dir=%2FFolder&editing=false&openfile=true', $response->getRedirectURL());
 	}
 
 	public function testShowPadReturnsErrorWhenResolverCannotFindPath(): void {
@@ -98,7 +98,7 @@ class ViewerControllerTest extends TestCase {
 		$response = $controller->showPadById(7);
 
 		$this->assertInstanceOf(RedirectResponse::class, $response);
-		$this->assertSame('/apps/files/7?dir=%2FFolder&editing=false&openfile=true', $response->getRedirectURL());
+		$this->assertSame('/apps/files/files/7?dir=%2FFolder&editing=false&openfile=true', $response->getRedirectURL());
 	}
 
 	public function testShowPadByIdReturnsFileIdErrorWhenResolverThrowsNotFound(): void {

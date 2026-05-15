@@ -47,12 +47,15 @@ class BindingService {
 	}
 
 	/** @return array<string,mixed>|null */
-	public function findByPadId(string $padId): ?array {
+	public function findByPadId(string $padId, ?string $state = null): ?array {
 		$qb = $this->db->getQueryBuilder();
 		$qb->select('*')
 			->from(self::TABLE)
 			->where($qb->expr()->eq('pad_id', $qb->createNamedParameter($padId)))
 			->setMaxResults(1);
+		if ($state !== null) {
+			$qb->andWhere($qb->expr()->eq('state', $qb->createNamedParameter($state)));
+		}
 
 		$result = $qb->executeQuery();
 		$row = $result->fetch();

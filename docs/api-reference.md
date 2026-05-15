@@ -196,6 +196,21 @@ Base: `/apps/etherpad_nextcloud`
     - `409` with `status=skipped` + `reason` on invalid lifecycle state.
       - includes transition-race guard reason `binding_state_transition_conflict` on concurrent state updates.
 
+- `POST /api/v1/pads/recover-from-snapshot/{fileId}`
+  - Controller: `PadController::recoverByFileId`
+  - Purpose: manual recovery entry point for `.pad` files that ended up without a binding row (WebDAV backup restore, `occ files:scan`, direct DB intervention, file copy). Reuses the same "frontmatter → fresh pad" path as `NodeRestoredEvent` but is guarded so it refuses when a binding row already exists.
+  - Result:
+    - `200` with `status=restored`, `old_pad_id`, `new_pad_id` on success. Always provisions a fresh pad — `pad_id` from frontmatter is never reused.
+    - `409` with `status=skipped` + `reason=external_pad` for external (`ext.*`) frontmatter; recovery doesn't apply there.
+    - `409` with `message` and the `PadAlreadyHasBindingException` mapping if a binding row already exists for the file.
+
+- `GET /api/v1/pads/find-original/{fileId}`
+  - Controller: `PadController::findOriginalByFileId`
+  - Purpose: look up whether the orphan's frontmatter `pad_id` is bound to another `.pad` the requester can read. Used by the recovery UI to offer "Open the original" when a copy is detected.
+  - Result:
+    - `200` with `{ found: true, file_id, path, viewer_url }` when the lookup hits **and** the bound file is readable by the requester.
+    - `200` with `{ found: false }` for every miss path (no row, ext.* pad id, trashed/pending-delete binding, binding for a file not addressable in the requester's userspace, unparseable frontmatter, orphan itself not readable, self-loop). Payload shape and status are intentionally identical so the endpoint cannot be used to probe for binding rows that belong to other users.
+
 - `POST /api/v1/admin/settings`
   - Controller: `AdminController::saveSettings`
   - Auth: admin only
@@ -264,6 +279,7 @@ Base: `/apps/etherpad_nextcloud`
 - `status` (sync): `updated` or `unchanged`.
 - `snapshot_rev` (sync): Etherpad revision currently persisted in `.pad`.
 - `sync_status_url` (open/open-by-id): endpoint for revision-based sync status in viewer.
+- `code` (errors): stable identifier on selected error responses, currently `missing_binding` for `MissingBindingException`. The viewer and embed use this to swap a dead-end error message for the recovery UI (`POST /api/v1/pads/recover-from-snapshot/{fileId}` + optional `GET /api/v1/pads/find-original/{fileId}` lookup).
 
 ## Cookie Behavior (Protected Pads)
 
@@ -298,11 +314,13 @@ Base: `/apps/etherpad_nextcloud`
   - prefers `POST /api/v1/pads/open-by-id` (`fileId`, requesttoken).
   - falls back to `POST /api/v1/pads/open` (`file`, requesttoken) only without `fileId`.
   - if open fails with missing frontmatter, calls `POST /api/v1/pads/initialize*` and retries open once.
+  - if open fails with `code=missing_binding`, renders a recovery card with an optional `GET /api/v1/pads/find-original/{fileId}` lookup and a `POST /api/v1/pads/recover-from-snapshot/{fileId}` action.
   - uses `POST /api/v1/pads/sync/{fileId}` periodically and on unload.
 - `src/embed-main.js`
   - powers the minimal `/embed/by-id/{fileId}` page.
   - uses same-origin `POST /api/v1/pads/open-by-id`.
   - if open fails with missing frontmatter, calls `POST /api/v1/pads/initialize-by-id/{fileId}` and retries once.
+  - if open fails with `code=missing_binding`, renders the same recovery flow as the inline viewer (lookup + recover).
   - sets the returned `response.url` directly on the internal iframe.
   - uses the returned `sync_url` / `sync_interval_seconds` to trigger the same snapshot sync contract as the native viewer.
   - listens for trusted parent-frame `postMessage` events:
