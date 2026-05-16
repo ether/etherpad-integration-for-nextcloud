@@ -46,6 +46,9 @@ const extractCreateCapabilityFromMenuContext = (arg) => {
 		typeof arg.get === 'function' ? arg.get('permissions') : null,
 	]
 	for (const candidate of permissionCandidates) {
+		if (candidate === null || candidate === undefined) {
+			continue
+		}
 		const numeric = Number(candidate)
 		if (Number.isFinite(numeric)) {
 			return (numeric & requiredPermission) === requiredPermission
