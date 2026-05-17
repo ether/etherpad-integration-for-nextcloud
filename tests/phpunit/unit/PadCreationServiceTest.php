@@ -274,6 +274,114 @@ class PadCreationServiceTest extends TestCase {
 			->createFromUrl('alice', '/External', 'https://pad.remote.test/p/RemotePad');
 	}
 
+	public function testCreateFromTemplateProvisionsFreshPadWithResolvedBody(): void {
+		$templateNode = $this->createMock(\OCP\Files\File::class);
+		$templateNode->method('getName')->willReturn('Protokoll-Tpl.pad');
+		$templateNode->method('getContent')->willReturn('tpl-content');
+
+		$userNodeResolver = $this->createMock(UserNodeResolver::class);
+		$userNodeResolver->method('resolveUserFileNodeById')
+			->with('alice', 7)
+			->willReturn($templateNode);
+
+		$padPaths = $this->createMock(PadPathService::class);
+		$padPaths->method('normalizeCreatePath')->with('/Meetings/Protokoll 18.05.2026.pad')->willReturn('/Meetings/Protokoll 18.05.2026.pad');
+
+		$newFile = $this->createMock(\OCP\Files\File::class);
+		$newFile->method('getId')->willReturn(99);
+		$newFile->expects($this->once())->method('putContent');
+		$fileCreator = $this->createMock(PadFileCreator::class);
+		$fileCreator->method('createUserFile')->with('alice', '/Meetings/Protokoll 18.05.2026.pad')->willReturn($newFile);
+
+		$padFileService = $this->createMock(PadFileService::class);
+		$padFileService->method('parsePadFile')->with('tpl-content')->willReturn([
+			'frontmatter' => ['pad_id' => 'g.tpl$pad', 'access_mode' => BindingService::ACCESS_PROTECTED],
+			'body' => 'body',
+		]);
+		$padFileService->method('extractPadMetadata')->willReturn([
+			'pad_id' => 'g.tpl$pad',
+			'access_mode' => BindingService::ACCESS_PROTECTED,
+			'pad_url' => '',
+		]);
+		$padFileService->method('isExternalFrontmatter')->willReturn(false);
+		$padFileService->method('getSnapshotPartsFromBody')->willReturn([
+			'text' => 'Datum: {{date:next monday|d.m.Y}}',
+			'html' => '',
+		]);
+		$padFileService->expects($this->once())
+			->method('buildInitialDocument')
+			->with(99, 'p-fresh', BindingService::ACCESS_PROTECTED, 'Datum: 18.05.2026', $this->isType('string'))
+			->willReturn('doc');
+		$padFileService->method('withExportSnapshot')->willReturn('doc-with-snapshot');
+
+		$bootstrap = $this->createMock(PadBootstrapService::class);
+		$bootstrap->expects($this->once())
+			->method('provisionPadId')
+			->with(BindingService::ACCESS_PROTECTED)
+			->willReturn('p-fresh');
+		$bootstrap->expects($this->once())
+			->method('pushInitialSnapshot')
+			->with('p-fresh', 'Datum: 18.05.2026', '');
+
+		$bindingService = $this->createMock(BindingService::class);
+		$bindingService->expects($this->once())
+			->method('createBinding')
+			->with(99, 'p-fresh', BindingService::ACCESS_PROTECTED);
+
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->method('buildPadUrl')->willReturn('https://pad.example.test/p/p-fresh');
+
+		$user = $this->createMock(\OCP\IUser::class);
+		$user->method('getDisplayName')->willReturn('Alice');
+		$user->method('getUID')->willReturn('alice');
+
+		$result = $this->buildService($padFileService, $padPaths, $fileCreator, $userNodeResolver, null, $bindingService, $etherpadClient, $bootstrap)
+			->createFromTemplate('alice', '/Meetings/Protokoll {{date:next monday|d.m.Y}}.pad', 7, $user);
+
+		$this->assertSame('/Meetings/Protokoll 18.05.2026.pad', $result['file']);
+		$this->assertSame(99, $result['file_id']);
+		$this->assertSame('p-fresh', $result['pad_id']);
+		$this->assertSame(BindingService::ACCESS_PROTECTED, $result['access_mode']);
+	}
+
+	public function testCreateFromTemplateRefusesNonPadTemplate(): void {
+		$templateNode = $this->createMock(\OCP\Files\File::class);
+		$templateNode->method('getName')->willReturn('Notes.txt');
+
+		$userNodeResolver = $this->createMock(UserNodeResolver::class);
+		$userNodeResolver->method('resolveUserFileNodeById')->willReturn($templateNode);
+
+		$this->expectException(\OCA\EtherpadNextcloud\Exception\NotAPadFileException::class);
+
+		$this->buildService(userNodeResolver: $userNodeResolver)
+			->createFromTemplate('alice', '/Out.pad', 7, null);
+	}
+
+	public function testCreateFromTemplateRefusesExternalTemplate(): void {
+		$templateNode = $this->createMock(\OCP\Files\File::class);
+		$templateNode->method('getName')->willReturn('Remote.pad');
+		$templateNode->method('getContent')->willReturn('tpl');
+
+		$userNodeResolver = $this->createMock(UserNodeResolver::class);
+		$userNodeResolver->method('resolveUserFileNodeById')->willReturn($templateNode);
+
+		$padFileService = $this->createMock(PadFileService::class);
+		$padFileService->method('parsePadFile')->willReturn([
+			'frontmatter' => ['pad_id' => 'ext.remote'],
+			'body' => '',
+		]);
+		$padFileService->method('extractPadMetadata')->willReturn(['pad_id' => 'ext.remote']);
+
+		$padPaths = $this->createMock(PadPathService::class);
+		$padPaths->method('normalizeCreatePath')->willReturn('/Out.pad');
+
+		$this->expectException(\InvalidArgumentException::class);
+		$this->expectExceptionMessage('External pads cannot be used as a template.');
+
+		$this->buildService($padFileService, $padPaths, null, $userNodeResolver)
+			->createFromTemplate('alice', '/Out.pad', 7, null);
+	}
+
 	private function buildService(
 		?PadFileService $padFileService = null,
 		?PadPathService $padPaths = null,
@@ -283,7 +391,13 @@ class PadCreationServiceTest extends TestCase {
 		?BindingService $bindingService = null,
 		?EtherpadClient $etherpadClient = null,
 		?PadBootstrapService $bootstrap = null,
+		?\OCA\EtherpadNextcloud\Service\PadPlaceholderResolver $placeholderResolver = null,
 	): PadCreationService {
+		if ($placeholderResolver === null) {
+			$timeFactory = $this->createMock(\OCP\AppFramework\Utility\ITimeFactory::class);
+			$timeFactory->method('getTime')->willReturn(1778976000);
+			$placeholderResolver = new \OCA\EtherpadNextcloud\Service\PadPlaceholderResolver($timeFactory);
+		}
 		return new PadCreationService(
 			$padFileService ?? $this->createMock(PadFileService::class),
 			$padPaths ?? $this->createMock(PadPathService::class),
@@ -293,6 +407,7 @@ class PadCreationServiceTest extends TestCase {
 			$bindingService ?? $this->createMock(BindingService::class),
 			$etherpadClient ?? $this->createMock(EtherpadClient::class),
 			$bootstrap ?? $this->createMock(PadBootstrapService::class),
+			$placeholderResolver,
 			$this->createMock(LoggerInterface::class),
 		);
 	}

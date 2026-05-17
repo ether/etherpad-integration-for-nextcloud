@@ -89,6 +89,26 @@ class PadController extends Controller {
 	}
 
 	#[\OCP\AppFramework\Http\Attribute\NoAdminRequired]
+	public function createFromTemplate(string $file, int $templateFileId): DataResponse {
+		return $this->runForUser(
+			fn(IUser $user): array => $this->padCreationService->createFromTemplate(
+				$user->getUID(),
+				$file,
+				$this->requireFileId($templateFileId),
+				$user,
+			),
+			fn(array $result): DataResponse => new DataResponse($this->padResponses->withViewerUrl($result)),
+			[
+				'invalid_argument' => $this->l10n->t('Invalid input.'),
+				'not_found' => $this->l10n->t('Template file not found.'),
+				'binding_message' => $this->l10n->t('A file with this name already exists.'),
+				'binding_status' => Http::STATUS_CONFLICT,
+				'generic' => $this->l10n->t('Could not create pad from template.'),
+			],
+		);
+	}
+
+	#[\OCP\AppFramework\Http\Attribute\NoAdminRequired]
 	public function createFromUrl(string $file, string $padUrl): DataResponse {
 		return $this->runForUser(
 			fn(IUser $user): array => $this->padCreationService->createFromUrl($user->getUID(), $file, $padUrl),

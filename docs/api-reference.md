@@ -113,6 +113,15 @@ Base: `/apps/etherpad_nextcloud`
     - external `/export/txt` responses are size-limited (5 MiB hard limit)
     - external sync accepts only safe text-oriented response content-types
 
+- `POST /api/v1/pads/from-template`
+  - Controller: `PadController::createFromTemplate`
+  - Params:
+    - `file` (required) — target path. Body placeholders (`{{date}}`, `{{user}}` etc.) are resolved server-side.
+    - `templateFileId` (required) — id of any `.pad` in the user's userspace; doesn't have to live in the *Templates* folder.
+  - Purpose: create-from-template path for custom frontends that need filename templating or want to pick the source file outside `/Templates`. Bypasses NC's `TemplateManager`.
+  - Behaviour: resolves `{{...}}` in `file` and template body, provisions a fresh Etherpad pad, writes the new `.pad` content + snapshot, creates the binding. Returns `viewer_url` alongside the regular create response shape.
+  - Errors: 400 (non-pad template / external template / empty), 404 (template id not found in userspace), 409 (filename collision).
+
 - `POST /api/v1/pads/open`
   - Controller: `PadController::open`
   - Params: `file=/path/file.pad`

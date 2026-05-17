@@ -47,6 +47,43 @@ Placeholders in the template's filename are **not** rewritten. Nextcloud's `+ Ne
 
 The new file ends up at the name the user types into NC's filename dialog. Body placeholders still get resolved.
 
+## API for custom frontends
+
+Custom frontends that don't go through Nextcloud's native `+ New pad` menu can call our own endpoint instead, which bypasses NC's `TemplateManager` entirely:
+
+```
+POST /index.php/apps/etherpad_nextcloud/api/v1/pads/from-template
+Content-Type: application/x-www-form-urlencoded
+requesttoken: <csrf>
+
+file=/Meetings/Protokoll {{date:next monday|d.m.Y}}.pad&templateFileId=1234
+```
+
+Differences from the NC-native flow:
+
+- **Filename placeholders are applied.** Pass `{{date}}` / `{{user}}` tokens in `file` and the endpoint resolves them on the server side before creating the file. The NC web flow can't do this because of how `TemplateManager` re-fetches by the user-typed path.
+- **Any `.pad` in the user's userspace works as a template.** Pass any `templateFileId` the user has read access to; the source doesn't have to live in the *Templates* folder. Caller-side filtering (current folder, ancestor scan, explicit team list) is up to the frontend.
+- **Single atomic call.** The endpoint provisions the pad, writes the file, creates the binding, and returns `file_id` + `pad_id` + `viewer_url` in one response.
+
+Response shape on success (200):
+
+```json
+{
+  "file": "/Meetings/Protokoll 18.05.2026.pad",
+  "file_id": 4321,
+  "pad_id": "p-newpad",
+  "access_mode": "protected",
+  "pad_url": "https://pad.example.test/p/p-newpad",
+  "viewer_url": "/index.php/apps/files/files/4321?dir=%2FMeetings&editing=false&openfile=true"
+}
+```
+
+Error responses:
+- **400** — template is not a `.pad`, template is external (`ext.*`), template is empty, target path invalid
+- **404** — template file ID does not resolve in the user's userspace
+- **409** — target filename collides with an existing file (`A file with this name already exists.`)
+- **500** — Etherpad unreachable or other unexpected failure
+
 ## Caveats
 
 - **External pads (`ext.*`)** can't be used as templates — they hold only a snapshot, not Etherpad-side content. The new file is reset to empty and the user gets a clean blank pad instead.

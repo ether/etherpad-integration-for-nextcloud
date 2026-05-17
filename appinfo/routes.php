@@ -12,6 +12,7 @@ return ['routes' => [
 	['name' => 'pad#create', 'url' => '/api/v1/pads', 'verb' => 'POST'],
 	['name' => 'pad#createByParent', 'url' => '/api/v1/pads/create-by-parent', 'verb' => 'POST'],
 	['name' => 'pad#createFromUrl', 'url' => '/api/v1/pads/from-url', 'verb' => 'POST'],
+	['name' => 'pad#createFromTemplate', 'url' => '/api/v1/pads/from-template', 'verb' => 'POST'],
 	['name' => 'pad#metaById', 'url' => '/api/v1/pads/meta-by-id/{fileId}', 'verb' => 'GET'],
 	['name' => 'pad#resolveById', 'url' => '/api/v1/pads/resolve', 'verb' => 'GET'],
 	['name' => 'pad#open', 'url' => '/api/v1/pads/open', 'verb' => 'POST'],
