@@ -34,19 +34,11 @@ Placeholders in the **body** and the **filename** are resolved when the new pad 
 
 Unknown directives stay as literal text (`{{forecast}}` → `{{forecast}}`). Unparseable date expressions also stay as literal so the user can fix the template without losing the file.
 
-## Filename templates
+## Filename templates (not supported in v1)
 
-Placeholders work in the template's filename too. A template named:
+Placeholders in the template's filename are **not** rewritten today. Nextcloud's `+ New pad` flow asks the user for a filename **before** showing the template picker, and `TemplateManager::createFromTemplate` re-fetches the new file by that user-typed path *after* our event fires. Renaming during the event causes a `NotFoundException` and NC returns 403 to the client.
 
-```
-Protokoll {{date:next monday|d.m.Y}}.pad
-```
-
-…produces a new file `Protokoll 18.05.2026.pad` when used on a Sunday — **regardless** of what filename the user types when Nextcloud first asks for one. Nextcloud's flow is filename-first, template-picker-second, so the user types some placeholder name (`Untitled`, or whatever the picker pre-fills), then picks the template. After the copy, the plugin renames the target to the resolved template filename.
-
-If the resolved name collides with an existing file in the target folder, Nextcloud's standard `(1)`, `(2)` suffix kicks in.
-
-If the template's filename contains no `{{...}}` token, the user's typed filename is kept as-is.
+Realistic workaround for now: type a meaningful filename when prompted. The body still gets its `{{date}}` / `{{user}}` placeholders resolved.
 
 ## Caveats
 
