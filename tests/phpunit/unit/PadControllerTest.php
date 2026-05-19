@@ -15,7 +15,6 @@ use OCA\EtherpadNextcloud\Service\PadCreationService;
 use OCA\EtherpadNextcloud\Service\PadFileLockRetryService;
 use OCA\EtherpadNextcloud\Service\PadFileService;
 use OCA\EtherpadNextcloud\Service\PadInitializationService;
-use OCA\EtherpadNextcloud\Service\PadLifecycleOperationService;
 use OCA\EtherpadNextcloud\Service\PadMetadataService;
 use OCA\EtherpadNextcloud\Service\PadOpenService;
 use OCA\EtherpadNextcloud\Service\PadResponseService;
@@ -185,7 +184,7 @@ class PadControllerTest extends TestCase {
 			$this->createMock(PadMetadataService::class),
 			$padOpenService,
 			$this->createMock(PadSyncService::class),
-			$this->createMock(PadLifecycleOperationService::class),
+			$this->createMock(LifecycleService::class),
 			$padResponseService,
 			new PadControllerErrorMapper($padResponseService, $logger),
 		);
@@ -313,7 +312,7 @@ class PadControllerTest extends TestCase {
 			$this->createMock(PadMetadataService::class),
 			$padOpenService,
 			$this->createMock(PadSyncService::class),
-			$this->createMock(PadLifecycleOperationService::class),
+			$this->createMock(LifecycleService::class),
 			$padResponseService,
 			new PadControllerErrorMapper($padResponseService, $logger),
 		);
@@ -760,7 +759,7 @@ class PadControllerTest extends TestCase {
 		$userSession = $this->createMock(IUserSession::class);
 		$userSession->method('getUser')->willReturn($user);
 
-		$lifecycleOps = $this->createMock(PadLifecycleOperationService::class);
+		$lifecycleOps = $this->createMock(LifecycleService::class);
 		$lifecycleOps->method('recoverByFileId')
 			->willThrowException(new PadAlreadyHasBindingException('binding exists'));
 
@@ -780,7 +779,7 @@ class PadControllerTest extends TestCase {
 		$userSession = $this->createMock(IUserSession::class);
 		$userSession->method('getUser')->willReturn($user);
 
-		$lifecycleOps = $this->createMock(PadLifecycleOperationService::class);
+		$lifecycleOps = $this->createMock(LifecycleService::class);
 		$lifecycleOps->expects($this->once())
 			->method('recoverByFileId')
 			->with('alice', 99)
@@ -810,7 +809,7 @@ class PadControllerTest extends TestCase {
 		?PadFileService $padFileService = null,
 		?BindingService $bindingService = null,
 		?EtherpadClient $etherpadClient = null,
-		?PadLifecycleOperationService $padLifecycleOperations = null,
+		?LifecycleService $padLifecycleOperations = null,
 	): PadController {
 		$resolvedRootFolder = $rootFolder ?? $this->createMock(IRootFolder::class);
 		$resolvedEtherpadClient = $etherpadClient ?? $this->createMock(EtherpadClient::class);
@@ -834,7 +833,7 @@ class PadControllerTest extends TestCase {
 		);
 		$padSyncService = new PadSyncService($resolvedPadFileService, $userNodeResolver, $lockRetryService, $resolvedBindingService, $resolvedEtherpadClient, $logger);
 		$padLifecycleOperations = $padLifecycleOperations
-			?? new PadLifecycleOperationService($padPaths, $userNodeResolver, $this->createMock(LifecycleService::class));
+			?? $this->createMock(LifecycleService::class);
 		$urlGenerator = $this->createMock(IURLGenerator::class);
 		$urlGenerator->method('linkToRoute')->willReturnCallback(
 			static function (string $route, array $params = []): string {

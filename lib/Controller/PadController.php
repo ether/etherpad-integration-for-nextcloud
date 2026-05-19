@@ -15,7 +15,7 @@ use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\EtherpadNextcloud\Service\PadCreationService;
 use OCA\EtherpadNextcloud\Service\PadInitializationResult;
 use OCA\EtherpadNextcloud\Service\PadInitializationService;
-use OCA\EtherpadNextcloud\Service\PadLifecycleOperationService;
+use OCA\EtherpadNextcloud\Service\LifecycleService;
 use OCA\EtherpadNextcloud\Service\PadMeta;
 use OCA\EtherpadNextcloud\Service\PadMetadataService;
 use OCA\EtherpadNextcloud\Service\PadOpenService;
@@ -47,7 +47,7 @@ class PadController extends Controller {
 		private PadMetadataService $padMetadataService,
 		private PadOpenService $padOpenService,
 		private PadSyncService $padSyncService,
-		private PadLifecycleOperationService $padLifecycleOperations,
+		private LifecycleService $lifecycleService,
 		private PadResponseService $padResponses,
 		private PadControllerErrorMapper $errors,
 	) {
@@ -235,7 +235,7 @@ class PadController extends Controller {
 	#[\OCP\AppFramework\Http\Attribute\NoAdminRequired]
 	public function trash(string $file): DataResponse {
 		return $this->runForUser(
-			fn(IUser $user): array => $this->padLifecycleOperations->trashByPath($user->getUID(), $file),
+			fn(IUser $user): array => $this->lifecycleService->trashByPath($user->getUID(), $file),
 			fn(array $result): DataResponse => $this->padResponses->lifecycleResponse($result),
 			[
 				'invalid_argument' => $this->l10n->t('Invalid file path.'),
@@ -267,7 +267,7 @@ class PadController extends Controller {
 	#[\OCP\AppFramework\Http\Attribute\NoAdminRequired]
 	public function recoverByFileId(int $fileId): DataResponse {
 		return $this->runForUser(
-			fn(IUser $user): array => $this->padLifecycleOperations->recoverByFileId($user->getUID(), $this->requireFileId($fileId)),
+			fn(IUser $user): array => $this->lifecycleService->recoverByFileId($user->getUID(), $this->requireFileId($fileId)),
 			fn(array $result): DataResponse => $this->padResponses->lifecycleResponse($result),
 			[
 				'not_found' => $this->l10n->t('Pad file not found.'),
@@ -283,7 +283,7 @@ class PadController extends Controller {
 	#[\OCP\AppFramework\Http\Attribute\NoAdminRequired]
 	public function restore(string $file): DataResponse {
 		return $this->runForUser(
-			fn(IUser $user): array => $this->padLifecycleOperations->restoreByPath($user->getUID(), $file),
+			fn(IUser $user): array => $this->lifecycleService->restoreByPath($user->getUID(), $file),
 			fn(array $result): DataResponse => $this->padResponses->lifecycleResponse($result),
 			[
 				'invalid_argument' => $this->l10n->t('Invalid file path.'),

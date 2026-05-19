@@ -14,6 +14,8 @@ use OCA\EtherpadNextcloud\Service\EtherpadClient;
 use OCA\EtherpadNextcloud\Service\LifecycleService;
 use OCA\EtherpadNextcloud\Service\PadFileService;
 use OCA\EtherpadNextcloud\Service\ParsedPadFile;
+use OCA\EtherpadNextcloud\Service\UserNodeResolver;
+use OCA\EtherpadNextcloud\Util\PathNormalizer;
 use OCP\Files\File;
 use OCP\IConfig;
 use OCP\Security\ISecureRandom;
@@ -42,7 +44,9 @@ class LifecycleServiceTest extends TestCase {
 			$etherpadClient,
 			$config,
 			$logger,
-			$secureRandom
+			$secureRandom,
+			$this->createMock(UserNodeResolver::class),
+			$this->createMock(PathNormalizer::class),
 		);
 
 		$result = $service->handleTrash($file);
@@ -106,7 +110,9 @@ class LifecycleServiceTest extends TestCase {
 			$etherpadClient,
 			$config,
 			$logger,
-			$secureRandom
+			$secureRandom,
+			$this->createMock(UserNodeResolver::class),
+			$this->createMock(PathNormalizer::class),
 		);
 
 		$result = $service->handleTrash($file);
@@ -160,7 +166,9 @@ class LifecycleServiceTest extends TestCase {
 			$etherpadClient,
 			$config,
 			$logger,
-			$secureRandom
+			$secureRandom,
+			$this->createMock(UserNodeResolver::class),
+			$this->createMock(PathNormalizer::class),
 		);
 
 		$result = $service->handleTrash($file);
@@ -237,7 +245,9 @@ class LifecycleServiceTest extends TestCase {
 			$etherpadClient,
 			$config,
 			$logger,
-			$secureRandom
+			$secureRandom,
+			$this->createMock(UserNodeResolver::class),
+			$this->createMock(PathNormalizer::class),
 		);
 
 		$result = $service->handleRestore($file);
@@ -309,6 +319,8 @@ class LifecycleServiceTest extends TestCase {
 			$this->buildDeleteOnTrashEnabledConfig(),
 			$this->createMock(LoggerInterface::class),
 			$secureRandom,
+			$this->createMock(UserNodeResolver::class),
+			$this->createMock(PathNormalizer::class),
 		))->handleRestore($file);
 
 		$this->assertSame(LifecycleService::RESULT_RESTORED, $result['status']);
@@ -367,6 +379,8 @@ class LifecycleServiceTest extends TestCase {
 			$this->buildDeleteOnTrashEnabledConfig(),
 			$this->createMock(LoggerInterface::class),
 			$this->createMock(ISecureRandom::class),
+			$this->createMock(UserNodeResolver::class),
+			$this->createMock(PathNormalizer::class),
 		))->handleRestore($file);
 
 		$this->assertSame(LifecycleService::RESULT_SKIPPED, $result['status']);
@@ -424,6 +438,8 @@ class LifecycleServiceTest extends TestCase {
 			$this->buildDeleteOnTrashEnabledConfig(),
 			$this->createMock(LoggerInterface::class),
 			$this->createMock(ISecureRandom::class),
+			$this->createMock(UserNodeResolver::class),
+			$this->createMock(PathNormalizer::class),
 		))->handleRestore($file);
 
 		$this->assertSame(LifecycleService::RESULT_SKIPPED, $result['status']);
@@ -486,6 +502,8 @@ class LifecycleServiceTest extends TestCase {
 			$this->buildDeleteOnTrashEnabledConfig(),
 			$this->createMock(LoggerInterface::class),
 			$this->createMock(ISecureRandom::class),
+			$this->createMock(UserNodeResolver::class),
+			$this->createMock(PathNormalizer::class),
 		))->handleRestore($file);
 
 		$this->assertSame(LifecycleService::RESULT_SKIPPED, $result['status']);
@@ -548,6 +566,8 @@ class LifecycleServiceTest extends TestCase {
 			$this->buildDeleteOnTrashEnabledConfig(),
 			$this->createMock(LoggerInterface::class),
 			$secureRandom,
+			$this->createMock(UserNodeResolver::class),
+			$this->createMock(PathNormalizer::class),
 		))->recoverFromSnapshot($file);
 
 		$this->assertSame(LifecycleService::RESULT_RESTORED, $result['status']);
@@ -612,6 +632,8 @@ class LifecycleServiceTest extends TestCase {
 			$this->buildDeleteOnTrashEnabledConfig(),
 			$this->createMock(LoggerInterface::class),
 			$secureRandom,
+			$this->createMock(UserNodeResolver::class),
+			$this->createMock(PathNormalizer::class),
 		))->recoverFromSnapshot($file);
 	}
 
@@ -637,6 +659,8 @@ class LifecycleServiceTest extends TestCase {
 			$this->buildDeleteOnTrashEnabledConfig(),
 			$this->createMock(LoggerInterface::class),
 			$this->createMock(ISecureRandom::class),
+			$this->createMock(UserNodeResolver::class),
+			$this->createMock(PathNormalizer::class),
 		);
 
 		$this->expectException(PadAlreadyHasBindingException::class);
@@ -658,10 +682,226 @@ class LifecycleServiceTest extends TestCase {
 			$this->buildDeleteOnTrashEnabledConfig(),
 			$this->createMock(LoggerInterface::class),
 			$this->createMock(ISecureRandom::class),
+			$this->createMock(UserNodeResolver::class),
+			$this->createMock(PathNormalizer::class),
 		);
 
 		$this->expectException(NotAPadFileException::class);
 		$service->recoverFromSnapshot($file);
+	}
+
+	// ------------------------------------------------------------------
+	// Wrapper tests for trashByPath / restoreByPath / recoverByFileId.
+	// These were previously in PadLifecycleOperationServiceTest and now
+	// live here since the reshape logic moved into LifecycleService.
+	// They verify that the public wrappers resolve the node, call the
+	// underlying lifecycle step, and reshape the result into the public
+	// shape expected by controllers.
+	// ------------------------------------------------------------------
+
+	public function testTrashByPathReshapesSkippedResult(): void {
+		$file = $this->createMock(File::class);
+		$file->method('getId')->willReturn(42);
+		$file->method('getName')->willReturn('Test.pad');
+
+		$bindingService = $this->createMock(BindingService::class);
+		$bindingService->expects($this->never())->method('findByFileId');
+
+		$padFileService = $this->createMock(PadFileService::class);
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+
+		// delete_on_trash disabled => skipped before any binding/etherpad work.
+		$config = $this->createMock(IConfig::class);
+		$config->method('getAppValue')->willReturnCallback(
+			static function (string $appName, string $key, string $default = ''): string {
+				if ($appName === 'etherpad_nextcloud' && $key === 'delete_on_trash') {
+					return 'no';
+				}
+				return $default;
+			}
+		);
+		$config->method('getSystemValueBool')->willReturn(false);
+
+		$userNodeResolver = $this->createMock(UserNodeResolver::class);
+		$userNodeResolver->expects($this->once())
+			->method('resolveUserFileNodeByPath')
+			->with('alice', '/Test.pad')
+			->willReturn($file);
+
+		$service = new LifecycleService(
+			$bindingService,
+			$padFileService,
+			$etherpadClient,
+			$config,
+			$this->createMock(LoggerInterface::class),
+			$this->createMock(ISecureRandom::class),
+			$userNodeResolver,
+			new PathNormalizer(),
+		);
+
+		$result = $service->trashByPath('alice', '/Test.pad');
+
+		$this->assertSame([
+			'file' => '/Test.pad',
+			'status' => LifecycleService::RESULT_SKIPPED,
+			'reason' => 'delete_on_trash_disabled',
+		], $result);
+	}
+
+	public function testTrashByPathReshapesTrashedResult(): void {
+		$fileId = 21;
+		$padId = 'pad-abc';
+
+		$bindingService = $this->createMock(BindingService::class);
+		$bindingService->expects($this->once())
+			->method('findByFileId')
+			->with($fileId)
+			->willReturn([
+				'file_id' => $fileId,
+				'pad_id' => $padId,
+				'access_mode' => BindingService::ACCESS_PUBLIC,
+				'state' => BindingService::STATE_ACTIVE,
+			]);
+		$bindingService->expects($this->once())->method('deleteByFileId')->with($fileId);
+
+		$padFileService = $this->createMock(PadFileService::class);
+
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->expects($this->once())->method('deletePad')->with($padId);
+
+		$file = $this->createMock(File::class);
+		$file->method('getId')->willReturn($fileId);
+		$file->method('getName')->willReturn('Test.pad');
+		$file->method('getContent')->willReturn('');
+
+		$userNodeResolver = $this->createMock(UserNodeResolver::class);
+		$userNodeResolver->expects($this->once())
+			->method('resolveUserFileNodeByPath')
+			->with('alice', '/Test.pad')
+			->willReturn($file);
+
+		$service = new LifecycleService(
+			$bindingService,
+			$padFileService,
+			$etherpadClient,
+			$this->buildDeleteOnTrashEnabledConfig(),
+			$this->createMock(LoggerInterface::class),
+			$this->createMock(ISecureRandom::class),
+			$userNodeResolver,
+			new PathNormalizer(),
+		);
+
+		$result = $service->trashByPath('alice', '/Test.pad');
+
+		$this->assertSame('/Test.pad', $result['file']);
+		$this->assertSame(LifecycleService::RESULT_TRASHED, $result['status']);
+		$this->assertIsInt($result['deleted_at']);
+		$this->assertFalse($result['snapshot_persisted']);
+		$this->assertFalse($result['delete_pending']);
+		$this->assertArrayNotHasKey('reason', $result);
+	}
+
+	public function testTrashByPathRejectsEmptyPath(): void {
+		$service = new LifecycleService(
+			$this->createMock(BindingService::class),
+			$this->createMock(PadFileService::class),
+			$this->createMock(EtherpadClient::class),
+			$this->buildDeleteOnTrashEnabledConfig(),
+			$this->createMock(LoggerInterface::class),
+			$this->createMock(ISecureRandom::class),
+			$this->createMock(UserNodeResolver::class),
+			new PathNormalizer(),
+		);
+
+		$this->expectException(\InvalidArgumentException::class);
+		$service->trashByPath('alice', '   ');
+	}
+
+	public function testRestoreByPathReshapesSkippedResult(): void {
+		$file = $this->createMock(File::class);
+		$file->method('getId')->willReturn(42);
+		$file->method('getName')->willReturn('Notes.txt'); // not a .pad => skipped
+
+		$bindingService = $this->createMock(BindingService::class);
+		$bindingService->expects($this->never())->method('findByFileId');
+
+		$userNodeResolver = $this->createMock(UserNodeResolver::class);
+		$userNodeResolver->expects($this->once())
+			->method('resolveUserFileNodeByPath')
+			->with('alice', '/Test.pad')
+			->willReturn($file);
+
+		$service = new LifecycleService(
+			$bindingService,
+			$this->createMock(PadFileService::class),
+			$this->createMock(EtherpadClient::class),
+			$this->buildDeleteOnTrashEnabledConfig(),
+			$this->createMock(LoggerInterface::class),
+			$this->createMock(ISecureRandom::class),
+			$userNodeResolver,
+			new PathNormalizer(),
+		);
+
+		$result = $service->restoreByPath('alice', '/Test.pad');
+
+		$this->assertSame([
+			'file' => '/Test.pad',
+			'status' => LifecycleService::RESULT_SKIPPED,
+			'reason' => 'not_pad_file',
+		], $result);
+	}
+
+	public function testRecoverByFileIdReshapesSkippedExternalPadResult(): void {
+		$fileId = 51;
+
+		$bindingService = $this->createMock(BindingService::class);
+		$bindingService->expects($this->once())
+			->method('findByFileId')
+			->with($fileId)
+			->willReturn(null);
+
+		$padFileService = $this->createMock(PadFileService::class);
+		$padFileService->expects($this->once())
+			->method('readPad')
+			->with('doc')
+			->willReturn(new ParsedPadFile(
+				frontmatter: ['pad_id' => 'ext.abc', 'access_mode' => BindingService::ACCESS_PUBLIC],
+				body: '',
+				padId: 'ext.abc',
+				accessMode: BindingService::ACCESS_PUBLIC,
+				padUrl: '',
+				isExternal: true,
+			));
+
+		$file = $this->createMock(File::class);
+		$file->method('getId')->willReturn($fileId);
+		$file->method('getName')->willReturn('Ext.pad');
+		$file->method('getContent')->willReturn('doc');
+
+		$userNodeResolver = $this->createMock(UserNodeResolver::class);
+		$userNodeResolver->expects($this->once())
+			->method('resolveUserFileNodeById')
+			->with('alice', $fileId)
+			->willReturn($file);
+
+		$service = new LifecycleService(
+			$bindingService,
+			$padFileService,
+			$this->createMock(EtherpadClient::class),
+			$this->buildDeleteOnTrashEnabledConfig(),
+			$this->createMock(LoggerInterface::class),
+			$this->createMock(ISecureRandom::class),
+			$userNodeResolver,
+			new PathNormalizer(),
+		);
+
+		$result = $service->recoverByFileId('alice', $fileId);
+
+		$this->assertSame([
+			'file_id' => $fileId,
+			'status' => LifecycleService::RESULT_SKIPPED,
+			'reason' => 'external_pad',
+		], $result);
 	}
 
 	private function buildDeleteOnTrashEnabledConfig(): IConfig {

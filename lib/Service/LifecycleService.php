@@ -39,7 +39,99 @@ class LifecycleService {
 		private IConfig $config,
 		private LoggerInterface $logger,
 		private ISecureRandom $secureRandom,
+		private UserNodeResolver $userNodeResolver,
+		private \OCA\EtherpadNextcloud\Util\PathNormalizer $padPaths,
 	) {
+	}
+
+	// ------------------------------------------------------------------
+	// Public wrappers that take (uid, path/fileId), resolve the node
+	// internally, and reshape the result so controllers don't have to.
+	// Mirrors the surface that `PadLifecycleOperationService` used to
+	// expose before it was folded into this service.
+	// ------------------------------------------------------------------
+
+	/**
+	 * @return array{file:string,status:string,reason?:string,deleted_at?:int,snapshot_persisted?:bool,delete_pending?:bool}
+	 * @throws \OCP\Files\NotFoundException
+	 */
+	public function trashByPath(string $uid, string $file): array {
+		$path = $this->normalizeLifecyclePath($file);
+		$node = $this->userNodeResolver->resolveUserFileNodeByPath($uid, $path);
+		$result = $this->handleTrash($node);
+
+		if (($result['status'] ?? '') === self::RESULT_SKIPPED) {
+			return [
+				'file' => $path,
+				'status' => self::RESULT_SKIPPED,
+				'reason' => (string)($result['reason'] ?? 'unknown'),
+			];
+		}
+
+		return [
+			'file' => $path,
+			'status' => self::RESULT_TRASHED,
+			'deleted_at' => (int)($result['deleted_at'] ?? 0),
+			'snapshot_persisted' => (bool)($result['snapshot_persisted'] ?? false),
+			'delete_pending' => (bool)($result['delete_pending'] ?? false),
+		];
+	}
+
+	/**
+	 * @return array{file:string,status:string,reason?:string,old_pad_id?:string,new_pad_id?:string}
+	 * @throws \OCP\Files\NotFoundException
+	 */
+	public function restoreByPath(string $uid, string $file): array {
+		$path = $this->normalizeLifecyclePath($file);
+		$node = $this->userNodeResolver->resolveUserFileNodeByPath($uid, $path);
+		$result = $this->handleRestore($node);
+
+		if (($result['status'] ?? '') === self::RESULT_SKIPPED) {
+			return [
+				'file' => $path,
+				'status' => self::RESULT_SKIPPED,
+				'reason' => (string)($result['reason'] ?? 'unknown'),
+			];
+		}
+
+		return [
+			'file' => $path,
+			'status' => self::RESULT_RESTORED,
+			'old_pad_id' => (string)($result['old_pad_id'] ?? ''),
+			'new_pad_id' => (string)($result['new_pad_id'] ?? ''),
+		];
+	}
+
+	/**
+	 * @return array{file_id:int,status:string,reason?:string,old_pad_id?:string,new_pad_id?:string}
+	 * @throws \OCP\Files\NotFoundException
+	 */
+	public function recoverByFileId(string $uid, int $fileId): array {
+		$node = $this->userNodeResolver->resolveUserFileNodeById($uid, $fileId);
+		$result = $this->recoverFromSnapshot($node);
+
+		if (($result['status'] ?? '') === self::RESULT_SKIPPED) {
+			return [
+				'file_id' => $fileId,
+				'status' => self::RESULT_SKIPPED,
+				'reason' => (string)($result['reason'] ?? 'unknown'),
+			];
+		}
+
+		return [
+			'file_id' => $fileId,
+			'status' => self::RESULT_RESTORED,
+			'old_pad_id' => (string)($result['old_pad_id'] ?? ''),
+			'new_pad_id' => (string)($result['new_pad_id'] ?? ''),
+		];
+	}
+
+	private function normalizeLifecyclePath(string $file): string {
+		$path = $this->padPaths->normalizeViewerFilePath($file);
+		if ($path === '') {
+			throw new \InvalidArgumentException('Invalid file path.');
+		}
+		return $path;
 	}
 
 	/** @return array{status: string, reason?: string, file_id: int, pad_id?: string, deleted_at?: int, snapshot_persisted?: bool, delete_pending?: bool} */
