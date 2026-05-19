@@ -246,6 +246,58 @@ class PadCreationServiceTest extends TestCase {
 		$this->assertSame('remote_export_unavailable', $result['snapshot_warning_code']);
 	}
 
+	public function testSeedExternalIntoFileWritesFrontmatterOnExistingFile(): void {
+		// Re-used by the legacy-Ownpad migration path: the file already
+		// exists, we only need to seed it with `ext.*` frontmatter + snapshot.
+		$fileNode = $this->createMock(File::class);
+		$fileNode->expects($this->once())
+			->method('putContent')
+			->with('seeded-frontmatter');
+
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->expects($this->once())
+			->method('normalizeAndFetchExternalPublicPadTextOrEmpty')
+			->with('https://pad.remote.test/p/RemotePad')
+			->willReturn([
+				'pad_url' => 'https://pad.remote.test/p/RemotePad',
+				'origin' => 'https://pad.remote.test',
+				'pad_id' => 'RemotePad',
+				'text' => 'snapshot-body',
+			]);
+
+		$padFileService = $this->createMock(PadFileService::class);
+		$padFileService->expects($this->once())
+			->method('buildInitialDocument')
+			->with(
+				999,
+				'ext.RemotePad',
+				BindingService::ACCESS_PUBLIC,
+				'',
+				'https://pad.remote.test/p/RemotePad',
+				[
+					'pad_origin' => 'https://pad.remote.test',
+					'remote_pad_id' => 'RemotePad',
+				],
+			)
+			->willReturn('initial-doc');
+		$padFileService->expects($this->once())
+			->method('withExportSnapshot')
+			->with('initial-doc', 'snapshot-body', '', 0, false)
+			->willReturn('seeded-frontmatter');
+
+		$result = $this->buildService(
+			padFileService: $padFileService,
+			etherpadClient: $etherpadClient,
+		)->seedExternalIntoFile($fileNode, 999, 'https://pad.remote.test/p/RemotePad');
+
+		$this->assertSame([
+			'file_id' => 999,
+			'pad_id' => 'ext.RemotePad',
+			'access_mode' => BindingService::ACCESS_PUBLIC,
+			'pad_url' => 'https://pad.remote.test/p/RemotePad',
+		], $result);
+	}
+
 	public function testCreateFromUrlRollsBackWhenInitialSnapshotFetchFails(): void {
 		$fileNode = $this->createMock(File::class);
 		$fileNode->method('getId')->willReturn(321);

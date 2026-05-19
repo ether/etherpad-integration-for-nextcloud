@@ -186,10 +186,9 @@ class PadCreationService {
 	public function createFromUrl(string $uid, string $file, string $padUrl): array {
 		$path = $this->padPaths->normalizeCreatePath($file);
 		$fileCreated = false;
-		$external = null;
 
 		return $this->withCreateRollback(
-			function () use ($uid, $path, $padUrl, &$external, &$fileCreated): array {
+			function () use ($uid, $path, $padUrl, &$fileCreated): array {
 				$fileNode = $this->padFileCreator->createUserFile($uid, $path);
 				$fileCreated = true;
 				$fileId = (int)$fileNode->getId();
@@ -197,42 +196,11 @@ class PadCreationService {
 					throw new \RuntimeException('Could not resolve new file ID.');
 				}
 
-				$external = $this->etherpadClient->normalizeAndFetchExternalPublicPadTextOrEmpty($padUrl);
-				// External pads are no longer DB-bound, so the local marker only needs to
-				// distinguish them from managed internal pad IDs. The canonical remote
-				// identity remains pad_origin + remote_pad_id in the frontmatter.
-				$externalPadId = 'ext.' . $external['pad_id'];
-				$content = $this->padFileService->buildInitialDocument(
-					$fileId,
-					$externalPadId,
-					BindingService::ACCESS_PUBLIC,
-					'',
-					$external['pad_url'],
-					[
-						'pad_origin' => $external['origin'],
-						'remote_pad_id' => $external['pad_id'],
-					]
-				);
-				$content = $this->padFileService->withExportSnapshot($content, $external['text'], '', 0, false);
-				$fileNode->putContent($content);
-
-				$result = [
-					'file' => $path,
-					'file_id' => $fileId,
-					'pad_id' => $externalPadId,
-					'access_mode' => BindingService::ACCESS_PUBLIC,
-					'pad_url' => $external['pad_url'],
-				];
-				if (!empty($external['snapshot_unavailable'])) {
-					// The pad URL itself validated, but the public-text export
-					// endpoint refused to serve content (404). Common causes:
-					// the remote Etherpad has authentication on /p/<id>/export,
-					// or the pad is restricted despite a public-looking URL.
-					// We keep the file (the viewer can still load the pad
-					// directly through the iframe) and surface a stable code
-					// the frontend translates into a toast.
-					$result['snapshot_warning_code'] = 'remote_export_unavailable';
-				}
+				$seeded = $this->seedExternalIntoFile($fileNode, $fileId, $padUrl);
+				// Preserve the historical key ordering for the external-create
+				// response: `file` is the first key so tests asserting via
+				// `assertSame` keep matching after the refactor.
+				$result = ['file' => $path] + $seeded;
 				return $result;
 			},
 			function () use ($uid, $path, &$fileCreated): void {
@@ -261,6 +229,57 @@ class PadCreationService {
 				];
 			},
 		);
+	}
+
+	/**
+	 * Writes external-pad frontmatter (`ext.<remote-id>`) into a `.pad` file
+	 * that already exists on disk, fetching a snapshot of the remote pad's
+	 * content along the way. Extracted from `createFromUrl` so the legacy
+	 * Ownpad migration path can reuse the same shape when the source URL
+	 * points at a different Etherpad server than the one we manage.
+	 *
+	 * No binding row is created — `ext.*` pads are intentionally not bound,
+	 * since we don't own their lifecycle.
+	 *
+	 * @return array{file_id:int,pad_id:string,access_mode:string,pad_url:string,snapshot_warning_code?:string}
+	 */
+	public function seedExternalIntoFile(File $file, int $fileId, string $padUrl): array {
+		$external = $this->etherpadClient->normalizeAndFetchExternalPublicPadTextOrEmpty($padUrl);
+		// External pads are no longer DB-bound, so the local marker only needs to
+		// distinguish them from managed internal pad IDs. The canonical remote
+		// identity remains pad_origin + remote_pad_id in the frontmatter.
+		$externalPadId = 'ext.' . $external['pad_id'];
+		$content = $this->padFileService->buildInitialDocument(
+			$fileId,
+			$externalPadId,
+			BindingService::ACCESS_PUBLIC,
+			'',
+			$external['pad_url'],
+			[
+				'pad_origin' => $external['origin'],
+				'remote_pad_id' => $external['pad_id'],
+			]
+		);
+		$content = $this->padFileService->withExportSnapshot($content, $external['text'], '', 0, false);
+		$file->putContent($content);
+
+		$result = [
+			'file_id' => $fileId,
+			'pad_id' => $externalPadId,
+			'access_mode' => BindingService::ACCESS_PUBLIC,
+			'pad_url' => $external['pad_url'],
+		];
+		if (!empty($external['snapshot_unavailable'])) {
+			// The pad URL itself validated, but the public-text export
+			// endpoint refused to serve content (404). Common causes:
+			// the remote Etherpad has authentication on /p/<id>/export,
+			// or the pad is restricted despite a public-looking URL.
+			// We keep the file (the viewer can still load the pad
+			// directly through the iframe) and surface a stable code
+			// the frontend translates into a toast.
+			$result['snapshot_warning_code'] = 'remote_export_unavailable';
+		}
+		return $result;
 	}
 
 	/**
