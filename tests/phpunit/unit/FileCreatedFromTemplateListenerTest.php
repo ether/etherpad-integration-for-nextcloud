@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\Tests\Unit;
 
 use OCA\EtherpadNextcloud\Listeners\FileCreatedFromTemplateListener;
+use OCA\EtherpadNextcloud\Service\PadBootstrapService;
 use OCA\EtherpadNextcloud\Service\PadCreationService;
 use OCP\EventDispatcher\Event;
 use OCP\Files\File;
@@ -15,64 +16,91 @@ use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 
 /**
- * The listener is now a thin wrapper that delegates the template
- * materialization pipeline to `PadCreationService::materializeTemplateInto`.
- * Detailed behavior of that pipeline (external template handling, binding
- * cleanup, etc.) is exercised in `PadCreationServiceTest`. The cases here
- * focus on the listener-specific responsibilities: filtering irrelevant
- * events and resetting the NC byte-copy to empty when materialization fails.
+ * The listener handles two template-flow cases:
+ *  - source-template → delegate to PadCreationService::materializeTemplateInto
+ *  - blank-template (no source) → write fresh frontmatter via
+ *    PadBootstrapService so /open doesn't 4xx on the first call.
  */
 class FileCreatedFromTemplateListenerTest extends TestCase {
 	public function testIgnoresUnrelatedEvent(): void {
-		$service = $this->createMock(PadCreationService::class);
-		$service->expects($this->never())->method('materializeTemplateInto');
+		$creation = $this->createMock(PadCreationService::class);
+		$bootstrap = $this->createMock(PadBootstrapService::class);
+		$creation->expects($this->never())->method('materializeTemplateInto');
+		$bootstrap->expects($this->never())->method('initializeMissingFrontmatter');
 
-		$this->buildListener($service)->handle(new class extends Event {});
+		$this->buildListener($creation, $bootstrap)->handle(new class extends Event {});
 	}
 
 	public function testIgnoresNonPadTarget(): void {
-		$service = $this->createMock(PadCreationService::class);
-		$service->expects($this->never())->method('materializeTemplateInto');
+		$creation = $this->createMock(PadCreationService::class);
+		$bootstrap = $this->createMock(PadBootstrapService::class);
+		$creation->expects($this->never())->method('materializeTemplateInto');
+		$bootstrap->expects($this->never())->method('initializeMissingFrontmatter');
 
-		$this->buildListener($service)->handle(new FileCreatedFromTemplateEvent(
+		$this->buildListener($creation, $bootstrap)->handle(new FileCreatedFromTemplateEvent(
 			$this->file('Template.pad'),
 			$this->file('Notes.txt'),
 		));
 	}
 
-	public function testIgnoresMissingTemplate(): void {
-		$service = $this->createMock(PadCreationService::class);
-		$service->expects($this->never())->method('materializeTemplateInto');
+	public function testBlankTemplateInitialisesFrontmatterImmediately(): void {
+		// + → New pad with the "Blank" option: NC creates an empty .pad
+		// and dispatches the event without a source template. Without this
+		// branch the viewer's first /open hits a 400 (no YAML frontmatter)
+		// before the retry path runs /initialize. Initialising in the
+		// listener removes that first 400.
+		$target = $this->file('New.pad');
 
-		$this->buildListener($service)->handle(new FileCreatedFromTemplateEvent(
+		$creation = $this->createMock(PadCreationService::class);
+		$creation->expects($this->never())->method('materializeTemplateInto');
+
+		$bootstrap = $this->createMock(PadBootstrapService::class);
+		$bootstrap->expects($this->once())
+			->method('initializeMissingFrontmatter')
+			->with('alice', $target, '');
+
+		$this->buildListener($creation, $bootstrap)->handle(new FileCreatedFromTemplateEvent(
 			null,
-			$this->file('New.pad'),
+			$target,
 		));
 	}
 
-	public function testDelegatesToService(): void {
+	public function testSourceTemplateDelegatesToCreationService(): void {
 		$template = $this->file('Tpl.pad');
 		$target = $this->file('New.pad');
 		$target->expects($this->never())->method('putContent');
 
-		$service = $this->createMock(PadCreationService::class);
-		$service->expects($this->once())
+		$creation = $this->createMock(PadCreationService::class);
+		$creation->expects($this->once())
 			->method('materializeTemplateInto')
 			->with($target, $template, $this->isInstanceOf(IUser::class));
 
-		$this->buildListener($service)->handle(new FileCreatedFromTemplateEvent($template, $target));
+		$bootstrap = $this->createMock(PadBootstrapService::class);
+		$bootstrap->expects($this->never())->method('initializeMissingFrontmatter');
+
+		$this->buildListener($creation, $bootstrap)->handle(new FileCreatedFromTemplateEvent($template, $target));
 	}
 
-	public function testResetsTargetWhenServiceThrows(): void {
+	public function testFailedSourceTemplateFallsBackToBlankInit(): void {
+		// If materializeTemplateInto throws, the byte-copy is wiped *and*
+		// then re-initialised so the user still ends up with an openable
+		// blank pad (not the 4xx-on-first-open state that existed before
+		// the fall-through init).
 		$template = $this->file('Tpl.pad');
 		$target = $this->file('New.pad');
 		$target->expects($this->once())->method('putContent')->with('');
 
-		$service = $this->createMock(PadCreationService::class);
-		$service->method('materializeTemplateInto')
+		$creation = $this->createMock(PadCreationService::class);
+		$creation->method('materializeTemplateInto')
 			->willThrowException(new \RuntimeException('boom'));
 
-		$this->buildListener($service)->handle(new FileCreatedFromTemplateEvent($template, $target));
+		$bootstrap = $this->createMock(PadBootstrapService::class);
+		$bootstrap->expects($this->once())
+			->method('initializeMissingFrontmatter')
+			->with('alice', $target, '');
+
+		$this->buildListener($creation, $bootstrap)
+			->handle(new FileCreatedFromTemplateEvent($template, $target));
 	}
 
 	public function testResetsTargetWhenNoUserInSession(): void {
@@ -80,15 +108,19 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 		$target = $this->file('New.pad');
 		$target->expects($this->once())->method('putContent')->with('');
 
-		$service = $this->createMock(PadCreationService::class);
-		$service->expects($this->never())->method('materializeTemplateInto');
+		$creation = $this->createMock(PadCreationService::class);
+		$creation->expects($this->never())->method('materializeTemplateInto');
 
-		$listener = $this->buildListener($service, withUser: false);
+		$bootstrap = $this->createMock(PadBootstrapService::class);
+		$bootstrap->expects($this->never())->method('initializeMissingFrontmatter');
+
+		$listener = $this->buildListener($creation, $bootstrap, withUser: false);
 		$listener->handle(new FileCreatedFromTemplateEvent($template, $target));
 	}
 
 	private function buildListener(
-		PadCreationService $service,
+		PadCreationService $creation,
+		PadBootstrapService $bootstrap,
 		bool $withUser = true,
 	): FileCreatedFromTemplateListener {
 		$userSession = $this->createMock(IUserSession::class);
@@ -101,7 +133,8 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 			$userSession->method('getUser')->willReturn(null);
 		}
 		return new FileCreatedFromTemplateListener(
-			$service,
+			$creation,
+			$bootstrap,
 			$userSession,
 			$this->createMock(LoggerInterface::class),
 		);

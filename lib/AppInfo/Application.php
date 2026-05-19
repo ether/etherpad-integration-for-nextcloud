@@ -33,6 +33,13 @@ class Application extends App implements IBootstrap {
 	}
 
 	public function register(IRegistrationContext $context): void {
+		// Suppresses 4xx noise from NC's /core/preview endpoint when the
+		// Files app or template picker lists .pad files.
+		$context->registerPreviewProvider(
+			\OCA\EtherpadNextcloud\Preview\PadPreviewProvider::class,
+			'/^application\/x-etherpad-nextcloud$/',
+		);
+
 		$context->registerEventListener(AddContentSecurityPolicyEvent::class, \OCA\EtherpadNextcloud\Listeners\CSPListener::class);
 		$context->registerEventListener(
 			LoadAdditionalScriptsEvent::class,
