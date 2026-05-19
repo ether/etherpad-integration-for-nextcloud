@@ -82,6 +82,22 @@ class EtherpadClientTest extends TestCase {
 		$this->assertSame('https://1.1.1.1/p/My%20Pad', $result['pad_url']);
 	}
 
+	public function testNormalizeAndValidateExternalPublicPadUrlKeepsLiteralPlusInPadId(): void {
+		// `+` is literal in URL path segments. Using urldecode() previously
+		// turned `team+pad` into pad-id `team pad`, then re-emitted
+		// `/p/team%20pad` which hits a different / non-existent pad.
+		$client = new EtherpadClient($this->buildExternalEnabledConfig());
+		$result = $client->normalizeAndValidateExternalPublicPadUrl('https://1.1.1.1/p/team+meeting');
+		$this->assertSame('team+meeting', $result['pad_id']);
+		$this->assertSame('https://1.1.1.1/p/team%2Bmeeting', $result['pad_url']);
+	}
+
+	public function testNormalizeAndValidateExternalPublicPadUrlDecodesPercentEncodedPlus(): void {
+		$client = new EtherpadClient($this->buildExternalEnabledConfig());
+		$result = $client->normalizeAndValidateExternalPublicPadUrl('https://1.1.1.1/p/team%2Bmeeting');
+		$this->assertSame('team+meeting', $result['pad_id']);
+	}
+
 	public function testNormalizeAndValidateExternalPublicPadUrlAcceptsMatchingAllowlistedOriginWithPort(): void {
 		$client = new EtherpadClient($this->buildExternalEnabledConfig('https://1.1.1.1:8443'));
 

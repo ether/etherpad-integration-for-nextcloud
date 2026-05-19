@@ -646,7 +646,11 @@ class EtherpadClient {
 		$host = strtolower((string)($parts['host'] ?? ''));
 		$port = isset($parts['port']) ? (int)$parts['port'] : 443;
 		$path = (string)($parts['path'] ?? '');
-		$decodedPath = urldecode($path);
+		// `+` is literal in URL path segments — only query/form bodies treat
+		// it as a space. Using urldecode here turned `/p/team+pad` into
+		// pad-id `team pad`, then re-encoded to `/p/team%20pad` at fetch
+		// time, hitting a different / non-existent remote pad.
+		$decodedPath = rawurldecode($path);
 		if ($scheme !== 'https' || $host === '' || $decodedPath === '' || $port <= 0 || $port > 65535) {
 			throw new EtherpadClientException('Invalid public pad URL.');
 		}

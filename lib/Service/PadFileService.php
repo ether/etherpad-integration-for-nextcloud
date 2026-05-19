@@ -108,7 +108,13 @@ class PadFileService {
 		}
 
 		$path = (string)(parse_url($url, PHP_URL_PATH) ?? '');
-		$decodedPath = urldecode($path);
+		// rawurldecode (not urldecode): `+` is a literal in URL path
+		// segments, only `application/x-www-form-urlencoded` (query strings,
+		// form bodies) treats `+` as a space. A pad URL like
+		// `/p/team+meeting` must yield pad-id `team+meeting`, not
+		// `team meeting` — otherwise we re-emit `/p/team%20meeting` and the
+		// binding points at a different / non-existent pad.
+		$decodedPath = rawurldecode($path);
 		if (preg_match('~/p/([^/?#]+)$~', $decodedPath, $padMatches) !== 1) {
 			return null;
 		}

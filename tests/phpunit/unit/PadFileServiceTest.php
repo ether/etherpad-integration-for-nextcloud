@@ -288,6 +288,28 @@ class PadFileServiceTest extends TestCase {
 		);
 	}
 
+	public function testParseLegacyOwnpadShortcutKeepsLiteralPlusInPadId(): void {
+		// `+` is a literal in URL path segments; only query/form encoding
+		// treats it as a space. The previous urldecode() turned
+		// `team+meeting` into `team meeting` and broke the binding lookup.
+		$service = new PadFileService();
+		$parsed = $service->parseLegacyOwnpadShortcut(
+			"[InternetShortcut]\nURL=https://pad.example.test/p/team+meeting\n"
+		);
+		$this->assertNotNull($parsed);
+		$this->assertSame('team+meeting', $parsed['pad_id']);
+	}
+
+	public function testParseLegacyOwnpadShortcutDecodesPercentEncodedPlus(): void {
+		// `%2B` (percent-encoded plus) must still decode to `+`.
+		$service = new PadFileService();
+		$parsed = $service->parseLegacyOwnpadShortcut(
+			"[InternetShortcut]\nURL=https://pad.example.test/p/team%2Bmeeting\n"
+		);
+		$this->assertNotNull($parsed);
+		$this->assertSame('team+meeting', $parsed['pad_id']);
+	}
+
 	public function testParseLegacyOwnpadShortcutReturnsNullWithoutPadSegment(): void {
 		$service = new PadFileService();
 		$this->assertNull(

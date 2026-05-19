@@ -52,8 +52,8 @@ Legacy migration:
 - Old Ownpad format
   - `[InternetShortcut]`
   - `URL=https://.../p/<pad-id>`
-- is auto-migrated on open to `etherpad-nextcloud/1` (only for empty files or this legacy format).
-- GroupPad IDs in legacy format (`g.<group>$<name>`) are not auto-imported for security reasons.
+- is auto-migrated on first open to `etherpad-nextcloud/1`. The migration branches on the URL origin (same vs. cross) and the pad-id format; GroupPad IDs (`g.<group>$<name>`) re-bind as protected, free-form IDs re-bind as public, cross-origin URLs route through the external-pad flow as `ext.*`.
+- A claim-collision check protects against legacy files being used to claim pads already bound to another user's file — see `docs/legacy-ownpad-migration.md` for the full state table.
 
 ## Snapshot Body
 
