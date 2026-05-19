@@ -9,17 +9,17 @@ use OCA\EtherpadNextcloud\Service\EtherpadClient;
 use OCA\EtherpadNextcloud\Service\PadFileLockRetryService;
 use OCA\EtherpadNextcloud\Service\PadFileService;
 use OCA\EtherpadNextcloud\Service\PadOpenService;
-use OCA\EtherpadNextcloud\Service\PadPathService;
 use OCA\EtherpadNextcloud\Service\PadSessionService;
 use OCA\EtherpadNextcloud\Service\SnapshotExtractor;
 use OCA\EtherpadNextcloud\Service\SnapshotHtmlSanitizer;
 use OCA\EtherpadNextcloud\Service\UserNodeResolver;
+use OCA\EtherpadNextcloud\Util\PathNormalizer;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 
 class PadOpenServiceTest extends TestCase {
 	public function testOpenByPathRejectsEmptyNormalizedPath(): void {
-		$padPaths = $this->createMock(PadPathService::class);
+		$padPaths = $this->createMock(PathNormalizer::class);
 		$padPaths->method('normalizeViewerFilePath')
 			->with(" \t")
 			->willReturn('');
@@ -34,7 +34,7 @@ class PadOpenServiceTest extends TestCase {
 			->openByPath('alice', 'Alice', " \t");
 	}
 
-	private function buildService(PadPathService $padPaths, UserNodeResolver $userNodeResolver): PadOpenService {
+	private function buildService(PathNormalizer $padPaths, UserNodeResolver $userNodeResolver): PadOpenService {
 		$padFileService = $this->createMock(PadFileService::class);
 		return new PadOpenService(
 			$padFileService,

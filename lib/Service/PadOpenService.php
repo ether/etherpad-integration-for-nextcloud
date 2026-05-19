@@ -12,6 +12,7 @@ namespace OCA\EtherpadNextcloud\Service;
 use OCA\EtherpadNextcloud\Exception\BindingException;
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
 use OCA\EtherpadNextcloud\Exception\PadFileFormatException;
+use OCA\EtherpadNextcloud\Util\PathNormalizer;
 use OCP\Files\File;
 use OCP\Files\NotFoundException;
 use OCP\Lock\LockedException;
@@ -20,7 +21,7 @@ use Psr\Log\LoggerInterface;
 class PadOpenService {
 	public function __construct(
 		private PadFileService $padFileService,
-		private PadPathService $padPaths,
+		private PathNormalizer $padPaths,
 		private UserNodeResolver $userNodeResolver,
 		private PadFileLockRetryService $lockRetryService,
 		private BindingService $bindingService,

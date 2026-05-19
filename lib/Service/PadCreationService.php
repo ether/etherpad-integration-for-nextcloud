@@ -14,6 +14,7 @@ use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
 use OCA\EtherpadNextcloud\Exception\NotAPadFileException;
 use OCA\EtherpadNextcloud\Exception\PadFileAlreadyExistsException;
 use OCA\EtherpadNextcloud\Exception\PadParentFolderNotWritableException;
+use OCA\EtherpadNextcloud\Util\PathNormalizer;
 use OCP\Files\File;
 use OCP\IUser;
 use Psr\Log\LoggerInterface;
@@ -21,7 +22,7 @@ use Psr\Log\LoggerInterface;
 class PadCreationService {
 	public function __construct(
 		private PadFileService $padFileService,
-		private PadPathService $padPaths,
+		private PathNormalizer $padPaths,
 		private PadFileCreator $padFileCreator,
 		private UserNodeResolver $userNodeResolver,
 		private PadCreateRollbackService $rollbackService,

@@ -15,8 +15,8 @@ use OCA\EtherpadNextcloud\Service\PadCreationService;
 use OCA\EtherpadNextcloud\Service\PadFileCreator;
 use OCA\EtherpadNextcloud\Service\PadFileService;
 use OCA\EtherpadNextcloud\Service\ParsedPadFile;
-use OCA\EtherpadNextcloud\Service\PadPathService;
 use OCA\EtherpadNextcloud\Service\UserNodeResolver;
+use OCA\EtherpadNextcloud\Util\PathNormalizer;
 use OCP\Files\File;
 use OCP\Files\Folder;
 use PHPUnit\Framework\TestCase;
@@ -28,7 +28,7 @@ class PadCreationServiceTest extends TestCase {
 		$fileNode->method('getId')->willReturn(123);
 		$fileNode->expects($this->once())->method('putContent')->with('frontmatter');
 
-		$padPaths = $this->createMock(PadPathService::class);
+		$padPaths = $this->createMock(PathNormalizer::class);
 		$padPaths->method('normalizeCreatePath')->with('/Test')->willReturn('/Test.pad');
 		$fileCreator = $this->createMock(PadFileCreator::class);
 		$fileCreator->method('createUserFile')->with('alice', '/Test.pad')->willReturn($fileNode);
@@ -66,7 +66,7 @@ class PadCreationServiceTest extends TestCase {
 		$fileNode = $this->createMock(File::class);
 		$fileNode->method('getId')->willReturn(123);
 
-		$padPaths = $this->createMock(PadPathService::class);
+		$padPaths = $this->createMock(PathNormalizer::class);
 		$padPaths->method('normalizeCreatePath')->with('/Test')->willReturn('/Test.pad');
 		$fileCreator = $this->createMock(PadFileCreator::class);
 		$fileCreator->method('createUserFile')->with('alice', '/Test.pad')->willReturn($fileNode);
@@ -97,7 +97,7 @@ class PadCreationServiceTest extends TestCase {
 		$parent = $this->createMock(Folder::class);
 		$parent->method('isCreatable')->willReturn(false);
 
-		$padPaths = $this->createMock(PadPathService::class);
+		$padPaths = $this->createMock(PathNormalizer::class);
 		$padPaths->method('normalizeCreateFileName')->with('Test')->willReturn('Test.pad');
 		$userNodeResolver = $this->createMock(UserNodeResolver::class);
 		$userNodeResolver->method('resolveUserFolderNodeById')->with('alice', 99)->willReturn($parent);
@@ -113,7 +113,7 @@ class PadCreationServiceTest extends TestCase {
 		$fileNode->method('getId')->willReturn(321);
 		$fileNode->expects($this->once())->method('putContent')->with('external-frontmatter');
 
-		$padPaths = $this->createMock(PadPathService::class);
+		$padPaths = $this->createMock(PathNormalizer::class);
 		$padPaths->method('normalizeCreatePath')->with('/External')->willReturn('/External.pad');
 		$fileCreator = $this->createMock(PadFileCreator::class);
 		$fileCreator->method('createUserFile')->with('alice', '/External.pad')->willReturn($fileNode);
@@ -169,7 +169,7 @@ class PadCreationServiceTest extends TestCase {
 		$fileNode->method('getId')->willReturn(321);
 		$fileNode->expects($this->once())->method('putContent')->with('external-frontmatter');
 
-		$padPaths = $this->createMock(PadPathService::class);
+		$padPaths = $this->createMock(PathNormalizer::class);
 		$padPaths->method('normalizeCreatePath')->with('/External')->willReturn('/External.pad');
 		$fileCreator = $this->createMock(PadFileCreator::class);
 		$fileCreator->method('createUserFile')->with('alice', '/External.pad')->willReturn($fileNode);
@@ -215,7 +215,7 @@ class PadCreationServiceTest extends TestCase {
 		$fileNode->method('getId')->willReturn(322);
 		$fileNode->method('putContent')->willReturnSelf();
 
-		$padPaths = $this->createMock(PadPathService::class);
+		$padPaths = $this->createMock(PathNormalizer::class);
 		$padPaths->method('normalizeCreatePath')->willReturn('/External.pad');
 		$fileCreator = $this->createMock(PadFileCreator::class);
 		$fileCreator->method('createUserFile')->willReturn($fileNode);
@@ -252,7 +252,7 @@ class PadCreationServiceTest extends TestCase {
 		$fileNode->method('getId')->willReturn(321);
 		$fileNode->expects($this->never())->method('putContent');
 
-		$padPaths = $this->createMock(PadPathService::class);
+		$padPaths = $this->createMock(PathNormalizer::class);
 		$padPaths->method('normalizeCreatePath')->with('/External')->willReturn('/External.pad');
 		$fileCreator = $this->createMock(PadFileCreator::class);
 		$fileCreator->expects($this->once())->method('createUserFile')->with('alice', '/External.pad')->willReturn($fileNode);
@@ -285,7 +285,7 @@ class PadCreationServiceTest extends TestCase {
 			->with('alice', 7)
 			->willReturn($templateNode);
 
-		$padPaths = $this->createMock(PadPathService::class);
+		$padPaths = $this->createMock(PathNormalizer::class);
 		$padPaths->method('normalizeCreatePath')->with('/Meetings/Protokoll 18.05.2026.pad')->willReturn('/Meetings/Protokoll 18.05.2026.pad');
 
 		$newFile = $this->createMock(\OCP\Files\File::class);
@@ -374,7 +374,7 @@ class PadCreationServiceTest extends TestCase {
 			isExternal: true,
 		));
 
-		$padPaths = $this->createMock(PadPathService::class);
+		$padPaths = $this->createMock(PathNormalizer::class);
 		$padPaths->method('normalizeCreatePath')->willReturn('/Out.pad');
 
 		$this->expectException(\InvalidArgumentException::class);
@@ -406,7 +406,7 @@ class PadCreationServiceTest extends TestCase {
 			isExternal: false,
 		));
 
-		$padPaths = $this->createMock(PadPathService::class);
+		$padPaths = $this->createMock(PathNormalizer::class);
 		$padPaths->method('normalizeCreatePath')->willReturn('/Out.pad');
 
 		$this->expectException(\InvalidArgumentException::class);
@@ -418,7 +418,7 @@ class PadCreationServiceTest extends TestCase {
 
 	private function buildService(
 		?PadFileService $padFileService = null,
-		?PadPathService $padPaths = null,
+		?PathNormalizer $padPaths = null,
 		?PadFileCreator $fileCreator = null,
 		?UserNodeResolver $userNodeResolver = null,
 		?PadCreateRollbackService $rollbackService = null,
@@ -443,7 +443,7 @@ class PadCreationServiceTest extends TestCase {
 			?? new \OCA\EtherpadNextcloud\Service\ExternalPadSeeder($padFileService, $etherpadClient);
 		return new PadCreationService(
 			$padFileService,
-			$padPaths ?? $this->createMock(PadPathService::class),
+			$padPaths ?? $this->createMock(PathNormalizer::class),
 			$fileCreator ?? $this->createMock(PadFileCreator::class),
 			$userNodeResolver ?? $this->createMock(UserNodeResolver::class),
 			$rollbackService ?? $this->createMock(PadCreateRollbackService::class),

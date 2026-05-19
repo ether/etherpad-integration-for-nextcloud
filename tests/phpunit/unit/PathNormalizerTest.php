@@ -108,4 +108,19 @@ class PathNormalizerTest extends TestCase {
 
 		(new PathNormalizer())->normalizePublicShareFilePath(null, 'token123');
 	}
+
+	// ------------------------------------------------------------------
+	// normalizeCreatePath
+	// ------------------------------------------------------------------
+
+	public function testNormalizeCreatePathRejectsEmptyPath(): void {
+		$this->expectException(InvalidArgumentException::class);
+		$this->expectExceptionMessage('Invalid file path.');
+
+		(new PathNormalizer())->normalizeCreatePath('   ');
+	}
+
+	public function testNormalizeCreatePathAppendsPadExtension(): void {
+		$this->assertSame('/Notes.pad', (new PathNormalizer())->normalizeCreatePath('/Notes'));
+	}
 }

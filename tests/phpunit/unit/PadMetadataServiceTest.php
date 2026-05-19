@@ -9,9 +9,9 @@ use OCA\EtherpadNextcloud\Service\EtherpadClient;
 use OCA\EtherpadNextcloud\Service\PadFileLockRetryService;
 use OCA\EtherpadNextcloud\Service\PadFileService;
 use OCA\EtherpadNextcloud\Service\PadMetadataService;
-use OCA\EtherpadNextcloud\Service\PadPathService;
 use OCA\EtherpadNextcloud\Service\ParsedPadFile;
 use OCA\EtherpadNextcloud\Service\UserNodeResolver;
+use OCA\EtherpadNextcloud\Util\PathNormalizer;
 use OCP\Files\File;
 use OCP\Files\NotFoundException;
 use PHPUnit\Framework\TestCase;
@@ -325,7 +325,7 @@ class PadMetadataServiceTest extends TestCase {
 
 	private function buildService(
 		?PadFileService $padFileService = null,
-		?PadPathService $padPaths = null,
+		?PathNormalizer $padPaths = null,
 		?UserNodeResolver $userNodeResolver = null,
 		?PadFileLockRetryService $lockRetryService = null,
 		?EtherpadClient $etherpadClient = null,
@@ -333,7 +333,7 @@ class PadMetadataServiceTest extends TestCase {
 	): PadMetadataService {
 		return new PadMetadataService(
 			$padFileService ?? $this->createMock(PadFileService::class),
-			$padPaths ?? $this->createMock(PadPathService::class),
+			$padPaths ?? $this->createMock(PathNormalizer::class),
 			$userNodeResolver ?? $this->createMock(UserNodeResolver::class),
 			$lockRetryService ?? $this->createMock(PadFileLockRetryService::class),
 			$etherpadClient ?? $this->createMock(EtherpadClient::class),

@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Service;
 
+use OCA\EtherpadNextcloud\Util\PathNormalizer;
 use OCP\Files\File;
 use OCP\Files\NotFoundException;
 use OCP\Lock\LockedException;
@@ -17,7 +18,7 @@ use Psr\Log\LoggerInterface;
 class PadMetadataService {
 	public function __construct(
 		private PadFileService $padFileService,
-		private PadPathService $padPaths,
+		private PathNormalizer $padPaths,
 		private UserNodeResolver $userNodeResolver,
 		private PadFileLockRetryService $lockRetryService,
 		private EtherpadClient $etherpadClient,

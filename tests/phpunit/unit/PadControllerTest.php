@@ -18,7 +18,6 @@ use OCA\EtherpadNextcloud\Service\PadInitializationService;
 use OCA\EtherpadNextcloud\Service\PadLifecycleOperationService;
 use OCA\EtherpadNextcloud\Service\PadMetadataService;
 use OCA\EtherpadNextcloud\Service\PadOpenService;
-use OCA\EtherpadNextcloud\Service\PadPathService;
 use OCA\EtherpadNextcloud\Service\PadResponseService;
 use OCA\EtherpadNextcloud\Service\PadSessionService;
 use OCA\EtherpadNextcloud\Service\PadSyncService;
@@ -157,7 +156,7 @@ class PadControllerTest extends TestCase {
 				['etherpad_nextcloud.pad.syncStatusById', ['fileId' => 138], '/sync-status/138'],
 		]);
 		$logger = $this->createMock(LoggerInterface::class);
-		$padPaths = new PadPathService(new PathNormalizer());
+		$padPaths = new PathNormalizer();
 		$userNodeResolver = new UserNodeResolver($rootFolder);
 		$lockRetryService = $this->buildNoSleepLockRetryService();
 		$padOpenService = new PadOpenService(
@@ -285,7 +284,7 @@ class PadControllerTest extends TestCase {
 				['etherpad_nextcloud.pad.syncStatusById', ['fileId' => 138], '/sync-status/138'],
 		]);
 		$logger = $this->createMock(LoggerInterface::class);
-		$padPaths = new PadPathService(new PathNormalizer());
+		$padPaths = new PathNormalizer();
 		$userNodeResolver = new UserNodeResolver($rootFolder);
 		$lockRetryService = $this->buildNoSleepLockRetryService();
 		$padOpenService = new PadOpenService(
@@ -818,7 +817,7 @@ class PadControllerTest extends TestCase {
 		$resolvedPadFileService = $padFileService ?? $this->createMock(PadFileService::class);
 		$resolvedBindingService = $bindingService ?? $this->createMock(BindingService::class);
 		$logger = $this->createMock(LoggerInterface::class);
-		$padPaths = new PadPathService(new PathNormalizer());
+		$padPaths = new PathNormalizer();
 		$userNodeResolver = new UserNodeResolver($resolvedRootFolder);
 		$lockRetryService = $this->buildNoSleepLockRetryService();
 		$padMetadataService = new PadMetadataService($resolvedPadFileService, $padPaths, $userNodeResolver, $lockRetryService, $resolvedEtherpadClient, $resolvedBindingService, $logger);

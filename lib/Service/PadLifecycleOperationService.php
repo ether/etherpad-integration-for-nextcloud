@@ -9,11 +9,12 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Service;
 
+use OCA\EtherpadNextcloud\Util\PathNormalizer;
 use OCP\Files\NotFoundException;
 
 class PadLifecycleOperationService {
 	public function __construct(
-		private PadPathService $padPaths,
+		private PathNormalizer $padPaths,
 		private UserNodeResolver $userNodeResolver,
 		private LifecycleService $lifecycleService,
 	) {

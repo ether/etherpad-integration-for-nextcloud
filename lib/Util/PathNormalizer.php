@@ -41,6 +41,42 @@ class PathNormalizer {
 		return '/' . $normalized;
 	}
 
+	/**
+	 * Normalize a viewer-style absolute path and ensure it ends in `.pad`.
+	 * Used by the `create`-style endpoints where the caller-supplied path
+	 * may omit the file extension.
+	 */
+	public function normalizeCreatePath(string $file): string {
+		$path = $this->normalizeViewerFilePath($file);
+		if ($path === '') {
+			throw new InvalidArgumentException('Invalid file path.');
+		}
+		if (!str_ends_with(strtolower($path), '.pad')) {
+			$path .= '.pad';
+		}
+		return $path;
+	}
+
+	/**
+	 * Normalize a single filename (no slashes) and ensure it ends in `.pad`.
+	 * Used by `createByParent` where the caller passes a bare filename and
+	 * the folder context comes from a separate parent-id.
+	 */
+	public function normalizeCreateFileName(string $name): string {
+		$fileName = trim($name);
+		$fileName = preg_replace('/\s+\.pad$/i', '.pad', $fileName) ?? $fileName;
+		if ($fileName === '' || $fileName === '.' || $fileName === '..') {
+			throw new InvalidArgumentException('Invalid file name.');
+		}
+		if (str_contains($fileName, '/') || str_contains($fileName, '\\')) {
+			throw new InvalidArgumentException('Invalid file name.');
+		}
+		if (!str_ends_with(strtolower($fileName), '.pad')) {
+			$fileName .= '.pad';
+		}
+		return $fileName;
+	}
+
 	public function normalizePublicShareFilePath(mixed $fileParam, string $shareToken): string {
 		if (!is_string($fileParam)) {
 			throw new InvalidArgumentException('Invalid file parameter.');

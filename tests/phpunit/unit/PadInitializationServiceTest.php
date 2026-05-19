@@ -10,8 +10,8 @@ use OCA\EtherpadNextcloud\Service\PadBootstrapService;
 use OCA\EtherpadNextcloud\Service\PadFileService;
 use OCA\EtherpadNextcloud\Service\PadInitializationService;
 use OCA\EtherpadNextcloud\Service\ParsedPadFile;
-use OCA\EtherpadNextcloud\Service\PadPathService;
 use OCA\EtherpadNextcloud\Service\UserNodeResolver;
+use OCA\EtherpadNextcloud\Util\PathNormalizer;
 use OCP\Files\File;
 use PHPUnit\Framework\TestCase;
 
@@ -23,7 +23,7 @@ class PadInitializationServiceTest extends TestCase {
 			->method('getContent')
 			->willReturn('content');
 
-		$padPaths = $this->createMock(PadPathService::class);
+		$padPaths = $this->createMock(PathNormalizer::class);
 		$padPaths->expects($this->once())
 			->method('normalizeViewerFilePath')
 			->with('/Existing.pad')
@@ -93,7 +93,7 @@ class PadInitializationServiceTest extends TestCase {
 		$bootstrap = $this->createMock(PadBootstrapService::class);
 		$bootstrap->expects($this->never())->method('initializeMissingFrontmatter');
 
-		$result = (new PadInitializationService($padFileService, $this->createMock(PadPathService::class), $userNodeResolver, $bootstrap))
+		$result = (new PadInitializationService($padFileService, $this->createMock(PathNormalizer::class), $userNodeResolver, $bootstrap))
 			->initializeById('alice', 42);
 
 		$this->assertSame(PadInitializationService::STATUS_ALREADY_INITIALIZED, $result->status);
@@ -102,7 +102,7 @@ class PadInitializationServiceTest extends TestCase {
 	}
 
 	public function testInitializeByPathRejectsEmptyPath(): void {
-		$padPaths = $this->createMock(PadPathService::class);
+		$padPaths = $this->createMock(PathNormalizer::class);
 		$padPaths->expects($this->once())
 			->method('normalizeViewerFilePath')
 			->with('   ')
@@ -143,7 +143,7 @@ class PadInitializationServiceTest extends TestCase {
 		$bootstrap = $this->createMock(PadBootstrapService::class);
 		$bootstrap->expects($this->never())->method('initializeMissingFrontmatter');
 
-		$result = (new PadInitializationService($padFileService, $this->createMock(PadPathService::class), $userNodeResolver, $bootstrap))
+		$result = (new PadInitializationService($padFileService, $this->createMock(PathNormalizer::class), $userNodeResolver, $bootstrap))
 			->initialize('alice', $file, 'content');
 
 		$this->assertSame(PadInitializationService::STATUS_ALREADY_INITIALIZED, $result->status);
@@ -190,7 +190,7 @@ class PadInitializationServiceTest extends TestCase {
 			->with('alice', $file, 'legacy-content')
 			->willReturn(false);
 
-		$result = (new PadInitializationService($padFileService, $this->createMock(PadPathService::class), $userNodeResolver, $bootstrap))
+		$result = (new PadInitializationService($padFileService, $this->createMock(PathNormalizer::class), $userNodeResolver, $bootstrap))
 			->initialize('alice', $file, 'legacy-content');
 
 		$this->assertSame(PadInitializationService::STATUS_INITIALIZED, $result->status);
@@ -233,7 +233,7 @@ class PadInitializationServiceTest extends TestCase {
 		$bootstrap = $this->createMock(PadBootstrapService::class);
 		$bootstrap->method('initializeMissingFrontmatter')->willReturn(true);
 
-		$result = (new PadInitializationService($padFileService, $this->createMock(PadPathService::class), $userNodeResolver, $bootstrap))
+		$result = (new PadInitializationService($padFileService, $this->createMock(PathNormalizer::class), $userNodeResolver, $bootstrap))
 			->initialize('alice', $file, "[InternetShortcut]\nURL=https://pad.example.test/p/re-bound-pad\n");
 
 		$this->assertSame(PadInitializationService::STATUS_MIGRATED_FROM_LEGACY, $result->status);

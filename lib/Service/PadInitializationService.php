@@ -11,6 +11,7 @@ namespace OCA\EtherpadNextcloud\Service;
 
 use OCA\EtherpadNextcloud\Exception\MissingFrontmatterException;
 use OCA\EtherpadNextcloud\Exception\PadFileFormatException;
+use OCA\EtherpadNextcloud\Util\PathNormalizer;
 use OCP\Files\File;
 use OCP\Files\NotFoundException;
 
@@ -21,7 +22,7 @@ class PadInitializationService {
 
 	public function __construct(
 		private PadFileService $padFileService,
-		private PadPathService $padPaths,
+		private PathNormalizer $padPaths,
 		private UserNodeResolver $userNodeResolver,
 		private PadBootstrapService $padBootstrapService,
 	) {
