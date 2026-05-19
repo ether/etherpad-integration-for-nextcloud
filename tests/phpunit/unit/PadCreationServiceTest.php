@@ -14,6 +14,7 @@ use OCA\EtherpadNextcloud\Service\PadCreateRollbackService;
 use OCA\EtherpadNextcloud\Service\PadCreationService;
 use OCA\EtherpadNextcloud\Service\PadFileCreator;
 use OCA\EtherpadNextcloud\Service\PadFileService;
+use OCA\EtherpadNextcloud\Service\ParsedPadFile;
 use OCA\EtherpadNextcloud\Service\PadPathService;
 use OCA\EtherpadNextcloud\Service\UserNodeResolver;
 use OCP\Files\File;
@@ -294,16 +295,14 @@ class PadCreationServiceTest extends TestCase {
 		$fileCreator->method('createUserFile')->with('alice', '/Meetings/Protokoll 18.05.2026.pad')->willReturn($newFile);
 
 		$padFileService = $this->createMock(PadFileService::class);
-		$padFileService->method('parsePadFile')->with('tpl-content')->willReturn([
-			'frontmatter' => ['pad_id' => 'g.tpl$pad', 'access_mode' => BindingService::ACCESS_PROTECTED],
-			'body' => 'body',
-		]);
-		$padFileService->method('extractPadMetadata')->willReturn([
-			'pad_id' => 'g.tpl$pad',
-			'access_mode' => BindingService::ACCESS_PROTECTED,
-			'pad_url' => '',
-		]);
-		$padFileService->method('isExternalFrontmatter')->willReturn(false);
+		$padFileService->method('readPad')->with('tpl-content')->willReturn(new ParsedPadFile(
+			frontmatter: ['pad_id' => 'g.tpl$pad', 'access_mode' => BindingService::ACCESS_PROTECTED],
+			body: 'body',
+			padId: 'g.tpl$pad',
+			accessMode: BindingService::ACCESS_PROTECTED,
+			padUrl: '',
+			isExternal: false,
+		));
 		$padFileService->method('getSnapshotPartsFromBody')->willReturn([
 			'text' => 'Datum: {{date:next monday|d.m.Y}}',
 			'html' => '',
@@ -366,11 +365,14 @@ class PadCreationServiceTest extends TestCase {
 		$userNodeResolver->method('resolveUserFileNodeById')->willReturn($templateNode);
 
 		$padFileService = $this->createMock(PadFileService::class);
-		$padFileService->method('parsePadFile')->willReturn([
-			'frontmatter' => ['pad_id' => 'ext.remote'],
-			'body' => '',
-		]);
-		$padFileService->method('extractPadMetadata')->willReturn(['pad_id' => 'ext.remote']);
+		$padFileService->method('readPad')->willReturn(new ParsedPadFile(
+			frontmatter: ['pad_id' => 'ext.remote'],
+			body: '',
+			padId: 'ext.remote',
+			accessMode: '',
+			padUrl: '',
+			isExternal: true,
+		));
 
 		$padPaths = $this->createMock(PadPathService::class);
 		$padPaths->method('normalizeCreatePath')->willReturn('/Out.pad');
@@ -395,11 +397,14 @@ class PadCreationServiceTest extends TestCase {
 		$userNodeResolver->method('resolveUserFileNodeById')->willReturn($templateNode);
 
 		$padFileService = $this->createMock(PadFileService::class);
-		$padFileService->method('parsePadFile')->willReturn([
-			'frontmatter' => [],
-			'body' => '',
-		]);
-		$padFileService->method('extractPadMetadata')->willReturn([]);
+		$padFileService->method('readPad')->willReturn(new ParsedPadFile(
+			frontmatter: [],
+			body: '',
+			padId: '',
+			accessMode: '',
+			padUrl: '',
+			isExternal: false,
+		));
 
 		$padPaths = $this->createMock(PadPathService::class);
 		$padPaths->method('normalizeCreatePath')->willReturn('/Out.pad');

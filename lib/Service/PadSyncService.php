@@ -53,13 +53,11 @@ class PadSyncService {
 
 		try {
 			$currentContent = (string)$node->getContent();
-			$parsed = $this->padFileService->parsePadFile((string)$currentContent);
-			$frontmatter = $parsed['frontmatter'];
-			$meta = $this->padFileService->extractPadMetadata($frontmatter);
-			$padId = $meta['pad_id'];
-			$accessMode = $meta['access_mode'];
-			$padUrl = $meta['pad_url'];
-			$isExternal = $this->padFileService->isExternalFrontmatter($frontmatter, $padId);
+			$pad = $this->padFileService->readPad((string)$currentContent);
+			$padId = $pad->padId;
+			$accessMode = $pad->accessMode;
+			$padUrl = $pad->padUrl;
+			$isExternal = $pad->isExternal;
 			if (!$isExternal) {
 				$this->bindingService->assertConsistentMapping($fileId, $padId, $accessMode);
 			}
@@ -96,12 +94,10 @@ class PadSyncService {
 
 		try {
 			$content = (string)$node->getContent();
-			$parsed = $this->padFileService->parsePadFile((string)$content);
-			$frontmatter = $parsed['frontmatter'];
-			$meta = $this->padFileService->extractPadMetadata($frontmatter);
-			$padId = $meta['pad_id'];
-			$accessMode = $meta['access_mode'];
-			$isExternal = $this->padFileService->isExternalFrontmatter($frontmatter, $padId);
+			$pad = $this->padFileService->readPad((string)$content);
+			$padId = $pad->padId;
+			$accessMode = $pad->accessMode;
+			$isExternal = $pad->isExternal;
 			if (!$isExternal) {
 				$this->bindingService->assertConsistentMapping($fileId, $padId, $accessMode);
 			}

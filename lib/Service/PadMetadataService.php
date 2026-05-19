@@ -51,10 +51,7 @@ class PadMetadataService {
 
 		$padId = '';
 		try {
-			$content = (string)$node->getContent();
-			$parsed = $this->padFileService->parsePadFile($content);
-			$meta = $this->padFileService->extractPadMetadata($parsed['frontmatter']);
-			$padId = (string)($meta['pad_id'] ?? '');
+			$padId = $this->padFileService->readPad((string)$node->getContent())->padId;
 		} catch (\Throwable) {
 			return new PadOriginalLookup(found: false);
 		}
@@ -190,13 +187,11 @@ class PadMetadataService {
 			$content = $retryLockedRead
 				? $this->lockRetryService->readContentWithOpenLockRetry($node)
 				: (string)$node->getContent();
-			$parsed = $this->padFileService->parsePadFile((string)$content);
-			$frontmatter = $parsed['frontmatter'];
-			$meta = $this->padFileService->extractPadMetadata($frontmatter);
-			$padId = $meta['pad_id'];
-			$accessMode = $meta['access_mode'];
-			$padUrl = $meta['pad_url'];
-			$isExternal = $this->padFileService->isExternalFrontmatter($frontmatter, $padId);
+			$pad = $this->padFileService->readPad((string)$content);
+			$padId = $pad->padId;
+			$accessMode = $pad->accessMode;
+			$padUrl = $pad->padUrl;
+			$isExternal = $pad->isExternal;
 
 			if ($accessMode === BindingService::ACCESS_PUBLIC) {
 				$publicOpenUrl = $this->resolvePublicOpenUrl($padId, $padUrl, $isExternal);

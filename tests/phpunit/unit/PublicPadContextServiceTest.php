@@ -6,6 +6,7 @@ namespace OCA\EtherpadNextcloud\Tests\Unit;
 
 use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\EtherpadNextcloud\Service\PadFileService;
+use OCA\EtherpadNextcloud\Service\ParsedPadFile;
 use OCA\EtherpadNextcloud\Service\PublicPadContextService;
 use OCA\EtherpadNextcloud\Service\PublicPadOpenService;
 use OCA\EtherpadNextcloud\Service\PublicPadOpenTarget;
@@ -38,13 +39,14 @@ class PublicPadContextServiceTest extends TestCase {
 			'pad_url' => '',
 		];
 		$padFiles = $this->createMock(PadFileService::class);
-		$padFiles->expects($this->once())->method('parsePadFile')->with('frontmatter')->willReturn(['frontmatter' => $frontmatter]);
-		$padFiles->expects($this->once())->method('extractPadMetadata')->with($frontmatter)->willReturn([
-			'pad_id' => 'g.group$pad',
-			'access_mode' => BindingService::ACCESS_PROTECTED,
-			'pad_url' => '',
-		]);
-		$padFiles->expects($this->once())->method('isExternalFrontmatter')->with($frontmatter, 'g.group$pad')->willReturn(false);
+		$padFiles->expects($this->once())->method('readPad')->with('frontmatter')->willReturn(new ParsedPadFile(
+			frontmatter: $frontmatter,
+			body: '',
+			padId: 'g.group$pad',
+			accessMode: BindingService::ACCESS_PROTECTED,
+			padUrl: '',
+			isExternal: false,
+		));
 
 		$bindings = $this->createMock(BindingService::class);
 		$bindings->expects($this->once())

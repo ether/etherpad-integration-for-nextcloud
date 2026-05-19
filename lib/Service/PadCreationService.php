@@ -324,24 +324,20 @@ class PadCreationService {
 			throw new \InvalidArgumentException('Template is empty.');
 		}
 
-		$parsed = $this->padFileService->parsePadFile($templateContent);
-		$frontmatter = $parsed['frontmatter'];
-		$meta = $this->padFileService->extractPadMetadata($frontmatter);
-		$sourcePadId = (string)($meta['pad_id'] ?? '');
-		if ($sourcePadId === '') {
+		$pad = $this->padFileService->readPad($templateContent);
+		if ($pad->padId === '') {
 			throw new \InvalidArgumentException('Template has no usable pad_id in its frontmatter.');
 		}
-		if (str_starts_with($sourcePadId, 'ext.')
-			|| $this->padFileService->isExternalFrontmatter($frontmatter, $sourcePadId)) {
+		if (str_starts_with($pad->padId, 'ext.') || $pad->isExternal) {
 			throw new \InvalidArgumentException('External pads cannot be used as a template.');
 		}
 
-		$accessMode = (string)($meta['access_mode'] ?? BindingService::ACCESS_PROTECTED);
+		$accessMode = $pad->accessMode !== '' ? $pad->accessMode : BindingService::ACCESS_PROTECTED;
 		if ($accessMode !== BindingService::ACCESS_PUBLIC && $accessMode !== BindingService::ACCESS_PROTECTED) {
 			$accessMode = BindingService::ACCESS_PROTECTED;
 		}
 
-		$snapshot = $this->padFileService->getSnapshotPartsFromBody((string)$parsed['body']);
+		$snapshot = $this->padFileService->getSnapshotPartsFromBody($pad->body);
 		$resolvedText = $this->placeholderResolver->applyForContent($snapshot['text'], $user);
 		$resolvedHtml = $this->placeholderResolver->applyForContent($snapshot['html'], $user);
 

@@ -67,13 +67,11 @@ class PadOpenService {
 				throw new \RuntimeException('Could not resolve file ID.');
 			}
 
-			$parsed = $this->padFileService->parsePadFile((string)$content);
-			$frontmatter = $parsed['frontmatter'];
-			$meta = $this->padFileService->extractPadMetadata($frontmatter);
-			$padId = $meta['pad_id'];
-			$accessMode = $meta['access_mode'];
-			$padUrl = $meta['pad_url'];
-			$isExternal = $this->padFileService->isExternalFrontmatter($frontmatter, $padId);
+			$pad = $this->padFileService->readPad((string)$content);
+			$padId = $pad->padId;
+			$accessMode = $pad->accessMode;
+			$padUrl = $pad->padUrl;
+			$isExternal = $pad->isExternal;
 			$snapshot = $isExternal
 				? $this->snapshotExtractor->extract((string)$content)
 				: new SnapshotPayload('', '');

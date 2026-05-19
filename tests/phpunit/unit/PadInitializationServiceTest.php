@@ -9,6 +9,7 @@ use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\EtherpadNextcloud\Service\PadBootstrapService;
 use OCA\EtherpadNextcloud\Service\PadFileService;
 use OCA\EtherpadNextcloud\Service\PadInitializationService;
+use OCA\EtherpadNextcloud\Service\ParsedPadFile;
 use OCA\EtherpadNextcloud\Service\PadPathService;
 use OCA\EtherpadNextcloud\Service\UserNodeResolver;
 use OCP\Files\File;
@@ -35,14 +36,19 @@ class PadInitializationServiceTest extends TestCase {
 		$userNodeResolver->method('toUserAbsolutePath')->with('alice', $file)->willReturn('/Existing.pad');
 
 		$padFileService = $this->createMock(PadFileService::class);
-		$padFileService->method('parsePadFile')
+		$padFileService->method('readPad')
 			->with('content')
-			->willReturn([
-				'frontmatter' => [
+			->willReturn(new ParsedPadFile(
+				frontmatter: [
 					'pad_id' => 'g.ABC$pad',
 					'access_mode' => BindingService::ACCESS_PUBLIC,
 				],
-			]);
+				body: '',
+				padId: 'g.ABC$pad',
+				accessMode: BindingService::ACCESS_PUBLIC,
+				padUrl: '',
+				isExternal: false,
+			));
 
 		$bootstrap = $this->createMock(PadBootstrapService::class);
 		$bootstrap->expects($this->never())->method('initializeMissingFrontmatter');
@@ -70,14 +76,19 @@ class PadInitializationServiceTest extends TestCase {
 		$userNodeResolver->method('toUserAbsolutePath')->with('alice', $file)->willReturn('/Existing.pad');
 
 		$padFileService = $this->createMock(PadFileService::class);
-		$padFileService->method('parsePadFile')
+		$padFileService->method('readPad')
 			->with('content')
-			->willReturn([
-				'frontmatter' => [
+			->willReturn(new ParsedPadFile(
+				frontmatter: [
 					'pad_id' => 'g.ABC$pad',
 					'access_mode' => BindingService::ACCESS_PUBLIC,
 				],
-			]);
+				body: '',
+				padId: 'g.ABC$pad',
+				accessMode: BindingService::ACCESS_PUBLIC,
+				padUrl: '',
+				isExternal: false,
+			));
 
 		$bootstrap = $this->createMock(PadBootstrapService::class);
 		$bootstrap->expects($this->never())->method('initializeMissingFrontmatter');
@@ -115,14 +126,19 @@ class PadInitializationServiceTest extends TestCase {
 		$userNodeResolver->method('toUserAbsolutePath')->with('alice', $file)->willReturn('/Existing.pad');
 
 		$padFileService = $this->createMock(PadFileService::class);
-		$padFileService->method('parsePadFile')
+		$padFileService->method('readPad')
 			->with('content')
-			->willReturn([
-				'frontmatter' => [
+			->willReturn(new ParsedPadFile(
+				frontmatter: [
 					'pad_id' => 'g.ABC$pad',
 					'access_mode' => BindingService::ACCESS_PUBLIC,
 				],
-			]);
+				body: '',
+				padId: 'g.ABC$pad',
+				accessMode: BindingService::ACCESS_PUBLIC,
+				padUrl: '',
+				isExternal: false,
+			));
 
 		$bootstrap = $this->createMock(PadBootstrapService::class);
 		$bootstrap->expects($this->never())->method('initializeMissingFrontmatter');
@@ -148,19 +164,24 @@ class PadInitializationServiceTest extends TestCase {
 		$padFileService = $this->createMock(PadFileService::class);
 		$parseCalls = 0;
 		$padFileService->expects($this->exactly(2))
-			->method('parsePadFile')
-			->willReturnCallback(static function (string $content) use (&$parseCalls): array {
+			->method('readPad')
+			->willReturnCallback(static function (string $content) use (&$parseCalls): ParsedPadFile {
 				$parseCalls++;
 				if ($parseCalls === 1) {
 					throw new MissingFrontmatterException('Missing frontmatter.');
 				}
 				TestCase::assertSame('updated-content', $content);
-				return [
-					'frontmatter' => [
+				return new ParsedPadFile(
+					frontmatter: [
 						'pad_id' => 'g.XYZ$pad',
 						'access_mode' => BindingService::ACCESS_PROTECTED,
 					],
-				];
+					body: '',
+					padId: 'g.XYZ$pad',
+					accessMode: BindingService::ACCESS_PROTECTED,
+					padUrl: '',
+					isExternal: false,
+				);
 			});
 
 		$bootstrap = $this->createMock(PadBootstrapService::class);
@@ -190,18 +211,23 @@ class PadInitializationServiceTest extends TestCase {
 		$padFileService = $this->createMock(PadFileService::class);
 		$parseCalls = 0;
 		$padFileService->expects($this->exactly(2))
-			->method('parsePadFile')
-			->willReturnCallback(static function (string $content) use (&$parseCalls): array {
+			->method('readPad')
+			->willReturnCallback(static function (string $content) use (&$parseCalls): ParsedPadFile {
 				$parseCalls++;
 				if ($parseCalls === 1) {
 					throw new MissingFrontmatterException('Missing frontmatter.');
 				}
-				return [
-					'frontmatter' => [
+				return new ParsedPadFile(
+					frontmatter: [
 						'pad_id' => 're-bound-pad',
 						'access_mode' => BindingService::ACCESS_PUBLIC,
 					],
-				];
+					body: '',
+					padId: 're-bound-pad',
+					accessMode: BindingService::ACCESS_PUBLIC,
+					padUrl: '',
+					isExternal: false,
+				);
 			});
 
 		$bootstrap = $this->createMock(PadBootstrapService::class);

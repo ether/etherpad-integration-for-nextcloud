@@ -10,6 +10,7 @@ use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\EtherpadNextcloud\Service\EtherpadClient;
 use OCA\EtherpadNextcloud\Service\PadFileService;
 use OCA\EtherpadNextcloud\Service\PadSessionService;
+use OCA\EtherpadNextcloud\Service\ParsedPadFile;
 use OCA\EtherpadNextcloud\Service\PublicPadContextService;
 use OCA\EtherpadNextcloud\Service\PublicPadOpenService;
 use OCA\EtherpadNextcloud\Service\PublicShareResolver;
@@ -53,21 +54,16 @@ class PublicViewerControllerTest extends TestCase {
 
 		$padFileService = $this->createMock(PadFileService::class);
 		$padFileService->expects($this->once())
-			->method('parsePadFile')
+			->method('readPad')
 			->with('frontmatter')
-			->willReturn(['frontmatter' => $frontmatter]);
-		$padFileService->expects($this->once())
-			->method('extractPadMetadata')
-			->with($frontmatter)
-			->willReturn([
-				'pad_id' => 'g.abcdefghijklmnop$Shared',
-				'access_mode' => BindingService::ACCESS_PROTECTED,
-				'pad_url' => '',
-			]);
-		$padFileService->expects($this->once())
-			->method('isExternalFrontmatter')
-			->with($frontmatter, 'g.abcdefghijklmnop$Shared')
-			->willReturn(false);
+			->willReturn(new ParsedPadFile(
+				frontmatter: $frontmatter,
+				body: '',
+				padId: 'g.abcdefghijklmnop$Shared',
+				accessMode: BindingService::ACCESS_PROTECTED,
+				padUrl: '',
+				isExternal: false,
+			));
 		$padFileService->expects($this->once())
 			->method('getTextSnapshotForRestore')
 			->with('frontmatter')
@@ -132,21 +128,16 @@ class PublicViewerControllerTest extends TestCase {
 
 		$padFileService = $this->createMock(PadFileService::class);
 		$padFileService->expects($this->once())
-			->method('parsePadFile')
+			->method('readPad')
 			->with('frontmatter')
-			->willReturn(['frontmatter' => $frontmatter]);
-		$padFileService->expects($this->once())
-			->method('extractPadMetadata')
-			->with($frontmatter)
-			->willReturn([
-				'pad_id' => 'ext.abc123',
-				'access_mode' => BindingService::ACCESS_PUBLIC,
-				'pad_url' => 'https://pad.portal.example/p/Test',
-			]);
-		$padFileService->expects($this->once())
-			->method('isExternalFrontmatter')
-			->with($frontmatter, 'ext.abc123')
-			->willReturn(true);
+			->willReturn(new ParsedPadFile(
+				frontmatter: $frontmatter,
+				body: '',
+				padId: 'ext.abc123',
+				accessMode: BindingService::ACCESS_PUBLIC,
+				padUrl: 'https://pad.portal.example/p/Test',
+				isExternal: true,
+			));
 		$padFileService->expects($this->once())
 			->method('getTextSnapshotForRestore')
 			->with('frontmatter')
@@ -205,34 +196,22 @@ class PublicViewerControllerTest extends TestCase {
 
 		$padFileService = $this->createMock(PadFileService::class);
 		$padFileService->expects($this->once())
-			->method('parsePadFile')
+			->method('readPad')
 			->with('frontmatter')
-			->willReturn([
-				'frontmatter' => [
+			->willReturn(new ParsedPadFile(
+				frontmatter: [
 					'pad_id' => 'ext.123',
 					'access_mode' => BindingService::ACCESS_PROTECTED,
 					'pad_url' => 'https://remote.example.test/p/demo',
 					'pad_origin' => 'https://remote.example.test',
 					'remote_pad_id' => 'demo',
 				],
-			]);
-		$padFileService->expects($this->once())
-			->method('extractPadMetadata')
-			->willReturn([
-				'pad_id' => 'ext.123',
-				'access_mode' => BindingService::ACCESS_PROTECTED,
-				'pad_url' => 'https://remote.example.test/p/demo',
-			]);
-		$padFileService->expects($this->once())
-			->method('isExternalFrontmatter')
-			->with([
-				'pad_id' => 'ext.123',
-				'access_mode' => BindingService::ACCESS_PROTECTED,
-				'pad_url' => 'https://remote.example.test/p/demo',
-				'pad_origin' => 'https://remote.example.test',
-				'remote_pad_id' => 'demo',
-			], 'ext.123')
-			->willReturn(true);
+				body: '',
+				padId: 'ext.123',
+				accessMode: BindingService::ACCESS_PROTECTED,
+				padUrl: 'https://remote.example.test/p/demo',
+				isExternal: true,
+			));
 
 		$bindingService = $this->createMock(BindingService::class);
 		$bindingService->expects($this->never())->method('assertConsistentMapping');

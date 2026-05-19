@@ -340,15 +340,13 @@ class LifecycleService {
 				throw new LockedException('Injected test fault: restore_read_lock');
 			}
 			$currentContent = (string)$file->getContent();
-			$parsed = $this->padFileService->parsePadFile($currentContent);
-			$frontmatter = $parsed['frontmatter'];
-			$meta = $this->padFileService->extractPadMetadata($frontmatter);
-			$oldPadId = $meta['pad_id'];
-			$accessMode = $meta['access_mode'];
-			if (str_starts_with($oldPadId, 'ext.') || $this->padFileService->isExternalFrontmatter($frontmatter, $oldPadId)) {
+			$pad = $this->padFileService->readPad($currentContent);
+			$oldPadId = $pad->padId;
+			$accessMode = $pad->accessMode;
+			if (str_starts_with($oldPadId, 'ext.') || $pad->isExternal) {
 				return $this->buildSkippedResult('external_pad', $fileId, $oldPadId);
 			}
-			$snapshotParts = $this->padFileService->getSnapshotPartsFromBody((string)$parsed['body']);
+			$snapshotParts = $this->padFileService->getSnapshotPartsFromBody($pad->body);
 			$snapshot = $snapshotParts['text'];
 			$htmlSnapshot = $snapshotParts['html'];
 			$newPadId = $this->provisionRestorePadId($accessMode, $oldPadId);
@@ -447,11 +445,8 @@ class LifecycleService {
 			if ($content === null) {
 				$content = (string)$file->getContent();
 			}
-			$parsed = $this->padFileService->parsePadFile($content);
-			$frontmatter = $parsed['frontmatter'];
-			$meta = $this->padFileService->extractPadMetadata($frontmatter);
-			return str_starts_with($meta['pad_id'], 'ext.')
-				|| $this->padFileService->isExternalFrontmatter($frontmatter, $meta['pad_id']);
+			$pad = $this->padFileService->readPad($content);
+			return str_starts_with($pad->padId, 'ext.') || $pad->isExternal;
 		} catch (\Throwable) {
 			return false;
 		}

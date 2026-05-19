@@ -61,14 +61,13 @@ class PadInitializationService {
 		$fileId = (int)$file->getId();
 		$path = $this->userNodeResolver->toUserAbsolutePath($uid, $file);
 		try {
-			$parsed = $this->padFileService->parsePadFile($content);
-			$meta = $parsed['frontmatter'];
+			$pad = $this->padFileService->readPad($content);
 			return new PadInitializationResult(
 				status: self::STATUS_ALREADY_INITIALIZED,
 				file: $path,
 				fileId: $fileId,
-				padId: (string)$meta['pad_id'],
-				accessMode: (string)$meta['access_mode'],
+				padId: $pad->padId,
+				accessMode: $pad->accessMode,
 			);
 		} catch (MissingFrontmatterException) {
 			// Explicitly continue with bootstrap flow for legacy or empty .pad files.
@@ -77,16 +76,14 @@ class PadInitializationService {
 		}
 
 		$wasLegacyMigration = $this->padBootstrapService->initializeMissingFrontmatter($uid, $file, $content);
-		$updatedContent = (string)$file->getContent();
-		$parsed = $this->padFileService->parsePadFile((string)$updatedContent);
-		$meta = $parsed['frontmatter'];
+		$pad = $this->padFileService->readPad((string)$file->getContent());
 
 		return new PadInitializationResult(
 			status: $wasLegacyMigration ? self::STATUS_MIGRATED_FROM_LEGACY : self::STATUS_INITIALIZED,
 			file: $path,
 			fileId: $fileId,
-			padId: (string)$meta['pad_id'],
-			accessMode: (string)$meta['access_mode'],
+			padId: $pad->padId,
+			accessMode: $pad->accessMode,
 		);
 	}
 }

@@ -13,6 +13,7 @@ use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\EtherpadNextcloud\Service\EtherpadClient;
 use OCA\EtherpadNextcloud\Service\LifecycleService;
 use OCA\EtherpadNextcloud\Service\PadFileService;
+use OCA\EtherpadNextcloud\Service\ParsedPadFile;
 use OCP\Files\File;
 use OCP\IConfig;
 use OCP\Security\ISecureRandom;
@@ -262,20 +263,18 @@ class LifecycleServiceTest extends TestCase {
 			->with($fileId, $newPadId, BindingService::ACCESS_PUBLIC);
 
 		$padFileService = $this->createMock(PadFileService::class);
-		$padFileService->method('parsePadFile')->with('doc-before')->willReturn([
-			'frontmatter' => [
+		$padFileService->method('readPad')->with('doc-before')->willReturn(new ParsedPadFile(
+			frontmatter: [
 				'pad_id' => $oldPadId,
 				'access_mode' => BindingService::ACCESS_PUBLIC,
 				'state' => 'trashed',
 			],
-			'body' => '',
-		]);
-		$padFileService->method('extractPadMetadata')->willReturn([
-			'pad_id' => $oldPadId,
-			'access_mode' => BindingService::ACCESS_PUBLIC,
-			'pad_url' => 'https://pad.example.test/p/' . rawurlencode($oldPadId),
-		]);
-		$padFileService->method('isExternalFrontmatter')->willReturn(false);
+			body: '',
+			padId: $oldPadId,
+			accessMode: BindingService::ACCESS_PUBLIC,
+			padUrl: 'https://pad.example.test/p/' . rawurlencode($oldPadId),
+			isExternal: false,
+		));
 		$padFileService->method('getSnapshotPartsFromBody')->willReturn([
 			'text' => 'plain text',
 			'html' => '',
@@ -337,16 +336,14 @@ class LifecycleServiceTest extends TestCase {
 			'remote_pad_id' => $remotePadId,
 		];
 		$padFileService = $this->createMock(PadFileService::class);
-		$padFileService->method('parsePadFile')->with('doc-before')->willReturn([
-			'frontmatter' => $frontmatter,
-			'body' => '',
-		]);
-		$padFileService->method('extractPadMetadata')->willReturn([
-			'pad_id' => $oldPadId,
-			'access_mode' => BindingService::ACCESS_PUBLIC,
-			'pad_url' => $padUrl,
-		]);
-		$padFileService->method('isExternalFrontmatter')->with($frontmatter, $oldPadId)->willReturn(true);
+		$padFileService->method('readPad')->with('doc-before')->willReturn(new ParsedPadFile(
+			frontmatter: $frontmatter,
+			body: '',
+			padId: $oldPadId,
+			accessMode: BindingService::ACCESS_PUBLIC,
+			padUrl: $padUrl,
+			isExternal: true,
+		));
 		$padFileService->expects($this->never())->method('getSnapshotPartsFromBody');
 		$padFileService->expects($this->never())->method('withStateAndSnapshot');
 
@@ -393,16 +390,14 @@ class LifecycleServiceTest extends TestCase {
 			'pad_url' => '',
 		];
 		$padFileService = $this->createMock(PadFileService::class);
-		$padFileService->method('parsePadFile')->with('doc-before')->willReturn([
-			'frontmatter' => $frontmatter,
-			'body' => '',
-		]);
-		$padFileService->method('extractPadMetadata')->willReturn([
-			'pad_id' => $oldPadId,
-			'access_mode' => BindingService::ACCESS_PUBLIC,
-			'pad_url' => '',
-		]);
-		$padFileService->method('isExternalFrontmatter')->with($frontmatter, $oldPadId)->willReturn(false);
+		$padFileService->method('readPad')->with('doc-before')->willReturn(new ParsedPadFile(
+			frontmatter: $frontmatter,
+			body: '',
+			padId: $oldPadId,
+			accessMode: BindingService::ACCESS_PUBLIC,
+			padUrl: '',
+			isExternal: false,
+		));
 		$padFileService->method('getSnapshotPartsFromBody')->willReturn([
 			'text' => 'external snapshot',
 			'html' => '',
@@ -457,16 +452,14 @@ class LifecycleServiceTest extends TestCase {
 			'remote_pad_id' => $remotePadId,
 		];
 		$padFileService = $this->createMock(PadFileService::class);
-		$padFileService->method('parsePadFile')->with('doc-before')->willReturn([
-			'frontmatter' => $frontmatter,
-			'body' => '',
-		]);
-		$padFileService->method('extractPadMetadata')->willReturn([
-			'pad_id' => $oldPadId,
-			'access_mode' => BindingService::ACCESS_PUBLIC,
-			'pad_url' => $padUrl,
-		]);
-		$padFileService->method('isExternalFrontmatter')->with($frontmatter, $oldPadId)->willReturn(true);
+		$padFileService->method('readPad')->with('doc-before')->willReturn(new ParsedPadFile(
+			frontmatter: $frontmatter,
+			body: '',
+			padId: $oldPadId,
+			accessMode: BindingService::ACCESS_PUBLIC,
+			padUrl: $padUrl,
+			isExternal: true,
+		));
 		$padFileService->method('getSnapshotPartsFromBody')->willReturn([
 			'text' => 'external snapshot',
 			'html' => '',
@@ -517,19 +510,17 @@ class LifecycleServiceTest extends TestCase {
 			->with($fileId, $newPadId, BindingService::ACCESS_PUBLIC);
 
 		$padFileService = $this->createMock(PadFileService::class);
-		$padFileService->method('parsePadFile')->willReturn([
-			'frontmatter' => [
+		$padFileService->method('readPad')->willReturn(new ParsedPadFile(
+			frontmatter: [
 				'pad_id' => $oldPadId,
 				'access_mode' => BindingService::ACCESS_PUBLIC,
 			],
-			'body' => '',
-		]);
-		$padFileService->method('extractPadMetadata')->willReturn([
-			'pad_id' => $oldPadId,
-			'access_mode' => BindingService::ACCESS_PUBLIC,
-			'pad_url' => 'https://pad.example.test/p/' . rawurlencode($oldPadId),
-		]);
-		$padFileService->method('isExternalFrontmatter')->willReturn(false);
+			body: '',
+			padId: $oldPadId,
+			accessMode: BindingService::ACCESS_PUBLIC,
+			padUrl: 'https://pad.example.test/p/' . rawurlencode($oldPadId),
+			isExternal: false,
+		));
 		$padFileService->method('getSnapshotPartsFromBody')->willReturn([
 			'text' => 'recovered content',
 			'html' => '',
@@ -585,16 +576,14 @@ class LifecycleServiceTest extends TestCase {
 		$bindingService->expects($this->never())->method('deleteByFileId');
 
 		$padFileService = $this->createMock(PadFileService::class);
-		$padFileService->method('parsePadFile')->willReturn([
-			'frontmatter' => ['pad_id' => $oldPadId, 'access_mode' => BindingService::ACCESS_PUBLIC],
-			'body' => '',
-		]);
-		$padFileService->method('extractPadMetadata')->willReturn([
-			'pad_id' => $oldPadId,
-			'access_mode' => BindingService::ACCESS_PUBLIC,
-			'pad_url' => '',
-		]);
-		$padFileService->method('isExternalFrontmatter')->willReturn(false);
+		$padFileService->method('readPad')->willReturn(new ParsedPadFile(
+			frontmatter: ['pad_id' => $oldPadId, 'access_mode' => BindingService::ACCESS_PUBLIC],
+			body: '',
+			padId: $oldPadId,
+			accessMode: BindingService::ACCESS_PUBLIC,
+			padUrl: '',
+			isExternal: false,
+		));
 		$padFileService->method('getSnapshotPartsFromBody')->willReturn(['text' => 'content', 'html' => '']);
 		$padFileService->method('withStateAndSnapshot')->willReturn('doc-after');
 

@@ -137,6 +137,30 @@ class PadFileService {
 	}
 
 	/**
+	 * One-shot read of the pad-file frontmatter into a typed value object.
+	 * Composes `parsePadFile`, `extractPadMetadata`, and
+	 * `isExternalFrontmatter` so callers don't open-code the same 4-line
+	 * sequence at every site that opens a `.pad`.
+	 *
+	 * @throws \OCA\EtherpadNextcloud\Exception\MissingFrontmatterException
+	 * @throws \OCA\EtherpadNextcloud\Exception\PadFileFormatException
+	 */
+	public function readPad(string $content): ParsedPadFile {
+		$parsed = $this->parsePadFile($content);
+		$frontmatter = $parsed['frontmatter'];
+		$meta = $this->extractPadMetadata($frontmatter);
+		$padId = $meta['pad_id'];
+		return new ParsedPadFile(
+			frontmatter: $frontmatter,
+			body: (string)($parsed['body'] ?? ''),
+			padId: $padId,
+			accessMode: $meta['access_mode'],
+			padUrl: $meta['pad_url'],
+			isExternal: $this->isExternalFrontmatter($frontmatter, $padId),
+		);
+	}
+
+	/**
 	 * @param array<string,mixed> $frontmatter
 	 * @return array{pad_id:string,access_mode:string,pad_url:string}
 	 */

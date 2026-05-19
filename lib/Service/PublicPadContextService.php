@@ -34,13 +34,11 @@ class PublicPadContextService {
 		$content = (string)$node->getContent();
 		$fileId = (int)$node->getId();
 
-		$parsed = $this->padFileService->parsePadFile($content);
-		$frontmatter = $parsed['frontmatter'];
-		$meta = $this->padFileService->extractPadMetadata($frontmatter);
-		$padId = $meta['pad_id'];
-		$accessMode = $meta['access_mode'];
-		$padUrl = $meta['pad_url'];
-		$isExternal = $this->padFileService->isExternalFrontmatter($frontmatter, $padId);
+		$pad = $this->padFileService->readPad($content);
+		$padId = $pad->padId;
+		$accessMode = $pad->accessMode;
+		$padUrl = $pad->padUrl;
+		$isExternal = $pad->isExternal;
 
 		if (!$isExternal) {
 			$this->bindingService->assertConsistentMapping($fileId, $padId, $accessMode);
