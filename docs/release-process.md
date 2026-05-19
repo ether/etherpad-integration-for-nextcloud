@@ -124,11 +124,11 @@ Notes:
 After deploy, verify that the historical query-budget warning is not present anymore:
 
 ```bash
-ssh <server> 'grep -n "PadController::create executed" /path/to/nextcloud.log | tail -n 20'
+ssh <server> 'grep -n "PadCreateController::create executed" /path/to/nextcloud.log | tail -n 20'
 ssh <server> 'grep -nE "executed [0-9]+ queries" /path/to/nextcloud.log | tail -n 20'
 ```
 
-Expected result: no new warnings for `PadController::create` above the Nextcloud warning threshold.
+Expected result: no new warnings for `PadCreateController::create` above the Nextcloud warning threshold.
 
 ## 6) Cookie Header Contract (Protected Pads)
 

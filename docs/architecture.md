@@ -43,9 +43,9 @@ Etherpad is the editing source of truth; the `.pad` file acts as binding storage
 - `lib/Controller/EmbedController.php`
   - Minimal embed entrypoints for trusted same-site / trusted-origin integrations.
   - Renders blank embed/open and embed/create pages with route-specific CSP `frame-ancestors`.
-- `lib/Controller/PadController.php`
-  - API for create/open/resolve/sync/trash/restore.
-  - For protected pad opens, attaches explicit Etherpad `Set-Cookie` session header via response header.
+- `lib/Controller/PadCreateController.php`, `lib/Controller/PadSessionController.php`, `lib/Controller/PadLifecycleController.php` (all extend `AbstractPadController` for the shared deps + helpers)
+  - The `.pad` API surface split along three concerns: create-side endpoints, open/init/meta endpoints, and lifecycle/sync endpoints. Public URL paths (`/api/v1/pads/…`) are stable; only the internal controller class differs per route.
+  - For protected pad opens, `PadSessionController` attaches the explicit Etherpad `Set-Cookie` session header via the response.
 
 ## Frontend Build
 
@@ -87,7 +87,7 @@ checked-in runtime assets in `js/`.
 
 ### 1) Create
 
-1. `PadController::create` creates an Etherpad pad (public or protected/group).
+1. `PadCreateController::create` creates an Etherpad pad (public or protected/group).
 2. Creates the `.pad` file.
 3. Writes initial frontmatter.
 4. Creates DB binding.
@@ -103,7 +103,7 @@ Primary flow (native viewer):
 2. `src/viewer-main.js` resolves Etherpad open data via API:
    - preferred: `POST /api/v1/pads/open-by-id` (`fileId`, CSRF `requesttoken`)
    - fallback: `POST /api/v1/pads/open` (`file`, CSRF `requesttoken`) if no stable `fileId` is available
-3. `PadController` validates frontmatter/binding and resolves secure open URL:
+3. `PadSessionController` validates frontmatter/binding and resolves secure open URL:
    - `protected`: session URL via `PadSessionService`
    - external: validate the stored external URL and return a read-only snapshot/open target without DB binding lookup
    - `public`: direct/read-only URL as appropriate
@@ -155,7 +155,7 @@ Primary flow (minimal blank create launcher page):
 3. `templates/embed-create.php` loads the Vite-built bundle for `src/embed-create-main.js` explicitly in blank layout.
 4. `src/embed-create-main.js` reads `name` and `accessMode` from the launcher URL, validates them client-side, and calls `POST /api/v1/pads/create-by-parent` same-origin with CSRF token from the template.
    - the token is injected manually for the same reason as embed-open: blank layout has no automatic `OC.requestToken` bootstrap
-5. `PadController::createByParent` performs server-side validation of `name`, `accessMode`, and the writable target folder before creating the `.pad` file and binding.
+5. `PadCreateController::createByParent` performs server-side validation of `name`, `accessMode`, and the writable target folder before creating the `.pad` file and binding.
 6. On success the launcher redirects itself to the returned `embed_url`, after which the normal embed-open flow takes over.
 
 ### 3) Open (public share)
@@ -195,7 +195,7 @@ Primary flow (native viewer when available):
    - flush on `visibilitychange`
    - flush on `pagehide`
    - extra flush triggers via trusted host messages
-3. `PadController::syncById` fetches revision state from Etherpad.
+3. `PadLifecycleController::syncById` fetches revision state from Etherpad.
 4. `.pad` snapshot is updated only when the upstream snapshot actually differs.
    - `force=1` requests an immediate upstream re-check, but unchanged snapshots are still not rewritten.
    - Snapshot writes are built via `PadFileService::withExportSnapshot(...)` and persisted via `PadFileLockRetryService::putContentWithSyncLockRetry(...)`.

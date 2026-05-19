@@ -72,14 +72,14 @@ Base: `/apps/etherpad_nextcloud`
     - public/external pad share: regular public Etherpad URL
 
 - `POST /api/v1/pads`
-  - Controller: `PadController::create`
+  - Controller: `PadCreateController::create`
   - Params:
     - `file` (required)
     - `accessMode` (`public|protected`, optional, default `protected`)
   - Result: creates pad, file, and binding.
 
 - `POST /api/v1/pads/create-by-parent`
-  - Controller: `PadController::createByParent`
+  - Controller: `PadCreateController::createByParent`
   - Params:
     - `parentFolderId` (required, Nextcloud folder/file ID of the writable target folder)
     - `name` (required, filename base; `.pad` suffix is appended if missing)
@@ -99,7 +99,7 @@ Base: `/apps/etherpad_nextcloud`
     - not direct server-side cross-app mutation without a real Nextcloud user session
 
 - `POST /api/v1/pads/from-url`
-  - Controller: `PadController::createFromUrl`
+  - Controller: `PadCreateController::createFromUrl`
   - Params:
     - `file` (required)
     - `padUrl` (required, absolute `https` URL with `/p/{padId}`)
@@ -114,7 +114,7 @@ Base: `/apps/etherpad_nextcloud`
     - external sync accepts only safe text-oriented response content-types
 
 - `POST /api/v1/pads/from-template`
-  - Controller: `PadController::createFromTemplate`
+  - Controller: `PadCreateController::createFromTemplate`
   - Params:
     - `file` (required) — target path. Body placeholders (`{{date}}`, `{{user}}` etc.) are resolved server-side.
     - `templateFileId` (required) — id of any `.pad` in the user's userspace; doesn't have to live in the *Templates* folder.
@@ -123,30 +123,30 @@ Base: `/apps/etherpad_nextcloud`
   - Errors: 400 (non-pad template / external template / empty), 404 (template id not found in userspace), 409 (filename collision).
 
 - `POST /api/v1/pads/open`
-  - Controller: `PadController::open`
+  - Controller: `PadSessionController::open`
   - Params: `file=/path/file.pad`
   - Result: secure open URL.
   - Behavior: read-only (no auto-mutation of `.pad` metadata), CSRF-protected.
   - Protected mode: response includes one Etherpad session `Set-Cookie` header.
 
 - `POST /api/v1/pads/open-by-id`
-  - Controller: `PadController::openById`
+  - Controller: `PadSessionController::openById`
   - Params: `fileId=<int>`
   - Result: secure open URL via stable Nextcloud `fileId`.
   - Behavior: read-only (no auto-mutation of `.pad` metadata), CSRF-protected.
   - Protected mode: response includes one Etherpad session `Set-Cookie` header.
 
 - `POST /api/v1/pads/initialize`
-  - Controller: `PadController::initialize`
+  - Controller: `PadSessionController::initialize`
   - Params: `file=/path/file.pad`
   - Purpose: explicit frontmatter initialization for empty/legacy `.pad` files.
 
 - `POST /api/v1/pads/initialize-by-id/{fileId}`
-  - Controller: `PadController::initializeById`
+  - Controller: `PadSessionController::initializeById`
   - Purpose: explicit frontmatter initialization by stable Nextcloud `fileId`.
 
 - `GET /api/v1/pads/meta-by-id/{fileId}`
-  - Controller: `PadController::metaById`
+  - Controller: `PadSessionController::metaById`
   - Purpose: read-only metadata endpoint for external UIs that need stable file context without triggering open/session bootstrap.
   - Result includes:
     - `is_pad`
@@ -163,14 +163,14 @@ Base: `/apps/etherpad_nextcloud`
     - `embed_url`
 
 - `GET /api/v1/pads/resolve`
-  - Controller: `PadController::resolveById`
+  - Controller: `PadSessionController::resolveById`
   - Query:
     - `fileId=<int>` (preferred)
     - `file=/path/file.pad` (path fallback)
   - Result: MIME/path/viewer target for files frontend.
 
 - `POST /api/v1/pads/sync/{fileId}`
-  - Controller: `PadController::syncById`
+  - Controller: `PadLifecycleController::syncById`
   - Optional query: `force=1`
   - Result: snapshot sync Etherpad -> `.pad` (`updated` or `unchanged`).
   - `force=1` requests an immediate upstream re-check, but unchanged snapshots are still not rewritten.
@@ -180,7 +180,7 @@ Base: `/apps/etherpad_nextcloud`
     - No DB binding is required; the external target is validated from `.pad` frontmatter.
 
 - `GET /api/v1/pads/sync-status/{fileId}`
-  - Controller: `PadController::syncStatusById`
+  - Controller: `PadLifecycleController::syncStatusById`
   - Result:
     - `status=synced` if `snapshot_rev >= current_rev`
     - `status=out_of_sync` if `snapshot_rev < current_rev`
@@ -188,7 +188,7 @@ Base: `/apps/etherpad_nextcloud`
     - External pads return `unavailable` because the app intentionally does not keep revision state for remote servers.
 
 - `POST /api/v1/pads/trash`
-  - Controller: `PadController::trash`
+  - Controller: `PadLifecycleController::trash`
   - Params: `file=/path/file.pad`
   - Result:
     - `200` with `status=trashed` for successful trash flow.
@@ -198,7 +198,7 @@ Base: `/apps/etherpad_nextcloud`
       - includes transition-race guard reason `binding_state_transition_conflict` on concurrent state updates.
 
 - `POST /api/v1/pads/restore`
-  - Controller: `PadController::restore`
+  - Controller: `PadLifecycleController::restore`
   - Params: `file=/path/file.pad`
   - Result:
     - `200` with `status=restored` for successful restore flow.
@@ -206,7 +206,7 @@ Base: `/apps/etherpad_nextcloud`
       - includes transition-race guard reason `binding_state_transition_conflict` on concurrent state updates.
 
 - `POST /api/v1/pads/recover-from-snapshot/{fileId}`
-  - Controller: `PadController::recoverByFileId`
+  - Controller: `PadLifecycleController::recoverByFileId`
   - Purpose: manual recovery entry point for `.pad` files that ended up without a binding row (WebDAV backup restore, `occ files:scan`, direct DB intervention, file copy). Reuses the same "frontmatter → fresh pad" path as `NodeRestoredEvent` but is guarded so it refuses when a binding row already exists.
   - Result:
     - `200` with `status=restored`, `old_pad_id`, `new_pad_id` on success. Always provisions a fresh pad — `pad_id` from frontmatter is never reused.
@@ -214,7 +214,7 @@ Base: `/apps/etherpad_nextcloud`
     - `409` with `message` and the `PadAlreadyHasBindingException` mapping if a binding row already exists for the file.
 
 - `GET /api/v1/pads/find-original/{fileId}`
-  - Controller: `PadController::findOriginalByFileId`
+  - Controller: `PadLifecycleController::findOriginalByFileId`
   - Purpose: look up whether the orphan's frontmatter `pad_id` is bound to another `.pad` the requester can read. Used by the recovery UI to offer "Open the original" when a copy is detected.
   - Result:
     - `200` with `{ found: true, file_id, path, viewer_url }` when the lookup hits **and** the bound file is readable by the requester.
