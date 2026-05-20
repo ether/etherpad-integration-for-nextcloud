@@ -3,8 +3,8 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-: "${DEPLOY_SSH_TARGET:?DEPLOY_SSH_TARGET is required (example: jaggob@hamal.uberspace.de)}"
-: "${DEPLOY_APP_PATH:?DEPLOY_APP_PATH is required (example: /var/www/virtual/jaggob/html/apps/etherpad_nextcloud)}"
+: "${DEPLOY_SSH_TARGET:?DEPLOY_SSH_TARGET is required (example: user@nextcloud.example.com)}"
+: "${DEPLOY_APP_PATH:?DEPLOY_APP_PATH is required (example: /var/www/nextcloud/apps/etherpad_nextcloud)}"
 
 RSYNC_DELETE="${RSYNC_DELETE:-0}"
 
