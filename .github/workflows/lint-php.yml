@@ -1,0 +1,47 @@
+# SPDX-FileCopyrightText: 2026 Etherpad contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# Modeled on https://github.com/nextcloud/notes/blob/main/.github/workflows/lint-php.yml
+# Parse-lint every PHP file with the lowest supported PHP toolchain, then
+# repeat on the highest to catch version-specific syntax issues.
+
+name: Lint PHP
+
+on: pull_request
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lint-php-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  php-lint:
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        php-versions: ['8.2', '8.4']
+
+    name: PHP ${{ matrix.php-versions }} parse-lint
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@9e72090525849c5e82e596468b86eb55e9cc5401 # v2.32.0
+        with:
+          php-version: ${{ matrix.php-versions }}
+          coverage: none
+          tools: none
+
+      - name: Lint
+        run: |
+          set -euo pipefail
+          find lib tests scripts -type f -name '*.php' -print0 \
+            | xargs -0 -n1 -P4 php -l > /dev/null
