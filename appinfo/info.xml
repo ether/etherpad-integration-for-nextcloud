@@ -8,21 +8,24 @@
 	<version>1.1.0-alpha.1</version>
 	<licence>agpl</licence>
 	<author>Jacob Bühler</author>
+	<author>John McLear</author>
 	<namespace>EtherpadNextcloud</namespace>
-	<types>
-		<filesystem/>
-	</types>
+	<category>office</category>
+	<website>https://github.com/Jaggob/etherpad-integration-for-nextcloud</website>
+	<bugs>https://github.com/Jaggob/etherpad-integration-for-nextcloud/issues</bugs>
+	<repository type="git">https://github.com/Jaggob/etherpad-integration-for-nextcloud.git</repository>
 	<dependencies>
-		<nextcloud min-version="30" max-version="33"/>
+		<php min-version="8.1" max-version="8.5"/>
+		<nextcloud min-version="31" max-version="33"/>
 	</dependencies>
-	<settings>
-		<admin-section>OCA\EtherpadNextcloud\Settings\AdminSection</admin-section>
-		<admin>OCA\EtherpadNextcloud\Settings\AdminSettings</admin>
-	</settings>
 	<repair-steps>
 		<post-migration>
 			<step>OCA\EtherpadNextcloud\Migration\RegisterMimeType</step>
 			<step>OCA\EtherpadNextcloud\Migration\BackfillPadMimeType</step>
 		</post-migration>
 	</repair-steps>
+	<settings>
+		<admin>OCA\EtherpadNextcloud\Settings\AdminSettings</admin>
+		<admin-section>OCA\EtherpadNextcloud\Settings\AdminSection</admin-section>
+	</settings>
 </info>
