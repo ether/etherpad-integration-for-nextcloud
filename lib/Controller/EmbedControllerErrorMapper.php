@@ -75,7 +75,7 @@ class EmbedControllerErrorMapper {
 				'app' => Application::APP_ID,
 				'exception' => $e,
 			]);
-			return $this->errorTemplate($this->l10n->t('Unable to open pad.'), $errorTitle);
+			return $this->errorTemplate($this->l10n->t('Could not open pad.'), $errorTitle);
 		}
 	}
 

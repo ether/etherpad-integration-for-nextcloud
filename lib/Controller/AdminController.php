@@ -108,7 +108,7 @@ class AdminController extends Controller {
 			},
 			fn(array $result): DataResponse => new DataResponse([
 				'ok' => true,
-				'message' => $this->l10n->t('Lifecycle delete retry finished.'),
+				'message' => $this->l10n->t('Pending delete retry finished.'),
 				'attempted' => $result['attempted'],
 				'resolved' => $result['resolved'],
 				'failed' => $result['failed'],

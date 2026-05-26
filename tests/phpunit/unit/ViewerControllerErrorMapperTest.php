@@ -79,7 +79,7 @@ class ViewerControllerErrorMapperTest extends TestCase {
 		);
 
 		$this->assertInstanceOf(TemplateResponse::class, $response);
-		$this->assertSame('Unable to open pad.', $response->getParams()['error']);
+		$this->assertSame('Could not open pad.', $response->getParams()['error']);
 	}
 
 	private function buildMapper(?LoggerInterface $logger = null): ViewerControllerErrorMapper {

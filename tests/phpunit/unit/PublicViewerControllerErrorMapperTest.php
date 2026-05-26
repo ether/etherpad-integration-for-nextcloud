@@ -158,7 +158,7 @@ class PublicViewerControllerErrorMapperTest extends TestCase {
 		);
 
 		$this->assertSame(Http::STATUS_INTERNAL_SERVER_ERROR, $response->getStatus());
-		$this->assertSame('Unable to open pad.', $response->getData()['message']);
+		$this->assertSame('Could not open pad.', $response->getData()['message']);
 	}
 
 	public function testRunForTemplateLogsAndMasksUnexpectedFailures(): void {
@@ -180,7 +180,7 @@ class PublicViewerControllerErrorMapperTest extends TestCase {
 
 		$this->assertInstanceOf(TemplateResponse::class, $response);
 		$this->assertSame(Http::STATUS_INTERNAL_SERVER_ERROR, $response->getStatus());
-		$this->assertSame('Unable to open pad.', $response->getParams()['error']);
+		$this->assertSame('Could not open pad.', $response->getParams()['error']);
 		$this->assertSame('/nc/s/token', $response->getParams()['back_url']);
 	}
 

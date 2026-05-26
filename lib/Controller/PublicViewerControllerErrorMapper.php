@@ -102,7 +102,7 @@ class PublicViewerControllerErrorMapper {
 		if ($this->isExpectedPublicError($e)) {
 			return $e->getMessage();
 		}
-		return 'Unable to open pad.';
+		return 'Could not open pad.';
 	}
 
 	private function logUnexpected(\Throwable $e): void {

@@ -39,11 +39,11 @@
 		healthOk: root.getAttribute('data-l10n-health-ok') || 'Health check successful.',
 		consistencyOk: root.getAttribute('data-l10n-consistency-ok') || 'Consistency check successful.',
 		requestFailed: root.getAttribute('data-l10n-request-failed') || 'Request failed.',
-		savingFailed: root.getAttribute('data-l10n-saving-failed') || 'Saving settings failed.',
+		savingFailed: root.getAttribute('data-l10n-saving-failed') || 'Failed to save settings.',
 		healthFailed: root.getAttribute('data-l10n-health-failed') || 'Health check failed.',
 		consistencyFailed: root.getAttribute('data-l10n-consistency-failed') || 'Consistency check failed.',
 		pendingDeleteLabel: root.getAttribute('data-l10n-pending-delete-label') || 'Pending Etherpad deletes',
-		retryFailed: root.getAttribute('data-l10n-retry-failed') || 'Lifecycle delete retry failed.',
+		retryFailed: root.getAttribute('data-l10n-retry-failed') || 'Pending delete retry failed.',
 	}
 
 	if (saveUrl === '' || healthUrl === '' || consistencyUrl === '' || retryPendingUrl === '') {

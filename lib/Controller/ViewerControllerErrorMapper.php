@@ -57,7 +57,7 @@ class ViewerControllerErrorMapper {
 				'app' => Application::APP_ID,
 				'exception' => $e,
 			]);
-			return $this->errorTemplate($this->l10n->t('Unable to open pad.'));
+			return $this->errorTemplate($this->l10n->t('Could not open pad.'));
 		}
 	}
 

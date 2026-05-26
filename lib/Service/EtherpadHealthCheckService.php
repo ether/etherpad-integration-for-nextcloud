@@ -86,7 +86,7 @@ class EtherpadHealthCheckService {
 		if (str_contains($message, 'no or wrong api key')
 			|| str_contains($message, 'wrong api key')
 			|| str_contains($message, 'invalid apikey')) {
-			return $this->l10n->t('Hint: In Etherpad settings.json set "authenticationMethod": "apikey".');
+			return $this->l10n->t('Hint: Set "authenticationMethod": "apikey" in Etherpad\'s settings.json.');
 		}
 
 		// HTTP status hints come before transport hints because they
