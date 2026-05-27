@@ -106,7 +106,7 @@ OC.L10N.register(
     "Pad name is required.": "Se requiere el nombre del pad.",
     "Pads": "Pads",
     "Pending Etherpad deletes": "Eliminaciones pendientes en Etherpad",
-    "Pending delete retry failed.": "No se pudo reintentar las eliminaciones pendientes.",
+    "Pending delete retry failed.": "No se pudieron reintentar las eliminaciones pendientes.",
     "Pending delete retry finished.": "Reintento de eliminaciones pendientes completado.",
     "Public pad": "Pad público",
     "Public pad from URL": "Pad público desde URL",

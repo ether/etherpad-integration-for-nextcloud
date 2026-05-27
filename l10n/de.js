@@ -72,7 +72,7 @@ OC.L10N.register(
     "External pad URL": "Externe Pad-URL",
     "External pad URL is required.": "Externe Pad-URL ist erforderlich.",
     "Failed to save settings.": "Einstellungen konnten nicht gespeichert werden.",
-    "Failed to update test fault.": "Test-Fehler konnte nicht aktualisiert werden.",
+    "Failed to update test fault.": "Testfehler konnte nicht aktualisiert werden.",
     "File name": "Dateiname",
     "File name is required.": "Dateiname ist erforderlich.",
     "Hint: API endpoint not found. Check the API host and that the configured API version is supported by your Etherpad.": "Hinweis: API-Endpunkt nicht gefunden. Prüfe den API-Host und ob die konfigurierte API-Version von deinem Etherpad unterstützt wird.",
