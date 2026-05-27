@@ -75,7 +75,7 @@ OC.L10N.register(
     "Failed to update test fault.": "No se pudo actualizar el fallo de prueba.",
     "File name": "Nombre de archivo",
     "File name is required.": "El nombre de archivo es obligatorio.",
-    "Hint: API endpoint not found. Check the API host and that the configured API version is supported by your Etherpad.": "Sugerencia: punto de acceso de la API no encontrado. Comprueba el host de la API y que la versión configurada sea compatible con tu Etherpad.",
+    "Hint: API endpoint not found. Check the API host and that the configured API version is supported by your Etherpad.": "Sugerencia: punto final de la API no encontrado. Comprueba el host de la API y que la versión configurada sea compatible con tu Etherpad.",
     "Hint: Connection refused. Etherpad does not appear to be running on the configured host and port.": "Sugerencia: conexión rechazada. Etherpad no parece estar ejecutándose en el host y puerto configurados.",
     "Hint: Connection timed out. Check that this server can reach the Etherpad host (firewall, network).": "Sugerencia: tiempo de conexión agotado. Comprueba que este servidor pueda acceder al host de Etherpad (cortafuegos, red).",
     "Hint: Could not reach Etherpad. Check the API host and that this server can connect to it.": "Sugerencia: no se pudo contactar con Etherpad. Comprueba el host de la API y que este servidor pueda conectarse a él.",
