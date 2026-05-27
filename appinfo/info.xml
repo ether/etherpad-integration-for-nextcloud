@@ -5,7 +5,7 @@
 	<name>Etherpad Integration for Nextcloud</name>
 	<summary>Standalone Etherpad integration for Nextcloud</summary>
 	<description>Standalone Etherpad integration for Nextcloud with binding-based lifecycle and secure viewer flows.</description>
-	<version>1.1.0-alpha.1</version>
+	<version>1.1.0-alpha.2</version>
 	<licence>agpl</licence>
 	<author>Jacob Bühler</author>
 	<author>John McLear</author>

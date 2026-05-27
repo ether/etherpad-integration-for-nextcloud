@@ -1,5 +1,27 @@
 # Changelog
 
+## 1.1.0-alpha.2 — 2026-05-27
+
+Second public-review release. Focus: localisation cleanup, embed-create host signalling, and CI / release infrastructure.
+
+### Added
+
+- **Embed-create result events.** The `/embed/create-by-parent` flow now emits `epnc:create-succeeded` / `epnc:create-failed` postMessages to the parent host so embedders can react to the create outcome without scraping the iframe. (#95, #96)
+- **GitHub Actions CI** (`lint-info-xml`, PHPUnit on PHP 8.2/8.3/8.4, npm-build + vitest, info.xml schema check), Dependabot config for npm, composer, and actions. (#75, #83)
+- **Release tarball builder** `scripts/build-release-tarball.sh` for reproducible app-store-style builds. (#74)
+- **NC-discoverable app icon** at `img/etherpad_nextcloud.svg` (+ dark variant + 512 px PNG) so the Apps page in NC settings shows the Etherpad icon instead of the generic placeholder. (#84)
+
+### Changed
+
+- **Locale cleanup for 1.1.0.** All maintained locales (`de`, `es`, `fr`) brought to 132/132 keys with no orphans. Source strings consolidated (`Health check` → `Test Etherpad connection`, `Pad file` → `.pad file`, unified `Could not …` / `Unable to …` pairs, `External Etherpad host allowlist`, …). DE locale reviewed end-to-end by a native speaker (`Du`-form, full terminology pass). ES and FR are best-effort first-pass translations done with AI assistance + school-level grammar — usable but expected to receive native-speaker polish via translatewiki once the project is onboarded (#98). Dropped the `de_DE` mirror and the legacy `*.php` catalogs — only `*.json` + `*.js` per locale, alphabetically sorted for clean cross-locale diffs. `docs/i18n.md` rewritten for the new layout. (#77)
+- **`appinfo/info.xml` schema** now validates against the official apps.nextcloud.com schema; John McLear added as second author for the Etherpad upstream. (#94)
+- Dev dependencies refreshed via Dependabot (actions/setup-node 6, actions/checkout 6, actions/cache 5, shivammathur/setup-php 2.37, vitest 4.1.7, dorny/paths-filter 4, skjnldsv/read-package-engines-version-actions 3).
+
+### Investigated (no code change)
+
+- `fileId=-1` preview 400 on fresh-pad create (#99) — reproduced with plain `+ → New Markdown file`; root cause is hard-coded in NC core's `PreviewController` and not actionable plugin-side. Closed as upstream.
+- Tiptap unmount warning on fresh-pad create (#72) — re-diagnosed as NC Text-app `RichWorkspace` mounting on page load (fires regardless of pad create). Not in our flow. Closed as wrong diagnosis.
+
 ## 1.1.0-alpha.1 — 2026-05-20
 
 First public-review release. Versioning reset to a clean minor cut with a pre-release marker; not intended for production deployments yet.
