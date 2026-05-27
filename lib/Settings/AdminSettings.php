@@ -77,7 +77,7 @@ class AdminSettings implements ISettings {
 				'delete_on_trash' => $this->l10n->t('Delete linked Etherpad pad when .pad file is moved to trash'),
 				'delete_on_trash_hint' => $this->l10n->t('If enabled, moving a .pad file to the trash also deletes the linked Etherpad pad.'),
 				'allow_external_pads' => $this->l10n->t('Allow linking external public pads'),
-				'external_allowlist' => $this->l10n->t('External host allowlist (optional)'),
+				'external_allowlist' => $this->l10n->t('External Etherpad host allowlist (optional)'),
 				'external_allowlist_hint' => $this->l10n->t('Add trusted Etherpad hostnames or HTTPS origins. Leave empty only if all public HTTPS hosts should be trusted.'),
 				'trusted_embed_origins' => $this->l10n->t('Trusted embed origins (optional)'),
 				'trusted_embed_origins_hint' => $this->l10n->t('Absolute https origins allowed to embed the /embed/by-id and /embed/create-by-parent routes. Leave empty to disable external embedding.'),
