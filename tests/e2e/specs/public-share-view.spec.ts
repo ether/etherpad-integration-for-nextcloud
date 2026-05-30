@@ -20,15 +20,19 @@ import {
 test.describe('public share access without login', () => {
 	const padName = uniquePadName('public-share')
 	const textFileName = `e2e-public-share-non-pad-${Date.now()}.txt`
+	const textRouteFileName = `e2e-public-share-non-pad-route-${Date.now()}.txt`
 	let shareToken = ''
 	let nonPadShareToken = ''
+	let nonPadRouteShareToken = ''
 	let shareUrl = ''
 
 	test.afterAll(async () => {
 		await deletePublicShare(shareToken)
 		await deletePublicShare(nonPadShareToken)
+		await deletePublicShare(nonPadRouteShareToken)
 		await deleteViaDav(padName)
 		await deleteViaDav(textFileName)
+		await deleteViaDav(textRouteFileName)
 	})
 
 	test('opens a shared public pad without authenticated storage state', async ({ page, browser }) => {
@@ -80,6 +84,19 @@ test.describe('public share access without login', () => {
 		}
 	})
 
+	test('renders an error page for invalid public viewer tokens', async ({ browser }) => {
+		const publicContext = await browser.newContext()
+		const publicPage = await publicContext.newPage()
+		try {
+			await publicPage.goto(`${E2E.baseURL}/apps/etherpad_nextcloud/public/not-a-real-e2e-token?file=/Missing.pad`)
+
+			await expect(publicPage.locator('iframe[title="Etherpad"], .epnc-viewer__iframe')).toHaveCount(0)
+			await expect(publicPage.getByText(/share not found|freigabe nicht gefunden/i)).toBeVisible()
+		} finally {
+			await publicContext.close()
+		}
+	})
+
 	test('rejects non-pad public shares without pad data', async ({ browser }) => {
 		await putFileViaDav(textFileName, 'This is not a managed pad.')
 		const share = await createPublicReadShare(textFileName)
@@ -95,6 +112,23 @@ test.describe('public share access without login', () => {
 			expect(response.status()).toBeGreaterThanOrEqual(400)
 			expect(body).not.toMatch(/"url"\s*:/)
 			expect(body).not.toMatch(/"pad_url"\s*:/)
+		} finally {
+			await publicContext.close()
+		}
+	})
+
+	test('does not mount Etherpad for non-pad public viewer shares', async ({ browser }) => {
+		await putFileViaDav(textRouteFileName, 'This is not a managed pad.')
+		const share = await createPublicReadShare(textRouteFileName)
+		nonPadRouteShareToken = share.token
+
+		const publicContext = await browser.newContext()
+		const publicPage = await publicContext.newPage()
+		try {
+			await publicPage.goto(`${E2E.baseURL}/apps/etherpad_nextcloud/public/${encodeURIComponent(nonPadRouteShareToken)}`)
+
+			await expect(publicPage.locator('iframe[title="Etherpad"], .epnc-viewer__iframe')).toHaveCount(0)
+			await expect(publicPage.getByText('This is not a managed pad.')).toBeVisible()
 		} finally {
 			await publicContext.close()
 		}

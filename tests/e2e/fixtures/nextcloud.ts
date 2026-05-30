@@ -132,10 +132,14 @@ export const expectEtherpadViewerMounted = async (page: Page): Promise<void> => 
 	await expect(page.locator('iframe').first()).toBeVisible({ timeout: 30_000 })
 }
 
-export const expectExternalSnapshotViewerMounted = async (page: Page): Promise<void> => {
+export const expectExternalSnapshotViewerMounted = async (page: Page, expectedOriginalUrl = ''): Promise<void> => {
 	await expect(page.locator('.epnc-native-snapshot').first()).toBeVisible({ timeout: 30_000 })
 	await expect(page.getByText(/pad from another server|pad von einem anderen server/i).first()).toBeVisible()
-	await expect(page.getByRole('link', { name: /open original pad|original-pad öffnen/i })).toBeVisible()
+	const originalLink = page.getByRole('link', { name: /open original pad|original-pad öffnen/i })
+	await expect(originalLink).toBeVisible()
+	if (expectedOriginalUrl !== '') {
+		await expect(originalLink).toHaveAttribute('href', expectedOriginalUrl)
+	}
 }
 
 export const readEtherpadUrlFromViewer = async (page: Page): Promise<string> => {

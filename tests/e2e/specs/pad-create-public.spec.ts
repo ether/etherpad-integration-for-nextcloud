@@ -81,6 +81,6 @@ test.describe('external public pad create + snapshot viewer', () => {
 		await closeViewer(page)
 
 		await createExternalPublicPadFromUrl(page, etherpadUrl, externalPadName)
-		await expectExternalSnapshotViewerMounted(page)
+		await expectExternalSnapshotViewerMounted(page, etherpadUrl)
 	})
 })
