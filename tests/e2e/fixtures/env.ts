@@ -47,4 +47,21 @@ export const E2E = {
 	get appPassword(): string {
 		return requireEnv('E2E_APP_PASSWORD')
 	},
+
+	/**
+	 * Optional second account used by cross-user permission specs. When
+	 * either of these is unset the relevant specs skip themselves with a
+	 * clear message rather than throwing.
+	 */
+	get secondaryUser(): string | null {
+		const value = process.env.E2E_USER2?.trim()
+		return value && value !== '' ? value : null
+	},
+	get secondaryAppPassword(): string | null {
+		const value = process.env.E2E_USER2_APP_PASSWORD?.trim()
+		return value && value !== '' ? value : null
+	},
+	hasSecondaryAccount(): boolean {
+		return this.secondaryUser !== null && this.secondaryAppPassword !== null
+	},
 }

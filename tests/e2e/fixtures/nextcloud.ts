@@ -165,6 +165,22 @@ export const readEtherpadUrlFromViewer = async (page: Page): Promise<string> => 
 	return decoded
 }
 
+/**
+ * Recovery card the viewer renders when the .pad file has no matching
+ * binding row. The lookup against /find-original may resolve into one of
+ * two states; both should surface a "Create new pad from this file"
+ * action, and the original-found state additionally exposes "Open the
+ * original .pad file" pointing back at the source.
+ */
+export const expectRecoveryCardForCopy = async (page: Page, options: { originalFound: boolean }): Promise<void> => {
+	const card = page.locator('.epnc-native-error-message').first()
+	await expect(card).toBeVisible({ timeout: 30_000 })
+	await expect(page.getByRole('button', { name: /create new pad from this file|neues pad aus dieser datei erstellen/i }).first()).toBeVisible()
+	if (options.originalFound) {
+		await expect(page.getByRole('link', { name: /open the original \.pad file|urspr.ngliche \.pad-datei öffnen/i }).first()).toBeVisible()
+	}
+}
+
 /** A unique-ish file name so parallel/repeat runs don't collide. */
 export const uniquePadName = (label: string): string =>
 	`e2e-${label}-${Date.now()}.pad`
