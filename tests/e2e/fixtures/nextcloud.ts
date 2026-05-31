@@ -174,7 +174,14 @@ export const expectFileInList = async (page: Page, fileName: string): Promise<vo
 export const closeViewer = async (page: Page): Promise<void> => {
 	const viewer = page.locator('.viewer__content, .viewer, [data-cy-viewer]').first()
 	const closeButton = page.getByRole('button', { name: /close|schließen/i }).last()
-	if (await closeButton.isVisible({ timeout: 5_000 }).catch(() => false)) {
+	// waitFor (not isVisible({timeout}), whose timeout is a documented no-op)
+	// so a close button that paints slightly late is still clicked rather
+	// than falling through to Escape; only a truly absent button uses Escape.
+	const hasCloseButton = await closeButton
+		.waitFor({ state: 'visible', timeout: 5_000 })
+		.then(() => true)
+		.catch(() => false)
+	if (hasCloseButton) {
 		await closeButton.click()
 	} else {
 		await page.keyboard.press('Escape')
@@ -243,7 +250,15 @@ export const expectEtherpadCurrentUserName = async (page: Page, expectedName: st
 		'input[id*="username" i]',
 		'input[class*="username" i]',
 	].join(', ')).first()
-	if (await currentUserNameInput.isVisible({ timeout: 5_000 }).catch(() => false)) {
+	// waitFor (not isVisible({timeout}), whose timeout is a documented no-op)
+	// so a popup that renders the username input slightly late still takes
+	// the precise toHaveValue branch. The current user's name lives in the
+	// input value, which the toContainText fallback below cannot match.
+	const hasUserNameInput = await currentUserNameInput
+		.waitFor({ state: 'visible', timeout: 5_000 })
+		.then(() => true)
+		.catch(() => false)
+	if (hasUserNameInput) {
 		await expect(currentUserNameInput).toHaveValue(expected, { timeout: 15_000 })
 		return
 	}
