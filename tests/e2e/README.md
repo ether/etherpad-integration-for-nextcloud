@@ -2,9 +2,9 @@
 
 SPDX-License-Identifier: AGPL-3.0-or-later
 
-Browser-driven smoke tests for the flows that vitest + happy-dom can't
-cover: NewFileMenu create, viewer mount, public-share view, lifecycle.
-See issue #54.
+Browser-driven tests for the flows that vitest + happy-dom can't cover:
+NewFileMenu create, viewer mount inside NC's modal, public-share
+interception, trashbin lifecycle, cross-user sharing. See issue #54.
 
 ## What it talks to
 
@@ -12,8 +12,8 @@ The specs are **target-agnostic** — they drive whatever Nextcloud
 instance `E2E_BASE_URL` points at. For local development that's easiest
 against an existing test instance (your own NC, or the shared test
 server). A reproducible Docker NC+Etherpad target for CI is a later
-phase; because the specs only depend on `E2E_BASE_URL`, adding it won't
-require rewriting tests.
+phase (#112); because the specs only depend on `E2E_BASE_URL` and the
+documented env vars, adding it won't require rewriting tests.
 
 > Use a **dedicated throwaway test account**. The specs create and delete
 > `.pad` files on the target instance.
@@ -26,8 +26,14 @@ npx playwright install chromium
 
 # 2. configure your target
 cp tests/e2e/.env.e2e.example tests/e2e/.env.e2e
-$EDITOR tests/e2e/.env.e2e      # fill in E2E_BASE_URL / E2E_LOGIN_URL / E2E_USER / E2E_PASS / E2E_APP_PASSWORD
+$EDITOR tests/e2e/.env.e2e
 ```
+
+Required: `E2E_BASE_URL`, `E2E_USER`, `E2E_PASS`, `E2E_APP_PASSWORD`
+(plus optional `E2E_LOGIN_URL`). The cross-user specs additionally need a
+second account — `E2E_USER2`, `E2E_USER2_PASS`, `E2E_USER2_APP_PASSWORD`;
+they skip cleanly when it isn't configured. See `.env.e2e.example` for
+what each one is for.
 
 ## Run
 
@@ -36,27 +42,56 @@ npm run test:e2e        # headless
 npm run test:e2e:ui     # Playwright UI mode (watch + time-travel)
 ```
 
-The `setup` project logs in once and saves the session to
-`tests/e2e/.auth/state.json` (gitignored); every spec reuses it.
-`E2E_LOGIN_URL` defaults to `/login`. Override it for instances with a
-custom login front door, for example `/login?noredir=1#body-login`.
+The `setup` project logs in once per account and saves the sessions to
+`tests/e2e/.auth/` (gitignored); every spec reuses the stored
+`storageState` instead of re-logging in. `E2E_LOGIN_URL` defaults to
+`/login` — override it for instances with a custom login front door,
+for example `/login?noredir=1#body-login`.
 
 ## Layout
 
 ```
 tests/e2e/
-  playwright.config.ts     baseURL from E2E_BASE_URL, serial, trace-on-failure
-  auth.setup.ts            form login -> .auth/state.json
+  playwright.config.ts     baseURL from env, serial, retry + trace on failure
+  auth.setup.ts            logs in each account -> .auth/state*.json
   fixtures/
-    env.ts                 required-env reader
-    dav.ts                 WebDAV setup/teardown via app password
+    env.ts                 required-env reader (+ optional secondary account)
+    auth.ts                login flow, stored-state paths, wizard dismissal
+    dav.ts                 WebDAV + OCS + plugin-API helpers (app password)
     nextcloud.ts           Files-app browser helpers
-  specs/
-    pad-create-public.spec.ts   smoke #1: create public pad + viewer mounts
+  specs/                   one file per flow (see Coverage)
 ```
 
 Selectors prefer stable hooks (NC `data-cy-*`, our own `data-testid`)
-over localized text so specs survive UI-language changes.
+over localized text so specs survive UI-language changes. Content checks
+are credential-free: they go through the plugin's own HTTP endpoints +
+WebDAV rather than the Etherpad API or editor-iframe typing.
+
+## Coverage
+
+Each `specs/*.spec.ts` covers one flow:
+
+- **pad-create-public** — internal public pad create + open, reopening an
+  existing pad, and external pad from URL → external-snapshot viewer.
+- **pad-create-template** — create from the blank template-picker entry.
+- **pad-template-placeholders** — `{{date}}` / `{{user}}` substitution
+  when creating from a Templates-folder `.pad` (#26).
+- **pad-move-rename** — the binding (keyed on file id) survives an
+  in-place rename and a move into a subfolder.
+- **pad-orphan-recovery** — a binding-less `.pad` (WebDAV copy) shows the
+  recovery card and "Open the original" navigates to the source pad.
+- **pad-snapshot-roundtrip** — recover-from-snapshot pushes a known
+  marker into a new pad and sync reads it back (the content copy that
+  restore and recover share).
+- **pad-trash-restore** — trash + restore round-trip, pad reopens.
+- **pad-user-share** — user-to-user share grants access, revoke removes
+  it (NC boundary; Etherpad's own session-cookie window is out of scope).
+- **pad-ownership-boundary** — cross-user `open-by-id` is rejected.
+- **public-share-view** — public share opens without login, plus auth
+  boundaries (tokenless access, invalid / non-pad tokens).
+- **pad-legacy-migration** — an `[InternetShortcut]` Ownpad file migrates
+  to YAML frontmatter on first open.
+- **admin-health-check** — the admin "Test Etherpad connection" button.
 
 ## Cleanup
 
@@ -70,4 +105,9 @@ Keep `E2E_PASS` and `E2E_APP_PASSWORD` separate:
 - `E2E_PASS` logs into the interactive Nextcloud web UI once and stores
   Playwright's browser `storageState`.
 - `E2E_APP_PASSWORD` is used only for BasicAuth requests outside the
-  browser, such as WebDAV cleanup and future OCS/API setup.
+  browser, such as WebDAV cleanup and plugin-API calls.
+
+> Note: a brand-new account shows Nextcloud's first-run wizard modal,
+> which blocks clicks. `auth.ts` dismisses it after login; on a shared
+> instance you can also disable it once with
+> `occ app:disable firstrunwizard`.

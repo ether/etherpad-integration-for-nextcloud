@@ -44,6 +44,20 @@ npm run build
 The Vite build writes runtime assets to `js/`; those built files must be present
 in the deployed app.
 
+Browser-level end-to-end checks live in a separate Playwright suite that drives
+a real Nextcloud instance (NewFileMenu create, viewer mount, share + revoke,
+trash/restore, recovery, legacy migration, …). It is target-agnostic and
+credential-driven via `tests/e2e/.env.e2e`:
+
+```bash
+npm run test:e2e
+```
+
+Setup, the required env vars, and the per-spec coverage are documented in
+[tests/e2e/README.md](../tests/e2e/README.md). This suite is not yet wired into
+CI (a reproducible Docker target is tracked in #112), so run it manually against
+a test instance before a release when frontend flows changed.
+
 Environment variables for E2E:
 
 - `NC_BASE_URL`
