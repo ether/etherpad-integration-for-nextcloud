@@ -18,6 +18,7 @@ class EtherpadClient {
 
 	public function __construct(
 		private IConfig $config,
+		private AdminSettingsRepository $settingsRepository,
 	) {
 	}
 
@@ -297,7 +298,10 @@ class EtherpadClient {
 	}
 
 	private function getApiKey(): string {
-		$key = (string)$this->config->getAppValue('etherpad_nextcloud', 'etherpad_api_key', '');
+		// Single read path: AdminSettingsRepository owns reading the
+		// sensitive (encrypted-at-rest) key via IAppConfig. Going through it
+		// keeps the "must decrypt via IAppConfig" knowledge in one place.
+		$key = $this->settingsRepository->getApiKey();
 		if ($key === '') {
 			throw new EtherpadClientException('Etherpad API key is not configured.');
 		}

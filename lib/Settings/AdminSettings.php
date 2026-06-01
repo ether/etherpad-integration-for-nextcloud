@@ -9,6 +9,7 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\Settings;
 
 use OCA\EtherpadNextcloud\AppInfo\Application;
+use OCA\EtherpadNextcloud\Service\AdminSettingsRepository;
 use OCA\EtherpadNextcloud\Service\AppConfigService;
 use OCA\EtherpadNextcloud\Service\EtherpadClient;
 use OCP\AppFramework\Http\TemplateResponse;
@@ -24,6 +25,7 @@ class AdminSettings implements ISettings {
 		private IURLGenerator $urlGenerator,
 		private IL10N $l10n,
 		private AppConfigService $appConfigService,
+		private AdminSettingsRepository $settingsRepository,
 	) {
 	}
 
@@ -57,7 +59,7 @@ class AdminSettings implements ISettings {
 			'allow_external_pads' => (string)$this->config->getAppValue(Application::APP_ID, 'allow_external_pads', 'no') === 'yes',
 			'external_pad_allowlist' => (string)$this->config->getAppValue(Application::APP_ID, 'external_pad_allowlist', ''),
 			'trusted_embed_origins' => $this->appConfigService->getTrustedEmbedOriginsRaw(),
-			'has_api_key' => (string)$this->config->getAppValue(Application::APP_ID, 'etherpad_api_key', '') !== '',
+			'has_api_key' => $this->settingsRepository->hasApiKey(),
 			'save_settings_url' => $this->urlGenerator->linkToRoute('etherpad_nextcloud.admin.saveSettings'),
 			'health_check_url' => $this->urlGenerator->linkToRoute('etherpad_nextcloud.admin.healthCheck'),
 			'consistency_check_url' => $this->urlGenerator->linkToRoute('etherpad_nextcloud.admin.consistencyCheck'),
