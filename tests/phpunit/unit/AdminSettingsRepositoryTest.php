@@ -105,6 +105,9 @@ class AdminSettingsRepositoryTest extends TestCase {
 
 		$repository = new AdminSettingsRepository($config, $appConfig);
 		$this->assertTrue($repository->hasApiKey());
+		// getApiKey() is the single read path EtherpadClient uses; it returns
+		// the raw decrypted value, getStoredSettings() trims for display.
+		$this->assertSame('  stored-key  ', $repository->getApiKey());
 		$this->assertSame('stored-key', $repository->getStoredSettings()->apiKey);
 	}
 }

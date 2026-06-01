@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Tests\Unit;
 
+use OCA\EtherpadNextcloud\Service\AdminSettingsRepository;
 use OCA\EtherpadNextcloud\Service\EtherpadClient;
-use OCP\IAppConfig;
 use OCP\IConfig;
 use PHPUnit\Framework\TestCase;
 
@@ -60,12 +60,12 @@ class EtherpadClientTest extends TestCase {
 	}
 
 	/**
-	 * Construct the client with a bare IAppConfig mock. None of these tests
-	 * exercise the API-key read path (no network calls), so the default
-	 * empty getValueString return is fine.
+	 * Construct the client with a bare settings-repository mock. None of
+	 * these tests exercise the API-key read path (no network calls), so the
+	 * default empty getApiKey() return is fine.
 	 */
 	private function client(IConfig $config): EtherpadClient {
-		return new EtherpadClient($config, $this->createMock(IAppConfig::class));
+		return new EtherpadClient($config, $this->createMock(AdminSettingsRepository::class));
 	}
 
 	private function configWithHost(string $host): IConfig {

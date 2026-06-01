@@ -24,7 +24,7 @@ class AdminSettingsRepository {
 
 	public function getStoredSettings(): StoredAdminSettings {
 		return new StoredAdminSettings(
-			trim($this->appConfig->getValueString(Application::APP_ID, self::API_KEY, '')),
+			trim($this->getApiKey()),
 			(string)$this->config->getAppValue(Application::APP_ID, 'etherpad_cookie_domain', ''),
 			(string)$this->config->getAppValue(Application::APP_ID, 'delete_on_trash', 'yes') === 'yes',
 			(string)$this->config->getAppValue(Application::APP_ID, 'allow_external_pads', 'no') === 'yes',
@@ -53,6 +53,17 @@ class AdminSettingsRepository {
 	}
 
 	public function hasApiKey(): bool {
-		return trim($this->appConfig->getValueString(Application::APP_ID, self::API_KEY, '')) !== '';
+		return trim($this->getApiKey()) !== '';
+	}
+
+	/**
+	 * The single read path for the Etherpad API key. It lives here because
+	 * the key is stored sensitive (encrypted at rest) and must be read via
+	 * IAppConfig — IConfig::getAppValue does NOT decrypt sensitive values.
+	 * Every consumer (EtherpadClient, the admin UI) goes through this so the
+	 * write- and read-via-IAppConfig knowledge can't drift apart again.
+	 */
+	public function getApiKey(): string {
+		return $this->appConfig->getValueString(Application::APP_ID, self::API_KEY, '');
 	}
 }
