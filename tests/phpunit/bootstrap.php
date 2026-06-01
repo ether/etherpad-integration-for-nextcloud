@@ -31,6 +31,7 @@ $stubFiles = [
 	__DIR__ . '/stubs/OCP/IRequest.php',
 	__DIR__ . '/stubs/OCP/Security/ISecureRandom.php',
 	__DIR__ . '/stubs/OCP/IConfig.php',
+	__DIR__ . '/stubs/OCP/IAppConfig.php',
 	__DIR__ . '/stubs/OCP/IDBConnection.php',
 	__DIR__ . '/stubs/OCP/IL10N.php',
 	__DIR__ . '/stubs/OCP/IGroupManager.php',

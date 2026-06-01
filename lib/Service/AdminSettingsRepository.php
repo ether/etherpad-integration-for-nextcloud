@@ -10,17 +10,21 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\Service;
 
 use OCA\EtherpadNextcloud\AppInfo\Application;
+use OCP\IAppConfig;
 use OCP\IConfig;
 
 class AdminSettingsRepository {
+	public const API_KEY = 'etherpad_api_key';
+
 	public function __construct(
 		private IConfig $config,
+		private IAppConfig $appConfig,
 	) {
 	}
 
 	public function getStoredSettings(): StoredAdminSettings {
 		return new StoredAdminSettings(
-			trim((string)$this->config->getAppValue(Application::APP_ID, 'etherpad_api_key', '')),
+			trim($this->appConfig->getValueString(Application::APP_ID, self::API_KEY, '')),
 			(string)$this->config->getAppValue(Application::APP_ID, 'etherpad_cookie_domain', ''),
 			(string)$this->config->getAppValue(Application::APP_ID, 'delete_on_trash', 'yes') === 'yes',
 			(string)$this->config->getAppValue(Application::APP_ID, 'allow_external_pads', 'no') === 'yes',
@@ -34,7 +38,11 @@ class AdminSettingsRepository {
 		$this->config->setAppValue(Application::APP_ID, 'etherpad_cookie_domain', $settings->etherpadCookieDomain);
 		$this->config->setAppValue(Application::APP_ID, 'etherpad_cookie_domain_configured', 'yes');
 		if ($settings->etherpadApiKey !== null) {
-			$this->config->setAppValue(Application::APP_ID, 'etherpad_api_key', $settings->etherpadApiKey);
+			// Store the API key with the sensitive flag so it is redacted in
+			// `occ config:list` and support dumps. IAppConfig and IConfig
+			// share the same underlying app-config storage, so the other
+			// reads/writes here are unaffected.
+			$this->appConfig->setValueString(Application::APP_ID, self::API_KEY, $settings->etherpadApiKey, sensitive: true);
 		}
 		$this->config->setAppValue(Application::APP_ID, 'etherpad_api_version', $settings->etherpadApiVersion);
 		$this->config->setAppValue(Application::APP_ID, 'sync_interval_seconds', (string)$settings->syncIntervalSeconds);
@@ -45,6 +53,6 @@ class AdminSettingsRepository {
 	}
 
 	public function hasApiKey(): bool {
-		return trim((string)$this->config->getAppValue(Application::APP_ID, 'etherpad_api_key', '')) !== '';
+		return trim($this->appConfig->getValueString(Application::APP_ID, self::API_KEY, '')) !== '';
 	}
 }
