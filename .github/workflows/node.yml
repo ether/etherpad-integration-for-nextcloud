@@ -79,3 +79,16 @@ jobs:
 
       - name: Production build
         run: npm run build
+
+      - name: Fail if built assets are stale
+        # The committed js/ bundles must match a fresh build of src/.
+        # Use `git status --porcelain` (not `git diff`) so a brand-new,
+        # still-untracked chunk/entry point also fails the check.
+        # If this fails, run `npm run build` locally and commit js/.
+        run: |
+          changes="$(git status --porcelain -- js/)"
+          if [ -n "$changes" ]; then
+            echo "Built js/ assets are out of date with src/. Run 'npm run build' and commit js/:" >&2
+            echo "$changes" >&2
+            exit 1
+          fi
