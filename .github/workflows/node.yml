@@ -79,3 +79,8 @@ jobs:
 
       - name: Production build
         run: npm run build
+
+      - name: Fail if built assets are stale
+        # The committed js/ bundles must match a fresh build of src/.
+        # If this fails, run `npm run build` locally and commit js/.
+        run: git diff --exit-code -- js/
