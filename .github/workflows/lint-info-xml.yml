@@ -35,3 +35,34 @@ jobs:
         with:
           xml-file: ./appinfo/info.xml
           xml-schema-file: ./info.xsd
+
+  version-consistency:
+    runs-on: ubuntu-latest
+
+    name: version consistency
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      # appinfo/info.xml is the single source of truth for the app version.
+      # package.json / package-lock.json are aligned manually, so guard against
+      # drift (#119): fail the build if they disagree.
+      - name: Compare info.xml and package.json versions
+        run: |
+          INFO_VERSION="$(grep -oE '<version>[^<]+</version>' appinfo/info.xml | sed -E 's|</?version>||g' | head -n1)"
+          PKG_VERSION="$(jq -r '.version' package.json)"
+          LOCK_VERSION="$(jq -r '.version' package-lock.json)"
+          echo "info.xml:          $INFO_VERSION"
+          echo "package.json:      $PKG_VERSION"
+          echo "package-lock.json: $LOCK_VERSION"
+          if [ -z "$INFO_VERSION" ]; then
+            echo "::error::could not read <version> from appinfo/info.xml" >&2
+            exit 1
+          fi
+          if [ "$PKG_VERSION" != "$INFO_VERSION" ] || [ "$LOCK_VERSION" != "$INFO_VERSION" ]; then
+            echo "::error::Version mismatch. appinfo/info.xml is the source of truth ($INFO_VERSION); align package.json and package-lock.json to it." >&2
+            exit 1
+          fi
