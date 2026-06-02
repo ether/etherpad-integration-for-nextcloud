@@ -53,9 +53,14 @@ class CSPListener implements IEventListener {
 
 		$rawAllowlist = trim((string)$this->config->getAppValue('etherpad_nextcloud', 'external_pad_allowlist', ''));
 		if ($rawAllowlist === '') {
-			// Empty allowlist means "allow all public HTTPS hosts" for external pad linking.
-			// Mirror that behavior in CSP so valid external pads can actually load in the iframe.
-			$domains['https:'] = true;
+			// An empty allowlist means "allow all public HTTPS hosts" for the
+			// server-side snapshot fetch (see ExternalPadExportFetcher), but we
+			// must NOT mirror that into CSP: this listener handles *every*
+			// AddContentSecurityPolicyEvent, so emitting `https:` here would
+			// relax frame-src/child-src on all of Nextcloud, not just pad pages.
+			// External pads are shown as locally rendered snapshots (no live
+			// iframe to the external host), so framing them is unnecessary;
+			// only concrete allowlisted hosts ever get a frame relaxation.
 			return array_keys($domains);
 		}
 
