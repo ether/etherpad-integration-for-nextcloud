@@ -89,6 +89,31 @@ describe('pad-sync', () => {
 		expect(fetchImpl).toHaveBeenCalledTimes(2)
 	})
 
+	it('does not replay a coalesced forced flush once the url is cleared mid-flight (pad-switch safety)', async () => {
+		// The viewer resets via configure({ syncUrl: '' }) before switching
+		// pads. A forced flush that was queued against the old pad must then
+		// become a no-op instead of POSTing to a stale/replaced target.
+		const gates = []
+		const fetchImpl = vi.fn(() => new Promise((resolve) => {
+			gates.push(() => resolve(okResponse()))
+		}))
+		const ps = createPadSync({ fetchImpl })
+		ps.configure({ syncUrl: '/sync/A' })
+
+		const inflight = ps.sync(false, false) // to /sync/A, in flight
+		const forced = ps.sync(true, false) // coalesced, pending replay
+		expect(fetchImpl).toHaveBeenCalledTimes(1)
+
+		ps.configure({ syncUrl: '' }) // viewer clears before re-resolving
+
+		gates[0]() // finish the in-flight sync; the replay now sees no url
+		await Promise.all([inflight, forced])
+		await flush()
+
+		expect(fetchImpl).toHaveBeenCalledTimes(1) // replay was a no-op
+		await expect(forced).resolves.toEqual({ status: 'disabled' })
+	})
+
 	it('start() runs a sync per interval only while the document is visible; stop() halts it', async () => {
 		vi.useFakeTimers()
 		const fetchImpl = vi.fn(async () => okResponse())
