@@ -5,6 +5,7 @@
 import { APP_ID, MIME, VIEWER_HANDLER_ID } from './lib/constants.js'
 import { apiFindOriginalPad, apiRecoverFromSnapshot } from './lib/api-client.js'
 import { ocGenerateUrl, ocRequestToken, translate } from './lib/oc-compat.js'
+import { createPadSync } from './lib/pad-sync.js'
 import { buildPadFrameSrcdoc } from './lib/pad-frame-srcdoc.js'
 import { parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './lib/urls.js'
 
@@ -35,12 +36,6 @@ import { parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './li
 				snapshotMode: '',
 				snapshot: { text: '', html: '' },
 				resolveGeneration: 0,
-				syncUrl: '',
-				syncIntervalMs: 120000,
-				syncInFlight: false,
-				syncTimerId: null,
-				visibilityHandler: null,
-				pageHideHandler: null,
 			}
 		},
 		computed: {
@@ -189,69 +184,27 @@ import { parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './li
 			markLoaded() {
 				this.$emit('update:loaded', true)
 			},
-			stopSyncLoop() {
-				if (this.syncTimerId !== null) {
-					window.clearInterval(this.syncTimerId)
-					this.syncTimerId = null
+			// Lazily build the shared sync controller. Kept off `data()` on
+			// purpose so it is not made reactive, and memoised on a plain
+			// instance field so it survives the immediate filePath watcher
+			// (which runs before created/mounted).
+			padSync() {
+				if (!this._padSync) {
+					this._padSync = createPadSync({ requestToken: () => ocRequestToken() })
 				}
+				return this._padSync
 			},
-			startSyncLoop() {
-				if (!this.syncUrl || this.syncTimerId !== null) {
+			// Final flush + full teardown on destroy. Guard on the existing
+			// controller so we never spin one up just to tear it down (a viewer
+			// destroyed before its first open). The lazy create stays in the
+			// resolve path, which actually needs to sync.
+			teardownSync() {
+				if (!this._padSync) {
 					return
 				}
-				this.syncTimerId = window.setInterval(() => {
-					if (document.visibilityState === 'visible') {
-						void this.runSync(false, false)
-					}
-				}, this.syncIntervalMs)
-			},
-			async runSync(force, keepalive) {
-				if (!this.syncUrl) return
-				if (this.syncInFlight && !force) return
-				this.syncInFlight = true
-				try {
-					const url = force ? (this.syncUrl + (this.syncUrl.includes('?') ? '&' : '?') + 'force=1') : this.syncUrl
-					await fetch(url, {
-						method: 'POST',
-						credentials: 'same-origin',
-						headers: {
-							Accept: 'application/json',
-							requesttoken: ocRequestToken(),
-						},
-						keepalive: Boolean(keepalive),
-					})
-				} finally {
-					this.syncInFlight = false
-				}
-			},
-			installSyncLifecycleHandlers() {
-				if (this.visibilityHandler || this.pageHideHandler) {
-					return
-				}
-				this.visibilityHandler = () => {
-					if (document.visibilityState === 'hidden') {
-						void this.runSync(true, true)
-						this.stopSyncLoop()
-						return
-					}
-					this.startSyncLoop()
-				}
-				this.pageHideHandler = () => {
-					void this.runSync(true, true)
-					this.stopSyncLoop()
-				}
-				document.addEventListener('visibilitychange', this.visibilityHandler)
-				window.addEventListener('pagehide', this.pageHideHandler)
-			},
-			removeSyncLifecycleHandlers() {
-				if (this.visibilityHandler) {
-					document.removeEventListener('visibilitychange', this.visibilityHandler)
-					this.visibilityHandler = null
-				}
-				if (this.pageHideHandler) {
-					window.removeEventListener('pagehide', this.pageHideHandler)
-					this.pageHideHandler = null
-				}
+				this._padSync.fireAndForget(true, true)
+				this._padSync.stop()
+				this._padSync.removeLifecycleHandlers()
 			},
 			async resolveOpenUrl() {
 				const generation = ++this.resolveGeneration
@@ -267,9 +220,14 @@ import { parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './li
 				this.externalOpenMessage = ''
 				this.snapshotMode = ''
 				this.snapshot = { text: '', html: '' }
-				this.syncUrl = ''
-				this.syncInFlight = false
-				this.stopSyncLoop()
+				// Reset only an existing controller; don't construct one just to
+				// stop/clear it (e.g. the initial immediate watcher with no pad).
+				// The success path below lazily creates it when there's a pad to
+				// actually sync.
+				if (this._padSync) {
+					this._padSync.stop()
+					this._padSync.configure({ syncUrl: '' })
+				}
 
 				if (!this.filePath) {
 					if (!isCurrent()) return
@@ -340,16 +298,17 @@ import { parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './li
 						if (!isCurrent()) return
 					}
 
-					this.syncUrl = (data && typeof data.sync_url === 'string') ? data.sync_url : ''
+					const syncUrl = (data && typeof data.sync_url === 'string') ? data.sync_url : ''
 
 					const intervalSeconds = Number(data && data.sync_interval_seconds)
-					this.syncIntervalMs = (Number.isFinite(intervalSeconds) && intervalSeconds > 0)
+					const intervalMs = (Number.isFinite(intervalSeconds) && intervalSeconds > 0)
 						? Math.max(5000, Math.min(3600000, intervalSeconds * 1000))
 						: 120000
 
-					this.installSyncLifecycleHandlers()
-					if (this.syncUrl) {
-						this.startSyncLoop()
+					this.padSync().configure({ syncUrl, intervalMs })
+					this.padSync().installLifecycleHandlers()
+					if (syncUrl) {
+						this.padSync().start()
 					}
 
 					if (data && data.is_readonly_snapshot === true) {
@@ -467,15 +426,11 @@ import { parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './li
 		},
 		beforeDestroy() {
 			this.resolveGeneration += 1
-			void this.runSync(true, true)
-			this.stopSyncLoop()
-			this.removeSyncLifecycleHandlers()
+			this.teardownSync()
 		},
 		beforeUnmount() {
 			this.resolveGeneration += 1
-			void this.runSync(true, true)
-			this.stopSyncLoop()
-			this.removeSyncLifecycleHandlers()
+			this.teardownSync()
 		},
 		render(createElement) {
 			if (this.loadError) {

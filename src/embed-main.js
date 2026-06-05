@@ -3,6 +3,7 @@
  * Copyright (c) 2026 Jacob Bühler
  */
 import { ocRequestToken } from './lib/oc-compat.js'
+import { createPadSync } from './lib/pad-sync.js'
 import { fetchJsonWithTimeout as fetchJson } from './lib/fetch-helpers.js'
 
 (function () {
@@ -41,18 +42,10 @@ import { fetchJsonWithTimeout as fetchJson } from './lib/fetch-helpers.js'
 	const recoveryOpenOriginalText = String(root.getAttribute('data-l10n-recovery-open-original') || 'Open the original .pad file').trim()
 	const recoveryCreateNewText = String(root.getAttribute('data-l10n-recovery-create-new') || 'Create new pad from this file').trim()
 	const recoveryCreatingText = String(root.getAttribute('data-l10n-recovery-creating') || 'Creating new pad...').trim()
-	let syncUrl = ''
-	let syncIntervalMs = 120000
-	let syncPromise = null
-	let activeSyncForce = false
-	let pendingForcedSync = false
-	let pendingForcedKeepalive = false
-	let syncTimerId = null
-	let visibilityHandler = null
-	let pageHideHandler = null
 	let messageHandler = null
 
 	const requestToken = () => ocRequestToken(templateRequestToken)
+	const padSync = createPadSync({ requestToken })
 
 	const showError = (message) => {
 		if (loadingNode instanceof HTMLElement) {
@@ -163,17 +156,6 @@ import { fetchJsonWithTimeout as fetchJson } from './lib/fetch-helpers.js'
 		iframe.src = url
 	}
 
-	const stopSyncLoop = () => {
-		if (syncTimerId !== null) {
-			window.clearInterval(syncTimerId)
-			syncTimerId = null
-		}
-	}
-
-	const fireAndForgetSync = (force, keepalive) => {
-		void runSync(force, keepalive).catch(() => {})
-	}
-
 	const postHostMessage = (source, origin, type, payload = {}) => {
 		// Replies are only sent from the already origin-validated message handler.
 		if (!source || typeof source.postMessage !== 'function') {
@@ -183,93 +165,6 @@ import { fetchJsonWithTimeout as fetchJson } from './lib/fetch-helpers.js'
 			type,
 			fileId,
 		}, payload), origin)
-	}
-
-	const runSync = async (force, keepalive) => {
-		if (!syncUrl) {
-			return { status: 'disabled' }
-		}
-		if (syncPromise) {
-			if (force && !activeSyncForce) {
-				pendingForcedSync = true
-				pendingForcedKeepalive = pendingForcedKeepalive || Boolean(keepalive)
-				return syncPromise.catch(() => undefined).then(() => runSync(true, pendingForcedKeepalive))
-			}
-			return syncPromise
-		}
-		activeSyncForce = Boolean(force)
-		const currentPromise = (async () => {
-			const url = force ? (syncUrl + (syncUrl.includes('?') ? '&' : '?') + 'force=1') : syncUrl
-			const response = await fetch(url, {
-				method: 'POST',
-				credentials: 'same-origin',
-				headers: {
-					Accept: 'application/json',
-					requesttoken: requestToken(),
-				},
-				keepalive: Boolean(keepalive),
-			})
-			const data = await response.json().catch(() => ({}))
-			if (!response.ok) {
-				throw new Error((data && data.message) || 'Sync request failed.')
-			}
-			return data
-		})()
-		syncPromise = currentPromise
-		let result
-		let syncError = null
-		try {
-			result = await currentPromise
-		} catch (error) {
-			syncError = error
-		} finally {
-			if (syncPromise === currentPromise) {
-				syncPromise = null
-			}
-			activeSyncForce = false
-		}
-		const rerunForcedSync = pendingForcedSync
-		const rerunKeepalive = pendingForcedKeepalive
-		pendingForcedSync = false
-		pendingForcedKeepalive = false
-		if (rerunForcedSync) {
-			return runSync(true, rerunKeepalive)
-		}
-		if (syncError instanceof Error) {
-			throw syncError
-		}
-		return result
-	}
-
-	const startSyncLoop = () => {
-		if (!syncUrl || syncTimerId !== null) {
-			return
-		}
-		syncTimerId = window.setInterval(() => {
-			if (document.visibilityState === 'visible') {
-				fireAndForgetSync(false, false)
-			}
-		}, syncIntervalMs)
-	}
-
-	const installSyncLifecycleHandlers = () => {
-		if (visibilityHandler || pageHideHandler) {
-			return
-		}
-		visibilityHandler = () => {
-			if (document.visibilityState === 'hidden') {
-				fireAndForgetSync(true, true)
-				stopSyncLoop()
-				return
-			}
-			startSyncLoop()
-		}
-		pageHideHandler = () => {
-			fireAndForgetSync(true, true)
-			stopSyncLoop()
-		}
-		document.addEventListener('visibilitychange', visibilityHandler)
-		window.addEventListener('pagehide', pageHideHandler)
 	}
 
 	const isAllowedMessageOrigin = (origin) => {
@@ -299,12 +194,12 @@ import { fetchJsonWithTimeout as fetchJson } from './lib/fetch-helpers.js'
 				return
 			}
 			if (type === 'epnc:host-visible') {
-				startSyncLoop()
+				padSync.start()
 				return
 			}
 			if (type === 'epnc:host-hidden') {
-				fireAndForgetSync(true, true)
-				stopSyncLoop()
+				padSync.fireAndForget(true, true)
+				padSync.stop()
 				return
 			}
 			if (type === 'epnc:host-before-close' || type === 'epnc:host-sync-now') {
@@ -313,7 +208,7 @@ import { fetchJsonWithTimeout as fetchJson } from './lib/fetch-helpers.js'
 				postHostMessage(event.source, origin, 'epnc:sync-flush-started', {
 					reason,
 				})
-				void runSync(true, keepalive)
+				void padSync.sync(true, keepalive)
 					.then((result) => {
 						postHostMessage(event.source, origin, 'epnc:sync-flush-finished', {
 							reason,
@@ -327,7 +222,7 @@ import { fetchJsonWithTimeout as fetchJson } from './lib/fetch-helpers.js'
 						})
 					})
 				if (keepalive) {
-					stopSyncLoop()
+					padSync.stop()
 				}
 			}
 		}
@@ -517,12 +412,13 @@ import { fetchJsonWithTimeout as fetchJson } from './lib/fetch-helpers.js'
 				await initializePad()
 				data = await openPad()
 			}
-			syncUrl = typeof data.sync_url === 'string' ? data.sync_url.trim() : ''
+			const syncUrl = typeof data.sync_url === 'string' ? data.sync_url.trim() : ''
 			const intervalSeconds = Number(data.sync_interval_seconds ?? 0)
-			syncIntervalMs = Number.isFinite(intervalSeconds) && intervalSeconds > 0 ? intervalSeconds * 1000 : 120000
-			installSyncLifecycleHandlers()
+			const intervalMs = Number.isFinite(intervalSeconds) && intervalSeconds > 0 ? intervalSeconds * 1000 : 120000
+			padSync.configure({ syncUrl, intervalMs })
+			padSync.installLifecycleHandlers()
 			installHostMessageHandler()
-			startSyncLoop()
+			padSync.start()
 			if (data.is_external === true) {
 				showExternalPadPreview(
 					data.url,
