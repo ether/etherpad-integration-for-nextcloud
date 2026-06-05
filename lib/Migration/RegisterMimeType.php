@@ -114,7 +114,21 @@ class RegisterMimeType implements IRepairStep {
 			}
 		}
 
-		$updated = array_replace_recursive($current, $mappings);
+		$updated = self::mergeMimeMappings($current, $mappings);
 		file_put_contents($file, json_encode($updated, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n");
+	}
+
+	/**
+	 * Merge our `.pad` mapping into the existing mimetype config without
+	 * clobbering unrelated entries, and idempotently (re-running yields the
+	 * same result). Extracted as a pure function so the contract is testable
+	 * without the surrounding filesystem / \OC config-dir resolution.
+	 *
+	 * @param array<string,mixed> $current
+	 * @param array<string,mixed> $mappings
+	 * @return array<string,mixed>
+	 */
+	public static function mergeMimeMappings(array $current, array $mappings): array {
+		return array_replace_recursive($current, $mappings);
 	}
 }
