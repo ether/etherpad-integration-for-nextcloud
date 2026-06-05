@@ -1,4 +1,9 @@
 /**
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ * Copyright (c) 2026 Jacob Bühler
+ */
+
+/**
  * Shared pad-sync loop for the viewer and embed entrypoints.
  *
  * Owns the periodic background sync, forced/keepalive flushes, and the
