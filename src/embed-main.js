@@ -5,6 +5,7 @@
 import { ocRequestToken } from './lib/oc-compat.js'
 import { createPadSync } from './lib/pad-sync.js'
 import { fetchJsonWithTimeout as fetchJson } from './lib/fetch-helpers.js'
+import { sanitizeSnapshotHtml } from './lib/sanitize-html.js'
 
 (function () {
 	const IFRAME_REVEAL_DELAY_MS = 100
@@ -110,7 +111,7 @@ import { fetchJsonWithTimeout as fetchJson } from './lib/fetch-helpers.js'
 			? 'epnc-embed__snapshot-text epnc-embed__snapshot-text--html'
 			: 'epnc-embed__snapshot-text'
 		if (hasSnapshotHtml) {
-			preview.innerHTML = String(snapshotHtml)
+			preview.innerHTML = sanitizeSnapshotHtml(snapshotHtml)
 		} else {
 			preview.textContent = String(snapshotText || '').trim() !== '' ? String(snapshotText) : externalEmptyText
 		}

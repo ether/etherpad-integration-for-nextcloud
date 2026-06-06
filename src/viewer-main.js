@@ -6,6 +6,7 @@ import { APP_ID, MIME, VIEWER_HANDLER_ID } from './lib/constants.js'
 import { apiFindOriginalPad, apiRecoverFromSnapshot } from './lib/api-client.js'
 import { ocGenerateUrl, ocRequestToken, translate } from './lib/oc-compat.js'
 import { createPadSync } from './lib/pad-sync.js'
+import { sanitizeSnapshotHtml } from './lib/sanitize-html.js'
 import { buildPadFrameSrcdoc } from './lib/pad-frame-srcdoc.js'
 import { parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './lib/urls.js'
 
@@ -397,7 +398,7 @@ import { parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './li
 				}
 			},
 			renderSnapshotView(createElement, options) {
-				const html = String(options.html || '')
+				const html = sanitizeSnapshotHtml(options.html)
 				const text = String(options.text || '')
 				const actions = Array.isArray(options.actions) ? options.actions : []
 
