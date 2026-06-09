@@ -2,9 +2,11 @@
 
 SPDX-License-Identifier: AGPL-3.0-or-later
 
-Browser-driven tests for the flows that vitest + happy-dom can't cover:
-NewFileMenu create, viewer mount inside NC's modal, public-share
-interception, trashbin lifecycle, cross-user sharing. See issue #54.
+Browser-driven tests that complement our PHPUnit and vitest unit suites:
+they drive a real Nextcloud + Etherpad and walk through the flows users
+and admins actually perform in the browser — creating and opening pads
+from the Files UI, templates, trash and restore, sharing, public-share
+access, and the admin health check.
 
 ## What it talks to
 
@@ -12,7 +14,8 @@ The specs are **target-agnostic** — they drive whatever Nextcloud
 instance `E2E_BASE_URL` points at. For local development that's easiest
 against an existing test instance (your own NC, or the shared test
 server). A reproducible Docker NC+Etherpad target for CI is a later
-phase (#112); because the specs only depend on `E2E_BASE_URL` and the
+phase ([#112](https://github.com/Jaggob/etherpad-integration-for-nextcloud/issues/112));
+because the specs only depend on `E2E_BASE_URL` and the
 documented env vars, adding it won't require rewriting tests.
 
 > Use a **dedicated throwaway test account**. The specs create and delete
@@ -78,7 +81,7 @@ Each `specs/*.spec.ts` covers one flow:
 - **pad-author-display-name** — protected pad opens with the NC account's
   display name visible in Etherpad's user list.
 - **pad-template-placeholders** — `{{date}}` / `{{user}}` substitution
-  when creating from a Templates-folder `.pad` (#26).
+  when creating from a Templates-folder `.pad`.
 - **pad-move-rename** — the binding (keyed on file id) survives an
   in-place rename and a move into a subfolder.
 - **pad-orphan-recovery** — a binding-less `.pad` (WebDAV copy) shows the
