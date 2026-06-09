@@ -85,6 +85,12 @@ RSYNC_EXCLUDES=(
 	--exclude='psalm.xml'
 	--exclude='psalm-baseline.xml'
 	--exclude='dist/'
+	# Playwright e2e artefacts (gitignored, but rsync copies the working
+	# tree regardless) — must never end up in the app tarball.
+	--exclude='test-results/'
+	--exclude='playwright-report/'
+	--exclude='blob-report/'
+	--exclude='.playwright/'
 )
 
 rsync -a "${RSYNC_EXCLUDES[@]}" "$ROOT_DIR/" "$APP_STAGE/"
