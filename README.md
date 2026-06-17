@@ -209,10 +209,8 @@ PHP checks and optional E2E checks are described in [docs/release-process.md](do
 ## License
 
 - App code: AGPL-3.0-or-later (full text: [LICENSES/AGPL-3.0.txt](LICENSES/AGPL-3.0.txt))
-- Etherpad logo assets in `img/etherpad-icon-*.svg`: Apache-2.0 (see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md))
+- Etherpad logo assets in `img/etherpad-icon-*.svg`: Apache-2.0 (full text: [LICENSES/Apache-2.0.txt](LICENSES/Apache-2.0.txt))
 
 ## Acknowledgements
 
 - Thanks to the Ownpad project for the groundwork, ideas, and lessons learned that inspired and shaped this plugin.
-- Thanks to the Nextcloud and Etherpad communities for the underlying platforms and documentation.
-- This project is not affiliated with, endorsed by, or operated by the Ownpad, Nextcloud, or Etherpad projects.

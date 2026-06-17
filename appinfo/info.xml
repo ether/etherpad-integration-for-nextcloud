@@ -11,9 +11,9 @@
 	<author>John McLear</author>
 	<namespace>EtherpadNextcloud</namespace>
 	<category>office</category>
-	<website>https://github.com/Jaggob/etherpad-integration-for-nextcloud</website>
-	<bugs>https://github.com/Jaggob/etherpad-integration-for-nextcloud/issues</bugs>
-	<repository type="git">https://github.com/Jaggob/etherpad-integration-for-nextcloud.git</repository>
+	<website>https://github.com/ether/etherpad-integration-for-nextcloud</website>
+	<bugs>https://github.com/ether/etherpad-integration-for-nextcloud/issues</bugs>
+	<repository type="git">https://github.com/ether/etherpad-integration-for-nextcloud.git</repository>
 	<dependencies>
 		<php min-version="8.1" max-version="8.5"/>
 		<nextcloud min-version="31" max-version="33"/>

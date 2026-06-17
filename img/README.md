@@ -16,7 +16,6 @@ This folder contains icon assets used by the app UI and filetype integration.
   - Source: Etherpad branding assets
   - License: Apache License 2.0
   - License text: `../LICENSES/Apache-2.0.txt`
-  - Attribution: `../THIRD_PARTY_NOTICES.md`
 
 - `pad-debug.svg`
   - Local debug/development icon

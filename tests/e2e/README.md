@@ -14,7 +14,7 @@ The specs are **target-agnostic** — they drive whatever Nextcloud
 instance `E2E_BASE_URL` points at. For local development that's easiest
 against an existing test instance (your own NC, or the shared test
 server). A reproducible Docker NC+Etherpad target for CI is a later
-phase ([#112](https://github.com/Jaggob/etherpad-integration-for-nextcloud/issues/112));
+phase ([#112](https://github.com/ether/etherpad-integration-for-nextcloud/issues/112));
 because the specs only depend on `E2E_BASE_URL` and the
 documented env vars, adding it won't require rewriting tests.
 
