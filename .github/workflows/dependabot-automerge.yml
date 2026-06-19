@@ -1,0 +1,54 @@
+# SPDX-FileCopyrightText: 2026 Etherpad contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# Auto-merges Dependabot PRs once every CI workflow has passed.
+#
+# We trigger on `workflow_run` completion (rather than `pull_request`) so the
+# job only fires after CI has actually run. pascalgn/automerge-action then
+# re-checks the PR's full combined status before merging, so it waits for the
+# *other* CI workflows too and won't merge while anything is still pending or
+# failing. This keeps auto-merge self-contained -- it does not rely on branch
+# protection / required status checks being configured on the repo.
+
+name: Dependabot Automerge
+
+permissions:
+  contents: write
+  pull-requests: write
+
+on:
+  workflow_run:
+    workflows:
+      - Node
+      - Lint PHP
+      - Lint info.xml
+      - PHPUnit
+      - Psalm
+    types:
+      - completed
+
+# A Dependabot push fires several CI workflows; each completion re-triggers
+# this one. Collapse them per branch so we don't run several merge attempts
+# in parallel for the same PR.
+concurrency:
+  group: dependabot-automerge-${{ github.event.workflow_run.head_branch }}
+  cancel-in-progress: true
+
+jobs:
+  automerge:
+    if: >
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.actor.login == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Automerge
+        uses: pascalgn/automerge-action@7961b8b5eec56cc088c140b56d864285eabd3f67 # v0.16.4
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MERGE_METHOD: squash
+          MERGE_LABELS: ""
+          # Retry while sibling CI workflows are still finishing, so a merge
+          # attempt kicked off by the first workflow to complete waits for the
+          # rest to go green rather than bailing out.
+          MERGE_RETRY_SLEEP: "60000"
