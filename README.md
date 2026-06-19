@@ -13,6 +13,20 @@ This plugin lets you surface pads from an Etherpad instance inside Nextcloud and
 - Trash deletes on Etherpad (with deferred retry when Etherpad is temporarily unavailable)
 - Restore recreates pads from `.pad` snapshot data
 
+## Screenshots
+
+Create a pad straight from the Files app with `+ New`:
+
+![The Nextcloud "+ New" menu showing New pad, Public pad, and Public pad from URL entries](docs/screenshots/new-pad-menu.png)
+
+Open a `.pad` file and the linked Etherpad pad loads in the native Nextcloud viewer, with real-time collaboration and per-author colours:
+
+![A pad open inside the Nextcloud file viewer, two authors editing a Team Roadmap in real time](docs/screenshots/embedded-editor.png)
+
+Pads live alongside your other files and behave like any other Nextcloud file:
+
+![A .pad file listed in the Nextcloud Files app](docs/screenshots/pad-in-files.png)
+
 ## Requirements
 
 - Nextcloud `30` to `33` (see [appinfo/info.xml](appinfo/info.xml))
