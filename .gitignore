@@ -12,3 +12,8 @@ test-results/
 playwright-report/
 blob-report/
 .playwright/
+
+# Stray probe/screenshot artifacts at repo root (img/ pngs stay tracked)
+/*.png
+/probe*.mjs
+/dbg.mjs
