@@ -49,13 +49,17 @@ class PadTypePolicyTest extends TestCase {
 		self::assertTrue(true); // reaching this point is the assertion
 	}
 
-	public function testRequireEnabledRejectsADisabledType(): void {
+	public function testRequireEnabledRejectsADisabledTypeAndNamesIt(): void {
+		// The mode travels as data so the error mapper can build a stable
+		// payload instead of forwarding prose.
 		$policy = $this->buildPolicy([PadTypePolicy::SETTING_PUBLIC => 'no']);
 
-		$this->expectException(PadTypeDisabledException::class);
-		$this->expectExceptionMessage('Public pads are disabled');
-
-		$policy->requireEnabled(BindingService::ACCESS_PUBLIC);
+		try {
+			$policy->requireEnabled(BindingService::ACCESS_PUBLIC);
+			self::fail('Expected PadTypeDisabledException');
+		} catch (PadTypeDisabledException $e) {
+			self::assertSame(BindingService::ACCESS_PUBLIC, $e->getAccessMode());
+		}
 	}
 
 	public function testTemplateKeepsItsOwnModeWhenThatTypeIsEnabled(): void {
@@ -93,9 +97,13 @@ class PadTypePolicyTest extends TestCase {
 			PadTypePolicy::SETTING_PUBLIC => 'no',
 		]);
 
-		$this->expectException(PadTypeDisabledException::class);
-
-		$policy->resolveForTemplate(BindingService::ACCESS_PROTECTED);
+		try {
+			$policy->resolveForTemplate(BindingService::ACCESS_PROTECTED);
+			self::fail('Expected PadTypeDisabledException');
+		} catch (PadTypeDisabledException $e) {
+			// No single mode to blame when nothing is enabled.
+			self::assertSame('', $e->getAccessMode());
+		}
 	}
 
 	/** @param array<string,string> $values */

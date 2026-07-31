@@ -49,9 +49,7 @@ class PadTypePolicy {
 		if ($this->isEnabled($accessMode)) {
 			return;
 		}
-		throw new PadTypeDisabledException($accessMode === BindingService::ACCESS_PUBLIC
-			? 'Public pads are disabled on this instance.'
-			: 'Protected pads are disabled on this instance.');
+		throw new PadTypeDisabledException($accessMode);
 	}
 
 	/**
@@ -71,7 +69,7 @@ class PadTypePolicy {
 				return $fallback;
 			}
 		}
-		throw new PadTypeDisabledException('Creating pads is disabled on this instance.');
+		throw new PadTypeDisabledException();
 	}
 
 	private function flag(string $key): bool {

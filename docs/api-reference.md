@@ -77,6 +77,10 @@ of a disabled type is refused with `403` by `POST /pads`,
 `initialize` endpoints; pads that already exist are unaffected. Templates
 carrying a disabled mode are created in the enabled mode instead of failing.
 
+The refusal carries `code: pad_type_disabled`, plus `access_mode` naming the
+disabled type — that field is absent when no pad type is enabled at all.
+Branch on the code rather than on the message text.
+
 `POST /pads/from-url` is deliberately exempt: external pads are governed
 solely by the separate external-pad policy, not by these two settings.
 

@@ -97,9 +97,16 @@ class PadControllerErrorMapper {
 				'message' => 'Selected parent folder is not writable.',
 			], Http::STATUS_FORBIDDEN);
 		} catch (PadTypeDisabledException $e) {
-			return new DataResponse([
-				'message' => $e->getMessage(),
-			], Http::STATUS_FORBIDDEN);
+			// Fixed wording plus a stable code, like the other structured
+			// errors here — the exception's own message stays internal.
+			$payload = [
+				'message' => 'This pad type is disabled on this instance.',
+				'code' => 'pad_type_disabled',
+			];
+			if ($e->getAccessMode() !== '') {
+				$payload['access_mode'] = $e->getAccessMode();
+			}
+			return new DataResponse($payload, Http::STATUS_FORBIDDEN);
 		} catch (BindingException $e) {
 			$message = isset($options['binding_message'])
 				? (string)$options['binding_message']
