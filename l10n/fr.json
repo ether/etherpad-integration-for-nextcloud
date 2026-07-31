@@ -7,6 +7,7 @@
         "Add trusted Etherpad hostnames or HTTPS origins. Leave empty only if all public HTTPS hosts should be trusted.": "Ajouter des noms d’hôte Etherpad ou des origines HTTPS de confiance. Ne laisser vide que si tous les hôtes HTTPS publics doivent être considérés comme de confiance.",
         "Admin permissions required.": "Permissions administrateur requises.",
         "Allow linking external public pads": "Autoriser les liens vers des pads publics externes",
+        "Anyone with the pad link can open it, without a Nextcloud account. Created as ordinary Etherpad pads.": "Toute personne disposant du lien du pad peut l'ouvrir, sans compte Nextcloud. Créés comme des pads Etherpad ordinaires.",
         "Authentication required.": "Authentification requise.",
         "Auto-filled from the Nextcloud and Etherpad hosts when possible. Adjust it if your deployment uses a proxy path or a different trusted parent domain; leave empty for a host-only cookie.": "Renseigné automatiquement à partir des hôtes Nextcloud et Etherpad lorsque c’est possible. À ajuster si le déploiement utilise un chemin proxy ou un autre domaine parent de confiance ; laisser vide pour un cookie limité à l’hôte.",
         "Back": "Retour",
@@ -97,6 +98,7 @@
         "Loading pad...": "Chargement du pad...",
         "New pad": "Nouveau pad",
         "No synced snapshot is stored in this .pad file yet.": "Aucune copie synchronisée n'est encore stockée dans ce fichier .pad.",
+        "Only people who can open the .pad file in Nextcloud can open the pad. Created as Etherpad group pads, which require a session issued by Nextcloud.": "Seules les personnes pouvant ouvrir le fichier .pad dans Nextcloud peuvent ouvrir le pad. Créés comme des pads de groupe Etherpad, qui nécessitent une session émise par Nextcloud.",
         "Open in Etherpad": "Ouvrir dans Etherpad",
         "Open original pad": "Ouvrir le pad d’origine",
         "Open the original .pad file": "Ouvrir le fichier .pad d’origine",
@@ -107,8 +109,10 @@
         "Pending Etherpad deletes": "Suppressions Etherpad en attente",
         "Pending delete retry failed.": "Impossible de réessayer les suppressions en attente.",
         "Pending delete retry finished.": "Réessai des suppressions en attente terminé.",
+        "Protected pads": "Pads protégés",
         "Public pad": "Pad public",
         "Public pad from URL": "Pad public depuis une URL",
+        "Public pads": "Pads publics",
         "Read-only snapshot": "Copie en lecture seule",
         "Read-only snapshot from the .pad file.": "Copie en lecture seule du fichier .pad.",
         "Request failed.": "La requête a échoué.",
@@ -131,7 +135,8 @@
         "Trusted embed origins (optional)": "Origines d'intégration de confiance (optionnel)",
         "Unknown error.": "Erreur inconnue.",
         "Unsupported test fault.": "Défaut de test non pris en charge.",
-        "We couldn't find a matching pad in this Nextcloud. You can create a new pad from the text stored in this file; from then on, opening this file will load the new pad.": "Nous n'avons pas trouvé de pad correspondant dans ce Nextcloud. Vous pouvez créer un nouveau pad à partir du texte stocké dans ce fichier ; à partir de là, ouvrir ce fichier chargera le nouveau pad."
+        "We couldn't find a matching pad in this Nextcloud. You can create a new pad from the text stored in this file; from then on, opening this file will load the new pad.": "Nous n'avons pas trouvé de pad correspondant dans ce Nextcloud. Vous pouvez créer un nouveau pad à partir du texte stocké dans ce fichier ; à partir de là, ouvrir ce fichier chargera le nouveau pad.",
+        "With both types switched off, no new pads can be created. Existing pads keep working.": "Si les deux types sont désactivés, aucun nouveau pad ne peut être créé. Les pads existants continuent de fonctionner."
     },
     "pluralForm": "nplurals=2; plural=(n > 1);"
 }

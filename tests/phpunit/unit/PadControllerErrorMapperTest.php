@@ -146,6 +146,16 @@ class PadControllerErrorMapperTest extends TestCase {
 		$this->assertSame('This .pad file is already linked to a pad.', $response->getData()['message']);
 	}
 
+	public function testRunMapsDisabledPadTypeToForbiddenAndKeepsTheReason(): void {
+		$response = $this->buildMapper()->run(
+			static fn(): array => throw new \OCA\EtherpadNextcloud\Exception\PadTypeDisabledException('Public pads are disabled on this instance.'),
+			static fn(array $result): DataResponse => new DataResponse($result),
+		);
+
+		$this->assertSame(Http::STATUS_FORBIDDEN, $response->getStatus());
+		$this->assertSame('Public pads are disabled on this instance.', $response->getData()['message']);
+	}
+
 	public function testRunMapsParentFolderNotWritable(): void {
 		$response = $this->buildMapper()->run(
 			static fn(): array => throw new PadParentFolderNotWritableException('not writable'),

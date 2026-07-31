@@ -80,6 +80,7 @@ Response shape on success (200):
 
 Error responses:
 - **400** — template is not a `.pad`, template is external (`ext.*`), template is empty, target path invalid
+- **403** — no pad type is enabled in the admin settings, so nothing can be created
 - **404** — template file ID does not resolve in the user's userspace
 - **409** — target filename collides with an existing file (`A file with this name already exists.`)
 - **500** — Etherpad unreachable or other unexpected failure
@@ -90,3 +91,4 @@ Error responses:
 - **Failed template materialisation falls back to a blank pad.** If anything in the listener throws (binding race, Etherpad unreachable, malformed template), the byte-copy NC made is wiped and the new file behaves like a normal empty `.pad` — the regular missing-frontmatter init kicks in on first open.
 - **Placeholder substitution applies to both the plain-text and the HTML snapshot in the body**. If a placeholder ends up inside an HTML attribute (`<a href="{{date}}">`), it gets resolved too — keep placeholders in human-readable locations to avoid surprises.
 - **No template registry** — every `.pad` in the user's *Templates* folder is a candidate. There's no separate "is a template" flag.
+- **A template keeps its own access mode**, unless the admin switched that pad type off. In that case the pad is created in the enabled mode instead of failing, so the template's content still lands. With no pad type enabled at all, template creation is refused.

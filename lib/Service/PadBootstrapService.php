@@ -21,6 +21,7 @@ class PadBootstrapService {
 		private ISecureRandom $secureRandom,
 		private LoggerInterface $logger,
 		private PadLegacyMigrationService $legacyMigrationService,
+		private PadTypePolicy $padTypePolicy,
 	) {
 	}
 
@@ -96,6 +97,11 @@ class PadBootstrapService {
 			$padId = (string)$binding['pad_id'];
 			$accessMode = (string)$binding['access_mode'];
 		} else {
+			// No binding yet, so this provisions a brand-new pad rather than
+			// re-initialising an existing one — the policy applies. Files that
+			// already have a binding fall into the branch above and keep
+			// working whatever the admin configured.
+			$this->padTypePolicy->requireEnabled(BindingService::ACCESS_PROTECTED);
 			$padId = $this->provisionPadId(BindingService::ACCESS_PROTECTED);
 			$accessMode = BindingService::ACCESS_PROTECTED;
 			$this->bindingService->createBinding($fileId, $padId, $accessMode);

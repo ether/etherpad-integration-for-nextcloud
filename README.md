@@ -95,8 +95,30 @@ and configure:
 - Etherpad API URL (optional; defaults to Base URL)
 - Etherpad API key (OAuth is not required; Etherpad API key auth is used)
 - Copy content to `.pad` file interval
+- Which pad types users may create (see below)
 - Delete-on-trash policy
 - External public pad policy
+
+Two settings control which pad types the app offers, both enabled by default:
+
+- **Protected pads** — only people who can open the `.pad` file in Nextcloud
+  can open the pad. Created as Etherpad group pads, which require a session
+  issued by Nextcloud.
+- **Public pads** — anyone with the pad link can open the pad, without a
+  Nextcloud account.
+
+Switching a type off hides its `+ New` entries and refuses new pads of that
+type on the regular create paths — the API create endpoints, the template
+flows and the first-open initialisation of a `.pad` that has no pad yet. Pads
+that already exist keep working either way.
+
+The setting decides what the app offers; it is not a hard boundary against a
+user who crafts `.pad` files by hand. Recovering an orphaned `.pad` from its
+snapshot still re-provisions the mode recorded in that file, because rescuing
+existing content takes precedence.
+
+Linking external public pads is governed separately by the external pad
+policy and is unaffected by these two settings.
 
 ### 5) Check iframe and cookie setup for protected pads
 

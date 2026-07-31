@@ -66,7 +66,7 @@ class PadBootstrapServiceTest extends TestCase {
 		$file->expects($this->once())->method('putContent')->with('doc-content');
 
 		$migration = $this->createMock(\OCA\EtherpadNextcloud\Service\PadLegacyMigrationService::class);
-		$service = new PadBootstrapService($bindingService, $padFileService, $etherpadClient, $secureRandom, $logger, $migration);
+		$service = new PadBootstrapService($bindingService, $padFileService, $etherpadClient, $secureRandom, $logger, $migration, $this->buildPadTypePolicy(true));
 		$service->initializeMissingFrontmatter('alice', $file, '');
 	}
 
@@ -96,7 +96,7 @@ class PadBootstrapServiceTest extends TestCase {
 			->method('migrate')
 			->with('alice', $file, $legacy);
 
-		$service = new PadBootstrapService($bindingService, $padFileService, $etherpadClient, $secureRandom, $logger, $migration);
+		$service = new PadBootstrapService($bindingService, $padFileService, $etherpadClient, $secureRandom, $logger, $migration, $this->buildPadTypePolicy(true));
 
 		$this->assertTrue(
 			$service->initializeMissingFrontmatter('alice', $file, "[InternetShortcut]\nURL=https://pad.example.test/p/public-pad\n")
@@ -150,10 +150,124 @@ class PadBootstrapServiceTest extends TestCase {
 			->willThrowException(new \RuntimeException('write failed'));
 
 		$migration = $this->createMock(\OCA\EtherpadNextcloud\Service\PadLegacyMigrationService::class);
-		$service = new PadBootstrapService($bindingService, $padFileService, $etherpadClient, $secureRandom, $logger, $migration);
+		$service = new PadBootstrapService($bindingService, $padFileService, $etherpadClient, $secureRandom, $logger, $migration, $this->buildPadTypePolicy(true));
 
 		$this->expectException(\RuntimeException::class);
 		$this->expectExceptionMessage('write failed');
 		$service->initializeMissingFrontmatter('alice', $file, '');
+	}
+
+	public function testBlankInitialisationIsRefusedWhenProtectedPadsAreDisabled(): void {
+		// Without a binding this provisions a brand-new pad, so the admin's
+		// setting applies — otherwise an empty .pad plus /initialize would be
+		// a way around it.
+		$bindingService = $this->createMock(BindingService::class);
+		$bindingService->method('findByFileId')->willReturn(null);
+		$bindingService->expects($this->never())->method('createBinding');
+
+		$padFileService = $this->createMock(PadFileService::class);
+		$padFileService->method('parseLegacyOwnpadShortcut')->willReturn(null);
+
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->expects($this->never())->method('createGroup');
+		$etherpadClient->expects($this->never())->method('createGroupPad');
+
+		$file = $this->createMock(File::class);
+		$file->method('getId')->willReturn(4321);
+		$file->expects($this->never())->method('putContent');
+
+		$service = new PadBootstrapService(
+			$bindingService,
+			$padFileService,
+			$etherpadClient,
+			$this->createMock(ISecureRandom::class),
+			$this->createMock(LoggerInterface::class),
+			$this->createMock(\OCA\EtherpadNextcloud\Service\PadLegacyMigrationService::class),
+			$this->buildPadTypePolicy(false),
+		);
+
+		$this->expectException(\OCA\EtherpadNextcloud\Exception\PadTypeDisabledException::class);
+
+		$service->initializeMissingFrontmatter('alice', $file, '');
+	}
+
+	public function testExistingBindingStillInitialisesWhenProtectedPadsAreDisabled(): void {
+		// The pad already exists; the setting governs creation only, so this
+		// file must keep opening.
+		$fileId = 4321;
+		$bindingService = $this->createMock(BindingService::class);
+		$bindingService->method('findByFileId')->willReturn([
+			'pad_id' => 'g.group$existing',
+			'access_mode' => BindingService::ACCESS_PROTECTED,
+		]);
+		$bindingService->expects($this->never())->method('createBinding');
+
+		$padFileService = $this->createMock(PadFileService::class);
+		$padFileService->method('parseLegacyOwnpadShortcut')->willReturn(null);
+		$padFileService->expects($this->once())
+			->method('buildInitialDocument')
+			->willReturn('doc-content');
+
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->expects($this->never())->method('createGroupPad');
+		$etherpadClient->method('buildPadUrl')->willReturn('https://pad.example.test/p/existing');
+
+		$file = $this->createMock(File::class);
+		$file->method('getId')->willReturn($fileId);
+		$file->expects($this->once())->method('putContent')->with('doc-content');
+
+		$service = new PadBootstrapService(
+			$bindingService,
+			$padFileService,
+			$etherpadClient,
+			$this->createMock(ISecureRandom::class),
+			$this->createMock(LoggerInterface::class),
+			$this->createMock(\OCA\EtherpadNextcloud\Service\PadLegacyMigrationService::class),
+			$this->buildPadTypePolicy(false),
+		);
+
+		$service->initializeMissingFrontmatter('alice', $file, '');
+	}
+
+	public function testLegacyMigrationStillRunsWhenProtectedPadsAreDisabled(): void {
+		// Legacy Ownpad files are existing content, not new pads.
+		$legacy = ['url' => 'https://pad.example.test/p/public-pad', 'pad_id' => 'public-pad'];
+
+		$padFileService = $this->createMock(PadFileService::class);
+		$padFileService->method('parseLegacyOwnpadShortcut')->willReturn($legacy);
+
+		$file = $this->createMock(File::class);
+		$file->method('getId')->willReturn(4321);
+
+		$migration = $this->createMock(\OCA\EtherpadNextcloud\Service\PadLegacyMigrationService::class);
+		$migration->expects($this->once())->method('migrate')->with('alice', $file, $legacy);
+
+		$service = new PadBootstrapService(
+			$this->createMock(BindingService::class),
+			$padFileService,
+			$this->createMock(EtherpadClient::class),
+			$this->createMock(ISecureRandom::class),
+			$this->createMock(LoggerInterface::class),
+			$migration,
+			$this->buildPadTypePolicy(false),
+		);
+
+		self::assertTrue($service->initializeMissingFrontmatter(
+			'alice',
+			$file,
+			"[InternetShortcut]\nURL=https://pad.example.test/p/public-pad\n"
+		));
+	}
+
+	private function buildPadTypePolicy(bool $protectedEnabled): \OCA\EtherpadNextcloud\Service\PadTypePolicy {
+		$config = $this->createMock(\OCP\IConfig::class);
+		$config->method('getAppValue')->willReturnCallback(
+			static fn (string $app, string $key, string $default = ''): string => (
+				$key === \OCA\EtherpadNextcloud\Service\PadTypePolicy::SETTING_PROTECTED
+					? ($protectedEnabled ? 'yes' : 'no')
+					: $default
+			)
+		);
+		return new \OCA\EtherpadNextcloud\Service\PadTypePolicy($config);
 	}
 }

@@ -110,4 +110,58 @@ class AdminSettingsRepositoryTest extends TestCase {
 		$this->assertSame('  stored-key  ', $repository->getApiKey());
 		$this->assertSame('stored-key', $repository->getStoredSettings()->apiKey);
 	}
+
+	public function testPadTypeSettingsSurviveTheRoundTripWhenSwitchedOff(): void {
+		// Both flags default to 'yes', so an explicit false has to be written
+		// out as 'no' — otherwise switching a type off would silently reset on
+		// the next load.
+		$saved = [];
+		$config = $this->createMock(IConfig::class);
+		$config->method('setAppValue')->willReturnCallback(
+			static function (string $appName, string $key, string $value) use (&$saved): void {
+				$saved[$key] = $value;
+			}
+		);
+		$config->method('getAppValue')->willReturnCallback(
+			static function (string $appName, string $key, string $default = '') use (&$saved): string {
+				return $saved[$key] ?? $default;
+			}
+		);
+
+		$repository = new AdminSettingsRepository($config, $this->createMock(IAppConfig::class));
+		$repository->persist(new ValidatedAdminSettings(
+			'https://pad.example.test',
+			'https://pad-api.example.test',
+			'.example.test',
+			'key',
+			'key',
+			'1.3.0',
+			90,
+			true,
+			false,
+			'',
+			'',
+			false,
+			false,
+		));
+
+		$this->assertSame('no', $saved['enable_protected_pads']);
+		$this->assertSame('no', $saved['enable_public_pads']);
+
+		$stored = $repository->getStoredSettings();
+		$this->assertFalse($stored->enableProtectedPads);
+		$this->assertFalse($stored->enablePublicPads);
+	}
+
+	public function testPadTypeSettingsDefaultToEnabled(): void {
+		$config = $this->createMock(IConfig::class);
+		$config->method('getAppValue')->willReturnCallback(
+			static fn (string $appName, string $key, string $default = ''): string => $default
+		);
+
+		$stored = (new AdminSettingsRepository($config, $this->createMock(IAppConfig::class)))->getStoredSettings();
+
+		$this->assertTrue($stored->enableProtectedPads);
+		$this->assertTrue($stored->enablePublicPads);
+	}
 }

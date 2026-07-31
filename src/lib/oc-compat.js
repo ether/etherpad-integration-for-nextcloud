@@ -108,3 +108,27 @@ export const nextcloudMajorVersion = () => {
 }
 
 export const translate = (text) => (typeof window.t === 'function' ? window.t(APP_ID, text) : text)
+
+/**
+ * Read a value provided via `IInitialState`. We don't bundle
+ * `@nextcloud/initial-state`, so read the hidden input the server renders,
+ * which holds the value base64-encoded.
+ *
+ * Returns the fallback when the field is absent or unreadable — callers use
+ * this for presentation only, and the server enforces the same rules again.
+ */
+export const ocInitialState = (key, fallback = null) => {
+	const field = document.getElementById('initial-state-' + APP_ID + '-' + key)
+	if (!(field instanceof HTMLInputElement)) {
+		return fallback
+	}
+	const encoded = String(field.value || '').trim()
+	if (encoded === '') {
+		return fallback
+	}
+	try {
+		return JSON.parse(window.atob(encoded))
+	} catch (error) {
+		return fallback
+	}
+}

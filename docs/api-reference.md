@@ -71,6 +71,15 @@ Base: `/apps/etherpad_nextcloud`
     - read-only protected share: `is_readonly_snapshot=true`, empty `url`, `snapshot_text`, and sanitized `snapshot_html`; no Etherpad session cookie
     - public/external pad share: regular public Etherpad URL
 
+Admins can switch either pad type off (see the admin settings). Creating a pad
+of a disabled type is refused with `403` by `POST /pads`,
+`POST /pads/create-by-parent`, `POST /pads/from-template` and the
+`initialize` endpoints; pads that already exist are unaffected. Templates
+carrying a disabled mode are created in the enabled mode instead of failing.
+
+`POST /pads/from-url` is deliberately exempt: external pads are governed
+solely by the separate external-pad policy, not by these two settings.
+
 - `POST /api/v1/pads`
   - Controller: `PadCreateController::create`
   - Params:

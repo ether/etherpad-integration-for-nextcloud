@@ -7,6 +7,7 @@ namespace OCA\EtherpadNextcloud\Tests\Unit;
 use OCA\EtherpadNextcloud\Exception\BindingException;
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
 use OCA\EtherpadNextcloud\Exception\PadParentFolderNotWritableException;
+use OCA\EtherpadNextcloud\Exception\PadTypeDisabledException;
 use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\EtherpadNextcloud\Service\EtherpadClient;
 use OCA\EtherpadNextcloud\Service\ExternalPadExportFetcher;
@@ -107,6 +108,111 @@ class PadCreationServiceTest extends TestCase {
 
 		$this->buildService(padPaths: $padPaths, userNodeResolver: $userNodeResolver)
 			->createInParent('alice', 99, 'Test', BindingService::ACCESS_PUBLIC);
+	}
+
+	public function testCreateRefusesAPadTypeTheAdminSwitchedOff(): void {
+		// The guard sits before any file is touched, so a rejected create
+		// leaves nothing behind to roll back.
+		$fileCreator = $this->createMock(PadFileCreator::class);
+		$fileCreator->expects(self::never())->method('createUserFile');
+
+		$this->expectException(PadTypeDisabledException::class);
+
+		$this->buildService(
+			fileCreator: $fileCreator,
+			padTypePolicy: $this->buildPadTypePolicy(true, false),
+		)->create('alice', '/Test.pad', BindingService::ACCESS_PUBLIC);
+	}
+
+	public function testCreateInParentRefusesAPadTypeTheAdminSwitchedOff(): void {
+		$this->expectException(PadTypeDisabledException::class);
+
+		$this->buildService(padTypePolicy: $this->buildPadTypePolicy(false, true))
+			->createInParent('alice', 99, 'Test', BindingService::ACCESS_PROTECTED);
+	}
+
+	public function testTemplateCreationIsRefusedWhenNoPadTypeIsEnabled(): void {
+		// Proves the template path consults the policy at all; which mode it
+		// falls back to is covered by PadTypePolicyTest.
+		$templateNode = $this->createMock(\OCP\Files\File::class);
+		$templateNode->method('getName')->willReturn('Template.pad');
+		$templateNode->method('getContent')->willReturn('tpl');
+
+		$userNodeResolver = $this->createMock(UserNodeResolver::class);
+		$userNodeResolver->method('resolveUserFileNodeById')->willReturn($templateNode);
+
+		$padFileService = $this->createMock(PadFileService::class);
+		$padFileService->method('readPad')->willReturn(new ParsedPadFile(
+			frontmatter: ['pad_id' => 'nc-abc'],
+			body: '',
+			padId: 'nc-abc',
+			accessMode: BindingService::ACCESS_PROTECTED,
+			padUrl: '',
+			isExternal: false,
+		));
+
+		$padPaths = $this->createMock(PathNormalizer::class);
+		$padPaths->method('normalizeCreatePath')->willReturn('/Out.pad');
+
+		$this->expectException(PadTypeDisabledException::class);
+
+		$this->buildService(
+			$padFileService,
+			$padPaths,
+			null,
+			$userNodeResolver,
+			padTypePolicy: $this->buildPadTypePolicy(false, false),
+		)->createFromTemplate('alice', '/Out.pad', 7, null);
+	}
+
+	public function testTemplateMaterialisationUsesTheRedirectedModeEndToEnd(): void {
+		// The template says "public", but the admin only offers protected —
+		// the pad and its binding must both end up protected.
+		$template = $this->createMock(\OCP\Files\File::class);
+		$template->method('getName')->willReturn('Template.pad');
+		$template->method('getContent')->willReturn('tpl');
+
+		$target = $this->createMock(\OCP\Files\File::class);
+		$target->method('getId')->willReturn(4321);
+
+		$padFileService = $this->createMock(PadFileService::class);
+		$padFileService->method('readPad')->willReturn(new ParsedPadFile(
+			frontmatter: ['pad_id' => 'nc-source'],
+			body: 'body',
+			padId: 'nc-source',
+			accessMode: BindingService::ACCESS_PUBLIC,
+			padUrl: '',
+			isExternal: false,
+		));
+		$padFileService->method('getSnapshotPartsFromBody')->willReturn(['text' => 'hello', 'html' => '<p>hello</p>']);
+		$padFileService->method('buildInitialDocument')
+			->with(4321, 'g.grp$pad', BindingService::ACCESS_PROTECTED, 'hello', 'https://pad.example.test/p/x')
+			->willReturn('doc');
+		$padFileService->method('withExportSnapshot')->willReturn('doc-with-snapshot');
+
+		$bootstrap = $this->createMock(PadBootstrapService::class);
+		$bootstrap->expects(self::once())
+			->method('provisionPadId')
+			->with(BindingService::ACCESS_PROTECTED)
+			->willReturn('g.grp$pad');
+
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->method('buildPadUrl')->willReturn('https://pad.example.test/p/x');
+
+		$bindingService = $this->createMock(BindingService::class);
+		$bindingService->expects(self::once())
+			->method('createBinding')
+			->with(4321, 'g.grp$pad', BindingService::ACCESS_PROTECTED);
+
+		$result = $this->buildService(
+			padFileService: $padFileService,
+			bindingService: $bindingService,
+			etherpadClient: $etherpadClient,
+			bootstrap: $bootstrap,
+			padTypePolicy: $this->buildPadTypePolicy(true, false),
+		)->materializeTemplateInto($target, $template, null);
+
+		self::assertSame(BindingService::ACCESS_PROTECTED, $result['access_mode']);
 	}
 
 	public function testCreateFromUrlBuildsExternalPadFileWithoutBinding(): void {
@@ -429,6 +535,7 @@ class PadCreationServiceTest extends TestCase {
 		?\OCA\EtherpadNextcloud\Service\PadPlaceholderResolver $placeholderResolver = null,
 		?\OCA\EtherpadNextcloud\Service\ExternalPadSeeder $externalPadSeeder = null,
 		?ExternalPadExportFetcher $externalPadExportFetcher = null,
+		?\OCA\EtherpadNextcloud\Service\PadTypePolicy $padTypePolicy = null,
 	): PadCreationService {
 		if ($placeholderResolver === null) {
 			$timeFactory = $this->createMock(\OCP\AppFramework\Utility\ITimeFactory::class);
@@ -455,7 +562,21 @@ class PadCreationServiceTest extends TestCase {
 			$bootstrap ?? $this->createMock(PadBootstrapService::class),
 			$placeholderResolver,
 			$externalPadSeeder,
+			$padTypePolicy ?? $this->buildPadTypePolicy(true, true),
 			$this->createMock(LoggerInterface::class),
 		);
+	}
+
+	/** Both pad types enabled unless a test says otherwise — the shipped default. */
+	private function buildPadTypePolicy(bool $protectedEnabled, bool $publicEnabled): \OCA\EtherpadNextcloud\Service\PadTypePolicy {
+		$config = $this->createMock(\OCP\IConfig::class);
+		$config->method('getAppValue')->willReturnCallback(
+			static fn (string $app, string $key, string $default = ''): string => match ($key) {
+				\OCA\EtherpadNextcloud\Service\PadTypePolicy::SETTING_PROTECTED => $protectedEnabled ? 'yes' : 'no',
+				\OCA\EtherpadNextcloud\Service\PadTypePolicy::SETTING_PUBLIC => $publicEnabled ? 'yes' : 'no',
+				default => $default,
+			}
+		);
+		return new \OCA\EtherpadNextcloud\Service\PadTypePolicy($config);
 	}
 }
