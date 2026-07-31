@@ -73,6 +73,11 @@ class AdminSettings implements ISettings {
 			'l10n' => [
 				'section_title' => $this->l10n->t('Pads'),
 				'intro' => $this->l10n->t('Configure the Etherpad server and external pad security policy for the Etherpad Nextcloud app.'),
+				'section_server' => $this->l10n->t('Etherpad server'),
+				'section_pad_types' => $this->l10n->t('Pad types and behaviour'),
+				'section_external' => $this->l10n->t('External pads and embedding'),
+				'section_diagnostics' => $this->l10n->t('Diagnostics'),
+				'section_diagnostics_hint' => $this->l10n->t('The connection test checks that Nextcloud reaches the Etherpad API with the configured key. The consistency check looks for pad links whose .pad file no longer exists.'),
 				'etherpad_base_url' => $this->l10n->t('Etherpad Base URL'),
 				'etherpad_api_url' => $this->l10n->t('Etherpad API URL (optional)'),
 				'etherpad_api_url_hint' => $this->l10n->t('Optional internal URL for server-side API calls. Leave empty to use Etherpad Base URL.'),

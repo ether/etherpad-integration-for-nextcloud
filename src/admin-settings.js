@@ -4,6 +4,7 @@
 	const root = document.getElementById('etherpad-nextcloud-admin-settings')
 	const form = document.getElementById('etherpad-nextcloud-admin-form')
 	const statusNode = document.getElementById('etherpad-nextcloud-admin-status')
+	const diagnosticsStatusNode = document.getElementById('etherpad-nextcloud-diagnostics-status')
 	const healthButton = document.getElementById('etherpad-nextcloud-health-check')
 	const consistencyButton = document.getElementById('etherpad-nextcloud-consistency-check')
 	const retryPendingButton = document.getElementById('etherpad-nextcloud-retry-pending')
@@ -79,9 +80,9 @@
 			&& !protectedPadsCheckbox.checked
 			&& !publicPadsCheckbox.checked
 		if (padTypesNoneHint instanceof HTMLElement) {
-			// Toggle `display` rather than the `hidden` attribute: the element
-			// also carries Nextcloud's `.settings-hint` class, whose rule wins
-			// over the user-agent `[hidden]` default.
+			// Toggle `display` rather than the `hidden` attribute: our own
+			// `.settings-hint { display: block }` rule is ID-scoped and so
+			// outweighs the user-agent `[hidden]` default.
 			padTypesNoneHint.style.display = noneEnabled ? '' : 'none'
 		}
 	}
@@ -103,14 +104,33 @@
 		}
 	}
 
-	function setStatus(message, state) {
-		statusNode.textContent = message
-		statusNode.classList.remove('ep-status-success', 'ep-status-error')
-		if (state === 'success') {
-			statusNode.classList.add('ep-status-success')
-		} else if (state === 'error') {
-			statusNode.classList.add('ep-status-error')
+	// Saving and the diagnostic tools live in separate sections, so each
+	// reports next to its own buttons. Writing a status only ever touches its
+	// own area — the two run independently, and a response arriving late must
+	// not wipe out the other action's result.
+	function setStatus(message, state, node = statusNode) {
+		if (!(node instanceof HTMLElement)) {
+			return
 		}
+		node.textContent = message
+		node.classList.remove('ep-status-success', 'ep-status-error')
+		if (state === 'success') {
+			node.classList.add('ep-status-success')
+		} else if (state === 'error') {
+			node.classList.add('ep-status-error')
+		}
+	}
+
+	// Starting an action does clear the other area: its result predates this
+	// action and could otherwise be read as belonging to it.
+	function beginStatus(message, node = statusNode) {
+		for (const other of [statusNode, diagnosticsStatusNode]) {
+			if (other instanceof HTMLElement && other !== node) {
+				other.textContent = ''
+				other.classList.remove('ep-status-success', 'ep-status-error')
+			}
+		}
+		setStatus(message, null, node)
 	}
 
 	function clearFieldErrors() {
@@ -197,7 +217,7 @@
 	form.addEventListener('submit', async (event) => {
 		event.preventDefault()
 		clearFieldErrors()
-		setStatus(l10n.saving, null)
+		beginStatus(l10n.saving)
 		try {
 			const data = await postJson(saveUrl, getPayload())
 			const versionSuffix = data && data.api_version ? ` api=${String(data.api_version)}` : ''
@@ -212,7 +232,7 @@
 
 	healthButton.addEventListener('click', async () => {
 		clearFieldErrors()
-		setStatus(l10n.checking, null)
+		beginStatus(l10n.checking, diagnosticsStatusNode)
 		try {
 			const data = await postJson(healthUrl, getPayload())
 			const details = []
@@ -233,26 +253,26 @@
 			}
 			const suffix = details.length > 0 ? ` ${details.join(' | ')}` : ''
 			const message = `${String(data.message || l10n.healthOk)}${suffix}`
-			setStatus(message, 'success')
+			setStatus(message, 'success', diagnosticsStatusNode)
 		} catch (error) {
 			if (error && typeof error.field === 'string' && error.field !== '') {
 				showFieldError(error.field, error.message || l10n.healthFailed)
 			}
-			setStatus(error instanceof Error ? error.message : l10n.healthFailed, 'error')
+			setStatus(error instanceof Error ? error.message : l10n.healthFailed, 'error', diagnosticsStatusNode)
 		}
 	})
 
 	if (consistencyButton instanceof HTMLElement) {
 		consistencyButton.addEventListener('click', async () => {
 			clearFieldErrors()
-			setStatus(l10n.consistencyRunning, null)
+			beginStatus(l10n.consistencyRunning, diagnosticsStatusNode)
 			try {
 				const data = await postJson(consistencyUrl, {})
 				const bindingWithoutFile = Number(data.binding_without_file_count || 0)
 				const message = `${String(data.message || l10n.consistencyOk)} binding_without_file=${String(bindingWithoutFile)}`
-				setStatus(message, bindingWithoutFile > 0 ? 'error' : 'success')
+				setStatus(message, bindingWithoutFile > 0 ? 'error' : 'success', diagnosticsStatusNode)
 			} catch (error) {
-				setStatus(error instanceof Error ? error.message : l10n.consistencyFailed, 'error')
+				setStatus(error instanceof Error ? error.message : l10n.consistencyFailed, 'error', diagnosticsStatusNode)
 			}
 		})
 	}
@@ -260,7 +280,7 @@
 	if (retryPendingButton instanceof HTMLElement) {
 		retryPendingButton.addEventListener('click', async () => {
 			clearFieldErrors()
-			setStatus(l10n.checking, null)
+			beginStatus(l10n.checking, diagnosticsStatusNode)
 			try {
 				const data = await postJson(retryPendingUrl, {})
 				const details = []
@@ -280,9 +300,9 @@
 					updatePendingDeleteUi(Number(data.remaining || 0))
 				}
 				const suffix = details.length > 0 ? ` ${details.join(' | ')}` : ''
-				setStatus(`${String(data.message || 'OK')}${suffix}`, 'success')
+				setStatus(`${String(data.message || 'OK')}${suffix}`, 'success', diagnosticsStatusNode)
 			} catch (error) {
-				setStatus(error instanceof Error ? error.message : l10n.retryFailed, 'error')
+				setStatus(error instanceof Error ? error.message : l10n.retryFailed, 'error', diagnosticsStatusNode)
 			}
 		})
 	}

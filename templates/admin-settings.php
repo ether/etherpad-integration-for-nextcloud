@@ -28,6 +28,8 @@
 	</p>
 
 	<form id="etherpad-nextcloud-admin-form">
+		<h3 class="ep-section-heading"><?php p((string)$_['l10n']['section_server']); ?></h3>
+
 		<p>
 			<label for="etherpad-host"><?php p((string)$_['l10n']['etherpad_base_url']); ?></label>
 			<input
@@ -40,31 +42,7 @@
 			<span class="ep-field-error" data-field-error="etherpad_host" aria-live="polite"></span>
 		</p>
 
-		<p>
-			<label for="etherpad-api-host"><?php p((string)$_['l10n']['etherpad_api_url']); ?></label>
-			<input
-				type="url"
-				id="etherpad-api-host"
-				name="etherpad_api_host"
-				placeholder="https://etherpad.internal"
-				value="<?php p((string)$_['etherpad_api_host']); ?>">
-			<span class="ep-field-error" data-field-error="etherpad_api_host" aria-live="polite"></span>
-		</p>
-		<p class="settings-hint ep-field-hint"><?php p((string)$_['l10n']['etherpad_api_url_hint']); ?></p>
-
-		<p>
-			<label for="etherpad-cookie-domain"><?php p((string)$_['l10n']['etherpad_cookie_domain']); ?></label>
-			<input
-				type="text"
-				id="etherpad-cookie-domain"
-				name="etherpad_cookie_domain"
-				placeholder=".example.org"
-				value="<?php p((string)$_['etherpad_cookie_domain']); ?>">
-			<span class="ep-field-error" data-field-error="etherpad_cookie_domain" aria-live="polite"></span>
-		</p>
-		<p class="settings-hint ep-field-hint"><?php p((string)$_['l10n']['etherpad_cookie_domain_hint']); ?></p>
-
-		<p>
+		<p class="ep-field-row">
 			<label for="etherpad-api-key"><?php p((string)$_['l10n']['etherpad_api_key']); ?></label>
 			<input
 				type="password"
@@ -74,16 +52,71 @@
 				placeholder="••••••••••••••••">
 			<span class="ep-field-error" data-field-error="etherpad_api_key" aria-live="polite"></span>
 		</p>
-
-		<p class="settings-hint ep-field-hint">
+		<p class="settings-hint ep-detected-value">
 			<?php p((string)$_['l10n']['detected_api_version']); ?> <strong><?php p((string)$_['etherpad_api_version']); ?></strong>
 		</p>
 
-		<p>
+		<p class="ep-field-row">
+			<label for="etherpad-api-host"><?php p((string)$_['l10n']['etherpad_api_url']); ?></label>
+			<input
+				type="url"
+				id="etherpad-api-host"
+				aria-describedby="hint-api-host"
+				name="etherpad_api_host"
+				placeholder="https://etherpad.internal"
+				value="<?php p((string)$_['etherpad_api_host']); ?>">
+			<span class="ep-field-error" data-field-error="etherpad_api_host" aria-live="polite"></span>
+		</p>
+		<p class="settings-hint ep-field-hint" id="hint-api-host"><?php p((string)$_['l10n']['etherpad_api_url_hint']); ?></p>
+
+		<p class="ep-field-row">
+			<label for="etherpad-cookie-domain"><?php p((string)$_['l10n']['etherpad_cookie_domain']); ?></label>
+			<input
+				type="text"
+				id="etherpad-cookie-domain"
+				aria-describedby="hint-cookie-domain"
+				name="etherpad_cookie_domain"
+				placeholder=".example.org"
+				value="<?php p((string)$_['etherpad_cookie_domain']); ?>">
+			<span class="ep-field-error" data-field-error="etherpad_cookie_domain" aria-live="polite"></span>
+		</p>
+		<p class="settings-hint ep-field-hint" id="hint-cookie-domain"><?php p((string)$_['l10n']['etherpad_cookie_domain_hint']); ?></p>
+
+		<h3 class="ep-section-heading"><?php p((string)$_['l10n']['section_pad_types']); ?></h3>
+
+		<p id="enable-protected-pads-row" class="ep-checkbox-row">
+			<label class="checkbox">
+				<input
+					type="checkbox"
+					name="enable_protected_pads"
+					aria-describedby="hint-protected-pads"
+					value="1"
+					<?php if ((bool)$_['enable_protected_pads']): ?>checked<?php endif; ?>>
+				<?php p((string)$_['l10n']['enable_protected_pads']); ?>
+			</label>
+		</p>
+		<p class="settings-hint ep-field-hint ep-checkbox-hint" id="hint-protected-pads"><?php p((string)$_['l10n']['enable_protected_pads_hint']); ?></p>
+
+		<p id="enable-public-pads-row" class="ep-checkbox-row">
+			<label class="checkbox">
+				<input
+					type="checkbox"
+					name="enable_public_pads"
+					aria-describedby="hint-public-pads"
+					value="1"
+					<?php if ((bool)$_['enable_public_pads']): ?>checked<?php endif; ?>>
+				<?php p((string)$_['l10n']['enable_public_pads']); ?>
+			</label>
+		</p>
+		<p class="settings-hint ep-field-hint ep-checkbox-hint" id="hint-public-pads"><?php p((string)$_['l10n']['enable_public_pads_hint']); ?></p>
+		<p class="settings-hint ep-field-hint ep-checkbox-hint" id="pad-types-none-hint" role="status"<?php if ((bool)$_['enable_protected_pads'] || (bool)$_['enable_public_pads']): ?> style="display: none"<?php endif; ?>><?php p((string)$_['l10n']['pad_types_none_hint']); ?></p>
+
+		<p class="ep-field-row">
 			<label for="sync-interval-seconds"><?php p((string)$_['l10n']['copy_interval']); ?></label>
 			<input
 				type="number"
 				id="sync-interval-seconds"
+				aria-describedby="hint-sync-interval"
 				name="sync_interval_seconds"
 				min="5"
 				max="3600"
@@ -91,44 +124,22 @@
 				value="<?php p((string)$_['sync_interval_seconds']); ?>">
 			<span class="ep-field-error" data-field-error="sync_interval_seconds" aria-live="polite"></span>
 		</p>
-		<p class="settings-hint ep-field-hint"><?php p((string)$_['l10n']['copy_interval_hint']); ?></p>
+		<p class="settings-hint ep-field-hint" id="hint-sync-interval"><?php p((string)$_['l10n']['copy_interval_hint']); ?></p>
 
-		<p id="delete-on-trash-row">
+		<p id="delete-on-trash-row" class="ep-checkbox-row">
 			<label class="checkbox">
 				<input
 					type="checkbox"
 					name="delete_on_trash"
+					aria-describedby="hint-delete-on-trash"
 					value="1"
 					<?php if ((bool)$_['delete_on_trash']): ?>checked<?php endif; ?>>
 				<?php p((string)$_['l10n']['delete_on_trash']); ?>
 			</label>
 		</p>
-		<p class="settings-hint ep-field-hint"><?php p((string)$_['l10n']['delete_on_trash_hint']); ?></p>
+		<p class="settings-hint ep-field-hint ep-checkbox-hint" id="hint-delete-on-trash"><?php p((string)$_['l10n']['delete_on_trash_hint']); ?></p>
 
-		<p id="enable-protected-pads-row">
-			<label class="checkbox">
-				<input
-					type="checkbox"
-					name="enable_protected_pads"
-					value="1"
-					<?php if ((bool)$_['enable_protected_pads']): ?>checked<?php endif; ?>>
-				<?php p((string)$_['l10n']['enable_protected_pads']); ?>
-			</label>
-		</p>
-		<p class="settings-hint ep-field-hint"><?php p((string)$_['l10n']['enable_protected_pads_hint']); ?></p>
-
-		<p id="enable-public-pads-row">
-			<label class="checkbox">
-				<input
-					type="checkbox"
-					name="enable_public_pads"
-					value="1"
-					<?php if ((bool)$_['enable_public_pads']): ?>checked<?php endif; ?>>
-				<?php p((string)$_['l10n']['enable_public_pads']); ?>
-			</label>
-		</p>
-		<p class="settings-hint ep-field-hint"><?php p((string)$_['l10n']['enable_public_pads_hint']); ?></p>
-		<p class="settings-hint ep-field-hint" id="pad-types-none-hint"<?php if ((bool)$_['enable_protected_pads'] || (bool)$_['enable_public_pads']): ?> style="display: none"<?php endif; ?>><?php p((string)$_['l10n']['pad_types_none_hint']); ?></p>
+		<h3 class="ep-section-heading"><?php p((string)$_['l10n']['section_external']); ?></h3>
 
 		<p id="allow-external-pads-row">
 			<label class="checkbox">
@@ -141,10 +152,11 @@
 			</label>
 		</p>
 
-		<p id="external-pad-allowlist-row">
+		<p id="external-pad-allowlist-row" class="ep-field-row">
 			<label for="external-pad-allowlist"><?php p((string)$_['l10n']['external_allowlist']); ?></label>
 			<textarea
 				id="external-pad-allowlist"
+				aria-describedby="external-pad-allowlist-hint"
 				name="external_pad_allowlist"
 				rows="5"
 				placeholder="pad.example.org&#10;etherpad.example.net"><?php p((string)$_['external_pad_allowlist']); ?></textarea>
@@ -152,10 +164,11 @@
 		</p>
 		<p id="external-pad-allowlist-hint" class="settings-hint ep-field-hint"><?php p((string)$_['l10n']['external_allowlist_hint']); ?></p>
 
-		<p id="trusted-embed-origins-row">
+		<p id="trusted-embed-origins-row" class="ep-field-row">
 			<label for="trusted-embed-origins"><?php p((string)$_['l10n']['trusted_embed_origins']); ?></label>
 			<textarea
 				id="trusted-embed-origins"
+				aria-describedby="trusted-embed-origins-hint"
 				name="trusted_embed_origins"
 				rows="4"
 				placeholder="https://portal.example.org&#10;https://app.example.org"><?php p((string)$_['trusted_embed_origins']); ?></textarea>
@@ -165,6 +178,13 @@
 
 		<div class="etherpad-nextcloud-admin-actions">
 			<button type="submit" class="primary"><?php p((string)$_['l10n']['save_button']); ?></button>
+		</div>
+		<p id="etherpad-nextcloud-admin-status" class="settings-hint ep-status" aria-live="polite"></p>
+
+		<h3 class="ep-section-heading"><?php p((string)$_['l10n']['section_diagnostics']); ?></h3>
+		<p class="settings-hint ep-field-hint"><?php p((string)$_['l10n']['section_diagnostics_hint']); ?></p>
+
+		<div class="etherpad-nextcloud-admin-actions">
 			<button type="button" id="etherpad-nextcloud-health-check"><?php p((string)$_['l10n']['health_button']); ?></button>
 			<button type="button" id="etherpad-nextcloud-consistency-check"><?php p((string)$_['l10n']['consistency_button']); ?></button>
 		</div>
@@ -172,7 +192,6 @@
 			<button type="button" id="etherpad-nextcloud-retry-pending"><?php p((string)$_['l10n']['retry_pending_button']); ?></button>
 			<span id="etherpad-nextcloud-pending-count" class="settings-hint"></span>
 		</div>
-
-		<p id="etherpad-nextcloud-admin-status" class="settings-hint" aria-live="polite"></p>
+		<p id="etherpad-nextcloud-diagnostics-status" class="settings-hint ep-status" aria-live="polite"></p>
 	</form>
 </div>

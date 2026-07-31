@@ -10,27 +10,79 @@
 	display: block;
 }
 
+/* Muted like Nextcloud's own setting descriptions, but at body text size.
+   Capped at the input width so the text column lines up with the fields.
+
+   A row followed by a hint is marked as such and drops its own bottom
+   margin, instead of the hint pulling itself up with a negative one — that
+   kept the spacing dependent on whichever `p` rule happened to apply. */
+#etherpad-nextcloud-admin-settings .ep-field-row {
+	margin-bottom: 4px;
+}
+
 #etherpad-nextcloud-admin-settings .ep-field-hint {
-	margin-top: -8px;
+	margin-top: 0;
 	margin-bottom: 14px;
+	max-width: 640px;
+	color: var(--color-text-maxcontrast);
+}
+
+/* Not an explanation but a reported value, so it keeps normal body text
+   styling instead of the muted hint treatment. */
+#etherpad-nextcloud-admin-settings .ep-detected-value {
+	margin-top: 0;
+	margin-bottom: 14px;
+}
+
+/* Hints belonging to a checkbox line up under its label text rather than
+   under the box itself, so the pairing reads at a glance. */
+/* An option and its description form one block: no gap worth mentioning
+   between them, a clear one to the next option. Both margins are set
+   outright rather than pulled back with negative values, so the result
+   doesn't depend on which surrounding rule happens to win. */
+#etherpad-nextcloud-admin-settings .ep-checkbox-row {
+	margin-bottom: 0;
+}
+
+#etherpad-nextcloud-admin-settings .ep-checkbox-row label {
+	margin-bottom: 0;
+}
+
+#etherpad-nextcloud-admin-settings .ep-checkbox-hint {
+	margin-top: 2px;
+	margin-bottom: 22px;
+	padding-left: 26px;
+}
+
+/* Smaller than a bare h3 so it doesn't compete with the page title, but
+   dark and bold like Nextcloud's own section names — muted or uppercase
+   headings would read as secondary text next to the field labels. */
+#etherpad-nextcloud-admin-settings .ep-section-heading {
+	margin: 0 0 14px;
+	padding-top: 22px;
+	border-top: 1px solid var(--color-border);
+	font-size: 1.2em;
+	font-weight: bold;
+	color: var(--color-main-text);
+}
+
+/* The first heading follows the page intro, so it needs no divider. */
+#etherpad-nextcloud-admin-settings form > .ep-section-heading:first-child {
+	padding-top: 0;
+	border-top: none;
 }
 
 #etherpad-nextcloud-admin-settings #allow-external-pads-row {
 	margin-bottom: 6px;
 }
 
-#etherpad-nextcloud-admin-settings #external-pad-allowlist-row {
-	margin-bottom: 6px;
-}
-
-#etherpad-nextcloud-admin-settings #external-pad-allowlist-hint {
-	margin-top: 0;
-}
-
+/* Nextcloud mutes form labels by default; field names are primary content
+   here, so they keep full contrast like the section headings. */
 #etherpad-nextcloud-admin-settings label {
 	display: block;
 	font-weight: 600;
 	margin-bottom: 6px;
+	color: var(--color-main-text);
 }
 
 #etherpad-nextcloud-admin-settings input[type="url"],
@@ -42,11 +94,15 @@
 	max-width: 640px;
 }
 
+/* Nextcloud's checkbox styling mutes the label, which left it looking the
+   same as the description underneath. Restore full contrast and a little
+   extra weight so the option reads as the heading of its own block. */
 #etherpad-nextcloud-admin-settings label.checkbox {
 	display: inline-flex;
 	align-items: center;
 	gap: 8px;
-	font-weight: 400;
+	font-weight: 600;
+	color: var(--color-main-text);
 }
 
 #etherpad-nextcloud-admin-settings .etherpad-nextcloud-admin-actions {
@@ -55,8 +111,10 @@
 	gap: 10px;
 }
 
-#etherpad-nextcloud-admin-settings #etherpad-nextcloud-admin-status.ep-status-success,
-#etherpad-nextcloud-admin-settings #etherpad-nextcloud-admin-status.ep-status-error {
+/* Both the save and the diagnostics area carry `ep-status`, so the rule keys
+   off the class rather than naming a single element. */
+#etherpad-nextcloud-admin-settings .ep-status.ep-status-success,
+#etherpad-nextcloud-admin-settings .ep-status.ep-status-error {
 	color: var(--color-main-text, var(--color-text-maxcontrast, #1f2937));
 }
 
