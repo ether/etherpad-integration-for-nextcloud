@@ -16,6 +16,12 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 10
+    ignore:
+      # @nextcloud/vite-config peer-requires vite ^7, so a vite 8 bump breaks
+      # `npm ci` for everyone. Minor/patch updates still come through.
+      # Remove this once upstream supports vite 8.
+      - dependency-name: vite
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: github-actions
     directory: "/"
