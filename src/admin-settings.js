@@ -5,6 +5,12 @@
 	const form = document.getElementById('etherpad-nextcloud-admin-form')
 	const statusNode = document.getElementById('etherpad-nextcloud-admin-status')
 	const diagnosticsStatusNode = document.getElementById('etherpad-nextcloud-diagnostics-status')
+	// Only the save area is required at startup. Markup rendered before the
+	// diagnostics area existed still has to show diagnostics feedback
+	// somewhere, so fall back to the save area instead of dropping it.
+	const diagnosticsTarget = diagnosticsStatusNode instanceof HTMLElement
+		? diagnosticsStatusNode
+		: statusNode
 	const healthButton = document.getElementById('etherpad-nextcloud-health-check')
 	const consistencyButton = document.getElementById('etherpad-nextcloud-consistency-check')
 	const retryPendingButton = document.getElementById('etherpad-nextcloud-retry-pending')
@@ -124,7 +130,7 @@
 	// Starting an action does clear the other area: its result predates this
 	// action and could otherwise be read as belonging to it.
 	function beginStatus(message, node = statusNode) {
-		for (const other of [statusNode, diagnosticsStatusNode]) {
+		for (const other of [statusNode, diagnosticsTarget]) {
 			if (other instanceof HTMLElement && other !== node) {
 				other.textContent = ''
 				other.classList.remove('ep-status-success', 'ep-status-error')
@@ -232,7 +238,7 @@
 
 	healthButton.addEventListener('click', async () => {
 		clearFieldErrors()
-		beginStatus(l10n.checking, diagnosticsStatusNode)
+		beginStatus(l10n.checking, diagnosticsTarget)
 		try {
 			const data = await postJson(healthUrl, getPayload())
 			const details = []
@@ -253,26 +259,26 @@
 			}
 			const suffix = details.length > 0 ? ` ${details.join(' | ')}` : ''
 			const message = `${String(data.message || l10n.healthOk)}${suffix}`
-			setStatus(message, 'success', diagnosticsStatusNode)
+			setStatus(message, 'success', diagnosticsTarget)
 		} catch (error) {
 			if (error && typeof error.field === 'string' && error.field !== '') {
 				showFieldError(error.field, error.message || l10n.healthFailed)
 			}
-			setStatus(error instanceof Error ? error.message : l10n.healthFailed, 'error', diagnosticsStatusNode)
+			setStatus(error instanceof Error ? error.message : l10n.healthFailed, 'error', diagnosticsTarget)
 		}
 	})
 
 	if (consistencyButton instanceof HTMLElement) {
 		consistencyButton.addEventListener('click', async () => {
 			clearFieldErrors()
-			beginStatus(l10n.consistencyRunning, diagnosticsStatusNode)
+			beginStatus(l10n.consistencyRunning, diagnosticsTarget)
 			try {
 				const data = await postJson(consistencyUrl, {})
 				const bindingWithoutFile = Number(data.binding_without_file_count || 0)
 				const message = `${String(data.message || l10n.consistencyOk)} binding_without_file=${String(bindingWithoutFile)}`
-				setStatus(message, bindingWithoutFile > 0 ? 'error' : 'success', diagnosticsStatusNode)
+				setStatus(message, bindingWithoutFile > 0 ? 'error' : 'success', diagnosticsTarget)
 			} catch (error) {
-				setStatus(error instanceof Error ? error.message : l10n.consistencyFailed, 'error', diagnosticsStatusNode)
+				setStatus(error instanceof Error ? error.message : l10n.consistencyFailed, 'error', diagnosticsTarget)
 			}
 		})
 	}
@@ -280,7 +286,7 @@
 	if (retryPendingButton instanceof HTMLElement) {
 		retryPendingButton.addEventListener('click', async () => {
 			clearFieldErrors()
-			beginStatus(l10n.checking, diagnosticsStatusNode)
+			beginStatus(l10n.checking, diagnosticsTarget)
 			try {
 				const data = await postJson(retryPendingUrl, {})
 				const details = []
@@ -300,9 +306,9 @@
 					updatePendingDeleteUi(Number(data.remaining || 0))
 				}
 				const suffix = details.length > 0 ? ` ${details.join(' | ')}` : ''
-				setStatus(`${String(data.message || 'OK')}${suffix}`, 'success', diagnosticsStatusNode)
+				setStatus(`${String(data.message || 'OK')}${suffix}`, 'success', diagnosticsTarget)
 			} catch (error) {
-				setStatus(error instanceof Error ? error.message : l10n.retryFailed, 'error', diagnosticsStatusNode)
+				setStatus(error instanceof Error ? error.message : l10n.retryFailed, 'error', diagnosticsTarget)
 			}
 		})
 	}

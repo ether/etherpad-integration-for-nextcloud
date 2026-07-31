@@ -42,6 +42,14 @@ const setupAdminDom = () => {
 const saveStatus = () => document.getElementById('etherpad-nextcloud-admin-status')
 const diagnosticsStatus = () => document.getElementById('etherpad-nextcloud-diagnostics-status')
 
+/** Mirrors a successful controller response: the client only treats a body
+ * carrying `ok: true` as success, anything else takes the error path. */
+const okResponse = (body) => ({
+	ok: true,
+	status: 200,
+	text: () => Promise.resolve(JSON.stringify({ ok: true, ...body })),
+})
+
 /** A fetch whose response is resolved by the test, so overlapping requests
  * can be completed in a deliberately reversed order. */
 const deferred = () => {
@@ -51,11 +59,7 @@ const deferred = () => {
 	})
 	return {
 		promise,
-		respond: (body) => resolve({
-			ok: true,
-			status: 200,
-			text: () => Promise.resolve(JSON.stringify(body)),
-		}),
+		respond: (body) => resolve(okResponse(body)),
 	}
 }
 
@@ -79,17 +83,16 @@ describe('admin settings status areas', () => {
 	})
 
 	it('reports saving and diagnostics next to their own actions', async () => {
-		vi.stubGlobal('fetch', vi.fn(() => Promise.resolve({
-			ok: true,
-			status: 200,
-			text: () => Promise.resolve(JSON.stringify({ message: 'Connection ok.' })),
-		})))
+		vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(okResponse({ message: 'Connection ok.' }))))
 		await import(MODULE)
 
 		document.getElementById('etherpad-nextcloud-health-check').click()
 		await flush()
 
 		expect(diagnosticsStatus().textContent).toContain('Connection ok.')
+		// Success, not the error path: the mock has to satisfy the client's
+		// `ok: true` contract for this assertion to hold.
+		expect(diagnosticsStatus().classList.contains('ep-status-success')).toBe(true)
 		expect(saveStatus().textContent).toBe('')
 	})
 
@@ -112,15 +115,13 @@ describe('admin settings status areas', () => {
 		await flush()
 
 		expect(diagnosticsStatus().textContent).toContain('Connection ok.')
+		expect(diagnosticsStatus().classList.contains('ep-status-success')).toBe(true)
 		expect(saveStatus().textContent).toContain('Saved.')
+		expect(saveStatus().classList.contains('ep-status-success')).toBe(true)
 	})
 
 	it('clears the other area when a new action starts', async () => {
-		vi.stubGlobal('fetch', vi.fn(() => Promise.resolve({
-			ok: true,
-			status: 200,
-			text: () => Promise.resolve(JSON.stringify({ message: 'Connection ok.' })),
-		})))
+		vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(okResponse({ message: 'Connection ok.' }))))
 		await import(MODULE)
 
 		document.getElementById('etherpad-nextcloud-health-check').click()
@@ -132,5 +133,17 @@ describe('admin settings status areas', () => {
 
 		expect(diagnosticsStatus().textContent).toBe('')
 		expect(diagnosticsStatus().classList.contains('ep-status-success')).toBe(false)
+	})
+
+	it('falls back to the save area when the diagnostics area is missing', async () => {
+		diagnosticsStatus().remove()
+		vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(okResponse({ message: 'Connection ok.' }))))
+		await import(MODULE)
+
+		document.getElementById('etherpad-nextcloud-health-check').click()
+		await flush()
+
+		expect(saveStatus().textContent).toContain('Connection ok.')
+		expect(saveStatus().classList.contains('ep-status-success')).toBe(true)
 	})
 })
