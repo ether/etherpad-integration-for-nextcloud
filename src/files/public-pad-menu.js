@@ -111,6 +111,9 @@ export const createPublicPadMenuRegistrar = ({
 	isFilesAppRoute,
 	onCreateInternalPublicPad,
 	onCreateExternalPublicPad,
+	// Admins can switch public pads off. The "from URL" entry is governed by
+	// the separate external-pads setting and stays independent of this one.
+	publicPadsEnabled = true,
 }) => {
 	let modernApiRegistered = false
 	let legacyApiRegistered = false
@@ -168,12 +171,24 @@ export const createPublicPadMenuRegistrar = ({
 		actionHandler: externalHandler,
 	})
 
+	const modernEntries = () => (publicPadsEnabled
+		? [buildInternalEntry(), buildExternalEntry()]
+		: [buildExternalEntry()])
+
+	const legacyEntryPairs = () => {
+		const pairs = [{ legacy: buildExternalLegacyEntry(), modern: buildExternalEntry() }]
+		if (publicPadsEnabled) {
+			pairs.unshift({ legacy: buildInternalLegacyEntry(), modern: buildInternalEntry() })
+		}
+		return pairs
+	}
+
 	const tryRegisterViaModernApi = async () => {
 		const api = resolveNewFileMenuApi()
 		if (!api) {
 			return false
 		}
-		for (const entry of [buildInternalEntry(), buildExternalEntry()]) {
+		for (const entry of modernEntries()) {
 			try {
 				api.register(entry)
 			} catch (error) {
@@ -191,10 +206,7 @@ export const createPublicPadMenuRegistrar = ({
 			window.OCA && window.OCA.Files && window.OCA.Files.NewFileMenu,
 			window.OCA && window.OCA.Files && window.OCA.Files.newFileMenu,
 		]
-		const entries = [
-			{ legacy: buildInternalLegacyEntry(), modern: buildInternalEntry() },
-			{ legacy: buildExternalLegacyEntry(), modern: buildExternalEntry() },
-		]
+		const entries = legacyEntryPairs()
 		for (const menu of candidates) {
 			if (!menu || typeof menu !== 'object') {
 				continue
@@ -243,14 +255,13 @@ export const createPublicPadMenuRegistrar = ({
 				return true
 			}
 			if (!legacyPluginHooked && window.OC && window.OC.Plugins && typeof window.OC.Plugins.register === 'function') {
-				const internalEntry = buildInternalLegacyEntry()
-				const externalEntry = buildExternalLegacyEntry()
+				const pluginEntries = legacyEntryPairs().map(({ legacy }) => legacy)
 				window.OC.Plugins.register('OCA.Files.NewFileMenu', {
 					attach(menu) {
 						if (!menu || typeof menu.addMenuEntry !== 'function') {
 							return
 						}
-						for (const entry of [internalEntry, externalEntry]) {
+						for (const entry of pluginEntries) {
 							try {
 								menu.addMenuEntry(entry)
 							} catch (error) {

@@ -37,6 +37,10 @@ Important:
   - GroupPad ID (`g.<group>$<name>`).
   - Access only with a valid Etherpad session (`sessionID` cookie).
 
+Either type can be switched off in the admin settings, which stops new pads of
+that type from being created. Existing pads keep opening regardless, so the
+setting never cuts anyone off from content.
+
 ## Session Flow (protected)
 
 Implemented in `lib/Service/PadSessionService.php`.

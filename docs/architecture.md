@@ -29,6 +29,10 @@ Etherpad is the editing source of truth; the `.pad` file acts as binding storage
   - Revision metadata and snapshot body structure (`[TEXT]`, `[HTML-BEGIN]`, `[HTML-END]`).
 - `lib/Service/PadSessionService.php`
   - Session-cookie flow for protected GroupPads.
+- `lib/Service/PadTypePolicy.php`
+  - Which pad types the instance offers (both enabled by default).
+  - Guards creation only; existing pads of a disabled type keep working.
+  - Resolves a template's access mode to an enabled one instead of failing.
 - `lib/Service/ConsistencyCheckService.php`
   - Optional admin integrity scan:
     - bindings without file
@@ -86,7 +90,7 @@ checked-in runtime assets in `js/`.
 
 ### 1) Create
 
-1. `PadCreateController::create` creates an Etherpad pad (public or protected/group).
+1. `PadCreateController::create` creates an Etherpad pad (public or protected/group). `PadCreationService` asks `PadTypePolicy` first and refuses a pad type the admin switched off; the check sits in the create paths rather than in `PadBootstrapService::provisionPadId`, which also serves existing files.
 2. Creates the `.pad` file.
 3. Writes initial frontmatter.
 4. Creates DB binding.
@@ -249,6 +253,7 @@ Primary flow (native viewer when available):
   - `+ Neu` integration for `Public pad` with runtime capability checks:
     - modern API: `addNewFileMenuEntry` / `getNewFileMenu().registerEntry`
     - legacy API fallback: `OC.Plugins.register('OCA.Files.NewFileMenu', ...)`
+  - The `Public pad` entry follows the admin setting, read from initial state. `Public pad from URL` is always registered; the external-pad policy is enforced server-side when the create call arrives.
 - `src/files/public-share-pad-links.js`
   - Public-share click interception for download links that need remapping to the pad viewer.
   - Authenticated Files routes intentionally do not use global click interception.

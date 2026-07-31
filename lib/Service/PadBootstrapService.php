@@ -21,6 +21,7 @@ class PadBootstrapService {
 		private ISecureRandom $secureRandom,
 		private LoggerInterface $logger,
 		private PadLegacyMigrationService $legacyMigrationService,
+		private PadTypePolicy $padTypePolicy,
 	) {
 	}
 
@@ -96,8 +97,17 @@ class PadBootstrapService {
 			$padId = (string)$binding['pad_id'];
 			$accessMode = (string)$binding['access_mode'];
 		} else {
-			$padId = $this->provisionPadId(BindingService::ACCESS_PROTECTED);
-			$accessMode = BindingService::ACCESS_PROTECTED;
+			// No binding yet, so this provisions a brand-new pad rather than
+			// re-initialising an existing one — the policy applies. Files that
+			// already have a binding fall into the branch above and keep
+			// working whatever the admin configured.
+			//
+			// Fall back rather than refuse: an empty `.pad` can arrive outside
+			// the UI (WebDAV, another integration, or from before the setting
+			// changed), and a hard requirement would leave it permanently
+			// unopenable even when the other pad type is available.
+			$accessMode = $this->padTypePolicy->resolveCreatableMode(BindingService::ACCESS_PROTECTED);
+			$padId = $this->provisionPadId($accessMode);
 			$this->bindingService->createBinding($fileId, $padId, $accessMode);
 			$createdNewBinding = true;
 			$createdNewPad = true;

@@ -1,0 +1,85 @@
+<?php
+
+declare(strict_types=1);
+/**
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ *
+ * Copyright (c) 2026 Jacob Bühler
+ */
+
+namespace OCA\EtherpadNextcloud\Service;
+
+use OCA\EtherpadNextcloud\AppInfo\Application;
+use OCA\EtherpadNextcloud\Exception\PadTypeDisabledException;
+use OCP\IConfig;
+
+/**
+ * Which pad types an instance offers.
+ *
+ * Both types default to enabled, so an installation that never touches the
+ * settings behaves exactly as before. The policy governs *creation* only:
+ * pads that already exist keep opening whatever the settings say, which is
+ * why the checks live in the create paths and not in
+ * `PadBootstrapService::provisionPadId()` — that one also serves
+ * `initializeMissingFrontmatter` for existing files.
+ *
+ * External pads are deliberately not covered here. They are always public in
+ * Etherpad terms but are governed solely by `allow_external_pads`, enforced
+ * in ExternalPadExportFetcher and CSPListener.
+ */
+class PadTypePolicy {
+	public const SETTING_PROTECTED = 'enable_protected_pads';
+	public const SETTING_PUBLIC = 'enable_public_pads';
+
+	public function __construct(
+		private IConfig $config,
+	) {
+	}
+
+	public function isEnabled(string $accessMode): bool {
+		return match ($accessMode) {
+			BindingService::ACCESS_PROTECTED => $this->flag(self::SETTING_PROTECTED),
+			BindingService::ACCESS_PUBLIC => $this->flag(self::SETTING_PUBLIC),
+			default => false,
+		};
+	}
+
+	/** @throws PadTypeDisabledException */
+	public function requireEnabled(string $accessMode): void {
+		if ($this->isEnabled($accessMode)) {
+			return;
+		}
+		throw new PadTypeDisabledException($accessMode);
+	}
+
+	/**
+	 * Pick a mode that may actually be created, preferring the requested one.
+	 *
+	 * Used where refusing would strand the user rather than protect anything:
+	 * a template carries the mode of the pad it was made from, and a `.pad`
+	 * file that arrived outside the UI (WebDAV, another integration) has to
+	 * become *some* pad on first open. Falling back keeps the content
+	 * reachable while the policy still holds for the resulting pad.
+	 *
+	 * Note this can widen access — a protected template becomes a public pad
+	 * when protected pads are off. That is the instance's only option at that
+	 * point, but it is a downgrade in the security-relevant direction.
+	 *
+	 * @throws PadTypeDisabledException when no pad type is enabled at all
+	 */
+	public function resolveCreatableMode(string $requested): string {
+		if ($this->isEnabled($requested)) {
+			return $requested;
+		}
+		foreach ([BindingService::ACCESS_PROTECTED, BindingService::ACCESS_PUBLIC] as $fallback) {
+			if ($this->isEnabled($fallback)) {
+				return $fallback;
+			}
+		}
+		throw new PadTypeDisabledException();
+	}
+
+	private function flag(string $key): bool {
+		return (string)$this->config->getAppValue(Application::APP_ID, $key, 'yes') === 'yes';
+	}
+}

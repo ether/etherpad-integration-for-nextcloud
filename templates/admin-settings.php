@@ -105,6 +105,31 @@
 		</p>
 		<p class="settings-hint ep-field-hint"><?php p((string)$_['l10n']['delete_on_trash_hint']); ?></p>
 
+		<p id="enable-protected-pads-row">
+			<label class="checkbox">
+				<input
+					type="checkbox"
+					name="enable_protected_pads"
+					value="1"
+					<?php if ((bool)$_['enable_protected_pads']): ?>checked<?php endif; ?>>
+				<?php p((string)$_['l10n']['enable_protected_pads']); ?>
+			</label>
+		</p>
+		<p class="settings-hint ep-field-hint"><?php p((string)$_['l10n']['enable_protected_pads_hint']); ?></p>
+
+		<p id="enable-public-pads-row">
+			<label class="checkbox">
+				<input
+					type="checkbox"
+					name="enable_public_pads"
+					value="1"
+					<?php if ((bool)$_['enable_public_pads']): ?>checked<?php endif; ?>>
+				<?php p((string)$_['l10n']['enable_public_pads']); ?>
+			</label>
+		</p>
+		<p class="settings-hint ep-field-hint"><?php p((string)$_['l10n']['enable_public_pads_hint']); ?></p>
+		<p class="settings-hint ep-field-hint" id="pad-types-none-hint"<?php if ((bool)$_['enable_protected_pads'] || (bool)$_['enable_public_pads']): ?> style="display: none"<?php endif; ?>><?php p((string)$_['l10n']['pad_types_none_hint']); ?></p>
+
 		<p id="allow-external-pads-row">
 			<label class="checkbox">
 				<input

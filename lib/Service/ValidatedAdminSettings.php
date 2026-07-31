@@ -22,6 +22,8 @@ class ValidatedAdminSettings {
 		public readonly bool $allowExternalPads,
 		public readonly string $externalPadAllowlist,
 		public readonly string $trustedEmbedOrigins,
+		public readonly bool $enableProtectedPads = true,
+		public readonly bool $enablePublicPads = true,
 	) {
 	}
 }

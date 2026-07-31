@@ -12,6 +12,7 @@ use OCA\EtherpadNextcloud\AppInfo\Application;
 use OCA\EtherpadNextcloud\Service\AdminSettingsRepository;
 use OCA\EtherpadNextcloud\Service\AppConfigService;
 use OCA\EtherpadNextcloud\Service\EtherpadClient;
+use OCA\EtherpadNextcloud\Service\PadTypePolicy;
 use OCP\AppFramework\Http\TemplateResponse;
 use OCP\IConfig;
 use OCP\IL10N;
@@ -58,6 +59,8 @@ class AdminSettings implements ISettings {
 			'etherpad_cookie_domain' => $cookieDomain,
 			'etherpad_api_version' => $apiVersion,
 			'sync_interval_seconds' => $syncInterval,
+			'enable_protected_pads' => (string)$this->config->getAppValue(Application::APP_ID, PadTypePolicy::SETTING_PROTECTED, 'yes') === 'yes',
+			'enable_public_pads' => (string)$this->config->getAppValue(Application::APP_ID, PadTypePolicy::SETTING_PUBLIC, 'yes') === 'yes',
 			'delete_on_trash' => (string)$this->config->getAppValue(Application::APP_ID, 'delete_on_trash', 'yes') === 'yes',
 			'allow_external_pads' => (string)$this->config->getAppValue(Application::APP_ID, 'allow_external_pads', 'no') === 'yes',
 			'external_pad_allowlist' => (string)$this->config->getAppValue(Application::APP_ID, 'external_pad_allowlist', ''),
@@ -79,6 +82,11 @@ class AdminSettings implements ISettings {
 				'detected_api_version' => $this->l10n->t('Detected API version:'),
 				'copy_interval' => $this->l10n->t('.pad file sync interval (seconds)'),
 				'copy_interval_hint' => $this->l10n->t('Controls how often pad content is copied from Etherpad into the .pad file while the pad is open.'),
+				'enable_protected_pads' => $this->l10n->t('Protected pads'),
+				'enable_protected_pads_hint' => $this->l10n->t('Only people who can open the .pad file in Nextcloud can open the pad. Created as Etherpad group pads, which require a session issued by Nextcloud.'),
+				'enable_public_pads' => $this->l10n->t('Public pads'),
+				'enable_public_pads_hint' => $this->l10n->t('Anyone with the pad link can open it, without a Nextcloud account. Created as ordinary Etherpad pads.'),
+				'pad_types_none_hint' => $this->l10n->t('With both types switched off, no new pads can be created. Existing pads keep working.'),
 				'delete_on_trash' => $this->l10n->t('Delete linked Etherpad pad when .pad file is moved to trash'),
 				'delete_on_trash_hint' => $this->l10n->t('If enabled, moving a .pad file to the trash also deletes the linked Etherpad pad.'),
 				'allow_external_pads' => $this->l10n->t('Allow linking external public pads'),

@@ -18,6 +18,7 @@ use OCA\EtherpadNextcloud\Exception\PadAlreadyHasBindingException;
 use OCA\EtherpadNextcloud\Exception\PadFileAlreadyExistsException;
 use OCA\EtherpadNextcloud\Exception\PadFileFormatException;
 use OCA\EtherpadNextcloud\Exception\PadParentFolderNotWritableException;
+use OCA\EtherpadNextcloud\Exception\PadTypeDisabledException;
 use OCA\EtherpadNextcloud\Exception\UnauthorizedRequestException;
 use OCA\EtherpadNextcloud\Service\PadResponseService;
 use OCP\AppFramework\Http;
@@ -95,6 +96,17 @@ class PadControllerErrorMapper {
 			return new DataResponse([
 				'message' => 'Selected parent folder is not writable.',
 			], Http::STATUS_FORBIDDEN);
+		} catch (PadTypeDisabledException $e) {
+			// Fixed wording plus a stable code, like the other structured
+			// errors here — the exception's own message stays internal.
+			$payload = [
+				'message' => 'This pad type is disabled on this instance.',
+				'code' => 'pad_type_disabled',
+			];
+			if ($e->getAccessMode() !== '') {
+				$payload['access_mode'] = $e->getAccessMode();
+			}
+			return new DataResponse($payload, Http::STATUS_FORBIDDEN);
 		} catch (BindingException $e) {
 			$message = isset($options['binding_message'])
 				? (string)$options['binding_message']

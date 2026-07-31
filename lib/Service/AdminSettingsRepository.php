@@ -29,6 +29,8 @@ class AdminSettingsRepository {
 			(string)$this->config->getAppValue(Application::APP_ID, 'delete_on_trash', 'yes') === 'yes',
 			(string)$this->config->getAppValue(Application::APP_ID, 'allow_external_pads', 'no') === 'yes',
 			(string)$this->config->getAppValue(Application::APP_ID, 'trusted_embed_origins', ''),
+			(string)$this->config->getAppValue(Application::APP_ID, PadTypePolicy::SETTING_PROTECTED, 'yes') === 'yes',
+			(string)$this->config->getAppValue(Application::APP_ID, PadTypePolicy::SETTING_PUBLIC, 'yes') === 'yes',
 		);
 	}
 
@@ -50,6 +52,8 @@ class AdminSettingsRepository {
 		$this->config->setAppValue(Application::APP_ID, 'allow_external_pads', $settings->allowExternalPads ? 'yes' : 'no');
 		$this->config->setAppValue(Application::APP_ID, 'external_pad_allowlist', $settings->externalPadAllowlist);
 		$this->config->setAppValue(Application::APP_ID, 'trusted_embed_origins', $settings->trustedEmbedOrigins);
+		$this->config->setAppValue(Application::APP_ID, PadTypePolicy::SETTING_PROTECTED, $settings->enableProtectedPads ? 'yes' : 'no');
+		$this->config->setAppValue(Application::APP_ID, PadTypePolicy::SETTING_PUBLIC, $settings->enablePublicPads ? 'yes' : 'no');
 	}
 
 	public function hasApiKey(): bool {

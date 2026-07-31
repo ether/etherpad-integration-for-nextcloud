@@ -8,6 +8,7 @@ OC.L10N.register(
     "Add trusted Etherpad hostnames or HTTPS origins. Leave empty only if all public HTTPS hosts should be trusted.": "Agrega nombres de host de Etherpad u orígenes HTTPS de confianza. Déjalo vacío solo si se debe confiar en todos los hosts HTTPS públicos.",
     "Admin permissions required.": "Se requieren permisos de administrador.",
     "Allow linking external public pads": "Permitir enlazar pads públicos externos",
+    "Anyone with the pad link can open it, without a Nextcloud account. Created as ordinary Etherpad pads.": "Cualquier persona con el enlace del pad puede abrirlo, sin una cuenta de Nextcloud. Se crean como pads normales de Etherpad.",
     "Authentication required.": "Autenticación requerida.",
     "Auto-filled from the Nextcloud and Etherpad hosts when possible. Adjust it if your deployment uses a proxy path or a different trusted parent domain; leave empty for a host-only cookie.": "Se completa automáticamente desde los hosts de Nextcloud y Etherpad cuando es posible. Ajústalo si la instalación usa una ruta de proxy u otro dominio padre de confianza; deja vacío para una cookie solo de host.",
     "Back": "Atrás",
@@ -98,6 +99,7 @@ OC.L10N.register(
     "Loading pad...": "Cargando pad...",
     "New pad": "Nuevo pad",
     "No synced snapshot is stored in this .pad file yet.": "Aún no hay ninguna copia sincronizada almacenada en este archivo .pad.",
+    "Only people who can open the .pad file in Nextcloud can open the pad. Created as Etherpad group pads, which require a session issued by Nextcloud.": "Solo quienes pueden abrir el archivo .pad en Nextcloud pueden abrir el pad. Se crean como pads de grupo de Etherpad, que requieren una sesión emitida por Nextcloud.",
     "Open in Etherpad": "Abrir en Etherpad",
     "Open original pad": "Abrir pad original",
     "Open the original .pad file": "Abrir el archivo .pad original",
@@ -108,8 +110,10 @@ OC.L10N.register(
     "Pending Etherpad deletes": "Eliminaciones pendientes en Etherpad",
     "Pending delete retry failed.": "No se pudieron reintentar las eliminaciones pendientes.",
     "Pending delete retry finished.": "Reintento de eliminaciones pendientes completado.",
+    "Protected pads": "Pads protegidos",
     "Public pad": "Pad público",
     "Public pad from URL": "Pad público desde URL",
+    "Public pads": "Pads públicos",
     "Read-only snapshot": "Copia de solo lectura",
     "Read-only snapshot from the .pad file.": "Copia de solo lectura del archivo .pad.",
     "Request failed.": "La solicitud falló.",
@@ -132,7 +136,8 @@ OC.L10N.register(
     "Trusted embed origins (optional)": "Orígenes de incrustación de confianza (opcional)",
     "Unknown error.": "Error desconocido.",
     "Unsupported test fault.": "Fallo de prueba no compatible.",
-    "We couldn't find a matching pad in this Nextcloud. You can create a new pad from the text stored in this file; from then on, opening this file will load the new pad.": "No se ha encontrado ningún pad correspondiente en este Nextcloud. Puedes crear un nuevo pad a partir del texto almacenado en este archivo; a partir de ese momento, abrir este archivo cargará el nuevo pad."
+    "We couldn't find a matching pad in this Nextcloud. You can create a new pad from the text stored in this file; from then on, opening this file will load the new pad.": "No se ha encontrado ningún pad correspondiente en este Nextcloud. Puedes crear un nuevo pad a partir del texto almacenado en este archivo; a partir de ese momento, abrir este archivo cargará el nuevo pad.",
+    "With both types switched off, no new pads can be created. Existing pads keep working.": "Con ambos tipos desactivados, no se pueden crear pads nuevos. Los pads existentes siguen funcionando."
 },
 	"nplurals=2; plural=(n != 1);"
 );

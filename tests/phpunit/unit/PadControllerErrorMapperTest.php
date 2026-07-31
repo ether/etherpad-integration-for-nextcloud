@@ -146,6 +146,31 @@ class PadControllerErrorMapperTest extends TestCase {
 		$this->assertSame('This .pad file is already linked to a pad.', $response->getData()['message']);
 	}
 
+	public function testRunMapsDisabledPadTypeToForbiddenWithAStableCode(): void {
+		// The exception's own message must not reach the client; the payload
+		// is built here so the API contract stays independent of it.
+		$response = $this->buildMapper()->run(
+			static fn(): array => throw new \OCA\EtherpadNextcloud\Exception\PadTypeDisabledException('public'),
+			static fn(array $result): DataResponse => new DataResponse($result),
+		);
+
+		$this->assertSame(Http::STATUS_FORBIDDEN, $response->getStatus());
+		$this->assertSame('pad_type_disabled', $response->getData()['code']);
+		$this->assertSame('public', $response->getData()['access_mode']);
+		$this->assertSame('This pad type is disabled on this instance.', $response->getData()['message']);
+	}
+
+	public function testRunOmitsTheAccessModeWhenNoPadTypeIsEnabled(): void {
+		$response = $this->buildMapper()->run(
+			static fn(): array => throw new \OCA\EtherpadNextcloud\Exception\PadTypeDisabledException(),
+			static fn(array $result): DataResponse => new DataResponse($result),
+		);
+
+		$this->assertSame(Http::STATUS_FORBIDDEN, $response->getStatus());
+		$this->assertSame('pad_type_disabled', $response->getData()['code']);
+		$this->assertArrayNotHasKey('access_mode', $response->getData());
+	}
+
 	public function testRunMapsParentFolderNotWritable(): void {
 		$response = $this->buildMapper()->run(
 			static fn(): array => throw new PadParentFolderNotWritableException('not writable'),

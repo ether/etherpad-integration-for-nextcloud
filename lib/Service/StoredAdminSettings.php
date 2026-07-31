@@ -16,6 +16,8 @@ class StoredAdminSettings {
 		public readonly bool $deleteOnTrash,
 		public readonly bool $allowExternalPads,
 		public readonly string $trustedEmbedOrigins,
+		public readonly bool $enableProtectedPads = true,
+		public readonly bool $enablePublicPads = true,
 	) {
 	}
 }

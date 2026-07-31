@@ -10,6 +10,9 @@
 	const pendingActions = document.getElementById('etherpad-nextcloud-pending-actions')
 	const pendingCountNode = document.getElementById('etherpad-nextcloud-pending-count')
 	const allowExternalCheckbox = form ? form.querySelector('input[name="allow_external_pads"]') : null
+	const protectedPadsCheckbox = form ? form.querySelector('input[name="enable_protected_pads"]') : null
+	const publicPadsCheckbox = form ? form.querySelector('input[name="enable_public_pads"]') : null
+	const padTypesNoneHint = document.getElementById('pad-types-none-hint')
 	const allowlistRow = document.getElementById('external-pad-allowlist-row')
 	const allowlistHint = document.getElementById('external-pad-allowlist-hint')
 	const allowlistTextarea = document.getElementById('external-pad-allowlist')
@@ -71,6 +74,18 @@
 		}
 	}
 
+	function updatePadTypesHint() {
+		const noneEnabled = !!(protectedPadsCheckbox && publicPadsCheckbox)
+			&& !protectedPadsCheckbox.checked
+			&& !publicPadsCheckbox.checked
+		if (padTypesNoneHint instanceof HTMLElement) {
+			// Toggle `display` rather than the `hidden` attribute: the element
+			// also carries Nextcloud's `.settings-hint` class, whose rule wins
+			// over the user-agent `[hidden]` default.
+			padTypesNoneHint.style.display = noneEnabled ? '' : 'none'
+		}
+	}
+
 	function getPayload() {
 		const data = new FormData(form)
 		return {
@@ -80,6 +95,8 @@
 			etherpad_api_key: String(data.get('etherpad_api_key') || '').trim(),
 			sync_interval_seconds: Number(data.get('sync_interval_seconds') || 120),
 			delete_on_trash: data.has('delete_on_trash'),
+			enable_protected_pads: data.has('enable_protected_pads'),
+			enable_public_pads: data.has('enable_public_pads'),
 			allow_external_pads: data.has('allow_external_pads'),
 			external_pad_allowlist: String(data.get('external_pad_allowlist') || ''),
 			trusted_embed_origins: String(data.get('trusted_embed_origins') || ''),
@@ -274,4 +291,11 @@
 		allowExternalCheckbox.addEventListener('change', updateExternalSettingsVisibility)
 	}
 	updateExternalSettingsVisibility()
+
+	for (const checkbox of [protectedPadsCheckbox, publicPadsCheckbox]) {
+		if (checkbox) {
+			checkbox.addEventListener('change', updatePadTypesHint)
+		}
+	}
+	updatePadTypesHint()
 })()

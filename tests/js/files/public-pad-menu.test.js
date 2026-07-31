@@ -197,6 +197,45 @@ describe('createPublicPadMenuRegistrar', () => {
 		expect(addMenuEntry).toHaveBeenCalledTimes(2)
 	})
 
+	it('omits the public pad entry when the admin disabled that pad type', async () => {
+		const register = vi.fn()
+		window.OCP.Files = { addNewFileMenuEntry: register }
+
+		buildRegistrar({ publicPadsEnabled: false })()
+		await flushMicrotasks()
+
+		// The "from URL" entry stays: external pads have their own setting and
+		// are deliberately independent of this one.
+		expect(register).toHaveBeenCalledTimes(1)
+		expect(register.mock.calls[0][0].id).toBe('etherpad_nextcloud_public_pad_external')
+	})
+
+	it('omits the public pad entry on the legacy direct-menu path too', async () => {
+		const addMenuEntry = vi.fn()
+		window.OCA.Files = { NewFileMenu: { addMenuEntry } }
+
+		buildRegistrar({ publicPadsEnabled: false })()
+		await flushMicrotasks()
+
+		expect(addMenuEntry).toHaveBeenCalledTimes(1)
+		expect(addMenuEntry.mock.calls[0][0].id).toBe('etherpad_nextcloud_public_pad_external')
+	})
+
+	it('omits the public pad entry on the OC.Plugins path too', async () => {
+		const pluginRegister = vi.fn()
+		window.OC = { ...window.OC, Plugins: { register: pluginRegister } }
+
+		buildRegistrar({ publicPadsEnabled: false })()
+		await flushMicrotasks()
+
+		const [, listener] = pluginRegister.mock.calls[0]
+		const addMenuEntry = vi.fn()
+		listener.attach({ addMenuEntry })
+
+		expect(addMenuEntry).toHaveBeenCalledTimes(1)
+		expect(addMenuEntry.mock.calls[0][0].id).toBe('etherpad_nextcloud_public_pad_external')
+	})
+
 	it('produces an enabled() callback that respects hasCreatePermission', async () => {
 		const register = vi.fn()
 		window.OCP.Files = { addNewFileMenuEntry: register }

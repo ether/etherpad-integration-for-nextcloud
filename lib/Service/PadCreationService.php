@@ -31,6 +31,7 @@ class PadCreationService {
 		private PadBootstrapService $padBootstrapService,
 		private PadPlaceholderResolver $placeholderResolver,
 		private ExternalPadSeeder $externalPadSeeder,
+		private PadTypePolicy $padTypePolicy,
 		private LoggerInterface $logger,
 	) {
 	}
@@ -39,6 +40,7 @@ class PadCreationService {
 	 * @return array{file:string,file_id:int,pad_id:string,access_mode:string,pad_url:string}
 	 */
 	public function create(string $uid, string $file, string $accessMode): array {
+		$this->padTypePolicy->requireEnabled($accessMode);
 		$path = $this->padPaths->normalizeCreatePath($file);
 		$padId = '';
 		$fileCreated = false;
@@ -107,6 +109,7 @@ class PadCreationService {
 	 * @return array{file:string,file_id:int,parent_folder_id:int,pad_id:string,access_mode:string,pad_url:string}
 	 */
 	public function createInParent(string $uid, int $parentFolderId, string $name, string $accessMode): array {
+		$this->padTypePolicy->requireEnabled($accessMode);
 		$fileName = $this->padPaths->normalizeCreateFileName($name);
 		$parentFolder = $this->userNodeResolver->resolveUserFolderNodeById($uid, $parentFolderId);
 		if (!$parentFolder->isCreatable()) {
@@ -337,6 +340,10 @@ class PadCreationService {
 		if ($accessMode !== BindingService::ACCESS_PUBLIC && $accessMode !== BindingService::ACCESS_PROTECTED) {
 			$accessMode = BindingService::ACCESS_PROTECTED;
 		}
+		// A template keeps the access mode of the pad it was made from. If the
+		// admin switched that type off, create the pad in the other enabled
+		// mode rather than refusing — the template's content is the point.
+		$accessMode = $this->padTypePolicy->resolveCreatableMode($accessMode);
 
 		$snapshot = $this->padFileService->getSnapshotPartsFromBody($pad->body);
 		$resolvedText = $this->placeholderResolver->applyForContent($snapshot['text'], $user);

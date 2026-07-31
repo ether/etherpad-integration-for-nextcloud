@@ -54,6 +54,8 @@ class AdminSettingsValidator {
 		$syncIntervalSeconds = $this->normalizeSyncInterval($payload['sync_interval_seconds'] ?? 120);
 		$deleteOnTrash = $this->toBool($payload['delete_on_trash'] ?? $stored->deleteOnTrash);
 		$allowExternalPads = $this->toBool($payload['allow_external_pads'] ?? $stored->allowExternalPads);
+		$enableProtectedPads = $this->toBool($payload[PadTypePolicy::SETTING_PROTECTED] ?? $stored->enableProtectedPads);
+		$enablePublicPads = $this->toBool($payload[PadTypePolicy::SETTING_PUBLIC] ?? $stored->enablePublicPads);
 		$externalAllowlist = $this->allowlistNormalizer->normalize((string)($payload['external_pad_allowlist'] ?? ''));
 		$trustedEmbedOrigins = $this->trustedEmbedOriginsNormalizer->normalize(
 			(string)($payload['trusted_embed_origins'] ?? $stored->trustedEmbedOrigins)
@@ -71,6 +73,8 @@ class AdminSettingsValidator {
 			$allowExternalPads,
 			$externalAllowlist,
 			$trustedEmbedOrigins,
+			$enableProtectedPads,
+			$enablePublicPads,
 		);
 	}
 
