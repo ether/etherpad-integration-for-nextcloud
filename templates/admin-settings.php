@@ -128,7 +128,7 @@
 			</label>
 		</p>
 		<p class="settings-hint ep-field-hint"><?php p((string)$_['l10n']['enable_public_pads_hint']); ?></p>
-		<p class="settings-hint ep-field-hint" id="pad-types-none-hint" hidden><?php p((string)$_['l10n']['pad_types_none_hint']); ?></p>
+		<p class="settings-hint ep-field-hint" id="pad-types-none-hint"<?php if ((bool)$_['enable_protected_pads'] || (bool)$_['enable_public_pads']): ?> style="display: none"<?php endif; ?>><?php p((string)$_['l10n']['pad_types_none_hint']); ?></p>
 
 		<p id="allow-external-pads-row">
 			<label class="checkbox">

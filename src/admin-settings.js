@@ -79,7 +79,10 @@
 			&& !protectedPadsCheckbox.checked
 			&& !publicPadsCheckbox.checked
 		if (padTypesNoneHint instanceof HTMLElement) {
-			padTypesNoneHint.hidden = !noneEnabled
+			// Toggle `display` rather than the `hidden` attribute: the element
+			// also carries Nextcloud's `.settings-hint` class, whose rule wins
+			// over the user-agent `[hidden]` default.
+			padTypesNoneHint.style.display = noneEnabled ? '' : 'none'
 		}
 	}
 
