@@ -71,11 +71,15 @@ Base: `/apps/etherpad_nextcloud`
     - read-only protected share: `is_readonly_snapshot=true`, empty `url`, `snapshot_text`, and sanitized `snapshot_html`; no Etherpad session cookie
     - public/external pad share: regular public Etherpad URL
 
-Admins can switch either pad type off (see the admin settings). Creating a pad
-of a disabled type is refused with `403` by `POST /pads`,
-`POST /pads/create-by-parent`, `POST /pads/from-template` and the
-`initialize` endpoints; pads that already exist are unaffected. Templates
-carrying a disabled mode are created in the enabled mode instead of failing.
+Admins can switch either pad type off (see the admin settings). `POST /pads`
+and `POST /pads/create-by-parent` refuse a disabled `accessMode` with `403`.
+Pads that already exist are unaffected.
+
+`POST /pads/from-template` and the `initialize` endpoints do not refuse a
+disabled mode — they create the pad in the enabled mode instead, so a
+template or a `.pad` that arrived outside the UI stays usable. They only
+return `403` when no pad type is enabled at all. Note this can widen access:
+a protected template becomes a public pad when protected pads are off.
 
 The refusal carries `code: pad_type_disabled`, plus `access_mode` naming the
 disabled type — that field is absent when no pad type is enabled at all.

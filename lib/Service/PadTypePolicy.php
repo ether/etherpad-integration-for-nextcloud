@@ -53,14 +53,21 @@ class PadTypePolicy {
 	}
 
 	/**
-	 * A template carries the access mode of the pad it was made from. When
-	 * that mode is switched off, create the pad in the other enabled mode
-	 * rather than refusing: the template's content is what the user is after,
-	 * and the policy still holds for the resulting pad.
+	 * Pick a mode that may actually be created, preferring the requested one.
+	 *
+	 * Used where refusing would strand the user rather than protect anything:
+	 * a template carries the mode of the pad it was made from, and a `.pad`
+	 * file that arrived outside the UI (WebDAV, another integration) has to
+	 * become *some* pad on first open. Falling back keeps the content
+	 * reachable while the policy still holds for the resulting pad.
+	 *
+	 * Note this can widen access — a protected template becomes a public pad
+	 * when protected pads are off. That is the instance's only option at that
+	 * point, but it is a downgrade in the security-relevant direction.
 	 *
 	 * @throws PadTypeDisabledException when no pad type is enabled at all
 	 */
-	public function resolveForTemplate(string $requested): string {
+	public function resolveCreatableMode(string $requested): string {
 		if ($this->isEnabled($requested)) {
 			return $requested;
 		}

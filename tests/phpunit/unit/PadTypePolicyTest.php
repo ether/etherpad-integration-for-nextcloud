@@ -67,7 +67,7 @@ class PadTypePolicyTest extends TestCase {
 
 		self::assertSame(
 			BindingService::ACCESS_PUBLIC,
-			$policy->resolveForTemplate(BindingService::ACCESS_PUBLIC)
+			$policy->resolveCreatableMode(BindingService::ACCESS_PUBLIC)
 		);
 	}
 
@@ -78,7 +78,7 @@ class PadTypePolicyTest extends TestCase {
 
 		self::assertSame(
 			BindingService::ACCESS_PROTECTED,
-			$policy->resolveForTemplate(BindingService::ACCESS_PUBLIC)
+			$policy->resolveCreatableMode(BindingService::ACCESS_PUBLIC)
 		);
 	}
 
@@ -87,7 +87,7 @@ class PadTypePolicyTest extends TestCase {
 
 		self::assertSame(
 			BindingService::ACCESS_PUBLIC,
-			$policy->resolveForTemplate(BindingService::ACCESS_PROTECTED)
+			$policy->resolveCreatableMode(BindingService::ACCESS_PROTECTED)
 		);
 	}
 
@@ -98,7 +98,7 @@ class PadTypePolicyTest extends TestCase {
 		]);
 
 		try {
-			$policy->resolveForTemplate(BindingService::ACCESS_PROTECTED);
+			$policy->resolveCreatableMode(BindingService::ACCESS_PROTECTED);
 			self::fail('Expected PadTypeDisabledException');
 		} catch (PadTypeDisabledException $e) {
 			// No single mode to blame when nothing is enabled.

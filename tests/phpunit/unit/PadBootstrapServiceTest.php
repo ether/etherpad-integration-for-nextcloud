@@ -157,10 +157,10 @@ class PadBootstrapServiceTest extends TestCase {
 		$service->initializeMissingFrontmatter('alice', $file, '');
 	}
 
-	public function testBlankInitialisationIsRefusedWhenProtectedPadsAreDisabled(): void {
-		// Without a binding this provisions a brand-new pad, so the admin's
-		// setting applies — otherwise an empty .pad plus /initialize would be
-		// a way around it.
+	public function testBlankInitialisationIsRefusedWhenNoPadTypeIsEnabled(): void {
+		// Without a binding this provisions a brand-new pad, so the policy
+		// applies — otherwise an empty .pad plus /initialize would be a way
+		// around it.
 		$bindingService = $this->createMock(BindingService::class);
 		$bindingService->method('findByFileId')->willReturn(null);
 		$bindingService->expects($this->never())->method('createBinding');
@@ -171,24 +171,73 @@ class PadBootstrapServiceTest extends TestCase {
 		$etherpadClient = $this->createMock(EtherpadClient::class);
 		$etherpadClient->expects($this->never())->method('createGroup');
 		$etherpadClient->expects($this->never())->method('createGroupPad');
+		$etherpadClient->expects($this->never())->method('createPad');
 
 		$file = $this->createMock(File::class);
 		$file->method('getId')->willReturn(4321);
 		$file->expects($this->never())->method('putContent');
 
+		$service = $this->buildService($bindingService, $padFileService, $etherpadClient, $this->buildPadTypePolicy(false, false));
+
+		$this->expectException(\OCA\EtherpadNextcloud\Exception\PadTypeDisabledException::class);
+
+		$service->initializeMissingFrontmatter('alice', $file, '');
+	}
+
+	public function testBlankInitialisationFallsBackToPublicWhenProtectedPadsAreDisabled(): void {
+		// A .pad can arrive outside the UI (WebDAV, another integration). If
+		// protected pads are off but public ones are allowed, the file must
+		// still become openable instead of 403-ing forever.
+		$bindingService = $this->createMock(BindingService::class);
+		$bindingService->method('findByFileId')->willReturn(null);
+		$bindingService->expects($this->once())
+			->method('createBinding')
+			->with(4321, 'nc-abcdefghijklmnopqrstuvwx', BindingService::ACCESS_PUBLIC);
+
+		$padFileService = $this->createMock(PadFileService::class);
+		$padFileService->method('parseLegacyOwnpadShortcut')->willReturn(null);
+		$padFileService->method('buildInitialDocument')->willReturn('doc-content');
+
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->expects($this->never())->method('createGroupPad');
+		$etherpadClient->expects($this->once())->method('createPad')->with('nc-abcdefghijklmnopqrstuvwx');
+		$etherpadClient->method('buildPadUrl')->willReturn('https://pad.example.test/p/nc-abcdefghijklmnopqrstuvwx');
+
+		$secureRandom = $this->createMock(ISecureRandom::class);
+		$secureRandom->method('generate')->willReturn('abcdefghijklmnopqrstuvwx');
+
+		$file = $this->createMock(File::class);
+		$file->method('getId')->willReturn(4321);
+		$file->expects($this->once())->method('putContent')->with('doc-content');
+
 		$service = new PadBootstrapService(
+			$bindingService,
+			$padFileService,
+			$etherpadClient,
+			$secureRandom,
+			$this->createMock(LoggerInterface::class),
+			$this->createMock(\OCA\EtherpadNextcloud\Service\PadLegacyMigrationService::class),
+			$this->buildPadTypePolicy(false, true),
+		);
+
+		$service->initializeMissingFrontmatter('alice', $file, '');
+	}
+
+	private function buildService(
+		BindingService $bindingService,
+		PadFileService $padFileService,
+		EtherpadClient $etherpadClient,
+		\OCA\EtherpadNextcloud\Service\PadTypePolicy $policy,
+	): PadBootstrapService {
+		return new PadBootstrapService(
 			$bindingService,
 			$padFileService,
 			$etherpadClient,
 			$this->createMock(ISecureRandom::class),
 			$this->createMock(LoggerInterface::class),
 			$this->createMock(\OCA\EtherpadNextcloud\Service\PadLegacyMigrationService::class),
-			$this->buildPadTypePolicy(false),
+			$policy,
 		);
-
-		$this->expectException(\OCA\EtherpadNextcloud\Exception\PadTypeDisabledException::class);
-
-		$service->initializeMissingFrontmatter('alice', $file, '');
 	}
 
 	public function testExistingBindingStillInitialisesWhenProtectedPadsAreDisabled(): void {
@@ -259,14 +308,14 @@ class PadBootstrapServiceTest extends TestCase {
 		));
 	}
 
-	private function buildPadTypePolicy(bool $protectedEnabled): \OCA\EtherpadNextcloud\Service\PadTypePolicy {
+	private function buildPadTypePolicy(bool $protectedEnabled, bool $publicEnabled = true): \OCA\EtherpadNextcloud\Service\PadTypePolicy {
 		$config = $this->createMock(\OCP\IConfig::class);
 		$config->method('getAppValue')->willReturnCallback(
-			static fn (string $app, string $key, string $default = ''): string => (
-				$key === \OCA\EtherpadNextcloud\Service\PadTypePolicy::SETTING_PROTECTED
-					? ($protectedEnabled ? 'yes' : 'no')
-					: $default
-			)
+			static fn (string $app, string $key, string $default = ''): string => match ($key) {
+				\OCA\EtherpadNextcloud\Service\PadTypePolicy::SETTING_PROTECTED => $protectedEnabled ? 'yes' : 'no',
+				\OCA\EtherpadNextcloud\Service\PadTypePolicy::SETTING_PUBLIC => $publicEnabled ? 'yes' : 'no',
+				default => $default,
+			}
 		);
 		return new \OCA\EtherpadNextcloud\Service\PadTypePolicy($config);
 	}

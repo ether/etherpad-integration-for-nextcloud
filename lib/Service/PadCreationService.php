@@ -343,7 +343,7 @@ class PadCreationService {
 		// A template keeps the access mode of the pad it was made from. If the
 		// admin switched that type off, create the pad in the other enabled
 		// mode rather than refusing — the template's content is the point.
-		$accessMode = $this->padTypePolicy->resolveForTemplate($accessMode);
+		$accessMode = $this->padTypePolicy->resolveCreatableMode($accessMode);
 
 		$snapshot = $this->padFileService->getSnapshotPartsFromBody($pad->body);
 		$resolvedText = $this->placeholderResolver->applyForContent($snapshot['text'], $user);

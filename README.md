@@ -108,9 +108,15 @@ Two settings control which pad types the app offers, both enabled by default:
   Nextcloud account.
 
 Switching a type off hides its `+ New` entries and refuses new pads of that
-type on the regular create paths — the API create endpoints, the template
-flows and the first-open initialisation of a `.pad` that has no pad yet. Pads
-that already exist keep working either way.
+type on the API create endpoints. Pads that already exist keep working either
+way.
+
+Two paths fall back rather than refuse, so nothing gets stranded: a template
+carrying the disabled mode, and the first-open initialisation of a `.pad`
+that arrived outside the app (over WebDAV, say). Both create the pad in the
+enabled mode; only with both types off is creation refused outright. Note
+that this can widen access — a protected template becomes a public pad when
+protected pads are off.
 
 The setting decides what the app offers; it is not a hard boundary against a
 user who crafts `.pad` files by hand. Recovering an orphaned `.pad` from its
