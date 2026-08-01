@@ -24,6 +24,11 @@ class HealthCheckItem {
 		/** Already translated: these are built for display. */
 		public readonly string $label,
 		public readonly string $detail = '',
+		/**
+		 * Form field this line is about, so the result can be shown right at
+		 * the input that caused it. Empty when it belongs to no single field.
+		 */
+		public readonly string $field = '',
 	) {
 	}
 }

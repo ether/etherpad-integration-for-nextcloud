@@ -251,6 +251,9 @@ solely by the separate external-pad policy, not by these two settings.
 - `POST /api/v1/admin/health`
   - Controller: `AdminController::healthCheck`
   - Auth: admin only
+  - `message` summarises the run — "All checks passed." or a note that some
+    settings need attention. It deliberately does not say "successful": the
+    request succeeding says nothing about the configuration.
   - Result includes:
     - `host`
     - `api_host`
@@ -261,8 +264,10 @@ solely by the separate external-pad policy, not by these two settings.
     - `pending_delete_count`
     - `checks` — one entry per verified part, so a failure points at the field
       that caused it: `api`, `api_key`, `base_url`, `protected_pads`. Each has
-      `id`, `status` (`ok|warning|skipped`), `label` and `detail`, all already
-      translated for display.
+      `id`, `status` (`ok|warning|skipped`), `label`, `detail` and `field`,
+      all already translated for display. `field` names the form input the
+      line belongs to, so the result can be rendered at that input; it is
+      empty when the line belongs to no single field.
 
       `base_url` is the only entry that performs additional I/O: a short GET
       against the browser-facing Etherpad URL, which nothing else contacts. It

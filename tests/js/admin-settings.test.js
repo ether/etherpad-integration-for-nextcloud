@@ -19,6 +19,8 @@ const setupAdminDom = () => {
 			data-l10n-health-ok="Connection ok.">
 			<form id="etherpad-nextcloud-admin-form">
 				<input name="etherpad_host" value="https://pad.example.org">
+				<span class="ep-check-result" data-check-result="etherpad_host"></span>
+				<span class="ep-check-result" data-check-result="etherpad_cookie_domain"></span>
 				<input name="etherpad_api_host" value="">
 				<input name="etherpad_cookie_domain" value="">
 				<input name="etherpad_api_key" value="">
@@ -180,6 +182,47 @@ describe('protected pads cookie warning', () => {
 		vi.unstubAllGlobals()
 	})
 
+	it('shows each result at the field it came from', async () => {
+		vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(okResponse({
+			message: 'Check finished. Some settings need attention.',
+			checks: [
+				{ id: 'base_url', status: 'ok', label: 'Etherpad base URL reachable', detail: 'https://pad.example.org', field: 'etherpad_host' },
+				{ id: 'protected_pads', status: 'warning', label: 'Protected pads: session cookie', detail: 'Hosts do not share a parent domain.', field: 'etherpad_cookie_domain' },
+			],
+		}))))
+		await import(MODULE)
+
+		document.getElementById('etherpad-nextcloud-health-check').click()
+		await flush()
+
+		const base = document.querySelector('[data-check-result="etherpad_host"]')
+		const cookie = document.querySelector('[data-check-result="etherpad_cookie_domain"]')
+		// A passing field only needs the label; a failing one needs the reason.
+		expect(base.classList.contains('ep-check-ok')).toBe(true)
+		expect(base.textContent).toBe('Etherpad base URL reachable')
+		expect(cookie.classList.contains('ep-check-warning')).toBe(true)
+		expect(cookie.textContent).toBe('Hosts do not share a parent domain.')
+		// Nothing was left over for the fallback list.
+		expect(checkList().querySelectorAll('.ep-check')).toHaveLength(0)
+	})
+
+	it('clears field results before showing a new run', async () => {
+		const cookie = document.querySelector('[data-check-result="etherpad_cookie_domain"]')
+		cookie.className = 'ep-check-result ep-check-warning'
+		cookie.textContent = 'Stale problem.'
+		vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(okResponse({
+			message: 'All checks passed.',
+			checks: [{ id: 'protected_pads', status: 'ok', label: 'Protected pads: session cookie', detail: '.example.org', field: 'etherpad_cookie_domain' }],
+		}))))
+		await import(MODULE)
+
+		document.getElementById('etherpad-nextcloud-health-check').click()
+		await flush()
+
+		expect(cookie.classList.contains('ep-check-warning')).toBe(false)
+		expect(cookie.classList.contains('ep-check-ok')).toBe(true)
+	})
+
 	it('hands the warning to the check list after a connection test', async () => {
 		warning().textContent = 'Stale warning from page load.'
 		vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(okResponse({
@@ -221,10 +264,13 @@ describe('protected pads cookie warning', () => {
 		expect(checkList().querySelectorAll('.ep-check')).toHaveLength(0)
 	})
 
-	it('marks the connection result as a warning when protected pads are broken', async () => {
+	it('marks the summary as a warning when any check needs attention', async () => {
 		vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(okResponse({
-			message: 'Connection ok.',
-			protected_pads: problem('Hosts do not share a parent domain.'),
+			message: 'Check finished. Some settings need attention.',
+			checks: [
+				{ id: 'api', status: 'ok', label: 'Etherpad API reachable', detail: '', field: 'etherpad_api_host' },
+				{ id: 'protected_pads', status: 'warning', label: 'Protected pads: session cookie', detail: 'Hosts do not share a parent domain.', field: 'etherpad_cookie_domain' },
+			],
 		}))))
 		await import(MODULE)
 
@@ -233,15 +279,15 @@ describe('protected pads cookie warning', () => {
 
 		// The API answered, so not an error — but not an unqualified pass either.
 		const status = document.getElementById('etherpad-nextcloud-connection-status')
-		expect(status.textContent).toContain('Connection ok.')
+		expect(status.textContent).toContain('Some settings need attention')
 		expect(status.classList.contains('ep-status-warning')).toBe(true)
 		expect(status.classList.contains('ep-status-success')).toBe(false)
 	})
 
-	it('keeps the connection result green when protected pads are fine', async () => {
+	it('keeps the summary green when every check passes', async () => {
 		vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(okResponse({
-			message: 'Connection ok.',
-			protected_pads: { ok: true, status: 'ok', reason: 'common_parent', message: '' },
+			message: 'All checks passed.',
+			checks: [{ id: 'api', status: 'ok', label: 'Etherpad API reachable', detail: '', field: 'etherpad_api_host' }],
 		}))))
 		await import(MODULE)
 

@@ -145,13 +145,17 @@
 		setStatus(message, null, node)
 	}
 
-	// One line per check, so a failure points at the field that caused it
-	// instead of hiding inside a combined verdict.
+	// Each result is shown at the field it came from: a green tick where
+	// things are fine, the message itself where they are not. Anything that
+	// belongs to no single field falls back to the list under the button.
 	function renderConnectionChecks(checks) {
-		if (!(connectionChecksNode instanceof HTMLElement)) {
-			return
+		for (const slot of document.querySelectorAll('[data-check-result]')) {
+			slot.replaceChildren()
+			slot.className = 'ep-check-result'
 		}
-		connectionChecksNode.replaceChildren()
+		if (connectionChecksNode instanceof HTMLElement) {
+			connectionChecksNode.replaceChildren()
+		}
 		if (!Array.isArray(checks)) {
 			return
 		}
@@ -159,20 +163,39 @@
 			if (!check || typeof check.label !== 'string') {
 				continue
 			}
-			const row = document.createElement('li')
-			row.className = `ep-check ep-check-${String(check.status || 'skipped')}`
-			const label = document.createElement('span')
-			label.className = 'ep-check-label'
-			label.textContent = check.label
-			row.appendChild(label)
-			if (typeof check.detail === 'string' && check.detail !== '') {
-				const detail = document.createElement('span')
-				detail.className = 'ep-check-detail'
-				detail.textContent = check.detail
-				row.appendChild(detail)
+			const status = String(check.status || 'skipped')
+			const detail = typeof check.detail === 'string' ? check.detail : ''
+			const slot = check.field
+				? document.querySelector(`[data-check-result="${CSS.escape(String(check.field))}"]`)
+				: null
+			if (slot instanceof HTMLElement) {
+				slot.className = `ep-check-result ep-check-${status}`
+				// A passing field needs no prose — the tick and the label say
+				// it. A failing one needs the reason right there.
+				slot.textContent = status === 'ok' ? check.label : (detail || check.label)
+				continue
 			}
-			connectionChecksNode.appendChild(row)
+			appendCheckRow(status, check.label, detail)
 		}
+	}
+
+	function appendCheckRow(status, label, detail) {
+		if (!(connectionChecksNode instanceof HTMLElement)) {
+			return
+		}
+		const row = document.createElement('li')
+		row.className = `ep-check ep-check-${status}`
+		const labelNode = document.createElement('span')
+		labelNode.className = 'ep-check-label'
+		labelNode.textContent = label
+		row.appendChild(labelNode)
+		if (detail !== '') {
+			const detailNode = document.createElement('span')
+			detailNode.className = 'ep-check-detail'
+			detailNode.textContent = detail
+			row.appendChild(detailNode)
+		}
+		connectionChecksNode.appendChild(row)
 	}
 
 	function updateCookieWarning(protectedPads) {
@@ -293,32 +316,16 @@
 		beginStatus(l10n.checking, connectionTarget)
 		try {
 			const data = await postJson(healthUrl, getPayload())
-			const details = []
-			if (typeof data.pad_count !== 'undefined') {
-				details.push(`pad_count=${String(data.pad_count)}`)
-			}
-			if (typeof data.api_version === 'string' && data.api_version.trim() !== '') {
-				details.push(`api=${data.api_version}`)
-			}
-			if (typeof data.latency_ms !== 'undefined') {
-				details.push(`latency=${String(data.latency_ms)}ms`)
-			}
-			if (typeof data.target === 'string' && data.target.trim() !== '') {
-				details.push(`target=${data.target}`)
-			}
 			if (typeof data.pending_delete_count !== 'undefined') {
 				updatePendingDeleteUi(Number(data.pending_delete_count))
 			}
-			// The list carries the protected-pads verdict too, so the standalone
-			// warning would only duplicate it.
+			// The per-field results carry the target, pad count and latency, and
+			// the protected-pads verdict, so the summary stays a summary.
 			renderConnectionChecks(data.checks)
 			updateCookieWarning(null)
-			const suffix = details.length > 0 ? ` ${details.join(' | ')}` : ''
-			const message = `${String(data.message || l10n.healthOk)}${suffix}`
-			// The API answered, so this is not a failure — but a plain green
-			// would read as an all-clear while protected pads cannot work.
-			const protectedPadsBroken = !!(data.protected_pads && data.protected_pads.ok === false)
-			setStatus(message, protectedPadsBroken ? 'warning' : 'success', connectionTarget)
+			const needsAttention = Array.isArray(data.checks)
+				&& data.checks.some((check) => check && check.status === 'warning')
+			setStatus(String(data.message || l10n.healthOk), needsAttention ? 'warning' : 'success', connectionTarget)
 		} catch (error) {
 			if (error && typeof error.field === 'string' && error.field !== '') {
 				showFieldError(error.field, error.message || l10n.healthFailed)

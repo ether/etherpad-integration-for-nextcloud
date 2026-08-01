@@ -40,6 +40,7 @@
 				placeholder="https://pad.example.org"
 				value="<?php p((string)$_['etherpad_host']); ?>">
 			<span class="ep-field-error" data-field-error="etherpad_host" aria-live="polite"></span>
+			<span class="ep-check-result" data-check-result="etherpad_host" role="status"></span>
 		</p>
 
 		<p class="ep-field-row">
@@ -51,6 +52,7 @@
 				autocomplete="off"
 				placeholder="••••••••••••••••">
 			<span class="ep-field-error" data-field-error="etherpad_api_key" aria-live="polite"></span>
+			<span class="ep-check-result" data-check-result="etherpad_api_key" role="status"></span>
 		</p>
 		<p class="settings-hint ep-detected-value">
 			<?php p((string)$_['l10n']['detected_api_version']); ?> <strong><?php p((string)$_['etherpad_api_version']); ?></strong>
@@ -66,6 +68,7 @@
 				placeholder="https://etherpad.internal"
 				value="<?php p((string)$_['etherpad_api_host']); ?>">
 			<span class="ep-field-error" data-field-error="etherpad_api_host" aria-live="polite"></span>
+			<span class="ep-check-result" data-check-result="etherpad_api_host" role="status"></span>
 		</p>
 		<p class="settings-hint ep-field-hint" id="epnc-hint-api-host"><?php p((string)$_['l10n']['etherpad_api_url_hint']); ?></p>
 
@@ -79,6 +82,7 @@
 				placeholder=".example.org"
 				value="<?php p((string)$_['etherpad_cookie_domain']); ?>">
 			<span class="ep-field-error" data-field-error="etherpad_cookie_domain" aria-live="polite"></span>
+			<span class="ep-check-result" data-check-result="etherpad_cookie_domain" role="status"></span>
 		</p>
 		<p class="settings-hint ep-field-hint" id="epnc-hint-cookie-domain"><?php p((string)$_['l10n']['etherpad_cookie_domain_hint']); ?></p>
 

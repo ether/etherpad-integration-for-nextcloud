@@ -98,7 +98,10 @@ class AdminController extends Controller {
 			},
 			fn(HealthCheckResult $result): DataResponse => new DataResponse([
 				'ok' => true,
-				'message' => $this->l10n->t('Etherpad connection test successful.'),
+				// Not "successful": the test succeeding says nothing about the
+				// configuration, and reading it as an all-clear is exactly the
+				// confusion the per-check list is meant to remove.
+				'message' => $this->summariseChecks($result->checks),
 				'host' => $result->host,
 				'api_host' => $result->apiHost,
 				'api_version' => $result->apiVersion,
@@ -116,6 +119,7 @@ class AdminController extends Controller {
 						'status' => $item->status,
 						'label' => $item->label,
 						'detail' => $item->detail,
+						'field' => $item->field,
 					],
 					$result->checks,
 				),
@@ -197,6 +201,17 @@ class AdminController extends Controller {
 		if (!$this->groupManager->isAdmin($user->getUID())) {
 			throw new AdminPermissionRequiredException('Admin permissions required.');
 		}
+	}
+
+	/** @param list<HealthCheckItem> $checks */
+	private function summariseChecks(array $checks): string {
+		$needAttention = count(array_filter(
+			$checks,
+			static fn(HealthCheckItem $item): bool => $item->status === HealthCheckItem::STATUS_WARNING,
+		));
+		return $needAttention === 0
+			? $this->l10n->t('All checks passed.')
+			: $this->l10n->t('Check finished. Some settings need attention.');
 	}
 
 	/** @return array<string,mixed>|null */

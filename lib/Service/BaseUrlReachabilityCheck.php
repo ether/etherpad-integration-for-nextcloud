@@ -28,6 +28,7 @@ use OCP\IL10N;
  */
 class BaseUrlReachabilityCheck {
 	private const TIMEOUT_SECONDS = 5;
+	private const FIELD = 'etherpad_host';
 
 	public function __construct(
 		private IClientService $clientService,
@@ -39,10 +40,10 @@ class BaseUrlReachabilityCheck {
 		$label = $this->l10n->t('Etherpad base URL reachable');
 		$trimmed = trim($baseUrl);
 		if ($trimmed === '') {
-			return new HealthCheckItem('base_url', HealthCheckItem::STATUS_SKIPPED, $label, $this->l10n->t('No base URL configured.'));
+			return new HealthCheckItem('base_url', HealthCheckItem::STATUS_SKIPPED, $label, $this->l10n->t('No base URL configured.'), self::FIELD);
 		}
 		if (rtrim($trimmed, '/') === rtrim(trim($apiHost), '/')) {
-			return new HealthCheckItem('base_url', HealthCheckItem::STATUS_SKIPPED, $label, $this->l10n->t('Same as the API URL, already covered above.'));
+			return new HealthCheckItem('base_url', HealthCheckItem::STATUS_SKIPPED, $label, $this->l10n->t('Same as the API URL, already checked.'), self::FIELD);
 		}
 
 		try {
@@ -63,6 +64,7 @@ class BaseUrlReachabilityCheck {
 					$this->l10n->t('{url} did not answer: {error}. If Nextcloud cannot reach the public URL by design, ignore this — but check the URL for typos, because pad links in the browser use it.'),
 					['url' => $trimmed, 'error' => $this->shorten($e->getMessage())],
 				),
+				self::FIELD,
 			);
 		}
 
@@ -75,10 +77,11 @@ class BaseUrlReachabilityCheck {
 				HealthCheckItem::STATUS_WARNING,
 				$label,
 				$this->fill($this->l10n->t('{url} answered with HTTP {status}.'), ['url' => $trimmed, 'status' => (string)$status]),
+				self::FIELD,
 			);
 		}
 
-		return new HealthCheckItem('base_url', HealthCheckItem::STATUS_OK, $label, $trimmed);
+		return new HealthCheckItem('base_url', HealthCheckItem::STATUS_OK, $label, $trimmed, self::FIELD);
 	}
 
 	private function shorten(string $message): string {

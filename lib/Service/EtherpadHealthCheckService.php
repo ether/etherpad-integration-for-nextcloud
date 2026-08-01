@@ -75,20 +75,33 @@ class EtherpadHealthCheckService {
 			)
 			: null;
 
-		// Each part gets its own line. A single verdict hid the fact that only
-		// the API host is contacted, so a typo in the base URL — which every
-		// pad link in the browser uses — still read as a clean pass.
+		$padCount = (int)($result['pad_count'] ?? 0);
+		$latencyMs = (int)round(($this->now() - $startedAt) * 1000.0);
+		$target = rtrim($settings->etherpadApiHost, '/') . '/api/' . $settings->etherpadApiVersion . '/listAllPads';
+
+		// Each part gets its own line, tied to the field it came from. A single
+		// verdict hid the fact that only the API host is contacted, so a typo in
+		// the base URL — which every pad link in the browser uses — still read
+		// as a clean pass. An empty API URL falls back to the base URL, so the
+		// API line points at whichever field actually supplied the address.
+		$apiField = $settings->etherpadApiHost === $settings->etherpadHost ? 'etherpad_host' : 'etherpad_api_host';
 		$checks = [
 			new HealthCheckItem(
 				'api',
 				HealthCheckItem::STATUS_OK,
 				$this->l10n->t('Etherpad API reachable'),
-				rtrim($settings->etherpadApiHost, '/') . '/api/' . $settings->etherpadApiVersion,
+				$this->fill(
+					$this->l10n->t('{target} — {count} pads, {latency} ms'),
+					['target' => $target, 'count' => (string)$padCount, 'latency' => (string)$latencyMs],
+				),
+				$apiField,
 			),
 			new HealthCheckItem(
 				'api_key',
 				HealthCheckItem::STATUS_OK,
 				$this->l10n->t('API key accepted'),
+				$this->fill($this->l10n->t('API version {version}'), ['version' => $settings->etherpadApiVersion]),
+				'etherpad_api_key',
 			),
 			$this->baseUrlCheck->check($settings->etherpadHost, $settings->etherpadApiHost),
 			$this->protectedPadsCheck($cookieDomain),
@@ -98,9 +111,9 @@ class EtherpadHealthCheckService {
 			$settings->etherpadHost,
 			$settings->etherpadApiHost,
 			$settings->etherpadApiVersion,
-			(int)($result['pad_count'] ?? 0),
-			(int)round(($this->now() - $startedAt) * 1000.0),
-			rtrim($settings->etherpadApiHost, '/') . '/api/' . $settings->etherpadApiVersion . '/listAllPads',
+			$padCount,
+			$latencyMs,
+			$target,
 			$this->pendingDeleteRetryService->countPendingDeletes(),
 			$cookieDomain,
 			$checks,
@@ -165,16 +178,25 @@ class EtherpadHealthCheckService {
 
 	private function protectedPadsCheck(?CookieDomainDecision $decision): HealthCheckItem {
 		$label = $this->l10n->t('Protected pads: session cookie');
+		$field = 'etherpad_cookie_domain';
 		if ($decision === null) {
-			return new HealthCheckItem('protected_pads', HealthCheckItem::STATUS_SKIPPED, $label, $this->l10n->t('Protected pads are switched off.'));
+			return new HealthCheckItem('protected_pads', HealthCheckItem::STATUS_SKIPPED, $label, $this->l10n->t('Protected pads are switched off.'), $field);
 		}
 		if ($decision->isOk()) {
 			$detail = $decision->effectiveDomain !== ''
 				? $decision->effectiveDomain
 				: $this->l10n->t('Host-only cookie, Nextcloud and Etherpad share a host.');
-			return new HealthCheckItem('protected_pads', HealthCheckItem::STATUS_OK, $label, $detail);
+			return new HealthCheckItem('protected_pads', HealthCheckItem::STATUS_OK, $label, $detail, $field);
 		}
-		return new HealthCheckItem('protected_pads', HealthCheckItem::STATUS_WARNING, $label, $this->cookieDomainMessages->describe($decision));
+		return new HealthCheckItem('protected_pads', HealthCheckItem::STATUS_WARNING, $label, $this->cookieDomainMessages->describe($decision), $field);
+	}
+
+	/** @param array<string,string> $parameters */
+	private function fill(string $text, array $parameters): string {
+		foreach ($parameters as $key => $value) {
+			$text = str_replace('{' . $key . '}', $value, $text);
+		}
+		return $text;
 	}
 
 	protected function now(): float {

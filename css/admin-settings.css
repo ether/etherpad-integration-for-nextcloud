@@ -223,3 +223,38 @@
 	color: var(--color-text-maxcontrast);
 	font-weight: normal;
 }
+
+/* Verdict shown at the field it came from. A tick marks a pass, the amber
+   text carries the reason for anything else — the wording says which,
+   colour only reinforces it. */
+#etherpad-nextcloud-admin-settings .ep-check-result {
+	display: none;
+	margin-top: 4px;
+	max-width: 640px;
+	overflow-wrap: anywhere;
+}
+
+#etherpad-nextcloud-admin-settings .ep-check-result.ep-check-ok,
+#etherpad-nextcloud-admin-settings .ep-check-result.ep-check-warning,
+#etherpad-nextcloud-admin-settings .ep-check-result.ep-check-skipped {
+	display: block;
+}
+
+#etherpad-nextcloud-admin-settings .ep-check-result.ep-check-ok {
+	color: var(--color-success, #2d7d46);
+}
+
+#etherpad-nextcloud-admin-settings .ep-check-result.ep-check-ok::before {
+	content: "\2713\00a0";
+	font-weight: bold;
+}
+
+#etherpad-nextcloud-admin-settings .ep-check-result.ep-check-warning {
+	padding-left: 10px;
+	border-left: 3px solid var(--color-warning, #c98600);
+	color: var(--color-main-text);
+}
+
+#etherpad-nextcloud-admin-settings .ep-check-result.ep-check-skipped {
+	color: var(--color-text-maxcontrast);
+}

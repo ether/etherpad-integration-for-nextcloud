@@ -53,7 +53,10 @@ export const runAdminEtherpadHealthCheck = async (page: Page): Promise<void> => 
 	await page.locator('#etherpad-nextcloud-health-check').click()
 
 	await expect(status).toHaveClass(/ep-status-success/, { timeout: 30_000 })
-	await expect(status).toContainText(/pad_count=|api=|latency=/, { timeout: 30_000 })
+	// Details moved to the per-field results; the API line carries the target
+	// and the metrics, so assert there rather than on the summary.
+	await expect(page.locator('[data-check-result="etherpad_api_host"], [data-check-result="etherpad_host"]').first())
+		.toHaveClass(/ep-check-ok/, { timeout: 30_000 })
 }
 
 /** Click the Files "+ New" toolbar button and wait for its menu. */
