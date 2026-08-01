@@ -25,6 +25,7 @@ const setupAdminDom = () => {
 				<input name="sync_interval_seconds" value="120">
 				<input type="checkbox" name="enable_protected_pads" checked>
 				<input type="checkbox" name="enable_public_pads" checked>
+				<p id="pad-types-none-hint" class="ep-field-hint" role="status" data-message="No pad type is enabled."></p>
 				<input type="checkbox" name="delete_on_trash" checked>
 				<input type="checkbox" name="allow_external_pads">
 				<textarea name="external_pad_allowlist"></textarea>
@@ -145,5 +146,71 @@ describe('admin settings status areas', () => {
 
 		expect(saveStatus().textContent).toContain('Connection ok.')
 		expect(saveStatus().classList.contains('ep-status-success')).toBe(true)
+	})
+})
+
+describe('pad types live region', () => {
+	const hint = () => document.getElementById('pad-types-none-hint')
+	const protectedBox = () => document.querySelector('[name="enable_protected_pads"]')
+	const publicBox = () => document.querySelector('[name="enable_public_pads"]')
+
+	const uncheck = (box) => {
+		box.checked = false
+		box.dispatchEvent(new Event('change', { bubbles: true }))
+	}
+
+	beforeEach(() => {
+		vi.resetModules()
+		global.OC = { requestToken: 'token' }
+		setupAdminDom()
+		vi.stubGlobal('fetch', vi.fn())
+	})
+
+	afterEach(() => {
+		document.body.innerHTML = ''
+		delete global.OC
+		vi.unstubAllGlobals()
+	})
+
+	it('writes the message as text so the live region announces it', async () => {
+		await import(MODULE)
+		expect(hint().textContent).toBe('')
+
+		uncheck(protectedBox())
+		uncheck(publicBox())
+
+		// Text, not visibility: an element returning from display:none is not
+		// a content change and would go unannounced.
+		expect(hint().textContent).toBe('No pad type is enabled.')
+		expect(hint().style.display).toBe('')
+	})
+
+	it('clears the text again once a pad type is re-enabled', async () => {
+		await import(MODULE)
+		uncheck(protectedBox())
+		uncheck(publicBox())
+		expect(hint().textContent).not.toBe('')
+
+		publicBox().checked = true
+		publicBox().dispatchEvent(new Event('change', { bubbles: true }))
+
+		expect(hint().textContent).toBe('')
+	})
+
+	it('leaves already-rendered text untouched on load', async () => {
+		// Server-rendered state: both types off, message already present. A
+		// rewrite would announce it as if the admin had just changed it.
+		hint().textContent = 'No pad type is enabled.'
+		protectedBox().checked = false
+		publicBox().checked = false
+		const observed = []
+		new MutationObserver((records) => observed.push(...records))
+			.observe(hint(), { childList: true, characterData: true, subtree: true })
+
+		await import(MODULE)
+		await flush()
+
+		expect(hint().textContent).toBe('No pad type is enabled.')
+		expect(observed).toHaveLength(0)
 	})
 })

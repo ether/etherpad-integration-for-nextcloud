@@ -61,26 +61,26 @@
 			<input
 				type="url"
 				id="etherpad-api-host"
-				aria-describedby="hint-api-host"
+				aria-describedby="epnc-hint-api-host"
 				name="etherpad_api_host"
 				placeholder="https://etherpad.internal"
 				value="<?php p((string)$_['etherpad_api_host']); ?>">
 			<span class="ep-field-error" data-field-error="etherpad_api_host" aria-live="polite"></span>
 		</p>
-		<p class="settings-hint ep-field-hint" id="hint-api-host"><?php p((string)$_['l10n']['etherpad_api_url_hint']); ?></p>
+		<p class="settings-hint ep-field-hint" id="epnc-hint-api-host"><?php p((string)$_['l10n']['etherpad_api_url_hint']); ?></p>
 
 		<p class="ep-field-row">
 			<label for="etherpad-cookie-domain"><?php p((string)$_['l10n']['etherpad_cookie_domain']); ?></label>
 			<input
 				type="text"
 				id="etherpad-cookie-domain"
-				aria-describedby="hint-cookie-domain"
+				aria-describedby="epnc-hint-cookie-domain"
 				name="etherpad_cookie_domain"
 				placeholder=".example.org"
 				value="<?php p((string)$_['etherpad_cookie_domain']); ?>">
 			<span class="ep-field-error" data-field-error="etherpad_cookie_domain" aria-live="polite"></span>
 		</p>
-		<p class="settings-hint ep-field-hint" id="hint-cookie-domain"><?php p((string)$_['l10n']['etherpad_cookie_domain_hint']); ?></p>
+		<p class="settings-hint ep-field-hint" id="epnc-hint-cookie-domain"><?php p((string)$_['l10n']['etherpad_cookie_domain_hint']); ?></p>
 
 		<h3 class="ep-section-heading"><?php p((string)$_['l10n']['section_pad_types']); ?></h3>
 
@@ -89,34 +89,39 @@
 				<input
 					type="checkbox"
 					name="enable_protected_pads"
-					aria-describedby="hint-protected-pads"
+					aria-describedby="epnc-hint-protected-pads"
 					value="1"
 					<?php if ((bool)$_['enable_protected_pads']): ?>checked<?php endif; ?>>
 				<?php p((string)$_['l10n']['enable_protected_pads']); ?>
 			</label>
 		</p>
-		<p class="settings-hint ep-field-hint ep-checkbox-hint" id="hint-protected-pads"><?php p((string)$_['l10n']['enable_protected_pads_hint']); ?></p>
+		<p class="settings-hint ep-field-hint ep-checkbox-hint" id="epnc-hint-protected-pads"><?php p((string)$_['l10n']['enable_protected_pads_hint']); ?></p>
 
 		<p id="enable-public-pads-row" class="ep-checkbox-row">
 			<label class="checkbox">
 				<input
 					type="checkbox"
 					name="enable_public_pads"
-					aria-describedby="hint-public-pads"
+					aria-describedby="epnc-hint-public-pads"
 					value="1"
 					<?php if ((bool)$_['enable_public_pads']): ?>checked<?php endif; ?>>
 				<?php p((string)$_['l10n']['enable_public_pads']); ?>
 			</label>
 		</p>
-		<p class="settings-hint ep-field-hint ep-checkbox-hint" id="hint-public-pads"><?php p((string)$_['l10n']['enable_public_pads_hint']); ?></p>
-		<p class="settings-hint ep-field-hint ep-checkbox-hint" id="pad-types-none-hint" role="status"<?php if ((bool)$_['enable_protected_pads'] || (bool)$_['enable_public_pads']): ?> style="display: none"<?php endif; ?>><?php p((string)$_['l10n']['pad_types_none_hint']); ?></p>
+		<p class="settings-hint ep-field-hint ep-checkbox-hint" id="epnc-hint-public-pads"><?php p((string)$_['l10n']['enable_public_pads_hint']); ?></p>
+		<?php /* Always rendered so the live region can announce; the text is
+			carried in data-message and written by the script when it applies.
+			No whitespace inside the tag, or `:empty` would not match. */ ?>
+		<p class="settings-hint ep-field-hint ep-checkbox-hint" id="pad-types-none-hint" role="status" data-message="<?php p((string)$_['l10n']['pad_types_none_hint']); ?>"><?php if (!(bool)$_['enable_protected_pads'] && !(bool)$_['enable_public_pads']) {
+			p((string)$_['l10n']['pad_types_none_hint']);
+		} ?></p>
 
 		<p class="ep-field-row">
 			<label for="sync-interval-seconds"><?php p((string)$_['l10n']['copy_interval']); ?></label>
 			<input
 				type="number"
 				id="sync-interval-seconds"
-				aria-describedby="hint-sync-interval"
+				aria-describedby="epnc-hint-sync-interval"
 				name="sync_interval_seconds"
 				min="5"
 				max="3600"
@@ -124,20 +129,20 @@
 				value="<?php p((string)$_['sync_interval_seconds']); ?>">
 			<span class="ep-field-error" data-field-error="sync_interval_seconds" aria-live="polite"></span>
 		</p>
-		<p class="settings-hint ep-field-hint" id="hint-sync-interval"><?php p((string)$_['l10n']['copy_interval_hint']); ?></p>
+		<p class="settings-hint ep-field-hint" id="epnc-hint-sync-interval"><?php p((string)$_['l10n']['copy_interval_hint']); ?></p>
 
 		<p id="delete-on-trash-row" class="ep-checkbox-row">
 			<label class="checkbox">
 				<input
 					type="checkbox"
 					name="delete_on_trash"
-					aria-describedby="hint-delete-on-trash"
+					aria-describedby="epnc-hint-delete-on-trash"
 					value="1"
 					<?php if ((bool)$_['delete_on_trash']): ?>checked<?php endif; ?>>
 				<?php p((string)$_['l10n']['delete_on_trash']); ?>
 			</label>
 		</p>
-		<p class="settings-hint ep-field-hint ep-checkbox-hint" id="hint-delete-on-trash"><?php p((string)$_['l10n']['delete_on_trash_hint']); ?></p>
+		<p class="settings-hint ep-field-hint ep-checkbox-hint" id="epnc-hint-delete-on-trash"><?php p((string)$_['l10n']['delete_on_trash_hint']); ?></p>
 
 		<h3 class="ep-section-heading"><?php p((string)$_['l10n']['section_external']); ?></h3>
 

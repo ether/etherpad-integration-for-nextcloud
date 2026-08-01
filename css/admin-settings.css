@@ -27,6 +27,13 @@
 	color: var(--color-text-maxcontrast);
 }
 
+/* A hint that carries no text takes up no space either. Lets the script
+   clear a live region's text instead of hiding the element, which would
+   take it out of the accessibility tree and silence the announcement. */
+#etherpad-nextcloud-admin-settings .ep-field-hint:empty {
+	margin: 0;
+}
+
 /* Not an explanation but a reported value, so it keeps normal body text
    styling instead of the muted hint treatment. */
 #etherpad-nextcloud-admin-settings .ep-detected-value {

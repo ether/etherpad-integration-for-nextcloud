@@ -86,10 +86,17 @@
 			&& !protectedPadsCheckbox.checked
 			&& !publicPadsCheckbox.checked
 		if (padTypesNoneHint instanceof HTMLElement) {
-			// Toggle `display` rather than the `hidden` attribute: our own
-			// `.settings-hint { display: block }` rule is ID-scoped and so
-			// outweighs the user-agent `[hidden]` default.
-			padTypesNoneHint.style.display = noneEnabled ? '' : 'none'
+			// Set the text rather than toggling visibility. A live region only
+			// announces content *changes*; an element coming back from
+			// `display: none` was not in the accessibility tree before, so its
+			// text counts as initial content and commonly stays unspoken. The
+			// empty paragraph collapses via `.ep-field-hint:empty`, so this
+			// looks the same as hiding it.
+			const message = noneEnabled ? (padTypesNoneHint.dataset.message || '') : ''
+			// Rewriting the same text would announce it again on load.
+			if (padTypesNoneHint.textContent !== message) {
+				padTypesNoneHint.textContent = message
+			}
 		}
 	}
 
