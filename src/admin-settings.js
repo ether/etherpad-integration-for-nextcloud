@@ -5,9 +5,8 @@
 	const form = document.getElementById('etherpad-nextcloud-admin-form')
 	const statusNode = document.getElementById('etherpad-nextcloud-admin-status')
 	const diagnosticsStatusNode = document.getElementById('etherpad-nextcloud-diagnostics-status')
-	// Only the save area is required at startup. Markup rendered before the
-	// diagnostics area existed still has to show diagnostics feedback
-	// somewhere, so fall back to the save area instead of dropping it.
+	// Only the save area is required at startup; older markup without the
+	// diagnostics area still has to show its feedback somewhere.
 	const diagnosticsTarget = diagnosticsStatusNode instanceof HTMLElement
 		? diagnosticsStatusNode
 		: statusNode
@@ -86,12 +85,10 @@
 			&& !protectedPadsCheckbox.checked
 			&& !publicPadsCheckbox.checked
 		if (padTypesNoneHint instanceof HTMLElement) {
-			// Set the text rather than toggling visibility. A live region only
-			// announces content *changes*; an element coming back from
-			// `display: none` was not in the accessibility tree before, so its
-			// text counts as initial content and commonly stays unspoken. The
-			// empty paragraph collapses via `.ep-field-hint:empty`, so this
-			// looks the same as hiding it.
+			// Write the text instead of toggling visibility: a live region only
+			// announces content changes, and an element returning from
+			// `display: none` reads as initial content. `.ep-field-hint:empty`
+			// collapses the empty paragraph, so it looks the same.
 			const message = noneEnabled ? (padTypesNoneHint.dataset.message || '') : ''
 			// Rewriting the same text would announce it again on load.
 			if (padTypesNoneHint.textContent !== message) {
@@ -117,10 +114,8 @@
 		}
 	}
 
-	// Saving and the diagnostic tools live in separate sections, so each
-	// reports next to its own buttons. Writing a status only ever touches its
-	// own area — the two run independently, and a response arriving late must
-	// not wipe out the other action's result.
+	// Writing a status touches only its own area, so a late response cannot
+	// wipe out the other action's result.
 	function setStatus(message, state, node = statusNode) {
 		if (!(node instanceof HTMLElement)) {
 			return
@@ -134,8 +129,8 @@
 		}
 	}
 
-	// Starting an action does clear the other area: its result predates this
-	// action and could otherwise be read as belonging to it.
+	// Starting one does clear the other: its result predates this action and
+	// would be read as belonging to it.
 	function beginStatus(message, node = statusNode) {
 		for (const other of [statusNode, diagnosticsTarget]) {
 			if (other instanceof HTMLElement && other !== node) {

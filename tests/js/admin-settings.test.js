@@ -43,16 +43,15 @@ const setupAdminDom = () => {
 const saveStatus = () => document.getElementById('etherpad-nextcloud-admin-status')
 const diagnosticsStatus = () => document.getElementById('etherpad-nextcloud-diagnostics-status')
 
-/** Mirrors a successful controller response: the client only treats a body
- * carrying `ok: true` as success, anything else takes the error path. */
+/** The client only treats a body carrying `ok: true` as success. */
 const okResponse = (body) => ({
 	ok: true,
 	status: 200,
 	text: () => Promise.resolve(JSON.stringify({ ok: true, ...body })),
 })
 
-/** A fetch whose response is resolved by the test, so overlapping requests
- * can be completed in a deliberately reversed order. */
+/** A response the test resolves itself, to complete overlapping requests
+ * in a deliberately reversed order. */
 const deferred = () => {
 	let resolve
 	const promise = new Promise((r) => {
@@ -91,8 +90,7 @@ describe('admin settings status areas', () => {
 		await flush()
 
 		expect(diagnosticsStatus().textContent).toContain('Connection ok.')
-		// Success, not the error path: the mock has to satisfy the client's
-		// `ok: true` contract for this assertion to hold.
+		// Success, not the error path.
 		expect(diagnosticsStatus().classList.contains('ep-status-success')).toBe(true)
 		expect(saveStatus().textContent).toBe('')
 	})
@@ -108,8 +106,7 @@ describe('admin settings status areas', () => {
 		document.getElementById('etherpad-nextcloud-admin-form').requestSubmit()
 		await flush()
 
-		// The diagnostics request finishes first, the save afterwards; the save
-		// response must not clear the diagnostics area.
+		// Diagnostics finishes first, the save afterwards.
 		health.respond({ message: 'Connection ok.' })
 		await flush()
 		save.respond({ message: 'Saved.' })
@@ -179,8 +176,6 @@ describe('pad types live region', () => {
 		uncheck(protectedBox())
 		uncheck(publicBox())
 
-		// Text, not visibility: an element returning from display:none is not
-		// a content change and would go unannounced.
 		expect(hint().textContent).toBe('No pad type is enabled.')
 		expect(hint().style.display).toBe('')
 	})
@@ -198,8 +193,8 @@ describe('pad types live region', () => {
 	})
 
 	it('leaves already-rendered text untouched on load', async () => {
-		// Server-rendered state: both types off, message already present. A
-		// rewrite would announce it as if the admin had just changed it.
+		// Server-rendered state: a rewrite would announce it as if the admin
+		// had just changed something.
 		hint().textContent = 'No pad type is enabled.'
 		protectedBox().checked = false
 		publicBox().checked = false

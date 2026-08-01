@@ -109,9 +109,8 @@
 			</label>
 		</p>
 		<p class="settings-hint ep-field-hint ep-checkbox-hint" id="epnc-hint-public-pads"><?php p((string)$_['l10n']['enable_public_pads_hint']); ?></p>
-		<?php /* Always rendered so the live region can announce; the text is
-			carried in data-message and written by the script when it applies.
-			No whitespace inside the tag, or `:empty` would not match. */ ?>
+		<?php /* Always rendered, text written by the script — and no whitespace
+			inside the tag, or `:empty` would not match. */ ?>
 		<p class="settings-hint ep-field-hint ep-checkbox-hint" id="pad-types-none-hint" role="status" data-message="<?php p((string)$_['l10n']['pad_types_none_hint']); ?>"><?php if (!(bool)$_['enable_protected_pads'] && !(bool)$_['enable_public_pads']) {
 			p((string)$_['l10n']['pad_types_none_hint']);
 		} ?></p>
