@@ -20,7 +20,7 @@
         "Cannot resolve selected parent folder.": "Impossible de résoudre le dossier parent sélectionné.",
         "Check finished. Some settings need attention.": "Vérification terminée. Certains réglages demandent votre attention.",
         "Checking for the original pad...": "Recherche du pad d’origine...",
-        "Checks that Nextcloud reaches the Etherpad API with the values above, saved or not.": "Vérifie que Nextcloud atteint l'API Etherpad avec les valeurs ci-dessus, enregistrées ou non.",
+        "Checks that Nextcloud reaches the Etherpad API with the values above.": "Vérifie que Nextcloud atteint l'API Etherpad avec les valeurs ci-dessus.",
         "Close": "Fermer",
         "Configure the Etherpad server and external pad security policy for the Etherpad Nextcloud app.": "Configurez le serveur Etherpad et la politique de sécurité des pads externes pour l'application Etherpad Nextcloud.",
         "Consistency check": "Vérification de cohérence",

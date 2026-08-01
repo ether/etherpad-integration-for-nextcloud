@@ -21,7 +21,7 @@ OC.L10N.register(
     "Cannot resolve selected parent folder.": "No se puede resolver la carpeta principal seleccionada.",
     "Check finished. Some settings need attention.": "Comprobación finalizada. Algunos ajustes requieren atención.",
     "Checking for the original pad...": "Buscando el pad original...",
-    "Checks that Nextcloud reaches the Etherpad API with the values above, saved or not.": "Comprueba si Nextcloud alcanza la API de Etherpad con los valores de arriba, estén guardados o no.",
+    "Checks that Nextcloud reaches the Etherpad API with the values above.": "Comprueba si Nextcloud alcanza la API de Etherpad con los valores de arriba.",
     "Close": "Cerrar",
     "Configure the Etherpad server and external pad security policy for the Etherpad Nextcloud app.": "Configura el servidor de Etherpad y la política de seguridad para pads externos en la aplicación Etherpad Nextcloud.",
     "Consistency check": "Comprobación de consistencia",

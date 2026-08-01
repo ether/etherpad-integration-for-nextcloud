@@ -21,7 +21,7 @@ OC.L10N.register(
     "Cannot resolve selected parent folder.": "Ausgewählter Zielordner konnte nicht aufgelöst werden.",
     "Check finished. Some settings need attention.": "Prüfung abgeschlossen. Einige Einstellungen brauchen Aufmerksamkeit.",
     "Checking for the original pad...": "Suche nach dem Original-Pad ...",
-    "Checks that Nextcloud reaches the Etherpad API with the values above, saved or not.": "Prüft, ob Nextcloud die Etherpad-API mit den Werten oben erreicht – gespeichert oder nicht.",
+    "Checks that Nextcloud reaches the Etherpad API with the values above.": "Prüft, ob Nextcloud die Etherpad-API mit den Werten oben erreicht.",
     "Close": "Schließen",
     "Configure the Etherpad server and external pad security policy for the Etherpad Nextcloud app.": "Konfiguriere den Etherpad-Server und die Sicherheitsrichtlinie für externe Pads in der Etherpad-Nextcloud-App.",
     "Consistency check": "Konsistenzprüfung",
