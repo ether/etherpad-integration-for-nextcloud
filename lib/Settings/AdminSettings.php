@@ -129,7 +129,6 @@ class AdminSettings implements ISettings {
 				'saved' => $this->l10n->t('Settings saved.'),
 				'checking' => $this->l10n->t('Testing Etherpad connection...'),
 				'consistency_running' => $this->l10n->t('Running consistency check...'),
-				'health_ok' => $this->l10n->t('Etherpad connection test successful.'),
 				'consistency_ok' => $this->l10n->t('Consistency check successful.'),
 				'request_failed' => $this->l10n->t('Request failed.'),
 				'saving_failed' => $this->l10n->t('Failed to save settings.'),

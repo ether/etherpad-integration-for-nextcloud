@@ -106,12 +106,13 @@ class AdminControllerTest extends TestCase {
 				'https://pad-api.internal/api/1.3.0/listAllPads',
 				3,
 				new CookieDomainDecision(
-					'',
+					'.example.tests',
 					CookieDomainDecision::STATUS_WARNING,
-					CookieDomainDecision::REASON_NO_COMMON_PARENT,
+					CookieDomainDecision::REASON_CONFIGURED_DOMAIN_MISMATCH,
 					'cloud.example.test',
-					'pad.unrelated.test',
-					CookieDomainDecision::SOURCE_HOST_ONLY,
+					'pad.example.test',
+					CookieDomainDecision::SOURCE_CONFIGURED,
+					'.example.test',
 				),
 			));
 
@@ -128,10 +129,17 @@ class AdminControllerTest extends TestCase {
 		// failed connection test, and the controller renders its text.
 		$this->assertFalse($data['protected_pads']['ok']);
 		$this->assertSame(CookieDomainDecision::STATUS_WARNING, $data['protected_pads']['status']);
-		$this->assertSame(CookieDomainDecision::REASON_NO_COMMON_PARENT, $data['protected_pads']['reason']);
-		$this->assertSame(CookieDomainDecision::SOURCE_HOST_ONLY, $data['protected_pads']['cookie_domain_source']);
-		$this->assertStringContainsString('cloud.example.test', $data['protected_pads']['message']);
-		$this->assertStringContainsString('pad.unrelated.test', $data['protected_pads']['message']);
+		$this->assertSame(CookieDomainDecision::REASON_CONFIGURED_DOMAIN_MISMATCH, $data['protected_pads']['reason']);
+		$this->assertSame(CookieDomainDecision::SOURCE_CONFIGURED, $data['protected_pads']['cookie_domain_source']);
+
+		// The controller appends the protected-pads line itself, so summary
+		// and list describe the same outcome — the service returns neither.
+		$line = end($data['checks']);
+		$this->assertSame('protected_pads', $line['id']);
+		$this->assertSame(HealthCheckItem::STATUS_WARNING, $line['status']);
+		$this->assertStringContainsString('cloud.example.test', $line['detail']);
+		$this->assertStringContainsString('.example.test would cover both', $line['detail']);
+		$this->assertStringContainsString('need attention', $data['message']);
 	}
 
 	public function testRetryPendingDeletesUsesConfiguredBatchSize(): void {

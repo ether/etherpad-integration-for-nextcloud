@@ -71,7 +71,6 @@
         "Etherpad base URL reachable": "Etherpad-Basis-URL erreichbar",
         "Etherpad connection test failed.": "Etherpad-Verbindung konnte nicht geprüft werden.",
         "Etherpad connection test failed: {detail}": "Etherpad-Verbindung konnte nicht geprüft werden: {detail}",
-        "Etherpad connection test successful.": "Etherpad-Verbindung erfolgreich geprüft.",
         "Etherpad server": "Etherpad-Server",
         "Etherpad session cookie domain": "Domain des Etherpad-Sitzungscookies",
         "External Etherpad host allowlist (optional)": "Erlaubte externe Etherpad-Hosts (optional)",

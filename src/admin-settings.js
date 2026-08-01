@@ -4,16 +4,8 @@
 	const root = document.getElementById('etherpad-nextcloud-admin-settings')
 	const form = document.getElementById('etherpad-nextcloud-admin-form')
 	const statusNode = document.getElementById('etherpad-nextcloud-admin-status')
-	const diagnosticsStatusNode = document.getElementById('etherpad-nextcloud-diagnostics-status')
-	const connectionStatusNode = document.getElementById('etherpad-nextcloud-connection-status')
-	// Only the save area is required at startup; older markup without these
-	// areas still has to show its feedback somewhere.
-	const diagnosticsTarget = diagnosticsStatusNode instanceof HTMLElement
-		? diagnosticsStatusNode
-		: statusNode
-	const connectionTarget = connectionStatusNode instanceof HTMLElement
-		? connectionStatusNode
-		: diagnosticsTarget
+	const diagnosticsTarget = document.getElementById('etherpad-nextcloud-diagnostics-status')
+	const connectionTarget = document.getElementById('etherpad-nextcloud-connection-status')
 	const healthButton = document.getElementById('etherpad-nextcloud-health-check')
 	const consistencyButton = document.getElementById('etherpad-nextcloud-consistency-check')
 	const retryPendingButton = document.getElementById('etherpad-nextcloud-retry-pending')
@@ -49,7 +41,6 @@
 		saved: root.getAttribute('data-l10n-saved') || 'Settings saved.',
 		checking: root.getAttribute('data-l10n-checking') || 'Testing Etherpad connection...',
 		consistencyRunning: root.getAttribute('data-l10n-consistency-running') || 'Running consistency check...',
-		healthOk: root.getAttribute('data-l10n-health-ok') || 'Etherpad connection test successful.',
 		consistencyOk: root.getAttribute('data-l10n-consistency-ok') || 'Consistency check successful.',
 		requestFailed: root.getAttribute('data-l10n-request-failed') || 'Request failed.',
 		savingFailed: root.getAttribute('data-l10n-saving-failed') || 'Failed to save settings.',
@@ -290,7 +281,7 @@
 			renderConnectionChecks(data.checks)
 			const needsAttention = Array.isArray(data.checks)
 				&& data.checks.some((check) => check && check.status === 'warning')
-			setStatus(String(data.message || l10n.healthOk), needsAttention ? 'warning' : 'success', connectionTarget)
+			setStatus(String(data.message), needsAttention ? 'warning' : 'success', connectionTarget)
 		} catch (error) {
 			if (error && typeof error.field === 'string' && error.field !== '') {
 				showFieldError(error.field, error.message || l10n.healthFailed)

@@ -15,8 +15,7 @@ const setupAdminDom = () => {
 			data-retry-pending-url="/retry"
 			data-l10n-saving="Saving..."
 			data-l10n-saved="Saved."
-			data-l10n-checking="Checking..."
-			data-l10n-health-ok="Connection ok.">
+			data-l10n-checking="Checking...">
 			<form id="etherpad-nextcloud-admin-form">
 				<input name="etherpad_host" value="https://pad.example.org">
 				<span class="ep-check-result" data-check-result="etherpad_host"></span>
@@ -88,13 +87,13 @@ describe('admin settings status areas', () => {
 	})
 
 	it('reports saving and diagnostics next to their own actions', async () => {
-		vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(okResponse({ message: 'Connection ok.' }))))
+		vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(okResponse({ message: 'All checks passed.' }))))
 		await import(MODULE)
 
 		document.getElementById('etherpad-nextcloud-health-check').click()
 		await flush()
 
-		expect(connectionStatus().textContent).toContain('Connection ok.')
+		expect(connectionStatus().textContent).toContain('All checks passed.')
 		// Success, not the error path.
 		expect(connectionStatus().classList.contains('ep-status-success')).toBe(true)
 		expect(saveStatus().textContent).toBe('')
@@ -113,24 +112,24 @@ describe('admin settings status areas', () => {
 		await flush()
 
 		// Diagnostics finishes first, the save afterwards.
-		health.respond({ message: 'Connection ok.' })
+		health.respond({ message: 'All checks passed.' })
 		await flush()
 		save.respond({ message: 'Saved.' })
 		await flush()
 
-		expect(connectionStatus().textContent).toContain('Connection ok.')
+		expect(connectionStatus().textContent).toContain('All checks passed.')
 		expect(connectionStatus().classList.contains('ep-status-success')).toBe(true)
 		expect(saveStatus().textContent).toContain('Saved.')
 		expect(saveStatus().classList.contains('ep-status-success')).toBe(true)
 	})
 
 	it('clears the other area when a new action starts', async () => {
-		vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(okResponse({ message: 'Connection ok.' }))))
+		vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(okResponse({ message: 'All checks passed.' }))))
 		await import(MODULE)
 
 		document.getElementById('etherpad-nextcloud-health-check').click()
 		await flush()
-		expect(connectionStatus().textContent).toContain('Connection ok.')
+		expect(connectionStatus().textContent).toContain('All checks passed.')
 
 		document.getElementById('etherpad-nextcloud-admin-form').requestSubmit()
 		await flush()
@@ -139,29 +138,7 @@ describe('admin settings status areas', () => {
 		expect(connectionStatus().classList.contains('ep-status-success')).toBe(false)
 	})
 
-	it('falls back to the diagnostics area when the connection area is missing', async () => {
-		connectionStatus().remove()
-		vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(okResponse({ message: 'Connection ok.' }))))
-		await import(MODULE)
 
-		document.getElementById('etherpad-nextcloud-health-check').click()
-		await flush()
-
-		expect(diagnosticsStatus().textContent).toContain('Connection ok.')
-		expect(diagnosticsStatus().classList.contains('ep-status-success')).toBe(true)
-	})
-
-	it('falls back all the way to the save area when neither exists', async () => {
-		connectionStatus().remove()
-		diagnosticsStatus().remove()
-		vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(okResponse({ message: 'Connection ok.' }))))
-		await import(MODULE)
-
-		document.getElementById('etherpad-nextcloud-health-check').click()
-		await flush()
-
-		expect(saveStatus().textContent).toContain('Connection ok.')
-	})
 })
 
 describe('protected pads cookie warning', () => {

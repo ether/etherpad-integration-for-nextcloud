@@ -80,9 +80,10 @@ class BaseUrlReachabilityCheck {
 		}
 		$status = $response->getStatusCode();
 
-		// Anything the server answers means the host exists and serves. Even
-		// 401/403/404 tell us the name resolves and something is listening.
-		if ($status >= 500) {
+		// The host answering is not enough: a base URL with a wrong path
+		// returns 404 while every pad link built from it is broken. Only a
+		// success or a redirect counts as a working base URL.
+		if ($status >= 400) {
 			return new HealthCheckItem(
 				'base_url',
 				HealthCheckItem::STATUS_WARNING,

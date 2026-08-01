@@ -14,7 +14,6 @@
 	data-l10n-saved="<?php p((string)$_['l10n']['saved']); ?>"
 	data-l10n-checking="<?php p((string)$_['l10n']['checking']); ?>"
 	data-l10n-consistency-running="<?php p((string)$_['l10n']['consistency_running']); ?>"
-	data-l10n-health-ok="<?php p((string)$_['l10n']['health_ok']); ?>"
 	data-l10n-consistency-ok="<?php p((string)$_['l10n']['consistency_ok']); ?>"
 	data-l10n-request-failed="<?php p((string)$_['l10n']['request_failed']); ?>"
 	data-l10n-saving-failed="<?php p((string)$_['l10n']['saving_failed']); ?>"

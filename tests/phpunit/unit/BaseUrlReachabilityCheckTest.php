@@ -26,14 +26,22 @@ class BaseUrlReachabilityCheckTest extends TestCase {
 	}
 
 	/**
-	 * Any answer proves the name resolves and something listens, which is all
-	 * this row claims. Etherpad may well require auth at the root.
+	 * A host that answers is not automatically a working base URL: point it
+	 * at the wrong path and every pad link built from it 404s, while the
+	 * summary would still report that everything passed.
 	 */
-	public function testAuthOrNotFoundStillCountsAsReachable(): void {
+	public function testClientErrorsWarnRatherThanCountAsReachable(): void {
 		foreach ([401, 403, 404] as $status) {
-			$item = $this->buildCheck($this->respondingWith($status))->check('https://pad.example.test', 'http://localhost:9001');
-			$this->assertSame(HealthCheckItem::STATUS_OK, $item->status, (string)$status);
+			$item = $this->buildCheck($this->respondingWith($status))->check('https://pad.example.test/wrong', 'http://localhost:9001');
+			$this->assertSame(HealthCheckItem::STATUS_WARNING, $item->status, (string)$status);
+			$this->assertStringContainsString((string)$status, $item->detail, (string)$status);
 		}
+	}
+
+	public function testRedirectsCountAsReachable(): void {
+		$item = $this->buildCheck($this->respondingWith(200))->check('https://pad.example.test', 'http://localhost:9001');
+
+		$this->assertSame(HealthCheckItem::STATUS_OK, $item->status);
 	}
 
 	/**
@@ -62,7 +70,7 @@ class BaseUrlReachabilityCheckTest extends TestCase {
 
 		$item = $this->buildCheck($client)->check('https://pad.example.test', 'http://localhost:9001');
 
-		$this->assertSame(HealthCheckItem::STATUS_OK, $item->status);
+		$this->assertSame(HealthCheckItem::STATUS_WARNING, $item->status);
 	}
 
 	public function testServerErrorWarns(): void {

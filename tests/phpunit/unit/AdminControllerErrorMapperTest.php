@@ -71,12 +71,28 @@ class AdminControllerErrorMapperTest extends TestCase {
 
 	public function testMapsHealthCheckExceptionToBadGateway(): void {
 		$response = $this->buildMapper()->run(
-			static fn(): array => throw new AdminHealthCheckException('Etherpad connection test failed: bad key'),
+			static fn(): array => throw new AdminHealthCheckException(
+				'Etherpad connection test failed: bad key',
+				0,
+				null,
+				'etherpad_api_key',
+			),
 			static fn(array $data): DataResponse => new DataResponse($data),
 		);
 
 		$this->assertSame(Http::STATUS_BAD_GATEWAY, $response->getStatus());
 		$this->assertSame('Etherpad connection test failed: bad key', $response->getData()['message']);
+		// Same shape validation errors use, so the page marks the input.
+		$this->assertSame('etherpad_api_key', $response->getData()['field']);
+	}
+
+	public function testHealthCheckExceptionWithoutAFieldOmitsIt(): void {
+		$response = $this->buildMapper()->run(
+			static fn(): array => throw new AdminHealthCheckException('Etherpad connection test failed: odd'),
+			static fn(array $data): DataResponse => new DataResponse($data),
+		);
+
+		$this->assertArrayNotHasKey('field', $response->getData());
 	}
 
 	public function testLogsGenericFailures(): void {

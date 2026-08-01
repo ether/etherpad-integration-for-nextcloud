@@ -20,7 +20,6 @@ class EtherpadHealthCheckService {
 		private PendingDeleteRetryService $pendingDeleteRetryService,
 		private IL10N $l10n,
 		private CookieDomainPolicy $cookieDomainPolicy,
-		private CookieDomainMessages $cookieDomainMessages,
 		private BaseUrlReachabilityCheck $baseUrlCheck,
 		private IURLGenerator $urlGenerator,
 	) {
@@ -80,7 +79,9 @@ class EtherpadHealthCheckService {
 		$latencyMs = (int)round(($this->now() - $startedAt) * 1000.0);
 		$target = rtrim($settings->etherpadApiHost, '/') . '/api/' . $settings->etherpadApiVersion . '/listAllPads';
 
-		// Each part gets its own line, tied to the field it came from. A single
+		// Each part gets its own line, tied to the field it came from. The
+		// protected-pads line is added by the caller from $cookieDomain, so the
+		// summary and the payload cannot disagree about it. A single
 		// verdict hid the fact that only the API host is contacted, so a typo in
 		// the base URL — which every pad link in the browser uses — still read
 		// as a clean pass. An empty API URL falls back to the base URL, so the
@@ -105,7 +106,6 @@ class EtherpadHealthCheckService {
 				'etherpad_api_key',
 			),
 			$this->baseUrlCheck->check($settings->etherpadHost, $settings->etherpadApiHost),
-			$this->cookieDomainMessages->asCheckItem($cookieDomain),
 		];
 
 		return new HealthCheckResult(

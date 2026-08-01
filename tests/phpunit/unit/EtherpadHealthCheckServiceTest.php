@@ -8,7 +8,6 @@ use OCA\EtherpadNextcloud\Exception\AdminHealthCheckException;
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
 use OCA\EtherpadNextcloud\Service\BaseUrlReachabilityCheck;
 use OCA\EtherpadNextcloud\Service\CookieDomainDecision;
-use OCA\EtherpadNextcloud\Service\CookieDomainMessages;
 use OCA\EtherpadNextcloud\Service\CookieDomainPolicy;
 use OCA\EtherpadNextcloud\Service\EtherpadClient;
 use OCA\EtherpadNextcloud\Service\EtherpadHealthCheckService;
@@ -43,10 +42,6 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 		$this->assertSame('cloud.example.test', $result->cookieDomain->nextcloudHost);
 		$this->assertSame('pad.unrelated.test', $result->cookieDomain->etherpadHost);
 
-		$line = $this->lineById($result->checks, 'protected_pads');
-		$this->assertSame(HealthCheckItem::STATUS_WARNING, $line->status);
-		$this->assertStringContainsString('cloud.example.test', $line->detail);
-		$this->assertStringContainsString('pad.unrelated.test', $line->detail);
 	}
 
 	public function testCheckSkipsTheCookieVerdictWhenProtectedPadsAreSubmittedAsDisabled(): void {
@@ -57,23 +52,8 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 			->check($this->settings('https://pad.unrelated.test', false));
 
 		$this->assertNull($result->cookieDomain);
-		// Skipped, not failed: an instance offering only public pads has
-		// nothing to fix here.
-		$this->assertSame(HealthCheckItem::STATUS_SKIPPED, $this->lineById($result->checks, 'protected_pads')->status);
 	}
 
-	public function testProtectedPadsLineNamesADomainThatWouldWork(): void {
-		$etherpad = $this->createMock(EtherpadClient::class);
-		$etherpad->method('healthCheck')->willReturn(['pad_count' => 1]);
-
-		// Shared parent, but the saved domain has a typo in it.
-		$result = $this->buildService($etherpad, $this->pendingCounts(0), 'https://cloud.example.test')
-			->check($this->settings('https://pad.example.test', true, '.example.tests'));
-
-		$line = $this->lineById($result->checks, 'protected_pads');
-		$this->assertSame(HealthCheckItem::STATUS_WARNING, $line->status);
-		$this->assertStringContainsString('.example.test would cover both', $line->detail);
-	}
 
 	/** @return list<array{string,string}> */
 	public static function failureFieldProvider(): array {
@@ -140,9 +120,10 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 		foreach ($result->checks as $item) {
 			$byId[$item->id] = $item;
 		}
-		$this->assertSame(['api', 'api_key', 'base_url', 'protected_pads'], array_keys($byId));
+		// The protected-pads line is appended by the controller from
+		// $cookieDomain, so summary and payload cannot disagree about it.
+		$this->assertSame(['api', 'api_key', 'base_url'], array_keys($byId));
 		$this->assertSame(HealthCheckItem::STATUS_OK, $byId['api']->status);
-		$this->assertSame(HealthCheckItem::STATUS_OK, $byId['protected_pads']->status);
 	}
 
 	/** @param list<HealthCheckItem> $checks */
@@ -167,7 +148,6 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 			$pending,
 			$this->buildL10n(),
 			new CookieDomainPolicy(),
-			new CookieDomainMessages($this->buildL10n()),
 			$this->baseUrlCheck(),
 			$urlGenerator,
 		);
@@ -221,7 +201,6 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 			$this->pendingCounts(0),
 			$this->buildL10n(),
 			new CookieDomainPolicy(),
-			new CookieDomainMessages($this->buildL10n()),
 			$this->baseUrlCheck(),
 			$urlGenerator,
 			$ticks,
@@ -232,12 +211,11 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 				PendingDeleteRetryService $pendingDeleteRetryService,
 				IL10N $l10n,
 				CookieDomainPolicy $cookieDomainPolicy,
-				CookieDomainMessages $cookieDomainMessages,
 				BaseUrlReachabilityCheck $baseUrlCheck,
 				IURLGenerator $urlGenerator,
 				private array $ticks,
 			) {
-				parent::__construct($etherpadClient, $pendingDeleteRetryService, $l10n, $cookieDomainPolicy, $cookieDomainMessages, $baseUrlCheck, $urlGenerator);
+				parent::__construct($etherpadClient, $pendingDeleteRetryService, $l10n, $cookieDomainPolicy, $baseUrlCheck, $urlGenerator);
 			}
 
 			protected function now(): float {

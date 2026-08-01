@@ -98,25 +98,30 @@ class AdminController extends Controller {
 				);
 				return $this->healthCheckService->check($settings);
 			},
-			fn(HealthCheckResult $result): DataResponse => new DataResponse([
-				'ok' => true,
-				// Not "successful": the test succeeding says nothing about the
-				// configuration, and reading it as an all-clear is exactly the
-				// confusion the per-check list is meant to remove.
-				'message' => $this->summariseChecks($result->checks),
-				'host' => $result->host,
-				'api_host' => $result->apiHost,
-				'api_version' => $result->apiVersion,
-				'pad_count' => $result->padCount,
-				'latency_ms' => $result->latencyMs,
-				'target' => $result->target,
-				'pending_delete_count' => $result->pendingDeleteCount,
-				// Reported next to the connection result, not as part of it:
-				// the API can be reachable while protected pads still cannot
-				// work. null when protected pads are switched off.
-				'protected_pads' => $this->describeCookieDomain($result->cookieDomain),
-				'checks' => $this->describeChecks($result->checks),
-			]),
+			function (HealthCheckResult $result): DataResponse {
+				// One list feeds both the summary and the payload, so they
+				// cannot report different outcomes.
+				$checks = [...$result->checks, $this->cookieDomainMessages->asCheckItem($result->cookieDomain)];
+				return new DataResponse([
+					'ok' => true,
+					// Not "successful": the test succeeding says nothing about the
+					// configuration, and reading it as an all-clear is exactly the
+					// confusion the per-check list is meant to remove.
+					'message' => $this->summariseChecks($checks),
+					'host' => $result->host,
+					'api_host' => $result->apiHost,
+					'api_version' => $result->apiVersion,
+					'pad_count' => $result->padCount,
+					'latency_ms' => $result->latencyMs,
+					'target' => $result->target,
+					'pending_delete_count' => $result->pendingDeleteCount,
+					// Reported next to the connection result, not as part of it:
+					// the API can be reachable while protected pads still cannot
+					// work. null when protected pads are switched off.
+					'protected_pads' => $this->describeCookieDomain($result->cookieDomain),
+					'checks' => $this->describeChecks($checks),
+				]);
+			},
 			[
 				'generic' => $this->l10n->t('Etherpad connection test failed.'),
 				'log_message' => 'Etherpad health check failed',
