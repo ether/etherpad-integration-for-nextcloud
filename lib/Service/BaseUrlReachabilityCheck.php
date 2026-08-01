@@ -43,6 +43,7 @@ use OCP\IL10N;
 class BaseUrlReachabilityCheck {
 	private const TIMEOUT_SECONDS = 5;
 	private const FIELD = 'etherpad_host';
+	private const DETAIL_MAX_LENGTH = 160;
 
 	public function __construct(
 		private IClientService $clientService,
@@ -126,7 +127,9 @@ class BaseUrlReachabilityCheck {
 
 	private function shorten(string $message): string {
 		$message = trim($message);
-		return strlen($message) > 160 ? substr($message, 0, 160) . '…' : $message;
+		return strlen($message) > self::DETAIL_MAX_LENGTH
+			? substr($message, 0, self::DETAIL_MAX_LENGTH) . '…'
+			: $message;
 	}
 
 	/** @param array<string,string> $parameters */

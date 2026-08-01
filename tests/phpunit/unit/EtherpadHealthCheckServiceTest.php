@@ -186,6 +186,31 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 
 
 
+	/**
+	 * A transport failure can carry a long tail of internal hostnames and
+	 * addresses. The admin needs the actionable part, not all of it — but the
+	 * classification has to see the whole thing, or a keyword behind the cut
+	 * would take the hint and the field with it.
+	 */
+	public function testLongFailuresAreShortenedWithoutLosingTheClassification(): void {
+		$tail = str_repeat('internal-host.example.invalid ', 20);
+		$etherpad = $this->createMock(EtherpadClient::class);
+		$etherpad->method('healthCheck')->willThrowException(
+			new EtherpadClientException('Etherpad transport error: ' . $tail . 'Connection refused')
+		);
+
+		try {
+			$this->buildService($etherpad, $this->pendingCounts(0))->check($this->settings());
+			$this->fail('Expected health check exception.');
+		} catch (AdminHealthCheckException $e) {
+			$this->assertStringContainsString('…', $e->getMessage());
+			$this->assertLessThan(strlen($tail), strlen($e->getMessage()));
+			// Classified from the full text, so hint and field survive.
+			$this->assertStringContainsString('Etherpad does not appear to be running', $e->getMessage());
+			$this->assertSame('etherpad_api_host', $e->getField());
+		}
+	}
+
 	/** @return iterable<string,array{0:string,1:string,2:string}> */
 	public static function failureCaseProvider(): iterable {
 		yield 'api key mode' => [

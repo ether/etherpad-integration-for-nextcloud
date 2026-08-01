@@ -27,6 +27,7 @@ class EtherpadHealthCheckService {
 	private const REASON_INVALID_JSON = 'invalid_json';
 	private const REASON_API_KEY_OTHER = 'api_key_other';
 	private const REASON_UNKNOWN = '';
+	private const DETAIL_MAX_LENGTH = 160;
 
 	public function __construct(
 		private EtherpadClient $etherpadClient,
@@ -57,7 +58,12 @@ class EtherpadHealthCheckService {
 			if ($previous instanceof \Throwable && $previous->getMessage() !== '') {
 				$detail .= ' (' . $previous->getMessage() . ')';
 			}
+			// Classify on the full text: a keyword can sit behind the cut, and
+			// losing it would drop both the hint and the field. Only what the
+			// admin reads is shortened — a transport failure can carry a long
+			// tail of internal hostnames and addresses.
 			$reason = $this->classifyFailure($detail);
+			$detail = $this->shorten($detail);
 			$hint = $this->hintForReason($reason);
 			if ($hint !== '') {
 				$detail .= ' ' . $hint;
@@ -237,6 +243,14 @@ class EtherpadHealthCheckService {
 			self::REASON_TRANSPORT => $apiField,
 			default => '',
 		};
+	}
+
+	/** Same cap as BaseUrlReachabilityCheck; these end up in the same panel. */
+	private function shorten(string $message): string {
+		$message = trim($message);
+		return strlen($message) > self::DETAIL_MAX_LENGTH
+			? substr($message, 0, self::DETAIL_MAX_LENGTH) . '…'
+			: $message;
 	}
 
 	/** @param array<string,string> $parameters */
