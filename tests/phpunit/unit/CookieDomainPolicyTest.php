@@ -203,6 +203,20 @@ class CookieDomainPolicyTest extends TestCase {
 		$this->assertTrue($decision->isOk());
 	}
 
+	/**
+	 * Installations predating the "was configured" flag carry only the value.
+	 * Treating those as unset would re-derive over a domain an admin chose.
+	 */
+	public function testStoredValueKeepsALegacyDomainWithoutTheFlag(): void {
+		$this->assertSame('.example.org', $this->policy->storedValue('.example.org', false));
+		$this->assertSame('.example.org', $this->policy->storedValue('  .example.org  ', false));
+	}
+
+	public function testStoredValueDistinguishesNeverSetFromDeliberatelyEmpty(): void {
+		$this->assertNull($this->policy->storedValue('', false));
+		$this->assertSame('', $this->policy->storedValue('', true));
+	}
+
 	public function testResolveReturnsTheDomainOfTheSameDecision(): void {
 		$this->assertSame(
 			$this->policy->decide('https://cloud.example.org', 'https://pad.example.org', null)->effectiveDomain,

@@ -244,6 +244,9 @@ solely by the separate external-pad policy, not by these two settings.
     - `etherpad_host` (public/browser base URL)
     - `etherpad_api_host` (optional internal API URL; fallback to `etherpad_host`)
     - `delete_on_trash` (`yes|no`)
+  - Result includes `protected_pads`, recomputed from the saved values, in the
+    same shape as the health check below — so the settings page can refresh its
+    warning without a separate connection test.
 
 - `POST /api/v1/admin/health`
   - Controller: `AdminController::healthCheck`

@@ -241,6 +241,9 @@
 		beginStatus(l10n.saving)
 		try {
 			const data = await postJson(saveUrl, getPayload())
+			// Saving changes the answer, so refresh it here too — otherwise a
+			// corrected domain keeps showing the old warning until reload.
+			updateCookieWarning(data.protected_pads)
 			const versionSuffix = data && data.api_version ? ` api=${String(data.api_version)}` : ''
 			setStatus(`${String(data.message || l10n.saved)}${versionSuffix}`, 'success')
 		} catch (error) {

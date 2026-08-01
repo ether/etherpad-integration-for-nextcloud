@@ -15,6 +15,9 @@ use OCA\EtherpadNextcloud\Service\AdminSettingsRepository;
 use OCA\EtherpadNextcloud\Service\AdminSettingsValidator;
 use OCA\EtherpadNextcloud\Service\AdminTestFaultService;
 use OCA\EtherpadNextcloud\Service\ConsistencyCheckService;
+use OCA\EtherpadNextcloud\Service\CookieDomainDecision;
+use OCA\EtherpadNextcloud\Service\CookieDomainMessages;
+use OCA\EtherpadNextcloud\Service\CookieDomainPolicy;
 use OCA\EtherpadNextcloud\Service\EtherpadHealthCheckService;
 use OCA\EtherpadNextcloud\Service\HealthCheckResult;
 use OCA\EtherpadNextcloud\Service\PendingDeleteRetryService;
@@ -24,6 +27,7 @@ use OCP\AppFramework\Http\DataResponse;
 use OCP\IGroupManager;
 use OCP\IL10N;
 use OCP\IRequest;
+use OCP\IURLGenerator;
 use OCP\IUserSession;
 
 /**
@@ -47,6 +51,9 @@ class AdminController extends Controller {
 		private AdminConsistencyCheckResponseBuilder $consistencyResponseBuilder,
 		private AdminTestFaultService $testFaultService,
 		private AdminControllerErrorMapper $errors,
+		private CookieDomainPolicy $cookieDomainPolicy,
+		private CookieDomainMessages $cookieDomainMessages,
+		private IURLGenerator $urlGenerator,
 	) {
 		parent::__construct($appName, $request);
 	}
@@ -67,6 +74,9 @@ class AdminController extends Controller {
 				'message' => $this->l10n->t('Settings saved.'),
 				'api_version' => $settings->etherpadApiVersion,
 				'has_api_key' => $this->settingsRepository->hasApiKey(),
+				// Recomputed from what was just saved, so the page does not
+				// keep showing a warning about the settings it replaced.
+				'protected_pads' => $this->protectedPadsPayload($settings),
 			]),
 			[
 				'generic' => $this->l10n->t('Failed to save settings.'),
@@ -98,16 +108,7 @@ class AdminController extends Controller {
 				// Reported next to the connection result, not as part of it:
 				// the API can be reachable while protected pads still cannot
 				// work. null when protected pads are switched off.
-				'protected_pads' => $result->cookieDomain === null ? null : [
-					'ok' => $result->cookieDomain->isOk(),
-					'status' => $result->cookieDomain->status,
-					'reason' => $result->cookieDomain->reason,
-					'cookie_domain' => $result->cookieDomain->effectiveDomain,
-					'cookie_domain_source' => $result->cookieDomain->source,
-					'nextcloud_host' => $result->cookieDomain->nextcloudHost,
-					'etherpad_host' => $result->cookieDomain->etherpadHost,
-					'message' => $result->cookieDomainMessage,
-				],
+				'protected_pads' => $this->describeCookieDomain($result->cookieDomain, $result->cookieDomainMessage),
 			]),
 			[
 				'generic' => $this->l10n->t('Etherpad connection test failed.'),
@@ -186,5 +187,35 @@ class AdminController extends Controller {
 		if (!$this->groupManager->isAdmin($user->getUID())) {
 			throw new AdminPermissionRequiredException('Admin permissions required.');
 		}
+	}
+
+	/** @return array<string,mixed>|null */
+	private function protectedPadsPayload(ValidatedAdminSettings $settings): ?array {
+		if (!$settings->enableProtectedPads) {
+			return null;
+		}
+		$decision = $this->cookieDomainPolicy->decide(
+			$this->urlGenerator->getBaseUrl(),
+			$settings->etherpadHost,
+			$this->cookieDomainPolicy->storedValue($settings->etherpadCookieDomain, $settings->cookieDomainConfigured),
+		);
+		return $this->describeCookieDomain($decision, $this->cookieDomainMessages->describe($decision));
+	}
+
+	/** @return array<string,mixed>|null */
+	private function describeCookieDomain(?CookieDomainDecision $decision, string $message): ?array {
+		if ($decision === null) {
+			return null;
+		}
+		return [
+			'ok' => $decision->isOk(),
+			'status' => $decision->status,
+			'reason' => $decision->reason,
+			'cookie_domain' => $decision->effectiveDomain,
+			'cookie_domain_source' => $decision->source,
+			'nextcloud_host' => $decision->nextcloudHost,
+			'etherpad_host' => $decision->etherpadHost,
+			'message' => $message,
+		];
 	}
 }

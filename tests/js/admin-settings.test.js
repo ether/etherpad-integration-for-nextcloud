@@ -35,6 +35,7 @@ const setupAdminDom = () => {
 				<button type="button" id="etherpad-nextcloud-health-check">Test</button>
 				<button type="button" id="etherpad-nextcloud-consistency-check">Check</button>
 				<p id="etherpad-nextcloud-diagnostics-status" class="ep-status"></p>
+				<p id="epnc-cookie-warning"></p>
 			</form>
 		</div>
 	`
@@ -143,6 +144,77 @@ describe('admin settings status areas', () => {
 
 		expect(saveStatus().textContent).toContain('Connection ok.')
 		expect(saveStatus().classList.contains('ep-status-success')).toBe(true)
+	})
+})
+
+describe('protected pads cookie warning', () => {
+	const warning = () => document.getElementById('epnc-cookie-warning')
+	const problem = (message) => ({ ok: false, status: 'warning', reason: 'no_common_parent', message })
+
+	beforeEach(() => {
+		vi.resetModules()
+		global.OC = { requestToken: 'token' }
+		setupAdminDom()
+	})
+
+	afterEach(() => {
+		document.body.innerHTML = ''
+		delete global.OC
+		vi.unstubAllGlobals()
+	})
+
+	it('shows the warning reported by the connection test', async () => {
+		vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(okResponse({
+			message: 'Connection ok.',
+			protected_pads: problem('Hosts do not share a parent domain.'),
+		}))))
+		await import(MODULE)
+
+		document.getElementById('etherpad-nextcloud-health-check').click()
+		await flush()
+
+		expect(warning().textContent).toBe('Hosts do not share a parent domain.')
+	})
+
+	it('refreshes the warning when settings are saved', async () => {
+		warning().textContent = 'Hosts do not share a parent domain.'
+		// The save fixed the domain, so the stale warning has to go without a
+		// reload or a separate connection test.
+		vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(okResponse({
+			message: 'Saved.',
+			protected_pads: { ok: true, status: 'ok', reason: 'common_parent', message: '' },
+		}))))
+		await import(MODULE)
+
+		document.getElementById('etherpad-nextcloud-admin-form').requestSubmit()
+		await flush()
+
+		expect(warning().textContent).toBe('')
+	})
+
+	it('raises a new warning on save when the domain was broken', async () => {
+		vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(okResponse({
+			message: 'Saved.',
+			protected_pads: problem('Hosts do not share a parent domain.'),
+		}))))
+		await import(MODULE)
+
+		document.getElementById('etherpad-nextcloud-admin-form').requestSubmit()
+		await flush()
+
+		expect(warning().textContent).toBe('Hosts do not share a parent domain.')
+	})
+
+	it('clears the warning when protected pads are switched off', async () => {
+		warning().textContent = 'Hosts do not share a parent domain.'
+		// null means the check did not run, not that a problem persists.
+		vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(okResponse({ message: 'Saved.', protected_pads: null }))))
+		await import(MODULE)
+
+		document.getElementById('etherpad-nextcloud-admin-form').requestSubmit()
+		await flush()
+
+		expect(warning().textContent).toBe('')
 	})
 })
 

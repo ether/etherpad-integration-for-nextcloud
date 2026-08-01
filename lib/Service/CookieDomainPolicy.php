@@ -55,6 +55,22 @@ class CookieDomainPolicy {
 		return $this->decideDerived($nextcloudHost, $etherpadHost);
 	}
 
+	/**
+	 * Normalises the stored setting into what decide() expects.
+	 *
+	 * Installations from before the "was configured" flag existed carry only
+	 * the value, so a non-empty one counts as chosen. Treating it as unset
+	 * would silently re-derive over a domain an admin had picked. Every caller
+	 * goes through here so they cannot feed the policy different inputs.
+	 */
+	public function storedValue(string $stored, bool $configuredFlag): ?string {
+		$trimmed = trim($stored);
+		if (!$configuredFlag && $trimmed === '') {
+			return null;
+		}
+		return $trimmed;
+	}
+
 	/** The `Domain=` value alone, for callers that only set the cookie. */
 	public function resolve(string $nextcloudUrl, string $etherpadUrl, ?string $configured): string {
 		return $this->decide($nextcloudUrl, $etherpadUrl, $configured)->effectiveDomain;

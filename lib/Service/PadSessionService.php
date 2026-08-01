@@ -109,14 +109,11 @@ class PadSessionService {
 		);
 	}
 
-	/** null when no domain was ever saved, so the policy derives one. */
 	private function storedCookieDomain(): ?string {
-		$configured = (string)$this->config->getAppValue('etherpad_nextcloud', 'etherpad_cookie_domain_configured', 'no') === 'yes';
-		$stored = trim((string)$this->config->getAppValue('etherpad_nextcloud', 'etherpad_cookie_domain', ''));
-		if (!$configured && $stored === '') {
-			return null;
-		}
-		return $stored;
+		return $this->cookieDomainPolicy->storedValue(
+			(string)$this->config->getAppValue('etherpad_nextcloud', 'etherpad_cookie_domain', ''),
+			(string)$this->config->getAppValue('etherpad_nextcloud', 'etherpad_cookie_domain_configured', 'no') === 'yes',
+		);
 	}
 
 	private function syncAuthorMapping(string $uid, string $authorId, string $displayName): string {

@@ -21,7 +21,6 @@ class EtherpadHealthCheckService {
 		private IL10N $l10n,
 		private CookieDomainPolicy $cookieDomainPolicy,
 		private CookieDomainMessages $cookieDomainMessages,
-		private PadTypePolicy $padTypePolicy,
 		private IURLGenerator $urlGenerator,
 	) {
 	}
@@ -69,11 +68,14 @@ class EtherpadHealthCheckService {
 		// work, and that must not read as a failed connection test.
 		$cookieDomain = null;
 		$cookieMessage = '';
-		if ($this->padTypePolicy->isEnabled(BindingService::ACCESS_PROTECTED)) {
+		// The submitted settings, not the stored ones: the health check tests
+		// the form as it stands, so a toggle the admin just flipped has to
+		// count before it is saved.
+		if ($settings->enableProtectedPads) {
 			$cookieDomain = $this->cookieDomainPolicy->decide(
 				$this->urlGenerator->getBaseUrl(),
 				$settings->etherpadHost,
-				$settings->cookieDomainConfigured ? $settings->etherpadCookieDomain : null,
+				$this->cookieDomainPolicy->storedValue($settings->etherpadCookieDomain, $settings->cookieDomainConfigured),
 			);
 			$cookieMessage = $this->cookieDomainMessages->describe($cookieDomain);
 		}

@@ -13,6 +13,8 @@ use OCA\EtherpadNextcloud\Service\AdminSettingsRepository;
 use OCA\EtherpadNextcloud\Service\AdminSettingsValidator;
 use OCA\EtherpadNextcloud\Service\AdminTestFaultService;
 use OCA\EtherpadNextcloud\Service\ConsistencyCheckService;
+use OCA\EtherpadNextcloud\Service\CookieDomainMessages;
+use OCA\EtherpadNextcloud\Service\CookieDomainPolicy;
 use OCA\EtherpadNextcloud\Service\EtherpadHealthCheckService;
 use OCA\EtherpadNextcloud\Service\HealthCheckResult;
 use OCA\EtherpadNextcloud\Service\PendingDeleteRetryService;
@@ -22,6 +24,7 @@ use OCP\AppFramework\Http;
 use OCP\IGroupManager;
 use OCP\IL10N;
 use OCP\IRequest;
+use OCP\IURLGenerator;
 use OCP\IUser;
 use OCP\IUserSession;
 use PHPUnit\Framework\TestCase;
@@ -195,7 +198,16 @@ class AdminControllerTest extends TestCase {
 			$consistencyResponses ?? new AdminConsistencyCheckResponseBuilder($l10n),
 			$testFaults ?? $this->createMock(AdminTestFaultService::class),
 			new AdminControllerErrorMapper($l10n, $logger),
+			new CookieDomainPolicy(),
+			new CookieDomainMessages($l10n),
+			$this->urlGenerator(),
 		);
+	}
+
+	private function urlGenerator(string $baseUrl = 'https://cloud.example.test'): IURLGenerator {
+		$urlGenerator = $this->createMock(IURLGenerator::class);
+		$urlGenerator->method('getBaseUrl')->willReturn($baseUrl);
+		return $urlGenerator;
 	}
 
 	/** @param array<string,mixed> $payload */

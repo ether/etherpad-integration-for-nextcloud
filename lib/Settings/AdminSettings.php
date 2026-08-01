@@ -51,9 +51,11 @@ class AdminSettings implements ISettings {
 		$decision = $this->cookieDomainPolicy->decide(
 			$this->urlGenerator->getBaseUrl(),
 			$etherpadHost,
-			$cookieDomainConfigured ? $storedCookieDomain : null,
+			$this->cookieDomainPolicy->storedValue($storedCookieDomain, $cookieDomainConfigured),
 		);
-		$cookieDomain = $cookieDomainConfigured ? $storedCookieDomain : $decision->effectiveDomain;
+		// Show what will actually be sent, including a legacy value stored
+		// without the flag — otherwise the field and the runtime disagree.
+		$cookieDomain = $this->cookieDomainPolicy->storedValue($storedCookieDomain, $cookieDomainConfigured) ?? $decision->effectiveDomain;
 		$apiVersion = (string)$this->config->getAppValue(Application::APP_ID, 'etherpad_api_version', EtherpadClient::DEFAULT_API_VERSION);
 		$syncInterval = (int)$this->config->getAppValue(Application::APP_ID, 'sync_interval_seconds', '120');
 		if ($syncInterval < 5) {
