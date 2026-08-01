@@ -48,14 +48,12 @@ class AdminSettings implements ISettings {
 		$etherpadApiHost = (string)$this->config->getAppValue(Application::APP_ID, 'etherpad_api_host', '');
 		$cookieDomainConfigured = (string)$this->config->getAppValue(Application::APP_ID, 'etherpad_cookie_domain_configured', 'no') === 'yes';
 		$storedCookieDomain = (string)$this->config->getAppValue(Application::APP_ID, 'etherpad_cookie_domain', '');
-		$decision = $this->cookieDomainPolicy->decide(
-			$this->urlGenerator->getBaseUrl(),
-			$etherpadHost,
-			$this->cookieDomainPolicy->storedValue($storedCookieDomain, $cookieDomainConfigured),
-		);
-		// Show what will actually be sent, including a legacy value stored
-		// without the flag — otherwise the field and the runtime disagree.
-		$cookieDomain = $this->cookieDomainPolicy->storedValue($storedCookieDomain, $cookieDomainConfigured) ?? $decision->effectiveDomain;
+		$configuredCookieDomain = $this->cookieDomainPolicy->storedValue($storedCookieDomain, $cookieDomainConfigured);
+		$decision = $this->cookieDomainPolicy->decide($this->urlGenerator->getBaseUrl(), $etherpadHost, $configuredCookieDomain);
+		// The field shows the saved value, falling back to the derived one when
+		// nothing was saved. That is not always what gets sent: identical hosts
+		// use a host-only cookie and ignore any saved domain.
+		$cookieDomain = $configuredCookieDomain ?? $decision->effectiveDomain;
 		$apiVersion = (string)$this->config->getAppValue(Application::APP_ID, 'etherpad_api_version', EtherpadClient::DEFAULT_API_VERSION);
 		$syncInterval = (int)$this->config->getAppValue(Application::APP_ID, 'sync_interval_seconds', '120');
 		if ($syncInterval < 5) {

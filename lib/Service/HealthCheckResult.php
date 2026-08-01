@@ -20,7 +20,6 @@ class HealthCheckResult {
 		public readonly int $pendingDeleteCount,
 		/** null when protected pads are switched off, so nothing was checked. */
 		public readonly ?CookieDomainDecision $cookieDomain = null,
-		public readonly string $cookieDomainMessage = '',
 	) {
 	}
 }

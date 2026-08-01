@@ -20,7 +20,6 @@ class EtherpadHealthCheckService {
 		private PendingDeleteRetryService $pendingDeleteRetryService,
 		private IL10N $l10n,
 		private CookieDomainPolicy $cookieDomainPolicy,
-		private CookieDomainMessages $cookieDomainMessages,
 		private IURLGenerator $urlGenerator,
 	) {
 	}
@@ -67,7 +66,6 @@ class EtherpadHealthCheckService {
 		// API can be perfectly reachable while protected pads still cannot
 		// work, and that must not read as a failed connection test.
 		$cookieDomain = null;
-		$cookieMessage = '';
 		// The submitted settings, not the stored ones: the health check tests
 		// the form as it stands, so a toggle the admin just flipped has to
 		// count before it is saved.
@@ -77,7 +75,6 @@ class EtherpadHealthCheckService {
 				$settings->etherpadHost,
 				$this->cookieDomainPolicy->storedValue($settings->etherpadCookieDomain, $settings->cookieDomainConfigured),
 			);
-			$cookieMessage = $this->cookieDomainMessages->describe($cookieDomain);
 		}
 
 		return new HealthCheckResult(
@@ -89,7 +86,6 @@ class EtherpadHealthCheckService {
 			rtrim($settings->etherpadApiHost, '/') . '/api/' . $settings->etherpadApiVersion . '/listAllPads',
 			$this->pendingDeleteRetryService->countPendingDeletes(),
 			$cookieDomain,
-			$cookieMessage,
 		);
 	}
 

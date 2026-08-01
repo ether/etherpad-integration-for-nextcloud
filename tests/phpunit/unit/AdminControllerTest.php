@@ -13,6 +13,7 @@ use OCA\EtherpadNextcloud\Service\AdminSettingsRepository;
 use OCA\EtherpadNextcloud\Service\AdminSettingsValidator;
 use OCA\EtherpadNextcloud\Service\AdminTestFaultService;
 use OCA\EtherpadNextcloud\Service\ConsistencyCheckService;
+use OCA\EtherpadNextcloud\Service\CookieDomainDecision;
 use OCA\EtherpadNextcloud\Service\CookieDomainMessages;
 use OCA\EtherpadNextcloud\Service\CookieDomainPolicy;
 use OCA\EtherpadNextcloud\Service\EtherpadHealthCheckService;
@@ -67,6 +68,14 @@ class AdminControllerTest extends TestCase {
 		$this->assertTrue((bool)$response->getData()['ok']);
 		$this->assertSame('1.3.0', $response->getData()['api_version']);
 		$this->assertTrue((bool)$response->getData()['has_api_key']);
+		// Recomputed from the saved values so the page can refresh its warning.
+		$protectedPads = $response->getData()['protected_pads'];
+		$this->assertTrue($protectedPads['ok']);
+		$this->assertSame(CookieDomainDecision::STATUS_OK, $protectedPads['status']);
+		$this->assertSame(CookieDomainDecision::REASON_CONFIGURED, $protectedPads['reason']);
+		$this->assertSame('.example.test', $protectedPads['cookie_domain']);
+		$this->assertSame(CookieDomainDecision::SOURCE_CONFIGURED, $protectedPads['cookie_domain_source']);
+		$this->assertSame('', $protectedPads['message']);
 	}
 
 	public function testHealthCheckReturnsApiAndPendingDeleteMetrics(): void {
@@ -95,6 +104,14 @@ class AdminControllerTest extends TestCase {
 				123,
 				'https://pad-api.internal/api/1.3.0/listAllPads',
 				3,
+				new CookieDomainDecision(
+					'',
+					CookieDomainDecision::STATUS_WARNING,
+					CookieDomainDecision::REASON_NO_COMMON_PARENT,
+					'cloud.example.test',
+					'pad.unrelated.test',
+					CookieDomainDecision::SOURCE_HOST_ONLY,
+				),
 			));
 
 		$response = $this->buildController($request, validator: $validator, repository: $repository, healthCheck: $health)->healthCheck();
@@ -106,6 +123,14 @@ class AdminControllerTest extends TestCase {
 		$this->assertSame(3, $data['pending_delete_count']);
 		$this->assertArrayNotHasKey('trashed_without_file_count', $data);
 		$this->assertSame('https://pad-api.internal/api/1.3.0/listAllPads', $data['target']);
+		// A protected-pads problem is reported beside the result, not as a
+		// failed connection test, and the controller renders its text.
+		$this->assertFalse($data['protected_pads']['ok']);
+		$this->assertSame(CookieDomainDecision::STATUS_WARNING, $data['protected_pads']['status']);
+		$this->assertSame(CookieDomainDecision::REASON_NO_COMMON_PARENT, $data['protected_pads']['reason']);
+		$this->assertSame(CookieDomainDecision::SOURCE_HOST_ONLY, $data['protected_pads']['cookie_domain_source']);
+		$this->assertStringContainsString('cloud.example.test', $data['protected_pads']['message']);
+		$this->assertStringContainsString('pad.unrelated.test', $data['protected_pads']['message']);
 	}
 
 	public function testRetryPendingDeletesUsesConfiguredBatchSize(): void {

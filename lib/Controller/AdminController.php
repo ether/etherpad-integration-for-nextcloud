@@ -108,7 +108,7 @@ class AdminController extends Controller {
 				// Reported next to the connection result, not as part of it:
 				// the API can be reachable while protected pads still cannot
 				// work. null when protected pads are switched off.
-				'protected_pads' => $this->describeCookieDomain($result->cookieDomain, $result->cookieDomainMessage),
+				'protected_pads' => $this->describeCookieDomain($result->cookieDomain),
 			]),
 			[
 				'generic' => $this->l10n->t('Etherpad connection test failed.'),
@@ -199,11 +199,11 @@ class AdminController extends Controller {
 			$settings->etherpadHost,
 			$this->cookieDomainPolicy->storedValue($settings->etherpadCookieDomain, $settings->cookieDomainConfigured),
 		);
-		return $this->describeCookieDomain($decision, $this->cookieDomainMessages->describe($decision));
+		return $this->describeCookieDomain($decision);
 	}
 
 	/** @return array<string,mixed>|null */
-	private function describeCookieDomain(?CookieDomainDecision $decision, string $message): ?array {
+	private function describeCookieDomain(?CookieDomainDecision $decision): ?array {
 		if ($decision === null) {
 			return null;
 		}
@@ -215,7 +215,7 @@ class AdminController extends Controller {
 			'cookie_domain_source' => $decision->source,
 			'nextcloud_host' => $decision->nextcloudHost,
 			'etherpad_host' => $decision->etherpadHost,
-			'message' => $message,
+			'message' => $this->cookieDomainMessages->describe($decision),
 		];
 	}
 }

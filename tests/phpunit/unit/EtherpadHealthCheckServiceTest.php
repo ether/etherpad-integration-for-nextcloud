@@ -7,7 +7,7 @@ namespace OCA\EtherpadNextcloud\Tests\Unit;
 use OCA\EtherpadNextcloud\Exception\AdminHealthCheckException;
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
 use OCA\EtherpadNextcloud\Service\EtherpadClient;
-use OCA\EtherpadNextcloud\Service\CookieDomainMessages;
+use OCA\EtherpadNextcloud\Service\CookieDomainDecision;
 use OCA\EtherpadNextcloud\Service\CookieDomainPolicy;
 use OCA\EtherpadNextcloud\Service\EtherpadHealthCheckService;
 use OCA\EtherpadNextcloud\Service\PendingDeleteRetryService;
@@ -17,24 +17,30 @@ use OCP\IURLGenerator;
 use PHPUnit\Framework\TestCase;
 
 class EtherpadHealthCheckServiceTest extends TestCase {
-	public function testCheckReportsProtectedPadCookieProblemWithoutFailing(): void {
+	/**
+	 * The verdict follows the submitted form, not the stored configuration: a
+	 * toggle the admin just flipped has to count before it is saved. Both
+	 * directions matter, so the pair below covers on and off.
+	 */
+	public function testCheckReportsACookieProblemWhenProtectedPadsAreSubmittedAsEnabled(): void {
 		$etherpad = $this->createMock(EtherpadClient::class);
 		$etherpad->method('healthCheck')->willReturn(['pad_count' => 3]);
 
 		// Nextcloud and Etherpad on unrelated domains: the API answers, but no
 		// session cookie can span both hosts.
+		// No cookie domain saved, so the policy derives one — and cannot.
 		$result = $this->buildService($etherpad, $this->pendingCounts(0), 'https://cloud.example.test')
-			->check($this->settings('https://pad.unrelated.test'));
+			->check($this->settings('https://pad.unrelated.test', true, ''));
 
 		$this->assertSame(3, $result->padCount);
 		$this->assertNotNull($result->cookieDomain);
 		$this->assertFalse($result->cookieDomain->isOk());
-		$this->assertNotSame('', $result->cookieDomainMessage);
-		$this->assertStringContainsString('cloud.example.test', $result->cookieDomainMessage);
-		$this->assertStringContainsString('pad.unrelated.test', $result->cookieDomainMessage);
+		$this->assertSame(CookieDomainDecision::REASON_NO_COMMON_PARENT, $result->cookieDomain->reason);
+		$this->assertSame('cloud.example.test', $result->cookieDomain->nextcloudHost);
+		$this->assertSame('pad.unrelated.test', $result->cookieDomain->etherpadHost);
 	}
 
-	public function testCheckReportsNoCookieVerdictWhenProtectedPadsAreOff(): void {
+	public function testCheckSkipsTheCookieVerdictWhenProtectedPadsAreSubmittedAsDisabled(): void {
 		$etherpad = $this->createMock(EtherpadClient::class);
 		$etherpad->method('healthCheck')->willReturn(['pad_count' => 1]);
 
@@ -42,37 +48,6 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 			->check($this->settings('https://pad.unrelated.test', false));
 
 		$this->assertNull($result->cookieDomain);
-		$this->assertSame('', $result->cookieDomainMessage);
-	}
-
-	/**
-	 * The health check runs against the form as submitted. A toggle flipped
-	 * but not yet saved therefore has to count, in both directions — reading
-	 * the stored flag instead would report on a different configuration than
-	 * the one being tested.
-	 */
-	public function testCheckFollowsTheSubmittedProtectedPadsToggleWhenTurnedOn(): void {
-		$etherpad = $this->createMock(EtherpadClient::class);
-		$etherpad->method('healthCheck')->willReturn(['pad_count' => 1]);
-
-		$result = $this->buildService($etherpad, $this->pendingCounts(0))
-			->check($this->settings('https://pad.unrelated.test', true));
-
-		$this->assertNotNull($result->cookieDomain);
-		$this->assertFalse($result->cookieDomain->isOk());
-	}
-
-	public function testCheckFollowsTheSubmittedProtectedPadsToggleWhenTurnedOff(): void {
-		$etherpad = $this->createMock(EtherpadClient::class);
-		$etherpad->method('healthCheck')->willReturn(['pad_count' => 1]);
-
-		// Same broken host pair, but the admin switched protected pads off in
-		// the form: nothing to warn about.
-		$result = $this->buildService($etherpad, $this->pendingCounts(0))
-			->check($this->settings('https://pad.unrelated.test', false));
-
-		$this->assertNull($result->cookieDomain);
-		$this->assertSame('', $result->cookieDomainMessage);
 	}
 
 	private function buildService(
@@ -87,7 +62,6 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 			$pending,
 			$this->buildL10n(),
 			new CookieDomainPolicy(),
-			new CookieDomainMessages($this->buildL10n()),
 			$urlGenerator,
 		);
 	}
@@ -130,7 +104,6 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 			$this->pendingCounts(0),
 			$this->buildL10n(),
 			new CookieDomainPolicy(),
-			new CookieDomainMessages($this->buildL10n()),
 			$urlGenerator,
 			$ticks,
 		) extends EtherpadHealthCheckService {
@@ -140,11 +113,10 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 				PendingDeleteRetryService $pendingDeleteRetryService,
 				IL10N $l10n,
 				CookieDomainPolicy $cookieDomainPolicy,
-				CookieDomainMessages $cookieDomainMessages,
 				IURLGenerator $urlGenerator,
 				private array $ticks,
 			) {
-				parent::__construct($etherpadClient, $pendingDeleteRetryService, $l10n, $cookieDomainPolicy, $cookieDomainMessages, $urlGenerator);
+				parent::__construct($etherpadClient, $pendingDeleteRetryService, $l10n, $cookieDomainPolicy, $urlGenerator);
 			}
 
 			protected function now(): float {
@@ -267,11 +239,15 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 		}
 	}
 
-	private function settings(string $etherpadHost = 'https://pad.example.test', bool $enableProtectedPads = true): ValidatedAdminSettings {
+	private function settings(
+		string $etherpadHost = 'https://pad.example.test',
+		bool $enableProtectedPads = true,
+		string $cookieDomain = '.example.test',
+	): ValidatedAdminSettings {
 		return new ValidatedAdminSettings(
 			$etherpadHost,
 			'https://pad-api.example.test',
-			'.example.test',
+			$cookieDomain,
 			'key',
 			'key',
 			'1.3.0',
