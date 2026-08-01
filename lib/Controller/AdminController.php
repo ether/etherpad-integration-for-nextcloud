@@ -75,9 +75,11 @@ class AdminController extends Controller {
 				'message' => $this->l10n->t('Settings saved.'),
 				'api_version' => $settings->etherpadApiVersion,
 				'has_api_key' => $this->settingsRepository->hasApiKey(),
-				// Recomputed from what was just saved, so the page does not
-				// keep showing a warning about the settings it replaced.
-				'protected_pads' => $this->protectedPadsPayload($settings),
+				// Recomputed from what was just saved, in the same shape the
+				// connection test answers in, so the page has one way to show
+				// a verdict. Any older per-field result is stale after a save
+				// and gets cleared along the way.
+				'checks' => $this->describeChecks([$this->cookieDomainMessages->asCheckItem($this->savedCookieDecision($settings))]),
 			]),
 			[
 				'generic' => $this->l10n->t('Failed to save settings.'),
@@ -113,16 +115,7 @@ class AdminController extends Controller {
 				// the API can be reachable while protected pads still cannot
 				// work. null when protected pads are switched off.
 				'protected_pads' => $this->describeCookieDomain($result->cookieDomain),
-				'checks' => array_map(
-					static fn(HealthCheckItem $item): array => [
-						'id' => $item->id,
-						'status' => $item->status,
-						'label' => $item->label,
-						'detail' => $item->detail,
-						'field' => $item->field,
-					],
-					$result->checks,
-				),
+				'checks' => $this->describeChecks($result->checks),
 			]),
 			[
 				'generic' => $this->l10n->t('Etherpad connection test failed.'),
@@ -214,17 +207,32 @@ class AdminController extends Controller {
 			: $this->l10n->t('Check finished. Some settings need attention.');
 	}
 
-	/** @return array<string,mixed>|null */
-	private function protectedPadsPayload(ValidatedAdminSettings $settings): ?array {
+	private function savedCookieDecision(ValidatedAdminSettings $settings): ?CookieDomainDecision {
 		if (!$settings->enableProtectedPads) {
 			return null;
 		}
-		$decision = $this->cookieDomainPolicy->decide(
+		return $this->cookieDomainPolicy->decide(
 			$this->urlGenerator->getBaseUrl(),
 			$settings->etherpadHost,
 			$this->cookieDomainPolicy->storedValue($settings->etherpadCookieDomain, $settings->cookieDomainConfigured),
 		);
-		return $this->describeCookieDomain($decision);
+	}
+
+	/**
+	 * @param list<HealthCheckItem> $checks
+	 * @return list<array<string,string>>
+	 */
+	private function describeChecks(array $checks): array {
+		return array_map(
+			static fn(HealthCheckItem $item): array => [
+				'id' => $item->id,
+				'status' => $item->status,
+				'label' => $item->label,
+				'detail' => $item->detail,
+				'field' => $item->field,
+			],
+			$checks,
+		);
 	}
 
 	/** @return array<string,mixed>|null */

@@ -244,9 +244,10 @@ solely by the separate external-pad policy, not by these two settings.
     - `etherpad_host` (public/browser base URL)
     - `etherpad_api_host` (optional internal API URL; fallback to `etherpad_host`)
     - `delete_on_trash` (`yes|no`)
-  - Result includes `protected_pads`, recomputed from the saved values, in the
-    same shape as the health check below — so the settings page can refresh its
-    warning without a separate connection test.
+  - Result includes `checks` with the single `protected_pads` line, recomputed
+    from the saved values in the same shape the health check uses — so the
+    settings page refreshes that verdict without a separate connection test,
+    and clears results the save invalidated.
 
 - `POST /api/v1/admin/health`
   - Controller: `AdminController::healthCheck`
@@ -274,9 +275,10 @@ solely by the separate external-pad policy, not by these two settings.
       is never an error — Nextcloud may be unable to reach the public URL by
       design (split-horizon DNS, egress firewall), so an unreachable base URL
       warns and says so.
-    - `protected_pads` — the session cookie domain verdict, or `null` when
-      protected pads are switched off. A failing verdict does **not** fail the
-      connection test: the API can be reachable while protected pads cannot
+    - `protected_pads` — the same verdict as the `protected_pads` line in
+      `checks`, but machine-readable for support and other clients, or `null`
+      when protected pads are switched off. A failing verdict does **not** fail
+      the connection test: the API can be reachable while protected pads cannot
       work. Fields: `ok`, `status` (`ok|warning|unknown`), `reason`,
       `cookie_domain`, `cookie_domain_source` (`configured|derived|host_only`),
       `nextcloud_host`, `etherpad_host`, `message`.

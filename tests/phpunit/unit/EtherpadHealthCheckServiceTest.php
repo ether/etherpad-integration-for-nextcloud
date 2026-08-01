@@ -23,15 +23,16 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 	/**
 	 * The verdict follows the submitted form, not the stored configuration: a
 	 * toggle the admin just flipped has to count before it is saved. Both
-	 * directions matter, so the pair below covers on and off.
+	 * directions matter, so the pair below covers on and off, each across the
+	 * two surfaces it reaches — the decision in the payload and the line the
+	 * settings page renders.
 	 */
 	public function testCheckReportsACookieProblemWhenProtectedPadsAreSubmittedAsEnabled(): void {
 		$etherpad = $this->createMock(EtherpadClient::class);
 		$etherpad->method('healthCheck')->willReturn(['pad_count' => 3]);
 
-		// Nextcloud and Etherpad on unrelated domains: the API answers, but no
-		// session cookie can span both hosts.
-		// No cookie domain saved, so the policy derives one — and cannot.
+		// Unrelated domains and no saved cookie domain: the API answers, but
+		// the policy cannot derive one that spans both hosts.
 		$result = $this->buildService($etherpad, $this->pendingCounts(0), 'https://cloud.example.test')
 			->check($this->settings('https://pad.unrelated.test', true, ''));
 
@@ -41,6 +42,11 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 		$this->assertSame(CookieDomainDecision::REASON_NO_COMMON_PARENT, $result->cookieDomain->reason);
 		$this->assertSame('cloud.example.test', $result->cookieDomain->nextcloudHost);
 		$this->assertSame('pad.unrelated.test', $result->cookieDomain->etherpadHost);
+
+		$line = $this->lineById($result->checks, 'protected_pads');
+		$this->assertSame(HealthCheckItem::STATUS_WARNING, $line->status);
+		$this->assertStringContainsString('cloud.example.test', $line->detail);
+		$this->assertStringContainsString('pad.unrelated.test', $line->detail);
 	}
 
 	public function testCheckSkipsTheCookieVerdictWhenProtectedPadsAreSubmittedAsDisabled(): void {
@@ -51,6 +57,9 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 			->check($this->settings('https://pad.unrelated.test', false));
 
 		$this->assertNull($result->cookieDomain);
+		// Skipped, not failed: an instance offering only public pads has
+		// nothing to fix here.
+		$this->assertSame(HealthCheckItem::STATUS_SKIPPED, $this->lineById($result->checks, 'protected_pads')->status);
 	}
 
 	public function testCheckReportsEachPartOnItsOwnLine(): void {
@@ -66,29 +75,6 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 		$this->assertSame(['api', 'api_key', 'base_url', 'protected_pads'], array_keys($byId));
 		$this->assertSame(HealthCheckItem::STATUS_OK, $byId['api']->status);
 		$this->assertSame(HealthCheckItem::STATUS_OK, $byId['protected_pads']->status);
-	}
-
-	public function testProtectedPadsLineCarriesTheWarningTextWhenItCannotWork(): void {
-		$etherpad = $this->createMock(EtherpadClient::class);
-		$etherpad->method('healthCheck')->willReturn(['pad_count' => 1]);
-
-		$result = $this->buildService($etherpad, $this->pendingCounts(0))
-			->check($this->settings('https://pad.unrelated.test', true, ''));
-
-		$line = $this->lineById($result->checks, 'protected_pads');
-		$this->assertSame(HealthCheckItem::STATUS_WARNING, $line->status);
-		$this->assertStringContainsString('cloud.example.test', $line->detail);
-		$this->assertStringContainsString('pad.unrelated.test', $line->detail);
-	}
-
-	public function testProtectedPadsLineIsSkippedRatherThanFailedWhenSwitchedOff(): void {
-		$etherpad = $this->createMock(EtherpadClient::class);
-		$etherpad->method('healthCheck')->willReturn(['pad_count' => 1]);
-
-		$result = $this->buildService($etherpad, $this->pendingCounts(0))
-			->check($this->settings('https://pad.unrelated.test', false));
-
-		$this->assertSame(HealthCheckItem::STATUS_SKIPPED, $this->lineById($result->checks, 'protected_pads')->status);
 	}
 
 	/** @param list<HealthCheckItem> $checks */

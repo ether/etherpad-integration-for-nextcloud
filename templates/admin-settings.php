@@ -82,7 +82,7 @@
 				placeholder=".example.org"
 				value="<?php p((string)$_['etherpad_cookie_domain']); ?>">
 			<span class="ep-field-error" data-field-error="etherpad_cookie_domain" aria-live="polite"></span>
-			<span class="ep-check-result" data-check-result="etherpad_cookie_domain" role="status"></span>
+			<span class="ep-check-result<?php if ((string)$_['cookie_domain_warning'] !== ''): ?> ep-check-warning<?php endif; ?>" data-check-result="etherpad_cookie_domain" role="status"><?php p((string)$_['cookie_domain_warning']); ?></span>
 		</p>
 		<p class="settings-hint ep-field-hint" id="epnc-hint-cookie-domain"><?php p((string)$_['l10n']['etherpad_cookie_domain_hint']); ?></p>
 
@@ -91,10 +91,6 @@
 		</div>
 		<p class="settings-hint ep-field-hint"><?php p((string)$_['l10n']['section_connection_hint']); ?></p>
 		<p id="etherpad-nextcloud-connection-status" class="ep-status" aria-live="polite"></p>
-		<ul id="etherpad-nextcloud-connection-checks" class="ep-check-list"></ul>
-		<?php /* Always rendered so the health check can fill it in later; empty
-			collapses via `:empty`, and no whitespace inside the tag. */ ?>
-		<p class="ep-cookie-warning" id="epnc-cookie-warning" role="status"><?php p((string)$_['cookie_domain_warning']); ?></p>
 
 		<h3 class="ep-section-heading"><?php p((string)$_['l10n']['section_pad_types']); ?></h3>
 

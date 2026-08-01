@@ -104,7 +104,7 @@ class EtherpadHealthCheckService {
 				'etherpad_api_key',
 			),
 			$this->baseUrlCheck->check($settings->etherpadHost, $settings->etherpadApiHost),
-			$this->protectedPadsCheck($cookieDomain),
+			$this->cookieDomainMessages->asCheckItem($cookieDomain),
 		];
 
 		return new HealthCheckResult(
@@ -174,21 +174,6 @@ class EtherpadHealthCheckService {
 		}
 
 		return '';
-	}
-
-	private function protectedPadsCheck(?CookieDomainDecision $decision): HealthCheckItem {
-		$label = $this->l10n->t('Protected pads: session cookie');
-		$field = 'etherpad_cookie_domain';
-		if ($decision === null) {
-			return new HealthCheckItem('protected_pads', HealthCheckItem::STATUS_SKIPPED, $label, $this->l10n->t('Protected pads are switched off.'), $field);
-		}
-		if ($decision->isOk()) {
-			$detail = $decision->effectiveDomain !== ''
-				? $decision->effectiveDomain
-				: $this->l10n->t('Host-only cookie, Nextcloud and Etherpad share a host.');
-			return new HealthCheckItem('protected_pads', HealthCheckItem::STATUS_OK, $label, $detail, $field);
-		}
-		return new HealthCheckItem('protected_pads', HealthCheckItem::STATUS_WARNING, $label, $this->cookieDomainMessages->describe($decision), $field);
 	}
 
 	/** @param array<string,string> $parameters */

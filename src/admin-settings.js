@@ -23,8 +23,6 @@
 	const protectedPadsCheckbox = form ? form.querySelector('input[name="enable_protected_pads"]') : null
 	const publicPadsCheckbox = form ? form.querySelector('input[name="enable_public_pads"]') : null
 	const padTypesNoneHint = document.getElementById('pad-types-none-hint')
-	const cookieWarningNode = document.getElementById('epnc-cookie-warning')
-	const connectionChecksNode = document.getElementById('etherpad-nextcloud-connection-checks')
 	const allowlistRow = document.getElementById('external-pad-allowlist-row')
 	const allowlistHint = document.getElementById('external-pad-allowlist-hint')
 	const allowlistTextarea = document.getElementById('external-pad-allowlist')
@@ -146,15 +144,11 @@
 	}
 
 	// Each result is shown at the field it came from: a green tick where
-	// things are fine, the message itself where they are not. Anything that
-	// belongs to no single field falls back to the list under the button.
+	// things are fine, the message itself where they are not.
 	function renderConnectionChecks(checks) {
 		for (const slot of document.querySelectorAll('[data-check-result]')) {
-			slot.replaceChildren()
+			slot.textContent = ''
 			slot.className = 'ep-check-result'
-		}
-		if (connectionChecksNode instanceof HTMLElement) {
-			connectionChecksNode.replaceChildren()
 		}
 		if (!Array.isArray(checks)) {
 			return
@@ -168,45 +162,13 @@
 			const slot = check.field
 				? document.querySelector(`[data-check-result="${CSS.escape(String(check.field))}"]`)
 				: null
-			if (slot instanceof HTMLElement) {
-				slot.className = `ep-check-result ep-check-${status}`
-				// A passing field needs no prose — the tick and the label say
-				// it. A failing one needs the reason right there.
-				slot.textContent = status === 'ok' ? check.label : (detail || check.label)
+			if (!(slot instanceof HTMLElement)) {
 				continue
 			}
-			appendCheckRow(status, check.label, detail)
-		}
-	}
-
-	function appendCheckRow(status, label, detail) {
-		if (!(connectionChecksNode instanceof HTMLElement)) {
-			return
-		}
-		const row = document.createElement('li')
-		row.className = `ep-check ep-check-${status}`
-		const labelNode = document.createElement('span')
-		labelNode.className = 'ep-check-label'
-		labelNode.textContent = label
-		row.appendChild(labelNode)
-		if (detail !== '') {
-			const detailNode = document.createElement('span')
-			detailNode.className = 'ep-check-detail'
-			detailNode.textContent = detail
-			row.appendChild(detailNode)
-		}
-		connectionChecksNode.appendChild(row)
-	}
-
-	function updateCookieWarning(protectedPads) {
-		if (!(cookieWarningNode instanceof HTMLElement)) {
-			return
-		}
-		const message = (protectedPads && protectedPads.ok === false && typeof protectedPads.message === 'string')
-			? protectedPads.message
-			: ''
-		if (cookieWarningNode.textContent !== message) {
-			cookieWarningNode.textContent = message
+			slot.className = `ep-check-result ep-check-${status}`
+			// A passing field needs no prose — the tick and the label say it.
+			// A failing one needs the reason right there.
+			slot.textContent = status === 'ok' ? check.label : (detail || check.label)
 		}
 	}
 
@@ -297,10 +259,9 @@
 		beginStatus(l10n.saving)
 		try {
 			const data = await postJson(saveUrl, getPayload())
-			// Saving invalidates the list — only a connection test produces one —
-			// so the standalone warning takes over again.
-			renderConnectionChecks([])
-			updateCookieWarning(data.protected_pads)
+			// Saving answers with the cookie verdict alone; rendering it clears
+			// the other fields' results, which the save just invalidated.
+			renderConnectionChecks(data.checks)
 			const versionSuffix = data && data.api_version ? ` api=${String(data.api_version)}` : ''
 			setStatus(`${String(data.message || l10n.saved)}${versionSuffix}`, 'success')
 		} catch (error) {
@@ -322,7 +283,6 @@
 			// The per-field results carry the target, pad count and latency, and
 			// the protected-pads verdict, so the summary stays a summary.
 			renderConnectionChecks(data.checks)
-			updateCookieWarning(null)
 			const needsAttention = Array.isArray(data.checks)
 				&& data.checks.some((check) => check && check.status === 'warning')
 			setStatus(String(data.message || l10n.healthOk), needsAttention ? 'warning' : 'success', connectionTarget)

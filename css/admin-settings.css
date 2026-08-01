@@ -106,8 +106,7 @@
 /* Result callouts share one shape — coloured rule, tinted panel — so the
    outcome reads at a glance. The colour only reinforces the wording, which
    already says whether it worked, so it never carries the meaning alone. */
-#etherpad-nextcloud-admin-settings .ep-status,
-#etherpad-nextcloud-admin-settings .ep-cookie-warning {
+#etherpad-nextcloud-admin-settings .ep-status {
 	margin: 0 0 14px;
 	padding: 8px 12px;
 	max-width: 640px;
@@ -115,8 +114,7 @@
 	color: var(--color-main-text);
 }
 
-#etherpad-nextcloud-admin-settings .ep-status:empty,
-#etherpad-nextcloud-admin-settings .ep-cookie-warning:empty {
+#etherpad-nextcloud-admin-settings .ep-status:empty {
 	display: none;
 }
 
@@ -135,10 +133,6 @@
 	background-color: var(--color-background-hover, #f5f5f5);
 }
 
-#etherpad-nextcloud-admin-settings .ep-cookie-warning {
-	border-left-color: var(--color-warning, #c98600);
-	background-color: var(--color-background-hover, #f5f5f5);
-}
 
 /* While a check runs there is no verdict yet, so no colour either. */
 #etherpad-nextcloud-admin-settings .ep-status:not(.ep-status-success):not(.ep-status-warning):not(.ep-status-error) {
@@ -165,65 +159,6 @@
 }
 
 
-/* One row per check. The coloured dot repeats what the wording already
-   says, so colour never carries the outcome on its own. */
-#etherpad-nextcloud-admin-settings .ep-check-list {
-	margin: 0 0 14px;
-	padding: 0;
-	max-width: 640px;
-	list-style: none;
-}
-
-#etherpad-nextcloud-admin-settings .ep-check-list:empty {
-	display: none;
-}
-
-#etherpad-nextcloud-admin-settings .ep-check {
-	display: flex;
-	gap: 8px;
-	align-items: baseline;
-	padding: 4px 0;
-	border-bottom: 1px solid var(--color-border);
-}
-
-#etherpad-nextcloud-admin-settings .ep-check:last-child {
-	border-bottom: none;
-}
-
-#etherpad-nextcloud-admin-settings .ep-check-label {
-	flex: 0 0 auto;
-	font-weight: 600;
-}
-
-#etherpad-nextcloud-admin-settings .ep-check-label::before {
-	content: "";
-	display: inline-block;
-	width: 8px;
-	height: 8px;
-	margin-right: 8px;
-	border-radius: 50%;
-	background-color: var(--color-text-maxcontrast);
-}
-
-#etherpad-nextcloud-admin-settings .ep-check-ok .ep-check-label::before {
-	background-color: var(--color-success, #2d7d46);
-}
-
-#etherpad-nextcloud-admin-settings .ep-check-warning .ep-check-label::before {
-	background-color: var(--color-warning, #c98600);
-}
-
-#etherpad-nextcloud-admin-settings .ep-check-detail {
-	color: var(--color-text-maxcontrast);
-	overflow-wrap: anywhere;
-}
-
-#etherpad-nextcloud-admin-settings .ep-check-skipped .ep-check-label,
-#etherpad-nextcloud-admin-settings .ep-check-skipped .ep-check-detail {
-	color: var(--color-text-maxcontrast);
-	font-weight: normal;
-}
-
 /* Verdict shown at the field it came from. A tick marks a pass, the amber
    text carries the reason for anything else — the wording says which,
    colour only reinforces it. */
@@ -240,12 +175,15 @@
 	display: block;
 }
 
+/* Only the tick is green. Nextcloud's success colour is too light to read
+   as body text, and the wording carries the outcome anyway. */
 #etherpad-nextcloud-admin-settings .ep-check-result.ep-check-ok {
-	color: var(--color-success, #2d7d46);
+	color: var(--color-text-maxcontrast);
 }
 
 #etherpad-nextcloud-admin-settings .ep-check-result.ep-check-ok::before {
 	content: "\2713\00a0";
+	color: var(--color-success, #2d7d46);
 	font-weight: bold;
 }
 

@@ -14,6 +14,7 @@ use OCA\EtherpadNextcloud\Service\AdminSettingsValidator;
 use OCA\EtherpadNextcloud\Service\AdminTestFaultService;
 use OCA\EtherpadNextcloud\Service\ConsistencyCheckService;
 use OCA\EtherpadNextcloud\Service\CookieDomainDecision;
+use OCA\EtherpadNextcloud\Service\HealthCheckItem;
 use OCA\EtherpadNextcloud\Service\CookieDomainMessages;
 use OCA\EtherpadNextcloud\Service\CookieDomainPolicy;
 use OCA\EtherpadNextcloud\Service\EtherpadHealthCheckService;
@@ -68,14 +69,14 @@ class AdminControllerTest extends TestCase {
 		$this->assertTrue((bool)$response->getData()['ok']);
 		$this->assertSame('1.3.0', $response->getData()['api_version']);
 		$this->assertTrue((bool)$response->getData()['has_api_key']);
-		// Recomputed from the saved values so the page can refresh its warning.
-		$protectedPads = $response->getData()['protected_pads'];
-		$this->assertTrue($protectedPads['ok']);
-		$this->assertSame(CookieDomainDecision::STATUS_OK, $protectedPads['status']);
-		$this->assertSame(CookieDomainDecision::REASON_CONFIGURED, $protectedPads['reason']);
-		$this->assertSame('.example.test', $protectedPads['cookie_domain']);
-		$this->assertSame(CookieDomainDecision::SOURCE_CONFIGURED, $protectedPads['cookie_domain_source']);
-		$this->assertSame('', $protectedPads['message']);
+		// Recomputed from the saved values, in the connection test's shape, so
+		// the page refreshes the verdict at the cookie domain field.
+		$checks = $response->getData()['checks'];
+		$this->assertCount(1, $checks);
+		$this->assertSame('protected_pads', $checks[0]['id']);
+		$this->assertSame(HealthCheckItem::STATUS_OK, $checks[0]['status']);
+		$this->assertSame('etherpad_cookie_domain', $checks[0]['field']);
+		$this->assertSame('.example.test', $checks[0]['detail']);
 	}
 
 	public function testHealthCheckReturnsApiAndPendingDeleteMetrics(): void {

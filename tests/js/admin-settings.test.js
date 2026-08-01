@@ -38,8 +38,6 @@ const setupAdminDom = () => {
 				<button type="button" id="etherpad-nextcloud-consistency-check">Check</button>
 				<p id="etherpad-nextcloud-connection-status" class="ep-status"></p>
 				<p id="etherpad-nextcloud-diagnostics-status" class="ep-status"></p>
-				<p id="epnc-cookie-warning"></p>
-				<ul id="etherpad-nextcloud-connection-checks"></ul>
 			</form>
 		</div>
 	`
@@ -166,9 +164,7 @@ describe('admin settings status areas', () => {
 })
 
 describe('protected pads cookie warning', () => {
-	const warning = () => document.getElementById('epnc-cookie-warning')
-	const problem = (message) => ({ ok: false, status: 'warning', reason: 'no_common_parent', message })
-	const checkList = () => document.getElementById('etherpad-nextcloud-connection-checks')
+	const cookieSlot = () => document.querySelector('[data-check-result="etherpad_cookie_domain"]')
 
 	beforeEach(() => {
 		vi.resetModules()
@@ -202,8 +198,6 @@ describe('protected pads cookie warning', () => {
 		expect(base.textContent).toBe('Etherpad base URL reachable')
 		expect(cookie.classList.contains('ep-check-warning')).toBe(true)
 		expect(cookie.textContent).toBe('Hosts do not share a parent domain.')
-		// Nothing was left over for the fallback list.
-		expect(checkList().querySelectorAll('.ep-check')).toHaveLength(0)
 	})
 
 	it('clears field results before showing a new run', async () => {
@@ -223,45 +217,23 @@ describe('protected pads cookie warning', () => {
 		expect(cookie.classList.contains('ep-check-ok')).toBe(true)
 	})
 
-	it('hands the warning to the check list after a connection test', async () => {
-		warning().textContent = 'Stale warning from page load.'
-		vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(okResponse({
-			message: 'Connection ok.',
-			protected_pads: problem('Hosts do not share a parent domain.'),
-			checks: [
-				{ id: 'api', status: 'ok', label: 'Etherpad API reachable', detail: 'http://localhost:9001/api/1.3.0' },
-				{ id: 'protected_pads', status: 'warning', label: 'Protected pads: session cookie', detail: 'Hosts do not share a parent domain.' },
-			],
-		}))))
-		await import(MODULE)
-
-		document.getElementById('etherpad-nextcloud-health-check').click()
-		await flush()
-
-		const rows = [...checkList().querySelectorAll('.ep-check')]
-		expect(rows).toHaveLength(2)
-		expect(rows[1].classList.contains('ep-check-warning')).toBe(true)
-		expect(rows[1].textContent).toContain('Hosts do not share a parent domain.')
-		// The list already says it; repeating it above would read as two problems.
-		expect(warning().textContent).toBe('')
-	})
-
-	it('drops the stale check list when settings are saved', async () => {
-		vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(okResponse({
-			message: 'Connection ok.',
-			checks: [{ id: 'api', status: 'ok', label: 'Etherpad API reachable', detail: '' }],
-		}))))
+	it('drops stale per-field results when settings are saved', async () => {
+		// The save answers with the cookie verdict only, so results from the
+		// earlier connection test must not linger at the other fields.
+		vi.stubGlobal('fetch', vi.fn((url) => Promise.resolve(okResponse(url === '/health'
+			? { message: 'All checks passed.', checks: [{ id: 'base_url', status: 'ok', label: 'Etherpad base URL reachable', detail: '', field: 'etherpad_host' }] }
+			: { message: 'Saved.', checks: [{ id: 'protected_pads', status: 'ok', label: 'Protected pads: session cookie', detail: '.example.org', field: 'etherpad_cookie_domain' }] }))))
 		await import(MODULE)
 		document.getElementById('etherpad-nextcloud-health-check').click()
 		await flush()
-		expect(checkList().querySelectorAll('.ep-check')).toHaveLength(1)
+		expect(document.querySelector('[data-check-result="etherpad_host"]').textContent).not.toBe('')
 
 		// Saving does not re-run the checks, so keeping them would show a
 		// verdict about values that no longer apply.
 		document.getElementById('etherpad-nextcloud-admin-form').requestSubmit()
 		await flush()
 
-		expect(checkList().querySelectorAll('.ep-check')).toHaveLength(0)
+		expect(document.querySelector('[data-check-result="etherpad_host"]').textContent).toBe('')
 	})
 
 	it('marks the summary as a warning when any check needs attention', async () => {
@@ -299,45 +271,53 @@ describe('protected pads cookie warning', () => {
 		expect(status.classList.contains('ep-status-warning')).toBe(false)
 	})
 
-	it('refreshes the warning when settings are saved', async () => {
-		warning().textContent = 'Hosts do not share a parent domain.'
+	it('refreshes the verdict when settings are saved', async () => {
+		cookieSlot().textContent = 'Hosts do not share a parent domain.'
+		cookieSlot().className = 'ep-check-result ep-check-warning'
 		// The save fixed the domain, so the stale warning has to go without a
 		// reload or a separate connection test.
 		vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(okResponse({
 			message: 'Saved.',
-			protected_pads: { ok: true, status: 'ok', reason: 'common_parent', message: '' },
+			checks: [{ id: 'protected_pads', status: 'ok', label: 'Protected pads: session cookie', detail: '.example.org', field: 'etherpad_cookie_domain' }],
 		}))))
 		await import(MODULE)
 
 		document.getElementById('etherpad-nextcloud-admin-form').requestSubmit()
 		await flush()
 
-		expect(warning().textContent).toBe('')
+		expect(cookieSlot().classList.contains('ep-check-warning')).toBe(false)
+		expect(cookieSlot().textContent).toBe('Protected pads: session cookie')
 	})
 
 	it('raises a new warning on save when the domain was broken', async () => {
 		vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(okResponse({
 			message: 'Saved.',
-			protected_pads: problem('Hosts do not share a parent domain.'),
+			checks: [{ id: 'protected_pads', status: 'warning', label: 'Protected pads: session cookie', detail: 'Hosts do not share a parent domain.', field: 'etherpad_cookie_domain' }],
 		}))))
 		await import(MODULE)
 
 		document.getElementById('etherpad-nextcloud-admin-form').requestSubmit()
 		await flush()
 
-		expect(warning().textContent).toBe('Hosts do not share a parent domain.')
+		expect(cookieSlot().textContent).toBe('Hosts do not share a parent domain.')
 	})
 
-	it('clears the warning when protected pads are switched off', async () => {
-		warning().textContent = 'Hosts do not share a parent domain.'
-		// null means the check did not run, not that a problem persists.
-		vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(okResponse({ message: 'Saved.', protected_pads: null }))))
+	it('marks the verdict as skipped when protected pads are switched off', async () => {
+		cookieSlot().textContent = 'Hosts do not share a parent domain.'
+		cookieSlot().className = 'ep-check-result ep-check-warning'
+		// Skipped, not a problem: there is nothing to fix on an instance that
+		// only offers public pads.
+		vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(okResponse({
+			message: 'Saved.',
+			checks: [{ id: 'protected_pads', status: 'skipped', label: 'Protected pads: session cookie', detail: 'Protected pads are switched off.', field: 'etherpad_cookie_domain' }],
+		}))))
 		await import(MODULE)
 
 		document.getElementById('etherpad-nextcloud-admin-form').requestSubmit()
 		await flush()
 
-		expect(warning().textContent).toBe('')
+		expect(cookieSlot().classList.contains('ep-check-skipped')).toBe(true)
+		expect(cookieSlot().classList.contains('ep-check-warning')).toBe(false)
 	})
 })
 

@@ -69,6 +69,8 @@ class AdminSettings implements ISettings {
 		$cookieWarning = ($protectedPadsEnabled && $decision->status === CookieDomainDecision::STATUS_WARNING)
 			? $this->cookieDomainMessages->describe($decision)
 			: '';
+		// Rendered into the same slot the connection test writes to, so the
+		// page has one place per field for a verdict rather than two.
 
 		return new TemplateResponse(Application::APP_ID, 'admin-settings', [
 			'cookie_domain_warning' => $cookieWarning,
