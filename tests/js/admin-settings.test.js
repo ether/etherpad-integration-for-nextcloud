@@ -34,6 +34,7 @@ const setupAdminDom = () => {
 				<p id="etherpad-nextcloud-admin-status" class="ep-status"></p>
 				<button type="button" id="etherpad-nextcloud-health-check">Test</button>
 				<button type="button" id="etherpad-nextcloud-consistency-check">Check</button>
+				<p id="etherpad-nextcloud-connection-status" class="ep-status"></p>
 				<p id="etherpad-nextcloud-diagnostics-status" class="ep-status"></p>
 				<p id="epnc-cookie-warning"></p>
 			</form>
@@ -43,6 +44,7 @@ const setupAdminDom = () => {
 
 const saveStatus = () => document.getElementById('etherpad-nextcloud-admin-status')
 const diagnosticsStatus = () => document.getElementById('etherpad-nextcloud-diagnostics-status')
+const connectionStatus = () => document.getElementById('etherpad-nextcloud-connection-status')
 
 /** The client only treats a body carrying `ok: true` as success. */
 const okResponse = (body) => ({
@@ -90,10 +92,11 @@ describe('admin settings status areas', () => {
 		document.getElementById('etherpad-nextcloud-health-check').click()
 		await flush()
 
-		expect(diagnosticsStatus().textContent).toContain('Connection ok.')
+		expect(connectionStatus().textContent).toContain('Connection ok.')
 		// Success, not the error path.
-		expect(diagnosticsStatus().classList.contains('ep-status-success')).toBe(true)
+		expect(connectionStatus().classList.contains('ep-status-success')).toBe(true)
 		expect(saveStatus().textContent).toBe('')
+		expect(diagnosticsStatus().textContent).toBe('')
 	})
 
 	it('keeps a diagnostics result when a later save response arrives', async () => {
@@ -113,8 +116,8 @@ describe('admin settings status areas', () => {
 		save.respond({ message: 'Saved.' })
 		await flush()
 
-		expect(diagnosticsStatus().textContent).toContain('Connection ok.')
-		expect(diagnosticsStatus().classList.contains('ep-status-success')).toBe(true)
+		expect(connectionStatus().textContent).toContain('Connection ok.')
+		expect(connectionStatus().classList.contains('ep-status-success')).toBe(true)
 		expect(saveStatus().textContent).toContain('Saved.')
 		expect(saveStatus().classList.contains('ep-status-success')).toBe(true)
 	})
@@ -125,16 +128,29 @@ describe('admin settings status areas', () => {
 
 		document.getElementById('etherpad-nextcloud-health-check').click()
 		await flush()
-		expect(diagnosticsStatus().textContent).toContain('Connection ok.')
+		expect(connectionStatus().textContent).toContain('Connection ok.')
 
 		document.getElementById('etherpad-nextcloud-admin-form').requestSubmit()
 		await flush()
 
-		expect(diagnosticsStatus().textContent).toBe('')
-		expect(diagnosticsStatus().classList.contains('ep-status-success')).toBe(false)
+		expect(connectionStatus().textContent).toBe('')
+		expect(connectionStatus().classList.contains('ep-status-success')).toBe(false)
 	})
 
-	it('falls back to the save area when the diagnostics area is missing', async () => {
+	it('falls back to the diagnostics area when the connection area is missing', async () => {
+		connectionStatus().remove()
+		vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(okResponse({ message: 'Connection ok.' }))))
+		await import(MODULE)
+
+		document.getElementById('etherpad-nextcloud-health-check').click()
+		await flush()
+
+		expect(diagnosticsStatus().textContent).toContain('Connection ok.')
+		expect(diagnosticsStatus().classList.contains('ep-status-success')).toBe(true)
+	})
+
+	it('falls back all the way to the save area when neither exists', async () => {
+		connectionStatus().remove()
 		diagnosticsStatus().remove()
 		vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(okResponse({ message: 'Connection ok.' }))))
 		await import(MODULE)
@@ -143,7 +159,6 @@ describe('admin settings status areas', () => {
 		await flush()
 
 		expect(saveStatus().textContent).toContain('Connection ok.')
-		expect(saveStatus().classList.contains('ep-status-success')).toBe(true)
 	})
 })
 

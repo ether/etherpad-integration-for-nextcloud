@@ -5,11 +5,15 @@
 	const form = document.getElementById('etherpad-nextcloud-admin-form')
 	const statusNode = document.getElementById('etherpad-nextcloud-admin-status')
 	const diagnosticsStatusNode = document.getElementById('etherpad-nextcloud-diagnostics-status')
-	// Only the save area is required at startup; older markup without the
-	// diagnostics area still has to show its feedback somewhere.
+	const connectionStatusNode = document.getElementById('etherpad-nextcloud-connection-status')
+	// Only the save area is required at startup; older markup without these
+	// areas still has to show its feedback somewhere.
 	const diagnosticsTarget = diagnosticsStatusNode instanceof HTMLElement
 		? diagnosticsStatusNode
 		: statusNode
+	const connectionTarget = connectionStatusNode instanceof HTMLElement
+		? connectionStatusNode
+		: diagnosticsTarget
 	const healthButton = document.getElementById('etherpad-nextcloud-health-check')
 	const consistencyButton = document.getElementById('etherpad-nextcloud-consistency-check')
 	const retryPendingButton = document.getElementById('etherpad-nextcloud-retry-pending')
@@ -133,7 +137,7 @@
 	// Starting one does clear the other: its result predates this action and
 	// would be read as belonging to it.
 	function beginStatus(message, node = statusNode) {
-		for (const other of [statusNode, diagnosticsTarget]) {
+		for (const other of [statusNode, diagnosticsTarget, connectionTarget]) {
 			if (other instanceof HTMLElement && other !== node) {
 				other.textContent = ''
 				other.classList.remove('ep-status-success', 'ep-status-error')
@@ -256,7 +260,7 @@
 
 	healthButton.addEventListener('click', async () => {
 		clearFieldErrors()
-		beginStatus(l10n.checking, diagnosticsTarget)
+		beginStatus(l10n.checking, connectionTarget)
 		try {
 			const data = await postJson(healthUrl, getPayload())
 			const details = []
@@ -280,12 +284,12 @@
 			updateCookieWarning(data.protected_pads)
 			const suffix = details.length > 0 ? ` ${details.join(' | ')}` : ''
 			const message = `${String(data.message || l10n.healthOk)}${suffix}`
-			setStatus(message, 'success', diagnosticsTarget)
+			setStatus(message, 'success', connectionTarget)
 		} catch (error) {
 			if (error && typeof error.field === 'string' && error.field !== '') {
 				showFieldError(error.field, error.message || l10n.healthFailed)
 			}
-			setStatus(error instanceof Error ? error.message : l10n.healthFailed, 'error', diagnosticsTarget)
+			setStatus(error instanceof Error ? error.message : l10n.healthFailed, 'error', connectionTarget)
 		}
 	})
 

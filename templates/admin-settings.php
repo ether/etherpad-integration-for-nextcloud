@@ -85,6 +85,12 @@
 			collapses via `:empty`, and no whitespace inside the tag. */ ?>
 		<p class="ep-cookie-warning" id="epnc-cookie-warning" role="status"><?php p((string)$_['cookie_domain_warning']); ?></p>
 
+		<div class="etherpad-nextcloud-admin-actions">
+			<button type="button" id="etherpad-nextcloud-health-check"><?php p((string)$_['l10n']['health_button']); ?></button>
+		</div>
+		<p class="settings-hint ep-field-hint"><?php p((string)$_['l10n']['section_connection_hint']); ?></p>
+		<p id="etherpad-nextcloud-connection-status" class="ep-status" aria-live="polite"></p>
+
 		<h3 class="ep-section-heading"><?php p((string)$_['l10n']['section_pad_types']); ?></h3>
 
 		<p id="enable-protected-pads-row" class="ep-checkbox-row">
@@ -186,19 +192,18 @@
 		<div class="etherpad-nextcloud-admin-actions">
 			<button type="submit" class="primary"><?php p((string)$_['l10n']['save_button']); ?></button>
 		</div>
-		<p id="etherpad-nextcloud-admin-status" class="settings-hint ep-status" aria-live="polite"></p>
+		<p id="etherpad-nextcloud-admin-status" class="ep-status" aria-live="polite"></p>
 
 		<h3 class="ep-section-heading"><?php p((string)$_['l10n']['section_diagnostics']); ?></h3>
-		<p class="settings-hint ep-field-hint"><?php p((string)$_['l10n']['section_diagnostics_hint']); ?></p>
+		<p class="settings-hint ep-field-hint"><?php p((string)$_['l10n']['section_consistency_hint']); ?></p>
 
 		<div class="etherpad-nextcloud-admin-actions">
-			<button type="button" id="etherpad-nextcloud-health-check"><?php p((string)$_['l10n']['health_button']); ?></button>
 			<button type="button" id="etherpad-nextcloud-consistency-check"><?php p((string)$_['l10n']['consistency_button']); ?></button>
 		</div>
 		<div id="etherpad-nextcloud-pending-actions" class="etherpad-nextcloud-admin-actions" style="display:none;">
 			<button type="button" id="etherpad-nextcloud-retry-pending"><?php p((string)$_['l10n']['retry_pending_button']); ?></button>
 			<span id="etherpad-nextcloud-pending-count" class="settings-hint"></span>
 		</div>
-		<p id="etherpad-nextcloud-diagnostics-status" class="settings-hint ep-status" aria-live="polite"></p>
+		<p id="etherpad-nextcloud-diagnostics-status" class="ep-status" aria-live="polite"></p>
 	</form>
 </div>
