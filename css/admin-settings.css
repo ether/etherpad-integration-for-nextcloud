@@ -125,6 +125,11 @@
 	background-color: var(--color-background-hover, #f5f5f5);
 }
 
+#etherpad-nextcloud-admin-settings .ep-status-warning {
+	border-left-color: var(--color-warning, #c98600);
+	background-color: var(--color-background-hover, #f5f5f5);
+}
+
 #etherpad-nextcloud-admin-settings .ep-status-error {
 	border-left-color: var(--color-error, #c62828);
 	background-color: var(--color-background-hover, #f5f5f5);
@@ -136,7 +141,7 @@
 }
 
 /* While a check runs there is no verdict yet, so no colour either. */
-#etherpad-nextcloud-admin-settings .ep-status:not(.ep-status-success):not(.ep-status-error) {
+#etherpad-nextcloud-admin-settings .ep-status:not(.ep-status-success):not(.ep-status-warning):not(.ep-status-error) {
 	padding-left: 0;
 	border-left-color: transparent;
 	background: none;
@@ -159,3 +164,62 @@
 	box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-error, #c62828) 40%, transparent) !important;
 }
 
+
+/* One row per check. The coloured dot repeats what the wording already
+   says, so colour never carries the outcome on its own. */
+#etherpad-nextcloud-admin-settings .ep-check-list {
+	margin: 0 0 14px;
+	padding: 0;
+	max-width: 640px;
+	list-style: none;
+}
+
+#etherpad-nextcloud-admin-settings .ep-check-list:empty {
+	display: none;
+}
+
+#etherpad-nextcloud-admin-settings .ep-check {
+	display: flex;
+	gap: 8px;
+	align-items: baseline;
+	padding: 4px 0;
+	border-bottom: 1px solid var(--color-border);
+}
+
+#etherpad-nextcloud-admin-settings .ep-check:last-child {
+	border-bottom: none;
+}
+
+#etherpad-nextcloud-admin-settings .ep-check-label {
+	flex: 0 0 auto;
+	font-weight: 600;
+}
+
+#etherpad-nextcloud-admin-settings .ep-check-label::before {
+	content: "";
+	display: inline-block;
+	width: 8px;
+	height: 8px;
+	margin-right: 8px;
+	border-radius: 50%;
+	background-color: var(--color-text-maxcontrast);
+}
+
+#etherpad-nextcloud-admin-settings .ep-check-ok .ep-check-label::before {
+	background-color: var(--color-success, #2d7d46);
+}
+
+#etherpad-nextcloud-admin-settings .ep-check-warning .ep-check-label::before {
+	background-color: var(--color-warning, #c98600);
+}
+
+#etherpad-nextcloud-admin-settings .ep-check-detail {
+	color: var(--color-text-maxcontrast);
+	overflow-wrap: anywhere;
+}
+
+#etherpad-nextcloud-admin-settings .ep-check-skipped .ep-check-label,
+#etherpad-nextcloud-admin-settings .ep-check-skipped .ep-check-detail {
+	color: var(--color-text-maxcontrast);
+	font-weight: normal;
+}

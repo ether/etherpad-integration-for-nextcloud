@@ -37,6 +37,7 @@ const setupAdminDom = () => {
 				<p id="etherpad-nextcloud-connection-status" class="ep-status"></p>
 				<p id="etherpad-nextcloud-diagnostics-status" class="ep-status"></p>
 				<p id="epnc-cookie-warning"></p>
+				<ul id="etherpad-nextcloud-connection-checks"></ul>
 			</form>
 		</div>
 	`
@@ -165,6 +166,7 @@ describe('admin settings status areas', () => {
 describe('protected pads cookie warning', () => {
 	const warning = () => document.getElementById('epnc-cookie-warning')
 	const problem = (message) => ({ ok: false, status: 'warning', reason: 'no_common_parent', message })
+	const checkList = () => document.getElementById('etherpad-nextcloud-connection-checks')
 
 	beforeEach(() => {
 		vi.resetModules()
@@ -178,7 +180,48 @@ describe('protected pads cookie warning', () => {
 		vi.unstubAllGlobals()
 	})
 
-	it('shows the warning reported by the connection test', async () => {
+	it('hands the warning to the check list after a connection test', async () => {
+		warning().textContent = 'Stale warning from page load.'
+		vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(okResponse({
+			message: 'Connection ok.',
+			protected_pads: problem('Hosts do not share a parent domain.'),
+			checks: [
+				{ id: 'api', status: 'ok', label: 'Etherpad API reachable', detail: 'http://localhost:9001/api/1.3.0' },
+				{ id: 'protected_pads', status: 'warning', label: 'Protected pads: session cookie', detail: 'Hosts do not share a parent domain.' },
+			],
+		}))))
+		await import(MODULE)
+
+		document.getElementById('etherpad-nextcloud-health-check').click()
+		await flush()
+
+		const rows = [...checkList().querySelectorAll('.ep-check')]
+		expect(rows).toHaveLength(2)
+		expect(rows[1].classList.contains('ep-check-warning')).toBe(true)
+		expect(rows[1].textContent).toContain('Hosts do not share a parent domain.')
+		// The list already says it; repeating it above would read as two problems.
+		expect(warning().textContent).toBe('')
+	})
+
+	it('drops the stale check list when settings are saved', async () => {
+		vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(okResponse({
+			message: 'Connection ok.',
+			checks: [{ id: 'api', status: 'ok', label: 'Etherpad API reachable', detail: '' }],
+		}))))
+		await import(MODULE)
+		document.getElementById('etherpad-nextcloud-health-check').click()
+		await flush()
+		expect(checkList().querySelectorAll('.ep-check')).toHaveLength(1)
+
+		// Saving does not re-run the checks, so keeping them would show a
+		// verdict about values that no longer apply.
+		document.getElementById('etherpad-nextcloud-admin-form').requestSubmit()
+		await flush()
+
+		expect(checkList().querySelectorAll('.ep-check')).toHaveLength(0)
+	})
+
+	it('marks the connection result as a warning when protected pads are broken', async () => {
 		vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(okResponse({
 			message: 'Connection ok.',
 			protected_pads: problem('Hosts do not share a parent domain.'),
@@ -188,7 +231,26 @@ describe('protected pads cookie warning', () => {
 		document.getElementById('etherpad-nextcloud-health-check').click()
 		await flush()
 
-		expect(warning().textContent).toBe('Hosts do not share a parent domain.')
+		// The API answered, so not an error — but not an unqualified pass either.
+		const status = document.getElementById('etherpad-nextcloud-connection-status')
+		expect(status.textContent).toContain('Connection ok.')
+		expect(status.classList.contains('ep-status-warning')).toBe(true)
+		expect(status.classList.contains('ep-status-success')).toBe(false)
+	})
+
+	it('keeps the connection result green when protected pads are fine', async () => {
+		vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(okResponse({
+			message: 'Connection ok.',
+			protected_pads: { ok: true, status: 'ok', reason: 'common_parent', message: '' },
+		}))))
+		await import(MODULE)
+
+		document.getElementById('etherpad-nextcloud-health-check').click()
+		await flush()
+
+		const status = document.getElementById('etherpad-nextcloud-connection-status')
+		expect(status.classList.contains('ep-status-success')).toBe(true)
+		expect(status.classList.contains('ep-status-warning')).toBe(false)
 	})
 
 	it('refreshes the warning when settings are saved', async () => {

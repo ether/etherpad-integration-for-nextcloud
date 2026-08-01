@@ -7,7 +7,10 @@ namespace OCA\EtherpadNextcloud\Tests\Unit;
 use OCA\EtherpadNextcloud\Exception\AdminHealthCheckException;
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
 use OCA\EtherpadNextcloud\Service\EtherpadClient;
+use OCA\EtherpadNextcloud\Service\BaseUrlReachabilityCheck;
 use OCA\EtherpadNextcloud\Service\CookieDomainDecision;
+use OCA\EtherpadNextcloud\Service\CookieDomainMessages;
+use OCA\EtherpadNextcloud\Service\HealthCheckItem;
 use OCA\EtherpadNextcloud\Service\CookieDomainPolicy;
 use OCA\EtherpadNextcloud\Service\EtherpadHealthCheckService;
 use OCA\EtherpadNextcloud\Service\PendingDeleteRetryService;
@@ -50,6 +53,54 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 		$this->assertNull($result->cookieDomain);
 	}
 
+	public function testCheckReportsEachPartOnItsOwnLine(): void {
+		$etherpad = $this->createMock(EtherpadClient::class);
+		$etherpad->method('healthCheck')->willReturn(['pad_count' => 1]);
+
+		$result = $this->buildService($etherpad, $this->pendingCounts(0))->check($this->settings());
+
+		$byId = [];
+		foreach ($result->checks as $item) {
+			$byId[$item->id] = $item;
+		}
+		$this->assertSame(['api', 'api_key', 'base_url', 'protected_pads'], array_keys($byId));
+		$this->assertSame(HealthCheckItem::STATUS_OK, $byId['api']->status);
+		$this->assertSame(HealthCheckItem::STATUS_OK, $byId['protected_pads']->status);
+	}
+
+	public function testProtectedPadsLineCarriesTheWarningTextWhenItCannotWork(): void {
+		$etherpad = $this->createMock(EtherpadClient::class);
+		$etherpad->method('healthCheck')->willReturn(['pad_count' => 1]);
+
+		$result = $this->buildService($etherpad, $this->pendingCounts(0))
+			->check($this->settings('https://pad.unrelated.test', true, ''));
+
+		$line = $this->lineById($result->checks, 'protected_pads');
+		$this->assertSame(HealthCheckItem::STATUS_WARNING, $line->status);
+		$this->assertStringContainsString('cloud.example.test', $line->detail);
+		$this->assertStringContainsString('pad.unrelated.test', $line->detail);
+	}
+
+	public function testProtectedPadsLineIsSkippedRatherThanFailedWhenSwitchedOff(): void {
+		$etherpad = $this->createMock(EtherpadClient::class);
+		$etherpad->method('healthCheck')->willReturn(['pad_count' => 1]);
+
+		$result = $this->buildService($etherpad, $this->pendingCounts(0))
+			->check($this->settings('https://pad.unrelated.test', false));
+
+		$this->assertSame(HealthCheckItem::STATUS_SKIPPED, $this->lineById($result->checks, 'protected_pads')->status);
+	}
+
+	/** @param list<HealthCheckItem> $checks */
+	private function lineById(array $checks, string $id): HealthCheckItem {
+		foreach ($checks as $item) {
+			if ($item->id === $id) {
+				return $item;
+			}
+		}
+		$this->fail('No check line with id ' . $id);
+	}
+
 	private function buildService(
 		EtherpadClient $etherpad,
 		PendingDeleteRetryService $pending,
@@ -62,8 +113,20 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 			$pending,
 			$this->buildL10n(),
 			new CookieDomainPolicy(),
+			new CookieDomainMessages($this->buildL10n()),
+			$this->baseUrlCheck(),
 			$urlGenerator,
 		);
+	}
+
+	/**
+	 * The base URL row does real I/O, so every case here stubs it. Its own
+	 * behaviour is covered in BaseUrlReachabilityCheckTest.
+	 */
+	private function baseUrlCheck(string $status = HealthCheckItem::STATUS_OK): BaseUrlReachabilityCheck {
+		$check = $this->createMock(BaseUrlReachabilityCheck::class);
+		$check->method('check')->willReturn(new HealthCheckItem('base_url', $status, 'Etherpad base URL reachable'));
+		return $check;
 	}
 
 	public function testCheckReturnsHealthCheckResult(): void {
@@ -104,6 +167,8 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 			$this->pendingCounts(0),
 			$this->buildL10n(),
 			new CookieDomainPolicy(),
+			new CookieDomainMessages($this->buildL10n()),
+			$this->baseUrlCheck(),
 			$urlGenerator,
 			$ticks,
 		) extends EtherpadHealthCheckService {
@@ -113,10 +178,12 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 				PendingDeleteRetryService $pendingDeleteRetryService,
 				IL10N $l10n,
 				CookieDomainPolicy $cookieDomainPolicy,
+				CookieDomainMessages $cookieDomainMessages,
+				BaseUrlReachabilityCheck $baseUrlCheck,
 				IURLGenerator $urlGenerator,
 				private array $ticks,
 			) {
-				parent::__construct($etherpadClient, $pendingDeleteRetryService, $l10n, $cookieDomainPolicy, $urlGenerator);
+				parent::__construct($etherpadClient, $pendingDeleteRetryService, $l10n, $cookieDomainPolicy, $cookieDomainMessages, $baseUrlCheck, $urlGenerator);
 			}
 
 			protected function now(): float {

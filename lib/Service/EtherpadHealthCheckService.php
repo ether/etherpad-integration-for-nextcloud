@@ -20,6 +20,8 @@ class EtherpadHealthCheckService {
 		private PendingDeleteRetryService $pendingDeleteRetryService,
 		private IL10N $l10n,
 		private CookieDomainPolicy $cookieDomainPolicy,
+		private CookieDomainMessages $cookieDomainMessages,
+		private BaseUrlReachabilityCheck $baseUrlCheck,
 		private IURLGenerator $urlGenerator,
 	) {
 	}
@@ -62,20 +64,35 @@ class EtherpadHealthCheckService {
 			);
 		}
 
-		// Reported alongside the connection result, never folded into it: the
-		// API can be perfectly reachable while protected pads still cannot
-		// work, and that must not read as a failed connection test.
-		$cookieDomain = null;
 		// The submitted settings, not the stored ones: the health check tests
 		// the form as it stands, so a toggle the admin just flipped has to
 		// count before it is saved.
-		if ($settings->enableProtectedPads) {
-			$cookieDomain = $this->cookieDomainPolicy->decide(
+		$cookieDomain = $settings->enableProtectedPads
+			? $this->cookieDomainPolicy->decide(
 				$this->urlGenerator->getBaseUrl(),
 				$settings->etherpadHost,
 				$this->cookieDomainPolicy->storedValue($settings->etherpadCookieDomain, $settings->cookieDomainConfigured),
-			);
-		}
+			)
+			: null;
+
+		// Each part gets its own line. A single verdict hid the fact that only
+		// the API host is contacted, so a typo in the base URL — which every
+		// pad link in the browser uses — still read as a clean pass.
+		$checks = [
+			new HealthCheckItem(
+				'api',
+				HealthCheckItem::STATUS_OK,
+				$this->l10n->t('Etherpad API reachable'),
+				rtrim($settings->etherpadApiHost, '/') . '/api/' . $settings->etherpadApiVersion,
+			),
+			new HealthCheckItem(
+				'api_key',
+				HealthCheckItem::STATUS_OK,
+				$this->l10n->t('API key accepted'),
+			),
+			$this->baseUrlCheck->check($settings->etherpadHost, $settings->etherpadApiHost),
+			$this->protectedPadsCheck($cookieDomain),
+		];
 
 		return new HealthCheckResult(
 			$settings->etherpadHost,
@@ -86,6 +103,7 @@ class EtherpadHealthCheckService {
 			rtrim($settings->etherpadApiHost, '/') . '/api/' . $settings->etherpadApiVersion . '/listAllPads',
 			$this->pendingDeleteRetryService->countPendingDeletes(),
 			$cookieDomain,
+			$checks,
 		);
 	}
 
@@ -143,6 +161,20 @@ class EtherpadHealthCheckService {
 		}
 
 		return '';
+	}
+
+	private function protectedPadsCheck(?CookieDomainDecision $decision): HealthCheckItem {
+		$label = $this->l10n->t('Protected pads: session cookie');
+		if ($decision === null) {
+			return new HealthCheckItem('protected_pads', HealthCheckItem::STATUS_SKIPPED, $label, $this->l10n->t('Protected pads are switched off.'));
+		}
+		if ($decision->isOk()) {
+			$detail = $decision->effectiveDomain !== ''
+				? $decision->effectiveDomain
+				: $this->l10n->t('Host-only cookie, Nextcloud and Etherpad share a host.');
+			return new HealthCheckItem('protected_pads', HealthCheckItem::STATUS_OK, $label, $detail);
+		}
+		return new HealthCheckItem('protected_pads', HealthCheckItem::STATUS_WARNING, $label, $this->cookieDomainMessages->describe($decision));
 	}
 
 	protected function now(): float {

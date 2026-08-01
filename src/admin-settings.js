@@ -24,6 +24,7 @@
 	const publicPadsCheckbox = form ? form.querySelector('input[name="enable_public_pads"]') : null
 	const padTypesNoneHint = document.getElementById('pad-types-none-hint')
 	const cookieWarningNode = document.getElementById('epnc-cookie-warning')
+	const connectionChecksNode = document.getElementById('etherpad-nextcloud-connection-checks')
 	const allowlistRow = document.getElementById('external-pad-allowlist-row')
 	const allowlistHint = document.getElementById('external-pad-allowlist-hint')
 	const allowlistTextarea = document.getElementById('external-pad-allowlist')
@@ -126,11 +127,9 @@
 			return
 		}
 		node.textContent = message
-		node.classList.remove('ep-status-success', 'ep-status-error')
-		if (state === 'success') {
-			node.classList.add('ep-status-success')
-		} else if (state === 'error') {
-			node.classList.add('ep-status-error')
+		node.classList.remove('ep-status-success', 'ep-status-warning', 'ep-status-error')
+		if (state === 'success' || state === 'warning' || state === 'error') {
+			node.classList.add(`ep-status-${state}`)
 		}
 	}
 
@@ -140,10 +139,40 @@
 		for (const other of [statusNode, diagnosticsTarget, connectionTarget]) {
 			if (other instanceof HTMLElement && other !== node) {
 				other.textContent = ''
-				other.classList.remove('ep-status-success', 'ep-status-error')
+				other.classList.remove('ep-status-success', 'ep-status-warning', 'ep-status-error')
 			}
 		}
 		setStatus(message, null, node)
+	}
+
+	// One line per check, so a failure points at the field that caused it
+	// instead of hiding inside a combined verdict.
+	function renderConnectionChecks(checks) {
+		if (!(connectionChecksNode instanceof HTMLElement)) {
+			return
+		}
+		connectionChecksNode.replaceChildren()
+		if (!Array.isArray(checks)) {
+			return
+		}
+		for (const check of checks) {
+			if (!check || typeof check.label !== 'string') {
+				continue
+			}
+			const row = document.createElement('li')
+			row.className = `ep-check ep-check-${String(check.status || 'skipped')}`
+			const label = document.createElement('span')
+			label.className = 'ep-check-label'
+			label.textContent = check.label
+			row.appendChild(label)
+			if (typeof check.detail === 'string' && check.detail !== '') {
+				const detail = document.createElement('span')
+				detail.className = 'ep-check-detail'
+				detail.textContent = check.detail
+				row.appendChild(detail)
+			}
+			connectionChecksNode.appendChild(row)
+		}
 	}
 
 	function updateCookieWarning(protectedPads) {
@@ -245,8 +274,9 @@
 		beginStatus(l10n.saving)
 		try {
 			const data = await postJson(saveUrl, getPayload())
-			// Saving changes the answer, so refresh it here too — otherwise a
-			// corrected domain keeps showing the old warning until reload.
+			// Saving invalidates the list — only a connection test produces one —
+			// so the standalone warning takes over again.
+			renderConnectionChecks([])
 			updateCookieWarning(data.protected_pads)
 			const versionSuffix = data && data.api_version ? ` api=${String(data.api_version)}` : ''
 			setStatus(`${String(data.message || l10n.saved)}${versionSuffix}`, 'success')
@@ -279,16 +309,21 @@
 			if (typeof data.pending_delete_count !== 'undefined') {
 				updatePendingDeleteUi(Number(data.pending_delete_count))
 			}
-			// A protected-pads problem is a warning beside the result, never a
-			// failed connection test: the API answered fine.
-			updateCookieWarning(data.protected_pads)
+			// The list carries the protected-pads verdict too, so the standalone
+			// warning would only duplicate it.
+			renderConnectionChecks(data.checks)
+			updateCookieWarning(null)
 			const suffix = details.length > 0 ? ` ${details.join(' | ')}` : ''
 			const message = `${String(data.message || l10n.healthOk)}${suffix}`
-			setStatus(message, 'success', connectionTarget)
+			// The API answered, so this is not a failure — but a plain green
+			// would read as an all-clear while protected pads cannot work.
+			const protectedPadsBroken = !!(data.protected_pads && data.protected_pads.ok === false)
+			setStatus(message, protectedPadsBroken ? 'warning' : 'success', connectionTarget)
 		} catch (error) {
 			if (error && typeof error.field === 'string' && error.field !== '') {
 				showFieldError(error.field, error.message || l10n.healthFailed)
 			}
+			renderConnectionChecks([])
 			setStatus(error instanceof Error ? error.message : l10n.healthFailed, 'error', connectionTarget)
 		}
 	})

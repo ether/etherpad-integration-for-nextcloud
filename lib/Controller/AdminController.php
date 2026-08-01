@@ -19,6 +19,7 @@ use OCA\EtherpadNextcloud\Service\CookieDomainDecision;
 use OCA\EtherpadNextcloud\Service\CookieDomainMessages;
 use OCA\EtherpadNextcloud\Service\CookieDomainPolicy;
 use OCA\EtherpadNextcloud\Service\EtherpadHealthCheckService;
+use OCA\EtherpadNextcloud\Service\HealthCheckItem;
 use OCA\EtherpadNextcloud\Service\HealthCheckResult;
 use OCA\EtherpadNextcloud\Service\PendingDeleteRetryService;
 use OCA\EtherpadNextcloud\Service\ValidatedAdminSettings;
@@ -109,6 +110,15 @@ class AdminController extends Controller {
 				// the API can be reachable while protected pads still cannot
 				// work. null when protected pads are switched off.
 				'protected_pads' => $this->describeCookieDomain($result->cookieDomain),
+				'checks' => array_map(
+					static fn(HealthCheckItem $item): array => [
+						'id' => $item->id,
+						'status' => $item->status,
+						'label' => $item->label,
+						'detail' => $item->detail,
+					],
+					$result->checks,
+				),
 			]),
 			[
 				'generic' => $this->l10n->t('Etherpad connection test failed.'),

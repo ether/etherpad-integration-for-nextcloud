@@ -259,6 +259,16 @@ solely by the separate external-pad policy, not by these two settings.
     - `latency_ms`
     - `target`
     - `pending_delete_count`
+    - `checks` — one entry per verified part, so a failure points at the field
+      that caused it: `api`, `api_key`, `base_url`, `protected_pads`. Each has
+      `id`, `status` (`ok|warning|skipped`), `label` and `detail`, all already
+      translated for display.
+
+      `base_url` is the only entry that performs additional I/O: a short GET
+      against the browser-facing Etherpad URL, which nothing else contacts. It
+      is never an error — Nextcloud may be unable to reach the public URL by
+      design (split-horizon DNS, egress firewall), so an unreachable base URL
+      warns and says so.
     - `protected_pads` — the session cookie domain verdict, or `null` when
       protected pads are switched off. A failing verdict does **not** fail the
       connection test: the API can be reachable while protected pads cannot
