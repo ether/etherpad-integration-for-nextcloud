@@ -25,6 +25,7 @@ class EtherpadHealthCheckService {
 	private const REASON_TLS = 'tls';
 	private const REASON_TRANSPORT = 'transport';
 	private const REASON_INVALID_JSON = 'invalid_json';
+	private const REASON_API_KEY_OTHER = 'api_key_other';
 	private const REASON_UNKNOWN = '';
 
 	public function __construct(
@@ -186,6 +187,14 @@ class EtherpadHealthCheckService {
 			return self::REASON_INVALID_JSON;
 		}
 
+		// Last resort, so it never shadows a more specific reason and its
+		// hint: anything else that mentions the key is still about the key,
+		// even when we have nothing to advise. Without this a message like
+		// "API key file could not be read" would mark no field at all.
+		if (str_contains($message, 'api key') || str_contains($message, 'apikey')) {
+			return self::REASON_API_KEY_OTHER;
+		}
+
 		return self::REASON_UNKNOWN;
 	}
 
@@ -217,7 +226,9 @@ class EtherpadHealthCheckService {
 		$apiField = $settings->etherpadApiHost === $settings->etherpadHost ? 'etherpad_host' : 'etherpad_api_host';
 
 		return match ($reason) {
-			self::REASON_API_KEY_MODE, self::REASON_API_KEY_REJECTED => 'etherpad_api_key',
+			self::REASON_API_KEY_MODE,
+			self::REASON_API_KEY_REJECTED,
+			self::REASON_API_KEY_OTHER => 'etherpad_api_key',
 			self::REASON_API_NOT_FOUND,
 			self::REASON_DNS,
 			self::REASON_CONNECTION_REFUSED,

@@ -235,6 +235,12 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 			'non-JSON',
 			'',
 		];
+		// No advice to give, but still about the key: the field must survive.
+		yield 'other api key trouble' => [
+			'Etherpad API request failed: API key file could not be read',
+			'',
+			'etherpad_api_key',
+		];
 		yield 'unrecognised' => [
 			'Etherpad API request failed: something new upstream',
 			'',

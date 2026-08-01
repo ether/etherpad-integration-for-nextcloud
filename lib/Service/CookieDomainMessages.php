@@ -77,10 +77,11 @@ class CookieDomainMessages {
 			return new HealthCheckItem('protected_pads', HealthCheckItem::STATUS_OK, $label, $detail, $field);
 		}
 		// A reason without its own wording would otherwise render as a blank
-		// warning; naming both hosts is still enough to act on.
+		// warning. Say plainly that the check came up short, so a forgotten
+		// mapping reads as one instead of hiding behind the hosts alone.
 		$detail = $this->describe($decision);
 		if (trim($detail) === '') {
-			$detail = $this->hostSentence($decision);
+			$detail = $this->hostSentence($decision) . ' ' . $this->l10n->t('The session cookie domain could not be verified.');
 		}
 		return new HealthCheckItem('protected_pads', HealthCheckItem::STATUS_WARNING, $label, $detail, $field);
 	}

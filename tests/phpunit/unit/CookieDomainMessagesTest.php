@@ -104,6 +104,8 @@ class CookieDomainMessagesTest extends TestCase {
 		$this->assertSame(HealthCheckItem::STATUS_WARNING, $line->status);
 		$this->assertStringContainsString('cloud.example.org', $line->detail);
 		$this->assertStringContainsString('pad.other.net', $line->detail);
+		// And says that it is a gap, so a forgotten mapping reads as one.
+		$this->assertStringContainsString('could not be verified', $line->detail);
 	}
 
 	public function testNoDecisionIsSkippedRatherThanEmpty(): void {
