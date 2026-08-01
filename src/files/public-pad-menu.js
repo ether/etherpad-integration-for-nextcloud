@@ -5,6 +5,7 @@
 
 import { APP_ID } from '../lib/constants.js'
 import { nextcloudMajorVersion, ocPermissionCreate } from '../lib/oc-compat.js'
+import { fileNamesFromMenuArgs } from './free-file-name.js'
 
 const ENTRY_INTERNAL_ID = APP_ID + '_public_pad'
 const ENTRY_EXTERNAL_ID = APP_ID + '_public_pad_external'
@@ -120,11 +121,13 @@ export const createPublicPadMenuRegistrar = ({
 	let legacyPluginHooked = false
 	let registrationToken = 0
 
-	const internalHandler = () => {
-		void onCreateInternalPublicPad()
+	// The menu knows what is already in the folder, so pass it on: the dialog
+	// can then offer a name that is free instead of one that collides.
+	const internalHandler = (...args) => {
+		void onCreateInternalPublicPad(fileNamesFromMenuArgs(...args))
 	}
-	const externalHandler = () => {
-		void onCreateExternalPublicPad()
+	const externalHandler = (...args) => {
+		void onCreateExternalPublicPad(fileNamesFromMenuArgs(...args))
 	}
 
 	const menuEnabled = (...args) => canCreateFromMenuContext(...args)

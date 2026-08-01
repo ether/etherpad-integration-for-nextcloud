@@ -35,6 +35,48 @@ afterEach(() => {
 	delete window._nc_newfilemenu
 })
 
+describe('folder contents reach the create flow', () => {
+	/**
+	 * The menu is the only place that knows what is already in the folder, so
+	 * the handler has to pass it on — otherwise the dialog can only offer a
+	 * name that may well be taken.
+	 */
+	it('hands the entries in the folder to both flows', async () => {
+		const register = vi.fn()
+		window.OCP.Files = { addNewFileMenuEntry: register }
+		const internalHandler = vi.fn()
+		const externalHandler = vi.fn()
+
+		const ensureRegistration = buildRegistrar({
+			onCreateInternalPublicPad: internalHandler,
+			onCreateExternalPublicPad: externalHandler,
+		})
+		ensureRegistration()
+		await flushMicrotasks()
+
+		const [internalEntry, externalEntry] = register.mock.calls.map((c) => c[0])
+		internalEntry.handler({ path: '/' }, [{ basename: 'Public pad.pad' }])
+		externalEntry.handler({ path: '/' }, [{ basename: 'Imported pad.pad' }])
+
+		expect(internalHandler).toHaveBeenCalledWith(['Public pad.pad'])
+		expect(externalHandler).toHaveBeenCalledWith(['Imported pad.pad'])
+	})
+
+	it('passes an empty list when the menu gives no contents', async () => {
+		const register = vi.fn()
+		window.OCP.Files = { addNewFileMenuEntry: register }
+		const internalHandler = vi.fn()
+
+		const ensureRegistration = buildRegistrar({ onCreateInternalPublicPad: internalHandler })
+		ensureRegistration()
+		await flushMicrotasks()
+
+		register.mock.calls[0][0].handler({ path: '/' })
+
+		expect(internalHandler).toHaveBeenCalledWith([])
+	})
+})
+
 describe('createPublicPadMenuRegistrar', () => {
 	it('does nothing when not on the Files app route', async () => {
 		const isFilesAppRoute = vi.fn(() => false)

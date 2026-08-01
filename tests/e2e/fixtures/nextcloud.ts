@@ -69,6 +69,25 @@ const openNewMenu = async (page: Page): Promise<void> => {
  * Create an internal public pad through our own "Public pad" NewFileMenu
  * entry + dialog. Returns the final file name used.
  */
+/**
+ * Create a public pad accepting whatever name the dialog offers, which is
+ * the only way to prove that Nextcloud actually hands the folder contents to
+ * our menu handler — the suggestion is derived from them.
+ */
+export const createPublicPadWithSuggestedName = async (page: Page): Promise<string> => {
+	await openNewMenu(page)
+	await page.getByRole('menuitem', { name: /public pad(?! from)|öffentliches pad(?! aus)/i }).first().click()
+	await expect(page.locator('[data-epnc-modal="internal"]')).toBeVisible()
+
+	const input = page.locator('[data-testid="epnc-filename-input"]')
+	const suggested = await input.inputValue()
+	await page.locator('[data-testid="epnc-create-submit"]').or(page.getByRole('button', { name: /create|erstellen/i })).first().click()
+	// Wait on the dialog itself, not on its title text: the created file lands
+	// in the list under the same name, so a text match would never go away.
+	await expect(page.locator('[data-epnc-modal="internal"]')).toBeHidden({ timeout: 30_000 })
+	return suggested
+}
+
 export const createPublicPad = async (page: Page, fileName: string): Promise<string> => {
 	await openNewMenu(page)
 	// Menu entry label is localized; match our pad entries by their icon

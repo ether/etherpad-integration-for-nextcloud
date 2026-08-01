@@ -28,6 +28,51 @@ const flushMicrotasks = async () => {
 	await Promise.resolve()
 }
 
+describe('free name suggestion', () => {
+	const nameField = () => document.querySelector('[data-testid="epnc-filename-input"]')
+
+	afterEach(() => {
+		document.body.innerHTML = ''
+	})
+
+	it('offers the plain name when the folder is empty', () => {
+		void openInternalPublicPadDialog({ onSubmit: async () => ({}) })
+
+		expect(nameField().value).toBe('Public pad.pad')
+	})
+
+	/** Creating several in a row used to collide on every one after the first. */
+	it('numbers past the names already in the folder', () => {
+		void openInternalPublicPadDialog({
+			onSubmit: async () => ({}),
+			takenNames: ['Public pad.pad', 'Public pad (2).pad'],
+		})
+
+		expect(nameField().value).toBe('Public pad (3).pad')
+	})
+
+	it('numbers the imported name too', () => {
+		void openExternalPublicPadDialog({
+			onSubmit: async () => ({}),
+			takenNames: ['Imported pad.pad'],
+		})
+
+		expect(nameField().value).toBe('Imported pad (2).pad')
+	})
+
+	it('keeps a name derived from the URL free as well', () => {
+		void openExternalPublicPadDialog({
+			onSubmit: async () => ({}),
+			takenNames: ['shared-notes.pad'],
+		})
+		const url = document.querySelector('[data-testid="epnc-external-url-input"]')
+		url.value = 'https://pad.example.org/p/shared-notes'
+		url.dispatchEvent(new Event('blur'))
+
+		expect(nameField().value).toBe('shared-notes (2).pad')
+	})
+})
+
 describe('openInternalPublicPadDialog', () => {
 	it('closes with the onSubmit result when submission succeeds', async () => {
 		const onSubmit = vi.fn(async (name) => ({ name, ok: true }))

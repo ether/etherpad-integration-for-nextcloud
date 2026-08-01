@@ -4,6 +4,7 @@
  */
 
 import { APP_ID } from '../lib/constants.js'
+import { suggestFreeName } from './free-file-name.js'
 
 const suggestFileNameFromPadUrl = (padUrl) => {
 	try {
@@ -81,7 +82,7 @@ const createModalScaffold = (titleText, variant = '') => {
  * @param {(name: string) => Promise<*>} options.onSubmit
  * @returns {Promise<*|null>}
  */
-export const openInternalPublicPadDialog = ({ onSubmit }) => new Promise((resolve) => {
+export const openInternalPublicPadDialog = ({ onSubmit, takenNames = [] }) => new Promise((resolve) => {
 	const { overlay, dialog, closeButton } = createModalScaffold(t(APP_ID, 'Public pad'), 'internal')
 
 	const nameLabel = document.createElement('label')
@@ -92,7 +93,9 @@ export const openInternalPublicPadDialog = ({ onSubmit }) => new Promise((resolv
 	const nameInput = document.createElement('input')
 	nameInput.type = 'text'
 	nameInput.setAttribute('data-testid', 'epnc-filename-input')
-	nameInput.value = t(APP_ID, 'Public pad') + '.pad'
+	// Offer a name that is free, so creating several in a row does not walk
+	// into the backend's duplicate rejection every time.
+	nameInput.value = suggestFreeName(t(APP_ID, 'Public pad') + '.pad', takenNames)
 	nameInput.style.width = '100%'
 	nameInput.style.boxSizing = 'border-box'
 	nameInput.style.marginBottom = '12px'
@@ -183,7 +186,7 @@ export const openInternalPublicPadDialog = ({ onSubmit }) => new Promise((resolv
  *   value, rejects to keep the dialog open and show the error message inline.
  * @returns {Promise<*|null>} the resolved onSubmit value, or null if the user cancelled.
  */
-export const openExternalPublicPadDialog = ({ onSubmit }) => new Promise((resolve) => {
+export const openExternalPublicPadDialog = ({ onSubmit, takenNames = [] }) => new Promise((resolve) => {
 	const { overlay, dialog, closeButton } = createModalScaffold(t(APP_ID, 'Public pad from URL'), 'external')
 
 	const urlLabel = document.createElement('label')
@@ -208,7 +211,7 @@ export const openExternalPublicPadDialog = ({ onSubmit }) => new Promise((resolv
 	const nameInput = document.createElement('input')
 	nameInput.type = 'text'
 	nameInput.setAttribute('data-testid', 'epnc-filename-input')
-	nameInput.value = 'Imported pad.pad'
+	nameInput.value = suggestFreeName('Imported pad.pad', takenNames)
 	nameInput.style.width = '100%'
 	nameInput.style.boxSizing = 'border-box'
 	nameInput.style.marginBottom = '12px'
@@ -242,7 +245,9 @@ export const openExternalPublicPadDialog = ({ onSubmit }) => new Promise((resolv
 	urlInput.addEventListener('blur', () => {
 		const candidate = urlInput.value.trim()
 		if (candidate.startsWith('http')) {
-			nameInput.value = suggestFileNameFromPadUrl(candidate)
+			// Two pads can share a slug, and the same URL may be imported
+			// twice, so the derived name needs the same treatment.
+			nameInput.value = suggestFreeName(suggestFileNameFromPadUrl(candidate), takenNames)
 		}
 	})
 

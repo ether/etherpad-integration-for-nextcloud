@@ -8,6 +8,7 @@ import {
 	closeViewer,
 	createExternalPublicPadFromUrl,
 	createPublicPad,
+	createPublicPadWithSuggestedName,
 	expectFileInList,
 	expectExternalSnapshotViewerMounted,
 	expectFilesRouteWithoutOpenFlag,
@@ -87,5 +88,36 @@ test.describe('external public pad create + snapshot viewer', () => {
 			+ 'needs allow_external_pads=yes and a resolvable, allowlisted Etherpad host.',
 		)
 		await expectExternalSnapshotViewerMounted(page, etherpadUrl)
+	})
+})
+
+/**
+ * Issue #180: creating several public pads in a row used to fail on the
+ * second one, because the dialog always offered the same name and the
+ * backend refuses to overwrite. The suggestion is derived from the folder
+ * contents the NewFileMenu passes to our handler, so this also verifies that
+ * Nextcloud actually hands them over — nothing unit tests can prove.
+ */
+test.describe('public pad names do not collide', () => {
+	const created: string[] = []
+
+	test.afterAll(async () => {
+		for (const name of created) {
+			await deleteViaDav(name)
+		}
+	})
+
+	test('numbers the suggestion when the name is taken', async ({ page }) => {
+		await gotoFiles(page)
+
+		created.push(await createPublicPadWithSuggestedName(page))
+		await closeViewer(page)
+		await gotoFiles(page)
+		created.push(await createPublicPadWithSuggestedName(page))
+
+		expect(created[0]).not.toBe(created[1])
+		for (const name of created) {
+			await expectFileInList(page, name)
+		}
 	})
 })

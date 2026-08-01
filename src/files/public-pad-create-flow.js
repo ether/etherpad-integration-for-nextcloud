@@ -42,8 +42,9 @@ export const createPublicPadFlows = ({ openPadInNativeViewer }) => {
 	 * create call and renders backend errors inline (including the 409
 	 * "A file with this name already exists." on the duplicate-name path).
 	 */
-	const createInternalPublicPad = async () => {
+	const createInternalPublicPad = async (takenNames = []) => {
 		await openInternalPublicPadDialog({
+			takenNames,
 			onSubmit: async (name) => {
 				const filePath = normalizeFilePath(getCurrentDir(), ensurePadExtension(name.trim()))
 				const created = await apiCreatePublicPad(filePath)
@@ -60,8 +61,9 @@ export const createPublicPadFlows = ({ openPadInNativeViewer }) => {
 	 * "A file with this name already exists." message) inline so the user can
 	 * adjust the name without losing the URL.
 	 */
-	const createExternalPublicPad = async () => {
+	const createExternalPublicPad = async (takenNames = []) => {
 		await openExternalPublicPadDialog({
+			takenNames,
 			onSubmit: async ({ padUrl, name }) => {
 				const trimmedUrl = padUrl.trim()
 				const filePath = normalizeFilePath(getCurrentDir(), ensurePadExtension(name.trim()))
