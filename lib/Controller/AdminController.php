@@ -75,10 +75,8 @@ class AdminController extends Controller {
 				'message' => $this->l10n->t('Settings saved.'),
 				'api_version' => $settings->etherpadApiVersion,
 				'has_api_key' => $this->settingsRepository->hasApiKey(),
-				// Recomputed from what was just saved, in the same shape the
-				// connection test answers in, so the page has one way to show
-				// a verdict. Any older per-field result is stale after a save
-				// and gets cleared along the way.
+				// Same shape the connection test answers in, so the page has one
+				// way to show a verdict.
 				'checks' => $this->describeChecks([$this->cookieDomainMessages->asCheckItem($this->savedCookieDecision($settings))]),
 			]),
 			[
@@ -104,9 +102,8 @@ class AdminController extends Controller {
 				$checks = [...$result->checks, $this->cookieDomainMessages->asCheckItem($result->cookieDomain)];
 				return new DataResponse([
 					'ok' => true,
-					// Not "successful": the test succeeding says nothing about the
-					// configuration, and reading it as an all-clear is exactly the
-					// confusion the per-check list is meant to remove.
+					// Not "successful": the request going through says nothing
+					// about the configuration.
 					'message' => $this->summariseChecks($checks),
 					'host' => $result->host,
 					'api_host' => $result->apiHost,
@@ -115,9 +112,7 @@ class AdminController extends Controller {
 					'latency_ms' => $result->latencyMs,
 					'target' => $result->target,
 					'pending_delete_count' => $result->pendingDeleteCount,
-					// Reported next to the connection result, not as part of it:
-					// the API can be reachable while protected pads still cannot
-					// work. null when protected pads are switched off.
+					// Machine-readable form of the protected-pads line above.
 					'protected_pads' => $this->describeCookieDomain($result->cookieDomain),
 					'checks' => $this->describeChecks($checks),
 				]);

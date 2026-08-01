@@ -114,6 +114,9 @@ class AdminControllerTest extends TestCase {
 					CookieDomainDecision::SOURCE_CONFIGURED,
 					'.example.test',
 				),
+				// The service's own lines; the controller appends the
+				// protected-pads one from the decision above.
+				[new HealthCheckItem('api', HealthCheckItem::STATUS_OK, 'Etherpad API reachable', '', 'etherpad_api_host')],
 			));
 
 		$response = $this->buildController($request, validator: $validator, repository: $repository, healthCheck: $health)->healthCheck();
