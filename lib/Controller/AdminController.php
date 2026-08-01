@@ -15,7 +15,11 @@ use OCA\EtherpadNextcloud\Service\AdminSettingsRepository;
 use OCA\EtherpadNextcloud\Service\AdminSettingsValidator;
 use OCA\EtherpadNextcloud\Service\AdminTestFaultService;
 use OCA\EtherpadNextcloud\Service\ConsistencyCheckService;
+use OCA\EtherpadNextcloud\Service\CookieDomainDecision;
+use OCA\EtherpadNextcloud\Service\CookieDomainMessages;
+use OCA\EtherpadNextcloud\Service\CookieDomainPolicy;
 use OCA\EtherpadNextcloud\Service\EtherpadHealthCheckService;
+use OCA\EtherpadNextcloud\Service\HealthCheckItem;
 use OCA\EtherpadNextcloud\Service\HealthCheckResult;
 use OCA\EtherpadNextcloud\Service\PendingDeleteRetryService;
 use OCA\EtherpadNextcloud\Service\ValidatedAdminSettings;
@@ -24,6 +28,7 @@ use OCP\AppFramework\Http\DataResponse;
 use OCP\IGroupManager;
 use OCP\IL10N;
 use OCP\IRequest;
+use OCP\IURLGenerator;
 use OCP\IUserSession;
 
 /**
@@ -47,6 +52,9 @@ class AdminController extends Controller {
 		private AdminConsistencyCheckResponseBuilder $consistencyResponseBuilder,
 		private AdminTestFaultService $testFaultService,
 		private AdminControllerErrorMapper $errors,
+		private CookieDomainPolicy $cookieDomainPolicy,
+		private CookieDomainMessages $cookieDomainMessages,
+		private IURLGenerator $urlGenerator,
 	) {
 		parent::__construct($appName, $request);
 	}
@@ -67,6 +75,9 @@ class AdminController extends Controller {
 				'message' => $this->l10n->t('Settings saved.'),
 				'api_version' => $settings->etherpadApiVersion,
 				'has_api_key' => $this->settingsRepository->hasApiKey(),
+				// Same shape the connection test answers in, so the page has one
+				// way to show a verdict.
+				'checks' => $this->describeChecks([$this->cookieDomainMessages->asCheckItem($this->savedCookieDecision($settings))]),
 			]),
 			[
 				'generic' => $this->l10n->t('Failed to save settings.'),
@@ -85,17 +96,27 @@ class AdminController extends Controller {
 				);
 				return $this->healthCheckService->check($settings);
 			},
-			fn(HealthCheckResult $result): DataResponse => new DataResponse([
-				'ok' => true,
-				'message' => $this->l10n->t('Etherpad connection test successful.'),
-				'host' => $result->host,
-				'api_host' => $result->apiHost,
-				'api_version' => $result->apiVersion,
-				'pad_count' => $result->padCount,
-				'latency_ms' => $result->latencyMs,
-				'target' => $result->target,
-				'pending_delete_count' => $result->pendingDeleteCount,
-			]),
+			function (HealthCheckResult $result): DataResponse {
+				// One list feeds both the summary and the payload, so they
+				// cannot report different outcomes.
+				$checks = [...$result->checks, $this->cookieDomainMessages->asCheckItem($result->cookieDomain)];
+				return new DataResponse([
+					'ok' => true,
+					// Not "successful": the request going through says nothing
+					// about the configuration.
+					'message' => $this->summariseChecks($checks),
+					'host' => $result->host,
+					'api_host' => $result->apiHost,
+					'api_version' => $result->apiVersion,
+					'pad_count' => $result->padCount,
+					'latency_ms' => $result->latencyMs,
+					'target' => $result->target,
+					'pending_delete_count' => $result->pendingDeleteCount,
+					// Machine-readable form of the protected-pads line above.
+					'protected_pads' => $this->describeCookieDomain($result->cookieDomain),
+					'checks' => $this->describeChecks($checks),
+				]);
+			},
 			[
 				'generic' => $this->l10n->t('Etherpad connection test failed.'),
 				'log_message' => 'Etherpad health check failed',
@@ -173,5 +194,61 @@ class AdminController extends Controller {
 		if (!$this->groupManager->isAdmin($user->getUID())) {
 			throw new AdminPermissionRequiredException('Admin permissions required.');
 		}
+	}
+
+	/** @param list<HealthCheckItem> $checks */
+	private function summariseChecks(array $checks): string {
+		$needAttention = count(array_filter(
+			$checks,
+			static fn(HealthCheckItem $item): bool => $item->status === HealthCheckItem::STATUS_WARNING,
+		));
+		return $needAttention === 0
+			? $this->l10n->t('All checks passed.')
+			: $this->l10n->t('Check finished. Some settings need attention.');
+	}
+
+	private function savedCookieDecision(ValidatedAdminSettings $settings): ?CookieDomainDecision {
+		if (!$settings->enableProtectedPads) {
+			return null;
+		}
+		return $this->cookieDomainPolicy->decide(
+			$this->urlGenerator->getBaseUrl(),
+			$settings->etherpadHost,
+			$this->cookieDomainPolicy->storedValue($settings->etherpadCookieDomain, $settings->cookieDomainConfigured),
+		);
+	}
+
+	/**
+	 * @param list<HealthCheckItem> $checks
+	 * @return list<array<string,string>>
+	 */
+	private function describeChecks(array $checks): array {
+		return array_map(
+			static fn(HealthCheckItem $item): array => [
+				'id' => $item->id,
+				'status' => $item->status,
+				'label' => $item->label,
+				'detail' => $item->detail,
+				'field' => $item->field,
+			],
+			$checks,
+		);
+	}
+
+	/** @return array<string,mixed>|null */
+	private function describeCookieDomain(?CookieDomainDecision $decision): ?array {
+		if ($decision === null) {
+			return null;
+		}
+		return [
+			'ok' => $decision->isOk(),
+			'status' => $decision->status,
+			'reason' => $decision->reason,
+			'cookie_domain' => $decision->effectiveDomain,
+			'cookie_domain_source' => $decision->source,
+			'nextcloud_host' => $decision->nextcloudHost,
+			'etherpad_host' => $decision->etherpadHost,
+			'message' => $this->cookieDomainMessages->describe($decision),
+		];
 	}
 }

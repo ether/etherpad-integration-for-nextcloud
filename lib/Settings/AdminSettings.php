@@ -11,6 +11,10 @@ namespace OCA\EtherpadNextcloud\Settings;
 use OCA\EtherpadNextcloud\AppInfo\Application;
 use OCA\EtherpadNextcloud\Service\AdminSettingsRepository;
 use OCA\EtherpadNextcloud\Service\AppConfigService;
+use OCA\EtherpadNextcloud\Service\BindingService;
+use OCA\EtherpadNextcloud\Service\CookieDomainDecision;
+use OCA\EtherpadNextcloud\Service\CookieDomainMessages;
+use OCA\EtherpadNextcloud\Service\CookieDomainPolicy;
 use OCA\EtherpadNextcloud\Service\EtherpadClient;
 use OCA\EtherpadNextcloud\Service\PadTypePolicy;
 use OCP\AppFramework\Http\TemplateResponse;
@@ -30,6 +34,9 @@ class AdminSettings implements ISettings {
 		private IL10N $l10n,
 		private AppConfigService $appConfigService,
 		private AdminSettingsRepository $settingsRepository,
+		private CookieDomainPolicy $cookieDomainPolicy,
+		private CookieDomainMessages $cookieDomainMessages,
+		private PadTypePolicy $padTypePolicy,
 	) {
 	}
 
@@ -41,9 +48,12 @@ class AdminSettings implements ISettings {
 		$etherpadApiHost = (string)$this->config->getAppValue(Application::APP_ID, 'etherpad_api_host', '');
 		$cookieDomainConfigured = (string)$this->config->getAppValue(Application::APP_ID, 'etherpad_cookie_domain_configured', 'no') === 'yes';
 		$storedCookieDomain = (string)$this->config->getAppValue(Application::APP_ID, 'etherpad_cookie_domain', '');
-		$cookieDomain = $cookieDomainConfigured
-			? $storedCookieDomain
-			: $this->deriveCookieDomainFromKnownHosts($this->urlGenerator->getBaseUrl(), $etherpadHost);
+		$configuredCookieDomain = $this->cookieDomainPolicy->storedValue($storedCookieDomain, $cookieDomainConfigured);
+		$decision = $this->cookieDomainPolicy->decide($this->urlGenerator->getBaseUrl(), $etherpadHost, $configuredCookieDomain);
+		// The field shows the saved value, falling back to the derived one when
+		// nothing was saved. That is not always what gets sent: identical hosts
+		// use a host-only cookie and ignore any saved domain.
+		$cookieDomain = $configuredCookieDomain ?? $decision->effectiveDomain;
 		$apiVersion = (string)$this->config->getAppValue(Application::APP_ID, 'etherpad_api_version', EtherpadClient::DEFAULT_API_VERSION);
 		$syncInterval = (int)$this->config->getAppValue(Application::APP_ID, 'sync_interval_seconds', '120');
 		if ($syncInterval < 5) {
@@ -53,7 +63,17 @@ class AdminSettings implements ISettings {
 			$syncInterval = 3600;
 		}
 
+		// Only relevant when protected pads are actually offered — an instance
+		// that only serves public pads needs no session cookie at all.
+		$protectedPadsEnabled = $this->padTypePolicy->isEnabled(BindingService::ACCESS_PROTECTED);
+		$cookieWarning = ($protectedPadsEnabled && $decision->status === CookieDomainDecision::STATUS_WARNING)
+			? $this->cookieDomainMessages->describe($decision)
+			: '';
+		// Rendered into the same slot the connection test writes to, so the
+		// page has one place per field for a verdict rather than two.
+
 		return new TemplateResponse(Application::APP_ID, 'admin-settings', [
+			'cookie_domain_warning' => $cookieWarning,
 			'etherpad_host' => $etherpadHost,
 			'etherpad_api_host' => $etherpadApiHost,
 			'etherpad_cookie_domain' => $cookieDomain,
@@ -77,12 +97,13 @@ class AdminSettings implements ISettings {
 				'section_pad_types' => $this->l10n->t('Pad types and behaviour'),
 				'section_external' => $this->l10n->t('External pads and embedding'),
 				'section_diagnostics' => $this->l10n->t('Diagnostics'),
-				'section_diagnostics_hint' => $this->l10n->t('The connection test checks that Nextcloud reaches the Etherpad API with the configured key. The consistency check looks for pad links whose .pad file no longer exists.'),
+				'section_connection_hint' => $this->l10n->t('Checks that Nextcloud reaches the Etherpad API with the values above.'),
+				'section_consistency_hint' => $this->l10n->t('Looks for pad links whose .pad file no longer exists.'),
 				'etherpad_base_url' => $this->l10n->t('Etherpad Base URL'),
 				'etherpad_api_url' => $this->l10n->t('Etherpad API URL (optional)'),
 				'etherpad_api_url_hint' => $this->l10n->t('Optional internal URL for server-side API calls. Leave empty to use Etherpad Base URL.'),
-				'etherpad_cookie_domain' => $this->l10n->t('Etherpad session cookie domain (optional)'),
-				'etherpad_cookie_domain_hint' => $this->l10n->t('Auto-filled from the Nextcloud and Etherpad hosts when possible. Adjust it if your deployment uses a proxy path or a different trusted parent domain; leave empty for a host-only cookie.'),
+				'etherpad_cookie_domain' => $this->l10n->t('Etherpad session cookie domain'),
+				'etherpad_cookie_domain_hint' => $this->l10n->t('Required for protected pads unless Nextcloud and Etherpad run on the same host: the session cookie must be valid for both. Auto-filled from the two hosts when they share a parent domain. Leave empty for a host-only cookie.'),
 				'etherpad_api_key' => $this->l10n->t('Etherpad API key'),
 				'detected_api_version' => $this->l10n->t('Detected API version:'),
 				'copy_interval' => $this->l10n->t('.pad file sync interval (seconds)'),
@@ -108,7 +129,6 @@ class AdminSettings implements ISettings {
 				'saved' => $this->l10n->t('Settings saved.'),
 				'checking' => $this->l10n->t('Testing Etherpad connection...'),
 				'consistency_running' => $this->l10n->t('Running consistency check...'),
-				'health_ok' => $this->l10n->t('Etherpad connection test successful.'),
 				'consistency_ok' => $this->l10n->t('Consistency check successful.'),
 				'request_failed' => $this->l10n->t('Request failed.'),
 				'saving_failed' => $this->l10n->t('Failed to save settings.'),
@@ -125,77 +145,5 @@ class AdminSettings implements ISettings {
 
 	public function getPriority(): int {
 		return 10;
-	}
-
-	private function deriveCookieDomainFromKnownHosts(string $nextcloudUrl, string $etherpadUrl): string {
-		$nextcloudHost = $this->extractHost($nextcloudUrl);
-		$etherpadHost = $this->extractHost($etherpadUrl);
-		if ($nextcloudHost === '' || $etherpadHost === '' || $nextcloudHost === $etherpadHost) {
-			return '';
-		}
-		if ($this->isHostUnsuitableForDomainCookie($nextcloudHost) || $this->isHostUnsuitableForDomainCookie($etherpadHost)) {
-			return '';
-		}
-
-		$nextcloudLabels = array_reverse(explode('.', $nextcloudHost));
-		$etherpadLabels = array_reverse(explode('.', $etherpadHost));
-		$common = [];
-		$limit = min(count($nextcloudLabels), count($etherpadLabels));
-		for ($i = 0; $i < $limit; $i++) {
-			if ($nextcloudLabels[$i] !== $etherpadLabels[$i]) {
-				break;
-			}
-			$common[] = $nextcloudLabels[$i];
-		}
-
-		$common = array_reverse($common);
-		if (count($common) < 2 || $this->looksLikeTwoLabelPublicSuffix($common)) {
-			return '';
-		}
-
-		return '.' . implode('.', $common);
-	}
-
-	private function extractHost(string $urlOrHost): string {
-		$value = strtolower(trim($urlOrHost));
-		if ($value === '') {
-			return '';
-		}
-		$host = parse_url($value, PHP_URL_HOST);
-		if (!is_string($host) || $host === '') {
-			$host = preg_replace('/:\d+$/', '', $value) ?? '';
-		}
-		$host = trim(strtolower($host), "[] \t\n\r\0\x0B.");
-		return $this->isValidCookieHost($host) ? $host : '';
-	}
-
-	private function isValidCookieHost(string $host): bool {
-		if ($host === '' || strlen($host) > 253) {
-			return false;
-		}
-		if (filter_var($host, FILTER_VALIDATE_IP) !== false) {
-			return true;
-		}
-		foreach (explode('.', $host) as $label) {
-			if ($label === '' || strlen($label) > 63 || preg_match('/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/', $label) !== 1) {
-				return false;
-			}
-		}
-		return true;
-	}
-
-	private function isHostUnsuitableForDomainCookie(string $host): bool {
-		return filter_var($host, FILTER_VALIDATE_IP) !== false
-			|| $host === 'localhost'
-			|| str_ends_with($host, '.localhost')
-			|| !str_contains($host, '.');
-	}
-
-	/** @param list<string> $commonLabels */
-	private function looksLikeTwoLabelPublicSuffix(array $commonLabels): bool {
-		if (count($commonLabels) !== 2 || strlen($commonLabels[1]) !== 2) {
-			return false;
-		}
-		return in_array($commonLabels[0], ['ac', 'co', 'com', 'edu', 'gov', 'net', 'org'], true);
 	}
 }

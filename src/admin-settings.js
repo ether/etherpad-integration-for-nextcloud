@@ -4,12 +4,8 @@
 	const root = document.getElementById('etherpad-nextcloud-admin-settings')
 	const form = document.getElementById('etherpad-nextcloud-admin-form')
 	const statusNode = document.getElementById('etherpad-nextcloud-admin-status')
-	const diagnosticsStatusNode = document.getElementById('etherpad-nextcloud-diagnostics-status')
-	// Only the save area is required at startup; older markup without the
-	// diagnostics area still has to show its feedback somewhere.
-	const diagnosticsTarget = diagnosticsStatusNode instanceof HTMLElement
-		? diagnosticsStatusNode
-		: statusNode
+	const diagnosticsTarget = document.getElementById('etherpad-nextcloud-diagnostics-status')
+	const connectionTarget = document.getElementById('etherpad-nextcloud-connection-status')
 	const healthButton = document.getElementById('etherpad-nextcloud-health-check')
 	const consistencyButton = document.getElementById('etherpad-nextcloud-consistency-check')
 	const retryPendingButton = document.getElementById('etherpad-nextcloud-retry-pending')
@@ -45,7 +41,6 @@
 		saved: root.getAttribute('data-l10n-saved') || 'Settings saved.',
 		checking: root.getAttribute('data-l10n-checking') || 'Testing Etherpad connection...',
 		consistencyRunning: root.getAttribute('data-l10n-consistency-running') || 'Running consistency check...',
-		healthOk: root.getAttribute('data-l10n-health-ok') || 'Etherpad connection test successful.',
 		consistencyOk: root.getAttribute('data-l10n-consistency-ok') || 'Consistency check successful.',
 		requestFailed: root.getAttribute('data-l10n-request-failed') || 'Request failed.',
 		savingFailed: root.getAttribute('data-l10n-saving-failed') || 'Failed to save settings.',
@@ -121,24 +116,61 @@
 			return
 		}
 		node.textContent = message
-		node.classList.remove('ep-status-success', 'ep-status-error')
-		if (state === 'success') {
-			node.classList.add('ep-status-success')
-		} else if (state === 'error') {
-			node.classList.add('ep-status-error')
+		node.classList.remove('ep-status-success', 'ep-status-warning', 'ep-status-error')
+		if (state === 'success' || state === 'warning' || state === 'error') {
+			node.classList.add(`ep-status-${state}`)
 		}
 	}
 
 	// Starting one does clear the other: its result predates this action and
 	// would be read as belonging to it.
 	function beginStatus(message, node = statusNode) {
-		for (const other of [statusNode, diagnosticsTarget]) {
+		for (const other of [statusNode, diagnosticsTarget, connectionTarget]) {
 			if (other instanceof HTMLElement && other !== node) {
 				other.textContent = ''
-				other.classList.remove('ep-status-success', 'ep-status-error')
+				other.classList.remove('ep-status-success', 'ep-status-warning', 'ep-status-error')
 			}
 		}
 		setStatus(message, null, node)
+	}
+
+	// Higher wins when two checks land on the same field, so a problem is
+	// never hidden by a passing verdict that happened to come later.
+	const CHECK_SEVERITY = { skipped: 0, ok: 1, warning: 2 }
+
+	// Each result is shown at the field it came from: a green tick where
+	// things are fine, the message itself where they are not.
+	function renderConnectionChecks(checks) {
+		for (const slot of document.querySelectorAll('[data-check-result]')) {
+			slot.textContent = ''
+			slot.className = 'ep-check-result'
+			delete slot.dataset.checkStatus
+		}
+		if (!Array.isArray(checks)) {
+			return
+		}
+		for (const check of checks) {
+			if (!check || typeof check.label !== 'string') {
+				continue
+			}
+			const status = String(check.status || 'skipped')
+			const detail = typeof check.detail === 'string' ? check.detail : ''
+			const slot = check.field
+				? document.querySelector(`[data-check-result="${CSS.escape(String(check.field))}"]`)
+				: null
+			if (!(slot instanceof HTMLElement)) {
+				continue
+			}
+			const shown = slot.dataset.checkStatus
+			if (shown && (CHECK_SEVERITY[shown] ?? 0) > (CHECK_SEVERITY[status] ?? 0)) {
+				continue
+			}
+			slot.dataset.checkStatus = status
+			slot.className = `ep-check-result ep-check-${status}`
+			// A passing field needs no prose — the tick and the label say it.
+			// A failing one needs the reason right there.
+			slot.textContent = status === 'ok' ? check.label : (detail || check.label)
+		}
 	}
 
 	function clearFieldErrors() {
@@ -225,9 +257,16 @@
 	form.addEventListener('submit', async (event) => {
 		event.preventDefault()
 		clearFieldErrors()
+		// Verdicts describe the values of the previous run: keeping them up
+		// while this one is in flight puts a green tick next to a field that
+		// is being changed, and a failed save would leave them there.
+		renderConnectionChecks([])
 		beginStatus(l10n.saving)
 		try {
 			const data = await postJson(saveUrl, getPayload())
+			// Saving answers with the cookie verdict alone; rendering it clears
+			// the other fields' results, which the save just invalidated.
+			renderConnectionChecks(data.checks)
 			const versionSuffix = data && data.api_version ? ` api=${String(data.api_version)}` : ''
 			setStatus(`${String(data.message || l10n.saved)}${versionSuffix}`, 'success')
 		} catch (error) {
@@ -240,33 +279,24 @@
 
 	healthButton.addEventListener('click', async () => {
 		clearFieldErrors()
-		beginStatus(l10n.checking, diagnosticsTarget)
+		renderConnectionChecks([])
+		beginStatus(l10n.checking, connectionTarget)
 		try {
 			const data = await postJson(healthUrl, getPayload())
-			const details = []
-			if (typeof data.pad_count !== 'undefined') {
-				details.push(`pad_count=${String(data.pad_count)}`)
-			}
-			if (typeof data.api_version === 'string' && data.api_version.trim() !== '') {
-				details.push(`api=${data.api_version}`)
-			}
-			if (typeof data.latency_ms !== 'undefined') {
-				details.push(`latency=${String(data.latency_ms)}ms`)
-			}
-			if (typeof data.target === 'string' && data.target.trim() !== '') {
-				details.push(`target=${data.target}`)
-			}
 			if (typeof data.pending_delete_count !== 'undefined') {
 				updatePendingDeleteUi(Number(data.pending_delete_count))
 			}
-			const suffix = details.length > 0 ? ` ${details.join(' | ')}` : ''
-			const message = `${String(data.message || l10n.healthOk)}${suffix}`
-			setStatus(message, 'success', diagnosticsTarget)
+			// The per-field results carry the target, pad count and latency, and
+			// the protected-pads verdict, so the summary stays a summary.
+			renderConnectionChecks(data.checks)
+			const needsAttention = Array.isArray(data.checks)
+				&& data.checks.some((check) => check && check.status === 'warning')
+			setStatus(String(data.message), needsAttention ? 'warning' : 'success', connectionTarget)
 		} catch (error) {
 			if (error && typeof error.field === 'string' && error.field !== '') {
 				showFieldError(error.field, error.message || l10n.healthFailed)
 			}
-			setStatus(error instanceof Error ? error.message : l10n.healthFailed, 'error', diagnosticsTarget)
+			setStatus(error instanceof Error ? error.message : l10n.healthFailed, 'error', connectionTarget)
 		}
 	})
 

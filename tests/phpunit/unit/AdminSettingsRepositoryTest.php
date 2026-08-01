@@ -11,6 +11,44 @@ use OCP\IConfig;
 use PHPUnit\Framework\TestCase;
 
 class AdminSettingsRepositoryTest extends TestCase {
+	/**
+	 * A client may omit the optional cookie domain field. Recording that as
+	 * "configured" would freeze an empty value into a deliberate host-only
+	 * cookie, and the save response would describe a different state than the
+	 * one stored.
+	 */
+	public function testPersistKeepsAnUnconfiguredCookieDomainUnconfigured(): void {
+		$saved = [];
+		$config = $this->createMock(IConfig::class);
+		$config->method('setAppValue')->willReturnCallback(
+			static function (string $appName, string $key, string $value) use (&$saved): void {
+				if ($appName === 'etherpad_nextcloud') {
+					$saved[$key] = $value;
+				}
+			}
+		);
+		$appConfig = $this->createMock(IAppConfig::class);
+		$appConfig->method('setValueString')->willReturn(true);
+
+		(new AdminSettingsRepository($config, $appConfig))->persist(new ValidatedAdminSettings(
+			'https://pad.example.test',
+			'https://pad-api.example.test',
+			'',
+			'new-key',
+			'new-key',
+			'1.3.0',
+			90,
+			false,
+			true,
+			'',
+			'',
+			cookieDomainConfigured: false,
+		));
+
+		$this->assertSame('', $saved['etherpad_cookie_domain']);
+		$this->assertSame('no', $saved['etherpad_cookie_domain_configured']);
+	}
+
 	public function testPersistStoresValidatedSettings(): void {
 		$saved = [];
 		$config = $this->createMock(IConfig::class);
@@ -45,6 +83,7 @@ class AdminSettingsRepositoryTest extends TestCase {
 			true,
 			'https://external.example.test:8443',
 			'https://portal.example.test',
+			cookieDomainConfigured: true,
 		));
 
 		$this->assertSame('https://pad.example.test', $saved['etherpad_host']);

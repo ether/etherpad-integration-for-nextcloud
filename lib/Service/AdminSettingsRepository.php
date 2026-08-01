@@ -31,6 +31,7 @@ class AdminSettingsRepository {
 			(string)$this->config->getAppValue(Application::APP_ID, 'trusted_embed_origins', ''),
 			(string)$this->config->getAppValue(Application::APP_ID, PadTypePolicy::SETTING_PROTECTED, 'yes') === 'yes',
 			(string)$this->config->getAppValue(Application::APP_ID, PadTypePolicy::SETTING_PUBLIC, 'yes') === 'yes',
+			(string)$this->config->getAppValue(Application::APP_ID, 'etherpad_cookie_domain_configured', 'no') === 'yes',
 		);
 	}
 
@@ -38,7 +39,15 @@ class AdminSettingsRepository {
 		$this->config->setAppValue(Application::APP_ID, 'etherpad_host', $settings->etherpadHost);
 		$this->config->setAppValue(Application::APP_ID, 'etherpad_api_host', $settings->etherpadApiHost);
 		$this->config->setAppValue(Application::APP_ID, 'etherpad_cookie_domain', $settings->etherpadCookieDomain);
-		$this->config->setAppValue(Application::APP_ID, 'etherpad_cookie_domain_configured', 'yes');
+		// Carry the validator's verdict rather than forcing 'yes': a client
+		// that omits the optional field has not configured anything, and
+		// recording otherwise would pin an empty value as a deliberate
+		// host-only cookie.
+		$this->config->setAppValue(
+			Application::APP_ID,
+			'etherpad_cookie_domain_configured',
+			$settings->cookieDomainConfigured ? 'yes' : 'no',
+		);
 		if ($settings->etherpadApiKey !== null) {
 			// Store the API key with the sensitive flag so it is redacted in
 			// `occ config:list` and support dumps. IAppConfig and IConfig

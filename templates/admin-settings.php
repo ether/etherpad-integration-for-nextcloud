@@ -14,7 +14,6 @@
 	data-l10n-saved="<?php p((string)$_['l10n']['saved']); ?>"
 	data-l10n-checking="<?php p((string)$_['l10n']['checking']); ?>"
 	data-l10n-consistency-running="<?php p((string)$_['l10n']['consistency_running']); ?>"
-	data-l10n-health-ok="<?php p((string)$_['l10n']['health_ok']); ?>"
 	data-l10n-consistency-ok="<?php p((string)$_['l10n']['consistency_ok']); ?>"
 	data-l10n-request-failed="<?php p((string)$_['l10n']['request_failed']); ?>"
 	data-l10n-saving-failed="<?php p((string)$_['l10n']['saving_failed']); ?>"
@@ -40,6 +39,7 @@
 				placeholder="https://pad.example.org"
 				value="<?php p((string)$_['etherpad_host']); ?>">
 			<span class="ep-field-error" data-field-error="etherpad_host" aria-live="polite"></span>
+			<span class="ep-check-result" data-check-result="etherpad_host" role="status"></span>
 		</p>
 
 		<p class="ep-field-row">
@@ -51,6 +51,7 @@
 				autocomplete="off"
 				placeholder="••••••••••••••••">
 			<span class="ep-field-error" data-field-error="etherpad_api_key" aria-live="polite"></span>
+			<span class="ep-check-result" data-check-result="etherpad_api_key" role="status"></span>
 		</p>
 		<p class="settings-hint ep-detected-value">
 			<?php p((string)$_['l10n']['detected_api_version']); ?> <strong><?php p((string)$_['etherpad_api_version']); ?></strong>
@@ -66,6 +67,7 @@
 				placeholder="https://etherpad.internal"
 				value="<?php p((string)$_['etherpad_api_host']); ?>">
 			<span class="ep-field-error" data-field-error="etherpad_api_host" aria-live="polite"></span>
+			<span class="ep-check-result" data-check-result="etherpad_api_host" role="status"></span>
 		</p>
 		<p class="settings-hint ep-field-hint" id="epnc-hint-api-host"><?php p((string)$_['l10n']['etherpad_api_url_hint']); ?></p>
 
@@ -79,8 +81,15 @@
 				placeholder=".example.org"
 				value="<?php p((string)$_['etherpad_cookie_domain']); ?>">
 			<span class="ep-field-error" data-field-error="etherpad_cookie_domain" aria-live="polite"></span>
+			<span class="ep-check-result<?php if ((string)$_['cookie_domain_warning'] !== ''): ?> ep-check-warning<?php endif; ?>" data-check-result="etherpad_cookie_domain" role="status"><?php p((string)$_['cookie_domain_warning']); ?></span>
 		</p>
 		<p class="settings-hint ep-field-hint" id="epnc-hint-cookie-domain"><?php p((string)$_['l10n']['etherpad_cookie_domain_hint']); ?></p>
+
+		<div class="etherpad-nextcloud-admin-actions">
+			<button type="button" id="etherpad-nextcloud-health-check"><?php p((string)$_['l10n']['health_button']); ?></button>
+		</div>
+		<p class="settings-hint ep-field-hint"><?php p((string)$_['l10n']['section_connection_hint']); ?></p>
+		<p id="etherpad-nextcloud-connection-status" class="ep-status" aria-live="polite"></p>
 
 		<h3 class="ep-section-heading"><?php p((string)$_['l10n']['section_pad_types']); ?></h3>
 
@@ -183,19 +192,18 @@
 		<div class="etherpad-nextcloud-admin-actions">
 			<button type="submit" class="primary"><?php p((string)$_['l10n']['save_button']); ?></button>
 		</div>
-		<p id="etherpad-nextcloud-admin-status" class="settings-hint ep-status" aria-live="polite"></p>
+		<p id="etherpad-nextcloud-admin-status" class="ep-status" aria-live="polite"></p>
 
 		<h3 class="ep-section-heading"><?php p((string)$_['l10n']['section_diagnostics']); ?></h3>
-		<p class="settings-hint ep-field-hint"><?php p((string)$_['l10n']['section_diagnostics_hint']); ?></p>
+		<p class="settings-hint ep-field-hint"><?php p((string)$_['l10n']['section_consistency_hint']); ?></p>
 
 		<div class="etherpad-nextcloud-admin-actions">
-			<button type="button" id="etherpad-nextcloud-health-check"><?php p((string)$_['l10n']['health_button']); ?></button>
 			<button type="button" id="etherpad-nextcloud-consistency-check"><?php p((string)$_['l10n']['consistency_button']); ?></button>
 		</div>
 		<div id="etherpad-nextcloud-pending-actions" class="etherpad-nextcloud-admin-actions" style="display:none;">
 			<button type="button" id="etherpad-nextcloud-retry-pending"><?php p((string)$_['l10n']['retry_pending_button']); ?></button>
 			<span id="etherpad-nextcloud-pending-count" class="settings-hint"></span>
 		</div>
-		<p id="etherpad-nextcloud-diagnostics-status" class="settings-hint ep-status" aria-live="polite"></p>
+		<p id="etherpad-nextcloud-diagnostics-status" class="ep-status" aria-live="polite"></p>
 	</form>
 </div>

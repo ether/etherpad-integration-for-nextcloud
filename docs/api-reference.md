@@ -244,10 +244,17 @@ solely by the separate external-pad policy, not by these two settings.
     - `etherpad_host` (public/browser base URL)
     - `etherpad_api_host` (optional internal API URL; fallback to `etherpad_host`)
     - `delete_on_trash` (`yes|no`)
+  - Result includes `checks` with the single `protected_pads` line, recomputed
+    from the saved values in the same shape the health check uses — so the
+    settings page refreshes that verdict without a separate connection test,
+    and clears results the save invalidated.
 
 - `POST /api/v1/admin/health`
   - Controller: `AdminController::healthCheck`
   - Auth: admin only
+  - `message` summarises the run — "All checks passed." or a note that some
+    settings need attention. It deliberately does not say "successful": the
+    request succeeding says nothing about the configuration.
   - Result includes:
     - `host`
     - `api_host`
@@ -256,6 +263,46 @@ solely by the separate external-pad policy, not by these two settings.
     - `latency_ms`
     - `target`
     - `pending_delete_count`
+    - `checks` — one entry per verified part, so a failure points at the field
+      that caused it: `api`, `api_key`, `base_url`, `protected_pads`. Each has
+      `id`, `status` (`ok|warning|skipped`), `label`, `detail` and `field`,
+      all already translated for display. `field` names the form input the
+      line belongs to, so the result can be rendered at that input; it is
+      empty when the line belongs to no single field.
+
+      `base_url` is the only entry that performs additional I/O: a short GET
+      against the browser-facing Etherpad URL, which nothing else contacts.
+      Unlike the API host it gets no local-address exemption — that exemption
+      is what would let an admin-supplied address probe the server's own
+      network. Redirects are not followed and the body is not buffered, since
+      neither is needed for a status code. The protection is Nextcloud's, so
+      `allow_local_remote_servers=true` disables it instance-wide.
+
+      The line is never an error. Nextcloud may be unable to reach the public
+      URL by design (split-horizon DNS, egress firewall), and a blocked local
+      address is reported as unverified rather than broken, since an internal
+      deployment may still serve it to users. It runs even when the base URL
+      matches the API URL, because the API call may succeed against a loopback
+      address no browser can use; both lines then land on the same field,
+      where the more severe verdict is the one shown.
+
+    - `protected_pads` — the same verdict as the `protected_pads` line in
+      `checks`, but machine-readable for support and other clients, or `null`
+      when protected pads are switched off. A failing verdict does **not** fail
+      the connection test: the API can be reachable while protected pads cannot
+      work. Fields: `ok`, `status` (`ok|warning|unknown`), `reason`,
+      `cookie_domain`, `cookie_domain_source` (`configured|derived|host_only`),
+      `nextcloud_host`, `etherpad_host`, `message`.
+
+      See "Check iframe and cookie setup for protected pads" in `README.md` for
+      why the two hosts must share a parent domain. The check performs no I/O;
+      public suffixes are recognised by a conservative heuristic rather than a
+      Public Suffix List lookup, so `common_parent_may_be_public_suffix` is a
+      warning rather than a verdict.
+  - A failed connection test answers `502` with `message` and, where the cause
+    can be attributed, `field` — the same shape validation errors use, so the
+    page marks the input rather than reporting only at the bottom. No other
+    fields are present on that response.
 
 - `POST /api/v1/admin/consistency-check`
   - Controller: `AdminController::consistencyCheck`

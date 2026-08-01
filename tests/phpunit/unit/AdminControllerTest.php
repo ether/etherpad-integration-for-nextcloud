@@ -13,6 +13,10 @@ use OCA\EtherpadNextcloud\Service\AdminSettingsRepository;
 use OCA\EtherpadNextcloud\Service\AdminSettingsValidator;
 use OCA\EtherpadNextcloud\Service\AdminTestFaultService;
 use OCA\EtherpadNextcloud\Service\ConsistencyCheckService;
+use OCA\EtherpadNextcloud\Service\CookieDomainDecision;
+use OCA\EtherpadNextcloud\Service\HealthCheckItem;
+use OCA\EtherpadNextcloud\Service\CookieDomainMessages;
+use OCA\EtherpadNextcloud\Service\CookieDomainPolicy;
 use OCA\EtherpadNextcloud\Service\EtherpadHealthCheckService;
 use OCA\EtherpadNextcloud\Service\HealthCheckResult;
 use OCA\EtherpadNextcloud\Service\PendingDeleteRetryService;
@@ -22,6 +26,7 @@ use OCP\AppFramework\Http;
 use OCP\IGroupManager;
 use OCP\IL10N;
 use OCP\IRequest;
+use OCP\IURLGenerator;
 use OCP\IUser;
 use OCP\IUserSession;
 use PHPUnit\Framework\TestCase;
@@ -64,6 +69,14 @@ class AdminControllerTest extends TestCase {
 		$this->assertTrue((bool)$response->getData()['ok']);
 		$this->assertSame('1.3.0', $response->getData()['api_version']);
 		$this->assertTrue((bool)$response->getData()['has_api_key']);
+		// Recomputed from the saved values, in the connection test's shape, so
+		// the page refreshes the verdict at the cookie domain field.
+		$checks = $response->getData()['checks'];
+		$this->assertCount(1, $checks);
+		$this->assertSame('protected_pads', $checks[0]['id']);
+		$this->assertSame(HealthCheckItem::STATUS_OK, $checks[0]['status']);
+		$this->assertSame('etherpad_cookie_domain', $checks[0]['field']);
+		$this->assertSame('.example.test', $checks[0]['detail']);
 	}
 
 	public function testHealthCheckReturnsApiAndPendingDeleteMetrics(): void {
@@ -92,6 +105,18 @@ class AdminControllerTest extends TestCase {
 				123,
 				'https://pad-api.internal/api/1.3.0/listAllPads',
 				3,
+				new CookieDomainDecision(
+					'.example.tests',
+					CookieDomainDecision::STATUS_WARNING,
+					CookieDomainDecision::REASON_CONFIGURED_DOMAIN_MISMATCH,
+					'cloud.example.test',
+					'pad.example.test',
+					CookieDomainDecision::SOURCE_CONFIGURED,
+					'.example.test',
+				),
+				// The service's own lines; the controller appends the
+				// protected-pads one from the decision above.
+				[new HealthCheckItem('api', HealthCheckItem::STATUS_OK, 'Etherpad API reachable', '', 'etherpad_api_host')],
 			));
 
 		$response = $this->buildController($request, validator: $validator, repository: $repository, healthCheck: $health)->healthCheck();
@@ -103,6 +128,21 @@ class AdminControllerTest extends TestCase {
 		$this->assertSame(3, $data['pending_delete_count']);
 		$this->assertArrayNotHasKey('trashed_without_file_count', $data);
 		$this->assertSame('https://pad-api.internal/api/1.3.0/listAllPads', $data['target']);
+		// A protected-pads problem is reported beside the result, not as a
+		// failed connection test, and the controller renders its text.
+		$this->assertFalse($data['protected_pads']['ok']);
+		$this->assertSame(CookieDomainDecision::STATUS_WARNING, $data['protected_pads']['status']);
+		$this->assertSame(CookieDomainDecision::REASON_CONFIGURED_DOMAIN_MISMATCH, $data['protected_pads']['reason']);
+		$this->assertSame(CookieDomainDecision::SOURCE_CONFIGURED, $data['protected_pads']['cookie_domain_source']);
+
+		// The controller appends the protected-pads line itself, so summary
+		// and list describe the same outcome — the service returns neither.
+		$line = end($data['checks']);
+		$this->assertSame('protected_pads', $line['id']);
+		$this->assertSame(HealthCheckItem::STATUS_WARNING, $line['status']);
+		$this->assertStringContainsString('cloud.example.test', $line['detail']);
+		$this->assertStringContainsString('.example.test would cover both', $line['detail']);
+		$this->assertStringContainsString('need attention', $data['message']);
 	}
 
 	public function testRetryPendingDeletesUsesConfiguredBatchSize(): void {
@@ -195,7 +235,16 @@ class AdminControllerTest extends TestCase {
 			$consistencyResponses ?? new AdminConsistencyCheckResponseBuilder($l10n),
 			$testFaults ?? $this->createMock(AdminTestFaultService::class),
 			new AdminControllerErrorMapper($l10n, $logger),
+			new CookieDomainPolicy(),
+			new CookieDomainMessages($l10n),
+			$this->urlGenerator(),
 		);
+	}
+
+	private function urlGenerator(string $baseUrl = 'https://cloud.example.test'): IURLGenerator {
+		$urlGenerator = $this->createMock(IURLGenerator::class);
+		$urlGenerator->method('getBaseUrl')->willReturn($baseUrl);
+		return $urlGenerator;
 	}
 
 	/** @param array<string,mixed> $payload */

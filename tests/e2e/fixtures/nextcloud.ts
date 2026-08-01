@@ -49,11 +49,14 @@ export const gotoAdminPadSettings = async (page: Page): Promise<boolean> => {
 
 /** Run the admin Etherpad health check and assert the configured pad server responds. */
 export const runAdminEtherpadHealthCheck = async (page: Page): Promise<void> => {
-	const status = page.locator('#etherpad-nextcloud-diagnostics-status')
+	const status = page.locator('#etherpad-nextcloud-connection-status')
 	await page.locator('#etherpad-nextcloud-health-check').click()
 
 	await expect(status).toHaveClass(/ep-status-success/, { timeout: 30_000 })
-	await expect(status).toContainText(/pad_count=|api=|latency=/, { timeout: 30_000 })
+	// Details moved to the per-field results; the API line carries the target
+	// and the metrics, so assert there rather than on the summary.
+	await expect(page.locator('[data-check-result="etherpad_api_host"], [data-check-result="etherpad_host"]').first())
+		.toHaveClass(/ep-check-ok/, { timeout: 30_000 })
 }
 
 /** Click the Files "+ New" toolbar button and wait for its menu. */

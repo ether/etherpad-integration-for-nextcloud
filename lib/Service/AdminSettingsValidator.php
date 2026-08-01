@@ -75,6 +75,9 @@ class AdminSettingsValidator {
 			$trustedEmbedOrigins,
 			$enableProtectedPads,
 			$enablePublicPads,
+			// The form always submits the field, so a value present here means
+			// the admin set one — whether or not it was ever saved before.
+			array_key_exists('etherpad_cookie_domain', $payload) || $stored->cookieDomainConfigured,
 		);
 	}
 

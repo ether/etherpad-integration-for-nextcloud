@@ -103,9 +103,43 @@
 	gap: 10px;
 }
 
-#etherpad-nextcloud-admin-settings .ep-status.ep-status-success,
-#etherpad-nextcloud-admin-settings .ep-status.ep-status-error {
-	color: var(--color-main-text, var(--color-text-maxcontrast, #1f2937));
+/* Result callouts share one shape — coloured rule, tinted panel — so the
+   outcome reads at a glance. The colour only reinforces the wording, which
+   already says whether it worked, so it never carries the meaning alone. */
+#etherpad-nextcloud-admin-settings .ep-status {
+	margin: 0 0 14px;
+	padding: 8px 12px;
+	max-width: 640px;
+	border-left: 4px solid transparent;
+	color: var(--color-main-text);
+}
+
+#etherpad-nextcloud-admin-settings .ep-status:empty {
+	display: none;
+}
+
+#etherpad-nextcloud-admin-settings .ep-status-success {
+	border-left-color: var(--color-success, #2d7d46);
+	background-color: var(--color-background-hover, #f5f5f5);
+}
+
+#etherpad-nextcloud-admin-settings .ep-status-warning {
+	border-left-color: var(--color-warning, #c98600);
+	background-color: var(--color-background-hover, #f5f5f5);
+}
+
+#etherpad-nextcloud-admin-settings .ep-status-error {
+	border-left-color: var(--color-error, #c62828);
+	background-color: var(--color-background-hover, #f5f5f5);
+}
+
+
+/* While a check runs there is no verdict yet, so no colour either. */
+#etherpad-nextcloud-admin-settings .ep-status:not(.ep-status-success):not(.ep-status-warning):not(.ep-status-error) {
+	padding-left: 0;
+	border-left-color: transparent;
+	background: none;
+	color: var(--color-text-maxcontrast);
 }
 
 #etherpad-nextcloud-admin-settings .ep-field-error {
@@ -122,4 +156,43 @@
 #etherpad-nextcloud-admin-settings .ep-input-error {
 	border-color: var(--color-error, #c62828) !important;
 	box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-error, #c62828) 40%, transparent) !important;
+}
+
+
+/* Verdict shown at the field it came from. A tick marks a pass, the amber
+   text carries the reason for anything else — the wording says which,
+   colour only reinforces it. */
+#etherpad-nextcloud-admin-settings .ep-check-result {
+	display: none;
+	margin-top: 4px;
+	max-width: 640px;
+	overflow-wrap: anywhere;
+}
+
+#etherpad-nextcloud-admin-settings .ep-check-result.ep-check-ok,
+#etherpad-nextcloud-admin-settings .ep-check-result.ep-check-warning,
+#etherpad-nextcloud-admin-settings .ep-check-result.ep-check-skipped {
+	display: block;
+}
+
+/* Only the tick is green. Nextcloud's success colour is too light to read
+   as body text, and the wording carries the outcome anyway. */
+#etherpad-nextcloud-admin-settings .ep-check-result.ep-check-ok {
+	color: var(--color-text-maxcontrast);
+}
+
+#etherpad-nextcloud-admin-settings .ep-check-result.ep-check-ok::before {
+	content: "\2713\00a0";
+	color: var(--color-success, #2d7d46);
+	font-weight: bold;
+}
+
+#etherpad-nextcloud-admin-settings .ep-check-result.ep-check-warning {
+	padding-left: 10px;
+	border-left: 3px solid var(--color-warning, #c98600);
+	color: var(--color-main-text);
+}
+
+#etherpad-nextcloud-admin-settings .ep-check-result.ep-check-skipped {
+	color: var(--color-text-maxcontrast);
 }
