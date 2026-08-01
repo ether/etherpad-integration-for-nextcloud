@@ -37,9 +37,13 @@ class CookieDomainMessages {
 			['nextcloud_host' => $decision->nextcloudHost, 'etherpad_host' => $decision->etherpadHost],
 		);
 
+		$suggestion = $decision->suggestedDomain !== ''
+			? ' ' . $this->fill($this->l10n->t('{domain} would cover both.'), ['domain' => $decision->suggestedDomain])
+			: '';
+
 		return match ($decision->reason) {
 			CookieDomainDecision::REASON_NO_COMMON_PARENT => $hosts . ' ' . $this->l10n->t(
-				'They share no parent domain, so Nextcloud cannot set a session cookie that reaches Etherpad, and protected pads will not open. Move one of them to a shared domain, or switch protected pads off.'
+				'They share no parent domain, so Nextcloud cannot set a session cookie that reaches Etherpad, and protected pads will not open. If a proxy already serves Etherpad under the Nextcloud domain, enter that address as the base URL — pad links use it, so the cookie follows. Otherwise move one of the hosts, or switch protected pads off.'
 			),
 			CookieDomainDecision::REASON_HOST_NOT_COOKIE_CAPABLE => $hosts . ' ' . $this->l10n->t(
 				'IP addresses and single-label hosts cannot share a cookie domain. Use hostnames under a common domain, or serve both from the same host.'
@@ -47,10 +51,10 @@ class CookieDomainMessages {
 			CookieDomainDecision::REASON_CONFIGURED_DOMAIN_MISMATCH => $hosts . ' ' . $this->fill(
 				$this->l10n->t('The configured cookie domain {domain} does not cover both of them, so the browser will reject the session cookie.'),
 				['domain' => $decision->effectiveDomain],
-			),
+			) . $suggestion,
 			CookieDomainDecision::REASON_HOST_ONLY_ACROSS_HOSTS => $hosts . ' ' . $this->l10n->t(
 				'The cookie domain is empty, so the session cookie stays on the Nextcloud host and never reaches Etherpad.'
-			),
+			) . $suggestion,
 			CookieDomainDecision::REASON_MAY_BE_PUBLIC_SUFFIX => $hosts . ' ' . $this->fill(
 				$this->l10n->t('{domain} looks like a public suffix such as co.uk, which browsers refuse as a cookie domain. If it is one, protected pads will not open.'),
 				['domain' => $decision->effectiveDomain],

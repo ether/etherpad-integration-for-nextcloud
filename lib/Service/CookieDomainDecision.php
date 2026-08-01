@@ -45,6 +45,12 @@ class CookieDomainDecision {
 		public readonly string $nextcloudHost,
 		public readonly string $etherpadHost,
 		public readonly string $source,
+		/**
+		 * A domain that would work for these two hosts, when one exists and
+		 * the current setting is not it. Empty when there is nothing to
+		 * suggest — notably when the hosts share no parent at all.
+		 */
+		public readonly string $suggestedDomain = '',
 	) {
 	}
 

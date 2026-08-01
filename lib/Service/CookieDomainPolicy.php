@@ -80,14 +80,16 @@ class CookieDomainPolicy {
 		if ($configured === '') {
 			// Deliberate host-only cookie, but the hosts differ, so it never
 			// reaches Etherpad.
-			return $this->decision('', CookieDomainDecision::STATUS_WARNING, CookieDomainDecision::REASON_HOST_ONLY_ACROSS_HOSTS, $nextcloudHost, $etherpadHost, CookieDomainDecision::SOURCE_HOST_ONLY);
+			return $this->decision('', CookieDomainDecision::STATUS_WARNING, CookieDomainDecision::REASON_HOST_ONLY_ACROSS_HOSTS, $nextcloudHost, $etherpadHost, CookieDomainDecision::SOURCE_HOST_ONLY, $this->workableDomain($nextcloudHost, $etherpadHost));
 		}
 
 		$bare = ltrim(strtolower($configured), '.');
 		$domain = '.' . $bare;
 
 		if (!$this->domainCovers($bare, $nextcloudHost) || !$this->domainCovers($bare, $etherpadHost)) {
-			return $this->decision($domain, CookieDomainDecision::STATUS_WARNING, CookieDomainDecision::REASON_CONFIGURED_DOMAIN_MISMATCH, $nextcloudHost, $etherpadHost, CookieDomainDecision::SOURCE_CONFIGURED);
+			// Naming the domain that would work turns "this is wrong" into
+			// something the admin can act on without working it out by hand.
+			return $this->decision($domain, CookieDomainDecision::STATUS_WARNING, CookieDomainDecision::REASON_CONFIGURED_DOMAIN_MISMATCH, $nextcloudHost, $etherpadHost, CookieDomainDecision::SOURCE_CONFIGURED, $this->workableDomain($nextcloudHost, $etherpadHost));
 		}
 
 		// Covering both hosts is not enough: a browser rejects a public suffix
@@ -115,6 +117,16 @@ class CookieDomainPolicy {
 		}
 
 		return $this->decision($domain, CookieDomainDecision::STATUS_OK, CookieDomainDecision::REASON_COMMON_PARENT, $nextcloudHost, $etherpadHost, CookieDomainDecision::SOURCE_DERIVED);
+	}
+
+	/**
+	 * The domain these two hosts could actually share, or empty when there is
+	 * none. Derived exactly as an unconfigured instance would, so the
+	 * suggestion is the value the field would hold on its own.
+	 */
+	private function workableDomain(string $nextcloudHost, string $etherpadHost): string {
+		$derived = $this->decideDerived($nextcloudHost, $etherpadHost);
+		return $derived->isOk() ? $derived->effectiveDomain : '';
 	}
 
 	/**
@@ -207,7 +219,7 @@ class CookieDomainPolicy {
 		return true;
 	}
 
-	private function decision(string $domain, string $status, string $reason, string $nextcloudHost, string $etherpadHost, string $source): CookieDomainDecision {
-		return new CookieDomainDecision($domain, $status, $reason, $nextcloudHost, $etherpadHost, $source);
+	private function decision(string $domain, string $status, string $reason, string $nextcloudHost, string $etherpadHost, string $source, string $suggestedDomain = ''): CookieDomainDecision {
+		return new CookieDomainDecision($domain, $status, $reason, $nextcloudHost, $etherpadHost, $source, $suggestedDomain);
 	}
 }

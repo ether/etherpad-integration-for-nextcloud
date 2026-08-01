@@ -145,8 +145,15 @@ cookie is sent cross-site, not which domain may be set.
 - Shared parent domain: the cookie domain is derived automatically, and
   Etherpad's default `SameSite: Lax` usually works.
 - Unrelated registrable domains: protected pads cannot work with the current
-  session model. Move one host, or switch protected pads off and offer public
-  pads instead.
+  session model. If a reverse proxy already serves Etherpad under the Nextcloud
+  domain, put that address in the base URL — pad links use it, so the cookie
+  follows. Otherwise move one host, or switch protected pads off and offer
+  public pads instead.
+
+The check compares the Nextcloud host with the host in the base URL, which is
+exactly the address the browser loads a pad from. A proxy alias therefore
+counts as soon as it is the configured base URL, and does not need to be
+detected separately.
 
 Example:
 

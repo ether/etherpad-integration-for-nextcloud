@@ -91,6 +91,39 @@ class CookieDomainPolicyTest extends TestCase {
 		$this->assertSame(CookieDomainDecision::REASON_CONFIGURED_DOMAIN_MISMATCH, $bad->reason);
 	}
 
+	/**
+	 * A wrong domain is easier to fix when the message names the one that
+	 * would work, rather than leaving the admin to work it out.
+	 */
+	public function testMismatchSuggestsTheDomainThatWouldWork(): void {
+		$decision = $this->policy->decide('https://cloud.example.org', 'https://pad.example.org', '.example.orgs');
+
+		$this->assertSame(CookieDomainDecision::REASON_CONFIGURED_DOMAIN_MISMATCH, $decision->reason);
+		$this->assertSame('.example.org', $decision->suggestedDomain);
+	}
+
+	public function testDeliberateHostOnlyAcrossHostsSuggestsTheSharedParent(): void {
+		$decision = $this->policy->decide('https://cloud.example.org', 'https://pad.example.org', '');
+
+		$this->assertSame(CookieDomainDecision::REASON_HOST_ONLY_ACROSS_HOSTS, $decision->reason);
+		$this->assertSame('.example.org', $decision->suggestedDomain);
+	}
+
+	/** Nothing to suggest when the hosts share no parent — that is the problem. */
+	public function testNoSuggestionWhenTheHostsShareNoParent(): void {
+		$decision = $this->policy->decide('https://cloud.example.org', 'https://pad.other.net', '.example.org');
+
+		$this->assertSame(CookieDomainDecision::REASON_CONFIGURED_DOMAIN_MISMATCH, $decision->reason);
+		$this->assertSame('', $decision->suggestedDomain);
+	}
+
+	/** A public suffix is no better a suggestion than the wrong value. */
+	public function testNoSuggestionWhenTheSharedParentIsAPublicSuffix(): void {
+		$decision = $this->policy->decide('https://cloud.co.uk', 'https://pad.co.uk', '.co.uks');
+
+		$this->assertSame('', $decision->suggestedDomain);
+	}
+
 	/** A suffix match must not cross a label boundary. */
 	public function testLookalikeDomainDoesNotCount(): void {
 		$decision = $this->policy->decide('https://cloud.example.org', 'https://pad.evil-example.org', 'example.org');

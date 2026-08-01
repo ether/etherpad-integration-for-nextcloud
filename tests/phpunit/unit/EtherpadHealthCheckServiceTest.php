@@ -62,6 +62,19 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 		$this->assertSame(HealthCheckItem::STATUS_SKIPPED, $this->lineById($result->checks, 'protected_pads')->status);
 	}
 
+	public function testProtectedPadsLineNamesADomainThatWouldWork(): void {
+		$etherpad = $this->createMock(EtherpadClient::class);
+		$etherpad->method('healthCheck')->willReturn(['pad_count' => 1]);
+
+		// Shared parent, but the saved domain has a typo in it.
+		$result = $this->buildService($etherpad, $this->pendingCounts(0), 'https://cloud.example.test')
+			->check($this->settings('https://pad.example.test', true, '.example.tests'));
+
+		$line = $this->lineById($result->checks, 'protected_pads');
+		$this->assertSame(HealthCheckItem::STATUS_WARNING, $line->status);
+		$this->assertStringContainsString('.example.test would cover both', $line->detail);
+	}
+
 	public function testCheckReportsEachPartOnItsOwnLine(): void {
 		$etherpad = $this->createMock(EtherpadClient::class);
 		$etherpad->method('healthCheck')->willReturn(['pad_count' => 1]);
