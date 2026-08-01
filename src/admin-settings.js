@@ -19,6 +19,7 @@
 	const protectedPadsCheckbox = form ? form.querySelector('input[name="enable_protected_pads"]') : null
 	const publicPadsCheckbox = form ? form.querySelector('input[name="enable_public_pads"]') : null
 	const padTypesNoneHint = document.getElementById('pad-types-none-hint')
+	const cookieWarningNode = document.getElementById('epnc-cookie-warning')
 	const allowlistRow = document.getElementById('external-pad-allowlist-row')
 	const allowlistHint = document.getElementById('external-pad-allowlist-hint')
 	const allowlistTextarea = document.getElementById('external-pad-allowlist')
@@ -141,6 +142,18 @@
 		setStatus(message, null, node)
 	}
 
+	function updateCookieWarning(protectedPads) {
+		if (!(cookieWarningNode instanceof HTMLElement)) {
+			return
+		}
+		const message = (protectedPads && protectedPads.ok === false && typeof protectedPads.message === 'string')
+			? protectedPads.message
+			: ''
+		if (cookieWarningNode.textContent !== message) {
+			cookieWarningNode.textContent = message
+		}
+	}
+
 	function clearFieldErrors() {
 		Object.keys(fieldNodes).forEach((field) => {
 			const input = fieldNodes[field]
@@ -259,6 +272,9 @@
 			if (typeof data.pending_delete_count !== 'undefined') {
 				updatePendingDeleteUi(Number(data.pending_delete_count))
 			}
+			// A protected-pads problem is a warning beside the result, never a
+			// failed connection test: the API answered fine.
+			updateCookieWarning(data.protected_pads)
 			const suffix = details.length > 0 ? ` ${details.join(' | ')}` : ''
 			const message = `${String(data.message || l10n.healthOk)}${suffix}`
 			setStatus(message, 'success', diagnosticsTarget)

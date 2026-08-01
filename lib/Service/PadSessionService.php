@@ -10,6 +10,7 @@ namespace OCA\EtherpadNextcloud\Service;
 
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
 use OCP\IConfig;
+use OCP\IURLGenerator;
 
 class PadSessionService {
 	private const USER_CONFIG_AUTHOR_ID_KEY = 'etherpad_author_id';
@@ -18,6 +19,8 @@ class PadSessionService {
 	public function __construct(
 		private EtherpadClient $etherpadClient,
 		private IConfig $config,
+		private IURLGenerator $urlGenerator,
+		private CookieDomainPolicy $cookieDomainPolicy,
 	) {
 	}
 
@@ -99,53 +102,21 @@ class PadSessionService {
 	}
 
 	private function resolveCookieDomain(): string {
-		$storedCookieDomain = trim((string)$this->config->getAppValue('etherpad_nextcloud', 'etherpad_cookie_domain', ''));
-		$cookieDomainConfigured = (string)$this->config->getAppValue('etherpad_nextcloud', 'etherpad_cookie_domain_configured', 'no') === 'yes';
-		if ($cookieDomainConfigured || $storedCookieDomain !== '') {
-			return $storedCookieDomain;
-		}
-		return $this->deriveCookieDomainFromHost();
+		return $this->cookieDomainPolicy->resolve(
+			$this->urlGenerator->getBaseUrl(),
+			(string)$this->config->getAppValue('etherpad_nextcloud', 'etherpad_host', ''),
+			$this->storedCookieDomain(),
+		);
 	}
 
-	private function deriveCookieDomainFromHost(): string {
-		$host = $this->extractHost((string)$this->config->getAppValue('etherpad_nextcloud', 'etherpad_host', ''));
-		if ($host === '' || filter_var($host, FILTER_VALIDATE_IP) !== false || !str_contains($host, '.')) {
-			return '';
+	/** null when no domain was ever saved, so the policy derives one. */
+	private function storedCookieDomain(): ?string {
+		$configured = (string)$this->config->getAppValue('etherpad_nextcloud', 'etherpad_cookie_domain_configured', 'no') === 'yes';
+		$stored = trim((string)$this->config->getAppValue('etherpad_nextcloud', 'etherpad_cookie_domain', ''));
+		if (!$configured && $stored === '') {
+			return null;
 		}
-
-		$labels = explode('.', $host);
-		if (count($labels) === 2) {
-			return $host;
-		}
-		if (count($labels) < 2) {
-			return '';
-		}
-
-		array_shift($labels);
-		return '.' . implode('.', $labels);
-	}
-
-	private function extractHost(string $urlOrHost): string {
-		$value = strtolower(trim($urlOrHost));
-		if ($value === '') {
-			return '';
-		}
-
-		$host = parse_url($value, PHP_URL_HOST);
-		if (!is_string($host) || $host === '') {
-			$host = preg_replace('/:\d+$/', '', $value) ?? '';
-		}
-		$host = trim(strtolower($host), "[] \t\n\r\0\x0B.");
-		if ($host === '' || strlen($host) > 253) {
-			return '';
-		}
-
-		foreach (explode('.', $host) as $label) {
-			if ($label === '' || strlen($label) > 63 || preg_match('/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/', $label) !== 1) {
-				return '';
-			}
-		}
-		return $host;
+		return $stored;
 	}
 
 	private function syncAuthorMapping(string $uid, string $authorId, string $displayName): string {

@@ -31,6 +31,7 @@ class AdminSettingsRepository {
 			(string)$this->config->getAppValue(Application::APP_ID, 'trusted_embed_origins', ''),
 			(string)$this->config->getAppValue(Application::APP_ID, PadTypePolicy::SETTING_PROTECTED, 'yes') === 'yes',
 			(string)$this->config->getAppValue(Application::APP_ID, PadTypePolicy::SETTING_PUBLIC, 'yes') === 'yes',
+			(string)$this->config->getAppValue(Application::APP_ID, 'etherpad_cookie_domain_configured', 'no') === 'yes',
 		);
 	}
 

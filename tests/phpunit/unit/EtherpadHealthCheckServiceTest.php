@@ -7,13 +7,71 @@ namespace OCA\EtherpadNextcloud\Tests\Unit;
 use OCA\EtherpadNextcloud\Exception\AdminHealthCheckException;
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
 use OCA\EtherpadNextcloud\Service\EtherpadClient;
+use OCA\EtherpadNextcloud\Service\CookieDomainMessages;
+use OCA\EtherpadNextcloud\Service\CookieDomainPolicy;
 use OCA\EtherpadNextcloud\Service\EtherpadHealthCheckService;
+use OCA\EtherpadNextcloud\Service\PadTypePolicy;
 use OCA\EtherpadNextcloud\Service\PendingDeleteRetryService;
 use OCA\EtherpadNextcloud\Service\ValidatedAdminSettings;
+use OCP\IConfig;
 use OCP\IL10N;
+use OCP\IURLGenerator;
 use PHPUnit\Framework\TestCase;
 
 class EtherpadHealthCheckServiceTest extends TestCase {
+	public function testCheckReportsProtectedPadCookieProblemWithoutFailing(): void {
+		$etherpad = $this->createMock(EtherpadClient::class);
+		$etherpad->method('healthCheck')->willReturn(['pad_count' => 3]);
+
+		// Nextcloud and Etherpad on unrelated domains: the API answers, but no
+		// session cookie can span both hosts.
+		$result = $this->buildService($etherpad, $this->pendingCounts(0), 'https://cloud.example.test')
+			->check($this->settings('https://pad.unrelated.test'));
+
+		$this->assertSame(3, $result->padCount);
+		$this->assertNotNull($result->cookieDomain);
+		$this->assertFalse($result->cookieDomain->isOk());
+		$this->assertNotSame('', $result->cookieDomainMessage);
+		$this->assertStringContainsString('cloud.example.test', $result->cookieDomainMessage);
+		$this->assertStringContainsString('pad.unrelated.test', $result->cookieDomainMessage);
+	}
+
+	public function testCheckReportsNoCookieVerdictWhenProtectedPadsAreOff(): void {
+		$etherpad = $this->createMock(EtherpadClient::class);
+		$etherpad->method('healthCheck')->willReturn(['pad_count' => 1]);
+
+		$result = $this->buildService($etherpad, $this->pendingCounts(0), 'https://cloud.example.test', false)
+			->check($this->settings('https://pad.unrelated.test'));
+
+		$this->assertNull($result->cookieDomain);
+		$this->assertSame('', $result->cookieDomainMessage);
+	}
+
+	private function buildService(
+		EtherpadClient $etherpad,
+		PendingDeleteRetryService $pending,
+		string $nextcloudUrl = 'https://cloud.example.test',
+		bool $protectedPadsEnabled = true,
+	): EtherpadHealthCheckService {
+		$urlGenerator = $this->createMock(IURLGenerator::class);
+		$urlGenerator->method('getBaseUrl')->willReturn($nextcloudUrl);
+		$config = $this->createMock(IConfig::class);
+		$config->method('getAppValue')->willReturnCallback(
+			static fn(string $app, string $key, string $default = ''): string => $key === PadTypePolicy::SETTING_PROTECTED
+				? ($protectedPadsEnabled ? 'yes' : 'no')
+				: $default
+		);
+		return new EtherpadHealthCheckService(
+			$etherpad,
+			$pending,
+			$this->buildL10n(),
+			new CookieDomainPolicy(),
+			new CookieDomainMessages($this->buildL10n()),
+			new PadTypePolicy($config),
+			$urlGenerator,
+		);
+	}
+
 	public function testCheckReturnsHealthCheckResult(): void {
 		$etherpad = $this->createMock(EtherpadClient::class);
 		$etherpad->expects($this->once())
@@ -24,7 +82,7 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 		$pending = $this->createMock(PendingDeleteRetryService::class);
 		$pending->expects($this->once())->method('countPendingDeletes')->willReturn(3);
 
-		$result = (new EtherpadHealthCheckService($etherpad, $pending, $this->buildL10n()))->check($this->settings());
+		$result = ($this->buildService($etherpad, $pending))->check($this->settings());
 
 		$this->assertSame(42, $result->padCount);
 		$this->assertSame(3, $result->pendingDeleteCount);
@@ -35,11 +93,7 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 		$etherpad = $this->createMock(EtherpadClient::class);
 		$etherpad->method('healthCheck')->willReturn([]);
 
-		$result = (new EtherpadHealthCheckService(
-			$etherpad,
-			$this->pendingCounts(0),
-			$this->buildL10n(),
-		))->check($this->settings());
+		$result = $this->buildService($etherpad, $this->pendingCounts(0))->check($this->settings());
 
 		$this->assertSame(0, $result->padCount);
 	}
@@ -49,10 +103,20 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 		$etherpad->method('healthCheck')->willReturn(['pad_count' => 1]);
 		$ticks = [100.0000, 100.1246];
 
+		$urlGenerator = $this->createMock(IURLGenerator::class);
+		$urlGenerator->method('getBaseUrl')->willReturn('https://cloud.example.test');
+		$config = $this->createMock(IConfig::class);
+		$config->method('getAppValue')->willReturnCallback(
+			static fn(string $app, string $key, string $default = ''): string => $default
+		);
 		$service = new class(
 			$etherpad,
 			$this->pendingCounts(0),
 			$this->buildL10n(),
+			new CookieDomainPolicy(),
+			new CookieDomainMessages($this->buildL10n()),
+			new PadTypePolicy($config),
+			$urlGenerator,
 			$ticks,
 		) extends EtherpadHealthCheckService {
 			/** @param list<float> $ticks */
@@ -60,9 +124,13 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 				EtherpadClient $etherpadClient,
 				PendingDeleteRetryService $pendingDeleteRetryService,
 				IL10N $l10n,
+				CookieDomainPolicy $cookieDomainPolicy,
+				CookieDomainMessages $cookieDomainMessages,
+				PadTypePolicy $padTypePolicy,
+				IURLGenerator $urlGenerator,
 				private array $ticks,
 			) {
-				parent::__construct($etherpadClient, $pendingDeleteRetryService, $l10n);
+				parent::__construct($etherpadClient, $pendingDeleteRetryService, $l10n, $cookieDomainPolicy, $cookieDomainMessages, $padTypePolicy, $urlGenerator);
 			}
 
 			protected function now(): float {
@@ -82,7 +150,7 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 		$this->expectException(AdminHealthCheckException::class);
 		$this->expectExceptionMessage('authenticationMethod');
 
-		(new EtherpadHealthCheckService($etherpad, $this->createMock(PendingDeleteRetryService::class), $this->buildL10n()))
+		($this->buildService($etherpad, $this->createMock(PendingDeleteRetryService::class)))
 			->check($this->settings());
 	}
 
@@ -91,7 +159,7 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 		$etherpad->method('healthCheck')->willThrowException(new EtherpadClientException('Etherpad transport error: getaddrinfo for pad.bogus failed'));
 
 		try {
-			(new EtherpadHealthCheckService($etherpad, $this->createMock(PendingDeleteRetryService::class), $this->buildL10n()))
+			($this->buildService($etherpad, $this->createMock(PendingDeleteRetryService::class)))
 				->check($this->settings());
 			$this->fail('Expected health check exception.');
 		} catch (AdminHealthCheckException $e) {
@@ -142,7 +210,7 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 		$etherpad->method('healthCheck')->willThrowException(new EtherpadClientException($clientMessage));
 
 		try {
-			(new EtherpadHealthCheckService($etherpad, $this->createMock(PendingDeleteRetryService::class), $this->buildL10n()))
+			($this->buildService($etherpad, $this->createMock(PendingDeleteRetryService::class)))
 				->check($this->settings());
 			$this->fail('Expected health check exception.');
 		} catch (AdminHealthCheckException $e) {
@@ -162,7 +230,7 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 		$etherpad->method('healthCheck')->willThrowException($wrapped);
 
 		try {
-			(new EtherpadHealthCheckService($etherpad, $this->createMock(PendingDeleteRetryService::class), $this->buildL10n()))
+			($this->buildService($etherpad, $this->createMock(PendingDeleteRetryService::class)))
 				->check($this->settings());
 			$this->fail('Expected health check exception.');
 		} catch (AdminHealthCheckException $e) {
@@ -177,7 +245,7 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 		$etherpad->method('healthCheck')->willThrowException(new EtherpadClientException('something completely unexpected happened'));
 
 		try {
-			(new EtherpadHealthCheckService($etherpad, $this->createMock(PendingDeleteRetryService::class), $this->buildL10n()))
+			($this->buildService($etherpad, $this->createMock(PendingDeleteRetryService::class)))
 				->check($this->settings());
 			$this->fail('Expected health check exception.');
 		} catch (AdminHealthCheckException $e) {
@@ -185,9 +253,9 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 		}
 	}
 
-	private function settings(): ValidatedAdminSettings {
+	private function settings(string $etherpadHost = 'https://pad.example.test'): ValidatedAdminSettings {
 		return new ValidatedAdminSettings(
-			'https://pad.example.test',
+			$etherpadHost,
 			'https://pad-api.example.test',
 			'.example.test',
 			'key',

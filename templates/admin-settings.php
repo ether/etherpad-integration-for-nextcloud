@@ -81,6 +81,9 @@
 			<span class="ep-field-error" data-field-error="etherpad_cookie_domain" aria-live="polite"></span>
 		</p>
 		<p class="settings-hint ep-field-hint" id="epnc-hint-cookie-domain"><?php p((string)$_['l10n']['etherpad_cookie_domain_hint']); ?></p>
+		<?php /* Always rendered so the health check can fill it in later; empty
+			collapses via `:empty`, and no whitespace inside the tag. */ ?>
+		<p class="ep-cookie-warning" id="epnc-cookie-warning" role="status"><?php p((string)$_['cookie_domain_warning']); ?></p>
 
 		<h3 class="ep-section-heading"><?php p((string)$_['l10n']['section_pad_types']); ?></h3>
 

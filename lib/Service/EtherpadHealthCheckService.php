@@ -12,12 +12,17 @@ namespace OCA\EtherpadNextcloud\Service;
 use OCA\EtherpadNextcloud\Exception\AdminHealthCheckException;
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
 use OCP\IL10N;
+use OCP\IURLGenerator;
 
 class EtherpadHealthCheckService {
 	public function __construct(
 		private EtherpadClient $etherpadClient,
 		private PendingDeleteRetryService $pendingDeleteRetryService,
 		private IL10N $l10n,
+		private CookieDomainPolicy $cookieDomainPolicy,
+		private CookieDomainMessages $cookieDomainMessages,
+		private PadTypePolicy $padTypePolicy,
+		private IURLGenerator $urlGenerator,
 	) {
 	}
 
@@ -59,6 +64,20 @@ class EtherpadHealthCheckService {
 			);
 		}
 
+		// Reported alongside the connection result, never folded into it: the
+		// API can be perfectly reachable while protected pads still cannot
+		// work, and that must not read as a failed connection test.
+		$cookieDomain = null;
+		$cookieMessage = '';
+		if ($this->padTypePolicy->isEnabled(BindingService::ACCESS_PROTECTED)) {
+			$cookieDomain = $this->cookieDomainPolicy->decide(
+				$this->urlGenerator->getBaseUrl(),
+				$settings->etherpadHost,
+				$settings->cookieDomainConfigured ? $settings->etherpadCookieDomain : null,
+			);
+			$cookieMessage = $this->cookieDomainMessages->describe($cookieDomain);
+		}
+
 		return new HealthCheckResult(
 			$settings->etherpadHost,
 			$settings->etherpadApiHost,
@@ -67,6 +86,8 @@ class EtherpadHealthCheckService {
 			(int)round(($this->now() - $startedAt) * 1000.0),
 			rtrim($settings->etherpadApiHost, '/') . '/api/' . $settings->etherpadApiVersion . '/listAllPads',
 			$this->pendingDeleteRetryService->countPendingDeletes(),
+			$cookieDomain,
+			$cookieMessage,
 		);
 	}
 

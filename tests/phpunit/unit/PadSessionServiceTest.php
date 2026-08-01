@@ -5,16 +5,29 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\Tests\Unit;
 
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
+use OCA\EtherpadNextcloud\Service\CookieDomainPolicy;
 use OCA\EtherpadNextcloud\Service\EtherpadClient;
 use OCA\EtherpadNextcloud\Service\PadSessionService;
 use OCP\IConfig;
+use OCP\IURLGenerator;
 use PHPUnit\Framework\TestCase;
 
 class PadSessionServiceTest extends TestCase {
+	/**
+	 * The cookie domain now depends on the Nextcloud host as well, so every
+	 * case runs against a Nextcloud that shares a parent with the Etherpad
+	 * host used in the fixtures.
+	 */
+	private function buildService(EtherpadClient $etherpadClient, IConfig $config, string $nextcloudUrl = 'https://cloud.example.test'): PadSessionService {
+		$urlGenerator = $this->createMock(IURLGenerator::class);
+		$urlGenerator->method('getBaseUrl')->willReturn($nextcloudUrl);
+		return new PadSessionService($etherpadClient, $config, $urlGenerator, new CookieDomainPolicy());
+	}
+
 	public function testExtractGroupIdReturnsGroupPrefix(): void {
 		$etherpadClient = $this->createMock(EtherpadClient::class);
 		$config = $this->createMock(IConfig::class);
-		$service = new PadSessionService($etherpadClient, $config);
+		$service = $this->buildService($etherpadClient, $config);
 
 		$groupId = $service->extractGroupId('g.ABCDEFGHIJKLMNOP$my-pad-name');
 		$this->assertSame('g.ABCDEFGHIJKLMNOP', $groupId);
@@ -23,7 +36,7 @@ class PadSessionServiceTest extends TestCase {
 	public function testExtractGroupIdRejectsInvalidId(): void {
 		$etherpadClient = $this->createMock(EtherpadClient::class);
 		$config = $this->createMock(IConfig::class);
-		$service = new PadSessionService($etherpadClient, $config);
+		$service = $this->buildService($etherpadClient, $config);
 
 		$this->expectException(EtherpadClientException::class);
 		$this->expectExceptionMessage('Protected pad ID is invalid');
@@ -68,7 +81,7 @@ class PadSessionServiceTest extends TestCase {
 				['etherpad_nextcloud', 'etherpad_host', '', 'https://pad.example.test'],
 			]);
 
-		$service = new PadSessionService($etherpadClient, $config);
+		$service = $this->buildService($etherpadClient, $config);
 		$result = $service->createProtectedOpenContext($uid, '   ', $padId, 10);
 		$resultUrl = $result['url'];
 
@@ -94,9 +107,10 @@ class PadSessionServiceTest extends TestCase {
 			->willReturnMap([
 				['etherpad_nextcloud', 'etherpad_cookie_domain', '', '.example.test'],
 				['etherpad_nextcloud', 'etherpad_cookie_domain_configured', 'no', 'yes'],
+				['etherpad_nextcloud', 'etherpad_host', '', 'https://pad.example.test'],
 			]);
 
-		$service = new PadSessionService($etherpadClient, $config);
+		$service = $this->buildService($etherpadClient, $config);
 		$result = $service->createProtectedOpenContext($uid, 'Admin', $padId);
 
 		$this->assertSame('.example.test', $result['cookie']['domain']);
@@ -119,7 +133,7 @@ class PadSessionServiceTest extends TestCase {
 				['etherpad_nextcloud', 'etherpad_host', '', 'https://pad.example.test'],
 			]);
 
-		$service = new PadSessionService($etherpadClient, $config);
+		$service = $this->buildService($etherpadClient, $config);
 		$result = $service->createProtectedOpenContext($uid, 'Admin', $padId);
 
 		$this->assertSame('', $result['cookie']['domain']);
@@ -128,7 +142,7 @@ class PadSessionServiceTest extends TestCase {
 	public function testBuildSetCookieHeaderIncludesExpectedAttributes(): void {
 		$etherpadClient = $this->createMock(EtherpadClient::class);
 		$config = $this->createMock(IConfig::class);
-		$service = new PadSessionService($etherpadClient, $config);
+		$service = $this->buildService($etherpadClient, $config);
 
 		$header = $service->buildSetCookieHeader([
 			'name' => 'sessionID',
@@ -190,7 +204,7 @@ class PadSessionServiceTest extends TestCase {
 		$config->expects($this->never())->method('setUserValue');
 		$config->expects($this->never())->method('deleteUserValue');
 
-		$service = new PadSessionService($etherpadClient, $config);
+		$service = $this->buildService($etherpadClient, $config);
 		$result = $service->createProtectedOpenContext($uid, $displayName, $padId);
 
 		$this->assertSame($padUrl, $result['url']);
@@ -232,7 +246,7 @@ class PadSessionServiceTest extends TestCase {
 			->method('setUserValue')
 			->with($uid, 'etherpad_nextcloud', 'etherpad_author_display_name', $displayName);
 
-		$service = new PadSessionService($etherpadClient, $config);
+		$service = $this->buildService($etherpadClient, $config);
 		$service->createProtectedOpenContext($uid, $displayName, $padId);
 	}
 
@@ -317,7 +331,7 @@ class PadSessionServiceTest extends TestCase {
 				TestCase::assertSame($displayName, $value);
 			});
 
-		$service = new PadSessionService($etherpadClient, $config);
+		$service = $this->buildService($etherpadClient, $config);
 		$result = $service->createProtectedOpenContext($uid, $displayName, $padId);
 
 		$this->assertSame($sessionId, $result['cookie']['value']);
@@ -350,7 +364,7 @@ class PadSessionServiceTest extends TestCase {
 		$config->expects($this->never())->method('setUserValue');
 		$config->expects($this->never())->method('deleteUserValue');
 
-		$service = new PadSessionService($etherpadClient, $config);
+		$service = $this->buildService($etherpadClient, $config);
 		$service->createProtectedOpenContext($uid, $displayName, $padId);
 	}
 }

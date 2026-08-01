@@ -123,3 +123,18 @@
 	border-color: var(--color-error, #c62828) !important;
 	box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-error, #c62828) 40%, transparent) !important;
 }
+
+/* A configuration problem the admin should act on, but not an error of the
+   page itself — warning colour, not the red used for invalid input. */
+#etherpad-nextcloud-admin-settings .ep-cookie-warning:empty {
+	display: none;
+}
+
+#etherpad-nextcloud-admin-settings .ep-cookie-warning {
+	margin: 0 0 14px;
+	padding: 8px 12px;
+	max-width: 640px;
+	border-left: 4px solid var(--color-warning, #c98600);
+	background-color: var(--color-background-hover, #f5f5f5);
+	color: var(--color-main-text);
+}

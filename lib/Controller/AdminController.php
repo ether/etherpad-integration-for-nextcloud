@@ -95,6 +95,19 @@ class AdminController extends Controller {
 				'latency_ms' => $result->latencyMs,
 				'target' => $result->target,
 				'pending_delete_count' => $result->pendingDeleteCount,
+				// Reported next to the connection result, not as part of it:
+				// the API can be reachable while protected pads still cannot
+				// work. null when protected pads are switched off.
+				'protected_pads' => $result->cookieDomain === null ? null : [
+					'ok' => $result->cookieDomain->isOk(),
+					'status' => $result->cookieDomain->status,
+					'reason' => $result->cookieDomain->reason,
+					'cookie_domain' => $result->cookieDomain->effectiveDomain,
+					'cookie_domain_source' => $result->cookieDomain->source,
+					'nextcloud_host' => $result->cookieDomain->nextcloudHost,
+					'etherpad_host' => $result->cookieDomain->etherpadHost,
+					'message' => $result->cookieDomainMessage,
+				],
 			]),
 			[
 				'generic' => $this->l10n->t('Etherpad connection test failed.'),

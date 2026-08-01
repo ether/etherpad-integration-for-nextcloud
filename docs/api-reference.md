@@ -256,6 +256,21 @@ solely by the separate external-pad policy, not by these two settings.
     - `latency_ms`
     - `target`
     - `pending_delete_count`
+    - `protected_pads` — the session cookie domain verdict, or `null` when
+      protected pads are switched off. A failing verdict does **not** fail the
+      connection test: the API can be reachable while protected pads cannot
+      work. Fields: `ok`, `status` (`ok|warning|unknown`), `reason`,
+      `cookie_domain`, `cookie_domain_source` (`configured|derived|host_only`),
+      `nextcloud_host`, `etherpad_host`, `message`.
+
+      Protected pads need a session cookie valid for both hosts. Since
+      Nextcloud sets that cookie from its own response, the two must share a
+      parent domain or run on the same host; `SameSite` does not lift that
+      restriction. The check is pure string comparison against the configured
+      hosts and performs no I/O. Public suffixes (`co.uk`, `github.io`) are
+      recognised by a conservative heuristic, not a Public Suffix List lookup,
+      so `common_parent_may_be_public_suffix` is a warning rather than a
+      verdict.
 
 - `POST /api/v1/admin/consistency-check`
   - Controller: `AdminController::consistencyCheck`

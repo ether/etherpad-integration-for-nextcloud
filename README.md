@@ -133,13 +133,29 @@ If protected pads should open inside the Nextcloud viewer iframe:
 - Etherpad responses must allow embedding from your Nextcloud origin.
 - Reverse proxies must not enforce a conflicting `X-Frame-Options` policy.
 - A `Content-Security-Policy: frame-ancestors ...` header on the Etherpad side is the most reliable modern setup.
-- If Nextcloud and Etherpad are on the same registrable domain, Etherpad's default `SameSite: Lax` session cookie usually works.
-- If they are on different registrable domains, set Etherpad `cookie.sameSite` to `"None"` and keep HTTPS + `trustProxy: true`.
+Protected pads additionally require Nextcloud and Etherpad to **share a parent
+domain**, unless both run on the same host. Nextcloud issues the Etherpad
+session cookie from its own response, and a browser only accepts a `Domain=`
+that covers the host which sent it. A response from `cloud.example.org` can
+therefore never set a cookie that reaches `pad.otherdomain.example`, and
+`SameSite=None` does not change that — it governs whether an already valid
+cookie is sent cross-site, not which domain may be set.
+
+- Same host for both: nothing to configure, a host-only cookie covers it.
+- Shared parent domain: the cookie domain is derived automatically, and
+  Etherpad's default `SameSite: Lax` usually works.
+- Unrelated registrable domains: protected pads cannot work with the current
+  session model. Move one host, or switch protected pads off and offer public
+  pads instead.
 
 Example:
 
-- `cloud.example.org` + `pad.example.org` -> usually works with default `SameSite: "Lax"`
-- `cloud.example.org` + `pad.otherdomain.example` -> usually requires `SameSite: "None"` and HTTPS
+- `cloud.example.org` + `pad.example.org` -> works, cookie domain `.example.org`
+- `cloud.example.org` + `cloud.example.org` -> works, host-only cookie
+- `cloud.example.org` + `pad.otherdomain.example` -> not supported for protected pads
+
+`Test Etherpad connection` reports this alongside the connection result, and the
+settings page shows it without running the test.
 
 ## Upgrade
 
@@ -220,11 +236,15 @@ PHP checks and optional E2E checks are described in [docs/release-process.md](do
 
 ### Protected pads fail because of cookies / iframe auth
 
+- First check the domain relationship: Nextcloud and Etherpad must share a
+  parent domain, or run on the same host. `Test Etherpad connection` names both
+  hostnames when they do not.
 - Check Etherpad cookie settings:
-  - same registrable domain: default `SameSite: "Lax"` is usually enough
-  - different registrable domains: use `cookie.sameSite: "None"` and `trustProxy: true`
+  - shared parent domain: default `SameSite: "Lax"` is usually enough
+  - across subdomains behind a proxy: `cookie.sameSite: "None"` and `trustProxy: true`
 - HTTPS is required when using `SameSite=None`
-- Some hosting domains that look related are still treated as cross-site by browsers
+- A shared parent that is a public suffix (`co.uk`, `github.io`) does not count:
+  browsers reject it as a cookie domain
 
 ### Etherpad is blocked inside the Nextcloud viewer iframe
 
