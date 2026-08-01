@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\Service;
 
 use OCP\Http\Client\IClientService;
+use OCP\Http\Client\LocalServerException;
 use OCP\IL10N;
 
 /**
@@ -24,6 +25,18 @@ use OCP\IL10N;
  * correctly configured instances, so an unreachable base URL is a warning
  * that says as much.
  *
+ * Unlike the API host, this URL gets no local-address exemption. That
+ * exemption is what would turn an admin-supplied address into a probe into
+ * the server's own network, and it is not needed here: a browser-facing URL
+ * that only this server can reach is broken for users anyway. Redirects are
+ * disabled on top — Nextcloud validates redirect targets too while the local
+ * protection is on, but this check has no use for the target, so not
+ * following one is simply less surface.
+ *
+ * The protection is Nextcloud's, so an instance running with
+ * `allow_local_remote_servers=true` disables it for every request including
+ * this one.
+ *
  * @psalm-api
  */
 class BaseUrlReachabilityCheck {
@@ -36,26 +49,40 @@ class BaseUrlReachabilityCheck {
 	) {
 	}
 
-	public function check(string $baseUrl, string $apiHost): HealthCheckItem {
+	public function check(string $baseUrl): HealthCheckItem {
 		$label = $this->l10n->t('Etherpad base URL reachable');
-		// The validator rejects an empty base URL, so only the shared-address
-		// case is skipped here. It claims no field: with no separate API URL
-		// the API line already speaks for that input, and two verdicts cannot
-		// share one slot.
+		// Checked even when it matches the API URL. The API call may well
+		// succeed against a loopback address, which says nothing about whether
+		// a browser can open a pad there — skipping would hide exactly the
+		// case the strict policy exists for.
 		$trimmed = trim($baseUrl);
-		if (rtrim($trimmed, '/') === rtrim(trim($apiHost), '/')) {
-			return new HealthCheckItem('base_url', HealthCheckItem::STATUS_SKIPPED, $label, $this->l10n->t('Same as the API URL, already checked.'));
-		}
 
 		$client = $this->clientService->newClient();
 		try {
 			$response = $client->request('GET', $trimmed, [
 				'timeout' => self::TIMEOUT_SECONDS,
-				// Etherpad redirects / to /p/... on some setups, and a proxy may
-				// redirect http to https. Following a couple is normal here.
-				'allow_redirects' => ['max' => 3],
-				'nextcloud' => ['allow_local_address' => true],
+				// Not followed, matching EtherpadClient: a 3xx already proves
+				// something is listening, so the target is of no use here.
+				'allow_redirects' => ['max' => 0],
+				// Only the status code is wanted, so the body is never
+				// buffered: a hostile host could otherwise send as much as it
+				// manages within the timeout.
+				'stream' => true,
 			]);
+		} catch (LocalServerException $e) {
+			// Blocked before anything left the server. Saying so beats the
+			// generic "did not answer", which would send the admin looking for
+			// a network fault that is not there.
+			return new HealthCheckItem(
+				'base_url',
+				HealthCheckItem::STATUS_WARNING,
+				$label,
+				$this->fill(
+					$this->l10n->t('{url} points into this server\'s own network, so Nextcloud refused to contact it. Browsers cannot open pads there either.'),
+					['url' => $trimmed],
+				),
+				self::FIELD,
+			);
 		} catch (\Throwable $e) {
 			// The Nextcloud client throws on >= 400, so recover the real
 			// response: a 404 still proves the host answers, which is all this
@@ -79,7 +106,9 @@ class BaseUrlReachabilityCheck {
 		$status = $response->getStatusCode();
 
 		// A host that answers is not automatically a working base URL: point it
-		// at the wrong path and every pad link built from it 404s.
+		// at the wrong path and every pad link built from it 404s. A 3xx is
+		// fine — Etherpad redirects / on some setups, and a proxy may send
+		// http to https.
 		if ($status >= 400) {
 			return new HealthCheckItem(
 				'base_url',

@@ -14,12 +14,13 @@ use OCA\EtherpadNextcloud\Service\HealthCheckItem;
 use OCP\Http\Client\IClient;
 use OCP\Http\Client\IClientService;
 use OCP\Http\Client\IResponse;
+use OCP\Http\Client\LocalServerException;
 use OCP\IL10N;
 use PHPUnit\Framework\TestCase;
 
 class BaseUrlReachabilityCheckTest extends TestCase {
 	public function testReachableBaseUrlPasses(): void {
-		$item = $this->buildCheck($this->respondingWith(200))->check('https://pad.example.test', 'http://localhost:9001');
+		$item = $this->buildCheck($this->respondingWith(200))->check('https://pad.example.test');
 
 		$this->assertSame(HealthCheckItem::STATUS_OK, $item->status);
 		$this->assertSame('https://pad.example.test', $item->detail);
@@ -32,17 +33,19 @@ class BaseUrlReachabilityCheckTest extends TestCase {
 	 */
 	public function testClientErrorsWarnRatherThanCountAsReachable(): void {
 		foreach ([401, 403, 404] as $status) {
-			$item = $this->buildCheck($this->respondingWith($status))->check('https://pad.example.test/wrong', 'http://localhost:9001');
+			$item = $this->buildCheck($this->respondingWith($status))->check('https://pad.example.test/wrong');
 			$this->assertSame(HealthCheckItem::STATUS_WARNING, $item->status, (string)$status);
 			$this->assertStringContainsString((string)$status, $item->detail, (string)$status);
 		}
 	}
 
 	/**
-	 * The client follows redirects and reaches loopback addresses only when
-	 * told to, and a slow host must not hold the settings page.
+	 * The base URL is admin-supplied and points at a host we do not control,
+	 * so this must not become an SSRF probe: no local-address exemption, no
+	 * redirect following, a body that is never buffered, and a timeout short
+	 * enough not to hold the settings page.
 	 */
-	public function testRequestsWithTheIntendedOptions(): void {
+	public function testRequestsWithoutRedirectsOrLocalAddressAccess(): void {
 		$response = $this->createMock(IResponse::class);
 		$response->method('getStatusCode')->willReturn(200);
 		$client = $this->createMock(IClient::class);
@@ -53,13 +56,14 @@ class BaseUrlReachabilityCheckTest extends TestCase {
 				'https://pad.example.test',
 				$this->callback(static function (array $options): bool {
 					return $options['timeout'] === 5
-						&& $options['allow_redirects']['max'] === 3
-						&& $options['nextcloud']['allow_local_address'] === true;
+						&& $options['allow_redirects']['max'] === 0
+						&& $options['stream'] === true
+						&& !isset($options['nextcloud']['allow_local_address']);
 				}),
 			)
 			->willReturn($response);
 
-		$this->buildCheck($client)->check('https://pad.example.test', 'http://localhost:9001');
+		$this->buildCheck($client)->check('https://pad.example.test');
 	}
 
 	/**
@@ -72,7 +76,7 @@ class BaseUrlReachabilityCheckTest extends TestCase {
 		$client->method('request')->willThrowException(new \RuntimeException('Could not resolve host: pad.example.spacer'));
 		$client->method('getResponseFromThrowable')->willThrowException(new \RuntimeException('no response'));
 
-		$item = $this->buildCheck($client)->check('https://pad.example.spacer', 'http://localhost:9001');
+		$item = $this->buildCheck($client)->check('https://pad.example.spacer');
 
 		$this->assertSame(HealthCheckItem::STATUS_WARNING, $item->status);
 		$this->assertStringContainsString('pad.example.spacer', $item->detail);
@@ -86,29 +90,52 @@ class BaseUrlReachabilityCheckTest extends TestCase {
 		$client = $this->createMock(IClient::class);
 		$client->method('request')->willReturn($response);
 
-		$item = $this->buildCheck($client)->check('https://pad.example.test', 'http://localhost:9001');
+		$item = $this->buildCheck($client)->check('https://pad.example.test');
 
 		$this->assertSame(HealthCheckItem::STATUS_WARNING, $item->status);
 	}
 
+	/** A redirect proves the host answers; we just do not follow it. */
+	public function testRedirectCountsAsReachable(): void {
+		$item = $this->buildCheck($this->respondingWith(302))->check('https://pad.example.test');
+
+		$this->assertSame(HealthCheckItem::STATUS_OK, $item->status);
+	}
+
 	public function testServerErrorWarns(): void {
-		$item = $this->buildCheck($this->respondingWith(502))->check('https://pad.example.test', 'http://localhost:9001');
+		$item = $this->buildCheck($this->respondingWith(502))->check('https://pad.example.test');
 
 		$this->assertSame(HealthCheckItem::STATUS_WARNING, $item->status);
 		$this->assertStringContainsString('502', $item->detail);
 	}
 
-	public function testIdenticalApiUrlIsSkippedRatherThanRequestedTwice(): void {
-		$clientService = $this->createMock(IClientService::class);
-		$clientService->expects($this->never())->method('newClient');
+	/**
+	 * Skipping when it matches the API URL would hide the very case the
+	 * strict policy exists for: the API call may succeed against a loopback
+	 * address that no browser can use.
+	 */
+	public function testIsCheckedEvenWhenItMatchesTheApiUrl(): void {
+		$client = $this->createMock(IClient::class);
+		$client->expects($this->once())
+			->method('request')
+			->willThrowException(new LocalServerException('Host violates local access rules'));
 
-		$item = (new BaseUrlReachabilityCheck($clientService, $this->buildL10n()))
-			->check('https://pad.example.test/', 'https://pad.example.test');
+		$item = $this->buildCheck($client)->check('http://localhost:9001');
 
-		$this->assertSame(HealthCheckItem::STATUS_SKIPPED, $item->status);
-		// No field: the API line already speaks for that input, and one slot
-		// cannot hold two verdicts.
-		$this->assertSame('', $item->field);
+		$this->assertSame(HealthCheckItem::STATUS_WARNING, $item->status);
+	}
+
+	/** Blocked before anything left the server, which is not a network fault. */
+	public function testALocalAddressSaysItWasRefusedRatherThanUnreachable(): void {
+		$client = $this->createMock(IClient::class);
+		$client->method('request')->willThrowException(new LocalServerException('Host violates local access rules'));
+
+		$item = $this->buildCheck($client)->check('http://192.168.1.5:9001');
+
+		$this->assertSame(HealthCheckItem::STATUS_WARNING, $item->status);
+		$this->assertStringContainsString('192.168.1.5', $item->detail);
+		$this->assertStringContainsString('own network', $item->detail);
+		$this->assertStringNotContainsString('did not answer', $item->detail);
 	}
 
 

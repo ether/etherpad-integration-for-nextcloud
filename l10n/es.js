@@ -135,7 +135,6 @@ OC.L10N.register(
     "Required for protected pads unless Nextcloud and Etherpad run on the same host: the session cookie must be valid for both. Auto-filled from the two hosts when they share a parent domain. Leave empty for a host-only cookie.": "Necesario para los pads protegidos, salvo que Nextcloud y Etherpad se ejecuten en el mismo host: la cookie de sesión debe ser válida para ambos. Se rellena automáticamente a partir de los dos hosts cuando comparten un dominio principal. Déjalo vacío para una cookie limitada al host.",
     "Retry pending deletes now": "Reintentar las eliminaciones pendientes ahora",
     "Running consistency check...": "Ejecutando comprobación de consistencia...",
-    "Same as the API URL, already checked.": "Igual que la URL de la API, ya comprobada.",
     "Save settings": "Guardar ajustes",
     "Saving settings...": "Guardando ajustes...",
     "Selected file is not a .pad file.": "El archivo seleccionado no es un archivo .pad.",
@@ -164,7 +163,8 @@ OC.L10N.register(
     "{domain} would cover both.": "{domain} cubriría ambos.",
     "{target} — {count} pads, {latency} ms": "{target}: {count} pads, {latency} ms",
     "{url} answered with HTTP {status}.": "{url} respondió con HTTP {status}.",
-    "{url} did not answer: {error}. If Nextcloud cannot reach the public URL by design, ignore this — but check the URL for typos, because pad links in the browser use it.": "{url} no respondió: {error}. Si Nextcloud no puede alcanzar la URL pública por diseño, ignóralo; pero revisa la URL por si hay erratas, porque los enlaces de pad del navegador la utilizan."
+    "{url} did not answer: {error}. If Nextcloud cannot reach the public URL by design, ignore this — but check the URL for typos, because pad links in the browser use it.": "{url} no respondió: {error}. Si Nextcloud no puede alcanzar la URL pública por diseño, ignóralo; pero revisa la URL por si hay erratas, porque los enlaces de pad del navegador la utilizan.",
+    "{url} points into this server's own network, so Nextcloud refused to contact it. Browsers cannot open pads there either.": "{url} apunta a la propia red de este servidor, así que Nextcloud se negó a contactarla. Los navegadores tampoco pueden abrir pads ahí."
 },
 	"nplurals=2; plural=(n != 1);"
 );

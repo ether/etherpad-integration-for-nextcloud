@@ -7,6 +7,7 @@ $stubFiles = [
 	__DIR__ . '/stubs/OCP/AppFramework/Controller.php',
 	__DIR__ . '/stubs/OCP/ISession.php',
 	__DIR__ . '/stubs/OCP/Util.php',
+	__DIR__ . '/stubs/OCP/Http/Client/LocalServerException.php',
 	__DIR__ . '/stubs/OCP/Settings/ISettings.php',
 	__DIR__ . '/stubs/OCP/AppFramework/PublicShareController.php',
 	__DIR__ . '/stubs/OCP/AppFramework/Http.php',

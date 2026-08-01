@@ -134,12 +134,17 @@
 		setStatus(message, null, node)
 	}
 
+	// Higher wins when two checks land on the same field, so a problem is
+	// never hidden by a passing verdict that happened to come later.
+	const CHECK_SEVERITY = { skipped: 0, ok: 1, warning: 2 }
+
 	// Each result is shown at the field it came from: a green tick where
 	// things are fine, the message itself where they are not.
 	function renderConnectionChecks(checks) {
 		for (const slot of document.querySelectorAll('[data-check-result]')) {
 			slot.textContent = ''
 			slot.className = 'ep-check-result'
+			delete slot.dataset.checkStatus
 		}
 		if (!Array.isArray(checks)) {
 			return
@@ -156,6 +161,11 @@
 			if (!(slot instanceof HTMLElement)) {
 				continue
 			}
+			const shown = slot.dataset.checkStatus
+			if (shown && (CHECK_SEVERITY[shown] ?? 0) > (CHECK_SEVERITY[status] ?? 0)) {
+				continue
+			}
+			slot.dataset.checkStatus = status
 			slot.className = `ep-check-result ep-check-${status}`
 			// A passing field needs no prose — the tick and the label say it.
 			// A failing one needs the reason right there.

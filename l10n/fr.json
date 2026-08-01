@@ -134,7 +134,6 @@
         "Required for protected pads unless Nextcloud and Etherpad run on the same host: the session cookie must be valid for both. Auto-filled from the two hosts when they share a parent domain. Leave empty for a host-only cookie.": "Nécessaire pour les pads protégés, sauf si Nextcloud et Etherpad tournent sur le même hôte : le cookie de session doit être valide pour les deux. Rempli automatiquement à partir des deux hôtes lorsqu'ils partagent un domaine parent. Laisser vide pour un cookie limité à l'hôte.",
         "Retry pending deletes now": "Réessayer les suppressions en attente maintenant",
         "Running consistency check...": "Vérification de cohérence en cours...",
-        "Same as the API URL, already checked.": "Identique à l’URL de l’API, déjà vérifiée.",
         "Save settings": "Enregistrer les paramètres",
         "Saving settings...": "Enregistrement des paramètres...",
         "Selected file is not a .pad file.": "Le fichier sélectionné n'est pas un fichier .pad.",
@@ -163,7 +162,8 @@
         "{domain} would cover both.": "{domain} couvrirait les deux.",
         "{target} — {count} pads, {latency} ms": "{target} – {count} pads, {latency} ms",
         "{url} answered with HTTP {status}.": "{url} a répondu avec HTTP {status}.",
-        "{url} did not answer: {error}. If Nextcloud cannot reach the public URL by design, ignore this — but check the URL for typos, because pad links in the browser use it.": "{url} n'a pas répondu : {error}. Si Nextcloud ne peut pas atteindre l'URL publique par conception, ignorez ce message ; vérifiez toutefois les fautes de frappe, car les liens de pad du navigateur l'utilisent."
+        "{url} did not answer: {error}. If Nextcloud cannot reach the public URL by design, ignore this — but check the URL for typos, because pad links in the browser use it.": "{url} n'a pas répondu : {error}. Si Nextcloud ne peut pas atteindre l'URL publique par conception, ignorez ce message ; vérifiez toutefois les fautes de frappe, car les liens de pad du navigateur l'utilisent.",
+        "{url} points into this server's own network, so Nextcloud refused to contact it. Browsers cannot open pads there either.": "{url} pointe vers le réseau interne de ce serveur, Nextcloud a donc refusé de le contacter. Les navigateurs ne peuvent pas non plus y ouvrir de pads."
     },
     "pluralForm": "nplurals=2; plural=(n > 1);"
 }

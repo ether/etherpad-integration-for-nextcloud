@@ -178,6 +178,42 @@ describe('protected pads cookie warning', () => {
 		expect(cookie.textContent).toBe('Hosts do not share a parent domain.')
 	})
 
+	it('lets a warning win over a pass on the same field', async () => {
+		// With no separate API URL both lines describe the base URL input.
+		vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(okResponse({
+			message: 'Check finished. Some settings need attention.',
+			checks: [
+				{ id: 'api', status: 'ok', label: 'Etherpad API reachable', detail: '', field: 'etherpad_host' },
+				{ id: 'base_url', status: 'warning', label: 'Etherpad base URL reachable', detail: 'Points into this server\'s own network.', field: 'etherpad_host' },
+			],
+		}))))
+		await import(MODULE)
+
+		document.getElementById('etherpad-nextcloud-health-check').click()
+		await flush()
+
+		const slot = document.querySelector('[data-check-result="etherpad_host"]')
+		expect(slot.classList.contains('ep-check-warning')).toBe(true)
+		expect(slot.textContent).toContain('own network')
+	})
+
+	it('keeps the warning even when the passing line comes last', async () => {
+		vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(okResponse({
+			message: 'Check finished. Some settings need attention.',
+			checks: [
+				{ id: 'base_url', status: 'warning', label: 'Etherpad base URL reachable', detail: 'Points into this server\'s own network.', field: 'etherpad_host' },
+				{ id: 'api', status: 'ok', label: 'Etherpad API reachable', detail: '', field: 'etherpad_host' },
+			],
+		}))))
+		await import(MODULE)
+
+		document.getElementById('etherpad-nextcloud-health-check').click()
+		await flush()
+
+		const slot = document.querySelector('[data-check-result="etherpad_host"]')
+		expect(slot.classList.contains('ep-check-warning')).toBe(true)
+	})
+
 	it('clears field results while the new run is still in flight', async () => {
 		const cookie = document.querySelector('[data-check-result="etherpad_cookie_domain"]')
 		cookie.className = 'ep-check-result ep-check-warning'

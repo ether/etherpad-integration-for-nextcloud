@@ -119,7 +119,7 @@ class EtherpadHealthCheckService {
 				$this->fill($this->l10n->t('API version {version}'), ['version' => $settings->etherpadApiVersion]),
 				'etherpad_api_key',
 			),
-			$this->baseUrlCheck->check($settings->etherpadHost, $settings->etherpadApiHost),
+			$this->baseUrlCheck->check($settings->etherpadHost),
 		];
 
 		return new HealthCheckResult(
