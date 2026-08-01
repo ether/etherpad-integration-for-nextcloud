@@ -15,6 +15,18 @@ use OCP\IL10N;
 use OCP\IURLGenerator;
 
 class EtherpadHealthCheckService {
+	private const REASON_API_KEY_MODE = 'api_key_mode';
+	private const REASON_API_KEY_REJECTED = 'api_key_rejected';
+	private const REASON_API_NOT_FOUND = 'api_not_found';
+	private const REASON_SERVER_ERROR = 'server_error';
+	private const REASON_DNS = 'dns';
+	private const REASON_CONNECTION_REFUSED = 'connection_refused';
+	private const REASON_TIMEOUT = 'timeout';
+	private const REASON_TLS = 'tls';
+	private const REASON_TRANSPORT = 'transport';
+	private const REASON_INVALID_JSON = 'invalid_json';
+	private const REASON_UNKNOWN = '';
+
 	public function __construct(
 		private EtherpadClient $etherpadClient,
 		private PendingDeleteRetryService $pendingDeleteRetryService,
@@ -44,7 +56,8 @@ class EtherpadHealthCheckService {
 			if ($previous instanceof \Throwable && $previous->getMessage() !== '') {
 				$detail .= ' (' . $previous->getMessage() . ')';
 			}
-			$hint = $this->hintForFailureMessage($detail);
+			$reason = $this->classifyFailure($detail);
+			$hint = $this->hintForReason($reason);
 			if ($hint !== '') {
 				$detail .= ' ' . $hint;
 			}
@@ -60,7 +73,7 @@ class EtherpadHealthCheckService {
 				str_replace('{detail}', $detail, $template),
 				0,
 				$e,
-				$this->fieldForFailureMessage($detail, $settings),
+				$this->fieldForReason($reason, $settings),
 			);
 		}
 
@@ -122,59 +135,97 @@ class EtherpadHealthCheckService {
 	}
 
 	/**
-	 * Map the full failure message (including inner-exception text) onto an
-	 * actionable hint string. Returns an empty string when no hint applies —
-	 * the bare error stays in the detail field in that case.
+	 * Classify a failure once, then derive both the hint and the field from
+	 * the result. Two separate matchers over the same strings could hand out
+	 * a correct hint with the wrong field.
 	 *
-	 * Matching is intentionally on substrings rather than exception subtypes
-	 * because the upstream library bundles many failure shapes into the same
-	 * message. If upstream wording changes the hint just drops; the error
-	 * itself still surfaces.
+	 * Matching is on substrings rather than exception subtypes because the
+	 * upstream library bundles many failure shapes into the same message. If
+	 * upstream wording changes the classification just falls through to
+	 * REASON_UNKNOWN; the error itself still surfaces.
 	 */
-	private function hintForFailureMessage(string $rawMessage): string {
+	private function classifyFailure(string $rawMessage): string {
 		$message = strtolower($rawMessage);
 
 		if (str_contains($message, 'no or wrong api key')
 			|| str_contains($message, 'wrong api key')
 			|| str_contains($message, 'invalid apikey')) {
-			return $this->l10n->t('Hint: Set "authenticationMethod": "apikey" in Etherpad\'s settings.json.');
+			return self::REASON_API_KEY_MODE;
 		}
 
-		// HTTP status hints come before transport hints because they
-		// distinguish "Etherpad reachable but unhappy" from "can't reach
-		// Etherpad at all".
+		// HTTP statuses come before transport reasons because they distinguish
+		// "Etherpad reachable but unhappy" from "cannot reach Etherpad at all".
 		if (str_contains($message, 'http error (401)') || str_contains($message, 'http error (403)')) {
-			return $this->l10n->t('Hint: Etherpad rejected the API key. Check that the key matches Etherpad\'s APIKEY.txt.');
+			return self::REASON_API_KEY_REJECTED;
 		}
 		if (str_contains($message, 'http error (404)')) {
-			return $this->l10n->t('Hint: API endpoint not found. Check the API host and that the configured API version is supported by your Etherpad.');
+			return self::REASON_API_NOT_FOUND;
 		}
 		if (preg_match('/http error \(5\d{2}\)/', $message) === 1) {
-			return $this->l10n->t('Hint: Etherpad returned a server error. Check the Etherpad server logs.');
+			return self::REASON_SERVER_ERROR;
 		}
 
-		// Transport-level — Nextcloud HTTP client (IClientService) connection failures.
+		// Transport level — Nextcloud HTTP client (IClientService) failures.
 		if (str_contains($message, 'transport error')) {
 			if (str_contains($message, 'getaddrinfo') || str_contains($message, 'name or service not known') || str_contains($message, 'could not resolve host')) {
-				return $this->l10n->t('Hint: The configured Etherpad host did not resolve. Check the hostname for typos and that DNS reaches it from this server.');
+				return self::REASON_DNS;
 			}
 			if (str_contains($message, 'connection refused')) {
-				return $this->l10n->t('Hint: Connection refused. Etherpad does not appear to be running on the configured host and port.');
+				return self::REASON_CONNECTION_REFUSED;
 			}
 			if (str_contains($message, 'timed out') || str_contains($message, 'timeout')) {
-				return $this->l10n->t('Hint: Connection timed out. Check that this server can reach the Etherpad host (firewall, network).');
+				return self::REASON_TIMEOUT;
 			}
 			if (str_contains($message, 'ssl') || str_contains($message, 'tls') || str_contains($message, 'certificate')) {
-				return $this->l10n->t('Hint: TLS handshake failed. Check the Etherpad certificate and that the configured URL uses the right scheme.');
+				return self::REASON_TLS;
 			}
-			return $this->l10n->t('Hint: Could not reach Etherpad. Check the API host and that this server can connect to it.');
+			return self::REASON_TRANSPORT;
 		}
 
 		if (str_contains($message, 'invalid json response')) {
-			return $this->l10n->t('Hint: Etherpad returned non-JSON. Likely a reverse proxy or HTML error page in front of the API host.');
+			return self::REASON_INVALID_JSON;
 		}
 
-		return '';
+		return self::REASON_UNKNOWN;
+	}
+
+	/** Empty when no hint applies — the bare error stays in the detail field. */
+	private function hintForReason(string $reason): string {
+		return match ($reason) {
+			self::REASON_API_KEY_MODE => $this->l10n->t('Hint: Set "authenticationMethod": "apikey" in Etherpad\'s settings.json.'),
+			self::REASON_API_KEY_REJECTED => $this->l10n->t('Hint: Etherpad rejected the API key. Check that the key matches Etherpad\'s APIKEY.txt.'),
+			self::REASON_API_NOT_FOUND => $this->l10n->t('Hint: API endpoint not found. Check the API host and that the configured API version is supported by your Etherpad.'),
+			self::REASON_SERVER_ERROR => $this->l10n->t('Hint: Etherpad returned a server error. Check the Etherpad server logs.'),
+			self::REASON_DNS => $this->l10n->t('Hint: The configured Etherpad host did not resolve. Check the hostname for typos and that DNS reaches it from this server.'),
+			self::REASON_CONNECTION_REFUSED => $this->l10n->t('Hint: Connection refused. Etherpad does not appear to be running on the configured host and port.'),
+			self::REASON_TIMEOUT => $this->l10n->t('Hint: Connection timed out. Check that this server can reach the Etherpad host (firewall, network).'),
+			self::REASON_TLS => $this->l10n->t('Hint: TLS handshake failed. Check the Etherpad certificate and that the configured URL uses the right scheme.'),
+			self::REASON_TRANSPORT => $this->l10n->t('Hint: Could not reach Etherpad. Check the API host and that this server can connect to it.'),
+			self::REASON_INVALID_JSON => $this->l10n->t('Hint: Etherpad returned non-JSON. Likely a reverse proxy or HTML error page in front of the API host.'),
+			default => '',
+		};
+	}
+
+	/**
+	 * Which input the failure points at. A rejected key is about the key; an
+	 * address that does not resolve, refuses or 404s is about the address —
+	 * which is the base URL field when no separate API URL is set. A server
+	 * error or non-JSON answer means the address is fine and something behind
+	 * it is not, so neither field is marked.
+	 */
+	private function fieldForReason(string $reason, ValidatedAdminSettings $settings): string {
+		$apiField = $settings->etherpadApiHost === $settings->etherpadHost ? 'etherpad_host' : 'etherpad_api_host';
+
+		return match ($reason) {
+			self::REASON_API_KEY_MODE, self::REASON_API_KEY_REJECTED => 'etherpad_api_key',
+			self::REASON_API_NOT_FOUND,
+			self::REASON_DNS,
+			self::REASON_CONNECTION_REFUSED,
+			self::REASON_TIMEOUT,
+			self::REASON_TLS,
+			self::REASON_TRANSPORT => $apiField,
+			default => '',
+		};
 	}
 
 	/** @param array<string,string> $parameters */
@@ -183,27 +234,6 @@ class EtherpadHealthCheckService {
 			$text = str_replace('{' . $key . '}', $value, $text);
 		}
 		return $text;
-	}
-
-	/**
-	 * Which input the failure points at. A rejected key is about the key; a
-	 * host that does not resolve, refuses or 404s is about the address — which
-	 * is the base URL field when no separate API URL is set.
-	 */
-	private function fieldForFailureMessage(string $rawMessage, ValidatedAdminSettings $settings): string {
-		$message = strtolower($rawMessage);
-		$apiField = $settings->etherpadApiHost === $settings->etherpadHost ? 'etherpad_host' : 'etherpad_api_host';
-
-		if (str_contains($message, 'api key')
-			|| str_contains($message, 'apikey')
-			|| str_contains($message, 'http error (401)')
-			|| str_contains($message, 'http error (403)')) {
-			return 'etherpad_api_key';
-		}
-		if (str_contains($message, 'transport error') || str_contains($message, 'http error (404)')) {
-			return $apiField;
-		}
-		return '';
 	}
 
 	protected function now(): float {

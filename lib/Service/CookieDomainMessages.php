@@ -32,10 +32,7 @@ class CookieDomainMessages {
 	 * seen leaking the literal placeholder through in some catalog setups.
 	 */
 	public function describe(CookieDomainDecision $decision): string {
-		$hosts = $this->fill(
-			$this->l10n->t('Nextcloud runs on {nextcloud_host}, Etherpad on {etherpad_host}.'),
-			['nextcloud_host' => $decision->nextcloudHost, 'etherpad_host' => $decision->etherpadHost],
-		);
+		$hosts = $this->hostSentence($decision);
 
 		$suggestion = $decision->suggestedDomain !== ''
 			? ' ' . $this->fill($this->l10n->t('{domain} would cover both.'), ['domain' => $decision->suggestedDomain])
@@ -79,7 +76,20 @@ class CookieDomainMessages {
 				: $this->l10n->t('Host-only cookie, Nextcloud and Etherpad share a host.');
 			return new HealthCheckItem('protected_pads', HealthCheckItem::STATUS_OK, $label, $detail, $field);
 		}
-		return new HealthCheckItem('protected_pads', HealthCheckItem::STATUS_WARNING, $label, $this->describe($decision), $field);
+		// A reason without its own wording would otherwise render as a blank
+		// warning; naming both hosts is still enough to act on.
+		$detail = $this->describe($decision);
+		if (trim($detail) === '') {
+			$detail = $this->hostSentence($decision);
+		}
+		return new HealthCheckItem('protected_pads', HealthCheckItem::STATUS_WARNING, $label, $detail, $field);
+	}
+
+	private function hostSentence(CookieDomainDecision $decision): string {
+		return $this->fill(
+			$this->l10n->t('Nextcloud runs on {nextcloud_host}, Etherpad on {etherpad_host}.'),
+			['nextcloud_host' => $decision->nextcloudHost, 'etherpad_host' => $decision->etherpadHost],
+		);
 	}
 
 	/** @param array<string,string> $parameters */

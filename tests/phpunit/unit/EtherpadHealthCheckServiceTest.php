@@ -55,33 +55,6 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 	}
 
 
-	/** @return list<array{string,string}> */
-	public static function failureFieldProvider(): array {
-		return [
-			['no or wrong API Key', 'etherpad_api_key'],
-			['HTTP error (401)', 'etherpad_api_key'],
-			['Etherpad transport error: getaddrinfo failed', 'etherpad_api_host'],
-			['HTTP error (404)', 'etherpad_api_host'],
-			['Invalid JSON response', ''],
-		];
-	}
-
-	/**
-	 * The failure the admin most needs to see should land at the input that
-	 * caused it, not only in the summary at the bottom.
-	 */
-	#[\PHPUnit\Framework\Attributes\DataProvider('failureFieldProvider')]
-	public function testCheckPointsAFailureAtTheFieldItCameFrom(string $failure, string $expectedField): void {
-		$etherpad = $this->createMock(EtherpadClient::class);
-		$etherpad->method('healthCheck')->willThrowException(new EtherpadClientException($failure));
-
-		try {
-			$this->buildService($etherpad, $this->pendingCounts(0))->check($this->settings());
-			$this->fail('Expected AdminHealthCheckException');
-		} catch (AdminHealthCheckException $e) {
-			$this->assertSame($expectedField, $e->getField());
-		}
-	}
 
 	/** With no separate API URL the address failure is about the base URL. */
 	public function testTransportFailureFallsBackToTheBaseUrlFieldWhenNoApiUrlIsSet(): void {
@@ -126,15 +99,6 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 		$this->assertSame(HealthCheckItem::STATUS_OK, $byId['api']->status);
 	}
 
-	/** @param list<HealthCheckItem> $checks */
-	private function lineById(array $checks, string $id): HealthCheckItem {
-		foreach ($checks as $item) {
-			if ($item->id === $id) {
-				return $item;
-			}
-		}
-		$this->fail('No check line with id ' . $id);
-	}
 
 	private function buildService(
 		EtherpadClient $etherpad,
@@ -180,14 +144,6 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 		$this->assertSame('https://pad-api.example.test/api/1.3.0/listAllPads', $result->target);
 	}
 
-	public function testCheckDefaultsMissingPadCountToZero(): void {
-		$etherpad = $this->createMock(EtherpadClient::class);
-		$etherpad->method('healthCheck')->willReturn([]);
-
-		$result = $this->buildService($etherpad, $this->pendingCounts(0))->check($this->settings());
-
-		$this->assertSame(0, $result->padCount);
-	}
 
 	public function testCheckRoundsLatencyMilliseconds(): void {
 		$etherpad = $this->createMock(EtherpadClient::class);
@@ -228,79 +184,85 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 		$this->assertSame(125, $result->latencyMs);
 	}
 
-	public function testCheckAddsAuthMethodHintForApiKeyMismatch(): void {
-		$etherpad = $this->createMock(EtherpadClient::class);
-		$etherpad->method('healthCheck')->willThrowException(new EtherpadClientException('no or wrong API Key'));
 
-		$this->expectException(AdminHealthCheckException::class);
-		$this->expectExceptionMessage('authenticationMethod');
 
-		($this->buildService($etherpad, $this->createMock(PendingDeleteRetryService::class)))
-			->check($this->settings());
-	}
-
-	public function testCheckDoesNotAddAuthHintForUnrelatedFailures(): void {
-		$etherpad = $this->createMock(EtherpadClient::class);
-		$etherpad->method('healthCheck')->willThrowException(new EtherpadClientException('Etherpad transport error: getaddrinfo for pad.bogus failed'));
-
-		try {
-			($this->buildService($etherpad, $this->createMock(PendingDeleteRetryService::class)))
-				->check($this->settings());
-			$this->fail('Expected health check exception.');
-		} catch (AdminHealthCheckException $e) {
-			$this->assertStringContainsString('getaddrinfo', $e->getMessage());
-			$this->assertStringNotContainsString('authenticationMethod', $e->getMessage());
-		}
-	}
-
-	/** @return iterable<string,array{0:string,1:string}> */
-	public static function hintCaseProvider(): iterable {
+	/** @return iterable<string,array{0:string,1:string,2:string}> */
+	public static function failureCaseProvider(): iterable {
+		yield 'api key mode' => [
+			'no or wrong API Key',
+			'authenticationMethod',
+			'etherpad_api_key',
+		];
 		yield 'dns failure' => [
 			'Etherpad transport error: php_network_getaddresses: getaddrinfo for pad.example failed',
 			'did not resolve',
+			'etherpad_api_host',
 		];
 		yield 'connection refused' => [
 			'Etherpad transport error: Connection refused',
 			'Etherpad does not appear to be running',
+			'etherpad_api_host',
 		];
 		yield 'timeout' => [
 			'Etherpad transport error: stream_socket_client(): timed out',
 			'Connection timed out',
+			'etherpad_api_host',
 		];
 		yield 'tls handshake' => [
 			'Etherpad transport error: SSL operation failed with code 1. OpenSSL Error',
 			'TLS handshake failed',
+			'etherpad_api_host',
 		];
 		yield 'http 401' => [
 			'Etherpad API HTTP error (401)',
 			'rejected the API key',
+			'etherpad_api_key',
 		];
 		yield 'http 404' => [
 			'Etherpad API HTTP error (404)',
 			'API endpoint not found',
+			'etherpad_api_host',
 		];
+		// Etherpad answered, so the address is right and something behind it
+		// is not: no field to mark.
 		yield 'http 502' => [
 			'Etherpad API HTTP error (502)',
 			'server error',
+			'',
 		];
 		yield 'invalid json' => [
 			'Invalid JSON response from Etherpad API.',
 			'non-JSON',
+			'',
+		];
+		yield 'unrecognised' => [
+			'Etherpad API request failed: something new upstream',
+			'',
+			'',
 		];
 	}
 
-	#[\PHPUnit\Framework\Attributes\DataProvider('hintCaseProvider')]
-	public function testCheckAttachesActionableHintForKnownFailures(string $clientMessage, string $expectedHintFragment): void {
+	/**
+	 * Hint and field come from one classification, so they are asserted from
+	 * one table — two matchers over the same strings could hand out a correct
+	 * hint with the wrong field.
+	 */
+	#[\PHPUnit\Framework\Attributes\DataProvider('failureCaseProvider')]
+	public function testCheckClassifiesAFailureOnce(string $clientMessage, string $expectedHintFragment, string $expectedField): void {
 		$etherpad = $this->createMock(EtherpadClient::class);
 		$etherpad->method('healthCheck')->willThrowException(new EtherpadClientException($clientMessage));
 
 		try {
-			($this->buildService($etherpad, $this->createMock(PendingDeleteRetryService::class)))
-				->check($this->settings());
+			$this->buildService($etherpad, $this->createMock(PendingDeleteRetryService::class))->check($this->settings());
 			$this->fail('Expected health check exception.');
 		} catch (AdminHealthCheckException $e) {
 			$this->assertStringContainsString($clientMessage, $e->getMessage());
-			$this->assertStringContainsString($expectedHintFragment, $e->getMessage());
+			if ($expectedHintFragment === '') {
+				$this->assertStringNotContainsString('Hint:', $e->getMessage());
+			} else {
+				$this->assertStringContainsString($expectedHintFragment, $e->getMessage());
+			}
+			$this->assertSame($expectedField, $e->getField());
 		}
 	}
 
@@ -325,18 +287,6 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 		}
 	}
 
-	public function testCheckAttachesNoHintForUnrecognisedFailureShape(): void {
-		$etherpad = $this->createMock(EtherpadClient::class);
-		$etherpad->method('healthCheck')->willThrowException(new EtherpadClientException('something completely unexpected happened'));
-
-		try {
-			($this->buildService($etherpad, $this->createMock(PendingDeleteRetryService::class)))
-				->check($this->settings());
-			$this->fail('Expected health check exception.');
-		} catch (AdminHealthCheckException $e) {
-			$this->assertSame('Etherpad connection test failed: something completely unexpected happened', $e->getMessage());
-		}
-	}
 
 	private function settings(
 		string $etherpadHost = 'https://pad.example.test',

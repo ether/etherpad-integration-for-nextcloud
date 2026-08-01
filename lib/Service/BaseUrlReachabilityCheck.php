@@ -38,13 +38,11 @@ class BaseUrlReachabilityCheck {
 
 	public function check(string $baseUrl, string $apiHost): HealthCheckItem {
 		$label = $this->l10n->t('Etherpad base URL reachable');
+		// The validator rejects an empty base URL, so only the shared-address
+		// case is skipped here. It claims no field: with no separate API URL
+		// the API line already speaks for that input, and two verdicts cannot
+		// share one slot.
 		$trimmed = trim($baseUrl);
-		// A skipped line claims no field: with an empty API URL the API line
-		// already speaks for the base URL input, and two verdicts cannot share
-		// one slot.
-		if ($trimmed === '') {
-			return new HealthCheckItem('base_url', HealthCheckItem::STATUS_SKIPPED, $label, $this->l10n->t('No base URL configured.'));
-		}
 		if (rtrim($trimmed, '/') === rtrim(trim($apiHost), '/')) {
 			return new HealthCheckItem('base_url', HealthCheckItem::STATUS_SKIPPED, $label, $this->l10n->t('Same as the API URL, already checked.'));
 		}
@@ -80,9 +78,8 @@ class BaseUrlReachabilityCheck {
 		}
 		$status = $response->getStatusCode();
 
-		// The host answering is not enough: a base URL with a wrong path
-		// returns 404 while every pad link built from it is broken. Only a
-		// success or a redirect counts as a working base URL.
+		// A host that answers is not automatically a working base URL: point it
+		// at the wrong path and every pad link built from it 404s.
 		if ($status >= 400) {
 			return new HealthCheckItem(
 				'base_url',

@@ -110,7 +110,6 @@ OC.L10N.register(
     "Looks for pad links whose .pad file no longer exists.": "Busca enlaces de pad cuyo archivo .pad ya no existe.",
     "New pad": "Nuevo pad",
     "Nextcloud runs on {nextcloud_host}, Etherpad on {etherpad_host}.": "Nextcloud se ejecuta en {nextcloud_host} y Etherpad en {etherpad_host}.",
-    "No base URL configured.": "No hay ninguna URL base configurada.",
     "No synced snapshot is stored in this .pad file yet.": "Aún no hay ninguna copia sincronizada almacenada en este archivo .pad.",
     "Only people who can open the .pad file in Nextcloud can open the pad. Created as Etherpad group pads, which require a session issued by Nextcloud.": "Solo quienes pueden abrir el archivo .pad en Nextcloud pueden abrir el pad. Se crean como pads de grupo de Etherpad, que requieren una sesión emitida por Nextcloud.",
     "Open in Etherpad": "Abrir en Etherpad",

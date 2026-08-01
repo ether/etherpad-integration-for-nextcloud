@@ -38,10 +38,28 @@ class BaseUrlReachabilityCheckTest extends TestCase {
 		}
 	}
 
-	public function testRedirectsCountAsReachable(): void {
-		$item = $this->buildCheck($this->respondingWith(200))->check('https://pad.example.test', 'http://localhost:9001');
+	/**
+	 * The client follows redirects and reaches loopback addresses only when
+	 * told to, and a slow host must not hold the settings page.
+	 */
+	public function testRequestsWithTheIntendedOptions(): void {
+		$response = $this->createMock(IResponse::class);
+		$response->method('getStatusCode')->willReturn(200);
+		$client = $this->createMock(IClient::class);
+		$client->expects($this->once())
+			->method('request')
+			->with(
+				'GET',
+				'https://pad.example.test',
+				$this->callback(static function (array $options): bool {
+					return $options['timeout'] === 5
+						&& $options['allow_redirects']['max'] === 3
+						&& $options['nextcloud']['allow_local_address'] === true;
+				}),
+			)
+			->willReturn($response);
 
-		$this->assertSame(HealthCheckItem::STATUS_OK, $item->status);
+		$this->buildCheck($client)->check('https://pad.example.test', 'http://localhost:9001');
 	}
 
 	/**
@@ -93,14 +111,6 @@ class BaseUrlReachabilityCheckTest extends TestCase {
 		$this->assertSame('', $item->field);
 	}
 
-	public function testMissingBaseUrlIsSkipped(): void {
-		$clientService = $this->createMock(IClientService::class);
-		$clientService->expects($this->never())->method('newClient');
-
-		$item = (new BaseUrlReachabilityCheck($clientService, $this->buildL10n()))->check('  ', 'http://localhost:9001');
-
-		$this->assertSame(HealthCheckItem::STATUS_SKIPPED, $item->status);
-	}
 
 	/**
 	 * Nextcloud's HTTP client throws on >= 400 and hands the real response

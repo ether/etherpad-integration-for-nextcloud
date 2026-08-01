@@ -109,7 +109,6 @@
         "Looks for pad links whose .pad file no longer exists.": "Recherche les liens de pad dont le fichier .pad n'existe plus.",
         "New pad": "Nouveau pad",
         "Nextcloud runs on {nextcloud_host}, Etherpad on {etherpad_host}.": "Nextcloud tourne sur {nextcloud_host}, Etherpad sur {etherpad_host}.",
-        "No base URL configured.": "Aucune URL de base configurée.",
         "No synced snapshot is stored in this .pad file yet.": "Aucune copie synchronisée n'est encore stockée dans ce fichier .pad.",
         "Only people who can open the .pad file in Nextcloud can open the pad. Created as Etherpad group pads, which require a session issued by Nextcloud.": "Seules les personnes pouvant ouvrir le fichier .pad dans Nextcloud peuvent ouvrir le pad. Créés comme des pads de groupe Etherpad, qui nécessitent une session émise par Nextcloud.",
         "Open in Etherpad": "Ouvrir dans Etherpad",
