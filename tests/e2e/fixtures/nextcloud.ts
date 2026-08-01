@@ -49,7 +49,7 @@ export const gotoAdminPadSettings = async (page: Page): Promise<boolean> => {
 
 /** Run the admin Etherpad health check and assert the configured pad server responds. */
 export const runAdminEtherpadHealthCheck = async (page: Page): Promise<void> => {
-	const status = page.locator('#etherpad-nextcloud-admin-status')
+	const status = page.locator('#etherpad-nextcloud-diagnostics-status')
 	await page.locator('#etherpad-nextcloud-health-check').click()
 
 	await expect(status).toHaveClass(/ep-status-success/, { timeout: 30_000 })

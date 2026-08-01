@@ -10,27 +10,73 @@
 	display: block;
 }
 
+/* Rows followed by a hint set their own gap, so it does not depend on
+   whichever `p` rule wins. */
+#etherpad-nextcloud-admin-settings .ep-field-row {
+	margin-bottom: 4px;
+}
+
 #etherpad-nextcloud-admin-settings .ep-field-hint {
-	margin-top: -8px;
+	margin-top: 0;
 	margin-bottom: 14px;
+	max-width: 640px;
+	color: var(--color-text-maxcontrast);
+}
+
+/* Lets the script empty a live region instead of hiding it — see
+   updatePadTypesHint(). */
+#etherpad-nextcloud-admin-settings .ep-field-hint:empty {
+	margin: 0;
+}
+
+/* A reported value, not an explanation: no muted hint styling. */
+#etherpad-nextcloud-admin-settings .ep-detected-value {
+	margin-top: 0;
+	margin-bottom: 14px;
+}
+
+/* An option and its description form one block: tight between them,
+   clear gap to the next option, hint indented under the label text. */
+#etherpad-nextcloud-admin-settings .ep-checkbox-row {
+	margin-bottom: 0;
+}
+
+#etherpad-nextcloud-admin-settings .ep-checkbox-row label {
+	margin-bottom: 0;
+}
+
+#etherpad-nextcloud-admin-settings .ep-checkbox-hint {
+	margin-top: 2px;
+	margin-bottom: 22px;
+	padding-left: 26px;
+}
+
+/* Dark and bold like Nextcloud's own section names; muted or uppercase
+   would read as secondary text next to the field labels. */
+#etherpad-nextcloud-admin-settings .ep-section-heading {
+	margin: 0 0 14px;
+	padding-top: 22px;
+	border-top: 1px solid var(--color-border);
+	font-size: 1.2em;
+	font-weight: bold;
+	color: var(--color-main-text);
+}
+
+#etherpad-nextcloud-admin-settings form > .ep-section-heading:first-child {
+	padding-top: 0;
+	border-top: none;
 }
 
 #etherpad-nextcloud-admin-settings #allow-external-pads-row {
 	margin-bottom: 6px;
 }
 
-#etherpad-nextcloud-admin-settings #external-pad-allowlist-row {
-	margin-bottom: 6px;
-}
-
-#etherpad-nextcloud-admin-settings #external-pad-allowlist-hint {
-	margin-top: 0;
-}
-
+/* Nextcloud mutes form labels; field names are primary content here. */
 #etherpad-nextcloud-admin-settings label {
 	display: block;
 	font-weight: 600;
 	margin-bottom: 6px;
+	color: var(--color-main-text);
 }
 
 #etherpad-nextcloud-admin-settings input[type="url"],
@@ -42,11 +88,13 @@
 	max-width: 640px;
 }
 
+/* Same reason, plus weight: the option heads its own block. */
 #etherpad-nextcloud-admin-settings label.checkbox {
 	display: inline-flex;
 	align-items: center;
 	gap: 8px;
-	font-weight: 400;
+	font-weight: 600;
+	color: var(--color-main-text);
 }
 
 #etherpad-nextcloud-admin-settings .etherpad-nextcloud-admin-actions {
@@ -55,8 +103,8 @@
 	gap: 10px;
 }
 
-#etherpad-nextcloud-admin-settings #etherpad-nextcloud-admin-status.ep-status-success,
-#etherpad-nextcloud-admin-settings #etherpad-nextcloud-admin-status.ep-status-error {
+#etherpad-nextcloud-admin-settings .ep-status.ep-status-success,
+#etherpad-nextcloud-admin-settings .ep-status.ep-status-error {
 	color: var(--color-main-text, var(--color-text-maxcontrast, #1f2937));
 }
 
