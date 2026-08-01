@@ -120,22 +120,28 @@ class BaseUrlReachabilityCheckTest extends TestCase {
 			->method('request')
 			->willThrowException(new LocalServerException('Host violates local access rules'));
 
-		$item = $this->buildCheck($client)->check('http://localhost:9001');
+		$item = $this->buildCheck($client)->check('https://localhost:9001');
 
 		$this->assertSame(HealthCheckItem::STATUS_WARNING, $item->status);
 	}
 
-	/** Blocked before anything left the server, which is not a network fault. */
-	public function testALocalAddressSaysItWasRefusedRatherThanUnreachable(): void {
+	/**
+	 * Blocked before anything left the server, so it must not be reported as
+	 * a network fault — nor as unusable, since an internal or split-DNS
+	 * deployment may still serve it to users.
+	 */
+	public function testALocalAddressSaysItWasNotContactedRatherThanUnreachable(): void {
 		$client = $this->createMock(IClient::class);
 		$client->method('request')->willThrowException(new LocalServerException('Host violates local access rules'));
 
-		$item = $this->buildCheck($client)->check('http://192.168.1.5:9001');
+		$item = $this->buildCheck($client)->check('https://192.168.1.5:9001');
 
 		$this->assertSame(HealthCheckItem::STATUS_WARNING, $item->status);
 		$this->assertStringContainsString('192.168.1.5', $item->detail);
-		$this->assertStringContainsString('own network', $item->detail);
+		$this->assertStringContainsString('was not contacted', $item->detail);
 		$this->assertStringNotContainsString('did not answer', $item->detail);
+		// Not a verdict on whether users can reach it.
+		$this->assertStringContainsString('browsers can reach', $item->detail);
 	}
 
 

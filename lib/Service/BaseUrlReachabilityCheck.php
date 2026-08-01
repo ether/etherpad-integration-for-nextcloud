@@ -27,8 +27,9 @@ use OCP\IL10N;
  *
  * Unlike the API host, this URL gets no local-address exemption. That
  * exemption is what would turn an admin-supplied address into a probe into
- * the server's own network, and it is not needed here: a browser-facing URL
- * that only this server can reach is broken for users anyway. Redirects are
+ * the server's own network. Losing it costs little: a blocked address is
+ * reported as unverified rather than as broken, since an internal or
+ * split-DNS deployment may still serve it to users. Redirects are
  * disabled on top — Nextcloud validates redirect targets too while the local
  * protection is on, but this check has no use for the target, so not
  * following one is simply less surface.
@@ -70,15 +71,17 @@ class BaseUrlReachabilityCheck {
 				'stream' => true,
 			]);
 		} catch (LocalServerException $e) {
-			// Blocked before anything left the server. Saying so beats the
-			// generic "did not answer", which would send the admin looking for
-			// a network fault that is not there.
+			// Blocked before anything left the server, so this says nothing
+			// about the address itself: on an internal or split-DNS
+			// deployment the users' browsers may well reach it. Only the
+			// generic "did not answer" would be wrong here — it would send the
+			// admin hunting a network fault that does not exist.
 			return new HealthCheckItem(
 				'base_url',
 				HealthCheckItem::STATUS_WARNING,
 				$label,
 				$this->fill(
-					$this->l10n->t('{url} points into this server\'s own network, so Nextcloud refused to contact it. Browsers cannot open pads there either.'),
+					$this->l10n->t('{url} was not contacted: Nextcloud blocks requests into its own network. Check that your users\' browsers can reach this address.'),
 					['url' => $trimmed],
 				),
 				self::FIELD,
@@ -107,8 +110,7 @@ class BaseUrlReachabilityCheck {
 
 		// A host that answers is not automatically a working base URL: point it
 		// at the wrong path and every pad link built from it 404s. A 3xx is
-		// fine — Etherpad redirects / on some setups, and a proxy may send
-		// http to https.
+		// fine — Etherpad redirects / on some setups.
 		if ($status >= 400) {
 			return new HealthCheckItem(
 				'base_url',

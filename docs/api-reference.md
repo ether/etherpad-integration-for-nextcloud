@@ -272,17 +272,20 @@ solely by the separate external-pad policy, not by these two settings.
 
       `base_url` is the only entry that performs additional I/O: a short GET
       against the browser-facing Etherpad URL, which nothing else contacts.
-      Unlike the API host it gets no local-address exemption: that exemption
+      Unlike the API host it gets no local-address exemption — that exemption
       is what would let an admin-supplied address probe the server's own
-      network, and a browser-facing URL only this server can reach is broken
-      anyway. Redirects are not followed and the body is not buffered, since
-      neither is needed for a status code. Nextcloud's protection is what
-      enforces this, so `allow_local_remote_servers=true` disables it
-      instance-wide. It
-      is never an error — Nextcloud may be unable to reach the public URL by
-      design (split-horizon DNS, egress firewall), so an unreachable base URL
-      warns and says so. It is `skipped` without a `field` when the API URL is
-      empty, because the `api` line already speaks for that input.
+      network. Redirects are not followed and the body is not buffered, since
+      neither is needed for a status code. The protection is Nextcloud's, so
+      `allow_local_remote_servers=true` disables it instance-wide.
+
+      The line is never an error. Nextcloud may be unable to reach the public
+      URL by design (split-horizon DNS, egress firewall), and a blocked local
+      address is reported as unverified rather than broken, since an internal
+      deployment may still serve it to users. It runs even when the base URL
+      matches the API URL, because the API call may succeed against a loopback
+      address no browser can use; both lines then land on the same field,
+      where the more severe verdict is the one shown.
+
     - `protected_pads` — the same verdict as the `protected_pads` line in
       `checks`, but machine-readable for support and other clients, or `null`
       when protected pads are switched off. A failing verdict does **not** fail

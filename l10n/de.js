@@ -164,7 +164,7 @@ OC.L10N.register(
     "{target} — {count} pads, {latency} ms": "{target} – {count} Pads, {latency} ms",
     "{url} answered with HTTP {status}.": "{url} hat mit HTTP {status} geantwortet.",
     "{url} did not answer: {error}. If Nextcloud cannot reach the public URL by design, ignore this — but check the URL for typos, because pad links in the browser use it.": "{url} hat nicht geantwortet: {error}. Wenn Nextcloud die öffentliche URL bewusst nicht erreichen kann, ignorieren – prüfe die URL aber auf Tippfehler, denn die Pad-Links im Browser verwenden sie.",
-    "{url} points into this server's own network, so Nextcloud refused to contact it. Browsers cannot open pads there either.": "{url} zeigt in das eigene Netz dieses Servers, deshalb hat Nextcloud die Anfrage abgelehnt. Browser können dort ebenfalls keine Pads öffnen."
+    "{url} was not contacted: Nextcloud blocks requests into its own network. Check that your users' browsers can reach this address.": "{url} wurde nicht kontaktiert: Nextcloud blockiert Anfragen in das eigene Netz. Prüfe, ob die Browser deiner Nutzerinnen und Nutzer diese Adresse erreichen."
 },
 	"nplurals=2; plural=(n != 1);"
 );
