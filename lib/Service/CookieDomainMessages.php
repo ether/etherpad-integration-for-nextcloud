@@ -40,7 +40,7 @@ class CookieDomainMessages {
 
 		return match ($decision->reason) {
 			CookieDomainDecision::REASON_NO_COMMON_PARENT => $hosts . ' ' . $this->l10n->t(
-				'They share no parent domain, so Nextcloud cannot set a session cookie that reaches Etherpad, and protected pads will not open. If a proxy already serves Etherpad under the Nextcloud domain, enter that address as the base URL — pad links use it, so the cookie follows. Otherwise move one of the hosts, or switch protected pads off.'
+				'Nextcloud and Etherpad share no parent domain, so the browser cannot send the session cookie to Etherpad and protected pads will not open. If a proxy exposes Etherpad under the Nextcloud domain, use that address as the base URL. Otherwise, place both services under a shared parent domain or switch protected pads off.'
 			),
 			CookieDomainDecision::REASON_HOST_NOT_COOKIE_CAPABLE => $hosts . ' ' . $this->l10n->t(
 				'IP addresses and single-label hosts cannot share a cookie domain. Use hostnames under a common domain, or serve both from the same host.'
