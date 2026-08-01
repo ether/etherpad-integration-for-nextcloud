@@ -6,13 +6,13 @@ namespace OCA\EtherpadNextcloud\Tests\Unit;
 
 use OCA\EtherpadNextcloud\Exception\AdminHealthCheckException;
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
-use OCA\EtherpadNextcloud\Service\EtherpadClient;
 use OCA\EtherpadNextcloud\Service\BaseUrlReachabilityCheck;
 use OCA\EtherpadNextcloud\Service\CookieDomainDecision;
 use OCA\EtherpadNextcloud\Service\CookieDomainMessages;
-use OCA\EtherpadNextcloud\Service\HealthCheckItem;
 use OCA\EtherpadNextcloud\Service\CookieDomainPolicy;
+use OCA\EtherpadNextcloud\Service\EtherpadClient;
 use OCA\EtherpadNextcloud\Service\EtherpadHealthCheckService;
+use OCA\EtherpadNextcloud\Service\HealthCheckItem;
 use OCA\EtherpadNextcloud\Service\PendingDeleteRetryService;
 use OCA\EtherpadNextcloud\Service\ValidatedAdminSettings;
 use OCP\IL10N;
@@ -73,6 +73,61 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 		$line = $this->lineById($result->checks, 'protected_pads');
 		$this->assertSame(HealthCheckItem::STATUS_WARNING, $line->status);
 		$this->assertStringContainsString('.example.test would cover both', $line->detail);
+	}
+
+	/** @return list<array{string,string}> */
+	public static function failureFieldProvider(): array {
+		return [
+			['no or wrong API Key', 'etherpad_api_key'],
+			['HTTP error (401)', 'etherpad_api_key'],
+			['Etherpad transport error: getaddrinfo failed', 'etherpad_api_host'],
+			['HTTP error (404)', 'etherpad_api_host'],
+			['Invalid JSON response', ''],
+		];
+	}
+
+	/**
+	 * The failure the admin most needs to see should land at the input that
+	 * caused it, not only in the summary at the bottom.
+	 */
+	#[\PHPUnit\Framework\Attributes\DataProvider('failureFieldProvider')]
+	public function testCheckPointsAFailureAtTheFieldItCameFrom(string $failure, string $expectedField): void {
+		$etherpad = $this->createMock(EtherpadClient::class);
+		$etherpad->method('healthCheck')->willThrowException(new EtherpadClientException($failure));
+
+		try {
+			$this->buildService($etherpad, $this->pendingCounts(0))->check($this->settings());
+			$this->fail('Expected AdminHealthCheckException');
+		} catch (AdminHealthCheckException $e) {
+			$this->assertSame($expectedField, $e->getField());
+		}
+	}
+
+	/** With no separate API URL the address failure is about the base URL. */
+	public function testTransportFailureFallsBackToTheBaseUrlFieldWhenNoApiUrlIsSet(): void {
+		$etherpad = $this->createMock(EtherpadClient::class);
+		$etherpad->method('healthCheck')->willThrowException(new EtherpadClientException('Etherpad transport error: connection refused'));
+
+		$settings = new ValidatedAdminSettings(
+			'https://pad.example.test',
+			'https://pad.example.test',
+			'.example.test',
+			'key',
+			'key',
+			'1.3.0',
+			120,
+			true,
+			true,
+			'',
+			'',
+		);
+
+		try {
+			$this->buildService($etherpad, $this->pendingCounts(0))->check($settings);
+			$this->fail('Expected AdminHealthCheckException');
+		} catch (AdminHealthCheckException $e) {
+			$this->assertSame('etherpad_host', $e->getField());
+		}
 	}
 
 	public function testCheckReportsEachPartOnItsOwnLine(): void {

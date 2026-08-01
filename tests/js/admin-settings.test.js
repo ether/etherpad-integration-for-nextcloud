@@ -24,6 +24,7 @@ const setupAdminDom = () => {
 				<input name="etherpad_api_host" value="">
 				<input name="etherpad_cookie_domain" value="">
 				<input name="etherpad_api_key" value="">
+				<span class="ep-field-error" data-field-error="etherpad_api_key"></span>
 				<input name="sync_interval_seconds" value="120">
 				<input type="checkbox" name="enable_protected_pads" checked>
 				<input type="checkbox" name="enable_public_pads" checked>
@@ -200,21 +201,67 @@ describe('protected pads cookie warning', () => {
 		expect(cookie.textContent).toBe('Hosts do not share a parent domain.')
 	})
 
-	it('clears field results before showing a new run', async () => {
+	it('clears field results while the new run is still in flight', async () => {
 		const cookie = document.querySelector('[data-check-result="etherpad_cookie_domain"]')
 		cookie.className = 'ep-check-result ep-check-warning'
 		cookie.textContent = 'Stale problem.'
-		vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(okResponse({
-			message: 'All checks passed.',
-			checks: [{ id: 'protected_pads', status: 'ok', label: 'Protected pads: session cookie', detail: '.example.org', field: 'etherpad_cookie_domain' }],
-		}))))
+		const health = deferred()
+		vi.stubGlobal('fetch', vi.fn(() => health.promise))
 		await import(MODULE)
 
 		document.getElementById('etherpad-nextcloud-health-check').click()
 		await flush()
 
+		// Still waiting: a green tick or an old problem next to "Testing…"
+		// would describe the previous values.
+		expect(cookie.textContent).toBe('')
 		expect(cookie.classList.contains('ep-check-warning')).toBe(false)
+
+		health.respond({
+			message: 'All checks passed.',
+			checks: [{ id: 'protected_pads', status: 'ok', label: 'Protected pads: session cookie', detail: '.example.org', field: 'etherpad_cookie_domain' }],
+		})
+		await flush()
+
 		expect(cookie.classList.contains('ep-check-ok')).toBe(true)
+	})
+
+	it('marks the field a failed connection test points at', async () => {
+		vi.stubGlobal('fetch', vi.fn(() => Promise.resolve({
+			ok: false,
+			status: 502,
+			text: () => Promise.resolve(JSON.stringify({
+				ok: false,
+				message: 'Etherpad connection test failed: no or wrong API Key',
+				field: 'etherpad_api_key',
+			})),
+		})))
+		await import(MODULE)
+
+		document.getElementById('etherpad-nextcloud-health-check').click()
+		await flush()
+
+		const error = document.querySelector('[data-field-error="etherpad_api_key"]')
+		expect(error.classList.contains('is-visible')).toBe(true)
+		expect(error.textContent).toContain('wrong API Key')
+	})
+
+	it('drops field results when a save fails', async () => {
+		const cookie = document.querySelector('[data-check-result="etherpad_cookie_domain"]')
+		cookie.className = 'ep-check-result ep-check-ok'
+		cookie.textContent = 'Protected pads: session cookie'
+		vi.stubGlobal('fetch', vi.fn(() => Promise.resolve({
+			ok: false,
+			status: 400,
+			text: () => Promise.resolve(JSON.stringify({ ok: false, message: 'Failed.' })),
+		})))
+		await import(MODULE)
+
+		document.getElementById('etherpad-nextcloud-admin-form').requestSubmit()
+		await flush()
+
+		// The form values changed, so the old verdict no longer describes them.
+		expect(cookie.textContent).toBe('')
 	})
 
 	it('drops stale per-field results when settings are saved', async () => {

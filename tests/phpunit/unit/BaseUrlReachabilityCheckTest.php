@@ -41,14 +41,28 @@ class BaseUrlReachabilityCheckTest extends TestCase {
 	 * design, so this must not cry wolf on a correct instance.
 	 */
 	public function testUnreachableBaseUrlWarnsAndNamesTheUrl(): void {
+		// A genuine transport failure: no response to recover either.
 		$client = $this->createMock(IClient::class);
 		$client->method('request')->willThrowException(new \RuntimeException('Could not resolve host: pad.example.spacer'));
+		$client->method('getResponseFromThrowable')->willThrowException(new \RuntimeException('no response'));
 
 		$item = $this->buildCheck($client)->check('https://pad.example.spacer', 'http://localhost:9001');
 
 		$this->assertSame(HealthCheckItem::STATUS_WARNING, $item->status);
 		$this->assertStringContainsString('pad.example.spacer', $item->detail);
 		$this->assertStringContainsString('Could not resolve host', $item->detail);
+	}
+
+	/** The client returning a response directly must work just the same. */
+	public function testDirectlyReturnedErrorResponseIsAlsoUnderstood(): void {
+		$response = $this->createMock(IResponse::class);
+		$response->method('getStatusCode')->willReturn(404);
+		$client = $this->createMock(IClient::class);
+		$client->method('request')->willReturn($response);
+
+		$item = $this->buildCheck($client)->check('https://pad.example.test', 'http://localhost:9001');
+
+		$this->assertSame(HealthCheckItem::STATUS_OK, $item->status);
 	}
 
 	public function testServerErrorWarns(): void {
@@ -66,6 +80,9 @@ class BaseUrlReachabilityCheckTest extends TestCase {
 			->check('https://pad.example.test/', 'https://pad.example.test');
 
 		$this->assertSame(HealthCheckItem::STATUS_SKIPPED, $item->status);
+		// No field: the API line already speaks for that input, and one slot
+		// cannot hold two verdicts.
+		$this->assertSame('', $item->field);
 	}
 
 	public function testMissingBaseUrlIsSkipped(): void {
@@ -77,11 +94,21 @@ class BaseUrlReachabilityCheckTest extends TestCase {
 		$this->assertSame(HealthCheckItem::STATUS_SKIPPED, $item->status);
 	}
 
+	/**
+	 * Nextcloud's HTTP client throws on >= 400 and hands the real response
+	 * back through getResponseFromThrowable(), so both shapes have to behave
+	 * the same here.
+	 */
 	private function respondingWith(int $status): IClient {
 		$response = $this->createMock(IResponse::class);
 		$response->method('getStatusCode')->willReturn($status);
 		$client = $this->createMock(IClient::class);
-		$client->method('request')->willReturn($response);
+		if ($status >= 400) {
+			$client->method('request')->willThrowException(new \RuntimeException('HTTP error (' . $status . ')'));
+			$client->method('getResponseFromThrowable')->willReturn($response);
+		} else {
+			$client->method('request')->willReturn($response);
+		}
 		return $client;
 	}
 

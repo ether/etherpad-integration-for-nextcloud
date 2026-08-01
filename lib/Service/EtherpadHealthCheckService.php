@@ -61,6 +61,7 @@ class EtherpadHealthCheckService {
 				str_replace('{detail}', $detail, $template),
 				0,
 				$e,
+				$this->fieldForFailureMessage($detail, $settings),
 			);
 		}
 
@@ -182,6 +183,27 @@ class EtherpadHealthCheckService {
 			$text = str_replace('{' . $key . '}', $value, $text);
 		}
 		return $text;
+	}
+
+	/**
+	 * Which input the failure points at. A rejected key is about the key; a
+	 * host that does not resolve, refuses or 404s is about the address — which
+	 * is the base URL field when no separate API URL is set.
+	 */
+	private function fieldForFailureMessage(string $rawMessage, ValidatedAdminSettings $settings): string {
+		$message = strtolower($rawMessage);
+		$apiField = $settings->etherpadApiHost === $settings->etherpadHost ? 'etherpad_host' : 'etherpad_api_host';
+
+		if (str_contains($message, 'api key')
+			|| str_contains($message, 'apikey')
+			|| str_contains($message, 'http error (401)')
+			|| str_contains($message, 'http error (403)')) {
+			return 'etherpad_api_key';
+		}
+		if (str_contains($message, 'transport error') || str_contains($message, 'http error (404)')) {
+			return $apiField;
+		}
+		return '';
 	}
 
 	protected function now(): float {

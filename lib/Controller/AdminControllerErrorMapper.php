@@ -70,10 +70,13 @@ class AdminControllerErrorMapper {
 				'message' => $e->getMessage(),
 			], Http::STATUS_BAD_REQUEST);
 		} catch (AdminHealthCheckException $e) {
-			return new DataResponse([
-				'ok' => false,
-				'message' => $e->getMessage(),
-			], Http::STATUS_BAD_GATEWAY);
+			$payload = ['ok' => false, 'message' => $e->getMessage()];
+			// Same shape the validator uses, so the page marks the field the
+			// failure came from instead of reporting it only at the bottom.
+			if ($e->getField() !== '') {
+				$payload['field'] = $e->getField();
+			}
+			return new DataResponse($payload, Http::STATUS_BAD_GATEWAY);
 		} catch (\Throwable $e) {
 			$this->logger->error((string)($options['log_message'] ?? 'Admin request failed'), [
 				'app' => Application::APP_ID,

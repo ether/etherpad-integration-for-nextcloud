@@ -274,7 +274,11 @@ solely by the separate external-pad policy, not by these two settings.
       against the browser-facing Etherpad URL, which nothing else contacts. It
       is never an error — Nextcloud may be unable to reach the public URL by
       design (split-horizon DNS, egress firewall), so an unreachable base URL
-      warns and says so.
+      warns and says so. It is `skipped` without a `field` when the API URL is
+      empty, because the `api` line already speaks for that input.
+  - A failed connection test answers `502` with `message` and, where the cause
+    can be attributed, `field` — the same shape validation errors use, so the
+    page marks the input rather than reporting only at the bottom.
     - `protected_pads` — the same verdict as the `protected_pads` line in
       `checks`, but machine-readable for support and other clients, or `null`
       when protected pads are switched off. A failing verdict does **not** fail

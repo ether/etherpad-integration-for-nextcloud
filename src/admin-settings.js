@@ -256,6 +256,10 @@
 	form.addEventListener('submit', async (event) => {
 		event.preventDefault()
 		clearFieldErrors()
+		// Verdicts describe the values of the previous run: keeping them up
+		// while this one is in flight puts a green tick next to a field that
+		// is being changed, and a failed save would leave them there.
+		renderConnectionChecks([])
 		beginStatus(l10n.saving)
 		try {
 			const data = await postJson(saveUrl, getPayload())
@@ -274,6 +278,7 @@
 
 	healthButton.addEventListener('click', async () => {
 		clearFieldErrors()
+		renderConnectionChecks([])
 		beginStatus(l10n.checking, connectionTarget)
 		try {
 			const data = await postJson(healthUrl, getPayload())
@@ -290,7 +295,6 @@
 			if (error && typeof error.field === 'string' && error.field !== '') {
 				showFieldError(error.field, error.message || l10n.healthFailed)
 			}
-			renderConnectionChecks([])
 			setStatus(error instanceof Error ? error.message : l10n.healthFailed, 'error', connectionTarget)
 		}
 	})

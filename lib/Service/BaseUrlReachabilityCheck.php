@@ -39,38 +39,49 @@ class BaseUrlReachabilityCheck {
 	public function check(string $baseUrl, string $apiHost): HealthCheckItem {
 		$label = $this->l10n->t('Etherpad base URL reachable');
 		$trimmed = trim($baseUrl);
+		// A skipped line claims no field: with an empty API URL the API line
+		// already speaks for the base URL input, and two verdicts cannot share
+		// one slot.
 		if ($trimmed === '') {
-			return new HealthCheckItem('base_url', HealthCheckItem::STATUS_SKIPPED, $label, $this->l10n->t('No base URL configured.'), self::FIELD);
+			return new HealthCheckItem('base_url', HealthCheckItem::STATUS_SKIPPED, $label, $this->l10n->t('No base URL configured.'));
 		}
 		if (rtrim($trimmed, '/') === rtrim(trim($apiHost), '/')) {
-			return new HealthCheckItem('base_url', HealthCheckItem::STATUS_SKIPPED, $label, $this->l10n->t('Same as the API URL, already checked.'), self::FIELD);
+			return new HealthCheckItem('base_url', HealthCheckItem::STATUS_SKIPPED, $label, $this->l10n->t('Same as the API URL, already checked.'));
 		}
 
+		$client = $this->clientService->newClient();
 		try {
-			$response = $this->clientService->newClient()->request('GET', $trimmed, [
+			$response = $client->request('GET', $trimmed, [
 				'timeout' => self::TIMEOUT_SECONDS,
 				// Etherpad redirects / to /p/... on some setups, and a proxy may
 				// redirect http to https. Following a couple is normal here.
 				'allow_redirects' => ['max' => 3],
 				'nextcloud' => ['allow_local_address' => true],
 			]);
-			$status = $response->getStatusCode();
 		} catch (\Throwable $e) {
-			return new HealthCheckItem(
-				'base_url',
-				HealthCheckItem::STATUS_WARNING,
-				$label,
-				$this->fill(
-					$this->l10n->t('{url} did not answer: {error}. If Nextcloud cannot reach the public URL by design, ignore this — but check the URL for typos, because pad links in the browser use it.'),
-					['url' => $trimmed, 'error' => $this->shorten($e->getMessage())],
-				),
-				self::FIELD,
-			);
+			// The Nextcloud client throws on >= 400, so recover the real
+			// response: a 404 still proves the host answers, which is all this
+			// row claims. Only a throwable without one is a transport failure,
+			// and then the original error is the useful one to report.
+			try {
+				$response = $client->getResponseFromThrowable($e);
+			} catch (\Throwable) {
+				return new HealthCheckItem(
+					'base_url',
+					HealthCheckItem::STATUS_WARNING,
+					$label,
+					$this->fill(
+						$this->l10n->t('{url} did not answer: {error}. If Nextcloud cannot reach the public URL by design, ignore this — but check the URL for typos, because pad links in the browser use it.'),
+						['url' => $trimmed, 'error' => $this->shorten($e->getMessage())],
+					),
+					self::FIELD,
+				);
+			}
 		}
+		$status = $response->getStatusCode();
 
 		// Anything the server answers means the host exists and serves. Even
-		// 401/403/404 tell us the name resolves and something is listening,
-		// which is what this row is about.
+		// 401/403/404 tell us the name resolves and something is listening.
 		if ($status >= 500) {
 			return new HealthCheckItem(
 				'base_url',
