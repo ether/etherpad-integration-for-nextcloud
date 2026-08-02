@@ -20,7 +20,14 @@
 	data-l10n-health-failed="<?php p((string)$_['l10n']['health_failed']); ?>"
 	data-l10n-consistency-failed="<?php p((string)$_['l10n']['consistency_failed']); ?>"
 	data-l10n-pending-delete-label="<?php p((string)$_['l10n']['pending_delete_label']); ?>"
-	data-l10n-retry-failed="<?php p((string)$_['l10n']['retry_failed']); ?>">
+	data-l10n-retry-failed="<?php p((string)$_['l10n']['retry_failed']); ?>"
+	data-templates-url="<?php p((string)$_['templates_url']); ?>"
+	data-templates-delete-url="<?php p((string)$_['templates_delete_url']); ?>"
+	data-l10n-template-uploading="<?php p((string)$_['l10n']['templates_uploading']); ?>"
+	data-l10n-template-delete="<?php p((string)$_['l10n']['templates_delete_button']); ?>"
+	data-l10n-template-confirm-delete="<?php p((string)$_['l10n']['templates_confirm_delete']); ?>"
+	data-l10n-template-confirm-replace="<?php p((string)$_['l10n']['templates_confirm_replace']); ?>"
+	data-l10n-template-failed="<?php p((string)$_['l10n']['templates_failed']); ?>">
 	<h2><?php p((string)$_['l10n']['section_title']); ?></h2>
 	<p class="settings-hint">
 		<?php p((string)$_['l10n']['intro']); ?>
@@ -193,6 +200,18 @@
 			<button type="submit" class="primary"><?php p((string)$_['l10n']['save_button']); ?></button>
 		</div>
 		<p id="etherpad-nextcloud-admin-status" class="ep-status" aria-live="polite"></p>
+
+		<h3 class="ep-section-heading"><?php p((string)$_['l10n']['section_templates']); ?></h3>
+		<p class="settings-hint ep-field-hint"><?php p((string)$_['l10n']['section_templates_hint']); ?></p>
+
+		<ul id="epnc-template-list" class="ep-template-list"></ul>
+		<p id="epnc-template-empty" class="settings-hint ep-field-hint"><?php p((string)$_['l10n']['templates_none']); ?></p>
+
+		<div class="etherpad-nextcloud-admin-actions">
+			<input type="file" id="epnc-template-file" accept=".pad" class="ep-visually-hidden">
+			<button type="button" id="epnc-template-upload"><?php p((string)$_['l10n']['templates_upload_button']); ?></button>
+		</div>
+		<p id="epnc-template-status" class="ep-status" aria-live="polite"></p>
 
 		<h3 class="ep-section-heading"><?php p((string)$_['l10n']['section_diagnostics']); ?></h3>
 		<p class="settings-hint ep-field-hint"><?php p((string)$_['l10n']['section_consistency_hint']); ?></p>

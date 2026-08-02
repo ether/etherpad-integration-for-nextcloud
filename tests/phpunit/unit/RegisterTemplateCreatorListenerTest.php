@@ -18,24 +18,32 @@ use OCP\IL10N;
 use PHPUnit\Framework\TestCase;
 
 class RegisterTemplateCreatorListenerTest extends TestCase {
-	public function testRegistersTheTemplateCreatorWhenProtectedPadsAreEnabled(): void {
-		$templateManager = $this->createMock(ITemplateManager::class);
-		$templateManager->expects($this->once())->method('registerTemplateFileCreator');
-
-		$this->buildListener(true)->handle($this->buildEvent($templateManager));
+	/**
+	 * This entry is the only way to create a pad from the Files app, so it has
+	 * to survive as long as either type is on — the blank option produces
+	 * whichever one is available. Dropping it whenever protected was off left
+	 * a public-only instance with no way to create anything.
+	 *
+	 * @return iterable<string,array{0:bool,1:bool,2:bool}>
+	 */
+	public static function padTypeProvider(): iterable {
+		yield 'both enabled' => [true, true, true];
+		yield 'protected only' => [true, false, true];
+		yield 'public only' => [false, true, true];
+		yield 'both disabled' => [false, false, false];
 	}
 
-	public function testSkipsRegistrationWhenProtectedPadsAreDisabled(): void {
-		// Nextcloud's own "+ New pad" entry always produces a protected pad,
-		// so offering it while that type is off would hand users a dead end.
+	#[\PHPUnit\Framework\Attributes\DataProvider('padTypeProvider')]
+	public function testRegistersWhileAnyPadTypeIsEnabled(bool $protected, bool $public, bool $expected): void {
 		$templateManager = $this->createMock(ITemplateManager::class);
-		$templateManager->expects($this->never())->method('registerTemplateFileCreator');
+		$templateManager->expects($expected ? $this->once() : $this->never())
+			->method('registerTemplateFileCreator');
 
-		$this->buildListener(false)->handle($this->buildEvent($templateManager));
+		$this->buildListener($protected, $public)->handle($this->buildEvent($templateManager));
 	}
 
 	public function testIgnoresUnrelatedEvents(): void {
-		$this->buildListener(true)->handle(new Event());
+		$this->buildListener(true, true)->handle(new Event());
 
 		self::assertTrue(true); // not throwing is the assertion
 	}
@@ -44,17 +52,21 @@ class RegisterTemplateCreatorListenerTest extends TestCase {
 		return new RegisterTemplateCreatorEvent($templateManager);
 	}
 
-	private function buildListener(bool $protectedEnabled): RegisterTemplateCreatorListener {
+	private function buildListener(bool $protectedEnabled, bool $publicEnabled = true): RegisterTemplateCreatorListener {
 		$l10n = $this->createMock(IL10N::class);
 		$l10n->method('t')->willReturnArgument(0);
 
 		$config = $this->createMock(\OCP\IConfig::class);
 		$config->method('getAppValue')->willReturnCallback(
-			static fn (string $app, string $key, string $default = ''): string => (
-				$key === PadTypePolicy::SETTING_PROTECTED
-					? ($protectedEnabled ? 'yes' : 'no')
-					: $default
-			)
+			static function (string $app, string $key, string $default = '') use ($protectedEnabled, $publicEnabled): string {
+				if ($key === PadTypePolicy::SETTING_PROTECTED) {
+					return $protectedEnabled ? 'yes' : 'no';
+				}
+				if ($key === PadTypePolicy::SETTING_PUBLIC) {
+					return $publicEnabled ? 'yes' : 'no';
+				}
+				return $default;
+			}
 		);
 
 		return new RegisterTemplateCreatorListener($l10n, new PadTypePolicy($config));

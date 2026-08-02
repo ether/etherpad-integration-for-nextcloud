@@ -30,4 +30,7 @@ return ['routes' => [
 	['name' => 'admin#consistencyCheck', 'url' => '/api/v1/admin/consistency-check', 'verb' => 'POST'],
 	['name' => 'admin#retryPendingDeletes', 'url' => '/api/v1/admin/retry-pending-deletes', 'verb' => 'POST'],
 	['name' => 'admin#setTestFault', 'url' => '/api/v1/admin/test-fault', 'verb' => 'POST'],
+	['name' => 'admin#listPadTemplates', 'url' => '/api/v1/admin/templates', 'verb' => 'GET'],
+	['name' => 'admin#uploadPadTemplate', 'url' => '/api/v1/admin/templates', 'verb' => 'POST'],
+	['name' => 'admin#deletePadTemplate', 'url' => '/api/v1/admin/templates/delete', 'verb' => 'POST'],
 ]];

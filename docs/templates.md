@@ -1,14 +1,30 @@
 # Pad Templates
 
-Users can pre-fill new `.pad` files with content from a template they prepared once. Templates live in Nextcloud's standard *Templates* folder (default path: `/Templates` in the user's userspace); the plugin hooks into NC's existing template flow.
+Users can pre-fill new `.pad` files with content from a template they prepared once. The plugin hooks into Nextcloud's existing template flow, so templates appear in the picker NC already shows for **+ → New pad**.
 
-## Where templates live
+## Where templates come from
 
-Each Nextcloud account has its own *Templates* folder. The default location is `/Templates` in the user's userspace, but the path is configurable per user in **Personal Settings → Files → Templates folder**.
+Three sources feed the same picker.
 
-**Group folders also work.** Because Nextcloud mounts group folders into the user's virtual filesystem, a user can set their Templates folder to a group-folder path (e.g. `/MyTeam/Vorlagen`) and the team's shared `.pad` templates show up in the picker for everyone who points their Templates folder at the same path. Each user has to set this themselves — there is no automatic team-wide template registry, NC only looks at the single path configured per account.
+### Personal templates
 
-Read-only shares (a folder shared *to* the user from someone else's account) are not officially supported as a template source; results depend on how NC's virtual filesystem mounts the share. For team templates, prefer group folders.
+Each Nextcloud account has its own *Templates* folder. The default location is `/Templates` in the user's userspace, but the path is configurable per user in **Personal Settings → Files → Templates folder**. Every `.pad` in that folder is offered to that user, and to nobody else.
+
+### Group folder templates
+
+Because Nextcloud mounts group folders into the user's virtual filesystem, a user can point their Templates folder at a group-folder path (e.g. `/MyTeam/Vorlagen`), and the team's shared `.pad` templates then show up for everyone who points their Templates folder at the same path. Each user has to set this themselves: NC only looks at the single path configured per account, so this shares the files, not the configuration.
+
+Read-only shares (a folder shared *to* the user from someone else's account) are not officially supported as a template source; results depend on how NC's virtual filesystem mounts the share. For team templates, prefer group folders or the admin templates below.
+
+### Admin templates (instance-wide)
+
+An admin can upload `.pad` templates under **Administration settings → Etherpad**. They are offered to every account on the instance, with no per-user setup — this is the one source a user cannot opt out of or misconfigure.
+
+They are stored in the instance's `appdata` directory, not in anyone's files. Practical consequences:
+
+- A full backup of the data directory covers them; a per-user export does not.
+- There is no versioning and no trash behind that folder. Uploading over an existing name is refused unless the request says it means to replace, and the admin page asks first — the previous file is gone for good.
+- They are not visible in the Files app and are not searchable; the settings page is the only place they are listed.
 
 ## Creating a template
 
@@ -17,13 +33,13 @@ Read-only shares (a folder shared *to* the user from someone else's account) are
 
 ## Using a template
 
-When the user clicks **+ → New pad** in the Files app, Nextcloud's template picker lists every `.pad` in their *Templates* folder. Selecting one creates a new pad in the current folder with:
+When the user clicks **+ → New pad** in the Files app, Nextcloud's template picker lists every `.pad` in their *Templates* folder together with the admin templates. Selecting a template creates a new pad in the current folder with:
 
 - a freshly provisioned Etherpad pad on the server,
 - the template body copied across (placeholders resolved — see below),
 - a new binding row so the pad and the `.pad` file stay linked.
 
-If the user picks "Blank" instead of a template, the new file is empty and behaves like any normal "+ New pad" creation — frontmatter is initialised on first open.
+If the user picks "Blank" instead of a template, the new file is empty and behaves like any normal "+ New pad" creation — frontmatter is initialised on first open. The pad type is then the default one, protected, unless the admin switched protected pads off; in that case a blank pad is created as a public pad, readable by anyone with the link.
 
 ## Placeholder syntax
 
@@ -90,5 +106,5 @@ Error responses:
 - **External pads (`ext.*`)** can't be used as templates — they hold only a snapshot, not Etherpad-side content. The new file is reset to empty and the user gets a clean blank pad instead.
 - **Failed template materialisation falls back to a blank pad.** If anything in the listener throws (binding race, Etherpad unreachable, malformed template), the byte-copy NC made is wiped and the new file behaves like a normal empty `.pad` — the regular missing-frontmatter init kicks in on first open.
 - **Placeholder substitution applies to both the plain-text and the HTML snapshot in the body**. If a placeholder ends up inside an HTML attribute (`<a href="{{date}}">`), it gets resolved too — keep placeholders in human-readable locations to avoid surprises.
-- **No template registry** — every `.pad` in the user's *Templates* folder is a candidate. There's no separate "is a template" flag.
+- **No "is a template" flag** — every `.pad` in the user's *Templates* folder is a candidate, and every `.pad` an admin uploaded is offered instance-wide. Nothing inside the file marks it as a template.
 - **A template keeps its own access mode**, unless the admin switched that pad type off. In that case the pad is created in the enabled mode instead of failing, so the template's content still lands. With no pad type enabled at all, template creation is refused. Be aware this can widen access: a protected template creates a public pad when protected pads are off — on such an instance that is the only option, but the resulting pad is open to anyone with the link.

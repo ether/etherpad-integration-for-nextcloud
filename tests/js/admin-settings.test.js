@@ -15,7 +15,12 @@ const setupAdminDom = () => {
 			data-retry-pending-url="/retry"
 			data-l10n-saving="Saving..."
 			data-l10n-saved="Saved."
-			data-l10n-checking="Checking...">
+			data-l10n-checking="Checking..."
+			data-templates-url="/templates"
+			data-templates-delete-url="/templates/delete"
+			data-l10n-template-delete="Delete"
+			data-l10n-template-confirm-delete="Delete this template for everyone?"
+			data-l10n-template-confirm-replace="Replace the existing template of that name?">
 			<form id="etherpad-nextcloud-admin-form">
 				<input name="etherpad_host" value="https://pad.example.org">
 				<span class="ep-check-result" data-check-result="etherpad_host"></span>
@@ -38,6 +43,11 @@ const setupAdminDom = () => {
 				<button type="button" id="etherpad-nextcloud-consistency-check">Check</button>
 				<p id="etherpad-nextcloud-connection-status" class="ep-status"></p>
 				<p id="etherpad-nextcloud-diagnostics-status" class="ep-status"></p>
+				<ul id="epnc-template-list"></ul>
+				<p id="epnc-template-empty"></p>
+				<input type="file" id="epnc-template-file">
+				<button type="button" id="epnc-template-upload">Upload</button>
+				<p id="epnc-template-status" class="ep-status"></p>
 			</form>
 		</div>
 	`
@@ -443,4 +453,159 @@ describe('pad types live region', () => {
 		expect(hint().textContent).toBe('No pad type is enabled.')
 		expect(observed).toHaveLength(0)
 	})
+})
+
+describe('shared templates', () => {
+	const list = () => document.getElementById('epnc-template-list')
+	const status = () => document.getElementById('epnc-template-status')
+	const rows = () => [...list().querySelectorAll('.ep-template-row')]
+
+	const templateResponse = (names) => okResponse({ templates: names.map((name) => ({ name, size: 1, modified: 1 })) })
+
+	beforeEach(() => {
+		vi.resetModules()
+		global.OC = { requestToken: 'token' }
+		setupAdminDom()
+	})
+
+	afterEach(() => {
+		document.body.innerHTML = ''
+		delete global.OC
+		vi.unstubAllGlobals()
+	})
+
+	it('lists what the server reports', async () => {
+		vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(templateResponse(['Meeting notes.pad', 'Retro.pad']))))
+		await import(MODULE)
+		await flush()
+
+		expect(rows().map((row) => row.querySelector('.ep-template-name').textContent))
+			.toEqual(['Meeting notes.pad', 'Retro.pad'])
+		expect(document.getElementById('epnc-template-empty').style.display).toBe('none')
+	})
+
+	/**
+	 * A failing listing used to look exactly like an empty one, so broken
+	 * appdata permissions read as "no templates yet".
+	 */
+	it('reports a failing listing instead of showing an empty one', async () => {
+		vi.stubGlobal('fetch', vi.fn(() => Promise.resolve({
+			ok: false,
+			status: 500,
+			text: () => Promise.resolve(JSON.stringify({ ok: false, message: 'Could not read the templates.' })),
+		})))
+		await import(MODULE)
+		await flush()
+
+		expect(status().textContent).toContain('Could not read the templates.')
+		expect(status().classList.contains('ep-status-error')).toBe(true)
+	})
+
+	/** A file name is data, never markup. */
+	it('renders a template name as text', async () => {
+		vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(templateResponse(['<img src=x onerror=alert(1)>.pad']))))
+		await import(MODULE)
+		await flush()
+
+		const name = list().querySelector('.ep-template-name')
+		expect(name.textContent).toBe('<img src=x onerror=alert(1)>.pad')
+		expect(name.querySelector('img')).toBeNull()
+	})
+
+	it('uploads as JSON and reloads the list', async () => {
+		const calls = []
+		vi.stubGlobal('fetch', vi.fn((url, options) => {
+			calls.push({ url, options })
+			return Promise.resolve(url === '/templates' && options && options.method === 'POST'
+				? okResponse({ message: 'Template saved.' })
+				: templateResponse(['Meeting notes.pad']))
+		}))
+		await import(MODULE)
+		await flush()
+
+		await uploadFile('Meeting notes.pad', 'content')
+
+		const upload = calls.find((c) => c.options && c.options.method === 'POST')
+		expect(upload.options.headers['Content-Type']).toBe('application/json')
+		expect(JSON.parse(upload.options.body)).toMatchObject({ name: 'Meeting notes.pad', replace: false })
+		expect(status().textContent).toContain('Template saved.')
+	})
+
+	/**
+	 * The server refuses to overwrite unless asked, so a taken name comes back
+	 * as a question. Confirming repeats the upload with replace set.
+	 */
+	it('asks before replacing a template of the same name', async () => {
+		const bodies = []
+		vi.stubGlobal('fetch', vi.fn((url, options) => {
+			if (options && options.method === 'POST') {
+				bodies.push(JSON.parse(options.body))
+				return Promise.resolve(bodies.length === 1
+					? { ok: false, status: 400, text: () => Promise.resolve(JSON.stringify({ ok: false, message: 'exists', field: 'template_exists' })) }
+					: okResponse({ message: 'Template saved.' }))
+			}
+			return Promise.resolve(templateResponse([]))
+		}))
+		vi.stubGlobal('confirm', vi.fn(() => true))
+		await import(MODULE)
+		await flush()
+
+		await uploadFile('Meeting notes.pad', 'content')
+
+		expect(bodies.map((b) => b.replace)).toEqual([false, true])
+		expect(status().textContent).toContain('Template saved.')
+	})
+
+	it('leaves the template alone when the replace prompt is declined', async () => {
+		const bodies = []
+		vi.stubGlobal('fetch', vi.fn((url, options) => {
+			if (options && options.method === 'POST') {
+				bodies.push(JSON.parse(options.body))
+				return Promise.resolve({ ok: false, status: 400, text: () => Promise.resolve(JSON.stringify({ ok: false, message: 'exists', field: 'template_exists' })) })
+			}
+			return Promise.resolve(templateResponse([]))
+		}))
+		vi.stubGlobal('confirm', vi.fn(() => false))
+		await import(MODULE)
+		await flush()
+
+		await uploadFile('Meeting notes.pad', 'content')
+
+		expect(bodies).toHaveLength(1)
+		expect(status().textContent).toBe('')
+	})
+
+	it('deletes after confirmation and skips it otherwise', async () => {
+		const posts = []
+		vi.stubGlobal('fetch', vi.fn((url, options) => {
+			if (options && options.method === 'POST') {
+				posts.push(url)
+				return Promise.resolve(okResponse({ message: 'Template deleted.', name: 'Retro.pad' }))
+			}
+			return Promise.resolve(templateResponse(['Retro.pad']))
+		}))
+		const confirmMock = vi.fn(() => false)
+		vi.stubGlobal('confirm', confirmMock)
+		await import(MODULE)
+		await flush()
+
+		rows()[0].querySelector('button').click()
+		await flush()
+		expect(posts).toHaveLength(0)
+
+		confirmMock.mockReturnValue(true)
+		rows()[0].querySelector('button').click()
+		await flush()
+		expect(posts).toEqual(['/templates/delete'])
+	})
+
+	const uploadFile = async (name, content) => {
+		const input = document.getElementById('epnc-template-file')
+		Object.defineProperty(input, 'files', {
+			configurable: true,
+			value: [{ name, text: () => Promise.resolve(content) }],
+		})
+		input.dispatchEvent(new Event('change'))
+		await flush()
+	}
 })

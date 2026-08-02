@@ -16,7 +16,9 @@ use OCA\EtherpadNextcloud\Service\ConsistencyCheckService;
 use OCA\EtherpadNextcloud\Service\CookieDomainDecision;
 use OCA\EtherpadNextcloud\Service\HealthCheckItem;
 use OCA\EtherpadNextcloud\Service\CookieDomainMessages;
+use OCA\EtherpadNextcloud\Exception\AdminValidationException;
 use OCA\EtherpadNextcloud\Service\CookieDomainPolicy;
+use OCA\EtherpadNextcloud\Service\PadTemplateAdminService;
 use OCA\EtherpadNextcloud\Service\EtherpadHealthCheckService;
 use OCA\EtherpadNextcloud\Service\HealthCheckResult;
 use OCA\EtherpadNextcloud\Service\PendingDeleteRetryService;
@@ -207,6 +209,63 @@ class AdminControllerTest extends TestCase {
 		$this->assertSame('trash_read_lock', $response->getData()['fault']);
 	}
 
+	public function testListsPadTemplates(): void {
+		$templates = $this->createMock(PadTemplateAdminService::class);
+		$templates->method('list')->willReturn([['name' => 'Meeting notes.pad', 'size' => 10, 'modified' => 1]]);
+
+		$response = $this->buildController(padTemplateAdmin: $templates)->listPadTemplates();
+
+		$this->assertSame(Http::STATUS_OK, $response->getStatus());
+		$this->assertSame('Meeting notes.pad', $response->getData()['templates'][0]['name']);
+	}
+
+	public function testUploadsAPadTemplate(): void {
+		$request = $this->request(['name' => 'Meeting notes.pad', 'content' => "---\npad_id: \"nc-abc\"\n---\n"]);
+		$templates = $this->createMock(PadTemplateAdminService::class);
+		$templates->expects($this->once())
+			->method('add')
+			->with('Meeting notes.pad', "---\npad_id: \"nc-abc\"\n---\n")
+			->willReturn(['name' => 'Meeting notes.pad', 'size' => 10, 'modified' => 1]);
+
+		$response = $this->buildController($request, padTemplateAdmin: $templates)->uploadPadTemplate();
+
+		$this->assertSame(Http::STATUS_OK, $response->getStatus());
+		$this->assertTrue((bool)$response->getData()['ok']);
+	}
+
+	/** The message has to name the field so the page can mark it. */
+	public function testReportsAnInvalidTemplateAsAValidationError(): void {
+		$templates = $this->createMock(PadTemplateAdminService::class);
+		$templates->method('add')->willThrowException(
+			new AdminValidationException('template', 'A template must be a .pad file.')
+		);
+
+		$response = $this->buildController($this->request(['name' => 'notes.txt', 'content' => 'x']), padTemplateAdmin: $templates)
+			->uploadPadTemplate();
+
+		$this->assertSame(Http::STATUS_BAD_REQUEST, $response->getStatus());
+		$this->assertSame('A template must be a .pad file.', $response->getData()['message']);
+	}
+
+	public function testDeletesAPadTemplate(): void {
+		$templates = $this->createMock(PadTemplateAdminService::class);
+		$templates->expects($this->once())->method('delete')->with('gone.pad');
+
+		$response = $this->buildController($this->request(['name' => 'gone.pad']), padTemplateAdmin: $templates)
+			->deletePadTemplate();
+
+		$this->assertSame(Http::STATUS_OK, $response->getStatus());
+		$this->assertSame('gone.pad', $response->getData()['name']);
+	}
+
+	public function testTemplateEndpointsRefuseNonAdmins(): void {
+		$controller = $this->buildController(groupManager: $this->adminGroup(false));
+
+		$this->assertSame(Http::STATUS_FORBIDDEN, $controller->listPadTemplates()->getStatus());
+		$this->assertSame(Http::STATUS_FORBIDDEN, $controller->uploadPadTemplate()->getStatus());
+		$this->assertSame(Http::STATUS_FORBIDDEN, $controller->deletePadTemplate()->getStatus());
+	}
+
 	private function buildController(
 		?IRequest $request = null,
 		?IUserSession $userSession = null,
@@ -218,6 +277,7 @@ class AdminControllerTest extends TestCase {
 		?ConsistencyCheckService $consistencyCheck = null,
 		?AdminConsistencyCheckResponseBuilder $consistencyResponses = null,
 		?AdminTestFaultService $testFaults = null,
+		?PadTemplateAdminService $padTemplateAdmin = null,
 	): AdminController {
 		$l10n = $this->buildL10n();
 		$logger = $this->createMock(LoggerInterface::class);
@@ -238,6 +298,7 @@ class AdminControllerTest extends TestCase {
 			new CookieDomainPolicy(),
 			new CookieDomainMessages($l10n),
 			$this->urlGenerator(),
+			$padTemplateAdmin ?? $this->createMock(PadTemplateAdminService::class),
 		);
 	}
 
