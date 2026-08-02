@@ -12,6 +12,8 @@ namespace OCA\EtherpadNextcloud\Service;
 use OCA\EtherpadNextcloud\Exception\AdminValidationException;
 use OCA\EtherpadNextcloud\Exception\PadFileFormatException;
 use OCA\EtherpadNextcloud\Exception\TemplateExistsException;
+use OCP\Files\IFilenameValidator;
+use OCP\Files\InvalidPathException;
 use OCP\IL10N;
 
 /**
@@ -28,10 +30,13 @@ use OCP\IL10N;
 class PadTemplateAdminService {
 	/** Generous, but enough to stop an accidental upload of something huge. */
 	private const MAX_TEMPLATE_BYTES = 2 * 1024 * 1024;
+	/** Characters, not bytes: the name is what an admin reads in the picker. */
+	private const MAX_NAME_CHARS = 200;
 
 	public function __construct(
 		private PadTemplateStorage $storage,
 		private PadFileService $padFileService,
+		private IFilenameValidator $filenameValidator,
 		private IL10N $l10n,
 	) {
 	}
@@ -106,14 +111,29 @@ class PadTemplateAdminService {
 	 */
 	private function validateName(string $name): string {
 		$trimmed = trim($name);
-		if ($trimmed === '' || strlen($trimmed) > 200) {
+		if ($trimmed === '') {
 			throw new AdminValidationException('template', $this->l10n->t('Template name is required.'));
+		}
+		if (mb_strlen($trimmed) > self::MAX_NAME_CHARS) {
+			throw new AdminValidationException('template', $this->l10n->t('Template name is too long.'));
 		}
 		if (!str_ends_with(strtolower($trimmed), '.pad')) {
 			throw new AdminValidationException('template', $this->l10n->t('A template must be a .pad file.'));
 		}
 		if (str_contains($trimmed, '/') || str_contains($trimmed, '\\') || str_starts_with($trimmed, '.')) {
 			throw new AdminValidationException('template', $this->l10n->t('Template name must not contain a path.'));
+		}
+		// Everything an instance forbids beyond that — control characters, the
+		// configured forbidden characters and names — is Nextcloud's own rule
+		// set. Without asking it here, the write fails deep in the storage and
+		// the admin gets a 500 instead of a sentence they can act on.
+		try {
+			$this->filenameValidator->validateFilename($trimmed);
+		} catch (InvalidPathException $e) {
+			$message = trim($e->getMessage());
+			throw new AdminValidationException('template', $message !== ''
+				? $message
+				: $this->l10n->t('That template name is not allowed on this server.'));
 		}
 		return $trimmed;
 	}

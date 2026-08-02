@@ -103,32 +103,72 @@ class PadTemplateStorageTest extends TestCase {
 
 	/** Check and write are one step, so the name is held across both. */
 	public function testHoldsAnExclusiveLockWhileWriting(): void {
-		$locks = $this->createMock(ILockingProvider::class);
-		$locks->expects($this->once())->method('acquireLock')
-			->with(self::FOLDER_PATH . '/agenda.pad', ILockingProvider::LOCK_EXCLUSIVE);
-		$locks->expects($this->once())->method('releaseLock')
-			->with(self::FOLDER_PATH . '/agenda.pad', ILockingProvider::LOCK_EXCLUSIVE);
+		$acquired = [];
+		$released = [];
+		$locks = $this->lockRecorder($acquired, $released);
 
 		$folder = $this->folderWith([]);
 		$folder->method('newFile')->willReturn($this->namedFile('agenda.pad'));
 
 		$this->buildStorage($folder, $locks)->addGlobalTemplate('agenda.pad', 'content');
+
+		$this->assertSame($acquired, $released);
+		$this->assertCount(1, $acquired);
+		// Nextcloud stores this key in a 64-character column, so the plain
+		// path — already 68 characters with an ordinary instance id — would
+		// fail the write on any instance not backed by Redis.
+		$this->assertLessThanOrEqual(64, strlen($acquired[0]));
+		$this->assertStringStartsWith('etherpad_nextcloud:', $acquired[0]);
+		$this->assertStringNotContainsString('agenda.pad', $acquired[0]);
 	}
 
-	/** Deleting takes the same lock, or it could interleave with an upload. */
-	public function testDeletesUnderTheSameLock(): void {
+	/** Two names must not be able to lock each other out. */
+	public function testLocksEachNameSeparately(): void {
+		$acquired = [];
+		$released = [];
+		$folder = $this->folderWith([]);
+		$folder->method('newFile')->willReturn($this->namedFile('x.pad'));
+
+		$storage = $this->buildStorage($folder, $this->lockRecorder($acquired, $released));
+		$storage->addGlobalTemplate('agenda.pad', 'content');
+		$storage->addGlobalTemplate('minutes.pad', 'content');
+
+		$this->assertNotSame($acquired[0], $acquired[1]);
+	}
+
+	/** A long name must not push the key past what the column can hold. */
+	public function testKeepsTheLockKeyBoundedForAnyName(): void {
+		$acquired = [];
+		$released = [];
+		$folder = $this->folderWith([]);
+		$folder->method('newFile')->willReturn($this->namedFile('x.pad'));
+
+		$this->buildStorage($folder, $this->lockRecorder($acquired, $released))
+			->addGlobalTemplate(str_repeat('a', 190) . '.pad', 'content');
+
+		$this->assertLessThanOrEqual(64, strlen($acquired[0]));
+	}
+
+	/** Deleting takes the same lock as writing, or the two could interleave. */
+	public function testDeletesUnderTheSameLockAsWriting(): void {
 		$file = $this->namedFile('agenda.pad');
 		$file->expects($this->once())->method('delete');
-		$locks = $this->createMock(ILockingProvider::class);
-		$locks->expects($this->once())->method('acquireLock')
-			->with(self::FOLDER_PATH . '/agenda.pad', ILockingProvider::LOCK_EXCLUSIVE);
-		$locks->expects($this->once())->method('releaseLock');
+		$released = [];
+		$written = [];
+		$deleted = [];
 
 		$folder = $this->createMock(Folder::class);
 		$folder->method('getPath')->willReturn(self::FOLDER_PATH);
 		$folder->method('getDirectoryListing')->willReturn([$file]);
+		$folder->method('get')->willReturn($file);
 
-		$this->assertTrue($this->buildStorage($folder, $locks)->deleteGlobalTemplate('agenda.pad'));
+		$this->buildStorage($folder, $this->lockRecorder($written, $released))
+			->addGlobalTemplate('agenda.pad', 'content', true);
+		$this->assertTrue(
+			$this->buildStorage($folder, $this->lockRecorder($deleted, $released))->deleteGlobalTemplate('agenda.pad')
+		);
+
+		$this->assertSame($written, $deleted);
 	}
 
 	public function testReportsADeleteOfSomethingThatIsNotThere(): void {
@@ -194,6 +234,33 @@ class PadTemplateStorageTest extends TestCase {
 		$this->assertSame([], $this->buildStorage($folder, null, $appData)->globalTemplates());
 	}
 
+	/** The other outcome of that race: another request created it first. */
+	public function testUsesTheFolderAnotherRequestCreatedFirst(): void {
+		$calls = 0;
+		$appData = $this->createMock(IAppData::class);
+		$appData->method('getFolder')->willReturnCallback(
+			function () use (&$calls): ISimpleFolder {
+				$calls += 1;
+				if ($calls === 1) {
+					throw new NotFoundException('templates');
+				}
+				return $this->createMock(ISimpleFolder::class);
+			}
+		);
+		$appData->method('newFolder')->willThrowException(new \RuntimeException('already exists'));
+
+		$folder = $this->createMock(Folder::class);
+		$folder->method('getPath')->willReturn(self::FOLDER_PATH);
+		$folder->method('getDirectoryListing')->willReturn([$this->namedFile('agenda.pad')]);
+
+		$names = array_map(
+			static fn(File $file): string => $file->getName(),
+			$this->buildStorage($folder, null, $appData)->globalTemplates(),
+		);
+
+		$this->assertSame(['agenda.pad'], $names);
+	}
+
 	/**
 	 * A failed create is only harmless when the folder is there afterwards.
 	 * Answering a permission or quota failure with "not found" would replace
@@ -206,6 +273,25 @@ class PadTemplateStorageTest extends TestCase {
 
 		$this->expectExceptionMessage('permission denied');
 		$this->buildStorage($this->folderWith([]), null, $appData)->globalTemplates();
+	}
+
+	/**
+	 * @param list<string> $acquired
+	 * @param list<string> $released
+	 */
+	private function lockRecorder(array &$acquired, array &$released): ILockingProvider {
+		$locks = $this->createMock(ILockingProvider::class);
+		$locks->method('acquireLock')->willReturnCallback(
+			static function (string $path, int $type) use (&$acquired): void {
+				$acquired[] = $path;
+			}
+		);
+		$locks->method('releaseLock')->willReturnCallback(
+			static function (string $path, int $type) use (&$released): void {
+				$released[] = $path;
+			}
+		);
+		return $locks;
 	}
 
 	private function buildStorage(

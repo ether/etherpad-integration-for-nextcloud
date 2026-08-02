@@ -120,7 +120,7 @@ class PadTemplateStorage {
 	 */
 	private function withNameLocked(string $name, callable $write) {
 		$folder = $this->templateFolder();
-		$lock = $folder->getPath() . '/' . $name;
+		$lock = $this->lockKey($folder, $name);
 
 		try {
 			$this->lockingProvider->acquireLock($lock, ILockingProvider::LOCK_EXCLUSIVE);
@@ -135,6 +135,17 @@ class PadTemplateStorage {
 		} finally {
 			$this->lockingProvider->releaseLock($lock, ILockingProvider::LOCK_EXCLUSIVE);
 		}
+	}
+
+	/**
+	 * Nextcloud's database locking stores this in a 64-character column, and
+	 * the plain path already exceeds that with an ordinary instance id and file
+	 * name — the write would fail on any instance not backed by Redis. Hashing
+	 * keeps it bounded while staying specific to this folder and name, and the
+	 * prefix keeps it clear of Nextcloud's own file locks.
+	 */
+	private function lockKey(Folder $folder, string $name): string {
+		return Application::APP_ID . ':tpl:' . sha1($folder->getPath() . "\0" . $name);
 	}
 
 	/**

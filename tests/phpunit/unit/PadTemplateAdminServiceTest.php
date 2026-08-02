@@ -16,6 +16,8 @@ use OCA\EtherpadNextcloud\Service\PadTemplateAdminService;
 use OCA\EtherpadNextcloud\Service\PadTemplateStorage;
 use OCA\EtherpadNextcloud\Service\ParsedPadFile;
 use OCP\Files\File;
+use OCP\Files\IFilenameValidator;
+use OCP\Files\InvalidPathException;
 use OCP\IL10N;
 use PHPUnit\Framework\TestCase;
 
@@ -94,10 +96,30 @@ class PadTemplateAdminServiceTest extends TestCase {
 
 		$l10n = $this->createMock(IL10N::class);
 		$l10n->method('t')->willReturnArgument(0);
-		$service = new PadTemplateAdminService($storage, new PadFileService(), $l10n);
+		$service = new PadTemplateAdminService($storage, new PadFileService(), $this->filenameValidator(), $l10n);
 
 		$this->expectException(AdminValidationException::class);
 		$service->add('broken.pad', "not a pad file at all\njust text\n");
+	}
+
+	/**
+	 * What an instance forbids beyond our own rules is Nextcloud's business —
+	 * asked here so the admin gets a sentence instead of a 500 from deep in
+	 * the storage.
+	 */
+	public function testRejectsWhatNextcloudRejects(): void {
+		$storage = $this->createMock(PadTemplateStorage::class);
+		$storage->expects($this->never())->method('addGlobalTemplate');
+
+		$validator = $this->createMock(IFilenameValidator::class);
+		$validator->method('validateFilename')->willThrowException(new InvalidPathException('Filename contains at least one invalid character'));
+
+		$l10n = $this->createMock(IL10N::class);
+		$l10n->method('t')->willReturnArgument(0);
+		$service = new PadTemplateAdminService($storage, new PadFileService(), $validator, $l10n);
+
+		$this->expectExceptionMessage('Filename contains at least one invalid character');
+		$service->add('note*s.pad', self::PAD);
 	}
 
 	/**
@@ -144,6 +166,11 @@ class PadTemplateAdminServiceTest extends TestCase {
 		$this->buildService($storage)->delete('gone.pad');
 	}
 
+	/** Accepts everything by default; the rules themselves are Nextcloud's. */
+	private function filenameValidator(): IFilenameValidator {
+		return $this->createMock(IFilenameValidator::class);
+	}
+
 	private function file(string $name, int $size, int $mtime): File {
 		$file = $this->createMock(File::class);
 		$file->method('getName')->willReturn($name);
@@ -170,6 +197,6 @@ class PadTemplateAdminServiceTest extends TestCase {
 		$l10n = $this->createMock(IL10N::class);
 		$l10n->method('t')->willReturnArgument(0);
 
-		return new PadTemplateAdminService($storage, $padFileService, $l10n);
+		return new PadTemplateAdminService($storage, $padFileService, $this->filenameValidator(), $l10n);
 	}
 }

@@ -33,11 +33,10 @@ class RegisterTemplateCreatorListener implements IEventListener {
 			return;
 		}
 
-		// This entry is the only way to create a pad from the Files app, so it
-		// stays as long as either type is on: its blank option produces
-		// whichever one is available, and the picker adds a tile for the
-		// second when both are. Only with both switched off is there nothing
-		// left to create.
+		// This entry is the only way to create a pad from the Files app – and
+		// the only way to reach the shared templates – so it stays as long as
+		// either type is on: its blank option produces whichever one is
+		// available. Only with both switched off is there nothing to create.
 		$anyTypeEnabled = $this->padTypePolicy->isEnabled(BindingService::ACCESS_PROTECTED)
 			|| $this->padTypePolicy->isEnabled(BindingService::ACCESS_PUBLIC);
 		if (!$anyTypeEnabled) {

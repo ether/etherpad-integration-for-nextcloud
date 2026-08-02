@@ -51,6 +51,8 @@ $stubFiles = [
 	__DIR__ . '/stubs/OCP/IURLGenerator.php',
 	__DIR__ . '/stubs/OCP/IUser.php',
 	__DIR__ . '/stubs/OCP/IUserSession.php',
+	__DIR__ . '/stubs/OCP/Files/InvalidPathException.php',
+	__DIR__ . '/stubs/OCP/Files/IFilenameValidator.php',
 	__DIR__ . '/stubs/OCP/Files/SimpleFS/ISimpleFolder.php',
 	__DIR__ . '/stubs/OCP/Files/IAppData.php',
 	__DIR__ . '/stubs/OCP/Files/AppData/IAppDataFactory.php',
