@@ -96,9 +96,17 @@ class PadTemplateAdminService {
 		];
 	}
 
-	/** @throws AdminValidationException */
+	/**
+	 * Deliberately without the upload rules: they say what may be stored, and
+	 * tightening them later — ours or Nextcloud's — would otherwise strand a
+	 * template that is already there, visible in the list and impossible to
+	 * remove. What makes this safe is the exact match against the listing in
+	 * the storage, not the shape of the name.
+	 *
+	 * @throws AdminValidationException
+	 */
 	public function delete(string $name): void {
-		if (!$this->storage->deleteGlobalTemplate($this->validateName($name))) {
+		if (!$this->storage->deleteGlobalTemplate(trim($name))) {
 			throw new AdminValidationException('template', $this->l10n->t('No such template.'));
 		}
 	}

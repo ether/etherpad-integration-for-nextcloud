@@ -114,12 +114,14 @@ class PadTemplateStorageTest extends TestCase {
 
 		$this->assertSame($acquired, $released);
 		$this->assertCount(1, $acquired);
+		[$key, $type] = $acquired[0];
+		$this->assertSame(ILockingProvider::LOCK_EXCLUSIVE, $type);
 		// Nextcloud stores this key in a 64-character column, so the plain
 		// path — already 68 characters with an ordinary instance id — would
 		// fail the write on any instance not backed by Redis.
-		$this->assertLessThanOrEqual(64, strlen($acquired[0]));
-		$this->assertStringStartsWith('etherpad_nextcloud:', $acquired[0]);
-		$this->assertStringNotContainsString('agenda.pad', $acquired[0]);
+		$this->assertLessThanOrEqual(64, strlen($key));
+		$this->assertStringStartsWith('etherpad_nextcloud:', $key);
+		$this->assertStringNotContainsString('agenda.pad', $key);
 	}
 
 	/** Two names must not be able to lock each other out. */
@@ -146,7 +148,7 @@ class PadTemplateStorageTest extends TestCase {
 		$this->buildStorage($folder, $this->lockRecorder($acquired, $released))
 			->addGlobalTemplate(str_repeat('a', 190) . '.pad', 'content');
 
-		$this->assertLessThanOrEqual(64, strlen($acquired[0]));
+		$this->assertLessThanOrEqual(64, strlen($acquired[0][0]));
 	}
 
 	/** Deleting takes the same lock as writing, or the two could interleave. */
@@ -276,19 +278,22 @@ class PadTemplateStorageTest extends TestCase {
 	}
 
 	/**
-	 * @param list<string> $acquired
-	 * @param list<string> $released
+	 * Records key *and* type: a shared lock would let two writers through, and
+	 * a recorder that only kept the key could not tell the difference.
+	 *
+	 * @param list<array{0:string,1:int}> $acquired
+	 * @param list<array{0:string,1:int}> $released
 	 */
 	private function lockRecorder(array &$acquired, array &$released): ILockingProvider {
 		$locks = $this->createMock(ILockingProvider::class);
 		$locks->method('acquireLock')->willReturnCallback(
 			static function (string $path, int $type) use (&$acquired): void {
-				$acquired[] = $path;
+				$acquired[] = [$path, $type];
 			}
 		);
 		$locks->method('releaseLock')->willReturnCallback(
 			static function (string $path, int $type) use (&$released): void {
-				$released[] = $path;
+				$released[] = [$path, $type];
 			}
 		);
 		return $locks;

@@ -158,6 +158,23 @@ class PadTemplateAdminServiceTest extends TestCase {
 		$this->buildService($storage)->delete('gone.pad');
 	}
 
+	/**
+	 * Rules that say what may be stored must not decide what may be removed:
+	 * tightening them later would strand a template that is already there.
+	 */
+	public function testDeletesAStoredTemplateTheUploadRulesWouldNowReject(): void {
+		$storage = $this->createMock(PadTemplateStorage::class);
+		$storage->expects($this->once())->method('deleteGlobalTemplate')->with('Notiz*.pad')->willReturn(true);
+
+		$validator = $this->createMock(IFilenameValidator::class);
+		$validator->method('validateFilename')->willThrowException(new InvalidPathException('now forbidden'));
+
+		$l10n = $this->createMock(IL10N::class);
+		$l10n->method('t')->willReturnArgument(0);
+
+		(new PadTemplateAdminService($storage, new PadFileService(), $validator, $l10n))->delete(' Notiz*.pad ');
+	}
+
 	public function testReportsADeleteOfSomethingThatIsNotThere(): void {
 		$storage = $this->createMock(PadTemplateStorage::class);
 		$storage->method('deleteGlobalTemplate')->willReturn(false);
