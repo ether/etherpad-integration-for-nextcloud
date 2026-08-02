@@ -12,6 +12,7 @@ namespace OCA\EtherpadNextcloud\Tests\Unit;
 use OCA\EtherpadNextcloud\Service\PadTemplateStorage;
 use OCA\EtherpadNextcloud\Template\PadTemplateProvider;
 use OCP\Files\File;
+use OCP\IURLGenerator;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
@@ -49,9 +50,20 @@ class PadTemplateProviderTest extends TestCase {
 		$logger = $this->createMock(LoggerInterface::class);
 		$logger->expects($this->once())->method('warning');
 
-		$provider = new PadTemplateProvider($storage, $logger);
+		$provider = new PadTemplateProvider($storage, $this->urlGenerator(), $logger);
 
 		$this->assertSame([], $provider->getCustomTemplates(self::MIME));
+	}
+
+	/**
+	 * Nextcloud points the tile at /core/preview, which has nothing to render
+	 * for a .pad – the picker would show its generic document icon.
+	 */
+	public function testTheTemplatesCarryThePadIcon(): void {
+		$templates = $this->buildProvider([$this->templateFile('Meeting notes.pad')])
+			->getCustomTemplates(self::MIME);
+
+		$this->assertStringContainsString('etherpad-icon', (string)$templates[0]->jsonSerialize()['previewUrl']);
 	}
 
 	public function testResolvesATemplateIdToItsFile(): void {
@@ -59,7 +71,7 @@ class PadTemplateProviderTest extends TestCase {
 		$storage = $this->createMock(PadTemplateStorage::class);
 		$storage->method('globalTemplate')->with('Meeting notes.pad')->willReturn($file);
 
-		$provider = new PadTemplateProvider($storage, $this->createMock(LoggerInterface::class));
+		$provider = new PadTemplateProvider($storage, $this->urlGenerator(), $this->createMock(LoggerInterface::class));
 
 		$this->assertSame($file, $provider->getCustomTemplate('global:Meeting notes.pad'));
 	}
@@ -79,14 +91,25 @@ class PadTemplateProviderTest extends TestCase {
 		$storage->method('globalTemplate')->willReturn(null);
 
 		$this->expectException(\RuntimeException::class);
-		(new PadTemplateProvider($storage, $this->createMock(LoggerInterface::class)))->getCustomTemplate($templateId);
+		(new PadTemplateProvider($storage, $this->urlGenerator(), $this->createMock(LoggerInterface::class)))->getCustomTemplate($templateId);
 	}
 
 	/** @param list<File> $templates */
 	private function buildProvider(array $templates): PadTemplateProvider {
 		$storage = $this->createMock(PadTemplateStorage::class);
 		$storage->method('globalTemplates')->willReturn($templates);
-		return new PadTemplateProvider($storage, $this->createMock(LoggerInterface::class));
+		return new PadTemplateProvider($storage, $this->urlGenerator(), $this->createMock(LoggerInterface::class));
+	}
+
+	private function urlGenerator(): IURLGenerator {
+		$urlGenerator = $this->createMock(IURLGenerator::class);
+		$urlGenerator->method('imagePath')->willReturnCallback(
+			static fn(string $app, string $file): string => '/apps/' . $app . '/img/' . $file
+		);
+		$urlGenerator->method('getAbsoluteURL')->willReturnCallback(
+			static fn(string $path): string => 'https://cloud.example.test' . $path
+		);
+		return $urlGenerator;
 	}
 
 	/** Nextcloud's Template serialises the file, so it has to answer for real. */
