@@ -164,6 +164,20 @@ export const createBlankPadFromTemplatePicker = async (page: Page, fileName: str
 	await fileNameInput.fill(fileName.replace(/\.pad$/i, ''))
 
 	await page.getByRole('button', { name: /create|erstellen/i }).last().click()
+
+	// Nextcloud shows the template picker whenever there is something to pick,
+	// which the shared templates now guarantee on this instance. Blank comes
+	// preselected, so confirming is all that is left. The confirm control is an
+	// <input type="submit">, and matching it by label would also hit the "+ New"
+	// menu's entries still in the page behind the modal.
+	const confirm = page.locator('.templates-picker__buttons input[type="submit"]')
+	const pickerShown = await confirm.waitFor({ state: 'visible', timeout: 10_000 })
+		.then(() => true)
+		.catch(() => false)
+	if (pickerShown) {
+		await confirm.click()
+	}
+
 	await expectFileInList(page, fileName)
 	return fileName
 }
