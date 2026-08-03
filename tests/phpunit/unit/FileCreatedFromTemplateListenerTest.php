@@ -186,6 +186,51 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 	}
 
 	/**
+	 * A pasted address may carry a query or fragment, and canonicalisation is
+	 * what drops them — so the record of an unavailable export must not repeat
+	 * what was typed, or a token would land in the server log.
+	 */
+	public function testLogsTheCanonicalAddressWhenTheRemoteExportIsUnavailable(): void {
+		$marker = $this->file(PadTemplateStorage::EXTERNAL_MARKER);
+		$target = $this->file('Team pad.pad');
+
+		$storage = $this->createMock(PadTemplateStorage::class);
+		$storage->method('isExternalMarkerFile')->willReturn(true);
+
+		$seeder = $this->createMock(ExternalPadSeeder::class);
+		$seeder->method('seed')->willReturn([
+			'file_id' => 42,
+			'pad_id' => 'ext.RemotePad',
+			'access_mode' => 'public',
+			'pad_url' => 'https://pad.remote.test/p/RemotePad',
+			'snapshot_warning_code' => 'remote_export_unavailable',
+		]);
+
+		$logged = [];
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->method('warning')->willReturnCallback(
+			static function (string $message, array $context = []) use (&$logged): void {
+				$logged[] = $context;
+			}
+		);
+
+		$listener = new FileCreatedFromTemplateListener(
+			$this->createMock(PadCreationService::class),
+			$this->createMock(PadBootstrapService::class),
+			$storage,
+			$seeder,
+			$this->userSession(true),
+			$logger,
+		);
+		$listener->handle(new FileCreatedFromTemplateEvent($marker, $target, [
+			'pad_url' => ['content' => 'https://pad.remote.test/p/RemotePad?token=s3cret#top'],
+		]));
+
+		$this->assertCount(1, $logged);
+		$this->assertSame('https://pad.remote.test/p/RemotePad', $logged[0]['padUrl'] ?? null);
+	}
+
+	/**
 	 * An empty `.pad` left behind would become an ordinary local pad on first
 	 * open — not what the user picked. Nextcloud turns the exception into its
 	 * own "could not create from template" message.
@@ -314,23 +359,27 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 		?PadTemplateStorage $templateStorage = null,
 		?ExternalPadSeeder $externalPadSeeder = null,
 	): FileCreatedFromTemplateListener {
+		return new FileCreatedFromTemplateListener(
+			$creation,
+			$bootstrap,
+			$templateStorage ?? $this->noTypeTemplates(),
+			$externalPadSeeder ?? $this->createMock(ExternalPadSeeder::class),
+			$this->userSession($withUser),
+			$this->createMock(LoggerInterface::class),
+		);
+	}
+
+	private function userSession(bool $withUser): IUserSession {
 		$userSession = $this->createMock(IUserSession::class);
 		if ($withUser) {
 			$user = $this->createMock(IUser::class);
 			$user->method('getUID')->willReturn('alice');
 			$user->method('getDisplayName')->willReturn('Alice');
 			$userSession->method('getUser')->willReturn($user);
-		} else {
-			$userSession->method('getUser')->willReturn(null);
+			return $userSession;
 		}
-		return new FileCreatedFromTemplateListener(
-			$creation,
-			$bootstrap,
-			$templateStorage ?? $this->noTypeTemplates(),
-			$externalPadSeeder ?? $this->createMock(ExternalPadSeeder::class),
-			$userSession,
-			$this->createMock(LoggerInterface::class),
-		);
+		$userSession->method('getUser')->willReturn(null);
+		return $userSession;
 	}
 
 	private function file(string $name): File {

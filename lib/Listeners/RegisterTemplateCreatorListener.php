@@ -9,7 +9,6 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\Listeners;
 
 use OCA\EtherpadNextcloud\AppInfo\Application;
-use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\EtherpadNextcloud\Service\PadTypePolicy;
 use OCP\EventDispatcher\Event;
 use OCP\EventDispatcher\IEventListener;
@@ -61,8 +60,7 @@ class RegisterTemplateCreatorListener implements IEventListener {
 	}
 
 	private function anythingCanBeCreated(): bool {
-		return $this->padTypePolicy->isEnabled(BindingService::ACCESS_PROTECTED)
-			|| $this->padTypePolicy->isEnabled(BindingService::ACCESS_PUBLIC)
+		return $this->padTypePolicy->hasAnyEnabledType()
 			|| (string)$this->config->getAppValue(Application::APP_ID, 'allow_external_pads', 'no') === 'yes';
 	}
 }
