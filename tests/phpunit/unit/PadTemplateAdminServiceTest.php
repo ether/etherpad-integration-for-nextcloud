@@ -104,14 +104,24 @@ class PadTemplateAdminServiceTest extends TestCase {
 
 	/**
 	 * The app labels its own picker tiles with these names, so a template of
-	 * the same name would be a second tile nobody can tell apart.
+	 * the same name would be a second tile nobody can tell apart. Case does
+	 * not save it either.
+	 *
+	 * @return iterable<string,array{0:string}>
 	 */
-	public function testRejectsTheNamesTheAppKeepsForItsOwnTiles(): void {
+	public static function reservedNameProvider(): iterable {
+		yield 'public tile' => [PadTemplateStorage::PUBLIC_TILE_NAME];
+		yield 'public tile, other case' => ['public PAD.pad'];
+		yield 'external tile' => [PadTemplateStorage::EXTERNAL_TILE_NAME];
+	}
+
+	#[\PHPUnit\Framework\Attributes\DataProvider('reservedNameProvider')]
+	public function testRejectsTheNamesTheAppKeepsForItsOwnTiles(string $name): void {
 		$storage = $this->createMock(PadTemplateStorage::class);
 		$storage->expects($this->never())->method('addGlobalTemplate');
 
 		$this->expectException(AdminValidationException::class);
-		$this->buildService($storage)->add('public PAD.pad', self::PAD);
+		$this->buildService($storage)->add($name, self::PAD);
 	}
 
 	/**

@@ -19,6 +19,7 @@ const setupAdminDom = () => {
 			data-templates-url="/templates"
 			data-templates-delete-url="/templates/delete"
 			data-l10n-template-delete="Delete"
+			data-l10n-template-delete-label="Vorlage {name} löschen"
 			data-l10n-template-confirm-delete="Delete this template for everyone?"
 			data-l10n-template-confirm-replace="Replace the existing template of that name?">
 			<form id="etherpad-nextcloud-admin-form">
@@ -510,7 +511,9 @@ describe('shared templates', () => {
 		await flush()
 
 		const remove = list().querySelector('button')
-		expect(remove.getAttribute('aria-label')).toBe('Delete Meeting notes.pad')
+		// Read from the page, not glued together here: the sentence differs per
+		// language, and only the placeholder is ours to fill.
+		expect(remove.getAttribute('aria-label')).toBe('Vorlage Meeting notes.pad löschen')
 	})
 
 	/**

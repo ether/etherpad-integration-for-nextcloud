@@ -63,6 +63,7 @@ OC.L10N.register(
     "Creating...": "Wird erstellt ...",
     "Delete": "Löschen",
     "Delete linked Etherpad pad when .pad file is moved to trash": "Verknüpftes Etherpad-Pad löschen, wenn die .pad-Datei in den Papierkorb verschoben wird",
+    "Delete template {name}": "Vorlage {name} löschen",
     "Delete this template for everyone?": "Diese Vorlage für alle löschen?",
     "Detected API version:": "Erkannte API-Version:",
     "Diagnostics": "Diagnose",

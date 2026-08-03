@@ -103,6 +103,10 @@ class AdminSettings implements ISettings {
 				'templates_none' => $this->l10n->t('No shared templates yet.'),
 				'templates_upload_button' => $this->l10n->t('Upload template'),
 				'templates_delete_button' => $this->l10n->t('Delete'),
+				// Its own sentence: gluing the button label to the file name
+				// gives "Löschen Meeting.pad" in German, which no translator
+				// can fix from the parts.
+				'templates_delete_label' => $this->l10n->t('Delete template {name}'),
 				'templates_uploading' => $this->l10n->t('Uploading template...'),
 				'templates_confirm_delete' => $this->l10n->t('Delete this template for everyone?'),
 				'templates_confirm_replace' => $this->l10n->t('Replace the existing template of that name?'),

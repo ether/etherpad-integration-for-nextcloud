@@ -52,14 +52,17 @@ test.describe('shared templates: upload, offer, create', () => {
 			'',
 		].join('\n')
 
-		await page.locator('#epnc-template-file').setInputFiles({
-			name: templateName,
-			mimeType: 'application/x-etherpad-nextcloud',
-			buffer: Buffer.from(template, 'utf8'),
-		})
-		await expect(page.locator('#epnc-template-list li', { hasText: templateName })).toBeVisible({ timeout: 30_000 })
-
 		try {
+			// Inside the try from the first byte: the upload can succeed on the
+			// server and still fail the assertion below, and the template would
+			// then outlive the run.
+			await page.locator('#epnc-template-file').setInputFiles({
+				name: templateName,
+				mimeType: 'application/x-etherpad-nextcloud',
+				buffer: Buffer.from(template, 'utf8'),
+			})
+			await expect(page.locator('#epnc-template-list li', { hasText: templateName })).toBeVisible({ timeout: 30_000 })
+
 			await gotoFiles(page)
 			await createPadFromTemplate(page, templateName, padName)
 

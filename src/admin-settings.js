@@ -55,6 +55,7 @@
 		retryFailed: root.getAttribute('data-l10n-retry-failed') || 'Pending delete retry failed.',
 		templateUploading: root.getAttribute('data-l10n-template-uploading') || 'Uploading template...',
 		templateDelete: root.getAttribute('data-l10n-template-delete') || 'Delete',
+		templateDeleteLabel: root.getAttribute('data-l10n-template-delete-label') || 'Delete template {name}',
 		templateConfirmDelete: root.getAttribute('data-l10n-template-confirm-delete') || 'Delete this template for everyone?',
 		templateFailed: root.getAttribute('data-l10n-template-failed') || 'Template request failed.',
 		templateConfirmReplace: root.getAttribute('data-l10n-template-confirm-replace') || 'Replace the existing template of that name?',
@@ -221,7 +222,7 @@
 		remove.textContent = l10n.templateDelete
 		// The visible label repeats on every row, so the accessible name has to
 		// carry the name of the template this one removes.
-		remove.setAttribute('aria-label', `${l10n.templateDelete} ${name}`)
+		remove.setAttribute('aria-label', l10n.templateDeleteLabel.replace('{name}', name))
 		remove.addEventListener('click', () => {
 			if (!window.confirm(l10n.templateConfirmDelete)) {
 				return
