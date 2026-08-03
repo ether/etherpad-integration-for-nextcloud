@@ -6,7 +6,8 @@ import { test, expect } from '@playwright/test'
 import {
 	gotoFiles,
 	closeViewer,
-	createExternalPublicPadFromUrl,
+	createExternalPadFromTile,
+	externalPadTileAvailable,
 	createPublicPad,
 	expectFileInList,
 	expectExternalSnapshotViewerMounted,
@@ -90,12 +91,12 @@ test.describe('external pad from the template picker', () => {
 		const etherpadUrl = await readEtherpadUrlFromViewer(page)
 		await closeViewer(page)
 
-		const result = await createExternalPublicPadFromUrl(page, etherpadUrl, externalPadName)
-		test.skip(
-			!result.ok,
-			`External pad import unavailable on this instance (${result.error ?? 'rejected'}); `
-			+ 'needs allow_external_pads=yes and a resolvable, allowlisted Etherpad host.',
-		)
+		// Only the tile's presence is a configuration question. Once it is
+		// there, everything after it has to work — a file that never appears
+		// would otherwise turn a listener or seeding regression into a skip.
+		const tileOffered = await externalPadTileAvailable(page, externalPadName)
+		test.skip(!tileOffered, 'External pads are disabled on this instance; external tile spec skipped.')
+		await createExternalPadFromTile(page, etherpadUrl, externalPadName)
 
 		// Nextcloud opens the file it just created, and a linked external pad
 		// opens straight into the snapshot view — so only open it from the list

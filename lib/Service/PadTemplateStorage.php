@@ -33,6 +33,15 @@ class PadTemplateStorage {
 	public const TEMPLATE_DIR = 'templates';
 
 	/**
+	 * The markers live in their own folder, not among the admin's templates.
+	 * Sharing one would make an uploaded file of the same name *become* the
+	 * tile: it would vanish from the admin list and its content would be
+	 * ignored on creation, with nothing to say so. Two folders cost a few
+	 * lines; that costs an admin their template.
+	 */
+	public const TYPE_TEMPLATE_DIR = 'type_templates';
+
+	/**
 	 * Names the app keeps for the tiles it offers in the picker itself, and the
 	 * marker files behind them. The picker labels a tile with the file's own
 	 * name, so a template of the same name would be a second tile nobody can
@@ -52,6 +61,7 @@ class PadTemplateStorage {
 		private ILockingProvider $lockingProvider,
 	) {
 	}
+
 
 	public function publicMarker(): File {
 		return $this->marker(self::PUBLIC_TILE_NAME);
@@ -79,15 +89,11 @@ class PadTemplateStorage {
 		// list has no way to tell "none uploaded" from "appdata unreadable".
 		// The picker is the one place that tolerates this — see
 		// PadTemplateProvider::globalTiles().
-		$entries = $this->templateFolder()->getDirectoryListing();
+		$entries = $this->folder(self::TEMPLATE_DIR)->getDirectoryListing();
 
 		$files = [];
 		foreach ($entries as $entry) {
 			if (!$entry instanceof File || !str_ends_with(strtolower($entry->getName()), '.pad')) {
-				continue;
-			}
-			// The markers share this folder and are tiles in their own right.
-			if (in_array($entry->getName(), self::reservedNames(), true)) {
 				continue;
 			}
 			$files[] = $entry;
@@ -99,7 +105,7 @@ class PadTemplateStorage {
 	/**
 	 * The name arrives from the client, so it is matched against the listing
 	 * rather than passed to get(): that keeps a crafted value from reaching
-	 * anything outside this folder, and keeps the markers out of reach.
+	 * anything outside this folder.
 	 */
 	public function globalTemplate(string $name): ?File {
 		foreach ($this->globalTemplates() as $file) {
@@ -173,7 +179,7 @@ class PadTemplateStorage {
 	 * @return T
 	 */
 	private function withNameLocked(string $name, callable $write) {
-		$folder = $this->templateFolder();
+		$folder = $this->folder(self::TEMPLATE_DIR);
 		$lock = $this->lockKey($folder, $name);
 
 		try {
@@ -193,7 +199,7 @@ class PadTemplateStorage {
 
 	/** The marker file for a tile, created on first use. */
 	private function marker(string $name): File {
-		$folder = $this->templateFolder();
+		$folder = $this->folder(self::TYPE_TEMPLATE_DIR);
 		$existing = $this->readFile($folder, $name);
 		if ($existing !== null) {
 			return $existing;
@@ -213,15 +219,18 @@ class PadTemplateStorage {
 		}
 	}
 
+	/**
+	 * Built from the path alone, without resolving anything: this runs while a
+	 * file is being created, and a storage hiccup must not be able to answer
+	 * "not a marker" — the caller would then treat the external tile as an
+	 * ordinary template and quietly produce a local pad instead.
+	 */
 	private function isMarkerFile(File $template, string $name): bool {
-		try {
-			$expected = trim($this->templateFolder()->getPath(), '/') . '/' . $name;
-		} catch (\Throwable) {
-			// Without a readable appdata folder nothing can be our marker, and
-			// this runs inside file creation — no place to fail.
-			return false;
-		}
-		return trim($template->getPath(), '/') === $expected;
+		$expected = $this->rootFolder->getAppDataDirectoryName()
+			. '/' . Application::APP_ID
+			. '/' . self::TYPE_TEMPLATE_DIR
+			. '/' . $name;
+		return trim($template->getPath(), '/') === trim($expected, '/');
 	}
 
 	/**
@@ -261,19 +270,19 @@ class PadTemplateStorage {
 	/**
 	 * @throws \RuntimeException when appdata cannot be resolved as a folder
 	 */
-	private function templateFolder(): Folder {
+	private function folder(string $name): Folder {
 		$appData = $this->appDataFactory->get(Application::APP_ID);
 		try {
-			$appData->getFolder(self::TEMPLATE_DIR);
+			$appData->getFolder($name);
 		} catch (NotFoundException) {
 			try {
-				$appData->newFolder(self::TEMPLATE_DIR);
+				$appData->newFolder($name);
 			} catch (\Throwable $e) {
 				// Another request creating it first is not a failure. Anything
 				// else — no permission, no space — keeps its own exception: a
 				// follow-up "not found" would say far less about what happened.
 				try {
-					$appData->getFolder(self::TEMPLATE_DIR);
+					$appData->getFolder($name);
 				} catch (\Throwable) {
 					throw $e;
 				}
@@ -282,7 +291,7 @@ class PadTemplateStorage {
 
 		$path = $this->rootFolder->getAppDataDirectoryName()
 			. '/' . Application::APP_ID
-			. '/' . self::TEMPLATE_DIR;
+			. '/' . $name;
 		$node = $this->rootFolder->get($path);
 		if (!$node instanceof Folder) {
 			throw new \RuntimeException('Expected a folder at ' . $path);

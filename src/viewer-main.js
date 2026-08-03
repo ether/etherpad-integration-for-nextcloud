@@ -339,9 +339,6 @@ import { parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './li
 					this.markLoaded()
 				} catch (error) {
 					if (!isCurrent()) return
-					// A pad created from the "Public pad from URL" tile carries
-					// no pad yet: the template picker had nowhere to ask for the
-					// URL, so this is the first moment it can be asked for.
 					this.loadError = error instanceof Error ? error.message : 'Could not load pad.'
 					// Recovery is gated on having a fileId we can address. Public-share
 					// visitors don't get a recovery action — only the share owner.

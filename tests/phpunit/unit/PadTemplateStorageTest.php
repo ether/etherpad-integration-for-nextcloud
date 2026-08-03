@@ -24,6 +24,7 @@ use PHPUnit\Framework\TestCase;
 
 class PadTemplateStorageTest extends TestCase {
 	private const FOLDER_PATH = '/appdata_testinstance/etherpad_nextcloud/templates';
+	private const MARKER_PATH = '/appdata_testinstance/etherpad_nextcloud/type_templates';
 
 	public function testReusesAnExistingMarker(): void {
 		$marker = $this->namedFile(PadTemplateStorage::PUBLIC_TILE_NAME);
@@ -79,9 +80,9 @@ class PadTemplateStorageTest extends TestCase {
 	public function testRecognisesEachMarkerByItsPath(): void {
 		$storage = $this->buildStorage($this->folderWith([]));
 
-		$this->assertTrue($storage->isPublicMarkerFile($this->fileAt(self::FOLDER_PATH . '/' . PadTemplateStorage::PUBLIC_TILE_NAME)));
-		$this->assertTrue($storage->isExternalMarkerFile($this->fileAt(self::FOLDER_PATH . '/' . PadTemplateStorage::EXTERNAL_TILE_NAME)));
-		$this->assertSame('public', $storage->accessModeForTemplateFile($this->fileAt(self::FOLDER_PATH . '/' . PadTemplateStorage::PUBLIC_TILE_NAME)));
+		$this->assertTrue($storage->isPublicMarkerFile($this->fileAt(self::MARKER_PATH . '/' . PadTemplateStorage::PUBLIC_TILE_NAME)));
+		$this->assertTrue($storage->isExternalMarkerFile($this->fileAt(self::MARKER_PATH . '/' . PadTemplateStorage::EXTERNAL_TILE_NAME)));
+		$this->assertSame('public', $storage->accessModeForTemplateFile($this->fileAt(self::MARKER_PATH . '/' . PadTemplateStorage::PUBLIC_TILE_NAME)));
 	}
 
 	/**
@@ -96,23 +97,45 @@ class PadTemplateStorageTest extends TestCase {
 		$this->assertSame('', $storage->accessModeForTemplateFile($userFile));
 	}
 
-	/** Recognising a marker runs during file creation and must never write. */
-	public function testRecognisingAMarkerNeverWrites(): void {
-		$folder = $this->folderWith([]);
+	/**
+	 * Recognising a marker runs while a file is being created: it must not
+	 * write, and a storage that is unavailable must not be able to answer
+	 * "not a marker" — the caller would then treat the external tile as an
+	 * ordinary template and quietly produce a local pad.
+	 */
+	public function testRecognisingAMarkerTouchesNoStorageAtAll(): void {
+		$folder = $this->createMock(Folder::class);
 		$folder->expects($this->never())->method('newFile');
+		$folder->expects($this->never())->method('get');
+		$folder->expects($this->never())->method('getDirectoryListing');
 
-		$this->buildStorage($folder)->isPublicMarkerFile($this->fileAt('/somewhere/else.pad'));
+		$appData = $this->createMock(IAppData::class);
+		$appData->expects($this->never())->method('getFolder');
+		$appData->expects($this->never())->method('newFolder');
+
+		$storage = $this->buildStorage($folder, null, $appData);
+
+		$this->assertTrue($storage->isExternalMarkerFile($this->fileAt(self::MARKER_PATH . '/' . PadTemplateStorage::EXTERNAL_TILE_NAME)));
+		$this->assertFalse($storage->isPublicMarkerFile($this->fileAt('/somewhere/else.pad')));
 	}
 
-	public function testListsUploadedTemplatesByNameAndHidesTheMarkers(): void {
+	/**
+	 * An admin template of the same name keeps being a template: the markers
+	 * have their own folder, so an upload can never be turned into a tile.
+	 */
+	public function testDoesNotMistakeASharedTemplateOfTheSameNameForAMarker(): void {
+		$storage = $this->buildStorage($this->folderWith([]));
+
+		$this->assertFalse($storage->isPublicMarkerFile($this->fileAt(self::FOLDER_PATH . '/' . PadTemplateStorage::PUBLIC_TILE_NAME)));
+	}
+
+	public function testListsUploadedTemplatesByName(): void {
 		$folder = $this->createMock(Folder::class);
 		$folder->method('getPath')->willReturn(self::FOLDER_PATH);
 		$folder->method('getDirectoryListing')->willReturn([
 			$this->namedFile('Zebra.pad'),
-			$this->namedFile(PadTemplateStorage::PUBLIC_TILE_NAME),
 			$this->namedFile('notes.txt'),
 			$this->namedFile('agenda.pad'),
-			$this->namedFile(PadTemplateStorage::EXTERNAL_TILE_NAME),
 			$this->createMock(Folder::class),
 		]);
 

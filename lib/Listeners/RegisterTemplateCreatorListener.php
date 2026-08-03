@@ -15,6 +15,7 @@ use OCP\EventDispatcher\Event;
 use OCP\EventDispatcher\IEventListener;
 use OCP\Files\Template\RegisterTemplateCreatorEvent;
 use OCP\Files\Template\TemplateFileCreator;
+use OCP\IConfig;
 use OCP\IL10N;
 
 /**
@@ -25,6 +26,7 @@ class RegisterTemplateCreatorListener implements IEventListener {
 	public function __construct(
 		private IL10N $l10n,
 		private PadTypePolicy $padTypePolicy,
+		private IConfig $config,
 	) {
 	}
 
@@ -34,12 +36,11 @@ class RegisterTemplateCreatorListener implements IEventListener {
 		}
 
 		// This entry is the only way to create a pad from the Files app – and
-		// the only way to reach the shared templates – so it stays as long as
-		// either type is on: its blank option produces whichever one is
-		// available. Only with both switched off is there nothing to create.
-		$anyTypeEnabled = $this->padTypePolicy->isEnabled(BindingService::ACCESS_PROTECTED)
-			|| $this->padTypePolicy->isEnabled(BindingService::ACCESS_PUBLIC);
-		if (!$anyTypeEnabled) {
+		// the only way to reach the shared templates and the tiles – so it
+		// stays as long as anything at all can be created. External pads count:
+		// they are not a pad type and follow their own setting, so an instance
+		// offering only those would otherwise have a tile nobody can open.
+		if (!$this->anythingCanBeCreated()) {
 			return;
 		}
 
@@ -57,5 +58,11 @@ class RegisterTemplateCreatorListener implements IEventListener {
 			}
 			return $creator;
 		});
+	}
+
+	private function anythingCanBeCreated(): bool {
+		return $this->padTypePolicy->isEnabled(BindingService::ACCESS_PROTECTED)
+			|| $this->padTypePolicy->isEnabled(BindingService::ACCESS_PUBLIC)
+			|| (string)$this->config->getAppValue(Application::APP_ID, 'allow_external_pads', 'no') === 'yes';
 	}
 }

@@ -91,11 +91,7 @@ export const createPublicPad = async (page: Page, fileName: string): Promise<str
  * a create failure, so the file never appears — we return `{ ok: false }` in
  * that case rather than hanging until timeout.
  */
-export const createExternalPublicPadFromUrl = async (
-	page: Page,
-	padUrl: string,
-	fileName: string,
-): Promise<{ ok: boolean, error?: string }> => {
+export const externalPadTileAvailable = async (page: Page, fileName: string): Promise<boolean> => {
 	await openNewMenu(page)
 	await page.getByRole('menuitem', { name: /new pad|neues pad/i }).first().click()
 
@@ -103,9 +99,23 @@ export const createExternalPublicPadFromUrl = async (
 	await fileNameInput.fill(fileName.replace(/\.pad$/i, ''))
 	await page.getByRole('button', { name: /^(create|erstellen)$/i }).last().click()
 
-	const tile = page.getByRole('dialog').getByText('Public pad from URL', { exact: true }).first()
-	await expect(tile).toBeVisible({ timeout: 15_000 })
-	await tile.click()
+	// Whether the tile is on offer is a configuration question — an instance
+	// with allow_external_pads off does not show it. Everything after this
+	// point is the flow itself and has to succeed.
+	return page.getByRole('dialog').getByText('Public pad from URL', { exact: true }).first()
+		.waitFor({ state: 'visible', timeout: 15_000 })
+		.then(() => true)
+		.catch(() => false)
+}
+
+/**
+ * Finish the flow the tile starts: pick it, let Nextcloud ask for the pad's
+ * address, and wait for the linked file. Call only after
+ * externalPadTileAvailable() said yes — a file that does not appear here is a
+ * regression, not a configuration, so this throws rather than reporting.
+ */
+export const createExternalPadFromTile = async (page: Page, padUrl: string, fileName: string): Promise<string> => {
+	await page.getByRole('dialog').getByText('Public pad from URL', { exact: true }).first().click()
 	// The picker confirms with an <input type="submit">, not a button, so match
 	// the control itself: a by-label match also finds the "+ New" menu entries
 	// still in the page behind the modal.
@@ -119,14 +129,8 @@ export const createExternalPublicPadFromUrl = async (
 	// the visible, translated caption — so match either, unanchored.
 	await page.getByRole('button', { name: /submit|übermitteln/i }).last().click()
 
-	const appeared = await page
-		.locator(`[data-cy-files-list-row-name="${fileName}"], [title="${fileName}"]`)
-		.first()
-		.waitFor({ state: 'visible', timeout: 30_000 })
-		.then(() => true)
-		.catch(() => false)
-
-	return appeared ? { ok: true } : { ok: false, error: 'file was not created' }
+	await expectFileInList(page, fileName)
+	return fileName
 }
 
 

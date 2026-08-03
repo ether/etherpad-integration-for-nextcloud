@@ -159,7 +159,18 @@ class FileCreatedFromTemplateListener implements IEventListener {
 			if ($fileId <= 0) {
 				throw new \RuntimeException('Could not resolve new file ID.');
 			}
-			$this->externalPadSeeder->seed($target, $fileId, $padUrl);
+			$seeded = $this->externalPadSeeder->seed($target, $fileId, $padUrl);
+			if (($seeded['snapshot_warning_code'] ?? '') === 'remote_export_unavailable') {
+				// The pad is linked and opens; only its stored snapshot stays
+				// empty because the remote refused the export. The picker has
+				// no place to show that, and the viewer says so on open, so
+				// this is the record an admin can act on.
+				$this->logger->warning('Linked an external pad whose content could not be fetched; the snapshot stays empty.', [
+					'app' => 'etherpad_nextcloud',
+					'fileId' => $fileId,
+					'padUrl' => $padUrl,
+				]);
+			}
 		} catch (\Throwable $e) {
 			$this->logger->warning('Could not link a new .pad file to an external pad.', [
 				'app' => 'etherpad_nextcloud',

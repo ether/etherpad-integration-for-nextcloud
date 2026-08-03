@@ -71,11 +71,6 @@ export const apiRecoverFromSnapshot = async (fileId) => {
 	return result
 }
 
-const formHeaders = () => ({
-	Accept: 'application/json',
-	'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
-	requesttoken: ocRequestToken(),
-})
 
 const getResolveCache = (cacheKey) => {
 	const cached = RESOLVE_CACHE.get(cacheKey)
