@@ -86,6 +86,32 @@ class PadTemplateAdminServiceTest extends TestCase {
 	}
 
 	/**
+	 * A template whose frontmatter names no pad would fail for everyone who
+	 * picks the tile later, so it must not get stored. The parser already
+	 * refuses it — this pins that the upload path relies on nothing else.
+	 *
+	 * @return iterable<string,array{0:string}>
+	 */
+	public static function noPadIdProvider(): iterable {
+		yield 'pad_id missing' => ["---\nformat: \"etherpad-nextcloud/1\"\nfile_id: 1\naccess_mode: \"public\"\nstate: \"active\"\ncreated_at: \"2026-01-01T00:00:00+00:00\"\nupdated_at: \"2026-01-01T00:00:00+00:00\"\nsnapshot_rev: 0\n---\nBody\n"];
+		yield 'pad_id empty' => ["---\nformat: \"etherpad-nextcloud/1\"\nfile_id: 1\npad_id: \"\"\naccess_mode: \"public\"\nstate: \"active\"\ncreated_at: \"2026-01-01T00:00:00+00:00\"\nupdated_at: \"2026-01-01T00:00:00+00:00\"\nsnapshot_rev: 0\n---\nBody\n"];
+	}
+
+	#[\PHPUnit\Framework\Attributes\DataProvider('noPadIdProvider')]
+	public function testRejectsATemplateThatNamesNoPad(string $content): void {
+		$storage = $this->createMock(PadTemplateStorage::class);
+		$storage->expects($this->never())->method('addGlobalTemplate');
+
+		$l10n = $this->createMock(IL10N::class);
+		$l10n->method('t')->willReturnArgument(0);
+		// The real parser: a mock would decide the very thing under test.
+		$service = new PadTemplateAdminService($storage, new PadFileService(), $this->filenameValidator(), $l10n);
+
+		$this->expectException(AdminValidationException::class);
+		$service->add('notes.pad', $content);
+	}
+
+	/**
 	 * The parser throws on damaged frontmatter, which the admin mapper would
 	 * otherwise answer with a 500. Uses the real PadFileService: a mock would
 	 * never take that path.
