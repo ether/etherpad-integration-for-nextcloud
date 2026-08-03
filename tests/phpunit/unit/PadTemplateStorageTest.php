@@ -178,7 +178,7 @@ class PadTemplateStorageTest extends TestCase {
 	public function testReadsTheTemplatesAndTheMarkersFromDifferentFolders(): void {
 		$requested = [];
 		$folder = $this->folderWith([]);
-		$folder->method('newFile')->willReturn($this->namedFile(PadTemplateStorage::PUBLIC_MARKER));
+		$folder->method('newFile')->willReturn($this->namedFile(PadTemplateStorage::PUBLIC_TILE_NAME));
 
 		$rootFolder = $this->createMock(IRootFolder::class);
 		$rootFolder->method('getAppDataDirectoryName')->willReturn('appdata_testinstance');

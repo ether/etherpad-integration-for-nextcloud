@@ -160,11 +160,7 @@ OC.L10N.register(
     "Test fault set: {fault}": "Fallo de prueba establecido: {fault}",
     "Test faults are available only when Nextcloud debug mode is enabled.": "Los fallos de prueba solo están disponibles cuando el modo debug de Nextcloud está activado.",
     "Testing Etherpad connection...": "Comprobando la conexión con Etherpad...",
-<<<<<<< HEAD
     "That name is reserved for the app's own tiles.": "Ese nombre está reservado para las tarjetas propias de la aplicación.",
-=======
-    "That name is reserved for the pad type tile.": "Ese nombre está reservado para la tarjeta de tipo de pad.",
->>>>>>> e61cffa (Pick the pad type in Nextcloud's template picker)
     "That template name is not allowed on this server.": "Ese nombre de plantilla no está permitido en este servidor.",
     "The Etherpad base URL could not be read as a hostname, so the session cookie domain cannot be checked.": "No se pudo interpretar la URL base de Etherpad como un nombre de host, así que no se puede comprobar el dominio de la cookie de sesión.",
     "The configured cookie domain {domain} does not cover both of them, so the browser will reject the session cookie.": "El dominio de cookie configurado {domain} no cubre a ambos, por lo que el navegador rechazará la cookie de sesión.",

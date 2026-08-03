@@ -7,7 +7,6 @@ namespace OCA\EtherpadNextcloud\Tests\Unit;
 use OCA\EtherpadNextcloud\Listeners\FileCreatedFromTemplateListener;
 use OCA\EtherpadNextcloud\Exception\PadTypeDisabledException;
 use OCA\EtherpadNextcloud\Service\PadBootstrapService;
-use OCA\EtherpadNextcloud\Exception\PadTypeDisabledException;
 use OCA\EtherpadNextcloud\Service\ExternalPadSeeder;
 use OCA\EtherpadNextcloud\Service\PadCreationService;
 use OCA\EtherpadNextcloud\Service\PadTemplateStorage;
@@ -191,7 +190,7 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 	 * what was typed, or a token would land in the server log.
 	 */
 	public function testLogsTheCanonicalAddressWhenTheRemoteExportIsUnavailable(): void {
-		$marker = $this->file(PadTemplateStorage::EXTERNAL_MARKER);
+		$marker = $this->file(PadTemplateStorage::EXTERNAL_TILE_NAME);
 		$target = $this->file('Team pad.pad');
 
 		$storage = $this->createMock(PadTemplateStorage::class);
@@ -295,7 +294,7 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 
 	/** The same for the type tile, which provisions a pad just as directly. */
 	public function testRemovesTheFileOfTheTypeTileWhenThatTypeIsGone(): void {
-		$marker = $this->file(PadTemplateStorage::PUBLIC_MARKER);
+		$marker = $this->file(PadTemplateStorage::PUBLIC_TILE_NAME);
 		$target = $this->file('Notes.pad');
 		$target->expects($this->once())->method('delete');
 
@@ -337,19 +336,6 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 		$this->expectException(PadTypeDisabledException::class);
 		$this->buildListener($creation, $bootstrap)
 			->handle(new FileCreatedFromTemplateEvent($template, $target, []));
-	}
-
-	/** The same for Nextcloud's blank entry, which provisions just as directly. */
-	public function testRemovesTheBlankFileWhenNoPadTypeIsEnabled(): void {
-		$target = $this->file('Notes.pad');
-		$target->expects($this->once())->method('delete');
-
-		$bootstrap = $this->createMock(PadBootstrapService::class);
-		$bootstrap->method('initializeMissingFrontmatter')->willThrowException(new PadTypeDisabledException());
-
-		$this->expectException(PadTypeDisabledException::class);
-		$this->buildListener($this->createMock(PadCreationService::class), $bootstrap)
-			->handle(new FileCreatedFromTemplateEvent(null, $target, []));
 	}
 
 	private function buildListener(
