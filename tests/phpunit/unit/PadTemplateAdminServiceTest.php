@@ -128,15 +128,6 @@ class PadTemplateAdminServiceTest extends TestCase {
 		$service->add('broken.pad', "not a pad file at all\njust text\n");
 	}
 
-	/** Two tiles labelled the same would be indistinguishable in the picker. */
-	public function testRejectsTheNameReservedForTheTypeTile(): void {
-		$storage = $this->createMock(PadTemplateStorage::class);
-		$storage->expects($this->never())->method('addGlobalTemplate');
-
-		$this->expectException(AdminValidationException::class);
-		$this->buildService($storage)->add('public PAD.pad', self::PAD);
-	}
-
 	/**
 	 * The app labels its own picker tiles with these names, so a template of
 	 * the same name would be a second tile nobody can tell apart. Case does
