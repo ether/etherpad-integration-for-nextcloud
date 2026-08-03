@@ -128,6 +128,15 @@ class PadTemplateAdminServiceTest extends TestCase {
 		$service->add('broken.pad', "not a pad file at all\njust text\n");
 	}
 
+	/** Two tiles labelled the same would be indistinguishable in the picker. */
+	public function testRejectsTheNameReservedForTheTypeTile(): void {
+		$storage = $this->createMock(PadTemplateStorage::class);
+		$storage->expects($this->never())->method('addGlobalTemplate');
+
+		$this->expectException(AdminValidationException::class);
+		$this->buildService($storage)->add('public PAD.pad', self::PAD);
+	}
+
 	/**
 	 * The app labels its own picker tiles with these names, so a template of
 	 * the same name would be a second tile nobody can tell apart. Case does
@@ -171,6 +180,23 @@ class PadTemplateAdminServiceTest extends TestCase {
 	}
 
 	/**
+	 * Rules that say what may be stored must not decide what may be removed:
+	 * tightening them later would strand a template that is already there.
+	 */
+	public function testDeletesAStoredTemplateTheUploadRulesWouldNowReject(): void {
+		$storage = $this->createMock(PadTemplateStorage::class);
+		$storage->expects($this->once())->method('deleteGlobalTemplate')->with('Notiz*.pad')->willReturn(true);
+
+		$validator = $this->createMock(IFilenameValidator::class);
+		$validator->method('validateFilename')->willThrowException(new InvalidPathException('now forbidden'));
+
+		$l10n = $this->createMock(IL10N::class);
+		$l10n->method('t')->willReturnArgument(0);
+
+		(new PadTemplateAdminService($storage, new PadFileService(), $validator, $l10n))->delete(' Notiz*.pad ');
+	}
+
+	/**
 	 * There is no versioning or trash behind that folder, so a mistaken file
 	 * would destroy the previous template without a trace.
 	 */
@@ -204,23 +230,6 @@ class PadTemplateAdminServiceTest extends TestCase {
 		$storage->expects($this->once())->method('deleteGlobalTemplate')->with('gone.pad')->willReturn(true);
 
 		$this->buildService($storage)->delete('gone.pad');
-	}
-
-	/**
-	 * Rules that say what may be stored must not decide what may be removed:
-	 * tightening them later would strand a template that is already there.
-	 */
-	public function testDeletesAStoredTemplateTheUploadRulesWouldNowReject(): void {
-		$storage = $this->createMock(PadTemplateStorage::class);
-		$storage->expects($this->once())->method('deleteGlobalTemplate')->with('Notiz*.pad')->willReturn(true);
-
-		$validator = $this->createMock(IFilenameValidator::class);
-		$validator->method('validateFilename')->willThrowException(new InvalidPathException('now forbidden'));
-
-		$l10n = $this->createMock(IL10N::class);
-		$l10n->method('t')->willReturnArgument(0);
-
-		(new PadTemplateAdminService($storage, new PadFileService(), $validator, $l10n))->delete(' Notiz*.pad ');
 	}
 
 	public function testReportsADeleteOfSomethingThatIsNotThere(): void {

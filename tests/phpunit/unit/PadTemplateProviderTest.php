@@ -10,8 +10,11 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\Tests\Unit;
 
 use OCA\EtherpadNextcloud\Service\PadTemplateStorage;
+use OCA\EtherpadNextcloud\Service\PadTypePolicy;
 use OCA\EtherpadNextcloud\Template\PadTemplateProvider;
 use OCP\Files\File;
+use OCP\IConfig;
+use OCP\IL10N;
 use OCP\IURLGenerator;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
@@ -20,60 +23,147 @@ use Psr\Log\LoggerInterface;
 class PadTemplateProviderTest extends TestCase {
 	private const MIME = 'application/x-etherpad-nextcloud';
 
+	/**
+	 * The public tile only earns its place while both types are on: with one
+	 * switched off the blank entry already produces the only type on offer.
+	 * The external tile is not a pad type at all — it follows
+	 * allow_external_pads alone.
+	 *
+	 * @return iterable<string,array{0:bool,1:bool,2:bool,3:list<string>}>
+	 */
+	public static function tileProvider(): iterable {
+		yield 'both types, external off' => [true, true, false, ['pad-public']];
+		yield 'both types, external on' => [true, true, true, ['pad-public', 'pad-external']];
+		yield 'protected only' => [true, false, false, []];
+		yield 'public only' => [false, true, false, []];
+		yield 'public only, external on' => [false, true, true, ['pad-external']];
+	}
+
+	#[DataProvider('tileProvider')]
+	public function testOffersTheTilesTheSettingsAllow(bool $protected, bool $public, bool $external, array $expected): void {
+		$templates = $this->buildProvider($protected, $public, $external)->getCustomTemplates(self::MIME);
+
+		$this->assertSame($expected, array_map(
+			static fn($t): string => (string)$t->jsonSerialize()['templateId'],
+			$templates,
+		));
+	}
+
 	/** Nextcloud asks every provider for every creator. */
 	public function testIgnoresOtherMimetypes(): void {
-		$this->assertSame([], $this->buildProvider([])->getCustomTemplates('text/markdown'));
+		$this->assertSame([], $this->buildProvider()->getCustomTemplates('text/markdown'));
+	}
+
+	/** The tiles would otherwise show the generic document icon. */
+	public function testEveryTileCarriesAPreviewUrl(): void {
+		$templates = $this->buildProvider(external: true)->getCustomTemplates(self::MIME);
+
+		foreach ($templates as $template) {
+			$this->assertStringContainsString('etherpad-icon', (string)$template->jsonSerialize()['previewUrl']);
+		}
 	}
 
 	/**
-	 * The templates an admin uploaded, offered to everyone. Each carries its
-	 * own content and access mode, so the provider decides neither.
+	 * Nextcloud's picker collects the field and hands it to the create event,
+	 * which is what keeps a file from ever existing without its pad.
 	 */
-	public function testOffersTheSharedTemplates(): void {
-		$templates = $this->buildProvider([$this->templateFile('Meeting notes.pad')])
-			->getCustomTemplates(self::MIME);
+	public function testTheExternalTileAsksForThePadAddress(): void {
+		$templates = $this->buildProvider(external: true)->getCustomTemplates(self::MIME);
+		$fields = $templates[1]->jsonSerialize()['fields'] ?? [];
 
-		$this->assertSame(
-			['global:Meeting notes.pad'],
-			array_map(static fn($t): string => (string)$t->jsonSerialize()['templateId'], $templates),
-		);
+		// Template serialises its fields, so what the picker receives is the
+		// plain array — the same thing it renders the input from.
+		$this->assertCount(1, $fields);
+		$this->assertSame(PadTemplateProvider::FIELD_PAD_URL, $fields[0]['index']);
+		$this->assertSame('rich-text', $fields[0]['type']);
 	}
 
 	/**
-	 * A picker that fails to open would take every other app's templates with
-	 * it, so this one failure is logged and skipped. The admin page reads the
-	 * same list without that guard, where it stays visible.
+	 * Nextcloud points a tile at /core/preview, which has nothing to render for
+	 * a .pad — the picker would show its generic document icon.
 	 */
-	public function testKeepsThePickerOpenWhenTheTemplatesCannotBeListed(): void {
+	public function testTheSharedTemplatesCarryThePadIconToo(): void {
+		$storage = $this->storage();
+		$storage->method('globalTemplates')->willReturn([$this->markerFile('Meeting notes.pad')]);
+
+		$templates = $this->providerWith($storage, true, true, false)->getCustomTemplates(self::MIME);
+
+		$this->assertStringContainsString('etherpad-icon', (string)$templates[1]->jsonSerialize()['previewUrl']);
+	}
+
+	/** Only the type tile carries fields; the public one has nothing to ask. */
+	public function testThePublicTileAsksForNothing(): void {
+		$templates = $this->buildProvider()->getCustomTemplates(self::MIME);
+
+		$this->assertSame([], $templates[0]->jsonSerialize()['fields'] ?? []);
+	}
+
+	/**
+	 * A picker missing one tile is better than a picker that fails to open,
+	 * so a marker that cannot be resolved is logged and skipped.
+	 */
+	public function testSkipsATileWhoseMarkerCannotBeResolved(): void {
 		$storage = $this->createMock(PadTemplateStorage::class);
-		$storage->method('globalTemplates')->willThrowException(new \RuntimeException('appdata unavailable'));
+		$storage->method('publicMarker')->willThrowException(new \RuntimeException('appdata unavailable'));
 		$logger = $this->createMock(LoggerInterface::class);
 		$logger->expects($this->once())->method('warning');
 
-		$provider = new PadTemplateProvider($storage, $this->urlGenerator(), $logger);
+		$provider = new PadTemplateProvider(
+			$storage,
+			$this->policy(true, true),
+			$this->config(false),
+			$this->l10n(),
+			$this->urlGenerator(),
+			$logger,
+		);
 
 		$this->assertSame([], $provider->getCustomTemplates(self::MIME));
 	}
 
 	/**
-	 * Nextcloud points the tile at /core/preview, which has nothing to render
-	 * for a .pad – the picker would show its generic document icon.
+	 * An admin-uploaded template is offered alongside the tiles. Its content
+	 * becomes the pad's and it carries its own access mode, so the provider
+	 * decides neither.
 	 */
-	public function testTheTemplatesCarryThePadIcon(): void {
-		$templates = $this->buildProvider([$this->templateFile('Meeting notes.pad')])
-			->getCustomTemplates(self::MIME);
+	public function testOffersAdminUploadedTemplatesAlongsideTheTiles(): void {
+		$storage = $this->storage();
+		$storage->method('globalTemplates')->willReturn([$this->markerFile('Meeting notes.pad')]);
 
-		$this->assertStringContainsString('etherpad-icon', (string)$templates[0]->jsonSerialize()['previewUrl']);
+		$ids = array_map(
+			static fn($t): string => (string)$t->jsonSerialize()['templateId'],
+			$this->providerWith($storage, true, true, false)->getCustomTemplates(self::MIME),
+		);
+
+		$this->assertSame(['pad-public', 'global:Meeting notes.pad'], $ids);
 	}
 
-	public function testResolvesATemplateIdToItsFile(): void {
-		$file = $this->templateFile('Meeting notes.pad');
+	/** The picker must open even when the shared templates cannot be read. */
+	public function testKeepsTheTilesWhenTheSharedTemplatesCannotBeListed(): void {
+		$storage = $this->storage();
+		$storage->method('globalTemplates')->willThrowException(new \RuntimeException('appdata unavailable'));
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects($this->once())->method('warning');
+
+		$provider = new PadTemplateProvider($storage, $this->policy(true, true), $this->config(false), $this->l10n(), $this->urlGenerator(), $logger);
+
+		$this->assertCount(1, $provider->getCustomTemplates(self::MIME));
+	}
+
+	public function testResolvesEachTemplateIdToItsFile(): void {
+		$publicMarker = $this->markerFile(PadTemplateStorage::PUBLIC_TILE_NAME);
+		$externalMarker = $this->markerFile(PadTemplateStorage::EXTERNAL_TILE_NAME);
+		$global = $this->markerFile('Meeting notes.pad');
+
 		$storage = $this->createMock(PadTemplateStorage::class);
-		$storage->method('globalTemplate')->with('Meeting notes.pad')->willReturn($file);
+		$storage->method('publicMarker')->willReturn($publicMarker);
+		$storage->method('externalMarker')->willReturn($externalMarker);
+		$storage->method('globalTemplate')->with('Meeting notes.pad')->willReturn($global);
 
-		$provider = new PadTemplateProvider($storage, $this->urlGenerator(), $this->createMock(LoggerInterface::class));
+		$provider = $this->providerWith($storage, true, true, true);
 
-		$this->assertSame($file, $provider->getCustomTemplate('global:Meeting notes.pad'));
+		$this->assertSame($publicMarker, $provider->getCustomTemplate('pad-public'));
+		$this->assertSame($externalMarker, $provider->getCustomTemplate('pad-external'));
+		$this->assertSame($global, $provider->getCustomTemplate('global:Meeting notes.pad'));
 	}
 
 	/**
@@ -91,14 +181,74 @@ class PadTemplateProviderTest extends TestCase {
 		$storage->method('globalTemplate')->willReturn(null);
 
 		$this->expectException(\RuntimeException::class);
-		(new PadTemplateProvider($storage, $this->urlGenerator(), $this->createMock(LoggerInterface::class)))->getCustomTemplate($templateId);
+		$this->providerWith($storage, true, true, true)->getCustomTemplate($templateId);
 	}
 
-	/** @param list<File> $templates */
-	private function buildProvider(array $templates): PadTemplateProvider {
+	private function buildProvider(bool $protected = true, bool $public = true, bool $external = false): PadTemplateProvider {
+		return $this->providerWith($this->storage(), $protected, $public, $external);
+	}
+
+	private function providerWith(PadTemplateStorage $storage, bool $protected, bool $public, bool $external): PadTemplateProvider {
+		return new PadTemplateProvider(
+			$storage,
+			$this->policy($protected, $public),
+			$this->config($external),
+			$this->l10n(),
+			$this->urlGenerator(),
+			$this->createMock(LoggerInterface::class),
+		);
+	}
+
+	private function storage(): PadTemplateStorage {
 		$storage = $this->createMock(PadTemplateStorage::class);
-		$storage->method('globalTemplates')->willReturn($templates);
-		return new PadTemplateProvider($storage, $this->urlGenerator(), $this->createMock(LoggerInterface::class));
+		$storage->method('publicMarker')->willReturn($this->markerFile(PadTemplateStorage::PUBLIC_TILE_NAME));
+		$storage->method('externalMarker')->willReturn($this->markerFile(PadTemplateStorage::EXTERNAL_TILE_NAME));
+		return $storage;
+	}
+
+	/** Nextcloud's Template serialises the file, so it has to answer for real. */
+	private function markerFile(string $name): File {
+		$file = $this->createMock(File::class);
+		$file->method('getId')->willReturn(4711);
+		$file->method('getName')->willReturn($name);
+		$file->method('getEtag')->willReturn('etag');
+		$file->method('getMTime')->willReturn(1_700_000_000);
+		$file->method('getMimeType')->willReturn(self::MIME);
+		$file->method('getSize')->willReturn(0);
+		$file->method('getType')->willReturn('file');
+		return $file;
+	}
+
+	/** External pads are governed by allow_external_pads, not by a pad type. */
+	private function config(bool $allowExternal): IConfig {
+		$config = $this->createMock(IConfig::class);
+		$config->method('getAppValue')->willReturnCallback(
+			static fn(string $app, string $key, string $default = ''): string
+				=> $key === 'allow_external_pads' ? ($allowExternal ? 'yes' : 'no') : $default
+		);
+		return $config;
+	}
+
+	private function policy(bool $protected, bool $public): PadTypePolicy {
+		$config = $this->createMock(IConfig::class);
+		$config->method('getAppValue')->willReturnCallback(
+			static function (string $app, string $key, string $default = '') use ($protected, $public): string {
+				if ($key === PadTypePolicy::SETTING_PROTECTED) {
+					return $protected ? 'yes' : 'no';
+				}
+				if ($key === PadTypePolicy::SETTING_PUBLIC) {
+					return $public ? 'yes' : 'no';
+				}
+				return $default;
+			}
+		);
+		return new PadTypePolicy($config);
+	}
+
+	private function l10n(): IL10N {
+		$l10n = $this->createMock(IL10N::class);
+		$l10n->method('t')->willReturnArgument(0);
+		return $l10n;
 	}
 
 	private function urlGenerator(): IURLGenerator {
@@ -110,18 +260,5 @@ class PadTemplateProviderTest extends TestCase {
 			static fn(string $path): string => 'https://cloud.example.test' . $path
 		);
 		return $urlGenerator;
-	}
-
-	/** Nextcloud's Template serialises the file, so it has to answer for real. */
-	private function templateFile(string $name): File {
-		$file = $this->createMock(File::class);
-		$file->method('getId')->willReturn(4711);
-		$file->method('getName')->willReturn($name);
-		$file->method('getEtag')->willReturn('etag');
-		$file->method('getMTime')->willReturn(1_700_000_000);
-		$file->method('getMimeType')->willReturn(self::MIME);
-		$file->method('getSize')->willReturn(0);
-		$file->method('getType')->willReturn('file');
-		return $file;
 	}
 }

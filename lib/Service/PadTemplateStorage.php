@@ -20,8 +20,8 @@ use OCP\Lock\ILockingProvider;
 use OCP\Lock\LockedException;
 
 /**
- * The templates an admin shares with everyone, in the app's appdata folder —
- * see docs/templates.md for what lives there and why.
+ * The files behind the template tiles and the admin's shared templates, all in
+ * one appdata folder — see docs/templates.md for what lives there and why.
  *
  * `IAppData` owns the folder; the nodes come from `IRootFolder`, because
  * Nextcloud's template API needs a real `OCP\Files\File` and the
@@ -33,10 +33,10 @@ class PadTemplateStorage {
 	public const TEMPLATE_DIR = 'templates';
 
 	/**
-	 * Names the app keeps for the tiles it offers in the picker itself. A
-	 * template of the same name would be a second tile with the same label —
-	 * indistinguishable to whoever picks one, since the picker labels a tile
-	 * with the file's name.
+	 * Names the app keeps for the tiles it offers in the picker itself, and the
+	 * marker files behind them. The picker labels a tile with the file's own
+	 * name, so a template of the same name would be a second tile nobody can
+	 * tell apart — and it is also why these strings cannot be translated.
 	 */
 	public const PUBLIC_TILE_NAME = 'Public pad.pad';
 	public const EXTERNAL_TILE_NAME = 'Public pad from URL.pad';
@@ -51,6 +51,22 @@ class PadTemplateStorage {
 		private IAppDataFactory $appDataFactory,
 		private ILockingProvider $lockingProvider,
 	) {
+	}
+
+	public function publicMarker(): File {
+		return $this->marker(self::PUBLIC_TILE_NAME);
+	}
+
+	public function externalMarker(): File {
+		return $this->marker(self::EXTERNAL_TILE_NAME);
+	}
+
+	public function isPublicMarkerFile(File $template): bool {
+		return $this->isMarkerFile($template, self::PUBLIC_TILE_NAME);
+	}
+
+	public function isExternalMarkerFile(File $template): bool {
+		return $this->isMarkerFile($template, self::EXTERNAL_TILE_NAME);
 	}
 
 	/**
@@ -70,6 +86,10 @@ class PadTemplateStorage {
 			if (!$entry instanceof File || !str_ends_with(strtolower($entry->getName()), '.pad')) {
 				continue;
 			}
+			// The markers share this folder and are tiles in their own right.
+			if (in_array($entry->getName(), self::reservedNames(), true)) {
+				continue;
+			}
 			$files[] = $entry;
 		}
 		usort($files, static fn(File $a, File $b): int => strcasecmp($a->getName(), $b->getName()));
@@ -79,7 +99,7 @@ class PadTemplateStorage {
 	/**
 	 * The name arrives from the client, so it is matched against the listing
 	 * rather than passed to get(): that keeps a crafted value from reaching
-	 * anything outside this folder.
+	 * anything outside this folder, and keeps the markers out of reach.
 	 */
 	public function globalTemplate(string $name): ?File {
 		foreach ($this->globalTemplates() as $file) {
@@ -133,6 +153,21 @@ class PadTemplateStorage {
 	}
 
 	/**
+	 * The pad type a template file stands for, or an empty string when the
+	 * file is not the public marker.
+	 *
+	 * Read-only, and deliberately so: this runs while another file is being
+	 * created, and resolving the marker through publicMarker() could write — a
+	 * marker recreated with a fresh id would then fail to match, the empty
+	 * marker would be copied over the new pad as if it were a user template,
+	 * and the chosen type would be silently lost. Matching on the path cannot
+	 * do that, and it also keeps a user's own file of the same name apart.
+	 */
+	public function accessModeForTemplateFile(File $template): string {
+		return $this->isPublicMarkerFile($template) ? BindingService::ACCESS_PUBLIC : '';
+	}
+
+	/**
 	 * @template T
 	 * @param callable(Folder): T $write
 	 * @return T
@@ -154,6 +189,39 @@ class PadTemplateStorage {
 		} finally {
 			$this->lockingProvider->releaseLock($lock, ILockingProvider::LOCK_EXCLUSIVE);
 		}
+	}
+
+	/** The marker file for a tile, created on first use. */
+	private function marker(string $name): File {
+		$folder = $this->templateFolder();
+		$existing = $this->readFile($folder, $name);
+		if ($existing !== null) {
+			return $existing;
+		}
+
+		try {
+			return $folder->newFile($name, '');
+		} catch (\Throwable $e) {
+			// Another request may have created it in the meantime, so losing
+			// that race is not an error. Anything else — no permission, no
+			// space — must keep its own exception.
+			$created = $this->readFile($folder, $name);
+			if ($created !== null) {
+				return $created;
+			}
+			throw $e;
+		}
+	}
+
+	private function isMarkerFile(File $template, string $name): bool {
+		try {
+			$expected = trim($this->templateFolder()->getPath(), '/') . '/' . $name;
+		} catch (\Throwable) {
+			// Without a readable appdata folder nothing can be our marker, and
+			// this runs inside file creation — no place to fail.
+			return false;
+		}
+		return trim($template->getPath(), '/') === $expected;
 	}
 
 	/**

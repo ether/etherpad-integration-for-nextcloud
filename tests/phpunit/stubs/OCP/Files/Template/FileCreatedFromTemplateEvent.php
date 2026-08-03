@@ -12,7 +12,9 @@ if (!class_exists(FileCreatedFromTemplateEvent::class)) {
 		public function __construct(
 			private ?\OCP\Files\File $template,
 			private \OCP\Files\File $target,
-			private array $templateFields = [],
+			// Required in Nextcloud, so required here: a call the real class
+		// rejects must not pass in tests.
+		private array $templateFields,
 		) {
 		}
 

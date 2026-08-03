@@ -17,7 +17,7 @@ This plugin lets you surface pads from an Etherpad instance inside Nextcloud and
 
 Create a pad straight from the Files app with `+ New`:
 
-![The Nextcloud "+ New" menu showing New pad, Public pad, and Public pad from URL entries](docs/screenshots/new-pad-menu.png)
+![The Nextcloud "+ New" menu showing the New pad entry](docs/screenshots/new-pad-menu.png)
 
 Open a `.pad` file and the linked Etherpad pad loads in the native Nextcloud viewer, with real-time collaboration and per-author colours:
 
@@ -193,8 +193,14 @@ PHP checks and optional E2E checks are described in [docs/release-process.md](do
 
 ### Create pads
 
-- `+ New -> New pad`
-- `+ New -> Public pad` (internal public pad on the configured Etherpad instance, or external public pad by URL)
+- `+ New -> New pad`, then pick a template or the blank entry. The blank entry
+  creates a protected pad; the **Public pad** tile creates a public one. The
+  tile only appears when both pad types are enabled — with one switched off the
+  blank entry already creates the only type on offer.
+- The **Public pad from URL** tile in the same picker links a pad on another
+  Etherpad server. The picker asks for the pad's address itself, so the file is
+  linked as it is created. The tile appears while external pads are allowed in
+  the admin settings.
 
 An administrator can add **shared templates** under
 `Settings -> Administration -> Pads`: upload a `.pad` file and it appears as a

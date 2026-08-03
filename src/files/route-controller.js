@@ -18,7 +18,6 @@ import { isSingleFilePublicShare } from './public-single-share-ui.js'
 const ROUTE_WATCH_FLAG = 'EtherpadNextcloudRouteWatchInstalled'
 
 export const createRouteController = ({
-	ensurePublicPadMenuRegistration,
 	openPadInNativeViewer,
 	schedulePublicSingleShareUiStateRefresh,
 }) => {
@@ -118,9 +117,6 @@ export const createRouteController = ({
 			return
 		}
 		lastRouteCheckKey = currentKey
-		if (isFilesAppRoute()) {
-			ensurePublicPadMenuRegistration()
-		}
 		schedulePublicSingleShareUiStateRefresh()
 		void maybeNormalizeStalePadFileRoute()
 		void maybeRedirectFromFilesRoute()
