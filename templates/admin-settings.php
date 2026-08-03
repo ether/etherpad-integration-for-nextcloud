@@ -208,7 +208,9 @@
 		<p id="epnc-template-empty" class="settings-hint ep-field-hint"><?php p((string)$_['l10n']['templates_none']); ?></p>
 
 		<div class="etherpad-nextcloud-admin-actions">
-			<input type="file" id="epnc-template-file" accept=".pad" class="ep-visually-hidden">
+			<?php /* The visible button operates it; on its own it would be a
+			       focusable control with no name. */ ?>
+			<input type="file" id="epnc-template-file" accept=".pad" class="ep-visually-hidden" tabindex="-1" aria-hidden="true">
 			<button type="button" id="epnc-template-upload"><?php p((string)$_['l10n']['templates_upload_button']); ?></button>
 		</div>
 		<p id="epnc-template-status" class="ep-status" aria-live="polite"></p>

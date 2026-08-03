@@ -32,6 +32,20 @@ use OCP\Lock\LockedException;
 class PadTemplateStorage {
 	public const TEMPLATE_DIR = 'templates';
 
+	/**
+	 * Names the app keeps for the tiles it offers in the picker itself. A
+	 * template of the same name would be a second tile with the same label —
+	 * indistinguishable to whoever picks one, since the picker labels a tile
+	 * with the file's name.
+	 */
+	public const PUBLIC_TILE_NAME = 'Public pad.pad';
+	public const EXTERNAL_TILE_NAME = 'Public pad from URL.pad';
+
+	/** @return list<string> */
+	public static function reservedNames(): array {
+		return [self::PUBLIC_TILE_NAME, self::EXTERNAL_TILE_NAME];
+	}
+
 	public function __construct(
 		private IRootFolder $rootFolder,
 		private IAppDataFactory $appDataFactory,

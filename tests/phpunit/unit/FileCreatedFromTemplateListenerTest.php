@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\Tests\Unit;
 
 use OCA\EtherpadNextcloud\Listeners\FileCreatedFromTemplateListener;
+use OCA\EtherpadNextcloud\Exception\PadTypeDisabledException;
 use OCA\EtherpadNextcloud\Service\PadBootstrapService;
 use OCA\EtherpadNextcloud\Service\PadCreationService;
 use OCP\EventDispatcher\Event;
@@ -116,6 +117,39 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 
 		$listener = $this->buildListener($creation, $bootstrap, withUser: false);
 		$listener->handle(new FileCreatedFromTemplateEvent($template, $target));
+	}
+
+	/**
+	 * The setting can change while the picker is open. Materialising then fails
+	 * correctly — and the blank fallback would fail for the same reason,
+	 * leaving an empty .pad nobody can open.
+	 */
+	public function testRemovesTheFileWhenNoPadTypeIsEnabledAnyMore(): void {
+		$template = $this->file('Meeting notes.pad');
+		$target = $this->file('Notes.pad');
+		$target->expects($this->once())->method('delete');
+
+		$creation = $this->createMock(PadCreationService::class);
+		$creation->method('materializeTemplateInto')->willThrowException(new PadTypeDisabledException());
+		$bootstrap = $this->createMock(PadBootstrapService::class);
+		$bootstrap->expects($this->never())->method('initializeMissingFrontmatter');
+
+		$this->expectException(PadTypeDisabledException::class);
+		$this->buildListener($creation, $bootstrap)
+			->handle(new FileCreatedFromTemplateEvent($template, $target));
+	}
+
+	/** The same for Nextcloud's blank entry, which provisions just as directly. */
+	public function testRemovesTheBlankFileWhenNoPadTypeIsEnabled(): void {
+		$target = $this->file('Notes.pad');
+		$target->expects($this->once())->method('delete');
+
+		$bootstrap = $this->createMock(PadBootstrapService::class);
+		$bootstrap->method('initializeMissingFrontmatter')->willThrowException(new PadTypeDisabledException());
+
+		$this->expectException(PadTypeDisabledException::class);
+		$this->buildListener($this->createMock(PadCreationService::class), $bootstrap)
+			->handle(new FileCreatedFromTemplateEvent(null, $target));
 	}
 
 	private function buildListener(

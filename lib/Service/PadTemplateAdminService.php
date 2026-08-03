@@ -131,6 +131,12 @@ class PadTemplateAdminService {
 		if (str_contains($trimmed, '/') || str_contains($trimmed, '\\') || str_starts_with($trimmed, '.')) {
 			throw new AdminValidationException('template', $this->l10n->t('Template name must not contain a path.'));
 		}
+		// The app labels its own tiles with these names.
+		foreach (PadTemplateStorage::reservedNames() as $reserved) {
+			if (strcasecmp($trimmed, $reserved) === 0) {
+				throw new AdminValidationException('template', $this->l10n->t('That name is reserved for the app\'s own tiles.'));
+			}
+		}
 		// Everything an instance forbids beyond that — control characters, the
 		// configured forbidden characters and names — is Nextcloud's own rule
 		// set. Without asking it here, the write fails deep in the storage and

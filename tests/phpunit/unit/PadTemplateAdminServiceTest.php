@@ -103,6 +103,18 @@ class PadTemplateAdminServiceTest extends TestCase {
 	}
 
 	/**
+	 * The app labels its own picker tiles with these names, so a template of
+	 * the same name would be a second tile nobody can tell apart.
+	 */
+	public function testRejectsTheNamesTheAppKeepsForItsOwnTiles(): void {
+		$storage = $this->createMock(PadTemplateStorage::class);
+		$storage->expects($this->never())->method('addGlobalTemplate');
+
+		$this->expectException(AdminValidationException::class);
+		$this->buildService($storage)->add('public PAD.pad', self::PAD);
+	}
+
+	/**
 	 * What an instance forbids beyond our own rules is Nextcloud's business —
 	 * asked here so the admin gets a sentence instead of a 500 from deep in
 	 * the storage.

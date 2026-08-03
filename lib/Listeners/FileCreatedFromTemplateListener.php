@@ -8,6 +8,7 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Listeners;
 
+use OCA\EtherpadNextcloud\Exception\PadTypeDisabledException;
 use OCA\EtherpadNextcloud\Service\PadBootstrapService;
 use OCA\EtherpadNextcloud\Service\PadCreationService;
 use OCP\EventDispatcher\Event;
@@ -82,6 +83,18 @@ class FileCreatedFromTemplateListener implements IEventListener {
 
 		try {
 			$this->padCreationService->materializeTemplateInto($target, $template, $user);
+		} catch (PadTypeDisabledException $e) {
+			// Not a hiccup to retry around: the instance creates no pads at all
+			// right now, which happens when the setting changes while the
+			// picker is open. The blank fallback below would fail for the same
+			// reason and leave an empty .pad nobody can open.
+			$this->logger->warning('Pad template create refused: no pad type is enabled.', [
+				'app' => 'etherpad_nextcloud',
+				'targetFileId' => (int)$target->getId(),
+				'exception' => $e,
+			]);
+			$this->deleteTarget($target);
+			throw $e;
 		} catch (\Throwable $e) {
 			$this->logger->error('Pad template materialization failed — falling back to blank-pad init.', [
 				'app' => 'etherpad_nextcloud',
@@ -99,11 +112,33 @@ class FileCreatedFromTemplateListener implements IEventListener {
 	private function initializeBlankPad(string $uid, File $target): void {
 		try {
 			$this->padBootstrapService->initializeMissingFrontmatter($uid, $target, '');
+		} catch (PadTypeDisabledException $e) {
+			// Same as above, for Nextcloud's blank entry: no type to create,
+			// so the file has to go rather than sit there unopenable.
+			$this->logger->warning('Blank pad create refused: no pad type is enabled.', [
+				'app' => 'etherpad_nextcloud',
+				'fileId' => (int)$target->getId(),
+				'exception' => $e,
+			]);
+			$this->deleteTarget($target);
+			throw $e;
 		} catch (\Throwable $e) {
 			// Worst case the existing viewer retry path catches a missing-
 			// frontmatter state and runs initialize-by-id — same behaviour
 			// as before this listener was extended, plus a logged warning.
 			$this->logger->warning('Could not initialise frontmatter for blank-template .pad — falling back to viewer init-retry path.', [
+				'app' => 'etherpad_nextcloud',
+				'fileId' => (int)$target->getId(),
+				'exception' => $e,
+			]);
+		}
+	}
+
+	private function deleteTarget(File $target): void {
+		try {
+			$target->delete();
+		} catch (\Throwable $e) {
+			$this->logger->warning('Could not remove the .pad file of a failed template create.', [
 				'app' => 'etherpad_nextcloud',
 				'fileId' => (int)$target->getId(),
 				'exception' => $e,

@@ -499,6 +499,37 @@ describe('shared templates', () => {
 
 		expect(status().textContent).toContain('Could not read the templates.')
 		expect(status().classList.contains('ep-status-error')).toBe(true)
+		// The claim "none uploaded" is exactly what we do not know here.
+		expect(document.getElementById('epnc-template-empty').style.display).toBe('none')
+	})
+
+	/** Each row's only visible label is "Delete", so the name has to be read out. */
+	it('names the template each delete button removes', async () => {
+		vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(templateResponse(['Meeting notes.pad']))))
+		await import(MODULE)
+		await flush()
+
+		const remove = list().querySelector('button')
+		expect(remove.getAttribute('aria-label')).toBe('Delete Meeting notes.pad')
+	})
+
+	/**
+	 * Uploading a template says nothing about the connection test or the last
+	 * save, so it must not wipe their results.
+	 */
+	it('keeps the template status apart from the other results', async () => {
+		vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(templateResponse([]))))
+		await import(MODULE)
+		await flush()
+
+		const saved = document.getElementById('etherpad-nextcloud-admin-status')
+		saved.textContent = 'Settings saved.'
+		saved.classList.add('ep-status-success')
+
+		await uploadFile('agenda.pad', '---\n---\n')
+
+		expect(saved.textContent).toBe('Settings saved.')
+		expect(saved.classList.contains('ep-status-success')).toBe(true)
 	})
 
 	/** A file name is data, never markup. */

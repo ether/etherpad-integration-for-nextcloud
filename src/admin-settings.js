@@ -135,9 +135,14 @@
 	}
 
 	// Starting one does clear the other: its result predates this action and
-	// would be read as belonging to it.
+	// would be read as belonging to it. The template status is its own group —
+	// uploading a template makes neither a connection test nor a save result
+	// stale, and vice versa.
 	function beginStatus(message, node = statusNode) {
-		for (const other of [statusNode, diagnosticsTarget, connectionTarget, templateStatusNode]) {
+		const group = node === templateStatusNode
+			? [templateStatusNode]
+			: [statusNode, diagnosticsTarget, connectionTarget]
+		for (const other of group) {
 			if (other instanceof HTMLElement && other !== node) {
 				other.textContent = ''
 				other.classList.remove('ep-status-success', 'ep-status-warning', 'ep-status-error')
@@ -193,9 +198,7 @@
 		}
 		templateListNode.replaceChildren()
 		const list = Array.isArray(templates) ? templates : []
-		if (templateEmptyNode instanceof HTMLElement) {
-			templateEmptyNode.style.display = list.length === 0 ? '' : 'none'
-		}
+		showTemplateEmptyState(list.length === 0)
 		for (const template of list) {
 			if (!template || typeof template.name !== 'string') {
 				continue
@@ -216,6 +219,9 @@
 		const remove = document.createElement('button')
 		remove.type = 'button'
 		remove.textContent = l10n.templateDelete
+		// The visible label repeats on every row, so the accessible name has to
+		// carry the name of the template this one removes.
+		remove.setAttribute('aria-label', `${l10n.templateDelete} ${name}`)
 		remove.addEventListener('click', () => {
 			if (!window.confirm(l10n.templateConfirmDelete)) {
 				return
@@ -226,10 +232,20 @@
 		return row
 	}
 
+	function showTemplateEmptyState(visible) {
+		if (templateEmptyNode instanceof HTMLElement) {
+			templateEmptyNode.style.display = visible ? '' : 'none'
+		}
+	}
+
 	async function loadTemplates() {
 		if (templatesUrl === '' || !(templateListNode instanceof HTMLElement)) {
 			return
 		}
+		// "No shared templates yet" is an answer, and we do not have one until
+		// the request comes back — showing it next to an error would claim the
+		// list is empty when we simply could not read it.
+		showTemplateEmptyState(false)
 		try {
 			const response = await fetch(templatesUrl, {
 				credentials: 'same-origin',
@@ -238,6 +254,7 @@
 			const data = await readJsonResponse(response)
 			renderTemplates(data.templates)
 		} catch (error) {
+			showTemplateEmptyState(false)
 			setStatus(error instanceof Error ? error.message : l10n.templateFailed, 'error', templateStatusNode)
 		}
 	}
