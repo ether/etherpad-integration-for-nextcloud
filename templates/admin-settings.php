@@ -26,6 +26,7 @@
 	data-l10n-template-uploading="<?php p((string)$_['l10n']['templates_uploading']); ?>"
 	data-l10n-template-delete="<?php p((string)$_['l10n']['templates_delete_button']); ?>"
 	data-l10n-template-delete-label="<?php p((string)$_['l10n']['templates_delete_label']); ?>"
+	data-l10n-template-too-large="<?php p((string)$_['l10n']['templates_too_large']); ?>"
 	data-l10n-template-confirm-delete="<?php p((string)$_['l10n']['templates_confirm_delete']); ?>"
 	data-l10n-template-confirm-replace="<?php p((string)$_['l10n']['templates_confirm_replace']); ?>"
 	data-l10n-template-failed="<?php p((string)$_['l10n']['templates_failed']); ?>">

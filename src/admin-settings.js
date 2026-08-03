@@ -55,6 +55,7 @@
 		retryFailed: root.getAttribute('data-l10n-retry-failed') || 'Pending delete retry failed.',
 		templateUploading: root.getAttribute('data-l10n-template-uploading') || 'Uploading template...',
 		templateDelete: root.getAttribute('data-l10n-template-delete') || 'Delete',
+		templateTooLarge: root.getAttribute('data-l10n-template-too-large') || 'Template file is too large.',
 		templateDeleteLabel: root.getAttribute('data-l10n-template-delete-label') || 'Delete template {name}',
 		templateConfirmDelete: root.getAttribute('data-l10n-template-confirm-delete') || 'Delete this template for everyone?',
 		templateFailed: root.getAttribute('data-l10n-template-failed') || 'Template request failed.',
@@ -260,7 +261,16 @@
 		}
 	}
 
+	// The same limit the server enforces. Without it a mis-picked large file is
+	// read into memory and posted, only to hit post_max_size or the memory
+	// limit — a failure that says nothing, instead of the sentence below.
+	const MAX_TEMPLATE_BYTES = 2 * 1024 * 1024
+
 	async function uploadTemplate(file, replace = false) {
+		if (typeof file.size === 'number' && file.size > MAX_TEMPLATE_BYTES) {
+			setStatus(l10n.templateTooLarge, 'error', templateStatusNode)
+			return
+		}
 		beginStatus(l10n.templateUploading, templateStatusNode)
 		try {
 			const content = await file.text()

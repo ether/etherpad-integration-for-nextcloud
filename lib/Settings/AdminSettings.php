@@ -107,6 +107,9 @@ class AdminSettings implements ISettings {
 				// gives "Löschen Meeting.pad" in German, which no translator
 				// can fix from the parts.
 				'templates_delete_label' => $this->l10n->t('Delete template {name}'),
+				// Same sentence the server answers with, so the page can say it
+				// before reading a file it would only be refused for.
+				'templates_too_large' => $this->l10n->t('Template file is too large.'),
 				'templates_uploading' => $this->l10n->t('Uploading template...'),
 				'templates_confirm_delete' => $this->l10n->t('Delete this template for everyone?'),
 				'templates_confirm_replace' => $this->l10n->t('Replace the existing template of that name?'),

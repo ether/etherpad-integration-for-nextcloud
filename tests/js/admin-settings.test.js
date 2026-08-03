@@ -20,6 +20,7 @@ const setupAdminDom = () => {
 			data-templates-delete-url="/templates/delete"
 			data-l10n-template-delete="Delete"
 			data-l10n-template-delete-label="Vorlage {name} löschen"
+			data-l10n-template-too-large="Template file is too large."
 			data-l10n-template-confirm-delete="Delete this template for everyone?"
 			data-l10n-template-confirm-replace="Replace the existing template of that name?">
 			<form id="etherpad-nextcloud-admin-form">
@@ -535,6 +536,40 @@ describe('shared templates', () => {
 		expect(saved.classList.contains('ep-status-success')).toBe(true)
 	})
 
+	/**
+	 * The server refuses it anyway, but only after the whole file has been read
+	 * into memory and posted — where it can hit post_max_size instead, and the
+	 * admin gets a failure that says nothing.
+	 */
+	it('refuses an oversized file before reading it', async () => {
+		const posts = []
+		vi.stubGlobal('fetch', vi.fn((url, options) => {
+			if (options && options.method === 'POST') {
+				posts.push(url)
+			}
+			return Promise.resolve(templateResponse([]))
+		}))
+		await import(MODULE)
+		await flush()
+
+		let read = false
+		const input = document.getElementById('epnc-template-file')
+		Object.defineProperty(input, 'files', {
+			configurable: true,
+			value: [{
+				name: 'huge.pad',
+				size: 3 * 1024 * 1024,
+				text: () => { read = true; return Promise.resolve('x') },
+			}],
+		})
+		input.dispatchEvent(new Event('change'))
+		await flush()
+
+		expect(read).toBe(false)
+		expect(posts).toHaveLength(0)
+		expect(status().textContent).toContain('too large')
+	})
+
 	/** A file name is data, never markup. */
 	it('renders a template name as text', async () => {
 		vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(templateResponse(['<img src=x onerror=alert(1)>.pad']))))
@@ -633,11 +668,11 @@ describe('shared templates', () => {
 		expect(posts).toEqual(['/templates/delete'])
 	})
 
-	const uploadFile = async (name, content) => {
+	const uploadFile = async (name, content, size = content.length) => {
 		const input = document.getElementById('epnc-template-file')
 		Object.defineProperty(input, 'files', {
 			configurable: true,
-			value: [{ name, text: () => Promise.resolve(content) }],
+			value: [{ name, size, text: () => Promise.resolve(content) }],
 		})
 		input.dispatchEvent(new Event('change'))
 		await flush()

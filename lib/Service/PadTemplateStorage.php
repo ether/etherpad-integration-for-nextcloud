@@ -91,6 +91,11 @@ class PadTemplateStorage {
 	}
 
 	/**
+	 * Expects a name that has already been validated — see
+	 * PadTemplateAdminService::validateName(). The read paths match against the
+	 * listing, so a crafted name gets them nowhere; this one hands it to get()
+	 * and newFile(), and that check is what keeps it inside this folder.
+	 *
 	 * Whether an existing file may be overwritten is decided here, not by the
 	 * caller beforehand: Folder::newFile() happily writes over what is already
 	 * there, so a separate "does it exist?" question would leave a window in
@@ -155,11 +160,18 @@ class PadTemplateStorage {
 	 * Nextcloud's database locking stores this in a 64-character column, and
 	 * the plain path already exceeds that with an ordinary instance id and file
 	 * name — the write would fail on any instance not backed by Redis. Hashing
-	 * keeps it bounded while staying specific to this folder and name, and the
-	 * prefix keeps it clear of Nextcloud's own file locks.
+	 * keeps it bounded while staying specific to this folder and name.
+	 *
+	 * 18 characters for the app id, 5 for ':tpl:' and 32 of hash make 55, so a
+	 * longer prefix later still fits. 128 bits are ample for telling apart file
+	 * names in a single folder; this is a lock key, not a signature.
+	 *
+	 * The namespace also keeps it clear of Nextcloud's own `files/<hash>`
+	 * locks. That cuts both ways: it coordinates this app's writers with each
+	 * other, not with anything else reaching into appdata.
 	 */
 	private function lockKey(Folder $folder, string $name): string {
-		return Application::APP_ID . ':tpl:' . sha1($folder->getPath() . "\0" . $name);
+		return Application::APP_ID . ':tpl:' . substr(sha1($folder->getPath() . "\0" . $name), 0, 32);
 	}
 
 	/**
