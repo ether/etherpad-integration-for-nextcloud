@@ -74,13 +74,22 @@ test.describe('shared templates: upload, offer, create', () => {
 			expect(created).toMatch(/pad_id: "[^"]+"/)
 		} finally {
 			// The template outlives the run otherwise, and the next one would
-			// pick it up as an extra tile.
+			// pick it up as an extra tile. Only remove what is actually there:
+			// if the upload itself failed, waiting for its row would time out
+			// and bury the real error under a cleanup one.
 			const stillAdmin = await gotoAdminPadSettings(page)
 			if (stillAdmin) {
-				page.once('dialog', (dialog) => { void dialog.accept() })
-				await page.locator('#epnc-template-list li', { hasText: templateName })
-					.locator('button').click()
-				await expect(page.locator('#epnc-template-list li', { hasText: templateName })).toHaveCount(0, { timeout: 30_000 })
+				const row = page.locator('#epnc-template-list li', { hasText: templateName })
+				// The list arrives over the API, so give it a moment to render
+				// before concluding there is nothing to delete.
+				const uploaded = await row.waitFor({ state: 'visible', timeout: 15_000 })
+					.then(() => true)
+					.catch(() => false)
+				if (uploaded) {
+					page.once('dialog', (dialog) => { void dialog.accept() })
+					await row.locator('button').click()
+					await expect(row).toHaveCount(0, { timeout: 30_000 })
+				}
 			}
 		}
 	})

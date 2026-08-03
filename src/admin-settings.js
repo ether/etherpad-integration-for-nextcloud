@@ -240,10 +240,19 @@
 		}
 	}
 
+	// Every upload and delete starts another listing while the first may still
+	// be in flight. Without this the slower answer wins whenever it happens to
+	// arrive last, putting a deleted template back on the page or replacing a
+	// fresh result with an old error.
+	let templateListGeneration = 0
+
 	async function loadTemplates() {
 		if (templatesUrl === '' || !(templateListNode instanceof HTMLElement)) {
 			return
 		}
+		const generation = ++templateListGeneration
+		const isCurrent = () => generation === templateListGeneration
+
 		// "No shared templates yet" is an answer, and we do not have one until
 		// the request comes back — showing it next to an error would claim the
 		// list is empty when we simply could not read it.
@@ -254,8 +263,14 @@
 				headers: { requesttoken: String(OC.requestToken || '') },
 			})
 			const data = await readJsonResponse(response)
+			if (!isCurrent()) {
+				return
+			}
 			renderTemplates(data.templates)
 		} catch (error) {
+			if (!isCurrent()) {
+				return
+			}
 			showTemplateEmptyState(false)
 			setStatus(error instanceof Error ? error.message : l10n.templateFailed, 'error', templateStatusNode)
 		}

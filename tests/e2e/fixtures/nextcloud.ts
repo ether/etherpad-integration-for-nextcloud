@@ -165,15 +165,19 @@ export const createBlankPadFromTemplatePicker = async (page: Page, fileName: str
 
 	await page.getByRole('button', { name: /create|erstellen/i }).last().click()
 
-	// Nextcloud shows the template picker whenever there is something to pick,
-	// which the shared templates now guarantee on this instance. Blank comes
-	// preselected, so confirming is all that is left. The confirm control is an
-	// <input type="submit">, and matching it by label would also hit the "+ New"
-	// menu's entries still in the page behind the modal.
+	// Nextcloud shows the template picker only when there is something to pick;
+	// with no templates on the instance it creates the file straight away. So
+	// race the two outcomes instead of waiting out a picker that will never
+	// come — the wait would cost every run those seconds for nothing.
+	//
+	// The confirm control is an <input type="submit">; matching it by label
+	// would also hit the "+ New" menu entries still in the page behind it.
 	const confirm = page.locator('.templates-picker__buttons input[type="submit"]')
-	const pickerShown = await confirm.waitFor({ state: 'visible', timeout: 10_000 })
-		.then(() => true)
-		.catch(() => false)
+	const row = page.locator(`[data-cy-files-list-row-name="${fileName}"], [title="${fileName}"]`).first()
+	const pickerShown = await Promise.race([
+		confirm.waitFor({ state: 'visible', timeout: 30_000 }).then(() => true),
+		row.waitFor({ state: 'visible', timeout: 30_000 }).then(() => false),
+	]).catch(() => false)
 	if (pickerShown) {
 		await confirm.click()
 	}

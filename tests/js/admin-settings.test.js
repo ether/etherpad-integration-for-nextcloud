@@ -570,6 +570,34 @@ describe('shared templates', () => {
 		expect(status().textContent).toContain('too large')
 	})
 
+	/**
+	 * An upload or delete starts a second listing while the first may still be
+	 * in flight. Whichever answer arrives last used to win, which could put a
+	 * deleted template back on the page.
+	 */
+	it('ignores a listing answer that a newer request has superseded', async () => {
+		let releaseFirst
+		const first = new Promise((resolve) => { releaseFirst = resolve })
+		let call = 0
+		vi.stubGlobal('fetch', vi.fn(() => {
+			call += 1
+			if (call === 1) {
+				return first.then(() => templateResponse(['Stale.pad']))
+			}
+			return Promise.resolve(templateResponse(['Fresh.pad']))
+		}))
+		await import(MODULE)
+		await flush()
+
+		// Second listing answers first, then the first one comes back late.
+		await uploadFile('Fresh.pad', '---\n---\n')
+		releaseFirst()
+		await flush()
+
+		const names = [...list().querySelectorAll('.ep-template-name')].map((n) => n.textContent)
+		expect(names).toEqual(['Fresh.pad'])
+	})
+
 	/** A file name is data, never markup. */
 	it('renders a template name as text', async () => {
 		vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(templateResponse(['<img src=x onerror=alert(1)>.pad']))))
