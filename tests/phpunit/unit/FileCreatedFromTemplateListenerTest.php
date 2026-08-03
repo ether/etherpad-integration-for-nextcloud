@@ -7,6 +7,7 @@ namespace OCA\EtherpadNextcloud\Tests\Unit;
 use OCA\EtherpadNextcloud\Listeners\FileCreatedFromTemplateListener;
 use OCA\EtherpadNextcloud\Exception\PadTypeDisabledException;
 use OCA\EtherpadNextcloud\Service\PadBootstrapService;
+use OCA\EtherpadNextcloud\Exception\PadTypeDisabledException;
 use OCA\EtherpadNextcloud\Service\ExternalPadSeeder;
 use OCA\EtherpadNextcloud\Service\PadCreationService;
 use OCA\EtherpadNextcloud\Service\PadTemplateStorage;
@@ -19,10 +20,12 @@ use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 
 /**
- * The listener handles two template-flow cases:
- *  - source-template → delegate to PadCreationService::materializeTemplateInto
- *  - blank-template (no source) → write fresh frontmatter via
- *    PadBootstrapService so /open doesn't 4xx on the first call.
+ * The listener handles four cases, one per thing the picker can offer:
+ *  - blank entry → write fresh frontmatter via PadBootstrapService so /open
+ *    doesn't 4xx on the first call
+ *  - pad type tile → the same, straight to that type
+ *  - external tile → link the file to the address the picker collected
+ *  - any other template → PadCreationService::materializeTemplateInto
  */
 class FileCreatedFromTemplateListenerTest extends TestCase {
 	public function testIgnoresUnrelatedEvent(): void {
@@ -226,6 +229,41 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 		$this->expectExceptionMessage('pad not reachable');
 		$this->buildListener($this->createMock(PadCreationService::class), $this->createMock(PadBootstrapService::class), true, $storage, $seeder)
 			->handle(new FileCreatedFromTemplateEvent($marker, $target, ['pad_url' => ['content' => 'https://pad.remote.test/p/x']]));
+	}
+
+	/**
+	 * An instance that allows only external pads still shows "New pad" and,
+	 * with it, Nextcloud's blank entry. Provisioning then fails — correctly —
+	 * and the empty file must not stay behind.
+	 */
+	public function testRemovesTheBlankFileWhenNoPadTypeIsEnabled(): void {
+		$target = $this->file('Notes.pad');
+		$target->expects($this->once())->method('delete');
+
+		$bootstrap = $this->createMock(PadBootstrapService::class);
+		$bootstrap->method('initializeMissingFrontmatter')->willThrowException(new PadTypeDisabledException());
+
+		$this->expectException(PadTypeDisabledException::class);
+		$this->buildListener($this->createMock(PadCreationService::class), $bootstrap)
+			->handle(new FileCreatedFromTemplateEvent(null, $target, []));
+	}
+
+	/** The same for the type tile, which provisions a pad just as directly. */
+	public function testRemovesTheFileOfTheTypeTileWhenThatTypeIsGone(): void {
+		$marker = $this->file(PadTemplateStorage::PUBLIC_MARKER);
+		$target = $this->file('Notes.pad');
+		$target->expects($this->once())->method('delete');
+
+		$storage = $this->createMock(PadTemplateStorage::class);
+		$storage->method('isExternalMarkerFile')->willReturn(false);
+		$storage->method('accessModeForTemplateFile')->willReturn('public');
+
+		$bootstrap = $this->createMock(PadBootstrapService::class);
+		$bootstrap->method('initializeMissingFrontmatter')->willThrowException(new PadTypeDisabledException('public'));
+
+		$this->expectException(PadTypeDisabledException::class);
+		$this->buildListener($this->createMock(PadCreationService::class), $bootstrap, true, $storage)
+			->handle(new FileCreatedFromTemplateEvent($marker, $target, []));
 	}
 
 	/** A storage that recognises no template as one of ours. */

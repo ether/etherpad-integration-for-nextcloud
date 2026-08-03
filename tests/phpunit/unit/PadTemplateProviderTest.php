@@ -49,6 +49,23 @@ class PadTemplateProviderTest extends TestCase {
 		));
 	}
 
+	/**
+	 * With no pad type enabled, an instance can still offer external pads —
+	 * but a shared template provisions a local pad, so offering one would be a
+	 * promise it cannot keep.
+	 */
+	public function testHidesTheSharedTemplatesWhenNoPadTypeIsEnabled(): void {
+		$storage = $this->storage();
+		$storage->method('globalTemplates')->willReturn([$this->markerFile('Meeting notes.pad')]);
+
+		$ids = array_map(
+			static fn($t): string => (string)$t->jsonSerialize()['templateId'],
+			$this->providerWith($storage, false, false, true)->getCustomTemplates(self::MIME),
+		);
+
+		$this->assertSame(['pad-external'], $ids);
+	}
+
 	/** Nextcloud asks every provider for every creator. */
 	public function testIgnoresOtherMimetypes(): void {
 		$this->assertSame([], $this->buildProvider()->getCustomTemplates('text/markdown'));

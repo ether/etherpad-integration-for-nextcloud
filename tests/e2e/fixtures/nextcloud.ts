@@ -91,7 +91,16 @@ export const createPublicPad = async (page: Page, fileName: string): Promise<str
  * a create failure, so the file never appears — we return `{ ok: false }` in
  * that case rather than hanging until timeout.
  */
-export const externalPadTileAvailable = async (page: Page, fileName: string): Promise<boolean> => {
+/**
+ * Create a pad from the "Public pad from URL" tile: Nextcloud's picker asks
+ * for the pad's address through the tile's template field, and the create
+ * listener links the file with it.
+ *
+ * Whether external pads are configured is read from the environment, not from
+ * the page — a missing tile is a regression here, and every step below has to
+ * succeed.
+ */
+export const createExternalPadFromTile = async (page: Page, padUrl: string, fileName: string): Promise<string> => {
 	await openNewMenu(page)
 	await page.getByRole('menuitem', { name: /new pad|neues pad/i }).first().click()
 
@@ -99,23 +108,9 @@ export const externalPadTileAvailable = async (page: Page, fileName: string): Pr
 	await fileNameInput.fill(fileName.replace(/\.pad$/i, ''))
 	await page.getByRole('button', { name: /^(create|erstellen)$/i }).last().click()
 
-	// Whether the tile is on offer is a configuration question — an instance
-	// with allow_external_pads off does not show it. Everything after this
-	// point is the flow itself and has to succeed.
-	return page.getByRole('dialog').getByText('Public pad from URL', { exact: true }).first()
-		.waitFor({ state: 'visible', timeout: 15_000 })
-		.then(() => true)
-		.catch(() => false)
-}
-
-/**
- * Finish the flow the tile starts: pick it, let Nextcloud ask for the pad's
- * address, and wait for the linked file. Call only after
- * externalPadTileAvailable() said yes — a file that does not appear here is a
- * regression, not a configuration, so this throws rather than reporting.
- */
-export const createExternalPadFromTile = async (page: Page, padUrl: string, fileName: string): Promise<string> => {
-	await page.getByRole('dialog').getByText('Public pad from URL', { exact: true }).first().click()
+	const tile = page.getByRole('dialog').getByText('Public pad from URL', { exact: true }).first()
+	await expect(tile).toBeVisible({ timeout: 15_000 })
+	await tile.click()
 	// The picker confirms with an <input type="submit">, not a button, so match
 	// the control itself: a by-label match also finds the "+ New" menu entries
 	// still in the page behind the modal.

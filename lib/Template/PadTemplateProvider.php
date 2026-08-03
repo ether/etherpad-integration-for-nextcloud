@@ -57,6 +57,16 @@ class PadTemplateProvider implements ICustomTemplateProvider {
 		return array_merge($this->typeTile(), $this->externalTile(), $this->globalTiles());
 	}
 
+	/**
+	 * Whether a pad can be created locally at all. An instance that allows only
+	 * external pads still shows the "New pad" entry — the external tile needs
+	 * it — but everything that provisions a pad here would fail.
+	 */
+	private function anyPadTypeEnabled(): bool {
+		return $this->padTypePolicy->isEnabled(BindingService::ACCESS_PROTECTED)
+			|| $this->padTypePolicy->isEnabled(BindingService::ACCESS_PUBLIC);
+	}
+
 	/** @return list<Template> */
 	private function typeTile(): array {
 		$bothEnabled = $this->padTypePolicy->isEnabled(BindingService::ACCESS_PROTECTED)
@@ -135,6 +145,12 @@ class PadTemplateProvider implements ICustomTemplateProvider {
 	 * @return list<Template>
 	 */
 	private function globalTiles(): array {
+		// Offering them would be a promise the instance cannot keep: creating
+		// from one provisions a local pad, which needs a pad type.
+		if (!$this->anyPadTypeEnabled()) {
+			return [];
+		}
+
 		try {
 			$files = $this->storage->globalTemplates();
 		} catch (\Throwable $e) {

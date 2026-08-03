@@ -174,6 +174,35 @@ class PadTemplateStorageTest extends TestCase {
 		$this->assertNull($storage->globalTemplate('../../secrets.pad'));
 	}
 
+	/** The uploads and the markers must not share a folder. */
+	public function testReadsTheTemplatesAndTheMarkersFromDifferentFolders(): void {
+		$requested = [];
+		$folder = $this->folderWith([]);
+		$folder->method('newFile')->willReturn($this->namedFile(PadTemplateStorage::PUBLIC_MARKER));
+
+		$rootFolder = $this->createMock(IRootFolder::class);
+		$rootFolder->method('getAppDataDirectoryName')->willReturn('appdata_testinstance');
+		$rootFolder->method('get')->willReturnCallback(
+			function (string $path) use (&$requested, $folder): Folder {
+				$requested[] = $path;
+				return $folder;
+			}
+		);
+		$appData = $this->createMock(IAppData::class);
+		$appData->method('getFolder')->willReturn($this->createMock(ISimpleFolder::class));
+		$appDataFactory = $this->createMock(IAppDataFactory::class);
+		$appDataFactory->method('get')->willReturn($appData);
+
+		$storage = new PadTemplateStorage($rootFolder, $appDataFactory, $this->createMock(ILockingProvider::class));
+		$storage->globalTemplates();
+		$storage->publicMarker();
+
+		$this->assertSame(
+			[ltrim(self::FOLDER_PATH, '/'), ltrim(self::MARKER_PATH, '/')],
+			$requested,
+		);
+	}
+
 	public function testStoresANewTemplate(): void {
 		$created = $this->namedFile('agenda.pad');
 		$folder = $this->folderWith([]);
@@ -417,7 +446,17 @@ class PadTemplateStorageTest extends TestCase {
 
 		$rootFolder = $this->createMock(IRootFolder::class);
 		$rootFolder->method('getAppDataDirectoryName')->willReturn('appdata_testinstance');
-		$rootFolder->method('get')->willReturn($templateFolder);
+		// Both folders answer, but each only under its own path: a storage that
+		// went back to one folder for both would fail these tests instead of
+		// passing them quietly.
+		$rootFolder->method('get')->willReturnCallback(
+			function (string $path) use ($templateFolder): Folder {
+				if (in_array('/' . ltrim($path, '/'), [self::FOLDER_PATH, self::MARKER_PATH], true)) {
+					return $templateFolder;
+				}
+				throw new NotFoundException($path);
+			}
+		);
 
 		return new PadTemplateStorage(
 			$rootFolder,

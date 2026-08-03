@@ -111,7 +111,8 @@ class FileCreatedFromTemplateListener implements IEventListener {
 			]);
 			$this->resetTargetToEmpty($target);
 			// Re-initialise after the wipe so the user still gets a clean,
-			// openable pad even though the template path failed.
+			// openable pad even though the template path failed. A disabled
+			// pad type travels on from here as well.
 			$this->initializeBlankPad($user->getUID(), $target);
 		}
 	}
@@ -120,8 +121,9 @@ class FileCreatedFromTemplateListener implements IEventListener {
 		try {
 			$this->padBootstrapService->initializeMissingFrontmatter($uid, $target, '', $preferredAccessMode);
 		} catch (PadTypeDisabledException $e) {
-			// Same as above, for Nextcloud's blank entry: no type to create,
-			// so the file has to go rather than sit there unopenable.
+			// Same as above, for Nextcloud's blank entry — and an instance
+			// offering only external pads reaches this on every one of them,
+			// so leaving the file behind would hand out empty .pad files.
 			$this->logger->warning('Blank pad create refused: no pad type is enabled.', [
 				'app' => 'etherpad_nextcloud',
 				'fileId' => (int)$target->getId(),
@@ -165,10 +167,13 @@ class FileCreatedFromTemplateListener implements IEventListener {
 				// empty because the remote refused the export. The picker has
 				// no place to show that, and the viewer says so on open, so
 				// this is the record an admin can act on.
+				// The seeder's own value, not the input: a pasted address may
+				// carry a query or fragment, and canonicalisation is what drops
+				// them. A token in there has no business in the server log.
 				$this->logger->warning('Linked an external pad whose content could not be fetched; the snapshot stays empty.', [
 					'app' => 'etherpad_nextcloud',
 					'fileId' => $fileId,
-					'padUrl' => $padUrl,
+					'padUrl' => (string)($seeded['pad_url'] ?? ''),
 				]);
 			}
 		} catch (\Throwable $e) {

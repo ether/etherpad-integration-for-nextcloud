@@ -37,6 +37,16 @@ export const E2E = {
 		return requireEnv('E2E_PASS')
 	},
 	/**
+	 * Whether this instance is configured for external pads. The specs must
+	 * not infer that from the tile being there: a broken provider, a marker
+	 * that cannot be created or a missing registration look exactly the same,
+	 * and would turn a regression into a skip.
+	 */
+	get externalPadsEnabled(): boolean {
+		const value = (process.env.E2E_EXTERNAL_PADS ?? '').trim().toLowerCase();
+		return value === '1' || value === 'yes' || value === 'true';
+	},
+	/**
 	 * App password used for non-browser WebDAV/API setup and teardown
 	 * (mirrors the NC_APP_PASSWORD pattern in tests/integration/*.sh).
 	 *

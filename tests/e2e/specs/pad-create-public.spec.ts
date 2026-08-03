@@ -7,7 +7,6 @@ import {
 	gotoFiles,
 	closeViewer,
 	createExternalPadFromTile,
-	externalPadTileAvailable,
 	createPublicPad,
 	expectFileInList,
 	expectExternalSnapshotViewerMounted,
@@ -18,6 +17,7 @@ import {
 	uniquePadName,
 } from '../fixtures/nextcloud'
 import { deleteViaDav, getFileViaDav } from '../fixtures/dav'
+import { E2E } from '../fixtures/env'
 
 /**
  * Smoke flow #1 (issue #54): create an internal public pad via our
@@ -85,17 +85,18 @@ test.describe('external pad from the template picker', () => {
 	})
 
 	test('asks for the pad address in the picker and opens the remote pad', async ({ page }) => {
+		// Configuration is declared, not guessed: inferring it from the tile
+		// would let a broken provider or registration pass as a skip.
+		test.skip(
+			!E2E.externalPadsEnabled,
+			'Set E2E_EXTERNAL_PADS=1 once the instance has allow_external_pads=yes and an allowlisted Etherpad host.',
+		)
 		await gotoFiles(page)
 		await createPublicPad(page, sourcePadName)
 		await expectEtherpadViewerMounted(page)
 		const etherpadUrl = await readEtherpadUrlFromViewer(page)
 		await closeViewer(page)
 
-		// Only the tile's presence is a configuration question. Once it is
-		// there, everything after it has to work — a file that never appears
-		// would otherwise turn a listener or seeding regression into a skip.
-		const tileOffered = await externalPadTileAvailable(page, externalPadName)
-		test.skip(!tileOffered, 'External pads are disabled on this instance; external tile spec skipped.')
 		await createExternalPadFromTile(page, etherpadUrl, externalPadName)
 
 		// Nextcloud opens the file it just created, and a linked external pad
