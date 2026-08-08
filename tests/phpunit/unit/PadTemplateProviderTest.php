@@ -32,11 +32,11 @@ class PadTemplateProviderTest extends TestCase {
 	 * @return iterable<string,array{0:bool,1:bool,2:bool,3:list<string>}>
 	 */
 	public static function tileProvider(): iterable {
-		yield 'both types, external off' => [true, true, false, ['pad-public']];
-		yield 'both types, external on' => [true, true, true, ['pad-public', 'pad-external']];
+		yield 'both types, external off' => [true, true, false, [PadTemplateProvider::PUBLIC_TEMPLATE_ID]];
+		yield 'both types, external on' => [true, true, true, [PadTemplateProvider::PUBLIC_TEMPLATE_ID, PadTemplateProvider::EXTERNAL_TEMPLATE_ID]];
 		yield 'protected only' => [true, false, false, []];
 		yield 'public only' => [false, true, false, []];
-		yield 'public only, external on' => [false, true, true, ['pad-external']];
+		yield 'public only, external on' => [false, true, true, [PadTemplateProvider::EXTERNAL_TEMPLATE_ID]];
 	}
 
 	#[DataProvider('tileProvider')]
@@ -63,12 +63,27 @@ class PadTemplateProviderTest extends TestCase {
 			$this->providerWith($storage, false, false, true)->getCustomTemplates(self::MIME),
 		);
 
-		$this->assertSame(['pad-external'], $ids);
+		$this->assertSame([PadTemplateProvider::EXTERNAL_TEMPLATE_ID], $ids);
 	}
 
 	/** Nextcloud asks every provider for every creator. */
 	public function testIgnoresOtherMimetypes(): void {
 		$this->assertSame([], $this->buildProvider()->getCustomTemplates('text/markdown'));
+	}
+
+	/**
+	 * Nextcloud keys every provider's templates by this id in one map, so a
+	 * generic value would let two apps displace each other's tiles.
+	 */
+	public function testTheTemplateIdsCarryTheAppId(): void {
+		$ids = array_map(
+			static fn($t): string => (string)$t->jsonSerialize()['templateId'],
+			$this->buildProvider(external: true)->getCustomTemplates(self::MIME),
+		);
+
+		foreach ($ids as $id) {
+			$this->assertStringStartsWith('etherpad_nextcloud:', $id);
+		}
 	}
 
 	/** The tiles would otherwise show the generic document icon. */
@@ -151,7 +166,10 @@ class PadTemplateProviderTest extends TestCase {
 			$this->providerWith($storage, true, true, false)->getCustomTemplates(self::MIME),
 		);
 
-		$this->assertSame(['pad-public', 'global:Meeting notes.pad'], $ids);
+		$this->assertSame(
+			[PadTemplateProvider::PUBLIC_TEMPLATE_ID, 'etherpad_nextcloud:global:Meeting notes.pad'],
+			$ids,
+		);
 	}
 
 	/** The picker must open even when the shared templates cannot be read. */
@@ -178,9 +196,9 @@ class PadTemplateProviderTest extends TestCase {
 
 		$provider = $this->providerWith($storage, true, true, true);
 
-		$this->assertSame($publicMarker, $provider->getCustomTemplate('pad-public'));
-		$this->assertSame($externalMarker, $provider->getCustomTemplate('pad-external'));
-		$this->assertSame($global, $provider->getCustomTemplate('global:Meeting notes.pad'));
+		$this->assertSame($publicMarker, $provider->getCustomTemplate(PadTemplateProvider::PUBLIC_TEMPLATE_ID));
+		$this->assertSame($externalMarker, $provider->getCustomTemplate(PadTemplateProvider::EXTERNAL_TEMPLATE_ID));
+		$this->assertSame($global, $provider->getCustomTemplate('etherpad_nextcloud:global:Meeting notes.pad'));
 	}
 
 	/**
@@ -189,7 +207,9 @@ class PadTemplateProviderTest extends TestCase {
 	public static function unknownTemplateIdProvider(): iterable {
 		yield 'not ours' => ['some-user-template'];
 		yield 'empty' => [''];
-		yield 'shared template that is gone' => ['global:gone.pad'];
+		yield 'shared template that is gone' => ['etherpad_nextcloud:global:gone.pad'];
+		// Another app may hold the bare form; ours carries the app id.
+		yield 'unnamespaced id' => ['pad-public'];
 	}
 
 	#[DataProvider('unknownTemplateIdProvider')]

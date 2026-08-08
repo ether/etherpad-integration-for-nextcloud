@@ -167,13 +167,14 @@ class FileCreatedFromTemplateListener implements IEventListener {
 				// empty because the remote refused the export. The picker has
 				// no place to show that, and the viewer says so on open, so
 				// this is the record an admin can act on.
-				// The seeder's own value, not the input: a pasted address may
-				// carry a query or fragment, and canonicalisation is what drops
-				// them. A token in there has no business in the server log.
+				// Host only. A public pad's URL *is* its access link — logging
+				// it would hand out the pad to anyone who reads the log, and
+				// the same goes for the pad id in it. The file id identifies
+				// the file for anyone who may see it anyway.
 				$this->logger->warning('Linked an external pad whose content could not be fetched; the snapshot stays empty.', [
 					'app' => 'etherpad_nextcloud',
 					'fileId' => $fileId,
-					'padUrl' => (string)($seeded['pad_url'] ?? ''),
+					'padHost' => parse_url((string)($seeded['pad_url'] ?? ''), PHP_URL_HOST) ?: '',
 				]);
 			}
 		} catch (\Throwable $e) {

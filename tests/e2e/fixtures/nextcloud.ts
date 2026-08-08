@@ -82,16 +82,6 @@ export const createPublicPad = async (page: Page, fileName: string): Promise<str
 }
 
 /**
- * Create a pad that links an external Etherpad URL, through Nextcloud's own
- * template picker: the "Public pad from URL" tile carries a template field, so
- * the picker asks for the address and the file is linked as it is created.
- *
- * Returns `{ ok: true }` on success. When external pads are disabled or the
- * host is rejected, the listener removes the file again and Nextcloud reports
- * a create failure, so the file never appears — we return `{ ok: false }` in
- * that case rather than hanging until timeout.
- */
-/**
  * Create a pad from the "Public pad from URL" tile: Nextcloud's picker asks
  * for the pad's address through the tile's template field, and the create
  * listener links the file with it.

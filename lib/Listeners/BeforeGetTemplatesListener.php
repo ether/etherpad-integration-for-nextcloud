@@ -41,9 +41,10 @@ class BeforeGetTemplatesListener implements IEventListener {
 
 		foreach ($event->getTemplates() as $template) {
 			$serialized = $template->jsonSerialize();
-			// The type as well as the id: Nextcloud keeps template ids per
-			// provider, and `pad-external` is generic enough that another app
-			// could hold the same one. Rewriting its fields would be our bug.
+			// The type as well as the id: Nextcloud keeps all providers'
+			// templates in one map keyed by the id, so an id says less about
+			// ownership than it looks. Rewriting another app's fields would be
+			// our bug.
 			if (($serialized['templateType'] ?? '') !== PadTemplateProvider::class) {
 				continue;
 			}

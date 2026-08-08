@@ -33,11 +33,17 @@ use Psr\Log\LoggerInterface;
  * @psalm-api
  */
 class PadTemplateProvider implements ICustomTemplateProvider {
-	public const PUBLIC_TEMPLATE_ID = 'pad-public';
-	public const EXTERNAL_TEMPLATE_ID = 'pad-external';
+	/**
+	 * Nextcloud collects the templates of every provider into one map keyed by
+	 * this id alone, so a generic value would let another app's tile and ours
+	 * displace each other depending on registration order. The app id makes
+	 * them ours.
+	 */
+	public const PUBLIC_TEMPLATE_ID = Application::APP_ID . ':pad-public';
+	public const EXTERNAL_TEMPLATE_ID = Application::APP_ID . ':pad-external';
 	/** The field Nextcloud's picker asks for, read back by the create listener. */
 	public const FIELD_PAD_URL = 'pad_url';
-	private const GLOBAL_ID_PREFIX = 'global:';
+	private const GLOBAL_ID_PREFIX = Application::APP_ID . ':global:';
 
 	public function __construct(
 		private PadTemplateStorage $storage,

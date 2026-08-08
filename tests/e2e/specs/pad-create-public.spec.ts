@@ -20,10 +20,10 @@ import { deleteViaDav, getFileViaDav } from '../fixtures/dav'
 import { E2E } from '../fixtures/env'
 
 /**
- * Smoke flow #1 (issue #54): create an internal public pad via our
- * NewFileMenu entry + dialog, then confirm the native viewer mounts an
- * Etherpad iframe. Exercises the full plugin create path end-to-end:
- * dialog → POST create → frontmatter write → binding → viewer open.
+ * Smoke flow #1 (issue #54): create an internal public pad through the tile in
+ * Nextcloud's template picker, then confirm the native viewer mounts an
+ * Etherpad iframe. Exercises the full create path end-to-end: picker → create
+ * event → frontmatter write → binding → viewer open.
  */
 test.describe('public pad create + open', () => {
 	const padName = uniquePadName('public-create')

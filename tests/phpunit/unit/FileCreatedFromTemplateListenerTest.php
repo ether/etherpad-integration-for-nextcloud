@@ -185,11 +185,11 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 	}
 
 	/**
-	 * A pasted address may carry a query or fragment, and canonicalisation is
-	 * what drops them — so the record of an unavailable export must not repeat
-	 * what was typed, or a token would land in the server log.
+	 * A public pad's URL is its access link, and the pad id in it is enough to
+	 * open the pad — so the record of an unavailable export names the host and
+	 * the file, nothing that hands the pad to whoever reads the log.
 	 */
-	public function testLogsTheCanonicalAddressWhenTheRemoteExportIsUnavailable(): void {
+	public function testKeepsThePadOutOfTheLogWhenTheRemoteExportIsUnavailable(): void {
 		$marker = $this->file(PadTemplateStorage::EXTERNAL_TILE_NAME);
 		$target = $this->file('Team pad.pad');
 
@@ -226,7 +226,10 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 		]));
 
 		$this->assertCount(1, $logged);
-		$this->assertSame('https://pad.remote.test/p/RemotePad', $logged[0]['padUrl'] ?? null);
+		$this->assertSame('pad.remote.test', $logged[0]['padHost'] ?? null);
+		$this->assertSame(42, $logged[0]['fileId'] ?? null);
+		$this->assertStringNotContainsString('RemotePad', json_encode($logged[0]));
+		$this->assertStringNotContainsString('s3cret', json_encode($logged[0]));
 	}
 
 	/**

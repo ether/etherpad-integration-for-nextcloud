@@ -45,7 +45,7 @@ The Vite build writes runtime assets to `js/`; those built files must be present
 in the deployed app.
 
 Browser-level end-to-end checks live in a separate Playwright suite that drives
-a real Nextcloud instance (NewFileMenu create, viewer mount, share + revoke,
+a real Nextcloud instance (template-picker create, viewer mount, share + revoke,
 trash/restore, recovery, legacy migration, …). It is target-agnostic and
 credential-driven via `tests/e2e/.env.e2e`:
 
