@@ -17,5 +17,17 @@ if (!interface_exists(File::class)) {
 		public function getContent();
 
 		public function putContent($data): void;
+
+		// Nextcloud's Template serialises a file, so these are part of the
+		// contract even where the app itself never calls them.
+		public function getEtag(): string;
+
+		public function getMTime(): int;
+
+		public function getSize();
+
+		public function getType(): string;
+
+		public function delete(): void;
 	}
 }

@@ -304,6 +304,31 @@ solely by the separate external-pad policy, not by these two settings.
     page marks the input rather than reporting only at the bottom. No other
     fields are present on that response.
 
+- `GET /api/v1/admin/templates`
+  - Controller: `AdminController::listPadTemplates`
+  - Auth: admin only
+  - Result: `templates` — the shared templates, each with `name`, `size` and
+    `modified`.
+
+- `POST /api/v1/admin/templates`
+  - Controller: `AdminController::uploadPadTemplate`
+  - Auth: admin only
+  - Params: `name` (a `.pad` file name without a path), `content`, `replace`
+    (optional). Sent as a JSON body — URL-encoding a whole file would inflate
+    it several times over.
+  - An existing name is refused with field `template_exists` unless `replace`
+    is set. There is no versioning behind that folder, so overwriting is a
+    decision the caller has to state.
+  - Stores a template offered to everyone in the picker. Rejects anything that
+    is not a usable pad — no frontmatter pad id, a pad on another Etherpad
+    server, empty, or over 2 MiB — because the alternative is an error shown
+    to whoever picks the tile later.
+
+- `POST /api/v1/admin/templates/delete`
+  - Controller: `AdminController::deletePadTemplate`
+  - Auth: admin only
+  - Params: `name`
+
 - `POST /api/v1/admin/consistency-check`
   - Controller: `AdminController::consistencyCheck`
   - Auth: admin only

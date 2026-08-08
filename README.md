@@ -196,6 +196,18 @@ PHP checks and optional E2E checks are described in [docs/release-process.md](do
 - `+ New -> New pad`
 - `+ New -> Public pad` (internal public pad on the configured Etherpad instance, or external public pad by URL)
 
+An administrator can add **shared templates** under
+`Settings -> Administration -> Pads`: upload a `.pad` file and it appears as a
+tile for everyone. Its content becomes the new pad and placeholders such as
+`{{date}}` are resolved on creation. The pad type of the template is used when
+that type is enabled; otherwise the pad is created with the type that is
+available, which can turn a protected template into a public pad.
+
+Shared templates live in the instance's `appdata` directory, not in any user's
+files. They are covered by a full backup of the data directory, but not by a
+per-user export, and they have no file versioning or trash — uploading over an
+existing name asks for confirmation because the previous file is gone for good.
+
 ### Open pads
 
 - Click `.pad` file in Files app

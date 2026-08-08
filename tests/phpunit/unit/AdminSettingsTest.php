@@ -45,6 +45,27 @@ class AdminSettingsTest extends TestCase {
 		$this->assertSame('', (string)$params['cookie_domain_warning']);
 	}
 
+	/**
+	 * The template reads its labels and URLs out of this array by name, and a
+	 * missing key renders as an empty string — a section that silently loses
+	 * its heading, its hint and its button labels. Nothing else notices, so
+	 * the two are compared here.
+	 */
+	public function testProvidesEveryValueTheTemplateReads(): void {
+		$params = $this->renderWith('https://pad.example.test', true);
+		$template = (string)file_get_contents(__DIR__ . '/../../../templates/admin-settings.php');
+
+		preg_match_all("/\\\$_\\['([a-z0-9_]+)'\\](?!\\[)/", $template, $topLevel);
+		foreach (array_unique($topLevel[1]) as $key) {
+			$this->assertArrayHasKey($key, $params, 'Template reads $_[' . $key . ']');
+		}
+
+		preg_match_all("/\\\$_\\['l10n'\\]\\['([a-z0-9_]+)'\\]/", $template, $labels);
+		foreach (array_unique($labels[1]) as $key) {
+			$this->assertArrayHasKey($key, $params['l10n'], 'Template reads $_[l10n][' . $key . ']');
+		}
+	}
+
 	/** @return array<string,mixed> */
 	private function renderWith(string $etherpadHost, bool $protectedPadsEnabled): array {
 		$appValues = [

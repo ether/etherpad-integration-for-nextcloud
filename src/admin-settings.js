@@ -18,6 +18,11 @@
 	const allowlistRow = document.getElementById('external-pad-allowlist-row')
 	const allowlistHint = document.getElementById('external-pad-allowlist-hint')
 	const allowlistTextarea = document.getElementById('external-pad-allowlist')
+	const templateListNode = document.getElementById('epnc-template-list')
+	const templateEmptyNode = document.getElementById('epnc-template-empty')
+	const templateFileInput = document.getElementById('epnc-template-file')
+	const templateUploadButton = document.getElementById('epnc-template-upload')
+	const templateStatusNode = document.getElementById('epnc-template-status')
 	const fieldNodes = {
 		etherpad_host: form.querySelector('[name="etherpad_host"]'),
 		etherpad_api_host: form.querySelector('[name="etherpad_api_host"]'),
@@ -48,7 +53,16 @@
 		consistencyFailed: root.getAttribute('data-l10n-consistency-failed') || 'Consistency check failed.',
 		pendingDeleteLabel: root.getAttribute('data-l10n-pending-delete-label') || 'Pending Etherpad deletes',
 		retryFailed: root.getAttribute('data-l10n-retry-failed') || 'Pending delete retry failed.',
+		templateUploading: root.getAttribute('data-l10n-template-uploading') || 'Uploading template...',
+		templateDelete: root.getAttribute('data-l10n-template-delete') || 'Delete',
+		templateTooLarge: root.getAttribute('data-l10n-template-too-large') || 'Template file is too large.',
+		templateDeleteLabel: root.getAttribute('data-l10n-template-delete-label') || 'Delete template {name}',
+		templateConfirmDelete: root.getAttribute('data-l10n-template-confirm-delete') || 'Delete this template for everyone?',
+		templateFailed: root.getAttribute('data-l10n-template-failed') || 'Template request failed.',
+		templateConfirmReplace: root.getAttribute('data-l10n-template-confirm-replace') || 'Replace the existing template of that name?',
 	}
+	const templatesUrl = root.getAttribute('data-templates-url') || ''
+	const templatesDeleteUrl = root.getAttribute('data-templates-delete-url') || ''
 
 	if (saveUrl === '' || healthUrl === '' || consistencyUrl === '' || retryPendingUrl === '') {
 		return
@@ -123,9 +137,14 @@
 	}
 
 	// Starting one does clear the other: its result predates this action and
-	// would be read as belonging to it.
+	// would be read as belonging to it. The template status is its own group —
+	// uploading a template makes neither a connection test nor a save result
+	// stale, and vice versa.
 	function beginStatus(message, node = statusNode) {
-		for (const other of [statusNode, diagnosticsTarget, connectionTarget]) {
+		const group = node === templateStatusNode
+			? [templateStatusNode]
+			: [statusNode, diagnosticsTarget, connectionTarget]
+		for (const other of group) {
 			if (other instanceof HTMLElement && other !== node) {
 				other.textContent = ''
 				other.classList.remove('ep-status-success', 'ep-status-warning', 'ep-status-error')
@@ -170,6 +189,131 @@
 			// A passing field needs no prose — the tick and the label say it.
 			// A failing one needs the reason right there.
 			slot.textContent = status === 'ok' ? check.label : (detail || check.label)
+		}
+	}
+
+	// Shared templates: an admin uploads .pad files that everyone then sees as
+	// tiles in Nextcloud's picker.
+	function renderTemplates(templates) {
+		if (!(templateListNode instanceof HTMLElement)) {
+			return
+		}
+		templateListNode.replaceChildren()
+		const list = Array.isArray(templates) ? templates : []
+		showTemplateEmptyState(list.length === 0)
+		for (const template of list) {
+			if (!template || typeof template.name !== 'string') {
+				continue
+			}
+			templateListNode.appendChild(buildTemplateRow(template.name))
+		}
+	}
+
+	function buildTemplateRow(name) {
+		const row = document.createElement('li')
+		row.className = 'ep-template-row'
+
+		const label = document.createElement('span')
+		label.className = 'ep-template-name'
+		label.textContent = name
+		row.appendChild(label)
+
+		const remove = document.createElement('button')
+		remove.type = 'button'
+		remove.textContent = l10n.templateDelete
+		// The visible label repeats on every row, so the accessible name has to
+		// carry the name of the template this one removes.
+		remove.setAttribute('aria-label', l10n.templateDeleteLabel.replace('{name}', name))
+		remove.addEventListener('click', () => {
+			if (!window.confirm(l10n.templateConfirmDelete)) {
+				return
+			}
+			void deleteTemplate(name)
+		})
+		row.appendChild(remove)
+		return row
+	}
+
+	function showTemplateEmptyState(visible) {
+		if (templateEmptyNode instanceof HTMLElement) {
+			templateEmptyNode.style.display = visible ? '' : 'none'
+		}
+	}
+
+	// Every upload and delete starts another listing while the first may still
+	// be in flight. Without this the slower answer wins whenever it happens to
+	// arrive last, putting a deleted template back on the page or replacing a
+	// fresh result with an old error.
+	let templateListGeneration = 0
+
+	async function loadTemplates() {
+		if (templatesUrl === '' || !(templateListNode instanceof HTMLElement)) {
+			return
+		}
+		const generation = ++templateListGeneration
+		const isCurrent = () => generation === templateListGeneration
+
+		// "No shared templates yet" is an answer, and we do not have one until
+		// the request comes back — showing it next to an error would claim the
+		// list is empty when we simply could not read it.
+		showTemplateEmptyState(false)
+		try {
+			const response = await fetch(templatesUrl, {
+				credentials: 'same-origin',
+				headers: { requesttoken: String(OC.requestToken || '') },
+			})
+			const data = await readJsonResponse(response)
+			if (!isCurrent()) {
+				return
+			}
+			renderTemplates(data.templates)
+		} catch (error) {
+			if (!isCurrent()) {
+				return
+			}
+			showTemplateEmptyState(false)
+			setStatus(error instanceof Error ? error.message : l10n.templateFailed, 'error', templateStatusNode)
+		}
+	}
+
+	// The same limit the server enforces. Without it a mis-picked large file is
+	// read into memory and posted, only to hit post_max_size or the memory
+	// limit — a failure that says nothing, instead of the sentence below.
+	const MAX_TEMPLATE_BYTES = 2 * 1024 * 1024
+
+	async function uploadTemplate(file, replace = false) {
+		if (typeof file.size === 'number' && file.size > MAX_TEMPLATE_BYTES) {
+			setStatus(l10n.templateTooLarge, 'error', templateStatusNode)
+			return
+		}
+		beginStatus(l10n.templateUploading, templateStatusNode)
+		try {
+			const content = await file.text()
+			const data = await postJsonBody(templatesUrl, { name: file.name, content, replace })
+			setStatus(String(data.message || ''), 'success', templateStatusNode)
+			await loadTemplates()
+		} catch (error) {
+			// The server refuses to overwrite unless asked, so a name that is
+			// already taken comes back as a question rather than a failure.
+			if (!replace && error && error.field === 'template_exists') {
+				if (window.confirm(l10n.templateConfirmReplace)) {
+					await uploadTemplate(file, true)
+					return
+				}
+				setStatus('', null, templateStatusNode)
+				return
+			}
+			setStatus(error instanceof Error ? error.message : l10n.templateFailed, 'error', templateStatusNode)
+		}
+	}
+
+	async function deleteTemplate(name) {
+		try {
+			const data = await postJson(templatesDeleteUrl, { name })
+			setStatus(String(data.message || ''), 'success', templateStatusNode)
+			await loadTemplates()
+		} catch (error) {
+			setStatus(error instanceof Error ? error.message : l10n.templateFailed, 'error', templateStatusNode)
 		}
 	}
 
@@ -218,22 +362,9 @@
 		}
 	}
 
-	async function postJson(url, payload) {
-		const body = new URLSearchParams()
-		Object.keys(payload).forEach((key) => {
-			body.set(key, String(payload[key]))
-		})
-
-		const response = await fetch(url, {
-			method: 'POST',
-			credentials: 'same-origin',
-			headers: {
-				'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
-				requesttoken: String(OC.requestToken || ''),
-			},
-			body: body.toString(),
-		})
-
+	// One place decides what a response means, so a caller cannot forget to
+	// look at the status or at `ok` in the body.
+	async function readJsonResponse(response) {
 		let data = null
 		const responseText = await response.text()
 		try {
@@ -252,6 +383,42 @@
 		}
 
 		return data
+	}
+
+	/**
+	 * POST a JSON body. Used for the template upload, where URL-encoding a
+	 * whole file would inflate it several times over.
+	 */
+	async function postJsonBody(url, payload) {
+		const response = await fetch(url, {
+			method: 'POST',
+			credentials: 'same-origin',
+			headers: {
+				'Content-Type': 'application/json',
+				requesttoken: String(OC.requestToken || ''),
+			},
+			body: JSON.stringify(payload),
+		})
+		return readJsonResponse(response)
+	}
+
+	async function postJson(url, payload) {
+		const body = new URLSearchParams()
+		Object.keys(payload).forEach((key) => {
+			body.set(key, String(payload[key]))
+		})
+
+		const response = await fetch(url, {
+			method: 'POST',
+			credentials: 'same-origin',
+			headers: {
+				'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+				requesttoken: String(OC.requestToken || ''),
+			},
+			body: body.toString(),
+		})
+
+		return readJsonResponse(response)
 	}
 
 	form.addEventListener('submit', async (event) => {
@@ -343,6 +510,21 @@
 				setStatus(error instanceof Error ? error.message : l10n.retryFailed, 'error', diagnosticsTarget)
 			}
 		})
+	}
+
+	if (templateUploadButton instanceof HTMLElement && templateFileInput instanceof HTMLInputElement) {
+		templateUploadButton.addEventListener('click', () => {
+			templateFileInput.click()
+		})
+		templateFileInput.addEventListener('change', () => {
+			const file = templateFileInput.files && templateFileInput.files[0]
+			if (file) {
+				void uploadTemplate(file)
+			}
+			// Reset so picking the same file twice fires again.
+			templateFileInput.value = ''
+		})
+		void loadTemplates()
 	}
 
 	if (allowExternalCheckbox) {

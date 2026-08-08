@@ -12,5 +12,9 @@ if (!interface_exists(IURLGenerator::class)) {
 		public function getBaseUrl(): string;
 
 		public function getWebroot(): string;
+
+		public function imagePath(string $appName, string $file): string;
+
+		public function getAbsoluteURL(string $url): string;
 	}
 }

@@ -33,10 +33,13 @@ class RegisterTemplateCreatorListener implements IEventListener {
 			return;
 		}
 
-		// Nextcloud's own "+ New" entry always produces a protected pad — the
-		// blank file it creates is bootstrapped as one. Hide the entry when
-		// that type is switched off; public pads have their own menu entries.
-		if (!$this->padTypePolicy->isEnabled(BindingService::ACCESS_PROTECTED)) {
+		// This entry is the only way to create a pad from the Files app – and
+		// the only way to reach the shared templates – so it stays as long as
+		// either type is on: its blank option produces whichever one is
+		// available. Only with both switched off is there nothing to create.
+		$anyTypeEnabled = $this->padTypePolicy->isEnabled(BindingService::ACCESS_PROTECTED)
+			|| $this->padTypePolicy->isEnabled(BindingService::ACCESS_PUBLIC);
+		if (!$anyTypeEnabled) {
 			return;
 		}
 

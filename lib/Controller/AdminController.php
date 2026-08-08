@@ -21,6 +21,7 @@ use OCA\EtherpadNextcloud\Service\CookieDomainPolicy;
 use OCA\EtherpadNextcloud\Service\EtherpadHealthCheckService;
 use OCA\EtherpadNextcloud\Service\HealthCheckItem;
 use OCA\EtherpadNextcloud\Service\HealthCheckResult;
+use OCA\EtherpadNextcloud\Service\PadTemplateAdminService;
 use OCA\EtherpadNextcloud\Service\PendingDeleteRetryService;
 use OCA\EtherpadNextcloud\Service\ValidatedAdminSettings;
 use OCP\AppFramework\Controller;
@@ -55,6 +56,7 @@ class AdminController extends Controller {
 		private CookieDomainPolicy $cookieDomainPolicy,
 		private CookieDomainMessages $cookieDomainMessages,
 		private IURLGenerator $urlGenerator,
+		private PadTemplateAdminService $padTemplateAdmin,
 	) {
 		parent::__construct($appName, $request);
 	}
@@ -194,6 +196,54 @@ class AdminController extends Controller {
 		if (!$this->groupManager->isAdmin($user->getUID())) {
 			throw new AdminPermissionRequiredException('Admin permissions required.');
 		}
+	}
+
+	public function listPadTemplates(): DataResponse {
+		return $this->errors->run(
+			function (): array {
+				$this->requireAdmin();
+				return $this->padTemplateAdmin->list();
+			},
+			fn(array $templates): DataResponse => new DataResponse(['ok' => true, 'templates' => $templates]),
+			['generic' => $this->l10n->t('Could not read the templates.'), 'log_message' => 'Listing pad templates failed'],
+		);
+	}
+
+	public function uploadPadTemplate(): DataResponse {
+		return $this->errors->run(
+			function (): array {
+				$this->requireAdmin();
+				$payload = $this->readJsonPayload();
+				return $this->padTemplateAdmin->add(
+					(string)($payload['name'] ?? ''),
+					(string)($payload['content'] ?? ''),
+					filter_var($payload['replace'] ?? false, FILTER_VALIDATE_BOOLEAN),
+				);
+			},
+			fn(array $template): DataResponse => new DataResponse([
+				'ok' => true,
+				'message' => $this->l10n->t('Template saved.'),
+				'template' => $template,
+			]),
+			['generic' => $this->l10n->t('Could not save the template.'), 'log_message' => 'Saving a pad template failed'],
+		);
+	}
+
+	public function deletePadTemplate(): DataResponse {
+		return $this->errors->run(
+			function (): string {
+				$this->requireAdmin();
+				$name = (string)($this->readJsonPayload()['name'] ?? '');
+				$this->padTemplateAdmin->delete($name);
+				return $name;
+			},
+			fn(string $name): DataResponse => new DataResponse([
+				'ok' => true,
+				'message' => $this->l10n->t('Template deleted.'),
+				'name' => $name,
+			]),
+			['generic' => $this->l10n->t('Could not delete the template.'), 'log_message' => 'Deleting a pad template failed'],
+		);
 	}
 
 	/** @param list<HealthCheckItem> $checks */

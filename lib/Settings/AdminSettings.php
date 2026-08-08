@@ -90,12 +90,30 @@ class AdminSettings implements ISettings {
 			'health_check_url' => $this->urlGenerator->linkToRoute('etherpad_nextcloud.admin.healthCheck'),
 			'consistency_check_url' => $this->urlGenerator->linkToRoute('etherpad_nextcloud.admin.consistencyCheck'),
 			'retry_pending_deletes_url' => $this->urlGenerator->linkToRoute('etherpad_nextcloud.admin.retryPendingDeletes'),
+			'templates_url' => $this->urlGenerator->linkToRoute('etherpad_nextcloud.admin.listPadTemplates'),
+			'templates_delete_url' => $this->urlGenerator->linkToRoute('etherpad_nextcloud.admin.deletePadTemplate'),
 			'l10n' => [
 				'section_title' => $this->l10n->t('Pads'),
 				'intro' => $this->l10n->t('Configure the Etherpad server and external pad security policy for the Etherpad Nextcloud app.'),
 				'section_server' => $this->l10n->t('Etherpad server'),
 				'section_pad_types' => $this->l10n->t('Pad types and behaviour'),
 				'section_external' => $this->l10n->t('External pads and embedding'),
+				'section_templates' => $this->l10n->t('Shared pad templates'),
+				'section_templates_hint' => $this->l10n->t('Templates offered to everyone when creating a pad. Upload a .pad file: its content becomes the new pad, and placeholders such as {{date}} are resolved on creation. The pad type of the template is used when that type is enabled; otherwise the pad is created with the type that is available, which can turn a protected template into a public pad.'),
+				'templates_none' => $this->l10n->t('No shared templates yet.'),
+				'templates_upload_button' => $this->l10n->t('Upload template'),
+				'templates_delete_button' => $this->l10n->t('Delete'),
+				// Its own sentence: gluing the button label to the file name
+				// gives "Löschen Meeting.pad" in German, which no translator
+				// can fix from the parts.
+				'templates_delete_label' => $this->l10n->t('Delete template {name}'),
+				// Same sentence the server answers with, so the page can say it
+				// before reading a file it would only be refused for.
+				'templates_too_large' => $this->l10n->t('Template file is too large.'),
+				'templates_uploading' => $this->l10n->t('Uploading template...'),
+				'templates_confirm_delete' => $this->l10n->t('Delete this template for everyone?'),
+				'templates_confirm_replace' => $this->l10n->t('Replace the existing template of that name?'),
+				'templates_failed' => $this->l10n->t('Template request failed.'),
 				'section_diagnostics' => $this->l10n->t('Diagnostics'),
 				'section_connection_hint' => $this->l10n->t('Checks that Nextcloud reaches the Etherpad API with the values above.'),
 				'section_consistency_hint' => $this->l10n->t('Looks for pad links whose .pad file no longer exists.'),

@@ -10,10 +10,17 @@ if (!interface_exists(Folder::class)) {
 
 		public function get(string $path): mixed;
 
-		public function newFile(string $name): mixed;
+		public function newFile(string $name, $content = null): mixed;
+
+		public function newFolder(string $path): Folder;
 
 		public function isCreatable(): bool;
 
 		public function getPath(): string;
+
+		public function delete(): void;
+
+		/** @return array<int,mixed> */
+		public function getDirectoryListing(): array;
 	}
 }

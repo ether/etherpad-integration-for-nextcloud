@@ -63,6 +63,9 @@ class Application extends App implements IBootstrap {
 				\OCA\EtherpadNextcloud\Listeners\RegisterTemplateCreatorListener::class,
 			);
 		}
+		if (interface_exists('OCP\\Files\\Template\\ICustomTemplateProvider')) {
+			$context->registerTemplateProvider(\OCA\EtherpadNextcloud\Template\PadTemplateProvider::class);
+		}
 		if (class_exists(FileCreatedFromTemplateEvent::class)) {
 			$context->registerEventListener(
 				FileCreatedFromTemplateEvent::class,
