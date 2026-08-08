@@ -60,6 +60,20 @@ class BeforeGetTemplatesListenerTest extends TestCase {
 		$this->assertSame([], $template->jsonSerialize()['fields'] ?? []);
 	}
 
+	/**
+	 * The listing dispatch asks for templates, not for their fields — and
+	 * nobody overwrites them there either, so there is nothing to restore and
+	 * no reason to touch every template on every picker open.
+	 */
+	public function testDoesNothingWhenTheEventIsNotAskingForFields(): void {
+		$template = new Template(PadTemplateProvider::class, PadTemplateProvider::EXTERNAL_TEMPLATE_ID, $this->file());
+		$template->setFields([]);
+
+		$this->buildListener()->handle(new BeforeGetTemplatesEvent([$template], false));
+
+		$this->assertSame([], $template->jsonSerialize()['fields'] ?? []);
+	}
+
 	private function buildListener(): BeforeGetTemplatesListener {
 		$l10n = $this->createMock(IL10N::class);
 		$l10n->method('t')->willReturnArgument(0);

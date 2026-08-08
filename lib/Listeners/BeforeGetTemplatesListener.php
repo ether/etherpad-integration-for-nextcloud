@@ -38,6 +38,15 @@ class BeforeGetTemplatesListener implements IEventListener {
 		if (!$event instanceof BeforeGetTemplatesEvent) {
 			return;
 		}
+		// Nextcloud dispatches this twice: once to list templates, once to ask
+		// for their fields. Only the second one is ours to answer — and only
+		// there does Collabora overwrite anything, because its listener checks
+		// the same flag. The method arrives with Nextcloud 32; on 31 neither
+		// app can ask, so both act on every dispatch and the field still
+		// survives.
+		if (method_exists($event, 'shouldGetFields') && !$event->shouldGetFields()) {
+			return;
+		}
 
 		foreach ($event->getTemplates() as $template) {
 			$serialized = $template->jsonSerialize();
