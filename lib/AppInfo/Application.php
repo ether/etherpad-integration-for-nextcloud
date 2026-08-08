@@ -66,6 +66,17 @@ class Application extends App implements IBootstrap {
 		if (interface_exists('OCP\\Files\\Template\\ICustomTemplateProvider')) {
 			$context->registerTemplateProvider(\OCA\EtherpadNextcloud\Template\PadTemplateProvider::class);
 		}
+		if (class_exists('OCP\\Files\\Template\\BeforeGetTemplatesEvent')) {
+			// Below the default priority, deliberately: other apps answer this
+			// event for every template in it, ours included, and would
+			// otherwise drop the field the external tile asks its address
+			// with. This runs after every listener that kept the default.
+			$context->registerEventListener(
+				'OCP\\Files\\Template\\BeforeGetTemplatesEvent',
+				\OCA\EtherpadNextcloud\Listeners\BeforeGetTemplatesListener::class,
+				-100,
+			);
+		}
 		if (class_exists(FileCreatedFromTemplateEvent::class)) {
 			$context->registerEventListener(
 				FileCreatedFromTemplateEvent::class,

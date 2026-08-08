@@ -6,7 +6,7 @@ import { test, expect } from '@playwright/test'
 import {
 	gotoFiles,
 	closeViewer,
-	createExternalPublicPadFromUrl,
+	createExternalPadFromTile,
 	createPublicPad,
 	expectFileInList,
 	expectExternalSnapshotViewerMounted,
@@ -16,13 +16,14 @@ import {
 	readEtherpadUrlFromViewer,
 	uniquePadName,
 } from '../fixtures/nextcloud'
-import { deleteViaDav } from '../fixtures/dav'
+import { deleteViaDav, getFileViaDav } from '../fixtures/dav'
+import { E2E } from '../fixtures/env'
 
 /**
- * Smoke flow #1 (issue #54): create an internal public pad via our
- * NewFileMenu entry + dialog, then confirm the native viewer mounts an
- * Etherpad iframe. Exercises the full plugin create path end-to-end:
- * dialog → POST create → frontmatter write → binding → viewer open.
+ * Smoke flow #1 (issue #54): create an internal public pad through the tile in
+ * Nextcloud's template picker, then confirm the native viewer mounts an
+ * Etherpad iframe. Exercises the full create path end-to-end: picker → create
+ * event → frontmatter write → binding → viewer open.
  */
 test.describe('public pad create + open', () => {
 	const padName = uniquePadName('public-create')
@@ -38,6 +39,11 @@ test.describe('public pad create + open', () => {
 
 		// The file shows up in the listing.
 		await expectFileInList(page, padName)
+
+		// The tile is what makes this pad public. Without this assertion a
+		// missing tile would silently produce a protected pad and every other
+		// check here would still pass.
+		expect(await getFileViaDav(padName)).toContain('access_mode: "public"')
 
 		// Viewer mounts with an Etherpad iframe (not the no-viewer error template).
 		await expectEtherpadViewerMounted(page)
@@ -64,7 +70,12 @@ test.describe('existing public pad open', () => {
 	})
 })
 
-test.describe('external public pad create + snapshot viewer', () => {
+/**
+ * The "Public pad from URL" tile in Nextcloud's template picker. The tile
+ * carries a template field, so the picker collects the address itself and the
+ * create listener links the file with it — no half-finished file is stored.
+ */
+test.describe('external pad from the template picker', () => {
 	const sourcePadName = uniquePadName('external-source')
 	const externalPadName = uniquePadName('external-import')
 
@@ -73,19 +84,31 @@ test.describe('external public pad create + snapshot viewer', () => {
 		await deleteViaDav(sourcePadName)
 	})
 
-	test('imports an Etherpad URL and opens the external snapshot viewer', async ({ page }) => {
+	test('asks for the pad address in the picker and opens the remote pad', async ({ page }) => {
+		// Configuration is declared, not guessed: inferring it from the tile
+		// would let a broken provider or registration pass as a skip.
+		test.skip(
+			!E2E.externalPadsEnabled,
+			'Set E2E_EXTERNAL_PADS=1 once the instance has allow_external_pads=yes and an allowlisted Etherpad host.',
+		)
 		await gotoFiles(page)
 		await createPublicPad(page, sourcePadName)
 		await expectEtherpadViewerMounted(page)
 		const etherpadUrl = await readEtherpadUrlFromViewer(page)
 		await closeViewer(page)
 
-		const result = await createExternalPublicPadFromUrl(page, etherpadUrl, externalPadName)
-		test.skip(
-			!result.ok,
-			`External pad import unavailable on this instance (${result.error ?? 'rejected'}); `
-			+ 'needs allow_external_pads=yes and a resolvable, allowlisted Etherpad host.',
-		)
+		await createExternalPadFromTile(page, etherpadUrl, externalPadName)
+
+		// Nextcloud opens the file it just created, and a linked external pad
+		// opens straight into the snapshot view — so only open it from the list
+		// when that has not already happened.
+		const alreadyOpen = await page.locator('.epnc-native-snapshot').first()
+			.waitFor({ state: 'visible', timeout: 20_000 })
+			.then(() => true)
+			.catch(() => false)
+		if (!alreadyOpen) {
+			await openPadFromFileList(page, externalPadName)
+		}
 		await expectExternalSnapshotViewerMounted(page, etherpadUrl)
 	})
 })

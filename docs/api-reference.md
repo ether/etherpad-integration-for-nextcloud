@@ -94,6 +94,9 @@ solely by the separate external-pad policy, not by these two settings.
     - `file` (required)
     - `accessMode` (`public|protected`, optional, default `protected`)
   - Result: creates pad, file, and binding.
+  - The app's own UI no longer calls this: a pad type is picked in Nextcloud's
+    template picker, which creates the file itself. The endpoint stays for API
+    consumers and behaves as before.
 
 - `POST /api/v1/pads/create-by-parent`
   - Controller: `PadCreateController::createByParent`
@@ -399,10 +402,6 @@ solely by the separate external-pad policy, not by these two settings.
 - `src/files/pad-opener.js`
   - opens in files view through Nextcloud router (`fileid`, `openfile=true`).
   - clears `openfile`/`editing` again when the native viewer closes.
-- `src/files/public-pad-menu.js`
-  - registers `Public pad` in `+ Neu` via API-only runtime capability checks:
-    - modern: `addNewFileMenuEntry` / `getNewFileMenu().registerEntry`
-    - legacy fallback: `OC.Plugins.register('OCA.Files.NewFileMenu', ...)`
 - `src/files/public-share-pad-links.js`
   - global click interception is only used on public-share routes to remap share download links to the pad viewer.
 - `src/files/route-controller.js`

@@ -24,6 +24,110 @@ use PHPUnit\Framework\TestCase;
 
 class PadTemplateStorageTest extends TestCase {
 	private const FOLDER_PATH = '/appdata_testinstance/etherpad_nextcloud/templates';
+	private const MARKER_PATH = '/appdata_testinstance/etherpad_nextcloud/type_templates';
+
+	public function testReusesAnExistingMarker(): void {
+		$marker = $this->namedFile(PadTemplateStorage::PUBLIC_TILE_NAME);
+		$folder = $this->folderWith([PadTemplateStorage::PUBLIC_TILE_NAME => $marker]);
+		$folder->expects($this->never())->method('newFile');
+
+		$this->assertSame($marker, $this->buildStorage($folder)->publicMarker());
+	}
+
+	public function testCreatesTheMarkerWhenItIsMissing(): void {
+		$created = $this->namedFile(PadTemplateStorage::EXTERNAL_TILE_NAME);
+		$folder = $this->folderWith([]);
+		$folder->expects($this->once())
+			->method('newFile')
+			->with(PadTemplateStorage::EXTERNAL_TILE_NAME, '')
+			->willReturn($created);
+
+		$this->assertSame($created, $this->buildStorage($folder)->externalMarker());
+	}
+
+	/** Two first requests can try to create the same marker at once. */
+	public function testRereadsWhenAnotherRequestCreatedTheMarkerFirst(): void {
+		$existing = $this->namedFile(PadTemplateStorage::PUBLIC_TILE_NAME);
+		$calls = 0;
+		$folder = $this->createMock(Folder::class);
+		$folder->method('getPath')->willReturn(self::FOLDER_PATH);
+		$folder->method('get')->willReturnCallback(
+			function () use (&$calls, $existing): File {
+				$calls += 1;
+				if ($calls === 1) {
+					throw new NotFoundException('not yet');
+				}
+				return $existing;
+			}
+		);
+		$folder->method('newFile')->willThrowException(new \RuntimeException('already exists'));
+
+		$this->assertSame($existing, $this->buildStorage($folder)->publicMarker());
+	}
+
+	/**
+	 * Losing a race is not an error; running out of space is. Answering the
+	 * second with "not found" would hide what actually went wrong.
+	 */
+	public function testKeepsTheCreateErrorWhenTheMarkerIsStillMissing(): void {
+		$folder = $this->folderWith([]);
+		$folder->method('newFile')->willThrowException(new \RuntimeException('no space left'));
+
+		$this->expectExceptionMessage('no space left');
+		$this->buildStorage($folder)->publicMarker();
+	}
+
+	public function testRecognisesEachMarkerByItsPath(): void {
+		$storage = $this->buildStorage($this->folderWith([]));
+
+		$this->assertTrue($storage->isPublicMarkerFile($this->fileAt(self::MARKER_PATH . '/' . PadTemplateStorage::PUBLIC_TILE_NAME)));
+		$this->assertTrue($storage->isExternalMarkerFile($this->fileAt(self::MARKER_PATH . '/' . PadTemplateStorage::EXTERNAL_TILE_NAME)));
+		$this->assertSame('public', $storage->accessModeForTemplateFile($this->fileAt(self::MARKER_PATH . '/' . PadTemplateStorage::PUBLIC_TILE_NAME)));
+	}
+
+	/**
+	 * A user's own template may carry the same name. It lives in their files,
+	 * not under appdata, so only the path can tell the two apart.
+	 */
+	public function testDoesNotMistakeAUserFileOfTheSameNameForAMarker(): void {
+		$storage = $this->buildStorage($this->folderWith([]));
+		$userFile = $this->fileAt('/alice/files/Templates/' . PadTemplateStorage::PUBLIC_TILE_NAME);
+
+		$this->assertFalse($storage->isPublicMarkerFile($userFile));
+		$this->assertSame('', $storage->accessModeForTemplateFile($userFile));
+	}
+
+	/**
+	 * Recognising a marker runs while a file is being created: it must not
+	 * write, and a storage that is unavailable must not be able to answer
+	 * "not a marker" — the caller would then treat the external tile as an
+	 * ordinary template and quietly produce a local pad.
+	 */
+	public function testRecognisingAMarkerTouchesNoStorageAtAll(): void {
+		$folder = $this->createMock(Folder::class);
+		$folder->expects($this->never())->method('newFile');
+		$folder->expects($this->never())->method('get');
+		$folder->expects($this->never())->method('getDirectoryListing');
+
+		$appData = $this->createMock(IAppData::class);
+		$appData->expects($this->never())->method('getFolder');
+		$appData->expects($this->never())->method('newFolder');
+
+		$storage = $this->buildStorage($folder, null, $appData);
+
+		$this->assertTrue($storage->isExternalMarkerFile($this->fileAt(self::MARKER_PATH . '/' . PadTemplateStorage::EXTERNAL_TILE_NAME)));
+		$this->assertFalse($storage->isPublicMarkerFile($this->fileAt('/somewhere/else.pad')));
+	}
+
+	/**
+	 * An admin template of the same name keeps being a template: the markers
+	 * have their own folder, so an upload can never be turned into a tile.
+	 */
+	public function testDoesNotMistakeASharedTemplateOfTheSameNameForAMarker(): void {
+		$storage = $this->buildStorage($this->folderWith([]));
+
+		$this->assertFalse($storage->isPublicMarkerFile($this->fileAt(self::FOLDER_PATH . '/' . PadTemplateStorage::PUBLIC_TILE_NAME)));
+	}
 
 	public function testListsUploadedTemplatesByName(): void {
 		$folder = $this->createMock(Folder::class);
@@ -68,6 +172,35 @@ class PadTemplateStorageTest extends TestCase {
 
 		$this->assertSame($wanted, $storage->globalTemplate('agenda.pad'));
 		$this->assertNull($storage->globalTemplate('../../secrets.pad'));
+	}
+
+	/** The uploads and the markers must not share a folder. */
+	public function testReadsTheTemplatesAndTheMarkersFromDifferentFolders(): void {
+		$requested = [];
+		$folder = $this->folderWith([]);
+		$folder->method('newFile')->willReturn($this->namedFile(PadTemplateStorage::PUBLIC_TILE_NAME));
+
+		$rootFolder = $this->createMock(IRootFolder::class);
+		$rootFolder->method('getAppDataDirectoryName')->willReturn('appdata_testinstance');
+		$rootFolder->method('get')->willReturnCallback(
+			function (string $path) use (&$requested, $folder): Folder {
+				$requested[] = $path;
+				return $folder;
+			}
+		);
+		$appData = $this->createMock(IAppData::class);
+		$appData->method('getFolder')->willReturn($this->createMock(ISimpleFolder::class));
+		$appDataFactory = $this->createMock(IAppDataFactory::class);
+		$appDataFactory->method('get')->willReturn($appData);
+
+		$storage = new PadTemplateStorage($rootFolder, $appDataFactory, $this->createMock(ILockingProvider::class));
+		$storage->globalTemplates();
+		$storage->publicMarker();
+
+		$this->assertSame(
+			[ltrim(self::FOLDER_PATH, '/'), ltrim(self::MARKER_PATH, '/')],
+			$requested,
+		);
 	}
 
 	public function testStoresANewTemplate(): void {
@@ -313,7 +446,17 @@ class PadTemplateStorageTest extends TestCase {
 
 		$rootFolder = $this->createMock(IRootFolder::class);
 		$rootFolder->method('getAppDataDirectoryName')->willReturn('appdata_testinstance');
-		$rootFolder->method('get')->willReturn($templateFolder);
+		// Both folders answer, but each only under its own path: a storage that
+		// went back to one folder for both would fail these tests instead of
+		// passing them quietly.
+		$rootFolder->method('get')->willReturnCallback(
+			function (string $path) use ($templateFolder): Folder {
+				if (in_array('/' . ltrim($path, '/'), [self::FOLDER_PATH, self::MARKER_PATH], true)) {
+					return $templateFolder;
+				}
+				throw new NotFoundException($path);
+			}
+		);
 
 		return new PadTemplateStorage(
 			$rootFolder,
@@ -336,6 +479,12 @@ class PadTemplateStorageTest extends TestCase {
 			}
 		);
 		return $folder;
+	}
+
+	private function fileAt(string $path): File {
+		$file = $this->createMock(File::class);
+		$file->method('getPath')->willReturn($path);
+		return $file;
 	}
 
 	private function namedFile(string $name): File {

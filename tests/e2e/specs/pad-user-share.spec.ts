@@ -43,8 +43,9 @@ test.describe('user-to-user pad share', () => {
 	// Drives two browser contexts plus the full pad-create flow; user B's
 	// session is pre-built by the setup project (storageState) so the test
 	// itself does not pay for a form login. Still give some headroom for
-	// the two real Etherpad viewer mounts.
-	test.describe.configure({ timeout: 90_000 })
+	// the two real Etherpad viewer mounts — and for the extra step pad
+	// creation gained when the type moved into Nextcloud's template picker.
+	test.describe.configure({ timeout: 150_000 })
 
 	const padName = uniquePadName('user-share')
 	let shareId = ''

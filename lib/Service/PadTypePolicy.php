@@ -44,6 +44,15 @@ class PadTypePolicy {
 		};
 	}
 
+	/**
+	 * Whether a pad can be provisioned locally at all. External pads are not a
+	 * pad type and are not covered — they follow `allow_external_pads`.
+	 */
+	public function hasAnyEnabledType(): bool {
+		return $this->isEnabled(BindingService::ACCESS_PROTECTED)
+			|| $this->isEnabled(BindingService::ACCESS_PUBLIC);
+	}
+
 	/** @throws PadTypeDisabledException */
 	public function requireEnabled(string $accessMode): void {
 		if ($this->isEnabled($accessMode)) {

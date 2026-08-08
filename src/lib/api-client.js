@@ -48,19 +48,6 @@ export const apiResolvePadByPath = async (path) => {
 	return request
 }
 
-export const apiCreatePadFromUrl = async (filePath, padUrl) => {
-	const endpoint = ocGenerateUrl('/apps/' + APP_ID + '/api/v1/pads/from-url')
-	const body = new URLSearchParams()
-	body.set('file', filePath)
-	body.set('padUrl', padUrl)
-
-	return fetchJson(endpoint, {
-		method: 'POST',
-		headers: formHeaders(),
-		body: body.toString(),
-	}, 'Could not import public pad URL.')
-}
-
 export const apiFindOriginalPad = async (fileId) => {
 	const endpoint = ocGenerateUrl('/apps/' + APP_ID + '/api/v1/pads/find-original/' + encodeURIComponent(String(fileId)))
 	return fetchJson(endpoint, {
@@ -84,24 +71,6 @@ export const apiRecoverFromSnapshot = async (fileId) => {
 	return result
 }
 
-export const apiCreatePublicPad = async (filePath) => {
-	const endpoint = ocGenerateUrl('/apps/' + APP_ID + '/api/v1/pads')
-	const body = new URLSearchParams()
-	body.set('file', filePath)
-	body.set('accessMode', 'public')
-
-	return fetchJson(endpoint, {
-		method: 'POST',
-		headers: formHeaders(),
-		body: body.toString(),
-	}, 'Could not create public pad.')
-}
-
-const formHeaders = () => ({
-	Accept: 'application/json',
-	'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
-	requesttoken: ocRequestToken(),
-})
 
 const getResolveCache = (cacheKey) => {
 	const cached = RESOLVE_CACHE.get(cacheKey)

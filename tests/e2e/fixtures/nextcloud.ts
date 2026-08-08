@@ -59,6 +59,13 @@ export const runAdminEtherpadHealthCheck = async (page: Page): Promise<void> => 
 		.toHaveClass(/ep-check-ok/, { timeout: 30_000 })
 }
 
+/**
+ * The label of our template tile. It is the marker file's name, so it stays
+ * the same in every language — a template is a file, and files have names,
+ * not translations.
+ */
+const PUBLIC_PAD_TEMPLATE = 'Public pad'
+
 /** Click the Files "+ New" toolbar button and wait for its menu. */
 const openNewMenu = async (page: Page): Promise<void> => {
 	await page.locator('[data-cy-upload-picker] button, .upload-picker button').first().click()
@@ -66,67 +73,51 @@ const openNewMenu = async (page: Page): Promise<void> => {
 }
 
 /**
- * Create an internal public pad through our own "Public pad" NewFileMenu
- * entry + dialog. Returns the final file name used.
+ * Create a public pad. The type is chosen in Nextcloud's own template picker,
+ * so this goes through the same flow as any other template — only the tile
+ * differs. Returns the final file name used.
  */
 export const createPublicPad = async (page: Page, fileName: string): Promise<string> => {
-	await openNewMenu(page)
-	// Menu entry label is localized; match our pad entries by their icon
-	// menuitem text fallback. The internal entry is "Public pad".
-	await page.getByRole('menuitem', { name: /public pad(?! from)|öffentliches pad(?! aus)/i }).first().click()
-
-	await expect(page.getByText(/public pad|öffentliches pad/i).first()).toBeVisible()
-
-	const input = page.locator('[data-testid="epnc-filename-input"], input[type="text"]:visible').last()
-	await input.fill(fileName)
-	await page.locator('[data-testid="epnc-create-submit"]').or(page.getByRole('button', { name: /create|erstellen/i })).first().click()
-
-	// On success the dialog closes.
-	await expect(page.getByText(/public pad|öffentliches pad/i).first()).toBeHidden({ timeout: 30_000 })
-	return fileName
+	return createPadFromTemplate(page, PUBLIC_PAD_TEMPLATE, fileName)
 }
 
 /**
- * Create an external public pad from an existing Etherpad URL. The dialog is
- * intentionally exercised through the UI because most regressions here happen
- * in the Files-app menu/dialog glue, not only in the backend API.
+ * Create a pad from the "Public pad from URL" tile: Nextcloud's picker asks
+ * for the pad's address through the tile's template field, and the create
+ * listener links the file with it.
  *
- * Returns `{ ok: true }` on success. When external pads are disabled or the
- * host is rejected, the dialog shows an inline error instead of closing;
- * we return `{ ok: false, error }` so the caller can skip rather than hang
- * until timeout. Filling the URL auto-suggests a file name (on blur), so we
- * set the name *after* the URL and target the field by test id rather than
- * relying on tab order.
+ * Whether external pads are configured is read from the environment, not from
+ * the page — a missing tile is a regression here, and every step below has to
+ * succeed.
  */
-export const createExternalPublicPadFromUrl = async (
-	page: Page,
-	padUrl: string,
-	fileName: string,
-): Promise<{ ok: boolean, error?: string }> => {
+export const createExternalPadFromTile = async (page: Page, padUrl: string, fileName: string): Promise<string> => {
 	await openNewMenu(page)
-	await page.getByRole('menuitem', { name: /public pad from url|öffentliches pad aus url/i }).first().click()
+	await page.getByRole('menuitem', { name: /new pad|neues pad/i }).first().click()
 
-	const modal = page.locator('[data-epnc-modal="external"]')
-	await expect(modal).toBeVisible()
+	const fileNameInput = page.locator('input[type="text"]:visible').last()
+	await fileNameInput.fill(fileName.replace(/\.pad$/i, ''))
+	await page.getByRole('button', { name: /^(create|erstellen)$/i }).last().click()
 
-	const urlInput = modal.locator('[data-testid="epnc-external-url-input"]')
+	const tile = page.getByRole('dialog').getByText('Public pad from URL', { exact: true }).first()
+	await expect(tile).toBeVisible({ timeout: 15_000 })
+	await tile.click()
+	// The picker confirms with an <input type="submit">, not a button, so match
+	// the control itself: a by-label match also finds the "+ New" menu entries
+	// still in the page behind the modal.
+	await page.locator('.templates-picker__buttons input[type="submit"]').click()
+
+	// Nextcloud's field modal, rendered from the tile's template field.
+	const urlInput = page.locator('input[type="text"]:visible').last()
+	await expect(urlInput).toBeVisible({ timeout: 15_000 })
 	await urlInput.fill(padUrl)
-	await urlInput.blur()
+	// Its accessible name comes from an aria-label ("Submit button"), not from
+	// the visible, translated caption — so match either, unanchored.
+	await page.getByRole('button', { name: /submit|übermitteln/i }).last().click()
 
-	// Set the name explicitly after the URL's blur-suggestion, by test id.
-	await modal.locator('[data-testid="epnc-filename-input"]').fill(fileName)
-	await modal.locator('[data-testid="epnc-create-submit"]').click()
-
-	// Race success (dialog closes) against the inline error (feature off /
-	// host rejected) so a disabled instance skips instead of timing out.
-	const errorNode = modal.locator('[data-testid="epnc-modal-error"]')
-	const result = await Promise.race([
-		modal.waitFor({ state: 'hidden', timeout: 30_000 }).then(() => ({ ok: true as const })),
-		errorNode.filter({ hasText: /\S/ }).waitFor({ state: 'visible', timeout: 30_000 })
-			.then(async () => ({ ok: false as const, error: (await errorNode.textContent())?.trim() || 'rejected' })),
-	])
-	return result
+	await expectFileInList(page, fileName)
+	return fileName
 }
+
 
 /**
  * Create a pad from a SPECIFIC template via NC's template picker (as
@@ -143,11 +134,13 @@ export const createPadFromTemplate = async (page: Page, templateLabel: string, f
 	await page.getByRole('button', { name: /^(create|erstellen)$/i }).last().click()
 
 	// Step 2 — the template chooser ("Choose a template for …"). Pick the
-	// tile labelled with our template's (extension-stripped) file name,
-	// then confirm. The tile may not be a button, so match by text and
-	// click the enclosing option.
+	// tile labelled with our template's (extension-stripped) file name, then
+	// confirm. The tile is not a button, so match by text — but only inside
+	// the dialog and only on an exact label: the "+ New" menu is still in the
+	// page behind it, and its "Public pad from URL" entry contains the label
+	// of the "Public pad" tile.
 	const tileLabel = templateLabel.replace(/\.pad$/i, '')
-	const tile = page.getByText(tileLabel, { exact: false }).first()
+	const tile = page.getByRole('dialog').getByText(tileLabel, { exact: true }).first()
 	await expect(tile).toBeVisible({ timeout: 15_000 })
 	await tile.click()
 	await page.getByRole('button', { name: /create|erstellen|anhand der ausgewählten vorlage/i }).last().click()

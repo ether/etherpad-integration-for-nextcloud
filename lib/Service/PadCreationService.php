@@ -328,22 +328,18 @@ class PadCreationService {
 			throw new \InvalidArgumentException('Template is empty.');
 		}
 
+		// readPad() has already rejected a missing pad id and an access mode
+		// that is neither public nor protected, so what is left to check here
+		// is what only a template cares about.
 		$pad = $this->padFileService->readPad($templateContent);
-		if ($pad->padId === '') {
-			throw new \InvalidArgumentException('Template has no usable pad_id in its frontmatter.');
-		}
 		if (str_starts_with($pad->padId, 'ext.') || $pad->isExternal) {
 			throw new \InvalidArgumentException('External pads cannot be used as a template.');
 		}
 
-		$accessMode = $pad->accessMode !== '' ? $pad->accessMode : BindingService::ACCESS_PROTECTED;
-		if ($accessMode !== BindingService::ACCESS_PUBLIC && $accessMode !== BindingService::ACCESS_PROTECTED) {
-			$accessMode = BindingService::ACCESS_PROTECTED;
-		}
 		// A template keeps the access mode of the pad it was made from. If the
 		// admin switched that type off, create the pad in the other enabled
 		// mode rather than refusing — the template's content is the point.
-		$accessMode = $this->padTypePolicy->resolveCreatableMode($accessMode);
+		$accessMode = $this->padTypePolicy->resolveCreatableMode($pad->accessMode);
 
 		$snapshot = $this->padFileService->getSnapshotPartsFromBody($pad->body);
 		$resolvedText = $this->placeholderResolver->applyForContent($snapshot['text'], $user);

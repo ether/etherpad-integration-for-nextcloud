@@ -13,6 +13,7 @@ use OCA\EtherpadNextcloud\Exception\MissingFrontmatterException;
 
 class PadFileService {
 	public const FORMAT_V1 = 'etherpad-nextcloud/1';
+
 	private const TEXT_SECTION = '[TEXT]';
 	private const HTML_BEGIN_SECTION = '[HTML-BEGIN]';
 	private const HTML_END_SECTION = '[HTML-END]';

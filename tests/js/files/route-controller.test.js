@@ -12,7 +12,6 @@ const jsonResponse = (body) => Promise.resolve({
 })
 
 const createController = (overrides = {}) => createRouteController({
-	ensurePublicPadMenuRegistration: vi.fn(),
 	openPadInNativeViewer: vi.fn(),
 	schedulePublicSingleShareUiStateRefresh: vi.fn(),
 	...overrides,

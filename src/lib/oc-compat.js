@@ -27,108 +27,10 @@ export const ocRequestToken = (fallback = '') => {
 	return String((window.OC && window.OC.requestToken) || '')
 }
 
-const ocCurrentUserId = () => {
-	if (window.OC && typeof window.OC.getCurrentUser === 'function') {
-		const user = window.OC.getCurrentUser()
-		return String((user && user.uid) || '').trim()
-	}
-	return ''
-}
-
-const buildDavFileUrl = (path, encodePath) => {
-	const uid = ocCurrentUserId()
-	const normalizedPath = String(path || '').trim()
-	if (uid === '' || normalizedPath === '') {
-		return ''
-	}
-
-	const remoteBase = (window.OC && typeof window.OC.linkToRemoteBase === 'function')
-		? window.OC.linkToRemoteBase('dav')
-		: '/remote.php/dav'
-	const baseUrl = new URL(remoteBase, window.location.origin)
-	const pathSuffix = normalizedPath
-		.split('/')
-		.filter((part) => part !== '')
-		.map((part) => encodePath ? encodeURIComponent(part) : part)
-		.join('/')
-	return baseUrl.origin
-		+ baseUrl.pathname.replace(/\/+$/, '')
-		+ '/files/'
-		+ (encodePath ? encodeURIComponent(uid) : uid)
-		+ '/'
-		+ pathSuffix
-}
-
-export const ocDavFileSource = (path) => buildDavFileUrl(path, false)
-
-export const ocEmitEvent = (name, payload) => {
-	const bus = window._nc_event_bus || (window.OC && window.OC._eventBus)
-	if (!bus || typeof bus.emit !== 'function') {
-		return false
-	}
-
-	bus.emit(name, payload)
-	return true
-}
-
 export const ocPermissionRead = () => {
 	const value = window.OC && window.OC.PERMISSION_READ
 	const numeric = Number(value)
 	return Number.isFinite(numeric) && numeric > 0 ? numeric : 1
 }
 
-export const ocPermissionCreate = () => {
-	const value = window.OC && window.OC.PERMISSION_CREATE
-	const numeric = Number(value)
-	return Number.isFinite(numeric) && numeric > 0 ? numeric : 4
-}
-
-export const nextcloudMajorVersion = () => {
-	const candidates = [
-		window.OC && window.OC.config && window.OC.config.version,
-		window.OC && window.OC.config && window.OC.config.versionstring,
-		window.oc_appconfig && window.oc_appconfig.core && window.oc_appconfig.core.version,
-		document.documentElement && document.documentElement.getAttribute('data-version'),
-	]
-	for (const candidate of candidates) {
-		const value = String(candidate || '').trim()
-		if (value === '') {
-			continue
-		}
-		const match = value.match(/^(\d+)/)
-		if (!match) {
-			continue
-		}
-		const parsed = parseInt(match[1], 10)
-		if (Number.isFinite(parsed) && parsed > 0) {
-			return parsed
-		}
-	}
-	return null
-}
-
 export const translate = (text) => (typeof window.t === 'function' ? window.t(APP_ID, text) : text)
-
-/**
- * Read a value provided via `IInitialState`. We don't bundle
- * `@nextcloud/initial-state`, so read the hidden input the server renders,
- * which holds the value base64-encoded.
- *
- * Returns the fallback when the field is absent or unreadable — callers use
- * this for presentation only, and the server enforces the same rules again.
- */
-export const ocInitialState = (key, fallback = null) => {
-	const field = document.getElementById('initial-state-' + APP_ID + '-' + key)
-	if (!(field instanceof HTMLInputElement)) {
-		return fallback
-	}
-	const encoded = String(field.value || '').trim()
-	if (encoded === '') {
-		return fallback
-	}
-	try {
-		return JSON.parse(window.atob(encoded))
-	} catch (error) {
-		return fallback
-	}
-}

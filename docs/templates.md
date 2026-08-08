@@ -20,11 +20,19 @@ Read-only shares (a folder shared *to* the user from someone else's account) are
 
 An admin can upload `.pad` templates under **Administration settings → Etherpad**. They are offered to every account on the instance, with no per-user setup — this is the one source a user cannot opt out of or misconfigure.
 
-They are stored in the instance's `appdata` directory, not in anyone's files. Practical consequences:
+They are stored in the instance's `appdata` directory, not in anyone's files — in `templates`, next to the `type_templates` folder holding the marker files behind the tiles. The two are kept apart so an uploaded template can never be mistaken for a tile. Practical consequences:
 
 - A full backup of the data directory covers them; a per-user export does not.
 - There is no versioning and no trash behind that folder. Uploading over an existing name is refused unless the request says it means to replace, and the admin page asks first — the previous file is gone for good.
 - They are not visible in the Files app and are not searchable; the settings page is the only place they are listed.
+
+A pad type tile sits next to them in the picker: **Public pad** appears when both pad types are enabled, so a user can pick the type without changing any setting. It carries no content. The blank entry creates a protected pad, which is why there is no tile for that type — but only while protected pads are enabled: with that type switched off, the blank entry creates a public pad instead, and the tile is not offered because there is nothing left to choose between. The access rights differ, so it is worth being precise about it. A second tile, **Public pad from URL**, links a pad on another Etherpad server; it appears while `allow_external_pads` is on, independently of the pad types, because an external pad is not one. Both labels are the marker files' own names and therefore untranslated — see [i18n.md](i18n.md).
+
+The external tile carries a *template field*, so Nextcloud's own picker asks for the pad's address and hands the answer to the create listener: the file is linked the moment it exists. An address that is missing or cannot be reached removes the file again and Nextcloud reports a create failure — better than leaving a `.pad` behind that would become an ordinary local pad on first open.
+
+If the remote server refuses to export the pad's text, the file is still linked and opens, but its stored snapshot stays empty. The picker has no place to say so; the viewer notes it when the pad is opened, and the server log carries the reason.
+
+Note for other integrations: Nextcloud dispatches `BeforeGetTemplatesEvent` before answering which fields a template has, and Collabora's listener answers for *every* template in that event, overwriting the fields of each. A provider that sets fields only in `getCustomTemplates()` therefore loses them on an instance with Collabora installed. This app sets them again from its own listener, registered below the default priority so it runs after Collabora's – and after any other listener that kept the default.
 
 ## Creating a template
 
@@ -33,7 +41,7 @@ They are stored in the instance's `appdata` directory, not in anyone's files. Pr
 
 ## Using a template
 
-When the user clicks **+ → New pad** in the Files app, Nextcloud's template picker lists every `.pad` in their *Templates* folder together with the admin templates. Selecting a template creates a new pad in the current folder with:
+When the user clicks **+ → New pad** in the Files app, Nextcloud's template picker lists every `.pad` in their *Templates* folder together with the admin templates and the pad type tiles. Selecting a template creates a new pad in the current folder with:
 
 - a freshly provisioned Etherpad pad on the server,
 - the template body copied across (placeholders resolved — see below),

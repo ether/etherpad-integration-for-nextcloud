@@ -491,38 +491,6 @@ class PadCreationServiceTest extends TestCase {
 			->createFromTemplate('alice', '/Out.pad', 7, null);
 	}
 
-	public function testCreateFromTemplateReportsMissingPadIdSeparately(): void {
-		// A template with malformed / empty frontmatter (no pad_id) is not the
-		// same failure mode as an `ext.*` template — the user should see a
-		// targeted message so they can fix the template instead of being told
-		// the file is "external".
-		$templateNode = $this->createMock(\OCP\Files\File::class);
-		$templateNode->method('getName')->willReturn('Broken.pad');
-		$templateNode->method('getContent')->willReturn('tpl');
-
-		$userNodeResolver = $this->createMock(UserNodeResolver::class);
-		$userNodeResolver->method('resolveUserFileNodeById')->willReturn($templateNode);
-
-		$padFileService = $this->createMock(PadFileService::class);
-		$padFileService->method('readPad')->willReturn(new ParsedPadFile(
-			frontmatter: [],
-			body: '',
-			padId: '',
-			accessMode: '',
-			padUrl: '',
-			isExternal: false,
-		));
-
-		$padPaths = $this->createMock(PathNormalizer::class);
-		$padPaths->method('normalizeCreatePath')->willReturn('/Out.pad');
-
-		$this->expectException(\InvalidArgumentException::class);
-		$this->expectExceptionMessage('Template has no usable pad_id in its frontmatter.');
-
-		$this->buildService($padFileService, $padPaths, null, $userNodeResolver)
-			->createFromTemplate('alice', '/Out.pad', 7, null);
-	}
-
 	private function buildService(
 		?PadFileService $padFileService = null,
 		?PathNormalizer $padPaths = null,
