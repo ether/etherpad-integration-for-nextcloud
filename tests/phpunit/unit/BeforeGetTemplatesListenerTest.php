@@ -45,9 +45,11 @@ class BeforeGetTemplatesListenerTest extends TestCase {
 	}
 
 	/**
-	 * Template ids are kept per provider, and `pad-external` is generic enough
-	 * that another app could hold the same one — rewriting its fields would be
-	 * our bug, not theirs.
+	 * Nextcloud keeps every provider's templates in one map keyed by the id, so
+	 * an id alone says nothing about who owns a template. Ours carry the app id
+	 * and would be hard to hit by accident, but the listener rewrites fields —
+	 * doing that to another app's template would be our bug, not theirs, so it
+	 * checks the provider as well.
 	 */
 	public function testLeavesAnotherProvidersTemplateOfTheSameIdAlone(): void {
 		$template = new Template('OCA\\SomeOtherApp\\Template', PadTemplateProvider::EXTERNAL_TEMPLATE_ID, $this->file());
