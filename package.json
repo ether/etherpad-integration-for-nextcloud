@@ -24,6 +24,6 @@
 		"vitest": "^4.1.10"
 	},
 	"dependencies": {
-		"dompurify": "^3.4.12"
+		"dompurify": "^3.4.13"
 	}
 }
