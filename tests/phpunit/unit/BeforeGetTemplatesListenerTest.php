@@ -61,9 +61,10 @@ class BeforeGetTemplatesListenerTest extends TestCase {
 	}
 
 	/**
-	 * The listing dispatch asks for templates, not for their fields — and
-	 * nobody overwrites them there either, so there is nothing to restore and
-	 * no reason to touch every template on every picker open.
+	 * The listing dispatch asks for templates, not for their fields: the picker
+	 * fetches those through its own endpoint once a tile is chosen, and that
+	 * dispatch carries the flag. Restoring anything here would only mean
+	 * touching every template on every picker open.
 	 */
 	public function testDoesNothingWhenTheEventIsNotAskingForFields(): void {
 		$template = new Template(PadTemplateProvider::class, PadTemplateProvider::EXTERNAL_TEMPLATE_ID, $this->file());

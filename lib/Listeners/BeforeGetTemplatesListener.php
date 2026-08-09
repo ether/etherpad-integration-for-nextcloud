@@ -38,12 +38,14 @@ class BeforeGetTemplatesListener implements IEventListener {
 		if (!$event instanceof BeforeGetTemplatesEvent) {
 			return;
 		}
-		// Nextcloud dispatches this twice: once to list templates, once to ask
-		// for their fields. Only the second one is ours to answer — and only
-		// there does Collabora overwrite anything, because its listener checks
-		// the same flag. The method arrives with Nextcloud 32; on 31 neither
-		// app can ask, so both act on every dispatch and the field still
-		// survives.
+		// Nextcloud dispatches this twice: once to list the templates, once to
+		// answer what fields one has. Only the second dispatch matters — the
+		// picker asks for fields through its own endpoint after a tile is
+		// chosen, on 31, 32 and 33 alike — so what the listing carries is never
+		// read. Ignoring it saves walking every template on every picker open.
+		//
+		// method_exists because the flag is documented as Nextcloud 32 even
+		// though 31 ships it; the guard costs nothing and outlives the tag.
 		if (method_exists($event, 'shouldGetFields') && !$event->shouldGetFields()) {
 			return;
 		}
