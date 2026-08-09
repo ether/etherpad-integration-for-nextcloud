@@ -30,7 +30,22 @@ export const gotoFilesDir = async (page: Page, dir: string): Promise<void> => {
 /** Open the "Shared with me" view — used by the user-share spec. */
 export const gotoSharedWithMe = async (page: Page): Promise<void> => {
 	await page.goto(`${E2E.baseURL}/apps/files/sharingin`)
-	await expect(page.locator('[data-cy-files-list], #app-content-files, .files-list')).toBeVisible({ timeout: 30_000 })
+	// An empty view is a legitimate landing state here — the revoke step
+	// navigates back to check the row is gone. Nextcloud 31 renders the
+	// empty-state note *instead of* the list container, so waiting only for
+	// the list hangs until timeout on a view that loaded perfectly well.
+	// `:visible` on every branch: the empty-state markup exists in the DOM
+	// while the list is still loading, so an unfiltered `.first()` can latch
+	// onto a hidden node and wait for it forever.
+	await expect(
+		page.locator([
+			'[data-cy-files-list]:visible',
+			'#app-content-files:visible',
+			'.files-list:visible',
+			'.empty-content:visible',
+			'[data-cy-files-content-empty]:visible',
+		].join(', ')).first(),
+	).toBeVisible({ timeout: 30_000 })
 }
 
 /**
