@@ -148,7 +148,7 @@ describe('embed-create-main', () => {
 
 	it('posts epnc:create-failed with reason=server on a 5xx response', async () => {
 		fetch.mockResolvedValueOnce(errorResponse(
-			{ message: 'Could not create pad.' },
+			{ message: 'Could not create pad' },
 			500,
 		))
 

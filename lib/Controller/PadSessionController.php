@@ -55,7 +55,7 @@ class PadSessionController extends AbstractPadController {
 			[
 				'invalid_argument' => $this->l10n->t('Invalid file path.'),
 				'not_found' => $this->l10n->t('Cannot open selected .pad file.'),
-				'generic' => $this->l10n->t('Could not open pad.'),
+				'generic' => $this->l10n->t('Could not open pad'),
 			],
 		);
 	}
@@ -67,7 +67,7 @@ class PadSessionController extends AbstractPadController {
 			fn(PadOpenTarget $result): DataResponse => $this->padResponses->openResponse($result),
 			[
 				'not_found' => $this->l10n->t('Cannot open selected .pad file.'),
-				'generic' => $this->l10n->t('Could not open pad.'),
+				'generic' => $this->l10n->t('Could not open pad'),
 			],
 		);
 	}
