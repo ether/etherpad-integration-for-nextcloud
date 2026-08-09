@@ -106,6 +106,13 @@ Specs name their files `e2e-<label>-<timestamp>.pad` and delete them in
 non-browser requests, matching the existing `NC_APP_PASSWORD` pattern in
 `tests/integration/*.sh`.
 
+That `DELETE` only moves a file to the trash, so `global-teardown.ts`
+sweeps the trash once at the end of the run and purges every entry
+matching that name shape — including leftovers from earlier interrupted
+runs. Without it a shared account collects a dozen entries per green
+run, and a single unreadable one breaks the trash listing for every spec
+that reads it. The sweep never fails the run; it warns instead.
+
 Keep `E2E_PASS` and `E2E_APP_PASSWORD` separate:
 
 - `E2E_PASS` logs into the interactive Nextcloud web UI once and stores

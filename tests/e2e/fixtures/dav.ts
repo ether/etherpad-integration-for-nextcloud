@@ -220,6 +220,18 @@ const trashbinUrl = (subpath: string = ''): string => {
  * issue a MOVE for restore.
  */
 export const findTrashbinEntry = async (originalFileName: string): Promise<string | null> => {
+	const match = (await listTrashbinEntries())
+		.find((candidate) => candidate.originalName === originalFileName)
+	return match ? match.entry : null
+}
+
+/**
+ * Every entry currently in the trash, as `{ entry, originalName }` — the
+ * entry being the path below the trash root, which is what a MOVE or
+ * DELETE needs. Used by `findTrashbinEntry` and by the global teardown's
+ * sweep.
+ */
+export const listTrashbinEntries = async (): Promise<{ entry: string, originalName: string }[]> => {
 	const body = '<?xml version="1.0"?>\n'
 		+ '<d:propfind xmlns:d="DAV:" xmlns:nc="http://nextcloud.org/ns" xmlns:oc="http://owncloud.org/ns">\n'
 		+ '  <d:prop><nc:trashbin-filename/><oc:trashbin-original-filename/></d:prop>\n'
@@ -238,29 +250,46 @@ export const findTrashbinEntry = async (originalFileName: string): Promise<strin
 	}
 	const xml = await res.text()
 	// Parse minimally: walk each <d:response>, extract href + the
-	// original-filename property, match against the requested name.
-	const responseChunks = xml.split(/<d:response[\s>]/i).slice(1)
-	for (const chunk of responseChunks) {
+	// original-filename property.
+	const prefix = `/remote.php/dav/trashbin/${E2E.user}/`
+	const entries: { entry: string, originalName: string }[] = []
+	for (const chunk of xml.split(/<d:response[\s>]/i).slice(1)) {
 		const hrefMatch = chunk.match(/<d:href[^>]*>([^<]+)<\/d:href>/i)
 		const originalMatch = chunk.match(/<(?:oc:trashbin-original-filename|nc:trashbin-filename)[^>]*>([^<]+)<\/(?:oc:trashbin-original-filename|nc:trashbin-filename)>/i)
 		if (!hrefMatch || !originalMatch) {
 			continue
 		}
-		// The property value is XML text (XML-escaped), not URL-encoded, so
-		// unescape XML entities — not decodeURIComponent, which would throw
-		// on a literal '%' and leave entities like &amp; intact.
-		if (xmlUnescape(originalMatch[1].trim()) !== originalFileName) {
-			continue
-		}
-		// Strip leading /remote.php/dav/trashbin/<user>/ so the caller can
+		// Strip leading /remote.php/dav/trashbin/<user>/ so callers can
 		// recompose paths via trashbinUrl().
 		const href = decodeURIComponent(hrefMatch[1].trim())
-		const prefix = `/remote.php/dav/trashbin/${E2E.user}/`
-		if (href.startsWith(prefix)) {
-			return href.slice(prefix.length).replace(/\/+$/, '')
+		if (!href.startsWith(prefix)) {
+			continue
 		}
+		entries.push({
+			entry: href.slice(prefix.length).replace(/\/+$/, ''),
+			// The property value is XML text (XML-escaped), not URL-encoded,
+			// so unescape XML entities — not decodeURIComponent, which would
+			// throw on a literal '%' and leave entities like &amp; intact.
+			originalName: xmlUnescape(originalMatch[1].trim()),
+		})
 	}
-	return null
+	return entries
+}
+
+/**
+ * Permanently remove one trashed entry, the way the trash view's "Delete
+ * permanently" action does. `entry` is a path as returned by
+ * `listTrashbinEntries`.
+ */
+export const purgeTrashbinEntry = async (entry: string): Promise<void> => {
+	const res = await fetch(trashbinUrl(entry), {
+		method: 'DELETE',
+		headers: { Authorization: basicAuthHeader() },
+	})
+	// 404 means it is already gone — same end state.
+	if (!res.ok && res.status !== 204 && res.status !== 404) {
+		throw new Error(`WebDAV trashbin DELETE failed with HTTP ${res.status}`)
+	}
 }
 
 /**

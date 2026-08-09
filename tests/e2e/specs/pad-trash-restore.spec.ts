@@ -37,7 +37,8 @@ test.describe('pad trash + restore', () => {
 	test.afterAll(async () => {
 		// Belt-and-braces: if the restore path failed mid-test, the file
 		// may still be in trash and our regular DELETE would 404. Either
-		// way nothing else needs cleaning here.
+		// way the trash entry this leaves behind is swept by the global
+		// teardown, not here.
 		await deleteViaDav(padName)
 	})
 
