@@ -22,12 +22,13 @@ This note describes how icons are wired in the `+ New` menu and in pad sync acti
 - Icon is set inline via `setIconSvgInline(...)`.
 - Source: `img/etherpad-icon-color.svg`.
 
-### 2) Custom "Public pad" entry
+### 2) Template picker tiles
 
-- File: `src/files/public-pad-menu.js`
-- Entry is injected dynamically into the menu.
-- Icon reuses the same file type class as `.pad`:
-  - `icon-filetype-etherpad-nextcloud-pad`
+- File: `lib/Template/PadTemplateProvider.php`
+- The "Public pad" and "Public pad from URL" tiles live in Nextcloud's own
+  template picker behind `New pad`.
+- Each takes its icon from `setCustomPreviewUrl()`; without it the marker files
+  in appdata would show the generic document icon.
 
 ## File List / File Type Icon (`.pad`)
 

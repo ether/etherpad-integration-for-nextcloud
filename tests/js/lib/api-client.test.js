@@ -84,19 +84,6 @@ describe('api-client', () => {
 		)
 	})
 
-	it('creates external public pads as form requests', async () => {
-		const { apiCreatePadFromUrl } = await importClient()
-		fetch.mockResolvedValueOnce(jsonResponse({ file_id: 9 }))
-
-		await apiCreatePadFromUrl('/Folder/Imported.pad', 'https://pad.example.test/p/foo')
-
-		const [, options] = fetch.mock.calls[0]
-		expect(fetch.mock.calls[0][0]).toBe('/index.php/apps/etherpad_nextcloud/api/v1/pads/from-url')
-		expect(options.method).toBe('POST')
-		expect(options.headers['Content-Type']).toBe('application/x-www-form-urlencoded;charset=UTF-8')
-		expect(options.body).toBe('file=%2FFolder%2FImported.pad&padUrl=https%3A%2F%2Fpad.example.test%2Fp%2Ffoo')
-	})
-
 	it('posts a recovery request and invalidates the resolve cache on success', async () => {
 		const { apiRecoverFromSnapshot, apiResolvePadByFileId } = await importClient()
 		// Seed the resolve cache so we can verify it is dropped after recover.

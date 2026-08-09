@@ -76,7 +76,7 @@ class PadBootstrapService {
 	 * the migration path (callers may want to surface that as a distinct
 	 * status to the frontend); false for the regular empty-file init.
 	 */
-	public function initializeMissingFrontmatter(string $uid, File $file, string $existingContent): bool {
+	public function initializeMissingFrontmatter(string $uid, File $file, string $existingContent, ?string $preferredAccessMode = null): bool {
 		$fileId = (int)$file->getId();
 		$existingContentTrimmed = trim($existingContent);
 		$isEmptyFile = $existingContentTrimmed === '';
@@ -106,7 +106,10 @@ class PadBootstrapService {
 			// the UI (WebDAV, another integration, or from before the setting
 			// changed), and a hard requirement would leave it permanently
 			// unopenable even when the other pad type is available.
-			$accessMode = $this->padTypePolicy->resolveCreatableMode(BindingService::ACCESS_PROTECTED);
+			// A caller may know which type was asked for — the template picker
+			// does. The policy still has the last word, so a type disabled
+			// between choosing and creating falls back instead of failing.
+			$accessMode = $this->padTypePolicy->resolveCreatableMode($preferredAccessMode ?? BindingService::ACCESS_PROTECTED);
 			$padId = $this->provisionPadId($accessMode);
 			$this->bindingService->createBinding($fileId, $padId, $accessMode);
 			$createdNewBinding = true;

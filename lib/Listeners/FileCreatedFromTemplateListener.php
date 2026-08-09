@@ -10,7 +10,10 @@ namespace OCA\EtherpadNextcloud\Listeners;
 
 use OCA\EtherpadNextcloud\Exception\PadTypeDisabledException;
 use OCA\EtherpadNextcloud\Service\PadBootstrapService;
+use OCA\EtherpadNextcloud\Service\ExternalPadSeeder;
 use OCA\EtherpadNextcloud\Service\PadCreationService;
+use OCA\EtherpadNextcloud\Service\PadTemplateStorage;
+use OCA\EtherpadNextcloud\Template\PadTemplateProvider;
 use OCP\EventDispatcher\Event;
 use OCP\EventDispatcher\IEventListener;
 use OCP\Files\File;
@@ -19,25 +22,12 @@ use OCP\IUserSession;
 use Psr\Log\LoggerInterface;
 
 /**
- * Hooks into Nextcloud's native "+ New pad" template flow. The event fires
- * after NC has placed the new file on disk. Two cases:
+ * Finishes a `.pad` file Nextcloud has just created from a template or from
+ * the blank entry — see docs/templates.md for the flow.
  *
- * 1. **Blank template** — `$event->getTemplate()` is null. NC has dropped
- *    an empty `.pad` file. We initialise its frontmatter immediately via
- *    `PadBootstrapService::initializeMissingFrontmatter` so the very first
- *    `/open*` call after the picker succeeds. Without this step the viewer
- *    would log two 4xx network errors before its init-retry path finally
- *    runs `/initialize-by-id` — visible noise for anyone with dev tools
- *    open even though the pad eventually loads correctly.
- *
- * 2. **Source-template** — the heavy lifting (parse → resolve placeholders
- *    → provision pad → seed snapshot → rewrite file with fresh frontmatter
- *    → create binding) goes through `PadCreationService::materializeTemplateInto`,
- *    shared with the custom-frontend API entry point.
- *
- * On any skip / failure inside the source-template branch the target is
- * reset to empty *and* re-initialised so a fresh blank pad still opens
- * cleanly on the first call.
+ * The blank case is initialised here rather than left to the viewer's
+ * init-retry path: without it the first `/open*` call 4xxes twice before the
+ * pad loads, which is visible noise for anyone with dev tools open.
  *
  * @template-implements IEventListener<Event>
  * @psalm-api
@@ -46,6 +36,8 @@ class FileCreatedFromTemplateListener implements IEventListener {
 	public function __construct(
 		private PadCreationService $padCreationService,
 		private PadBootstrapService $padBootstrapService,
+		private PadTemplateStorage $templateStorage,
+		private ExternalPadSeeder $externalPadSeeder,
 		private IUserSession $userSession,
 		private LoggerInterface $logger,
 	) {
@@ -81,6 +73,21 @@ class FileCreatedFromTemplateListener implements IEventListener {
 			return;
 		}
 
+		// The external tile's address arrives with the event, so the file is
+		// complete before anyone opens it.
+		if ($this->templateStorage->isExternalMarkerFile($template)) {
+			$this->seedExternalPad($target, $event->getTemplateFields());
+			return;
+		}
+
+		// Our own tiles carry no content: initialise straight to the pad type
+		// instead of copying an empty marker over the new file.
+		$templateAccessMode = $this->templateStorage->accessModeForTemplateFile($template);
+		if ($templateAccessMode !== '') {
+			$this->initializeBlankPad($user->getUID(), $target, $templateAccessMode);
+			return;
+		}
+
 		try {
 			$this->padCreationService->materializeTemplateInto($target, $template, $user);
 		} catch (PadTypeDisabledException $e) {
@@ -104,17 +111,19 @@ class FileCreatedFromTemplateListener implements IEventListener {
 			]);
 			$this->resetTargetToEmpty($target);
 			// Re-initialise after the wipe so the user still gets a clean,
-			// openable pad even though the template path failed.
+			// openable pad even though the template path failed. A disabled
+			// pad type travels on from here as well.
 			$this->initializeBlankPad($user->getUID(), $target);
 		}
 	}
 
-	private function initializeBlankPad(string $uid, File $target): void {
+	private function initializeBlankPad(string $uid, File $target, ?string $preferredAccessMode = null): void {
 		try {
-			$this->padBootstrapService->initializeMissingFrontmatter($uid, $target, '');
+			$this->padBootstrapService->initializeMissingFrontmatter($uid, $target, '', $preferredAccessMode);
 		} catch (PadTypeDisabledException $e) {
-			// Same as above, for Nextcloud's blank entry: no type to create,
-			// so the file has to go rather than sit there unopenable.
+			// Same as above, for Nextcloud's blank entry — and an instance
+			// offering only external pads reaches this on every one of them,
+			// so leaving the file behind would hand out empty .pad files.
 			$this->logger->warning('Blank pad create refused: no pad type is enabled.', [
 				'app' => 'etherpad_nextcloud',
 				'fileId' => (int)$target->getId(),
@@ -132,6 +141,65 @@ class FileCreatedFromTemplateListener implements IEventListener {
 				'exception' => $e,
 			]);
 		}
+	}
+
+	/**
+	 * A file that cannot be linked is removed rather than left behind: an empty
+	 * `.pad` would become an ordinary local pad on first open, which is not
+	 * what the user picked. Nextcloud turns the exception into its own "could
+	 * not create from template" message and logs the reason.
+	 *
+	 * @param array<string,mixed> $templateFields
+	 */
+	private function seedExternalPad(File $target, array $templateFields): void {
+		$fileId = (int)$target->getId();
+		try {
+			$padUrl = $this->padUrlField($templateFields);
+			if ($padUrl === '') {
+				throw new \RuntimeException('No pad address was given for the external pad template.');
+			}
+			if ($fileId <= 0) {
+				throw new \RuntimeException('Could not resolve new file ID.');
+			}
+			$seeded = $this->externalPadSeeder->seed($target, $fileId, $padUrl);
+			if (($seeded['snapshot_warning_code'] ?? '') === 'remote_export_unavailable') {
+				// The pad is linked and opens; only its stored snapshot stays
+				// empty because the remote refused the export. The picker has
+				// no place to show that, and the viewer says so on open, so
+				// this is the record an admin can act on.
+				// Host only. A public pad's URL *is* its access link — logging
+				// it would hand out the pad to anyone who reads the log, and
+				// the same goes for the pad id in it. The file id identifies
+				// the file for anyone who may see it anyway.
+				$this->logger->warning('Linked an external pad whose content could not be fetched; the snapshot stays empty.', [
+					'app' => 'etherpad_nextcloud',
+					'fileId' => $fileId,
+					'padHost' => parse_url((string)($seeded['pad_url'] ?? ''), PHP_URL_HOST) ?: '',
+				]);
+			}
+		} catch (\Throwable $e) {
+			$this->logger->warning('Could not link a new .pad file to an external pad.', [
+				'app' => 'etherpad_nextcloud',
+				'fileId' => $fileId,
+				'exception' => $e,
+			]);
+			$this->deleteTarget($target);
+			throw $e;
+		}
+	}
+
+	/**
+	 * The picker submits one entry per field, each an object of the properties
+	 * its type carries — for a text field, its content.
+	 *
+	 * @param array<string,mixed> $templateFields
+	 */
+	private function padUrlField(array $templateFields): string {
+		$field = $templateFields[PadTemplateProvider::FIELD_PAD_URL] ?? null;
+		if (is_array($field)) {
+			return trim((string)($field['content'] ?? ''));
+		}
+		return is_string($field) ? trim($field) : '';
 	}
 
 	private function deleteTarget(File $target): void {
