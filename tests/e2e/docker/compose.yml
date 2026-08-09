@@ -1,0 +1,100 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (c) 2026 Jacob Bühler
+#
+# Throwaway Nextcloud + Etherpad target for the Playwright suite. Bring
+# it up with tests/e2e/docker/up.sh, which also seeds accounts and writes
+# tests/e2e/.env.e2e. NC_VERSION selects the Nextcloud major the app is
+# tested against (31, 32 or 33 — see appinfo/info.xml).
+
+name: etherpad-nc-e2e
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: nextcloud
+      POSTGRES_USER: nextcloud
+      POSTGRES_PASSWORD: nextcloud
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nextcloud"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  etherpad:
+    image: etherpad/etherpad:2
+    environment:
+      # Etherpad 2 reads its config from env; the API key file is mounted
+      # so occ and the app can be pointed at a known value.
+      #
+      # Etherpad 2.7 defaults to "sso" and then answers 401 to every API
+      # call — the same misconfiguration our admin settings hint about.
+      AUTHENTICATION_METHOD: apikey
+      TRUST_PROXY: "true"
+      DEFAULT_PAD_TEXT: ""
+      REQUIRE_AUTHENTICATION: "false"
+      REQUIRE_SESSION: "false"
+      EDIT_ONLY: "false"
+      DB_TYPE: dirty
+      DB_FILENAME: /opt/etherpad-lite/var/dirty.db
+    volumes:
+      - ./etherpad/APIKEY.txt:/opt/etherpad-lite/APIKEY.txt:ro
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:9001/api/2/checkToken?apikey='+require('fs').readFileSync('/opt/etherpad-lite/APIKEY.txt','utf8').trim()).then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 5s
+      timeout: 5s
+      retries: 40
+
+  nextcloud:
+    build:
+      context: .
+      dockerfile: Dockerfile.nextcloud
+      args:
+        NC_VERSION: ${NC_VERSION:-33}
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      POSTGRES_HOST: db
+      POSTGRES_DB: nextcloud
+      POSTGRES_USER: nextcloud
+      POSTGRES_PASSWORD: nextcloud
+      NEXTCLOUD_ADMIN_USER: admin
+      NEXTCLOUD_ADMIN_PASSWORD: admin-e2e-pw
+      NEXTCLOUD_TRUSTED_DOMAINS: nc.pad.test
+      OVERWRITEHOST: nc.pad.test
+      OVERWRITEPROTOCOL: https
+      OVERWRITECLIURL: https://nc.pad.test
+      # Caddy is the only thing in front of Nextcloud.
+      TRUSTED_PROXIES: 0.0.0.0/0
+    # The app is not bind-mounted: /var/www/html is populated by the
+    # entrypoint on first boot, and a mount underneath it makes the
+    # directory non-empty before that happens — Nextcloud 31 then aborts
+    # its install with "Cannot write into apps directory". up.sh copies
+    # the app in once the instance is up, and sync-app.sh repeats that
+    # after an edit.
+    healthcheck:
+      test: ["CMD-SHELL", "php -r 'exit(file_exists(\"/var/www/html/config/config.php\") ? 0 : 1);'"]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+
+  caddy:
+    image: caddy:2-alpine
+    depends_on:
+      - nextcloud
+      - etherpad
+    ports:
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./certs:/certs:ro
+    networks:
+      default:
+        # Without these the hostnames only exist in the host's /etc/hosts,
+        # so Nextcloud cannot reach its own public URL or Etherpad's — the
+        # health check then reports the instance as unreachable, which is
+        # true but is an artefact of the setup, not of the app.
+        aliases:
+          - nc.pad.test
+          - ep.pad.test

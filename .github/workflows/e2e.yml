@@ -1,0 +1,80 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (c) 2026 Jacob Bühler
+name: e2e
+
+on:
+  pull_request:
+    paths:
+      - 'lib/**'
+      - 'src/**'
+      - 'js/**'
+      - 'templates/**'
+      - 'appinfo/**'
+      - 'tests/e2e/**'
+      - '.github/workflows/e2e.yml'
+  workflow_dispatch:
+  schedule:
+    # The suite is slow and talks to a whole stack; a nightly run catches
+    # drift in the Nextcloud and Etherpad images without gating every PR
+    # on all three majors.
+    - cron: '0 3 * * *'
+
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        # The range appinfo/info.xml declares support for.
+        nextcloud: ['31', '32', '33']
+
+    name: Nextcloud ${{ matrix.nextcloud }}
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Resolve the stack hostnames
+        run: echo '127.0.0.1 nc.pad.test ep.pad.test' | sudo tee -a /etc/hosts
+
+      - name: Bring up Nextcloud ${{ matrix.nextcloud }} + Etherpad
+        env:
+          NC_VERSION: ${{ matrix.nextcloud }}
+        run: bash tests/e2e/docker/up.sh
+
+      - name: Run the Playwright suite
+        # run-suite.sh wires up the generated env file, the CA for node's
+        # fetch, and the browser-side exemption for the per-run CA.
+        run: bash tests/e2e/docker/run-suite.sh
+
+      - name: Collect stack logs on failure
+        if: failure()
+        run: docker compose -f tests/e2e/docker/compose.yml logs --no-color --tail=400 > stack-logs.txt
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: e2e-nc${{ matrix.nextcloud }}
+          path: |
+            playwright-report/
+            test-results/
+            stack-logs.txt
+          retention-days: 7
+
+      - name: Tear the stack down
+        if: always()
+        run: docker compose -f tests/e2e/docker/compose.yml down -v --remove-orphans

@@ -11,7 +11,12 @@ const here = dirname(fileURLToPath(import.meta.url))
 
 // Load tests/e2e/.env.e2e if present (gitignored). All real values —
 // base URL, user, passwords — live there, never in the repo.
-loadEnv({ path: resolve(here, '.env.e2e') })
+//
+// E2E_ENV_FILE points the suite at a different target without touching
+// that file: tests/e2e/docker/up.sh writes .env.e2e.docker for the
+// throwaway container stack, and CI sets the variable to it.
+const envFile = process.env.E2E_ENV_FILE?.trim()
+loadEnv({ path: envFile ? resolve(process.cwd(), envFile) : resolve(here, '.env.e2e') })
 
 // No localhost fallback on purpose: specs use the absolute URLs from
 // env.ts (which throws a clear "Missing env var" if E2E_BASE_URL is
@@ -49,7 +54,13 @@ export default defineConfig({
 		video: 'retain-on-failure',
 		// NC's session cookies need a real browser context; storageState is
 		// produced by the "setup" project below.
-		ignoreHTTPSErrors: false,
+		//
+		// Certificate errors are fatal against a real instance. The Docker
+		// stack signs itself with a CA minted per run, which the browser has
+		// no reason to trust and which proves nothing about the app, so
+		// up.sh opts that target out explicitly. Node's own fetch stays
+		// strict either way and gets the CA via NODE_EXTRA_CA_CERTS.
+		ignoreHTTPSErrors: process.env.E2E_IGNORE_HTTPS_ERRORS === '1',
 	},
 
 	projects: [

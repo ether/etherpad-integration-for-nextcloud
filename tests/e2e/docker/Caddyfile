@@ -1,0 +1,32 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (c) 2026 Jacob Bühler
+#
+# TLS termination for both stack hostnames. The app refuses a non-https
+# Etherpad base URL (AdminSettingsValidator::normalizeEtherpadHost), and
+# protected pads need Nextcloud and Etherpad under a shared parent
+# domain so the session cookie reaches both — hence two real hostnames
+# under pad.test rather than ports on localhost.
+
+{
+	admin off
+	auto_https disable_redirects
+}
+
+nc.pad.test {
+	tls /certs/site.crt /certs/site.key
+	reverse_proxy nextcloud:80 {
+		header_up X-Forwarded-Proto https
+	}
+	# Nextcloud ships large files through the viewer; keep the proxy out
+	# of the way of long-running sync requests.
+	request_body {
+		max_size 512MB
+	}
+}
+
+ep.pad.test {
+	tls /certs/site.crt /certs/site.key
+	reverse_proxy etherpad:9001 {
+		header_up X-Forwarded-Proto https
+	}
+}

@@ -1,0 +1,13 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (c) 2026 Jacob Bühler
+#
+# Stock Nextcloud plus the throwaway CA from make-certs.sh. Nextcloud
+# itself talks to Etherpad over the internal http API host, but the
+# health check probes the public https base URL — without the CA that
+# probe reports the instance as unreachable and the admin-health-check
+# spec fails for the wrong reason.
+ARG NC_VERSION=33
+FROM nextcloud:${NC_VERSION}-apache
+
+COPY certs/ca.crt /usr/local/share/ca-certificates/e2e-local-ca.crt
+RUN update-ca-certificates
