@@ -23,7 +23,7 @@ printf '127.0.0.1 nc.pad.test ep.pad.test\n' | sudo tee -a /etc/hosts
 ```bash
 tests/e2e/docker/up.sh          # NC_VERSION=31|32|33, default 33
 tests/e2e/docker/run-suite.sh   # the suite against that stack
-docker compose -f tests/e2e/docker/compose.yml down -v
+docker compose -f tests/e2e/docker/compose.yml down -v --remove-orphans
 ```
 
 `up.sh` refuses to run while a stack already exists — it promises a

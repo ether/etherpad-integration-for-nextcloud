@@ -12,6 +12,9 @@ on:
       - 'css/**'
       - 'appinfo/**'
       - 'tests/e2e/**'
+      # Defines what the stack installs; excluding a runtime path here
+      # changes what is tested without touching anything else.
+      - 'scripts/app-file-excludes.sh'
       # A Playwright or dotenv bump can break the suite itself, and a CSS
       # regression is exactly what a browser test catches.
       - 'package.json'
