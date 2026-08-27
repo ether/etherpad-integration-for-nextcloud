@@ -10,6 +10,9 @@ if (!interface_exists(Folder::class)) {
 
 		public function get(string $path): mixed;
 
+		/** Mirrors OCP\Files\Folder::getFirstNodeById(): the node or null. */
+		public function getFirstNodeById(int $id): mixed;
+
 		public function newFile(string $name, $content = null): mixed;
 
 		public function newFolder(string $path): Folder;

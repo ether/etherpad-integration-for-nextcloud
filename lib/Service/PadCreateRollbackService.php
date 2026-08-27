@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Service;
 
+use OCP\Files\File;
 use OCP\Files\IRootFolder;
 use Psr\Log\LoggerInterface;
 
@@ -25,10 +26,10 @@ class PadCreateRollbackService {
 	) {
 	}
 
-	public function rollbackFailedCreate(string $uid, string $path, string $padId, bool $fileCreated): void {
+	public function rollbackFailedCreate(string $uid, string $path, string $padId, int $createdFileId): void {
 		try {
-			if ($fileCreated) {
-				$this->deleteUserNodeIfExists($uid, $path);
+			if ($createdFileId > 0) {
+				$this->deleteCreatedFile($uid, $createdFileId);
 			}
 		} catch (\Throwable $cleanupError) {
 			$this->logger->warning('Could not cleanup failed .pad file create', [
@@ -51,10 +52,10 @@ class PadCreateRollbackService {
 		}
 	}
 
-	public function rollbackExternalCreate(string $uid, string $path, bool $fileCreated): void {
+	public function rollbackExternalCreate(string $uid, string $path, int $createdFileId): void {
 		try {
-			if ($fileCreated) {
-				$this->deleteUserNodeIfExists($uid, $path);
+			if ($createdFileId > 0) {
+				$this->deleteCreatedFile($uid, $createdFileId);
 			}
 		} catch (\Throwable $cleanupError) {
 			$this->logger->warning('Could not cleanup failed external .pad create', [
@@ -65,15 +66,25 @@ class PadCreateRollbackService {
 		}
 	}
 
-	private function deleteUserNodeIfExists(string $uid, string $absolutePath): void {
-		$relativePath = ltrim($absolutePath, '/');
-		if ($relativePath === '') {
+	/**
+	 * Delete the node this create actually made, identified by its file id.
+	 *
+	 * Resolving the path again instead would delete whatever holds that name
+	 * by the time cleanup runs. A path is not an identity: the file can be
+	 * moved or renamed while Etherpad is being provisioned, and the freed
+	 * name can be taken by something else — which a later failure would then
+	 * delete. The id follows the file wherever it went, and matches nothing
+	 * else.
+	 */
+	private function deleteCreatedFile(string $uid, int $fileId): void {
+		if ($fileId <= 0) {
 			return;
 		}
-		$userFolder = $this->rootFolder->getUserFolder($uid);
-		if (!$userFolder->nodeExists($relativePath)) {
-			return;
+		// Scoped to the user's own folder, so an id that somehow belongs
+		// elsewhere resolves to nothing rather than to someone else's file.
+		$node = $this->rootFolder->getUserFolder($uid)->getFirstNodeById($fileId);
+		if ($node instanceof File) {
+			$node->delete();
 		}
-		$userFolder->get($relativePath)->delete();
 	}
 }

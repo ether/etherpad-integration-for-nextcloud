@@ -43,16 +43,19 @@ class PadCreationService {
 		$this->padTypePolicy->requireEnabled($accessMode);
 		$path = $this->padPaths->normalizeCreatePath($file);
 		$padId = '';
-		$fileCreated = false;
+		$createdFileId = 0;
 
 		return $this->withCreateRollback(
-			function () use ($uid, $path, $accessMode, &$padId, &$fileCreated): array {
+			function () use ($uid, $path, $accessMode, &$padId, &$createdFileId): array {
 				$fileNode = $this->padFileCreator->createUserFile($uid, $path);
-				$fileCreated = true;
 				$fileId = (int)$fileNode->getId();
 				if ($fileId <= 0) {
+					// Without an id the file cannot be identified again, so
+					// rollback will leave it rather than guess by name. An
+					// empty leftover beats deleting someone else's file.
 					throw new \RuntimeException('Could not resolve new file ID.');
 				}
+				$createdFileId = $fileId;
 				$padId = $this->padBootstrapService->provisionPadId($accessMode);
 				$padUrl = $this->etherpadClient->buildPadUrl($padId);
 
@@ -75,8 +78,8 @@ class PadCreationService {
 					'pad_url' => $padUrl,
 				];
 			},
-			function () use ($uid, $path, &$padId, &$fileCreated): void {
-				$this->rollbackService->rollbackFailedCreate($uid, $path, $padId, $fileCreated);
+			function () use ($uid, $path, &$padId, &$createdFileId): void {
+				$this->rollbackService->rollbackFailedCreate($uid, $path, $padId, $createdFileId);
 			},
 			function (\Throwable $e) use ($path, $accessMode, &$padId): ?array {
 				if ($e instanceof BindingException) {
@@ -117,18 +120,21 @@ class PadCreationService {
 		}
 
 		$padId = '';
-		$fileCreated = false;
+		$createdFileId = 0;
 		$path = '';
 
 		return $this->withCreateRollback(
-			function () use ($uid, $parentFolder, $parentFolderId, $fileName, $accessMode, &$path, &$padId, &$fileCreated): array {
+			function () use ($uid, $parentFolder, $parentFolderId, $fileName, $accessMode, &$path, &$padId, &$createdFileId): array {
 				$fileNode = $this->padFileCreator->createUserFileInFolder($parentFolder, $fileName);
-				$fileCreated = true;
 				$path = $this->userNodeResolver->toUserAbsolutePath($uid, $fileNode);
 				$fileId = (int)$fileNode->getId();
 				if ($fileId <= 0) {
+					// Without an id the file cannot be identified again, so
+					// rollback will leave it rather than guess by name. An
+					// empty leftover beats deleting someone else's file.
 					throw new \RuntimeException('Could not resolve new file ID.');
 				}
+				$createdFileId = $fileId;
 
 				$padId = $this->padBootstrapService->provisionPadId($accessMode);
 				$padUrl = $this->etherpadClient->buildPadUrl($padId);
@@ -151,8 +157,8 @@ class PadCreationService {
 					'pad_url' => $padUrl,
 				];
 			},
-			function () use ($uid, &$path, &$padId, &$fileCreated): void {
-				$this->rollbackService->rollbackFailedCreate($uid, $path, $padId, $fileCreated);
+			function () use ($uid, &$path, &$padId, &$createdFileId): void {
+				$this->rollbackService->rollbackFailedCreate($uid, $path, $padId, $createdFileId);
 			},
 			function (\Throwable $e) use ($parentFolderId, $name, $accessMode, &$path, &$padId): ?array {
 				if ($e instanceof BindingException) {
@@ -190,16 +196,19 @@ class PadCreationService {
 	 */
 	public function createFromUrl(string $uid, string $file, string $padUrl): array {
 		$path = $this->padPaths->normalizeCreatePath($file);
-		$fileCreated = false;
+		$createdFileId = 0;
 
 		return $this->withCreateRollback(
-			function () use ($uid, $path, $padUrl, &$fileCreated) {
+			function () use ($uid, $path, $padUrl, &$createdFileId) {
 				$fileNode = $this->padFileCreator->createUserFile($uid, $path);
-				$fileCreated = true;
 				$fileId = (int)$fileNode->getId();
 				if ($fileId <= 0) {
+					// Without an id the file cannot be identified again, so
+					// rollback will leave it rather than guess by name. An
+					// empty leftover beats deleting someone else's file.
 					throw new \RuntimeException('Could not resolve new file ID.');
 				}
+				$createdFileId = $fileId;
 
 				$seeded = $this->externalPadSeeder->seed($fileNode, $fileId, $padUrl);
 				// Preserve the historical key ordering for the external-create
@@ -208,8 +217,8 @@ class PadCreationService {
 				$result = ['file' => $path] + $seeded;
 				return $result;
 			},
-			function () use ($uid, $path, &$fileCreated): void {
-				$this->rollbackService->rollbackExternalCreate($uid, $path, $fileCreated);
+			function () use ($uid, $path, &$createdFileId): void {
+				$this->rollbackService->rollbackExternalCreate($uid, $path, $createdFileId);
 			},
 			function (\Throwable $e) use ($path, $padUrl): ?array {
 				if ($e instanceof EtherpadClientException) {
@@ -253,12 +262,11 @@ class PadCreationService {
 		$templateNode = $this->userNodeResolver->resolveUserFileNodeById($uid, $templateFileId);
 
 		$padId = '';
-		$fileCreated = false;
+		$createdFileId = 0;
 
 		return $this->withCreateRollback(
-			function () use ($uid, $path, $templateNode, $user, &$padId, &$fileCreated): array {
+			function () use ($uid, $path, $templateNode, $user, &$padId, &$createdFileId): array {
 				$fileNode = $this->padFileCreator->createUserFile($uid, $path);
-				$fileCreated = true;
 
 				$result = $this->materializeTemplateInto($fileNode, $templateNode, $user);
 				$padId = $result['pad_id'];
@@ -271,8 +279,8 @@ class PadCreationService {
 					'pad_url' => $result['pad_url'],
 				];
 			},
-			function () use ($uid, $path, &$padId, &$fileCreated): void {
-				$this->rollbackService->rollbackFailedCreate($uid, $path, $padId, $fileCreated);
+			function () use ($uid, $path, &$padId, &$createdFileId): void {
+				$this->rollbackService->rollbackFailedCreate($uid, $path, $padId, $createdFileId);
 			},
 			function (\Throwable $e) use ($path, &$padId): ?array {
 				if ($e instanceof BindingException) {
