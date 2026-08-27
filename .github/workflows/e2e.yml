@@ -4,6 +4,9 @@ name: e2e
 
 on:
   pull_request:
+    # Drafts do not run (see the job's `if`), so ready_for_review has to be
+    # here — otherwise marking a PR ready would not start anything.
+    types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - 'lib/**'
       - 'src/**'
@@ -39,6 +42,9 @@ concurrency:
 
 jobs:
   e2e:
+    # Three container stacks per run is a lot to spend on work in progress.
+    # Keep the PR a draft while iterating; marking it ready starts the run.
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     timeout-minutes: 45
     strategy:
