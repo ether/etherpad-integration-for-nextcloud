@@ -46,6 +46,24 @@ describe('fixture names round-trip through the sweep', () => {
 		}
 	})
 
+	// The matcher must not recognise a label the builder would refuse: such
+	// a name was not created by anything of ours, and the sweep deletes
+	// permanently.
+	it.each([
+		'e2e-notes--ra1b2c3d4-1700000000001.pad',
+		'e2e--notes-ra1b2c3d4-1700000000001.pad',
+		'e2e-notes--1700000000001.pad',
+	])('refuses %s, which the builder could never produce', (entry) => {
+		expect(classify(entry)).toBe('not-ours')
+	})
+
+	it('refuses every label shape the builder rejects', () => {
+		for (const label of ['double--dash', '-leading', 'trailing-', 'Upper', 'with space']) {
+			expect(() => buildFixtureName(label, { runId: OURS })).toThrow()
+			expect(classify(`e2e-${label}-r${OURS}-1700000000001.pad`)).toBe('not-ours')
+		}
+	})
+
 	it('refuses to build a name the sweep could not recognise', () => {
 		expect(() => buildFixtureName('probe', { runId: OURS, extension: 'md' })).toThrow()
 		expect(() => buildFixtureName('Probe Mixed', { runId: OURS })).toThrow()

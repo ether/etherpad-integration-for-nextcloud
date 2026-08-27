@@ -16,12 +16,19 @@ export const FIXTURE_EXTENSIONS = ['pad', 'txt'] as const
 
 export type FixtureExtension = (typeof FIXTURE_EXTENSIONS)[number]
 
-const LABEL = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
+/**
+ * Lowercase words joined by single dashes. Builder and matcher share this
+ * one source: a name the matcher accepts but the builder cannot produce
+ * is a name nothing of ours created, and the sweep deletes permanently.
+ */
+const LABEL_SOURCE = '[a-z0-9]+(?:-[a-z0-9]+)*'
+
+const LABEL = new RegExp(`^${LABEL_SOURCE}$`)
 const RUN_ID = /^[0-9a-f]{8}$/
 
 /** `e2e-<label>-r<runid>-<timestamp>[.ext]` */
 const FIXTURE_NAME = new RegExp(
-	`^e2e-[a-z0-9-]+-r([0-9a-f]{8})-(\\d{13})(?:\\.(?:${FIXTURE_EXTENSIONS.join('|')}))?$`,
+	`^e2e-${LABEL_SOURCE}-r([0-9a-f]{8})-(\\d{13})(?:\\.(?:${FIXTURE_EXTENSIONS.join('|')}))?$`,
 )
 
 /**
@@ -30,7 +37,7 @@ const FIXTURE_NAME = new RegExp(
  * ours to begin with.
  */
 const LEGACY_FIXTURE_NAME = new RegExp(
-	`^e2e-[a-z0-9-]+-\\d{13}(?:\\.(?:${FIXTURE_EXTENSIONS.join('|')}))?$`,
+	`^e2e-${LABEL_SOURCE}-\\d{13}(?:\\.(?:${FIXTURE_EXTENSIONS.join('|')}))?$`,
 )
 
 export const isRunId = (value: string): boolean => RUN_ID.test(value)
