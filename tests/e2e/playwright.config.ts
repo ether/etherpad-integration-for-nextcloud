@@ -15,8 +15,16 @@ const here = dirname(fileURLToPath(import.meta.url))
 // E2E_ENV_FILE points the suite at a different target without touching
 // that file: tests/e2e/docker/up.sh writes .env.e2e.docker for the
 // throwaway container stack, and CI sets the variable to it.
+// An explicit E2E_ENV_FILE overrides variables already exported in the
+// shell; the default .env.e2e keeps dotenv's usual "the environment
+// wins" behaviour. Without that, someone with E2E_BASE_URL exported for
+// the long-lived instance would run the container target's env file and
+// still drive their real instance — creating and deleting files there.
 const envFile = process.env.E2E_ENV_FILE?.trim()
-loadEnv({ path: envFile ? resolve(process.cwd(), envFile) : resolve(here, '.env.e2e') })
+loadEnv({
+	path: envFile ? resolve(process.cwd(), envFile) : resolve(here, '.env.e2e'),
+	override: envFile !== undefined && envFile !== '',
+})
 
 // No localhost fallback on purpose: specs use the absolute URLs from
 // env.ts (which throws a clear "Missing env var" if E2E_BASE_URL is

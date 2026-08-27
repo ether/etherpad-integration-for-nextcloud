@@ -9,8 +9,13 @@ on:
       - 'src/**'
       - 'js/**'
       - 'templates/**'
+      - 'css/**'
       - 'appinfo/**'
       - 'tests/e2e/**'
+      # A Playwright or dotenv bump can break the suite itself, and a CSS
+      # regression is exactly what a browser test catches.
+      - 'package.json'
+      - 'package-lock.json'
       - '.github/workflows/e2e.yml'
   workflow_dispatch:
   schedule:
@@ -36,9 +41,9 @@ jobs:
     name: Nextcloud ${{ matrix.nextcloud }}
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
           cache: npm
@@ -65,7 +70,7 @@ jobs:
         if: failure()
         run: docker compose -f tests/e2e/docker/compose.yml logs --no-color --tail=400 > stack-logs.txt
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
         if: failure()
         with:
           name: e2e-nc${{ matrix.nextcloud }}

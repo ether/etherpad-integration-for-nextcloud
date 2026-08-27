@@ -31,10 +31,19 @@ second test account with app passwords for both, and writes
 `tests/e2e/.env.e2e.docker`. Your own `tests/e2e/.env.e2e` is never
 touched; `E2E_ENV_FILE` is what selects the target.
 
-The app is mounted from the working tree, so a PHP change needs no
-rebuild — at most `docker compose exec -u www-data nextcloud php occ
-maintenance:repair`. Frontend changes still need `npm run build`, same as
-on any instance.
+The app is **copied** into the container by `up.sh`, not mounted: a mount
+under `/var/www/html` makes that directory non-empty before the
+entrypoint populates it, and Nextcloud 31 then refuses to install. So a
+change in the working tree does not reach a running stack on its own —
+re-run the copy:
+
+```bash
+npm run build                     # only if you touched src/
+tests/e2e/docker/sync-app.sh
+```
+
+Skip that and you are testing the code as it was when the stack came up,
+without any sign that you are.
 
 ## Certificates
 
