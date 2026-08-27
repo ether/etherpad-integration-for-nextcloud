@@ -26,6 +26,12 @@ tests/e2e/docker/run-suite.sh   # the suite against that stack
 docker compose -f tests/e2e/docker/compose.yml down -v
 ```
 
+`up.sh` refuses to run while a stack already exists — it promises a
+fresh installation, and pointing it at a volume from another
+`NC_VERSION` fails deep inside the container where you cannot see it.
+Remove the old one with `down -v` first, or use `sync-app.sh` if you only
+want your code changes in the stack you already have.
+
 `up.sh` boots the stack, installs and configures the app, creates the
 second test account with app passwords for both, and writes
 `tests/e2e/.env.e2e.docker`. Your own `tests/e2e/.env.e2e` is never

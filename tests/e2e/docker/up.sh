@@ -25,6 +25,22 @@ USER2=e2e-tester2
 USER2_PASS=e2e-tester2-pw
 API_KEY="$(tr -d '\n' < "$here/etherpad/APIKEY.txt")"
 
+# up.sh promises a fresh installation, and Nextcloud refuses to upgrade
+# across two majors — so pointing it at a volume from another NC_VERSION
+# fails deep inside the container with nothing but "exited (1)" out here.
+# Stop before that, and leave the decision to remove it to a person: a
+# running stack is often the state someone is in the middle of examining.
+if [[ -n "$(compose ps -aq 2>/dev/null)" ]]; then
+	cat >&2 <<MSG
+An existing e2e stack was found. Remove it with:
+
+  docker compose -f tests/e2e/docker/compose.yml down -v --remove-orphans
+
+For code changes in the running stack, use tests/e2e/docker/sync-app.sh instead.
+MSG
+	exit 1
+fi
+
 echo "==> certificates"
 bash "$here/make-certs.sh"
 
