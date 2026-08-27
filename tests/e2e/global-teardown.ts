@@ -3,6 +3,7 @@
  * Copyright (c) 2026 Jacob Bühler
  */
 import { listTrashbinEntries, purgeTrashbinEntry } from './fixtures/dav'
+import { runId } from './fixtures/run-id'
 import { classifyTrashEntry } from './fixtures/sweep-filter'
 
 /**
@@ -15,10 +16,10 @@ import { classifyTrashEntry } from './fixtures/sweep-filter'
  * failing, at which point every spec that reads the trash is stuck and
  * the cause is nowhere near the symptom.
  *
- * What may be deleted is decided by `classifyTrashEntry`, which only
- * recognises the names the specs generate and leaves anything from a
- * concurrently running suite alone. Deleting here is permanent, so the
- * rule is: purge what we can positively account for, skip the rest.
+ * What may be deleted is decided by `classifyTrashEntry`: entries
+ * carrying this run's id, plus anything too old for a run to still be
+ * using. Deleting here is permanent, so the rule is to purge what we can
+ * positively account for and skip the rest.
  *
  * Housekeeping must not decide whether the run passed. Failures are
  * reported and swallowed — a broken trash listing is exactly the state
@@ -26,7 +27,7 @@ import { classifyTrashEntry } from './fixtures/sweep-filter'
  * failed.
  */
 export default async function globalTeardown(): Promise<void> {
-	const runStartedAt = Number(process.env.E2E_RUN_STARTED_AT ?? 0) || Date.now()
+	const id = runId()
 	const now = Date.now()
 
 	let entries: { entry: string, originalName: string }[]
@@ -40,7 +41,7 @@ export default async function globalTeardown(): Promise<void> {
 	const purgeable: { entry: string, originalName: string }[] = []
 	let foreign = 0
 	for (const candidate of entries) {
-		const decision = classifyTrashEntry(candidate.originalName, { runStartedAt, now })
+		const decision = classifyTrashEntry(candidate.originalName, { runId: id, now })
 		if (decision === 'ours' || decision === 'stale') {
 			purgeable.push(candidate)
 		} else if (decision === 'foreign-run') {

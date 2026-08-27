@@ -10,6 +10,7 @@ import {
 	propfindFileId,
 	putFileViaDav,
 } from '../fixtures/dav'
+import { uniqueName } from '../fixtures/nextcloud'
 
 /**
  * Content round-trip through the snapshot -> new-pad push that both the
@@ -38,7 +39,7 @@ import {
  * tests/integration/*.sh); no browser page is needed.
  */
 test.describe('snapshot -> pad content round-trip (recover + sync)', () => {
-	const padName = `e2e-roundtrip-${Date.now()}.pad`
+	const padName = uniqueName('roundtrip', '.pad')
 	const marker = `roundtrip-marker-${Date.now()}-Zürich-✓`
 	const freshPadId = `e2e-roundtrip-${Date.now()}`
 

@@ -7,6 +7,7 @@ import {
 	createPadFromTemplate,
 	expectEtherpadViewerMounted,
 	gotoFiles,
+	uniqueName,
 	uniquePadName,
 } from '../fixtures/nextcloud'
 import { deleteViaDav, getFileViaDav, mkcolViaDav, propfindFileId, putFileViaDav } from '../fixtures/dav'
@@ -26,7 +27,7 @@ import { deleteViaDav, getFileViaDav, mkcolViaDav, propfindFileId, putFileViaDav
  */
 test.describe('template placeholder substitution', () => {
 	const ts = Date.now()
-	const templateLabel = `e2e-tmpl-${ts}`
+	const templateLabel = uniqueName('tmpl')
 	const templatePath = `Templates/${templateLabel}.pad`
 	const templatePadId = `e2e-tmpl-src-${ts}`
 	const createdName = uniquePadName('tmpl-created')

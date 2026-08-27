@@ -4,6 +4,8 @@
  */
 import { expect, type Page } from '@playwright/test'
 import { E2E } from './env'
+import { runId } from './run-id'
+import { runToken } from './sweep-filter'
 
 /**
  * Helpers for driving the Nextcloud Files app in E2E specs. Selectors
@@ -353,5 +355,12 @@ export const followOpenTheOriginal = async (page: Page, expectedOriginalFileId: 
 }
 
 /** A unique-ish file name so parallel/repeat runs don't collide. */
-export const uniquePadName = (label: string): string =>
-	`e2e-${label}-${Date.now()}.pad`
+export const uniquePadName = (label: string): string => uniqueName(label, '.pad')
+
+/**
+ * Every file and folder a spec creates goes through here: the name
+ * carries this run's id, which is what lets the trash sweep in
+ * global-teardown tell its own leftovers from a concurrent run's.
+ */
+export const uniqueName = (label: string, extension: string = ''): string =>
+	`e2e-${label}-${runToken(runId())}-${Date.now()}${extension}`

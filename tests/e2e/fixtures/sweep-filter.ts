@@ -8,46 +8,58 @@
  * free of imports so it can be unit-tested without a target instance.
  */
 
+/** Marks the run id inside a fixture name, so a label cannot be mistaken for one. */
+export const runToken = (runId: string): string => `r${runId}`
+
 /**
- * The names the specs generate: `e2e-<label>-<timestamp>` with an
- * optional extension. `.pad` covers the pads, `.txt` the public-share
- * fixtures, and no extension at all the folders (`e2e-move-folder-…`,
- * `e2e-tmpl-…`).
+ * `e2e-<label>-r<runid>-<timestamp>` with an optional extension: `.pad`
+ * for pads, `.txt` for the public-share fixtures, none at all for the
+ * folders (`e2e-move-folder-…`, `e2e-tmpl-…`).
  *
  * Deliberately narrow. The sweep deletes permanently, so anything it
- * cannot positively recognise as ours is left alone — an unknown
- * extension is somebody's file, not a fixture.
+ * cannot positively account for is left alone.
  */
-const FIXTURE_NAME = /^e2e-[a-z0-9-]+-(\d{13})(?:\.(?:pad|txt))?$/
+const FIXTURE_NAME = /^e2e-[a-z0-9-]+-r([0-9a-f]{8})-(\d{13})(?:\.(?:pad|txt))?$/
 
-/** How long an unrecognised leftover has to sit before it counts as stale. */
+/** The same shape from before run ids, kept so old leftovers still get cleaned up. */
+const LEGACY_FIXTURE_NAME = /^e2e-[a-z0-9-]+-(\d{13})(?:\.(?:pad|txt))?$/
+
+/** How long an entry we cannot attribute has to sit before it counts as abandoned. */
 export const STALE_AFTER_MS = 2 * 60 * 60 * 1000
 
 export type SweepDecision = 'ours' | 'stale' | 'foreign-run' | 'not-ours'
 
 /**
- * `ours` — created by this run, purge.
- * `stale` — older than any plausible run, so a leftover from one that was
- *   interrupted; purge.
- * `foreign-run` — matches the fixture shape but predates this run and is
- *   too recent to be stale. Another suite may be running against the same
- *   instance right now and about to restore it; leave it.
- * `not-ours` — does not match at all.
+ * `ours` — carries this run's id, purge.
+ * `stale` — someone else's or from before run ids, and old enough that no
+ *   run could still be using it; purge.
+ * `foreign-run` — belongs to a different run that may still be going.
+ *   Leave it: its suite may be about to restore that very entry.
+ * `not-ours` — not a fixture name at all.
+ *
+ * Ownership is decided by the id, never by time. A timestamp cannot say
+ * who created an entry: a run that starts later has later timestamps
+ * throughout, so an earlier run would read all of them as its own and
+ * delete the files that run is still working with.
  */
 export const classifyTrashEntry = (
 	originalName: string,
-	options: { runStartedAt: number, now: number, staleAfterMs?: number },
+	options: { runId: string, now: number, staleAfterMs?: number },
 ): SweepDecision => {
+	const staleAfterMs = options.staleAfterMs ?? STALE_AFTER_MS
+
 	const match = FIXTURE_NAME.exec(originalName)
-	if (match === null) {
-		return 'not-ours'
+	if (match !== null) {
+		if (match[1] === options.runId) {
+			return 'ours'
+		}
+		return options.now - Number(match[2]) > staleAfterMs ? 'stale' : 'foreign-run'
 	}
 
-	const createdAt = Number(match[1])
-	if (createdAt >= options.runStartedAt) {
-		return 'ours'
+	const legacy = LEGACY_FIXTURE_NAME.exec(originalName)
+	if (legacy === null) {
+		return 'not-ours'
 	}
-	return options.now - createdAt > (options.staleAfterMs ?? STALE_AFTER_MS)
-		? 'stale'
-		: 'foreign-run'
+	// No id to go on, so age is all there is.
+	return options.now - Number(legacy[1]) > staleAfterMs ? 'stale' : 'foreign-run'
 }
