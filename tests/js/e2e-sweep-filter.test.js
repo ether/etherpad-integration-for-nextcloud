@@ -3,80 +3,103 @@
  * Copyright (c) 2026 Jacob Bühler
  */
 import { describe, it, expect } from 'vitest'
-import { classifyTrashEntry, runToken, STALE_AFTER_MS } from '../e2e/fixtures/sweep-filter.ts'
+import {
+	buildFixtureName,
+	isRunId,
+	normaliseRunId,
+	FIXTURE_EXTENSIONS,
+} from '../e2e/fixtures/fixture-name.ts'
+import { classifyTrashEntry } from '../e2e/fixtures/sweep-filter.ts'
 
 /**
- * The sweep deletes permanently, so its selection rule is worth pinning:
- * every name the specs actually generate has to be recognised, nothing
- * else may be, and a run must never claim another run's entries.
+ * The sweep deletes permanently, so the rule is worth pinning — and the
+ * only way that means anything is to feed it names the production builder
+ * produced. A test that rebuilds the format itself pins nothing: both
+ * halves could drift together and stay green.
  */
 const OURS = 'a1b2c3d4'
 const THEIRS = '99887766'
-const NOW = 1_700_000_060_000
 
-const name = (label, id, ts, ext = '') => `e2e-${label}-${runToken(id)}-${ts}${ext}`
-const classify = (entry, overrides = {}) =>
-	classifyTrashEntry(entry, { runId: OURS, now: NOW, ...overrides })
+const classify = (entry, runId = OURS) => classifyTrashEntry(entry, { runId })
 
-describe('trash sweep selection', () => {
-	// Exactly the shapes tests/e2e/specs and fixtures build.
+describe('fixture names round-trip through the sweep', () => {
+	// The labels and extensions tests/e2e/specs actually use. The template
+	// spec is the subtle one: uniqueName('tmpl') has no extension, but the
+	// spec then writes it as Templates/<name>.pad, so the trash entry does.
 	it.each([
-		['trash-restore', '.pad'],
-		['legacy', '.pad'],
-		['roundtrip', '.pad'],
-		['public-share-non-pad', '.txt'],
-		['public-share-non-pad-route', '.txt'],
-		// Folders — no extension. pad-move-rename leaves one per run.
-		['move-folder', ''],
-		['tmpl', ''],
-	])('purges this run\'s own %s%s', (label, ext) => {
-		expect(classify(name(label, OURS, 1_700_000_000_001, ext))).toBe('ours')
+		['trash-restore', 'pad'],
+		['legacy', 'pad'],
+		['roundtrip', 'pad'],
+		['tmpl', 'pad'],
+		['public-share-non-pad', 'txt'],
+		['public-share-non-pad-route', 'txt'],
+		// Folders carry no extension: pad-move-rename leaves one per run.
+		['move-folder', undefined],
+	])('recognises %s.%s as ours', (label, extension) => {
+		const name = buildFixtureName(label, { runId: OURS, extension })
+		expect(classify(name)).toBe('ours')
+	})
+
+	it('accepts every extension it advertises', () => {
+		for (const extension of FIXTURE_EXTENSIONS) {
+			expect(classify(buildFixtureName('probe', { runId: OURS, extension }))).toBe('ours')
+		}
+	})
+
+	it('refuses to build a name the sweep could not recognise', () => {
+		expect(() => buildFixtureName('probe', { runId: OURS, extension: 'md' })).toThrow()
+		expect(() => buildFixtureName('Probe Mixed', { runId: OURS })).toThrow()
+		expect(() => buildFixtureName('trailing-', { runId: OURS })).toThrow()
+	})
+})
+
+describe('run ids', () => {
+	it('keeps an id that is already in the expected shape', () => {
+		expect(normaliseRunId(OURS)).toBe(OURS)
+	})
+
+	// The values someone would plausibly wire up in CI. Used verbatim they
+	// would build names the matcher cannot classify, and the sweep would
+	// fail by silently purging nothing.
+	it.each(['12345678901', 'github42', 'A1B2C3D4', 'run/42', ''])('folds %j into the expected shape', (raw) => {
+		const folded = normaliseRunId(raw)
+		expect(isRunId(folded)).toBe(true)
+		expect(classify(buildFixtureName('probe', { runId: raw }), folded)).toBe('ours')
+	})
+
+	it('gives different ids to different runs', () => {
+		expect(normaliseRunId('github-run-1')).not.toBe(normaliseRunId('github-run-2'))
+	})
+})
+
+describe('what the sweep must not touch', () => {
+	it('leaves another run\'s fixtures alone whenever they were created', () => {
+		const theirs = buildFixtureName('trash-restore', { runId: THEIRS, extension: 'pad' })
+		expect(classify(theirs)).toBe('foreign-run')
+		// Ownership comes from the id alone: age must not enter into it.
+		const ancient = buildFixtureName('trash-restore', { runId: THEIRS, extension: 'pad', now: 1_000_000_000_000 })
+		expect(classify(ancient)).toBe('foreign-run')
+	})
+
+	it('claims its own fixture however old it is', () => {
+		const old = buildFixtureName('trash-restore', { runId: OURS, extension: 'pad', now: 1_000_000_000_000 })
+		expect(classify(old)).toBe('ours')
 	})
 
 	it.each([
-		// A person's file that happens to start the same way.
-		`e2e-debug-${runToken(OURS)}-1700000000001.pdf`,
-		'e2e-notes-1700000000001.docx',
+		// A person's files that happen to start the same way.
+		'e2e-notes-1600000000000.txt',
+		'e2e-report-1600000000000.pad',
+	])('only reports %s, never purges it', (entry) => {
+		expect(classify(entry)).toBe('legacy')
+	})
+
+	it.each([
+		'e2e-debug-ra1b2c3d4-1700000000001.pdf',
 		'Invoice 2026.pad',
 		'e2e-no-timestamp.pad',
-		'e2e-short-17000.pad',
-	])('leaves %s alone', (entry) => {
+		'notes.txt',
+	])('does not recognise %s at all', (entry) => {
 		expect(classify(entry)).toBe('not-ours')
-	})
-
-	describe('another run against the same instance', () => {
-		// The case that matters: ownership must come from the id, never
-		// from time. Whichever run started first, neither may claim the
-		// other's entries.
-		it('does not claim entries created before this run started', () => {
-			expect(classify(name('trash-restore', THEIRS, NOW - 60_000, '.pad'))).toBe('foreign-run')
-		})
-
-		it('does not claim entries created after this run started', () => {
-			expect(classify(name('trash-restore', THEIRS, NOW, '.pad'))).toBe('foreign-run')
-		})
-
-		it('does not claim entries whose timestamp is in the future', () => {
-			expect(classify(name('trash-restore', THEIRS, NOW + 600_000, '.pad'))).toBe('foreign-run')
-		})
-
-		it('claims its own entries whenever they were created', () => {
-			expect(classify(name('trash-restore', OURS, NOW - 10 * STALE_AFTER_MS, '.pad'))).toBe('ours')
-		})
-	})
-
-	describe('abandoned leftovers', () => {
-		it('purges another run\'s entry once no run could still be using it', () => {
-			const old = NOW - STALE_AFTER_MS - 1
-			expect(classify(name('trash-restore', THEIRS, old, '.pad'))).toBe('stale')
-		})
-
-		it('purges a pre-run-id leftover once it is old enough', () => {
-			expect(classify(`e2e-trash-restore-${NOW - STALE_AFTER_MS - 1}.pad`)).toBe('stale')
-		})
-
-		it('leaves a recent pre-run-id entry alone', () => {
-			expect(classify(`e2e-trash-restore-${NOW - 60_000}.pad`)).toBe('foreign-run')
-		})
 	})
 })

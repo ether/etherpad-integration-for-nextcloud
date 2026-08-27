@@ -3,6 +3,7 @@
  * Copyright (c) 2026 Jacob Bühler
  */
 import { randomBytes } from 'node:crypto'
+import { normaliseRunId } from './fixture-name'
 
 let fallback: string | null = null
 
@@ -12,14 +13,17 @@ let fallback: string | null = null
  * at the same time. globalSetup puts it in the environment before the
  * workers start, so runner and workers agree on it.
  *
- * The fallback only matters if a spec is driven without globalSetup. It
- * differs per process, so the sweep then recognises nothing as its own
- * and deletes nothing — the safe direction.
+ * An id from outside is folded into the expected shape rather than used
+ * verbatim: `E2E_RUN_ID=$GITHUB_RUN_ID` would otherwise build names the
+ * sweep cannot recognise, and it would fail by silently purging nothing.
+ * An empty value counts as unset — `??=` does not overwrite `''`, so a
+ * blank variable in an env file would leave runner and workers minting
+ * different ids.
  */
 export const runId = (): string => {
 	const fromEnv = process.env.E2E_RUN_ID?.trim()
 	if (fromEnv !== undefined && fromEnv !== '') {
-		return fromEnv
+		return normaliseRunId(fromEnv)
 	}
 	fallback ??= randomBytes(4).toString('hex')
 	return fallback

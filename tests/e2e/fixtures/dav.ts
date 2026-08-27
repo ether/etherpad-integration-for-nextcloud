@@ -23,6 +23,14 @@ const davUrl = (relativePath: string): string => {
 	return `${E2E.baseURL}/remote.php/dav/files/${encodeURIComponent(E2E.user)}/${path}`
 }
 
+/**
+ * The trash helpers run in globalTeardown, which Playwright does not put a
+ * timeout on. Without a bound, a wedged instance leaves the runner hanging
+ * after the report is already written until CI kills the job — housekeeping
+ * deciding whether the run passed, which is exactly what it must not do.
+ */
+const TRASH_REQUEST_TIMEOUT_MS = 30_000
+
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
 
 /** Decode the XML entities WebDAV property text can carry (not URL-encoding). */
@@ -236,18 +244,19 @@ export const listTrashbinEntries = async (): Promise<{ entry: string, originalNa
 		+ '<d:propfind xmlns:d="DAV:" xmlns:nc="http://nextcloud.org/ns" xmlns:oc="http://owncloud.org/ns">\n'
 		+ '  <d:prop><nc:trashbin-filename/><oc:trashbin-original-filename/></d:prop>\n'
 		+ '</d:propfind>'
-	const res = await fetch(trashbinUrl('trash'), {
-		method: 'PROPFIND',
-		headers: {
-			Authorization: basicAuthHeader(),
-			Depth: '1',
-			'Content-Type': 'application/xml; charset=UTF-8',
-		},
-		body,
-	})
-	if (!res.ok && res.status !== 207) {
-		throw new Error(`WebDAV PROPFIND trashbin failed with HTTP ${res.status}`)
-	}
+	const res = await withDavRetry(
+		() => fetch(trashbinUrl('trash'), {
+			method: 'PROPFIND',
+			headers: {
+				Authorization: basicAuthHeader(),
+				Depth: '1',
+				'Content-Type': 'application/xml; charset=UTF-8',
+			},
+			body,
+			signal: AbortSignal.timeout(TRASH_REQUEST_TIMEOUT_MS),
+		}),
+		{ retryOn: [423], accept: (status) => status < 300, label: 'PROPFIND trashbin' },
+	)
 	const xml = await res.text()
 	// Parse minimally: walk each <d:response>, extract href + the
 	// original-filename property.
@@ -259,9 +268,14 @@ export const listTrashbinEntries = async (): Promise<{ entry: string, originalNa
 		if (!hrefMatch || !originalMatch) {
 			continue
 		}
-		// Strip leading /remote.php/dav/trashbin/<user>/ so callers can
-		// recompose paths via trashbinUrl().
-		const href = decodeURIComponent(hrefMatch[1].trim())
+		// One entry with a stray % sequence must not take the whole listing
+		// down with it — that is the failure this listing exists to survive.
+		let href: string
+		try {
+			href = decodeURIComponent(hrefMatch[1].trim())
+		} catch {
+			continue
+		}
 		if (!href.startsWith(prefix)) {
 			continue
 		}
@@ -282,14 +296,15 @@ export const listTrashbinEntries = async (): Promise<{ entry: string, originalNa
  * `listTrashbinEntries`.
  */
 export const purgeTrashbinEntry = async (entry: string): Promise<void> => {
-	const res = await fetch(trashbinUrl(entry), {
-		method: 'DELETE',
-		headers: { Authorization: basicAuthHeader() },
-	})
-	// 404 means it is already gone — same end state.
-	if (!res.ok && res.status !== 204 && res.status !== 404) {
-		throw new Error(`WebDAV trashbin DELETE failed with HTTP ${res.status}`)
-	}
+	await withDavRetry(
+		() => fetch(trashbinUrl(entry), {
+			method: 'DELETE',
+			headers: { Authorization: basicAuthHeader() },
+			signal: AbortSignal.timeout(TRASH_REQUEST_TIMEOUT_MS),
+		}),
+		// 404 means it is already gone — same end state.
+		{ retryOn: [423], accept: (status) => status < 300 || status === 404, label: `DELETE ${entry}` },
+	)
 }
 
 /**
@@ -303,16 +318,17 @@ export const restoreFromTrashViaDav = async (originalFileName: string): Promise<
 	if (entry === null) {
 		throw new Error(`No trashbin entry found for "${originalFileName}".`)
 	}
-	const res = await fetch(trashbinUrl(entry), {
-		method: 'MOVE',
-		headers: {
-			Authorization: basicAuthHeader(),
-			Destination: trashbinUrl('restore/' + originalFileName),
-		},
-	})
-	if (!res.ok && res.status !== 201 && res.status !== 204) {
-		throw new Error(`WebDAV trashbin restore MOVE failed with HTTP ${res.status}`)
-	}
+	await withDavRetry(
+		() => fetch(trashbinUrl(entry), {
+			method: 'MOVE',
+			headers: {
+				Authorization: basicAuthHeader(),
+				Destination: trashbinUrl('restore/' + originalFileName),
+			},
+			signal: AbortSignal.timeout(TRASH_REQUEST_TIMEOUT_MS),
+		}),
+		{ retryOn: [423], accept: (status) => status < 300, label: `MOVE restore ${originalFileName}` },
+	)
 }
 
 /**

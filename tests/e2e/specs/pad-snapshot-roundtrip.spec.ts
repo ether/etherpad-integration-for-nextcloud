@@ -39,7 +39,7 @@ import { uniqueName } from '../fixtures/nextcloud'
  * tests/integration/*.sh); no browser page is needed.
  */
 test.describe('snapshot -> pad content round-trip (recover + sync)', () => {
-	const padName = uniqueName('roundtrip', '.pad')
+	const padName = uniqueName('roundtrip', 'pad')
 	const marker = `roundtrip-marker-${Date.now()}-Zürich-✓`
 	const freshPadId = `e2e-roundtrip-${Date.now()}`
 

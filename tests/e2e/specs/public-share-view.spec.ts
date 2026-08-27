@@ -20,8 +20,8 @@ import {
 
 test.describe('public share access without login', () => {
 	const padName = uniquePadName('public-share')
-	const textFileName = uniqueName('public-share-non-pad', '.txt')
-	const textRouteFileName = uniqueName('public-share-non-pad-route', '.txt')
+	const textFileName = uniqueName('public-share-non-pad', 'txt')
+	const textRouteFileName = uniqueName('public-share-non-pad-route', 'txt')
 	let shareToken = ''
 	let nonPadShareToken = ''
 	let nonPadRouteShareToken = ''

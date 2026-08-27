@@ -2,64 +2,36 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  * Copyright (c) 2026 Jacob Bühler
  */
+import { isLegacyFixtureName, runIdOf } from './fixture-name'
 
 /**
- * Decides what the trash sweep is allowed to delete permanently. Kept
- * free of imports so it can be unit-tested without a target instance.
- */
-
-/** Marks the run id inside a fixture name, so a label cannot be mistaken for one. */
-export const runToken = (runId: string): string => `r${runId}`
-
-/**
- * `e2e-<label>-r<runid>-<timestamp>` with an optional extension: `.pad`
- * for pads, `.txt` for the public-share fixtures, none at all for the
- * folders (`e2e-move-folder-…`, `e2e-tmpl-…`).
+ * Decides what the trash sweep may delete permanently.
  *
- * Deliberately narrow. The sweep deletes permanently, so anything it
- * cannot positively account for is left alone.
+ * Only entries carrying this run's id. Not "probably ours", not "old
+ * enough that nobody can still want it" — the sweep deletes permanently
+ * on an account a person also uses, so the rule is positive attribution
+ * or nothing.
+ *
+ * An earlier version purged unattributable entries past an age
+ * threshold. That is a time-based ownership judgement wearing a
+ * different hat: it would delete a maintainer's own
+ * `e2e-notes-<timestamp>.txt`, and between two machines with drifting
+ * clocks it would delete entries a concurrent run was still using.
  */
-const FIXTURE_NAME = /^e2e-[a-z0-9-]+-r([0-9a-f]{8})-(\d{13})(?:\.(?:pad|txt))?$/
-
-/** The same shape from before run ids, kept so old leftovers still get cleaned up. */
-const LEGACY_FIXTURE_NAME = /^e2e-[a-z0-9-]+-(\d{13})(?:\.(?:pad|txt))?$/
-
-/** How long an entry we cannot attribute has to sit before it counts as abandoned. */
-export const STALE_AFTER_MS = 2 * 60 * 60 * 1000
-
-export type SweepDecision = 'ours' | 'stale' | 'foreign-run' | 'not-ours'
+export type SweepDecision = 'ours' | 'foreign-run' | 'legacy' | 'not-ours'
 
 /**
  * `ours` — carries this run's id, purge.
- * `stale` — someone else's or from before run ids, and old enough that no
- *   run could still be using it; purge.
- * `foreign-run` — belongs to a different run that may still be going.
- *   Leave it: its suite may be about to restore that very entry.
+ * `foreign-run` — a fixture from a different run. Leave it: that suite may
+ *   be about to restore this very entry.
+ * `legacy` — our name shape from before run ids. Cannot be attributed, so
+ *   it is only reported; a person decides.
  * `not-ours` — not a fixture name at all.
- *
- * Ownership is decided by the id, never by time. A timestamp cannot say
- * who created an entry: a run that starts later has later timestamps
- * throughout, so an earlier run would read all of them as its own and
- * delete the files that run is still working with.
  */
-export const classifyTrashEntry = (
-	originalName: string,
-	options: { runId: string, now: number, staleAfterMs?: number },
-): SweepDecision => {
-	const staleAfterMs = options.staleAfterMs ?? STALE_AFTER_MS
-
-	const match = FIXTURE_NAME.exec(originalName)
-	if (match !== null) {
-		if (match[1] === options.runId) {
-			return 'ours'
-		}
-		return options.now - Number(match[2]) > staleAfterMs ? 'stale' : 'foreign-run'
+export const classifyTrashEntry = (originalName: string, options: { runId: string }): SweepDecision => {
+	const owner = runIdOf(originalName)
+	if (owner !== null) {
+		return owner === options.runId ? 'ours' : 'foreign-run'
 	}
-
-	const legacy = LEGACY_FIXTURE_NAME.exec(originalName)
-	if (legacy === null) {
-		return 'not-ours'
-	}
-	// No id to go on, so age is all there is.
-	return options.now - Number(legacy[1]) > staleAfterMs ? 'stale' : 'foreign-run'
+	return isLegacyFixtureName(originalName) ? 'legacy' : 'not-ours'
 }

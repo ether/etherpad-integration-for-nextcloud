@@ -7,7 +7,7 @@ import { runId } from './fixtures/run-id'
 import { classifyTrashEntry } from './fixtures/sweep-filter'
 
 /**
- * Sweep the fixtures this suite left in the trash.
+ * Sweep the fixtures this run left in the trash.
  *
  * WebDAV `DELETE` on a live file moves it to the trash rather than
  * removing it, so every spec that cleans up after itself leaves an entry
@@ -16,19 +16,20 @@ import { classifyTrashEntry } from './fixtures/sweep-filter'
  * failing, at which point every spec that reads the trash is stuck and
  * the cause is nowhere near the symptom.
  *
- * What may be deleted is decided by `classifyTrashEntry`: entries
- * carrying this run's id, plus anything too old for a run to still be
- * using. Deleting here is permanent, so the rule is to purge what we can
- * positively account for and skip the rest.
+ * Only this run's own entries are purged; see sweep-filter.ts for why
+ * nothing else is. Deleting here is permanent, so every purge is named in
+ * the log — it is the one irreversible thing the suite does.
  *
  * Housekeeping must not decide whether the run passed. Failures are
- * reported and swallowed — a broken trash listing is exactly the state
- * this exists to prevent, and throwing would mask whichever spec actually
- * failed.
+ * reported and swallowed, and the requests underneath carry their own
+ * timeout so a wedged instance cannot hang the runner either.
  */
+
+/** Enough to overlap the round-trips without hammering the instance. */
+const PURGE_CONCURRENCY = 4
+
 export default async function globalTeardown(): Promise<void> {
 	const id = runId()
-	const now = Date.now()
 
 	let entries: { entry: string, originalName: string }[]
 	try {
@@ -38,31 +39,40 @@ export default async function globalTeardown(): Promise<void> {
 		return
 	}
 
-	const purgeable: { entry: string, originalName: string }[] = []
+	const ours: { entry: string, originalName: string }[] = []
 	let foreign = 0
+	let legacy = 0
 	for (const candidate of entries) {
-		const decision = classifyTrashEntry(candidate.originalName, { runId: id, now })
-		if (decision === 'ours' || decision === 'stale') {
-			purgeable.push(candidate)
-		} else if (decision === 'foreign-run') {
-			foreign += 1
+		switch (classifyTrashEntry(candidate.originalName, { runId: id })) {
+			case 'ours': ours.push(candidate); break
+			case 'foreign-run': foreign += 1; break
+			case 'legacy': legacy += 1; break
+			default: break
 		}
 	}
 
-	let purged = 0
-	for (const candidate of purgeable) {
-		try {
-			await purgeTrashbinEntry(candidate.entry)
-			purged += 1
-		} catch (error) {
-			console.warn(`[teardown] could not purge "${candidate.originalName}": ${String(error)}`)
+	const failed: string[] = []
+	const queue = [...ours]
+	const workers = Array.from({ length: Math.min(PURGE_CONCURRENCY, queue.length) }, async () => {
+		for (let next = queue.shift(); next !== undefined; next = queue.shift()) {
+			try {
+				await purgeTrashbinEntry(next.entry)
+				console.log(`[teardown] purged ${next.originalName}`)
+			} catch (error) {
+				failed.push(next.originalName)
+				console.warn(`[teardown] could not purge "${next.originalName}": ${String(error)}`)
+			}
 		}
-	}
+	})
+	await Promise.all(workers)
 
-	if (purgeable.length > 0) {
-		console.log(`[teardown] purged ${purged}/${purgeable.length} e2e leftovers from the trash`)
+	if (ours.length > 0) {
+		console.log(`[teardown] purged ${ours.length - failed.length}/${ours.length} fixtures from run ${id}`)
 	}
 	if (foreign > 0) {
-		console.log(`[teardown] left ${foreign} recent e2e entries alone — another run may still need them`)
+		console.log(`[teardown] left ${foreign} fixtures from other runs alone`)
+	}
+	if (legacy > 0) {
+		console.log(`[teardown] ${legacy} trash entries predate run ids and cannot be attributed — purge them by hand if they are yours`)
 	}
 }

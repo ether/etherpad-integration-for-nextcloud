@@ -33,7 +33,7 @@ import { deleteViaDav, getFileViaDav, putFileViaDav } from '../fixtures/dav'
  */
 test.describe('legacy Ownpad .pad migration', () => {
 	const originProbe = uniquePadName('legacy-origin-probe')
-	const legacyName = uniqueName('legacy', '.pad')
+	const legacyName = uniqueName('legacy', 'pad')
 	const legacyPadId = `e2e-legacy-${Date.now()}`
 
 	test.afterAll(async () => {

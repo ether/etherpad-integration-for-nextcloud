@@ -21,8 +21,8 @@ const baseURL = process.env.E2E_BASE_URL || undefined
 
 export default defineConfig({
 	testDir: here,
-	// globalSetup only stamps the run's start time; the teardown needs it
-	// to tell its own trash leftovers from a concurrent run's.
+	// globalSetup only stamps this run's id; the teardown needs it to tell
+	// its own trash leftovers from a concurrent run's.
 	globalSetup: resolve(here, 'global-setup.ts'),
 	// Purges the fixtures the specs leave in the trash — see the file
 	// header for why DELETE alone is not enough.
