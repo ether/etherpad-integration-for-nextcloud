@@ -82,18 +82,19 @@ class UserNodeResolver {
 	}
 
 	/**
-	 * The user's *own* file with this id, or null.
+	 * The file with this id as this user can reach it, or null.
 	 *
-	 * Ownership is checked rather than assumed. Incoming shares are mounted
-	 * inside the user's folder, so an id can resolve to a node someone else
-	 * owns — and deleting that removes the owner's file, not a copy of it.
-	 * The path prefix alone does not catch this, because a share mounts
-	 * under `/<uid>/files/` like everything else.
+	 * Deliberately not restricted to files the user owns. A pad created in a
+	 * folder someone shared with them belongs, at storage level, to the
+	 * person who shared it — and in a group folder there may be no owner at
+	 * all. An ownership test would refuse to clean up exactly those creates.
+	 * What makes the file safe to delete is decided by the caller, on the
+	 * file's contents; see PadCreateRollbackService.
 	 *
 	 * Returns null instead of throwing: the caller is cleanup, and "not
-	 * ours" and "not there" lead to the same decision.
+	 * reachable" and "not there" lead to the same decision.
 	 */
-	public function findOwnedUserFileById(string $uid, int $fileId): ?File {
+	public function findUserFileById(string $uid, int $fileId): ?File {
 		if ($fileId <= 0) {
 			return null;
 		}
@@ -102,10 +103,6 @@ class UserNodeResolver {
 			return null;
 		}
 		if (!str_starts_with((string)$node->getPath(), '/' . $uid . '/files/')) {
-			return null;
-		}
-		$owner = $node->getOwner();
-		if ($owner === null || $owner->getUID() !== $uid) {
 			return null;
 		}
 

@@ -21,6 +21,8 @@ if (!interface_exists(Folder::class)) {
 
 		public function getPath(): string;
 
+		public function getId(): int;
+
 		public function delete(): void;
 
 		/** @return array<int,mixed> */

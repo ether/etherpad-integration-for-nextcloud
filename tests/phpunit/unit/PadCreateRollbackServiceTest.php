@@ -14,14 +14,14 @@ use Psr\Log\LoggerInterface;
 class PadCreateRollbackServiceTest extends TestCase {
 	public function testRollbackTouchesNothingWhenNoFileWasCreated(): void {
 		$resolver = $this->createMock(UserNodeResolver::class);
-		$resolver->expects($this->never())->method('findOwnedUserFileById');
+		$resolver->expects($this->never())->method('findUserFileById');
 
 		$this->buildService(resolver: $resolver)
 			->rollbackFailedCreate('alice', '/Existing.pad', '', 0);
 	}
 
 	public function testRollbackDeletesTheFileItCreated(): void {
-		$created = $this->createMock(File::class);
+		$created = $this->emptyFile();
 		$created->expects($this->once())->method('delete');
 
 		$this->buildService(resolver: $this->resolverReturning($created))
@@ -34,7 +34,7 @@ class PadCreateRollbackServiceTest extends TestCase {
 	 * name is not.
 	 */
 	public function testRollbackFollowsTheFileRatherThanTheName(): void {
-		$movedAway = $this->createMock(File::class);
+		$movedAway = $this->emptyFile();
 		$movedAway->method('getPath')->willReturn('/alice/files/Archive/Created.pad');
 		$movedAway->expects($this->once())->method('delete');
 
@@ -77,7 +77,7 @@ class PadCreateRollbackServiceTest extends TestCase {
 
 	/** A cleanup failure must not replace the error that caused the rollback. */
 	public function testRollbackReportsButSwallowsADeleteFailure(): void {
-		$created = $this->createMock(File::class);
+		$created = $this->emptyFile();
 		$created->method('delete')->willThrowException(new \RuntimeException('nope'));
 
 		$logger = $this->createMock(LoggerInterface::class);
@@ -107,7 +107,7 @@ class PadCreateRollbackServiceTest extends TestCase {
 
 	/** An external create links a remote pad, so there is none of ours to delete. */
 	public function testExternalRollbackDeletesTheFileButNoPad(): void {
-		$created = $this->createMock(File::class);
+		$created = $this->emptyFile();
 		$created->expects($this->once())->method('delete');
 
 		$etherpad = $this->createMock(EtherpadClient::class);
@@ -117,11 +117,59 @@ class PadCreateRollbackServiceTest extends TestCase {
 			->rollbackExternalCreate('alice', '/Created.pad', 4711);
 	}
 
+	/**
+	 * Nextcloud has no create-if-absent, so a create that lost a race by
+	 * microseconds can be holding a file somebody else made. Its id would
+	 * then be the id this rollback deletes by — unless the contents say
+	 * otherwise.
+	 */
+	public function testRollbackLeavesAFileHoldingSomeoneElsesContent(): void {
+		$stranger = $this->createMock(File::class);
+		$stranger->method('getSize')->willReturn(120);
+		$stranger->method('getContent')->willReturn("Bob's notes, nothing to do with us");
+		$stranger->expects($this->never())->method('delete');
+
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects($this->once())
+			->method('warning')
+			->with($this->stringContains('someone else'), $this->anything());
+
+		$this->buildService(resolver: $this->resolverReturning($stranger), logger: $logger)
+			->rollbackFailedCreate('alice', '/Created.pad', 'g.ABC$pad', 4711);
+	}
+
+	/** Our own half-written document names the pad this create provisioned. */
+	public function testRollbackDeletesAFileCarryingOurPadId(): void {
+		$ours = $this->createMock(File::class);
+		$ours->method('getSize')->willReturn(200);
+		$ours->method('getContent')->willReturn("---\npad_id: \"g.ABC\$pad\"\n---\n");
+		$ours->expects($this->once())->method('delete');
+
+		$this->buildService(resolver: $this->resolverReturning($ours))
+			->rollbackFailedCreate('alice', '/Created.pad', 'g.ABC$pad', 4711);
+	}
+
+	public function testRollbackLeavesAFileItCannotRead(): void {
+		$unreadable = $this->createMock(File::class);
+		$unreadable->method('getSize')->willReturn(10);
+		$unreadable->method('getContent')->willThrowException(new \RuntimeException('locked'));
+		$unreadable->expects($this->never())->method('delete');
+
+		$this->buildService(resolver: $this->resolverReturning($unreadable))
+			->rollbackFailedCreate('alice', '/Created.pad', 'g.ABC$pad', 4711);
+	}
+
+	private function emptyFile(): File {
+		$file = $this->createMock(File::class);
+		$file->method('getSize')->willReturn(0);
+		return $file;
+	}
+
 	/** Expects exactly one lookup, which is what every file-carrying case does. */
 	private function resolverReturning(?File $node): UserNodeResolver {
 		$resolver = $this->createMock(UserNodeResolver::class);
 		$resolver->expects($this->once())
-			->method('findOwnedUserFileById')
+			->method('findUserFileById')
 			->with('alice', 4711)
 			->willReturn($node);
 		return $resolver;
@@ -130,7 +178,7 @@ class PadCreateRollbackServiceTest extends TestCase {
 	/** For the pad-only cases, where no file was created to look up. */
 	private function resolverNotConsulted(): UserNodeResolver {
 		$resolver = $this->createMock(UserNodeResolver::class);
-		$resolver->expects($this->never())->method('findOwnedUserFileById');
+		$resolver->expects($this->never())->method('findUserFileById');
 		return $resolver;
 	}
 

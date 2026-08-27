@@ -23,43 +23,45 @@ class UserNodeResolverTest extends TestCase {
 	public function testFindsTheUsersOwnFileById(): void {
 		$file = $this->ownedFile('/alice/files/notes.pad', 'alice');
 
-		$this->assertSame($file, $this->resolverForFirstNode($file)->findOwnedUserFileById('alice', 42));
+		$this->assertSame($file, $this->resolverForFirstNode($file)->findUserFileById('alice', 42));
 	}
 
 	/**
-	 * An incoming share mounts *inside* the user's folder, so the path
-	 * prefix looks right while the file belongs to someone else — and
-	 * deleting it would remove the owner's file, not a copy.
+	 * A pad created in a folder someone shared with this user belongs, at
+	 * storage level, to whoever shared it. Refusing those would refuse to
+	 * clean up exactly the creates that happen inside shares — what makes a
+	 * file safe to delete is decided on its contents, not its owner.
 	 */
-	public function testRefusesAFileOwnedBySomeoneElse(): void {
+	public function testAcceptsAFileInsideAShareTheUserCanReach(): void {
 		$shared = $this->ownedFile('/alice/files/Shared/Team/notes.pad', 'bob');
 
-		$this->assertNull($this->resolverForFirstNode($shared)->findOwnedUserFileById('alice', 42));
+		$this->assertSame($shared, $this->resolverForFirstNode($shared)->findUserFileById('alice', 42));
 	}
 
 	public function testRefusesANodeOutsideTheUsersFileTree(): void {
 		$outside = $this->ownedFile('/alice/thumbnails/42.pad', 'alice');
 
-		$this->assertNull($this->resolverForFirstNode($outside)->findOwnedUserFileById('alice', 42));
+		$this->assertNull($this->resolverForFirstNode($outside)->findUserFileById('alice', 42));
 	}
 
-	public function testRefusesAFileWithNoOwner(): void {
+	/** Group folders can report no owner at all; that must not block cleanup. */
+	public function testAcceptsAFileWithNoOwner(): void {
 		$file = $this->createMock(File::class);
-		$file->method('getPath')->willReturn('/alice/files/notes.pad');
+		$file->method('getPath')->willReturn('/alice/files/Team/notes.pad');
 		$file->method('getOwner')->willReturn(null);
 
-		$this->assertNull($this->resolverForFirstNode($file)->findOwnedUserFileById('alice', 42));
+		$this->assertSame($file, $this->resolverForFirstNode($file)->findUserFileById('alice', 42));
 	}
 
 	public function testReturnsNullWhenNothingHasThatId(): void {
-		$this->assertNull($this->resolverForFirstNode(null)->findOwnedUserFileById('alice', 42));
+		$this->assertNull($this->resolverForFirstNode(null)->findUserFileById('alice', 42));
 	}
 
 	public function testRefusesANonPositiveId(): void {
 		$rootFolder = $this->createMock(IRootFolder::class);
 		$rootFolder->expects($this->never())->method('getUserFolder');
 
-		$this->assertNull((new UserNodeResolver($rootFolder))->findOwnedUserFileById('alice', 0));
+		$this->assertNull((new UserNodeResolver($rootFolder))->findUserFileById('alice', 0));
 	}
 
 	private function ownedFile(string $path, string $ownerUid): File {

@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Service;
 
+use OCP\Files\File;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -27,7 +28,7 @@ class PadCreateRollbackService {
 	public function rollbackFailedCreate(string $uid, string $path, string $padId, int $createdFileId): void {
 		try {
 			if ($createdFileId > 0) {
-				$this->deleteCreatedFile($uid, $createdFileId, $path);
+				$this->deleteCreatedFile($uid, $createdFileId, $path, $padId);
 			}
 		} catch (\Throwable $cleanupError) {
 			$this->logger->warning('Could not cleanup failed .pad file create', [
@@ -60,7 +61,8 @@ class PadCreateRollbackService {
 	}
 
 	/**
-	 * Delete the node this create actually made, identified by its file id.
+	 * Delete the node this create actually made, identified by its file id
+	 * and confirmed by what is in it.
 	 *
 	 * Resolving the path again instead would delete whatever holds that name
 	 * by the time cleanup runs. A path is not an identity: the file can be
@@ -69,11 +71,11 @@ class PadCreateRollbackService {
 	 * delete. The id follows the file wherever it went, and matches nothing
 	 * else.
 	 */
-	private function deleteCreatedFile(string $uid, int $fileId, string $path): void {
+	private function deleteCreatedFile(string $uid, int $fileId, string $path, string $padId): void {
 		if ($fileId <= 0) {
 			return;
 		}
-		$node = $this->userNodeResolver->findOwnedUserFileById($uid, $fileId);
+		$node = $this->userNodeResolver->findUserFileById($uid, $fileId);
 		if ($node === null) {
 			// Moved out of the user's home, already trashed, owned by someone
 			// else, or not visible in the cache yet. Nothing safe to delete —
@@ -85,6 +87,47 @@ class PadCreateRollbackService {
 			]);
 			return;
 		}
+
+		if (!$this->isOurs($node, $padId)) {
+			$this->logger->warning('The file to roll back holds someone else\'s content; leaving it in place', [
+				'app' => 'etherpad_nextcloud',
+				'file' => $path,
+				'fileId' => $fileId,
+			]);
+			return;
+		}
+
 		$node->delete();
+	}
+
+	/**
+	 * Is this still the file this create made?
+	 *
+	 * Nextcloud has no create-if-absent: Folder::newFile() calls
+	 * View::touch(), which succeeds on a file that is already there and
+	 * hands back a node for it. So a create that lost a race by microseconds
+	 * can be holding a file somebody else made, and its id would then be the
+	 * id this rollback deletes by.
+	 *
+	 * Two things make it ours: nothing has been written yet, or what is
+	 * written is the document this create wrote — which names the pad it
+	 * provisioned, an id no other file has a reason to carry.
+	 */
+	private function isOurs(File $node, string $padId): bool {
+		try {
+			if ((int)$node->getSize() === 0) {
+				return true;
+			}
+			if ($padId === '') {
+				return false;
+			}
+			return str_contains((string)$node->getContent(), $padId);
+		} catch (\Throwable $e) {
+			$this->logger->warning('Could not read the file to roll back; leaving it in place', [
+				'app' => 'etherpad_nextcloud',
+				'exception' => $e,
+			]);
+			return false;
+		}
 	}
 }

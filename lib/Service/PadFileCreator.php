@@ -114,11 +114,15 @@ class PadFileCreator {
 			throw new \RuntimeException('Could not create .pad file.');
 		}
 
-		// Some storage backends answer newFile() with the existing node
-		// instead of throwing. The caller records this node's id and the
-		// rollback deletes by it, so handing back someone's existing file
-		// would let a failed create delete their data. A file we just made
-		// is empty; anything else is not ours to take.
+		// newFile() is not an exclusive create: Folder::newFile() calls
+		// View::touch(), which succeeds on a file that already exists and
+		// hands back a node for it. The pre-check above is the actual guard,
+		// and this catches what slips past it — a file that appeared in the
+		// window and already has content is somebody's, not ours.
+		//
+		// It is a filter, not a proof. An empty file created in that same
+		// window is indistinguishable from one we just made, so the rollback
+		// checks again before deleting anything.
 		if ((int)$node->getSize() > 0) {
 			throw new PadFileAlreadyExistsException('Target .pad file already exists.');
 		}
@@ -127,12 +131,17 @@ class PadFileCreator {
 	}
 
 	/**
-	 * `oc_file_locks.key` is varchar(64), so the folder path and name are
-	 * hashed rather than spelled out — a deep path with a long name would
-	 * otherwise be truncated, and two different targets could collide on one
-	 * lock.
+	 * Keyed on the folder's file id, not its path.
+	 *
+	 * A shared folder has a different path for its owner than for everyone
+	 * it is shared with, so a path-based key would hand the same target two
+	 * different locks — and "two people create the same pad at once" is
+	 * exactly the case a shared folder makes likely. The file id is the same
+	 * number for all of them.
+	 *
+	 * `oc_file_locks.key` is varchar(64), hence the hash.
 	 */
 	private function lockKey(Folder $parent, string $fileName): string {
-		return Application::APP_ID . ':create:' . substr(sha1($parent->getPath() . "\0" . $fileName), 0, 32);
+		return Application::APP_ID . ':create:' . substr(sha1($parent->getId() . "\0" . $fileName), 0, 32);
 	}
 }
