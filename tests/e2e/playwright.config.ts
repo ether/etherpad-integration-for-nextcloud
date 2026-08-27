@@ -21,8 +21,11 @@ const baseURL = process.env.E2E_BASE_URL || undefined
 
 export default defineConfig({
 	testDir: here,
-	// Purges the pads the specs leave in the trash — see the file header
-	// for why DELETE alone is not enough.
+	// globalSetup only stamps the run's start time; the teardown needs it
+	// to tell its own trash leftovers from a concurrent run's.
+	globalSetup: resolve(here, 'global-setup.ts'),
+	// Purges the fixtures the specs leave in the trash — see the file
+	// header for why DELETE alone is not enough.
 	globalTeardown: resolve(here, 'global-teardown.ts'),
 	// One worker by default: tests run against a shared real instance,
 	// so serial execution avoids create/cleanup races. Bump locally with
