@@ -267,6 +267,10 @@ class PadCreationService {
 		return $this->withCreateRollback(
 			function () use ($uid, $path, $templateNode, $user, &$padId, &$createdFileId): array {
 				$fileNode = $this->padFileCreator->createUserFile($uid, $path);
+				// Recorded before the template is materialised: everything
+				// after this can fail, and rollback needs to know which file
+				// to remove.
+				$createdFileId = (int)$fileNode->getId();
 
 				$result = $this->materializeTemplateInto($fileNode, $templateNode, $user);
 				$padId = $result['pad_id'];
