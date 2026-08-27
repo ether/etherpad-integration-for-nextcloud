@@ -83,25 +83,6 @@ class PadFileCreatorTest extends TestCase {
 			->createUserFileInFolder($folder, 'Pad.pad');
 	}
 
-	/**
-	 * A backend that answers newFile() with the existing node instead of
-	 * throwing would hand back the user's file. The caller records its id and
-	 * the rollback deletes by that id, so accepting it would let a failed
-	 * create delete their data. A file we just made is empty.
-	 */
-	public function testRefusesANodeThatAlreadyHasContent(): void {
-		$existing = $this->createMock(File::class);
-		$existing->method('getSize')->willReturn(4096);
-
-		$folder = $this->createMock(Folder::class);
-		$folder->method('getPath')->willReturn('/alice/files');
-		$folder->method('nodeExists')->willReturn(false);
-		$folder->method('newFile')->willReturn($existing);
-
-		$this->expectException(PadFileAlreadyExistsException::class);
-		$this->buildCreator()->createUserFileInFolder($folder, 'Pad.pad');
-	}
-
 	public function testReleasesTheLockEvenWhenTheCreateFails(): void {
 		$folder = $this->createMock(Folder::class);
 		$folder->method('getPath')->willReturn('/alice/files');

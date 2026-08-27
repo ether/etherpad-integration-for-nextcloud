@@ -280,7 +280,9 @@ class PadCreationService {
 				];
 			},
 			function () use ($uid, $path, &$padId, &$createdFileId): void {
-				$this->rollbackService->rollbackFailedCreate($uid, $path, $padId, $createdFileId);
+				// File only: materializeTemplateInto() has already deleted the
+				// pad it provisioned before rethrowing.
+				$this->rollbackService->rollbackCreatedFileOnly($uid, $path, $padId, $createdFileId);
 			},
 			function (\Throwable $e) use ($path, &$padId): ?array {
 				if ($e instanceof BindingException) {

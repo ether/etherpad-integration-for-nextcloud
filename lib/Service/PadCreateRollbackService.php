@@ -26,17 +26,7 @@ class PadCreateRollbackService {
 	}
 
 	public function rollbackFailedCreate(string $uid, string $path, string $padId, int $createdFileId): void {
-		try {
-			if ($createdFileId > 0) {
-				$this->deleteCreatedFile($uid, $createdFileId, $path, $padId);
-			}
-		} catch (\Throwable $cleanupError) {
-			$this->logger->warning('Could not cleanup failed .pad file create', [
-				'app' => 'etherpad_nextcloud',
-				'file' => $path,
-				'exception' => $cleanupError,
-			]);
-		}
+		$this->rollbackCreatedFileOnly($uid, $path, $padId, $createdFileId);
 
 		if ($padId !== '') {
 			try {
@@ -48,6 +38,31 @@ class PadCreateRollbackService {
 					'exception' => $cleanupError,
 				]);
 			}
+		}
+	}
+
+	/**
+	 * Remove only the file, leaving the pad alone.
+	 *
+	 * For the flows that already clean up their own pad — the template
+	 * materialisation deletes it before rethrowing — so calling the full
+	 * rollback would delete it a second time, costing an API round trip and
+	 * logging a cleanup warning about a pad that is already gone.
+	 *
+	 * The pad id is still needed here: it is what proves the file was
+	 * written by this create.
+	 */
+	public function rollbackCreatedFileOnly(string $uid, string $path, string $padId, int $createdFileId): void {
+		try {
+			if ($createdFileId > 0) {
+				$this->deleteCreatedFile($uid, $createdFileId, $path, $padId);
+			}
+		} catch (\Throwable $cleanupError) {
+			$this->logger->warning('Could not cleanup failed .pad file create', [
+				'app' => 'etherpad_nextcloud',
+				'file' => $path,
+				'exception' => $cleanupError,
+			]);
 		}
 	}
 

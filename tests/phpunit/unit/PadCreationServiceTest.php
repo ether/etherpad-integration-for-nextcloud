@@ -492,7 +492,7 @@ class PadCreationServiceTest extends TestCase {
 
 		$rollbackService = $this->createMock(PadCreateRollbackService::class);
 		$rollbackService->expects($this->once())
-			->method('rollbackFailedCreate')
+			->method('rollbackCreatedFileOnly')
 			->with('alice', '/FromTpl.pad', '', 4242);
 
 		$this->expectException(\RuntimeException::class);
@@ -545,8 +545,9 @@ class PadCreationServiceTest extends TestCase {
 
 		$rollbackService = $this->createMock(PadCreateRollbackService::class);
 		$rollbackService->expects($this->once())
-			->method('rollbackFailedCreate')
+			->method('rollbackCreatedFileOnly')
 			->with('alice', '/FromTpl.pad', 'p-fresh', 4242);
+		$rollbackService->expects($this->never())->method('rollbackFailedCreate');
 
 		$this->expectException(\RuntimeException::class);
 
@@ -556,6 +557,71 @@ class PadCreationServiceTest extends TestCase {
 			fileCreator: $this->fileCreatorReturningId(4242),
 			userNodeResolver: $userNodeResolver,
 			bindingService: $bindingService,
+			bootstrap: $bootstrap,
+			rollbackService: $rollbackService,
+		)->createFromTemplate('alice', '/FromTpl.pad', 7, null);
+	}
+
+	/**
+	 * With the real rollback service, not a mock: materializeTemplateInto()
+	 * deletes the pad it provisioned before rethrowing, so the outer rollback
+	 * must not delete it again. A second deletePad() costs a round trip and
+	 * logs a cleanup warning about a pad that is already gone.
+	 */
+	public function testTemplateBindingFailureDeletesThePadExactlyOnce(): void {
+		$templateNode = $this->createMock(\OCP\Files\File::class);
+		$templateNode->method('getName')->willReturn('Tpl.pad');
+		$templateNode->method('getContent')->willReturn('tpl-content');
+
+		$userNodeResolver = $this->createMock(UserNodeResolver::class);
+		$userNodeResolver->method('resolveUserFileNodeById')->willReturn($templateNode);
+		// The written file, found again by the rollback.
+		$written = $this->createMock(\OCP\Files\File::class);
+		$written->method('getSize')->willReturn(120);
+		$written->method('getContent')->willReturn("pad_id: \"p-fresh\"");
+		$written->expects($this->once())->method('delete');
+		$userNodeResolver->method('findUserFileById')->with('alice', 4242)->willReturn($written);
+
+		$padPaths = $this->createMock(PathNormalizer::class);
+		$padPaths->method('normalizeCreatePath')->willReturn('/FromTpl.pad');
+
+		$padFileService = $this->createMock(PadFileService::class);
+		$padFileService->method('readPad')->willReturn(new ParsedPadFile(
+			frontmatter: ['pad_id' => 'g.tpl$pad', 'access_mode' => BindingService::ACCESS_PUBLIC],
+			body: 'body',
+			padId: 'g.tpl$pad',
+			accessMode: BindingService::ACCESS_PUBLIC,
+			padUrl: '',
+			isExternal: false,
+		));
+		$padFileService->method('getSnapshotPartsFromBody')->willReturn(['text' => 'text', 'html' => '']);
+		$padFileService->method('buildInitialDocument')->willReturn('doc');
+		$padFileService->method('withExportSnapshot')->willReturn('doc');
+
+		$bootstrap = $this->createMock(PadBootstrapService::class);
+		$bootstrap->method('provisionPadId')->willReturn('p-fresh');
+
+		$bindingService = $this->createMock(BindingService::class);
+		$bindingService->method('createBinding')->willThrowException(new \RuntimeException('binding failed'));
+
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->expects($this->once())->method('deletePad')->with('p-fresh');
+
+		$rollbackService = new PadCreateRollbackService(
+			$userNodeResolver,
+			$etherpadClient,
+			$this->createMock(\Psr\Log\LoggerInterface::class),
+		);
+
+		$this->expectException(\RuntimeException::class);
+
+		$this->buildService(
+			padFileService: $padFileService,
+			padPaths: $padPaths,
+			fileCreator: $this->fileCreatorReturningId(4242),
+			userNodeResolver: $userNodeResolver,
+			bindingService: $bindingService,
+			etherpadClient: $etherpadClient,
 			bootstrap: $bootstrap,
 			rollbackService: $rollbackService,
 		)->createFromTemplate('alice', '/FromTpl.pad', 7, null);
