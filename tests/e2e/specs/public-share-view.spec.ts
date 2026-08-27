@@ -9,6 +9,7 @@ import {
 	createPublicPad,
 	expectEtherpadViewerMounted,
 	uniquePadName,
+	uniqueName,
 } from '../fixtures/nextcloud'
 import {
 	createPublicReadShare,
@@ -19,8 +20,8 @@ import {
 
 test.describe('public share access without login', () => {
 	const padName = uniquePadName('public-share')
-	const textFileName = `e2e-public-share-non-pad-${Date.now()}.txt`
-	const textRouteFileName = `e2e-public-share-non-pad-route-${Date.now()}.txt`
+	const textFileName = uniqueName('public-share-non-pad', 'txt')
+	const textRouteFileName = uniqueName('public-share-non-pad-route', 'txt')
 	let shareToken = ''
 	let nonPadShareToken = ''
 	let nonPadRouteShareToken = ''

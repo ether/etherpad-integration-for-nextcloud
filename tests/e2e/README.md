@@ -101,10 +101,31 @@ Each `specs/*.spec.ts` covers one flow:
 
 ## Cleanup
 
-Specs name their files `e2e-<label>-<timestamp>.pad` and delete them in
-`afterAll` via WebDAV. `E2E_APP_PASSWORD` is required for these
-non-browser requests, matching the existing `NC_APP_PASSWORD` pattern in
-`tests/integration/*.sh`.
+Every file and folder a spec creates must be named through
+`uniqueName()` (or `uniquePadName()`) from `fixtures/nextcloud.ts`. The
+name it builds — `e2e-<label>-r<runid>-<timestamp>[.pad|.txt]` — is what
+the trash sweep recognises afterwards. A hand-built name leaks forever,
+silently, so `fixtures/fixture-name.ts` is the single place that both
+builds and matches names, and it throws on a label or extension it could
+not recognise later.
+
+Specs delete their files in `afterAll` via WebDAV. `E2E_APP_PASSWORD` is
+required for these non-browser requests, matching the existing
+`NC_APP_PASSWORD` pattern in `tests/integration/*.sh`.
+
+That `DELETE` only moves a file to the trash, so `global-teardown.ts`
+sweeps the trash at the end of the run. Without it a shared account
+collects a dozen entries per green run, and a single unreadable one
+breaks the trash listing for every spec that reads it.
+
+The sweep purges **only entries carrying this run's id**, which
+`global-setup.ts` stamps before the workers start. Fixtures from another
+run are left alone — that suite may be about to restore the very entry —
+and entries from before run ids existed are reported for a person to
+deal with, never deleted. Ownership is never inferred from age: a run
+that starts later has later timestamps throughout, so time cannot say
+who created what. Every purge is named in the output, because it is the
+one irreversible thing the suite does.
 
 Keep `E2E_PASS` and `E2E_APP_PASSWORD` separate:
 

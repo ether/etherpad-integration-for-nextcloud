@@ -11,6 +11,7 @@ import {
 	gotoFilesDir,
 	openPadFromFileList,
 	uniquePadName,
+	uniqueName,
 } from '../fixtures/nextcloud'
 import { deleteViaDav, mkcolViaDav, moveViaDav } from '../fixtures/dav'
 
@@ -46,7 +47,7 @@ test.describe('pad rename keeps the binding', () => {
 
 test.describe('pad move keeps the binding', () => {
 	const padName = uniquePadName('move')
-	const folder = `e2e-move-folder-${Date.now()}`
+	const folder = uniqueName('move-folder')
 
 	test.afterAll(async () => {
 		await deleteViaDav(`${folder}/${padName}`).catch(() => {})
