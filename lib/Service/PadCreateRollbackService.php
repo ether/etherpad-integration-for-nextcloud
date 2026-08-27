@@ -9,8 +9,6 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Service;
 
-use OCP\Files\File;
-use OCP\Files\IRootFolder;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -20,7 +18,7 @@ use Psr\Log\LoggerInterface;
  */
 class PadCreateRollbackService {
 	public function __construct(
-		private IRootFolder $rootFolder,
+		private UserNodeResolver $userNodeResolver,
 		private EtherpadClient $etherpadClient,
 		private LoggerInterface $logger,
 	) {
@@ -29,7 +27,7 @@ class PadCreateRollbackService {
 	public function rollbackFailedCreate(string $uid, string $path, string $padId, int $createdFileId): void {
 		try {
 			if ($createdFileId > 0) {
-				$this->deleteCreatedFile($uid, $createdFileId);
+				$this->deleteCreatedFile($uid, $createdFileId, $path);
 			}
 		} catch (\Throwable $cleanupError) {
 			$this->logger->warning('Could not cleanup failed .pad file create', [
@@ -52,18 +50,13 @@ class PadCreateRollbackService {
 		}
 	}
 
+	/**
+	 * Same cleanup, minus the pad: an external create links an existing
+	 * remote pad, so there is nothing of ours to delete on the Etherpad
+	 * side.
+	 */
 	public function rollbackExternalCreate(string $uid, string $path, int $createdFileId): void {
-		try {
-			if ($createdFileId > 0) {
-				$this->deleteCreatedFile($uid, $createdFileId);
-			}
-		} catch (\Throwable $cleanupError) {
-			$this->logger->warning('Could not cleanup failed external .pad create', [
-				'app' => 'etherpad_nextcloud',
-				'file' => $path,
-				'exception' => $cleanupError,
-			]);
-		}
+		$this->rollbackFailedCreate($uid, $path, '', $createdFileId);
 	}
 
 	/**
@@ -76,15 +69,22 @@ class PadCreateRollbackService {
 	 * delete. The id follows the file wherever it went, and matches nothing
 	 * else.
 	 */
-	private function deleteCreatedFile(string $uid, int $fileId): void {
+	private function deleteCreatedFile(string $uid, int $fileId, string $path): void {
 		if ($fileId <= 0) {
 			return;
 		}
-		// Scoped to the user's own folder, so an id that somehow belongs
-		// elsewhere resolves to nothing rather than to someone else's file.
-		$node = $this->rootFolder->getUserFolder($uid)->getFirstNodeById($fileId);
-		if ($node instanceof File) {
-			$node->delete();
+		$node = $this->userNodeResolver->findOwnedUserFileById($uid, $fileId);
+		if ($node === null) {
+			// Moved out of the user's home, already trashed, owned by someone
+			// else, or not visible in the cache yet. Nothing safe to delete —
+			// but say so, or the leftover has nothing tying it to this create.
+			$this->logger->warning('Could not identify the file to roll back; leaving it in place', [
+				'app' => 'etherpad_nextcloud',
+				'file' => $path,
+				'fileId' => $fileId,
+			]);
+			return;
 		}
+		$node->delete();
 	}
 }

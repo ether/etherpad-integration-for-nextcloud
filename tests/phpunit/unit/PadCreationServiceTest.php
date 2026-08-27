@@ -131,6 +131,20 @@ class PadCreationServiceTest extends TestCase {
 			->createInParent('alice', 99, 'Test', BindingService::ACCESS_PROTECTED);
 	}
 
+	/**
+	 * The template flow creates the file before it validates the template,
+	 * so even the refusal tests need a node that reports an id — the create
+	 * refuses to continue without one.
+	 */
+	private function fileCreatorReturningId(int $fileId): PadFileCreator {
+		$fileNode = $this->createMock(\OCP\Files\File::class);
+		$fileNode->method('getId')->willReturn($fileId);
+
+		$fileCreator = $this->createMock(PadFileCreator::class);
+		$fileCreator->method('createUserFile')->willReturn($fileNode);
+		return $fileCreator;
+	}
+
 	public function testTemplateCreationIsRefusedWhenNoPadTypeIsEnabled(): void {
 		// Proves the template path consults the policy at all; which mode it
 		// falls back to is covered by PadTypePolicyTest.
@@ -159,7 +173,7 @@ class PadCreationServiceTest extends TestCase {
 		$this->buildService(
 			$padFileService,
 			$padPaths,
-			null,
+			$this->fileCreatorReturningId(11),
 			$userNodeResolver,
 			padTypePolicy: $this->buildPadTypePolicy(false, false),
 		)->createFromTemplate('alice', '/Out.pad', 7, null);
@@ -501,7 +515,7 @@ class PadCreationServiceTest extends TestCase {
 
 		$this->expectException(\OCA\EtherpadNextcloud\Exception\NotAPadFileException::class);
 
-		$this->buildService(userNodeResolver: $userNodeResolver)
+		$this->buildService(fileCreator: $this->fileCreatorReturningId(11), userNodeResolver: $userNodeResolver)
 			->createFromTemplate('alice', '/Out.pad', 7, null);
 	}
 
@@ -529,7 +543,7 @@ class PadCreationServiceTest extends TestCase {
 		$this->expectException(\InvalidArgumentException::class);
 		$this->expectExceptionMessage('External pads cannot be used as a template.');
 
-		$this->buildService($padFileService, $padPaths, null, $userNodeResolver)
+		$this->buildService($padFileService, $padPaths, $this->fileCreatorReturningId(11), $userNodeResolver)
 			->createFromTemplate('alice', '/Out.pad', 7, null);
 	}
 

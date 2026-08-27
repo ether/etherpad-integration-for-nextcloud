@@ -16,6 +16,71 @@ use OCP\Files\NotFoundException;
 use PHPUnit\Framework\TestCase;
 
 class UserNodeResolverTest extends TestCase {
+	/**
+	 * Cleanup identifies its file by id, so this is the guard that decides
+	 * what may be deleted.
+	 */
+	public function testFindsTheUsersOwnFileById(): void {
+		$file = $this->ownedFile('/alice/files/notes.pad', 'alice');
+
+		$this->assertSame($file, $this->resolverForFirstNode($file)->findOwnedUserFileById('alice', 42));
+	}
+
+	/**
+	 * An incoming share mounts *inside* the user's folder, so the path
+	 * prefix looks right while the file belongs to someone else — and
+	 * deleting it would remove the owner's file, not a copy.
+	 */
+	public function testRefusesAFileOwnedBySomeoneElse(): void {
+		$shared = $this->ownedFile('/alice/files/Shared/Team/notes.pad', 'bob');
+
+		$this->assertNull($this->resolverForFirstNode($shared)->findOwnedUserFileById('alice', 42));
+	}
+
+	public function testRefusesANodeOutsideTheUsersFileTree(): void {
+		$outside = $this->ownedFile('/alice/thumbnails/42.pad', 'alice');
+
+		$this->assertNull($this->resolverForFirstNode($outside)->findOwnedUserFileById('alice', 42));
+	}
+
+	public function testRefusesAFileWithNoOwner(): void {
+		$file = $this->createMock(File::class);
+		$file->method('getPath')->willReturn('/alice/files/notes.pad');
+		$file->method('getOwner')->willReturn(null);
+
+		$this->assertNull($this->resolverForFirstNode($file)->findOwnedUserFileById('alice', 42));
+	}
+
+	public function testReturnsNullWhenNothingHasThatId(): void {
+		$this->assertNull($this->resolverForFirstNode(null)->findOwnedUserFileById('alice', 42));
+	}
+
+	public function testRefusesANonPositiveId(): void {
+		$rootFolder = $this->createMock(IRootFolder::class);
+		$rootFolder->expects($this->never())->method('getUserFolder');
+
+		$this->assertNull((new UserNodeResolver($rootFolder))->findOwnedUserFileById('alice', 0));
+	}
+
+	private function ownedFile(string $path, string $ownerUid): File {
+		$owner = $this->createMock(\OCP\IUser::class);
+		$owner->method('getUID')->willReturn($ownerUid);
+
+		$file = $this->createMock(File::class);
+		$file->method('getPath')->willReturn($path);
+		$file->method('getOwner')->willReturn($owner);
+		return $file;
+	}
+
+	private function resolverForFirstNode(mixed $node): UserNodeResolver {
+		$userFolder = $this->createMock(Folder::class);
+		$userFolder->method('getFirstNodeById')->with(42)->willReturn($node);
+
+		$rootFolder = $this->createMock(IRootFolder::class);
+		$rootFolder->method('getUserFolder')->with('alice')->willReturn($userFolder);
+		return new UserNodeResolver($rootFolder);
+	}
+
 	private function resolverFor(array $nodes): UserNodeResolver {
 		$rootFolder = $this->createMock(IRootFolder::class);
 		$rootFolder->method('getById')->willReturn($nodes);

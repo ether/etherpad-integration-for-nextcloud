@@ -48,13 +48,7 @@ class PadCreationService {
 		return $this->withCreateRollback(
 			function () use ($uid, $path, $accessMode, &$padId, &$createdFileId): array {
 				$fileNode = $this->padFileCreator->createUserFile($uid, $path);
-				$fileId = (int)$fileNode->getId();
-				if ($fileId <= 0) {
-					// Without an id the file cannot be identified again, so
-					// rollback will leave it rather than guess by name. An
-					// empty leftover beats deleting someone else's file.
-					throw new \RuntimeException('Could not resolve new file ID.');
-				}
+				$fileId = $this->requireFileId($fileNode);
 				$createdFileId = $fileId;
 				$padId = $this->padBootstrapService->provisionPadId($accessMode);
 				$padUrl = $this->etherpadClient->buildPadUrl($padId);
@@ -126,15 +120,13 @@ class PadCreationService {
 		return $this->withCreateRollback(
 			function () use ($uid, $parentFolder, $parentFolderId, $fileName, $accessMode, &$path, &$padId, &$createdFileId): array {
 				$fileNode = $this->padFileCreator->createUserFileInFolder($parentFolder, $fileName);
-				$path = $this->userNodeResolver->toUserAbsolutePath($uid, $fileNode);
-				$fileId = (int)$fileNode->getId();
-				if ($fileId <= 0) {
-					// Without an id the file cannot be identified again, so
-					// rollback will leave it rather than guess by name. An
-					// empty leftover beats deleting someone else's file.
-					throw new \RuntimeException('Could not resolve new file ID.');
-				}
+				// Id first: toUserAbsolutePath throws for a node outside the
+				// user's file tree, and a rollback triggered by that throw
+				// would otherwise have neither an id to delete by nor a path
+				// to name in the log.
+				$fileId = $this->requireFileId($fileNode);
 				$createdFileId = $fileId;
+				$path = $this->userNodeResolver->toUserAbsolutePath($uid, $fileNode);
 
 				$padId = $this->padBootstrapService->provisionPadId($accessMode);
 				$padUrl = $this->etherpadClient->buildPadUrl($padId);
@@ -201,13 +193,7 @@ class PadCreationService {
 		return $this->withCreateRollback(
 			function () use ($uid, $path, $padUrl, &$createdFileId) {
 				$fileNode = $this->padFileCreator->createUserFile($uid, $path);
-				$fileId = (int)$fileNode->getId();
-				if ($fileId <= 0) {
-					// Without an id the file cannot be identified again, so
-					// rollback will leave it rather than guess by name. An
-					// empty leftover beats deleting someone else's file.
-					throw new \RuntimeException('Could not resolve new file ID.');
-				}
+				$fileId = $this->requireFileId($fileNode);
 				$createdFileId = $fileId;
 
 				$seeded = $this->externalPadSeeder->seed($fileNode, $fileId, $padUrl);
@@ -270,7 +256,7 @@ class PadCreationService {
 				// Recorded before the template is materialised: everything
 				// after this can fail, and rollback needs to know which file
 				// to remove.
-				$createdFileId = (int)$fileNode->getId();
+				$createdFileId = $this->requireFileId($fileNode);
 
 				$result = $this->materializeTemplateInto($fileNode, $templateNode, $user);
 				$padId = $result['pad_id'];
@@ -412,6 +398,31 @@ class PadCreationService {
 	 * @param callable():array{message:string,context:array<string,mixed>} $errorFor
 	 * @return T
 	 */
+	/**
+	 * The id of the file we just created, or an exception.
+	 *
+	 * Rollback identifies the file by this id, so a create that cannot
+	 * produce one must not continue — and the file has to go now, while we
+	 * still hold the node. Leaving it would strand an unopenable empty .pad
+	 * in the user's folder; deleting it later by name is the thing this
+	 * whole flow no longer does.
+	 */
+	private function requireFileId(File $fileNode): int {
+		$fileId = (int)$fileNode->getId();
+		if ($fileId > 0) {
+			return $fileId;
+		}
+		try {
+			$fileNode->delete();
+		} catch (\Throwable $e) {
+			$this->logger->warning('Could not remove a .pad file whose ID could not be read', [
+				'app' => 'etherpad_nextcloud',
+				'exception' => $e,
+			]);
+		}
+		throw new \RuntimeException('Could not resolve new file ID.');
+	}
+
 	private function withCreateRollback(
 		callable $action,
 		callable $rollback,

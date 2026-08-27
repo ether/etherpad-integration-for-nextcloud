@@ -12,6 +12,9 @@ if (!interface_exists(File::class)) {
 
 		public function getPath(): string;
 
+		/** Mirrors OCP\Files\FileInfo::getOwner(): the owning user or null. */
+		public function getOwner(): mixed;
+
 		public function getMimeType(): string;
 
 		public function getContent();
