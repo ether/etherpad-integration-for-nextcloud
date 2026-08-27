@@ -21,10 +21,18 @@ const here = dirname(fileURLToPath(import.meta.url))
 // the long-lived instance would run the container target's env file and
 // still drive their real instance — creating and deleting files there.
 const envFile = process.env.E2E_ENV_FILE?.trim()
-loadEnv({
-	path: envFile ? resolve(process.cwd(), envFile) : resolve(here, '.env.e2e'),
-	override: envFile !== undefined && envFile !== '',
+const explicitTarget = envFile !== undefined && envFile !== ''
+const loaded = loadEnv({
+	path: explicitTarget ? resolve(process.cwd(), envFile as string) : resolve(here, '.env.e2e'),
+	override: explicitTarget,
 })
+// dotenv reports a missing or unreadable file in its return value rather
+// than throwing. Carrying on would mean running with whatever E2E_* the
+// shell happens to hold — which is how a container run ends up driving a
+// real instance. Someone who named a target file meant it.
+if (explicitTarget && loaded.error) {
+	throw new Error(`E2E_ENV_FILE "${envFile}" could not be loaded: ${loaded.error.message}`)
+}
 
 // No localhost fallback on purpose: specs use the absolute URLs from
 // env.ts (which throws a clear "Missing env var" if E2E_BASE_URL is
