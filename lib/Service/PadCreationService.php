@@ -258,8 +258,18 @@ class PadCreationService {
 				// to remove.
 				$createdFileId = $this->requireFileId($fileNode);
 
-				$result = $this->materializeTemplateInto($fileNode, $templateNode, $user);
-				$padId = $result['pad_id'];
+				// The pad id has to reach $padId while the pad is being set up,
+				// not after: if the binding write fails, the document is
+				// already in the file, and a rollback that does not know the
+				// id cannot tell that file apart from a stranger's.
+				$result = $this->materializeTemplateInto(
+					$fileNode,
+					$templateNode,
+					$user,
+					static function (string $provisioned) use (&$padId): void {
+						$padId = $provisioned;
+					},
+				);
 
 				return [
 					'file' => $path,
@@ -317,7 +327,12 @@ class PadCreationService {
 	 *
 	 * @return array{file_id:int,pad_id:string,access_mode:string,pad_url:string}
 	 */
-	public function materializeTemplateInto(File $target, File $template, ?IUser $user): array {
+	/**
+	 * @param null|callable(string):void $onPadProvisioned called as soon as the
+	 *        pad exists, so an outer rollback knows about it even when a later
+	 *        step throws
+	 */
+	public function materializeTemplateInto(File $target, File $template, ?IUser $user, ?callable $onPadProvisioned = null): array {
 		if (!str_ends_with(strtolower($template->getName()), '.pad')) {
 			throw new NotAPadFileException('Template is not a .pad file.');
 		}
@@ -349,6 +364,9 @@ class PadCreationService {
 		}
 
 		$padId = $this->padBootstrapService->provisionPadId($accessMode);
+		if ($onPadProvisioned !== null) {
+			$onPadProvisioned($padId);
+		}
 		try {
 			$this->padBootstrapService->pushInitialSnapshot($padId, $resolvedText, $resolvedHtml);
 			$padUrl = $this->etherpadClient->buildPadUrl($padId);
@@ -401,25 +419,20 @@ class PadCreationService {
 	/**
 	 * The id of the file we just created, or an exception.
 	 *
-	 * Rollback identifies the file by this id, so a create that cannot
-	 * produce one must not continue — and the file has to go now, while we
-	 * still hold the node. Leaving it would strand an unopenable empty .pad
-	 * in the user's folder; deleting it later by name is the thing this
-	 * whole flow no longer does.
+	 * The file is left where it is. Nextcloud has no create-if-absent, so a
+	 * node handed back by newFile() may be a file somebody else made moments
+	 * earlier — and without an id there is nothing to check that against.
+	 * The same rule holds here as in the rollback: unclear origin, no
+	 * deletion. It is logged so the leftover can be found.
 	 */
 	private function requireFileId(File $fileNode): int {
 		$fileId = (int)$fileNode->getId();
 		if ($fileId > 0) {
 			return $fileId;
 		}
-		try {
-			$fileNode->delete();
-		} catch (\Throwable $e) {
-			$this->logger->warning('Could not remove a .pad file whose ID could not be read', [
-				'app' => 'etherpad_nextcloud',
-				'exception' => $e,
-			]);
-		}
+		$this->logger->warning('Created a .pad file whose ID could not be read; leaving it in place', [
+			'app' => 'etherpad_nextcloud',
+		]);
 		throw new \RuntimeException('Could not resolve new file ID.');
 	}
 

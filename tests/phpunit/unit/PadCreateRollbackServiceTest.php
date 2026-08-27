@@ -20,12 +20,27 @@ class PadCreateRollbackServiceTest extends TestCase {
 			->rollbackFailedCreate('alice', '/Existing.pad', '', 0);
 	}
 
-	public function testRollbackDeletesTheFileItCreated(): void {
-		$created = $this->emptyFile();
+	public function testRollbackDeletesTheFileItWrote(): void {
+		$created = $this->fileContaining('g.ABC$pad');
 		$created->expects($this->once())->method('delete');
 
 		$this->buildService(resolver: $this->resolverReturning($created))
-			->rollbackFailedCreate('alice', '/Created.pad', '', 4711);
+			->rollbackFailedCreate('alice', '/Created.pad', 'g.ABC$pad', 4711);
+	}
+
+	/**
+	 * An empty file is not proof. newFile() hands back a file that already
+	 * existed, so a create that lost the race by microseconds can be holding
+	 * an empty file somebody else just made — and nothing afterwards tells
+	 * the two apart. The cost is a leftover the user can delete; the
+	 * alternative is deleting a file they made.
+	 */
+	public function testRollbackLeavesAnEmptyFileAlone(): void {
+		$empty = $this->emptyFile();
+		$empty->expects($this->never())->method('delete');
+
+		$this->buildService(resolver: $this->resolverReturning($empty))
+			->rollbackFailedCreate('alice', '/Created.pad', 'g.ABC$pad', 4711);
 	}
 
 	/**
@@ -34,12 +49,12 @@ class PadCreateRollbackServiceTest extends TestCase {
 	 * name is not.
 	 */
 	public function testRollbackFollowsTheFileRatherThanTheName(): void {
-		$movedAway = $this->emptyFile();
+		$movedAway = $this->fileContaining('g.ABC$pad');
 		$movedAway->method('getPath')->willReturn('/alice/files/Archive/Created.pad');
 		$movedAway->expects($this->once())->method('delete');
 
 		$this->buildService(resolver: $this->resolverReturning($movedAway))
-			->rollbackFailedCreate('alice', '/Created.pad', '', 4711);
+			->rollbackFailedCreate('alice', '/Created.pad', 'g.ABC$pad', 4711);
 	}
 
 	/**
@@ -77,7 +92,7 @@ class PadCreateRollbackServiceTest extends TestCase {
 
 	/** A cleanup failure must not replace the error that caused the rollback. */
 	public function testRollbackReportsButSwallowsADeleteFailure(): void {
-		$created = $this->emptyFile();
+		$created = $this->fileContaining('g.ABC$pad');
 		$created->method('delete')->willThrowException(new \RuntimeException('nope'));
 
 		$logger = $this->createMock(LoggerInterface::class);
@@ -89,7 +104,7 @@ class PadCreateRollbackServiceTest extends TestCase {
 			);
 
 		$this->buildService(resolver: $this->resolverReturning($created), logger: $logger)
-			->rollbackFailedCreate('alice', '/Created.pad', '', 4711);
+			->rollbackFailedCreate('alice', '/Created.pad', 'g.ABC$pad', 4711);
 	}
 
 	public function testRollbackReportsButSwallowsAPadDeleteFailure(): void {
@@ -106,9 +121,14 @@ class PadCreateRollbackServiceTest extends TestCase {
 	}
 
 	/** An external create links a remote pad, so there is none of ours to delete. */
-	public function testExternalRollbackDeletesTheFileButNoPad(): void {
-		$created = $this->emptyFile();
-		$created->expects($this->once())->method('delete');
+	/**
+	 * An external create links a remote pad, so there is none of ours to
+	 * delete — and no pad id, so the file cannot be attributed either and is
+	 * left where it is.
+	 */
+	public function testExternalRollbackDeletesNoPadAndKeepsTheFile(): void {
+		$created = $this->fileContaining('anything');
+		$created->expects($this->never())->method('delete');
 
 		$etherpad = $this->createMock(EtherpadClient::class);
 		$etherpad->expects($this->never())->method('deletePad');
@@ -130,9 +150,9 @@ class PadCreateRollbackServiceTest extends TestCase {
 		$stranger->expects($this->never())->method('delete');
 
 		$logger = $this->createMock(LoggerInterface::class);
-		$logger->expects($this->once())
+		$logger->expects($this->atLeastOnce())
 			->method('warning')
-			->with($this->stringContains('someone else'), $this->anything());
+			->with($this->stringContains('Could not confirm'), $this->anything());
 
 		$this->buildService(resolver: $this->resolverReturning($stranger), logger: $logger)
 			->rollbackFailedCreate('alice', '/Created.pad', 'g.ABC$pad', 4711);
@@ -157,6 +177,13 @@ class PadCreateRollbackServiceTest extends TestCase {
 
 		$this->buildService(resolver: $this->resolverReturning($unreadable))
 			->rollbackFailedCreate('alice', '/Created.pad', 'g.ABC$pad', 4711);
+	}
+
+	private function fileContaining(string $needle): File {
+		$file = $this->createMock(File::class);
+		$file->method('getSize')->willReturn(200);
+		$file->method('getContent')->willReturn("---\npad_id: \"$needle\"\n---\n");
+		return $file;
 	}
 
 	private function emptyFile(): File {

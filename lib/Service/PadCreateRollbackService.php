@@ -89,7 +89,7 @@ class PadCreateRollbackService {
 		}
 
 		if (!$this->isOurs($node, $padId)) {
-			$this->logger->warning('The file to roll back holds someone else\'s content; leaving it in place', [
+			$this->logger->warning('Could not confirm the file to roll back was written by this create; leaving it in place', [
 				'app' => 'etherpad_nextcloud',
 				'file' => $path,
 				'fileId' => $fileId,
@@ -101,26 +101,27 @@ class PadCreateRollbackService {
 	}
 
 	/**
-	 * Is this still the file this create made?
+	 * Is this file demonstrably the one this create wrote?
 	 *
-	 * Nextcloud has no create-if-absent: Folder::newFile() calls
-	 * View::touch(), which succeeds on a file that is already there and
-	 * hands back a node for it. So a create that lost a race by microseconds
-	 * can be holding a file somebody else made, and its id would then be the
-	 * id this rollback deletes by.
+	 * Only one thing demonstrates it: the document names the pad this create
+	 * provisioned, an id nothing else has a reason to carry.
 	 *
-	 * Two things make it ours: nothing has been written yet, or what is
-	 * written is the document this create wrote — which names the pad it
-	 * provisioned, an id no other file has a reason to carry.
+	 * An empty file is deliberately *not* enough. Nextcloud has no
+	 * create-if-absent — Folder::newFile() calls View::touch(), which
+	 * succeeds on a file that is already there and hands back a node for it
+	 * — so a create that lost a race by microseconds can be holding an empty
+	 * file somebody else just made. Nothing afterwards can tell the two
+	 * apart, and this method decides whether to delete permanently.
+	 *
+	 * The cost is an empty .pad left behind when a create fails before it
+	 * writes anything. That is a file the user can delete; the alternative
+	 * is deleting a file they made.
 	 */
 	private function isOurs(File $node, string $padId): bool {
+		if ($padId === '') {
+			return false;
+		}
 		try {
-			if ((int)$node->getSize() === 0) {
-				return true;
-			}
-			if ($padId === '') {
-				return false;
-			}
 			return str_contains((string)$node->getContent(), $padId);
 		} catch (\Throwable $e) {
 			$this->logger->warning('Could not read the file to roll back; leaving it in place', [

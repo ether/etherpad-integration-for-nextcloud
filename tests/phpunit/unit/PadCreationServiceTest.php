@@ -506,6 +506,61 @@ class PadCreationServiceTest extends TestCase {
 		)->createFromTemplate('alice', '/FromTpl.pad', 7, null);
 	}
 
+	/**
+	 * The case the earlier template test missed: the document is written and
+	 * the pad exists, and only then the binding fails. The rollback has to
+	 * know the pad id by then — otherwise it sees a file with content it
+	 * cannot attribute and leaves a broken .pad behind.
+	 */
+	public function testCreateFromTemplateRollsBackWithThePadIdWhenTheBindingFails(): void {
+		$templateNode = $this->createMock(\OCP\Files\File::class);
+		$templateNode->method('getName')->willReturn('Tpl.pad');
+		$templateNode->method('getContent')->willReturn('tpl-content');
+
+		$userNodeResolver = $this->createMock(UserNodeResolver::class);
+		$userNodeResolver->method('resolveUserFileNodeById')->willReturn($templateNode);
+
+		$padPaths = $this->createMock(PathNormalizer::class);
+		$padPaths->method('normalizeCreatePath')->willReturn('/FromTpl.pad');
+
+		$padFileService = $this->createMock(PadFileService::class);
+		$padFileService->method('readPad')->willReturn(new ParsedPadFile(
+			frontmatter: ['pad_id' => 'g.tpl$pad', 'access_mode' => BindingService::ACCESS_PUBLIC],
+			body: 'body',
+			padId: 'g.tpl$pad',
+			accessMode: BindingService::ACCESS_PUBLIC,
+			padUrl: '',
+			isExternal: false,
+		));
+		$padFileService->method('getSnapshotPartsFromBody')->willReturn(['text' => 'text', 'html' => '']);
+		$padFileService->method('buildInitialDocument')->willReturn('doc');
+		$padFileService->method('withExportSnapshot')->willReturn('doc');
+
+		$bootstrap = $this->createMock(PadBootstrapService::class);
+		$bootstrap->method('provisionPadId')->willReturn('p-fresh');
+
+		// Written, then the binding fails.
+		$bindingService = $this->createMock(BindingService::class);
+		$bindingService->method('createBinding')->willThrowException(new \RuntimeException('binding failed'));
+
+		$rollbackService = $this->createMock(PadCreateRollbackService::class);
+		$rollbackService->expects($this->once())
+			->method('rollbackFailedCreate')
+			->with('alice', '/FromTpl.pad', 'p-fresh', 4242);
+
+		$this->expectException(\RuntimeException::class);
+
+		$this->buildService(
+			padFileService: $padFileService,
+			padPaths: $padPaths,
+			fileCreator: $this->fileCreatorReturningId(4242),
+			userNodeResolver: $userNodeResolver,
+			bindingService: $bindingService,
+			bootstrap: $bootstrap,
+			rollbackService: $rollbackService,
+		)->createFromTemplate('alice', '/FromTpl.pad', 7, null);
+	}
+
 	public function testCreateFromTemplateRefusesNonPadTemplate(): void {
 		$templateNode = $this->createMock(\OCP\Files\File::class);
 		$templateNode->method('getName')->willReturn('Notes.txt');
