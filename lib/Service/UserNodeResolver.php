@@ -38,16 +38,24 @@ class UserNodeResolver {
 	}
 
 	/**
+	 * The user's own root counts as one of their folders. Its path is
+	 * `/<uid>/files` with no trailing slash, so a prefix test alone rejects
+	 * it — and create-by-parent then cannot create a pad directly in "All
+	 * files", which is where someone is most likely to start.
+	 *
 	 * @throws NotFoundException
 	 */
 	public function resolveUserFolderNodeById(string $uid, int $folderId): Folder {
 		$nodes = $this->rootFolder->getById($folderId);
-		$prefix = '/' . $uid . '/files/';
+		$root = '/' . $uid . '/files';
 		foreach ($nodes as $node) {
 			if (!$node instanceof Folder) {
 				continue;
 			}
-			if (str_starts_with((string)$node->getPath(), $prefix)) {
+			$path = rtrim((string)$node->getPath(), '/');
+			// The separator stays in the prefix test so a sibling that merely
+			// starts the same way — /<uid>/files_versions — is still refused.
+			if ($path === $root || str_starts_with($path, $root . '/')) {
 				return $node;
 			}
 		}
