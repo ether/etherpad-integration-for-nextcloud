@@ -11,15 +11,22 @@ access, and the admin health check.
 ## What it talks to
 
 The specs are **target-agnostic** — they drive whatever Nextcloud
-instance `E2E_BASE_URL` points at. For local development that's easiest
-against an existing test instance (your own NC, or the shared test
-server). A reproducible Docker NC+Etherpad target for CI is a later
-phase ([#112](https://github.com/ether/etherpad-integration-for-nextcloud/issues/112));
-because the specs only depend on `E2E_BASE_URL` and the
-documented env vars, adding it won't require rewriting tests.
+instance `E2E_BASE_URL` points at. There are two ways to give them one:
+
+- **A throwaway container stack**, built from images and thrown away
+  afterwards — see [`docker/README.md`](docker/README.md). This is what
+  CI uses, across every supported Nextcloud major, and it is the easiest
+  way to run the suite locally too.
+- **An existing instance** (your own Nextcloud, or the shared test
+  server), configured through `.env.e2e` as described below.
+
+`E2E_ENV_FILE` chooses between them: point it at a file and that file
+wins over anything already exported in your shell. Without it the suite
+falls back to `tests/e2e/.env.e2e`.
 
 > Use a **dedicated throwaway test account**. The specs create and delete
-> `.pad` files on the target instance.
+> `.pad` files on the target instance, and the trash sweep at the end of
+> a run deletes its own fixtures permanently.
 
 ## Setup
 
@@ -41,9 +48,14 @@ what each one is for.
 ## Run
 
 ```bash
-npm run test:e2e        # headless
-npm run test:e2e:ui     # Playwright UI mode (watch + time-travel)
+tests/e2e/docker/run-suite.sh   # against the container stack
+npm run test:e2e                # against the instance in .env.e2e
+npm run test:e2e:ui             # Playwright UI mode (watch + time-travel)
 ```
+
+`run-suite.sh` is the entry point for the container target: besides the
+env file it sets `NODE_EXTRA_CA_CERTS`, which node reads at startup and
+which therefore cannot come from an env file.
 
 The `setup` project logs in once per account and saves the sessions to
 `tests/e2e/.auth/` (gitignored); every spec reuses the stored
@@ -55,8 +67,11 @@ for example `/login?noredir=1#body-login`.
 
 ```
 tests/e2e/
-  playwright.config.ts     baseURL from env, serial, retry + trace on failure
+  playwright.config.ts     target selection, serial, retry + trace on failure
   auth.setup.ts            logs in each account -> .auth/state*.json
+  global-setup.ts          stamps this run's id
+  global-teardown.ts       sweeps this run's fixtures out of the trash
+  docker/                  throwaway Nextcloud + Etherpad stack (see its README)
   fixtures/
     env.ts                 required-env reader (+ optional secondary account)
     auth.ts                login flow, stored-state paths, wizard dismissal

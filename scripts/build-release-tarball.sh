@@ -57,41 +57,8 @@ mkdir -p "$APP_STAGE"
 # (lib, appinfo, templates, l10n, css, js, img, docs, top-level
 # README/LICENSE/CHANGELOG/THIRD_PARTY_NOTICES). Source / dev /
 # tooling / personal artefacts are excluded.
-RSYNC_EXCLUDES=(
-	--exclude='.git/'
-	--exclude='.github/'
-	--exclude='.gitignore'
-	--exclude='.gitattributes'
-	--exclude='.editorconfig'
-	--exclude='node_modules/'
-	--exclude='vendor/'
-	--exclude='tests/'
-	--exclude='src/'
-	--exclude='scripts/'
-	--exclude='.phpunit.cache/'
-	--exclude='_copy_probe/'
-	--exclude='.DS_Store'
-	--exclude='._*'
-	--exclude='ToDo.md'
-	--exclude='*.zip'
-	--exclude='package.json'
-	--exclude='package-lock.json'
-	--exclude='composer.json'
-	--exclude='composer.lock'
-	--exclude='phpunit.xml.dist'
-	--exclude='phpcs.xml.dist'
-	--exclude='vite.config.js'
-	--exclude='vitest.config.js'
-	--exclude='psalm.xml'
-	--exclude='psalm-baseline.xml'
-	--exclude='dist/'
-	# Playwright e2e artefacts (gitignored, but rsync copies the working
-	# tree regardless) — must never end up in the app tarball.
-	--exclude='test-results/'
-	--exclude='playwright-report/'
-	--exclude='blob-report/'
-	--exclude='.playwright/'
-)
+# The shipped-tree definition lives next door; see that file for why.
+source "$(dirname "${BASH_SOURCE[0]}")/app-file-excludes.sh"
 
 rsync -a "${RSYNC_EXCLUDES[@]}" "$ROOT_DIR/" "$APP_STAGE/"
 
