@@ -6,6 +6,7 @@ import { defineConfig, devices } from '@playwright/test'
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
 import { config as loadEnv } from 'dotenv'
+import { existsSync } from 'node:fs'
 
 const here = dirname(fileURLToPath(import.meta.url))
 
@@ -20,10 +21,19 @@ const here = dirname(fileURLToPath(import.meta.url))
 // wins" behaviour. Without that, someone with E2E_BASE_URL exported for
 // the long-lived instance would run the container target's env file and
 // still drive their real instance — creating and deleting files there.
+const resolveEnvFile = (value: string): string => {
+	const fromCwd = resolve(process.cwd(), value)
+	return existsSync(fromCwd) ? fromCwd : resolve(here, value)
+}
+
 const envFile = process.env.E2E_ENV_FILE?.trim()
 const explicitTarget = envFile !== undefined && envFile !== ''
 const loaded = loadEnv({
-	path: explicitTarget ? resolve(process.cwd(), envFile as string) : resolve(here, '.env.e2e'),
+	// Resolved against the working directory first, then against this
+	// file's directory, so the documented relative path works from the
+	// repo root and from tests/e2e alike — every other path in this config
+	// is relative to `here`.
+	path: explicitTarget ? resolveEnvFile(envFile as string) : resolve(here, '.env.e2e'),
 	override: explicitTarget,
 })
 // dotenv reports a missing or unreadable file in its return value rather
@@ -32,6 +42,12 @@ const loaded = loadEnv({
 // real instance. Someone who named a target file meant it.
 if (explicitTarget && loaded.error) {
 	throw new Error(`E2E_ENV_FILE "${envFile}" could not be loaded: ${loaded.error.message}`)
+}
+// An empty or truncated file loads without an error and would leave every
+// variable at whatever the shell held — the failure this check exists to
+// prevent. A target file that does not name the instance is not a target.
+if (explicitTarget && !loaded.parsed?.E2E_BASE_URL) {
+	throw new Error(`E2E_ENV_FILE "${envFile}" does not define E2E_BASE_URL; refusing to fall back to the environment.`)
 }
 
 // No localhost fallback on purpose: specs use the absolute URLs from
@@ -72,7 +88,7 @@ export default defineConfig({
 		// produced by the "setup" project below.
 		//
 		// Certificate errors are fatal against a real instance. The Docker
-		// stack signs itself with a CA minted per run, which the browser has
+		// stack signs itself with a CA it mints for itself, which the browser has
 		// no reason to trust and which proves nothing about the app, so
 		// up.sh opts that target out explicitly. Node's own fetch stays
 		// strict either way and gets the CA via NODE_EXTRA_CA_CERTS.

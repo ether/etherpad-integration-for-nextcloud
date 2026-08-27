@@ -46,6 +46,14 @@ export const gotoSharedWithMe = async (page: Page): Promise<void> => {
 			'[data-cy-files-content-empty]:visible',
 		].join(', ')).first(),
 	).toBeVisible({ timeout: 30_000 })
+	// Nextcloud can render an empty-state while it is still fetching rows.
+	// Returning then would make the caller's assertions run against a list
+	// that has not rendered yet — "the row is gone" would pass on a view
+	// that never showed one. Neither selector existing is fine; the wait
+	// resolves immediately.
+	await expect(
+		page.locator('.loading-icon:visible, [data-cy-files-content-loading]:visible'),
+	).toHaveCount(0, { timeout: 30_000 })
 }
 
 /**

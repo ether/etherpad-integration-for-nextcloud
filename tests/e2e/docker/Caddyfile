@@ -17,11 +17,6 @@ nc.pad.test {
 	reverse_proxy nextcloud:80 {
 		header_up X-Forwarded-Proto https
 	}
-	# Nextcloud ships large files through the viewer; keep the proxy out
-	# of the way of long-running sync requests.
-	request_body {
-		max_size 512MB
-	}
 }
 
 ep.pad.test {

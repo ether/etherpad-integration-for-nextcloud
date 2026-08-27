@@ -85,7 +85,11 @@ services:
       - nextcloud
       - etherpad
     ports:
-      - "443:443"
+      # Loopback only. The admin password and the Etherpad key are
+      # published in this repository on purpose, so a stack reachable from
+      # the LAN is an open admin account for anyone who sends the right
+      # Host header. The hostnames in /etc/hosts are not a boundary.
+      - "127.0.0.1:443:443"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - ./certs:/certs:ro

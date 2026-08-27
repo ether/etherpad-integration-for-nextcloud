@@ -53,13 +53,14 @@ without any sign that you are.
 
 ## Certificates
 
-`make-certs.sh` mints a CA and one certificate covering both hostnames
-into `certs/` (gitignored, regenerate with `FORCE=1`). The CA is baked
+`make-certs.sh` mints a local CA and one certificate covering both
+hostnames into `certs/` (gitignored). They are reused once they exist —
+`FORCE=1` regenerates them. The CA is baked
 into the Nextcloud image so its health check can reach the public
 Etherpad URL, and handed to node's fetch via `NODE_EXTRA_CA_CERTS`.
 
 Chromium is told to accept it via `E2E_IGNORE_HTTPS_ERRORS=1`, set by
-`run-suite.sh` for this target only. A CA minted per run says nothing
+`run-suite.sh` for this target only. A CA this stack mints for itself says nothing
 about the app's TLS behaviour, and trusting it in the browser's store
 differs per platform. Runs against a real instance keep certificate
 errors fatal.

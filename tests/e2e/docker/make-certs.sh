@@ -15,7 +15,9 @@ here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 certs="$here/certs"
 mkdir -p "$certs"
 
-if [[ -f "$certs/ca.crt" && -f "$certs/site.crt" && "${FORCE:-0}" != "1" ]]; then
+# All four, not just the certificates: a half-removed set would otherwise
+# be reported as present and fail later inside Caddy, far from the cause.
+if [[ -f "$certs/ca.crt" && -f "$certs/ca.key" && -f "$certs/site.crt" && -f "$certs/site.key" && "${FORCE:-0}" != "1" ]]; then
 	echo "certs already present in $certs (FORCE=1 to regenerate)"
 	exit 0
 fi

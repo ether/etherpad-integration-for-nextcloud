@@ -50,12 +50,19 @@ compose up -d --build --wait
 # `--wait` only honours the healthchecks; Nextcloud's own installer keeps
 # running for a while after config.php appears.
 echo "==> waiting for the Nextcloud installer"
+installed=0
 for _ in $(seq 1 90); do
 	if occ status 2>/dev/null | grep -q 'installed: true'; then
+		installed=1
 		break
 	fi
 	sleep 2
 done
+if [[ "$installed" -ne 1 ]]; then
+	echo "Nextcloud did not finish installing within three minutes. Container log:" >&2
+	compose logs nextcloud --no-color --tail=30 >&2
+	exit 1
+fi
 occ status | sed 's/^/    /'
 
 echo "==> seeding"
@@ -66,8 +73,9 @@ occ config:system:set skeletondirectory --value=''
 # check warns — correctly, but about the sandbox rather than the app.
 occ config:system:set allow_local_remote_servers --value=true --type=boolean
 
-OC_PASS="$USER2_PASS" occ user:add --password-from-env --display-name="E2E Tester 2" "$USER2" >/dev/null 2>&1 \
-	|| echo "    $USER2 already exists"
+# No `|| true` swallow here: the stack is guaranteed fresh, so the user
+# cannot already exist and any failure is a real one worth reading.
+OC_PASS="$USER2_PASS" occ user:add --password-from-env --display-name="E2E Tester 2" "$USER2" >/dev/null
 
 echo "==> installing the app"
 bash "$here/sync-app.sh"
@@ -97,8 +105,10 @@ app_password() {
 	OC_PASS="$2" occ user:add-app-password "$1" --password-from-env \
 		| grep -oE '[A-Za-z0-9]{29,}' | tail -1
 }
-ADMIN_APP_PW="$(app_password "$ADMIN_USER" "$ADMIN_PASS")"
-USER2_APP_PW="$(app_password "$USER2" "$USER2_PASS")"
+# `|| true`: without it the grep inside app_password fails the pipeline,
+# errexit kills the script here, and the message below never prints.
+ADMIN_APP_PW="$(app_password "$ADMIN_USER" "$ADMIN_PASS" || true)"
+USER2_APP_PW="$(app_password "$USER2" "$USER2_PASS" || true)"
 
 if [[ -z "$ADMIN_APP_PW" || -z "$USER2_APP_PW" ]]; then
 	echo "could not read an app password out of occ output" >&2
@@ -125,16 +135,35 @@ E2E_USER2=$USER2
 E2E_USER2_PASS=$USER2_PASS
 E2E_USER2_APP_PASSWORD=$USER2_APP_PW
 E2E_EXTERNAL_PADS=0
+# Read by playwright.config.ts rather than fixtures/env.ts: the browser
+# has no reason to trust a CA minted for this stack. NODE_EXTRA_CA_CERTS
+# cannot live here — node reads it at startup, before dotenv runs — so
+# run-suite.sh remains the entry point for this target.
+E2E_IGNORE_HTTPS_ERRORS=1
 ENV
 
 # Guard against that drifting: a variable added to env.ts but not here
 # would silently fall back to the shell's value.
+expected=()
+while IFS= read -r var; do
+	expected+=("$var")
+done < <(grep -hoE 'E2E_[A-Z_0-9]+' "$here/../fixtures/env.ts" "$here/../playwright.config.ts" \
+	| grep -v '^E2E_ENV_FILE$' | sort -u)
+
+# Fail closed: an empty list would mean the sources moved or were
+# refactored, and an empty loop would report success while every variable
+# quietly fell back to the shell.
+if [[ "${#expected[@]}" -eq 0 ]]; then
+	echo "Found no E2E_* variables to check for — did fixtures/env.ts or playwright.config.ts move?" >&2
+	exit 1
+fi
+
 missing=""
-for var in $(grep -oE 'E2E_[A-Z_0-9]+' "$here/../fixtures/env.ts" | sort -u); do
+for var in "${expected[@]}"; do
 	grep -qE "^${var}=" "$here/../.env.e2e.docker" || missing="$missing $var"
 done
 if [[ -n "$missing" ]]; then
-	echo "tests/e2e/fixtures/env.ts reads variables this file does not set:$missing" >&2
+	echo "The suite reads variables this file does not set:$missing" >&2
 	exit 1
 fi
 
