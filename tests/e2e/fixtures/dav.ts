@@ -332,6 +332,38 @@ export const restoreFromTrashViaDav = async (originalFileName: string): Promise<
 }
 
 /**
+ * The paths currently shared with the secondary account, read through the
+ * OCS share API as that user.
+ *
+ * The user-share spec calls its own docblock's bluff with this: "NC's
+ * share API is the authoritative boundary". Asserting a revoke through
+ * the Files UI depends on when the view finishes rendering, and a list
+ * that has not rendered yet looks exactly like one the row is gone from.
+ */
+export const sharedWithMePaths = async (): Promise<string[]> => {
+	const user = E2E.secondaryUser
+	const password = E2E.secondaryAppPassword
+	if (user === null || password === null) {
+		throw new Error('sharedWithMePaths needs E2E_USER2 and E2E_USER2_APP_PASSWORD.')
+	}
+	const res = await fetch(`${E2E.baseURL}/ocs/v2.php/apps/files_sharing/api/v1/shares?format=json&shared_with_me=true`, {
+		headers: {
+			Authorization: `Basic ${Buffer.from(`${user}:${password}`).toString('base64')}`,
+			'OCS-APIRequest': 'true',
+			Accept: 'application/json',
+		},
+	})
+	const payload = await parseJsonResponse(res) as {
+		ocs?: { meta?: { statuscode?: number, message?: string }, data?: { path?: string }[] }
+	}
+	const statusCode = Number(payload?.ocs?.meta?.statuscode ?? 0)
+	if (!res.ok || statusCode < 100 || statusCode >= 300) {
+		throw new Error(`OCS shared-with-me lookup failed with HTTP ${res.status} / OCS ${statusCode}: ${payload?.ocs?.meta?.message || 'unknown error'}`)
+	}
+	return (payload?.ocs?.data || []).map((share) => String(share.path || ''))
+}
+
+/**
  * PROPFIND for the file's fileid. Used by specs that need the numeric id
  * for cross-user / API permission checks. Throws if the file is missing
  * or the fileid prop cannot be parsed.
@@ -414,18 +446,31 @@ export const createUserReadShare = async (relativePath: string, shareWith: strin
 	body.set('shareWith', shareWith)
 	body.set('permissions', '1')
 
-	const res = await fetch(`${E2E.baseURL}/ocs/v2.php/apps/files_sharing/api/v1/shares?format=json`, {
-		method: 'POST',
-		headers: {
-			Authorization: basicAuthHeader(),
-			'OCS-APIRequest': 'true',
-			'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
-			Accept: 'application/json',
-		},
-		body,
-	})
-	const payload = await parseJsonResponse(res) as {
+	// A pad created through the UI moments ago is visible over WebDAV — the
+	// spec has already read its file id — but the share API can still answer
+	// 404 for the same path. Seen on a Nextcloud 31 CI runner, never on a
+	// local stack, which is what a propagation race looks like. Retry that
+	// one status; anything else is a real answer and is raised as-is.
+	let payload: {
 		ocs?: { meta?: { statuscode?: number, message?: string }, data?: { id?: string | number } }
+	} = {}
+	let res!: Response
+	for (let attempt = 0; attempt < 5; attempt++) {
+		res = await fetch(`${E2E.baseURL}/ocs/v2.php/apps/files_sharing/api/v1/shares?format=json`, {
+			method: 'POST',
+			headers: {
+				Authorization: basicAuthHeader(),
+				'OCS-APIRequest': 'true',
+				'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+				Accept: 'application/json',
+			},
+			body,
+		})
+		payload = await parseJsonResponse(res) as typeof payload
+		if (Number(payload?.ocs?.meta?.statuscode ?? 0) !== 404) {
+			break
+		}
+		await sleep(500 + attempt * 500)
 	}
 	const statusCode = Number(payload?.ocs?.meta?.statuscode ?? 0)
 	if (!res.ok || statusCode < 100 || statusCode >= 300) {

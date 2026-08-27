@@ -74,6 +74,12 @@ export default defineConfig({
 	// occasionally hit transient ERR_NETWORK_CHANGED or WebDAV 423 lock
 	// contention; one retry hides those without papering over real bugs.
 	retries: process.env.CI ? 2 : 1,
+	// A test that only passes on retry still shows up as `flaky` and leaves
+	// the run green, which is how an OCS race on Nextcloud 31 sat unnoticed
+	// in the first CI run. Retries stay — the second attempt is useful
+	// evidence — but in CI a flaky result fails the run, so the race gets
+	// fixed instead of tolerated. Local runs stay forgiving.
+	failOnFlakyTests: !!process.env.CI,
 	timeout: 60_000,
 	expect: { timeout: 15_000 },
 	reporter: process.env.CI ? [['github'], ['html', { open: 'never' }]] : [['list'], ['html', { open: 'never' }]],

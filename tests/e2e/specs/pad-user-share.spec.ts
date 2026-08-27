@@ -16,6 +16,7 @@ import {
 import {
 	createUserReadShare,
 	deleteShareById,
+	sharedWithMePaths,
 	deleteViaDav,
 	propfindFileId,
 } from '../fixtures/dav'
@@ -96,7 +97,16 @@ test.describe('user-to-user pad share', () => {
 			await deleteShareById(shareId)
 			shareId = ''
 
-			// 5a. As B: the row is gone from "Shared with me".
+			// 5a. As B: access is gone. Asserted through the share API, not
+			// the Files view: a list that has not finished rendering looks
+			// exactly like one the row was removed from, so a UI-only check
+			// here could pass while access was still in place.
+			await expect.poll(
+				async () => (await sharedWithMePaths()).some((path) => path.endsWith(padName)),
+				{ timeout: 30_000, message: `${padName} is still shared with ${E2E.secondaryUser}` },
+			).toBe(false)
+
+			// And the row is gone from the view the user actually looks at.
 			await gotoSharedWithMe(userB)
 			await expect(
 				userB.locator(`[data-cy-files-list-row-name="${padName}"]`).first(),
