@@ -8,7 +8,7 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Migration;
 
-use OCA\EtherpadNextcloud\AppInfo\Application;
+use OCP\Files\IMimeTypeDetector;
 use OCP\Files\IMimeTypeLoader;
 use OCP\IConfig;
 use OCP\Migration\IOutput;
@@ -19,13 +19,18 @@ use OCP\Migration\IRepairStep;
  */
 class RegisterMimeType implements IRepairStep {
 	private const MIME = 'application/x-etherpad-nextcloud';
-	private const MIME_ALIAS = 'etherpad-nextcloud-pad';
-	private const APP_ICON_RELATIVE = 'img/filetypes/etherpad-nextcloud-pad.svg';
-	private const CORE_ICON_DIR = 'core/img/filetypes';
+	// Alias .pad onto the core "document" mimetype so pads appear in the Files
+	// "Documents" type filter (which matches x-office/document, resolved through
+	// the mimetype alias map). The file list keeps the pad glyph because rows
+	// render the PadPreviewProvider thumbnail, not the mimetype icon; the "New"
+	// menu uses its own etherpad icon. The generic document icon only surfaces
+	// where no preview is rendered (e.g. file-picker dialogs / search results).
+	private const MIME_ALIAS = 'x-office/document';
 
 	public function __construct(
 		private IConfig $config,
 		private IMimeTypeLoader $mimeTypeLoader,
+		private IMimeTypeDetector $mimeTypeDetector,
 	) {
 	}
 
@@ -60,52 +65,68 @@ class RegisterMimeType implements IRepairStep {
 
 		$this->appendToJsonFile($configDir . 'mimetypealiases.json', $mimetypeToExt);
 		$this->appendToJsonFile($configDir . 'mimetypemapping.json', $extToMimetype);
-		$this->ensureCoreFiletypeIcon($output);
 
 		$output->info('Updated MIME mappings for .pad files and backfilled filecache extension mapping.');
-		$output->info('Run `occ maintenance:mimetype:update-js` and `occ maintenance:mimetype:update-db` if needed.');
+
+		$this->regenerateMimetypeListJs($output);
 	}
 
-	private function ensureCoreFiletypeIcon(IOutput $output): void {
-		if (!isset(\OC::$SERVERROOT) || !is_string(\OC::$SERVERROOT) || \OC::$SERVERROOT === '') {
-			$output->info('Skipping core filetype icon sync: server root is not available.');
+	/**
+	 * Regenerate core/js/mimetypelist.js so the browser alias map
+	 * (OC.MimeTypeList.aliases) picks up the .pad -> x-office/document alias.
+	 *
+	 * The Files type filter reads that generated map, and Nextcloud does NOT
+	 * regenerate it on app install/enable — without this the Documents filter
+	 * would only include pads after a manual `occ maintenance:mimetype:update-js`.
+	 *
+	 * Best-effort: this mirrors the `maintenance:mimetype:update-js` command
+	 * (getAllAliases/getAllNamings are public OCP; only the file builder is a
+	 * core-internal class, guarded by class_exists). On any failure we just log
+	 * the manual command instead of breaking the repair step.
+	 */
+	private function regenerateMimetypeListJs(IOutput $output): void {
+		$manualHint = 'Run `occ maintenance:mimetype:update-js` so .pad files appear under the Documents filter.';
+
+		$builderClass = 'OC\\Core\\Command\\Maintenance\\Mimetype\\GenerateMimetypeFileBuilder';
+		$serverRoot = (isset(\OC::$SERVERROOT) && is_string(\OC::$SERVERROOT)) ? rtrim(\OC::$SERVERROOT, '/') : '';
+		if ($serverRoot === '' || !class_exists($builderClass)) {
+			$output->info($manualHint);
 			return;
 		}
 
-		$serverRoot = rtrim(\OC::$SERVERROOT, '/');
-		$appIcon = $serverRoot . '/apps/' . Application::APP_ID . '/' . self::APP_ICON_RELATIVE;
-		$coreIconDir = $serverRoot . '/' . self::CORE_ICON_DIR;
-		$coreIcon = $coreIconDir . '/' . self::MIME_ALIAS . '.svg';
-
-		if (!is_file($appIcon)) {
-			$output->info('Skipping core filetype icon sync: app icon source file is missing.');
-			return;
-		}
-		if (!is_dir($coreIconDir) || !is_writable($coreIconDir)) {
-			$output->info('Skipping core filetype icon sync: core filetype directory is not writable.');
+		$target = $serverRoot . '/core/js/mimetypelist.js';
+		$writable = is_file($target) ? is_writable($target) : is_writable(dirname($target));
+		if (!$writable) {
+			$output->info('mimetypelist.js is not writable. ' . $manualHint);
 			return;
 		}
 
-		$iconContents = file_get_contents($appIcon);
-		if (!is_string($iconContents) || $iconContents === '') {
-			$output->info('Skipping core filetype icon sync: app icon source file is empty/unreadable.');
-			return;
-		}
+		try {
+			// getAllAliases() may be cached without the alias we just wrote, so
+			// merge it in explicitly to guarantee it lands in the generated map.
+			$aliases = $this->mimeTypeDetector->getAllAliases();
+			$aliases[self::MIME] = self::MIME_ALIAS;
 
-		if (is_file($coreIcon) || is_link($coreIcon)) {
-			$existing = @file_get_contents($coreIcon);
-			if (is_string($existing) && $existing === $iconContents) {
+			// getAllNamings() only exists on newer Nextcloud (not in the NC 31
+			// OCP); the file builder accepts the extra arg and ignores it where
+			// unsupported, so default to an empty map on older servers.
+			$namingsGetter = 'getAllNamings';
+			$namings = method_exists($this->mimeTypeDetector, $namingsGetter)
+				? $this->mimeTypeDetector->$namingsGetter()
+				: [];
+
+			$builder = new $builderClass();
+			$contents = $builder->generateFile($aliases, $namings);
+			if (!is_string($contents) || @file_put_contents($target, $contents) === false) {
+				$output->info('Could not regenerate mimetypelist.js. ' . $manualHint);
 				return;
 			}
-			@unlink($coreIcon);
-		}
-
-		if (@file_put_contents($coreIcon, $iconContents, LOCK_EX) !== false) {
-			$output->info('Synchronized core filetype icon via file copy for MIME alias etherpad-nextcloud-pad.');
+		} catch (\Throwable $e) {
+			$output->info('Could not regenerate mimetypelist.js (' . $e->getMessage() . '). ' . $manualHint);
 			return;
 		}
 
-		$output->info('Failed to synchronize core filetype icon for MIME alias etherpad-nextcloud-pad.');
+		$output->info('Regenerated core/js/mimetypelist.js for the .pad -> Documents alias.');
 	}
 
 	private function appendToJsonFile(string $file, array $mappings): void {
