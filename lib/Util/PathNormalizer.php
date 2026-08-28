@@ -13,12 +13,23 @@ namespace OCA\EtherpadNextcloud\Util;
 use InvalidArgumentException;
 
 class PathNormalizer {
+	/**
+	 * A request parameter arrives already decoded — PHP does that before the
+	 * controller sees it. Decoding again is not a safety net, it changes
+	 * names: urldecode() turns `+` into a space, so `C++.pad` becomes
+	 * `C  .pad` and then, once the trailing spaces are trimmed, `C.pad` —
+	 * a different file, opened or created without a word. A literal `%2B`
+	 * in a file name would be decoded a second time for the same reason.
+	 *
+	 * Only a full DAV URL carries percent-encoding of its own, and only its
+	 * path component is decoded, with rawurldecode() so `+` stays `+`.
+	 */
 	public function normalizeViewerFilePath(mixed $fileParam): string {
 		if (!is_string($fileParam)) {
 			throw new InvalidArgumentException('Invalid file parameter.');
 		}
 
-		$path = trim(urldecode($fileParam));
+		$path = trim($fileParam);
 		if ($path === '') {
 			return '';
 		}
@@ -82,22 +93,22 @@ class PathNormalizer {
 			throw new InvalidArgumentException('Invalid file parameter.');
 		}
 
-		$path = trim(urldecode($fileParam));
+		$path = trim($fileParam);
 		if ($path === '') {
 			return '';
 		}
 
 		if (preg_match('#^https?://#i', $path) === 1) {
 			$rawPath = (string)(parse_url($path, PHP_URL_PATH) ?? '');
-			if (preg_match('#/public\.php/dav/files/([^/]+)/(.*)$#', urldecode($rawPath), $matches) === 1) {
+			if (preg_match('#/public\.php/dav/files/([^/]+)/(.*)$#', rawurldecode($rawPath), $matches) === 1) {
 				if ($matches[1] !== $shareToken) {
 					throw new InvalidArgumentException('Share token mismatch in public file path.');
 				}
 				$path = $matches[2];
-			} elseif (preg_match('#/remote\.php/dav/files/[^/]+/(.*)$#', urldecode($rawPath), $matches) === 1) {
+			} elseif (preg_match('#/remote\.php/dav/files/[^/]+/(.*)$#', rawurldecode($rawPath), $matches) === 1) {
 				$path = $matches[1];
 			} else {
-				$path = ltrim(urldecode($rawPath), '/');
+				$path = ltrim(rawurldecode($rawPath), '/');
 			}
 		}
 
@@ -107,7 +118,7 @@ class PathNormalizer {
 
 	private function normalizeDavUrlToPath(string $url): string {
 		$rawPath = (string)(parse_url($url, PHP_URL_PATH) ?? '');
-		$decodedPath = urldecode($rawPath);
+		$decodedPath = rawurldecode($rawPath);
 
 		if (preg_match('#/remote\.php/dav/files/[^/]+/(.+)$#', $decodedPath, $matches) === 1) {
 			return '/' . ltrim($matches[1], '/');

@@ -123,4 +123,64 @@ class PathNormalizerTest extends TestCase {
 	public function testNormalizeCreatePathAppendsPadExtension(): void {
 		$this->assertSame('/Notes.pad', (new PathNormalizer())->normalizeCreatePath('/Notes'));
 	}
+	// ------------------------------------------------------------------
+	// Names carrying characters that URL decoding would change
+	// ------------------------------------------------------------------
+
+	/**
+	 * A request parameter is already decoded by the time a controller sees
+	 * it. Decoding it again turned `+` into a space, and the trailing-space
+	 * rule then swallowed it: `C++.pad` opened `C.pad` — a different file,
+	 * with nothing to show that it had happened.
+	 */
+	#[\PHPUnit\Framework\Attributes\DataProvider('namesThatDecodingWouldChange')]
+	public function testLeavesAnAlreadyDecodedNameAlone(string $given, string $expected): void {
+		$this->assertSame($expected, (new PathNormalizer())->normalizeViewerFilePath($given));
+	}
+
+	/** @return array<string,array{string,string}> */
+	public static function namesThatDecodingWouldChange(): array {
+		return [
+			'plus in the name' => ['/Meetings/C++.pad', '/Meetings/C++.pad'],
+			'plus between words' => ['/A + B.pad', '/A + B.pad'],
+			'plus at the end' => ['/Notes+.pad', '/Notes+.pad'],
+			// A file really named with a percent sequence: decoding would
+			// rename it, and %25 would decode twice.
+			'percent sequence' => ['/Plus%2BSign.pad', '/Plus%2BSign.pad'],
+			'double-encoded percent' => ['/Odd%252B.pad', '/Odd%252B.pad'],
+			'percent alone' => ['/100%.pad', '/100%.pad'],
+		];
+	}
+
+	/**
+	 * A full DAV URL is the one input that carries percent-encoding of its
+	 * own, and rawurldecode keeps `+` a `+` while decoding `%2B`.
+	 */
+	public function testDecodesOnlyThePathOfADavUrl(): void {
+		$normalizer = new PathNormalizer();
+
+		$this->assertSame(
+			'/Meetings/C++.pad',
+			$normalizer->normalizeViewerFilePath('https://nc.test/remote.php/dav/files/alice/Meetings/C%2B%2B.pad'),
+		);
+		$this->assertSame(
+			'/A + B.pad',
+			$normalizer->normalizeViewerFilePath('https://nc.test/remote.php/dav/files/alice/A%20%2B%20B.pad'),
+		);
+	}
+
+	public function testKeepsAPlusInAPublicShareePath(): void {
+		$this->assertSame(
+			'Meetings/C++.pad',
+			(new PathNormalizer())->normalizePublicShareFilePath('/Meetings/C++.pad', 'token123'),
+		);
+	}
+
+	public function testKeepsAPlusWhenAppendingTheExtension(): void {
+		$this->assertSame('/C++.pad', (new PathNormalizer())->normalizeCreatePath('/C++'));
+	}
+
+	public function testKeepsAPlusInABareFileName(): void {
+		$this->assertSame('C++.pad', (new PathNormalizer())->normalizeCreateFileName('C++'));
+	}
 }
