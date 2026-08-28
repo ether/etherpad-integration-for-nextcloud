@@ -14,8 +14,12 @@ use OCA\EtherpadNextcloud\Exception\InvalidPadNameException;
 use OCA\EtherpadNextcloud\Exception\PadFileAlreadyExistsException;
 use OCP\Files\File;
 use OCP\Files\Folder;
-use OCP\Files\IFilenameValidator;
+use OCP\Files\EmptyFileNameException;
+use OCP\Files\FileNameTooLongException;
+use OCP\Files\InvalidCharacterInPathException;
+use OCP\Files\InvalidDirectoryException;
 use OCP\Files\InvalidPathException;
+use OCP\Files\ReservedWordException;
 use OCP\Files\IRootFolder;
 use OCP\Files\NotFoundException;
 use OCP\Files\Storage\IStorage;
@@ -35,13 +39,14 @@ class PadFileCreator {
 	public function __construct(
 		private IRootFolder $rootFolder,
 		private ILockingProvider $lockingProvider,
-		private IFilenameValidator $filenameValidator,
 		private LoggerInterface $logger,
 	) {
 	}
 
 	/**
 	 * @throws \RuntimeException
+	 * @throws PadFileAlreadyExistsException
+	 * @throws InvalidPadNameException
 	 */
 	public function createUserFile(string $uid, string $absolutePath): File {
 		$relativePath = ltrim($absolutePath, '/');
@@ -88,6 +93,7 @@ class PadFileCreator {
 	 *
 	 * @throws \RuntimeException
 	 * @throws PadFileAlreadyExistsException
+	 * @throws InvalidPadNameException
 	 */
 	public function createUserFileInFolder(Folder $parent, string $fileName): File {
 		$this->requireNameThisFolderAccepts($parent, $fileName);
@@ -130,6 +136,11 @@ class PadFileCreator {
 
 		try {
 			$node = $parent->newFile($fileName);
+		} catch (InvalidPathException $e) {
+			// Some storages only judge a name when the write happens, so
+			// asking beforehand cannot be complete. Nextcloud is the
+			// authority either way; this just keeps the answer a 400.
+			throw $this->refusedName($e);
 		} catch (\Throwable $e) {
 			// Something else created it outside our lock — the Files UI, a
 			// sync client, another app.
@@ -160,34 +171,42 @@ class PadFileCreator {
 	 */
 	private function requireNameThisFolderAccepts(Folder $parent, string $fileName): void {
 		try {
-			$this->filenameValidator->validateFilename($fileName);
-		} catch (InvalidPathException $e) {
-			throw $this->refusedName($e);
-		}
-
-		try {
 			$storage = $parent->getStorage();
 			$internalPath = $parent->getInternalPath();
-		} catch (\Throwable) {
-			// No storage to ask. The instance-wide rules above stand on their
-			// own, and refusing a create because the folder could not name its
-			// storage would be worse than not asking.
-			return;
-		}
-		if (!$storage instanceof IStorage) {
-			return;
-		}
-
-		try {
+			if (!$storage instanceof IStorage) {
+				return;
+			}
 			$storage->verifyPath($internalPath, $fileName);
 		} catch (InvalidPathException $e) {
 			throw $this->refusedName($e);
+		} catch (\Throwable $e) {
+			// The storage could not answer — unreachable mount, a wrapper
+			// that failed to build. That is not a verdict on the name, so the
+			// create goes on and newFile() decides. Logged, because silently
+			// skipping the check would hide that it stopped running at all.
+			$this->logger->warning('Could not ask the storage whether it accepts a pad name', [
+				'app' => 'etherpad_nextcloud',
+				'file' => $fileName,
+				'exception' => $e,
+			]);
 		}
 	}
 
+	/**
+	 * Nextcloud's own refusals carry a translated sentence naming the rule,
+	 * and those are worth showing. A storage app's own InvalidPathException
+	 * is not: it may carry a mount point, a bucket name or a raw driver
+	 * error, and this response goes to a browser.
+	 */
 	private function refusedName(InvalidPathException $e): InvalidPadNameException {
 		$message = trim($e->getMessage());
-		return new InvalidPadNameException($message !== ''
+		$fromNextcloud = $e instanceof ReservedWordException
+			|| $e instanceof InvalidCharacterInPathException
+			|| $e instanceof FileNameTooLongException
+			|| $e instanceof EmptyFileNameException
+			|| $e instanceof InvalidDirectoryException;
+
+		return new InvalidPadNameException($fromNextcloud && $message !== ''
 			? $message
 			: 'That file name is not allowed on this server.', 0, $e);
 	}

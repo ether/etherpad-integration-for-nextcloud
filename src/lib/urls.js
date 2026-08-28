@@ -107,6 +107,37 @@ export const parseFileIdFromCurrentLocation = () => {
 	return Number.isFinite(id) && id > 0 ? id : null
 }
 
+/**
+ * Read a query parameter without the form-encoding rule that turns `+`
+ * into a space.
+ *
+ * `URLSearchParams.get()` applies `application/x-www-form-urlencoded`
+ * rules, where `+` means space. A pad may legitimately be called
+ * `C++.pad`, and a share link carries that name unencoded in the query —
+ * so the browser half of this app would resolve `C  .pad` and open the
+ * wrong file, or none. Percent sequences are still decoded.
+ */
+export const readQueryParam = (search, name) => {
+	const raw = String(search || '').replace(/^\?/, '')
+	for (const pair of raw.split('&')) {
+		if (!pair) {
+			continue
+		}
+		const eq = pair.indexOf('=')
+		const key = eq === -1 ? pair : pair.slice(0, eq)
+		if (key !== name) {
+			continue
+		}
+		const value = eq === -1 ? '' : pair.slice(eq + 1)
+		try {
+			return decodeURIComponent(value)
+		} catch (error) {
+			return value
+		}
+	}
+	return null
+}
+
 export const parsePublicSharePadFromHref = (href) => {
 	if (!href || typeof href !== 'string') {
 		return null
@@ -121,11 +152,11 @@ export const parsePublicSharePadFromHref = (href) => {
 	if (!pathMatch) {
 		return null
 	}
-	const files = (url.searchParams.get('files') || '').trim()
+	const files = (readQueryParam(url.search, 'files') || '').trim()
 	if (!isPadName(files)) {
 		return null
 	}
-	const dir = (url.searchParams.get('path') || '/').trim() || '/'
+	const dir = (readQueryParam(url.search, 'path') || '/').trim() || '/'
 	return {
 		token: pathMatch[1],
 		path: normalizeFilePath(dir, files),

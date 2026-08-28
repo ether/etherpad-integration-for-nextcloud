@@ -20,8 +20,12 @@ export type FixtureExtension = (typeof FIXTURE_EXTENSIONS)[number]
  * Lowercase words joined by single dashes. Builder and matcher share this
  * one source: a name the matcher accepts but the builder cannot produce
  * is a name nothing of ours created, and the sweep deletes permanently.
+ *
+ * `+` is allowed because a spec needs a fixture whose name contains one —
+ * `+` in a pad name used to resolve to a different file, and the test for
+ * that has to create the real thing.
  */
-const LABEL_SOURCE = '[a-z0-9]+(?:-[a-z0-9]+)*'
+const LABEL_SOURCE = '[a-z0-9+]+(?:-[a-z0-9+]+)*'
 
 const LABEL = new RegExp(`^${LABEL_SOURCE}$`)
 const RUN_ID = /^[0-9a-f]{8}$/

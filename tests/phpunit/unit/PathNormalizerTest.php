@@ -55,12 +55,24 @@ class PathNormalizerTest extends TestCase {
 		);
 	}
 
-	public function testNormalizeViewerFilePathStripsWhitespaceBeforePadExtension(): void {
-		// Some sources land here with a trailing space before .pad (UI quirks);
-		// the normalizer collapses that.
+	/**
+	 * This used to collapse " .pad" to ".pad", for sources said to add a
+	 * stray space. But "demo .pad" is a name Nextcloud accepts, so the
+	 * collapse quietly pointed at a different file — the same substitution
+	 * as `C++.pad` becoming `C.pad`. Names are passed through; whether one
+	 * is allowed is the storage's decision, asked when the file is created.
+	 */
+	public function testKeepsASpaceBeforeThePadExtension(): void {
 		$this->assertSame(
-			'/Folder/demo.pad',
+			'/Folder/demo .pad',
 			(new PathNormalizer())->normalizeViewerFilePath('/Folder/demo .pad')
+		);
+	}
+
+	public function testKeepsSpacesInsideASegment(): void {
+		$this->assertSame(
+			'/A/ B .pad',
+			(new PathNormalizer())->normalizeViewerFilePath('/A/ B .pad')
 		);
 	}
 

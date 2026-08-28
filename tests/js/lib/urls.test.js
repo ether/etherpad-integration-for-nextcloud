@@ -10,6 +10,8 @@ import {
 	getDirFromPath,
 	isPadName,
 	normalizeFilePath,
+	parsePublicSharePadFromHref,
+	readQueryParam,
 	parseFileIdFromCurrentLocation,
 	parseFileIdFromFilesHref,
 	parsePadPathFromDavHref,
@@ -172,5 +174,38 @@ describe('parsePadPathFromDavHref', () => {
 		const href = 'https://cloud.example.test/remote.php/dav/files/jacob/Folder/%E0%A4%A.pad'
 
 		expect(parsePadPathFromDavHref(href)).toBeNull()
+	})
+})
+
+describe('query parameters carrying a plus sign', () => {
+	// URLSearchParams applies form-encoding rules, where `+` means space.
+	// A share link carries the file name unencoded, so `C++.pad` came back
+	// as `C  .pad` and resolved to a different pad, or to none.
+	it('keeps a literal plus that URLSearchParams would turn into a space', () => {
+		expect(readQueryParam('?files=C++.pad', 'files')).toBe('C++.pad')
+		expect(new URLSearchParams('?files=C++.pad').get('files')).toBe('C  .pad')
+	})
+
+	it('still decodes percent sequences', () => {
+		expect(readQueryParam('?files=A%20%2B%20B.pad', 'files')).toBe('A + B.pad')
+		expect(readQueryParam('files=Caf%C3%A9.pad', 'files')).toBe('Café.pad')
+	})
+
+	it('returns null for a parameter that is not there', () => {
+		expect(readQueryParam('?path=/x', 'files')).toBeNull()
+		expect(readQueryParam('', 'files')).toBeNull()
+	})
+
+	it('does not match a parameter whose name merely ends the same way', () => {
+		expect(readQueryParam('?nofiles=x&files=y', 'files')).toBe('y')
+	})
+
+	it('survives a value that is not valid percent-encoding', () => {
+		expect(readQueryParam('?files=100%.pad', 'files')).toBe('100%.pad')
+	})
+
+	it('resolves a public share link to the pad it names', () => {
+		expect(parsePublicSharePadFromHref('https://nc.test/s/tok/download?path=/Meetings&files=C++.pad'))
+			.toEqual({ token: 'tok', path: '/Meetings/C++.pad' })
 	})
 })

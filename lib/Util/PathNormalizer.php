@@ -39,8 +39,11 @@ class PathNormalizer {
 		}
 
 		$path = str_replace('\\', '/', $path);
-		$path = preg_replace('/\s+\.pad$/i', '.pad', $path) ?? $path;
-		if ($path[0] !== '/') {
+		// No rewriting beyond separators. Collapsing " .pad" to ".pad" turned
+		// "Notes .pad" — a name Nextcloud accepts — into a different file,
+		// the same silent substitution as the plus sign. What a name may be
+		// is the storage's decision, asked at creation.
+		if ($path === '' || $path[0] !== '/') {
 			$path = '/' . $path;
 		}
 
@@ -75,7 +78,6 @@ class PathNormalizer {
 	 */
 	public function normalizeCreateFileName(string $name): string {
 		$fileName = trim($name);
-		$fileName = preg_replace('/\s+\.pad$/i', '.pad', $fileName) ?? $fileName;
 		if ($fileName === '' || $fileName === '.' || $fileName === '..') {
 			throw new InvalidArgumentException('Invalid file name.');
 		}
@@ -135,7 +137,6 @@ class PathNormalizer {
 		$segments = explode('/', ltrim($path, '/'));
 		$safe = [];
 		foreach ($segments as $segment) {
-			$segment = trim($segment);
 			if ($segment === '' || $segment === '.') {
 				continue;
 			}
