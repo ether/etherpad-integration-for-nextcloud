@@ -102,7 +102,7 @@ class PadCreateRollbackServiceTest extends TestCase {
 		$etherpad->expects($this->never())->method('deletePad');
 
 		$this->buildService(etherpad: $etherpad)
-			->rollbackCreatedFileOnly('alice', '/Created.pad', 'g.ABC$pad', $created);
+			->rollbackCreatedFileOnly('alice', '/Created.pad', $created);
 	}
 
 	/**

@@ -32,7 +32,7 @@ class PadCreateRollbackService {
 	}
 
 	public function rollbackFailedCreate(string $uid, string $path, string $padId, ?File $createdNode): void {
-		$this->rollbackCreatedFileOnly($uid, $path, $padId, $createdNode);
+		$this->rollbackCreatedFileOnly($uid, $path, $createdNode);
 
 		if ($padId !== '') {
 			try {
@@ -55,7 +55,7 @@ class PadCreateRollbackService {
 	 * would delete it a second time, costing a round trip and logging a
 	 * warning about a pad that is already gone.
 	 */
-	public function rollbackCreatedFileOnly(string $uid, string $path, string $padId, ?File $createdNode): void {
+	public function rollbackCreatedFileOnly(string $uid, string $path, ?File $createdNode): void {
 		if ($createdNode === null) {
 			return;
 		}
@@ -75,6 +75,6 @@ class PadCreateRollbackService {
 	public function rollbackExternalCreate(string $uid, string $path, ?File $createdNode): void {
 		// An external create links a pad that already exists elsewhere, so
 		// there is nothing of ours on the Etherpad side to remove.
-		$this->rollbackCreatedFileOnly($uid, $path, '', $createdNode);
+		$this->rollbackCreatedFileOnly($uid, $path, $createdNode);
 	}
 }

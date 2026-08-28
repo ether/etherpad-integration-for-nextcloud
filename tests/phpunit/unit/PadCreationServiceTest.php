@@ -493,7 +493,7 @@ class PadCreationServiceTest extends TestCase {
 		$rollbackService = $this->createMock(PadCreateRollbackService::class);
 		$rollbackService->expects($this->once())
 			->method('rollbackCreatedFileOnly')
-			->with('alice', '/FromTpl.pad', '', $this->isInstanceOf(\OCP\Files\File::class));
+			->with('alice', '/FromTpl.pad', $this->isInstanceOf(\OCP\Files\File::class));
 
 		$this->expectException(\RuntimeException::class);
 
@@ -546,7 +546,7 @@ class PadCreationServiceTest extends TestCase {
 		$rollbackService = $this->createMock(PadCreateRollbackService::class);
 		$rollbackService->expects($this->once())
 			->method('rollbackCreatedFileOnly')
-			->with('alice', '/FromTpl.pad', '', $this->isInstanceOf(\OCP\Files\File::class));
+			->with('alice', '/FromTpl.pad', $this->isInstanceOf(\OCP\Files\File::class));
 		$rollbackService->expects($this->never())->method('rollbackFailedCreate');
 
 		$this->expectException(\RuntimeException::class);
