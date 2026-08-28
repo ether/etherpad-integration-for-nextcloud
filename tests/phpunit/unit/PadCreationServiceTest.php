@@ -75,7 +75,7 @@ class PadCreationServiceTest extends TestCase {
 		$rollbackService = $this->createMock(PadCreateRollbackService::class);
 		$rollbackService->expects($this->once())
 			->method('rollbackFailedCreate')
-			->with('alice', '/Test.pad', 'g.ABC$pad', true);
+			->with('alice', '/Test.pad', 'g.ABC$pad', $this->isInstanceOf(\OCP\Files\File::class));
 
 		$bootstrap = $this->createMock(PadBootstrapService::class);
 		$bootstrap->method('provisionPadId')->willReturn('g.ABC$pad');
@@ -131,6 +131,20 @@ class PadCreationServiceTest extends TestCase {
 			->createInParent('alice', 99, 'Test', BindingService::ACCESS_PROTECTED);
 	}
 
+	/**
+	 * The template flow creates the file before it validates the template,
+	 * so even the refusal tests need a node that reports an id — the create
+	 * refuses to continue without one.
+	 */
+	private function fileCreatorReturningId(int $fileId): PadFileCreator {
+		$fileNode = $this->createMock(\OCP\Files\File::class);
+		$fileNode->method('getId')->willReturn($fileId);
+
+		$fileCreator = $this->createMock(PadFileCreator::class);
+		$fileCreator->method('createUserFile')->willReturn($fileNode);
+		return $fileCreator;
+	}
+
 	public function testTemplateCreationIsRefusedWhenNoPadTypeIsEnabled(): void {
 		// Proves the template path consults the policy at all; which mode it
 		// falls back to is covered by PadTypePolicyTest.
@@ -159,7 +173,7 @@ class PadCreationServiceTest extends TestCase {
 		$this->buildService(
 			$padFileService,
 			$padPaths,
-			null,
+			$this->fileCreatorReturningId(11),
 			$userNodeResolver,
 			padTypePolicy: $this->buildPadTypePolicy(false, false),
 		)->createFromTemplate('alice', '/Out.pad', 7, null);
@@ -366,7 +380,7 @@ class PadCreationServiceTest extends TestCase {
 		$rollbackService = $this->createMock(PadCreateRollbackService::class);
 		$rollbackService->expects($this->once())
 			->method('rollbackExternalCreate')
-			->with('alice', '/External.pad', true);
+			->with('alice', '/External.pad', $this->isInstanceOf(\OCP\Files\File::class));
 
 		$fetcher = $this->createMock(ExternalPadExportFetcher::class);
 		$fetcher->method('normalizeAndFetchExternalPublicPadTextOrEmpty')
@@ -450,6 +464,255 @@ class PadCreationServiceTest extends TestCase {
 		$this->assertSame(BindingService::ACCESS_PROTECTED, $result['access_mode']);
 	}
 
+	/**
+	 * Everything after the file is created can still fail, and the rollback
+	 * then has to be told which file to remove. The template flow used to
+	 * signal that with a boolean; carrying the id is what makes cleanup
+	 * follow the file rather than its name.
+	 */
+	public function testCreateFromTemplateRollsBackWithTheCreatedFileId(): void {
+		$templateNode = $this->createMock(\OCP\Files\File::class);
+		$templateNode->method('getName')->willReturn('Tpl.pad');
+		$templateNode->method('getContent')->willReturn('tpl-content');
+
+		$userNodeResolver = $this->createMock(UserNodeResolver::class);
+		$userNodeResolver->method('resolveUserFileNodeById')->willReturn($templateNode);
+
+		$padPaths = $this->createMock(PathNormalizer::class);
+		$padPaths->method('normalizeCreatePath')->willReturn('/FromTpl.pad');
+
+		$newFile = $this->createMock(\OCP\Files\File::class);
+		$newFile->method('getId')->willReturn(4242);
+		$fileCreator = $this->createMock(PadFileCreator::class);
+		$fileCreator->method('createUserFile')->willReturn($newFile);
+
+		// Fails after the file exists, which is the case that matters.
+		$padFileService = $this->createMock(PadFileService::class);
+		$padFileService->method('readPad')->willThrowException(new \RuntimeException('template unreadable'));
+
+		$rollbackService = $this->createMock(PadCreateRollbackService::class);
+		$rollbackService->expects($this->once())
+			->method('rollbackCreatedFileOnly')
+			->with('alice', '/FromTpl.pad', $this->isInstanceOf(\OCP\Files\File::class));
+
+		$this->expectException(\RuntimeException::class);
+
+		$this->buildService(
+			padPaths: $padPaths,
+			fileCreator: $fileCreator,
+			padFileService: $padFileService,
+			rollbackService: $rollbackService,
+			userNodeResolver: $userNodeResolver,
+		)->createFromTemplate('alice', '/FromTpl.pad', 7, null);
+	}
+
+	/**
+	 * The case the earlier template test missed: the document is written and
+	 * the pad exists, and only then the binding fails. The rollback has to
+	 * know the pad id by then — otherwise it sees a file with content it
+	 * cannot attribute and leaves a broken .pad behind.
+	 */
+	public function testCreateFromTemplateRollsBackWithThePadIdWhenTheBindingFails(): void {
+		$templateNode = $this->createMock(\OCP\Files\File::class);
+		$templateNode->method('getName')->willReturn('Tpl.pad');
+		$templateNode->method('getContent')->willReturn('tpl-content');
+
+		$userNodeResolver = $this->createMock(UserNodeResolver::class);
+		$userNodeResolver->method('resolveUserFileNodeById')->willReturn($templateNode);
+
+		$padPaths = $this->createMock(PathNormalizer::class);
+		$padPaths->method('normalizeCreatePath')->willReturn('/FromTpl.pad');
+
+		$padFileService = $this->createMock(PadFileService::class);
+		$padFileService->method('readPad')->willReturn(new ParsedPadFile(
+			frontmatter: ['pad_id' => 'g.tpl$pad', 'access_mode' => BindingService::ACCESS_PUBLIC],
+			body: 'body',
+			padId: 'g.tpl$pad',
+			accessMode: BindingService::ACCESS_PUBLIC,
+			padUrl: '',
+			isExternal: false,
+		));
+		$padFileService->method('getSnapshotPartsFromBody')->willReturn(['text' => 'text', 'html' => '']);
+		$padFileService->method('buildInitialDocument')->willReturn('doc');
+		$padFileService->method('withExportSnapshot')->willReturn('doc');
+
+		$bootstrap = $this->createMock(PadBootstrapService::class);
+		$bootstrap->method('provisionPadId')->willReturn('p-fresh');
+
+		// Written, then the binding fails.
+		$bindingService = $this->createMock(BindingService::class);
+		$bindingService->method('createBinding')->willThrowException(new \RuntimeException('binding failed'));
+
+		$rollbackService = $this->createMock(PadCreateRollbackService::class);
+		$rollbackService->expects($this->once())
+			->method('rollbackCreatedFileOnly')
+			->with('alice', '/FromTpl.pad', $this->isInstanceOf(\OCP\Files\File::class));
+		$rollbackService->expects($this->never())->method('rollbackFailedCreate');
+
+		$this->expectException(\RuntimeException::class);
+
+		$this->buildService(
+			padFileService: $padFileService,
+			padPaths: $padPaths,
+			fileCreator: $this->fileCreatorReturningId(4242),
+			userNodeResolver: $userNodeResolver,
+			bindingService: $bindingService,
+			bootstrap: $bootstrap,
+			rollbackService: $rollbackService,
+		)->createFromTemplate('alice', '/FromTpl.pad', 7, null);
+	}
+
+	/**
+	 * With the real rollback service, not a mock: materializeTemplateInto()
+	 * deletes the pad it provisioned before rethrowing, so the outer rollback
+	 * must not delete it again. A second deletePad() costs a round trip and
+	 * logs a cleanup warning about a pad that is already gone.
+	 */
+	public function testTemplateBindingFailureDeletesThePadExactlyOnce(): void {
+		$templateNode = $this->createMock(\OCP\Files\File::class);
+		$templateNode->method('getName')->willReturn('Tpl.pad');
+		$templateNode->method('getContent')->willReturn('tpl-content');
+
+		$userNodeResolver = $this->createMock(UserNodeResolver::class);
+		$userNodeResolver->method('resolveUserFileNodeById')->willReturn($templateNode);
+
+		$padPaths = $this->createMock(PathNormalizer::class);
+		$padPaths->method('normalizeCreatePath')->willReturn('/FromTpl.pad');
+
+		$padFileService = $this->createMock(PadFileService::class);
+		$padFileService->method('readPad')->willReturn(new ParsedPadFile(
+			frontmatter: ['pad_id' => 'g.tpl$pad', 'access_mode' => BindingService::ACCESS_PUBLIC],
+			body: 'body',
+			padId: 'g.tpl$pad',
+			accessMode: BindingService::ACCESS_PUBLIC,
+			padUrl: '',
+			isExternal: false,
+		));
+		$padFileService->method('getSnapshotPartsFromBody')->willReturn(['text' => 'text', 'html' => '']);
+		$padFileService->method('buildInitialDocument')->willReturn('doc');
+		$padFileService->method('withExportSnapshot')->willReturn('doc');
+
+		$bootstrap = $this->createMock(PadBootstrapService::class);
+		$bootstrap->method('provisionPadId')->willReturn('p-fresh');
+
+		$bindingService = $this->createMock(BindingService::class);
+		$bindingService->method('createBinding')->willThrowException(new \RuntimeException('binding failed'));
+
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->expects($this->once())->method('deletePad')->with('p-fresh');
+
+		$rollbackService = new PadCreateRollbackService(
+			$etherpadClient,
+			$this->createMock(\Psr\Log\LoggerInterface::class),
+		);
+
+		$this->expectException(\RuntimeException::class);
+
+		$this->buildService(
+			padFileService: $padFileService,
+			padPaths: $padPaths,
+			fileCreator: $this->fileCreatorReturningId(4242),
+			userNodeResolver: $userNodeResolver,
+			bindingService: $bindingService,
+			etherpadClient: $etherpadClient,
+			bootstrap: $bootstrap,
+			rollbackService: $rollbackService,
+		)->createFromTemplate('alice', '/FromTpl.pad', 7, null);
+	}
+
+	/**
+	 * newFile() is not a create-if-absent, and a stale cache entry can make
+	 * an existing file look absent and empty — at which point the create
+	 * would write its frontmatter over the user's pad and only notice when
+	 * the binding row turned out to be taken, with the document already
+	 * destroyed. A binding on the id says the file was somebody's pad before
+	 * this request touched it.
+	 */
+	public function testRefusesToWriteOverAFileThatIsAlreadyAPad(): void {
+		$existing = $this->createMock(\OCP\Files\File::class);
+		$existing->method('getId')->willReturn(4242);
+		$existing->method('getSize')->willReturn(0);
+		$existing->expects($this->never())->method('putContent');
+		// And it must survive the rollback that the refusal triggers: a file
+		// that was already a pad is not this create's to clean up.
+		$existing->expects($this->never())->method('delete');
+
+		$fileCreator = $this->createMock(PadFileCreator::class);
+		$fileCreator->method('createUserFile')->willReturn($existing);
+
+		$padPaths = $this->createMock(PathNormalizer::class);
+		$padPaths->method('normalizeCreatePath')->willReturn('/Notes.pad');
+
+		$bindingService = $this->createMock(BindingService::class);
+		$bindingService->method('findByFileId')->with(4242)->willReturn(['pad_id' => 'g.someone$pad']);
+		$bindingService->expects($this->never())->method('createBinding');
+
+		$bootstrap = $this->createMock(PadBootstrapService::class);
+		$bootstrap->expects($this->never())->method('provisionPadId');
+
+		$this->expectException(\OCA\EtherpadNextcloud\Exception\PadFileAlreadyExistsException::class);
+
+		$this->buildService(
+			padPaths: $padPaths,
+			fileCreator: $fileCreator,
+			bindingService: $bindingService,
+			bootstrap: $bootstrap,
+			rollbackService: new PadCreateRollbackService(
+				$this->createMock(EtherpadClient::class),
+				$this->createMock(\Psr\Log\LoggerInterface::class),
+			),
+		)->create('alice', '/Notes.pad', BindingService::ACCESS_PUBLIC);
+	}
+
+	/**
+	 * The other signal that a file predates this request. Checked here and
+	 * not in PadFileCreator: the creator would have to throw before handing
+	 * the node over, and then nobody could clean it up.
+	 */
+	public function testRefusesToWriteOverAFileThatAlreadyHasContent(): void {
+		$existing = $this->createMock(\OCP\Files\File::class);
+		$existing->method('getId')->willReturn(4242);
+		$existing->method('getSize')->willReturn(4096);
+		$existing->expects($this->never())->method('putContent');
+		$existing->expects($this->never())->method('delete');
+
+		$this->expectException(\OCA\EtherpadNextcloud\Exception\PadFileAlreadyExistsException::class);
+		$this->buildServiceRefusing($existing)->create('alice', '/Notes.pad', BindingService::ACCESS_PUBLIC);
+	}
+
+	/** A size that cannot be read is unknown, and unknown is not ours. */
+	public function testRefusesAFileWhoseSizeCannotBeRead(): void {
+		$existing = $this->createMock(\OCP\Files\File::class);
+		$existing->method('getId')->willReturn(4242);
+		$existing->method('getSize')->willThrowException(new \RuntimeException('storage hiccup'));
+		$existing->expects($this->never())->method('putContent');
+		$existing->expects($this->never())->method('delete');
+
+		$this->expectException(\OCA\EtherpadNextcloud\Exception\PadFileAlreadyExistsException::class);
+		$this->buildServiceRefusing($existing)->create('alice', '/Notes.pad', BindingService::ACCESS_PUBLIC);
+	}
+
+	private function buildServiceRefusing(\OCP\Files\File $node): PadCreationService {
+		$fileCreator = $this->createMock(PadFileCreator::class);
+		$fileCreator->method('createUserFile')->willReturn($node);
+
+		$padPaths = $this->createMock(PathNormalizer::class);
+		$padPaths->method('normalizeCreatePath')->willReturn('/Notes.pad');
+
+		$bootstrap = $this->createMock(PadBootstrapService::class);
+		$bootstrap->expects($this->never())->method('provisionPadId');
+
+		return $this->buildService(
+			padPaths: $padPaths,
+			fileCreator: $fileCreator,
+			bootstrap: $bootstrap,
+			rollbackService: new PadCreateRollbackService(
+				$this->createMock(EtherpadClient::class),
+				$this->createMock(\Psr\Log\LoggerInterface::class),
+			),
+		);
+	}
+
 	public function testCreateFromTemplateRefusesNonPadTemplate(): void {
 		$templateNode = $this->createMock(\OCP\Files\File::class);
 		$templateNode->method('getName')->willReturn('Notes.txt');
@@ -459,7 +722,7 @@ class PadCreationServiceTest extends TestCase {
 
 		$this->expectException(\OCA\EtherpadNextcloud\Exception\NotAPadFileException::class);
 
-		$this->buildService(userNodeResolver: $userNodeResolver)
+		$this->buildService(fileCreator: $this->fileCreatorReturningId(11), userNodeResolver: $userNodeResolver)
 			->createFromTemplate('alice', '/Out.pad', 7, null);
 	}
 
@@ -487,7 +750,7 @@ class PadCreationServiceTest extends TestCase {
 		$this->expectException(\InvalidArgumentException::class);
 		$this->expectExceptionMessage('External pads cannot be used as a template.');
 
-		$this->buildService($padFileService, $padPaths, null, $userNodeResolver)
+		$this->buildService($padFileService, $padPaths, $this->fileCreatorReturningId(11), $userNodeResolver)
 			->createFromTemplate('alice', '/Out.pad', 7, null);
 	}
 
