@@ -50,7 +50,11 @@ class PadCreationService {
 				$fileNode = $this->padFileCreator->createUserFile($uid, $path);
 				$createdNode = $fileNode;
 				$fileId = $this->requireFileId($fileNode, $path);
-				$this->refuseIfAlreadyBound($fileId, $path);
+				if ($this->isAlreadyBound($fileId, $path)) {
+					// Not ours after all, so it is not ours to clean up either.
+					$createdNode = null;
+					throw new PadFileAlreadyExistsException('Target .pad file already exists.');
+				}
 				$padId = $this->padBootstrapService->provisionPadId($accessMode);
 				$padUrl = $this->etherpadClient->buildPadUrl($padId);
 
@@ -125,7 +129,11 @@ class PadCreationService {
 				// failure anywhere below still cleans the file up.
 				$createdNode = $fileNode;
 				$fileId = $this->requireFileId($fileNode, $path);
-				$this->refuseIfAlreadyBound($fileId, $path);
+				if ($this->isAlreadyBound($fileId, $path)) {
+					// Not ours after all, so it is not ours to clean up either.
+					$createdNode = null;
+					throw new PadFileAlreadyExistsException('Target .pad file already exists.');
+				}
 				$path = $this->userNodeResolver->toUserAbsolutePath($uid, $fileNode);
 
 				$padId = $this->padBootstrapService->provisionPadId($accessMode);
@@ -195,7 +203,11 @@ class PadCreationService {
 				$fileNode = $this->padFileCreator->createUserFile($uid, $path);
 				$createdNode = $fileNode;
 				$fileId = $this->requireFileId($fileNode, $path);
-				$this->refuseIfAlreadyBound($fileId, $path);
+				if ($this->isAlreadyBound($fileId, $path)) {
+					// Not ours after all, so it is not ours to clean up either.
+					$createdNode = null;
+					throw new PadFileAlreadyExistsException('Target .pad file already exists.');
+				}
 
 				$seeded = $this->externalPadSeeder->seed($fileNode, $fileId, $padUrl);
 				// Preserve the historical key ordering for the external-create
@@ -259,7 +271,11 @@ class PadCreationService {
 				// to remove.
 				$createdNode = $fileNode;
 				$fileId = $this->requireFileId($fileNode, $path);
-				$this->refuseIfAlreadyBound($fileId, $path);
+				if ($this->isAlreadyBound($fileId, $path)) {
+					// Not ours after all, so it is not ours to clean up either.
+					$createdNode = null;
+					throw new PadFileAlreadyExistsException('Target .pad file already exists.');
+				}
 
 				$result = $this->materializeTemplateInto($fileNode, $templateNode, $user);
 				$padId = $result['pad_id'];
@@ -424,26 +440,28 @@ class PadCreationService {
 	}
 
 	/**
-	 * Refuse before writing if this file is already a pad.
+	 * Was this file somebody's pad before this request touched it?
 	 *
 	 * newFile() is not a create-if-absent, and a stale cache entry can make
-	 * an existing file look absent and empty. Overwriting it would destroy
-	 * the user's document, and the create would only notice afterwards, when
-	 * the binding write hits the row that is already there. A binding on
-	 * this id says the file was somebody's pad before we touched it.
+	 * an existing file look absent and empty. Writing would destroy the
+	 * user's document, and the create would only notice afterwards, when the
+	 * binding write hit the row that was already there.
 	 *
-	 * @throws PadFileAlreadyExistsException
+	 * Deliberately a question, not an action: the caller has by then
+	 * recorded the node as the one to clean up, and a file that was already
+	 * a pad must be dropped from that record before the create aborts. A
+	 * rollback deleting it would do the very damage this prevents.
 	 */
-	private function refuseIfAlreadyBound(int $fileId, string $path): void {
+	private function isAlreadyBound(int $fileId, string $path): bool {
 		if ($this->bindingService->findByFileId($fileId) === null) {
-			return;
+			return false;
 		}
 		$this->logger->warning('Refusing to write over a file that is already a pad', [
 			'app' => 'etherpad_nextcloud',
 			'file' => $path,
 			'fileId' => $fileId,
 		]);
-		throw new PadFileAlreadyExistsException('Target .pad file already exists.');
+		return true;
 	}
 
 	/**

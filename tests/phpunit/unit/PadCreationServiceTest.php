@@ -632,6 +632,9 @@ class PadCreationServiceTest extends TestCase {
 		$existing = $this->createMock(\OCP\Files\File::class);
 		$existing->method('getId')->willReturn(4242);
 		$existing->expects($this->never())->method('putContent');
+		// And it must survive the rollback that the refusal triggers: a file
+		// that was already a pad is not this create's to clean up.
+		$existing->expects($this->never())->method('delete');
 
 		$fileCreator = $this->createMock(PadFileCreator::class);
 		$fileCreator->method('createUserFile')->willReturn($existing);
@@ -653,6 +656,10 @@ class PadCreationServiceTest extends TestCase {
 			fileCreator: $fileCreator,
 			bindingService: $bindingService,
 			bootstrap: $bootstrap,
+			rollbackService: new PadCreateRollbackService(
+				$this->createMock(EtherpadClient::class),
+				$this->createMock(\Psr\Log\LoggerInterface::class),
+			),
 		)->create('alice', '/Notes.pad', BindingService::ACCESS_PUBLIC);
 	}
 

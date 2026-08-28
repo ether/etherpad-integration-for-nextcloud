@@ -142,8 +142,11 @@ class PadFileCreator {
 		// window and already has content is somebody's, not ours.
 		//
 		// It is a filter, not a proof. An empty file created in that same
-		// window is indistinguishable from one we just made, so the rollback
-		// checks again before deleting anything.
+		// window is indistinguishable from one we just made, and nothing
+		// downstream can tell them apart either — the create records the node
+		// it was handed and cleans that node up. What covers the case that
+		// matters is the caller's binding check: a file that was already
+		// somebody's pad is refused before anything is written to it.
 		if ((int)$node->getSize() > 0) {
 			throw new PadFileAlreadyExistsException('Target .pad file already exists.');
 		}
