@@ -50,7 +50,7 @@ class PadCreationService {
 				$fileNode = $this->padFileCreator->createUserFile($uid, $path);
 				$createdNode = $fileNode;
 				$fileId = $this->requireFileId($fileNode, $path);
-				if ($this->isAlreadyBound($fileId, $path)) {
+				if ($this->isNotOurs($fileNode, $fileId, $path)) {
 					// Not ours after all, so it is not ours to clean up either.
 					$createdNode = null;
 					throw new PadFileAlreadyExistsException('Target .pad file already exists.');
@@ -129,7 +129,7 @@ class PadCreationService {
 				// failure anywhere below still cleans the file up.
 				$createdNode = $fileNode;
 				$fileId = $this->requireFileId($fileNode, $path);
-				if ($this->isAlreadyBound($fileId, $path)) {
+				if ($this->isNotOurs($fileNode, $fileId, $path)) {
 					// Not ours after all, so it is not ours to clean up either.
 					$createdNode = null;
 					throw new PadFileAlreadyExistsException('Target .pad file already exists.');
@@ -203,7 +203,7 @@ class PadCreationService {
 				$fileNode = $this->padFileCreator->createUserFile($uid, $path);
 				$createdNode = $fileNode;
 				$fileId = $this->requireFileId($fileNode, $path);
-				if ($this->isAlreadyBound($fileId, $path)) {
+				if ($this->isNotOurs($fileNode, $fileId, $path)) {
 					// Not ours after all, so it is not ours to clean up either.
 					$createdNode = null;
 					throw new PadFileAlreadyExistsException('Target .pad file already exists.');
@@ -271,7 +271,7 @@ class PadCreationService {
 				// to remove.
 				$createdNode = $fileNode;
 				$fileId = $this->requireFileId($fileNode, $path);
-				if ($this->isAlreadyBound($fileId, $path)) {
+				if ($this->isNotOurs($fileNode, $fileId, $path)) {
 					// Not ours after all, so it is not ours to clean up either.
 					$createdNode = null;
 					throw new PadFileAlreadyExistsException('Target .pad file already exists.');
@@ -440,19 +440,44 @@ class PadCreationService {
 	}
 
 	/**
-	 * Was this file somebody's pad before this request touched it?
+	 * Did this create get handed a file that was already somebody's?
 	 *
-	 * newFile() is not a create-if-absent, and a stale cache entry can make
-	 * an existing file look absent and empty. Writing would destroy the
-	 * user's document, and the create would only notice afterwards, when the
+	 * newFile() is not a create-if-absent — it calls View::touch(), which
+	 * succeeds on a file that is already there — so a stale cache entry can
+	 * make an existing file look absent. Writing would destroy the user's
+	 * document, and the create would only notice afterwards, when the
 	 * binding write hit the row that was already there.
 	 *
-	 * Deliberately a question, not an action: the caller has by then
-	 * recorded the node as the one to clean up, and a file that was already
-	 * a pad must be dropped from that record before the create aborts. A
-	 * rollback deleting it would do the very damage this prevents.
+	 * Two signals say the file predates this request: it already holds
+	 * content, or it already has a binding. A size that cannot be read is
+	 * treated the same way — unknown is not ours.
+	 *
+	 * Deliberately a question, not an action, and asked here rather than in
+	 * PadFileCreator: by this point the caller has recorded the node as the
+	 * one to clean up, and it has to let go of that record before the create
+	 * aborts. Asking inside the creator would mean throwing before the node
+	 * was ever handed over, leaving a file nobody can clean up.
 	 */
-	private function isAlreadyBound(int $fileId, string $path): bool {
+	private function isNotOurs(File $fileNode, int $fileId, string $path): bool {
+		try {
+			$size = (int)$fileNode->getSize();
+		} catch (\Throwable $e) {
+			$this->logger->warning('Could not read the size of a freshly created .pad file; treating it as not ours', [
+				'app' => 'etherpad_nextcloud',
+				'file' => $path,
+				'exception' => $e,
+			]);
+			return true;
+		}
+		if ($size > 0) {
+			$this->logger->warning('Refusing to write over a file that already has content', [
+				'app' => 'etherpad_nextcloud',
+				'file' => $path,
+				'fileId' => $fileId,
+			]);
+			return true;
+		}
+
 		if ($this->bindingService->findByFileId($fileId) === null) {
 			return false;
 		}

@@ -131,24 +131,6 @@ class PadFileCreatorTest extends TestCase {
 	}
 
 	/**
-	 * newFile() is not a create-if-absent: it calls View::touch(), which
-	 * succeeds on a file that is already there. A file that arrives with
-	 * content is somebody's, so it is refused rather than written into.
-	 */
-	public function testRefusesAnExistingFileThatSlippedPastThePreCheck(): void {
-		$existing = $this->createMock(File::class);
-		$existing->method('getSize')->willReturn(4096);
-
-		$folder = $this->createMock(Folder::class);
-		$folder->method('getId')->willReturn(7);
-		$folder->method('nodeExists')->willReturn(false);
-		$folder->method('newFile')->willReturn($existing);
-
-		$this->expectException(PadFileAlreadyExistsException::class);
-		$this->buildCreator()->createUserFileInFolder($folder, 'Pad.pad');
-	}
-
-	/**
 	 * A shared folder has a different path for its owner than for everyone it
 	 * is shared with. Keying the lock on the path would give the same target
 	 * two locks — in exactly the folder where two people are most likely to

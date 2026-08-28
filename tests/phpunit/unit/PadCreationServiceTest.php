@@ -631,6 +631,7 @@ class PadCreationServiceTest extends TestCase {
 	public function testRefusesToWriteOverAFileThatIsAlreadyAPad(): void {
 		$existing = $this->createMock(\OCP\Files\File::class);
 		$existing->method('getId')->willReturn(4242);
+		$existing->method('getSize')->willReturn(0);
 		$existing->expects($this->never())->method('putContent');
 		// And it must survive the rollback that the refusal triggers: a file
 		// that was already a pad is not this create's to clean up.
@@ -661,6 +662,55 @@ class PadCreationServiceTest extends TestCase {
 				$this->createMock(\Psr\Log\LoggerInterface::class),
 			),
 		)->create('alice', '/Notes.pad', BindingService::ACCESS_PUBLIC);
+	}
+
+	/**
+	 * The other signal that a file predates this request. Checked here and
+	 * not in PadFileCreator: the creator would have to throw before handing
+	 * the node over, and then nobody could clean it up.
+	 */
+	public function testRefusesToWriteOverAFileThatAlreadyHasContent(): void {
+		$existing = $this->createMock(\OCP\Files\File::class);
+		$existing->method('getId')->willReturn(4242);
+		$existing->method('getSize')->willReturn(4096);
+		$existing->expects($this->never())->method('putContent');
+		$existing->expects($this->never())->method('delete');
+
+		$this->expectException(\OCA\EtherpadNextcloud\Exception\PadFileAlreadyExistsException::class);
+		$this->buildServiceRefusing($existing)->create('alice', '/Notes.pad', BindingService::ACCESS_PUBLIC);
+	}
+
+	/** A size that cannot be read is unknown, and unknown is not ours. */
+	public function testRefusesAFileWhoseSizeCannotBeRead(): void {
+		$existing = $this->createMock(\OCP\Files\File::class);
+		$existing->method('getId')->willReturn(4242);
+		$existing->method('getSize')->willThrowException(new \RuntimeException('storage hiccup'));
+		$existing->expects($this->never())->method('putContent');
+		$existing->expects($this->never())->method('delete');
+
+		$this->expectException(\OCA\EtherpadNextcloud\Exception\PadFileAlreadyExistsException::class);
+		$this->buildServiceRefusing($existing)->create('alice', '/Notes.pad', BindingService::ACCESS_PUBLIC);
+	}
+
+	private function buildServiceRefusing(\OCP\Files\File $node): PadCreationService {
+		$fileCreator = $this->createMock(PadFileCreator::class);
+		$fileCreator->method('createUserFile')->willReturn($node);
+
+		$padPaths = $this->createMock(PathNormalizer::class);
+		$padPaths->method('normalizeCreatePath')->willReturn('/Notes.pad');
+
+		$bootstrap = $this->createMock(PadBootstrapService::class);
+		$bootstrap->expects($this->never())->method('provisionPadId');
+
+		return $this->buildService(
+			padPaths: $padPaths,
+			fileCreator: $fileCreator,
+			bootstrap: $bootstrap,
+			rollbackService: new PadCreateRollbackService(
+				$this->createMock(EtherpadClient::class),
+				$this->createMock(\Psr\Log\LoggerInterface::class),
+			),
+		);
 	}
 
 	public function testCreateFromTemplateRefusesNonPadTemplate(): void {
