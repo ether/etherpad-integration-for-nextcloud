@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\Service;
 
 use OCA\EtherpadNextcloud\AppInfo\Application;
+use OCA\EtherpadNextcloud\Exception\InvalidPadNameException;
 use OCA\EtherpadNextcloud\Exception\PadFileAlreadyExistsException;
 use OCP\Files\File;
 use OCP\Files\Folder;
@@ -17,6 +18,7 @@ use OCP\Files\IFilenameValidator;
 use OCP\Files\InvalidPathException;
 use OCP\Files\IRootFolder;
 use OCP\Files\NotFoundException;
+use OCP\Files\Storage\IStorage;
 use OCP\Lock\ILockingProvider;
 use OCP\Lock\LockedException;
 use Psr\Log\LoggerInterface;
@@ -88,7 +90,7 @@ class PadFileCreator {
 	 * @throws PadFileAlreadyExistsException
 	 */
 	public function createUserFileInFolder(Folder $parent, string $fileName): File {
-		$this->requireNameThisInstanceAccepts($fileName);
+		$this->requireNameThisFolderAccepts($parent, $fileName);
 
 		$lock = $this->lockKey($parent, $fileName);
 		try {
@@ -144,25 +146,50 @@ class PadFileCreator {
 	}
 
 	/**
-	 * Ask Nextcloud whether it will take this name.
+	 * Ask whether this name may be used *here*.
 	 *
-	 * The app's own checks cover the structural cases — empty, a path, `.`
-	 * and `..`. Everything else is per instance: the configured forbidden
-	 * characters and names, control characters, what the storage behind the
-	 * folder allows. Without asking, the write fails somewhere in the
-	 * storage and the user gets a 500 instead of a sentence they can act on.
+	 * Two questions, because they have different answers. The filename
+	 * validator knows the instance's rules — configured forbidden characters
+	 * and names, control characters. The storage behind this particular
+	 * folder can add its own, and an external or mounted folder often does;
+	 * its own interface says as much. Asking only the first would still let
+	 * a name fail deep in the storage, which is the 500 this exists to
+	 * prevent.
 	 *
-	 * @throws \InvalidArgumentException
+	 * @throws InvalidPadNameException
 	 */
-	private function requireNameThisInstanceAccepts(string $fileName): void {
+	private function requireNameThisFolderAccepts(Folder $parent, string $fileName): void {
 		try {
 			$this->filenameValidator->validateFilename($fileName);
 		} catch (InvalidPathException $e) {
-			$message = trim($e->getMessage());
-			throw new \InvalidArgumentException($message !== ''
-				? $message
-				: 'That file name is not allowed on this server.', 0, $e);
+			throw $this->refusedName($e);
 		}
+
+		try {
+			$storage = $parent->getStorage();
+			$internalPath = $parent->getInternalPath();
+		} catch (\Throwable) {
+			// No storage to ask. The instance-wide rules above stand on their
+			// own, and refusing a create because the folder could not name its
+			// storage would be worse than not asking.
+			return;
+		}
+		if (!$storage instanceof IStorage) {
+			return;
+		}
+
+		try {
+			$storage->verifyPath($internalPath, $fileName);
+		} catch (InvalidPathException $e) {
+			throw $this->refusedName($e);
+		}
+	}
+
+	private function refusedName(InvalidPathException $e): InvalidPadNameException {
+		$message = trim($e->getMessage());
+		return new InvalidPadNameException($message !== ''
+			? $message
+			: 'That file name is not allowed on this server.', 0, $e);
 	}
 
 	/**

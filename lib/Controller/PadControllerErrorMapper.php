@@ -21,6 +21,7 @@ use OCA\EtherpadNextcloud\Exception\PadParentFolderNotWritableException;
 use OCA\EtherpadNextcloud\Exception\PadTypeDisabledException;
 use OCA\EtherpadNextcloud\Exception\UnauthorizedRequestException;
 use OCA\EtherpadNextcloud\Service\PadResponseService;
+use OCA\EtherpadNextcloud\Exception\InvalidPadNameException;
 use OCP\AppFramework\Http;
 use OCP\AppFramework\Http\DataResponse;
 use OCP\Files\NotFoundException;
@@ -62,6 +63,12 @@ class PadControllerErrorMapper {
 		} catch (ControllerBadRequestException $e) {
 			return new DataResponse([
 				'message' => $e->getMessage() !== '' ? $e->getMessage() : 'Invalid input.',
+			], Http::STATUS_BAD_REQUEST);
+		} catch (InvalidPadNameException $e) {
+			// Nextcloud said which rule the name broke, and that sentence is
+			// worth more to the user than "Invalid pad name".
+			return new DataResponse([
+				'message' => $e->getMessage(),
 			], Http::STATUS_BAD_REQUEST);
 		} catch (\InvalidArgumentException $e) {
 			$configuredMessage = isset($options['invalid_argument'])

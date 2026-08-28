@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Tests\Unit;
 
+use OCA\EtherpadNextcloud\Exception\InvalidPadNameException;
 use OCA\EtherpadNextcloud\Exception\PadFileAlreadyExistsException;
 use OCA\EtherpadNextcloud\Service\PadFileCreator;
 use OCP\Files\File;
@@ -11,6 +12,7 @@ use OCP\Files\Folder;
 use OCP\Files\IFilenameValidator;
 use OCP\Files\InvalidPathException;
 use OCP\Files\IRootFolder;
+use OCP\Files\Storage\IStorage;
 use OCP\Lock\ILockingProvider;
 use OCP\Lock\LockedException;
 use PHPUnit\Framework\TestCase;
@@ -183,7 +185,7 @@ class PadFileCreatorTest extends TestCase {
 		$locking = $this->createMock(ILockingProvider::class);
 		$locking->expects($this->never())->method('acquireLock');
 
-		$this->expectException(\InvalidArgumentException::class);
+		$this->expectException(InvalidPadNameException::class);
 		$this->expectExceptionMessage('"COM1" is a reserved name');
 
 		(new PadFileCreator(
@@ -192,6 +194,42 @@ class PadFileCreatorTest extends TestCase {
 			$validator,
 			$this->createMock(LoggerInterface::class),
 		))->createUserFileInFolder($folder, 'COM1.pad');
+	}
+
+	/**
+	 * The instance-wide rules are not the whole answer: the storage behind
+	 * this particular folder can add its own, and an external or mounted
+	 * folder often does. Asking only the validator would still let the name
+	 * fail deep in the storage.
+	 */
+	public function testRefusesANameTheTargetStorageForbids(): void {
+		$storage = $this->createMock(IStorage::class);
+		$storage->expects($this->once())
+			->method('verifyPath')
+			->with('Team', 'Report:2026.pad')
+			->willThrowException(new InvalidPathException('File name contains at least one invalid character'));
+
+		$folder = $this->createMock(Folder::class);
+		$folder->method('getStorage')->willReturn($storage);
+		$folder->method('getInternalPath')->willReturn('Team');
+		$folder->expects($this->never())->method('newFile');
+
+		$this->expectException(InvalidPadNameException::class);
+		$this->expectExceptionMessage('File name contains at least one invalid character');
+
+		$this->buildCreator()->createUserFileInFolder($folder, 'Report:2026.pad');
+	}
+
+	/** A folder that cannot name a storage is not a reason to refuse. */
+	public function testCreatesWhenTheFolderCannotBeAskedAboutItsStorage(): void {
+		$file = $this->emptyFile();
+		$folder = $this->createMock(Folder::class);
+		$folder->method('getId')->willReturn(7);
+		$folder->method('getStorage')->willThrowException(new \RuntimeException('no storage here'));
+		$folder->method('nodeExists')->willReturn(false);
+		$folder->method('newFile')->willReturn($file);
+
+		$this->assertSame($file, $this->buildCreator()->createUserFileInFolder($folder, 'Pad.pad'));
 	}
 
 	private function emptyFile(): File {

@@ -169,6 +169,27 @@ class PathNormalizerTest extends TestCase {
 		);
 	}
 
+	/**
+	 * The case that separates the two decoders. `%2B` proves nothing — both
+	 * turn it into `+`. A literal `+` in the URL is where they differ:
+	 * urldecode() reads it as a space, rawurldecode() leaves it alone.
+	 */
+	public function testKeepsALiteralPlusInADavUrl(): void {
+		$normalizer = new PathNormalizer();
+
+		$this->assertSame(
+			'/Meetings/C++.pad',
+			$normalizer->normalizeViewerFilePath('https://nc.test/remote.php/dav/files/alice/Meetings/C++.pad'),
+		);
+		$this->assertSame(
+			'Meetings/C++.pad',
+			$normalizer->normalizePublicShareFilePath(
+				'https://nc.test/public.php/dav/files/token123/Meetings/C++.pad',
+				'token123',
+			),
+		);
+	}
+
 	public function testKeepsAPlusInAPublicShareePath(): void {
 		$this->assertSame(
 			'Meetings/C++.pad',
