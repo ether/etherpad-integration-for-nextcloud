@@ -17,11 +17,21 @@ use OCP\Files\IRootFolder;
 use OCP\Files\NotFoundException;
 use OCP\Lock\ILockingProvider;
 use OCP\Lock\LockedException;
+use Psr\Log\LoggerInterface;
 
+/**
+ * Creates the Nextcloud file behind a pad.
+ *
+ * The serialisation below relies on Nextcloud's locking provider. On an
+ * instance with `filelocking.enabled` set to false that provider is a no-op,
+ * and creating falls back to check-then-create with the window this class
+ * exists to close.
+ */
 class PadFileCreator {
 	public function __construct(
 		private IRootFolder $rootFolder,
 		private ILockingProvider $lockingProvider,
+		private LoggerInterface $logger,
 	) {
 	}
 
@@ -81,6 +91,17 @@ class PadFileCreator {
 		} catch (LockedException $e) {
 			// Another create holds this exact name right now. Whether it
 			// succeeds or not, this request may not have it.
+			//
+			// Logged, because it is not the same thing as the file being
+			// there: a request killed between acquire and release leaves the
+			// row behind for up to an hour, and the user then sees "that name
+			// is taken" for a folder that is empty. Without this line there
+			// is nothing to explain it.
+			$this->logger->warning('A pad create was refused because the name is locked by another create', [
+				'app' => 'etherpad_nextcloud',
+				'file' => $fileName,
+				'lock' => $lock,
+			]);
 			throw new PadFileAlreadyExistsException('Target .pad file already exists.', 0, $e);
 		}
 

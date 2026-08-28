@@ -82,34 +82,6 @@ class UserNodeResolver {
 	}
 
 	/**
-	 * The file with this id as this user can reach it, or null.
-	 *
-	 * Deliberately not restricted to files the user owns. A pad created in a
-	 * folder someone shared with them belongs, at storage level, to the
-	 * person who shared it — and in a group folder there may be no owner at
-	 * all. An ownership test would refuse to clean up exactly those creates.
-	 * What makes the file safe to delete is decided by the caller, on the
-	 * file's contents; see PadCreateRollbackService.
-	 *
-	 * Returns null instead of throwing: the caller is cleanup, and "not
-	 * reachable" and "not there" lead to the same decision.
-	 */
-	public function findUserFileById(string $uid, int $fileId): ?File {
-		if ($fileId <= 0) {
-			return null;
-		}
-		$node = $this->rootFolder->getUserFolder($uid)->getFirstNodeById($fileId);
-		if (!$node instanceof File) {
-			return null;
-		}
-		if (!str_starts_with((string)$node->getPath(), '/' . $uid . '/files/')) {
-			return null;
-		}
-
-		return $node;
-	}
-
-	/**
 	 * @throws NotFoundException
 	 */
 	public function toUserAbsolutePath(string $uid, File $node): string {

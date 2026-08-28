@@ -43,13 +43,14 @@ class PadCreationService {
 		$this->padTypePolicy->requireEnabled($accessMode);
 		$path = $this->padPaths->normalizeCreatePath($file);
 		$padId = '';
-		$createdFileId = 0;
+		$createdNode = null;
 
 		return $this->withCreateRollback(
-			function () use ($uid, $path, $accessMode, &$padId, &$createdFileId): array {
+			function () use ($uid, $path, $accessMode, &$padId, &$createdNode): array {
 				$fileNode = $this->padFileCreator->createUserFile($uid, $path);
-				$fileId = $this->requireFileId($fileNode);
-				$createdFileId = $fileId;
+				$createdNode = $fileNode;
+				$fileId = $this->requireFileId($fileNode, $path);
+				$this->refuseIfAlreadyBound($fileId, $path);
 				$padId = $this->padBootstrapService->provisionPadId($accessMode);
 				$padUrl = $this->etherpadClient->buildPadUrl($padId);
 
@@ -72,8 +73,8 @@ class PadCreationService {
 					'pad_url' => $padUrl,
 				];
 			},
-			function () use ($uid, $path, &$padId, &$createdFileId): void {
-				$this->rollbackService->rollbackFailedCreate($uid, $path, $padId, $createdFileId);
+			function () use ($uid, $path, &$padId, &$createdNode): void {
+				$this->rollbackService->rollbackFailedCreate($uid, $path, $padId, $createdNode);
 			},
 			function (\Throwable $e) use ($path, $accessMode, &$padId): ?array {
 				if ($e instanceof BindingException) {
@@ -114,18 +115,17 @@ class PadCreationService {
 		}
 
 		$padId = '';
-		$createdFileId = 0;
+		$createdNode = null;
 		$path = '';
 
 		return $this->withCreateRollback(
-			function () use ($uid, $parentFolder, $parentFolderId, $fileName, $accessMode, &$path, &$padId, &$createdFileId): array {
+			function () use ($uid, $parentFolder, $parentFolderId, $fileName, $accessMode, &$path, &$padId, &$createdNode): array {
 				$fileNode = $this->padFileCreator->createUserFileInFolder($parentFolder, $fileName);
-				// Id first: toUserAbsolutePath throws for a node outside the
-				// user's file tree, and a rollback triggered by that throw
-				// would otherwise have neither an id to delete by nor a path
-				// to name in the log.
-				$fileId = $this->requireFileId($fileNode);
-				$createdFileId = $fileId;
+				// The node is recorded before anything that can throw, so a
+				// failure anywhere below still cleans the file up.
+				$createdNode = $fileNode;
+				$fileId = $this->requireFileId($fileNode, $path);
+				$this->refuseIfAlreadyBound($fileId, $path);
 				$path = $this->userNodeResolver->toUserAbsolutePath($uid, $fileNode);
 
 				$padId = $this->padBootstrapService->provisionPadId($accessMode);
@@ -149,8 +149,8 @@ class PadCreationService {
 					'pad_url' => $padUrl,
 				];
 			},
-			function () use ($uid, &$path, &$padId, &$createdFileId): void {
-				$this->rollbackService->rollbackFailedCreate($uid, $path, $padId, $createdFileId);
+			function () use ($uid, &$path, &$padId, &$createdNode): void {
+				$this->rollbackService->rollbackFailedCreate($uid, $path, $padId, $createdNode);
 			},
 			function (\Throwable $e) use ($parentFolderId, $name, $accessMode, &$path, &$padId): ?array {
 				if ($e instanceof BindingException) {
@@ -188,13 +188,14 @@ class PadCreationService {
 	 */
 	public function createFromUrl(string $uid, string $file, string $padUrl): array {
 		$path = $this->padPaths->normalizeCreatePath($file);
-		$createdFileId = 0;
+		$createdNode = null;
 
 		return $this->withCreateRollback(
-			function () use ($uid, $path, $padUrl, &$createdFileId) {
+			function () use ($uid, $path, $padUrl, &$createdNode) {
 				$fileNode = $this->padFileCreator->createUserFile($uid, $path);
-				$fileId = $this->requireFileId($fileNode);
-				$createdFileId = $fileId;
+				$createdNode = $fileNode;
+				$fileId = $this->requireFileId($fileNode, $path);
+				$this->refuseIfAlreadyBound($fileId, $path);
 
 				$seeded = $this->externalPadSeeder->seed($fileNode, $fileId, $padUrl);
 				// Preserve the historical key ordering for the external-create
@@ -203,8 +204,8 @@ class PadCreationService {
 				$result = ['file' => $path] + $seeded;
 				return $result;
 			},
-			function () use ($uid, $path, &$createdFileId): void {
-				$this->rollbackService->rollbackExternalCreate($uid, $path, $createdFileId);
+			function () use ($uid, $path, &$createdNode): void {
+				$this->rollbackService->rollbackExternalCreate($uid, $path, $createdNode);
 			},
 			function (\Throwable $e) use ($path, $padUrl): ?array {
 				if ($e instanceof EtherpadClientException) {
@@ -248,28 +249,20 @@ class PadCreationService {
 		$templateNode = $this->userNodeResolver->resolveUserFileNodeById($uid, $templateFileId);
 
 		$padId = '';
-		$createdFileId = 0;
+		$createdNode = null;
 
 		return $this->withCreateRollback(
-			function () use ($uid, $path, $templateNode, $user, &$padId, &$createdFileId): array {
+			function () use ($uid, $path, $templateNode, $user, &$padId, &$createdNode): array {
 				$fileNode = $this->padFileCreator->createUserFile($uid, $path);
 				// Recorded before the template is materialised: everything
 				// after this can fail, and rollback needs to know which file
 				// to remove.
-				$createdFileId = $this->requireFileId($fileNode);
+				$createdNode = $fileNode;
+				$fileId = $this->requireFileId($fileNode, $path);
+				$this->refuseIfAlreadyBound($fileId, $path);
 
-				// The pad id has to reach $padId while the pad is being set up,
-				// not after: if the binding write fails, the document is
-				// already in the file, and a rollback that does not know the
-				// id cannot tell that file apart from a stranger's.
-				$result = $this->materializeTemplateInto(
-					$fileNode,
-					$templateNode,
-					$user,
-					static function (string $provisioned) use (&$padId): void {
-						$padId = $provisioned;
-					},
-				);
+				$result = $this->materializeTemplateInto($fileNode, $templateNode, $user);
+				$padId = $result['pad_id'];
 
 				return [
 					'file' => $path,
@@ -279,10 +272,10 @@ class PadCreationService {
 					'pad_url' => $result['pad_url'],
 				];
 			},
-			function () use ($uid, $path, &$padId, &$createdFileId): void {
+			function () use ($uid, $path, &$padId, &$createdNode): void {
 				// File only: materializeTemplateInto() has already deleted the
 				// pad it provisioned before rethrowing.
-				$this->rollbackService->rollbackCreatedFileOnly($uid, $path, $padId, $createdFileId);
+				$this->rollbackService->rollbackCreatedFileOnly($uid, $path, '', $createdNode);
 			},
 			function (\Throwable $e) use ($path, &$padId): ?array {
 				if ($e instanceof BindingException) {
@@ -329,12 +322,7 @@ class PadCreationService {
 	 *
 	 * @return array{file_id:int,pad_id:string,access_mode:string,pad_url:string}
 	 */
-	/**
-	 * @param null|callable(string):void $onPadProvisioned called as soon as the
-	 *        pad exists, so an outer rollback knows about it even when a later
-	 *        step throws
-	 */
-	public function materializeTemplateInto(File $target, File $template, ?IUser $user, ?callable $onPadProvisioned = null): array {
+	public function materializeTemplateInto(File $target, File $template, ?IUser $user): array {
 		if (!str_ends_with(strtolower($template->getName()), '.pad')) {
 			throw new NotAPadFileException('Template is not a .pad file.');
 		}
@@ -366,9 +354,6 @@ class PadCreationService {
 		}
 
 		$padId = $this->padBootstrapService->provisionPadId($accessMode);
-		if ($onPadProvisioned !== null) {
-			$onPadProvisioned($padId);
-		}
 		try {
 			$this->padBootstrapService->pushInitialSnapshot($padId, $resolvedText, $resolvedHtml);
 			$padUrl = $this->etherpadClient->buildPadUrl($padId);
@@ -411,6 +396,57 @@ class PadCreationService {
 	}
 
 	/**
+	 * The id of the file we just created, or an exception. getId() can throw
+	 * on a node that is not in the cache yet, which is the same failure as
+	 * returning 0 and is reported the same way.
+	 *
+	 * @throws \RuntimeException
+	 */
+	private function requireFileId(File $fileNode, string $path): int {
+		try {
+			$fileId = (int)$fileNode->getId();
+		} catch (\Throwable $e) {
+			$this->logger->warning('Could not read the ID of a freshly created .pad file', [
+				'app' => 'etherpad_nextcloud',
+				'file' => $path,
+				'exception' => $e,
+			]);
+			throw new \RuntimeException('Could not resolve new file ID.', 0, $e);
+		}
+		if ($fileId > 0) {
+			return $fileId;
+		}
+		$this->logger->warning('A freshly created .pad file reported no ID', [
+			'app' => 'etherpad_nextcloud',
+			'file' => $path,
+		]);
+		throw new \RuntimeException('Could not resolve new file ID.');
+	}
+
+	/**
+	 * Refuse before writing if this file is already a pad.
+	 *
+	 * newFile() is not a create-if-absent, and a stale cache entry can make
+	 * an existing file look absent and empty. Overwriting it would destroy
+	 * the user's document, and the create would only notice afterwards, when
+	 * the binding write hits the row that is already there. A binding on
+	 * this id says the file was somebody's pad before we touched it.
+	 *
+	 * @throws PadFileAlreadyExistsException
+	 */
+	private function refuseIfAlreadyBound(int $fileId, string $path): void {
+		if ($this->bindingService->findByFileId($fileId) === null) {
+			return;
+		}
+		$this->logger->warning('Refusing to write over a file that is already a pad', [
+			'app' => 'etherpad_nextcloud',
+			'file' => $path,
+			'fileId' => $fileId,
+		]);
+		throw new PadFileAlreadyExistsException('Target .pad file already exists.');
+	}
+
+	/**
 	 * @template T
 	 * @param callable():T $action
 	 * @param callable():void $rollback
@@ -418,26 +454,6 @@ class PadCreationService {
 	 * @param callable():array{message:string,context:array<string,mixed>} $errorFor
 	 * @return T
 	 */
-	/**
-	 * The id of the file we just created, or an exception.
-	 *
-	 * The file is left where it is. Nextcloud has no create-if-absent, so a
-	 * node handed back by newFile() may be a file somebody else made moments
-	 * earlier — and without an id there is nothing to check that against.
-	 * The same rule holds here as in the rollback: unclear origin, no
-	 * deletion. It is logged so the leftover can be found.
-	 */
-	private function requireFileId(File $fileNode): int {
-		$fileId = (int)$fileNode->getId();
-		if ($fileId > 0) {
-			return $fileId;
-		}
-		$this->logger->warning('Created a .pad file whose ID could not be read; leaving it in place', [
-			'app' => 'etherpad_nextcloud',
-		]);
-		throw new \RuntimeException('Could not resolve new file ID.');
-	}
-
 	private function withCreateRollback(
 		callable $action,
 		callable $rollback,
