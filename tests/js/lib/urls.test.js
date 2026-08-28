@@ -11,7 +11,6 @@ import {
 	isPadName,
 	normalizeFilePath,
 	parsePublicSharePadFromHref,
-	readQueryParam,
 	parseFileIdFromCurrentLocation,
 	parseFileIdFromFilesHref,
 	parsePadPathFromDavHref,
@@ -33,7 +32,9 @@ const setLocation = (pathAndQuery) => {
 describe('path helpers', () => {
 	it('normalizes file paths from directory and file name', () => {
 		expect(normalizeFilePath('/Folder', 'Test.pad')).toBe('/Folder/Test.pad')
-		expect(normalizeFilePath('/', ' Test .pad')).toBe('/ Test.pad')
+		// The name is joined, never rewritten: " Test .pad" is a name
+		// Nextcloud accepts, and changing it here would point at another file.
+		expect(normalizeFilePath('/', ' Test .pad')).toBe('/ Test .pad')
 		expect(normalizeFilePath('', '/Nested/Test.pad')).toBe('/Nested/Test.pad')
 	})
 
@@ -177,35 +178,19 @@ describe('parsePadPathFromDavHref', () => {
 	})
 })
 
-describe('query parameters carrying a plus sign', () => {
-	// URLSearchParams applies form-encoding rules, where `+` means space.
-	// A share link carries the file name unencoded, so `C++.pad` came back
-	// as `C  .pad` and resolved to a different pad, or to none.
-	it('keeps a literal plus that URLSearchParams would turn into a space', () => {
-		expect(readQueryParam('?files=C++.pad', 'files')).toBe('C++.pad')
-		expect(new URLSearchParams('?files=C++.pad').get('files')).toBe('C  .pad')
+describe('query parameters in share links', () => {
+	// A query string is form-encoded: `+` means space, and a literal plus
+	// is `%2B`. Reading it any other way trades one wrong name for
+	// another — `A+B.pad` really does mean `A B.pad`.
+	it('reads a plus as a space and %2B as a plus', () => {
+		expect(parsePublicSharePadFromHref('https://nc.test/s/tok/download?path=/M&files=A+B.pad'))
+			.toEqual({ token: 'tok', path: '/M/A B.pad' })
+		expect(parsePublicSharePadFromHref('https://nc.test/s/tok/download?path=/M&files=C%2B%2B.pad'))
+			.toEqual({ token: 'tok', path: '/M/C++.pad' })
 	})
 
-	it('still decodes percent sequences', () => {
-		expect(readQueryParam('?files=A%20%2B%20B.pad', 'files')).toBe('A + B.pad')
-		expect(readQueryParam('files=Caf%C3%A9.pad', 'files')).toBe('Café.pad')
-	})
-
-	it('returns null for a parameter that is not there', () => {
-		expect(readQueryParam('?path=/x', 'files')).toBeNull()
-		expect(readQueryParam('', 'files')).toBeNull()
-	})
-
-	it('does not match a parameter whose name merely ends the same way', () => {
-		expect(readQueryParam('?nofiles=x&files=y', 'files')).toBe('y')
-	})
-
-	it('survives a value that is not valid percent-encoding', () => {
-		expect(readQueryParam('?files=100%.pad', 'files')).toBe('100%.pad')
-	})
-
-	it('resolves a public share link to the pad it names', () => {
-		expect(parsePublicSharePadFromHref('https://nc.test/s/tok/download?path=/Meetings&files=C++.pad'))
-			.toEqual({ token: 'tok', path: '/Meetings/C++.pad' })
+	it('keeps a name whose spaces sit before the extension', () => {
+		expect(parsePublicSharePadFromHref('https://nc.test/s/tok/download?path=/M&files=Notes%20.pad'))
+			.toEqual({ token: 'tok', path: '/M/Notes .pad' })
 	})
 })

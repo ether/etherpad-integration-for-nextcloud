@@ -9,11 +9,13 @@ use OCA\EtherpadNextcloud\Exception\PadFileAlreadyExistsException;
 use OCA\EtherpadNextcloud\Service\PadFileCreator;
 use OCP\Files\File;
 use OCP\Files\Folder;
+use OCP\Files\IFilenameValidator;
 use OCP\Files\InvalidPathException;
-use OCP\Files\ReservedWordException;
+use OCP\Files\StorageNotAvailableException;
 use OCP\Files\IRootFolder;
 use OCP\Files\Storage\IStorage;
 use OCP\Lock\ILockingProvider;
+use OCP\IL10N;
 use OCP\Lock\LockedException;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
@@ -84,7 +86,7 @@ class PadFileCreatorTest extends TestCase {
 		$locking->expects($this->never())->method('releaseLock');
 
 		$this->expectException(PadFileAlreadyExistsException::class);
-		(new PadFileCreator($this->createMock(IRootFolder::class), $locking, $this->createMock(LoggerInterface::class)))
+		($this->buildCreator(locking: $locking))
 			->createUserFileInFolder($folder, 'Pad.pad');
 	}
 
@@ -98,7 +100,7 @@ class PadFileCreatorTest extends TestCase {
 		$locking->expects($this->once())->method('releaseLock');
 
 		try {
-			(new PadFileCreator($this->createMock(IRootFolder::class), $locking, $this->createMock(LoggerInterface::class)))
+			($this->buildCreator(locking: $locking))
 				->createUserFileInFolder($folder, 'Pad.pad');
 			$this->fail('Expected the create to be refused.');
 		} catch (PadFileAlreadyExistsException) {
@@ -122,7 +124,7 @@ class PadFileCreatorTest extends TestCase {
 		$folder->method('nodeExists')->willReturn(false);
 		$folder->method('newFile')->willReturn($this->emptyFile());
 
-		$creator = new PadFileCreator($this->createMock(IRootFolder::class), $locking, $this->createMock(LoggerInterface::class));
+		$creator = $this->buildCreator(locking: $locking);
 		$creator->createUserFileInFolder($folder, 'One.pad');
 		$creator->createUserFileInFolder($folder, 'Two.pad');
 
@@ -149,7 +151,7 @@ class PadFileCreatorTest extends TestCase {
 			},
 		);
 
-		$creator = new PadFileCreator($this->createMock(IRootFolder::class), $locking, $this->createMock(LoggerInterface::class));
+		$creator = $this->buildCreator(locking: $locking);
 		$creator->createUserFileInFolder($this->folderSeenAs('/alice/files/Team', 7), 'Pad.pad');
 		$creator->createUserFileInFolder($this->folderSeenAs('/bob/files/Shared/Team', 7), 'Pad.pad');
 		$creator->createUserFileInFolder($this->folderSeenAs('/alice/files/Other', 8), 'Pad.pad');
@@ -173,22 +175,29 @@ class PadFileCreatorTest extends TestCase {
 	 * characters and names, control characters, what the storage allows —
 	 * and asking turns a 500 from deep in the storage into a sentence.
 	 */
-	/** Nextcloud's own refusals name the rule, and that sentence is shown. */
-	public function testPassesNextcloudsOwnReasonThrough(): void {
-		$storage = $this->createMock(IStorage::class);
-		$storage->method('verifyPath')->willThrowException(new ReservedWordException('"COM1" is a reserved name'));
+	/**
+	 * The filename validator's refusal is Nextcloud's own and translated,
+	 * so it is shown: "\"COM1\" is a reserved name" tells the user what to
+	 * change, "Invalid pad name" does not.
+	 */
+	public function testPassesTheValidatorsReasonThrough(): void {
+		$validator = $this->createMock(IFilenameValidator::class);
+		$validator->method('validateFilename')
+			->willThrowException(new InvalidPathException('"COM1" is a reserved name'));
 
 		$this->expectException(InvalidPadNameException::class);
 		$this->expectExceptionMessage('"COM1" is a reserved name');
 
-		$this->buildCreator()->createUserFileInFolder($this->folderOn($storage), 'COM1.pad');
+		$this->buildCreator(validator: $validator)
+			->createUserFileInFolder($this->createMock(Folder::class), 'COM1.pad');
 	}
 
 	/**
-	 * A storage app's own message is not shown: it may carry a mount point,
-	 * a bucket name or a raw driver error, and this reaches a browser.
+	 * A storage's message is never shown. These exception classes are
+	 * public, so a storage app may throw one carrying a mount point, a
+	 * bucket name or a driver error — and this reaches a browser.
 	 */
-	public function testDoesNotForwardAThirdPartyStoragesMessage(): void {
+	public function testDoesNotForwardAStoragesOwnMessage(): void {
 		$storage = $this->createMock(IStorage::class);
 		$storage->method('verifyPath')
 			->willThrowException(new InvalidPathException('smb://fileserver.internal/share denied 0xC0000022'));
@@ -207,10 +216,10 @@ class PadFileCreatorTest extends TestCase {
 		$folder = $this->createMock(Folder::class);
 		$folder->method('getId')->willReturn(7);
 		$folder->method('nodeExists')->willReturn(false);
-		$folder->method('newFile')->willThrowException(new ReservedWordException('"COM1" is a reserved name'));
+		$folder->method('newFile')->willThrowException(new InvalidPathException('rejected by the backend'));
 
 		$this->expectException(InvalidPadNameException::class);
-		$this->expectExceptionMessage('"COM1" is a reserved name');
+		$this->expectExceptionMessage('That file name is not allowed on this server.');
 
 		$this->buildCreator()->createUserFileInFolder($folder, 'COM1.pad');
 	}
@@ -222,7 +231,7 @@ class PadFileCreatorTest extends TestCase {
 	 */
 	public function testCarriesOnWhenTheStorageCannotAnswer(): void {
 		$storage = $this->createMock(IStorage::class);
-		$storage->method('verifyPath')->willThrowException(new \RuntimeException('storage unavailable'));
+		$storage->method('verifyPath')->willThrowException(new StorageNotAvailableException('mount is down'));
 
 		$file = $this->emptyFile();
 		$folder = $this->folderOn($storage);
@@ -233,11 +242,7 @@ class PadFileCreatorTest extends TestCase {
 		$logger->expects($this->once())->method('warning')
 			->with($this->stringContains('Could not ask the storage'), $this->anything());
 
-		$creator = new PadFileCreator(
-			$this->createMock(IRootFolder::class),
-			$this->createMock(ILockingProvider::class),
-			$logger,
-		);
+		$creator = $this->buildCreator(logger: $logger);
 
 		$this->assertSame($file, $creator->createUserFileInFolder($folder, 'Pad.pad'));
 	}
@@ -263,11 +268,20 @@ class PadFileCreatorTest extends TestCase {
 		return $folder;
 	}
 
-	private function buildCreator(): PadFileCreator {
+	private function buildCreator(
+		?ILockingProvider $locking = null,
+		?IFilenameValidator $validator = null,
+		?LoggerInterface $logger = null,
+	): PadFileCreator {
+		$l10n = $this->createMock(IL10N::class);
+		$l10n->method('t')->willReturnArgument(0);
+
 		return new PadFileCreator(
 			$this->createMock(IRootFolder::class),
-			$this->createMock(ILockingProvider::class),
-			$this->createMock(LoggerInterface::class),
+			$locking ?? $this->createMock(ILockingProvider::class),
+			$validator ?? $this->createMock(IFilenameValidator::class),
+			$l10n,
+			$logger ?? $this->createMock(LoggerInterface::class),
 		);
 	}
 }

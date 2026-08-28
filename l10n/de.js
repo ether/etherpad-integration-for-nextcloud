@@ -158,6 +158,7 @@ OC.L10N.register(
     "Test fault set: {fault}": "Testfehler gesetzt: {fault}",
     "Test faults are available only when Nextcloud debug mode is enabled.": "Testfehler sind nur verfügbar, wenn der Nextcloud-Debug-Modus aktiviert ist.",
     "Testing Etherpad connection...": "Etherpad-Verbindung wird geprüft ...",
+    "That file name is not allowed on this server.": "Dieser Dateiname ist auf diesem Server nicht erlaubt.",
     "That name is reserved for the app's own tiles.": "Dieser Name ist für die eigenen Kacheln der App reserviert.",
     "That template name is not allowed on this server.": "Dieser Vorlagenname ist auf diesem Server nicht zulässig.",
     "The Etherpad base URL could not be read as a hostname, so the session cookie domain cannot be checked.": "Die Etherpad-Basis-URL konnte nicht als Hostname gelesen werden, daher lässt sich die Cookie-Domain nicht prüfen.",

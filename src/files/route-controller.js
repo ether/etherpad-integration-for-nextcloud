@@ -11,7 +11,6 @@ import {
 	normalizeFilePath,
 	parseFileIdFromCurrentLocation,
 	parsePublicShareTokenFromLocation,
-	readQueryParam,
 	viewerUrlForPublicShare,
 } from '../lib/urls.js'
 import { isSingleFilePublicShare } from './public-single-share-ui.js'
@@ -60,8 +59,7 @@ export const createRouteController = ({
 		if (!fileId) {
 			return
 		}
-		const search = window.location.search || ''
-		const params = new URLSearchParams(search)
+		const params = new URLSearchParams(window.location.search || '')
 		if (params.get('openfile') === 'true' || params.get('opendetails') === 'true' || params.get('details') === '1') {
 			return
 		}
@@ -70,7 +68,7 @@ export const createRouteController = ({
 			if (!resolved || !resolved.is_pad) {
 				return
 			}
-			const dir = readQueryParam(search, 'dir') || '/'
+			const dir = params.get('dir') || '/'
 			const target = ocGenerateUrl('/apps/files/files') + '?dir=' + encodeURIComponent(dir)
 			if (window.location.href !== target) {
 				window.location.assign(target)
@@ -85,13 +83,13 @@ export const createRouteController = ({
 		if (!token) {
 			return
 		}
-		const search = window.location.search || ''
-		const fileName = readQueryParam(search, 'files') || ''
+		const params = new URLSearchParams(window.location.search || '')
+		const fileName = params.get('files') || ''
 		if (hasNativeViewer()) {
 			if (!isPadName(fileName)) {
 				return
 			}
-			const dir = readQueryParam(search, 'path') || '/'
+			const dir = params.get('path') || '/'
 			const filePath = normalizeFilePath(dir, fileName)
 			void openPadInNativeViewer({ path: filePath, fileId: null })
 			return
@@ -108,7 +106,7 @@ export const createRouteController = ({
 			}
 			return
 		}
-		const dir = readQueryParam(search, 'path') || '/'
+		const dir = params.get('path') || '/'
 		const filePath = normalizeFilePath(dir, fileName)
 		window.location.assign(viewerUrlForPublicShare(token, filePath))
 	}

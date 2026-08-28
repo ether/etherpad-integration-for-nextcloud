@@ -14,16 +14,14 @@ use OCA\EtherpadNextcloud\Exception\InvalidPadNameException;
 use OCA\EtherpadNextcloud\Exception\PadFileAlreadyExistsException;
 use OCP\Files\File;
 use OCP\Files\Folder;
-use OCP\Files\EmptyFileNameException;
-use OCP\Files\FileNameTooLongException;
-use OCP\Files\InvalidCharacterInPathException;
-use OCP\Files\InvalidDirectoryException;
+use OCP\Files\IFilenameValidator;
 use OCP\Files\InvalidPathException;
-use OCP\Files\ReservedWordException;
 use OCP\Files\IRootFolder;
 use OCP\Files\NotFoundException;
 use OCP\Files\Storage\IStorage;
+use OCP\Files\StorageNotAvailableException;
 use OCP\Lock\ILockingProvider;
+use OCP\IL10N;
 use OCP\Lock\LockedException;
 use Psr\Log\LoggerInterface;
 
@@ -39,6 +37,8 @@ class PadFileCreator {
 	public function __construct(
 		private IRootFolder $rootFolder,
 		private ILockingProvider $lockingProvider,
+		private IFilenameValidator $filenameValidator,
+		private IL10N $l10n,
 		private LoggerInterface $logger,
 	) {
 	}
@@ -140,7 +140,7 @@ class PadFileCreator {
 			// Some storages only judge a name when the write happens, so
 			// asking beforehand cannot be complete. Nextcloud is the
 			// authority either way; this just keeps the answer a 400.
-			throw $this->refusedName($e);
+			throw $this->refusedName($e, trustMessage: false);
 		} catch (\Throwable $e) {
 			// Something else created it outside our lock — the Files UI, a
 			// sync client, another app.
@@ -170,45 +170,64 @@ class PadFileCreator {
 	 * @throws InvalidPadNameException
 	 */
 	private function requireNameThisFolderAccepts(Folder $parent, string $fileName): void {
+		// Two questions with different answers, asked for different reasons.
+		//
+		// The filename validator knows Nextcloud's own rules, and its
+		// refusal carries a translated sentence naming the rule — that one
+		// is worth showing the user.
+		try {
+			$this->filenameValidator->validateFilename($fileName);
+		} catch (InvalidPathException $e) {
+			throw $this->refusedName($e, trustMessage: true);
+		}
+
+		// The storage behind this folder may add rules of its own, and an
+		// external or mounted folder often does. Its message is not shown:
+		// these exception classes are public, so a storage app is free to
+		// put a mount point, a bucket name or a driver error in one, and
+		// this reaches a browser.
 		try {
 			$storage = $parent->getStorage();
 			$internalPath = $parent->getInternalPath();
-			if (!$storage instanceof IStorage) {
-				return;
-			}
+		} catch (StorageNotAvailableException $e) {
+			$this->logStorageSilence($fileName, $e);
+			return;
+		}
+		if (!$storage instanceof IStorage) {
+			return;
+		}
+
+		try {
 			$storage->verifyPath($internalPath, $fileName);
 		} catch (InvalidPathException $e) {
-			throw $this->refusedName($e);
-		} catch (\Throwable $e) {
-			// The storage could not answer — unreachable mount, a wrapper
-			// that failed to build. That is not a verdict on the name, so the
-			// create goes on and newFile() decides. Logged, because silently
-			// skipping the check would hide that it stopped running at all.
-			$this->logger->warning('Could not ask the storage whether it accepts a pad name', [
-				'app' => 'etherpad_nextcloud',
-				'file' => $fileName,
-				'exception' => $e,
-			]);
+			throw $this->refusedName($e, trustMessage: false);
+		} catch (StorageNotAvailableException $e) {
+			// Not a verdict on the name — an unreachable mount. The create
+			// goes on and newFile() decides. Anything else that throws here
+			// is a defect and is left to surface.
+			$this->logStorageSilence($fileName, $e);
 		}
 	}
 
-	/**
-	 * Nextcloud's own refusals carry a translated sentence naming the rule,
-	 * and those are worth showing. A storage app's own InvalidPathException
-	 * is not: it may carry a mount point, a bucket name or a raw driver
-	 * error, and this response goes to a browser.
-	 */
-	private function refusedName(InvalidPathException $e): InvalidPadNameException {
-		$message = trim($e->getMessage());
-		$fromNextcloud = $e instanceof ReservedWordException
-			|| $e instanceof InvalidCharacterInPathException
-			|| $e instanceof FileNameTooLongException
-			|| $e instanceof EmptyFileNameException
-			|| $e instanceof InvalidDirectoryException;
+	private function logStorageSilence(string $fileName, \Throwable $e): void {
+		$this->logger->warning('Could not ask the storage whether it accepts a pad name', [
+			'app' => 'etherpad_nextcloud',
+			'file' => $fileName,
+			'exception' => $e,
+		]);
+	}
 
-		return new InvalidPadNameException($fromNextcloud && $message !== ''
+	/**
+	 * @param bool $trustMessage whether the exception came from the
+	 *        filename validator, whose message is Nextcloud's own and safe
+	 *        to show. The exception classes alone do not establish that:
+	 *        they are public, and any storage app may throw them.
+	 */
+	private function refusedName(InvalidPathException $e, bool $trustMessage): InvalidPadNameException {
+		$message = trim($e->getMessage());
+		return new InvalidPadNameException($trustMessage && $message !== ''
 			? $message
-			: 'That file name is not allowed on this server.', 0, $e);
+			: $this->l10n->t('That file name is not allowed on this server.'), 0, $e);
 	}
 
 	/**

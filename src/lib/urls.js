@@ -6,9 +6,18 @@
 import { APP_ID } from './constants.js'
 import { ocGenerateUrl } from './oc-compat.js'
 
+/**
+ * Join a directory and a file name. Nothing else: the name is not
+ * touched.
+ *
+ * This used to collapse " .pad" to ".pad", which meant `Notes .pad` — a
+ * name Nextcloud accepts — resolved to a different file. The same
+ * rewrite was removed from the PHP side; what a name may be is decided
+ * when the file is created, not while opening one.
+ */
 export const normalizeFilePath = (dir, filename) => {
 	const cleanDir = !dir || dir === '/' ? '' : String(dir)
-	const cleanName = String(filename || '').replace(/^\/+/, '').replace(/\s+\.pad$/i, '.pad')
+	const cleanName = String(filename || '').replace(/^\/+/, '')
 	if (cleanDir === '') {
 		return '/' + cleanName
 	}
@@ -107,37 +116,6 @@ export const parseFileIdFromCurrentLocation = () => {
 	return Number.isFinite(id) && id > 0 ? id : null
 }
 
-/**
- * Read a query parameter without the form-encoding rule that turns `+`
- * into a space.
- *
- * `URLSearchParams.get()` applies `application/x-www-form-urlencoded`
- * rules, where `+` means space. A pad may legitimately be called
- * `C++.pad`, and a share link carries that name unencoded in the query —
- * so the browser half of this app would resolve `C  .pad` and open the
- * wrong file, or none. Percent sequences are still decoded.
- */
-export const readQueryParam = (search, name) => {
-	const raw = String(search || '').replace(/^\?/, '')
-	for (const pair of raw.split('&')) {
-		if (!pair) {
-			continue
-		}
-		const eq = pair.indexOf('=')
-		const key = eq === -1 ? pair : pair.slice(0, eq)
-		if (key !== name) {
-			continue
-		}
-		const value = eq === -1 ? '' : pair.slice(eq + 1)
-		try {
-			return decodeURIComponent(value)
-		} catch (error) {
-			return value
-		}
-	}
-	return null
-}
-
 export const parsePublicSharePadFromHref = (href) => {
 	if (!href || typeof href !== 'string') {
 		return null
@@ -152,11 +130,11 @@ export const parsePublicSharePadFromHref = (href) => {
 	if (!pathMatch) {
 		return null
 	}
-	const files = (readQueryParam(url.search, 'files') || '').trim()
+	const files = url.searchParams.get('files') || ''
 	if (!isPadName(files)) {
 		return null
 	}
-	const dir = (readQueryParam(url.search, 'path') || '/').trim() || '/'
+	const dir = url.searchParams.get('path') || '/'
 	return {
 		token: pathMatch[1],
 		path: normalizeFilePath(dir, files),

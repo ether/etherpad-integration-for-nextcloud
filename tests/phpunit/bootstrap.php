@@ -58,6 +58,7 @@ $stubFiles = [
 	__DIR__ . '/stubs/OCP/Files/FileNameTooLongException.php',
 	__DIR__ . '/stubs/OCP/Files/EmptyFileNameException.php',
 	__DIR__ . '/stubs/OCP/Files/InvalidDirectoryException.php',
+	__DIR__ . '/stubs/OCP/Files/StorageNotAvailableException.php',
 	__DIR__ . '/stubs/OCP/Files/Storage/IStorage.php',
 	__DIR__ . '/stubs/OCP/Files/SimpleFS/ISimpleFolder.php',
 	__DIR__ . '/stubs/OCP/Files/IAppData.php',
