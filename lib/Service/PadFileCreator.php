@@ -13,6 +13,8 @@ use OCA\EtherpadNextcloud\AppInfo\Application;
 use OCA\EtherpadNextcloud\Exception\PadFileAlreadyExistsException;
 use OCP\Files\File;
 use OCP\Files\Folder;
+use OCP\Files\IFilenameValidator;
+use OCP\Files\InvalidPathException;
 use OCP\Files\IRootFolder;
 use OCP\Files\NotFoundException;
 use OCP\Lock\ILockingProvider;
@@ -31,6 +33,7 @@ class PadFileCreator {
 	public function __construct(
 		private IRootFolder $rootFolder,
 		private ILockingProvider $lockingProvider,
+		private IFilenameValidator $filenameValidator,
 		private LoggerInterface $logger,
 	) {
 	}
@@ -85,6 +88,8 @@ class PadFileCreator {
 	 * @throws PadFileAlreadyExistsException
 	 */
 	public function createUserFileInFolder(Folder $parent, string $fileName): File {
+		$this->requireNameThisInstanceAccepts($fileName);
+
 		$lock = $this->lockKey($parent, $fileName);
 		try {
 			$this->lockingProvider->acquireLock($lock, ILockingProvider::LOCK_EXCLUSIVE);
@@ -136,6 +141,28 @@ class PadFileCreator {
 		}
 
 		return $node;
+	}
+
+	/**
+	 * Ask Nextcloud whether it will take this name.
+	 *
+	 * The app's own checks cover the structural cases — empty, a path, `.`
+	 * and `..`. Everything else is per instance: the configured forbidden
+	 * characters and names, control characters, what the storage behind the
+	 * folder allows. Without asking, the write fails somewhere in the
+	 * storage and the user gets a 500 instead of a sentence they can act on.
+	 *
+	 * @throws \InvalidArgumentException
+	 */
+	private function requireNameThisInstanceAccepts(string $fileName): void {
+		try {
+			$this->filenameValidator->validateFilename($fileName);
+		} catch (InvalidPathException $e) {
+			$message = trim($e->getMessage());
+			throw new \InvalidArgumentException($message !== ''
+				? $message
+				: 'That file name is not allowed on this server.', 0, $e);
+		}
 	}
 
 	/**

@@ -8,6 +8,8 @@ use OCA\EtherpadNextcloud\Exception\PadFileAlreadyExistsException;
 use OCA\EtherpadNextcloud\Service\PadFileCreator;
 use OCP\Files\File;
 use OCP\Files\Folder;
+use OCP\Files\IFilenameValidator;
+use OCP\Files\InvalidPathException;
 use OCP\Files\IRootFolder;
 use OCP\Lock\ILockingProvider;
 use OCP\Lock\LockedException;
@@ -80,7 +82,7 @@ class PadFileCreatorTest extends TestCase {
 		$locking->expects($this->never())->method('releaseLock');
 
 		$this->expectException(PadFileAlreadyExistsException::class);
-		(new PadFileCreator($this->createMock(IRootFolder::class), $locking, $this->createMock(LoggerInterface::class)))
+		(new PadFileCreator($this->createMock(IRootFolder::class), $locking, $this->createMock(IFilenameValidator::class), $this->createMock(LoggerInterface::class)))
 			->createUserFileInFolder($folder, 'Pad.pad');
 	}
 
@@ -94,7 +96,7 @@ class PadFileCreatorTest extends TestCase {
 		$locking->expects($this->once())->method('releaseLock');
 
 		try {
-			(new PadFileCreator($this->createMock(IRootFolder::class), $locking, $this->createMock(LoggerInterface::class)))
+			(new PadFileCreator($this->createMock(IRootFolder::class), $locking, $this->createMock(IFilenameValidator::class), $this->createMock(LoggerInterface::class)))
 				->createUserFileInFolder($folder, 'Pad.pad');
 			$this->fail('Expected the create to be refused.');
 		} catch (PadFileAlreadyExistsException) {
@@ -118,7 +120,7 @@ class PadFileCreatorTest extends TestCase {
 		$folder->method('nodeExists')->willReturn(false);
 		$folder->method('newFile')->willReturn($this->emptyFile());
 
-		$creator = new PadFileCreator($this->createMock(IRootFolder::class), $locking, $this->createMock(LoggerInterface::class));
+		$creator = new PadFileCreator($this->createMock(IRootFolder::class), $locking, $this->createMock(IFilenameValidator::class), $this->createMock(LoggerInterface::class));
 		$creator->createUserFileInFolder($folder, 'One.pad');
 		$creator->createUserFileInFolder($folder, 'Two.pad');
 
@@ -145,7 +147,7 @@ class PadFileCreatorTest extends TestCase {
 			},
 		);
 
-		$creator = new PadFileCreator($this->createMock(IRootFolder::class), $locking, $this->createMock(LoggerInterface::class));
+		$creator = new PadFileCreator($this->createMock(IRootFolder::class), $locking, $this->createMock(IFilenameValidator::class), $this->createMock(LoggerInterface::class));
 		$creator->createUserFileInFolder($this->folderSeenAs('/alice/files/Team', 7), 'Pad.pad');
 		$creator->createUserFileInFolder($this->folderSeenAs('/bob/files/Shared/Team', 7), 'Pad.pad');
 		$creator->createUserFileInFolder($this->folderSeenAs('/alice/files/Other', 8), 'Pad.pad');
@@ -161,6 +163,35 @@ class PadFileCreatorTest extends TestCase {
 		$folder->method('nodeExists')->willReturn(false);
 		$folder->method('newFile')->willReturn($this->emptyFile());
 		return $folder;
+	}
+
+	/**
+	 * The structural checks elsewhere cover empty names, paths, `.` and
+	 * `..`. Everything past that is per instance — configured forbidden
+	 * characters and names, control characters, what the storage allows —
+	 * and asking turns a 500 from deep in the storage into a sentence.
+	 */
+	public function testRefusesANameThisInstanceForbids(): void {
+		$validator = $this->createMock(IFilenameValidator::class);
+		$validator->method('validateFilename')
+			->with('COM1.pad')
+			->willThrowException(new InvalidPathException('"COM1" is a reserved name'));
+
+		$folder = $this->createMock(Folder::class);
+		$folder->expects($this->never())->method('newFile');
+
+		$locking = $this->createMock(ILockingProvider::class);
+		$locking->expects($this->never())->method('acquireLock');
+
+		$this->expectException(\InvalidArgumentException::class);
+		$this->expectExceptionMessage('"COM1" is a reserved name');
+
+		(new PadFileCreator(
+			$this->createMock(IRootFolder::class),
+			$locking,
+			$validator,
+			$this->createMock(LoggerInterface::class),
+		))->createUserFileInFolder($folder, 'COM1.pad');
 	}
 
 	private function emptyFile(): File {
@@ -179,6 +210,7 @@ class PadFileCreatorTest extends TestCase {
 		return new PadFileCreator(
 			$this->createMock(IRootFolder::class),
 			$this->createMock(ILockingProvider::class),
+			$this->createMock(IFilenameValidator::class),
 			$this->createMock(LoggerInterface::class),
 		);
 	}
