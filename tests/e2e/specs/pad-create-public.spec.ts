@@ -121,11 +121,11 @@ test.describe('external pad from the template picker', () => {
  * query parsing (URLSearchParams applies form-encoding rules). `C++.pad`
  * created and opened `C.pad` — a different file, silently.
  *
- * The unit tests are what pin the bug — this spec passes against the
- * broken code too, because a viewer mounts either way and the failure was
- * *which* pad it mounted. What it does guard is that a name with a `+`
- * survives creation, the file listing and a path-based open at all, which
- * is a round trip no unit test covers.
+ * Checked against the pre-fix normalizer: the path-based reopen below
+ * fails there, because the file the server looked for no longer existed.
+ * The case where a viewer mounts the *wrong* pad rather than none needs
+ * two files whose names differ in that one character, which is what the
+ * public folder share in public-share-view.spec.ts sets up.
  */
 test.describe('pad name containing a plus sign', () => {
 	const padName = uniqueName('c++', 'pad')

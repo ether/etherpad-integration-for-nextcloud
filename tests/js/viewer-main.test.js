@@ -169,6 +169,31 @@ describe('viewer component — computed path/id derivation', () => {
 		expect(vm.filePath).toBe('/From/Dav.pad')
 	})
 
+	// Nextcloud accepts these names: its validator trims only to decide
+	// whether a name is empty or `.`/`..`, and judges the rest on the name
+	// as given. A viewer that trims asks for a neighbouring file instead,
+	// which is the plus-sign bug reached by a different character.
+	it('keeps a space before the extension', () => {
+		const vm = makeInstance({ fileInfo: { path: '/Notes/Standup .pad' } })
+		expect(vm.filePath).toBe('/Notes/Standup .pad')
+	})
+
+	it('keeps a leading space in the file name', () => {
+		const vm = makeInstance({ filename: ' A.pad' })
+		expect(vm.filePath).toBe('/ A.pad')
+	})
+
+	it('keeps a trailing space in the directory name', () => {
+		const vm = makeInstance({ filename: 'A.pad', fileInfo: { dirname: '/Folder ' } })
+		expect(vm.filePath).toBe('/Folder /A.pad')
+	})
+
+	it('keeps a trailing space in a directory taken from the URL', () => {
+		window.happyDOM.setURL('http://localhost/apps/files?dir=' + encodeURIComponent('/Folder '))
+		const vm = makeInstance({ filename: 'A.pad' })
+		expect(vm.filePath).toBe('/Folder /A.pad')
+	})
+
 	it('returns empty filePath when nothing resolves to a .pad', () => {
 		const vm = makeInstance({ filename: 'notes.txt', basename: '' })
 		expect(vm.filePath).toBe('/notes.txt') // non-pad falls through to "/" + baseName

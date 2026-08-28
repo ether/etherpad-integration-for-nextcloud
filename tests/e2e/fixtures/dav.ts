@@ -364,6 +364,37 @@ export const sharedWithMePaths = async (): Promise<string[]> => {
 }
 
 /**
+ * Create a pad at an exact path through the app's own API, and return the
+ * Etherpad address it was given.
+ *
+ * The address is what makes a test able to say *which* pad was opened.
+ * Asserting that a viewer appeared is not enough: the bug this guards
+ * against opened a viewer just as happily, for the wrong document.
+ */
+export const createPadAtPath = async (absolutePath: string, accessMode = 'public'): Promise<{ path: string, padUrl: string }> => {
+	const res = await fetch(`${E2E.baseURL}/index.php/apps/etherpad_nextcloud/api/v1/pads`, {
+		method: 'POST',
+		headers: {
+			Authorization: basicAuthHeader(),
+			'OCS-APIRequest': 'true',
+			'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+			Accept: 'application/json',
+		},
+		body: new URLSearchParams({ file: absolutePath, accessMode }),
+	})
+	const payload = await parseJsonResponse(res) as { file?: string, pad_url?: string, message?: string }
+	if (!res.ok) {
+		throw new Error(`Pad create failed for "${absolutePath}" with HTTP ${res.status}: ${payload?.message || 'unknown error'}`)
+	}
+	const path = String(payload?.file || '')
+	const padUrl = String(payload?.pad_url || '')
+	if (path === '' || padUrl === '') {
+		throw new Error(`Pad create response for "${absolutePath}" carried no path and pad URL.`)
+	}
+	return { path, padUrl }
+}
+
+/**
  * PROPFIND for the file's fileid. Used by specs that need the numeric id
  * for cross-user / API permission checks. Throws if the file is missing
  * or the fileid prop cannot be parsed.
@@ -403,11 +434,24 @@ export const propfindFileId = async (relativePath: string): Promise<number> => {
 	return parsed
 }
 
-export const createPublicReadShare = async (relativePath: string): Promise<{ token: string, url: string }> => {
+/**
+ * Permission bitmask for a public link share, as OCS spells it.
+ * Read alone makes a pad open read-only, which is a different code path
+ * in the app — a spec that wants to compare against the pad's own
+ * address has to hand out edit rights, because a read-only open
+ * deliberately serves the read-only pad id or a snapshot instead.
+ */
+export const SHARE_PERMISSION_READ = 1
+export const SHARE_PERMISSION_READ_WRITE = 3
+
+export const createPublicShare = async (
+	relativePath: string,
+	permissions: number = SHARE_PERMISSION_READ,
+): Promise<{ token: string, url: string }> => {
 	const body = new URLSearchParams()
 	body.set('path', '/' + relativePath.replace(/^\/+/, ''))
 	body.set('shareType', '3')
-	body.set('permissions', '1')
+	body.set('permissions', String(permissions))
 
 	const res = await fetch(`${E2E.baseURL}/ocs/v2.php/apps/files_sharing/api/v1/shares?format=json`, {
 		method: 'POST',
@@ -433,6 +477,10 @@ export const createPublicReadShare = async (relativePath: string): Promise<{ tok
 	}
 	return { token, url }
 }
+
+/** Read-only public link share — the common case. */
+export const createPublicReadShare = async (relativePath: string): Promise<{ token: string, url: string }> =>
+	createPublicShare(relativePath, SHARE_PERMISSION_READ)
 
 /**
  * Create a user-to-user share (`shareType=0`) granting `shareWith`
