@@ -5,6 +5,7 @@
 
 import { APP_ID } from './constants.js'
 import { ocGenerateUrl, ocRequestToken } from './oc-compat.js'
+import { fetchJsonWithTimeout } from './fetch-helpers.js'
 
 const RESOLVE_CACHE = new Map()
 const RESOLVE_CACHE_MAX_ENTRIES = 50
@@ -115,19 +116,11 @@ const setResolveCache = (cacheKey, request) => {
 	})
 }
 
-const fetchJson = async (url, options, fallbackMessage) => {
-	const response = await fetch(url, {
-		...options,
-		credentials: 'same-origin',
-	})
-	const data = await response.json().catch(() => ({}))
-	if (!response.ok) {
-		const error = new Error((data && data.message) || fallbackMessage)
-		if (data && typeof data.code === 'string') {
-			error.code = data.code
-		}
-		error.status = response.status
-		throw error
-	}
-	return data
-}
+/**
+ * The shared helper, with this module's per-call wording. It was a third
+ * copy of the same code without the helper's timeout — and one of these
+ * calls sits inside the viewer's open flow, where a request that never
+ * settles leaves "Loading pad..." on screen with no error and no way out.
+ */
+const fetchJson = async (url, options, fallbackMessage) =>
+	fetchJsonWithTimeout(url, options, { fallbackMessage })

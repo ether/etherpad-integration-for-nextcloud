@@ -11,7 +11,8 @@ const DEFAULT_REQUEST_TIMEOUT_MS = 10000
  * abandoning an open, say — must still be able to cancel. Whichever fires
  * first wins.
  */
-export const fetchJsonWithTimeout = async (url, init = {}, timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS) => {
+export const fetchJsonWithTimeout = async (url, init = {}, options = {}) => {
+	const { timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS, fallbackMessage = 'Request failed.' } = options
 	const controller = new AbortController()
 	const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs)
 	const callerSignal = init.signal
@@ -33,7 +34,7 @@ export const fetchJsonWithTimeout = async (url, init = {}, timeoutMs = DEFAULT_R
 		}))
 		const data = await response.json().catch(() => ({}))
 		if (!response.ok) {
-			const error = new Error((data && data.message) || 'Request failed.')
+			const error = new Error((data && data.message) || fallbackMessage)
 			if (data && typeof data.code === 'string') {
 				error.code = data.code
 			}
@@ -43,8 +44,10 @@ export const fetchJsonWithTimeout = async (url, init = {}, timeoutMs = DEFAULT_R
 		return data
 	} catch (error) {
 		if (error && typeof error === 'object' && 'name' in error && error.name === 'AbortError') {
-			// A caller's own abort is not a timeout, and its callers check for
-			// the AbortError name to tell "we cancelled this" from "it failed".
+			// A caller's own abort is not a timeout. No caller distinguishes
+			// them today — both recognise a superseded request by the
+			// generation guard instead — but rewriting a deliberate abort as
+			// "Request timed out." would be a lie the moment one does.
 			if (callerSignal && callerSignal.aborted) {
 				throw error
 			}

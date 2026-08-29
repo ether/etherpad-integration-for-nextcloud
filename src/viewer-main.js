@@ -34,6 +34,9 @@ import { parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './li
 				// The id recovery may address. Normally the Viewer's own, but
 				// resolved from the path when it supplies none.
 				recoveryFileId: null,
+				// The path recoveryFileId was resolved from, so invalidating
+				// its cache entry names the same file the id does.
+				recoveryPath: '',
 				isRecovering: false,
 				isCheckingOriginal: false,
 				originalPad: null,
@@ -271,6 +274,7 @@ import { parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './li
 				this.canRecover = false
 				this.maybeStaleFileId = false
 				this.recoveryFileId = null
+				this.recoveryPath = ''
 				this.isCheckingOriginal = false
 				this.originalPad = null
 				this.iframeSrc = ''
@@ -420,6 +424,7 @@ import { parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './li
 					// construction, and the server resolves it inside the
 					// user's own tree.
 					let recoveryFileId = this.resolvedFileId
+					this.recoveryPath = openPath
 					if (recoveryFileId === null && !byPublicUrl && error && error.code === 'missing_binding') {
 						recoveryFileId = await this.resolveRecoveryFileId(openPath)
 						// Assigned only after the guard: a slower lookup from a
@@ -476,7 +481,7 @@ import { parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './li
 				}
 				this.isRecovering = true
 				try {
-					await apiRecoverFromSnapshot(this.recoveryFileId, this.filePath)
+					await apiRecoverFromSnapshot(this.recoveryFileId, this.recoveryPath)
 					this.loadError = ''
 					this.canRecover = false
 					await this.resolveOpenUrl()

@@ -680,7 +680,7 @@ describe('viewer component — resolveOpenUrl', () => {
 describe('viewer component — recoverFromSnapshot', () => {
 	it('posts the recovery, clears the error, and re-resolves', async () => {
 		apiRecoverFromSnapshot.mockResolvedValue({})
-		const vm = makeInstance({ fileid: 42, recoveryFileId: 42, canRecover: true, loadError: 'boom', fileInfo: { path: '/x.pad' } })
+		const vm = makeInstance({ fileid: 42, recoveryFileId: 42, recoveryPath: '/x.pad', canRecover: true, loadError: 'boom' })
 		vm.resolveOpenUrl = vi.fn().mockResolvedValue()
 
 		await vm.recoverFromSnapshot()
