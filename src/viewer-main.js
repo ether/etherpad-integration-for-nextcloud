@@ -3,7 +3,7 @@
  * Copyright (c) 2026 Jacob Bühler
  */
 import { APP_ID, MIME, VIEWER_HANDLER_ID } from './lib/constants.js'
-import { apiFindOriginalPad, apiRecoverFromSnapshot } from './lib/api-client.js'
+import { apiFindOriginalPad, apiRecoverFromSnapshot, apiResolvePadByPath } from './lib/api-client.js'
 import { ocGenerateUrl, ocRequestToken, translate } from './lib/oc-compat.js'
 import { createPadSync } from './lib/pad-sync.js'
 import { sanitizeSnapshotHtml } from './lib/sanitize-html.js'
@@ -30,6 +30,9 @@ import { parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './li
 				loadError: '',
 				canRecover: false,
 				maybeStaleFileId: false,
+				// The id recovery may address. Normally the Viewer's own, but
+				// resolved from the path when it supplies none.
+				recoveryFileId: null,
 				isRecovering: false,
 				isCheckingOriginal: false,
 				originalPad: null,
@@ -123,12 +126,17 @@ import { parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './li
 		},
 		methods: {
 			async fetchOpenPayload(url, init = {}) {
+				// The merged headers go on last. Spreading `init` over an
+				// options object that already carried `headers` let
+				// `init.headers` replace it wholesale, so the Accept below was
+				// computed and then thrown away on every POST — and the
+				// framework's JSON error responses arrived only because
+				// fetch's default Accept happens to be `*/*`.
 				const headers = Object.assign({ Accept: 'application/json' }, init.headers || {})
 				const response = await fetch(url, Object.assign({
 					method: 'GET',
 					credentials: 'same-origin',
-					headers,
-				}, init))
+				}, init, { headers }))
 				const data = await response.json().catch(() => ({}))
 				if (!response.ok) {
 					const error = new Error((data && data.message) || 'Pad open failed.')
@@ -214,6 +222,20 @@ import { parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './li
 				announceMigratedStatus(data)
 				return data
 			},
+			/**
+			 * The file id of the path currently open, or null. Only used to
+			 * give recovery an address; a failure here just means no
+			 * recovery action, never a different file.
+			 */
+			async resolveRecoveryFileId() {
+				try {
+					const resolved = await apiResolvePadByPath(this.filePath)
+					const id = Number(resolved && resolved.file_id)
+					return Number.isFinite(id) && id > 0 ? id : null
+				} catch {
+					return null
+				}
+			},
 			markLoaded() {
 				this.$emit('update:loaded', true)
 			},
@@ -257,6 +279,7 @@ import { parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './li
 				this.loadError = ''
 				this.canRecover = false
 				this.maybeStaleFileId = false
+				this.recoveryFileId = null
 				this.isCheckingOriginal = false
 				this.originalPad = null
 				this.iframeSrc = ''
@@ -385,10 +408,22 @@ import { parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './li
 					this.maybeStaleFileId = this.resolvedFileId !== null
 						&& !byPublicUrl
 						&& Boolean(error) && error.status === 404 && !error.code
-					// Recovery is gated on having a fileId we can address. Public-share
-					// visitors don't get a recovery action — only the share owner.
+					// Recovery needs an id it may address. The Viewer's own is
+					// preferred; when it supplies none — the case the Files
+					// URL's id used to paper over, unsafely, because that id
+					// need not belong to the file on screen — the id is asked
+					// for by the path that was just opened. Same file by
+					// construction, and the server resolves it inside the
+					// user's own tree.
+					this.recoveryFileId = this.resolvedFileId
+					if (this.recoveryFileId === null && !byPublicUrl && error && error.code === 'missing_binding') {
+						this.recoveryFileId = await this.resolveRecoveryFileId()
+						if (!isCurrent()) return
+					}
+					// Public-share visitors don't get a recovery action — only
+					// the share owner.
 					this.canRecover = Boolean(error && error.code === 'missing_binding')
-						&& this.resolvedFileId !== null
+						&& this.recoveryFileId !== null
 						&& !byPublicUrl
 					if (this.canRecover) {
 						// Optional: check if this looks like a copy of a .pad we
@@ -404,12 +439,12 @@ import { parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './li
 				}
 			},
 			async fetchOriginalPadHint(generation, isCurrent) {
-				if (this.resolvedFileId === null) {
+				if (this.recoveryFileId === null) {
 					return
 				}
 				this.isCheckingOriginal = true
 				try {
-					const hint = await apiFindOriginalPad(this.resolvedFileId)
+					const hint = await apiFindOriginalPad(this.recoveryFileId)
 					if (!isCurrent()) return
 					if (hint && hint.found === true && typeof hint.viewer_url === 'string' && hint.viewer_url !== '') {
 						this.originalPad = {
@@ -427,12 +462,12 @@ import { parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './li
 				}
 			},
 			async recoverFromSnapshot() {
-				if (!this.canRecover || this.isRecovering || this.resolvedFileId === null) {
+				if (!this.canRecover || this.isRecovering || this.recoveryFileId === null) {
 					return
 				}
 				this.isRecovering = true
 				try {
-					await apiRecoverFromSnapshot(this.resolvedFileId)
+					await apiRecoverFromSnapshot(this.recoveryFileId)
 					this.loadError = ''
 					this.canRecover = false
 					await this.resolveOpenUrl()
@@ -472,10 +507,14 @@ import { parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './li
 		},
 		beforeDestroy() {
 			this.resolveGeneration += 1
+			// Closing the viewer mid-open is the commonest way to supersede a
+			// request; bumping the generation only drops the answer.
+			this._openAbort?.abort()
 			this.teardownSync()
 		},
 		beforeUnmount() {
 			this.resolveGeneration += 1
+			this._openAbort?.abort()
 			this.teardownSync()
 		},
 		render(createElement) {

@@ -12,8 +12,6 @@ use OCP\Files\File;
 use OCP\Files\Folder;
 use OCP\Files\IRootFolder;
 use OCP\Files\NotFoundException;
-use OCP\Files\NotPermittedException;
-use OCP\User\NoUserException;
 
 class UserNodeResolver {
 	public function __construct(
@@ -54,10 +52,10 @@ class UserNodeResolver {
 	}
 
 	/**
-	 * The user's own root counts as one of their folders. Its path is
-	 * `/<uid>/files` with no trailing slash, so a prefix test alone rejects
-	 * it — and create-by-parent then cannot create a pad directly in "All
-	 * files", which is where someone is most likely to start.
+	 * The user's own root counts as one of their folders, and it is the one
+	 * folder a lookup inside that folder cannot find — so it is answered by
+	 * its id before the search. Without that, create-by-parent could not put
+	 * a pad in "All files", which is where someone is most likely to start.
 	 *
 	 * @throws NotFoundException
 	 */
@@ -79,7 +77,10 @@ class UserNodeResolver {
 			$path = rtrim((string)$node->getPath(), '/');
 			// The separator stays in the prefix test so a sibling that merely
 			// starts the same way — /<uid>/files_versions — is still refused.
-			if ($path === $root || str_starts_with($path, $root . '/')) {
+			// The root itself is not compared here: getById() searches inside
+			// the folder and does not return it, which is why it is answered
+			// by id above.
+			if (str_starts_with($path, $root . '/')) {
 				return $node;
 			}
 		}
@@ -99,12 +100,20 @@ class UserNodeResolver {
 	 * to look inside a user's files is, for every caller here, the same
 	 * answer as not finding the file.
 	 *
+	 * Caught as `\Exception` because the types cannot all be named. The
+	 * public interface declares NotPermittedException, which is in OCP —
+	 * but the other one it declares, NoUserException, lives in `OC\User\`
+	 * and is not part of the public API an app may reference. Naming only
+	 * the reachable half would leave the more likely failure uncaught, and
+	 * this wraps a single call whose only outcomes are a folder or a
+	 * failure to produce one.
+	 *
 	 * @throws NotFoundException
 	 */
 	private function userFolder(string $uid): Folder {
 		try {
 			return $this->rootFolder->getUserFolder($uid);
-		} catch (NoUserException|NotPermittedException $e) {
+		} catch (\Exception $e) {
 			throw new NotFoundException('Cannot access the user file tree.', 0, $e);
 		}
 	}
@@ -118,8 +127,7 @@ class UserNodeResolver {
 			throw new NotFoundException('Invalid empty file path.');
 		}
 
-		$userFolder = $this->rootFolder->getUserFolder($uid);
-		$node = $userFolder->get($relativePath);
+		$node = $this->userFolder($uid)->get($relativePath);
 		if (!$node instanceof File) {
 			throw new NotFoundException('Path does not reference a file.');
 		}

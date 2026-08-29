@@ -14,7 +14,7 @@ use OCP\Files\Folder;
 use OCP\Files\IRootFolder;
 use OCP\Files\NotFoundException;
 use OCP\Files\NotPermittedException;
-use OCP\User\NoUserException;
+use OC\User\NoUserException;
 use PHPUnit\Framework\TestCase;
 
 class UserNodeResolverTest extends TestCase {
@@ -87,18 +87,6 @@ class UserNodeResolverTest extends TestCase {
 		$resolver = $this->resolverFor([$folder]);
 
 		$this->assertSame($folder, $resolver->resolveUserFolderNodeById('alice', 42));
-	}
-
-	/**
-	 * The user's own root has the path `/<uid>/files`, without a trailing
-	 * slash, so a prefix check against `/<uid>/files/` rejects it — and
-	 * create-by-parent cannot create a pad directly in "All files".
-	 */
-	public function testResolvesTheUserRootItself(): void {
-		$root = $this->folderAt('/alice/files');
-		$resolver = $this->resolverFor([$root]);
-
-		$this->assertSame($root, $resolver->resolveUserFolderNodeById('alice', 42));
 	}
 
 	public function testRejectsAFolderBelongingToAnotherUser(): void {

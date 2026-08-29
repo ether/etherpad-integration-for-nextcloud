@@ -20,14 +20,24 @@
 # DRY_RUN=1 prints the changes without making them.
 set -euo pipefail
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# -P so the tree is resolved physically: invoked through a symlink in
+# PATH, a logical `cd ..` would climb out of the symlink's directory
+# instead of the checkout, and the excludes sourced below would come from
+# somewhere else than the files being copied.
+SCRIPT_PATH="${BASH_SOURCE[0]}"
+while [[ -L "$SCRIPT_PATH" ]]; do
+	link_target="$(readlink "$SCRIPT_PATH")"
+	if [[ "$link_target" == /* ]]; then
+		SCRIPT_PATH="$link_target"
+	else
+		SCRIPT_PATH="$(cd -P "$(dirname "$SCRIPT_PATH")" && pwd)/$link_target"
+	fi
+done
+ROOT_DIR="$(cd -P "$(dirname "$SCRIPT_PATH")/.." && pwd)"
 
 : "${DEPLOY_SSH_TARGET:?DEPLOY_SSH_TARGET is required (example: user@nextcloud.example.com)}"
 : "${DEPLOY_APP_PATH:?DEPLOY_APP_PATH is required (example: /var/www/nextcloud/apps/etherpad_nextcloud)}"
 
-# Through ROOT_DIR, which is canonicalised: invoked via a symlink, a
-# second $(dirname ...) can name a different checkout than the one being
-# copied below.
 source "${ROOT_DIR}/scripts/app-file-excludes.sh"
 
 RSYNC_ARGS=(-az --human-readable --itemize-changes "${RSYNC_EXCLUDES[@]}")

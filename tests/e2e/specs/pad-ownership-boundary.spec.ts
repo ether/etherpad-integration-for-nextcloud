@@ -75,14 +75,24 @@ test.describe('pad ownership boundary (cross-user open-by-id)', () => {
 		const form = { fileId: String(createdFileId) }
 
 		try {
+			// Who the request is is asserted before what it may do. Any 4xx
+			// would otherwise satisfy the check below — a revoked or rotated
+			// E2E_USER2_APP_PASSWORD answers 401 from the auth layer, and the
+			// boundary would read as held without user B ever reaching it.
+			const whoami = await apiCtx.get('/ocs/v2.php/cloud/user?format=json')
+			expect(whoami.status(), 'user B credentials should authenticate').toBe(200)
+			const identity = await whoami.json() as { ocs?: { data?: { id?: string } } }
+			expect(identity?.ocs?.data?.id).toBe(userB)
+
 			const res = await apiCtx.post(openByIdUrl, { form })
 			// Anything 2xx would mean user B got an open ticket for user A's
-			// pad — that's the security regression we want to catch.
+			// pad — that's the security regression we want to catch. 404 is
+			// the controller's own answer: the id resolves to nothing inside
+			// user B's tree, and the server does not disclose that it exists.
 			expect(
 				res.status(),
 				`open-by-id should reject cross-user access, got HTTP ${res.status()}`,
-			).toBeGreaterThanOrEqual(400)
-			expect(res.status()).toBeLessThan(500)
+			).toBe(404)
 		} finally {
 			await apiCtx.dispose()
 		}

@@ -31,6 +31,7 @@ vi.mock('../../src/lib/pad-sync.js', () => ({
 vi.mock('../../src/lib/api-client.js', () => ({
 	apiFindOriginalPad: vi.fn(),
 	apiRecoverFromSnapshot: vi.fn(),
+	apiResolvePadByPath: vi.fn(),
 }))
 vi.mock('../../src/lib/sanitize-html.js', () => ({
 	sanitizeSnapshotHtml: vi.fn((html) => `SANITIZED:${html}`),
@@ -43,7 +44,7 @@ vi.mock('../../src/lib/urls.js', () => ({
 	parsePublicShareTokenFromLocation: vi.fn(() => ''),
 }))
 
-const { apiFindOriginalPad, apiRecoverFromSnapshot } = await import('../../src/lib/api-client.js')
+const { apiFindOriginalPad, apiRecoverFromSnapshot, apiResolvePadByPath } = await import('../../src/lib/api-client.js')
 const { sanitizeSnapshotHtml } = await import('../../src/lib/sanitize-html.js')
 const { parsePadPathFromDavHref, parsePublicShareTokenFromLocation } = await import('../../src/lib/urls.js')
 
@@ -463,6 +464,33 @@ describe('viewer component — resolveOpenUrl', () => {
 		expect(vm.iframeSrc).toBe('https://current')
 	})
 
+	it('sends Accept: application/json on a POST open, not only on a GET', async () => {
+		const fetchMock = stubFetch(jsonResponse({ url: 'https://pad.example/p', sync_url: '' }))
+		const vm = makeInstance({ fileid: 42, fileInfo: { path: '/x.pad' } })
+
+		await vm.resolveOpenUrl()
+
+		const sent = fetchMock.mock.calls[0][1].headers
+		expect(sent.Accept).toBe('application/json')
+		expect(sent['Content-Type']).toBe('application/x-www-form-urlencoded;charset=UTF-8')
+		expect(sent.requesttoken).toBe('csrf-token')
+	})
+
+	it('aborts the open when the viewer is torn down mid-request', async () => {
+		let captured
+		stubFetch((url, init) => {
+			captured = init && init.signal
+			return new Promise(() => {})
+		})
+		const vm = makeInstance({ fileid: 42, fileInfo: { path: '/x.pad' } })
+
+		void vm.resolveOpenUrl()
+		await Promise.resolve()
+		component.beforeDestroy.call(vm)
+
+		expect(captured.aborted).toBe(true)
+	})
+
 	it('surfaces a stale request token instead of retrying by path', async () => {
 		const fetchMock = stubFetch(jsonResponse({ message: 'CSRF check failed' }, false, 412))
 		const vm = makeInstance({ fileid: 42, fileInfo: { path: '/x.pad' } })
@@ -552,6 +580,48 @@ describe('viewer component — resolveOpenUrl', () => {
 		expect(vm.isCheckingOriginal).toBe(false)
 	})
 
+	// Dropping the Files-URL id took recovery's address with it. It is asked
+	// for by the path on screen instead — the same file by construction,
+	// where the URL's id need not have been.
+	it('resolves recovery\'s file id from the path when the Viewer supplies none', async () => {
+		stubFetch(jsonResponse({ message: 'no binding', code: 'missing_binding' }, false, 400))
+		apiResolvePadByPath.mockResolvedValue({ file_id: 99 })
+		apiFindOriginalPad.mockResolvedValue({ found: false })
+		const vm = makeInstance({ fileInfo: { path: '/copy.pad' } })
+
+		await vm.resolveOpenUrl()
+		await flush()
+
+		expect(apiResolvePadByPath).toHaveBeenCalledWith('/copy.pad')
+		expect(vm.recoveryFileId).toBe(99)
+		expect(vm.canRecover).toBe(true)
+		expect(apiFindOriginalPad).toHaveBeenCalledWith(99)
+	})
+
+	it('offers no recovery when the path cannot be resolved either', async () => {
+		stubFetch(jsonResponse({ message: 'no binding', code: 'missing_binding' }, false, 400))
+		apiResolvePadByPath.mockRejectedValue(new Error('resolve failed'))
+		const vm = makeInstance({ fileInfo: { path: '/copy.pad' } })
+
+		await vm.resolveOpenUrl()
+		await flush()
+
+		expect(vm.recoveryFileId).toBeNull()
+		expect(vm.canRecover).toBe(false)
+	})
+
+	it('does not ask for an id it already has', async () => {
+		stubFetch(jsonResponse({ message: 'no binding', code: 'missing_binding' }, false, 400))
+		apiFindOriginalPad.mockResolvedValue({ found: false })
+		const vm = makeInstance({ fileid: 42, fileInfo: { path: '/copy.pad' } })
+
+		await vm.resolveOpenUrl()
+		await flush()
+
+		expect(apiResolvePadByPath).not.toHaveBeenCalled()
+		expect(vm.recoveryFileId).toBe(42)
+	})
+
 	it('does not offer recovery on a public share even with missing_binding', async () => {
 		parsePublicShareTokenFromLocation.mockReturnValue('share-token')
 		stubFetch(jsonResponse({ message: 'no binding', code: 'missing_binding' }, false, 400))
@@ -581,7 +651,7 @@ describe('viewer component — resolveOpenUrl', () => {
 describe('viewer component — recoverFromSnapshot', () => {
 	it('posts the recovery, clears the error, and re-resolves', async () => {
 		apiRecoverFromSnapshot.mockResolvedValue({})
-		const vm = makeInstance({ fileid: 42, canRecover: true, loadError: 'boom' })
+		const vm = makeInstance({ fileid: 42, recoveryFileId: 42, canRecover: true, loadError: 'boom' })
 		vm.resolveOpenUrl = vi.fn().mockResolvedValue()
 
 		await vm.recoverFromSnapshot()
@@ -594,7 +664,7 @@ describe('viewer component — recoverFromSnapshot', () => {
 	})
 
 	it('is a no-op when recovery is not available', async () => {
-		const vm = makeInstance({ fileid: 42, canRecover: false })
+		const vm = makeInstance({ fileid: 42, recoveryFileId: 42, canRecover: false })
 		vm.resolveOpenUrl = vi.fn()
 
 		await vm.recoverFromSnapshot()
@@ -605,7 +675,7 @@ describe('viewer component — recoverFromSnapshot', () => {
 
 	it('surfaces the error and stops the spinner when recovery fails', async () => {
 		apiRecoverFromSnapshot.mockRejectedValue(new Error('recover failed'))
-		const vm = makeInstance({ fileid: 42, canRecover: true })
+		const vm = makeInstance({ fileid: 42, recoveryFileId: 42, canRecover: true })
 		vm.resolveOpenUrl = vi.fn()
 
 		await vm.recoverFromSnapshot()
