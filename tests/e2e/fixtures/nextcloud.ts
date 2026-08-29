@@ -71,16 +71,49 @@ export const gotoAdminPadSettings = async (page: Page): Promise<boolean> => {
 		.catch(() => false)
 }
 
-/** Run the admin Etherpad health check and assert the configured pad server responds. */
+/**
+ * Run the admin Etherpad health check and assert the configured pad server
+ * responds.
+ *
+ * Asserted per row, not on the summary. The summary also folds in the
+ * base-URL reachability row, which BaseUrlReachabilityCheck deliberately
+ * reports as a *warning* rather than an error: an instance may be unable
+ * to reach its own public URL — split-horizon DNS, an egress rule, or
+ * Nextcloud's own block on requests into its own network — while users'
+ * browsers reach it fine. The container stack is exactly such an instance,
+ * and on a loaded CI runner it has reported that block. Gating the suite
+ * on the summary therefore made an advisory row decide whether the run
+ * passed; the nine unit tests in BaseUrlReachabilityCheckTest are what pin
+ * that row's behaviour.
+ *
+ * What this asserts is what "the pad server responds" actually means: the
+ * API host was contacted and the key was accepted. A real failure there
+ * throws before any row is rendered and turns the summary into an error,
+ * which is still refused below.
+ *
+ * The row it reads is named exactly, because `.first()` over
+ * `etherpad_api_host, etherpad_host` did not read the row it was named
+ * after: the template renders the base-URL slot above the API-URL one, so
+ * DOM order always resolved it to the base URL. And when the API URL is
+ * left empty both checks share the `etherpad_host` slot, where the
+ * renderer lets the more severe verdict win — so that slot can never
+ * stand in for "the API is reachable" either.
+ */
 export const runAdminEtherpadHealthCheck = async (page: Page): Promise<void> => {
 	const status = page.locator('#etherpad-nextcloud-connection-status')
 	await page.locator('#etherpad-nextcloud-health-check').click()
 
-	await expect(status).toHaveClass(/ep-status-success/, { timeout: 30_000 })
-	// Details moved to the per-field results; the API line carries the target
-	// and the metrics, so assert there rather than on the summary.
-	await expect(page.locator('[data-check-result="etherpad_api_host"], [data-check-result="etherpad_host"]').first())
+	await expect(status).toHaveClass(/ep-status-(success|warning)/, { timeout: 30_000 })
+	await expect(status).not.toHaveClass(/ep-status-error/)
+	// The API key row, and only it. It is the one slot a single check ever
+	// writes to, and reaching "accepted" means the API host answered and
+	// took the credentials — everything this helper claims.
+	await expect(page.locator('[data-check-result="etherpad_api_key"]'))
 		.toHaveClass(/ep-check-ok/, { timeout: 30_000 })
+	// The base URL row has to be rendered, whatever it says: a check that
+	// silently produced no row would otherwise pass everything above.
+	await expect(page.locator('[data-check-result="etherpad_host"]'))
+		.toHaveClass(/ep-check-(ok|warning)/, { timeout: 30_000 })
 }
 
 /**

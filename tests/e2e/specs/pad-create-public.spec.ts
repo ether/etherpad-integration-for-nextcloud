@@ -14,6 +14,7 @@ import {
 	expectEtherpadViewerMounted,
 	openPadFromFileList,
 	readEtherpadUrlFromViewer,
+	uniqueName,
 	uniquePadName,
 } from '../fixtures/nextcloud'
 import { deleteViaDav, getFileViaDav } from '../fixtures/dav'
@@ -110,5 +111,45 @@ test.describe('external pad from the template picker', () => {
 			await openPadFromFileList(page, externalPadName)
 		}
 		await expectExternalSnapshotViewerMounted(page, etherpadUrl)
+	})
+})
+
+/**
+ * A pad whose name contains a `+`. The name survived neither the PHP
+ * normalizer (urldecode turned `+` into a space, and the rule trimming
+ * spaces before the extension finished the job) nor the browser's own
+ * query parsing (URLSearchParams applies form-encoding rules). `C++.pad`
+ * created and opened `C.pad` — a different file, silently.
+ *
+ * Checked against the pre-fix normalizer: the path-based reopen below
+ * fails there, because the file the server looked for no longer existed.
+ * The case where a viewer mounts the *wrong* pad rather than none needs
+ * two files whose names differ in that one character, which is what the
+ * public folder share in public-share-view.spec.ts sets up.
+ */
+test.describe('pad name containing a plus sign', () => {
+	const padName = uniqueName('c++', 'pad')
+
+	test.afterAll(async () => {
+		await deleteViaDav(padName)
+	})
+
+	test('creates and reopens the pad it was asked for', async ({ page }) => {
+		await gotoFiles(page)
+		await createPublicPad(page, padName)
+
+		// The exact name, not a shortened one.
+		await expectFileInList(page, padName)
+		await expectEtherpadViewerMounted(page)
+		const padUrl = await readEtherpadUrlFromViewer(page)
+		await closeViewer(page)
+
+		// And opening it *by path* — the route that reads the name from a
+		// query parameter, where the `+` used to be lost — reaches the same
+		// pad. Asserting that some viewer mounted is not enough: the bug
+		// opened a *different* pad, which mounts just as happily.
+		await page.goto(`${E2E.baseURL}/apps/etherpad_nextcloud/?file=${encodeURIComponent('/' + padName)}`)
+		await expectEtherpadViewerMounted(page)
+		expect(await readEtherpadUrlFromViewer(page)).toBe(padUrl)
 	})
 })

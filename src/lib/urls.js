@@ -6,9 +6,18 @@
 import { APP_ID } from './constants.js'
 import { ocGenerateUrl } from './oc-compat.js'
 
+/**
+ * Join a directory and a file name. Nothing else: the name is not
+ * touched.
+ *
+ * This used to collapse " .pad" to ".pad", which meant `Notes .pad` — a
+ * name Nextcloud accepts — resolved to a different file. The same
+ * rewrite was removed from the PHP side; what a name may be is decided
+ * when the file is created, not while opening one.
+ */
 export const normalizeFilePath = (dir, filename) => {
 	const cleanDir = !dir || dir === '/' ? '' : String(dir)
-	const cleanName = String(filename || '').replace(/^\/+/, '').replace(/\s+\.pad$/i, '.pad')
+	const cleanName = String(filename || '').replace(/^\/+/, '')
 	if (cleanDir === '') {
 		return '/' + cleanName
 	}
@@ -30,8 +39,13 @@ export const getDirFromPath = (path) => {
 
 export const getCurrentDir = () => {
 	const params = new URLSearchParams(window.location.search || '')
-	const dir = (params.get('dir') || '/').trim()
-	return dir === '' ? '/' : dir
+	const dir = params.get('dir') || '/'
+	// Trimmed only to decide whether a directory was named, never to change
+	// which one. `Folder ` is a name Nextcloud accepts, and trimming the
+	// value sent the open — and the post-close navigation through
+	// resolveOpenDir — to its neighbour instead. Same rule as the PHP
+	// normalizer and normalizeFilePath above.
+	return dir.trim() === '' ? '/' : dir
 }
 
 export const resolveOpenDir = (path) => {
@@ -121,11 +135,11 @@ export const parsePublicSharePadFromHref = (href) => {
 	if (!pathMatch) {
 		return null
 	}
-	const files = (url.searchParams.get('files') || '').trim()
+	const files = url.searchParams.get('files') || ''
 	if (!isPadName(files)) {
 		return null
 	}
-	const dir = (url.searchParams.get('path') || '/').trim() || '/'
+	const dir = url.searchParams.get('path') || '/'
 	return {
 		token: pathMatch[1],
 		path: normalizeFilePath(dir, files),

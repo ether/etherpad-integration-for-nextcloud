@@ -277,4 +277,22 @@ class PadControllerErrorMapperTest extends TestCase {
 			$logger ?? $this->createMock(LoggerInterface::class),
 		);
 	}
+
+	/**
+	 * A name the instance refuses is the user's to fix, so it answers 400
+	 * — and with the sentence naming the rule, not the endpoint's generic
+	 * one, which is the whole point of having its own type.
+	 */
+	public function testNameRefusalAnswers400WithItsOwnReason(): void {
+		$response = $this->buildMapper()->run(
+			static function (): array {
+				throw new \OCA\EtherpadNextcloud\Exception\InvalidPadNameException('"COM1" is a reserved name');
+			},
+			static fn (array $result): DataResponse => new DataResponse($result),
+			['invalid_argument' => 'Invalid pad name.'],
+		);
+
+		$this->assertSame(Http::STATUS_BAD_REQUEST, $response->getStatus());
+		$this->assertSame('"COM1" is a reserved name', $response->getData()['message']);
+	}
 }

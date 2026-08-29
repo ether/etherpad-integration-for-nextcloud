@@ -23,6 +23,11 @@ if (!interface_exists(Folder::class)) {
 
 		public function getId(): int;
 
+		/** Mirrors OCP\Files\FileInfo::getStorage() / ::getInternalPath(). */
+		public function getStorage(): mixed;
+
+		public function getInternalPath(): string;
+
 		public function delete(): void;
 
 		/** @return array<int,mixed> */

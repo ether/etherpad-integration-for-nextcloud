@@ -100,6 +100,12 @@ occ config:app:set etherpad_nextcloud enable_protected_pads --value='yes'
 occ config:app:set etherpad_nextcloud enable_public_pads --value='yes'
 occ config:app:set etherpad_nextcloud delete_on_trash --value='yes'
 
+# Nextcloud's default, set explicitly because a spec depends on it: a link
+# share with edit rights is refused outright when public upload is off,
+# and the public-folder-share spec needs edit rights to compare a pad's
+# real address rather than a read-only one.
+occ config:app:set core shareapi_allow_public_upload --value='yes'
+
 echo "==> app passwords"
 app_password() {
 	OC_PASS="$2" occ user:add-app-password "$1" --password-from-env \

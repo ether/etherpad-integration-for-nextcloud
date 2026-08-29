@@ -41,14 +41,24 @@ import { parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './li
 		},
 		computed: {
 			sourcePath() {
+				// The one place a trim is safe: `source` is a DAV href, and a
+				// URL is not a name — padding inside one is percent-encoded,
+				// so only transport noise around it can be removed here.
 				const value = typeof this.source === 'string' ? this.source.trim() : ''
 				if (!value) return ''
 				return parsePadPathFromDavHref(value) || ''
 			},
 			filePath() {
-				const normalizeName = (value) => String(value || '').trim().replace(/\s+\.pad$/i, '.pad')
-				const normalizeDir = (value) => {
-					const dir = String(value || '').trim()
+				// Names are passed through, not cleaned up. This used to
+				// collapse " .pad" to ".pad" and to trim both the name and the
+				// directory, so `Notes .pad`, ` A.pad` and a folder called
+				// `Folder ` each asked the server for a neighbour of the file
+				// that was clicked. Nextcloud accepts all three: its validator
+				// trims only to decide whether a name is empty or `.`/`..`,
+				// and judges everything else on the name as given. What a name
+				// may be is settled when the file is created, not while
+				// opening one.
+				const normalizeDir = (dir) => {
 					if (!dir || dir === '/') return '/'
 					return dir.startsWith('/') ? dir : ('/' + dir)
 				}
@@ -62,10 +72,10 @@ import { parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './li
 				if (isPadPath(this.sourcePath)) return this.sourcePath
 
 				const info = this.fileInfo && typeof this.fileInfo === 'object' ? this.fileInfo : null
-				const infoPath = info && typeof info.path === 'string' ? normalizeName(info.path) : ''
+				const infoPath = info && typeof info.path === 'string' ? info.path : ''
 				if (isPadPath(infoPath)) return infoPath.startsWith('/') ? infoPath : ('/' + infoPath)
 
-				const baseName = normalizeName(this.filename || this.basename || (info && (info.name || info.basename)) || '')
+				const baseName = String(this.filename || this.basename || (info && (info.name || info.basename)) || '')
 				if (!baseName) return ''
 
 				const infoDir = info && typeof info.dirname === 'string' ? info.dirname : ''

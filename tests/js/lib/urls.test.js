@@ -10,6 +10,7 @@ import {
 	getDirFromPath,
 	isPadName,
 	normalizeFilePath,
+	parsePublicSharePadFromHref,
 	parseFileIdFromCurrentLocation,
 	parseFileIdFromFilesHref,
 	parsePadPathFromDavHref,
@@ -31,7 +32,9 @@ const setLocation = (pathAndQuery) => {
 describe('path helpers', () => {
 	it('normalizes file paths from directory and file name', () => {
 		expect(normalizeFilePath('/Folder', 'Test.pad')).toBe('/Folder/Test.pad')
-		expect(normalizeFilePath('/', ' Test .pad')).toBe('/ Test.pad')
+		// The name is joined, never rewritten: " Test .pad" is a name
+		// Nextcloud accepts, and changing it here would point at another file.
+		expect(normalizeFilePath('/', ' Test .pad')).toBe('/ Test .pad')
 		expect(normalizeFilePath('', '/Nested/Test.pad')).toBe('/Nested/Test.pad')
 	})
 
@@ -51,6 +54,27 @@ describe('path helpers', () => {
 		setLocation('/apps/files/files/123?dir=/Folder')
 
 		expect(getCurrentDir()).toBe('/Folder')
+	})
+
+	// `Folder ` is a name Nextcloud accepts. Trimming the dir sent the open
+	// to its neighbour, the same silent substitution as the plus sign.
+	it('keeps a trailing space in the current Files dir', () => {
+		setLocation('/apps/files/files/123?dir=' + encodeURIComponent('/Folder '))
+
+		expect(getCurrentDir()).toBe('/Folder ')
+		expect(normalizeFilePath(getCurrentDir(), 'Notes.pad')).toBe('/Folder /Notes.pad')
+	})
+
+	it('falls back to root for a whitespace-only dir', () => {
+		setLocation('/apps/files/files/123?dir=' + encodeURIComponent('   '))
+
+		expect(getCurrentDir()).toBe('/')
+	})
+
+	it('carries a padded dir through resolveOpenDir', () => {
+		setLocation('/apps/files/files/123?dir=' + encodeURIComponent('/Current '))
+
+		expect(resolveOpenDir('/Test.pad')).toBe('/Current ')
 	})
 
 	it('uses the current Files dir when opening root-level paths', () => {
@@ -172,5 +196,22 @@ describe('parsePadPathFromDavHref', () => {
 		const href = 'https://cloud.example.test/remote.php/dav/files/jacob/Folder/%E0%A4%A.pad'
 
 		expect(parsePadPathFromDavHref(href)).toBeNull()
+	})
+})
+
+describe('query parameters in share links', () => {
+	// A query string is form-encoded: `+` means space, and a literal plus
+	// is `%2B`. Reading it any other way trades one wrong name for
+	// another — `A+B.pad` really does mean `A B.pad`.
+	it('reads a plus as a space and %2B as a plus', () => {
+		expect(parsePublicSharePadFromHref('https://nc.test/s/tok/download?path=/M&files=A+B.pad'))
+			.toEqual({ token: 'tok', path: '/M/A B.pad' })
+		expect(parsePublicSharePadFromHref('https://nc.test/s/tok/download?path=/M&files=C%2B%2B.pad'))
+			.toEqual({ token: 'tok', path: '/M/C++.pad' })
+	})
+
+	it('keeps a name whose spaces sit before the extension', () => {
+		expect(parsePublicSharePadFromHref('https://nc.test/s/tok/download?path=/M&files=Notes%20.pad'))
+			.toEqual({ token: 'tok', path: '/M/Notes .pad' })
 	})
 })
