@@ -129,9 +129,24 @@ DEPLOY_APP_PATH="/var/www/virtual/user/html/apps/etherpad_nextcloud" \
 
 Notes:
 
-- Excludes by default: `.git/`, `node_modules/`, `vendor/`, `tests/`, `docs/`, `.phpunit.cache/`, `_copy_probe/`, `.DS_Store`.
-- `node_modules/` should not be deployed, but the built `js/` directory should be.
-- Set `RSYNC_DELETE=1` only when you explicitly want remote cleanup.
+- The file set is `scripts/app-file-excludes.sh`, the same one the release
+  tarball and the Docker e2e stack use, so a test server carries exactly what
+  users install. Excluded are `src/`, `tests/`, `scripts/`, `dist/`,
+  `.github/`, the build and tooling configs, and `node_modules/`/`vendor/`;
+  the built `js/` directory ships.
+- `DRY_RUN=1` prints the changes without making them.
+- Set `RSYNC_DELETE=1` only when you explicitly want remote cleanup. It does
+  not remove files matching an exclude — rsync leaves those alone. A target
+  that was deployed with an older, wider file set keeps them until they are
+  removed by hand:
+
+  ```bash
+  source scripts/app-file-excludes.sh
+  rsync -az --itemize-changes --dry-run --delete --delete-excluded \
+    "${RSYNC_EXCLUDES[@]}" ./ user@host:/path/to/apps/etherpad_nextcloud/
+  ```
+
+  Read the `*deleting` lines first; drop `--dry-run` once they look right.
 
 ## 5) Server Log Verification (Recommended)
 
