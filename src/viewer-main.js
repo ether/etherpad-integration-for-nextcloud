@@ -227,10 +227,14 @@ import { parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './li
 			 * The file id of the path currently open, or null. Only used to
 			 * give recovery an address; a failure here just means no
 			 * recovery action, never a different file.
+			 *
+			 * Asked without the cache: recovery writes, and a five-minute-old
+			 * path-to-id answer can name a file that has since moved out of
+			 * the way of another.
 			 */
 			async resolveRecoveryFileId() {
 				try {
-					const resolved = await apiResolvePadByPath(this.filePath)
+					const resolved = await apiResolvePadByPath(this.filePath, { bypassCache: true })
 					const id = Number(resolved && resolved.file_id)
 					return Number.isFinite(id) && id > 0 ? id : null
 				} catch {

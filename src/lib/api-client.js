@@ -29,9 +29,20 @@ export const apiResolvePadByFileId = async (fileId) => {
 	return request
 }
 
-export const apiResolvePadByPath = async (path) => {
+/**
+ * Resolve a path to its pad metadata.
+ *
+ * `bypassCache` is for callers whose next step *writes*. A cached entry
+ * is up to five minutes old, and in five minutes a file can be moved and
+ * another `.pad` created at the same path — the answer would then name a
+ * document the user is not looking at. For an open that is a stale read;
+ * for recovery it would create and bind a pad against the wrong file,
+ * which is the substitution this whole area exists to prevent. The fresh
+ * answer still refreshes the cache, so nothing is left stale behind it.
+ */
+export const apiResolvePadByPath = async (path, { bypassCache = false } = {}) => {
 	const cacheKey = 'path:' + String(path)
-	const cached = getResolveCache(cacheKey)
+	const cached = bypassCache ? null : getResolveCache(cacheKey)
 	if (cached !== null) {
 		return cached
 	}

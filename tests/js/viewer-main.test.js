@@ -599,7 +599,8 @@ describe('viewer component — resolveOpenUrl', () => {
 		await vm.resolveOpenUrl()
 		await flush()
 
-		expect(apiResolvePadByPath).toHaveBeenCalledWith('/copy.pad')
+		// Without the cache: the next thing this id is used for is a write.
+		expect(apiResolvePadByPath).toHaveBeenCalledWith('/copy.pad', { bypassCache: true })
 		expect(vm.recoveryFileId).toBe(99)
 		expect(vm.canRecover).toBe(true)
 		expect(apiFindOriginalPad).toHaveBeenCalledWith(99)

@@ -84,6 +84,24 @@ describe('api-client', () => {
 		)
 	})
 
+	// Recovery writes. A cached path-to-id answer is up to five minutes old,
+	// and in five minutes the file can have moved and another .pad taken its
+	// place — the write would then land on the wrong document.
+	it('bypasses the cache when asked, and refreshes it with the new answer', async () => {
+		const { apiResolvePadByPath } = await importClient()
+		fetch.mockResolvedValueOnce(jsonResponse({ is_pad: true, file_id: 42 }))
+		expect((await apiResolvePadByPath('/x.pad')).file_id).toBe(42)
+
+		// The file moved and a different .pad took its place.
+		fetch.mockResolvedValueOnce(jsonResponse({ is_pad: true, file_id: 77 }))
+		expect((await apiResolvePadByPath('/x.pad', { bypassCache: true })).file_id).toBe(77)
+		expect(fetch).toHaveBeenCalledTimes(2)
+
+		// And the stale entry is gone rather than lingering behind the fresh answer.
+		expect((await apiResolvePadByPath('/x.pad')).file_id).toBe(77)
+		expect(fetch).toHaveBeenCalledTimes(2)
+	})
+
 	// The viewer resolves by path when it has no file id, so the path-keyed
 	// entry is now a second copy of the same pre-recovery answer.
 	it('also drops path-keyed resolve entries after a recovery', async () => {
