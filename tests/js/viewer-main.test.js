@@ -444,24 +444,31 @@ describe('viewer component — resolveOpenUrl', () => {
 	// an Etherpad session and cookie nothing consumes.
 	it('aborts the request a superseded resolve left in flight', async () => {
 		const signals = []
-		let release
-		const gate = new Promise((resolve) => { release = resolve })
+		// Rejects on abort, the way fetch does. A stub that resolves anyway
+		// would prove the signal was passed but never exercise the
+		// AbortError path — the only one a browser takes.
 		stubFetch((url, init) => {
-			signals.push(init && init.signal)
-			return signals.length === 1
-				? gate.then(() => jsonResponse({ url: 'https://stale', sync_url: '' }))
-				: Promise.resolve(jsonResponse({ url: 'https://current', sync_url: '' }))
+			const signal = init && init.signal
+			signals.push(signal)
+			if (signals.length > 1) {
+				return Promise.resolve(jsonResponse({ url: 'https://current', sync_url: '' }))
+			}
+			return new Promise((resolve, reject) => {
+				signal.addEventListener('abort', () => reject(new DOMException('The operation was aborted.', 'AbortError')))
+			})
 		})
 		const vm = makeInstance({ fileid: 42, fileInfo: { path: '/x.pad' } })
 
 		const superseded = vm.resolveOpenUrl()
 		const current = vm.resolveOpenUrl()
-		release()
 		await Promise.all([superseded, current])
 
 		expect(signals[0].aborted).toBe(true)
 		expect(signals[1].aborted).toBe(false)
 		expect(vm.iframeSrc).toBe('https://current')
+		// The abort is bookkeeping, not a failure the user should read.
+		expect(vm.loadError).toBe('')
+		expect(vm.isLoading).toBe(false)
 	})
 
 	it('sends Accept: application/json on a POST open, not only on a GET', async () => {

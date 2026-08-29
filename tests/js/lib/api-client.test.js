@@ -84,6 +84,23 @@ describe('api-client', () => {
 		)
 	})
 
+	// The viewer resolves by path when it has no file id, so the path-keyed
+	// entry is now a second copy of the same pre-recovery answer.
+	it('also drops path-keyed resolve entries after a recovery', async () => {
+		const { apiRecoverFromSnapshot, apiResolvePadByPath } = await importClient()
+		fetch.mockResolvedValueOnce(jsonResponse({ is_pad: true, file_id: 42 }))
+		await apiResolvePadByPath('/copy.pad')
+		expect(fetch).toHaveBeenCalledTimes(1)
+
+		fetch.mockResolvedValueOnce(jsonResponse({ status: 'restored' }))
+		await apiRecoverFromSnapshot(42)
+
+		fetch.mockResolvedValueOnce(jsonResponse({ is_pad: true, file_id: 42 }))
+		await apiResolvePadByPath('/copy.pad')
+
+		expect(fetch).toHaveBeenCalledTimes(3)
+	})
+
 	it('posts a recovery request and invalidates the resolve cache on success', async () => {
 		const { apiRecoverFromSnapshot, apiResolvePadByFileId } = await importClient()
 		// Seed the resolve cache so we can verify it is dropped after recover.

@@ -14,8 +14,10 @@ use OCP\Files\Folder;
 use OCP\Files\IRootFolder;
 use OCP\Files\NotFoundException;
 use OCP\Files\NotPermittedException;
+use OCP\Files\StorageNotAvailableException;
 use OC\User\NoUserException;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\LoggerInterface;
 
 class UserNodeResolverTest extends TestCase {
 	/**
@@ -36,7 +38,32 @@ class UserNodeResolverTest extends TestCase {
 		$rootFolder->method('getById')->willThrowException(
 			new \LogicException('An id must be resolved through the user folder, not the global root.')
 		);
-		return new UserNodeResolver($rootFolder);
+		return new UserNodeResolver($rootFolder, $this->createMock(LoggerInterface::class));
+	}
+
+	/**
+	 * The other half of the rule: a storage that is down is not a missing
+	 * file. Translating it would answer 404 for an outage, with nothing in
+	 * the log to say otherwise.
+	 */
+	public function testLeavesAnUnavailableStorageAlone(): void {
+		$rootFolder = $this->createMock(IRootFolder::class);
+		$rootFolder->method('getUserFolder')->willThrowException(new StorageNotAvailableException('down'));
+		$resolver = new UserNodeResolver($rootFolder, $this->createMock(LoggerInterface::class));
+
+		$this->expectException(StorageNotAvailableException::class);
+		$resolver->resolveUserFileNodeById('alice', 138);
+	}
+
+	public function testTranslatesARefusedPathIntoNotFound(): void {
+		$userFolder = $this->createMock(Folder::class);
+		$userFolder->method('get')->willThrowException(new NotPermittedException('denied'));
+		$rootFolder = $this->createMock(IRootFolder::class);
+		$rootFolder->method('getUserFolder')->willReturn($userFolder);
+		$resolver = new UserNodeResolver($rootFolder, $this->createMock(LoggerInterface::class));
+
+		$this->expectException(NotFoundException::class);
+		$resolver->resolveUserFileNodeByPath('alice', '/Notes.pad');
 	}
 
 	/**
@@ -48,7 +75,7 @@ class UserNodeResolverTest extends TestCase {
 		foreach ([new NoUserException('gone'), new NotPermittedException('denied')] as $thrown) {
 			$rootFolder = $this->createMock(IRootFolder::class);
 			$rootFolder->method('getUserFolder')->willThrowException($thrown);
-			$resolver = new UserNodeResolver($rootFolder);
+			$resolver = new UserNodeResolver($rootFolder, $this->createMock(LoggerInterface::class));
 
 			try {
 				$resolver->resolveUserFileNodeById('alice', 138);
@@ -71,7 +98,7 @@ class UserNodeResolverTest extends TestCase {
 		$rootFolder = $this->createMock(IRootFolder::class);
 		$rootFolder->method('getUserFolder')->willReturn($userFolder);
 
-		$resolver = new UserNodeResolver($rootFolder);
+		$resolver = new UserNodeResolver($rootFolder, $this->createMock(LoggerInterface::class));
 
 		$this->assertSame($userFolder, $resolver->resolveUserFolderNodeById('alice', 7));
 	}

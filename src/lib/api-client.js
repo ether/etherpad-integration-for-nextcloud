@@ -66,8 +66,16 @@ export const apiRecoverFromSnapshot = async (fileId) => {
 		},
 	}, 'Recovery failed.')
 	// A freshly recovered pad invalidates any cached resolve response: the
-	// old one carried a missing-binding marker that no longer applies.
+	// old one carried a missing-binding marker that no longer applies. Both
+	// keys go — the same file is cached under its id and under every path
+	// it was resolved by, and the viewer now resolves by path when it has
+	// no id of its own.
 	RESOLVE_CACHE.delete(String(fileId))
+	for (const key of [...RESOLVE_CACHE.keys()]) {
+		if (key.startsWith('path:')) {
+			RESOLVE_CACHE.delete(key)
+		}
+	}
 	return result
 }
 

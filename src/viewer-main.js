@@ -158,7 +158,7 @@ import { parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './li
 				if (!(error instanceof Error)) return false
 				return String(error.message || '').includes('Missing YAML frontmatter')
 			},
-			async initializeMissingFrontmatter() {
+			async initializeMissingFrontmatter(signal) {
 				const headers = {
 					Accept: 'application/json',
 					requesttoken: ocRequestToken(),
@@ -191,7 +191,7 @@ import { parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './li
 
 				if (this.resolvedFileId !== null) {
 					const url = ocGenerateUrl('/apps/' + APP_ID + '/api/v1/pads/initialize-by-id/' + encodeURIComponent(String(this.resolvedFileId)))
-					const response = await fetch(url, { method: 'POST', credentials: 'same-origin', headers })
+					const response = await fetch(url, { method: 'POST', credentials: 'same-origin', headers, signal })
 					const data = await response.json().catch(() => ({}))
 					if (!response.ok) {
 						throw buildInitError(data, 'Pad initialization failed.', response.status)
@@ -214,6 +214,7 @@ import { parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './li
 						'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
 					}),
 					body: body.toString(),
+					signal,
 				})
 				const data = await response.json().catch(() => ({}))
 				if (!response.ok) {
@@ -350,7 +351,10 @@ import { parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './li
 						if (!this.isMissingFrontmatterError(error)) {
 							throw error
 						}
-						await this.initializeMissingFrontmatter()
+						// The one mutating request in the flow: it creates a pad,
+						// writes a binding and rewrites the file. It gets the same
+						// signal, so closing the viewer stops it too.
+						await this.initializeMissingFrontmatter(abort ? abort.signal : undefined)
 						if (!isCurrent()) return
 						data = await fetchOpenData()
 						if (!isCurrent()) return
@@ -415,22 +419,27 @@ import { parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './li
 					// for by the path that was just opened. Same file by
 					// construction, and the server resolves it inside the
 					// user's own tree.
-					this.recoveryFileId = this.resolvedFileId
-					if (this.recoveryFileId === null && !byPublicUrl && error && error.code === 'missing_binding') {
-						this.recoveryFileId = await this.resolveRecoveryFileId()
+					let recoveryFileId = this.resolvedFileId
+					if (recoveryFileId === null && !byPublicUrl && error && error.code === 'missing_binding') {
+						recoveryFileId = await this.resolveRecoveryFileId()
+						// Assigned only after the guard: a slower lookup from a
+						// superseded resolve would otherwise overwrite the live
+						// card's address, and the recovery button would then
+						// create a pad for the file the user has left.
 						if (!isCurrent()) return
 					}
+					this.recoveryFileId = recoveryFileId
 					// Public-share visitors don't get a recovery action — only
 					// the share owner.
 					this.canRecover = Boolean(error && error.code === 'missing_binding')
-						&& this.recoveryFileId !== null
+						&& recoveryFileId !== null
 						&& !byPublicUrl
 					if (this.canRecover) {
 						// Optional: check if this looks like a copy of a .pad we
 						// can already address; if so we'll offer 'Open the
 						// original' as the primary action. A miss is silent — no
 						// UI element rendered, no info leaked.
-						this.fetchOriginalPadHint(generation, isCurrent)
+						this.fetchOriginalPadHint(isCurrent)
 					}
 					this.markLoaded()
 				} finally {
@@ -438,7 +447,7 @@ import { parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './li
 					this.isLoading = false
 				}
 			},
-			async fetchOriginalPadHint(generation, isCurrent) {
+			async fetchOriginalPadHint(isCurrent) {
 				if (this.recoveryFileId === null) {
 					return
 				}

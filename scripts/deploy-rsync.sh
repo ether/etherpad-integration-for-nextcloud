@@ -25,7 +25,10 @@ set -euo pipefail
 # instead of the checkout, and the excludes sourced below would come from
 # somewhere else than the files being copied.
 SCRIPT_PATH="${BASH_SOURCE[0]}"
-while [[ -L "$SCRIPT_PATH" ]]; do
+# Bounded: a symlink cycle would otherwise spin here forever, and errexit
+# cannot help because nothing fails.
+for _ in $(seq 1 40); do
+	[[ -L "$SCRIPT_PATH" ]] || break
 	link_target="$(readlink "$SCRIPT_PATH")"
 	if [[ "$link_target" == /* ]]; then
 		SCRIPT_PATH="$link_target"
@@ -33,6 +36,10 @@ while [[ -L "$SCRIPT_PATH" ]]; do
 		SCRIPT_PATH="$(cd -P "$(dirname "$SCRIPT_PATH")" && pwd)/$link_target"
 	fi
 done
+if [[ -L "$SCRIPT_PATH" ]]; then
+	echo "Could not resolve ${BASH_SOURCE[0]} to a real file — symlink loop?" >&2
+	exit 1
+fi
 ROOT_DIR="$(cd -P "$(dirname "$SCRIPT_PATH")/.." && pwd)"
 
 : "${DEPLOY_SSH_TARGET:?DEPLOY_SSH_TARGET is required (example: user@nextcloud.example.com)}"

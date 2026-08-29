@@ -12,10 +12,19 @@ use OCP\Files\File;
 use OCP\Files\Folder;
 use OCP\Files\IRootFolder;
 use OCP\Files\NotFoundException;
+use OCP\Files\NotPermittedException;
+use Psr\Log\LoggerInterface;
 
 class UserNodeResolver {
+	/**
+	 * Thrown by IRootFolder::getUserFolder(), and not referenceable: it is
+	 * an `OC\` class, so it is matched by name rather than in a catch.
+	 */
+	private const NO_USER_EXCEPTION = 'OC\\User\\NoUserException';
+
 	public function __construct(
 		private IRootFolder $rootFolder,
+		private LoggerInterface $logger,
 	) {
 	}
 
@@ -100,13 +109,14 @@ class UserNodeResolver {
 	 * to look inside a user's files is, for every caller here, the same
 	 * answer as not finding the file.
 	 *
-	 * Caught as `\Exception` because the types cannot all be named. The
-	 * public interface declares NotPermittedException, which is in OCP —
-	 * but the other one it declares, NoUserException, lives in `OC\User\`
-	 * and is not part of the public API an app may reference. Naming only
-	 * the reachable half would leave the more likely failure uncaught, and
-	 * this wraps a single call whose only outcomes are a folder or a
-	 * failure to produce one.
+	 * Only the two the interface declares. NotPermittedException is in OCP
+	 * and can be named; NoUserException lives in `OC\User\` and is not
+	 * part of the public API an app may reference, so it is matched by
+	 * class name. Everything else — a storage that is down, a mount that
+	 * fails to set up — is left alone on purpose: "I cannot reach your
+	 * files right now" is not the same answer as "that file is not there",
+	 * and reporting it as the latter would hide an outage behind a tidy
+	 * 404 with nothing in the log.
 	 *
 	 * @throws NotFoundException
 	 */
@@ -114,6 +124,10 @@ class UserNodeResolver {
 		try {
 			return $this->rootFolder->getUserFolder($uid);
 		} catch (\Exception $e) {
+			if (!$e instanceof NotPermittedException && $e::class !== self::NO_USER_EXCEPTION) {
+				throw $e;
+			}
+			$this->logger->debug('Cannot access the user file tree', ['uid' => $uid, 'exception' => $e]);
 			throw new NotFoundException('Cannot access the user file tree.', 0, $e);
 		}
 	}
@@ -127,7 +141,16 @@ class UserNodeResolver {
 			throw new NotFoundException('Invalid empty file path.');
 		}
 
-		$node = $this->userFolder($uid)->get($relativePath);
+		$userFolder = $this->userFolder($uid);
+		try {
+			$node = $userFolder->get($relativePath);
+		} catch (NotPermittedException $e) {
+			// Same rule as above: not being allowed to look is, to every
+			// caller here, the same answer as the file not being there. A
+			// sub-mount that is *down* still surfaces as itself.
+			$this->logger->debug('Not permitted to read the path', ['uid' => $uid, 'exception' => $e]);
+			throw new NotFoundException('Cannot access the requested path.', 0, $e);
+		}
 		if (!$node instanceof File) {
 			throw new NotFoundException('Path does not reference a file.');
 		}
