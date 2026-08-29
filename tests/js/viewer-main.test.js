@@ -421,6 +421,48 @@ describe('viewer component — resolveOpenUrl', () => {
 	// A stale request token is a 412 from the framework, not one of the
 	// controller's own statuses — and just as unsafe to answer with a
 	// second request.
+	// The initialize step is a second chance for the file to disappear: the
+	// open said "no frontmatter", the file moved, and the retry 404s. That
+	// error has to explain itself the same way the open's would.
+	it('carries the status through an initialize that no longer finds the file', async () => {
+		const fetchMock = stubFetch()
+		fetchMock
+			.mockResolvedValueOnce(jsonResponse({ message: 'Missing YAML frontmatter' }, false, 400))
+			.mockResolvedValueOnce(jsonResponse({ message: 'Cannot open selected .pad file.' }, false, 404))
+		const vm = makeInstance({ fileid: 42, fileInfo: { path: '/x.pad' } })
+
+		await vm.resolveOpenUrl()
+
+		expect(fetchMock).toHaveBeenCalledTimes(2)
+		expect(vm.loadError).toBe('Cannot open selected .pad file.')
+		expect(vm.maybeStaleFileId).toBe(true)
+	})
+
+	// The generation guard only discards the loser's result; the request
+	// itself used to run to completion, and for a protected pad that mints
+	// an Etherpad session and cookie nothing consumes.
+	it('aborts the request a superseded resolve left in flight', async () => {
+		const signals = []
+		let release
+		const gate = new Promise((resolve) => { release = resolve })
+		stubFetch((url, init) => {
+			signals.push(init && init.signal)
+			return signals.length === 1
+				? gate.then(() => jsonResponse({ url: 'https://stale', sync_url: '' }))
+				: Promise.resolve(jsonResponse({ url: 'https://current', sync_url: '' }))
+		})
+		const vm = makeInstance({ fileid: 42, fileInfo: { path: '/x.pad' } })
+
+		const superseded = vm.resolveOpenUrl()
+		const current = vm.resolveOpenUrl()
+		release()
+		await Promise.all([superseded, current])
+
+		expect(signals[0].aborted).toBe(true)
+		expect(signals[1].aborted).toBe(false)
+		expect(vm.iframeSrc).toBe('https://current')
+	})
+
 	it('surfaces a stale request token instead of retrying by path', async () => {
 		const fetchMock = stubFetch(jsonResponse({ message: 'CSRF check failed' }, false, 412))
 		const vm = makeInstance({ fileid: 42, fileInfo: { path: '/x.pad' } })
@@ -599,6 +641,23 @@ describe('viewer component — render', () => {
 		expect(findByClass(tree, 'epnc-native-status--error')).toBeTruthy()
 		expect(allText(tree)).toContain('Could not open pad')
 		expect(allText(tree)).toContain('Boom')
+	})
+
+	// The only error-card branch the assertions above do not reach: deleting
+	// the block would leave every other case green.
+	it('renders the reload hint when the file id may be stale', () => {
+		const vm = makeInstance({ loadError: 'Cannot open selected .pad file.', maybeStaleFileId: true })
+		const tree = component.render.call(vm, h)
+
+		expect(allText(tree)).toContain('Cannot open selected .pad file.')
+		expect(allText(tree)).toContain('may have been moved or replaced')
+	})
+
+	it('leaves the reload hint out for every other error', () => {
+		const vm = makeInstance({ loadError: 'Could not open pad', maybeStaleFileId: false })
+		const tree = component.render.call(vm, h)
+
+		expect(allText(tree)).not.toContain('may have been moved or replaced')
 	})
 
 	it('shows the "checking for the original" hint while the lookup is in flight', () => {

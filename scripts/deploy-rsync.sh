@@ -25,7 +25,10 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 : "${DEPLOY_SSH_TARGET:?DEPLOY_SSH_TARGET is required (example: user@nextcloud.example.com)}"
 : "${DEPLOY_APP_PATH:?DEPLOY_APP_PATH is required (example: /var/www/nextcloud/apps/etherpad_nextcloud)}"
 
-source "$(dirname "${BASH_SOURCE[0]}")/app-file-excludes.sh"
+# Through ROOT_DIR, which is canonicalised: invoked via a symlink, a
+# second $(dirname ...) can name a different checkout than the one being
+# copied below.
+source "${ROOT_DIR}/scripts/app-file-excludes.sh"
 
 RSYNC_ARGS=(-az --human-readable --itemize-changes "${RSYNC_EXCLUDES[@]}")
 

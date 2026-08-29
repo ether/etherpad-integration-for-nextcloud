@@ -50,8 +50,16 @@ test.describe('pad ownership boundary (cross-user open-by-id)', () => {
 		// secondary account hits open-by-id with user A's fileid.
 		const userB = E2E.secondaryUser!
 		const userBPassword = E2E.secondaryAppPassword!
+		// storageState is cleared explicitly. request.newContext() inherits
+		// the project's `use` options inside a test, and this project sets
+		// storageState to the primary account's saved session — so the
+		// context arrived carrying admin's session cookie, Nextcloud
+		// authenticated by that rather than by the Authorization header, and
+		// "user B" was user A. The endpoint answered 200, correctly, for the
+		// owner.
 		const apiCtx = await playwrightRequest.newContext({
 			baseURL: E2E.baseURL,
+			storageState: { cookies: [], origins: [] },
 			extraHTTPHeaders: {
 				Authorization: 'Basic ' + Buffer.from(`${userB}:${userBPassword}`).toString('base64'),
 				Accept: 'application/json',
@@ -59,10 +67,15 @@ test.describe('pad ownership boundary (cross-user open-by-id)', () => {
 			},
 		})
 
+		// The file id goes in the body. There is no `/open-by-id/{fileId}`
+		// route — this used to post one, so Nextcloud's router answered 404
+		// before any controller ran and the assertion below was satisfied by
+		// a typo rather than by the boundary it is named after.
+		const openByIdUrl = '/index.php/apps/etherpad_nextcloud/api/v1/pads/open-by-id'
+		const form = { fileId: String(createdFileId) }
+
 		try {
-			const res = await apiCtx.post(
-				`/index.php/apps/etherpad_nextcloud/api/v1/pads/open-by-id/${createdFileId}`,
-			)
+			const res = await apiCtx.post(openByIdUrl, { form })
 			// Anything 2xx would mean user B got an open ticket for user A's
 			// pad — that's the security regression we want to catch.
 			expect(
@@ -72,6 +85,25 @@ test.describe('pad ownership boundary (cross-user open-by-id)', () => {
 			expect(res.status()).toBeLessThan(500)
 		} finally {
 			await apiCtx.dispose()
+		}
+
+		// And the same request as the owner succeeds. Without this the
+		// rejection above proves nothing: a route that answers 4xx for
+		// everyone would pass it just as well.
+		const ownerCtx = await playwrightRequest.newContext({
+			baseURL: E2E.baseURL,
+			storageState: { cookies: [], origins: [] },
+			extraHTTPHeaders: {
+				Authorization: 'Basic ' + Buffer.from(`${E2E.user}:${E2E.appPassword}`).toString('base64'),
+				Accept: 'application/json',
+				'OCS-APIRequest': 'true',
+			},
+		})
+		try {
+			const res = await ownerCtx.post(openByIdUrl, { form })
+			expect(res.status(), `the owner should be able to open their own pad by id, got HTTP ${res.status()}`).toBe(200)
+		} finally {
+			await ownerCtx.dispose()
 		}
 	})
 })

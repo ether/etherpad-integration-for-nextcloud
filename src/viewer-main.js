@@ -156,8 +156,13 @@ import { parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './li
 					requesttoken: ocRequestToken(),
 				}
 
-				const buildInitError = (data, fallbackMessage) => {
+				const buildInitError = (data, fallbackMessage, status = 0) => {
 					const err = new Error((data && data.message) || fallbackMessage)
+					// Same shape as fetchOpenPayload's errors: the status
+					// explains the failure to the error card. Without it an
+					// initialize that 404s — the file moved between the open
+					// and the retry — is the dead-end card again.
+					err.status = status
 					// Forward a structured code so callers can branch on
 					// `legacy_collision_no_access` without parsing the message.
 					if (data && typeof data.code === 'string' && data.code !== '') {
@@ -181,7 +186,7 @@ import { parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './li
 					const response = await fetch(url, { method: 'POST', credentials: 'same-origin', headers })
 					const data = await response.json().catch(() => ({}))
 					if (!response.ok) {
-						throw buildInitError(data, 'Pad initialization failed.')
+						throw buildInitError(data, 'Pad initialization failed.', response.status)
 					}
 					announceMigratedStatus(data)
 					return data
@@ -204,7 +209,7 @@ import { parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './li
 				})
 				const data = await response.json().catch(() => ({}))
 				if (!response.ok) {
-					throw buildInitError(data, 'Pad initialization failed.')
+					throw buildInitError(data, 'Pad initialization failed.', response.status)
 				}
 				announceMigratedStatus(data)
 				return data
@@ -214,7 +219,7 @@ import { parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './li
 			},
 			// Lazily build the shared sync controller. Kept off `data()` on
 			// purpose so it is not made reactive, and memoised on a plain
-			// instance field so it survives the immediate filePath watcher
+			// instance field so it survives the immediate openKey watcher
 			// (which runs before created/mounted).
 			padSync() {
 				if (!this._padSync) {
@@ -237,6 +242,16 @@ import { parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './li
 			async resolveOpenUrl() {
 				const generation = ++this.resolveGeneration
 				const isCurrent = () => generation === this.resolveGeneration
+				// Abort whatever the previous resolve still has in flight.
+				// The generation guard only discards its *result*: the request
+				// itself ran to completion, and for a protected pad that means
+				// the server had already minted an Etherpad session and a
+				// cookie nothing would ever use. openKey collapses the common
+				// case to one resolve; this covers the rest — props arriving
+				// in separate ticks, or a recovery re-resolving mid-flight.
+				this._openAbort?.abort()
+				const abort = typeof AbortController === 'function' ? new AbortController() : null
+				this._openAbort = abort
 
 				this.isLoading = true
 				this.loadError = ''
@@ -284,22 +299,23 @@ import { parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './li
 							// how a refused id ended up opening whatever the
 							// path pointed at — see the cases pinned in
 							// tests/js/viewer-main.test.js.
+							const signal = abort ? abort.signal : undefined
 							if (byPublicUrl) {
-								return await this.fetchOpenPayload(byPublicUrl)
+								return await this.fetchOpenPayload(byPublicUrl, { signal })
 							}
 							if (this.resolvedFileId !== null) {
 								const byIdBody = new URLSearchParams()
 								byIdBody.set('fileId', String(this.resolvedFileId))
 								return await this.fetchOpenPayload(
 									ocGenerateUrl('/apps/' + APP_ID + '/api/v1/pads/open-by-id'),
-									{ method: 'POST', headers: openPostHeaders, body: byIdBody.toString() },
+									{ method: 'POST', headers: openPostHeaders, body: byIdBody.toString(), signal },
 								)
 							}
 							const byPathBody = new URLSearchParams()
 							byPathBody.set('file', this.filePath)
 							return await this.fetchOpenPayload(
 								ocGenerateUrl('/apps/' + APP_ID + '/api/v1/pads/open'),
-								{ method: 'POST', headers: openPostHeaders, body: byPathBody.toString() },
+								{ method: 'POST', headers: openPostHeaders, body: byPathBody.toString(), signal },
 							)
 						}
 
@@ -363,14 +379,17 @@ import { parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './li
 					// or because the id is not this user's. Since the open no
 					// longer answers that by trying the path, say what the one
 					// remedy is rather than leaving a dead end.
+					// `!byPublicUrl` rather than asking the location again: it
+					// is the branch that actually ran, and an SPA route change
+					// mid-flight would make a fresh lookup disagree with it.
 					this.maybeStaleFileId = this.resolvedFileId !== null
-						&& !parsePublicShareTokenFromLocation()
+						&& !byPublicUrl
 						&& Boolean(error) && error.status === 404 && !error.code
 					// Recovery is gated on having a fileId we can address. Public-share
 					// visitors don't get a recovery action — only the share owner.
 					this.canRecover = Boolean(error && error.code === 'missing_binding')
 						&& this.resolvedFileId !== null
-						&& !parsePublicShareTokenFromLocation()
+						&& !byPublicUrl
 					if (this.canRecover) {
 						// Optional: check if this looks like a copy of a .pad we
 						// can already address; if so we'll offer 'Open the

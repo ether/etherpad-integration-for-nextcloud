@@ -12,6 +12,8 @@ use OCP\Files\File;
 use OCP\Files\Folder;
 use OCP\Files\IRootFolder;
 use OCP\Files\NotFoundException;
+use OCP\Files\NotPermittedException;
+use OCP\User\NoUserException;
 
 class UserNodeResolver {
 	public function __construct(
@@ -37,7 +39,7 @@ class UserNodeResolver {
 	 * @throws NotFoundException
 	 */
 	public function resolveUserFileNodeById(string $uid, int $fileId): File {
-		$nodes = $this->rootFolder->getUserFolder($uid)->getById($fileId);
+		$nodes = $this->userFolder($uid)->getById($fileId);
 		$prefix = '/' . $uid . '/files/';
 		foreach ($nodes as $node) {
 			if (!$node instanceof File) {
@@ -64,7 +66,7 @@ class UserNodeResolver {
 		// folder, so their mounts exist before the id is looked up. The
 		// folder itself is answered directly — asking a folder for its own
 		// id is not something Folder::getById() is required to answer.
-		$userFolder = $this->rootFolder->getUserFolder($uid);
+		$userFolder = $this->userFolder($uid);
 		if ($userFolder->getId() === $folderId) {
 			return $userFolder;
 		}
@@ -83,6 +85,28 @@ class UserNodeResolver {
 		}
 
 		throw new NotFoundException('Folder not found by ID.');
+	}
+
+	/**
+	 * The user's folder, or NotFoundException.
+	 *
+	 * getUserFolder() answers NoUserException and NotPermittedException,
+	 * neither of which is a NotFoundException — and the callers of this
+	 * class catch that one type to degrade gracefully: a metadata lookup
+	 * answers "not a pad", the legacy migration reports a collision. Left
+	 * to escape, an unavailable home storage would turn both into a 500,
+	 * where asking the global root simply returned no nodes. Not being able
+	 * to look inside a user's files is, for every caller here, the same
+	 * answer as not finding the file.
+	 *
+	 * @throws NotFoundException
+	 */
+	private function userFolder(string $uid): Folder {
+		try {
+			return $this->rootFolder->getUserFolder($uid);
+		} catch (NoUserException|NotPermittedException $e) {
+			throw new NotFoundException('Cannot access the user file tree.', 0, $e);
+		}
 	}
 
 	/**
