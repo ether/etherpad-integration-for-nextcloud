@@ -29,11 +29,18 @@ class PathNormalizer {
 			throw new InvalidArgumentException('Invalid file parameter.');
 		}
 
-		$path = trim($fileParam);
-		if ($path === '') {
+		// Trimmed only to decide whether a file was named at all, never to
+		// change which one. That is the line Nextcloud's own
+		// FilenameValidator draws: it trims to answer "empty?" and "." /
+		// "..", and judges every other rule on the name as given. Trimming
+		// the value itself would turn " Notes.pad" into "Notes.pad" and
+		// "/Notes " — which becomes "/Notes .pad" below — into "/Notes.pad",
+		// both names Nextcloud accepts, both a different file.
+		if (trim($fileParam) === '') {
 			return '';
 		}
 
+		$path = $fileParam;
 		if (preg_match('#^https?://#i', $path) === 1) {
 			$path = $this->normalizeDavUrlToPath($path);
 		}
@@ -77,10 +84,13 @@ class PathNormalizer {
 	 * the folder context comes from a separate parent-id.
 	 */
 	public function normalizeCreateFileName(string $name): string {
-		$fileName = trim($name);
-		if ($fileName === '' || $fileName === '.' || $fileName === '..') {
+		// Same rule as above: the trimmed value answers whether a name was
+		// given, the untrimmed one is the name.
+		$trimmed = trim($name);
+		if ($trimmed === '' || $trimmed === '.' || $trimmed === '..') {
 			throw new InvalidArgumentException('Invalid file name.');
 		}
+		$fileName = $name;
 		if (str_contains($fileName, '/') || str_contains($fileName, '\\')) {
 			throw new InvalidArgumentException('Invalid file name.');
 		}
@@ -95,11 +105,11 @@ class PathNormalizer {
 			throw new InvalidArgumentException('Invalid file parameter.');
 		}
 
-		$path = trim($fileParam);
-		if ($path === '') {
+		if (trim($fileParam) === '') {
 			return '';
 		}
 
+		$path = $fileParam;
 		if (preg_match('#^https?://#i', $path) === 1) {
 			$rawPath = (string)(parse_url($path, PHP_URL_PATH) ?? '');
 			if (preg_match('#/public\.php/dav/files/([^/]+)/(.*)$#', rawurldecode($rawPath), $matches) === 1) {

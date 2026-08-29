@@ -76,6 +76,40 @@ class PathNormalizerTest extends TestCase {
 		);
 	}
 
+	/**
+	 * The remaining trim was the same defect one step further out: it
+	 * changed the name rather than deciding whether one was given.
+	 * Nextcloud's FilenameValidator trims only to answer "empty?" and
+	 * "." / "..", and accepts a leading or trailing space otherwise.
+	 */
+	public function testKeepsALeadingSpaceInABareName(): void {
+		$this->assertSame(
+			'/ Notes.pad',
+			(new PathNormalizer())->normalizeViewerFilePath(' Notes.pad')
+		);
+	}
+
+	public function testKeepsATrailingSpaceBeforeTheAppendedExtension(): void {
+		$this->assertSame(
+			'/Notes .pad',
+			(new PathNormalizer())->normalizeCreatePath('/Notes ')
+		);
+	}
+
+	public function testKeepsALeadingSpaceInAPublicShareName(): void {
+		$this->assertSame(
+			' Notes.pad',
+			(new PathNormalizer())->normalizePublicShareFilePath(' Notes.pad', 'tok')
+		);
+	}
+
+	public function testKeepsALeadingSpaceInACreateFileName(): void {
+		$this->assertSame(
+			' Notes.pad',
+			(new PathNormalizer())->normalizeCreateFileName(' Notes')
+		);
+	}
+
 	// ------------------------------------------------------------------
 	// normalizePublicShareFilePath
 	// ------------------------------------------------------------------
