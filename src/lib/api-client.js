@@ -70,13 +70,22 @@ export const apiFindOriginalPad = async (fileId) => {
 
 export const apiRecoverFromSnapshot = async (fileId, path = '') => {
 	const endpoint = ocGenerateUrl('/apps/' + APP_ID + '/api/v1/pads/recover-from-snapshot/' + encodeURIComponent(String(fileId)))
-	const result = await fetchJson(endpoint, {
+	// No timeout, named rather than inherited: this is a write. It creates
+	// an Etherpad group and pad, sets the content, writes the binding row
+	// and then the file — several Etherpad calls, each of which the server
+	// gives 15 seconds of its own, so one slow one already outlasts any
+	// client budget worth having. Abandoning it mid-way does not stop it;
+	// it only means nobody reads the outcome, and the retry then meets the
+	// binding the first run wrote (or orphans the pad it did not).
+	// initializeMissingFrontmatter, the other write, is exempt for the
+	// same reason.
+	const result = await fetchJsonWithTimeout(endpoint, {
 		method: 'POST',
 		headers: {
 			Accept: 'application/json',
 			requesttoken: ocRequestToken(),
 		},
-	}, 'Recovery failed.')
+	}, { fallbackMessage: 'Recovery failed.', timeoutMs: null })
 	// A freshly recovered pad invalidates any cached resolve response: the
 	// old one carried a missing-binding marker that no longer applies.
 	RESOLVE_CACHE.delete(String(fileId))

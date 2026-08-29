@@ -70,6 +70,38 @@ describe('fetchJsonWithTimeout', () => {
 		await assertion
 	})
 
+	// Writes wait. Cutting one short applies the change with nobody left to
+	// read the outcome; the retry then meets what the first run wrote.
+	it('never times out when the timeout is disabled', async () => {
+		vi.useFakeTimers()
+		let settle
+		// Rejects on abort, the way fetch does — otherwise the timer firing
+		// would make no difference to this test and it would pass with or
+		// without the exemption.
+		stubFetch((url, init) => new Promise((resolve, reject) => {
+			init.signal.addEventListener('abort', () => reject(abortError()))
+			settle = () => resolve(jsonResponse({ status: 'restored' }))
+		}))
+
+		const pending = fetchJsonWithTimeout('/x', { method: 'POST' }, { timeoutMs: null })
+		await vi.advanceTimersByTimeAsync(120_000)
+		settle()
+
+		await expect(pending).resolves.toEqual({ status: 'restored' })
+	})
+
+	it('still lets a caller abort a request that has no timeout', async () => {
+		const controller = new AbortController()
+		stubFetch((url, init) => new Promise((resolve, reject) => {
+			init.signal.addEventListener('abort', () => reject(abortError()))
+		}))
+
+		const pending = fetchJsonWithTimeout('/x', { signal: controller.signal }, { timeoutMs: null })
+		controller.abort()
+
+		await expect(pending).rejects.toMatchObject({ name: 'AbortError' })
+	})
+
 	// The three cases the chaining exists for.
 	it('does not send a request when the caller signal is already aborted', async () => {
 		const controller = new AbortController()

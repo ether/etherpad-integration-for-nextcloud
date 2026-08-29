@@ -102,6 +102,26 @@ describe('api-client', () => {
 		expect(fetch).toHaveBeenCalledTimes(2)
 	})
 
+	// The one write among these four: it must not be given up on.
+	it('sends the recovery without a timeout', async () => {
+		vi.useFakeTimers()
+		const { apiRecoverFromSnapshot } = await importClient()
+		let settle
+		// Aborts the way fetch does, so a timer that fires actually shows up
+		// here rather than being silently ignored by the mock.
+		fetch.mockImplementation((url, init) => new Promise((resolve, reject) => {
+			init.signal.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')))
+			settle = () => resolve(jsonResponse({ status: 'restored' }))
+		}))
+
+		const pending = apiRecoverFromSnapshot(42, '/copy.pad')
+		await vi.advanceTimersByTimeAsync(120_000)
+		settle()
+
+		await expect(pending).resolves.toEqual({ status: 'restored' })
+		vi.useRealTimers()
+	})
+
 	// The viewer resolves by path when it has no file id, so the path-keyed
 	// entry is a second copy of the same pre-recovery answer — but only that
 	// one path, not every path the session has looked up.

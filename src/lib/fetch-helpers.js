@@ -10,11 +10,20 @@ const DEFAULT_REQUEST_TIMEOUT_MS = 10000
  * controller of its own, and a caller that brought a signal — a viewer
  * abandoning an open, say — must still be able to cancel. Whichever fires
  * first wins.
+ *
+ * `timeoutMs: null` waits indefinitely, and is for requests that *write*.
+ * Cutting a read short costs a retry; cutting a write short applies the
+ * change with nobody left to read the outcome — a recovery that has
+ * created its pad but not yet its binding looks unrecovered, and the
+ * retry then either collides with the binding it did write or provisions
+ * a second pad and orphans the first. Slow is not the same as stuck.
  */
 export const fetchJsonWithTimeout = async (url, init = {}, options = {}) => {
 	const { timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS, fallbackMessage = 'Request failed.' } = options
 	const controller = new AbortController()
-	const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs)
+	const timeoutId = timeoutMs === null || timeoutMs === 0
+		? null
+		: window.setTimeout(() => controller.abort(), timeoutMs)
 	const callerSignal = init.signal
 	let abortOnCaller
 	if (callerSignal) {
@@ -48,14 +57,16 @@ export const fetchJsonWithTimeout = async (url, init = {}, options = {}) => {
 			// them today — both recognise a superseded request by the
 			// generation guard instead — but rewriting a deliberate abort as
 			// "Request timed out." would be a lie the moment one does.
-			if (callerSignal && callerSignal.aborted) {
+			if (timeoutId === null || (callerSignal && callerSignal.aborted)) {
 				throw error
 			}
 			throw new Error('Request timed out.')
 		}
 		throw error
 	} finally {
-		window.clearTimeout(timeoutId)
+		if (timeoutId !== null) {
+			window.clearTimeout(timeoutId)
+		}
 		if (abortOnCaller) {
 			callerSignal.removeEventListener('abort', abortOnCaller)
 		}
