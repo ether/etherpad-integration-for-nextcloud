@@ -86,10 +86,11 @@ class UserNodeResolver {
 			$path = rtrim((string)$node->getPath(), '/');
 			// The separator stays in the prefix test so a sibling that merely
 			// starts the same way — /<uid>/files_versions — is still refused.
-			// The root itself is not compared here: getById() searches inside
-			// the folder and does not return it, which is why it is answered
-			// by id above.
-			if (str_starts_with($path, $root . '/')) {
+			// The root is accepted here too. It should have been answered by
+			// id above, and getById() is not expected to return the folder it
+			// searches — but "not expected to" is an implementation detail,
+			// and this is the path create-by-parent takes into "All files".
+			if ($path === $root || str_starts_with($path, $root . '/')) {
 				return $node;
 			}
 		}
@@ -124,7 +125,7 @@ class UserNodeResolver {
 		try {
 			return $this->rootFolder->getUserFolder($uid);
 		} catch (\Exception $e) {
-			if (!$e instanceof NotPermittedException && $e::class !== self::NO_USER_EXCEPTION) {
+			if (!$e instanceof NotPermittedException && !is_a($e, self::NO_USER_EXCEPTION)) {
 				throw $e;
 			}
 			$this->logger->debug('Cannot access the user file tree', ['uid' => $uid, 'exception' => $e]);

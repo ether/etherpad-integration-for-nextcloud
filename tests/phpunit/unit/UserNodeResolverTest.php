@@ -42,6 +42,21 @@ class UserNodeResolverTest extends TestCase {
 	}
 
 	/**
+	 * Matched with is_a(), not by exact class: nothing marks NoUserException
+	 * final, and a subclass means the same thing.
+	 */
+	public function testTranslatesASubclassOfNoUserException(): void {
+		$thrown = new class ('gone') extends NoUserException {
+		};
+		$rootFolder = $this->createMock(IRootFolder::class);
+		$rootFolder->method('getUserFolder')->willThrowException($thrown);
+		$resolver = new UserNodeResolver($rootFolder, $this->createMock(LoggerInterface::class));
+
+		$this->expectException(NotFoundException::class);
+		$resolver->resolveUserFileNodeById('alice', 138);
+	}
+
+	/**
 	 * The other half of the rule: a storage that is down is not a missing
 	 * file. Translating it would answer 404 for an outage, with nothing in
 	 * the log to say otherwise.

@@ -4,6 +4,7 @@
  */
 import { APP_ID, MIME, VIEWER_HANDLER_ID } from './lib/constants.js'
 import { apiFindOriginalPad, apiRecoverFromSnapshot, apiResolvePadByPath } from './lib/api-client.js'
+import { fetchJsonWithTimeout } from './lib/fetch-helpers.js'
 import { ocGenerateUrl, ocRequestToken, translate } from './lib/oc-compat.js'
 import { createPadSync } from './lib/pad-sync.js'
 import { sanitizeSnapshotHtml } from './lib/sanitize-html.js'
@@ -125,30 +126,16 @@ import { parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './li
 			openKey: { immediate: true, handler() { void this.resolveOpenUrl() } },
 		},
 		methods: {
+			/**
+			 * The shared helper does the rest: Accept, merged headers, an
+			 * error carrying `.status` and `.code`, and a request timeout —
+			 * without which an unresponsive server left the viewer on
+			 * "Loading pad..." with no error and no way out. This method is
+			 * only the pad-specific part: the payload has to name a URL, or
+			 * be a read-only snapshot.
+			 */
 			async fetchOpenPayload(url, init = {}) {
-				// The merged headers go on last. Spreading `init` over an
-				// options object that already carried `headers` let
-				// `init.headers` replace it wholesale, so the Accept below was
-				// computed and then thrown away on every POST — and the
-				// framework's JSON error responses arrived only because
-				// fetch's default Accept happens to be `*/*`.
-				const headers = Object.assign({ Accept: 'application/json' }, init.headers || {})
-				const response = await fetch(url, Object.assign({
-					method: 'GET',
-					credentials: 'same-origin',
-				}, init, { headers }))
-				const data = await response.json().catch(() => ({}))
-				if (!response.ok) {
-					const error = new Error((data && data.message) || 'Pad open failed.')
-					// Carried for the error card, not for control flow: an
-					// unresolvable id and one that is not the user's look the
-					// same here, so this may explain but must never decide.
-					error.status = response.status
-					if (data && typeof data.code === 'string') {
-						error.code = data.code
-					}
-					throw error
-				}
+				const data = await fetchJsonWithTimeout(url, Object.assign({ method: 'GET' }, init))
 				if (!data || (data.is_readonly_snapshot !== true && (typeof data.url !== 'string' || data.url.trim() === ''))) {
 					throw new Error('Pad open API did not return a valid URL.')
 				}
@@ -158,7 +145,7 @@ import { parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './li
 				if (!(error instanceof Error)) return false
 				return String(error.message || '').includes('Missing YAML frontmatter')
 			},
-			async initializeMissingFrontmatter(signal) {
+			async initializeMissingFrontmatter() {
 				const headers = {
 					Accept: 'application/json',
 					requesttoken: ocRequestToken(),
@@ -191,7 +178,7 @@ import { parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './li
 
 				if (this.resolvedFileId !== null) {
 					const url = ocGenerateUrl('/apps/' + APP_ID + '/api/v1/pads/initialize-by-id/' + encodeURIComponent(String(this.resolvedFileId)))
-					const response = await fetch(url, { method: 'POST', credentials: 'same-origin', headers, signal })
+					const response = await fetch(url, { method: 'POST', credentials: 'same-origin', headers })
 					const data = await response.json().catch(() => ({}))
 					if (!response.ok) {
 						throw buildInitError(data, 'Pad initialization failed.', response.status)
@@ -214,7 +201,6 @@ import { parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './li
 						'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
 					}),
 					body: body.toString(),
-					signal,
 				})
 				const data = await response.json().catch(() => ({}))
 				if (!response.ok) {
@@ -232,9 +218,9 @@ import { parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './li
 			 * path-to-id answer can name a file that has since moved out of
 			 * the way of another.
 			 */
-			async resolveRecoveryFileId() {
+			async resolveRecoveryFileId(openPath) {
 				try {
-					const resolved = await apiResolvePadByPath(this.filePath, { bypassCache: true })
+					const resolved = await apiResolvePadByPath(openPath, { bypassCache: true })
 					const id = Number(resolved && resolved.file_id)
 					return Number.isFinite(id) && id > 0 ? id : null
 				} catch {
@@ -308,11 +294,17 @@ import { parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './li
 					return
 				}
 
+				// The path this resolve is about, captured once. filePath is a
+				// computed and updates the moment the Viewer swaps props —
+				// before the watcher has flushed and bumped the generation —
+				// so re-reading it later can describe a different file than
+				// the one this open and its error card are about.
+				const openPath = this.filePath
 				const publicToken = parsePublicShareTokenFromLocation()
 				const byPublicUrl = (() => {
 					if (!publicToken) return ''
 					const url = new URL(ocGenerateUrl('/apps/' + APP_ID + '/api/v1/public/open/' + encodeURIComponent(publicToken)), window.location.origin)
-					url.searchParams.set('file', this.filePath)
+					url.searchParams.set('file', openPath)
 					return url.toString()
 				})()
 				const openPostHeaders = {
@@ -340,7 +332,7 @@ import { parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './li
 								)
 							}
 							const byPathBody = new URLSearchParams()
-							byPathBody.set('file', this.filePath)
+							byPathBody.set('file', openPath)
 							return await this.fetchOpenPayload(
 								ocGenerateUrl('/apps/' + APP_ID + '/api/v1/pads/open'),
 								{ method: 'POST', headers: openPostHeaders, body: byPathBody.toString(), signal },
@@ -355,10 +347,14 @@ import { parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './li
 						if (!this.isMissingFrontmatterError(error)) {
 							throw error
 						}
-						// The one mutating request in the flow: it creates a pad,
-						// writes a binding and rewrites the file. It gets the same
-						// signal, so closing the viewer stops it too.
-						await this.initializeMissingFrontmatter(abort ? abort.signal : undefined)
+						// Deliberately *not* abortable. It creates a pad, writes a
+						// binding row and rewrites the file; tearing the
+						// connection down mid-write leaves the server to finish
+						// (or not) with nobody left to read the outcome. A
+						// superseded read costs a wasted request — this would
+						// cost a half-applied change. recoverFromSnapshot, the
+						// other write, is not abortable either.
+						await this.initializeMissingFrontmatter()
 						if (!isCurrent()) return
 						data = await fetchOpenData()
 						if (!isCurrent()) return
@@ -425,7 +421,7 @@ import { parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './li
 					// user's own tree.
 					let recoveryFileId = this.resolvedFileId
 					if (recoveryFileId === null && !byPublicUrl && error && error.code === 'missing_binding') {
-						recoveryFileId = await this.resolveRecoveryFileId()
+						recoveryFileId = await this.resolveRecoveryFileId(openPath)
 						// Assigned only after the guard: a slower lookup from a
 						// superseded resolve would otherwise overwrite the live
 						// card's address, and the recovery button would then
@@ -480,7 +476,7 @@ import { parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './li
 				}
 				this.isRecovering = true
 				try {
-					await apiRecoverFromSnapshot(this.recoveryFileId)
+					await apiRecoverFromSnapshot(this.recoveryFileId, this.filePath)
 					this.loadError = ''
 					this.canRecover = false
 					await this.resolveOpenUrl()

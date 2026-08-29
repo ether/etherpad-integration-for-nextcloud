@@ -5,9 +5,25 @@
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 10000
 
+/**
+ * `init.signal` is chained rather than replaced: the timeout needs a
+ * controller of its own, and a caller that brought a signal — a viewer
+ * abandoning an open, say — must still be able to cancel. Whichever fires
+ * first wins.
+ */
 export const fetchJsonWithTimeout = async (url, init = {}, timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS) => {
 	const controller = new AbortController()
 	const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs)
+	const callerSignal = init.signal
+	let abortOnCaller
+	if (callerSignal) {
+		if (callerSignal.aborted) {
+			controller.abort()
+		} else {
+			abortOnCaller = () => controller.abort()
+			callerSignal.addEventListener('abort', abortOnCaller)
+		}
+	}
 	const headers = Object.assign({ Accept: 'application/json' }, init.headers || {})
 	try {
 		const response = await fetch(url, Object.assign({}, init, {
@@ -27,10 +43,18 @@ export const fetchJsonWithTimeout = async (url, init = {}, timeoutMs = DEFAULT_R
 		return data
 	} catch (error) {
 		if (error && typeof error === 'object' && 'name' in error && error.name === 'AbortError') {
+			// A caller's own abort is not a timeout, and its callers check for
+			// the AbortError name to tell "we cancelled this" from "it failed".
+			if (callerSignal && callerSignal.aborted) {
+				throw error
+			}
 			throw new Error('Request timed out.')
 		}
 		throw error
 	} finally {
 		window.clearTimeout(timeoutId)
+		if (abortOnCaller) {
+			callerSignal.removeEventListener('abort', abortOnCaller)
+		}
 	}
 }

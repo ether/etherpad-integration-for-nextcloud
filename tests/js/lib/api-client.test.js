@@ -103,20 +103,28 @@ describe('api-client', () => {
 	})
 
 	// The viewer resolves by path when it has no file id, so the path-keyed
-	// entry is now a second copy of the same pre-recovery answer.
-	it('also drops path-keyed resolve entries after a recovery', async () => {
+	// entry is a second copy of the same pre-recovery answer — but only that
+	// one path, not every path the session has looked up.
+	it('drops the recovered path entry and leaves unrelated ones alone', async () => {
 		const { apiRecoverFromSnapshot, apiResolvePadByPath } = await importClient()
 		fetch.mockResolvedValueOnce(jsonResponse({ is_pad: true, file_id: 42 }))
 		await apiResolvePadByPath('/copy.pad')
-		expect(fetch).toHaveBeenCalledTimes(1)
+		fetch.mockResolvedValueOnce(jsonResponse({ is_pad: true, file_id: 7 }))
+		await apiResolvePadByPath('/unrelated.pad')
+		expect(fetch).toHaveBeenCalledTimes(2)
 
 		fetch.mockResolvedValueOnce(jsonResponse({ status: 'restored' }))
-		await apiRecoverFromSnapshot(42)
+		await apiRecoverFromSnapshot(42, '/copy.pad')
+		expect(fetch).toHaveBeenCalledTimes(3)
 
+		// The recovered path is asked again...
 		fetch.mockResolvedValueOnce(jsonResponse({ is_pad: true, file_id: 42 }))
 		await apiResolvePadByPath('/copy.pad')
+		expect(fetch).toHaveBeenCalledTimes(4)
 
-		expect(fetch).toHaveBeenCalledTimes(3)
+		// ...while an unrelated one is still served from the cache.
+		await apiResolvePadByPath('/unrelated.pad')
+		expect(fetch).toHaveBeenCalledTimes(4)
 	})
 
 	it('posts a recovery request and invalidates the resolve cache on success', async () => {

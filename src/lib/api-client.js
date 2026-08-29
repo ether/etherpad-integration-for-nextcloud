@@ -67,7 +67,7 @@ export const apiFindOriginalPad = async (fileId) => {
 	}, 'Lookup failed.')
 }
 
-export const apiRecoverFromSnapshot = async (fileId) => {
+export const apiRecoverFromSnapshot = async (fileId, path = '') => {
 	const endpoint = ocGenerateUrl('/apps/' + APP_ID + '/api/v1/pads/recover-from-snapshot/' + encodeURIComponent(String(fileId)))
 	const result = await fetchJson(endpoint, {
 		method: 'POST',
@@ -77,15 +77,14 @@ export const apiRecoverFromSnapshot = async (fileId) => {
 		},
 	}, 'Recovery failed.')
 	// A freshly recovered pad invalidates any cached resolve response: the
-	// old one carried a missing-binding marker that no longer applies. Both
-	// keys go — the same file is cached under its id and under every path
-	// it was resolved by, and the viewer now resolves by path when it has
-	// no id of its own.
+	// old one carried a missing-binding marker that no longer applies.
 	RESOLVE_CACHE.delete(String(fileId))
-	for (const key of [...RESOLVE_CACHE.keys()]) {
-		if (key.startsWith('path:')) {
-			RESOLVE_CACHE.delete(key)
-		}
+	// And the path the caller resolved this id by, if it named one. The
+	// same answer is cached under both keys; flushing every `path:` entry
+	// instead would throw away answers for unrelated files a session has
+	// already looked up.
+	if (typeof path === 'string' && path !== '') {
+		RESOLVE_CACHE.delete('path:' + path)
 	}
 	return result
 }

@@ -145,7 +145,12 @@ export const createPadOpener = () => {
 		}
 		if ((!fileId || !Number.isFinite(Number(fileId))) && path && !inPublicShareRoute) {
 			try {
-				const resolvedPad = await apiResolvePadByPath(path)
+				// Without the cache: this id decides which document the viewer
+				// opens, and since the by-path retry is gone there is nothing
+				// downstream to notice a stale one. A five-minute-old
+				// path-to-id answer can name a file that has since moved out
+				// of the way of another.
+				const resolvedPad = await apiResolvePadByPath(path, { bypassCache: true })
 				fileId = (resolvedPad && Number.isFinite(Number(resolvedPad.file_id))) ? Number(resolvedPad.file_id) : fileId
 			} catch (e) {
 				// Resolve failure is handled by route fallback below.

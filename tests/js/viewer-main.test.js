@@ -498,6 +498,27 @@ describe('viewer component — resolveOpenUrl', () => {
 		expect(captured.aborted).toBe(true)
 	})
 
+	// Without a timeout an unresponsive server left the viewer on
+	// "Loading pad..." with no error and no way out.
+	it('gives up on an open that never answers', async () => {
+		vi.useFakeTimers()
+		try {
+			stubFetch((url, init) => new Promise((resolve, reject) => {
+				init.signal.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')))
+			}))
+			const vm = makeInstance({ fileid: 42, fileInfo: { path: '/x.pad' } })
+
+			const pending = vm.resolveOpenUrl()
+			await vi.advanceTimersByTimeAsync(11_000)
+			await pending
+
+			expect(vm.loadError).toBe('Request timed out.')
+			expect(vm.isLoading).toBe(false)
+		} finally {
+			vi.useRealTimers()
+		}
+	})
+
 	it('surfaces a stale request token instead of retrying by path', async () => {
 		const fetchMock = stubFetch(jsonResponse({ message: 'CSRF check failed' }, false, 412))
 		const vm = makeInstance({ fileid: 42, fileInfo: { path: '/x.pad' } })
@@ -659,12 +680,13 @@ describe('viewer component — resolveOpenUrl', () => {
 describe('viewer component — recoverFromSnapshot', () => {
 	it('posts the recovery, clears the error, and re-resolves', async () => {
 		apiRecoverFromSnapshot.mockResolvedValue({})
-		const vm = makeInstance({ fileid: 42, recoveryFileId: 42, canRecover: true, loadError: 'boom' })
+		const vm = makeInstance({ fileid: 42, recoveryFileId: 42, canRecover: true, loadError: 'boom', fileInfo: { path: '/x.pad' } })
 		vm.resolveOpenUrl = vi.fn().mockResolvedValue()
 
 		await vm.recoverFromSnapshot()
 
-		expect(apiRecoverFromSnapshot).toHaveBeenCalledWith(42)
+		// The path travels with the id so only that cache entry is dropped.
+		expect(apiRecoverFromSnapshot).toHaveBeenCalledWith(42, '/x.pad')
 		expect(vm.loadError).toBe('')
 		expect(vm.canRecover).toBe(false)
 		expect(vm.resolveOpenUrl).toHaveBeenCalled()
