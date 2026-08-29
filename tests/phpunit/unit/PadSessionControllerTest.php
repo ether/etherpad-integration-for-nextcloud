@@ -65,6 +65,10 @@ class PadSessionControllerTest extends TestCase {
 			});
 
 		$rootFolder = $this->createMock(IRootFolder::class);
+		// IRootFolder is a Folder, so the root doubles as the user's own
+		// folder here: an id is resolved through getUserFolder(), which is
+		// what registers the user's mounts before the lookup.
+		$rootFolder->method('getUserFolder')->willReturn($rootFolder);
 		$rootFolder->method('getById')->with(138)->willReturn([$file]);
 
 		$padFileService = $this->createMock(PadFileService::class);
@@ -156,6 +160,7 @@ class PadSessionControllerTest extends TestCase {
 			->willThrowException(new LockedException('still locked'));
 
 		$rootFolder = $this->createMock(IRootFolder::class);
+		$rootFolder->method('getUserFolder')->willReturn($rootFolder);
 		$rootFolder->method('getById')->with(138)->willReturn([$file]);
 
 		$controller = $this->buildController(
@@ -179,6 +184,7 @@ class PadSessionControllerTest extends TestCase {
 		$file = $this->buildPadFileNode();
 
 		$rootFolder = $this->createMock(IRootFolder::class);
+		$rootFolder->method('getUserFolder')->willReturn($rootFolder);
 		$rootFolder->method('getById')->with(138)->willReturn([$file]);
 
 		$frontmatter = [
@@ -297,6 +303,7 @@ class PadSessionControllerTest extends TestCase {
 			->willThrowException(new LockedException('still locked'));
 
 		$rootFolder = $this->createMock(IRootFolder::class);
+		$rootFolder->method('getUserFolder')->willReturn($rootFolder);
 		$rootFolder->method('getById')->with(138)->willReturn([$file]);
 
 		$controller = $this->buildController(
@@ -315,6 +322,7 @@ class PadSessionControllerTest extends TestCase {
 		$user = $this->createConfiguredMock(IUser::class, ['getUID' => 'alice']);
 		$userSession = $this->createConfiguredMock(IUserSession::class, ['getUser' => $user]);
 		$rootFolder = $this->createMock(IRootFolder::class);
+		$rootFolder->method('getUserFolder')->willReturn($rootFolder);
 		$rootFolder->method('getById')->with(138)->willThrowException(new \RuntimeException('Storage offline.'));
 
 		$controller = $this->buildController(
@@ -338,6 +346,7 @@ class PadSessionControllerTest extends TestCase {
 		?ExternalPadExportFetcher $externalPadExportFetcher = null,
 	): PadSessionController {
 		$resolvedRootFolder = $rootFolder ?? $this->createMock(IRootFolder::class);
+		$resolvedRootFolder->method('getUserFolder')->willReturn($resolvedRootFolder);
 		$resolvedEtherpadClient = $etherpadClient ?? $this->createMock(EtherpadClient::class);
 		$resolvedExternalPadExportFetcher = $externalPadExportFetcher ?? $this->createMock(ExternalPadExportFetcher::class);
 		$resolvedPadFileService = $padFileService ?? $this->createMock(PadFileService::class);

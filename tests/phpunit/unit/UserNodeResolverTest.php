@@ -16,10 +16,39 @@ use OCP\Files\NotFoundException;
 use PHPUnit\Framework\TestCase;
 
 class UserNodeResolverTest extends TestCase {
-	private function resolverFor(array $nodes): UserNodeResolver {
+	/**
+	 * The nodes are served from the *user's* folder, not the global root:
+	 * that is where the resolver looks, because getUserFolder() is what
+	 * sets the user's mounts up before an id is looked up. A root that
+	 * still answered getById() would let a regression back through.
+	 */
+	private function resolverFor(array $nodes, int $userFolderId = 1): UserNodeResolver {
+		$userFolder = $this->createMock(Folder::class);
+		$userFolder->method('getById')->willReturn($nodes);
+		$userFolder->method('getId')->willReturn($userFolderId);
 		$rootFolder = $this->createMock(IRootFolder::class);
-		$rootFolder->method('getById')->willReturn($nodes);
+		$rootFolder->method('getUserFolder')->willReturn($userFolder);
+		$rootFolder->method('getById')->willThrowException(
+			new \LogicException('An id must be resolved through the user folder, not the global root.')
+		);
 		return new UserNodeResolver($rootFolder);
+	}
+
+	/**
+	 * The user's own root is the one folder that cannot be found by asking
+	 * it for its own id, so it is answered directly. Without this,
+	 * create-by-parent could not put a pad in "All files".
+	 */
+	public function testResolvesTheUsersOwnRootFolderById(): void {
+		$userFolder = $this->createMock(Folder::class);
+		$userFolder->method('getId')->willReturn(7);
+		$userFolder->method('getById')->willReturn([]);
+		$rootFolder = $this->createMock(IRootFolder::class);
+		$rootFolder->method('getUserFolder')->willReturn($userFolder);
+
+		$resolver = new UserNodeResolver($rootFolder);
+
+		$this->assertSame($userFolder, $resolver->resolveUserFolderNodeById('alice', 7));
 	}
 
 	private function folderAt(string $path): Folder {

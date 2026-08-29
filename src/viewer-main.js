@@ -29,6 +29,7 @@ import { parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './li
 				isLoading: true,
 				loadError: '',
 				canRecover: false,
+				maybeStaleFileId: false,
 				isRecovering: false,
 				isCheckingOriginal: false,
 				originalPad: null,
@@ -90,23 +91,35 @@ import { parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './li
 				if (isPadPath(fromDir)) return fromDir
 				return '/' + baseName
 			},
+			/** What the open depends on, as one value — see the watcher. */
+			openKey() {
+				return `${this.resolvedFileId === null ? '' : this.resolvedFileId}::${this.filePath}`
+			},
 			resolvedFileId() {
 				const candidates = [this.fileid, this.fileId, this.fileInfo && (this.fileInfo.fileid || this.fileInfo.fileId || this.fileInfo.id)]
 				for (const candidate of candidates) {
 					const numeric = Number(candidate)
 					if (Number.isFinite(numeric) && numeric > 0) return numeric
 				}
-				const params = new URLSearchParams(window.location.search || '')
-				if (params.get('openfile') !== 'true') return null
-				const match = (window.location.pathname || '').match(/\/apps\/files\/files\/(\d+)\/?$/)
-				if (!match) return null
-				const fallbackId = Number(match[1])
-				return Number.isFinite(fallbackId) && fallbackId > 0 ? fallbackId : null
+				// Only the props. The Files URL also carries an id, and this
+				// used to read it when `openfile=true` — but that id belongs
+				// to whatever the route was opened with, while `filePath`
+				// follows the file the Viewer is showing. The two part
+				// company as soon as the user steps to the next pad, and
+				// since opening by id no longer falls back to the path,
+				// the id would decide. A file the viewer cannot name an id
+				// for is opened by path instead.
+				return null
 			},
 		},
 		watch: {
-			filePath: { immediate: true, handler() { void this.resolveOpenUrl() } },
-			resolvedFileId() { void this.resolveOpenUrl() },
+			// One key, so one resolve. Watching filePath and resolvedFileId
+			// separately fired twice on every file swap — both change at
+			// once — and the generation guard discards the loser's result
+			// without cancelling its request. For a protected pad that
+			// second request had already minted an Etherpad session and a
+			// cookie that nothing would ever use.
+			openKey: { immediate: true, handler() { void this.resolveOpenUrl() } },
 		},
 		methods: {
 			async fetchOpenPayload(url, init = {}) {
@@ -119,6 +132,10 @@ import { parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './li
 				const data = await response.json().catch(() => ({}))
 				if (!response.ok) {
 					const error = new Error((data && data.message) || 'Pad open failed.')
+					// Carried for the error card, not for control flow: an
+					// unresolvable id and one that is not the user's look the
+					// same here, so this may explain but must never decide.
+					error.status = response.status
 					if (data && typeof data.code === 'string') {
 						error.code = data.code
 					}
@@ -224,6 +241,7 @@ import { parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './li
 				this.isLoading = true
 				this.loadError = ''
 				this.canRecover = false
+				this.maybeStaleFileId = false
 				this.isCheckingOriginal = false
 				this.originalPad = null
 				this.iframeSrc = ''
@@ -248,22 +266,12 @@ import { parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './li
 				}
 
 				const publicToken = parsePublicShareTokenFromLocation()
-				const byPathUrl = ocGenerateUrl('/apps/' + APP_ID + '/api/v1/pads/open')
 				const byPublicUrl = (() => {
 					if (!publicToken) return ''
 					const url = new URL(ocGenerateUrl('/apps/' + APP_ID + '/api/v1/public/open/' + encodeURIComponent(publicToken)), window.location.origin)
 					url.searchParams.set('file', this.filePath)
 					return url.toString()
 				})()
-				const byIdUrl = this.resolvedFileId !== null
-					? ocGenerateUrl('/apps/' + APP_ID + '/api/v1/pads/open-by-id')
-					: ''
-				const byPathBody = new URLSearchParams()
-				byPathBody.set('file', this.filePath)
-				const byIdBody = new URLSearchParams()
-				if (this.resolvedFileId !== null) {
-					byIdBody.set('fileId', String(this.resolvedFileId))
-				}
 				const openPostHeaders = {
 					'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
 					requesttoken: ocRequestToken(),
@@ -271,28 +279,28 @@ import { parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './li
 
 				try {
 					const fetchOpenData = async () => {
-							let data = null
+							// Exactly one way in, chosen once. Opening by id
+							// used to retry by path when it failed, which is
+							// how a refused id ended up opening whatever the
+							// path pointed at — see the cases pinned in
+							// tests/js/viewer-main.test.js.
 							if (byPublicUrl) {
-								data = await this.fetchOpenPayload(byPublicUrl)
-							} else if (byIdUrl) {
-								try {
-									data = await this.fetchOpenPayload(byIdUrl, {
-										method: 'POST',
-										headers: openPostHeaders,
-										body: byIdBody.toString(),
-									})
-								} catch {
-									// Fallback for moved/renamed files where stale fileId can fail.
-								}
+								return await this.fetchOpenPayload(byPublicUrl)
 							}
-							if (!data) {
-								data = await this.fetchOpenPayload(byPathUrl, {
-									method: 'POST',
-									headers: openPostHeaders,
-									body: byPathBody.toString(),
-								})
+							if (this.resolvedFileId !== null) {
+								const byIdBody = new URLSearchParams()
+								byIdBody.set('fileId', String(this.resolvedFileId))
+								return await this.fetchOpenPayload(
+									ocGenerateUrl('/apps/' + APP_ID + '/api/v1/pads/open-by-id'),
+									{ method: 'POST', headers: openPostHeaders, body: byIdBody.toString() },
+								)
 							}
-							return data
+							const byPathBody = new URLSearchParams()
+							byPathBody.set('file', this.filePath)
+							return await this.fetchOpenPayload(
+								ocGenerateUrl('/apps/' + APP_ID + '/api/v1/pads/open'),
+								{ method: 'POST', headers: openPostHeaders, body: byPathBody.toString() },
+							)
 						}
 
 					let data
@@ -350,6 +358,14 @@ import { parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './li
 				} catch (error) {
 					if (!isCurrent()) return
 					this.loadError = error instanceof Error ? error.message : 'Could not load pad.'
+					// The file id named a node the server could not hand over,
+					// and it cannot say whether that is because the file moved
+					// or because the id is not this user's. Since the open no
+					// longer answers that by trying the path, say what the one
+					// remedy is rather than leaving a dead end.
+					this.maybeStaleFileId = this.resolvedFileId !== null
+						&& !parsePublicShareTokenFromLocation()
+						&& Boolean(error) && error.status === 404 && !error.code
 					// Recovery is gated on having a fileId we can address. Public-share
 					// visitors don't get a recovery action — only the share owner.
 					this.canRecover = Boolean(error && error.code === 'missing_binding')
@@ -449,6 +465,12 @@ import { parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './li
 					createElement('div', { class: 'epnc-native-error-title' }, translate('Could not open pad')),
 					createElement('div', { class: 'epnc-native-error-message' }, this.loadError),
 				]
+				if (this.maybeStaleFileId) {
+					cardChildren.push(
+						createElement('div', { class: 'epnc-native-error-message' },
+							translate('This file may have been moved or replaced since the list was loaded. Reload the page and open it again.')),
+					)
+				}
 				if (this.canRecover) {
 					if (this.isCheckingOriginal) {
 						// Don't render any action button while the lookup is in

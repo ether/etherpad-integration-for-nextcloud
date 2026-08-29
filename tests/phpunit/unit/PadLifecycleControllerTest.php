@@ -61,6 +61,10 @@ class PadLifecycleControllerTest extends TestCase {
 			});
 
 		$rootFolder = $this->createMock(IRootFolder::class);
+		// IRootFolder is a Folder, so the root doubles as the user's own
+		// folder here: an id is resolved through getUserFolder(), which is
+		// what registers the user's mounts before the lookup.
+		$rootFolder->method('getUserFolder')->willReturn($rootFolder);
 		$rootFolder->method('getById')->with(138)->willReturn([$file]);
 
 		$padFileService = $this->createMock(PadFileService::class);
@@ -115,6 +119,7 @@ class PadLifecycleControllerTest extends TestCase {
 			->willThrowException(new LockedException('still locked'));
 
 		$rootFolder = $this->createMock(IRootFolder::class);
+		$rootFolder->method('getUserFolder')->willReturn($rootFolder);
 		$rootFolder->method('getById')->with(138)->willReturn([$file]);
 
 		$padFileService = $this->createMock(PadFileService::class);
@@ -163,6 +168,7 @@ class PadLifecycleControllerTest extends TestCase {
 		$file->expects($this->never())->method('putContent');
 
 		$rootFolder = $this->createMock(IRootFolder::class);
+		$rootFolder->method('getUserFolder')->willReturn($rootFolder);
 		$rootFolder->method('getById')->with(138)->willReturn([$file]);
 
 		$padFileService = $this->createMock(PadFileService::class);
@@ -217,6 +223,7 @@ class PadLifecycleControllerTest extends TestCase {
 		$file->expects($this->never())->method('putContent');
 
 		$rootFolder = $this->createMock(IRootFolder::class);
+		$rootFolder->method('getUserFolder')->willReturn($rootFolder);
 		$rootFolder->method('getById')->with(138)->willReturn([$file]);
 
 		$padFileService = $this->createMock(PadFileService::class);
@@ -319,6 +326,7 @@ class PadLifecycleControllerTest extends TestCase {
 			'getPath' => '/alice/files/Folder/Original.pad',
 		]);
 		$rootFolder = $this->createMock(IRootFolder::class);
+		$rootFolder->method('getUserFolder')->willReturn($rootFolder);
 		$rootFolder->method('getById')->willReturnMap([
 			[700, [$orphan]],
 			[42, [$original]],
@@ -358,6 +366,7 @@ class PadLifecycleControllerTest extends TestCase {
 			'getPath' => '/alice/files/Copy.pad',
 		]);
 		$rootFolder = $this->createMock(IRootFolder::class);
+		$rootFolder->method('getUserFolder')->willReturn($rootFolder);
 		$rootFolder->method('getById')->with(800)->willReturn([$orphan]);
 
 		$padFileService = $this->createMock(PadFileService::class);
@@ -465,6 +474,7 @@ class PadLifecycleControllerTest extends TestCase {
 		?ExternalPadExportFetcher $externalPadExportFetcher = null,
 	): PadLifecycleController {
 		$resolvedRootFolder = $rootFolder ?? $this->createMock(IRootFolder::class);
+		$resolvedRootFolder->method('getUserFolder')->willReturn($resolvedRootFolder);
 		$resolvedEtherpadClient = $etherpadClient ?? $this->createMock(EtherpadClient::class);
 		$resolvedExternalPadExportFetcher = $externalPadExportFetcher ?? $this->createMock(ExternalPadExportFetcher::class);
 		$resolvedPadFileService = $padFileService ?? $this->createMock(PadFileService::class);

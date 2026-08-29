@@ -106,6 +106,13 @@ const flush = async () => {
 	for (let i = 0; i < 8; i += 1) await Promise.resolve()
 }
 
+// `toContain('/pads/open')` is also true of '/pads/open-by-id', and
+// '/pads/initialize' of '/pads/initialize-by-id/42' — an assertion that
+// cannot fail. ocGenerateUrl is mocked as identity, so the endpoint is
+// the whole path and can be compared outright.
+const endpoint = (name) => `/apps/etherpad_nextcloud/api/v1/${name}`
+const bodyOf = (call) => String(call?.[1]?.body || '')
+
 const stubFetch = (impl) => {
 	const mock = typeof impl === 'function' ? vi.fn(impl) : vi.fn().mockResolvedValue(impl)
 	vi.stubGlobal('fetch', mock)
@@ -212,14 +219,44 @@ describe('viewer component — computed path/id derivation', () => {
 		expect(makeInstance({}).resolvedFileId).toBeNull()
 	})
 
-	it('falls back to the file id in the Files URL when openfile=true and no prop id is set', () => {
+	// The Files URL carries an id too, and this used to read it when
+	// `openfile=true`. That id belongs to whatever the route was opened
+	// with, while filePath follows the file the Viewer is showing — they
+	// part company on the next/previous arrows, and openfile=true survives
+	// until the viewer closes. With opening by id no longer retried by
+	// path, the URL's id would silently decide which document appears.
+	it('ignores the file id in the Files URL, whatever openfile says', () => {
 		window.happyDOM.setURL('http://localhost/apps/files/files/77?openfile=true')
-		expect(makeInstance({}).resolvedFileId).toBe(77)
-	})
+		expect(makeInstance({}).resolvedFileId).toBeNull()
 
-	it('ignores the Files-URL id when openfile is not set', () => {
 		window.happyDOM.setURL('http://localhost/apps/files/files/77')
 		expect(makeInstance({}).resolvedFileId).toBeNull()
+	})
+
+	it('still takes an id the Viewer supplies for that file', () => {
+		window.happyDOM.setURL('http://localhost/apps/files/files/77?openfile=true')
+		expect(makeInstance({ fileInfo: { id: 9, path: '/x.pad' } }).resolvedFileId).toBe(9)
+	})
+})
+
+// Both inputs change together on a file swap. Watching them separately
+// fired two opens, and the generation guard drops the loser's result
+// without cancelling its request — for a protected pad that is a second
+// Etherpad session and cookie nothing consumes.
+describe('viewer component — open key', () => {
+	it('watches a single key', () => {
+		expect(Object.keys(component.watch)).toEqual(['openKey'])
+		expect(component.watch.openKey.immediate).toBe(true)
+	})
+
+	it('changes when either the path or the id changes', () => {
+		const base = makeInstance({ fileid: 42, fileInfo: { path: '/x.pad' } })
+		const otherId = makeInstance({ fileid: 43, fileInfo: { path: '/x.pad' } })
+		const otherPath = makeInstance({ fileid: 42, fileInfo: { path: '/y.pad' } })
+
+		expect(base.openKey).not.toBe(otherId.openKey)
+		expect(base.openKey).not.toBe(otherPath.openKey)
+		expect(base.openKey).toBe(makeInstance({ fileid: 42, fileInfo: { path: '/x.pad' } }).openKey)
 	})
 })
 
@@ -280,7 +317,7 @@ describe('viewer component — resolveOpenUrl', () => {
 	it('missing frontmatter: initializes once then re-opens', async () => {
 		const fetchMock = stubFetch()
 		fetchMock
-			.mockResolvedValueOnce(jsonResponse({ message: 'Missing YAML frontmatter' }, false, 422))
+			.mockResolvedValueOnce(jsonResponse({ message: 'Missing YAML frontmatter' }, false, 400))
 			.mockResolvedValueOnce(jsonResponse({ status: 'ok' }))
 			.mockResolvedValueOnce(jsonResponse({ url: 'https://pad.example/after-init', sync_url: '' }))
 		const vm = makeInstance({ fileInfo: { path: '/x.pad' } }) // resolvedFileId null -> by-path only
@@ -288,7 +325,9 @@ describe('viewer component — resolveOpenUrl', () => {
 		await vm.resolveOpenUrl()
 
 		expect(fetchMock).toHaveBeenCalledTimes(3)
-		expect(fetchMock.mock.calls[1][0]).toContain('/pads/initialize')
+		expect(fetchMock.mock.calls[0][0]).toBe(endpoint('pads/open'))
+		expect(bodyOf(fetchMock.mock.calls[0])).toBe('file=%2Fx.pad')
+		expect(fetchMock.mock.calls[1][0]).toBe(endpoint('pads/initialize'))
 		expect(vm.iframeSrc).toBe('https://pad.example/after-init')
 		expect(vm.loadError).toBe('')
 	})
@@ -296,20 +335,168 @@ describe('viewer component — resolveOpenUrl', () => {
 	it('initializes by file id (not by path) when an id is available', async () => {
 		const fetchMock = stubFetch()
 		fetchMock
-			.mockResolvedValueOnce(jsonResponse({ message: 'Missing YAML frontmatter' }, false, 422)) // open by-id
-			.mockResolvedValueOnce(jsonResponse({ message: 'Missing YAML frontmatter' }, false, 422)) // open by-path
+			.mockResolvedValueOnce(jsonResponse({ message: 'Missing YAML frontmatter' }, false, 400)) // open by-id
 			.mockResolvedValueOnce(jsonResponse({ status: 'migrated_from_legacy' }))                  // initialize-by-id
 			.mockResolvedValueOnce(jsonResponse({ url: 'https://pad.example/by-id', sync_url: '' }))   // re-open by-id
 		const vm = makeInstance({ fileid: 42, fileInfo: { path: '/x.pad' } })
 
 		await vm.resolveOpenUrl()
 
-		expect(fetchMock.mock.calls[2][0]).toContain('/pads/initialize-by-id/42')
+		// The by-id answer is acted on directly: a 400 is a verdict about the
+		// file the id named, so there is no by-path attempt in between.
+		expect(fetchMock.mock.calls[0][0]).toBe(endpoint('pads/open-by-id'))
+		expect(fetchMock.mock.calls[1][0]).toBe(endpoint('pads/initialize-by-id/42'))
 		expect(vm.iframeSrc).toBe('https://pad.example/by-id')
 	})
 
+	// Opening by id exists so that the wrong document cannot be opened. A
+	// by-path retry after a by-id failure puts that back: the second, weaker
+	// question can succeed where the first was refused. The server answers a
+	// plain 404 both for an id that is gone and for one outside the user's
+	// own tree — it cannot separate them without disclosing that the file
+	// exists — so no by-id failure is safe to retry by path.
+	it('surfaces an unresolvable file id instead of opening the file at the path', async () => {
+		const fetchMock = stubFetch()
+		fetchMock.mockResolvedValueOnce(jsonResponse({ message: 'Cannot open selected .pad file.' }, false, 404))
+		const vm = makeInstance({ fileid: 42, fileInfo: { path: '/x.pad' } })
+
+		await vm.resolveOpenUrl()
+
+		expect(fetchMock).toHaveBeenCalledTimes(1)
+		expect(fetchMock.mock.calls[0][0]).toBe(endpoint('pads/open-by-id'))
+		expect(bodyOf(fetchMock.mock.calls[0])).toBe('fileId=42')
+		expect(vm.loadError).toBe('Cannot open selected .pad file.')
+		expect(vm.iframeSrc).toBe('')
+		// Not a dead end: the one thing that can help is named.
+		expect(vm.maybeStaleFileId).toBe(true)
+	})
+
+	it('does not suggest a reload for an error that a reload cannot fix', async () => {
+		stubFetch(jsonResponse({ message: 'Could not open pad' }, false, 500))
+		const vm = makeInstance({ fileid: 42, fileInfo: { path: '/x.pad' } })
+
+		await vm.resolveOpenUrl()
+
+		expect(vm.maybeStaleFileId).toBe(false)
+	})
+
+	it('does not suggest a reload on a public share, where no id was sent', async () => {
+		parsePublicShareTokenFromLocation.mockReturnValue('share-token')
+		stubFetch(jsonResponse({ message: 'The selected file does not exist in this share.' }, false, 404))
+		const vm = makeInstance({ fileid: 42, fileInfo: { path: '/x.pad' } })
+
+		await vm.resolveOpenUrl()
+
+		expect(vm.maybeStaleFileId).toBe(false)
+	})
+
+	it('opens by path when no file id is available at all', async () => {
+		const fetchMock = stubFetch(jsonResponse({ url: 'https://pad.example/by-path', sync_url: '' }))
+		const vm = makeInstance({ fileInfo: { path: '/x.pad' } })
+
+		await vm.resolveOpenUrl()
+
+		expect(fetchMock).toHaveBeenCalledTimes(1)
+		expect(fetchMock.mock.calls[0][0]).toBe(endpoint('pads/open'))
+		expect(bodyOf(fetchMock.mock.calls[0])).toBe('file=%2Fx.pad')
+		expect(vm.iframeSrc).toBe('https://pad.example/by-path')
+	})
+
+	// Nextcloud's own layers answer before the controller does. The request
+	// asks for JSON, so both come back as JSON rather than an HTML page:
+	// SecurityMiddleware returns a JSONResponse when Accept does not name
+	// html, and requireUser maps an absent session the same way.
+	it('surfaces an expired session instead of retrying by path', async () => {
+		const fetchMock = stubFetch(jsonResponse({ message: 'Not authenticated.' }, false, 401))
+		const vm = makeInstance({ fileid: 42, fileInfo: { path: '/x.pad' } })
+
+		await vm.resolveOpenUrl()
+
+		expect(fetchMock).toHaveBeenCalledTimes(1)
+		expect(vm.loadError).toBe('Not authenticated.')
+		expect(vm.canRecover).toBe(false)
+		expect(vm.iframeSrc).toBe('')
+	})
+
+	// A stale request token is a 412 from the framework, not one of the
+	// controller's own statuses — and just as unsafe to answer with a
+	// second request.
+	it('surfaces a stale request token instead of retrying by path', async () => {
+		const fetchMock = stubFetch(jsonResponse({ message: 'CSRF check failed' }, false, 412))
+		const vm = makeInstance({ fileid: 42, fileInfo: { path: '/x.pad' } })
+
+		await vm.resolveOpenUrl()
+
+		expect(fetchMock).toHaveBeenCalledTimes(1)
+		expect(vm.loadError).toBe('CSRF check failed')
+		expect(vm.iframeSrc).toBe('')
+	})
+
+	// A public share resolves inside the share, by name — the id branch must
+	// not take precedence there even when the Viewer hands one over. See #204.
+	it('uses the public-share route even when a file id is available', async () => {
+		parsePublicShareTokenFromLocation.mockReturnValue('share-token')
+		const fetchMock = stubFetch(jsonResponse({ url: 'https://pad.example/public', sync_url: '' }))
+		const vm = makeInstance({ fileid: 42, fileInfo: { path: '/x.pad' } })
+
+		await vm.resolveOpenUrl()
+
+		expect(fetchMock).toHaveBeenCalledTimes(1)
+		expect(fetchMock.mock.calls[0][0]).toContain('/api/v1/public/open/share-token')
+		expect(fetchMock.mock.calls[0][0]).toContain('file=%2Fx.pad')
+		expect(vm.iframeSrc).toBe('https://pad.example/public')
+	})
+
+	it('surfaces a payload without a usable URL instead of retrying by path', async () => {
+		const fetchMock = stubFetch(jsonResponse({ sync_url: 'https://sync.example' }))
+		const vm = makeInstance({ fileid: 42, fileInfo: { path: '/x.pad' } })
+
+		await vm.resolveOpenUrl()
+
+		expect(fetchMock).toHaveBeenCalledTimes(1)
+		expect(vm.loadError).toBe('Pad open API did not return a valid URL.')
+		expect(vm.iframeSrc).toBe('')
+	})
+
+	it('surfaces a server error from the by-id open instead of retrying by path', async () => {
+		const fetchMock = stubFetch()
+		fetchMock.mockResolvedValueOnce(jsonResponse({ message: 'Could not open pad' }, false, 500))
+		const vm = makeInstance({ fileid: 42, fileInfo: { path: '/x.pad' } })
+
+		await vm.resolveOpenUrl()
+
+		expect(fetchMock).toHaveBeenCalledTimes(1)
+		expect(vm.loadError).toBe('Could not open pad')
+		expect(vm.canRecover).toBe(false)
+		expect(vm.iframeSrc).toBe('')
+	})
+
+	it('offers recovery on a labelled error rather than opening the path', async () => {
+		const fetchMock = stubFetch()
+		fetchMock.mockResolvedValueOnce(jsonResponse({ message: 'no binding', code: 'missing_binding' }, false, 400))
+		apiFindOriginalPad.mockResolvedValue({ found: false })
+		const vm = makeInstance({ fileid: 42, fileInfo: { path: '/x.pad' } })
+
+		await vm.resolveOpenUrl()
+		await flush()
+
+		expect(fetchMock).toHaveBeenCalledTimes(1)
+		expect(vm.loadError).toBe('no binding')
+		expect(vm.canRecover).toBe(true)
+	})
+
+	it('surfaces a network failure from the by-id open instead of retrying by path', async () => {
+		const fetchMock = stubFetch(() => Promise.reject(new Error('Failed to fetch')))
+		const vm = makeInstance({ fileid: 42, fileInfo: { path: '/x.pad' } })
+
+		await vm.resolveOpenUrl()
+
+		expect(fetchMock).toHaveBeenCalledTimes(1)
+		expect(vm.loadError).toBe('Failed to fetch')
+	})
+
 	it('missing_binding for an addressable, non-public file: offers recovery and looks up the original', async () => {
-		stubFetch(jsonResponse({ message: 'no binding', code: 'missing_binding' }, false, 404))
+		stubFetch(jsonResponse({ message: 'no binding', code: 'missing_binding' }, false, 400))
 		apiFindOriginalPad.mockResolvedValue({ found: true, viewer_url: 'https://nc/viewer/123', path: '/orig.pad' })
 		const vm = makeInstance({ fileid: 42, fileInfo: { path: '/copy.pad' } })
 
@@ -325,7 +512,7 @@ describe('viewer component — resolveOpenUrl', () => {
 
 	it('does not offer recovery on a public share even with missing_binding', async () => {
 		parsePublicShareTokenFromLocation.mockReturnValue('share-token')
-		stubFetch(jsonResponse({ message: 'no binding', code: 'missing_binding' }, false, 404))
+		stubFetch(jsonResponse({ message: 'no binding', code: 'missing_binding' }, false, 400))
 		const vm = makeInstance({ fileid: 42, fileInfo: { path: '/copy.pad' } })
 
 		await vm.resolveOpenUrl()

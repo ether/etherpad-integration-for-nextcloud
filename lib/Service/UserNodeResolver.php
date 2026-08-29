@@ -20,10 +20,24 @@ class UserNodeResolver {
 	}
 
 	/**
+	 * Resolved through the user's own folder, not the global root.
+	 *
+	 * getUserFolder() is what sets the user's filesystem up and registers
+	 * their mount providers; asking the global root for an id before that
+	 * has happened answers "no such file" for a pad on external storage, in
+	 * a groupfolder, or in a share whose mount this request has not touched
+	 * — while the same file resolves by path, which goes through
+	 * getUserFolder() already. The two halves have to be equally strong:
+	 * the viewer no longer retries by path when opening by id fails, so a
+	 * by-id lookup that is merely weaker is now a dead end.
+	 *
+	 * Scoping to the user folder also makes the answer theirs by
+	 * construction. The prefix test stays as a second pair of eyes.
+	 *
 	 * @throws NotFoundException
 	 */
 	public function resolveUserFileNodeById(string $uid, int $fileId): File {
-		$nodes = $this->rootFolder->getById($fileId);
+		$nodes = $this->rootFolder->getUserFolder($uid)->getById($fileId);
 		$prefix = '/' . $uid . '/files/';
 		foreach ($nodes as $node) {
 			if (!$node instanceof File) {
@@ -46,7 +60,15 @@ class UserNodeResolver {
 	 * @throws NotFoundException
 	 */
 	public function resolveUserFolderNodeById(string $uid, int $folderId): Folder {
-		$nodes = $this->rootFolder->getById($folderId);
+		// Same reasoning as resolveUserFileNodeById: through the user's own
+		// folder, so their mounts exist before the id is looked up. The
+		// folder itself is answered directly — asking a folder for its own
+		// id is not something Folder::getById() is required to answer.
+		$userFolder = $this->rootFolder->getUserFolder($uid);
+		if ($userFolder->getId() === $folderId) {
+			return $userFolder;
+		}
+		$nodes = $userFolder->getById($folderId);
 		$root = '/' . $uid . '/files';
 		foreach ($nodes as $node) {
 			if (!$node instanceof Folder) {
