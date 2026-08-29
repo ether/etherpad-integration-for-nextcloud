@@ -110,6 +110,39 @@ class PathNormalizerTest extends TestCase {
 		);
 	}
 
+	/**
+	 * A URL is not a name: the scheme test has to see past padding, or a
+	 * padded DAV URL is read as a relative path and can only 404.
+	 */
+	public function testDecodesADavUrlWithSurroundingWhitespace(): void {
+		$this->assertSame(
+			'/Notes.pad',
+			(new PathNormalizer())->normalizeViewerFilePath('  https://host/remote.php/dav/files/alice/Notes.pad  ')
+		);
+	}
+
+	public function testDecodesAPublicDavUrlWithSurroundingWhitespace(): void {
+		$this->assertSame(
+			'Notes.pad',
+			(new PathNormalizer())->normalizePublicShareFilePath(' https://host/public.php/dav/files/tok/Notes.pad ', 'tok')
+		);
+	}
+
+	/**
+	 * Nextcloud trims before comparing a name against "." and "..", so
+	 * " .." is as invalid as "..". The create side already refused it; the
+	 * open side used to accept it as a literal segment.
+	 */
+	public function testRefusesAPaddedDotSegment(): void {
+		$this->expectException(\InvalidArgumentException::class);
+		(new PathNormalizer())->normalizeViewerFilePath('/Folder/ ../Notes.pad');
+	}
+
+	public function testRefusesAPaddedSingleDotSegment(): void {
+		$this->expectException(\InvalidArgumentException::class);
+		(new PathNormalizer())->normalizePublicShareFilePath('. /Notes.pad', 'tok');
+	}
+
 	// ------------------------------------------------------------------
 	// normalizePublicShareFilePath
 	// ------------------------------------------------------------------

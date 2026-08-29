@@ -56,6 +56,27 @@ describe('path helpers', () => {
 		expect(getCurrentDir()).toBe('/Folder')
 	})
 
+	// `Folder ` is a name Nextcloud accepts. Trimming the dir sent the open
+	// to its neighbour, the same silent substitution as the plus sign.
+	it('keeps a trailing space in the current Files dir', () => {
+		setLocation('/apps/files/files/123?dir=' + encodeURIComponent('/Folder '))
+
+		expect(getCurrentDir()).toBe('/Folder ')
+		expect(normalizeFilePath(getCurrentDir(), 'Notes.pad')).toBe('/Folder /Notes.pad')
+	})
+
+	it('falls back to root for a whitespace-only dir', () => {
+		setLocation('/apps/files/files/123?dir=' + encodeURIComponent('   '))
+
+		expect(getCurrentDir()).toBe('/')
+	})
+
+	it('carries a padded dir through resolveOpenDir', () => {
+		setLocation('/apps/files/files/123?dir=' + encodeURIComponent('/Current '))
+
+		expect(resolveOpenDir('/Test.pad')).toBe('/Current ')
+	})
+
 	it('uses the current Files dir when opening root-level paths', () => {
 		setLocation('/apps/files/files/123?dir=/Current')
 

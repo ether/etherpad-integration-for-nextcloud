@@ -41,8 +41,12 @@ class PathNormalizer {
 		}
 
 		$path = $fileParam;
-		if (preg_match('#^https?://#i', $path) === 1) {
-			$path = $this->normalizeDavUrlToPath($path);
+		// A URL is not a name. Padding around one is transport noise, so the
+		// scheme test looks past it and the URL is trimmed before it is
+		// decoded — otherwise dropping the outer trim would leave a padded
+		// DAV URL to be read as a relative path.
+		if (preg_match('#^\s*https?://#i', $path) === 1) {
+			$path = $this->normalizeDavUrlToPath(trim($path));
 		}
 
 		$path = str_replace('\\', '/', $path);
@@ -110,8 +114,9 @@ class PathNormalizer {
 		}
 
 		$path = $fileParam;
-		if (preg_match('#^https?://#i', $path) === 1) {
-			$rawPath = (string)(parse_url($path, PHP_URL_PATH) ?? '');
+		// Same as above: the scheme test sees through padding, the name does not.
+		if (preg_match('#^\s*https?://#i', $path) === 1) {
+			$rawPath = (string)(parse_url(trim($path), PHP_URL_PATH) ?? '');
 			if (preg_match('#/public\.php/dav/files/([^/]+)/(.*)$#', rawurldecode($rawPath), $matches) === 1) {
 				if ($matches[1] !== $shareToken) {
 					throw new InvalidArgumentException('Share token mismatch in public file path.');
@@ -147,11 +152,20 @@ class PathNormalizer {
 		$segments = explode('/', ltrim($path, '/'));
 		$safe = [];
 		foreach ($segments as $segment) {
+			// A bare "." is path notation for "here" and collapses away. A
+			// padded one is not notation, it is a name — and Nextcloud
+			// rejects it, because FilenameValidator trims before comparing
+			// against "." and "..". Refused rather than rewritten, so the
+			// create and open halves of that rule agree.
 			if ($segment === '' || $segment === '.') {
 				continue;
 			}
 			if ($segment === '..') {
 				throw new InvalidArgumentException('Path traversal is not allowed.');
+			}
+			$trimmedSegment = trim($segment);
+			if ($trimmedSegment === '.' || $trimmedSegment === '..') {
+				throw new InvalidArgumentException('Invalid path segment.');
 			}
 			$safe[] = $segment;
 		}

@@ -22,6 +22,7 @@ import {
 	deletePublicShare,
 	deleteViaDav,
 	mkcolViaDav,
+	propfindFileId,
 	putFileViaDav,
 } from '../fixtures/dav'
 
@@ -158,7 +159,17 @@ test.describe('public share access without login', () => {
  *
  * The share is handed out with edit rights on purpose. A read-only public
  * share opens the read-only pad id instead, whose address is derived
- * server-side and cannot be compared against what create returned.
+ * server-side and cannot be compared against what create returned. That
+ * makes the spec depend on `shareapi_allow_public_upload`, which
+ * Nextcloud defaults to `yes` and tests/e2e/docker/up.sh sets explicitly;
+ * against an instance that forbids public upload, the share create fails.
+ *
+ * Reading the frame with `iframe[title="Etherpad"]` is safe even with two
+ * viewable pads in one folder: measured on Nextcloud 33, an open viewer
+ * carries exactly one iframe — the Viewer does not mount a neighbour's
+ * handler for prefetch. Were that ever untrue, the second assertion
+ * expects a different address than the first, so a stale or neighbouring
+ * frame fails the spec rather than passing it.
  */
 test.describe('public folder share with confusable file names', () => {
 	const folderName = uniqueName('public-folder-plus-space')
@@ -170,30 +181,49 @@ test.describe('public folder share with confusable file names', () => {
 	const spaceName = 'A B.pad'
 	let shareToken = ''
 	let shareUrl = ''
-	let plusPadUrl = ''
-	let spacePadUrl = ''
+	let plusPad = { path: '', padUrl: '' }
+	let spacePad = { path: '', padUrl: '' }
 
 	test.beforeAll(async () => {
 		await mkcolViaDav(folderName)
-		plusPadUrl = (await createPadAtPath(`/${folderName}/${plusName}`)).padUrl
-		spacePadUrl = (await createPadAtPath(`/${folderName}/${spaceName}`)).padUrl
+		// PROPFIND before creating inside it. MKCOL answering 201 is not
+		// quite the same as the folder being resolvable by the next
+		// request — createUserReadShare in the same fixtures file carries a
+		// comment about that class of lag on a CI runner — and the retry in
+		// propfindFileId turns a race into a bounded wait.
+		await propfindFileId(folderName)
+		plusPad = await createPadAtPath(`/${folderName}/${plusName}`)
+		spacePad = await createPadAtPath(`/${folderName}/${spaceName}`)
 		const share = await createPublicShare(folderName, SHARE_PERMISSION_READ_WRITE)
 		shareToken = share.token
 		shareUrl = share.url
 	})
 
 	test.afterAll(async () => {
-		if (shareToken !== '') {
-			await deletePublicShare(shareToken)
+		// The folder delete is the only thing that can clean up these two
+		// pads — their names carry no run id, so the trash sweep would not
+		// recognise them on their own. It must not be skipped because
+		// revoking the share threw.
+		try {
+			if (shareToken !== '') {
+				await deletePublicShare(shareToken)
+			}
+		} finally {
+			await deleteViaDav(folderName)
 		}
-		await deleteViaDav(folderName)
 	})
 
 	test('opens plus and space filenames from a public folder share without confusing their pads', async ({ browser }) => {
-		// If create had already collapsed the two names, the second create
-		// would have hit the first file and both would carry one address.
-		// Everything below would then compare a value against itself.
-		expect(plusPadUrl).not.toBe(spacePadUrl)
+		// Create gave back the names it was asked for, at the path it was
+		// asked for. A rewrite here would be the same bug one step earlier,
+		// and the comparison below would then be measuring the wrong thing.
+		expect(plusPad.path).toBe(`/${folderName}/${plusName}`)
+		expect(spacePad.path).toBe(`/${folderName}/${spaceName}`)
+		// Two creates cannot share a pad id — an existing name is refused
+		// with 409 rather than reused — so this only fails if the binding
+		// side ever hands the same pad to two files. Cheap, and without it
+		// every comparison below could be vacuously true.
+		expect(plusPad.padUrl).not.toBe(spacePad.padUrl)
 
 		const publicContext = await browser.newContext()
 		const publicPage = await publicContext.newPage()
@@ -205,12 +235,12 @@ test.describe('public folder share with confusable file names', () => {
 			// on the way to the server is exactly what is under test.
 			await openPadFromFileList(publicPage, plusName)
 			await expectEtherpadViewerMounted(publicPage)
-			expect(await readEtherpadUrlFromViewer(publicPage)).toBe(plusPadUrl)
+			expect(await readEtherpadUrlFromViewer(publicPage)).toBe(plusPad.padUrl)
 			await closeViewer(publicPage)
 
 			await openPadFromFileList(publicPage, spaceName)
 			await expectEtherpadViewerMounted(publicPage)
-			expect(await readEtherpadUrlFromViewer(publicPage)).toBe(spacePadUrl)
+			expect(await readEtherpadUrlFromViewer(publicPage)).toBe(spacePad.padUrl)
 		} finally {
 			await publicContext.close()
 		}

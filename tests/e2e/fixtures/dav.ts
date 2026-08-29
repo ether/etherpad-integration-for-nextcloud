@@ -382,9 +382,23 @@ export const createPadAtPath = async (absolutePath: string, accessMode = 'public
 		},
 		body: new URLSearchParams({ file: absolutePath, accessMode }),
 	})
-	const payload = await parseJsonResponse(res) as { file?: string, pad_url?: string, message?: string }
+	// Status first, body second: an HTML error page would make
+	// parseJsonResponse throw its own generic message, and the path that
+	// failed — the one detail that says which of two confusable names it
+	// was — would never reach the report.
+	const text = await res.text()
+	let payload: { file?: string, pad_url?: string, message?: string } | null = null
+	try {
+		payload = text !== '' ? JSON.parse(text) : null
+	} catch {
+		payload = null
+	}
 	if (!res.ok) {
-		throw new Error(`Pad create failed for "${absolutePath}" with HTTP ${res.status}: ${payload?.message || 'unknown error'}`)
+		const detail = payload?.message || text.slice(0, 200) || 'no response body'
+		throw new Error(`Pad create failed for "${absolutePath}" with HTTP ${res.status}: ${detail}`)
+	}
+	if (payload === null) {
+		throw new Error(`Pad create for "${absolutePath}" answered HTTP ${res.status} with a non-JSON body: ${text.slice(0, 200)}`)
 	}
 	const path = String(payload?.file || '')
 	const padUrl = String(payload?.pad_url || '')
@@ -446,7 +460,7 @@ export const SHARE_PERMISSION_READ_WRITE = 3
 
 export const createPublicShare = async (
 	relativePath: string,
-	permissions: number = SHARE_PERMISSION_READ,
+	permissions: number,
 ): Promise<{ token: string, url: string }> => {
 	const body = new URLSearchParams()
 	body.set('path', '/' + relativePath.replace(/^\/+/, ''))

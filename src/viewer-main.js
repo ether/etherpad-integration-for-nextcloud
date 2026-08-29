@@ -41,6 +41,9 @@ import { parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './li
 		},
 		computed: {
 			sourcePath() {
+				// The one place a trim is safe: `source` is a DAV href, and a
+				// URL is not a name — padding inside one is percent-encoded,
+				// so only transport noise around it can be removed here.
 				const value = typeof this.source === 'string' ? this.source.trim() : ''
 				if (!value) return ''
 				return parsePadPathFromDavHref(value) || ''
@@ -55,9 +58,7 @@ import { parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './li
 				// and judges everything else on the name as given. What a name
 				// may be is settled when the file is created, not while
 				// opening one.
-				const asName = (value) => String(value || '')
-				const normalizeDir = (value) => {
-					const dir = String(value || '')
+				const normalizeDir = (dir) => {
 					if (!dir || dir === '/') return '/'
 					return dir.startsWith('/') ? dir : ('/' + dir)
 				}
@@ -71,10 +72,10 @@ import { parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './li
 				if (isPadPath(this.sourcePath)) return this.sourcePath
 
 				const info = this.fileInfo && typeof this.fileInfo === 'object' ? this.fileInfo : null
-				const infoPath = info && typeof info.path === 'string' ? asName(info.path) : ''
+				const infoPath = info && typeof info.path === 'string' ? info.path : ''
 				if (isPadPath(infoPath)) return infoPath.startsWith('/') ? infoPath : ('/' + infoPath)
 
-				const baseName = asName(this.filename || this.basename || (info && (info.name || info.basename)) || '')
+				const baseName = String(this.filename || this.basename || (info && (info.name || info.basename)) || '')
 				if (!baseName) return ''
 
 				const infoDir = info && typeof info.dirname === 'string' ? info.dirname : ''

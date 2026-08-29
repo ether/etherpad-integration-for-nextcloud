@@ -39,8 +39,13 @@ export const getDirFromPath = (path) => {
 
 export const getCurrentDir = () => {
 	const params = new URLSearchParams(window.location.search || '')
-	const dir = (params.get('dir') || '/').trim()
-	return dir === '' ? '/' : dir
+	const dir = params.get('dir') || '/'
+	// Trimmed only to decide whether a directory was named, never to change
+	// which one. `Folder ` is a name Nextcloud accepts, and trimming the
+	// value sent the open — and the post-close navigation through
+	// resolveOpenDir — to its neighbour instead. Same rule as the PHP
+	// normalizer and normalizeFilePath above.
+	return dir.trim() === '' ? '/' : dir
 }
 
 export const resolveOpenDir = (path) => {
