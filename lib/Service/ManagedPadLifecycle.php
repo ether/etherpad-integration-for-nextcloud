@@ -92,6 +92,33 @@ class ManagedPadLifecycle {
 	}
 
 	/**
+	 * Remove a pad this request has just provisioned.
+	 *
+	 * There is nothing to find out here. The group was made by
+	 * `provisionGroupPad` a few lines earlier in the same call, and it holds
+	 * the one pad that call put in it — so the ownership question `discard`
+	 * has to ask Etherpad is already answered, by control flow rather than
+	 * by the shape of an id.
+	 *
+	 * Which matters because these are rollbacks: nothing retries them. Under
+	 * `discard`, a `listPads` that timed out would give up the group and its
+	 * sessions for good, on a group this app made seconds ago and nothing
+	 * else has ever seen.
+	 *
+	 * Only for a pad provisioned in the same call. Anything read back out of
+	 * a binding goes through `discard`.
+	 */
+	public function discardProvisioned(string $padId): void {
+		$groupId = PadId::groupIdOf($padId);
+		if ($groupId === null) {
+			$this->etherpadClient->deletePad($padId);
+			return;
+		}
+
+		$this->etherpadClient->deleteGroup($groupId);
+	}
+
+	/**
 	 * Remove a pad the app is bound to, whatever kind it is.
 	 *
 	 * The group is only removed once Etherpad has confirmed it holds nothing

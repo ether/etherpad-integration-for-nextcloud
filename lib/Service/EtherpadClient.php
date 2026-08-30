@@ -85,15 +85,30 @@ class EtherpadClient {
 	 * that is not there, which for a pad inside it means the pad is not
 	 * there either.
 	 *
+	 * Read strictly, because of what an empty answer now means. The caller
+	 * takes `[]` as "this group holds nothing, removing it takes nothing
+	 * with it" — so a shrugged-off answer would be a licence to delete. A
+	 * missing field, a non-array, a member that is not a string: each of
+	 * those is an Etherpad that did not answer the question, not a group
+	 * that is empty. Saying so drops the caller back to deleting the pad
+	 * alone, which is what it did before it could ask.
+	 *
 	 * @return list<string>
 	 */
 	public function listPads(string $groupId): array {
 		$data = $this->apiCall('listPads', ['groupID' => $groupId]);
-		$padIds = $data['padIDs'] ?? [];
-		if (!is_array($padIds)) {
-			return [];
+		if (!array_key_exists('padIDs', $data) || !is_array($data['padIDs']) || !array_is_list($data['padIDs'])) {
+			throw new EtherpadClientException('Etherpad did not return a pad list for the group.');
 		}
-		return array_values(array_filter($padIds, 'is_string'));
+
+		$padIds = [];
+		foreach ($data['padIDs'] as $padId) {
+			if (!is_string($padId)) {
+				throw new EtherpadClientException('Etherpad returned a pad list with a non-string entry.');
+			}
+			$padIds[] = $padId;
+		}
+		return $padIds;
 	}
 
 	/**

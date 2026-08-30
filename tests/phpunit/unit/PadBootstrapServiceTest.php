@@ -236,12 +236,13 @@ class PadBootstrapServiceTest extends TestCase {
 
 	/**
 	 * The insert committed and the connection dropped before the answer got
-	 * back, so the row is there while the call reports failure. A flag set
-	 * next to `createBinding` says it is not, and the pad would then be
-	 * destroyed under a binding that still names it — a file nobody can open
-	 * again. Asking which pad the row names settles it.
+	 * back, so the row is there while the call reports failure. Row and pad
+	 * agree, and the file is merely still empty — the next open finds the
+	 * binding and writes the frontmatter. Tearing that down would trade a
+	 * recoverable file for a best-effort remote call that can fail and leave
+	 * the pad unreachable with its last reference already gone.
 	 */
-	public function testRemovesABindingRowThatOutlivedItsFailedWrite(): void {
+	public function testKeepsABindingRowThatOutlivedItsFailedWrite(): void {
 		$fileId = 99;
 		$padId = 'g.ABCDEFGHIJKLMNOP$p-abcdefghijklmnopqrst';
 
@@ -253,7 +254,7 @@ class PadBootstrapServiceTest extends TestCase {
 		$bindingService->expects($this->once())
 			->method('createBinding')
 			->willThrowException(new \RuntimeException('binding write failed'));
-		$bindingService->expects($this->once())->method('deleteByFileId')->with($fileId);
+		$bindingService->expects($this->never())->method('deleteByFileId');
 
 		$padFileService = $this->createMock(PadFileService::class);
 		$padFileService->method('parseLegacyOwnpadShortcut')->willReturn(null);
@@ -261,8 +262,8 @@ class PadBootstrapServiceTest extends TestCase {
 		$etherpadClient = $this->createMock(EtherpadClient::class);
 		$etherpadClient->method('createGroup')->willReturn('g.ABCDEFGHIJKLMNOP');
 		$etherpadClient->method('createGroupPad')->willReturn($padId);
-		$etherpadClient->method('listPads')->with('g.ABCDEFGHIJKLMNOP')->willReturn([$padId]);
-		$etherpadClient->expects($this->once())->method('deleteGroup')->with('g.ABCDEFGHIJKLMNOP');
+		$etherpadClient->expects($this->never())->method('deleteGroup');
+		$etherpadClient->expects($this->never())->method('deletePad');
 
 		$secureRandom = $this->createMock(ISecureRandom::class);
 		$secureRandom->method('generate')->willReturn('abcdefghijklmnopqrst');
@@ -309,7 +310,9 @@ class PadBootstrapServiceTest extends TestCase {
 		$etherpadClient = $this->createMock(EtherpadClient::class);
 		$etherpadClient->method('createGroup')->willReturn('g.ABCDEFGHIJKLMNOP');
 		$etherpadClient->method('createGroupPad')->willReturn($padId);
-		$etherpadClient->method('listPads')->with('g.ABCDEFGHIJKLMNOP')->willReturn([$padId]);
+		// This call made the group, so it needs no ownership check to take
+		// it back — and must not wait on one, since nothing retries this.
+		$etherpadClient->expects($this->never())->method('listPads');
 		$etherpadClient->expects($this->once())->method('deleteGroup')->with('g.ABCDEFGHIJKLMNOP');
 
 		$secureRandom = $this->createMock(ISecureRandom::class);
@@ -333,7 +336,13 @@ class PadBootstrapServiceTest extends TestCase {
 		$service->initializeMissingFrontmatter('alice', $file, '');
 	}
 
-	public function testInitializeMissingFrontmatterCleansUpWhenWriteFails(): void {
+	/**
+	 * The write failed with the binding already in place, so row and pad
+	 * agree and only the file is unwritten — the state the next open knows
+	 * how to finish. The template listener says so where it swallows this
+	 * error and leaves the retry to the viewer.
+	 */
+	public function testInitializeMissingFrontmatterKeepsAConsistentPairWhenTheWriteFails(): void {
 		$fileId = 99;
 		// Shaped like the real thing: `g.` plus the sixteen characters
 		// `createGroup` answers with. Nothing enforces that length — the one
@@ -355,9 +364,7 @@ class PadBootstrapServiceTest extends TestCase {
 		$bindingService->expects($this->once())
 			->method('createBinding')
 			->with($fileId, $padId, BindingService::ACCESS_PROTECTED);
-		$bindingService->expects($this->once())
-			->method('deleteByFileId')
-			->with($fileId);
+		$bindingService->expects($this->never())->method('deleteByFileId');
 
 		$padFileService = $this->createMock(PadFileService::class);
 		$padFileService->expects($this->once())
@@ -371,11 +378,9 @@ class PadBootstrapServiceTest extends TestCase {
 		$etherpadClient->expects($this->once())->method('createGroup')->willReturn('g.ABCDEFGHIJKLMNOP');
 		$etherpadClient->expects($this->once())->method('createGroupPad')->willReturn($padId);
 		$etherpadClient->expects($this->once())->method('buildPadUrl')->with($padId)->willReturn('https://pad.example.test/p/' . rawurlencode($padId));
-		// The whole group, not just the pad: the group and its sessions would
-		// otherwise stay behind with nothing pointing at them — once Etherpad
-		// confirms the group holds nothing else.
-		$etherpadClient->method('listPads')->with('g.ABCDEFGHIJKLMNOP')->willReturn([$padId]);
-		$etherpadClient->expects($this->once())->method('deleteGroup')->with('g.ABCDEFGHIJKLMNOP');
+		// Nothing is taken back: the binding names this pad, so the pair is
+		// consistent and the next open finishes the job.
+		$etherpadClient->expects($this->never())->method('deleteGroup');
 		$etherpadClient->expects($this->never())->method('deletePad');
 
 		$secureRandom = $this->createMock(ISecureRandom::class);

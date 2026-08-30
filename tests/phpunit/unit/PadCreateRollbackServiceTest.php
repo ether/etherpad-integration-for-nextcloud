@@ -53,30 +53,17 @@ class PadCreateRollbackServiceTest extends TestCase {
 	}
 
 	/**
-	 * A protected pad is removed by its group, once Etherpad has said the
-	 * group holds nothing else.
+	 * A protected pad is removed by its group — and without asking Etherpad
+	 * whose group it is. A rollback only ever holds a pad its own request
+	 * provisioned, and nothing retries it: making the delete wait on a read
+	 * would mean one timed-out read strands a group and its sessions for
+	 * good, on a group nothing else has ever seen.
 	 */
-	public function testTakesTheGroupOfAProvisionedProtectedPad(): void {
+	public function testTakesTheGroupOfAProvisionedProtectedPadWithoutAsking(): void {
 		$etherpad = $this->createMock(EtherpadClient::class);
-		$etherpad->method('listPads')->with('g.ABCDEFGHIJKLMNOP')->willReturn(['g.ABCDEFGHIJKLMNOP$pad']);
+		$etherpad->expects($this->never())->method('listPads');
 		$etherpad->expects($this->once())->method('deleteGroup')->with('g.ABCDEFGHIJKLMNOP');
 		$etherpad->expects($this->never())->method('deletePad');
-
-		$this->buildService(etherpad: $etherpad)
-			->rollbackFailedCreate('alice', '/Created.pad', 'g.ABCDEFGHIJKLMNOP$pad', null);
-	}
-
-	/**
-	 * Nothing retries a rollback. So when the group cannot be read, the
-	 * question that read answers — may the group go? — has to be given up,
-	 * not the delete: otherwise one timed-out read strands the pad this
-	 * exists to reclaim.
-	 */
-	public function testStillDeletesThePadWhenTheGroupCannotBeRead(): void {
-		$etherpad = $this->createMock(EtherpadClient::class);
-		$etherpad->method('listPads')->willThrowException(new \RuntimeException('Connection timed out'));
-		$etherpad->expects($this->never())->method('deleteGroup');
-		$etherpad->expects($this->once())->method('deletePad')->with('g.ABCDEFGHIJKLMNOP$pad');
 
 		$this->buildService(etherpad: $etherpad)
 			->rollbackFailedCreate('alice', '/Created.pad', 'g.ABCDEFGHIJKLMNOP$pad', null);

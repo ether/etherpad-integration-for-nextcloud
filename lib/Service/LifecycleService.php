@@ -357,7 +357,7 @@ class LifecycleService {
 					}
 				}
 				try {
-					$this->padLifecycle->discard($newPadId);
+					$this->padLifecycle->discardProvisioned($newPadId);
 				} catch (\Throwable $cleanupError) {
 					$this->logger->warning('Could not cleanup newly provisioned restore pad after failure.', [
 						'app' => 'etherpad_nextcloud',
@@ -488,7 +488,7 @@ class LifecycleService {
 			}
 			if ($managedPadCreated && $newPadId !== '') {
 				try {
-					$this->padLifecycle->discard($newPadId);
+					$this->padLifecycle->discardProvisioned($newPadId);
 				} catch (\Throwable $cleanupError) {
 					$this->logger->warning('Could not cleanup newly provisioned restore pad after failed no-binding restore.', [
 						'app' => 'etherpad_nextcloud',

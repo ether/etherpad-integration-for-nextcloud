@@ -157,4 +157,28 @@ class ManagedPadLifecycleTest extends TestCase {
 		$this->expectException(\RuntimeException::class);
 		$this->lifecycle($client)->provisionPad('nc-abcdef0123456789');
 	}
+
+	/**
+	 * The ownership question `discard` asks Etherpad is already answered
+	 * here, by control flow: the group was made by `provisionGroupPad` in
+	 * the same call. Asking again would not make it safer, only breakable —
+	 * these are rollbacks, nothing retries them, and a read that timed out
+	 * would cost the group and its sessions for good.
+	 */
+	public function testTakesAProvisionedGroupWithoutAskingWhatIsInIt(): void {
+		$client = $this->createMock(EtherpadClient::class);
+		$client->expects($this->never())->method('listPads');
+		$client->expects($this->once())->method('deleteGroup')->with('g.ABCDEFGHIJKLMNOP');
+		$client->expects($this->never())->method('deletePad');
+
+		$this->lifecycle($client)->discardProvisioned('g.ABCDEFGHIJKLMNOP$p-abc123');
+	}
+
+	public function testDiscardsAProvisionedPublicPadAsAPlainPad(): void {
+		$client = $this->createMock(EtherpadClient::class);
+		$client->expects($this->never())->method('deleteGroup');
+		$client->expects($this->once())->method('deletePad')->with('nc-abcdef0123456789');
+
+		$this->lifecycle($client)->discardProvisioned('nc-abcdef0123456789');
+	}
 }

@@ -394,7 +394,9 @@ class PadCreationService {
 			$this->bindingService->createBinding($fileId, $padId, $accessMode);
 		} catch (\Throwable $e) {
 			try {
-				$this->padLifecycle->discard($padId);
+				// Provisioned four lines up, so no ownership check is needed
+				// — and none may be required: nothing retries this.
+				$this->padLifecycle->discardProvisioned($padId);
 			} catch (\Throwable $cleanupError) {
 				$this->logger->warning('Could not cleanup Etherpad pad after template materialization failure.', [
 					'app' => 'etherpad_nextcloud',

@@ -10,6 +10,8 @@ namespace OCA\EtherpadNextcloud\Service;
 
 use OCA\EtherpadNextcloud\Exception\BindingException;
 use OCA\EtherpadNextcloud\Exception\LegacyPadCollisionException;
+use OCA\EtherpadNextcloud\Exception\PadFileFormatException;
+use OCA\EtherpadNextcloud\Util\PadId;
 use OCP\Files\File;
 use OCP\Files\NotFoundException;
 use Psr\Log\LoggerInterface;
@@ -52,6 +54,36 @@ class PadLegacyMigrationService {
 	}
 
 	/**
+	 * A group pad this file names has to be a group pad that is there.
+	 *
+	 * The pad id in a legacy `.pad` is written by whoever wrote the file,
+	 * and for a group pad it decides which Etherpad group a session is
+	 * later minted for. Binding someone else's *existing* pad is already
+	 * refused: `pad_id` is unique, so it collides with their binding and
+	 * comes out as a collision the access check handles. Inventing a suffix
+	 * walked around that — `g.<their-group>$anything` collides with nothing
+	 * while naming their group, and the session issued on open grants
+	 * access to everything in it.
+	 *
+	 * Asking whether the pad is in the group keeps the honest case intact:
+	 * a real Ownpad pad is in its group, which is why the file names it. A
+	 * made-up one is not.
+	 *
+	 * Fails closed. A refused migration is retried on the next open; a
+	 * migration waved through on a failed read cannot be taken back.
+	 */
+	private function assertGroupPadExists(string $sourcePadId): void {
+		$groupId = PadId::groupIdOf($sourcePadId);
+		if ($groupId === null) {
+			return;
+		}
+
+		if (!in_array($sourcePadId, $this->etherpadClient->listPads($groupId), true)) {
+			throw new PadFileFormatException('The legacy .pad file names a pad that does not exist in its Etherpad group.');
+		}
+	}
+
+	/**
 	 * Migrate the legacy `.pad` file in place.
 	 *
 	 * @param array{url:string,pad_id:string} $legacyShortcut output of
@@ -80,6 +112,8 @@ class PadLegacyMigrationService {
 			]);
 			return;
 		}
+
+		$this->assertGroupPadExists($sourcePadId);
 
 		$accessMode = $this->padFileService->inferAccessModeFromPadId($sourcePadId);
 		$existingBinding = $this->bindingService->findByPadId($sourcePadId, BindingService::STATE_ACTIVE);

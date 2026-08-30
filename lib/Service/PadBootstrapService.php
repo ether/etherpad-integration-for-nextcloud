@@ -134,29 +134,29 @@ class PadBootstrapService {
 	}
 
 	/**
-	 * Undo a pad this call provisioned, together with the binding row that
-	 * names it.
+	 * What to undo after a failed first init, decided by what the binding
+	 * row says.
 	 *
-	 * The row goes first, and the pad only follows if it went. A binding
-	 * pointing at a pad that no longer exists is a file the user cannot open
-	 * again; a pad with no binding is invisible rubbish an admin can clear.
-	 * Between those two, keep the file working.
+	 * A row naming this pad is not damage — it is the finished half of the
+	 * job. The file is still empty, so the next open comes back through this
+	 * method, finds the binding and writes the frontmatter it did not manage
+	 * to write; the template listener says as much where it swallows this
+	 * error. Removing anything there means giving up a working file for a
+	 * best-effort remote call that can fail and leave the pad unreachable
+	 * with the last reference to it already deleted. So: leave both.
 	 *
-	 * Which row to remove is asked, not assumed. A flag set alongside
-	 * `createBinding` cannot see the two ways it fails: an insert that
-	 * committed before the connection dropped leaves a row the flag says is
-	 * not there, and an insert refused by the unique constraint means a
-	 * concurrent first-open won the race — deleting the row then would take
-	 * *their* binding away. The pad id tells the two apart.
+	 * That covers the two ways `createBinding` fails without saying so — an
+	 * insert that committed before the connection dropped, and an insert the
+	 * unique constraint refused because a concurrent first-open won the
+	 * race. Only the first leaves a row naming *this* pad. The other, and a
+	 * failure before any row was written, leave the pad with nothing
+	 * pointing at it, and that is the one to clean up.
 	 */
 	private function rollbackProvisionedPad(int $fileId, string $padId): void {
 		try {
 			$binding = $this->bindingService->findByFileId($fileId);
-			if ($binding !== null && (string)$binding['pad_id'] === $padId) {
-				$this->bindingService->deleteByFileId($fileId);
-			}
 		} catch (\Throwable $cleanupError) {
-			$this->logger->warning('Could not cleanup binding after frontmatter init failure; keeping its pad.', [
+			$this->logger->warning('Could not read the binding after frontmatter init failure; keeping its pad.', [
 				'app' => 'etherpad_nextcloud',
 				'fileId' => $fileId,
 				'padId' => $padId,
@@ -165,8 +165,15 @@ class PadBootstrapService {
 			return;
 		}
 
+		if ($binding !== null && (string)$binding['pad_id'] === $padId) {
+			return;
+		}
+
 		try {
-			$this->padLifecycle->discard($padId);
+			// Provisioned by this call, so the group needs no ownership
+			// check — and must not depend on one, because nothing retries
+			// this.
+			$this->padLifecycle->discardProvisioned($padId);
 		} catch (\Throwable $cleanupError) {
 			$this->logger->warning('Could not cleanup Etherpad pad after frontmatter init failure.', [
 				'app' => 'etherpad_nextcloud',

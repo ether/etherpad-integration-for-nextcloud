@@ -6,6 +6,7 @@ namespace OCA\EtherpadNextcloud\Tests\Unit;
 
 use OCA\EtherpadNextcloud\Exception\BindingException;
 use OCA\EtherpadNextcloud\Exception\LegacyPadCollisionException;
+use OCA\EtherpadNextcloud\Exception\PadFileFormatException;
 use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\EtherpadNextcloud\Service\EtherpadClient;
 use OCA\EtherpadNextcloud\Service\ExternalPadSeeder;
@@ -106,6 +107,8 @@ class PadLegacyMigrationServiceTest extends TestCase {
 		$etherpadClient->method('getConfiguredOrigin')->willReturn('https://pad.our-server.test');
 		$etherpadClient->method('normalizeOrigin')->willReturn('https://pad.our-server.test');
 		$etherpadClient->method('buildPadUrl')->willReturn('https://pad.our-server.test/p/g.abc$team-meeting');
+		// The pad a legacy file names has to be in the group it names.
+		$etherpadClient->method('listPads')->with('g.abc')->willReturn(['g.abc$team-meeting']);
 
 		$binding = $this->createMock(BindingService::class);
 		$binding->method('findByPadId')->willReturn(null);
@@ -139,6 +142,8 @@ class PadLegacyMigrationServiceTest extends TestCase {
 		$etherpadClient->method('getConfiguredOrigin')->willReturn('https://pad.our-server.test');
 		$etherpadClient->method('normalizeOrigin')->willReturn('https://pad.our-server.test');
 		$etherpadClient->method('buildPadUrl')->willReturn('https://pad.our-server.test/p/g.abc$x');
+		// The pad a legacy file names has to be in the group it names.
+		$etherpadClient->method('listPads')->with('g.abc')->willReturn(['g.abc$x']);
 
 		$binding = $this->createMock(BindingService::class);
 		$binding->method('findByPadId')->willReturn([
@@ -186,6 +191,8 @@ class PadLegacyMigrationServiceTest extends TestCase {
 		$etherpadClient->method('getConfiguredOrigin')->willReturn('https://pad.our-server.test');
 		$etherpadClient->method('normalizeOrigin')->willReturn('https://pad.our-server.test');
 		$etherpadClient->method('buildPadUrl')->willReturn('https://pad.our-server.test/p/g.x$y');
+		// The pad a legacy file names has to be in the group it names.
+		$etherpadClient->method('listPads')->with('g.x')->willReturn(['g.x$y']);
 
 		$binding = $this->createMock(BindingService::class);
 		$binding->method('findByPadId')->willReturn(null);
@@ -257,6 +264,69 @@ class PadLegacyMigrationServiceTest extends TestCase {
 		]);
 	}
 
+	/**
+	 * The pad id in a legacy `.pad` is written by whoever wrote the file. A
+	 * real one names an existing pad, which collides with that pad's binding
+	 * — `pad_id` is unique — and comes out as a collision. An invented
+	 * suffix collides with nothing while still naming a real group, and the
+	 * session minted on open would grant access to everything in it.
+	 */
+	public function testSameOriginRefusesAPadThatIsNotInTheGroupItNames(): void {
+		$file = $this->createMock(File::class);
+		$file->method('getId')->willReturn(506);
+		$file->expects($this->never())->method('putContent');
+
+		$padFileService = $this->createMock(PadFileService::class);
+
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->method('getConfiguredOrigin')->willReturn('https://pad.our-server.test');
+		$etherpadClient->method('normalizeOrigin')->willReturn('https://pad.our-server.test');
+		$etherpadClient->expects($this->once())
+			->method('listPads')
+			->with('g.VICTIMGROUPID12')
+			->willReturn(['g.VICTIMGROUPID12$their-real-pad']);
+
+		$binding = $this->createMock(BindingService::class);
+		$binding->expects($this->never())->method('createBinding');
+
+		$this->expectException(PadFileFormatException::class);
+
+		$this->buildService(
+			binding: $binding,
+			padFileService: $padFileService,
+			etherpadClient: $etherpadClient,
+		)->migrate('mallory', $file, [
+			'url' => 'https://pad.our-server.test/p/g.VICTIMGROUPID12$made-up',
+			'pad_id' => 'g.VICTIMGROUPID12$made-up',
+		]);
+	}
+
+	/** Fails closed: a read that did not answer is not permission to bind. */
+	public function testSameOriginRefusesWhenTheGroupCannotBeRead(): void {
+		$file = $this->createMock(File::class);
+		$file->method('getId')->willReturn(507);
+		$file->expects($this->never())->method('putContent');
+
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->method('getConfiguredOrigin')->willReturn('https://pad.our-server.test');
+		$etherpadClient->method('normalizeOrigin')->willReturn('https://pad.our-server.test');
+		$etherpadClient->method('listPads')->willThrowException(new \RuntimeException('Connection timed out'));
+
+		$binding = $this->createMock(BindingService::class);
+		$binding->expects($this->never())->method('createBinding');
+
+		$this->expectException(\RuntimeException::class);
+
+		$this->buildService(
+			binding: $binding,
+			padFileService: $this->createMock(PadFileService::class),
+			etherpadClient: $etherpadClient,
+		)->migrate('alice', $file, [
+			'url' => 'https://pad.our-server.test/p/g.abc$x',
+			'pad_id' => 'g.abc$x',
+		]);
+	}
+
 	public function testSameOriginCollisionWithoutAccessRefuses(): void {
 		// The pad is bound to someone else's file alice cannot read.
 		// Migration is refused, the .pad file stays untouched, an exception
@@ -271,6 +341,9 @@ class PadLegacyMigrationServiceTest extends TestCase {
 		$etherpadClient = $this->createMock(EtherpadClient::class);
 		$etherpadClient->method('getConfiguredOrigin')->willReturn('https://pad.our-server.test');
 		$etherpadClient->method('normalizeOrigin')->willReturn('https://pad.our-server.test');
+		// The pad is real and in its group — what refuses this migration is
+		// the other file's binding, not the group check.
+		$etherpadClient->method('listPads')->with('g.abc')->willReturn(['g.abc$x']);
 
 		$binding = $this->createMock(BindingService::class);
 		$binding->method('findByPadId')->willReturn([
