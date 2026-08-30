@@ -4,7 +4,18 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+// Module scope: vi.mock is hoisted regardless of where it is written, so a
+// call inside a test would silently apply to the whole file — and Vitest
+// warns that writing it there will become an error. The functions are
+// configured per test instead.
+vi.mock('../../../src/lib/api-client.js', () => ({
+	apiResolvePadByFileId: vi.fn(),
+	apiResolvePadByPath: vi.fn(),
+}))
+
 import { createPadOpener } from '../../../src/files/pad-opener.js'
+
+const { apiResolvePadByFileId, apiResolvePadByPath } = await import('../../../src/lib/api-client.js')
 
 const installFilesRouter = () => {
 	const router = {
@@ -22,6 +33,8 @@ const installFilesRouter = () => {
 let assignSpy
 
 beforeEach(() => {
+	apiResolvePadByFileId.mockReset()
+	apiResolvePadByPath.mockReset()
 	vi.useFakeTimers()
 	window.history.replaceState({}, '', '/index.php/apps/files/files?dir=/Current')
 	window.OCA = {
@@ -118,10 +131,7 @@ describe('pad opener', () => {
 	// since the viewer no longer retries by path there is nothing downstream
 	// to notice.
 	it('opens by path when the id lookup fails, not by the id in the route', async () => {
-		vi.mock('../../../src/lib/api-client.js', () => ({
-			apiResolvePadByFileId: vi.fn(),
-			apiResolvePadByPath: vi.fn(() => Promise.reject(new Error('resolve failed'))),
-		}))
+		apiResolvePadByPath.mockRejectedValue(new Error('resolve failed'))
 		window.history.replaceState({}, '', '/index.php/apps/files/files/99')
 		installFilesRouter()
 		const openPad = createPadOpener()
