@@ -176,8 +176,13 @@ class PadSessionServiceTest extends TestCase {
 		$this->assertSame($this->sid('new') . ',' . $known, $value);
 	}
 
+	/**
+	 * Strictly longer than the new session's hour, so this cannot pass with
+	 * the expiry taken from the new session alone — and cannot fail because
+	 * a second ticked between two time() calls.
+	 */
 	public function testTheCookieOutlivesEveryIdItCarries(): void {
-		$longer = time() + 3600;
+		$longer = time() + 7200;
 		$other = $this->sid('other');
 
 		$cookie = $this->openContextCookie(
@@ -185,16 +190,18 @@ class PadSessionServiceTest extends TestCase {
 			$other,
 		);
 
+		$this->assertSame($this->sid('new') . ',' . $other, $cookie['value']);
 		$this->assertSame($longer, $cookie['expires']);
 	}
 
 	public function testKeepsTheCookieBoundedAndDropsWhatExpiresSoonest(): void {
 		$sessions = [];
 		$ids = [];
-		foreach (range(1, 30) as $i) {
+		// A full cookie: the most this can ever have emitted.
+		foreach (range(1, 25) as $i) {
 			$id = $this->sid('g' . $i);
 			$ids[] = $id;
-			$sessions[$id] = ['groupID' => 'g.GROUP' . str_pad((string)$i, 11, '0'), 'validUntil' => time() + 600 + $i];
+			$sessions[$id] = ['groupID' => 'g.GROUP' . str_pad((string)$i, 11, '0', STR_PAD_LEFT), 'validUntil' => time() + 600 + $i];
 		}
 
 		$value = $this->openContextCookie($sessions, implode(',', $ids))['value'];
@@ -202,9 +209,24 @@ class PadSessionServiceTest extends TestCase {
 
 		$this->assertCount(25, $kept);
 		$this->assertSame($this->sid('new'), $kept[0]);
-		$this->assertSame($this->sid('g30'), $kept[1]);
+		// Longest-lived first after the pad being opened, soonest dropped.
+		$this->assertSame($this->sid('g25'), $kept[1]);
 		$this->assertNotContains($this->sid('g1'), $kept);
-		$this->assertLessThan(2000, strlen($value));
+		// 25 ids of 18 bytes with percent-encoded separators.
+		$this->assertLessThan(600, strlen($value));
+	}
+
+	/**
+	 * Any host under the shared parent domain can write this cookie, so the
+	 * parse must not grow with what it finds there. Nothing beyond what
+	 * could ever be emitted again is even looked at.
+	 */
+	public function testIgnoresMoreCookieIdsThanItCouldEverEmit(): void {
+		$ids = array_map(fn (int $i): string => $this->sid('junk' . $i), range(1, 100));
+
+		$value = $this->openContextCookie([], implode(',', $ids))['value'];
+
+		$this->assertSame($this->sid('new'), $value);
 	}
 
 	public function testIgnoresCookieValuesThatAreNotSessionIds(): void {
@@ -229,11 +251,6 @@ class PadSessionServiceTest extends TestCase {
 		$this->assertSame($this->sid('new') . ',' . $one, $value);
 	}
 
-	/**
-	 * When Etherpad cannot answer, the open still happens — on the browser's
-	 * cookie alone, group-blind and capped tighter, and logged, because the
-	 * symptom this method prevents comes back on that path.
-	 */
 	/**
 	 * Without the listing nothing can be attributed, so nothing is carried:
 	 * the open falls back to exactly what it did before this branch, one

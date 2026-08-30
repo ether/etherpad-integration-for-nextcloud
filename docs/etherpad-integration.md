@@ -91,10 +91,30 @@ two cases at once, and only one of them is harmless:
   same, and carrying it would let the next person to log in keep their
   pad until it expired.
 
-Since nothing here can tell those apart, both are dropped. The cookie is
-also scoped to the domain Nextcloud and Etherpad share, so it reaches
-every host under that parent — it is not a pad-host-only cookie, which is
-how the open request can read it in the first place.
+Since nothing here can tell those apart, both are dropped. On a public
+share the session listing is not asked for at all: the author there comes
+from the share token, so every anonymous visitor of one link shares it,
+and Etherpad deletes no sessions — a link opened by hundreds of people
+would make every open download hundreds of entries.
+
+The cookie is scoped to the domain Nextcloud and Etherpad share, so it
+reaches every host under that parent — it is not a pad-host-only cookie,
+which is how the open request can read it in the first place.
+
+#### The costs this accepts
+
+- **One cookie now carries several sessions.** That is the point of it,
+  but it also means a single exposure — script on any host under the
+  shared parent domain, since the cookie cannot be `HttpOnly` on Etherpad
+  before 3.0.0 — yields every protected pad the user has open rather than
+  one. Narrowing the domain is not available: the cookie has to reach
+  Etherpad.
+- **A revoked share stays usable until its session expires.** Before, an
+  open of any other protected pad happened to overwrite the cookie and cut
+  it off; that only ever helped if the user opened another pad, and did
+  nothing otherwise. Nothing in the app deletes Etherpad sessions, so the
+  window is the session TTL either way — it is just no longer shortened by
+  accident.
 
 ### Author Resolution Strategy
 

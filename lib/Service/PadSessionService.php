@@ -26,8 +26,10 @@ class PadSessionService {
 
 	/**
 	 * One entry per group, so this is how many protected pads may be open at
-	 * once before the oldest loses access. A session id is ~34 bytes, so 25
-	 * of them are under a kilobyte against the 4 KB a cookie may occupy. It
+	 * once before the oldest loses access. An Etherpad session id is `s.`
+	 * plus 16 characters, and buildSetCookieHeader percent-encodes the comma
+	 * between them, so 25 of them cost 25×18 + 24×3 = 522 bytes against the
+	 * 4 KB a cookie may occupy. It
 	 * is not a pad-host-only cookie — it is scoped to the domain both hosts
 	 * share, so Nextcloud and every sibling under that parent see it too,
 	 * which is how this request can read it at all. The pad being opened is
@@ -36,6 +38,15 @@ class PadSessionService {
 	 * looking at.
 	 */
 	private const MAX_SESSION_IDS = 25;
+
+	/**
+	 * How many ids are read out of the cookie at all. Only a bound on work:
+	 * the cap above decides what survives. Any host under the shared parent
+	 * domain can write this cookie, and without a limit a forged value would
+	 * decide how much parsing and comparing each open does. Twice the emit
+	 * cap, so a legitimate cookie is never truncated by it.
+	 */
+	private const MAX_PARSED_SESSION_IDS = 50;
 
 	public function __construct(
 		private EtherpadClient $etherpadClient,
@@ -57,7 +68,7 @@ class PadSessionService {
 		if ($authorId !== '') {
 			$authorId = $this->syncAuthorMapping($uid, $authorId, $effectiveDisplayName);
 			try {
-				return $this->openContextFor($authorId, $groupId, $padId, $validUntil);
+				return $this->openContextFor($uid, $authorId, $groupId, $padId, $validUntil);
 			} catch (EtherpadClientException) {
 				$this->clearCachedAuthorState($uid);
 			}
@@ -66,7 +77,7 @@ class PadSessionService {
 		$authorId = $this->etherpadClient->createAuthorIfNotExistsFor('nc:' . $uid, $effectiveDisplayName);
 		$this->rememberAuthorId($uid, $authorId);
 		$this->rememberAuthorName($uid, $effectiveDisplayName);
-		return $this->openContextFor($authorId, $groupId, $padId, $validUntil);
+		return $this->openContextFor($uid, $authorId, $groupId, $padId, $validUntil);
 	}
 
 	/**
@@ -83,13 +94,12 @@ class PadSessionService {
 	 * cookie says what this browser already held, so an open adds nothing
 	 * that was not already there — it does not re-issue access to a pad the
 	 * user has since lost, it only refrains from taking away what they were
-	 * carrying, which dies at its own validUntil. Etherpad's list then says
-	 * which of those are this author's; the rest are dropped.
-	 * Etherpad's session list says which group each of those ids belongs to
-	 * and how long it lasts, which is what lets one entry per group survive
-	 * rather than one per open: without it, opening the same pad ten times
-	 * filled the cookie with ten ids for one group and pushed the other pad
-	 * out.
+	 * carrying, which dies at its own validUntil. Etherpad's session list
+	 * then says which of those ids are this author's, which group each is
+	 * for, and how long it lasts — that is what lets one entry per group
+	 * survive rather than one per open: without it, opening the same pad ten
+	 * times filled the cookie with ten ids for one group and pushed the
+	 * other pad out.
 	 *
 	 * Ids the list does not know are dropped. That covers a public share's
 	 * session — each share token is its own Etherpad author — so a share and
@@ -101,31 +111,21 @@ class PadSessionService {
 	 *
 	 * @return array{url:string,cookie:array{name:string,value:string,expires:int,path:string,domain:string,secure:bool,http_only:bool,same_site:string}}
 	 */
-	private function openContextFor(string $authorId, string $groupId, string $padId, int $validUntil): array {
+	private function openContextFor(string $uid, string $authorId, string $groupId, string $padId, int $validUntil): array {
 		$carriedIds = $this->sessionIdsFromCookie();
-
-		// Nothing to annotate, nothing to ask. The first protected open of a
-		// browsing session — the common case, and the whole of it for anyone
-		// who only ever has one pad open — costs no extra round trip, and
-		// the listing is the call whose cost grows with every distinct pad
-		// the user has ever opened.
-		$sessions = [];
-		try {
-			if ($carriedIds !== []) {
-				$sessions = $this->etherpadClient->listSessionsOfAuthor($authorId);
-			}
-		} catch (EtherpadClientException $e) {
-			// Not fatal — the open proceeds on the cookie alone. Logged
-			// because that degraded path cannot tell groups apart, so the
-			// symptom this method exists to prevent comes back, and nothing
-			// else would say why.
-			$this->logger->warning('Could not list Etherpad sessions; the session cookie falls back to the browser copy', [
-				'app' => 'etherpad_nextcloud',
-				'exception' => $e,
-			]);
-		}
+		$sessions = $this->sessionsToAttributeWith($uid, $authorId, $carriedIds);
 
 		$chosenSessionId = $this->etherpadClient->createSession($groupId, $authorId, $validUntil);
+		if (preg_match(self::SESSION_ID_PATTERN, $chosenSessionId) !== 1) {
+			// The id is about to be written into a cookie that the next open
+			// has to be able to read back. If Etherpad's shape ever moves
+			// outside what sessionIdsFromCookie accepts, every later open
+			// would silently find an empty cookie and write a single id
+			// again — this branch's bug, restored, with nothing to say so.
+			$this->logger->warning('Etherpad returned a session id in an unexpected shape; carrying sessions between pads will not work', [
+				'app' => 'etherpad_nextcloud',
+			]);
+		}
 
 		return [
 			'url' => $this->etherpadClient->buildPadUrl($padId),
@@ -133,6 +133,45 @@ class PadSessionService {
 				$this->cookieValueFor($chosenSessionId, $validUntil, $groupId, $carriedIds, $sessions),
 			),
 		];
+	}
+
+	/**
+	 * What the carried ids can be checked against, or an empty list when
+	 * they cannot be checked at all.
+	 *
+	 * Not asked for when there is nothing to check — the first protected
+	 * open of a browsing session, and every open for anyone who only ever
+	 * has one pad open, costs no extra round trip.
+	 *
+	 * Not asked for on a public share either. There the author is derived
+	 * from the share token alone, so every anonymous visitor of one link
+	 * shares it, and Etherpad deletes no sessions: a link opened by five
+	 * hundred people carries five hundred sessions under one author, and
+	 * every open would download the lot. The cost is that two protected
+	 * pads inside one shared folder cannot be open at once, which is what
+	 * happened before this branch anyway.
+	 *
+	 * @param list<string> $carriedIds
+	 * @return array<string,array{groupID:string,validUntil:int}>
+	 */
+	private function sessionsToAttributeWith(string $uid, string $authorId, array $carriedIds): array {
+		if ($carriedIds === [] || !$this->shouldPersistAuthorState($uid)) {
+			return [];
+		}
+
+		try {
+			return $this->etherpadClient->listSessionsOfAuthor($authorId);
+		} catch (EtherpadClientException $e) {
+			// Not fatal: the open goes ahead. But nothing can be attributed
+			// without the listing, so nothing is carried and a second pad
+			// loses access exactly as it did before this existed — which is
+			// a symptom nothing else would explain.
+			$this->logger->warning('Could not list Etherpad sessions; this open drops the other pads\' sessions from the cookie', [
+				'app' => 'etherpad_nextcloud',
+				'exception' => $e,
+			]);
+			return [];
+		}
 	}
 
 	/**
@@ -151,9 +190,6 @@ class PadSessionService {
 		$carried = [];
 
 		foreach ($carriedIds as $candidate) {
-			if ($candidate === $chosenSessionId) {
-				continue;
-			}
 			$info = $sessions[$candidate] ?? null;
 			if ($info === null) {
 				// Not this author's, so not this user's: dropped. It used to
@@ -174,6 +210,17 @@ class PadSessionService {
 			if ($known === null || $info['validUntil'] > $known['validUntil']) {
 				$carried[$info['groupID']] = ['sessionId' => $candidate, 'validUntil' => $info['validUntil']];
 			}
+		}
+
+		if ($carried === [] && $carriedIds !== [] && $sessions !== []) {
+			// The browser brought ids and this author owns none of them.
+			// Expected after a user switch — that is the case the rule exists
+			// for — but it also happens when the author id itself was
+			// re-issued, and then the user loses their other open pads for a
+			// reason that looks exactly like the bug this prevents.
+			$this->logger->debug('None of the session ids the browser sent belong to this Etherpad author; the other pads drop out of the cookie', [
+				'app' => 'etherpad_nextcloud',
+			]);
 		}
 
 		// The pad being opened first, then the rest by how long they last,
@@ -212,6 +259,9 @@ class PadSessionService {
 		$existing = (string)($this->request->getCookie('sessionID') ?? '');
 		$ids = [];
 		foreach (explode(',', trim($existing, '"')) as $candidate) {
+			if (count($ids) >= self::MAX_PARSED_SESSION_IDS) {
+				break;
+			}
 			$candidate = trim($candidate);
 			if ($candidate === '' || in_array($candidate, $ids, true)) {
 				continue;
@@ -231,8 +281,10 @@ class PadSessionService {
 		return $matches[1];
 	}
 
-	/** @return array{name:string,value:string,expires:int,path:string,domain:string,secure:bool,http_only:bool,same_site:string} */
-	/** @param array{value:string,expires:int} $cookie */
+	/**
+	 * @param array{value:string,expires:int} $cookie
+	 * @return array{name:string,value:string,expires:int,path:string,domain:string,secure:bool,http_only:bool,same_site:string}
+	 */
 	private function buildEtherpadSessionCookie(array $cookie): array {
 		$cookieDomain = $this->resolveCookieDomain();
 		return [
