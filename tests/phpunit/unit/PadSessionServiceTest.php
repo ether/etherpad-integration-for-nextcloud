@@ -12,6 +12,7 @@ use OCP\IConfig;
 use OCP\IRequest;
 use OCP\IURLGenerator;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\LoggerInterface;
 
 class PadSessionServiceTest extends TestCase {
 	/**
@@ -29,28 +30,41 @@ class PadSessionServiceTest extends TestCase {
 		$urlGenerator->method('getBaseUrl')->willReturn($nextcloudUrl);
 		$request = $this->createMock(IRequest::class);
 		$request->method('getCookie')->with('sessionID')->willReturn($incomingSessionCookie);
-		return new PadSessionService($etherpadClient, $config, $urlGenerator, new CookieDomainPolicy(), $request);
+		return new PadSessionService(
+			$etherpadClient,
+			$config,
+			$urlGenerator,
+			new CookieDomainPolicy(),
+			$request,
+			$this->createMock(LoggerInterface::class),
+		);
+	}
+
+	/**
+	 * Etherpad's real shape: `s.` plus 16 characters. The `x` separates the
+	 * label from the padding, so `g1` and `g10` do not collide.
+	 */
+	private function sid(string $label): string {
+		return 's.' . substr(str_pad($label . 'x', 16, '0'), 0, 16);
 	}
 
 	/**
 	 * Each protected pad is its own Etherpad group, and a session grants
-	 * access to one group. Etherpad holds the author's sessions and knows
-	 * which group each belongs to, so that list — not the incoming cookie —
-	 * decides what the cookie should say.
+	 * access to one group. The cookie is the only place that state lives,
+	 * so an open must not write away what the browser already carried.
 	 *
-	 * @param array<string,array{groupID:string,validUntil:int}>|null $sessions null makes the listing fail
+	 * @param array<string,array{groupID:string,validUntil:int}> $sessions
+	 * @return array{name:string,value:string,expires:int,path:string,domain:string,secure:bool,http_only:bool,same_site:string}
 	 */
-	private function openContextCookieValue(
-		?array $sessions,
+	private function openContextCookie(
+		array $sessions,
 		?string $incoming = null,
 		string $groupId = 'g.ABCDEFGHIJKLMNOP',
-		?EtherpadClient $client = null,
-	): string {
-		$etherpadClient = $client ?? $this->createMock(EtherpadClient::class);
-		if ($client === null) {
-			$etherpadClient->method('createSession')->willReturn('s.new');
-		}
-		if ($sessions === null) {
+		bool $listingFails = false,
+	): array {
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->method('createSession')->willReturn($this->sid('new'));
+		if ($listingFails) {
 			$etherpadClient->method('listSessionsOfAuthor')
 				->willThrowException(new EtherpadClientException('unavailable'));
 		} else {
@@ -58,139 +72,195 @@ class PadSessionServiceTest extends TestCase {
 		}
 		$etherpadClient->method('createAuthorIfNotExistsFor')->willReturn('a.author');
 		$etherpadClient->method('buildPadUrl')->willReturn('https://pad.example.test/p/x');
-		$config = $this->createMock(IConfig::class);
-		$service = $this->buildService($etherpadClient, $config, 'https://cloud.example.test', $incoming);
 
-		return $service->createProtectedOpenContext('admin', 'Admin', $groupId . '$pad-1')['cookie']['value'];
-	}
-
-	/**
-	 * @param array<string,array{groupID:string,validUntil:int}> $sessions
-	 * @return array{name:string,value:string,expires:int,path:string,domain:string,secure:bool,http_only:bool,same_site:string}
-	 */
-	private function openContextCookie(array $sessions, string $groupId = 'g.ABCDEFGHIJKLMNOP'): array {
-		$etherpadClient = $this->createMock(EtherpadClient::class);
-		$etherpadClient->method('createSession')->willReturn('s.new');
-		$etherpadClient->method('listSessionsOfAuthor')->willReturn($sessions);
-		$etherpadClient->method('createAuthorIfNotExistsFor')->willReturn('a.author');
-		$etherpadClient->method('buildPadUrl')->willReturn('https://pad.example.test/p/x');
-
-		$service = $this->buildService($etherpadClient, $this->createMock(IConfig::class));
+		$service = $this->buildService(
+			$etherpadClient,
+			$this->createMock(IConfig::class),
+			'https://cloud.example.test',
+			$incoming,
+		);
 
 		return $service->createProtectedOpenContext('admin', 'Admin', $groupId . '$pad-1')['cookie'];
 	}
 
-	public function testCarriesTheAuthorsOtherLivingSessions(): void {
-		$value = $this->openContextCookieValue([
-			's.other' => ['groupID' => 'g.OTHERGROUP00000', 'validUntil' => time() + 3600],
-		]);
+	public function testWritesOnlyTheNewSessionWhenTheBrowserSentNone(): void {
+		$this->assertSame($this->sid('new'), $this->openContextCookie([], null)['value']);
+	}
 
-		$this->assertSame('s.new,s.other', $value);
+	public function testKeepsAnotherPadsSessionTheBrowserWasCarrying(): void {
+		$other = $this->sid('other');
+
+		$value = $this->openContextCookie(
+			[$other => ['groupID' => 'g.OTHERGROUP00000', 'validUntil' => time() + 3600]],
+			$other,
+		)['value'];
+
+		$this->assertSame($this->sid('new') . ',' . $other, $value);
 	}
 
 	/**
-	 * The bug a cookie-only list could not fix: every open minted a session
-	 * even for a pad already open, so ten entries meant ten opens. Opening
-	 * one pad repeatedly pushed the other out.
+	 * The point of asking Etherpad: without the group behind each id, ten
+	 * opens of one pad filled the cookie with ten of its ids and pushed the
+	 * other pad out.
 	 */
-	public function testReusesTheLivingSessionOfTheGroupBeingOpened(): void {
-		$existing = time() + 3600;
-		$etherpadClient = $this->createMock(EtherpadClient::class);
-		$etherpadClient->expects($this->never())->method('createSession');
+	public function testCollapsesSeveralSessionsOfOneGroupIntoTheLongestLiving(): void {
+		$short = $this->sid('bshort');
+		$long = $this->sid('blong');
+		$c = $this->sid('c');
 
-		$value = $this->openContextCookieValue(
+		$value = $this->openContextCookie(
 			[
-				's.same' => ['groupID' => 'g.ABCDEFGHIJKLMNOP', 'validUntil' => $existing],
-				's.other' => ['groupID' => 'g.OTHERGROUP00000', 'validUntil' => time() + 60],
+				$short => ['groupID' => 'g.BBBBBBBBBBBBBBBB', 'validUntil' => time() + 600],
+				$long => ['groupID' => 'g.BBBBBBBBBBBBBBBB', 'validUntil' => time() + 3600],
+				$c => ['groupID' => 'g.CCCCCCCCCCCCCCCC', 'validUntil' => time() + 1200],
 			],
-			null,
-			'g.ABCDEFGHIJKLMNOP',
-			$etherpadClient,
-		);
+			implode(',', [$short, $long, $c]),
+		)['value'];
 
-		$this->assertSame('s.same,s.other', $value);
+		$this->assertSame(implode(',', [$this->sid('new'), $long, $c]), $value);
 	}
 
-	public function testMintsAFreshSessionWhenTheGroupsSessionIsAboutToExpire(): void {
-		$value = $this->openContextCookieValue([
-			's.nearly' => ['groupID' => 'g.ABCDEFGHIJKLMNOP', 'validUntil' => time() + 60],
-		]);
+	/**
+	 * Nothing is added that the browser was not already carrying. An open
+	 * must not re-issue access to a pad the user has since lost — it only
+	 * refrains from taking away what they held, which dies on its own.
+	 */
+	public function testDoesNotReissueSessionsTheBrowserDidNotSend(): void {
+		$value = $this->openContextCookie(
+			[$this->sid('revoked') => ['groupID' => 'g.REVOKEDGROUP000', 'validUntil' => time() + 3600]],
+			null,
+		)['value'];
 
-		$this->assertSame('s.new', $value);
+		$this->assertSame($this->sid('new'), $value);
+	}
+
+	public function testDropsTheOldSessionOfTheGroupBeingOpened(): void {
+		$stale = $this->sid('stale');
+
+		$value = $this->openContextCookie(
+			[$stale => ['groupID' => 'g.ABCDEFGHIJKLMNOP', 'validUntil' => time() + 3600]],
+			$stale,
+		)['value'];
+
+		$this->assertSame($this->sid('new'), $value);
 	}
 
 	public function testDropsSessionsThatHaveExpired(): void {
-		$value = $this->openContextCookieValue([
-			's.dead' => ['groupID' => 'g.OTHERGROUP00000', 'validUntil' => time() - 10],
-		]);
+		$dead = $this->sid('dead');
 
-		$this->assertSame('s.new', $value);
+		$value = $this->openContextCookie(
+			[$dead => ['groupID' => 'g.OTHERGROUP00000', 'validUntil' => time() - 10]],
+			$dead,
+		)['value'];
+
+		$this->assertSame($this->sid('new'), $value);
+	}
+
+	/**
+	 * A public share is its own Etherpad author, so its session is not in
+	 * this author's listing. It is kept anyway — the browser had it — but
+	 * last, and under a tighter cap, because nothing here can tell it from a
+	 * value some other host under the shared cookie domain wrote.
+	 */
+	public function testKeepsIdsTheListingDoesNotKnowLastAndCapped(): void {
+		$known = $this->sid('known');
+		$foreign = array_map(fn (int $i): string => $this->sid('foreign' . $i), range(1, 8));
+
+		$value = $this->openContextCookie(
+			[$known => ['groupID' => 'g.OTHERGROUP00000', 'validUntil' => time() + 3600]],
+			implode(',', array_merge($foreign, [$known])),
+		)['value'];
+
+		$ids = explode(',', $value);
+		$this->assertSame($this->sid('new'), $ids[0]);
+		$this->assertSame($known, $ids[1]);
+		$this->assertCount(2 + 5, $ids);
+	}
+
+	public function testTheCookieOutlivesEveryIdItCarries(): void {
+		$longer = time() + 3600;
+		$other = $this->sid('other');
+
+		$cookie = $this->openContextCookie(
+			[$other => ['groupID' => 'g.BBBBBBBBBBBBBBBB', 'validUntil' => $longer]],
+			$other,
+		);
+
+		$this->assertSame($longer, $cookie['expires']);
 	}
 
 	public function testKeepsTheCookieBoundedAndDropsWhatExpiresSoonest(): void {
 		$sessions = [];
+		$ids = [];
 		foreach (range(1, 30) as $i) {
-			$sessions['s.g' . $i] = ['groupID' => 'g.GROUP' . str_pad((string)$i, 11, '0'), 'validUntil' => time() + 600 + $i];
+			$id = $this->sid('g' . $i);
+			$ids[] = $id;
+			$sessions[$id] = ['groupID' => 'g.GROUP' . str_pad((string)$i, 11, '0'), 'validUntil' => time() + 600 + $i];
 		}
 
-		$value = $this->openContextCookieValue($sessions);
-		$ids = explode(',', $value);
+		$value = $this->openContextCookie($sessions, implode(',', $ids))['value'];
+		$kept = explode(',', $value);
 
-		$this->assertCount(25, $ids);
-		$this->assertSame('s.new', $ids[0]);
-		// Longest-lived first after the pad being opened, soonest dropped.
-		$this->assertSame('s.g30', $ids[1]);
-		$this->assertNotContains('s.g1', $ids);
-		// Still comfortably inside what a cookie may carry.
+		$this->assertCount(25, $kept);
+		$this->assertSame($this->sid('new'), $kept[0]);
+		$this->assertSame($this->sid('g30'), $kept[1]);
+		$this->assertNotContains($this->sid('g1'), $kept);
 		$this->assertLessThan(2000, strlen($value));
 	}
 
-	/**
-	 * An author can hold several living sessions for one group — from opens
-	 * before the reuse existed, from the fallback, or from two opens racing.
-	 * Keyed by session they would each take a slot and push a third pad out.
-	 */
-	public function testKeepsOnlyTheLongestLivingSessionPerOtherGroup(): void {
-		$value = $this->openContextCookieValue([
-			's.b-short' => ['groupID' => 'g.BBBBBBBBBBBBBBBB', 'validUntil' => time() + 600],
-			's.b-long' => ['groupID' => 'g.BBBBBBBBBBBBBBBB', 'validUntil' => time() + 3600],
-			's.c' => ['groupID' => 'g.CCCCCCCCCCCCCCCC', 'validUntil' => time() + 1200],
-		]);
+	public function testIgnoresCookieValuesThatAreNotSessionIds(): void {
+		$value = $this->openContextCookie([], 'nonsense; HttpOnly,../etc,s.,s.' . str_repeat('a', 200))['value'];
 
-		$this->assertSame('s.new,s.b-long,s.c', $value);
+		$this->assertSame($this->sid('new'), $value);
+	}
+
+	public function testAcceptsTheQuotedCookieForm(): void {
+		$one = $this->sid('one');
+
+		$value = $this->openContextCookie([], '"' . $one . ' "')['value'];
+
+		$this->assertSame($this->sid('new') . ',' . $one, $value);
 	}
 
 	/**
-	 * Reusing a short-lived session must not shorten the cookie: the browser
-	 * would drop another pad's id that was still good for an hour.
-	 */
-	public function testTheCookieOutlivesEveryIdItCarries(): void {
-		$longer = time() + 3600;
-
-		$cookie = $this->openContextCookie([
-			's.same' => ['groupID' => 'g.ABCDEFGHIJKLMNOP', 'validUntil' => time() + 900],
-			's.other' => ['groupID' => 'g.BBBBBBBBBBBBBBBB', 'validUntil' => $longer],
-		]);
-
-		$this->assertSame('s.same,s.other', $cookie['value']);
-		$this->assertSame($longer, $cookie['expires']);
-	}
-
-	/**
-	 * When Etherpad cannot answer, the open still happens — with a fresh
-	 * session merged into what the browser sent, which is all this had
-	 * before the listing existed.
+	 * When Etherpad cannot answer, the open still happens — on the browser's
+	 * cookie alone, group-blind and capped tighter, and logged, because the
+	 * symptom this method prevents comes back on that path.
 	 */
 	public function testFallsBackToTheBrowsersCookieWhenTheListingFails(): void {
-		$this->assertSame('s.new,s.old', $this->openContextCookieValue(null, 's.old'));
+		$carried = array_map(fn (int $i): string => $this->sid('old' . $i), range(1, 8));
+
+		$value = $this->openContextCookie([], implode(',', $carried), 'g.ABCDEFGHIJKLMNOP', true)['value'];
+
+		$ids = explode(',', $value);
+		$this->assertSame($this->sid('new'), $ids[0]);
+		$this->assertCount(1 + 5, $ids);
 	}
 
-	public function testTheFallbackCarriesNothingOverThatIsNotASessionId(): void {
-		$this->assertSame('s.new', $this->openContextCookieValue(null, 'nonsense; HttpOnly,../etc,s.'));
-	}
+	public function testLogsWhenTheListingIsUnavailable(): void {
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->method('createSession')->willReturn($this->sid('new'));
+		$etherpadClient->method('listSessionsOfAuthor')
+			->willThrowException(new EtherpadClientException('unavailable'));
+		$etherpadClient->method('createAuthorIfNotExistsFor')->willReturn('a.author');
+		$etherpadClient->method('buildPadUrl')->willReturn('https://pad.example.test/p/x');
 
-	public function testTheFallbackAcceptsTheQuotedCookieForm(): void {
-		$this->assertSame('s.new,s.one,s.two', $this->openContextCookieValue(null, '"s.one, s.two"'));
+		$urlGenerator = $this->createMock(IURLGenerator::class);
+		$urlGenerator->method('getBaseUrl')->willReturn('https://cloud.example.test');
+		$request = $this->createMock(IRequest::class);
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects($this->once())->method('warning');
+
+		$service = new PadSessionService(
+			$etherpadClient,
+			$this->createMock(IConfig::class),
+			$urlGenerator,
+			new CookieDomainPolicy(),
+			$request,
+			$logger,
+		);
+
+		$service->createProtectedOpenContext('admin', 'Admin', 'g.ABCDEFGHIJKLMNOP$pad-1');
 	}
 
 	/**

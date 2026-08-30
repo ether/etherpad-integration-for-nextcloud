@@ -12,6 +12,7 @@ use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
 use OCP\IConfig;
 use OCP\IRequest;
 use OCP\IURLGenerator;
+use Psr\Log\LoggerInterface;
 
 class PadSessionService {
 	private const USER_CONFIG_AUTHOR_ID_KEY = 'etherpad_author_id';
@@ -21,7 +22,7 @@ class PadSessionService {
 	 * The shape createSession() returns. Anything else in the incoming
 	 * cookie is dropped rather than echoed back into a Set-Cookie header.
 	 */
-	private const SESSION_ID_PATTERN = '/^s\.[A-Za-z0-9]+$/';
+	private const SESSION_ID_PATTERN = '/^s\.[A-Za-z0-9]{16,64}$/';
 
 	/**
 	 * One entry per group, so this is how many protected pads may be open at
@@ -35,10 +36,13 @@ class PadSessionService {
 	private const MAX_SESSION_IDS = 25;
 
 	/**
-	 * A session about to expire is not worth reusing: the pad would lose
-	 * access minutes later with no open to renew it.
+	 * How many carried-over ids the degraded path keeps. It cannot tell
+	 * groups apart, so it cannot stop one pad — or a cookie written by a
+	 * sibling host under the shared parent domain — from filling every
+	 * slot. A handful preserves the common two-or-three-tabs case without
+	 * offering that much room.
 	 */
-	private const REUSE_MIN_REMAINING_SECONDS = 300;
+	private const MAX_UNVERIFIED_SESSION_IDS = 5;
 
 	public function __construct(
 		private EtherpadClient $etherpadClient,
@@ -46,6 +50,7 @@ class PadSessionService {
 		private IURLGenerator $urlGenerator,
 		private CookieDomainPolicy $cookieDomainPolicy,
 		private IRequest $request,
+		private LoggerInterface $logger,
 	) {
 	}
 
@@ -72,93 +77,137 @@ class PadSessionService {
 	}
 
 	/**
-	 * The author's sessions, as Etherpad holds them, are the source of truth
-	 * for what the cookie should say.
+	 * A fresh session for the pad being opened, plus the ids the browser
+	 * already had that are still worth carrying.
 	 *
-	 * Building the list from the incoming cookie alone could not get this
-	 * right. Every open minted a new session even for a pad already open, so
-	 * ten entries meant ten *opens*, not ten pads: opening B ten times
-	 * pushed A out and A went back to 403 with two pads on screen. Etherpad
-	 * knows which group each session belongs to, so the session for this
-	 * group is reused while it lasts and the cookie carries one entry per
-	 * group.
+	 * The cookie is the only place this state lives, and writing just the
+	 * new id replaced it — so a second protected pad in a second tab took
+	 * the first tab's access away. Etherpad reads the value as a
+	 * comma-separated list and picks the entry matching the group, so the
+	 * others have to survive the write.
 	 *
-	 * It also stops the sessions piling up. Etherpad deletes none of them —
-	 * an author who has opened protected pads for a while accumulates
-	 * hundreds, nearly all long expired.
+	 * What may survive is decided by two things together. The browser's
+	 * cookie says what this browser already held: nothing is added to it
+	 * here that was not already there, so an open never re-issues access to
+	 * a pad the user has since lost — it only refrains from taking away what
+	 * they were already carrying, which dies at its own validUntil.
+	 * Etherpad's session list says which group each of those ids belongs to
+	 * and how long it lasts, which is what lets one entry per group survive
+	 * rather than one per open: without it, opening the same pad ten times
+	 * filled the cookie with ten ids for one group and pushed the other pad
+	 * out.
 	 *
-	 * If Etherpad cannot answer, the open still happens: a fresh session,
-	 * and the cookie merged with what the browser sent, which is what this
-	 * did before.
+	 * Ids the list does not know — another author's, which is every public
+	 * share, since each share token is its own Etherpad author — are kept
+	 * unverified and last, capped tighter, because nothing here can tell
+	 * them apart from a value some other host under the shared cookie
+	 * domain wrote.
 	 *
 	 * @return array{url:string,cookie:array{name:string,value:string,expires:int,path:string,domain:string,secure:bool,http_only:bool,same_site:string}}
 	 */
 	private function openContextFor(string $authorId, string $groupId, string $padId, int $validUntil): array {
+		$sessions = [];
 		try {
 			$sessions = $this->etherpadClient->listSessionsOfAuthor($authorId);
-		} catch (EtherpadClientException) {
-			$sessionId = $this->etherpadClient->createSession($groupId, $authorId, $validUntil);
-			return [
-				'url' => $this->etherpadClient->buildPadUrl($padId),
-				'cookie' => $this->buildEtherpadSessionCookie(
-					$this->mergeWithExistingSessionIds($sessionId),
-					$validUntil,
-				),
-			];
+		} catch (EtherpadClientException $e) {
+			// Not fatal — the open proceeds on the cookie alone. Logged
+			// because that degraded path cannot tell groups apart, so the
+			// symptom this method exists to prevent comes back, and nothing
+			// else would say why.
+			$this->logger->warning('Could not list Etherpad sessions; the session cookie falls back to the browser copy', [
+				'app' => 'etherpad_nextcloud',
+				'exception' => $e,
+			]);
 		}
 
-		$now = time();
-		$reusable = '';
-		// Keyed by group, not by session: an author can hold several living
-		// sessions for one group — from opens before this reuse existed, from
-		// the fallback below, or from two opens racing — and keying by
-		// session id would let one pad occupy several of the 25 slots and
-		// push a third pad out. The longest-lived per group wins.
-		$perGroup = [];
-		foreach ($sessions as $sessionId => $info) {
-			if ($info['validUntil'] <= $now) {
-				continue;
-			}
-			if ($info['groupID'] === $groupId) {
-				if ($info['validUntil'] > ($now + self::REUSE_MIN_REMAINING_SECONDS)
-					&& ($reusable === '' || $info['validUntil'] > $sessions[$reusable]['validUntil'])) {
-					$reusable = $sessionId;
-				}
-				continue;
-			}
-			$known = $perGroup[$info['groupID']] ?? null;
-			if ($known === null || $info['validUntil'] > $known['validUntil']) {
-				$perGroup[$info['groupID']] = ['sessionId' => $sessionId, 'validUntil' => $info['validUntil']];
-			}
-		}
-
-		if ($reusable !== '') {
-			$validUntil = $sessions[$reusable]['validUntil'];
-			$sessionId = $reusable;
-		} else {
-			$sessionId = $this->etherpadClient->createSession($groupId, $authorId, $validUntil);
-		}
-
-		// The pad being opened first, then the rest by how long they last,
-		// so the cap drops what expires soonest.
-		uasort($perGroup, static fn (array $a, array $b): int => $b['validUntil'] <=> $a['validUntil']);
-		$kept = array_slice(
-			array_merge([['sessionId' => $sessionId, 'validUntil' => $validUntil]], array_values($perGroup)),
-			0,
-			self::MAX_SESSION_IDS,
-		);
+		$chosenSessionId = $this->etherpadClient->createSession($groupId, $authorId, $validUntil);
 
 		return [
 			'url' => $this->etherpadClient->buildPadUrl($padId),
 			'cookie' => $this->buildEtherpadSessionCookie(
-				implode(',', array_column($kept, 'sessionId')),
-				// The cookie has to outlive every id it carries. Reusing a
-				// session with ten minutes left would otherwise set the whole
-				// cookie to ten minutes, and the browser would drop another
-				// pad's session that was good for another hour.
-				max(array_column($kept, 'validUntil')),
+				$this->cookieValueFor($chosenSessionId, $validUntil, $groupId, $sessions),
 			),
 		];
+	}
+
+	/**
+	 * @param array<string,array{groupID:string,validUntil:int}> $sessions
+	 * @return array{value:string,expires:int}
+	 */
+	private function cookieValueFor(string $chosenSessionId, int $validUntil, string $groupId, array $sessions): array {
+		$now = time();
+		$carried = [];
+		$unverified = [];
+
+		foreach ($this->sessionIdsFromCookie() as $candidate) {
+			if ($candidate === $chosenSessionId) {
+				continue;
+			}
+			$info = $sessions[$candidate] ?? null;
+			if ($info === null) {
+				if (count($unverified) < self::MAX_UNVERIFIED_SESSION_IDS) {
+					$unverified[] = $candidate;
+				}
+				continue;
+			}
+			if ($info['validUntil'] <= $now || $info['groupID'] === $groupId) {
+				// Expired, or superseded by the session just created.
+				continue;
+			}
+			$known = $carried[$info['groupID']] ?? null;
+			if ($known === null || $info['validUntil'] > $known['validUntil']) {
+				$carried[$info['groupID']] = ['sessionId' => $candidate, 'validUntil' => $info['validUntil']];
+			}
+		}
+
+		// The pad being opened first, then the rest by how long they last,
+		// so the cap drops what expires soonest.
+		uasort($carried, static fn (array $a, array $b): int => $b['validUntil'] <=> $a['validUntil']);
+
+		$ids = array_merge(
+			[$chosenSessionId],
+			array_column(array_values($carried), 'sessionId'),
+			$unverified,
+		);
+		$expiries = array_merge(
+			[$validUntil],
+			array_column(array_values($carried), 'validUntil'),
+		);
+
+		return [
+			'value' => implode(',', array_slice($ids, 0, self::MAX_SESSION_IDS)),
+			// The cookie has to outlive every id it carries, or the browser
+			// drops another pad's session that was good for another hour.
+			// Unverified ids have no known expiry and cannot extend it.
+			'expires' => max($expiries),
+		];
+	}
+
+	/**
+	 * The session ids the browser sent, in the order it sent them.
+	 *
+	 * Only values shaped like one are read. The cookie is attacker-writable
+	 * in principle — any host under the shared parent domain can set it —
+	 * and while buildSetCookieHeader percent-encodes the value, so a `;`
+	 * cannot smuggle in an attribute, an unbounded length could still be
+	 * echoed back as a header no proxy will pass.
+	 *
+	 * @return list<string>
+	 */
+	private function sessionIdsFromCookie(): array {
+		$existing = (string)($this->request->getCookie('sessionID') ?? '');
+		$ids = [];
+		foreach (explode(',', trim($existing, '"')) as $candidate) {
+			$candidate = trim($candidate);
+			if ($candidate === '' || in_array($candidate, $ids, true)) {
+				continue;
+			}
+			if (preg_match(self::SESSION_ID_PATTERN, $candidate) !== 1) {
+				continue;
+			}
+			$ids[] = $candidate;
+		}
+		return $ids;
 	}
 
 	public function extractGroupId(string $padId): string {
@@ -169,12 +218,13 @@ class PadSessionService {
 	}
 
 	/** @return array{name:string,value:string,expires:int,path:string,domain:string,secure:bool,http_only:bool,same_site:string} */
-	private function buildEtherpadSessionCookie(string $cookieValue, int $validUntil): array {
+	/** @param array{value:string,expires:int} $cookie */
+	private function buildEtherpadSessionCookie(array $cookie): array {
 		$cookieDomain = $this->resolveCookieDomain();
 		return [
 			'name' => 'sessionID',
-			'value' => $cookieValue,
-			'expires' => $validUntil,
+			'value' => $cookie['value'],
+			'expires' => $cookie['expires'],
 			'path' => '/',
 			'domain' => $cookieDomain,
 			'secure' => true,
@@ -183,43 +233,6 @@ class PadSessionService {
 			'http_only' => false,
 			'same_site' => 'None',
 		];
-	}
-
-	/**
-	 * Every protected pad lives in its own Etherpad group, and a session is
-	 * granted for one group. Writing only the new session id replaced the
-	 * one before it, so a second protected pad open in a second tab silently
-	 * took the first tab's access away — Etherpad answers 403 for a pad
-	 * whose group no longer has a session in the cookie.
-	 *
-	 * Etherpad reads the cookie as a comma-separated list and picks the
-	 * entry matching the group being opened, so the fix is to keep the ones
-	 * already there. Newest first: when the cap trims, the oldest goes,
-	 * which is the one least likely to still be on screen. Expired entries
-	 * need no pruning here — Etherpad checks each against its own validUntil.
-	 *
-	 * Only values shaped like a session id are carried over. The cookie is
-	 * attacker-writable in principle, and while buildSetCookieHeader
-	 * percent-encodes the value — so a `;` cannot smuggle in an attribute —
-	 * there is no reason to hand anything else back.
-	 */
-	private function mergeWithExistingSessionIds(string $newSessionId): string {
-		$sessionIds = [$newSessionId];
-		$existing = (string)($this->request->getCookie('sessionID') ?? '');
-		foreach (explode(',', trim($existing, '"')) as $candidate) {
-			if (count($sessionIds) >= self::MAX_SESSION_IDS) {
-				break;
-			}
-			$candidate = trim($candidate);
-			if ($candidate === '' || in_array($candidate, $sessionIds, true)) {
-				continue;
-			}
-			if (preg_match(self::SESSION_ID_PATTERN, $candidate) !== 1) {
-				continue;
-			}
-			$sessionIds[] = $candidate;
-		}
-		return implode(',', $sessionIds);
 	}
 
 	/** @param array{name:string,value:string,expires:int,path:string,domain:string,secure:bool,http_only:bool,same_site:string} $cookie */
@@ -290,10 +303,11 @@ class PadSessionService {
 		return $authorId;
 	}
 
+	/**
+	 * Only reached with a uid whose state is persisted — resolveCachedAuthorId
+	 * answers '' for the others and the caller stops there.
+	 */
 	private function cachedAuthorName(string $uid): string {
-		if (!$this->shouldPersistAuthorState($uid)) {
-			return '';
-		}
 		return trim((string)$this->config->getUserValue(
 			$uid,
 			'etherpad_nextcloud',
