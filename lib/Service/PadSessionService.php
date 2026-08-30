@@ -109,7 +109,12 @@ class PadSessionService {
 
 		$now = time();
 		$reusable = '';
-		$otherGroups = [];
+		// Keyed by group, not by session: an author can hold several living
+		// sessions for one group — from opens before this reuse existed, from
+		// the fallback below, or from two opens racing — and keying by
+		// session id would let one pad occupy several of the 25 slots and
+		// push a third pad out. The longest-lived per group wins.
+		$perGroup = [];
 		foreach ($sessions as $sessionId => $info) {
 			if ($info['validUntil'] <= $now) {
 				continue;
@@ -121,7 +126,10 @@ class PadSessionService {
 				}
 				continue;
 			}
-			$otherGroups[$sessionId] = $info['validUntil'];
+			$known = $perGroup[$info['groupID']] ?? null;
+			if ($known === null || $info['validUntil'] > $known['validUntil']) {
+				$perGroup[$info['groupID']] = ['sessionId' => $sessionId, 'validUntil' => $info['validUntil']];
+			}
 		}
 
 		if ($reusable !== '') {
@@ -133,14 +141,22 @@ class PadSessionService {
 
 		// The pad being opened first, then the rest by how long they last,
 		// so the cap drops what expires soonest.
-		arsort($otherGroups);
-		$cookieIds = array_merge([$sessionId], array_keys($otherGroups));
+		uasort($perGroup, static fn (array $a, array $b): int => $b['validUntil'] <=> $a['validUntil']);
+		$kept = array_slice(
+			array_merge([['sessionId' => $sessionId, 'validUntil' => $validUntil]], array_values($perGroup)),
+			0,
+			self::MAX_SESSION_IDS,
+		);
 
 		return [
 			'url' => $this->etherpadClient->buildPadUrl($padId),
 			'cookie' => $this->buildEtherpadSessionCookie(
-				implode(',', array_slice($cookieIds, 0, self::MAX_SESSION_IDS)),
-				$validUntil,
+				implode(',', array_column($kept, 'sessionId')),
+				// The cookie has to outlive every id it carries. Reusing a
+				// session with ten minutes left would otherwise set the whole
+				// cookie to ten minutes, and the browser would drop another
+				// pad's session that was good for another hour.
+				max(array_column($kept, 'validUntil')),
 			),
 		];
 	}

@@ -64,6 +64,22 @@ class PadSessionServiceTest extends TestCase {
 		return $service->createProtectedOpenContext('admin', 'Admin', $groupId . '$pad-1')['cookie']['value'];
 	}
 
+	/**
+	 * @param array<string,array{groupID:string,validUntil:int}> $sessions
+	 * @return array{name:string,value:string,expires:int,path:string,domain:string,secure:bool,http_only:bool,same_site:string}
+	 */
+	private function openContextCookie(array $sessions, string $groupId = 'g.ABCDEFGHIJKLMNOP'): array {
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->method('createSession')->willReturn('s.new');
+		$etherpadClient->method('listSessionsOfAuthor')->willReturn($sessions);
+		$etherpadClient->method('createAuthorIfNotExistsFor')->willReturn('a.author');
+		$etherpadClient->method('buildPadUrl')->willReturn('https://pad.example.test/p/x');
+
+		$service = $this->buildService($etherpadClient, $this->createMock(IConfig::class));
+
+		return $service->createProtectedOpenContext('admin', 'Admin', $groupId . '$pad-1')['cookie'];
+	}
+
 	public function testCarriesTheAuthorsOtherLivingSessions(): void {
 		$value = $this->openContextCookieValue([
 			's.other' => ['groupID' => 'g.OTHERGROUP00000', 'validUntil' => time() + 3600],
@@ -127,6 +143,37 @@ class PadSessionServiceTest extends TestCase {
 		$this->assertNotContains('s.g1', $ids);
 		// Still comfortably inside what a cookie may carry.
 		$this->assertLessThan(2000, strlen($value));
+	}
+
+	/**
+	 * An author can hold several living sessions for one group — from opens
+	 * before the reuse existed, from the fallback, or from two opens racing.
+	 * Keyed by session they would each take a slot and push a third pad out.
+	 */
+	public function testKeepsOnlyTheLongestLivingSessionPerOtherGroup(): void {
+		$value = $this->openContextCookieValue([
+			's.b-short' => ['groupID' => 'g.BBBBBBBBBBBBBBBB', 'validUntil' => time() + 600],
+			's.b-long' => ['groupID' => 'g.BBBBBBBBBBBBBBBB', 'validUntil' => time() + 3600],
+			's.c' => ['groupID' => 'g.CCCCCCCCCCCCCCCC', 'validUntil' => time() + 1200],
+		]);
+
+		$this->assertSame('s.new,s.b-long,s.c', $value);
+	}
+
+	/**
+	 * Reusing a short-lived session must not shorten the cookie: the browser
+	 * would drop another pad's id that was still good for an hour.
+	 */
+	public function testTheCookieOutlivesEveryIdItCarries(): void {
+		$longer = time() + 3600;
+
+		$cookie = $this->openContextCookie([
+			's.same' => ['groupID' => 'g.ABCDEFGHIJKLMNOP', 'validUntil' => time() + 900],
+			's.other' => ['groupID' => 'g.BBBBBBBBBBBBBBBB', 'validUntil' => $longer],
+		]);
+
+		$this->assertSame('s.same,s.other', $cookie['value']);
+		$this->assertSame($longer, $cookie['expires']);
 	}
 
 	/**

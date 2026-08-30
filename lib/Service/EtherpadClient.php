@@ -133,7 +133,9 @@ class EtherpadClient {
 	 * @return array<string,array{groupID:string,validUntil:int}>
 	 */
 	public function listSessionsOfAuthor(string $authorId): array {
-		$data = $this->apiCall('listSessionsOfAuthor', ['authorID' => $authorId], 'GET');
+		// POST like every other authenticated call: a GET would put the
+		// apikey in the URL, and from there into proxy and access logs.
+		$data = $this->apiCall('listSessionsOfAuthor', ['authorID' => $authorId]);
 
 		$sessions = [];
 		foreach ($data as $sessionId => $info) {
