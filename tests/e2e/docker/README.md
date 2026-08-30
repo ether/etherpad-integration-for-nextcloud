@@ -22,9 +22,16 @@ printf '127.0.0.1 nc.pad.test ep.pad.test\n' | sudo tee -a /etc/hosts
 
 ```bash
 tests/e2e/docker/up.sh          # NC_VERSION=31|32|33, default 33
+                                # EP_VERSION=2|3, default 2
 tests/e2e/docker/run-suite.sh   # the suite against that stack
 docker compose -f tests/e2e/docker/compose.yml down -v --remove-orphans
 ```
+
+Both versions are chosen at `up.sh` time and written to
+`tests/e2e/docker/.env`, which Compose reads by itself — so a later
+`docker compose` call resolves the same versions from whatever shell you
+run it in. Without that file, Compose would fall back to its defaults and
+a plain `docker compose up` could recreate the stack on the wrong major.
 
 `up.sh` refuses to run while a stack already exists — it promises a
 fresh installation, and pointing it at a volume from another

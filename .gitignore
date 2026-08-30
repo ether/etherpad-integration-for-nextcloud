@@ -18,3 +18,7 @@ blob-report/
 # branch that does not carry the generator cannot commit them by accident.
 tests/e2e/.env.e2e.docker
 tests/e2e/docker/certs/
+
+# Written by tests/e2e/docker/up.sh so Compose resolves the same
+# Nextcloud and Etherpad majors on every later call.
+tests/e2e/docker/.env

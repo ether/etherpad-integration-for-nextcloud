@@ -50,10 +50,26 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # The range appinfo/info.xml declares support for.
-        nextcloud: ['31', '32', '33']
+        # Nextcloud is the axis that matters: the range appinfo/info.xml
+        # declares support for, all on the Etherpad major the app is written
+        # against. Crossing both versions would double the jobs for almost no
+        # information — an Etherpad problem looks the same on every Nextcloud.
+        include:
+          - nextcloud: '31'
+            etherpad: '2'
+          - nextcloud: '32'
+            etherpad: '2'
+          - nextcloud: '33'
+            etherpad: '2'
+          # One job against Etherpad 3, on the newest Nextcloud, because a
+          # break there is worth seeing against the version we are heading
+          # for. It blocks like the others: the suite passes against 3.3.3
+          # today, so a red result means something changed, which is exactly
+          # what this is for.
+          - nextcloud: '33'
+            etherpad: '3'
 
-    name: Nextcloud ${{ matrix.nextcloud }}
+    name: Nextcloud ${{ matrix.nextcloud }} + Etherpad ${{ matrix.etherpad }}
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -73,9 +89,10 @@ jobs:
       - name: Resolve the stack hostnames
         run: echo '127.0.0.1 nc.pad.test ep.pad.test' | sudo tee -a /etc/hosts
 
-      - name: Bring up Nextcloud ${{ matrix.nextcloud }} + Etherpad
+      - name: Bring up Nextcloud ${{ matrix.nextcloud }} + Etherpad ${{ matrix.etherpad }}
         env:
           NC_VERSION: ${{ matrix.nextcloud }}
+          EP_VERSION: ${{ matrix.etherpad }}
         run: bash tests/e2e/docker/up.sh
 
       - name: Run the Playwright suite
@@ -90,7 +107,7 @@ jobs:
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: failure()
         with:
-          name: e2e-nc${{ matrix.nextcloud }}
+          name: e2e-nc${{ matrix.nextcloud }}-ep${{ matrix.etherpad }}
           path: |
             playwright-report/
             test-results/
