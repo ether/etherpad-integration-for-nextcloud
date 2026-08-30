@@ -106,9 +106,18 @@ class PadSessionService {
 	 * @return array{url:string,cookie:array{name:string,value:string,expires:int,path:string,domain:string,secure:bool,http_only:bool,same_site:string}}
 	 */
 	private function openContextFor(string $authorId, string $groupId, string $padId, int $validUntil): array {
+		$carriedIds = $this->sessionIdsFromCookie();
+
+		// Nothing to annotate, nothing to ask. The first protected open of a
+		// browsing session — the common case, and the whole of it for anyone
+		// who only ever has one pad open — costs no extra round trip, and
+		// the listing is the call whose cost grows with every distinct pad
+		// the user has ever opened.
 		$sessions = [];
 		try {
-			$sessions = $this->etherpadClient->listSessionsOfAuthor($authorId);
+			if ($carriedIds !== []) {
+				$sessions = $this->etherpadClient->listSessionsOfAuthor($authorId);
+			}
 		} catch (EtherpadClientException $e) {
 			// Not fatal — the open proceeds on the cookie alone. Logged
 			// because that degraded path cannot tell groups apart, so the
@@ -125,21 +134,28 @@ class PadSessionService {
 		return [
 			'url' => $this->etherpadClient->buildPadUrl($padId),
 			'cookie' => $this->buildEtherpadSessionCookie(
-				$this->cookieValueFor($chosenSessionId, $validUntil, $groupId, $sessions),
+				$this->cookieValueFor($chosenSessionId, $validUntil, $groupId, $carriedIds, $sessions),
 			),
 		];
 	}
 
 	/**
+	 * @param list<string> $carriedIds
 	 * @param array<string,array{groupID:string,validUntil:int}> $sessions
 	 * @return array{value:string,expires:int}
 	 */
-	private function cookieValueFor(string $chosenSessionId, int $validUntil, string $groupId, array $sessions): array {
+	private function cookieValueFor(
+		string $chosenSessionId,
+		int $validUntil,
+		string $groupId,
+		array $carriedIds,
+		array $sessions,
+	): array {
 		$now = time();
 		$carried = [];
 		$unverified = [];
 
-		foreach ($this->sessionIdsFromCookie() as $candidate) {
+		foreach ($carriedIds as $candidate) {
 			if ($candidate === $chosenSessionId) {
 				continue;
 			}

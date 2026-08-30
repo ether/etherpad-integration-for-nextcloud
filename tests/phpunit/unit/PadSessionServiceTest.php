@@ -237,6 +237,25 @@ class PadSessionServiceTest extends TestCase {
 		$this->assertCount(1 + 5, $ids);
 	}
 
+	/**
+	 * The listing is the call whose cost grows with every distinct pad the
+	 * user has ever opened. With nothing in the cookie there is nothing to
+	 * annotate, so the first open of a browsing session does not pay for it.
+	 */
+	public function testDoesNotAskForTheListingWhenTheBrowserSentNoSessions(): void {
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->expects($this->never())->method('listSessionsOfAuthor');
+		$etherpadClient->method('createSession')->willReturn($this->sid('new'));
+		$etherpadClient->method('createAuthorIfNotExistsFor')->willReturn('a.author');
+		$etherpadClient->method('buildPadUrl')->willReturn('https://pad.example.test/p/x');
+
+		$service = $this->buildService($etherpadClient, $this->createMock(IConfig::class));
+
+		$cookie = $service->createProtectedOpenContext('admin', 'Admin', 'g.ABCDEFGHIJKLMNOP$pad-1')['cookie'];
+
+		$this->assertSame($this->sid('new'), $cookie['value']);
+	}
+
 	public function testLogsWhenTheListingIsUnavailable(): void {
 		$etherpadClient = $this->createMock(EtherpadClient::class);
 		$etherpadClient->method('createSession')->willReturn($this->sid('new'));
@@ -247,7 +266,9 @@ class PadSessionServiceTest extends TestCase {
 
 		$urlGenerator = $this->createMock(IURLGenerator::class);
 		$urlGenerator->method('getBaseUrl')->willReturn('https://cloud.example.test');
+		// The listing is only asked for when the browser sent ids to annotate.
 		$request = $this->createMock(IRequest::class);
+		$request->method('getCookie')->with('sessionID')->willReturn($this->sid('carried'));
 		$logger = $this->createMock(LoggerInterface::class);
 		$logger->expects($this->once())->method('warning');
 
