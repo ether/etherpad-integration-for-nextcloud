@@ -29,10 +29,13 @@ test.describe('protected pad cleanup on the Etherpad side', () => {
 		test.skip(etherpad === null, 'E2E_ETHERPAD_URL / E2E_ETHERPAD_API_KEY not configured; Etherpad-side spec skipped.')
 
 		const api = await playwrightRequest.newContext({ storageState: { cookies: [], origins: [] } })
-		// POST, not GET: a query string carries the api key into proxy logs,
-		// and — with `trace: 'retain-on-failure'` and the html reporter — into
-		// the report CI uploads as an artifact. EtherpadClient posts every
-		// authenticated call for the same reason.
+		// POST, not GET: a query string carries the api key into proxy and
+		// access logs, and — with `trace: 'retain-on-failure'` and the html
+		// reporter — into the report CI uploads as an artifact.
+		// EtherpadClient posts every authenticated call for the same reason.
+		// Not a secret-safe channel either way: a trace can hold the body
+		// too. What makes that acceptable is the key, not the method — it
+		// comes from the checked-in APIKEY.txt of a throwaway stack.
 		const groupIds = async (): Promise<string[]> => {
 			const res = await api.post(`${etherpad!.url}/api/1.2.15/listAllGroups`, { form: { apikey: etherpad!.key } })
 			expect(res.status()).toBe(200)
