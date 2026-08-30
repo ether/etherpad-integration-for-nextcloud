@@ -113,6 +113,26 @@ describe('pad opener', () => {
 		expect(assignSpy).toHaveBeenCalledWith('/index.php/apps/files/files/42?dir=%2FFolder&editing=false&openfile=true')
 	})
 
+	// The id in the current route belongs to whatever the route was last at.
+	// Pairing it with a path is how one file opens under another's name, and
+	// since the viewer no longer retries by path there is nothing downstream
+	// to notice.
+	it('opens by path when the id lookup fails, not by the id in the route', async () => {
+		vi.mock('../../../src/lib/api-client.js', () => ({
+			apiResolvePadByFileId: vi.fn(),
+			apiResolvePadByPath: vi.fn(() => Promise.reject(new Error('resolve failed'))),
+		}))
+		window.history.replaceState({}, '', '/index.php/apps/files/files/99')
+		installFilesRouter()
+		const openPad = createPadOpener()
+
+		await openPad({ path: '/Folder/Test.pad', fileId: null })
+		await vi.advanceTimersByTimeAsync(180)
+
+		// Not /apps/files/files/99 — that id was never checked against the path.
+		expect(assignSpy).toHaveBeenCalledWith('/index.php/apps/etherpad_nextcloud/?file=%2FFolder%2FTest.pad')
+	})
+
 	it('deduplicates repeated open requests in a short window', async () => {
 		const router = installFilesRouter()
 		const openPad = createPadOpener()
