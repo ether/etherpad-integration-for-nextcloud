@@ -54,6 +54,7 @@ class PadSessionService {
 		private IConfig $config,
 		private IURLGenerator $urlGenerator,
 		private CookieDomainPolicy $cookieDomainPolicy,
+		private EtherpadReleasePolicy $releasePolicy,
 		private IRequest $request,
 		private LoggerInterface $logger,
 	) {
@@ -296,9 +297,12 @@ class PadSessionService {
 			'path' => '/',
 			'domain' => $cookieDomain,
 			'secure' => true,
-			// Etherpad reads its session cookie client-side in the pad app, so this
-			// must remain script-readable for protected pad opens to work.
-			'http_only' => false,
+			// Up to Etherpad 2.7.3 the pad app reads `sessionID` itself, in
+			// the browser — HttpOnly there would lock the user out of every
+			// protected pad. From 3.0.0 the server takes it out of the
+			// socket.io handshake and the browser never needs to see it, so
+			// the cookie can be kept away from any script on the page.
+			'http_only' => $this->releasePolicy->supportsHttpOnlySessionCookie(),
 			'same_site' => 'None',
 		];
 	}

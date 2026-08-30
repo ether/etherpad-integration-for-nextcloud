@@ -212,6 +212,32 @@ class EtherpadClient {
 		return ['pad_count' => $padCount];
 	}
 
+	/**
+	 * The Etherpad release this instance is running, as `/health` reports it.
+	 *
+	 * Not the API version: `/api` answers `1.3.1` on both Etherpad 2.7.3 and
+	 * 3.3.3, so it cannot tell the two apart. `releaseId` can, and the one
+	 * thing that turns on it — whether Etherpad still needs to read its
+	 * session cookie from JavaScript — changed between those two majors.
+	 *
+	 * `/health` needs no api key, which is why it is asked rather than an
+	 * API method: this runs on the open path, and the key belongs in as few
+	 * places as possible.
+	 */
+	public function detectReleaseVersion(): string {
+		$raw = $this->sendPublicGetRequest($this->getApiHost() . '/health');
+		$decoded = json_decode($raw, true);
+		$release = is_array($decoded) && isset($decoded['releaseId']) && is_string($decoded['releaseId'])
+			? trim($decoded['releaseId'])
+			: '';
+
+		if (preg_match('/^\d+\.\d+\.\d+/', $release) !== 1) {
+			throw new EtherpadClientException('Could not detect the Etherpad release version.');
+		}
+
+		return $release;
+	}
+
 	public function detectApiVersion(string $host): string {
 		$url = rtrim(trim($host), '/') . '/api';
 		$raw = $this->sendPublicGetRequest($url);

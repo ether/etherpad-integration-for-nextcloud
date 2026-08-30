@@ -163,6 +163,53 @@ class EtherpadClientTest extends TestCase {
 		];
 	}
 
+	/**
+	 * Measured: `/api` answers `{"currentVersion":"1.3.1"}` on both Etherpad
+	 * 2.7.3 and 3.3.3, so the API version cannot tell the two apart.
+	 * `/health` reports the release, and it needs no api key.
+	 */
+	public function testDetectsTheReleaseFromHealth(): void {
+		$captured = null;
+		$client = $this->clientWithResponse(
+			$this->response(200, '{"status":"pass","releaseId":"3.3.3"}'),
+			$captured,
+		);
+
+		self::assertSame('3.3.3', $client->detectReleaseVersion());
+		self::assertSame('GET', $captured['method']);
+		self::assertStringEndsWith('/health', (string)$captured['url']);
+		self::assertStringNotContainsString('apikey', (string)$captured['url']);
+	}
+
+	public function testDetectsAReleaseWithASuffix(): void {
+		$client = $this->clientWithResponse($this->response(200, '{"status":"pass","releaseId":"3.0.0-beta.1"}'));
+		self::assertSame('3.0.0-beta.1', $client->detectReleaseVersion());
+	}
+
+	/**
+	 * Refuses rather than guessing. The caller falls back to the last known
+	 * release, and without one to a cookie the browser can read.
+	 *
+	 * @param string $payload
+	 */
+	#[\PHPUnit\Framework\Attributes\DataProvider('provideUnreadableHealthAnswers')]
+	public function testRefusesAHealthAnswerItCannotRead(string $payload): void {
+		$client = $this->clientWithResponse($this->response(200, $payload));
+		$this->expectException(EtherpadClientException::class);
+		$client->detectReleaseVersion();
+	}
+
+	/** @return array<string,array{string}> */
+	public static function provideUnreadableHealthAnswers(): array {
+		return [
+			'no releaseId' => ['{"status":"pass"}'],
+			'releaseId is not a string' => ['{"status":"pass","releaseId":3}'],
+			'releaseId is empty' => ['{"status":"pass","releaseId":""}'],
+			'releaseId is not a version' => ['{"status":"pass","releaseId":"latest"}'],
+			'not an object' => ['[]'],
+		];
+	}
+
 	public function testApiCallThrowsOnNonZeroApiCode(): void {
 		$client = $this->clientWithResponse(
 			$this->response(200, '{"code":1,"message":"groupID does not exist"}')
