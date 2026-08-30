@@ -342,7 +342,7 @@ class LifecycleService {
 				'new_pad_id' => $newPadId,
 			];
 		} catch (\Throwable $e) {
-			if (!$restored) {
+			if (!$restored && !$this->restoreAlreadyLanded($fileId, $newPadId)) {
 				if ($fileContentUpdated) {
 					try {
 						$file->putContent($currentContent);
@@ -430,7 +430,6 @@ class LifecycleService {
 		$newPadId = '';
 		$fileContentUpdated = false;
 		$managedPadCreated = false;
-		$bindingCreated = false;
 
 		try {
 			if ($this->isTestFaultActive(self::TEST_FAULT_RESTORE_READ_LOCK)) {
@@ -463,7 +462,6 @@ class LifecycleService {
 			// got here first, createBinding throws and we abort cleanly
 			// without overwriting their .pad content.
 			$this->bindingService->createBinding($fileId, $newPadId, $accessMode);
-			$bindingCreated = true;
 			$this->writeRestoredContent($file, $updatedContent);
 			$fileContentUpdated = true;
 
@@ -474,29 +472,8 @@ class LifecycleService {
 				'new_pad_id' => $newPadId,
 			];
 		} catch (\Throwable $e) {
-			if ($bindingCreated && !$fileContentUpdated) {
-				try {
-					$this->bindingService->deleteByFileId($fileId);
-				} catch (\Throwable $bindingRollbackError) {
-					$this->logger->warning('Could not rollback binding row after failed restore-without-binding write.', [
-						'app' => 'etherpad_nextcloud',
-						'fileId' => $fileId,
-						'newPadId' => $newPadId,
-						'exception' => $bindingRollbackError,
-					]);
-				}
-			}
-			if ($managedPadCreated && $newPadId !== '') {
-				try {
-					$this->padLifecycle->discardProvisioned($newPadId);
-				} catch (\Throwable $cleanupError) {
-					$this->logger->warning('Could not cleanup newly provisioned restore pad after failed no-binding restore.', [
-						'app' => 'etherpad_nextcloud',
-						'fileId' => $fileId,
-						'newPadId' => $newPadId,
-						'exception' => $cleanupError,
-					]);
-				}
+			if ($managedPadCreated && $newPadId !== '' && !$fileContentUpdated) {
+				$this->unwindUnwrittenRestore($fileId, $newPadId);
 			}
 			$this->logger->error('Restore lifecycle failed without existing binding.', [
 				'app' => 'etherpad_nextcloud',
@@ -557,6 +534,76 @@ class LifecycleService {
 		$newPadId = $this->buildPublicRestorePadId($oldPadId);
 		$this->padLifecycle->provisionPad($newPadId);
 		return $newPadId;
+	}
+
+	/**
+	 * Whether the restore landed despite the error.
+	 *
+	 * `markRestored` is the last step, and it can commit and still throw —
+	 * the connection drops between the update and its answer. By then the
+	 * file already names the new pad, so row, file and pad agree: a
+	 * finished restore reported as a failure. The rollback below is then
+	 * the only thing that could break it, putting the old content back and
+	 * deleting the pad the row now points at.
+	 *
+	 * A row that cannot be read counts as landed. The alternative is
+	 * deleting a pad a row may well name.
+	 */
+	private function restoreAlreadyLanded(int $fileId, string $newPadId): bool {
+		try {
+			return $this->bindingService->isBoundTo($fileId, $newPadId);
+		} catch (\Throwable $readError) {
+			$this->logger->warning('Could not read the binding after a failed restore; leaving the new pad in place.', [
+				'app' => 'etherpad_nextcloud',
+				'fileId' => $fileId,
+				'newPadId' => $newPadId,
+				'exception' => $readError,
+			]);
+			return true;
+		}
+	}
+
+	/**
+	 * The row and the pad a recovery made when the file was never written.
+	 *
+	 * Nothing consistent to keep here, unlike a first init: the row names
+	 * the new pad while the `.pad` still names the old one. No binding at
+	 * all is the state this recovery is built to start from, so that is
+	 * what it goes back to.
+	 *
+	 * Which row to remove is read, not remembered. `createBinding` can
+	 * commit and still throw, and the flag then says no row while a row is
+	 * there naming the pad about to be deleted. A row naming a different
+	 * pad belongs to the concurrent recovery that won the file — the unique
+	 * constraint is the serialization point here — and stays.
+	 *
+	 * Without an answer nothing is destroyed.
+	 */
+	private function unwindUnwrittenRestore(int $fileId, string $newPadId): void {
+		try {
+			if ($this->bindingService->isBoundTo($fileId, $newPadId)) {
+				$this->bindingService->deleteByFileId($fileId);
+			}
+		} catch (\Throwable $bindingRollbackError) {
+			$this->logger->warning('Could not rollback binding row after failed restore-without-binding write; keeping its pad.', [
+				'app' => 'etherpad_nextcloud',
+				'fileId' => $fileId,
+				'newPadId' => $newPadId,
+				'exception' => $bindingRollbackError,
+			]);
+			return;
+		}
+
+		try {
+			$this->padLifecycle->discardProvisioned($newPadId);
+		} catch (\Throwable $cleanupError) {
+			$this->logger->warning('Could not cleanup newly provisioned restore pad after failed no-binding restore.', [
+				'app' => 'etherpad_nextcloud',
+				'fileId' => $fileId,
+				'newPadId' => $newPadId,
+				'exception' => $cleanupError,
+			]);
+		}
 	}
 
 	/**

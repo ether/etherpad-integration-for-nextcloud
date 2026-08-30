@@ -154,7 +154,9 @@ class PadBootstrapService {
 	 */
 	private function rollbackProvisionedPad(int $fileId, string $padId): void {
 		try {
-			$binding = $this->bindingService->findByFileId($fileId);
+			if ($this->bindingService->isBoundTo($fileId, $padId)) {
+				return;
+			}
 		} catch (\Throwable $cleanupError) {
 			$this->logger->warning('Could not read the binding after frontmatter init failure; keeping its pad.', [
 				'app' => 'etherpad_nextcloud',
@@ -162,10 +164,6 @@ class PadBootstrapService {
 				'padId' => $padId,
 				'exception' => $cleanupError,
 			]);
-			return;
-		}
-
-		if ($binding !== null && (string)$binding['pad_id'] === $padId) {
 			return;
 		}
 

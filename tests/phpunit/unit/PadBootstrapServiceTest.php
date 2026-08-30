@@ -247,13 +247,12 @@ class PadBootstrapServiceTest extends TestCase {
 		$padId = 'g.ABCDEFGHIJKLMNOP$p-abcdefghijklmnopqrst';
 
 		$bindingService = $this->createMock(BindingService::class);
-		$bindingService->method('findByFileId')->with($fileId)->willReturnOnConsecutiveCalls(
-			null,
-			['file_id' => $fileId, 'pad_id' => $padId, 'access_mode' => BindingService::ACCESS_PROTECTED, 'state' => BindingService::STATE_ACTIVE],
-		);
+		$bindingService->method('findByFileId')->with($fileId)->willReturn(null);
 		$bindingService->expects($this->once())
 			->method('createBinding')
 			->willThrowException(new \RuntimeException('binding write failed'));
+		// The insert landed even though the call reported failure.
+		$bindingService->expects($this->once())->method('isBoundTo')->with($fileId, $padId)->willReturn(true);
 		$bindingService->expects($this->never())->method('deleteByFileId');
 
 		$padFileService = $this->createMock(PadFileService::class);
@@ -297,11 +296,10 @@ class PadBootstrapServiceTest extends TestCase {
 		$padId = 'g.ABCDEFGHIJKLMNOP$p-abcdefghijklmnopqrst';
 
 		$bindingService = $this->createMock(BindingService::class);
-		$bindingService->method('findByFileId')->with($fileId)->willReturnOnConsecutiveCalls(
-			null,
-			['file_id' => $fileId, 'pad_id' => 'g.OTHERGROUPIDXYZ$p-theirs', 'access_mode' => BindingService::ACCESS_PROTECTED, 'state' => BindingService::STATE_ACTIVE],
-		);
+		$bindingService->method('findByFileId')->with($fileId)->willReturn(null);
 		$bindingService->method('createBinding')->willThrowException(new \RuntimeException('unique constraint violation'));
+		// A row is there, but it names the winner's pad, not ours.
+		$bindingService->method('isBoundTo')->with($fileId, $padId)->willReturn(false);
 		$bindingService->expects($this->never())->method('deleteByFileId');
 
 		$padFileService = $this->createMock(PadFileService::class);
@@ -352,18 +350,15 @@ class PadBootstrapServiceTest extends TestCase {
 		$padId = 'g.ABCDEFGHIJKLMNOP$p-abcdefghijklmnopqrst';
 
 		$bindingService = $this->createMock(BindingService::class);
-		// Read twice: once to find there is no binding, and once in the
-		// cleanup to check that the row now there is the one naming this pad.
-		$bindingService->expects($this->exactly(2))
+		$bindingService->expects($this->once())
 			->method('findByFileId')
 			->with($fileId)
-			->willReturnOnConsecutiveCalls(
-				null,
-				['file_id' => $fileId, 'pad_id' => $padId, 'access_mode' => BindingService::ACCESS_PROTECTED, 'state' => BindingService::STATE_ACTIVE],
-			);
+			->willReturn(null);
 		$bindingService->expects($this->once())
 			->method('createBinding')
 			->with($fileId, $padId, BindingService::ACCESS_PROTECTED);
+		// The cleanup asks whether the row that is now there names this pad.
+		$bindingService->expects($this->once())->method('isBoundTo')->with($fileId, $padId)->willReturn(true);
 		$bindingService->expects($this->never())->method('deleteByFileId');
 
 		$padFileService = $this->createMock(PadFileService::class);
