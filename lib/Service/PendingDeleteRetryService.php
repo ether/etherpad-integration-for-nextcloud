@@ -15,7 +15,7 @@ use Psr\Log\LoggerInterface;
 class PendingDeleteRetryService {
 	public function __construct(
 		private BindingService $bindingService,
-		private EtherpadClient $etherpadClient,
+		private ManagedPadLifecycle $padLifecycle,
 		private LoggerInterface $logger,
 	) {
 	}
@@ -84,7 +84,7 @@ class PendingDeleteRetryService {
 			}
 			$attempted++;
 			try {
-				$this->etherpadClient->deletePad($padId);
+				$this->padLifecycle->discard($padId);
 				if (!$this->bindingService->deletePendingDeleteBinding($fileId, $padId)) {
 					$this->logger->info('Skipped stale pending delete binding after successful pad delete.', [
 						'app' => 'etherpad_nextcloud',

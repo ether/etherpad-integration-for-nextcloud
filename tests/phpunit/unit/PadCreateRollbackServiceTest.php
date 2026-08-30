@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\Tests\Unit;
 
 use OCA\EtherpadNextcloud\Service\EtherpadClient;
+use OCA\EtherpadNextcloud\Service\ManagedPadLifecycle;
 use OCA\EtherpadNextcloud\Service\PadCreateRollbackService;
 use OCP\Files\File;
 use PHPUnit\Framework\TestCase;
@@ -125,7 +126,7 @@ class PadCreateRollbackServiceTest extends TestCase {
 		?LoggerInterface $logger = null,
 	): PadCreateRollbackService {
 		return new PadCreateRollbackService(
-			$etherpad ?? $this->createMock(EtherpadClient::class),
+			new ManagedPadLifecycle($etherpad ?? $this->createMock(EtherpadClient::class)),
 			$logger ?? $this->createMock(LoggerInterface::class),
 		);
 	}

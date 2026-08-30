@@ -157,6 +157,10 @@ E2E_USER2=$USER2
 E2E_USER2_PASS=$USER2_PASS
 E2E_USER2_APP_PASSWORD=$USER2_APP_PW
 E2E_EXTERNAL_PADS=0
+# Etherpad's own API, so a spec can ask the pad server directly whether a
+# group outlived the pad. Only this throwaway stack knows the key.
+E2E_ETHERPAD_URL=https://ep.pad.test
+E2E_ETHERPAD_API_KEY=$API_KEY
 # Read by playwright.config.ts rather than fixtures/env.ts: the browser
 # has no reason to trust a CA minted for this stack. NODE_EXTRA_CA_CERTS
 # cannot live here — node reads it at startup, before dotenv runs — so

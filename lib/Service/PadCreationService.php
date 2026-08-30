@@ -29,6 +29,7 @@ class PadCreationService {
 		private PadCreateRollbackService $rollbackService,
 		private BindingService $bindingService,
 		private EtherpadClient $etherpadClient,
+		private ManagedPadLifecycle $padLifecycle,
 		private PadBootstrapService $padBootstrapService,
 		private PadPlaceholderResolver $placeholderResolver,
 		private ExternalPadSeeder $externalPadSeeder,
@@ -393,7 +394,7 @@ class PadCreationService {
 			$this->bindingService->createBinding($fileId, $padId, $accessMode);
 		} catch (\Throwable $e) {
 			try {
-				$this->etherpadClient->deletePad($padId);
+				$this->padLifecycle->discard($padId);
 			} catch (\Throwable $cleanupError) {
 				$this->logger->warning('Could not cleanup Etherpad pad after template materialization failure.', [
 					'app' => 'etherpad_nextcloud',

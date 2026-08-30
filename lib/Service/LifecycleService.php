@@ -36,6 +36,7 @@ class LifecycleService {
 		private BindingService $bindingService,
 		private PadFileService $padFileService,
 		private EtherpadClient $etherpadClient,
+		private ManagedPadLifecycle $padLifecycle,
 		private IConfig $config,
 		private LoggerInterface $logger,
 		private ISecureRandom $secureRandom,
@@ -224,7 +225,7 @@ class LifecycleService {
 			}
 
 			try {
-				$this->etherpadClient->deletePad($padId);
+				$this->padLifecycle->discard($padId);
 			} catch (\Throwable $deleteError) {
 				if (EtherpadErrorClassifier::isPadAlreadyDeleted($deleteError)) {
 					$this->logger->info('Pad already deleted while processing trash; deleting binding row.', [
@@ -356,7 +357,7 @@ class LifecycleService {
 					}
 				}
 				try {
-					$this->etherpadClient->deletePad($newPadId);
+					$this->padLifecycle->discard($newPadId);
 				} catch (\Throwable $cleanupError) {
 					$this->logger->warning('Could not cleanup newly provisioned restore pad after failure.', [
 						'app' => 'etherpad_nextcloud',
@@ -482,7 +483,7 @@ class LifecycleService {
 			}
 			if ($managedPadCreated && $newPadId !== '') {
 				try {
-					$this->etherpadClient->deletePad($newPadId);
+					$this->padLifecycle->discard($newPadId);
 				} catch (\Throwable $cleanupError) {
 					$this->logger->warning('Could not cleanup newly provisioned restore pad after failed no-binding restore.', [
 						'app' => 'etherpad_nextcloud',

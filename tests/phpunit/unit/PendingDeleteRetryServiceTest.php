@@ -6,6 +6,7 @@ namespace OCA\EtherpadNextcloud\Tests\Unit;
 
 use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\EtherpadNextcloud\Service\EtherpadClient;
+use OCA\EtherpadNextcloud\Service\ManagedPadLifecycle;
 use OCA\EtherpadNextcloud\Service\PendingDeleteRetryService;
 use OCP\AppFramework\Utility\ITimeFactory;
 use OCP\IDBConnection;
@@ -28,7 +29,7 @@ class PendingDeleteRetryServiceTest extends TestCase {
 
 		$result = (new PendingDeleteRetryService(
 			$binding,
-			$etherpad,
+			new ManagedPadLifecycle($etherpad),
 			$this->createMock(LoggerInterface::class),
 		))->retryByAge(3600, 86400, 50);
 
@@ -51,7 +52,7 @@ class PendingDeleteRetryServiceTest extends TestCase {
 
 		$result = (new PendingDeleteRetryService(
 			$binding,
-			$etherpad,
+			new ManagedPadLifecycle($etherpad),
 			$this->createMock(LoggerInterface::class),
 		))->retryByAge(86400, null, 10);
 
@@ -72,7 +73,7 @@ class PendingDeleteRetryServiceTest extends TestCase {
 
 		$result = (new PendingDeleteRetryService(
 			$binding,
-			$etherpad,
+			new ManagedPadLifecycle($etherpad),
 			$this->createMock(LoggerInterface::class),
 		))->retryByAge(0, 3600, 10);
 
@@ -97,7 +98,7 @@ class PendingDeleteRetryServiceTest extends TestCase {
 
 		$result = (new PendingDeleteRetryService(
 			$binding,
-			$etherpad,
+			new ManagedPadLifecycle($etherpad),
 			$this->createMock(LoggerInterface::class),
 		))->retryByAge(0, null, 10);
 
@@ -112,7 +113,7 @@ class PendingDeleteRetryServiceTest extends TestCase {
 
 		$result = (new PendingDeleteRetryService(
 			$binding,
-			$etherpad,
+			new ManagedPadLifecycle($etherpad),
 			$this->createMock(LoggerInterface::class),
 		))->retryByAge(0, 3600, 10);
 
@@ -136,7 +137,7 @@ class PendingDeleteRetryServiceTest extends TestCase {
 
 		$result = (new PendingDeleteRetryService(
 			$binding,
-			$etherpad,
+			new ManagedPadLifecycle($etherpad),
 			$this->createMock(LoggerInterface::class),
 		))->retry(50);
 

@@ -26,7 +26,7 @@ use Psr\Log\LoggerInterface;
  */
 class PadCreateRollbackService {
 	public function __construct(
-		private EtherpadClient $etherpadClient,
+		private ManagedPadLifecycle $padLifecycle,
 		private LoggerInterface $logger,
 	) {
 	}
@@ -36,7 +36,7 @@ class PadCreateRollbackService {
 
 		if ($padId !== '') {
 			try {
-				$this->etherpadClient->deletePad($padId);
+				$this->padLifecycle->discard($padId);
 			} catch (\Throwable $cleanupError) {
 				$this->logger->warning('Could not cleanup failed Etherpad create', [
 					'app' => 'etherpad_nextcloud',

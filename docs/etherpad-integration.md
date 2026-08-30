@@ -28,6 +28,26 @@ Important:
 - `createAuthorIfNotExistsFor`
 - `createSession`
 - `listSessionsOfAuthor`
+- `deleteGroup`
+
+### Removing a pad
+
+A public pad is a pad. A protected pad is a pad *inside a group*, plus the
+sessions that grant access to that group — and `deletePad` removes only the
+first of those three. Every delete used to call it, so a protected pad left
+its group and every session ever issued for it behind, with nothing in
+Nextcloud pointing at them and nothing to collect them.
+
+`ManagedPadLifecycle::discard()` is the one place that decides:
+
+- pad id shaped `g.<16 chars>$<name>` → `deleteGroup`, which removes the
+  group, its pads and its sessions in one call;
+- anything else → `deletePad`, which is also what a legacy Ownpad id gets.
+
+The pad id is the authority rather than the binding's access mode: it is
+what Etherpad keys on, and it stays right for a pad whose binding says
+something else after a migration. One group holds exactly one pad here, so
+deleting the group cannot take a bystander with it.
 
 ## Pad Types
 

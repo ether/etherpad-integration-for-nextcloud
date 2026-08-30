@@ -47,6 +47,17 @@ export const E2E = {
 		return value === '1' || value === 'yes' || value === 'true';
 	},
 	/**
+	 * Etherpad's own API, for the few assertions that have to ask the pad
+	 * server rather than Nextcloud — whether a group survived a delete, say.
+	 * Optional: only the throwaway container stack knows its own API key,
+	 * and a spec that needs it skips elsewhere rather than failing.
+	 */
+	get etherpadApi(): { url: string, key: string } | null {
+		const url = process.env.E2E_ETHERPAD_URL?.trim()
+		const key = process.env.E2E_ETHERPAD_API_KEY?.trim()
+		return (url && key) ? { url: url.replace(/\/+$/, ''), key } : null
+	},
+	/**
 	 * App password used for non-browser WebDAV/API setup and teardown
 	 * (mirrors the NC_APP_PASSWORD pattern in tests/integration/*.sh).
 	 *

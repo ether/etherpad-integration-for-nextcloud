@@ -80,6 +80,16 @@ class EtherpadClient {
 		return $groupId;
 	}
 
+	/**
+	 * Removes the group, every pad inside it, and every session that granted
+	 * access to it — which is what makes it the right call for a protected
+	 * pad. deletePad() on a group pad leaves the group and its sessions
+	 * behind, and nothing else ever collects them.
+	 */
+	public function deleteGroup(string $groupId): void {
+		$this->apiCall('deleteGroup', ['groupID' => $groupId]);
+	}
+
 	public function createGroupPad(string $groupId, string $padName): string {
 		$data = $this->apiCall('createGroupPad', [
 			'groupID' => $groupId,
