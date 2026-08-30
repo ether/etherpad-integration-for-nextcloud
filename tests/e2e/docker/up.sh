@@ -13,6 +13,10 @@ set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 export NC_VERSION="${NC_VERSION:-33}"
+# The Etherpad major. 2 is what the app is written against today; 3 moved
+# the session cookie to the socket.io handshake and is what a run against
+# it is meant to find out about.
+export EP_VERSION="${EP_VERSION:-2}"
 
 compose() { docker compose -f "$here/compose.yml" "$@"; }
 # OC_PASS has to be forwarded explicitly: setting it on the host does
@@ -44,7 +48,7 @@ fi
 echo "==> certificates"
 bash "$here/make-certs.sh"
 
-echo "==> starting the stack (Nextcloud ${NC_VERSION})"
+echo "==> starting the stack (Nextcloud ${NC_VERSION}, Etherpad ${EP_VERSION})"
 compose up -d --build --wait
 
 # `--wait` only honours the healthchecks; Nextcloud's own installer keeps
@@ -175,7 +179,7 @@ fi
 
 echo
 echo "Nextcloud  https://nc.pad.test  ($ADMIN_USER / $ADMIN_PASS)"
-echo "Etherpad   https://ep.pad.test"
+echo "Etherpad   https://ep.pad.test  (major ${EP_VERSION})"
 echo
 echo "Run the suite against it with:"
 echo "  tests/e2e/docker/run-suite.sh"
