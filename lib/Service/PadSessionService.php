@@ -24,11 +24,21 @@ class PadSessionService {
 	private const SESSION_ID_PATTERN = '/^s\.[A-Za-z0-9]+$/';
 
 	/**
-	 * A session id is ~34 bytes, so ten of them stay far inside the 4 KB a
-	 * cookie may occupy — and nobody has ten protected pads open whose
-	 * sessions all still matter. The newest are kept.
+	 * One entry per group, so this is how many protected pads may be open at
+	 * once before the oldest loses access. A session id is ~34 bytes, so 25
+	 * of them are under a kilobyte against the 4 KB a cookie may occupy —
+	 * and the cookie only ever goes to the pad host. The pad being opened is
+	 * always kept; beyond that the ones expiring last win, because the
+	 * soonest to expire is the one a user is least likely to still be
+	 * looking at.
 	 */
-	private const MAX_SESSION_IDS = 10;
+	private const MAX_SESSION_IDS = 25;
+
+	/**
+	 * A session about to expire is not worth reusing: the pad would lose
+	 * access minutes later with no open to renew it.
+	 */
+	private const REUSE_MIN_REMAINING_SECONDS = 300;
 
 	public function __construct(
 		private EtherpadClient $etherpadClient,
@@ -49,11 +59,7 @@ class PadSessionService {
 		if ($authorId !== '') {
 			$authorId = $this->syncAuthorMapping($uid, $authorId, $effectiveDisplayName);
 			try {
-				$sessionId = $this->etherpadClient->createSession($groupId, $authorId, $validUntil);
-				return [
-					'url' => $this->etherpadClient->buildPadUrl($padId),
-					'cookie' => $this->buildEtherpadSessionCookie($sessionId, $validUntil),
-				];
+				return $this->openContextFor($authorId, $groupId, $padId, $validUntil);
 			} catch (EtherpadClientException) {
 				$this->clearCachedAuthorState($uid);
 			}
@@ -62,10 +68,80 @@ class PadSessionService {
 		$authorId = $this->etherpadClient->createAuthorIfNotExistsFor('nc:' . $uid, $effectiveDisplayName);
 		$this->rememberAuthorId($uid, $authorId);
 		$this->rememberAuthorName($uid, $effectiveDisplayName);
-		$sessionId = $this->etherpadClient->createSession($groupId, $authorId, $validUntil);
+		return $this->openContextFor($authorId, $groupId, $padId, $validUntil);
+	}
+
+	/**
+	 * The author's sessions, as Etherpad holds them, are the source of truth
+	 * for what the cookie should say.
+	 *
+	 * Building the list from the incoming cookie alone could not get this
+	 * right. Every open minted a new session even for a pad already open, so
+	 * ten entries meant ten *opens*, not ten pads: opening B ten times
+	 * pushed A out and A went back to 403 with two pads on screen. Etherpad
+	 * knows which group each session belongs to, so the session for this
+	 * group is reused while it lasts and the cookie carries one entry per
+	 * group.
+	 *
+	 * It also stops the sessions piling up. Etherpad deletes none of them —
+	 * an author who has opened protected pads for a while accumulates
+	 * hundreds, nearly all long expired.
+	 *
+	 * If Etherpad cannot answer, the open still happens: a fresh session,
+	 * and the cookie merged with what the browser sent, which is what this
+	 * did before.
+	 *
+	 * @return array{url:string,cookie:array{name:string,value:string,expires:int,path:string,domain:string,secure:bool,http_only:bool,same_site:string}}
+	 */
+	private function openContextFor(string $authorId, string $groupId, string $padId, int $validUntil): array {
+		try {
+			$sessions = $this->etherpadClient->listSessionsOfAuthor($authorId);
+		} catch (EtherpadClientException) {
+			$sessionId = $this->etherpadClient->createSession($groupId, $authorId, $validUntil);
+			return [
+				'url' => $this->etherpadClient->buildPadUrl($padId),
+				'cookie' => $this->buildEtherpadSessionCookie(
+					$this->mergeWithExistingSessionIds($sessionId),
+					$validUntil,
+				),
+			];
+		}
+
+		$now = time();
+		$reusable = '';
+		$otherGroups = [];
+		foreach ($sessions as $sessionId => $info) {
+			if ($info['validUntil'] <= $now) {
+				continue;
+			}
+			if ($info['groupID'] === $groupId) {
+				if ($info['validUntil'] > ($now + self::REUSE_MIN_REMAINING_SECONDS)
+					&& ($reusable === '' || $info['validUntil'] > $sessions[$reusable]['validUntil'])) {
+					$reusable = $sessionId;
+				}
+				continue;
+			}
+			$otherGroups[$sessionId] = $info['validUntil'];
+		}
+
+		if ($reusable !== '') {
+			$validUntil = $sessions[$reusable]['validUntil'];
+			$sessionId = $reusable;
+		} else {
+			$sessionId = $this->etherpadClient->createSession($groupId, $authorId, $validUntil);
+		}
+
+		// The pad being opened first, then the rest by how long they last,
+		// so the cap drops what expires soonest.
+		arsort($otherGroups);
+		$cookieIds = array_merge([$sessionId], array_keys($otherGroups));
+
 		return [
 			'url' => $this->etherpadClient->buildPadUrl($padId),
-			'cookie' => $this->buildEtherpadSessionCookie($sessionId, $validUntil),
+			'cookie' => $this->buildEtherpadSessionCookie(
+				implode(',', array_slice($cookieIds, 0, self::MAX_SESSION_IDS)),
+				$validUntil,
+			),
 		];
 	}
 
@@ -77,11 +153,11 @@ class PadSessionService {
 	}
 
 	/** @return array{name:string,value:string,expires:int,path:string,domain:string,secure:bool,http_only:bool,same_site:string} */
-	private function buildEtherpadSessionCookie(string $sessionId, int $validUntil): array {
+	private function buildEtherpadSessionCookie(string $cookieValue, int $validUntil): array {
 		$cookieDomain = $this->resolveCookieDomain();
 		return [
 			'name' => 'sessionID',
-			'value' => $this->mergeWithExistingSessionIds($sessionId),
+			'value' => $cookieValue,
 			'expires' => $validUntil,
 			'path' => '/',
 			'domain' => $cookieDomain,
@@ -174,19 +250,13 @@ class PadSessionService {
 			return $authorId;
 		}
 
-		// The cached id only saves a round trip if it is allowed to. This
-		// asked Etherpad for the author on every open and compared the name
-		// afterwards, so the cache spared nothing and a repeat open of the
-		// same pad cost two API calls where one would do. The stored name is
-		// the question being asked, so ask it first.
-		//
-		// Skipping the call also skips the incidental proof that the author
-		// still exists — createSession answers that a moment later, and its
-		// failure already clears the cache and retries from scratch.
-		if ($this->cachedAuthorName($uid) === $trimmedName) {
-			return $authorId;
-		}
-
+		// Asked on every open, and deliberately not skipped when the stored
+		// name still matches. It looks like a round trip the cache should
+		// spare, but it is the only thing that keeps Etherpad's idea of the
+		// author's name in step with Nextcloud's: the name can drift on the
+		// Etherpad side — a user renaming themselves in the pad, another
+		// integrator, an API call — and nothing else ever repairs it. The
+		// e2e suite catches exactly that, with the pad showing a stale name.
 		try {
 			$syncedAuthorId = $this->etherpadClient->createAuthorIfNotExistsFor('nc:' . $uid, $trimmedName);
 		} catch (\Throwable) {
