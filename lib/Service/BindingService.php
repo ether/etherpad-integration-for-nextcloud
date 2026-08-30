@@ -47,6 +47,29 @@ class BindingService {
 	}
 
 	/** @return array<string,mixed>|null */
+	/**
+	 * Whether this file's binding names this pad.
+	 *
+	 * The question a cleanup has to ask before destroying a pad it just
+	 * provisioned. `createBinding` and `markRestored` can commit and still
+	 * throw — the connection drops between the write and its answer — so a
+	 * flag set alongside the call says "no row" while a row is sitting
+	 * there naming the pad about to be deleted. Only reading it back knows.
+	 *
+	 * It also separates that from the other way those calls fail: an insert
+	 * the unique constraint refused because a concurrent request for the
+	 * same file won. That row names a different pad, and is not ours to
+	 * touch.
+	 *
+	 * Throws rather than guessing when the row cannot be read at all. Each
+	 * caller decides what to do without an answer, and they all decide the
+	 * same way — destroy nothing.
+	 */
+	public function isBoundTo(int $fileId, string $padId): bool {
+		$binding = $this->findByFileId($fileId);
+		return $binding !== null && (string)$binding['pad_id'] === $padId;
+	}
+
 	public function findByPadId(string $padId, ?string $state = null): ?array {
 		$qb = $this->db->getQueryBuilder();
 		$qb->select('*')

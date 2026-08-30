@@ -10,6 +10,7 @@ use OCA\EtherpadNextcloud\Exception\PadParentFolderNotWritableException;
 use OCA\EtherpadNextcloud\Exception\PadTypeDisabledException;
 use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\EtherpadNextcloud\Service\EtherpadClient;
+use OCA\EtherpadNextcloud\Service\ManagedPadLifecycle;
 use OCA\EtherpadNextcloud\Service\ExternalPadExportFetcher;
 use OCA\EtherpadNextcloud\Service\PadBootstrapService;
 use OCA\EtherpadNextcloud\Service\PadCreateRollbackService;
@@ -602,7 +603,7 @@ class PadCreationServiceTest extends TestCase {
 		$etherpadClient->expects($this->once())->method('deletePad')->with('p-fresh');
 
 		$rollbackService = new PadCreateRollbackService(
-			$etherpadClient,
+			new ManagedPadLifecycle($etherpadClient, $this->createMock(LoggerInterface::class)),
 			$this->createMock(\Psr\Log\LoggerInterface::class),
 		);
 
@@ -658,7 +659,7 @@ class PadCreationServiceTest extends TestCase {
 			bindingService: $bindingService,
 			bootstrap: $bootstrap,
 			rollbackService: new PadCreateRollbackService(
-				$this->createMock(EtherpadClient::class),
+				new ManagedPadLifecycle($this->createMock(EtherpadClient::class), $this->createMock(LoggerInterface::class)),
 				$this->createMock(\Psr\Log\LoggerInterface::class),
 			),
 		)->create('alice', '/Notes.pad', BindingService::ACCESS_PUBLIC);
@@ -692,6 +693,91 @@ class PadCreationServiceTest extends TestCase {
 		$this->buildServiceRefusing($existing)->create('alice', '/Notes.pad', BindingService::ACCESS_PUBLIC);
 	}
 
+	/**
+	 * `createBinding` is the last step of a materialization and can commit
+	 * and still throw. Both callers give up on the file — the create flow
+	 * deletes it, the template listener wipes it and re-initialises — so a
+	 * surviving row would send that re-initialisation at a pad this cleanup
+	 * has just deleted.
+	 */
+	public function testMaterializeRemovesARowItsFailedBindingWriteLeftBehind(): void {
+		$padId = 'g.ABCDEFGHIJKLMNOP$pad';
+
+		$bindingService = $this->createMock(BindingService::class);
+		$bindingService->method('createBinding')->willThrowException(new \RuntimeException('connection lost'));
+		$bindingService->method('isBoundTo')->with(4321, $padId)->willReturn(true);
+		$bindingService->expects(self::once())->method('deleteByFileId')->with(4321);
+
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->method('buildPadUrl')->willReturn('https://pad.example.test/p/x');
+		$etherpadClient->expects(self::once())->method('deleteGroup')->with('g.ABCDEFGHIJKLMNOP');
+
+		$this->expectException(\RuntimeException::class);
+		$this->buildMaterializeService($bindingService, $etherpadClient, $padId)
+			->materializeTemplateInto($this->buildMaterializeTarget(), $this->buildMaterializeTemplate(), null);
+	}
+
+	/** A row naming a different pad belongs to the request that won the file. */
+	public function testMaterializeLeavesARivalRequestsRow(): void {
+		$padId = 'g.ABCDEFGHIJKLMNOP$pad';
+
+		$bindingService = $this->createMock(BindingService::class);
+		$bindingService->method('createBinding')->willThrowException(new \RuntimeException('unique constraint violation'));
+		$bindingService->method('isBoundTo')->with(4321, $padId)->willReturn(false);
+		$bindingService->expects(self::never())->method('deleteByFileId');
+
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->method('buildPadUrl')->willReturn('https://pad.example.test/p/x');
+		$etherpadClient->expects(self::once())->method('deleteGroup')->with('g.ABCDEFGHIJKLMNOP');
+
+		$this->expectException(\RuntimeException::class);
+		$this->buildMaterializeService($bindingService, $etherpadClient, $padId)
+			->materializeTemplateInto($this->buildMaterializeTarget(), $this->buildMaterializeTemplate(), null);
+	}
+
+	private function buildMaterializeTemplate(): \OCP\Files\File {
+		$template = $this->createMock(\OCP\Files\File::class);
+		$template->method('getName')->willReturn('Template.pad');
+		$template->method('getContent')->willReturn('tpl');
+		return $template;
+	}
+
+	private function buildMaterializeTarget(): \OCP\Files\File {
+		$target = $this->createMock(\OCP\Files\File::class);
+		$target->method('getId')->willReturn(4321);
+		return $target;
+	}
+
+	private function buildMaterializeService(
+		BindingService $bindingService,
+		EtherpadClient $etherpadClient,
+		string $padId,
+	): PadCreationService {
+		$padFileService = $this->createMock(PadFileService::class);
+		$padFileService->method('readPad')->willReturn(new ParsedPadFile(
+			frontmatter: ['pad_id' => 'nc-source'],
+			body: 'body',
+			padId: 'nc-source',
+			accessMode: BindingService::ACCESS_PROTECTED,
+			padUrl: '',
+			isExternal: false,
+		));
+		$padFileService->method('getSnapshotPartsFromBody')->willReturn(['text' => 'hello', 'html' => '']);
+		$padFileService->method('buildInitialDocument')->willReturn('doc');
+		$padFileService->method('withExportSnapshot')->willReturn('doc-with-snapshot');
+
+		$bootstrap = $this->createMock(PadBootstrapService::class);
+		$bootstrap->method('provisionPadId')->willReturn($padId);
+
+		return $this->buildService(
+			padFileService: $padFileService,
+			bindingService: $bindingService,
+			etherpadClient: $etherpadClient,
+			bootstrap: $bootstrap,
+			padTypePolicy: $this->buildPadTypePolicy(true, false),
+		);
+	}
+
 	private function buildServiceRefusing(\OCP\Files\File $node): PadCreationService {
 		$fileCreator = $this->createMock(PadFileCreator::class);
 		$fileCreator->method('createUserFile')->willReturn($node);
@@ -707,7 +793,7 @@ class PadCreationServiceTest extends TestCase {
 			fileCreator: $fileCreator,
 			bootstrap: $bootstrap,
 			rollbackService: new PadCreateRollbackService(
-				$this->createMock(EtherpadClient::class),
+				new ManagedPadLifecycle($this->createMock(EtherpadClient::class), $this->createMock(LoggerInterface::class)),
 				$this->createMock(\Psr\Log\LoggerInterface::class),
 			),
 		);
@@ -790,6 +876,7 @@ class PadCreationServiceTest extends TestCase {
 			$rollbackService ?? $this->createMock(PadCreateRollbackService::class),
 			$bindingService ?? $this->createMock(BindingService::class),
 			$etherpadClient,
+			new ManagedPadLifecycle($etherpadClient, $this->createMock(LoggerInterface::class)),
 			$bootstrap ?? $this->createMock(PadBootstrapService::class),
 			$placeholderResolver,
 			$externalPadSeeder,

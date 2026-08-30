@@ -36,6 +36,7 @@ class LifecycleService {
 		private BindingService $bindingService,
 		private PadFileService $padFileService,
 		private EtherpadClient $etherpadClient,
+		private ManagedPadLifecycle $padLifecycle,
 		private IConfig $config,
 		private LoggerInterface $logger,
 		private ISecureRandom $secureRandom,
@@ -224,7 +225,7 @@ class LifecycleService {
 			}
 
 			try {
-				$this->etherpadClient->deletePad($padId);
+				$this->padLifecycle->discard($padId);
 			} catch (\Throwable $deleteError) {
 				if (EtherpadErrorClassifier::isPadAlreadyDeleted($deleteError)) {
 					$this->logger->info('Pad already deleted while processing trash; deleting binding row.', [
@@ -334,14 +335,14 @@ class LifecycleService {
 			$fileContentUpdated = true;
 			$this->bindingService->markRestored($fileId, $newPadId);
 			$restored = true;
-			return [
+			$result = [
 				'status' => self::RESULT_RESTORED,
 				'file_id' => $fileId,
 				'old_pad_id' => $oldPadId,
 				'new_pad_id' => $newPadId,
 			];
 		} catch (\Throwable $e) {
-			if (!$restored) {
+			if (!$restored && !$this->restoreAlreadyLanded($fileId, $newPadId)) {
 				if ($fileContentUpdated) {
 					try {
 						$file->putContent($currentContent);
@@ -356,7 +357,7 @@ class LifecycleService {
 					}
 				}
 				try {
-					$this->etherpadClient->deletePad($newPadId);
+					$this->padLifecycle->discardProvisioned($newPadId);
 				} catch (\Throwable $cleanupError) {
 					$this->logger->warning('Could not cleanup newly provisioned restore pad after failure.', [
 						'app' => 'etherpad_nextcloud',
@@ -384,6 +385,11 @@ class LifecycleService {
 			]);
 			throw new LifecycleException('Restore flow failed before completion.', 0, $e);
 		}
+
+		// Outside the try on purpose: the restore is done and recorded, and
+		// nothing about clearing up after it may turn that into a failure.
+		$this->discardSupersededPad($fileId, $oldPadId, $newPadId);
+		return $result;
 	}
 
 	/**
@@ -424,7 +430,6 @@ class LifecycleService {
 		$newPadId = '';
 		$fileContentUpdated = false;
 		$managedPadCreated = false;
-		$bindingCreated = false;
 
 		try {
 			if ($this->isTestFaultActive(self::TEST_FAULT_RESTORE_READ_LOCK)) {
@@ -457,7 +462,6 @@ class LifecycleService {
 			// got here first, createBinding throws and we abort cleanly
 			// without overwriting their .pad content.
 			$this->bindingService->createBinding($fileId, $newPadId, $accessMode);
-			$bindingCreated = true;
 			$this->writeRestoredContent($file, $updatedContent);
 			$fileContentUpdated = true;
 
@@ -468,29 +472,8 @@ class LifecycleService {
 				'new_pad_id' => $newPadId,
 			];
 		} catch (\Throwable $e) {
-			if ($bindingCreated && !$fileContentUpdated) {
-				try {
-					$this->bindingService->deleteByFileId($fileId);
-				} catch (\Throwable $bindingRollbackError) {
-					$this->logger->warning('Could not rollback binding row after failed restore-without-binding write.', [
-						'app' => 'etherpad_nextcloud',
-						'fileId' => $fileId,
-						'newPadId' => $newPadId,
-						'exception' => $bindingRollbackError,
-					]);
-				}
-			}
-			if ($managedPadCreated && $newPadId !== '') {
-				try {
-					$this->etherpadClient->deletePad($newPadId);
-				} catch (\Throwable $cleanupError) {
-					$this->logger->warning('Could not cleanup newly provisioned restore pad after failed no-binding restore.', [
-						'app' => 'etherpad_nextcloud',
-						'fileId' => $fileId,
-						'newPadId' => $newPadId,
-						'exception' => $cleanupError,
-					]);
-				}
+			if ($managedPadCreated && $newPadId !== '' && !$fileContentUpdated) {
+				$this->unwindUnwrittenRestore($fileId, $newPadId);
 			}
 			$this->logger->error('Restore lifecycle failed without existing binding.', [
 				'app' => 'etherpad_nextcloud',
@@ -545,14 +528,119 @@ class LifecycleService {
 
 	private function provisionRestorePadId(string $accessMode, string $oldPadId): string {
 		if ($accessMode === BindingService::ACCESS_PROTECTED) {
-			$groupId = $this->etherpadClient->createGroup();
-			$padName = $this->buildProtectedRestorePadName();
-			return $this->etherpadClient->createGroupPad($groupId, $padName);
+			return $this->padLifecycle->provisionGroupPad($this->buildProtectedRestorePadName());
 		}
 
 		$newPadId = $this->buildPublicRestorePadId($oldPadId);
-		$this->etherpadClient->createPad($newPadId);
+		$this->padLifecycle->provisionPad($newPadId);
 		return $newPadId;
+	}
+
+	/**
+	 * Whether the restore landed despite the error.
+	 *
+	 * `markRestored` is the last step, and it can commit and still throw —
+	 * the connection drops between the update and its answer. By then the
+	 * file already names the new pad, so row, file and pad agree: a
+	 * finished restore reported as a failure. The rollback below is then
+	 * the only thing that could break it, putting the old content back and
+	 * deleting the pad the row now points at.
+	 *
+	 * A row that cannot be read counts as landed. The alternative is
+	 * deleting a pad a row may well name.
+	 */
+	private function restoreAlreadyLanded(int $fileId, string $newPadId): bool {
+		try {
+			return $this->bindingService->isBoundTo($fileId, $newPadId);
+		} catch (\Throwable $readError) {
+			$this->logger->warning('Could not read the binding after a failed restore; leaving the new pad in place.', [
+				'app' => 'etherpad_nextcloud',
+				'fileId' => $fileId,
+				'newPadId' => $newPadId,
+				'exception' => $readError,
+			]);
+			return true;
+		}
+	}
+
+	/**
+	 * The row and the pad a recovery made when the file was never written.
+	 *
+	 * Nothing consistent to keep here, unlike a first init: the row names
+	 * the new pad while the `.pad` still names the old one. No binding at
+	 * all is the state this recovery is built to start from, so that is
+	 * what it goes back to.
+	 *
+	 * Which row to remove is read, not remembered. `createBinding` can
+	 * commit and still throw, and the flag then says no row while a row is
+	 * there naming the pad about to be deleted. A row naming a different
+	 * pad belongs to the concurrent recovery that won the file — the unique
+	 * constraint is the serialization point here — and stays.
+	 *
+	 * Without an answer nothing is destroyed.
+	 */
+	private function unwindUnwrittenRestore(int $fileId, string $newPadId): void {
+		try {
+			if ($this->bindingService->isBoundTo($fileId, $newPadId)) {
+				$this->bindingService->deleteByFileId($fileId);
+			}
+		} catch (\Throwable $bindingRollbackError) {
+			$this->logger->warning('Could not rollback binding row after failed restore-without-binding write; keeping its pad.', [
+				'app' => 'etherpad_nextcloud',
+				'fileId' => $fileId,
+				'newPadId' => $newPadId,
+				'exception' => $bindingRollbackError,
+			]);
+			return;
+		}
+
+		try {
+			$this->padLifecycle->discardProvisioned($newPadId);
+		} catch (\Throwable $cleanupError) {
+			$this->logger->warning('Could not cleanup newly provisioned restore pad after failed no-binding restore.', [
+				'app' => 'etherpad_nextcloud',
+				'fileId' => $fileId,
+				'newPadId' => $newPadId,
+				'exception' => $cleanupError,
+			]);
+		}
+	}
+
+	/**
+	 * The pad the restore left behind.
+	 *
+	 * A binding only reaches `pending_delete` because its pad delete failed,
+	 * so by the time it is restored the old pad is usually still there — and
+	 * `markRestored` points the row at the new one, which was the last thing
+	 * naming the old. The retry job walks `pending_delete` rows, so after
+	 * that update nothing will ever look at it again: a whole group and its
+	 * sessions, for a protected pad.
+	 *
+	 * Best effort, and after the state change rather than before. The delete
+	 * that failed once may fail again, and the restore has already succeeded
+	 * — it must not be undone over its own leftovers. `padID does not exist`
+	 * is the ordinary case where the first delete got through and only its
+	 * answer was lost.
+	 */
+	private function discardSupersededPad(int $fileId, string $oldPadId, string $newPadId): void {
+		if ($oldPadId === '' || $oldPadId === $newPadId || str_starts_with($oldPadId, 'ext.')) {
+			return;
+		}
+
+		try {
+			$this->padLifecycle->discard($oldPadId);
+		} catch (\Throwable $e) {
+			if (EtherpadErrorClassifier::isPadAlreadyDeleted($e)) {
+				return;
+			}
+			$this->logger->warning('Could not remove the pad a restore replaced. It is no longer referenced.', [
+				'app' => 'etherpad_nextcloud',
+				'fileId' => $fileId,
+				'oldPadId' => $oldPadId,
+				'newPadId' => $newPadId,
+				'exception' => $e,
+			]);
+		}
 	}
 
 	private function restoreSnapshotToManagedPad(int $fileId, string $oldPadId, string $newPadId, string $snapshot, string $htmlSnapshot): void {

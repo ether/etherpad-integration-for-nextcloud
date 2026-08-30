@@ -29,6 +29,7 @@ class PadCreationService {
 		private PadCreateRollbackService $rollbackService,
 		private BindingService $bindingService,
 		private EtherpadClient $etherpadClient,
+		private ManagedPadLifecycle $padLifecycle,
 		private PadBootstrapService $padBootstrapService,
 		private PadPlaceholderResolver $placeholderResolver,
 		private ExternalPadSeeder $externalPadSeeder,
@@ -339,6 +340,50 @@ class PadCreationService {
 	 *
 	 * @return array{file_id:int,pad_id:string,access_mode:string,pad_url:string}
 	 */
+	/**
+	 * The pad and the binding row a failed materialization made.
+	 *
+	 * Both callers give up on the file: the create flow deletes the node it
+	 * made, and the template listener wipes it and re-initialises. So there
+	 * is no consistent pair to keep here — a surviving row would send that
+	 * re-initialisation straight at a pad that no longer exists.
+	 *
+	 * The row is looked up rather than remembered. `createBinding` is the
+	 * last step and can commit and still throw, and a flag would then say
+	 * no row while a row names the pad about to go. A row naming a
+	 * different pad belongs to a request that won the file, and stays.
+	 *
+	 * Without an answer, nothing is destroyed: a pad an admin can find
+	 * beats a binding pointing at a pad that is gone.
+	 */
+	private function unwindMaterializedPad(int $fileId, string $padId): void {
+		try {
+			if ($this->bindingService->isBoundTo($fileId, $padId)) {
+				$this->bindingService->deleteByFileId($fileId);
+			}
+		} catch (\Throwable $bindingError) {
+			$this->logger->warning('Could not rollback the binding after template materialization failure; keeping its pad.', [
+				'app' => 'etherpad_nextcloud',
+				'fileId' => $fileId,
+				'padId' => $padId,
+				'exception' => $bindingError,
+			]);
+			return;
+		}
+
+		try {
+			// Provisioned in this call, so no ownership check is needed —
+			// and none may be required: nothing retries this.
+			$this->padLifecycle->discardProvisioned($padId);
+		} catch (\Throwable $cleanupError) {
+			$this->logger->warning('Could not cleanup Etherpad pad after template materialization failure.', [
+				'app' => 'etherpad_nextcloud',
+				'padId' => $padId,
+				'exception' => $cleanupError,
+			]);
+		}
+	}
+
 	public function materializeTemplateInto(File $target, File $template, ?IUser $user): array {
 		if (!str_ends_with(strtolower($template->getName()), '.pad')) {
 			throw new NotAPadFileException('Template is not a .pad file.');
@@ -392,15 +437,7 @@ class PadCreationService {
 			$target->putContent($content);
 			$this->bindingService->createBinding($fileId, $padId, $accessMode);
 		} catch (\Throwable $e) {
-			try {
-				$this->etherpadClient->deletePad($padId);
-			} catch (\Throwable $cleanupError) {
-				$this->logger->warning('Could not cleanup Etherpad pad after template materialization failure.', [
-					'app' => 'etherpad_nextcloud',
-					'padId' => $padId,
-					'exception' => $cleanupError,
-				]);
-			}
+			$this->unwindMaterializedPad($fileId, $padId);
 			throw $e;
 		}
 

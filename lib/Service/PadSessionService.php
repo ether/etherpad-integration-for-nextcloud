@@ -10,6 +10,7 @@ namespace OCA\EtherpadNextcloud\Service;
 
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
 use OCP\IConfig;
+use OCA\EtherpadNextcloud\Util\PadId;
 use OCP\IRequest;
 use OCP\IURLGenerator;
 use Psr\Log\LoggerInterface;
@@ -275,10 +276,11 @@ class PadSessionService {
 	}
 
 	public function extractGroupId(string $padId): string {
-		if (preg_match('/^(g\.[A-Za-z0-9]{16})\$/', $padId, $matches) !== 1) {
+		$groupId = PadId::groupIdOf($padId);
+		if ($groupId === null) {
 			throw new EtherpadClientException('Protected pad ID is invalid (group prefix missing).');
 		}
-		return $matches[1];
+		return $groupId;
 	}
 
 	/**

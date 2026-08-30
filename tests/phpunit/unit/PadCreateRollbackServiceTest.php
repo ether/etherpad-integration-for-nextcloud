@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\Tests\Unit;
 
 use OCA\EtherpadNextcloud\Service\EtherpadClient;
+use OCA\EtherpadNextcloud\Service\ManagedPadLifecycle;
 use OCA\EtherpadNextcloud\Service\PadCreateRollbackService;
 use OCP\Files\File;
 use PHPUnit\Framework\TestCase;
@@ -45,10 +46,27 @@ class PadCreateRollbackServiceTest extends TestCase {
 
 	public function testDeletesTheProvisionedPad(): void {
 		$etherpad = $this->createMock(EtherpadClient::class);
-		$etherpad->expects($this->once())->method('deletePad')->with('g.ABC$pad');
+		$etherpad->expects($this->once())->method('deletePad')->with('nc-abcdef0123456789');
 
 		$this->buildService(etherpad: $etherpad)
-			->rollbackFailedCreate('alice', '/Created.pad', 'g.ABC$pad', null);
+			->rollbackFailedCreate('alice', '/Created.pad', 'nc-abcdef0123456789', null);
+	}
+
+	/**
+	 * A protected pad is removed by its group — and without asking Etherpad
+	 * whose group it is. A rollback only ever holds a pad its own request
+	 * provisioned, and nothing retries it: making the delete wait on a read
+	 * would mean one timed-out read strands a group and its sessions for
+	 * good, on a group nothing else has ever seen.
+	 */
+	public function testTakesTheGroupOfAProvisionedProtectedPadWithoutAsking(): void {
+		$etherpad = $this->createMock(EtherpadClient::class);
+		$etherpad->expects($this->never())->method('listPads');
+		$etherpad->expects($this->once())->method('deleteGroup')->with('g.ABCDEFGHIJKLMNOP');
+		$etherpad->expects($this->never())->method('deletePad');
+
+		$this->buildService(etherpad: $etherpad)
+			->rollbackFailedCreate('alice', '/Created.pad', 'g.ABCDEFGHIJKLMNOP$pad', null);
 	}
 
 	public function testLeavesEtherpadAloneWithoutAPadId(): void {
@@ -86,7 +104,7 @@ class PadCreateRollbackServiceTest extends TestCase {
 			->with($this->stringContains('Could not cleanup failed Etherpad create'), $this->anything());
 
 		$this->buildService(etherpad: $etherpad, logger: $logger)
-			->rollbackFailedCreate('alice', '/Created.pad', 'g.ABC$pad', null);
+			->rollbackFailedCreate('alice', '/Created.pad', 'nc-abcdef0123456789', null);
 	}
 
 	/**
@@ -125,7 +143,7 @@ class PadCreateRollbackServiceTest extends TestCase {
 		?LoggerInterface $logger = null,
 	): PadCreateRollbackService {
 		return new PadCreateRollbackService(
-			$etherpad ?? $this->createMock(EtherpadClient::class),
+			new ManagedPadLifecycle($etherpad ?? $this->createMock(EtherpadClient::class), $this->createMock(LoggerInterface::class)),
 			$logger ?? $this->createMock(LoggerInterface::class),
 		);
 	}

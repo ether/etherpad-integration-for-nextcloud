@@ -8,6 +8,8 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Service;
 
+use OCA\EtherpadNextcloud\Util\PadId;
+
 use OCA\EtherpadNextcloud\Exception\PadFileFormatException;
 use OCA\EtherpadNextcloud\Exception\MissingFrontmatterException;
 
@@ -131,10 +133,9 @@ class PadFileService {
 	}
 
 	public function inferAccessModeFromPadId(string $padId): string {
-		if (preg_match('/^g\.[^$]+\$.+$/', $padId) === 1) {
-			return BindingService::ACCESS_PROTECTED;
-		}
-		return BindingService::ACCESS_PUBLIC;
+		return PadId::isGroupPad($padId)
+			? BindingService::ACCESS_PROTECTED
+			: BindingService::ACCESS_PUBLIC;
 	}
 
 	/**

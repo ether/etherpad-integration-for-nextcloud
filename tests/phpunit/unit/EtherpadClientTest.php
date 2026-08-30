@@ -123,6 +123,46 @@ class EtherpadClientTest extends TestCase {
 		$this->assertSame(['s.ok' => ['groupID' => 'g.aaa', 'validUntil' => 42]], $client->listSessionsOfAuthor('a.x'));
 	}
 
+	public function testListPadsReadsAValidPadList(): void {
+		$client = $this->clientWithResponse(
+			$this->response(200, '{"code":0,"data":{"padIDs":["g.aaa$one","g.aaa$two"]}}')
+		);
+		$this->assertSame(['g.aaa$one', 'g.aaa$two'], $client->listPads('g.aaa'));
+	}
+
+	/** Measured against Etherpad: an empty group answers with an empty list. */
+	public function testListPadsReadsAnEmptyGroup(): void {
+		$client = $this->clientWithResponse($this->response(200, '{"code":0,"data":{"padIDs":[]}}'));
+		$this->assertSame([], $client->listPads('g.aaa'));
+	}
+
+	/**
+	 * Not `[]`, because of what the caller does with `[]`: it reads it as
+	 * "this group holds nothing, so removing it takes nothing with it". An
+	 * answer that does not contain a list is not an empty group, and
+	 * shrugging it off would be a licence to delete. Saying so drops the
+	 * caller back to deleting the pad alone.
+	 *
+	 */
+	#[\PHPUnit\Framework\Attributes\DataProvider('provideUnreadablePadLists')]
+	public function testListPadsRefusesAnAnswerItCannotRead(string $payload): void {
+		$client = $this->clientWithResponse($this->response(200, $payload));
+		$this->expectException(EtherpadClientException::class);
+		$client->listPads('g.aaa');
+	}
+
+	/** @return array<string,array{string}> */
+	public static function provideUnreadablePadLists(): array {
+		return [
+			'no padIDs field' => ['{"code":0,"data":{}}'],
+			'null data' => ['{"code":0,"data":null}'],
+			'padIDs is a string' => ['{"code":0,"data":{"padIDs":"g.aaa$one"}}'],
+			'padIDs is an object' => ['{"code":0,"data":{"padIDs":{"a":"g.aaa$one"}}}'],
+			'a member is not a string' => ['{"code":0,"data":{"padIDs":["g.aaa$one",42]}}'],
+			'a member is null' => ['{"code":0,"data":{"padIDs":[null]}}'],
+		];
+	}
+
 	public function testApiCallThrowsOnNonZeroApiCode(): void {
 		$client = $this->clientWithResponse(
 			$this->response(200, '{"code":1,"message":"groupID does not exist"}')
