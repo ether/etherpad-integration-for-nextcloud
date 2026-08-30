@@ -29,8 +29,12 @@ test.describe('protected pad cleanup on the Etherpad side', () => {
 		test.skip(etherpad === null, 'E2E_ETHERPAD_URL / E2E_ETHERPAD_API_KEY not configured; Etherpad-side spec skipped.')
 
 		const api = await playwrightRequest.newContext({ storageState: { cookies: [], origins: [] } })
+		// POST, not GET: a query string carries the api key into proxy logs,
+		// and — with `trace: 'retain-on-failure'` and the html reporter — into
+		// the report CI uploads as an artifact. EtherpadClient posts every
+		// authenticated call for the same reason.
 		const groupIds = async (): Promise<string[]> => {
-			const res = await api.get(`${etherpad!.url}/api/1.2.15/listAllGroups?apikey=${encodeURIComponent(etherpad!.key)}`)
+			const res = await api.post(`${etherpad!.url}/api/1.2.15/listAllGroups`, { form: { apikey: etherpad!.key } })
 			expect(res.status()).toBe(200)
 			const payload = await res.json() as { code: number, data?: { groupIDs?: string[] } }
 			expect(payload.code, JSON.stringify(payload)).toBe(0)

@@ -61,6 +61,38 @@ class ManagedPadLifecycleTest extends TestCase {
 		$this->lifecycle($client)->discard($padId);
 	}
 
+	/**
+	 * The state every protected delete before this left behind: the pad is
+	 * gone, its group is still standing. Nothing else can collect it — a
+	 * retry that only deleted the pad again would answer "already gone" and
+	 * drop the last row naming the group.
+	 */
+	public function testDeletesAGroupThatHasBeenEmptied(): void {
+		$padId = 'g.ABCDEFGHIJKLMNOP$p-abc123';
+		$client = $this->createMock(EtherpadClient::class);
+		$client->expects($this->once())->method('listPads')->with('g.ABCDEFGHIJKLMNOP')->willReturn([]);
+		$client->expects($this->once())->method('deleteGroup')->with('g.ABCDEFGHIJKLMNOP');
+		$client->expects($this->never())->method('deletePad');
+
+		$this->lifecycle($client)->discard($padId);
+	}
+
+	/**
+	 * Reading the group is what makes removing the group safe, not what
+	 * makes removing the pad safe. Most callers are rollbacks with no retry
+	 * behind them, so a read that times out must cost the group, not the
+	 * delete.
+	 */
+	public function testStillRemovesThePadWhenTheGroupCannotBeRead(): void {
+		$padId = 'g.ABCDEFGHIJKLMNOP$p-abc123';
+		$client = $this->createMock(EtherpadClient::class);
+		$client->method('listPads')->willThrowException(new \RuntimeException('Connection timed out'));
+		$client->expects($this->never())->method('deleteGroup');
+		$client->expects($this->once())->method('deletePad')->with($padId);
+
+		$this->lifecycle($client)->discard($padId);
+	}
+
 	public function testDeletesOnlyThePadForAPublicOne(): void {
 		$client = $this->createMock(EtherpadClient::class);
 		$client->expects($this->never())->method('listPads');
@@ -97,5 +129,32 @@ class ManagedPadLifecycleTest extends TestCase {
 		$client->expects($this->once())->method('deleteGroup')->with('g.abc123');
 
 		$this->lifecycle($client)->discard($padId);
+	}
+
+	/**
+	 * A create that fails on the way back may still have made the pad. The
+	 * id is ours here — unlike the group case there is always something to
+	 * clean up with — and if it is not used, nothing will ever name it again.
+	 */
+	public function testRemovesAPublicPadWhoseCreateFailed(): void {
+		$client = $this->createMock(EtherpadClient::class);
+		$client->method('createPad')->willThrowException(new \RuntimeException('Connection timed out'));
+		$client->expects($this->once())->method('deletePad')->with('nc-abcdef0123456789');
+
+		$this->expectException(\RuntimeException::class);
+		$this->lifecycle($client)->provisionPad('nc-abcdef0123456789');
+	}
+
+	/**
+	 * The one failure that is not ours to undo: the pad was there before the
+	 * call, so deleting it would destroy live content.
+	 */
+	public function testLeavesAPadThatWasAlreadyThere(): void {
+		$client = $this->createMock(EtherpadClient::class);
+		$client->method('createPad')->willThrowException(new \RuntimeException('padID does already exist'));
+		$client->expects($this->never())->method('deletePad');
+
+		$this->expectException(\RuntimeException::class);
+		$this->lifecycle($client)->provisionPad('nc-abcdef0123456789');
 	}
 }

@@ -58,7 +58,7 @@ class PadBootstrapService {
 	public function provisionPadId(string $accessMode): string {
 		if ($accessMode === BindingService::ACCESS_PUBLIC) {
 			$padId = 'nc-' . $this->secureRandom->generate(24, ISecureRandom::CHAR_LOWER . ISecureRandom::CHAR_DIGITS);
-			$this->etherpadClient->createPad($padId);
+			$this->padLifecycle->provisionPad($padId);
 			return $padId;
 		}
 
@@ -89,7 +89,6 @@ class PadBootstrapService {
 		}
 
 		$binding = $this->bindingService->findByFileId($fileId);
-		$createdNewBinding = false;
 		$createdNewPad = false;
 
 		$padId = '';
@@ -120,7 +119,6 @@ class PadBootstrapService {
 				// Ours from here, before the binding exists.
 				$createdNewPad = true;
 				$this->bindingService->createBinding($fileId, $padId, $accessMode);
-				$createdNewBinding = true;
 			}
 
 			$padUrl = $this->etherpadClient->buildPadUrl($padId);
@@ -128,32 +126,55 @@ class PadBootstrapService {
 			$file->putContent($doc);
 		} catch (\Throwable $e) {
 			if ($createdNewPad) {
-				try {
-					$this->padLifecycle->discard($padId);
-				} catch (\Throwable $cleanupError) {
-					$this->logger->warning('Could not cleanup Etherpad pad after frontmatter init failure.', [
-						'app' => 'etherpad_nextcloud',
-						'fileId' => $fileId,
-						'padId' => $padId,
-						'exception' => $cleanupError,
-					]);
-				}
-			}
-			if ($createdNewBinding) {
-				try {
-					$this->bindingService->deleteByFileId($fileId);
-				} catch (\Throwable $cleanupError) {
-					$this->logger->warning('Could not cleanup binding after frontmatter init failure.', [
-						'app' => 'etherpad_nextcloud',
-						'fileId' => $fileId,
-						'padId' => $padId,
-						'exception' => $cleanupError,
-					]);
-				}
+				$this->rollbackProvisionedPad($fileId, $padId);
 			}
 			throw $e;
 		}
 		return false;
+	}
+
+	/**
+	 * Undo a pad this call provisioned, together with the binding row that
+	 * names it.
+	 *
+	 * The row goes first, and the pad only follows if it went. A binding
+	 * pointing at a pad that no longer exists is a file the user cannot open
+	 * again; a pad with no binding is invisible rubbish an admin can clear.
+	 * Between those two, keep the file working.
+	 *
+	 * Which row to remove is asked, not assumed. A flag set alongside
+	 * `createBinding` cannot see the two ways it fails: an insert that
+	 * committed before the connection dropped leaves a row the flag says is
+	 * not there, and an insert refused by the unique constraint means a
+	 * concurrent first-open won the race — deleting the row then would take
+	 * *their* binding away. The pad id tells the two apart.
+	 */
+	private function rollbackProvisionedPad(int $fileId, string $padId): void {
+		try {
+			$binding = $this->bindingService->findByFileId($fileId);
+			if ($binding !== null && (string)$binding['pad_id'] === $padId) {
+				$this->bindingService->deleteByFileId($fileId);
+			}
+		} catch (\Throwable $cleanupError) {
+			$this->logger->warning('Could not cleanup binding after frontmatter init failure; keeping its pad.', [
+				'app' => 'etherpad_nextcloud',
+				'fileId' => $fileId,
+				'padId' => $padId,
+				'exception' => $cleanupError,
+			]);
+			return;
+		}
+
+		try {
+			$this->padLifecycle->discard($padId);
+		} catch (\Throwable $cleanupError) {
+			$this->logger->warning('Could not cleanup Etherpad pad after frontmatter init failure.', [
+				'app' => 'etherpad_nextcloud',
+				'fileId' => $fileId,
+				'padId' => $padId,
+				'exception' => $cleanupError,
+			]);
+		}
 	}
 
 	private function buildProtectedPadName(): string {

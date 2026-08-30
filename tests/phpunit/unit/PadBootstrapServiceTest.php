@@ -234,17 +234,124 @@ class PadBootstrapServiceTest extends TestCase {
 		$service->initializeMissingFrontmatter('alice', $file, '');
 	}
 
-	public function testInitializeMissingFrontmatterCleansUpWhenWriteFails(): void {
+	/**
+	 * The insert committed and the connection dropped before the answer got
+	 * back, so the row is there while the call reports failure. A flag set
+	 * next to `createBinding` says it is not, and the pad would then be
+	 * destroyed under a binding that still names it — a file nobody can open
+	 * again. Asking which pad the row names settles it.
+	 */
+	public function testRemovesABindingRowThatOutlivedItsFailedWrite(): void {
 		$fileId = 99;
-		// A real group id is `g.` plus 16 characters — with a short one the
-		// pad would not be recognised as a group pad at all.
 		$padId = 'g.ABCDEFGHIJKLMNOP$p-abcdefghijklmnopqrst';
 
 		$bindingService = $this->createMock(BindingService::class);
+		$bindingService->method('findByFileId')->with($fileId)->willReturnOnConsecutiveCalls(
+			null,
+			['file_id' => $fileId, 'pad_id' => $padId, 'access_mode' => BindingService::ACCESS_PROTECTED, 'state' => BindingService::STATE_ACTIVE],
+		);
 		$bindingService->expects($this->once())
+			->method('createBinding')
+			->willThrowException(new \RuntimeException('binding write failed'));
+		$bindingService->expects($this->once())->method('deleteByFileId')->with($fileId);
+
+		$padFileService = $this->createMock(PadFileService::class);
+		$padFileService->method('parseLegacyOwnpadShortcut')->willReturn(null);
+
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->method('createGroup')->willReturn('g.ABCDEFGHIJKLMNOP');
+		$etherpadClient->method('createGroupPad')->willReturn($padId);
+		$etherpadClient->method('listPads')->with('g.ABCDEFGHIJKLMNOP')->willReturn([$padId]);
+		$etherpadClient->expects($this->once())->method('deleteGroup')->with('g.ABCDEFGHIJKLMNOP');
+
+		$secureRandom = $this->createMock(ISecureRandom::class);
+		$secureRandom->method('generate')->willReturn('abcdefghijklmnopqrst');
+
+		$file = $this->createMock(File::class);
+		$file->method('getId')->willReturn($fileId);
+
+		$service = new PadBootstrapService(
+			$bindingService,
+			$padFileService,
+			$etherpadClient,
+			new ManagedPadLifecycle($etherpadClient, $this->createMock(LoggerInterface::class)),
+			$secureRandom,
+			$this->createMock(LoggerInterface::class),
+			$this->createMock(\OCA\EtherpadNextcloud\Service\PadLegacyMigrationService::class),
+			$this->buildPadTypePolicy(true),
+		);
+
+		$this->expectException(\RuntimeException::class);
+		$service->initializeMissingFrontmatter('alice', $file, '');
+	}
+
+	/**
+	 * The other way `createBinding` fails: a concurrent first-open of the
+	 * same file inserted first and the unique constraint refused ours. The
+	 * row is theirs, and taking it away would leave their pad with nothing
+	 * pointing at it. Our own pad still goes.
+	 */
+	public function testLeavesABindingRowAConcurrentOpenWon(): void {
+		$fileId = 99;
+		$padId = 'g.ABCDEFGHIJKLMNOP$p-abcdefghijklmnopqrst';
+
+		$bindingService = $this->createMock(BindingService::class);
+		$bindingService->method('findByFileId')->with($fileId)->willReturnOnConsecutiveCalls(
+			null,
+			['file_id' => $fileId, 'pad_id' => 'g.OTHERGROUPIDXYZ$p-theirs', 'access_mode' => BindingService::ACCESS_PROTECTED, 'state' => BindingService::STATE_ACTIVE],
+		);
+		$bindingService->method('createBinding')->willThrowException(new \RuntimeException('unique constraint violation'));
+		$bindingService->expects($this->never())->method('deleteByFileId');
+
+		$padFileService = $this->createMock(PadFileService::class);
+		$padFileService->method('parseLegacyOwnpadShortcut')->willReturn(null);
+
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->method('createGroup')->willReturn('g.ABCDEFGHIJKLMNOP');
+		$etherpadClient->method('createGroupPad')->willReturn($padId);
+		$etherpadClient->method('listPads')->with('g.ABCDEFGHIJKLMNOP')->willReturn([$padId]);
+		$etherpadClient->expects($this->once())->method('deleteGroup')->with('g.ABCDEFGHIJKLMNOP');
+
+		$secureRandom = $this->createMock(ISecureRandom::class);
+		$secureRandom->method('generate')->willReturn('abcdefghijklmnopqrst');
+
+		$file = $this->createMock(File::class);
+		$file->method('getId')->willReturn($fileId);
+
+		$service = new PadBootstrapService(
+			$bindingService,
+			$padFileService,
+			$etherpadClient,
+			new ManagedPadLifecycle($etherpadClient, $this->createMock(LoggerInterface::class)),
+			$secureRandom,
+			$this->createMock(LoggerInterface::class),
+			$this->createMock(\OCA\EtherpadNextcloud\Service\PadLegacyMigrationService::class),
+			$this->buildPadTypePolicy(true),
+		);
+
+		$this->expectException(\RuntimeException::class);
+		$service->initializeMissingFrontmatter('alice', $file, '');
+	}
+
+	public function testInitializeMissingFrontmatterCleansUpWhenWriteFails(): void {
+		$fileId = 99;
+		// Shaped like the real thing: `g.` plus the sixteen characters
+		// `createGroup` answers with. Nothing enforces that length — the one
+		// rule, PadId, only asks for `g.<something>$<something>` — but a
+		// fixture that looks like Etherpad's output keeps the test honest
+		// about what it stands in for.
+		$padId = 'g.ABCDEFGHIJKLMNOP$p-abcdefghijklmnopqrst';
+
+		$bindingService = $this->createMock(BindingService::class);
+		// Read twice: once to find there is no binding, and once in the
+		// cleanup to check that the row now there is the one naming this pad.
+		$bindingService->expects($this->exactly(2))
 			->method('findByFileId')
 			->with($fileId)
-			->willReturn(null);
+			->willReturnOnConsecutiveCalls(
+				null,
+				['file_id' => $fileId, 'pad_id' => $padId, 'access_mode' => BindingService::ACCESS_PROTECTED, 'state' => BindingService::STATE_ACTIVE],
+			);
 		$bindingService->expects($this->once())
 			->method('createBinding')
 			->with($fileId, $padId, BindingService::ACCESS_PROTECTED);

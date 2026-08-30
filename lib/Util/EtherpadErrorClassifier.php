@@ -40,4 +40,27 @@ final class EtherpadErrorClassifier {
 
 		return false;
 	}
+
+	/**
+	 * "It is already there" — the one Etherpad answer a create may not treat
+	 * as its own doing.
+	 *
+	 * A create that fails after Etherpad made the pad has to be cleaned up,
+	 * or the pad is orphaned the moment the id is forgotten. This is the
+	 * case where it must not be: the pad was someone else's before the call,
+	 * and deleting it would destroy live content. Measured: Etherpad answers
+	 * `padID does already exist`.
+	 */
+	public static function isPadAlreadyPresent(\Throwable $error): bool {
+		$current = $error;
+		while ($current !== null) {
+			$message = strtolower(trim($current->getMessage()));
+			if ($message !== '' && str_contains($message, 'does already exist')) {
+				return true;
+			}
+			$current = $current->getPrevious();
+		}
+
+		return false;
+	}
 }
