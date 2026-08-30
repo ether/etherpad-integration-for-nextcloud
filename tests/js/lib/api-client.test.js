@@ -84,6 +84,69 @@ describe('api-client', () => {
 		)
 	})
 
+	// Recovery writes. A cached path-to-id answer is up to five minutes old,
+	// and in five minutes the file can have moved and another .pad taken its
+	// place — the write would then land on the wrong document.
+	it('bypasses the cache when asked, and refreshes it with the new answer', async () => {
+		const { apiResolvePadByPath } = await importClient()
+		fetch.mockResolvedValueOnce(jsonResponse({ is_pad: true, file_id: 42 }))
+		expect((await apiResolvePadByPath('/x.pad')).file_id).toBe(42)
+
+		// The file moved and a different .pad took its place.
+		fetch.mockResolvedValueOnce(jsonResponse({ is_pad: true, file_id: 77 }))
+		expect((await apiResolvePadByPath('/x.pad', { bypassCache: true })).file_id).toBe(77)
+		expect(fetch).toHaveBeenCalledTimes(2)
+
+		// And the stale entry is gone rather than lingering behind the fresh answer.
+		expect((await apiResolvePadByPath('/x.pad')).file_id).toBe(77)
+		expect(fetch).toHaveBeenCalledTimes(2)
+	})
+
+	// The one write among these four: it must not be given up on.
+	it('sends the recovery without a timeout', async () => {
+		vi.useFakeTimers()
+		const { apiRecoverFromSnapshot } = await importClient()
+		let settle
+		// Aborts the way fetch does, so a timer that fires actually shows up
+		// here rather than being silently ignored by the mock.
+		fetch.mockImplementation((url, init) => new Promise((resolve, reject) => {
+			init.signal.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')))
+			settle = () => resolve(jsonResponse({ status: 'restored' }))
+		}))
+
+		const pending = apiRecoverFromSnapshot(42, '/copy.pad')
+		await vi.advanceTimersByTimeAsync(120_000)
+		settle()
+
+		await expect(pending).resolves.toEqual({ status: 'restored' })
+		vi.useRealTimers()
+	})
+
+	// The viewer resolves by path when it has no file id, so the path-keyed
+	// entry is a second copy of the same pre-recovery answer — but only that
+	// one path, not every path the session has looked up.
+	it('drops the recovered path entry and leaves unrelated ones alone', async () => {
+		const { apiRecoverFromSnapshot, apiResolvePadByPath } = await importClient()
+		fetch.mockResolvedValueOnce(jsonResponse({ is_pad: true, file_id: 42 }))
+		await apiResolvePadByPath('/copy.pad')
+		fetch.mockResolvedValueOnce(jsonResponse({ is_pad: true, file_id: 7 }))
+		await apiResolvePadByPath('/unrelated.pad')
+		expect(fetch).toHaveBeenCalledTimes(2)
+
+		fetch.mockResolvedValueOnce(jsonResponse({ status: 'restored' }))
+		await apiRecoverFromSnapshot(42, '/copy.pad')
+		expect(fetch).toHaveBeenCalledTimes(3)
+
+		// The recovered path is asked again...
+		fetch.mockResolvedValueOnce(jsonResponse({ is_pad: true, file_id: 42 }))
+		await apiResolvePadByPath('/copy.pad')
+		expect(fetch).toHaveBeenCalledTimes(4)
+
+		// ...while an unrelated one is still served from the cache.
+		await apiResolvePadByPath('/unrelated.pad')
+		expect(fetch).toHaveBeenCalledTimes(4)
+	})
+
 	it('posts a recovery request and invalidates the resolve cache on success', async () => {
 		const { apiRecoverFromSnapshot, apiResolvePadByFileId } = await importClient()
 		// Seed the resolve cache so we can verify it is dropped after recover.

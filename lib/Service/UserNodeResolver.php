@@ -12,18 +12,41 @@ use OCP\Files\File;
 use OCP\Files\Folder;
 use OCP\Files\IRootFolder;
 use OCP\Files\NotFoundException;
+use OCP\Files\NotPermittedException;
+use Psr\Log\LoggerInterface;
 
 class UserNodeResolver {
+	/**
+	 * Thrown by IRootFolder::getUserFolder(), and not referenceable: it is
+	 * an `OC\` class, so it is matched by name rather than in a catch.
+	 */
+	private const NO_USER_EXCEPTION = 'OC\\User\\NoUserException';
+
 	public function __construct(
 		private IRootFolder $rootFolder,
+		private LoggerInterface $logger,
 	) {
 	}
 
 	/**
+	 * Resolved through the user's own folder, not the global root.
+	 *
+	 * getUserFolder() is what sets the user's filesystem up and registers
+	 * their mount providers; asking the global root for an id before that
+	 * has happened answers "no such file" for a pad on external storage, in
+	 * a groupfolder, or in a share whose mount this request has not touched
+	 * — while the same file resolves by path, which goes through
+	 * getUserFolder() already. The two halves have to be equally strong:
+	 * the viewer no longer retries by path when opening by id fails, so a
+	 * by-id lookup that is merely weaker is now a dead end.
+	 *
+	 * Scoping to the user folder also makes the answer theirs by
+	 * construction. The prefix test stays as a second pair of eyes.
+	 *
 	 * @throws NotFoundException
 	 */
 	public function resolveUserFileNodeById(string $uid, int $fileId): File {
-		$nodes = $this->rootFolder->getById($fileId);
+		$nodes = $this->userFolder($uid)->getById($fileId);
 		$prefix = '/' . $uid . '/files/';
 		foreach ($nodes as $node) {
 			if (!$node instanceof File) {
@@ -38,15 +61,23 @@ class UserNodeResolver {
 	}
 
 	/**
-	 * The user's own root counts as one of their folders. Its path is
-	 * `/<uid>/files` with no trailing slash, so a prefix test alone rejects
-	 * it — and create-by-parent then cannot create a pad directly in "All
-	 * files", which is where someone is most likely to start.
+	 * The user's own root counts as one of their folders, and it is the one
+	 * folder a lookup inside that folder cannot find — so it is answered by
+	 * its id before the search. Without that, create-by-parent could not put
+	 * a pad in "All files", which is where someone is most likely to start.
 	 *
 	 * @throws NotFoundException
 	 */
 	public function resolveUserFolderNodeById(string $uid, int $folderId): Folder {
-		$nodes = $this->rootFolder->getById($folderId);
+		// Same reasoning as resolveUserFileNodeById: through the user's own
+		// folder, so their mounts exist before the id is looked up. The
+		// folder itself is answered directly — asking a folder for its own
+		// id is not something Folder::getById() is required to answer.
+		$userFolder = $this->userFolder($uid);
+		if ($userFolder->getId() === $folderId) {
+			return $userFolder;
+		}
+		$nodes = $userFolder->getById($folderId);
 		$root = '/' . $uid . '/files';
 		foreach ($nodes as $node) {
 			if (!$node instanceof Folder) {
@@ -55,12 +86,51 @@ class UserNodeResolver {
 			$path = rtrim((string)$node->getPath(), '/');
 			// The separator stays in the prefix test so a sibling that merely
 			// starts the same way — /<uid>/files_versions — is still refused.
+			// The root is accepted here too. It should have been answered by
+			// id above, and getById() is not expected to return the folder it
+			// searches — but "not expected to" is an implementation detail,
+			// and this is the path create-by-parent takes into "All files".
 			if ($path === $root || str_starts_with($path, $root . '/')) {
 				return $node;
 			}
 		}
 
 		throw new NotFoundException('Folder not found by ID.');
+	}
+
+	/**
+	 * The user's folder, or NotFoundException.
+	 *
+	 * getUserFolder() answers NoUserException and NotPermittedException,
+	 * neither of which is a NotFoundException — and the callers of this
+	 * class catch that one type to degrade gracefully: a metadata lookup
+	 * answers "not a pad", the legacy migration reports a collision. Left
+	 * to escape, an unavailable home storage would turn both into a 500,
+	 * where asking the global root simply returned no nodes. Not being able
+	 * to look inside a user's files is, for every caller here, the same
+	 * answer as not finding the file.
+	 *
+	 * Only the two the interface declares. NotPermittedException is in OCP
+	 * and can be named; NoUserException lives in `OC\User\` and is not
+	 * part of the public API an app may reference, so it is matched by
+	 * class name. Everything else — a storage that is down, a mount that
+	 * fails to set up — is left alone on purpose: "I cannot reach your
+	 * files right now" is not the same answer as "that file is not there",
+	 * and reporting it as the latter would hide an outage behind a tidy
+	 * 404 with nothing in the log.
+	 *
+	 * @throws NotFoundException
+	 */
+	private function userFolder(string $uid): Folder {
+		try {
+			return $this->rootFolder->getUserFolder($uid);
+		} catch (\Exception $e) {
+			if (!$e instanceof NotPermittedException && !is_a($e, self::NO_USER_EXCEPTION)) {
+				throw $e;
+			}
+			$this->logger->debug('Cannot access the user file tree', ['uid' => $uid, 'exception' => $e]);
+			throw new NotFoundException('Cannot access the user file tree.', 0, $e);
+		}
 	}
 
 	/**
@@ -72,8 +142,16 @@ class UserNodeResolver {
 			throw new NotFoundException('Invalid empty file path.');
 		}
 
-		$userFolder = $this->rootFolder->getUserFolder($uid);
-		$node = $userFolder->get($relativePath);
+		$userFolder = $this->userFolder($uid);
+		try {
+			$node = $userFolder->get($relativePath);
+		} catch (NotPermittedException $e) {
+			// Same rule as above: not being allowed to look is, to every
+			// caller here, the same answer as the file not being there. A
+			// sub-mount that is *down* still surfaces as itself.
+			$this->logger->debug('Not permitted to read the path', ['uid' => $uid, 'exception' => $e]);
+			throw new NotFoundException('Cannot access the requested path.', 0, $e);
+		}
 		if (!$node instanceof File) {
 			throw new NotFoundException('Path does not reference a file.');
 		}

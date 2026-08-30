@@ -10,8 +10,5 @@ if (!interface_exists(IRootFolder::class)) {
 	interface IRootFolder extends Folder {
 		public function getAppDataDirectoryName(): string;
 		public function getUserFolder(string $uid): Folder;
-
-		/** @return array<int,mixed> */
-		public function getById(int $id): array;
 	}
 }

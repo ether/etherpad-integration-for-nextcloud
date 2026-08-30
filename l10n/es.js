@@ -167,6 +167,7 @@ OC.L10N.register(
     "The session cookie domain could not be verified.": "No se pudo verificar el dominio de la cookie de sesión.",
     "This .pad file has no matching pad in this Nextcloud.": "Este archivo .pad no tiene ningún pad correspondiente en este Nextcloud.",
     "This file looks like a copy of an existing .pad file in your account. Open the original to keep editing the linked pad, or create a new pad to fork the content stored in this file.": "Este archivo parece ser una copia de un archivo .pad existente en tu cuenta. Abre el original para seguir editando el pad enlazado, o crea un nuevo pad para crear una copia independiente del contenido almacenado en este archivo.",
+    "This file may have been moved or replaced since the list was loaded. Reload the page and open it again.": "Es posible que este archivo se haya movido o reemplazado desde que se cargó la lista. Recarga la página y vuelve a abrir el archivo.",
     "Trusted embed origins (optional)": "Orígenes de incrustación de confianza (opcional)",
     "Unknown error.": "Error desconocido.",
     "Unsupported test fault.": "Fallo de prueba no compatible.",

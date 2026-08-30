@@ -107,7 +107,11 @@ class PadSessionControllerTest extends TestCase {
 		]);
 		$logger = $this->createMock(LoggerInterface::class);
 		$padPaths = new PathNormalizer();
-		$userNodeResolver = new UserNodeResolver($rootFolder);
+		// IRootFolder is a Folder, so the root doubles as the user's own
+		// folder here: an id is resolved through getUserFolder(), which is
+		// what registers the user's mounts before the lookup.
+		$rootFolder->method('getUserFolder')->willReturn($rootFolder);
+		$userNodeResolver = new UserNodeResolver($rootFolder, $this->createMock(LoggerInterface::class));
 		$lockRetryService = $this->buildNoSleepLockRetryService();
 		$padOpenService = new PadOpenService(
 			$padFileService,
@@ -234,7 +238,8 @@ class PadSessionControllerTest extends TestCase {
 		]);
 		$logger = $this->createMock(LoggerInterface::class);
 		$padPaths = new PathNormalizer();
-		$userNodeResolver = new UserNodeResolver($rootFolder);
+		$rootFolder->method('getUserFolder')->willReturn($rootFolder);
+		$userNodeResolver = new UserNodeResolver($rootFolder, $this->createMock(LoggerInterface::class));
 		$lockRetryService = $this->buildNoSleepLockRetryService();
 		$padOpenService = new PadOpenService(
 			$padFileService,
@@ -338,13 +343,14 @@ class PadSessionControllerTest extends TestCase {
 		?ExternalPadExportFetcher $externalPadExportFetcher = null,
 	): PadSessionController {
 		$resolvedRootFolder = $rootFolder ?? $this->createMock(IRootFolder::class);
+		$resolvedRootFolder->method('getUserFolder')->willReturn($resolvedRootFolder);
 		$resolvedEtherpadClient = $etherpadClient ?? $this->createMock(EtherpadClient::class);
 		$resolvedExternalPadExportFetcher = $externalPadExportFetcher ?? $this->createMock(ExternalPadExportFetcher::class);
 		$resolvedPadFileService = $padFileService ?? $this->createMock(PadFileService::class);
 		$resolvedBindingService = $bindingService ?? $this->createMock(BindingService::class);
 		$logger = $this->createMock(LoggerInterface::class);
 		$padPaths = new PathNormalizer();
-		$userNodeResolver = new UserNodeResolver($resolvedRootFolder);
+		$userNodeResolver = new UserNodeResolver($resolvedRootFolder, $this->createMock(LoggerInterface::class));
 		$lockRetryService = $this->buildNoSleepLockRetryService();
 		$padMetadataService = new PadMetadataService($resolvedPadFileService, $padPaths, $userNodeResolver, $lockRetryService, $resolvedEtherpadClient, $resolvedExternalPadExportFetcher, $resolvedBindingService, $logger);
 		$padOpenService = new PadOpenService(

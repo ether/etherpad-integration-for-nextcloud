@@ -106,10 +106,15 @@ export const createPadOpener = () => {
 				window.location.assign(filesUrlForFileId(Number(navigation.fileId), fallbackPath))
 				return
 			}
+			// The id in the current Files route describes whatever the route
+			// was last at, not necessarily the file that was clicked. It may
+			// stand in only when there is no path to contradict it —
+			// pairing it with a path is how the viewer ends up opening one
+			// file under another's name, and the by-path retry that used to
+			// absorb that is gone.
 			const routeFileId = isFilesAppRoute() ? parseFileIdFromCurrentLocation() : null
-			if ((navigation.fileId === null || navigation.fileId === undefined) && routeFileId) {
-				const fallbackPath = navigation.path || '/'
-				window.location.assign(filesUrlForFileId(routeFileId, fallbackPath))
+			if (!navigation.path && (navigation.fileId === null || navigation.fileId === undefined) && routeFileId) {
+				window.location.assign(filesUrlForFileId(routeFileId, '/'))
 				return
 			}
 			if (navigation.fileId !== null && navigation.fileId !== undefined && Number.isFinite(Number(navigation.fileId))) {
@@ -145,18 +150,21 @@ export const createPadOpener = () => {
 		}
 		if ((!fileId || !Number.isFinite(Number(fileId))) && path && !inPublicShareRoute) {
 			try {
-				const resolvedPad = await apiResolvePadByPath(path)
+				// Without the cache: this id decides which document the viewer
+				// opens, and since the by-path retry is gone there is nothing
+				// downstream to notice a stale one. A five-minute-old
+				// path-to-id answer can name a file that has since moved out
+				// of the way of another.
+				const resolvedPad = await apiResolvePadByPath(path, { bypassCache: true })
 				fileId = (resolvedPad && Number.isFinite(Number(resolvedPad.file_id))) ? Number(resolvedPad.file_id) : fileId
 			} catch (e) {
 				// Resolve failure is handled by route fallback below.
 			}
 		}
-		if ((!fileId || !Number.isFinite(Number(fileId))) && isFilesAppRoute()) {
-			const routeFileId = parseFileIdFromCurrentLocation()
-			if (routeFileId) {
-				fileId = routeFileId
-			}
-		}
+		// No route-id fall-through here: this point is only reached with a
+		// path in hand, and an id the path could not be verified against
+		// would decide which document opens. Without one the open goes by
+		// path, which is what fallbackOpen ends on.
 		if (isFilesAppRoute()) {
 			if (fileId && Number.isFinite(Number(fileId)) && navigateFilesRouteAndOpen(Number(fileId), path)) {
 				return

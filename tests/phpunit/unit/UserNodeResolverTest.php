@@ -13,13 +13,109 @@ use OCP\Files\File;
 use OCP\Files\Folder;
 use OCP\Files\IRootFolder;
 use OCP\Files\NotFoundException;
+use OCP\Files\NotPermittedException;
+use OCP\Files\StorageNotAvailableException;
+use OC\User\NoUserException;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\LoggerInterface;
 
 class UserNodeResolverTest extends TestCase {
+	/**
+	 * The nodes are served from the *user's* folder, not the global root:
+	 * that is where the resolver looks, because getUserFolder() is what
+	 * sets the user's mounts up before an id is looked up. A root that
+	 * still answered getById() would let a regression back through.
+	 */
 	private function resolverFor(array $nodes): UserNodeResolver {
+		$userFolder = $this->createMock(Folder::class);
+		$userFolder->method('getById')->willReturn($nodes);
+		$userFolder->method('getId')->willReturn(1);
 		$rootFolder = $this->createMock(IRootFolder::class);
-		$rootFolder->method('getById')->willReturn($nodes);
-		return new UserNodeResolver($rootFolder);
+		// with('alice'): scoping the lookup to *this* user's folder is the
+		// property the change rests on, and a stub matching any argument
+		// would accept a hardcoded uid just as happily.
+		$rootFolder->method('getUserFolder')->with('alice')->willReturn($userFolder);
+		$rootFolder->method('getById')->willThrowException(
+			new \LogicException('An id must be resolved through the user folder, not the global root.')
+		);
+		return new UserNodeResolver($rootFolder, $this->createMock(LoggerInterface::class));
+	}
+
+	/**
+	 * Matched with is_a(), not by exact class: nothing marks NoUserException
+	 * final, and a subclass means the same thing.
+	 */
+	public function testTranslatesASubclassOfNoUserException(): void {
+		$thrown = new class ('gone') extends NoUserException {
+		};
+		$rootFolder = $this->createMock(IRootFolder::class);
+		$rootFolder->method('getUserFolder')->willThrowException($thrown);
+		$resolver = new UserNodeResolver($rootFolder, $this->createMock(LoggerInterface::class));
+
+		$this->expectException(NotFoundException::class);
+		$resolver->resolveUserFileNodeById('alice', 138);
+	}
+
+	/**
+	 * The other half of the rule: a storage that is down is not a missing
+	 * file. Translating it would answer 404 for an outage, with nothing in
+	 * the log to say otherwise.
+	 */
+	public function testLeavesAnUnavailableStorageAlone(): void {
+		$rootFolder = $this->createMock(IRootFolder::class);
+		$rootFolder->method('getUserFolder')->willThrowException(new StorageNotAvailableException('down'));
+		$resolver = new UserNodeResolver($rootFolder, $this->createMock(LoggerInterface::class));
+
+		$this->expectException(StorageNotAvailableException::class);
+		$resolver->resolveUserFileNodeById('alice', 138);
+	}
+
+	public function testTranslatesARefusedPathIntoNotFound(): void {
+		$userFolder = $this->createMock(Folder::class);
+		$userFolder->method('get')->willThrowException(new NotPermittedException('denied'));
+		$rootFolder = $this->createMock(IRootFolder::class);
+		$rootFolder->method('getUserFolder')->willReturn($userFolder);
+		$resolver = new UserNodeResolver($rootFolder, $this->createMock(LoggerInterface::class));
+
+		$this->expectException(NotFoundException::class);
+		$resolver->resolveUserFileNodeByPath('alice', '/Notes.pad');
+	}
+
+	/**
+	 * getUserFolder() answers with its own exception types, and callers of
+	 * this class catch NotFoundException to degrade gracefully. Letting
+	 * either escape turns an unavailable home storage into a 500.
+	 */
+	public function testTranslatesAnUnavailableUserFolderIntoNotFound(): void {
+		foreach ([new NoUserException('gone'), new NotPermittedException('denied')] as $thrown) {
+			$rootFolder = $this->createMock(IRootFolder::class);
+			$rootFolder->method('getUserFolder')->willThrowException($thrown);
+			$resolver = new UserNodeResolver($rootFolder, $this->createMock(LoggerInterface::class));
+
+			try {
+				$resolver->resolveUserFileNodeById('alice', 138);
+				$this->fail('Expected NotFoundException for ' . $thrown::class);
+			} catch (NotFoundException $e) {
+				$this->assertSame($thrown, $e->getPrevious());
+			}
+		}
+	}
+
+	/**
+	 * The user's own root is the one folder that cannot be found by asking
+	 * it for its own id, so it is answered directly. Without this,
+	 * create-by-parent could not put a pad in "All files".
+	 */
+	public function testResolvesTheUsersOwnRootFolderById(): void {
+		$userFolder = $this->createMock(Folder::class);
+		$userFolder->method('getId')->willReturn(7);
+		$userFolder->method('getById')->willReturn([]);
+		$rootFolder = $this->createMock(IRootFolder::class);
+		$rootFolder->method('getUserFolder')->willReturn($userFolder);
+
+		$resolver = new UserNodeResolver($rootFolder, $this->createMock(LoggerInterface::class));
+
+		$this->assertSame($userFolder, $resolver->resolveUserFolderNodeById('alice', 7));
 	}
 
 	private function folderAt(string $path): Folder {
@@ -33,18 +129,6 @@ class UserNodeResolverTest extends TestCase {
 		$resolver = $this->resolverFor([$folder]);
 
 		$this->assertSame($folder, $resolver->resolveUserFolderNodeById('alice', 42));
-	}
-
-	/**
-	 * The user's own root has the path `/<uid>/files`, without a trailing
-	 * slash, so a prefix check against `/<uid>/files/` rejects it — and
-	 * create-by-parent cannot create a pad directly in "All files".
-	 */
-	public function testResolvesTheUserRootItself(): void {
-		$root = $this->folderAt('/alice/files');
-		$resolver = $this->resolverFor([$root]);
-
-		$this->assertSame($root, $resolver->resolveUserFolderNodeById('alice', 42));
 	}
 
 	public function testRejectsAFolderBelongingToAnotherUser(): void {

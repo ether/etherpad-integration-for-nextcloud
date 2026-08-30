@@ -32,6 +32,8 @@ $stubFiles = [
 	__DIR__ . '/stubs/OCP/Files/Folder.php',
 	__DIR__ . '/stubs/OCP/Files/IRootFolder.php',
 	__DIR__ . '/stubs/OCP/Files/NotFoundException.php',
+	__DIR__ . '/stubs/OCP/Files/NotPermittedException.php',
+	__DIR__ . '/stubs/OC/User/NoUserException.php',
 	__DIR__ . '/stubs/OCP/Files/Template/BeforeGetTemplatesEvent.php',
 	__DIR__ . '/stubs/OCP/Files/Template/FileCreatedFromTemplateEvent.php',
 	__DIR__ . '/stubs/OCP/Files/Template/ITemplateManager.php',
