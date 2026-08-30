@@ -24,6 +24,41 @@ use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 
 class LifecycleServiceTest extends TestCase {
+	/**
+	 * The restore path provisions the same way the bootstrap does — group
+	 * first, then the pad — so it leaves the same empty group behind when the
+	 * pad fails, and cleans up the same way.
+	 */
+	public function testRestoreProvisioningRemovesTheGroupWhenItsPadCannotBeCreated(): void {
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->expects($this->once())->method('createGroup')->willReturn('g.ABCDEFGHIJKLMNOP');
+		$etherpadClient->expects($this->once())
+			->method('createGroupPad')
+			->willThrowException(new \RuntimeException('pad creation failed'));
+		$etherpadClient->expects($this->once())->method('deleteGroup')->with('g.ABCDEFGHIJKLMNOP');
+
+		$secureRandom = $this->createMock(ISecureRandom::class);
+		$secureRandom->method('generate')->willReturn('abcdefghijklmnopqrst');
+
+		$service = new LifecycleService(
+			$this->createMock(BindingService::class),
+			$this->createMock(PadFileService::class),
+			$etherpadClient,
+			new ManagedPadLifecycle($etherpadClient),
+			$this->buildDeleteOnTrashEnabledConfig(),
+			$this->createMock(LoggerInterface::class),
+			$secureRandom,
+			$this->createMock(UserNodeResolver::class),
+			$this->createMock(PathNormalizer::class),
+		);
+
+		// provisionRestorePadId is private; reach it the way the restore path
+		// does, without standing up the whole restore.
+		$provision = new \ReflectionMethod($service, 'provisionRestorePadId');
+		$this->expectException(\RuntimeException::class);
+		$provision->invoke($service, BindingService::ACCESS_PROTECTED, 'nc-old');
+	}
+
 	public function testHandleTrashSkipsNonPadFiles(): void {
 		$bindingService = $this->createMock(BindingService::class);
 		$bindingService->expects($this->never())->method('findByFileId');

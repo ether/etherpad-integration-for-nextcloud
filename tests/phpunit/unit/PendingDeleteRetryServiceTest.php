@@ -61,6 +61,34 @@ class PendingDeleteRetryServiceTest extends TestCase {
 		$this->assertSame(0, $result['failed']);
 	}
 
+	/**
+	 * A protected pad is removed by its group, and Etherpad answers a group
+	 * that is already gone with a different message than a pad that is —
+	 * measured against 2.7.3 and 3.3.3. Without that spelling, a delete whose
+	 * response was lost would sit in pending_delete and fail every retry for
+	 * good.
+	 */
+	public function testAlreadyDeletedGroupResolvesPendingBinding(): void {
+		$binding = $this->buildBindingService([
+			['file_id' => 12, 'pad_id' => 'g.ABCDEFGHIJKLMNOP$p-gone'],
+		]);
+		$etherpad = $this->createMock(EtherpadClient::class);
+		$etherpad->expects($this->once())
+			->method('deleteGroup')
+			->with('g.ABCDEFGHIJKLMNOP')
+			->willThrowException(new \RuntimeException('groupID does not exist'));
+
+		$result = (new PendingDeleteRetryService(
+			$binding,
+			new ManagedPadLifecycle($etherpad),
+			$this->createMock(LoggerInterface::class),
+		))->retryByAge(86400, null, 10);
+
+		$this->assertSame(1, $binding->deletedBindings);
+		$this->assertSame(1, $result['resolved']);
+		$this->assertSame(0, $result['failed']);
+	}
+
 	public function testUnclassifiedEtherpadErrorIsCountedAsFailureAndKeepsBinding(): void {
 		// Transient errors (network blip, 5xx, etc.) must NOT delete the binding
 		// row — the row stays in pending_delete so the next retry job picks it

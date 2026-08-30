@@ -547,8 +547,23 @@ class LifecycleService {
 	private function provisionRestorePadId(string $accessMode, string $oldPadId): string {
 		if ($accessMode === BindingService::ACCESS_PROTECTED) {
 			$groupId = $this->etherpadClient->createGroup();
-			$padName = $this->buildProtectedRestorePadName();
-			return $this->etherpadClient->createGroupPad($groupId, $padName);
+			try {
+				return $this->etherpadClient->createGroupPad($groupId, $this->buildProtectedRestorePadName());
+			} catch (\Throwable $e) {
+				// The group exists with nothing in it, and nothing will ever
+				// look at it again. Same shape as PadBootstrapService's
+				// provisioning, and the same cleanup.
+				try {
+					$this->etherpadClient->deleteGroup($groupId);
+				} catch (\Throwable $cleanupError) {
+					$this->logger->warning('Could not remove the Etherpad group after its restore pad failed to be created.', [
+						'app' => 'etherpad_nextcloud',
+						'groupId' => $groupId,
+						'exception' => $cleanupError,
+					]);
+				}
+				throw $e;
+			}
 		}
 
 		$newPadId = $this->buildPublicRestorePadId($oldPadId);
