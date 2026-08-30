@@ -68,18 +68,33 @@ matching the group being opened, so the others survive the write:
 - the ids the browser sent are the candidates — nothing is added that was
   not already there, so an open never re-issues access to a pad the user
   has since lost;
-- `listSessionsOfAuthor` says which group each of those belongs to and how
-  long it lasts, which is what keeps one entry per group rather than one
-  per open;
-- ids that listing does not know — another author's, which is every
-  public share, since each share token is its own Etherpad author — are
-  kept unverified, last, and under a tighter cap;
-- the cookie expires with the longest-lived id it carries, and holds at
-  most 25.
+- `listSessionsOfAuthor` says which of those belong to this Etherpad
+  author, which group each is for, and how long it lasts; that is what
+  keeps one entry per group rather than one per open;
+- ids the listing does not know are dropped, and the cookie expires with
+  the longest-lived id it keeps, up to 25 of them.
 
-If `listSessionsOfAuthor` is unavailable the open still happens, on the
-browser's cookie alone. That path cannot tell groups apart, so it keeps
-only a few carried-over ids and logs a warning.
+If `listSessionsOfAuthor` is unavailable, the open still happens but
+carries nothing — one fresh id, as before this mechanism existed — and
+logs a warning.
+
+#### What this deliberately does not do
+
+An id the current author does not own cannot be attributed. That covers
+two cases at once, and only one of them is harmless:
+
+- a protected **public share** is its own Etherpad author (`nc:public-share:<token>`),
+  so its session looks foreign to a logged-in user's author — a share and
+  an authenticated protected pad therefore cannot be open at the same
+  time, which was already true before;
+- the session of **whoever used the browser before** looks exactly the
+  same, and carrying it would let the next person to log in keep their
+  pad until it expired.
+
+Since nothing here can tell those apart, both are dropped. The cookie is
+also scoped to the domain Nextcloud and Etherpad share, so it reaches
+every host under that parent — it is not a pad-host-only cookie, which is
+how the open request can read it in the first place.
 
 ### Author Resolution Strategy
 

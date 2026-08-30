@@ -157,12 +157,14 @@ class PadSessionServiceTest extends TestCase {
 	}
 
 	/**
-	 * A public share is its own Etherpad author, so its session is not in
-	 * this author's listing. It is kept anyway — the browser had it — but
-	 * last, and under a tighter cap, because nothing here can tell it from a
-	 * value some other host under the shared cookie domain wrote.
+	 * The session of whoever used this browser before belongs to their
+	 * Etherpad author, so it is not in this one's listing. Carrying it would
+	 * hand the next person to log in a pad that is not theirs — and a public
+	 * share's session, which is also its own author, is indistinguishable
+	 * from it. Both are dropped; the share case was already broken before
+	 * any of this, the other one would have been new.
 	 */
-	public function testKeepsIdsTheListingDoesNotKnowLastAndCapped(): void {
+	public function testDropsIdsTheListingDoesNotKnow(): void {
 		$known = $this->sid('known');
 		$foreign = array_map(fn (int $i): string => $this->sid('foreign' . $i), range(1, 8));
 
@@ -171,10 +173,7 @@ class PadSessionServiceTest extends TestCase {
 			implode(',', array_merge($foreign, [$known])),
 		)['value'];
 
-		$ids = explode(',', $value);
-		$this->assertSame($this->sid('new'), $ids[0]);
-		$this->assertSame($known, $ids[1]);
-		$this->assertCount(2 + 5, $ids);
+		$this->assertSame($this->sid('new') . ',' . $known, $value);
 	}
 
 	public function testTheCookieOutlivesEveryIdItCarries(): void {
@@ -214,10 +213,18 @@ class PadSessionServiceTest extends TestCase {
 		$this->assertSame($this->sid('new'), $value);
 	}
 
+	/**
+	 * RFC 6265 lets a server quote a value that contains commas, and
+	 * Etherpad strips those quotes itself. The parsing has to as well, or a
+	 * quoted cookie would look like one unusable id.
+	 */
 	public function testAcceptsTheQuotedCookieForm(): void {
 		$one = $this->sid('one');
 
-		$value = $this->openContextCookie([], '"' . $one . ' "')['value'];
+		$value = $this->openContextCookie(
+			[$one => ['groupID' => 'g.OTHERGROUP00000', 'validUntil' => time() + 3600]],
+			'"' . $one . ' "',
+		)['value'];
 
 		$this->assertSame($this->sid('new') . ',' . $one, $value);
 	}
@@ -227,14 +234,17 @@ class PadSessionServiceTest extends TestCase {
 	 * cookie alone, group-blind and capped tighter, and logged, because the
 	 * symptom this method prevents comes back on that path.
 	 */
-	public function testFallsBackToTheBrowsersCookieWhenTheListingFails(): void {
+	/**
+	 * Without the listing nothing can be attributed, so nothing is carried:
+	 * the open falls back to exactly what it did before this branch, one
+	 * fresh id, rather than to a rule it cannot enforce.
+	 */
+	public function testCarriesNothingWhenTheListingFails(): void {
 		$carried = array_map(fn (int $i): string => $this->sid('old' . $i), range(1, 8));
 
 		$value = $this->openContextCookie([], implode(',', $carried), 'g.ABCDEFGHIJKLMNOP', true)['value'];
 
-		$ids = explode(',', $value);
-		$this->assertSame($this->sid('new'), $ids[0]);
-		$this->assertCount(1 + 5, $ids);
+		$this->assertSame($this->sid('new'), $value);
 	}
 
 	/**

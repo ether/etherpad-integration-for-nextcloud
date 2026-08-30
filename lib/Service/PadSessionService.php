@@ -27,22 +27,15 @@ class PadSessionService {
 	/**
 	 * One entry per group, so this is how many protected pads may be open at
 	 * once before the oldest loses access. A session id is ~34 bytes, so 25
-	 * of them are under a kilobyte against the 4 KB a cookie may occupy —
-	 * and the cookie only ever goes to the pad host. The pad being opened is
+	 * of them are under a kilobyte against the 4 KB a cookie may occupy. It
+	 * is not a pad-host-only cookie — it is scoped to the domain both hosts
+	 * share, so Nextcloud and every sibling under that parent see it too,
+	 * which is how this request can read it at all. The pad being opened is
 	 * always kept; beyond that the ones expiring last win, because the
 	 * soonest to expire is the one a user is least likely to still be
 	 * looking at.
 	 */
 	private const MAX_SESSION_IDS = 25;
-
-	/**
-	 * How many carried-over ids the degraded path keeps. It cannot tell
-	 * groups apart, so it cannot stop one pad — or a cookie written by a
-	 * sibling host under the shared parent domain — from filling every
-	 * slot. A handful preserves the common two-or-three-tabs case without
-	 * offering that much room.
-	 */
-	private const MAX_UNVERIFIED_SESSION_IDS = 5;
 
 	public function __construct(
 		private EtherpadClient $etherpadClient,
@@ -87,21 +80,24 @@ class PadSessionService {
 	 * others have to survive the write.
 	 *
 	 * What may survive is decided by two things together. The browser's
-	 * cookie says what this browser already held: nothing is added to it
-	 * here that was not already there, so an open never re-issues access to
-	 * a pad the user has since lost — it only refrains from taking away what
-	 * they were already carrying, which dies at its own validUntil.
+	 * cookie says what this browser already held, so an open adds nothing
+	 * that was not already there — it does not re-issue access to a pad the
+	 * user has since lost, it only refrains from taking away what they were
+	 * carrying, which dies at its own validUntil. Etherpad's list then says
+	 * which of those are this author's; the rest are dropped.
 	 * Etherpad's session list says which group each of those ids belongs to
 	 * and how long it lasts, which is what lets one entry per group survive
 	 * rather than one per open: without it, opening the same pad ten times
 	 * filled the cookie with ten ids for one group and pushed the other pad
 	 * out.
 	 *
-	 * Ids the list does not know — another author's, which is every public
-	 * share, since each share token is its own Etherpad author — are kept
-	 * unverified and last, capped tighter, because nothing here can tell
-	 * them apart from a value some other host under the shared cookie
-	 * domain wrote.
+	 * Ids the list does not know are dropped. That covers a public share's
+	 * session — each share token is its own Etherpad author — so a share and
+	 * an authenticated pad cannot be open at once, as was already the case
+	 * before any of this. It also covers the session of whoever used this
+	 * browser before, which is why the rule is worth the loss: nothing here
+	 * can tell those two apart, and carrying them would hand a pad to the
+	 * next person to log in.
 	 *
 	 * @return array{url:string,cookie:array{name:string,value:string,expires:int,path:string,domain:string,secure:bool,http_only:bool,same_site:string}}
 	 */
@@ -153,7 +149,6 @@ class PadSessionService {
 	): array {
 		$now = time();
 		$carried = [];
-		$unverified = [];
 
 		foreach ($carriedIds as $candidate) {
 			if ($candidate === $chosenSessionId) {
@@ -161,9 +156,14 @@ class PadSessionService {
 			}
 			$info = $sessions[$candidate] ?? null;
 			if ($info === null) {
-				if (count($unverified) < self::MAX_UNVERIFIED_SESSION_IDS) {
-					$unverified[] = $candidate;
-				}
+				// Not this author's, so not this user's: dropped. It used to
+				// be carried, on the grounds that a public share is its own
+				// Etherpad author and its session would look exactly like
+				// this — but so does the session of whoever was logged into
+				// this browser before. Keeping it let the next user inherit
+				// their pad until it expired, where overwriting the cookie
+				// had cut that off. Nothing here can tell the two apart, and
+				// only one of them is safe to guess at.
 				continue;
 			}
 			if ($info['validUntil'] <= $now || $info['groupID'] === $groupId) {
@@ -183,7 +183,6 @@ class PadSessionService {
 		$ids = array_merge(
 			[$chosenSessionId],
 			array_column(array_values($carried), 'sessionId'),
-			$unverified,
 		);
 		$expiries = array_merge(
 			[$validUntil],
@@ -194,7 +193,6 @@ class PadSessionService {
 			'value' => implode(',', array_slice($ids, 0, self::MAX_SESSION_IDS)),
 			// The cookie has to outlive every id it carries, or the browser
 			// drops another pad's session that was good for another hour.
-			// Unverified ids have no known expiry and cannot extend it.
 			'expires' => max($expiries),
 		];
 	}
