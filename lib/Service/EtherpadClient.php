@@ -122,6 +122,37 @@ class EtherpadClient {
 		return $sessionId;
 	}
 
+	/**
+	 * The author's sessions, keyed by session id, each carrying the group it
+	 * grants access to and when it stops doing so.
+	 *
+	 * Etherpad keeps them until they are deleted — an author who has opened
+	 * protected pads for a while accumulates hundreds, nearly all expired —
+	 * so callers must filter by validUntil rather than trust the list.
+	 *
+	 * @return array<string,array{groupID:string,validUntil:int}>
+	 */
+	public function listSessionsOfAuthor(string $authorId): array {
+		// POST like every other authenticated call: a GET would put the
+		// apikey in the URL, and from there into proxy and access logs.
+		$data = $this->apiCall('listSessionsOfAuthor', ['authorID' => $authorId]);
+
+		$sessions = [];
+		foreach ($data as $sessionId => $info) {
+			if (!is_string($sessionId) || !is_array($info)) {
+				continue;
+			}
+			$groupId = (string)($info['groupID'] ?? '');
+			$validUntil = (int)($info['validUntil'] ?? 0);
+			if ($groupId === '' || $validUntil <= 0) {
+				continue;
+			}
+			$sessions[$sessionId] = ['groupID' => $groupId, 'validUntil' => $validUntil];
+		}
+
+		return $sessions;
+	}
+
 	public function getReadOnlyPadUrl(string $padId): string {
 		$data = $this->apiCall('getReadOnlyID', ['padID' => $padId]);
 		$readOnlyId = (string)($data['readOnlyID'] ?? '');

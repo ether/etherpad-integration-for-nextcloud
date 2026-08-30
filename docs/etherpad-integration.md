@@ -27,6 +27,7 @@ Important:
 - `createGroupPad`
 - `createAuthorIfNotExistsFor`
 - `createSession`
+- `listSessionsOfAuthor`
 
 ## Pad Types
 
@@ -49,9 +50,71 @@ Normal protected open flow:
 
 1. Extract group ID from pad ID.
 2. Resolve Etherpad author context for the Nextcloud user.
-3. Create Etherpad session via `createSession`.
-4. Set `sessionID` cookie.
+3. Create an Etherpad session for that group via `createSession`.
+4. Set the `sessionID` cookie — see below, it may carry several ids.
 5. Open regular pad URL.
+
+#### Why the cookie carries more than one session
+
+A session grants access to exactly one group, and every protected pad is
+its own group. The cookie is the only place that state lives, so writing
+just the new id used to revoke whatever the browser held: a second
+protected pad in a second tab took the first tab's access away, and
+Etherpad answered 403 for it.
+
+Etherpad reads the value as a comma-separated list and picks the entry
+matching the group being opened, so the others survive the write:
+
+- the ids the browser sent are the candidates — nothing is added that was
+  not already there, so an open never re-issues access to a pad the user
+  has since lost;
+- `listSessionsOfAuthor` says which of those belong to this Etherpad
+  author, which group each is for, and how long it lasts; that is what
+  keeps one entry per group rather than one per open;
+- ids the listing does not know are dropped, and the cookie expires with
+  the longest-lived id it keeps, up to 25 of them.
+
+If `listSessionsOfAuthor` is unavailable, the open still happens but
+carries nothing — one fresh id, as before this mechanism existed — and
+logs a warning.
+
+#### What this deliberately does not do
+
+An id the current author does not own cannot be attributed. That covers
+two cases at once, and only one of them is harmless:
+
+- a protected **public share** is its own Etherpad author (`nc:public-share:<token>`),
+  so its session looks foreign to a logged-in user's author — a share and
+  an authenticated protected pad therefore cannot be open at the same
+  time, which was already true before;
+- the session of **whoever used the browser before** looks exactly the
+  same, and carrying it would let the next person to log in keep their
+  pad until it expired.
+
+Since nothing here can tell those apart, both are dropped. On a public
+share the session listing is not asked for at all: the author there comes
+from the share token, so every anonymous visitor of one link shares it,
+and Etherpad deletes no sessions — a link opened by hundreds of people
+would make every open download hundreds of entries.
+
+The cookie is scoped to the domain Nextcloud and Etherpad share, so it
+reaches every host under that parent — it is not a pad-host-only cookie,
+which is how the open request can read it in the first place.
+
+#### The costs this accepts
+
+- **One cookie now carries several sessions.** That is the point of it,
+  but it also means a single exposure — script on any host under the
+  shared parent domain, since the cookie cannot be `HttpOnly` on Etherpad
+  before 3.0.0 — yields every protected pad the user has open rather than
+  one. Narrowing the domain is not available: the cookie has to reach
+  Etherpad.
+- **A revoked share stays usable until its session expires.** Before, an
+  open of any other protected pad happened to overwrite the cookie and cut
+  it off; that only ever helped if the user opened another pad, and did
+  nothing otherwise. Nothing in the app deletes Etherpad sessions, so the
+  window is the session TTL either way — it is just no longer shortened by
+  accident.
 
 ### Author Resolution Strategy
 
@@ -68,25 +131,26 @@ For normal authenticated users, the plugin now caches Etherpad author state per 
 Open-path behavior:
 
 1. Try cached `authorId` for the current Nextcloud user.
-2. If the current display name differs from the cached synced name:
-   - call `setAuthorName`
-   - update cached name
-3. Try `createSession` with cached `authorId`.
-4. If session creation fails with an Etherpad API error:
+2. Call `createAuthorIfNotExistsFor` with the current display name. This
+   runs on every open even when the cached name still matches: it is the
+   only thing that keeps Etherpad's copy of the name in step with
+   Nextcloud's, and a name that drifted on the Etherpad side — a user
+   renaming themselves in the pad, another integrator — is never repaired
+   otherwise. If the answer is a different author id, the cache follows it.
+3. Build the open context with the cached `authorId`.
+4. If anything in that fails with an Etherpad API error:
    - clear cached author state
    - retry full author bootstrap through `createAuthorIfNotExistsFor`
-   - then create session again
+   - then build the open context again
 
-Why this exists:
+What the cache is for:
 
-- Without caching, a normal protected open typically required:
-  - `createAuthorIfNotExistsFor`
-  - `setAuthorName`
-  - `createSession`
-- With cache hit and unchanged display name, the hot path is usually only:
-  - `createSession`
+- it holds the author id, so the id does not have to be rediscovered from
+  scratch, and it holds the last synced name so a rename is written back
+  only when it actually changed;
+- it is not a way to skip the author call — see step 2.
 
-This reduces Etherpad API round-trips on repeated opens without weakening access checks or moving trust to the client.
+This keeps the author identity stable across opens without weakening access checks or moving trust to the client.
 
 Cookie details:
 

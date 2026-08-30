@@ -87,6 +87,42 @@ class EtherpadClientTest extends TestCase {
 		$this->assertStringContainsString('apikey=stored-key', (string)$captured['options']['body']);
 	}
 
+	/**
+	 * The session listing is a POST like every other authenticated call. As
+	 * a GET the apikey would travel in the URL and from there into proxy and
+	 * access logs.
+	 */
+	public function testListSessionsOfAuthorSendsTheKeyInTheBodyNotTheUrl(): void {
+		$captured = null;
+		$client = $this->clientWithResponse(
+			$this->response(200, '{"code":0,"data":{"s.one":{"groupID":"g.aaa","authorID":"a.x","validUntil":99}}}'),
+			$captured,
+		);
+
+		$sessions = $client->listSessionsOfAuthor('a.x');
+
+		$this->assertSame('POST', $captured['method']);
+		$this->assertStringNotContainsString('apikey', $captured['url']);
+		$this->assertArrayNotHasKey('query', $captured['options']);
+		$this->assertStringContainsString('apikey=stored-key', (string)$captured['options']['body']);
+		$this->assertStringContainsString('authorID=a.x', (string)$captured['options']['body']);
+		$this->assertSame(['s.one' => ['groupID' => 'g.aaa', 'validUntil' => 99]], $sessions);
+	}
+
+	public function testListSessionsOfAuthorSkipsEntriesWithoutAGroupOrExpiry(): void {
+		$client = $this->clientWithResponse($this->response(200, json_encode([
+			'code' => 0,
+			'data' => [
+				's.ok' => ['groupID' => 'g.aaa', 'validUntil' => 42],
+				's.nogroup' => ['groupID' => '', 'validUntil' => 42],
+				's.noexpiry' => ['groupID' => 'g.bbb', 'validUntil' => 0],
+				's.notanarray' => 'nonsense',
+			],
+		])));
+
+		$this->assertSame(['s.ok' => ['groupID' => 'g.aaa', 'validUntil' => 42]], $client->listSessionsOfAuthor('a.x'));
+	}
+
 	public function testApiCallThrowsOnNonZeroApiCode(): void {
 		$client = $this->clientWithResponse(
 			$this->response(200, '{"code":1,"message":"groupID does not exist"}')
