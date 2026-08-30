@@ -126,7 +126,7 @@ class PadCreateRollbackServiceTest extends TestCase {
 		?LoggerInterface $logger = null,
 	): PadCreateRollbackService {
 		return new PadCreateRollbackService(
-			new ManagedPadLifecycle($etherpad ?? $this->createMock(EtherpadClient::class)),
+			new ManagedPadLifecycle($etherpad ?? $this->createMock(EtherpadClient::class), $this->createMock(LoggerInterface::class)),
 			$logger ?? $this->createMock(LoggerInterface::class),
 		);
 	}

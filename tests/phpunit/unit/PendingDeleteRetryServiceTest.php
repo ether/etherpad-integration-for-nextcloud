@@ -29,7 +29,7 @@ class PendingDeleteRetryServiceTest extends TestCase {
 
 		$result = (new PendingDeleteRetryService(
 			$binding,
-			new ManagedPadLifecycle($etherpad),
+			new ManagedPadLifecycle($etherpad, $this->createMock(LoggerInterface::class)),
 			$this->createMock(LoggerInterface::class),
 		))->retryByAge(3600, 86400, 50);
 
@@ -52,7 +52,7 @@ class PendingDeleteRetryServiceTest extends TestCase {
 
 		$result = (new PendingDeleteRetryService(
 			$binding,
-			new ManagedPadLifecycle($etherpad),
+			new ManagedPadLifecycle($etherpad, $this->createMock(LoggerInterface::class)),
 			$this->createMock(LoggerInterface::class),
 		))->retryByAge(86400, null, 10);
 
@@ -73,14 +73,17 @@ class PendingDeleteRetryServiceTest extends TestCase {
 			['file_id' => 12, 'pad_id' => 'g.ABCDEFGHIJKLMNOP$p-gone'],
 		]);
 		$etherpad = $this->createMock(EtherpadClient::class);
+		// The group is gone, so listing it is what reports that — and a pad
+		// inside a group that does not exist cannot exist either.
 		$etherpad->expects($this->once())
-			->method('deleteGroup')
+			->method('listPads')
 			->with('g.ABCDEFGHIJKLMNOP')
 			->willThrowException(new \RuntimeException('groupID does not exist'));
+		$etherpad->expects($this->never())->method('deleteGroup');
 
 		$result = (new PendingDeleteRetryService(
 			$binding,
-			new ManagedPadLifecycle($etherpad),
+			new ManagedPadLifecycle($etherpad, $this->createMock(LoggerInterface::class)),
 			$this->createMock(LoggerInterface::class),
 		))->retryByAge(86400, null, 10);
 
@@ -101,7 +104,7 @@ class PendingDeleteRetryServiceTest extends TestCase {
 
 		$result = (new PendingDeleteRetryService(
 			$binding,
-			new ManagedPadLifecycle($etherpad),
+			new ManagedPadLifecycle($etherpad, $this->createMock(LoggerInterface::class)),
 			$this->createMock(LoggerInterface::class),
 		))->retryByAge(0, 3600, 10);
 
@@ -126,7 +129,7 @@ class PendingDeleteRetryServiceTest extends TestCase {
 
 		$result = (new PendingDeleteRetryService(
 			$binding,
-			new ManagedPadLifecycle($etherpad),
+			new ManagedPadLifecycle($etherpad, $this->createMock(LoggerInterface::class)),
 			$this->createMock(LoggerInterface::class),
 		))->retryByAge(0, null, 10);
 
@@ -141,7 +144,7 @@ class PendingDeleteRetryServiceTest extends TestCase {
 
 		$result = (new PendingDeleteRetryService(
 			$binding,
-			new ManagedPadLifecycle($etherpad),
+			new ManagedPadLifecycle($etherpad, $this->createMock(LoggerInterface::class)),
 			$this->createMock(LoggerInterface::class),
 		))->retryByAge(0, 3600, 10);
 
@@ -165,7 +168,7 @@ class PendingDeleteRetryServiceTest extends TestCase {
 
 		$result = (new PendingDeleteRetryService(
 			$binding,
-			new ManagedPadLifecycle($etherpad),
+			new ManagedPadLifecycle($etherpad, $this->createMock(LoggerInterface::class)),
 			$this->createMock(LoggerInterface::class),
 		))->retry(50);
 

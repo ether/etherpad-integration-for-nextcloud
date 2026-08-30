@@ -67,7 +67,7 @@ class PadBootstrapServiceTest extends TestCase {
 		$file->expects($this->once())->method('putContent')->with('doc-content');
 
 		$migration = $this->createMock(\OCA\EtherpadNextcloud\Service\PadLegacyMigrationService::class);
-		$service = new PadBootstrapService($bindingService, $padFileService, $etherpadClient, new ManagedPadLifecycle($etherpadClient), $secureRandom, $logger, $migration, $this->buildPadTypePolicy(true));
+		$service = new PadBootstrapService($bindingService, $padFileService, $etherpadClient, new ManagedPadLifecycle($etherpadClient, $this->createMock(LoggerInterface::class)), $secureRandom, $logger, $migration, $this->buildPadTypePolicy(true));
 		$service->initializeMissingFrontmatter('alice', $file, '');
 	}
 
@@ -97,7 +97,7 @@ class PadBootstrapServiceTest extends TestCase {
 			->method('migrate')
 			->with('alice', $file, $legacy);
 
-		$service = new PadBootstrapService($bindingService, $padFileService, $etherpadClient, new ManagedPadLifecycle($etherpadClient), $secureRandom, $logger, $migration, $this->buildPadTypePolicy(true));
+		$service = new PadBootstrapService($bindingService, $padFileService, $etherpadClient, new ManagedPadLifecycle($etherpadClient, $this->createMock(LoggerInterface::class)), $secureRandom, $logger, $migration, $this->buildPadTypePolicy(true));
 
 		$this->assertTrue(
 			$service->initializeMissingFrontmatter('alice', $file, "[InternetShortcut]\nURL=https://pad.example.test/p/public-pad\n")
@@ -129,6 +129,9 @@ class PadBootstrapServiceTest extends TestCase {
 		$etherpadClient = $this->createMock(EtherpadClient::class);
 		$etherpadClient->expects($this->once())->method('createGroup')->willReturn('g.ABCDEFGHIJKLMNOP');
 		$etherpadClient->expects($this->once())->method('createGroupPad')->willReturn($padId);
+		// The group is only removed once Etherpad confirms it holds nothing
+		// but this pad.
+		$etherpadClient->method('listPads')->with('g.ABCDEFGHIJKLMNOP')->willReturn([$padId]);
 		$etherpadClient->expects($this->once())->method('deleteGroup')->with('g.ABCDEFGHIJKLMNOP');
 
 		$secureRandom = $this->createMock(ISecureRandom::class);
@@ -142,7 +145,7 @@ class PadBootstrapServiceTest extends TestCase {
 			$bindingService,
 			$padFileService,
 			$etherpadClient,
-			new ManagedPadLifecycle($etherpadClient),
+			new ManagedPadLifecycle($etherpadClient, $this->createMock(LoggerInterface::class)),
 			$secureRandom,
 			$this->createMock(LoggerInterface::class),
 			$this->createMock(\OCA\EtherpadNextcloud\Service\PadLegacyMigrationService::class),
@@ -155,7 +158,9 @@ class PadBootstrapServiceTest extends TestCase {
 
 	/**
 	 * A group with no pad in it is invisible to everything afterwards, so the
-	 * failure that leaves one has to clean up after itself.
+	 * failure that leaves one has to clean up after itself. Both provisioning
+	 * paths — this one and the restore — go through the same method now, so
+	 * this covers both.
 	 */
 	public function testProvisionRemovesTheGroupWhenItsPadCannotBeCreated(): void {
 		$etherpadClient = $this->createMock(EtherpadClient::class);
@@ -172,7 +177,7 @@ class PadBootstrapServiceTest extends TestCase {
 			$this->createMock(BindingService::class),
 			$this->createMock(PadFileService::class),
 			$etherpadClient,
-			new ManagedPadLifecycle($etherpadClient),
+			new ManagedPadLifecycle($etherpadClient, $this->createMock(LoggerInterface::class)),
 			$secureRandom,
 			$this->createMock(LoggerInterface::class),
 			$this->createMock(\OCA\EtherpadNextcloud\Service\PadLegacyMigrationService::class),
@@ -181,6 +186,52 @@ class PadBootstrapServiceTest extends TestCase {
 
 		$this->expectException(\RuntimeException::class);
 		$service->provisionPadId(BindingService::ACCESS_PROTECTED);
+	}
+
+	/**
+	 * The branch the cleanup guard exists to protect. An existing binding
+	 * means the pad was not created here, so a write that fails must leave
+	 * it alone — a wrong guard would destroy a live protected pad and its
+	 * group over a transient file lock.
+	 */
+	public function testInitializeMissingFrontmatterLeavesAnExistingPadAloneWhenTheWriteFails(): void {
+		$fileId = 77;
+		$padId = 'g.ABCDEFGHIJKLMNOP$p-existing';
+
+		$bindingService = $this->createMock(BindingService::class);
+		$bindingService->method('findByFileId')->with($fileId)->willReturn([
+			'pad_id' => $padId,
+			'access_mode' => BindingService::ACCESS_PROTECTED,
+		]);
+		$bindingService->expects($this->never())->method('createBinding');
+		$bindingService->expects($this->never())->method('deleteByFileId');
+
+		$padFileService = $this->createMock(PadFileService::class);
+		$padFileService->method('parseLegacyOwnpadShortcut')->willReturn(null);
+		$padFileService->method('buildInitialDocument')->willReturn('doc-that-fails-to-write');
+
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->method('buildPadUrl')->willReturn('https://pad.example.test/p/x');
+		$etherpadClient->expects($this->never())->method('deletePad');
+		$etherpadClient->expects($this->never())->method('deleteGroup');
+
+		$file = $this->createMock(File::class);
+		$file->method('getId')->willReturn($fileId);
+		$file->method('putContent')->willThrowException(new \RuntimeException('file is locked'));
+
+		$service = new PadBootstrapService(
+			$bindingService,
+			$padFileService,
+			$etherpadClient,
+			new ManagedPadLifecycle($etherpadClient, $this->createMock(LoggerInterface::class)),
+			$this->createMock(ISecureRandom::class),
+			$this->createMock(LoggerInterface::class),
+			$this->createMock(\OCA\EtherpadNextcloud\Service\PadLegacyMigrationService::class),
+			$this->buildPadTypePolicy(true),
+		);
+
+		$this->expectException(\RuntimeException::class);
+		$service->initializeMissingFrontmatter('alice', $file, '');
 	}
 
 	public function testInitializeMissingFrontmatterCleansUpWhenWriteFails(): void {
@@ -214,7 +265,9 @@ class PadBootstrapServiceTest extends TestCase {
 		$etherpadClient->expects($this->once())->method('createGroupPad')->willReturn($padId);
 		$etherpadClient->expects($this->once())->method('buildPadUrl')->with($padId)->willReturn('https://pad.example.test/p/' . rawurlencode($padId));
 		// The whole group, not just the pad: the group and its sessions would
-		// otherwise stay behind with nothing pointing at them.
+		// otherwise stay behind with nothing pointing at them — once Etherpad
+		// confirms the group holds nothing else.
+		$etherpadClient->method('listPads')->with('g.ABCDEFGHIJKLMNOP')->willReturn([$padId]);
 		$etherpadClient->expects($this->once())->method('deleteGroup')->with('g.ABCDEFGHIJKLMNOP');
 		$etherpadClient->expects($this->never())->method('deletePad');
 
@@ -235,7 +288,7 @@ class PadBootstrapServiceTest extends TestCase {
 			->willThrowException(new \RuntimeException('write failed'));
 
 		$migration = $this->createMock(\OCA\EtherpadNextcloud\Service\PadLegacyMigrationService::class);
-		$service = new PadBootstrapService($bindingService, $padFileService, $etherpadClient, new ManagedPadLifecycle($etherpadClient), $secureRandom, $logger, $migration, $this->buildPadTypePolicy(true));
+		$service = new PadBootstrapService($bindingService, $padFileService, $etherpadClient, new ManagedPadLifecycle($etherpadClient, $this->createMock(LoggerInterface::class)), $secureRandom, $logger, $migration, $this->buildPadTypePolicy(true));
 
 		$this->expectException(\RuntimeException::class);
 		$this->expectExceptionMessage('write failed');
@@ -299,7 +352,7 @@ class PadBootstrapServiceTest extends TestCase {
 			$bindingService,
 			$padFileService,
 			$etherpadClient,
-			new ManagedPadLifecycle($etherpadClient),
+			new ManagedPadLifecycle($etherpadClient, $this->createMock(LoggerInterface::class)),
 			$secureRandom,
 			$this->createMock(LoggerInterface::class),
 			$this->createMock(\OCA\EtherpadNextcloud\Service\PadLegacyMigrationService::class),
@@ -319,7 +372,7 @@ class PadBootstrapServiceTest extends TestCase {
 			$bindingService,
 			$padFileService,
 			$etherpadClient,
-			new ManagedPadLifecycle($etherpadClient),
+			new ManagedPadLifecycle($etherpadClient, $this->createMock(LoggerInterface::class)),
 			$this->createMock(ISecureRandom::class),
 			$this->createMock(LoggerInterface::class),
 			$this->createMock(\OCA\EtherpadNextcloud\Service\PadLegacyMigrationService::class),
@@ -356,7 +409,7 @@ class PadBootstrapServiceTest extends TestCase {
 			$bindingService,
 			$padFileService,
 			$etherpadClient,
-			new ManagedPadLifecycle($etherpadClient),
+			new ManagedPadLifecycle($etherpadClient, $this->createMock(LoggerInterface::class)),
 			$this->createMock(ISecureRandom::class),
 			$this->createMock(LoggerInterface::class),
 			$this->createMock(\OCA\EtherpadNextcloud\Service\PadLegacyMigrationService::class),
@@ -383,7 +436,7 @@ class PadBootstrapServiceTest extends TestCase {
 			$this->createMock(BindingService::class),
 			$padFileService,
 			$this->createMock(EtherpadClient::class),
-			new ManagedPadLifecycle($this->createMock(EtherpadClient::class)),
+			new ManagedPadLifecycle($this->createMock(EtherpadClient::class), $this->createMock(LoggerInterface::class)),
 			$this->createMock(ISecureRandom::class),
 			$this->createMock(LoggerInterface::class),
 			$migration,

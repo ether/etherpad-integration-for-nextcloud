@@ -81,6 +81,22 @@ class EtherpadClient {
 	}
 
 	/**
+	 * The pads inside a group. Answers `groupID does not exist` for a group
+	 * that is not there, which for a pad inside it means the pad is not
+	 * there either.
+	 *
+	 * @return list<string>
+	 */
+	public function listPads(string $groupId): array {
+		$data = $this->apiCall('listPads', ['groupID' => $groupId]);
+		$padIds = $data['padIDs'] ?? [];
+		if (!is_array($padIds)) {
+			return [];
+		}
+		return array_values(array_filter($padIds, 'is_string'));
+	}
+
+	/**
 	 * Removes the group, every pad inside it, and every session that granted
 	 * access to it — which is what makes it the right call for a protected
 	 * pad. deletePad() on a group pad leaves the group and its sessions

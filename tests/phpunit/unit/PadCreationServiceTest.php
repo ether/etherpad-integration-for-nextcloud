@@ -603,7 +603,7 @@ class PadCreationServiceTest extends TestCase {
 		$etherpadClient->expects($this->once())->method('deletePad')->with('p-fresh');
 
 		$rollbackService = new PadCreateRollbackService(
-			new ManagedPadLifecycle($etherpadClient),
+			new ManagedPadLifecycle($etherpadClient, $this->createMock(LoggerInterface::class)),
 			$this->createMock(\Psr\Log\LoggerInterface::class),
 		);
 
@@ -659,7 +659,7 @@ class PadCreationServiceTest extends TestCase {
 			bindingService: $bindingService,
 			bootstrap: $bootstrap,
 			rollbackService: new PadCreateRollbackService(
-				new ManagedPadLifecycle($this->createMock(EtherpadClient::class)),
+				new ManagedPadLifecycle($this->createMock(EtherpadClient::class), $this->createMock(LoggerInterface::class)),
 				$this->createMock(\Psr\Log\LoggerInterface::class),
 			),
 		)->create('alice', '/Notes.pad', BindingService::ACCESS_PUBLIC);
@@ -708,7 +708,7 @@ class PadCreationServiceTest extends TestCase {
 			fileCreator: $fileCreator,
 			bootstrap: $bootstrap,
 			rollbackService: new PadCreateRollbackService(
-				new ManagedPadLifecycle($this->createMock(EtherpadClient::class)),
+				new ManagedPadLifecycle($this->createMock(EtherpadClient::class), $this->createMock(LoggerInterface::class)),
 				$this->createMock(\Psr\Log\LoggerInterface::class),
 			),
 		);
@@ -791,7 +791,7 @@ class PadCreationServiceTest extends TestCase {
 			$rollbackService ?? $this->createMock(PadCreateRollbackService::class),
 			$bindingService ?? $this->createMock(BindingService::class),
 			$etherpadClient,
-			new ManagedPadLifecycle($etherpadClient),
+			new ManagedPadLifecycle($etherpadClient, $this->createMock(LoggerInterface::class)),
 			$bootstrap ?? $this->createMock(PadBootstrapService::class),
 			$placeholderResolver,
 			$externalPadSeeder,

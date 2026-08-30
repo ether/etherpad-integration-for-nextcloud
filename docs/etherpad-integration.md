@@ -28,6 +28,7 @@ Important:
 - `createAuthorIfNotExistsFor`
 - `createSession`
 - `listSessionsOfAuthor`
+- `listPads`
 - `deleteGroup`
 
 ### Removing a pad
@@ -40,14 +41,27 @@ Nextcloud pointing at them and nothing to collect them.
 
 `ManagedPadLifecycle::discard()` is the one place that decides:
 
-- pad id shaped `g.<16 chars>$<name>` → `deleteGroup`, which removes the
-  group, its pads and its sessions in one call;
-- anything else → `deletePad`, which is also what a legacy Ownpad id gets.
+- pad id not shaped `g.<group>$<name>` → `deletePad`;
+- otherwise ask Etherpad what the group holds. Exactly this pad and nothing
+  else → `deleteGroup`, which removes the group, its pad and its sessions in
+  one call. Anything else → `deletePad`.
 
-The pad id is the authority rather than the binding's access mode: it is
-what Etherpad keys on, and it stays right for a pad whose binding says
-something else after a migration. One group holds exactly one pad here, so
-deleting the group cannot take a bystander with it.
+The question is asked rather than inferred, because a binding's pad id does
+not have to name a group this app created. A legacy Ownpad `.pad` file names
+its own pad id and the migration binds it as given, so a file written by hand
+naming another user's group would, on a plain shape check, have made deleting
+that file destroy their group, their pad and their sessions. A group that
+holds only the pad being deleted has nothing else to lose.
+
+A group that is not there at all answers `groupID does not exist`, which the
+callers read as "already gone" — correct, since a pad inside a group that
+does not exist cannot exist either.
+
+The shape rule itself lives in `Util\PadId` and is the same one that
+classifies a binding as protected. It used to be stricter here, so a pad
+bound as protected by the loose rule was not recognised as a group pad by
+the strict one and its group was left behind — the leak this section is
+about, reached from the other side.
 
 ## Pad Types
 

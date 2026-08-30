@@ -66,23 +66,7 @@ class PadBootstrapService {
 			throw new \InvalidArgumentException('Unsupported access mode for pad provisioning.');
 		}
 
-		$groupId = $this->etherpadClient->createGroup();
-		try {
-			return $this->etherpadClient->createGroupPad($groupId, $this->buildProtectedPadName());
-		} catch (\Throwable $e) {
-			// The group exists and has nothing in it. Nothing else will ever
-			// look at it, so it would sit there for good.
-			try {
-				$this->etherpadClient->deleteGroup($groupId);
-			} catch (\Throwable $cleanupError) {
-				$this->logger->warning('Could not remove the Etherpad group after its pad failed to be created.', [
-					'app' => 'etherpad_nextcloud',
-					'groupId' => $groupId,
-					'exception' => $cleanupError,
-				]);
-			}
-			throw $e;
-		}
+		return $this->padLifecycle->provisionGroupPad($this->buildProtectedPadName());
 	}
 
 	/**
@@ -118,20 +102,19 @@ class PadBootstrapService {
 			if ($binding !== null) {
 				$padId = (string)$binding['pad_id'];
 				$accessMode = (string)$binding['access_mode'];
-				$createdNewPad = false;
 			} else {
-			// No binding yet, so this provisions a brand-new pad rather than
-			// re-initialising an existing one — the policy applies. Files that
-			// already have a binding fall into the branch above and keep
-			// working whatever the admin configured.
-			//
-			// Fall back rather than refuse: an empty `.pad` can arrive outside
-			// the UI (WebDAV, another integration, or from before the setting
-			// changed), and a hard requirement would leave it permanently
-			// unopenable even when the other pad type is available.
-			// A caller may know which type was asked for — the template picker
-			// does. The policy still has the last word, so a type disabled
-			// between choosing and creating falls back instead of failing.
+				// No binding yet, so this provisions a brand-new pad rather than
+				// re-initialising an existing one — the policy applies. Files that
+				// already have a binding fall into the branch above and keep
+				// working whatever the admin configured.
+				//
+				// Fall back rather than refuse: an empty `.pad` can arrive outside
+				// the UI (WebDAV, another integration, or from before the setting
+				// changed), and a hard requirement would leave it permanently
+				// unopenable even when the other pad type is available.
+				// A caller may know which type was asked for — the template picker
+				// does. The policy still has the last word, so a type disabled
+				// between choosing and creating falls back instead of failing.
 				$accessMode = $this->padTypePolicy->resolveCreatableMode($preferredAccessMode ?? BindingService::ACCESS_PROTECTED);
 				$padId = $this->provisionPadId($accessMode);
 				// Ours from here, before the binding exists.

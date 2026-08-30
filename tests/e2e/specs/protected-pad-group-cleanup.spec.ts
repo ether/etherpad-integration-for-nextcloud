@@ -54,7 +54,11 @@ test.describe('protected pad cleanup on the Etherpad side', () => {
 			// the pad — and with it, the group and its sessions.
 			await expect.poll(groupIds, { timeout: 20_000 })
 				.not.toContain(decodeURIComponent(group))
-			expect((await groupIds()).length, 'no other group should have been touched').toBe(before.length)
+			// Not a count: another suite run against the same instance may add
+			// groups of its own, and this must fail for a leak rather than
+			// for company.
+			expect(await groupIds(), 'no other group should have been touched')
+				.toEqual(expect.arrayContaining(before))
 		} finally {
 			await api.dispose()
 		}
