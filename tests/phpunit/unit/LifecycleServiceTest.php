@@ -219,6 +219,51 @@ class LifecycleServiceTest extends TestCase {
 	 * retry job walks `pending_delete` rows and will never see it again, so
 	 * for a protected pad a whole group and its sessions would be stranded.
 	 */
+	/** The restore's own provisioning leaks the same way a first open does. */
+	public function testHandleRestoreRemovesAPublicPadWhoseCreationFailedHalfway(): void {
+		$fileId = 86;
+		$oldPadId = 'old-pad';
+		$newPadId = 'r-old-pad-abc123def456';
+
+		$bindingService = $this->createMock(BindingService::class);
+		$bindingService->method('findByFileId')->with($fileId)->willReturn([
+			'file_id' => $fileId,
+			'pad_id' => $oldPadId,
+			'access_mode' => BindingService::ACCESS_PUBLIC,
+			'state' => BindingService::STATE_PENDING_DELETE,
+		]);
+		$bindingService->expects($this->never())->method('markRestored');
+
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->expects($this->once())
+			->method('createPad')
+			->with($newPadId)
+			->willThrowException(new \RuntimeException('Connection timed out'));
+		$etherpadClient->expects($this->once())->method('deletePad')->with($newPadId);
+
+		$secureRandom = $this->createMock(ISecureRandom::class);
+		$secureRandom->method('generate')->willReturn('abc123def456');
+
+		$file = $this->createMock(File::class);
+		$file->method('getId')->willReturn($fileId);
+		$file->method('getName')->willReturn('Restored.pad');
+
+		$service = new LifecycleService(
+			$bindingService,
+			$this->createMock(PadFileService::class),
+			$etherpadClient,
+			new ManagedPadLifecycle($etherpadClient, $this->createMock(LoggerInterface::class)),
+			$this->buildDeleteOnTrashEnabledConfig(),
+			$this->createMock(LoggerInterface::class),
+			$secureRandom,
+			$this->createMock(UserNodeResolver::class),
+			$this->createMock(PathNormalizer::class),
+		);
+
+		$this->expectException(\RuntimeException::class);
+		$service->handleRestore($file);
+	}
+
 	public function testHandleRestoreTakesTheSupersededGroupWithIt(): void {
 		$fileId = 84;
 		$oldPadId = 'g.OLDGROUPID12345$p-old';

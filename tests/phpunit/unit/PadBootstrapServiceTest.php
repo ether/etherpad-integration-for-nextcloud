@@ -557,6 +557,52 @@ class PadBootstrapServiceTest extends TestCase {
 		));
 	}
 
+	/**
+	 * A `createPad` that times out on the way back may still have made the
+	 * pad, and the caller never learns the id — `provisionPadId` throws
+	 * before returning it, so no rollback can name it. The public path had
+	 * no cleanup of its own; the protected one has had it since the group
+	 * was pulled into provisioning.
+	 */
+	public function testRemovesAPublicPadWhoseCreationFailedHalfway(): void {
+		$fileId = 99;
+		$padId = 'nc-abcdefghijklmnopqrstuvwx';
+
+		$bindingService = $this->createMock(BindingService::class);
+		$bindingService->method('findByFileId')->with($fileId)->willReturn(null);
+		$bindingService->expects($this->never())->method('createBinding');
+
+		$padFileService = $this->createMock(PadFileService::class);
+		$padFileService->method('parseLegacyOwnpadShortcut')->willReturn(null);
+
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->expects($this->once())
+			->method('createPad')
+			->with($padId)
+			->willThrowException(new \RuntimeException('Connection timed out'));
+		$etherpadClient->expects($this->once())->method('deletePad')->with($padId);
+
+		$secureRandom = $this->createMock(ISecureRandom::class);
+		$secureRandom->method('generate')->willReturn('abcdefghijklmnopqrstuvwx');
+
+		$file = $this->createMock(File::class);
+		$file->method('getId')->willReturn($fileId);
+
+		$service = new PadBootstrapService(
+			$bindingService,
+			$padFileService,
+			$etherpadClient,
+			new ManagedPadLifecycle($etherpadClient, $this->createMock(LoggerInterface::class)),
+			$secureRandom,
+			$this->createMock(LoggerInterface::class),
+			$this->createMock(\OCA\EtherpadNextcloud\Service\PadLegacyMigrationService::class),
+			$this->buildPadTypePolicy(false),
+		);
+
+		$this->expectException(\RuntimeException::class);
+		$service->initializeMissingFrontmatter('alice', $file, '');
+	}
+
 	private function buildPadTypePolicy(bool $protectedEnabled, bool $publicEnabled = true): \OCA\EtherpadNextcloud\Service\PadTypePolicy {
 		$config = $this->createMock(\OCP\IConfig::class);
 		$config->method('getAppValue')->willReturnCallback(
