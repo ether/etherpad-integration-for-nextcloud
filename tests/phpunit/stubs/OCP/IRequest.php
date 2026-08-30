@@ -10,5 +10,8 @@ if (!interface_exists(IRequest::class)) {
 		public function getParams(): array;
 
 		public function getParam(string $key, mixed $default = null): mixed;
+
+		/** Mirrors OCP\IRequest::getCookie(): the raw value, or null. */
+		public function getCookie(string $key): ?string;
 	}
 }
