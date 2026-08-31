@@ -145,28 +145,21 @@ class EtherpadHealthCheckService {
 	}
 
 	/**
-	 * What the Etherpad session cookie will look like, and why.
+	 * What the Etherpad session cookie will look like, and why — the one
+	 * place an admin can see it. When the detection is wrong the symptom is
+	 * that no protected pad opens and nothing else says why.
 	 *
-	 * The one place an admin can see it. The release decides whether the
-	 * cookie may be kept from JavaScript, it is discovered rather than
-	 * configured, and it lives in an app value with no field of its own —
-	 * so when the detection is wrong, the symptom is that no protected pad
-	 * opens and nothing anywhere says why.
+	 * Reads the answer the open path is using and probes the submitted host
+	 * separately: those two disagreeing *is* the lockout.
 	 *
-	 * It reads the answer the open path is using, and asks the host being
-	 * submitted separately. Those two can disagree — a cached release from
-	 * before a downgrade against a server that has since gone back to 2.x
-	 * — and that disagreement *is* the lockout, so it is what gets said.
+	 * Read, never resolved. Resolving would refresh an expired cache, which
+	 * probes the stored host and writes — so testing an unsaved form would
+	 * teach the open path something, and park real opens in the failure
+	 * backoff because somebody pressed a button.
 	 *
-	 * Read, not resolved: calling the policy's own predicate would refresh
-	 * an expired cache, which means probing the *stored* host and writing
-	 * three app values. Testing an unsaved form would teach the open path
-	 * something, and against a host that is gone it would also park real
-	 * pad opens in the failure backoff because somebody pressed a button.
-	 *
-	 * Everything lands on `etherpad_session_cookie`. Sharing a field with
-	 * the API lines means losing to them: the panel keeps the highest
-	 * severity per field, and a passing `api` outranks a skip.
+	 * Everything lands on `etherpad_session_cookie`: the panel keeps the
+	 * highest severity per field, so sharing one with the API lines means
+	 * losing to them.
 	 */
 	private function sessionCookieCheck(ValidatedAdminSettings $settings): HealthCheckItem {
 		if (!$settings->enableProtectedPads) {
@@ -189,9 +182,8 @@ class EtherpadHealthCheckService {
 		}
 
 		try {
-			// As patient as the calls beside it: a slow but healthy pad
-			// server is not a misconfiguration of this app, and this is not
-			// the open path.
+			// The full timeout, not the open path's three seconds: a slow
+			// but healthy pad server is not a misconfiguration.
 			$release = $this->etherpadClient->detectReleaseVersion(
 				$settings->etherpadApiHost,
 				EtherpadClient::REQUEST_TIMEOUT_SECONDS,
@@ -208,15 +200,10 @@ class EtherpadHealthCheckService {
 		}
 
 		if ($release === '') {
-			// Not a warning. Nothing is broken: the cookie stays readable,
-			// which is what every Etherpad before 3.0 needs anyway. A pad
-			// server without /health, or a proxy that routes /api and not
-			// /health, works and merely misses a hardening.
-			//
-			// The reason is worth carrying, though. DNS, a TLS mismatch, a
-			// 404 because the proxy does not route /health, a 401 from proxy
-			// auth and a timeout are five different fixes, and the class
-			// already knows how to tell them apart.
+			// Not a warning: the cookie stays readable, which is what every
+			// Etherpad before 3.0 needs anyway. The reason still matters —
+			// DNS, TLS, an unrouted /health and proxy auth are different
+			// fixes, and this class already tells them apart.
 			return $this->sessionCookieItem(
 				HealthCheckItem::STATUS_SKIPPED,
 				$this->l10n->t('Session cookie: readable by scripts'),
@@ -225,13 +212,11 @@ class EtherpadHealthCheckService {
 			);
 		}
 
-		// About the *stored* host: that is the one the open path resolves,
-		// and a form being typed says nothing about what pads are doing.
+		// The stored host is the one the open path resolves. Comparing a
+		// probe of an address being typed against what pads are doing would
+		// read every planned migration as a live lockout.
 		$configuredHost = $this->etherpadClient->getApiHost();
 		if (rtrim($configuredHost, '/') !== rtrim($settings->etherpadApiHost, '/')) {
-			// Somebody is testing an address before saving it. Comparing a
-			// probe of that address against what pads are doing now would
-			// read every planned migration as a live lockout.
 			return $this->sessionCookieItem(
 				HealthCheckItem::STATUS_OK,
 				$this->fill(
@@ -257,8 +242,6 @@ class EtherpadHealthCheckService {
 
 		$sending = EtherpadReleasePolicy::allowsHttpOnly($knownRelease);
 		if ($sending !== EtherpadReleasePolicy::allowsHttpOnly($release)) {
-			// The cache and the server disagree, which is precisely the
-			// lockout an admin comes here to explain.
 			return $this->sessionCookieItem(
 				HealthCheckItem::STATUS_WARNING,
 				$this->l10n->t('Etherpad session cookie'),
@@ -299,16 +282,11 @@ class EtherpadHealthCheckService {
 	}
 
 	/**
-	 * A hand-set flag, reported by what it costs rather than by the fact
-	 * that it is set.
-	 *
-	 * The two values are not symmetric. `yes` below Etherpad 3.0 stops every
-	 * protected pad from opening and has to shout. `no` gives up a hardening
-	 * and is what this app did before any of it — warning on that teaches an
-	 * admin to ignore the line that would have told them about the other.
-	 *
-	 * Either way it says what the release is, so somebody who reached for
-	 * the escape hatch during an outage can see whether they may put it back.
+	 * A hand-set flag, reported by what it costs. The two values are not
+	 * symmetric: `yes` below 3.0 stops every protected pad and has to
+	 * shout, `no` only gives up a hardening — warning on that teaches an
+	 * admin to ignore the line that matters. Both name the release, so
+	 * somebody who reached for the escape hatch can see if they may stop.
 	 */
 	private function overriddenSessionCookieItem(string $override, string $release): HealthCheckItem {
 		$forcedOn = $override === EtherpadReleasePolicy::OVERRIDE_YES;
