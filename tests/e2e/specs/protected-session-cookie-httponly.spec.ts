@@ -88,6 +88,37 @@ test.describe('the session cookie and the Etherpad that reads it', () => {
 			} else {
 				expect(setCookie, `Etherpad ${release} reads the session in the browser`).not.toContain('HttpOnly')
 			}
+
+			// An absent flag is the default, so on an Etherpad 2 target the
+			// branch above passes just as well when detection is broken end
+			// to end — /health blocked from inside the container, the policy
+			// throwing, the flag removed altogether. This spec asks from the
+			// runner's network; the app asks from inside, against its own
+			// configured api host. So make it say what it found: the
+			// connection test reports the release the app itself read, and
+			// naming it is only possible if that half is live.
+			const connectionTest = await api.post(
+				`${E2E.baseURL}/index.php/apps/etherpad_nextcloud/api/v1/admin/health`,
+				{
+					headers: {
+						Authorization: basicAuthHeader(),
+						'OCS-APIRequest': 'true',
+						Accept: 'application/json',
+						'Content-Type': 'application/json',
+					},
+					// The connection test validates the form as submitted, and
+					// the base URL is required there. Same server either way.
+					data: { etherpad_host: etherpadUrl! },
+				},
+			)
+			expect(connectionTest.status(), await connectionTest.text()).toBe(200)
+			const checks = ((await connectionTest.json()) as { checks?: Array<{ id: string, label: string, detail: string }> }).checks ?? []
+			const sessionCookie = checks.find((c) => c.id === 'session_cookie')
+			expect(sessionCookie, 'the connection test should report on the session cookie').toBeDefined()
+			expect(
+				`${sessionCookie!.label} ${sessionCookie!.detail}`,
+				'the app should name the release it read for itself',
+			).toContain(release)
 		} finally {
 			await api.dispose()
 		}

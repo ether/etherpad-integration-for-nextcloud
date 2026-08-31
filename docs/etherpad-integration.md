@@ -191,7 +191,7 @@ Cookie details:
 - Name: `sessionID`
 - `secure: true`
 - `samesite: None`
-- `http_only: false` (runtime compatibility with current Etherpad/socket flow on this deployment)
+- `http_only`: depends on the Etherpad release, see below
 - Domain handling:
   - if `etherpad_cookie_domain` is set, this value is used as-is
   - if empty, domain is derived from `etherpad_host`
@@ -200,12 +200,46 @@ Cookie details:
   - derivation is skipped for IP hosts and invalid host values
   - recommendation: use explicit `etherpad_cookie_domain` in multi-subdomain/proxy setups
 
+### `HttpOnly` and the Etherpad release
+
+Up to Etherpad 2.7.3 the pad app reads `sessionID` in the browser, so the
+cookie has to stay script-readable — `HttpOnly` there locks the user out of
+every protected pad. From 3.0.0 Etherpad takes the session id out of the
+socket.io handshake instead, and the cookie can be withheld from any script
+on the page. Measured on 2.7.3, 3.0.0 and 3.3.3.
+
+The app finds this out from `GET /health` (`releaseId`), which needs no api
+key. `/api` cannot answer it: it reports `1.3.1` on both 2.7.3 and 3.3.3.
+The answer is cached for an hour, retried at most once a minute after a
+failure, dropped after six hours without a successful check, and kept
+against the API host it was read from. Not knowing means a readable cookie.
+
+The connection test in the admin settings shows which release was found and
+what the cookie will be, and warns when the two have drifted apart — which
+is what a downgrade looks like from the outside.
+
+App config keys, none of them meant to be edited by hand except the first:
+
+| key | meaning |
+| --- | --- |
+| `etherpad_http_only_session_cookie` | `auto` (default), `yes` or `no`. The escape hatch when detection is wrong. `yes` against an Etherpad below 3.0 stops every protected pad from opening. |
+| `etherpad_release_version` | last detected release |
+| `etherpad_release_checked_at` | when it was last confirmed |
+| `etherpad_release_host` | the API host it was read from |
+| `etherpad_release_failed_at` | when the last check failed |
+
+```bash
+occ config:app:set etherpad_nextcloud etherpad_http_only_session_cookie --value=no
+```
+
 Regression safety check:
 
 - `tests/integration/e2e-protected-cookie-contract.sh` validates the protected open response cookie contract:
   - one `sessionID` `Set-Cookie` header from app flow
   - includes `Secure` and `SameSite=None`
-  - excludes `HttpOnly` (current runtime compatibility requirement)
+  - `HttpOnly` present exactly when the pad server's `/health` reports a
+    release of 3 or newer; skipped with a note when `/health` cannot be
+    reached from where the script runs
 
 ## Read-only Behavior
 

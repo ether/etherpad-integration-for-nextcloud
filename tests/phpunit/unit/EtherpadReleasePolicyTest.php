@@ -25,10 +25,12 @@ class EtherpadReleasePolicyTest extends TestCase {
 	/** App config that actually remembers what was written to it. */
 	private \ArrayObject $stored;
 	private int $now = 1_700_000_000;
+	private \OCP\ICacheFactory $cacheFactory;
 
 	protected function setUp(): void {
 		parent::setUp();
 		$this->stored = new \ArrayObject();
+		$this->cacheFactory = $this->noCache();
 	}
 
 	public function testEtherpadThreeCanKeepTheCookieFromScripts(): void {
@@ -129,6 +131,10 @@ class EtherpadReleasePolicyTest extends TestCase {
 	 * stamp. Claiming the check first means one of them asks.
 	 */
 	public function testConcurrentOpensDoNotEachProbe(): void {
+		// The claim only works where something is actually shared between
+		// workers: Nextcloud loads app config once per request, so a
+		// timestamp written here is invisible to a request already running.
+		$this->cacheFactory = $this->sharedCache();
 		$this->store(host: 'https://pad.example.test', release: '3.3.3', checkedAt: $this->now - 3601);
 		$client = $this->createMock(EtherpadClient::class);
 		$client->method('getApiHost')->willReturn('https://pad.example.test');
@@ -139,6 +145,21 @@ class EtherpadReleasePolicyTest extends TestCase {
 				return '3.3.3';
 			});
 
+		self::assertTrue($this->policy($client)->supportsHttpOnlySessionCookie());
+	}
+
+	/**
+	 * Nothing to coordinate with is not a reason to skip the check: a
+	 * single-node instance without a memory cache has one worker per open.
+	 */
+	public function testWithoutAMemoryCacheTheCheckStillHappens(): void {
+		$this->cacheFactory = $this->noCache();
+		$client = $this->createMock(EtherpadClient::class);
+		$client->method('getApiHost')->willReturn('https://pad.example.test');
+		$client->expects(self::exactly(2))->method('detectReleaseVersion')->willReturn('3.3.3');
+
+		self::assertTrue($this->policy($client)->supportsHttpOnlySessionCookie());
+		$this->stored['etherpad_release_checked_at'] = (string)($this->now - 3601);
 		self::assertTrue($this->policy($client)->supportsHttpOnlySessionCookie());
 	}
 
@@ -265,6 +286,42 @@ class EtherpadReleasePolicyTest extends TestCase {
 		$timeFactory = $this->createMock(ITimeFactory::class);
 		$timeFactory->method('getTime')->willReturnCallback(fn (): int => $this->now);
 
-		return new EtherpadReleasePolicy($client, $config, $timeFactory, $this->createMock(LoggerInterface::class));
+		return new EtherpadReleasePolicy(
+			$client,
+			$config,
+			$timeFactory,
+			$this->cacheFactory,
+			$this->createMock(LoggerInterface::class),
+		);
+	}
+
+	/**
+	 * A distributed cache shared between the policies a test builds, the way
+	 * one is shared between workers. Without a real one the claim is a
+	 * no-op, which is what a single-node instance gets.
+	 */
+	private function sharedCache(): \OCP\ICacheFactory {
+		$held = new \ArrayObject();
+		$cache = $this->createMock(\OCP\ICache::class);
+		$cache->method('add')->willReturnCallback(
+			static function (string $key) use ($held): bool {
+				if (isset($held[$key])) {
+					return false;
+				}
+				$held[$key] = true;
+				return true;
+			}
+		);
+		$factory = $this->createMock(\OCP\ICacheFactory::class);
+		$factory->method('isAvailable')->willReturn(true);
+		$factory->method('createDistributed')->willReturn($cache);
+		return $factory;
+	}
+
+	/** No memory cache: one worker per open, nothing to coordinate with. */
+	private function noCache(): \OCP\ICacheFactory {
+		$factory = $this->createMock(\OCP\ICacheFactory::class);
+		$factory->method('isAvailable')->willReturn(false);
+		return $factory;
 	}
 }

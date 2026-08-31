@@ -21,6 +21,8 @@ $stubFiles = [
 	__DIR__ . '/stubs/OCP/AppFramework/Http/Attribute/NoCSRFRequired.php',
 	__DIR__ . '/stubs/OCP/AppFramework/Http/Attribute/PublicPage.php',
 	__DIR__ . '/stubs/OCP/AppFramework/Utility/ITimeFactory.php',
+	__DIR__ . '/stubs/OCP/ICache.php',
+	__DIR__ . '/stubs/OCP/ICacheFactory.php',
 	__DIR__ . '/stubs/OCP/BackgroundJob/TimedJob.php',
 	__DIR__ . '/stubs/OC/Security/CSRF/CsrfToken.php',
 	__DIR__ . '/stubs/OC/Security/CSRF/CsrfTokenManager.php',

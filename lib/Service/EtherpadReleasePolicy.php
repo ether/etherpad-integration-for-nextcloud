@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\Service;
 
 use OCP\AppFramework\Utility\ITimeFactory;
+use OCP\ICacheFactory;
 use OCP\IConfig;
 use Psr\Log\LoggerInterface;
 
@@ -43,6 +44,9 @@ class EtherpadReleasePolicy {
 
 	/** auto (detect) | yes (force HttpOnly) | no (force a readable cookie). */
 	public const OVERRIDE_KEY = 'etherpad_http_only_session_cookie';
+	public const OVERRIDE_AUTO = 'auto';
+	public const OVERRIDE_YES = 'yes';
+	public const OVERRIDE_NO = 'no';
 
 	/**
 	 * The first major that reads the session cookie server-side.
@@ -96,8 +100,9 @@ class EtherpadReleasePolicy {
 	 *
 	 * Without it, a pad server that accepts the connection and then says
 	 * nothing costs every single open the health timeout, for as long as it
-	 * stays that way. This bounds that to one attempt a minute, and doubles
-	 * as the claim that keeps concurrent opens from all probing at once.
+	 * stays that way. This bounds that to one attempt a minute. It is also
+	 * how long the claim below is held, so a worker that dies mid-check
+	 * blocks nothing for longer than a retry would have waited anyway.
 	 */
 	private const FAILURE_BACKOFF_SECONDS = 60;
 
@@ -105,6 +110,7 @@ class EtherpadReleasePolicy {
 		private EtherpadClient $etherpadClient,
 		private IConfig $config,
 		private ITimeFactory $timeFactory,
+		private ICacheFactory $cacheFactory,
 		private LoggerInterface $logger,
 	) {
 	}
@@ -128,15 +134,38 @@ class EtherpadReleasePolicy {
 	 * so the answer without an answer is the one that keeps them working.
 	 */
 	public function supportsHttpOnlySessionCookie(): bool {
-		$override = strtolower($this->read(self::OVERRIDE_KEY));
-		if ($override === 'yes') {
-			return true;
-		}
-		if ($override === 'no') {
+		try {
+			$override = $this->overrideMode();
+			if ($override !== self::OVERRIDE_AUTO) {
+				return $override === self::OVERRIDE_YES;
+			}
+
+			return self::allowsHttpOnly($this->resolveReleaseOrThrow());
+		} catch (\Throwable $e) {
+			// The promise this class makes: an open never fails because of
+			// it. Reading the override is inside the guard too — it is the
+			// first app-config read of some requests, and a database blip
+			// there would otherwise escape a predicate that says it cannot.
+			$this->logger->warning('Could not work out the Etherpad release; writing a script-readable session cookie.', [
+				'app' => self::APP_ID,
+				'exception' => $e,
+			]);
 			return false;
 		}
+	}
 
-		return self::allowsHttpOnly($this->resolveRelease());
+	/**
+	 * What the admin has decided, if anything.
+	 *
+	 * Public so the admin health check reports on the same reading rather
+	 * than parsing the value a second time with its own default — the same
+	 * reason `allowsHttpOnly()` is public: one rule, one place.
+	 */
+	public function overrideMode(): string {
+		$override = strtolower($this->read(self::OVERRIDE_KEY));
+		return in_array($override, [self::OVERRIDE_YES, self::OVERRIDE_NO], true)
+			? $override
+			: self::OVERRIDE_AUTO;
 	}
 
 	/** The release currently believed, without asking anything. For the admin view. */
@@ -150,21 +179,8 @@ class EtherpadReleasePolicy {
 	 * A detection that fails keeps the last known answer for a while rather
 	 * than dropping to unknown at the first blip: this runs on the open
 	 * path, and a pad server that is briefly unreachable should not change
-	 * how the cookie is written. It never throws, for the same reason —
-	 * nothing here is worth failing an open over.
+	 * how the cookie is written.
 	 */
-	private function resolveRelease(): string {
-		try {
-			return $this->resolveReleaseOrThrow();
-		} catch (\Throwable $e) {
-			$this->logger->warning('Could not work out the Etherpad release; writing a script-readable session cookie.', [
-				'app' => self::APP_ID,
-				'exception' => $e,
-			]);
-			return '';
-		}
-	}
-
 	private function resolveReleaseOrThrow(): string {
 		$host = $this->etherpadClient->getApiHost();
 		$now = $this->timeFactory->getTime();
@@ -179,7 +195,7 @@ class EtherpadReleasePolicy {
 
 		$cached = $this->read(self::RELEASE_KEY);
 		$age = $this->ageOf(self::CHECKED_AT_KEY, $now);
-		if ($cached !== '' && $age >= self::MAX_STALE_SECONDS) {
+		if ($cached !== '' && $age !== null && $age >= self::MAX_STALE_SECONDS) {
 			// Nothing has confirmed this for hours. Whatever it says, it is
 			// no longer evidence about the server answering today.
 			$this->logger->warning('The last known Etherpad release is too old to trust; falling back to a script-readable session cookie.', [
@@ -191,23 +207,23 @@ class EtherpadReleasePolicy {
 			$cached = '';
 		}
 
-		if ($cached !== '' && $age < self::TTL_SECONDS) {
-			return $cached;
-		}
-		if ($this->ageOf(self::FAILED_AT_KEY, $now) < self::FAILURE_BACKOFF_SECONDS) {
-			// Either a recent failure, or another request checking right
-			// now — the claim below makes those look the same on purpose.
+		if ($cached !== '' && $age !== null && $age < self::TTL_SECONDS) {
 			return $cached;
 		}
 
-		// Claim the check before making it, so a hundred opens arriving at
-		// the moment the hour turns do not each spend a round trip on the
-		// same question. A claim that goes nowhere expires as a failure.
-		$this->config->setAppValue(self::APP_ID, self::FAILED_AT_KEY, (string)$now);
+		$failedAge = $this->ageOf(self::FAILED_AT_KEY, $now);
+		if ($failedAge !== null && $failedAge < self::FAILURE_BACKOFF_SECONDS) {
+			return $cached;
+		}
+		if (!$this->claimTheCheck()) {
+			// Another worker is asking right now.
+			return $cached;
+		}
 
 		try {
 			$release = $this->etherpadClient->detectReleaseVersion();
 		} catch (\Throwable $e) {
+			$this->config->setAppValue(self::APP_ID, self::FAILED_AT_KEY, (string)$now);
 			$this->logger->warning('Could not read the Etherpad release from /health.', [
 				'app' => self::APP_ID,
 				'cachedRelease' => $cached,
@@ -230,22 +246,52 @@ class EtherpadReleasePolicy {
 	}
 
 	/**
-	 * How long ago a stamp was written, counting anything in the future as
-	 * forever ago.
+	 * How long ago a stamp was written, or null when it does not say.
 	 *
 	 * A clock that jumps backwards — an NTP correction, a restored snapshot,
-	 * a cluster node that drifts — otherwise leaves a stamp ahead of `now`,
-	 * and a negative age is younger than every window there is. The cache
-	 * would then freeze until real time caught up: hours in which a
-	 * downgrade goes unnoticed. A stamp from the future is not evidence
-	 * about the past, so it counts for nothing.
+	 * a cluster node that drifts — leaves a stamp ahead of `now`, and a
+	 * negative age is younger than every window there is: the cache would
+	 * freeze until real time caught up, hours in which a downgrade goes
+	 * unnoticed. So a stamp from the future is not an age at all.
+	 *
+	 * Null rather than a very large number, because the two readings of
+	 * "no usable age" differ. Not knowing means check again now. It does
+	 * not mean the release is hours stale — answering that would wipe a
+	 * cache seconds old and log that it was hours old, over a clock that
+	 * moved by a second.
 	 */
-	private function ageOf(string $key, int $now): int {
+	private function ageOf(string $key, int $now): ?int {
 		$stamp = (int)$this->read($key);
 		if ($stamp <= 0 || $stamp > $now) {
-			return PHP_INT_MAX;
+			return null;
 		}
 		return $now - $stamp;
+	}
+
+	/**
+	 * Take the right to make the check, if nobody else holds it.
+	 *
+	 * The obvious way to do this — write the timestamp before asking — does
+	 * not work across workers. Nextcloud loads an app's config once per
+	 * request and serves later reads from that copy, so a hundred opens
+	 * arriving together have all already read the old value and none of
+	 * them sees anybody else's write. They would each spend a round trip
+	 * on the same question.
+	 *
+	 * A distributed cache is the thing that is actually shared. `add()`
+	 * succeeds for exactly one caller, which is the whole requirement. Not
+	 * every deployment has one; a single-node instance without a memory
+	 * cache has one worker per open and nothing to coordinate with, so
+	 * going ahead is the right answer there.
+	 */
+	private function claimTheCheck(): bool {
+		if (!$this->cacheFactory->isAvailable()) {
+			return true;
+		}
+
+		return $this->cacheFactory
+			->createDistributed(self::APP_ID . '/release/')
+			->add('probe', '1', self::FAILURE_BACKOFF_SECONDS);
 	}
 
 	private function read(string $key): string {

@@ -9,10 +9,8 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Service;
 
-use OCA\EtherpadNextcloud\AppInfo\Application;
 use OCA\EtherpadNextcloud\Exception\AdminHealthCheckException;
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
-use OCP\IConfig;
 use OCP\IL10N;
 use OCP\IURLGenerator;
 
@@ -38,7 +36,7 @@ class EtherpadHealthCheckService {
 		private CookieDomainPolicy $cookieDomainPolicy,
 		private BaseUrlReachabilityCheck $baseUrlCheck,
 		private IURLGenerator $urlGenerator,
-		private IConfig $config,
+		private EtherpadReleasePolicy $releasePolicy,
 	) {
 	}
 
@@ -129,7 +127,7 @@ class EtherpadHealthCheckService {
 				'etherpad_api_key',
 			),
 			$this->baseUrlCheck->check($settings->etherpadHost),
-			$this->sessionCookieCheck($settings),
+			$this->sessionCookieCheck($settings, $apiField),
 		];
 
 		return new HealthCheckResult(
@@ -154,62 +152,94 @@ class EtherpadHealthCheckService {
 	 * so when the detection is wrong, the symptom is that no protected pad
 	 * opens and nothing anywhere says why.
 	 *
-	 * Asked against the host being submitted, not the one already stored,
-	 * like every other line here. Nothing is written to the cache from this:
-	 * a form that is not saved should not teach the open path anything, and
-	 * the cache is keyed by host so a saved change re-checks by itself.
+	 * It reports what the open path is *doing*, which is not the same as
+	 * what this host would say if asked now. The open path answers from a
+	 * cached release, so right after a downgrade the cookie can be HttpOnly
+	 * against a pad server that has already gone back to 2.x — the exact
+	 * moment this line exists for. Asking as well, against the host being
+	 * submitted, is what turns "here is the cookie" into "and here is why
+	 * that is now wrong".
+	 *
+	 * Nothing is written to the cache from here: a form that is not saved
+	 * should not teach the open path anything, and the cache is keyed by
+	 * host so a saved change re-checks by itself.
 	 */
-	private function sessionCookieCheck(ValidatedAdminSettings $settings): HealthCheckItem {
+	private function sessionCookieCheck(ValidatedAdminSettings $settings, string $apiField): HealthCheckItem {
 		if (!$settings->enableProtectedPads) {
 			return new HealthCheckItem(
 				'session_cookie',
 				HealthCheckItem::STATUS_SKIPPED,
-				$this->l10n->t('Etherpad session cookie'),
-				$this->l10n->t('Not checked: protected pads are switched off.'),
+				$this->l10n->t('Session cookie: not checked, protected pads are off'),
+				'',
+				'etherpad_session_cookie',
 			);
 		}
 
-		$override = strtolower(trim((string)$this->config->getAppValue(
-			Application::APP_ID,
-			EtherpadReleasePolicy::OVERRIDE_KEY,
-			'auto',
-		)));
-		if ($override === 'yes' || $override === 'no') {
+		$httpOnly = $this->releasePolicy->supportsHttpOnlySessionCookie();
+		$override = $this->releasePolicy->overrideMode();
+		if ($override !== EtherpadReleasePolicy::OVERRIDE_AUTO) {
 			return new HealthCheckItem(
 				'session_cookie',
 				HealthCheckItem::STATUS_WARNING,
 				$this->l10n->t('Etherpad session cookie'),
-				$override === 'yes'
+				$httpOnly
 					? $this->l10n->t('HttpOnly is switched on by hand. Etherpad below 3.0 cannot read the cookie, and protected pads will not open.')
 					: $this->l10n->t('HttpOnly is switched off by hand. The pad server is not asked.'),
+				'etherpad_session_cookie',
 			);
 		}
 
 		try {
-			$release = $this->etherpadClient->detectReleaseVersion($settings->etherpadApiHost);
+			// As patient as the calls beside it: a slow but healthy pad
+			// server is not a misconfiguration of this app, and this is not
+			// the open path.
+			$release = $this->etherpadClient->detectReleaseVersion(
+				$settings->etherpadApiHost,
+				EtherpadClient::REQUEST_TIMEOUT_SECONDS,
+			);
 		} catch (\Throwable $e) {
+			// Not a warning. Nothing is broken: the cookie stays readable,
+			// which is what every Etherpad before 3.0 needs anyway. An
+			// Etherpad without /health, or a proxy that routes /api and not
+			// /health, is a deployment that works and misses a hardening.
+			return new HealthCheckItem(
+				'session_cookie',
+				HealthCheckItem::STATUS_SKIPPED,
+				$this->l10n->t('Session cookie: readable by scripts'),
+				$this->l10n->t('The Etherpad release could not be read from /health, so the cookie is left readable.'),
+				$apiField,
+			);
+		}
+
+		$serverAllowsHttpOnly = EtherpadReleasePolicy::allowsHttpOnly($release);
+		if ($serverAllowsHttpOnly !== $httpOnly) {
+			// The cache and the server disagree, which is precisely the
+			// lockout an admin comes here to explain.
 			return new HealthCheckItem(
 				'session_cookie',
 				HealthCheckItem::STATUS_WARNING,
 				$this->l10n->t('Etherpad session cookie'),
-				$this->l10n->t('Could not read the Etherpad release from /health, so the cookie stays readable by scripts.'),
-				'etherpad_api_host',
+				$this->fill(
+					$httpOnly
+						? $this->l10n->t('Pads are being sent an HttpOnly cookie from an earlier check, but this server reports Etherpad {release}, which reads the cookie in the browser. Protected pads will not open until the check is repeated.')
+						: $this->l10n->t('This server reports Etherpad {release}, which reads the session server-side, but pads are still being sent a script-readable cookie from an earlier check.'),
+					['release' => $this->shorten($release)],
+				),
+				$apiField,
 			);
 		}
 
 		return new HealthCheckItem(
 			'session_cookie',
 			HealthCheckItem::STATUS_OK,
-			$this->l10n->t('Etherpad session cookie'),
-			EtherpadReleasePolicy::allowsHttpOnly($release)
-				? $this->fill(
-					$this->l10n->t('Etherpad {release} reads the session server-side, so the cookie is set HttpOnly.'),
-					['release' => $release],
-				)
-				: $this->fill(
-					$this->l10n->t('Etherpad {release} reads the session in the browser, so the cookie stays readable by scripts.'),
-					['release' => $release],
-				),
+			$this->fill(
+				$httpOnly
+					? $this->l10n->t('Session cookie kept from scripts (Etherpad {release})')
+					: $this->l10n->t('Session cookie readable by scripts (Etherpad {release})'),
+				['release' => $this->shorten($release)],
+			),
+			'',
+			'etherpad_session_cookie',
 		);
 	}
 

@@ -26,7 +26,8 @@ class EtherpadClient {
 	 */
 	public const DEFAULT_API_VERSION = '1.2.15';
 
-	private const REQUEST_TIMEOUT_SECONDS = 15;
+	/** Public so the admin connection test can ask for the same patience. */
+	public const REQUEST_TIMEOUT_SECONDS = 15;
 
 	/**
 	 * `/health` gets far less patience than an API call.
@@ -237,17 +238,26 @@ class EtherpadClient {
 	 * places as possible.
 	 *
 	 * A host may be given so the admin health check can ask about the
-	 * address being submitted rather than the one already stored.
+	 * address being submitted rather than the one already stored, and a
+	 * timeout so that check can be as patient as the calls beside it while
+	 * the open path stays impatient.
+	 *
+	 * What comes back is a version string and nothing else. It is written
+	 * into app config, read on every protected open and rendered to an
+	 * admin, so a pad server answering with a megabyte of prose after a
+	 * plausible prefix must not get any of that.
 	 */
-	public function detectReleaseVersion(?string $host = null): string {
+	public function detectReleaseVersion(?string $host = null, int $timeoutSeconds = self::HEALTH_TIMEOUT_SECONDS): string {
 		$apiHost = $host !== null && trim($host) !== '' ? rtrim(trim($host), '/') : $this->getApiHost();
-		$raw = $this->sendPublicGetRequest($apiHost . '/health', self::HEALTH_TIMEOUT_SECONDS);
+		$raw = $this->sendPublicGetRequest($apiHost . '/health', $timeoutSeconds);
 		$decoded = json_decode($raw, true);
 		$release = is_array($decoded) && isset($decoded['releaseId']) && is_string($decoded['releaseId'])
 			? trim($decoded['releaseId'])
 			: '';
 
-		if (preg_match('/^\d+\.\d+\.\d+/', $release) !== 1) {
+		// Anchored at both ends: `<major>.<minor>.<patch>` and at most a
+		// short pre-release tail after it.
+		if (preg_match('/^\d{1,6}\.\d{1,6}\.\d{1,6}([-+][0-9A-Za-z.-]{1,24})?$/', $release) !== 1) {
 			throw new EtherpadClientException('Could not detect the Etherpad release version.');
 		}
 

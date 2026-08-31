@@ -94,6 +94,14 @@
 		</p>
 		<p class="settings-hint ep-field-hint" id="epnc-hint-cookie-domain"><?php p((string)$_['l10n']['etherpad_cookie_domain_hint']); ?></p>
 
+		<?php // The session cookie belongs to no input: the release decides it,
+		// and the release is discovered rather than typed. Without a slot of
+		// its own the connection test would count the line and render it
+		// nowhere. ?>
+		<p>
+			<span class="ep-check-result" data-check-result="etherpad_session_cookie" role="status"></span>
+		</p>
+
 		<div class="etherpad-nextcloud-admin-actions">
 			<button type="button" id="etherpad-nextcloud-health-check"><?php p((string)$_['l10n']['health_button']); ?></button>
 		</div>
