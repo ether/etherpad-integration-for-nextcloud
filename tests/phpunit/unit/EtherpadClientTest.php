@@ -224,6 +224,11 @@ class EtherpadClientTest extends TestCase {
 			'releaseId is empty' => ['{"status":"pass","releaseId":""}'],
 			'releaseId is not a version' => ['{"status":"pass","releaseId":"latest"}'],
 			'not an object' => ['[]'],
+			// The one an unanchored prefix match lets through. This is
+			// written to app config, read on every protected open and
+			// rendered to an admin.
+			'a version and then a megabyte' => ['{"status":"pass","releaseId":"3.3.3' . str_repeat('x', 1024) . '"}'],
+			'a version and then prose' => ['{"status":"pass","releaseId":"3.3.3 (nightly build of something)"}'],
 		];
 	}
 

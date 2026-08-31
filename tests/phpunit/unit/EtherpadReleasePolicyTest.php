@@ -115,6 +115,31 @@ class EtherpadReleasePolicyTest extends TestCase {
 	}
 
 	/**
+	 * The override is read before anything else, and on many requests it is
+	 * the first app-config read there is — so a database blip there would
+	 * escape a predicate that promises it cannot fail an open.
+	 */
+	public function testAConfigReadThatFailsIsAnAnswerAndNotAnException(): void {
+		$client = $this->createMock(EtherpadClient::class);
+		$client->method('getApiHost')->willReturn('https://pad.example.test');
+
+		$config = $this->createMock(IConfig::class);
+		$config->method('getAppValue')->willThrowException(new \RuntimeException('database has gone away'));
+		$timeFactory = $this->createMock(ITimeFactory::class);
+		$timeFactory->method('getTime')->willReturn($this->now);
+
+		$policy = new EtherpadReleasePolicy(
+			$client,
+			$config,
+			$timeFactory,
+			$this->noCache(),
+			$this->createMock(LoggerInterface::class),
+		);
+
+		self::assertFalse($policy->supportsHttpOnlySessionCookie());
+	}
+
+	/**
 	 * The class promises never to fail an open. `getApiHost()` throws when
 	 * no host is configured at all, and it sits outside the detection call.
 	 */
