@@ -5,6 +5,7 @@ set -euo pipefail
 # NC_BASE_URL="https://cloud.example.tld" \
 # NC_USER="alice" \
 # NC_APP_PASSWORD="app-password" \
+# EXPECTED_SAMESITE="Lax" \
 # ./tests/integration/e2e-protected-cookie-contract.sh "/Apps/Test/cookie-contract"
 
 if [[ $# -lt 1 ]]; then
@@ -137,7 +138,22 @@ fi
 SESSION_COOKIE_LINE="$(printf '%s\n' "$SESSION_COOKIE_LINES" | sed -n '1p')"
 
 assert_cookie_contains "$SESSION_COOKIE_LINE" "secure" "Secure"
-assert_cookie_contains "$SESSION_COOKIE_LINE" "samesite=none" "SameSite=None"
+# Lax on a default instance. An admin can set
+# etherpad_session_cookie_samesite=none for a cross-site embed behind
+# proxy authentication; this check then has to be told, because the value
+# is not derivable from anything the script can see.
+EXPECTED_SAMESITE="${EXPECTED_SAMESITE:-Lax}"
+EXPECTED_SAMESITE_LOWER="$(printf '%s' "$EXPECTED_SAMESITE" | tr '[:upper:]' '[:lower:]')"
+# Checked before use: `Non` would match inside `samesite=none` and pass
+# while asserting nothing.
+case "$EXPECTED_SAMESITE_LOWER" in
+	lax|none|strict) ;;
+	*)
+		echo "EXPECTED_SAMESITE must be Lax, None or Strict, got '${EXPECTED_SAMESITE}'" >&2
+		exit 1
+		;;
+esac
+assert_cookie_contains "$SESSION_COOKIE_LINE" "samesite=${EXPECTED_SAMESITE_LOWER}" "SameSite=${EXPECTED_SAMESITE}"
 
 # HttpOnly is not a constant of this contract, it depends on the pad server.
 # The major-3 boundary below restates EtherpadReleasePolicy's

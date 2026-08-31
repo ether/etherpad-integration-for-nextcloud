@@ -40,6 +40,11 @@ class PadSessionService {
 	 */
 	private const MAX_SESSION_IDS = 25;
 
+	/** `lax` (default) or `none`; see sameSiteMode(). */
+	public const SAME_SITE_KEY = 'etherpad_session_cookie_samesite';
+	public const SAME_SITE_LAX = 'Lax';
+	public const SAME_SITE_NONE = 'None';
+
 	/**
 	 * How many ids are read out of the cookie at all. Only a bound on work:
 	 * the cap above decides what survives. Any host under the shared parent
@@ -297,13 +302,13 @@ class PadSessionService {
 			'path' => '/',
 			'domain' => $cookieDomain,
 			'secure' => true,
+			'same_site' => $this->sameSiteMode(),
 			// Up to Etherpad 2.7.3 the pad app reads `sessionID` itself, in
 			// the browser — HttpOnly there would lock the user out of every
 			// protected pad. From 3.0.0 the server takes it out of the
 			// socket.io handshake and the browser never needs to see it, so
 			// the cookie can be kept away from any script on the page.
 			'http_only' => $this->releasePolicy->supportsHttpOnlySessionCookie(),
-			'same_site' => 'None',
 		];
 	}
 
@@ -328,6 +333,70 @@ class PadSessionService {
 			$parts[] = 'SameSite=' . $cookie['same_site'];
 		}
 		return implode('; ', $parts);
+	}
+
+	/**
+	 * How far the session cookie may travel.
+	 *
+	 * `Lax` by default, and it costs nothing in the ordinary chain:
+	 * Nextcloud and Etherpad have to share a registrable domain for a
+	 * protected pad to work at all — a browser rejects a `Set-Cookie` whose
+	 * `Domain=` is not a suffix of the host that set it — so the pad iframe
+	 * is a same-site subresource, while a foreign page framing a pad URL
+	 * gets nothing. `Strict` would go further and is deliberately not used:
+	 * it would also withhold the cookie from a top-level navigation, so a
+	 * pad link in an email would open unauthenticated.
+	 *
+	 * `None` is asked for, never inferred. It is needed by exactly one
+	 * deployment: a foreign site framing the embed routes, where Nextcloud
+	 * authenticates the request without a cookie — proxy-injected
+	 * `REMOTE_USER`, Kerberos, SAML in environment mode. A cookie policy
+	 * cannot see that, and the previous attempt to work it out from the
+	 * hosts involved needed a public suffix list to be right. So the admin
+	 * says so.
+	 *
+	 * Anything else is `Lax`, and named by the connection test rather than
+	 * swallowed — `strict` included, where somebody meant to harden.
+	 */
+	public function sameSiteMode(): string {
+		return $this->readSameSite()['mode'];
+	}
+
+	/**
+	 * A stored value that is none of the accepted words, or ''.
+	 *
+	 * Worth being able to say: `off`, `no` and `cross-site` all read as
+	 * `Lax` here, and so does `strict` — where somebody meant to harden and
+	 * gets the opposite. The sibling setting for HttpOnly reports the same
+	 * thing for the same reason.
+	 */
+	public function unrecognisedSameSite(): string {
+		return $this->readSameSite()['unrecognised'];
+	}
+
+	/**
+	 * The stored value, read once and in one place.
+	 *
+	 * Public through the two methods above so the admin health check reports
+	 * on the same reading rather than parsing the value again with its own
+	 * default.
+	 *
+	 * @return array{mode:string,unrecognised:string}
+	 */
+	private function readSameSite(): array {
+		$configured = strtolower(trim((string)$this->config->getAppValue(
+			'etherpad_nextcloud',
+			self::SAME_SITE_KEY,
+			'lax',
+		)));
+		if ($configured === 'none') {
+			return ['mode' => self::SAME_SITE_NONE, 'unrecognised' => ''];
+		}
+		if ($configured === 'lax' || $configured === '') {
+			return ['mode' => self::SAME_SITE_LAX, 'unrecognised' => ''];
+		}
+
+		return ['mode' => self::SAME_SITE_LAX, 'unrecognised' => substr($configured, 0, 32)];
 	}
 
 	private function resolveCookieDomain(): string {

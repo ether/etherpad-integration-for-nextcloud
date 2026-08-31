@@ -162,6 +162,6 @@ Expected result: no new warnings for `PadCreateController::create` above the Nex
 ## 6) Cookie Header Contract (Protected Pads)
 
 - Protected pad open responses intentionally attach one explicit `Set-Cookie` header for Etherpad session bootstrapping.
-- We use explicit cookie attributes (`Domain`, `Secure`, `SameSite=None`) for cross-subdomain iframe sessions.
+- We use explicit cookie attributes (`Domain`, `Secure`, `SameSite=Lax`) for cross-subdomain iframe sessions. `Lax` is enough because Nextcloud and Etherpad must share a registrable domain for the cookie to be settable at all. An instance with `etherpad_session_cookie_samesite=none` sends `None` instead – check the setting before reading a deviation as a bug.
 - Current contract: this app writes one Etherpad session cookie on these responses; no additional custom cookies are added by this app on the same response.
 - If future features require multiple custom cookies on the same response, cookie handling must be extended deliberately and covered by dedicated tests.

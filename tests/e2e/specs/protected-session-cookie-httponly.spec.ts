@@ -64,10 +64,13 @@ test.describe('the session cookie and the Etherpad that reads it', () => {
 				.find((value) => value.startsWith('sessionID='))
 			expect(setCookie, 'a protected open should set the Etherpad session cookie').toBeDefined()
 
-			// Secure and SameSite=None hold either way: the cookie has to reach
-			// a pad server on another host.
 			expect(setCookie).toContain('Secure')
-			expect(setCookie).toContain('SameSite=None')
+			// Lax, the default: the value comes from
+			// etherpad_session_cookie_samesite and from nothing else, and
+			// this stack does not set it. Nextcloud and Etherpad share a
+			// registrable domain, so the pad iframe is a same-site
+			// subresource and a foreign page framing a pad URL gets nothing.
+			expect(setCookie).toContain('SameSite=Lax')
 
 			if (readsItServerSide) {
 				expect(setCookie, `Etherpad ${release} reads the session server-side`).toContain('HttpOnly')

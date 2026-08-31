@@ -137,7 +137,7 @@ class AdminSettings implements ISettings {
 				'external_allowlist' => $this->l10n->t('External Etherpad host allowlist (optional)'),
 				'external_allowlist_hint' => $this->l10n->t('Add trusted Etherpad hostnames or HTTPS origins. Leave empty only if all public HTTPS hosts should be trusted.'),
 				'trusted_embed_origins' => $this->l10n->t('Trusted embed origins (optional)'),
-				'trusted_embed_origins_hint' => $this->l10n->t('Absolute https origins allowed to embed the /embed/by-id and /embed/create-by-parent routes. Leave empty to disable external embedding.'),
+				'trusted_embed_origins_hint' => $this->l10n->t('Absolute https origins allowed to embed the /embed/by-id and /embed/create-by-parent routes. Leave empty to disable external embedding. An origin on another registrable domain also needs Nextcloud to authenticate without a cookie (proxy REMOTE_USER, Kerberos, SAML in environment mode) and the app setting etherpad_session_cookie_samesite=none; without both, the embedded pad has no Etherpad session.'),
 				'save_button' => $this->l10n->t('Save settings'),
 				'health_button' => $this->l10n->t('Test Etherpad connection'),
 				'consistency_button' => $this->l10n->t('Consistency check'),
