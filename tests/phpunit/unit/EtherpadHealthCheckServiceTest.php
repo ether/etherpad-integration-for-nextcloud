@@ -316,12 +316,41 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 	public function testSessionCookieLineWarnsWhenTheCookieIsSentToOtherSites(): void {
 		$etherpad = $this->createMock(EtherpadClient::class);
 		$etherpad->method('healthCheck')->willReturn(['pad_count' => 1]);
-		$etherpad->expects(self::never())->method('detectReleaseVersion');
+		$etherpad->method('detectReleaseVersion')->willReturn('2.7.3');
 
 		$line = $this->sessionCookieLine($etherpad, sameSiteSetting: 'none');
 		self::assertSame(HealthCheckItem::STATUS_WARNING, $line->status);
-		self::assertStringContainsString('SameSite=None', $line->label);
+		self::assertStringContainsString('SameSite=None', $line->detail);
 		self::assertStringContainsString('REMOTE_USER', $line->detail);
+	}
+
+	/**
+	 * There is one session-cookie slot. A note about how far the cookie
+	 * travels must not push off the line saying that no protected pad opens
+	 * at all — which is what `yes` below Etherpad 3.0 means.
+	 */
+	public function testTheCrossSiteNoteDoesNotHideALockout(): void {
+		$etherpad = $this->createMock(EtherpadClient::class);
+		$etherpad->method('healthCheck')->willReturn(['pad_count' => 1]);
+		$etherpad->method('detectReleaseVersion')->willReturn('2.7.3');
+
+		$line = $this->sessionCookieLine($etherpad, 'yes', sameSiteSetting: 'none');
+		self::assertSame(HealthCheckItem::STATUS_WARNING, $line->status);
+		// The lockout, still there.
+		self::assertStringContainsString('by hand', $line->detail);
+		self::assertStringContainsString('2.7.3', $line->detail);
+		// And the note beside it.
+		self::assertStringContainsString('SameSite=None', $line->detail);
+	}
+
+	/** Same for a value nobody meant: the ignored setting still gets named. */
+	public function testTheCrossSiteNoteDoesNotHideAnUnrecognisedOverride(): void {
+		$etherpad = $this->createMock(EtherpadClient::class);
+		$etherpad->method('healthCheck')->willReturn(['pad_count' => 1]);
+
+		$line = $this->sessionCookieLine($etherpad, unrecognisedOverride: 'true', sameSiteSetting: 'none');
+		self::assertStringContainsString('true', $line->detail);
+		self::assertStringContainsString('SameSite=None', $line->detail);
 	}
 
 	/**

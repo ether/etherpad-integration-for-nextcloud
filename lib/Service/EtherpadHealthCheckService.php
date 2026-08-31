@@ -172,11 +172,10 @@ class EtherpadHealthCheckService {
 			);
 		}
 
-		$crossSite = $this->crossSiteCookieLine();
-		if ($crossSite !== null) {
-			return $crossSite;
-		}
+		return $this->withCrossSiteNote($this->sessionCookieDiagnosis($settings));
+	}
 
+	private function sessionCookieDiagnosis(ValidatedAdminSettings $settings): HealthCheckItem {
 		$unrecognised = $this->releasePolicy->unrecognisedOverride();
 		if ($unrecognised !== '') {
 			return $this->sessionCookieItem(
@@ -274,38 +273,41 @@ class EtherpadHealthCheckService {
 	}
 
 	/**
-	 * The one line about `SameSite`, and only when it has been widened.
+	 * What `SameSite=None` costs, added to whatever else the line says.
 	 *
-	 * `None` is set by hand, for one deployment: a foreign site framing the
-	 * embed routes where Nextcloud authenticates the request without a
-	 * cookie. Whether that holds is not something this app can decide, but
-	 * Nextcloud's own session cookie is readable at runtime and says which
-	 * half of the question the admin is in — so it is reported rather than
-	 * assumed, which is what the comment in the cookie builder used to do.
+	 * Set by hand, for one deployment: a foreign site framing the embed
+	 * routes where Nextcloud authenticates without a cookie. Whether that
+	 * holds is not this app's to decide, but Nextcloud's own session cookie
+	 * is readable at runtime and says which half of the question the admin
+	 * is in — reported rather than assumed.
 	 */
-	private function crossSiteCookieLine(): ?HealthCheckItem {
+	private function withCrossSiteNote(HealthCheckItem $item): HealthCheckItem {
 		$configured = strtolower(trim((string)$this->config->getAppValue(
 			Application::APP_ID,
 			PadSessionService::SAME_SITE_KEY,
 			'lax',
 		)));
 		if ($configured !== 'none') {
-			return null;
+			return $item;
 		}
 
+		$note = $this->l10n->t('The session cookie is also sent to other sites (SameSite=None), set by hand so a foreign site can frame the embed routes. It only works where Nextcloud authenticates without a cookie — proxy REMOTE_USER, Kerberos, SAML in environment mode.');
 		$nextcloudSameSite = strtolower(trim(session_get_cookie_params()['samesite'] ?? ''));
-		$detail = $this->l10n->t('Set by hand so a foreign site can frame the embed routes. It only works where Nextcloud authenticates without a cookie — proxy REMOTE_USER, Kerberos, SAML in environment mode.');
 		if (in_array($nextcloudSameSite, ['lax', 'strict'], true)) {
-			$detail .= ' ' . $this->fill(
+			$note .= ' ' . $this->fill(
 				$this->l10n->t('Nextcloud sends its own session cookie as {samesite}, so a cross-site frame is not logged in through it.'),
 				['samesite' => ucfirst($nextcloudSameSite)],
 			);
 		}
 
+		// One slot, two things worth saying. Folded in rather than returned
+		// instead: the line underneath can be the one announcing that no
+		// protected pad opens at all, and a note about how far the cookie
+		// travels must not push that off the panel.
 		return $this->sessionCookieItem(
 			HealthCheckItem::STATUS_WARNING,
-			$this->l10n->t('Session cookie sent to other sites (SameSite=None)'),
-			$detail,
+			$item->label,
+			trim($item->detail . ' ' . $note),
 		);
 	}
 
