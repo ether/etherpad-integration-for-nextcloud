@@ -335,6 +335,23 @@ class EtherpadReleasePolicyTest extends TestCase {
 		self::assertSame('', $policy->knownRelease('https://other.pad.test'));
 	}
 
+	/**
+	 * An encoding failure must not read as a successful write. `''` decodes
+	 * to no record at all, so nothing would ever be cached and nothing
+	 * would ever back off — every protected open probing /health again,
+	 * with the write reporting success.
+	 */
+	public function testAnEncodingFailureIsAnErrorAndNotAnEmptyRecord(): void {
+		$client = $this->createMock(EtherpadClient::class);
+		// Invalid UTF-8 in the host, which is the one field that is not
+		// regex-validated ASCII by the time it gets here.
+		$client->method('getApiHost')->willReturn("https://pad.example.test/\xB1\x31");
+		$client->method('detectReleaseVersion')->willReturn('3.3.3');
+
+		self::assertFalse($this->policy($client)->supportsHttpOnlySessionCookie());
+		self::assertArrayNotHasKey('etherpad_release_state', (array)$this->stored);
+	}
+
 	/** A release with a suffix is still a 3. */
 	public function testAPreReleaseOfAMajorCountsAsThatMajor(): void {
 		self::assertTrue(EtherpadReleasePolicy::allowsHttpOnly('3.0.0-beta.1'));
