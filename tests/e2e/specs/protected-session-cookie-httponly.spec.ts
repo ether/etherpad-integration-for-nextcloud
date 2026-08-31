@@ -118,13 +118,23 @@ test.describe('the session cookie and the Etherpad that reads it', () => {
 				},
 			)
 			expect(connectionTest.status(), await connectionTest.text()).toBe(200)
-			const checks = ((await connectionTest.json()) as { checks?: Array<{ id: string, label: string, detail: string }> }).checks ?? []
-			const sessionCookie = checks.find((c) => c.id === 'session_cookie')
-			expect(sessionCookie, 'the connection test should report on the session cookie').toBeDefined()
+			const body = (await connectionTest.json()) as {
+				session_cookie_release?: string,
+				checks?: Array<{ id: string }>,
+			}
 			expect(
-				`${sessionCookie!.label} ${sessionCookie!.detail}`,
-				'the app should name the release it cached for itself when opening the pad',
-			).toContain(release)
+				body.checks?.some((c) => c.id === 'session_cookie'),
+				'the connection test should report on the session cookie',
+			).toBe(true)
+			// The dedicated field, not the prose. The line has several
+			// passing shapes and one of them fills the release from the
+			// probe the connection test itself just made — which is exactly
+			// the state this is meant to rule out, so matching the sentence
+			// would pass with nothing cached at all.
+			expect(
+				body.session_cookie_release,
+				'the app should have cached a release of its own while opening the pad',
+			).toBe(release)
 		} finally {
 			await api.dispose()
 		}

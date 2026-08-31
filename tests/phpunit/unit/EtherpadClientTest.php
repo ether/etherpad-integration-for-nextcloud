@@ -175,7 +175,7 @@ class EtherpadClientTest extends TestCase {
 			$captured,
 		);
 
-		self::assertSame('3.3.3', $client->detectReleaseVersion());
+		self::assertSame('3.3.3', $client->detectReleaseVersion('https://pad.example.test'));
 		self::assertSame('GET', $captured['method']);
 		self::assertStringEndsWith('/health', (string)$captured['url']);
 		self::assertStringNotContainsString('apikey', (string)$captured['url']);
@@ -200,7 +200,7 @@ class EtherpadClientTest extends TestCase {
 
 	public function testDetectsAReleaseWithASuffix(): void {
 		$client = $this->clientWithResponse($this->response(200, '{"status":"pass","releaseId":"3.0.0-beta.1"}'));
-		self::assertSame('3.0.0-beta.1', $client->detectReleaseVersion());
+		self::assertSame('3.0.0-beta.1', $client->detectReleaseVersion('https://pad.example.test'));
 	}
 
 	/**
@@ -213,7 +213,7 @@ class EtherpadClientTest extends TestCase {
 	public function testRefusesAHealthAnswerItCannotRead(string $payload): void {
 		$client = $this->clientWithResponse($this->response(200, $payload));
 		$this->expectException(EtherpadClientException::class);
-		$client->detectReleaseVersion();
+		$client->detectReleaseVersion('https://pad.example.test');
 	}
 
 	/** @return array<string,array{string}> */

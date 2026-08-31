@@ -138,6 +138,7 @@ class EtherpadHealthCheckService {
 			$latencyMs,
 			$target,
 			$this->pendingDeleteRetryService->countPendingDeletes(),
+			$this->releasePolicy->knownRelease(),
 			$cookieDomain,
 			$checks,
 		);
@@ -195,8 +196,10 @@ class EtherpadHealthCheckService {
 				$settings->etherpadApiHost,
 				EtherpadClient::REQUEST_TIMEOUT_SECONDS,
 			);
+			$probeError = null;
 		} catch (\Throwable $e) {
 			$release = '';
+			$probeError = $e;
 		}
 
 		$override = $this->releasePolicy->overrideMode();
@@ -209,14 +212,39 @@ class EtherpadHealthCheckService {
 			// which is what every Etherpad before 3.0 needs anyway. A pad
 			// server without /health, or a proxy that routes /api and not
 			// /health, works and merely misses a hardening.
+			//
+			// The reason is worth carrying, though. DNS, a TLS mismatch, a
+			// 404 because the proxy does not route /health, a 401 from proxy
+			// auth and a timeout are five different fixes, and the class
+			// already knows how to tell them apart.
 			return $this->sessionCookieItem(
 				HealthCheckItem::STATUS_SKIPPED,
 				$this->l10n->t('Session cookie: readable by scripts'),
-				$this->l10n->t('The Etherpad release could not be read from /health, so the cookie is left readable.'),
+				$this->l10n->t('The Etherpad release could not be read from /health, so the cookie is left readable.')
+					. ' ' . $this->describeProbeFailure($probeError),
 			);
 		}
 
-		$knownRelease = $this->releasePolicy->knownRelease();
+		// About the *stored* host: that is the one the open path resolves,
+		// and a form being typed says nothing about what pads are doing.
+		$configuredHost = $this->etherpadClient->getApiHost();
+		if (rtrim($configuredHost, '/') !== rtrim($settings->etherpadApiHost, '/')) {
+			// Somebody is testing an address before saving it. Comparing a
+			// probe of that address against what pads are doing now would
+			// read every planned migration as a live lockout.
+			return $this->sessionCookieItem(
+				HealthCheckItem::STATUS_OK,
+				$this->fill(
+					EtherpadReleasePolicy::allowsHttpOnly($release)
+						? $this->l10n->t('Session cookie: this address reports Etherpad {release} and would be sent an HttpOnly cookie')
+						: $this->l10n->t('Session cookie: this address reports Etherpad {release} and would be sent a script-readable cookie'),
+					['release' => $this->shorten($release)],
+				),
+				$this->l10n->t('Not the address currently in use — save the settings to switch pads over to it.'),
+			);
+		}
+
+		$knownRelease = $this->releasePolicy->knownRelease($configuredHost);
 		if ($knownRelease === '') {
 			return $this->sessionCookieItem(
 				HealthCheckItem::STATUS_OK,
@@ -252,6 +280,22 @@ class EtherpadHealthCheckService {
 				['release' => $this->shorten($knownRelease)],
 			),
 		);
+	}
+
+	/** The same vocabulary the rest of this class uses for a failed call. */
+	private function describeProbeFailure(?\Throwable $error): string {
+		if ($error === null) {
+			return '';
+		}
+
+		$detail = $error->getMessage();
+		$previous = $error->getPrevious();
+		if ($previous instanceof \Throwable && $previous->getMessage() !== '') {
+			$detail .= ' (' . $previous->getMessage() . ')';
+		}
+		$hint = $this->hintForReason($this->classifyFailure($detail));
+
+		return $this->shorten($detail) . ($hint !== '' ? ' ' . $hint : '');
 	}
 
 	/**

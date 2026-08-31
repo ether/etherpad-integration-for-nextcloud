@@ -58,6 +58,18 @@ class EtherpadReleasePolicy {
 	 */
 	private const STATE_KEY = 'etherpad_release_state';
 
+	/**
+	 * When a check last failed, and for which host. Its own value.
+	 *
+	 * A failure has nothing to say about the release, so it must not carry
+	 * one. Folding it into the record above made every failure a full
+	 * rewrite of the record — and a worker whose check times out cannot see
+	 * the success another worker wrote in the meantime, so it would put the
+	 * old release back with a fresh-looking timestamp. After a downgrade
+	 * that is an hour of HttpOnly against an Etherpad 2.
+	 */
+	private const FAILED_KEY = 'etherpad_release_failed';
+
 	/** auto (detect) | yes (force HttpOnly) | no (force a readable cookie). */
 	public const OVERRIDE_KEY = 'etherpad_http_only_session_cookie';
 	public const OVERRIDE_AUTO = 'auto';
@@ -177,18 +189,34 @@ class EtherpadReleasePolicy {
 	 * reason `allowsHttpOnly()` is public: one rule, one place.
 	 */
 	public function overrideMode(): string {
+		return $this->readOverride()['mode'];
+	}
+
+	/**
+	 * The stored override, read once.
+	 *
+	 * Both public faces come from here rather than each parsing the value:
+	 * a fourth accepted spelling added to one and not the other would fail
+	 * silently, with the mode resolving correctly while the connection test
+	 * calls the same value unrecognised, or the reverse.
+	 *
+	 * Not logged. It is read on every protected open, and a warning per
+	 * open for a setting whose effect is "ignored" is a hundred identical
+	 * lines an hour at the same level as real problems. The connection test
+	 * says it on request, which is where somebody is looking.
+	 *
+	 * @return array{mode:string,unrecognised:string}
+	 */
+	private function readOverride(): array {
 		$override = strtolower($this->read(self::OVERRIDE_KEY));
-		if (in_array($override, [self::OVERRIDE_YES, self::OVERRIDE_NO, self::OVERRIDE_AUTO, ''], true)) {
-			return $override === '' ? self::OVERRIDE_AUTO : $override;
+		if (in_array($override, [self::OVERRIDE_YES, self::OVERRIDE_NO], true)) {
+			return ['mode' => $override, 'unrecognised' => ''];
+		}
+		if (in_array($override, [self::OVERRIDE_AUTO, ''], true)) {
+			return ['mode' => self::OVERRIDE_AUTO, 'unrecognised' => ''];
 		}
 
-		$this->logger->warning('Ignoring an unrecognised value for the Etherpad session cookie setting.', [
-			'app' => self::APP_ID,
-			'setting' => self::OVERRIDE_KEY,
-			'value' => substr($override, 0, 32),
-			'expected' => [self::OVERRIDE_AUTO, self::OVERRIDE_YES, self::OVERRIDE_NO],
-		]);
-		return self::OVERRIDE_AUTO;
+		return ['mode' => self::OVERRIDE_AUTO, 'unrecognised' => substr($override, 0, 32)];
 	}
 
 	/**
@@ -202,18 +230,28 @@ class EtherpadReleasePolicy {
 	 * them nothing is overridden. So it is worth being able to say.
 	 */
 	public function unrecognisedOverride(): string {
-		$override = strtolower($this->read(self::OVERRIDE_KEY));
-		if (in_array($override, [self::OVERRIDE_YES, self::OVERRIDE_NO, self::OVERRIDE_AUTO, ''], true)) {
-			return '';
-		}
-
-		return substr($override, 0, 32);
+		return $this->readOverride()['unrecognised'];
 	}
 
-	/** The release currently believed, without asking anything. For the admin view. */
-	public function knownRelease(): string {
+	/**
+	 * The release the open path is going by right now, without asking
+	 * anything and without writing anything.
+	 *
+	 * Same staleness rule as the open path, or it would not be the same
+	 * answer: a record nothing has confirmed for six hours stops counting
+	 * there, and a reader that skipped that would report a cookie the
+	 * opposite of the one going out — and, against an Etherpad 2, warn
+	 * about a lockout the rule had already healed.
+	 *
+	 * @param string|null $host the host to ask about, or null for the
+	 *   configured one. A record about a different server is not an answer
+	 *   about this one.
+	 */
+	public function knownRelease(?string $host = null): string {
 		try {
-			return $this->readState($this->etherpadClient->getApiHost())['release'];
+			$state = $this->readState($host ?? $this->etherpadClient->getApiHost());
+			$age = $this->ageOf($state['checkedAt'], $this->timeFactory->getTime());
+			return ($age === null || $age >= self::MAX_STALE_SECONDS) ? '' : $state['release'];
 		} catch (\Throwable) {
 			return '';
 		}
@@ -234,10 +272,13 @@ class EtherpadReleasePolicy {
 
 		$cached = $state['release'];
 		$age = $this->ageOf($state['checkedAt'], $now);
-		if ($cached !== '' && $age !== null && $age >= self::MAX_STALE_SECONDS) {
+		if ($cached !== '' && ($age === null || $age >= self::MAX_STALE_SECONDS)) {
 			// Nothing has confirmed this for hours. Whatever it says, it is
-			// no longer evidence about the server answering today.
-			$this->logger->warning('The last known Etherpad release is too old to trust; falling back to a script-readable session cookie.', [
+			// no longer evidence about the server answering today. Debug,
+			// not a warning: the reason it is not being confirmed already
+			// logs a warning at the probe, once per backoff window, while
+			// this branch is reached by every open until one succeeds.
+			$this->logger->debug('The last known Etherpad release is too old to trust; falling back to a script-readable session cookie.', [
 				'app' => self::APP_ID,
 				'staleRelease' => $cached,
 				'ageSeconds' => $age,
@@ -249,11 +290,13 @@ class EtherpadReleasePolicy {
 			return $cached;
 		}
 
-		$failedAge = $this->ageOf($state['failedAt'], $now);
+		$failedAge = $this->ageOf($this->readFailure($host), $now);
 		if ($failedAge !== null && $failedAge < self::FAILURE_BACKOFF_SECONDS) {
 			return $cached;
 		}
-		if (!$this->claimTheCheck($host)) {
+
+		$cache = $this->probeCache();
+		if (!$this->claimTheCheck($cache, $host)) {
 			// Another worker is asking right now.
 			return $cached;
 		}
@@ -264,17 +307,23 @@ class EtherpadReleasePolicy {
 			// be the one that was asked.
 			$release = $this->etherpadClient->detectReleaseVersion($host);
 		} catch (\Throwable $e) {
-			$this->writeState($host, $cached, $state['checkedAt'], $now);
+			// Only that it failed, and when. A failure knows nothing about
+			// the release, and this worker cannot see a success another one
+			// may have written while it was waiting — writing the record
+			// back would put a stale release in front of a fresh one.
+			$this->writeFailure($host, $now);
 			$this->logger->warning('Could not read the Etherpad release from /health.', [
 				'app' => self::APP_ID,
+				'host' => $host,
 				'cachedRelease' => $cached,
 				'exception' => $e,
 			]);
 			return $cached;
 		}
 
-		$this->writeState($host, $release, $now, 0);
-		$this->releaseTheClaim($host);
+		$this->writeState($host, $release, $now);
+		$this->clearFailure();
+		$this->releaseTheClaim($cache, $host);
 		if ($release !== $cached) {
 			$this->logger->info('Detected the Etherpad release.', [
 				'app' => self::APP_ID,
@@ -289,30 +338,58 @@ class EtherpadReleasePolicy {
 	 * What is on record about this host, or nothing when the record is
 	 * about a different one.
 	 *
-	 * @return array{release:string,checkedAt:int,failedAt:int}
+	 * @return array{release:string,checkedAt:int}
 	 */
 	private function readState(string $host): array {
-		$empty = ['release' => '', 'checkedAt' => 0, 'failedAt' => 0];
 		$decoded = json_decode($this->read(self::STATE_KEY), true);
 		if (!is_array($decoded) || ($decoded['host'] ?? null) !== $host) {
-			return $empty;
+			return ['release' => '', 'checkedAt' => 0];
 		}
 
 		$release = $decoded['release'] ?? '';
 		return [
 			'release' => is_string($release) ? $release : '',
 			'checkedAt' => (int)($decoded['checkedAt'] ?? 0),
-			'failedAt' => (int)($decoded['failedAt'] ?? 0),
 		];
 	}
 
-	private function writeState(string $host, string $release, int $checkedAt, int $failedAt): void {
-		$this->config->setAppValue(self::APP_ID, self::STATE_KEY, (string)json_encode([
+	private function writeState(string $host, string $release, int $checkedAt): void {
+		$this->config->setAppValue(self::APP_ID, self::STATE_KEY, $this->encode([
 			'host' => $host,
 			'release' => $release,
 			'checkedAt' => $checkedAt,
-			'failedAt' => $failedAt,
 		]));
+	}
+
+	/** When a check for this host last failed, or 0. */
+	private function readFailure(string $host): int {
+		$decoded = json_decode($this->read(self::FAILED_KEY), true);
+		return is_array($decoded) && ($decoded['host'] ?? null) === $host
+			? (int)($decoded['at'] ?? 0)
+			: 0;
+	}
+
+	private function writeFailure(string $host, int $now): void {
+		$this->config->setAppValue(self::APP_ID, self::FAILED_KEY, $this->encode([
+			'host' => $host,
+			'at' => $now,
+		]));
+	}
+
+	private function clearFailure(): void {
+		$this->config->setAppValue(self::APP_ID, self::FAILED_KEY, '');
+	}
+
+	/**
+	 * @param array<string,mixed> $value
+	 *
+	 * Throws rather than storing ''. An empty value reads back as no record
+	 * at all, so a silent encoding failure would mean nothing is ever
+	 * cached and nothing ever backs off — every protected open probing
+	 * /health again, with the write reporting success.
+	 */
+	private function encode(array $value): string {
+		return json_encode($value, JSON_THROW_ON_ERROR);
 	}
 
 	/**
@@ -362,14 +439,18 @@ class EtherpadReleasePolicy {
 	 * new server's first check would be turned away by a claim taken for
 	 * the old one. Released as soon as the answer is written, so the next
 	 * refresh is not waiting out a minute that has already done its job.
+	 *
+	 * The cache is resolved once by the caller and handed to both halves,
+	 * so a claim cannot be taken from one backend and released against
+	 * another — or, if availability changes mid-request, taken and never
+	 * given back.
 	 */
-	private function claimTheCheck(string $host): bool {
-		$cache = $this->probeCache();
+	private function claimTheCheck(?IMemcache $cache, string $host): bool {
 		return $cache === null || $cache->add($this->claimKey($host), '1', self::FAILURE_BACKOFF_SECONDS);
 	}
 
-	private function releaseTheClaim(string $host): void {
-		$this->probeCache()?->remove($this->claimKey($host));
+	private function releaseTheClaim(?IMemcache $cache, string $host): void {
+		$cache?->remove($this->claimKey($host));
 	}
 
 	private function claimKey(string $host): string {

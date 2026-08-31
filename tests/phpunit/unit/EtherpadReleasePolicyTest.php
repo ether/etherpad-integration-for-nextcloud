@@ -284,6 +284,57 @@ class EtherpadReleasePolicyTest extends TestCase {
 		self::assertTrue($this->policy($client)->supportsHttpOnlySessionCookie());
 	}
 
+	/**
+	 * A worker whose check times out cannot see the success another worker
+	 * wrote while it was waiting — Nextcloud loads app config once per
+	 * request. When the failure path wrote the whole record back, that put
+	 * the pre-downgrade release in front of the fresh one, with a
+	 * fresh-looking timestamp: an hour of HttpOnly against an Etherpad 2.
+	 */
+	public function testAFailedCheckDoesNotPutAStaleReleaseBack(): void {
+		$this->store(host: 'https://pad.example.test', release: '3.3.3', checkedAt: $this->now - 3601);
+
+		$slow = $this->createMock(EtherpadClient::class);
+		$slow->method('getApiHost')->willReturn('https://pad.example.test');
+		$slow->method('detectReleaseVersion')->willReturnCallback(function (): string {
+			// While this one waits, another worker detects the downgrade.
+			$this->store(host: 'https://pad.example.test', release: '2.7.3', checkedAt: $this->now);
+			throw new EtherpadClientException('Connection timed out');
+		});
+
+		// It reports what it had, which is fine — it is what it knew.
+		self::assertTrue($this->policy($slow)->supportsHttpOnlySessionCookie());
+
+		// But it must not have overwritten the newer answer.
+		$next = $this->createMock(EtherpadClient::class);
+		$next->method('getApiHost')->willReturn('https://pad.example.test');
+		$next->expects(self::never())->method('detectReleaseVersion');
+		self::assertFalse($this->policy($next)->supportsHttpOnlySessionCookie());
+	}
+
+	/**
+	 * `knownRelease()` is what the admin panel reports as "what pads are
+	 * being sent". It has to answer the same way the open path decides, or
+	 * it reports the opposite of what is going out.
+	 */
+	public function testKnownReleaseForgetsAnAnswerTheOpenPathHasStoppedTrusting(): void {
+		$this->store(host: 'https://pad.example.test', release: '3.3.3', checkedAt: $this->now - 7 * 3600);
+		$client = $this->createMock(EtherpadClient::class);
+		$client->method('getApiHost')->willReturn('https://pad.example.test');
+
+		self::assertSame('', $this->policy($client)->knownRelease());
+	}
+
+	public function testKnownReleaseAnswersAboutTheHostItIsAsked(): void {
+		$this->store(host: 'https://pad.example.test', release: '3.3.3', checkedAt: $this->now);
+		$client = $this->createMock(EtherpadClient::class);
+		$client->method('getApiHost')->willReturn('https://pad.example.test');
+
+		$policy = $this->policy($client);
+		self::assertSame('3.3.3', $policy->knownRelease('https://pad.example.test'));
+		self::assertSame('', $policy->knownRelease('https://other.pad.test'));
+	}
+
 	/** A release with a suffix is still a 3. */
 	public function testAPreReleaseOfAMajorCountsAsThatMajor(): void {
 		self::assertTrue(EtherpadReleasePolicy::allowsHttpOnly('3.0.0-beta.1'));
@@ -371,13 +422,15 @@ class EtherpadReleasePolicyTest extends TestCase {
 		self::assertFalse($this->policy($client)->supportsHttpOnlySessionCookie());
 	}
 
-	private function store(string $host, string $release, int $checkedAt, int $failedAt = 0): void {
+	private function store(string $host, string $release, int $checkedAt, ?int $failedAt = null): void {
 		$this->stored['etherpad_release_state'] = (string)json_encode([
 			'host' => $host,
 			'release' => $release,
 			'checkedAt' => $checkedAt,
-			'failedAt' => $failedAt,
 		]);
+		if ($failedAt !== null) {
+			$this->stored['etherpad_release_failed'] = (string)json_encode(['host' => $host, 'at' => $failedAt]);
+		}
 	}
 
 	/** @return array{host?:string,release?:string,checkedAt?:int,failedAt?:int} */

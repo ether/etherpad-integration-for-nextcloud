@@ -107,9 +107,14 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 		string $httpOnlyOverride = 'auto',
 		string $knownRelease = '',
 		string $unrecognisedOverride = '',
+		string $configuredApiHost = 'https://pad-api.example.test',
 	): EtherpadHealthCheckService {
 		$urlGenerator = $this->createMock(IURLGenerator::class);
 		$urlGenerator->method('getBaseUrl')->willReturn($nextcloudUrl);
+		// The stored API host. The session-cookie line compares it with the
+		// submitted one, because a form being typed says nothing about what
+		// pads are doing right now.
+		$etherpad->method('getApiHost')->willReturn($configuredApiHost);
 		// What the open path is doing, which is the thing this line reports.
 		// It answers from a cache, so it can disagree with the server.
 		$releasePolicy = $this->createMock(\OCA\EtherpadNextcloud\Service\EtherpadReleasePolicy::class);
@@ -142,6 +147,7 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 		string $override = 'auto',
 		string $knownRelease = '',
 		string $unrecognisedOverride = '',
+		string $configuredApiHost = 'https://pad-api.example.test',
 	): HealthCheckItem {
 		$result = $this->buildService(
 			$etherpad,
@@ -149,6 +155,7 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 			httpOnlyOverride: $override,
 			knownRelease: $knownRelease,
 			unrecognisedOverride: $unrecognisedOverride,
+			configuredApiHost: $configuredApiHost,
 		)->check($this->settings());
 		foreach ($result->checks as $item) {
 			if ($item->id === 'session_cookie') {
@@ -247,6 +254,46 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 			'',
 			true,
 		);
+	}
+
+	/**
+	 * Typing a new address and pressing Test is not a lockout. Pads are
+	 * still going to the saved server, and comparing a probe of the typed
+	 * address against what they are doing would read every planned
+	 * migration as one.
+	 */
+	public function testSessionCookieLineDoesNotCallAnUnsavedAddressALockout(): void {
+		$etherpad = $this->createMock(EtherpadClient::class);
+		$etherpad->method('healthCheck')->willReturn(['pad_count' => 1]);
+		$etherpad->method('detectReleaseVersion')->willReturn('2.7.3');
+
+		// Saved: a different server, which is still an Etherpad 3 as far as
+		// the open path is concerned.
+		$line = $this->sessionCookieLine(
+			$etherpad,
+			knownRelease: '3.3.3',
+			configuredApiHost: 'https://old-api.example.test',
+		);
+
+		self::assertSame(HealthCheckItem::STATUS_OK, $line->status);
+		self::assertStringContainsString('2.7.3', $line->label);
+		self::assertStringContainsString('save', $line->detail);
+	}
+
+	/**
+	 * DNS, a TLS mismatch, a 404 from a proxy that does not route /health
+	 * and proxy auth are four different fixes. A fixed sentence points at
+	 * none of them, and the class already knows this vocabulary.
+	 */
+	public function testSessionCookieLineCarriesTheReasonTheProbeFailed(): void {
+		$etherpad = $this->createMock(EtherpadClient::class);
+		$etherpad->method('healthCheck')->willReturn(['pad_count' => 1]);
+		$etherpad->method('detectReleaseVersion')
+			->willThrowException(new EtherpadClientException('cURL error 6: Could not resolve host: pad.example.test'));
+
+		$line = $this->sessionCookieLine($etherpad);
+		self::assertSame(HealthCheckItem::STATUS_SKIPPED, $line->status);
+		self::assertStringContainsString('Could not resolve host', $line->detail);
 	}
 
 	/**

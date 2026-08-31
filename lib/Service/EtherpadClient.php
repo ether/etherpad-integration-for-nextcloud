@@ -237,18 +237,19 @@ class EtherpadClient {
 	 * API method: this runs on the open path, and the key belongs in as few
 	 * places as possible.
 	 *
-	 * A host may be given so the admin health check can ask about the
-	 * address being submitted rather than the one already stored, and a
-	 * timeout so that check can be as patient as the calls beside it while
-	 * the open path stays impatient.
+	 * The host is given rather than looked up here: the caller files the
+	 * answer under a host, and that has to be the host that was asked. The
+	 * admin health check asks about the address being submitted rather than
+	 * the one already stored, and passes a timeout so it can be as patient
+	 * as the calls beside it while the open path stays impatient.
 	 *
 	 * What comes back is a version string and nothing else. It is written
 	 * into app config, read on every protected open and rendered to an
 	 * admin, so a pad server answering with a megabyte of prose after a
 	 * plausible prefix must not get any of that.
 	 */
-	public function detectReleaseVersion(?string $host = null, int $timeoutSeconds = self::HEALTH_TIMEOUT_SECONDS): string {
-		$apiHost = $host !== null && trim($host) !== '' ? rtrim(trim($host), '/') : $this->getApiHost();
+	public function detectReleaseVersion(string $host, int $timeoutSeconds = self::HEALTH_TIMEOUT_SECONDS): string {
+		$apiHost = trim($host) !== '' ? rtrim(trim($host), '/') : $this->getApiHost();
 		$raw = $this->sendPublicGetRequest($apiHost . '/health', $timeoutSeconds);
 		$decoded = json_decode($raw, true);
 		$release = is_array($decoded) && isset($decoded['releaseId']) && is_string($decoded['releaseId'])
