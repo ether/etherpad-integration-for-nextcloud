@@ -16,8 +16,14 @@ import { uniquePadName } from '../fixtures/nextcloud'
  *
  * The app asks `/health` which one it is talking to. This spec asks the
  * same question and holds the answer against the cookie that actually
- * goes out, so one spec is right on both halves of the matrix — and the
- * protected specs running beside it are what prove the pads still open.
+ * goes out, so one spec is right on both halves of the matrix.
+ *
+ * What the flag being wrong actually costs is measured elsewhere:
+ * `pad-author-display-name` drives Etherpad's own toolbar two frames
+ * deep, and with `HttpOnly` forced on 2.7.3 the pad app never becomes
+ * usable. The other `protected-*` specs cannot see that — they work at
+ * request level, where nothing ever needs to read the cookie from
+ * JavaScript, and they pass either way.
  */
 test.describe('the session cookie and the Etherpad that reads it', () => {
 	const padName = uniquePadName('httponly')
