@@ -208,6 +208,12 @@ every protected pad. From 3.0.0 Etherpad takes the session id out of the
 socket.io handshake instead, and the cookie can be withheld from any script
 on the page. Measured on 2.7.3, 3.0.0 and 3.3.3.
 
+The boundary is the major version — Etherpad 3 and up — and it lives in
+`EtherpadReleasePolicy::HTTP_ONLY_SINCE_MAJOR`. The two test layers restate
+it rather than asking the app: `tests/e2e/specs/protected-session-cookie-httponly.spec.ts`
+and `tests/integration/e2e-protected-cookie-contract.sh`. Moving it means
+moving all three and this table.
+
 The app finds this out from `GET /health` (`releaseId`), which needs no api
 key. `/api` cannot answer it: it reports `1.3.1` on both 2.7.3 and 3.3.3.
 The answer is cached for an hour, retried at most once a minute after a
@@ -222,7 +228,7 @@ App config keys, none of them meant to be edited by hand except the first:
 
 | key | meaning |
 | --- | --- |
-| `etherpad_http_only_session_cookie` | `auto` (default), `yes` or `no`. The escape hatch when detection is wrong. `yes` against an Etherpad below 3.0 stops every protected pad from opening. |
+| `etherpad_http_only_session_cookie` | Exactly `auto` (default), `yes` or `no` — anything else is ignored with a log warning and the connection test says so. The escape hatch when detection is wrong. `yes` against an Etherpad below 3.0 stops every protected pad from opening. |
 | `etherpad_release_version` | last detected release |
 | `etherpad_release_checked_at` | when it was last confirmed |
 | `etherpad_release_host` | the API host it was read from |

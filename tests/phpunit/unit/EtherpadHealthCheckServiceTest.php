@@ -105,7 +105,8 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 		PendingDeleteRetryService $pending,
 		string $nextcloudUrl = 'https://cloud.example.test',
 		string $httpOnlyOverride = 'auto',
-		?bool $cookieIsHttpOnly = null,
+		string $knownRelease = '',
+		string $unrecognisedOverride = '',
 	): EtherpadHealthCheckService {
 		$urlGenerator = $this->createMock(IURLGenerator::class);
 		$urlGenerator->method('getBaseUrl')->willReturn($nextcloudUrl);
@@ -113,9 +114,12 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 		// It answers from a cache, so it can disagree with the server.
 		$releasePolicy = $this->createMock(\OCA\EtherpadNextcloud\Service\EtherpadReleasePolicy::class);
 		$releasePolicy->method('overrideMode')->willReturn($httpOnlyOverride);
-		$releasePolicy->method('supportsHttpOnlySessionCookie')->willReturn(
-			$cookieIsHttpOnly ?? ($httpOnlyOverride === 'yes')
-		);
+		$releasePolicy->method('unrecognisedOverride')->willReturn($unrecognisedOverride);
+		// Read, never resolved: resolving would refresh the cache against
+		// the stored host and write to app config from a form that may not
+		// be saved.
+		$releasePolicy->expects(self::never())->method('supportsHttpOnlySessionCookie');
+		$releasePolicy->method('knownRelease')->willReturn($knownRelease);
 		return new EtherpadHealthCheckService(
 			$etherpad,
 			$pending,
@@ -136,13 +140,15 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 	private function sessionCookieLine(
 		EtherpadClient $etherpad,
 		string $override = 'auto',
-		?bool $cookieIsHttpOnly = null,
+		string $knownRelease = '',
+		string $unrecognisedOverride = '',
 	): HealthCheckItem {
 		$result = $this->buildService(
 			$etherpad,
 			$this->pendingCounts(0),
 			httpOnlyOverride: $override,
-			cookieIsHttpOnly: $cookieIsHttpOnly,
+			knownRelease: $knownRelease,
+			unrecognisedOverride: $unrecognisedOverride,
 		)->check($this->settings());
 		foreach ($result->checks as $item) {
 			if ($item->id === 'session_cookie') {
@@ -157,7 +163,7 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 		$etherpad->method('healthCheck')->willReturn(['pad_count' => 1]);
 		$etherpad->method('detectReleaseVersion')->willReturn('3.3.3');
 
-		$line = $this->sessionCookieLine($etherpad, cookieIsHttpOnly: true);
+		$line = $this->sessionCookieLine($etherpad, knownRelease: '3.3.3');
 		self::assertSame(HealthCheckItem::STATUS_OK, $line->status);
 		// The label, not the detail: the admin panel shows only the label
 		// for a passing line, so that is where the release has to be.
@@ -170,7 +176,7 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 		$etherpad->method('healthCheck')->willReturn(['pad_count' => 1]);
 		$etherpad->method('detectReleaseVersion')->willReturn('2.7.3');
 
-		$line = $this->sessionCookieLine($etherpad, cookieIsHttpOnly: false);
+		$line = $this->sessionCookieLine($etherpad, knownRelease: '2.7.3');
 		self::assertSame(HealthCheckItem::STATUS_OK, $line->status);
 		self::assertStringContainsString('2.7.3', $line->label);
 		self::assertStringContainsString('readable', $line->label);
@@ -188,9 +194,10 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 		$etherpad->method('healthCheck')->willReturn(['pad_count' => 1]);
 		$etherpad->method('detectReleaseVersion')->willReturn('2.7.3');
 
-		$line = $this->sessionCookieLine($etherpad, cookieIsHttpOnly: true);
+		$line = $this->sessionCookieLine($etherpad, knownRelease: '3.3.3');
 		self::assertSame(HealthCheckItem::STATUS_WARNING, $line->status);
 		self::assertStringContainsString('2.7.3', $line->detail);
+		self::assertStringContainsString('3.3.3', $line->detail);
 	}
 
 	/** The admin test is as patient as the calls beside it. */
@@ -202,11 +209,11 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 			->with(self::anything(), EtherpadClient::REQUEST_TIMEOUT_SECONDS)
 			->willReturn('3.3.3');
 
-		self::assertSame(HealthCheckItem::STATUS_OK, $this->sessionCookieLine($etherpad, cookieIsHttpOnly: true)->status);
+		self::assertSame(HealthCheckItem::STATUS_OK, $this->sessionCookieLine($etherpad, knownRelease: '3.3.3')->status);
 	}
 
 	/** The case with no other signal at all: /health unreachable. */
-	public function testSessionCookieLineWarnsWhenTheReleaseCannotBeRead(): void {
+	public function testSessionCookieLineIsSkippedWhenTheReleaseCannotBeRead(): void {
 		$etherpad = $this->createMock(EtherpadClient::class);
 		$etherpad->method('healthCheck')->willReturn(['pad_count' => 1]);
 		$etherpad->method('detectReleaseVersion')
@@ -218,31 +225,11 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 		// a hardening.
 		$line = $this->sessionCookieLine($etherpad);
 		self::assertSame(HealthCheckItem::STATUS_SKIPPED, $line->status);
-		// The field the rest of this class derives, so the line lands on
-		// whichever input actually supplied the address — here a separate
-		// API URL is configured.
-		self::assertSame('etherpad_api_host', $line->field);
-	}
-
-	/**
-	 * And with no separate API URL, on the field the admin actually filled
-	 * in. A hardcoded 'etherpad_api_host' would point them at an empty box.
-	 */
-	public function testSessionCookieLineFollowsTheFieldThatSuppliedTheAddress(): void {
-		$etherpad = $this->createMock(EtherpadClient::class);
-		$etherpad->method('healthCheck')->willReturn(['pad_count' => 1]);
-		$etherpad->method('detectReleaseVersion')
-			->willThrowException(new EtherpadClientException('Connection timed out'));
-
-		$result = $this->buildService($etherpad, $this->pendingCounts(0))
-			->check($this->settingsWithoutSeparateApiHost());
-		foreach ($result->checks as $item) {
-			if ($item->id === 'session_cookie') {
-				self::assertSame('etherpad_host', $item->field);
-				return;
-			}
-		}
-		self::fail('no session_cookie line in the health check');
+		// Its own slot. Sharing a field with the API lines means losing to
+		// them: the panel keeps the highest severity per field, and a
+		// passing `api` outranks a skip — so on the very deployment this
+		// branch describes, the line would render nowhere.
+		self::assertSame('etherpad_session_cookie', $line->field);
 	}
 
 	private function settingsWithoutSeparateApiHost(): ValidatedAdminSettings {
@@ -262,15 +249,49 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 		);
 	}
 
-	/** A hand-set flag is worth saying out loud, especially the risky one. */
-	public function testSessionCookieLineSaysWhenTheFlagWasSetByHand(): void {
+	/**
+	 * The dangerous half of the override shouts, and says what the server
+	 * actually is so somebody who reached for it during an outage can see
+	 * whether they may put it back.
+	 */
+	public function testSessionCookieLineWarnsWhenHttpOnlyIsForcedOn(): void {
 		$etherpad = $this->createMock(EtherpadClient::class);
 		$etherpad->method('healthCheck')->willReturn(['pad_count' => 1]);
-		$etherpad->expects(self::never())->method('detectReleaseVersion');
+		$etherpad->method('detectReleaseVersion')->willReturn('2.7.3');
 
 		$line = $this->sessionCookieLine($etherpad, 'yes');
 		self::assertSame(HealthCheckItem::STATUS_WARNING, $line->status);
 		self::assertStringContainsString('by hand', $line->detail);
+		self::assertStringContainsString('2.7.3', $line->detail);
+	}
+
+	/**
+	 * The safe half does not. It gives up a hardening and is what this app
+	 * did before any of this — warning on it teaches an admin to ignore the
+	 * line that would have told them about the other one.
+	 */
+	public function testSessionCookieLineDoesNotWarnWhenHttpOnlyIsForcedOff(): void {
+		$etherpad = $this->createMock(EtherpadClient::class);
+		$etherpad->method('healthCheck')->willReturn(['pad_count' => 1]);
+		$etherpad->method('detectReleaseVersion')->willReturn('3.3.3');
+
+		$line = $this->sessionCookieLine($etherpad, 'no');
+		self::assertSame(HealthCheckItem::STATUS_OK, $line->status);
+		self::assertStringContainsString('3.3.3', $line->detail);
+	}
+
+	/**
+	 * `--value=true`, `--value=1`, `--value=off`: the words an admin reaches
+	 * for while pads are down. All of them silently mean auto, and the line
+	 * would otherwise confirm the automatic behaviour as fine.
+	 */
+	public function testSessionCookieLineNamesAnUnrecognisedOverride(): void {
+		$etherpad = $this->createMock(EtherpadClient::class);
+		$etherpad->method('healthCheck')->willReturn(['pad_count' => 1]);
+
+		$line = $this->sessionCookieLine($etherpad, unrecognisedOverride: 'true');
+		self::assertSame(HealthCheckItem::STATUS_WARNING, $line->status);
+		self::assertStringContainsString('true', $line->detail);
 	}
 
 	/**

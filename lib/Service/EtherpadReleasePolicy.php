@@ -11,6 +11,7 @@ namespace OCA\EtherpadNextcloud\Service;
 
 use OCP\AppFramework\Utility\ITimeFactory;
 use OCP\ICacheFactory;
+use OCP\IMemcache;
 use OCP\IConfig;
 use Psr\Log\LoggerInterface;
 
@@ -122,8 +123,7 @@ class EtherpadReleasePolicy {
 	 * be without a second copy of the rule.
 	 */
 	public static function allowsHttpOnly(string $release): bool {
-		$major = (int)(explode('.', ltrim(trim($release), 'v'))[0] ?? '0');
-		return $major >= self::HTTP_ONLY_SINCE_MAJOR;
+		return (int)explode('.', ltrim(trim($release), 'v'))[0] >= self::HTTP_ONLY_SINCE_MAJOR;
 	}
 
 	/**
@@ -163,9 +163,36 @@ class EtherpadReleasePolicy {
 	 */
 	public function overrideMode(): string {
 		$override = strtolower($this->read(self::OVERRIDE_KEY));
-		return in_array($override, [self::OVERRIDE_YES, self::OVERRIDE_NO], true)
-			? $override
-			: self::OVERRIDE_AUTO;
+		if (in_array($override, [self::OVERRIDE_YES, self::OVERRIDE_NO, self::OVERRIDE_AUTO, ''], true)) {
+			return $override === '' ? self::OVERRIDE_AUTO : $override;
+		}
+
+		$this->logger->warning('Ignoring an unrecognised value for the Etherpad session cookie setting.', [
+			'app' => self::APP_ID,
+			'setting' => self::OVERRIDE_KEY,
+			'value' => substr($override, 0, 32),
+			'expected' => [self::OVERRIDE_AUTO, self::OVERRIDE_YES, self::OVERRIDE_NO],
+		]);
+		return self::OVERRIDE_AUTO;
+	}
+
+	/**
+	 * A stored override that is none of the three words, or '' when there
+	 * is no such problem.
+	 *
+	 * This is the setting an admin reaches for while protected pads are
+	 * down, typed into `occ` from memory: `true`, `1`, `off`, `disabled`.
+	 * Every one of those silently means `auto`, and the connection test
+	 * would then confirm the automatic behaviour as fine — actively telling
+	 * them nothing is overridden. So it is worth being able to say.
+	 */
+	public function unrecognisedOverride(): string {
+		$override = strtolower($this->read(self::OVERRIDE_KEY));
+		if (in_array($override, [self::OVERRIDE_YES, self::OVERRIDE_NO, self::OVERRIDE_AUTO, ''], true)) {
+			return '';
+		}
+
+		return substr($override, 0, 32);
 	}
 
 	/** The release currently believed, without asking anything. For the admin view. */
@@ -215,7 +242,7 @@ class EtherpadReleasePolicy {
 		if ($failedAge !== null && $failedAge < self::FAILURE_BACKOFF_SECONDS) {
 			return $cached;
 		}
-		if (!$this->claimTheCheck()) {
+		if (!$this->claimTheCheck($host)) {
 			// Another worker is asking right now.
 			return $cached;
 		}
@@ -235,6 +262,7 @@ class EtherpadReleasePolicy {
 		$this->config->setAppValue(self::APP_ID, self::RELEASE_KEY, $release);
 		$this->config->setAppValue(self::APP_ID, self::CHECKED_AT_KEY, (string)$now);
 		$this->config->setAppValue(self::APP_ID, self::FAILED_AT_KEY, '0');
+		$this->releaseTheClaim($host);
 		if ($release !== $cached) {
 			$this->logger->info('Detected the Etherpad release.', [
 				'app' => self::APP_ID,
@@ -279,19 +307,41 @@ class EtherpadReleasePolicy {
 	 * on the same question.
 	 *
 	 * A distributed cache is the thing that is actually shared. `add()`
-	 * succeeds for exactly one caller, which is the whole requirement. Not
-	 * every deployment has one; a single-node instance without a memory
-	 * cache has one worker per open and nothing to coordinate with, so
-	 * going ahead is the right answer there.
+	 * succeeds for exactly one caller, which is the whole requirement — but
+	 * it is declared on `IMemcache`, not on the `ICache` that
+	 * `createDistributed()` promises. Every backend Nextcloud actually
+	 * hands back implements it; the contract does not say so, so it is
+	 * asked rather than assumed.
+	 *
+	 * Not every deployment has a memory cache at all. One without has a
+	 * worker per open and nothing to coordinate with, so going ahead is the
+	 * right answer there — as it is for a backend that cannot claim.
+	 *
+	 * Keyed by host, because a claim outlives a repointing otherwise: the
+	 * new server's first check would be turned away by a claim taken for
+	 * the old one. Released as soon as the answer is written, so the next
+	 * refresh is not waiting out a minute that has already done its job.
 	 */
-	private function claimTheCheck(): bool {
+	private function claimTheCheck(string $host): bool {
+		$cache = $this->probeCache();
+		return $cache === null || $cache->add($this->claimKey($host), '1', self::FAILURE_BACKOFF_SECONDS);
+	}
+
+	private function releaseTheClaim(string $host): void {
+		$this->probeCache()?->remove($this->claimKey($host));
+	}
+
+	private function claimKey(string $host): string {
+		return 'probe-' . md5($host);
+	}
+
+	private function probeCache(): ?IMemcache {
 		if (!$this->cacheFactory->isAvailable()) {
-			return true;
+			return null;
 		}
 
-		return $this->cacheFactory
-			->createDistributed(self::APP_ID . '/release/')
-			->add('probe', '1', self::FAILURE_BACKOFF_SECONDS);
+		$cache = $this->cacheFactory->createDistributed(self::APP_ID . '/release/');
+		return $cache instanceof IMemcache ? $cache : null;
 	}
 
 	private function read(string $key): string {

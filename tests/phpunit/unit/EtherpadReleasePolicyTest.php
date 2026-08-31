@@ -26,10 +26,12 @@ class EtherpadReleasePolicyTest extends TestCase {
 	private \ArrayObject $stored;
 	private int $now = 1_700_000_000;
 	private \OCP\ICacheFactory $cacheFactory;
+	private \ArrayObject $claims;
 
 	protected function setUp(): void {
 		parent::setUp();
 		$this->stored = new \ArrayObject();
+		$this->claims = new \ArrayObject();
 		$this->cacheFactory = $this->noCache();
 	}
 
@@ -170,6 +172,56 @@ class EtherpadReleasePolicyTest extends TestCase {
 				return '3.3.3';
 			});
 
+		self::assertTrue($this->policy($client)->supportsHttpOnlySessionCookie());
+	}
+
+	/**
+	 * A cache backend that cannot claim atomically is the same situation as
+	 * no cache: `add()` is on IMemcache, and createDistributed() only
+	 * promises an ICache.
+	 */
+	public function testACacheThatCannotClaimDoesNotBlockTheCheck(): void {
+		$factory = $this->createMock(\OCP\ICacheFactory::class);
+		$factory->method('isAvailable')->willReturn(true);
+		$factory->method('createDistributed')->willReturn($this->createMock(\OCP\ICache::class));
+		$this->cacheFactory = $factory;
+
+		$client = $this->createMock(EtherpadClient::class);
+		$client->method('getApiHost')->willReturn('https://pad.example.test');
+		$client->expects(self::once())->method('detectReleaseVersion')->willReturn('3.3.3');
+
+		self::assertTrue($this->policy($client)->supportsHttpOnlySessionCookie());
+	}
+
+	/**
+	 * A claim taken for one pad server must not turn away the first check of
+	 * the next one — a repointing would otherwise start with a minute of
+	 * not knowing.
+	 */
+	public function testAClaimForOneHostDoesNotBlockAnother(): void {
+		$this->cacheFactory = $this->sharedCache();
+		$this->store(host: 'https://old.pad.test', release: '3.3.3', checkedAt: $this->now - 3601);
+
+		$old = $this->createMock(EtherpadClient::class);
+		$old->method('getApiHost')->willReturn('https://old.pad.test');
+		$old->method('detectReleaseVersion')->willThrowException(new EtherpadClientException('down'));
+		self::assertTrue($this->policy($old)->supportsHttpOnlySessionCookie());
+
+		$new = $this->createMock(EtherpadClient::class);
+		$new->method('getApiHost')->willReturn('https://new.pad.test');
+		$new->expects(self::once())->method('detectReleaseVersion')->willReturn('3.3.3');
+		self::assertTrue($this->policy($new)->supportsHttpOnlySessionCookie());
+	}
+
+	/** And a claim is given back once the answer is in, not held for a minute. */
+	public function testASuccessfulCheckReleasesItsClaim(): void {
+		$this->cacheFactory = $this->sharedCache();
+		$client = $this->createMock(EtherpadClient::class);
+		$client->method('getApiHost')->willReturn('https://pad.example.test');
+		$client->expects(self::exactly(2))->method('detectReleaseVersion')->willReturn('3.3.3');
+
+		self::assertTrue($this->policy($client)->supportsHttpOnlySessionCookie());
+		$this->stored['etherpad_release_checked_at'] = (string)($this->now - 3601);
 		self::assertTrue($this->policy($client)->supportsHttpOnlySessionCookie());
 	}
 
@@ -326,14 +378,22 @@ class EtherpadReleasePolicyTest extends TestCase {
 	 * no-op, which is what a single-node instance gets.
 	 */
 	private function sharedCache(): \OCP\ICacheFactory {
-		$held = new \ArrayObject();
-		$cache = $this->createMock(\OCP\ICache::class);
+		$held = $this->claims;
+		// IMemcache, not ICache: `add()` is declared there, and the policy
+		// asks for it rather than assuming createDistributed() returns one.
+		$cache = $this->createMock(\OCP\IMemcache::class);
 		$cache->method('add')->willReturnCallback(
 			static function (string $key) use ($held): bool {
 				if (isset($held[$key])) {
 					return false;
 				}
 				$held[$key] = true;
+				return true;
+			}
+		);
+		$cache->method('remove')->willReturnCallback(
+			static function (string $key) use ($held): bool {
+				unset($held[$key]);
 				return true;
 			}
 		);

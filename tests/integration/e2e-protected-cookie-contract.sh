@@ -140,6 +140,10 @@ assert_cookie_contains "$SESSION_COOKIE_LINE" "secure" "Secure"
 assert_cookie_contains "$SESSION_COOKIE_LINE" "samesite=none" "SameSite=None"
 
 # HttpOnly is not a constant of this contract, it depends on the pad server.
+# The major-3 boundary below restates EtherpadReleasePolicy's
+# HTTP_ONLY_SINCE_MAJOR rather than importing it — a check that asked the app
+# what to expect would assert nothing. Moving the boundary means moving it
+# here, in the Playwright spec, and in docs/etherpad-integration.md.
 # Up to Etherpad 2.7.3 the pad app reads sessionID in the browser, so the
 # cookie has to stay script-readable; from 3.0.0 the server takes it out of
 # the socket.io handshake. Asking /health is how the app decides, so it is

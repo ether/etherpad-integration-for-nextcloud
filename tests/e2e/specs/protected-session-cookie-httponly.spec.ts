@@ -55,10 +55,12 @@ test.describe('the session cookie and the Etherpad that reads it', () => {
 			expect(health.status()).toBe(200)
 			const release = String(((await health.json()) as { releaseId?: string }).releaseId ?? '')
 			expect(release, 'Etherpad /health should report a releaseId').toMatch(/^\d+\.\d+\.\d+/)
-			// The same rule the app applies, and the reason it is the major
-			// rather than the full version: this has to be expressible here
-			// too, and PHP sorts `3.0.0-beta.1` below `3.0.0` while any
-			// reading of it here would call it a 3.
+			// The same rule the app applies — EtherpadReleasePolicy's
+			// HTTP_ONLY_SINCE_MAJOR — restated rather than imported, because
+			// a test that derives its expectation from the thing under test
+			// asserts nothing. It is the major rather than the full version
+			// exactly so it can be restated: PHP sorts `3.0.0-beta.1` below
+			// `3.0.0` while any reading of it here calls it a 3.
 			const readsItServerSide = Number(release.split('.')[0]) >= 3
 
 			await createPadAtPath(`/${padName}`, 'protected')
@@ -94,9 +96,13 @@ test.describe('the session cookie and the Etherpad that reads it', () => {
 			// to end — /health blocked from inside the container, the policy
 			// throwing, the flag removed altogether. This spec asks from the
 			// runner's network; the app asks from inside, against its own
-			// configured api host. So make it say what it found: the
-			// connection test reports the release the app itself read, and
-			// naming it is only possible if that half is live.
+			// configured api host.
+			//
+			// So make it say what it *stored*. The connection test reports
+			// the cached release — the one the open path above actually used
+			// to decide this cookie — so naming it is only possible if the
+			// whole path ran: probe from inside the container, parse, write,
+			// read back.
 			const connectionTest = await api.post(
 				`${E2E.baseURL}/index.php/apps/etherpad_nextcloud/api/v1/admin/health`,
 				{
@@ -117,7 +123,7 @@ test.describe('the session cookie and the Etherpad that reads it', () => {
 			expect(sessionCookie, 'the connection test should report on the session cookie').toBeDefined()
 			expect(
 				`${sessionCookie!.label} ${sessionCookie!.detail}`,
-				'the app should name the release it read for itself',
+				'the app should name the release it cached for itself when opening the pad',
 			).toContain(release)
 		} finally {
 			await api.dispose()
