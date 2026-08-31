@@ -217,8 +217,8 @@ moving all three and this table.
 The app finds this out from `GET /health` (`releaseId`), which needs no api
 key. `/api` cannot answer it: it reports `1.3.1` on both 2.7.3 and 3.3.3.
 The answer is cached for an hour, retried at most once a minute after a
-failure, dropped after six hours without a successful check, and kept
-against the API host it was read from. Not knowing means a readable cookie.
+failure, dropped after six hours without a successful check, and stored
+together with the API host it was read from. Not knowing means a readable cookie.
 
 The connection test in the admin settings shows which release was found and
 what the cookie will be, and warns when the two have drifted apart — which
@@ -229,10 +229,7 @@ App config keys, none of them meant to be edited by hand except the first:
 | key | meaning |
 | --- | --- |
 | `etherpad_http_only_session_cookie` | Exactly `auto` (default), `yes` or `no` — anything else is ignored with a log warning and the connection test says so. The escape hatch when detection is wrong. `yes` against an Etherpad below 3.0 stops every protected pad from opening. |
-| `etherpad_release_version` | last detected release |
-| `etherpad_release_checked_at` | when it was last confirmed |
-| `etherpad_release_host` | the API host it was read from |
-| `etherpad_release_failed_at` | when the last check failed |
+| `etherpad_release_state` | JSON: the detected release, the API host it was read from, when it was last confirmed, and when a check last failed. One value on purpose – a check that finishes after the app has been repointed can only write a record that says which server it is about, and the next reader discards it. |
 
 ```bash
 occ config:app:set etherpad_nextcloud etherpad_http_only_session_cookie --value=no

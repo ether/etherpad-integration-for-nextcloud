@@ -221,7 +221,7 @@ class EtherpadReleasePolicyTest extends TestCase {
 		$client->expects(self::exactly(2))->method('detectReleaseVersion')->willReturn('3.3.3');
 
 		self::assertTrue($this->policy($client)->supportsHttpOnlySessionCookie());
-		$this->stored['etherpad_release_checked_at'] = (string)($this->now - 3601);
+		$this->store(host: 'https://pad.example.test', release: '3.3.3', checkedAt: $this->now - 3601);
 		self::assertTrue($this->policy($client)->supportsHttpOnlySessionCookie());
 	}
 
@@ -236,7 +236,51 @@ class EtherpadReleasePolicyTest extends TestCase {
 		$client->expects(self::exactly(2))->method('detectReleaseVersion')->willReturn('3.3.3');
 
 		self::assertTrue($this->policy($client)->supportsHttpOnlySessionCookie());
-		$this->stored['etherpad_release_checked_at'] = (string)($this->now - 3601);
+		$this->store(host: 'https://pad.example.test', release: '3.3.3', checkedAt: $this->now - 3601);
+		self::assertTrue($this->policy($client)->supportsHttpOnlySessionCookie());
+	}
+
+	/**
+	 * A check for the host configured a moment ago can finish after the app
+	 * has been repointed. Its write must not file the old server's release
+	 * under the new server's name — which for an Etherpad 2 would mean an
+	 * HttpOnly cookie and no protected pad opening for an hour.
+	 *
+	 * Neither ordering nor a re-read can prevent the write: Nextcloud loads
+	 * app config once per request, so the late writer never sees the
+	 * repointing. What prevents the damage is that the record says which
+	 * host it is about.
+	 */
+	public function testAProbeThatFinishesAfterARepointingIsNotTrusted(): void {
+		$old = $this->createMock(EtherpadClient::class);
+		$old->method('getApiHost')->willReturn('https://old.pad.test');
+		$old->method('detectReleaseVersion')->willReturnCallback(function (): string {
+			// While this probe is in flight, another request repoints the
+			// app and records what the new server says.
+			$this->store(host: 'https://new.pad.test', release: '2.7.3', checkedAt: $this->now);
+			return '3.3.3';
+		});
+
+		// The old host's probe lands last and wins the write.
+		self::assertTrue($this->policy($old)->supportsHttpOnlySessionCookie());
+		self::assertSame('https://old.pad.test', $this->storedState()['host'] ?? '');
+
+		// The next open is against the new host, and must not inherit it.
+		$new = $this->createMock(EtherpadClient::class);
+		$new->method('getApiHost')->willReturn('https://new.pad.test');
+		$new->expects(self::once())->method('detectReleaseVersion')->willReturn('2.7.3');
+		self::assertFalse($this->policy($new)->supportsHttpOnlySessionCookie());
+	}
+
+	/** The host asked is the host the answer is filed under. */
+	public function testTheProbeIsPointedAtTheHostItIsFiledUnder(): void {
+		$client = $this->createMock(EtherpadClient::class);
+		$client->method('getApiHost')->willReturn('https://pad.example.test');
+		$client->expects(self::once())
+			->method('detectReleaseVersion')
+			->with('https://pad.example.test')
+			->willReturn('3.3.3');
+
 		self::assertTrue($this->policy($client)->supportsHttpOnlySessionCookie());
 	}
 
@@ -327,10 +371,19 @@ class EtherpadReleasePolicyTest extends TestCase {
 		self::assertFalse($this->policy($client)->supportsHttpOnlySessionCookie());
 	}
 
-	private function store(string $host, string $release, int $checkedAt): void {
-		$this->stored['etherpad_release_host'] = $host;
-		$this->stored['etherpad_release_version'] = $release;
-		$this->stored['etherpad_release_checked_at'] = (string)$checkedAt;
+	private function store(string $host, string $release, int $checkedAt, int $failedAt = 0): void {
+		$this->stored['etherpad_release_state'] = (string)json_encode([
+			'host' => $host,
+			'release' => $release,
+			'checkedAt' => $checkedAt,
+			'failedAt' => $failedAt,
+		]);
+	}
+
+	/** @return array{host?:string,release?:string,checkedAt?:int,failedAt?:int} */
+	private function storedState(): array {
+		$decoded = json_decode((string)($this->stored['etherpad_release_state'] ?? ''), true);
+		return is_array($decoded) ? $decoded : [];
 	}
 
 	private function answering(string $release): EtherpadClient {

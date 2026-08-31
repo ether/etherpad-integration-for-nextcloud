@@ -38,10 +38,25 @@ use Psr\Log\LoggerInterface;
  */
 class EtherpadReleasePolicy {
 	private const APP_ID = 'etherpad_nextcloud';
-	private const RELEASE_KEY = 'etherpad_release_version';
-	private const CHECKED_AT_KEY = 'etherpad_release_checked_at';
-	private const HOST_KEY = 'etherpad_release_host';
-	private const FAILED_AT_KEY = 'etherpad_release_failed_at';
+
+	/**
+	 * Everything known about the pad server's release, in one value.
+	 *
+	 * One value rather than four keys, and the host lives inside it. A
+	 * check for the host configured a moment ago can finish after the app
+	 * has been repointed, and with a separate host marker its write would
+	 * file the old server's release under the new server's name — for an
+	 * hour, and for an Etherpad 2 that means no protected pad opens at all.
+	 * Neither ordering nor a re-read before writing can prevent that:
+	 * Nextcloud loads an app's config once per request, so the late writer
+	 * cannot see the repointing at all.
+	 *
+	 * Keeping the host in the record does prevent it. A stale write can
+	 * only produce a record that says which server it is about, and the
+	 * next reader compares that against the host configured now and throws
+	 * it away. The cost of losing the race is one extra check.
+	 */
+	private const STATE_KEY = 'etherpad_release_state';
 
 	/** auto (detect) | yes (force HttpOnly) | no (force a readable cookie). */
 	public const OVERRIDE_KEY = 'etherpad_http_only_session_cookie';
@@ -197,7 +212,11 @@ class EtherpadReleasePolicy {
 
 	/** The release currently believed, without asking anything. For the admin view. */
 	public function knownRelease(): string {
-		return $this->read(self::RELEASE_KEY);
+		try {
+			return $this->readState($this->etherpadClient->getApiHost())['release'];
+		} catch (\Throwable) {
+			return '';
+		}
 	}
 
 	/**
@@ -211,17 +230,10 @@ class EtherpadReleasePolicy {
 	private function resolveReleaseOrThrow(): string {
 		$host = $this->etherpadClient->getApiHost();
 		$now = $this->timeFactory->getTime();
+		$state = $this->readState($host);
 
-		if ($this->read(self::HOST_KEY) !== $host) {
-			// A different pad server answers now. What the last one said
-			// about itself says nothing about this one, and an admin who
-			// repoints the app at an Etherpad 2 must not have it sent a
-			// cookie its pad app cannot read for the rest of the hour.
-			$this->forgetFor($host);
-		}
-
-		$cached = $this->read(self::RELEASE_KEY);
-		$age = $this->ageOf(self::CHECKED_AT_KEY, $now);
+		$cached = $state['release'];
+		$age = $this->ageOf($state['checkedAt'], $now);
 		if ($cached !== '' && $age !== null && $age >= self::MAX_STALE_SECONDS) {
 			// Nothing has confirmed this for hours. Whatever it says, it is
 			// no longer evidence about the server answering today.
@@ -230,7 +242,6 @@ class EtherpadReleasePolicy {
 				'staleRelease' => $cached,
 				'ageSeconds' => $age,
 			]);
-			$this->forgetFor($host);
 			$cached = '';
 		}
 
@@ -238,7 +249,7 @@ class EtherpadReleasePolicy {
 			return $cached;
 		}
 
-		$failedAge = $this->ageOf(self::FAILED_AT_KEY, $now);
+		$failedAge = $this->ageOf($state['failedAt'], $now);
 		if ($failedAge !== null && $failedAge < self::FAILURE_BACKOFF_SECONDS) {
 			return $cached;
 		}
@@ -248,9 +259,12 @@ class EtherpadReleasePolicy {
 		}
 
 		try {
-			$release = $this->etherpadClient->detectReleaseVersion();
+			// The host is passed rather than looked up again inside the
+			// client: the answer is filed under this one, so this one has to
+			// be the one that was asked.
+			$release = $this->etherpadClient->detectReleaseVersion($host);
 		} catch (\Throwable $e) {
-			$this->config->setAppValue(self::APP_ID, self::FAILED_AT_KEY, (string)$now);
+			$this->writeState($host, $cached, $state['checkedAt'], $now);
 			$this->logger->warning('Could not read the Etherpad release from /health.', [
 				'app' => self::APP_ID,
 				'cachedRelease' => $cached,
@@ -259,9 +273,7 @@ class EtherpadReleasePolicy {
 			return $cached;
 		}
 
-		$this->config->setAppValue(self::APP_ID, self::RELEASE_KEY, $release);
-		$this->config->setAppValue(self::APP_ID, self::CHECKED_AT_KEY, (string)$now);
-		$this->config->setAppValue(self::APP_ID, self::FAILED_AT_KEY, '0');
+		$this->writeState($host, $release, $now, 0);
 		$this->releaseTheClaim($host);
 		if ($release !== $cached) {
 			$this->logger->info('Detected the Etherpad release.', [
@@ -271,6 +283,36 @@ class EtherpadReleasePolicy {
 			]);
 		}
 		return $release;
+	}
+
+	/**
+	 * What is on record about this host, or nothing when the record is
+	 * about a different one.
+	 *
+	 * @return array{release:string,checkedAt:int,failedAt:int}
+	 */
+	private function readState(string $host): array {
+		$empty = ['release' => '', 'checkedAt' => 0, 'failedAt' => 0];
+		$decoded = json_decode($this->read(self::STATE_KEY), true);
+		if (!is_array($decoded) || ($decoded['host'] ?? null) !== $host) {
+			return $empty;
+		}
+
+		$release = $decoded['release'] ?? '';
+		return [
+			'release' => is_string($release) ? $release : '',
+			'checkedAt' => (int)($decoded['checkedAt'] ?? 0),
+			'failedAt' => (int)($decoded['failedAt'] ?? 0),
+		];
+	}
+
+	private function writeState(string $host, string $release, int $checkedAt, int $failedAt): void {
+		$this->config->setAppValue(self::APP_ID, self::STATE_KEY, (string)json_encode([
+			'host' => $host,
+			'release' => $release,
+			'checkedAt' => $checkedAt,
+			'failedAt' => $failedAt,
+		]));
 	}
 
 	/**
@@ -288,8 +330,7 @@ class EtherpadReleasePolicy {
 	 * cache seconds old and log that it was hours old, over a clock that
 	 * moved by a second.
 	 */
-	private function ageOf(string $key, int $now): ?int {
-		$stamp = (int)$this->read($key);
+	private function ageOf(int $stamp, int $now): ?int {
 		if ($stamp <= 0 || $stamp > $now) {
 			return null;
 		}
@@ -348,11 +389,4 @@ class EtherpadReleasePolicy {
 		return trim((string)$this->config->getAppValue(self::APP_ID, $key, ''));
 	}
 
-	/** Drop everything known about a release, and note whose it would be now. */
-	private function forgetFor(string $host): void {
-		$this->config->setAppValue(self::APP_ID, self::HOST_KEY, $host);
-		$this->config->setAppValue(self::APP_ID, self::RELEASE_KEY, '');
-		$this->config->setAppValue(self::APP_ID, self::CHECKED_AT_KEY, '0');
-		$this->config->setAppValue(self::APP_ID, self::FAILED_AT_KEY, '0');
-	}
 }
