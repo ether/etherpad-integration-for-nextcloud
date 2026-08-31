@@ -235,9 +235,13 @@ class EtherpadClient {
 	 * `/health` needs no api key, which is why it is asked rather than an
 	 * API method: this runs on the open path, and the key belongs in as few
 	 * places as possible.
+	 *
+	 * A host may be given so the admin health check can ask about the
+	 * address being submitted rather than the one already stored.
 	 */
-	public function detectReleaseVersion(): string {
-		$raw = $this->sendPublicGetRequest($this->getApiHost() . '/health', self::HEALTH_TIMEOUT_SECONDS);
+	public function detectReleaseVersion(?string $host = null): string {
+		$apiHost = $host !== null && trim($host) !== '' ? rtrim(trim($host), '/') : $this->getApiHost();
+		$raw = $this->sendPublicGetRequest($apiHost . '/health', self::HEALTH_TIMEOUT_SECONDS);
 		$decoded = json_decode($raw, true);
 		$release = is_array($decoded) && isset($decoded['releaseId']) && is_string($decoded['releaseId'])
 			? trim($decoded['releaseId'])
@@ -415,7 +419,7 @@ class EtherpadClient {
 		return $key;
 	}
 
-	private function sendPublicGetRequest(string $url, ?int $timeoutSeconds = null): string {
+	private function sendPublicGetRequest(string $url, int $timeoutSeconds = self::REQUEST_TIMEOUT_SECONDS): string {
 		$response = $this->doRequest('GET', $url, $this->baseRequestOptions($timeoutSeconds));
 		$statusCode = $response->getStatusCode();
 		if ($statusCode >= 400) {
@@ -441,9 +445,9 @@ class EtherpadClient {
 	 *
 	 * @return array<string,mixed>
 	 */
-	private function baseRequestOptions(?int $timeoutSeconds = null): array {
+	private function baseRequestOptions(int $timeoutSeconds = self::REQUEST_TIMEOUT_SECONDS): array {
 		return [
-			'timeout' => $timeoutSeconds ?? self::REQUEST_TIMEOUT_SECONDS,
+			'timeout' => $timeoutSeconds,
 			'allow_redirects' => ['max' => 0],
 			'headers' => ['Accept' => 'application/json'],
 			'nextcloud' => ['allow_local_address' => true],

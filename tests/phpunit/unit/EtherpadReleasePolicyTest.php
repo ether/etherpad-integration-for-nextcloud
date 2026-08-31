@@ -56,9 +56,97 @@ class EtherpadReleasePolicyTest extends TestCase {
 
 	/** A blip does not undo what was already known about the pad server. */
 	public function testAFailedCheckKeepsTheLastKnownRelease(): void {
-		$this->store(host: 'https://pad.example.test', release: '3.3.3', checkedAt: 0);
+		$this->store(host: 'https://pad.example.test', release: '3.3.3', checkedAt: $this->now - 3601);
 
 		self::assertTrue($this->policy($this->failing())->supportsHttpOnlySessionCookie());
+	}
+
+	/**
+	 * But not forever. The TTL is justified by the cache turning over, and
+	 * on this path it never did: an admin moving back to an Etherpad 2 whose
+	 * `/health` cannot be reached would have had every protected pad locked
+	 * out for good, asked once a minute.
+	 */
+	public function testAReleaseNothingHasConfirmedForHoursStopsCounting(): void {
+		$this->store(host: 'https://pad.example.test', release: '3.3.3', checkedAt: $this->now - 6 * 3600);
+
+		self::assertFalse($this->policy($this->failing())->supportsHttpOnlySessionCookie());
+	}
+
+	/**
+	 * A clock that jumps backwards leaves a stamp ahead of now, and a
+	 * negative age is younger than every window there is — the cache would
+	 * freeze until real time caught up.
+	 */
+	public function testAStampFromTheFutureIsNotTreatedAsFresh(): void {
+		$this->store(host: 'https://pad.example.test', release: '3.3.3', checkedAt: $this->now + 7200);
+		$client = $this->answering('2.7.3');
+		$client->expects(self::once())->method('detectReleaseVersion')->willReturn('2.7.3');
+
+		self::assertFalse($this->policy($client)->supportsHttpOnlySessionCookie());
+	}
+
+	/**
+	 * The failure mode of getting the flag wrong is total, so it does not
+	 * rest on detection alone.
+	 */
+	public function testAnAdminCanForceTheCookieReadable(): void {
+		$this->stored[EtherpadReleasePolicy::OVERRIDE_KEY] = 'no';
+		$client = $this->createMock(EtherpadClient::class);
+		$client->expects(self::never())->method('detectReleaseVersion');
+
+		self::assertFalse($this->policy($client)->supportsHttpOnlySessionCookie());
+	}
+
+	public function testAnAdminCanForceTheCookieHttpOnly(): void {
+		$this->stored[EtherpadReleasePolicy::OVERRIDE_KEY] = 'yes';
+		$client = $this->createMock(EtherpadClient::class);
+		$client->expects(self::never())->method('detectReleaseVersion');
+
+		self::assertTrue($this->policy($client)->supportsHttpOnlySessionCookie());
+	}
+
+	public function testAnythingElseMeansDetect(): void {
+		$this->stored[EtherpadReleasePolicy::OVERRIDE_KEY] = 'auto';
+
+		self::assertTrue($this->policy($this->answering('3.3.3'))->supportsHttpOnlySessionCookie());
+	}
+
+	/**
+	 * The class promises never to fail an open. `getApiHost()` throws when
+	 * no host is configured at all, and it sits outside the detection call.
+	 */
+	public function testAnUnconfiguredHostIsAnAnswerAndNotAnException(): void {
+		$client = $this->createMock(EtherpadClient::class);
+		$client->method('getApiHost')
+			->willThrowException(new EtherpadClientException('Etherpad host is not configured.'));
+
+		self::assertFalse($this->policy($client)->supportsHttpOnlySessionCookie());
+	}
+
+	/**
+	 * At the moment the hour turns, every open in flight sees the same stale
+	 * stamp. Claiming the check first means one of them asks.
+	 */
+	public function testConcurrentOpensDoNotEachProbe(): void {
+		$this->store(host: 'https://pad.example.test', release: '3.3.3', checkedAt: $this->now - 3601);
+		$client = $this->createMock(EtherpadClient::class);
+		$client->method('getApiHost')->willReturn('https://pad.example.test');
+		$client->expects(self::once())->method('detectReleaseVersion')
+			->willReturnCallback(function () use (&$client): string {
+				// What a second request arriving mid-flight would see.
+				self::assertTrue($this->policy($client)->supportsHttpOnlySessionCookie());
+				return '3.3.3';
+			});
+
+		self::assertTrue($this->policy($client)->supportsHttpOnlySessionCookie());
+	}
+
+	/** A release with a suffix is still a 3. */
+	public function testAPreReleaseOfAMajorCountsAsThatMajor(): void {
+		self::assertTrue(EtherpadReleasePolicy::allowsHttpOnly('3.0.0-beta.1'));
+		self::assertFalse(EtherpadReleasePolicy::allowsHttpOnly('2.9.9-rc.1'));
+		self::assertFalse(EtherpadReleasePolicy::allowsHttpOnly(''));
 	}
 
 	/** This runs on the open path; a fresh answer is not asked for twice. */

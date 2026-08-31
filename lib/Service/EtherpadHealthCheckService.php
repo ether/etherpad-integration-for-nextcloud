@@ -9,8 +9,10 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Service;
 
+use OCA\EtherpadNextcloud\AppInfo\Application;
 use OCA\EtherpadNextcloud\Exception\AdminHealthCheckException;
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
+use OCP\IConfig;
 use OCP\IL10N;
 use OCP\IURLGenerator;
 
@@ -36,6 +38,7 @@ class EtherpadHealthCheckService {
 		private CookieDomainPolicy $cookieDomainPolicy,
 		private BaseUrlReachabilityCheck $baseUrlCheck,
 		private IURLGenerator $urlGenerator,
+		private IConfig $config,
 	) {
 	}
 
@@ -126,6 +129,7 @@ class EtherpadHealthCheckService {
 				'etherpad_api_key',
 			),
 			$this->baseUrlCheck->check($settings->etherpadHost),
+			$this->sessionCookieCheck($settings),
 		];
 
 		return new HealthCheckResult(
@@ -138,6 +142,74 @@ class EtherpadHealthCheckService {
 			$this->pendingDeleteRetryService->countPendingDeletes(),
 			$cookieDomain,
 			$checks,
+		);
+	}
+
+	/**
+	 * What the Etherpad session cookie will look like, and why.
+	 *
+	 * The one place an admin can see it. The release decides whether the
+	 * cookie may be kept from JavaScript, it is discovered rather than
+	 * configured, and it lives in an app value with no field of its own —
+	 * so when the detection is wrong, the symptom is that no protected pad
+	 * opens and nothing anywhere says why.
+	 *
+	 * Asked against the host being submitted, not the one already stored,
+	 * like every other line here. Nothing is written to the cache from this:
+	 * a form that is not saved should not teach the open path anything, and
+	 * the cache is keyed by host so a saved change re-checks by itself.
+	 */
+	private function sessionCookieCheck(ValidatedAdminSettings $settings): HealthCheckItem {
+		if (!$settings->enableProtectedPads) {
+			return new HealthCheckItem(
+				'session_cookie',
+				HealthCheckItem::STATUS_SKIPPED,
+				$this->l10n->t('Etherpad session cookie'),
+				$this->l10n->t('Not checked: protected pads are switched off.'),
+			);
+		}
+
+		$override = strtolower(trim((string)$this->config->getAppValue(
+			Application::APP_ID,
+			EtherpadReleasePolicy::OVERRIDE_KEY,
+			'auto',
+		)));
+		if ($override === 'yes' || $override === 'no') {
+			return new HealthCheckItem(
+				'session_cookie',
+				HealthCheckItem::STATUS_WARNING,
+				$this->l10n->t('Etherpad session cookie'),
+				$override === 'yes'
+					? $this->l10n->t('HttpOnly is switched on by hand. Etherpad below 3.0 cannot read the cookie, and protected pads will not open.')
+					: $this->l10n->t('HttpOnly is switched off by hand. The pad server is not asked.'),
+			);
+		}
+
+		try {
+			$release = $this->etherpadClient->detectReleaseVersion($settings->etherpadApiHost);
+		} catch (\Throwable $e) {
+			return new HealthCheckItem(
+				'session_cookie',
+				HealthCheckItem::STATUS_WARNING,
+				$this->l10n->t('Etherpad session cookie'),
+				$this->l10n->t('Could not read the Etherpad release from /health, so the cookie stays readable by scripts.'),
+				'etherpad_api_host',
+			);
+		}
+
+		return new HealthCheckItem(
+			'session_cookie',
+			HealthCheckItem::STATUS_OK,
+			$this->l10n->t('Etherpad session cookie'),
+			EtherpadReleasePolicy::allowsHttpOnly($release)
+				? $this->fill(
+					$this->l10n->t('Etherpad {release} reads the session server-side, so the cookie is set HttpOnly.'),
+					['release' => $release],
+				)
+				: $this->fill(
+					$this->l10n->t('Etherpad {release} reads the session in the browser, so the cookie stays readable by scripts.'),
+					['release' => $release],
+				),
 		);
 	}
 

@@ -27,6 +27,11 @@ use Psr\Log\LoggerInterface;
  * and 3.3.3. `/health` reports a `releaseId`, and that is the only thing
  * that separates them.
  *
+ * Every answer here is reversible by an admin: `etherpad_http_only_session_cookie`
+ * is `auto` by default and takes `yes` or `no`. The failure mode of getting
+ * this wrong is total — not one protected pad opens — so it does not rest
+ * on detection alone.
+ *
  * @psalm-api
  */
 class EtherpadReleasePolicy {
@@ -36,8 +41,25 @@ class EtherpadReleasePolicy {
 	private const HOST_KEY = 'etherpad_release_host';
 	private const FAILED_AT_KEY = 'etherpad_release_failed_at';
 
-	/** The first release that reads the session cookie server-side. */
-	private const HTTP_ONLY_SINCE = '3.0.0';
+	/** auto (detect) | yes (force HttpOnly) | no (force a readable cookie). */
+	public const OVERRIDE_KEY = 'etherpad_http_only_session_cookie';
+
+	/**
+	 * The first major that reads the session cookie server-side.
+	 *
+	 * Measured, not read off a changelog, and measured at the boundary
+	 * rather than around it: with `HttpOnly` forced on, a protected pad on
+	 * **2.7.3** loads and never becomes usable, while **3.0.0** and
+	 * **3.3.3** work. The e2e stack takes a full tag, so `EP_VERSION=3.0.0`
+	 * reproduces the middle one.
+	 *
+	 * Compared by major on purpose. A patch-level comparison would have to
+	 * answer what `3.0.0-beta.1` is, and PHP sorts that *below* `3.0.0`
+	 * while the e2e spec — which has to make the same call in TypeScript —
+	 * would read the major and disagree. One rule, expressible in both
+	 * languages, and the thing that actually changed was the major.
+	 */
+	private const HTTP_ONLY_SINCE_MAJOR = 3;
 
 	/**
 	 * How long a detected release is trusted.
@@ -51,14 +73,31 @@ class EtherpadReleasePolicy {
 	private const TTL_SECONDS = 3600;
 
 	/**
+	 * When a release stops being believed at all.
+	 *
+	 * The sentence above only holds if the cache does turn over, and on the
+	 * failure path it did not: the last known release was served again on
+	 * every open and nothing ever dropped it. An admin who moves back to an
+	 * Etherpad 2 whose `/health` is unreachable — behind proxy auth, or
+	 * simply not routed — would have had a locked-out instance forever,
+	 * asked once a minute.
+	 *
+	 * So a release that has not been confirmed for six hours stops counting,
+	 * and the class falls back to the answer it defines for not knowing.
+	 * Long enough to ride out an outage, and an outage of the pad server is
+	 * not a time when pads open anyway; short enough that a misconfiguration
+	 * heals inside a working day, with the override for anyone who cannot
+	 * wait.
+	 */
+	private const MAX_STALE_SECONDS = 6 * 3600;
+
+	/**
 	 * How long a failed check is left alone.
 	 *
 	 * Without it, a pad server that accepts the connection and then says
 	 * nothing costs every single open the health timeout, for as long as it
-	 * stays that way – the failure path returns the last known release but
-	 * records nothing, so the next open starts over. This bounds that to one
-	 * attempt a minute. Much shorter than the TTL: a check that failed has
-	 * told us nothing, so there is nothing to hold on to for an hour.
+	 * stays that way. This bounds that to one attempt a minute, and doubles
+	 * as the claim that keeps concurrent opens from all probing at once.
 	 */
 	private const FAILURE_BACKOFF_SECONDS = 60;
 
@@ -71,6 +110,17 @@ class EtherpadReleasePolicy {
 	}
 
 	/**
+	 * Whether a release reads its session cookie server-side.
+	 *
+	 * Public and pure so the admin health check can say what the cookie will
+	 * be without a second copy of the rule.
+	 */
+	public static function allowsHttpOnly(string $release): bool {
+		$major = (int)(explode('.', ltrim(trim($release), 'v'))[0] ?? '0');
+		return $major >= self::HTTP_ONLY_SINCE_MAJOR;
+	}
+
+	/**
 	 * Whether the session cookie may be withheld from JavaScript.
 	 *
 	 * Unknown means no. Getting this wrong in one direction costs a
@@ -78,20 +128,44 @@ class EtherpadReleasePolicy {
 	 * so the answer without an answer is the one that keeps them working.
 	 */
 	public function supportsHttpOnlySessionCookie(): bool {
-		$release = $this->resolveRelease();
-		return $release !== '' && version_compare($release, self::HTTP_ONLY_SINCE, '>=');
+		$override = strtolower($this->read(self::OVERRIDE_KEY));
+		if ($override === 'yes') {
+			return true;
+		}
+		if ($override === 'no') {
+			return false;
+		}
+
+		return self::allowsHttpOnly($this->resolveRelease());
+	}
+
+	/** The release currently believed, without asking anything. For the admin view. */
+	public function knownRelease(): string {
+		return $this->read(self::RELEASE_KEY);
 	}
 
 	/**
 	 * The cached release, refreshed when it has gone stale.
 	 *
-	 * A detection that fails keeps the last known answer rather than
-	 * dropping to unknown: this runs on the open path, and a pad server
-	 * that is briefly unreachable should not change how the cookie is
-	 * written. It never throws for the same reason — nothing here is worth
-	 * failing an open over.
+	 * A detection that fails keeps the last known answer for a while rather
+	 * than dropping to unknown at the first blip: this runs on the open
+	 * path, and a pad server that is briefly unreachable should not change
+	 * how the cookie is written. It never throws, for the same reason —
+	 * nothing here is worth failing an open over.
 	 */
 	private function resolveRelease(): string {
+		try {
+			return $this->resolveReleaseOrThrow();
+		} catch (\Throwable $e) {
+			$this->logger->warning('Could not work out the Etherpad release; writing a script-readable session cookie.', [
+				'app' => self::APP_ID,
+				'exception' => $e,
+			]);
+			return '';
+		}
+	}
+
+	private function resolveReleaseOrThrow(): string {
 		$host = $this->etherpadClient->getApiHost();
 		$now = $this->timeFactory->getTime();
 
@@ -104,18 +178,37 @@ class EtherpadReleasePolicy {
 		}
 
 		$cached = $this->read(self::RELEASE_KEY);
-		if ($cached !== '' && $now - (int)$this->read(self::CHECKED_AT_KEY) < self::TTL_SECONDS) {
+		$age = $this->ageOf(self::CHECKED_AT_KEY, $now);
+		if ($cached !== '' && $age >= self::MAX_STALE_SECONDS) {
+			// Nothing has confirmed this for hours. Whatever it says, it is
+			// no longer evidence about the server answering today.
+			$this->logger->warning('The last known Etherpad release is too old to trust; falling back to a script-readable session cookie.', [
+				'app' => self::APP_ID,
+				'staleRelease' => $cached,
+				'ageSeconds' => $age,
+			]);
+			$this->forgetFor($host);
+			$cached = '';
+		}
+
+		if ($cached !== '' && $age < self::TTL_SECONDS) {
 			return $cached;
 		}
-		if ($now - (int)$this->read(self::FAILED_AT_KEY) < self::FAILURE_BACKOFF_SECONDS) {
+		if ($this->ageOf(self::FAILED_AT_KEY, $now) < self::FAILURE_BACKOFF_SECONDS) {
+			// Either a recent failure, or another request checking right
+			// now — the claim below makes those look the same on purpose.
 			return $cached;
 		}
+
+		// Claim the check before making it, so a hundred opens arriving at
+		// the moment the hour turns do not each spend a round trip on the
+		// same question. A claim that goes nowhere expires as a failure.
+		$this->config->setAppValue(self::APP_ID, self::FAILED_AT_KEY, (string)$now);
 
 		try {
 			$release = $this->etherpadClient->detectReleaseVersion();
 		} catch (\Throwable $e) {
-			$this->config->setAppValue(self::APP_ID, self::FAILED_AT_KEY, (string)$now);
-			$this->logger->debug('Could not read the Etherpad release; keeping the last known one.', [
+			$this->logger->warning('Could not read the Etherpad release from /health.', [
 				'app' => self::APP_ID,
 				'cachedRelease' => $cached,
 				'exception' => $e,
@@ -134,6 +227,25 @@ class EtherpadReleasePolicy {
 			]);
 		}
 		return $release;
+	}
+
+	/**
+	 * How long ago a stamp was written, counting anything in the future as
+	 * forever ago.
+	 *
+	 * A clock that jumps backwards — an NTP correction, a restored snapshot,
+	 * a cluster node that drifts — otherwise leaves a stamp ahead of `now`,
+	 * and a negative age is younger than every window there is. The cache
+	 * would then freeze until real time caught up: hours in which a
+	 * downgrade goes unnoticed. A stamp from the future is not evidence
+	 * about the past, so it counts for nothing.
+	 */
+	private function ageOf(string $key, int $now): int {
+		$stamp = (int)$this->read($key);
+		if ($stamp <= 0 || $stamp > $now) {
+			return PHP_INT_MAX;
+		}
+		return $now - $stamp;
 	}
 
 	private function read(string $key): string {
