@@ -33,6 +33,8 @@ class EtherpadReleasePolicy {
 	private const APP_ID = 'etherpad_nextcloud';
 	private const RELEASE_KEY = 'etherpad_release_version';
 	private const CHECKED_AT_KEY = 'etherpad_release_checked_at';
+	private const HOST_KEY = 'etherpad_release_host';
+	private const FAILED_AT_KEY = 'etherpad_release_failed_at';
 
 	/** The first release that reads the session cookie server-side. */
 	private const HTTP_ONLY_SINCE = '3.0.0';
@@ -47,6 +49,18 @@ class EtherpadReleasePolicy {
 	 * would stop opening until the cache turned over.
 	 */
 	private const TTL_SECONDS = 3600;
+
+	/**
+	 * How long a failed check is left alone.
+	 *
+	 * Without it, a pad server that accepts the connection and then says
+	 * nothing costs every single open the health timeout, for as long as it
+	 * stays that way – the failure path returns the last known release but
+	 * records nothing, so the next open starts over. This bounds that to one
+	 * attempt a minute. Much shorter than the TTL: a check that failed has
+	 * told us nothing, so there is nothing to hold on to for an hour.
+	 */
+	private const FAILURE_BACKOFF_SECONDS = 60;
 
 	public function __construct(
 		private EtherpadClient $etherpadClient,
@@ -78,17 +92,29 @@ class EtherpadReleasePolicy {
 	 * failing an open over.
 	 */
 	private function resolveRelease(): string {
-		$cached = trim((string)$this->config->getAppValue(self::APP_ID, self::RELEASE_KEY, ''));
-		$checkedAt = (int)$this->config->getAppValue(self::APP_ID, self::CHECKED_AT_KEY, '0');
+		$host = $this->etherpadClient->getApiHost();
 		$now = $this->timeFactory->getTime();
 
-		if ($cached !== '' && $checkedAt > 0 && ($now - $checkedAt) < self::TTL_SECONDS) {
+		if ($this->read(self::HOST_KEY) !== $host) {
+			// A different pad server answers now. What the last one said
+			// about itself says nothing about this one, and an admin who
+			// repoints the app at an Etherpad 2 must not have it sent a
+			// cookie its pad app cannot read for the rest of the hour.
+			$this->forgetFor($host);
+		}
+
+		$cached = $this->read(self::RELEASE_KEY);
+		if ($cached !== '' && $now - (int)$this->read(self::CHECKED_AT_KEY) < self::TTL_SECONDS) {
+			return $cached;
+		}
+		if ($now - (int)$this->read(self::FAILED_AT_KEY) < self::FAILURE_BACKOFF_SECONDS) {
 			return $cached;
 		}
 
 		try {
 			$release = $this->etherpadClient->detectReleaseVersion();
 		} catch (\Throwable $e) {
+			$this->config->setAppValue(self::APP_ID, self::FAILED_AT_KEY, (string)$now);
 			$this->logger->debug('Could not read the Etherpad release; keeping the last known one.', [
 				'app' => self::APP_ID,
 				'cachedRelease' => $cached,
@@ -99,6 +125,7 @@ class EtherpadReleasePolicy {
 
 		$this->config->setAppValue(self::APP_ID, self::RELEASE_KEY, $release);
 		$this->config->setAppValue(self::APP_ID, self::CHECKED_AT_KEY, (string)$now);
+		$this->config->setAppValue(self::APP_ID, self::FAILED_AT_KEY, '0');
 		if ($release !== $cached) {
 			$this->logger->info('Detected the Etherpad release.', [
 				'app' => self::APP_ID,
@@ -107,5 +134,17 @@ class EtherpadReleasePolicy {
 			]);
 		}
 		return $release;
+	}
+
+	private function read(string $key): string {
+		return trim((string)$this->config->getAppValue(self::APP_ID, $key, ''));
+	}
+
+	/** Drop everything known about a release, and note whose it would be now. */
+	private function forgetFor(string $host): void {
+		$this->config->setAppValue(self::APP_ID, self::HOST_KEY, $host);
+		$this->config->setAppValue(self::APP_ID, self::RELEASE_KEY, '');
+		$this->config->setAppValue(self::APP_ID, self::CHECKED_AT_KEY, '0');
+		$this->config->setAppValue(self::APP_ID, self::FAILED_AT_KEY, '0');
 	}
 }

@@ -179,6 +179,23 @@ class EtherpadClientTest extends TestCase {
 		self::assertSame('GET', $captured['method']);
 		self::assertStringEndsWith('/health', (string)$captured['url']);
 		self::assertStringNotContainsString('apikey', (string)$captured['url']);
+		// Asked on the open path, and nothing depends on the answer, so a pad
+		// server that accepts the connection and then says nothing must not
+		// hold an open for the full request timeout.
+		self::assertSame(3, $captured['options']['timeout']);
+	}
+
+	/** The calls that do matter keep the full patience. */
+	public function testApiCallsKeepTheFullRequestTimeout(): void {
+		$captured = null;
+		$client = $this->clientWithResponse(
+			$this->response(200, '{"code":0,"data":{"groupID":"g.aaa"}}'),
+			$captured,
+		);
+
+		$client->createGroup();
+
+		self::assertSame(15, $captured['options']['timeout']);
 	}
 
 	public function testDetectsAReleaseWithASuffix(): void {

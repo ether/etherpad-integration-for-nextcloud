@@ -28,6 +28,18 @@ class EtherpadClient {
 
 	private const REQUEST_TIMEOUT_SECONDS = 15;
 
+	/**
+	 * `/health` gets far less patience than an API call.
+	 *
+	 * Nothing depends on the answer: the caller falls back to the last known
+	 * release, and without one to the cookie it was writing before. It is
+	 * asked on the open path, though, so a pad server that accepts the
+	 * connection and then says nothing must not be able to hold an open
+	 * hostage for the full request timeout on top of the calls that do
+	 * matter.
+	 */
+	private const HEALTH_TIMEOUT_SECONDS = 3;
+
 	public function __construct(
 		private IConfig $config,
 		private AdminSettingsRepository $settingsRepository,
@@ -225,7 +237,7 @@ class EtherpadClient {
 	 * places as possible.
 	 */
 	public function detectReleaseVersion(): string {
-		$raw = $this->sendPublicGetRequest($this->getApiHost() . '/health');
+		$raw = $this->sendPublicGetRequest($this->getApiHost() . '/health', self::HEALTH_TIMEOUT_SECONDS);
 		$decoded = json_decode($raw, true);
 		$release = is_array($decoded) && isset($decoded['releaseId']) && is_string($decoded['releaseId'])
 			? trim($decoded['releaseId'])
@@ -378,7 +390,13 @@ class EtherpadClient {
 		return $scheme . '://' . $host . ':' . $port;
 	}
 
-	private function getApiHost(): string {
+	/**
+	 * The Etherpad the API calls actually go to: the admin's `etherpad_api_host`
+	 * when set, otherwise the public one. Exposed because what this server
+	 * says about itself is only true of this server – anything cached about a
+	 * release has to be kept against the endpoint it was read from.
+	 */
+	public function getApiHost(): string {
 		$apiHost = rtrim((string)$this->config->getAppValue('etherpad_nextcloud', 'etherpad_api_host', ''), '/');
 		if ($apiHost !== '') {
 			return $apiHost;
@@ -397,8 +415,8 @@ class EtherpadClient {
 		return $key;
 	}
 
-	private function sendPublicGetRequest(string $url): string {
-		$response = $this->doRequest('GET', $url, $this->baseRequestOptions());
+	private function sendPublicGetRequest(string $url, ?int $timeoutSeconds = null): string {
+		$response = $this->doRequest('GET', $url, $this->baseRequestOptions($timeoutSeconds));
 		$statusCode = $response->getStatusCode();
 		if ($statusCode >= 400) {
 			throw new EtherpadClientException('HTTP error (' . $statusCode . ')');
@@ -423,9 +441,9 @@ class EtherpadClient {
 	 *
 	 * @return array<string,mixed>
 	 */
-	private function baseRequestOptions(): array {
+	private function baseRequestOptions(?int $timeoutSeconds = null): array {
 		return [
-			'timeout' => self::REQUEST_TIMEOUT_SECONDS,
+			'timeout' => $timeoutSeconds ?? self::REQUEST_TIMEOUT_SECONDS,
 			'allow_redirects' => ['max' => 0],
 			'headers' => ['Accept' => 'application/json'],
 			'nextcloud' => ['allow_local_address' => true],

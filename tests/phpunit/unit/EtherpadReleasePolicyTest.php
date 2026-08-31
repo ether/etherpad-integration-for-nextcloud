@@ -22,29 +22,28 @@ use Psr\Log\LoggerInterface;
  * server reads it out of the socket.io handshake instead.
  */
 class EtherpadReleasePolicyTest extends TestCase {
-	public function testEtherpadThreeCanKeepTheCookieFromScripts(): void {
-		$client = $this->createMock(EtherpadClient::class);
-		$client->method('detectReleaseVersion')->willReturn('3.3.3');
+	/** App config that actually remembers what was written to it. */
+	private \ArrayObject $stored;
+	private int $now = 1_700_000_000;
 
-		self::assertTrue($this->policy($client, $this->config())->supportsHttpOnlySessionCookie());
+	protected function setUp(): void {
+		parent::setUp();
+		$this->stored = new \ArrayObject();
+	}
+
+	public function testEtherpadThreeCanKeepTheCookieFromScripts(): void {
+		self::assertTrue($this->policy($this->answering('3.3.3'))->supportsHttpOnlySessionCookie());
 	}
 
 	public function testEtherpadTwoStillNeedsAReadableCookie(): void {
-		$client = $this->createMock(EtherpadClient::class);
-		$client->method('detectReleaseVersion')->willReturn('2.7.3');
-
-		self::assertFalse($this->policy($client, $this->config())->supportsHttpOnlySessionCookie());
+		self::assertFalse($this->policy($this->answering('2.7.3'))->supportsHttpOnlySessionCookie());
 	}
 
 	/** The boundary itself, from both sides. */
 	public function testTheBoundaryIsThreeZeroZero(): void {
-		$before = $this->createMock(EtherpadClient::class);
-		$before->method('detectReleaseVersion')->willReturn('2.9.9');
-		self::assertFalse($this->policy($before, $this->config())->supportsHttpOnlySessionCookie());
-
-		$exactly = $this->createMock(EtherpadClient::class);
-		$exactly->method('detectReleaseVersion')->willReturn('3.0.0');
-		self::assertTrue($this->policy($exactly, $this->config())->supportsHttpOnlySessionCookie());
+		self::assertFalse($this->policy($this->answering('2.9.9'))->supportsHttpOnlySessionCookie());
+		$this->stored = new \ArrayObject();
+		self::assertTrue($this->policy($this->answering('3.0.0'))->supportsHttpOnlySessionCookie());
 	}
 
 	/**
@@ -52,35 +51,24 @@ class EtherpadReleasePolicyTest extends TestCase {
 	 * protected pad on the instance, a wrong `false` costs a hardening.
 	 */
 	public function testAnUnreachableEtherpadKeepsTheCookieReadable(): void {
-		$client = $this->createMock(EtherpadClient::class);
-		$client->method('detectReleaseVersion')
-			->willThrowException(new EtherpadClientException('Connection timed out'));
-
-		self::assertFalse($this->policy($client, $this->config())->supportsHttpOnlySessionCookie());
+		self::assertFalse($this->policy($this->failing())->supportsHttpOnlySessionCookie());
 	}
 
 	/** A blip does not undo what was already known about the pad server. */
 	public function testAFailedCheckKeepsTheLastKnownRelease(): void {
-		$client = $this->createMock(EtherpadClient::class);
-		$client->method('detectReleaseVersion')
-			->willThrowException(new EtherpadClientException('Connection timed out'));
+		$this->store(host: 'https://pad.example.test', release: '3.3.3', checkedAt: 0);
 
-		$config = $this->config(['etherpad_release_version' => '3.3.3', 'etherpad_release_checked_at' => '0']);
-
-		self::assertTrue($this->policy($client, $config)->supportsHttpOnlySessionCookie());
+		self::assertTrue($this->policy($this->failing())->supportsHttpOnlySessionCookie());
 	}
 
 	/** This runs on the open path; a fresh answer is not asked for twice. */
 	public function testAFreshAnswerIsNotAskedForAgain(): void {
+		$this->store(host: 'https://pad.example.test', release: '3.3.3', checkedAt: $this->now - 60);
 		$client = $this->createMock(EtherpadClient::class);
+		$client->method('getApiHost')->willReturn('https://pad.example.test');
 		$client->expects(self::never())->method('detectReleaseVersion');
 
-		$config = $this->config([
-			'etherpad_release_version' => '3.3.3',
-			'etherpad_release_checked_at' => (string)(1_700_000_000 - 60),
-		]);
-
-		self::assertTrue($this->policy($client, $config)->supportsHttpOnlySessionCookie());
+		self::assertTrue($this->policy($client)->supportsHttpOnlySessionCookie());
 	}
 
 	/**
@@ -89,34 +77,106 @@ class EtherpadReleasePolicyTest extends TestCase {
 	 * read.
 	 */
 	public function testAStaleAnswerIsCheckedAgain(): void {
-		$client = $this->createMock(EtherpadClient::class);
+		$this->store(host: 'https://pad.example.test', release: '3.3.3', checkedAt: $this->now - 3601);
+		$client = $this->answering('2.7.3');
 		$client->expects(self::once())->method('detectReleaseVersion')->willReturn('2.7.3');
 
-		$config = $this->config([
-			'etherpad_release_version' => '3.3.3',
-			'etherpad_release_checked_at' => (string)(1_700_000_000 - 3601),
-		]);
-
-		self::assertFalse($this->policy($client, $config)->supportsHttpOnlySessionCookie());
+		self::assertFalse($this->policy($client)->supportsHttpOnlySessionCookie());
 	}
 
-	/** @param array<string,string> $stored */
-	private function config(array $stored = []): IConfig {
+	/**
+	 * A pad server that accepts the connection and then says nothing costs
+	 * every open the health timeout. The failure path returned the last
+	 * known release but recorded nothing, so the next open started over.
+	 */
+	public function testAFailedCheckIsNotRepeatedOnTheNextOpen(): void {
+		$client = $this->createMock(EtherpadClient::class);
+		$client->method('getApiHost')->willReturn('https://pad.example.test');
+		$client->expects(self::once())
+			->method('detectReleaseVersion')
+			->willThrowException(new EtherpadClientException('Connection timed out'));
+
+		$policy = $this->policy($client);
+		self::assertFalse($policy->supportsHttpOnlySessionCookie());
+		$this->now += 30;
+		self::assertFalse($policy->supportsHttpOnlySessionCookie());
+	}
+
+	/** The backoff is a minute, not an hour: a failure told us nothing. */
+	public function testAFailedCheckIsRetriedAfterTheBackoff(): void {
+		$client = $this->createMock(EtherpadClient::class);
+		$client->method('getApiHost')->willReturn('https://pad.example.test');
+		$client->expects(self::exactly(2))
+			->method('detectReleaseVersion')
+			->willReturnOnConsecutiveCalls(
+				self::throwException(new EtherpadClientException('Connection timed out')),
+				'3.3.3',
+			);
+
+		$policy = $this->policy($client);
+		self::assertFalse($policy->supportsHttpOnlySessionCookie());
+		$this->now += 61;
+		self::assertTrue($policy->supportsHttpOnlySessionCookie());
+	}
+
+	/**
+	 * What one pad server says about itself is not true of the next one. An
+	 * admin repointing the app from an Etherpad 3 to an Etherpad 2 must not
+	 * have it sent a cookie its pad app cannot read.
+	 */
+	public function testARepointedHostDoesNotInheritTheOldOnesRelease(): void {
+		$this->store(host: 'https://old.pad.test', release: '3.3.3', checkedAt: $this->now);
+		$client = $this->answering('2.7.3');
+		$client->method('getApiHost')->willReturn('https://new.pad.test');
+
+		self::assertFalse($this->policy($client)->supportsHttpOnlySessionCookie());
+	}
+
+	/** And not even when the new host cannot be reached at all. */
+	public function testARepointedHostThatCannotBeReachedIsUnknown(): void {
+		$this->store(host: 'https://old.pad.test', release: '3.3.3', checkedAt: $this->now);
+		$client = $this->failing();
+		$client->method('getApiHost')->willReturn('https://new.pad.test');
+
+		self::assertFalse($this->policy($client)->supportsHttpOnlySessionCookie());
+	}
+
+	private function store(string $host, string $release, int $checkedAt): void {
+		$this->stored['etherpad_release_host'] = $host;
+		$this->stored['etherpad_release_version'] = $release;
+		$this->stored['etherpad_release_checked_at'] = (string)$checkedAt;
+	}
+
+	private function answering(string $release): EtherpadClient {
+		$client = $this->createMock(EtherpadClient::class);
+		$client->method('getApiHost')->willReturn('https://pad.example.test');
+		$client->method('detectReleaseVersion')->willReturn($release);
+		return $client;
+	}
+
+	private function failing(): EtherpadClient {
+		$client = $this->createMock(EtherpadClient::class);
+		$client->method('getApiHost')->willReturn('https://pad.example.test');
+		$client->method('detectReleaseVersion')
+			->willThrowException(new EtherpadClientException('Connection timed out'));
+		return $client;
+	}
+
+	private function policy(EtherpadClient $client): EtherpadReleasePolicy {
+		$stored = $this->stored;
 		$config = $this->createMock(IConfig::class);
 		$config->method('getAppValue')->willReturnCallback(
-			static fn (string $app, string $key, string $default = ''): string => $stored[$key] ?? $default
+			static fn (string $app, string $key, string $default = ''): string => (string)($stored[$key] ?? $default)
 		);
 		$config->method('setAppValue')->willReturnCallback(
-			static function (string $app, string $key, string $value) use (&$stored): void {
+			static function (string $app, string $key, string $value) use ($stored): void {
 				$stored[$key] = $value;
 			}
 		);
-		return $config;
-	}
 
-	private function policy(EtherpadClient $client, IConfig $config): EtherpadReleasePolicy {
 		$timeFactory = $this->createMock(ITimeFactory::class);
-		$timeFactory->method('getTime')->willReturn(1_700_000_000);
+		$timeFactory->method('getTime')->willReturnCallback(fn (): int => $this->now);
+
 		return new EtherpadReleasePolicy($client, $config, $timeFactory, $this->createMock(LoggerInterface::class));
 	}
 }
