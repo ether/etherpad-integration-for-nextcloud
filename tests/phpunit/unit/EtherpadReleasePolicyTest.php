@@ -27,6 +27,7 @@ class EtherpadReleasePolicyTest extends TestCase {
 	private int $now = 1_700_000_000;
 	private \OCP\ICacheFactory $cacheFactory;
 	private \ArrayObject $claims;
+	private ?LoggerInterface $logger = null;
 
 	protected function setUp(): void {
 		parent::setUp();
@@ -352,6 +353,59 @@ class EtherpadReleasePolicyTest extends TestCase {
 		self::assertArrayNotHasKey('etherpad_release_state', (array)$this->stored);
 	}
 
+	/**
+	 * A success must not clear the failure stamp. It is the one value here
+	 * that is not read per host, so clearing it wipes a backoff another
+	 * host's failing check just took — and without a memcache that host's
+	 * next opens each wait out the health timeout again.
+	 */
+	public function testASuccessLeavesAnotherHostsBackoffAlone(): void {
+		$this->stored['etherpad_release_failed'] = (string)json_encode([
+			'host' => 'https://other.pad.test',
+			'at' => $this->now,
+		]);
+
+		$client = $this->createMock(EtherpadClient::class);
+		$client->method('getApiHost')->willReturn('https://pad.example.test');
+		$client->method('detectReleaseVersion')->willReturn('3.3.3');
+		self::assertTrue($this->policy($client)->supportsHttpOnlySessionCookie());
+
+		$other = $this->createMock(EtherpadClient::class);
+		$other->method('getApiHost')->willReturn('https://other.pad.test');
+		$other->expects(self::never())->method('detectReleaseVersion');
+		self::assertFalse($this->policy($other)->supportsHttpOnlySessionCookie());
+	}
+
+	/**
+	 * `--value=true` is worth a line: it is an escape hatch reached for
+	 * during an outage, and it silently means auto.
+	 */
+	public function testAnUnrecognisedOverrideIsLogged(): void {
+		$this->stored[EtherpadReleasePolicy::OVERRIDE_KEY] = 'true';
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects(self::once())
+			->method('warning')
+			->with(self::stringContains('unrecognised'), self::anything());
+		$this->logger = $logger;
+
+		$this->policy($this->answering('3.3.3'))->supportsHttpOnlySessionCookie();
+	}
+
+	/** But this is read on every open, so once an hour, not a hundred times. */
+	public function testAnUnrecognisedOverrideIsNotLoggedOnEveryOpen(): void {
+		$this->stored[EtherpadReleasePolicy::OVERRIDE_KEY] = 'true';
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects(self::once())->method('warning');
+		$this->logger = $logger;
+
+		$client = $this->answering('3.3.3');
+		$this->policy($client)->supportsHttpOnlySessionCookie();
+		$this->now += 60;
+		$this->policy($client)->supportsHttpOnlySessionCookie();
+		$this->now += 600;
+		$this->policy($client)->supportsHttpOnlySessionCookie();
+	}
+
 	/** A release with a suffix is still a 3. */
 	public function testAPreReleaseOfAMajorCountsAsThatMajor(): void {
 		self::assertTrue(EtherpadReleasePolicy::allowsHttpOnly('3.0.0-beta.1'));
@@ -491,7 +545,7 @@ class EtherpadReleasePolicyTest extends TestCase {
 			$config,
 			$timeFactory,
 			$this->cacheFactory,
-			$this->createMock(LoggerInterface::class),
+			$this->logger ?? $this->createMock(LoggerInterface::class),
 		);
 	}
 

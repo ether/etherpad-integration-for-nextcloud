@@ -72,6 +72,11 @@ class EtherpadReleasePolicy {
 
 	/** auto (detect) | yes (force HttpOnly) | no (force a readable cookie). */
 	public const OVERRIDE_KEY = 'etherpad_http_only_session_cookie';
+	private const OVERRIDE_WARNED_KEY = 'etherpad_http_only_override_warned_at';
+
+	/** How often an ignored override is worth a line. */
+	private const OVERRIDE_WARNING_INTERVAL_SECONDS = 3600;
+
 	public const OVERRIDE_AUTO = 'auto';
 	public const OVERRIDE_YES = 'yes';
 	public const OVERRIDE_NO = 'no';
@@ -200,10 +205,11 @@ class EtherpadReleasePolicy {
 	 * silently, with the mode resolving correctly while the connection test
 	 * calls the same value unrecognised, or the reverse.
 	 *
-	 * Not logged. It is read on every protected open, and a warning per
-	 * open for a setting whose effect is "ignored" is a hundred identical
-	 * lines an hour at the same level as real problems. The connection test
-	 * says it on request, which is where somebody is looking.
+	 * A value that is none of the three is worth saying — it is an escape
+	 * hatch reached for during an outage, and `true` or `off` silently
+	 * meaning `auto` is exactly the kind of thing an admin needs told. But
+	 * this is read on every protected open, so it is said at most once an
+	 * hour rather than a hundred times.
 	 *
 	 * @return array{mode:string,unrecognised:string}
 	 */
@@ -216,7 +222,38 @@ class EtherpadReleasePolicy {
 			return ['mode' => self::OVERRIDE_AUTO, 'unrecognised' => ''];
 		}
 
-		return ['mode' => self::OVERRIDE_AUTO, 'unrecognised' => substr($override, 0, 32)];
+		$unrecognised = substr($override, 0, 32);
+		$this->warnAboutOverride($unrecognised);
+		return ['mode' => self::OVERRIDE_AUTO, 'unrecognised' => $unrecognised];
+	}
+
+	/**
+	 * One line an hour about a setting that is being ignored.
+	 *
+	 * The stamp goes through app config rather than the memory cache
+	 * because an instance without one still deserves the warning, and the
+	 * race between two workers costs at most a second line. Best effort
+	 * throughout: this is called from the admin health check as well, where
+	 * it is outside the guard that keeps an open from failing.
+	 */
+	private function warnAboutOverride(string $value): void {
+		try {
+			$now = $this->timeFactory->getTime();
+			$age = $this->ageOf((int)$this->read(self::OVERRIDE_WARNED_KEY), $now);
+			if ($age !== null && $age < self::OVERRIDE_WARNING_INTERVAL_SECONDS) {
+				return;
+			}
+
+			$this->config->setAppValue(self::APP_ID, self::OVERRIDE_WARNED_KEY, (string)$now);
+			$this->logger->warning('Ignoring an unrecognised value for the Etherpad session cookie setting.', [
+				'app' => self::APP_ID,
+				'setting' => self::OVERRIDE_KEY,
+				'value' => $value,
+				'expected' => [self::OVERRIDE_AUTO, self::OVERRIDE_YES, self::OVERRIDE_NO],
+			]);
+		} catch (\Throwable) {
+			// Nothing here is worth failing anything over.
+		}
 	}
 
 	/**
@@ -321,8 +358,14 @@ class EtherpadReleasePolicy {
 			return $cached;
 		}
 
+		// The failure stamp is deliberately left alone. It is the one value
+		// here that is not read per host, and clearing it would wipe a
+		// backoff a concurrent check just took for a *different* host —
+		// which without a memcache means that host's next opens each wait
+		// out the health timeout again. It also does not need clearing: a
+		// fresh record returns above, before the stamp is ever consulted,
+		// and by the time the hour is up any stamp is far past its minute.
 		$this->writeState($host, $release, $now);
-		$this->clearFailure();
 		$this->releaseTheClaim($cache, $host);
 		if ($release !== $cached) {
 			$this->logger->info('Detected the Etherpad release.', [
@@ -374,10 +417,6 @@ class EtherpadReleasePolicy {
 			'host' => $host,
 			'at' => $now,
 		]));
-	}
-
-	private function clearFailure(): void {
-		$this->config->setAppValue(self::APP_ID, self::FAILED_KEY, '');
 	}
 
 	/**
