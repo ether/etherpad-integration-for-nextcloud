@@ -17,13 +17,10 @@ use Psr\Log\LoggerInterface;
 
 /**
  * Which Etherpad releases can be sent a session cookie the browser cannot
- * read.
+ * read. The release, not the API version: `/api` answers `1.3.1` on both
+ * 2.7.3 and 3.3.3, so only `/health`'s `releaseId` tells them apart.
  *
- * The release, not the API version: `/api` answers `1.3.1` on both 2.7.3
- * and 3.3.3, so only `/health`'s `releaseId` tells them apart.
- *
- * What changes at 3.0, what the cache does and how an admin overrides it
- * are in docs/etherpad-integration.md.
+ * docs/etherpad-integration.md has the operator's version.
  *
  * @psalm-api
  */
@@ -31,31 +28,25 @@ class EtherpadReleasePolicy {
 	private const APP_ID = 'etherpad_nextcloud';
 
 	/**
-	 * The detected release together with the host it was read from.
-	 *
-	 * The host belongs inside the record, not in a key beside it. A check
-	 * for the previously configured host can finish after the app has been
-	 * repointed, and app config is loaded once per request, so that write
-	 * can neither be prevented nor noticed — but a record that names its
-	 * own host is simply not read as an answer about the new one.
+	 * The detected release together with the host it was read from — inside
+	 * the record, not in a key beside it. A check for the old host can land
+	 * after a repointing, and app config is loaded once per request, so
+	 * that write can neither be prevented nor noticed; a record that names
+	 * its own host is simply not read as an answer about the new one.
 	 */
 	private const STATE_KEY = 'etherpad_release_state';
 
 	/**
-	 * When a check last failed, and for which host.
-	 *
-	 * Kept apart from the record above and never written with it: a failing
-	 * worker cannot see a success another worker wrote while it waited, so
-	 * writing the record back would put a stale release in front of a fresh
-	 * one.
+	 * When a check last failed, and for which host. Never written together
+	 * with the record above: a failing worker cannot see a success another
+	 * one wrote while it waited, so it would put a stale release in front
+	 * of a fresh one.
 	 */
 	private const FAILED_KEY = 'etherpad_release_failed';
 
 	/** auto (detect) | yes (force HttpOnly) | no (force a readable cookie). */
 	public const OVERRIDE_KEY = 'etherpad_http_only_session_cookie';
 	private const OVERRIDE_WARNED_KEY = 'etherpad_http_only_override_warned_at';
-
-	/** How often an ignored override is worth a line. */
 	private const OVERRIDE_WARNING_INTERVAL_SECONDS = 3600;
 
 	public const OVERRIDE_AUTO = 'auto';
@@ -64,35 +55,26 @@ class EtherpadReleasePolicy {
 
 	/**
 	 * The first major that reads the session cookie server-side. Measured
-	 * against 2.7.3, 3.0.0 and 3.3.3.
-	 *
-	 * By major rather than `version_compare`: the e2e spec and the bash
-	 * contract restate this rule, and PHP sorts `3.0.0-beta.1` below
-	 * `3.0.0` while either of those reads it as a 3.
+	 * against 2.7.3, 3.0.0 and 3.3.3. By major rather than
+	 * `version_compare`, because the e2e spec and the bash contract restate
+	 * this rule and both read `3.0.0-beta.1` as a 3 where PHP does not.
 	 */
 	private const HTTP_ONLY_SINCE_MAJOR = 3;
 
-	/**
-	 * How long a detected release is trusted. Short because of the
-	 * downgrade: a stale 3 means an `HttpOnly` cookie an Etherpad 2 cannot
-	 * read, and no protected pad opens.
-	 */
+	/** Short because of the downgrade: a stale 3 locks out an Etherpad 2. */
 	private const TTL_SECONDS = 3600;
 
 	/**
-	 * When a release stops being believed at all.
-	 *
-	 * The TTL above only bounds a downgrade while checks keep succeeding.
-	 * This bounds it when they stop: a pad server whose `/health` has been
-	 * unreachable for six hours can no longer keep an instance locked out.
+	 * The TTL only bounds a downgrade while checks succeed. This bounds it
+	 * when they stop, so an unreachable `/health` cannot keep an instance
+	 * locked out for good.
 	 */
 	private const MAX_STALE_SECONDS = 6 * 3600;
 
 	/**
-	 * How long a failed check is left alone, so a pad server that accepts
-	 * the connection and then says nothing does not cost every open the
-	 * health timeout. Also how long the probe claim is held, so a worker
-	 * that dies mid-check blocks nothing longer than a retry would.
+	 * How long a failed check is left alone, so a silent pad server does
+	 * not cost every open the health timeout. Also how long the probe claim
+	 * is held, so a worker that dies mid-check blocks nothing longer.
 	 */
 	private const FAILURE_BACKOFF_SECONDS = 60;
 
@@ -149,9 +131,8 @@ class EtherpadReleasePolicy {
 	 * silently, with the mode resolving correctly while the connection test
 	 * calls the same value unrecognised, or the reverse.
 	 *
-	 * A value that is none of the three is worth saying — `true` or `off`
-	 * silently meaning `auto` is the kind of thing that hides an outage —
-	 * but this runs on every open, so it is said once an hour.
+	 * A value that is none of the three is worth saying, but this runs on
+	 * every open, so it is said once an hour.
 	 *
 	 * @return array{mode:string,unrecognised:string}
 	 */
@@ -170,10 +151,9 @@ class EtherpadReleasePolicy {
 	}
 
 	/**
-	 * The stamp goes through app config rather than the memory cache so an
-	 * instance without one still gets the warning; two workers racing cost
-	 * a second line. Best effort: the health check calls this outside the
-	 * guard that keeps an open from failing.
+	 * Through app config rather than the memory cache, so an instance
+	 * without one still gets the warning. Best effort: the health check
+	 * calls this outside the guard that keeps an open from failing.
 	 */
 	private function warnAboutOverride(string $value): void {
 		try {
@@ -196,14 +176,9 @@ class EtherpadReleasePolicy {
 	}
 
 	/**
-	 * A stored override that is none of the three words, or '' when there
-	 * is no such problem.
-	 *
-	 * This is the setting an admin reaches for while protected pads are
-	 * down, typed into `occ` from memory: `true`, `1`, `off`, `disabled`.
-	 * Every one of those silently means `auto`, and the connection test
-	 * would then confirm the automatic behaviour as fine — actively telling
-	 * them nothing is overridden. So it is worth being able to say.
+	 * A stored override that is none of the three words, or ''. `true`,
+	 * `1`, `off` all silently mean `auto`, and the connection test would
+	 * otherwise confirm the automatic behaviour as fine.
 	 */
 	public function unrecognisedOverride(): string {
 		return $this->readOverride()['unrecognised'];
@@ -211,14 +186,11 @@ class EtherpadReleasePolicy {
 
 	/**
 	 * The release the open path is going by, without asking or writing
-	 * anything.
+	 * anything. Applies the same staleness rule, or it would not be the
+	 * same answer — the admin panel reports this as what pads are sent.
 	 *
-	 * Applies the same staleness rule, or it would not be the same answer —
-	 * the admin panel reports this as what pads are being sent.
-	 *
-	 * @param string|null $host the host to ask about, or null for the
-	 *   configured one. A record about a different server is not an answer
-	 *   about this one.
+	 * @param string|null $host null for the configured host. A record about
+	 *   a different server is not an answer about this one.
 	 */
 	public function knownRelease(?string $host = null): string {
 		try {
@@ -230,11 +202,7 @@ class EtherpadReleasePolicy {
 		}
 	}
 
-	/**
-	 * The cached release, refreshed when it has gone stale. A failed check
-	 * keeps the last known answer rather than dropping to unknown at the
-	 * first blip.
-	 */
+	/** A failed check keeps the last known answer rather than dropping it. */
 	private function resolveReleaseOrThrow(): string {
 		$host = $this->etherpadClient->getApiHost();
 		$now = $this->timeFactory->getTime();
@@ -354,13 +322,11 @@ class EtherpadReleasePolicy {
 	}
 
 	/**
-	 * How long ago a stamp was written, or null when it does not say.
-	 *
-	 * A stamp from the future is not an age: a clock that jumps backwards
-	 * would otherwise look younger than every window and freeze the cache.
-	 * Null rather than a huge number, because not knowing means "check
-	 * again", not "hours stale" — the latter would wipe a fresh cache and
-	 * log that it was old.
+	 * How long ago a stamp was written, or null when it does not say. A
+	 * stamp from the future is not an age — a clock that jumps backwards
+	 * would look younger than every window and freeze the cache. Null
+	 * rather than a huge number: not knowing means "check again", not
+	 * "hours stale".
 	 */
 	private function ageOf(int $stamp, int $now): ?int {
 		if ($stamp <= 0 || $stamp > $now) {
@@ -373,18 +339,15 @@ class EtherpadReleasePolicy {
 	 * Take the right to make the check, if nobody else holds it.
 	 *
 	 * Not through app config: it is loaded once per request, so workers
-	 * never see each other's writes and would each spend a round trip on
-	 * the same question. A distributed cache is what is actually shared.
-	 *
-	 * `add()` is declared on `IMemcache`, while `createDistributed()`
-	 * promises only an `ICache` — every backend Nextcloud hands back
-	 * implements both, the contract does not say so, so it is asked.
-	 * Nothing to claim with means one worker per open and nothing to
+	 * never see each other's writes. A distributed cache is what is
+	 * actually shared — and `add()` is declared on `IMemcache` while
+	 * `createDistributed()` promises only an `ICache`, so it is asked for
+	 * rather than assumed. Nothing to claim with means nothing to
 	 * coordinate, so the check goes ahead.
 	 *
-	 * Keyed by host, or a claim outlives a repointing. The cache is
-	 * resolved once by the caller and handed to both halves, so a claim
-	 * cannot be taken from one backend and released against another.
+	 * Keyed by host, or a claim outlives a repointing. Resolved once by the
+	 * caller and handed to both halves, so a claim cannot be taken from one
+	 * backend and released against another.
 	 */
 	private function claimTheCheck(?IMemcache $cache, string $host): bool {
 		return $cache === null || $cache->add($this->claimKey($host), '1', self::FAILURE_BACKOFF_SECONDS);
