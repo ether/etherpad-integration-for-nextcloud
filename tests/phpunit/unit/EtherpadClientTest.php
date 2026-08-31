@@ -163,6 +163,75 @@ class EtherpadClientTest extends TestCase {
 		];
 	}
 
+	/**
+	 * Measured: `/api` answers `{"currentVersion":"1.3.1"}` on both Etherpad
+	 * 2.7.3 and 3.3.3, so the API version cannot tell the two apart.
+	 * `/health` reports the release, and it needs no api key.
+	 */
+	public function testDetectsTheReleaseFromHealth(): void {
+		$captured = null;
+		$client = $this->clientWithResponse(
+			$this->response(200, '{"status":"pass","releaseId":"3.3.3"}'),
+			$captured,
+		);
+
+		self::assertSame('3.3.3', $client->detectReleaseVersion('https://pad.example.test'));
+		self::assertSame('GET', $captured['method']);
+		self::assertStringEndsWith('/health', (string)$captured['url']);
+		self::assertStringNotContainsString('apikey', (string)$captured['url']);
+		// Asked on the open path, and nothing depends on the answer, so a pad
+		// server that accepts the connection and then says nothing must not
+		// hold an open for the full request timeout.
+		self::assertSame(3, $captured['options']['timeout']);
+	}
+
+	/** The calls that do matter keep the full patience. */
+	public function testApiCallsKeepTheFullRequestTimeout(): void {
+		$captured = null;
+		$client = $this->clientWithResponse(
+			$this->response(200, '{"code":0,"data":{"groupID":"g.aaa"}}'),
+			$captured,
+		);
+
+		$client->createGroup();
+
+		self::assertSame(15, $captured['options']['timeout']);
+	}
+
+	public function testDetectsAReleaseWithASuffix(): void {
+		$client = $this->clientWithResponse($this->response(200, '{"status":"pass","releaseId":"3.0.0-beta.1"}'));
+		self::assertSame('3.0.0-beta.1', $client->detectReleaseVersion('https://pad.example.test'));
+	}
+
+	/**
+	 * Refuses rather than guessing. The caller falls back to the last known
+	 * release, and without one to a cookie the browser can read.
+	 *
+	 * @param string $payload
+	 */
+	#[\PHPUnit\Framework\Attributes\DataProvider('provideUnreadableHealthAnswers')]
+	public function testRefusesAHealthAnswerItCannotRead(string $payload): void {
+		$client = $this->clientWithResponse($this->response(200, $payload));
+		$this->expectException(EtherpadClientException::class);
+		$client->detectReleaseVersion('https://pad.example.test');
+	}
+
+	/** @return array<string,array{string}> */
+	public static function provideUnreadableHealthAnswers(): array {
+		return [
+			'no releaseId' => ['{"status":"pass"}'],
+			'releaseId is not a string' => ['{"status":"pass","releaseId":3}'],
+			'releaseId is empty' => ['{"status":"pass","releaseId":""}'],
+			'releaseId is not a version' => ['{"status":"pass","releaseId":"latest"}'],
+			'not an object' => ['[]'],
+			// The one an unanchored prefix match lets through. This is
+			// written to app config, read on every protected open and
+			// rendered to an admin.
+			'a version and then a megabyte' => ['{"status":"pass","releaseId":"3.3.3' . str_repeat('x', 1024) . '"}'],
+			'a version and then prose' => ['{"status":"pass","releaseId":"3.3.3 (nightly build of something)"}'],
+		];
+	}
+
 	public function testApiCallThrowsOnNonZeroApiCode(): void {
 		$client = $this->clientWithResponse(
 			$this->response(200, '{"code":1,"message":"groupID does not exist"}')

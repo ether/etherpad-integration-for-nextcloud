@@ -58,6 +58,15 @@ export const E2E = {
 		return (url && key) ? { url: url.replace(/\/+$/, ''), key } : null
 	},
 	/**
+	 * The pad server's address on its own. `/health` needs no api key, so a
+	 * spec that only asks that must not be gated on one — a target that
+	 * configured the URL and nothing else would skip in silence.
+	 */
+	get etherpadUrl(): string | null {
+		const url = process.env.E2E_ETHERPAD_URL?.trim()
+		return url ? url.replace(/\/+$/, '') : null
+	},
+	/**
 	 * App password used for non-browser WebDAV/API setup and teardown
 	 * (mirrors the NC_APP_PASSWORD pattern in tests/integration/*.sh).
 	 *

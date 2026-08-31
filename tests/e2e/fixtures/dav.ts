@@ -4,7 +4,7 @@
  */
 import { E2E } from './env'
 
-const basicAuthHeader = (): string => {
+export const basicAuthHeader = (): string => {
 	const auth = Buffer.from(`${E2E.user}:${E2E.appPassword}`).toString('base64')
 	return `Basic ${auth}`
 }

@@ -138,7 +138,33 @@ SESSION_COOKIE_LINE="$(printf '%s\n' "$SESSION_COOKIE_LINES" | sed -n '1p')"
 
 assert_cookie_contains "$SESSION_COOKIE_LINE" "secure" "Secure"
 assert_cookie_contains "$SESSION_COOKIE_LINE" "samesite=none" "SameSite=None"
-assert_cookie_not_contains "$SESSION_COOKIE_LINE" "httponly" "HttpOnly"
+
+# HttpOnly is not a constant of this contract, it depends on the pad server.
+# The major-3 boundary below restates EtherpadReleasePolicy's
+# HTTP_ONLY_SINCE_MAJOR rather than importing it — a check that asked the app
+# what to expect would assert nothing. Moving the boundary means moving it
+# here, in the Playwright spec, and in docs/etherpad-integration.md.
+# Up to Etherpad 2.7.3 the pad app reads sessionID in the browser, so the
+# cookie has to stay script-readable; from 3.0.0 the server takes it out of
+# the socket.io handshake. Asking /health is how the app decides, so it is
+# how this checks. No api key needed for it.
+PAD_URL="$(json_field "$OPEN_JSON" "pad_url" || true)"
+EP_ORIGIN="$(printf '%s' "$PAD_URL" | sed -n 's#^\(https\{0,1\}://[^/]*\).*#\1#p')"
+EP_RELEASE=""
+if [[ -n "$EP_ORIGIN" ]]; then
+	EP_RELEASE="$(curl -fsS --max-time 10 "${EP_ORIGIN}/health" 2>/dev/null \
+		| sed -n 's/.*"releaseId"[[:space:]]*:[[:space:]]*"\([0-9][0-9.]*\).*/\1/p' || true)"
+fi
+
+if [[ -z "$EP_RELEASE" ]]; then
+	# Not a failure: the pad server may be unreachable from here even though
+	# Nextcloud can reach it. Say so rather than asserting the wrong half.
+	echo "  note: could not read the Etherpad release from ${EP_ORIGIN:-<unknown>}/health; skipping the HttpOnly assertion" >&2
+elif [[ "${EP_RELEASE%%.*}" -ge 3 ]]; then
+	assert_cookie_contains "$SESSION_COOKIE_LINE" "httponly" "HttpOnly (Etherpad ${EP_RELEASE} reads the session server-side)"
+else
+	assert_cookie_not_contains "$SESSION_COOKIE_LINE" "httponly" "HttpOnly (Etherpad ${EP_RELEASE} reads the session in the browser)"
+fi
 
 echo "[3/4] CLEANUP trash ${INPUT_PATH}"
 TRASH_RES="$(nc_request_with_code POST "$API_BASE/trash" --data-urlencode "file=${INPUT_PATH}")"

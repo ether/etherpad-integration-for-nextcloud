@@ -25,16 +25,20 @@ class PadSessionServiceTest extends TestCase {
 		IConfig $config,
 		string $nextcloudUrl = 'https://cloud.example.test',
 		?string $incomingSessionCookie = null,
+		bool $httpOnlySupported = false,
 	): PadSessionService {
 		$urlGenerator = $this->createMock(IURLGenerator::class);
 		$urlGenerator->method('getBaseUrl')->willReturn($nextcloudUrl);
 		$request = $this->createMock(IRequest::class);
 		$request->method('getCookie')->with('sessionID')->willReturn($incomingSessionCookie);
+		$releasePolicy = $this->createMock(\OCA\EtherpadNextcloud\Service\EtherpadReleasePolicy::class);
+		$releasePolicy->method('supportsHttpOnlySessionCookie')->willReturn($httpOnlySupported);
 		return new PadSessionService(
 			$etherpadClient,
 			$config,
 			$urlGenerator,
 			new CookieDomainPolicy(),
+			$releasePolicy,
 			$request,
 			$this->createMock(LoggerInterface::class),
 		);
@@ -61,6 +65,7 @@ class PadSessionServiceTest extends TestCase {
 		?string $incoming = null,
 		string $groupId = 'g.ABCDEFGHIJKLMNOP',
 		bool $listingFails = false,
+		bool $httpOnlySupported = false,
 	): array {
 		$etherpadClient = $this->createMock(EtherpadClient::class);
 		$etherpadClient->method('createSession')->willReturn($this->sid('new'));
@@ -78,9 +83,29 @@ class PadSessionServiceTest extends TestCase {
 			$this->createMock(IConfig::class),
 			'https://cloud.example.test',
 			$incoming,
+			$httpOnlySupported,
 		);
 
 		return $service->createProtectedOpenContext('admin', 'Admin', $groupId . '$pad-1')['cookie'];
+	}
+
+	/**
+	 * The pad app up to Etherpad 2.7.3 reads `sessionID` itself, in the
+	 * browser. HttpOnly there is not a hardening, it is a lockout.
+	 */
+	public function testLeavesTheCookieReadableForAnEtherpadThatReadsItInTheBrowser(): void {
+		$cookie = $this->openContextCookie([], null, httpOnlySupported: false);
+		$this->assertFalse($cookie['http_only']);
+	}
+
+	/**
+	 * From 3.0.0 the session id comes out of the socket.io handshake on the
+	 * server, so nothing on the page needs to see it — and a script that
+	 * gets onto the page cannot take it.
+	 */
+	public function testKeepsTheCookieFromScriptsWhereEtherpadReadsItServerSide(): void {
+		$cookie = $this->openContextCookie([], null, httpOnlySupported: true);
+		$this->assertTrue($cookie['http_only']);
 	}
 
 	public function testWritesOnlyTheNewSessionWhenTheBrowserSentNone(): void {
@@ -304,6 +329,7 @@ class PadSessionServiceTest extends TestCase {
 			$this->createMock(IConfig::class),
 			$urlGenerator,
 			new CookieDomainPolicy(),
+			$this->createMock(\OCA\EtherpadNextcloud\Service\EtherpadReleasePolicy::class),
 			$request,
 			$logger,
 		);

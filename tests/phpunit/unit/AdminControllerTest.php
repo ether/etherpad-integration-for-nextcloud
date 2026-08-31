@@ -107,6 +107,7 @@ class AdminControllerTest extends TestCase {
 				123,
 				'https://pad-api.internal/api/1.3.0/listAllPads',
 				3,
+				'3.3.3',
 				new CookieDomainDecision(
 					'.example.tests',
 					CookieDomainDecision::STATUS_WARNING,
@@ -128,6 +129,9 @@ class AdminControllerTest extends TestCase {
 		$this->assertTrue((bool)$data['ok']);
 		$this->assertSame(72, $data['pad_count']);
 		$this->assertSame(3, $data['pending_delete_count']);
+		// The release the open path is going by, machine-readable, because
+		// it can differ from whatever this check just probed.
+		$this->assertSame('3.3.3', $data['session_cookie_release']);
 		$this->assertArrayNotHasKey('trashed_without_file_count', $data);
 		$this->assertSame('https://pad-api.internal/api/1.3.0/listAllPads', $data['target']);
 		// A protected-pads problem is reported beside the result, not as a

@@ -26,7 +26,20 @@ class EtherpadClient {
 	 */
 	public const DEFAULT_API_VERSION = '1.2.15';
 
-	private const REQUEST_TIMEOUT_SECONDS = 15;
+	/** Public so the admin connection test can ask for the same patience. */
+	public const REQUEST_TIMEOUT_SECONDS = 15;
+
+	/**
+	 * `/health` gets far less patience than an API call.
+	 *
+	 * Nothing depends on the answer: the caller falls back to the last known
+	 * release, and without one to the cookie it was writing before. It is
+	 * asked on the open path, though, so a pad server that accepts the
+	 * connection and then says nothing must not be able to hold an open
+	 * hostage for the full request timeout on top of the calls that do
+	 * matter.
+	 */
+	private const HEALTH_TIMEOUT_SECONDS = 3;
 
 	public function __construct(
 		private IConfig $config,
@@ -212,6 +225,46 @@ class EtherpadClient {
 		return ['pad_count' => $padCount];
 	}
 
+	/**
+	 * The Etherpad release this instance is running, as `/health` reports it.
+	 *
+	 * Not the API version: `/api` answers `1.3.1` on both Etherpad 2.7.3 and
+	 * 3.3.3, so it cannot tell the two apart. `releaseId` can, and the one
+	 * thing that turns on it — whether Etherpad still needs to read its
+	 * session cookie from JavaScript — changed between those two majors.
+	 *
+	 * `/health` needs no api key, which is why it is asked rather than an
+	 * API method: this runs on the open path, and the key belongs in as few
+	 * places as possible.
+	 *
+	 * The host is given rather than looked up here: the caller files the
+	 * answer under a host, and that has to be the host that was asked. The
+	 * admin health check asks about the address being submitted rather than
+	 * the one already stored, and passes a timeout so it can be as patient
+	 * as the calls beside it while the open path stays impatient.
+	 *
+	 * What comes back is a version string and nothing else. It is written
+	 * into app config, read on every protected open and rendered to an
+	 * admin, so a pad server answering with a megabyte of prose after a
+	 * plausible prefix must not get any of that.
+	 */
+	public function detectReleaseVersion(string $host, int $timeoutSeconds = self::HEALTH_TIMEOUT_SECONDS): string {
+		$apiHost = trim($host) !== '' ? rtrim(trim($host), '/') : $this->getApiHost();
+		$raw = $this->sendPublicGetRequest($apiHost . '/health', $timeoutSeconds);
+		$decoded = json_decode($raw, true);
+		$release = is_array($decoded) && isset($decoded['releaseId']) && is_string($decoded['releaseId'])
+			? trim($decoded['releaseId'])
+			: '';
+
+		// Anchored at both ends: `<major>.<minor>.<patch>` and at most a
+		// short pre-release tail after it.
+		if (preg_match('/^\d{1,6}\.\d{1,6}\.\d{1,6}([-+][0-9A-Za-z.-]{1,24})?$/', $release) !== 1) {
+			throw new EtherpadClientException('Could not detect the Etherpad release version.');
+		}
+
+		return $release;
+	}
+
 	public function detectApiVersion(string $host): string {
 		$url = rtrim(trim($host), '/') . '/api';
 		$raw = $this->sendPublicGetRequest($url);
@@ -352,7 +405,13 @@ class EtherpadClient {
 		return $scheme . '://' . $host . ':' . $port;
 	}
 
-	private function getApiHost(): string {
+	/**
+	 * The Etherpad the API calls actually go to: the admin's `etherpad_api_host`
+	 * when set, otherwise the public one. Exposed because what this server
+	 * says about itself is only true of this server – anything cached about a
+	 * release has to be kept against the endpoint it was read from.
+	 */
+	public function getApiHost(): string {
 		$apiHost = rtrim((string)$this->config->getAppValue('etherpad_nextcloud', 'etherpad_api_host', ''), '/');
 		if ($apiHost !== '') {
 			return $apiHost;
@@ -371,8 +430,8 @@ class EtherpadClient {
 		return $key;
 	}
 
-	private function sendPublicGetRequest(string $url): string {
-		$response = $this->doRequest('GET', $url, $this->baseRequestOptions());
+	private function sendPublicGetRequest(string $url, int $timeoutSeconds = self::REQUEST_TIMEOUT_SECONDS): string {
+		$response = $this->doRequest('GET', $url, $this->baseRequestOptions($timeoutSeconds));
 		$statusCode = $response->getStatusCode();
 		if ($statusCode >= 400) {
 			throw new EtherpadClientException('HTTP error (' . $statusCode . ')');
@@ -397,9 +456,9 @@ class EtherpadClient {
 	 *
 	 * @return array<string,mixed>
 	 */
-	private function baseRequestOptions(): array {
+	private function baseRequestOptions(int $timeoutSeconds = self::REQUEST_TIMEOUT_SECONDS): array {
 		return [
-			'timeout' => self::REQUEST_TIMEOUT_SECONDS,
+			'timeout' => $timeoutSeconds,
 			'allow_redirects' => ['max' => 0],
 			'headers' => ['Accept' => 'application/json'],
 			'nextcloud' => ['allow_local_address' => true],

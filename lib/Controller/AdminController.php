@@ -116,6 +116,7 @@ class AdminController extends Controller {
 					'pending_delete_count' => $result->pendingDeleteCount,
 					// Machine-readable form of the protected-pads line above.
 					'protected_pads' => $this->describeCookieDomain($result->cookieDomain),
+					'session_cookie_release' => $result->sessionCookieRelease,
 					'checks' => $this->describeChecks($checks),
 				]);
 			},
