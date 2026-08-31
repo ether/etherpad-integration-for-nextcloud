@@ -109,6 +109,9 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 		string $unrecognisedOverride = '',
 		string $configuredApiHost = 'https://pad-api.example.test',
 		string $sameSiteSetting = 'lax',
+		string $unrecognisedSameSite = '',
+		array $trustedEmbedOrigins = [],
+		string $nextcloudSameSite = '',
 	): EtherpadHealthCheckService {
 		$urlGenerator = $this->createMock(IURLGenerator::class);
 		$urlGenerator->method('getBaseUrl')->willReturn($nextcloudUrl);
@@ -126,13 +129,19 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 		// be saved.
 		$releasePolicy->expects(self::never())->method('supportsHttpOnlySessionCookie');
 		$releasePolicy->method('knownRelease')->willReturn($knownRelease);
-		$config = $this->createMock(\OCP\IConfig::class);
-		$config->method('getAppValue')->willReturnCallback(
-			static fn (string $app, string $key, string $default = ''): string => $key === \OCA\EtherpadNextcloud\Service\PadSessionService::SAME_SITE_KEY
-				? $sameSiteSetting
-				: $default
+		$padSessions = $this->createMock(\OCA\EtherpadNextcloud\Service\PadSessionService::class);
+		$padSessions->method('sameSiteMode')->willReturn(
+			$sameSiteSetting === 'none'
+				? \OCA\EtherpadNextcloud\Service\PadSessionService::SAME_SITE_NONE
+				: \OCA\EtherpadNextcloud\Service\PadSessionService::SAME_SITE_LAX
 		);
-		return new EtherpadHealthCheckService(
+		$padSessions->method('unrecognisedSameSite')->willReturn($unrecognisedSameSite);
+		$appConfig = $this->createMock(\OCA\EtherpadNextcloud\Service\AppConfigService::class);
+		$appConfig->method('getTrustedEmbedOrigins')->willReturn($trustedEmbedOrigins);
+
+		// There is no session in a unit test, so the runtime read of
+		// Nextcloud's own cookie needs a seam to be exercised at all.
+		return new class(
 			$etherpad,
 			$pending,
 			$this->buildL10n(),
@@ -140,8 +149,29 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 			$this->baseUrlCheck(),
 			$urlGenerator,
 			$releasePolicy,
-			$config,
-		);
+			$padSessions,
+			$appConfig,
+			$nextcloudSameSite,
+		) extends EtherpadHealthCheckService {
+			public function __construct(
+				EtherpadClient $etherpadClient,
+				PendingDeleteRetryService $pendingDeleteRetryService,
+				IL10N $l10n,
+				CookieDomainPolicy $cookieDomainPolicy,
+				BaseUrlReachabilityCheck $baseUrlCheck,
+				IURLGenerator $urlGenerator,
+				\OCA\EtherpadNextcloud\Service\EtherpadReleasePolicy $releasePolicy,
+				\OCA\EtherpadNextcloud\Service\PadSessionService $padSessionService,
+				\OCA\EtherpadNextcloud\Service\AppConfigService $appConfigService,
+				private string $nextcloudSameSite,
+			) {
+				parent::__construct($etherpadClient, $pendingDeleteRetryService, $l10n, $cookieDomainPolicy, $baseUrlCheck, $urlGenerator, $releasePolicy, $padSessionService, $appConfigService);
+			}
+
+			protected function nextcloudSessionSameSite(): string {
+				return $this->nextcloudSameSite;
+			}
+		};
 	}
 
 	/**
@@ -157,6 +187,9 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 		string $unrecognisedOverride = '',
 		string $configuredApiHost = 'https://pad-api.example.test',
 		string $sameSiteSetting = 'lax',
+		string $unrecognisedSameSite = '',
+		array $trustedEmbedOrigins = [],
+		string $nextcloudSameSite = '',
 	): HealthCheckItem {
 		$result = $this->buildService(
 			$etherpad,
@@ -166,6 +199,9 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 			unrecognisedOverride: $unrecognisedOverride,
 			configuredApiHost: $configuredApiHost,
 			sameSiteSetting: $sameSiteSetting,
+			unrecognisedSameSite: $unrecognisedSameSite,
+			trustedEmbedOrigins: $trustedEmbedOrigins,
+			nextcloudSameSite: $nextcloudSameSite,
 		)->check($this->settings());
 		foreach ($result->checks as $item) {
 			if ($item->id === 'session_cookie') {
@@ -325,6 +361,73 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 	}
 
 	/**
+	 * The panel shows a label only while the status is ok. Folding the note
+	 * in makes the line a warning, so a passing line's text — the release,
+	 * the cookie verdict — has to move into the detail or it is gone.
+	 */
+	public function testTheCrossSiteNoteKeepsWhatThePassingLineSaid(): void {
+		$etherpad = $this->createMock(EtherpadClient::class);
+		$etherpad->method('healthCheck')->willReturn(['pad_count' => 1]);
+		$etherpad->method('detectReleaseVersion')->willReturn('3.3.3');
+
+		$line = $this->sessionCookieLine($etherpad, knownRelease: '3.3.3', sameSiteSetting: 'none');
+		self::assertSame(HealthCheckItem::STATUS_WARNING, $line->status);
+		self::assertStringContainsString('3.3.3', $line->detail);
+		self::assertStringContainsString('SameSite=None', $line->detail);
+	}
+
+	/** The runtime read, in both directions. */
+	public function testTheCrossSiteNoteNamesWhatNextcloudDoesWithItsOwnCookie(): void {
+		$etherpad = $this->createMock(EtherpadClient::class);
+		$etherpad->method('healthCheck')->willReturn(['pad_count' => 1]);
+		$etherpad->method('detectReleaseVersion')->willReturn('2.7.3');
+
+		$named = $this->sessionCookieLine($etherpad, sameSiteSetting: 'none', nextcloudSameSite: 'lax');
+		self::assertStringContainsString('Nextcloud sends its own session cookie as Lax', $named->detail);
+
+		$silent = $this->sessionCookieLine($etherpad, sameSiteSetting: 'none', nextcloudSameSite: '');
+		self::assertStringNotContainsString('sends its own session cookie', $silent->detail);
+	}
+
+	/**
+	 * The configuration that breaks silently, and the one this check had no
+	 * word for: an embed origin the session cookie does not reach, while the
+	 * cookie stays same-site.
+	 */
+	public function testAnEmbedOriginOutsideTheCookieDomainIsNamed(): void {
+		$etherpad = $this->createMock(EtherpadClient::class);
+		$etherpad->method('healthCheck')->willReturn(['pad_count' => 1]);
+		$etherpad->method('detectReleaseVersion')->willReturn('2.7.3');
+		$etherpad->method('getConfiguredOrigin')->willReturn('https://pad.example.test');
+
+		$line = $this->sessionCookieLine($etherpad, trustedEmbedOrigins: ['https://partner.example.com']);
+		self::assertSame(HealthCheckItem::STATUS_WARNING, $line->status);
+		self::assertStringContainsString('partner.example.com', $line->detail);
+	}
+
+	/** One the cookie already reaches is certainly fine and stays quiet. */
+	public function testAnEmbedOriginInsideTheCookieDomainIsNotNamed(): void {
+		$etherpad = $this->createMock(EtherpadClient::class);
+		$etherpad->method('healthCheck')->willReturn(['pad_count' => 1]);
+		$etherpad->method('detectReleaseVersion')->willReturn('2.7.3');
+		$etherpad->method('getConfiguredOrigin')->willReturn('https://pad.example.test');
+
+		$line = $this->sessionCookieLine($etherpad, trustedEmbedOrigins: ['https://portal.example.test']);
+		self::assertSame(HealthCheckItem::STATUS_OK, $line->status);
+	}
+
+	/** A value that is neither lax nor none is said out loud, like its sibling. */
+	public function testAnUnrecognisedSameSiteValueIsNamed(): void {
+		$etherpad = $this->createMock(EtherpadClient::class);
+		$etherpad->method('healthCheck')->willReturn(['pad_count' => 1]);
+		$etherpad->method('detectReleaseVersion')->willReturn('2.7.3');
+
+		$line = $this->sessionCookieLine($etherpad, unrecognisedSameSite: 'strict');
+		self::assertSame(HealthCheckItem::STATUS_WARNING, $line->status);
+		self::assertStringContainsString('strict', $line->detail);
+	}
+
+	/**
 	 * There is one session-cookie slot. A note about how far the cookie
 	 * travels must not push off the line saying that no protected pad opens
 	 * at all — which is what `yes` below Etherpad 3.0 means.
@@ -441,7 +544,8 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 			$this->baseUrlCheck(),
 			$urlGenerator,
 			$this->createMock(\OCA\EtherpadNextcloud\Service\EtherpadReleasePolicy::class),
-			$this->createMock(\OCP\IConfig::class),
+			$this->createMock(\OCA\EtherpadNextcloud\Service\PadSessionService::class),
+			$this->createMock(\OCA\EtherpadNextcloud\Service\AppConfigService::class),
 			$ticks,
 		) extends EtherpadHealthCheckService {
 			/** @param list<float> $ticks */
@@ -453,10 +557,11 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 				BaseUrlReachabilityCheck $baseUrlCheck,
 				IURLGenerator $urlGenerator,
 				\OCA\EtherpadNextcloud\Service\EtherpadReleasePolicy $releasePolicy,
-				\OCP\IConfig $config,
+				\OCA\EtherpadNextcloud\Service\PadSessionService $padSessionService,
+				\OCA\EtherpadNextcloud\Service\AppConfigService $appConfigService,
 				private array $ticks,
 			) {
-				parent::__construct($etherpadClient, $pendingDeleteRetryService, $l10n, $cookieDomainPolicy, $baseUrlCheck, $urlGenerator, $releasePolicy, $config);
+				parent::__construct($etherpadClient, $pendingDeleteRetryService, $l10n, $cookieDomainPolicy, $baseUrlCheck, $urlGenerator, $releasePolicy, $padSessionService, $appConfigService);
 			}
 
 			protected function now(): float {

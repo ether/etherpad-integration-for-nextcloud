@@ -40,8 +40,10 @@ class PadSessionService {
 	 */
 	private const MAX_SESSION_IDS = 25;
 
-	/** `lax` (default) or `none`; see resolveSameSite(). */
+	/** `lax` (default) or `none`; see sameSiteMode(). */
 	public const SAME_SITE_KEY = 'etherpad_session_cookie_samesite';
+	public const SAME_SITE_LAX = 'Lax';
+	public const SAME_SITE_NONE = 'None';
 
 	/**
 	 * How many ids are read out of the cookie at all. Only a bound on work:
@@ -300,7 +302,7 @@ class PadSessionService {
 			'path' => '/',
 			'domain' => $cookieDomain,
 			'secure' => true,
-			'same_site' => $this->resolveSameSite(),
+			'same_site' => $this->sameSiteMode(),
 			// Up to Etherpad 2.7.3 the pad app reads `sessionID` itself, in
 			// the browser — HttpOnly there would lock the user out of every
 			// protected pad. From 3.0.0 the server takes it out of the
@@ -352,15 +354,49 @@ class PadSessionService {
 	 * cannot see that, and the previous attempt to work it out from the
 	 * hosts involved needed a public suffix list to be right. So the admin
 	 * says so.
+	 *
+	 * Anything else is `Lax`, and named by the connection test rather than
+	 * swallowed — `strict` included, where somebody meant to harden.
 	 */
-	private function resolveSameSite(): string {
+	public function sameSiteMode(): string {
+		return $this->readSameSite()['mode'];
+	}
+
+	/**
+	 * A stored value that is none of the accepted words, or ''.
+	 *
+	 * Worth being able to say: `off`, `no` and `cross-site` all read as
+	 * `Lax` here, and so does `strict` — where somebody meant to harden and
+	 * gets the opposite. The sibling setting for HttpOnly reports the same
+	 * thing for the same reason.
+	 */
+	public function unrecognisedSameSite(): string {
+		return $this->readSameSite()['unrecognised'];
+	}
+
+	/**
+	 * The stored value, read once and in one place.
+	 *
+	 * Public through the two methods above so the admin health check reports
+	 * on the same reading rather than parsing the value again with its own
+	 * default.
+	 *
+	 * @return array{mode:string,unrecognised:string}
+	 */
+	private function readSameSite(): array {
 		$configured = strtolower(trim((string)$this->config->getAppValue(
 			'etherpad_nextcloud',
 			self::SAME_SITE_KEY,
 			'lax',
 		)));
+		if ($configured === 'none') {
+			return ['mode' => self::SAME_SITE_NONE, 'unrecognised' => ''];
+		}
+		if ($configured === 'lax' || $configured === '') {
+			return ['mode' => self::SAME_SITE_LAX, 'unrecognised' => ''];
+		}
 
-		return $configured === 'none' ? 'None' : 'Lax';
+		return ['mode' => self::SAME_SITE_LAX, 'unrecognised' => substr($configured, 0, 32)];
 	}
 
 	private function resolveCookieDomain(): string {

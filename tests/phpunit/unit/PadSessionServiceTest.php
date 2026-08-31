@@ -435,7 +435,6 @@ class PadSessionServiceTest extends TestCase {
 				['etherpad_nextcloud', 'etherpad_cookie_domain', '', ''],
 				['etherpad_nextcloud', 'etherpad_cookie_domain_configured', 'no', 'no'],
 				['etherpad_nextcloud', 'etherpad_host', '', 'https://pad.example.test'],
-			['etherpad_nextcloud', PadSessionService::SAME_SITE_KEY, 'lax', 'lax'],
 				['etherpad_nextcloud', PadSessionService::SAME_SITE_KEY, 'lax', 'lax'],
 			]);
 
@@ -503,7 +502,6 @@ class PadSessionServiceTest extends TestCase {
 				['etherpad_nextcloud', 'etherpad_cookie_domain', '', '.example.test'],
 				['etherpad_nextcloud', 'etherpad_cookie_domain_configured', 'no', 'yes'],
 				['etherpad_nextcloud', 'etherpad_host', '', 'https://pad.example.test'],
-			['etherpad_nextcloud', PadSessionService::SAME_SITE_KEY, 'lax', 'lax'],
 				['etherpad_nextcloud', PadSessionService::SAME_SITE_KEY, 'lax', 'lax'],
 			]);
 
@@ -528,7 +526,6 @@ class PadSessionServiceTest extends TestCase {
 				['etherpad_nextcloud', 'etherpad_cookie_domain', '', ''],
 				['etherpad_nextcloud', 'etherpad_cookie_domain_configured', 'no', 'yes'],
 				['etherpad_nextcloud', 'etherpad_host', '', 'https://pad.example.test'],
-			['etherpad_nextcloud', PadSessionService::SAME_SITE_KEY, 'lax', 'lax'],
 				['etherpad_nextcloud', PadSessionService::SAME_SITE_KEY, 'lax', 'lax'],
 			]);
 
@@ -600,7 +597,6 @@ class PadSessionServiceTest extends TestCase {
 				['etherpad_nextcloud', 'etherpad_cookie_domain', '', ''],
 				['etherpad_nextcloud', 'etherpad_cookie_domain_configured', 'no', 'no'],
 				['etherpad_nextcloud', 'etherpad_host', '', 'https://pad.example.test'],
-			['etherpad_nextcloud', PadSessionService::SAME_SITE_KEY, 'lax', 'lax'],
 				['etherpad_nextcloud', PadSessionService::SAME_SITE_KEY, 'lax', 'lax'],
 			]);
 		$config->method('getUserValue')
@@ -643,7 +639,6 @@ class PadSessionServiceTest extends TestCase {
 				['etherpad_nextcloud', 'etherpad_cookie_domain', '', ''],
 				['etherpad_nextcloud', 'etherpad_cookie_domain_configured', 'no', 'no'],
 				['etherpad_nextcloud', 'etherpad_host', '', 'https://pad.example.test'],
-			['etherpad_nextcloud', PadSessionService::SAME_SITE_KEY, 'lax', 'lax'],
 				['etherpad_nextcloud', PadSessionService::SAME_SITE_KEY, 'lax', 'lax'],
 			]);
 		$config->method('getUserValue')
@@ -704,7 +699,6 @@ class PadSessionServiceTest extends TestCase {
 				['etherpad_nextcloud', 'etherpad_cookie_domain', '', ''],
 				['etherpad_nextcloud', 'etherpad_cookie_domain_configured', 'no', 'no'],
 				['etherpad_nextcloud', 'etherpad_host', '', 'https://pad.example.test'],
-			['etherpad_nextcloud', PadSessionService::SAME_SITE_KEY, 'lax', 'lax'],
 				['etherpad_nextcloud', PadSessionService::SAME_SITE_KEY, 'lax', 'lax'],
 			]);
 		$config->method('getUserValue')
@@ -772,7 +766,6 @@ class PadSessionServiceTest extends TestCase {
 				['etherpad_nextcloud', 'etherpad_cookie_domain', '', ''],
 				['etherpad_nextcloud', 'etherpad_cookie_domain_configured', 'no', 'no'],
 				['etherpad_nextcloud', 'etherpad_host', '', 'https://pad.example.test'],
-			['etherpad_nextcloud', PadSessionService::SAME_SITE_KEY, 'lax', 'lax'],
 				['etherpad_nextcloud', PadSessionService::SAME_SITE_KEY, 'lax', 'lax'],
 			]);
 		$config->expects($this->never())->method('setUserValue');

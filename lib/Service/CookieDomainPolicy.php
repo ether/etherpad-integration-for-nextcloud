@@ -133,6 +133,24 @@ class CookieDomainPolicy {
 	 * Suffix test on label boundaries, so `example.org` does not cover
 	 * `evil-example.org`.
 	 */
+	/**
+	 * Whether a URL or host sits inside a cookie `Domain=`.
+	 *
+	 * Not a same-site test — it is narrower, and deliberately so. A host the
+	 * cookie already reaches is certainly one site with it; a host outside
+	 * may still be, and the caller treats that as "worth checking" rather
+	 * than as an answer.
+	 */
+	public function isCoveredBy(string $urlOrHost, string $cookieDomain): bool {
+		$host = $this->extractHost($urlOrHost);
+		$domain = ltrim(strtolower(trim($cookieDomain)), '.');
+		if ($host === '' || $domain === '') {
+			return false;
+		}
+
+		return $this->domainCovers($domain, $host);
+	}
+
 	private function domainCovers(string $domain, string $host): bool {
 		return $host === $domain || str_ends_with($host, '.' . $domain);
 	}

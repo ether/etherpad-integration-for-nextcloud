@@ -9,10 +9,8 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Service;
 
-use OCA\EtherpadNextcloud\AppInfo\Application;
 use OCA\EtherpadNextcloud\Exception\AdminHealthCheckException;
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
-use OCP\IConfig;
 use OCP\IL10N;
 use OCP\IURLGenerator;
 
@@ -39,7 +37,8 @@ class EtherpadHealthCheckService {
 		private BaseUrlReachabilityCheck $baseUrlCheck,
 		private IURLGenerator $urlGenerator,
 		private EtherpadReleasePolicy $releasePolicy,
-		private IConfig $config,
+		private PadSessionService $padSessionService,
+		private AppConfigService $appConfigService,
 	) {
 	}
 
@@ -282,17 +281,42 @@ class EtherpadHealthCheckService {
 	 * is in — reported rather than assumed.
 	 */
 	private function withCrossSiteNote(HealthCheckItem $item): HealthCheckItem {
-		$configured = strtolower(trim((string)$this->config->getAppValue(
-			Application::APP_ID,
-			PadSessionService::SAME_SITE_KEY,
-			'lax',
-		)));
-		if ($configured !== 'none') {
+		$note = $this->crossSiteNote();
+		if ($note === '') {
 			return $item;
 		}
 
+		// One slot, two things worth saying. Folded in rather than returned
+		// instead: the line underneath can be the one announcing that no
+		// protected pad opens at all, and a note about how far the cookie
+		// travels must not push that off the panel.
+		//
+		// The label moves into the detail when there was none. A passing
+		// line keeps its text there — the release, the cookie verdict — and
+		// the panel only renders a label while the status is ok.
+		return $this->sessionCookieItem(
+			HealthCheckItem::STATUS_WARNING,
+			$item->label,
+			trim(($item->detail !== '' ? $item->detail : $item->label) . ' ' . $note),
+		);
+	}
+
+	/** What is worth saying about how far the cookie travels, or ''. */
+	private function crossSiteNote(): string {
+		$unrecognised = $this->padSessionService->unrecognisedSameSite();
+		if ($unrecognised !== '') {
+			return $this->fill(
+				$this->l10n->t('"{value}" is not one of lax or none, so the session cookie stays same-site. Set one of those two, or remove the setting.'),
+				['value' => $unrecognised],
+			);
+		}
+
+		if ($this->padSessionService->sameSiteMode() !== PadSessionService::SAME_SITE_NONE) {
+			return $this->embedOriginNote();
+		}
+
 		$note = $this->l10n->t('The session cookie is also sent to other sites (SameSite=None), set by hand so a foreign site can frame the embed routes. It only works where Nextcloud authenticates without a cookie — proxy REMOTE_USER, Kerberos, SAML in environment mode.');
-		$nextcloudSameSite = strtolower(trim(session_get_cookie_params()['samesite'] ?? ''));
+		$nextcloudSameSite = $this->nextcloudSessionSameSite();
 		if (in_array($nextcloudSameSite, ['lax', 'strict'], true)) {
 			$note .= ' ' . $this->fill(
 				$this->l10n->t('Nextcloud sends its own session cookie as {samesite}, so a cross-site frame is not logged in through it.'),
@@ -300,15 +324,48 @@ class EtherpadHealthCheckService {
 			);
 		}
 
-		// One slot, two things worth saying. Folded in rather than returned
-		// instead: the line underneath can be the one announcing that no
-		// protected pad opens at all, and a note about how far the cookie
-		// travels must not push that off the panel.
-		return $this->sessionCookieItem(
-			HealthCheckItem::STATUS_WARNING,
-			$item->label,
-			trim($item->detail . ' ' . $note),
+		return $note;
+	}
+
+	/**
+	 * The configuration that breaks silently: an embed origin outside the
+	 * cookie's own domain while the cookie stays same-site.
+	 *
+	 * Compared against the domain the cookie actually carries, not against
+	 * a guess at the registrable domain — an origin the cookie already
+	 * covers is certainly same-site, and anything else is worth a second
+	 * look. Over-warning is the acceptable direction here: this asks an
+	 * admin to check, where deciding the cookie from the same comparison
+	 * would need a public suffix list to be right.
+	 */
+	private function embedOriginNote(): string {
+		$origins = $this->appConfigService->getTrustedEmbedOrigins();
+		if ($origins === []) {
+			return '';
+		}
+
+		$cookieDomain = $this->cookieDomainPolicy->resolve(
+			$this->urlGenerator->getBaseUrl(),
+			$this->etherpadClient->getConfiguredOrigin(),
+			null,
 		);
+		$outside = array_values(array_filter(
+			$origins,
+			fn (string $origin): bool => !$this->cookieDomainPolicy->isCoveredBy($origin, $cookieDomain),
+		));
+		if ($outside === []) {
+			return '';
+		}
+
+		return $this->fill(
+			$this->l10n->t('{origins} may frame the embed routes but is not covered by the session cookie domain {domain}. If it is on another site, the embedded pad gets no Etherpad session unless etherpad_session_cookie_samesite is set to none.'),
+			['origins' => $this->shorten(implode(', ', $outside)), 'domain' => $cookieDomain !== '' ? $cookieDomain : '(host-only)'],
+		);
+	}
+
+	/** Seam: there is no session in a unit test, so this is overridable. */
+	protected function nextcloudSessionSameSite(): string {
+		return strtolower(trim(session_get_cookie_params()['samesite'] ?? ''));
 	}
 
 	/** The same vocabulary the rest of this class uses for a failed call. */
