@@ -487,6 +487,44 @@ class PadSessionServiceTest extends TestCase {
 		$this->assertSame('Lax', $this->openContextCookie([], null, sameSiteSetting: '')['same_site']);
 	}
 
+	/**
+	 * But it is not swallowed. `strict` is the one that stings: somebody
+	 * meant to harden and gets the opposite, and without this the only
+	 * evidence is the cookie itself.
+	 *
+	 * @param string $stored
+	 * @param string $expected
+	 */
+	#[\PHPUnit\Framework\Attributes\DataProvider('sameSiteValues')]
+	public function testAnUnrecognisedSameSiteValueIsReported(string $stored, string $expected): void {
+		$service = $this->buildService(
+			$this->createMock(EtherpadClient::class),
+			$this->configReturning(PadSessionService::SAME_SITE_KEY, $stored),
+		);
+
+		$this->assertSame($expected, $service->unrecognisedSameSite());
+	}
+
+	/** @return array<string,array{string,string}> */
+	public static function sameSiteValues(): array {
+		return [
+			'none' => ['none', ''],
+			'lax' => ['lax', ''],
+			'unset' => ['', ''],
+			'strict' => ['strict', 'strict'],
+			'off' => ['off', 'off'],
+			'cross-site' => ['cross-site', 'cross-site'],
+		];
+	}
+
+	private function configReturning(string $key, string $value): IConfig {
+		$config = $this->createMock(IConfig::class);
+		$config->method('getAppValue')->willReturnCallback(
+			static fn (string $app, string $wanted, string $default = ''): string => $wanted === $key ? $value : $default
+		);
+		return $config;
+	}
+
 	public function testCreateProtectedOpenContextUsesExplicitCookieDomainOnly(): void {
 		$uid = 'admin';
 		$padId = 'g.ABCDEFGHIJKLMNOP$pad-1';
