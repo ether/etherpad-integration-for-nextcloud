@@ -190,7 +190,7 @@ Cookie details:
 
 - Name: `sessionID`
 - `secure: true`
-- `samesite: None`
+- `samesite: Lax`
 - `http_only`: depends on the Etherpad release, see below
 - Domain handling:
   - if `etherpad_cookie_domain` is set, this value is used as-is
@@ -199,6 +199,26 @@ Cookie details:
     - multi-label host (for example `pad.example.org`) -> `.example.org`
   - derivation is skipped for IP hosts and invalid host values
   - recommendation: use explicit `etherpad_cookie_domain` in multi-subdomain/proxy setups
+
+### `SameSite=Lax`
+
+Nextcloud and Etherpad have to share a registrable domain for a protected
+pad to work at all – a browser rejects a `Set-Cookie` whose `Domain=` is not
+a suffix of the host that set it. So the pad iframe is a same-site
+subresource, `Lax` covers it, and a foreign page that frames a pad URL gets
+no session cookie with it: the pad renders unauthenticated instead of as the
+visiting user.
+
+There is no `None` case. The embed routes (`trusted_embed_origins`) look
+like one and are not: they are `NoAdminRequired`, so they need a Nextcloud
+session, and Nextcloud pins its own session cookie to `Lax` on every
+supported version. A cross-site embed is unauthenticated before Etherpad is
+ever reached, so widening this cookie would buy a flow that does not work.
+An embed origin under the same registrable domain – `portal.example.org`
+framing `cloud.example.org` – is same-site throughout and unaffected.
+
+Public shares are `PublicPage` but add no `frame-ancestors`, so Nextcloud's
+default `'self'` keeps them from being framed elsewhere.
 
 ### `HttpOnly` and the Etherpad release
 
@@ -241,7 +261,7 @@ Regression safety check:
 
 - `tests/integration/e2e-protected-cookie-contract.sh` validates the protected open response cookie contract:
   - one `sessionID` `Set-Cookie` header from app flow
-  - includes `Secure` and `SameSite=None`
+  - includes `Secure` and `SameSite=Lax`
   - `HttpOnly` present exactly when the pad server's `/health` reports a
     release of 3 or newer; skipped with a note when `/health` cannot be
     reached from where the script runs

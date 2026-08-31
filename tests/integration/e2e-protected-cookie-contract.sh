@@ -137,7 +137,10 @@ fi
 SESSION_COOKIE_LINE="$(printf '%s\n' "$SESSION_COOKIE_LINES" | sed -n '1p')"
 
 assert_cookie_contains "$SESSION_COOKIE_LINE" "secure" "Secure"
-assert_cookie_contains "$SESSION_COOKIE_LINE" "samesite=none" "SameSite=None"
+# Lax unless trusted_embed_origins names a host on another site: Nextcloud
+# and Etherpad have to share a registrable domain for the cookie to be
+# settable at all, so the ordinary chain is same-site.
+assert_cookie_contains "$SESSION_COOKIE_LINE" "samesite=lax" "SameSite=Lax"
 
 # HttpOnly is not a constant of this contract, it depends on the pad server.
 # The major-3 boundary below restates EtherpadReleasePolicy's

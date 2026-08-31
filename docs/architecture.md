@@ -184,7 +184,7 @@ Primary flow (native viewer when available):
 - We intentionally use explicit attributes required for Etherpad iframe sessions across subdomains:
   - `Domain`
   - `Secure`
-  - `SameSite=None`
+  - `SameSite=Lax`
 - Domain source:
   - explicit `etherpad_cookie_domain` app setting when configured
   - otherwise derived from `etherpad_host` with label-aware fallback rules

@@ -297,13 +297,29 @@ class PadSessionService {
 			'path' => '/',
 			'domain' => $cookieDomain,
 			'secure' => true,
+			// Lax, and there is no case for None. Nextcloud and Etherpad have
+			// to share a registrable domain for a protected pad to work at
+			// all — a browser rejects a `Set-Cookie` whose `Domain=` is not a
+			// suffix of the host that set it — so the pad iframe is a
+			// same-site subresource, while a foreign page framing a pad URL
+			// gets nothing.
+			//
+			// The embed routes look like the exception and are not: they are
+			// NoAdminRequired, so they need a Nextcloud session, and
+			// Nextcloud pins its own session cookie to Lax on every version
+			// this app supports (Session/Internal.php, 31 through 33). A
+			// cross-site embed is therefore already unauthenticated before
+			// Etherpad is reached. Widening this cookie for it would buy a
+			// flow that does not work. Public shares are PublicPage but add
+			// no frame-ancestors, so Nextcloud's own `'self'` keeps them from
+			// being framed elsewhere.
+			'same_site' => 'Lax',
 			// Up to Etherpad 2.7.3 the pad app reads `sessionID` itself, in
 			// the browser — HttpOnly there would lock the user out of every
 			// protected pad. From 3.0.0 the server takes it out of the
 			// socket.io handshake and the browser never needs to see it, so
 			// the cookie can be kept away from any script on the page.
 			'http_only' => $this->releasePolicy->supportsHttpOnlySessionCookie(),
-			'same_site' => 'None',
 		];
 	}
 

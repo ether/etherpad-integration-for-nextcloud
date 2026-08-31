@@ -78,9 +78,17 @@ class PadSessionServiceTest extends TestCase {
 		$etherpadClient->method('createAuthorIfNotExistsFor')->willReturn('a.author');
 		$etherpadClient->method('buildPadUrl')->willReturn('https://pad.example.test/p/x');
 
+		// The pad host matters here: SameSite is decided against it, since
+		// that is where the cookie is sent.
+		$config = $this->createMock(IConfig::class);
+		$config->method('getAppValue')->willReturnCallback(
+			static fn (string $app, string $key, string $default = ''): string => $key === 'etherpad_host'
+				? 'https://pad.example.test'
+				: $default
+		);
 		$service = $this->buildService(
 			$etherpadClient,
-			$this->createMock(IConfig::class),
+			$config,
 			'https://cloud.example.test',
 			$incoming,
 			$httpOnlySupported,
@@ -437,8 +445,22 @@ class PadSessionServiceTest extends TestCase {
 		$this->assertSame('sessionID', $result['cookie']['name']);
 		$this->assertSame($sessionId, $result['cookie']['value']);
 		$this->assertSame('.example.test', $result['cookie']['domain']);
-		$this->assertSame('None', $result['cookie']['same_site']);
+		$this->assertSame('Lax', $result['cookie']['same_site']);
 		$this->assertTrue($result['cookie']['secure']);
+	}
+
+	/**
+	 * `Lax` covers the ordinary chain by itself: Nextcloud and Etherpad have
+	 * to share a registrable domain for the cookie to be settable at all, so
+	 * the pad iframe is a same-site subresource — while a foreign page
+	 * framing a pad URL gets nothing.
+	 *
+	 * Unconditional. The embed routes need a Nextcloud session, and
+	 * Nextcloud pins that cookie to `Lax` itself, so there is no cross-site
+	 * flow left for `None` to serve.
+	 */
+	public function testTheSessionCookieDoesNotTravelToOtherSites(): void {
+		$this->assertSame('Lax', $this->openContextCookie([], null)['same_site']);
 	}
 
 	public function testCreateProtectedOpenContextUsesExplicitCookieDomainOnly(): void {
@@ -500,7 +522,7 @@ class PadSessionServiceTest extends TestCase {
 			'domain' => '.example.test',
 			'secure' => true,
 			'http_only' => false,
-			'same_site' => 'None',
+			'same_site' => 'Lax',
 		]);
 
 		$this->assertStringContainsString('sessionID=s.abc123', $header);
@@ -509,7 +531,7 @@ class PadSessionServiceTest extends TestCase {
 		$this->assertStringContainsString('Path=/', $header);
 		$this->assertStringContainsString('Domain=.example.test', $header);
 		$this->assertStringContainsString('Secure', $header);
-		$this->assertStringContainsString('SameSite=None', $header);
+		$this->assertStringContainsString('SameSite=Lax', $header);
 		$this->assertStringNotContainsString("\n", $header);
 		$this->assertStringNotContainsString("\r", $header);
 	}
