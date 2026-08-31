@@ -209,16 +209,33 @@ subresource, `Lax` covers it, and a foreign page that frames a pad URL gets
 no session cookie with it: the pad renders unauthenticated instead of as the
 visiting user.
 
-There is no `None` case. The embed routes (`trusted_embed_origins`) look
-like one and are not: they are `NoAdminRequired`, so they need a Nextcloud
-session, and Nextcloud pins its own session cookie to `Lax` on every
-supported version. A cross-site embed is unauthenticated before Etherpad is
-ever reached, so widening this cookie would buy a flow that does not work.
-An embed origin under the same registrable domain – `portal.example.org`
-framing `cloud.example.org` – is same-site throughout and unaffected.
+`Strict` is deliberately not used: it would also withhold the cookie from a
+top-level navigation, so a pad link in an email would open unauthenticated.
 
-Public shares are `PublicPage` but add no `frame-ancestors`, so Nextcloud's
-default `'self'` keeps them from being framed elsewhere.
+`None` exists as an opt-in and is never inferred:
+
+```bash
+occ config:app:set etherpad_nextcloud etherpad_session_cookie_samesite --value=none
+```
+
+It is needed by one deployment: a foreign site framing the embed routes.
+Those routes are `NoAdminRequired`, so they need an authenticated Nextcloud
+request – and Nextcloud sends its own session cookie as `Lax`, so a
+cross-site frame is not logged in through it. What makes such an embed work
+anyway is authentication that does not travel in a cookie: a proxy-injected
+`REMOTE_USER`, Kerberos, or SAML in environment mode. That is not something
+this app can detect, so an admin who runs it says so. The connection test
+warns while the setting is on, and names what Nextcloud's own cookie does.
+
+An embed origin under the same registrable domain – `portal.example.org`
+framing `cloud.example.org` – is same-site throughout and needs none of
+this.
+
+A writable protected public share does mint a session, and its page carries
+no `frame-ancestors` of its own – but any installed app may add one through
+`AddContentSecurityPolicyEvent`, which Nextcloud merges into every response.
+`Lax` is the safer value there for exactly that reason, rather than a
+guarantee that such a page can never be framed.
 
 ### `HttpOnly` and the Etherpad release
 
@@ -251,6 +268,7 @@ App config keys, none of them meant to be edited by hand except the first:
 | `etherpad_http_only_session_cookie` | Exactly `auto` (default), `yes` or `no` – anything else is ignored, with one warning per hour in the log and a line in the connection test. The escape hatch when detection is wrong. `yes` against an Etherpad below 3.0 stops every protected pad from opening. |
 | `etherpad_http_only_override_warned_at` | when the warning above was last written, so it is one line an hour rather than one per pad open |
 | `etherpad_release_failed` | JSON: when a check last failed, and for which host. Its own value, because a failure has nothing to say about the release – folding the two together made every failure overwrite the record. |
+| `etherpad_session_cookie_samesite` | `lax` (default) or `none`. Only for a cross-site embed behind cookie-independent authentication – see above. |
 | `etherpad_release_state` | JSON: the detected release, the API host it was read from, when it was last confirmed, and when a check last failed. One value on purpose – a check that finishes after the app has been repointed can only write a record that says which server it is about, and the next reader discards it. |
 
 ```bash

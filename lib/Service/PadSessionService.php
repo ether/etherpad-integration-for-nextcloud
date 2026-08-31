@@ -40,6 +40,9 @@ class PadSessionService {
 	 */
 	private const MAX_SESSION_IDS = 25;
 
+	/** `lax` (default) or `none`; see resolveSameSite(). */
+	public const SAME_SITE_KEY = 'etherpad_session_cookie_samesite';
+
 	/**
 	 * How many ids are read out of the cookie at all. Only a bound on work:
 	 * the cap above decides what survives. Any host under the shared parent
@@ -297,23 +300,7 @@ class PadSessionService {
 			'path' => '/',
 			'domain' => $cookieDomain,
 			'secure' => true,
-			// Lax, and there is no case for None. Nextcloud and Etherpad have
-			// to share a registrable domain for a protected pad to work at
-			// all — a browser rejects a `Set-Cookie` whose `Domain=` is not a
-			// suffix of the host that set it — so the pad iframe is a
-			// same-site subresource, while a foreign page framing a pad URL
-			// gets nothing.
-			//
-			// The embed routes look like the exception and are not: they are
-			// NoAdminRequired, so they need a Nextcloud session, and
-			// Nextcloud pins its own session cookie to Lax on every version
-			// this app supports (Session/Internal.php, 31 through 33). A
-			// cross-site embed is therefore already unauthenticated before
-			// Etherpad is reached. Widening this cookie for it would buy a
-			// flow that does not work. Public shares are PublicPage but add
-			// no frame-ancestors, so Nextcloud's own `'self'` keeps them from
-			// being framed elsewhere.
-			'same_site' => 'Lax',
+			'same_site' => $this->resolveSameSite(),
 			// Up to Etherpad 2.7.3 the pad app reads `sessionID` itself, in
 			// the browser — HttpOnly there would lock the user out of every
 			// protected pad. From 3.0.0 the server takes it out of the
@@ -344,6 +331,36 @@ class PadSessionService {
 			$parts[] = 'SameSite=' . $cookie['same_site'];
 		}
 		return implode('; ', $parts);
+	}
+
+	/**
+	 * How far the session cookie may travel.
+	 *
+	 * `Lax` by default, and it costs nothing in the ordinary chain:
+	 * Nextcloud and Etherpad have to share a registrable domain for a
+	 * protected pad to work at all — a browser rejects a `Set-Cookie` whose
+	 * `Domain=` is not a suffix of the host that set it — so the pad iframe
+	 * is a same-site subresource, while a foreign page framing a pad URL
+	 * gets nothing. `Strict` would go further and is deliberately not used:
+	 * it would also withhold the cookie from a top-level navigation, so a
+	 * pad link in an email would open unauthenticated.
+	 *
+	 * `None` is asked for, never inferred. It is needed by exactly one
+	 * deployment: a foreign site framing the embed routes, where Nextcloud
+	 * authenticates the request without a cookie — proxy-injected
+	 * `REMOTE_USER`, Kerberos, SAML in environment mode. A cookie policy
+	 * cannot see that, and the previous attempt to work it out from the
+	 * hosts involved needed a public suffix list to be right. So the admin
+	 * says so.
+	 */
+	private function resolveSameSite(): string {
+		$configured = strtolower(trim((string)$this->config->getAppValue(
+			'etherpad_nextcloud',
+			self::SAME_SITE_KEY,
+			'lax',
+		)));
+
+		return $configured === 'none' ? 'None' : 'Lax';
 	}
 
 	private function resolveCookieDomain(): string {

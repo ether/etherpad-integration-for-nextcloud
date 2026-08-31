@@ -66,6 +66,7 @@ class PadSessionServiceTest extends TestCase {
 		string $groupId = 'g.ABCDEFGHIJKLMNOP',
 		bool $listingFails = false,
 		bool $httpOnlySupported = false,
+		string $sameSiteSetting = 'lax',
 	): array {
 		$etherpadClient = $this->createMock(EtherpadClient::class);
 		$etherpadClient->method('createSession')->willReturn($this->sid('new'));
@@ -78,12 +79,10 @@ class PadSessionServiceTest extends TestCase {
 		$etherpadClient->method('createAuthorIfNotExistsFor')->willReturn('a.author');
 		$etherpadClient->method('buildPadUrl')->willReturn('https://pad.example.test/p/x');
 
-		// The pad host matters here: SameSite is decided against it, since
-		// that is where the cookie is sent.
 		$config = $this->createMock(IConfig::class);
 		$config->method('getAppValue')->willReturnCallback(
-			static fn (string $app, string $key, string $default = ''): string => $key === 'etherpad_host'
-				? 'https://pad.example.test'
+			static fn (string $app, string $key, string $default = ''): string => $key === PadSessionService::SAME_SITE_KEY
+				? $sameSiteSetting
 				: $default
 		);
 		$service = $this->buildService(
@@ -366,6 +365,7 @@ class PadSessionServiceTest extends TestCase {
 			['etherpad_nextcloud', 'etherpad_cookie_domain', '', ''],
 			['etherpad_nextcloud', 'etherpad_cookie_domain_configured', 'no', 'no'],
 			['etherpad_nextcloud', 'etherpad_host', '', 'https://pad.example.test'],
+			['etherpad_nextcloud', PadSessionService::SAME_SITE_KEY, 'lax', 'lax'],
 		]);
 		$config->method('getUserValue')->willReturnMap([
 			[$uid, 'etherpad_nextcloud', 'etherpad_author_id', '', 'a.cached'],
@@ -435,6 +435,8 @@ class PadSessionServiceTest extends TestCase {
 				['etherpad_nextcloud', 'etherpad_cookie_domain', '', ''],
 				['etherpad_nextcloud', 'etherpad_cookie_domain_configured', 'no', 'no'],
 				['etherpad_nextcloud', 'etherpad_host', '', 'https://pad.example.test'],
+			['etherpad_nextcloud', PadSessionService::SAME_SITE_KEY, 'lax', 'lax'],
+				['etherpad_nextcloud', PadSessionService::SAME_SITE_KEY, 'lax', 'lax'],
 			]);
 
 		$service = $this->buildService($etherpadClient, $config);
@@ -455,12 +457,35 @@ class PadSessionServiceTest extends TestCase {
 	 * the pad iframe is a same-site subresource — while a foreign page
 	 * framing a pad URL gets nothing.
 	 *
-	 * Unconditional. The embed routes need a Nextcloud session, and
-	 * Nextcloud pins that cookie to `Lax` itself, so there is no cross-site
-	 * flow left for `None` to serve.
+	 * Not `Strict`, which is the other direction this could drift: that
+	 * withholds the cookie from a top-level navigation too, so a pad link
+	 * in an email would open unauthenticated.
 	 */
 	public function testTheSessionCookieDoesNotTravelToOtherSites(): void {
 		$this->assertSame('Lax', $this->openContextCookie([], null)['same_site']);
+	}
+
+	/**
+	 * Asked for, never inferred. The one deployment that needs it is a
+	 * foreign site framing the embed routes where Nextcloud authenticates
+	 * without a cookie — proxy `REMOTE_USER`, Kerberos, SAML in environment
+	 * mode. Nothing in a cookie policy can see that.
+	 */
+	public function testTheCookieIsNotStrict(): void {
+		// A later hardening pass reads the comment above, sees "do not give
+		// this to other sites", and reaches for Strict. That breaks opening
+		// a pad from a link, and nothing else in the suite would notice.
+		$this->assertNotSame('Strict', $this->openContextCookie([], null)['same_site']);
+	}
+
+	public function testAnAdminCanWidenTheCookieForACrossSiteEmbed(): void {
+		$this->assertSame('None', $this->openContextCookie([], null, sameSiteSetting: 'none')['same_site']);
+	}
+
+	/** Anything else is Lax, including a value nobody meant. */
+	public function testAnythingButNoneMeansLax(): void {
+		$this->assertSame('Lax', $this->openContextCookie([], null, sameSiteSetting: 'true')['same_site']);
+		$this->assertSame('Lax', $this->openContextCookie([], null, sameSiteSetting: '')['same_site']);
 	}
 
 	public function testCreateProtectedOpenContextUsesExplicitCookieDomainOnly(): void {
@@ -478,6 +503,8 @@ class PadSessionServiceTest extends TestCase {
 				['etherpad_nextcloud', 'etherpad_cookie_domain', '', '.example.test'],
 				['etherpad_nextcloud', 'etherpad_cookie_domain_configured', 'no', 'yes'],
 				['etherpad_nextcloud', 'etherpad_host', '', 'https://pad.example.test'],
+			['etherpad_nextcloud', PadSessionService::SAME_SITE_KEY, 'lax', 'lax'],
+				['etherpad_nextcloud', PadSessionService::SAME_SITE_KEY, 'lax', 'lax'],
 			]);
 
 		$service = $this->buildService($etherpadClient, $config);
@@ -501,6 +528,8 @@ class PadSessionServiceTest extends TestCase {
 				['etherpad_nextcloud', 'etherpad_cookie_domain', '', ''],
 				['etherpad_nextcloud', 'etherpad_cookie_domain_configured', 'no', 'yes'],
 				['etherpad_nextcloud', 'etherpad_host', '', 'https://pad.example.test'],
+			['etherpad_nextcloud', PadSessionService::SAME_SITE_KEY, 'lax', 'lax'],
+				['etherpad_nextcloud', PadSessionService::SAME_SITE_KEY, 'lax', 'lax'],
 			]);
 
 		$service = $this->buildService($etherpadClient, $config);
@@ -571,6 +600,8 @@ class PadSessionServiceTest extends TestCase {
 				['etherpad_nextcloud', 'etherpad_cookie_domain', '', ''],
 				['etherpad_nextcloud', 'etherpad_cookie_domain_configured', 'no', 'no'],
 				['etherpad_nextcloud', 'etherpad_host', '', 'https://pad.example.test'],
+			['etherpad_nextcloud', PadSessionService::SAME_SITE_KEY, 'lax', 'lax'],
+				['etherpad_nextcloud', PadSessionService::SAME_SITE_KEY, 'lax', 'lax'],
 			]);
 		$config->method('getUserValue')
 			->willReturnMap([
@@ -612,6 +643,8 @@ class PadSessionServiceTest extends TestCase {
 				['etherpad_nextcloud', 'etherpad_cookie_domain', '', ''],
 				['etherpad_nextcloud', 'etherpad_cookie_domain_configured', 'no', 'no'],
 				['etherpad_nextcloud', 'etherpad_host', '', 'https://pad.example.test'],
+			['etherpad_nextcloud', PadSessionService::SAME_SITE_KEY, 'lax', 'lax'],
+				['etherpad_nextcloud', PadSessionService::SAME_SITE_KEY, 'lax', 'lax'],
 			]);
 		$config->method('getUserValue')
 			->willReturnMap([
@@ -671,6 +704,8 @@ class PadSessionServiceTest extends TestCase {
 				['etherpad_nextcloud', 'etherpad_cookie_domain', '', ''],
 				['etherpad_nextcloud', 'etherpad_cookie_domain_configured', 'no', 'no'],
 				['etherpad_nextcloud', 'etherpad_host', '', 'https://pad.example.test'],
+			['etherpad_nextcloud', PadSessionService::SAME_SITE_KEY, 'lax', 'lax'],
+				['etherpad_nextcloud', PadSessionService::SAME_SITE_KEY, 'lax', 'lax'],
 			]);
 		$config->method('getUserValue')
 			->willReturnMap([
@@ -737,6 +772,8 @@ class PadSessionServiceTest extends TestCase {
 				['etherpad_nextcloud', 'etherpad_cookie_domain', '', ''],
 				['etherpad_nextcloud', 'etherpad_cookie_domain_configured', 'no', 'no'],
 				['etherpad_nextcloud', 'etherpad_host', '', 'https://pad.example.test'],
+			['etherpad_nextcloud', PadSessionService::SAME_SITE_KEY, 'lax', 'lax'],
+				['etherpad_nextcloud', PadSessionService::SAME_SITE_KEY, 'lax', 'lax'],
 			]);
 		$config->expects($this->never())->method('setUserValue');
 		$config->expects($this->never())->method('deleteUserValue');

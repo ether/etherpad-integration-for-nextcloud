@@ -108,6 +108,7 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 		string $knownRelease = '',
 		string $unrecognisedOverride = '',
 		string $configuredApiHost = 'https://pad-api.example.test',
+		string $sameSiteSetting = 'lax',
 	): EtherpadHealthCheckService {
 		$urlGenerator = $this->createMock(IURLGenerator::class);
 		$urlGenerator->method('getBaseUrl')->willReturn($nextcloudUrl);
@@ -125,6 +126,12 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 		// be saved.
 		$releasePolicy->expects(self::never())->method('supportsHttpOnlySessionCookie');
 		$releasePolicy->method('knownRelease')->willReturn($knownRelease);
+		$config = $this->createMock(\OCP\IConfig::class);
+		$config->method('getAppValue')->willReturnCallback(
+			static fn (string $app, string $key, string $default = ''): string => $key === \OCA\EtherpadNextcloud\Service\PadSessionService::SAME_SITE_KEY
+				? $sameSiteSetting
+				: $default
+		);
 		return new EtherpadHealthCheckService(
 			$etherpad,
 			$pending,
@@ -133,6 +140,7 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 			$this->baseUrlCheck(),
 			$urlGenerator,
 			$releasePolicy,
+			$config,
 		);
 	}
 
@@ -148,6 +156,7 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 		string $knownRelease = '',
 		string $unrecognisedOverride = '',
 		string $configuredApiHost = 'https://pad-api.example.test',
+		string $sameSiteSetting = 'lax',
 	): HealthCheckItem {
 		$result = $this->buildService(
 			$etherpad,
@@ -156,6 +165,7 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 			knownRelease: $knownRelease,
 			unrecognisedOverride: $unrecognisedOverride,
 			configuredApiHost: $configuredApiHost,
+			sameSiteSetting: $sameSiteSetting,
 		)->check($this->settings());
 		foreach ($result->checks as $item) {
 			if ($item->id === 'session_cookie') {
@@ -297,6 +307,24 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 	}
 
 	/**
+	 * `SameSite=None` is the one setting here that hands the cookie to other
+	 * sites, and it works only where Nextcloud authenticates without a
+	 * cookie. Whether that holds is not this app's to decide — but
+	 * Nextcloud's own session cookie says which half of the question the
+	 * admin is in, so it is reported rather than assumed.
+	 */
+	public function testSessionCookieLineWarnsWhenTheCookieIsSentToOtherSites(): void {
+		$etherpad = $this->createMock(EtherpadClient::class);
+		$etherpad->method('healthCheck')->willReturn(['pad_count' => 1]);
+		$etherpad->expects(self::never())->method('detectReleaseVersion');
+
+		$line = $this->sessionCookieLine($etherpad, sameSiteSetting: 'none');
+		self::assertSame(HealthCheckItem::STATUS_WARNING, $line->status);
+		self::assertStringContainsString('SameSite=None', $line->label);
+		self::assertStringContainsString('REMOTE_USER', $line->detail);
+	}
+
+	/**
 	 * The dangerous half of the override shouts, and says what the server
 	 * actually is so somebody who reached for it during an outage can see
 	 * whether they may put it back.
@@ -384,6 +412,7 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 			$this->baseUrlCheck(),
 			$urlGenerator,
 			$this->createMock(\OCA\EtherpadNextcloud\Service\EtherpadReleasePolicy::class),
+			$this->createMock(\OCP\IConfig::class),
 			$ticks,
 		) extends EtherpadHealthCheckService {
 			/** @param list<float> $ticks */
@@ -395,9 +424,10 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 				BaseUrlReachabilityCheck $baseUrlCheck,
 				IURLGenerator $urlGenerator,
 				\OCA\EtherpadNextcloud\Service\EtherpadReleasePolicy $releasePolicy,
+				\OCP\IConfig $config,
 				private array $ticks,
 			) {
-				parent::__construct($etherpadClient, $pendingDeleteRetryService, $l10n, $cookieDomainPolicy, $baseUrlCheck, $urlGenerator, $releasePolicy);
+				parent::__construct($etherpadClient, $pendingDeleteRetryService, $l10n, $cookieDomainPolicy, $baseUrlCheck, $urlGenerator, $releasePolicy, $config);
 			}
 
 			protected function now(): float {

@@ -5,6 +5,7 @@ set -euo pipefail
 # NC_BASE_URL="https://cloud.example.tld" \
 # NC_USER="alice" \
 # NC_APP_PASSWORD="app-password" \
+# EXPECTED_SAMESITE="Lax" \
 # ./tests/integration/e2e-protected-cookie-contract.sh "/Apps/Test/cookie-contract"
 
 if [[ $# -lt 1 ]]; then
@@ -137,10 +138,12 @@ fi
 SESSION_COOKIE_LINE="$(printf '%s\n' "$SESSION_COOKIE_LINES" | sed -n '1p')"
 
 assert_cookie_contains "$SESSION_COOKIE_LINE" "secure" "Secure"
-# Lax unless trusted_embed_origins names a host on another site: Nextcloud
-# and Etherpad have to share a registrable domain for the cookie to be
-# settable at all, so the ordinary chain is same-site.
-assert_cookie_contains "$SESSION_COOKIE_LINE" "samesite=lax" "SameSite=Lax"
+# Lax on a default instance. An admin can set
+# etherpad_session_cookie_samesite=none for a cross-site embed behind
+# proxy authentication; this check then has to be told, because the value
+# is not derivable from anything the script can see.
+EXPECTED_SAMESITE="$(printf '%s' "${EXPECTED_SAMESITE:-Lax}" | tr '[:upper:]' '[:lower:]')"
+assert_cookie_contains "$SESSION_COOKIE_LINE" "samesite=${EXPECTED_SAMESITE}" "SameSite=${EXPECTED_SAMESITE}"
 
 # HttpOnly is not a constant of this contract, it depends on the pad server.
 # The major-3 boundary below restates EtherpadReleasePolicy's
