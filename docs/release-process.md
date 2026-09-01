@@ -19,12 +19,13 @@ What it does:
 
 - Verifies required local tools (`git`, `php`).
 - Fails on dirty working tree by default.
-- Runs local tiny unit test:
-  - `php tests/unit/padfile-pathnormalizer-test.php`
-- Runs PHPUnit unit suite when available:
+- Runs the PHPUnit unit suite, which is required rather than optional – it is
+  the only local test path, so a missing `vendor/bin/phpunit` fails the check
+  instead of skipping it:
   - `vendor/bin/phpunit --testsuite unit`
-  - If `vendor/bin/phpunit` is missing, install once with:
-    - `composer install --no-interaction`
+  - Install once with `composer install --no-interaction`
+  - The path-normalizer coverage this step used to run as a standalone script
+    lives in that suite as `PathNormalizerTest`
 - If Nextcloud test credentials are present, runs core E2E checks:
   - pad flow
   - protected cookie contract (session cookie attrs + no `HttpOnly` for current Etherpad runtime compatibility)

@@ -1,5 +1,49 @@
 # Changelog
 
+## 1.1.0-alpha.4 — 2026-08-31
+
+Fourth public-review release. Focus: one pad-creation entry point with shared templates, a clearer admin surface, protected-pad session and lifecycle correctness, and a disposable end-to-end stack that runs the browser suite across three Nextcloud and two Etherpad majors.
+
+### Added
+
+- **Instance-wide pad templates.** Administrators upload and manage shared `.pad` templates; they appear in Nextcloud's template picker for everyone and always create a fresh Etherpad pad. (#181)
+- **One "New pad" entry.** The separate protected/public/external entries in the New menu are replaced by a single entry, with the pad type and any shared template chosen in Nextcloud's own template picker. (#187)
+- **Configurable pad types.** Protected and public pads can be enabled or disabled independently; pads of a disabled type keep working, and external pads keep their own setting. (#177)
+- **Italian locale**, alongside German, Spanish and French. (#188)
+
+### Changed
+
+- **Admin page grouped into sections**, with the descriptions rewritten. (#178)
+- **Connection test reports each part separately** — API, API key, browser-facing Etherpad URL, protected-pad cookie — with field-specific guidance where a setting needs attention. (#179)
+- The cookie-domain calculation used by the settings page, the diagnostics and the runtime is one implementation. (#179)
+
+### Security
+
+- **The Etherpad session cookie is `SameSite=Lax`.** It was `None`, so any page on the web could frame a pad URL and a visiting user's cookie went with it. `etherpad_session_cookie_samesite=none` remains for a cross-site embed behind cookie-independent authentication. (#210)
+- **`HttpOnly` from Etherpad 3.0.** The release is detected from `/health`; up to 2.7.3 the pad app reads the cookie in the browser, where `HttpOnly` would lock users out of every protected pad. (#209)
+- **Deleting a protected pad removes its Etherpad group and that group's sessions**, instead of leaving both behind with nothing pointing at them. (#208)
+- **Legacy Ownpad migration checks that a group pad is in the group it names**, closing a path where a hand-written `.pad` could name someone else's Etherpad group and have a session minted for it. (#208)
+
+### Fixed
+
+- **Several protected pads stay open at once.** Opening a second one no longer replaces the first one's Etherpad session. (#206)
+- **Opening by file id is trustworthy** for group folders, shares, external storage and files whose path changed. (#205)
+- **Pad names keep their special characters**, and Nextcloud judges what a valid name is. (#200)
+- **Pad files are created atomically**, and a failed create rolls back the file it made. (#198)
+- Creating a pad directly in the user's root folder works. (#196)
+- Restoring a `.pad` from the trash works on Nextcloud 31. (#190)
+- Cleanup and rollback are consistent when creation, binding, restoration or deletion only partly succeeds. (#198, #205, #208)
+
+### Tooling / tests / CI
+
+- **Disposable Docker e2e stack** — Nextcloud, Etherpad, PostgreSQL and TLS — so the browser suite runs against a throwaway target. (#195)
+- **The Playwright suite runs in CI** against Nextcloud 31, 32 and 33 on Etherpad 2, and Nextcloud 33 on Etherpad 3. (#195, #207)
+- Browser and unit coverage extended across creation, templates, shares, protected sessions, trash and restore, lifecycle cleanup and the security-sensitive paths. (#53, #138, #194)
+- Test runs no longer leave fixtures in the Nextcloud trash. (#194)
+- DOMPurify updated and the shipped frontend bundles rebuilt with it. (#144, #166, #189)
+- Playwright artefacts excluded from the release tarball. (#136)
+- Dependabot PRs auto-merge once CI passes. (#151)
+
 ## 1.1.0-alpha.3 — 2026-06-09
 
 Third public-review release. Focus: security hardening of the Etherpad/admin surface, a browser end-to-end test suite, and a deep static-analysis / tech-debt pass. No user-facing feature changes since alpha.2.
