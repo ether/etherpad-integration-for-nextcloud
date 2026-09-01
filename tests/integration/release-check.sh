@@ -38,7 +38,9 @@ fi
 
 echo "[2/5] Unit checks"
 cd "$ROOT_DIR"
-php tests/unit/padfile-pathnormalizer-test.php
+# The standalone path-normalizer script this used to run was folded into the
+# PHPUnit suite in #41 (PathNormalizerTest). The call outlived it and, under
+# set -e, aborted the whole check — so this gate has not completed since.
 if [[ -x "${ROOT_DIR}/vendor/bin/phpunit" ]]; then
 	"${ROOT_DIR}/vendor/bin/phpunit" --testsuite unit
 else
