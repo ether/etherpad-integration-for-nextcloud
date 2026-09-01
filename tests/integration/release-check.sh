@@ -40,12 +40,19 @@ echo "[2/5] Unit checks"
 cd "$ROOT_DIR"
 # The standalone path-normalizer script this used to run was folded into the
 # PHPUnit suite in #41 (PathNormalizerTest). The call outlived it and, under
-# set -e, aborted the whole check — so this gate has not completed since.
-if [[ -x "${ROOT_DIR}/vendor/bin/phpunit" ]]; then
-	"${ROOT_DIR}/vendor/bin/phpunit" --testsuite unit
-else
-	echo "-> PHPUnit suite skipped (run 'composer install --no-interaction' to enable)."
+# set -e, aborted the whole check — so this gate did not complete for two
+# releases.
+#
+# PHPUnit is required rather than optional. It was the second of two test
+# paths when the standalone script existed; as the only one, skipping it
+# would let this gate report "local-only checks passed" having run nothing
+# at all — which is worse than the abort it replaced.
+if [[ ! -x "${ROOT_DIR}/vendor/bin/phpunit" ]]; then
+	echo "PHPUnit is missing and this check runs no tests without it." >&2
+	echo "Install it once with: composer install --no-interaction" >&2
+	exit 2
 fi
+"${ROOT_DIR}/vendor/bin/phpunit" --testsuite unit
 
 if ! has_nextcloud_e2e_env; then
 	echo "[3/5] Core E2E checks skipped (missing NC_BASE_URL / NC_USER / NC_APP_PASSWORD)."
