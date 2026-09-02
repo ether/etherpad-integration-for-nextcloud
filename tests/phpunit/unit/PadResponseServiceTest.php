@@ -38,6 +38,43 @@ class PadResponseServiceTest extends TestCase {
 		$this->assertSame('/apps/etherpad/embed/by-id/42', $result['embed_url']);
 	}
 
+	/**
+	 * The viewer decides what to render from this one field, so a target
+	 * that withholds the pad must be reported as withholding it — otherwise
+	 * the service does the right thing and the client still asks for an
+	 * editor it was never given a URL for.
+	 */
+	public function testOpenResponseCarriesTheReadOnlyDecisionToTheClient(): void {
+		$urlGenerator = $this->createMock(IURLGenerator::class);
+		$urlGenerator->method('linkToRoute')->willReturn('/sync/42');
+		$appConfigService = $this->createMock(AppConfigService::class);
+		$appConfigService->method('getSyncIntervalSeconds')->willReturn(45);
+		$service = new PadResponseService($urlGenerator, $appConfigService, $this->l10nEcho());
+
+		$readOnly = $service->openResponse($this->buildTarget(isReadOnlySnapshot: true))->getData();
+		$editable = $service->openResponse($this->buildTarget(isReadOnlySnapshot: false))->getData();
+
+		$this->assertTrue($readOnly['is_readonly_snapshot']);
+		$this->assertFalse($editable['is_readonly_snapshot']);
+	}
+
+	private function buildTarget(bool $isReadOnlySnapshot): \OCA\EtherpadNextcloud\Service\PadOpenTarget {
+		return new \OCA\EtherpadNextcloud\Service\PadOpenTarget(
+			file: '/Test.pad',
+			fileId: 42,
+			padId: 'test',
+			accessMode: 'protected',
+			padUrl: 'https://pad.example.test/p/test',
+			isExternal: false,
+			originalPadUrl: '',
+			snapshotText: $isReadOnlySnapshot ? 'snapshot' : '',
+			snapshotHtml: '',
+			url: $isReadOnlySnapshot ? '' : 'https://pad.example.test/p/test',
+			cookieHeader: '',
+			isReadOnlySnapshot: $isReadOnlySnapshot,
+		);
+	}
+
 	public function testOpenResponseMovesCookieHeaderOutOfPayload(): void {
 		$urlGenerator = $this->createMock(IURLGenerator::class);
 		$urlGenerator->method('linkToRoute')
