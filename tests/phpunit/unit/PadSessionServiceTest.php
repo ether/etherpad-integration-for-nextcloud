@@ -26,6 +26,7 @@ class PadSessionServiceTest extends TestCase {
 		string $nextcloudUrl = 'https://cloud.example.test',
 		?string $incomingSessionCookie = null,
 		bool $httpOnlySupported = false,
+		?\OCA\EtherpadNextcloud\Service\ExpiredSessionCollector $collector = null,
 	): PadSessionService {
 		$urlGenerator = $this->createMock(IURLGenerator::class);
 		$urlGenerator->method('getBaseUrl')->willReturn($nextcloudUrl);
@@ -40,8 +41,42 @@ class PadSessionServiceTest extends TestCase {
 			new CookieDomainPolicy(),
 			$releasePolicy,
 			$request,
+			$collector ?? $this->createMock(\OCA\EtherpadNextcloud\Service\ExpiredSessionCollector::class),
 			$this->createMock(LoggerInterface::class),
 		);
+	}
+
+	/**
+	 * Every protected open leaves the author's id for the sweep, before
+	 * anything is asked of the pad server.
+	 *
+	 * Not "when a backlog is noticed": noticing one needs the listing, and
+	 * the listing only happens when the browser carries session ids — so a
+	 * first open made none, and neither does a public link. Both were
+	 * invisible to a sweep that had to be told what to look at.
+	 */
+	public function testTellsTheCollectorWhoOpenedThePad(): void {
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->method('createSession')->willReturn($this->sid('new'));
+		$etherpadClient->expects($this->never())->method('listSessionsOfAuthor');
+		$etherpadClient->method('createAuthorIfNotExistsFor')->willReturn('a.author');
+		$etherpadClient->method('buildPadUrl')->willReturn('https://pad.example.test/p/x');
+
+		$collector = $this->createMock(\OCA\EtherpadNextcloud\Service\ExpiredSessionCollector::class);
+		// The author id alone. For a public link the uid is the share token,
+		// and this argument is persisted in the jobs table.
+		$collector->expects($this->once())->method('noteAuthor')->with('a.author');
+
+		// No incoming cookie: the case the old trigger could never see.
+		$service = $this->buildService(
+			$etherpadClient,
+			$this->createMock(IConfig::class),
+			'https://cloud.example.test',
+			null,
+			false,
+			$collector,
+		);
+		$service->createProtectedOpenContext('admin', 'Admin', 'g.ABCDEFGHIJKLMNOP$pad-1');
 	}
 
 	/**
@@ -338,6 +373,7 @@ class PadSessionServiceTest extends TestCase {
 			new CookieDomainPolicy(),
 			$this->createMock(\OCA\EtherpadNextcloud\Service\EtherpadReleasePolicy::class),
 			$request,
+			$this->createMock(\OCA\EtherpadNextcloud\Service\ExpiredSessionCollector::class),
 			$logger,
 		);
 

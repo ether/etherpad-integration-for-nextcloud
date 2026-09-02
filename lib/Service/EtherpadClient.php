@@ -177,6 +177,19 @@ class EtherpadClient {
 	}
 
 	/**
+	 * Take one session away.
+	 *
+	 * Measured: a second delete of the same id answers `sessionID does not
+	 * exist`, which the classifier reads as already gone.
+	 *
+	 * The timeout is a parameter because the collector promises a total run
+	 * length, which a call carrying the standard timeout would overrun.
+	 */
+	public function deleteSession(string $sessionId, ?int $timeoutSeconds = null): void {
+		$this->apiCall('deleteSession', ['sessionID' => $sessionId], 'POST', null, null, null, $timeoutSeconds);
+	}
+
+	/**
 	 * The author's sessions, keyed by session id, each carrying the group it
 	 * grants access to and when it stops doing so.
 	 *
@@ -186,19 +199,31 @@ class EtherpadClient {
 	 *
 	 * @return array<string,array{groupID:string,validUntil:int}>
 	 */
-	public function listSessionsOfAuthor(string $authorId): array {
+	/**
+	 * @param ?int $unreadableEntries set to how many ids the index listed
+	 *   that Etherpad could not describe — see below
+	 */
+	public function listSessionsOfAuthor(
+		string $authorId,
+		?int $timeoutSeconds = null,
+		?int &$unreadableEntries = null,
+	): array {
 		// POST like every other authenticated call: a GET would put the
 		// apikey in the URL, and from there into proxy and access logs.
-		$data = $this->apiCall('listSessionsOfAuthor', ['authorID' => $authorId]);
+		$data = $this->apiCall('listSessionsOfAuthor', ['authorID' => $authorId], 'POST', null, null, null, $timeoutSeconds);
 
 		$sessions = [];
+		// Every entry the index listed that cannot be turned into a session,
+		// whatever made it unusable — a null, a malformed record, an
+		// unexpected key. Each still costs a lookup per listing and
+		// `deleteSession` will not take it, so dropping any of them quietly
+		// would let a sweep look successful while the index stayed as long.
+		$unreadableEntries = 0;
 		foreach ($data as $sessionId => $info) {
-			if (!is_string($sessionId) || !is_array($info)) {
-				continue;
-			}
-			$groupId = (string)($info['groupID'] ?? '');
-			$validUntil = (int)($info['validUntil'] ?? 0);
-			if ($groupId === '' || $validUntil <= 0) {
+			$groupId = is_array($info) ? (string)($info['groupID'] ?? '') : '';
+			$validUntil = is_array($info) ? (int)($info['validUntil'] ?? 0) : 0;
+			if (!is_string($sessionId) || $groupId === '' || $validUntil <= 0) {
+				$unreadableEntries++;
 				continue;
 			}
 			$sessions[$sessionId] = ['groupID' => $groupId, 'validUntil' => $validUntil];
@@ -297,7 +322,8 @@ class EtherpadClient {
 		string $httpMethod = 'POST',
 		?string $hostOverride = null,
 		?string $apiKeyOverride = null,
-		?string $apiVersionOverride = null
+		?string $apiVersionOverride = null,
+		?int $timeoutSeconds = null
 	): array {
 		$apiVersion = $apiVersionOverride !== null && trim($apiVersionOverride) !== ''
 			? trim($apiVersionOverride)
@@ -315,7 +341,7 @@ class EtherpadClient {
 		]);
 
 		try {
-			$rawBody = $this->sendRequest($url, $query, $httpMethod);
+			$rawBody = $this->sendRequest($url, $query, $httpMethod, $timeoutSeconds);
 		} catch (\Throwable $e) {
 			throw new EtherpadClientException('Etherpad API request failed: ' . $method, 0, $e);
 		}
@@ -338,9 +364,15 @@ class EtherpadClient {
 	/**
 	 * @param array<string,mixed> $query
 	 */
-	private function sendRequest(string $url, array $query, string $httpMethod): string {
+	private function sendRequest(
+		string $url,
+		array $query,
+		string $httpMethod,
+		?int $timeoutSeconds = null,
+	): string {
 		$method = strtoupper($httpMethod);
-		$options = $this->baseRequestOptions();
+		// Clamped: Guzzle reads `timeout => 0` as no timeout at all.
+		$options = $this->baseRequestOptions($this->boundedTimeout($timeoutSeconds));
 		if ($method === 'GET') {
 			$options['query'] = $query;
 		} else {
@@ -456,6 +488,15 @@ class EtherpadClient {
 	 *
 	 * @return array<string,mixed>
 	 */
+	/** At least a second, never more than any other call in this app. */
+	private function boundedTimeout(?int $timeoutSeconds): int {
+		if ($timeoutSeconds === null) {
+			return self::REQUEST_TIMEOUT_SECONDS;
+		}
+
+		return max(1, min($timeoutSeconds, self::REQUEST_TIMEOUT_SECONDS));
+	}
+
 	private function baseRequestOptions(int $timeoutSeconds = self::REQUEST_TIMEOUT_SECONDS): array {
 		return [
 			'timeout' => $timeoutSeconds,

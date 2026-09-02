@@ -185,6 +185,80 @@ class EtherpadClientTest extends TestCase {
 		self::assertSame(3, $captured['options']['timeout']);
 	}
 
+	/**
+	 * A caller that says how long it may take gets exactly that.
+	 *
+	 * apiCall() takes seven positional parameters, so the timeout reaches
+	 * the request through three nulls; drop or misplace one — the plausible
+	 * edit when some future call needs a host override — and it lands in
+	 * the api-version slot instead. Every delete would then quietly run at
+	 * the default again, and the collector's tests would not notice,
+	 * because they assert against a mocked client.
+	 */
+	public function testPassesACallersTimeoutThroughToTheRequest(): void {
+		$captured = null;
+		$client = $this->clientWithResponse(
+			$this->response(200, '{"code":0,"data":null}'),
+			$captured,
+		);
+
+		$client->deleteSession('s.aaaaaaaaaaaaaaaa', 4);
+
+		self::assertSame(4, $captured['options']['timeout']);
+	}
+
+	/**
+	 * Guzzle reads `timeout => 0` as no timeout at all, so the one
+	 * parameter whose purpose is bounding time must never be able to
+	 * unbound a call. Clamped at both ends: no housekeeping call gets more
+	 * patience than the ones a user waits on either.
+	 */
+	public function testClampsATimeoutThatWouldRemoveTheBound(): void {
+		foreach ([0 => 1, -5 => 1, 900 => 15] as $asked => $expected) {
+			$captured = null;
+			$client = $this->clientWithResponse(
+				$this->response(200, '{"code":0,"data":null}'),
+				$captured,
+			);
+
+			$client->deleteSession('s.aaaaaaaaaaaaaaaa', $asked);
+
+			self::assertSame($expected, $captured['options']['timeout'], "asked for {$asked}");
+		}
+	}
+
+	/**
+	 * An id the index lists but Etherpad cannot describe is counted, not
+	 * quietly dropped.
+	 *
+	 * Etherpad's listing walks the author index and answers null for a key
+	 * whose session record is gone. Such a key still costs a lookup on
+	 * every listing, and `deleteSession` will not take it — it answers that
+	 * it does not exist. Swallowing them would let a collector report a
+	 * clean sweep while the index it exists to shrink stayed as long.
+	 */
+	public function testCountsTheIndexEntriesEtherpadCannotDescribe(): void {
+		$captured = null;
+		$client = $this->clientWithResponse(
+			$this->response(200, json_encode(['code' => 0, 'data' => [
+				's.aaaaaaaaaaaaaaaa' => ['groupID' => 'g.aaaaaaaaaaaaaaaa', 'validUntil' => 4102444800],
+				's.bbbbbbbbbbbbbbbb' => null,
+				's.cccccccccccccccc' => null,
+				// Malformed rather than null, and just as unusable: still a
+				// key the listing walks that no delete will take.
+				's.dddddddddddddddd' => ['validUntil' => 4102444800],
+				's.eeeeeeeeeeeeeeee' => ['groupID' => 'g.aaaaaaaaaaaaaaaa'],
+				's.ffffffffffffffff' => [],
+			]])),
+			$captured,
+		);
+
+		$sessions = $client->listSessionsOfAuthor('a.aaaaaaaaaaaaaaaa', null, $unreadable);
+
+		self::assertSame(['s.aaaaaaaaaaaaaaaa'], array_keys($sessions));
+		self::assertSame(5, $unreadable);
+	}
+
 	/** The calls that do matter keep the full patience. */
 	public function testApiCallsKeepTheFullRequestTimeout(): void {
 		$captured = null;

@@ -200,6 +200,47 @@ Cookie details:
   - derivation is skipped for IP hosts and invalid host values
   - recommendation: use explicit `etherpad_cookie_domain` in multi-subdomain/proxy setups
 
+### Expired Etherpad sessions
+
+Every open of a protected pad mints a session – since 1.0.0 – and Etherpad
+never removes one once it expires. Nothing read the pile until 1.1.0-alpha.4,
+when keeping several pads open at once began checking which cookie ids are
+still valid: `listSessionsOfAuthor` walks the author's whole index one
+awaited lookup at a time, expired entries included. The cost of an open
+therefore grows with past opens rather than with live access.
+
+An open leaves the author's id in the job table; a queued job does the rest.
+The id says which author to look at, not whether there is anything to
+collect – that answer is the listing, and the listing is the slow call, so
+it belongs in the job together with the deleting. This also reaches the two
+cases a request could not: the first open of a browsing session carries no
+cookie ids and so makes no listing, and a public link never carries any,
+although every visitor of one adds a session under the same shared author.
+
+The id is also all that is stored. A public link's uid is
+`public-share:<token>`, the credential from the share URL, and job
+arguments are persisted and printed by `occ`.
+
+A run deletes up to 250 sessions within 20 seconds, requeueing itself for
+the rest. A refusal is requeued with a growing delay and a limit; a single
+session the server will never delete is skipped rather than allowed to
+block the ones behind it. A run with nothing to do comes back when the
+earliest session still standing falls due, which also keeps the next open
+from queueing a second sweep. Nothing is deleted until five minutes after
+expiry, because Etherpad judges `validUntil` against its own clock and a
+session dead by ours may still be live there.
+
+This assumes deleting a session removes its id from the author index.
+Verified on 2.5.3 with PostgreSQL and on 2.x with the built-in store; an
+integration test pins it by counting raw API keys, since the client filters
+out exactly the entries a surviving key produces. Where entries do survive,
+collecting cannot shrink the index and the sweep says so in the log.
+
+Not covered: sessions still being created – that is what keeps an open pad
+working – and authors nobody opens a pad for, whose leftovers cost storage
+only. Recording each session's id at issue time would remove the listing;
+renewing sessions instead of minting them would remove the pile.
+
 ### `SameSite=Lax`
 
 Nextcloud and Etherpad have to share a registrable domain for a protected

@@ -61,6 +61,7 @@ class PadSessionService {
 		private CookieDomainPolicy $cookieDomainPolicy,
 		private EtherpadReleasePolicy $releasePolicy,
 		private IRequest $request,
+		private ExpiredSessionCollector $collector,
 		private LoggerInterface $logger,
 	) {
 	}
@@ -119,6 +120,11 @@ class PadSessionService {
 	 * @return array{url:string,cookie:array{name:string,value:string,expires:int,path:string,domain:string,secure:bool,http_only:bool,same_site:string}}
 	 */
 	private function openContextFor(string $uid, string $authorId, string $groupId, string $padId, int $validUntil): array {
+		// Before the listing below, which only happens when the browser
+		// carries ids — a first open makes none, and a public link never
+		// does.
+		$this->collector->noteAuthor($authorId);
+
 		$carriedIds = $this->sessionIdsFromCookie();
 		$sessions = $this->sessionsToAttributeWith($uid, $authorId, $carriedIds);
 
@@ -167,7 +173,7 @@ class PadSessionService {
 		}
 
 		try {
-			return $this->etherpadClient->listSessionsOfAuthor($authorId);
+			$sessions = $this->etherpadClient->listSessionsOfAuthor($authorId);
 		} catch (EtherpadClientException $e) {
 			// Not fatal: the open goes ahead. But nothing can be attributed
 			// without the listing, so nothing is carried and a second pad
@@ -179,6 +185,8 @@ class PadSessionService {
 			]);
 			return [];
 		}
+
+		return $sessions;
 	}
 
 	/**

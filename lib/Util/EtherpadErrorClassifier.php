@@ -22,18 +22,47 @@ final class EtherpadErrorClassifier {
 	 * every retry for good.
 	 */
 	public static function isPadAlreadyDeleted(\Throwable $error): bool {
+		return self::mentions($error, [
+			'padid does not exist',
+			'pad does not exist',
+			'unknown pad',
+			'groupid does not exist',
+		]);
+	}
+
+	/**
+	 * The same idea for a session, and deliberately a different list.
+	 *
+	 * One shared set of strings would let an answer about a session be read
+	 * as an answer about a pad: a pad delete failing while Etherpad tears
+	 * down that group's sessions could report `sessionID does not exist`
+	 * and be taken for "the pad is gone", which drops a binding row for a
+	 * pad that is still there. Measured: a second delete of the same
+	 * session answers `sessionID does not exist`.
+	 */
+	public static function isSessionAlreadyGone(\Throwable $error): bool {
+		return self::mentions($error, ['sessionid does not exist']);
+	}
+
+	/**
+	 * Walk the cause chain for any of these, case-insensitively.
+	 *
+	 * The chain matters: the client wraps transport errors, so the sentence
+	 * Etherpad actually said is often not the one on the outermost
+	 * exception.
+	 *
+	 * @param list<string> $needles lower-case
+	 */
+	private static function mentions(\Throwable $error, array $needles): bool {
 		$current = $error;
 		while ($current !== null) {
 			$message = strtolower(trim($current->getMessage()));
-			if (
-				$message !== '' && (
-					str_contains($message, 'padid does not exist')
-					|| str_contains($message, 'pad does not exist')
-					|| str_contains($message, 'unknown pad')
-					|| str_contains($message, 'groupid does not exist')
-				)
-			) {
-				return true;
+			if ($message !== '') {
+				foreach ($needles as $needle) {
+					if (str_contains($message, $needle)) {
+						return true;
+					}
+				}
 			}
 			$current = $current->getPrevious();
 		}
@@ -52,15 +81,6 @@ final class EtherpadErrorClassifier {
 	 * `padID does already exist`.
 	 */
 	public static function isPadAlreadyPresent(\Throwable $error): bool {
-		$current = $error;
-		while ($current !== null) {
-			$message = strtolower(trim($current->getMessage()));
-			if ($message !== '' && str_contains($message, 'does already exist')) {
-				return true;
-			}
-			$current = $current->getPrevious();
-		}
-
-		return false;
+		return self::mentions($error, ['does already exist']);
 	}
 }
