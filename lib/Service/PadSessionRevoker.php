@@ -37,16 +37,7 @@ class PadSessionRevoker {
 	private const BUDGET_SECONDS = 2.0;
 	private const MAX_PER_REQUEST = 25;
 
-	/**
-	 * How far past expiry a session has to be before it counts as gone.
-	 *
-	 * Etherpad judges `validUntil` against its own clock. If ours runs
-	 * ahead, a session we call expired is one it still honours — and
-	 * skipping that leaves exactly the access this exists to take away.
-	 * The collector uses the same margin in the opposite direction, so that
-	 * neither side acts inside the window where the clocks disagree.
-	 */
-	private const EXPIRY_GRACE_SECONDS = 300;
+
 
 	/** Below this, a call cannot finish inside the budget and is not made. */
 	private const MIN_CALL_TIMEOUT_SECONDS = 1;
@@ -99,6 +90,18 @@ class PadSessionRevoker {
 			return 0;
 		}
 
+		// The same check every delete gets. Reading the cached author is a
+		// database round trip, and if it took the budget then starting a
+		// listing on top of it would overrun by a whole call — the floor
+		// under callTimeout() would hand it a second it does not have.
+		if ($deadline - microtime(true) < self::MIN_CALL_TIMEOUT_SECONDS) {
+			$this->logger->warning('No time left to revoke Etherpad sessions; they will expire on their own.', [
+				'app' => 'etherpad_nextcloud',
+				'uid' => $uid,
+			]);
+			return 0;
+		}
+
 		try {
 			$sessions = $this->etherpadClient->listSessionsOfAuthor(
 				$authorId,
@@ -113,16 +116,14 @@ class PadSessionRevoker {
 			return 0;
 		}
 
-		// Someone has to notice the backlog, and this is the one place that
-		// already holds the whole list. Leaving a note is a row in the job
-		// table; working through it here would be the thing this budget
-		// exists to prevent.
 		// Only what is expired on both clocks. Anything newer is treated as
 		// live and revoked, which at worst deletes something already gone.
-		$expiredBefore = time() - self::EXPIRY_GRACE_SECONDS;
+		$expiredBefore = time() - EtherpadClient::CLOCK_SKEW_ALLOWANCE_SECONDS;
+		$sessions = $this->carriedFirst($sessions);
 		$attempted = 0;
 		$revoked = 0;
 		$skipped = 0;
+		$failed = 0;
 		foreach ($sessions as $sessionId => $info) {
 			if ($info['validUntil'] <= $expiredBefore) {
 				// Grants nothing already. Etherpad keeps expired sessions
@@ -156,6 +157,11 @@ class PadSessionRevoker {
 					// Already gone, which is the outcome asked for.
 					continue;
 				}
+				// Counted as left behind, not merely warned about: the
+				// summary below is what says whether a logout finished its
+				// job, and a live session the pad server refused to delete
+				// is exactly as left behind as one the budget never reached.
+				$failed++;
 				$this->logger->warning('Could not revoke an Etherpad session; it will expire on its own.', [
 					'app' => 'etherpad_nextcloud',
 					'uid' => $uid,
@@ -165,12 +171,23 @@ class PadSessionRevoker {
 			}
 		}
 
-		if ($revoked > 0 || $skipped > 0) {
+		$leftToExpire = $skipped + $failed;
+		if ($revoked > 0) {
 			$this->logger->info('Revoked Etherpad sessions.', [
 				'app' => 'etherpad_nextcloud',
 				'uid' => $uid,
 				'count' => $revoked,
-				'leftToExpire' => $skipped,
+				'leftToExpire' => $leftToExpire,
+			]);
+		} elseif ($leftToExpire > 0) {
+			// Not "revoked" with a count of zero. That line is the shape of
+			// the failure an admin would be grepping for — a logout that
+			// removed nothing because the pad server was slow — and it must
+			// not read like the opposite.
+			$this->logger->warning('Revoked no Etherpad sessions; they will expire on their own.', [
+				'app' => 'etherpad_nextcloud',
+				'uid' => $uid,
+				'leftToExpire' => $leftToExpire,
 			]);
 		}
 
@@ -182,6 +199,30 @@ class PadSessionRevoker {
 			self::MIN_CALL_TIMEOUT_SECONDS,
 			min(floor($left), EtherpadClient::REQUEST_TIMEOUT_SECONDS),
 		);
+	}
+
+	/**
+	 * The same sessions, with the ones this browser is carrying first.
+	 *
+	 * The listing arrives in the author index's order, which is roughly the
+	 * order the sessions were made — so the ceiling would spend itself on
+	 * the oldest and leave the newest, and the newest is the one in the
+	 * cookie of the person who just logged out. Twenty-six opens of one pad
+	 * were enough to revoke twenty-five sessions and leave the only one that
+	 * mattered. The set is unchanged; only the order is.
+	 *
+	 * @param array<string,array{groupID:string,validUntil:int}> $sessions
+	 * @return array<string,array{groupID:string,validUntil:int}>
+	 */
+	private function carriedFirst(array $sessions): array {
+		$carried = [];
+		foreach ($this->padSessionService->carriedSessionIds() as $sessionId) {
+			if (isset($sessions[$sessionId])) {
+				$carried[$sessionId] = $sessions[$sessionId];
+			}
+		}
+
+		return $carried === [] ? $sessions : $carried + $sessions;
 	}
 
 }

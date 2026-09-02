@@ -220,8 +220,11 @@ away itself:
   `validUntil` with its own, so a session ours calls dead may still be
   honoured there, and skipping it would leave exactly the access a logout
   removes. What is live is revoked within a small budget – 25 calls or two
-  seconds, with each call given what is left of it – and the rest is left
-  to expire. The log line says how much.
+  seconds, with each call given what is left of it – starting with the
+  sessions this browser is carrying, since the listing arrives oldest
+  first and the ceiling would otherwise spend itself before reaching the
+  one in the cookie of the person who just logged out. What is left over,
+  whether skipped or refused, is counted and logged.
 
 No table of our own is involved: sessions belong to an Etherpad author, the
 author is cached per uid, and `listSessionsOfAuthor` answers the rest. That

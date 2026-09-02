@@ -33,12 +33,7 @@ class ExpiredSessionCollector {
 	/** Refusals a run puts up with before reading them as an outage. */
 	private const MAX_FAILURES_PER_RUN = 5;
 
-	/**
-	 * Nextcloud computes `validUntil`; Etherpad judges it against its own
-	 * clock. In the window where the two disagree, deleting would close a
-	 * socket somebody is typing into.
-	 */
-	private const EXPIRY_GRACE_SECONDS = 300;
+
 
 	/** Below this, a call cannot finish inside the budget and is not made. */
 	private const MIN_CALL_TIMEOUT_SECONDS = 2;
@@ -122,7 +117,7 @@ class ExpiredSessionCollector {
 			]);
 		}
 
-		$cutoff = time() - self::EXPIRY_GRACE_SECONDS;
+		$cutoff = time() - EtherpadClient::CLOCK_SKEW_ALLOWANCE_SECONDS;
 		$expired = [];
 		$nextDueAt = null;
 		foreach ($sessions as $sessionId => $info) {
@@ -135,7 +130,7 @@ class ExpiredSessionCollector {
 
 			// When the earliest becomes collectable — without it, a sweep
 			// that found nothing is queued again by the very next open.
-			$dueAt = (int)$info['validUntil'] + self::EXPIRY_GRACE_SECONDS;
+			$dueAt = (int)$info['validUntil'] + EtherpadClient::CLOCK_SKEW_ALLOWANCE_SECONDS;
 			$nextDueAt = $nextDueAt === null ? $dueAt : min($nextDueAt, $dueAt);
 		}
 

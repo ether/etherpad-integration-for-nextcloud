@@ -78,14 +78,13 @@ class PadSessionService {
 			try {
 				return $this->openContextFor($uid, $authorId, $groupId, $padId, $validUntil);
 			} catch (EtherpadClientException) {
-				// The name only. The author id is the one thing that can find
-				// this user's live sessions again, and dropping it because an
-				// open failed would mean a logout after a brief pad-server
-				// outage revokes nothing — it cannot tell an emptied cache
-				// from a user who never opened a protected pad. A stale id is
-				// the lesser risk: the listing simply answers that it does not
-				// exist, and the next successful open overwrites it anyway.
-				$this->clearCachedAuthorName($uid);
+				// Nothing is cleared. The author id is the one route from a
+				// uid to that user's live sessions, and dropping it because
+				// an open failed would leave a cache indistinguishable from a
+				// user who never opened a protected pad — a logout after a
+				// brief outage would then revoke nothing. A stale id is the
+				// lesser risk: the listing answers that it does not exist,
+				// and the bootstrap below overwrites it on the next open.
 			}
 		}
 
@@ -497,6 +496,19 @@ class PadSessionService {
 	 * Empty when the user has never opened a protected pad — then there is
 	 * nothing to revoke either.
 	 */
+	/**
+	 * The session ids this browser is carrying.
+	 *
+	 * Public so a revoke can take them first. Which sessions exist is a
+	 * question for the pad server, but which one is in front of the person
+	 * at this keyboard is only answerable here.
+	 *
+	 * @return list<string>
+	 */
+	public function carriedSessionIds(): array {
+		return $this->sessionIdsFromCookie();
+	}
+
 	public function cachedAuthorId(string $uid): string {
 		return $this->resolveCachedAuthorId($uid);
 	}
@@ -530,13 +542,6 @@ class PadSessionService {
 			self::USER_CONFIG_AUTHOR_NAME_KEY,
 			trim($displayName)
 		);
-	}
-
-	private function clearCachedAuthorName(string $uid): void {
-		if (!$this->shouldPersistAuthorState($uid)) {
-			return;
-		}
-		$this->config->deleteUserValue($uid, 'etherpad_nextcloud', self::USER_CONFIG_AUTHOR_NAME_KEY);
 	}
 
 	private function shouldPersistAuthorState(string $uid): bool {

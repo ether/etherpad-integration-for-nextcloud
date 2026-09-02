@@ -100,15 +100,7 @@ class PadSessionServiceTest extends TestCase {
 			['admin', 'etherpad_nextcloud', 'etherpad_author_id', '', 'a.author'],
 			['admin', 'etherpad_nextcloud', 'etherpad_author_display_name', '', 'Admin'],
 		]);
-		$config->method('deleteUserValue')->willReturnCallback(
-			static function (string $uid, string $app, string $key): void {
-				TestCase::assertNotSame(
-					'etherpad_author_id',
-					$key,
-					'the id is what makes revoking possible at all',
-				);
-			}
-		);
+		$config->expects($this->never())->method('deleteUserValue');
 
 		$service = $this->buildService($etherpadClient, $config);
 		$this->expectException(EtherpadClientException::class);
@@ -823,12 +815,10 @@ class PadSessionServiceTest extends TestCase {
 				[$uid, 'etherpad_nextcloud', 'etherpad_author_id', '', $cachedAuthorId],
 				[$uid, 'etherpad_nextcloud', 'etherpad_author_display_name', '', $displayName],
 			]);
-		// The name goes, the id stays: the id is the only way to find this
-		// user's live sessions again, and a failed open must not take the
-		// ability to revoke them with it.
-		$config->expects($this->once())
-			->method('deleteUserValue')
-			->with($uid, 'etherpad_nextcloud', 'etherpad_author_display_name');
+		// Nothing is cleared: the id is the only way to find this user's
+		// live sessions again, and the name is rewritten by the bootstrap
+		// below in any case.
+		$config->expects($this->never())->method('deleteUserValue');
 		$config->expects($this->exactly(2))
 			->method('setUserValue')
 			->willReturnCallback(static function (string $actualUid, string $appName, string $key, string $value) use ($uid, $freshAuthorId, $displayName): void {

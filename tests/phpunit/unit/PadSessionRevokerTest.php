@@ -217,13 +217,131 @@ class PadSessionRevokerTest extends TestCase {
 		}
 	}
 
+	/**
+	 * The ceiling must not spend itself on the oldest sessions and leave
+	 * the one in front of the person who just logged out.
+	 *
+	 * The listing arrives in the author index's order, roughly oldest
+	 * first, so twenty-six opens of one pad meant revoking twenty-five and
+	 * leaving the only one that mattered — the shared-computer case failing
+	 * against a perfectly healthy pad server.
+	 */
+	public function testTakesTheSessionThisBrowserIsCarryingFirst(): void {
+		$sessions = [];
+		for ($i = 0; $i < 30; $i++) {
+			$sessions['s.old' . $i] = ['groupID' => 'g.AAAAAAAAAAAAAAAA', 'validUntil' => time() + 3600];
+		}
+		$sessions['s.inthecookie'] = ['groupID' => 'g.AAAAAAAAAAAAAAAA', 'validUntil' => time() + 3600];
+
+		$client = $this->createMock(EtherpadClient::class);
+		$client->method('listSessionsOfAuthor')->willReturn($sessions);
+		$removed = [];
+		$client->method('deleteSession')->willReturnCallback(
+			static function (string $id) use (&$removed): void {
+				$removed[] = $id;
+			}
+		);
+
+		$this->revoker($client, carriedIds: ['s.inthecookie'])->revokeAll('alice');
+
+		self::assertContains('s.inthecookie', $removed, 'the cookie session outlived the ceiling');
+		self::assertSame('s.inthecookie', $removed[0], 'and it should have gone first');
+	}
+
+	/** An id the cookie carries for some other author changes nothing. */
+	public function testIgnoresCarriedIdsThatAreNotThisAuthorsSessions(): void {
+		$client = $this->createMock(EtherpadClient::class);
+		$client->method('listSessionsOfAuthor')->willReturn([
+			's.mine' => ['groupID' => 'g.AAAAAAAAAAAAAAAA', 'validUntil' => time() + 3600],
+		]);
+		$client->expects(self::once())->method('deleteSession')->with('s.mine');
+
+		self::assertSame(1, $this->revoker($client, carriedIds: ['s.somebodyelse'])->revokeAll('alice'));
+	}
+
+	/**
+	 * Reading the cached author is a database round trip. If it took the
+	 * budget, starting a listing on top of it overruns by a whole call,
+	 * because the floor under callTimeout() hands it a second it has not
+	 * got.
+	 */
+	public function testDoesNotStartTheListingWithoutTimeForIt(): void {
+		$client = $this->createMock(EtherpadClient::class);
+		$client->expects(self::never())->method('listSessionsOfAuthor');
+
+		$sessions = $this->createMock(PadSessionService::class);
+		$sessions->method('cachedAuthorId')->willReturnCallback(
+			static function (): string {
+				usleep(2_100_000);
+				return self::AUTHOR;
+			}
+		);
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects(self::once())->method('warning');
+
+		$revoker = new PadSessionRevoker($client, $sessions, $logger);
+
+		self::assertSame(0, $revoker->revokeAll('alice'));
+	}
+
+	/**
+	 * A live session the pad server refused is exactly as left behind as
+	 * one the budget never reached, and the summary is what says whether a
+	 * logout finished its job.
+	 */
+	public function testCountsARefusedDeleteAsLeftBehind(): void {
+		$client = $this->createMock(EtherpadClient::class);
+		$client->method('listSessionsOfAuthor')->willReturn([
+			's.ok' => ['groupID' => 'g.AAAAAAAAAAAAAAAA', 'validUntil' => time() + 3600],
+			's.refused' => ['groupID' => 'g.AAAAAAAAAAAAAAAA', 'validUntil' => time() + 3600],
+		]);
+		$client->method('deleteSession')->willReturnCallback(
+			static function (string $id): void {
+				if ($id === 's.refused') {
+					throw new EtherpadClientException('internal error');
+				}
+			}
+		);
+
+		$reported = null;
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->method('info')->willReturnCallback(
+			static function (string $message, array $context) use (&$reported): void {
+				$reported = $context['leftToExpire'] ?? null;
+			}
+		);
+
+		self::assertSame(1, $this->revoker($client, logger: $logger)->revokeAll('alice'));
+		self::assertSame(1, $reported, 'the refused session is left behind, not merely warned about');
+	}
+
+	/**
+	 * A run that removed nothing must not be logged as one that revoked.
+	 * That line is the shape of the failure an admin greps for.
+	 */
+	public function testDoesNotClaimToHaveRevokedWhenItDidNot(): void {
+		$client = $this->createMock(EtherpadClient::class);
+		$client->method('listSessionsOfAuthor')->willReturn([
+			's.refused' => ['groupID' => 'g.AAAAAAAAAAAAAAAA', 'validUntil' => time() + 3600],
+		]);
+		$client->method('deleteSession')->willThrowException(new EtherpadClientException('internal error'));
+
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects(self::never())->method('info');
+		$logger->expects(self::exactly(2))->method('warning');
+
+		self::assertSame(0, $this->revoker($client, logger: $logger)->revokeAll('alice'));
+	}
+
 	private function revoker(
 		EtherpadClient $client,
 		string $author = self::AUTHOR,
 		?LoggerInterface $logger = null,
+		array $carriedIds = [],
 	): PadSessionRevoker {
 		$sessions = $this->createMock(PadSessionService::class);
 		$sessions->method('cachedAuthorId')->willReturn($author);
+		$sessions->method('carriedSessionIds')->willReturn($carriedIds);
 
 		return new PadSessionRevoker(
 			$client,
