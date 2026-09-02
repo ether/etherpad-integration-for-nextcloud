@@ -90,6 +90,13 @@ class Application extends App implements IBootstrap {
 			);
 		}
 
+		// The Etherpad session cookie outlives a Nextcloud logout, so the
+		// sessions behind it are taken away explicitly.
+		$context->registerEventListener(
+			\OCP\User\Events\UserLoggedOutEvent::class,
+			\OCA\EtherpadNextcloud\Listeners\UserLoggedOutListener::class,
+		);
+
 		$context->registerEventListener(
 			'OCA\\Files_Trashbin\\Events\\MoveToTrashEvent',
 			\OCA\EtherpadNextcloud\Listeners\MoveToTrashListener::class,

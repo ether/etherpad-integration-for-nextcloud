@@ -200,6 +200,69 @@ Cookie details:
   - derivation is skipped for IP hosts and invalid host values
   - recommendation: use explicit `etherpad_cookie_domain` in multi-subdomain/proxy setups
 
+### Session lifetime and revocation
+
+An Etherpad session is a bearer token for one group with a `validUntil`.
+Nothing about losing the Nextcloud session reaches it, so the app takes it
+away itself:
+
+- **Logout revokes every session of that user** – including ones opened in
+  another browser, which is deliberate: a cookie copied off the machine
+  cannot be narrowed down by the cookie you can see, and a shared computer
+  is exactly the case where the copy you can see is not the only one.
+- **Every open mints a fresh session.** Etherpad re-checks `validUntil` on
+  every socket message and keeps the session id it was handed when the pad
+  connected – read in 2.7.3, 3.0.0 and 3.3.3 – so a session that expires
+  mid-edit rejects the next keystroke, and no later cookie reaches that
+  socket. What bounds the window is revocation, not a shorter lifetime.
+- Expired sessions are left to the background sweep described below. They
+  grant nothing, and deleting them one call at a time inside a logout would
+  put that backlog in front of the user. What is still live is revoked
+  within a small budget – 25 calls or two seconds – and the rest is left to
+  expire, because each call carries the full client timeout. The log line
+  says how much was left behind.
+
+No table of our own is involved: sessions belong to an Etherpad author, the
+author is cached per uid, and `listSessionsOfAuthor` answers the rest.
+
+**Only logout.** Losing a share does not revoke anything, and neither does
+a permission downgrade, a deleted or disabled account, or a deleted public
+link. A session issued before any of those stays valid until `validUntil`.
+Covering them one event at a time means enumerating every way access can
+end, and that list has no natural end – a public link in particular opens
+under its own Etherpad author whose id is deliberately never cached, so
+there is nothing to look the sessions up by. The direction that does close
+them is the other one: short sessions that have to be renewed against a
+live permission check.
+
+**A session can still expire while someone is editing.** Etherpad rejects
+the next message rather than the next reload, and nothing renews a session
+mid-edit – the pad talks to Etherpad directly once it is open. The window
+is the configured TTL, counted from when the pad was opened.
+
+**Reopening a pad leaves the earlier session behind.** Every open mints one
+and only the cookie forgets the previous, so a pad reopened often carries
+several live sessions for one group. A logout is one more reader of an
+index whose length is the subject of the next section.
+
+**Revocation cannot outrun an open that is already in flight.** A request
+that has passed its permission check can issue a session after a revoke has
+listed what to remove. The window is short and the outcome is one more
+session of the configured lifetime.
+
+**Two Nextclouds pointed at one Etherpad share an author.** The mapper is
+`nc:<uid>`, which Etherpad stores globally, so one instance's logout can
+end the other's sessions. Naming it per instance needs a migration – the
+mapper is asked for on every open, so changing its shape re-issues an
+author for every existing user and orphans their live sessions – and is not
+done here.
+
+**A failed revoke is not retried.** If the pad server cannot be reached the
+listing fails, nothing is removed, and the logout carries on regardless –
+deliberately, since a logout may not fail because Etherpad is down. On a
+shared machine that leaves live sessions behind and a cookie still naming
+them; a listener has no response, so the cookie is never cleared either.
+
 ### Expired Etherpad sessions
 
 Every open of a protected pad mints a session – since 1.0.0 – and Etherpad
@@ -240,6 +303,7 @@ Not covered: sessions still being created – that is what keeps an open pad
 working – and authors nobody opens a pad for, whose leftovers cost storage
 only. Recording each session's id at issue time would remove the listing;
 renewing sessions instead of minting them would remove the pile.
+
 
 ### `SameSite=Lax`
 

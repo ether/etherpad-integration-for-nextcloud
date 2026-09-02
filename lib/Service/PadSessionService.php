@@ -128,6 +128,14 @@ class PadSessionService {
 		$carriedIds = $this->sessionIdsFromCookie();
 		$sessions = $this->sessionsToAttributeWith($uid, $authorId, $carriedIds);
 
+		// Deliberately a fresh session, not the one the browser is carrying.
+		// Etherpad re-checks validUntil on every socket message and holds the
+		// session id it was given at CLIENT_READY — read in 2.7.3, 3.0.0 and
+		// 3.3.3, so both majors and the boundary between them. A session that
+		// expires mid-edit therefore rejects the next keystroke, and no later
+		// cookie can reach that socket. Reusing a shorter one traded editing
+		// time for a renewal property that a client arriving without a cookie
+		// does not have anyway. What bounds the window is revocation.
 		$chosenSessionId = $this->etherpadClient->createSession($groupId, $authorId, $validUntil);
 		if (preg_match(self::SESSION_ID_PATTERN, $chosenSessionId) !== 1) {
 			// The id is about to be written into a cookie that the next open
@@ -463,6 +471,27 @@ class PadSessionService {
 			self::USER_CONFIG_AUTHOR_NAME_KEY,
 			''
 		));
+	}
+
+	/**
+	 * The Etherpad author this user writes as, if one has been made.
+	 *
+	 * The mapper is `nc:<uid>`, which Etherpad stores globally — two
+	 * Nextclouds pointed at one pad server share the author, and with it
+	 * each other's sessions. Naming it per instance is the fix and is not
+	 * done here: `syncAuthorMapping` asks for the mapper on every open, so
+	 * changing its shape re-issues an author for every existing user at
+	 * once, and their live sessions become invisible to the revoking this
+	 * branch is for. It needs a migration, not a one-line change.
+	 *
+	 * Public because it is what makes revoking possible without a table of
+	 * our own: Etherpad already knows which sessions belong to an author,
+	 * and this is the only step between a Nextcloud uid and that answer.
+	 * Empty when the user has never opened a protected pad — then there is
+	 * nothing to revoke either.
+	 */
+	public function cachedAuthorId(string $uid): string {
+		return $this->resolveCachedAuthorId($uid);
 	}
 
 	private function resolveCachedAuthorId(string $uid): string {

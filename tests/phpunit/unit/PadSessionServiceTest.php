@@ -201,12 +201,19 @@ class PadSessionServiceTest extends TestCase {
 		$this->assertSame($this->sid('new'), $value);
 	}
 
-	public function testDropsTheOldSessionOfTheGroupBeingOpened(): void {
-		$stale = $this->sid('stale');
+	/**
+	 * An open always mints. Etherpad re-checks validUntil on every socket
+	 * message and keeps the session id it was handed at CLIENT_READY, so a
+	 * session that expires mid-edit rejects the next keystroke and no later
+	 * cookie reaches that socket — reusing a shorter one would hand out
+	 * less editing time than the caller asked for.
+	 */
+	public function testAlwaysIssuesAFreshSessionForThePadBeingOpened(): void {
+		$held = $this->sid('held');
 
 		$value = $this->openContextCookie(
-			[$stale => ['groupID' => 'g.ABCDEFGHIJKLMNOP', 'validUntil' => time() + 3600]],
-			$stale,
+			[$held => ['groupID' => 'g.ABCDEFGHIJKLMNOP', 'validUntil' => time() + 3600]],
+			$held,
 		)['value'];
 
 		$this->assertSame($this->sid('new'), $value);
