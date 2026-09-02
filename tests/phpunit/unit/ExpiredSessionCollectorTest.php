@@ -118,6 +118,37 @@ class ExpiredSessionCollectorTest extends TestCase {
 	}
 
 	/**
+	 * Every delete carries the run's own timeout, not the client's.
+	 *
+	 * A deadline checked between calls says when the last one may start,
+	 * never when it must end. With the client's standard timeout a delete
+	 * begun just under the deadline runs far past it, and the budget stops
+	 * describing the run at all — the number it advertises would be short
+	 * by a whole timeout.
+	 *
+	 * The deadline is taken before the listing, so a slow listing comes out
+	 * of the same budget rather than being added to it.
+	 */
+	public function testGivesEveryDeleteWhatIsLeftOfTheBudget(): void {
+		$client = $this->createMock(EtherpadClient::class);
+		$client->method('listSessionsOfAuthor')->willReturn(self::expiredSessions(3));
+		$timeouts = [];
+		$client->expects(self::exactly(3))->method('deleteSession')->willReturnCallback(
+			static function (string $id, ?int $timeoutSeconds = null) use (&$timeouts): void {
+				$timeouts[] = $timeoutSeconds;
+			}
+		);
+
+		$this->collector($client)->collect('alice', self::AUTHOR);
+
+		foreach ($timeouts as $timeout) {
+			self::assertNotNull($timeout, 'a delete was issued with the client default');
+			self::assertGreaterThanOrEqual(2, $timeout, 'never issue an already-dead timeout');
+			self::assertLessThanOrEqual(20, $timeout, 'never more patient than the whole budget');
+		}
+	}
+
+	/**
 	 * The ceiling has to be reported honestly, because the job decides
 	 * whether to come back from this number alone.
 	 */
