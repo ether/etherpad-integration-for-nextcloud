@@ -21,9 +21,10 @@ use OCP\BackgroundJob\QueuedJob;
  * work is created exactly where it exists instead of being found again by
  * a sweep over every account on the instance.
  *
- * The author id travels in the argument. Resolving it from the uid would
- * mean reaching back into the session service, and there is no reason to:
- * whoever queued this had it in hand, and the two are one to one.
+ * The author id travels in the argument, and nothing else does. For a
+ * public link the Nextcloud uid is `public-share:<token>` — the credential
+ * from the share URL — and a job argument is persisted, printed by occ,
+ * and carried into database dumps. The job has no use for it either way.
  *
  * @psalm-api
  */
@@ -47,8 +48,8 @@ class CollectExpiredSessionsJob extends QueuedJob {
 	 * matches arguments exactly, so a sweep queued while a retry waits
 	 * would be a second row that runs at once.
 	 *
-	 * @param array{uid:string,authorId:string} $argument
-	 * @return list<array{uid:string,authorId:string,attempt:int}>
+	 * @param array{authorId:string} $argument
+	 * @return list<array{authorId:string,attempt:int}>
 	 */
 	public static function attemptArguments(array $argument): array {
 		$arguments = [];
@@ -57,6 +58,17 @@ class CollectExpiredSessionsJob extends QueuedJob {
 		}
 
 		return $arguments;
+	}
+
+	/** Whether a backed-off retry for this author is waiting its turn. */
+	private function retryIsWaiting(string $authorId): bool {
+		foreach (self::attemptArguments(['authorId' => $authorId]) as $retryArgument) {
+			if ($this->jobList->has(self::class, $retryArgument)) {
+				return true;
+			}
+		}
+
+		return false;
 	}
 
 	public function __construct(
@@ -75,18 +87,25 @@ class CollectExpiredSessionsJob extends QueuedJob {
 		if (!is_array($argument)) {
 			return;
 		}
-		$uid = (string)($argument['uid'] ?? '');
 		$authorId = (string)($argument['authorId'] ?? '');
-		if ($uid === '' || $authorId === '') {
+		if ($authorId === '') {
 			return;
 		}
-
 		// Clamped, not trusted. The attempt travels through the jobs table,
 		// and a row is just data: a negative one would index past the start
 		// of the backoff table.
 		$attempt = max(0, (int)($argument['attempt'] ?? 0));
 
-		$result = $this->collector->collect($uid, $authorId);
+		// A plain row can be queued while a run is in progress — QueuedJob
+		// removes its own row before running, so for those seconds nothing
+		// says a sweep exists — and the failing run then adds its retry
+		// behind it. The plain row would run at once and undo the waiting
+		// the backoff is for, so it stands down when a retry is pending.
+		if ($attempt === 0 && $this->retryIsWaiting($authorId)) {
+			return;
+		}
+
+		$result = $this->collector->collect($authorId);
 		if ($result['retry']) {
 			// Something was refused — the listing, or a delete. Either way
 			// this has to be re-queued explicitly: QueuedJob removes its row
@@ -99,7 +118,7 @@ class CollectExpiredSessionsJob extends QueuedJob {
 			// few of them were refused. It waits out the backoff and then
 			// carries on as a fresh attempt.
 			if ($result['deleted'] > 0) {
-				$this->reschedule($uid, $authorId, 0, self::RETRY_DELAYS[$attempt] ?? self::CONTINUE_DELAY_SECONDS);
+				$this->reschedule($authorId, 0, self::RETRY_DELAYS[$attempt] ?? self::CONTINUE_DELAY_SECONDS);
 				return;
 			}
 
@@ -108,22 +127,28 @@ class CollectExpiredSessionsJob extends QueuedJob {
 			// helped by a fourth ask, and the next open queues a fresh sweep
 			// anyway.
 			if (isset(self::RETRY_DELAYS[$attempt])) {
-				$this->reschedule($uid, $authorId, $attempt + 1, self::RETRY_DELAYS[$attempt]);
+				$this->reschedule($authorId, $attempt + 1, self::RETRY_DELAYS[$attempt]);
 			}
 			return;
 		}
-		if ($result['remaining'] <= 0) {
+
+		if ($result['remaining'] > 0) {
+			// More than one run's worth. Queued for later rather than looped
+			// here: a backlog large enough to need a second pass is large
+			// enough that holding a cron worker on it would starve
+			// everything behind it, and nothing is waiting for this.
+			$this->reschedule($authorId, 0, self::CONTINUE_DELAY_SECONDS);
 			return;
 		}
 
-		// More than one run's worth. Queued for later rather than looped
-		// here: a backlog large enough to need a second pass is large
-		// enough that holding a cron worker on it would starve everything
-		// behind it, and nothing is waiting for this to finish.
-		//
-		// The attempt counter starts over: this run did its work, so the
-		// next one is a continuation, not a retry.
-		$this->reschedule($uid, $authorId, 0, self::CONTINUE_DELAY_SECONDS);
+		// Nothing left to collect. Coming back when the earliest session
+		// still standing expires, rather than not at all: this row is also
+		// what tells an open that a sweep is already accounted for, so
+		// without it every visitor of a busy public link would queue
+		// another full walk of one shared author's index.
+		if ($result['nextDueAt'] !== null) {
+			$this->reschedule($authorId, 0, max(1, $result['nextDueAt'] - $this->time->getTime()));
+		}
 	}
 
 	/**
@@ -140,8 +165,8 @@ class CollectExpiredSessionsJob extends QueuedJob {
 	 * different row from the plain one an open queues, so an open cannot
 	 * reset the backoff.
 	 */
-	private function reschedule(string $uid, string $authorId, int $attempt, int $delaySeconds): void {
-		$argument = ['uid' => $uid, 'authorId' => $authorId];
+	private function reschedule(string $authorId, int $attempt, int $delaySeconds): void {
+		$argument = ['authorId' => $authorId];
 		if ($attempt > 0) {
 			$argument['attempt'] = $attempt;
 		}
@@ -155,7 +180,6 @@ class CollectExpiredSessionsJob extends QueuedJob {
 			// collector guards the same call for the same reason.
 			$this->logger->warning('Could not queue the next Etherpad session sweep; the rest waits for another open.', [
 				'app' => 'etherpad_nextcloud',
-				'uid' => $uid,
 				'authorId' => $authorId,
 				'exception' => $e,
 			]);

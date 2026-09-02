@@ -23,30 +23,30 @@ use PHPUnit\Framework\TestCase;
 class CollectExpiredSessionsJobTest extends TestCase {
 	public function testComesBackForWhatDidNotFit(): void {
 		$collector = $this->createMock(ExpiredSessionCollector::class);
-		$collector->method('collect')->willReturn(['deleted' => 250, 'remaining' => 150, 'retry' => false]);
+		$collector->method('collect')->willReturn(['deleted' => 250, 'remaining' => 150, 'retry' => false, 'nextDueAt' => null]);
 
 		$jobList = $this->createMock(IJobList::class);
 		$jobList->expects(self::once())->method('scheduleAfter')->with(
 			CollectExpiredSessionsJob::class,
 			1_000_060,
-			['uid' => 'alice', 'authorId' => 'a.author'],
+			['authorId' => 'a.author'],
 		);
 
 		$job = $this->job($collector, $jobList);
-		$job->setArgument(['uid' => 'alice', 'authorId' => 'a.author']);
+		$job->setArgument(['authorId' => 'a.author']);
 		$job->start($jobList);
 	}
 
 	/** A finished sweep must not leave a job behind that finds nothing. */
 	public function testStopsWhenThereIsNothingLeft(): void {
 		$collector = $this->createMock(ExpiredSessionCollector::class);
-		$collector->method('collect')->willReturn(['deleted' => 12, 'remaining' => 0, 'retry' => false]);
+		$collector->method('collect')->willReturn(['deleted' => 12, 'remaining' => 0, 'retry' => false, 'nextDueAt' => null]);
 
 		$jobList = $this->createMock(IJobList::class);
 		$jobList->expects(self::never())->method('scheduleAfter');
 
 		$job = $this->job($collector, $jobList);
-		$job->setArgument(['uid' => 'alice', 'authorId' => 'a.author']);
+		$job->setArgument(['authorId' => 'a.author']);
 		$job->start($jobList);
 	}
 
@@ -57,17 +57,17 @@ class CollectExpiredSessionsJobTest extends TestCase {
 	 */
 	public function testComesBackAfterAFailedListing(): void {
 		$collector = $this->createMock(ExpiredSessionCollector::class);
-		$collector->method('collect')->willReturn(['deleted' => 0, 'remaining' => 0, 'retry' => true]);
+		$collector->method('collect')->willReturn(['deleted' => 0, 'remaining' => 0, 'retry' => true, 'nextDueAt' => null]);
 
 		$jobList = $this->createMock(IJobList::class);
 		$jobList->expects(self::once())->method('scheduleAfter')->with(
 			CollectExpiredSessionsJob::class,
 			1_000_060,
-			['uid' => 'alice', 'authorId' => 'a.author', 'attempt' => 1],
+			['authorId' => 'a.author', 'attempt' => 1],
 		);
 
 		$job = $this->job($collector, $jobList);
-		$job->setArgument(['uid' => 'alice', 'authorId' => 'a.author']);
+		$job->setArgument(['authorId' => 'a.author']);
 		$job->start($jobList);
 	}
 
@@ -78,17 +78,17 @@ class CollectExpiredSessionsJobTest extends TestCase {
 	 */
 	public function testBacksOffFurtherOnEachFailure(): void {
 		$collector = $this->createMock(ExpiredSessionCollector::class);
-		$collector->method('collect')->willReturn(['deleted' => 0, 'remaining' => 0, 'retry' => true]);
+		$collector->method('collect')->willReturn(['deleted' => 0, 'remaining' => 0, 'retry' => true, 'nextDueAt' => null]);
 
 		$jobList = $this->createMock(IJobList::class);
 		$jobList->expects(self::once())->method('scheduleAfter')->with(
 			CollectExpiredSessionsJob::class,
 			1_000_900,
-			['uid' => 'alice', 'authorId' => 'a.author', 'attempt' => 3],
+			['authorId' => 'a.author', 'attempt' => 3],
 		);
 
 		$job = $this->job($collector, $jobList);
-		$job->setArgument(['uid' => 'alice', 'authorId' => 'a.author', 'attempt' => 2]);
+		$job->setArgument(['authorId' => 'a.author', 'attempt' => 2]);
 		$job->start($jobList);
 	}
 
@@ -99,13 +99,13 @@ class CollectExpiredSessionsJobTest extends TestCase {
 	 */
 	public function testGivesUpAfterEnoughFailures(): void {
 		$collector = $this->createMock(ExpiredSessionCollector::class);
-		$collector->method('collect')->willReturn(['deleted' => 0, 'remaining' => 0, 'retry' => true]);
+		$collector->method('collect')->willReturn(['deleted' => 0, 'remaining' => 0, 'retry' => true, 'nextDueAt' => null]);
 
 		$jobList = $this->createMock(IJobList::class);
 		$jobList->expects(self::never())->method('scheduleAfter');
 
 		$job = $this->job($collector, $jobList);
-		$job->setArgument(['uid' => 'alice', 'authorId' => 'a.author', 'attempt' => 3]);
+		$job->setArgument(['authorId' => 'a.author', 'attempt' => 3]);
 		$job->start($jobList);
 	}
 
@@ -120,17 +120,17 @@ class CollectExpiredSessionsJobTest extends TestCase {
 	 */
 	public function testCarriesOnWhenARefusedRunStillMadeProgress(): void {
 		$collector = $this->createMock(ExpiredSessionCollector::class);
-		$collector->method('collect')->willReturn(['deleted' => 200, 'remaining' => 3000, 'retry' => true]);
+		$collector->method('collect')->willReturn(['deleted' => 200, 'remaining' => 3000, 'retry' => true, 'nextDueAt' => null]);
 
 		$jobList = $this->createMock(IJobList::class);
 		$jobList->expects(self::once())->method('scheduleAfter')->with(
 			CollectExpiredSessionsJob::class,
 			1_000_300,
-			['uid' => 'alice', 'authorId' => 'a.author'],
+			['authorId' => 'a.author'],
 		);
 
 		$job = $this->job($collector, $jobList);
-		$job->setArgument(['uid' => 'alice', 'authorId' => 'a.author', 'attempt' => 1]);
+		$job->setArgument(['authorId' => 'a.author', 'attempt' => 1]);
 		$job->start($jobList);
 	}
 
@@ -141,7 +141,7 @@ class CollectExpiredSessionsJobTest extends TestCase {
 	 */
 	public function testSaysSoWhenItCannotQueueTheNextPass(): void {
 		$collector = $this->createMock(ExpiredSessionCollector::class);
-		$collector->method('collect')->willReturn(['deleted' => 250, 'remaining' => 40, 'retry' => false]);
+		$collector->method('collect')->willReturn(['deleted' => 250, 'remaining' => 40, 'retry' => false, 'nextDueAt' => null]);
 
 		$jobList = $this->createMock(IJobList::class);
 		$jobList->method('scheduleAfter')->willThrowException(new \RuntimeException('Deadlock found'));
@@ -149,7 +149,7 @@ class CollectExpiredSessionsJobTest extends TestCase {
 		$logger->expects(self::once())->method('warning');
 
 		$job = $this->job($collector, $jobList, $logger);
-		$job->setArgument(['uid' => 'alice', 'authorId' => 'a.author']);
+		$job->setArgument(['authorId' => 'a.author']);
 		$job->start($jobList);
 	}
 
@@ -161,61 +161,121 @@ class CollectExpiredSessionsJobTest extends TestCase {
 	 */
 	public function testTheBackoffTableIsItsOwnLimit(): void {
 		$collector = $this->createMock(ExpiredSessionCollector::class);
-		$collector->method('collect')->willReturn(['deleted' => 0, 'remaining' => 0, 'retry' => true]);
+		$collector->method('collect')->willReturn(['deleted' => 0, 'remaining' => 0, 'retry' => true, 'nextDueAt' => null]);
 
 		$jobList = $this->createMock(IJobList::class);
 		$jobList->expects(self::never())->method('scheduleAfter');
 
 		$job = $this->job($collector, $jobList);
 		$job->setArgument([
-			'uid' => 'alice',
 			'authorId' => 'a.author',
-			'attempt' => count(CollectExpiredSessionsJob::attemptArguments(['uid' => 'a', 'authorId' => 'b'])),
+			'attempt' => count(CollectExpiredSessionsJob::attemptArguments(['authorId' => 'b'])),
 		]);
+		$job->start($jobList);
+	}
+
+	/**
+	 * A plain row queued while a run was in progress stands down when a
+	 * retry is waiting.
+	 *
+	 * QueuedJob removes its own row before running, so for the length of a
+	 * run nothing says a sweep exists: an open queues a plain row, the
+	 * failing run then adds its retry behind it, and the plain one would
+	 * run at once — undoing exactly the waiting the backoff is for, during
+	 * the outage it exists for.
+	 */
+	public function testStandsDownWhileABackedOffRetryIsWaiting(): void {
+		$collector = $this->createMock(ExpiredSessionCollector::class);
+		$collector->expects(self::never())->method('collect');
+
+		$jobList = $this->createMock(IJobList::class);
+		$jobList->method('has')->willReturnCallback(
+			static fn (string $job, mixed $argument): bool => is_array($argument)
+				&& ($argument['attempt'] ?? 0) === 2
+		);
+
+		$job = $this->job($collector, $jobList);
+		$job->setArgument(['authorId' => 'a.author']);
+		$job->start($jobList);
+	}
+
+	/** A retry itself must not stand down — it is the one that was waiting. */
+	public function testARetryRunsEvenThoughItIsItselfQueued(): void {
+		$collector = $this->createMock(ExpiredSessionCollector::class);
+		$collector->expects(self::once())->method('collect')
+			->willReturn(['deleted' => 5, 'remaining' => 0, 'retry' => false, 'nextDueAt' => null]);
+
+		$jobList = $this->createMock(IJobList::class);
+		$jobList->method('has')->willReturn(true);
+
+		$job = $this->job($collector, $jobList);
+		$job->setArgument(['authorId' => 'a.author', 'attempt' => 2]);
+		$job->start($jobList);
+	}
+
+	/**
+	 * A finished sweep comes back when the earliest session still standing
+	 * becomes collectable — that row is also what tells an open a sweep is
+	 * already accounted for.
+	 */
+	public function testComesBackWhenTheNextSessionFallsDue(): void {
+		$collector = $this->createMock(ExpiredSessionCollector::class);
+		$collector->method('collect')
+			->willReturn(['deleted' => 3, 'remaining' => 0, 'retry' => false, 'nextDueAt' => 1_000_900]);
+
+		$jobList = $this->createMock(IJobList::class);
+		$jobList->expects(self::once())->method('scheduleAfter')->with(
+			CollectExpiredSessionsJob::class,
+			1_000_900,
+			['authorId' => 'a.author'],
+		);
+
+		$job = $this->job($collector, $jobList);
+		$job->setArgument(['authorId' => 'a.author']);
 		$job->start($jobList);
 	}
 
 	/** Every retry shape the collector has to recognise before queueing one. */
 	public function testNamesEveryRetryArgumentItCanProduce(): void {
 		self::assertSame([
-			['uid' => 'alice', 'authorId' => 'a.author', 'attempt' => 1],
-			['uid' => 'alice', 'authorId' => 'a.author', 'attempt' => 2],
-			['uid' => 'alice', 'authorId' => 'a.author', 'attempt' => 3],
-		], CollectExpiredSessionsJob::attemptArguments(['uid' => 'alice', 'authorId' => 'a.author']));
+			['authorId' => 'a.author', 'attempt' => 1],
+			['authorId' => 'a.author', 'attempt' => 2],
+			['authorId' => 'a.author', 'attempt' => 3],
+		], CollectExpiredSessionsJob::attemptArguments(['authorId' => 'a.author']));
 	}
 
 
 	/** A run that did its work continues, it does not retry. */
 	public function testAContinuationIsNotARetry(): void {
 		$collector = $this->createMock(ExpiredSessionCollector::class);
-		$collector->method('collect')->willReturn(['deleted' => 250, 'remaining' => 40, 'retry' => false]);
+		$collector->method('collect')->willReturn(['deleted' => 250, 'remaining' => 40, 'retry' => false, 'nextDueAt' => null]);
 
 		$jobList = $this->createMock(IJobList::class);
 		$jobList->expects(self::once())->method('scheduleAfter')->with(
 			CollectExpiredSessionsJob::class,
 			1_000_060,
-			['uid' => 'alice', 'authorId' => 'a.author'],
+			['authorId' => 'a.author'],
 		);
 
 		$job = $this->job($collector, $jobList);
-		$job->setArgument(['uid' => 'alice', 'authorId' => 'a.author', 'attempt' => 2]);
+		$job->setArgument(['authorId' => 'a.author', 'attempt' => 2]);
 		$job->start($jobList);
 	}
 
 	/** A row is data: an attempt count out of range must not index the backoff table. */
 	public function testTreatsANonsenseAttemptAsTheFirst(): void {
 		$collector = $this->createMock(ExpiredSessionCollector::class);
-		$collector->method('collect')->willReturn(['deleted' => 0, 'remaining' => 0, 'retry' => true]);
+		$collector->method('collect')->willReturn(['deleted' => 0, 'remaining' => 0, 'retry' => true, 'nextDueAt' => null]);
 
 		$jobList = $this->createMock(IJobList::class);
 		$jobList->expects(self::once())->method('scheduleAfter')->with(
 			CollectExpiredSessionsJob::class,
 			1_000_060,
-			['uid' => 'alice', 'authorId' => 'a.author', 'attempt' => 1],
+			['authorId' => 'a.author', 'attempt' => 1],
 		);
 
 		$job = $this->job($collector, $jobList);
-		$job->setArgument(['uid' => 'alice', 'authorId' => 'a.author', 'attempt' => -5]);
+		$job->setArgument(['authorId' => 'a.author', 'attempt' => -5]);
 		$job->start($jobList);
 	}
 
@@ -240,10 +300,13 @@ class CollectExpiredSessionsJobTest extends TestCase {
 	/** @return iterable<string,array{mixed}> */
 	public static function unusableArguments(): iterable {
 		yield 'null' => [null];
-		yield 'a bare uid from an older queue' => ['alice'];
-		yield 'no author' => [['uid' => 'alice']];
-		yield 'no uid' => [['authorId' => 'a.author']];
-		yield 'empty author' => [['uid' => 'alice', 'authorId' => '']];
+		yield 'a bare string from an older queue' => ['alice'];
+		yield 'no author' => [[]];
+		yield 'empty author' => [['authorId' => '']];
+		// The shape this job used to be queued with, when the argument
+		// still carried a uid — and for a public link that uid was the
+		// share token.
+		yield 'an older row without an author' => [['uid' => 'alice']];
 	}
 
 	private function job(

@@ -231,9 +231,21 @@ refusals ends one.
 
 The id alone is enough, and that is the point. A listing is only made when
 the browser carries session ids, so the first open after arriving made
-none — and a public link never does, while every visitor of one link
+none – and a public link never does, while every visitor of one link
 writes to the same shared author's index. Both were invisible to a sweep
 that had to be told there was a backlog.
+
+The author id is also all that is written down. A public link's Nextcloud
+uid is `public-share:<token>` – the credential out of the share URL – and
+a job argument is persisted in the jobs table, printed by `occ`, and
+carried into database dumps and support bundles. The job has no use for
+it.
+
+A sweep that finds nothing to collect does not simply end: it comes back
+when the earliest session still standing falls due. That row is also what
+tells the next open a sweep is already accounted for, so a busy public
+link does not queue another walk of one shared index behind every
+visitor.
 
 Nothing is deleted until five minutes after it expired. `validUntil` is a
 number Nextcloud computes and Etherpad judges against its own clock, and

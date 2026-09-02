@@ -58,11 +58,11 @@ class ExpiredSessionCollectorTest extends TestCase {
 		$jobList->method('has')->willReturn(false);
 		$jobList->expects(self::once())->method('add')->with(
 			CollectExpiredSessionsJob::class,
-			['uid' => 'alice', 'authorId' => self::AUTHOR],
+			['authorId' => self::AUTHOR],
 		);
 
 		$this->collector($this->createMock(EtherpadClient::class), $jobList)
-			->noteAuthor('alice', self::AUTHOR);
+			->noteAuthor(self::AUTHOR);
 	}
 
 	/**
@@ -74,7 +74,7 @@ class ExpiredSessionCollectorTest extends TestCase {
 		$client = $this->createMock(EtherpadClient::class);
 		$client->expects(self::never())->method('listSessionsOfAuthor');
 
-		$this->collector($client)->noteAuthor('alice', self::AUTHOR);
+		$this->collector($client)->noteAuthor(self::AUTHOR);
 	}
 
 	/**
@@ -87,11 +87,11 @@ class ExpiredSessionCollectorTest extends TestCase {
 		$jobList->method('has')->willReturn(false);
 		$jobList->expects(self::once())->method('add')->with(
 			CollectExpiredSessionsJob::class,
-			['uid' => 'public-share:tok', 'authorId' => self::AUTHOR],
+			['authorId' => self::AUTHOR],
 		);
 
 		$this->collector($this->createMock(EtherpadClient::class), $jobList)
-			->noteAuthor('public-share:tok', self::AUTHOR);
+			->noteAuthor(self::AUTHOR);
 	}
 
 	/** No author means nothing was ever issued under one. */
@@ -100,7 +100,7 @@ class ExpiredSessionCollectorTest extends TestCase {
 		$jobList->expects(self::never())->method('add');
 
 		$this->collector($this->createMock(EtherpadClient::class), $jobList)
-			->noteAuthor('alice', '');
+			->noteAuthor('');
 	}
 
 	/**
@@ -114,7 +114,7 @@ class ExpiredSessionCollectorTest extends TestCase {
 		$jobList->expects(self::never())->method('add');
 
 		$this->collector($this->createMock(EtherpadClient::class), $jobList)
-			->noteAuthor('alice', self::AUTHOR);
+			->noteAuthor(self::AUTHOR);
 	}
 
 	/**
@@ -132,7 +132,7 @@ class ExpiredSessionCollectorTest extends TestCase {
 		$jobList->expects(self::never())->method('add');
 
 		$this->collector($this->createMock(EtherpadClient::class), $jobList)
-			->noteAuthor('alice', self::AUTHOR);
+			->noteAuthor(self::AUTHOR);
 	}
 
 	/**
@@ -147,7 +147,7 @@ class ExpiredSessionCollectorTest extends TestCase {
 		$logger->expects(self::once())->method('warning');
 
 		$this->collector($this->createMock(EtherpadClient::class), $jobList, $logger)
-			->noteAuthor('alice', self::AUTHOR);
+			->noteAuthor(self::AUTHOR);
 	}
 
 	public function testDeletesTheExpiredOnesAndLeavesTheLiveOnesAlone(): void {
@@ -164,10 +164,16 @@ class ExpiredSessionCollectorTest extends TestCase {
 			}
 		);
 
-		$result = $this->collector($client)->collect('alice', self::AUTHOR);
+		$result = $this->collector($client)->collect(self::AUTHOR);
 
 		self::assertSame(['s.old', 's.older'], $removed);
-		self::assertSame(['deleted' => 2, 'remaining' => 0, 'retry' => false], $result);
+		self::assertSame(2, $result['deleted']);
+		self::assertSame(0, $result['remaining']);
+		self::assertFalse($result['retry']);
+		self::assertNotNull(
+			$result['nextDueAt'],
+			'the live session it left alone is what the next run comes back for',
+		);
 	}
 
 	/**
@@ -192,7 +198,7 @@ class ExpiredSessionCollectorTest extends TestCase {
 			}
 		);
 
-		$this->collector($client)->collect('alice', self::AUTHOR);
+		$this->collector($client)->collect(self::AUTHOR);
 
 		foreach ($timeouts as $timeout) {
 			self::assertNotNull($timeout, 'a delete was issued with the client default');
@@ -218,9 +224,9 @@ class ExpiredSessionCollectorTest extends TestCase {
 		$client->method('listSessionsOfAuthor')->willReturn(self::expiredSessions(5));
 		$client->expects(self::never())->method('deleteSession');
 
-		$result = $this->collector($client, budgetSeconds: 0.3)->collect('alice', self::AUTHOR);
+		$result = $this->collector($client, budgetSeconds: 0.3)->collect(self::AUTHOR);
 
-		self::assertSame(['deleted' => 0, 'remaining' => 5, 'retry' => false], $result);
+		self::assertSame(['deleted' => 0, 'remaining' => 5, 'retry' => false, 'nextDueAt' => null], $result);
 	}
 
 	/**
@@ -241,12 +247,43 @@ class ExpiredSessionCollectorTest extends TestCase {
 			}
 		);
 
-		$this->collector($client)->collect('alice', self::AUTHOR);
+		$this->collector($client)->collect(self::AUTHOR);
 
 		self::assertNotSame('unset', $seen);
 		self::assertNotNull($seen, 'the listing went out with the client default');
 		self::assertGreaterThanOrEqual(1, $seen);
 		self::assertLessThanOrEqual(15, $seen);
+	}
+
+	/**
+	 * A sweep that found nothing to do says when there will be.
+	 *
+	 * Otherwise the very next open queues another full walk of the index:
+	 * a busy public link would have one behind every visitor, for as long
+	 * as a session lives, over the one author they all share. The answer is
+	 * already in the listing this run paid for.
+	 */
+	public function testSaysWhenTheEarliestSessionBecomesCollectable(): void {
+		$soon = time() + 600;
+		$client = $this->createMock(EtherpadClient::class);
+		$client->method('listSessionsOfAuthor')->willReturn([
+			's.later' => ['groupID' => 'g.AAAAAAAAAAAAAAAA', 'validUntil' => time() + 3600],
+			's.soon' => ['groupID' => 'g.AAAAAAAAAAAAAAAA', 'validUntil' => $soon],
+		]);
+		$client->expects(self::never())->method('deleteSession');
+
+		$result = $this->collector($client)->collect(self::AUTHOR);
+
+		self::assertSame(0, $result['deleted']);
+		self::assertSame($soon + 300, $result['nextDueAt'], 'the earliest one, plus the grace');
+	}
+
+	/** An author holding nothing has nothing to come back for. */
+	public function testHasNoDueTimeWhenTheAuthorHoldsNothing(): void {
+		$client = $this->createMock(EtherpadClient::class);
+		$client->method('listSessionsOfAuthor')->willReturn([]);
+
+		self::assertNull($this->collector($client)->collect(self::AUTHOR)['nextDueAt']);
 	}
 
 	/**
@@ -257,7 +294,7 @@ class ExpiredSessionCollectorTest extends TestCase {
 		$client = $this->createMock(EtherpadClient::class);
 		$client->method('listSessionsOfAuthor')->willReturn(self::expiredSessions(400));
 
-		$result = $this->collector($client)->collect('alice', self::AUTHOR);
+		$result = $this->collector($client)->collect(self::AUTHOR);
 
 		self::assertSame(250, $result['deleted']);
 		self::assertSame(150, $result['remaining']);
@@ -282,7 +319,7 @@ class ExpiredSessionCollectorTest extends TestCase {
 			}
 		);
 
-		$result = $this->collector($client)->collect('alice', self::AUTHOR);
+		$result = $this->collector($client)->collect(self::AUTHOR);
 
 		self::assertSame(1, $result['deleted']);
 		self::assertSame(0, $result['remaining'], 'a session that is already gone is not left over');
@@ -305,10 +342,10 @@ class ExpiredSessionCollectorTest extends TestCase {
 			}
 		);
 
-		$result = $this->collector($client)->collect('alice', self::AUTHOR);
+		$result = $this->collector($client)->collect(self::AUTHOR);
 
 		self::assertSame(250, $calls, 'the run should stop at the ceiling, not walk the whole index');
-		self::assertSame(['deleted' => 0, 'remaining' => 150, 'retry' => false], $result);
+		self::assertSame(['deleted' => 0, 'remaining' => 150, 'retry' => false, 'nextDueAt' => null], $result);
 	}
 
 	/**
@@ -335,7 +372,7 @@ class ExpiredSessionCollectorTest extends TestCase {
 			}
 		);
 
-		$result = $this->collector($client)->collect('alice', self::AUTHOR);
+		$result = $this->collector($client)->collect(self::AUTHOR);
 
 		self::assertSame(2, $result['deleted'], 'the entries behind the poison one should still go');
 		self::assertSame(1, $result['remaining'], 'and the poison one is what is left');
@@ -357,10 +394,10 @@ class ExpiredSessionCollectorTest extends TestCase {
 			}
 		);
 
-		$result = $this->collector($client)->collect('alice', self::AUTHOR);
+		$result = $this->collector($client)->collect(self::AUTHOR);
 
 		self::assertSame(5, $calls, 'a run puts up with a handful of refusals, not a hundred');
-		self::assertSame(['deleted' => 0, 'remaining' => 100, 'retry' => true], $result);
+		self::assertSame(['deleted' => 0, 'remaining' => 100, 'retry' => true, 'nextDueAt' => null], $result);
 	}
 
 
@@ -379,7 +416,7 @@ class ExpiredSessionCollectorTest extends TestCase {
 		]);
 		$client->expects(self::once())->method('deleteSession')->with('s.longago');
 
-		self::assertSame(1, $this->collector($client)->collect('alice', self::AUTHOR)['deleted']);
+		self::assertSame(1, $this->collector($client)->collect(self::AUTHOR)['deleted']);
 	}
 
 	/** Nothing about collecting may take a pad server outage further. */
@@ -389,8 +426,8 @@ class ExpiredSessionCollectorTest extends TestCase {
 			->willThrowException(new EtherpadClientException('Connection timed out'));
 
 		self::assertSame(
-			['deleted' => 0, 'remaining' => 0, 'retry' => true],
-			$this->collector($client)->collect('alice', self::AUTHOR),
+			['deleted' => 0, 'remaining' => 0, 'retry' => true, 'nextDueAt' => null],
+			$this->collector($client)->collect(self::AUTHOR),
 			'a failed listing is a retry, not an empty backlog',
 		);
 	}

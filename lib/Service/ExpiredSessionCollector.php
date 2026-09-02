@@ -117,12 +117,18 @@ class ExpiredSessionCollector {
 	 * index. Both were invisible to a sweep that had to be told what to
 	 * look at. An author id is known on every open.
 	 */
-	public function noteAuthor(string $uid, string $authorId): void {
+	public function noteAuthor(string $authorId): void {
 		if ($authorId === '') {
 			return;
 		}
 
-		$argument = ['uid' => $uid, 'authorId' => $authorId];
+		// The author id and nothing else. For a public link the uid is
+		// `public-share:<token>` — the bearer credential from the share
+		// URL — and a job argument is persisted in the jobs table, printed
+		// by occ, and carried into database dumps and support bundles. The
+		// job has no use for it, and an author id maps back to a Nextcloud
+		// user through their stored setting when a real one is behind it.
+		$argument = ['authorId' => $authorId];
 		// Both of these are Nextcloud database calls, and they run inside an
 		// open somebody is waiting for. Housekeeping may not be the reason a
 		// pad fails to open: a deadlock or a lost connection here would turn
@@ -136,7 +142,7 @@ class ExpiredSessionCollector {
 		} catch (\Throwable $e) {
 			$this->logger->warning('Could not queue the Etherpad session sweep.', [
 				'app' => 'etherpad_nextcloud',
-				'uid' => $uid,
+				'authorId' => $authorId,
 				'exception' => $e,
 			]);
 		}
@@ -154,9 +160,14 @@ class ExpiredSessionCollector {
 	 * whichever open notices it again — and a failure reported as progress
 	 * has the job coming back every minute for good.
 	 *
-	 * @return array{deleted:int,remaining:int,retry:bool}
+	 * `nextDueAt` is when the earliest session still standing becomes
+	 * collectable, so a run that found nothing to do can say when it is
+	 * worth coming back instead of leaving the next open to ask again. Null
+	 * when the author holds nothing at all.
+	 *
+	 * @return array{deleted:int,remaining:int,retry:bool,nextDueAt:?int}
 	 */
-	public function collect(string $uid, string $authorId): array {
+	public function collect(string $authorId): array {
 		$deadline = microtime(true) + $this->budgetSeconds;
 
 		try {
@@ -171,17 +182,17 @@ class ExpiredSessionCollector {
 		} catch (\Throwable $e) {
 			$this->logger->warning('Could not list the Etherpad sessions to collect.', [
 				'app' => 'etherpad_nextcloud',
-				'uid' => $uid,
 				'authorId' => $authorId,
 				'exception' => $e,
 			]);
-			return ['deleted' => 0, 'remaining' => 0, 'retry' => true];
+			return ['deleted' => 0, 'remaining' => 0, 'retry' => true, 'nextDueAt' => null];
 		}
 
 		// The same grace as the counting above, for the same reason: a
 		// session is only collected once both clocks must agree it is dead.
 		$cutoff = time() - self::EXPIRY_GRACE_SECONDS;
 		$expired = [];
+		$nextDueAt = null;
 		foreach ($sessions as $sessionId => $info) {
 			// Anything still live is left alone. This job reclaims storage;
 			// deciding that somebody's access should end is a different
@@ -189,7 +200,16 @@ class ExpiredSessionCollector {
 			// housekeeping sweep gets to answer.
 			if ($info['validUntil'] <= $cutoff) {
 				$expired[] = $sessionId;
+				continue;
 			}
+
+			// Not collectable yet. Remembering when the earliest one becomes
+			// so is what keeps a sweep that found nothing from being asked
+			// again by the very next open: a busy public link would
+			// otherwise walk one shared author's whole index behind every
+			// visitor, for the length of a session lifetime.
+			$dueAt = (int)$info['validUntil'] + self::EXPIRY_GRACE_SECONDS;
+			$nextDueAt = $nextDueAt === null ? $dueAt : min($nextDueAt, $dueAt);
 		}
 
 		// Counted separately: `handled` is what is no longer there, whether
@@ -229,7 +249,6 @@ class ExpiredSessionCollector {
 				// and reaches the rest.
 				$this->logger->warning('Could not collect an expired Etherpad session.', [
 					'app' => 'etherpad_nextcloud',
-					'uid' => $uid,
 					'authorId' => $authorId,
 					'sessionId' => $sessionId,
 					'exception' => $e,
@@ -246,7 +265,6 @@ class ExpiredSessionCollector {
 		if ($deleted > 0 || $remaining > 0) {
 			$this->logger->debug('Collected expired Etherpad sessions.', [
 				'app' => 'etherpad_nextcloud',
-				'uid' => $uid,
 				'deleted' => $deleted,
 				'remaining' => $remaining,
 			]);
@@ -256,7 +274,7 @@ class ExpiredSessionCollector {
 		// listing gets. Without it the job reads "some progress, more to do"
 		// and comes back every minute for good — one call and one warning a
 		// minute against a pad server that has already said no.
-		return ['deleted' => $deleted, 'remaining' => $remaining, 'retry' => $failures > 0];
+		return ['deleted' => $deleted, 'remaining' => $remaining, 'retry' => $failures > 0, 'nextDueAt' => $nextDueAt];
 	}
 
 	/**
@@ -272,7 +290,7 @@ class ExpiredSessionCollector {
 	 * A handful of lookups, in a path that only runs once a backlog has
 	 * built up.
 	 *
-	 * @param array{uid:string,authorId:string} $argument
+	 * @param array{authorId:string} $argument
 	 */
 	private function sweepIsQueued(array $argument): bool {
 		if ($this->jobList->has(CollectExpiredSessionsJob::class, $argument)) {

@@ -125,7 +125,7 @@ class PadSessionService {
 		// happens when the browser carries ids. A first open makes none, and
 		// a public link never does — so a sweep that waited to be told about
 		// a backlog would never hear about either.
-		$this->collector->noteAuthor($uid, $authorId);
+		$this->collector->noteAuthor($authorId);
 
 		$carriedIds = $this->sessionIdsFromCookie();
 		$sessions = $this->sessionsToAttributeWith($uid, $authorId, $carriedIds);

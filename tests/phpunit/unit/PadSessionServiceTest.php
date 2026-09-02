@@ -63,7 +63,9 @@ class PadSessionServiceTest extends TestCase {
 		$etherpadClient->method('buildPadUrl')->willReturn('https://pad.example.test/p/x');
 
 		$collector = $this->createMock(\OCA\EtherpadNextcloud\Service\ExpiredSessionCollector::class);
-		$collector->expects($this->once())->method('noteAuthor')->with('admin', 'a.author');
+		// The author id alone. For a public link the uid is the share token,
+		// and this argument is persisted in the jobs table.
+		$collector->expects($this->once())->method('noteAuthor')->with('a.author');
 
 		// No incoming cookie: the case the old trigger could never see.
 		$service = $this->buildService(
