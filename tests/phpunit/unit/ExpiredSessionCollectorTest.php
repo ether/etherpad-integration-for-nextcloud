@@ -444,6 +444,33 @@ class ExpiredSessionCollectorTest extends TestCase {
 		self::assertSame(1, $this->collector($client)->collect(self::AUTHOR)['deleted']);
 	}
 
+	/**
+	 * A session id is the value of the `sessionID` cookie — the credential
+	 * itself — and this branch is reached for sessions the pad server may
+	 * still accept. A digest correlates the same entry across runs without
+	 * writing the credential into a log that outlives it.
+	 */
+	public function testDoesNotWriteASessionIdIntoTheLog(): void {
+		$client = $this->createMock(EtherpadClient::class);
+		$client->method('listSessionsOfAuthor')->willReturn(['s.secretsecret123' => self::expired()]);
+		$client->method('deleteSession')->willThrowException(new EtherpadClientException('internal error'));
+
+		$seen = [];
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->method('warning')->willReturnCallback(
+			static function (string $message, array $context) use (&$seen): void {
+				$seen[] = json_encode($context);
+			}
+		);
+
+		$this->collector($client, logger: $logger)->collect(self::AUTHOR);
+
+		self::assertNotSame([], $seen, 'the refusal should have been logged at all');
+		foreach ($seen as $context) {
+			self::assertStringNotContainsString('s.secretsecret123', $context);
+		}
+	}
+
 	/** Nothing about collecting may take a pad server outage further. */
 	public function testSurvivesAnUnreachablePadServer(): void {
 		$client = $this->createMock(EtherpadClient::class);

@@ -244,6 +244,11 @@ class EtherpadClientTest extends TestCase {
 				's.aaaaaaaaaaaaaaaa' => ['groupID' => 'g.aaaaaaaaaaaaaaaa', 'validUntil' => 4102444800],
 				's.bbbbbbbbbbbbbbbb' => null,
 				's.cccccccccccccccc' => null,
+				// Malformed rather than null, and just as unusable: still a
+				// key the listing walks that no delete will take.
+				's.dddddddddddddddd' => ['validUntil' => 4102444800],
+				's.eeeeeeeeeeeeeeee' => ['groupID' => 'g.aaaaaaaaaaaaaaaa'],
+				's.ffffffffffffffff' => [],
 			]])),
 			$captured,
 		);
@@ -251,7 +256,7 @@ class EtherpadClientTest extends TestCase {
 		$sessions = $client->listSessionsOfAuthor('a.aaaaaaaaaaaaaaaa', null, $unreadable);
 
 		self::assertSame(['s.aaaaaaaaaaaaaaaa'], array_keys($sessions));
-		self::assertSame(2, $unreadable);
+		self::assertSame(5, $unreadable);
 	}
 
 	/** The calls that do matter keep the full patience. */
