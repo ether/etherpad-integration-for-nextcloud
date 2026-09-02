@@ -177,6 +177,16 @@ class EtherpadClient {
 	}
 
 	/**
+	 * Take one session away.
+	 *
+	 * Measured: a second delete of the same id answers `sessionID does not
+	 * exist`, which the classifier reads as already gone.
+	 */
+	public function deleteSession(string $sessionId): void {
+		$this->apiCall('deleteSession', ['sessionID' => $sessionId]);
+	}
+
+	/**
 	 * The author's sessions, keyed by session id, each carrying the group it
 	 * grants access to and when it stops doing so.
 	 *

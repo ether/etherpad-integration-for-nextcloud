@@ -200,6 +200,35 @@ Cookie details:
   - derivation is skipped for IP hosts and invalid host values
   - recommendation: use explicit `etherpad_cookie_domain` in multi-subdomain/proxy setups
 
+### Expired Etherpad sessions
+
+Every open of a protected pad mints a session – that has been true since
+1.0.0 – and Etherpad never removes one once it expires. The pile was free
+while nothing read it. Since 1.1.0-alpha.4 something does: keeping several
+protected pads open at once means checking which of the ids in the cookie
+are still valid, and that asks `listSessionsOfAuthor`, which walks the
+author's whole index one awaited lookup at a time, expired entries
+included.
+
+So the cost of an open grows with the number of past opens rather than
+with the number of sessions that still grant anything. Ten opens a day is
+a few thousand entries in a year, and each one is a round trip inside
+Etherpad before the pad appears.
+
+No request deletes them – doing that one call at a time is the backlog
+itself. Instead the open that is already holding the listing counts the
+expired entries, and past fifty queues a job for that author. The sweep
+runs there, up to 250 per run inside a 20-second budget, and requeues
+itself for whatever did not fit. The job list keys on class plus argument,
+so ten opens before the sweep runs still queue one sweep.
+
+What this does not do is stop the sessions being created. That is a
+property of issuing a fresh session per open, which is what keeps an
+already-open pad working; the collector only keeps the record of it from
+growing without end. An author nobody opens a pad for is never swept –
+it costs storage and nothing else, because the cost that matters is paid
+by whoever reads the index.
+
 ### `SameSite=Lax`
 
 Nextcloud and Etherpad have to share a registrable domain for a protected

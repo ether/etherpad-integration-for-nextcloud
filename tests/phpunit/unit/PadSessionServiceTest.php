@@ -26,6 +26,7 @@ class PadSessionServiceTest extends TestCase {
 		string $nextcloudUrl = 'https://cloud.example.test',
 		?string $incomingSessionCookie = null,
 		bool $httpOnlySupported = false,
+		?\OCA\EtherpadNextcloud\Service\ExpiredSessionCollector $collector = null,
 	): PadSessionService {
 		$urlGenerator = $this->createMock(IURLGenerator::class);
 		$urlGenerator->method('getBaseUrl')->willReturn($nextcloudUrl);
@@ -40,8 +41,39 @@ class PadSessionServiceTest extends TestCase {
 			new CookieDomainPolicy(),
 			$releasePolicy,
 			$request,
+			$collector ?? $this->createMock(\OCA\EtherpadNextcloud\Service\ExpiredSessionCollector::class),
 			$this->createMock(LoggerInterface::class),
 		);
+	}
+
+	/**
+	 * The open path is the one that suffers first when the index gets long,
+	 * and it is already holding the listing — so it is where the backlog is
+	 * counted. Nothing is deleted here; a note is left for a job.
+	 */
+	public function testHandsTheListingToTheCollector(): void {
+		$sessions = [
+			$this->sid('carried') => ['groupID' => 'g.ABCDEFGHIJKLMNOP', 'validUntil' => time() - 60],
+		];
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->method('createSession')->willReturn($this->sid('new'));
+		$etherpadClient->method('listSessionsOfAuthor')->willReturn($sessions);
+		$etherpadClient->method('createAuthorIfNotExistsFor')->willReturn('a.author');
+		$etherpadClient->method('buildPadUrl')->willReturn('https://pad.example.test/p/x');
+
+		$collector = $this->createMock(\OCA\EtherpadNextcloud\Service\ExpiredSessionCollector::class);
+		$collector->expects($this->once())->method('noteBacklog')
+			->with('admin', 'a.author', $sessions);
+
+		$service = $this->buildService(
+			$etherpadClient,
+			$this->createMock(IConfig::class),
+			'https://cloud.example.test',
+			$this->sid('carried'),
+			false,
+			$collector,
+		);
+		$service->createProtectedOpenContext('admin', 'Admin', 'g.ABCDEFGHIJKLMNOP$pad-1');
 	}
 
 	/**
@@ -338,6 +370,7 @@ class PadSessionServiceTest extends TestCase {
 			new CookieDomainPolicy(),
 			$this->createMock(\OCA\EtherpadNextcloud\Service\EtherpadReleasePolicy::class),
 			$request,
+			$this->createMock(\OCA\EtherpadNextcloud\Service\ExpiredSessionCollector::class),
 			$logger,
 		);
 
