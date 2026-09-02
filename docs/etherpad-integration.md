@@ -217,17 +217,28 @@ Etherpad before the pad appears.
 
 No request deletes them – doing that one call at a time is the backlog
 itself. Instead the open that is already holding the listing counts the
-expired entries, and past fifty queues a job for that author. The sweep
-runs there, up to 250 per run inside a 20-second budget, and requeues
-itself for whatever did not fit. The job list keys on class plus argument,
-so ten opens before the sweep runs still queue one sweep.
+expired entries, and past fifty queues a job for that author, unless one
+is queued already. The sweep runs there, up to 250 per run inside a
+20-second budget, and requeues itself for whatever did not fit. A listing
+that failed is requeued too, with a growing delay and a limit: a queued
+job is removed from the list before it runs, so a pad server hiccup would
+otherwise leave the pile for whichever open notices it next.
+
+Two limits are worth knowing. The sweep only ever sees an author somebody
+opens a pad for, so an account nobody uses keeps whatever piled up – that
+costs storage and nothing else, since the cost that matters is paid by
+whoever reads the index. And public link shares are not covered at all:
+they open under a shared anonymous author whose id is never cached, so the
+listing that spots a backlog is never made for them, while every visitor
+of one link adds a session under that same author.
 
 What this does not do is stop the sessions being created. That is a
 property of issuing a fresh session per open, which is what keeps an
 already-open pad working; the collector only keeps the record of it from
-growing without end. An author nobody opens a pad for is never swept –
-it costs storage and nothing else, because the cost that matters is paid
-by whoever reads the index.
+growing without end. Noting the id and expiry of each session as it is
+issued would cover the public-link case too and need no listing at all;
+renewing one session instead of minting another would remove the reason
+for the pile. Both are larger changes than this.
 
 ### `SameSite=Lax`
 

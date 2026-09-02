@@ -181,9 +181,15 @@ class EtherpadClient {
 	 *
 	 * Measured: a second delete of the same id answers `sessionID does not
 	 * exist`, which the classifier reads as already gone.
+	 *
+	 * The timeout is a parameter because the collector promises a total run
+	 * length, and a call that may take the standard timeout on its own can
+	 * only be started, never bounded. Without this the promise is off by a
+	 * whole timeout — the last call is allowed to begin just under the
+	 * deadline and then run past it.
 	 */
-	public function deleteSession(string $sessionId): void {
-		$this->apiCall('deleteSession', ['sessionID' => $sessionId]);
+	public function deleteSession(string $sessionId, ?int $timeoutSeconds = null): void {
+		$this->apiCall('deleteSession', ['sessionID' => $sessionId], 'POST', null, null, null, $timeoutSeconds);
 	}
 
 	/**
@@ -307,7 +313,8 @@ class EtherpadClient {
 		string $httpMethod = 'POST',
 		?string $hostOverride = null,
 		?string $apiKeyOverride = null,
-		?string $apiVersionOverride = null
+		?string $apiVersionOverride = null,
+		?int $timeoutSeconds = null
 	): array {
 		$apiVersion = $apiVersionOverride !== null && trim($apiVersionOverride) !== ''
 			? trim($apiVersionOverride)
@@ -325,7 +332,7 @@ class EtherpadClient {
 		]);
 
 		try {
-			$rawBody = $this->sendRequest($url, $query, $httpMethod);
+			$rawBody = $this->sendRequest($url, $query, $httpMethod, $timeoutSeconds);
 		} catch (\Throwable $e) {
 			throw new EtherpadClientException('Etherpad API request failed: ' . $method, 0, $e);
 		}
@@ -348,9 +355,14 @@ class EtherpadClient {
 	/**
 	 * @param array<string,mixed> $query
 	 */
-	private function sendRequest(string $url, array $query, string $httpMethod): string {
+	private function sendRequest(
+		string $url,
+		array $query,
+		string $httpMethod,
+		?int $timeoutSeconds = null,
+	): string {
 		$method = strtoupper($httpMethod);
-		$options = $this->baseRequestOptions();
+		$options = $this->baseRequestOptions($timeoutSeconds ?? self::REQUEST_TIMEOUT_SECONDS);
 		if ($method === 'GET') {
 			$options['query'] = $query;
 		} else {

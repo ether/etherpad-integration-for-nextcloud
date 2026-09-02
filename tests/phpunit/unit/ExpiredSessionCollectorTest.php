@@ -47,6 +47,7 @@ class ExpiredSessionCollectorTest extends TestCase {
 
 	public function testLeavesANoteOnceTheBacklogIsWorthSweeping(): void {
 		$jobList = $this->createMock(IJobList::class);
+		$jobList->method('has')->willReturn(false);
 		$jobList->expects(self::once())->method('add')->with(
 			CollectExpiredSessionsJob::class,
 			['uid' => 'alice', 'authorId' => self::AUTHOR],
@@ -82,6 +83,20 @@ class ExpiredSessionCollectorTest extends TestCase {
 			->noteBacklog('alice', self::AUTHOR, $sessions);
 	}
 
+	/**
+	 * A second note would not be ignored: Nextcloud updates the row and
+	 * clears last_run and reserved_at, so a sweep this job deliberately put
+	 * a minute out would be released by the next pad open.
+	 */
+	public function testDoesNotTouchANoteThatIsAlreadyThere(): void {
+		$jobList = $this->createMock(IJobList::class);
+		$jobList->method('has')->willReturn(true);
+		$jobList->expects(self::never())->method('add');
+
+		$this->collector($this->createMock(EtherpadClient::class), $jobList)
+			->noteBacklog('alice', self::AUTHOR, self::expiredSessions(80));
+	}
+
 	public function testDeletesTheExpiredOnesAndLeavesTheLiveOnesAlone(): void {
 		$client = $this->createMock(EtherpadClient::class);
 		$client->method('listSessionsOfAuthor')->willReturn([
@@ -99,7 +114,7 @@ class ExpiredSessionCollectorTest extends TestCase {
 		$result = $this->collector($client)->collect('alice', self::AUTHOR);
 
 		self::assertSame(['s.old', 's.older'], $removed);
-		self::assertSame(['deleted' => 2, 'remaining' => 0], $result);
+		self::assertSame(['deleted' => 2, 'remaining' => 0, 'retry' => false], $result);
 	}
 
 	/**
@@ -161,7 +176,7 @@ class ExpiredSessionCollectorTest extends TestCase {
 		$result = $this->collector($client)->collect('alice', self::AUTHOR);
 
 		self::assertSame(250, $calls, 'the run should stop at the ceiling, not walk the whole index');
-		self::assertSame(['deleted' => 0, 'remaining' => 150], $result);
+		self::assertSame(['deleted' => 0, 'remaining' => 150, 'retry' => false], $result);
 	}
 
 	/**
@@ -185,7 +200,7 @@ class ExpiredSessionCollectorTest extends TestCase {
 		$result = $this->collector($client, logger: $logger)->collect('alice', self::AUTHOR);
 
 		self::assertSame(1, $calls, 'one failure is enough to know the rest will fail too');
-		self::assertSame(['deleted' => 0, 'remaining' => 10], $result);
+		self::assertSame(['deleted' => 0, 'remaining' => 10, 'retry' => false], $result);
 	}
 
 	/** Nothing about collecting may take a pad server outage further. */
@@ -195,8 +210,9 @@ class ExpiredSessionCollectorTest extends TestCase {
 			->willThrowException(new EtherpadClientException('Connection timed out'));
 
 		self::assertSame(
-			['deleted' => 0, 'remaining' => 0],
+			['deleted' => 0, 'remaining' => 0, 'retry' => true],
 			$this->collector($client)->collect('alice', self::AUTHOR),
+			'a failed listing is a retry, not an empty backlog',
 		);
 	}
 

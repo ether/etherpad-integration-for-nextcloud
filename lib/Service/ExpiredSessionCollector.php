@@ -54,6 +54,17 @@ class ExpiredSessionCollector {
 	private const MAX_PER_RUN = 250;
 	private const BUDGET_SECONDS = 20.0;
 
+	/**
+	 * The collector's own request timeout, in place of the client's.
+	 *
+	 * A deadline checked between calls bounds when the last one starts, not
+	 * when it ends: with the standard timeout a delete begun just under the
+	 * deadline runs well past it, and the budget above would be a number
+	 * that describes nothing. Each call gets whatever is left, floored so a
+	 * request is never issued with an already-dead timeout.
+	 */
+	private const MIN_CALL_TIMEOUT_SECONDS = 2;
+
 	public function __construct(
 		private EtherpadClient $etherpadClient,
 		private IJobList $jobList,
@@ -87,18 +98,36 @@ class ExpiredSessionCollector {
 			return;
 		}
 
-		// Adding the same job twice is a no-op on the second call: the job
-		// list keys on class plus argument, so a user who opens ten pads
-		// before the sweep runs still queues one sweep.
-		$this->jobList->add(CollectExpiredSessionsJob::class, ['uid' => $uid, 'authorId' => $authorId]);
+		$argument = ['uid' => $uid, 'authorId' => $authorId];
+		// Not simply add(). Nextcloud's job list does not ignore a second
+		// add for the same class and argument — it updates the row, setting
+		// last_run and reserved_at back to zero and last_checked to now. A
+		// job this collector deliberately scheduled a minute out would be
+		// released immediately by the next pad open, which is how a backoff
+		// stops being one.
+		//
+		// has() then add() is still not atomic, and the jobs table has no
+		// unique index on (class, argument_hash), so two simultaneous opens
+		// can queue two sweeps. That is waste, not damage: a sweep deletes
+		// what has already expired, and a session the other run removed
+		// first comes back as "already gone" and counts as handled.
+		if ($this->jobList->has(CollectExpiredSessionsJob::class, $argument)) {
+			return;
+		}
+		$this->jobList->add(CollectExpiredSessionsJob::class, $argument);
 	}
 
 	/**
 	 * Delete what has expired, up to the run's budget.
 	 *
-	 * @return array{deleted:int,remaining:int} remaining counts what was
-	 *   still expired when the budget ran out, so the caller can decide
-	 *   whether to come back rather than guess.
+	 * Three outcomes, not two. `remaining` says the sweep worked and did
+	 * not finish; `retry` says it never got to start, because the listing
+	 * failed. They must not be one number: the job removes its own row
+	 * before running, so a run that reported nothing left would leave a
+	 * pad server hiccup to be discovered by whichever open happens to
+	 * notice the backlog again.
+	 *
+	 * @return array{deleted:int,remaining:int,retry:bool}
 	 */
 	public function collect(string $uid, string $authorId): array {
 		$deadline = microtime(true) + self::BUDGET_SECONDS;
@@ -112,7 +141,7 @@ class ExpiredSessionCollector {
 				'authorId' => $authorId,
 				'exception' => $e,
 			]);
-			return ['deleted' => 0, 'remaining' => 0];
+			return ['deleted' => 0, 'remaining' => 0, 'retry' => true];
 		}
 
 		$now = time();
@@ -138,7 +167,7 @@ class ExpiredSessionCollector {
 			}
 
 			try {
-				$this->etherpadClient->deleteSession($sessionId);
+				$this->etherpadClient->deleteSession($sessionId, $this->timeoutLeft($deadline));
 				$deleted++;
 				$handled++;
 			} catch (\Throwable $e) {
@@ -169,6 +198,11 @@ class ExpiredSessionCollector {
 			]);
 		}
 
-		return ['deleted' => $deleted, 'remaining' => $remaining];
+		return ['deleted' => $deleted, 'remaining' => $remaining, 'retry' => false];
+	}
+
+	/** Whatever is left of the run's budget, never below the floor. */
+	private function timeoutLeft(float $deadline): int {
+		return max(self::MIN_CALL_TIMEOUT_SECONDS, (int)ceil($deadline - microtime(true)));
 	}
 }
