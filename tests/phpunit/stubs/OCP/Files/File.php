@@ -18,6 +18,13 @@ if (!interface_exists(File::class)) {
 
 		public function putContent($data): void;
 
+		/**
+		 * Untyped, like Nextcloud's own: OCP\Files\Node declares it with a
+		 * @return bool docblock and no return type. A stub that tightened
+		 * that would accept mocks the real interface would not.
+		 */
+		public function isUpdateable();
+
 		// Nextcloud's Template serialises a file, so these are part of the
 		// contract even where the app itself never calls them.
 		public function getEtag(): string;

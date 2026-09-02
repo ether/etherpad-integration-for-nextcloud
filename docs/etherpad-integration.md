@@ -402,13 +402,33 @@ Regression safety check:
 
 ## Read-only Behavior
 
-- Read-only URL is built via `getReadOnlyID`.
-- Authenticated protected GroupPad opens still require a session.
-- Public read-only shares of protected GroupPads do not create an Etherpad session.
-  - They render the last synced snapshot stored in the `.pad` file.
-  - If an HTML snapshot is stored, only a small tag whitelist is rendered (`p`, lists, headings, basic inline formatting, block/code tags); attributes and dangerous tags are stripped.
-  - If no HTML snapshot is stored, the viewer falls back to the text snapshot.
-  - This prevents the public share response from setting a session cookie that could also open the writable GroupPad URL.
+A share without write permission gets no way to edit, whether it is a
+public link or an internal share with another user. Both are decided the
+same way and reach the same two answers.
+
+- **Protected pads render the stored snapshot**, and no Etherpad session is
+  created at all.
+  - If an HTML snapshot is stored, only a small tag whitelist is rendered
+    (`p`, lists, headings, basic inline formatting, block/code tags);
+    attributes and dangerous tags are stripped. Otherwise the text snapshot
+    is used.
+  - Etherpad's own read-only view is deliberately **not** used here.
+    `SecurityManager` resolves a read-only id back to the real pad before
+    any check, so the view needs the same group session as the editable
+    one – and the editable pad id is written in plain text in the `.pad`
+    file, which a read-only share still lets the recipient read. Handing
+    over a session would therefore hand over editing, with the id supplied
+    by the file itself. Etherpad has no session that grants reading but not
+    writing.
+- **Public pads get Etherpad's read-only URL** (`getReadOnlyID`), which is
+  presentation rather than enforcement: a public pad is editable by anyone
+  who has its id, and its id is in the `.pad` file. Nothing can be enforced
+  there, so the live read-only view is preferred over a snapshot that would
+  only be staler.
+
+The read-only id itself is random – `r.` plus sixteen characters, stored as
+a `pad2readonly` / `readonly2pad` mapping – so it reveals nothing about the
+pad it belongs to.
 
 ## Share Permission Mapping
 

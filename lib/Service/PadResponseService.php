@@ -174,6 +174,7 @@ class PadResponseService {
 			'access_mode' => $target->accessMode,
 			'pad_url' => $target->padUrl,
 			'is_external' => $target->isExternal,
+			'is_readonly_snapshot' => $target->isReadOnlySnapshot,
 			'original_pad_url' => $target->originalPadUrl,
 			'snapshot_text' => $target->snapshotText,
 			'snapshot_html' => $target->snapshotHtml,

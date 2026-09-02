@@ -29,6 +29,7 @@ class PadOpenTarget {
 		public readonly string $snapshotHtml,
 		public readonly string $url,
 		public readonly string $cookieHeader,
+		public readonly bool $isReadOnlySnapshot = false,
 	) {
 	}
 }

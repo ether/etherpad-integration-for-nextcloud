@@ -74,7 +74,11 @@ class PadOpenService {
 			$accessMode = $pad->accessMode;
 			$padUrl = $pad->padUrl;
 			$isExternal = $pad->isExternal;
-			$snapshot = $isExternal
+			// Every read-only path needs it, and the node is the only place
+			// that knows: it is resolved through this user's own view, so
+			// its permissions are the ones the share granted them.
+			$mayWrite = $node->isUpdateable();
+			$snapshot = ($isExternal || !$mayWrite)
 				? $this->snapshotExtractor->extract($content)
 				: new SnapshotPayload('', '');
 			if (!$isExternal) {
@@ -91,7 +95,8 @@ class PadOpenService {
 				$padUrl,
 				$isExternal,
 				$snapshot->text,
-				$snapshot->html
+				$snapshot->html,
+				$mayWrite
 			);
 		} catch (LockedException $e) {
 			$this->logger->info('Pad open deferred because .pad file is locked', [
@@ -114,7 +119,8 @@ class PadOpenService {
 		string $padUrl = '',
 		bool $isExternal = false,
 		string $snapshotText = '',
-		string $snapshotHtml = ''
+		string $snapshotHtml = '',
+		bool $mayWrite = true
 	): PadOpenTarget {
 		if ($isExternal && $accessMode !== BindingService::ACCESS_PUBLIC) {
 			throw new EtherpadClientException('External pad metadata requires public access_mode.');
@@ -131,6 +137,38 @@ class PadOpenService {
 			$originalPadUrl = $normalized['pad_url'];
 		} else {
 			$effectivePadUrl = $this->etherpadClient->buildPadUrl($padId);
+		}
+
+		// A share that grants no write permission must not be handed a way to
+		// edit. Nextcloud's own read-only shares stop at the file; the pad
+		// lives on another host, where the only thing standing between a
+		// viewer and the text is what this hands them — a session, or a URL.
+		if (!$mayWrite) {
+			if ($accessMode === BindingService::ACCESS_PROTECTED) {
+				// No session at all. The snapshot in the .pad file is what a
+				// viewer gets, exactly as a read-only public link does.
+				return new PadOpenTarget(
+					file: $path,
+					fileId: $fileId,
+					padId: $padId,
+					accessMode: $accessMode,
+					padUrl: $effectivePadUrl,
+					isExternal: $isExternal,
+					originalPadUrl: $originalPadUrl,
+					snapshotText: $snapshotText,
+					snapshotHtml: $snapshotHtml,
+					url: '',
+					cookieHeader: '',
+					isReadOnlySnapshot: true,
+				);
+			}
+
+			if (!$isExternal) {
+				// A public pad has no session to withhold, so the editable
+				// URL is the whole of the access. Etherpad's own read-only
+				// view is the one thing that is not editable.
+				$effectivePadUrl = $this->etherpadClient->getReadOnlyPadUrl($padId);
+			}
 		}
 
 		$cookieHeader = '';
