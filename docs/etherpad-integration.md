@@ -202,80 +202,44 @@ Cookie details:
 
 ### Expired Etherpad sessions
 
-Every open of a protected pad mints a session – that has been true since
-1.0.0 – and Etherpad never removes one once it expires. The pile was free
-while nothing read it. Since 1.1.0-alpha.4 something does: keeping several
-protected pads open at once means checking which of the ids in the cookie
-are still valid, and that asks `listSessionsOfAuthor`, which walks the
-author's whole index one awaited lookup at a time, expired entries
-included.
+Every open of a protected pad mints a session – since 1.0.0 – and Etherpad
+never removes one once it expires. Nothing read the pile until 1.1.0-alpha.4,
+when keeping several pads open at once began checking which cookie ids are
+still valid: `listSessionsOfAuthor` walks the author's whole index one
+awaited lookup at a time, expired entries included. The cost of an open
+therefore grows with past opens rather than with live access.
 
-So the cost of an open grows with the number of past opens rather than
-with the number of sessions that still grant anything. Ten opens a day is
-a few thousand entries in a year, and each one is a round trip inside
-Etherpad before the pad appears.
+An open leaves the author's id in the job table; a queued job does the rest.
+The id says which author to look at, not whether there is anything to
+collect – that answer is the listing, and the listing is the slow call, so
+it belongs in the job together with the deleting. This also reaches the two
+cases a request could not: the first open of a browsing session carries no
+cookie ids and so makes no listing, and a public link never carries any,
+although every visitor of one adds a session under the same shared author.
 
-No request deletes them, and no request finds out whether there are any
-– the listing is the call that gets slow, so asking is as much the problem
-as deleting. Every open of a protected pad leaves the author's id in the
-job table instead, and the sweep does both: it lists, and it deletes what
-has expired. Up to 250 per run inside a 20-second budget that no single
-call may overrun, requeued for whatever did not fit. A run that ended on a
-refusal – for the listing or for a delete – is requeued with a growing
-delay and a limit instead: a queued job is removed from the list before it
-runs, so a pad server hiccup would otherwise leave the pile for the next
-open to rediscover, and a refusal read as progress would have the job
-coming back every minute for good. A single session the server will never
-delete does not stop the run; it is skipped past, and only a handful of
-refusals ends one.
+The id is also all that is stored. A public link's uid is
+`public-share:<token>`, the credential from the share URL, and job
+arguments are persisted and printed by `occ`.
 
-The id alone is enough, and that is the point. A listing is only made when
-the browser carries session ids, so the first open after arriving made
-none – and a public link never does, while every visitor of one link
-writes to the same shared author's index. Both were invisible to a sweep
-that had to be told there was a backlog.
+A run deletes up to 250 sessions within 20 seconds, requeueing itself for
+the rest. A refusal is requeued with a growing delay and a limit; a single
+session the server will never delete is skipped rather than allowed to
+block the ones behind it. A run with nothing to do comes back when the
+earliest session still standing falls due, which also keeps the next open
+from queueing a second sweep. Nothing is deleted until five minutes after
+expiry, because Etherpad judges `validUntil` against its own clock and a
+session dead by ours may still be live there.
 
-The author id is also all that is written down. A public link's Nextcloud
-uid is `public-share:<token>` – the credential out of the share URL – and
-a job argument is persisted in the jobs table, printed by `occ`, and
-carried into database dumps and support bundles. The job has no use for
-it.
+This assumes deleting a session removes its id from the author index.
+Verified on 2.5.3 with PostgreSQL and on 2.x with the built-in store; an
+integration test pins it by counting raw API keys, since the client filters
+out exactly the entries a surviving key produces. Where entries do survive,
+collecting cannot shrink the index and the sweep says so in the log.
 
-A sweep that finds nothing to collect does not simply end: it comes back
-when the earliest session still standing falls due. That row is also what
-tells the next open a sweep is already accounted for, so a busy public
-link does not queue another walk of one shared index behind every
-visitor.
-
-This rests on one property of the pad server: deleting a session takes its
-id out of the author's index, so the listing gets shorter. Etherpad
-updates that index with `setSub(..., undefined)`, and there are reports of
-the key surviving on some versions and storage backends – which would
-leave an id the listing still walks and `deleteSession` will no longer
-take, since it answers that the session does not exist. Collecting cannot
-help there. Measured to hold on 2.5.3 with PostgreSQL, where a swept
-author's index record disappears entirely, and on 2.x with the built-in
-store; an integration test pins it against whatever Etherpad the suite
-runs, counting the raw keys of the API response rather than what the
-client hands back, because the client drops exactly the entries a
-surviving key produces. When such entries do turn up, the sweep says so in
-the log instead of reporting a clean run.
-
-Nothing is deleted until five minutes after it expired. `validUntil` is a
-number Nextcloud computes and Etherpad judges against its own clock, and
-in the window where the two disagree a session this side calls dead is one
-the pad server still grants – deleting it there would close a socket
-somebody is typing into. Queueing is best-effort too: it writes to the
-jobs table from inside an open, and housekeeping is not allowed to be the
-reason a pad fails to open.
-
-What this does not do is stop the sessions being created. That is a
-property of issuing a fresh session per open, which is what keeps an
-already-open pad working; the collector only keeps the record of it from
-growing without end. Noting the id and expiry of each session as it is
-issued would let the sweep skip the listing entirely; renewing one session
-instead of minting another would remove the reason for the pile. Both are
-larger changes than this.
+Not covered: sessions still being created – that is what keeps an open pad
+working – and authors nobody opens a pad for, whose leftovers cost storage
+only. Recording each session's id at issue time would remove the listing;
+renewing sessions instead of minting them would remove the pile.
 
 ### `SameSite=Lax`
 
