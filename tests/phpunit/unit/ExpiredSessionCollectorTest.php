@@ -173,7 +173,11 @@ class ExpiredSessionCollectorTest extends TestCase {
 		foreach ($timeouts as $timeout) {
 			self::assertNotNull($timeout, 'a delete was issued with the client default');
 			self::assertGreaterThanOrEqual(2, $timeout, 'never issue an already-dead timeout');
-			self::assertLessThanOrEqual(20, $timeout, 'never more patient than the whole budget');
+			self::assertLessThanOrEqual(
+				15,
+				$timeout,
+				'housekeeping must not be more patient than the calls a user waits on',
+			);
 		}
 	}
 
@@ -193,6 +197,32 @@ class ExpiredSessionCollectorTest extends TestCase {
 		$result = $this->collector($client, budgetSeconds: 0.3)->collect('alice', self::AUTHOR);
 
 		self::assertSame(['deleted' => 0, 'remaining' => 5, 'retry' => false], $result);
+	}
+
+	/**
+	 * The listing is inside the budget too.
+	 *
+	 * It was the one call in the run that could ignore it, which is
+	 * backwards: it is the expensive call this whole class exists because
+	 * of, so a slow index could spend the run and leave no time to delete
+	 * anything from it.
+	 */
+	public function testTheListingIsBoundedByTheRunsBudgetAsWell(): void {
+		$client = $this->createMock(EtherpadClient::class);
+		$seen = 'unset';
+		$client->method('listSessionsOfAuthor')->willReturnCallback(
+			static function (string $authorId, ?int $timeoutSeconds = null) use (&$seen): array {
+				$seen = $timeoutSeconds;
+				return [];
+			}
+		);
+
+		$this->collector($client)->collect('alice', self::AUTHOR);
+
+		self::assertNotSame('unset', $seen);
+		self::assertNotNull($seen, 'the listing went out with the client default');
+		self::assertGreaterThanOrEqual(1, $seen);
+		self::assertLessThanOrEqual(15, $seen);
 	}
 
 	/**
