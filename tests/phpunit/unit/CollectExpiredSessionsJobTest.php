@@ -108,6 +108,28 @@ class CollectExpiredSessionsJobTest extends TestCase {
 		$job->start($jobList);
 	}
 
+	/**
+	 * A delete that failed is a failure, even when the run deleted plenty
+	 * before it. Read as "progress, more to do" it would reset the attempt
+	 * counter, and a record the pad server will never let go of would cost
+	 * one call and one warning a minute for good.
+	 */
+	public function testBacksOffWhenTheRunEndedOnAFailedDelete(): void {
+		$collector = $this->createMock(ExpiredSessionCollector::class);
+		$collector->method('collect')->willReturn(['deleted' => 40, 'remaining' => 60, 'retry' => true]);
+
+		$jobList = $this->createMock(IJobList::class);
+		$jobList->expects(self::once())->method('scheduleAfter')->with(
+			CollectExpiredSessionsJob::class,
+			1_000_300,
+			['uid' => 'alice', 'authorId' => 'a.author', 'attempt' => 2],
+		);
+
+		$job = $this->job($collector, $jobList);
+		$job->setArgument(['uid' => 'alice', 'authorId' => 'a.author', 'attempt' => 1]);
+		$job->start($jobList);
+	}
+
 	/** A run that did its work continues, it does not retry. */
 	public function testAContinuationIsNotARetry(): void {
 		$collector = $this->createMock(ExpiredSessionCollector::class);

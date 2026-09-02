@@ -55,20 +55,41 @@ class ExpiredSessionCollector {
 	private const BUDGET_SECONDS = 20.0;
 
 	/**
+	 * How long past expiry a session has to be before this touches it.
+	 *
+	 * `validUntil` is a number Nextcloud computes and Etherpad judges
+	 * against its own clock. If Nextcloud runs ahead, there is a window in
+	 * which this side calls a session expired while the pad server still
+	 * grants it — and deleting one there would close a socket somebody is
+	 * typing into, which is the one thing collecting garbage must not do.
+	 * Nothing here is urgent enough to be worth that, so it waits out any
+	 * plausible drift first.
+	 */
+	private const EXPIRY_GRACE_SECONDS = 300;
+
+	/**
 	 * The collector's own request timeout, in place of the client's.
 	 *
 	 * A deadline checked between calls bounds when the last one starts, not
 	 * when it ends: with the standard timeout a delete begun just under the
 	 * deadline runs well past it, and the budget above would be a number
-	 * that describes nothing. Each call gets whatever is left, floored so a
-	 * request is never issued with an already-dead timeout.
+	 * that describes nothing. Each call gets whatever is left instead, and
+	 * a call that no longer fits is not started at all — its session goes
+	 * to the next run rather than over the budget.
 	 */
 	private const MIN_CALL_TIMEOUT_SECONDS = 2;
 
+	/**
+	 * The budget is a parameter so that the bound can be checked rather
+	 * than believed. It is not a setting: nothing configures it, and the
+	 * default is the only value production ever sees. A limit no test can
+	 * drive is how the last one came to be off by a whole timeout.
+	 */
 	public function __construct(
 		private EtherpadClient $etherpadClient,
 		private IJobList $jobList,
 		private LoggerInterface $logger,
+		private float $budgetSeconds = self::BUDGET_SECONDS,
 	) {
 	}
 
@@ -87,10 +108,10 @@ class ExpiredSessionCollector {
 			return;
 		}
 
-		$now = time();
+		$cutoff = time() - self::EXPIRY_GRACE_SECONDS;
 		$expired = 0;
 		foreach ($sessions as $info) {
-			if ($info['validUntil'] <= $now) {
+			if ($info['validUntil'] <= $cutoff) {
 				$expired++;
 			}
 		}
@@ -111,26 +132,41 @@ class ExpiredSessionCollector {
 		// can queue two sweeps. That is waste, not damage: a sweep deletes
 		// what has already expired, and a session the other run removed
 		// first comes back as "already gone" and counts as handled.
-		if ($this->jobList->has(CollectExpiredSessionsJob::class, $argument)) {
-			return;
+		// Both of these are Nextcloud database calls, and they run inside an
+		// open somebody is waiting for. Housekeeping may not be the reason a
+		// pad fails to open: a deadlock or a lost connection here would turn
+		// a working open into a 500, and the worst case of swallowing it is
+		// that the sweep is queued by the next open instead.
+		try {
+			if ($this->jobList->has(CollectExpiredSessionsJob::class, $argument)) {
+				return;
+			}
+			$this->jobList->add(CollectExpiredSessionsJob::class, $argument);
+		} catch (\Throwable $e) {
+			$this->logger->warning('Could not queue the Etherpad session sweep.', [
+				'app' => 'etherpad_nextcloud',
+				'uid' => $uid,
+				'exception' => $e,
+			]);
 		}
-		$this->jobList->add(CollectExpiredSessionsJob::class, $argument);
 	}
 
 	/**
 	 * Delete what has expired, up to the run's budget.
 	 *
 	 * Three outcomes, not two. `remaining` says the sweep worked and did
-	 * not finish; `retry` says it never got to start, because the listing
-	 * failed. They must not be one number: the job removes its own row
-	 * before running, so a run that reported nothing left would leave a
-	 * pad server hiccup to be discovered by whichever open happens to
-	 * notice the backlog again.
+	 * not finish — the ceiling, the budget, and nothing more to say than
+	 * "come back". `retry` says the pad server refused, either for the
+	 * listing or for a delete, and the next run should wait longer. They
+	 * must not be one number in either direction: the job removes its own
+	 * row before running, so a swallowed failure leaves the pile for
+	 * whichever open notices it again — and a failure reported as progress
+	 * has the job coming back every minute for good.
 	 *
 	 * @return array{deleted:int,remaining:int,retry:bool}
 	 */
 	public function collect(string $uid, string $authorId): array {
-		$deadline = microtime(true) + self::BUDGET_SECONDS;
+		$deadline = microtime(true) + $this->budgetSeconds;
 
 		try {
 			$sessions = $this->etherpadClient->listSessionsOfAuthor($authorId);
@@ -144,13 +180,15 @@ class ExpiredSessionCollector {
 			return ['deleted' => 0, 'remaining' => 0, 'retry' => true];
 		}
 
-		$now = time();
+		// The same grace as the counting above, for the same reason: a
+		// session is only collected once both clocks must agree it is dead.
+		$cutoff = time() - self::EXPIRY_GRACE_SECONDS;
 		$expired = [];
 		foreach ($sessions as $sessionId => $info) {
 			// Anything still live is left alone. Taking one away is a decision
 			// about permissions, and it is made in the revoker, where the
 			// reason for it is known.
-			if ($info['validUntil'] <= $now) {
+			if ($info['validUntil'] <= $cutoff) {
 				$expired[] = $sessionId;
 			}
 		}
@@ -161,13 +199,20 @@ class ExpiredSessionCollector {
 		// is what the log line is about.
 		$handled = 0;
 		$deleted = 0;
+		$failed = false;
 		foreach ($expired as $sessionId) {
-			if ($handled >= self::MAX_PER_RUN || microtime(true) >= $deadline) {
+			// A call that cannot finish inside the budget must not start.
+			// Checking only that the deadline has not passed would let the
+			// last one begin with a fraction of a second left and still run
+			// for its whole timeout, which is the budget being wrong by a
+			// timeout again, just a smaller one.
+			$left = $deadline - microtime(true);
+			if ($handled >= self::MAX_PER_RUN || $left < self::MIN_CALL_TIMEOUT_SECONDS) {
 				break;
 			}
 
 			try {
-				$this->etherpadClient->deleteSession($sessionId, $this->timeoutLeft($deadline));
+				$this->etherpadClient->deleteSession($sessionId, (int)floor($left));
 				$deleted++;
 				$handled++;
 			} catch (\Throwable $e) {
@@ -175,6 +220,7 @@ class ExpiredSessionCollector {
 					$handled++;
 					continue;
 				}
+				$failed = true;
 				// One line for the run, not one per session: a pad server that
 				// refuses this call refuses the next two hundred too, and the
 				// queued job will come back to it anyway.
@@ -198,11 +244,11 @@ class ExpiredSessionCollector {
 			]);
 		}
 
-		return ['deleted' => $deleted, 'remaining' => $remaining, 'retry' => false];
+		// A run that ended on a failure asks for the same backoff a failed
+		// listing gets. Without it the job reads "some progress, more to do"
+		// and comes back every minute for good — one call and one warning a
+		// minute against a pad server that has already said no.
+		return ['deleted' => $deleted, 'remaining' => $remaining, 'retry' => $failed];
 	}
 
-	/** Whatever is left of the run's budget, never below the floor. */
-	private function timeoutLeft(float $deadline): int {
-		return max(self::MIN_CALL_TIMEOUT_SECONDS, (int)ceil($deadline - microtime(true)));
-	}
 }

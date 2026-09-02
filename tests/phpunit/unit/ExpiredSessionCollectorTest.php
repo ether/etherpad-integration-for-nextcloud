@@ -26,8 +26,16 @@ use Psr\Log\LoggerInterface;
 class ExpiredSessionCollectorTest extends TestCase {
 	private const AUTHOR = 'a.author';
 
-	/** @return array{groupID:string,validUntil:int} */
+	/**
+	 * Long enough past expiry that both clocks must agree. A session that
+	 * ran out a minute ago is deliberately not collected.
+	 */
 	private static function expired(): array {
+		return ['groupID' => 'g.AAAAAAAAAAAAAAAA', 'validUntil' => time() - 3600];
+	}
+
+	/** @return array{groupID:string,validUntil:int} */
+	private static function justExpired(): array {
 		return ['groupID' => 'g.AAAAAAAAAAAAAAAA', 'validUntil' => time() - 60];
 	}
 
@@ -149,6 +157,24 @@ class ExpiredSessionCollectorTest extends TestCase {
 	}
 
 	/**
+	 * A call that cannot finish inside the budget is not started.
+	 *
+	 * Checking only that the deadline has not passed lets the last delete
+	 * begin with a fraction of a second left and then run for its whole
+	 * timeout — the budget wrong by a timeout again, just a smaller one.
+	 * The sessions it did not get to are the next run's business.
+	 */
+	public function testStartsNoCallItCannotFinishInTime(): void {
+		$client = $this->createMock(EtherpadClient::class);
+		$client->method('listSessionsOfAuthor')->willReturn(self::expiredSessions(5));
+		$client->expects(self::never())->method('deleteSession');
+
+		$result = $this->collector($client, budgetSeconds: 0.3)->collect('alice', self::AUTHOR);
+
+		self::assertSame(['deleted' => 0, 'remaining' => 5, 'retry' => false], $result);
+	}
+
+	/**
 	 * The ceiling has to be reported honestly, because the job decides
 	 * whether to come back from this number alone.
 	 */
@@ -231,7 +257,55 @@ class ExpiredSessionCollectorTest extends TestCase {
 		$result = $this->collector($client, logger: $logger)->collect('alice', self::AUTHOR);
 
 		self::assertSame(1, $calls, 'one failure is enough to know the rest will fail too');
-		self::assertSame(['deleted' => 0, 'remaining' => 10, 'retry' => false], $result);
+		self::assertSame(['deleted' => 0, 'remaining' => 10, 'retry' => true], $result);
+	}
+
+	/**
+	 * Nextcloud computes validUntil; Etherpad judges it against its own
+	 * clock. In the window where the two disagree, a session this side
+	 * calls dead is one the pad server still grants — and deleting it
+	 * closes a socket somebody is typing into. Nothing here is urgent
+	 * enough to be worth that.
+	 */
+	public function testWaitsOutTheClockDifferenceBeforeDeleting(): void {
+		$client = $this->createMock(EtherpadClient::class);
+		$client->method('listSessionsOfAuthor')->willReturn([
+			's.justnow' => self::justExpired(),
+			's.longago' => self::expired(),
+		]);
+		$client->expects(self::once())->method('deleteSession')->with('s.longago');
+
+		self::assertSame(1, $this->collector($client)->collect('alice', self::AUTHOR)['deleted']);
+	}
+
+	/** And the same session does not count towards queueing a sweep either. */
+	public function testDoesNotCountAFreshlyExpiredSessionAsBacklog(): void {
+		$jobList = $this->createMock(IJobList::class);
+		$jobList->method('has')->willReturn(false);
+		$jobList->expects(self::never())->method('add');
+
+		$sessions = [];
+		for ($i = 0; $i < 80; $i++) {
+			$sessions['s.just' . $i] = self::justExpired();
+		}
+
+		$this->collector($this->createMock(EtherpadClient::class), $jobList)
+			->noteBacklog('alice', self::AUTHOR, $sessions);
+	}
+
+	/**
+	 * Queueing is housekeeping, and housekeeping may not be why a pad fails
+	 * to open. Both calls behind this touch Nextcloud's database from
+	 * inside a request somebody is waiting on.
+	 */
+	public function testAnUnreachableJobTableDoesNotBreakTheOpen(): void {
+		$jobList = $this->createMock(IJobList::class);
+		$jobList->method('has')->willThrowException(new \RuntimeException('Deadlock found'));
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects(self::once())->method('warning');
+
+		$this->collector($this->createMock(EtherpadClient::class), $jobList, $logger)
+			->noteBacklog('alice', self::AUTHOR, self::expiredSessions(80));
 	}
 
 	/** Nothing about collecting may take a pad server outage further. */
@@ -251,11 +325,13 @@ class ExpiredSessionCollectorTest extends TestCase {
 		EtherpadClient $client,
 		?IJobList $jobList = null,
 		?LoggerInterface $logger = null,
+		?float $budgetSeconds = null,
 	): ExpiredSessionCollector {
 		return new ExpiredSessionCollector(
 			$client,
 			$jobList ?? $this->createMock(IJobList::class),
 			$logger ?? $this->createMock(LoggerInterface::class),
+			...($budgetSeconds === null ? [] : [$budgetSeconds]),
 		);
 	}
 }

@@ -219,10 +219,21 @@ No request deletes them – doing that one call at a time is the backlog
 itself. Instead the open that is already holding the listing counts the
 expired entries, and past fifty queues a job for that author, unless one
 is queued already. The sweep runs there, up to 250 per run inside a
-20-second budget, and requeues itself for whatever did not fit. A listing
-that failed is requeued too, with a growing delay and a limit: a queued
-job is removed from the list before it runs, so a pad server hiccup would
-otherwise leave the pile for whichever open notices it next.
+20-second budget that no single call may overrun, and requeues itself for
+whatever did not fit. A run that ended on a refusal – for the listing or
+for a delete – is requeued with a growing delay and a limit instead: a
+queued job is removed from the list before it runs, so a pad server
+hiccup would otherwise leave the pile for whichever open notices it next,
+and a refusal read as progress would have the job coming back every
+minute for good.
+
+Nothing is deleted until five minutes after it expired. `validUntil` is a
+number Nextcloud computes and Etherpad judges against its own clock, and
+in the window where the two disagree a session this side calls dead is
+one the pad server still grants – deleting it there would close a socket
+somebody is typing into. Queueing the sweep is best-effort too: it writes
+to the jobs table from inside an open, and housekeeping is not allowed to
+be the reason a pad fails to open.
 
 Two limits are worth knowing. The sweep only ever sees an author somebody
 opens a pad for, so an account nobody uses keeps whatever piled up – that
