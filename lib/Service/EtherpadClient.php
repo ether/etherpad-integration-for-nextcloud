@@ -183,10 +183,7 @@ class EtherpadClient {
 	 * exist`, which the classifier reads as already gone.
 	 *
 	 * The timeout is a parameter because the collector promises a total run
-	 * length, and a call that may take the standard timeout on its own can
-	 * only be started, never bounded. Without this the promise is off by a
-	 * whole timeout — the last call is allowed to begin just under the
-	 * deadline and then run past it.
+	 * length, which a call carrying the standard timeout would overrun.
 	 */
 	public function deleteSession(string $sessionId, ?int $timeoutSeconds = null): void {
 		$this->apiCall('deleteSession', ['sessionID' => $sessionId], 'POST', null, null, null, $timeoutSeconds);
@@ -216,13 +213,10 @@ class EtherpadClient {
 		$data = $this->apiCall('listSessionsOfAuthor', ['authorID' => $authorId], 'POST', null, null, null, $timeoutSeconds);
 
 		$sessions = [];
-		// An id the index lists but Etherpad cannot describe comes back as
-		// null. That is not noise: Etherpad's own listing walks the author
-		// index and answers null for a key whose session record is gone, so
-		// a null is an entry that still costs a lookup on every listing and
-		// that `deleteSession` cannot remove — it answers "does not exist".
-		// Dropping them silently would let a collector report success while
-		// the index it exists to shrink stayed exactly as long.
+		// A null is a key the index lists whose session record is gone: it
+		// still costs a lookup per listing and `deleteSession` will not take
+		// it. Dropping those silently would let a sweep look successful
+		// while the index stayed as long.
 		$unreadableEntries = 0;
 		foreach ($data as $sessionId => $info) {
 			if (!is_string($sessionId)) {
@@ -382,10 +376,7 @@ class EtherpadClient {
 		?int $timeoutSeconds = null,
 	): string {
 		$method = strtoupper($httpMethod);
-		// Clamped, not merely defaulted. Guzzle reads `timeout => 0` as no
-		// timeout at all, so a caller computing a remainder that reaches
-		// zero would turn the one parameter whose purpose is bounding time
-		// into an unbounded call.
+		// Clamped: Guzzle reads `timeout => 0` as no timeout at all.
 		$options = $this->baseRequestOptions($this->boundedTimeout($timeoutSeconds));
 		if ($method === 'GET') {
 			$options['query'] = $query;

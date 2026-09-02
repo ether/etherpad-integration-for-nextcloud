@@ -120,11 +120,9 @@ class PadSessionService {
 	 * @return array{url:string,cookie:array{name:string,value:string,expires:int,path:string,domain:string,secure:bool,http_only:bool,same_site:string}}
 	 */
 	private function openContextFor(string $uid, string $authorId, string $groupId, string $padId, int $validUntil): array {
-		// Before anything else, and without asking whether there is anything
-		// to collect: the answer to that is the listing below, which only
-		// happens when the browser carries ids. A first open makes none, and
-		// a public link never does — so a sweep that waited to be told about
-		// a backlog would never hear about either.
+		// Before the listing below, which only happens when the browser
+		// carries ids — a first open makes none, and a public link never
+		// does.
 		$this->collector->noteAuthor($authorId);
 
 		$carriedIds = $this->sessionIdsFromCookie();
