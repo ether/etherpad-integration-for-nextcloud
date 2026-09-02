@@ -95,3 +95,7 @@ export const liveSessionCount = async (groupId: string, authorId: string): Promi
 		.filter((info) => info !== null && info.authorID === authorId && info.validUntil > now)
 		.length
 }
+
+/** The pad id out of a pad URL, decoded. */
+export const padIdOfPadUrl = (padUrl: string): string =>
+	decodeURIComponent(padUrl.split('/p/').pop() ?? '')

@@ -19,7 +19,10 @@ import {
 	createUserWriteShare,
 	deleteShareById,
 	deleteViaDav,
+	padApiPost,
+	propfindFileId,
 } from '../fixtures/dav'
+import { etherpadApiPost, padIdOfPadUrl } from '../fixtures/etherpad'
 import { E2E } from '../fixtures/env'
 import { SECONDARY_STATE_FILE } from '../fixtures/auth'
 
@@ -35,6 +38,10 @@ import { SECONDARY_STATE_FILE } from '../fixtures/auth'
 test.describe('read-only share of a protected pad', () => {
 	test.describe.configure({ timeout: 180_000 })
 
+	// Distinctive enough that finding it in the rendered view proves the
+	// snapshot came from this pad rather than from an empty placeholder.
+	const snapshotMarker = 'readonly-marker-8f3a1c'
+
 	test('shows the snapshot, not an editable pad', async ({ page, browser }) => {
 		test.skip(
 			!E2E.hasSecondaryBrowserAccount(),
@@ -45,14 +52,17 @@ test.describe('read-only share of a protected pad', () => {
 		let shareId = ''
 		const userBCtx = await browser.newContext({ storageState: SECONDARY_STATE_FILE })
 		try {
-			await createPadAtPath(`/${padName}`, 'protected')
+			const pad = await createPadAtPath(`/${padName}`, 'protected')
+			const fileId = await propfindFileId(padName)
 
-			// The owner opens it once, so the pad has content and a snapshot
-			// to show — and so the editable case is known to work here.
-			await gotoFiles(page)
-			await openPadFromFileList(page, padName)
-			await expectEtherpadViewerMounted(page)
-			await closeViewer(page)
+			// Give the pad content and get it into the `.pad` file, both on
+			// purpose. Without this the assertion below cannot tell a
+			// rendered snapshot from the placeholder shown when there is
+			// none — and the snapshot written on viewer close is fired off
+			// unawaited, so waiting for it would be a race.
+			await etherpadApiPost('setText', { padID: padIdOfPadUrl(pad.padUrl), text: snapshotMarker })
+			const synced = await padApiPost(`pads/sync/${fileId}`)
+			expect(synced.status, JSON.stringify(synced.body)).toBe(200)
 
 			shareId = (await createUserReadShare(padName, E2E.secondaryUser!)).id
 
@@ -60,7 +70,7 @@ test.describe('read-only share of a protected pad', () => {
 			await gotoSharedWithMe(userB)
 			await expectFileInList(userB, padName)
 			await openPadFromFileList(userB, padName)
-			await expectReadOnlySnapshotViewerMounted(userB)
+			await expectReadOnlySnapshotViewerMounted(userB, snapshotMarker)
 			await userB.close()
 		} finally {
 			if (shareId !== '') {

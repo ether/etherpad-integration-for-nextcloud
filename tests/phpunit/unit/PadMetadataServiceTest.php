@@ -84,6 +84,7 @@ class PadMetadataServiceTest extends TestCase {
 			'getName' => 'Public.pad',
 			'getMimeType' => 'application/x-etherpad-nextcloud',
 			'getContent' => 'frontmatter',
+			'isUpdateable' => true,
 		]);
 
 		$userNodeResolver = $this->createMock(UserNodeResolver::class);
@@ -116,6 +117,46 @@ class PadMetadataServiceTest extends TestCase {
 		$this->assertSame(BindingService::ACCESS_PUBLIC, $result->accessMode);
 		$this->assertFalse($result->isExternal);
 		$this->assertSame('https://pad.example.test/p/g.ABC$pad', $result->publicOpenUrl);
+	}
+
+	/**
+	 * This endpoint hands out an address, and for a public pad the address
+	 * is the whole of the access — so it has to ask the same question the
+	 * open path asks, or the rule holds for one endpoint and is claimed of
+	 * both.
+	 */
+	public function testResolveGivesAReadOnlyShareTheReadOnlyUrl(): void {
+		$file = $this->createConfiguredMock(File::class, [
+			'getId' => 138,
+			'getName' => 'Public.pad',
+			'getMimeType' => 'application/x-etherpad-nextcloud',
+			'getContent' => 'frontmatter',
+			'isUpdateable' => false,
+		]);
+
+		$userNodeResolver = $this->createMock(UserNodeResolver::class);
+		$userNodeResolver->method('resolveUserFileNodeById')->willReturn($file);
+		$userNodeResolver->method('toUserAbsolutePath')->willReturn('/Public.pad');
+
+		$padFileService = $this->createMock(PadFileService::class);
+		$padFileService->method('readPad')->willReturn(new ParsedPadFile(
+			frontmatter: ['pad_id' => 'g.ABC$pad', 'access_mode' => BindingService::ACCESS_PUBLIC],
+			body: '',
+			padId: 'g.ABC$pad',
+			accessMode: BindingService::ACCESS_PUBLIC,
+			padUrl: '',
+			isExternal: false,
+		));
+
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->expects($this->never())->method('buildPadUrl');
+		$etherpadClient->method('getReadOnlyPadUrl')->with('g.ABC$pad')
+			->willReturn('https://pad.example.test/p/r.readonlyid');
+
+		$result = $this->buildService($padFileService, userNodeResolver: $userNodeResolver, etherpadClient: $etherpadClient)
+			->resolve('alice', 138);
+
+		$this->assertSame('https://pad.example.test/p/r.readonlyid', $result->publicOpenUrl);
 	}
 
 	public function testFindOriginalForCopyReturnsFoundWhenBoundFileIsReadableByRequester(): void {
@@ -316,11 +357,14 @@ class PadMetadataServiceTest extends TestCase {
 		$this->assertFalse($result->found);
 	}
 
-	private function buildPadNode(int $fileId, string $name, string $content): File {
+	private function buildPadNode(int $fileId, string $name, string $content, bool $updateable = true): File {
 		return $this->createConfiguredMock(File::class, [
 			'getId' => $fileId,
 			'getName' => $name,
 			'getContent' => $content,
+			// What the share granted. This endpoint hands out an address, and
+			// for a public pad the address is the access.
+			'isUpdateable' => $updateable,
 		]);
 	}
 

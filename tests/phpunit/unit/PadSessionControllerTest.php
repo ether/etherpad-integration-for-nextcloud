@@ -395,16 +395,15 @@ class PadSessionControllerTest extends TestCase {
 		);
 	}
 
-	private function buildPadFileNode(bool $updateable = true): File {
+	private function buildPadFileNode(): File {
 		$file = $this->createMock(File::class);
 		$file->method('getId')->willReturn(138);
 		$file->method('getName')->willReturn('Test.pad');
 		$file->method('getPath')->willReturn('/alice/files/Test.pad');
 		$file->method('getContent')->willReturn('frontmatter');
-		// What the share granted this user. A mock left unset answers false,
-		// which is the read-only path — so every test that expects an
-		// editable pad has to say so.
-		$file->method('isUpdateable')->willReturn($updateable);
+		// Every test in this file is about an editable pad; the read-only
+		// path is covered where the decision is made, in PadOpenServiceTest.
+		$file->method('isUpdateable')->willReturn(true);
 		return $file;
 	}
 

@@ -432,7 +432,9 @@ pad it belongs to.
 
 ## Share Permission Mapping
 
-`PublicViewerController` maps Nextcloud share permissions:
+Both open paths map Nextcloud share permissions the same way –
+`PublicViewerController` for links, `PadOpenService` and
+`PadMetadataService` for authenticated users:
 
 - protected share without update permission -> local `.pad` text snapshot, no Etherpad cookie
 - public pad share without update permission -> Etherpad read-only URL

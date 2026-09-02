@@ -103,7 +103,11 @@ import { sanitizeSnapshotHtml } from './lib/sanitize-html.js'
 
 		const actions = document.createElement('div')
 		actions.className = 'epnc-embed__snapshot-actions'
-		actions.appendChild(link)
+		// A read-only share has nothing to link to: the pad it would point
+		// at is the one being withheld.
+		if (String(url || '').trim() !== '') {
+			actions.appendChild(link)
+		}
 
 		// Sanitize first, then decide on the HTML path from the *sanitized*
 		// result: if DOMPurify empties it (e.g. all-dangerous markup) we fall
@@ -253,7 +257,7 @@ import { sanitizeSnapshotHtml } from './lib/sanitize-html.js'
 			},
 			body: body.toString(),
 		})
-		if (!data || typeof data.url !== 'string' || data.url.trim() === '') {
+		if (!data || (data.is_readonly_snapshot !== true && (typeof data.url !== 'string' || data.url.trim() === ''))) {
 			throw new Error('Pad open API did not return a valid URL.')
 		}
 		return data
@@ -424,7 +428,19 @@ import { sanitizeSnapshotHtml } from './lib/sanitize-html.js'
 			padSync.configure({ syncUrl, intervalMs })
 			padSync.installLifecycleHandlers()
 			installHostMessageHandler()
-			padSync.start()
+			// No syncing for a viewer: it writes the pad back into the .pad
+			// file, which is exactly what a read-only share may not do.
+			if (syncUrl !== '') {
+				padSync.start()
+			}
+			if (data.is_readonly_snapshot === true) {
+				showExternalPadPreview(
+					'',
+					typeof data.snapshot_text === 'string' ? data.snapshot_text : '',
+					typeof data.snapshot_html === 'string' ? data.snapshot_html : '',
+				)
+				return
+			}
 			if (data.is_external === true) {
 				showExternalPadPreview(
 					data.url,

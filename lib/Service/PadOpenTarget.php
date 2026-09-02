@@ -29,7 +29,10 @@ class PadOpenTarget {
 		public readonly string $snapshotHtml,
 		public readonly string $url,
 		public readonly string $cookieHeader,
-		public readonly bool $isReadOnlySnapshot = false,
+		// Required, unlike every optional convenience above it: this is the
+		// one field that decides whether somebody may edit, and a default
+		// would let a future construction site grant that by forgetting.
+		public readonly bool $isReadOnlySnapshot,
 	) {
 	}
 }

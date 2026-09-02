@@ -74,11 +74,11 @@ class PadOpenService {
 			$accessMode = $pad->accessMode;
 			$padUrl = $pad->padUrl;
 			$isExternal = $pad->isExternal;
-			// Every read-only path needs it, and the node is the only place
-			// that knows: it is resolved through this user's own view, so
-			// its permissions are the ones the share granted them.
+			// The node is the only place that knows: it is resolved through
+			// this user's own view, so its permissions are the ones the
+			// share granted them.
 			$mayWrite = $node->isUpdateable();
-			$snapshot = ($isExternal || !$mayWrite)
+			$snapshot = $isExternal
 				? $this->snapshotExtractor->extract($content)
 				: new SnapshotPayload('', '');
 			if (!$isExternal) {
@@ -96,7 +96,8 @@ class PadOpenService {
 				$isExternal,
 				$snapshot->text,
 				$snapshot->html,
-				$mayWrite
+				$mayWrite,
+				$content
 			);
 		} catch (LockedException $e) {
 			$this->logger->info('Pad open deferred because .pad file is locked', [
@@ -116,11 +117,15 @@ class PadOpenService {
 		int $fileId,
 		string $padId,
 		string $accessMode,
-		string $padUrl = '',
-		bool $isExternal = false,
-		string $snapshotText = '',
-		string $snapshotHtml = '',
-		bool $mayWrite = true
+		string $padUrl,
+		bool $isExternal,
+		string $snapshotText,
+		string $snapshotHtml,
+		// Deliberately without a default, like everything above it: a caller
+		// that forgets this one grants edit access, and nothing would fail
+		// to say so.
+		bool $mayWrite,
+		string $padFileContent
 	): PadOpenTarget {
 		if ($isExternal && $accessMode !== BindingService::ACCESS_PUBLIC) {
 			throw new EtherpadClientException('External pad metadata requires public access_mode.');
@@ -147,27 +152,45 @@ class PadOpenService {
 			if ($accessMode === BindingService::ACCESS_PROTECTED) {
 				// No session at all. The snapshot in the .pad file is what a
 				// viewer gets, exactly as a read-only public link does.
-				return new PadOpenTarget(
-					file: $path,
-					fileId: $fileId,
-					padId: $padId,
-					accessMode: $accessMode,
-					padUrl: $effectivePadUrl,
-					isExternal: $isExternal,
-					originalPadUrl: $originalPadUrl,
-					snapshotText: $snapshotText,
-					snapshotHtml: $snapshotHtml,
-					url: '',
-					cookieHeader: '',
-					isReadOnlySnapshot: true,
+				return $this->readOnlySnapshotTarget(
+					$path,
+					$fileId,
+					$padId,
+					$accessMode,
+					$isExternal,
+					$originalPadUrl,
+					$padFileContent,
+					$snapshotText,
+					$snapshotHtml,
 				);
 			}
 
 			if (!$isExternal) {
 				// A public pad has no session to withhold, so the editable
 				// URL is the whole of the access. Etherpad's own read-only
-				// view is the one thing that is not editable.
-				$effectivePadUrl = $this->etherpadClient->getReadOnlyPadUrl($padId);
+				// view is the one thing that is not editable — and if the pad
+				// server cannot say what it is, the snapshot is a better
+				// answer than an error, and far better than the editable URL.
+				try {
+					$effectivePadUrl = $this->etherpadClient->getReadOnlyPadUrl($padId);
+				} catch (\Throwable $e) {
+					$this->logger->warning('Could not resolve the read-only pad URL; showing the snapshot instead.', [
+						'app' => 'etherpad_nextcloud',
+						'fileId' => $fileId,
+						'exception' => $e,
+					]);
+					return $this->readOnlySnapshotTarget(
+						$path,
+						$fileId,
+						$padId,
+						$accessMode,
+						$isExternal,
+						$originalPadUrl,
+						$padFileContent,
+						$snapshotText,
+						$snapshotHtml,
+					);
+				}
 			}
 		}
 
@@ -194,6 +217,52 @@ class PadOpenService {
 			snapshotHtml: $isExternal ? $snapshotHtml : '',
 			url: $url,
 			cookieHeader: $cookieHeader,
+			isReadOnlySnapshot: false,
 		);
 	}
+	/**
+	 * What a share without write permission gets: the stored snapshot, and
+	 * no address of any kind.
+	 *
+	 * `padUrl` is emptied too. The response ships it as `pad_url`, and
+	 * handing back the editable address under a second key would undo the
+	 * withholding the caller just did — no client reads it today, which is
+	 * exactly why it would be missed.
+	 */
+	private function readOnlySnapshotTarget(
+		string $path,
+		int $fileId,
+		string $padId,
+		string $accessMode,
+		bool $isExternal,
+		string $originalPadUrl,
+		string $padFileContent,
+		string $snapshotText,
+		string $snapshotHtml
+	): PadOpenTarget {
+		if (!$isExternal) {
+			// Extracted here rather than up front: a sanitize pass over the
+			// whole stored document is not worth paying on every open that
+			// turns out to be an ordinary editable one.
+			$snapshot = $this->snapshotExtractor->extract($padFileContent);
+			$snapshotText = $snapshot->text;
+			$snapshotHtml = $snapshot->html;
+		}
+
+		return new PadOpenTarget(
+			file: $path,
+			fileId: $fileId,
+			padId: $padId,
+			accessMode: $accessMode,
+			padUrl: '',
+			isExternal: $isExternal,
+			originalPadUrl: $originalPadUrl,
+			snapshotText: $snapshotText,
+			snapshotHtml: $snapshotHtml,
+			url: '',
+			cookieHeader: '',
+			isReadOnlySnapshot: true,
+		);
+	}
+
 }

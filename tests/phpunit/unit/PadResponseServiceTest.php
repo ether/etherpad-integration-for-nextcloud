@@ -98,6 +98,7 @@ class PadResponseServiceTest extends TestCase {
 			snapshotHtml: '',
 			url: 'https://pad.example.test/p/test',
 			cookieHeader: 'sessionID=s.test; Path=/',
+			isReadOnlySnapshot: false,
 		);
 		$response = (new PadResponseService($urlGenerator, $appConfigService, $this->l10nEcho()))->openResponse($target);
 

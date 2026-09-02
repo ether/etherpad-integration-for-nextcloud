@@ -195,7 +195,14 @@ class PadMetadataService {
 			$isExternal = $pad->isExternal;
 
 			if ($accessMode === BindingService::ACCESS_PUBLIC) {
-				$publicOpenUrl = $this->resolvePublicOpenUrl($padId, $padUrl, $isExternal);
+				// The same question the open path asks, for the same reason:
+				// this endpoint hands out an address, and an address to a
+				// public pad is the whole of the access to it. Answering it
+				// in one service and not the other would leave the rule true
+				// of one endpoint and claimed of both.
+				$publicOpenUrl = $node->isUpdateable()
+					? $this->resolvePublicOpenUrl($padId, $padUrl, $isExternal)
+					: $this->resolveReadOnlyOpenUrl($padId, $padUrl, $isExternal);
 				if ($publicOpenUrl !== '') {
 					$padUrl = $publicOpenUrl;
 				}
@@ -216,6 +223,32 @@ class PadMetadataService {
 			'pad_url' => $padUrl,
 			'public_open_url' => $publicOpenUrl,
 		];
+	}
+
+	/**
+	 * What a share without write permission is told a public pad's address
+	 * is: Etherpad's read-only view.
+	 *
+	 * Presentation rather than enforcement — a public pad is editable by
+	 * anyone holding its id, and its id is in the `.pad` file the recipient
+	 * may read. It is still the address that matches what the share says,
+	 * and an unreachable pad server means no address at all rather than the
+	 * editable one.
+	 */
+	private function resolveReadOnlyOpenUrl(string $padId, string $padUrl, bool $isExternal): string {
+		if ($isExternal || $padId === '') {
+			return $this->resolvePublicOpenUrl($padId, $padUrl, $isExternal);
+		}
+
+		try {
+			return $this->etherpadClient->getReadOnlyPadUrl($padId);
+		} catch (\Throwable $e) {
+			$this->logger->warning('Could not resolve the read-only pad URL for metadata.', [
+				'app' => 'etherpad_nextcloud',
+				'exception' => $e,
+			]);
+			return '';
+		}
 	}
 
 	private function resolvePublicOpenUrl(string $padId, string $padUrl, bool $isExternal): string {

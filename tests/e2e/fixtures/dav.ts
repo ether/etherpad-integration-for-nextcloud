@@ -497,9 +497,10 @@ export const createPublicReadShare = async (relativePath: string): Promise<{ tok
 	createPublicShare(relativePath, SHARE_PERMISSION_READ)
 
 /**
- * Create a user-to-user share (`shareType=0`) granting `shareWith`
- * read access to the file at `relativePath`. Returns the OCS share id
- * so callers can revoke through `deleteShareById`.
+ * Create a user-to-user share (`shareType=0`) granting `shareWith` the
+ * given permissions on the file at `relativePath` — the shared
+ * implementation behind the read and write helpers below. Returns the OCS
+ * share id so callers can revoke through `deleteShareById`.
  */
 export const createUserShare = async (
 	relativePath: string,
@@ -549,11 +550,15 @@ export const createUserShare = async (
 	return { id }
 }
 
-/** Read-only user share: the recipient gets the snapshot, never the pad. */
+/**
+ * Read-only user share. For a protected pad the recipient gets the stored
+ * snapshot and no pad at all; for a public one they get Etherpad's
+ * read-only view, which is still a pad URL.
+ */
 export const createUserReadShare = async (relativePath: string, shareWith: string): Promise<{ id: string }> =>
 	createUserShare(relativePath, shareWith, SHARE_PERMISSION_READ)
 
-/** Writable user share: the recipient opens the pad itself. */
+/** Writable user share: the recipient opens the editable pad. */
 export const createUserWriteShare = async (relativePath: string, shareWith: string): Promise<{ id: string }> =>
 	createUserShare(relativePath, shareWith, SHARE_PERMISSION_READ_WRITE)
 

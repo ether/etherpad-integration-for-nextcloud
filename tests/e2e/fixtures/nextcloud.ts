@@ -376,9 +376,15 @@ export const expectEtherpadCurrentUserName = async (page: Page, expectedName: st
  * the pad lives on another host, so anything that hands over a pad URL or
  * a session hands over the ability to edit, whatever the share said.
  */
-export const expectReadOnlySnapshotViewerMounted = async (page: Page): Promise<void> => {
+export const expectReadOnlySnapshotViewerMounted = async (page: Page, expectedText = ''): Promise<void> => {
 	await expect(page.locator('.epnc-native-snapshot').first()).toBeVisible({ timeout: 30_000 })
-	await expect(page.getByText(/read-only snapshot|schreibgeschützter schnappschuss/i).first()).toBeVisible()
+	await expect(page.getByText(/read-only snapshot|schreibgeschützte kopie/i).first()).toBeVisible()
+	if (expectedText !== '') {
+		// Without this the assertion passes just as well against the
+		// "no snapshot stored yet" placeholder, which renders in the same
+		// container under the same heading.
+		await expect(page.locator('.epnc-native-snapshot').first()).toContainText(expectedText)
+	}
 	await expect(
 		page.locator('iframe[title="Etherpad"]'),
 		'a read-only share must not be given a pad to type into',

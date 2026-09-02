@@ -179,8 +179,16 @@ class PadResponseService {
 			'snapshot_text' => $target->snapshotText,
 			'snapshot_html' => $target->snapshotHtml,
 			'url' => $target->url,
-			'sync_url' => $this->urlGenerator->linkToRoute('etherpad_nextcloud.padLifecycle.syncById', ['fileId' => $target->fileId]),
-			'sync_status_url' => $this->urlGenerator->linkToRoute('etherpad_nextcloud.padLifecycle.syncStatusById', ['fileId' => $target->fileId]),
+			// Not for a viewer. Syncing writes the pad back into the `.pad`
+			// file, which is the one thing a read-only share may not do — the
+			// client would flush on a timer and on every tab switch, and each
+			// one would fail on the filesystem and be logged as an error.
+			'sync_url' => $target->isReadOnlySnapshot
+				? ''
+				: $this->urlGenerator->linkToRoute('etherpad_nextcloud.padLifecycle.syncById', ['fileId' => $target->fileId]),
+			'sync_status_url' => $target->isReadOnlySnapshot
+				? ''
+				: $this->urlGenerator->linkToRoute('etherpad_nextcloud.padLifecycle.syncStatusById', ['fileId' => $target->fileId]),
 			'sync_interval_seconds' => $this->appConfigService->getSyncIntervalSeconds(),
 		];
 
