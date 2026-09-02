@@ -58,6 +58,28 @@ class PadResponseServiceTest extends TestCase {
 		$this->assertFalse($editable['is_readonly_snapshot']);
 	}
 
+	/**
+	 * A viewer must not be told where to sync. Syncing writes the pad back
+	 * into the `.pad` file, which is the one thing a read-only share may
+	 * not do — and the client flushes on a timer and on every tab switch,
+	 * so each one would fail on the filesystem and be logged as an error
+	 * for as long as the tab is open.
+	 */
+	public function testOpenResponseWithholdsTheSyncUrlsFromAViewer(): void {
+		$urlGenerator = $this->createMock(IURLGenerator::class);
+		$urlGenerator->method('linkToRoute')->willReturn('/sync/42');
+		$appConfigService = $this->createMock(AppConfigService::class);
+		$appConfigService->method('getSyncIntervalSeconds')->willReturn(45);
+		$service = new PadResponseService($urlGenerator, $appConfigService, $this->l10nEcho());
+
+		$readOnly = $service->openResponse($this->buildTarget(isReadOnlySnapshot: true))->getData();
+		$editable = $service->openResponse($this->buildTarget(isReadOnlySnapshot: false))->getData();
+
+		$this->assertSame('', $readOnly['sync_url']);
+		$this->assertSame('', $readOnly['sync_status_url']);
+		$this->assertSame('/sync/42', $editable['sync_url']);
+	}
+
 	private function buildTarget(bool $isReadOnlySnapshot): \OCA\EtherpadNextcloud\Service\PadOpenTarget {
 		return new \OCA\EtherpadNextcloud\Service\PadOpenTarget(
 			file: '/Test.pad',
