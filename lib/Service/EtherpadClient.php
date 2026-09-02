@@ -202,14 +202,34 @@ class EtherpadClient {
 	 *
 	 * @return array<string,array{groupID:string,validUntil:int}>
 	 */
-	public function listSessionsOfAuthor(string $authorId, ?int $timeoutSeconds = null): array {
+	/**
+	 * @param ?int $unreadableEntries set to how many ids the index listed
+	 *   that Etherpad could not describe — see below
+	 */
+	public function listSessionsOfAuthor(
+		string $authorId,
+		?int $timeoutSeconds = null,
+		?int &$unreadableEntries = null,
+	): array {
 		// POST like every other authenticated call: a GET would put the
 		// apikey in the URL, and from there into proxy and access logs.
 		$data = $this->apiCall('listSessionsOfAuthor', ['authorID' => $authorId], 'POST', null, null, null, $timeoutSeconds);
 
 		$sessions = [];
+		// An id the index lists but Etherpad cannot describe comes back as
+		// null. That is not noise: Etherpad's own listing walks the author
+		// index and answers null for a key whose session record is gone, so
+		// a null is an entry that still costs a lookup on every listing and
+		// that `deleteSession` cannot remove — it answers "does not exist".
+		// Dropping them silently would let a collector report success while
+		// the index it exists to shrink stayed exactly as long.
+		$unreadableEntries = 0;
 		foreach ($data as $sessionId => $info) {
-			if (!is_string($sessionId) || !is_array($info)) {
+			if (!is_string($sessionId)) {
+				continue;
+			}
+			if (!is_array($info)) {
+				$unreadableEntries++;
 				continue;
 			}
 			$groupId = (string)($info['groupID'] ?? '');

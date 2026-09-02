@@ -287,6 +287,31 @@ class ExpiredSessionCollectorTest extends TestCase {
 	}
 
 	/**
+	 * An Etherpad that keeps index entries it cannot describe says so in
+	 * the log, rather than letting a sweep look clean.
+	 *
+	 * Those keys cost a lookup on every listing and `deleteSession` will
+	 * not take them, so collecting cannot shrink that part of the index —
+	 * on such a server this whole feature is not the remedy it is here, and
+	 * an admin should be able to find that out from the log rather than by
+	 * reading the pad server's source.
+	 */
+	public function testSaysWhenTheIndexHoldsEntriesItCannotCollect(): void {
+		$client = $this->createMock(EtherpadClient::class);
+		$client->method('listSessionsOfAuthor')->willReturnCallback(
+			static function (string $authorId, ?int $timeout = null, ?int &$unreadable = null): array {
+				$unreadable = 7;
+				return [];
+			}
+		);
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects(self::once())->method('warning')
+			->with(self::stringContains('cannot describe'), self::anything());
+
+		$this->collector($client, logger: $logger)->collect(self::AUTHOR);
+	}
+
+	/**
 	 * The ceiling has to be reported honestly, because the job decides
 	 * whether to come back from this number alone.
 	 */

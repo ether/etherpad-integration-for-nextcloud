@@ -178,6 +178,7 @@ class ExpiredSessionCollector {
 			$sessions = $this->etherpadClient->listSessionsOfAuthor(
 				$authorId,
 				$this->callTimeout($deadline - microtime(true)),
+				$unreadable,
 			);
 		} catch (\Throwable $e) {
 			$this->logger->warning('Could not list the Etherpad sessions to collect.', [
@@ -186,6 +187,22 @@ class ExpiredSessionCollector {
 				'exception' => $e,
 			]);
 			return ['deleted' => 0, 'remaining' => 0, 'retry' => true, 'nextDueAt' => null];
+		}
+
+		if (($unreadable ?? 0) > 0) {
+			// Ids the author index lists that Etherpad can no longer
+			// describe. `deleteSession` will not take them either — it
+			// answers that they do not exist — so this run cannot shrink
+			// that part of the index, and neither can any later one. It is
+			// worth saying out loud rather than reporting a clean sweep:
+			// the listing stays as slow as the number of keys, and on an
+			// Etherpad that leaves them behind, collecting is not the
+			// remedy it is here.
+			$this->logger->warning('Etherpad lists sessions it cannot describe; those entries cannot be collected.', [
+				'app' => 'etherpad_nextcloud',
+				'authorId' => $authorId,
+				'unreadableEntries' => $unreadable,
+			]);
 		}
 
 		// The same grace as the counting above, for the same reason: a

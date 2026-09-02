@@ -247,6 +247,20 @@ tells the next open a sweep is already accounted for, so a busy public
 link does not queue another walk of one shared index behind every
 visitor.
 
+This rests on one property of the pad server: deleting a session takes its
+id out of the author's index, so the listing gets shorter. Etherpad
+updates that index with `setSub(..., undefined)`, and there are reports of
+the key surviving on some versions and storage backends – which would
+leave an id the listing still walks and `deleteSession` will no longer
+take, since it answers that the session does not exist. Collecting cannot
+help there. Measured to hold on 2.5.3 with PostgreSQL, where a swept
+author's index record disappears entirely, and on 2.x with the built-in
+store; an integration test pins it against whatever Etherpad the suite
+runs, counting the raw keys of the API response rather than what the
+client hands back, because the client drops exactly the entries a
+surviving key produces. When such entries do turn up, the sweep says so in
+the log instead of reporting a clean run.
+
 Nothing is deleted until five minutes after it expired. `validUntil` is a
 number Nextcloud computes and Etherpad judges against its own clock, and
 in the window where the two disagree a session this side calls dead is one

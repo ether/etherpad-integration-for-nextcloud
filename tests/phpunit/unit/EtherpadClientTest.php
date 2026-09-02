@@ -227,6 +227,33 @@ class EtherpadClientTest extends TestCase {
 		}
 	}
 
+	/**
+	 * An id the index lists but Etherpad cannot describe is counted, not
+	 * quietly dropped.
+	 *
+	 * Etherpad's listing walks the author index and answers null for a key
+	 * whose session record is gone. Such a key still costs a lookup on
+	 * every listing, and `deleteSession` will not take it — it answers that
+	 * it does not exist. Swallowing them would let a collector report a
+	 * clean sweep while the index it exists to shrink stayed as long.
+	 */
+	public function testCountsTheIndexEntriesEtherpadCannotDescribe(): void {
+		$captured = null;
+		$client = $this->clientWithResponse(
+			$this->response(200, json_encode(['code' => 0, 'data' => [
+				's.aaaaaaaaaaaaaaaa' => ['groupID' => 'g.aaaaaaaaaaaaaaaa', 'validUntil' => 4102444800],
+				's.bbbbbbbbbbbbbbbb' => null,
+				's.cccccccccccccccc' => null,
+			]])),
+			$captured,
+		);
+
+		$sessions = $client->listSessionsOfAuthor('a.aaaaaaaaaaaaaaaa', null, $unreadable);
+
+		self::assertSame(['s.aaaaaaaaaaaaaaaa'], array_keys($sessions));
+		self::assertSame(2, $unreadable);
+	}
+
 	/** The calls that do matter keep the full patience. */
 	public function testApiCallsKeepTheFullRequestTimeout(): void {
 		$captured = null;
