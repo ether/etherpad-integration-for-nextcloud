@@ -115,6 +115,7 @@ class PadSessionRevoker {
 			$sessions = $this->etherpadClient->listSessionsOfAuthor(
 				$authorId,
 				$this->callTimeout($deadline - microtime(true)),
+				$unreadable,
 			);
 		} catch (\Throwable $e) {
 			$this->logger->warning('Could not list the Etherpad sessions to revoke; they will expire on their own.', [
@@ -124,6 +125,12 @@ class PadSessionRevoker {
 			]);
 			return 0;
 		}
+
+		// Ids the index lists that Etherpad cannot describe. They cannot be
+		// revoked — deleteSession answers that they do not exist — so they
+		// belong in the number that says this logout did not finish, not
+		// dropped on the way in.
+		$unclassified = $unreadable ?? 0;
 
 		// Only what is expired on both clocks. Anything newer is treated as
 		// live and revoked, which at worst deletes something already gone.
@@ -180,7 +187,7 @@ class PadSessionRevoker {
 			}
 		}
 
-		$leftToExpire = $skipped + $failed;
+		$leftToExpire = $skipped + $failed + $unclassified;
 		if ($revoked > 0) {
 			$this->logger->info('Revoked Etherpad sessions.', [
 				'app' => 'etherpad_nextcloud',

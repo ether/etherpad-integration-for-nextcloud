@@ -372,6 +372,33 @@ class PadSessionRevokerTest extends TestCase {
 		self::assertSame(0, $this->revoker($client, logger: $logger)->revokeAll('alice'));
 	}
 
+	/**
+	 * An index entry Etherpad cannot describe cannot be revoked either —
+	 * deleteSession answers that it does not exist — so it belongs in the
+	 * number that says a logout did not finish. The client counts them; the
+	 * revoke must not drop the count on the way in.
+	 */
+	public function testCountsIndexEntriesItCannotClassify(): void {
+		$client = $this->createMock(EtherpadClient::class);
+		$client->method('listSessionsOfAuthor')->willReturnCallback(
+			static function (string $authorId, ?int $timeout = null, ?int &$unreadable = null): array {
+				$unreadable = 3;
+				return ['s.live' => ['groupID' => 'g.AAAAAAAAAAAAAAAA', 'validUntil' => time() + 3600]];
+			}
+		);
+
+		$reported = null;
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->method('info')->willReturnCallback(
+			static function (string $message, array $context) use (&$reported): void {
+				$reported = $context['leftToExpire'] ?? null;
+			}
+		);
+
+		self::assertSame(1, $this->revoker($client, logger: $logger)->revokeAll('alice'));
+		self::assertSame(3, $reported, 'the entries it could not read are left behind too');
+	}
+
 	private function revoker(
 		EtherpadClient $client,
 		string $author = self::AUTHOR,
