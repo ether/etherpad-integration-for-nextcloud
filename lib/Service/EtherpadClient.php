@@ -213,22 +213,17 @@ class EtherpadClient {
 		$data = $this->apiCall('listSessionsOfAuthor', ['authorID' => $authorId], 'POST', null, null, null, $timeoutSeconds);
 
 		$sessions = [];
-		// A null is a key the index lists whose session record is gone: it
-		// still costs a lookup per listing and `deleteSession` will not take
-		// it. Dropping those silently would let a sweep look successful
-		// while the index stayed as long.
+		// Every entry the index listed that cannot be turned into a session,
+		// whatever made it unusable — a null, a malformed record, an
+		// unexpected key. Each still costs a lookup per listing and
+		// `deleteSession` will not take it, so dropping any of them quietly
+		// would let a sweep look successful while the index stayed as long.
 		$unreadableEntries = 0;
 		foreach ($data as $sessionId => $info) {
-			if (!is_string($sessionId)) {
-				continue;
-			}
-			if (!is_array($info)) {
+			$groupId = is_array($info) ? (string)($info['groupID'] ?? '') : '';
+			$validUntil = is_array($info) ? (int)($info['validUntil'] ?? 0) : 0;
+			if (!is_string($sessionId) || $groupId === '' || $validUntil <= 0) {
 				$unreadableEntries++;
-				continue;
-			}
-			$groupId = (string)($info['groupID'] ?? '');
-			$validUntil = (int)($info['validUntil'] ?? 0);
-			if ($groupId === '' || $validUntil <= 0) {
 				continue;
 			}
 			$sessions[$sessionId] = ['groupID' => $groupId, 'validUntil' => $validUntil];

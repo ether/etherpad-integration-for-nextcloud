@@ -166,10 +166,16 @@ class ExpiredSessionCollector {
 				// one undeletable record shadow everything behind it for
 				// good, since the next run meets it first again.
 				$failures++;
+				// A digest, not the id: a session id is the value of the
+				// `sessionID` cookie, so it is the credential itself — and
+				// this branch is reached for sessions the pad server may
+				// still accept, which is why the grace above exists. The
+				// digest is enough to see the same entry failing run after
+				// run.
 				$this->logger->warning('Could not collect an expired Etherpad session.', [
 					'app' => 'etherpad_nextcloud',
 					'authorId' => $authorId,
-					'sessionId' => $sessionId,
+					'sessionRef' => substr(hash('sha256', $sessionId), 0, 12),
 					'exception' => $e,
 				]);
 				if ($failures >= self::MAX_FAILURES_PER_RUN) {
