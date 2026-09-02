@@ -264,9 +264,34 @@ export const expectFilesRouteWithoutOpenFlag = async (page: Page): Promise<void>
 	await expect.poll(() => page.url(), { timeout: 10_000 }).not.toMatch(/[?&]openfile=true\b/)
 }
 
+/**
+ * Open a pad by clicking its row, and make sure the click landed.
+ *
+ * Nextcloud's file list renders lazily — it says so itself in the table's
+ * description — so a row can be resolved and then replaced underneath the
+ * click, which then hits nothing. The result is a list still on screen and
+ * a viewer that never opens, and the failure surfaces thirty seconds later
+ * in whatever waits for the viewer, pointing at the viewer rather than at
+ * the click that never happened.
+ *
+ * The retry is on the interaction, not on the assertion: a viewer that
+ * fails to mount for any other reason still fails, in the caller, with its
+ * full timeout.
+ */
 export const openPadFromFileList = async (page: Page, fileName: string): Promise<void> => {
 	await expectFileInList(page, fileName)
-	await page.locator(`[data-cy-files-list-row-name="${fileName}"], [title="${fileName}"]`).first().click()
+	const row = page.locator(`[data-cy-files-list-row-name="${fileName}"], [title="${fileName}"]`).first()
+	const viewer = page.locator('.viewer__content, .viewer, [data-cy-viewer]').first()
+
+	for (let attempt = 0; attempt < 3; attempt++) {
+		await row.click()
+		try {
+			await viewer.waitFor({ state: 'visible', timeout: 5_000 })
+			return
+		} catch {
+			// The click did not take. Leave the verdict to the caller.
+		}
+	}
 }
 
 /**
