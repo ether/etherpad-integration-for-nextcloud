@@ -38,7 +38,7 @@ class PadSessionService {
 	 * soonest to expire is the one a user is least likely to still be
 	 * looking at.
 	 */
-	private const MAX_SESSION_IDS = 25;
+	public const MAX_SESSION_IDS = 25;
 
 	/** `lax` (default) or `none`; see sameSiteMode(). */
 	public const SAME_SITE_KEY = 'etherpad_session_cookie_samesite';
@@ -496,6 +496,10 @@ class PadSessionService {
 	 * Empty when the user has never opened a protected pad — then there is
 	 * nothing to revoke either.
 	 */
+	public function cachedAuthorId(string $uid): string {
+		return $this->resolveCachedAuthorId($uid);
+	}
+
 	/**
 	 * The session ids this browser is carrying.
 	 *
@@ -507,10 +511,6 @@ class PadSessionService {
 	 */
 	public function carriedSessionIds(): array {
 		return $this->sessionIdsFromCookie();
-	}
-
-	public function cachedAuthorId(string $uid): string {
-		return $this->resolveCachedAuthorId($uid);
 	}
 
 	private function resolveCachedAuthorId(string $uid): string {

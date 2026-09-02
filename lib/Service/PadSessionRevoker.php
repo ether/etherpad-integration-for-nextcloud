@@ -35,9 +35,18 @@ class PadSessionRevoker {
 	 * would spend the client timeout on the first few.
 	 */
 	private const BUDGET_SECONDS = 2.0;
-	private const MAX_PER_REQUEST = 25;
 
-
+	/**
+	 * At least every id a cookie can hold.
+	 *
+	 * Taking the carried sessions first only guarantees they are reached if
+	 * the ceiling covers a full cookie: a lower one would revoke a prefix
+	 * of what the browser is holding and leave the tail, which is the same
+	 * shared-computer failure the ordering was introduced to fix. Derived
+	 * rather than repeated, because two 25s in two classes are a
+	 * coincidence a reader has to verify and a maintainer can break.
+	 */
+	private const MAX_PER_REQUEST = PadSessionService::MAX_SESSION_IDS;
 
 	/** Below this, a call cannot finish inside the budget and is not made. */
 	private const MIN_CALL_TIMEOUT_SECONDS = 1;

@@ -248,6 +248,45 @@ class PadSessionRevokerTest extends TestCase {
 		self::assertSame('s.inthecookie', $removed[0], 'and it should have gone first');
 	}
 
+	/**
+	 * A full cookie is revoked in full.
+	 *
+	 * Taking the carried ids first only reaches all of them if the ceiling
+	 * covers a whole cookie. A lower one would revoke a prefix and leave
+	 * the tail — the same shared-computer failure as before, one step
+	 * further along. This asks for the property rather than the number, so
+	 * it stays green while the two move together and falls when they part.
+	 */
+	public function testRevokesEveryIdAFullCookieCanHold(): void {
+		$carried = [];
+		$sessions = [];
+		for ($i = 0; $i < PadSessionService::MAX_SESSION_IDS; $i++) {
+			$id = 's.carried' . $i;
+			$carried[] = $id;
+			$sessions[$id] = ['groupID' => 'g.AAAAAAAAAAAAAAAA', 'validUntil' => time() + 3600];
+		}
+		// Plenty more behind them, so the ceiling is the only thing that
+		// could stop the carried ones being reached.
+		for ($i = 0; $i < 200; $i++) {
+			$sessions['s.other' . $i] = ['groupID' => 'g.BBBBBBBBBBBBBBBB', 'validUntil' => time() + 3600];
+		}
+
+		$client = $this->createMock(EtherpadClient::class);
+		$client->method('listSessionsOfAuthor')->willReturn($sessions);
+		$removed = [];
+		$client->method('deleteSession')->willReturnCallback(
+			static function (string $id) use (&$removed): void {
+				$removed[] = $id;
+			}
+		);
+
+		$this->revoker($client, carriedIds: $carried)->revokeAll('alice');
+
+		foreach ($carried as $id) {
+			self::assertContains($id, $removed, "{$id} was in the cookie and survived the logout");
+		}
+	}
+
 	/** An id the cookie carries for some other author changes nothing. */
 	public function testIgnoresCarriedIdsThatAreNotThisAuthorsSessions(): void {
 		$client = $this->createMock(EtherpadClient::class);

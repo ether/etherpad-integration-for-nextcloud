@@ -33,8 +33,6 @@ class ExpiredSessionCollector {
 	/** Refusals a run puts up with before reading them as an outage. */
 	private const MAX_FAILURES_PER_RUN = 5;
 
-
-
 	/** Below this, a call cannot finish inside the budget and is not made. */
 	private const MIN_CALL_TIMEOUT_SECONDS = 2;
 

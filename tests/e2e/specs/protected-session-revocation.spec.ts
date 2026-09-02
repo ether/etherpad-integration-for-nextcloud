@@ -127,6 +127,13 @@ test.describe('protected pad session revocation', () => {
 			// clear it with, and the app says so. Asserting it is still here
 			// is what makes the next line about revocation rather than about
 			// a browser that happens to have forgotten something.
+			//
+			// It also settles what the unit tests cannot: they hand the
+			// revoker its carried ids directly, so nothing there shows the
+			// cookie actually reaching Nextcloud. This one is set for the
+			// parent domain of both hosts, and the logout is a same-site
+			// top-level GET — so a cookie still present here is a cookie the
+			// logout request carried.
 			const cookies = await context.cookies(padUrl)
 			expect(
 				cookies.some((cookie) => cookie.name === 'sessionID'),
