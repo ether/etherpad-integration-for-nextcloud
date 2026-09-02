@@ -80,6 +80,42 @@ class PadSessionServiceTest extends TestCase {
 	}
 
 	/**
+	 * A failed open must not take the ability to revoke with it.
+	 *
+	 * The author id is the only route from a uid to that user's live
+	 * sessions. Dropping it when an open fails leaves a cache that cannot
+	 * be told apart from a user who never opened a protected pad – so a
+	 * logout after a brief pad-server outage would revoke nothing while
+	 * sessions from before it were still valid.
+	 */
+	public function testKeepsTheAuthorIdWhenAnOpenFails(): void {
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->method('createSession')
+			->willThrowException(new EtherpadClientException('unavailable'));
+		$etherpadClient->method('createAuthorIfNotExistsFor')
+			->willThrowException(new EtherpadClientException('unavailable'));
+
+		$config = $this->createMock(IConfig::class);
+		$config->method('getUserValue')->willReturnMap([
+			['admin', 'etherpad_nextcloud', 'etherpad_author_id', '', 'a.author'],
+			['admin', 'etherpad_nextcloud', 'etherpad_author_display_name', '', 'Admin'],
+		]);
+		$config->method('deleteUserValue')->willReturnCallback(
+			static function (string $uid, string $app, string $key): void {
+				TestCase::assertNotSame(
+					'etherpad_author_id',
+					$key,
+					'the id is what makes revoking possible at all',
+				);
+			}
+		);
+
+		$service = $this->buildService($etherpadClient, $config);
+		$this->expectException(EtherpadClientException::class);
+		$service->createProtectedOpenContext('admin', 'Admin', 'g.ABCDEFGHIJKLMNOP$pad-1');
+	}
+
+	/**
 	 * Etherpad's real shape: `s.` plus 16 characters. The `x` separates the
 	 * label from the padding, so `g1` and `g10` do not collide.
 	 */
@@ -787,20 +823,12 @@ class PadSessionServiceTest extends TestCase {
 				[$uid, 'etherpad_nextcloud', 'etherpad_author_id', '', $cachedAuthorId],
 				[$uid, 'etherpad_nextcloud', 'etherpad_author_display_name', '', $displayName],
 			]);
-		$config->expects($this->exactly(2))
+		// The name goes, the id stays: the id is the only way to find this
+		// user's live sessions again, and a failed open must not take the
+		// ability to revoke them with it.
+		$config->expects($this->once())
 			->method('deleteUserValue')
-			->willReturnCallback(static function (string $actualUid, string $appName, string $key) use ($uid): void {
-				static $call = 0;
-				$call++;
-				TestCase::assertSame($uid, $actualUid);
-				TestCase::assertSame('etherpad_nextcloud', $appName);
-				if ($call === 1) {
-					TestCase::assertSame('etherpad_author_id', $key);
-					return;
-				}
-
-				TestCase::assertSame('etherpad_author_display_name', $key);
-			});
+			->with($uid, 'etherpad_nextcloud', 'etherpad_author_display_name');
 		$config->expects($this->exactly(2))
 			->method('setUserValue')
 			->willReturnCallback(static function (string $actualUid, string $appName, string $key, string $value) use ($uid, $freshAuthorId, $displayName): void {

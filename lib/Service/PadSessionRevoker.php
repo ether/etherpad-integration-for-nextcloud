@@ -37,6 +37,20 @@ class PadSessionRevoker {
 	private const BUDGET_SECONDS = 2.0;
 	private const MAX_PER_REQUEST = 25;
 
+	/**
+	 * How far past expiry a session has to be before it counts as gone.
+	 *
+	 * Etherpad judges `validUntil` against its own clock. If ours runs
+	 * ahead, a session we call expired is one it still honours — and
+	 * skipping that leaves exactly the access this exists to take away.
+	 * The collector uses the same margin in the opposite direction, so that
+	 * neither side acts inside the window where the clocks disagree.
+	 */
+	private const EXPIRY_GRACE_SECONDS = 300;
+
+	/** Below this, a call cannot finish inside the budget and is not made. */
+	private const MIN_CALL_TIMEOUT_SECONDS = 1;
+
 	public function __construct(
 		private EtherpadClient $etherpadClient,
 		private PadSessionService $padSessionService,
@@ -72,9 +86,10 @@ class PadSessionRevoker {
 	 *
 	 * The budget starts before the listing, because the listing is a call
 	 * with the same timeout behind it and counting only the deletes would
-	 * bound the wrong half. It still cannot cap the request: the check
-	 * happens between calls, so one that stalls runs to the client timeout
-	 * before the budget is consulted again.
+	 * bound the wrong half. Each call is given what is left of it, and one
+	 * that no longer fits is not made: a deadline checked between calls
+	 * would otherwise say when the last call may start, not when it must
+	 * end.
 	 */
 	private function revoke(string $uid): int {
 		$deadline = microtime(true) + self::BUDGET_SECONDS;
@@ -85,7 +100,10 @@ class PadSessionRevoker {
 		}
 
 		try {
-			$sessions = $this->etherpadClient->listSessionsOfAuthor($authorId);
+			$sessions = $this->etherpadClient->listSessionsOfAuthor(
+				$authorId,
+				$this->callTimeout($deadline - microtime(true)),
+			);
 		} catch (\Throwable $e) {
 			$this->logger->warning('Could not list the Etherpad sessions to revoke; they will expire on their own.', [
 				'app' => 'etherpad_nextcloud',
@@ -99,12 +117,14 @@ class PadSessionRevoker {
 		// already holds the whole list. Leaving a note is a row in the job
 		// table; working through it here would be the thing this budget
 		// exists to prevent.
-		$now = time();
+		// Only what is expired on both clocks. Anything newer is treated as
+		// live and revoked, which at worst deletes something already gone.
+		$expiredBefore = time() - self::EXPIRY_GRACE_SECONDS;
 		$attempted = 0;
 		$revoked = 0;
 		$skipped = 0;
 		foreach ($sessions as $sessionId => $info) {
-			if ($info['validUntil'] <= $now) {
+			if ($info['validUntil'] <= $expiredBefore) {
 				// Grants nothing already. Etherpad keeps expired sessions
 				// until something deletes them, so an author who has used
 				// protected pads for a while carries hundreds — and this
@@ -121,14 +141,15 @@ class PadSessionRevoker {
 			// rotated api key, a 500 — would otherwise never reach a ceiling
 			// counted in completed deletes, and spend one call and one
 			// warning per live session.
-			if ($attempted >= self::MAX_PER_REQUEST || microtime(true) >= $deadline) {
+			$left = $deadline - microtime(true);
+			if ($attempted >= self::MAX_PER_REQUEST || $left < self::MIN_CALL_TIMEOUT_SECONDS) {
 				$skipped++;
 				continue;
 			}
 			$attempted++;
 
 			try {
-				$this->etherpadClient->deleteSession($sessionId);
+				$this->etherpadClient->deleteSession($sessionId, $this->callTimeout($left));
 				$revoked++;
 			} catch (\Throwable $e) {
 				if (EtherpadErrorClassifier::isSessionAlreadyGone($e)) {
@@ -155,4 +176,12 @@ class PadSessionRevoker {
 
 		return $revoked;
 	}
+	/** The rest of the budget, never more than any other call in this app. */
+	private function callTimeout(float $left): int {
+		return (int)max(
+			self::MIN_CALL_TIMEOUT_SECONDS,
+			min(floor($left), EtherpadClient::REQUEST_TIMEOUT_SECONDS),
+		);
+	}
+
 }

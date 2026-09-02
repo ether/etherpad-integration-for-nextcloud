@@ -78,7 +78,14 @@ class PadSessionService {
 			try {
 				return $this->openContextFor($uid, $authorId, $groupId, $padId, $validUntil);
 			} catch (EtherpadClientException) {
-				$this->clearCachedAuthorState($uid);
+				// The name only. The author id is the one thing that can find
+				// this user's live sessions again, and dropping it because an
+				// open failed would mean a logout after a brief pad-server
+				// outage revokes nothing — it cannot tell an emptied cache
+				// from a user who never opened a protected pad. A stale id is
+				// the lesser risk: the listing simply answers that it does not
+				// exist, and the next successful open overwrites it anyway.
+				$this->clearCachedAuthorName($uid);
 			}
 		}
 
@@ -525,11 +532,10 @@ class PadSessionService {
 		);
 	}
 
-	private function clearCachedAuthorState(string $uid): void {
+	private function clearCachedAuthorName(string $uid): void {
 		if (!$this->shouldPersistAuthorState($uid)) {
 			return;
 		}
-		$this->config->deleteUserValue($uid, 'etherpad_nextcloud', self::USER_CONFIG_AUTHOR_ID_KEY);
 		$this->config->deleteUserValue($uid, 'etherpad_nextcloud', self::USER_CONFIG_AUTHOR_NAME_KEY);
 	}
 

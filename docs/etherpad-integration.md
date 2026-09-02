@@ -215,15 +215,19 @@ away itself:
   connected – read in 2.7.3, 3.0.0 and 3.3.3 – so a session that expires
   mid-edit rejects the next keystroke, and no later cookie reaches that
   socket. What bounds the window is revocation, not a shorter lifetime.
-- Expired sessions are left to the background sweep described below. They
-  grant nothing, and deleting them one call at a time inside a logout would
-  put that backlog in front of the user. What is still live is revoked
-  within a small budget – 25 calls or two seconds – and the rest is left to
-  expire, because each call carries the full client timeout. The log line
-  says how much was left behind.
+- Expired sessions are left to the background sweep described below. Only
+  what is expired by both clocks counts as expired: Etherpad judges
+  `validUntil` with its own, so a session ours calls dead may still be
+  honoured there, and skipping it would leave exactly the access a logout
+  removes. What is live is revoked within a small budget – 25 calls or two
+  seconds, with each call given what is left of it – and the rest is left
+  to expire. The log line says how much.
 
 No table of our own is involved: sessions belong to an Etherpad author, the
-author is cached per uid, and `listSessionsOfAuthor` answers the rest.
+author is cached per uid, and `listSessionsOfAuthor` answers the rest. That
+cached id is therefore not dropped when an open fails – an emptied cache
+cannot be told from a user who never opened a protected pad, and a logout
+after a brief outage would revoke nothing.
 
 **Only logout.** Losing a share does not revoke anything, and neither does
 a permission downgrade, a deleted or disabled account, or a deleted public

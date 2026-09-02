@@ -91,7 +91,7 @@ class PadSessionRevokerTest extends TestCase {
 	public function testLeavesExpiredSessionsToABackgroundJob(): void {
 		$client = $this->createMock(EtherpadClient::class);
 		$client->method('listSessionsOfAuthor')->willReturn([
-			's.old' => ['groupID' => 'g.AAAAAAAAAAAAAAAA', 'validUntil' => time() - 1],
+			's.old' => ['groupID' => 'g.AAAAAAAAAAAAAAAA', 'validUntil' => time() - 3600],
 			's.live' => ['groupID' => 'g.AAAAAAAAAAAAAAAA', 'validUntil' => time() + 3600],
 		]);
 		$client->expects(self::once())->method('deleteSession')->with('s.live');
@@ -147,8 +147,11 @@ class PadSessionRevokerTest extends TestCase {
 		for ($i = 0; $i < 30; $i++) {
 			$sessions['live.' . $i] = ['groupID' => 'g.AAAAAAAAAAAAAAAA', 'validUntil' => time() + 3600];
 		}
+		// Well past expiry: a session that ran out ten seconds ago is
+		// treated as live here, because Etherpad's clock decides and ours
+		// may be ahead of it.
 		for ($i = 0; $i < 800; $i++) {
-			$sessions['dead.' . $i] = ['groupID' => 'g.AAAAAAAAAAAAAAAA', 'validUntil' => time() - 10];
+			$sessions['dead.' . $i] = ['groupID' => 'g.AAAAAAAAAAAAAAAA', 'validUntil' => time() - 3600];
 		}
 		$client = $this->createMock(EtherpadClient::class);
 		$client->method('listSessionsOfAuthor')->willReturn($sessions);
@@ -163,6 +166,55 @@ class PadSessionRevokerTest extends TestCase {
 
 		self::assertSame(25, $this->revoker($client, logger: $logger)->revokeAll('alice'));
 		self::assertSame(5, $reported);
+	}
+
+	/**
+	 * Etherpad judges `validUntil` against its own clock. If ours runs
+	 * ahead, a session we would call expired is one it still honours, and
+	 * skipping it leaves exactly the access a logout is meant to take away.
+	 */
+	public function testRevokesASessionThatOnlyOurClockCallsExpired(): void {
+		$client = $this->createMock(EtherpadClient::class);
+		$client->method('listSessionsOfAuthor')->willReturn([
+			's.justexpired' => ['groupID' => 'g.AAAAAAAAAAAAAAAA', 'validUntil' => time() - 30],
+			's.longgone' => ['groupID' => 'g.AAAAAAAAAAAAAAAA', 'validUntil' => time() - 3600],
+		]);
+		$client->expects(self::once())->method('deleteSession')->with('s.justexpired');
+
+		self::assertSame(1, $this->revoker($client)->revokeAll('alice'));
+	}
+
+	/**
+	 * The budget only describes the run if it reaches the calls it bounds.
+	 * A deadline checked between them says when the last one may start, not
+	 * when it must end – with the client's own timeout that is two seconds
+	 * promised and seventeen possible, inside a logout somebody is waiting
+	 * for.
+	 */
+	public function testGivesEveryCallWhatIsLeftOfTheBudget(): void {
+		$client = $this->createMock(EtherpadClient::class);
+		$listingTimeout = 'unset';
+		$client->method('listSessionsOfAuthor')->willReturnCallback(
+			static function (string $authorId, ?int $timeout = null) use (&$listingTimeout): array {
+				$listingTimeout = $timeout;
+				return ['s.one' => ['groupID' => 'g.AAAAAAAAAAAAAAAA', 'validUntil' => time() + 3600]];
+			}
+		);
+		$deleteTimeout = 'unset';
+		$client->method('deleteSession')->willReturnCallback(
+			static function (string $id, ?int $timeout = null) use (&$deleteTimeout): void {
+				$deleteTimeout = $timeout;
+			}
+		);
+
+		$this->revoker($client)->revokeAll('alice');
+
+		foreach (['listing' => $listingTimeout, 'delete' => $deleteTimeout] as $what => $timeout) {
+			self::assertNotSame('unset', $timeout, "the {$what} was never made");
+			self::assertNotNull($timeout, "the {$what} went out with the client default");
+			self::assertLessThanOrEqual(2, $timeout, "the {$what} may not outlast the budget");
+			self::assertGreaterThanOrEqual(1, $timeout);
+		}
 	}
 
 	private function revoker(
