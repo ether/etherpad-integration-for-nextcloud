@@ -185,6 +185,48 @@ class EtherpadClientTest extends TestCase {
 		self::assertSame(3, $captured['options']['timeout']);
 	}
 
+	/**
+	 * A caller that says how long it may take gets exactly that.
+	 *
+	 * apiCall() takes seven positional parameters, so the timeout reaches
+	 * the request through three nulls; drop or misplace one — the plausible
+	 * edit when some future call needs a host override — and it lands in
+	 * the api-version slot instead. Every delete would then quietly run at
+	 * the default again, and the collector's tests would not notice,
+	 * because they assert against a mocked client.
+	 */
+	public function testPassesACallersTimeoutThroughToTheRequest(): void {
+		$captured = null;
+		$client = $this->clientWithResponse(
+			$this->response(200, '{"code":0,"data":null}'),
+			$captured,
+		);
+
+		$client->deleteSession('s.aaaaaaaaaaaaaaaa', 4);
+
+		self::assertSame(4, $captured['options']['timeout']);
+	}
+
+	/**
+	 * Guzzle reads `timeout => 0` as no timeout at all, so the one
+	 * parameter whose purpose is bounding time must never be able to
+	 * unbound a call. Clamped at both ends: no housekeeping call gets more
+	 * patience than the ones a user waits on either.
+	 */
+	public function testClampsATimeoutThatWouldRemoveTheBound(): void {
+		foreach ([0 => 1, -5 => 1, 900 => 15] as $asked => $expected) {
+			$captured = null;
+			$client = $this->clientWithResponse(
+				$this->response(200, '{"code":0,"data":null}'),
+				$captured,
+			);
+
+			$client->deleteSession('s.aaaaaaaaaaaaaaaa', $asked);
+
+			self::assertSame($expected, $captured['options']['timeout'], "asked for {$asked}");
+		}
+	}
+
 	/** The calls that do matter keep the full patience. */
 	public function testApiCallsKeepTheFullRequestTimeout(): void {
 		$captured = null;

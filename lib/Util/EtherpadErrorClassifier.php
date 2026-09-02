@@ -57,9 +57,11 @@ final class EtherpadErrorClassifier {
 		$current = $error;
 		while ($current !== null) {
 			$message = strtolower(trim($current->getMessage()));
-			foreach ($needles as $needle) {
-				if ($message !== '' && str_contains($message, $needle)) {
-					return true;
+			if ($message !== '') {
+				foreach ($needles as $needle) {
+					if (str_contains($message, $needle)) {
+						return true;
+					}
 				}
 			}
 			$current = $current->getPrevious();
@@ -79,15 +81,6 @@ final class EtherpadErrorClassifier {
 	 * `padID does already exist`.
 	 */
 	public static function isPadAlreadyPresent(\Throwable $error): bool {
-		$current = $error;
-		while ($current !== null) {
-			$message = strtolower(trim($current->getMessage()));
-			if ($message !== '' && str_contains($message, 'does already exist')) {
-				return true;
-			}
-			$current = $current->getPrevious();
-		}
-
-		return false;
+		return self::mentions($error, ['does already exist']);
 	}
 }

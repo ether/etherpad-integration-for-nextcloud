@@ -31,14 +31,39 @@ class CollectExpiredSessionsJob extends QueuedJob {
 	/** Seconds to wait before the next pass of a sweep that had more to do. */
 	private const CONTINUE_DELAY_SECONDS = 60;
 
-	/** Backoff after a failed listing, one entry per attempt. */
+	/**
+	 * Backoff after a refusal, one entry per attempt. The table is the
+	 * limit: a second constant saying how many there are would be a fact
+	 * about this array kept somewhere else, and tuning the delays without
+	 * noticing would index past its end — inside a cron worker, with this
+	 * job's row already removed and the backlog with it.
+	 */
 	private const RETRY_DELAYS = [60, 300, 900];
-	private const MAX_RETRIES = 3;
+
+	/**
+	 * The arguments a waiting retry for this author can have.
+	 *
+	 * The collector has to recognise every one of them: the job list
+	 * matches arguments exactly, so a sweep queued while a retry waits
+	 * would be a second row that runs at once.
+	 *
+	 * @param array{uid:string,authorId:string} $argument
+	 * @return list<array{uid:string,authorId:string,attempt:int}>
+	 */
+	public static function attemptArguments(array $argument): array {
+		$arguments = [];
+		foreach (array_keys(self::RETRY_DELAYS) as $index) {
+			$arguments[] = $argument + ['attempt' => $index + 1];
+		}
+
+		return $arguments;
+	}
 
 	public function __construct(
 		\OCP\AppFramework\Utility\ITimeFactory $time,
 		private ExpiredSessionCollector $collector,
 		private IJobList $jobList,
+		private \Psr\Log\LoggerInterface $logger,
 	) {
 		parent::__construct($time);
 	}
@@ -63,16 +88,26 @@ class CollectExpiredSessionsJob extends QueuedJob {
 
 		$result = $this->collector->collect($uid, $authorId);
 		if ($result['retry']) {
-			// The listing failed, so nothing was even attempted. This has to
-			// be re-queued explicitly: QueuedJob removes its row before
-			// run(), so an unreported failure is a backlog that waits for
-			// somebody to open a pad and notice it all over again.
+			// Something was refused — the listing, or a delete. Either way
+			// this has to be re-queued explicitly: QueuedJob removes its row
+			// before run(), so a failure nobody reports is a backlog waiting
+			// for somebody to open a pad and notice it all over again.
 			//
-			// Backed off, and given up on after a few tries. A pad server
-			// that has been unreachable for half an hour will not be helped
-			// by a fourth attempt, and the next open queues a fresh sweep
+			// A run that deleted something is not an outage. The server
+			// answered, the pile got smaller, and giving up on a sweep that
+			// is visibly working would drop thousands of entries because a
+			// few of them were refused. It waits out the backoff and then
+			// carries on as a fresh attempt.
+			if ($result['deleted'] > 0) {
+				$this->reschedule($uid, $authorId, 0, self::RETRY_DELAYS[$attempt] ?? self::CONTINUE_DELAY_SECONDS);
+				return;
+			}
+
+			// Nothing moved. Backed off, and given up on after a few tries:
+			// a pad server unreachable for a quarter of an hour will not be
+			// helped by a fourth ask, and the next open queues a fresh sweep
 			// anyway.
-			if ($attempt < self::MAX_RETRIES) {
+			if (isset(self::RETRY_DELAYS[$attempt])) {
 				$this->reschedule($uid, $authorId, $attempt + 1, self::RETRY_DELAYS[$attempt]);
 			}
 			return;
@@ -111,6 +146,19 @@ class CollectExpiredSessionsJob extends QueuedJob {
 			$argument['attempt'] = $attempt;
 		}
 
-		$this->jobList->scheduleAfter(self::class, $this->time->getTime() + $delaySeconds, $argument);
+		try {
+			$this->jobList->scheduleAfter(self::class, $this->time->getTime() + $delaySeconds, $argument);
+		} catch (\Throwable $e) {
+			// This job's row is already gone — QueuedJob removes it before
+			// run() — so an exception here loses the rest of the backlog with
+			// nothing but Nextcloud's generic job error to show for it. The
+			// collector guards the same call for the same reason.
+			$this->logger->warning('Could not queue the next Etherpad session sweep; the rest waits for another open.', [
+				'app' => 'etherpad_nextcloud',
+				'uid' => $uid,
+				'authorId' => $authorId,
+				'exception' => $e,
+			]);
+		}
 	}
 }

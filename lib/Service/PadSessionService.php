@@ -169,13 +169,6 @@ class PadSessionService {
 
 		try {
 			$sessions = $this->etherpadClient->listSessionsOfAuthor($authorId);
-			// The open path already pays for this listing, and it is the
-			// path that suffers first when the index gets long: the cost is
-			// one awaited lookup per entry inside Etherpad, expired ones
-			// included. Counting them here is free; deleting them is not,
-			// which is why that goes to a job.
-			$this->collector->noteBacklog($uid, $authorId, $sessions);
-			return $sessions;
 		} catch (EtherpadClientException $e) {
 			// Not fatal: the open goes ahead. But nothing can be attributed
 			// without the listing, so nothing is carried and a second pad
@@ -187,6 +180,15 @@ class PadSessionService {
 			]);
 			return [];
 		}
+
+		// Outside the catch above on purpose. This is housekeeping, and the
+		// catch is about a listing that failed — a throw from here would be
+		// logged as the pad server being unreachable and cost the user the
+		// sessions this listing was fetched to keep, with a diagnostic
+		// pointing at Etherpad for something Etherpad did not do.
+		$this->collector->noteBacklog($uid, $authorId, $sessions);
+
+		return $sessions;
 	}
 
 	/**

@@ -77,6 +77,27 @@ class ExpiredSessionCollectorTest extends TestCase {
 			->noteBacklog('alice', self::AUTHOR, self::expiredSessions(49));
 	}
 
+	/**
+	 * A retry that is deliberately waiting counts as queued.
+	 *
+	 * It carries its attempt in the argument so an open cannot reset its
+	 * backoff, and the job list matches arguments exactly — so asking only
+	 * about the plain form would miss it and add a second row that the next
+	 * cron runs at once. That is the loop the backoff exists to prevent,
+	 * reached from the other side.
+	 */
+	public function testSeesARetryThatIsAlreadyWaiting(): void {
+		$jobList = $this->createMock(IJobList::class);
+		$jobList->method('has')->willReturnCallback(
+			static fn (string $job, mixed $argument): bool => is_array($argument)
+				&& ($argument['attempt'] ?? 0) === 3
+		);
+		$jobList->expects(self::never())->method('add');
+
+		$this->collector($this->createMock(EtherpadClient::class), $jobList)
+			->noteBacklog('alice', self::AUTHOR, self::expiredSessions(80));
+	}
+
 	/** Live sessions are not a backlog; they are the thing being protected. */
 	public function testDoesNotCountLiveSessionsAsBacklog(): void {
 		$jobList = $this->createMock(IJobList::class);
@@ -237,13 +258,43 @@ class ExpiredSessionCollectorTest extends TestCase {
 	}
 
 	/**
-	 * A pad server refusing this call refuses the next one too. Stopping
-	 * keeps one broken sweep from writing hundreds of warnings, and the
-	 * count left over is what makes the job try again later.
+	 * One session Etherpad will never delete must not shadow the rest.
+	 *
+	 * Stopping at the first refusal put that entry in front of everything
+	 * behind it for good: the next run re-lists, meets it first, stops
+	 * again, and the backlog never moves while every pad open re-queues the
+	 * same doomed sweep. The sibling loop in PendingDeleteRetryService
+	 * counts a failure and carries on for the same reason.
 	 */
-	public function testStopsAtTheFirstRealFailureAndSaysWhatIsLeft(): void {
+	public function testAPoisonEntryDoesNotShadowTheOnesBehindIt(): void {
 		$client = $this->createMock(EtherpadClient::class);
-		$client->method('listSessionsOfAuthor')->willReturn(self::expiredSessions(10));
+		$client->method('listSessionsOfAuthor')->willReturn([
+			's.poison' => self::expired(),
+			's.one' => self::expired(),
+			's.two' => self::expired(),
+		]);
+		$client->method('deleteSession')->willReturnCallback(
+			static function (string $id): void {
+				if ($id === 's.poison') {
+					throw new EtherpadClientException('internal error');
+				}
+			}
+		);
+
+		$result = $this->collector($client)->collect('alice', self::AUTHOR);
+
+		self::assertSame(2, $result['deleted'], 'the entries behind the poison one should still go');
+		self::assertSame(1, $result['remaining'], 'and the poison one is what is left');
+		self::assertTrue($result['retry'], 'a refusal still asks for the backoff');
+	}
+
+	/**
+	 * The other reading of a refusal is that the server is down, and then
+	 * there is nothing to be gained by asking two hundred more times.
+	 */
+	public function testGivesUpOnARunThatKeepsBeingRefused(): void {
+		$client = $this->createMock(EtherpadClient::class);
+		$client->method('listSessionsOfAuthor')->willReturn(self::expiredSessions(100));
 		$calls = 0;
 		$client->method('deleteSession')->willReturnCallback(
 			static function () use (&$calls): void {
@@ -251,14 +302,13 @@ class ExpiredSessionCollectorTest extends TestCase {
 				throw new EtherpadClientException('Connection timed out');
 			}
 		);
-		$logger = $this->createMock(LoggerInterface::class);
-		$logger->expects(self::once())->method('warning');
 
-		$result = $this->collector($client, logger: $logger)->collect('alice', self::AUTHOR);
+		$result = $this->collector($client)->collect('alice', self::AUTHOR);
 
-		self::assertSame(1, $calls, 'one failure is enough to know the rest will fail too');
-		self::assertSame(['deleted' => 0, 'remaining' => 10, 'retry' => true], $result);
+		self::assertSame(5, $calls, 'a run puts up with a handful of refusals, not a hundred');
+		self::assertSame(['deleted' => 0, 'remaining' => 100, 'retry' => true], $result);
 	}
+
 
 	/**
 	 * Nextcloud computes validUntil; Etherpad judges it against its own

@@ -202,10 +202,10 @@ class EtherpadClient {
 	 *
 	 * @return array<string,array{groupID:string,validUntil:int}>
 	 */
-	public function listSessionsOfAuthor(string $authorId): array {
+	public function listSessionsOfAuthor(string $authorId, ?int $timeoutSeconds = null): array {
 		// POST like every other authenticated call: a GET would put the
 		// apikey in the URL, and from there into proxy and access logs.
-		$data = $this->apiCall('listSessionsOfAuthor', ['authorID' => $authorId]);
+		$data = $this->apiCall('listSessionsOfAuthor', ['authorID' => $authorId], 'POST', null, null, null, $timeoutSeconds);
 
 		$sessions = [];
 		foreach ($data as $sessionId => $info) {
@@ -362,7 +362,11 @@ class EtherpadClient {
 		?int $timeoutSeconds = null,
 	): string {
 		$method = strtoupper($httpMethod);
-		$options = $this->baseRequestOptions($timeoutSeconds ?? self::REQUEST_TIMEOUT_SECONDS);
+		// Clamped, not merely defaulted. Guzzle reads `timeout => 0` as no
+		// timeout at all, so a caller computing a remainder that reaches
+		// zero would turn the one parameter whose purpose is bounding time
+		// into an unbounded call.
+		$options = $this->baseRequestOptions($this->boundedTimeout($timeoutSeconds));
 		if ($method === 'GET') {
 			$options['query'] = $query;
 		} else {
@@ -478,6 +482,15 @@ class EtherpadClient {
 	 *
 	 * @return array<string,mixed>
 	 */
+	/** At least a second, never more than any other call in this app. */
+	private function boundedTimeout(?int $timeoutSeconds): int {
+		if ($timeoutSeconds === null) {
+			return self::REQUEST_TIMEOUT_SECONDS;
+		}
+
+		return max(1, min($timeoutSeconds, self::REQUEST_TIMEOUT_SECONDS));
+	}
+
 	private function baseRequestOptions(int $timeoutSeconds = self::REQUEST_TIMEOUT_SECONDS): array {
 		return [
 			'timeout' => $timeoutSeconds,

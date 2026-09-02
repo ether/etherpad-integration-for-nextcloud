@@ -18,21 +18,19 @@ use Psr\Log\LoggerInterface;
  * Collects the Etherpad sessions that have already expired.
  *
  * They grant nothing, so this is not about access. It is about the cost of
- * asking about access: Etherpad never removes an expired session, and
+ * asking: Etherpad never removes an expired session, and
  * `listSessionsOfAuthor` walks the author's whole index one awaited lookup
- * at a time — expired entries included. So the price of a revoke grows
- * with every pad this user has ever opened, not with the number of
- * sessions that still grant anything.
+ * at a time, expired entries included. Opening a protected pad asks that
+ * question — it is how the app decides which of the ids in the cookie are
+ * still worth carrying — so the price of an open grows with every pad the
+ * user has ever opened rather than with the sessions that still grant
+ * anything.
  *
- * Far enough along that stops being a performance question. The revoker
- * gives a logout two seconds, and the listing is inside that budget: once
- * the listing alone can spend it, the logout revokes nothing at all and
- * the guarantee this app makes about logging out quietly stops holding.
- *
- * Which is why the collecting happens here rather than in the revoker. A
- * logout must not wait on a backlog it did not create, and deleting
- * sessions one call at a time is exactly the backlog. The request only
- * notices that there is one and leaves a note.
+ * Deleting them is not something a request can do. Each one is its own
+ * call, and a backlog of thousands in front of a pad appearing is worse
+ * than the listing it would save. So the open that is already holding the
+ * listing counts what has expired and leaves a note; the deleting happens
+ * in a job.
  *
  * @psalm-api
  */
@@ -52,6 +50,22 @@ class ExpiredSessionCollector {
 	 * fit is picked up by the job it queues behind itself.
 	 */
 	private const MAX_PER_RUN = 250;
+
+	/**
+	 * How many refusals a run puts up with before it stops.
+	 *
+	 * Not one. A session Etherpad will never let go of — a record whose
+	 * group is gone in a way that makes the delete answer with something
+	 * other than "already gone" — would otherwise stand in front of every
+	 * entry behind it for good: the run breaks, the next run re-lists and
+	 * finds the same entry first, and the backlog never moves. Skipping
+	 * past it costs one wasted call per run and reaches the other 3999.
+	 *
+	 * Bounded all the same, because the other reading of a refusal is that
+	 * the server is down, and then there is nothing to be gained by asking
+	 * two hundred more times.
+	 */
+	private const MAX_FAILURES_PER_RUN = 5;
 	private const BUDGET_SECONDS = 20.0;
 
 	/**
@@ -138,7 +152,7 @@ class ExpiredSessionCollector {
 		// a working open into a 500, and the worst case of swallowing it is
 		// that the sweep is queued by the next open instead.
 		try {
-			if ($this->jobList->has(CollectExpiredSessionsJob::class, $argument)) {
+			if ($this->sweepIsQueued($argument)) {
 				return;
 			}
 			$this->jobList->add(CollectExpiredSessionsJob::class, $argument);
@@ -169,7 +183,14 @@ class ExpiredSessionCollector {
 		$deadline = microtime(true) + $this->budgetSeconds;
 
 		try {
-			$sessions = $this->etherpadClient->listSessionsOfAuthor($authorId);
+			// The listing is inside the budget, and until now it was the one
+			// call in the run that could ignore it. It is also the expensive
+			// one — the reason this class exists — so a slow index could eat
+			// the whole run and leave no time to delete anything from it.
+			$sessions = $this->etherpadClient->listSessionsOfAuthor(
+				$authorId,
+				$this->callTimeout($deadline - microtime(true)),
+			);
 		} catch (\Throwable $e) {
 			$this->logger->warning('Could not list the Etherpad sessions to collect.', [
 				'app' => 'etherpad_nextcloud',
@@ -185,9 +206,10 @@ class ExpiredSessionCollector {
 		$cutoff = time() - self::EXPIRY_GRACE_SECONDS;
 		$expired = [];
 		foreach ($sessions as $sessionId => $info) {
-			// Anything still live is left alone. Taking one away is a decision
-			// about permissions, and it is made in the revoker, where the
-			// reason for it is known.
+			// Anything still live is left alone. This job reclaims storage;
+			// deciding that somebody's access should end is a different
+			// question with different reasons behind it, and not one a
+			// housekeeping sweep gets to answer.
 			if ($info['validUntil'] <= $cutoff) {
 				$expired[] = $sessionId;
 			}
@@ -199,7 +221,7 @@ class ExpiredSessionCollector {
 		// is what the log line is about.
 		$handled = 0;
 		$deleted = 0;
-		$failed = false;
+		$failures = 0;
 		foreach ($expired as $sessionId) {
 			// A call that cannot finish inside the budget must not start.
 			// Checking only that the deadline has not passed would let the
@@ -212,7 +234,7 @@ class ExpiredSessionCollector {
 			}
 
 			try {
-				$this->etherpadClient->deleteSession($sessionId, (int)floor($left));
+				$this->etherpadClient->deleteSession($sessionId, $this->callTimeout($left));
 				$deleted++;
 				$handled++;
 			} catch (\Throwable $e) {
@@ -220,17 +242,26 @@ class ExpiredSessionCollector {
 					$handled++;
 					continue;
 				}
-				$failed = true;
-				// One line for the run, not one per session: a pad server that
-				// refuses this call refuses the next two hundred too, and the
-				// queued job will come back to it anyway.
-				$this->logger->warning('Could not collect an expired Etherpad session; stopping this run.', [
+
+				$failures++;
+				// One line per refusal, and a handful of refusals per run.
+				// Stopping at the first would let a single record Etherpad
+				// will never delete stand in front of everything behind it:
+				// the next run re-lists, meets the same entry first, and the
+				// backlog never moves. Going past it wastes one call a run
+				// and reaches the rest.
+				$this->logger->warning('Could not collect an expired Etherpad session.', [
 					'app' => 'etherpad_nextcloud',
 					'uid' => $uid,
 					'authorId' => $authorId,
+					'sessionId' => $sessionId,
 					'exception' => $e,
 				]);
-				break;
+				if ($failures >= self::MAX_FAILURES_PER_RUN) {
+					// The other reading of a refusal: the server is down, and
+					// two hundred more calls will not change that.
+					break;
+				}
 			}
 		}
 		$remaining = count($expired) - $handled;
@@ -248,7 +279,48 @@ class ExpiredSessionCollector {
 		// listing gets. Without it the job reads "some progress, more to do"
 		// and comes back every minute for good — one call and one warning a
 		// minute against a pad server that has already said no.
-		return ['deleted' => $deleted, 'remaining' => $remaining, 'retry' => $failed];
+		return ['deleted' => $deleted, 'remaining' => $remaining, 'retry' => $failures > 0];
 	}
 
+	/**
+	 * Whether any sweep for this author is already waiting.
+	 *
+	 * Every shape of it, not just the plain one. A retry carries its
+	 * attempt in the argument so that an open cannot reset a backoff, and
+	 * the job list matches arguments exactly — so asking only about the
+	 * plain form would miss a retry that is deliberately waiting and queue
+	 * a second, immediately runnable row beside it. That is the loop the
+	 * backoff exists to prevent, arrived at from the other side.
+	 *
+	 * A handful of lookups, in a path that only runs once a backlog has
+	 * built up.
+	 *
+	 * @param array{uid:string,authorId:string} $argument
+	 */
+	private function sweepIsQueued(array $argument): bool {
+		if ($this->jobList->has(CollectExpiredSessionsJob::class, $argument)) {
+			return true;
+		}
+		foreach (CollectExpiredSessionsJob::attemptArguments($argument) as $retryArgument) {
+			if ($this->jobList->has(CollectExpiredSessionsJob::class, $retryArgument)) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	/**
+	 * What one call may take: the rest of the run's budget, but never more
+	 * patience than any other request this app makes.
+	 *
+	 * Without the upper half a run whose listing came back quickly would
+	 * hand its first delete nearly the whole budget — a housekeeping call
+	 * given more time than the ones a user is waiting on, and a pad server
+	 * that stalls after accepting the connection would spend the whole run
+	 * on one session.
+	 */
+	private function callTimeout(float $left): int {
+		return (int)min(floor($left), EtherpadClient::REQUEST_TIMEOUT_SECONDS);
+	}
 }

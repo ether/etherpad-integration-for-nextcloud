@@ -12,6 +12,7 @@ use OCA\EtherpadNextcloud\BackgroundJob\CollectExpiredSessionsJob;
 use OCA\EtherpadNextcloud\Service\ExpiredSessionCollector;
 use OCP\AppFramework\Utility\ITimeFactory;
 use OCP\BackgroundJob\IJobList;
+use Psr\Log\LoggerInterface;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
@@ -109,26 +110,80 @@ class CollectExpiredSessionsJobTest extends TestCase {
 	}
 
 	/**
-	 * A delete that failed is a failure, even when the run deleted plenty
-	 * before it. Read as "progress, more to do" it would reset the attempt
-	 * counter, and a record the pad server will never let go of would cost
-	 * one call and one warning a minute for good.
+	 * A run that deleted something is not an outage.
+	 *
+	 * The server answered and the pile got smaller, so giving up would drop
+	 * thousands of entries because a few were refused. It waits out the
+	 * backoff and then carries on as a fresh attempt — the counter resets,
+	 * because what the counter is for is deciding when to stop asking a
+	 * server that never answers.
 	 */
-	public function testBacksOffWhenTheRunEndedOnAFailedDelete(): void {
+	public function testCarriesOnWhenARefusedRunStillMadeProgress(): void {
 		$collector = $this->createMock(ExpiredSessionCollector::class);
-		$collector->method('collect')->willReturn(['deleted' => 40, 'remaining' => 60, 'retry' => true]);
+		$collector->method('collect')->willReturn(['deleted' => 200, 'remaining' => 3000, 'retry' => true]);
 
 		$jobList = $this->createMock(IJobList::class);
 		$jobList->expects(self::once())->method('scheduleAfter')->with(
 			CollectExpiredSessionsJob::class,
 			1_000_300,
-			['uid' => 'alice', 'authorId' => 'a.author', 'attempt' => 2],
+			['uid' => 'alice', 'authorId' => 'a.author'],
 		);
 
 		$job = $this->job($collector, $jobList);
 		$job->setArgument(['uid' => 'alice', 'authorId' => 'a.author', 'attempt' => 1]);
 		$job->start($jobList);
 	}
+
+	/**
+	 * Losing the continuation must not be silent. This job's row is gone
+	 * before run() is called, so an exception here takes the rest of the
+	 * backlog with it and leaves only Nextcloud's generic job error behind.
+	 */
+	public function testSaysSoWhenItCannotQueueTheNextPass(): void {
+		$collector = $this->createMock(ExpiredSessionCollector::class);
+		$collector->method('collect')->willReturn(['deleted' => 250, 'remaining' => 40, 'retry' => false]);
+
+		$jobList = $this->createMock(IJobList::class);
+		$jobList->method('scheduleAfter')->willThrowException(new \RuntimeException('Deadlock found'));
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects(self::once())->method('warning');
+
+		$job = $this->job($collector, $jobList, $logger);
+		$job->setArgument(['uid' => 'alice', 'authorId' => 'a.author']);
+		$job->start($jobList);
+	}
+
+	/**
+	 * The backoff table is the limit. A second constant saying how long it
+	 * is would be a fact about this array kept somewhere else, and tuning
+	 * the delays without noticing would index past its end — inside a cron
+	 * worker, with the row already removed and the backlog with it.
+	 */
+	public function testTheBackoffTableIsItsOwnLimit(): void {
+		$collector = $this->createMock(ExpiredSessionCollector::class);
+		$collector->method('collect')->willReturn(['deleted' => 0, 'remaining' => 0, 'retry' => true]);
+
+		$jobList = $this->createMock(IJobList::class);
+		$jobList->expects(self::never())->method('scheduleAfter');
+
+		$job = $this->job($collector, $jobList);
+		$job->setArgument([
+			'uid' => 'alice',
+			'authorId' => 'a.author',
+			'attempt' => count(CollectExpiredSessionsJob::attemptArguments(['uid' => 'a', 'authorId' => 'b'])),
+		]);
+		$job->start($jobList);
+	}
+
+	/** Every retry shape the collector has to recognise before queueing one. */
+	public function testNamesEveryRetryArgumentItCanProduce(): void {
+		self::assertSame([
+			['uid' => 'alice', 'authorId' => 'a.author', 'attempt' => 1],
+			['uid' => 'alice', 'authorId' => 'a.author', 'attempt' => 2],
+			['uid' => 'alice', 'authorId' => 'a.author', 'attempt' => 3],
+		], CollectExpiredSessionsJob::attemptArguments(['uid' => 'alice', 'authorId' => 'a.author']));
+	}
+
 
 	/** A run that did its work continues, it does not retry. */
 	public function testAContinuationIsNotARetry(): void {
@@ -194,6 +249,7 @@ class CollectExpiredSessionsJobTest extends TestCase {
 	private function job(
 		ExpiredSessionCollector $collector,
 		?IJobList $jobList = null,
+		?LoggerInterface $logger = null,
 	): CollectExpiredSessionsJob {
 		$time = $this->createMock(ITimeFactory::class);
 		$time->method('getTime')->willReturn(1_000_000);
@@ -202,6 +258,7 @@ class CollectExpiredSessionsJobTest extends TestCase {
 			$time,
 			$collector,
 			$jobList ?? $this->createMock(IJobList::class),
+			$logger ?? $this->createMock(LoggerInterface::class),
 		);
 	}
 }
