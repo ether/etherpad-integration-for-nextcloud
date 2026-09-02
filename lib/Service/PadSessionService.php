@@ -120,6 +120,13 @@ class PadSessionService {
 	 * @return array{url:string,cookie:array{name:string,value:string,expires:int,path:string,domain:string,secure:bool,http_only:bool,same_site:string}}
 	 */
 	private function openContextFor(string $uid, string $authorId, string $groupId, string $padId, int $validUntil): array {
+		// Before anything else, and without asking whether there is anything
+		// to collect: the answer to that is the listing below, which only
+		// happens when the browser carries ids. A first open makes none, and
+		// a public link never does — so a sweep that waited to be told about
+		// a backlog would never hear about either.
+		$this->collector->noteAuthor($uid, $authorId);
+
 		$carriedIds = $this->sessionIdsFromCookie();
 		$sessions = $this->sessionsToAttributeWith($uid, $authorId, $carriedIds);
 
@@ -180,13 +187,6 @@ class PadSessionService {
 			]);
 			return [];
 		}
-
-		// Outside the catch above on purpose. This is housekeeping, and the
-		// catch is about a listing that failed — a throw from here would be
-		// logged as the pad server being unreachable and cost the user the
-		// sessions this listing was fetched to keep, with a diagnostic
-		// pointing at Etherpad for something Etherpad did not do.
-		$this->collector->noteBacklog($uid, $authorId, $sessions);
 
 		return $sessions;
 	}

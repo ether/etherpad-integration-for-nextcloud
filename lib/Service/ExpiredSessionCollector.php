@@ -26,22 +26,16 @@ use Psr\Log\LoggerInterface;
  * user has ever opened rather than with the sessions that still grant
  * anything.
  *
- * Deleting them is not something a request can do. Each one is its own
- * call, and a backlog of thousands in front of a pad appearing is worse
- * than the listing it would save. So the open that is already holding the
- * listing counts what has expired and leaves a note; the deleting happens
- * in a job.
+ * Neither the asking nor the deleting belongs in a request. Each delete is
+ * its own call, and a backlog of thousands in front of a pad appearing is
+ * worse than the listing it would save; and the listing itself is what
+ * gets slow. So an open leaves nothing behind but the author's id, and the
+ * job does both — it finds out whether there is anything to collect, and
+ * collects it.
  *
  * @psalm-api
  */
 class ExpiredSessionCollector {
-	/**
-	 * How many expired sessions have to pile up before a sweep is worth a
-	 * row in the job table. Well under the point where the listing costs
-	 * real time, and well above the handful that one day of ordinary use
-	 * leaves behind.
-	 */
-	private const BACKLOG_THRESHOLD = 50;
 
 	/**
 	 * A sweep is bounded like everything else that talks to Etherpad, but
@@ -108,44 +102,27 @@ class ExpiredSessionCollector {
 	}
 
 	/**
-	 * Note a backlog seen in a listing somebody else already paid for.
+	 * Remember that this author might have something to collect.
 	 *
-	 * Deliberately takes the sessions rather than fetching them: every
-	 * caller is a request that has the list in hand, and a collector that
-	 * asked again would add a round trip to the very path it exists to
-	 * keep short.
+	 * Deliberately knows nothing about whether there is a backlog. Finding
+	 * that out means the listing, and the listing is the expensive call
+	 * this class exists to keep out of a request — so it happens in the
+	 * job, which is also where the deleting happens and where nobody is
+	 * waiting.
 	 *
-	 * @param array<string,array{groupID:string,validUntil:int}> $sessions
+	 * That is the difference from asking a request to spot the backlog
+	 * first: a listing is only made when a browser carries session ids, so
+	 * the very first open after arriving never made one, and neither did a
+	 * public link — every visitor of which writes to one shared author's
+	 * index. Both were invisible to a sweep that had to be told what to
+	 * look at. An author id is known on every open.
 	 */
-	public function noteBacklog(string $uid, string $authorId, array $sessions): void {
-		if ($uid === '' || $authorId === '') {
-			return;
-		}
-
-		$cutoff = time() - self::EXPIRY_GRACE_SECONDS;
-		$expired = 0;
-		foreach ($sessions as $info) {
-			if ($info['validUntil'] <= $cutoff) {
-				$expired++;
-			}
-		}
-		if ($expired < self::BACKLOG_THRESHOLD) {
+	public function noteAuthor(string $uid, string $authorId): void {
+		if ($authorId === '') {
 			return;
 		}
 
 		$argument = ['uid' => $uid, 'authorId' => $authorId];
-		// Not simply add(). Nextcloud's job list does not ignore a second
-		// add for the same class and argument — it updates the row, setting
-		// last_run and reserved_at back to zero and last_checked to now. A
-		// job this collector deliberately scheduled a minute out would be
-		// released immediately by the next pad open, which is how a backoff
-		// stops being one.
-		//
-		// has() then add() is still not atomic, and the jobs table has no
-		// unique index on (class, argument_hash), so two simultaneous opens
-		// can queue two sweeps. That is waste, not damage: a sweep deletes
-		// what has already expired, and a session the other run removed
-		// first comes back as "already gone" and counts as handled.
 		// Both of these are Nextcloud database calls, and they run inside an
 		// open somebody is waiting for. Housekeeping may not be the reason a
 		// pad fails to open: a deadlock or a lost connection here would turn

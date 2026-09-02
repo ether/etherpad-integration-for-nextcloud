@@ -47,29 +47,30 @@ class PadSessionServiceTest extends TestCase {
 	}
 
 	/**
-	 * The open path is the one that suffers first when the index gets long,
-	 * and it is already holding the listing — so it is where the backlog is
-	 * counted. Nothing is deleted here; a note is left for a job.
+	 * Every protected open leaves the author's id for the sweep, before
+	 * anything is asked of the pad server.
+	 *
+	 * Not "when a backlog is noticed": noticing one needs the listing, and
+	 * the listing only happens when the browser carries session ids — so a
+	 * first open made none, and neither does a public link. Both were
+	 * invisible to a sweep that had to be told what to look at.
 	 */
-	public function testHandsTheListingToTheCollector(): void {
-		$sessions = [
-			$this->sid('carried') => ['groupID' => 'g.ABCDEFGHIJKLMNOP', 'validUntil' => time() - 60],
-		];
+	public function testTellsTheCollectorWhoOpenedThePad(): void {
 		$etherpadClient = $this->createMock(EtherpadClient::class);
 		$etherpadClient->method('createSession')->willReturn($this->sid('new'));
-		$etherpadClient->method('listSessionsOfAuthor')->willReturn($sessions);
+		$etherpadClient->expects($this->never())->method('listSessionsOfAuthor');
 		$etherpadClient->method('createAuthorIfNotExistsFor')->willReturn('a.author');
 		$etherpadClient->method('buildPadUrl')->willReturn('https://pad.example.test/p/x');
 
 		$collector = $this->createMock(\OCA\EtherpadNextcloud\Service\ExpiredSessionCollector::class);
-		$collector->expects($this->once())->method('noteBacklog')
-			->with('admin', 'a.author', $sessions);
+		$collector->expects($this->once())->method('noteAuthor')->with('admin', 'a.author');
 
+		// No incoming cookie: the case the old trigger could never see.
 		$service = $this->buildService(
 			$etherpadClient,
 			$this->createMock(IConfig::class),
 			'https://cloud.example.test',
-			$this->sid('carried'),
+			null,
 			false,
 			$collector,
 		);

@@ -215,41 +215,41 @@ with the number of sessions that still grant anything. Ten opens a day is
 a few thousand entries in a year, and each one is a round trip inside
 Etherpad before the pad appears.
 
-No request deletes them – doing that one call at a time is the backlog
-itself. Instead the open that is already holding the listing counts the
-expired entries, and past fifty queues a job for that author, unless one
-is queued already. The sweep runs there, up to 250 per run inside a
-20-second budget that no single call may overrun, and requeues itself for
-whatever did not fit. A run that ended on a refusal – for the listing or
-for a delete – is requeued with a growing delay and a limit instead: a
-queued job is removed from the list before it runs, so a pad server
-hiccup would otherwise leave the pile for whichever open notices it next,
-and a refusal read as progress would have the job coming back every
-minute for good.
+No request deletes them, and no request finds out whether there are any
+– the listing is the call that gets slow, so asking is as much the problem
+as deleting. Every open of a protected pad leaves the author's id in the
+job table instead, and the sweep does both: it lists, and it deletes what
+has expired. Up to 250 per run inside a 20-second budget that no single
+call may overrun, requeued for whatever did not fit. A run that ended on a
+refusal – for the listing or for a delete – is requeued with a growing
+delay and a limit instead: a queued job is removed from the list before it
+runs, so a pad server hiccup would otherwise leave the pile for the next
+open to rediscover, and a refusal read as progress would have the job
+coming back every minute for good. A single session the server will never
+delete does not stop the run; it is skipped past, and only a handful of
+refusals ends one.
+
+The id alone is enough, and that is the point. A listing is only made when
+the browser carries session ids, so the first open after arriving made
+none — and a public link never does, while every visitor of one link
+writes to the same shared author's index. Both were invisible to a sweep
+that had to be told there was a backlog.
 
 Nothing is deleted until five minutes after it expired. `validUntil` is a
 number Nextcloud computes and Etherpad judges against its own clock, and
-in the window where the two disagree a session this side calls dead is
-one the pad server still grants – deleting it there would close a socket
-somebody is typing into. Queueing the sweep is best-effort too: it writes
-to the jobs table from inside an open, and housekeeping is not allowed to
-be the reason a pad fails to open.
-
-Two limits are worth knowing. The sweep only ever sees an author somebody
-opens a pad for, so an account nobody uses keeps whatever piled up – that
-costs storage and nothing else, since the cost that matters is paid by
-whoever reads the index. And public link shares are not covered at all:
-they open under a shared anonymous author whose id is never cached, so the
-listing that spots a backlog is never made for them, while every visitor
-of one link adds a session under that same author.
+in the window where the two disagree a session this side calls dead is one
+the pad server still grants – deleting it there would close a socket
+somebody is typing into. Queueing is best-effort too: it writes to the
+jobs table from inside an open, and housekeeping is not allowed to be the
+reason a pad fails to open.
 
 What this does not do is stop the sessions being created. That is a
 property of issuing a fresh session per open, which is what keeps an
 already-open pad working; the collector only keeps the record of it from
 growing without end. Noting the id and expiry of each session as it is
-issued would cover the public-link case too and need no listing at all;
-renewing one session instead of minting another would remove the reason
-for the pile. Both are larger changes than this.
+issued would let the sweep skip the listing entirely; renewing one session
+instead of minting another would remove the reason for the pile. Both are
+larger changes than this.
 
 ### `SameSite=Lax`
 

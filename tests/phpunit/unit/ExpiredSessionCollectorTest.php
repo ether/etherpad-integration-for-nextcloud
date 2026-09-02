@@ -53,7 +53,7 @@ class ExpiredSessionCollectorTest extends TestCase {
 		return $sessions;
 	}
 
-	public function testLeavesANoteOnceTheBacklogIsWorthSweeping(): void {
+	public function testQueuesASweepForTheAuthorThatJustOpenedAPad(): void {
 		$jobList = $this->createMock(IJobList::class);
 		$jobList->method('has')->willReturn(false);
 		$jobList->expects(self::once())->method('add')->with(
@@ -62,29 +62,66 @@ class ExpiredSessionCollectorTest extends TestCase {
 		);
 
 		$this->collector($this->createMock(EtherpadClient::class), $jobList)
-			->noteBacklog('alice', self::AUTHOR, self::expiredSessions(50));
+			->noteAuthor('alice', self::AUTHOR);
 	}
 
 	/**
-	 * A day of ordinary use leaves a handful behind. Queueing a sweep for
-	 * those would put a row in the job table on nearly every logout.
+	 * Without asking whether there is anything to collect. Finding that out
+	 * is the listing, and the listing is the call this class exists to keep
+	 * out of a request.
 	 */
-	public function testSaysNothingAboutAHandful(): void {
+	public function testAsksThePadServerNothingWhileQueueing(): void {
+		$client = $this->createMock(EtherpadClient::class);
+		$client->expects(self::never())->method('listSessionsOfAuthor');
+
+		$this->collector($client)->noteAuthor('alice', self::AUTHOR);
+	}
+
+	/**
+	 * A public link has no cached author state, but it does have an author
+	 * id at the moment it opens — and every visitor of one link writes to
+	 * that same index, which makes it the fastest-growing one there is.
+	 */
+	public function testQueuesForAnAnonymousPublicShareAuthorToo(): void {
+		$jobList = $this->createMock(IJobList::class);
+		$jobList->method('has')->willReturn(false);
+		$jobList->expects(self::once())->method('add')->with(
+			CollectExpiredSessionsJob::class,
+			['uid' => 'public-share:tok', 'authorId' => self::AUTHOR],
+		);
+
+		$this->collector($this->createMock(EtherpadClient::class), $jobList)
+			->noteAuthor('public-share:tok', self::AUTHOR);
+	}
+
+	/** No author means nothing was ever issued under one. */
+	public function testQueuesNothingWithoutAnAuthor(): void {
 		$jobList = $this->createMock(IJobList::class);
 		$jobList->expects(self::never())->method('add');
 
 		$this->collector($this->createMock(EtherpadClient::class), $jobList)
-			->noteBacklog('alice', self::AUTHOR, self::expiredSessions(49));
+			->noteAuthor('alice', '');
 	}
 
 	/**
-	 * A retry that is deliberately waiting counts as queued.
-	 *
-	 * It carries its attempt in the argument so an open cannot reset its
-	 * backoff, and the job list matches arguments exactly — so asking only
-	 * about the plain form would miss it and add a second row that the next
-	 * cron runs at once. That is the loop the backoff exists to prevent,
-	 * reached from the other side.
+	 * A second note would not be ignored: Nextcloud updates the row and
+	 * clears last_run and reserved_at, so a sweep deliberately scheduled a
+	 * minute out would be released by the next pad open.
+	 */
+	public function testDoesNotTouchANoteThatIsAlreadyThere(): void {
+		$jobList = $this->createMock(IJobList::class);
+		$jobList->method('has')->willReturn(true);
+		$jobList->expects(self::never())->method('add');
+
+		$this->collector($this->createMock(EtherpadClient::class), $jobList)
+			->noteAuthor('alice', self::AUTHOR);
+	}
+
+	/**
+	 * A retry that is deliberately waiting counts as queued. It carries its
+	 * attempt in the argument so an open cannot reset its backoff, and the
+	 * job list matches arguments exactly — so asking only about the plain
+	 * form would add a second row that the next cron runs at once.
 	 */
 	public function testSeesARetryThatIsAlreadyWaiting(): void {
 		$jobList = $this->createMock(IJobList::class);
@@ -95,35 +132,22 @@ class ExpiredSessionCollectorTest extends TestCase {
 		$jobList->expects(self::never())->method('add');
 
 		$this->collector($this->createMock(EtherpadClient::class), $jobList)
-			->noteBacklog('alice', self::AUTHOR, self::expiredSessions(80));
-	}
-
-	/** Live sessions are not a backlog; they are the thing being protected. */
-	public function testDoesNotCountLiveSessionsAsBacklog(): void {
-		$jobList = $this->createMock(IJobList::class);
-		$jobList->expects(self::never())->method('add');
-
-		$sessions = [];
-		for ($i = 0; $i < 80; $i++) {
-			$sessions['s.live' . $i] = self::live();
-		}
-
-		$this->collector($this->createMock(EtherpadClient::class), $jobList)
-			->noteBacklog('alice', self::AUTHOR, $sessions);
+			->noteAuthor('alice', self::AUTHOR);
 	}
 
 	/**
-	 * A second note would not be ignored: Nextcloud updates the row and
-	 * clears last_run and reserved_at, so a sweep this job deliberately put
-	 * a minute out would be released by the next pad open.
+	 * Queueing is housekeeping, and housekeeping may not be why a pad fails
+	 * to open. Both calls behind it touch Nextcloud's database from inside
+	 * a request somebody is waiting on.
 	 */
-	public function testDoesNotTouchANoteThatIsAlreadyThere(): void {
+	public function testAnUnreachableJobTableDoesNotBreakTheOpen(): void {
 		$jobList = $this->createMock(IJobList::class);
-		$jobList->method('has')->willReturn(true);
-		$jobList->expects(self::never())->method('add');
+		$jobList->method('has')->willThrowException(new \RuntimeException('Deadlock found'));
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects(self::once())->method('warning');
 
-		$this->collector($this->createMock(EtherpadClient::class), $jobList)
-			->noteBacklog('alice', self::AUTHOR, self::expiredSessions(80));
+		$this->collector($this->createMock(EtherpadClient::class), $jobList, $logger)
+			->noteAuthor('alice', self::AUTHOR);
 	}
 
 	public function testDeletesTheExpiredOnesAndLeavesTheLiveOnesAlone(): void {
@@ -356,36 +380,6 @@ class ExpiredSessionCollectorTest extends TestCase {
 		$client->expects(self::once())->method('deleteSession')->with('s.longago');
 
 		self::assertSame(1, $this->collector($client)->collect('alice', self::AUTHOR)['deleted']);
-	}
-
-	/** And the same session does not count towards queueing a sweep either. */
-	public function testDoesNotCountAFreshlyExpiredSessionAsBacklog(): void {
-		$jobList = $this->createMock(IJobList::class);
-		$jobList->method('has')->willReturn(false);
-		$jobList->expects(self::never())->method('add');
-
-		$sessions = [];
-		for ($i = 0; $i < 80; $i++) {
-			$sessions['s.just' . $i] = self::justExpired();
-		}
-
-		$this->collector($this->createMock(EtherpadClient::class), $jobList)
-			->noteBacklog('alice', self::AUTHOR, $sessions);
-	}
-
-	/**
-	 * Queueing is housekeeping, and housekeeping may not be why a pad fails
-	 * to open. Both calls behind this touch Nextcloud's database from
-	 * inside a request somebody is waiting on.
-	 */
-	public function testAnUnreachableJobTableDoesNotBreakTheOpen(): void {
-		$jobList = $this->createMock(IJobList::class);
-		$jobList->method('has')->willThrowException(new \RuntimeException('Deadlock found'));
-		$logger = $this->createMock(LoggerInterface::class);
-		$logger->expects(self::once())->method('warning');
-
-		$this->collector($this->createMock(EtherpadClient::class), $jobList, $logger)
-			->noteBacklog('alice', self::AUTHOR, self::expiredSessions(80));
 	}
 
 	/** Nothing about collecting may take a pad server outage further. */
