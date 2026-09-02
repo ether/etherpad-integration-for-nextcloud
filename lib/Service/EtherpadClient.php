@@ -30,6 +30,20 @@ class EtherpadClient {
 	public const REQUEST_TIMEOUT_SECONDS = 15;
 
 	/**
+	 * How far the two clocks are allowed to disagree.
+	 *
+	 * `validUntil` is a number Nextcloud computes and Etherpad judges
+	 * against its own clock, so around expiry the two sides can hold
+	 * different opinions about the same session. Both users of this margin
+	 * stay out of that window from opposite directions: revoking treats a
+	 * session as live until it is past, collecting waits until it is past
+	 * before deleting. One constant, because the invariant is that they
+	 * tile — a smaller margin on one side alone opens a band in which one
+	 * says gone and the other says not yet.
+	 */
+	public const CLOCK_SKEW_ALLOWANCE_SECONDS = 300;
+
+	/**
 	 * `/health` gets far less patience than an API call.
 	 *
 	 * Nothing depends on the answer: the caller falls back to the last known

@@ -91,3 +91,26 @@ export const loginAs = async (page: Page, user: string, password: string): Promi
 	// stored session (and the server-side "seen" flag) start clean.
 	await dismissFirstRunWizard(page)
 }
+
+/**
+ * Log the page's user out of Nextcloud, the way the header menu does.
+ *
+ * Driven by URL rather than by clicking through the avatar menu: the menu
+ * is markup that NC rewrites between versions, and a spec that fails
+ * because a button moved says nothing about what it meant to test. The
+ * request token is what makes this a real logout — `/logout` without one
+ * is rejected as a forgery, which would leave the session standing and
+ * the assertion afterwards passing for the wrong reason.
+ *
+ * The page must already be on a Nextcloud page; the token is rendered
+ * into `<head>` of every one of them.
+ */
+export const logout = async (page: Page): Promise<void> => {
+	const token = await page.evaluate(() => document.head.getAttribute('data-requesttoken') ?? '')
+	if (token === '') {
+		throw new Error('No data-requesttoken in <head>; is the page on a logged-in Nextcloud page?')
+	}
+
+	await page.goto(`${E2E.baseURL}/logout?requesttoken=${encodeURIComponent(token)}`)
+	await page.waitForURL(/\/login/, { timeout: 30_000 })
+}

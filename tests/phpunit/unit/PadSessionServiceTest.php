@@ -80,6 +80,34 @@ class PadSessionServiceTest extends TestCase {
 	}
 
 	/**
+	 * A failed open must not take the ability to revoke with it.
+	 *
+	 * The author id is the only route from a uid to that user's live
+	 * sessions. Dropping it when an open fails leaves a cache that cannot
+	 * be told apart from a user who never opened a protected pad – so a
+	 * logout after a brief pad-server outage would revoke nothing while
+	 * sessions from before it were still valid.
+	 */
+	public function testKeepsTheAuthorIdWhenAnOpenFails(): void {
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->method('createSession')
+			->willThrowException(new EtherpadClientException('unavailable'));
+		$etherpadClient->method('createAuthorIfNotExistsFor')
+			->willThrowException(new EtherpadClientException('unavailable'));
+
+		$config = $this->createMock(IConfig::class);
+		$config->method('getUserValue')->willReturnMap([
+			['admin', 'etherpad_nextcloud', 'etherpad_author_id', '', 'a.author'],
+			['admin', 'etherpad_nextcloud', 'etherpad_author_display_name', '', 'Admin'],
+		]);
+		$config->expects($this->never())->method('deleteUserValue');
+
+		$service = $this->buildService($etherpadClient, $config);
+		$this->expectException(EtherpadClientException::class);
+		$service->createProtectedOpenContext('admin', 'Admin', 'g.ABCDEFGHIJKLMNOP$pad-1');
+	}
+
+	/**
 	 * Etherpad's real shape: `s.` plus 16 characters. The `x` separates the
 	 * label from the padding, so `g1` and `g10` do not collide.
 	 */
@@ -201,12 +229,19 @@ class PadSessionServiceTest extends TestCase {
 		$this->assertSame($this->sid('new'), $value);
 	}
 
-	public function testDropsTheOldSessionOfTheGroupBeingOpened(): void {
-		$stale = $this->sid('stale');
+	/**
+	 * An open always mints. Etherpad re-checks validUntil on every socket
+	 * message and keeps the session id it was handed at CLIENT_READY, so a
+	 * session that expires mid-edit rejects the next keystroke and no later
+	 * cookie reaches that socket — reusing a shorter one would hand out
+	 * less editing time than the caller asked for.
+	 */
+	public function testAlwaysIssuesAFreshSessionForThePadBeingOpened(): void {
+		$held = $this->sid('held');
 
 		$value = $this->openContextCookie(
-			[$stale => ['groupID' => 'g.ABCDEFGHIJKLMNOP', 'validUntil' => time() + 3600]],
-			$stale,
+			[$held => ['groupID' => 'g.ABCDEFGHIJKLMNOP', 'validUntil' => time() + 3600]],
+			$held,
 		)['value'];
 
 		$this->assertSame($this->sid('new'), $value);
@@ -780,20 +815,10 @@ class PadSessionServiceTest extends TestCase {
 				[$uid, 'etherpad_nextcloud', 'etherpad_author_id', '', $cachedAuthorId],
 				[$uid, 'etherpad_nextcloud', 'etherpad_author_display_name', '', $displayName],
 			]);
-		$config->expects($this->exactly(2))
-			->method('deleteUserValue')
-			->willReturnCallback(static function (string $actualUid, string $appName, string $key) use ($uid): void {
-				static $call = 0;
-				$call++;
-				TestCase::assertSame($uid, $actualUid);
-				TestCase::assertSame('etherpad_nextcloud', $appName);
-				if ($call === 1) {
-					TestCase::assertSame('etherpad_author_id', $key);
-					return;
-				}
-
-				TestCase::assertSame('etherpad_author_display_name', $key);
-			});
+		// Nothing is cleared: the id is the only way to find this user's
+		// live sessions again, and the name is rewritten by the bootstrap
+		// below in any case.
+		$config->expects($this->never())->method('deleteUserValue');
 		$config->expects($this->exactly(2))
 			->method('setUserValue')
 			->willReturnCallback(static function (string $actualUid, string $appName, string $key, string $value) use ($uid, $freshAuthorId, $displayName): void {
