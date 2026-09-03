@@ -205,6 +205,10 @@ body,
 	overflow: visible;
 }
 
+.epnc-embed__snapshot-text > button {
+	margin-top: 12px;
+}
+
 .epnc-embed__snapshot-text--html {
 	font-family: var(--epnc-embed-font);
 	white-space: normal;

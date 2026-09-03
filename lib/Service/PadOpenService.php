@@ -28,7 +28,6 @@ class PadOpenService {
 		private EtherpadClient $etherpadClient,
 		private ExternalPadExportFetcher $externalPadExportFetcher,
 		private PadSessionService $padSessionService,
-		private SnapshotExtractor $snapshotExtractor,
 		private LoggerInterface $logger,
 	) {
 	}
@@ -82,23 +81,11 @@ class PadOpenService {
 			// narrower: without write permission in Nextcloud, this open may
 			// not issue a session that writes on the pad server.
 			$mayWrite = $node->isUpdateable();
-			$snapshot = $pad->isExternal
-				? $this->snapshotExtractor->extract($content)
-				: new SnapshotPayload('', '');
 			if (!$pad->isExternal) {
 				$this->bindingService->assertConsistentMapping($fileId, $pad->padId, $pad->accessMode);
 			}
 
-			return $this->buildOpenContext(
-				$uid,
-				$displayName,
-				$absolutePath,
-				$fileId,
-				$pad,
-				$snapshot,
-				$mayWrite,
-				$content
-			);
+			return $this->buildOpenContext($uid, $displayName, $absolutePath, $fileId, $pad, $mayWrite);
 		} catch (LockedException $e) {
 			$this->logger->info('Pad open deferred because .pad file is locked', [
 				'app' => 'etherpad_nextcloud',
@@ -116,11 +103,9 @@ class PadOpenService {
 		string $path,
 		int $fileId,
 		ParsedPadFile $pad,
-		SnapshotPayload $snapshot,
 		// Deliberately without a default: a caller that forgets this grants
 		// edit access, and nothing would fail to say so.
-		bool $mayWrite,
-		string $padFileContent
+		bool $mayWrite
 	): PadOpenTarget {
 		$padId = $pad->padId;
 		$accessMode = $pad->accessMode;
@@ -131,11 +116,11 @@ class PadOpenService {
 		}
 
 		// Before any address is built. A protected pad without write
-		// permission is answered entirely from the `.pad` file, so it should
-		// not depend on the pad server being configured or reachable to say
-		// so — and the URL built here would only be discarded.
+		// permission gets no address of any kind, so this should not depend
+		// on the pad server being reachable to say so — and the URL built
+		// here would only be discarded.
 		if (!$mayWrite && $accessMode === BindingService::ACCESS_PROTECTED) {
-			return $this->readOnlySnapshotTarget($path, $fileId, $padId, $accessMode, $padFileContent);
+			return $this->readOnlyViewTarget($path, $fileId, $padId, $accessMode);
 		}
 
 		$originalPadUrl = '';
@@ -153,17 +138,18 @@ class PadOpenService {
 			// A public pad has no session to withhold, so the editable URL is
 			// the whole of the access. Etherpad's own read-only view is the
 			// one thing that cannot be typed into — and if the pad server
-			// cannot say what it is, the snapshot is a better answer than an
-			// error, and far better than the editable URL.
+			// cannot say what it is, this app's own read-only view is a
+			// better answer than an error, and far better than the editable
+			// URL.
 			try {
 				$effectivePadUrl = $this->etherpadClient->getReadOnlyPadUrl($padId);
 			} catch (\Throwable $e) {
-				$this->logger->warning('Could not resolve the read-only pad URL; showing the snapshot instead.', [
+				$this->logger->warning('Could not resolve the read-only pad URL; showing the read-only view instead.', [
 					'app' => 'etherpad_nextcloud',
 					'fileId' => $fileId,
 					'exception' => $e,
 				]);
-				return $this->readOnlySnapshotTarget($path, $fileId, $padId, $accessMode, $padFileContent);
+				return $this->readOnlyViewTarget($path, $fileId, $padId, $accessMode);
 			}
 		}
 
@@ -186,36 +172,26 @@ class PadOpenService {
 			padUrl: $effectivePadUrl,
 			isExternal: $isExternal,
 			originalPadUrl: $originalPadUrl,
-			snapshotText: $isExternal ? $snapshot->text : '',
-			snapshotHtml: $isExternal ? $snapshot->html : '',
 			url: $url,
 			cookieHeader: $cookieHeader,
-			isReadOnlySnapshot: false,
+			isReadOnlyView: false,
 			mayWrite: $mayWrite,
 		);
 	}
 
 	/**
-	 * What a share without write permission gets: the stored snapshot, and
-	 * no address of any kind.
+	 * What a share without write permission gets: no address of any kind.
 	 *
 	 * `padUrl` is emptied too. The response ships it as `pad_url`, and
 	 * handing back the editable address under a second key would undo the
 	 * withholding — no client reads it today, which is exactly why it would
-	 * be missed.
+	 * be missed. The content arrives over the separate content endpoint,
+	 * which never discloses an address either.
 	 *
 	 * Only reached for pads this app holds itself, so there is no external
-	 * URL to carry and the snapshot is always the one in this file.
+	 * URL to carry.
 	 */
-	private function readOnlySnapshotTarget(
-		string $path,
-		int $fileId,
-		string $padId,
-		string $accessMode,
-		string $padFileContent
-	): PadOpenTarget {
-		$snapshot = $this->snapshotExtractor->extract($padFileContent);
-
+	private function readOnlyViewTarget(string $path, int $fileId, string $padId, string $accessMode): PadOpenTarget {
 		return new PadOpenTarget(
 			file: $path,
 			fileId: $fileId,
@@ -224,11 +200,9 @@ class PadOpenService {
 			padUrl: '',
 			isExternal: false,
 			originalPadUrl: '',
-			snapshotText: $snapshot->text,
-			snapshotHtml: $snapshot->html,
 			url: '',
 			cookieHeader: '',
-			isReadOnlySnapshot: true,
+			isReadOnlyView: true,
 			mayWrite: false,
 		);
 	}

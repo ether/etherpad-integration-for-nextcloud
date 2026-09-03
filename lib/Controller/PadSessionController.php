@@ -9,6 +9,8 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Controller;
 
+use OCA\EtherpadNextcloud\Service\LivePadHtml;
+use OCA\EtherpadNextcloud\Service\PadContentService;
 use OCA\EtherpadNextcloud\Service\PadInitializationResult;
 use OCA\EtherpadNextcloud\Service\PadInitializationService;
 use OCA\EtherpadNextcloud\Service\PadMeta;
@@ -43,6 +45,7 @@ class PadSessionController extends AbstractPadController {
 		private PadOpenService $padOpenService,
 		private PadInitializationService $padInitializationService,
 		private PadMetadataService $padMetadataService,
+		private PadContentService $padContentService,
 	) {
 		parent::__construct($appName, $request, $userSession, $logger, $l10n, $padResponses, $errors);
 	}
@@ -68,6 +71,25 @@ class PadSessionController extends AbstractPadController {
 			[
 				'not_found' => $this->l10n->t('Cannot open selected .pad file.'),
 				'generic' => $this->l10n->t('Could not open pad'),
+			],
+		);
+	}
+
+	/**
+	 * The current pad content for this app's read-only view.
+	 *
+	 * Its own endpoint rather than a field on the open: the viewer retries
+	 * with it, and every retry has to pass the access checks again.
+	 */
+	#[\OCP\AppFramework\Http\Attribute\NoAdminRequired]
+	#[\OCP\AppFramework\Http\Attribute\NoCSRFRequired]
+	public function contentById(int $fileId): DataResponse {
+		return $this->runForUser(
+			fn(IUser $user): LivePadHtml => $this->padContentService->contentById($user->getUID(), $this->requireFileId($fileId)),
+			fn(LivePadHtml $content): DataResponse => $this->padResponses->padContentResponse($content),
+			[
+				'not_found' => $this->l10n->t('Cannot open selected .pad file.'),
+				'generic' => $this->l10n->t('Could not load the pad content.'),
 			],
 		);
 	}

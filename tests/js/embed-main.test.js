@@ -4,6 +4,12 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+vi.mock('../../src/lib/pad-content.js', () => ({
+	loadPadContent: vi.fn(async () => ({ html: '', isEmpty: true })),
+}))
+
+const { loadPadContent } = await import('../../src/lib/pad-content.js')
+
 const flushMicrotasks = async () => {
 	for (let i = 0; i < 8; i += 1) {
 		await Promise.resolve()
@@ -63,6 +69,8 @@ beforeEach(() => {
 	setupEmbedDom()
 	window.OC = { requestToken: 'csrf' }
 	globalThis.fetch = vi.fn()
+	loadPadContent.mockReset()
+	loadPadContent.mockResolvedValue({ html: '', isEmpty: true })
 })
 
 afterEach(() => {
@@ -94,21 +102,21 @@ describe('embed-main', () => {
 		expect(isHidden('[data-epnc-embed-recovery]')).toBe(true)
 	})
 
-	it('renders the external snapshot view when is_external is set', async () => {
+	it('renders the external pad view when is_external is set', async () => {
 		fetch.mockResolvedValueOnce(jsonResponse({
 			url: 'https://pad.remote.test/p/foreign',
 			is_external: true,
-			snapshot_text: 'remote text snapshot',
-			snapshot_html: '',
+			content_url: '/api/content/42',
 		}))
+		loadPadContent.mockResolvedValueOnce({ html: '<p>remote body</p>', isEmpty: false })
 
 		await importEmbed()
 		await flushMicrotasks()
 
-		// Iframe stays hidden — external pads render a snapshot UI instead.
+		// Iframe stays hidden — external pads render our own view instead.
 		expect(iframe().hidden).toBe(true)
-		// The snapshot text lands in the loading-slot turned snapshot-slot.
-		expect(document.body.textContent).toContain('remote text snapshot')
+		expect(loadPadContent).toHaveBeenCalledWith('/api/content/42')
+		expect(document.body.textContent).toContain('remote body')
 		// The "Open original pad" link points at the remote URL.
 		const link = document.querySelector('a.epnc-embed__snapshot-link')
 		expect(link).not.toBeNull()
@@ -116,29 +124,63 @@ describe('embed-main', () => {
 		expect(link.target).toBe('_blank')
 	})
 
-	it('renders the snapshot for a read-only share, with its own reason', async () => {
+	it('renders the read-only view for a share without write permission', async () => {
 		fetch.mockResolvedValueOnce(jsonResponse({
 			url: '',
-			is_readonly_snapshot: true,
-			snapshot_text: 'shared read-only text',
-			snapshot_html: '',
+			is_readonly_view: true,
+			content_url: '/api/content/42',
 			sync_url: '',
 		}))
+		loadPadContent.mockResolvedValueOnce({ html: '<p>shared body</p>', isEmpty: false })
 
 		await importEmbed()
 		await flushMicrotasks()
 
 		// Accepted at all: the payload carries no url, which the open used
 		// to reject outright and answer with the error card.
-		expect(document.body.textContent).toContain('shared read-only text')
+		expect(document.body.textContent).toContain('shared body')
 		expect(iframe().hidden).toBe(true)
 		// The reason shown has to be the right one — "from another server"
 		// explains something that is not true of an internal share.
-		expect(document.body.textContent).toContain('Read-only snapshot')
+		expect(document.body.textContent).toContain('Read-only view')
 		expect(document.body.textContent).not.toContain('another server')
 		// And nothing to click through to: the pad it would point at is the
 		// one being withheld.
 		expect(document.querySelector('a.epnc-embed__snapshot-link')).toBeNull()
+	})
+
+	it('says so when the pad loaded and is empty', async () => {
+		fetch.mockResolvedValueOnce(jsonResponse({ url: '', is_readonly_view: true, content_url: '/api/content/42', sync_url: '' }))
+		loadPadContent.mockResolvedValueOnce({ html: '', isEmpty: true })
+
+		await importEmbed()
+		await flushMicrotasks()
+
+		expect(document.body.textContent).toContain('This pad is still empty.')
+	})
+
+	/**
+	 * The retry re-runs the fetch, which re-runs the access check on the
+	 * server — so a reader whose access ended meanwhile is not served from
+	 * anything kept in the page.
+	 */
+	it('offers a retry that loads again after a failure', async () => {
+		fetch.mockResolvedValueOnce(jsonResponse({ url: '', is_readonly_view: true, content_url: '/api/content/42', sync_url: '' }))
+		loadPadContent.mockRejectedValueOnce(new Error('pad server unreachable'))
+
+		await importEmbed()
+		await flushMicrotasks()
+
+		expect(document.body.textContent).toContain('pad server unreachable')
+		const retry = [...document.querySelectorAll('button')].find((button) => button.textContent === 'Try again')
+		expect(retry).toBeDefined()
+
+		loadPadContent.mockResolvedValueOnce({ html: '<p>second try</p>', isEmpty: false })
+		retry.click()
+		await flushMicrotasks()
+
+		expect(loadPadContent).toHaveBeenCalledTimes(2)
+		expect(document.body.textContent).toContain('second try')
 	})
 
 	it('runs initialize + re-opens when the first open reports missing frontmatter', async () => {

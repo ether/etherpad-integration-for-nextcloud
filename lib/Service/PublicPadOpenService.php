@@ -15,7 +15,8 @@ use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
  * Applies public-share-specific open rules for internal, protected and external pads.
  *
  * Public protected write access uses an anonymous public-share Etherpad author;
- * read-only protected access intentionally serves the stored snapshot instead.
+ * read-only protected access gets no pad address at all and is answered by
+ * this app's own viewer, which loads the content separately.
  */
 class PublicPadOpenService {
 	private const PUBLIC_SHARE_AUTHOR_NAME = 'Public share';
@@ -25,7 +26,6 @@ class PublicPadOpenService {
 		private EtherpadClient $etherpadClient,
 		private ExternalPadExportFetcher $externalPadExportFetcher,
 		private PadSessionService $padSessionService,
-		private SnapshotExtractor $snapshotExtractor,
 	) {
 	}
 
@@ -35,7 +35,6 @@ class PublicPadOpenService {
 		bool $readOnly,
 		string $token,
 		bool $isExternal,
-		string $padFileContent,
 		string $padUrl = '',
 	): PublicPadOpenTarget {
 		if ($isExternal && $accessMode !== BindingService::ACCESS_PUBLIC) {
@@ -44,15 +43,7 @@ class PublicPadOpenService {
 
 		if ($accessMode === BindingService::ACCESS_PROTECTED) {
 			if ($readOnly) {
-				$snapshot = $this->snapshotExtractor->extract($padFileContent);
-				return new PublicPadOpenTarget(
-					'',
-					'',
-					'',
-					true,
-					$snapshot->text,
-					$snapshot->html,
-				);
+				return new PublicPadOpenTarget('', '', '', true);
 			}
 
 			$openContext = $this->padSessionService->createProtectedOpenContext(
@@ -67,8 +58,6 @@ class PublicPadOpenService {
 				'',
 				$this->padSessionService->buildSetCookieHeader($openContext['cookie']),
 				false,
-				'',
-				'',
 			);
 		}
 
@@ -77,35 +66,18 @@ class PublicPadOpenService {
 				throw new EtherpadClientException('External pad URL metadata is missing or invalid.');
 			}
 			$normalized = $this->externalPadExportFetcher->normalizeAndValidateExternalPublicPadUrl($padUrl);
-			$snapshot = $this->snapshotExtractor->extract($padFileContent);
 			return new PublicPadOpenTarget(
 				$normalized['pad_url'],
 				$normalized['pad_url'],
 				'',
 				false,
-				$snapshot->text,
-				$snapshot->html,
 			);
 		}
 
 		if ($readOnly) {
-			return new PublicPadOpenTarget(
-				$this->etherpadClient->getReadOnlyPadUrl($padId),
-				'',
-				'',
-				false,
-				'',
-				'',
-			);
+			return new PublicPadOpenTarget($this->etherpadClient->getReadOnlyPadUrl($padId), '', '', false);
 		}
 
-		return new PublicPadOpenTarget(
-			$this->etherpadClient->buildPadUrl($padId),
-			'',
-			'',
-			false,
-			'',
-			'',
-		);
+		return new PublicPadOpenTarget($this->etherpadClient->buildPadUrl($padId), '', '', false);
 	}
 }

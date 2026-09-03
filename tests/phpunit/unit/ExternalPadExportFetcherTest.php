@@ -79,6 +79,43 @@ class ExternalPadExportFetcherTest extends TestCase {
 		$fetcher->normalizeAndValidateExternalPublicPadUrl('https://1.1.1.1/p/public-pad');
 	}
 
+	/**
+	 * The rule that keeps an error page from being read as pad content.
+	 *
+	 * Widening it for the HTML export must not widen it for the text one:
+	 * a foreign server answering a text export with an HTML error page and
+	 * a 200 is the case it was written for.
+	 */
+	#[\PHPUnit\Framework\Attributes\DataProvider('contentTypeCases')]
+	public function testContentTypeIsAcceptedPerExportFormat(string $format, string $contentType, bool $accepted): void {
+		$assert = new \ReflectionMethod(ExternalPadExportFetcher::class, 'assertAllowedExternalExportContentType');
+		$fetcher = new ExternalPadExportFetcher($this->buildExternalEnabledConfig());
+
+		if (!$accepted) {
+			$this->expectException(EtherpadClientException::class);
+		}
+		$assert->invoke($fetcher, $contentType, $format);
+
+		if ($accepted) {
+			$this->addToAssertionCount(1);
+		}
+	}
+
+	/** @return array<string,array{0:string,1:string,2:bool}> */
+	public static function contentTypeCases(): array {
+		return [
+			'text export keeps refusing html' => ['txt', 'text/html; charset=utf-8', false],
+			'text export takes plain text' => ['txt', 'text/plain; charset=utf-8', true],
+			'text export takes a byte stream' => ['txt', 'application/octet-stream', true],
+			'html export takes html' => ['html', 'text/html; charset=utf-8', true],
+			'html export takes xhtml' => ['html', 'application/xhtml+xml', true],
+			'html export refuses plain text' => ['html', 'text/plain', false],
+			'html export refuses json' => ['html', 'application/json', false],
+			'html export refuses a byte stream' => ['html', 'application/octet-stream', false],
+			'a missing header is refused either way' => ['html', '', false],
+		];
+	}
+
 	private function buildExternalEnabledConfig(string $externalPadAllowlist = ''): IConfig {
 		$config = $this->createMock(IConfig::class);
 		$config->method('getAppValue')->willReturnCallback(

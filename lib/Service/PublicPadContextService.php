@@ -9,6 +9,8 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Service;
 
+use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
+use OCP\IURLGenerator;
 use OCP\Share\IShare;
 
 /**
@@ -23,7 +25,37 @@ class PublicPadContextService {
 		private PadFileService $padFileService,
 		private BindingService $bindingService,
 		private PublicPadOpenService $publicPadOpenService,
+		private LivePadHtmlFetcher $livePadHtmlFetcher,
+		private IURLGenerator $urlGenerator,
 	) {
+	}
+
+	/**
+	 * What the pad says now, for a read-only visitor of a public link.
+	 *
+	 * The share is resolved again on every call — the token, its password
+	 * gate and the file's membership in the share all have to hold at the
+	 * moment of the fetch, not merely at the moment the page was opened.
+	 */
+	public function resolveContent(string $token, mixed $fileParam, ?IShare $cachedShare = null): LivePadHtml {
+		$share = $this->shareResolver->resolveShare($token, $cachedShare);
+		$resolved = $this->shareResolver->resolvePadFile($share, $fileParam, $token);
+		$node = $resolved->node;
+
+		$pad = $this->padFileService->readPad((string)$node->getContent());
+		if ($pad->isExternal) {
+			if ($pad->accessMode !== BindingService::ACCESS_PUBLIC) {
+				throw new EtherpadClientException('External pad metadata requires public access_mode.');
+			}
+			if ($pad->padUrl === '') {
+				throw new EtherpadClientException('External pad URL metadata is missing or invalid.');
+			}
+			return $this->livePadHtmlFetcher->fetchExternal($pad->padUrl);
+		}
+
+		$this->bindingService->assertConsistentMapping((int)$node->getId(), $pad->padId, $pad->accessMode);
+
+		return $this->livePadHtmlFetcher->fetchInternal($pad->padId);
 	}
 
 	public function resolve(string $token, mixed $fileParam, ?IShare $cachedShare = null): PublicPadContext {
@@ -49,7 +81,6 @@ class PublicPadContextService {
 			$resolved->readOnly,
 			$token,
 			$isExternal,
-			$content,
 			$padUrl,
 		);
 
@@ -57,11 +88,24 @@ class PublicPadContextService {
 			$resolved->name,
 			$openTarget->url,
 			$isExternal,
-			$openTarget->isReadOnlySnapshot,
-			$openTarget->snapshotText,
-			$openTarget->snapshotHtml,
+			$openTarget->isReadOnlyView,
 			$openTarget->originalPadUrl,
+			// Same rule as the signed-in open: only where one of our own
+			// surfaces draws the pad. The `file` parameter travels with it
+			// so the retry resolves the same node inside the share.
+			($openTarget->isReadOnlyView || $isExternal)
+				? $this->buildContentUrl($token, $fileParam)
+				: '',
 			$openTarget->cookieHeader,
 		);
+	}
+
+	private function buildContentUrl(string $token, mixed $fileParam): string {
+		$parameters = ['token' => $token];
+		if (is_string($fileParam) && $fileParam !== '') {
+			$parameters['file'] = $fileParam;
+		}
+
+		return $this->urlGenerator->linkToRoute('etherpad_nextcloud.publicViewer.padContent', $parameters);
 	}
 }

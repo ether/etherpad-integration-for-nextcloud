@@ -406,12 +406,18 @@ A share without write permission gets no way to edit, whether it is a
 public link or an internal share with another user. Both are decided the
 same way and reach the same two answers.
 
-- **Protected pads render the stored snapshot**, and no Etherpad session is
-  created at all.
-  - If an HTML snapshot is stored, only a small tag whitelist is rendered
-    (`p`, lists, headings, basic inline formatting, block/code tags);
-    attributes and dangerous tags are stripped. Otherwise the text snapshot
-    is used.
+- **Protected pads are rendered by this app**, and no Etherpad session is
+  created at all. The content is fetched fresh on every open, over the
+  Etherpad API for own pads and over the public HTML export for pads on
+  other servers – the stored `.pad` snapshot is not a fallback, and a
+  failed fetch shows an error with a retry rather than an older text.
+  - Only a small tag whitelist survives (`p`, lists, headings, basic inline
+    formatting, block/code tags); attributes and dangerous tags are
+    stripped, on the server and again in the browser.
+  - The fetch runs behind its own endpoint, which re-checks the share and
+    the `.pad` binding on every call. The binding check is what keeps an
+    edited `.pad` file from pointing this app's API key at somebody else's
+    pad.
   - Etherpad's own read-only view is deliberately **not** used here.
     `SecurityManager` resolves a read-only id back to the real pad before
     any check, so the view needs the same group session as the editable
@@ -423,8 +429,9 @@ same way and reach the same two answers.
 - **Public pads get Etherpad's read-only URL** (`getReadOnlyID`), which is
   presentation rather than enforcement: a public pad is editable by anyone
   who has its id, and its id is in the `.pad` file. Nothing can be enforced
-  there, so the live read-only view is preferred over a snapshot that would
-  only be staler.
+  there, so Etherpad's own live view is preferred. When the pad server
+  cannot say what that URL is, the pad falls back to this app's read-only
+  view rather than to the editable address.
 
 The decision is `isUpdateable()` on the file as this user sees it, which
 is the update permission bit – `(permissions & UPDATE)` – and not a lock

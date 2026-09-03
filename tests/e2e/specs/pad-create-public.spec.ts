@@ -9,7 +9,7 @@ import {
 	createExternalPadFromTile,
 	createPublicPad,
 	expectFileInList,
-	expectExternalSnapshotViewerMounted,
+	expectExternalPadViewerMounted,
 	expectFilesRouteWithoutOpenFlag,
 	expectEtherpadViewerMounted,
 	openPadFromFileList,
@@ -110,7 +110,7 @@ test.describe('external pad from the template picker', () => {
 		if (!alreadyOpen) {
 			await openPadFromFileList(page, externalPadName)
 		}
-		await expectExternalSnapshotViewerMounted(page, etherpadUrl)
+		await expectExternalPadViewerMounted(page, etherpadUrl)
 	})
 })
 

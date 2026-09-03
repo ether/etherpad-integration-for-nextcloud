@@ -33,8 +33,8 @@ vi.mock('../../src/lib/api-client.js', () => ({
 	apiRecoverFromSnapshot: vi.fn(),
 	apiResolvePadByPath: vi.fn(),
 }))
-vi.mock('../../src/lib/sanitize-html.js', () => ({
-	sanitizeSnapshotHtml: vi.fn((html) => `SANITIZED:${html}`),
+vi.mock('../../src/lib/pad-content.js', () => ({
+	loadPadContent: vi.fn(async () => ({ html: 'LOADED', isEmpty: false })),
 }))
 vi.mock('../../src/lib/pad-frame-srcdoc.js', () => ({
 	buildPadFrameSrcdoc: vi.fn((url) => `SRCDOC:${url}`),
@@ -45,7 +45,7 @@ vi.mock('../../src/lib/urls.js', () => ({
 }))
 
 const { apiFindOriginalPad, apiRecoverFromSnapshot, apiResolvePadByPath } = await import('../../src/lib/api-client.js')
-const { sanitizeSnapshotHtml } = await import('../../src/lib/sanitize-html.js')
+const { loadPadContent } = await import('../../src/lib/pad-content.js')
 const { parsePadPathFromDavHref, parsePublicShareTokenFromLocation } = await import('../../src/lib/urls.js')
 
 let component
@@ -287,32 +287,47 @@ describe('viewer component — resolveOpenUrl', () => {
 		expect(vm._padSync.start).not.toHaveBeenCalled()
 	})
 
-	it('external pad: enters external snapshot mode with the stored snapshot', async () => {
+	it('external pad: shows the pad itself, loaded from the content endpoint', async () => {
 		stubFetch(jsonResponse({
 			url: 'https://other.server/p/abc',
 			is_external: true,
-			snapshot_text: 'hello',
-			snapshot_html: '<b>hello</b>',
+			content_url: '/content/42',
 		}))
 		const vm = makeInstance({ fileid: 42, fileInfo: { path: '/x.pad' } })
 
 		await vm.resolveOpenUrl()
 
-		expect(vm.snapshotMode).toBe('external')
+		expect(vm.contentMode).toBe('external')
 		expect(vm.externalOpenUrl).toBe('https://other.server/p/abc')
-		expect(vm.snapshot).toEqual({ text: 'hello', html: '<b>hello</b>' })
+		expect(loadPadContent).toHaveBeenCalledWith('/content/42', expect.anything())
 		expect(vm.iframeSrc).toBe('')
 		expect(vm.$emit).toHaveBeenCalledWith('update:loaded', true)
 	})
 
-	it('readonly snapshot: enters readonly mode without requiring a url', async () => {
-		stubFetch(jsonResponse({ is_readonly_snapshot: true, snapshot_text: 't', snapshot_html: '<i>t</i>' }))
+	it('read-only view: enters readonly mode without requiring a url', async () => {
+		stubFetch(jsonResponse({ is_readonly_view: true, content_url: '/content/42' }))
 		const vm = makeInstance({ fileid: 42, fileInfo: { path: '/x.pad' } })
 
 		await vm.resolveOpenUrl()
 
-		expect(vm.snapshotMode).toBe('readonly')
-		expect(vm.snapshot).toEqual({ text: 't', html: '<i>t</i>' })
+		expect(vm.contentMode).toBe('readonly')
+		expect(loadPadContent).toHaveBeenCalledWith('/content/42', expect.anything())
+	})
+
+	/**
+	 * A read-only open that names no endpoint is a bug, but the reader has
+	 * to be told something — a viewer stuck on "loading" forever is the one
+	 * outcome that looks like a hang.
+	 */
+	it('read-only view: reports an error when the open names no content endpoint', async () => {
+		stubFetch(jsonResponse({ is_readonly_view: true, content_url: '' }))
+		const vm = makeInstance({ fileid: 42, fileInfo: { path: '/x.pad' } })
+
+		await vm.resolveOpenUrl()
+		await vm.loadContent()
+
+		expect(vm.contentState).toBe('error')
+		expect(loadPadContent).not.toHaveBeenCalled()
 	})
 
 	it('missing frontmatter: initializes once then re-opens', async () => {
@@ -791,26 +806,48 @@ describe('viewer component — render', () => {
 		expect(allText(tree)).toContain('Create new pad from this file')
 	})
 
-	it('renders the external snapshot view with a sanitized body and an open-original link', () => {
+	it('renders the external view with the loaded body and an open-original link', () => {
 		const vm = makeInstance({
-			snapshotMode: 'external',
+			contentMode: 'external',
 			externalOpenUrl: 'https://other/p',
-			externalOpenMessage: 'msg',
-			snapshot: { text: 'plain', html: '<b>x</b>' },
+			contentState: 'ready',
+			content: { html: '<b>x</b>', isEmpty: false },
 		})
 		const tree = component.render.call(vm, h)
 
 		expect(allText(tree)).toContain('Pad from another server')
 		expect(findByTag(tree, 'a')[0].data.attrs.href).toBe('https://other/p')
-		expect(sanitizeSnapshotHtml).toHaveBeenCalledWith('<b>x</b>')
-		expect(findByClass(tree, 'epnc-native-snapshot__text--html').data.domProps.innerHTML).toBe('SANITIZED:<b>x</b>')
+		expect(findByClass(tree, 'epnc-native-snapshot__text--html').data.domProps.innerHTML).toBe('<b>x</b>')
 	})
 
-	it('renders the readonly snapshot view', () => {
-		const vm = makeInstance({ snapshotMode: 'readonly', snapshot: { text: 't', html: '' } })
+	it('renders the read-only view', () => {
+		const vm = makeInstance({ contentMode: 'readonly', contentState: 'ready', content: { html: '<p>t</p>', isEmpty: false } })
 		const tree = component.render.call(vm, h)
 
-		expect(allText(tree)).toContain('Read-only snapshot')
+		expect(allText(tree)).toContain('Read-only view')
+		expect(findByClass(tree, 'epnc-native-snapshot__text--html').data.domProps.innerHTML).toBe('<p>t</p>')
+	})
+
+	it('says so when the pad loaded and is empty', () => {
+		const vm = makeInstance({ contentMode: 'readonly', contentState: 'ready', content: { html: '', isEmpty: true } })
+		const tree = component.render.call(vm, h)
+
+		expect(allText(tree)).toContain('This pad is still empty.')
+	})
+
+	it('shows a retry action when the content could not be loaded', () => {
+		const vm = makeInstance({ contentMode: 'readonly', contentState: 'error', contentError: 'boom' })
+		const tree = component.render.call(vm, h)
+
+		expect(allText(tree)).toContain('boom')
+		expect(allText(tree)).toContain('Try again')
+	})
+
+	it('shows a loading state while the pad is being fetched', () => {
+		const vm = makeInstance({ contentMode: 'readonly', contentState: 'loading' })
+		const tree = component.render.call(vm, h)
+
+		expect(allText(tree)).toContain('Loading pad content...')
 	})
 
 	it('renders the loading placeholder while resolving', () => {

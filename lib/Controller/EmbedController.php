@@ -74,9 +74,12 @@ class EmbedController extends Controller {
 					// A share without write permission is a different reason
 					// for the same view; saying "from another server" there
 					// explains something that is not true.
-					'readonly_title' => $this->l10n->t('Read-only snapshot'),
-					'external_message' => $this->l10n->t('Read-only snapshot from the .pad file.'),
-					'external_empty' => $this->l10n->t('No synced snapshot is stored in this .pad file yet.'),
+					'readonly_title' => $this->l10n->t('Read-only view'),
+					'content_message' => $this->l10n->t('Loaded when you opened this pad.'),
+					'content_empty' => $this->l10n->t('This pad is still empty.'),
+					'content_loading' => $this->l10n->t('Loading pad content...'),
+					'content_error' => $this->l10n->t('Could not load the pad content.'),
+					'content_retry' => $this->l10n->t('Try again'),
 					'external_link' => $this->l10n->t('Open original pad'),
 					'recovery_checking' => $this->l10n->t('Checking for the original pad...'),
 					'recovery_copy_body' => $this->l10n->t('This file looks like a copy of an existing .pad file in your account. Open the original to keep editing the linked pad, or create a new pad to fork the content stored in this file.'),

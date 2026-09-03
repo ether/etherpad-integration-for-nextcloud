@@ -369,21 +369,21 @@ export const expectEtherpadCurrentUserName = async (page: Page, expectedName: st
 }
 
 /**
- * The viewer a read-only share is supposed to get: the snapshot stored in
- * the `.pad` file, and no Etherpad frame at all.
+ * The viewer a read-only share is supposed to get: the pad's content,
+ * loaded from the pad server, and no Etherpad frame at all.
  *
  * The absence is the point. Nextcloud's read-only share stops at the file;
  * the pad lives on another host, so anything that hands over a pad URL or
  * a session hands over the ability to edit, whatever the share said.
  */
-export const expectReadOnlySnapshotViewerMounted = async (page: Page, expectedText = ''): Promise<void> => {
+export const expectReadOnlyPadViewerMounted = async (page: Page, expectedText = ''): Promise<void> => {
 	await expect(page.locator('.epnc-native-snapshot').first()).toBeVisible({ timeout: 30_000 })
-	await expect(page.getByText(/read-only snapshot|schreibgeschützte kopie/i).first()).toBeVisible()
+	await expect(page.getByText(/read-only view|nur-lesen-ansicht/i).first()).toBeVisible()
 	if (expectedText !== '') {
 		// Without this the assertion passes just as well against the
-		// "no snapshot stored yet" placeholder, which renders in the same
-		// container under the same heading.
-		await expect(page.locator('.epnc-native-snapshot').first()).toContainText(expectedText)
+		// loading state and the "still empty" hint, which render in the
+		// same container under the same heading.
+		await expect(page.locator('.epnc-native-snapshot').first()).toContainText(expectedText, { timeout: 30_000 })
 	}
 	await expect(
 		page.locator('iframe[title="Etherpad"]'),
@@ -391,7 +391,7 @@ export const expectReadOnlySnapshotViewerMounted = async (page: Page, expectedTe
 	).toHaveCount(0)
 }
 
-export const expectExternalSnapshotViewerMounted = async (page: Page, expectedOriginalUrl = ''): Promise<void> => {
+export const expectExternalPadViewerMounted = async (page: Page, expectedOriginalUrl = ''): Promise<void> => {
 	await expect(page.locator('.epnc-native-snapshot').first()).toBeVisible({ timeout: 30_000 })
 	await expect(page.getByText(/pad from another server|pad von einem anderen server/i).first()).toBeVisible()
 	const originalLink = page.getByRole('link', { name: /open original pad|original-pad öffnen/i })

@@ -14,10 +14,9 @@ class PublicPadContext {
 		public string $title,
 		public string $url,
 		public bool $isExternal,
-		public bool $isReadOnlySnapshot,
-		public string $snapshotText,
-		public string $snapshotHtml,
+		public bool $isReadOnlyView,
 		public string $originalPadUrl,
+		public string $contentUrl,
 		public string $cookieHeader,
 	) {
 	}

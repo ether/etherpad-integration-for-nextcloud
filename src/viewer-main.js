@@ -7,7 +7,7 @@ import { apiFindOriginalPad, apiRecoverFromSnapshot, apiResolvePadByPath } from 
 import { fetchJsonWithTimeout } from './lib/fetch-helpers.js'
 import { ocGenerateUrl, ocRequestToken, translate } from './lib/oc-compat.js'
 import { createPadSync } from './lib/pad-sync.js'
-import { sanitizeSnapshotHtml } from './lib/sanitize-html.js'
+import { loadPadContent } from './lib/pad-content.js'
 import { buildPadFrameSrcdoc } from './lib/pad-frame-srcdoc.js'
 import { parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './lib/urls.js'
 
@@ -41,9 +41,14 @@ import { parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './li
 				isCheckingOriginal: false,
 				originalPad: null,
 				externalOpenUrl: '',
-				externalOpenMessage: '',
-				snapshotMode: '',
-				snapshot: { text: '', html: '' },
+				// Which read-only surface is showing, if any: '' for the
+				// editor, 'readonly' for a share without write permission,
+				// 'external' for a pad on a foreign server.
+				contentMode: '',
+				contentUrl: '',
+				contentState: 'idle',
+				contentError: '',
+				content: { html: '', isEmpty: false },
 				resolveGeneration: 0,
 			}
 		},
@@ -139,7 +144,7 @@ import { parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './li
 			 */
 			async fetchOpenPayload(url, init = {}) {
 				const data = await fetchJsonWithTimeout(url, Object.assign({ method: 'GET' }, init))
-				if (!data || (data.is_readonly_snapshot !== true && (typeof data.url !== 'string' || data.url.trim() === ''))) {
+				if (!data || (data.is_readonly_view !== true && (typeof data.url !== 'string' || data.url.trim() === ''))) {
 					throw new Error('Pad open API did not return a valid URL.')
 				}
 				return data
@@ -279,9 +284,12 @@ import { parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './li
 				this.originalPad = null
 				this.iframeSrc = ''
 				this.externalOpenUrl = ''
-				this.externalOpenMessage = ''
-				this.snapshotMode = ''
-				this.snapshot = { text: '', html: '' }
+				this.contentMode = ''
+				this.contentUrl = ''
+				this.contentState = 'idle'
+				this.contentError = ''
+				this.content = { html: '', isEmpty: false }
+				this._contentAbort?.abort()
 				// Reset only an existing controller; don't construct one just to
 				// stop/clear it (e.g. the initial immediate watcher with no pad).
 				// The success path below lazily creates it when there's a pad to
@@ -377,26 +385,25 @@ import { parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './li
 						this.padSync().start()
 					}
 
-					if (data && data.is_readonly_snapshot === true) {
-						this.snapshotMode = 'readonly'
-						this.snapshot = {
-							text: (typeof data.snapshot_text === 'string') ? data.snapshot_text : '',
-							html: (typeof data.snapshot_html === 'string') ? data.snapshot_html : '',
-						}
+					const contentUrl = (data && typeof data.content_url === 'string') ? data.content_url.trim() : ''
+
+					if (data && data.is_readonly_view === true) {
+						this.contentMode = 'readonly'
+						this.contentUrl = contentUrl
 						this.markLoaded()
+						// Not awaited: the frame is drawn now and fills in
+						// when the pad answers, so a slow pad server shows a
+						// loading state instead of an empty viewer.
+						void this.loadContent()
 						return
 					}
 
 					if (data && data.is_external === true && typeof data.url === 'string' && data.url.trim() !== '') {
-						const targetUrl = data.url.trim()
-						this.externalOpenUrl = targetUrl
-						this.externalOpenMessage = translate('Read-only snapshot from the .pad file.')
-						this.snapshotMode = 'external'
-						this.snapshot = {
-							text: (data && typeof data.snapshot_text === 'string') ? data.snapshot_text : '',
-							html: (data && typeof data.snapshot_html === 'string') ? data.snapshot_html : '',
-						}
+						this.externalOpenUrl = data.url.trim()
+						this.contentMode = 'external'
+						this.contentUrl = contentUrl
 						this.markLoaded()
+						void this.loadContent()
 						return
 					}
 
@@ -491,10 +498,43 @@ import { parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './li
 					this.isRecovering = false
 				}
 			},
-			renderSnapshotView(createElement, options) {
-				const html = sanitizeSnapshotHtml(options.html)
-				const text = String(options.text || '')
+			/**
+			 * Loads what the pad says now, and again on every retry.
+			 *
+			 * The endpoint re-checks access on each call, so a share
+			 * withdrawn while the tab sat open stops answering rather than
+			 * keeping the reader supplied.
+			 */
+			async loadContent() {
+				const generation = this.resolveGeneration
+				const isCurrent = () => generation === this.resolveGeneration
+
+				if (this.contentUrl === '') {
+					this.contentState = 'error'
+					this.contentError = translate('The server did not say where to load this pad from.')
+					return
+				}
+
+				this._contentAbort?.abort()
+				const abort = new AbortController()
+				this._contentAbort = abort
+				this.contentState = 'loading'
+				this.contentError = ''
+
+				try {
+					const content = await loadPadContent(this.contentUrl, { signal: abort.signal })
+					if (!isCurrent()) return
+					this.content = content
+					this.contentState = 'ready'
+				} catch (error) {
+					if (!isCurrent() || (error && error.name === 'AbortError')) return
+					this.contentState = 'error'
+					this.contentError = error instanceof Error ? error.message : translate('Could not load the pad content.')
+				}
+			},
+			renderContentView(createElement, options) {
 				const actions = Array.isArray(options.actions) ? options.actions : []
+				const body = this.renderContentBody(createElement)
 
 				return createElement('div', { class: 'epnc-native-snapshot' }, [
 					createElement('div', { class: 'epnc-native-snapshot__inner' }, [
@@ -507,16 +547,34 @@ import { parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './li
 								? createElement('div', { class: 'epnc-native-snapshot__actions' }, actions)
 								: null,
 						]),
-						html.trim() !== ''
-							? createElement('div', {
-								class: 'epnc-native-snapshot__text epnc-native-snapshot__text--html',
-								domProps: { innerHTML: html },
-							})
-							: createElement('pre', { class: 'epnc-native-snapshot__text' }, text.trim() !== ''
-								? text
-								: options.emptyMessage),
+						body,
 					]),
 				])
+			},
+			renderContentBody(createElement) {
+				if (this.contentState === 'error') {
+					return createElement('div', { class: 'epnc-native-snapshot__text epnc-native-snapshot__status' }, [
+						createElement('div', {},
+							this.contentError || translate('Could not load the pad content.')),
+						createElement('button', {
+							class: 'button primary',
+							attrs: { type: 'button' },
+							on: { click: () => { void this.loadContent() } },
+						}, translate('Try again')),
+					])
+				}
+				if (this.contentState !== 'ready') {
+					return createElement('div', { class: 'epnc-native-snapshot__text epnc-native-snapshot__status' }, translate('Loading pad content...'))
+				}
+				// An empty pad loaded fine. Saying so is the whole point:
+				// silence here reads as a failure that was never reported.
+				if (this.content.isEmpty) {
+					return createElement('div', { class: 'epnc-native-snapshot__text epnc-native-snapshot__status' }, translate('This pad is still empty.'))
+				}
+				return createElement('div', {
+					class: 'epnc-native-snapshot__text epnc-native-snapshot__text--html',
+					domProps: { innerHTML: this.content.html },
+				})
 			},
 		},
 		beforeDestroy() {
@@ -524,11 +582,13 @@ import { parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './li
 			// Closing the viewer mid-open is the commonest way to supersede a
 			// request; bumping the generation only drops the answer.
 			this._openAbort?.abort()
+			this._contentAbort?.abort()
 			this.teardownSync()
 		},
 		beforeUnmount() {
 			this.resolveGeneration += 1
 			this._openAbort?.abort()
+			this._contentAbort?.abort()
 			this.teardownSync()
 		},
 		render(createElement) {
@@ -583,10 +643,10 @@ import { parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './li
 					createElement('div', { class: 'epnc-native-error-card' }, cardChildren),
 				])
 			}
-			if (this.snapshotMode === 'external') {
-				return this.renderSnapshotView(createElement, {
+			if (this.contentMode === 'external') {
+				return this.renderContentView(createElement, {
 					title: translate('Pad from another server'),
-					message: this.externalOpenMessage,
+					message: translate('Loaded when you opened this pad.'),
 					actions: [
 						createElement('a', {
 							class: 'button primary',
@@ -597,18 +657,12 @@ import { parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './li
 							},
 						}, translate('Open original pad')),
 					],
-					html: this.snapshot.html,
-					text: this.snapshot.text,
-					emptyMessage: translate('No synced snapshot is stored in this .pad file yet.'),
 				})
 			}
-			if (this.snapshotMode === 'readonly') {
-				return this.renderSnapshotView(createElement, {
-					title: translate('Read-only snapshot'),
-					message: translate('Read-only snapshot from the .pad file.'),
-					html: this.snapshot.html,
-					text: this.snapshot.text,
-					emptyMessage: translate('No synced snapshot is stored in this .pad file yet.'),
+			if (this.contentMode === 'readonly') {
+				return this.renderContentView(createElement, {
+					title: translate('Read-only view'),
+					message: translate('Loaded when you opened this pad.'),
 				})
 			}
 			if (this.isLoading || !this.iframeSrc) {

@@ -144,6 +144,15 @@
 	overflow: visible;
 }
 
+.epnc-native-snapshot__status {
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+	gap: 12px;
+	white-space: normal;
+	color: var(--color-text-maxcontrast, #6b7280);
+}
+
 .epnc-native-snapshot__text--html {
 	font-family: var(--font-face, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
 	white-space: normal;
