@@ -193,10 +193,13 @@ class PadMetadataServiceTest extends TestCase {
 		$etherpadClient->method('getReadOnlyPadUrl')
 			->willThrowException(new \OCA\EtherpadNextcloud\Exception\EtherpadClientException('unavailable'));
 
+		// `meta`, not `resolve`: the response ships pad_url from here, and
+		// that is the field the editable address would survive in.
 		$result = $this->buildService($padFileService, userNodeResolver: $userNodeResolver, etherpadClient: $etherpadClient)
-			->resolve('alice', 138);
+			->metaById('alice', 138);
 
-		$this->assertSame('', $result->publicOpenUrl, 'no address at all is the right answer here');
+		$this->assertSame('', $result->publicOpenUrl, 'no read-only address to give');
+		$this->assertSame('', $result->padUrl, 'and the editable one must not survive as the answer');
 	}
 
 	public function testFindOriginalForCopyReturnsFoundWhenBoundFileIsReadableByRequester(): void {
