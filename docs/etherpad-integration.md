@@ -427,15 +427,18 @@ same way and reach the same two answers.
   only be staler.
 
 The decision is `isUpdateable()` on the file as this user sees it, which
-Nextcloud defines as whether the file is writable – not as what the share
-granted. Anything that removes write permission puts the pad into the
-snapshot view: a share without it, but also a lock somebody is holding on
-the `.pad` file, a read-only mount, or a group folder ACL. That is
-deliberate, because a pad edit only persists by this file being written,
-so an editor for somebody who cannot write it would lose what they type.
-It does mean a held lock makes the pad read-only for everyone else until
-it clears – worth knowing when someone reports that their own pad has
-suddenly stopped accepting input.
+is the update permission bit – `(permissions & UPDATE)` – and not a lock
+check. The share feeds into it, and so does the mount: a read-only
+external storage or a group folder ACL puts the pad into the snapshot view
+just as a "can view" share does. That is deliberate, because a pad edit
+only persists by this file being written, so an editor for somebody who
+cannot write it would lose what they type.
+
+One file can be reachable by several paths with different permissions –
+shared directly and again inside a shared folder – so the id lookup
+prefers a path the user may write. Otherwise whichever mount came first
+would decide, and the open, the metadata and the sync could end up on
+different ones.
 
 The read-only id itself is random – `r.` plus sixteen characters, stored as
 a `pad2readonly` / `readonly2pad` mapping – so it reveals nothing about the

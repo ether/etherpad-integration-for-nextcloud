@@ -20,6 +20,7 @@
 	data-l10n-loading="<?php p((string)$_['l10n']['loading']); ?>"
 	data-l10n-error-title="<?php p((string)$_['l10n']['error_title']); ?>"
 	data-l10n-external-title="<?php p((string)($_['l10n']['external_title'] ?? 'Pad from another server')); ?>"
+	data-l10n-readonly-title="<?php p((string)($_['l10n']['readonly_title'] ?? 'Read-only snapshot')); ?>"
 	data-l10n-external-message="<?php p((string)($_['l10n']['external_message'] ?? 'Read-only snapshot from the .pad file.')); ?>"
 	data-l10n-external-empty="<?php p((string)($_['l10n']['external_empty'] ?? 'No synced snapshot is stored in this .pad file yet.')); ?>"
 	data-l10n-external-link="<?php p((string)($_['l10n']['external_link'] ?? 'Open original pad')); ?>"

@@ -74,16 +74,16 @@ class PadOpenService {
 			$accessMode = $pad->accessMode;
 			$padUrl = $pad->padUrl;
 			$isExternal = $pad->isExternal;
-			// Not "what the share granted". OCP documents this as whether the
-			// file is writable, which is an AND over every source of write
-			// permission: the share, a lock somebody holds on the file, a
-			// read-only mount, a group folder ACL.
+			// Not "what the share granted": this is the update permission bit
+			// on the file as this user sees it — `(permissions & UPDATE)` —
+			// which the share and the mount both feed into. It is not a lock
+			// check; Nextcloud treats locks separately, and so does the sync
+			// path here.
 			//
-			// That is the right question anyway. A pad edit persists only by
+			// It is the right question anyway. A pad edit persists only by
 			// this file being written, so somebody who cannot write it
-			// cannot keep what they type — handing them an editor whose
-			// changes have nowhere to go would be the worse answer. The cost
-			// is that a held lock shows the snapshot until it clears.
+			// cannot keep what they type, and an editor whose changes have
+			// nowhere to go would be the worse answer.
 			$mayWrite = $node->isUpdateable();
 			$snapshot = $isExternal
 				? $this->snapshotExtractor->extract($content)
