@@ -28,6 +28,7 @@ class PadContentService {
 	public function __construct(
 		private PadFileService $padFileService,
 		private UserNodeResolver $userNodeResolver,
+		private PadFileLockRetryService $lockRetryService,
 		private BindingService $bindingService,
 		private LivePadHtmlFetcher $livePadHtmlFetcher,
 	) {
@@ -35,7 +36,10 @@ class PadContentService {
 
 	public function contentById(string $uid, int $fileId): LivePadHtml {
 		$node = $this->userNodeResolver->resolveUserFileNodeById($uid, $fileId);
-		$pad = $this->padFileService->readPad((string)$node->getContent());
+		// Through the retry, like the open. A sync holds the file for a
+		// moment, and reading straight through would turn that moment into
+		// an error message and a "Try again" the reader has to press.
+		$pad = $this->padFileService->readPad($this->lockRetryService->readContentWithOpenLockRetry($node));
 
 		if ($pad->isExternal) {
 			if ($pad->accessMode !== BindingService::ACCESS_PUBLIC) {

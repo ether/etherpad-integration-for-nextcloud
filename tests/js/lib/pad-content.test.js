@@ -48,6 +48,25 @@ describe('loadPadContent', () => {
 		expect(content.isEmpty).toBe(true)
 	})
 
+	/**
+	 * The failure this catches looks exactly like success. A login page or
+	 * a maintenance notice answered with HTTP 200 carries no `html` at
+	 * all, and reading a missing field as an empty string would present it
+	 * to the reader as an empty pad.
+	 */
+	it.each([
+		['no body at all', null],
+		['a maintenance notice', { message: 'maintenance' }],
+		['html missing', { is_empty: false }],
+		['html not a string', { html: 42, is_empty: false }],
+		['is_empty missing', { html: '<p>ok</p>' }],
+		['is_empty not a boolean', { html: '<p>ok</p>', is_empty: 'no' }],
+	])('refuses %s rather than showing it as an empty pad', async (_label, body) => {
+		fetch.mockResolvedValueOnce(jsonResponse(body))
+
+		await expect(loadPadContent('/content/42')).rejects.toThrow('Could not load the pad content.')
+	})
+
 	it('reports the server message when the request fails', async () => {
 		fetch.mockResolvedValueOnce(jsonResponse({ message: 'Could not load the pad content.' }, false, 502))
 

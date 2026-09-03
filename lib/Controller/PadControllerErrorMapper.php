@@ -14,6 +14,7 @@ use OCA\EtherpadNextcloud\Exception\ControllerBadRequestException;
 use OCA\EtherpadNextcloud\Exception\LegacyPadCollisionException;
 use OCA\EtherpadNextcloud\Exception\MissingBindingException;
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
+use OCA\EtherpadNextcloud\Exception\EtherpadTooLargeException;
 use OCA\EtherpadNextcloud\Exception\PadAlreadyHasBindingException;
 use OCA\EtherpadNextcloud\Exception\PadFileAlreadyExistsException;
 use OCA\EtherpadNextcloud\Exception\PadFileFormatException;
@@ -137,6 +138,14 @@ class PadControllerErrorMapper {
 				'message' => $e->getMessage(),
 				'code' => 'legacy_collision_no_access',
 			], Http::STATUS_CONFLICT);
+		} catch (EtherpadTooLargeException) {
+			// The pad is fine and still editable; only this preview refuses
+			// to read that much. Its own wording, because the byte count in
+			// the exception explains nothing to a reader.
+			return new DataResponse([
+				'message' => 'This pad is too large to show here. Open it in Etherpad instead.',
+				'code' => 'pad_too_large',
+			], Http::STATUS_BAD_REQUEST);
 		} catch (PadFileFormatException|EtherpadClientException $e) {
 			return new DataResponse(['message' => $e->getMessage()], Http::STATUS_BAD_REQUEST);
 		} catch (\RuntimeException $e) {

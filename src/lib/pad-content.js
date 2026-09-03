@@ -29,13 +29,24 @@ export const loadPadContent = async (contentUrl, { signal } = {}) => {
 		{ method: 'GET', signal },
 		{ timeoutMs: CONTENT_TIMEOUT_MS, fallbackMessage: 'Could not load the pad content.' },
 	)
-	const html = sanitizeSnapshotHtml(data && data.html)
+
+	// Checked before anything is rendered, because the failure this catches
+	// looks exactly like success: a login page or a maintenance notice
+	// answered with HTTP 200 has no `html` at all, and treating a missing
+	// field as an empty string would show it as an empty pad. A number
+	// would be shown as its digits.
+	if (!data || typeof data !== 'object' || typeof data.html !== 'string' || typeof data.is_empty !== 'boolean') {
+		throw new Error('Could not load the pad content.')
+	}
+
+	const html = sanitizeSnapshotHtml(data.html)
 
 	return {
 		html,
-		// Server first, but a sanitizer that empties the markup means there
-		// is nothing to show either — and an empty frame with no explanation
-		// is the one outcome this view must not produce.
-		isEmpty: (data && data.is_empty === true) || html.trim() === '',
+		// The server's verdict, plus the case it cannot see: a sanitizer
+		// that empties the markup leaves nothing to show either, and an
+		// empty frame with no explanation is the one outcome this view must
+		// not produce.
+		isEmpty: data.is_empty || html.trim() === '',
 	}
 }

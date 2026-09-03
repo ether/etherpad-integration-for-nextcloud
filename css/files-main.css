@@ -6,7 +6,7 @@
 /* NC Viewer scoped CSS sets height:auto on .modal-container.
  * Scope override to our viewer only to avoid affecting other file types. */
 .viewer .modal-wrapper .modal-container:has(.epnc-native-shell),
-.viewer .modal-wrapper .modal-container:has(.epnc-native-snapshot) {
+.viewer .modal-wrapper .modal-container:has(.epnc-native-doc) {
 	height: unset !important;
 	bottom: 0 !important;
 }
@@ -70,7 +70,7 @@
 	word-break: break-word;
 }
 
-.epnc-native-snapshot {
+.epnc-native-doc {
 	box-sizing: border-box;
 	width: 100%;
 	height: 100%;
@@ -81,7 +81,7 @@
 	color: var(--color-main-text, #111827);
 }
 
-.epnc-native-snapshot__inner {
+.epnc-native-doc__inner {
 	box-sizing: border-box;
 	width: min(800px, 100%);
 	margin: 0 auto;
@@ -89,54 +89,21 @@
 	flex-direction: column;
 }
 
-.epnc-native-snapshot__header {
+.epnc-native-doc__toolbar {
 	display: flex;
-	align-items: flex-start;
-	justify-content: space-between;
-	gap: 16px;
-	margin: 0 0 18px;
+	align-items: center;
+	justify-content: flex-end;
+	gap: 8px;
+	margin: 0 0 10px;
 }
 
-.epnc-native-snapshot__heading {
-	min-width: 0;
-}
-
-.epnc-native-snapshot__title {
-	margin: 0 0 6px;
-	font-size: 18px;
-	font-weight: 600;
-	line-height: 1.35;
-	color: var(--color-main-text, #111827);
-}
-
-.epnc-native-snapshot__message {
-	margin: 0;
-	font-size: 14px;
-	line-height: 1.5;
-	color: var(--color-text-maxcontrast, #374151);
-}
-
-.epnc-native-snapshot__actions {
-	flex: 0 0 auto;
-	display: flex;
-	justify-content: flex-start;
-	margin: 0;
-}
-
-@media (max-width: 700px) {
-	.epnc-native-snapshot__header {
-		flex-direction: column;
-	}
-}
-
-.epnc-native-snapshot__text {
+/* A document, not a card: no frame and no tinted panel around the text. */
+.epnc-native-doc__text {
 	box-sizing: border-box;
 	width: 100%;
 	margin: 0;
-	padding: 22px 24px;
-	border: 1px solid var(--color-border, #d1d5db);
-	border-radius: 8px;
-	background: var(--color-background-hover, #f8fafc);
+	padding: 0;
+	background: transparent;
 	color: var(--color-main-text, #111827);
 	font: 15px/1.65 var(--font-face, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
 	white-space: pre-wrap;
@@ -144,7 +111,7 @@
 	overflow: visible;
 }
 
-.epnc-native-snapshot__status {
+.epnc-native-doc__status {
 	display: flex;
 	flex-direction: column;
 	align-items: flex-start;
@@ -153,85 +120,85 @@
 	color: var(--color-text-maxcontrast, #6b7280);
 }
 
-.epnc-native-snapshot__text--html {
+.epnc-native-doc__text--html {
 	font-family: var(--font-face, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
 	white-space: normal;
 }
 
-.epnc-native-snapshot__text--html > :first-child {
+.epnc-native-doc__text--html > :first-child {
 	margin-top: 0;
 }
 
-.epnc-native-snapshot__text--html > :last-child {
+.epnc-native-doc__text--html > :last-child {
 	margin-bottom: 0;
 }
 
-.epnc-native-snapshot__text--html h1,
-.epnc-native-snapshot__text--html h2,
-.epnc-native-snapshot__text--html h3,
-.epnc-native-snapshot__text--html h4,
-.epnc-native-snapshot__text--html h5,
-.epnc-native-snapshot__text--html h6 {
+.epnc-native-doc__text--html h1,
+.epnc-native-doc__text--html h2,
+.epnc-native-doc__text--html h3,
+.epnc-native-doc__text--html h4,
+.epnc-native-doc__text--html h5,
+.epnc-native-doc__text--html h6 {
 	margin: 1.2em 0 0.55em;
 	font-weight: 600;
 	line-height: 1.35;
 }
 
-.epnc-native-snapshot__text--html h1 {
+.epnc-native-doc__text--html h1 {
 	font-size: 1.75em;
 }
 
-.epnc-native-snapshot__text--html h2 {
+.epnc-native-doc__text--html h2 {
 	font-size: 1.45em;
 }
 
-.epnc-native-snapshot__text--html h3 {
+.epnc-native-doc__text--html h3 {
 	font-size: 1.25em;
 }
 
-.epnc-native-snapshot__text--html h4,
-.epnc-native-snapshot__text--html h5,
-.epnc-native-snapshot__text--html h6 {
+.epnc-native-doc__text--html h4,
+.epnc-native-doc__text--html h5,
+.epnc-native-doc__text--html h6 {
 	font-size: 1.1em;
 }
 
-.epnc-native-snapshot__text--html strong,
-.epnc-native-snapshot__text--html b {
+.epnc-native-doc__text--html strong,
+.epnc-native-doc__text--html b {
 	font-weight: 700;
 }
 
-.epnc-native-snapshot__text--html em,
-.epnc-native-snapshot__text--html i {
+.epnc-native-doc__text--html em,
+.epnc-native-doc__text--html i {
 	font-style: italic;
 }
 
-.epnc-native-snapshot__text--html u {
+.epnc-native-doc__text--html u {
 	text-decoration: underline;
 }
 
-.epnc-native-snapshot__text--html s,
-.epnc-native-snapshot__text--html del {
+.epnc-native-doc__text--html s,
+.epnc-native-doc__text--html del {
 	text-decoration: line-through;
 }
 
-.epnc-native-snapshot__text--html p,
-.epnc-native-snapshot__text--html ul,
-.epnc-native-snapshot__text--html ol,
-.epnc-native-snapshot__text--html blockquote,
-.epnc-native-snapshot__text--html pre {
+.epnc-native-doc__text--html p,
+.epnc-native-doc__text--html ul,
+.epnc-native-doc__text--html ol,
+.epnc-native-doc__text--html blockquote,
+.epnc-native-doc__text--html pre {
 	margin: 0 0 0.9em;
 }
 
-.epnc-native-snapshot__text--html ul,
-.epnc-native-snapshot__text--html ol {
+.epnc-native-doc__text--html ul,
+.epnc-native-doc__text--html ol {
 	padding-left: 1.5em;
 }
 
-.epnc-native-snapshot__text--html ul {
+.epnc-native-doc__text--html ul {
 	list-style: disc;
 }
 
-.epnc-native-snapshot__text--html ol {
+.epnc-native-doc__text--html ol {
 	list-style: decimal;
 }
 

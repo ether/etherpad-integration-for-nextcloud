@@ -166,8 +166,8 @@ solely by the separate external-pad policy, not by these two settings.
 - `GET /api/v1/pads/content/{fileId}`
   - Controller: `PadSessionController::contentById`
   - Purpose: the pad's current content for this app's read-only view.
-  - Result: sanitized `html` plus `is_empty`; answered `no-store`.
-  - Behavior: re-resolves the file and re-checks the `.pad` binding on every call. Own pads are read over the Etherpad API, pads on other servers over their public HTML export.
+  - Result: sanitized `html` plus `is_empty`; answered `no-store`. Both fields are always present — a reader must be able to tell an empty pad from an answer that carries no content.
+  - Behavior: re-resolves the file and re-checks the `.pad` binding on every call. Own pads are read over the Etherpad API, pads on other servers over their public HTML export. Either way the read stops at 5 MiB and answers `400` with `code: pad_too_large` past it.
 
 - `POST /api/v1/pads/initialize`
   - Controller: `PadSessionController::initialize`

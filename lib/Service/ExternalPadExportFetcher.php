@@ -220,21 +220,32 @@ class ExternalPadExportFetcher {
 				$errors[] = 'transport via ' . $ip . ': ' . ($curlError !== '' ? $curlError : 'unknown error');
 				continue;
 			}
-			if ($httpCode >= 400) {
-				if ($httpCode === 404) {
-					throw new ExternalPadExportNotFoundException(
-						'External public pad export was not found. Make sure the pad exists and can be exported.'
-					);
-				}
-				throw new EtherpadClientException('Public export HTTP error (' . $httpCode . ')');
-			}
-
+			$this->assertSuccessfulExportStatus($httpCode);
 			$this->assertAllowedExternalExportContentType($contentType, $format);
 			return $buffer;
 		}
 
 		$detail = $errors !== [] ? implode('; ', $errors) : 'all resolved targets failed';
 		throw new EtherpadClientException('Public export transport error: ' . $detail);
+	}
+
+	/**
+	 * Only an answer that says it *is* the export.
+	 *
+	 * Redirects are not followed, but their bodies used to be taken
+	 * anyway: a "Please sign in" page behind a 302 arrived as pad content.
+	 * The text export happened to reject those on content type; the HTML
+	 * export cannot, so the status is what decides.
+	 */
+	private function assertSuccessfulExportStatus(int $httpCode): void {
+		if ($httpCode === 404) {
+			throw new ExternalPadExportNotFoundException(
+				'External public pad export was not found. Make sure the pad exists and can be exported.'
+			);
+		}
+		if ($httpCode < 200 || $httpCode > 299) {
+			throw new EtherpadClientException('Public export HTTP error (' . $httpCode . ')');
+		}
 	}
 
 	/** What this app is willing to be sent back, per export format. */

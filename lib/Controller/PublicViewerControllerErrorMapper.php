@@ -12,6 +12,7 @@ namespace OCA\EtherpadNextcloud\Controller;
 use OCA\EtherpadNextcloud\AppInfo\Application;
 use OCA\EtherpadNextcloud\Exception\BindingException;
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
+use OCA\EtherpadNextcloud\Exception\EtherpadTooLargeException;
 use OCA\EtherpadNextcloud\Exception\InvalidShareFilePathException;
 use OCA\EtherpadNextcloud\Exception\InvalidShareTokenException;
 use OCA\EtherpadNextcloud\Exception\MissingBindingException;
@@ -95,6 +96,11 @@ class PublicViewerControllerErrorMapper {
 				return 'The selected .pad file is a copied file without an active pad binding. Please open the original shared .pad file.';
 			}
 			return 'Pad binding is inconsistent. Please contact the share owner.';
+		}
+		if ($e instanceof EtherpadTooLargeException) {
+			// Not an outage: the pad answered, and this preview will not
+			// read that much of it.
+			return 'This pad is too large to show here. Open it in Etherpad instead.';
 		}
 		if ($e instanceof EtherpadClientException) {
 			return 'Etherpad is currently unavailable for this shared pad.';

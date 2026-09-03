@@ -113,11 +113,11 @@ body,
 	cursor: progress;
 }
 
-.epnc-embed__loading--snapshot {
+.epnc-embed__loading--doc {
 	padding: 0;
 }
 
-.epnc-embed__snapshot {
+.epnc-embed__doc {
 	box-sizing: border-box;
 	width: 100%;
 	min-height: 100%;
@@ -128,7 +128,7 @@ body,
 	font-family: var(--epnc-embed-font);
 }
 
-.epnc-embed__snapshot-inner {
+.epnc-embed__doc-inner {
 	box-sizing: border-box;
 	width: min(800px, 100%);
 	margin: 0 auto;
@@ -136,42 +136,20 @@ body,
 	flex-direction: column;
 }
 
-.epnc-embed__snapshot-header {
+.epnc-embed__doc-toolbar {
 	display: flex;
-	align-items: flex-start;
-	justify-content: space-between;
-	gap: 16px;
-	margin: 0 0 18px;
+	align-items: center;
+	justify-content: flex-end;
+	gap: 8px;
+	margin: 0 0 10px;
 }
 
-.epnc-embed__snapshot-heading {
-	min-width: 0;
+.epnc-embed__doc-refresh:disabled {
+	opacity: 0.6;
+	cursor: progress;
 }
 
-.epnc-embed__snapshot-title {
-	margin: 0 0 6px;
-	font-size: 18px;
-	font-weight: 600;
-	line-height: 1.35;
-	color: var(--epnc-embed-text);
-}
-
-.epnc-embed__snapshot-message {
-	margin: 0;
-	font-size: 14px;
-	line-height: 1.5;
-	color: var(--epnc-embed-muted);
-	white-space: pre-wrap;
-}
-
-.epnc-embed__snapshot-actions {
-	flex: 0 0 auto;
-	display: flex;
-	justify-content: flex-start;
-	margin: 0;
-}
-
-.epnc-embed__snapshot-link {
+.epnc-embed__doc-link {
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
@@ -184,20 +162,19 @@ body,
 	font-weight: 600;
 }
 
-.epnc-embed__snapshot-link:hover,
-.epnc-embed__snapshot-link:focus {
+.epnc-embed__doc-link:hover,
+.epnc-embed__doc-link:focus {
 	text-decoration: none;
 	filter: brightness(1.05);
 }
 
-.epnc-embed__snapshot-text {
+/* A document, not a card: no frame and no tinted panel around the text. */
+.epnc-embed__doc-text {
 	box-sizing: border-box;
 	width: 100%;
 	margin: 0;
-	padding: 22px 24px;
-	border: 1px solid var(--epnc-embed-border);
-	border-radius: 8px;
-	background: var(--epnc-embed-surface);
+	padding: 0;
+	background: transparent;
 	color: var(--epnc-embed-text);
 	font: 15px/1.65 var(--epnc-embed-font);
 	white-space: pre-wrap;
@@ -205,79 +182,79 @@ body,
 	overflow: visible;
 }
 
-.epnc-embed__snapshot-text > button {
+.epnc-embed__doc-text > button {
 	margin-top: 12px;
 }
 
-.epnc-embed__snapshot-text--html {
+.epnc-embed__doc-text--html {
 	font-family: var(--epnc-embed-font);
 	white-space: normal;
 }
 
-.epnc-embed__snapshot-text--html > :first-child {
+.epnc-embed__doc-text--html > :first-child {
 	margin-top: 0;
 }
 
-.epnc-embed__snapshot-text--html > :last-child {
+.epnc-embed__doc-text--html > :last-child {
 	margin-bottom: 0;
 }
 
-.epnc-embed__snapshot-text--html :is(h1, h2, h3, h4, h5, h6) {
+.epnc-embed__doc-text--html :is(h1, h2, h3, h4, h5, h6) {
 	margin: 1.2em 0 0.55em;
 	font-weight: 600;
 	line-height: 1.35;
 }
 
-.epnc-embed__snapshot-text--html h1 {
+.epnc-embed__doc-text--html h1 {
 	font-size: 1.75em;
 }
 
-.epnc-embed__snapshot-text--html h2 {
+.epnc-embed__doc-text--html h2 {
 	font-size: 1.45em;
 }
 
-.epnc-embed__snapshot-text--html h3 {
+.epnc-embed__doc-text--html h3 {
 	font-size: 1.25em;
 }
 
-.epnc-embed__snapshot-text--html :is(h4, h5, h6) {
+.epnc-embed__doc-text--html :is(h4, h5, h6) {
 	font-size: 1.1em;
 }
 
-.epnc-embed__snapshot-text--html :is(strong, b) {
+.epnc-embed__doc-text--html :is(strong, b) {
 	font-weight: 700;
 }
 
-.epnc-embed__snapshot-text--html :is(em, i) {
+.epnc-embed__doc-text--html :is(em, i) {
 	font-style: italic;
 }
 
-.epnc-embed__snapshot-text--html u {
+.epnc-embed__doc-text--html u {
 	text-decoration: underline;
 }
 
-.epnc-embed__snapshot-text--html :is(s, del) {
+.epnc-embed__doc-text--html :is(s, del) {
 	text-decoration: line-through;
 }
 
-.epnc-embed__snapshot-text--html :is(p, ul, ol, blockquote, pre) {
+.epnc-embed__doc-text--html :is(p, ul, ol, blockquote, pre) {
 	margin: 0 0 0.9em;
 }
 
-.epnc-embed__snapshot-text--html :is(ul, ol) {
+.epnc-embed__doc-text--html :is(ul, ol) {
 	padding-left: 1.5em;
 }
 
-.epnc-embed__snapshot-text--html ul {
+.epnc-embed__doc-text--html ul {
 	list-style: disc;
 }
 
-.epnc-embed__snapshot-text--html ol {
+.epnc-embed__doc-text--html ol {
 	list-style: decimal;
 }
 
 @media (max-width: 700px) {
-	.epnc-embed__snapshot-header {
+	.epnc-embed__doc-header {
 		flex-direction: column;
 	}
 }

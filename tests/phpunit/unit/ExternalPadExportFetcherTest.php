@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\Tests\Unit;
 
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
+use OCA\EtherpadNextcloud\Exception\ExternalPadExportNotFoundException;
 use OCA\EtherpadNextcloud\Service\ExternalPadExportFetcher;
 use OCP\IConfig;
 use PHPUnit\Framework\TestCase;
@@ -99,6 +100,40 @@ class ExternalPadExportFetcherTest extends TestCase {
 		if ($accepted) {
 			$this->addToAssertionCount(1);
 		}
+	}
+
+	/**
+	 * Redirects are not followed, and their bodies are not read either.
+	 * A "Please sign in" page behind a 302 used to arrive as pad content
+	 * once the HTML export stopped rejecting it on content type.
+	 */
+	#[\PHPUnit\Framework\Attributes\DataProvider('statusCases')]
+	public function testOnlyASuccessfulExportStatusIsAccepted(int $status, ?string $expectedException): void {
+		$assert = new \ReflectionMethod(ExternalPadExportFetcher::class, 'assertSuccessfulExportStatus');
+		$fetcher = new ExternalPadExportFetcher($this->buildExternalEnabledConfig());
+
+		if ($expectedException !== null) {
+			$this->expectException($expectedException);
+		}
+		$assert->invoke($fetcher, $status);
+
+		if ($expectedException === null) {
+			$this->addToAssertionCount(1);
+		}
+	}
+
+	/** @return array<string,array{0:int,1:?string}> */
+	public static function statusCases(): array {
+		return [
+			'200 is the export' => [200, null],
+			'204 is still a success' => [204, null],
+			'301 is a redirect, not content' => [301, EtherpadClientException::class],
+			'302 is a redirect, not content' => [302, EtherpadClientException::class],
+			'307 is a redirect, not content' => [307, EtherpadClientException::class],
+			'401 is a login wall' => [401, EtherpadClientException::class],
+			'404 says the pad is not exportable' => [404, ExternalPadExportNotFoundException::class],
+			'500 is the far side failing' => [500, EtherpadClientException::class],
+		];
 	}
 
 	/** @return array<string,array{0:string,1:string,2:bool}> */

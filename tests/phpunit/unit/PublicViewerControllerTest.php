@@ -13,6 +13,7 @@ use OCA\EtherpadNextcloud\Service\PadFileService;
 use OCA\EtherpadNextcloud\Service\PadSessionService;
 use OCA\EtherpadNextcloud\Service\ParsedPadFile;
 use OCA\EtherpadNextcloud\Service\LivePadHtmlFetcher;
+use OCA\EtherpadNextcloud\Service\PadFileLockRetryService;
 use OCA\EtherpadNextcloud\Service\PadResponseService;
 use OCA\EtherpadNextcloud\Service\PublicPadContextService;
 use OCA\EtherpadNextcloud\Service\PublicPadOpenService;
@@ -229,6 +230,8 @@ class PublicViewerControllerTest extends TestCase {
 				$bindingService,
 				$publicPadOpenService,
 				$this->createMock(LivePadHtmlFetcher::class),
+				new PadFileLockRetryService(static function (int $delay): void {
+				}),
 				$urlGenerator,
 			),
 			$shareUrlBuilder,
@@ -333,6 +336,8 @@ class PublicViewerControllerTest extends TestCase {
 				$bindingService,
 				$publicPadOpenService,
 				$this->createMock(LivePadHtmlFetcher::class),
+				new PadFileLockRetryService(static function (int $delay): void {
+				}),
 				$urlGenerator,
 			),
 			$shareUrlBuilder,

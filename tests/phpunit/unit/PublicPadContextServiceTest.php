@@ -7,6 +7,7 @@ namespace OCA\EtherpadNextcloud\Tests\Unit;
 use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\EtherpadNextcloud\Service\LivePadHtml;
 use OCA\EtherpadNextcloud\Service\LivePadHtmlFetcher;
+use OCA\EtherpadNextcloud\Service\PadFileLockRetryService;
 use OCA\EtherpadNextcloud\Service\PadFileService;
 use OCA\EtherpadNextcloud\Service\ParsedPadFile;
 use OCA\EtherpadNextcloud\Service\PublicPadContextService;
@@ -22,6 +23,11 @@ use OCP\Share\IShare;
 use PHPUnit\Framework\TestCase;
 
 class PublicPadContextServiceTest extends TestCase {
+	private function buildNoSleepLockRetryService(): PadFileLockRetryService {
+		return new PadFileLockRetryService(static function (int $delay): void {
+		});
+	}
+
 	public function testResolveBuildsPublicPadContextFromCachedShare(): void {
 		$file = $this->createMock(File::class);
 		$file->method('getName')->willReturn('Shared.pad');
@@ -73,6 +79,7 @@ class PublicPadContextServiceTest extends TestCase {
 			$bindings,
 			$openService,
 			$this->createMock(LivePadHtmlFetcher::class),
+			$this->buildNoSleepLockRetryService(),
 			$urlGenerator,
 		);
 		$context = $service->resolve('token', '', $share);
@@ -130,6 +137,7 @@ class PublicPadContextServiceTest extends TestCase {
 			$bindings,
 			$this->createMock(PublicPadOpenService::class),
 			$fetcher,
+			$this->buildNoSleepLockRetryService(),
 			$this->createMock(IURLGenerator::class),
 		);
 

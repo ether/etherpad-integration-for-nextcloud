@@ -77,7 +77,7 @@ test.describe('read-only share of a protected pad', () => {
 			await openPadFromFileList(userB, padName)
 			await expectReadOnlyPadViewerMounted(userB, liveMarker)
 			await expect(
-				userB.locator('.epnc-native-snapshot').first(),
+				userB.locator('.epnc-native-doc').first(),
 				'the stored copy is a fallback that no longer exists',
 			).not.toContainText(syncedMarker)
 			await userB.close()
@@ -112,7 +112,7 @@ test.describe('read-only share of a protected pad', () => {
 			await expectFileInList(userB, padName)
 			await openPadFromFileList(userB, padName)
 			await expectEtherpadViewerMounted(userB)
-			await expect(userB.locator('.epnc-native-snapshot')).toHaveCount(0)
+			await expect(userB.locator('.epnc-native-doc')).toHaveCount(0)
 			await userB.close()
 		} finally {
 			if (shareId !== '') {
@@ -158,7 +158,7 @@ test.describe('read-only share of a protected pad', () => {
 			await expectFileInList(userB, padName)
 			await openPadFromFileList(userB, padName)
 			await expectEtherpadViewerMounted(userB)
-			await expect(userB.locator('.epnc-native-snapshot')).toHaveCount(0)
+			await expect(userB.locator('.epnc-native-doc')).toHaveCount(0)
 			await userB.close()
 		} finally {
 			for (const id of shareIds) {

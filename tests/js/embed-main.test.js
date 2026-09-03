@@ -118,7 +118,7 @@ describe('embed-main', () => {
 		expect(loadPadContent).toHaveBeenCalledWith('/api/content/42')
 		expect(document.body.textContent).toContain('remote body')
 		// The "Open original pad" link points at the remote URL.
-		const link = document.querySelector('a.epnc-embed__snapshot-link')
+		const link = document.querySelector('a.epnc-embed__doc-link')
 		expect(link).not.toBeNull()
 		expect(link.href).toContain('https://pad.remote.test/p/foreign')
 		expect(link.target).toBe('_blank')
@@ -140,13 +140,38 @@ describe('embed-main', () => {
 		// to reject outright and answer with the error card.
 		expect(document.body.textContent).toContain('shared body')
 		expect(iframe().hidden).toBe(true)
-		// The reason shown has to be the right one — "from another server"
-		// explains something that is not true of an internal share.
-		expect(document.body.textContent).toContain('Read-only view')
-		expect(document.body.textContent).not.toContain('another server')
-		// And nothing to click through to: the pad it would point at is the
-		// one being withheld.
-		expect(document.querySelector('a.epnc-embed__snapshot-link')).toBeNull()
+		// Nothing to click through to: the pad the link would point at is
+		// the one being withheld.
+		expect(document.querySelector('a.epnc-embed__doc-link')).toBeNull()
+	})
+
+	/**
+	 * Available whatever the state, not only after a failure — the view
+	 * shows the pad as of the last fetch, and an embed has no reload of
+	 * its own the reader can reach.
+	 */
+	it('refreshes on demand without re-running the open', async () => {
+		fetch.mockResolvedValueOnce(jsonResponse({ url: '', is_readonly_view: true, content_url: '/api/content/42', sync_url: '' }))
+		loadPadContent.mockResolvedValueOnce({ html: '<p>first</p>', isEmpty: false })
+
+		await importEmbed()
+		await flushMicrotasks()
+		expect(document.body.textContent).toContain('first')
+
+		const refresh = document.querySelector('button.epnc-embed__doc-refresh')
+		expect(refresh).not.toBeNull()
+		expect(refresh.disabled).toBe(false)
+
+		loadPadContent.mockResolvedValueOnce({ html: '<p>second</p>', isEmpty: false })
+		refresh.click()
+		await flushMicrotasks()
+
+		expect(loadPadContent).toHaveBeenCalledTimes(2)
+		expect(document.body.textContent).toContain('second')
+		// One open, and no second one: refreshing asks the content endpoint
+		// and nothing else.
+		expect(fetch).toHaveBeenCalledTimes(1)
+		expect(refresh.disabled).toBe(false)
 	})
 
 	it('says so when the pad loaded and is empty', async () => {

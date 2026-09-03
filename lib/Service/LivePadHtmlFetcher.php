@@ -13,8 +13,9 @@ namespace OCA\EtherpadNextcloud\Service;
  * Loads what a pad says right now, for the read-only views.
  *
  * Own pads come over the configured API, foreign ones over their public
- * export. Both answers go through the same sanitizer before anything leaves
- * this class, so the two paths cannot drift apart in what they let through.
+ * export. Both answers go through the same sanitizer, and both are read
+ * under the same size ceiling, so the two paths cannot drift apart in what
+ * they let through or in how much of it.
  *
  * Callers must have settled access first — nothing here checks it.
  */
@@ -27,7 +28,7 @@ class LivePadHtmlFetcher {
 	}
 
 	public function fetchInternal(string $padId): LivePadHtml {
-		return $this->toPayload($this->etherpadClient->getHTML($padId));
+		return $this->toPayload($this->etherpadClient->getHTMLForPreview($padId));
 	}
 
 	public function fetchExternal(string $padUrl): LivePadHtml {

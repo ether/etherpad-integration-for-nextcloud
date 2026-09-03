@@ -49,6 +49,10 @@ import { parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './li
 				contentState: 'idle',
 				contentError: '',
 				content: { html: '', isEmpty: false },
+				// Own counter, separate from the open's: refreshing does not
+				// supersede the open, and two quick refreshes must not let
+				// the slower answer land last.
+				contentGeneration: 0,
 				resolveGeneration: 0,
 			}
 		},
@@ -506,8 +510,11 @@ import { parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './li
 			 * keeping the reader supplied.
 			 */
 			async loadContent() {
-				const generation = this.resolveGeneration
-				const isCurrent = () => generation === this.resolveGeneration
+				const openGeneration = this.resolveGeneration
+				this.contentGeneration += 1
+				const generation = this.contentGeneration
+				const isCurrent = () => generation === this.contentGeneration
+					&& openGeneration === this.resolveGeneration
 
 				if (this.contentUrl === '') {
 					this.contentState = 'error'
@@ -533,27 +540,29 @@ import { parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './li
 				}
 			},
 			renderContentView(createElement, options) {
-				const actions = Array.isArray(options.actions) ? options.actions : []
-				const body = this.renderContentBody(createElement)
+				const extraActions = Array.isArray(options.actions) ? options.actions : []
 
-				return createElement('div', { class: 'epnc-native-snapshot' }, [
-					createElement('div', { class: 'epnc-native-snapshot__inner' }, [
-						createElement('div', { class: 'epnc-native-snapshot__header' }, [
-							createElement('div', { class: 'epnc-native-snapshot__heading' }, [
-								createElement('div', { class: 'epnc-native-snapshot__title' }, options.title),
-								createElement('div', { class: 'epnc-native-snapshot__message' }, options.message),
-							]),
-							actions.length > 0
-								? createElement('div', { class: 'epnc-native-snapshot__actions' }, actions)
-								: null,
+				return createElement('div', { class: 'epnc-native-doc' }, [
+					createElement('div', { class: 'epnc-native-doc__inner' }, [
+						createElement('div', { class: 'epnc-native-doc__toolbar' }, [
+							// Always available, not only after a failure: the
+							// view shows the pad as of the last fetch, and
+							// without this the only way to catch up is to
+							// close and reopen the file.
+							createElement('button', {
+								class: 'button epnc-native-doc__refresh',
+								attrs: { type: 'button', disabled: this.contentState === 'loading' },
+								on: { click: () => { void this.loadContent() } },
+							}, translate('Refresh')),
+							...extraActions,
 						]),
-						body,
+						this.renderContentBody(createElement),
 					]),
 				])
 			},
 			renderContentBody(createElement) {
 				if (this.contentState === 'error') {
-					return createElement('div', { class: 'epnc-native-snapshot__text epnc-native-snapshot__status' }, [
+					return createElement('div', { class: 'epnc-native-doc__text epnc-native-doc__status' }, [
 						createElement('div', {},
 							this.contentError || translate('Could not load the pad content.')),
 						createElement('button', {
@@ -564,15 +573,15 @@ import { parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './li
 					])
 				}
 				if (this.contentState !== 'ready') {
-					return createElement('div', { class: 'epnc-native-snapshot__text epnc-native-snapshot__status' }, translate('Loading pad content...'))
+					return createElement('div', { class: 'epnc-native-doc__text epnc-native-doc__status' }, translate('Loading pad content...'))
 				}
 				// An empty pad loaded fine. Saying so is the whole point:
 				// silence here reads as a failure that was never reported.
 				if (this.content.isEmpty) {
-					return createElement('div', { class: 'epnc-native-snapshot__text epnc-native-snapshot__status' }, translate('This pad is still empty.'))
+					return createElement('div', { class: 'epnc-native-doc__text epnc-native-doc__status' }, translate('This pad is still empty.'))
 				}
 				return createElement('div', {
-					class: 'epnc-native-snapshot__text epnc-native-snapshot__text--html',
+					class: 'epnc-native-doc__text epnc-native-doc__text--html',
 					domProps: { innerHTML: this.content.html },
 				})
 			},
@@ -645,11 +654,9 @@ import { parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './li
 			}
 			if (this.contentMode === 'external') {
 				return this.renderContentView(createElement, {
-					title: translate('Pad from another server'),
-					message: translate('Loaded when you opened this pad.'),
 					actions: [
 						createElement('a', {
-							class: 'button primary',
+							class: 'button',
 							attrs: {
 								href: this.externalOpenUrl,
 								target: '_blank',
@@ -660,10 +667,7 @@ import { parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './li
 				})
 			}
 			if (this.contentMode === 'readonly') {
-				return this.renderContentView(createElement, {
-					title: translate('Read-only view'),
-					message: translate('Loaded when you opened this pad.'),
-				})
+				return this.renderContentView(createElement, {})
 			}
 			if (this.isLoading || !this.iframeSrc) {
 				return createElement('div', { class: 'epnc-native-status' }, 'Loading pad...')

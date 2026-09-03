@@ -14,7 +14,7 @@ class LivePadHtmlFetcherTest extends TestCase {
 	public function testOwnPadIsFetchedOverTheApiAndSanitized(): void {
 		$client = $this->createMock(EtherpadClient::class);
 		$client->expects($this->once())
-			->method('getHTML')
+			->method('getHTMLForPreview')
 			->with('g.group$pad')
 			->willReturn('<h1 onclick="x()">Title</h1><p>Body</p><script>steal()</script>');
 
@@ -49,14 +49,14 @@ class LivePadHtmlFetcherTest extends TestCase {
 	 */
 	public function testAnUntouchedPadIsReportedAsEmpty(): void {
 		$client = $this->createMock(EtherpadClient::class);
-		$client->method('getHTML')->willReturn('<br>');
+		$client->method('getHTMLForPreview')->willReturn('<br>');
 
 		$this->assertTrue($this->buildFetcher($client)->fetchInternal('pad')->isEmpty);
 	}
 
 	public function testAPadOfBlankLinesIsReportedAsEmpty(): void {
 		$client = $this->createMock(EtherpadClient::class);
-		$client->method('getHTML')->willReturn('<p>&nbsp;</p><p> </p><br>');
+		$client->method('getHTMLForPreview')->willReturn('<p>&nbsp;</p><p> </p><br>');
 
 		$this->assertTrue($this->buildFetcher($client)->fetchInternal('pad')->isEmpty);
 	}
@@ -64,7 +64,7 @@ class LivePadHtmlFetcherTest extends TestCase {
 	/** Markup the sanitizer strips down to nothing is empty as well. */
 	public function testMarkupThatSanitizesToNothingIsReportedAsEmpty(): void {
 		$client = $this->createMock(EtherpadClient::class);
-		$client->method('getHTML')->willReturn('<script>alert(1)</script>');
+		$client->method('getHTMLForPreview')->willReturn('<script>alert(1)</script>');
 
 		$result = $this->buildFetcher($client)->fetchInternal('pad');
 

@@ -8,6 +8,7 @@ use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
 use OCA\EtherpadNextcloud\Service\AdminSettingsRepository;
 use OCA\EtherpadNextcloud\Service\EtherpadClient;
 use OCP\Http\Client\IClient;
+use OCA\EtherpadNextcloud\Exception\EtherpadTooLargeException;
 use OCP\Http\Client\IClientService;
 use OCP\Http\Client\IResponse;
 use OCP\IConfig;

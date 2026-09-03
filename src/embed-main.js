@@ -33,13 +33,11 @@ import { loadPadContent } from './lib/pad-content.js'
 	const recoveryBodyNode = root.querySelector('[data-epnc-embed-recovery-body]')
 	const recoveryActionsNode = root.querySelector('[data-epnc-embed-recovery-actions]')
 	const iframe = root.querySelector('[data-epnc-embed-iframe]')
-	const externalTitleText = String(root.getAttribute('data-l10n-external-title') || 'Pad from another server').trim()
-	const readOnlyTitleText = String(root.getAttribute('data-l10n-readonly-title') || 'Read-only view').trim()
-	const contentMessageText = String(root.getAttribute('data-l10n-content-message') || 'Loaded when you opened this pad.').trim()
 	const contentEmptyText = String(root.getAttribute('data-l10n-content-empty') || 'This pad is still empty.').trim()
 	const contentLoadingText = String(root.getAttribute('data-l10n-content-loading') || 'Loading pad content...').trim()
 	const contentErrorText = String(root.getAttribute('data-l10n-content-error') || 'Could not load the pad content.').trim()
 	const contentRetryText = String(root.getAttribute('data-l10n-content-retry') || 'Try again').trim()
+	const contentRefreshText = String(root.getAttribute('data-l10n-content-refresh') || 'Refresh').trim()
 	const externalLinkText = String(root.getAttribute('data-l10n-external-link') || 'Open original pad').trim()
 	const recoveryCheckingText = String(root.getAttribute('data-l10n-recovery-checking') || 'Checking for the original pad...').trim()
 	const recoveryCopyBodyText = String(root.getAttribute('data-l10n-recovery-copy-body') || '').trim()
@@ -55,7 +53,7 @@ import { loadPadContent } from './lib/pad-content.js'
 	const showError = (message) => {
 		if (loadingNode instanceof HTMLElement) {
 			loadingNode.hidden = true
-			loadingNode.classList.remove('epnc-embed__loading--snapshot')
+			loadingNode.classList.remove('epnc-embed__loading--doc')
 		}
 		if (iframe instanceof HTMLIFrameElement) {
 			iframe.hidden = true
@@ -70,12 +68,15 @@ import { loadPadContent } from './lib/pad-content.js'
 	}
 
 	/**
-	 * The read-only surface: a header, and a body that is filled by
-	 * `loadContent` — loading, the pad itself, "still empty", or an error
-	 * with a retry. Returns the body element so the loader can redraw it
-	 * without rebuilding the frame around it.
+	 * The read-only surface: a small toolbar and a document area that
+	 * `loadContent` fills — loading, the pad itself, "still empty", or an
+	 * error. No heading and no subline; what this is, is apparent from the
+	 * fact that there is nothing to type into.
+	 *
+	 * Returns the parts the loader needs so it can redraw the text without
+	 * rebuilding the frame or losing the button it disables.
 	 */
-	const showPadContentView = (url, titleText = externalTitleText) => {
+	const showPadContentView = (url) => {
 		if (errorNode instanceof HTMLElement) {
 			errorNode.hidden = true
 		}
@@ -84,97 +85,104 @@ import { loadPadContent } from './lib/pad-content.js'
 			iframe.removeAttribute('src')
 		}
 		if (!(loadingNode instanceof HTMLElement)) {
-			return
+			return null
 		}
 		loadingNode.hidden = false
-		loadingNode.classList.add('epnc-embed__loading--snapshot')
+		loadingNode.classList.add('epnc-embed__loading--doc')
 		loadingNode.textContent = ''
 
-		const snapshot = document.createElement('div')
-		snapshot.className = 'epnc-embed__snapshot'
+		const surface = document.createElement('div')
+		surface.className = 'epnc-embed__doc'
 
 		const inner = document.createElement('div')
-		inner.className = 'epnc-embed__snapshot-inner'
+		inner.className = 'epnc-embed__doc-inner'
 
-		const title = document.createElement('h2')
-		title.className = 'epnc-embed__snapshot-title'
-		title.textContent = titleText
+		const toolbar = document.createElement('div')
+		toolbar.className = 'epnc-embed__doc-toolbar'
 
-		const message = document.createElement('p')
-		message.className = 'epnc-embed__snapshot-message'
-		message.textContent = contentMessageText
+		const refresh = document.createElement('button')
+		refresh.type = 'button'
+		refresh.className = 'button epnc-embed__doc-refresh'
+		refresh.textContent = contentRefreshText
+		toolbar.appendChild(refresh)
 
-		const link = document.createElement('a')
-		link.className = 'epnc-embed__snapshot-link'
-		link.href = url
-		link.target = '_blank'
-		link.rel = 'noopener noreferrer'
-		link.textContent = externalLinkText
-
-		const actions = document.createElement('div')
-		actions.className = 'epnc-embed__snapshot-actions'
 		// A read-only share has nothing to link to: the pad it would point
 		// at is the one being withheld.
 		if (String(url || '').trim() !== '') {
-			actions.appendChild(link)
+			const link = document.createElement('a')
+			link.className = 'button epnc-embed__doc-link'
+			link.href = url
+			link.target = '_blank'
+			link.rel = 'noopener noreferrer'
+			link.textContent = externalLinkText
+			toolbar.appendChild(link)
 		}
 
 		const body = document.createElement('div')
-		body.className = 'epnc-embed__snapshot-text'
+		body.className = 'epnc-embed__doc-text'
 		body.textContent = contentLoadingText
 
-		const heading = document.createElement('div')
-		heading.className = 'epnc-embed__snapshot-heading'
-		heading.appendChild(title)
-		heading.appendChild(message)
-
-		const header = document.createElement('div')
-		header.className = 'epnc-embed__snapshot-header'
-		header.appendChild(heading)
-		header.appendChild(actions)
-
-		inner.appendChild(header)
+		inner.appendChild(toolbar)
 		inner.appendChild(body)
-		snapshot.appendChild(inner)
-		loadingNode.appendChild(snapshot)
+		surface.appendChild(inner)
+		loadingNode.appendChild(surface)
 
-		return body
+		return { body, refresh }
 	}
+
+	// Bumped per load, so a slower earlier answer cannot land on top of a
+	// newer one when the button is pressed twice.
+	let contentGeneration = 0
 
 	/**
 	 * Loads the pad into an existing read-only surface, and again on every
-	 * press of "Try again". Each call re-checks access on the server.
+	 * press of "Refresh" or "Try again". Each call re-checks access on the
+	 * server.
 	 */
-	const loadContent = async (body, contentUrl) => {
-		if (!(body instanceof HTMLElement)) {
+	const loadContent = async (view, contentUrl) => {
+		if (!view || !(view.body instanceof HTMLElement)) {
 			return
 		}
-		body.className = 'epnc-embed__snapshot-text'
-		body.textContent = contentLoadingText
+		const { body, refresh } = view
+		contentGeneration += 1
+		const generation = contentGeneration
+		const isCurrent = () => generation === contentGeneration
 
-		if (contentUrl === '') {
-			renderContentError(body, contentUrl, contentErrorText)
-			return
+		body.className = 'epnc-embed__doc-text'
+		body.textContent = contentLoadingText
+		if (refresh instanceof HTMLButtonElement) {
+			refresh.disabled = true
 		}
 
 		try {
+			if (contentUrl === '') {
+				renderContentError(view, contentUrl, contentErrorText)
+				return
+			}
 			const content = await loadPadContent(contentUrl)
+			if (!isCurrent()) return
 			if (content.isEmpty) {
 				// Loaded, and there is nothing in it. Left blank this would
 				// read as a failure nobody reported.
-				body.className = 'epnc-embed__snapshot-text'
+				body.className = 'epnc-embed__doc-text'
 				body.textContent = contentEmptyText
 				return
 			}
-			body.className = 'epnc-embed__snapshot-text epnc-embed__snapshot-text--html'
+			body.className = 'epnc-embed__doc-text epnc-embed__doc-text--html'
 			body.innerHTML = content.html
 		} catch (error) {
-			renderContentError(body, contentUrl, error instanceof Error ? error.message : contentErrorText)
+			if (!isCurrent()) return
+			renderContentError(view, contentUrl, error instanceof Error ? error.message : contentErrorText)
+		} finally {
+			if (isCurrent() && refresh instanceof HTMLButtonElement) {
+				refresh.disabled = false
+			}
 		}
 	}
 
-	const renderContentError = (body, contentUrl, message) => {
-		body.className = 'epnc-embed__snapshot-text'
+	const renderContentError = (view, contentUrl, message) => {
+		const { body } = view
+		body.className = 'epnc-embed__doc-text'
 		body.textContent = ''
 
 		const text = document.createElement('p')
@@ -184,7 +192,7 @@ import { loadPadContent } from './lib/pad-content.js'
 		retry.type = 'button'
 		retry.className = 'button primary'
 		retry.textContent = contentRetryText
-		retry.addEventListener('click', () => { void loadContent(body, contentUrl) })
+		retry.addEventListener('click', () => { void loadContent(view, contentUrl) })
 
 		body.appendChild(text)
 		body.appendChild(retry)
@@ -199,7 +207,7 @@ import { loadPadContent } from './lib/pad-content.js'
 			errorNode.hidden = true
 		}
 		if (loadingNode instanceof HTMLElement) {
-			loadingNode.classList.remove('epnc-embed__loading--snapshot')
+			loadingNode.classList.remove('epnc-embed__loading--doc')
 		}
 		iframe.hidden = true
 		const revealIframe = () => {
@@ -483,12 +491,12 @@ import { loadPadContent } from './lib/pad-content.js'
 				padSync.start()
 			}
 			const contentUrl = typeof data.content_url === 'string' ? data.content_url.trim() : ''
-			if (data.is_readonly_view === true) {
-				void loadContent(showPadContentView('', readOnlyTitleText), contentUrl)
-				return
-			}
-			if (data.is_external === true) {
-				void loadContent(showPadContentView(data.url), contentUrl)
+			if (data.is_readonly_view === true || data.is_external === true) {
+				const view = showPadContentView(data.is_readonly_view === true ? '' : data.url)
+				if (view !== null) {
+					view.refresh.addEventListener('click', () => { void loadContent(view, contentUrl) })
+				}
+				void loadContent(view, contentUrl)
 				return
 			}
 			showIframe(data.url)

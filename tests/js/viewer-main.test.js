@@ -815,17 +815,52 @@ describe('viewer component — render', () => {
 		})
 		const tree = component.render.call(vm, h)
 
-		expect(allText(tree)).toContain('Pad from another server')
 		expect(findByTag(tree, 'a')[0].data.attrs.href).toBe('https://other/p')
-		expect(findByClass(tree, 'epnc-native-snapshot__text--html').data.domProps.innerHTML).toBe('<b>x</b>')
+		expect(findByClass(tree, 'epnc-native-doc__text--html').data.domProps.innerHTML).toBe('<b>x</b>')
 	})
 
 	it('renders the read-only view', () => {
 		const vm = makeInstance({ contentMode: 'readonly', contentState: 'ready', content: { html: '<p>t</p>', isEmpty: false } })
 		const tree = component.render.call(vm, h)
 
-		expect(allText(tree)).toContain('Read-only view')
-		expect(findByClass(tree, 'epnc-native-snapshot__text--html').data.domProps.innerHTML).toBe('<p>t</p>')
+		expect(findByClass(tree, 'epnc-native-doc__text--html').data.domProps.innerHTML).toBe('<p>t</p>')
+	})
+
+	/**
+	 * Available whatever the state, because the view shows the pad as of
+	 * the last fetch — without it the only way to catch up is to close the
+	 * file and open it again.
+	 */
+	it('offers refresh even after a successful load, and disables it while loading', () => {
+		const ready = component.render.call(
+			makeInstance({ contentMode: 'readonly', contentState: 'ready', content: { html: '<p>t</p>', isEmpty: false } }),
+			h,
+		)
+		const loading = component.render.call(makeInstance({ contentMode: 'readonly', contentState: 'loading' }), h)
+
+		expect(allText(ready)).toContain('Refresh')
+		expect(findByClass(ready, 'epnc-native-doc__refresh').data.attrs.disabled).toBe(false)
+		expect(findByClass(loading, 'epnc-native-doc__refresh').data.attrs.disabled).toBe(true)
+	})
+
+	/**
+	 * Two presses in flight: the earlier answer must not land on top of the
+	 * later one. The open's own counter cannot express this — refreshing
+	 * does not supersede the open.
+	 */
+	it('drops a superseded content answer', async () => {
+		const vm = makeInstance({ contentMode: 'readonly', contentUrl: '/content/42', contentState: 'ready' })
+		let releaseFirst
+		loadPadContent
+			.mockImplementationOnce(() => new Promise((resolve) => { releaseFirst = () => resolve({ html: 'STALE', isEmpty: false }) }))
+			.mockResolvedValueOnce({ html: 'FRESH', isEmpty: false })
+
+		const first = vm.loadContent()
+		await vm.loadContent()
+		releaseFirst()
+		await first
+
+		expect(vm.content.html).toBe('FRESH')
 	})
 
 	it('says so when the pad loaded and is empty', () => {

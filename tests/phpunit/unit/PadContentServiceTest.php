@@ -10,10 +10,12 @@ use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\EtherpadNextcloud\Service\LivePadHtml;
 use OCA\EtherpadNextcloud\Service\LivePadHtmlFetcher;
 use OCA\EtherpadNextcloud\Service\PadContentService;
+use OCA\EtherpadNextcloud\Service\PadFileLockRetryService;
 use OCA\EtherpadNextcloud\Service\PadFileService;
 use OCA\EtherpadNextcloud\Service\ParsedPadFile;
 use OCA\EtherpadNextcloud\Service\UserNodeResolver;
 use OCP\Files\File;
+use OCP\Lock\LockedException;
 use PHPUnit\Framework\TestCase;
 
 class PadContentServiceTest extends TestCase {
@@ -98,6 +100,42 @@ class PadContentServiceTest extends TestCase {
 		$this->buildService($pad, livePadHtmlFetcher: $fetcher)->contentById('alice', 138);
 	}
 
+	/**
+	 * A sync holds the `.pad` file for a moment. Reading straight through
+	 * would turn that moment into an error message and a "Try again" the
+	 * reader has to press — the open path has used the retry for exactly
+	 * this since long before the read-only view existed.
+	 */
+	public function testAShortFileLockIsWaitedOutRatherThanReported(): void {
+		$file = $this->createMock(File::class);
+		$file->method('getId')->willReturn(138);
+		$file->method('getContent')
+			->willReturnOnConsecutiveCalls(
+				$this->throwException(new LockedException('/Test.pad')),
+				'frontmatter',
+			);
+
+		$userNodeResolver = $this->createMock(UserNodeResolver::class);
+		$userNodeResolver->method('resolveUserFileNodeById')->willReturn($file);
+
+		$padFileService = $this->createMock(PadFileService::class);
+		$padFileService->method('readPad')->with('frontmatter')->willReturn($this->parsedPad());
+
+		$fetcher = $this->createMock(LivePadHtmlFetcher::class);
+		$fetcher->method('fetchInternal')->willReturn(new LivePadHtml('<p>Now</p>', false));
+
+		$service = new PadContentService(
+			$padFileService,
+			$userNodeResolver,
+			new PadFileLockRetryService(static function (int $delay): void {
+			}),
+			$this->createMock(BindingService::class),
+			$fetcher,
+		);
+
+		$this->assertSame('<p>Now</p>', $service->contentById('alice', 138)->html);
+	}
+
 	private function parsedPad(
 		string $padId = 'g.group$pad',
 		string $accessMode = BindingService::ACCESS_PROTECTED,
@@ -132,6 +170,8 @@ class PadContentServiceTest extends TestCase {
 		return new PadContentService(
 			$padFileService,
 			$userNodeResolver,
+			new PadFileLockRetryService(static function (int $delay): void {
+			}),
 			$bindingService ?? $this->createMock(BindingService::class),
 			$livePadHtmlFetcher ?? $this->createMock(LivePadHtmlFetcher::class),
 		);

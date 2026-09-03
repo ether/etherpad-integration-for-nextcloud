@@ -26,6 +26,7 @@ class PublicPadContextService {
 		private BindingService $bindingService,
 		private PublicPadOpenService $publicPadOpenService,
 		private LivePadHtmlFetcher $livePadHtmlFetcher,
+		private PadFileLockRetryService $lockRetryService,
 		private IURLGenerator $urlGenerator,
 	) {
 	}
@@ -42,7 +43,9 @@ class PublicPadContextService {
 		$resolved = $this->shareResolver->resolvePadFile($share, $fileParam, $token);
 		$node = $resolved->node;
 
-		$pad = $this->padFileService->readPad((string)$node->getContent());
+		// See PadContentService: a sync holding the file must not surface
+		// as a failed content fetch.
+		$pad = $this->padFileService->readPad($this->lockRetryService->readContentWithOpenLockRetry($node));
 		if ($pad->isExternal) {
 			if ($pad->accessMode !== BindingService::ACCESS_PUBLIC) {
 				throw new EtherpadClientException('External pad metadata requires public access_mode.');

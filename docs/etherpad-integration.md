@@ -417,7 +417,12 @@ same way and reach the same two answers.
   - The fetch runs behind its own endpoint, which re-checks the share and
     the `.pad` binding on every call. The binding check is what keeps an
     edited `.pad` file from pointing this app's API key at somebody else's
-    pad.
+    pad. A "Refresh" button re-runs that one request – not the whole open –
+    so catching up on changes costs one checked read.
+  - Both fetch paths stop at 5 MiB. A pad past that is reported as too
+    large to preview (`pad_too_large`) and stays editable as usual; the
+    limit exists because the view is read per reader on demand, and the
+    body is held twice, once as text and once as the DOM parsed from it.
   - Etherpad's own read-only view is deliberately **not** used here.
     `SecurityManager` resolves a read-only id back to the real pad before
     any check, so the view needs the same group session as the editable
