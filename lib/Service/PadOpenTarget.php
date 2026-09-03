@@ -29,6 +29,17 @@ class PadOpenTarget {
 		public readonly string $snapshotHtml,
 		public readonly string $url,
 		public readonly string $cookieHeader,
+		// Required, unlike every optional convenience above it: these decide
+		// whether somebody may edit, and a default would let a future
+		// construction site grant that by forgetting.
+		//
+		// Two fields, because they are two things. A public pad opened
+		// read-only is not a snapshot — it is Etherpad's live read-only
+		// view — but it is still not writable, and anything that follows
+		// from "may not write" has to follow from that rather than from the
+		// snapshot mode.
+		public readonly bool $isReadOnlySnapshot,
+		public readonly bool $mayWrite,
 	) {
 	}
 }

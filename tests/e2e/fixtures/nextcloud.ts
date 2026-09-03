@@ -368,6 +368,29 @@ export const expectEtherpadCurrentUserName = async (page: Page, expectedName: st
 	].join(', ')).first()).toContainText(expected, { timeout: 15_000 })
 }
 
+/**
+ * The viewer a read-only share is supposed to get: the snapshot stored in
+ * the `.pad` file, and no Etherpad frame at all.
+ *
+ * The absence is the point. Nextcloud's read-only share stops at the file;
+ * the pad lives on another host, so anything that hands over a pad URL or
+ * a session hands over the ability to edit, whatever the share said.
+ */
+export const expectReadOnlySnapshotViewerMounted = async (page: Page, expectedText = ''): Promise<void> => {
+	await expect(page.locator('.epnc-native-snapshot').first()).toBeVisible({ timeout: 30_000 })
+	await expect(page.getByText(/read-only snapshot|schreibgeschützte kopie/i).first()).toBeVisible()
+	if (expectedText !== '') {
+		// Without this the assertion passes just as well against the
+		// "no snapshot stored yet" placeholder, which renders in the same
+		// container under the same heading.
+		await expect(page.locator('.epnc-native-snapshot').first()).toContainText(expectedText)
+	}
+	await expect(
+		page.locator('iframe[title="Etherpad"]'),
+		'a read-only share must not be given a pad to type into',
+	).toHaveCount(0)
+}
+
 export const expectExternalSnapshotViewerMounted = async (page: Page, expectedOriginalUrl = ''): Promise<void> => {
 	await expect(page.locator('.epnc-native-snapshot').first()).toBeVisible({ timeout: 30_000 })
 	await expect(page.getByText(/pad from another server|pad von einem anderen server/i).first()).toBeVisible()

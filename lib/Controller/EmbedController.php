@@ -71,6 +71,10 @@ class EmbedController extends Controller {
 					'loading' => $this->l10n->t('Loading pad...'),
 					'error_title' => $this->l10n->t('Could not open pad'),
 					'external_title' => $this->l10n->t('Pad from another server'),
+					// A share without write permission is a different reason
+					// for the same view; saying "from another server" there
+					// explains something that is not true.
+					'readonly_title' => $this->l10n->t('Read-only snapshot'),
 					'external_message' => $this->l10n->t('Read-only snapshot from the .pad file.'),
 					'external_empty' => $this->l10n->t('No synced snapshot is stored in this .pad file yet.'),
 					'external_link' => $this->l10n->t('Open original pad'),

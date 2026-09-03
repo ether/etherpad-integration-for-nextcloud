@@ -84,6 +84,7 @@ class PadMetadataServiceTest extends TestCase {
 			'getName' => 'Public.pad',
 			'getMimeType' => 'application/x-etherpad-nextcloud',
 			'getContent' => 'frontmatter',
+			'isUpdateable' => true,
 		]);
 
 		$userNodeResolver = $this->createMock(UserNodeResolver::class);
@@ -116,6 +117,89 @@ class PadMetadataServiceTest extends TestCase {
 		$this->assertSame(BindingService::ACCESS_PUBLIC, $result->accessMode);
 		$this->assertFalse($result->isExternal);
 		$this->assertSame('https://pad.example.test/p/g.ABC$pad', $result->publicOpenUrl);
+	}
+
+	/**
+	 * This endpoint hands out an address, and for a public pad the address
+	 * is the whole of the access — so it has to ask the same question the
+	 * open path asks, or the rule holds for one endpoint and is claimed of
+	 * both.
+	 */
+	public function testResolveGivesAReadOnlyShareTheReadOnlyUrl(): void {
+		$file = $this->createConfiguredMock(File::class, [
+			'getId' => 138,
+			'getName' => 'Public.pad',
+			'getMimeType' => 'application/x-etherpad-nextcloud',
+			'getContent' => 'frontmatter',
+			'isUpdateable' => false,
+		]);
+
+		$userNodeResolver = $this->createMock(UserNodeResolver::class);
+		$userNodeResolver->method('resolveUserFileNodeById')->willReturn($file);
+		$userNodeResolver->method('toUserAbsolutePath')->willReturn('/Public.pad');
+
+		$padFileService = $this->createMock(PadFileService::class);
+		$padFileService->method('readPad')->willReturn(new ParsedPadFile(
+			frontmatter: ['pad_id' => 'g.ABC$pad', 'access_mode' => BindingService::ACCESS_PUBLIC],
+			body: '',
+			padId: 'g.ABC$pad',
+			accessMode: BindingService::ACCESS_PUBLIC,
+			padUrl: '',
+			isExternal: false,
+		));
+
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->expects($this->never())->method('buildPadUrl');
+		$etherpadClient->method('getReadOnlyPadUrl')->with('g.ABC$pad')
+			->willReturn('https://pad.example.test/p/r.readonlyid');
+
+		$result = $this->buildService($padFileService, userNodeResolver: $userNodeResolver, etherpadClient: $etherpadClient)
+			->resolve('alice', 138);
+
+		$this->assertSame('https://pad.example.test/p/r.readonlyid', $result->publicOpenUrl);
+	}
+
+	/**
+	 * A failed read-only lookup must not fall back to the editable address.
+	 * That is the moment the withholding matters most: the call meant to
+	 * avoid handing it over is the one that just failed.
+	 */
+	public function testResolveGivesNoUrlWhenTheReadOnlyLookupFails(): void {
+		$file = $this->createConfiguredMock(File::class, [
+			'getId' => 138,
+			'getName' => 'Public.pad',
+			'getMimeType' => 'application/x-etherpad-nextcloud',
+			'getContent' => 'frontmatter',
+			'isUpdateable' => false,
+		]);
+
+		$userNodeResolver = $this->createMock(UserNodeResolver::class);
+		$userNodeResolver->method('resolveUserFileNodeById')->willReturn($file);
+		$userNodeResolver->method('toUserAbsolutePath')->willReturn('/Public.pad');
+
+		$padFileService = $this->createMock(PadFileService::class);
+		$padFileService->method('readPad')->willReturn(new ParsedPadFile(
+			frontmatter: ['pad_id' => 'g.ABC$pad', 'access_mode' => BindingService::ACCESS_PUBLIC],
+			body: '',
+			padId: 'g.ABC$pad',
+			accessMode: BindingService::ACCESS_PUBLIC,
+			// The editable address as stored in the file — the one that must
+			// not survive as the answer.
+			padUrl: 'https://pad.example.test/p/g.ABC$pad',
+			isExternal: false,
+		));
+
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->method('getReadOnlyPadUrl')
+			->willThrowException(new \OCA\EtherpadNextcloud\Exception\EtherpadClientException('unavailable'));
+
+		// `meta`, not `resolve`: the response ships pad_url from here, and
+		// that is the field the editable address would survive in.
+		$result = $this->buildService($padFileService, userNodeResolver: $userNodeResolver, etherpadClient: $etherpadClient)
+			->metaById('alice', 138);
+
+		$this->assertSame('', $result->publicOpenUrl, 'no read-only address to give');
+		$this->assertSame('', $result->padUrl, 'and the editable one must not survive as the answer');
 	}
 
 	public function testFindOriginalForCopyReturnsFoundWhenBoundFileIsReadableByRequester(): void {
@@ -316,11 +400,14 @@ class PadMetadataServiceTest extends TestCase {
 		$this->assertFalse($result->found);
 	}
 
-	private function buildPadNode(int $fileId, string $name, string $content): File {
+	private function buildPadNode(int $fileId, string $name, string $content, bool $updateable = true): File {
 		return $this->createConfiguredMock(File::class, [
 			'getId' => $fileId,
 			'getName' => $name,
 			'getContent' => $content,
+			// What the share granted. This endpoint hands out an address, and
+			// for a public pad the address is the access.
+			'isUpdateable' => $updateable,
 		]);
 	}
 

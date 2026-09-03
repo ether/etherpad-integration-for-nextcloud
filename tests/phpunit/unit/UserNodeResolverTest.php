@@ -118,6 +118,48 @@ class UserNodeResolverTest extends TestCase {
 		$this->assertSame($userFolder, $resolver->resolveUserFolderNodeById('alice', 7));
 	}
 
+	/**
+	 * One file, two paths, different permissions — shared to this user
+	 * directly and again inside a shared folder. Whichever the lookup
+	 * happens to return first decides what the whole open does, including
+	 * whether the pad is editable, so it must not be a coin toss.
+	 */
+	public function testPrefersAPathTheUserMayWrite(): void {
+		$readOnly = $this->fileAt('/alice/files/Shared/Notes.pad', updateable: false);
+		$writable = $this->fileAt('/alice/files/Team/Notes.pad', updateable: true);
+
+		$this->assertSame(
+			$writable,
+			$this->resolverFor([$readOnly, $writable])->resolveUserFileNodeById('alice', 42),
+			'the read-only mount came first and must not win',
+		);
+	}
+
+	/** With nothing writable there is still a file to open, read-only. */
+	public function testFallsBackToAReadOnlyPathWhenThatIsAllThereIs(): void {
+		$readOnly = $this->fileAt('/alice/files/Shared/Notes.pad', updateable: false);
+
+		$this->assertSame(
+			$readOnly,
+			$this->resolverFor([$readOnly])->resolveUserFileNodeById('alice', 42),
+		);
+	}
+
+	/** Another user's mount is not an answer, writable or not. */
+	public function testStillRejectsAPathBelongingToSomebodyElse(): void {
+		$resolver = $this->resolverFor([$this->fileAt('/bob/files/Notes.pad', updateable: true)]);
+
+		$this->expectException(NotFoundException::class);
+		$resolver->resolveUserFileNodeById('alice', 42);
+	}
+
+	private function fileAt(string $path, bool $updateable): File {
+		$file = $this->createMock(File::class);
+		$file->method('getPath')->willReturn($path);
+		$file->method('isUpdateable')->willReturn($updateable);
+		return $file;
+	}
+
 	private function folderAt(string $path): Folder {
 		$folder = $this->createMock(Folder::class);
 		$folder->method('getPath')->willReturn($path);

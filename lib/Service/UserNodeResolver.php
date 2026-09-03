@@ -45,16 +45,37 @@ class UserNodeResolver {
 	 *
 	 * @throws NotFoundException
 	 */
+	/**
+	 * The user's own view of a file id, preferring a path they may write.
+	 *
+	 * One file can be reachable by several paths at once — shared to this
+	 * user directly and again inside a shared folder — and the two can carry
+	 * different permissions. Taking whichever came first would let the
+	 * read-only path decide for a user who also holds a writable one, and
+	 * every later step works from the node this returns: the open, the
+	 * metadata, the sync. Picking the writable one keeps all three on the
+	 * same mount.
+	 *
+	 * This is the pattern Nextcloud Text uses for the same reason.
+	 */
 	public function resolveUserFileNodeById(string $uid, int $fileId): File {
 		$nodes = $this->userFolder($uid)->getById($fileId);
 		$prefix = '/' . $uid . '/files/';
+		$fallback = null;
 		foreach ($nodes as $node) {
 			if (!$node instanceof File) {
 				continue;
 			}
-			if (str_starts_with((string)$node->getPath(), $prefix)) {
+			if (!str_starts_with((string)$node->getPath(), $prefix)) {
+				continue;
+			}
+			if ($node->isUpdateable()) {
 				return $node;
 			}
+			$fallback ??= $node;
+		}
+		if ($fallback !== null) {
+			return $fallback;
 		}
 
 		throw new NotFoundException('File not found by ID.');

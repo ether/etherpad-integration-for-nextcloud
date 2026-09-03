@@ -401,6 +401,9 @@ class PadSessionControllerTest extends TestCase {
 		$file->method('getName')->willReturn('Test.pad');
 		$file->method('getPath')->willReturn('/alice/files/Test.pad');
 		$file->method('getContent')->willReturn('frontmatter');
+		// Every test in this file is about an editable pad; the read-only
+		// path is covered where the decision is made, in PadOpenServiceTest.
+		$file->method('isUpdateable')->willReturn(true);
 		return $file;
 	}
 

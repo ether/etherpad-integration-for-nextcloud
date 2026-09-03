@@ -402,17 +402,54 @@ Regression safety check:
 
 ## Read-only Behavior
 
-- Read-only URL is built via `getReadOnlyID`.
-- Authenticated protected GroupPad opens still require a session.
-- Public read-only shares of protected GroupPads do not create an Etherpad session.
-  - They render the last synced snapshot stored in the `.pad` file.
-  - If an HTML snapshot is stored, only a small tag whitelist is rendered (`p`, lists, headings, basic inline formatting, block/code tags); attributes and dangerous tags are stripped.
-  - If no HTML snapshot is stored, the viewer falls back to the text snapshot.
-  - This prevents the public share response from setting a session cookie that could also open the writable GroupPad URL.
+A share without write permission gets no way to edit, whether it is a
+public link or an internal share with another user. Both are decided the
+same way and reach the same two answers.
+
+- **Protected pads render the stored snapshot**, and no Etherpad session is
+  created at all.
+  - If an HTML snapshot is stored, only a small tag whitelist is rendered
+    (`p`, lists, headings, basic inline formatting, block/code tags);
+    attributes and dangerous tags are stripped. Otherwise the text snapshot
+    is used.
+  - Etherpad's own read-only view is deliberately **not** used here.
+    `SecurityManager` resolves a read-only id back to the real pad before
+    any check, so the view needs the same group session as the editable
+    one – and the editable pad id is written in plain text in the `.pad`
+    file, which a read-only share still lets the recipient read. Handing
+    over a session would therefore hand over editing, with the id supplied
+    by the file itself. Etherpad has no session that grants reading but not
+    writing.
+- **Public pads get Etherpad's read-only URL** (`getReadOnlyID`), which is
+  presentation rather than enforcement: a public pad is editable by anyone
+  who has its id, and its id is in the `.pad` file. Nothing can be enforced
+  there, so the live read-only view is preferred over a snapshot that would
+  only be staler.
+
+The decision is `isUpdateable()` on the file as this user sees it, which
+is the update permission bit – `(permissions & UPDATE)` – and not a lock
+check. The share feeds into it, and so does the mount: a read-only
+external storage or a group folder ACL puts the pad into the snapshot view
+just as a "can view" share does. Not because edits would be lost –
+Etherpad stores the pad itself, and a failed sync leaves a stale copy here
+rather than lost text – but because an open without write permission in
+Nextcloud may not issue a session that writes on the pad server.
+
+One file can be reachable by several paths with different permissions –
+shared directly and again inside a shared folder – so the id lookup
+prefers a path the user may write. Otherwise whichever mount came first
+would decide, and the open, the metadata and the sync could end up on
+different ones.
+
+The read-only id itself is random – `r.` plus sixteen characters, stored as
+a `pad2readonly` / `readonly2pad` mapping – so it reveals nothing about the
+pad it belongs to.
 
 ## Share Permission Mapping
 
-`PublicViewerController` maps Nextcloud share permissions:
+Both open paths map Nextcloud share permissions the same way –
+`PublicViewerController` for links, `PadOpenService` and
+`PadMetadataService` for authenticated users:
 
 - protected share without update permission -> local `.pad` text snapshot, no Etherpad cookie
 - public pad share without update permission -> Etherpad read-only URL

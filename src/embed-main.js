@@ -34,6 +34,7 @@ import { sanitizeSnapshotHtml } from './lib/sanitize-html.js'
 	const recoveryActionsNode = root.querySelector('[data-epnc-embed-recovery-actions]')
 	const iframe = root.querySelector('[data-epnc-embed-iframe]')
 	const externalTitleText = String(root.getAttribute('data-l10n-external-title') || 'Pad from another server').trim()
+	const readOnlyTitleText = String(root.getAttribute('data-l10n-readonly-title') || 'Read-only snapshot').trim()
 	const externalMessageText = String(root.getAttribute('data-l10n-external-message') || 'Read-only snapshot from the .pad file.').trim()
 	const externalEmptyText = String(root.getAttribute('data-l10n-external-empty') || 'No synced snapshot is stored in this .pad file yet.').trim()
 	const externalLinkText = String(root.getAttribute('data-l10n-external-link') || 'Open original pad').trim()
@@ -65,7 +66,7 @@ import { sanitizeSnapshotHtml } from './lib/sanitize-html.js'
 		}
 	}
 
-	const showExternalPadPreview = (url, snapshotText, snapshotHtml) => {
+	const showExternalPadPreview = (url, snapshotText, snapshotHtml, titleText = externalTitleText) => {
 		if (errorNode instanceof HTMLElement) {
 			errorNode.hidden = true
 		}
@@ -88,7 +89,7 @@ import { sanitizeSnapshotHtml } from './lib/sanitize-html.js'
 
 		const title = document.createElement('h2')
 		title.className = 'epnc-embed__snapshot-title'
-		title.textContent = externalTitleText
+		title.textContent = titleText
 
 		const message = document.createElement('p')
 		message.className = 'epnc-embed__snapshot-message'
@@ -103,7 +104,11 @@ import { sanitizeSnapshotHtml } from './lib/sanitize-html.js'
 
 		const actions = document.createElement('div')
 		actions.className = 'epnc-embed__snapshot-actions'
-		actions.appendChild(link)
+		// A read-only share has nothing to link to: the pad it would point
+		// at is the one being withheld.
+		if (String(url || '').trim() !== '') {
+			actions.appendChild(link)
+		}
 
 		// Sanitize first, then decide on the HTML path from the *sanitized*
 		// result: if DOMPurify empties it (e.g. all-dangerous markup) we fall
@@ -253,7 +258,7 @@ import { sanitizeSnapshotHtml } from './lib/sanitize-html.js'
 			},
 			body: body.toString(),
 		})
-		if (!data || typeof data.url !== 'string' || data.url.trim() === '') {
+		if (!data || (data.is_readonly_snapshot !== true && (typeof data.url !== 'string' || data.url.trim() === ''))) {
 			throw new Error('Pad open API did not return a valid URL.')
 		}
 		return data
@@ -424,7 +429,20 @@ import { sanitizeSnapshotHtml } from './lib/sanitize-html.js'
 			padSync.configure({ syncUrl, intervalMs })
 			padSync.installLifecycleHandlers()
 			installHostMessageHandler()
-			padSync.start()
+			// No syncing for a viewer: it writes the pad back into the .pad
+			// file, which is exactly what a read-only share may not do.
+			if (syncUrl !== '') {
+				padSync.start()
+			}
+			if (data.is_readonly_snapshot === true) {
+				showExternalPadPreview(
+					'',
+					typeof data.snapshot_text === 'string' ? data.snapshot_text : '',
+					typeof data.snapshot_html === 'string' ? data.snapshot_html : '',
+					readOnlyTitleText,
+				)
+				return
+			}
 			if (data.is_external === true) {
 				showExternalPadPreview(
 					data.url,

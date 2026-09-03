@@ -497,16 +497,21 @@ export const createPublicReadShare = async (relativePath: string): Promise<{ tok
 	createPublicShare(relativePath, SHARE_PERMISSION_READ)
 
 /**
- * Create a user-to-user share (`shareType=0`) granting `shareWith`
- * read access to the file at `relativePath`. Returns the OCS share id
- * so callers can revoke through `deleteShareById`.
+ * Create a user-to-user share (`shareType=0`) granting `shareWith` the
+ * given permissions on the file at `relativePath` — the shared
+ * implementation behind the read and write helpers below. Returns the OCS
+ * share id so callers can revoke through `deleteShareById`.
  */
-export const createUserReadShare = async (relativePath: string, shareWith: string): Promise<{ id: string }> => {
+export const createUserShare = async (
+	relativePath: string,
+	shareWith: string,
+	permissions: number = SHARE_PERMISSION_READ,
+): Promise<{ id: string }> => {
 	const body = new URLSearchParams()
 	body.set('path', '/' + relativePath.replace(/^\/+/, ''))
 	body.set('shareType', '0')
 	body.set('shareWith', shareWith)
-	body.set('permissions', '1')
+	body.set('permissions', String(permissions))
 
 	// A pad created through the UI moments ago is visible over WebDAV — the
 	// spec has already read its file id — but the share API can still answer
@@ -544,6 +549,18 @@ export const createUserReadShare = async (relativePath: string, shareWith: strin
 	}
 	return { id }
 }
+
+/**
+ * Read-only user share. For a protected pad the recipient gets the stored
+ * snapshot and no pad at all; for a public one they get Etherpad's
+ * read-only view, which is still a pad URL.
+ */
+export const createUserReadShare = async (relativePath: string, shareWith: string): Promise<{ id: string }> =>
+	createUserShare(relativePath, shareWith, SHARE_PERMISSION_READ)
+
+/** Writable user share: the recipient opens the editable pad. */
+export const createUserWriteShare = async (relativePath: string, shareWith: string): Promise<{ id: string }> =>
+	createUserShare(relativePath, shareWith, SHARE_PERMISSION_READ_WRITE)
 
 /**
  * Revoke a share by its OCS id. Used by both link-share and user-share

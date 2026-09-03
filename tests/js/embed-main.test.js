@@ -116,6 +116,31 @@ describe('embed-main', () => {
 		expect(link.target).toBe('_blank')
 	})
 
+	it('renders the snapshot for a read-only share, with its own reason', async () => {
+		fetch.mockResolvedValueOnce(jsonResponse({
+			url: '',
+			is_readonly_snapshot: true,
+			snapshot_text: 'shared read-only text',
+			snapshot_html: '',
+			sync_url: '',
+		}))
+
+		await importEmbed()
+		await flushMicrotasks()
+
+		// Accepted at all: the payload carries no url, which the open used
+		// to reject outright and answer with the error card.
+		expect(document.body.textContent).toContain('shared read-only text')
+		expect(iframe().hidden).toBe(true)
+		// The reason shown has to be the right one — "from another server"
+		// explains something that is not true of an internal share.
+		expect(document.body.textContent).toContain('Read-only snapshot')
+		expect(document.body.textContent).not.toContain('another server')
+		// And nothing to click through to: the pad it would point at is the
+		// one being withheld.
+		expect(document.querySelector('a.epnc-embed__snapshot-link')).toBeNull()
+	})
+
 	it('runs initialize + re-opens when the first open reports missing frontmatter', async () => {
 		fetch
 			.mockResolvedValueOnce(errorResponse({ message: 'Missing YAML frontmatter in .pad file.' }))

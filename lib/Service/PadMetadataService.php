@@ -195,8 +195,23 @@ class PadMetadataService {
 			$isExternal = $pad->isExternal;
 
 			if ($accessMode === BindingService::ACCESS_PUBLIC) {
-				$publicOpenUrl = $this->resolvePublicOpenUrl($padId, $padUrl, $isExternal);
-				if ($publicOpenUrl !== '') {
+				// The same question the open path asks, and the same caveat:
+				// this is whether the file is writable, not what the share
+				// granted. Answering it in one service and not the other
+				// would leave the rule true of one endpoint and claimed of
+				// both.
+				if ($node->isUpdateable()) {
+					$publicOpenUrl = $this->resolvePublicOpenUrl($padId, $padUrl, $isExternal);
+					if ($publicOpenUrl !== '') {
+						$padUrl = $publicOpenUrl;
+					}
+				} else {
+					// No fall-through to the stored address. Without a
+					// read-only URL there is no address this share may be
+					// given, and leaving the editable one in `pad_url` would
+					// hand it over precisely when the lookup that was meant
+					// to avoid that has failed.
+					$publicOpenUrl = $this->resolveReadOnlyOpenUrl($padId, $padUrl, $isExternal);
 					$padUrl = $publicOpenUrl;
 				}
 			}
@@ -216,6 +231,32 @@ class PadMetadataService {
 			'pad_url' => $padUrl,
 			'public_open_url' => $publicOpenUrl,
 		];
+	}
+
+	/**
+	 * What a share without write permission is told a public pad's address
+	 * is: Etherpad's read-only view.
+	 *
+	 * Presentation rather than enforcement — a public pad is editable by
+	 * anyone holding its id, and its id is in the `.pad` file the recipient
+	 * may read. It is still the address that matches what the share says,
+	 * and an unreachable pad server means no address at all rather than the
+	 * editable one.
+	 */
+	private function resolveReadOnlyOpenUrl(string $padId, string $padUrl, bool $isExternal): string {
+		if ($isExternal || $padId === '') {
+			return $this->resolvePublicOpenUrl($padId, $padUrl, $isExternal);
+		}
+
+		try {
+			return $this->etherpadClient->getReadOnlyPadUrl($padId);
+		} catch (\Throwable $e) {
+			$this->logger->warning('Could not resolve the read-only pad URL for metadata.', [
+				'app' => 'etherpad_nextcloud',
+				'exception' => $e,
+			]);
+			return '';
+		}
 	}
 
 	private function resolvePublicOpenUrl(string $padId, string $padUrl, bool $isExternal): string {

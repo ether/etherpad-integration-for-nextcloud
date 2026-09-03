@@ -38,6 +38,71 @@ class PadResponseServiceTest extends TestCase {
 		$this->assertSame('/apps/etherpad/embed/by-id/42', $result['embed_url']);
 	}
 
+	/**
+	 * The viewer decides what to render from this one field, so a target
+	 * that withholds the pad must be reported as withholding it — otherwise
+	 * the service does the right thing and the client still asks for an
+	 * editor it was never given a URL for.
+	 */
+	public function testOpenResponseCarriesTheReadOnlyDecisionToTheClient(): void {
+		$urlGenerator = $this->createMock(IURLGenerator::class);
+		$urlGenerator->method('linkToRoute')->willReturn('/sync/42');
+		$appConfigService = $this->createMock(AppConfigService::class);
+		$appConfigService->method('getSyncIntervalSeconds')->willReturn(45);
+		$service = new PadResponseService($urlGenerator, $appConfigService, $this->l10nEcho());
+
+		$readOnly = $service->openResponse($this->buildTarget(isReadOnlySnapshot: true))->getData();
+		$editable = $service->openResponse($this->buildTarget(isReadOnlySnapshot: false, mayWrite: true))->getData();
+
+		$this->assertTrue($readOnly['is_readonly_snapshot']);
+		$this->assertFalse($editable['is_readonly_snapshot']);
+	}
+
+	/**
+	 * A viewer must not be told where to sync. Syncing writes the pad back
+	 * into the `.pad` file, which is the one thing a read-only share may
+	 * not do — and the client flushes on a timer and on every tab switch,
+	 * so each one would fail on the filesystem and be logged as an error
+	 * for as long as the tab is open.
+	 */
+	public function testOpenResponseWithholdsTheSyncUrlsFromAViewer(): void {
+		$urlGenerator = $this->createMock(IURLGenerator::class);
+		$urlGenerator->method('linkToRoute')->willReturn('/sync/42');
+		$appConfigService = $this->createMock(AppConfigService::class);
+		$appConfigService->method('getSyncIntervalSeconds')->willReturn(45);
+		$service = new PadResponseService($urlGenerator, $appConfigService, $this->l10nEcho());
+
+		$snapshot = $service->openResponse($this->buildTarget(isReadOnlySnapshot: true))->getData();
+		// A public pad opened read-only: a live Etherpad view, not a
+		// snapshot — and it must not sync either.
+		$liveReadOnly = $service->openResponse($this->buildTarget(isReadOnlySnapshot: false))->getData();
+		$editable = $service->openResponse($this->buildTarget(isReadOnlySnapshot: false, mayWrite: true))->getData();
+
+		$this->assertSame('', $snapshot['sync_url']);
+		$this->assertSame('', $snapshot['sync_status_url']);
+		$this->assertSame('', $liveReadOnly['sync_url'], 'not a snapshot, still not writable');
+		$this->assertSame('', $liveReadOnly['sync_status_url']);
+		$this->assertSame('/sync/42', $editable['sync_url']);
+	}
+
+	private function buildTarget(bool $isReadOnlySnapshot, bool $mayWrite = false): \OCA\EtherpadNextcloud\Service\PadOpenTarget {
+		return new \OCA\EtherpadNextcloud\Service\PadOpenTarget(
+			file: '/Test.pad',
+			fileId: 42,
+			padId: 'test',
+			accessMode: 'protected',
+			padUrl: 'https://pad.example.test/p/test',
+			isExternal: false,
+			originalPadUrl: '',
+			snapshotText: $isReadOnlySnapshot ? 'snapshot' : '',
+			snapshotHtml: '',
+			url: $isReadOnlySnapshot ? '' : 'https://pad.example.test/p/test',
+			cookieHeader: '',
+			isReadOnlySnapshot: $isReadOnlySnapshot,
+			mayWrite: $mayWrite,
+		);
+	}
+
 	public function testOpenResponseMovesCookieHeaderOutOfPayload(): void {
 		$urlGenerator = $this->createMock(IURLGenerator::class);
 		$urlGenerator->method('linkToRoute')
@@ -61,6 +126,8 @@ class PadResponseServiceTest extends TestCase {
 			snapshotHtml: '',
 			url: 'https://pad.example.test/p/test',
 			cookieHeader: 'sessionID=s.test; Path=/',
+			isReadOnlySnapshot: false,
+			mayWrite: true,
 		);
 		$response = (new PadResponseService($urlGenerator, $appConfigService, $this->l10nEcho()))->openResponse($target);
 
