@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Tests\Unit;
 
+use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
 use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\EtherpadNextcloud\Service\EtherpadClient;
 use OCA\EtherpadNextcloud\Service\ExternalPadExportFetcher;
@@ -109,6 +110,33 @@ class PadOpenServiceTest extends TestCase {
 		);
 
 		$this->assertSame('https://pad.example.test/p/r.readonlyid', $target->url);
+	}
+
+	/**
+	 * A pad server that cannot say what the read-only URL is must not turn
+	 * a view-only open into a failure — the writable users on the same pad
+	 * would keep working, so the outage would present as "only the people
+	 * who may not edit cannot open it".
+	 */
+	public function testFallsBackToTheSnapshotWhenTheReadOnlyUrlCannotBeResolved(): void {
+		$client = $this->createMock(EtherpadClient::class);
+		$client->method('buildPadUrl')->willReturn('https://pad.example.test/p/pad-1');
+		$client->method('getReadOnlyPadUrl')
+			->willThrowException(new EtherpadClientException('Connection timed out'));
+
+		$target = $this->openWith(
+			BindingService::ACCESS_PUBLIC,
+			updateable: false,
+			etherpadClient: $client,
+			padId: 'pad-1',
+		);
+
+		$this->assertTrue($target->isReadOnlySnapshot);
+		$this->assertSame('', $target->url, 'no pad to open');
+		$this->assertSame('', $target->padUrl, 'and not under the other name either');
+		$this->assertSame('', $target->cookieHeader, 'and no session');
+		$this->assertSame('snapshot text', $target->snapshotText);
+		$this->assertSame('<p>snapshot</p>', $target->snapshotHtml, 'sanitized, as everywhere else');
 	}
 
 	private function openWith(
