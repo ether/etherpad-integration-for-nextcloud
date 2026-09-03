@@ -195,11 +195,11 @@ class PadMetadataService {
 			$isExternal = $pad->isExternal;
 
 			if ($accessMode === BindingService::ACCESS_PUBLIC) {
-				// The same question the open path asks, for the same reason:
-				// this endpoint hands out an address, and an address to a
-				// public pad is the whole of the access to it. Answering it
-				// in one service and not the other would leave the rule true
-				// of one endpoint and claimed of both.
+				// The same question the open path asks, and the same caveat:
+				// this is whether the file is writable, not what the share
+				// granted. Answering it in one service and not the other
+				// would leave the rule true of one endpoint and claimed of
+				// both.
 				$publicOpenUrl = $node->isUpdateable()
 					? $this->resolvePublicOpenUrl($padId, $padUrl, $isExternal)
 					: $this->resolveReadOnlyOpenUrl($padId, $padUrl, $isExternal);

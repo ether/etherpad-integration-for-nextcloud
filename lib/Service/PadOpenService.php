@@ -74,9 +74,16 @@ class PadOpenService {
 			$accessMode = $pad->accessMode;
 			$padUrl = $pad->padUrl;
 			$isExternal = $pad->isExternal;
-			// The node is the only place that knows: it is resolved through
-			// this user's own view, so its permissions are the ones the
-			// share granted them.
+			// Not "what the share granted". OCP documents this as whether the
+			// file is writable, which is an AND over every source of write
+			// permission: the share, a lock somebody holds on the file, a
+			// read-only mount, a group folder ACL.
+			//
+			// That is the right question anyway. A pad edit persists only by
+			// this file being written, so somebody who cannot write it
+			// cannot keep what they type — handing them an editor whose
+			// changes have nowhere to go would be the worse answer. The cost
+			// is that a held lock shows the snapshot until it clears.
 			$mayWrite = $node->isUpdateable();
 			$snapshot = $isExternal
 				? $this->snapshotExtractor->extract($content)

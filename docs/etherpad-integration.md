@@ -426,6 +426,17 @@ same way and reach the same two answers.
   there, so the live read-only view is preferred over a snapshot that would
   only be staler.
 
+The decision is `isUpdateable()` on the file as this user sees it, which
+Nextcloud defines as whether the file is writable – not as what the share
+granted. Anything that removes write permission puts the pad into the
+snapshot view: a share without it, but also a lock somebody is holding on
+the `.pad` file, a read-only mount, or a group folder ACL. That is
+deliberate, because a pad edit only persists by this file being written,
+so an editor for somebody who cannot write it would lose what they type.
+It does mean a held lock makes the pad read-only for everyone else until
+it clears – worth knowing when someone reports that their own pad has
+suddenly stopped accepting input.
+
 The read-only id itself is random – `r.` plus sixteen characters, stored as
 a `pad2readonly` / `readonly2pad` mapping – so it reveals nothing about the
 pad it belongs to.
