@@ -200,10 +200,18 @@ class PadMetadataService {
 				// granted. Answering it in one service and not the other
 				// would leave the rule true of one endpoint and claimed of
 				// both.
-				$publicOpenUrl = $node->isUpdateable()
-					? $this->resolvePublicOpenUrl($padId, $padUrl, $isExternal)
-					: $this->resolveReadOnlyOpenUrl($padId, $padUrl, $isExternal);
-				if ($publicOpenUrl !== '') {
+				if ($node->isUpdateable()) {
+					$publicOpenUrl = $this->resolvePublicOpenUrl($padId, $padUrl, $isExternal);
+					if ($publicOpenUrl !== '') {
+						$padUrl = $publicOpenUrl;
+					}
+				} else {
+					// No fall-through to the stored address. Without a
+					// read-only URL there is no address this share may be
+					// given, and leaving the editable one in `pad_url` would
+					// hand it over precisely when the lookup that was meant
+					// to avoid that has failed.
+					$publicOpenUrl = $this->resolveReadOnlyOpenUrl($padId, $padUrl, $isExternal);
 					$padUrl = $publicOpenUrl;
 				}
 			}

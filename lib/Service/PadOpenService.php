@@ -191,6 +191,7 @@ class PadOpenService {
 			url: $url,
 			cookieHeader: $cookieHeader,
 			isReadOnlySnapshot: false,
+			mayWrite: $mayWrite,
 		);
 	}
 
@@ -228,6 +229,7 @@ class PadOpenService {
 			url: '',
 			cookieHeader: '',
 			isReadOnlySnapshot: true,
+			mayWrite: false,
 		);
 	}
 

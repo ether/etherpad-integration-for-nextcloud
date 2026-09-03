@@ -159,6 +159,46 @@ class PadMetadataServiceTest extends TestCase {
 		$this->assertSame('https://pad.example.test/p/r.readonlyid', $result->publicOpenUrl);
 	}
 
+	/**
+	 * A failed read-only lookup must not fall back to the editable address.
+	 * That is the moment the withholding matters most: the call meant to
+	 * avoid handing it over is the one that just failed.
+	 */
+	public function testResolveGivesNoUrlWhenTheReadOnlyLookupFails(): void {
+		$file = $this->createConfiguredMock(File::class, [
+			'getId' => 138,
+			'getName' => 'Public.pad',
+			'getMimeType' => 'application/x-etherpad-nextcloud',
+			'getContent' => 'frontmatter',
+			'isUpdateable' => false,
+		]);
+
+		$userNodeResolver = $this->createMock(UserNodeResolver::class);
+		$userNodeResolver->method('resolveUserFileNodeById')->willReturn($file);
+		$userNodeResolver->method('toUserAbsolutePath')->willReturn('/Public.pad');
+
+		$padFileService = $this->createMock(PadFileService::class);
+		$padFileService->method('readPad')->willReturn(new ParsedPadFile(
+			frontmatter: ['pad_id' => 'g.ABC$pad', 'access_mode' => BindingService::ACCESS_PUBLIC],
+			body: '',
+			padId: 'g.ABC$pad',
+			accessMode: BindingService::ACCESS_PUBLIC,
+			// The editable address as stored in the file — the one that must
+			// not survive as the answer.
+			padUrl: 'https://pad.example.test/p/g.ABC$pad',
+			isExternal: false,
+		));
+
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->method('getReadOnlyPadUrl')
+			->willThrowException(new \OCA\EtherpadNextcloud\Exception\EtherpadClientException('unavailable'));
+
+		$result = $this->buildService($padFileService, userNodeResolver: $userNodeResolver, etherpadClient: $etherpadClient)
+			->resolve('alice', 138);
+
+		$this->assertSame('', $result->publicOpenUrl, 'no address at all is the right answer here');
+	}
+
 	public function testFindOriginalForCopyReturnsFoundWhenBoundFileIsReadableByRequester(): void {
 		$orphan = $this->buildPadNode(701, 'Copy.pad', "---\npad_id: original-pad\naccess_mode: protected\n---\n");
 		$originalNode = $this->createMock(File::class);

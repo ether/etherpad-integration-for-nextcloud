@@ -52,7 +52,7 @@ class PadResponseServiceTest extends TestCase {
 		$service = new PadResponseService($urlGenerator, $appConfigService, $this->l10nEcho());
 
 		$readOnly = $service->openResponse($this->buildTarget(isReadOnlySnapshot: true))->getData();
-		$editable = $service->openResponse($this->buildTarget(isReadOnlySnapshot: false))->getData();
+		$editable = $service->openResponse($this->buildTarget(isReadOnlySnapshot: false, mayWrite: true))->getData();
 
 		$this->assertTrue($readOnly['is_readonly_snapshot']);
 		$this->assertFalse($editable['is_readonly_snapshot']);
@@ -72,15 +72,20 @@ class PadResponseServiceTest extends TestCase {
 		$appConfigService->method('getSyncIntervalSeconds')->willReturn(45);
 		$service = new PadResponseService($urlGenerator, $appConfigService, $this->l10nEcho());
 
-		$readOnly = $service->openResponse($this->buildTarget(isReadOnlySnapshot: true))->getData();
-		$editable = $service->openResponse($this->buildTarget(isReadOnlySnapshot: false))->getData();
+		$snapshot = $service->openResponse($this->buildTarget(isReadOnlySnapshot: true))->getData();
+		// A public pad opened read-only: a live Etherpad view, not a
+		// snapshot — and it must not sync either.
+		$liveReadOnly = $service->openResponse($this->buildTarget(isReadOnlySnapshot: false))->getData();
+		$editable = $service->openResponse($this->buildTarget(isReadOnlySnapshot: false, mayWrite: true))->getData();
 
-		$this->assertSame('', $readOnly['sync_url']);
-		$this->assertSame('', $readOnly['sync_status_url']);
+		$this->assertSame('', $snapshot['sync_url']);
+		$this->assertSame('', $snapshot['sync_status_url']);
+		$this->assertSame('', $liveReadOnly['sync_url'], 'not a snapshot, still not writable');
+		$this->assertSame('', $liveReadOnly['sync_status_url']);
 		$this->assertSame('/sync/42', $editable['sync_url']);
 	}
 
-	private function buildTarget(bool $isReadOnlySnapshot): \OCA\EtherpadNextcloud\Service\PadOpenTarget {
+	private function buildTarget(bool $isReadOnlySnapshot, bool $mayWrite = false): \OCA\EtherpadNextcloud\Service\PadOpenTarget {
 		return new \OCA\EtherpadNextcloud\Service\PadOpenTarget(
 			file: '/Test.pad',
 			fileId: 42,
@@ -94,6 +99,7 @@ class PadResponseServiceTest extends TestCase {
 			url: $isReadOnlySnapshot ? '' : 'https://pad.example.test/p/test',
 			cookieHeader: '',
 			isReadOnlySnapshot: $isReadOnlySnapshot,
+			mayWrite: $mayWrite,
 		);
 	}
 
@@ -121,6 +127,7 @@ class PadResponseServiceTest extends TestCase {
 			url: 'https://pad.example.test/p/test',
 			cookieHeader: 'sessionID=s.test; Path=/',
 			isReadOnlySnapshot: false,
+			mayWrite: true,
 		);
 		$response = (new PadResponseService($urlGenerator, $appConfigService, $this->l10nEcho()))->openResponse($target);
 
