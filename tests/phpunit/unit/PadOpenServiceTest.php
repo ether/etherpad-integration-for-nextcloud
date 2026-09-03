@@ -49,10 +49,18 @@ class PadOpenServiceTest extends TestCase {
 		$session = $this->createMock(PadSessionService::class);
 		$session->expects($this->never())->method('createProtectedOpenContext');
 
+		// Nor any address. This answer comes entirely out of the `.pad`
+		// file, so it must not depend on the pad server being configured or
+		// reachable — asking it anything here would put that back.
+		$client = $this->createMock(EtherpadClient::class);
+		$client->expects($this->never())->method('buildPadUrl');
+		$client->expects($this->never())->method('getReadOnlyPadUrl');
+
 		$target = $this->openWith(
 			BindingService::ACCESS_PROTECTED,
 			updateable: false,
 			padSessionService: $session,
+			etherpadClient: $client,
 		);
 
 		$this->assertTrue($target->isReadOnlySnapshot);

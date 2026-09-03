@@ -430,9 +430,10 @@ The decision is `isUpdateable()` on the file as this user sees it, which
 is the update permission bit – `(permissions & UPDATE)` – and not a lock
 check. The share feeds into it, and so does the mount: a read-only
 external storage or a group folder ACL puts the pad into the snapshot view
-just as a "can view" share does. That is deliberate, because a pad edit
-only persists by this file being written, so an editor for somebody who
-cannot write it would lose what they type.
+just as a "can view" share does. Not because edits would be lost –
+Etherpad stores the pad itself, and a failed sync leaves a stale copy here
+rather than lost text – but because an open without write permission in
+Nextcloud may not issue a session that writes on the pad server.
 
 One file can be reachable by several paths with different permissions –
 shared directly and again inside a shared folder – so the id lookup
