@@ -9,8 +9,10 @@ import {
 	expectFileInList,
 	expectReadOnlySnapshotViewerMounted,
 	gotoFiles,
+	gotoFilesDir,
 	gotoSharedWithMe,
 	openPadFromFileList,
+	uniqueName,
 	uniquePadName,
 } from '../fixtures/nextcloud'
 import {
@@ -19,6 +21,7 @@ import {
 	createUserWriteShare,
 	deleteShareById,
 	deleteViaDav,
+	mkcolViaDav,
 	padApiPost,
 	propfindFileId,
 } from '../fixtures/dav'
@@ -111,6 +114,52 @@ test.describe('read-only share of a protected pad', () => {
 			}
 			await userBCtx.close()
 			await deleteViaDav(padName).catch(() => {})
+		}
+	})
+	/**
+	 * One file, two ways in, different permissions on each.
+	 *
+	 * A pad shared read-only on its own but living in a folder shared with
+	 * write permission is reachable by both paths. This asserts the promise
+	 * a user cares about: they may edit it, so they get the editor.
+	 *
+	 * It does not prove the writable-path preference. `getById`'s order is
+	 * not controllable from here, and on this stack it returns the writable
+	 * mount first regardless — removing the preference leaves this test
+	 * green, which was checked rather than assumed. The preference itself is
+	 * pinned in UserNodeResolverTest, where the order can be chosen.
+	 */
+	test('opens the editor when another path to the same pad may write', async ({ browser }) => {
+		test.skip(
+			!E2E.hasSecondaryBrowserAccount(),
+			'E2E_USER2 / E2E_USER2_PASS / E2E_USER2_APP_PASSWORD not configured; two-user spec skipped.',
+		)
+
+		const folderName = uniqueName('overlap')
+		const padName = uniquePadName('overlap')
+		const shareIds: string[] = []
+		const userBCtx = await browser.newContext({ storageState: SECONDARY_STATE_FILE })
+		try {
+			await mkcolViaDav(folderName)
+			await createPadAtPath(`/${folderName}/${padName}`, 'protected')
+
+			// Both at once: the folder writable, the file itself view-only.
+			shareIds.push((await createUserWriteShare(folderName, E2E.secondaryUser!)).id)
+			shareIds.push((await createUserReadShare(`${folderName}/${padName}`, E2E.secondaryUser!)).id)
+
+			const userB = await userBCtx.newPage()
+			await gotoFilesDir(userB, folderName)
+			await expectFileInList(userB, padName)
+			await openPadFromFileList(userB, padName)
+			await expectEtherpadViewerMounted(userB)
+			await expect(userB.locator('.epnc-native-snapshot')).toHaveCount(0)
+			await userB.close()
+		} finally {
+			for (const id of shareIds) {
+				await deleteShareById(id).catch(() => {})
+			}
+			await deleteViaDav(`${folderName}/${padName}`).catch(() => {})
+			await deleteViaDav(folderName).catch(() => {})
 		}
 	})
 })
