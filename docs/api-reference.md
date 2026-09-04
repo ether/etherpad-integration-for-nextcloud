@@ -417,9 +417,6 @@ solely by the separate external-pad policy, not by these two settings.
 
 - `src/files-main.js`
   - wires the Files/public-share frontend modules.
-- `src/files/open-action.js`
-  - extracts `fileId` directly from the authenticated Files action context whenever available.
-  - uses `GET /api/v1/pads/resolve` mainly as a fallback to convert file path -> `fileId` when no stable `fileId` is available.
 - `src/files/pad-opener.js`
   - opens in files view through Nextcloud router (`fileid`, `openfile=true`).
   - clears `openfile`/`editing` again when the native viewer closes.

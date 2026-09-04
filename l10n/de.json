@@ -114,7 +114,6 @@
         "No such template.": "Diese Vorlage gibt es nicht.",
         "Not a pad file: the frontmatter could not be read.": "Keine Pad-Datei: Die Frontmatter konnte nicht gelesen werden.",
         "Only people who can open the .pad file in Nextcloud can open the pad. Created as Etherpad group pads, which require a session issued by Nextcloud.": "Nur wer die .pad-Datei in Nextcloud öffnen kann, kann auch das Pad öffnen. Werden als Etherpad-Gruppen-Pads angelegt, die eine von Nextcloud ausgestellte Sitzung erfordern.",
-        "Open in Etherpad": "In Etherpad öffnen",
         "Open original pad": "Original-Pad öffnen",
         "Open the original .pad file": "Ursprüngliche .pad-Datei öffnen",
         "Optional internal URL for server-side API calls. Leave empty to use Etherpad Base URL.": "Optionale interne URL für serverseitige API-Aufrufe. Leer lassen, um die Etherpad-Basis-URL zu verwenden.",

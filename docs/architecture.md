@@ -235,9 +235,6 @@ Primary flow (native viewer when available):
 
 - `src/files-main.js`
   - Thin files-app entrypoint that wires the modules below.
-- `src/files/open-action.js`
-  - Registers the authenticated `.pad` default file action.
-  - Uses stable `fileId` from the Files action context whenever available.
 - `src/files/pad-opener.js`
   - Opens authenticated `.pad` files through Nextcloud router with `fileid` + `openfile=true`.
   - Target route: `/index.php/apps/files/files/{fileId}?dir=...&editing=false&openfile=true`.
