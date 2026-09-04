@@ -7,7 +7,6 @@ import { describe, expect, it } from 'vitest'
 import {
 	isPadName,
 	normalizeFilePath,
-	parsePublicSharePadFromHref,
 	parseFileIdFromCurrentLocation,
 	parsePadPathFromDavHref,
 	parsePublicSharePadFromHref,
@@ -17,10 +16,6 @@ import {
 
 const setPathname = (pathname) => {
 	window.history.replaceState({}, '', pathname)
-}
-
-const setLocation = (pathAndQuery) => {
-	window.history.replaceState({}, '', pathAndQuery)
 }
 
 describe('path helpers', () => {
@@ -37,14 +32,6 @@ describe('path helpers', () => {
 		expect(isPadName('Test.txt')).toBe(false)
 		expect(isPadName(null)).toBe(false)
 	})
-
-
-
-	// `Folder ` is a name Nextcloud accepts. Trimming the dir sent the open
-	// to its neighbour, the same silent substitution as the plus sign.
-
-
-
 })
 
 describe('viewer URL builders', () => {
@@ -63,6 +50,13 @@ describe('parsePublicShareTokenFromLocation', () => {
 
 	it('extracts tokens from pretty public share routes', () => {
 		setPathname('/s/share-token/download')
+
+		expect(parsePublicShareTokenFromLocation()).toBe('share-token')
+	})
+
+	it('extracts tokens when Nextcloud is served from a subdirectory', () => {
+		// Why the pattern is not anchored at the start of the path.
+		setPathname('/nextcloud/s/share-token')
 
 		expect(parsePublicShareTokenFromLocation()).toBe('share-token')
 	})

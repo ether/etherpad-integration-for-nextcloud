@@ -217,7 +217,7 @@ existing name asks for confirmation because the previous file is gone for good.
 ### Open pads
 
 - Click `.pad` file in Files app
-- App uses Nextcloud native viewer flow (`openfile=true`)
+- Nextcloud's own viewer opens it, against the MIME type this app registers a viewer handler for
 
 ### Sync
 
