@@ -398,9 +398,10 @@ solely by the separate external-pad policy, not by these two settings.
   - `missing_frontmatter` (`MissingFrontmatterException`) — the file has no pad metadata yet; clients call `POST /api/v1/pads/initialize-by-id/{fileId}` once and retry the open. A file whose content is neither metadata nor a legacy shortcut cannot be initialised and is refused *without* this code.
   - `pad_too_large` (`EtherpadTooLargeException`) — the pad is past the 5 MiB preview ceiling; it stays editable in Etherpad.
   - `pad_file_changed` (`PadFileChangedException`) — the target file changed while the pad was being created; retry against a different name.
+  - `pad_type_disabled` (`PadTypeDisabledException`) — `403`; carries `access_mode` naming the disabled type, absent when neither type is enabled. See the pad-type settings section.
   - `legacy_collision_no_access` (`LegacyPadCollisionException`) — see the legacy migration section.
 
-  Responses without a `code` carry a `message` only and are not meant to be branched on.
+  A response without a `code` may still be machine-readable through its HTTP status and other documented fields — a locked `.pad` answers `503` with `retryable: true`, for instance. What is never a stable identifier is the `message` text.
 
 ## Cookie Behavior (Protected Pads)
 
