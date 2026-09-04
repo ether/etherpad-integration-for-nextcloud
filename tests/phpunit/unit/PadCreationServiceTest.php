@@ -13,6 +13,7 @@ use OCA\EtherpadNextcloud\Service\EtherpadClient;
 use OCA\EtherpadNextcloud\Service\ManagedPadLifecycle;
 use OCA\EtherpadNextcloud\Service\ExternalPadExportFetcher;
 use OCA\EtherpadNextcloud\Service\PadBootstrapService;
+use OCA\EtherpadNextcloud\Service\CreatedFileClaim;
 use OCA\EtherpadNextcloud\Service\PadCreateRollbackService;
 use OCA\EtherpadNextcloud\Service\PadCreationService;
 use OCA\EtherpadNextcloud\Service\PadFileCreator;
@@ -76,7 +77,7 @@ class PadCreationServiceTest extends TestCase {
 		$rollbackService = $this->createMock(PadCreateRollbackService::class);
 		$rollbackService->expects($this->once())
 			->method('rollbackFailedCreate')
-			->with('alice', '/Test.pad', 'g.ABC$pad', $this->isType('int'));
+			->with('alice', '/Test.pad', 'g.ABC$pad', $this->isInstanceOf(CreatedFileClaim::class));
 
 		$bootstrap = $this->createMock(PadBootstrapService::class);
 		$bootstrap->method('provisionPadId')->willReturn('g.ABC$pad');
@@ -225,7 +226,7 @@ class PadCreationServiceTest extends TestCase {
 			etherpadClient: $etherpadClient,
 			bootstrap: $bootstrap,
 			padTypePolicy: $this->buildPadTypePolicy(true, false),
-		)->materializeTemplateInto($target, $template, null);
+		)->materializeTemplateInto($target, $template, $this->materializeUser());
 
 		self::assertSame(BindingService::ACCESS_PROTECTED, $result['access_mode']);
 	}
@@ -383,7 +384,7 @@ class PadCreationServiceTest extends TestCase {
 		$rollbackService = $this->createMock(PadCreateRollbackService::class);
 		$rollbackService->expects($this->once())
 			->method('rollbackExternalCreate')
-			->with('alice', '/External.pad', $this->isType('int'));
+			->with('alice', '/External.pad', $this->isInstanceOf(CreatedFileClaim::class));
 
 		$fetcher = $this->createMock(ExternalPadExportFetcher::class);
 		$fetcher->method('normalizeAndFetchExternalPublicPadTextOrEmpty')
@@ -506,7 +507,7 @@ class PadCreationServiceTest extends TestCase {
 		$rollbackService = $this->createMock(PadCreateRollbackService::class);
 		$rollbackService->expects($this->once())
 			->method('rollbackCreatedFileOnly')
-			->with('alice', '/FromTpl.pad', $this->isType('int'));
+			->with('alice', '/FromTpl.pad', $this->isInstanceOf(CreatedFileClaim::class));
 
 		$this->expectException(\RuntimeException::class);
 
@@ -559,7 +560,7 @@ class PadCreationServiceTest extends TestCase {
 		$rollbackService = $this->createMock(PadCreateRollbackService::class);
 		$rollbackService->expects($this->once())
 			->method('rollbackCreatedFileOnly')
-			->with('alice', '/FromTpl.pad', $this->isType('int'));
+			->with('alice', '/FromTpl.pad', $this->isInstanceOf(CreatedFileClaim::class));
 		$rollbackService->expects($this->never())->method('rollbackFailedCreate');
 
 		$this->expectException(\RuntimeException::class);
@@ -728,7 +729,7 @@ class PadCreationServiceTest extends TestCase {
 
 		$this->expectException(\RuntimeException::class);
 		$this->buildMaterializeService($bindingService, $etherpadClient, $padId)
-			->materializeTemplateInto($this->buildMaterializeTarget(), $this->buildMaterializeTemplate(), null);
+			->materializeTemplateInto($this->buildMaterializeTarget(), $this->buildMaterializeTemplate(), $this->materializeUser());
 	}
 
 	/** A row naming a different pad belongs to the request that won the file. */
@@ -746,7 +747,7 @@ class PadCreationServiceTest extends TestCase {
 
 		$this->expectException(\RuntimeException::class);
 		$this->buildMaterializeService($bindingService, $etherpadClient, $padId)
-			->materializeTemplateInto($this->buildMaterializeTarget(), $this->buildMaterializeTemplate(), null);
+			->materializeTemplateInto($this->buildMaterializeTarget(), $this->buildMaterializeTemplate(), $this->materializeUser());
 	}
 
 	private function buildMaterializeTemplate(): \OCP\Files\File {
@@ -754,6 +755,19 @@ class PadCreationServiceTest extends TestCase {
 		$template->method('getName')->willReturn('Template.pad');
 		$template->method('getContent')->willReturn('tpl');
 		return $template;
+	}
+
+	/**
+	 * The hook always has one — it returns early without a user — and the
+	 * file is now resolved by id under that user rather than written
+	 * through the node, so there is no userless path left to test.
+	 */
+	private function materializeUser(): \OCP\IUser {
+		$user = $this->createMock(\OCP\IUser::class);
+		$user->method('getUID')->willReturn('alice');
+		$user->method('getDisplayName')->willReturn('Alice');
+
+		return $user;
 	}
 
 	private function buildMaterializeTarget(): \OCP\Files\File {

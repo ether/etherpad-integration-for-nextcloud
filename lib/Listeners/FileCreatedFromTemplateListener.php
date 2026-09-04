@@ -8,6 +8,7 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Listeners;
 
+use OCA\EtherpadNextcloud\Exception\PadFileChangedException;
 use OCA\EtherpadNextcloud\Exception\PadTypeDisabledException;
 use OCA\EtherpadNextcloud\Service\PadBootstrapService;
 use OCA\EtherpadNextcloud\Service\ExternalPadSeeder;
@@ -102,6 +103,17 @@ class FileCreatedFromTemplateListener implements IEventListener {
 			]);
 			$this->deleteTarget($target);
 			throw $e;
+		} catch (PadFileChangedException $e) {
+			// Somebody else wrote into this file while the pad was being
+			// provisioned. The blank fallback below would empty exactly the
+			// content that check just refused to overwrite, so this failure
+			// ends here without touching the file at all.
+			$this->logger->warning('Pad template create stopped: the target file changed while the pad was provisioned.', [
+				'app' => 'etherpad_nextcloud',
+				'targetFileId' => (int)$target->getId(),
+				'exception' => $e,
+			]);
+			return;
 		} catch (\Throwable $e) {
 			$this->logger->error('Pad template materialization failed — falling back to blank-pad init.', [
 				'app' => 'etherpad_nextcloud',

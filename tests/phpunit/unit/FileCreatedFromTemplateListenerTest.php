@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\Tests\Unit;
 
 use OCA\EtherpadNextcloud\Listeners\FileCreatedFromTemplateListener;
+use OCA\EtherpadNextcloud\Exception\PadFileChangedException;
 use OCA\EtherpadNextcloud\Exception\PadTypeDisabledException;
 use OCA\EtherpadNextcloud\Service\PadBootstrapService;
 use OCA\EtherpadNextcloud\Service\ExternalPadSeeder;
@@ -376,5 +377,29 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 		$file->method('getName')->willReturn($name);
 		$file->method('getId')->willReturn(42);
 		return $file;
+	}
+
+	/**
+	 * The write refuses because somebody else filled the file while the pad
+	 * was being provisioned. The blank fallback would empty exactly that
+	 * content, so this failure has to end without touching the file.
+	 */
+	public function testAChangedTargetIsLeftAloneInsteadOfBlanked(): void {
+		$target = $this->file('Notes.pad');
+		$target->expects($this->never())->method('putContent');
+		$target->expects($this->never())->method('delete');
+
+		$creation = $this->createMock(PadCreationService::class);
+		$creation->method('materializeTemplateInto')
+			->willThrowException(new PadFileChangedException('changed'));
+
+		$bootstrap = $this->createMock(PadBootstrapService::class);
+		$bootstrap->expects($this->never())->method('initializeMissingFrontmatter');
+
+		$this->buildListener($creation, $bootstrap)->handle(new FileCreatedFromTemplateEvent(
+			$this->file('Template.pad'),
+			$target,
+			[],
+		));
 	}
 }

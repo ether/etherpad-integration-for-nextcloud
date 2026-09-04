@@ -33,14 +33,8 @@ class PadCreateRollbackService {
 	) {
 	}
 
-	public function rollbackFailedCreate(
-		string $uid,
-		string $path,
-		string $padId,
-		?int $createdFileId,
-		?string $writtenHash = null
-	): void {
-		$this->rollbackCreatedFileOnly($uid, $path, $createdFileId, $writtenHash);
+	public function rollbackFailedCreate(string $uid, string $path, string $padId, ?CreatedFileClaim $claim): void {
+		$this->rollbackCreatedFileOnly($uid, $path, $claim);
 
 		if ($padId !== '') {
 			try {
@@ -66,13 +60,8 @@ class PadCreateRollbackService {
 	 * would delete it a second time, costing a round trip and logging a
 	 * warning about a pad that is already gone.
 	 */
-	public function rollbackCreatedFileOnly(
-		string $uid,
-		string $path,
-		?int $createdFileId,
-		?string $writtenHash = null
-	): void {
-		if ($createdFileId === null || $createdFileId <= 0) {
+	public function rollbackCreatedFileOnly(string $uid, string $path, ?CreatedFileClaim $claim): void {
+		if ($claim === null) {
 			// The create never got an id it could trust, so there is nothing
 			// here that identifies a file. Leaving a stray empty `.pad`
 			// behind is a mess; deleting the wrong file is a loss.
@@ -80,7 +69,7 @@ class PadCreateRollbackService {
 		}
 
 		try {
-			$node = $this->userNodeResolver->resolveUserFileNodeById($uid, $createdFileId);
+			$node = $this->userNodeResolver->resolveUserFileNodeById($claim->uid, $claim->fileId);
 		} catch (NotFoundException) {
 			// Usually the file is simply gone. But the same exception covers
 			// an id that now resolves to a folder or outside the user's
@@ -90,7 +79,7 @@ class PadCreateRollbackService {
 				'app' => 'etherpad_nextcloud',
 				'uid' => $uid,
 				'file' => $path,
-				'fileId' => $createdFileId,
+				'fileId' => $claim->fileId,
 			]);
 			return;
 		} catch (\Throwable $lookupError) {
@@ -98,13 +87,13 @@ class PadCreateRollbackService {
 				'app' => 'etherpad_nextcloud',
 				'uid' => $uid,
 				'file' => $path,
-				'fileId' => $createdFileId,
+				'fileId' => $claim->fileId,
 				'exception' => $lookupError,
 			]);
 			return;
 		}
 
-		if (!$this->isStillOurs($node, $path, $writtenHash)) {
+		if (!$this->isStillOurs($node, $path, $claim->writtenHash)) {
 			return;
 		}
 
@@ -120,15 +109,10 @@ class PadCreateRollbackService {
 		}
 	}
 
-	public function rollbackExternalCreate(
-		string $uid,
-		string $path,
-		?int $createdFileId,
-		?string $writtenHash = null
-	): void {
+	public function rollbackExternalCreate(string $uid, string $path, ?CreatedFileClaim $claim): void {
 		// An external create links a pad that already exists elsewhere, so
 		// there is nothing of ours on the Etherpad side to remove.
-		$this->rollbackCreatedFileOnly($uid, $path, $createdFileId, $writtenHash);
+		$this->rollbackCreatedFileOnly($uid, $path, $claim);
 	}
 
 	/**

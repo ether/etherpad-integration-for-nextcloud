@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\Tests\Unit;
 
 use OCA\EtherpadNextcloud\Service\EtherpadClient;
+use OCA\EtherpadNextcloud\Service\CreatedFileClaim;
 use OCA\EtherpadNextcloud\Service\ManagedPadLifecycle;
 use OCA\EtherpadNextcloud\Service\PadCreateRollbackService;
 use OCA\EtherpadNextcloud\Service\UserNodeResolver;
@@ -33,7 +34,7 @@ class PadCreateRollbackServiceTest extends TestCase {
 		$stillOurs->expects($this->once())->method('delete');
 
 		$this->buildService(userNodeResolver: $this->resolverFinding($stillOurs))
-			->rollbackFailedCreate('alice', '/Created.pad', '', 4711);
+			->rollbackFailedCreate('alice', '/Created.pad', '', new CreatedFileClaim('alice', 4711));
 	}
 
 	/**
@@ -49,7 +50,7 @@ class PadCreateRollbackServiceTest extends TestCase {
 		$logger->expects($this->never())->method('warning');
 
 		$this->buildService(logger: $logger, userNodeResolver: $resolver)
-			->rollbackFailedCreate('alice', '/Created.pad', '', 4711);
+			->rollbackFailedCreate('alice', '/Created.pad', '', new CreatedFileClaim('alice', 4711));
 	}
 
 	/**
@@ -79,7 +80,7 @@ class PadCreateRollbackServiceTest extends TestCase {
 			->with($this->stringContains('not what this create wrote'), $this->anything());
 
 		$this->buildService(logger: $logger, userNodeResolver: $this->resolverFinding($foreign))
-			->rollbackFailedCreate('alice', '/Created.pad', '', 4711, hash('sha256', 'our document'));
+			->rollbackFailedCreate('alice', '/Created.pad', '', $this->claimThatWrote('our document'));
 	}
 
 	/**
@@ -92,7 +93,7 @@ class PadCreateRollbackServiceTest extends TestCase {
 		$rivals->expects($this->never())->method('delete');
 
 		$this->buildService(userNodeResolver: $this->resolverFinding($rivals))
-			->rollbackFailedCreate('alice', '/Created.pad', 'nc-own', 4711, hash('sha256', "---\nfile_id: 4711\npad_id: nc-own\n---\n"));
+			->rollbackFailedCreate('alice', '/Created.pad', 'nc-own', $this->claimThatWrote("---\nfile_id: 4711\npad_id: nc-own\n---\n"));
 	}
 
 	/** Exactly the bytes this create wrote, so this one is ours to remove. */
@@ -101,7 +102,7 @@ class PadCreateRollbackServiceTest extends TestCase {
 		$ours->expects($this->once())->method('delete');
 
 		$this->buildService(userNodeResolver: $this->resolverFinding($ours))
-			->rollbackFailedCreate('alice', '/Created.pad', '', 4711, hash('sha256', 'our document'));
+			->rollbackFailedCreate('alice', '/Created.pad', '', $this->claimThatWrote('our document'));
 	}
 
 	/**
@@ -120,7 +121,7 @@ class PadCreateRollbackServiceTest extends TestCase {
 			->with($this->stringContains('could not be read'), $this->anything());
 
 		$this->buildService(logger: $logger, userNodeResolver: $this->resolverFinding($locked))
-			->rollbackFailedCreate('alice', '/Created.pad', '', 4711, hash('sha256', 'our document'));
+			->rollbackFailedCreate('alice', '/Created.pad', '', $this->claimThatWrote('our document'));
 	}
 
 	public function testSwallowsAFailedLookup(): void {
@@ -132,7 +133,15 @@ class PadCreateRollbackServiceTest extends TestCase {
 			->with($this->stringContains('Could not look up'), $this->anything());
 
 		$this->buildService(logger: $logger, userNodeResolver: $resolver)
-			->rollbackFailedCreate('alice', '/Created.pad', '', 4711, null);
+			->rollbackFailedCreate('alice', '/Created.pad', '', new CreatedFileClaim('alice', 4711));
+	}
+
+	/** A claim whose write succeeded, carrying proof of those exact bytes. */
+	private function claimThatWrote(string $content): CreatedFileClaim {
+		$claim = new CreatedFileClaim('alice', 4711);
+		$claim->writtenHash = hash('sha256', $content);
+
+		return $claim;
 	}
 
 	private function fileHolding(string $content): File {
@@ -154,7 +163,7 @@ class PadCreateRollbackServiceTest extends TestCase {
 		$empty->expects($this->once())->method('delete');
 
 		$this->buildService(userNodeResolver: $this->resolverFinding($empty))
-			->rollbackFailedCreate('alice', '/Created.pad', '', 4711);
+			->rollbackFailedCreate('alice', '/Created.pad', '', new CreatedFileClaim('alice', 4711));
 	}
 
 	public function testDeletesTheProvisionedPad(): void {
@@ -204,7 +213,7 @@ class PadCreateRollbackServiceTest extends TestCase {
 			);
 
 		$this->buildService(logger: $logger, userNodeResolver: $this->resolverFinding($resolved))
-			->rollbackFailedCreate('alice', '/Created.pad', '', 4711);
+			->rollbackFailedCreate('alice', '/Created.pad', '', new CreatedFileClaim('alice', 4711));
 	}
 
 	public function testReportsButSwallowsAPadDeleteFailure(): void {
@@ -233,7 +242,7 @@ class PadCreateRollbackServiceTest extends TestCase {
 		$etherpad->expects($this->never())->method('deletePad');
 
 		$this->buildService(etherpad: $etherpad, userNodeResolver: $this->resolverFinding($resolved))
-			->rollbackCreatedFileOnly('alice', '/Created.pad', 4711);
+			->rollbackCreatedFileOnly('alice', '/Created.pad', new CreatedFileClaim('alice', 4711));
 	}
 
 	/**
@@ -248,7 +257,7 @@ class PadCreateRollbackServiceTest extends TestCase {
 		$etherpad->expects($this->never())->method('deletePad');
 
 		$this->buildService(etherpad: $etherpad, userNodeResolver: $this->resolverFinding($resolved))
-			->rollbackExternalCreate('alice', '/Created.pad', 4711);
+			->rollbackExternalCreate('alice', '/Created.pad', new CreatedFileClaim('alice', 4711));
 	}
 
 	private function buildService(
