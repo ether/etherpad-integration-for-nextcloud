@@ -45,21 +45,19 @@ class PadCreationService {
 	public function create(string $uid, string $file, string $accessMode): array {
 		$this->padTypePolicy->requireEnabled($accessMode);
 		$path = $this->padPaths->normalizeCreatePath($file);
-		$padId = '';
-		$claim = null;
 
 		return $this->withCreateRollback(
-			function () use ($uid, $path, $accessMode, &$padId, &$claim): array {
+			function (PadCreateAttempt $attempt) use ($uid, $path, $accessMode): array {
 				$fileNode = $this->padFileCreator->createUserFile($uid, $path);
 				// Capture the id before provisioning; getId() on this node is path-based.
 				$fileId = $this->requireFileId($fileNode, $path);
-				$claim = new CreatedFileClaim($uid, $fileId);
+				$claim = $attempt->claimFile($uid, $fileId);
 				if ($this->isNotOurs($fileNode, $fileId, $path)) {
-					// Not ours after all, so it is not ours to clean up either.
-					$claim = null;
+					$attempt->disownFile();
 					throw new PadFileAlreadyExistsException('Target .pad file already exists.');
 				}
 				$padId = $this->padBootstrapService->provisionPadId($accessMode);
+				$attempt->recordPad($padId);
 				$padUrl = $this->etherpadClient->buildPadUrl($padId);
 
 				$content = $this->padFileService->buildInitialDocument(
@@ -81,30 +79,30 @@ class PadCreationService {
 					'pad_url' => $padUrl,
 				];
 			},
-			function () use ($uid, $path, &$padId, &$claim): void {
-				$this->rollbackService->rollbackFailedCreate($uid, $path, $padId, $claim);
+			function (PadCreateAttempt $attempt) use ($uid, $path): void {
+				$this->rollbackService->rollbackFailedCreate($uid, $path, $attempt->padId(), $attempt->claim());
 			},
-			function (\Throwable $e) use ($path, $accessMode, &$padId): ?array {
+			function (\Throwable $e, PadCreateAttempt $attempt) use ($path, $accessMode): ?array {
 				if ($e instanceof BindingException) {
 					return [
 						'message' => 'Pad create hit existing binding',
 						'context' => [
 							'file' => $path,
 							'accessMode' => $accessMode,
-							'padId' => $padId,
+							'padId' => $attempt->padId(),
 						],
 					];
 				}
 
 				return null;
 			},
-			function () use ($path, $accessMode, &$padId): array {
+			function (PadCreateAttempt $attempt) use ($path, $accessMode): array {
 				return [
 					'message' => 'Pad creation failed',
 					'context' => [
 						'file' => $path,
 						'accessMode' => $accessMode,
-						'padId' => $padId,
+						'padId' => $attempt->padId(),
 					],
 				];
 			},
@@ -122,23 +120,20 @@ class PadCreationService {
 			throw new PadParentFolderNotWritableException('Selected parent folder is not writable.');
 		}
 
-		$padId = '';
-		$claim = null;
-		$path = '';
-
 		return $this->withCreateRollback(
-			function () use ($uid, $parentFolder, $parentFolderId, $fileName, $accessMode, &$path, &$padId, &$claim): array {
+			function (PadCreateAttempt $attempt) use ($uid, $parentFolder, $parentFolderId, $fileName, $accessMode): array {
 				$fileNode = $this->padFileCreator->createUserFileInFolder($parentFolder, $fileName);
-				$fileId = $this->requireFileId($fileNode, $path);
-				$claim = new CreatedFileClaim($uid, $fileId);
-				if ($this->isNotOurs($fileNode, $fileId, $path)) {
-					// Not ours after all, so it is not ours to clean up either.
-					$claim = null;
+				$fileId = $this->requireFileId($fileNode, $attempt->path());
+				$claim = $attempt->claimFile($uid, $fileId);
+				if ($this->isNotOurs($fileNode, $fileId, $attempt->path())) {
+					$attempt->disownFile();
 					throw new PadFileAlreadyExistsException('Target .pad file already exists.');
 				}
 				$path = $this->userNodeResolver->toUserAbsolutePath($uid, $fileNode);
+				$attempt->recordPath($path);
 
 				$padId = $this->padBootstrapService->provisionPadId($accessMode);
+				$attempt->recordPad($padId);
 				$padUrl = $this->etherpadClient->buildPadUrl($padId);
 				$content = $this->padFileService->buildInitialDocument(
 					$fileId,
@@ -159,34 +154,34 @@ class PadCreationService {
 					'pad_url' => $padUrl,
 				];
 			},
-			function () use ($uid, &$path, &$padId, &$claim): void {
-				$this->rollbackService->rollbackFailedCreate($uid, $path, $padId, $claim);
+			function (PadCreateAttempt $attempt) use ($uid): void {
+				$this->rollbackService->rollbackFailedCreate($uid, $attempt->path(), $attempt->padId(), $attempt->claim());
 			},
-			function (\Throwable $e) use ($parentFolderId, $name, $accessMode, &$path, &$padId): ?array {
+			function (\Throwable $e, PadCreateAttempt $attempt) use ($parentFolderId, $name, $accessMode): ?array {
 				if ($e instanceof BindingException) {
 					return [
 						'message' => 'Pad creation by parent hit existing binding',
 						'context' => [
 							'parentFolderId' => $parentFolderId,
 							'padName' => $name,
-							'path' => $path,
+							'path' => $attempt->path(),
 							'accessMode' => $accessMode,
-							'padId' => $padId,
+							'padId' => $attempt->padId(),
 						],
 					];
 				}
 
 				return null;
 			},
-			function () use ($parentFolderId, $name, $accessMode, &$path, &$padId): array {
+			function (PadCreateAttempt $attempt) use ($parentFolderId, $name, $accessMode): array {
 				return [
 					'message' => 'Pad creation by parent failed',
 					'context' => [
 						'parentFolderId' => $parentFolderId,
 						'padName' => $name,
-						'path' => $path,
+						'path' => $attempt->path(),
 						'accessMode' => $accessMode,
-						'padId' => $padId,
+						'padId' => $attempt->padId(),
 					],
 				];
 			},
@@ -198,16 +193,15 @@ class PadCreationService {
 	 */
 	public function createFromUrl(string $uid, string $file, string $padUrl): array {
 		$path = $this->padPaths->normalizeCreatePath($file);
-		$claim = null;
 
 		return $this->withCreateRollback(
-			function () use ($uid, $path, $padUrl, &$claim) {
+			function (PadCreateAttempt $attempt) use ($uid, $path, $padUrl) {
+				$attempt->recordPath($path);
 				$fileNode = $this->padFileCreator->createUserFile($uid, $path);
 				$fileId = $this->requireFileId($fileNode, $path);
-				$claim = new CreatedFileClaim($uid, $fileId);
+				$claim = $attempt->claimFile($uid, $fileId);
 				if ($this->isNotOurs($fileNode, $fileId, $path)) {
-					// Not ours after all, so it is not ours to clean up either.
-					$claim = null;
+					$attempt->disownFile();
 					throw new PadFileAlreadyExistsException('Target .pad file already exists.');
 				}
 
@@ -220,9 +214,11 @@ class PadCreationService {
 				$result = ['file' => $path] + $seeded;
 				return $result;
 			},
-			function () use ($uid, $path, &$claim): void {
-				$this->rollbackService->rollbackExternalCreate($uid, $path, $claim);
+			function (PadCreateAttempt $attempt) use ($uid): void {
+				$this->rollbackService->rollbackExternalCreate($uid, $attempt->path(), $attempt->claim());
 			},
+			// No pad of ours here — an external create links one that already
+			// exists — so neither log closure has an attempt to read.
 			function (\Throwable $e) use ($path, $padUrl): ?array {
 				if ($e instanceof EtherpadClientException) {
 					return [
@@ -264,23 +260,23 @@ class PadCreationService {
 
 		$templateNode = $this->userNodeResolver->resolveUserFileNodeById($uid, $templateFileId);
 
-		$padId = '';
-		$claim = null;
-
 		return $this->withCreateRollback(
-			function () use ($uid, $path, $templateNode, $user, &$padId, &$claim): array {
+			function (PadCreateAttempt $attempt) use ($uid, $path, $templateNode, $user): array {
+				$attempt->recordPath($path);
 				$fileNode = $this->padFileCreator->createUserFile($uid, $path);
 				$fileId = $this->requireFileId($fileNode, $path);
 				// API creates start empty; do not replace this baseline with a later read.
-				$claim = new CreatedFileClaim($uid, $fileId);
+				$claim = $attempt->claimFile($uid, $fileId);
 				if ($this->isNotOurs($fileNode, $fileId, $path)) {
-					// Not ours after all, so it is not ours to clean up either.
-					$claim = null;
+					$attempt->disownFile();
 					throw new PadFileAlreadyExistsException('Target .pad file already exists.');
 				}
 
 				$result = $this->materializeTemplateInto($fileNode, $templateNode, $user, $claim);
-				$padId = $result['pad_id'];
+				// Recorded for the log lines only: this pad belongs to
+				// materializeTemplateInto(), which removes it itself before
+				// rethrowing, so the rollback below is file-only.
+				$attempt->recordPad($result['pad_id']);
 
 				return [
 					'file' => $path,
@@ -290,30 +286,30 @@ class PadCreationService {
 					'pad_url' => $result['pad_url'],
 				];
 			},
-			function () use ($uid, $path, &$padId, &$claim): void {
+			function (PadCreateAttempt $attempt) use ($uid): void {
 				// File only: materializeTemplateInto() has already deleted the
 				// pad it provisioned before rethrowing.
-				$this->rollbackService->rollbackCreatedFileOnly($uid, $path, $claim);
+				$this->rollbackService->rollbackCreatedFileOnly($uid, $attempt->path(), $attempt->claim());
 			},
-			function (\Throwable $e) use ($path, &$padId): ?array {
+			function (\Throwable $e, PadCreateAttempt $attempt) use ($path): ?array {
 				if ($e instanceof BindingException) {
 					return [
 						'message' => 'Pad create-from-template hit existing binding',
 						'context' => [
 							'file' => $path,
-							'padId' => $padId,
+							'padId' => $attempt->padId(),
 						],
 					];
 				}
 				return null;
 			},
-			function () use ($path, $templateFileId, &$padId): array {
+			function (PadCreateAttempt $attempt) use ($path, $templateFileId): array {
 				return [
 					'message' => 'Pad create-from-template failed',
 					'context' => [
 						'file' => $path,
 						'templateFileId' => $templateFileId,
-						'padId' => $padId,
+						'padId' => $attempt->padId(),
 					],
 				];
 			},
@@ -591,16 +587,29 @@ class PadCreationService {
 	 * @param callable():array{message:string,context:array<string,mixed>} $errorFor
 	 * @return T
 	 */
+	/**
+	 * Runs one create attempt, owning the state the rollback needs.
+	 *
+	 * The attempt is made here and handed to both closures, so nothing has
+	 * to be threaded through by reference and the two cannot disagree about
+	 * what was created.
+	 *
+	 * @param callable(PadCreateAttempt): mixed $action
+	 * @param callable(PadCreateAttempt): void $rollback
+	 * @param callable(\Throwable, PadCreateAttempt): ?array{message:string,context:array<string,mixed>} $warningFor
+	 * @param callable(PadCreateAttempt): array{message:string,context:array<string,mixed>} $errorFor
+	 */
 	private function withCreateRollback(
 		callable $action,
 		callable $rollback,
 		callable $warningFor,
 		callable $errorFor,
 	): mixed {
+		$attempt = new PadCreateAttempt();
 		try {
-			return $action();
+			return $action($attempt);
 		} catch (\Throwable $e) {
-			$warning = $warningFor($e);
+			$warning = $warningFor($e, $attempt);
 			if ($warning !== null) {
 				$this->logger->warning($warning['message'], array_merge(
 					['app' => 'etherpad_nextcloud'],
@@ -608,7 +617,7 @@ class PadCreationService {
 					['exception' => $e],
 				));
 			} elseif (!($e instanceof PadFileAlreadyExistsException) && !($e instanceof InvalidPadNameException)) {
-				$error = $errorFor();
+				$error = $errorFor($attempt);
 				$this->logger->error($error['message'], array_merge(
 					['app' => 'etherpad_nextcloud'],
 					$error['context'],
@@ -616,7 +625,7 @@ class PadCreationService {
 				));
 			}
 
-			$rollback();
+			$rollback($attempt);
 			throw $e;
 		}
 	}
