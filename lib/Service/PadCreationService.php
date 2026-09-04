@@ -123,14 +123,17 @@ class PadCreationService {
 		return $this->withCreateRollback(
 			function (PadCreateAttempt $attempt) use ($uid, $parentFolder, $parentFolderId, $fileName, $accessMode): array {
 				$fileNode = $this->padFileCreator->createUserFileInFolder($parentFolder, $fileName);
-				$fileId = $this->requireFileId($fileNode, $attempt->path());
+				// Before anything that can throw: this is the only flow that
+				// does not know the path up front, and a rollback running
+				// before it was recorded used to log an empty one.
+				$path = $this->userNodeResolver->toUserAbsolutePath($uid, $fileNode);
+				$attempt->recordPath($path);
+				$fileId = $this->requireFileId($fileNode, $path);
 				$claim = $attempt->claimFile($uid, $fileId);
-				if ($this->isNotOurs($fileNode, $fileId, $attempt->path())) {
+				if ($this->isNotOurs($fileNode, $fileId, $path)) {
 					$attempt->disownFile();
 					throw new PadFileAlreadyExistsException('Target .pad file already exists.');
 				}
-				$path = $this->userNodeResolver->toUserAbsolutePath($uid, $fileNode);
-				$attempt->recordPath($path);
 
 				$padId = $this->padBootstrapService->provisionPadId($accessMode);
 				$attempt->recordPad($padId);
@@ -580,24 +583,18 @@ class PadCreationService {
 	}
 
 	/**
-	 * @template T
-	 * @param callable():T $action
-	 * @param callable():void $rollback
-	 * @param callable(\Throwable):?array{message:string,context:array<string,mixed>} $warningFor
-	 * @param callable():array{message:string,context:array<string,mixed>} $errorFor
-	 * @return T
-	 */
-	/**
 	 * Runs one create attempt, owning the state the rollback needs.
 	 *
-	 * The attempt is made here and handed to both closures, so nothing has
+	 * The attempt is made here and handed to every closure, so nothing has
 	 * to be threaded through by reference and the two cannot disagree about
 	 * what was created.
 	 *
-	 * @param callable(PadCreateAttempt): mixed $action
-	 * @param callable(PadCreateAttempt): void $rollback
-	 * @param callable(\Throwable, PadCreateAttempt): ?array{message:string,context:array<string,mixed>} $warningFor
-	 * @param callable(PadCreateAttempt): array{message:string,context:array<string,mixed>} $errorFor
+	 * @template T
+	 * @param callable(PadCreateAttempt):T $action
+	 * @param callable(PadCreateAttempt):void $rollback
+	 * @param callable(\Throwable,PadCreateAttempt):?array{message:string,context:array<string,mixed>} $warningFor
+	 * @param callable(PadCreateAttempt):array{message:string,context:array<string,mixed>} $errorFor
+	 * @return T
 	 */
 	private function withCreateRollback(
 		callable $action,
