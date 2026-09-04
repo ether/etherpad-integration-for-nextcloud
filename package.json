@@ -18,7 +18,7 @@
 		"@nextcloud/vite-config": "^2.5.4",
 		"@playwright/test": "^1.62.1",
 		"dotenv": "^17.4.2",
-		"happy-dom": "^20.11.6",
+		"happy-dom": "^20.12.0",
 		"jsdom": "^30.0.1",
 		"vite": "^7.3.6",
 		"vitest": "^4.1.11"
