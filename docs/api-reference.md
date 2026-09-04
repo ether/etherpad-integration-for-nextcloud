@@ -68,8 +68,15 @@ Base: `/apps/etherpad_nextcloud`
   - Purpose: resolves a `.pad` file inside a public share for the native viewer.
   - Result:
     - writable protected share: Etherpad URL plus one `sessionID` `Set-Cookie` header
-    - read-only protected share: `is_readonly_snapshot=true`, empty `url`, `snapshot_text`, and sanitized `snapshot_html`; no Etherpad session cookie
-    - public/external pad share: regular public Etherpad URL
+    - read-only protected share: `is_readonly_view=true`, empty `url`, and a `content_url` the viewer loads the pad from; no Etherpad session cookie
+    - public/external pad share: regular public Etherpad URL, plus `content_url` for external pads
+
+- `GET /api/v1/public/content/{token}`
+  - Controller: `PublicViewerController::padContent`
+  - Query (folder share): `file=/subfolder/file.pad`
+  - Purpose: the pad's current content for the read-only view of a public share.
+  - Result: sanitized `html` plus `is_empty`; answered `no-store`.
+  - Behavior: resolves the share and re-checks the `.pad` binding on every call, so a retry cannot outlive the access it was granted under.
 
 Admins can switch either pad type off (see the admin settings). `POST /pads`
 and `POST /pads/create-by-parent` refuse a disabled `accessMode` with `403`.
@@ -155,6 +162,12 @@ solely by the separate external-pad policy, not by these two settings.
   - Result: secure open URL via stable Nextcloud `fileId`.
   - Behavior: read-only (no auto-mutation of `.pad` metadata), CSRF-protected.
   - Protected mode: response includes one Etherpad session `Set-Cookie` header.
+
+- `GET /api/v1/pads/content/{fileId}`
+  - Controller: `PadSessionController::contentById`
+  - Purpose: the pad's current content for this app's read-only view.
+  - Result: sanitized `html` plus `is_empty`; answered `no-store`. Both fields are always present — a reader must be able to tell an empty pad from an answer that carries no content.
+  - Behavior: re-resolves the file and re-checks the `.pad` binding on every call. Own pads are read over the Etherpad API, pads on other servers over their public HTML export. Either way the read stops at 5 MiB and answers `400` with `code: pad_too_large` past it.
 
 - `POST /api/v1/pads/initialize`
   - Controller: `PadSessionController::initialize`

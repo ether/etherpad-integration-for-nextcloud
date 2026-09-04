@@ -73,7 +73,7 @@ Notes:
 - HTML is an additional structure/format snapshot.
 - External pads (`pad_origin` + `remote_pad_id`) are imported and synced as text only for security reasons; HTML sections are omitted when the app writes external snapshots.
 - The parser expects exact `[HTML-BEGIN] ... [HTML-END]` markers for the HTML part.
-- Viewer/API responses never expose stored HTML directly. `SnapshotExtractor` runs `SnapshotHtmlSanitizer`, which allowlists simple formatting tags only and drops every attribute before HTML reaches the frontend.
+- Viewer/API responses never expose stored HTML. The read-only viewer is served by `LivePadHtmlFetcher`, which fetches the pad's current HTML and runs `SnapshotHtmlSanitizer` over it. That sanitizer allowlists simple formatting tags and drops every attribute **except `href` on `<a>`**, which survives only for `http`, `https` and `mailto`; the browser applies the same allowlist again before the HTML is injected.
 
 ## Mode Variants
 
@@ -121,7 +121,7 @@ Snapshot write flow:
 
 - `PadFileService::withExportSnapshot(...)` builds the new `.pad` content after an Etherpad export.
 - `PadFileLockRetryService::putContentWithSyncLockRetry(...)` writes that content back to the Nextcloud file with bounded lock retry.
-- `SnapshotExtractor` is read-only: it extracts text + sanitized HTML for viewer responses and does not mutate `.pad` files.
+- Stored snapshots are read by `LifecycleService` when restoring a pad and by the forced sync when comparing content. No viewer path reads them.
 - External public pad create/sync paths both use the validated, host-pinned `/export/txt` fetch internally (via `ExternalPadExportFetcher`) and store no HTML snapshot:
   - create uses `ExternalPadExportFetcher::normalizeAndFetchExternalPublicPadTextOrEmpty(...)`, allowing the `.pad` file to be created with an empty initial snapshot if the export is not available yet.
   - sync uses `ExternalPadExportFetcher::normalizeAndFetchExternalPublicPadText(...)`, keeping later export failures visible.

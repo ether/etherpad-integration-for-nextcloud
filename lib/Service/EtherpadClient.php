@@ -9,6 +9,8 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\Service;
 
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
+use OCA\EtherpadNextcloud\Exception\EtherpadTooLargeException;
+use OCA\EtherpadNextcloud\Http\BoundedSinkStream;
 use OCP\Http\Client\IClientService;
 use OCP\Http\Client\IResponse;
 use OCP\IConfig;
@@ -43,6 +45,9 @@ class EtherpadClient {
 	 */
 	public const CLOCK_SKEW_ALLOWANCE_SECONDS = 300;
 
+	/** Same ceiling the foreign public export has had all along. */
+	public const PREVIEW_MAX_BYTES = 5242880;
+
 	/**
 	 * `/health` gets far less patience than an API call.
 	 *
@@ -67,13 +72,36 @@ class EtherpadClient {
 	}
 
 	public function getText(string $padId): string {
-		$data = $this->apiCall('getText', ['padID' => $padId]);
-		return (string)($data['text'] ?? '');
+		return $this->requireStringField($this->apiCall('getText', ['padID' => $padId]), 'text', 'getText');
 	}
 
 	public function getHTML(string $padId): string {
-		$data = $this->apiCall('getHTML', ['padID' => $padId]);
-		return (string)($data['html'] ?? '');
+		return $this->requireStringField($this->apiCall('getHTML', ['padID' => $padId]), 'html', 'getHTML');
+	}
+
+	/**
+	 * The same export, capped. The read-only view fetches it per reader on
+	 * demand, so an oversized pad would otherwise cost as much memory as
+	 * the pad is long — twice, once buffered and once as a DOM.
+	 */
+	public function getHTMLForPreview(string $padId): string {
+		$data = $this->apiCall('getHTML', ['padID' => $padId], maxBytes: self::PREVIEW_MAX_BYTES);
+		return $this->requireStringField($data, 'html', 'getHTML');
+	}
+
+	/**
+	 * Coercing a missing key to `''` reads an incomplete answer as an empty
+	 * pad — which the preview shows as one, and a sync writes over the
+	 * stored copy with.
+	 *
+	 * @param array<string,mixed> $data
+	 */
+	private function requireStringField(array $data, string $field, string $method): string {
+		if (!array_key_exists($field, $data) || !is_string($data[$field])) {
+			throw new EtherpadClientException(sprintf('Etherpad API response for %s has no %s.', $method, $field));
+		}
+
+		return $data[$field];
 	}
 
 	public function getRevisionsCount(string $padId): int {
@@ -337,7 +365,8 @@ class EtherpadClient {
 		?string $hostOverride = null,
 		?string $apiKeyOverride = null,
 		?string $apiVersionOverride = null,
-		?int $timeoutSeconds = null
+		?int $timeoutSeconds = null,
+		?int $maxBytes = null
 	): array {
 		$apiVersion = $apiVersionOverride !== null && trim($apiVersionOverride) !== ''
 			? trim($apiVersionOverride)
@@ -355,8 +384,16 @@ class EtherpadClient {
 		]);
 
 		try {
-			$rawBody = $this->sendRequest($url, $query, $httpMethod, $timeoutSeconds);
+			$rawBody = $this->sendRequest($url, $query, $httpMethod, $timeoutSeconds, $maxBytes);
 		} catch (\Throwable $e) {
+			// The size refusal is thrown from inside the sink, so the HTTP
+			// client hands it back wrapped. It has to survive as its own
+			// type: the caller says "too large to show" rather than
+			// "request failed".
+			$tooLarge = $this->findTooLargeCause($e);
+			if ($tooLarge !== null) {
+				throw $tooLarge;
+			}
 			throw new EtherpadClientException('Etherpad API request failed: ' . $method, 0, $e);
 		}
 
@@ -375,18 +412,34 @@ class EtherpadClient {
 		return is_array($data) ? $data : [];
 	}
 
-	/**
-	 * @param array<string,mixed> $query
-	 */
+	private function findTooLargeCause(\Throwable $e): ?EtherpadTooLargeException {
+		for ($cause = $e; $cause !== null; $cause = $cause->getPrevious()) {
+			if ($cause instanceof EtherpadTooLargeException) {
+				return $cause;
+			}
+		}
+
+		return null;
+	}
+
 	private function sendRequest(
 		string $url,
 		array $query,
 		string $httpMethod,
 		?int $timeoutSeconds = null,
+		?int $maxBytes = null,
 	): string {
 		$method = strtoupper($httpMethod);
 		// Clamped: Guzzle reads `timeout => 0` as no timeout at all.
 		$options = $this->baseRequestOptions($this->boundedTimeout($timeoutSeconds));
+		$sink = null;
+		if ($maxBytes !== null) {
+			// The cap has to be part of the transfer, not a check after it:
+			// Nextcloud pins Guzzle's CurlHandler, which buffers the whole
+			// body into a temp stream before anything of ours could look.
+			$sink = new BoundedSinkStream($maxBytes);
+			$options['sink'] = $sink;
+		}
 		if ($method === 'GET') {
 			$options['query'] = $query;
 		} else {
@@ -402,8 +455,11 @@ class EtherpadClient {
 			throw new EtherpadClientException('Etherpad API HTTP error (' . $statusCode . ')');
 		}
 
-		return (string)$response->getBody();
+		// From the sink rather than the response: it is the object that saw
+		// the bytes, and its limit already held while they arrived.
+		return $sink === null ? (string)$response->getBody() : $sink->getContents();
 	}
+
 
 	private function getPublicHost(): string {
 		$host = rtrim((string)$this->config->getAppValue('etherpad_nextcloud', 'etherpad_host', ''), '/');
@@ -534,6 +590,13 @@ class EtherpadClient {
 		try {
 			return $client->request($method, $url, $options);
 		} catch (\Throwable $e) {
+			// Our own refusal, thrown from the sink while the body was
+			// arriving. It is not a transport failure and must keep its
+			// type all the way to the error mapper.
+			$tooLarge = $this->findTooLargeCause($e);
+			if ($tooLarge !== null) {
+				throw $tooLarge;
+			}
 			try {
 				return $client->getResponseFromThrowable($e);
 			} catch (\Throwable) {

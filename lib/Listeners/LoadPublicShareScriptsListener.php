@@ -27,6 +27,7 @@ class LoadPublicShareScriptsListener implements IEventListener {
 			return;
 		}
 
+		Util::addStyle(Application::APP_ID, 'pad-document');
 		Util::addStyle(Application::APP_ID, 'files-main');
 		Util::addScript(Application::APP_ID, 'etherpad_nextcloud-files-main', 'files_sharing');
 		Util::addScript(Application::APP_ID, 'etherpad_nextcloud-viewer-main', 'files_sharing');

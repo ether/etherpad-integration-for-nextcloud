@@ -4,8 +4,10 @@
  * Copyright (c) 2026 Jacob Bühler
  */
 ?>
+<?php $docCssUrl = link_to('etherpad_nextcloud', 'css/pad-document.css') . '?v=' . rawurlencode((string)filemtime(__DIR__ . '/../css/pad-document.css')); ?>
 <?php $embedCssUrl = link_to('etherpad_nextcloud', 'css/embed.css') . '?v=' . rawurlencode((string)filemtime(__DIR__ . '/../css/embed.css')); ?>
 <?php $embedJsUrl = link_to('etherpad_nextcloud', 'js/etherpad_nextcloud-embed-main.mjs') . '?v=' . rawurlencode((string)filemtime(__DIR__ . '/../js/etherpad_nextcloud-embed-main.mjs')); ?>
+<link rel="stylesheet" href="<?php p($docCssUrl); ?>">
 <link rel="stylesheet" href="<?php p($embedCssUrl); ?>">
 <script nonce="<?php p((string)$_['cspNonce']); ?>" type="module" src="<?php p($embedJsUrl); ?>"></script>
 <div id="etherpad-nextcloud-embed"
@@ -19,10 +21,13 @@
 	data-trusted-origins="<?php p(implode(' ', array_map('strval', $_['trusted_embed_origins'] ?? []))); ?>"
 	data-l10n-loading="<?php p((string)$_['l10n']['loading']); ?>"
 	data-l10n-error-title="<?php p((string)$_['l10n']['error_title']); ?>"
-	data-l10n-external-title="<?php p((string)($_['l10n']['external_title'] ?? 'Pad from another server')); ?>"
-	data-l10n-readonly-title="<?php p((string)($_['l10n']['readonly_title'] ?? 'Read-only snapshot')); ?>"
-	data-l10n-external-message="<?php p((string)($_['l10n']['external_message'] ?? 'Read-only snapshot from the .pad file.')); ?>"
-	data-l10n-external-empty="<?php p((string)($_['l10n']['external_empty'] ?? 'No synced snapshot is stored in this .pad file yet.')); ?>"
+	data-l10n-content-empty="<?php p((string)($_['l10n']['content_empty'] ?? 'This pad is still empty.')); ?>"
+	data-l10n-content-loading="<?php p((string)($_['l10n']['content_loading'] ?? 'Loading pad content...')); ?>"
+	data-l10n-content-error="<?php p((string)($_['l10n']['content_error'] ?? 'Could not load the pad content.')); ?>"
+	data-l10n-content-no-url="<?php p((string)($_['l10n']['content_no_url'] ?? 'The server did not say where to load this pad from.')); ?>"
+	data-l10n-content-retry="<?php p((string)($_['l10n']['content_retry'] ?? 'Try again')); ?>"
+	data-l10n-content-refresh="<?php p((string)($_['l10n']['content_refresh'] ?? 'Refresh')); ?>"
+	data-l10n-content-refreshing="<?php p((string)($_['l10n']['content_refreshing'] ?? 'Refreshing...')); ?>"
 	data-l10n-external-link="<?php p((string)($_['l10n']['external_link'] ?? 'Open original pad')); ?>"
 	data-l10n-recovery-checking="<?php p((string)($_['l10n']['recovery_checking'] ?? 'Checking for the original pad...')); ?>"
 	data-l10n-recovery-copy-body="<?php p((string)($_['l10n']['recovery_copy_body'] ?? '')); ?>"

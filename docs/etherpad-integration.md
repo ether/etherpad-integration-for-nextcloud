@@ -406,12 +406,31 @@ A share without write permission gets no way to edit, whether it is a
 public link or an internal share with another user. Both are decided the
 same way and reach the same two answers.
 
-- **Protected pads render the stored snapshot**, and no Etherpad session is
-  created at all.
-  - If an HTML snapshot is stored, only a small tag whitelist is rendered
-    (`p`, lists, headings, basic inline formatting, block/code tags);
-    attributes and dangerous tags are stripped. Otherwise the text snapshot
-    is used.
+- **Protected pads are rendered by this app**, and no Etherpad session is
+  created at all. The content is fetched fresh on every open, over the
+  Etherpad API for own pads and over the public HTML export for pads on
+  other servers – the stored `.pad` snapshot is not a fallback, and a
+  failed fetch shows an error with a retry rather than an older text.
+  - Only a small tag whitelist survives (`p`, lists, headings, basic inline
+    formatting, block/code tags, and `a`); dangerous tags are stripped, on
+    the server and again in the browser.
+  - Links stay clickable, and are the only place an attribute survives:
+    `href` is kept when it names http, https or mailto – an allowlist, not
+    a `javascript:` denylist – and `target="_blank"` with
+    `rel="noopener noreferrer"` is set by both stages. Anything else keeps
+    its text and loses the link. Colours and author highlighting are still
+    dropped.
+  - The fetch runs behind its own endpoint, which re-checks the share and
+    the `.pad` binding on every call. The binding check is what keeps an
+    edited `.pad` file from pointing this app's API key at somebody else's
+    pad. A "Refresh" button re-runs that one request – not the whole open –
+    so catching up on changes costs one checked read. The text on screen
+    stays while it runs; a refresh that fails is reported beside the button
+    and leaves the last content in place.
+  - Both fetch paths stop at 5 MiB. A pad past that is reported as too
+    large to preview (`pad_too_large`) and stays editable as usual; the
+    limit exists because the view is read per reader on demand, and the
+    body is held twice, once as text and once as the DOM parsed from it.
   - Etherpad's own read-only view is deliberately **not** used here.
     `SecurityManager` resolves a read-only id back to the real pad before
     any check, so the view needs the same group session as the editable
@@ -423,8 +442,9 @@ same way and reach the same two answers.
 - **Public pads get Etherpad's read-only URL** (`getReadOnlyID`), which is
   presentation rather than enforcement: a public pad is editable by anyone
   who has its id, and its id is in the `.pad` file. Nothing can be enforced
-  there, so the live read-only view is preferred over a snapshot that would
-  only be staler.
+  there, so Etherpad's own live view is preferred. When the pad server
+  cannot say what that URL is, the pad falls back to this app's read-only
+  view rather than to the editable address.
 
 The decision is `isUpdateable()` on the file as this user sees it, which
 is the update permission bit – `(permissions & UPDATE)` – and not a lock

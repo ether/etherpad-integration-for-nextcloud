@@ -5,7 +5,7 @@
 import { ocRequestToken } from './lib/oc-compat.js'
 import { createPadSync } from './lib/pad-sync.js'
 import { fetchJsonWithTimeout as fetchJson } from './lib/fetch-helpers.js'
-import { sanitizeSnapshotHtml } from './lib/sanitize-html.js'
+import { loadPadContent } from './lib/pad-content.js'
 
 (function () {
 	const IFRAME_REVEAL_DELAY_MS = 100
@@ -33,10 +33,13 @@ import { sanitizeSnapshotHtml } from './lib/sanitize-html.js'
 	const recoveryBodyNode = root.querySelector('[data-epnc-embed-recovery-body]')
 	const recoveryActionsNode = root.querySelector('[data-epnc-embed-recovery-actions]')
 	const iframe = root.querySelector('[data-epnc-embed-iframe]')
-	const externalTitleText = String(root.getAttribute('data-l10n-external-title') || 'Pad from another server').trim()
-	const readOnlyTitleText = String(root.getAttribute('data-l10n-readonly-title') || 'Read-only snapshot').trim()
-	const externalMessageText = String(root.getAttribute('data-l10n-external-message') || 'Read-only snapshot from the .pad file.').trim()
-	const externalEmptyText = String(root.getAttribute('data-l10n-external-empty') || 'No synced snapshot is stored in this .pad file yet.').trim()
+	const contentEmptyText = String(root.getAttribute('data-l10n-content-empty') || 'This pad is still empty.').trim()
+	const contentLoadingText = String(root.getAttribute('data-l10n-content-loading') || 'Loading pad content...').trim()
+	const contentErrorText = String(root.getAttribute('data-l10n-content-error') || 'Could not load the pad content.').trim()
+	const contentNoUrlText = String(root.getAttribute('data-l10n-content-no-url') || 'The server did not say where to load this pad from.').trim()
+	const contentRetryText = String(root.getAttribute('data-l10n-content-retry') || 'Try again').trim()
+	const contentRefreshText = String(root.getAttribute('data-l10n-content-refresh') || 'Refresh').trim()
+	const contentRefreshingText = String(root.getAttribute('data-l10n-content-refreshing') || 'Refreshing...').trim()
 	const externalLinkText = String(root.getAttribute('data-l10n-external-link') || 'Open original pad').trim()
 	const recoveryCheckingText = String(root.getAttribute('data-l10n-recovery-checking') || 'Checking for the original pad...').trim()
 	const recoveryCopyBodyText = String(root.getAttribute('data-l10n-recovery-copy-body') || '').trim()
@@ -52,7 +55,7 @@ import { sanitizeSnapshotHtml } from './lib/sanitize-html.js'
 	const showError = (message) => {
 		if (loadingNode instanceof HTMLElement) {
 			loadingNode.hidden = true
-			loadingNode.classList.remove('epnc-embed__loading--snapshot')
+			loadingNode.classList.remove('epnc-embed__loading--pad-doc')
 		}
 		if (iframe instanceof HTMLIFrameElement) {
 			iframe.hidden = true
@@ -66,7 +69,12 @@ import { sanitizeSnapshotHtml } from './lib/sanitize-html.js'
 		}
 	}
 
-	const showExternalPadPreview = (url, snapshotText, snapshotHtml, titleText = externalTitleText) => {
+	/**
+	 * The read-only surface: a small toolbar and a document area that
+	 * `loadContent` fills. Returns the parts the loader redraws, so the
+	 * frame and its button survive a refresh.
+	 */
+	const showPadContentView = (url) => {
 		if (errorNode instanceof HTMLElement) {
 			errorNode.hidden = true
 		}
@@ -75,71 +83,137 @@ import { sanitizeSnapshotHtml } from './lib/sanitize-html.js'
 			iframe.removeAttribute('src')
 		}
 		if (!(loadingNode instanceof HTMLElement)) {
-			return
+			return null
 		}
 		loadingNode.hidden = false
-		loadingNode.classList.add('epnc-embed__loading--snapshot')
+		loadingNode.classList.add('epnc-embed__loading--pad-doc')
 		loadingNode.textContent = ''
 
-		const snapshot = document.createElement('div')
-		snapshot.className = 'epnc-embed__snapshot'
+		const surface = document.createElement('div')
+		surface.className = 'epnc-pad-doc'
 
 		const inner = document.createElement('div')
-		inner.className = 'epnc-embed__snapshot-inner'
+		inner.className = 'epnc-pad-doc__inner'
 
-		const title = document.createElement('h2')
-		title.className = 'epnc-embed__snapshot-title'
-		title.textContent = titleText
+		const toolbar = document.createElement('div')
+		toolbar.className = 'epnc-pad-doc__toolbar'
 
-		const message = document.createElement('p')
-		message.className = 'epnc-embed__snapshot-message'
-		message.textContent = externalMessageText
+		// A failed refresh is reported here rather than in place of the pad.
+		const toolbarError = document.createElement('span')
+		toolbarError.className = 'epnc-pad-doc__toolbar-error'
+		toolbarError.hidden = true
+		toolbar.appendChild(toolbarError)
 
-		const link = document.createElement('a')
-		link.className = 'epnc-embed__snapshot-link'
-		link.href = url
-		link.target = '_blank'
-		link.rel = 'noopener noreferrer'
-		link.textContent = externalLinkText
+		const refresh = document.createElement('button')
+		refresh.type = 'button'
+		refresh.className = 'button epnc-pad-doc__refresh'
+		refresh.textContent = contentRefreshText
+		toolbar.appendChild(refresh)
 
-		const actions = document.createElement('div')
-		actions.className = 'epnc-embed__snapshot-actions'
 		// A read-only share has nothing to link to: the pad it would point
 		// at is the one being withheld.
 		if (String(url || '').trim() !== '') {
-			actions.appendChild(link)
+			const link = document.createElement('a')
+			link.className = 'button epnc-pad-doc__link'
+			link.href = url
+			link.target = '_blank'
+			link.rel = 'noopener noreferrer'
+			link.textContent = externalLinkText
+			toolbar.appendChild(link)
 		}
 
-		// Sanitize first, then decide on the HTML path from the *sanitized*
-		// result: if DOMPurify empties it (e.g. all-dangerous markup) we fall
-		// back to the text / empty-message path instead of rendering a blank
-		// HTML block (mirrors viewer-main's renderSnapshotView).
-		const sanitizedSnapshotHtml = sanitizeSnapshotHtml(snapshotHtml)
-		const hasSnapshotHtml = sanitizedSnapshotHtml.trim() !== ''
-		const preview = document.createElement(hasSnapshotHtml ? 'div' : 'pre')
-		preview.className = hasSnapshotHtml
-			? 'epnc-embed__snapshot-text epnc-embed__snapshot-text--html'
-			: 'epnc-embed__snapshot-text'
-		if (hasSnapshotHtml) {
-			preview.innerHTML = sanitizedSnapshotHtml
-		} else {
-			preview.textContent = String(snapshotText || '').trim() !== '' ? String(snapshotText) : externalEmptyText
+		const body = document.createElement('div')
+		body.className = 'epnc-pad-doc__text'
+		body.textContent = contentLoadingText
+
+		inner.appendChild(toolbar)
+		inner.appendChild(body)
+		surface.appendChild(inner)
+		loadingNode.appendChild(surface)
+
+		// `loaded`: "busy" and "nothing yet" are two states, and only the
+		// second may blank the view.
+		return { body, refresh, toolbarError, loaded: false }
+	}
+
+	// So a slower earlier answer cannot land on top of a newer one.
+	let contentGeneration = 0
+
+	/** Each call re-checks access on the server. */
+	const loadContent = async (view, contentUrl) => {
+		if (!view || !(view.body instanceof HTMLElement)) {
+			return
+		}
+		const { body, refresh, toolbarError } = view
+		contentGeneration += 1
+		const generation = contentGeneration
+		const isCurrent = () => generation === contentGeneration
+
+		// Only before the first answer; after that the button carries it.
+		if (!view.loaded) {
+			body.className = 'epnc-pad-doc__text'
+			body.textContent = contentLoadingText
+		}
+		if (toolbarError instanceof HTMLElement) {
+			toolbarError.hidden = true
+		}
+		if (refresh instanceof HTMLButtonElement) {
+			refresh.disabled = true
+			refresh.textContent = contentRefreshingText
 		}
 
-		const heading = document.createElement('div')
-		heading.className = 'epnc-embed__snapshot-heading'
-		heading.appendChild(title)
-		heading.appendChild(message)
+		try {
+			if (contentUrl === '') {
+				// Retrying cannot help, so the message says what is actually
+				// wrong instead of inviting another press.
+				renderContentError(view, contentUrl, contentNoUrlText, false)
+				return
+			}
+			const content = await loadPadContent(contentUrl)
+			if (!isCurrent()) return
+			view.loaded = true
+			if (content.isEmpty) {
+				// Left blank this would read as a failure nobody reported.
+				body.className = 'epnc-pad-doc__text'
+				body.textContent = contentEmptyText
+				return
+			}
+			body.className = 'epnc-pad-doc__text epnc-pad-doc__text--html'
+			body.innerHTML = content.html
+		} catch (error) {
+			if (!isCurrent()) return
+			renderContentError(view, contentUrl, error instanceof Error ? error.message : contentErrorText)
+		} finally {
+			if (isCurrent() && refresh instanceof HTMLButtonElement) {
+				refresh.disabled = false
+				refresh.textContent = contentRefreshText
+			}
+		}
+	}
 
-		const header = document.createElement('div')
-		header.className = 'epnc-embed__snapshot-header'
-		header.appendChild(heading)
-		header.appendChild(actions)
+	const renderContentError = (view, contentUrl, message, canRetry = true) => {
+		const { body, toolbarError } = view
+		// Something is on screen: keep it, and say the attempt failed.
+		if (view.loaded && toolbarError instanceof HTMLElement) {
+			toolbarError.textContent = message || contentErrorText
+			toolbarError.hidden = false
+			return
+		}
+		body.className = 'epnc-pad-doc__text'
+		body.textContent = ''
 
-		inner.appendChild(header)
-		inner.appendChild(preview)
-		snapshot.appendChild(inner)
-		loadingNode.appendChild(snapshot)
+		const text = document.createElement('p')
+		text.textContent = message || contentErrorText
+
+		body.appendChild(text)
+		if (canRetry) {
+			const retry = document.createElement('button')
+			retry.type = 'button'
+			retry.className = 'button primary'
+			retry.textContent = contentRetryText
+			retry.addEventListener('click', () => { void loadContent(view, contentUrl) })
+			body.appendChild(retry)
+		}
 	}
 
 	const showIframe = (url) => {
@@ -151,7 +225,7 @@ import { sanitizeSnapshotHtml } from './lib/sanitize-html.js'
 			errorNode.hidden = true
 		}
 		if (loadingNode instanceof HTMLElement) {
-			loadingNode.classList.remove('epnc-embed__loading--snapshot')
+			loadingNode.classList.remove('epnc-embed__loading--pad-doc')
 		}
 		iframe.hidden = true
 		const revealIframe = () => {
@@ -258,7 +332,7 @@ import { sanitizeSnapshotHtml } from './lib/sanitize-html.js'
 			},
 			body: body.toString(),
 		})
-		if (!data || (data.is_readonly_snapshot !== true && (typeof data.url !== 'string' || data.url.trim() === ''))) {
+		if (!data || (data.is_readonly_view !== true && (typeof data.url !== 'string' || data.url.trim() === ''))) {
 			throw new Error('Pad open API did not return a valid URL.')
 		}
 		return data
@@ -434,21 +508,13 @@ import { sanitizeSnapshotHtml } from './lib/sanitize-html.js'
 			if (syncUrl !== '') {
 				padSync.start()
 			}
-			if (data.is_readonly_snapshot === true) {
-				showExternalPadPreview(
-					'',
-					typeof data.snapshot_text === 'string' ? data.snapshot_text : '',
-					typeof data.snapshot_html === 'string' ? data.snapshot_html : '',
-					readOnlyTitleText,
-				)
-				return
-			}
-			if (data.is_external === true) {
-				showExternalPadPreview(
-					data.url,
-					typeof data.snapshot_text === 'string' ? data.snapshot_text : '',
-					typeof data.snapshot_html === 'string' ? data.snapshot_html : '',
-				)
+			const contentUrl = typeof data.content_url === 'string' ? data.content_url.trim() : ''
+			if (data.is_readonly_view === true || data.is_external === true) {
+				const view = showPadContentView(data.is_readonly_view === true ? '' : data.url)
+				if (view !== null) {
+					view.refresh.addEventListener('click', () => { void loadContent(view, contentUrl) })
+				}
+				void loadContent(view, contentUrl)
 				return
 			}
 			showIframe(data.url)

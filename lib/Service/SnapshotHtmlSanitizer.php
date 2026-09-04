@@ -10,11 +10,13 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\Service;
 
 /**
- * Sanitizes stored Etherpad snapshot HTML for read-only public previews.
+ * Sanitizes Etherpad HTML for the read-only views.
  *
- * No attributes are preserved by design: links, styles, event handlers and
- * classes are all dropped. Unknown tags are unwrapped, while explicitly
- * dangerous/embedded content tags are removed with their content.
+ * One attribute survives, on one tag: `href` on `<a>`, and only when it
+ * names http, https or mailto. Everything else — styles, event handlers,
+ * classes, every attribute on every other tag — is dropped. Unknown tags
+ * are unwrapped, while explicitly dangerous/embedded content tags are
+ * removed with their content.
  */
 class SnapshotHtmlSanitizer {
 	private const FORBIDDEN_TAGS = [
@@ -55,7 +57,15 @@ class SnapshotHtmlSanitizer {
 		'blockquote',
 		'pre',
 		'code',
+		'a',
 	];
+
+	/**
+	 * An allowlist rather than a `javascript:` denylist: everything a
+	 * denylist would have to anticipate — `data:`, `vbscript:`, a scheme
+	 * some browser adds later — is simply not on this list.
+	 */
+	private const ALLOWED_LINK_SCHEMES = ['http', 'https', 'mailto'];
 
 	public function sanitize(string $html): string {
 		$trimmed = trim($html);
@@ -84,6 +94,30 @@ class SnapshotHtmlSanitizer {
 		return trim($output);
 	}
 
+	/** Returns the href to emit, or `''` when it may not be emitted at all. */
+	private function safeLinkTarget(string $href): string {
+		$target = trim($href);
+		if ($target === '') {
+			return '';
+		}
+
+		// Only for reading the scheme, and only up to the colon. Browsers
+		// ignore control characters there, so `java\tscript:` is
+		// `javascript:` to them — but the same characters further along are
+		// part of a legitimate path, and a space in
+		// `/files/Meeting notes.pdf` is one a browser encodes rather than
+		// drops. The address itself is passed through untouched.
+		$colon = strpos($target, ':');
+		if ($colon === false) {
+			// No scheme: a relative link, which inside a pad would point at
+			// this Nextcloud rather than anywhere the pad meant.
+			return '';
+		}
+		$scheme = strtolower((string)preg_replace('/[\x00-\x20\x7F]/', '', substr($target, 0, $colon)));
+
+		return in_array($scheme, self::ALLOWED_LINK_SCHEMES, true) ? $target : '';
+	}
+
 	private function sanitizeNode(\DOMNode $node): string {
 		if ($node instanceof \DOMText || $node instanceof \DOMCdataSection) {
 			return htmlspecialchars($node->nodeValue ?? '', ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
@@ -107,6 +141,16 @@ class SnapshotHtmlSanitizer {
 		}
 		if ($tag === 'br') {
 			return '<br>';
+		}
+		if ($tag === 'a') {
+			$href = $this->safeLinkTarget($node->getAttribute('href'));
+			// A link with nowhere safe to go is still text worth keeping.
+			if ($href === '') {
+				return $content;
+			}
+
+			return '<a href="' . htmlspecialchars($href, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8')
+				. '" target="_blank" rel="noopener noreferrer">' . $content . '</a>';
 		}
 		return '<' . $tag . '>' . $content . '</' . $tag . '>';
 	}

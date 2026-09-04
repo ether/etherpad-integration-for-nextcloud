@@ -44,4 +44,40 @@ describe('sanitizeSnapshotHtml', () => {
 		expect(sanitizeSnapshotHtml(null)).toBe('')
 		expect(sanitizeSnapshotHtml(undefined)).toBe('')
 	})
+
+	/**
+	 * The browser stage stands on its own: even a link that arrives
+	 * without them cannot hand the opened tab a reference back to this
+	 * one.
+	 */
+	it('keeps safe links and forces target and rel itself', () => {
+		const out = sanitizeSnapshotHtml('<a href="https://example.test/x">go</a>')
+
+		expect(out).toContain('href="https://example.test/x"')
+		expect(out).toContain('target="_blank"')
+		expect(out).toContain('rel="noopener noreferrer"')
+	})
+
+	it('keeps mailto links', () => {
+		expect(sanitizeSnapshotHtml('<a href="mailto:a@example.test">write</a>')).toContain('mailto:a@example.test')
+	})
+
+	it.each([
+		['javascript:alert(1)'],
+		['JaVaScRiPt:alert(1)'],
+		['data:text/html,<script>alert(1)</script>'],
+		['vbscript:msgbox(1)'],
+		['//evil.test/'],
+	])('drops the href for %s while keeping the text', (href) => {
+		const out = sanitizeSnapshotHtml(`<a href="${href}">click</a>`)
+
+		expect(out).toContain('click')
+		expect(out).not.toContain('href')
+	})
+
+	it('still allows no attribute other than a link\'s', () => {
+		const out = sanitizeSnapshotHtml('<p class="x" style="color:red" onclick="alert(1)">text</p>')
+
+		expect(out).toBe('<p>text</p>')
+	})
 })

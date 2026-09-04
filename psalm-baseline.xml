@@ -108,7 +108,17 @@
       <code><![CDATA[__construct]]></code>
     </PossiblyUnusedMethod>
   </file>
+  <file src="lib/Service/LivePadHtmlFetcher.php">
+    <PossiblyUnusedMethod>
+      <code><![CDATA[__construct]]></code>
+    </PossiblyUnusedMethod>
+  </file>
   <file src="lib/Service/PadBootstrapService.php">
+    <PossiblyUnusedMethod>
+      <code><![CDATA[__construct]]></code>
+    </PossiblyUnusedMethod>
+  </file>
+  <file src="lib/Service/PadContentService.php">
     <PossiblyUnusedMethod>
       <code><![CDATA[__construct]]></code>
     </PossiblyUnusedMethod>
@@ -221,11 +231,6 @@
       <code><![CDATA[$isFolderShare]]></code>
       <code><![CDATA[$selectedRelativePath]]></code>
     </PossiblyUnusedProperty>
-  </file>
-  <file src="lib/Service/SnapshotExtractor.php">
-    <PossiblyUnusedMethod>
-      <code><![CDATA[__construct]]></code>
-    </PossiblyUnusedMethod>
   </file>
   <file src="lib/Service/TrustedEmbedOriginsNormalizer.php">
     <PossiblyUnusedMethod>

@@ -51,11 +51,11 @@ class PadResponseServiceTest extends TestCase {
 		$appConfigService->method('getSyncIntervalSeconds')->willReturn(45);
 		$service = new PadResponseService($urlGenerator, $appConfigService, $this->l10nEcho());
 
-		$readOnly = $service->openResponse($this->buildTarget(isReadOnlySnapshot: true))->getData();
-		$editable = $service->openResponse($this->buildTarget(isReadOnlySnapshot: false, mayWrite: true))->getData();
+		$readOnly = $service->openResponse($this->buildTarget(isReadOnlyView: true))->getData();
+		$editable = $service->openResponse($this->buildTarget(isReadOnlyView: false, mayWrite: true))->getData();
 
-		$this->assertTrue($readOnly['is_readonly_snapshot']);
-		$this->assertFalse($editable['is_readonly_snapshot']);
+		$this->assertTrue($readOnly['is_readonly_view']);
+		$this->assertFalse($editable['is_readonly_view']);
 	}
 
 	/**
@@ -72,20 +72,40 @@ class PadResponseServiceTest extends TestCase {
 		$appConfigService->method('getSyncIntervalSeconds')->willReturn(45);
 		$service = new PadResponseService($urlGenerator, $appConfigService, $this->l10nEcho());
 
-		$snapshot = $service->openResponse($this->buildTarget(isReadOnlySnapshot: true))->getData();
-		// A public pad opened read-only: a live Etherpad view, not a
-		// snapshot — and it must not sync either.
-		$liveReadOnly = $service->openResponse($this->buildTarget(isReadOnlySnapshot: false))->getData();
-		$editable = $service->openResponse($this->buildTarget(isReadOnlySnapshot: false, mayWrite: true))->getData();
+		$ownView = $service->openResponse($this->buildTarget(isReadOnlyView: true))->getData();
+		// A public pad opened read-only: Etherpad's own read-only page in an
+		// iframe rather than our viewer — and it must not sync either.
+		$liveReadOnly = $service->openResponse($this->buildTarget(isReadOnlyView: false))->getData();
+		$editable = $service->openResponse($this->buildTarget(isReadOnlyView: false, mayWrite: true))->getData();
 
-		$this->assertSame('', $snapshot['sync_url']);
-		$this->assertSame('', $snapshot['sync_status_url']);
-		$this->assertSame('', $liveReadOnly['sync_url'], 'not a snapshot, still not writable');
+		$this->assertSame('', $ownView['sync_url']);
+		$this->assertSame('', $ownView['sync_status_url']);
+		$this->assertSame('', $liveReadOnly['sync_url'], 'not our viewer, still not writable');
 		$this->assertSame('', $liveReadOnly['sync_status_url']);
 		$this->assertSame('/sync/42', $editable['sync_url']);
 	}
 
-	private function buildTarget(bool $isReadOnlySnapshot, bool $mayWrite = false): \OCA\EtherpadNextcloud\Service\PadOpenTarget {
+	/**
+	 * The view exists to show the pad as it is now, so a cached copy would
+	 * defeat the point of it — and since the body is answered per reader
+	 * after an access check, a shared cache must not keep it at all.
+	 */
+	public function testPadContentIsAnsweredWithCachingTurnedOff(): void {
+		$service = new PadResponseService(
+			$this->createMock(IURLGenerator::class),
+			$this->createMock(AppConfigService::class),
+			$this->l10nEcho(),
+		);
+
+		$response = $service->padContentResponse(new \OCA\EtherpadNextcloud\Service\LivePadHtml('<p>Now</p>', false));
+
+		$this->assertSame('<p>Now</p>', $response->getData()['html']);
+		$this->assertFalse($response->getData()['is_empty']);
+		$this->assertStringContainsString('no-store', $response->getHeaders()['Cache-Control']);
+		$this->assertStringContainsString('private', $response->getHeaders()['Cache-Control']);
+	}
+
+	private function buildTarget(bool $isReadOnlyView, bool $mayWrite = false): \OCA\EtherpadNextcloud\Service\PadOpenTarget {
 		return new \OCA\EtherpadNextcloud\Service\PadOpenTarget(
 			file: '/Test.pad',
 			fileId: 42,
@@ -94,11 +114,9 @@ class PadResponseServiceTest extends TestCase {
 			padUrl: 'https://pad.example.test/p/test',
 			isExternal: false,
 			originalPadUrl: '',
-			snapshotText: $isReadOnlySnapshot ? 'snapshot' : '',
-			snapshotHtml: '',
-			url: $isReadOnlySnapshot ? '' : 'https://pad.example.test/p/test',
+			url: $isReadOnlyView ? '' : 'https://pad.example.test/p/test',
 			cookieHeader: '',
-			isReadOnlySnapshot: $isReadOnlySnapshot,
+			isReadOnlyView: $isReadOnlyView,
 			mayWrite: $mayWrite,
 		);
 	}
@@ -122,11 +140,9 @@ class PadResponseServiceTest extends TestCase {
 			padUrl: 'https://pad.example.test/p/test',
 			isExternal: false,
 			originalPadUrl: '',
-			snapshotText: '',
-			snapshotHtml: '',
 			url: 'https://pad.example.test/p/test',
 			cookieHeader: 'sessionID=s.test; Path=/',
-			isReadOnlySnapshot: false,
+			isReadOnlyView: false,
 			mayWrite: true,
 		);
 		$response = (new PadResponseService($urlGenerator, $appConfigService, $this->l10nEcho()))->openResponse($target);

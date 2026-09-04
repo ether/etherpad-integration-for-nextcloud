@@ -111,4 +111,79 @@ class SnapshotHtmlSanitizerTest extends TestCase {
 	private function sanitize(string $html): string {
 		return (new SnapshotHtmlSanitizer())->sanitize($html);
 	}
+
+	/**
+	 * Etherpad's own HTML export autolinks URLs — `ExportHtml` emits
+	 * `<a href=...>` — so dropping anchors turned every link in a pad into
+	 * unclickable text.
+	 */
+	public function testKeepsLinksAndForcesASafeTarget(): void {
+		$out = (new SnapshotHtmlSanitizer())->sanitize('<p>See <a href="https://example.test/a?b=1">this</a></p>');
+
+		$this->assertSame(
+			'<p>See <a href="https://example.test/a?b=1" target="_blank" rel="noopener noreferrer">this</a></p>',
+			$out
+		);
+	}
+
+	public function testKeepsMailtoLinks(): void {
+		$out = (new SnapshotHtmlSanitizer())->sanitize('<a href="mailto:a@example.test">write</a>');
+
+		$this->assertStringContainsString('href="mailto:a@example.test"', $out);
+	}
+
+	/**
+	 * An allowlist, not a `javascript:` denylist. The pad server is not
+	 * this app's, and the href travels from a document anyone with write
+	 * access to the pad can shape.
+	 *
+	 * @param string $href
+	 */
+	#[\PHPUnit\Framework\Attributes\DataProvider('unsafeHrefs')]
+	public function testDropsTheLinkButKeepsItsTextForAnUnsafeTarget(string $href): void {
+		$out = (new SnapshotHtmlSanitizer())->sanitize('<p><a href="' . $href . '">click</a></p>');
+
+		$this->assertSame('<p>click</p>', $out, 'the text stays, the link does not');
+		$this->assertStringNotContainsString('href', $out);
+	}
+
+	/** @return array<string,array{0:string}> */
+	public static function unsafeHrefs(): array {
+		return [
+			'javascript' => ['javascript:alert(1)'],
+			'javascript in mixed case' => ['JaVaScRiPt:alert(1)'],
+			// Browsers ignore control characters while reading a scheme, so
+			// this is `javascript:` to them and must be to us as well.
+			'javascript split by a tab' => ["java	script:alert(1)"],
+			'javascript with a leading newline' => ["\njavascript:alert(1)"],
+			'data uri' => ['data:text/html,<script>alert(1)</script>'],
+			'vbscript' => ['vbscript:msgbox(1)'],
+			'relative path' => ['/settings/admin'],
+			'protocol relative' => ['//evil.test/'],
+			'empty' => [''],
+		];
+	}
+
+	/**
+	 * The scheme is read past control characters, but the address itself is
+	 * not rewritten. Stripping them from the whole href turned
+	 * `/files/Meeting notes.pdf` into `/files/Meetingnotes.pdf` — a
+	 * different file, or none.
+	 */
+	#[\PHPUnit\Framework\Attributes\DataProvider('hrefsThatMustSurviveIntact')]
+	public function testKeepsTheAddressExactlyAsGiven(string $href): void {
+		$out = (new SnapshotHtmlSanitizer())->sanitize('<a href="' . $href . '">x</a>');
+
+		$this->assertStringContainsString('href="' . $href . '"', $out);
+	}
+
+	/** @return array<string,array{0:string}> */
+	public static function hrefsThatMustSurviveIntact(): array {
+		return [
+			'a space in the path' => ['https://example.org/files/Meeting notes.pdf'],
+			'a space in a query' => ['mailto:a@example.test?subject=Team meeting'],
+			'an encoded space' => ['https://example.org/files/Meeting%20notes.pdf'],
+			'a query and a fragment' => ['https://example.org/a?b=1&amp;c=2#d'],
+		];
+	}
 }

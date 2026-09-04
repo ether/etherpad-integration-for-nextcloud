@@ -11,10 +11,12 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\Controller;
 
 use OCA\EtherpadNextcloud\Exception\InvalidShareTokenException;
+use OCA\EtherpadNextcloud\Service\LivePadHtml;
 use OCA\EtherpadNextcloud\Service\PublicPadContext;
 use OCA\EtherpadNextcloud\Service\PublicPadContextService;
 use OCA\EtherpadNextcloud\Service\PublicShareResolver;
 use OCA\EtherpadNextcloud\Service\PublicShareUrlBuilder;
+use OCA\EtherpadNextcloud\Service\PadResponseService;
 use OCP\AppFramework\Http\DataResponse;
 use OCP\AppFramework\PublicShareController;
 use OCP\AppFramework\Http\RedirectResponse;
@@ -35,6 +37,7 @@ class PublicViewerController extends PublicShareController {
 		private PublicShareResolver $shareResolver,
 		private PublicPadContextService $padContextService,
 		private PublicShareUrlBuilder $shareUrlBuilder,
+		private PadResponseService $padResponses,
 		private PublicViewerControllerErrorMapper $errors,
 		ISession $session,
 	) {
@@ -69,6 +72,24 @@ class PublicViewerController extends PublicShareController {
 		);
 	}
 
+	/**
+	 * @see PadSessionController::contentById() for why this is its own endpoint.
+	 *
+	 * Throttled because it is the one anonymous route that makes this
+	 * server fetch something on demand — the pad over the API, or a foreign
+	 * export. 60 a minute is far more than reading and refreshing needs,
+	 * and far less than a loop wants.
+	 */
+	#[\OCP\AppFramework\Http\Attribute\PublicPage]
+	#[\OCP\AppFramework\Http\Attribute\NoCSRFRequired]
+	#[\OCP\AppFramework\Http\Attribute\AnonRateLimit(limit: 60, period: 60)]
+	public function padContent(string $token, mixed $file = ''): DataResponse {
+		return $this->errors->runForData(
+			fn(): LivePadHtml => $this->padContextService->resolveContent($token, $file, $this->share),
+			fn(LivePadHtml $content): DataResponse => $this->padResponses->padContentResponse($content),
+		);
+	}
+
 	#[\OCP\AppFramework\Http\Attribute\PublicPage]
 	#[\OCP\AppFramework\Http\Attribute\NoCSRFRequired]
 	public function openPadData(string $token, mixed $file = ''): DataResponse {
@@ -79,10 +100,9 @@ class PublicViewerController extends PublicShareController {
 					'title' => $context->title,
 					'url' => $context->url,
 					'is_external' => $context->isExternal,
-					'is_readonly_snapshot' => $context->isReadOnlySnapshot,
-					'snapshot_text' => $context->snapshotText,
-					'snapshot_html' => $context->snapshotHtml,
+					'is_readonly_view' => $context->isReadOnlyView,
 					'original_pad_url' => $context->originalPadUrl,
+					'content_url' => $context->contentUrl,
 				]);
 				if ($context->cookieHeader !== '') {
 					$response->addHeader('Set-Cookie', $context->cookieHeader);

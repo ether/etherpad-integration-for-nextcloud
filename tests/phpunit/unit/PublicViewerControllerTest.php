@@ -12,12 +12,13 @@ use OCA\EtherpadNextcloud\Service\ExternalPadExportFetcher;
 use OCA\EtherpadNextcloud\Service\PadFileService;
 use OCA\EtherpadNextcloud\Service\PadSessionService;
 use OCA\EtherpadNextcloud\Service\ParsedPadFile;
+use OCA\EtherpadNextcloud\Service\LivePadHtmlFetcher;
+use OCA\EtherpadNextcloud\Service\PadFileLockRetryService;
+use OCA\EtherpadNextcloud\Service\PadResponseService;
 use OCA\EtherpadNextcloud\Service\PublicPadContextService;
 use OCA\EtherpadNextcloud\Service\PublicPadOpenService;
 use OCA\EtherpadNextcloud\Service\PublicShareResolver;
 use OCA\EtherpadNextcloud\Service\PublicShareUrlBuilder;
-use OCA\EtherpadNextcloud\Service\SnapshotExtractor;
-use OCA\EtherpadNextcloud\Service\SnapshotHtmlSanitizer;
 use OCA\EtherpadNextcloud\Util\PathNormalizer;
 use OCP\AppFramework\Http;
 use OCP\Constants;
@@ -65,14 +66,10 @@ class PublicViewerControllerTest extends TestCase {
 				padUrl: '',
 				isExternal: false,
 			));
-		$padFileService->expects($this->once())
-			->method('getTextSnapshotForRestore')
-			->with('frontmatter')
-			->willReturn("Snapshot text\nSecond line");
-		$padFileService->expects($this->once())
-			->method('getHtmlSnapshotForRestore')
-			->with('frontmatter')
-			->willReturn('<h1 style="color:red" onclick="alert(1)">Title</h1><p><strong>Safe</strong> <span style="color:red">text</span><script>alert(1)</script></p>');
+		// The stored copy plays no part in opening any more: the viewer
+		// loads the pad from the pad server over `content_url`.
+		$padFileService->expects($this->never())->method('getTextSnapshotForRestore');
+		$padFileService->expects($this->never())->method('getHtmlSnapshotForRestore');
 
 		$bindingService = $this->createMock(BindingService::class);
 		$bindingService->expects($this->once())
@@ -97,13 +94,12 @@ class PublicViewerControllerTest extends TestCase {
 
 		$this->assertSame(Http::STATUS_OK, $response->getStatus());
 		$this->assertSame('', $response->getData()['url']);
-		$this->assertTrue($response->getData()['is_readonly_snapshot']);
-		$this->assertSame("Snapshot text\nSecond line", $response->getData()['snapshot_text']);
-		$this->assertSame('<h1>Title</h1><p><strong>Safe</strong> text</p>', $response->getData()['snapshot_html']);
+		$this->assertTrue($response->getData()['is_readonly_view']);
+		$this->assertSame('/public/content/share-token', $response->getData()['content_url']);
 		$this->assertArrayNotHasKey('Set-Cookie', $response->getHeaders());
 	}
 
-	public function testPublicExternalPadShareReturnsStoredTextAndSanitizedHtmlSnapshots(): void {
+	public function testPublicExternalPadShareReturnsNormalizedUrlAndAContentUrl(): void {
 		$file = $this->createMock(File::class);
 		$file->method('getName')->willReturn('External.pad');
 		$file->method('getId')->willReturn(77);
@@ -139,14 +135,8 @@ class PublicViewerControllerTest extends TestCase {
 				padUrl: 'https://pad.portal.example/p/Test',
 				isExternal: true,
 			));
-		$padFileService->expects($this->once())
-			->method('getTextSnapshotForRestore')
-			->with('frontmatter')
-			->willReturn("External snapshot\nSecond line");
-		$padFileService->expects($this->once())
-			->method('getHtmlSnapshotForRestore')
-			->with('frontmatter')
-			->willReturn('<h2>External</h2><script>bad()</script>');
+		$padFileService->expects($this->never())->method('getTextSnapshotForRestore');
+		$padFileService->expects($this->never())->method('getHtmlSnapshotForRestore');
 
 		$bindingService = $this->createMock(BindingService::class);
 		$bindingService->expects($this->never())->method('assertConsistentMapping');
@@ -173,9 +163,8 @@ class PublicViewerControllerTest extends TestCase {
 		$this->assertSame('https://pad.portal.example/p/Test', $response->getData()['url']);
 		$this->assertSame('https://pad.portal.example/p/Test', $response->getData()['original_pad_url']);
 		$this->assertTrue($response->getData()['is_external']);
-		$this->assertFalse($response->getData()['is_readonly_snapshot']);
-		$this->assertSame("External snapshot\nSecond line", $response->getData()['snapshot_text']);
-		$this->assertSame('<h2>External</h2>', $response->getData()['snapshot_html']);
+		$this->assertFalse($response->getData()['is_readonly_view']);
+		$this->assertSame('/public/content/share-token', $response->getData()['content_url'], 'the preview loads the pad itself');
 		$this->assertArrayNotHasKey('Set-Cookie', $response->getHeaders());
 	}
 
@@ -226,16 +215,27 @@ class PublicViewerControllerTest extends TestCase {
 
 		$urlGenerator = $this->createMock(IURLGenerator::class);
 		$urlGenerator->method('getWebroot')->willReturn('');
+		$urlGenerator->method('linkToRoute')->willReturn('/public/content/share-token');
 		$shareUrlBuilder = new PublicShareUrlBuilder($urlGenerator, new PathNormalizer());
 		$shareResolver = new PublicShareResolver($shareManager, new PathNormalizer());
-		$publicPadOpenService = new PublicPadOpenService($etherpadClient, $fetcher, $padSessionService, new SnapshotExtractor($padFileService, new SnapshotHtmlSanitizer()));
+		$publicPadOpenService = new PublicPadOpenService($etherpadClient, $fetcher, $padSessionService);
 
 		$controller = new PublicViewerController(
 			'etherpad_nextcloud',
 			$this->createMock(IRequest::class),
 			$shareResolver,
-			new PublicPadContextService($shareResolver, $padFileService, $bindingService, $publicPadOpenService),
+			new PublicPadContextService(
+				$shareResolver,
+				$padFileService,
+				$bindingService,
+				$publicPadOpenService,
+				$this->createMock(LivePadHtmlFetcher::class),
+				new PadFileLockRetryService(static function (int $delay): void {
+				}),
+				$urlGenerator,
+			),
 			$shareUrlBuilder,
+			$this->buildPadResponseService($urlGenerator),
 			new PublicViewerControllerErrorMapper($shareUrlBuilder, $this->createMock(LoggerInterface::class)),
 			$this->createMock(ISession::class),
 		);
@@ -316,6 +316,7 @@ class PublicViewerControllerTest extends TestCase {
 	): PublicViewerController {
 		$urlGenerator = $this->createMock(IURLGenerator::class);
 		$urlGenerator->method('getWebroot')->willReturn('');
+		$urlGenerator->method('linkToRoute')->willReturn('/public/content/share-token');
 		$shareUrlBuilder = new PublicShareUrlBuilder($urlGenerator, new PathNormalizer());
 		$padFileService ??= $this->createMock(PadFileService::class);
 		$etherpadClient ??= $this->createMock(EtherpadClient::class);
@@ -323,16 +324,33 @@ class PublicViewerControllerTest extends TestCase {
 		$padSessionService ??= $this->createMock(PadSessionService::class);
 		$bindingService ??= $this->createMock(BindingService::class);
 		$shareResolver = new PublicShareResolver($shareManager, new PathNormalizer());
-		$publicPadOpenService = new PublicPadOpenService($etherpadClient, $externalPadExportFetcher, $padSessionService, new SnapshotExtractor($padFileService, new SnapshotHtmlSanitizer()));
+		$publicPadOpenService = new PublicPadOpenService($etherpadClient, $externalPadExportFetcher, $padSessionService);
 
 		return new PublicViewerController(
 			'etherpad_nextcloud',
 			$this->createMock(IRequest::class),
 			$shareResolver,
-			new PublicPadContextService($shareResolver, $padFileService, $bindingService, $publicPadOpenService),
+			new PublicPadContextService(
+				$shareResolver,
+				$padFileService,
+				$bindingService,
+				$publicPadOpenService,
+				$this->createMock(LivePadHtmlFetcher::class),
+				new PadFileLockRetryService(static function (int $delay): void {
+				}),
+				$urlGenerator,
+			),
 			$shareUrlBuilder,
+			$this->buildPadResponseService($urlGenerator),
 			new PublicViewerControllerErrorMapper($shareUrlBuilder, $this->createMock(LoggerInterface::class)),
 			$session ?? $this->createMock(ISession::class),
 		);
+	}
+
+	private function buildPadResponseService(IURLGenerator $urlGenerator): PadResponseService {
+		$l10n = $this->createMock(\OCP\IL10N::class);
+		$l10n->method('t')->willReturnCallback(static fn (string $text): string => $text);
+
+		return new PadResponseService($urlGenerator, $this->createMock(\OCA\EtherpadNextcloud\Service\AppConfigService::class), $l10n);
 	}
 }

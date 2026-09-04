@@ -12,14 +12,13 @@ use OCA\EtherpadNextcloud\Service\EtherpadClient;
 use OCA\EtherpadNextcloud\Service\ExternalPadExportFetcher;
 use OCA\EtherpadNextcloud\Service\PadFileLockRetryService;
 use OCA\EtherpadNextcloud\Service\PadFileService;
+use OCA\EtherpadNextcloud\Service\PadContentService;
 use OCA\EtherpadNextcloud\Service\PadInitializationService;
 use OCA\EtherpadNextcloud\Service\PadMetadataService;
 use OCA\EtherpadNextcloud\Service\PadOpenService;
 use OCA\EtherpadNextcloud\Service\PadResponseService;
 use OCA\EtherpadNextcloud\Service\PadSessionService;
 use OCA\EtherpadNextcloud\Service\ParsedPadFile;
-use OCA\EtherpadNextcloud\Service\SnapshotExtractor;
-use OCA\EtherpadNextcloud\Service\SnapshotHtmlSanitizer;
 use OCA\EtherpadNextcloud\Service\UserNodeResolver;
 use OCA\EtherpadNextcloud\Util\PathNormalizer;
 use OCP\AppFramework\Http;
@@ -104,6 +103,7 @@ class PadSessionControllerTest extends TestCase {
 			->willReturnMap([
 				['etherpad_nextcloud.padLifecycle.syncById', ['fileId' => 138], '/sync/138'],
 				['etherpad_nextcloud.padLifecycle.syncStatusById', ['fileId' => 138], '/sync-status/138'],
+				['etherpad_nextcloud.padSession.contentById', ['fileId' => 138], '/content/138'],
 		]);
 		$logger = $this->createMock(LoggerInterface::class);
 		$padPaths = new PathNormalizer();
@@ -122,7 +122,6 @@ class PadSessionControllerTest extends TestCase {
 			$etherpadClient,
 			$this->createMock(ExternalPadExportFetcher::class),
 			$this->createMock(PadSessionService::class),
-			new SnapshotExtractor($padFileService, new SnapshotHtmlSanitizer()),
 			$logger,
 		);
 		$l10n = $this->createMock(\OCP\IL10N::class);
@@ -140,6 +139,7 @@ class PadSessionControllerTest extends TestCase {
 			$padOpenService,
 			$this->createMock(PadInitializationService::class),
 			$this->createMock(PadMetadataService::class),
+			$this->createMock(PadContentService::class),
 		);
 
 		$response = $controller->openById(138);
@@ -205,14 +205,10 @@ class PadSessionControllerTest extends TestCase {
 				padUrl: 'https://pad.portal.fzs.de/p/Test',
 				isExternal: true,
 			));
-		$padFileService->expects($this->once())
-			->method('getTextSnapshotForRestore')
-			->with('frontmatter')
-			->willReturn("External snapshot\nSecond line");
-		$padFileService->expects($this->once())
-			->method('getHtmlSnapshotForRestore')
-			->with('frontmatter')
-			->willReturn('<h1>External</h1><script>bad()</script>');
+		// The open no longer reads the stored copy at all — the preview
+		// loads the pad from its own server over `content_url`.
+		$padFileService->expects($this->never())->method('getTextSnapshotForRestore');
+		$padFileService->expects($this->never())->method('getHtmlSnapshotForRestore');
 
 		$bindingService = $this->createMock(BindingService::class);
 		$bindingService->expects($this->never())->method('assertConsistentMapping');
@@ -235,6 +231,7 @@ class PadSessionControllerTest extends TestCase {
 			->willReturnMap([
 				['etherpad_nextcloud.padLifecycle.syncById', ['fileId' => 138], '/sync/138'],
 				['etherpad_nextcloud.padLifecycle.syncStatusById', ['fileId' => 138], '/sync-status/138'],
+				['etherpad_nextcloud.padSession.contentById', ['fileId' => 138], '/content/138'],
 		]);
 		$logger = $this->createMock(LoggerInterface::class);
 		$padPaths = new PathNormalizer();
@@ -250,7 +247,6 @@ class PadSessionControllerTest extends TestCase {
 			$etherpadClient,
 			$externalPadExportFetcher,
 			$this->createMock(PadSessionService::class),
-			new SnapshotExtractor($padFileService, new SnapshotHtmlSanitizer()),
 			$logger,
 		);
 		$l10n = $this->createMock(\OCP\IL10N::class);
@@ -268,6 +264,7 @@ class PadSessionControllerTest extends TestCase {
 			$padOpenService,
 			$this->createMock(PadInitializationService::class),
 			$this->createMock(PadMetadataService::class),
+			$this->createMock(PadContentService::class),
 		);
 
 		$response = $controller->openById(138);
@@ -277,8 +274,7 @@ class PadSessionControllerTest extends TestCase {
 		$this->assertTrue($response->getData()['is_external']);
 		$this->assertSame('https://pad.portal.fzs.de/p/Test', $response->getData()['pad_url']);
 		$this->assertSame('https://pad.portal.fzs.de/p/Test', $response->getData()['original_pad_url']);
-		$this->assertSame("External snapshot\nSecond line", $response->getData()['snapshot_text']);
-		$this->assertSame('<h1>External</h1>', $response->getData()['snapshot_html']);
+		$this->assertSame('/content/138', $response->getData()['content_url'], 'the preview loads the pad itself');
 	}
 
 	public function testMetaByIdRejectsInvalidFileId(): void {
@@ -362,7 +358,6 @@ class PadSessionControllerTest extends TestCase {
 			$resolvedEtherpadClient,
 			$resolvedExternalPadExportFetcher,
 			$this->createMock(PadSessionService::class),
-			new SnapshotExtractor($resolvedPadFileService, new SnapshotHtmlSanitizer()),
 			$logger,
 		);
 		$urlGenerator = $this->createMock(IURLGenerator::class);
@@ -392,6 +387,7 @@ class PadSessionControllerTest extends TestCase {
 			$padOpenService,
 			$this->createMock(PadInitializationService::class),
 			$padMetadataService,
+			$this->createMock(PadContentService::class),
 		);
 	}
 

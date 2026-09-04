@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\Tests\Unit;
 
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
+use OCA\EtherpadNextcloud\Exception\ExternalPadExportNotFoundException;
 use OCA\EtherpadNextcloud\Service\ExternalPadExportFetcher;
 use OCP\IConfig;
 use PHPUnit\Framework\TestCase;
@@ -77,6 +78,100 @@ class ExternalPadExportFetcherTest extends TestCase {
 		$this->expectException(EtherpadClientException::class);
 		$this->expectExceptionMessage('External pad linking is disabled by admin settings.');
 		$fetcher->normalizeAndValidateExternalPublicPadUrl('https://1.1.1.1/p/public-pad');
+	}
+
+	/**
+	 * The budget is shared with everything before the request, name
+	 * resolution included, so an attempt that no longer fits is not made at
+	 * all rather than started with the full timeout.
+	 */
+	public function testAnExhaustedBudgetStopsBeforeAnyAttempt(): void {
+		$send = new \ReflectionMethod(ExternalPadExportFetcher::class, 'sendPinnedPublicGetRequest');
+		$fetcher = new ExternalPadExportFetcher($this->buildExternalEnabledConfig());
+
+		$this->expectException(EtherpadClientException::class);
+		$this->expectExceptionMessage('no time left');
+		$send->invoke(
+			$fetcher,
+			'https://1.1.1.1/p/Test/export/html',
+			'1.1.1.1',
+			443,
+			['1.1.1.1'],
+			'html',
+			// Already spent: a slow lookup leaves nothing for the transfer.
+			microtime(true) - 1.0,
+		);
+	}
+
+	/**
+	 * The rule that keeps an error page from being read as pad content.
+	 *
+	 * Widening it for the HTML export must not widen it for the text one:
+	 * a foreign server answering a text export with an HTML error page and
+	 * a 200 is the case it was written for.
+	 */
+	#[\PHPUnit\Framework\Attributes\DataProvider('contentTypeCases')]
+	public function testContentTypeIsAcceptedPerExportFormat(string $format, string $contentType, bool $accepted): void {
+		$assert = new \ReflectionMethod(ExternalPadExportFetcher::class, 'assertAllowedExternalExportContentType');
+		$fetcher = new ExternalPadExportFetcher($this->buildExternalEnabledConfig());
+
+		if (!$accepted) {
+			$this->expectException(EtherpadClientException::class);
+		}
+		$assert->invoke($fetcher, $contentType, $format);
+
+		if ($accepted) {
+			$this->addToAssertionCount(1);
+		}
+	}
+
+	/**
+	 * Redirects are not followed, and their bodies are not read either.
+	 * A "Please sign in" page behind a 302 used to arrive as pad content
+	 * once the HTML export stopped rejecting it on content type.
+	 */
+	#[\PHPUnit\Framework\Attributes\DataProvider('statusCases')]
+	public function testOnlyASuccessfulExportStatusIsAccepted(int $status, ?string $expectedException): void {
+		$assert = new \ReflectionMethod(ExternalPadExportFetcher::class, 'assertSuccessfulExportStatus');
+		$fetcher = new ExternalPadExportFetcher($this->buildExternalEnabledConfig());
+
+		if ($expectedException !== null) {
+			$this->expectException($expectedException);
+		}
+		$assert->invoke($fetcher, $status);
+
+		if ($expectedException === null) {
+			$this->addToAssertionCount(1);
+		}
+	}
+
+	/** @return array<string,array{0:int,1:?string}> */
+	public static function statusCases(): array {
+		return [
+			'200 is the export' => [200, null],
+			'204 is still a success' => [204, null],
+			'301 is a redirect, not content' => [301, EtherpadClientException::class],
+			'302 is a redirect, not content' => [302, EtherpadClientException::class],
+			'307 is a redirect, not content' => [307, EtherpadClientException::class],
+			'401 is a login wall' => [401, EtherpadClientException::class],
+			'404 says the pad is not exportable' => [404, ExternalPadExportNotFoundException::class],
+			'500 is the far side failing' => [500, EtherpadClientException::class],
+		];
+	}
+
+	/** @return array<string,array{0:string,1:string,2:bool}> */
+	public static function contentTypeCases(): array {
+		return [
+			'text export keeps refusing html' => ['txt', 'text/html; charset=utf-8', false],
+			'text export takes plain text' => ['txt', 'text/plain; charset=utf-8', true],
+			'text export takes a byte stream' => ['txt', 'application/octet-stream', true],
+			'html export takes html' => ['html', 'text/html; charset=utf-8', true],
+			'html export takes xhtml' => ['html', 'application/xhtml+xml', true],
+			'html export refuses plain text' => ['html', 'text/plain', false],
+			'html export refuses json' => ['html', 'application/json', false],
+			'html export refuses a byte stream' => ['html', 'application/octet-stream', false],
+			'a missing header is refused either way' => ['html', '', false],
+		];
 	}
 
 	private function buildExternalEnabledConfig(string $externalPadAllowlist = ''): IConfig {

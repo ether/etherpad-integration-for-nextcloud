@@ -174,11 +174,16 @@ class PadResponseService {
 			'access_mode' => $target->accessMode,
 			'pad_url' => $target->padUrl,
 			'is_external' => $target->isExternal,
-			'is_readonly_snapshot' => $target->isReadOnlySnapshot,
+			'is_readonly_view' => $target->isReadOnlyView,
 			'original_pad_url' => $target->originalPadUrl,
-			'snapshot_text' => $target->snapshotText,
-			'snapshot_html' => $target->snapshotHtml,
 			'url' => $target->url,
+			// Only where a surface of ours draws the pad itself: the
+			// read-only view always, and an external pad because its iframe
+			// may be refused and fall back to the same view. An editable
+			// protected pad is Etherpad's own page and has no use for it.
+			'content_url' => ($target->isReadOnlyView || $target->isExternal)
+				? $this->urlGenerator->linkToRoute('etherpad_nextcloud.padSession.contentById', ['fileId' => $target->fileId])
+				: '',
 			// Keyed on write permission, not on the snapshot mode: a public
 			// pad opened read-only is a live Etherpad view rather than a
 			// snapshot, and it must not sync either. Syncing writes the pad
@@ -199,6 +204,22 @@ class PadResponseService {
 		if ($target->cookieHeader !== '') {
 			$response->addHeader('Set-Cookie', $target->cookieHeader);
 		}
+		return $response;
+	}
+
+	/**
+	 * A read-only view's content, uncached: it shows the pad as it is now,
+	 * and it is answered per reader after an access check, so no cache may
+	 * keep it.
+	 */
+	public function padContentResponse(LivePadHtml $content): DataResponse {
+		$response = new DataResponse([
+			'html' => $content->html,
+			'is_empty' => $content->isEmpty,
+		]);
+		$response->addHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+		$response->addHeader('Pragma', 'no-cache');
+
 		return $response;
 	}
 

@@ -8,32 +8,26 @@ use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
 use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\EtherpadNextcloud\Service\EtherpadClient;
 use OCA\EtherpadNextcloud\Service\ExternalPadExportFetcher;
-use OCA\EtherpadNextcloud\Service\PadFileService;
 use OCA\EtherpadNextcloud\Service\PadSessionService;
 use OCA\EtherpadNextcloud\Service\PublicPadOpenService;
-use OCA\EtherpadNextcloud\Service\SnapshotExtractor;
-use OCA\EtherpadNextcloud\Service\SnapshotHtmlSanitizer;
 use PHPUnit\Framework\TestCase;
 
 class PublicPadOpenServiceTest extends TestCase {
-	public function testProtectedReadOnlyReturnsSanitizedSnapshot(): void {
-		$padFiles = $this->createMock(PadFileService::class);
-		$padFiles->expects($this->once())->method('getTextSnapshotForRestore')->with('content')->willReturn('Snapshot text');
-		$padFiles->expects($this->once())->method('getHtmlSnapshotForRestore')->with('content')->willReturn('<h1 onclick="x">Title</h1><script>x</script>');
+	public function testProtectedReadOnlyHandsOutNoPadAddress(): void {
+		$etherpad = $this->createMock(EtherpadClient::class);
+		$etherpad->expects($this->never())->method('buildPadUrl');
+		$etherpad->expects($this->never())->method('getReadOnlyPadUrl');
 
-		$result = $this->buildService($padFiles)->open(
+		$result = $this->buildService(etherpadClient: $etherpad)->open(
 			'g.group$pad',
 			BindingService::ACCESS_PROTECTED,
 			true,
 			'token',
 			false,
-			'content',
 		);
 
 		$this->assertSame('', $result->url);
-		$this->assertTrue($result->isReadOnlySnapshot);
-		$this->assertSame('Snapshot text', $result->snapshotText);
-		$this->assertSame('<h1>Title</h1>', $result->snapshotHtml);
+		$this->assertTrue($result->isReadOnlyView);
 		$this->assertSame('', $result->cookieHeader);
 	}
 
@@ -54,39 +48,31 @@ class PublicPadOpenServiceTest extends TestCase {
 			false,
 			'token',
 			false,
-			'content',
 		);
 
 		$this->assertSame('https://pad.example/p/g.group$pad', $result->url);
 		$this->assertSame('sessionID=abc; Path=/', $result->cookieHeader);
-		$this->assertFalse($result->isReadOnlySnapshot);
+		$this->assertFalse($result->isReadOnlyView);
 	}
 
-	public function testExternalPublicPadReturnsNormalizedUrlAndSanitizedSnapshots(): void {
-		$padFiles = $this->createMock(PadFileService::class);
-		$padFiles->expects($this->once())->method('getTextSnapshotForRestore')->with('content')->willReturn('External snapshot');
-		$padFiles->expects($this->once())->method('getHtmlSnapshotForRestore')->with('content')->willReturn('<h1>External</h1><iframe></iframe>');
-
+	public function testExternalPublicPadReturnsNormalizedUrl(): void {
 		$fetcher = $this->createMock(ExternalPadExportFetcher::class);
 		$fetcher->expects($this->once())
 			->method('normalizeAndValidateExternalPublicPadUrl')
 			->with('https://remote.example/p/Test')
 			->willReturn(['pad_url' => 'https://remote.example/p/Test']);
 
-		$result = $this->buildService($padFiles, externalPadExportFetcher: $fetcher)->open(
+		$result = $this->buildService(externalPadExportFetcher: $fetcher)->open(
 			'ext.abc',
 			BindingService::ACCESS_PUBLIC,
 			true,
 			'token',
 			true,
-			'content',
 			'https://remote.example/p/Test',
 		);
 
 		$this->assertSame('https://remote.example/p/Test', $result->url);
 		$this->assertSame('https://remote.example/p/Test', $result->originalPadUrl);
-		$this->assertSame('External snapshot', $result->snapshotText);
-		$this->assertSame('<h1>External</h1>', $result->snapshotHtml);
 	}
 
 	public function testExternalProtectedMetadataIsRejected(): void {
@@ -99,7 +85,6 @@ class PublicPadOpenServiceTest extends TestCase {
 			false,
 			'token',
 			true,
-			'content',
 			'https://remote.example/p/Test',
 		);
 	}
@@ -114,7 +99,6 @@ class PublicPadOpenServiceTest extends TestCase {
 			false,
 			'token',
 			true,
-			'content',
 			'',
 		);
 	}
@@ -132,7 +116,6 @@ class PublicPadOpenServiceTest extends TestCase {
 			true,
 			'token',
 			false,
-			'content',
 		);
 
 		$this->assertSame('https://pad.example/p/r.public-pad', $result->url);
@@ -155,7 +138,6 @@ class PublicPadOpenServiceTest extends TestCase {
 			false,
 			'token',
 			false,
-			'content',
 		);
 
 		$this->assertSame('https://pad.example/p/public-pad', $result->url);
@@ -163,17 +145,14 @@ class PublicPadOpenServiceTest extends TestCase {
 	}
 
 	private function buildService(
-		?PadFileService $padFileService = null,
 		?EtherpadClient $etherpadClient = null,
 		?PadSessionService $padSessionService = null,
 		?ExternalPadExportFetcher $externalPadExportFetcher = null,
 	): PublicPadOpenService {
-		$padFileService ??= $this->createMock(PadFileService::class);
 		return new PublicPadOpenService(
 			$etherpadClient ?? $this->createMock(EtherpadClient::class),
 			$externalPadExportFetcher ?? $this->createMock(ExternalPadExportFetcher::class),
 			$padSessionService ?? $this->createMock(PadSessionService::class),
-			new SnapshotExtractor($padFileService, new SnapshotHtmlSanitizer()),
 		);
 	}
 }

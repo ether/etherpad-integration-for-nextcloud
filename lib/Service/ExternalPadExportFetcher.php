@@ -9,12 +9,28 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\Service;
 
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
+use OCA\EtherpadNextcloud\Exception\EtherpadTooLargeException;
 use OCA\EtherpadNextcloud\Exception\ExternalPadExportNotFoundException;
 use OCP\IConfig;
 
 class ExternalPadExportFetcher {
 	private const EXTERNAL_EXPORT_MAX_BYTES = 5242880; // 5 MiB
 	private const EXTERNAL_REQUEST_TIMEOUT_SECONDS = 15;
+
+	/**
+	 * The whole fetch, not each attempt: a host with four unreachable
+	 * addresses used to hold a request for a minute. An attempt gets what
+	 * is left, and one that no longer fits is not made.
+	 *
+	 * The clock starts before the name is resolved, so a slow lookup costs
+	 * the HTTP attempts their time rather than being added on top. What it
+	 * cannot do is bound the lookup itself: `dns_get_record()` takes no
+	 * timeout and obeys the system resolver, so a dead nameserver can still
+	 * hold a request for its own retry schedule before this budget has
+	 * anything left to give.
+	 */
+	private const EXTERNAL_TOTAL_BUDGET_SECONDS = 20;
+	private const EXTERNAL_MIN_ATTEMPT_SECONDS = 2;
 
 	public function __construct(
 		private IConfig $config,
@@ -23,12 +39,13 @@ class ExternalPadExportFetcher {
 
 	/** @return array{origin:string,pad_id:string,pad_url:string,text:string} */
 	public function normalizeAndFetchExternalPublicPadText(string $padUrl): array {
+		$deadline = $this->startBudget();
 		$resolved = $this->resolveAndValidateExternalPublicPadUrl($padUrl);
 		return [
 			'origin' => $resolved['origin'],
 			'pad_id' => $resolved['pad_id'],
 			'pad_url' => $resolved['pad_url'],
-			'text' => $this->getPublicTextFromResolvedExternalPad($resolved),
+			'text' => $this->fetchPublicExport($resolved, 'txt', $deadline),
 		];
 	}
 
@@ -36,10 +53,11 @@ class ExternalPadExportFetcher {
 	 * @return array{origin:string,pad_id:string,pad_url:string,text:string,snapshot_unavailable:bool}
 	 */
 	public function normalizeAndFetchExternalPublicPadTextOrEmpty(string $padUrl): array {
+		$deadline = $this->startBudget();
 		$resolved = $this->resolveAndValidateExternalPublicPadUrl($padUrl);
 		$snapshotUnavailable = false;
 		try {
-			$text = $this->getPublicTextFromResolvedExternalPad($resolved);
+			$text = $this->fetchPublicExport($resolved, 'txt', $deadline);
 		} catch (ExternalPadExportNotFoundException) {
 			$text = '';
 			$snapshotUnavailable = true;
@@ -52,6 +70,16 @@ class ExternalPadExportFetcher {
 			'text' => $text,
 			'snapshot_unavailable' => $snapshotUnavailable,
 		];
+	}
+
+	/**
+	 * Same address checks, pinning and size cap as the text export — only
+	 * the format differs, and with it what may come back.
+	 */
+	public function fetchExternalPublicPadHtml(string $padUrl): string {
+		$deadline = $this->startBudget();
+
+		return $this->fetchPublicExport($this->resolveAndValidateExternalPublicPadUrl($padUrl), 'html', $deadline);
 	}
 
 	/** @return array{origin:string,pad_id:string,pad_url:string} */
@@ -72,9 +100,20 @@ class ExternalPadExportFetcher {
 	/**
 	 * @param array{origin:string,pad_id:string,pad_url:string,host:string,port:int,resolved_ips:list<string>} $resolved
 	 */
-	private function getPublicTextFromResolvedExternalPad(array $resolved): string {
-		$url = $this->buildPublicExportUrl($resolved['pad_url'], 'txt');
-		return $this->sendPinnedPublicGetRequest($url, $resolved['host'], $resolved['port'], $resolved['resolved_ips']);
+	private function fetchPublicExport(array $resolved, string $format, float $deadline): string {
+		return $this->sendPinnedPublicGetRequest(
+			$this->buildPublicExportUrl($resolved['pad_url'], $format),
+			$resolved['host'],
+			$resolved['port'],
+			$resolved['resolved_ips'],
+			$format,
+			$deadline,
+		);
+	}
+
+	/** Started before the name is resolved, so the lookup spends from it too. */
+	private function startBudget(): float {
+		return microtime(true) + (float)self::EXTERNAL_TOTAL_BUDGET_SECONDS;
 	}
 
 	/** @return array{origin:string,pad_id:string,pad_url:string,host:string,port:int,resolved_ips:list<string>} */
@@ -98,13 +137,26 @@ class ExternalPadExportFetcher {
 	/**
 	 * @param list<string> $resolvedIps
 	 */
-	private function sendPinnedPublicGetRequest(string $url, string $host, int $port, array $resolvedIps): string {
+	private function sendPinnedPublicGetRequest(
+		string $url,
+		string $host,
+		int $port,
+		array $resolvedIps,
+		string $format,
+		float $deadline
+	): string {
 		if (!function_exists('curl_init')) {
 			throw new EtherpadClientException('External pad sync requires PHP cURL extension.');
 		}
 
 		$errors = [];
 		foreach ($resolvedIps as $ip) {
+			$left = (int)floor($deadline - microtime(true));
+			if ($left < self::EXTERNAL_MIN_ATTEMPT_SECONDS) {
+				$errors[] = 'no time left to try ' . $ip;
+				break;
+			}
+			$attemptTimeout = min($left, self::EXTERNAL_REQUEST_TIMEOUT_SECONDS);
 			$buffer = '';
 			$contentType = '';
 			$sizeExceeded = false;
@@ -117,13 +169,13 @@ class ExternalPadExportFetcher {
 				CURLOPT_RETURNTRANSFER => false,
 				CURLOPT_FOLLOWLOCATION => false,
 				CURLOPT_MAXREDIRS => 0,
-				CURLOPT_CONNECTTIMEOUT => self::EXTERNAL_REQUEST_TIMEOUT_SECONDS,
-				CURLOPT_TIMEOUT => self::EXTERNAL_REQUEST_TIMEOUT_SECONDS,
+				CURLOPT_CONNECTTIMEOUT => $attemptTimeout,
+				CURLOPT_TIMEOUT => $attemptTimeout,
 				CURLOPT_HTTPGET => true,
 				CURLOPT_SSL_VERIFYPEER => true,
 				CURLOPT_SSL_VERIFYHOST => 2,
 				CURLOPT_HTTPHEADER => [
-					'Accept: text/plain, application/octet-stream;q=0.9, */*;q=0.1',
+					'Accept: ' . self::acceptHeaderFor($format),
 				],
 				CURLOPT_RESOLVE => [$host . ':' . $port . ':' . $ip],
 				CURLOPT_HEADERFUNCTION => static function ($ch, string $headerLine) use (&$contentType): int {
@@ -162,23 +214,18 @@ class ExternalPadExportFetcher {
 				// stays false here.
 				/** @psalm-suppress TypeDoesNotContainType */
 				if ($sizeExceeded) {
-					throw new EtherpadClientException(
+					// Same type as the own-server cap, so both answer the
+					// reader with "too large to show" instead of one of them
+					// looking like an outage.
+					throw new EtherpadTooLargeException(
 						'External public pad export exceeds maximum size (' . self::EXTERNAL_EXPORT_MAX_BYTES . ' bytes).'
 					);
 				}
 				$errors[] = 'transport via ' . $ip . ': ' . ($curlError !== '' ? $curlError : 'unknown error');
 				continue;
 			}
-			if ($httpCode >= 400) {
-				if ($httpCode === 404) {
-					throw new ExternalPadExportNotFoundException(
-						'External public pad export was not found. Make sure the pad exists and can be exported.'
-					);
-				}
-				throw new EtherpadClientException('Public export HTTP error (' . $httpCode . ')');
-			}
-
-			$this->assertAllowedExternalExportContentType($contentType);
+			$this->assertSuccessfulExportStatus($httpCode);
+			$this->assertAllowedExternalExportContentType($contentType, $format);
 			return $buffer;
 		}
 
@@ -186,13 +233,51 @@ class ExternalPadExportFetcher {
 		throw new EtherpadClientException('Public export transport error: ' . $detail);
 	}
 
-	private function assertAllowedExternalExportContentType(string $contentTypeHeader): void {
+	/**
+	 * Only an answer that says it *is* the export. Redirects are not
+	 * followed, but their bodies used to be taken anyway — a "Please sign
+	 * in" page behind a 302 arrived as pad content, which the text export
+	 * caught on content type and the HTML export cannot.
+	 */
+	private function assertSuccessfulExportStatus(int $httpCode): void {
+		if ($httpCode === 404) {
+			throw new ExternalPadExportNotFoundException(
+				'External public pad export was not found. Make sure the pad exists and can be exported.'
+			);
+		}
+		if ($httpCode < 200 || $httpCode > 299) {
+			throw new EtherpadClientException('Public export HTTP error (' . $httpCode . ')');
+		}
+	}
+
+	/** What this app is willing to be sent back, per export format. */
+	private static function acceptHeaderFor(string $format): string {
+		return $format === 'html'
+			? 'text/html, application/xhtml+xml;q=0.9, */*;q=0.1'
+			: 'text/plain, application/octet-stream;q=0.9, */*;q=0.1';
+	}
+
+	/**
+	 * Only what this format asked for. The text export still refuses
+	 * `text/html`, because an error page answered with 200 is the shape
+	 * that rule exists for; allowing the union for both would weaken the
+	 * text path to buy nothing for this one.
+	 */
+	private function assertAllowedExternalExportContentType(string $contentTypeHeader, string $format = 'txt'): void {
 		$raw = trim($contentTypeHeader);
 		if ($raw === '') {
 			throw new EtherpadClientException('Public export did not provide a Content-Type header.');
 		}
 
 		$normalized = strtolower(trim((string)explode(';', $raw, 2)[0]));
+
+		if ($format === 'html') {
+			if (in_array($normalized, ['text/html', 'application/xhtml+xml'], true)) {
+				return;
+			}
+			throw new EtherpadClientException('Public HTML export returned unsupported Content-Type: ' . $normalized);
+		}
+
 		if ($normalized === 'text/html') {
 			throw new EtherpadClientException('Public export returned unsupported Content-Type: text/html');
 		}

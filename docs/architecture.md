@@ -84,7 +84,7 @@ checked-in runtime assets in `js/`.
 - Snapshot helpers
   - `PadFileService::withExportSnapshot(...)` constructs updated `.pad` content for snapshot writes.
   - `PadFileLockRetryService::putContentWithSyncLockRetry(...)` persists that content to the Nextcloud file.
-  - `SnapshotExtractor` only reads stored snapshot text + sanitized HTML for viewers.
+  - Stored snapshots are read only by restore and by the forced-sync comparison; the read-only viewer no longer uses them at all (see `LivePadHtmlFetcher`).
 
 ## Main Flows
 

@@ -12,8 +12,6 @@ use OCA\EtherpadNextcloud\Service\PadFileLockRetryService;
 use OCA\EtherpadNextcloud\Service\PadFileService;
 use OCA\EtherpadNextcloud\Service\PadOpenService;
 use OCA\EtherpadNextcloud\Service\PadSessionService;
-use OCA\EtherpadNextcloud\Service\SnapshotExtractor;
-use OCA\EtherpadNextcloud\Service\SnapshotHtmlSanitizer;
 use OCA\EtherpadNextcloud\Service\UserNodeResolver;
 use OCA\EtherpadNextcloud\Util\PathNormalizer;
 use OCA\EtherpadNextcloud\Service\ParsedPadFile;
@@ -45,13 +43,13 @@ class PadOpenServiceTest extends TestCase {
 	 * the access — so withholding them is the only thing that makes "view
 	 * only" mean anything there.
 	 */
-	public function testGivesAProtectedPadAsASnapshotWhenTheShareIsReadOnly(): void {
+	public function testGivesAProtectedPadAsAReadOnlyViewWhenTheShareIsReadOnly(): void {
 		$session = $this->createMock(PadSessionService::class);
 		$session->expects($this->never())->method('createProtectedOpenContext');
 
-		// Nor any address. This answer comes entirely out of the `.pad`
-		// file, so it must not depend on the pad server being configured or
-		// reachable — asking it anything here would put that back.
+		// Nor any address. The content arrives over the separate content
+		// endpoint, so nothing here needs the pad server — asking it
+		// anything would put that dependency back into the open.
 		$client = $this->createMock(EtherpadClient::class);
 		$client->expects($this->never())->method('buildPadUrl');
 		$client->expects($this->never())->method('getReadOnlyPadUrl');
@@ -63,7 +61,7 @@ class PadOpenServiceTest extends TestCase {
 			etherpadClient: $client,
 		);
 
-		$this->assertTrue($target->isReadOnlySnapshot);
+		$this->assertTrue($target->isReadOnlyView);
 		$this->assertSame('', $target->url, 'a viewer must not be given a pad to open');
 		$this->assertSame('', $target->cookieHeader, 'and no session to open it with');
 		// The response ships this as `pad_url`. Withholding one address and
@@ -71,7 +69,6 @@ class PadOpenServiceTest extends TestCase {
 		// thing, and no client reads it today — which is why it would go
 		// unnoticed.
 		$this->assertSame('', $target->padUrl, 'nor the address under a second name');
-		$this->assertSame('snapshot text', $target->snapshotText);
 	}
 
 	/** With write permission, the same pad opens as it always did. */
@@ -93,7 +90,7 @@ class PadOpenServiceTest extends TestCase {
 			padSessionService: $session,
 		);
 
-		$this->assertFalse($target->isReadOnlySnapshot);
+		$this->assertFalse($target->isReadOnlyView);
 		$this->assertSame('https://pad.example.test/p/g.ABCDEFGHIJKLMNOP$pad-1', $target->url);
 	}
 
@@ -126,7 +123,7 @@ class PadOpenServiceTest extends TestCase {
 	 * would keep working, so the outage would present as "only the people
 	 * who may not edit cannot open it".
 	 */
-	public function testFallsBackToTheSnapshotWhenTheReadOnlyUrlCannotBeResolved(): void {
+	public function testFallsBackToTheReadOnlyViewWhenTheReadOnlyUrlCannotBeResolved(): void {
 		$client = $this->createMock(EtherpadClient::class);
 		$client->method('buildPadUrl')->willReturn('https://pad.example.test/p/pad-1');
 		$client->method('getReadOnlyPadUrl')
@@ -139,12 +136,10 @@ class PadOpenServiceTest extends TestCase {
 			padId: 'pad-1',
 		);
 
-		$this->assertTrue($target->isReadOnlySnapshot);
+		$this->assertTrue($target->isReadOnlyView);
 		$this->assertSame('', $target->url, 'no pad to open');
 		$this->assertSame('', $target->padUrl, 'and not under the other name either');
 		$this->assertSame('', $target->cookieHeader, 'and no session');
-		$this->assertSame('snapshot text', $target->snapshotText);
-		$this->assertSame('<p>snapshot</p>', $target->snapshotHtml, 'sanitized, as everywhere else');
 	}
 
 	private function openWith(
@@ -163,8 +158,6 @@ class PadOpenServiceTest extends TestCase {
 		$userNodeResolver->method('resolveUserFileNodeById')->willReturn($file);
 
 		$padFileService = $this->createMock(PadFileService::class);
-		$padFileService->method('getTextSnapshotForRestore')->willReturn('snapshot text');
-		$padFileService->method('getHtmlSnapshotForRestore')->willReturn('<p>snapshot</p>');
 		$padFileService->method('readPad')->willReturn(new ParsedPadFile(
 			frontmatter: ['pad_id' => $padId, 'access_mode' => $accessMode],
 			body: 'snapshot text',
@@ -185,7 +178,6 @@ class PadOpenServiceTest extends TestCase {
 			$client,
 			$this->createMock(ExternalPadExportFetcher::class),
 			$padSessionService ?? $this->createMock(PadSessionService::class),
-			new SnapshotExtractor($padFileService, new SnapshotHtmlSanitizer()),
 			$this->createMock(LoggerInterface::class),
 		);
 
@@ -203,7 +195,6 @@ class PadOpenServiceTest extends TestCase {
 			$this->createMock(EtherpadClient::class),
 			$this->createMock(ExternalPadExportFetcher::class),
 			$this->createMock(PadSessionService::class),
-			new SnapshotExtractor($padFileService, new SnapshotHtmlSanitizer()),
 			$this->createMock(LoggerInterface::class),
 		);
 	}
