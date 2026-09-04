@@ -73,6 +73,7 @@ class EmbedController extends Controller {
 					'content_empty' => $this->l10n->t('This pad is still empty.'),
 					'content_loading' => $this->l10n->t('Loading pad content...'),
 					'content_error' => $this->l10n->t('Could not load the pad content.'),
+					'content_no_url' => $this->l10n->t('The server did not say where to load this pad from.'),
 					'content_retry' => $this->l10n->t('Try again'),
 					'content_refresh' => $this->l10n->t('Refresh'),
 					'content_refreshing' => $this->l10n->t('Refreshing...'),

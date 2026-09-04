@@ -89,6 +89,7 @@ class PadSessionController extends AbstractPadController {
 			fn(LivePadHtml $content): DataResponse => $this->padResponses->padContentResponse($content),
 			[
 				'not_found' => $this->l10n->t('Cannot open selected .pad file.'),
+				'too_large' => $this->l10n->t('This pad is too large to show here. Open it in Etherpad instead.'),
 				'generic' => $this->l10n->t('Could not load the pad content.'),
 			],
 		);

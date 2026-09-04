@@ -96,23 +96,26 @@ class SnapshotHtmlSanitizer {
 
 	/** Returns the href to emit, or `''` when it may not be emitted at all. */
 	private function safeLinkTarget(string $href): string {
-		// Browsers ignore control characters while reading a scheme, so
-		// `java\tscript:` is `javascript:` to them — and so it is here.
-		$candidate = (string)preg_replace('/[\x00-\x20\x7F]/', '', $href);
-		if ($candidate === '') {
+		$target = trim($href);
+		if ($target === '') {
 			return '';
 		}
 
-		// No scheme means a relative link, which inside a pad would point at
-		// this Nextcloud rather than anywhere the pad meant.
-		$colon = strpos($candidate, ':');
+		// Only for reading the scheme, and only up to the colon. Browsers
+		// ignore control characters there, so `java\tscript:` is
+		// `javascript:` to them — but the same characters further along are
+		// part of a legitimate path, and a space in
+		// `/files/Meeting notes.pdf` is one a browser encodes rather than
+		// drops. The address itself is passed through untouched.
+		$colon = strpos($target, ':');
 		if ($colon === false) {
+			// No scheme: a relative link, which inside a pad would point at
+			// this Nextcloud rather than anywhere the pad meant.
 			return '';
 		}
+		$scheme = strtolower((string)preg_replace('/[\x00-\x20\x7F]/', '', substr($target, 0, $colon)));
 
-		return in_array(strtolower(substr($candidate, 0, $colon)), self::ALLOWED_LINK_SCHEMES, true)
-			? $candidate
-			: '';
+		return in_array($scheme, self::ALLOWED_LINK_SCHEMES, true) ? $target : '';
 	}
 
 	private function sanitizeNode(\DOMNode $node): string {

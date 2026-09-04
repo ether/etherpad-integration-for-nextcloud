@@ -297,7 +297,7 @@ describe('viewer component — resolveOpenUrl', () => {
 
 		await vm.resolveOpenUrl()
 
-		expect(vm.contentMode).toBe('external')
+		expect(vm.contentMode).toBe('content')
 		expect(vm.externalOpenUrl).toBe('https://other.server/p/abc')
 		expect(loadPadContent).toHaveBeenCalledWith('/content/42', expect.anything())
 		expect(vm.iframeSrc).toBe('')
@@ -310,7 +310,7 @@ describe('viewer component — resolveOpenUrl', () => {
 
 		await vm.resolveOpenUrl()
 
-		expect(vm.contentMode).toBe('readonly')
+		expect(vm.contentMode).toBe('content')
 		expect(loadPadContent).toHaveBeenCalledWith('/content/42', expect.anything())
 	})
 
@@ -808,7 +808,7 @@ describe('viewer component — render', () => {
 
 	it('renders the external view with the loaded body and an open-original link', () => {
 		const vm = makeInstance({
-			contentMode: 'external',
+			contentMode: 'content',
 			externalOpenUrl: 'https://other/p',
 			contentState: 'ready',
 			content: { html: '<b>x</b>', isEmpty: false },
@@ -816,14 +816,14 @@ describe('viewer component — render', () => {
 		const tree = component.render.call(vm, h)
 
 		expect(findByTag(tree, 'a')[0].data.attrs.href).toBe('https://other/p')
-		expect(findByClass(tree, 'epnc-native-doc__text--html').data.domProps.innerHTML).toBe('<b>x</b>')
+		expect(findByClass(tree, 'epnc-pad-doc__text--html').data.domProps.innerHTML).toBe('<b>x</b>')
 	})
 
 	it('renders the read-only view', () => {
-		const vm = makeInstance({ contentMode: 'readonly', contentState: 'ready', content: { html: '<p>t</p>', isEmpty: false } })
+		const vm = makeInstance({ contentMode: 'content', contentState: 'ready', content: { html: '<p>t</p>', isEmpty: false } })
 		const tree = component.render.call(vm, h)
 
-		expect(findByClass(tree, 'epnc-native-doc__text--html').data.domProps.innerHTML).toBe('<p>t</p>')
+		expect(findByClass(tree, 'epnc-pad-doc__text--html').data.domProps.innerHTML).toBe('<p>t</p>')
 	})
 
 	/**
@@ -833,14 +833,14 @@ describe('viewer component — render', () => {
 	 */
 	it('offers refresh even after a successful load, and disables it while loading', () => {
 		const ready = component.render.call(
-			makeInstance({ contentMode: 'readonly', contentState: 'ready', content: { html: '<p>t</p>', isEmpty: false } }),
+			makeInstance({ contentMode: 'content', contentState: 'ready', content: { html: '<p>t</p>', isEmpty: false } }),
 			h,
 		)
-		const loading = component.render.call(makeInstance({ contentMode: 'readonly', contentState: 'loading' }), h)
+		const loading = component.render.call(makeInstance({ contentMode: 'content', contentState: 'loading' }), h)
 
 		expect(allText(ready)).toContain('Refresh')
-		expect(findByClass(ready, 'epnc-native-doc__refresh').data.attrs.disabled).toBe(false)
-		expect(findByClass(loading, 'epnc-native-doc__refresh').data.attrs.disabled).toBe(true)
+		expect(findByClass(ready, 'epnc-pad-doc__refresh').data.attrs.disabled).toBe(false)
+		expect(findByClass(loading, 'epnc-pad-doc__refresh').data.attrs.disabled).toBe(true)
 	})
 
 	/**
@@ -849,22 +849,22 @@ describe('viewer component — render', () => {
 	 */
 	it('keeps showing the last content while refreshing', () => {
 		const tree = component.render.call(makeInstance({
-			contentMode: 'readonly',
+			contentMode: 'content',
 			contentState: 'loading',
 			contentLoaded: true,
 			content: { html: '<p>still here</p>', isEmpty: false },
 		}), h)
 
-		expect(findByClass(tree, 'epnc-native-doc__text--html').data.domProps.innerHTML).toBe('<p>still here</p>')
+		expect(findByClass(tree, 'epnc-pad-doc__text--html').data.domProps.innerHTML).toBe('<p>still here</p>')
 		expect(allText(tree)).not.toContain('Loading pad content...')
 		expect(allText(tree)).toContain('Refreshing...')
-		expect(findByClass(tree, 'epnc-native-doc__refresh').data.attrs.disabled).toBe(true)
+		expect(findByClass(tree, 'epnc-pad-doc__refresh').data.attrs.disabled).toBe(true)
 	})
 
 	/** Before the first answer there is nothing to keep, so this one may blank. */
 	it('shows the loading state only until the first answer', () => {
 		const tree = component.render.call(
-			makeInstance({ contentMode: 'readonly', contentState: 'loading', contentLoaded: false }),
+			makeInstance({ contentMode: 'content', contentState: 'loading', contentLoaded: false }),
 			h,
 		)
 
@@ -878,15 +878,15 @@ describe('viewer component — render', () => {
 	 */
 	it('keeps the content and reports a failed refresh beside the button', () => {
 		const tree = component.render.call(makeInstance({
-			contentMode: 'readonly',
+			contentMode: 'content',
 			contentState: 'error',
 			contentError: 'pad server unreachable',
 			contentLoaded: true,
 			content: { html: '<p>still here</p>', isEmpty: false },
 		}), h)
 
-		expect(findByClass(tree, 'epnc-native-doc__text--html').data.domProps.innerHTML).toBe('<p>still here</p>')
-		expect(findByClass(tree, 'epnc-native-doc__toolbar-error')).not.toBeNull()
+		expect(findByClass(tree, 'epnc-pad-doc__text--html').data.domProps.innerHTML).toBe('<p>still here</p>')
+		expect(findByClass(tree, 'epnc-pad-doc__toolbar-error')).not.toBeNull()
 		expect(allText(tree)).toContain('pad server unreachable')
 		expect(allText(tree)).not.toContain('Try again')
 	})
@@ -897,7 +897,7 @@ describe('viewer component — render', () => {
 	 * does not supersede the open.
 	 */
 	it('drops a superseded content answer', async () => {
-		const vm = makeInstance({ contentMode: 'readonly', contentUrl: '/content/42', contentState: 'ready' })
+		const vm = makeInstance({ contentMode: 'content', contentUrl: '/content/42', contentState: 'ready' })
 		let releaseFirst
 		loadPadContent
 			.mockImplementationOnce(() => new Promise((resolve) => { releaseFirst = () => resolve({ html: 'STALE', isEmpty: false }) }))
@@ -912,14 +912,14 @@ describe('viewer component — render', () => {
 	})
 
 	it('says so when the pad loaded and is empty', () => {
-		const vm = makeInstance({ contentMode: 'readonly', contentState: 'ready', content: { html: '', isEmpty: true } })
+		const vm = makeInstance({ contentMode: 'content', contentState: 'ready', content: { html: '', isEmpty: true } })
 		const tree = component.render.call(vm, h)
 
 		expect(allText(tree)).toContain('This pad is still empty.')
 	})
 
 	it('shows a retry action when the content could not be loaded', () => {
-		const vm = makeInstance({ contentMode: 'readonly', contentState: 'error', contentError: 'boom' })
+		const vm = makeInstance({ contentMode: 'content', contentState: 'error', contentError: 'boom' })
 		const tree = component.render.call(vm, h)
 
 		expect(allText(tree)).toContain('boom')
@@ -927,7 +927,7 @@ describe('viewer component — render', () => {
 	})
 
 	it('shows a loading state while the pad is being fetched', () => {
-		const vm = makeInstance({ contentMode: 'readonly', contentState: 'loading' })
+		const vm = makeInstance({ contentMode: 'content', contentState: 'loading' })
 		const tree = component.render.call(vm, h)
 
 		expect(allText(tree)).toContain('Loading pad content...')

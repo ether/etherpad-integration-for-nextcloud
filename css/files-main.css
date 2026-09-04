@@ -6,7 +6,7 @@
 /* NC Viewer scoped CSS sets height:auto on .modal-container.
  * Scope override to our viewer only to avoid affecting other file types. */
 .viewer .modal-wrapper .modal-container:has(.epnc-native-shell),
-.viewer .modal-wrapper .modal-container:has(.epnc-native-doc) {
+.viewer .modal-wrapper .modal-container:has(.epnc-pad-doc) {
 	height: unset !important;
 	bottom: 0 !important;
 }
@@ -70,7 +70,7 @@
 	word-break: break-word;
 }
 
-.epnc-native-doc {
+.epnc-pad-doc {
 	box-sizing: border-box;
 	width: 100%;
 	height: 100%;
@@ -79,165 +79,11 @@
 	overflow: auto;
 	background: var(--color-main-background, #fff);
 	color: var(--color-main-text, #111827);
-}
 
-.epnc-native-doc__inner {
-	box-sizing: border-box;
-	width: min(800px, 100%);
-	margin: 0 auto;
-	display: flex;
-	flex-direction: column;
-}
-
-.epnc-native-doc__toolbar {
-	display: flex;
-	align-items: center;
-	justify-content: flex-end;
-	gap: 8px;
-	margin: 0 0 10px;
-}
-
-.epnc-native-doc__toolbar-error {
-	margin-right: auto;
-	color: var(--color-error, #b32d2e);
-	font-size: 13px;
-}
-
-.epnc-native-doc__text--html a {
-	color: var(--color-primary-element, #0082c9);
-	text-decoration: underline;
-}
-
-/* A document, not a card: no frame and no tinted panel around the text. */
-.epnc-native-doc__text {
-	box-sizing: border-box;
-	width: 100%;
-	margin: 0;
-	padding: 0;
-	background: transparent;
-	color: var(--color-main-text, #111827);
-	font: 15px/1.65 var(--font-face, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
-	white-space: pre-wrap;
-	word-break: break-word;
-	overflow: visible;
-}
-
-.epnc-native-doc__status {
-	display: flex;
-	flex-direction: column;
-	align-items: flex-start;
-	gap: 12px;
-	white-space: normal;
-	color: var(--color-text-maxcontrast, #6b7280);
-}
-
-.epnc-native-doc__text--html {
-	font-family: var(--font-face, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
-	white-space: normal;
-}
-
-.epnc-native-doc__text--html > :first-child {
-	margin-top: 0;
-}
-
-.epnc-native-doc__text--html > :last-child {
-	margin-bottom: 0;
-}
-
-.epnc-native-doc__text--html h1,
-.epnc-native-doc__text--html h2,
-.epnc-native-doc__text--html h3,
-.epnc-native-doc__text--html h4,
-.epnc-native-doc__text--html h5,
-.epnc-native-doc__text--html h6 {
-	margin: 1.2em 0 0.55em;
-	font-weight: 600;
-	line-height: 1.35;
-}
-
-.epnc-native-doc__text--html h1 {
-	font-size: 1.75em;
-}
-
-.epnc-native-doc__text--html h2 {
-	font-size: 1.45em;
-}
-
-.epnc-native-doc__text--html h3 {
-	font-size: 1.25em;
-}
-
-.epnc-native-doc__text--html h4,
-.epnc-native-doc__text--html h5,
-.epnc-native-doc__text--html h6 {
-	font-size: 1.1em;
-}
-
-.epnc-native-doc__text--html strong,
-.epnc-native-doc__text--html b {
-	font-weight: 700;
-}
-
-.epnc-native-doc__text--html em,
-.epnc-native-doc__text--html i {
-	font-style: italic;
-}
-
-.epnc-native-doc__text--html u {
-	text-decoration: underline;
-}
-
-.epnc-native-doc__text--html s,
-.epnc-native-doc__text--html del {
-	text-decoration: line-through;
-}
-
-.epnc-native-doc__text--html p,
-.epnc-native-doc__text--html ul,
-.epnc-native-doc__text--html ol,
-.epnc-native-doc__text--html blockquote,
-.epnc-native-doc__text--html pre {
-	margin: 0 0 0.9em;
-}
-
-.epnc-native-doc__text--html ul,
-.epnc-native-doc__text--html ol {
-	padding-left: 1.5em;
-}
-
-.epnc-native-doc__text--html ul {
-	list-style: disc;
-}
-
-.epnc-native-doc__text--html ol {
-	list-style: decimal;
-}
-
-#body-public[data-epnc-single-file-share="1"] .modal-header .icons-menu,
-#body-public[data-epnc-single-file-share="1"] .modal-header .header-close {
-	display: none !important;
-}
-
-#body-public[data-epnc-single-file-share="1"] .viewer .modal-header {
-	display: none !important;
-	opacity: 0 !important;
-	visibility: hidden !important;
-	pointer-events: none !important;
-}
-
-#body-public[data-epnc-single-file-share="1"] .viewer .modal-wrapper--full > .modal-container {
-	top: 0 !important;
-	height: 100% !important;
-	max-height: 100% !important;
-}
-
-/* Fallback icon class for the + New menu on NC30-32.
- * NC33+ uses iconSvgInline directly; older versions render iconClass as a
- * <span class="…"> and need the background-image to be defined in CSS.
- */
-.icon-filetype-etherpad-nextcloud-pad {
-	background-image: url('../img/filetypes/etherpad-nextcloud-pad.svg');
-	background-repeat: no-repeat;
-	background-position: center;
-	background-size: contain;
+	/* What the shared document stylesheet paints with, from the theme. */
+	--epnc-doc-text: var(--color-main-text, #111827);
+	--epnc-doc-muted: var(--color-text-maxcontrast, #6b7280);
+	--epnc-doc-accent: var(--color-primary-element, #0082c9);
+	--epnc-doc-error: var(--color-error, #b32d2e);
+	--epnc-doc-font: var(--font-face, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
 }

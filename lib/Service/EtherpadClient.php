@@ -10,6 +10,7 @@ namespace OCA\EtherpadNextcloud\Service;
 
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
 use OCA\EtherpadNextcloud\Exception\EtherpadTooLargeException;
+use OCA\EtherpadNextcloud\Http\BoundedSinkStream;
 use OCP\Http\Client\IClientService;
 use OCP\Http\Client\IResponse;
 use OCP\IConfig;
@@ -384,11 +385,15 @@ class EtherpadClient {
 
 		try {
 			$rawBody = $this->sendRequest($url, $query, $httpMethod, $timeoutSeconds, $maxBytes);
-		} catch (EtherpadTooLargeException $e) {
-			// Not wrapped: the caller says "too large to show" rather than
-			// "request failed", so the type has to survive.
-			throw $e;
 		} catch (\Throwable $e) {
+			// The size refusal is thrown from inside the sink, so the HTTP
+			// client hands it back wrapped. It has to survive as its own
+			// type: the caller says "too large to show" rather than
+			// "request failed".
+			$tooLarge = $this->findTooLargeCause($e);
+			if ($tooLarge !== null) {
+				throw $tooLarge;
+			}
 			throw new EtherpadClientException('Etherpad API request failed: ' . $method, 0, $e);
 		}
 
@@ -407,9 +412,16 @@ class EtherpadClient {
 		return is_array($data) ? $data : [];
 	}
 
-	/**
-	 * @param array<string,mixed> $query
-	 */
+	private function findTooLargeCause(\Throwable $e): ?EtherpadTooLargeException {
+		for ($cause = $e; $cause !== null; $cause = $cause->getPrevious()) {
+			if ($cause instanceof EtherpadTooLargeException) {
+				return $cause;
+			}
+		}
+
+		return null;
+	}
+
 	private function sendRequest(
 		string $url,
 		array $query,
@@ -420,8 +432,13 @@ class EtherpadClient {
 		$method = strtoupper($httpMethod);
 		// Clamped: Guzzle reads `timeout => 0` as no timeout at all.
 		$options = $this->baseRequestOptions($this->boundedTimeout($timeoutSeconds));
+		$sink = null;
 		if ($maxBytes !== null) {
-			$options['stream'] = true;
+			// The cap has to be part of the transfer, not a check after it:
+			// Nextcloud pins Guzzle's CurlHandler, which buffers the whole
+			// body into a temp stream before anything of ours could look.
+			$sink = new BoundedSinkStream($maxBytes);
+			$options['sink'] = $sink;
 		}
 		if ($method === 'GET') {
 			$options['query'] = $query;
@@ -438,44 +455,11 @@ class EtherpadClient {
 			throw new EtherpadClientException('Etherpad API HTTP error (' . $statusCode . ')');
 		}
 
-		return $maxBytes === null
-			? (string)$response->getBody()
-			: $this->readBounded($response, $maxBytes);
+		// From the sink rather than the response: it is the object that saw
+		// the bytes, and its limit already held while they arrived.
+		return $sink === null ? (string)$response->getBody() : $sink->getContents();
 	}
 
-	/**
-	 * Reads at most `$maxBytes` and stops rather than truncating — a
-	 * truncated JSON body decodes to nothing anyway.
-	 *
-	 * Streaming is the HTTP client's choice: when it streams, nothing above
-	 * the limit is ever held; when it does not, the limit still holds, just
-	 * after the fact.
-	 */
-	private function readBounded(IResponse $response, int $maxBytes): string {
-		$body = $response->getBody();
-		if (is_string($body)) {
-			if (strlen($body) > $maxBytes) {
-				throw new EtherpadTooLargeException('Etherpad API response exceeds ' . $maxBytes . ' bytes.');
-			}
-			return $body;
-		}
-
-		$buffer = '';
-		while (!feof($body)) {
-			$chunk = fread($body, 8192);
-			if ($chunk === false) {
-				break;
-			}
-			$buffer .= $chunk;
-			if (strlen($buffer) > $maxBytes) {
-				fclose($body);
-				throw new EtherpadTooLargeException('Etherpad API response exceeds ' . $maxBytes . ' bytes.');
-			}
-		}
-		fclose($body);
-
-		return $buffer;
-	}
 
 	private function getPublicHost(): string {
 		$host = rtrim((string)$this->config->getAppValue('etherpad_nextcloud', 'etherpad_host', ''), '/');
@@ -606,6 +590,13 @@ class EtherpadClient {
 		try {
 			return $client->request($method, $url, $options);
 		} catch (\Throwable $e) {
+			// Our own refusal, thrown from the sink while the body was
+			// arriving. It is not a transport failure and must keep its
+			// type all the way to the error mapper.
+			$tooLarge = $this->findTooLargeCause($e);
+			if ($tooLarge !== null) {
+				throw $tooLarge;
+			}
 			try {
 				return $client->getResponseFromThrowable($e);
 			} catch (\Throwable) {

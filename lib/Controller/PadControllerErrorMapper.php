@@ -47,6 +47,7 @@ class PadControllerErrorMapper {
 	 * @param array{
 	 *   invalid_argument?: string,
 	 *   not_found?: string,
+	 *   too_large?: string,
 	 *   binding_message?: string,
 	 *   binding_status?: int,
 	 *   generic?: string,
@@ -141,9 +142,10 @@ class PadControllerErrorMapper {
 		} catch (EtherpadTooLargeException) {
 			// The pad is fine and still editable; only this preview refuses
 			// to read that much. Its own wording, because the byte count in
-			// the exception explains nothing to a reader.
+			// the exception explains nothing to a reader, and translated by
+			// the controller like every other message that reaches a user.
 			return new DataResponse([
-				'message' => 'This pad is too large to show here. Open it in Etherpad instead.',
+				'message' => $options['too_large'] ?? 'This pad is too large to show here. Open it in Etherpad instead.',
 				'code' => 'pad_too_large',
 			], Http::STATUS_BAD_REQUEST);
 		} catch (PadFileFormatException|EtherpadClientException $e) {

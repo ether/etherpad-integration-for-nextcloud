@@ -103,7 +103,7 @@ test.describe('external pad from the template picker', () => {
 		// Nextcloud opens the file it just created, and a linked external pad
 		// opens straight into the snapshot view — so only open it from the list
 		// when that has not already happened.
-		const alreadyOpen = await page.locator('.epnc-native-doc').first()
+		const alreadyOpen = await page.locator('.epnc-pad-doc').first()
 			.waitFor({ state: 'visible', timeout: 20_000 })
 			.then(() => true)
 			.catch(() => false)

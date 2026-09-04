@@ -394,21 +394,19 @@ import { parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './li
 
 					const contentUrl = (data && typeof data.content_url === 'string') ? data.content_url.trim() : ''
 
-					if (data && data.is_readonly_view === true) {
-						this.contentMode = 'readonly'
+					// One branch for both read-only surfaces: they load the
+					// same way and render the same view. The only difference
+					// is whether there is an original pad to link to — and
+					// for a protected read-only pad there must not be.
+					const isExternal = Boolean(data && data.is_external === true
+						&& typeof data.url === 'string' && data.url.trim() !== '')
+					if ((data && data.is_readonly_view === true) || isExternal) {
+						this.externalOpenUrl = isExternal ? data.url.trim() : ''
 						this.contentUrl = contentUrl
+						this.contentMode = 'content'
 						this.markLoaded()
 						// Not awaited: the frame is drawn now and fills in
 						// when the pad answers.
-						void this.loadContent()
-						return
-					}
-
-					if (data && data.is_external === true && typeof data.url === 'string' && data.url.trim() !== '') {
-						this.externalOpenUrl = data.url.trim()
-						this.contentMode = 'external'
-						this.contentUrl = contentUrl
-						this.markLoaded()
 						void this.loadContent()
 						return
 					}
@@ -522,13 +520,14 @@ import { parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './li
 				}
 
 				this._contentAbort?.abort()
-				const abort = new AbortController()
+				// Guarded like the open's, a few hundred lines up.
+				const abort = typeof AbortController === 'function' ? new AbortController() : null
 				this._contentAbort = abort
 				this.contentState = 'loading'
 				this.contentError = ''
 
 				try {
-					const content = await loadPadContent(this.contentUrl, { signal: abort.signal })
+					const content = await loadPadContent(this.contentUrl, { signal: abort?.signal })
 					if (!isCurrent()) return
 					this.content = content
 					this.contentLoaded = true
@@ -543,21 +542,21 @@ import { parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './li
 				const extraActions = Array.isArray(options.actions) ? options.actions : []
 				const isBusy = this.contentState === 'loading'
 
-				return createElement('div', { class: 'epnc-native-doc' }, [
-					createElement('div', { class: 'epnc-native-doc__inner' }, [
-						createElement('div', { class: 'epnc-native-doc__toolbar' }, [
+				return createElement('div', { class: 'epnc-pad-doc' }, [
+					createElement('div', { class: 'epnc-pad-doc__inner' }, [
+						createElement('div', { class: 'epnc-pad-doc__toolbar' }, [
 							// A failed refresh leaves the text it could not
 							// replace on screen, so it is reported here
 							// rather than in place of the pad.
 							(this.contentState === 'error' && this.contentLoaded)
-								? createElement('span', { class: 'epnc-native-doc__toolbar-error' },
+								? createElement('span', { class: 'epnc-pad-doc__toolbar-error' },
 									this.contentError || translate('Could not load the pad content.'))
 								: null,
 							// Always available: the view shows the pad as of
 							// the last fetch, and the only other way to
 							// catch up is to close and reopen the file.
 							createElement('button', {
-								class: 'button epnc-native-doc__refresh',
+								class: 'button epnc-pad-doc__refresh',
 								attrs: { type: 'button', disabled: isBusy },
 								on: { click: () => { void this.loadContent() } },
 							}, isBusy ? translate('Refreshing...') : translate('Refresh')),
@@ -574,7 +573,7 @@ import { parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './li
 					return this.renderContentText(createElement)
 				}
 				if (this.contentState === 'error') {
-					return createElement('div', { class: 'epnc-native-doc__text epnc-native-doc__status' }, [
+					return createElement('div', { class: 'epnc-pad-doc__text epnc-pad-doc__status' }, [
 						createElement('div', {},
 							this.contentError || translate('Could not load the pad content.')),
 						createElement('button', {
@@ -585,7 +584,7 @@ import { parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './li
 					])
 				}
 				if (this.contentState !== 'ready') {
-					return createElement('div', { class: 'epnc-native-doc__text epnc-native-doc__status' }, translate('Loading pad content...'))
+					return createElement('div', { class: 'epnc-pad-doc__text epnc-pad-doc__status' }, translate('Loading pad content...'))
 				}
 				return this.renderContentText(createElement)
 			},
@@ -593,10 +592,10 @@ import { parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './li
 				// An empty pad loaded fine, and silence would read as a
 				// failure nobody reported.
 				if (this.content.isEmpty) {
-					return createElement('div', { class: 'epnc-native-doc__text epnc-native-doc__status' }, translate('This pad is still empty.'))
+					return createElement('div', { class: 'epnc-pad-doc__text epnc-pad-doc__status' }, translate('This pad is still empty.'))
 				}
 				return createElement('div', {
-					class: 'epnc-native-doc__text epnc-native-doc__text--html',
+					class: 'epnc-pad-doc__text epnc-pad-doc__text--html',
 					domProps: { innerHTML: this.content.html },
 				})
 			},
@@ -667,22 +666,21 @@ import { parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './li
 					createElement('div', { class: 'epnc-native-error-card' }, cardChildren),
 				])
 			}
-			if (this.contentMode === 'external') {
-				return this.renderContentView(createElement, {
-					actions: [
-						createElement('a', {
-							class: 'button',
-							attrs: {
-								href: this.externalOpenUrl,
-								target: '_blank',
-								rel: 'noopener noreferrer',
-							},
-						}, translate('Open original pad')),
-					],
-				})
-			}
-			if (this.contentMode === 'readonly') {
-				return this.renderContentView(createElement, {})
+			if (this.contentMode === 'content') {
+				return this.renderContentView(createElement, this.externalOpenUrl === ''
+					? {}
+					: {
+						actions: [
+							createElement('a', {
+								class: 'button epnc-pad-doc__link',
+								attrs: {
+									href: this.externalOpenUrl,
+									target: '_blank',
+									rel: 'noopener noreferrer',
+								},
+							}, translate('Open original pad')),
+						],
+					})
 			}
 			if (this.isLoading || !this.iframeSrc) {
 				return createElement('div', { class: 'epnc-native-status' }, 'Loading pad...')

@@ -9,6 +9,7 @@ use OCA\EtherpadNextcloud\Service\AdminSettingsRepository;
 use OCA\EtherpadNextcloud\Service\EtherpadClient;
 use OCP\Http\Client\IClient;
 use OCA\EtherpadNextcloud\Exception\EtherpadTooLargeException;
+use OCA\EtherpadNextcloud\Http\BoundedSinkStream;
 use OCP\Http\Client\IClientService;
 use OCP\Http\Client\IResponse;
 use OCP\IConfig;
@@ -387,6 +388,91 @@ class EtherpadClientTest extends TestCase {
 	}
 
 	/**
+	 * The cap has to be part of the transfer. Nextcloud pins Guzzle's
+	 * CurlHandler, which buffers the whole body into a temp stream before
+	 * anything of ours could look at its size — so the refusal comes out
+	 * of the sink, while the bytes are still arriving.
+	 */
+	public function testPreviewExportRefusesABodyPastTheCap(): void {
+		$this->expectException(EtherpadTooLargeException::class);
+		$this->clientWritingIntoTheSink(EtherpadClient::PREVIEW_MAX_BYTES + 1)->getHTMLForPreview('pad-1');
+	}
+
+	/** The reader is told the pad is large, not that the request failed. */
+	public function testTooLargeSurvivesTheClientsOwnErrorWrapping(): void {
+		try {
+			$this->clientWritingIntoTheSink(EtherpadClient::PREVIEW_MAX_BYTES + 1)->getHTMLForPreview('pad-1');
+			$this->fail('expected the oversized export to be refused');
+		} catch (EtherpadClientException $e) {
+			$this->assertInstanceOf(EtherpadTooLargeException::class, $e);
+			$this->assertStringNotContainsString('Etherpad API request failed', $e->getMessage());
+		}
+	}
+
+	public function testPreviewExportAsksForTheCappedSink(): void {
+		$captured = null;
+		$body = (string)json_encode(['code' => 0, 'data' => ['html' => '<p>small</p>']]);
+
+		$this->assertSame('<p>small</p>', $this->clientWithResponse($this->response(200, $body), $captured)->getHTMLForPreview('pad-1'));
+		$this->assertInstanceOf(BoundedSinkStream::class, $captured['options']['sink'] ?? null);
+		$this->assertArrayNotHasKey('stream', $captured['options'], 'the pinned curl handler ignores it');
+	}
+
+	/** An uncapped call must not grow a sink it never asked for. */
+	public function testOrdinaryCallsGetNoSink(): void {
+		$captured = null;
+		$body = (string)json_encode(['code' => 0, 'data' => ['text' => 'x']]);
+
+		$this->clientWithResponse($this->response(200, $body), $captured)->getText('pad-1');
+
+		$this->assertArrayNotHasKey('sink', $captured['options']);
+	}
+
+	/**
+	 * An answer without the field is not an empty pad. Coercing it to `''`
+	 * shows one as empty, and a sync writes that over the stored copy.
+	 *
+	 * @param array<string,mixed> $data
+	 */
+	#[\PHPUnit\Framework\Attributes\DataProvider('incompleteApiAnswers')]
+	public function testAnIncompleteApiAnswerIsRejected(array $data, string $call): void {
+		$client = $this->clientWithResponse($this->response(200, (string)json_encode(['code' => 0, 'data' => $data])));
+
+		$this->expectException(EtherpadClientException::class);
+		$client->$call('pad-1');
+	}
+
+	/** @return array<string,array{0:array<string,mixed>,1:string}> */
+	public static function incompleteApiAnswers(): array {
+		return [
+			'getHTML without html' => [[], 'getHTML'],
+			'getHTML with a non-string html' => [['html' => 42], 'getHTML'],
+			'getText without text' => [[], 'getText'],
+			'getText with a non-string text' => [['text' => ['a']], 'getText'],
+		];
+	}
+
+	/** Drives the sink the way the HTTP client would: chunk by chunk. */
+	private function clientWritingIntoTheSink(int $bytes): EtherpadClient {
+		$response = $this->response(200, '');
+		$http = $this->createMock(IClient::class);
+		$http->method('request')->willReturnCallback(
+			function (string $method, string $url, array $options) use ($response, $bytes): IResponse {
+				$sink = $options['sink'] ?? null;
+				$this->assertInstanceOf(BoundedSinkStream::class, $sink);
+				foreach (str_split(str_repeat('a', $bytes), 8192) as $chunk) {
+					$sink->write($chunk);
+				}
+				return $response;
+			}
+		);
+		$service = $this->createMock(IClientService::class);
+		$service->method('newClient')->willReturn($http);
+
+		return new EtherpadClient($this->configForApi(), $this->repositoryWithKey('stored-key'), $service);
+	}
+
+	/**
 	 * Build a client whose single HTTP call returns the given response.
 	 * Optionally captures the outgoing [method, url, options].
 	 *
@@ -397,6 +483,12 @@ class EtherpadClientTest extends TestCase {
 		$http->method('request')->willReturnCallback(
 			static function (string $method, string $url, array $options) use ($response, &$captured): IResponse {
 				$captured = ['method' => $method, 'url' => $url, 'options' => $options];
+				// A sink is where the client puts the body, so a double that
+				// ignores it would let a capped call read nothing.
+				$sink = $options['sink'] ?? null;
+				if ($sink instanceof BoundedSinkStream) {
+					$sink->write((string)$response->getBody());
+				}
 				return $response;
 			}
 		);

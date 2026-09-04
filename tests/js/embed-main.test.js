@@ -118,7 +118,7 @@ describe('embed-main', () => {
 		expect(loadPadContent).toHaveBeenCalledWith('/api/content/42')
 		expect(document.body.textContent).toContain('remote body')
 		// The "Open original pad" link points at the remote URL.
-		const link = document.querySelector('a.epnc-embed__doc-link')
+		const link = document.querySelector('a.epnc-pad-doc__link')
 		expect(link).not.toBeNull()
 		expect(link.href).toContain('https://pad.remote.test/p/foreign')
 		expect(link.target).toBe('_blank')
@@ -142,7 +142,7 @@ describe('embed-main', () => {
 		expect(iframe().hidden).toBe(true)
 		// Nothing to click through to: the pad the link would point at is
 		// the one being withheld.
-		expect(document.querySelector('a.epnc-embed__doc-link')).toBeNull()
+		expect(document.querySelector('a.epnc-pad-doc__link')).toBeNull()
 	})
 
 	/**
@@ -158,7 +158,7 @@ describe('embed-main', () => {
 		await flushMicrotasks()
 		expect(document.body.textContent).toContain('first')
 
-		const refresh = document.querySelector('button.epnc-embed__doc-refresh')
+		const refresh = document.querySelector('button.epnc-pad-doc__refresh')
 		expect(refresh).not.toBeNull()
 		expect(refresh.disabled).toBe(false)
 
@@ -188,7 +188,7 @@ describe('embed-main', () => {
 
 		let release
 		loadPadContent.mockImplementationOnce(() => new Promise((resolve) => { release = () => resolve({ html: '<p>second</p>', isEmpty: false }) }))
-		const refresh = document.querySelector('button.epnc-embed__doc-refresh')
+		const refresh = document.querySelector('button.epnc-pad-doc__refresh')
 		refresh.click()
 		await flushMicrotasks()
 
@@ -216,11 +216,11 @@ describe('embed-main', () => {
 		await flushMicrotasks()
 
 		loadPadContent.mockRejectedValueOnce(new Error('pad server unreachable'))
-		document.querySelector('button.epnc-embed__doc-refresh').click()
+		document.querySelector('button.epnc-pad-doc__refresh').click()
 		await flushMicrotasks()
 
 		expect(document.body.textContent).toContain('first')
-		const toolbarError = document.querySelector('.epnc-embed__doc-toolbar-error')
+		const toolbarError = document.querySelector('.epnc-pad-doc__toolbar-error')
 		expect(toolbarError.hidden).toBe(false)
 		expect(toolbarError.textContent).toBe('pad server unreachable')
 	})

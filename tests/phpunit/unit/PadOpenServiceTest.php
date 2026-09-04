@@ -158,8 +158,6 @@ class PadOpenServiceTest extends TestCase {
 		$userNodeResolver->method('resolveUserFileNodeById')->willReturn($file);
 
 		$padFileService = $this->createMock(PadFileService::class);
-		$padFileService->method('getTextSnapshotForRestore')->willReturn('snapshot text');
-		$padFileService->method('getHtmlSnapshotForRestore')->willReturn('<p>snapshot</p>');
 		$padFileService->method('readPad')->willReturn(new ParsedPadFile(
 			frontmatter: ['pad_id' => $padId, 'access_mode' => $accessMode],
 			body: 'snapshot text',

@@ -45,7 +45,14 @@ class PublicViewerControllerErrorMapper {
 			return $success($action());
 		} catch (\Throwable $e) {
 			$this->logUnexpected($e);
-			return new DataResponse(['message' => $this->messageFor($e)], $this->statusFor($e));
+			$payload = ['message' => $this->messageFor($e)];
+			// Same shape as the signed-in endpoint: a client that wants to
+			// treat "too large" differently from any other 400 has to be
+			// able to see it, and a message is not something to branch on.
+			if ($e instanceof EtherpadTooLargeException) {
+				$payload['code'] = 'pad_too_large';
+			}
+			return new DataResponse($payload, $this->statusFor($e));
 		}
 	}
 

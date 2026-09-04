@@ -52,8 +52,11 @@ DOMPurify.addHook('afterSanitizeAttributes', (node) => {
 export function sanitizeSnapshotHtml(html) {
 	return DOMPurify.sanitize(String(html ?? ''), {
 		ALLOWED_TAGS,
-		// Only what a link needs; the hook above sets target and rel.
-		ALLOWED_ATTR: ['href', 'target', 'rel'],
+		// `href` only. `target` and `rel` are deliberately absent: DOMPurify
+		// matches their values against ALLOWED_URI_REGEXP and would strip
+		// them anyway, so listing them would read as though the server's
+		// values pass through. The hook above sets them instead.
+		ALLOWED_ATTR: ['href'],
 		ALLOWED_URI_REGEXP,
 		ALLOW_DATA_ATTR: false,
 	})

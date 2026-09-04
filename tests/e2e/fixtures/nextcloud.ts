@@ -377,15 +377,19 @@ export const expectEtherpadCurrentUserName = async (page: Page, expectedName: st
  * a session hands over the ability to edit, whatever the share said.
  */
 export const expectReadOnlyPadViewerMounted = async (page: Page, expectedText = ''): Promise<void> => {
-	await expect(page.locator('.epnc-native-doc').first()).toBeVisible({ timeout: 30_000 })
+	await expect(page.locator('.epnc-pad-doc').first()).toBeVisible({ timeout: 30_000 })
 	// The surface carries no heading any more, so the refresh control is
 	// what identifies it — and it is the one affordance the view has.
 	await expect(page.getByRole('button', { name: /refresh|aktualisieren/i })).toBeVisible()
+	// The document styles live in their own stylesheet, shared with the
+	// embed. If it stops being loaded the view still works and still passes
+	// every other assertion here, so the reading width is checked instead.
+	await expect(page.locator('.epnc-pad-doc__text').first()).toHaveCSS('font-size', '15px')
 	if (expectedText !== '') {
 		// Without this the assertion passes just as well against the
 		// loading state and the "still empty" hint, which render in the
 		// same container.
-		await expect(page.locator('.epnc-native-doc').first()).toContainText(expectedText, { timeout: 30_000 })
+		await expect(page.locator('.epnc-pad-doc').first()).toContainText(expectedText, { timeout: 30_000 })
 	}
 	await expect(
 		page.locator('iframe[title="Etherpad"]'),
@@ -394,7 +398,7 @@ export const expectReadOnlyPadViewerMounted = async (page: Page, expectedText = 
 }
 
 export const expectExternalPadViewerMounted = async (page: Page, expectedOriginalUrl = ''): Promise<void> => {
-	await expect(page.locator('.epnc-native-doc').first()).toBeVisible({ timeout: 30_000 })
+	await expect(page.locator('.epnc-pad-doc').first()).toBeVisible({ timeout: 30_000 })
 	const originalLink = page.getByRole('link', { name: /open original pad|original-pad öffnen/i })
 	await expect(originalLink).toBeVisible()
 	if (expectedOriginalUrl !== '') {

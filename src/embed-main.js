@@ -36,6 +36,7 @@ import { loadPadContent } from './lib/pad-content.js'
 	const contentEmptyText = String(root.getAttribute('data-l10n-content-empty') || 'This pad is still empty.').trim()
 	const contentLoadingText = String(root.getAttribute('data-l10n-content-loading') || 'Loading pad content...').trim()
 	const contentErrorText = String(root.getAttribute('data-l10n-content-error') || 'Could not load the pad content.').trim()
+	const contentNoUrlText = String(root.getAttribute('data-l10n-content-no-url') || 'The server did not say where to load this pad from.').trim()
 	const contentRetryText = String(root.getAttribute('data-l10n-content-retry') || 'Try again').trim()
 	const contentRefreshText = String(root.getAttribute('data-l10n-content-refresh') || 'Refresh').trim()
 	const contentRefreshingText = String(root.getAttribute('data-l10n-content-refreshing') || 'Refreshing...').trim()
@@ -54,7 +55,7 @@ import { loadPadContent } from './lib/pad-content.js'
 	const showError = (message) => {
 		if (loadingNode instanceof HTMLElement) {
 			loadingNode.hidden = true
-			loadingNode.classList.remove('epnc-embed__loading--doc')
+			loadingNode.classList.remove('epnc-embed__loading--pad-doc')
 		}
 		if (iframe instanceof HTMLIFrameElement) {
 			iframe.hidden = true
@@ -85,27 +86,27 @@ import { loadPadContent } from './lib/pad-content.js'
 			return null
 		}
 		loadingNode.hidden = false
-		loadingNode.classList.add('epnc-embed__loading--doc')
+		loadingNode.classList.add('epnc-embed__loading--pad-doc')
 		loadingNode.textContent = ''
 
 		const surface = document.createElement('div')
-		surface.className = 'epnc-embed__doc'
+		surface.className = 'epnc-pad-doc'
 
 		const inner = document.createElement('div')
-		inner.className = 'epnc-embed__doc-inner'
+		inner.className = 'epnc-pad-doc__inner'
 
 		const toolbar = document.createElement('div')
-		toolbar.className = 'epnc-embed__doc-toolbar'
+		toolbar.className = 'epnc-pad-doc__toolbar'
 
 		// A failed refresh is reported here rather than in place of the pad.
 		const toolbarError = document.createElement('span')
-		toolbarError.className = 'epnc-embed__doc-toolbar-error'
+		toolbarError.className = 'epnc-pad-doc__toolbar-error'
 		toolbarError.hidden = true
 		toolbar.appendChild(toolbarError)
 
 		const refresh = document.createElement('button')
 		refresh.type = 'button'
-		refresh.className = 'button epnc-embed__doc-refresh'
+		refresh.className = 'button epnc-pad-doc__refresh'
 		refresh.textContent = contentRefreshText
 		toolbar.appendChild(refresh)
 
@@ -113,7 +114,7 @@ import { loadPadContent } from './lib/pad-content.js'
 		// at is the one being withheld.
 		if (String(url || '').trim() !== '') {
 			const link = document.createElement('a')
-			link.className = 'button epnc-embed__doc-link'
+			link.className = 'button epnc-pad-doc__link'
 			link.href = url
 			link.target = '_blank'
 			link.rel = 'noopener noreferrer'
@@ -122,7 +123,7 @@ import { loadPadContent } from './lib/pad-content.js'
 		}
 
 		const body = document.createElement('div')
-		body.className = 'epnc-embed__doc-text'
+		body.className = 'epnc-pad-doc__text'
 		body.textContent = contentLoadingText
 
 		inner.appendChild(toolbar)
@@ -150,7 +151,7 @@ import { loadPadContent } from './lib/pad-content.js'
 
 		// Only before the first answer; after that the button carries it.
 		if (!view.loaded) {
-			body.className = 'epnc-embed__doc-text'
+			body.className = 'epnc-pad-doc__text'
 			body.textContent = contentLoadingText
 		}
 		if (toolbarError instanceof HTMLElement) {
@@ -163,7 +164,9 @@ import { loadPadContent } from './lib/pad-content.js'
 
 		try {
 			if (contentUrl === '') {
-				renderContentError(view, contentUrl, contentErrorText)
+				// Retrying cannot help, so the message says what is actually
+				// wrong instead of inviting another press.
+				renderContentError(view, contentUrl, contentNoUrlText, false)
 				return
 			}
 			const content = await loadPadContent(contentUrl)
@@ -171,11 +174,11 @@ import { loadPadContent } from './lib/pad-content.js'
 			view.loaded = true
 			if (content.isEmpty) {
 				// Left blank this would read as a failure nobody reported.
-				body.className = 'epnc-embed__doc-text'
+				body.className = 'epnc-pad-doc__text'
 				body.textContent = contentEmptyText
 				return
 			}
-			body.className = 'epnc-embed__doc-text epnc-embed__doc-text--html'
+			body.className = 'epnc-pad-doc__text epnc-pad-doc__text--html'
 			body.innerHTML = content.html
 		} catch (error) {
 			if (!isCurrent()) return
@@ -188,7 +191,7 @@ import { loadPadContent } from './lib/pad-content.js'
 		}
 	}
 
-	const renderContentError = (view, contentUrl, message) => {
+	const renderContentError = (view, contentUrl, message, canRetry = true) => {
 		const { body, toolbarError } = view
 		// Something is on screen: keep it, and say the attempt failed.
 		if (view.loaded && toolbarError instanceof HTMLElement) {
@@ -196,20 +199,21 @@ import { loadPadContent } from './lib/pad-content.js'
 			toolbarError.hidden = false
 			return
 		}
-		body.className = 'epnc-embed__doc-text'
+		body.className = 'epnc-pad-doc__text'
 		body.textContent = ''
 
 		const text = document.createElement('p')
 		text.textContent = message || contentErrorText
 
-		const retry = document.createElement('button')
-		retry.type = 'button'
-		retry.className = 'button primary'
-		retry.textContent = contentRetryText
-		retry.addEventListener('click', () => { void loadContent(view, contentUrl) })
-
 		body.appendChild(text)
-		body.appendChild(retry)
+		if (canRetry) {
+			const retry = document.createElement('button')
+			retry.type = 'button'
+			retry.className = 'button primary'
+			retry.textContent = contentRetryText
+			retry.addEventListener('click', () => { void loadContent(view, contentUrl) })
+			body.appendChild(retry)
+		}
 	}
 
 	const showIframe = (url) => {
@@ -221,7 +225,7 @@ import { loadPadContent } from './lib/pad-content.js'
 			errorNode.hidden = true
 		}
 		if (loadingNode instanceof HTMLElement) {
-			loadingNode.classList.remove('epnc-embed__loading--doc')
+			loadingNode.classList.remove('epnc-embed__loading--pad-doc')
 		}
 		iframe.hidden = true
 		const revealIframe = () => {

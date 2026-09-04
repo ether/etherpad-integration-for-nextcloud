@@ -1,0 +1,136 @@
+/**
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ * Copyright (c) 2026 Jacob Bühler
+ *
+ * The read-only document surface, shared by the Files viewer and the
+ * embed page. Both render the same thing, so both use these class names
+ * and this file; what differs between them — the viewer's height rules
+ * inside the Viewer modal, the embed's standalone page chrome — stays in
+ * their own stylesheets.
+ *
+ * Colours come from tokens each surface defines for itself: inside
+ * Nextcloud they map to the theme, on the standalone embed page to its own
+ * light/dark fallbacks.
+ */
+
+.epnc-pad-doc__inner {
+	box-sizing: border-box;
+	width: min(800px, 100%);
+	margin: 0 auto;
+	display: flex;
+	flex-direction: column;
+}
+
+.epnc-pad-doc__toolbar {
+	display: flex;
+	align-items: center;
+	justify-content: flex-end;
+	gap: 8px;
+	margin: 0 0 10px;
+}
+
+.epnc-pad-doc__refresh:disabled {
+	opacity: 0.6;
+	cursor: progress;
+}
+
+.epnc-pad-doc__toolbar-error {
+	margin-right: auto;
+	color: var(--epnc-doc-error);
+	font-size: 13px;
+}
+
+/* A document, not a card: no frame and no tinted panel around the text. */
+.epnc-pad-doc__text {
+	box-sizing: border-box;
+	width: 100%;
+	margin: 0;
+	padding: 0;
+	background: transparent;
+	color: var(--epnc-doc-text);
+	font: 15px/1.65 var(--epnc-doc-font);
+	white-space: pre-wrap;
+	word-break: break-word;
+	overflow: visible;
+}
+
+.epnc-pad-doc__status {
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+	gap: 12px;
+	white-space: normal;
+	color: var(--epnc-doc-muted);
+}
+
+.epnc-pad-doc__text--html {
+	font-family: var(--epnc-doc-font);
+	white-space: normal;
+}
+
+.epnc-pad-doc__text--html a {
+	color: var(--epnc-doc-accent);
+	text-decoration: underline;
+}
+
+.epnc-pad-doc__text--html > :first-child {
+	margin-top: 0;
+}
+
+.epnc-pad-doc__text--html > :last-child {
+	margin-bottom: 0;
+}
+
+.epnc-pad-doc__text--html :is(h1, h2, h3, h4, h5, h6) {
+	margin: 1.2em 0 0.55em;
+	font-weight: 600;
+	line-height: 1.35;
+}
+
+.epnc-pad-doc__text--html h1 {
+	font-size: 1.75em;
+}
+
+.epnc-pad-doc__text--html h2 {
+	font-size: 1.45em;
+}
+
+.epnc-pad-doc__text--html h3 {
+	font-size: 1.25em;
+}
+
+.epnc-pad-doc__text--html :is(h4, h5, h6) {
+	font-size: 1.1em;
+}
+
+.epnc-pad-doc__text--html :is(strong, b) {
+	font-weight: 700;
+}
+
+.epnc-pad-doc__text--html :is(em, i) {
+	font-style: italic;
+}
+
+.epnc-pad-doc__text--html u {
+	text-decoration: underline;
+}
+
+.epnc-pad-doc__text--html :is(s, del) {
+	text-decoration: line-through;
+}
+
+.epnc-pad-doc__text--html :is(p, ul, ol, blockquote, pre) {
+	margin: 0 0 0.85em;
+}
+
+.epnc-pad-doc__text--html :is(ul, ol) {
+	padding-left: 1.6em;
+}
+
+.epnc-pad-doc__text--html ul {
+	list-style: disc;
+}
+
+.epnc-pad-doc__text--html ol {
+	list-style: decimal;
+}

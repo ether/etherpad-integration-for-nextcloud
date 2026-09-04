@@ -7,8 +7,6 @@
 	--epnc-embed-background-fallback: #fff;
 	--epnc-embed-text-fallback: #111827;
 	--epnc-embed-muted-fallback: #374151;
-	--epnc-embed-surface-fallback: #f8fafc;
-	--epnc-embed-border-fallback: #d1d5db;
 	--epnc-embed-accent-fallback: #0082c9;
 	--epnc-embed-error-fallback: #b32d2e;
 	--epnc-embed-accent: var(--color-primary-element, var(--epnc-embed-accent-fallback));
@@ -16,9 +14,14 @@
 	--epnc-embed-background: var(--color-main-background, var(--epnc-embed-background-fallback));
 	--epnc-embed-text: var(--color-main-text, var(--epnc-embed-text-fallback));
 	--epnc-embed-muted: var(--color-text-maxcontrast, var(--epnc-embed-muted-fallback));
-	--epnc-embed-surface: var(--color-background-hover, var(--epnc-embed-surface-fallback));
-	--epnc-embed-border: var(--color-border, var(--epnc-embed-border-fallback));
 	--epnc-embed-font: var(--font-face, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
+
+	/* What the shared document stylesheet paints with. */
+	--epnc-doc-text: var(--epnc-embed-text);
+	--epnc-doc-muted: var(--epnc-embed-muted);
+	--epnc-doc-accent: var(--epnc-embed-accent);
+	--epnc-doc-error: var(--epnc-embed-error);
+	--epnc-doc-font: var(--epnc-embed-font);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -26,8 +29,6 @@
 		--epnc-embed-background-fallback: #181818;
 		--epnc-embed-text-fallback: #ebebeb;
 		--epnc-embed-muted-fallback: #b8b8b8;
-		--epnc-embed-surface-fallback: #242424;
-		--epnc-embed-border-fallback: #3a3a3a;
 		--epnc-embed-accent-fallback: #6ab5ec;
 		--epnc-embed-error-fallback: #e57373;
 	}
@@ -119,43 +120,13 @@ body,
 	cursor: progress;
 }
 
-.epnc-embed__loading--doc {
+.epnc-embed__loading--pad-doc {
 	padding: 0;
 }
 
-.epnc-embed__doc {
-	box-sizing: border-box;
-	width: 100%;
-	min-height: 100%;
-	padding: 40px 24px;
-	overflow: auto;
-	background: var(--epnc-embed-background);
-	color: var(--epnc-embed-text);
-	font-family: var(--epnc-embed-font);
-}
-
-.epnc-embed__doc-inner {
-	box-sizing: border-box;
-	width: min(800px, 100%);
-	margin: 0 auto;
-	display: flex;
-	flex-direction: column;
-}
-
-.epnc-embed__doc-toolbar {
-	display: flex;
-	align-items: center;
-	justify-content: flex-end;
-	gap: 8px;
-	margin: 0 0 10px;
-}
-
-.epnc-embed__doc-refresh:disabled {
-	opacity: 0.6;
-	cursor: progress;
-}
-
-.epnc-embed__doc-link {
+/* The standalone embed page has none of Nextcloud's button styles, so the
+   toolbar's own controls are painted here. */
+.epnc-pad-doc__link {
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
@@ -168,112 +139,10 @@ body,
 	font-weight: 600;
 }
 
-.epnc-embed__doc-link:hover,
-.epnc-embed__doc-link:focus {
+.epnc-pad-doc__link:hover,
+.epnc-pad-doc__link:focus {
 	text-decoration: none;
 	filter: brightness(1.05);
-}
-
-/* A document, not a card: no frame and no tinted panel around the text. */
-.epnc-embed__doc-text {
-	box-sizing: border-box;
-	width: 100%;
-	margin: 0;
-	padding: 0;
-	background: transparent;
-	color: var(--epnc-embed-text);
-	font: 15px/1.65 var(--epnc-embed-font);
-	white-space: pre-wrap;
-	word-break: break-word;
-	overflow: visible;
-}
-
-.epnc-embed__doc-toolbar-error {
-	margin-right: auto;
-	color: var(--epnc-embed-error, #b32d2e);
-	font-size: 13px;
-}
-
-.epnc-embed__doc-text--html a {
-	color: var(--epnc-embed-accent, #0082c9);
-	text-decoration: underline;
-}
-
-.epnc-embed__doc-text > button {
-	margin-top: 12px;
-}
-
-.epnc-embed__doc-text--html {
-	font-family: var(--epnc-embed-font);
-	white-space: normal;
-}
-
-.epnc-embed__doc-text--html > :first-child {
-	margin-top: 0;
-}
-
-.epnc-embed__doc-text--html > :last-child {
-	margin-bottom: 0;
-}
-
-.epnc-embed__doc-text--html :is(h1, h2, h3, h4, h5, h6) {
-	margin: 1.2em 0 0.55em;
-	font-weight: 600;
-	line-height: 1.35;
-}
-
-.epnc-embed__doc-text--html h1 {
-	font-size: 1.75em;
-}
-
-.epnc-embed__doc-text--html h2 {
-	font-size: 1.45em;
-}
-
-.epnc-embed__doc-text--html h3 {
-	font-size: 1.25em;
-}
-
-.epnc-embed__doc-text--html :is(h4, h5, h6) {
-	font-size: 1.1em;
-}
-
-.epnc-embed__doc-text--html :is(strong, b) {
-	font-weight: 700;
-}
-
-.epnc-embed__doc-text--html :is(em, i) {
-	font-style: italic;
-}
-
-.epnc-embed__doc-text--html u {
-	text-decoration: underline;
-}
-
-.epnc-embed__doc-text--html :is(s, del) {
-	text-decoration: line-through;
-}
-
-.epnc-embed__doc-text--html :is(p, ul, ol, blockquote, pre) {
-	margin: 0 0 0.9em;
-}
-
-.epnc-embed__doc-text--html :is(ul, ol) {
-	padding-left: 1.5em;
-}
-
-.epnc-embed__doc-text--html ul {
-	list-style: disc;
-}
-
-.epnc-embed__doc-text--html ol {
-	list-style: decimal;
-}
-
-@media (max-width: 700px) {
-	.epnc-embed__doc-header {
-		flex-direction: column;
-	}
 }
 
 .epnc-embed__error-title {

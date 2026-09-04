@@ -163,4 +163,27 @@ class SnapshotHtmlSanitizerTest extends TestCase {
 			'empty' => [''],
 		];
 	}
+
+	/**
+	 * The scheme is read past control characters, but the address itself is
+	 * not rewritten. Stripping them from the whole href turned
+	 * `/files/Meeting notes.pdf` into `/files/Meetingnotes.pdf` — a
+	 * different file, or none.
+	 */
+	#[\PHPUnit\Framework\Attributes\DataProvider('hrefsThatMustSurviveIntact')]
+	public function testKeepsTheAddressExactlyAsGiven(string $href): void {
+		$out = (new SnapshotHtmlSanitizer())->sanitize('<a href="' . $href . '">x</a>');
+
+		$this->assertStringContainsString('href="' . $href . '"', $out);
+	}
+
+	/** @return array<string,array{0:string}> */
+	public static function hrefsThatMustSurviveIntact(): array {
+		return [
+			'a space in the path' => ['https://example.org/files/Meeting notes.pdf'],
+			'a space in a query' => ['mailto:a@example.test?subject=Team meeting'],
+			'an encoded space' => ['https://example.org/files/Meeting%20notes.pdf'],
+			'a query and a fragment' => ['https://example.org/a?b=1&amp;c=2#d'],
+		];
+	}
 }

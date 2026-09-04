@@ -9,6 +9,7 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\Service;
 
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
+use OCA\EtherpadNextcloud\Exception\EtherpadTooLargeException;
 use OCA\EtherpadNextcloud\Exception\ExternalPadExportNotFoundException;
 use OCP\IConfig;
 
@@ -196,7 +197,10 @@ class ExternalPadExportFetcher {
 				// stays false here.
 				/** @psalm-suppress TypeDoesNotContainType */
 				if ($sizeExceeded) {
-					throw new EtherpadClientException(
+					// Same type as the own-server cap, so both answer the
+					// reader with "too large to show" instead of one of them
+					// looking like an outage.
+					throw new EtherpadTooLargeException(
 						'External public pad export exceeds maximum size (' . self::EXTERNAL_EXPORT_MAX_BYTES . ' bytes).'
 					);
 				}

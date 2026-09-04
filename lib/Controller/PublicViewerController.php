@@ -72,9 +72,17 @@ class PublicViewerController extends PublicShareController {
 		);
 	}
 
-	/** @see PadSessionController::contentById() for why this is its own endpoint. */
+	/**
+	 * @see PadSessionController::contentById() for why this is its own endpoint.
+	 *
+	 * Throttled because it is the one anonymous route that makes this
+	 * server fetch something on demand — the pad over the API, or a foreign
+	 * export. 60 a minute is far more than reading and refreshing needs,
+	 * and far less than a loop wants.
+	 */
 	#[\OCP\AppFramework\Http\Attribute\PublicPage]
 	#[\OCP\AppFramework\Http\Attribute\NoCSRFRequired]
+	#[\OCP\AppFramework\Http\Attribute\AnonRateLimit(limit: 60, period: 60)]
 	public function padContent(string $token, mixed $file = ''): DataResponse {
 		return $this->errors->runForData(
 			fn(): LivePadHtml => $this->padContextService->resolveContent($token, $file, $this->share),

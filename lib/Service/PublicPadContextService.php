@@ -53,7 +53,9 @@ class PublicPadContextService {
 		$resolved = $this->shareResolver->resolvePadFile($share, $fileParam, $token);
 		$node = $resolved->node;
 
-		$content = (string)$node->getContent();
+		// Same retry as resolveContent(): a sync holding the file for a
+		// moment must not become a failed page load.
+		$content = $this->lockRetryService->readContentWithOpenLockRetry($node);
 		$fileId = (int)$node->getId();
 
 		$pad = $this->padFileService->readPad($content);
