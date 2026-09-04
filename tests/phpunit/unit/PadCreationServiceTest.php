@@ -118,6 +118,47 @@ class PadCreationServiceTest extends TestCase {
 			->createInParent('alice', 99, 'Test', BindingService::ACCESS_PUBLIC);
 	}
 
+	/**
+	 * `toUserAbsolutePath()` throws when the node cannot be mapped into the
+	 * user's tree, and by then `newFile()` has already made the file. The
+	 * claim has to exist before that call, or the rollback is handed
+	 * nothing and the empty `.pad` stays behind.
+	 */
+	public function testClaimsTheFileBeforeResolvingItsPath(): void {
+		$parent = $this->createMock(Folder::class);
+		$parent->method('isCreatable')->willReturn(true);
+
+		$fileNode = $this->createMock(\OCP\Files\File::class);
+		$fileNode->method('getId')->willReturn(4242);
+
+		$fileCreator = $this->createMock(PadFileCreator::class);
+		$fileCreator->method('createUserFileInFolder')->willReturn($fileNode);
+
+		$padPaths = $this->createMock(PathNormalizer::class);
+		$padPaths->method('normalizeCreateFileName')->willReturn('Test.pad');
+
+		$userNodeResolver = $this->createMock(UserNodeResolver::class);
+		$userNodeResolver->method('resolveUserFolderNodeById')->willReturn($parent);
+		$userNodeResolver->method('toUserAbsolutePath')
+			->willThrowException(new \OCP\Files\NotFoundException('outside the user tree'));
+
+		$rollbackService = $this->createMock(PadCreateRollbackService::class);
+		$rollbackService->expects($this->once())
+			->method('rollbackFailedCreate')
+			->with('alice', $this->anything(), '', $this->callback(
+				static fn (?CreatedFileClaim $claim): bool => $claim !== null && $claim->fileId === 4242
+			));
+
+		$this->expectException(\OCP\Files\NotFoundException::class);
+
+		$this->buildService(
+			padPaths: $padPaths,
+			fileCreator: $fileCreator,
+			userNodeResolver: $userNodeResolver,
+			rollbackService: $rollbackService,
+		)->createInParent('alice', 99, 'Test', BindingService::ACCESS_PUBLIC);
+	}
+
 	public function testCreateRefusesAPadTypeTheAdminSwitchedOff(): void {
 		// The guard sits before any file is touched, so a rejected create
 		// leaves nothing behind to roll back.

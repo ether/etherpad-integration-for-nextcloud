@@ -123,13 +123,16 @@ class PadCreationService {
 		return $this->withCreateRollback(
 			function (PadCreateAttempt $attempt) use ($uid, $parentFolder, $parentFolderId, $fileName, $accessMode): array {
 				$fileNode = $this->padFileCreator->createUserFileInFolder($parentFolder, $fileName);
-				// Before anything that can throw: this is the only flow that
-				// does not know the path up front, and a rollback running
-				// before it was recorded used to log an empty one.
+				// Ownership first, path second. The id is what the rollback
+				// needs to remove this file at all, and `toUserAbsolutePath()`
+				// throws when the node cannot be mapped into the user's tree —
+				// claiming after it would leave the new file behind. The path
+				// only makes the log lines readable, and this is the one flow
+				// that does not know it up front.
+				$fileId = $this->requireFileId($fileNode, $fileName);
+				$claim = $attempt->claimFile($uid, $fileId);
 				$path = $this->userNodeResolver->toUserAbsolutePath($uid, $fileNode);
 				$attempt->recordPath($path);
-				$fileId = $this->requireFileId($fileNode, $path);
-				$claim = $attempt->claimFile($uid, $fileId);
 				if ($this->isNotOurs($fileNode, $fileId, $path)) {
 					$attempt->disownFile();
 					throw new PadFileAlreadyExistsException('Target .pad file already exists.');
