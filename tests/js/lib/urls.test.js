@@ -5,28 +5,17 @@
 
 import { describe, expect, it } from 'vitest'
 import {
-	filesUrlForFileId,
-	getCurrentDir,
-	getDirFromPath,
 	isPadName,
 	normalizeFilePath,
-	parsePublicSharePadFromHref,
 	parseFileIdFromCurrentLocation,
-	parseFileIdFromFilesHref,
 	parsePadPathFromDavHref,
 	parsePublicSharePadFromHref,
 	parsePublicShareTokenFromLocation,
-	resolveOpenDir,
-	viewerUrlForPath,
 	viewerUrlForPublicShare,
 } from '../../../src/lib/urls.js'
 
 const setPathname = (pathname) => {
 	window.history.replaceState({}, '', pathname)
-}
-
-const setLocation = (pathAndQuery) => {
-	window.history.replaceState({}, '', pathAndQuery)
 }
 
 describe('path helpers', () => {
@@ -43,59 +32,9 @@ describe('path helpers', () => {
 		expect(isPadName('Test.txt')).toBe(false)
 		expect(isPadName(null)).toBe(false)
 	})
-
-	it('extracts directories from paths', () => {
-		expect(getDirFromPath('/Folder/Test.pad')).toBe('/Folder')
-		expect(getDirFromPath('/Test.pad')).toBe('/')
-		expect(getDirFromPath('')).toBe('/')
-	})
-
-	it('reads the current Files dir from query params', () => {
-		setLocation('/apps/files/files/123?dir=/Folder')
-
-		expect(getCurrentDir()).toBe('/Folder')
-	})
-
-	// `Folder ` is a name Nextcloud accepts. Trimming the dir sent the open
-	// to its neighbour, the same silent substitution as the plus sign.
-	it('keeps a trailing space in the current Files dir', () => {
-		setLocation('/apps/files/files/123?dir=' + encodeURIComponent('/Folder '))
-
-		expect(getCurrentDir()).toBe('/Folder ')
-		expect(normalizeFilePath(getCurrentDir(), 'Notes.pad')).toBe('/Folder /Notes.pad')
-	})
-
-	it('falls back to root for a whitespace-only dir', () => {
-		setLocation('/apps/files/files/123?dir=' + encodeURIComponent('   '))
-
-		expect(getCurrentDir()).toBe('/')
-	})
-
-	it('carries a padded dir through resolveOpenDir', () => {
-		setLocation('/apps/files/files/123?dir=' + encodeURIComponent('/Current '))
-
-		expect(resolveOpenDir('/Test.pad')).toBe('/Current ')
-	})
-
-	it('uses the current Files dir when opening root-level paths', () => {
-		setLocation('/apps/files/files/123?dir=/Current')
-
-		expect(resolveOpenDir('/Test.pad')).toBe('/Current')
-		expect(resolveOpenDir('/Folder/Test.pad')).toBe('/Folder')
-	})
 })
 
 describe('viewer URL builders', () => {
-	it('builds internal viewer URLs', () => {
-		expect(viewerUrlForPath('/Folder/Test.pad')).toBe('/index.php/apps/etherpad_nextcloud/?file=%2FFolder%2FTest.pad')
-	})
-
-	it('builds Files viewer URLs', () => {
-		setLocation('/apps/files/files/123?dir=/Current')
-
-		expect(filesUrlForFileId(42, '/Folder/Test.pad')).toBe('/index.php/apps/files/files/42?dir=%2FFolder&editing=false&openfile=true')
-	})
-
 	it('builds public viewer URLs', () => {
 		expect(viewerUrlForPublicShare('abc', '')).toBe('/index.php/apps/etherpad_nextcloud/public/abc')
 		expect(viewerUrlForPublicShare('abc', '/Shared/Test.pad')).toBe('/index.php/apps/etherpad_nextcloud/public/abc?file=%2FShared%2FTest.pad')
@@ -115,26 +54,17 @@ describe('parsePublicShareTokenFromLocation', () => {
 		expect(parsePublicShareTokenFromLocation()).toBe('share-token')
 	})
 
+	it('extracts tokens when Nextcloud is served from a subdirectory', () => {
+		// Why the pattern is not anchored at the start of the path.
+		setPathname('/nextcloud/s/share-token')
+
+		expect(parsePublicShareTokenFromLocation()).toBe('share-token')
+	})
+
 	it('returns null outside public share routes', () => {
 		setPathname('/apps/files/files/123')
 
 		expect(parsePublicShareTokenFromLocation()).toBeNull()
-	})
-})
-
-describe('parseFileIdFromFilesHref', () => {
-	it('extracts file ids from Files routes', () => {
-		expect(parseFileIdFromFilesHref('/apps/files/files/123')).toBe(123)
-	})
-
-	it('extracts file ids from /f routes and query params', () => {
-		expect(parseFileIdFromFilesHref('/f/456')).toBe(456)
-		expect(parseFileIdFromFilesHref('/apps/files?fileid=789')).toBe(789)
-	})
-
-	it('returns null for invalid file id hrefs', () => {
-		expect(parseFileIdFromFilesHref('/apps/files/files/nope')).toBeNull()
-		expect(parseFileIdFromFilesHref('https://[invalid')).toBeNull()
 	})
 })
 

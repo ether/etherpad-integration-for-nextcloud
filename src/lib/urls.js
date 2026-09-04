@@ -26,51 +26,6 @@ export const normalizeFilePath = (dir, filename) => {
 
 export const isPadName = (name) => typeof name === 'string' && name.toLowerCase().endsWith('.pad')
 
-export const getDirFromPath = (path) => {
-	if (!path || typeof path !== 'string') {
-		return '/'
-	}
-	const idx = path.lastIndexOf('/')
-	if (idx <= 0) {
-		return '/'
-	}
-	return path.slice(0, idx) || '/'
-}
-
-export const getCurrentDir = () => {
-	const params = new URLSearchParams(window.location.search || '')
-	const dir = params.get('dir') || '/'
-	// Trimmed only to decide whether a directory was named, never to change
-	// which one. `Folder ` is a name Nextcloud accepts, and trimming the
-	// value sent the open — and the post-close navigation through
-	// resolveOpenDir — to its neighbour instead. Same rule as the PHP
-	// normalizer and normalizeFilePath above.
-	return dir.trim() === '' ? '/' : dir
-}
-
-export const resolveOpenDir = (path) => {
-	const dirFromPath = getDirFromPath(path)
-	if (dirFromPath !== '/') {
-		return dirFromPath
-	}
-	// When a file path has no directory context (or is already root), keep the
-	// currently active Files dir in URL so close/back navigation returns to the
-	// same folder instead of jumping to an unrelated default view.
-	const currentDir = getCurrentDir()
-	return currentDir === '' ? '/' : currentDir
-}
-
-export const viewerUrlForPath = (path) => ocGenerateUrl('/apps/' + APP_ID + '/?file=' + encodeURIComponent(path))
-
-export const filesUrlForFileId = (fileId, path) => {
-	const base = ocGenerateUrl('/apps/files/files/' + encodeURIComponent(String(fileId)))
-	const params = new URLSearchParams()
-	params.set('dir', resolveOpenDir(path))
-	params.set('editing', 'false')
-	params.set('openfile', 'true')
-	return base + '?' + params.toString()
-}
-
 export const viewerUrlForPublicShare = (token, path) => {
 	const base = ocGenerateUrl('/apps/' + APP_ID + '/public/' + encodeURIComponent(token))
 	if (!path) {
@@ -85,31 +40,6 @@ export const parsePublicShareTokenFromLocation = () => {
 		return null
 	}
 	return match[1] || null
-}
-
-export const parseFileIdFromFilesHref = (href) => {
-	if (!href || typeof href !== 'string') {
-		return null
-	}
-	let url
-	try {
-		url = new URL(href, window.location.origin)
-	} catch (error) {
-		return null
-	}
-	const pathValue = url.pathname || ''
-	const match = pathValue.match(/\/apps\/files\/files\/(\d+)\/?$/)
-	if (!match) {
-		const shareMatch = pathValue.match(/\/f\/(\d+)\/?$/)
-		if (!shareMatch) {
-			const byQuery = Number(url.searchParams.get('fileid') || '')
-			return Number.isFinite(byQuery) && byQuery > 0 ? byQuery : null
-		}
-		const shareId = parseInt(shareMatch[1], 10)
-		return Number.isFinite(shareId) && shareId > 0 ? shareId : null
-	}
-	const id = parseInt(match[1], 10)
-	return Number.isFinite(id) && id > 0 ? id : null
 }
 
 export const parseFileIdFromCurrentLocation = () => {

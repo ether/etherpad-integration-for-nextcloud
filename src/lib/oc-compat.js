@@ -12,25 +12,12 @@ export const ocGenerateUrl = (path) => {
 	return '/index.php' + path
 }
 
-export const ocImagePath = (app, asset) => {
-	if (window.OC && typeof window.OC.imagePath === 'function') {
-		return window.OC.imagePath(app, asset)
-	}
-	return ''
-}
-
 export const ocRequestToken = (fallback = '') => {
 	const configuredFallback = String(fallback || '').trim()
 	if (configuredFallback !== '') {
 		return configuredFallback
 	}
 	return String((window.OC && window.OC.requestToken) || '')
-}
-
-export const ocPermissionRead = () => {
-	const value = window.OC && window.OC.PERMISSION_READ
-	const numeric = Number(value)
-	return Number.isFinite(numeric) && numeric > 0 ? numeric : 1
 }
 
 export const translate = (text) => (typeof window.t === 'function' ? window.t(APP_ID, text) : text)

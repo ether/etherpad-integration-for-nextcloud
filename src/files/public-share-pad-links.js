@@ -63,7 +63,7 @@ export const registerPublicSharePadClickInterceptor = ({ openPadInNativeViewer }
 			event.stopImmediatePropagation()
 		}
 		if (hasNativeViewer()) {
-			await openPadInNativeViewer({ path: padPath, fileId: null })
+			await openPadInNativeViewer(padPath)
 			return
 		}
 		window.location.assign(viewerUrlForPublicShare(publicToken, padPath))

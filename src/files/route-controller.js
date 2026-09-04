@@ -91,7 +91,7 @@ export const createRouteController = ({
 			}
 			const dir = params.get('path') || '/'
 			const filePath = normalizeFilePath(dir, fileName)
-			void openPadInNativeViewer({ path: filePath, fileId: null })
+			void openPadInNativeViewer(filePath)
 			return
 		}
 		if (!isPadName(fileName)) {

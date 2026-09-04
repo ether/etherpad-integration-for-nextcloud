@@ -100,9 +100,7 @@ checked-in runtime assets in `js/`.
 
 Primary flow (native viewer):
 
-1. `src/files-main.js` opens `.pad` in Nextcloud Files viewer route (`/apps/files/files/{fileId}?openfile=true`).
-   - on authenticated files routes, it now extracts the stable `fileId` directly from the Nextcloud file-action context whenever available
-   - path-based resolve is only a fallback for contexts without a usable `fileId`
+1. On an authenticated Files route, Nextcloud's own Viewer action opens the file: this app registers the `.pad` MIME type through `OCA.Viewer.registerHandler()` and contributes no file action of its own.
 2. `src/viewer-main.js` resolves Etherpad open data via API:
    - preferred: `POST /api/v1/pads/open-by-id` (`fileId`, CSRF `requesttoken`)
    - fallback: `POST /api/v1/pads/open` (`file`, CSRF `requesttoken`) if no stable `fileId` is available
@@ -235,13 +233,9 @@ Primary flow (native viewer when available):
 
 - `src/files-main.js`
   - Thin files-app entrypoint that wires the modules below.
-- `src/files/open-action.js`
-  - Registers the authenticated `.pad` default file action.
-  - Uses stable `fileId` from the Files action context whenever available.
 - `src/files/pad-opener.js`
-  - Opens authenticated `.pad` files through Nextcloud router with `fileid` + `openfile=true`.
-  - Target route: `/index.php/apps/files/files/{fileId}?dir=...&editing=false&openfile=true`.
-  - Falls back to hard navigation when the native viewer/router path cannot be used.
+  - Opens a `.pad` on a public-share route, the only place this app opens one itself.
+  - Falls back to hard navigation to the app's public viewer URL when the native viewer cannot be used.
 - `src/files/route-controller.js`
   - Watches Files/public-share route changes.
   - Normalizes stale `.pad` routes without `openfile=true` back to folder routes.

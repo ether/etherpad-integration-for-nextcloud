@@ -9,7 +9,7 @@ This note describes how icons are wired in the `+ New` menu and in pad sync acti
 - `img/etherpad-icon-black.svg`
   - Admin settings (dark/monochrome icon)
 - `img/etherpad-icon-color.svg`
-  - File list, template creator, `+ New` entries
+  - Template creator, `+ New` entries
 - `img/filetypes/etherpad-nextcloud-pad.svg`
   - preferred Nextcloud mimetype icon source for MIME alias `etherpad-nextcloud-pad`
   - kept identical to `img/etherpad-icon-color.svg`
