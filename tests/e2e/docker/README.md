@@ -4,8 +4,15 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 A self-contained Nextcloud + Etherpad stack for the Playwright suite, so
 a run does not depend on a long-lived instance and its unrelated apps.
-This is what the `e2e` workflow uses, across the Nextcloud majors
-`appinfo/info.xml` declares support for.
+This is what the `e2e` workflow uses. A pull request there runs the two
+ends of the range `appinfo/info.xml` declares — 31 and 34 — and the
+nightly run covers the majors in between. Those middle majors are worth
+a local run when you touch something version-sensitive, since nothing
+gates a merge on them:
+
+```bash
+NC_VERSION=32 tests/e2e/docker/up.sh
+```
 
 ## One-time host setup
 
@@ -21,7 +28,7 @@ printf '127.0.0.1 nc.pad.test ep.pad.test\n' | sudo tee -a /etc/hosts
 ## Run
 
 ```bash
-tests/e2e/docker/up.sh          # NC_VERSION=31|32|33, default 33
+tests/e2e/docker/up.sh          # NC_VERSION=31|32|33|34, default 34
                                 # EP_VERSION=2|3, default 2
 tests/e2e/docker/run-suite.sh   # the suite against that stack
 docker compose -f tests/e2e/docker/compose.yml down -v --remove-orphans
