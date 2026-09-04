@@ -2,41 +2,28 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  * Copyright (c) 2026 Jacob Bühler
  */
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 
-import { ignoreExpectedNavigationResult } from '../../../src/lib/nextcloud-runtime.js'
-
-afterEach(() => {
-	vi.restoreAllMocks()
-})
+import { isExpectedNavigationRedirect } from '../../../src/lib/nextcloud-runtime.js'
 
 describe('Nextcloud runtime helpers', () => {
-	it('accepts promise-like navigation results without a catch method', () => {
-		const thenable = {
-			then(resolve) {
-				resolve()
-			},
-		}
-
-		expect(() => ignoreExpectedNavigationResult(thenable)).not.toThrow()
+	it('recognises the rejection a Vue Router navigation guard produces', () => {
+		expect(isExpectedNavigationRedirect(
+			new Error('Redirected when going from "/files/1" to "/files/2" via a navigation guard.'),
+		)).toBe(true)
 	})
 
-	it('suppresses expected Vue Router navigation guard redirects', async () => {
-		const debugSpy = vi.spyOn(window.console, 'debug').mockImplementation(() => {})
-
-		ignoreExpectedNavigationResult(Promise.reject(new Error('Redirected when going from "/files/1" to "/files/2" via a navigation guard.')))
-		await Promise.resolve()
-
-		expect(debugSpy).not.toHaveBeenCalled()
+	it('treats every other rejection as a real failure', () => {
+		// The caller falls back on these, so a false positive here would turn
+		// a failed open into a dead link.
+		expect(isExpectedNavigationRedirect(new Error('Viewer failed for an unexpected reason.'))).toBe(false)
+		expect(isExpectedNavigationRedirect(new Error('Redirected when going from "/a" to "/b".'))).toBe(false)
+		expect(isExpectedNavigationRedirect(new Error('blocked by a navigation guard'))).toBe(false)
 	})
 
-	it('debug-logs unexpected navigation rejections', async () => {
-		const debugSpy = vi.spyOn(window.console, 'debug').mockImplementation(() => {})
-		const error = new Error('Viewer failed for an unexpected reason.')
-
-		ignoreExpectedNavigationResult(Promise.reject(error))
-		await Promise.resolve()
-
-		expect(debugSpy).toHaveBeenCalledWith('[etherpad_nextcloud] Unexpected navigation rejection', error)
+	it('survives a rejection that is not an Error', () => {
+		expect(isExpectedNavigationRedirect('Redirected when going somewhere via a navigation guard')).toBe(true)
+		expect(isExpectedNavigationRedirect(null)).toBe(false)
+		expect(isExpectedNavigationRedirect(undefined)).toBe(false)
 	})
 })

@@ -7,7 +7,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPadOpener } from '../../../src/files/pad-opener.js'
 
 const PUBLIC_ROUTE = '/index.php/s/sharetoken123'
+// The message Nextcloud's own router rejects with when a navigation guard
+// redirects. The route change happened; the rejection is noise.
+const GUARD_REDIRECT = 'Redirected when going from "/s/x" to "/s/y" via a navigation guard.'
+
 let assignSpy
+
+const flush = async () => {
+	await Promise.resolve()
+	await Promise.resolve()
+}
 
 beforeEach(() => {
 	vi.useFakeTimers()
@@ -24,26 +33,26 @@ afterEach(() => {
 
 describe('pad opener', () => {
 	it('opens the path in the native viewer without navigating away', async () => {
-		await createPadOpener()({ path: '/Folder/Test.pad', fileId: null })
+		await createPadOpener()('/Folder/Test.pad')
 
 		expect(window.OCA.Viewer.open).toHaveBeenCalledWith({ path: '/Folder/Test.pad' })
 		expect(assignSpy).not.toHaveBeenCalled()
 	})
 
-	it('swallows the navigation rejection Viewer.open resolves with', async () => {
-		const rejection = Promise.reject(new Error('Navigation cancelled'))
-		window.OCA.Viewer.open.mockReturnValue(rejection)
+	it('leaves an expected navigation-guard rejection alone', async () => {
+		window.OCA.Viewer.open.mockReturnValue(Promise.reject(new Error(GUARD_REDIRECT)))
 
-		await expect(createPadOpener()({ path: '/Folder/Test.pad', fileId: null })).resolves.toBeUndefined()
-		await expect(rejection.catch(() => 'handled')).resolves.toBe('handled')
+		await createPadOpener()('/Folder/Test.pad')
+		await flush()
+
+		expect(assignSpy).not.toHaveBeenCalled()
 	})
 
-	it('falls back to the app public viewer when the native viewer throws', async () => {
-		window.OCA.Viewer.open.mockImplementation(() => {
-			throw new Error('no viewer')
-		})
+	it('falls back to the app public viewer when the open rejects for any other reason', async () => {
+		window.OCA.Viewer.open.mockReturnValue(Promise.reject(new Error('no handler for this mimetype')))
 
-		await createPadOpener()({ path: '/Folder/Test.pad', fileId: null })
+		await createPadOpener()('/Folder/Test.pad')
+		await flush()
 
 		expect(assignSpy).toHaveBeenCalledTimes(1)
 		const url = assignSpy.mock.calls[0][0]
@@ -51,43 +60,47 @@ describe('pad opener', () => {
 		expect(url).toContain('file=' + encodeURIComponent('/Folder/Test.pad'))
 	})
 
-	it('falls back to the app public viewer when there is no native viewer at all', async () => {
-		delete window.OCA.Viewer
+	it('falls back when the open throws synchronously', async () => {
+		window.OCA.Viewer.open.mockImplementation(() => {
+			throw new Error('no viewer')
+		})
 
-		await createPadOpener()({ path: '/Folder/Test.pad', fileId: null })
+		await createPadOpener()('/Folder/Test.pad')
 
 		expect(assignSpy).toHaveBeenCalledTimes(1)
 		expect(assignSpy.mock.calls[0][0]).toContain('/apps/etherpad_nextcloud/public/sharetoken123')
 	})
 
-	it('sends a pathless open to the share own viewer', async () => {
-		await createPadOpener()({ path: '', fileId: null })
+	it('falls back when the Viewer app is not there at all', async () => {
+		delete window.OCA.Viewer
 
-		expect(window.OCA.Viewer.open).not.toHaveBeenCalled()
+		await createPadOpener()('/Folder/Test.pad')
+
 		expect(assignSpy).toHaveBeenCalledTimes(1)
-		expect(assignSpy.mock.calls[0][0]).not.toContain('file=')
+		expect(assignSpy.mock.calls[0][0]).toContain('/apps/etherpad_nextcloud/public/sharetoken123')
 	})
 
 	it('does nothing off a public-share route, where Nextcloud own viewer action opens the pad', async () => {
 		window.history.replaceState({}, '', '/index.php/apps/files/files?dir=/Folder')
 
-		await createPadOpener()({ path: '/Folder/Test.pad', fileId: null })
+		await createPadOpener()('/Folder/Test.pad')
 
 		expect(window.OCA.Viewer.open).not.toHaveBeenCalled()
 		expect(assignSpy).not.toHaveBeenCalled()
 	})
 
-	it('deduplicates repeated open requests in a short window', async () => {
+	it('deduplicates repeated open requests inside the window and lets a later one through', async () => {
 		const openPad = createPadOpener()
 
-		await openPad({ path: '/Folder/Test.pad', fileId: null })
-		await openPad({ path: '/Folder/Test.pad', fileId: null })
+		await openPad('/Folder/Test.pad')
+		await openPad('/Folder/Test.pad')
 
 		expect(window.OCA.Viewer.open).toHaveBeenCalledTimes(1)
 
-		vi.advanceTimersByTime(1_000)
-		vi.setSystemTime(Date.now() + 1_000)
-		await openPad({ path: '/Folder/Test.pad', fileId: null })
+		// One step past DEDUPE_OPEN_WINDOW_MS, not two: the assertion should
+		// fail if the window is ever widened.
+		vi.advanceTimersByTime(801)
+		await openPad('/Folder/Test.pad')
 
 		expect(window.OCA.Viewer.open).toHaveBeenCalledTimes(2)
 	})

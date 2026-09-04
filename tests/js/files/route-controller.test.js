@@ -77,9 +77,6 @@ describe('route controller', () => {
 
 		controller.evaluateCurrentRoute()
 
-		expect(openPadInNativeViewer).toHaveBeenCalledWith({
-			path: '/Shared/Pad.pad',
-			fileId: null,
-		})
+		expect(openPadInNativeViewer).toHaveBeenCalledWith('/Shared/Pad.pad')
 	})
 })
