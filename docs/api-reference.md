@@ -418,8 +418,8 @@ solely by the separate external-pad policy, not by these two settings.
 - `src/files-main.js`
   - wires the Files/public-share frontend modules.
 - `src/files/pad-opener.js`
-  - opens in files view through Nextcloud router (`fileid`, `openfile=true`).
-  - clears `openfile`/`editing` again when the native viewer closes.
+  - opens a `.pad` on a public-share route, through the native viewer where one exists.
+  - falls back to `GET /apps/etherpad_nextcloud/public/{token}?file=…` otherwise.
 - `src/files/public-share-pad-links.js`
   - global click interception is only used on public-share routes to remap share download links to the pad viewer.
 - `src/files/route-controller.js`

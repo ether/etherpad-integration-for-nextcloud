@@ -87,31 +87,6 @@ export const parsePublicShareTokenFromLocation = () => {
 	return match[1] || null
 }
 
-export const parseFileIdFromFilesHref = (href) => {
-	if (!href || typeof href !== 'string') {
-		return null
-	}
-	let url
-	try {
-		url = new URL(href, window.location.origin)
-	} catch (error) {
-		return null
-	}
-	const pathValue = url.pathname || ''
-	const match = pathValue.match(/\/apps\/files\/files\/(\d+)\/?$/)
-	if (!match) {
-		const shareMatch = pathValue.match(/\/f\/(\d+)\/?$/)
-		if (!shareMatch) {
-			const byQuery = Number(url.searchParams.get('fileid') || '')
-			return Number.isFinite(byQuery) && byQuery > 0 ? byQuery : null
-		}
-		const shareId = parseInt(shareMatch[1], 10)
-		return Number.isFinite(shareId) && shareId > 0 ? shareId : null
-	}
-	const id = parseInt(match[1], 10)
-	return Number.isFinite(id) && id > 0 ? id : null
-}
-
 export const parseFileIdFromCurrentLocation = () => {
 	const match = (window.location.pathname || '').match(/\/apps\/files\/files\/(\d+)\/?$/)
 	if (!match) {

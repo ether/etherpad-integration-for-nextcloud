@@ -12,7 +12,6 @@ import {
 	normalizeFilePath,
 	parsePublicSharePadFromHref,
 	parseFileIdFromCurrentLocation,
-	parseFileIdFromFilesHref,
 	parsePadPathFromDavHref,
 	parsePublicSharePadFromHref,
 	parsePublicShareTokenFromLocation,
@@ -119,22 +118,6 @@ describe('parsePublicShareTokenFromLocation', () => {
 		setPathname('/apps/files/files/123')
 
 		expect(parsePublicShareTokenFromLocation()).toBeNull()
-	})
-})
-
-describe('parseFileIdFromFilesHref', () => {
-	it('extracts file ids from Files routes', () => {
-		expect(parseFileIdFromFilesHref('/apps/files/files/123')).toBe(123)
-	})
-
-	it('extracts file ids from /f routes and query params', () => {
-		expect(parseFileIdFromFilesHref('/f/456')).toBe(456)
-		expect(parseFileIdFromFilesHref('/apps/files?fileid=789')).toBe(789)
-	})
-
-	it('returns null for invalid file id hrefs', () => {
-		expect(parseFileIdFromFilesHref('/apps/files/files/nope')).toBeNull()
-		expect(parseFileIdFromFilesHref('https://[invalid')).toBeNull()
 	})
 })
 
