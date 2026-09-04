@@ -21,6 +21,13 @@ class ExternalPadExportFetcher {
 	 * The whole fetch, not each attempt: a host with four unreachable
 	 * addresses used to hold a request for a minute. An attempt gets what
 	 * is left, and one that no longer fits is not made.
+	 *
+	 * The clock starts before the name is resolved, so a slow lookup costs
+	 * the HTTP attempts their time rather than being added on top. What it
+	 * cannot do is bound the lookup itself: `dns_get_record()` takes no
+	 * timeout and obeys the system resolver, so a dead nameserver can still
+	 * hold a request for its own retry schedule before this budget has
+	 * anything left to give.
 	 */
 	private const EXTERNAL_TOTAL_BUDGET_SECONDS = 20;
 	private const EXTERNAL_MIN_ATTEMPT_SECONDS = 2;
@@ -32,12 +39,13 @@ class ExternalPadExportFetcher {
 
 	/** @return array{origin:string,pad_id:string,pad_url:string,text:string} */
 	public function normalizeAndFetchExternalPublicPadText(string $padUrl): array {
+		$deadline = $this->startBudget();
 		$resolved = $this->resolveAndValidateExternalPublicPadUrl($padUrl);
 		return [
 			'origin' => $resolved['origin'],
 			'pad_id' => $resolved['pad_id'],
 			'pad_url' => $resolved['pad_url'],
-			'text' => $this->fetchPublicExport($resolved, 'txt'),
+			'text' => $this->fetchPublicExport($resolved, 'txt', $deadline),
 		];
 	}
 
@@ -45,10 +53,11 @@ class ExternalPadExportFetcher {
 	 * @return array{origin:string,pad_id:string,pad_url:string,text:string,snapshot_unavailable:bool}
 	 */
 	public function normalizeAndFetchExternalPublicPadTextOrEmpty(string $padUrl): array {
+		$deadline = $this->startBudget();
 		$resolved = $this->resolveAndValidateExternalPublicPadUrl($padUrl);
 		$snapshotUnavailable = false;
 		try {
-			$text = $this->fetchPublicExport($resolved, 'txt');
+			$text = $this->fetchPublicExport($resolved, 'txt', $deadline);
 		} catch (ExternalPadExportNotFoundException) {
 			$text = '';
 			$snapshotUnavailable = true;
@@ -68,7 +77,9 @@ class ExternalPadExportFetcher {
 	 * the format differs, and with it what may come back.
 	 */
 	public function fetchExternalPublicPadHtml(string $padUrl): string {
-		return $this->fetchPublicExport($this->resolveAndValidateExternalPublicPadUrl($padUrl), 'html');
+		$deadline = $this->startBudget();
+
+		return $this->fetchPublicExport($this->resolveAndValidateExternalPublicPadUrl($padUrl), 'html', $deadline);
 	}
 
 	/** @return array{origin:string,pad_id:string,pad_url:string} */
@@ -89,14 +100,20 @@ class ExternalPadExportFetcher {
 	/**
 	 * @param array{origin:string,pad_id:string,pad_url:string,host:string,port:int,resolved_ips:list<string>} $resolved
 	 */
-	private function fetchPublicExport(array $resolved, string $format): string {
+	private function fetchPublicExport(array $resolved, string $format, float $deadline): string {
 		return $this->sendPinnedPublicGetRequest(
 			$this->buildPublicExportUrl($resolved['pad_url'], $format),
 			$resolved['host'],
 			$resolved['port'],
 			$resolved['resolved_ips'],
 			$format,
+			$deadline,
 		);
+	}
+
+	/** Started before the name is resolved, so the lookup spends from it too. */
+	private function startBudget(): float {
+		return microtime(true) + (float)self::EXTERNAL_TOTAL_BUDGET_SECONDS;
 	}
 
 	/** @return array{origin:string,pad_id:string,pad_url:string,host:string,port:int,resolved_ips:list<string>} */
@@ -125,13 +142,13 @@ class ExternalPadExportFetcher {
 		string $host,
 		int $port,
 		array $resolvedIps,
-		string $format = 'txt'
+		string $format,
+		float $deadline
 	): string {
 		if (!function_exists('curl_init')) {
 			throw new EtherpadClientException('External pad sync requires PHP cURL extension.');
 		}
 
-		$deadline = microtime(true) + (float)self::EXTERNAL_TOTAL_BUDGET_SECONDS;
 		$errors = [];
 		foreach ($resolvedIps as $ip) {
 			$left = (int)floor($deadline - microtime(true));

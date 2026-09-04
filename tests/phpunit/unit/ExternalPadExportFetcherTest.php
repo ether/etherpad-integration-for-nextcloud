@@ -81,6 +81,29 @@ class ExternalPadExportFetcherTest extends TestCase {
 	}
 
 	/**
+	 * The budget is shared with everything before the request, name
+	 * resolution included, so an attempt that no longer fits is not made at
+	 * all rather than started with the full timeout.
+	 */
+	public function testAnExhaustedBudgetStopsBeforeAnyAttempt(): void {
+		$send = new \ReflectionMethod(ExternalPadExportFetcher::class, 'sendPinnedPublicGetRequest');
+		$fetcher = new ExternalPadExportFetcher($this->buildExternalEnabledConfig());
+
+		$this->expectException(EtherpadClientException::class);
+		$this->expectExceptionMessage('no time left');
+		$send->invoke(
+			$fetcher,
+			'https://1.1.1.1/p/Test/export/html',
+			'1.1.1.1',
+			443,
+			['1.1.1.1'],
+			'html',
+			// Already spent: a slow lookup leaves nothing for the transfer.
+			microtime(true) - 1.0,
+		);
+	}
+
+	/**
 	 * The rule that keeps an error page from being read as pad content.
 	 *
 	 * Widening it for the HTML export must not widen it for the text one:
