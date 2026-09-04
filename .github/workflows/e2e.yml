@@ -25,9 +25,10 @@ on:
       - '.github/workflows/e2e.yml'
   workflow_dispatch:
   schedule:
-    # The suite is slow and talks to a whole stack; a nightly run catches
-    # drift in the Nextcloud and Etherpad images without gating every PR
-    # on all three majors.
+    # The suite is slow and talks to a whole stack. The nightly run is what
+    # covers every supported major and catches drift in the Nextcloud and
+    # Etherpad images; a pull request only pays for the edges. See the
+    # matrix below.
     - cron: '0 3 * * *'
 
 # Same as every other workflow here: a read-only token, and no credentials
@@ -42,7 +43,7 @@ concurrency:
 
 jobs:
   e2e:
-    # Three container stacks per run is a lot to spend on work in progress.
+    # Even three container stacks is a lot to spend on work in progress.
     # Keep the PR a draft while iterating; marking it ready starts the run.
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
@@ -50,23 +51,28 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Nextcloud is the axis that matters: the range appinfo/info.xml
-        # declares support for, all on the Etherpad major the app is written
-        # against. Crossing both versions would double the jobs for almost no
-        # information — an Etherpad problem looks the same on every Nextcloud.
+        # Nextcloud is the axis that matters, on the Etherpad major the app is
+        # written against. Crossing both versions would double the jobs for
+        # almost no information — an Etherpad problem looks the same on every
+        # Nextcloud.
+        #
+        # A pull request runs the two ends of the declared range, plus
+        # Etherpad 3 on the newest Nextcloud; the majors in between fail the
+        # same way as their neighbours, so they wait for the nightly run
+        # rather than gating every merge.
+        #
+        # The Etherpad 3 job blocks like the others: the suite passes against
+        # 3.3.3 today, so a red result means something changed, which is
+        # exactly what it is for.
+        nextcloud: >-
+          ${{ fromJSON(github.event_name == 'pull_request'
+          && '["31", "34"]' || '["31", "32", "33", "34"]') }}
+        etherpad: ['2']
         include:
-          - nextcloud: '31'
-            etherpad: '2'
-          - nextcloud: '32'
-            etherpad: '2'
-          - nextcloud: '33'
-            etherpad: '2'
-          # One job against Etherpad 3, on the newest Nextcloud, because a
-          # break there is worth seeing against the version we are heading
-          # for. It blocks like the others: the suite passes against 3.3.3
-          # today, so a red result means something changed, which is exactly
-          # what this is for.
-          - nextcloud: '33'
+          # Neither key can be added to an existing combination without
+          # overwriting it, so this is one extra job rather than a change to
+          # the Etherpad 2 ones.
+          - nextcloud: '34'
             etherpad: '3'
 
     name: Nextcloud ${{ matrix.nextcloud }} + Etherpad ${{ matrix.etherpad }}

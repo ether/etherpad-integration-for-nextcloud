@@ -5,14 +5,14 @@
 # Bring up a throwaway Nextcloud + Etherpad target for the Playwright
 # suite, seed it, and write tests/e2e/.env.e2e pointing at it.
 #
-#   NC_VERSION=32 tests/e2e/docker/up.sh
+#   NC_VERSION=31 tests/e2e/docker/up.sh
 #
 # Requires nc.pad.test and ep.pad.test to resolve to 127.0.0.1 — see
 # tests/e2e/docker/README.md.
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-export NC_VERSION="${NC_VERSION:-33}"
+export NC_VERSION="${NC_VERSION:-34}"
 # The Etherpad major. 2 is what the app is written against today; 3 moved
 # the session cookie to the socket.io handshake and is what a run against
 # it is meant to find out about.

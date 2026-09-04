@@ -11,6 +11,7 @@ use OCA\EtherpadNextcloud\Controller\EmbedControllerErrorMapper;
 use OCA\EtherpadNextcloud\Service\AppConfigService;
 use OCA\EtherpadNextcloud\Service\EmbedResponseBuilder;
 use OCA\EtherpadNextcloud\Service\UserNodeResolver;
+use OCP\AppFramework\Http\TemplateResponse;
 use OCP\Files\File;
 use OCP\Files\NotFoundException;
 use OCP\IL10N;
@@ -38,7 +39,7 @@ class EmbedControllerTest extends TestCase {
 		$params = $response->getParams();
 
 		$this->assertSame('embed', $response->getTemplateName());
-		$this->assertSame('blank', $response->getRenderAs());
+		$this->assertSame(TemplateResponse::RENDER_AS_BLANK, $response->getRenderAs());
 		$this->assertSame('csrf-token-value', $params['requesttoken']);
 		$this->assertSame(['https://portal.example.test'], $params['trusted_embed_origins']);
 		$this->assertSame(42, $params['file_id']);

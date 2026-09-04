@@ -34,6 +34,8 @@ jobs:
           filters: |
             src:
               - '.github/workflows/psalm.yml'
+              # The upper bound the matrix analyses comes from here.
+              - 'appinfo/info.xml'
               - 'composer.*'
               - 'lib/**'
               - 'psalm.xml'
@@ -46,7 +48,17 @@ jobs:
     needs: changes
     if: needs.changes.outputs.src != 'false'
 
-    name: Psalm static analysis
+    strategy:
+      fail-fast: false
+      matrix:
+        # Both ends of the range appinfo/info.xml declares. The lower bound
+        # catches an API that only exists on newer servers, the upper bound one
+        # that has since been removed. `locked` is whatever composer.lock pins,
+        # which is the declared minimum and the version every other job here
+        # installs.
+        ocp: ['locked', '^34']
+
+    name: Psalm static analysis (OCP ${{ matrix.ocp }})
 
     steps:
       - name: Checkout
@@ -69,12 +81,36 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ steps.composer-cache.outputs.dir }}
-          key: ${{ runner.os }}-composer-psalm-${{ hashFiles('**/composer.lock') }}
+          key: ${{ runner.os }}-composer-psalm-${{ matrix.ocp }}-${{ hashFiles('**/composer.lock') }}
           restore-keys: |
             ${{ runner.os }}-composer-psalm-
 
       - name: Install dependencies
         run: composer install --no-progress --prefer-dist
 
+      # Only the upper bound is resolved fresh. Re-requiring the lower one
+      # would step outside the lock and analyse whatever patch release happens
+      # to be newest that day, which no other job has installed.
+      - name: Select the OCP version under test
+        if: matrix.ocp != 'locked'
+        run: composer require --dev --no-progress --no-interaction "nextcloud/ocp:${{ matrix.ocp }}"
+
       - name: Run Psalm
         run: composer psalm
+
+  summary:
+    runs-on: ubuntu-latest
+    needs: psalm
+    if: always()
+
+    # The name the branch ruleset requires, kept stable while the matrix above
+    # changes shape. That is the whole point of the split: the analysis jobs
+    # carry their OCP version in their own names, this one never does.
+    name: Psalm static analysis
+
+    steps:
+      - run: |
+          result="${{ needs.psalm.result }}"
+          if [ "$result" != "success" ] && [ "$result" != "skipped" ]; then
+            exit 1
+          fi

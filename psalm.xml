@@ -24,7 +24,12 @@
         <!-- Classes that exist at runtime but aren't shipped in nextcloud/ocp
              (and can't be cleanly stubbed because we call their API, or they
              pull in further unshipped internals). IRootFolder & friends DO
-             resolve, via tests/psalm/missing-class-stubs.php. -->
+             resolve, via tests/psalm/missing-class-stubs.php.
+
+             These are the blind spot of the OCP version matrix: no analysis
+             run sees a signature change in any of them, and the private ones
+             are the likeliest to move between majors. Reaching for one is a
+             decision to check it by hand on a new Nextcloud. -->
         <UndefinedClass>
             <errorLevel type="suppress">
                 <referencedClass name="OCP\Image" />

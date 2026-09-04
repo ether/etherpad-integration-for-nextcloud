@@ -70,7 +70,7 @@ class PublicViewerControllerErrorMapper {
 				'error' => $this->messageFor($e),
 				'back_url' => $this->shareUrlBuilder->buildShareBaseUrl($token),
 				'back_label' => 'Back to shared files',
-			], 'blank');
+			], TemplateResponse::RENDER_AS_BLANK);
 			$response->setStatus($this->statusFor($e));
 			return $response;
 		}

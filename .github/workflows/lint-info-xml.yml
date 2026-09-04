@@ -71,3 +71,8 @@ jobs:
             echo "::error::Version mismatch. appinfo/info.xml is the source of truth ($INFO_VERSION); align package.json and both version fields in package-lock.json to it." >&2
             exit 1
           fi
+
+      # The same argument for the supported Nextcloud range: info.xml declares
+      # it and seven other files restate it.
+      - name: Compare info.xml and the Nextcloud range everything else assumes
+        run: python3 scripts/check-nextcloud-range.py
