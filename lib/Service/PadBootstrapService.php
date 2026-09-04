@@ -8,6 +8,7 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Service;
 
+use OCA\EtherpadNextcloud\Exception\MissingFrontmatterException;
 use OCA\EtherpadNextcloud\Exception\PadFileChangedException;
 use OCA\EtherpadNextcloud\Exception\PadFileFormatException;
 use OCP\Files\File;
@@ -83,7 +84,7 @@ class PadBootstrapService {
 		$isEmptyFile = $existingContentTrimmed === '';
 		$legacyShortcut = $this->padFileService->parseLegacyOwnpadShortcut($existingContent);
 		if (!$isEmptyFile && $legacyShortcut === null) {
-			throw new PadFileFormatException('Missing YAML frontmatter in .pad file.');
+			throw new MissingFrontmatterException('Missing YAML frontmatter in .pad file.');
 		}
 		if ($legacyShortcut !== null) {
 			$this->legacyMigrationService->migrate($uid, $file, $legacyShortcut);

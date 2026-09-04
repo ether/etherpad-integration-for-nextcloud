@@ -333,7 +333,7 @@ describe('viewer component — resolveOpenUrl', () => {
 	it('missing frontmatter: initializes once then re-opens', async () => {
 		const fetchMock = stubFetch()
 		fetchMock
-			.mockResolvedValueOnce(jsonResponse({ message: 'Missing YAML frontmatter' }, false, 400))
+			.mockResolvedValueOnce(jsonResponse({ message: 'Missing YAML frontmatter in .pad file.', code: 'missing_frontmatter' }, false, 400))
 			.mockResolvedValueOnce(jsonResponse({ status: 'ok' }))
 			.mockResolvedValueOnce(jsonResponse({ url: 'https://pad.example/after-init', sync_url: '' }))
 		const vm = makeInstance({ fileInfo: { path: '/x.pad' } }) // resolvedFileId null -> by-path only
@@ -351,7 +351,7 @@ describe('viewer component — resolveOpenUrl', () => {
 	it('initializes by file id (not by path) when an id is available', async () => {
 		const fetchMock = stubFetch()
 		fetchMock
-			.mockResolvedValueOnce(jsonResponse({ message: 'Missing YAML frontmatter' }, false, 400)) // open by-id
+			.mockResolvedValueOnce(jsonResponse({ message: 'Missing YAML frontmatter in .pad file.', code: 'missing_frontmatter' }, false, 400)) // open by-id
 			.mockResolvedValueOnce(jsonResponse({ status: 'migrated_from_legacy' }))                  // initialize-by-id
 			.mockResolvedValueOnce(jsonResponse({ url: 'https://pad.example/by-id', sync_url: '' }))   // re-open by-id
 		const vm = makeInstance({ fileid: 42, fileInfo: { path: '/x.pad' } })
@@ -443,7 +443,7 @@ describe('viewer component — resolveOpenUrl', () => {
 	it('carries the status through an initialize that no longer finds the file', async () => {
 		const fetchMock = stubFetch()
 		fetchMock
-			.mockResolvedValueOnce(jsonResponse({ message: 'Missing YAML frontmatter' }, false, 400))
+			.mockResolvedValueOnce(jsonResponse({ message: 'Missing YAML frontmatter in .pad file.', code: 'missing_frontmatter' }, false, 400))
 			.mockResolvedValueOnce(jsonResponse({ message: 'Cannot open selected .pad file.' }, false, 404))
 		const vm = makeInstance({ fileid: 42, fileInfo: { path: '/x.pad' } })
 

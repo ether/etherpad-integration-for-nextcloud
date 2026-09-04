@@ -8,6 +8,7 @@ use OCA\EtherpadNextcloud\Controller\PadControllerErrorMapper;
 use OCA\EtherpadNextcloud\Exception\BindingException;
 use OCA\EtherpadNextcloud\Exception\LegacyPadCollisionException;
 use OCA\EtherpadNextcloud\Exception\MissingBindingException;
+use OCA\EtherpadNextcloud\Exception\MissingFrontmatterException;
 use OCA\EtherpadNextcloud\Exception\ControllerBadRequestException;
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
 use OCA\EtherpadNextcloud\Exception\PadAlreadyHasBindingException;
@@ -263,6 +264,33 @@ class PadControllerErrorMapperTest extends TestCase {
 
 		$this->assertSame(Http::STATUS_INTERNAL_SERVER_ERROR, $response->getStatus());
 		$this->assertSame('Pad open failed.', $response->getData()['message']);
+	}
+
+	/**
+	 * The one `.pad` problem the clients act on rather than report: they
+	 * initialise the file and retry. They used to recognise it by searching
+	 * the English message for a phrase, so this code is what holds the two
+	 * halves together — without it the frontends silently stop recovering.
+	 */
+	public function testMissingFrontmatterCarriesAStableCode(): void {
+		$response = $this->buildMapper()->run(
+			static fn(): array => throw new MissingFrontmatterException('Missing YAML frontmatter in .pad file.'),
+			static fn(array $r): DataResponse => new DataResponse($r),
+		);
+
+		$this->assertSame(Http::STATUS_BAD_REQUEST, $response->getStatus());
+		$this->assertSame('missing_frontmatter', $response->getData()['code']);
+	}
+
+	/** Any other format problem stays a plain 400 with no code to branch on. */
+	public function testAnotherFormatProblemCarriesNoCode(): void {
+		$response = $this->buildMapper()->run(
+			static fn(): array => throw new PadFileFormatException('The body is not a pad.'),
+			static fn(array $r): DataResponse => new DataResponse($r),
+		);
+
+		$this->assertSame(Http::STATUS_BAD_REQUEST, $response->getStatus());
+		$this->assertArrayNotHasKey('code', $response->getData());
 	}
 
 	private function buildMapper(?LoggerInterface $logger = null): PadControllerErrorMapper {

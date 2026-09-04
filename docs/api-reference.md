@@ -23,7 +23,7 @@ Base: `/apps/etherpad_nextcloud`
     - validates that `fileId` resolves to an accessible `.pad` file in the user's file tree
     - renders a blank embed page that internally calls `open-by-id`
     - injects CSRF token manually into the blank template because this layout does not receive the normal `OC.requestToken` bootstrap
-    - if open fails with `Missing YAML frontmatter`, the embed page retries once after `initialize-by-id/{fileId}`
+    - if open fails with `code: missing_frontmatter`, the embed page retries once after `initialize-by-id/{fileId}`
     - sets route-specific `frame-ancestors` from admin-configured trusted embed origins
   - Host message contract:
     - accepted incoming messages from trusted origins:

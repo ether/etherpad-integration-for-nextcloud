@@ -16,6 +16,7 @@ use OCA\EtherpadNextcloud\Exception\EtherpadTooLargeException;
 use OCA\EtherpadNextcloud\Exception\InvalidShareFilePathException;
 use OCA\EtherpadNextcloud\Exception\InvalidShareTokenException;
 use OCA\EtherpadNextcloud\Exception\MissingBindingException;
+use OCA\EtherpadNextcloud\Exception\MissingFrontmatterException;
 use OCA\EtherpadNextcloud\Exception\NoShareFileSelectedException;
 use OCA\EtherpadNextcloud\Exception\NotAPadFileException;
 use OCA\EtherpadNextcloud\Exception\PadFileFormatException;
@@ -93,10 +94,9 @@ class PublicViewerControllerErrorMapper {
 
 	private function messageFor(\Throwable $e): string {
 		if ($e instanceof PadFileFormatException) {
-			if (str_contains($e->getMessage(), 'Missing YAML frontmatter')) {
-				return 'The selected .pad file is missing required metadata.';
-			}
-			return 'The selected .pad file has an invalid format.';
+			return $e instanceof MissingFrontmatterException
+				? 'The selected .pad file is missing required metadata.'
+				: 'The selected .pad file has an invalid format.';
 		}
 		if ($e instanceof BindingException) {
 			if ($e instanceof MissingBindingException) {

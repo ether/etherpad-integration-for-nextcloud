@@ -10,6 +10,7 @@ use OCA\EtherpadNextcloud\Exception\InvalidShareFilePathException;
 use OCA\EtherpadNextcloud\Exception\InvalidShareTokenException;
 use OCA\EtherpadNextcloud\Exception\MissingBindingException;
 use OCA\EtherpadNextcloud\Exception\NotAPadFileException;
+use OCA\EtherpadNextcloud\Exception\MissingFrontmatterException;
 use OCA\EtherpadNextcloud\Exception\PadFileFormatException;
 use OCA\EtherpadNextcloud\Exception\ShareFileNotInShareException;
 use OCA\EtherpadNextcloud\Exception\ShareReadForbiddenException;
@@ -84,7 +85,7 @@ class PublicViewerControllerErrorMapperTest extends TestCase {
 
 	public function testRunForDataMapsMissingFrontmatterMessage(): void {
 		$response = $this->buildMapper()->runForData(
-			static fn(): array => throw new PadFileFormatException('Missing YAML frontmatter.'),
+			static fn(): array => throw new MissingFrontmatterException('Missing YAML frontmatter.'),
 			static fn(array $result): DataResponse => new DataResponse($result),
 		);
 

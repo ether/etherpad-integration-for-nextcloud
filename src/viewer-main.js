@@ -156,8 +156,10 @@ import { parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './li
 				return data
 			},
 			isMissingFrontmatterError(error) {
-				if (!(error instanceof Error)) return false
-				return String(error.message || '').includes('Missing YAML frontmatter')
+				// The code, not the message: the server's wording is a
+				// sentence for a person, and searching it for a phrase broke
+				// the moment anyone translated or reworded it.
+				return Boolean(error) && error.code === 'missing_frontmatter'
 			},
 			async initializeMissingFrontmatter() {
 				const headers = {
