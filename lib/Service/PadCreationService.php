@@ -48,14 +48,10 @@ class PadCreationService {
 
 		return $this->withCreateRollback(
 			function (PadCreateAttempt $attempt) use ($uid, $path, $accessMode): array {
+				$attempt->recordPath($path);
 				$fileNode = $this->padFileCreator->createUserFile($uid, $path);
-				// Capture the id before provisioning; getId() on this node is path-based.
-				$fileId = $this->requireFileId($fileNode, $path);
-				$claim = $attempt->claimFile($uid, $fileId);
-				if ($this->isNotOurs($fileNode, $fileId, $path)) {
-					$attempt->disownFile();
-					throw new PadFileAlreadyExistsException('Target .pad file already exists.');
-				}
+				$claim = $this->claimCreatedFile($attempt, $uid, $fileNode, $path);
+				$fileId = $claim->fileId;
 				$padId = $this->padBootstrapService->provisionPadId($accessMode);
 				$attempt->recordPad($padId);
 				$padUrl = $this->etherpadClient->buildPadUrl($padId);
@@ -79,8 +75,8 @@ class PadCreationService {
 					'pad_url' => $padUrl,
 				];
 			},
-			function (PadCreateAttempt $attempt) use ($uid, $path): void {
-				$this->rollbackService->rollbackFailedCreate($uid, $path, $attempt->padId(), $attempt->claim());
+			function (PadCreateAttempt $attempt) use ($uid): void {
+				$this->rollbackService->rollbackFailedCreate($uid, $attempt->path(), $attempt->padId(), $attempt->claim());
 			},
 			function (\Throwable $e, PadCreateAttempt $attempt) use ($path, $accessMode): ?array {
 				if ($e instanceof BindingException) {
@@ -123,20 +119,9 @@ class PadCreationService {
 		return $this->withCreateRollback(
 			function (PadCreateAttempt $attempt) use ($uid, $parentFolder, $parentFolderId, $fileName, $accessMode): array {
 				$fileNode = $this->padFileCreator->createUserFileInFolder($parentFolder, $fileName);
-				// Ownership first, path second. The id is what the rollback
-				// needs to remove this file at all, and `toUserAbsolutePath()`
-				// throws when the node cannot be mapped into the user's tree —
-				// claiming after it would leave the new file behind. The path
-				// only makes the log lines readable, and this is the one flow
-				// that does not know it up front.
-				$fileId = $this->requireFileId($fileNode, $fileName);
-				$claim = $attempt->claimFile($uid, $fileId);
-				$path = $this->userNodeResolver->toUserAbsolutePath($uid, $fileNode);
-				$attempt->recordPath($path);
-				if ($this->isNotOurs($fileNode, $fileId, $path)) {
-					$attempt->disownFile();
-					throw new PadFileAlreadyExistsException('Target .pad file already exists.');
-				}
+				$claim = $this->claimCreatedFile($attempt, $uid, $fileNode);
+				$fileId = $claim->fileId;
+				$path = $attempt->path();
 
 				$padId = $this->padBootstrapService->provisionPadId($accessMode);
 				$attempt->recordPad($padId);
@@ -204,12 +189,8 @@ class PadCreationService {
 			function (PadCreateAttempt $attempt) use ($uid, $path, $padUrl) {
 				$attempt->recordPath($path);
 				$fileNode = $this->padFileCreator->createUserFile($uid, $path);
-				$fileId = $this->requireFileId($fileNode, $path);
-				$claim = $attempt->claimFile($uid, $fileId);
-				if ($this->isNotOurs($fileNode, $fileId, $path)) {
-					$attempt->disownFile();
-					throw new PadFileAlreadyExistsException('Target .pad file already exists.');
-				}
+				$claim = $this->claimCreatedFile($attempt, $uid, $fileNode, $path);
+				$fileId = $claim->fileId;
 
 				$prepared = $this->externalPadSeeder->prepare($fileId, $padUrl);
 				$this->writeCreatedFile($claim, $prepared['content']);
@@ -270,13 +251,8 @@ class PadCreationService {
 			function (PadCreateAttempt $attempt) use ($uid, $path, $templateNode, $user): array {
 				$attempt->recordPath($path);
 				$fileNode = $this->padFileCreator->createUserFile($uid, $path);
-				$fileId = $this->requireFileId($fileNode, $path);
 				// API creates start empty; do not replace this baseline with a later read.
-				$claim = $attempt->claimFile($uid, $fileId);
-				if ($this->isNotOurs($fileNode, $fileId, $path)) {
-					$attempt->disownFile();
-					throw new PadFileAlreadyExistsException('Target .pad file already exists.');
-				}
+				$claim = $this->claimCreatedFile($attempt, $uid, $fileNode, $path);
 
 				$result = $this->materializeTemplateInto($fileNode, $templateNode, $user, $claim);
 				// Recorded for the log lines only: this pad belongs to
@@ -505,6 +481,33 @@ class PadCreationService {
 		}
 
 		return $node;
+	}
+
+	/**
+	 * Take ownership of the file this attempt just made — or refuse it.
+	 *
+	 * One method because the order is the point: the id before anything
+	 * that can throw, the ownership check before any write, the disown
+	 * before the throw. Written out four times it was already drifting.
+	 *
+	 * An empty `$path` means create-by-parent, which cannot know it before
+	 * the file exists; deriving it can throw, hence after the claim.
+	 */
+	private function claimCreatedFile(PadCreateAttempt $attempt, string $uid, File $fileNode, string $path = ''): CreatedFileClaim {
+		$fileId = $this->requireFileId($fileNode, $path !== '' ? $path : $fileNode->getName());
+		$claim = $attempt->claimFile($uid, $fileId);
+
+		if ($path === '') {
+			$path = $this->userNodeResolver->toUserAbsolutePath($uid, $fileNode);
+		}
+		$attempt->recordPath($path);
+
+		if ($this->isNotOurs($fileNode, $fileId, $path)) {
+			$attempt->disownFile();
+			throw new PadFileAlreadyExistsException('Target .pad file already exists.');
+		}
+
+		return $claim;
 	}
 
 	/**
