@@ -3,89 +3,30 @@
  * Copyright (c) 2026 Jacob Bühler
  */
 import {
-	apiResolvePadByFileId,
-	apiResolvePadByPath,
-} from '../lib/api-client.js'
-import {
-	getFilesRouter,
 	hasNativeViewer,
 	ignoreExpectedNavigationResult,
-	isFilesAppRoute,
 } from '../lib/nextcloud-runtime.js'
 import {
-	filesUrlForFileId,
-	parseFileIdFromCurrentLocation,
 	parsePublicShareTokenFromLocation,
-	resolveOpenDir,
-	viewerUrlForPath,
 	viewerUrlForPublicShare,
 } from '../lib/urls.js'
 
 const DEDUPE_OPEN_WINDOW_MS = 800
-const ROUTE_FALLBACK_DELAY_MS = 180
-// Debounce between route push and Viewer.open: Nextcloud's SPA needs a short
-// moment to settle the folder state, otherwise the viewer can render against
-// the previous folder context or fail to resolve the path.
-const ROUTE_OPEN_DELAY_MS = 120
 
-const navigateFilesRouteAndOpen = (fileId, path) => {
-	const router = getFilesRouter()
-	if (!router) {
-		return false
-	}
-	if (!fileId || !Number.isFinite(fileId)) {
-		return false
-	}
-	let nativeOpenStarted = false
-	ignoreExpectedNavigationResult(router.goToRoute(
-		null,
-		{
-			view: 'files',
-			fileid: String(fileId),
-		},
-		{
-			dir: resolveOpenDir(path),
-		}
-	))
-	window.setTimeout(() => {
-		try {
-			const result = window.OCA.Viewer.open({
-				path,
-				onClose: clearFilesViewerRoute,
-			})
-			nativeOpenStarted = true
-			ignoreExpectedNavigationResult(result)
-		} catch (e) {
-			// The route fallback below still lets Nextcloud handle viewer opening.
-		}
-	}, ROUTE_OPEN_DELAY_MS)
-	window.setTimeout(() => {
-		if (nativeOpenStarted) {
-			return
-		}
-		const fallbackUrl = filesUrlForFileId(fileId, path)
-		window.location.assign(fallbackUrl)
-	}, ROUTE_FALLBACK_DELAY_MS)
-	return true
-}
-
-const clearFilesViewerRoute = () => {
-	const router = getFilesRouter()
-	if (!router) {
-		return
-	}
-	const query = { ...(router.query || {}) }
-	delete query.openfile
-	delete query.editing
-	ignoreExpectedNavigationResult(router.goToRoute(null, router.params || {}, query))
-}
-
+/**
+ * Opens a pad on a public-share route, which is the only place this app opens
+ * one itself: a signed-in user's click is answered by Nextcloud's own Viewer
+ * action, against the MIME type viewer-main.js registers. Both callers — the
+ * share-link click interceptor and the route controller — read the token out
+ * of the location before calling, so a call without one has nowhere to go.
+ */
 export const createPadOpener = () => {
 	let lastOpenKey = null
 	let lastOpenAt = 0
 
 	return async (navigation) => {
-		const openKey = String(navigation.fileId ?? '') + '|' + String(navigation.path ?? '')
+		const path = navigation.path || ''
+		const openKey = String(navigation.fileId ?? '') + '|' + path
 		const now = Date.now()
 		if (lastOpenKey === openKey && (now - lastOpenAt) < DEDUPE_OPEN_WINDOW_MS) {
 			return
@@ -93,91 +34,24 @@ export const createPadOpener = () => {
 		lastOpenKey = openKey
 		lastOpenAt = now
 
-		const publicShareToken = parsePublicShareTokenFromLocation()
-		const inPublicShareRoute = publicShareToken !== null && publicShareToken !== ''
-
-		const fallbackOpen = () => {
-			if (inPublicShareRoute) {
-				window.location.assign(viewerUrlForPublicShare(publicShareToken, navigation.path || ''))
-				return
-			}
-			if (isFilesAppRoute() && navigation.fileId !== null && navigation.fileId !== undefined && Number.isFinite(Number(navigation.fileId))) {
-				const fallbackPath = navigation.path || '/'
-				window.location.assign(filesUrlForFileId(Number(navigation.fileId), fallbackPath))
-				return
-			}
-			// The id in the current Files route describes whatever the route
-			// was last at, not necessarily the file that was clicked. It may
-			// stand in only when there is no path to contradict it —
-			// pairing it with a path is how the viewer ends up opening one
-			// file under another's name, and the by-path retry that used to
-			// absorb that is gone.
-			const routeFileId = isFilesAppRoute() ? parseFileIdFromCurrentLocation() : null
-			if (!navigation.path && (navigation.fileId === null || navigation.fileId === undefined) && routeFileId) {
-				window.location.assign(filesUrlForFileId(routeFileId, '/'))
-				return
-			}
-			if (navigation.fileId !== null && navigation.fileId !== undefined && Number.isFinite(Number(navigation.fileId))) {
-				const fallbackPath = navigation.path || '/'
-				window.location.assign(filesUrlForFileId(Number(navigation.fileId), fallbackPath))
-				return
-			}
-			if (navigation.path) {
-				window.location.assign(viewerUrlForPath(navigation.path))
-			}
-		}
-
-		if (!hasNativeViewer()) {
-			fallbackOpen()
+		const token = parsePublicShareTokenFromLocation()
+		if (!token) {
 			return
 		}
 
-		let path = navigation.path || ''
-		let fileId = navigation.fileId ?? null
-		if (!path && navigation.fileId !== null && navigation.fileId !== undefined) {
-			try {
-				const resolvedPad = await apiResolvePadByFileId(navigation.fileId)
-				path = (resolvedPad && typeof resolvedPad.path === 'string') ? resolvedPad.path : ''
-				fileId = (resolvedPad && Number.isFinite(Number(resolvedPad.file_id))) ? Number(resolvedPad.file_id) : fileId
-			} catch (e) {
-				path = ''
-			}
-		}
+		// Without a path this lands on the share's own viewer, which is the
+		// right destination for a single-file share.
+		const openInAppViewer = () => window.location.assign(viewerUrlForPublicShare(token, path))
 
-		if (!path) {
-			fallbackOpen()
-			return
-		}
-		if ((!fileId || !Number.isFinite(Number(fileId))) && path && !inPublicShareRoute) {
-			try {
-				// Without the cache: this id decides which document the viewer
-				// opens, and since the by-path retry is gone there is nothing
-				// downstream to notice a stale one. A five-minute-old
-				// path-to-id answer can name a file that has since moved out
-				// of the way of another.
-				const resolvedPad = await apiResolvePadByPath(path, { bypassCache: true })
-				fileId = (resolvedPad && Number.isFinite(Number(resolvedPad.file_id))) ? Number(resolvedPad.file_id) : fileId
-			} catch (e) {
-				// Resolve failure is handled by route fallback below.
-			}
-		}
-		// No route-id fall-through here: this point is only reached with a
-		// path in hand, and an id the path could not be verified against
-		// would decide which document opens. Without one the open goes by
-		// path, which is what fallbackOpen ends on.
-		if (isFilesAppRoute()) {
-			if (fileId && Number.isFinite(Number(fileId)) && navigateFilesRouteAndOpen(Number(fileId), path)) {
-				return
-			}
-			fallbackOpen()
+		if (!hasNativeViewer() || !path) {
+			openInAppViewer()
 			return
 		}
 
 		try {
-			const result = window.OCA.Viewer.open({ path })
-			ignoreExpectedNavigationResult(result)
+			ignoreExpectedNavigationResult(window.OCA.Viewer.open({ path }))
 		} catch (e) {
-			fallbackOpen()
+			openInAppViewer()
 		}
 	}
 }

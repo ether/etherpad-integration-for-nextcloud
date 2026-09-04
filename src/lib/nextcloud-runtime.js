@@ -10,11 +10,6 @@ export const hasNativeViewer = () => USE_NATIVE_VIEWER
 
 export const isFilesAppRoute = () => (window.location.pathname || '').includes('/apps/files')
 
-export const getFilesRouter = () => {
-	const router = window.OCP && window.OCP.Files && window.OCP.Files.Router
-	return router && typeof router.goToRoute === 'function' ? router : null
-}
-
 const isExpectedNavigationRedirect = (error) => {
 	const message = error instanceof Error ? error.message : String(error || '')
 	return message.includes('Redirected when going') && message.includes('navigation guard')
