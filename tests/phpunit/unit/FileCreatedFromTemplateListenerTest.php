@@ -9,6 +9,7 @@ use OCA\EtherpadNextcloud\Exception\PadFileChangedException;
 use OCA\EtherpadNextcloud\Exception\PadTypeDisabledException;
 use OCA\EtherpadNextcloud\Service\PadBootstrapService;
 use OCA\EtherpadNextcloud\Service\ExternalPadSeeder;
+use OCA\EtherpadNextcloud\Service\CreatedFileClaim;
 use OCA\EtherpadNextcloud\Service\PadCreationService;
 use OCA\EtherpadNextcloud\Service\PadTemplateStorage;
 use OCP\EventDispatcher\Event;
@@ -99,6 +100,7 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 		$target->expects($this->once())->method('putContent')->with('');
 
 		$creation = $this->createMock(PadCreationService::class);
+		$this->expectClaimFor($creation, $target);
 		$creation->method('materializeTemplateInto')
 			->willThrowException(new \RuntimeException('boom'));
 
@@ -333,6 +335,7 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 		$target->expects($this->once())->method('delete');
 
 		$creation = $this->createMock(PadCreationService::class);
+		$this->expectClaimFor($creation, $target);
 		$creation->method('materializeTemplateInto')->willThrowException(new PadTypeDisabledException());
 		$bootstrap = $this->createMock(PadBootstrapService::class);
 		$bootstrap->expects($this->never())->method('initializeMissingFrontmatter');
@@ -340,6 +343,60 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 		$this->expectException(PadTypeDisabledException::class);
 		$this->buildListener($creation, $bootstrap)
 			->handle(new FileCreatedFromTemplateEvent($template, $target, []));
+	}
+
+	/**
+	 * The general failure branch is not exempt. A pad call can fail
+	 * *because* the file moved, and the name it left behind may belong to
+	 * somebody else — so the blank recovery only runs on a file that is
+	 * still the one this listener was handed.
+	 */
+	public function testDoesNotBlankAFileThatIsNoLongerTheClaimedOne(): void {
+		$target = $this->file('Notes.pad');
+		$target->expects($this->never())->method('putContent');
+		$target->expects($this->never())->method('delete');
+
+		$creation = $this->createMock(PadCreationService::class);
+		$creation->method('claimTemplateTarget')->willReturn(new CreatedFileClaim('alice', 4242));
+		// Moved away, or replaced at that path: nothing matches the claim.
+		$creation->method('resolveUnchangedClaim')->willReturn(null);
+		$creation->method('materializeTemplateInto')
+			->willThrowException(new \RuntimeException('etherpad unreachable'));
+
+		$bootstrap = $this->createMock(PadBootstrapService::class);
+		$bootstrap->expects($this->never())->method('initializeMissingFrontmatter');
+
+		$this->buildListener($creation, $bootstrap)
+			->handle(new FileCreatedFromTemplateEvent($this->file('Template.pad'), $target, []));
+	}
+
+	/** Same rule for the refusal that deletes rather than blanks. */
+	public function testDoesNotDeleteAFileThatIsNoLongerTheClaimedOne(): void {
+		$target = $this->file('Notes.pad');
+		$target->expects($this->never())->method('delete');
+
+		$creation = $this->createMock(PadCreationService::class);
+		$creation->method('claimTemplateTarget')->willReturn(new CreatedFileClaim('alice', 4242));
+		$creation->method('resolveUnchangedClaim')->willReturn(null);
+		$creation->method('materializeTemplateInto')->willThrowException(new PadTypeDisabledException());
+
+		$this->expectException(PadTypeDisabledException::class);
+
+		$this->buildListener($creation, $this->createMock(PadBootstrapService::class))
+			->handle(new FileCreatedFromTemplateEvent($this->file('Template.pad'), $target, []));
+	}
+
+	/**
+	 * The listener claims its target before materialising and measures every
+	 * recovery against that claim, so a double that answers neither call
+	 * leaves it with nothing to act on.
+	 */
+	private function expectClaimFor(PadCreationService $creation, File $target, int $fileId = 4242): CreatedFileClaim {
+		$claim = new CreatedFileClaim('alice', $fileId);
+		$creation->method('claimTemplateTarget')->willReturn($claim);
+		$creation->method('resolveUnchangedClaim')->willReturn($target);
+
+		return $claim;
 	}
 
 	private function buildListener(

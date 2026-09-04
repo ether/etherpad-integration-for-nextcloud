@@ -414,7 +414,7 @@ class PadCreationService {
 		// Nextcloud's template hook brings no claim: it has a user, so it
 		// gets one made here, and its file already carries the template's
 		// bytes, so "unchanged" rather than "empty" is what fits it.
-		$claim ??= $this->claimForTemplateHook($target, $user);
+		$claim ??= $this->claimTemplateTarget($target, $user);
 		if (!str_ends_with(strtolower($template->getName()), '.pad')) {
 			throw new NotAPadFileException('Template is not a .pad file.');
 		}
@@ -483,10 +483,11 @@ class PadCreationService {
 	 * A claim for the one caller that does not create the file: Nextcloud's
 	 * template hook, which hands over a file it made from the template.
 	 *
-	 * Read once, here, so the rest of the call works from a fixed
-	 * expectation rather than from whatever the file has become.
+	 * Read once, so the rest of the work — including whatever the caller
+	 * does after a failure — measures against a fixed expectation rather
+	 * than against whatever the file has become.
 	 */
-	private function claimForTemplateHook(File $target, ?IUser $user): CreatedFileClaim {
+	public function claimTemplateTarget(File $target, ?IUser $user): CreatedFileClaim {
 		$uid = $user?->getUID();
 		if ($uid === null || $uid === '') {
 			throw new \RuntimeException('Cannot materialize a template without a user to resolve the file by.');
@@ -522,6 +523,27 @@ class PadCreationService {
 		// never receives a return value, and its rollback would then have no
 		// proof of what this attempt wrote.
 		$claim->writtenHash = hash('sha256', $content);
+	}
+
+	/**
+	 * The claimed file, if it is still exactly as it was claimed.
+	 *
+	 * For a caller that wants to recover from a failed create by rewriting
+	 * the target: a failure says nothing about who owns the file now. The
+	 * pad call may have failed *because* the file moved, and the name it
+	 * left behind may belong to somebody else by the time anyone looks.
+	 */
+	public function resolveUnchangedClaim(CreatedFileClaim $claim): ?File {
+		try {
+			$node = $this->userNodeResolver->resolveUserFileNodeById($claim->uid, $claim->fileId);
+			if ((string)$node->getContent() !== $claim->expectedBefore) {
+				return null;
+			}
+		} catch (\Throwable) {
+			return null;
+		}
+
+		return $node;
 	}
 
 	/**

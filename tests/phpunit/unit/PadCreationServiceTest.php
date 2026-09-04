@@ -77,7 +77,14 @@ class PadCreationServiceTest extends TestCase {
 		$rollbackService = $this->createMock(PadCreateRollbackService::class);
 		$rollbackService->expects($this->once())
 			->method('rollbackFailedCreate')
-			->with('alice', '/Test.pad', 'g.ABC$pad', $this->isInstanceOf(CreatedFileClaim::class));
+			->with('alice', '/Test.pad', 'g.ABC$pad', $this->callback(
+				// Not just "a claim": the rollback needs this attempt's id
+				// and the proof of what it wrote, or it deletes nothing.
+				static fn (CreatedFileClaim $claim): bool => $claim->uid === 'alice'
+					&& $claim->fileId === 123
+					&& $claim->expectedBefore === ''
+					&& $claim->writtenHash !== null
+			));
 
 		$bootstrap = $this->createMock(PadBootstrapService::class);
 		$bootstrap->method('provisionPadId')->willReturn('g.ABC$pad');

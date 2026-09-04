@@ -89,8 +89,22 @@ class FileCreatedFromTemplateListener implements IEventListener {
 			return;
 		}
 
+		// Made before anything can fail, and used by every recovery below.
+		// A failure says nothing about who owns the file afterwards: the pad
+		// call may have failed *because* the file moved, and the name it
+		// left behind may belong to somebody else by the time we look.
 		try {
-			$this->padCreationService->materializeTemplateInto($target, $template, $user);
+			$claim = $this->padCreationService->claimTemplateTarget($target, $user);
+		} catch (\Throwable $e) {
+			$this->logger->warning('Pad template create skipped: the target could not be identified.', [
+				'app' => 'etherpad_nextcloud',
+				'exception' => $e,
+			]);
+			return;
+		}
+
+		try {
+			$this->padCreationService->materializeTemplateInto($target, $template, $user, $claim);
 		} catch (PadTypeDisabledException $e) {
 			// Not a hiccup to retry around: the instance creates no pads at all
 			// right now, which happens when the setting changes while the
@@ -101,7 +115,10 @@ class FileCreatedFromTemplateListener implements IEventListener {
 				'targetFileId' => (int)$target->getId(),
 				'exception' => $e,
 			]);
-			$this->deleteTarget($target);
+			$unchanged = $this->padCreationService->resolveUnchangedClaim($claim);
+			if ($unchanged !== null) {
+				$this->deleteTarget($unchanged);
+			}
 			throw $e;
 		} catch (PadFileChangedException $e) {
 			// Somebody else wrote into this file while the pad was being
@@ -121,11 +138,23 @@ class FileCreatedFromTemplateListener implements IEventListener {
 				'templateFileId' => (int)$template->getId(),
 				'exception' => $e,
 			]);
-			$this->resetTargetToEmpty($target);
+			// Only onto the file this listener was handed, and only while it
+			// is still that file. Otherwise the recovery would empty
+			// somebody else's document — the very thing the write refused to
+			// do a moment earlier.
+			$unchanged = $this->padCreationService->resolveUnchangedClaim($claim);
+			if ($unchanged === null) {
+				$this->logger->warning('Left the template target alone: it is no longer the file this create was given.', [
+					'app' => 'etherpad_nextcloud',
+					'targetFileId' => $claim->fileId,
+				]);
+				return;
+			}
+			$this->resetTargetToEmpty($unchanged);
 			// Re-initialise after the wipe so the user still gets a clean,
 			// openable pad even though the template path failed. A disabled
 			// pad type travels on from here as well.
-			$this->initializeBlankPad($user->getUID(), $target);
+			$this->initializeBlankPad($user->getUID(), $unchanged);
 		}
 	}
 
