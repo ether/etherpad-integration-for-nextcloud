@@ -8,6 +8,7 @@ use OC\Security\CSRF\CsrfToken;
 use OC\Security\CSRF\CsrfTokenManager;
 use OCA\EtherpadNextcloud\Service\AppConfigService;
 use OCA\EtherpadNextcloud\Service\EmbedResponseBuilder;
+use OCP\AppFramework\Http\TemplateResponse;
 use PHPUnit\Framework\TestCase;
 
 class EmbedResponseBuilderTest extends TestCase {
@@ -18,7 +19,7 @@ class EmbedResponseBuilderTest extends TestCase {
 		$params = $response->getParams();
 
 		$this->assertSame('embed', $response->getTemplateName());
-		$this->assertSame('blank', $response->getRenderAs());
+		$this->assertSame(TemplateResponse::RENDER_AS_BLANK, $response->getRenderAs());
 		$this->assertSame(17, $params['file_id']);
 		$this->assertSame('csrf-token-value', $params['requesttoken']);
 		$this->assertSame(['https://portal.example.test'], $params['trusted_embed_origins']);

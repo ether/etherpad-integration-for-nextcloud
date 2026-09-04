@@ -34,10 +34,14 @@ class CSPListener implements IEventListener {
 			return;
 		}
 
+		// `frame-src` only, never `child-src` as well. Pages that set no
+		// `worker-src` of their own — a public share does not — fall back to
+		// `child-src`, so a host listed there is the only worker source left
+		// and Nextcloud's own workers stop loading. Nextcloud 34 has no
+		// addAllowedChildSrcDomain() at all.
 		$policy = new ContentSecurityPolicy();
 		foreach ($domains as $domain) {
 			$policy->addAllowedFrameDomain($domain);
-			$policy->addAllowedChildSrcDomain($domain);
 		}
 		$event->addPolicy($policy);
 	}
@@ -61,7 +65,7 @@ class CSPListener implements IEventListener {
 			// server-side snapshot fetch (see ExternalPadExportFetcher), but we
 			// must NOT mirror that into CSP: this listener handles *every*
 			// AddContentSecurityPolicyEvent, so emitting `https:` here would
-			// relax frame-src/child-src on all of Nextcloud, not just pad pages.
+			// relax frame-src on all of Nextcloud, not just pad pages.
 			// External pads are shown as locally rendered snapshots (no live
 			// iframe to the external host), so framing them is unnecessary;
 			// only concrete allowlisted hosts ever get a frame relaxation.

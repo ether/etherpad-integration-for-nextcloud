@@ -29,7 +29,7 @@ Pads live alongside your other files and behave like any other Nextcloud file:
 
 ## Requirements
 
-- Nextcloud `30` to `33` (see [appinfo/info.xml](appinfo/info.xml))
+- Nextcloud `31` to `34` (see [appinfo/info.xml](appinfo/info.xml))
 - Etherpad reachable from Nextcloud server
 - Etherpad API key
 - HTTPS for production deployments

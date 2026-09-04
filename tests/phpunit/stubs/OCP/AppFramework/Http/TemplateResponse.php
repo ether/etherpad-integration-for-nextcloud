@@ -6,6 +6,13 @@ namespace OCP\AppFramework\Http;
 
 if (!class_exists(TemplateResponse::class)) {
 	class TemplateResponse {
+		public const RENDER_AS_GUEST = 'guest';
+		public const RENDER_AS_BLANK = '';
+		public const RENDER_AS_BASE = 'base';
+		public const RENDER_AS_USER = 'user';
+		public const RENDER_AS_ERROR = 'error';
+		public const RENDER_AS_PUBLIC = 'public';
+
 		/** @var array<string,mixed> */
 		private array $params;
 		private ?ContentSecurityPolicy $contentSecurityPolicy = null;
@@ -16,7 +23,7 @@ if (!class_exists(TemplateResponse::class)) {
 			private string $appName,
 			private string $templateName,
 			array $params = [],
-			private string $renderAs = 'blank',
+			private string $renderAs = self::RENDER_AS_USER,
 		) {
 			$this->params = $params;
 		}

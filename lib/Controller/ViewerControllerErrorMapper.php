@@ -62,6 +62,6 @@ class ViewerControllerErrorMapper {
 	}
 
 	private function errorTemplate(string $error): TemplateResponse {
-		return new TemplateResponse(Application::APP_ID, 'noviewer', ['error' => $error], 'blank');
+		return new TemplateResponse(Application::APP_ID, 'noviewer', ['error' => $error], TemplateResponse::RENDER_AS_BLANK);
 	}
 }

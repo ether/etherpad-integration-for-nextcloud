@@ -41,7 +41,7 @@ class EmbedResponseBuilder {
 			Application::APP_ID,
 			$template,
 			array_merge($this->getBaseData(), $data),
-			'blank'
+			TemplateResponse::RENDER_AS_BLANK
 		);
 
 		return $this->applyEmbedPolicy($response);

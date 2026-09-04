@@ -25,7 +25,7 @@ class EmbedControllerErrorMapperTest extends TestCase {
 
 		$response = $mapper->runForTemplate(
 			static fn (): string => 'payload',
-			static fn (string $value): TemplateResponse => new TemplateResponse('etherpad_nextcloud', 'embed', ['value' => $value], 'blank'),
+			static fn (string $value): TemplateResponse => new TemplateResponse('etherpad_nextcloud', 'embed', ['value' => $value], TemplateResponse::RENDER_AS_BLANK),
 			errorTitle: 'Could not open pad',
 		);
 
