@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Tests\Unit;
 
+use OCA\EtherpadNextcloud\Exception\MissingFrontmatterException;
 use OCA\EtherpadNextcloud\Exception\PadFileFormatException;
+use OCA\EtherpadNextcloud\Exception\UnrecognisedPadContentException;
 use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\EtherpadNextcloud\Service\EtherpadClient;
 use OCA\EtherpadNextcloud\Service\ManagedPadLifecycle;
@@ -672,5 +674,34 @@ class PadBootstrapServiceTest extends TestCase {
 
 		$this->expectException(\OCA\EtherpadNextcloud\Exception\PadFileChangedException::class);
 		$service->initializeMissingFrontmatter('alice', $claimed, '');
+	}
+
+	/**
+	 * A file holding something else entirely — a renamed text file, say —
+	 * cannot be initialised, and saying so with `MissingFrontmatterException`
+	 * would answer this refusal with the very code that asks a client to
+	 * call this endpoint.
+	 */
+	public function testRefusesContentThatIsNeitherFrontmatterNorALegacyShortcut(): void {
+		$file = $this->createMock(File::class);
+		$file->method('getId')->willReturn(4321);
+		$file->expects($this->never())->method('putContent');
+
+		$this->expectException(UnrecognisedPadContentException::class);
+		$this->buildService(
+			$this->createMock(BindingService::class),
+			$this->createMock(PadFileService::class),
+			$this->createMock(EtherpadClient::class),
+			$this->buildPadTypePolicy(true),
+			$file,
+		)->initializeMissingFrontmatter('alice', $file, 'just some notes, not a pad');
+	}
+
+	/** And it is not the type the initialize flow treats as "carry on". */
+	public function testThatRefusalIsNotTheCarryOnType(): void {
+		$this->assertFalse(
+			is_a(UnrecognisedPadContentException::class, MissingFrontmatterException::class, true),
+			'PadInitializationService catches MissingFrontmatterException to continue into the bootstrap',
+		);
 	}
 }

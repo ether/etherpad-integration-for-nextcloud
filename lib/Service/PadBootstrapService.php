@@ -8,7 +8,7 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Service;
 
-use OCA\EtherpadNextcloud\Exception\MissingFrontmatterException;
+use OCA\EtherpadNextcloud\Exception\UnrecognisedPadContentException;
 use OCA\EtherpadNextcloud\Exception\PadFileChangedException;
 use OCA\EtherpadNextcloud\Exception\PadFileFormatException;
 use OCP\Files\File;
@@ -84,7 +84,11 @@ class PadBootstrapService {
 		$isEmptyFile = $existingContentTrimmed === '';
 		$legacyShortcut = $this->padFileService->parseLegacyOwnpadShortcut($existingContent);
 		if (!$isEmptyFile && $legacyShortcut === null) {
-			throw new MissingFrontmatterException('Missing YAML frontmatter in .pad file.');
+			// Not the same thing as "has no frontmatter yet": this file has
+			// content that is neither. Saying so with the other type would
+			// answer this refusal with the code that asks a client to call
+			// exactly this endpoint.
+			throw new UnrecognisedPadContentException('This .pad file holds content that is neither pad metadata nor a legacy shortcut.');
 		}
 		if ($legacyShortcut !== null) {
 			$this->legacyMigrationService->migrate($uid, $file, $legacyShortcut);

@@ -330,6 +330,25 @@ describe('viewer component — resolveOpenUrl', () => {
 		expect(loadPadContent).not.toHaveBeenCalled()
 	})
 
+	/**
+	 * The other half of the contract, and the one PHP cannot reach: the
+	 * client must key on the code alone. Putting `message.includes(...)`
+	 * back "to be safe" would restore exactly the coupling this removed,
+	 * and every other fixture here now carries both the code and the
+	 * phrase — so only a fixture without the code can catch it.
+	 */
+	it('does not initialize on a 400 that carries the old sentence but no code', async () => {
+		const fetchMock = stubFetch()
+		fetchMock.mockResolvedValue(jsonResponse({ message: 'Missing YAML frontmatter in .pad file.' }, false, 400))
+		const vm = makeInstance({ fileInfo: { path: '/x.pad' } })
+
+		await vm.resolveOpenUrl()
+
+		expect(fetchMock).toHaveBeenCalledTimes(1)
+		expect(fetchMock.mock.calls.some(([url]) => String(url).includes('initialize'))).toBe(false)
+		expect(vm.loadError).not.toBe('')
+	})
+
 	it('missing frontmatter: initializes once then re-opens', async () => {
 		const fetchMock = stubFetch()
 		fetchMock

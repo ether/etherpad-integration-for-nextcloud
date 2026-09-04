@@ -12,6 +12,7 @@ use OCA\EtherpadNextcloud\Exception\MissingBindingException;
 use OCA\EtherpadNextcloud\Exception\NotAPadFileException;
 use OCA\EtherpadNextcloud\Exception\MissingFrontmatterException;
 use OCA\EtherpadNextcloud\Exception\PadFileFormatException;
+use OCA\EtherpadNextcloud\Exception\UnrecognisedPadContentException;
 use OCA\EtherpadNextcloud\Exception\ShareFileNotInShareException;
 use OCA\EtherpadNextcloud\Exception\ShareReadForbiddenException;
 use OCA\EtherpadNextcloud\Service\PublicShareUrlBuilder;
@@ -192,5 +193,30 @@ class PublicViewerControllerErrorMapperTest extends TestCase {
 			new PublicShareUrlBuilder($urlGenerator, new PathNormalizer()),
 			$logger ?? $this->createMock(LoggerInterface::class),
 		);
+	}
+
+	/**
+	 * The fallback arm, which changed behaviour: the old text search gave
+	 * the "missing metadata" wording to any format error whose message
+	 * happened to contain the phrase. Only the exact subtype gets it now,
+	 * so the arm that everything else lands on needs its own test.
+	 */
+	public function testRunForDataMapsAnyOtherFormatProblemToInvalidFormat(): void {
+		$response = $this->buildMapper()->runForData(
+			static fn(): array => throw new PadFileFormatException('The body is not a pad.'),
+			static fn(array $r): DataResponse => new DataResponse($r),
+		);
+
+		$this->assertSame('The selected .pad file has an invalid format.', $response->getData()['message']);
+	}
+
+	/** A file that cannot be initialised is a format problem, not missing metadata. */
+	public function testRunForDataMapsUnrecognisedContentToInvalidFormat(): void {
+		$response = $this->buildMapper()->runForData(
+			static fn(): array => throw new UnrecognisedPadContentException('neither metadata nor a shortcut'),
+			static fn(array $r): DataResponse => new DataResponse($r),
+		);
+
+		$this->assertSame('The selected .pad file has an invalid format.', $response->getData()['message']);
 	}
 }

@@ -167,20 +167,15 @@ import { parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './li
 					requesttoken: ocRequestToken(),
 				}
 
-				const buildInitError = (data, fallbackMessage, status = 0) => {
-					const err = new Error((data && data.message) || fallbackMessage)
-					// Same shape as fetchOpenPayload's errors: the status
-					// explains the failure to the error card. Without it an
-					// initialize that 404s — the file moved between the open
-					// and the retry — is the dead-end card again.
-					err.status = status
-					// Forward a structured code so callers can branch on
-					// `legacy_collision_no_access` without parsing the message.
-					if (data && typeof data.code === 'string' && data.code !== '') {
-						err.code = data.code
-					}
-					return err
-				}
+				// `timeoutMs: null` because this writes: it creates a pad,
+				// writes a binding row and rewrites the file, and cutting
+				// the connection short would leave the server to finish
+				// with nobody reading the outcome. The shared helper carries
+				// `code` and `status` onto the error, which the recovery
+				// card and the retry both read — a second builder here was
+				// the same rule written twice, and the two had already
+				// drifted apart in one condition.
+				const initOptions = { timeoutMs: null, fallbackMessage: 'Pad initialization failed.' }
 
 				const announceMigratedStatus = (data) => {
 					if (data && data.status === 'migrated_from_legacy') {
@@ -194,11 +189,7 @@ import { parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './li
 
 				if (this.resolvedFileId !== null) {
 					const url = ocGenerateUrl('/apps/' + APP_ID + '/api/v1/pads/initialize-by-id/' + encodeURIComponent(String(this.resolvedFileId)))
-					const response = await fetch(url, { method: 'POST', credentials: 'same-origin', headers })
-					const data = await response.json().catch(() => ({}))
-					if (!response.ok) {
-						throw buildInitError(data, 'Pad initialization failed.', response.status)
-					}
+					const data = await fetchJsonWithTimeout(url, { method: 'POST', headers }, initOptions)
 					announceMigratedStatus(data)
 					return data
 				}
@@ -210,18 +201,13 @@ import { parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './li
 				const body = new URLSearchParams()
 				body.set('file', this.filePath)
 				const url = ocGenerateUrl('/apps/' + APP_ID + '/api/v1/pads/initialize')
-				const response = await fetch(url, {
+				const data = await fetchJsonWithTimeout(url, {
 					method: 'POST',
-					credentials: 'same-origin',
 					headers: Object.assign({}, headers, {
 						'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
 					}),
 					body: body.toString(),
-				})
-				const data = await response.json().catch(() => ({}))
-				if (!response.ok) {
-					throw buildInitError(data, 'Pad initialization failed.', response.status)
-				}
+				}, initOptions)
 				announceMigratedStatus(data)
 				return data
 			},

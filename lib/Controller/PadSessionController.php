@@ -58,6 +58,7 @@ class PadSessionController extends AbstractPadController {
 			[
 				'invalid_argument' => $this->l10n->t('Invalid file path.'),
 				'not_found' => $this->l10n->t('Cannot open selected .pad file.'),
+				'missing_frontmatter' => $this->l10n->t('This .pad file has no pad metadata yet.'),
 				'generic' => $this->l10n->t('Could not open pad'),
 			],
 		);
@@ -70,6 +71,7 @@ class PadSessionController extends AbstractPadController {
 			fn(PadOpenTarget $result): DataResponse => $this->padResponses->openResponse($result),
 			[
 				'not_found' => $this->l10n->t('Cannot open selected .pad file.'),
+				'missing_frontmatter' => $this->l10n->t('This .pad file has no pad metadata yet.'),
 				'generic' => $this->l10n->t('Could not open pad'),
 			],
 		);
@@ -89,6 +91,7 @@ class PadSessionController extends AbstractPadController {
 			fn(LivePadHtml $content): DataResponse => $this->padResponses->padContentResponse($content),
 			[
 				'not_found' => $this->l10n->t('Cannot open selected .pad file.'),
+				'missing_frontmatter' => $this->l10n->t('This .pad file has no pad metadata yet.'),
 				'too_large' => $this->l10n->t('This pad is too large to show here. Open it in Etherpad instead.'),
 				'generic' => $this->l10n->t('Could not load the pad content.'),
 			],
@@ -103,6 +106,7 @@ class PadSessionController extends AbstractPadController {
 			[
 				'invalid_argument' => $this->l10n->t('Invalid file path.'),
 				'not_found' => $this->l10n->t('Cannot open selected .pad file.'),
+				'missing_frontmatter' => $this->l10n->t('This .pad file has no pad metadata yet.'),
 				'generic' => $this->l10n->t('Could not initialize .pad file.'),
 				'on_throwable' => fn(\Throwable $e) => $this->logError('Pad frontmatter initialization failed in API initialize', [
 					'file' => $file,
@@ -119,6 +123,7 @@ class PadSessionController extends AbstractPadController {
 			fn(PadInitializationResult $result): DataResponse => new DataResponse($this->padResponses->initializationResponse($result)),
 			[
 				'not_found' => $this->l10n->t('Cannot open selected .pad file.'),
+				'missing_frontmatter' => $this->l10n->t('This .pad file has no pad metadata yet.'),
 				'generic' => $this->l10n->t('Could not initialize .pad file.'),
 				'on_throwable' => fn(\Throwable $e) => $this->logError('Pad frontmatter initialization failed in API initialize-by-id', [
 					'fileId' => $fileId,

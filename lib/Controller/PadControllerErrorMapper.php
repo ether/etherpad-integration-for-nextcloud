@@ -50,6 +50,7 @@ class PadControllerErrorMapper {
 	 *   invalid_argument?: string,
 	 *   not_found?: string,
 	 *   too_large?: string,
+	 *   missing_frontmatter?: string,
 	 *   file_changed?: string,
 	 *   binding_message?: string,
 	 *   binding_status?: int,
@@ -163,7 +164,7 @@ class PadControllerErrorMapper {
 			// for a phrase — which a translation or a reworded throw would
 			// have broken silently.
 			return new DataResponse([
-				'message' => $e->getMessage(),
+				'message' => $options['missing_frontmatter'] ?? 'This .pad file has no pad metadata yet.',
 				'code' => 'missing_frontmatter',
 			], Http::STATUS_BAD_REQUEST);
 		} catch (PadFileFormatException|EtherpadClientException $e) {
