@@ -8,6 +8,7 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Service;
 
+use OCA\EtherpadNextcloud\Exception\PadFileChangedException;
 use OCA\EtherpadNextcloud\Exception\PadFileFormatException;
 use OCP\Files\File;
 use OCP\Security\ISecureRandom;
@@ -23,6 +24,7 @@ class PadBootstrapService {
 		private LoggerInterface $logger,
 		private PadLegacyMigrationService $legacyMigrationService,
 		private PadTypePolicy $padTypePolicy,
+		private UserNodeResolver $userNodeResolver,
 	) {
 	}
 
@@ -123,7 +125,13 @@ class PadBootstrapService {
 
 			$padUrl = $this->etherpadClient->buildPadUrl($padId);
 			$doc = $this->padFileService->buildInitialDocument($fileId, $padId, $accessMode, '', $padUrl);
-			$file->putContent($doc);
+			// By id, and only while the file still holds what the caller
+			// read: provisioning the pad above is a full round trip to
+			// another host, and `File::putContent()` writes to the path its
+			// object remembers. The file can be moved and its name taken in
+			// that time, and this document names a file id — writing it into
+			// somebody else's file mislabels theirs and loses their content.
+			$this->writeInitialDocument($uid, $fileId, $existingContent, $doc);
 		} catch (\Throwable $e) {
 			if ($createdNewPad) {
 				$this->rollbackProvisionedPad($fileId, $padId);
@@ -131,6 +139,18 @@ class PadBootstrapService {
 			throw $e;
 		}
 		return false;
+	}
+
+	/**
+	 * @throws PadFileChangedException when the file is no longer the one the
+	 *                                 caller read
+	 */
+	private function writeInitialDocument(string $uid, int $fileId, string $expectedBefore, string $doc): void {
+		$node = $this->userNodeResolver->resolveUserFileNodeById($uid, $fileId);
+		if ((string)$node->getContent() !== $expectedBefore) {
+			throw new PadFileChangedException('The .pad file changed while its pad was being provisioned.');
+		}
+		$node->putContent($doc);
 	}
 
 	/**

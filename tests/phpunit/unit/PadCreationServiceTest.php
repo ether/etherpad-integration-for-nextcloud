@@ -913,6 +913,37 @@ class PadCreationServiceTest extends TestCase {
 	}
 
 	/**
+	 * A create that wrote its document and then failed at the binding leaves
+	 * that document, not the state it started from. Recovery has to accept
+	 * it — refusing would strand the file pointing at a pad the failure has
+	 * just deleted.
+	 */
+	public function testRecognisesOurOwnWrittenDocumentAsStillOurs(): void {
+		$claim = new CreatedFileClaim('alice', 4242);
+		$claim->writtenHash = hash('sha256', 'our document');
+
+		$node = $this->createMock(\OCP\Files\File::class);
+		$node->method('getContent')->willReturn('our document');
+
+		$service = $this->buildService(userNodeResolver: $this->resolverFor($node, 'alice', 4242));
+
+		$this->assertSame($node, $service->resolveUnchangedClaim($claim));
+	}
+
+	/** Somebody else's content is neither the prior state nor our write. */
+	public function testDoesNotRecogniseAStrangersContent(): void {
+		$claim = new CreatedFileClaim('alice', 4242);
+		$claim->writtenHash = hash('sha256', 'our document');
+
+		$node = $this->createMock(\OCP\Files\File::class);
+		$node->method('getContent')->willReturn('somebody else\'s notes');
+
+		$service = $this->buildService(userNodeResolver: $this->resolverFor($node, 'alice', 4242));
+
+		$this->assertNull($service->resolveUnchangedClaim($claim));
+	}
+
+	/**
 	 * The whole way through: `getId()` throws on the freshly created node,
 	 * so the create never holds an id — and the rollback must not go
 	 * looking for one, because a second read would answer for whatever

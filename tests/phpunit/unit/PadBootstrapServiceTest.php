@@ -9,6 +9,7 @@ use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\EtherpadNextcloud\Service\EtherpadClient;
 use OCA\EtherpadNextcloud\Service\ManagedPadLifecycle;
 use OCA\EtherpadNextcloud\Service\PadBootstrapService;
+use OCA\EtherpadNextcloud\Service\UserNodeResolver;
 use OCA\EtherpadNextcloud\Service\PadFileService;
 use OCP\Files\File;
 use OCP\Security\ISecureRandom;
@@ -67,7 +68,7 @@ class PadBootstrapServiceTest extends TestCase {
 		$file->expects($this->once())->method('putContent')->with('doc-content');
 
 		$migration = $this->createMock(\OCA\EtherpadNextcloud\Service\PadLegacyMigrationService::class);
-		$service = new PadBootstrapService($bindingService, $padFileService, $etherpadClient, new ManagedPadLifecycle($etherpadClient, $this->createMock(LoggerInterface::class)), $secureRandom, $logger, $migration, $this->buildPadTypePolicy(true));
+		$service = new PadBootstrapService($bindingService, $padFileService, $etherpadClient, new ManagedPadLifecycle($etherpadClient, $this->createMock(LoggerInterface::class)), $secureRandom, $logger, $migration, $this->buildPadTypePolicy(true), $this->resolverReturning($file));
 		$service->initializeMissingFrontmatter('alice', $file, '');
 	}
 
@@ -97,7 +98,7 @@ class PadBootstrapServiceTest extends TestCase {
 			->method('migrate')
 			->with('alice', $file, $legacy);
 
-		$service = new PadBootstrapService($bindingService, $padFileService, $etherpadClient, new ManagedPadLifecycle($etherpadClient, $this->createMock(LoggerInterface::class)), $secureRandom, $logger, $migration, $this->buildPadTypePolicy(true));
+		$service = new PadBootstrapService($bindingService, $padFileService, $etherpadClient, new ManagedPadLifecycle($etherpadClient, $this->createMock(LoggerInterface::class)), $secureRandom, $logger, $migration, $this->buildPadTypePolicy(true), $this->resolverReturning($file));
 
 		$this->assertTrue(
 			$service->initializeMissingFrontmatter('alice', $file, "[InternetShortcut]\nURL=https://pad.example.test/p/public-pad\n")
@@ -150,6 +151,7 @@ class PadBootstrapServiceTest extends TestCase {
 			$this->createMock(LoggerInterface::class),
 			$this->createMock(\OCA\EtherpadNextcloud\Service\PadLegacyMigrationService::class),
 			$this->buildPadTypePolicy(true),
+			$this->resolverReturning($file),
 		);
 
 		$this->expectException(\RuntimeException::class);
@@ -182,6 +184,7 @@ class PadBootstrapServiceTest extends TestCase {
 			$this->createMock(LoggerInterface::class),
 			$this->createMock(\OCA\EtherpadNextcloud\Service\PadLegacyMigrationService::class),
 			$this->buildPadTypePolicy(true),
+			$this->resolverReturning(null),
 		);
 
 		$this->expectException(\RuntimeException::class);
@@ -228,6 +231,7 @@ class PadBootstrapServiceTest extends TestCase {
 			$this->createMock(LoggerInterface::class),
 			$this->createMock(\OCA\EtherpadNextcloud\Service\PadLegacyMigrationService::class),
 			$this->buildPadTypePolicy(true),
+			$this->resolverReturning($file),
 		);
 
 		$this->expectException(\RuntimeException::class);
@@ -279,6 +283,7 @@ class PadBootstrapServiceTest extends TestCase {
 			$this->createMock(LoggerInterface::class),
 			$this->createMock(\OCA\EtherpadNextcloud\Service\PadLegacyMigrationService::class),
 			$this->buildPadTypePolicy(true),
+			$this->resolverReturning($file),
 		);
 
 		$this->expectException(\RuntimeException::class);
@@ -328,6 +333,7 @@ class PadBootstrapServiceTest extends TestCase {
 			$this->createMock(LoggerInterface::class),
 			$this->createMock(\OCA\EtherpadNextcloud\Service\PadLegacyMigrationService::class),
 			$this->buildPadTypePolicy(true),
+			$this->resolverReturning($file),
 		);
 
 		$this->expectException(\RuntimeException::class);
@@ -395,7 +401,7 @@ class PadBootstrapServiceTest extends TestCase {
 			->willThrowException(new \RuntimeException('write failed'));
 
 		$migration = $this->createMock(\OCA\EtherpadNextcloud\Service\PadLegacyMigrationService::class);
-		$service = new PadBootstrapService($bindingService, $padFileService, $etherpadClient, new ManagedPadLifecycle($etherpadClient, $this->createMock(LoggerInterface::class)), $secureRandom, $logger, $migration, $this->buildPadTypePolicy(true));
+		$service = new PadBootstrapService($bindingService, $padFileService, $etherpadClient, new ManagedPadLifecycle($etherpadClient, $this->createMock(LoggerInterface::class)), $secureRandom, $logger, $migration, $this->buildPadTypePolicy(true), $this->resolverReturning($file));
 
 		$this->expectException(\RuntimeException::class);
 		$this->expectExceptionMessage('write failed');
@@ -464,6 +470,7 @@ class PadBootstrapServiceTest extends TestCase {
 			$this->createMock(LoggerInterface::class),
 			$this->createMock(\OCA\EtherpadNextcloud\Service\PadLegacyMigrationService::class),
 			$this->buildPadTypePolicy(false, true),
+			$this->resolverReturning($file),
 		);
 
 		$service->initializeMissingFrontmatter('alice', $file, '');
@@ -474,6 +481,7 @@ class PadBootstrapServiceTest extends TestCase {
 		PadFileService $padFileService,
 		EtherpadClient $etherpadClient,
 		\OCA\EtherpadNextcloud\Service\PadTypePolicy $policy,
+		?File $file = null,
 	): PadBootstrapService {
 		return new PadBootstrapService(
 			$bindingService,
@@ -484,6 +492,7 @@ class PadBootstrapServiceTest extends TestCase {
 			$this->createMock(LoggerInterface::class),
 			$this->createMock(\OCA\EtherpadNextcloud\Service\PadLegacyMigrationService::class),
 			$policy,
+			$this->resolverReturning($file ?? $this->createMock(File::class)),
 		);
 	}
 
@@ -521,6 +530,7 @@ class PadBootstrapServiceTest extends TestCase {
 			$this->createMock(LoggerInterface::class),
 			$this->createMock(\OCA\EtherpadNextcloud\Service\PadLegacyMigrationService::class),
 			$this->buildPadTypePolicy(false),
+			$this->resolverReturning($file),
 		);
 
 		$service->initializeMissingFrontmatter('alice', $file, '');
@@ -548,6 +558,7 @@ class PadBootstrapServiceTest extends TestCase {
 			$this->createMock(LoggerInterface::class),
 			$migration,
 			$this->buildPadTypePolicy(false),
+			$this->resolverReturning($file),
 		);
 
 		self::assertTrue($service->initializeMissingFrontmatter(
@@ -597,6 +608,7 @@ class PadBootstrapServiceTest extends TestCase {
 			$this->createMock(LoggerInterface::class),
 			$this->createMock(\OCA\EtherpadNextcloud\Service\PadLegacyMigrationService::class),
 			$this->buildPadTypePolicy(false),
+			$this->resolverReturning($file),
 		);
 
 		$this->expectException(\RuntimeException::class);
@@ -613,5 +625,63 @@ class PadBootstrapServiceTest extends TestCase {
 			}
 		);
 		return new \OCA\EtherpadNextcloud\Service\PadTypePolicy($config);
+	}
+
+	/**
+	 * The node the id resolves to at write time. The service writes there
+	 * rather than through the node it was handed, so a double that answers
+	 * with nothing would let a passing test write nowhere.
+	 */
+	private function resolverReturning(?File $file): UserNodeResolver {
+		$file ??= $this->createMock(File::class);
+		$resolver = $this->createMock(UserNodeResolver::class);
+		$resolver->method('resolveUserFileNodeById')->willReturn($file);
+
+		return $resolver;
+	}
+
+	/**
+	 * Provisioning the pad is a full round trip to another host, and the
+	 * document written afterwards names a file id. If the file moved and
+	 * something else took its name in the meantime, writing through the
+	 * node handed in would mislabel the stranger's file and lose its
+	 * content — so the write goes by id and only onto what the caller read.
+	 */
+	public function testRefusesToWriteWhenTheFileChangedWhileThePadWasProvisioned(): void {
+		$bindingService = $this->createMock(BindingService::class);
+		$bindingService->method('findByFileId')->willReturn(null);
+
+		$padFileService = $this->createMock(PadFileService::class);
+		$padFileService->method('buildInitialDocument')->willReturn('doc-content');
+
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->method('buildPadUrl')->willReturn('https://pad.example.test/p/nc-x');
+
+		$secureRandom = $this->createMock(ISecureRandom::class);
+		$secureRandom->method('generate')->willReturn('abcdefghijklmnopqrstuvwx');
+
+		$claimed = $this->createMock(File::class);
+		$claimed->method('getId')->willReturn(4242);
+		$claimed->expects($this->never())->method('putContent');
+
+		// What the id resolves to now: a different file at that path.
+		$stranger = $this->createMock(File::class);
+		$stranger->method('getContent')->willReturn('somebody else\'s notes');
+		$stranger->expects($this->never())->method('putContent');
+
+		$service = new PadBootstrapService(
+			$bindingService,
+			$padFileService,
+			$etherpadClient,
+			new ManagedPadLifecycle($etherpadClient, $this->createMock(LoggerInterface::class)),
+			$secureRandom,
+			$this->createMock(LoggerInterface::class),
+			$this->createMock(\OCA\EtherpadNextcloud\Service\PadLegacyMigrationService::class),
+			$this->buildPadTypePolicy(true),
+			$this->resolverReturning($stranger),
+		);
+
+		$this->expectException(\OCA\EtherpadNextcloud\Exception\PadFileChangedException::class);
+		$service->initializeMissingFrontmatter('alice', $claimed, '');
 	}
 }

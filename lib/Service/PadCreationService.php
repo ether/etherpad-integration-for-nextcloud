@@ -536,7 +536,14 @@ class PadCreationService {
 	public function resolveUnchangedClaim(CreatedFileClaim $claim): ?File {
 		try {
 			$node = $this->userNodeResolver->resolveUserFileNodeById($claim->uid, $claim->fileId);
-			if ((string)$node->getContent() !== $claim->expectedBefore) {
+			$current = (string)$node->getContent();
+			// Two states belong to this attempt: what it found, and what it
+			// wrote. A create that wrote its document and then failed at the
+			// binding leaves the second — refusing to recover from it would
+			// strand the file pointing at a pad that has just been deleted.
+			$isOurs = $current === $claim->expectedBefore
+				|| ($claim->writtenHash !== null && hash_equals($claim->writtenHash, hash('sha256', $current)));
+			if (!$isOurs) {
 				return null;
 			}
 		} catch (\Throwable) {
