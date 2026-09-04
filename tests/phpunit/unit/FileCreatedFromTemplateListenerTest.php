@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\Tests\Unit;
 
 use OCA\EtherpadNextcloud\Listeners\FileCreatedFromTemplateListener;
+use OCA\EtherpadNextcloud\Exception\PadFileChangedException;
 use OCA\EtherpadNextcloud\Exception\PadTypeDisabledException;
 use OCA\EtherpadNextcloud\Service\PadBootstrapService;
 use OCA\EtherpadNextcloud\Service\ExternalPadSeeder;
+use OCA\EtherpadNextcloud\Service\CreatedFileClaim;
 use OCA\EtherpadNextcloud\Service\PadCreationService;
 use OCA\EtherpadNextcloud\Service\PadTemplateStorage;
 use OCP\EventDispatcher\Event;
@@ -98,6 +100,7 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 		$target->expects($this->once())->method('putContent')->with('');
 
 		$creation = $this->createMock(PadCreationService::class);
+		$this->expectClaimFor($creation, $target);
 		$creation->method('materializeTemplateInto')
 			->willThrowException(new \RuntimeException('boom'));
 
@@ -332,6 +335,7 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 		$target->expects($this->once())->method('delete');
 
 		$creation = $this->createMock(PadCreationService::class);
+		$this->expectClaimFor($creation, $target);
 		$creation->method('materializeTemplateInto')->willThrowException(new PadTypeDisabledException());
 		$bootstrap = $this->createMock(PadBootstrapService::class);
 		$bootstrap->expects($this->never())->method('initializeMissingFrontmatter');
@@ -339,6 +343,50 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 		$this->expectException(PadTypeDisabledException::class);
 		$this->buildListener($creation, $bootstrap)
 			->handle(new FileCreatedFromTemplateEvent($template, $target, []));
+	}
+
+	/** A remote error must not bypass the content check before blank recovery. */
+	public function testDoesNotBlankAFileThatIsNoLongerTheClaimedOne(): void {
+		$target = $this->file('Notes.pad');
+		$target->expects($this->never())->method('putContent');
+		$target->expects($this->never())->method('delete');
+
+		$creation = $this->createMock(PadCreationService::class);
+		$creation->method('claimTemplateTarget')->willReturn(new CreatedFileClaim('alice', 4242));
+		// The claimed file is no longer accessible or its content changed.
+		$creation->method('resolveUnchangedClaim')->willReturn(null);
+		$creation->method('materializeTemplateInto')
+			->willThrowException(new \RuntimeException('etherpad unreachable'));
+
+		$bootstrap = $this->createMock(PadBootstrapService::class);
+		$bootstrap->expects($this->never())->method('initializeMissingFrontmatter');
+
+		$this->buildListener($creation, $bootstrap)
+			->handle(new FileCreatedFromTemplateEvent($this->file('Template.pad'), $target, []));
+	}
+
+	public function testDoesNotDeleteAFileThatIsNoLongerTheClaimedOne(): void {
+		$target = $this->file('Notes.pad');
+		$target->expects($this->never())->method('delete');
+
+		$creation = $this->createMock(PadCreationService::class);
+		$creation->method('claimTemplateTarget')->willReturn(new CreatedFileClaim('alice', 4242));
+		$creation->method('resolveUnchangedClaim')->willReturn(null);
+		$creation->method('materializeTemplateInto')->willThrowException(new PadTypeDisabledException());
+
+		$this->expectException(PadTypeDisabledException::class);
+
+		$this->buildListener($creation, $this->createMock(PadBootstrapService::class))
+			->handle(new FileCreatedFromTemplateEvent($this->file('Template.pad'), $target, []));
+	}
+
+	/** Stub a claimed target that remains eligible for recovery. */
+	private function expectClaimFor(PadCreationService $creation, File $target, int $fileId = 4242): CreatedFileClaim {
+		$claim = new CreatedFileClaim('alice', $fileId);
+		$creation->method('claimTemplateTarget')->willReturn($claim);
+		$creation->method('resolveUnchangedClaim')->willReturn($target);
+
+		return $claim;
 	}
 
 	private function buildListener(
@@ -376,5 +424,29 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 		$file->method('getName')->willReturn($name);
 		$file->method('getId')->willReturn(42);
 		return $file;
+	}
+
+	public function testAChangedTargetIsLeftAloneInsteadOfBlanked(): void {
+		$target = $this->file('Notes.pad');
+		$target->expects($this->never())->method('putContent');
+		$target->expects($this->never())->method('delete');
+		// The handler must not ask the stale node anything, id included: it
+		// answers for whatever holds the path by then, and it can throw
+		// while an error is already being handled.
+		$target->expects($this->never())->method('getId');
+
+		$creation = $this->createMock(PadCreationService::class);
+		$this->expectClaimFor($creation, $target);
+		$creation->method('materializeTemplateInto')
+			->willThrowException(new PadFileChangedException('changed'));
+
+		$bootstrap = $this->createMock(PadBootstrapService::class);
+		$bootstrap->expects($this->never())->method('initializeMissingFrontmatter');
+
+		$this->buildListener($creation, $bootstrap)->handle(new FileCreatedFromTemplateEvent(
+			$this->file('Template.pad'),
+			$target,
+			[],
+		));
 	}
 }

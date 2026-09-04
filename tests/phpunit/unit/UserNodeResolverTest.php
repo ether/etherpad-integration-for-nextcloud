@@ -213,4 +213,32 @@ class UserNodeResolverTest extends TestCase {
 		$this->expectException(NotFoundException::class);
 		$resolver->resolveUserFileNodeById('alice', 42);
 	}
+
+	/** Prefer the creatable share regardless of lookup order. */
+	#[\PHPUnit\Framework\Attributes\DataProvider('shareOrders')]
+	public function testPrefersAFolderThisUserMayCreateIn(bool $writableFirst): void {
+		$readOnly = $this->createMock(Folder::class);
+		$readOnly->method('getPath')->willReturn('/alice/files/Shared/Team');
+		$readOnly->method('isCreatable')->willReturn(false);
+
+		$writable = $this->createMock(Folder::class);
+		$writable->method('getPath')->willReturn('/alice/files/Team');
+		$writable->method('isCreatable')->willReturn(true);
+
+		$userFolder = $this->createMock(Folder::class);
+		$userFolder->method('getId')->willReturn(1);
+		$userFolder->method('getById')->willReturn($writableFirst ? [$writable, $readOnly] : [$readOnly, $writable]);
+
+		$rootFolder = $this->createMock(IRootFolder::class);
+		$rootFolder->method('getUserFolder')->with('alice')->willReturn($userFolder);
+
+		$resolver = new UserNodeResolver($rootFolder, $this->createMock(LoggerInterface::class));
+
+		$this->assertSame($writable, $resolver->resolveUserFolderNodeById('alice', 42));
+	}
+
+	/** @return array<string,array{0:bool}> */
+	public static function shareOrders(): array {
+		return ['writable first' => [true], 'read-only first' => [false]];
+	}
 }

@@ -166,6 +166,7 @@ OC.L10N.register(
     "The cookie domain is empty, so the session cookie stays on the Nextcloud host and never reaches Etherpad.": "Il dominio del cookie è vuoto, quindi il cookie di sessione resta sull'host Nextcloud e non raggiunge mai Etherpad.",
     "The server did not say where to load this pad from.": "Il server non ha indicato da dove caricare questo pad.",
     "The session cookie domain could not be verified.": "Non è stato possibile verificare il dominio del cookie di sessione.",
+    "The target file changed while the pad was being created. Try again with a new name.": "Il file di destinazione è cambiato durante la creazione del pad. Riprova con un altro nome.",
     "This .pad file has no matching pad in this Nextcloud.": "Questo file .pad non ha alcun pad corrispondente in questo Nextcloud.",
     "This file looks like a copy of an existing .pad file in your account. Open the original to keep editing the linked pad, or create a new pad to fork the content stored in this file.": "Questo file sembra una copia di un file .pad già esistente nel tuo account. Apri l'originale per continuare a modificare il pad collegato, oppure crea un nuovo pad per creare una copia indipendente del contenuto memorizzato in questo file.",
     "This file may have been moved or replaced since the list was loaded. Reload the page and open it again.": "Questo file potrebbe essere stato spostato o sostituito da quando l’elenco è stato caricato. Ricarica la pagina e riapri il file.",

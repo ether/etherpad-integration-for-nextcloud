@@ -100,6 +100,7 @@ class UserNodeResolver {
 		}
 		$nodes = $userFolder->getById($folderId);
 		$root = '/' . $uid . '/files';
+		$fallback = null;
 		foreach ($nodes as $node) {
 			if (!$node instanceof Folder) {
 				continue;
@@ -111,9 +112,18 @@ class UserNodeResolver {
 			// id above, and getById() is not expected to return the folder it
 			// searches — but "not expected to" is an implementation detail,
 			// and this is the path create-by-parent takes into "All files".
-			if ($path === $root || str_starts_with($path, $root . '/')) {
+			if ($path !== $root && !str_starts_with($path, $root . '/')) {
+				continue;
+			}
+			// Overlapping shares can expose the same folder with different permissions.
+			// Prefer a mount that allows creation, regardless of getById() order.
+			if ($node->isCreatable()) {
 				return $node;
 			}
+			$fallback ??= $node;
+		}
+		if ($fallback !== null) {
+			return $fallback;
 		}
 
 		throw new NotFoundException('Folder not found by ID.');

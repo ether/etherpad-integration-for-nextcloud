@@ -48,6 +48,7 @@ class PadCreateController extends AbstractPadController {
 				'invalid_argument' => $this->l10n->t('Invalid file path.'),
 				'binding_message' => $this->l10n->t('A file with this name already exists.'),
 				'binding_status' => Http::STATUS_CONFLICT,
+				'file_changed' => $this->l10n->t('The target file changed while the pad was being created. Try again with a new name.'),
 				'generic' => $this->l10n->t('Could not create pad'),
 			],
 		);
@@ -68,6 +69,7 @@ class PadCreateController extends AbstractPadController {
 				'not_found' => $this->l10n->t('Cannot resolve selected parent folder.'),
 				'binding_message' => $this->l10n->t('A file with this name already exists.'),
 				'binding_status' => Http::STATUS_CONFLICT,
+				'file_changed' => $this->l10n->t('The target file changed while the pad was being created. Try again with a new name.'),
 				'generic' => $this->l10n->t('Could not create pad'),
 			],
 		);
@@ -88,6 +90,7 @@ class PadCreateController extends AbstractPadController {
 				'not_found' => $this->l10n->t('Template file not found.'),
 				'binding_message' => $this->l10n->t('A file with this name already exists.'),
 				'binding_status' => Http::STATUS_CONFLICT,
+				'file_changed' => $this->l10n->t('The target file changed while the pad was being created. Try again with a new name.'),
 				'generic' => $this->l10n->t('Could not create pad from template.'),
 			],
 		);
@@ -100,6 +103,7 @@ class PadCreateController extends AbstractPadController {
 			fn(array $result): DataResponse => new DataResponse($this->padResponses->withViewerUrl($result)),
 			[
 				'invalid_argument' => $this->l10n->t('Invalid input.'),
+				'file_changed' => $this->l10n->t('The target file changed while the pad was being created. Try again with a new name.'),
 				'generic' => $this->l10n->t('Could not import external pad.'),
 			],
 		);

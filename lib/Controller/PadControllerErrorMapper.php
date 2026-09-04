@@ -17,6 +17,7 @@ use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
 use OCA\EtherpadNextcloud\Exception\EtherpadTooLargeException;
 use OCA\EtherpadNextcloud\Exception\PadAlreadyHasBindingException;
 use OCA\EtherpadNextcloud\Exception\PadFileAlreadyExistsException;
+use OCA\EtherpadNextcloud\Exception\PadFileChangedException;
 use OCA\EtherpadNextcloud\Exception\PadFileFormatException;
 use OCA\EtherpadNextcloud\Exception\PadParentFolderNotWritableException;
 use OCA\EtherpadNextcloud\Exception\PadTypeDisabledException;
@@ -48,6 +49,7 @@ class PadControllerErrorMapper {
 	 *   invalid_argument?: string,
 	 *   not_found?: string,
 	 *   too_large?: string,
+	 *   file_changed?: string,
 	 *   binding_message?: string,
 	 *   binding_status?: int,
 	 *   generic?: string,
@@ -93,6 +95,11 @@ class PadControllerErrorMapper {
 				'message' => 'Pad file is temporarily locked. Please retry.',
 				'retryable' => true,
 			], Http::STATUS_SERVICE_UNAVAILABLE);
+		} catch (PadFileChangedException $e) {
+			return new DataResponse([
+				'message' => $options['file_changed'] ?? 'The target file changed while the pad was being created.',
+				'code' => 'pad_file_changed',
+			], Http::STATUS_CONFLICT);
 		} catch (PadFileAlreadyExistsException) {
 			return new DataResponse([
 				'message' => 'A file with this name already exists.',
