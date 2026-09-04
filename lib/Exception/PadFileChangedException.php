@@ -10,11 +10,8 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\Exception;
 
 /**
- * The target file is no longer what this create claimed.
- *
- * Its own type because the only correct response is to stop touching the
- * file. A caller that treats it as a generic failure and "recovers" by
- * emptying the target destroys exactly the content this check found.
+ * The target content differs from the create's expected state.
+ * Recovery must not blank or delete that content.
  */
 class PadFileChangedException extends \RuntimeException {
 }

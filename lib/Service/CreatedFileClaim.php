@@ -10,16 +10,10 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\Service;
 
 /**
- * What one create attempt knows about the file it claimed.
+ * Identity, expected content and write evidence for one create attempt.
  *
- * Held together on purpose. Each of these was being re-derived at the point
- * of use — the id read again from a node, the prior content read again
- * inside a helper, the written hash returned through a value that a failing
- * caller never received — and every one of those re-derivations was a way
- * to act on the wrong file or with the wrong expectation.
- *
- * Carried by reference, so a write that succeeds reaches the rollback of a
- * step that fails afterwards.
+ * Pass the same instance through writing and recovery so a later failure
+ * retains the write evidence. A claim does not lock the file.
  */
 class CreatedFileClaim {
 	public ?string $writtenHash = null;
@@ -27,8 +21,7 @@ class CreatedFileClaim {
 	public function __construct(
 		public readonly string $uid,
 		public readonly int $fileId,
-		/** What the file held when this attempt claimed it: empty for a file
-		 *  we created, the template's bytes for Nextcloud's template hook. */
+		/** Initially empty for API creates; copied template content for the hook. */
 		public readonly string $expectedBefore = '',
 	) {
 	}

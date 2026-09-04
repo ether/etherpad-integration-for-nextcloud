@@ -31,10 +31,7 @@ class ExternalPadSeeder {
 
 	/**
 	 * Fetch the remote export and build the document, without writing it.
-	 *
-	 * Split out because the fetch is slow, and a caller that created the
-	 * target itself must write by id afterwards rather than through the
-	 * node it was holding when the fetch began.
+	 * Lets callers re-resolve and check their target after the remote fetch.
 	 *
 	 * @return array{content:string,result:array{file_id:int,pad_id:string,access_mode:string,pad_url:string,snapshot_warning_code?:string}}
 	 */
@@ -79,8 +76,7 @@ class ExternalPadSeeder {
 	}
 
 	/**
-	 * Prepare and write in one step, for callers handed a file they did not
-	 * create and so have no id of their own to write by.
+	 * Prepare and write through the supplied node without re-resolving or checking it.
 	 *
 	 * @return array{file_id:int,pad_id:string,access_mode:string,pad_url:string,snapshot_warning_code?:string}
 	 */

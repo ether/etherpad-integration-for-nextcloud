@@ -345,12 +345,7 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 			->handle(new FileCreatedFromTemplateEvent($template, $target, []));
 	}
 
-	/**
-	 * The general failure branch is not exempt. A pad call can fail
-	 * *because* the file moved, and the name it left behind may belong to
-	 * somebody else — so the blank recovery only runs on a file that is
-	 * still the one this listener was handed.
-	 */
+	/** A remote error must not bypass the content check before blank recovery. */
 	public function testDoesNotBlankAFileThatIsNoLongerTheClaimedOne(): void {
 		$target = $this->file('Notes.pad');
 		$target->expects($this->never())->method('putContent');
@@ -358,7 +353,7 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 
 		$creation = $this->createMock(PadCreationService::class);
 		$creation->method('claimTemplateTarget')->willReturn(new CreatedFileClaim('alice', 4242));
-		// Moved away, or replaced at that path: nothing matches the claim.
+		// The claimed file is no longer accessible or its content changed.
 		$creation->method('resolveUnchangedClaim')->willReturn(null);
 		$creation->method('materializeTemplateInto')
 			->willThrowException(new \RuntimeException('etherpad unreachable'));
@@ -370,7 +365,6 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 			->handle(new FileCreatedFromTemplateEvent($this->file('Template.pad'), $target, []));
 	}
 
-	/** Same rule for the refusal that deletes rather than blanks. */
 	public function testDoesNotDeleteAFileThatIsNoLongerTheClaimedOne(): void {
 		$target = $this->file('Notes.pad');
 		$target->expects($this->never())->method('delete');
@@ -386,11 +380,7 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 			->handle(new FileCreatedFromTemplateEvent($this->file('Template.pad'), $target, []));
 	}
 
-	/**
-	 * The listener claims its target before materialising and measures every
-	 * recovery against that claim, so a double that answers neither call
-	 * leaves it with nothing to act on.
-	 */
+	/** Stub a claimed target that remains eligible for recovery. */
 	private function expectClaimFor(PadCreationService $creation, File $target, int $fileId = 4242): CreatedFileClaim {
 		$claim = new CreatedFileClaim('alice', $fileId);
 		$creation->method('claimTemplateTarget')->willReturn($claim);
@@ -436,17 +426,17 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 		return $file;
 	}
 
-	/**
-	 * The write refuses because somebody else filled the file while the pad
-	 * was being provisioned. The blank fallback would empty exactly that
-	 * content, so this failure has to end without touching the file.
-	 */
 	public function testAChangedTargetIsLeftAloneInsteadOfBlanked(): void {
 		$target = $this->file('Notes.pad');
 		$target->expects($this->never())->method('putContent');
 		$target->expects($this->never())->method('delete');
+		// The handler must not ask the stale node anything, id included: it
+		// answers for whatever holds the path by then, and it can throw
+		// while an error is already being handled.
+		$target->expects($this->never())->method('getId');
 
 		$creation = $this->createMock(PadCreationService::class);
+		$this->expectClaimFor($creation, $target);
 		$creation->method('materializeTemplateInto')
 			->willThrowException(new PadFileChangedException('changed'));
 

@@ -627,11 +627,7 @@ class PadBootstrapServiceTest extends TestCase {
 		return new \OCA\EtherpadNextcloud\Service\PadTypePolicy($config);
 	}
 
-	/**
-	 * The node the id resolves to at write time. The service writes there
-	 * rather than through the node it was handed, so a double that answers
-	 * with nothing would let a passing test write nowhere.
-	 */
+	/** Stub the node resolved at write time, which may differ from the input node. */
 	private function resolverReturning(?File $file): UserNodeResolver {
 		$file ??= $this->createMock(File::class);
 		$resolver = $this->createMock(UserNodeResolver::class);
@@ -640,13 +636,6 @@ class PadBootstrapServiceTest extends TestCase {
 		return $resolver;
 	}
 
-	/**
-	 * Provisioning the pad is a full round trip to another host, and the
-	 * document written afterwards names a file id. If the file moved and
-	 * something else took its name in the meantime, writing through the
-	 * node handed in would mislabel the stranger's file and lose its
-	 * content — so the write goes by id and only onto what the caller read.
-	 */
 	public function testRefusesToWriteWhenTheFileChangedWhileThePadWasProvisioned(): void {
 		$bindingService = $this->createMock(BindingService::class);
 		$bindingService->method('findByFileId')->willReturn(null);
@@ -664,7 +653,7 @@ class PadBootstrapServiceTest extends TestCase {
 		$claimed->method('getId')->willReturn(4242);
 		$claimed->expects($this->never())->method('putContent');
 
-		// What the id resolves to now: a different file at that path.
+		// A fresh node for the claimed id, now containing another writer's content.
 		$stranger = $this->createMock(File::class);
 		$stranger->method('getContent')->willReturn('somebody else\'s notes');
 		$stranger->expects($this->never())->method('putContent');

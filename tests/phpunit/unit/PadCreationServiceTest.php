@@ -78,8 +78,7 @@ class PadCreationServiceTest extends TestCase {
 		$rollbackService->expects($this->once())
 			->method('rollbackFailedCreate')
 			->with('alice', '/Test.pad', 'g.ABC$pad', $this->callback(
-				// Not just "a claim": the rollback needs this attempt's id
-				// and the proof of what it wrote, or it deletes nothing.
+				// Check identity, baseline and write evidence, not just the claim's type.
 				static fn (CreatedFileClaim $claim): bool => $claim->uid === 'alice'
 					&& $claim->fileId === 123
 					&& $claim->expectedBefore === ''
@@ -417,8 +416,7 @@ class PadCreationServiceTest extends TestCase {
 
 		$newFile = $this->createMock(\OCP\Files\File::class);
 		$newFile->method('getId')->willReturn(99);
-		// The template is read by its id, and the pad is written to the file
-		// this create made — by its id too, not through the node.
+		// Writing must use the re-resolved target, not the node returned by create.
 		$newFile->expects($this->never())->method('putContent');
 
 		$written = $this->createMock(\OCP\Files\File::class);
@@ -764,11 +762,6 @@ class PadCreationServiceTest extends TestCase {
 		return $template;
 	}
 
-	/**
-	 * The hook always has one — it returns early without a user — and the
-	 * file is now resolved by id under that user rather than written
-	 * through the node, so there is no userless path left to test.
-	 */
 	private function materializeUser(): \OCP\IUser {
 		$user = $this->createMock(\OCP\IUser::class);
 		$user->method('getUID')->willReturn('alice');
@@ -876,12 +869,6 @@ class PadCreationServiceTest extends TestCase {
 			->createFromTemplate('alice', '/Out.pad', 7, null);
 	}
 
-	/**
-	 * The write goes to the file the id resolves to, not through the node
-	 * the create returned. `File::putContent()` writes to its remembered
-	 * path, and provisioning the pad takes long enough for that path to
-	 * hold somebody else's file by the time the content is written.
-	 */
 	public function testWritesToTheFileTheIdResolvesToNotTheCreatedNode(): void {
 		$createdNode = $this->createMock(\OCP\Files\File::class);
 		$createdNode->method('getId')->willReturn(4242);
@@ -912,12 +899,7 @@ class PadCreationServiceTest extends TestCase {
 		)->create('alice', '/Notes.pad', BindingService::ACCESS_PUBLIC);
 	}
 
-	/**
-	 * A create that wrote its document and then failed at the binding leaves
-	 * that document, not the state it started from. Recovery has to accept
-	 * it — refusing would strand the file pointing at a pad the failure has
-	 * just deleted.
-	 */
+	/** A binding failure after writing must still allow recovery from that write. */
 	public function testRecognisesOurOwnWrittenDocumentAsStillOurs(): void {
 		$claim = new CreatedFileClaim('alice', 4242);
 		$claim->writtenHash = hash('sha256', 'our document');
@@ -930,7 +912,6 @@ class PadCreationServiceTest extends TestCase {
 		$this->assertSame($node, $service->resolveUnchangedClaim($claim));
 	}
 
-	/** Somebody else's content is neither the prior state nor our write. */
 	public function testDoesNotRecogniseAStrangersContent(): void {
 		$claim = new CreatedFileClaim('alice', 4242);
 		$claim->writtenHash = hash('sha256', 'our document');
@@ -943,12 +924,7 @@ class PadCreationServiceTest extends TestCase {
 		$this->assertNull($service->resolveUnchangedClaim($claim));
 	}
 
-	/**
-	 * The whole way through: `getId()` throws on the freshly created node,
-	 * so the create never holds an id — and the rollback must not go
-	 * looking for one, because a second read would answer for whatever
-	 * holds that path by then.
-	 */
+	/** Exercise create and rollback together when the initial getId() fails. */
 	public function testACreateThatNeverGotAnIdCleansUpNothing(): void {
 		$node = $this->createMock(\OCP\Files\File::class);
 		$node->method('getId')->willThrowException(new \RuntimeException('no cache entry'));
@@ -978,16 +954,10 @@ class PadCreationServiceTest extends TestCase {
 		)->create('alice', '/Notes.pad', BindingService::ACCESS_PUBLIC);
 	}
 
-	/**
-	 * The file the id resolves to at write time — which is what the create
-	 * writes through, so a test stubbing only the creator's node would pass
-	 * while nothing was written.
-	 */
+	/** Stub the write target and optionally constrain the lookup identity. */
 	private function resolverFor(\OCP\Files\File $node, ?string $uid = null, ?int $fileId = null): UserNodeResolver {
 		$resolver = $this->createMock(UserNodeResolver::class);
 		$expectation = $resolver->method('resolveUserFileNodeById');
-		// Pinned where the test knows them: "some node came back" would pass
-		// just as well if the create looked up the wrong user or file.
 		if ($uid !== null && $fileId !== null) {
 			$expectation->with($uid, $fileId);
 		}

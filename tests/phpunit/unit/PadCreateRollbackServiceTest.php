@@ -23,12 +23,6 @@ class PadCreateRollbackServiceTest extends TestCase {
 			->rollbackFailedCreate('alice', '/Existing.pad', '', null);
 	}
 
-	/**
-	 * By id, never through the node the create returned. `File::delete()`
-	 * unlinks its remembered path, and Etherpad provisioning lasts long
-	 * enough for that path to hold somebody else's file by the time the
-	 * rollback runs.
-	 */
 	public function testDeletesTheFileTheIdResolvesToNow(): void {
 		$stillOurs = $this->untouchedFile();
 		$stillOurs->expects($this->once())->method('delete');
@@ -37,11 +31,6 @@ class PadCreateRollbackServiceTest extends TestCase {
 			->rollbackFailedCreate('alice', '/Created.pad', '', new CreatedFileClaim('alice', 4711));
 	}
 
-	/**
-	 * The substitution this exists to prevent: our file was moved away and
-	 * another one took the name. The id finds nothing, so nothing is
-	 * deleted — and the stranger's file survives.
-	 */
 	public function testDeletesNothingWhenTheCreatedFileIsNoLongerThere(): void {
 		$resolver = $this->createMock(UserNodeResolver::class);
 		$resolver->method('resolveUserFileNodeById')->willThrowException(new NotFoundException('gone'));
@@ -53,11 +42,6 @@ class PadCreateRollbackServiceTest extends TestCase {
 			->rollbackFailedCreate('alice', '/Created.pad', '', new CreatedFileClaim('alice', 4711));
 	}
 
-	/**
-	 * The create never read an id it could trust, so nothing here names a
-	 * file. Asking the old node for one now would answer for whatever holds
-	 * that path by now — which is the substitution this exists to prevent.
-	 */
 	public function testLooksUpNothingWhenTheCreateNeverGotAnId(): void {
 		$resolver = $this->createMock(UserNodeResolver::class);
 		$resolver->expects($this->never())->method('resolveUserFileNodeById');
@@ -66,11 +50,6 @@ class PadCreateRollbackServiceTest extends TestCase {
 			->rollbackFailedCreate('alice', '/Created.pad', '', null);
 	}
 
-	/**
-	 * The id is not proof of authorship: `newFile()` can hand back a file
-	 * another writer created a moment earlier, and that writer may have
-	 * filled it while this request was away at Etherpad.
-	 */
 	public function testLeavesAFileSomebodyElseWroteInto(): void {
 		$foreign = $this->fileHolding('someone else\'s notes');
 		$foreign->expects($this->never())->method('delete');
@@ -83,11 +62,7 @@ class PadCreateRollbackServiceTest extends TestCase {
 			->rollbackFailedCreate('alice', '/Created.pad', '', $this->claimThatWrote('our document'));
 	}
 
-	/**
-	 * A rival create can finish into the same file. Its document carries the
-	 * same `file_id` — the id belongs to the file, not to the attempt — so
-	 * only the bytes this attempt wrote settle it.
-	 */
+	/** Matching file_id values do not prove that this attempt wrote the document. */
 	public function testLeavesADocumentAnotherCreateWroteIntoTheSameFile(): void {
 		$rivals = $this->fileHolding("---\nfile_id: 4711\npad_id: nc-rival\n---\n");
 		$rivals->expects($this->never())->method('delete');
@@ -96,7 +71,6 @@ class PadCreateRollbackServiceTest extends TestCase {
 			->rollbackFailedCreate('alice', '/Created.pad', 'nc-own', $this->claimThatWrote("---\nfile_id: 4711\npad_id: nc-own\n---\n"));
 	}
 
-	/** Exactly the bytes this create wrote, so this one is ours to remove. */
 	public function testDeletesAFileHoldingWhatThisCreateWrote(): void {
 		$ours = $this->fileHolding('our document');
 		$ours->expects($this->once())->method('delete');
@@ -105,11 +79,7 @@ class PadCreateRollbackServiceTest extends TestCase {
 			->rollbackFailedCreate('alice', '/Created.pad', '', $this->claimThatWrote('our document'));
 	}
 
-	/**
-	 * Both give up rather than delete. They are the conservative half of the
-	 * rule, and an exception escaping either would turn a best-effort
-	 * cleanup into a failure that hides the original create error.
-	 */
+	/** A read failure must not delete the file or mask the original create error. */
 	public function testLeavesTheFileAloneWhenItsContentCannotBeRead(): void {
 		$locked = $this->createMock(File::class);
 		$locked->method('getSize')->willReturn(120);
@@ -136,7 +106,6 @@ class PadCreateRollbackServiceTest extends TestCase {
 			->rollbackFailedCreate('alice', '/Created.pad', '', new CreatedFileClaim('alice', 4711));
 	}
 
-	/** A claim whose write succeeded, carrying proof of those exact bytes. */
 	private function claimThatWrote(string $content): CreatedFileClaim {
 		$claim = new CreatedFileClaim('alice', 4711);
 		$claim->writtenHash = hash('sha256', $content);
@@ -272,10 +241,7 @@ class PadCreateRollbackServiceTest extends TestCase {
 		);
 	}
 
-	/**
-	 * The file the id resolves to now — which is what the service deletes,
-	 * so a test that stubs only the create's own node proves nothing.
-	 */
+	/** Pin the lookup identity and return the node used for cleanup. */
 	private function resolverFinding(File $node, int $fileId = 4711): UserNodeResolver {
 		$resolver = $this->createMock(UserNodeResolver::class);
 		$resolver->method('resolveUserFileNodeById')->with('alice', $fileId)->willReturn($node);
@@ -283,7 +249,6 @@ class PadCreateRollbackServiceTest extends TestCase {
 		return $resolver;
 	}
 
-	/** An untouched file: still empty, so still ours to remove. */
 	private function untouchedFile(): File {
 		$node = $this->createMock(File::class);
 		$node->method('getSize')->willReturn(0);

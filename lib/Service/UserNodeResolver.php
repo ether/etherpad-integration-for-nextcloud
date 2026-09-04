@@ -115,12 +115,8 @@ class UserNodeResolver {
 			if ($path !== $root && !str_starts_with($path, $root . '/')) {
 				continue;
 			}
-			// One folder can be reached by several shares, and only some of
-			// them may allow creating. Taking the first hit made the answer
-			// depend on the order `getById()` happened to return, so a user
-			// with both a read-only and a writable path to the same folder
-			// could be refused on the strength of the wrong one. Same rule
-			// the file lookup above already follows.
+			// Overlapping shares can expose the same folder with different permissions.
+			// Prefer a mount that allows creation, regardless of getById() order.
 			if ($node->isCreatable()) {
 				return $node;
 			}

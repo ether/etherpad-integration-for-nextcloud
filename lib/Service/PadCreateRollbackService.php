@@ -18,12 +18,9 @@ use Psr\Log\LoggerInterface;
  * Cleanup steps are isolated and best-effort so cleanup errors do not mask
  * the original create failure.
  *
- * Cleanup is addressed by the file id the create read once, at the moment it
- * created the file — never by a `File` object and never by asking one for
- * its id again. `File::delete()` unlinks its remembered path and
- * `Node::getId()` re-reads through that same path, so a node held across pad
- * provisioning answers for whatever occupies the path by then. An id that
- * was never read stays unknown, and an unknown id deletes nothing.
+ * Resolve the captured file id before deletion: a retained File deletes
+ * its remembered path, and getId() may read a replacement at that path.
+ * Without a claim, leave the file in place.
  */
 class PadCreateRollbackService {
 	public function __construct(
@@ -62,19 +59,13 @@ class PadCreateRollbackService {
 	 */
 	public function rollbackCreatedFileOnly(string $uid, string $path, ?CreatedFileClaim $claim): void {
 		if ($claim === null) {
-			// The create never got an id it could trust, so there is nothing
-			// here that identifies a file. Leaving a stray empty `.pad`
-			// behind is a mess; deleting the wrong file is a loss.
 			return;
 		}
 
 		try {
 			$node = $this->userNodeResolver->resolveUserFileNodeById($claim->uid, $claim->fileId);
 		} catch (NotFoundException) {
-			// Usually the file is simply gone. But the same exception covers
-			// an id that now resolves to a folder or outside the user's
-			// files, and in those a file this request created is still
-			// there — so this is worth a line, unlike a silent success.
+			// An unresolved id may still exist outside the user's files; log the skipped cleanup.
 			$this->logger->info('Nothing to clean up: the created .pad file did not resolve', [
 				'app' => 'etherpad_nextcloud',
 				'uid' => $uid,
@@ -116,16 +107,11 @@ class PadCreateRollbackService {
 	}
 
 	/**
-	 * The id is not proof of authorship, and neither is a valid pad
-	 * document.
+	 * Allow deletion only if empty with no recorded write, or matching the
+	 * recorded SHA-256. A matching file_id alone does not prove authorship.
 	 *
-	 * `newFile()` can hand back a file another writer created a moment
-	 * earlier, empty, which every check at create time accepts. That writer
-	 * may then have finished its own create into the same file: its
-	 * document carries the same `file_id` — the id is the file's, not the
-	 * attempt's — and only its `pad_id` differs. So the test is against
-	 * what *this* attempt wrote: the file is removed while it is still
-	 * untouched, or while it still holds exactly those bytes.
+	 * A competing create's empty file is indistinguishable from ours.
+	 * This check and the subsequent delete are not atomic.
 	 */
 	private function isStillOurs(File $node, string $path, ?string $writtenHash): bool {
 		try {

@@ -214,14 +214,7 @@ class UserNodeResolverTest extends TestCase {
 		$resolver->resolveUserFileNodeById('alice', 42);
 	}
 
-	/**
-	 * One folder, two shares: read-only and writable. Taking the first hit
-	 * made the answer depend on the order `getById()` happened to return,
-	 * so create-by-parent could be refused on the strength of the share
-	 * that grants less.
-	 *
-	 * @param bool $writableFirst
-	 */
+	/** Prefer the creatable share regardless of lookup order. */
 	#[\PHPUnit\Framework\Attributes\DataProvider('shareOrders')]
 	public function testPrefersAFolderThisUserMayCreateIn(bool $writableFirst): void {
 		$readOnly = $this->createMock(Folder::class);

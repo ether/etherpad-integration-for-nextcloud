@@ -96,10 +96,6 @@ class PadControllerErrorMapper {
 				'retryable' => true,
 			], Http::STATUS_SERVICE_UNAVAILABLE);
 		} catch (PadFileChangedException $e) {
-			// A conflict, not a server fault: the file this create claimed is
-			// not the file that is there now, so it refused to write. Its own
-			// code, because the caller's retry has to target a fresh name
-			// rather than repeat the same request.
 			return new DataResponse([
 				'message' => $options['file_changed'] ?? 'The target file changed while the pad was being created.',
 				'code' => 'pad_file_changed',

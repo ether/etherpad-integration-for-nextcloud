@@ -89,12 +89,14 @@ class FileCreatedFromTemplateListener implements IEventListener {
 			return;
 		}
 
-		// Made before anything can fail, and used by every recovery below.
-		// A failure says nothing about who owns the file afterwards: the pad
-		// call may have failed *because* the file moved, and the name it
-		// left behind may belong to somebody else by the time we look.
+		// Capture identity and content before materialization; recovery uses the same claim.
+		// Both ids read once, here, and used by every log line below. Reading
+		// them again inside a catch is the stale-node re-read this whole
+		// change is about: it answers for whatever holds the path by then,
+		// and it can throw while an error is already being handled.
 		try {
 			$claim = $this->padCreationService->claimTemplateTarget($target, $user);
+			$templateFileId = (int)$template->getId();
 		} catch (\Throwable $e) {
 			$this->logger->warning('Pad template create skipped: the target could not be identified.', [
 				'app' => 'etherpad_nextcloud',
@@ -112,36 +114,30 @@ class FileCreatedFromTemplateListener implements IEventListener {
 			// reason and leave an empty .pad nobody can open.
 			$this->logger->warning('Pad template create refused: no pad type is enabled.', [
 				'app' => 'etherpad_nextcloud',
-				'targetFileId' => (int)$target->getId(),
+				'targetFileId' => $claim->fileId,
 				'exception' => $e,
 			]);
 			$unchanged = $this->padCreationService->resolveUnchangedClaim($claim);
 			if ($unchanged !== null) {
-				$this->deleteTarget($unchanged);
+				$this->deleteTarget($unchanged, $claim->fileId);
 			}
 			throw $e;
 		} catch (PadFileChangedException $e) {
-			// Somebody else wrote into this file while the pad was being
-			// provisioned. The blank fallback below would empty exactly the
-			// content that check just refused to overwrite, so this failure
-			// ends here without touching the file at all.
+			// Do not blank content that the guarded write refused to overwrite.
 			$this->logger->warning('Pad template create stopped: the target file changed while the pad was provisioned.', [
 				'app' => 'etherpad_nextcloud',
-				'targetFileId' => (int)$target->getId(),
+				'targetFileId' => $claim->fileId,
 				'exception' => $e,
 			]);
 			return;
 		} catch (\Throwable $e) {
 			$this->logger->error('Pad template materialization failed — falling back to blank-pad init.', [
 				'app' => 'etherpad_nextcloud',
-				'targetFileId' => (int)$target->getId(),
-				'templateFileId' => (int)$template->getId(),
+				'targetFileId' => $claim->fileId,
+				'templateFileId' => $templateFileId,
 				'exception' => $e,
 			]);
-			// Only onto the file this listener was handed, and only while it
-			// is still that file. Otherwise the recovery would empty
-			// somebody else's document — the very thing the write refused to
-			// do a moment earlier.
+			// Other failures do not imply unchanged content: check before resetting.
 			$unchanged = $this->padCreationService->resolveUnchangedClaim($claim);
 			if ($unchanged === null) {
 				$this->logger->warning('Left the template target alone: it is no longer the file this create was given.', [
@@ -150,7 +146,7 @@ class FileCreatedFromTemplateListener implements IEventListener {
 				]);
 				return;
 			}
-			$this->resetTargetToEmpty($unchanged);
+			$this->resetTargetToEmpty($unchanged, $claim->fileId);
 			// Re-initialise after the wipe so the user still gets a clean,
 			// openable pad even though the template path failed. A disabled
 			// pad type travels on from here as well.
@@ -243,25 +239,40 @@ class FileCreatedFromTemplateListener implements IEventListener {
 		return is_string($field) ? trim($field) : '';
 	}
 
-	private function deleteTarget(File $target): void {
+	/**
+	 * `$fileId` is passed in rather than read here: this runs while an error
+	 * is already being handled, and `Node::getId()` re-reads through the
+	 * node's path — it can throw, and on a replaced path it answers for the
+	 * wrong file.
+	 */
+	private function deleteTarget(File $target, ?int $fileId = null): void {
 		try {
 			$target->delete();
 		} catch (\Throwable $e) {
 			$this->logger->warning('Could not remove the .pad file of a failed template create.', [
 				'app' => 'etherpad_nextcloud',
-				'fileId' => (int)$target->getId(),
+				'fileId' => $fileId ?? $this->idOrNull($target),
 				'exception' => $e,
 			]);
 		}
 	}
 
-	private function resetTargetToEmpty(File $target): void {
+	private function idOrNull(File $file): ?int {
+		try {
+			return (int)$file->getId();
+		} catch (\Throwable) {
+			return null;
+		}
+	}
+
+	/** See deleteTarget() for why the id is a parameter. */
+	private function resetTargetToEmpty(File $target, ?int $fileId = null): void {
 		try {
 			$target->putContent('');
 		} catch (\Throwable $e) {
 			$this->logger->warning('Could not reset target file content after rejected template.', [
 				'app' => 'etherpad_nextcloud',
-				'fileId' => (int)$target->getId(),
+				'fileId' => $fileId ?? $this->idOrNull($target),
 				'exception' => $e,
 			]);
 		}
