@@ -30,9 +30,15 @@ class ExternalPadSeeder {
 	}
 
 	/**
-	 * @return array{file_id:int,pad_id:string,access_mode:string,pad_url:string,snapshot_warning_code?:string}
+	 * Fetch the remote export and build the document, without writing it.
+	 *
+	 * Split out because the fetch is slow, and a caller that created the
+	 * target itself must write by id afterwards rather than through the
+	 * node it was holding when the fetch began.
+	 *
+	 * @return array{content:string,result:array{file_id:int,pad_id:string,access_mode:string,pad_url:string,snapshot_warning_code?:string}}
 	 */
-	public function seed(File $file, int $fileId, string $padUrl): array {
+	public function prepare(int $fileId, string $padUrl): array {
 		$external = $this->externalPadExportFetcher->normalizeAndFetchExternalPublicPadTextOrEmpty($padUrl);
 		// External pads aren't DB-bound (we don't own their lifecycle), so the
 		// local `ext.*` pad-id is just a marker distinguishing them from
@@ -51,7 +57,6 @@ class ExternalPadSeeder {
 			]
 		);
 		$content = $this->padFileService->withExportSnapshot($content, $external['text'], '', 0, false);
-		$file->putContent($content);
 
 		$result = [
 			'file_id' => $fileId,
@@ -69,6 +74,20 @@ class ExternalPadSeeder {
 			// the frontend translates into a toast.
 			$result['snapshot_warning_code'] = 'remote_export_unavailable';
 		}
-		return $result;
+
+		return ['content' => $content, 'result' => $result];
+	}
+
+	/**
+	 * Prepare and write in one step, for callers handed a file they did not
+	 * create and so have no id of their own to write by.
+	 *
+	 * @return array{file_id:int,pad_id:string,access_mode:string,pad_url:string,snapshot_warning_code?:string}
+	 */
+	public function seed(File $file, int $fileId, string $padUrl): array {
+		$prepared = $this->prepare($fileId, $padUrl);
+		$file->putContent($prepared['content']);
+
+		return $prepared['result'];
 	}
 }

@@ -6,6 +6,8 @@ namespace OCA\EtherpadNextcloud\Tests\Unit;
 
 use OCA\EtherpadNextcloud\Service\EtherpadClient;
 use OCA\EtherpadNextcloud\Service\ManagedPadLifecycle;
+use OCA\EtherpadNextcloud\Service\PadFileService;
+use OCA\EtherpadNextcloud\Service\ParsedPadFile;
 use OCA\EtherpadNextcloud\Service\PadCreateRollbackService;
 use OCA\EtherpadNextcloud\Service\UserNodeResolver;
 use OCP\Files\File;
@@ -29,11 +31,11 @@ class PadCreateRollbackServiceTest extends TestCase {
 	 * rollback runs.
 	 */
 	public function testDeletesTheFileTheIdResolvesToNow(): void {
-		$stillOurs = $this->createMock(File::class);
+		$stillOurs = $this->untouchedFile();
 		$stillOurs->expects($this->once())->method('delete');
 
 		$this->buildService(userNodeResolver: $this->resolverFinding($stillOurs))
-			->rollbackFailedCreate('alice', '/Created.pad', '', $this->createdNode());
+			->rollbackFailedCreate('alice', '/Created.pad', '', 4711);
 	}
 
 	/**
@@ -49,27 +51,63 @@ class PadCreateRollbackServiceTest extends TestCase {
 		$logger->expects($this->never())->method('warning');
 
 		$this->buildService(logger: $logger, userNodeResolver: $resolver)
-			->rollbackFailedCreate('alice', '/Created.pad', '', $this->createdNode());
+			->rollbackFailedCreate('alice', '/Created.pad', '', 4711);
 	}
 
 	/**
-	 * No id, no proof of which file this is. A stray empty `.pad` is a
-	 * mess; deleting the wrong file is a loss.
+	 * The create never read an id it could trust, so nothing here names a
+	 * file. Asking the old node for one now would answer for whatever holds
+	 * that path by now — which is the substitution this exists to prevent.
 	 */
-	public function testLeavesTheFileAloneWhenItsIdCannotBeRead(): void {
-		$node = $this->createMock(File::class);
-		$node->method('getId')->willThrowException(new \RuntimeException('no cache entry'));
-		$node->expects($this->never())->method('delete');
-
+	public function testLooksUpNothingWhenTheCreateNeverGotAnId(): void {
 		$resolver = $this->createMock(UserNodeResolver::class);
 		$resolver->expects($this->never())->method('resolveUserFileNodeById');
 
+		$this->buildService(userNodeResolver: $resolver)
+			->rollbackFailedCreate('alice', '/Created.pad', '', null);
+	}
+
+	/**
+	 * The id is not proof of authorship: `newFile()` can hand back a file
+	 * another writer created a moment earlier, and that writer may have
+	 * filled it while this request was away at Etherpad.
+	 */
+	public function testLeavesAFileSomebodyElseWroteInto(): void {
+		$foreign = $this->createMock(File::class);
+		$foreign->method('getSize')->willReturn(42);
+		$foreign->method('getContent')->willReturn('someone else\'s notes');
+		$foreign->expects($this->never())->method('delete');
+
+		$padFiles = $this->createMock(PadFileService::class);
+		$padFiles->method('readPad')->willThrowException(new \RuntimeException('not a pad file'));
+
 		$logger = $this->createMock(LoggerInterface::class);
 		$logger->expects($this->once())->method('warning')
-			->with($this->stringContains('no usable id'), $this->anything());
+			->with($this->stringContains('content this create did not write'), $this->anything());
 
-		$this->buildService(logger: $logger, userNodeResolver: $resolver)
-			->rollbackFailedCreate('alice', '/Created.pad', '', $node);
+		$this->buildService(logger: $logger, userNodeResolver: $this->resolverFinding($foreign), padFileService: $padFiles)
+			->rollbackFailedCreate('alice', '/Created.pad', '', 4711);
+	}
+
+	/** Its own frontmatter names the id, so this one is ours to remove. */
+	public function testDeletesAFileCarryingTheDocumentThisCreateWrote(): void {
+		$ours = $this->createMock(File::class);
+		$ours->method('getSize')->willReturn(120);
+		$ours->method('getContent')->willReturn('frontmatter');
+		$ours->expects($this->once())->method('delete');
+
+		$padFiles = $this->createMock(PadFileService::class);
+		$padFiles->method('readPad')->with('frontmatter')->willReturn(new ParsedPadFile(
+			frontmatter: ['file_id' => 4711, 'pad_id' => 'p-1', 'access_mode' => 'public'],
+			body: '',
+			padId: 'p-1',
+			accessMode: 'public',
+			padUrl: '',
+			isExternal: false,
+		));
+
+		$this->buildService(userNodeResolver: $this->resolverFinding($ours), padFileService: $padFiles)
+			->rollbackFailedCreate('alice', '/Created.pad', '', 4711);
 	}
 
 	/**
@@ -83,7 +121,7 @@ class PadCreateRollbackServiceTest extends TestCase {
 		$empty->expects($this->once())->method('delete');
 
 		$this->buildService(userNodeResolver: $this->resolverFinding($empty))
-			->rollbackFailedCreate('alice', '/Created.pad', '', $this->createdNode());
+			->rollbackFailedCreate('alice', '/Created.pad', '', 4711);
 	}
 
 	public function testDeletesTheProvisionedPad(): void {
@@ -121,7 +159,7 @@ class PadCreateRollbackServiceTest extends TestCase {
 
 	/** A cleanup failure must not replace the error that caused the rollback. */
 	public function testReportsButSwallowsADeleteFailure(): void {
-		$resolved = $this->createMock(File::class);
+		$resolved = $this->untouchedFile();
 		$resolved->method('delete')->willThrowException(new \RuntimeException('nope'));
 
 		$logger = $this->createMock(LoggerInterface::class);
@@ -133,7 +171,7 @@ class PadCreateRollbackServiceTest extends TestCase {
 			);
 
 		$this->buildService(logger: $logger, userNodeResolver: $this->resolverFinding($resolved))
-			->rollbackFailedCreate('alice', '/Created.pad', '', $this->createdNode());
+			->rollbackFailedCreate('alice', '/Created.pad', '', 4711);
 	}
 
 	public function testReportsButSwallowsAPadDeleteFailure(): void {
@@ -155,14 +193,14 @@ class PadCreateRollbackServiceTest extends TestCase {
 	 * pad step, so a future pad-side step cannot leak into it.
 	 */
 	public function testFileOnlyRollbackLeavesThePadAlone(): void {
-		$resolved = $this->createMock(File::class);
+		$resolved = $this->untouchedFile();
 		$resolved->expects($this->once())->method('delete');
 
 		$etherpad = $this->createMock(EtherpadClient::class);
 		$etherpad->expects($this->never())->method('deletePad');
 
 		$this->buildService(etherpad: $etherpad, userNodeResolver: $this->resolverFinding($resolved))
-			->rollbackCreatedFileOnly('alice', '/Created.pad', $this->createdNode());
+			->rollbackCreatedFileOnly('alice', '/Created.pad', 4711);
 	}
 
 	/**
@@ -170,22 +208,24 @@ class PadCreateRollbackServiceTest extends TestCase {
 	 * file goes and nothing is deleted on the Etherpad side.
 	 */
 	public function testExternalRollbackDeletesTheFileButNoPad(): void {
-		$resolved = $this->createMock(File::class);
+		$resolved = $this->untouchedFile();
 		$resolved->expects($this->once())->method('delete');
 
 		$etherpad = $this->createMock(EtherpadClient::class);
 		$etherpad->expects($this->never())->method('deletePad');
 
 		$this->buildService(etherpad: $etherpad, userNodeResolver: $this->resolverFinding($resolved))
-			->rollbackExternalCreate('alice', '/Created.pad', $this->createdNode());
+			->rollbackExternalCreate('alice', '/Created.pad', 4711);
 	}
 
 	private function buildService(
 		?EtherpadClient $etherpad = null,
 		?LoggerInterface $logger = null,
 		?UserNodeResolver $userNodeResolver = null,
+		?PadFileService $padFileService = null,
 	): PadCreateRollbackService {
 		return new PadCreateRollbackService(
+			$padFileService ?? $this->createMock(PadFileService::class),
 			new ManagedPadLifecycle($etherpad ?? $this->createMock(EtherpadClient::class), $this->createMock(LoggerInterface::class)),
 			$userNodeResolver ?? $this->createMock(UserNodeResolver::class),
 			$logger ?? $this->createMock(LoggerInterface::class),
@@ -203,11 +243,10 @@ class PadCreateRollbackServiceTest extends TestCase {
 		return $resolver;
 	}
 
-	/** A node the create returned, carrying an id but nothing else. */
-	private function createdNode(int $fileId = 4711): File {
+	/** An untouched file: still empty, so still ours to remove. */
+	private function untouchedFile(): File {
 		$node = $this->createMock(File::class);
-		$node->method('getId')->willReturn($fileId);
-		$node->expects($this->never())->method('delete');
+		$node->method('getSize')->willReturn(0);
 
 		return $node;
 	}
