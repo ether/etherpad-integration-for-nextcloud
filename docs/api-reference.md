@@ -23,7 +23,7 @@ Base: `/apps/etherpad_nextcloud`
     - validates that `fileId` resolves to an accessible `.pad` file in the user's file tree
     - renders a blank embed page that internally calls `open-by-id`
     - injects CSRF token manually into the blank template because this layout does not receive the normal `OC.requestToken` bootstrap
-    - if open fails with `Missing YAML frontmatter`, the embed page retries once after `initialize-by-id/{fileId}`
+    - if open fails with `code: missing_frontmatter`, the embed page retries once after `initialize-by-id/{fileId}`
     - sets route-specific `frame-ancestors` from admin-configured trusted embed origins
   - Host message contract:
     - accepted incoming messages from trusted origins:
@@ -393,7 +393,15 @@ solely by the separate external-pad policy, not by these two settings.
 - `status` (sync): `updated` or `unchanged`.
 - `snapshot_rev` (sync): Etherpad revision currently persisted in `.pad`.
 - `sync_status_url` (open/open-by-id): endpoint for revision-based sync status in viewer.
-- `code` (errors): stable identifier on selected error responses, currently `missing_binding` for `MissingBindingException`. The viewer and embed use this to swap a dead-end error message for the recovery UI (`POST /api/v1/pads/recover-from-snapshot/{fileId}` + optional `GET /api/v1/pads/find-original/{fileId}` lookup).
+- `code` (errors): stable identifier on selected error responses. Branch on this, never on `message` — messages are written for people and are translated. The full set:
+  - `missing_binding` (`MissingBindingException`) — the viewer and embed swap the dead-end error for the recovery UI (`POST /api/v1/pads/recover-from-snapshot/{fileId}` + optional `GET /api/v1/pads/find-original/{fileId}` lookup).
+  - `missing_frontmatter` (`MissingFrontmatterException`) — the file has no pad metadata yet; clients call `POST /api/v1/pads/initialize-by-id/{fileId}` once and retry the open. A file whose content is neither metadata nor a legacy shortcut cannot be initialised and is refused *without* this code.
+  - `pad_too_large` (`EtherpadTooLargeException`) — the pad is past the 5 MiB preview ceiling; it stays editable in Etherpad.
+  - `pad_file_changed` (`PadFileChangedException`) — the target file changed while the pad was being created; retry against a different name.
+  - `pad_type_disabled` (`PadTypeDisabledException`) — `403`; carries `access_mode` naming the disabled type, absent when neither type is enabled. See the pad-type settings section.
+  - `legacy_collision_no_access` (`LegacyPadCollisionException`) — see the legacy migration section.
+
+  A response without a `code` may still be machine-readable through its HTTP status and other documented fields — a locked `.pad` answers `503` with `retryable: true`, for instance. What is never a stable identifier is the `message` text.
 
 ## Cookie Behavior (Protected Pads)
 

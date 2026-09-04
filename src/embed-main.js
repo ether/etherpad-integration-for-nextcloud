@@ -314,12 +314,8 @@ import { loadPadContent } from './lib/pad-content.js'
 		window.addEventListener('message', messageHandler)
 	}
 
-	const isMissingFrontmatterError = (error) => {
-		if (!(error instanceof Error)) {
-			return false
-		}
-		return String(error.message || '').includes('Missing YAML frontmatter')
-	}
+	// The code, not the message: see viewer-main.js.
+	const isMissingFrontmatterError = (error) => Boolean(error) && error.code === 'missing_frontmatter'
 
 	const openPad = async () => {
 		const body = new URLSearchParams()

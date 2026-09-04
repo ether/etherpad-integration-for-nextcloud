@@ -330,10 +330,29 @@ describe('viewer component — resolveOpenUrl', () => {
 		expect(loadPadContent).not.toHaveBeenCalled()
 	})
 
+	/**
+	 * The other half of the contract, and the one PHP cannot reach: the
+	 * client must key on the code alone. Putting `message.includes(...)`
+	 * back "to be safe" would restore exactly the coupling this removed,
+	 * and every other fixture here now carries both the code and the
+	 * phrase — so only a fixture without the code can catch it.
+	 */
+	it('does not initialize on a 400 that carries the old sentence but no code', async () => {
+		const fetchMock = stubFetch()
+		fetchMock.mockResolvedValue(jsonResponse({ message: 'Missing YAML frontmatter in .pad file.' }, false, 400))
+		const vm = makeInstance({ fileInfo: { path: '/x.pad' } })
+
+		await vm.resolveOpenUrl()
+
+		expect(fetchMock).toHaveBeenCalledTimes(1)
+		expect(fetchMock.mock.calls.some(([url]) => String(url).includes('initialize'))).toBe(false)
+		expect(vm.loadError).not.toBe('')
+	})
+
 	it('missing frontmatter: initializes once then re-opens', async () => {
 		const fetchMock = stubFetch()
 		fetchMock
-			.mockResolvedValueOnce(jsonResponse({ message: 'Missing YAML frontmatter' }, false, 400))
+			.mockResolvedValueOnce(jsonResponse({ message: 'Missing YAML frontmatter in .pad file.', code: 'missing_frontmatter' }, false, 400))
 			.mockResolvedValueOnce(jsonResponse({ status: 'ok' }))
 			.mockResolvedValueOnce(jsonResponse({ url: 'https://pad.example/after-init', sync_url: '' }))
 		const vm = makeInstance({ fileInfo: { path: '/x.pad' } }) // resolvedFileId null -> by-path only
@@ -351,7 +370,7 @@ describe('viewer component — resolveOpenUrl', () => {
 	it('initializes by file id (not by path) when an id is available', async () => {
 		const fetchMock = stubFetch()
 		fetchMock
-			.mockResolvedValueOnce(jsonResponse({ message: 'Missing YAML frontmatter' }, false, 400)) // open by-id
+			.mockResolvedValueOnce(jsonResponse({ message: 'Missing YAML frontmatter in .pad file.', code: 'missing_frontmatter' }, false, 400)) // open by-id
 			.mockResolvedValueOnce(jsonResponse({ status: 'migrated_from_legacy' }))                  // initialize-by-id
 			.mockResolvedValueOnce(jsonResponse({ url: 'https://pad.example/by-id', sync_url: '' }))   // re-open by-id
 		const vm = makeInstance({ fileid: 42, fileInfo: { path: '/x.pad' } })
@@ -443,7 +462,7 @@ describe('viewer component — resolveOpenUrl', () => {
 	it('carries the status through an initialize that no longer finds the file', async () => {
 		const fetchMock = stubFetch()
 		fetchMock
-			.mockResolvedValueOnce(jsonResponse({ message: 'Missing YAML frontmatter' }, false, 400))
+			.mockResolvedValueOnce(jsonResponse({ message: 'Missing YAML frontmatter in .pad file.', code: 'missing_frontmatter' }, false, 400))
 			.mockResolvedValueOnce(jsonResponse({ message: 'Cannot open selected .pad file.' }, false, 404))
 		const vm = makeInstance({ fileid: 42, fileInfo: { path: '/x.pad' } })
 

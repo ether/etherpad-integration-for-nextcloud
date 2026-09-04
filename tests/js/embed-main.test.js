@@ -261,7 +261,7 @@ describe('embed-main', () => {
 
 	it('runs initialize + re-opens when the first open reports missing frontmatter', async () => {
 		fetch
-			.mockResolvedValueOnce(errorResponse({ message: 'Missing YAML frontmatter in .pad file.' }))
+			.mockResolvedValueOnce(errorResponse({ message: 'Missing YAML frontmatter in .pad file.', code: 'missing_frontmatter' }))
 			.mockResolvedValueOnce(jsonResponse({ status: 'initialized', file_id: 42 }))
 			.mockResolvedValueOnce(jsonResponse({ url: 'https://pad.example.test/p/abc' }))
 

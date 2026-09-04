@@ -126,7 +126,7 @@ Primary flow (minimal blank embed page):
    - because blank layout does not inject the normal `OC.requestToken` bootstrap
    - and this Nextcloud version exposes no public `OCP\...` CSRF-token service for that template use-case
    - `EmbedController` therefore passes the encrypted token manually from the internal CSRF token manager
-5. On `Missing YAML frontmatter`, the embed page retries once after `POST /api/v1/pads/initialize-by-id/{fileId}`.
+5. On `code: missing_frontmatter`, the embed page retries once after `POST /api/v1/pads/initialize-by-id/{fileId}`.
 6. As soon as `open-by-id` returns `url`, the iframe `src` is set to the Etherpad target.
 7. Sync and host-message handlers are installed after iframe start so initial visual load is not delayed by background setup.
 

@@ -168,6 +168,7 @@ OC.L10N.register(
     "The session cookie domain could not be verified.": "Die Domain des Sitzungscookies konnte nicht geprüft werden.",
     "The target file changed while the pad was being created. Try again with a new name.": "Die Zieldatei hat sich geändert, während das Pad erstellt wurde. Versuche es mit einem neuen Namen erneut.",
     "This .pad file has no matching pad in this Nextcloud.": "Für diese .pad-Datei existiert in dieser Nextcloud kein passendes Pad.",
+    "This .pad file has no pad metadata yet.": "Diese .pad-Datei hat noch keine Pad-Metadaten.",
     "This file looks like a copy of an existing .pad file in your account. Open the original to keep editing the linked pad, or create a new pad to fork the content stored in this file.": "Diese Datei sieht aus wie eine Kopie einer bereits vorhandenen .pad-Datei in deinem Konto. Öffne das Original, um am verknüpften Pad weiterzuarbeiten, oder erstelle aus dem in dieser Datei gespeicherten Inhalt ein neues Pad als eigene Kopie.",
     "This file may have been moved or replaced since the list was loaded. Reload the page and open it again.": "Diese Datei wurde seit dem Laden der Liste möglicherweise verschoben oder ersetzt. Lade die Seite neu und öffne die Datei erneut.",
     "This pad is still empty.": "Dieses Pad ist noch leer.",

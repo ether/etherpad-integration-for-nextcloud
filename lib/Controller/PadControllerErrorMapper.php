@@ -13,6 +13,7 @@ use OCA\EtherpadNextcloud\Exception\BindingException;
 use OCA\EtherpadNextcloud\Exception\ControllerBadRequestException;
 use OCA\EtherpadNextcloud\Exception\LegacyPadCollisionException;
 use OCA\EtherpadNextcloud\Exception\MissingBindingException;
+use OCA\EtherpadNextcloud\Exception\MissingFrontmatterException;
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
 use OCA\EtherpadNextcloud\Exception\EtherpadTooLargeException;
 use OCA\EtherpadNextcloud\Exception\PadAlreadyHasBindingException;
@@ -49,6 +50,7 @@ class PadControllerErrorMapper {
 	 *   invalid_argument?: string,
 	 *   not_found?: string,
 	 *   too_large?: string,
+	 *   missing_frontmatter?: string,
 	 *   file_changed?: string,
 	 *   binding_message?: string,
 	 *   binding_status?: int,
@@ -154,6 +156,16 @@ class PadControllerErrorMapper {
 			return new DataResponse([
 				'message' => $options['too_large'] ?? 'This pad is too large to show here. Open it in Etherpad instead.',
 				'code' => 'pad_too_large',
+			], Http::STATUS_BAD_REQUEST);
+		} catch (MissingFrontmatterException $e) {
+			// The one .pad problem the clients act on rather than report:
+			// they initialise the file and retry. A stable code, because
+			// they used to recognise it by searching the English message
+			// for a phrase — which a translation or a reworded throw would
+			// have broken silently.
+			return new DataResponse([
+				'message' => $options['missing_frontmatter'] ?? 'This .pad file has no pad metadata yet.',
+				'code' => 'missing_frontmatter',
 			], Http::STATUS_BAD_REQUEST);
 		} catch (PadFileFormatException|EtherpadClientException $e) {
 			return new DataResponse(['message' => $e->getMessage()], Http::STATUS_BAD_REQUEST);
