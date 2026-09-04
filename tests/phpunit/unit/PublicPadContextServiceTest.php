@@ -94,9 +94,10 @@ class PublicPadContextServiceTest extends TestCase {
 	/**
 	 * The retry goes through the share again — token, password gate and the
 	 * file's membership in the share all have to hold at the moment of the
-	 * fetch, not merely when the page was opened.
+	 * fetch, not merely when the page was opened. What the resolved file is
+	 * then allowed to point at is `LivePadHtmlFetcher`'s question.
 	 */
-	public function testResolveContentChecksTheShareAndTheBindingBeforeFetching(): void {
+	public function testResolveContentResolvesTheShareAgainBeforeFetching(): void {
 		$file = $this->createMock(File::class);
 		$file->method('getName')->willReturn('Shared.pad');
 		$file->method('getId')->willReturn(42);
@@ -120,21 +121,16 @@ class PublicPadContextServiceTest extends TestCase {
 			isExternal: false,
 		));
 
-		$bindings = $this->createMock(BindingService::class);
-		$bindings->expects($this->once())
-			->method('assertConsistentMapping')
-			->with(42, 'g.group$pad', BindingService::ACCESS_PROTECTED);
-
 		$fetcher = $this->createMock(LivePadHtmlFetcher::class);
 		$fetcher->expects($this->once())
-			->method('fetchInternal')
-			->with('g.group$pad')
+			->method('fetchForPadFile')
+			->with($this->anything(), 42)
 			->willReturn(new LivePadHtml('<p>Now</p>', false));
 
 		$service = new PublicPadContextService(
 			$shareResolver,
 			$padFiles,
-			$bindings,
+			$this->createMock(BindingService::class),
 			$this->createMock(PublicPadOpenService::class),
 			$fetcher,
 			$this->buildNoSleepLockRetryService(),

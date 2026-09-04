@@ -61,13 +61,9 @@ class SnapshotHtmlSanitizer {
 	];
 
 	/**
-	 * What a link may point at.
-	 *
-	 * An allowlist rather than a `javascript:` denylist: the schemes worth
-	 * having are three, and everything a denylist would have to anticipate
-	 * — `data:`, `vbscript:`, whitespace and control characters inside the
-	 * scheme, a fresh scheme some browser adds later — is simply not on
-	 * this list.
+	 * An allowlist rather than a `javascript:` denylist: everything a
+	 * denylist would have to anticipate — `data:`, `vbscript:`, a scheme
+	 * some browser adds later — is simply not on this list.
 	 */
 	private const ALLOWED_LINK_SCHEMES = ['http', 'https', 'mailto'];
 
@@ -100,18 +96,17 @@ class SnapshotHtmlSanitizer {
 
 	/** Returns the href to emit, or `''` when it may not be emitted at all. */
 	private function safeLinkTarget(string $href): string {
-		// Browsers ignore leading and embedded control characters when they
-		// read a scheme, so `java\tscript:` is `javascript:` to them. They
-		// are removed here for the same reason, before the scheme is read.
+		// Browsers ignore control characters while reading a scheme, so
+		// `java\tscript:` is `javascript:` to them — and so it is here.
 		$candidate = (string)preg_replace('/[\x00-\x20\x7F]/', '', $href);
 		if ($candidate === '') {
 			return '';
 		}
 
+		// No scheme means a relative link, which inside a pad would point at
+		// this Nextcloud rather than anywhere the pad meant.
 		$colon = strpos($candidate, ':');
 		if ($colon === false) {
-			// No scheme: a relative link, which inside a pad means a path on
-			// this Nextcloud rather than anywhere the pad meant.
 			return '';
 		}
 

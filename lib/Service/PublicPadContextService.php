@@ -9,7 +9,6 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Service;
 
-use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
 use OCP\IURLGenerator;
 use OCP\Share\IShare;
 
@@ -43,22 +42,10 @@ class PublicPadContextService {
 		$resolved = $this->shareResolver->resolvePadFile($share, $fileParam, $token);
 		$node = $resolved->node;
 
-		// See PadContentService: a sync holding the file must not surface
-		// as a failed content fetch.
+		// See PadContentService for the retry.
 		$pad = $this->padFileService->readPad($this->lockRetryService->readContentWithOpenLockRetry($node));
-		if ($pad->isExternal) {
-			if ($pad->accessMode !== BindingService::ACCESS_PUBLIC) {
-				throw new EtherpadClientException('External pad metadata requires public access_mode.');
-			}
-			if ($pad->padUrl === '') {
-				throw new EtherpadClientException('External pad URL metadata is missing or invalid.');
-			}
-			return $this->livePadHtmlFetcher->fetchExternal($pad->padUrl);
-		}
 
-		$this->bindingService->assertConsistentMapping((int)$node->getId(), $pad->padId, $pad->accessMode);
-
-		return $this->livePadHtmlFetcher->fetchInternal($pad->padId);
+		return $this->livePadHtmlFetcher->fetchForPadFile($pad, (int)$node->getId());
 	}
 
 	public function resolve(string $token, mixed $fileParam, ?IShare $cachedShare = null): PublicPadContext {

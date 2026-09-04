@@ -7,12 +7,10 @@ import DOMPurify from 'dompurify'
 /**
  * Client-side defense-in-depth for pad HTML.
  *
- * The HTML is already sanitized server-side by `SnapshotHtmlSanitizer`
- * before it reaches the browser, but it originates on a pad server this
- * app does not own, and that server pass is the sole XSS gate. Since the
- * viewer and embed inject the HTML via `innerHTML`, we run it through
- * DOMPurify with the *same* allowlist the server enforces so a regression
- * in the server gate can't turn into stored XSS.
+ * The HTML is sanitized server-side already, but it comes from a pad
+ * server this app does not own and the viewer injects it via `innerHTML`,
+ * so the same allowlist is enforced again here — a regression in the
+ * server gate then cannot become XSS.
  *
  * Mirrors `SnapshotHtmlSanitizer::ALLOWED_TAGS` and its link rule.
  */
@@ -29,9 +27,8 @@ const ALLOWED_TAGS = [
 const ALLOWED_URI_REGEXP = /^(?:https?|mailto):/i
 
 /**
- * Set here rather than trusted from the server pass, so the browser stage
- * stands on its own: a link that arrives without them still cannot hand
- * the opened tab a reference back to this one.
+ * Set here rather than trusted from the server pass: a link arriving
+ * without them still cannot hand the opened tab a reference back.
  */
 DOMPurify.addHook('afterSanitizeAttributes', (node) => {
 	if (node.tagName !== 'A') {
@@ -55,8 +52,7 @@ DOMPurify.addHook('afterSanitizeAttributes', (node) => {
 export function sanitizeSnapshotHtml(html) {
 	return DOMPurify.sanitize(String(html ?? ''), {
 		ALLOWED_TAGS,
-		// Only what a link needs. `target` and `rel` are allowed because
-		// the hook above sets them; nothing else survives on any tag.
+		// Only what a link needs; the hook above sets target and rel.
 		ALLOWED_ATTR: ['href', 'target', 'rel'],
 		ALLOWED_URI_REGEXP,
 		ALLOW_DATA_ATTR: false,

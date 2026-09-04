@@ -70,12 +70,8 @@ import { loadPadContent } from './lib/pad-content.js'
 
 	/**
 	 * The read-only surface: a small toolbar and a document area that
-	 * `loadContent` fills — loading, the pad itself, "still empty", or an
-	 * error. No heading and no subline; what this is, is apparent from the
-	 * fact that there is nothing to type into.
-	 *
-	 * Returns the parts the loader needs so it can redraw the text without
-	 * rebuilding the frame or losing the button it disables.
+	 * `loadContent` fills. Returns the parts the loader redraws, so the
+	 * frame and its button survive a refresh.
 	 */
 	const showPadContentView = (url) => {
 		if (errorNode instanceof HTMLElement) {
@@ -101,9 +97,7 @@ import { loadPadContent } from './lib/pad-content.js'
 		const toolbar = document.createElement('div')
 		toolbar.className = 'epnc-embed__doc-toolbar'
 
-		// A refresh that fails leaves the text it could not replace on
-		// screen, so the failure is said here rather than in place of the
-		// pad.
+		// A failed refresh is reported here rather than in place of the pad.
 		const toolbarError = document.createElement('span')
 		toolbarError.className = 'epnc-embed__doc-toolbar-error'
 		toolbarError.hidden = true
@@ -136,21 +130,15 @@ import { loadPadContent } from './lib/pad-content.js'
 		surface.appendChild(inner)
 		loadingNode.appendChild(surface)
 
-		// `loaded` says whether anything has ever been shown: a refresh
-		// keeps the last text on screen, so "busy" and "nothing yet" are
-		// two states and only the second may blank the view.
+		// `loaded`: "busy" and "nothing yet" are two states, and only the
+		// second may blank the view.
 		return { body, refresh, toolbarError, loaded: false }
 	}
 
-	// Bumped per load, so a slower earlier answer cannot land on top of a
-	// newer one when the button is pressed twice.
+	// So a slower earlier answer cannot land on top of a newer one.
 	let contentGeneration = 0
 
-	/**
-	 * Loads the pad into an existing read-only surface, and again on every
-	 * press of "Refresh" or "Try again". Each call re-checks access on the
-	 * server.
-	 */
+	/** Each call re-checks access on the server. */
 	const loadContent = async (view, contentUrl) => {
 		if (!view || !(view.body instanceof HTMLElement)) {
 			return
@@ -160,8 +148,7 @@ import { loadPadContent } from './lib/pad-content.js'
 		const generation = contentGeneration
 		const isCurrent = () => generation === contentGeneration
 
-		// Only before the first answer. After that the pad stays on screen
-		// and the button carries the fact that something is happening.
+		// Only before the first answer; after that the button carries it.
 		if (!view.loaded) {
 			body.className = 'epnc-embed__doc-text'
 			body.textContent = contentLoadingText
@@ -183,8 +170,7 @@ import { loadPadContent } from './lib/pad-content.js'
 			if (!isCurrent()) return
 			view.loaded = true
 			if (content.isEmpty) {
-				// Loaded, and there is nothing in it. Left blank this would
-				// read as a failure nobody reported.
+				// Left blank this would read as a failure nobody reported.
 				body.className = 'epnc-embed__doc-text'
 				body.textContent = contentEmptyText
 				return
@@ -204,8 +190,7 @@ import { loadPadContent } from './lib/pad-content.js'
 
 	const renderContentError = (view, contentUrl, message) => {
 		const { body, toolbarError } = view
-		// Something is already on screen: keep it, and say next to the
-		// button that this attempt did not replace it.
+		// Something is on screen: keep it, and say the attempt failed.
 		if (view.loaded && toolbarError instanceof HTMLElement) {
 			toolbarError.textContent = message || contentErrorText
 			toolbarError.hidden = false

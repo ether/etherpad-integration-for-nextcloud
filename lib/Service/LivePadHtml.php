@@ -12,9 +12,9 @@ namespace OCA\EtherpadNextcloud\Service;
 /**
  * One pad's current content, sanitized and ready for the browser.
  *
- * `isEmpty` is decided here rather than in the viewer: Etherpad answers an
- * empty pad with markup (`<br>`), so "no text" is not the same as "no HTML",
- * and a client checking the string would show an untouched pad as broken.
+ * `isEmpty` is decided server-side because Etherpad answers an untouched
+ * pad with markup (`<br>`), which a client checking the string would show
+ * as broken rather than as empty.
  */
 class LivePadHtml {
 	public function __construct(

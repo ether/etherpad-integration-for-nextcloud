@@ -208,11 +208,9 @@ class PadResponseService {
 	}
 
 	/**
-	 * A read-only view's content, with caching turned off.
-	 *
-	 * The point of the view is that it shows the pad as it is now, and a
-	 * cached copy would quietly defeat that. It is also answered per reader
-	 * after an access check, so a shared cache must not keep it at all.
+	 * A read-only view's content, uncached: it shows the pad as it is now,
+	 * and it is answered per reader after an access check, so no cache may
+	 * keep it.
 	 */
 	public function padContentResponse(LivePadHtml $content): DataResponse {
 		$response = new DataResponse([

@@ -17,13 +17,9 @@ class ExternalPadExportFetcher {
 	private const EXTERNAL_REQUEST_TIMEOUT_SECONDS = 15;
 
 	/**
-	 * The whole fetch, not each attempt.
-	 *
-	 * A host can resolve to several addresses, and every one of them used to
-	 * get the full timeout — so a name with four unreachable records held a
-	 * request for a minute. The budget is shared now: what an attempt may
-	 * take is whatever is left of it, and one that no longer fits is not
-	 * made.
+	 * The whole fetch, not each attempt: a host with four unreachable
+	 * addresses used to hold a request for a minute. An attempt gets what
+	 * is left, and one that no longer fits is not made.
 	 */
 	private const EXTERNAL_TOTAL_BUDGET_SECONDS = 20;
 	private const EXTERNAL_MIN_ATTEMPT_SECONDS = 2;
@@ -40,7 +36,7 @@ class ExternalPadExportFetcher {
 			'origin' => $resolved['origin'],
 			'pad_id' => $resolved['pad_id'],
 			'pad_url' => $resolved['pad_url'],
-			'text' => $this->getPublicTextFromResolvedExternalPad($resolved),
+			'text' => $this->fetchPublicExport($resolved, 'txt'),
 		];
 	}
 
@@ -51,7 +47,7 @@ class ExternalPadExportFetcher {
 		$resolved = $this->resolveAndValidateExternalPublicPadUrl($padUrl);
 		$snapshotUnavailable = false;
 		try {
-			$text = $this->getPublicTextFromResolvedExternalPad($resolved);
+			$text = $this->fetchPublicExport($resolved, 'txt');
 		} catch (ExternalPadExportNotFoundException) {
 			$text = '';
 			$snapshotUnavailable = true;
@@ -67,29 +63,11 @@ class ExternalPadExportFetcher {
 	}
 
 	/**
-	 * The pad's current content as HTML, straight from the foreign server.
-	 *
-	 * Same address checks, same pinning, same size cap as the text export —
-	 * only the format differs, and with it what may come back.
-	 *
-	 * @return array{origin:string,pad_id:string,pad_url:string,html:string}
+	 * Same address checks, pinning and size cap as the text export — only
+	 * the format differs, and with it what may come back.
 	 */
-	public function normalizeAndFetchExternalPublicPadHtml(string $padUrl): array {
-		$resolved = $this->resolveAndValidateExternalPublicPadUrl($padUrl);
-		$url = $this->buildPublicExportUrl($resolved['pad_url'], 'html');
-
-		return [
-			'origin' => $resolved['origin'],
-			'pad_id' => $resolved['pad_id'],
-			'pad_url' => $resolved['pad_url'],
-			'html' => $this->sendPinnedPublicGetRequest(
-				$url,
-				$resolved['host'],
-				$resolved['port'],
-				$resolved['resolved_ips'],
-				'html',
-			),
-		];
+	public function fetchExternalPublicPadHtml(string $padUrl): string {
+		return $this->fetchPublicExport($this->resolveAndValidateExternalPublicPadUrl($padUrl), 'html');
 	}
 
 	/** @return array{origin:string,pad_id:string,pad_url:string} */
@@ -110,9 +88,14 @@ class ExternalPadExportFetcher {
 	/**
 	 * @param array{origin:string,pad_id:string,pad_url:string,host:string,port:int,resolved_ips:list<string>} $resolved
 	 */
-	private function getPublicTextFromResolvedExternalPad(array $resolved): string {
-		$url = $this->buildPublicExportUrl($resolved['pad_url'], 'txt');
-		return $this->sendPinnedPublicGetRequest($url, $resolved['host'], $resolved['port'], $resolved['resolved_ips']);
+	private function fetchPublicExport(array $resolved, string $format): string {
+		return $this->sendPinnedPublicGetRequest(
+			$this->buildPublicExportUrl($resolved['pad_url'], $format),
+			$resolved['host'],
+			$resolved['port'],
+			$resolved['resolved_ips'],
+			$format,
+		);
 	}
 
 	/** @return array{origin:string,pad_id:string,pad_url:string,host:string,port:int,resolved_ips:list<string>} */
@@ -230,12 +213,10 @@ class ExternalPadExportFetcher {
 	}
 
 	/**
-	 * Only an answer that says it *is* the export.
-	 *
-	 * Redirects are not followed, but their bodies used to be taken
-	 * anyway: a "Please sign in" page behind a 302 arrived as pad content.
-	 * The text export happened to reject those on content type; the HTML
-	 * export cannot, so the status is what decides.
+	 * Only an answer that says it *is* the export. Redirects are not
+	 * followed, but their bodies used to be taken anyway — a "Please sign
+	 * in" page behind a 302 arrived as pad content, which the text export
+	 * caught on content type and the HTML export cannot.
 	 */
 	private function assertSuccessfulExportStatus(int $httpCode): void {
 		if ($httpCode === 404) {
@@ -256,13 +237,10 @@ class ExternalPadExportFetcher {
 	}
 
 	/**
-	 * Only what this format asked for.
-	 *
-	 * The text export still refuses `text/html` — an error page answered
-	 * with 200 is the shape that rule exists for, and reading one as pad
-	 * content is exactly the confusion to avoid. The HTML export accepts it
-	 * and nothing else: allowing the union for both would weaken the text
-	 * path to buy nothing for this one.
+	 * Only what this format asked for. The text export still refuses
+	 * `text/html`, because an error page answered with 200 is the shape
+	 * that rule exists for; allowing the union for both would weaken the
+	 * text path to buy nothing for this one.
 	 */
 	private function assertAllowedExternalExportContentType(string $contentTypeHeader, string $format = 'txt'): void {
 		$raw = trim($contentTypeHeader);

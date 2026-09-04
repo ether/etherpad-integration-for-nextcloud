@@ -79,12 +79,9 @@ class EtherpadClient {
 	}
 
 	/**
-	 * The same export, with a ceiling on how much of it will be read.
-	 *
-	 * The read-only view fetches this per reader on demand, so an oversized
-	 * pad would otherwise buy a caller as much of this server's memory as
-	 * the pad is long — twice over, once buffered and once as a DOM. The
-	 * cap matches the one the foreign export already had.
+	 * The same export, capped. The read-only view fetches it per reader on
+	 * demand, so an oversized pad would otherwise cost as much memory as
+	 * the pad is long — twice, once buffered and once as a DOM.
 	 */
 	public function getHTMLForPreview(string $padId): string {
 		$data = $this->apiCall('getHTML', ['padID' => $padId], maxBytes: self::PREVIEW_MAX_BYTES);
@@ -92,11 +89,9 @@ class EtherpadClient {
 	}
 
 	/**
-	 * A field the API is supposed to have answered with.
-	 *
 	 * Coercing a missing key to `''` reads an incomplete answer as an empty
-	 * pad — which the preview would then present as one, and a sync would
-	 * write over the stored copy with.
+	 * pad — which the preview shows as one, and a sync writes over the
+	 * stored copy with.
 	 *
 	 * @param array<string,mixed> $data
 	 */
@@ -390,8 +385,8 @@ class EtherpadClient {
 		try {
 			$rawBody = $this->sendRequest($url, $query, $httpMethod, $timeoutSeconds, $maxBytes);
 		} catch (EtherpadTooLargeException $e) {
-			// Not wrapped: this one has to stay recognisable, because the
-			// caller says "too large to show" rather than "request failed".
+			// Not wrapped: the caller says "too large to show" rather than
+			// "request failed", so the type has to survive.
 			throw $e;
 		} catch (\Throwable $e) {
 			throw new EtherpadClientException('Etherpad API request failed: ' . $method, 0, $e);
@@ -449,15 +444,12 @@ class EtherpadClient {
 	}
 
 	/**
-	 * Reads at most `$maxBytes`, and stops rather than truncating.
+	 * Reads at most `$maxBytes` and stops rather than truncating — a
+	 * truncated JSON body decodes to nothing anyway.
 	 *
-	 * A truncated JSON body would decode to nothing anyway, so there is
-	 * nothing to salvage from going over — saying "too large" is both
-	 * cheaper and truthful.
-	 *
-	 * Whether the body arrives as a stream is up to the HTTP client. When
-	 * it does, nothing above the limit is ever held; when it does not, the
-	 * limit is still enforced, just after the fact.
+	 * Streaming is the HTTP client's choice: when it streams, nothing above
+	 * the limit is ever held; when it does not, the limit still holds, just
+	 * after the fact.
 	 */
 	private function readBounded(IResponse $response, int $maxBytes): string {
 		$body = $response->getBody();

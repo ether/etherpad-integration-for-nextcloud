@@ -10,11 +10,9 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\Exception;
 
 /**
- * A pad whose export is past the size this app will read.
- *
- * Its own type so the read-only view can say "too large to show here"
- * rather than reporting it as a failed request — the pad is fine, and the
- * editable path is unaffected.
+ * A pad whose export is past the size this app will read. Its own type so
+ * the view can say "too large to show here" rather than "request failed" —
+ * the pad is fine, and stays editable.
  */
 class EtherpadTooLargeException extends EtherpadClientException {
 }
