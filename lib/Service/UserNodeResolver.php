@@ -100,6 +100,7 @@ class UserNodeResolver {
 		}
 		$nodes = $userFolder->getById($folderId);
 		$root = '/' . $uid . '/files';
+		$fallback = null;
 		foreach ($nodes as $node) {
 			if (!$node instanceof Folder) {
 				continue;
@@ -111,9 +112,22 @@ class UserNodeResolver {
 			// id above, and getById() is not expected to return the folder it
 			// searches — but "not expected to" is an implementation detail,
 			// and this is the path create-by-parent takes into "All files".
-			if ($path === $root || str_starts_with($path, $root . '/')) {
+			if ($path !== $root && !str_starts_with($path, $root . '/')) {
+				continue;
+			}
+			// One folder can be reached by several shares, and only some of
+			// them may allow creating. Taking the first hit made the answer
+			// depend on the order `getById()` happened to return, so a user
+			// with both a read-only and a writable path to the same folder
+			// could be refused on the strength of the wrong one. Same rule
+			// the file lookup above already follows.
+			if ($node->isCreatable()) {
 				return $node;
 			}
+			$fallback ??= $node;
+		}
+		if ($fallback !== null) {
+			return $fallback;
 		}
 
 		throw new NotFoundException('Folder not found by ID.');

@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\Service;
 
 use OCP\Files\File;
+use OCP\Files\NotFoundException;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -17,16 +18,19 @@ use Psr\Log\LoggerInterface;
  * Cleanup steps are isolated and best-effort so cleanup errors do not mask
  * the original create failure.
  *
- * Cleanup is handed the node the create made, not its path and not its id.
- * A path is not an identity — the file can be renamed while Etherpad is
- * being provisioned, and something else can take the old name — and looking
- * an id up again reopens the same question of whether the thing found is
- * still the thing created. The node is the answer to both: it is the object
- * this request created, in this request.
+ * The file is deleted by id, never through the node the create returned.
+ * A `File` object is not an identity: `File::delete()` unlinks
+ * `$this->view->unlink($this->path)`, so it acts on whatever sits at the
+ * remembered path at that moment. Etherpad provisioning takes long enough
+ * for the file to be moved and the name taken by something else, and the
+ * rollback would then delete a stranger's file. Re-resolving the id gives a
+ * fresh path for the file we actually created — and when the id resolves to
+ * nothing, there is nothing of ours left to remove.
  */
 class PadCreateRollbackService {
 	public function __construct(
 		private ManagedPadLifecycle $padLifecycle,
+		private UserNodeResolver $userNodeResolver,
 		private LoggerInterface $logger,
 	) {
 	}
@@ -63,8 +67,24 @@ class PadCreateRollbackService {
 			return;
 		}
 
+		$fileId = $this->createdFileId($createdNode);
+		if ($fileId === null) {
+			// No id, no proof of which file this is. Leaving a stray empty
+			// `.pad` behind is a mess; deleting the wrong file is a loss.
+			$this->logger->warning('Skipped .pad cleanup because the created file has no usable id', [
+				'app' => 'etherpad_nextcloud',
+				'uid' => $uid,
+				'file' => $path,
+			]);
+			return;
+		}
+
 		try {
-			$createdNode->delete();
+			$this->userNodeResolver->resolveUserFileNodeById($uid, $fileId)->delete();
+		} catch (NotFoundException) {
+			// Already gone, or no longer this user's. Either way there is
+			// nothing of ours to remove, and nothing to report.
+			return;
 		} catch (\Throwable $cleanupError) {
 			$this->logger->warning('Could not cleanup failed .pad file create', [
 				'app' => 'etherpad_nextcloud',
@@ -73,6 +93,16 @@ class PadCreateRollbackService {
 				'exception' => $cleanupError,
 			]);
 		}
+	}
+
+	private function createdFileId(File $createdNode): ?int {
+		try {
+			$fileId = $createdNode->getId();
+		} catch (\Throwable) {
+			return null;
+		}
+
+		return $fileId > 0 ? $fileId : null;
 	}
 
 	public function rollbackExternalCreate(string $uid, string $path, ?File $createdNode): void {

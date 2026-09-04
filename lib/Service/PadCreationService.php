@@ -67,7 +67,7 @@ class PadCreationService {
 					'',
 					$padUrl
 				);
-				$fileNode->putContent($content);
+				$this->writeCreatedFile($uid, $fileId, $content);
 
 				$this->bindingService->createBinding($fileId, $padId, $accessMode);
 
@@ -147,7 +147,7 @@ class PadCreationService {
 					'',
 					$padUrl
 				);
-				$fileNode->putContent($content);
+				$this->writeCreatedFile($uid, $fileId, $content);
 				$this->bindingService->createBinding($fileId, $padId, $accessMode);
 
 				return [
@@ -434,6 +434,10 @@ class PadCreationService {
 				0,
 				true,
 			);
+			// Written through the node as given: unlike the create flows,
+			// this file is not one we made — Nextcloud's template hook hands
+			// it over — and the caller need not supply a uid to re-resolve
+			// the id with.
 			$target->putContent($content);
 			$this->bindingService->createBinding($fileId, $padId, $accessMode);
 		} catch (\Throwable $e) {
@@ -456,6 +460,22 @@ class PadCreationService {
 	 *
 	 * @throws \RuntimeException
 	 */
+	/**
+	 * Write to the file this create made, addressed by id.
+	 *
+	 * Not through the node the create returned: `File::putContent()` writes
+	 * to its remembered path, and by this point the request has been away
+	 * at Etherpad long enough for the file to be moved and the name taken
+	 * by something else. Resolving the id gives a fresh path for the file
+	 * we actually created; if it resolves to nothing, the create fails and
+	 * rolls back rather than writing over a stranger.
+	 *
+	 * @throws \OCP\Files\NotFoundException
+	 */
+	private function writeCreatedFile(string $uid, int $fileId, string $content): void {
+		$this->userNodeResolver->resolveUserFileNodeById($uid, $fileId)->putContent($content);
+	}
+
 	private function requireFileId(File $fileNode, string $path): int {
 		try {
 			$fileId = (int)$fileNode->getId();

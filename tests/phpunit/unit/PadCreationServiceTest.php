@@ -53,7 +53,7 @@ class PadCreationServiceTest extends TestCase {
 			->method('createBinding')
 			->with(123, 'g.ABC$pad', BindingService::ACCESS_PROTECTED);
 
-		$result = $this->buildService($padFileService, $padPaths, $fileCreator, null, null, $bindingService, $etherpadClient, $bootstrap)
+		$result = $this->buildService($padFileService, $padPaths, $fileCreator, $this->resolverFor($fileNode), null, $bindingService, $etherpadClient, $bootstrap)
 			->create('alice', '/Test', BindingService::ACCESS_PROTECTED);
 
 		$this->assertSame([
@@ -604,6 +604,7 @@ class PadCreationServiceTest extends TestCase {
 
 		$rollbackService = new PadCreateRollbackService(
 			new ManagedPadLifecycle($etherpadClient, $this->createMock(LoggerInterface::class)),
+			$this->createMock(UserNodeResolver::class),
 			$this->createMock(\Psr\Log\LoggerInterface::class),
 		);
 
@@ -660,6 +661,7 @@ class PadCreationServiceTest extends TestCase {
 			bootstrap: $bootstrap,
 			rollbackService: new PadCreateRollbackService(
 				new ManagedPadLifecycle($this->createMock(EtherpadClient::class), $this->createMock(LoggerInterface::class)),
+				$this->createMock(UserNodeResolver::class),
 				$this->createMock(\Psr\Log\LoggerInterface::class),
 			),
 		)->create('alice', '/Notes.pad', BindingService::ACCESS_PUBLIC);
@@ -794,6 +796,7 @@ class PadCreationServiceTest extends TestCase {
 			bootstrap: $bootstrap,
 			rollbackService: new PadCreateRollbackService(
 				new ManagedPadLifecycle($this->createMock(EtherpadClient::class), $this->createMock(LoggerInterface::class)),
+				$this->createMock(UserNodeResolver::class),
 				$this->createMock(\Psr\Log\LoggerInterface::class),
 			),
 		);
@@ -838,6 +841,54 @@ class PadCreationServiceTest extends TestCase {
 
 		$this->buildService($padFileService, $padPaths, $this->fileCreatorReturningId(11), $userNodeResolver)
 			->createFromTemplate('alice', '/Out.pad', 7, null);
+	}
+
+	/**
+	 * The write goes to the file the id resolves to, not through the node
+	 * the create returned. `File::putContent()` writes to its remembered
+	 * path, and provisioning the pad takes long enough for that path to
+	 * hold somebody else's file by the time the content is written.
+	 */
+	public function testWritesToTheFileTheIdResolvesToNotTheCreatedNode(): void {
+		$createdNode = $this->createMock(\OCP\Files\File::class);
+		$createdNode->method('getId')->willReturn(4242);
+		$createdNode->method('getSize')->willReturn(0);
+		$createdNode->expects($this->never())->method('putContent');
+
+		$stillOurs = $this->createMock(\OCP\Files\File::class);
+		$stillOurs->expects($this->once())->method('putContent')->with('frontmatter');
+
+		$fileCreator = $this->createMock(PadFileCreator::class);
+		$fileCreator->method('createUserFile')->willReturn($createdNode);
+
+		$padPaths = $this->createMock(PathNormalizer::class);
+		$padPaths->method('normalizeCreatePath')->willReturn('/Notes.pad');
+
+		$padFileService = $this->createMock(PadFileService::class);
+		$padFileService->method('buildInitialDocument')->willReturn('frontmatter');
+
+		$bootstrap = $this->createMock(PadBootstrapService::class);
+		$bootstrap->method('provisionPadId')->willReturn('p-fresh');
+
+		$this->buildService(
+			padFileService: $padFileService,
+			padPaths: $padPaths,
+			fileCreator: $fileCreator,
+			userNodeResolver: $this->resolverFor($stillOurs),
+			bootstrap: $bootstrap,
+		)->create('alice', '/Notes.pad', BindingService::ACCESS_PUBLIC);
+	}
+
+	/**
+	 * The file the id resolves to at write time — which is what the create
+	 * writes through, so a test stubbing only the creator's node would pass
+	 * while nothing was written.
+	 */
+	private function resolverFor(\OCP\Files\File $node): UserNodeResolver {
+		$resolver = $this->createMock(UserNodeResolver::class);
+		$resolver->method('resolveUserFileNodeById')->willReturn($node);
+
+		return $resolver;
 	}
 
 	private function buildService(
