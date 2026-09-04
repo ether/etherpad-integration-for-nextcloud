@@ -6,8 +6,6 @@ namespace OCA\EtherpadNextcloud\Tests\Unit;
 
 use OCA\EtherpadNextcloud\Service\EtherpadClient;
 use OCA\EtherpadNextcloud\Service\ManagedPadLifecycle;
-use OCA\EtherpadNextcloud\Service\PadFileService;
-use OCA\EtherpadNextcloud\Service\ParsedPadFile;
 use OCA\EtherpadNextcloud\Service\PadCreateRollbackService;
 use OCA\EtherpadNextcloud\Service\UserNodeResolver;
 use OCP\Files\File;
@@ -73,41 +71,76 @@ class PadCreateRollbackServiceTest extends TestCase {
 	 * filled it while this request was away at Etherpad.
 	 */
 	public function testLeavesAFileSomebodyElseWroteInto(): void {
-		$foreign = $this->createMock(File::class);
-		$foreign->method('getSize')->willReturn(42);
-		$foreign->method('getContent')->willReturn('someone else\'s notes');
+		$foreign = $this->fileHolding('someone else\'s notes');
 		$foreign->expects($this->never())->method('delete');
-
-		$padFiles = $this->createMock(PadFileService::class);
-		$padFiles->method('readPad')->willThrowException(new \RuntimeException('not a pad file'));
 
 		$logger = $this->createMock(LoggerInterface::class);
 		$logger->expects($this->once())->method('warning')
-			->with($this->stringContains('content this create did not write'), $this->anything());
+			->with($this->stringContains('not what this create wrote'), $this->anything());
 
-		$this->buildService(logger: $logger, userNodeResolver: $this->resolverFinding($foreign), padFileService: $padFiles)
-			->rollbackFailedCreate('alice', '/Created.pad', '', 4711);
+		$this->buildService(logger: $logger, userNodeResolver: $this->resolverFinding($foreign))
+			->rollbackFailedCreate('alice', '/Created.pad', '', 4711, hash('sha256', 'our document'));
 	}
 
-	/** Its own frontmatter names the id, so this one is ours to remove. */
-	public function testDeletesAFileCarryingTheDocumentThisCreateWrote(): void {
-		$ours = $this->createMock(File::class);
-		$ours->method('getSize')->willReturn(120);
-		$ours->method('getContent')->willReturn('frontmatter');
+	/**
+	 * A rival create can finish into the same file. Its document carries the
+	 * same `file_id` — the id belongs to the file, not to the attempt — so
+	 * only the bytes this attempt wrote settle it.
+	 */
+	public function testLeavesADocumentAnotherCreateWroteIntoTheSameFile(): void {
+		$rivals = $this->fileHolding("---\nfile_id: 4711\npad_id: nc-rival\n---\n");
+		$rivals->expects($this->never())->method('delete');
+
+		$this->buildService(userNodeResolver: $this->resolverFinding($rivals))
+			->rollbackFailedCreate('alice', '/Created.pad', 'nc-own', 4711, hash('sha256', "---\nfile_id: 4711\npad_id: nc-own\n---\n"));
+	}
+
+	/** Exactly the bytes this create wrote, so this one is ours to remove. */
+	public function testDeletesAFileHoldingWhatThisCreateWrote(): void {
+		$ours = $this->fileHolding('our document');
 		$ours->expects($this->once())->method('delete');
 
-		$padFiles = $this->createMock(PadFileService::class);
-		$padFiles->method('readPad')->with('frontmatter')->willReturn(new ParsedPadFile(
-			frontmatter: ['file_id' => 4711, 'pad_id' => 'p-1', 'access_mode' => 'public'],
-			body: '',
-			padId: 'p-1',
-			accessMode: 'public',
-			padUrl: '',
-			isExternal: false,
-		));
+		$this->buildService(userNodeResolver: $this->resolverFinding($ours))
+			->rollbackFailedCreate('alice', '/Created.pad', '', 4711, hash('sha256', 'our document'));
+	}
 
-		$this->buildService(userNodeResolver: $this->resolverFinding($ours), padFileService: $padFiles)
-			->rollbackFailedCreate('alice', '/Created.pad', '', 4711);
+	/**
+	 * Both give up rather than delete. They are the conservative half of the
+	 * rule, and an exception escaping either would turn a best-effort
+	 * cleanup into a failure that hides the original create error.
+	 */
+	public function testLeavesTheFileAloneWhenItsContentCannotBeRead(): void {
+		$locked = $this->createMock(File::class);
+		$locked->method('getSize')->willReturn(120);
+		$locked->method('getContent')->willThrowException(new \OCP\Lock\LockedException('/Created.pad'));
+		$locked->expects($this->never())->method('delete');
+
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects($this->once())->method('warning')
+			->with($this->stringContains('could not be read'), $this->anything());
+
+		$this->buildService(logger: $logger, userNodeResolver: $this->resolverFinding($locked))
+			->rollbackFailedCreate('alice', '/Created.pad', '', 4711, hash('sha256', 'our document'));
+	}
+
+	public function testSwallowsAFailedLookup(): void {
+		$resolver = $this->createMock(UserNodeResolver::class);
+		$resolver->method('resolveUserFileNodeById')->willThrowException(new \RuntimeException('storage down'));
+
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects($this->once())->method('warning')
+			->with($this->stringContains('Could not look up'), $this->anything());
+
+		$this->buildService(logger: $logger, userNodeResolver: $resolver)
+			->rollbackFailedCreate('alice', '/Created.pad', '', 4711, null);
+	}
+
+	private function fileHolding(string $content): File {
+		$node = $this->createMock(File::class);
+		$node->method('getSize')->willReturn(strlen($content));
+		$node->method('getContent')->willReturn($content);
+
+		return $node;
 	}
 
 	/**
@@ -222,10 +255,8 @@ class PadCreateRollbackServiceTest extends TestCase {
 		?EtherpadClient $etherpad = null,
 		?LoggerInterface $logger = null,
 		?UserNodeResolver $userNodeResolver = null,
-		?PadFileService $padFileService = null,
 	): PadCreateRollbackService {
 		return new PadCreateRollbackService(
-			$padFileService ?? $this->createMock(PadFileService::class),
 			new ManagedPadLifecycle($etherpad ?? $this->createMock(EtherpadClient::class), $this->createMock(LoggerInterface::class)),
 			$userNodeResolver ?? $this->createMock(UserNodeResolver::class),
 			$logger ?? $this->createMock(LoggerInterface::class),

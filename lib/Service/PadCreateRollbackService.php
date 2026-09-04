@@ -27,15 +27,20 @@ use Psr\Log\LoggerInterface;
  */
 class PadCreateRollbackService {
 	public function __construct(
-		private PadFileService $padFileService,
 		private ManagedPadLifecycle $padLifecycle,
 		private UserNodeResolver $userNodeResolver,
 		private LoggerInterface $logger,
 	) {
 	}
 
-	public function rollbackFailedCreate(string $uid, string $path, string $padId, ?int $createdFileId): void {
-		$this->rollbackCreatedFileOnly($uid, $path, $createdFileId);
+	public function rollbackFailedCreate(
+		string $uid,
+		string $path,
+		string $padId,
+		?int $createdFileId,
+		?string $writtenHash = null
+	): void {
+		$this->rollbackCreatedFileOnly($uid, $path, $createdFileId, $writtenHash);
 
 		if ($padId !== '') {
 			try {
@@ -61,7 +66,12 @@ class PadCreateRollbackService {
 	 * would delete it a second time, costing a round trip and logging a
 	 * warning about a pad that is already gone.
 	 */
-	public function rollbackCreatedFileOnly(string $uid, string $path, ?int $createdFileId): void {
+	public function rollbackCreatedFileOnly(
+		string $uid,
+		string $path,
+		?int $createdFileId,
+		?string $writtenHash = null
+	): void {
 		if ($createdFileId === null || $createdFileId <= 0) {
 			// The create never got an id it could trust, so there is nothing
 			// here that identifies a file. Leaving a stray empty `.pad`
@@ -72,8 +82,16 @@ class PadCreateRollbackService {
 		try {
 			$node = $this->userNodeResolver->resolveUserFileNodeById($uid, $createdFileId);
 		} catch (NotFoundException) {
-			// Already gone, or no longer this user's. Nothing of ours to
-			// remove, and nothing to report.
+			// Usually the file is simply gone. But the same exception covers
+			// an id that now resolves to a folder or outside the user's
+			// files, and in those a file this request created is still
+			// there — so this is worth a line, unlike a silent success.
+			$this->logger->info('Nothing to clean up: the created .pad file did not resolve', [
+				'app' => 'etherpad_nextcloud',
+				'uid' => $uid,
+				'file' => $path,
+				'fileId' => $createdFileId,
+			]);
 			return;
 		} catch (\Throwable $lookupError) {
 			$this->logger->warning('Could not look up the .pad file to clean up', [
@@ -86,7 +104,7 @@ class PadCreateRollbackService {
 			return;
 		}
 
-		if (!$this->isStillOurs($node, $createdFileId, $path)) {
+		if (!$this->isStillOurs($node, $path, $writtenHash)) {
 			return;
 		}
 
@@ -102,50 +120,58 @@ class PadCreateRollbackService {
 		}
 	}
 
-	public function rollbackExternalCreate(string $uid, string $path, ?int $createdFileId): void {
+	public function rollbackExternalCreate(
+		string $uid,
+		string $path,
+		?int $createdFileId,
+		?string $writtenHash = null
+	): void {
 		// An external create links a pad that already exists elsewhere, so
 		// there is nothing of ours on the Etherpad side to remove.
-		$this->rollbackCreatedFileOnly($uid, $path, $createdFileId);
+		$this->rollbackCreatedFileOnly($uid, $path, $createdFileId, $writtenHash);
 	}
 
 	/**
-	 * The id is not proof of authorship.
+	 * The id is not proof of authorship, and neither is a valid pad
+	 * document.
 	 *
 	 * `newFile()` can hand back a file another writer created a moment
-	 * earlier, empty, which every check at create time accepts — and that
-	 * writer may have filled it while this request was away at Etherpad.
-	 * So the file is only removed while it is still empty, or while it
-	 * carries the document this create wrote into it, which names the id.
+	 * earlier, empty, which every check at create time accepts. That writer
+	 * may then have finished its own create into the same file: its
+	 * document carries the same `file_id` — the id is the file's, not the
+	 * attempt's — and only its `pad_id` differs. So the test is against
+	 * what *this* attempt wrote: the file is removed while it is still
+	 * untouched, or while it still holds exactly those bytes.
 	 */
-	private function isStillOurs(File $node, int $fileId, string $path): bool {
+	private function isStillOurs(File $node, string $path, ?string $writtenHash): bool {
 		try {
 			if ((int)$node->getSize() === 0) {
-				return true;
+				return $writtenHash === null;
 			}
-			$content = (string)$node->getContent();
+			if ($writtenHash === null) {
+				$this->logger->warning('Left a .pad file in place: it has content this create never wrote', [
+					'app' => 'etherpad_nextcloud',
+					'file' => $path,
+				]);
+				return false;
+			}
+			$current = hash('sha256', (string)$node->getContent());
 		} catch (\Throwable $readError) {
 			$this->logger->warning('Left a .pad file in place because its content could not be read', [
 				'app' => 'etherpad_nextcloud',
-				'uid' => $path,
-				'fileId' => $fileId,
+				'file' => $path,
 				'exception' => $readError,
 			]);
 			return false;
 		}
 
-		try {
-			$writtenFileId = (int)($this->padFileService->readPad($content)->frontmatter['file_id'] ?? 0);
-		} catch (\Throwable) {
-			$writtenFileId = 0;
-		}
-		if ($writtenFileId === $fileId) {
+		if (hash_equals($writtenHash, $current)) {
 			return true;
 		}
 
-		$this->logger->warning('Left a .pad file in place: it has content this create did not write', [
+		$this->logger->warning('Left a .pad file in place: its content is not what this create wrote', [
 			'app' => 'etherpad_nextcloud',
 			'file' => $path,
-			'fileId' => $fileId,
 		]);
 
 		return false;

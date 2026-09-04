@@ -615,7 +615,6 @@ class PadCreationServiceTest extends TestCase {
 		$etherpadClient->expects($this->once())->method('deletePad')->with('p-fresh');
 
 		$rollbackService = new PadCreateRollbackService(
-			$this->createMock(PadFileService::class),
 			new ManagedPadLifecycle($etherpadClient, $this->createMock(LoggerInterface::class)),
 			$this->createMock(UserNodeResolver::class),
 			$this->createMock(\Psr\Log\LoggerInterface::class),
@@ -673,7 +672,6 @@ class PadCreationServiceTest extends TestCase {
 			bindingService: $bindingService,
 			bootstrap: $bootstrap,
 			rollbackService: new PadCreateRollbackService(
-				$this->createMock(PadFileService::class),
 				new ManagedPadLifecycle($this->createMock(EtherpadClient::class), $this->createMock(LoggerInterface::class)),
 				$this->createMock(UserNodeResolver::class),
 				$this->createMock(\Psr\Log\LoggerInterface::class),
@@ -809,7 +807,6 @@ class PadCreationServiceTest extends TestCase {
 			fileCreator: $fileCreator,
 			bootstrap: $bootstrap,
 			rollbackService: new PadCreateRollbackService(
-				$this->createMock(PadFileService::class),
 				new ManagedPadLifecycle($this->createMock(EtherpadClient::class), $this->createMock(LoggerInterface::class)),
 				$this->createMock(UserNodeResolver::class),
 				$this->createMock(\Psr\Log\LoggerInterface::class),
@@ -891,6 +888,41 @@ class PadCreationServiceTest extends TestCase {
 			fileCreator: $fileCreator,
 			userNodeResolver: $this->resolverFor($stillOurs, 'alice', 4242),
 			bootstrap: $bootstrap,
+		)->create('alice', '/Notes.pad', BindingService::ACCESS_PUBLIC);
+	}
+
+	/**
+	 * The whole way through: `getId()` throws on the freshly created node,
+	 * so the create never holds an id — and the rollback must not go
+	 * looking for one, because a second read would answer for whatever
+	 * holds that path by then.
+	 */
+	public function testACreateThatNeverGotAnIdCleansUpNothing(): void {
+		$node = $this->createMock(\OCP\Files\File::class);
+		$node->method('getId')->willThrowException(new \RuntimeException('no cache entry'));
+
+		$fileCreator = $this->createMock(PadFileCreator::class);
+		$fileCreator->method('createUserFile')->willReturn($node);
+
+		$padPaths = $this->createMock(PathNormalizer::class);
+		$padPaths->method('normalizeCreatePath')->willReturn('/Notes.pad');
+
+		$resolver = $this->createMock(UserNodeResolver::class);
+		$resolver->expects($this->never())->method('resolveUserFileNodeById');
+
+		$rollbackService = new PadCreateRollbackService(
+			new ManagedPadLifecycle($this->createMock(EtherpadClient::class), $this->createMock(LoggerInterface::class)),
+			$resolver,
+			$this->createMock(\Psr\Log\LoggerInterface::class),
+		);
+
+		$this->expectException(\RuntimeException::class);
+
+		$this->buildService(
+			padPaths: $padPaths,
+			fileCreator: $fileCreator,
+			userNodeResolver: $resolver,
+			rollbackService: $rollbackService,
 		)->create('alice', '/Notes.pad', BindingService::ACCESS_PUBLIC);
 	}
 
