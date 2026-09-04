@@ -50,30 +50,8 @@ class PadCreationService {
 			function (PadCreateAttempt $attempt) use ($uid, $path, $accessMode): array {
 				$attempt->recordPath($path);
 				$fileNode = $this->padFileCreator->createUserFile($uid, $path);
-				$claim = $this->claimCreatedFile($attempt, $uid, $fileNode, $path);
-				$fileId = $claim->fileId;
-				$padId = $this->padBootstrapService->provisionPadId($accessMode);
-				$attempt->recordPad($padId);
-				$padUrl = $this->etherpadClient->buildPadUrl($padId);
 
-				$content = $this->padFileService->buildInitialDocument(
-					$fileId,
-					$padId,
-					$accessMode,
-					'',
-					$padUrl
-				);
-				$this->writeCreatedFile($claim, $content);
-
-				$this->bindingService->createBinding($fileId, $padId, $accessMode);
-
-				return [
-					'file' => $path,
-					'file_id' => $fileId,
-					'pad_id' => $padId,
-					'access_mode' => $accessMode,
-					'pad_url' => $padUrl,
-				];
+				return $this->provisionPadForNewFile($attempt, $uid, $fileNode, $accessMode, $path);
 			},
 			function (PadCreateAttempt $attempt) use ($uid): void {
 				$this->rollbackService->rollbackFailedCreate($uid, $attempt->path(), $attempt->padId(), $attempt->claim());
@@ -119,30 +97,17 @@ class PadCreationService {
 		return $this->withCreateRollback(
 			function (PadCreateAttempt $attempt) use ($uid, $parentFolder, $parentFolderId, $fileName, $accessMode): array {
 				$fileNode = $this->padFileCreator->createUserFileInFolder($parentFolder, $fileName);
-				$claim = $this->claimCreatedFile($attempt, $uid, $fileNode);
-				$fileId = $claim->fileId;
-				$path = $attempt->path();
+				$created = $this->provisionPadForNewFile($attempt, $uid, $fileNode, $accessMode);
 
-				$padId = $this->padBootstrapService->provisionPadId($accessMode);
-				$attempt->recordPad($padId);
-				$padUrl = $this->etherpadClient->buildPadUrl($padId);
-				$content = $this->padFileService->buildInitialDocument(
-					$fileId,
-					$padId,
-					$accessMode,
-					'',
-					$padUrl
-				);
-				$this->writeCreatedFile($claim, $content);
-				$this->bindingService->createBinding($fileId, $padId, $accessMode);
-
+				// Rebuilt rather than appended: the response's key order is
+				// part of what callers compare against.
 				return [
-					'file' => $path,
-					'file_id' => $fileId,
+					'file' => $created['file'],
+					'file_id' => $created['file_id'],
 					'parent_folder_id' => $parentFolderId,
-					'pad_id' => $padId,
-					'access_mode' => $accessMode,
-					'pad_url' => $padUrl,
+					'pad_id' => $created['pad_id'],
+					'access_mode' => $created['access_mode'],
+					'pad_url' => $created['pad_url'],
 				];
 			},
 			function (PadCreateAttempt $attempt) use ($uid): void {
@@ -481,6 +446,42 @@ class PadCreationService {
 		}
 
 		return $node;
+	}
+
+	/**
+	 * Everything a blank create does once its file exists.
+	 *
+	 * `create()` and `createInParent()` differ only in how they reach that
+	 * file — a path in the user's tree, or a name in a folder they had to
+	 * resolve first. From here on they were the same twenty lines twice.
+	 *
+	 * @return array{file:string,file_id:int,pad_id:string,access_mode:string,pad_url:string}
+	 */
+	private function provisionPadForNewFile(
+		PadCreateAttempt $attempt,
+		string $uid,
+		File $fileNode,
+		string $accessMode,
+		string $path = ''
+	): array {
+		$claim = $this->claimCreatedFile($attempt, $uid, $fileNode, $path);
+		$fileId = $claim->fileId;
+
+		$padId = $this->padBootstrapService->provisionPadId($accessMode);
+		$attempt->recordPad($padId);
+		$padUrl = $this->etherpadClient->buildPadUrl($padId);
+
+		$content = $this->padFileService->buildInitialDocument($fileId, $padId, $accessMode, '', $padUrl);
+		$this->writeCreatedFile($claim, $content);
+		$this->bindingService->createBinding($fileId, $padId, $accessMode);
+
+		return [
+			'file' => $attempt->path(),
+			'file_id' => $fileId,
+			'pad_id' => $padId,
+			'access_mode' => $accessMode,
+			'pad_url' => $padUrl,
+		];
 	}
 
 	/**
