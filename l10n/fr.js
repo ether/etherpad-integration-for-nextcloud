@@ -130,6 +130,7 @@ OC.L10N.register(
     "Protected pads: session cookie": "Pads protégés : cookie de session",
     "Public pads": "Pads publics",
     "Refresh": "Actualiser",
+    "Refreshing...": "Actualisation…",
     "Replace the existing template of that name?": "Remplacer le modèle existant portant ce nom ?",
     "Request failed.": "La requête a échoué.",
     "Required for protected pads unless Nextcloud and Etherpad run on the same host: the session cookie must be valid for both. Auto-filled from the two hosts when they share a parent domain. Leave empty for a host-only cookie.": "Nécessaire pour les pads protégés, sauf si Nextcloud et Etherpad tournent sur le même hôte : le cookie de session doit être valide pour les deux. Rempli automatiquement à partir des deux hôtes lorsqu'ils partagent un domaine parent. Laisser vide pour un cookie limité à l'hôte.",

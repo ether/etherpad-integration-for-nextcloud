@@ -174,6 +174,57 @@ describe('embed-main', () => {
 		expect(refresh.disabled).toBe(false)
 	})
 
+	/**
+	 * The pad stays on screen while the next answer is on its way — a
+	 * refresh that blanks the view first is a flash of nothing on every
+	 * press.
+	 */
+	it('keeps the last content visible while refreshing, and says so on the button', async () => {
+		fetch.mockResolvedValueOnce(jsonResponse({ url: '', is_readonly_view: true, content_url: '/api/content/42', sync_url: '' }))
+		loadPadContent.mockResolvedValueOnce({ html: '<p>first</p>', isEmpty: false })
+
+		await importEmbed()
+		await flushMicrotasks()
+
+		let release
+		loadPadContent.mockImplementationOnce(() => new Promise((resolve) => { release = () => resolve({ html: '<p>second</p>', isEmpty: false }) }))
+		const refresh = document.querySelector('button.epnc-embed__doc-refresh')
+		refresh.click()
+		await flushMicrotasks()
+
+		expect(document.body.textContent).toContain('first')
+		expect(document.body.textContent).not.toContain('Loading pad content...')
+		expect(refresh.disabled).toBe(true)
+		expect(refresh.textContent).toBe('Refreshing...')
+
+		release()
+		await flushMicrotasks()
+
+		expect(document.body.textContent).toContain('second')
+		expect(refresh.textContent).toBe('Refresh')
+	})
+
+	/**
+	 * A failed refresh must not take the pad away: what is on screen is
+	 * still the last thing the pad said.
+	 */
+	it('keeps the content when a refresh fails and reports it beside the button', async () => {
+		fetch.mockResolvedValueOnce(jsonResponse({ url: '', is_readonly_view: true, content_url: '/api/content/42', sync_url: '' }))
+		loadPadContent.mockResolvedValueOnce({ html: '<p>first</p>', isEmpty: false })
+
+		await importEmbed()
+		await flushMicrotasks()
+
+		loadPadContent.mockRejectedValueOnce(new Error('pad server unreachable'))
+		document.querySelector('button.epnc-embed__doc-refresh').click()
+		await flushMicrotasks()
+
+		expect(document.body.textContent).toContain('first')
+		const toolbarError = document.querySelector('.epnc-embed__doc-toolbar-error')
+		expect(toolbarError.hidden).toBe(false)
+		expect(toolbarError.textContent).toBe('pad server unreachable')
+	})
+
 	it('says so when the pad loaded and is empty', async () => {
 		fetch.mockResolvedValueOnce(jsonResponse({ url: '', is_readonly_view: true, content_url: '/api/content/42', sync_url: '' }))
 		loadPadContent.mockResolvedValueOnce({ html: '', isEmpty: true })

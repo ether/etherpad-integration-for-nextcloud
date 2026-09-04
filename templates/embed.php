@@ -24,6 +24,7 @@
 	data-l10n-content-error="<?php p((string)($_['l10n']['content_error'] ?? 'Could not load the pad content.')); ?>"
 	data-l10n-content-retry="<?php p((string)($_['l10n']['content_retry'] ?? 'Try again')); ?>"
 	data-l10n-content-refresh="<?php p((string)($_['l10n']['content_refresh'] ?? 'Refresh')); ?>"
+	data-l10n-content-refreshing="<?php p((string)($_['l10n']['content_refreshing'] ?? 'Refreshing...')); ?>"
 	data-l10n-external-link="<?php p((string)($_['l10n']['external_link'] ?? 'Open original pad')); ?>"
 	data-l10n-recovery-checking="<?php p((string)($_['l10n']['recovery_checking'] ?? 'Checking for the original pad...')); ?>"
 	data-l10n-recovery-copy-body="<?php p((string)($_['l10n']['recovery_copy_body'] ?? '')); ?>"

@@ -38,6 +38,7 @@ import { loadPadContent } from './lib/pad-content.js'
 	const contentErrorText = String(root.getAttribute('data-l10n-content-error') || 'Could not load the pad content.').trim()
 	const contentRetryText = String(root.getAttribute('data-l10n-content-retry') || 'Try again').trim()
 	const contentRefreshText = String(root.getAttribute('data-l10n-content-refresh') || 'Refresh').trim()
+	const contentRefreshingText = String(root.getAttribute('data-l10n-content-refreshing') || 'Refreshing...').trim()
 	const externalLinkText = String(root.getAttribute('data-l10n-external-link') || 'Open original pad').trim()
 	const recoveryCheckingText = String(root.getAttribute('data-l10n-recovery-checking') || 'Checking for the original pad...').trim()
 	const recoveryCopyBodyText = String(root.getAttribute('data-l10n-recovery-copy-body') || '').trim()
@@ -100,6 +101,14 @@ import { loadPadContent } from './lib/pad-content.js'
 		const toolbar = document.createElement('div')
 		toolbar.className = 'epnc-embed__doc-toolbar'
 
+		// A refresh that fails leaves the text it could not replace on
+		// screen, so the failure is said here rather than in place of the
+		// pad.
+		const toolbarError = document.createElement('span')
+		toolbarError.className = 'epnc-embed__doc-toolbar-error'
+		toolbarError.hidden = true
+		toolbar.appendChild(toolbarError)
+
 		const refresh = document.createElement('button')
 		refresh.type = 'button'
 		refresh.className = 'button epnc-embed__doc-refresh'
@@ -127,7 +136,10 @@ import { loadPadContent } from './lib/pad-content.js'
 		surface.appendChild(inner)
 		loadingNode.appendChild(surface)
 
-		return { body, refresh }
+		// `loaded` says whether anything has ever been shown: a refresh
+		// keeps the last text on screen, so "busy" and "nothing yet" are
+		// two states and only the second may blank the view.
+		return { body, refresh, toolbarError, loaded: false }
 	}
 
 	// Bumped per load, so a slower earlier answer cannot land on top of a
@@ -143,15 +155,23 @@ import { loadPadContent } from './lib/pad-content.js'
 		if (!view || !(view.body instanceof HTMLElement)) {
 			return
 		}
-		const { body, refresh } = view
+		const { body, refresh, toolbarError } = view
 		contentGeneration += 1
 		const generation = contentGeneration
 		const isCurrent = () => generation === contentGeneration
 
-		body.className = 'epnc-embed__doc-text'
-		body.textContent = contentLoadingText
+		// Only before the first answer. After that the pad stays on screen
+		// and the button carries the fact that something is happening.
+		if (!view.loaded) {
+			body.className = 'epnc-embed__doc-text'
+			body.textContent = contentLoadingText
+		}
+		if (toolbarError instanceof HTMLElement) {
+			toolbarError.hidden = true
+		}
 		if (refresh instanceof HTMLButtonElement) {
 			refresh.disabled = true
+			refresh.textContent = contentRefreshingText
 		}
 
 		try {
@@ -161,6 +181,7 @@ import { loadPadContent } from './lib/pad-content.js'
 			}
 			const content = await loadPadContent(contentUrl)
 			if (!isCurrent()) return
+			view.loaded = true
 			if (content.isEmpty) {
 				// Loaded, and there is nothing in it. Left blank this would
 				// read as a failure nobody reported.
@@ -176,12 +197,20 @@ import { loadPadContent } from './lib/pad-content.js'
 		} finally {
 			if (isCurrent() && refresh instanceof HTMLButtonElement) {
 				refresh.disabled = false
+				refresh.textContent = contentRefreshText
 			}
 		}
 	}
 
 	const renderContentError = (view, contentUrl, message) => {
-		const { body } = view
+		const { body, toolbarError } = view
+		// Something is already on screen: keep it, and say next to the
+		// button that this attempt did not replace it.
+		if (view.loaded && toolbarError instanceof HTMLElement) {
+			toolbarError.textContent = message || contentErrorText
+			toolbarError.hidden = false
+			return
+		}
 		body.className = 'epnc-embed__doc-text'
 		body.textContent = ''
 

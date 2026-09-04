@@ -844,6 +844,54 @@ describe('viewer component — render', () => {
 	})
 
 	/**
+	 * A refresh replaces the text when the answer arrives. Blanking the
+	 * view first would make every refresh a flash of nothing.
+	 */
+	it('keeps showing the last content while refreshing', () => {
+		const tree = component.render.call(makeInstance({
+			contentMode: 'readonly',
+			contentState: 'loading',
+			contentLoaded: true,
+			content: { html: '<p>still here</p>', isEmpty: false },
+		}), h)
+
+		expect(findByClass(tree, 'epnc-native-doc__text--html').data.domProps.innerHTML).toBe('<p>still here</p>')
+		expect(allText(tree)).not.toContain('Loading pad content...')
+		expect(allText(tree)).toContain('Refreshing...')
+		expect(findByClass(tree, 'epnc-native-doc__refresh').data.attrs.disabled).toBe(true)
+	})
+
+	/** Before the first answer there is nothing to keep, so this one may blank. */
+	it('shows the loading state only until the first answer', () => {
+		const tree = component.render.call(
+			makeInstance({ contentMode: 'readonly', contentState: 'loading', contentLoaded: false }),
+			h,
+		)
+
+		expect(allText(tree)).toContain('Loading pad content...')
+	})
+
+	/**
+	 * A refresh that fails must not take the pad away — the reader had
+	 * something valid on screen, and it is still the last thing the pad
+	 * said.
+	 */
+	it('keeps the content and reports a failed refresh beside the button', () => {
+		const tree = component.render.call(makeInstance({
+			contentMode: 'readonly',
+			contentState: 'error',
+			contentError: 'pad server unreachable',
+			contentLoaded: true,
+			content: { html: '<p>still here</p>', isEmpty: false },
+		}), h)
+
+		expect(findByClass(tree, 'epnc-native-doc__text--html').data.domProps.innerHTML).toBe('<p>still here</p>')
+		expect(findByClass(tree, 'epnc-native-doc__toolbar-error')).not.toBeNull()
+		expect(allText(tree)).toContain('pad server unreachable')
+		expect(allText(tree)).not.toContain('Try again')
+	})
+
+	/**
 	 * Two presses in flight: the earlier answer must not land on top of the
 	 * later one. The open's own counter cannot express this — refreshing
 	 * does not supersede the open.

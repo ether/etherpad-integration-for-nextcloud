@@ -412,13 +412,21 @@ same way and reach the same two answers.
   other servers – the stored `.pad` snapshot is not a fallback, and a
   failed fetch shows an error with a retry rather than an older text.
   - Only a small tag whitelist survives (`p`, lists, headings, basic inline
-    formatting, block/code tags); attributes and dangerous tags are
-    stripped, on the server and again in the browser.
+    formatting, block/code tags, and `a`); dangerous tags are stripped, on
+    the server and again in the browser.
+  - Links stay clickable, and are the only place an attribute survives:
+    `href` is kept when it names http, https or mailto – an allowlist, not
+    a `javascript:` denylist – and `target="_blank"` with
+    `rel="noopener noreferrer"` is set by both stages. Anything else keeps
+    its text and loses the link. Colours and author highlighting are still
+    dropped.
   - The fetch runs behind its own endpoint, which re-checks the share and
     the `.pad` binding on every call. The binding check is what keeps an
     edited `.pad` file from pointing this app's API key at somebody else's
     pad. A "Refresh" button re-runs that one request – not the whole open –
-    so catching up on changes costs one checked read.
+    so catching up on changes costs one checked read. The text on screen
+    stays while it runs; a refresh that fails is reported beside the button
+    and leaves the last content in place.
   - Both fetch paths stop at 5 MiB. A pad past that is reported as too
     large to preview (`pad_too_large`) and stays editable as usual; the
     limit exists because the view is read per reader on demand, and the

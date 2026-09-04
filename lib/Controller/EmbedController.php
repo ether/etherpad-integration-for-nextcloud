@@ -75,6 +75,7 @@ class EmbedController extends Controller {
 					'content_error' => $this->l10n->t('Could not load the pad content.'),
 					'content_retry' => $this->l10n->t('Try again'),
 					'content_refresh' => $this->l10n->t('Refresh'),
+					'content_refreshing' => $this->l10n->t('Refreshing...'),
 					'external_link' => $this->l10n->t('Open original pad'),
 					'recovery_checking' => $this->l10n->t('Checking for the original pad...'),
 					'recovery_copy_body' => $this->l10n->t('This file looks like a copy of an existing .pad file in your account. Open the original to keep editing the linked pad, or create a new pad to fork the content stored in this file.'),

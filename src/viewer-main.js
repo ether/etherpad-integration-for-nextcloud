@@ -49,6 +49,10 @@ import { parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './li
 				contentState: 'idle',
 				contentError: '',
 				content: { html: '', isEmpty: false },
+				// Whether anything has ever been shown. A refresh keeps the
+				// last text on screen, so "busy" and "nothing yet" are two
+				// states and only the second may blank the view.
+				contentLoaded: false,
 				// Own counter, separate from the open's: refreshing does not
 				// supersede the open, and two quick refreshes must not let
 				// the slower answer land last.
@@ -293,6 +297,7 @@ import { parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './li
 				this.contentState = 'idle'
 				this.contentError = ''
 				this.content = { html: '', isEmpty: false }
+				this.contentLoaded = false
 				this._contentAbort?.abort()
 				// Reset only an existing controller; don't construct one just to
 				// stop/clear it (e.g. the initial immediate watcher with no pad).
@@ -532,6 +537,7 @@ import { parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './li
 					const content = await loadPadContent(this.contentUrl, { signal: abort.signal })
 					if (!isCurrent()) return
 					this.content = content
+					this.contentLoaded = true
 					this.contentState = 'ready'
 				} catch (error) {
 					if (!isCurrent() || (error && error.name === 'AbortError')) return
@@ -541,19 +547,27 @@ import { parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './li
 			},
 			renderContentView(createElement, options) {
 				const extraActions = Array.isArray(options.actions) ? options.actions : []
+				const isBusy = this.contentState === 'loading'
 
 				return createElement('div', { class: 'epnc-native-doc' }, [
 					createElement('div', { class: 'epnc-native-doc__inner' }, [
 						createElement('div', { class: 'epnc-native-doc__toolbar' }, [
+							// A refresh that fails leaves the text it could
+							// not replace on screen, so the failure has to be
+							// said here rather than in place of the pad.
+							(this.contentState === 'error' && this.contentLoaded)
+								? createElement('span', { class: 'epnc-native-doc__toolbar-error' },
+									this.contentError || translate('Could not load the pad content.'))
+								: null,
 							// Always available, not only after a failure: the
 							// view shows the pad as of the last fetch, and
 							// without this the only way to catch up is to
 							// close and reopen the file.
 							createElement('button', {
 								class: 'button epnc-native-doc__refresh',
-								attrs: { type: 'button', disabled: this.contentState === 'loading' },
+								attrs: { type: 'button', disabled: isBusy },
 								on: { click: () => { void this.loadContent() } },
-							}, translate('Refresh')),
+							}, isBusy ? translate('Refreshing...') : translate('Refresh')),
 							...extraActions,
 						]),
 						this.renderContentBody(createElement),
@@ -561,6 +575,13 @@ import { parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './li
 				])
 			},
 			renderContentBody(createElement) {
+				// Once something has been shown, it stays shown. A refresh
+				// replaces the text when the answer arrives; blanking the
+				// view first would make every refresh a flash of nothing,
+				// and a failed one would take the pad away as well.
+				if (this.contentLoaded && this.contentState !== 'ready') {
+					return this.renderContentText(createElement)
+				}
 				if (this.contentState === 'error') {
 					return createElement('div', { class: 'epnc-native-doc__text epnc-native-doc__status' }, [
 						createElement('div', {},
@@ -575,6 +596,9 @@ import { parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './li
 				if (this.contentState !== 'ready') {
 					return createElement('div', { class: 'epnc-native-doc__text epnc-native-doc__status' }, translate('Loading pad content...'))
 				}
+				return this.renderContentText(createElement)
+			},
+			renderContentText(createElement) {
 				// An empty pad loaded fine. Saying so is the whole point:
 				// silence here reads as a failure that was never reported.
 				if (this.content.isEmpty) {

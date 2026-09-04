@@ -129,6 +129,7 @@
         "Protected pads: session cookie": "Geschützte Pads: Sitzungscookie",
         "Public pads": "Öffentliche Pads",
         "Refresh": "Aktualisieren",
+        "Refreshing...": "Wird aktualisiert …",
         "Replace the existing template of that name?": "Die vorhandene Vorlage dieses Namens ersetzen?",
         "Request failed.": "Anfrage fehlgeschlagen.",
         "Required for protected pads unless Nextcloud and Etherpad run on the same host: the session cookie must be valid for both. Auto-filled from the two hosts when they share a parent domain. Leave empty for a host-only cookie.": "Für geschützte Pads erforderlich, sofern Nextcloud und Etherpad nicht auf demselben Host laufen: Das Sitzungscookie muss für beide gültig sein. Wird automatisch aus den beiden Hosts ausgefüllt, wenn sie eine gemeinsame übergeordnete Domain haben. Leer lassen für ein Cookie nur für diesen Host.",

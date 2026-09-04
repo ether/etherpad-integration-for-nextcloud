@@ -97,6 +97,17 @@
 	margin: 0 0 10px;
 }
 
+.epnc-native-doc__toolbar-error {
+	margin-right: auto;
+	color: var(--color-error, #b32d2e);
+	font-size: 13px;
+}
+
+.epnc-native-doc__text--html a {
+	color: var(--color-primary-element, #0082c9);
+	text-decoration: underline;
+}
+
 /* A document, not a card: no frame and no tinted panel around the text. */
 .epnc-native-doc__text {
 	box-sizing: border-box;
