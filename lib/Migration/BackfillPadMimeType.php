@@ -8,6 +8,7 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Migration;
 
+use OCP\DB\QueryBuilder\IQueryBuilder;
 use OCP\Migration\IOutput;
 use OCP\Migration\IRepairStep;
 use OCP\IDBConnection;
@@ -17,7 +18,6 @@ use OCP\IDBConnection;
  */
 class BackfillPadMimeType implements IRepairStep {
 	private const MIME_PAD = 'application/x-etherpad-nextcloud';
-	private const MIME_PART = 'application';
 
 	public function __construct(
 		private IDBConnection $connection,
@@ -25,42 +25,69 @@ class BackfillPadMimeType implements IRepairStep {
 	}
 
 	public function getName(): string {
-		return 'Backfill MIME type for existing .pad files';
+		return 'Backfill MIME part for existing .pad files';
 	}
 
 	public function run(IOutput $output): void {
 		$padMimeId = $this->getMimeId(self::MIME_PAD);
 		if ($padMimeId === null) {
-			$output->info('Skipping MIME backfill: application/x-etherpad-nextcloud is not registered.');
+			$output->info('Skipping MIME backfill: ' . self::MIME_PAD . ' is not registered.');
 			return;
 		}
 
-		$mimePartId = $this->getMimeId(self::MIME_PART);
+		$mimePart = explode('/', self::MIME_PAD, 2)[0];
+		$mimePartId = $this->getMimeId($mimePart);
 		if ($mimePartId === null) {
-			$output->info('Skipping MIME backfill: application mimepart is missing.');
+			$output->info('Skipping MIME backfill: the ' . $mimePart . ' mimepart is missing.');
 			return;
 		}
 
 		$queryBuilder = $this->connection->getQueryBuilder();
 		$queryBuilder
 			->update('filecache')
-			->set('mimetype', $queryBuilder->createNamedParameter($padMimeId))
-			->set('mimepart', $queryBuilder->createNamedParameter($mimePartId))
+			->set('mimepart', $queryBuilder->createNamedParameter($mimePartId, IQueryBuilder::PARAM_INT))
 			->where(
-				$queryBuilder->expr()->like(
-					'name',
-					$queryBuilder->createNamedParameter('%.pad'),
+				$queryBuilder->expr()->eq(
+					'mimetype',
+					$queryBuilder->createNamedParameter($padMimeId, IQueryBuilder::PARAM_INT),
 				),
 			)
 			->andWhere(
 				$queryBuilder->expr()->neq(
-					'mimetype',
-					$queryBuilder->createNamedParameter($padMimeId),
+					'mimepart',
+					$queryBuilder->createNamedParameter($mimePartId, IQueryBuilder::PARAM_INT),
 				),
 			);
 
 		$updated = $queryBuilder->executeStatement();
-		$output->info(sprintf('Backfilled MIME type for %d .pad files.', $updated));
+		if ($updated > 0) {
+			$output->info(sprintf('Backfilled MIME part for %d .pad files.', $updated));
+			return;
+		}
+
+		$output->info($this->hasPadRows($padMimeId)
+			? 'MIME part was already correct on every .pad file.'
+			: 'No file carries the pad MIME type; nothing to repair here.');
+	}
+
+	private function hasPadRows(int $padMimeId): bool {
+		$queryBuilder = $this->connection->getQueryBuilder();
+		$queryBuilder
+			->select('fileid')
+			->from('filecache')
+			->where(
+				$queryBuilder->expr()->eq(
+					'mimetype',
+					$queryBuilder->createNamedParameter($padMimeId, IQueryBuilder::PARAM_INT),
+				),
+			)
+			->setMaxResults(1);
+
+		$result = $queryBuilder->executeQuery();
+		$found = $result->fetchOne();
+		$result->closeCursor();
+
+		return $found !== false;
 	}
 
 	private function getMimeId(string $mime): ?int {

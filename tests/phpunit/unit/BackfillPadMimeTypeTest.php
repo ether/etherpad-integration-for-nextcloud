@@ -11,7 +11,6 @@ use OCP\Migration\IOutput;
 use PHPUnit\Framework\TestCase;
 
 class BackfillPadMimeTypeTest extends TestCase {
-	private const MIME = 'application/x-etherpad-nextcloud';
 
 	public function testSkipsWhenPadMimeTypeIsNotRegistered(): void {
 		// getMimeId('application/x-etherpad-nextcloud') -> not found.
@@ -37,29 +36,65 @@ class BackfillPadMimeTypeTest extends TestCase {
 		$this->assertFalse($qb->executeStatementCalled);
 	}
 
-	public function testUpdatesPadRowsAndOnlyTouchesRowsNotAlreadyTheTarget(): void {
+	public function testRepairsTheMimePartOnRowsThatAlreadyCarryThePadType(): void {
 		// pad mime id = 7, application mimepart id = 1, 3 rows updated.
 		$qb = new BackfillTestQueryBuilder([7, 1], 3);
 		$output = $this->createMock(IOutput::class);
 		$output->expects($this->once())->method('info')
-			->with($this->stringContains('Backfilled MIME type for 3 .pad files.'));
+			->with($this->stringContains('Backfilled MIME part for 3 .pad files.'));
 
 		(new BackfillPadMimeType($this->connection($qb)))->run($output);
 
 		$this->assertTrue($qb->executeStatementCalled);
 		$this->assertSame('filecache', $qb->updateTable);
-		// mimetype + mimepart set to the resolved ids.
-		$this->assertSame(7, $qb->params[$qb->sets['mimetype']]);
+
+		$this->assertSame(['mimepart'], array_keys($qb->sets));
 		$this->assertSame(1, $qb->params[$qb->sets['mimepart']]);
-		// Targets only *.pad rows …
-		$like = $qb->findCondition('like', 'name');
-		$this->assertNotNull($like);
-		$this->assertSame('%.pad', $qb->params[$like[2]]);
-		// … and only rows whose mimetype is NOT already the pad mime: this is
-		// the idempotency guard (a second run updates nothing).
-		$neq = $qb->findCondition('neq', 'mimetype');
+
+		$eq = $qb->findCondition('eq', 'mimetype');
+		$this->assertNotNull($eq);
+		$this->assertSame(7, $qb->params[$eq[2]]);
+		$this->assertNull($qb->findCondition('like', 'name'), 'the name must not be matched here');
+
+		$neq = $qb->findCondition('neq', 'mimepart');
 		$this->assertNotNull($neq);
-		$this->assertSame(7, $qb->params[$neq[2]]);
+		$this->assertSame(1, $qb->params[$neq[2]]);
+
+		$this->assertCount(2, $qb->conditions, 'the update must carry these two conditions and no other');
+
+		foreach ([$qb->sets['mimepart'], $eq[2], $neq[2]] as $parameter) {
+			$this->assertSame(
+				IQueryBuilder::PARAM_INT,
+				$qb->paramTypes[$parameter],
+				'a mime id is a bigint column; binding it as a string casts the column and drops its index',
+			);
+		}
+	}
+
+	/**
+	 * Zero updated rows has two very different causes, and the step is the
+	 * only place that can tell them apart: everything is already correct, or
+	 * nothing carries the type at all - which is what a reordered repair list
+	 * would look like, since the mime-type step has to run first.
+	 */
+	public function testSaysSoWhenEveryPadFileWasAlreadyCorrect(): void {
+		// pad mime 7, application mimepart 1, then one row carrying the type.
+		$qb = new BackfillTestQueryBuilder([7, 1, 4242], 0);
+		$output = $this->createMock(IOutput::class);
+		$output->expects($this->once())->method('info')
+			->with($this->stringContains('already correct'));
+
+		(new BackfillPadMimeType($this->connection($qb)))->run($output);
+	}
+
+	public function testSaysSoWhenNoFileCarriesThePadTypeAtAll(): void {
+		// pad mime 7, application mimepart 1, then no row carrying the type.
+		$qb = new BackfillTestQueryBuilder([7, 1, false], 0);
+		$output = $this->createMock(IOutput::class);
+		$output->expects($this->once())->method('info')
+			->with($this->stringContains('No file carries the pad MIME type'));
+
+		(new BackfillPadMimeType($this->connection($qb)))->run($output);
 	}
 
 	private function connection(BackfillTestQueryBuilder $qb): IDBConnection {
@@ -77,6 +112,8 @@ class BackfillPadMimeTypeTest extends TestCase {
 class BackfillTestQueryBuilder implements IQueryBuilder {
 	/** @var array<string,mixed> */
 	public array $params = [];
+	/** @var array<string,int|null> */
+	public array $paramTypes = [];
 	/** @var array<string,string> field => parameter name */
 	public array $sets = [];
 	/** @var list<array<int,string>> */
@@ -101,6 +138,10 @@ class BackfillTestQueryBuilder implements IQueryBuilder {
 	}
 
 	public function update(string $table): self {
+		// The real getQueryBuilder() hands out a fresh builder per statement;
+		// this double is reused, so a statement starts by forgetting the last.
+		$this->conditions = [];
+		$this->sets = [];
 		$this->updateTable = $table;
 		return $this;
 	}
@@ -127,6 +168,7 @@ class BackfillTestQueryBuilder implements IQueryBuilder {
 	public function createNamedParameter(mixed $value, ?int $type = null): string {
 		$name = 'param' . ++$this->counter;
 		$this->params[$name] = $value;
+		$this->paramTypes[$name] = $type;
 		return $name;
 	}
 
