@@ -366,6 +366,9 @@ class PadFileService {
 	}
 
 	private function stringScalar(string $value): string {
+		if (preg_match('/[\x00-\x1F\x7F]/', $value) === 1) {
+			throw new PadFileFormatException('Frontmatter values must not contain control characters.');
+		}
 		$escaped = str_replace(['\\', '"'], ['\\\\', '\\"'], $value);
 		return '"' . $escaped . '"';
 	}
