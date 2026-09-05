@@ -54,6 +54,15 @@ class ExternalPadExportFetcherTest extends TestCase {
 		$fetcher->normalizeAndValidateExternalPublicPadUrl('https://1.1.1.1:9443/p/public-pad');
 	}
 
+	public function testNormalizeAndValidateExternalPublicPadUrlRejectsAPadIdWithANewline(): void {
+		$fetcher = new ExternalPadExportFetcher($this->buildExternalEnabledConfig());
+
+		$this->expectException(EtherpadClientException::class);
+		$fetcher->normalizeAndValidateExternalPublicPadUrl(
+			'https://1.1.1.1/p/a%0Apad_id:%20g.victim$secret',
+		);
+	}
+
 	public function testNormalizeAndValidateExternalPublicPadUrlRejectsProtectedPadIds(): void {
 		$fetcher = new ExternalPadExportFetcher($this->buildExternalEnabledConfig());
 

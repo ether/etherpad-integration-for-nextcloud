@@ -223,6 +223,20 @@ class PadFileServiceTest extends TestCase {
 		$this->assertSame('', $service->getHtmlSnapshotForRestore($textOnly));
 	}
 
+	public function testFrontmatterValuesWithControlCharactersAreRefused(): void {
+		$service = new PadFileService();
+
+		$this->expectException(PadFileFormatException::class);
+		$service->buildInitialDocument(
+			321,
+			'ext.RemotePad',
+			BindingService::ACCESS_PUBLIC,
+			'body',
+			'https://pad.remote.test/p/x',
+			['remote_pad_id' => "a\npad_id: g.victim\$secret\naccess_mode: protected"],
+		);
+	}
+
 	public function testGetSnapshotPartsFromBodyHandlesBodyWithoutMarkers(): void {
 		$service = new PadFileService();
 		$parts = $service->getSnapshotPartsFromBody('raw text without sections');

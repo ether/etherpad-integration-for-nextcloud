@@ -417,7 +417,7 @@ class ExternalPadExportFetcher {
 
 		$basePath = rtrim($matches[1], '/');
 		$padId = trim($matches[2]);
-		if ($padId === '') {
+		if ($padId === '' || preg_match('/[\x00-\x1F\x7F]/', $padId) === 1) {
 			throw new EtherpadClientException('Invalid public pad URL.');
 		}
 
