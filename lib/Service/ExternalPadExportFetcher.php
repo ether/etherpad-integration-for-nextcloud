@@ -407,7 +407,8 @@ class ExternalPadExportFetcher {
 		// pad-id `team pad`, then re-encoded to `/p/team%20pad` at fetch
 		// time, hitting a different / non-existent remote pad.
 		$decodedPath = rawurldecode($path);
-		if ($scheme !== 'https' || $host === '' || $decodedPath === '' || $port <= 0 || $port > 65535) {
+		if ($scheme !== 'https' || $host === '' || $decodedPath === '' || $port <= 0 || $port > 65535
+			|| preg_match('/[\x00-\x1F\x7F]/', $decodedPath) === 1) {
 			throw new EtherpadClientException('Invalid public pad URL.');
 		}
 
@@ -417,7 +418,7 @@ class ExternalPadExportFetcher {
 
 		$basePath = rtrim($matches[1], '/');
 		$padId = trim($matches[2]);
-		if ($padId === '' || preg_match('/[\x00-\x1F\x7F]/', $padId) === 1) {
+		if ($padId === '') {
 			throw new EtherpadClientException('Invalid public pad URL.');
 		}
 
