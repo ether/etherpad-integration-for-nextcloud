@@ -36,18 +36,17 @@ class ExternalPadSeederTest extends TestCase {
 				999,
 				'ext.RemotePad',
 				BindingService::ACCESS_PUBLIC,
-				'',
+				'snapshot-body',
 				'https://pad.remote.test/p/RemotePad',
 				[
 					'pad_origin' => 'https://pad.remote.test',
 					'remote_pad_id' => 'RemotePad',
 				],
+				null,
+				0,
 			)
-			->willReturn('initial-doc');
-		$padFileService->expects($this->once())
-			->method('withExportSnapshot')
-			->with('initial-doc', 'snapshot-body', '', 0, false)
 			->willReturn('seeded-frontmatter');
+		$padFileService->expects($this->never())->method('withExportSnapshot');
 
 		$result = (new ExternalPadSeeder($padFileService, $fetcher))
 			->seed($fileNode, 999, 'https://pad.remote.test/p/RemotePad');
@@ -73,7 +72,6 @@ class ExternalPadSeederTest extends TestCase {
 
 		$padFileService = $this->createMock(PadFileService::class);
 		$padFileService->method('buildInitialDocument')->willReturn('doc');
-		$padFileService->method('withExportSnapshot')->willReturn('doc');
 
 		$result = (new ExternalPadSeeder($padFileService, $fetcher))
 			->seed($this->createMock(File::class), 1, 'https://pad.remote.test/p/RemotePad');

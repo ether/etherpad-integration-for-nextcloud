@@ -207,8 +207,7 @@ class PadSessionControllerTest extends TestCase {
 			));
 		// The open no longer reads the stored copy at all — the preview
 		// loads the pad from its own server over `content_url`.
-		$padFileService->expects($this->never())->method('getTextSnapshotForRestore');
-		$padFileService->expects($this->never())->method('getHtmlSnapshotForRestore');
+		$padFileService->expects($this->never())->method('getSnapshotPartsFromBody');
 
 		$bindingService = $this->createMock(BindingService::class);
 		$bindingService->expects($this->never())->method('assertConsistentMapping');

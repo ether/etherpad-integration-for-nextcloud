@@ -64,13 +64,23 @@ class PadFileService {
 		return "---\n" . implode("\n", $lines) . "\n---\n" . $body;
 	}
 
+	/**
+	 * @param array<string,mixed> $extraFrontmatter
+	 * @param ?string $snapshotHtml an HTML half for the snapshot body, or null
+	 *                              for a text-only one
+	 * @param ?int $snapshotRev the revision the snapshot was taken at; null
+	 *                          leaves the document unsnapshotted, which is
+	 *                          what a pad that starts empty wants
+	 */
 	public function buildInitialDocument(
 		int $fileId,
 		string $padId,
 		string $accessMode,
 		string $snapshot = '',
 		?string $padUrl = null,
-		array $extraFrontmatter = []
+		array $extraFrontmatter = [],
+		?string $snapshotHtml = null,
+		?int $snapshotRev = null,
 	): string {
 		$now = gmdate('c');
 		$frontmatter = [
@@ -92,7 +102,18 @@ class PadFileService {
 				$frontmatter[$key] = (string)$value;
 			}
 		}
-		return $this->serialize($frontmatter, $snapshot);
+		if ($snapshotRev === null) {
+			return $this->serialize($frontmatter, $snapshot);
+		}
+
+		// A caller that arrives with content already in hand gets the
+		// sectioned body here rather than building a document and parsing it
+		// straight back to put the snapshot in.
+		$frontmatter['snapshot_rev'] = max(0, $snapshotRev);
+		return $this->serialize(
+			$frontmatter,
+			$this->buildSnapshotBody($snapshot, $snapshotHtml ?? '', $snapshotHtml !== null),
+		);
 	}
 
 	/** @return array{url: string, pad_id: string}|null */
@@ -182,16 +203,15 @@ class PadFileService {
 	}
 
 	public function withStateAndSnapshot(
-		string $content,
+		ParsedPadFile $pad,
 		string $state,
 		string $snapshot,
 		?string $padId = null,
 		?int $deletedAtTs = null,
 		?string $padUrl = null
 	): string {
-		$parsed = $this->parsePadFile($content);
-		$frontmatter = $parsed['frontmatter'];
-		$bodyParts = $this->splitSnapshotBody((string)$parsed['body']);
+		$frontmatter = $pad->frontmatter;
+		$bodyParts = $this->splitSnapshotBody($pad->body);
 		$frontmatter['state'] = $state;
 		$frontmatter['updated_at'] = gmdate('c');
 		$frontmatter['deleted_at'] = $deletedAtTs === null ? null : gmdate('c', $deletedAtTs);
@@ -205,18 +225,12 @@ class PadFileService {
 		return $this->serialize($frontmatter, $this->buildSnapshotBody($snapshot, $bodyParts['html']));
 	}
 
-	public function withExportSnapshot(string $content, string $text, string $html, int $exportedRev, bool $includeHtmlSection = true): string {
-		$parsed = $this->parsePadFile($content);
-		$frontmatter = $parsed['frontmatter'];
+	public function withExportSnapshot(ParsedPadFile $pad, string $text, string $html, int $exportedRev, bool $includeHtmlSection = true): string {
+		$frontmatter = $pad->frontmatter;
 		$frontmatter['updated_at'] = gmdate('c');
 		$frontmatter['snapshot_rev'] = max(0, $exportedRev);
 
 		return $this->serialize($frontmatter, $this->buildSnapshotBody($text, $html, $includeHtmlSection));
-	}
-
-	public function getSnapshotRevision(string $content): int {
-		$parsed = $this->parsePadFile($content);
-		return $this->getSnapshotRevisionFromFrontmatter($parsed['frontmatter']);
 	}
 
 	/** @param array<string,mixed> $frontmatter */
@@ -226,16 +240,6 @@ class PadFileService {
 			return -1;
 		}
 		return (int)$rev;
-	}
-
-	public function getTextSnapshotForRestore(string $content): string {
-		$parsed = $this->parsePadFile($content);
-		return $this->getSnapshotPartsFromBody((string)$parsed['body'])['text'];
-	}
-
-	public function getHtmlSnapshotForRestore(string $content): string {
-		$parsed = $this->parsePadFile($content);
-		return $this->getSnapshotPartsFromBody((string)$parsed['body'])['html'];
 	}
 
 	/** @return array{text:string,html:string} */

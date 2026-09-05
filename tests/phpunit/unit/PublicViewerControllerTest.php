@@ -68,8 +68,7 @@ class PublicViewerControllerTest extends TestCase {
 			));
 		// The stored copy plays no part in opening any more: the viewer
 		// loads the pad from the pad server over `content_url`.
-		$padFileService->expects($this->never())->method('getTextSnapshotForRestore');
-		$padFileService->expects($this->never())->method('getHtmlSnapshotForRestore');
+		$padFileService->expects($this->never())->method('getSnapshotPartsFromBody');
 
 		$bindingService = $this->createMock(BindingService::class);
 		$bindingService->expects($this->once())
@@ -135,8 +134,7 @@ class PublicViewerControllerTest extends TestCase {
 				padUrl: 'https://pad.portal.example/p/Test',
 				isExternal: true,
 			));
-		$padFileService->expects($this->never())->method('getTextSnapshotForRestore');
-		$padFileService->expects($this->never())->method('getHtmlSnapshotForRestore');
+		$padFileService->expects($this->never())->method('getSnapshotPartsFromBody');
 
 		$bindingService = $this->createMock(BindingService::class);
 		$bindingService->expects($this->never())->method('assertConsistentMapping');

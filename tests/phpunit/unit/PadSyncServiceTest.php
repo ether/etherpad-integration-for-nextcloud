@@ -67,7 +67,7 @@ class PadSyncServiceTest extends TestCase {
 			padUrl: '',
 			isExternal: false,
 		));
-		$padFileService->method('getSnapshotRevision')->with('frontmatter')->willReturn(3);
+		$padFileService->method('getSnapshotRevisionFromFrontmatter')->willReturn(3);
 
 		$bindingService = $this->createMock(BindingService::class);
 		$bindingService->expects($this->once())
@@ -111,16 +111,14 @@ class PadSyncServiceTest extends TestCase {
 			isExternal: true,
 		));
 		$padFileService->expects($this->once())
-			->method('getTextSnapshotForRestore')
-			->with('frontmatter')
-			->willReturn('previous text');
+			->method('getSnapshotPartsFromBody')
+			->willReturn(['text' => 'previous text', 'html' => '']);
 		$padFileService->expects($this->once())
-			->method('getSnapshotRevision')
-			->with('frontmatter')
+			->method('getSnapshotRevisionFromFrontmatter')
 			->willReturn(4);
 		$padFileService->expects($this->once())
 			->method('withExportSnapshot')
-			->with('frontmatter', "remote text\nfrom export", '', 5, false)
+			->with($this->isInstanceOf(ParsedPadFile::class), "remote text\nfrom export", '', 5, false)
 			->willReturn('updated-frontmatter');
 
 		$bindingService = $this->createMock(BindingService::class);

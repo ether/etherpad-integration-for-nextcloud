@@ -188,12 +188,12 @@ class PadFileServiceTest extends TestCase {
 		$service = new PadFileService();
 		$base = $service->buildInitialDocument(1, 'demo-pad', BindingService::ACCESS_PUBLIC);
 
-		$updated = $service->withExportSnapshot($base, "line-a\nline-b", '<p>line-a</p>', 7);
+		$updated = $service->withExportSnapshot($service->readPad($base), "line-a\nline-b", '<p>line-a</p>', 7);
 
 		$parsed = $service->parsePadFile($updated);
 		$this->assertSame(7, $parsed['frontmatter']['snapshot_rev']);
-		$this->assertSame("line-a\nline-b", $service->getTextSnapshotForRestore($updated));
-		$this->assertSame('<p>line-a</p>', $service->getHtmlSnapshotForRestore($updated));
+		$this->assertSame("line-a\nline-b", $service->getSnapshotPartsFromBody($service->readPad($updated)->body)['text']);
+		$this->assertSame('<p>line-a</p>', $service->getSnapshotPartsFromBody($service->readPad($updated)->body)['html']);
 	}
 
 	public function testWithExportSnapshotEmptyValuesOverwritePreviousSnapshot(): void {
@@ -202,25 +202,25 @@ class PadFileServiceTest extends TestCase {
 		// become empty (otherwise stale content would resurface on restore).
 		$service = new PadFileService();
 		$base = $service->buildInitialDocument(1, 'demo-pad', BindingService::ACCESS_PUBLIC);
-		$withContent = $service->withExportSnapshot($base, 'previous text', '<p>previous html</p>', 5);
+		$withContent = $service->withExportSnapshot($service->readPad($base), 'previous text', '<p>previous html</p>', 5);
 
-		$cleared = $service->withExportSnapshot($withContent, '', '', 6);
+		$cleared = $service->withExportSnapshot($service->readPad($withContent), '', '', 6);
 
-		$this->assertSame('', $service->getTextSnapshotForRestore($cleared));
-		$this->assertSame('', $service->getHtmlSnapshotForRestore($cleared));
-		$this->assertSame(6, $service->getSnapshotRevision($cleared));
+		$this->assertSame('', $service->getSnapshotPartsFromBody($service->readPad($cleared)->body)['text']);
+		$this->assertSame('', $service->getSnapshotPartsFromBody($service->readPad($cleared)->body)['html']);
+		$this->assertSame(6, $service->readPad($cleared)->frontmatter['snapshot_rev']);
 	}
 
 	public function testWithExportSnapshotOmitsHtmlSectionWhenRequested(): void {
 		$service = new PadFileService();
 		$base = $service->buildInitialDocument(1, 'demo-pad', BindingService::ACCESS_PUBLIC);
 
-		$textOnly = $service->withExportSnapshot($base, 'just text', '<p>ignored</p>', 1, false);
+		$textOnly = $service->withExportSnapshot($service->readPad($base), 'just text', '<p>ignored</p>', 1, false);
 
 		$this->assertStringNotContainsString('[HTML-BEGIN]', $textOnly);
 		$this->assertStringNotContainsString('[HTML-END]', $textOnly);
-		$this->assertSame('just text', $service->getTextSnapshotForRestore($textOnly));
-		$this->assertSame('', $service->getHtmlSnapshotForRestore($textOnly));
+		$this->assertSame('just text', $service->getSnapshotPartsFromBody($service->readPad($textOnly)->body)['text']);
+		$this->assertSame('', $service->getSnapshotPartsFromBody($service->readPad($textOnly)->body)['html']);
 	}
 
 	public function testGetSnapshotPartsFromBodyHandlesBodyWithoutMarkers(): void {
@@ -237,18 +237,18 @@ class PadFileServiceTest extends TestCase {
 		// text is available.
 		$service = new PadFileService();
 		$base = $service->buildInitialDocument(1, 'demo-pad', BindingService::ACCESS_PUBLIC);
-		$withExport = $service->withExportSnapshot($base, 'original text', '<p>kept html</p>', 4);
+		$withExport = $service->withExportSnapshot($service->readPad($base), 'original text', '<p>kept html</p>', 4);
 
 		$updated = $service->withStateAndSnapshot(
-			$withExport,
+			$service->readPad($withExport),
 			BindingService::STATE_ACTIVE,
 			'replaced text',
 			null,
 			1700000000
 		);
 
-		$this->assertSame('replaced text', $service->getTextSnapshotForRestore($updated));
-		$this->assertSame('<p>kept html</p>', $service->getHtmlSnapshotForRestore($updated));
+		$this->assertSame('replaced text', $service->getSnapshotPartsFromBody($service->readPad($updated)->body)['text']);
+		$this->assertSame('<p>kept html</p>', $service->getSnapshotPartsFromBody($service->readPad($updated)->body)['html']);
 		$parsed = $service->parsePadFile($updated);
 		$this->assertSame('2023-11-14T22:13:20+00:00', (string)$parsed['frontmatter']['deleted_at']);
 	}

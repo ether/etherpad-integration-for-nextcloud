@@ -373,13 +373,8 @@ class PadCreationService {
 				$accessMode,
 				$resolvedText,
 				$padUrl,
-			);
-			$content = $this->padFileService->withExportSnapshot(
-				$content,
-				$resolvedText,
-				$resolvedHtml,
-				0,
-				true,
+				snapshotHtml: $resolvedHtml,
+				snapshotRev: 0,
 			);
 			$this->writeCreatedFile($claim, $content);
 			$this->bindingService->createBinding($fileId, $padId, $accessMode);

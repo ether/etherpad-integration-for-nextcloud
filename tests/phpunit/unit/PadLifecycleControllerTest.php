@@ -75,8 +75,8 @@ class PadLifecycleControllerTest extends TestCase {
 			padUrl: '',
 			isExternal: false,
 		));
-		$padFileService->method('getSnapshotRevision')->willReturn(4);
-		$padFileService->method('withExportSnapshot')->with("frontmatter", 'hello', '<p>hello</p>', 5)->willReturn('updated-content');
+		$padFileService->method('getSnapshotRevisionFromFrontmatter')->willReturn(4);
+		$padFileService->method('withExportSnapshot')->with($this->isInstanceOf(ParsedPadFile::class), 'hello', '<p>hello</p>', 5)->willReturn('updated-content');
 
 		$bindingService = $this->createMock(BindingService::class);
 		$bindingService->expects($this->once())
@@ -129,8 +129,8 @@ class PadLifecycleControllerTest extends TestCase {
 			padUrl: '',
 			isExternal: false,
 		));
-		$padFileService->method('getSnapshotRevision')->willReturn(1);
-		$padFileService->method('withExportSnapshot')->with("frontmatter", 'hello', '<p>hello</p>', 5)->willReturn('updated-content');
+		$padFileService->method('getSnapshotRevisionFromFrontmatter')->willReturn(1);
+		$padFileService->method('withExportSnapshot')->with($this->isInstanceOf(ParsedPadFile::class), 'hello', '<p>hello</p>', 5)->willReturn('updated-content');
 
 		$bindingService = $this->createMock(BindingService::class);
 		$bindingService->method('assertConsistentMapping');
@@ -177,9 +177,8 @@ class PadLifecycleControllerTest extends TestCase {
 			padUrl: '',
 			isExternal: false,
 		));
-		$padFileService->method('getSnapshotRevision')->willReturn(5);
-		$padFileService->method('getTextSnapshotForRestore')->with('frontmatter')->willReturn('hello');
-		$padFileService->method('getHtmlSnapshotForRestore')->with('frontmatter')->willReturn('<p>hello</p>');
+		$padFileService->method('getSnapshotRevisionFromFrontmatter')->willReturn(5);
+		$padFileService->method('getSnapshotPartsFromBody')->willReturn(['text' => 'hello', 'html' => '<p>hello</p>']);
 
 		$bindingService = $this->createMock(BindingService::class);
 		$bindingService->method('assertConsistentMapping');
@@ -234,7 +233,7 @@ class PadLifecycleControllerTest extends TestCase {
 			padUrl: 'https://pad.example.test/p/public-pad',
 			isExternal: true,
 		));
-		$padFileService->method('getTextSnapshotForRestore')->willReturn('same text');
+		$padFileService->method('getSnapshotPartsFromBody')->willReturn(['text' => 'same text', 'html' => '']);
 
 		$bindingService = $this->createMock(BindingService::class);
 		$bindingService->method('assertConsistentMapping');

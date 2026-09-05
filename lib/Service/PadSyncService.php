@@ -53,8 +53,7 @@ class PadSyncService {
 		$lockRetries = 0;
 
 		try {
-			$currentContent = (string)$node->getContent();
-			$pad = $this->padFileService->readPad((string)$currentContent);
+			$pad = $this->padFileService->readPad((string)$node->getContent());
 			$padId = $pad->padId;
 			$accessMode = $pad->accessMode;
 			$padUrl = $pad->padUrl;
@@ -64,10 +63,10 @@ class PadSyncService {
 			}
 
 			if ($isExternal) {
-				return $this->syncExternalPad($node, $fileId, $padId, $padUrl, (string)$currentContent, $force);
+				return $this->syncExternalPad($node, $fileId, $padId, $padUrl, $pad, $force);
 			}
 
-			return $this->syncInternalPad($node, $fileId, $padId, (string)$currentContent, $force);
+			return $this->syncInternalPad($node, $fileId, $padId, $pad, $force);
 		} catch (PadFileLockRetryExhaustedException $e) {
 			$lockRetries = $e->getRetryAttempts();
 			return $this->lockedSyncResponse($e->getLockedException(), $fileId, $absolutePath, $padId, $accessMode, $isExternal, $force, $lockRetries);
@@ -94,8 +93,7 @@ class PadSyncService {
 		$node = $this->userNodeResolver->resolveUserFileNodeById($uid, $fileId);
 
 		try {
-			$content = (string)$node->getContent();
-			$pad = $this->padFileService->readPad((string)$content);
+			$pad = $this->padFileService->readPad((string)$node->getContent());
 			$padId = $pad->padId;
 			$accessMode = $pad->accessMode;
 			$isExternal = $pad->isExternal;
@@ -111,7 +109,7 @@ class PadSyncService {
 			}
 
 			$currentRev = $this->etherpadClient->getRevisionsCount($padId);
-			$snapshotRev = $this->padFileService->getSnapshotRevision((string)$content);
+			$snapshotRev = $this->padFileService->getSnapshotRevisionFromFrontmatter($pad->frontmatter);
 			$inSync = $snapshotRev >= $currentRev;
 
 			return new PadSyncStatus(
@@ -137,7 +135,7 @@ class PadSyncService {
 		int $fileId,
 		string $padId,
 		string $padUrl,
-		string $currentContent,
+		ParsedPadFile $pad,
 		bool $force,
 	): PadSyncResult {
 		if ($padUrl === '') {
@@ -148,7 +146,7 @@ class PadSyncService {
 		$external = $this->externalPadExportFetcher->normalizeAndFetchExternalPublicPadText($padUrl);
 		$text = $external['text'];
 
-		$existingText = $this->padFileService->getTextSnapshotForRestore($currentContent);
+		$existingText = $this->padFileService->getSnapshotPartsFromBody($pad->body)['text'];
 		if ($existingText === $text) {
 			return new PadSyncResult(
 				status: self::STATUS_UNCHANGED,
@@ -159,9 +157,9 @@ class PadSyncService {
 			);
 		}
 
-		$previousRev = $this->padFileService->getSnapshotRevision($currentContent);
+		$previousRev = $this->padFileService->getSnapshotRevisionFromFrontmatter($pad->frontmatter);
 		$nextRev = max(0, $previousRev + 1);
-		$updatedContent = $this->padFileService->withExportSnapshot($currentContent, $text, '', $nextRev, false);
+		$updatedContent = $this->padFileService->withExportSnapshot($pad, $text, '', $nextRev, false);
 		$lockRetries = $this->lockRetryService->putContentWithSyncLockRetry($node, $updatedContent);
 
 		return new PadSyncResult(
@@ -179,11 +177,11 @@ class PadSyncService {
 		File $node,
 		int $fileId,
 		string $padId,
-		string $currentContent,
+		ParsedPadFile $pad,
 		bool $force,
 	): PadSyncResult {
 		$currentRev = $this->etherpadClient->getRevisionsCount($padId);
-		$snapshotRev = $this->padFileService->getSnapshotRevision($currentContent);
+		$snapshotRev = $this->padFileService->getSnapshotRevisionFromFrontmatter($pad->frontmatter);
 		if (!$force && $snapshotRev >= $currentRev) {
 			return new PadSyncResult(
 				status: self::STATUS_UNCHANGED,
@@ -200,9 +198,8 @@ class PadSyncService {
 		$html = $this->etherpadClient->getHTML($padId);
 		if ($force && $snapshotRev >= $currentRev) {
 			// force=1 bypasses the cheap revision short-circuit and performs a live content re-check.
-			$existingText = $this->padFileService->getTextSnapshotForRestore($currentContent);
-			$existingHtml = $this->padFileService->getHtmlSnapshotForRestore($currentContent);
-			if ($existingText === $text && $existingHtml === $html) {
+			$existing = $this->padFileService->getSnapshotPartsFromBody($pad->body);
+			if ($existing['text'] === $text && $existing['html'] === $html) {
 				return new PadSyncResult(
 					status: self::STATUS_UNCHANGED,
 					fileId: $fileId,
@@ -215,7 +212,7 @@ class PadSyncService {
 			}
 		}
 
-		$updatedContent = $this->padFileService->withExportSnapshot($currentContent, $text, $html, $currentRev);
+		$updatedContent = $this->padFileService->withExportSnapshot($pad, $text, $html, $currentRev);
 		$lockRetries = $this->lockRetryService->putContentWithSyncLockRetry($node, $updatedContent);
 
 		return new PadSyncResult(

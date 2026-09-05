@@ -249,9 +249,9 @@ class PadCreationServiceTest extends TestCase {
 		));
 		$padFileService->method('getSnapshotPartsFromBody')->willReturn(['text' => 'hello', 'html' => '<p>hello</p>']);
 		$padFileService->method('buildInitialDocument')
-			->with(4321, 'g.grp$pad', BindingService::ACCESS_PROTECTED, 'hello', 'https://pad.example.test/p/x')
-			->willReturn('doc');
-		$padFileService->method('withExportSnapshot')->willReturn('doc-with-snapshot');
+			->with(4321, 'g.grp$pad', BindingService::ACCESS_PROTECTED, 'hello', 'https://pad.example.test/p/x', [], '<p>hello</p>', 0)
+			->willReturn('doc-with-snapshot');
+		$padFileService->expects($this->never())->method('withExportSnapshot');
 
 		$bootstrap = $this->createMock(PadBootstrapService::class);
 		$bootstrap->expects(self::once())
@@ -306,18 +306,17 @@ class PadCreationServiceTest extends TestCase {
 				321,
 				'ext.RemotePad',
 				BindingService::ACCESS_PUBLIC,
-				'',
+				"Initial snapshot\nfrom remote pad",
 				'https://pad.remote.test/p/RemotePad',
 				[
 					'pad_origin' => 'https://pad.remote.test',
 					'remote_pad_id' => 'RemotePad',
-				]
+				],
+				null,
+				0,
 			)
-			->willReturn('external-empty-frontmatter');
-		$padFileService->expects($this->once())
-			->method('withExportSnapshot')
-			->with('external-empty-frontmatter', "Initial snapshot\nfrom remote pad", '', 0, false)
 			->willReturn('external-frontmatter');
+		$padFileService->expects($this->never())->method('withExportSnapshot');
 
 		$bindingService = $this->createMock(BindingService::class);
 		$bindingService->expects($this->never())->method('createBinding');
@@ -357,11 +356,22 @@ class PadCreationServiceTest extends TestCase {
 			]);
 
 		$padFileService = $this->createMock(PadFileService::class);
-		$padFileService->method('buildInitialDocument')->willReturn('external-empty-frontmatter');
+		// An unavailable remote export still produces a snapshotted document;
+		// the snapshot is simply empty.
 		$padFileService->expects($this->once())
-			->method('withExportSnapshot')
-			->with('external-empty-frontmatter', '', '', 0, false)
+			->method('buildInitialDocument')
+			->with(
+				$this->anything(),
+				$this->anything(),
+				BindingService::ACCESS_PUBLIC,
+				'',
+				$this->anything(),
+				$this->anything(),
+				null,
+				0,
+			)
 			->willReturn('external-frontmatter');
+		$padFileService->expects($this->never())->method('withExportSnapshot');
 
 		$bindingService = $this->createMock(BindingService::class);
 		$bindingService->expects($this->never())->method('createBinding');
