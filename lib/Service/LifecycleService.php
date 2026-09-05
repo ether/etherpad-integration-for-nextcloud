@@ -15,6 +15,7 @@ use OCA\EtherpadNextcloud\Exception\LifecycleException;
 use OCA\EtherpadNextcloud\Exception\NotAPadFileException;
 use OCA\EtherpadNextcloud\Exception\PadAlreadyHasBindingException;
 use OCA\EtherpadNextcloud\Util\EtherpadErrorClassifier;
+use OCP\AppFramework\Utility\ITimeFactory;
 use OCP\Files\File;
 use OCP\IConfig;
 use OCP\Lock\LockedException;
@@ -42,6 +43,7 @@ class LifecycleService {
 		private ISecureRandom $secureRandom,
 		private UserNodeResolver $userNodeResolver,
 		private \OCA\EtherpadNextcloud\Util\PathNormalizer $padPaths,
+		private ITimeFactory $timeFactory,
 	) {
 	}
 
@@ -158,7 +160,7 @@ class LifecycleService {
 			return $this->buildSkippedResult('binding_not_active', $fileId, $padId);
 		}
 
-		$deletedAt = time();
+		$deletedAt = $this->timeFactory->getTime();
 		$currentContent = '';
 		$snapshotPersisted = false;
 		$canPersistSnapshotToFile = true;

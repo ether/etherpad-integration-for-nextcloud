@@ -20,6 +20,7 @@ use OCP\Files\IFilenameValidator;
 use OCP\Files\InvalidPathException;
 use OCP\IL10N;
 use PHPUnit\Framework\TestCase;
+use OCA\EtherpadNextcloud\Tests\Support\FixedClock;
 
 class PadTemplateAdminServiceTest extends TestCase {
 	private const PAD = "---\nformat: \"etherpad-nextcloud/1\"\npad_id: \"nc-abc\"\n---\n";
@@ -105,7 +106,7 @@ class PadTemplateAdminServiceTest extends TestCase {
 		$l10n = $this->createMock(IL10N::class);
 		$l10n->method('t')->willReturnArgument(0);
 		// The real parser: a mock would decide the very thing under test.
-		$service = new PadTemplateAdminService($storage, new PadFileService(), $this->filenameValidator(), $l10n);
+		$service = new PadTemplateAdminService($storage, new PadFileService(new FixedClock()), $this->filenameValidator(), $l10n);
 
 		$this->expectException(AdminValidationException::class);
 		$service->add('notes.pad', $content);
@@ -122,7 +123,7 @@ class PadTemplateAdminServiceTest extends TestCase {
 
 		$l10n = $this->createMock(IL10N::class);
 		$l10n->method('t')->willReturnArgument(0);
-		$service = new PadTemplateAdminService($storage, new PadFileService(), $this->filenameValidator(), $l10n);
+		$service = new PadTemplateAdminService($storage, new PadFileService(new FixedClock()), $this->filenameValidator(), $l10n);
 
 		$this->expectException(AdminValidationException::class);
 		$service->add('broken.pad', "not a pad file at all\njust text\n");
@@ -164,7 +165,7 @@ class PadTemplateAdminServiceTest extends TestCase {
 
 		$l10n = $this->createMock(IL10N::class);
 		$l10n->method('t')->willReturnArgument(0);
-		$service = new PadTemplateAdminService($storage, new PadFileService(), $validator, $l10n);
+		$service = new PadTemplateAdminService($storage, new PadFileService(new FixedClock()), $validator, $l10n);
 
 		$this->expectExceptionMessage('Filename contains at least one invalid character');
 		$service->add('note*s.pad', self::PAD);
@@ -184,7 +185,7 @@ class PadTemplateAdminServiceTest extends TestCase {
 		$l10n = $this->createMock(IL10N::class);
 		$l10n->method('t')->willReturnArgument(0);
 
-		(new PadTemplateAdminService($storage, new PadFileService(), $validator, $l10n))->delete(' Notiz*.pad ');
+		(new PadTemplateAdminService($storage, new PadFileService(new FixedClock()), $validator, $l10n))->delete(' Notiz*.pad ');
 	}
 
 	/**

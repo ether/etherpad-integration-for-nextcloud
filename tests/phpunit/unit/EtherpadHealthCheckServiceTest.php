@@ -17,6 +17,8 @@ use OCA\EtherpadNextcloud\Service\ValidatedAdminSettings;
 use OCP\IL10N;
 use OCP\IURLGenerator;
 use PHPUnit\Framework\TestCase;
+use OCA\EtherpadNextcloud\Tests\Support\ScriptedClock;
+use OCA\EtherpadNextcloud\Tests\Support\FixedClock;
 
 class EtherpadHealthCheckServiceTest extends TestCase {
 	/**
@@ -165,7 +167,7 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 				\OCA\EtherpadNextcloud\Service\AppConfigService $appConfigService,
 				private string $nextcloudSameSite,
 			) {
-				parent::__construct($etherpadClient, $pendingDeleteRetryService, $l10n, $cookieDomainPolicy, $baseUrlCheck, $urlGenerator, $releasePolicy, $padSessionService, $appConfigService);
+				parent::__construct($etherpadClient, $pendingDeleteRetryService, $l10n, $cookieDomainPolicy, $baseUrlCheck, $urlGenerator, $releasePolicy, $padSessionService, $appConfigService, new FixedClock());
 			}
 
 			protected function nextcloudSessionSameSite(): string {
@@ -532,11 +534,10 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 	public function testCheckRoundsLatencyMilliseconds(): void {
 		$etherpad = $this->createMock(EtherpadClient::class);
 		$etherpad->method('healthCheck')->willReturn(['pad_count' => 1]);
-		$ticks = [100.0000, 100.1246];
 
 		$urlGenerator = $this->createMock(IURLGenerator::class);
 		$urlGenerator->method('getBaseUrl')->willReturn('https://cloud.example.test');
-		$service = new class(
+		$service = new EtherpadHealthCheckService(
 			$etherpad,
 			$this->pendingCounts(0),
 			$this->buildL10n(),
@@ -546,35 +547,13 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 			$this->createMock(\OCA\EtherpadNextcloud\Service\EtherpadReleasePolicy::class),
 			$this->createMock(\OCA\EtherpadNextcloud\Service\PadSessionService::class),
 			$this->createMock(\OCA\EtherpadNextcloud\Service\AppConfigService::class),
-			$ticks,
-		) extends EtherpadHealthCheckService {
-			/** @param list<float> $ticks */
-			public function __construct(
-				EtherpadClient $etherpadClient,
-				PendingDeleteRetryService $pendingDeleteRetryService,
-				IL10N $l10n,
-				CookieDomainPolicy $cookieDomainPolicy,
-				BaseUrlReachabilityCheck $baseUrlCheck,
-				IURLGenerator $urlGenerator,
-				\OCA\EtherpadNextcloud\Service\EtherpadReleasePolicy $releasePolicy,
-				\OCA\EtherpadNextcloud\Service\PadSessionService $padSessionService,
-				\OCA\EtherpadNextcloud\Service\AppConfigService $appConfigService,
-				private array $ticks,
-			) {
-				parent::__construct($etherpadClient, $pendingDeleteRetryService, $l10n, $cookieDomainPolicy, $baseUrlCheck, $urlGenerator, $releasePolicy, $padSessionService, $appConfigService);
-			}
-
-			protected function now(): float {
-				return array_shift($this->ticks) ?? 100.1246;
-			}
-		};
+			new ScriptedClock([100.0000, 100.1246]),
+		);
 
 		$result = $service->check($this->settings());
 
 		$this->assertSame(125, $result->latencyMs);
 	}
-
-
 
 	/**
 	 * A transport failure can carry a long tail of internal hostnames and

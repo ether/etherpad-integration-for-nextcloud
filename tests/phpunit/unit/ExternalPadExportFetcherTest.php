@@ -8,11 +8,12 @@ use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
 use OCA\EtherpadNextcloud\Exception\ExternalPadExportNotFoundException;
 use OCA\EtherpadNextcloud\Service\ExternalPadExportFetcher;
 use OCP\IConfig;
+use OCA\EtherpadNextcloud\Tests\Support\FixedClock;
 use PHPUnit\Framework\TestCase;
 
 class ExternalPadExportFetcherTest extends TestCase {
 	public function testNormalizeAndValidateExternalPublicPadUrlCanonicalizesHttpsUrl(): void {
-		$fetcher = new ExternalPadExportFetcher($this->buildExternalEnabledConfig());
+		$fetcher = new ExternalPadExportFetcher($this->buildExternalEnabledConfig(), new FixedClock());
 
 		$result = $fetcher->normalizeAndValidateExternalPublicPadUrl('https://1.1.1.1/p/My Pad');
 
@@ -25,20 +26,20 @@ class ExternalPadExportFetcherTest extends TestCase {
 		// `+` is literal in URL path segments. Using urldecode() previously
 		// turned `team+pad` into pad-id `team pad`, then re-emitted
 		// `/p/team%20pad` which hits a different / non-existent pad.
-		$fetcher = new ExternalPadExportFetcher($this->buildExternalEnabledConfig());
+		$fetcher = new ExternalPadExportFetcher($this->buildExternalEnabledConfig(), new FixedClock());
 		$result = $fetcher->normalizeAndValidateExternalPublicPadUrl('https://1.1.1.1/p/team+meeting');
 		$this->assertSame('team+meeting', $result['pad_id']);
 		$this->assertSame('https://1.1.1.1/p/team%2Bmeeting', $result['pad_url']);
 	}
 
 	public function testNormalizeAndValidateExternalPublicPadUrlDecodesPercentEncodedPlus(): void {
-		$fetcher = new ExternalPadExportFetcher($this->buildExternalEnabledConfig());
+		$fetcher = new ExternalPadExportFetcher($this->buildExternalEnabledConfig(), new FixedClock());
 		$result = $fetcher->normalizeAndValidateExternalPublicPadUrl('https://1.1.1.1/p/team%2Bmeeting');
 		$this->assertSame('team+meeting', $result['pad_id']);
 	}
 
 	public function testNormalizeAndValidateExternalPublicPadUrlAcceptsMatchingAllowlistedOriginWithPort(): void {
-		$fetcher = new ExternalPadExportFetcher($this->buildExternalEnabledConfig('https://1.1.1.1:8443'));
+		$fetcher = new ExternalPadExportFetcher($this->buildExternalEnabledConfig('https://1.1.1.1:8443'), new FixedClock());
 
 		$result = $fetcher->normalizeAndValidateExternalPublicPadUrl('https://1.1.1.1:8443/p/public-pad');
 
@@ -47,7 +48,7 @@ class ExternalPadExportFetcherTest extends TestCase {
 	}
 
 	public function testNormalizeAndValidateExternalPublicPadUrlRejectsNonMatchingAllowlistedOriginPort(): void {
-		$fetcher = new ExternalPadExportFetcher($this->buildExternalEnabledConfig('https://1.1.1.1:8443'));
+		$fetcher = new ExternalPadExportFetcher($this->buildExternalEnabledConfig('https://1.1.1.1:8443'), new FixedClock());
 
 		$this->expectException(EtherpadClientException::class);
 		$this->expectExceptionMessage('External pad host is not in the allowlist.');
@@ -55,7 +56,7 @@ class ExternalPadExportFetcherTest extends TestCase {
 	}
 
 	public function testNormalizeAndValidateExternalPublicPadUrlRejectsAPadIdWithANewline(): void {
-		$fetcher = new ExternalPadExportFetcher($this->buildExternalEnabledConfig());
+		$fetcher = new ExternalPadExportFetcher($this->buildExternalEnabledConfig(), new FixedClock());
 
 		$this->expectException(EtherpadClientException::class);
 		$fetcher->normalizeAndValidateExternalPublicPadUrl(
@@ -64,14 +65,14 @@ class ExternalPadExportFetcherTest extends TestCase {
 	}
 
 	public function testNormalizeAndValidateExternalPublicPadUrlRejectsAControlCharacterBeforeThePadId(): void {
-		$fetcher = new ExternalPadExportFetcher($this->buildExternalEnabledConfig());
+		$fetcher = new ExternalPadExportFetcher($this->buildExternalEnabledConfig(), new FixedClock());
 
 		$this->expectException(EtherpadClientException::class);
 		$fetcher->normalizeAndValidateExternalPublicPadUrl('https://1.1.1.1/base%01/p/demo');
 	}
 
 	public function testNormalizeAndValidateExternalPublicPadUrlRejectsProtectedPadIds(): void {
-		$fetcher = new ExternalPadExportFetcher($this->buildExternalEnabledConfig());
+		$fetcher = new ExternalPadExportFetcher($this->buildExternalEnabledConfig(), new FixedClock());
 
 		$this->expectException(EtherpadClientException::class);
 		$this->expectExceptionMessage('Only public pad URLs can be linked from external servers.');
@@ -89,7 +90,7 @@ class ExternalPadExportFetcherTest extends TestCase {
 			}
 		);
 
-		$fetcher = new ExternalPadExportFetcher($config);
+		$fetcher = new ExternalPadExportFetcher($config, new FixedClock());
 
 		$this->expectException(EtherpadClientException::class);
 		$this->expectExceptionMessage('External pad linking is disabled by admin settings.');
@@ -103,7 +104,7 @@ class ExternalPadExportFetcherTest extends TestCase {
 	 */
 	public function testAnExhaustedBudgetStopsBeforeAnyAttempt(): void {
 		$send = new \ReflectionMethod(ExternalPadExportFetcher::class, 'sendPinnedPublicGetRequest');
-		$fetcher = new ExternalPadExportFetcher($this->buildExternalEnabledConfig());
+		$fetcher = new ExternalPadExportFetcher($this->buildExternalEnabledConfig(), new FixedClock());
 
 		$this->expectException(EtherpadClientException::class);
 		$this->expectExceptionMessage('no time left');
@@ -115,7 +116,9 @@ class ExternalPadExportFetcherTest extends TestCase {
 			['1.1.1.1'],
 			'html',
 			// Already spent: a slow lookup leaves nothing for the transfer.
-			microtime(true) - 1.0,
+			// Against the clock the fetcher reads, not the wall clock — the
+			// two are the same only by accident.
+			FixedClock::NOW - 1.0,
 		);
 	}
 
@@ -129,7 +132,7 @@ class ExternalPadExportFetcherTest extends TestCase {
 	#[\PHPUnit\Framework\Attributes\DataProvider('contentTypeCases')]
 	public function testContentTypeIsAcceptedPerExportFormat(string $format, string $contentType, bool $accepted): void {
 		$assert = new \ReflectionMethod(ExternalPadExportFetcher::class, 'assertAllowedExternalExportContentType');
-		$fetcher = new ExternalPadExportFetcher($this->buildExternalEnabledConfig());
+		$fetcher = new ExternalPadExportFetcher($this->buildExternalEnabledConfig(), new FixedClock());
 
 		if (!$accepted) {
 			$this->expectException(EtherpadClientException::class);
@@ -149,7 +152,7 @@ class ExternalPadExportFetcherTest extends TestCase {
 	#[\PHPUnit\Framework\Attributes\DataProvider('statusCases')]
 	public function testOnlyASuccessfulExportStatusIsAccepted(int $status, ?string $expectedException): void {
 		$assert = new \ReflectionMethod(ExternalPadExportFetcher::class, 'assertSuccessfulExportStatus');
-		$fetcher = new ExternalPadExportFetcher($this->buildExternalEnabledConfig());
+		$fetcher = new ExternalPadExportFetcher($this->buildExternalEnabledConfig(), new FixedClock());
 
 		if ($expectedException !== null) {
 			$this->expectException($expectedException);

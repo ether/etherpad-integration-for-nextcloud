@@ -11,6 +11,7 @@ use OCA\EtherpadNextcloud\Service\PadFileService;
 use OCA\EtherpadNextcloud\Service\PadSnapshot;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
+use OCA\EtherpadNextcloud\Tests\Support\FixedClock;
 
 class PadFileServiceTest extends TestCase {
 	// ------------------------------------------------------------------
@@ -18,7 +19,7 @@ class PadFileServiceTest extends TestCase {
 	// ------------------------------------------------------------------
 
 	public function testBuildInitialDocumentRoundtripsAllRequiredFields(): void {
-		$service = new PadFileService();
+		$service = new PadFileService(new FixedClock());
 		$document = $service->buildInitialDocument(
 			42,
 			'g.abc$demo',
@@ -38,7 +39,7 @@ class PadFileServiceTest extends TestCase {
 	}
 
 	public function testParsePadFileNormalizesCrlfLineEndings(): void {
-		$service = new PadFileService();
+		$service = new PadFileService(new FixedClock());
 		$document = str_replace(
 			"\n",
 			"\r\n",
@@ -60,7 +61,7 @@ class PadFileServiceTest extends TestCase {
 	}
 
 	public function testSerializeIncludesOptionalPadUrlOnlyWhenSet(): void {
-		$service = new PadFileService();
+		$service = new PadFileService(new FixedClock());
 		$withPadUrl = $service->buildInitialDocument(
 			10,
 			'demo-pad',
@@ -74,7 +75,7 @@ class PadFileServiceTest extends TestCase {
 	}
 
 	public function testQuotedStringScalarsRoundtripWithEscapes(): void {
-		$service = new PadFileService();
+		$service = new PadFileService(new FixedClock());
 		$padUrl = 'https://pad.example.org/p/say-"hello"-path\\with\\slashes';
 		$document = $service->buildInitialDocument(
 			51,
@@ -89,7 +90,7 @@ class PadFileServiceTest extends TestCase {
 	}
 
 	public function testBuildInitialDocumentPersistsExtraFrontmatterForExternalPads(): void {
-		$service = new PadFileService();
+		$service = new PadFileService(new FixedClock());
 		$document = $service->buildInitialDocument(
 			7,
 			'ext.remote-pad-id',
@@ -115,7 +116,7 @@ class PadFileServiceTest extends TestCase {
 		$this->expectException(MissingFrontmatterException::class);
 		$this->expectExceptionMessage('Missing YAML frontmatter in .pad file.');
 
-		(new PadFileService())->parsePadFile("not-a-frontmatter");
+		(new PadFileService(new FixedClock()))->parsePadFile("not-a-frontmatter");
 	}
 
 	public function testParsePadFileRejectsUnsupportedFormat(): void {
@@ -124,7 +125,7 @@ class PadFileServiceTest extends TestCase {
 		$this->expectException(PadFileFormatException::class);
 		$this->expectExceptionMessage('Unsupported .pad format');
 
-		(new PadFileService())->parsePadFile($content);
+		(new PadFileService(new FixedClock()))->parsePadFile($content);
 	}
 
 	public function testParsePadFileRejectsMissingRequiredKey(): void {
@@ -134,7 +135,7 @@ class PadFileServiceTest extends TestCase {
 		$this->expectException(PadFileFormatException::class);
 		$this->expectExceptionMessage('Missing required frontmatter key: snapshot_rev');
 
-		(new PadFileService())->parsePadFile($content);
+		(new PadFileService(new FixedClock()))->parsePadFile($content);
 	}
 
 	public function testParsePadFileRejectsInvalidSnapshotRevBelowMinusOne(): void {
@@ -143,7 +144,7 @@ class PadFileServiceTest extends TestCase {
 		$this->expectException(PadFileFormatException::class);
 		$this->expectExceptionMessage('Invalid snapshot_rev');
 
-		(new PadFileService())->parsePadFile($content);
+		(new PadFileService(new FixedClock()))->parsePadFile($content);
 	}
 
 	public function testParsePadFileRejectsNonHttpPadUrl(): void {
@@ -152,7 +153,7 @@ class PadFileServiceTest extends TestCase {
 		$this->expectException(PadFileFormatException::class);
 		$this->expectExceptionMessage('Invalid pad_url');
 
-		(new PadFileService())->parsePadFile($content);
+		(new PadFileService(new FixedClock()))->parsePadFile($content);
 	}
 
 	public function testParsePadFileRejectsInvalidAccessMode(): void {
@@ -161,7 +162,7 @@ class PadFileServiceTest extends TestCase {
 		$this->expectException(PadFileFormatException::class);
 		$this->expectExceptionMessage('Invalid access_mode');
 
-		(new PadFileService())->parsePadFile($content);
+		(new PadFileService(new FixedClock()))->parsePadFile($content);
 	}
 
 	public function testParsePadFileRejectsMalformedYamlLine(): void {
@@ -170,13 +171,13 @@ class PadFileServiceTest extends TestCase {
 		$this->expectException(PadFileFormatException::class);
 		$this->expectExceptionMessage('Invalid YAML frontmatter');
 
-		(new PadFileService())->parsePadFile($content);
+		(new PadFileService(new FixedClock()))->parsePadFile($content);
 	}
 
 	public function testParsePadFileAcceptsLegacyStateValuesForBackwardCompat(): void {
 		// Old plugin versions wrote "trashed" / "purged" before the lifecycle
 		// simplification. Existing files in users' trashbins must still parse.
-		$service = new PadFileService();
+		$service = new PadFileService(new FixedClock());
 		$base = $service->buildInitialDocument(1, 'demo-pad', BindingService::ACCESS_PUBLIC);
 
 		$trashed = str_replace('state: "active"', 'state: "trashed"', $base);
@@ -191,7 +192,7 @@ class PadFileServiceTest extends TestCase {
 	// ------------------------------------------------------------------
 
 	public function testWithExportSnapshotUpdatesRevisionAndBodyParts(): void {
-		$service = new PadFileService();
+		$service = new PadFileService(new FixedClock());
 		$base = $service->buildInitialDocument(1, 'demo-pad', BindingService::ACCESS_PUBLIC);
 
 		$updated = $service->withExportSnapshot($service->readPad($base), new PadSnapshot("line-a\nline-b", '<p>line-a</p>', 7));
@@ -208,7 +209,7 @@ class PadFileServiceTest extends TestCase {
 		// Important product decision: there are no archive semantics in the
 		// snapshot. If Etherpad content is empty, the .pad snapshot must also
 		// become empty (otherwise stale content would resurface on restore).
-		$service = new PadFileService();
+		$service = new PadFileService(new FixedClock());
 		$base = $service->buildInitialDocument(1, 'demo-pad', BindingService::ACCESS_PUBLIC);
 		$withContent = $service->withExportSnapshot($service->readPad($base), new PadSnapshot('previous text', '<p>previous html</p>', 5));
 
@@ -220,7 +221,7 @@ class PadFileServiceTest extends TestCase {
 	}
 
 	public function testWithExportSnapshotOmitsHtmlSectionWhenRequested(): void {
-		$service = new PadFileService();
+		$service = new PadFileService(new FixedClock());
 		$base = $service->buildInitialDocument(1, 'demo-pad', BindingService::ACCESS_PUBLIC);
 
 		$textOnly = $service->withExportSnapshot($service->readPad($base), new PadSnapshot('just text', null, 1));
@@ -236,7 +237,7 @@ class PadFileServiceTest extends TestCase {
 	public function testBuildInitialDocumentWithSnapshotMatchesTheTwoStepItReplaces(): void {
 		// The one-step form claims to write exactly what the two-step one
 		// wrote, so the two are compared rather than sampled.
-		$service = new PadFileService();
+		$service = new PadFileService(new FixedClock());
 
 		$oneStep = $service->buildInitialDocument(
 			1,
@@ -255,7 +256,7 @@ class PadFileServiceTest extends TestCase {
 			new PadSnapshot('hello', '<p>hello</p>', 0),
 		);
 
-		$this->assertSame(self::withoutWallClock($twoStep), self::withoutWallClock($oneStep));
+		$this->assertSame($twoStep, $oneStep);
 
 		$parsed = $service->readPad($oneStep);
 		$this->assertSame(0, $parsed->frontmatter['snapshot_rev']);
@@ -265,9 +266,33 @@ class PadFileServiceTest extends TestCase {
 		);
 	}
 
+	/**
+	 * The body is opaque: everything after the closing `---` belongs to the
+	 * snapshot, including a line that happens to look like a frontmatter
+	 * key. The wall-clock helper this test file used to carry pinned that
+	 * in passing; the helper is gone and the property is not the helper's.
+	 */
+	public function testASnapshotBodyThatLooksLikeFrontmatterSurvivesTheRoundTrip(): void {
+		$service = new PadFileService(new FixedClock());
+		$text = "created_at: \"in the body\"\nupdated_at: \"and again\"";
+
+		$document = $service->buildInitialDocument(
+			1,
+			'demo-pad',
+			BindingService::ACCESS_PUBLIC,
+			snapshot: new PadSnapshot($text, null, 0),
+		);
+
+		$parsed = $service->readPad($document);
+
+		$this->assertSame($text, $service->getSnapshotPartsFromBody($parsed->body)['text']);
+		// And the real ones are still the ones the frontmatter carries.
+		$this->assertNotSame('in the body', $parsed->frontmatter['created_at']);
+	}
+
 	public function testBuildInitialDocumentWithoutHtmlOmitsTheHtmlSection(): void {
 		// snapshotHtml: null means text only, not "an empty HTML half".
-		$service = new PadFileService();
+		$service = new PadFileService(new FixedClock());
 
 		$oneStep = $service->buildInitialDocument(
 			2,
@@ -288,7 +313,7 @@ class PadFileServiceTest extends TestCase {
 			new PadSnapshot('remote text', null, 0),
 		);
 
-		$this->assertSame(self::withoutWallClock($twoStep), self::withoutWallClock($oneStep));
+		$this->assertSame($twoStep, $oneStep);
 		$this->assertStringNotContainsString('[HTML-BEGIN]', $oneStep);
 
 		$parsed = $service->readPad($oneStep);
@@ -296,54 +321,6 @@ class PadFileServiceTest extends TestCase {
 		$this->assertSame(
 			['text' => 'remote text', 'html' => ''],
 			$service->getSnapshotPartsFromBody($parsed->body),
-		);
-	}
-
-	/**
-	 * created_at and updated_at are read from the wall clock as each document
-	 * is built, so two documents built moments apart differ whenever a second
-	 * ticks between them. Everything else is what the comparison is about —
-	 * including a body that happens to hold a line shaped like one of those
-	 * keys, which is why only the frontmatter block is touched.
-	 */
-	private static function withoutWallClock(string $document): string {
-		if (preg_match('/^(---\n.*?\n---\n)(.*)$/s', $document, $matches) !== 1) {
-			return $document;
-		}
-
-		return (string)preg_replace('/^(created_at|updated_at): ".*"$/m', '$1: "<time>"', $matches[1])
-			. $matches[2];
-	}
-
-	public function testTheWallClockHelperNormalisesTheFrontmatterAndNothingElse(): void {
-		$service = new PadFileService();
-		$document = $service->buildInitialDocument(
-			1,
-			'demo-pad',
-			BindingService::ACCESS_PUBLIC,
-			snapshot: new PadSnapshot("created_at: \"in the body\"", null, 0),
-		);
-		// The frontmatter timestamps are the first two matches; the body's
-		// look-alike line comes after them.
-		$aSecondLater = (string)preg_replace(
-			'/^(created_at|updated_at): ".*"$/m',
-			'$1: "2026-01-01T00:00:00+00:00"',
-			$document,
-			2,
-		);
-
-		// What the comparison is meant to ignore.
-		$this->assertNotSame($document, $aSecondLater);
-		$this->assertSame(
-			self::withoutWallClock($document),
-			self::withoutWallClock($aSecondLater),
-		);
-
-		// And what it must not: a body that looks like a timestamp line.
-		$this->assertStringContainsString("created_at: \"in the body\"", self::withoutWallClock($document));
-		$this->assertNotSame(
-			self::withoutWallClock($document),
-			self::withoutWallClock(str_replace('in the body', 'changed', $document)),
 		);
 	}
 
@@ -356,7 +333,7 @@ class PadFileServiceTest extends TestCase {
 	}
 
 	public function testFrontmatterValuesThatWouldBecomeMoreKeysAreRefused(): void {
-		$service = new PadFileService();
+		$service = new PadFileService(new FixedClock());
 
 		$this->expectException(PadFileFormatException::class);
 		$service->buildInitialDocument(
@@ -379,7 +356,7 @@ class PadFileServiceTest extends TestCase {
 
 	#[DataProvider('refusedFrontmatterBytes')]
 	public function testOnlyBytesThatBreakTheRoundTripAreRefused(string $byte): void {
-		$service = new PadFileService();
+		$service = new PadFileService(new FixedClock());
 
 		$this->expectException(PadFileFormatException::class);
 		$service->buildInitialDocument(1, 'p', BindingService::ACCESS_PUBLIC, extraFrontmatter: ['remote_pad_id' => 'a' . $byte . 'b']);
@@ -387,7 +364,7 @@ class PadFileServiceTest extends TestCase {
 
 	#[DataProvider('refusedFrontmatterBytes')]
 	public function testAFileAlreadyHoldingARefusedByteIsRefusedOnRead(string $byte): void {
-		$service = new PadFileService();
+		$service = new PadFileService(new FixedClock());
 
 		$this->expectException(PadFileFormatException::class);
 		$service->readPad(self::documentWithRemotePadId('a' . $byte . 'b'));
@@ -406,7 +383,7 @@ class PadFileServiceTest extends TestCase {
 
 	#[DataProvider('survivingFrontmatterBytes')]
 	public function testAControlCharacterThatCannotBreakTheRoundTripSurvivesIt(string $byte): void {
-		$service = new PadFileService();
+		$service = new PadFileService(new FixedClock());
 
 		$document = $service->buildInitialDocument(
 			1,
@@ -420,7 +397,7 @@ class PadFileServiceTest extends TestCase {
 
 	#[DataProvider('survivingFrontmatterBytes')]
 	public function testAStoredPadCarryingSuchAByteCanStillBeSynced(string $byte): void {
-		$service = new PadFileService();
+		$service = new PadFileService(new FixedClock());
 		$padUrl = 'https://pad.example.test/p/de' . $byte . 'mo';
 
 		$stored = $service->buildInitialDocument(1, 'demo', BindingService::ACCESS_PUBLIC, padUrl: $padUrl);
@@ -448,7 +425,7 @@ class PadFileServiceTest extends TestCase {
 	}
 
 	public function testGetSnapshotPartsFromBodyHandlesBodyWithoutMarkers(): void {
-		$service = new PadFileService();
+		$service = new PadFileService(new FixedClock());
 		$parts = $service->getSnapshotPartsFromBody('raw text without sections');
 
 		$this->assertSame('raw text without sections', $parts['text']);
@@ -456,7 +433,7 @@ class PadFileServiceTest extends TestCase {
 	}
 
 	public function testWithRestoredSnapshotWritesTheRestoreInvariant(): void {
-		$service = new PadFileService();
+		$service = new PadFileService(new FixedClock());
 		$trashed = $service->readPad($service->withExportSnapshot(
 			$service->readPad($service->buildInitialDocument(1, 'old-pad', BindingService::ACCESS_PUBLIC)),
 			new PadSnapshot('original text', '<p>original html</p>', 4),
@@ -482,7 +459,7 @@ class PadFileServiceTest extends TestCase {
 	}
 
 	public function testTheParsedDocumentCarriesTheSnapshotRevision(): void {
-		$service = new PadFileService();
+		$service = new PadFileService(new FixedClock());
 		$base = $service->buildInitialDocument(1, 'demo-pad', BindingService::ACCESS_PUBLIC);
 
 		$this->assertSame(-1, $service->readPad($base)->snapshotRev);
@@ -490,7 +467,7 @@ class PadFileServiceTest extends TestCase {
 	}
 
 	public function testANonNumericSnapshotRevisionIsAFormatError(): void {
-		$service = new PadFileService();
+		$service = new PadFileService(new FixedClock());
 		$base = $service->buildInitialDocument(1, 'demo-pad', BindingService::ACCESS_PUBLIC);
 
 		$this->expectException(PadFileFormatException::class);
@@ -502,7 +479,7 @@ class PadFileServiceTest extends TestCase {
 	// ------------------------------------------------------------------
 
 	public function testParseLegacyOwnpadShortcutExtractsUrlAndPadId(): void {
-		$service = new PadFileService();
+		$service = new PadFileService(new FixedClock());
 		$parsed = $service->parseLegacyOwnpadShortcut(
 			"[InternetShortcut]\nURL=https://pad.example.test/p/public-pad-id\n"
 		);
@@ -513,13 +490,13 @@ class PadFileServiceTest extends TestCase {
 	}
 
 	public function testParseLegacyOwnpadShortcutReturnsNullForNonShortcutContent(): void {
-		$service = new PadFileService();
+		$service = new PadFileService(new FixedClock());
 		$this->assertNull($service->parseLegacyOwnpadShortcut('not a shortcut'));
 		$this->assertNull($service->parseLegacyOwnpadShortcut(''));
 	}
 
 	public function testParseLegacyOwnpadShortcutRejectsNonHttpUrls(): void {
-		$service = new PadFileService();
+		$service = new PadFileService(new FixedClock());
 		$this->assertNull(
 			$service->parseLegacyOwnpadShortcut("[InternetShortcut]\nURL=ftp://example.test/p/pad\n")
 		);
@@ -529,7 +506,7 @@ class PadFileServiceTest extends TestCase {
 		// `+` is a literal in URL path segments; only query/form encoding
 		// treats it as a space. The previous urldecode() turned
 		// `team+meeting` into `team meeting` and broke the binding lookup.
-		$service = new PadFileService();
+		$service = new PadFileService(new FixedClock());
 		$parsed = $service->parseLegacyOwnpadShortcut(
 			"[InternetShortcut]\nURL=https://pad.example.test/p/team+meeting\n"
 		);
@@ -539,7 +516,7 @@ class PadFileServiceTest extends TestCase {
 
 	public function testParseLegacyOwnpadShortcutDecodesPercentEncodedPlus(): void {
 		// `%2B` (percent-encoded plus) must still decode to `+`.
-		$service = new PadFileService();
+		$service = new PadFileService(new FixedClock());
 		$parsed = $service->parseLegacyOwnpadShortcut(
 			"[InternetShortcut]\nURL=https://pad.example.test/p/team%2Bmeeting\n"
 		);
@@ -548,14 +525,14 @@ class PadFileServiceTest extends TestCase {
 	}
 
 	public function testParseLegacyOwnpadShortcutReturnsNullWithoutPadSegment(): void {
-		$service = new PadFileService();
+		$service = new PadFileService(new FixedClock());
 		$this->assertNull(
 			$service->parseLegacyOwnpadShortcut("[InternetShortcut]\nURL=https://example.test/somewhere/else\n")
 		);
 	}
 
 	public function testInferAccessModeFromPadIdMapsGroupPadsToProtected(): void {
-		$service = new PadFileService();
+		$service = new PadFileService(new FixedClock());
 
 		$this->assertSame(
 			BindingService::ACCESS_PROTECTED,
@@ -568,7 +545,7 @@ class PadFileServiceTest extends TestCase {
 	}
 
 	public function testIsExternalFrontmatterRequiresExtPrefixAndOriginAndRemoteId(): void {
-		$service = new PadFileService();
+		$service = new PadFileService(new FixedClock());
 
 		$this->assertTrue($service->isExternalFrontmatter([
 			'pad_origin' => 'https://pad.remote.example',
@@ -593,7 +570,7 @@ class PadFileServiceTest extends TestCase {
 	}
 
 	public function testExtractPadMetadataReturnsDefaultsForMissingFields(): void {
-		$service = new PadFileService();
+		$service = new PadFileService(new FixedClock());
 
 		$this->assertSame(
 			['pad_id' => '', 'access_mode' => '', 'pad_url' => ''],

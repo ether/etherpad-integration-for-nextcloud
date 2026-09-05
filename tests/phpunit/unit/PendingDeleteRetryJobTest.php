@@ -8,7 +8,7 @@ use OCA\EtherpadNextcloud\BackgroundJob\ColdPendingDeleteRetryJob;
 use OCA\EtherpadNextcloud\BackgroundJob\HotPendingDeleteRetryJob;
 use OCA\EtherpadNextcloud\BackgroundJob\WarmPendingDeleteRetryJob;
 use OCA\EtherpadNextcloud\Service\PendingDeleteRetryService;
-use OCP\AppFramework\Utility\ITimeFactory;
+use OCA\EtherpadNextcloud\Tests\Support\FixedClock;
 use PHPUnit\Framework\TestCase;
 
 class PendingDeleteRetryJobTest extends TestCase {
@@ -16,7 +16,7 @@ class PendingDeleteRetryJobTest extends TestCase {
 		$retry = $this->createMock(PendingDeleteRetryService::class);
 		$retry->expects($this->once())->method('retryByAge')->with(0, 3600, 200);
 
-		$job = new HotPendingDeleteRetryJob($this->createMock(ITimeFactory::class), $retry);
+		$job = new HotPendingDeleteRetryJob(new FixedClock(), $retry);
 
 		$this->assertSame(300, $job->getInterval());
 		$this->runJob($job);
@@ -26,7 +26,7 @@ class PendingDeleteRetryJobTest extends TestCase {
 		$retry = $this->createMock(PendingDeleteRetryService::class);
 		$retry->expects($this->once())->method('retryByAge')->with(3600, 86400, 200);
 
-		$job = new WarmPendingDeleteRetryJob($this->createMock(ITimeFactory::class), $retry);
+		$job = new WarmPendingDeleteRetryJob(new FixedClock(), $retry);
 
 		$this->assertSame(3600, $job->getInterval());
 		$this->runJob($job);
@@ -36,7 +36,7 @@ class PendingDeleteRetryJobTest extends TestCase {
 		$retry = $this->createMock(PendingDeleteRetryService::class);
 		$retry->expects($this->once())->method('retryByAge')->with(86400, null, 200);
 
-		$job = new ColdPendingDeleteRetryJob($this->createMock(ITimeFactory::class), $retry);
+		$job = new ColdPendingDeleteRetryJob(new FixedClock(), $retry);
 
 		$this->assertSame(86400, $job->getInterval());
 		$this->runJob($job);

@@ -11,6 +11,7 @@ namespace OCA\EtherpadNextcloud\Service;
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
 use OCA\EtherpadNextcloud\Exception\EtherpadTooLargeException;
 use OCA\EtherpadNextcloud\Exception\ExternalPadExportNotFoundException;
+use OCP\AppFramework\Utility\ITimeFactory;
 use OCP\IConfig;
 
 class ExternalPadExportFetcher {
@@ -34,6 +35,7 @@ class ExternalPadExportFetcher {
 
 	public function __construct(
 		private IConfig $config,
+		private ITimeFactory $timeFactory,
 	) {
 	}
 
@@ -113,7 +115,12 @@ class ExternalPadExportFetcher {
 
 	/** Started before the name is resolved, so the lookup spends from it too. */
 	private function startBudget(): float {
-		return microtime(true) + (float)self::EXTERNAL_TOTAL_BUDGET_SECONDS;
+		return $this->nowSeconds() + (float)self::EXTERNAL_TOTAL_BUDGET_SECONDS;
+	}
+
+	/** The budget's clock, sub-second, through the same factory as the rest. */
+	private function nowSeconds(): float {
+		return (float)$this->timeFactory->now()->format('U.u');
 	}
 
 	/** @return array{origin:string,pad_id:string,pad_url:string,host:string,port:int,resolved_ips:list<string>} */
@@ -151,7 +158,7 @@ class ExternalPadExportFetcher {
 
 		$errors = [];
 		foreach ($resolvedIps as $ip) {
-			$left = (int)floor($deadline - microtime(true));
+			$left = (int)floor($deadline - $this->nowSeconds());
 			if ($left < self::EXTERNAL_MIN_ATTEMPT_SECONDS) {
 				$errors[] = 'no time left to try ' . $ip;
 				break;

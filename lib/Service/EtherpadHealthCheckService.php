@@ -11,6 +11,7 @@ namespace OCA\EtherpadNextcloud\Service;
 
 use OCA\EtherpadNextcloud\Exception\AdminHealthCheckException;
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
+use OCP\AppFramework\Utility\ITimeFactory;
 use OCP\IL10N;
 use OCP\IURLGenerator;
 
@@ -39,11 +40,12 @@ class EtherpadHealthCheckService {
 		private EtherpadReleasePolicy $releasePolicy,
 		private PadSessionService $padSessionService,
 		private AppConfigService $appConfigService,
+		private ITimeFactory $timeFactory,
 	) {
 	}
 
 	public function check(ValidatedAdminSettings $settings): HealthCheckResult {
-		$startedAt = $this->now();
+		$startedAt = $this->nowSeconds();
 		try {
 			$result = $this->etherpadClient->healthCheck(
 				$settings->etherpadApiHost,
@@ -99,7 +101,7 @@ class EtherpadHealthCheckService {
 			: null;
 
 		$padCount = (int)($result['pad_count'] ?? 0);
-		$latencyMs = (int)round(($this->now() - $startedAt) * 1000.0);
+		$latencyMs = (int)round(($this->nowSeconds() - $startedAt) * 1000.0);
 		$target = rtrim($settings->etherpadApiHost, '/') . '/api/' . $settings->etherpadApiVersion . '/listAllPads';
 
 		// Each part gets its own line, tied to the field it came from. The
@@ -541,7 +543,7 @@ class EtherpadHealthCheckService {
 		return $text;
 	}
 
-	protected function now(): float {
-		return microtime(true);
+	private function nowSeconds(): float {
+		return (float)$this->timeFactory->now()->format('U.u');
 	}
 }

@@ -11,6 +11,7 @@ namespace OCA\EtherpadNextcloud\Service;
 
 use OCA\EtherpadNextcloud\BackgroundJob\CollectExpiredSessionsJob;
 use OCA\EtherpadNextcloud\Util\EtherpadErrorClassifier;
+use OCP\AppFramework\Utility\ITimeFactory;
 use OCP\BackgroundJob\IJobList;
 use Psr\Log\LoggerInterface;
 
@@ -41,6 +42,7 @@ class ExpiredSessionCollector {
 		private EtherpadClient $etherpadClient,
 		private IJobList $jobList,
 		private LoggerInterface $logger,
+		private ITimeFactory $timeFactory,
 		private float $budgetSeconds = self::BUDGET_SECONDS,
 	) {
 	}
@@ -86,12 +88,12 @@ class ExpiredSessionCollector {
 	 * @return array{deleted:int,remaining:int,retry:bool,nextDueAt:?int}
 	 */
 	public function collect(string $authorId): array {
-		$deadline = microtime(true) + $this->budgetSeconds;
+		$deadline = $this->nowSeconds() + $this->budgetSeconds;
 
 		try {
 			$sessions = $this->etherpadClient->listSessionsOfAuthor(
 				$authorId,
-				$this->callTimeout($deadline - microtime(true)),
+				$this->callTimeout($deadline - $this->nowSeconds()),
 				$unreadable,
 			);
 		} catch (\Throwable $e) {
@@ -115,7 +117,7 @@ class ExpiredSessionCollector {
 			]);
 		}
 
-		$cutoff = time() - EtherpadClient::CLOCK_SKEW_ALLOWANCE_SECONDS;
+		$cutoff = $this->timeFactory->getTime() - EtherpadClient::CLOCK_SKEW_ALLOWANCE_SECONDS;
 		$expired = [];
 		$nextDueAt = null;
 		foreach ($sessions as $sessionId => $info) {
@@ -140,7 +142,7 @@ class ExpiredSessionCollector {
 		foreach ($expired as $sessionId) {
 			// A deadline alone bounds when the last call starts, not when it
 			// ends. One that no longer fits is not made.
-			$left = $deadline - microtime(true);
+			$left = $deadline - $this->nowSeconds();
 			if ($handled >= self::MAX_PER_RUN || $left < self::MIN_CALL_TIMEOUT_SECONDS) {
 				break;
 			}
@@ -215,5 +217,10 @@ class ExpiredSessionCollector {
 	 */
 	private function callTimeout(float $left): int {
 		return (int)min(floor($left), EtherpadClient::REQUEST_TIMEOUT_SECONDS);
+	}
+
+	/** The budget's clock, sub-second, through the same factory as the rest. */
+	private function nowSeconds(): float {
+		return (float)$this->timeFactory->now()->format('U.u');
 	}
 }

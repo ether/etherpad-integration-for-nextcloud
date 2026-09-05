@@ -10,10 +10,10 @@ namespace OCA\EtherpadNextcloud\Tests\Unit;
 
 use OCA\EtherpadNextcloud\BackgroundJob\CollectExpiredSessionsJob;
 use OCA\EtherpadNextcloud\Service\ExpiredSessionCollector;
-use OCP\AppFramework\Utility\ITimeFactory;
 use OCP\BackgroundJob\IJobList;
 use Psr\Log\LoggerInterface;
 use PHPUnit\Framework\Attributes\DataProvider;
+use OCA\EtherpadNextcloud\Tests\Support\FixedClock;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -314,8 +314,7 @@ class CollectExpiredSessionsJobTest extends TestCase {
 		?IJobList $jobList = null,
 		?LoggerInterface $logger = null,
 	): CollectExpiredSessionsJob {
-		$time = $this->createMock(ITimeFactory::class);
-		$time->method('getTime')->willReturn(1_000_000);
+		$time = new FixedClock(1_000_000);
 
 		return new CollectExpiredSessionsJob(
 			$time,

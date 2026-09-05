@@ -24,6 +24,7 @@ use OCA\EtherpadNextcloud\Service\UserNodeResolver;
 use OCA\EtherpadNextcloud\Util\PathNormalizer;
 use OCP\Files\File;
 use OCP\Files\Folder;
+use OCA\EtherpadNextcloud\Tests\Support\FixedClock;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 
@@ -1036,9 +1037,7 @@ class PadCreationServiceTest extends TestCase {
 		?\OCA\EtherpadNextcloud\Service\PadTypePolicy $padTypePolicy = null,
 	): PadCreationService {
 		if ($placeholderResolver === null) {
-			$timeFactory = $this->createMock(\OCP\AppFramework\Utility\ITimeFactory::class);
-			$timeFactory->method('getTime')->willReturn(1778976000);
-			$placeholderResolver = new \OCA\EtherpadNextcloud\Service\PadPlaceholderResolver($timeFactory);
+			$placeholderResolver = new \OCA\EtherpadNextcloud\Service\PadPlaceholderResolver(new FixedClock(1778976000));
 		}
 		$padFileService = $padFileService ?? $this->createMock(PadFileService::class);
 		$etherpadClient = $etherpadClient ?? $this->createMock(EtherpadClient::class);

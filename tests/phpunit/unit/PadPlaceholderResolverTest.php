@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\Tests\Unit;
 
 use OCA\EtherpadNextcloud\Service\PadPlaceholderResolver;
-use OCP\AppFramework\Utility\ITimeFactory;
 use OCP\IUser;
+use OCA\EtherpadNextcloud\Tests\Support\FixedClock;
 use PHPUnit\Framework\TestCase;
 
 class PadPlaceholderResolverTest extends TestCase {
@@ -120,9 +120,7 @@ class PadPlaceholderResolverTest extends TestCase {
 	}
 
 	private function resolver(): PadPlaceholderResolver {
-		$time = $this->createMock(ITimeFactory::class);
-		$time->method('getTime')->willReturn(self::FIXED_NOW);
-		return new PadPlaceholderResolver($time);
+		return new PadPlaceholderResolver(new FixedClock(self::FIXED_NOW));
 	}
 
 	private function user(string $displayName, string $uid = 'user1'): IUser {

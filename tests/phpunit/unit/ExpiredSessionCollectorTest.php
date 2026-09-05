@@ -15,6 +15,7 @@ use OCA\EtherpadNextcloud\Service\ExpiredSessionCollector;
 use OCP\BackgroundJob\IJobList;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
+use OCA\EtherpadNextcloud\Tests\Support\FixedClock;
 
 /**
  * Etherpad never removes an expired session, and listSessionsOfAuthor
@@ -31,17 +32,17 @@ class ExpiredSessionCollectorTest extends TestCase {
 	 * ran out a minute ago is deliberately not collected.
 	 */
 	private static function expired(): array {
-		return ['groupID' => 'g.AAAAAAAAAAAAAAAA', 'validUntil' => time() - 3600];
+		return ['groupID' => 'g.AAAAAAAAAAAAAAAA', 'validUntil' => FixedClock::NOW - 3600];
 	}
 
 	/** @return array{groupID:string,validUntil:int} */
 	private static function justExpired(): array {
-		return ['groupID' => 'g.AAAAAAAAAAAAAAAA', 'validUntil' => time() - 60];
+		return ['groupID' => 'g.AAAAAAAAAAAAAAAA', 'validUntil' => FixedClock::NOW - 60];
 	}
 
 	/** @return array{groupID:string,validUntil:int} */
 	private static function live(): array {
-		return ['groupID' => 'g.AAAAAAAAAAAAAAAA', 'validUntil' => time() + 3600];
+		return ['groupID' => 'g.AAAAAAAAAAAAAAAA', 'validUntil' => FixedClock::NOW + 3600];
 	}
 
 	/** @return array<string,array{groupID:string,validUntil:int}> */
@@ -264,10 +265,10 @@ class ExpiredSessionCollectorTest extends TestCase {
 	 * already in the listing this run paid for.
 	 */
 	public function testSaysWhenTheEarliestSessionBecomesCollectable(): void {
-		$soon = time() + 600;
+		$soon = FixedClock::NOW + 600;
 		$client = $this->createMock(EtherpadClient::class);
 		$client->method('listSessionsOfAuthor')->willReturn([
-			's.later' => ['groupID' => 'g.AAAAAAAAAAAAAAAA', 'validUntil' => time() + 3600],
+			's.later' => ['groupID' => 'g.AAAAAAAAAAAAAAAA', 'validUntil' => FixedClock::NOW + 3600],
 			's.soon' => ['groupID' => 'g.AAAAAAAAAAAAAAAA', 'validUntil' => $soon],
 		]);
 		$client->expects(self::never())->method('deleteSession');
@@ -494,6 +495,7 @@ class ExpiredSessionCollectorTest extends TestCase {
 			$client,
 			$jobList ?? $this->createMock(IJobList::class),
 			$logger ?? $this->createMock(LoggerInterface::class),
+			new FixedClock(),
 			...($budgetSeconds === null ? [] : [$budgetSeconds]),
 		);
 	}

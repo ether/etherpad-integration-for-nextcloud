@@ -12,6 +12,7 @@ use OCA\EtherpadNextcloud\Util\PadId;
 
 use OCA\EtherpadNextcloud\Exception\PadFileFormatException;
 use OCA\EtherpadNextcloud\Exception\MissingFrontmatterException;
+use OCP\AppFramework\Utility\ITimeFactory;
 
 class PadFileService {
 	public const FORMAT_V1 = 'etherpad-nextcloud/1';
@@ -19,6 +20,11 @@ class PadFileService {
 	private const TEXT_SECTION = '[TEXT]';
 	private const HTML_BEGIN_SECTION = '[HTML-BEGIN]';
 	private const HTML_END_SECTION = '[HTML-END]';
+
+	public function __construct(
+		private ITimeFactory $timeFactory,
+	) {
+	}
 
 	/** @return array{frontmatter: array<string,mixed>, body: string} */
 	public function parsePadFile(string $content): array {
@@ -77,7 +83,7 @@ class PadFileService {
 		?string $padUrl = null,
 		array $extraFrontmatter = [],
 	): string {
-		$now = gmdate('c');
+		$now = $this->nowIso();
 		$frontmatter = [
 			'format' => self::FORMAT_V1,
 			'file_id' => $fileId,
@@ -212,7 +218,7 @@ class PadFileService {
 	): string {
 		$frontmatter = $pad->frontmatter;
 		$frontmatter['state'] = BindingService::STATE_ACTIVE;
-		$frontmatter['updated_at'] = gmdate('c');
+		$frontmatter['updated_at'] = $this->nowIso();
 		$frontmatter['deleted_at'] = null;
 		$frontmatter['pad_id'] = $padId;
 		if ($padUrl !== '') {
@@ -224,7 +230,7 @@ class PadFileService {
 
 	public function withExportSnapshot(ParsedPadFile $pad, PadSnapshot $snapshot): string {
 		$frontmatter = $pad->frontmatter;
-		$frontmatter['updated_at'] = gmdate('c');
+		$frontmatter['updated_at'] = $this->nowIso();
 		$frontmatter['snapshot_rev'] = $snapshot->revision;
 
 		return $this->serialize($frontmatter, $this->snapshotBody($snapshot));
@@ -376,6 +382,10 @@ class PadFileService {
 		if (preg_match('/[\x00\x0A\x0D]/', $value) === 1) {
 			throw new PadFileFormatException('Frontmatter values must not contain a line terminator or a NUL byte.');
 		}
+	}
+
+	private function nowIso(): string {
+		return gmdate('c', $this->timeFactory->getTime());
 	}
 
 	private function stringScalar(string $value): string {
