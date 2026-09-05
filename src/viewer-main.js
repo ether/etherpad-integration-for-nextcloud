@@ -3,7 +3,7 @@
  * Copyright (c) 2026 Jacob Bühler
  */
 import { APP_ID, MIME, VIEWER_HANDLER_ID } from './lib/constants.js'
-import { apiFindOriginalPad, apiRecoverFromSnapshot, apiResolvePadByPath } from './lib/api-client.js'
+import { apiFindOriginalPad, apiMarkPadAlias, apiRecoverFromSnapshot, apiResolvePadByPath } from './lib/api-client.js'
 import { fetchJsonWithTimeout } from './lib/fetch-helpers.js'
 import { ocGenerateUrl, ocRequestToken, translate } from './lib/oc-compat.js'
 import { createPadSync } from './lib/pad-sync.js'
@@ -40,6 +40,8 @@ import { parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './li
 				isRecovering: false,
 				isCheckingOriginal: false,
 				originalPad: null,
+				rememberOriginal: false,
+				isRememberingOriginal: false,
 				externalOpenUrl: '',
 				// Which read-only surface is showing, if any: '' for the
 				// editor, 'readonly' for a share without write permission,
@@ -276,6 +278,8 @@ import { parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './li
 				this.recoveryPath = ''
 				this.isCheckingOriginal = false
 				this.originalPad = null
+				this.rememberOriginal = false
+				this.isRememberingOriginal = false
 				this.iframeSrc = ''
 				this.externalOpenUrl = ''
 				this.contentMode = ''
@@ -474,6 +478,23 @@ import { parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './li
 					}
 				}
 			},
+			async rememberAndOpenOriginal(target) {
+				if (this.recoveryFileId === null || this.isRememberingOriginal) {
+					return
+				}
+				this.isRememberingOriginal = true
+				try {
+					await apiMarkPadAlias(this.recoveryFileId, this.recoveryPath)
+				} catch (error) {
+					// Opening the original is what the click asked for; remembering
+					// it is the extra. A failure here needs no message because it
+					// announces itself: the card comes back on the next open, which
+					// is exactly the state the user tried to leave.
+				} finally {
+					this.isRememberingOriginal = false
+				}
+				window.location.assign(target)
+			},
 			async recoverFromSnapshot() {
 				if (!this.canRecover || this.isRecovering || this.recoveryFileId === null) {
 					return
@@ -631,7 +652,28 @@ import { parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './li
 							createElement('a', {
 								class: 'button primary epnc-native-error-action',
 								attrs: { href: this.originalPad.viewerUrl },
-							}, translate('Open the original .pad file')),
+								on: {
+									click: (event) => {
+										// Unchecked, this stays an ordinary link, so
+										// middle-click and open-in-new-tab keep working.
+										if (!this.rememberOriginal) {
+											return
+										}
+										event.preventDefault()
+										void this.rememberAndOpenOriginal(this.originalPad.viewerUrl)
+									},
+								},
+							}, this.isRememberingOriginal
+								? translate('Opening the original...')
+								: translate('Open the original .pad file')),
+							createElement('label', { class: 'epnc-native-error-remember' }, [
+								createElement('input', {
+									attrs: { type: 'checkbox' },
+									domProps: { checked: this.rememberOriginal },
+									on: { change: (event) => { this.rememberOriginal = Boolean(event.target.checked) } },
+								}),
+								createElement('span', {}, translate('Always open the original from this file')),
+							]),
 							createElement('button', {
 								class: 'button epnc-native-error-action',
 								attrs: { type: 'button', disabled: this.isRecovering },

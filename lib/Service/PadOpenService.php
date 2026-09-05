@@ -11,6 +11,7 @@ namespace OCA\EtherpadNextcloud\Service;
 
 use OCA\EtherpadNextcloud\Exception\BindingException;
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
+use OCA\EtherpadNextcloud\Exception\MissingBindingException;
 use OCA\EtherpadNextcloud\Exception\PadFileFormatException;
 use OCA\EtherpadNextcloud\Util\PathNormalizer;
 use OCP\Files\File;
@@ -60,7 +61,17 @@ class PadOpenService {
 	 * @throws LockedException
 	 * @throws PadFileFormatException
 	 */
-	private function openNode(string $uid, string $displayName, File $node, string $absolutePath): PadOpenTarget {
+	private function openNode(
+		string $uid,
+		string $displayName,
+		File $node,
+		string $absolutePath,
+		// False once a jump has been taken. An alias resolves to a bound
+		// file, and a bound file is opened as itself, so one hop is all the
+		// feature needs — and refusing a second makes a cycle unreachable
+		// without tracking where we have been.
+		bool $followAlias = true,
+	): PadOpenTarget {
 		try {
 			$content = $this->lockRetryService->readContentWithOpenLockRetry($node);
 			$fileId = (int)$node->getId();
@@ -82,7 +93,21 @@ class PadOpenService {
 			// not issue a session that writes on the pad server.
 			$mayWrite = $node->isUpdateable();
 			if (!$pad->isExternal) {
-				$this->bindingService->assertConsistentMapping($fileId, $pad->padId, $pad->accessMode);
+				try {
+					$this->bindingService->assertConsistentMapping($fileId, $pad->padId, $pad->accessMode);
+				} catch (MissingBindingException $e) {
+					$alias = $followAlias ? $this->resolveAliasTarget($uid, $pad, $fileId) : null;
+					if ($alias === null) {
+						throw $e;
+					}
+					return $this->openNode(
+						$uid,
+						$displayName,
+						$alias,
+						$this->userNodeResolver->toUserAbsolutePath($uid, $alias),
+						followAlias: false,
+					);
+				}
 			}
 
 			return $this->buildOpenContext($uid, $displayName, $absolutePath, $fileId, $pad, $mayWrite);
@@ -94,6 +119,39 @@ class PadOpenService {
 				'exception' => $e,
 			]);
 			throw $e;
+		}
+	}
+
+	/**
+	 * Resolves the pad a copy defers to, or null when the alias leads
+	 * nowhere the requester may go.
+	 *
+	 * Authorization mirrors `PadMetadataService::findOriginalForCopy`: the
+	 * target is only opened once `UserNodeResolver` has confirmed the
+	 * requester can already read that file. Every miss returns null and so
+	 * ends on the same recovery card as a copy without an alias, which
+	 * keeps a hand-written `alias_of_pad_id` from probing for pads in other
+	 * accounts.
+	 */
+	private function resolveAliasTarget(string $uid, ParsedPadFile $pad, int $fileId): ?File {
+		if ($pad->aliasOfPadId === '') {
+			return null;
+		}
+
+		$binding = $this->bindingService->findByPadId($pad->aliasOfPadId, BindingService::STATE_ACTIVE);
+		if ($binding === null) {
+			return null;
+		}
+
+		$boundFileId = (int)$binding['file_id'];
+		if ($boundFileId <= 0 || $boundFileId === $fileId) {
+			return null;
+		}
+
+		try {
+			return $this->userNodeResolver->resolveUserFileNodeById($uid, $boundFileId);
+		} catch (NotFoundException) {
+			return null;
 		}
 	}
 

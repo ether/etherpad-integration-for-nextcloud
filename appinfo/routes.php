@@ -27,6 +27,7 @@ return ['routes' => [
 	['name' => 'padLifecycle#restore', 'url' => '/api/v1/pads/restore', 'verb' => 'POST'],
 	['name' => 'padLifecycle#recoverByFileId', 'url' => '/api/v1/pads/recover-from-snapshot/{fileId}', 'verb' => 'POST'],
 	['name' => 'padLifecycle#findOriginalByFileId', 'url' => '/api/v1/pads/find-original/{fileId}', 'verb' => 'GET'],
+	['name' => 'padLifecycle#markAliasByFileId', 'url' => '/api/v1/pads/alias/{fileId}', 'verb' => 'POST'],
 	['name' => 'admin#saveSettings', 'url' => '/api/v1/admin/settings', 'verb' => 'POST'],
 	['name' => 'admin#healthCheck', 'url' => '/api/v1/admin/health', 'verb' => 'POST'],
 	['name' => 'admin#consistencyCheck', 'url' => '/api/v1/admin/consistency-check', 'verb' => 'POST'],

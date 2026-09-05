@@ -30,6 +30,7 @@ Additional fields:
 - `pad_url` (optional, absolute `http(s)` URL)
 - `pad_origin` (optional, origin of external Etherpad server, e.g. `https://pad.example.org`)
 - `remote_pad_id` (optional, actual pad ID on external server)
+- `alias_of_pad_id` (optional, pad this file defers to instead of binding one of its own)
 
 Example:
 
@@ -54,6 +55,21 @@ Legacy migration:
   - `URL=https://.../p/<pad-id>`
   - is auto-migrated on first open to `etherpad-nextcloud/1`. The migration branches on the URL origin (same vs. cross) and the pad-id format; GroupPad IDs (`g.<group>$<name>`) re-bind as protected, free-form IDs re-bind as public, cross-origin URLs route through the external-pad flow as `ext.*`.
   - A claim-collision check protects against legacy files being used to claim pads already bound to another user's file — see `docs/legacy-ownpad-migration.md` for the full state table.
+
+## Alias Files
+
+A `.pad` copied inside Nextcloud is a byte copy: it carries the original's `pad_id` and a `file_id` that is no longer its own, and it has no binding row. Opening it therefore fails with `missing_binding` and lands on the recovery card, which offers to open the original or to fork the stored snapshot into a new pad.
+
+`alias_of_pad_id` records that the user chose the first answer permanently. It is written only through the recovery card's opt-in, never implicitly on copy, and it names the pad rather than a file id so it survives a rename or move of the original. Because a copy starts out with the original's `pad_id`, the marker normally repeats that value; it differs only if this file later gets a pad of its own.
+
+On open, a file with the marker and no binding resolves the marker to its bound file and opens that file instead. The requester must already be able to read the target — the same `UserNodeResolver` round trip the find-original lookup uses — and every miss falls back to the ordinary recovery card, so a hand-written marker cannot be used to probe for pads in other accounts. Exactly one hop is followed: the file an alias points at is opened as itself, which also makes a cycle unreachable.
+
+**The snapshot in an alias file stays frozen.** Sync resolves the file its binding names, so it only ever writes the original; the copy keeps the snapshot it held when it was made. Two consequences follow and are accepted rather than worked around:
+
+- A WebDAV download of an alias file returns that old snapshot, not the current pad.
+- If the original is deleted, the alias is left with a stale snapshot and no live pad. The recovery card returns, and forking from it seeds a new pad with content from the moment of the copy.
+
+Mirroring the snapshot into every alias was considered and rejected: sync would first have to find the aliases, which needs an index of them in the database — precisely the state this design keeps in the file.
 
 ## Snapshot Body
 

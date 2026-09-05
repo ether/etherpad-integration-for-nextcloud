@@ -99,6 +99,24 @@ export const apiRecoverFromSnapshot = async (fileId, path = '') => {
 	return result
 }
 
+export const apiMarkPadAlias = async (fileId, path = '') => {
+	const endpoint = ocGenerateUrl('/apps/' + APP_ID + '/api/v1/pads/alias/' + encodeURIComponent(String(fileId)))
+	const result = await fetchJson(endpoint, {
+		method: 'POST',
+		headers: {
+			Accept: 'application/json',
+			requesttoken: ocRequestToken(),
+		},
+	}, 'Could not remember the original pad.')
+	// The cached resolve answer carries a missing-binding marker that this
+	// write just made obsolete: the next open follows the alias instead.
+	RESOLVE_CACHE.delete(String(fileId))
+	if (typeof path === 'string' && path !== '') {
+		RESOLVE_CACHE.delete('path:' + path)
+	}
+	return result
+}
+
 
 const getResolveCache = (cacheKey) => {
 	const cached = RESOLVE_CACHE.get(cacheKey)

@@ -462,6 +462,29 @@ export const followOpenTheOriginal = async (page: Page, expectedOriginalFileId: 
 		.toMatch(new RegExp(`(/files/${expectedOriginalFileId}\\b|fileid=${expectedOriginalFileId}\\b)`))
 }
 
+/**
+ * Tick the recovery card's opt-in, then follow "Open the original". The
+ * marker is written before the navigation, so a later open of the same
+ * copy skips the card entirely.
+ */
+export const rememberAndFollowOpenTheOriginal = async (page: Page, expectedOriginalFileId: number): Promise<void> => {
+	const box = page.getByRole('checkbox', { name: /always open the original from this file|aus dieser datei immer das original öffnen/i }).first()
+	await expect(box).toBeVisible({ timeout: 30_000 })
+	await box.check()
+
+	// Waits for the navigation itself rather than going through
+	// followOpenTheOriginal: with the box ticked the click first writes the
+	// marker and only then leaves the page, so asserting on the viewer
+	// before the URL would be reading the page we are still on.
+	const link = page.getByRole('link', { name: /open the original \.pad file|urspr.ngliche \.pad-datei öffnen/i }).first()
+	await expect(link).toBeVisible({ timeout: 30_000 })
+	await Promise.all([
+		page.waitForURL(new RegExp(`(/files/${expectedOriginalFileId}\\b|fileid=${expectedOriginalFileId}\\b)`), { timeout: 30_000 }),
+		link.click(),
+	])
+	await expectEtherpadViewerMounted(page)
+}
+
 /** A unique-ish file name so parallel/repeat runs don't collide. */
 export const uniquePadName = (label: string): string => uniqueName(label, 'pad')
 

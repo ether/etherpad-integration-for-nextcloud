@@ -409,6 +409,146 @@ class PadMetadataServiceTest extends TestCase {
 		$this->assertFalse($result->found);
 	}
 
+	public function testMarkAsAliasOfOriginalWritesTheMarkerIntoTheCopy(): void {
+		$copy = $this->buildPadNode(710, 'Copy.pad', "---\npad_id: original-pad\naccess_mode: protected\n---\nbody");
+		$originalNode = $this->createMock(File::class);
+
+		$userNodeResolver = $this->createMock(UserNodeResolver::class);
+		$userNodeResolver->method('resolveUserFileNodeById')->willReturnMap([
+			['alice', 710, $copy],
+			['alice', 42, $originalNode],
+		]);
+		$userNodeResolver->method('toUserAbsolutePath')->with('alice', $originalNode)->willReturn('/Original.pad');
+
+		$padFileService = $this->createMock(PadFileService::class);
+		$padFileService->method('readPad')->willReturn(new ParsedPadFile(
+			frontmatter: ['pad_id' => 'original-pad', 'access_mode' => 'protected'],
+			body: 'body',
+			padId: 'original-pad',
+			accessMode: 'protected',
+			padUrl: '',
+			isExternal: false,
+			snapshotRev: -1,
+		));
+		// The marker names the pad, and the rest of the frontmatter survives
+		// the rewrite untouched.
+		$padFileService->expects($this->once())
+			->method('serialize')
+			->with(
+				['pad_id' => 'original-pad', 'access_mode' => 'protected', 'alias_of_pad_id' => 'original-pad'],
+				'body',
+			)
+			->willReturn('serialized');
+
+		$lockRetryService = $this->createMock(PadFileLockRetryService::class);
+		$lockRetryService->method('readContentWithOpenLockRetry')->with($copy)->willReturn('raw');
+		$lockRetryService->expects($this->once())
+			->method('putContentWithSyncLockRetry')
+			->with($copy, 'serialized');
+
+		$bindingService = $this->createMock(BindingService::class);
+		$bindingService->method('findByPadId')
+			->with('original-pad', BindingService::STATE_ACTIVE)
+			->willReturn(['file_id' => 42, 'pad_id' => 'original-pad', 'state' => BindingService::STATE_ACTIVE]);
+
+		$result = $this->buildService(
+			padFileService: $padFileService,
+			userNodeResolver: $userNodeResolver,
+			lockRetryService: $lockRetryService,
+			bindingService: $bindingService,
+		)->markAsAliasOfOriginal('alice', 710);
+
+		$this->assertTrue($result->found);
+		$this->assertSame(42, $result->fileId);
+		$this->assertSame('/Original.pad', $result->path);
+	}
+
+	public function testMarkAsAliasOfOriginalWritesNothingWhenTheOriginalIsUnreadable(): void {
+		$copy = $this->buildPadNode(711, 'Copy.pad', "---\npad_id: original-pad\n---\n");
+
+		$userNodeResolver = $this->createMock(UserNodeResolver::class);
+		$userNodeResolver->method('resolveUserFileNodeById')->willReturnCallback(
+			static function (string $uid, int $fileId) use ($copy): File {
+				if ($fileId === 711) {
+					return $copy;
+				}
+				throw new NotFoundException('not readable by this user');
+			}
+		);
+
+		$padFileService = $this->createMock(PadFileService::class);
+		$padFileService->method('readPad')->willReturn(new ParsedPadFile(
+			frontmatter: ['pad_id' => 'original-pad'],
+			body: '',
+			padId: 'original-pad',
+			accessMode: '',
+			padUrl: '',
+			isExternal: false,
+			snapshotRev: -1,
+		));
+		$padFileService->expects($this->never())->method('serialize');
+
+		$lockRetryService = $this->createMock(PadFileLockRetryService::class);
+		$lockRetryService->expects($this->never())->method('putContentWithSyncLockRetry');
+
+		$bindingService = $this->createMock(BindingService::class);
+		$bindingService->method('findByPadId')
+			->willReturn(['file_id' => 42, 'pad_id' => 'original-pad', 'state' => BindingService::STATE_ACTIVE]);
+
+		$result = $this->buildService(
+			padFileService: $padFileService,
+			userNodeResolver: $userNodeResolver,
+			lockRetryService: $lockRetryService,
+			bindingService: $bindingService,
+		)->markAsAliasOfOriginal('alice', 711);
+
+		$this->assertFalse($result->found);
+	}
+
+	public function testMarkAsAliasOfOriginalLeavesAFileThatAlreadyCarriesTheMarkerAlone(): void {
+		$copy = $this->buildPadNode(712, 'Copy.pad', "---\npad_id: original-pad\n---\n");
+		$originalNode = $this->createMock(File::class);
+
+		$userNodeResolver = $this->createMock(UserNodeResolver::class);
+		$userNodeResolver->method('resolveUserFileNodeById')->willReturnMap([
+			['alice', 712, $copy],
+			['alice', 42, $originalNode],
+		]);
+		$userNodeResolver->method('toUserAbsolutePath')->willReturn('/Original.pad');
+
+		$padFileService = $this->createMock(PadFileService::class);
+		$padFileService->method('readPad')->willReturn(new ParsedPadFile(
+			frontmatter: ['pad_id' => 'original-pad', 'alias_of_pad_id' => 'original-pad'],
+			body: '',
+			padId: 'original-pad',
+			accessMode: '',
+			padUrl: '',
+			isExternal: false,
+			snapshotRev: -1,
+			aliasOfPadId: 'original-pad',
+		));
+		$padFileService->expects($this->never())->method('serialize');
+
+		$lockRetryService = $this->createMock(PadFileLockRetryService::class);
+		$lockRetryService->method('readContentWithOpenLockRetry')->willReturn('raw');
+		// A second click must not churn the file, and must not bump its mtime
+		// for a byte-identical rewrite.
+		$lockRetryService->expects($this->never())->method('putContentWithSyncLockRetry');
+
+		$bindingService = $this->createMock(BindingService::class);
+		$bindingService->method('findByPadId')
+			->willReturn(['file_id' => 42, 'pad_id' => 'original-pad', 'state' => BindingService::STATE_ACTIVE]);
+
+		$result = $this->buildService(
+			padFileService: $padFileService,
+			userNodeResolver: $userNodeResolver,
+			lockRetryService: $lockRetryService,
+			bindingService: $bindingService,
+		)->markAsAliasOfOriginal('alice', 712);
+
+		$this->assertTrue($result->found);
+	}
+
 	private function buildPadNode(int $fileId, string $name, string $content, bool $updateable = true): File {
 		return $this->createConfiguredMock(File::class, [
 			'getId' => $fileId,

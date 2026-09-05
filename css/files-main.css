@@ -70,6 +70,21 @@
 	word-break: break-word;
 }
 
+.epnc-native-error-remember {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	margin-top: 8px;
+	font-size: 13px;
+	color: var(--color-text-maxcontrast, #374151);
+	cursor: pointer;
+}
+
+.epnc-native-error-remember input {
+	margin: 0;
+	cursor: pointer;
+}
+
 .epnc-pad-doc {
 	box-sizing: border-box;
 	width: 100%;

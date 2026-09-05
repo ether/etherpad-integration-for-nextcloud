@@ -42,45 +42,102 @@ class PadMetadataService {
 	 * be used to probe for `.pad` files in other users' accounts.
 	 */
 	public function findOriginalForCopy(string $uid, int $fileId): PadOriginalLookup {
-		try {
-			$node = $this->userNodeResolver->resolveUserFileNodeById($uid, $fileId);
-		} catch (NotFoundException) {
-			return new PadOriginalLookup(found: false);
-		}
-		if (!str_ends_with(strtolower($node->getName()), '.pad')) {
-			return new PadOriginalLookup(found: false);
-		}
-
-		try {
-			$padId = $this->padFileService->readPad((string)$node->getContent())->padId;
-		} catch (\Throwable) {
-			return new PadOriginalLookup(found: false);
-		}
-		if ($padId === '' || str_starts_with($padId, 'ext.')) {
-			return new PadOriginalLookup(found: false);
-		}
-
-		$binding = $this->bindingService->findByPadId($padId, BindingService::STATE_ACTIVE);
-		if ($binding === null) {
-			return new PadOriginalLookup(found: false);
-		}
-
-		$boundFileId = (int)$binding['file_id'];
-		if ($boundFileId <= 0 || $boundFileId === $fileId) {
-			return new PadOriginalLookup(found: false);
-		}
-
-		try {
-			$originalNode = $this->userNodeResolver->resolveUserFileNodeById($uid, $boundFileId);
-		} catch (NotFoundException) {
+		$located = $this->locateOriginal($uid, $fileId);
+		if ($located === null) {
 			return new PadOriginalLookup(found: false);
 		}
 
 		return new PadOriginalLookup(
 			found: true,
-			fileId: $boundFileId,
-			path: $this->userNodeResolver->toUserAbsolutePath($uid, $originalNode),
+			fileId: $located['fileId'],
+			path: $located['path'],
 		);
+	}
+
+	/**
+	 * Records in the copy's own frontmatter that it defers to the original,
+	 * so later opens land on the pad instead of the recovery card.
+	 *
+	 * Runs the same lookup as `findOriginalForCopy` rather than trusting a
+	 * pad ID from the request, so the marker can only ever be written for a
+	 * pad the requester already reads. A miss writes nothing and reports
+	 * `found: false`, which leaves the caller on the recovery card.
+	 *
+	 * The marker is the pad ID the copy already carries: a copy is a byte
+	 * copy, so its `pad_id` is the original's. Naming the target explicitly
+	 * rather than setting a flag keeps the alias pointing at the same pad if
+	 * this file later gets a pad of its own.
+	 *
+	 * @throws LockedException
+	 */
+	public function markAsAliasOfOriginal(string $uid, int $fileId): PadOriginalLookup {
+		$located = $this->locateOriginal($uid, $fileId);
+		if ($located === null) {
+			return new PadOriginalLookup(found: false);
+		}
+
+		$node = $located['node'];
+		$parsed = $this->padFileService->readPad($this->lockRetryService->readContentWithOpenLockRetry($node));
+		if ($parsed->aliasOfPadId !== $located['padId']) {
+			$frontmatter = $parsed->frontmatter;
+			$frontmatter['alias_of_pad_id'] = $located['padId'];
+			$this->lockRetryService->putContentWithSyncLockRetry(
+				$node,
+				$this->padFileService->serialize($frontmatter, $parsed->body),
+			);
+		}
+
+		return new PadOriginalLookup(
+			found: true,
+			fileId: $located['fileId'],
+			path: $located['path'],
+		);
+	}
+
+	/**
+	 * @return array{node:File,padId:string,fileId:int,path:string}|null
+	 */
+	private function locateOriginal(string $uid, int $fileId): ?array {
+		try {
+			$node = $this->userNodeResolver->resolveUserFileNodeById($uid, $fileId);
+		} catch (NotFoundException) {
+			return null;
+		}
+		if (!str_ends_with(strtolower($node->getName()), '.pad')) {
+			return null;
+		}
+
+		try {
+			$padId = $this->padFileService->readPad((string)$node->getContent())->padId;
+		} catch (\Throwable) {
+			return null;
+		}
+		if ($padId === '' || str_starts_with($padId, 'ext.')) {
+			return null;
+		}
+
+		$binding = $this->bindingService->findByPadId($padId, BindingService::STATE_ACTIVE);
+		if ($binding === null) {
+			return null;
+		}
+
+		$boundFileId = (int)$binding['file_id'];
+		if ($boundFileId <= 0 || $boundFileId === $fileId) {
+			return null;
+		}
+
+		try {
+			$originalNode = $this->userNodeResolver->resolveUserFileNodeById($uid, $boundFileId);
+		} catch (NotFoundException) {
+			return null;
+		}
+
+		return [
+			'node' => $node,
+			'padId' => $padId,
+			'fileId' => $boundFileId,
+			'path' => $this->userNodeResolver->toUserAbsolutePath($uid, $originalNode),
+		];
 	}
 
 	/**

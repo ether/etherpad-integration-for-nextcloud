@@ -66,6 +66,9 @@ class PadFileService {
 		if (isset($frontmatter['remote_pad_id']) && is_string($frontmatter['remote_pad_id']) && $frontmatter['remote_pad_id'] !== '') {
 			$lines[] = 'remote_pad_id: ' . $this->stringScalar($frontmatter['remote_pad_id']);
 		}
+		if (isset($frontmatter['alias_of_pad_id']) && is_string($frontmatter['alias_of_pad_id']) && $frontmatter['alias_of_pad_id'] !== '') {
+			$lines[] = 'alias_of_pad_id: ' . $this->stringScalar($frontmatter['alias_of_pad_id']);
+		}
 
 		return "---\n" . implode("\n", $lines) . "\n---\n" . $body;
 	}
@@ -179,18 +182,20 @@ class PadFileService {
 			padUrl: $meta['pad_url'],
 			isExternal: $this->isExternalFrontmatter($frontmatter, $padId),
 			snapshotRev: $this->getSnapshotRevisionFromFrontmatter($frontmatter),
+			aliasOfPadId: $meta['alias_of_pad_id'],
 		);
 	}
 
 	/**
 	 * @param array<string,mixed> $frontmatter
-	 * @return array{pad_id:string,access_mode:string,pad_url:string}
+	 * @return array{pad_id:string,access_mode:string,pad_url:string,alias_of_pad_id:string}
 	 */
 	public function extractPadMetadata(array $frontmatter): array {
 		return [
 			'pad_id' => isset($frontmatter['pad_id']) ? (string)$frontmatter['pad_id'] : '',
 			'access_mode' => isset($frontmatter['access_mode']) ? (string)$frontmatter['access_mode'] : '',
 			'pad_url' => isset($frontmatter['pad_url']) ? trim((string)$frontmatter['pad_url']) : '',
+			'alias_of_pad_id' => isset($frontmatter['alias_of_pad_id']) ? trim((string)$frontmatter['alias_of_pad_id']) : '',
 		];
 	}
 
@@ -348,6 +353,12 @@ class PadFileService {
 		}
 		if (isset($frontmatter['remote_pad_id']) && $this->requireOptionalStringScalar($frontmatter, 'remote_pad_id') === '') {
 			throw new PadFileFormatException('Invalid remote_pad_id in frontmatter.');
+		}
+		if (isset($frontmatter['alias_of_pad_id'])) {
+			$aliasOfPadId = $this->requireOptionalStringScalar($frontmatter, 'alias_of_pad_id');
+			if ($aliasOfPadId === '' || str_starts_with($aliasOfPadId, 'ext.')) {
+				throw new PadFileFormatException('Invalid alias_of_pad_id in frontmatter.');
+			}
 		}
 	}
 

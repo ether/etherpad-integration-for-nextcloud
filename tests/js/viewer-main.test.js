@@ -30,6 +30,7 @@ vi.mock('../../src/lib/pad-sync.js', () => ({
 }))
 vi.mock('../../src/lib/api-client.js', () => ({
 	apiFindOriginalPad: vi.fn(),
+	apiMarkPadAlias: vi.fn(),
 	apiRecoverFromSnapshot: vi.fn(),
 	apiResolvePadByPath: vi.fn(),
 }))
@@ -44,7 +45,7 @@ vi.mock('../../src/lib/urls.js', () => ({
 	parsePublicShareTokenFromLocation: vi.fn(() => ''),
 }))
 
-const { apiFindOriginalPad, apiRecoverFromSnapshot, apiResolvePadByPath } = await import('../../src/lib/api-client.js')
+const { apiFindOriginalPad, apiMarkPadAlias, apiRecoverFromSnapshot, apiResolvePadByPath } = await import('../../src/lib/api-client.js')
 const { loadPadContent } = await import('../../src/lib/pad-content.js')
 const { parsePadPathFromDavHref, parsePublicShareTokenFromLocation } = await import('../../src/lib/urls.js')
 
@@ -749,6 +750,50 @@ describe('viewer component — recoverFromSnapshot', () => {
 	})
 })
 
+describe('viewer component — rememberAndOpenOriginal', () => {
+	let assign
+
+	beforeEach(() => {
+		assign = vi.fn()
+		// jsdom refuses real navigation, and what matters here is which
+		// address the click ends up at.
+		Object.defineProperty(window, 'location', {
+			configurable: true,
+			value: { assign },
+		})
+	})
+
+	it('writes the marker, then opens the original', async () => {
+		apiMarkPadAlias.mockResolvedValue({})
+		const vm = makeInstance({ recoveryFileId: 42, recoveryPath: '/copy.pad' })
+
+		await vm.rememberAndOpenOriginal('https://nc/viewer/9')
+
+		expect(apiMarkPadAlias).toHaveBeenCalledWith(42, '/copy.pad')
+		expect(assign).toHaveBeenCalledWith('https://nc/viewer/9')
+		expect(vm.isRememberingOriginal).toBe(false)
+	})
+
+	it('still opens the original when the marker could not be written', async () => {
+		apiMarkPadAlias.mockRejectedValue(new Error('nope'))
+		const vm = makeInstance({ recoveryFileId: 42, recoveryPath: '/copy.pad' })
+
+		await vm.rememberAndOpenOriginal('https://nc/viewer/9')
+
+		expect(assign).toHaveBeenCalledWith('https://nc/viewer/9')
+		expect(vm.isRememberingOriginal).toBe(false)
+	})
+
+	it('does nothing without a recovery address', async () => {
+		const vm = makeInstance({ recoveryFileId: null })
+
+		await vm.rememberAndOpenOriginal('https://nc/viewer/9')
+
+		expect(apiMarkPadAlias).not.toHaveBeenCalled()
+		expect(assign).not.toHaveBeenCalled()
+	})
+})
+
 describe('viewer component — teardown', () => {
 	it('flushes, stops, and unhooks the sync controller on beforeUnmount', () => {
 		const vm = makeInstance({})
@@ -814,6 +859,57 @@ describe('viewer component — render', () => {
 		expect(link.data.attrs.href).toBe('https://nc/viewer/9')
 		expect(allText(tree)).toContain('Open the original .pad file')
 		expect(findByTag(tree, 'button')).toHaveLength(1)
+	})
+
+	it('leaves the link alone while the remember box is unchecked', () => {
+		const vm = makeInstance({
+			loadError: 'x',
+			canRecover: true,
+			rememberOriginal: false,
+			originalPad: { viewerUrl: 'https://nc/viewer/9', path: '/o.pad' },
+		})
+		vm.rememberAndOpenOriginal = vi.fn()
+		const tree = component.render.call(vm, h)
+		const event = { preventDefault: vi.fn() }
+
+		findByTag(tree, 'a')[0].data.on.click(event)
+
+		// Still an ordinary link, so middle-click and open-in-new-tab work.
+		expect(event.preventDefault).not.toHaveBeenCalled()
+		expect(vm.rememberAndOpenOriginal).not.toHaveBeenCalled()
+	})
+
+	it('takes over the click once the remember box is checked', () => {
+		const vm = makeInstance({
+			loadError: 'x',
+			canRecover: true,
+			rememberOriginal: true,
+			originalPad: { viewerUrl: 'https://nc/viewer/9', path: '/o.pad' },
+		})
+		vm.rememberAndOpenOriginal = vi.fn()
+		const tree = component.render.call(vm, h)
+		const event = { preventDefault: vi.fn() }
+
+		findByTag(tree, 'a')[0].data.on.click(event)
+
+		expect(event.preventDefault).toHaveBeenCalled()
+		expect(vm.rememberAndOpenOriginal).toHaveBeenCalledWith('https://nc/viewer/9')
+	})
+
+	it('binds the remember box back onto the component', () => {
+		const vm = makeInstance({
+			loadError: 'x',
+			canRecover: true,
+			originalPad: { viewerUrl: 'https://nc/viewer/9', path: '/o.pad' },
+		})
+		const tree = component.render.call(vm, h)
+		const box = findByTag(tree, 'input')[0]
+
+		expect(box.data.attrs.type).toBe('checkbox')
+		expect(allText(tree)).toContain('Always open the original from this file')
+
+		box.data.on.change({ target: { checked: true } })
+		expect(vm.rememberOriginal).toBe(true)
 	})
 
 	it('offers only a create action when no original was found', () => {

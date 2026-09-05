@@ -10,7 +10,9 @@ import {
 	expectEtherpadViewerMounted,
 	expectRecoveryCardForCopy,
 	followOpenTheOriginal,
+	readEtherpadUrlFromViewer,
 	openPadFromFileList,
+	rememberAndFollowOpenTheOriginal,
 	uniquePadName,
 } from '../fixtures/nextcloud'
 import { copyViaDav, deleteViaDav, propfindFileId } from '../fixtures/dav'
@@ -30,8 +32,12 @@ import { copyViaDav, deleteViaDav, propfindFileId } from '../fixtures/dav'
 test.describe('orphan .pad recovery', () => {
 	const original = uniquePadName('orphan-source')
 	const copy = uniquePadName('orphan-copy')
+	const aliasCopies: string[] = []
 
 	test.afterAll(async () => {
+		for (const name of aliasCopies) {
+			await deleteViaDav(name)
+		}
 		await deleteViaDav(copy)
 		await deleteViaDav(original)
 	})
@@ -62,5 +68,43 @@ test.describe('orphan .pad recovery', () => {
 		// Following the affordance navigates to the original pad (mounts
 		// the viewer, URL points at the original file id, not the copy).
 		await followOpenTheOriginal(page, originalFileId)
+	})
+
+	/**
+	 * The opt-in from the same card: ticking it writes `alias_of_pad_id`
+	 * into the copy, so opening the copy again goes straight to the
+	 * original instead of asking once more.
+	 */
+	test('remembers the original so a later open skips the card', async ({ page }) => {
+		// Its own source and copy rather than the ones above, so this test
+		// stands on its own when run alone.
+		const aliasOriginal = uniquePadName('orphan-alias-source')
+		const aliasCopy = uniquePadName('orphan-alias-copy')
+		aliasCopies.push(aliasCopy, aliasOriginal)
+
+		await gotoFiles(page)
+		await createPublicPad(page, aliasOriginal)
+		await expectEtherpadViewerMounted(page)
+		await closeViewer(page)
+		const originalFileId = await propfindFileId(aliasOriginal)
+		await copyViaDav(aliasOriginal, aliasCopy)
+
+		await gotoFiles(page)
+		await openPadFromFileList(page, aliasCopy)
+		await expectRecoveryCardForCopy(page, { originalFound: true })
+		await rememberAndFollowOpenTheOriginal(page, originalFileId)
+
+		const originalPadUrl = await readEtherpadUrlFromViewer(page)
+
+		// Second open of the same copy: no card, and the frame carries the
+		// original's pad. The browser URL still names the copy — the alias
+		// is resolved server-side in the open payload, so the viewer never
+		// learns that it happened and never navigates.
+		await closeViewer(page)
+		await gotoFiles(page)
+		await openPadFromFileList(page, aliasCopy)
+		await expectEtherpadViewerMounted(page)
+		await expect(page.locator('.epnc-native-error-message')).toHaveCount(0)
+		expect(await readEtherpadUrlFromViewer(page)).toBe(originalPadUrl)
 	})
 })

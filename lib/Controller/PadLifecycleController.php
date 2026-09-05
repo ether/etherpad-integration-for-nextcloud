@@ -137,4 +137,19 @@ class PadLifecycleController extends AbstractPadController {
 			],
 		);
 	}
+
+	#[\OCP\AppFramework\Http\Attribute\NoAdminRequired]
+	#[\OCP\AppFramework\Http\Attribute\NoCSRFRequired]
+	public function markAliasByFileId(int $fileId): DataResponse {
+		return $this->runForUser(
+			fn(IUser $user): PadOriginalLookup => $this->padMetadataService->markAsAliasOfOriginal(
+				$user->getUID(),
+				$this->requireFileId($fileId),
+			),
+			fn(PadOriginalLookup $lookup): DataResponse => new DataResponse($this->padResponses->originalLookupResponse($lookup)),
+			[
+				'generic' => $this->l10n->t('Could not remember the original pad for this file.'),
+			],
+		);
+	}
 }

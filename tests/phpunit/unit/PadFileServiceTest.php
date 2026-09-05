@@ -74,6 +74,78 @@ class PadFileServiceTest extends TestCase {
 		$this->assertStringNotContainsString('pad_url:', $withoutPadUrl);
 	}
 
+	/**
+	 * `serialize()` writes a closed set of keys, so a marker that is not
+	 * named there would be dropped by the next rewrite that touches the
+	 * file.
+	 */
+	public function testAliasMarkerSurvivesASerializeRoundTrip(): void {
+		$service = new PadFileService(new FixedClock());
+		$document = $service->buildInitialDocument(
+			20,
+			'original-pad',
+			BindingService::ACCESS_PROTECTED,
+			extraFrontmatter: ['alias_of_pad_id' => 'original-pad'],
+		);
+
+		$parsed = $service->readPad($document);
+
+		$this->assertStringContainsString('alias_of_pad_id: "original-pad"', $document);
+		$this->assertSame('original-pad', $parsed->aliasOfPadId);
+		$this->assertSame('original-pad', $service->readPad($service->serialize($parsed->frontmatter, $parsed->body))->aliasOfPadId);
+	}
+
+	public function testAPadFileWithoutTheMarkerReportsNoAlias(): void {
+		$service = new PadFileService(new FixedClock());
+		$document = $service->buildInitialDocument(21, 'demo-pad', BindingService::ACCESS_PROTECTED);
+
+		$this->assertStringNotContainsString('alias_of_pad_id:', $document);
+		$this->assertSame('', $service->readPad($document)->aliasOfPadId);
+	}
+
+	/**
+	 * A copy is a byte copy, so its own `pad_id` is already the original's.
+	 * That equality is the ordinary case and must parse.
+	 */
+	public function testAliasMarkerMayRepeatTheFilesOwnPadId(): void {
+		$service = new PadFileService(new FixedClock());
+		$document = $service->buildInitialDocument(
+			22,
+			'shared-pad',
+			BindingService::ACCESS_PROTECTED,
+			extraFrontmatter: ['alias_of_pad_id' => 'shared-pad'],
+		);
+
+		$this->assertSame('shared-pad', $service->readPad($document)->aliasOfPadId);
+	}
+
+	public static function invalidAliasMarkerProvider(): array {
+		return [
+			'empty' => ['""'],
+			'external pad' => ['"ext.remote-pad"'],
+		];
+	}
+
+	#[\PHPUnit\Framework\Attributes\DataProvider('invalidAliasMarkerProvider')]
+	public function testRejectsAnUnusableAliasMarker(string $marker): void {
+		$service = new PadFileService(new FixedClock());
+		$valid = $service->buildInitialDocument(
+			23,
+			'demo-pad',
+			BindingService::ACCESS_PROTECTED,
+			extraFrontmatter: ['alias_of_pad_id' => 'other-pad'],
+		);
+		// Control: everything but the marker value is already accepted, so a
+		// rejection below can only come from the marker itself.
+		$this->assertSame('other-pad', $service->readPad($valid)->aliasOfPadId);
+
+		$broken = str_replace('alias_of_pad_id: "other-pad"', 'alias_of_pad_id: ' . $marker, $valid);
+		$this->assertNotSame($valid, $broken);
+
+		$this->expectException(PadFileFormatException::class);
+		$service->parsePadFile($broken);
+	}
+
 	public function testQuotedStringScalarsRoundtripWithEscapes(): void {
 		$service = new PadFileService(new FixedClock());
 		$padUrl = 'https://pad.example.org/p/say-"hello"-path\\with\\slashes';
@@ -573,15 +645,21 @@ class PadFileServiceTest extends TestCase {
 		$service = new PadFileService(new FixedClock());
 
 		$this->assertSame(
-			['pad_id' => '', 'access_mode' => '', 'pad_url' => ''],
+			['pad_id' => '', 'access_mode' => '', 'pad_url' => '', 'alias_of_pad_id' => ''],
 			$service->extractPadMetadata([])
 		);
 		$this->assertSame(
-			['pad_id' => 'pad-1', 'access_mode' => 'public', 'pad_url' => 'https://pad.example.test/p/pad-1'],
+			[
+				'pad_id' => 'pad-1',
+				'access_mode' => 'public',
+				'pad_url' => 'https://pad.example.test/p/pad-1',
+				'alias_of_pad_id' => 'original-pad',
+			],
 			$service->extractPadMetadata([
 				'pad_id' => 'pad-1',
 				'access_mode' => 'public',
 				'pad_url' => '  https://pad.example.test/p/pad-1  ',
+				'alias_of_pad_id' => '  original-pad  ',
 			])
 		);
 	}

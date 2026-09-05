@@ -26,6 +26,12 @@ class ParsedPadFile {
 		public readonly string $padUrl,
 		public readonly bool $isExternal,
 		public readonly int $snapshotRev,
+		/**
+		 * Pad this file defers to instead of carrying a binding of its own,
+		 * or '' for the ordinary case. Set on a copy so that opening it lands
+		 * on the original rather than on the recovery card.
+		 */
+		public readonly string $aliasOfPadId = '',
 	) {
 	}
 }
