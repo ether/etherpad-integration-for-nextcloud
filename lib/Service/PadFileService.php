@@ -358,19 +358,28 @@ class PadFileService {
 		}
 		if (str_starts_with($trimmed, '"') && str_ends_with($trimmed, '"')) {
 			$inner = substr($trimmed, 1, -1);
-			return preg_replace('/\\\\(["\\\\])/', '$1', $inner);
+			return $this->readableScalar((string)preg_replace('/\\\\(["\\\\])/', '$1', $inner));
 		}
 		if (str_starts_with($trimmed, "'") && str_ends_with($trimmed, "'")) {
 			$inner = substr($trimmed, 1, -1);
-			return str_replace("''", "'", $inner);
+			return $this->readableScalar(str_replace("''", "'", $inner));
 		}
-		return $trimmed;
+		return $this->readableScalar($trimmed);
+	}
+
+	private function readableScalar(string $value): string {
+		$this->assertScalarIsRoundTrippable($value);
+		return $value;
+	}
+
+	private function assertScalarIsRoundTrippable(string $value): void {
+		if (preg_match('/[\x00\x0A\x0D]/', $value) === 1) {
+			throw new PadFileFormatException('Frontmatter values must not contain a line terminator or a NUL byte.');
+		}
 	}
 
 	private function stringScalar(string $value): string {
-		if (preg_match('/[\x00-\x1F\x7F]/', $value) === 1) {
-			throw new PadFileFormatException('Frontmatter values must not contain control characters.');
-		}
+		$this->assertScalarIsRoundTrippable($value);
 		$escaped = str_replace(['\\', '"'], ['\\\\', '\\"'], $value);
 		return '"' . $escaped . '"';
 	}

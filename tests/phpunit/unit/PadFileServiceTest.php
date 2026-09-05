@@ -9,6 +9,7 @@ use OCA\EtherpadNextcloud\Exception\PadFileFormatException;
 use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\EtherpadNextcloud\Service\PadFileService;
 use OCA\EtherpadNextcloud\Service\PadSnapshot;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 class PadFileServiceTest extends TestCase {
@@ -354,7 +355,7 @@ class PadFileServiceTest extends TestCase {
 		new PadSnapshot('text', null, -1);
 	}
 
-	public function testFrontmatterValuesWithControlCharactersAreRefused(): void {
+	public function testFrontmatterValuesThatWouldBecomeMoreKeysAreRefused(): void {
 		$service = new PadFileService();
 
 		$this->expectException(PadFileFormatException::class);
@@ -365,6 +366,85 @@ class PadFileServiceTest extends TestCase {
 			padUrl: 'https://pad.remote.test/p/x',
 			extraFrontmatter: ['remote_pad_id' => "a\npad_id: g.victim\$secret\naccess_mode: protected"],
 		);
+	}
+
+	/** @return array<string,array{0: string}> */
+	public static function refusedFrontmatterBytes(): array {
+		return [
+			'line feed' => ["\n"],
+			'carriage return' => ["\r"],
+			'nul' => ["\x00"],
+		];
+	}
+
+	#[DataProvider('refusedFrontmatterBytes')]
+	public function testOnlyBytesThatBreakTheRoundTripAreRefused(string $byte): void {
+		$service = new PadFileService();
+
+		$this->expectException(PadFileFormatException::class);
+		$service->buildInitialDocument(1, 'p', BindingService::ACCESS_PUBLIC, extraFrontmatter: ['remote_pad_id' => 'a' . $byte . 'b']);
+	}
+
+	#[DataProvider('refusedFrontmatterBytes')]
+	public function testAFileAlreadyHoldingARefusedByteIsRefusedOnRead(string $byte): void {
+		$service = new PadFileService();
+
+		$this->expectException(PadFileFormatException::class);
+		$service->readPad(self::documentWithRemotePadId('a' . $byte . 'b'));
+	}
+
+	/** @return array<string,array{0: string}> */
+	public static function survivingFrontmatterBytes(): array {
+		return [
+			'start of heading' => ["\x01"],
+			'vertical tab' => ["\x0B"],
+			'form feed' => ["\x0C"],
+			'unit separator' => ["\x1F"],
+			'delete' => ["\x7F"],
+		];
+	}
+
+	#[DataProvider('survivingFrontmatterBytes')]
+	public function testAControlCharacterThatCannotBreakTheRoundTripSurvivesIt(string $byte): void {
+		$service = new PadFileService();
+
+		$document = $service->buildInitialDocument(
+			1,
+			'p',
+			BindingService::ACCESS_PUBLIC,
+			extraFrontmatter: ['remote_pad_id' => 'a' . $byte . 'b'],
+		);
+
+		$this->assertSame('a' . $byte . 'b', $service->readPad($document)->frontmatter['remote_pad_id']);
+	}
+
+	#[DataProvider('survivingFrontmatterBytes')]
+	public function testAStoredPadCarryingSuchAByteCanStillBeSynced(string $byte): void {
+		$service = new PadFileService();
+		$padUrl = 'https://pad.example.test/p/de' . $byte . 'mo';
+
+		$stored = $service->buildInitialDocument(1, 'demo', BindingService::ACCESS_PUBLIC, padUrl: $padUrl);
+		$pad = $service->readPad($stored);
+		$this->assertSame($padUrl, $pad->padUrl);
+
+		$synced = $service->withExportSnapshot($pad, new PadSnapshot('text', '<p>text</p>', 1));
+
+		$this->assertSame($padUrl, $service->readPad($synced)->padUrl);
+	}
+
+	private static function documentWithRemotePadId(string $value): string {
+		return "---\n"
+			. "format: \"etherpad-nextcloud/1\"\n"
+			. "file_id: 1\n"
+			. "pad_id: \"demo\"\n"
+			. "access_mode: \"public\"\n"
+			. "state: \"active\"\n"
+			. "deleted_at: null\n"
+			. "created_at: \"2026-03-06T00:00:00+00:00\"\n"
+			. "updated_at: \"2026-03-06T00:00:00+00:00\"\n"
+			. "snapshot_rev: 0\n"
+			. 'remote_pad_id: "' . $value . "\"\n"
+			. "---\n";
 	}
 
 	public function testGetSnapshotPartsFromBodyHandlesBodyWithoutMarkers(): void {
