@@ -479,20 +479,25 @@ import { parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './li
 				}
 			},
 			async rememberAndOpenOriginal(target) {
-				if (this.recoveryFileId === null || this.isRememberingOriginal) {
+				if (this.recoveryFileId === null || this.isRememberingOriginal || this.isRecovering) {
 					return
 				}
 				this.isRememberingOriginal = true
 				try {
-					await apiMarkPadAlias(this.recoveryFileId, this.recoveryPath)
+					const result = await apiMarkPadAlias(this.recoveryFileId, this.recoveryPath)
+					// The endpoint answers 200 with found:false when the original
+					// is gone by now. Navigating anyway would leave the card
+					// looking like it had saved the choice.
+					if (!result || result.found !== true) {
+						throw new Error(translate('Could not remember the original pad for this file.'))
+					}
 				} catch (error) {
-					// Opening the original is what the click asked for; remembering
-					// it is the extra. A failure here needs no message because it
-					// announces itself: the card comes back on the next open, which
-					// is exactly the state the user tried to leave.
-				} finally {
+					this.loadError = (error && error.message) || translate('Could not remember the original pad for this file.')
+					this.rememberOriginal = false
 					this.isRememberingOriginal = false
+					return
 				}
+				this.isRememberingOriginal = false
 				window.location.assign(target)
 			},
 			async recoverFromSnapshot() {
@@ -654,6 +659,12 @@ import { parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './li
 								attrs: { href: this.originalPad.viewerUrl },
 								on: {
 									click: (event) => {
+										// A fork in flight rewrites this file's frontmatter,
+										// so leaving the page now would race it.
+										if (this.isRecovering || this.isRememberingOriginal) {
+											event.preventDefault()
+											return
+										}
 										// Unchecked, this stays an ordinary link, so
 										// middle-click and open-in-new-tab keep working.
 										if (!this.rememberOriginal) {
@@ -668,7 +679,7 @@ import { parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './li
 								: translate('Open the original .pad file')),
 							createElement('label', { class: 'epnc-native-error-remember' }, [
 								createElement('input', {
-									attrs: { type: 'checkbox' },
+									attrs: { type: 'checkbox', disabled: this.isRecovering || this.isRememberingOriginal },
 									domProps: { checked: this.rememberOriginal },
 									on: { change: (event) => { this.rememberOriginal = Boolean(event.target.checked) } },
 								}),
@@ -676,7 +687,7 @@ import { parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './li
 							]),
 							createElement('button', {
 								class: 'button epnc-native-error-action',
-								attrs: { type: 'button', disabled: this.isRecovering },
+								attrs: { type: 'button', disabled: this.isRecovering || this.isRememberingOriginal },
 								on: { click: () => { void this.recoverFromSnapshot() } },
 							}, this.isRecovering ? translate('Creating new pad...') : translate('Create new pad from this file')),
 						)

@@ -447,6 +447,13 @@ class LifecycleService {
 			if (str_starts_with($oldPadId, 'ext.') || $pad->isExternal) {
 				return $this->buildSkippedResult('external_pad', $fileId, $oldPadId);
 			}
+			// An alias has no binding on purpose: it defers to the pad the
+			// marker names. Treating it like an orphan here would fork it
+			// into a pad of its own, silently undoing the deferral that a
+			// round trip through the trash never asked about.
+			if ($pad->aliasOfPadId !== '') {
+				return $this->buildSkippedResult('alias_file', $fileId, $oldPadId);
+			}
 			$snapshotParts = $this->padFileService->getSnapshotPartsFromBody($pad->body);
 			$snapshot = $snapshotParts['text'];
 			$htmlSnapshot = $snapshotParts['html'];

@@ -76,8 +76,19 @@ class PadMetadataService {
 			return new PadOriginalLookup(found: false);
 		}
 
+		// A fork started from the same card writes a binding for this file
+		// and rewrites its frontmatter. If that landed while this request
+		// was in flight, the file is no longer a copy deferring to
+		// anything, and marking it would describe a state it left.
+		if ($this->bindingService->findByFileId($fileId) !== null) {
+			return new PadOriginalLookup(found: false);
+		}
+
 		$node = $located['node'];
 		$parsed = $this->padFileService->readPad($this->lockRetryService->readContentWithOpenLockRetry($node));
+		if ($parsed->padId !== $located['padId']) {
+			return new PadOriginalLookup(found: false);
+		}
 		if ($parsed->aliasOfPadId !== $located['padId']) {
 			$frontmatter = $parsed->frontmatter;
 			$frontmatter['alias_of_pad_id'] = $located['padId'];

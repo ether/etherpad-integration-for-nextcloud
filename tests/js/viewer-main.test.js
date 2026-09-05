@@ -764,7 +764,7 @@ describe('viewer component — rememberAndOpenOriginal', () => {
 	})
 
 	it('writes the marker, then opens the original', async () => {
-		apiMarkPadAlias.mockResolvedValue({})
+		apiMarkPadAlias.mockResolvedValue({ found: true })
 		const vm = makeInstance({ recoveryFileId: 42, recoveryPath: '/copy.pad' })
 
 		await vm.rememberAndOpenOriginal('https://nc/viewer/9')
@@ -774,14 +774,40 @@ describe('viewer component — rememberAndOpenOriginal', () => {
 		expect(vm.isRememberingOriginal).toBe(false)
 	})
 
-	it('still opens the original when the marker could not be written', async () => {
+	it('stays on the card when the marker could not be written', async () => {
 		apiMarkPadAlias.mockRejectedValue(new Error('nope'))
-		const vm = makeInstance({ recoveryFileId: 42, recoveryPath: '/copy.pad' })
+		const vm = makeInstance({ recoveryFileId: 42, recoveryPath: '/copy.pad', rememberOriginal: true })
 
 		await vm.rememberAndOpenOriginal('https://nc/viewer/9')
 
-		expect(assign).toHaveBeenCalledWith('https://nc/viewer/9')
+		// Navigating anyway would carry the user off a card that never
+		// saved their choice, and they would find it again next time
+		// without ever learning why.
+		expect(assign).not.toHaveBeenCalled()
+		expect(vm.loadError).toBe('nope')
+		expect(vm.rememberOriginal).toBe(false)
 		expect(vm.isRememberingOriginal).toBe(false)
+	})
+
+	it('treats a found:false answer as a failure, not a save', async () => {
+		// The endpoint answers 200 with found:false when the original went
+		// away between the lookup and the click.
+		apiMarkPadAlias.mockResolvedValue({ found: false })
+		const vm = makeInstance({ recoveryFileId: 42, recoveryPath: '/copy.pad', rememberOriginal: true })
+
+		await vm.rememberAndOpenOriginal('https://nc/viewer/9')
+
+		expect(assign).not.toHaveBeenCalled()
+		expect(vm.loadError).toBe('Could not remember the original pad for this file.')
+	})
+
+	it('does not start while a fork is running', async () => {
+		const vm = makeInstance({ recoveryFileId: 42, isRecovering: true })
+
+		await vm.rememberAndOpenOriginal('https://nc/viewer/9')
+
+		expect(apiMarkPadAlias).not.toHaveBeenCalled()
+		expect(assign).not.toHaveBeenCalled()
 	})
 
 	it('does nothing without a recovery address', async () => {
@@ -910,6 +936,19 @@ describe('viewer component — render', () => {
 
 		box.data.on.change({ target: { checked: true } })
 		expect(vm.rememberOriginal).toBe(true)
+	})
+
+	it('locks the fork action while the alias is being written', () => {
+		const vm = makeInstance({
+			loadError: 'x',
+			canRecover: true,
+			isRememberingOriginal: true,
+			originalPad: { viewerUrl: 'https://nc/viewer/9', path: '/o.pad' },
+		})
+		const tree = component.render.call(vm, h)
+
+		expect(findByTag(tree, 'button')[0].data.attrs.disabled).toBe(true)
+		expect(findByTag(tree, 'input')[0].data.attrs.disabled).toBe(true)
 	})
 
 	it('offers only a create action when no original was found', () => {

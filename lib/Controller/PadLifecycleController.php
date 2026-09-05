@@ -139,7 +139,6 @@ class PadLifecycleController extends AbstractPadController {
 	}
 
 	#[\OCP\AppFramework\Http\Attribute\NoAdminRequired]
-	#[\OCP\AppFramework\Http\Attribute\NoCSRFRequired]
 	public function markAliasByFileId(int $fileId): DataResponse {
 		return $this->runForUser(
 			fn(IUser $user): PadOriginalLookup => $this->padMetadataService->markAsAliasOfOriginal(

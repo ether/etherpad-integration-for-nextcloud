@@ -819,6 +819,58 @@ class LifecycleServiceTest extends TestCase {
 		);
 	}
 
+	/**
+	 * An alias has no binding on purpose. Without this the restore path
+	 * would read it as an orphan and fork it into a pad of its own, which
+	 * a trip through the trash never asked the user about.
+	 */
+	public function testHandleRestoreWithoutBindingSkipsAnAliasFile(): void {
+		$fileId = 93;
+		$padId = 'original-pad';
+		$bindingService = $this->createMock(BindingService::class);
+		$bindingService->expects($this->once())->method('findByFileId')->with($fileId)->willReturn(null);
+		$bindingService->expects($this->never())->method('createBinding');
+
+		$padFileService = $this->createMock(PadFileService::class);
+		$padFileService->method('readPad')->with('doc-before')->willReturn(new ParsedPadFile(
+			frontmatter: ['pad_id' => $padId, 'access_mode' => BindingService::ACCESS_PROTECTED, 'state' => 'trashed'],
+			body: '',
+			padId: $padId,
+			accessMode: BindingService::ACCESS_PROTECTED,
+			padUrl: '',
+			isExternal: false,
+			snapshotRev: -1,
+			aliasOfPadId: $padId,
+		));
+		$padFileService->expects($this->never())->method('withRestoredSnapshot');
+
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->expects($this->never())->method('createPad');
+		$etherpadClient->expects($this->never())->method('setText');
+
+		$file = $this->createMock(File::class);
+		$file->method('getId')->willReturn($fileId);
+		$file->method('getName')->willReturn('Copy.pad');
+		$file->expects($this->once())->method('getContent')->willReturn('doc-before');
+		$file->expects($this->never())->method('putContent');
+
+		$result = (new LifecycleService(
+			$bindingService,
+			$padFileService,
+			$etherpadClient,
+			new ManagedPadLifecycle($etherpadClient, $this->createMock(LoggerInterface::class)),
+			$this->buildDeleteOnTrashEnabledConfig(),
+			$this->createMock(LoggerInterface::class),
+			$this->createMock(ISecureRandom::class),
+			$this->createMock(UserNodeResolver::class),
+			$this->createMock(PathNormalizer::class),
+			new FixedClock(),
+		))->handleRestore($file);
+
+		$this->assertSame(LifecycleService::RESULT_SKIPPED, $result['status']);
+		$this->assertSame('alias_file', $result['reason']);
+	}
+
 	public function testHandleRestoreWithoutBindingSkipsExternalPadFile(): void {
 		$fileId = 92;
 		$oldPadId = 'ext.old';
