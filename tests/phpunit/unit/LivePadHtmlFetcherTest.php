@@ -116,6 +116,7 @@ class LivePadHtmlFetcherTest extends TestCase {
 			accessMode: BindingService::ACCESS_PROTECTED,
 			padUrl: '',
 			isExternal: false,
+			snapshotRev: -1,
 		);
 	}
 
@@ -130,6 +131,7 @@ class LivePadHtmlFetcherTest extends TestCase {
 			accessMode: $accessMode,
 			padUrl: $padUrl,
 			isExternal: true,
+			snapshotRev: -1,
 		);
 	}
 

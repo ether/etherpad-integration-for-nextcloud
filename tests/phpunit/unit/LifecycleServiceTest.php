@@ -14,6 +14,7 @@ use OCA\EtherpadNextcloud\Service\EtherpadClient;
 use OCA\EtherpadNextcloud\Service\ManagedPadLifecycle;
 use OCA\EtherpadNextcloud\Service\LifecycleService;
 use OCA\EtherpadNextcloud\Service\PadFileService;
+use OCA\EtherpadNextcloud\Service\PadSnapshot;
 use OCA\EtherpadNextcloud\Service\ParsedPadFile;
 use OCA\EtherpadNextcloud\Service\UserNodeResolver;
 use OCA\EtherpadNextcloud\Util\PathNormalizer;
@@ -118,11 +119,12 @@ class LifecycleServiceTest extends TestCase {
 			accessMode: BindingService::ACCESS_PUBLIC,
 			padUrl: '',
 			isExternal: false,
+			snapshotRev: -1,
 		);
 		$padFileService->method('readPad')->with('doc-current')->willReturn($parsedPad);
 		$padFileService->expects($this->once())
 			->method('withExportSnapshot')
-			->with($this->identicalTo($parsedPad), 'snapshot-text', '<p>snapshot-html</p>', 7)
+			->with($this->identicalTo($parsedPad), new PadSnapshot('snapshot-text', '<p>snapshot-html</p>', 7))
 			->willReturn('doc-trash-updated');
 
 		$etherpadClient = $this->createMock(EtherpadClient::class);
@@ -279,6 +281,76 @@ class LifecycleServiceTest extends TestCase {
 	 * and the rollback would put the old content back and delete the pad
 	 * the row now points at.
 	 */
+	public function testHandleRestorePutsTheOriginalContentBackWhenTheRestoreFails(): void {
+		// The mirror of the test below: the update did not land, so the file
+		// must not be left holding the restored document.
+		$fileId = 88;
+		$oldPadId = 'old-pad';
+		$newPadId = 'r-old-pad-abc123def456';
+
+		$bindingService = $this->createMock(BindingService::class);
+		$bindingService->method('findByFileId')->with($fileId)->willReturn([
+			'file_id' => $fileId,
+			'pad_id' => $oldPadId,
+			'access_mode' => BindingService::ACCESS_PUBLIC,
+			'state' => BindingService::STATE_PENDING_DELETE,
+		]);
+		$bindingService->method('markRestored')->willThrowException(new \RuntimeException('connection lost'));
+		$bindingService->method('isBoundTo')->with($fileId, $newPadId)->willReturn(false);
+
+		$padFileService = $this->createMock(PadFileService::class);
+		$parsedPad = new ParsedPadFile(
+			frontmatter: [],
+			body: 'body',
+			padId: $oldPadId,
+			accessMode: BindingService::ACCESS_PUBLIC,
+			padUrl: '',
+			isExternal: false,
+			snapshotRev: -1,
+		);
+		$padFileService->method('readPad')->with('doc-before')->willReturn($parsedPad);
+		$padFileService->method('getSnapshotPartsFromBody')->with($parsedPad->body)->willReturn(['text' => 'plain text', 'html' => '']);
+		$padFileService->method('withRestoredSnapshot')->willReturn('doc-after');
+
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->method('buildPadUrl')->willReturn('https://pad.example.test/p/' . $newPadId);
+
+		$secureRandom = $this->createMock(ISecureRandom::class);
+		$secureRandom->method('generate')->willReturn('abc123def456');
+
+		$written = [];
+		$file = $this->createMock(File::class);
+		$file->method('getId')->willReturn($fileId);
+		$file->method('getName')->willReturn('Restored.pad');
+		$file->method('getContent')->willReturn('doc-before');
+		$file->expects($this->exactly(2))
+			->method('putContent')
+			->willReturnCallback(static function (string $content) use (&$written): void {
+				$written[] = $content;
+			});
+
+		$service = new LifecycleService(
+			$bindingService,
+			$padFileService,
+			$etherpadClient,
+			new ManagedPadLifecycle($etherpadClient, $this->createMock(LoggerInterface::class)),
+			$this->buildDeleteOnTrashEnabledConfig(),
+			$this->createMock(LoggerInterface::class),
+			$secureRandom,
+			$this->createMock(UserNodeResolver::class),
+			$this->createMock(PathNormalizer::class),
+		);
+
+		try {
+			$service->handleRestore($file);
+			$this->fail('Expected the restore to fail.');
+		} catch (LifecycleException) {
+			// The point of the test is what the file holds afterwards.
+		}
+
+		$this->assertSame(['doc-after', 'doc-before'], $written);
+	}
+
 	public function testHandleRestoreDoesNotUndoARestoreThatLanded(): void {
 		$fileId = 87;
 		$oldPadId = 'old-pad';
@@ -303,6 +375,7 @@ class LifecycleServiceTest extends TestCase {
 			accessMode: BindingService::ACCESS_PUBLIC,
 			padUrl: '',
 			isExternal: false,
+			snapshotRev: -1,
 		);
 		$padFileService->method('readPad')->with('doc-before')->willReturn($parsedPad);
 		$padFileService->method('getSnapshotPartsFromBody')->with($parsedPad->body)->willReturn(['text' => 'plain text', 'html' => '']);
@@ -362,6 +435,7 @@ class LifecycleServiceTest extends TestCase {
 			accessMode: BindingService::ACCESS_PUBLIC,
 			padUrl: '',
 			isExternal: false,
+			snapshotRev: -1,
 		);
 		$padFileService->method('readPad')->with('doc-before')->willReturn($parsedPad);
 		$padFileService->method('getSnapshotPartsFromBody')->with($parsedPad->body)->willReturn(['text' => 'plain text', 'html' => '']);
@@ -432,6 +506,7 @@ class LifecycleServiceTest extends TestCase {
 			accessMode: BindingService::ACCESS_PUBLIC,
 			padUrl: '',
 			isExternal: false,
+			snapshotRev: -1,
 		);
 		$padFileService->method('readPad')->with('doc-before')->willReturn($parsedPad);
 		$padFileService->method('getSnapshotPartsFromBody')->with($parsedPad->body)->willReturn(['text' => 'plain text', 'html' => '']);
@@ -498,6 +573,7 @@ class LifecycleServiceTest extends TestCase {
 			accessMode: BindingService::ACCESS_PUBLIC,
 			padUrl: '',
 			isExternal: false,
+			snapshotRev: -1,
 		);
 		$padFileService->method('readPad')->with('doc-before')->willReturn($parsedPad);
 		$padFileService->expects($this->once())->method('getSnapshotPartsFromBody')->with($parsedPad->body)->willReturn(['text' => 'plain text', 'html' => '<p>html text</p>']);
@@ -586,6 +662,7 @@ class LifecycleServiceTest extends TestCase {
 			accessMode: BindingService::ACCESS_PUBLIC,
 			padUrl: 'https://pad.example.test/p/' . rawurlencode($oldPadId),
 			isExternal: false,
+			snapshotRev: -1,
 		);
 		$padFileService->method('readPad')->with('doc-before')->willReturn($parsedPad);
 		$padFileService->method('getSnapshotPartsFromBody')->with($parsedPad->body)->willReturn([
@@ -708,6 +785,7 @@ class LifecycleServiceTest extends TestCase {
 			accessMode: BindingService::ACCESS_PUBLIC,
 			padUrl: 'https://pad.example.test/p/' . rawurlencode($oldPadId),
 			isExternal: false,
+			snapshotRev: -1,
 		));
 		$padFileService->method('getSnapshotPartsFromBody')->willReturn(['text' => 'plain text', 'html' => '']);
 		$padFileService->method('withRestoredSnapshot')->willReturn('doc-after');
@@ -754,6 +832,7 @@ class LifecycleServiceTest extends TestCase {
 			accessMode: BindingService::ACCESS_PUBLIC,
 			padUrl: $padUrl,
 			isExternal: true,
+			snapshotRev: -1,
 		));
 		$padFileService->expects($this->never())->method('getSnapshotPartsFromBody');
 		$padFileService->expects($this->never())->method('withRestoredSnapshot');
@@ -810,6 +889,7 @@ class LifecycleServiceTest extends TestCase {
 			accessMode: BindingService::ACCESS_PUBLIC,
 			padUrl: '',
 			isExternal: false,
+			snapshotRev: -1,
 		));
 		$padFileService->method('getSnapshotPartsFromBody')->willReturn([
 			'text' => 'external snapshot',
@@ -874,6 +954,7 @@ class LifecycleServiceTest extends TestCase {
 			accessMode: BindingService::ACCESS_PUBLIC,
 			padUrl: $padUrl,
 			isExternal: true,
+			snapshotRev: -1,
 		));
 		$padFileService->method('getSnapshotPartsFromBody')->willReturn([
 			'text' => 'external snapshot',
@@ -937,6 +1018,7 @@ class LifecycleServiceTest extends TestCase {
 			accessMode: BindingService::ACCESS_PUBLIC,
 			padUrl: 'https://pad.example.test/p/' . rawurlencode($oldPadId),
 			isExternal: false,
+			snapshotRev: -1,
 		));
 		$padFileService->method('getSnapshotPartsFromBody')->willReturn([
 			'text' => 'recovered content',
@@ -1003,6 +1085,7 @@ class LifecycleServiceTest extends TestCase {
 			accessMode: BindingService::ACCESS_PUBLIC,
 			padUrl: '',
 			isExternal: false,
+			snapshotRev: -1,
 		));
 		$padFileService->method('getSnapshotPartsFromBody')->willReturn(['text' => 'content', 'html' => '']);
 		$padFileService->method('withRestoredSnapshot')->willReturn('doc-after');
@@ -1278,6 +1361,7 @@ class LifecycleServiceTest extends TestCase {
 				accessMode: BindingService::ACCESS_PUBLIC,
 				padUrl: '',
 				isExternal: true,
+				snapshotRev: -1,
 			));
 
 		$file = $this->createMock(File::class);

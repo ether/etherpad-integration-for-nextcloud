@@ -165,6 +165,7 @@ class PadOpenServiceTest extends TestCase {
 			accessMode: $accessMode,
 			padUrl: '',
 			isExternal: false,
+			snapshotRev: -1,
 		));
 
 		$client = $etherpadClient ?? $this->createMock(EtherpadClient::class);

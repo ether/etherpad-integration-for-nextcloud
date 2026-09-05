@@ -56,6 +56,7 @@ class PadContentServiceTest extends TestCase {
 			accessMode: BindingService::ACCESS_PROTECTED,
 			padUrl: '',
 			isExternal: false,
+			snapshotRev: -1,
 		);
 	}
 

@@ -114,10 +114,11 @@ Implementation: `lib/Service/PadFileService.php`
 - `parsePadFile(string $content): array{frontmatter, body}`
 - `serialize(array $frontmatter, string $body): string`
 - `readPad(string $content): ParsedPadFile` parses once and hands back the frontmatter, the body and the fields derived from them
-- `withExportSnapshot(ParsedPadFile $pad, ...)` updates export metadata + snapshot body
+- `withExportSnapshot(ParsedPadFile $pad, PadSnapshot $snapshot)` updates export metadata + snapshot body
 - `withRestoredSnapshot(ParsedPadFile $pad, ...)` writes the document a restore leaves behind: active, undeleted, pointed at the replacement pad, with both snapshot halves as given
 - `getSnapshotPartsFromBody(string $body): array{text, html}` splits a stored snapshot into its two halves, from a body a caller already has
 - `buildInitialDocument(...)` takes an optional `PadSnapshot` for a document that starts out with content; without one the document is unsnapshotted (`snapshot_rev: -1`) and its body is empty
+- `PadSnapshot` is text, an HTML half and the revision the snapshot was taken at. Its `html` is nullable, and the two empty cases write different files: `null` means a text-only snapshot and omits the `[HTML-BEGIN]`/`[HTML-END]` section entirely, `''` writes the section with nothing in it. A negative revision is refused — `-1` is what an unsnapshotted document uses
 
 Snapshot write flow:
 

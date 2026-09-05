@@ -73,9 +73,9 @@ class PadFileService {
 		int $fileId,
 		string $padId,
 		string $accessMode,
+		?PadSnapshot $snapshot = null,
 		?string $padUrl = null,
 		array $extraFrontmatter = [],
-		?PadSnapshot $snapshot = null,
 	): string {
 		$now = gmdate('c');
 		$frontmatter = [
@@ -105,10 +105,7 @@ class PadFileService {
 		// sectioned body here rather than building a document and parsing it
 		// straight back to put the snapshot in.
 		$frontmatter['snapshot_rev'] = $snapshot->revision;
-		return $this->serialize(
-			$frontmatter,
-			$this->buildSnapshotBody($snapshot->text, $snapshot->html ?? '', $snapshot->html !== null),
-		);
+		return $this->serialize($frontmatter, $this->snapshotBody($snapshot));
 	}
 
 	/** @return array{url: string, pad_id: string}|null */
@@ -175,6 +172,7 @@ class PadFileService {
 			accessMode: $meta['access_mode'],
 			padUrl: $meta['pad_url'],
 			isExternal: $this->isExternalFrontmatter($frontmatter, $padId),
+			snapshotRev: $this->getSnapshotRevisionFromFrontmatter($frontmatter),
 		);
 	}
 
@@ -217,28 +215,23 @@ class PadFileService {
 		$frontmatter['updated_at'] = gmdate('c');
 		$frontmatter['deleted_at'] = null;
 		$frontmatter['pad_id'] = $padId;
-		$frontmatter['pad_url'] = $padUrl;
+		if ($padUrl !== '') {
+			$frontmatter['pad_url'] = $padUrl;
+		}
 
 		return $this->serialize($frontmatter, $this->buildSnapshotBody($text, $html));
 	}
 
-	/** @throws PadFileFormatException */
-	public function withExportSnapshot(ParsedPadFile $pad, string $text, string $html, int $exportedRev, bool $includeHtmlSection = true): string {
-		// Same rule as PadSnapshot: -1 is the format's "never synced", so a
-		// snapshot cannot be written at a negative revision. Raising it to 0
-		// instead would leave a never-synced pad looking synced.
-		if ($exportedRev < 0) {
-			throw new PadFileFormatException('A snapshot revision cannot be negative.');
-		}
+	public function withExportSnapshot(ParsedPadFile $pad, PadSnapshot $snapshot): string {
 		$frontmatter = $pad->frontmatter;
 		$frontmatter['updated_at'] = gmdate('c');
-		$frontmatter['snapshot_rev'] = $exportedRev;
+		$frontmatter['snapshot_rev'] = $snapshot->revision;
 
-		return $this->serialize($frontmatter, $this->buildSnapshotBody($text, $html, $includeHtmlSection));
+		return $this->serialize($frontmatter, $this->snapshotBody($snapshot));
 	}
 
 	/** @param array<string,mixed> $frontmatter */
-	public function getSnapshotRevisionFromFrontmatter(array $frontmatter): int {
+	private function getSnapshotRevisionFromFrontmatter(array $frontmatter): int {
 		$rev = $frontmatter['snapshot_rev'] ?? null;
 		if (!is_numeric($rev)) {
 			return -1;
@@ -412,6 +405,10 @@ class PadFileService {
 			throw new PadFileFormatException('Invalid ' . $key . ' in frontmatter.');
 		}
 		return (string)$value;
+	}
+
+	private function snapshotBody(PadSnapshot $snapshot): string {
+		return $this->buildSnapshotBody($snapshot->text, $snapshot->html ?? '', $snapshot->html !== null);
 	}
 
 	private function buildSnapshotBody(string $text, string $html, bool $includeHtmlSection = true): string {

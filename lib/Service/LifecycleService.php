@@ -187,9 +187,7 @@ class LifecycleService {
 					$revision = $this->etherpadClient->getRevisionsCount($padId);
 					$updatedContent = $this->padFileService->withExportSnapshot(
 						$this->padFileService->readPad($currentContent),
-						$snapshot,
-						$html,
-						$revision,
+						new PadSnapshot($snapshot, $html, $revision),
 					);
 				} catch (\Throwable $snapshotError) {
 					$this->logger->warning('Could not fetch fresh Etherpad snapshot during trash. Using current .pad snapshot/body.', [

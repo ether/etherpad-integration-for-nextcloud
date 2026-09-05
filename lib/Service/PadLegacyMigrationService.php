@@ -222,7 +222,7 @@ class PadLegacyMigrationService {
 			$fileId,
 			$padId,
 			$accessMode,
-			$padUrl,
+			padUrl: $padUrl,
 		);
 		$file->putContent($content);
 	}

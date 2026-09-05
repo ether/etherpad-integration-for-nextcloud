@@ -37,12 +37,12 @@ class ExternalPadSeederTest extends TestCase {
 				999,
 				'ext.RemotePad',
 				BindingService::ACCESS_PUBLIC,
+				new PadSnapshot('snapshot-body', null, 0),
 				'https://pad.remote.test/p/RemotePad',
 				[
 					'pad_origin' => 'https://pad.remote.test',
 					'remote_pad_id' => 'RemotePad',
 				],
-				new PadSnapshot('snapshot-body', null, 0),
 			)
 			->willReturn('seeded-frontmatter');
 		$padFileService->expects($this->never())->method('withExportSnapshot');

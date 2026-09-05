@@ -40,7 +40,7 @@ class PadBootstrapServiceTest extends TestCase {
 			->willReturn(null);
 		$padFileService->expects($this->once())
 			->method('buildInitialDocument')
-			->with($fileId, $padId, BindingService::ACCESS_PROTECTED, $padUrl)
+			->with($fileId, $padId, BindingService::ACCESS_PROTECTED, null, $padUrl)
 			->willReturn('doc-content');
 
 		$etherpadClient = $this->createMock(EtherpadClient::class);

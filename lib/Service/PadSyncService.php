@@ -108,7 +108,7 @@ class PadSyncService {
 			}
 
 			$currentRev = $this->etherpadClient->getRevisionsCount($padId);
-			$snapshotRev = $this->padFileService->getSnapshotRevisionFromFrontmatter($pad->frontmatter);
+			$snapshotRev = $pad->snapshotRev;
 			$inSync = $snapshotRev >= $currentRev;
 
 			return new PadSyncStatus(
@@ -156,9 +156,9 @@ class PadSyncService {
 			);
 		}
 
-		$previousRev = $this->padFileService->getSnapshotRevisionFromFrontmatter($pad->frontmatter);
+		$previousRev = $pad->snapshotRev;
 		$nextRev = max(0, $previousRev + 1);
-		$updatedContent = $this->padFileService->withExportSnapshot($pad, $text, '', $nextRev, false);
+		$updatedContent = $this->padFileService->withExportSnapshot($pad, new PadSnapshot($text, null, $nextRev));
 		$lockRetries = $this->lockRetryService->putContentWithSyncLockRetry($node, $updatedContent);
 
 		return new PadSyncResult(
@@ -180,7 +180,7 @@ class PadSyncService {
 	): PadSyncResult {
 		$padId = $pad->padId;
 		$currentRev = $this->etherpadClient->getRevisionsCount($padId);
-		$snapshotRev = $this->padFileService->getSnapshotRevisionFromFrontmatter($pad->frontmatter);
+		$snapshotRev = $pad->snapshotRev;
 		if (!$force && $snapshotRev >= $currentRev) {
 			return new PadSyncResult(
 				status: self::STATUS_UNCHANGED,
@@ -211,7 +211,7 @@ class PadSyncService {
 			}
 		}
 
-		$updatedContent = $this->padFileService->withExportSnapshot($pad, $text, $html, $currentRev);
+		$updatedContent = $this->padFileService->withExportSnapshot($pad, new PadSnapshot($text, $html, $currentRev));
 		$lockRetries = $this->lockRetryService->putContentWithSyncLockRetry($node, $updatedContent);
 
 		return new PadSyncResult(

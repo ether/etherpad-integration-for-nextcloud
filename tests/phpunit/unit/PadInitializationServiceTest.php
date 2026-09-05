@@ -48,6 +48,7 @@ class PadInitializationServiceTest extends TestCase {
 				accessMode: BindingService::ACCESS_PUBLIC,
 				padUrl: '',
 				isExternal: false,
+				snapshotRev: -1,
 			));
 
 		$bootstrap = $this->createMock(PadBootstrapService::class);
@@ -88,6 +89,7 @@ class PadInitializationServiceTest extends TestCase {
 				accessMode: BindingService::ACCESS_PUBLIC,
 				padUrl: '',
 				isExternal: false,
+				snapshotRev: -1,
 			));
 
 		$bootstrap = $this->createMock(PadBootstrapService::class);
@@ -138,6 +140,7 @@ class PadInitializationServiceTest extends TestCase {
 				accessMode: BindingService::ACCESS_PUBLIC,
 				padUrl: '',
 				isExternal: false,
+				snapshotRev: -1,
 			));
 
 		$bootstrap = $this->createMock(PadBootstrapService::class);
@@ -181,6 +184,7 @@ class PadInitializationServiceTest extends TestCase {
 					accessMode: BindingService::ACCESS_PROTECTED,
 					padUrl: '',
 					isExternal: false,
+					snapshotRev: -1,
 				);
 			});
 
@@ -227,6 +231,7 @@ class PadInitializationServiceTest extends TestCase {
 					accessMode: BindingService::ACCESS_PUBLIC,
 					padUrl: '',
 					isExternal: false,
+					snapshotRev: -1,
 				);
 			});
 

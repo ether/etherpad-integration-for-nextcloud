@@ -65,6 +65,7 @@ class PublicViewerControllerTest extends TestCase {
 				accessMode: BindingService::ACCESS_PROTECTED,
 				padUrl: '',
 				isExternal: false,
+				snapshotRev: -1,
 			));
 		// The stored copy plays no part in opening any more: the viewer
 		// loads the pad from the pad server over `content_url`.
@@ -133,6 +134,7 @@ class PublicViewerControllerTest extends TestCase {
 				accessMode: BindingService::ACCESS_PUBLIC,
 				padUrl: 'https://pad.portal.example/p/Test',
 				isExternal: true,
+				snapshotRev: -1,
 			));
 		$padFileService->expects($this->never())->method('getSnapshotPartsFromBody');
 
@@ -199,6 +201,7 @@ class PublicViewerControllerTest extends TestCase {
 				accessMode: BindingService::ACCESS_PROTECTED,
 				padUrl: 'https://remote.example.test/p/demo',
 				isExternal: true,
+				snapshotRev: -1,
 			));
 
 		$bindingService = $this->createMock(BindingService::class);

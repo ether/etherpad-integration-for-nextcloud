@@ -8,8 +8,6 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Service;
 
-use OCA\EtherpadNextcloud\Exception\PadFileFormatException;
-
 /**
  * Content a `.pad` starts out with, as one value.
  *
@@ -21,7 +19,7 @@ class PadSnapshot {
 	/**
 	 * @param ?string $html the HTML half, or null for a text-only snapshot —
 	 *                      which is not the same as an empty HTML half
-	 * @throws PadFileFormatException
+	 * @throws \InvalidArgumentException
 	 */
 	public function __construct(
 		public readonly string $text,
@@ -30,9 +28,10 @@ class PadSnapshot {
 	) {
 		// -1 is how the format says "no snapshot yet"; a snapshot that exists
 		// cannot be at that revision, and silently raising it to 0 would make
-		// a never-synced pad look synced.
+		// a never-synced pad look synced. This is a caller's mistake, so it is
+		// not the exception that tells a user their .pad is malformed.
 		if ($revision < 0) {
-			throw new PadFileFormatException('A snapshot revision cannot be negative.');
+			throw new \InvalidArgumentException('A snapshot revision cannot be negative.');
 		}
 	}
 }

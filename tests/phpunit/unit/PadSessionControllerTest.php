@@ -80,6 +80,7 @@ class PadSessionControllerTest extends TestCase {
 				accessMode: BindingService::ACCESS_PUBLIC,
 				padUrl: '',
 				isExternal: false,
+				snapshotRev: -1,
 			));
 
 		$bindingService = $this->createMock(BindingService::class);
@@ -204,6 +205,7 @@ class PadSessionControllerTest extends TestCase {
 				accessMode: BindingService::ACCESS_PUBLIC,
 				padUrl: 'https://pad.portal.fzs.de/p/Test',
 				isExternal: true,
+				snapshotRev: -1,
 			));
 		// The open no longer reads the stored copy at all — the preview
 		// loads the pad from its own server over `content_url`.

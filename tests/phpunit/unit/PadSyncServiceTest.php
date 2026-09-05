@@ -10,6 +10,7 @@ use OCA\EtherpadNextcloud\Service\ExternalPadExportFetcher;
 use OCA\EtherpadNextcloud\Service\PadFileLockRetryService;
 use OCA\EtherpadNextcloud\Service\PadFileService;
 use OCA\EtherpadNextcloud\Service\PadSyncService;
+use OCA\EtherpadNextcloud\Service\PadSnapshot;
 use OCA\EtherpadNextcloud\Service\ParsedPadFile;
 use OCA\EtherpadNextcloud\Service\UserNodeResolver;
 use OCP\Files\File;
@@ -35,6 +36,7 @@ class PadSyncServiceTest extends TestCase {
 			accessMode: BindingService::ACCESS_PUBLIC,
 			padUrl: 'https://pad.example.test/p/remote',
 			isExternal: true,
+			snapshotRev: -1,
 		));
 
 		$bindingService = $this->createMock(BindingService::class);
@@ -66,9 +68,9 @@ class PadSyncServiceTest extends TestCase {
 			accessMode: BindingService::ACCESS_PROTECTED,
 			padUrl: '',
 			isExternal: false,
+			snapshotRev: 3,
 		);
 		$padFileService->method('readPad')->with('frontmatter')->willReturn($parsedPad);
-		$padFileService->method('getSnapshotRevisionFromFrontmatter')->with($parsedPad->frontmatter)->willReturn(3);
 
 		$bindingService = $this->createMock(BindingService::class);
 		$bindingService->expects($this->once())
@@ -110,6 +112,7 @@ class PadSyncServiceTest extends TestCase {
 			accessMode: BindingService::ACCESS_PUBLIC,
 			padUrl: 'https://pad.example.test/p/remote',
 			isExternal: true,
+			snapshotRev: 4,
 		);
 		$padFileService->method('readPad')->with('frontmatter')->willReturn($parsedPad);
 		$padFileService->expects($this->once())
@@ -117,12 +120,8 @@ class PadSyncServiceTest extends TestCase {
 			->with($parsedPad->body)
 			->willReturn(['text' => 'previous text', 'html' => '']);
 		$padFileService->expects($this->once())
-			->method('getSnapshotRevisionFromFrontmatter')
-			->with($parsedPad->frontmatter)
-			->willReturn(4);
-		$padFileService->expects($this->once())
 			->method('withExportSnapshot')
-			->with($this->identicalTo($parsedPad), "remote text\nfrom export", '', 5, false)
+			->with($this->identicalTo($parsedPad), new PadSnapshot("remote text\nfrom export", null, 5))
 			->willReturn('updated-frontmatter');
 
 		$bindingService = $this->createMock(BindingService::class);

@@ -25,6 +25,7 @@ class ParsedPadFile {
 		public readonly string $accessMode,
 		public readonly string $padUrl,
 		public readonly bool $isExternal,
+		public readonly int $snapshotRev,
 	) {
 	}
 }
