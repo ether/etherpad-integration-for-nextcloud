@@ -117,7 +117,7 @@ Implementation: `lib/Service/PadFileService.php`
 - `withExportSnapshot(ParsedPadFile $pad, ...)` updates export metadata + snapshot body
 - `withStateAndSnapshot(ParsedPadFile $pad, ...)` updates state + snapshot
 - `getSnapshotPartsFromBody(string $body): array{text, html}` splits a stored snapshot into its two halves, from a body a caller already has
-- `buildInitialDocument(...)` takes `snapshotHtml` and `snapshotRev` for a document that starts out with content
+- `buildInitialDocument(...)` takes an optional `PadSnapshot` for a document that starts out with content; without one the document is unsnapshotted (`snapshot_rev: -1`) and its body is empty
 
 Snapshot write flow:
 

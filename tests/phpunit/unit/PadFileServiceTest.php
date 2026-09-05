@@ -308,10 +308,57 @@ class PadFileServiceTest extends TestCase {
 	/**
 	 * created_at and updated_at are read from the wall clock as each document
 	 * is built, so two documents built moments apart differ whenever a second
-	 * ticks between them. Everything else is what the comparison is about.
+	 * ticks between them. Everything else is what the comparison is about —
+	 * including a body that happens to hold a line shaped like one of those
+	 * keys, which is why only the frontmatter block is touched.
 	 */
 	private static function withoutWallClock(string $document): string {
-		return (string)preg_replace('/^(created_at|updated_at): ".*"$/m', '$1: "<time>"', $document);
+		if (preg_match('/^(---\n.*?\n---\n)(.*)$/s', $document, $matches) !== 1) {
+			return $document;
+		}
+
+		return (string)preg_replace('/^(created_at|updated_at): ".*"$/m', '$1: "<time>"', $matches[1])
+			. $matches[2];
+	}
+
+	public function testTheWallClockHelperNormalisesTheFrontmatterAndNothingElse(): void {
+		$service = new PadFileService();
+		$document = $service->buildInitialDocument(
+			1,
+			'demo-pad',
+			BindingService::ACCESS_PUBLIC,
+			snapshot: new PadSnapshot("created_at: \"in the body\"", null, 0),
+		);
+		// The frontmatter timestamps are the first two matches; the body's
+		// look-alike line comes after them.
+		$aSecondLater = (string)preg_replace(
+			'/^(created_at|updated_at): ".*"$/m',
+			'$1: "2026-01-01T00:00:00+00:00"',
+			$document,
+			2,
+		);
+
+		// What the comparison is meant to ignore.
+		$this->assertNotSame($document, $aSecondLater);
+		$this->assertSame(
+			self::withoutWallClock($document),
+			self::withoutWallClock($aSecondLater),
+		);
+
+		// And what it must not: a body that looks like a timestamp line.
+		$this->assertStringContainsString("created_at: \"in the body\"", self::withoutWallClock($document));
+		$this->assertNotSame(
+			self::withoutWallClock($document),
+			self::withoutWallClock(str_replace('in the body', 'changed', $document)),
+		);
+	}
+
+	public function testAnExportCannotBeWrittenAtANegativeRevision(): void {
+		$service = new PadFileService();
+		$pad = $service->readPad($service->buildInitialDocument(1, 'demo-pad', BindingService::ACCESS_PUBLIC));
+
+		$this->expectException(PadFileFormatException::class);
+		$service->withExportSnapshot($pad, 'text', '', -1);
 	}
 
 	public function testASnapshotCannotClaimTheNoSnapshotRevision(): void {

@@ -220,10 +220,17 @@ class PadFileService {
 		return $this->serialize($frontmatter, $this->buildSnapshotBody($snapshot, $bodyParts['html']));
 	}
 
+	/** @throws PadFileFormatException */
 	public function withExportSnapshot(ParsedPadFile $pad, string $text, string $html, int $exportedRev, bool $includeHtmlSection = true): string {
+		// Same rule as PadSnapshot: -1 is the format's "never synced", so a
+		// snapshot cannot be written at a negative revision. Raising it to 0
+		// instead would leave a never-synced pad looking synced.
+		if ($exportedRev < 0) {
+			throw new PadFileFormatException('A snapshot revision cannot be negative.');
+		}
 		$frontmatter = $pad->frontmatter;
 		$frontmatter['updated_at'] = gmdate('c');
-		$frontmatter['snapshot_rev'] = max(0, $exportedRev);
+		$frontmatter['snapshot_rev'] = $exportedRev;
 
 		return $this->serialize($frontmatter, $this->buildSnapshotBody($text, $html, $includeHtmlSection));
 	}

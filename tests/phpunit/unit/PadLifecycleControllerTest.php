@@ -75,7 +75,7 @@ class PadLifecycleControllerTest extends TestCase {
 			padUrl: '',
 			isExternal: false,
 		);
-		$padFileService->method('readPad')->willReturn($parsedPad);
+		$padFileService->method('readPad')->with('frontmatter')->willReturn($parsedPad);
 		$padFileService->method('getSnapshotRevisionFromFrontmatter')->with($parsedPad->frontmatter)->willReturn(4);
 		$padFileService->method('withExportSnapshot')->with($this->identicalTo($parsedPad), 'hello', '<p>hello</p>', 5)->willReturn('updated-content');
 
@@ -130,7 +130,7 @@ class PadLifecycleControllerTest extends TestCase {
 			padUrl: '',
 			isExternal: false,
 		);
-		$padFileService->method('readPad')->willReturn($parsedPad);
+		$padFileService->method('readPad')->with('frontmatter')->willReturn($parsedPad);
 		$padFileService->method('getSnapshotRevisionFromFrontmatter')->with($parsedPad->frontmatter)->willReturn(1);
 		$padFileService->method('withExportSnapshot')->with($this->identicalTo($parsedPad), 'hello', '<p>hello</p>', 5)->willReturn('updated-content');
 
@@ -179,7 +179,7 @@ class PadLifecycleControllerTest extends TestCase {
 			padUrl: '',
 			isExternal: false,
 		);
-		$padFileService->method('readPad')->willReturn($parsedPad);
+		$padFileService->method('readPad')->with('frontmatter')->willReturn($parsedPad);
 		$padFileService->method('getSnapshotRevisionFromFrontmatter')->with($parsedPad->frontmatter)->willReturn(5);
 		$padFileService->method('getSnapshotPartsFromBody')->with($parsedPad->body)->willReturn(['text' => 'hello', 'html' => '<p>hello</p>']);
 
@@ -236,7 +236,7 @@ class PadLifecycleControllerTest extends TestCase {
 			padUrl: 'https://pad.example.test/p/public-pad',
 			isExternal: true,
 		);
-		$padFileService->method('readPad')->willReturn($parsedPad);
+		$padFileService->method('readPad')->with('frontmatter')->willReturn($parsedPad);
 		$padFileService->method('getSnapshotPartsFromBody')->with($parsedPad->body)->willReturn(['text' => 'same text', 'html' => '']);
 
 		$bindingService = $this->createMock(BindingService::class);
@@ -303,7 +303,7 @@ class PadLifecycleControllerTest extends TestCase {
 			padUrl: '',
 			isExternal: false,
 		);
-		$padFileService->method('readPad')->willReturn($parsedPad);
+		$padFileService->method('readPad')->with('doc')->willReturn($parsedPad);
 
 		$bindingService = $this->createMock(BindingService::class);
 		$bindingService->method('findByPadId')
@@ -373,7 +373,7 @@ class PadLifecycleControllerTest extends TestCase {
 			padUrl: '',
 			isExternal: false,
 		);
-		$padFileService->method('readPad')->willReturn($parsedPad);
+		$padFileService->method('readPad')->with('frontmatter')->willReturn($parsedPad);
 
 		$controller = $this->buildController(
 			$this->createMock(IRequest::class),

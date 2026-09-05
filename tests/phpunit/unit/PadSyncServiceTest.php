@@ -56,7 +56,7 @@ class PadSyncServiceTest extends TestCase {
 		$userNodeResolver->method('resolveUserFileNodeById')->with('alice', 138)->willReturn($file);
 
 		$padFileService = $this->createMock(PadFileService::class);
-		$padFileService->method('readPad')->with('frontmatter')->willReturn(new ParsedPadFile(
+		$parsedPad = new ParsedPadFile(
 			frontmatter: [
 				'pad_id' => 'g.ABC$pad',
 				'access_mode' => BindingService::ACCESS_PROTECTED,
@@ -66,8 +66,9 @@ class PadSyncServiceTest extends TestCase {
 			accessMode: BindingService::ACCESS_PROTECTED,
 			padUrl: '',
 			isExternal: false,
-		));
-		$padFileService->method('getSnapshotRevisionFromFrontmatter')->willReturn(3);
+		);
+		$padFileService->method('readPad')->with('frontmatter')->willReturn($parsedPad);
+		$padFileService->method('getSnapshotRevisionFromFrontmatter')->with($parsedPad->frontmatter)->willReturn(3);
 
 		$bindingService = $this->createMock(BindingService::class);
 		$bindingService->expects($this->once())
