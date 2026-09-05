@@ -115,7 +115,7 @@ Implementation: `lib/Service/PadFileService.php`
 - `serialize(array $frontmatter, string $body): string`
 - `readPad(string $content): ParsedPadFile` parses once and hands back the frontmatter, the body and the fields derived from them
 - `withExportSnapshot(ParsedPadFile $pad, ...)` updates export metadata + snapshot body
-- `withStateAndSnapshot(ParsedPadFile $pad, ...)` updates state + snapshot
+- `withRestoredSnapshot(ParsedPadFile $pad, ...)` writes the document a restore leaves behind: active, undeleted, pointed at the replacement pad, with both snapshot halves as given
 - `getSnapshotPartsFromBody(string $body): array{text, html}` splits a stored snapshot into its two halves, from a body a caller already has
 - `buildInitialDocument(...)` takes an optional `PadSnapshot` for a document that starts out with content; without one the document is unsnapshotted (`snapshot_rev: -1`) and its body is empty
 

@@ -56,17 +56,16 @@ class PadSyncService {
 			$pad = $this->padFileService->readPad((string)$node->getContent());
 			$padId = $pad->padId;
 			$accessMode = $pad->accessMode;
-			$padUrl = $pad->padUrl;
 			$isExternal = $pad->isExternal;
 			if (!$isExternal) {
 				$this->bindingService->assertConsistentMapping($fileId, $padId, $accessMode);
 			}
 
 			if ($isExternal) {
-				return $this->syncExternalPad($node, $fileId, $padId, $padUrl, $pad, $force);
+				return $this->syncExternalPad($node, $fileId, $pad, $force);
 			}
 
-			return $this->syncInternalPad($node, $fileId, $padId, $pad, $force);
+			return $this->syncInternalPad($node, $fileId, $pad, $force);
 		} catch (PadFileLockRetryExhaustedException $e) {
 			$lockRetries = $e->getRetryAttempts();
 			return $this->lockedSyncResponse($e->getLockedException(), $fileId, $absolutePath, $padId, $accessMode, $isExternal, $force, $lockRetries);
@@ -133,11 +132,11 @@ class PadSyncService {
 	private function syncExternalPad(
 		File $node,
 		int $fileId,
-		string $padId,
-		string $padUrl,
 		ParsedPadFile $pad,
 		bool $force,
 	): PadSyncResult {
+		$padId = $pad->padId;
+		$padUrl = $pad->padUrl;
 		if ($padUrl === '') {
 			throw new EtherpadClientException('External pad URL metadata is missing or invalid.');
 		}
@@ -176,10 +175,10 @@ class PadSyncService {
 	private function syncInternalPad(
 		File $node,
 		int $fileId,
-		string $padId,
 		ParsedPadFile $pad,
 		bool $force,
 	): PadSyncResult {
+		$padId = $pad->padId;
 		$currentRev = $this->etherpadClient->getRevisionsCount($padId);
 		$snapshotRev = $this->padFileService->getSnapshotRevisionFromFrontmatter($pad->frontmatter);
 		if (!$force && $snapshotRev >= $currentRev) {

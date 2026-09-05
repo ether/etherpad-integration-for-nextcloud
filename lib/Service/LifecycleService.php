@@ -324,12 +324,11 @@ class LifecycleService {
 
 			$this->restoreSnapshotToManagedPad($fileId, $oldPadId, $newPadId, $snapshot, $htmlSnapshot);
 
-			$updatedContent = $this->padFileService->withStateAndSnapshot(
+			$updatedContent = $this->padFileService->withRestoredSnapshot(
 				$pad,
-				BindingService::STATE_ACTIVE,
 				$snapshot,
+				$htmlSnapshot,
 				$newPadId,
-				null,
 				$this->etherpadClient->buildPadUrl($newPadId),
 			);
 			if ($this->isTestFaultActive(self::TEST_FAULT_RESTORE_WRITE_LOCK)) {
@@ -442,8 +441,7 @@ class LifecycleService {
 			if ($this->isTestFaultActive(self::TEST_FAULT_RESTORE_READ_LOCK)) {
 				throw new LockedException('Injected test fault: restore_read_lock');
 			}
-			$currentContent = (string)$file->getContent();
-			$pad = $this->padFileService->readPad($currentContent);
+			$pad = $this->padFileService->readPad((string)$file->getContent());
 			$oldPadId = $pad->padId;
 			$accessMode = $pad->accessMode;
 			if (str_starts_with($oldPadId, 'ext.') || $pad->isExternal) {
@@ -455,12 +453,11 @@ class LifecycleService {
 			$newPadId = $this->provisionRestorePadId($accessMode, $oldPadId);
 			$managedPadCreated = true;
 			$this->restoreSnapshotToManagedPad($fileId, $oldPadId, $newPadId, $snapshot, $htmlSnapshot);
-			$updatedContent = $this->padFileService->withStateAndSnapshot(
+			$updatedContent = $this->padFileService->withRestoredSnapshot(
 				$pad,
-				BindingService::STATE_ACTIVE,
 				$snapshot,
+				$htmlSnapshot,
 				$newPadId,
-				null,
 				$this->etherpadClient->buildPadUrl($newPadId),
 			);
 			// Claim the binding row before touching the file. The unique

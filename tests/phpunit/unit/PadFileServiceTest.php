@@ -390,28 +390,32 @@ class PadFileServiceTest extends TestCase {
 		$this->assertSame('', $parts['html']);
 	}
 
-	public function testWithStateAndSnapshotPreservesExistingHtmlBody(): void {
-		// withStateAndSnapshot writes a new text snapshot but should keep the
-		// HTML body part already on disk. Used by trash flow when only fresh
-		// text is available.
+	public function testWithRestoredSnapshotWritesTheRestoreInvariant(): void {
 		$service = new PadFileService();
-		$base = $service->buildInitialDocument(1, 'demo-pad', BindingService::ACCESS_PUBLIC);
-		$withExport = $service->withExportSnapshot($service->readPad($base), 'original text', '<p>kept html</p>', 4);
+		$trashed = $service->readPad($service->withExportSnapshot(
+			$service->readPad($service->buildInitialDocument(1, 'old-pad', BindingService::ACCESS_PUBLIC)),
+			'original text',
+			'<p>original html</p>',
+			4,
+		));
 
-		$updated = $service->withStateAndSnapshot(
-			$service->readPad($withExport),
-			BindingService::STATE_ACTIVE,
+		$restored = $service->readPad($service->withRestoredSnapshot(
+			$trashed,
 			'replaced text',
-			null,
-			1700000000
-		);
+			'<p>replaced html</p>',
+			'new-pad',
+			'https://pad.example.test/p/new-pad',
+		));
 
-		$parsed = $service->readPad($updated);
+		// Active and undeleted are not the caller's to get wrong any more.
+		$this->assertSame(BindingService::STATE_ACTIVE, $restored->frontmatter['state']);
+		$this->assertNull($restored->frontmatter['deleted_at']);
+		$this->assertSame('new-pad', $restored->padId);
+		$this->assertSame('https://pad.example.test/p/new-pad', $restored->padUrl);
 		$this->assertSame(
-			['text' => 'replaced text', 'html' => '<p>kept html</p>'],
-			$service->getSnapshotPartsFromBody($parsed->body),
+			['text' => 'replaced text', 'html' => '<p>replaced html</p>'],
+			$service->getSnapshotPartsFromBody($restored->body),
 		);
-		$this->assertSame('2023-11-14T22:13:20+00:00', (string)$parsed->frontmatter['deleted_at']);
 	}
 
 	public function testGetSnapshotRevisionReturnsMinusOneForNonNumericValue(): void {

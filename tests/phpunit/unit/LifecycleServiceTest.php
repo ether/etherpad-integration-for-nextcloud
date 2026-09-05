@@ -306,7 +306,7 @@ class LifecycleServiceTest extends TestCase {
 		);
 		$padFileService->method('readPad')->with('doc-before')->willReturn($parsedPad);
 		$padFileService->method('getSnapshotPartsFromBody')->with($parsedPad->body)->willReturn(['text' => 'plain text', 'html' => '']);
-		$padFileService->method('withStateAndSnapshot')->willReturn('doc-after');
+		$padFileService->method('withRestoredSnapshot')->willReturn('doc-after');
 
 		$etherpadClient = $this->createMock(EtherpadClient::class);
 		$etherpadClient->method('buildPadUrl')->willReturn('https://pad.example.test/p/' . $newPadId);
@@ -365,7 +365,7 @@ class LifecycleServiceTest extends TestCase {
 		);
 		$padFileService->method('readPad')->with('doc-before')->willReturn($parsedPad);
 		$padFileService->method('getSnapshotPartsFromBody')->with($parsedPad->body)->willReturn(['text' => 'plain text', 'html' => '']);
-		$padFileService->method('withStateAndSnapshot')->willReturn('doc-after');
+		$padFileService->method('withRestoredSnapshot')->willReturn('doc-after');
 
 		$etherpadClient = $this->createMock(EtherpadClient::class);
 		$etherpadClient->method('createGroup')->willReturn('g.NEWGROUPID12345');
@@ -435,7 +435,7 @@ class LifecycleServiceTest extends TestCase {
 		);
 		$padFileService->method('readPad')->with('doc-before')->willReturn($parsedPad);
 		$padFileService->method('getSnapshotPartsFromBody')->with($parsedPad->body)->willReturn(['text' => 'plain text', 'html' => '']);
-		$padFileService->method('withStateAndSnapshot')->willReturn('doc-after');
+		$padFileService->method('withRestoredSnapshot')->willReturn('doc-after');
 
 		$etherpadClient = $this->createMock(EtherpadClient::class);
 		$etherpadClient->method('buildPadUrl')->willReturn('https://pad.example.test/p/' . $newPadId);
@@ -502,13 +502,12 @@ class LifecycleServiceTest extends TestCase {
 		$padFileService->method('readPad')->with('doc-before')->willReturn($parsedPad);
 		$padFileService->expects($this->once())->method('getSnapshotPartsFromBody')->with($parsedPad->body)->willReturn(['text' => 'plain text', 'html' => '<p>html text</p>']);
 		$padFileService->expects($this->once())
-			->method('withStateAndSnapshot')
+			->method('withRestoredSnapshot')
 			->with(
 				$this->identicalTo($parsedPad),
-				BindingService::STATE_ACTIVE,
 				'plain text',
+				'<p>html text</p>',
 				$newPadId,
-				null,
 				$newPadUrl
 			)
 			->willReturn('doc-after');
@@ -594,8 +593,8 @@ class LifecycleServiceTest extends TestCase {
 			'html' => '',
 		]);
 		$padFileService->expects($this->once())
-			->method('withStateAndSnapshot')
-			->with($this->identicalTo($parsedPad), BindingService::STATE_ACTIVE, 'plain text', $newPadId, null, $newPadUrl)
+			->method('withRestoredSnapshot')
+			->with($this->identicalTo($parsedPad), 'plain text', '', $newPadId, $newPadUrl)
 			->willReturn('doc-after');
 
 		$etherpadClient = $this->createMock(EtherpadClient::class);
@@ -711,7 +710,7 @@ class LifecycleServiceTest extends TestCase {
 			isExternal: false,
 		));
 		$padFileService->method('getSnapshotPartsFromBody')->willReturn(['text' => 'plain text', 'html' => '']);
-		$padFileService->method('withStateAndSnapshot')->willReturn('doc-after');
+		$padFileService->method('withRestoredSnapshot')->willReturn('doc-after');
 
 		$secureRandom = $this->createMock(ISecureRandom::class);
 		$secureRandom->method('generate')->willReturn('abc123def456');
@@ -757,7 +756,7 @@ class LifecycleServiceTest extends TestCase {
 			isExternal: true,
 		));
 		$padFileService->expects($this->never())->method('getSnapshotPartsFromBody');
-		$padFileService->expects($this->never())->method('withStateAndSnapshot');
+		$padFileService->expects($this->never())->method('withRestoredSnapshot');
 
 		$etherpadClient = $this->createMock(EtherpadClient::class);
 		$etherpadClient->expects($this->never())->method('createPad');
@@ -816,7 +815,7 @@ class LifecycleServiceTest extends TestCase {
 			'text' => 'external snapshot',
 			'html' => '',
 		]);
-		$padFileService->expects($this->never())->method('withStateAndSnapshot');
+		$padFileService->expects($this->never())->method('withRestoredSnapshot');
 
 		$etherpadClient = $this->createMock(EtherpadClient::class);
 		$etherpadClient->expects($this->never())->method('createPad');
@@ -880,7 +879,7 @@ class LifecycleServiceTest extends TestCase {
 			'text' => 'external snapshot',
 			'html' => '',
 		]);
-		$padFileService->expects($this->never())->method('withStateAndSnapshot');
+		$padFileService->expects($this->never())->method('withRestoredSnapshot');
 
 		$etherpadClient = $this->createMock(EtherpadClient::class);
 		$etherpadClient->expects($this->never())->method('createPad');
@@ -943,7 +942,7 @@ class LifecycleServiceTest extends TestCase {
 			'text' => 'recovered content',
 			'html' => '',
 		]);
-		$padFileService->method('withStateAndSnapshot')->willReturn('doc-after');
+		$padFileService->method('withRestoredSnapshot')->willReturn('doc-after');
 
 		$etherpadClient = $this->createMock(EtherpadClient::class);
 		$etherpadClient->expects($this->once())->method('createPad')->with($newPadId);
@@ -1006,7 +1005,7 @@ class LifecycleServiceTest extends TestCase {
 			isExternal: false,
 		));
 		$padFileService->method('getSnapshotPartsFromBody')->willReturn(['text' => 'content', 'html' => '']);
-		$padFileService->method('withStateAndSnapshot')->willReturn('doc-after');
+		$padFileService->method('withRestoredSnapshot')->willReturn('doc-after');
 
 		$etherpadClient = $this->createMock(EtherpadClient::class);
 		$etherpadClient->expects($this->once())->method('createPad');

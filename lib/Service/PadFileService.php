@@ -197,27 +197,29 @@ class PadFileService {
 		return str_starts_with($padId, 'ext.') && $remotePadId !== '' && $padOrigin !== '';
 	}
 
-	public function withStateAndSnapshot(
+	/**
+	 * The document a restore writes: active again, no deletion timestamp, and
+	 * pointed at the pad that was provisioned to replace the old one.
+	 *
+	 * The caller has already split the snapshot it is restoring, so both
+	 * halves arrive here rather than the body being taken apart a second time
+	 * to recover the HTML.
+	 */
+	public function withRestoredSnapshot(
 		ParsedPadFile $pad,
-		string $state,
-		string $snapshot,
-		?string $padId = null,
-		?int $deletedAtTs = null,
-		?string $padUrl = null
+		string $text,
+		string $html,
+		string $padId,
+		string $padUrl,
 	): string {
 		$frontmatter = $pad->frontmatter;
-		$bodyParts = $this->splitSnapshotBody($pad->body);
-		$frontmatter['state'] = $state;
+		$frontmatter['state'] = BindingService::STATE_ACTIVE;
 		$frontmatter['updated_at'] = gmdate('c');
-		$frontmatter['deleted_at'] = $deletedAtTs === null ? null : gmdate('c', $deletedAtTs);
-		if ($padId !== null) {
-			$frontmatter['pad_id'] = $padId;
-		}
-		if ($padUrl !== null) {
-			$frontmatter['pad_url'] = $padUrl;
-		}
+		$frontmatter['deleted_at'] = null;
+		$frontmatter['pad_id'] = $padId;
+		$frontmatter['pad_url'] = $padUrl;
 
-		return $this->serialize($frontmatter, $this->buildSnapshotBody($snapshot, $bodyParts['html']));
+		return $this->serialize($frontmatter, $this->buildSnapshotBody($text, $html));
 	}
 
 	/** @throws PadFileFormatException */
