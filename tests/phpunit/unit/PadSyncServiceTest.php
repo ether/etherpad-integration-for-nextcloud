@@ -10,6 +10,7 @@ use OCA\EtherpadNextcloud\Service\ExternalPadExportFetcher;
 use OCA\EtherpadNextcloud\Service\PadFileLockRetryService;
 use OCA\EtherpadNextcloud\Service\PadFileService;
 use OCA\EtherpadNextcloud\Service\PadSyncService;
+use OCA\EtherpadNextcloud\Service\PadSnapshot;
 use OCA\EtherpadNextcloud\Service\ParsedPadFile;
 use OCA\EtherpadNextcloud\Service\UserNodeResolver;
 use OCP\Files\File;
@@ -35,6 +36,7 @@ class PadSyncServiceTest extends TestCase {
 			accessMode: BindingService::ACCESS_PUBLIC,
 			padUrl: 'https://pad.example.test/p/remote',
 			isExternal: true,
+			snapshotRev: -1,
 		));
 
 		$bindingService = $this->createMock(BindingService::class);
@@ -56,7 +58,7 @@ class PadSyncServiceTest extends TestCase {
 		$userNodeResolver->method('resolveUserFileNodeById')->with('alice', 138)->willReturn($file);
 
 		$padFileService = $this->createMock(PadFileService::class);
-		$padFileService->method('readPad')->with('frontmatter')->willReturn(new ParsedPadFile(
+		$parsedPad = new ParsedPadFile(
 			frontmatter: [
 				'pad_id' => 'g.ABC$pad',
 				'access_mode' => BindingService::ACCESS_PROTECTED,
@@ -66,8 +68,9 @@ class PadSyncServiceTest extends TestCase {
 			accessMode: BindingService::ACCESS_PROTECTED,
 			padUrl: '',
 			isExternal: false,
-		));
-		$padFileService->method('getSnapshotRevision')->with('frontmatter')->willReturn(3);
+			snapshotRev: 3,
+		);
+		$padFileService->method('readPad')->with('frontmatter')->willReturn($parsedPad);
 
 		$bindingService = $this->createMock(BindingService::class);
 		$bindingService->expects($this->once())
@@ -99,7 +102,7 @@ class PadSyncServiceTest extends TestCase {
 		$userNodeResolver->method('toUserAbsolutePath')->with('alice', $file)->willReturn('/Remote.pad');
 
 		$padFileService = $this->createMock(PadFileService::class);
-		$padFileService->method('readPad')->with('frontmatter')->willReturn(new ParsedPadFile(
+		$parsedPad = new ParsedPadFile(
 			frontmatter: [
 				'pad_id' => 'ext.remote',
 				'access_mode' => BindingService::ACCESS_PUBLIC,
@@ -109,18 +112,16 @@ class PadSyncServiceTest extends TestCase {
 			accessMode: BindingService::ACCESS_PUBLIC,
 			padUrl: 'https://pad.example.test/p/remote',
 			isExternal: true,
-		));
+			snapshotRev: 4,
+		);
+		$padFileService->method('readPad')->with('frontmatter')->willReturn($parsedPad);
 		$padFileService->expects($this->once())
-			->method('getTextSnapshotForRestore')
-			->with('frontmatter')
-			->willReturn('previous text');
-		$padFileService->expects($this->once())
-			->method('getSnapshotRevision')
-			->with('frontmatter')
-			->willReturn(4);
+			->method('getSnapshotPartsFromBody')
+			->with($parsedPad->body)
+			->willReturn(['text' => 'previous text', 'html' => '']);
 		$padFileService->expects($this->once())
 			->method('withExportSnapshot')
-			->with('frontmatter', "remote text\nfrom export", '', 5, false)
+			->with($this->identicalTo($parsedPad), new PadSnapshot("remote text\nfrom export", null, 5))
 			->willReturn('updated-frontmatter');
 
 		$bindingService = $this->createMock(BindingService::class);

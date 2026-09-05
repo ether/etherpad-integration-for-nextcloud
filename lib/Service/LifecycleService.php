@@ -185,7 +185,10 @@ class LifecycleService {
 					$snapshot = $this->etherpadClient->getText($padId);
 					$html = $this->etherpadClient->getHTML($padId);
 					$revision = $this->etherpadClient->getRevisionsCount($padId);
-					$updatedContent = $this->padFileService->withExportSnapshot($currentContent, $snapshot, $html, $revision);
+					$updatedContent = $this->padFileService->withExportSnapshot(
+						$this->padFileService->readPad($currentContent),
+						new PadSnapshot($snapshot, $html, $revision),
+					);
 				} catch (\Throwable $snapshotError) {
 					$this->logger->warning('Could not fetch fresh Etherpad snapshot during trash. Using current .pad snapshot/body.', [
 						'app' => 'etherpad_nextcloud',
@@ -312,17 +315,18 @@ class LifecycleService {
 				throw new LockedException('Injected test fault: restore_read_lock');
 			}
 			$currentContent = (string)$file->getContent();
-			$snapshot = $this->padFileService->getTextSnapshotForRestore($currentContent);
-			$htmlSnapshot = $this->padFileService->getHtmlSnapshotForRestore($currentContent);
+			$pad = $this->padFileService->readPad($currentContent);
+			$snapshotParts = $this->padFileService->getSnapshotPartsFromBody($pad->body);
+			$snapshot = $snapshotParts['text'];
+			$htmlSnapshot = $snapshotParts['html'];
 
 			$this->restoreSnapshotToManagedPad($fileId, $oldPadId, $newPadId, $snapshot, $htmlSnapshot);
 
-			$updatedContent = $this->padFileService->withStateAndSnapshot(
-				$currentContent,
-				BindingService::STATE_ACTIVE,
+			$updatedContent = $this->padFileService->withRestoredSnapshot(
+				$pad,
 				$snapshot,
+				$htmlSnapshot,
 				$newPadId,
-				null,
 				$this->etherpadClient->buildPadUrl($newPadId),
 			);
 			if ($this->isTestFaultActive(self::TEST_FAULT_RESTORE_WRITE_LOCK)) {
@@ -435,8 +439,7 @@ class LifecycleService {
 			if ($this->isTestFaultActive(self::TEST_FAULT_RESTORE_READ_LOCK)) {
 				throw new LockedException('Injected test fault: restore_read_lock');
 			}
-			$currentContent = (string)$file->getContent();
-			$pad = $this->padFileService->readPad($currentContent);
+			$pad = $this->padFileService->readPad((string)$file->getContent());
 			$oldPadId = $pad->padId;
 			$accessMode = $pad->accessMode;
 			if (str_starts_with($oldPadId, 'ext.') || $pad->isExternal) {
@@ -448,12 +451,11 @@ class LifecycleService {
 			$newPadId = $this->provisionRestorePadId($accessMode, $oldPadId);
 			$managedPadCreated = true;
 			$this->restoreSnapshotToManagedPad($fileId, $oldPadId, $newPadId, $snapshot, $htmlSnapshot);
-			$updatedContent = $this->padFileService->withStateAndSnapshot(
-				$currentContent,
-				BindingService::STATE_ACTIVE,
+			$updatedContent = $this->padFileService->withRestoredSnapshot(
+				$pad,
 				$snapshot,
+				$htmlSnapshot,
 				$newPadId,
-				null,
 				$this->etherpadClient->buildPadUrl($newPadId),
 			);
 			// Claim the binding row before touching the file. The unique

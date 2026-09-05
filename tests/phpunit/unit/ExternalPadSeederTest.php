@@ -8,6 +8,7 @@ use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\EtherpadNextcloud\Service\ExternalPadExportFetcher;
 use OCA\EtherpadNextcloud\Service\ExternalPadSeeder;
 use OCA\EtherpadNextcloud\Service\PadFileService;
+use OCA\EtherpadNextcloud\Service\PadSnapshot;
 use OCP\Files\File;
 use PHPUnit\Framework\TestCase;
 
@@ -36,18 +37,15 @@ class ExternalPadSeederTest extends TestCase {
 				999,
 				'ext.RemotePad',
 				BindingService::ACCESS_PUBLIC,
-				'',
+				new PadSnapshot('snapshot-body', null, 0),
 				'https://pad.remote.test/p/RemotePad',
 				[
 					'pad_origin' => 'https://pad.remote.test',
 					'remote_pad_id' => 'RemotePad',
 				],
 			)
-			->willReturn('initial-doc');
-		$padFileService->expects($this->once())
-			->method('withExportSnapshot')
-			->with('initial-doc', 'snapshot-body', '', 0, false)
 			->willReturn('seeded-frontmatter');
+		$padFileService->expects($this->never())->method('withExportSnapshot');
 
 		$result = (new ExternalPadSeeder($padFileService, $fetcher))
 			->seed($fileNode, 999, 'https://pad.remote.test/p/RemotePad');
@@ -73,7 +71,6 @@ class ExternalPadSeederTest extends TestCase {
 
 		$padFileService = $this->createMock(PadFileService::class);
 		$padFileService->method('buildInitialDocument')->willReturn('doc');
-		$padFileService->method('withExportSnapshot')->willReturn('doc');
 
 		$result = (new ExternalPadSeeder($padFileService, $fetcher))
 			->seed($this->createMock(File::class), 1, 'https://pad.remote.test/p/RemotePad');

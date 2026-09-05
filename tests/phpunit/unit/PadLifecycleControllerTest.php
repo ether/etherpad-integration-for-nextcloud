@@ -17,6 +17,7 @@ use OCA\EtherpadNextcloud\Service\PadFileService;
 use OCA\EtherpadNextcloud\Service\PadMetadataService;
 use OCA\EtherpadNextcloud\Service\PadResponseService;
 use OCA\EtherpadNextcloud\Service\PadSyncService;
+use OCA\EtherpadNextcloud\Service\PadSnapshot;
 use OCA\EtherpadNextcloud\Service\ParsedPadFile;
 use OCA\EtherpadNextcloud\Service\UserNodeResolver;
 use OCA\EtherpadNextcloud\Util\PathNormalizer;
@@ -64,7 +65,7 @@ class PadLifecycleControllerTest extends TestCase {
 		$rootFolder->method('getById')->with(138)->willReturn([$file]);
 
 		$padFileService = $this->createMock(PadFileService::class);
-		$padFileService->method('readPad')->willReturn(new ParsedPadFile(
+		$parsedPad = new ParsedPadFile(
 			frontmatter: [
 				'pad_id' => 'g.ABCDEFGHIJKLMNOP$pad-1',
 				'access_mode' => BindingService::ACCESS_PROTECTED,
@@ -74,9 +75,10 @@ class PadLifecycleControllerTest extends TestCase {
 			accessMode: BindingService::ACCESS_PROTECTED,
 			padUrl: '',
 			isExternal: false,
-		));
-		$padFileService->method('getSnapshotRevision')->willReturn(4);
-		$padFileService->method('withExportSnapshot')->with("frontmatter", 'hello', '<p>hello</p>', 5)->willReturn('updated-content');
+			snapshotRev: 4,
+		);
+		$padFileService->method('readPad')->with('frontmatter')->willReturn($parsedPad);
+		$padFileService->method('withExportSnapshot')->with($this->identicalTo($parsedPad), new PadSnapshot('hello', '<p>hello</p>', 5))->willReturn('updated-content');
 
 		$bindingService = $this->createMock(BindingService::class);
 		$bindingService->expects($this->once())
@@ -118,7 +120,7 @@ class PadLifecycleControllerTest extends TestCase {
 		$rootFolder->method('getById')->with(138)->willReturn([$file]);
 
 		$padFileService = $this->createMock(PadFileService::class);
-		$padFileService->method('readPad')->willReturn(new ParsedPadFile(
+		$parsedPad = new ParsedPadFile(
 			frontmatter: [
 				'pad_id' => 'g.ABCDEFGHIJKLMNOP$pad-1',
 				'access_mode' => BindingService::ACCESS_PROTECTED,
@@ -128,9 +130,10 @@ class PadLifecycleControllerTest extends TestCase {
 			accessMode: BindingService::ACCESS_PROTECTED,
 			padUrl: '',
 			isExternal: false,
-		));
-		$padFileService->method('getSnapshotRevision')->willReturn(1);
-		$padFileService->method('withExportSnapshot')->with("frontmatter", 'hello', '<p>hello</p>', 5)->willReturn('updated-content');
+			snapshotRev: 1,
+		);
+		$padFileService->method('readPad')->with('frontmatter')->willReturn($parsedPad);
+		$padFileService->method('withExportSnapshot')->with($this->identicalTo($parsedPad), new PadSnapshot('hello', '<p>hello</p>', 5))->willReturn('updated-content');
 
 		$bindingService = $this->createMock(BindingService::class);
 		$bindingService->method('assertConsistentMapping');
@@ -166,7 +169,7 @@ class PadLifecycleControllerTest extends TestCase {
 		$rootFolder->method('getById')->with(138)->willReturn([$file]);
 
 		$padFileService = $this->createMock(PadFileService::class);
-		$padFileService->method('readPad')->willReturn(new ParsedPadFile(
+		$parsedPad = new ParsedPadFile(
 			frontmatter: [
 				'pad_id' => 'g.ABCDEFGHIJKLMNOP$pad-1',
 				'access_mode' => BindingService::ACCESS_PROTECTED,
@@ -176,10 +179,10 @@ class PadLifecycleControllerTest extends TestCase {
 			accessMode: BindingService::ACCESS_PROTECTED,
 			padUrl: '',
 			isExternal: false,
-		));
-		$padFileService->method('getSnapshotRevision')->willReturn(5);
-		$padFileService->method('getTextSnapshotForRestore')->with('frontmatter')->willReturn('hello');
-		$padFileService->method('getHtmlSnapshotForRestore')->with('frontmatter')->willReturn('<p>hello</p>');
+			snapshotRev: 5,
+		);
+		$padFileService->method('readPad')->with('frontmatter')->willReturn($parsedPad);
+		$padFileService->method('getSnapshotPartsFromBody')->with($parsedPad->body)->willReturn(['text' => 'hello', 'html' => '<p>hello</p>']);
 
 		$bindingService = $this->createMock(BindingService::class);
 		$bindingService->method('assertConsistentMapping');
@@ -220,7 +223,7 @@ class PadLifecycleControllerTest extends TestCase {
 		$rootFolder->method('getById')->with(138)->willReturn([$file]);
 
 		$padFileService = $this->createMock(PadFileService::class);
-		$padFileService->method('readPad')->willReturn(new ParsedPadFile(
+		$parsedPad = new ParsedPadFile(
 			frontmatter: [
 				'pad_id' => 'ext.remote-pad',
 				'access_mode' => BindingService::ACCESS_PUBLIC,
@@ -233,8 +236,10 @@ class PadLifecycleControllerTest extends TestCase {
 			accessMode: BindingService::ACCESS_PUBLIC,
 			padUrl: 'https://pad.example.test/p/public-pad',
 			isExternal: true,
-		));
-		$padFileService->method('getTextSnapshotForRestore')->willReturn('same text');
+			snapshotRev: -1,
+		);
+		$padFileService->method('readPad')->with('frontmatter')->willReturn($parsedPad);
+		$padFileService->method('getSnapshotPartsFromBody')->with($parsedPad->body)->willReturn(['text' => 'same text', 'html' => '']);
 
 		$bindingService = $this->createMock(BindingService::class);
 		$bindingService->method('assertConsistentMapping');
@@ -292,14 +297,16 @@ class PadLifecycleControllerTest extends TestCase {
 		$userSession->method('getUser')->willReturn($user);
 
 		$padFileService = $this->createMock(PadFileService::class);
-		$padFileService->method('readPad')->willReturn(new ParsedPadFile(
+		$parsedPad = new ParsedPadFile(
 			frontmatter: ['pad_id' => 'orig'],
 			body: '',
 			padId: 'orig',
 			accessMode: '',
 			padUrl: '',
 			isExternal: false,
-		));
+			snapshotRev: -1,
+		);
+		$padFileService->method('readPad')->with('doc')->willReturn($parsedPad);
 
 		$bindingService = $this->createMock(BindingService::class);
 		$bindingService->method('findByPadId')
@@ -361,14 +368,16 @@ class PadLifecycleControllerTest extends TestCase {
 		$rootFolder->method('getById')->with(800)->willReturn([$orphan]);
 
 		$padFileService = $this->createMock(PadFileService::class);
-		$padFileService->method('readPad')->willReturn(new ParsedPadFile(
+		$parsedPad = new ParsedPadFile(
 			frontmatter: ['pad_id' => 'orphan'],
 			body: '',
 			padId: 'orphan',
 			accessMode: '',
 			padUrl: '',
 			isExternal: false,
-		));
+			snapshotRev: -1,
+		);
+		$padFileService->method('readPad')->with('frontmatter')->willReturn($parsedPad);
 
 		$controller = $this->buildController(
 			$this->createMock(IRequest::class),

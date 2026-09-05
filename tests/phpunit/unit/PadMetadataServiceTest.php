@@ -43,6 +43,7 @@ class PadMetadataServiceTest extends TestCase {
 			accessMode: BindingService::ACCESS_PUBLIC,
 			padUrl: 'https://pad.example.test/p/External',
 			isExternal: true,
+			snapshotRev: -1,
 		));
 
 		$fetcher = $this->createMock(ExternalPadExportFetcher::class);
@@ -102,6 +103,7 @@ class PadMetadataServiceTest extends TestCase {
 			accessMode: BindingService::ACCESS_PUBLIC,
 			padUrl: '',
 			isExternal: false,
+			snapshotRev: -1,
 		));
 
 		$etherpadClient = $this->createMock(EtherpadClient::class);
@@ -146,6 +148,7 @@ class PadMetadataServiceTest extends TestCase {
 			accessMode: BindingService::ACCESS_PUBLIC,
 			padUrl: '',
 			isExternal: false,
+			snapshotRev: -1,
 		));
 
 		$etherpadClient = $this->createMock(EtherpadClient::class);
@@ -187,6 +190,7 @@ class PadMetadataServiceTest extends TestCase {
 			// not survive as the answer.
 			padUrl: 'https://pad.example.test/p/g.ABC$pad',
 			isExternal: false,
+			snapshotRev: -1,
 		));
 
 		$etherpadClient = $this->createMock(EtherpadClient::class);
@@ -221,6 +225,7 @@ class PadMetadataServiceTest extends TestCase {
 			accessMode: '',
 			padUrl: '',
 			isExternal: false,
+			snapshotRev: -1,
 		));
 
 		$bindingService = $this->createMock(BindingService::class);
@@ -266,6 +271,7 @@ class PadMetadataServiceTest extends TestCase {
 			accessMode: '',
 			padUrl: '',
 			isExternal: false,
+			snapshotRev: -1,
 		));
 
 		$bindingService = $this->createMock(BindingService::class);
@@ -293,6 +299,7 @@ class PadMetadataServiceTest extends TestCase {
 			accessMode: '',
 			padUrl: '',
 			isExternal: false,
+			snapshotRev: -1,
 		));
 
 		$bindingService = $this->createMock(BindingService::class);
@@ -322,6 +329,7 @@ class PadMetadataServiceTest extends TestCase {
 			accessMode: '',
 			padUrl: '',
 			isExternal: true,
+			snapshotRev: -1,
 		));
 
 		$bindingService = $this->createMock(BindingService::class);
@@ -386,6 +394,7 @@ class PadMetadataServiceTest extends TestCase {
 			accessMode: '',
 			padUrl: '',
 			isExternal: false,
+			snapshotRev: -1,
 		));
 
 		$bindingService = $this->createMock(BindingService::class);

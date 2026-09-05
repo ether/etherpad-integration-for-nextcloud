@@ -46,14 +46,13 @@ class ExternalPadSeeder {
 			$fileId,
 			$externalPadId,
 			BindingService::ACCESS_PUBLIC,
-			'',
-			$external['pad_url'],
-			[
+			snapshot: new PadSnapshot($external['text'], null, 0),
+			padUrl: $external['pad_url'],
+			extraFrontmatter: [
 				'pad_origin' => $external['origin'],
 				'remote_pad_id' => $external['pad_id'],
-			]
+			],
 		);
-		$content = $this->padFileService->withExportSnapshot($content, $external['text'], '', 0, false);
 
 		$result = [
 			'file_id' => $fileId,

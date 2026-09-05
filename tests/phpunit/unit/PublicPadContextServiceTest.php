@@ -55,6 +55,7 @@ class PublicPadContextServiceTest extends TestCase {
 			accessMode: BindingService::ACCESS_PROTECTED,
 			padUrl: '',
 			isExternal: false,
+			snapshotRev: -1,
 		));
 
 		$bindings = $this->createMock(BindingService::class);
@@ -119,6 +120,7 @@ class PublicPadContextServiceTest extends TestCase {
 			accessMode: BindingService::ACCESS_PROTECTED,
 			padUrl: '',
 			isExternal: false,
+			snapshotRev: -1,
 		));
 
 		$fetcher = $this->createMock(LivePadHtmlFetcher::class);

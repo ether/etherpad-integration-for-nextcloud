@@ -18,6 +18,7 @@ use OCA\EtherpadNextcloud\Service\PadCreateRollbackService;
 use OCA\EtherpadNextcloud\Service\PadCreationService;
 use OCA\EtherpadNextcloud\Service\PadFileCreator;
 use OCA\EtherpadNextcloud\Service\PadFileService;
+use OCA\EtherpadNextcloud\Service\PadSnapshot;
 use OCA\EtherpadNextcloud\Service\ParsedPadFile;
 use OCA\EtherpadNextcloud\Service\UserNodeResolver;
 use OCA\EtherpadNextcloud\Util\PathNormalizer;
@@ -46,7 +47,7 @@ class PadCreationServiceTest extends TestCase {
 		$padFileService = $this->createMock(PadFileService::class);
 		$padFileService->expects($this->once())
 			->method('buildInitialDocument')
-			->with(123, 'g.ABC$pad', BindingService::ACCESS_PROTECTED, '', 'https://pad.example.test/p/g.ABC$pad')
+			->with(123, 'g.ABC$pad', BindingService::ACCESS_PROTECTED, null, 'https://pad.example.test/p/g.ABC$pad')
 			->willReturn('frontmatter');
 
 		$bindingService = $this->createMock(BindingService::class);
@@ -212,6 +213,7 @@ class PadCreationServiceTest extends TestCase {
 			accessMode: BindingService::ACCESS_PROTECTED,
 			padUrl: '',
 			isExternal: false,
+			snapshotRev: -1,
 		));
 
 		$padPaths = $this->createMock(PathNormalizer::class);
@@ -246,12 +248,13 @@ class PadCreationServiceTest extends TestCase {
 			accessMode: BindingService::ACCESS_PUBLIC,
 			padUrl: '',
 			isExternal: false,
+			snapshotRev: -1,
 		));
 		$padFileService->method('getSnapshotPartsFromBody')->willReturn(['text' => 'hello', 'html' => '<p>hello</p>']);
 		$padFileService->method('buildInitialDocument')
-			->with(4321, 'g.grp$pad', BindingService::ACCESS_PROTECTED, 'hello', 'https://pad.example.test/p/x')
-			->willReturn('doc');
-		$padFileService->method('withExportSnapshot')->willReturn('doc-with-snapshot');
+			->with(4321, 'g.grp$pad', BindingService::ACCESS_PROTECTED, new PadSnapshot('hello', '<p>hello</p>', 0), 'https://pad.example.test/p/x')
+			->willReturn('doc-with-snapshot');
+		$padFileService->expects($this->never())->method('withExportSnapshot');
 
 		$bootstrap = $this->createMock(PadBootstrapService::class);
 		$bootstrap->expects(self::once())
@@ -306,18 +309,15 @@ class PadCreationServiceTest extends TestCase {
 				321,
 				'ext.RemotePad',
 				BindingService::ACCESS_PUBLIC,
-				'',
+				new PadSnapshot("Initial snapshot\nfrom remote pad", null, 0),
 				'https://pad.remote.test/p/RemotePad',
 				[
 					'pad_origin' => 'https://pad.remote.test',
 					'remote_pad_id' => 'RemotePad',
-				]
+				],
 			)
-			->willReturn('external-empty-frontmatter');
-		$padFileService->expects($this->once())
-			->method('withExportSnapshot')
-			->with('external-empty-frontmatter', "Initial snapshot\nfrom remote pad", '', 0, false)
 			->willReturn('external-frontmatter');
+		$padFileService->expects($this->never())->method('withExportSnapshot');
 
 		$bindingService = $this->createMock(BindingService::class);
 		$bindingService->expects($this->never())->method('createBinding');
@@ -357,11 +357,20 @@ class PadCreationServiceTest extends TestCase {
 			]);
 
 		$padFileService = $this->createMock(PadFileService::class);
-		$padFileService->method('buildInitialDocument')->willReturn('external-empty-frontmatter');
+		// An unavailable remote export still produces a snapshotted document;
+		// the snapshot is simply empty.
 		$padFileService->expects($this->once())
-			->method('withExportSnapshot')
-			->with('external-empty-frontmatter', '', '', 0, false)
+			->method('buildInitialDocument')
+			->with(
+				$this->anything(),
+				$this->anything(),
+				BindingService::ACCESS_PUBLIC,
+				new PadSnapshot('', null, 0),
+				$this->anything(),
+				$this->anything(),
+			)
 			->willReturn('external-frontmatter');
+		$padFileService->expects($this->never())->method('withExportSnapshot');
 
 		$bindingService = $this->createMock(BindingService::class);
 		$bindingService->expects($this->never())->method('createBinding');
@@ -404,7 +413,7 @@ class PadCreationServiceTest extends TestCase {
 
 		$padFileService = $this->createMock(PadFileService::class);
 		$padFileService->method('buildInitialDocument')->willReturn('frontmatter');
-		$padFileService->method('withExportSnapshot')->willReturn('frontmatter');
+		$padFileService->expects($this->never())->method('withExportSnapshot');
 
 		$result = $this->buildService(
 			$padFileService,
@@ -482,6 +491,7 @@ class PadCreationServiceTest extends TestCase {
 			accessMode: BindingService::ACCESS_PROTECTED,
 			padUrl: '',
 			isExternal: false,
+			snapshotRev: -1,
 		));
 		$padFileService->method('getSnapshotPartsFromBody')->willReturn([
 			'text' => 'Datum: {{date:next monday|d.m.Y}}',
@@ -489,9 +499,9 @@ class PadCreationServiceTest extends TestCase {
 		]);
 		$padFileService->expects($this->once())
 			->method('buildInitialDocument')
-			->with(99, 'p-fresh', BindingService::ACCESS_PROTECTED, 'Datum: 18.05.2026', $this->isType('string'))
+			->with(99, 'p-fresh', BindingService::ACCESS_PROTECTED, new PadSnapshot('Datum: 18.05.2026', '', 0), $this->isType('string'))
 			->willReturn('doc');
-		$padFileService->method('withExportSnapshot')->willReturn('doc-with-snapshot');
+		$padFileService->expects($this->never())->method('withExportSnapshot');
 
 		$bootstrap = $this->createMock(PadBootstrapService::class);
 		$bootstrap->expects($this->once())
@@ -591,10 +601,11 @@ class PadCreationServiceTest extends TestCase {
 			accessMode: BindingService::ACCESS_PUBLIC,
 			padUrl: '',
 			isExternal: false,
+			snapshotRev: -1,
 		));
 		$padFileService->method('getSnapshotPartsFromBody')->willReturn(['text' => 'text', 'html' => '']);
 		$padFileService->method('buildInitialDocument')->willReturn('doc');
-		$padFileService->method('withExportSnapshot')->willReturn('doc');
+		$padFileService->expects($this->never())->method('withExportSnapshot');
 
 		$bootstrap = $this->createMock(PadBootstrapService::class);
 		$bootstrap->method('provisionPadId')->willReturn('p-fresh');
@@ -647,10 +658,11 @@ class PadCreationServiceTest extends TestCase {
 			accessMode: BindingService::ACCESS_PUBLIC,
 			padUrl: '',
 			isExternal: false,
+			snapshotRev: -1,
 		));
 		$padFileService->method('getSnapshotPartsFromBody')->willReturn(['text' => 'text', 'html' => '']);
 		$padFileService->method('buildInitialDocument')->willReturn('doc');
-		$padFileService->method('withExportSnapshot')->willReturn('doc');
+		$padFileService->expects($this->never())->method('withExportSnapshot');
 
 		$bootstrap = $this->createMock(PadBootstrapService::class);
 		$bootstrap->method('provisionPadId')->willReturn('p-fresh');
@@ -830,10 +842,11 @@ class PadCreationServiceTest extends TestCase {
 			accessMode: BindingService::ACCESS_PROTECTED,
 			padUrl: '',
 			isExternal: false,
+			snapshotRev: -1,
 		));
 		$padFileService->method('getSnapshotPartsFromBody')->willReturn(['text' => 'hello', 'html' => '']);
 		$padFileService->method('buildInitialDocument')->willReturn('doc');
-		$padFileService->method('withExportSnapshot')->willReturn('doc-with-snapshot');
+		$padFileService->expects($this->never())->method('withExportSnapshot');
 
 		$bootstrap = $this->createMock(PadBootstrapService::class);
 		$bootstrap->method('provisionPadId')->willReturn($padId);
@@ -898,6 +911,7 @@ class PadCreationServiceTest extends TestCase {
 			accessMode: '',
 			padUrl: '',
 			isExternal: true,
+			snapshotRev: -1,
 		));
 
 		$padPaths = $this->createMock(PathNormalizer::class);

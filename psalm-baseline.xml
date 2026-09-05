@@ -188,11 +188,6 @@
       <code><![CDATA[__construct]]></code>
     </PossiblyUnusedMethod>
   </file>
-  <file src="lib/Service/ParsedPadFile.php">
-    <PossiblyUnusedProperty>
-      <code><![CDATA[$frontmatter]]></code>
-    </PossiblyUnusedProperty>
-  </file>
   <file src="lib/Service/PendingDeleteRetryService.php">
     <PossiblyUnusedMethod>
       <code><![CDATA[__construct]]></code>

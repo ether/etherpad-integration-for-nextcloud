@@ -257,6 +257,7 @@ class PadTemplateAdminServiceTest extends TestCase {
 			accessMode: 'protected',
 			padUrl: '',
 			isExternal: $isExternal,
+			snapshotRev: -1,
 		));
 
 		$l10n = $this->createMock(IL10N::class);

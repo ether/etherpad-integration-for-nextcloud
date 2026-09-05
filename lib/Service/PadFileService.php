@@ -64,13 +64,18 @@ class PadFileService {
 		return "---\n" . implode("\n", $lines) . "\n---\n" . $body;
 	}
 
+	/**
+	 * @param array<string,mixed> $extraFrontmatter
+	 * @param ?PadSnapshot $snapshot content the document starts out with, or
+	 *                               null for a pad that starts empty
+	 */
 	public function buildInitialDocument(
 		int $fileId,
 		string $padId,
 		string $accessMode,
-		string $snapshot = '',
+		?PadSnapshot $snapshot = null,
 		?string $padUrl = null,
-		array $extraFrontmatter = []
+		array $extraFrontmatter = [],
 	): string {
 		$now = gmdate('c');
 		$frontmatter = [
@@ -92,7 +97,15 @@ class PadFileService {
 				$frontmatter[$key] = (string)$value;
 			}
 		}
-		return $this->serialize($frontmatter, $snapshot);
+		if ($snapshot === null) {
+			return $this->serialize($frontmatter, '');
+		}
+
+		// A caller that arrives with content already in hand gets the
+		// sectioned body here rather than building a document and parsing it
+		// straight back to put the snapshot in.
+		$frontmatter['snapshot_rev'] = $snapshot->revision;
+		return $this->serialize($frontmatter, $this->snapshotBody($snapshot));
 	}
 
 	/** @return array{url: string, pad_id: string}|null */
@@ -159,6 +172,7 @@ class PadFileService {
 			accessMode: $meta['access_mode'],
 			padUrl: $meta['pad_url'],
 			isExternal: $this->isExternalFrontmatter($frontmatter, $padId),
+			snapshotRev: $this->getSnapshotRevisionFromFrontmatter($frontmatter),
 		);
 	}
 
@@ -181,61 +195,48 @@ class PadFileService {
 		return str_starts_with($padId, 'ext.') && $remotePadId !== '' && $padOrigin !== '';
 	}
 
-	public function withStateAndSnapshot(
-		string $content,
-		string $state,
-		string $snapshot,
-		?string $padId = null,
-		?int $deletedAtTs = null,
-		?string $padUrl = null
+	/**
+	 * The document a restore writes: active again, no deletion timestamp, and
+	 * pointed at the pad that was provisioned to replace the old one.
+	 *
+	 * The caller has already split the snapshot it is restoring, so both
+	 * halves arrive here rather than the body being taken apart a second time
+	 * to recover the HTML.
+	 */
+	public function withRestoredSnapshot(
+		ParsedPadFile $pad,
+		string $text,
+		string $html,
+		string $padId,
+		string $padUrl,
 	): string {
-		$parsed = $this->parsePadFile($content);
-		$frontmatter = $parsed['frontmatter'];
-		$bodyParts = $this->splitSnapshotBody((string)$parsed['body']);
-		$frontmatter['state'] = $state;
+		$frontmatter = $pad->frontmatter;
+		$frontmatter['state'] = BindingService::STATE_ACTIVE;
 		$frontmatter['updated_at'] = gmdate('c');
-		$frontmatter['deleted_at'] = $deletedAtTs === null ? null : gmdate('c', $deletedAtTs);
-		if ($padId !== null) {
-			$frontmatter['pad_id'] = $padId;
-		}
-		if ($padUrl !== null) {
+		$frontmatter['deleted_at'] = null;
+		$frontmatter['pad_id'] = $padId;
+		if ($padUrl !== '') {
 			$frontmatter['pad_url'] = $padUrl;
 		}
 
-		return $this->serialize($frontmatter, $this->buildSnapshotBody($snapshot, $bodyParts['html']));
+		return $this->serialize($frontmatter, $this->buildSnapshotBody($text, $html));
 	}
 
-	public function withExportSnapshot(string $content, string $text, string $html, int $exportedRev, bool $includeHtmlSection = true): string {
-		$parsed = $this->parsePadFile($content);
-		$frontmatter = $parsed['frontmatter'];
+	public function withExportSnapshot(ParsedPadFile $pad, PadSnapshot $snapshot): string {
+		$frontmatter = $pad->frontmatter;
 		$frontmatter['updated_at'] = gmdate('c');
-		$frontmatter['snapshot_rev'] = max(0, $exportedRev);
+		$frontmatter['snapshot_rev'] = $snapshot->revision;
 
-		return $this->serialize($frontmatter, $this->buildSnapshotBody($text, $html, $includeHtmlSection));
-	}
-
-	public function getSnapshotRevision(string $content): int {
-		$parsed = $this->parsePadFile($content);
-		return $this->getSnapshotRevisionFromFrontmatter($parsed['frontmatter']);
+		return $this->serialize($frontmatter, $this->snapshotBody($snapshot));
 	}
 
 	/** @param array<string,mixed> $frontmatter */
-	public function getSnapshotRevisionFromFrontmatter(array $frontmatter): int {
+	private function getSnapshotRevisionFromFrontmatter(array $frontmatter): int {
 		$rev = $frontmatter['snapshot_rev'] ?? null;
 		if (!is_numeric($rev)) {
 			return -1;
 		}
 		return (int)$rev;
-	}
-
-	public function getTextSnapshotForRestore(string $content): string {
-		$parsed = $this->parsePadFile($content);
-		return $this->getSnapshotPartsFromBody((string)$parsed['body'])['text'];
-	}
-
-	public function getHtmlSnapshotForRestore(string $content): string {
-		$parsed = $this->parsePadFile($content);
-		return $this->getSnapshotPartsFromBody((string)$parsed['body'])['html'];
 	}
 
 	/** @return array{text:string,html:string} */
@@ -404,6 +405,10 @@ class PadFileService {
 			throw new PadFileFormatException('Invalid ' . $key . ' in frontmatter.');
 		}
 		return (string)$value;
+	}
+
+	private function snapshotBody(PadSnapshot $snapshot): string {
+		return $this->buildSnapshotBody($snapshot->text, $snapshot->html ?? '', $snapshot->html !== null);
 	}
 
 	private function buildSnapshotBody(string $text, string $html, bool $includeHtmlSection = true): string {

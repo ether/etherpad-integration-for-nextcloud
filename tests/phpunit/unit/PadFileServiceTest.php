@@ -8,6 +8,7 @@ use OCA\EtherpadNextcloud\Exception\MissingFrontmatterException;
 use OCA\EtherpadNextcloud\Exception\PadFileFormatException;
 use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\EtherpadNextcloud\Service\PadFileService;
+use OCA\EtherpadNextcloud\Service\PadSnapshot;
 use PHPUnit\Framework\TestCase;
 
 class PadFileServiceTest extends TestCase {
@@ -21,7 +22,6 @@ class PadFileServiceTest extends TestCase {
 			42,
 			'g.abc$demo',
 			BindingService::ACCESS_PROTECTED,
-			'snapshot body'
 		);
 
 		$parsed = $service->parsePadFile($document);
@@ -33,7 +33,7 @@ class PadFileServiceTest extends TestCase {
 		$this->assertSame(BindingService::STATE_ACTIVE, $parsed['frontmatter']['state']);
 		$this->assertNull($parsed['frontmatter']['deleted_at']);
 		$this->assertSame(-1, $parsed['frontmatter']['snapshot_rev']);
-		$this->assertSame('snapshot body', $parsed['body']);
+		$this->assertSame('', $parsed['body']);
 	}
 
 	public function testParsePadFileNormalizesCrlfLineEndings(): void {
@@ -41,13 +41,21 @@ class PadFileServiceTest extends TestCase {
 		$document = str_replace(
 			"\n",
 			"\r\n",
-			$service->buildInitialDocument(1, 'demo-pad', BindingService::ACCESS_PUBLIC, 'body')
+			$service->buildInitialDocument(
+				1,
+				'demo-pad',
+				BindingService::ACCESS_PUBLIC,
+				snapshot: new PadSnapshot('body', null, 0),
+			)
 		);
 
 		$parsed = $service->parsePadFile($document);
 
 		$this->assertSame('demo-pad', $parsed['frontmatter']['pad_id']);
-		$this->assertSame('body', $parsed['body']);
+		$this->assertSame(
+			['text' => 'body', 'html' => ''],
+			$service->getSnapshotPartsFromBody($parsed['body']),
+		);
 	}
 
 	public function testSerializeIncludesOptionalPadUrlOnlyWhenSet(): void {
@@ -56,8 +64,7 @@ class PadFileServiceTest extends TestCase {
 			10,
 			'demo-pad',
 			BindingService::ACCESS_PUBLIC,
-			'',
-			'https://pad.example.test/p/demo-pad'
+			padUrl: 'https://pad.example.test/p/demo-pad',
 		);
 		$withoutPadUrl = $service->buildInitialDocument(11, 'demo-pad', BindingService::ACCESS_PUBLIC);
 
@@ -72,8 +79,7 @@ class PadFileServiceTest extends TestCase {
 			51,
 			'demo-pad',
 			BindingService::ACCESS_PUBLIC,
-			'',
-			$padUrl
+			padUrl: $padUrl,
 		);
 
 		$parsed = $service->parsePadFile($document);
@@ -87,9 +93,8 @@ class PadFileServiceTest extends TestCase {
 			7,
 			'ext.remote-pad-id',
 			BindingService::ACCESS_PUBLIC,
-			'',
-			'https://pad.remote.example/p/remote-pad-id',
-			[
+			padUrl: 'https://pad.remote.example/p/remote-pad-id',
+			extraFrontmatter: [
 				'pad_origin' => 'https://pad.remote.example',
 				'remote_pad_id' => 'remote-pad-id',
 			]
@@ -188,12 +193,14 @@ class PadFileServiceTest extends TestCase {
 		$service = new PadFileService();
 		$base = $service->buildInitialDocument(1, 'demo-pad', BindingService::ACCESS_PUBLIC);
 
-		$updated = $service->withExportSnapshot($base, "line-a\nline-b", '<p>line-a</p>', 7);
+		$updated = $service->withExportSnapshot($service->readPad($base), new PadSnapshot("line-a\nline-b", '<p>line-a</p>', 7));
 
-		$parsed = $service->parsePadFile($updated);
-		$this->assertSame(7, $parsed['frontmatter']['snapshot_rev']);
-		$this->assertSame("line-a\nline-b", $service->getTextSnapshotForRestore($updated));
-		$this->assertSame('<p>line-a</p>', $service->getHtmlSnapshotForRestore($updated));
+		$parsed = $service->readPad($updated);
+		$this->assertSame(7, $parsed->frontmatter['snapshot_rev']);
+		$this->assertSame(
+			['text' => "line-a\nline-b", 'html' => '<p>line-a</p>'],
+			$service->getSnapshotPartsFromBody($parsed->body),
+		);
 	}
 
 	public function testWithExportSnapshotEmptyValuesOverwritePreviousSnapshot(): void {
@@ -202,25 +209,149 @@ class PadFileServiceTest extends TestCase {
 		// become empty (otherwise stale content would resurface on restore).
 		$service = new PadFileService();
 		$base = $service->buildInitialDocument(1, 'demo-pad', BindingService::ACCESS_PUBLIC);
-		$withContent = $service->withExportSnapshot($base, 'previous text', '<p>previous html</p>', 5);
+		$withContent = $service->withExportSnapshot($service->readPad($base), new PadSnapshot('previous text', '<p>previous html</p>', 5));
 
-		$cleared = $service->withExportSnapshot($withContent, '', '', 6);
+		$cleared = $service->withExportSnapshot($service->readPad($withContent), new PadSnapshot('', '', 6));
 
-		$this->assertSame('', $service->getTextSnapshotForRestore($cleared));
-		$this->assertSame('', $service->getHtmlSnapshotForRestore($cleared));
-		$this->assertSame(6, $service->getSnapshotRevision($cleared));
+		$parsed = $service->readPad($cleared);
+		$this->assertSame(['text' => '', 'html' => ''], $service->getSnapshotPartsFromBody($parsed->body));
+		$this->assertSame(6, $parsed->frontmatter['snapshot_rev']);
 	}
 
 	public function testWithExportSnapshotOmitsHtmlSectionWhenRequested(): void {
 		$service = new PadFileService();
 		$base = $service->buildInitialDocument(1, 'demo-pad', BindingService::ACCESS_PUBLIC);
 
-		$textOnly = $service->withExportSnapshot($base, 'just text', '<p>ignored</p>', 1, false);
+		$textOnly = $service->withExportSnapshot($service->readPad($base), new PadSnapshot('just text', null, 1));
 
 		$this->assertStringNotContainsString('[HTML-BEGIN]', $textOnly);
 		$this->assertStringNotContainsString('[HTML-END]', $textOnly);
-		$this->assertSame('just text', $service->getTextSnapshotForRestore($textOnly));
-		$this->assertSame('', $service->getHtmlSnapshotForRestore($textOnly));
+		$this->assertSame(
+			['text' => 'just text', 'html' => ''],
+			$service->getSnapshotPartsFromBody($service->readPad($textOnly)->body),
+		);
+	}
+
+	public function testBuildInitialDocumentWithSnapshotMatchesTheTwoStepItReplaces(): void {
+		// The one-step form claims to write exactly what the two-step one
+		// wrote, so the two are compared rather than sampled.
+		$service = new PadFileService();
+
+		$oneStep = $service->buildInitialDocument(
+			1,
+			'g.grp$pad',
+			BindingService::ACCESS_PROTECTED,
+			snapshot: new PadSnapshot('hello', '<p>hello</p>', 0),
+			padUrl: 'https://pad.example.test/p/x',
+		);
+		$twoStep = $service->withExportSnapshot(
+			$service->readPad($service->buildInitialDocument(
+				1,
+				'g.grp$pad',
+				BindingService::ACCESS_PROTECTED,
+				padUrl: 'https://pad.example.test/p/x',
+			)),
+			new PadSnapshot('hello', '<p>hello</p>', 0),
+		);
+
+		$this->assertSame(self::withoutWallClock($twoStep), self::withoutWallClock($oneStep));
+
+		$parsed = $service->readPad($oneStep);
+		$this->assertSame(0, $parsed->frontmatter['snapshot_rev']);
+		$this->assertSame(
+			['text' => 'hello', 'html' => '<p>hello</p>'],
+			$service->getSnapshotPartsFromBody($parsed->body),
+		);
+	}
+
+	public function testBuildInitialDocumentWithoutHtmlOmitsTheHtmlSection(): void {
+		// snapshotHtml: null means text only, not "an empty HTML half".
+		$service = new PadFileService();
+
+		$oneStep = $service->buildInitialDocument(
+			2,
+			'ext.RemotePad',
+			BindingService::ACCESS_PUBLIC,
+			snapshot: new PadSnapshot('remote text', null, 0),
+			padUrl: 'https://pad.remote.test/p/RemotePad',
+			extraFrontmatter: ['pad_origin' => 'https://pad.remote.test'],
+		);
+		$twoStep = $service->withExportSnapshot(
+			$service->readPad($service->buildInitialDocument(
+				2,
+				'ext.RemotePad',
+				BindingService::ACCESS_PUBLIC,
+				padUrl: 'https://pad.remote.test/p/RemotePad',
+				extraFrontmatter: ['pad_origin' => 'https://pad.remote.test'],
+			)),
+			new PadSnapshot('remote text', null, 0),
+		);
+
+		$this->assertSame(self::withoutWallClock($twoStep), self::withoutWallClock($oneStep));
+		$this->assertStringNotContainsString('[HTML-BEGIN]', $oneStep);
+
+		$parsed = $service->readPad($oneStep);
+		$this->assertSame(0, $parsed->frontmatter['snapshot_rev']);
+		$this->assertSame(
+			['text' => 'remote text', 'html' => ''],
+			$service->getSnapshotPartsFromBody($parsed->body),
+		);
+	}
+
+	/**
+	 * created_at and updated_at are read from the wall clock as each document
+	 * is built, so two documents built moments apart differ whenever a second
+	 * ticks between them. Everything else is what the comparison is about —
+	 * including a body that happens to hold a line shaped like one of those
+	 * keys, which is why only the frontmatter block is touched.
+	 */
+	private static function withoutWallClock(string $document): string {
+		if (preg_match('/^(---\n.*?\n---\n)(.*)$/s', $document, $matches) !== 1) {
+			return $document;
+		}
+
+		return (string)preg_replace('/^(created_at|updated_at): ".*"$/m', '$1: "<time>"', $matches[1])
+			. $matches[2];
+	}
+
+	public function testTheWallClockHelperNormalisesTheFrontmatterAndNothingElse(): void {
+		$service = new PadFileService();
+		$document = $service->buildInitialDocument(
+			1,
+			'demo-pad',
+			BindingService::ACCESS_PUBLIC,
+			snapshot: new PadSnapshot("created_at: \"in the body\"", null, 0),
+		);
+		// The frontmatter timestamps are the first two matches; the body's
+		// look-alike line comes after them.
+		$aSecondLater = (string)preg_replace(
+			'/^(created_at|updated_at): ".*"$/m',
+			'$1: "2026-01-01T00:00:00+00:00"',
+			$document,
+			2,
+		);
+
+		// What the comparison is meant to ignore.
+		$this->assertNotSame($document, $aSecondLater);
+		$this->assertSame(
+			self::withoutWallClock($document),
+			self::withoutWallClock($aSecondLater),
+		);
+
+		// And what it must not: a body that looks like a timestamp line.
+		$this->assertStringContainsString("created_at: \"in the body\"", self::withoutWallClock($document));
+		$this->assertNotSame(
+			self::withoutWallClock($document),
+			self::withoutWallClock(str_replace('in the body', 'changed', $document)),
+		);
+	}
+
+	public function testASnapshotCannotClaimTheNoSnapshotRevision(): void {
+		// -1 is how the format says "never synced". A snapshot at that
+		// revision would make a never-synced pad look synced to the next
+		// sync's `$snapshotRev >= $currentRev` short circuit.
+		$this->expectException(\InvalidArgumentException::class);
+		new PadSnapshot('text', null, -1);
 	}
 
 	public function testFrontmatterValuesWithControlCharactersAreRefused(): void {
@@ -231,9 +362,8 @@ class PadFileServiceTest extends TestCase {
 			321,
 			'ext.RemotePad',
 			BindingService::ACCESS_PUBLIC,
-			'body',
-			'https://pad.remote.test/p/x',
-			['remote_pad_id' => "a\npad_id: g.victim\$secret\naccess_mode: protected"],
+			padUrl: 'https://pad.remote.test/p/x',
+			extraFrontmatter: ['remote_pad_id' => "a\npad_id: g.victim\$secret\naccess_mode: protected"],
 		);
 	}
 
@@ -245,33 +375,46 @@ class PadFileServiceTest extends TestCase {
 		$this->assertSame('', $parts['html']);
 	}
 
-	public function testWithStateAndSnapshotPreservesExistingHtmlBody(): void {
-		// withStateAndSnapshot writes a new text snapshot but should keep the
-		// HTML body part already on disk. Used by trash flow when only fresh
-		// text is available.
+	public function testWithRestoredSnapshotWritesTheRestoreInvariant(): void {
 		$service = new PadFileService();
-		$base = $service->buildInitialDocument(1, 'demo-pad', BindingService::ACCESS_PUBLIC);
-		$withExport = $service->withExportSnapshot($base, 'original text', '<p>kept html</p>', 4);
+		$trashed = $service->readPad($service->withExportSnapshot(
+			$service->readPad($service->buildInitialDocument(1, 'old-pad', BindingService::ACCESS_PUBLIC)),
+			new PadSnapshot('original text', '<p>original html</p>', 4),
+		));
 
-		$updated = $service->withStateAndSnapshot(
-			$withExport,
-			BindingService::STATE_ACTIVE,
+		$restored = $service->readPad($service->withRestoredSnapshot(
+			$trashed,
 			'replaced text',
-			null,
-			1700000000
-		);
+			'<p>replaced html</p>',
+			'new-pad',
+			'https://pad.example.test/p/new-pad',
+		));
 
-		$this->assertSame('replaced text', $service->getTextSnapshotForRestore($updated));
-		$this->assertSame('<p>kept html</p>', $service->getHtmlSnapshotForRestore($updated));
-		$parsed = $service->parsePadFile($updated);
-		$this->assertSame('2023-11-14T22:13:20+00:00', (string)$parsed['frontmatter']['deleted_at']);
+		// Active and undeleted are not the caller's to get wrong any more.
+		$this->assertSame(BindingService::STATE_ACTIVE, $restored->frontmatter['state']);
+		$this->assertNull($restored->frontmatter['deleted_at']);
+		$this->assertSame('new-pad', $restored->padId);
+		$this->assertSame('https://pad.example.test/p/new-pad', $restored->padUrl);
+		$this->assertSame(
+			['text' => 'replaced text', 'html' => '<p>replaced html</p>'],
+			$service->getSnapshotPartsFromBody($restored->body),
+		);
 	}
 
-	public function testGetSnapshotRevisionReturnsMinusOneForNonNumericValue(): void {
+	public function testTheParsedDocumentCarriesTheSnapshotRevision(): void {
 		$service = new PadFileService();
-		$this->assertSame(-1, $service->getSnapshotRevisionFromFrontmatter([]));
-		$this->assertSame(-1, $service->getSnapshotRevisionFromFrontmatter(['snapshot_rev' => 'abc']));
-		$this->assertSame(12, $service->getSnapshotRevisionFromFrontmatter(['snapshot_rev' => 12]));
+		$base = $service->buildInitialDocument(1, 'demo-pad', BindingService::ACCESS_PUBLIC);
+
+		$this->assertSame(-1, $service->readPad($base)->snapshotRev);
+		$this->assertSame(12, $service->readPad(str_replace('snapshot_rev: -1', 'snapshot_rev: 12', $base))->snapshotRev);
+	}
+
+	public function testANonNumericSnapshotRevisionIsAFormatError(): void {
+		$service = new PadFileService();
+		$base = $service->buildInitialDocument(1, 'demo-pad', BindingService::ACCESS_PUBLIC);
+
+		$this->expectException(PadFileFormatException::class);
+		$service->readPad(str_replace('snapshot_rev: -1', 'snapshot_rev: abc', $base));
 	}
 
 	// ------------------------------------------------------------------
