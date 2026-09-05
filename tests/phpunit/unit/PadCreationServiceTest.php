@@ -414,7 +414,7 @@ class PadCreationServiceTest extends TestCase {
 
 		$padFileService = $this->createMock(PadFileService::class);
 		$padFileService->method('buildInitialDocument')->willReturn('frontmatter');
-		$padFileService->method('withExportSnapshot')->willReturn('frontmatter');
+		$padFileService->expects($this->never())->method('withExportSnapshot');
 
 		$result = $this->buildService(
 			$padFileService,
@@ -499,9 +499,9 @@ class PadCreationServiceTest extends TestCase {
 		]);
 		$padFileService->expects($this->once())
 			->method('buildInitialDocument')
-			->with(99, 'p-fresh', BindingService::ACCESS_PROTECTED, 'Datum: 18.05.2026', $this->isType('string'))
+			->with(99, 'p-fresh', BindingService::ACCESS_PROTECTED, 'Datum: 18.05.2026', $this->isType('string'), [], '', 0)
 			->willReturn('doc');
-		$padFileService->method('withExportSnapshot')->willReturn('doc-with-snapshot');
+		$padFileService->expects($this->never())->method('withExportSnapshot');
 
 		$bootstrap = $this->createMock(PadBootstrapService::class);
 		$bootstrap->expects($this->once())
@@ -604,7 +604,7 @@ class PadCreationServiceTest extends TestCase {
 		));
 		$padFileService->method('getSnapshotPartsFromBody')->willReturn(['text' => 'text', 'html' => '']);
 		$padFileService->method('buildInitialDocument')->willReturn('doc');
-		$padFileService->method('withExportSnapshot')->willReturn('doc');
+		$padFileService->expects($this->never())->method('withExportSnapshot');
 
 		$bootstrap = $this->createMock(PadBootstrapService::class);
 		$bootstrap->method('provisionPadId')->willReturn('p-fresh');
@@ -660,7 +660,7 @@ class PadCreationServiceTest extends TestCase {
 		));
 		$padFileService->method('getSnapshotPartsFromBody')->willReturn(['text' => 'text', 'html' => '']);
 		$padFileService->method('buildInitialDocument')->willReturn('doc');
-		$padFileService->method('withExportSnapshot')->willReturn('doc');
+		$padFileService->expects($this->never())->method('withExportSnapshot');
 
 		$bootstrap = $this->createMock(PadBootstrapService::class);
 		$bootstrap->method('provisionPadId')->willReturn('p-fresh');
@@ -843,7 +843,7 @@ class PadCreationServiceTest extends TestCase {
 		));
 		$padFileService->method('getSnapshotPartsFromBody')->willReturn(['text' => 'hello', 'html' => '']);
 		$padFileService->method('buildInitialDocument')->willReturn('doc');
-		$padFileService->method('withExportSnapshot')->willReturn('doc-with-snapshot');
+		$padFileService->expects($this->never())->method('withExportSnapshot');
 
 		$bootstrap = $this->createMock(PadBootstrapService::class);
 		$bootstrap->method('provisionPadId')->willReturn($padId);

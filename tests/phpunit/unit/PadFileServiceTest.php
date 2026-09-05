@@ -190,10 +190,12 @@ class PadFileServiceTest extends TestCase {
 
 		$updated = $service->withExportSnapshot($service->readPad($base), "line-a\nline-b", '<p>line-a</p>', 7);
 
-		$parsed = $service->parsePadFile($updated);
-		$this->assertSame(7, $parsed['frontmatter']['snapshot_rev']);
-		$this->assertSame("line-a\nline-b", $service->getSnapshotPartsFromBody($service->readPad($updated)->body)['text']);
-		$this->assertSame('<p>line-a</p>', $service->getSnapshotPartsFromBody($service->readPad($updated)->body)['html']);
+		$parsed = $service->readPad($updated);
+		$this->assertSame(7, $parsed->frontmatter['snapshot_rev']);
+		$this->assertSame(
+			['text' => "line-a\nline-b", 'html' => '<p>line-a</p>'],
+			$service->getSnapshotPartsFromBody($parsed->body),
+		);
 	}
 
 	public function testWithExportSnapshotEmptyValuesOverwritePreviousSnapshot(): void {
@@ -206,9 +208,9 @@ class PadFileServiceTest extends TestCase {
 
 		$cleared = $service->withExportSnapshot($service->readPad($withContent), '', '', 6);
 
-		$this->assertSame('', $service->getSnapshotPartsFromBody($service->readPad($cleared)->body)['text']);
-		$this->assertSame('', $service->getSnapshotPartsFromBody($service->readPad($cleared)->body)['html']);
-		$this->assertSame(6, $service->readPad($cleared)->frontmatter['snapshot_rev']);
+		$parsed = $service->readPad($cleared);
+		$this->assertSame(['text' => '', 'html' => ''], $service->getSnapshotPartsFromBody($parsed->body));
+		$this->assertSame(6, $parsed->frontmatter['snapshot_rev']);
 	}
 
 	public function testWithExportSnapshotOmitsHtmlSectionWhenRequested(): void {
@@ -219,14 +221,15 @@ class PadFileServiceTest extends TestCase {
 
 		$this->assertStringNotContainsString('[HTML-BEGIN]', $textOnly);
 		$this->assertStringNotContainsString('[HTML-END]', $textOnly);
-		$this->assertSame('just text', $service->getSnapshotPartsFromBody($service->readPad($textOnly)->body)['text']);
-		$this->assertSame('', $service->getSnapshotPartsFromBody($service->readPad($textOnly)->body)['html']);
+		$this->assertSame(
+			['text' => 'just text', 'html' => ''],
+			$service->getSnapshotPartsFromBody($service->readPad($textOnly)->body),
+		);
 	}
 
 	public function testBuildInitialDocumentWithSnapshotMatchesTheTwoStepItReplaces(): void {
-		// The template path used to build a document and parse it straight
-		// back to put the snapshot in. Byte-identical output is the whole
-		// claim of the one-step form, so it is asserted rather than sampled.
+		// The one-step form claims to write exactly what the two-step one
+		// wrote, so the two are compared rather than sampled.
 		$service = new PadFileService();
 
 		$oneStep = $service->buildInitialDocument(
@@ -253,7 +256,7 @@ class PadFileServiceTest extends TestCase {
 			true,
 		);
 
-		$this->assertSame($twoStep, $oneStep);
+		$this->assertSame(self::withoutWallClock($twoStep), self::withoutWallClock($oneStep));
 
 		$parsed = $service->readPad($oneStep);
 		$this->assertSame(0, $parsed->frontmatter['snapshot_rev']);
@@ -264,8 +267,7 @@ class PadFileServiceTest extends TestCase {
 	}
 
 	public function testBuildInitialDocumentWithoutHtmlOmitsTheHtmlSection(): void {
-		// The external path stores text only, which is what snapshotHtml: null
-		// means here — not "an empty HTML half".
+		// snapshotHtml: null means text only, not "an empty HTML half".
 		$service = new PadFileService();
 
 		$oneStep = $service->buildInitialDocument(
@@ -293,7 +295,7 @@ class PadFileServiceTest extends TestCase {
 			false,
 		);
 
-		$this->assertSame($twoStep, $oneStep);
+		$this->assertSame(self::withoutWallClock($twoStep), self::withoutWallClock($oneStep));
 		$this->assertStringNotContainsString('[HTML-BEGIN]', $oneStep);
 
 		$parsed = $service->readPad($oneStep);
@@ -302,6 +304,15 @@ class PadFileServiceTest extends TestCase {
 			['text' => 'remote text', 'html' => ''],
 			$service->getSnapshotPartsFromBody($parsed->body),
 		);
+	}
+
+	/**
+	 * created_at and updated_at are read from the wall clock as each document
+	 * is built, so two documents built moments apart differ whenever a second
+	 * ticks between them. Everything else is what the comparison is about.
+	 */
+	private static function withoutWallClock(string $document): string {
+		return (string)preg_replace('/^(created_at|updated_at): ".*"$/m', '$1: "<time>"', $document);
 	}
 
 	public function testGetSnapshotPartsFromBodyHandlesBodyWithoutMarkers(): void {
@@ -328,10 +339,12 @@ class PadFileServiceTest extends TestCase {
 			1700000000
 		);
 
-		$this->assertSame('replaced text', $service->getSnapshotPartsFromBody($service->readPad($updated)->body)['text']);
-		$this->assertSame('<p>kept html</p>', $service->getSnapshotPartsFromBody($service->readPad($updated)->body)['html']);
-		$parsed = $service->parsePadFile($updated);
-		$this->assertSame('2023-11-14T22:13:20+00:00', (string)$parsed['frontmatter']['deleted_at']);
+		$parsed = $service->readPad($updated);
+		$this->assertSame(
+			['text' => 'replaced text', 'html' => '<p>kept html</p>'],
+			$service->getSnapshotPartsFromBody($parsed->body),
+		);
+		$this->assertSame('2023-11-14T22:13:20+00:00', (string)$parsed->frontmatter['deleted_at']);
 	}
 
 	public function testGetSnapshotRevisionReturnsMinusOneForNonNumericValue(): void {
