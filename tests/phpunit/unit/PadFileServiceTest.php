@@ -330,7 +330,6 @@ class PadFileServiceTest extends TestCase {
 			321,
 			'ext.RemotePad',
 			BindingService::ACCESS_PUBLIC,
-			'body',
 			'https://pad.remote.test/p/x',
 			['remote_pad_id' => "a\npad_id: g.victim\$secret\naccess_mode: protected"],
 		);
