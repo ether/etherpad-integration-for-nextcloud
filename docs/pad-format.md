@@ -113,9 +113,11 @@ Implementation: `lib/Service/PadFileService.php`
 
 - `parsePadFile(string $content): array{frontmatter, body}`
 - `serialize(array $frontmatter, string $body): string`
-- `withExportSnapshot(...)` updates export metadata + snapshot body
-- `withStateAndSnapshot(...)` updates state + snapshot
-- `getTextSnapshotForRestore(...)` and `getHtmlSnapshotForRestore(...)` read stored snapshots from the body
+- `readPad(string $content): ParsedPadFile` parses once and hands back the frontmatter, the body and the fields derived from them
+- `withExportSnapshot(ParsedPadFile $pad, ...)` updates export metadata + snapshot body
+- `withStateAndSnapshot(ParsedPadFile $pad, ...)` updates state + snapshot
+- `getSnapshotPartsFromBody(string $body): array{text, html}` splits a stored snapshot into its two halves, from a body a caller already has
+- `buildInitialDocument(...)` takes `snapshotHtml` and `snapshotRev` for a document that starts out with content
 
 Snapshot write flow:
 

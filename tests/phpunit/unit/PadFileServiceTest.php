@@ -223,6 +223,87 @@ class PadFileServiceTest extends TestCase {
 		$this->assertSame('', $service->getSnapshotPartsFromBody($service->readPad($textOnly)->body)['html']);
 	}
 
+	public function testBuildInitialDocumentWithSnapshotMatchesTheTwoStepItReplaces(): void {
+		// The template path used to build a document and parse it straight
+		// back to put the snapshot in. Byte-identical output is the whole
+		// claim of the one-step form, so it is asserted rather than sampled.
+		$service = new PadFileService();
+
+		$oneStep = $service->buildInitialDocument(
+			1,
+			'g.grp$pad',
+			BindingService::ACCESS_PROTECTED,
+			'hello',
+			'https://pad.example.test/p/x',
+			[],
+			'<p>hello</p>',
+			0,
+		);
+		$twoStep = $service->withExportSnapshot(
+			$service->readPad($service->buildInitialDocument(
+				1,
+				'g.grp$pad',
+				BindingService::ACCESS_PROTECTED,
+				'hello',
+				'https://pad.example.test/p/x',
+			)),
+			'hello',
+			'<p>hello</p>',
+			0,
+			true,
+		);
+
+		$this->assertSame($twoStep, $oneStep);
+
+		$parsed = $service->readPad($oneStep);
+		$this->assertSame(0, $parsed->frontmatter['snapshot_rev']);
+		$this->assertSame(
+			['text' => 'hello', 'html' => '<p>hello</p>'],
+			$service->getSnapshotPartsFromBody($parsed->body),
+		);
+	}
+
+	public function testBuildInitialDocumentWithoutHtmlOmitsTheHtmlSection(): void {
+		// The external path stores text only, which is what snapshotHtml: null
+		// means here — not "an empty HTML half".
+		$service = new PadFileService();
+
+		$oneStep = $service->buildInitialDocument(
+			2,
+			'ext.RemotePad',
+			BindingService::ACCESS_PUBLIC,
+			'remote text',
+			'https://pad.remote.test/p/RemotePad',
+			['pad_origin' => 'https://pad.remote.test'],
+			null,
+			0,
+		);
+		$twoStep = $service->withExportSnapshot(
+			$service->readPad($service->buildInitialDocument(
+				2,
+				'ext.RemotePad',
+				BindingService::ACCESS_PUBLIC,
+				'',
+				'https://pad.remote.test/p/RemotePad',
+				['pad_origin' => 'https://pad.remote.test'],
+			)),
+			'remote text',
+			'',
+			0,
+			false,
+		);
+
+		$this->assertSame($twoStep, $oneStep);
+		$this->assertStringNotContainsString('[HTML-BEGIN]', $oneStep);
+
+		$parsed = $service->readPad($oneStep);
+		$this->assertSame(0, $parsed->frontmatter['snapshot_rev']);
+		$this->assertSame(
+			['text' => 'remote text', 'html' => ''],
+			$service->getSnapshotPartsFromBody($parsed->body),
+		);
+	}
+
 	public function testGetSnapshotPartsFromBodyHandlesBodyWithoutMarkers(): void {
 		$service = new PadFileService();
 		$parts = $service->getSnapshotPartsFromBody('raw text without sections');
