@@ -371,10 +371,8 @@ class PadCreationService {
 				$fileId,
 				$padId,
 				$accessMode,
-				$resolvedText,
 				$padUrl,
-				snapshotHtml: $resolvedHtml,
-				snapshotRev: 0,
+				snapshot: new PadSnapshot($resolvedText, $resolvedHtml, 0),
 			);
 			$this->writeCreatedFile($claim, $content);
 			$this->bindingService->createBinding($fileId, $padId, $accessMode);
@@ -466,7 +464,7 @@ class PadCreationService {
 		$attempt->recordPad($padId);
 		$padUrl = $this->etherpadClient->buildPadUrl($padId);
 
-		$content = $this->padFileService->buildInitialDocument($fileId, $padId, $accessMode, '', $padUrl);
+		$content = $this->padFileService->buildInitialDocument($fileId, $padId, $accessMode, $padUrl);
 		$this->writeCreatedFile($claim, $content);
 		$this->bindingService->createBinding($fileId, $padId, $accessMode);
 

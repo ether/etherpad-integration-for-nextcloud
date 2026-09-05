@@ -8,6 +8,7 @@ use OCA\EtherpadNextcloud\Exception\MissingFrontmatterException;
 use OCA\EtherpadNextcloud\Exception\PadFileFormatException;
 use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\EtherpadNextcloud\Service\PadFileService;
+use OCA\EtherpadNextcloud\Service\PadSnapshot;
 use PHPUnit\Framework\TestCase;
 
 class PadFileServiceTest extends TestCase {
@@ -21,7 +22,6 @@ class PadFileServiceTest extends TestCase {
 			42,
 			'g.abc$demo',
 			BindingService::ACCESS_PROTECTED,
-			'snapshot body'
 		);
 
 		$parsed = $service->parsePadFile($document);
@@ -33,7 +33,7 @@ class PadFileServiceTest extends TestCase {
 		$this->assertSame(BindingService::STATE_ACTIVE, $parsed['frontmatter']['state']);
 		$this->assertNull($parsed['frontmatter']['deleted_at']);
 		$this->assertSame(-1, $parsed['frontmatter']['snapshot_rev']);
-		$this->assertSame('snapshot body', $parsed['body']);
+		$this->assertSame('', $parsed['body']);
 	}
 
 	public function testParsePadFileNormalizesCrlfLineEndings(): void {
@@ -41,13 +41,21 @@ class PadFileServiceTest extends TestCase {
 		$document = str_replace(
 			"\n",
 			"\r\n",
-			$service->buildInitialDocument(1, 'demo-pad', BindingService::ACCESS_PUBLIC, 'body')
+			$service->buildInitialDocument(
+				1,
+				'demo-pad',
+				BindingService::ACCESS_PUBLIC,
+				snapshot: new PadSnapshot('body', null, 0),
+			)
 		);
 
 		$parsed = $service->parsePadFile($document);
 
 		$this->assertSame('demo-pad', $parsed['frontmatter']['pad_id']);
-		$this->assertSame('body', $parsed['body']);
+		$this->assertSame(
+			['text' => 'body', 'html' => ''],
+			$service->getSnapshotPartsFromBody($parsed['body']),
+		);
 	}
 
 	public function testSerializeIncludesOptionalPadUrlOnlyWhenSet(): void {
@@ -56,7 +64,6 @@ class PadFileServiceTest extends TestCase {
 			10,
 			'demo-pad',
 			BindingService::ACCESS_PUBLIC,
-			'',
 			'https://pad.example.test/p/demo-pad'
 		);
 		$withoutPadUrl = $service->buildInitialDocument(11, 'demo-pad', BindingService::ACCESS_PUBLIC);
@@ -72,7 +79,6 @@ class PadFileServiceTest extends TestCase {
 			51,
 			'demo-pad',
 			BindingService::ACCESS_PUBLIC,
-			'',
 			$padUrl
 		);
 
@@ -87,7 +93,6 @@ class PadFileServiceTest extends TestCase {
 			7,
 			'ext.remote-pad-id',
 			BindingService::ACCESS_PUBLIC,
-			'',
 			'https://pad.remote.example/p/remote-pad-id',
 			[
 				'pad_origin' => 'https://pad.remote.example',
@@ -236,18 +241,15 @@ class PadFileServiceTest extends TestCase {
 			1,
 			'g.grp$pad',
 			BindingService::ACCESS_PROTECTED,
-			'hello',
 			'https://pad.example.test/p/x',
 			[],
-			'<p>hello</p>',
-			0,
+			new PadSnapshot('hello', '<p>hello</p>', 0),
 		);
 		$twoStep = $service->withExportSnapshot(
 			$service->readPad($service->buildInitialDocument(
 				1,
 				'g.grp$pad',
 				BindingService::ACCESS_PROTECTED,
-				'hello',
 				'https://pad.example.test/p/x',
 			)),
 			'hello',
@@ -274,18 +276,15 @@ class PadFileServiceTest extends TestCase {
 			2,
 			'ext.RemotePad',
 			BindingService::ACCESS_PUBLIC,
-			'remote text',
 			'https://pad.remote.test/p/RemotePad',
 			['pad_origin' => 'https://pad.remote.test'],
-			null,
-			0,
+			new PadSnapshot('remote text', null, 0),
 		);
 		$twoStep = $service->withExportSnapshot(
 			$service->readPad($service->buildInitialDocument(
 				2,
 				'ext.RemotePad',
 				BindingService::ACCESS_PUBLIC,
-				'',
 				'https://pad.remote.test/p/RemotePad',
 				['pad_origin' => 'https://pad.remote.test'],
 			)),
@@ -313,6 +312,14 @@ class PadFileServiceTest extends TestCase {
 	 */
 	private static function withoutWallClock(string $document): string {
 		return (string)preg_replace('/^(created_at|updated_at): ".*"$/m', '$1: "<time>"', $document);
+	}
+
+	public function testASnapshotCannotClaimTheNoSnapshotRevision(): void {
+		// -1 is how the format says "never synced". A snapshot at that
+		// revision would make a never-synced pad look synced to the next
+		// sync's `$snapshotRev >= $currentRev` short circuit.
+		$this->expectException(PadFileFormatException::class);
+		new PadSnapshot('text', null, -1);
 	}
 
 	public function testGetSnapshotPartsFromBodyHandlesBodyWithoutMarkers(): void {

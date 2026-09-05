@@ -129,7 +129,7 @@ class PadBootstrapService {
 			}
 
 			$padUrl = $this->etherpadClient->buildPadUrl($padId);
-			$doc = $this->padFileService->buildInitialDocument($fileId, $padId, $accessMode, '', $padUrl);
+			$doc = $this->padFileService->buildInitialDocument($fileId, $padId, $accessMode, $padUrl);
 			// Re-resolve after provisioning: the original File still writes to its remembered path.
 			$this->writeInitialDocument($uid, $fileId, $existingContent, $doc);
 		} catch (\Throwable $e) {

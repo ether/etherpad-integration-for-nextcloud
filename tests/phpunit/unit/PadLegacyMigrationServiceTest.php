@@ -65,7 +65,7 @@ class PadLegacyMigrationServiceTest extends TestCase {
 			->willReturn(BindingService::ACCESS_PUBLIC);
 		$padFileService->expects($this->once())
 			->method('buildInitialDocument')
-			->with(202, 'team-pad', BindingService::ACCESS_PUBLIC, '', 'https://pad.our-server.test/p/team-pad')
+			->with(202, 'team-pad', BindingService::ACCESS_PUBLIC, 'https://pad.our-server.test/p/team-pad')
 			->willReturn('written-frontmatter');
 
 		$etherpadClient = $this->createMock(EtherpadClient::class);

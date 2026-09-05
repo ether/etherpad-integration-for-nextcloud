@@ -8,6 +8,7 @@ use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\EtherpadNextcloud\Service\ExternalPadExportFetcher;
 use OCA\EtherpadNextcloud\Service\ExternalPadSeeder;
 use OCA\EtherpadNextcloud\Service\PadFileService;
+use OCA\EtherpadNextcloud\Service\PadSnapshot;
 use OCP\Files\File;
 use PHPUnit\Framework\TestCase;
 
@@ -36,14 +37,12 @@ class ExternalPadSeederTest extends TestCase {
 				999,
 				'ext.RemotePad',
 				BindingService::ACCESS_PUBLIC,
-				'snapshot-body',
 				'https://pad.remote.test/p/RemotePad',
 				[
 					'pad_origin' => 'https://pad.remote.test',
 					'remote_pad_id' => 'RemotePad',
 				],
-				null,
-				0,
+				new PadSnapshot('snapshot-body', null, 0),
 			)
 			->willReturn('seeded-frontmatter');
 		$padFileService->expects($this->never())->method('withExportSnapshot');

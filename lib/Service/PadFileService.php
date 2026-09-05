@@ -66,21 +66,16 @@ class PadFileService {
 
 	/**
 	 * @param array<string,mixed> $extraFrontmatter
-	 * @param ?string $snapshotHtml an HTML half for the snapshot body, or null
-	 *                              for a text-only one
-	 * @param ?int $snapshotRev the revision the snapshot was taken at; null
-	 *                          leaves the document unsnapshotted, which is
-	 *                          what a pad that starts empty wants
+	 * @param ?PadSnapshot $snapshot content the document starts out with, or
+	 *                               null for a pad that starts empty
 	 */
 	public function buildInitialDocument(
 		int $fileId,
 		string $padId,
 		string $accessMode,
-		string $snapshot = '',
 		?string $padUrl = null,
 		array $extraFrontmatter = [],
-		?string $snapshotHtml = null,
-		?int $snapshotRev = null,
+		?PadSnapshot $snapshot = null,
 	): string {
 		$now = gmdate('c');
 		$frontmatter = [
@@ -102,17 +97,17 @@ class PadFileService {
 				$frontmatter[$key] = (string)$value;
 			}
 		}
-		if ($snapshotRev === null) {
-			return $this->serialize($frontmatter, $snapshot);
+		if ($snapshot === null) {
+			return $this->serialize($frontmatter, '');
 		}
 
 		// A caller that arrives with content already in hand gets the
 		// sectioned body here rather than building a document and parsing it
 		// straight back to put the snapshot in.
-		$frontmatter['snapshot_rev'] = max(0, $snapshotRev);
+		$frontmatter['snapshot_rev'] = $snapshot->revision;
 		return $this->serialize(
 			$frontmatter,
-			$this->buildSnapshotBody($snapshot, $snapshotHtml ?? '', $snapshotHtml !== null),
+			$this->buildSnapshotBody($snapshot->text, $snapshot->html ?? '', $snapshot->html !== null),
 		);
 	}
 

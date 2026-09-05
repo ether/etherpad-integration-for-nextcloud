@@ -18,6 +18,7 @@ use OCA\EtherpadNextcloud\Service\PadCreateRollbackService;
 use OCA\EtherpadNextcloud\Service\PadCreationService;
 use OCA\EtherpadNextcloud\Service\PadFileCreator;
 use OCA\EtherpadNextcloud\Service\PadFileService;
+use OCA\EtherpadNextcloud\Service\PadSnapshot;
 use OCA\EtherpadNextcloud\Service\ParsedPadFile;
 use OCA\EtherpadNextcloud\Service\UserNodeResolver;
 use OCA\EtherpadNextcloud\Util\PathNormalizer;
@@ -46,7 +47,7 @@ class PadCreationServiceTest extends TestCase {
 		$padFileService = $this->createMock(PadFileService::class);
 		$padFileService->expects($this->once())
 			->method('buildInitialDocument')
-			->with(123, 'g.ABC$pad', BindingService::ACCESS_PROTECTED, '', 'https://pad.example.test/p/g.ABC$pad')
+			->with(123, 'g.ABC$pad', BindingService::ACCESS_PROTECTED, 'https://pad.example.test/p/g.ABC$pad')
 			->willReturn('frontmatter');
 
 		$bindingService = $this->createMock(BindingService::class);
@@ -249,7 +250,7 @@ class PadCreationServiceTest extends TestCase {
 		));
 		$padFileService->method('getSnapshotPartsFromBody')->willReturn(['text' => 'hello', 'html' => '<p>hello</p>']);
 		$padFileService->method('buildInitialDocument')
-			->with(4321, 'g.grp$pad', BindingService::ACCESS_PROTECTED, 'hello', 'https://pad.example.test/p/x', [], '<p>hello</p>', 0)
+			->with(4321, 'g.grp$pad', BindingService::ACCESS_PROTECTED, 'https://pad.example.test/p/x', [], new PadSnapshot('hello', '<p>hello</p>', 0))
 			->willReturn('doc-with-snapshot');
 		$padFileService->expects($this->never())->method('withExportSnapshot');
 
@@ -306,14 +307,12 @@ class PadCreationServiceTest extends TestCase {
 				321,
 				'ext.RemotePad',
 				BindingService::ACCESS_PUBLIC,
-				"Initial snapshot\nfrom remote pad",
 				'https://pad.remote.test/p/RemotePad',
 				[
 					'pad_origin' => 'https://pad.remote.test',
 					'remote_pad_id' => 'RemotePad',
 				],
-				null,
-				0,
+				new PadSnapshot("Initial snapshot\nfrom remote pad", null, 0),
 			)
 			->willReturn('external-frontmatter');
 		$padFileService->expects($this->never())->method('withExportSnapshot');
@@ -364,11 +363,9 @@ class PadCreationServiceTest extends TestCase {
 				$this->anything(),
 				$this->anything(),
 				BindingService::ACCESS_PUBLIC,
-				'',
 				$this->anything(),
 				$this->anything(),
-				null,
-				0,
+				new PadSnapshot('', null, 0),
 			)
 			->willReturn('external-frontmatter');
 		$padFileService->expects($this->never())->method('withExportSnapshot');
@@ -499,7 +496,7 @@ class PadCreationServiceTest extends TestCase {
 		]);
 		$padFileService->expects($this->once())
 			->method('buildInitialDocument')
-			->with(99, 'p-fresh', BindingService::ACCESS_PROTECTED, 'Datum: 18.05.2026', $this->isType('string'), [], '', 0)
+			->with(99, 'p-fresh', BindingService::ACCESS_PROTECTED, $this->isType('string'), [], new PadSnapshot('Datum: 18.05.2026', '', 0))
 			->willReturn('doc');
 		$padFileService->expects($this->never())->method('withExportSnapshot');
 
