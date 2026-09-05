@@ -138,6 +138,11 @@
       <code><![CDATA[__construct]]></code>
     </PossiblyUnusedMethod>
   </file>
+  <file src="lib/Service/PadFileService.php">
+    <PossiblyUnusedMethod>
+      <code><![CDATA[__construct]]></code>
+    </PossiblyUnusedMethod>
+  </file>
   <file src="lib/Service/PadFileLockRetryService.php">
     <PossiblyUnusedMethod>
       <code><![CDATA[__construct]]></code>

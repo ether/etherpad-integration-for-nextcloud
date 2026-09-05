@@ -23,6 +23,7 @@ use OCP\IConfig;
 use OCP\Security\ISecureRandom;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
+use OCA\EtherpadNextcloud\Tests\Support\FixedClock;
 
 class LifecycleServiceTest extends TestCase {
 	public function testRestoreProvisioningRemovesTheGroupWhenItsPadCannotBeCreated(): void {
@@ -46,6 +47,7 @@ class LifecycleServiceTest extends TestCase {
 			$secureRandom,
 			$this->createMock(UserNodeResolver::class),
 			$this->createMock(PathNormalizer::class),
+			new FixedClock(),
 		);
 
 		// provisionRestorePadId is private; reach it the way the restore path
@@ -80,6 +82,7 @@ class LifecycleServiceTest extends TestCase {
 			$secureRandom,
 			$this->createMock(UserNodeResolver::class),
 			$this->createMock(PathNormalizer::class),
+			new FixedClock(),
 		);
 
 		$result = $service->handleTrash($file);
@@ -157,6 +160,7 @@ class LifecycleServiceTest extends TestCase {
 			$secureRandom,
 			$this->createMock(UserNodeResolver::class),
 			$this->createMock(PathNormalizer::class),
+			new FixedClock(),
 		);
 
 		$result = $service->handleTrash($file);
@@ -214,6 +218,7 @@ class LifecycleServiceTest extends TestCase {
 			$secureRandom,
 			$this->createMock(UserNodeResolver::class),
 			$this->createMock(PathNormalizer::class),
+			new FixedClock(),
 		);
 
 		$result = $service->handleTrash($file);
@@ -269,6 +274,7 @@ class LifecycleServiceTest extends TestCase {
 			$secureRandom,
 			$this->createMock(UserNodeResolver::class),
 			$this->createMock(PathNormalizer::class),
+			new FixedClock(),
 		);
 
 		$this->expectException(\RuntimeException::class);
@@ -339,6 +345,7 @@ class LifecycleServiceTest extends TestCase {
 			$secureRandom,
 			$this->createMock(UserNodeResolver::class),
 			$this->createMock(PathNormalizer::class),
+			new FixedClock(),
 		);
 
 		try {
@@ -406,6 +413,7 @@ class LifecycleServiceTest extends TestCase {
 			$secureRandom,
 			$this->createMock(UserNodeResolver::class),
 			$this->createMock(PathNormalizer::class),
+			new FixedClock(),
 		);
 
 		$this->expectException(LifecycleException::class);
@@ -472,6 +480,7 @@ class LifecycleServiceTest extends TestCase {
 			$secureRandom,
 			$this->createMock(UserNodeResolver::class),
 			$this->createMock(PathNormalizer::class),
+			new FixedClock(),
 		);
 
 		$result = $service->handleRestore($file);
@@ -539,6 +548,7 @@ class LifecycleServiceTest extends TestCase {
 			$secureRandom,
 			$this->createMock(UserNodeResolver::class),
 			$this->createMock(PathNormalizer::class),
+			new FixedClock(),
 		);
 
 		$result = $service->handleRestore($file);
@@ -626,6 +636,7 @@ class LifecycleServiceTest extends TestCase {
 			$secureRandom,
 			$this->createMock(UserNodeResolver::class),
 			$this->createMock(PathNormalizer::class),
+			new FixedClock(),
 		);
 
 		$result = $service->handleRestore($file);
@@ -702,6 +713,7 @@ class LifecycleServiceTest extends TestCase {
 			$secureRandom,
 			$this->createMock(UserNodeResolver::class),
 			$this->createMock(PathNormalizer::class),
+			new FixedClock(),
 		))->handleRestore($file);
 
 		$this->assertSame(LifecycleService::RESULT_RESTORED, $result['status']);
@@ -803,6 +815,7 @@ class LifecycleServiceTest extends TestCase {
 			$secureRandom,
 			$this->createMock(UserNodeResolver::class),
 			$this->createMock(PathNormalizer::class),
+			new FixedClock(),
 		);
 	}
 
@@ -859,6 +872,7 @@ class LifecycleServiceTest extends TestCase {
 			$this->createMock(ISecureRandom::class),
 			$this->createMock(UserNodeResolver::class),
 			$this->createMock(PathNormalizer::class),
+			new FixedClock(),
 		))->handleRestore($file);
 
 		$this->assertSame(LifecycleService::RESULT_SKIPPED, $result['status']);
@@ -919,6 +933,7 @@ class LifecycleServiceTest extends TestCase {
 			$this->createMock(ISecureRandom::class),
 			$this->createMock(UserNodeResolver::class),
 			$this->createMock(PathNormalizer::class),
+			new FixedClock(),
 		))->handleRestore($file);
 
 		$this->assertSame(LifecycleService::RESULT_SKIPPED, $result['status']);
@@ -984,6 +999,7 @@ class LifecycleServiceTest extends TestCase {
 			$this->createMock(ISecureRandom::class),
 			$this->createMock(UserNodeResolver::class),
 			$this->createMock(PathNormalizer::class),
+			new FixedClock(),
 		))->handleRestore($file);
 
 		$this->assertSame(LifecycleService::RESULT_SKIPPED, $result['status']);
@@ -1050,6 +1066,7 @@ class LifecycleServiceTest extends TestCase {
 			$secureRandom,
 			$this->createMock(UserNodeResolver::class),
 			$this->createMock(PathNormalizer::class),
+			new FixedClock(),
 		))->recoverFromSnapshot($file);
 
 		$this->assertSame(LifecycleService::RESULT_RESTORED, $result['status']);
@@ -1118,6 +1135,7 @@ class LifecycleServiceTest extends TestCase {
 			$secureRandom,
 			$this->createMock(UserNodeResolver::class),
 			$this->createMock(PathNormalizer::class),
+			new FixedClock(),
 		))->recoverFromSnapshot($file);
 	}
 
@@ -1146,6 +1164,7 @@ class LifecycleServiceTest extends TestCase {
 			$this->createMock(ISecureRandom::class),
 			$this->createMock(UserNodeResolver::class),
 			$this->createMock(PathNormalizer::class),
+			new FixedClock(),
 		);
 
 		$this->expectException(PadAlreadyHasBindingException::class);
@@ -1170,6 +1189,7 @@ class LifecycleServiceTest extends TestCase {
 			$this->createMock(ISecureRandom::class),
 			$this->createMock(UserNodeResolver::class),
 			$this->createMock(PathNormalizer::class),
+			new FixedClock(),
 		);
 
 		$this->expectException(NotAPadFileException::class);
@@ -1224,6 +1244,7 @@ class LifecycleServiceTest extends TestCase {
 			$this->createMock(ISecureRandom::class),
 			$userNodeResolver,
 			new PathNormalizer(),
+			new FixedClock(),
 		);
 
 		$result = $service->trashByPath('alice', '/Test.pad');
@@ -1277,6 +1298,7 @@ class LifecycleServiceTest extends TestCase {
 			$this->createMock(ISecureRandom::class),
 			$userNodeResolver,
 			new PathNormalizer(),
+			new FixedClock(),
 		);
 
 		$result = $service->trashByPath('alice', '/Test.pad');
@@ -1300,6 +1322,7 @@ class LifecycleServiceTest extends TestCase {
 			$this->createMock(ISecureRandom::class),
 			$this->createMock(UserNodeResolver::class),
 			new PathNormalizer(),
+			new FixedClock(),
 		);
 
 		$this->expectException(\InvalidArgumentException::class);
@@ -1330,6 +1353,7 @@ class LifecycleServiceTest extends TestCase {
 			$this->createMock(ISecureRandom::class),
 			$userNodeResolver,
 			new PathNormalizer(),
+			new FixedClock(),
 		);
 
 		$result = $service->restoreByPath('alice', '/Test.pad');
@@ -1385,6 +1409,7 @@ class LifecycleServiceTest extends TestCase {
 			$this->createMock(ISecureRandom::class),
 			$userNodeResolver,
 			new PathNormalizer(),
+			new FixedClock(),
 		);
 
 		$result = $service->recoverByFileId('alice', $fileId);

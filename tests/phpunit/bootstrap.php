@@ -23,6 +23,9 @@ $stubFiles = [
 	__DIR__ . '/stubs/OCP/AppFramework/Http/Attribute/NoAdminRequired.php',
 	__DIR__ . '/stubs/OCP/AppFramework/Http/Attribute/NoCSRFRequired.php',
 	__DIR__ . '/stubs/OCP/AppFramework/Http/Attribute/PublicPage.php',
+	// Before ITimeFactory: the stub mirrors the real interface, which
+	// extends the PSR-20 clock.
+	__DIR__ . '/stubs/Psr/Clock/ClockInterface.php',
 	__DIR__ . '/stubs/OCP/AppFramework/Utility/ITimeFactory.php',
 	__DIR__ . '/stubs/OCP/ICache.php',
 	__DIR__ . '/stubs/OCP/IMemcache.php',

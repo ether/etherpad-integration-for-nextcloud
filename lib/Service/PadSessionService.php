@@ -9,6 +9,7 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\Service;
 
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
+use OCP\AppFramework\Utility\ITimeFactory;
 use OCP\IConfig;
 use OCA\EtherpadNextcloud\Util\PadId;
 use OCP\IRequest;
@@ -63,6 +64,7 @@ class PadSessionService {
 		private IRequest $request,
 		private ExpiredSessionCollector $collector,
 		private LoggerInterface $logger,
+		private ITimeFactory $timeFactory,
 	) {
 	}
 
@@ -71,7 +73,7 @@ class PadSessionService {
 		$groupId = $this->extractGroupId($padId);
 		$effectiveDisplayName = trim($displayName) !== '' ? $displayName : $uid;
 		$safeTtlSeconds = max(60, $ttlSeconds);
-		$validUntil = time() + $safeTtlSeconds;
+		$validUntil = $this->timeFactory->getTime() + $safeTtlSeconds;
 		$authorId = $this->resolveCachedAuthorId($uid);
 		if ($authorId !== '') {
 			$authorId = $this->syncAuthorMapping($uid, $authorId, $effectiveDisplayName);
@@ -215,7 +217,7 @@ class PadSessionService {
 		array $carriedIds,
 		array $sessions,
 	): array {
-		$now = time();
+		$now = $this->timeFactory->getTime();
 		$carried = [];
 
 		foreach ($carriedIds as $candidate) {
@@ -339,7 +341,7 @@ class PadSessionService {
 		$parts = [];
 		$parts[] = rawurlencode($cookie['name']) . '=' . rawurlencode($cookie['value']);
 		$parts[] = 'Expires=' . gmdate('D, d M Y H:i:s \G\M\T', $cookie['expires']);
-		$maxAge = max(0, $cookie['expires'] - time());
+		$maxAge = max(0, $cookie['expires'] - $this->timeFactory->getTime());
 		$parts[] = 'Max-Age=' . $maxAge;
 		$parts[] = 'Path=' . ($cookie['path'] !== '' ? $cookie['path'] : '/');
 		if ($cookie['domain'] !== '') {

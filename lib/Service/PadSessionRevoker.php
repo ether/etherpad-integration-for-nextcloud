@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\Service;
 
 use OCA\EtherpadNextcloud\Util\EtherpadErrorClassifier;
+use OCP\AppFramework\Utility\ITimeFactory;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -55,6 +56,7 @@ class PadSessionRevoker {
 		private EtherpadClient $etherpadClient,
 		private PadSessionService $padSessionService,
 		private LoggerInterface $logger,
+		private ITimeFactory $timeFactory,
 	) {
 	}
 
@@ -92,7 +94,7 @@ class PadSessionRevoker {
 	 * end.
 	 */
 	private function revoke(string $uid): int {
-		$deadline = microtime(true) + self::BUDGET_SECONDS;
+		$deadline = $this->nowSeconds() + self::BUDGET_SECONDS;
 		$authorId = $this->padSessionService->cachedAuthorId($uid);
 		if ($authorId === '') {
 			// Never opened a protected pad, so nothing was ever issued.
@@ -103,7 +105,7 @@ class PadSessionRevoker {
 		// database round trip, and if it took the budget then starting a
 		// listing on top of it would overrun by a whole call — the floor
 		// under callTimeout() would hand it a second it does not have.
-		if ($deadline - microtime(true) < self::MIN_CALL_TIMEOUT_SECONDS) {
+		if ($deadline - $this->nowSeconds() < self::MIN_CALL_TIMEOUT_SECONDS) {
 			$this->logger->warning('No time left to revoke Etherpad sessions; they will expire on their own.', [
 				'app' => 'etherpad_nextcloud',
 				'uid' => $uid,
@@ -114,7 +116,7 @@ class PadSessionRevoker {
 		try {
 			$sessions = $this->etherpadClient->listSessionsOfAuthor(
 				$authorId,
-				$this->callTimeout($deadline - microtime(true)),
+				$this->callTimeout($deadline - $this->nowSeconds()),
 				$unreadable,
 			);
 		} catch (\Throwable $e) {
@@ -134,7 +136,7 @@ class PadSessionRevoker {
 
 		// Only what is expired on both clocks. Anything newer is treated as
 		// live and revoked, which at worst deletes something already gone.
-		$expiredBefore = time() - EtherpadClient::CLOCK_SKEW_ALLOWANCE_SECONDS;
+		$expiredBefore = $this->timeFactory->getTime() - EtherpadClient::CLOCK_SKEW_ALLOWANCE_SECONDS;
 		$sessions = $this->carriedFirst($sessions);
 		$attempted = 0;
 		$revoked = 0;
@@ -158,7 +160,7 @@ class PadSessionRevoker {
 			// rotated api key, a 500 — would otherwise never reach a ceiling
 			// counted in completed deletes, and spend one call and one
 			// warning per live session.
-			$left = $deadline - microtime(true);
+			$left = $deadline - $this->nowSeconds();
 			if ($attempted >= self::MAX_PER_REQUEST || $left < self::MIN_CALL_TIMEOUT_SECONDS) {
 				$skipped++;
 				continue;
@@ -215,6 +217,18 @@ class PadSessionRevoker {
 			self::MIN_CALL_TIMEOUT_SECONDS,
 			min(floor($left), EtherpadClient::REQUEST_TIMEOUT_SECONDS),
 		);
+	}
+
+	/**
+	 * The budget's clock, sub-second, through the same factory as the rest.
+	 *
+	 * `microtime(true)` here would leave the one piece of logic that
+	 * actually decides an outcome on the wall clock while the seconds
+	 * beside it are injected — and it is what made the budget test depend
+	 * on the runner finishing a mocked call inside a second.
+	 */
+	private function nowSeconds(): float {
+		return (float)$this->timeFactory->now()->format('U.u');
 	}
 
 	/**

@@ -10,6 +10,7 @@ use OCA\EtherpadNextcloud\Service\ManagedPadLifecycle;
 use OCA\EtherpadNextcloud\Service\PendingDeleteRetryService;
 use OCP\AppFramework\Utility\ITimeFactory;
 use OCP\IDBConnection;
+use OCA\EtherpadNextcloud\Tests\Support\FixedClock;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 
@@ -181,7 +182,7 @@ class PendingDeleteRetryServiceTest extends TestCase {
 	private function buildBindingService(array $ageRows): BindingService {
 		return new class (
 			$this->createMock(IDBConnection::class),
-			$this->createMock(ITimeFactory::class),
+			new FixedClock(),
 			$this->createMock(LoggerInterface::class),
 			$ageRows,
 		) extends BindingService {
@@ -219,7 +220,7 @@ class PendingDeleteRetryServiceTest extends TestCase {
 	private function buildBindingServiceWithStateRows(array $stateRows): BindingService {
 		return new class (
 			$this->createMock(IDBConnection::class),
-			$this->createMock(ITimeFactory::class),
+			new FixedClock(),
 			$this->createMock(LoggerInterface::class),
 			$stateRows,
 		) extends BindingService {

@@ -13,6 +13,7 @@ use OCP\IRequest;
 use OCP\IURLGenerator;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
+use OCA\EtherpadNextcloud\Tests\Support\FixedClock;
 
 class PadSessionServiceTest extends TestCase {
 	/**
@@ -43,6 +44,7 @@ class PadSessionServiceTest extends TestCase {
 			$request,
 			$collector ?? $this->createMock(\OCA\EtherpadNextcloud\Service\ExpiredSessionCollector::class),
 			$this->createMock(LoggerInterface::class),
+			new FixedClock(),
 		);
 	}
 
@@ -186,7 +188,7 @@ class PadSessionServiceTest extends TestCase {
 		$other = $this->sid('other');
 
 		$value = $this->openContextCookie(
-			[$other => ['groupID' => 'g.OTHERGROUP00000', 'validUntil' => time() + 3600]],
+			[$other => ['groupID' => 'g.OTHERGROUP00000', 'validUntil' => FixedClock::NOW + 3600]],
 			$other,
 		)['value'];
 
@@ -205,9 +207,9 @@ class PadSessionServiceTest extends TestCase {
 
 		$value = $this->openContextCookie(
 			[
-				$short => ['groupID' => 'g.BBBBBBBBBBBBBBBB', 'validUntil' => time() + 600],
-				$long => ['groupID' => 'g.BBBBBBBBBBBBBBBB', 'validUntil' => time() + 3600],
-				$c => ['groupID' => 'g.CCCCCCCCCCCCCCCC', 'validUntil' => time() + 1200],
+				$short => ['groupID' => 'g.BBBBBBBBBBBBBBBB', 'validUntil' => FixedClock::NOW + 600],
+				$long => ['groupID' => 'g.BBBBBBBBBBBBBBBB', 'validUntil' => FixedClock::NOW + 3600],
+				$c => ['groupID' => 'g.CCCCCCCCCCCCCCCC', 'validUntil' => FixedClock::NOW + 1200],
 			],
 			implode(',', [$short, $long, $c]),
 		)['value'];
@@ -222,7 +224,7 @@ class PadSessionServiceTest extends TestCase {
 	 */
 	public function testDoesNotReissueSessionsTheBrowserDidNotSend(): void {
 		$value = $this->openContextCookie(
-			[$this->sid('revoked') => ['groupID' => 'g.REVOKEDGROUP000', 'validUntil' => time() + 3600]],
+			[$this->sid('revoked') => ['groupID' => 'g.REVOKEDGROUP000', 'validUntil' => FixedClock::NOW + 3600]],
 			null,
 		)['value'];
 
@@ -240,7 +242,7 @@ class PadSessionServiceTest extends TestCase {
 		$held = $this->sid('held');
 
 		$value = $this->openContextCookie(
-			[$held => ['groupID' => 'g.ABCDEFGHIJKLMNOP', 'validUntil' => time() + 3600]],
+			[$held => ['groupID' => 'g.ABCDEFGHIJKLMNOP', 'validUntil' => FixedClock::NOW + 3600]],
 			$held,
 		)['value'];
 
@@ -251,7 +253,7 @@ class PadSessionServiceTest extends TestCase {
 		$dead = $this->sid('dead');
 
 		$value = $this->openContextCookie(
-			[$dead => ['groupID' => 'g.OTHERGROUP00000', 'validUntil' => time() - 10]],
+			[$dead => ['groupID' => 'g.OTHERGROUP00000', 'validUntil' => FixedClock::NOW - 10]],
 			$dead,
 		)['value'];
 
@@ -271,7 +273,7 @@ class PadSessionServiceTest extends TestCase {
 		$foreign = array_map(fn (int $i): string => $this->sid('foreign' . $i), range(1, 8));
 
 		$value = $this->openContextCookie(
-			[$known => ['groupID' => 'g.OTHERGROUP00000', 'validUntil' => time() + 3600]],
+			[$known => ['groupID' => 'g.OTHERGROUP00000', 'validUntil' => FixedClock::NOW + 3600]],
 			implode(',', array_merge($foreign, [$known])),
 		)['value'];
 
@@ -281,10 +283,10 @@ class PadSessionServiceTest extends TestCase {
 	/**
 	 * Strictly longer than the new session's hour, so this cannot pass with
 	 * the expiry taken from the new session alone — and cannot fail because
-	 * a second ticked between two time() calls.
+	 * a second ticked between two FixedClock::NOW calls.
 	 */
 	public function testTheCookieOutlivesEveryIdItCarries(): void {
-		$longer = time() + 7200;
+		$longer = FixedClock::NOW + 7200;
 		$other = $this->sid('other');
 
 		$cookie = $this->openContextCookie(
@@ -303,7 +305,7 @@ class PadSessionServiceTest extends TestCase {
 		foreach (range(1, 25) as $i) {
 			$id = $this->sid('g' . $i);
 			$ids[] = $id;
-			$sessions[$id] = ['groupID' => 'g.GROUP' . str_pad((string)$i, 11, '0', STR_PAD_LEFT), 'validUntil' => time() + 600 + $i];
+			$sessions[$id] = ['groupID' => 'g.GROUP' . str_pad((string)$i, 11, '0', STR_PAD_LEFT), 'validUntil' => FixedClock::NOW + 600 + $i];
 		}
 
 		$value = $this->openContextCookie($sessions, implode(',', $ids))['value'];
@@ -346,7 +348,7 @@ class PadSessionServiceTest extends TestCase {
 		$one = $this->sid('one');
 
 		$value = $this->openContextCookie(
-			[$one => ['groupID' => 'g.OTHERGROUP00000', 'validUntil' => time() + 3600]],
+			[$one => ['groupID' => 'g.OTHERGROUP00000', 'validUntil' => FixedClock::NOW + 3600]],
 			'"' . $one . ' "',
 		)['value'];
 
@@ -410,6 +412,7 @@ class PadSessionServiceTest extends TestCase {
 			$request,
 			$this->createMock(\OCA\EtherpadNextcloud\Service\ExpiredSessionCollector::class),
 			$logger,
+			new FixedClock(),
 		);
 
 		$service->createProtectedOpenContext('admin', 'Admin', 'g.ABCDEFGHIJKLMNOP$pad-1');
@@ -477,7 +480,7 @@ class PadSessionServiceTest extends TestCase {
 		$authorId = 'a.test-author';
 		$sessionId = 's.test-session';
 		$padUrl = 'https://pad.example.test/p/' . rawurlencode($padId);
-		$before = time();
+		$before = FixedClock::NOW;
 
 		$etherpadClient = $this->createMock(EtherpadClient::class);
 		$etherpadClient->expects($this->once())
@@ -652,7 +655,7 @@ class PadSessionServiceTest extends TestCase {
 		$header = $service->buildSetCookieHeader([
 			'name' => 'sessionID',
 			'value' => 's.abc123',
-			'expires' => time() + 3600,
+			'expires' => FixedClock::NOW + 3600,
 			'path' => '/',
 			'domain' => '.example.test',
 			'secure' => true,

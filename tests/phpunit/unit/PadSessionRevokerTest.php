@@ -14,6 +14,7 @@ use OCA\EtherpadNextcloud\Service\PadSessionRevoker;
 use OCA\EtherpadNextcloud\Service\PadSessionService;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
+use OCA\EtherpadNextcloud\Tests\Support\FixedClock;
 
 /**
  * An Etherpad session is a bearer token with a lifetime: nothing about
@@ -26,8 +27,8 @@ class PadSessionRevokerTest extends TestCase {
 	public function testRemovesEverySessionOfTheUser(): void {
 		$client = $this->createMock(EtherpadClient::class);
 		$client->method('listSessionsOfAuthor')->with(self::AUTHOR)->willReturn([
-			's.one' => ['groupID' => 'g.AAAAAAAAAAAAAAAA', 'validUntil' => time() + 3600],
-			's.two' => ['groupID' => 'g.BBBBBBBBBBBBBBBB', 'validUntil' => time() + 3600],
+			's.one' => ['groupID' => 'g.AAAAAAAAAAAAAAAA', 'validUntil' => FixedClock::NOW + 3600],
+			's.two' => ['groupID' => 'g.BBBBBBBBBBBBBBBB', 'validUntil' => FixedClock::NOW + 3600],
 		]);
 		$removed = [];
 		$client->method('deleteSession')->willReturnCallback(
@@ -64,8 +65,8 @@ class PadSessionRevokerTest extends TestCase {
 	public function testCountsOnlyWhatItActuallyRemoved(): void {
 		$client = $this->createMock(EtherpadClient::class);
 		$client->method('listSessionsOfAuthor')->willReturn([
-			's.gone' => ['groupID' => 'g.AAAAAAAAAAAAAAAA', 'validUntil' => time() + 3600],
-			's.here' => ['groupID' => 'g.AAAAAAAAAAAAAAAA', 'validUntil' => time() + 3600],
+			's.gone' => ['groupID' => 'g.AAAAAAAAAAAAAAAA', 'validUntil' => FixedClock::NOW + 3600],
+			's.here' => ['groupID' => 'g.AAAAAAAAAAAAAAAA', 'validUntil' => FixedClock::NOW + 3600],
 		]);
 		$client->method('deleteSession')->willReturnCallback(
 			static function (string $id): void {
@@ -91,8 +92,8 @@ class PadSessionRevokerTest extends TestCase {
 	public function testLeavesExpiredSessionsToABackgroundJob(): void {
 		$client = $this->createMock(EtherpadClient::class);
 		$client->method('listSessionsOfAuthor')->willReturn([
-			's.old' => ['groupID' => 'g.AAAAAAAAAAAAAAAA', 'validUntil' => time() - 3600],
-			's.live' => ['groupID' => 'g.AAAAAAAAAAAAAAAA', 'validUntil' => time() + 3600],
+			's.old' => ['groupID' => 'g.AAAAAAAAAAAAAAAA', 'validUntil' => FixedClock::NOW - 3600],
+			's.live' => ['groupID' => 'g.AAAAAAAAAAAAAAAA', 'validUntil' => FixedClock::NOW + 3600],
 		]);
 		$client->expects(self::once())->method('deleteSession')->with('s.live');
 
@@ -108,7 +109,7 @@ class PadSessionRevokerTest extends TestCase {
 	public function testLeavesTheTailToExpireRatherThanHoldingTheRequest(): void {
 		$live = [];
 		for ($i = 0; $i < 40; $i++) {
-			$live['s.' . $i] = ['groupID' => 'g.AAAAAAAAAAAAAAAA', 'validUntil' => time() + 3600];
+			$live['s.' . $i] = ['groupID' => 'g.AAAAAAAAAAAAAAAA', 'validUntil' => FixedClock::NOW + 3600];
 		}
 		$client = $this->createMock(EtherpadClient::class);
 		$client->method('listSessionsOfAuthor')->willReturn($live);
@@ -126,7 +127,7 @@ class PadSessionRevokerTest extends TestCase {
 	public function testAFastFailingPadServerStillHitsTheCeiling(): void {
 		$live = [];
 		for ($i = 0; $i < 400; $i++) {
-			$live['s.' . $i] = ['groupID' => 'g.AAAAAAAAAAAAAAAA', 'validUntil' => time() + 3600];
+			$live['s.' . $i] = ['groupID' => 'g.AAAAAAAAAAAAAAAA', 'validUntil' => FixedClock::NOW + 3600];
 		}
 		$client = $this->createMock(EtherpadClient::class);
 		$client->method('listSessionsOfAuthor')->willReturn($live);
@@ -145,13 +146,13 @@ class PadSessionRevokerTest extends TestCase {
 	public function testTheExpiredTailIsNotReportedAsLeftBehind(): void {
 		$sessions = [];
 		for ($i = 0; $i < 30; $i++) {
-			$sessions['live.' . $i] = ['groupID' => 'g.AAAAAAAAAAAAAAAA', 'validUntil' => time() + 3600];
+			$sessions['live.' . $i] = ['groupID' => 'g.AAAAAAAAAAAAAAAA', 'validUntil' => FixedClock::NOW + 3600];
 		}
 		// Well past expiry: a session that ran out ten seconds ago is
 		// treated as live here, because Etherpad's clock decides and ours
 		// may be ahead of it.
 		for ($i = 0; $i < 800; $i++) {
-			$sessions['dead.' . $i] = ['groupID' => 'g.AAAAAAAAAAAAAAAA', 'validUntil' => time() - 3600];
+			$sessions['dead.' . $i] = ['groupID' => 'g.AAAAAAAAAAAAAAAA', 'validUntil' => FixedClock::NOW - 3600];
 		}
 		$client = $this->createMock(EtherpadClient::class);
 		$client->method('listSessionsOfAuthor')->willReturn($sessions);
@@ -176,8 +177,8 @@ class PadSessionRevokerTest extends TestCase {
 	public function testRevokesASessionThatOnlyOurClockCallsExpired(): void {
 		$client = $this->createMock(EtherpadClient::class);
 		$client->method('listSessionsOfAuthor')->willReturn([
-			's.justexpired' => ['groupID' => 'g.AAAAAAAAAAAAAAAA', 'validUntil' => time() - 30],
-			's.longgone' => ['groupID' => 'g.AAAAAAAAAAAAAAAA', 'validUntil' => time() - 3600],
+			's.justexpired' => ['groupID' => 'g.AAAAAAAAAAAAAAAA', 'validUntil' => FixedClock::NOW - 30],
+			's.longgone' => ['groupID' => 'g.AAAAAAAAAAAAAAAA', 'validUntil' => FixedClock::NOW - 3600],
 		]);
 		$client->expects(self::once())->method('deleteSession')->with('s.justexpired');
 
@@ -197,7 +198,7 @@ class PadSessionRevokerTest extends TestCase {
 		$client->method('listSessionsOfAuthor')->willReturnCallback(
 			static function (string $authorId, ?int $timeout = null) use (&$listingTimeout): array {
 				$listingTimeout = $timeout;
-				return ['s.one' => ['groupID' => 'g.AAAAAAAAAAAAAAAA', 'validUntil' => time() + 3600]];
+				return ['s.one' => ['groupID' => 'g.AAAAAAAAAAAAAAAA', 'validUntil' => FixedClock::NOW + 3600]];
 			}
 		);
 		$deleteTimeout = 'unset';
@@ -229,9 +230,9 @@ class PadSessionRevokerTest extends TestCase {
 	public function testTakesTheSessionThisBrowserIsCarryingFirst(): void {
 		$sessions = [];
 		for ($i = 0; $i < 30; $i++) {
-			$sessions['s.old' . $i] = ['groupID' => 'g.AAAAAAAAAAAAAAAA', 'validUntil' => time() + 3600];
+			$sessions['s.old' . $i] = ['groupID' => 'g.AAAAAAAAAAAAAAAA', 'validUntil' => FixedClock::NOW + 3600];
 		}
-		$sessions['s.inthecookie'] = ['groupID' => 'g.AAAAAAAAAAAAAAAA', 'validUntil' => time() + 3600];
+		$sessions['s.inthecookie'] = ['groupID' => 'g.AAAAAAAAAAAAAAAA', 'validUntil' => FixedClock::NOW + 3600];
 
 		$client = $this->createMock(EtherpadClient::class);
 		$client->method('listSessionsOfAuthor')->willReturn($sessions);
@@ -263,12 +264,12 @@ class PadSessionRevokerTest extends TestCase {
 		for ($i = 0; $i < PadSessionService::MAX_SESSION_IDS; $i++) {
 			$id = 's.carried' . $i;
 			$carried[] = $id;
-			$sessions[$id] = ['groupID' => 'g.AAAAAAAAAAAAAAAA', 'validUntil' => time() + 3600];
+			$sessions[$id] = ['groupID' => 'g.AAAAAAAAAAAAAAAA', 'validUntil' => FixedClock::NOW + 3600];
 		}
 		// Plenty more behind them, so the ceiling is the only thing that
 		// could stop the carried ones being reached.
 		for ($i = 0; $i < 200; $i++) {
-			$sessions['s.other' . $i] = ['groupID' => 'g.BBBBBBBBBBBBBBBB', 'validUntil' => time() + 3600];
+			$sessions['s.other' . $i] = ['groupID' => 'g.BBBBBBBBBBBBBBBB', 'validUntil' => FixedClock::NOW + 3600];
 		}
 
 		$client = $this->createMock(EtherpadClient::class);
@@ -291,7 +292,7 @@ class PadSessionRevokerTest extends TestCase {
 	public function testIgnoresCarriedIdsThatAreNotThisAuthorsSessions(): void {
 		$client = $this->createMock(EtherpadClient::class);
 		$client->method('listSessionsOfAuthor')->willReturn([
-			's.mine' => ['groupID' => 'g.AAAAAAAAAAAAAAAA', 'validUntil' => time() + 3600],
+			's.mine' => ['groupID' => 'g.AAAAAAAAAAAAAAAA', 'validUntil' => FixedClock::NOW + 3600],
 		]);
 		$client->expects(self::once())->method('deleteSession')->with('s.mine');
 
@@ -308,17 +309,22 @@ class PadSessionRevokerTest extends TestCase {
 		$client = $this->createMock(EtherpadClient::class);
 		$client->expects(self::never())->method('listSessionsOfAuthor');
 
+		// The lookup moves the clock rather than the test sleeping through
+		// it: 2.1 seconds of real time bought one assertion and made the
+		// result depend on the runner, which is what the injected clock is
+		// for.
+		$clock = new FixedClock();
 		$sessions = $this->createMock(PadSessionService::class);
 		$sessions->method('cachedAuthorId')->willReturnCallback(
-			static function (): string {
-				usleep(2_100_000);
+			static function () use ($clock): string {
+				$clock->advanceMicros(2_100_000);
 				return self::AUTHOR;
 			}
 		);
 		$logger = $this->createMock(LoggerInterface::class);
 		$logger->expects(self::once())->method('warning');
 
-		$revoker = new PadSessionRevoker($client, $sessions, $logger);
+		$revoker = new PadSessionRevoker($client, $sessions, $logger, $clock);
 
 		self::assertSame(0, $revoker->revokeAll('alice'));
 	}
@@ -331,8 +337,8 @@ class PadSessionRevokerTest extends TestCase {
 	public function testCountsARefusedDeleteAsLeftBehind(): void {
 		$client = $this->createMock(EtherpadClient::class);
 		$client->method('listSessionsOfAuthor')->willReturn([
-			's.ok' => ['groupID' => 'g.AAAAAAAAAAAAAAAA', 'validUntil' => time() + 3600],
-			's.refused' => ['groupID' => 'g.AAAAAAAAAAAAAAAA', 'validUntil' => time() + 3600],
+			's.ok' => ['groupID' => 'g.AAAAAAAAAAAAAAAA', 'validUntil' => FixedClock::NOW + 3600],
+			's.refused' => ['groupID' => 'g.AAAAAAAAAAAAAAAA', 'validUntil' => FixedClock::NOW + 3600],
 		]);
 		$client->method('deleteSession')->willReturnCallback(
 			static function (string $id): void {
@@ -361,7 +367,7 @@ class PadSessionRevokerTest extends TestCase {
 	public function testDoesNotClaimToHaveRevokedWhenItDidNot(): void {
 		$client = $this->createMock(EtherpadClient::class);
 		$client->method('listSessionsOfAuthor')->willReturn([
-			's.refused' => ['groupID' => 'g.AAAAAAAAAAAAAAAA', 'validUntil' => time() + 3600],
+			's.refused' => ['groupID' => 'g.AAAAAAAAAAAAAAAA', 'validUntil' => FixedClock::NOW + 3600],
 		]);
 		$client->method('deleteSession')->willThrowException(new EtherpadClientException('internal error'));
 
@@ -383,7 +389,7 @@ class PadSessionRevokerTest extends TestCase {
 		$client->method('listSessionsOfAuthor')->willReturnCallback(
 			static function (string $authorId, ?int $timeout = null, ?int &$unreadable = null): array {
 				$unreadable = 3;
-				return ['s.live' => ['groupID' => 'g.AAAAAAAAAAAAAAAA', 'validUntil' => time() + 3600]];
+				return ['s.live' => ['groupID' => 'g.AAAAAAAAAAAAAAAA', 'validUntil' => FixedClock::NOW + 3600]];
 			}
 		);
 
@@ -413,6 +419,7 @@ class PadSessionRevokerTest extends TestCase {
 			$client,
 			$sessions,
 			$logger ?? $this->createMock(LoggerInterface::class),
+			new FixedClock(),
 		);
 	}
 }

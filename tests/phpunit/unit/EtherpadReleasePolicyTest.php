@@ -11,8 +11,8 @@ namespace OCA\EtherpadNextcloud\Tests\Unit;
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
 use OCA\EtherpadNextcloud\Service\EtherpadClient;
 use OCA\EtherpadNextcloud\Service\EtherpadReleasePolicy;
-use OCP\AppFramework\Utility\ITimeFactory;
 use OCP\IConfig;
+use OCA\EtherpadNextcloud\Tests\Support\FixedClock;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 
@@ -24,7 +24,7 @@ use Psr\Log\LoggerInterface;
 class EtherpadReleasePolicyTest extends TestCase {
 	/** App config that actually remembers what was written to it. */
 	private \ArrayObject $stored;
-	private int $now = 1_700_000_000;
+	private FixedClock $clock;
 	private \OCP\ICacheFactory $cacheFactory;
 	private \ArrayObject $claims;
 	private ?LoggerInterface $logger = null;
@@ -32,6 +32,7 @@ class EtherpadReleasePolicyTest extends TestCase {
 	protected function setUp(): void {
 		parent::setUp();
 		$this->stored = new \ArrayObject();
+		$this->clock = new FixedClock(1_700_000_000);
 		$this->claims = new \ArrayObject();
 		$this->cacheFactory = $this->noCache();
 	}
@@ -61,7 +62,7 @@ class EtherpadReleasePolicyTest extends TestCase {
 
 	/** A blip does not undo what was already known about the pad server. */
 	public function testAFailedCheckKeepsTheLastKnownRelease(): void {
-		$this->store(host: 'https://pad.example.test', release: '3.3.3', checkedAt: $this->now - 3601);
+		$this->store(host: 'https://pad.example.test', release: '3.3.3', checkedAt: $this->clock->getTime() - 3601);
 
 		self::assertTrue($this->policy($this->failing())->supportsHttpOnlySessionCookie());
 	}
@@ -73,7 +74,7 @@ class EtherpadReleasePolicyTest extends TestCase {
 	 * out for good, asked once a minute.
 	 */
 	public function testAReleaseNothingHasConfirmedForHoursStopsCounting(): void {
-		$this->store(host: 'https://pad.example.test', release: '3.3.3', checkedAt: $this->now - 6 * 3600);
+		$this->store(host: 'https://pad.example.test', release: '3.3.3', checkedAt: $this->clock->getTime() - 6 * 3600);
 
 		self::assertFalse($this->policy($this->failing())->supportsHttpOnlySessionCookie());
 	}
@@ -84,7 +85,7 @@ class EtherpadReleasePolicyTest extends TestCase {
 	 * freeze until real time caught up.
 	 */
 	public function testAStampFromTheFutureIsNotTreatedAsFresh(): void {
-		$this->store(host: 'https://pad.example.test', release: '3.3.3', checkedAt: $this->now + 7200);
+		$this->store(host: 'https://pad.example.test', release: '3.3.3', checkedAt: $this->clock->getTime() + 7200);
 		$client = $this->answering('2.7.3');
 		$client->expects(self::once())->method('detectReleaseVersion')->willReturn('2.7.3');
 
@@ -128,13 +129,11 @@ class EtherpadReleasePolicyTest extends TestCase {
 
 		$config = $this->createMock(IConfig::class);
 		$config->method('getAppValue')->willThrowException(new \RuntimeException('database has gone away'));
-		$timeFactory = $this->createMock(ITimeFactory::class);
-		$timeFactory->method('getTime')->willReturn($this->now);
 
 		$policy = new EtherpadReleasePolicy(
 			$client,
 			$config,
-			$timeFactory,
+			$this->clock,
 			$this->noCache(),
 			$this->createMock(LoggerInterface::class),
 		);
@@ -163,7 +162,7 @@ class EtherpadReleasePolicyTest extends TestCase {
 		// workers: Nextcloud loads app config once per request, so a
 		// timestamp written here is invisible to a request already running.
 		$this->cacheFactory = $this->sharedCache();
-		$this->store(host: 'https://pad.example.test', release: '3.3.3', checkedAt: $this->now - 3601);
+		$this->store(host: 'https://pad.example.test', release: '3.3.3', checkedAt: $this->clock->getTime() - 3601);
 		$client = $this->createMock(EtherpadClient::class);
 		$client->method('getApiHost')->willReturn('https://pad.example.test');
 		$client->expects(self::once())->method('detectReleaseVersion')
@@ -201,7 +200,7 @@ class EtherpadReleasePolicyTest extends TestCase {
 	 */
 	public function testAClaimForOneHostDoesNotBlockAnother(): void {
 		$this->cacheFactory = $this->sharedCache();
-		$this->store(host: 'https://old.pad.test', release: '3.3.3', checkedAt: $this->now - 3601);
+		$this->store(host: 'https://old.pad.test', release: '3.3.3', checkedAt: $this->clock->getTime() - 3601);
 
 		$old = $this->createMock(EtherpadClient::class);
 		$old->method('getApiHost')->willReturn('https://old.pad.test');
@@ -222,7 +221,7 @@ class EtherpadReleasePolicyTest extends TestCase {
 		$client->expects(self::exactly(2))->method('detectReleaseVersion')->willReturn('3.3.3');
 
 		self::assertTrue($this->policy($client)->supportsHttpOnlySessionCookie());
-		$this->store(host: 'https://pad.example.test', release: '3.3.3', checkedAt: $this->now - 3601);
+		$this->store(host: 'https://pad.example.test', release: '3.3.3', checkedAt: $this->clock->getTime() - 3601);
 		self::assertTrue($this->policy($client)->supportsHttpOnlySessionCookie());
 	}
 
@@ -237,7 +236,7 @@ class EtherpadReleasePolicyTest extends TestCase {
 		$client->expects(self::exactly(2))->method('detectReleaseVersion')->willReturn('3.3.3');
 
 		self::assertTrue($this->policy($client)->supportsHttpOnlySessionCookie());
-		$this->store(host: 'https://pad.example.test', release: '3.3.3', checkedAt: $this->now - 3601);
+		$this->store(host: 'https://pad.example.test', release: '3.3.3', checkedAt: $this->clock->getTime() - 3601);
 		self::assertTrue($this->policy($client)->supportsHttpOnlySessionCookie());
 	}
 
@@ -258,7 +257,7 @@ class EtherpadReleasePolicyTest extends TestCase {
 		$old->method('detectReleaseVersion')->willReturnCallback(function (): string {
 			// While this probe is in flight, another request repoints the
 			// app and records what the new server says.
-			$this->store(host: 'https://new.pad.test', release: '2.7.3', checkedAt: $this->now);
+			$this->store(host: 'https://new.pad.test', release: '2.7.3', checkedAt: $this->clock->getTime());
 			return '3.3.3';
 		});
 
@@ -293,13 +292,13 @@ class EtherpadReleasePolicyTest extends TestCase {
 	 * fresh-looking timestamp: an hour of HttpOnly against an Etherpad 2.
 	 */
 	public function testAFailedCheckDoesNotPutAStaleReleaseBack(): void {
-		$this->store(host: 'https://pad.example.test', release: '3.3.3', checkedAt: $this->now - 3601);
+		$this->store(host: 'https://pad.example.test', release: '3.3.3', checkedAt: $this->clock->getTime() - 3601);
 
 		$slow = $this->createMock(EtherpadClient::class);
 		$slow->method('getApiHost')->willReturn('https://pad.example.test');
 		$slow->method('detectReleaseVersion')->willReturnCallback(function (): string {
 			// While this one waits, another worker detects the downgrade.
-			$this->store(host: 'https://pad.example.test', release: '2.7.3', checkedAt: $this->now);
+			$this->store(host: 'https://pad.example.test', release: '2.7.3', checkedAt: $this->clock->getTime());
 			throw new EtherpadClientException('Connection timed out');
 		});
 
@@ -319,7 +318,7 @@ class EtherpadReleasePolicyTest extends TestCase {
 	 * it reports the opposite of what is going out.
 	 */
 	public function testKnownReleaseForgetsAnAnswerTheOpenPathHasStoppedTrusting(): void {
-		$this->store(host: 'https://pad.example.test', release: '3.3.3', checkedAt: $this->now - 7 * 3600);
+		$this->store(host: 'https://pad.example.test', release: '3.3.3', checkedAt: $this->clock->getTime() - 7 * 3600);
 		$client = $this->createMock(EtherpadClient::class);
 		$client->method('getApiHost')->willReturn('https://pad.example.test');
 
@@ -327,7 +326,7 @@ class EtherpadReleasePolicyTest extends TestCase {
 	}
 
 	public function testKnownReleaseAnswersAboutTheHostItIsAsked(): void {
-		$this->store(host: 'https://pad.example.test', release: '3.3.3', checkedAt: $this->now);
+		$this->store(host: 'https://pad.example.test', release: '3.3.3', checkedAt: $this->clock->getTime());
 		$client = $this->createMock(EtherpadClient::class);
 		$client->method('getApiHost')->willReturn('https://pad.example.test');
 
@@ -362,7 +361,7 @@ class EtherpadReleasePolicyTest extends TestCase {
 	public function testASuccessLeavesAnotherHostsBackoffAlone(): void {
 		$this->stored['etherpad_release_failed'] = (string)json_encode([
 			'host' => 'https://other.pad.test',
-			'at' => $this->now,
+			'at' => $this->clock->getTime(),
 		]);
 
 		$client = $this->createMock(EtherpadClient::class);
@@ -400,9 +399,9 @@ class EtherpadReleasePolicyTest extends TestCase {
 
 		$client = $this->answering('3.3.3');
 		$this->policy($client)->supportsHttpOnlySessionCookie();
-		$this->now += 60;
+		$this->clock->advance(60);
 		$this->policy($client)->supportsHttpOnlySessionCookie();
-		$this->now += 600;
+		$this->clock->advance(600);
 		$this->policy($client)->supportsHttpOnlySessionCookie();
 	}
 
@@ -415,7 +414,7 @@ class EtherpadReleasePolicyTest extends TestCase {
 
 	/** This runs on the open path; a fresh answer is not asked for twice. */
 	public function testAFreshAnswerIsNotAskedForAgain(): void {
-		$this->store(host: 'https://pad.example.test', release: '3.3.3', checkedAt: $this->now - 60);
+		$this->store(host: 'https://pad.example.test', release: '3.3.3', checkedAt: $this->clock->getTime() - 60);
 		$client = $this->createMock(EtherpadClient::class);
 		$client->method('getApiHost')->willReturn('https://pad.example.test');
 		$client->expects(self::never())->method('detectReleaseVersion');
@@ -429,7 +428,7 @@ class EtherpadReleasePolicyTest extends TestCase {
 	 * read.
 	 */
 	public function testAStaleAnswerIsCheckedAgain(): void {
-		$this->store(host: 'https://pad.example.test', release: '3.3.3', checkedAt: $this->now - 3601);
+		$this->store(host: 'https://pad.example.test', release: '3.3.3', checkedAt: $this->clock->getTime() - 3601);
 		$client = $this->answering('2.7.3');
 		$client->expects(self::once())->method('detectReleaseVersion')->willReturn('2.7.3');
 
@@ -450,7 +449,7 @@ class EtherpadReleasePolicyTest extends TestCase {
 
 		$policy = $this->policy($client);
 		self::assertFalse($policy->supportsHttpOnlySessionCookie());
-		$this->now += 30;
+		$this->clock->advance(30);
 		self::assertFalse($policy->supportsHttpOnlySessionCookie());
 	}
 
@@ -467,7 +466,7 @@ class EtherpadReleasePolicyTest extends TestCase {
 
 		$policy = $this->policy($client);
 		self::assertFalse($policy->supportsHttpOnlySessionCookie());
-		$this->now += 61;
+		$this->clock->advance(61);
 		self::assertTrue($policy->supportsHttpOnlySessionCookie());
 	}
 
@@ -477,7 +476,7 @@ class EtherpadReleasePolicyTest extends TestCase {
 	 * have it sent a cookie its pad app cannot read.
 	 */
 	public function testARepointedHostDoesNotInheritTheOldOnesRelease(): void {
-		$this->store(host: 'https://old.pad.test', release: '3.3.3', checkedAt: $this->now);
+		$this->store(host: 'https://old.pad.test', release: '3.3.3', checkedAt: $this->clock->getTime());
 		$client = $this->answering('2.7.3');
 		$client->method('getApiHost')->willReturn('https://new.pad.test');
 
@@ -486,7 +485,7 @@ class EtherpadReleasePolicyTest extends TestCase {
 
 	/** And not even when the new host cannot be reached at all. */
 	public function testARepointedHostThatCannotBeReachedIsUnknown(): void {
-		$this->store(host: 'https://old.pad.test', release: '3.3.3', checkedAt: $this->now);
+		$this->store(host: 'https://old.pad.test', release: '3.3.3', checkedAt: $this->clock->getTime());
 		$client = $this->failing();
 		$client->method('getApiHost')->willReturn('https://new.pad.test');
 
@@ -537,13 +536,11 @@ class EtherpadReleasePolicyTest extends TestCase {
 			}
 		);
 
-		$timeFactory = $this->createMock(ITimeFactory::class);
-		$timeFactory->method('getTime')->willReturnCallback(fn (): int => $this->now);
 
 		return new EtherpadReleasePolicy(
 			$client,
 			$config,
-			$timeFactory,
+			$this->clock,
 			$this->cacheFactory,
 			$this->logger ?? $this->createMock(LoggerInterface::class),
 		);

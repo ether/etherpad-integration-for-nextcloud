@@ -10,6 +10,7 @@ use OCA\EtherpadNextcloud\Service\BindingService;
 use OCP\AppFramework\Utility\ITimeFactory;
 use OCP\DB\QueryBuilder\IQueryBuilder;
 use OCP\IDBConnection;
+use OCA\EtherpadNextcloud\Tests\Support\FixedClock;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 
@@ -130,9 +131,7 @@ class BindingServiceTest extends TestCase {
 	}
 
 	private function buildTimeFactory(int $now): ITimeFactory {
-		$timeFactory = $this->createMock(ITimeFactory::class);
-		$timeFactory->method('getTime')->willReturn($now);
-		return $timeFactory;
+		return new FixedClock($now);
 	}
 }
 
