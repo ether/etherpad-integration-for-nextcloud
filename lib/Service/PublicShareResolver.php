@@ -79,8 +79,9 @@ class PublicShareResolver {
 	}
 
 	/**
-	 * One file can be reachable by several paths with different permissions,
-	 * so getById() order must not decide which one is taken.
+	 * One file can be reachable by several paths with different permissions
+	 * and different names, so getById() order must not decide which one is
+	 * taken.
 	 * UserNodeResolver::resolveUserFileNodeById() answers this for a
 	 * signed-in user.
 	 *
@@ -88,6 +89,7 @@ class PublicShareResolver {
 	 */
 	private function fileInShareById(Folder $shareFolder, int $fileId, string $requestedPath): array {
 		$fallback = null;
+		$nonPad = null;
 
 		foreach ($shareFolder->getById($fileId) as $candidate) {
 			if (!$candidate instanceof File) {
@@ -110,10 +112,17 @@ class PublicShareResolver {
 				}
 
 				$match = [$candidate, ltrim($relativePath, '/')];
-				// A named path picks its mount; the preference below only
-				// settles an id-only request.
+				// A named path picks its mount; the preferences below only
+				// settle an id-only request.
 				if ($requestedPath !== '' && $match[1] === $requestedPath) {
 					return $match;
+				}
+				// A mount carries a name of its own, so one id can be a .pad
+				// under one path and not under another. Kept only so that an
+				// id with no pad behind it is still refused as a non-pad.
+				if (!PadFileType::isPad($candidate->getName())) {
+					$nonPad ??= $match;
+					continue;
 				}
 				if ($requestedPath === '' && $candidate->isUpdateable()) {
 					return $match;
@@ -127,6 +136,9 @@ class PublicShareResolver {
 
 		if ($fallback !== null) {
 			return $fallback;
+		}
+		if ($nonPad !== null) {
+			return $nonPad;
 		}
 
 		throw new ShareFileNotInShareException('The selected file is not part of this share.');

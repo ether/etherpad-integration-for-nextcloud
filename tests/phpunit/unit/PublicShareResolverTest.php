@@ -448,6 +448,37 @@ class PublicShareResolverTest extends TestCase {
 		$this->assertSame($file, $resolved->node);
 	}
 
+	/** A mount carries a name of its own, so one id can have two names. */
+	public function testResolvePadFilePrefersAPadOverANonPadNameForTheSameId(): void {
+		$alias = $this->padFile('Alias.txt', 42);
+		$alias->method('getPermissions')->willReturn(Constants::PERMISSION_READ | Constants::PERMISSION_UPDATE);
+		$alias->method('getPath')->willReturn('/owner/files/Share/Alias.txt');
+		$alias->method('isUpdateable')->willReturn(true);
+		$pad = $this->padFile('A.pad', 42);
+		$pad->method('getPermissions')->willReturn(Constants::PERMISSION_READ);
+		$pad->method('getPath')->willReturn('/owner/files/Share/Sub/A.pad');
+		$pad->method('isUpdateable')->willReturn(false);
+
+		$folder = $this->createMock(Folder::class);
+		$folder->method('getById')->willReturn([$alias, $pad]);
+		$folder->method('getRelativePath')->willReturnCallback(
+			static fn (string $path): string => str_replace('/owner/files/Share', '', $path)
+		);
+
+		$resolved = $this->buildResolver()->resolvePadFile($this->share($folder, Constants::PERMISSION_READ), '', 'token', 42);
+
+		$this->assertSame($pad, $resolved->node);
+	}
+
+	/** With no pad behind the id, the refusal still names the real reason. */
+	public function testResolvePadFileRefusesAnIdThatOnlyNamesANonPad(): void {
+		$folder = $this->folderResolving($this->padFile('Text.txt', 42), 'Text.txt');
+
+		$this->expectException(NotAPadFileException::class);
+		$this->expectExceptionMessage('The selected file is not a .pad document.');
+		$this->buildResolver()->resolvePadFile($this->share($folder, Constants::PERMISSION_READ), '', 'token', 42);
+	}
+
 	private function buildResolver(?IManager $manager = null): PublicShareResolver {
 		return new PublicShareResolver($manager ?? $this->createMock(IManager::class), new PathNormalizer());
 	}
