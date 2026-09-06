@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\Tests\Unit;
 
 use OCA\EtherpadNextcloud\Exception\MissingFrontmatterException;
+use OCA\EtherpadNextcloud\Exception\PadFileFormatException;
 use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\EtherpadNextcloud\Service\PadBootstrapService;
 use OCA\EtherpadNextcloud\Service\PadFileService;
@@ -120,11 +121,68 @@ class PadInitializationServiceTest extends TestCase {
 		))->initializeByPath('alice', '   ');
 	}
 
+	/** The read can fail on its own, and would then hide the real problem. */
+	public function testRefusesAnUnaddressableFileBeforeReadingIt(): void {
+		$file = $this->createMock(File::class);
+		$file->method('getId')->willReturn(0);
+		$file->expects($this->never())->method('getContent');
+
+		$userNodeResolver = $this->createMock(UserNodeResolver::class);
+		$userNodeResolver->method('resolveUserFileNodeById')->with('alice', 42)->willReturn($file);
+
+		$padFileService = $this->createMock(PadFileService::class);
+		$padFileService->expects($this->never())->method('readPad');
+
+		$this->expectException(\RuntimeException::class);
+		$this->expectExceptionMessage('Could not resolve file ID.');
+
+		(new PadInitializationService($padFileService, $this->createMock(PathNormalizer::class), $userNodeResolver, $this->createMock(PadBootstrapService::class)))
+			->initializeById('alice', 42);
+	}
+
+	/**
+	 * Only MissingFrontmatterException continues into the bootstrap. Every
+	 * other format error is the file saying something the app will not
+	 * reinterpret — a round-trip-unsafe frontmatter value, say — and
+	 * bootstrapping it would rewrite a file the user edited by hand instead
+	 * of reporting the problem.
+	 */
+	public function testAFormatErrorOtherThanMissingFrontmatterIsNotBootstrapped(): void {
+		$file = $this->createMock(File::class);
+		$file->method('getId')->willReturn(42);
+		$file->method('getContent')->willReturn(<<<PAD
+			---
+			format: "pad/v1"
+			pad_id: "g.aaaaaaaaaaaaaaaa\$broken"
+			---
+
+			PAD);
+
+		$userNodeResolver = $this->createMock(UserNodeResolver::class);
+		$userNodeResolver->method('resolveUserFileNodeById')->with('alice', 42)->willReturn($file);
+		$userNodeResolver->method('toUserAbsolutePath')->willReturn('/Broken.pad');
+
+		$padFileService = $this->createMock(PadFileService::class);
+		$padFileService->method('readPad')->willThrowException(
+			new PadFileFormatException('Frontmatter values must not contain a line terminator or a NUL byte.')
+		);
+
+		$bootstrap = $this->createMock(PadBootstrapService::class);
+		$bootstrap->expects($this->never())->method('initializeMissingFrontmatter');
+
+		$this->expectException(PadFileFormatException::class);
+
+		(new PadInitializationService($padFileService, $this->createMock(PathNormalizer::class), $userNodeResolver, $bootstrap))
+			->initializeById('alice', 42);
+	}
+
 	public function testInitializeReturnsExistingFrontmatter(): void {
 		$file = $this->createMock(File::class);
 		$file->method('getId')->willReturn(42);
+		$file->method('getContent')->willReturn('content');
 
 		$userNodeResolver = $this->createMock(UserNodeResolver::class);
+		$userNodeResolver->method('resolveUserFileNodeById')->with('alice', 42)->willReturn($file);
 		$userNodeResolver->method('toUserAbsolutePath')->with('alice', $file)->willReturn('/Existing.pad');
 
 		$padFileService = $this->createMock(PadFileService::class);
@@ -147,7 +205,7 @@ class PadInitializationServiceTest extends TestCase {
 		$bootstrap->expects($this->never())->method('initializeMissingFrontmatter');
 
 		$result = (new PadInitializationService($padFileService, $this->createMock(PathNormalizer::class), $userNodeResolver, $bootstrap))
-			->initialize('alice', $file, 'content');
+			->initializeById('alice', 42);
 
 		$this->assertSame(PadInitializationService::STATUS_ALREADY_INITIALIZED, $result->status);
 		$this->assertSame('/Existing.pad', $result->file);
@@ -159,9 +217,12 @@ class PadInitializationServiceTest extends TestCase {
 	public function testInitializeBootstrapsMissingFrontmatter(): void {
 		$file = $this->createMock(File::class);
 		$file->method('getId')->willReturn(42);
-		$file->method('getContent')->willReturn('updated-content');
+		// Two reads, and they differ: bootstrap rewrites the file between
+		// them, which is the whole reason the second one happens.
+		$file->method('getContent')->willReturnOnConsecutiveCalls('legacy-content', 'updated-content');
 
 		$userNodeResolver = $this->createMock(UserNodeResolver::class);
+		$userNodeResolver->method('resolveUserFileNodeById')->with('alice', 42)->willReturn($file);
 		$userNodeResolver->method('toUserAbsolutePath')->with('alice', $file)->willReturn('/Legacy.pad');
 
 		$padFileService = $this->createMock(PadFileService::class);
@@ -195,7 +256,7 @@ class PadInitializationServiceTest extends TestCase {
 			->willReturn(false);
 
 		$result = (new PadInitializationService($padFileService, $this->createMock(PathNormalizer::class), $userNodeResolver, $bootstrap))
-			->initialize('alice', $file, 'legacy-content');
+			->initializeById('alice', 42);
 
 		$this->assertSame(PadInitializationService::STATUS_INITIALIZED, $result->status);
 		$this->assertSame('/Legacy.pad', $result->file);
@@ -207,9 +268,13 @@ class PadInitializationServiceTest extends TestCase {
 	public function testInitializeReportsMigratedStatusForLegacyOwnpadShortcut(): void {
 		$file = $this->createMock(File::class);
 		$file->method('getId')->willReturn(43);
-		$file->method('getContent')->willReturn('updated-content');
+		$file->method('getContent')->willReturnOnConsecutiveCalls(
+			"[InternetShortcut]\nURL=https://pad.example.test/p/re-bound-pad\n",
+			'updated-content',
+		);
 
 		$userNodeResolver = $this->createMock(UserNodeResolver::class);
+		$userNodeResolver->method('resolveUserFileNodeById')->with('alice', 43)->willReturn($file);
 		$userNodeResolver->method('toUserAbsolutePath')->willReturn('/LegacyShortcut.pad');
 
 		$padFileService = $this->createMock(PadFileService::class);
@@ -239,7 +304,7 @@ class PadInitializationServiceTest extends TestCase {
 		$bootstrap->method('initializeMissingFrontmatter')->willReturn(true);
 
 		$result = (new PadInitializationService($padFileService, $this->createMock(PathNormalizer::class), $userNodeResolver, $bootstrap))
-			->initialize('alice', $file, "[InternetShortcut]\nURL=https://pad.example.test/p/re-bound-pad\n");
+			->initializeById('alice', 43);
 
 		$this->assertSame(PadInitializationService::STATUS_MIGRATED_FROM_LEGACY, $result->status);
 		$this->assertSame('re-bound-pad', $result->padId);

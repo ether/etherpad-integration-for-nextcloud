@@ -257,6 +257,13 @@ class PadFileService {
 		$currentMap = null;
 
 		foreach ($lines as $lineNumber => $line) {
+			// Whole line, before anything is matched or trimmed: `\s*` in the
+			// key pattern swallows a leading \r and trim() drops one at
+			// either end, so a check further in would let those through with
+			// the value silently changed. CRLF is normalised while the
+			// document is split, so a \r left here was put in by hand.
+			$this->assertLineIsRoundTrippable($line, $lineNumber);
+
 			if (trim($line) === '' || str_starts_with(trim($line), '#')) {
 				continue;
 			}
@@ -364,18 +371,21 @@ class PadFileService {
 		}
 		if (str_starts_with($trimmed, '"') && str_ends_with($trimmed, '"')) {
 			$inner = substr($trimmed, 1, -1);
-			return $this->readableScalar((string)preg_replace('/\\\\(["\\\\])/', '$1', $inner));
+			return (string)preg_replace('/\\\\(["\\\\])/', '$1', $inner);
 		}
 		if (str_starts_with($trimmed, "'") && str_ends_with($trimmed, "'")) {
 			$inner = substr($trimmed, 1, -1);
-			return $this->readableScalar(str_replace("''", "'", $inner));
+			return str_replace("''", "'", $inner);
 		}
-		return $this->readableScalar($trimmed);
+		return $trimmed;
 	}
 
-	private function readableScalar(string $value): string {
-		$this->assertScalarIsRoundTrippable($value);
-		return $value;
+	private function assertLineIsRoundTrippable(string $line, int $lineNumber): void {
+		if (preg_match('/[\x00\x0D]/', $line) === 1) {
+			throw new PadFileFormatException(
+				'Frontmatter line ' . ($lineNumber + 1) . ' contains a carriage return or a NUL byte.',
+			);
+		}
 	}
 
 	private function assertScalarIsRoundTrippable(string $value): void {

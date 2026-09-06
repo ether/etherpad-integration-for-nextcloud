@@ -5,7 +5,8 @@
 	"license": "AGPL-3.0-or-later",
 	"type": "module",
 	"engines": {
-		"node": ">=20"
+		"node": "^24.15.0",
+		"npm": "^11.0.0"
 	},
 	"scripts": {
 		"build": "node scripts/clean-js-build.mjs && vite build",

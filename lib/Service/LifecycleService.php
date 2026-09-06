@@ -14,6 +14,7 @@ use OCA\EtherpadNextcloud\Exception\BindingStateConflictException;
 use OCA\EtherpadNextcloud\Exception\LifecycleException;
 use OCA\EtherpadNextcloud\Exception\NotAPadFileException;
 use OCA\EtherpadNextcloud\Exception\PadAlreadyHasBindingException;
+use OCA\EtherpadNextcloud\Util\PadFileType;
 use OCA\EtherpadNextcloud\Util\EtherpadErrorClassifier;
 use OCP\AppFramework\Utility\ITimeFactory;
 use OCP\Files\File;
@@ -514,7 +515,7 @@ class LifecycleService {
 	}
 
 	private function isPadFile(File $file): bool {
-		return str_ends_with(strtolower($file->getName()), '.pad');
+		return PadFileType::isPad($file->getName());
 	}
 
 	/** Callers that already have `getContent()` can pass it to skip a re-read. */

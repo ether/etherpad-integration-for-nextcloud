@@ -8,6 +8,7 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Migration;
 
+use OCA\EtherpadNextcloud\Util\PadFileType;
 use OCP\DB\QueryBuilder\IQueryBuilder;
 use OCP\Migration\IOutput;
 use OCP\Migration\IRepairStep;
@@ -17,7 +18,6 @@ use OCP\IDBConnection;
  * @psalm-api
  */
 class BackfillPadMimeType implements IRepairStep {
-	private const MIME_PAD = 'application/x-etherpad-nextcloud';
 
 	public function __construct(
 		private IDBConnection $connection,
@@ -29,13 +29,13 @@ class BackfillPadMimeType implements IRepairStep {
 	}
 
 	public function run(IOutput $output): void {
-		$padMimeId = $this->getMimeId(self::MIME_PAD);
+		$padMimeId = $this->getMimeId(PadFileType::MIME);
 		if ($padMimeId === null) {
-			$output->info('Skipping MIME backfill: ' . self::MIME_PAD . ' is not registered.');
+			$output->info('Skipping MIME backfill: ' . PadFileType::MIME . ' is not registered.');
 			return;
 		}
 
-		$mimePart = explode('/', self::MIME_PAD, 2)[0];
+		$mimePart = explode('/', PadFileType::MIME, 2)[0];
 		$mimePartId = $this->getMimeId($mimePart);
 		if ($mimePartId === null) {
 			$output->info('Skipping MIME backfill: the ' . $mimePart . ' mimepart is missing.');

@@ -100,6 +100,14 @@ describe('parsePadPathFromDavHref', () => {
 		expect(parsePadPathFromDavHref(href)).toBe('/Folder/Test.pad')
 	})
 
+	it('accepts an upper-case suffix, like the PHP side does', () => {
+		// The server treats `.PAD` as a pad, so a link handler that
+		// disagreed would refuse to open a file the server opens.
+		const href = 'https://cloud.example.test/remote.php/dav/files/jacob/Folder/Test.PAD'
+
+		expect(parsePadPathFromDavHref(href)).toBe('/Folder/Test.PAD')
+	})
+
 	it('extracts public DAV pad paths', () => {
 		const href = 'https://cloud.example.test/public.php/dav/files/token/Shared/Test.pad'
 

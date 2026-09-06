@@ -11,6 +11,7 @@ namespace OCA\EtherpadNextcloud\Service;
 
 use OCA\EtherpadNextcloud\Exception\BindingException;
 use OCA\EtherpadNextcloud\Exception\MissingBindingException;
+use OCA\EtherpadNextcloud\Util\FilesViewerUrl;
 use OCP\AppFramework\Http;
 use OCP\AppFramework\Http\DataResponse;
 use OCP\IL10N;
@@ -29,7 +30,7 @@ class PadResponseService {
 	 * @return array<string,mixed>
 	 */
 	public function withViewerUrl(array $data): array {
-		$data['viewer_url'] = $this->buildFilesViewerUrl((int)$data['file_id'], (string)($data['file'] ?? $data['path']));
+		$data['viewer_url'] = FilesViewerUrl::forFile($this->urlGenerator, (int)$data['file_id'], (string)($data['file'] ?? $data['path']));
 		return $data;
 	}
 
@@ -229,20 +230,6 @@ class PadResponseService {
 			return $this->l10n->t('This .pad file has no matching pad in this Nextcloud.');
 		}
 		return $message;
-	}
-
-	private function buildFilesViewerUrl(int $fileId, string $absolutePath): string {
-		$dir = dirname($absolutePath);
-		if ($dir === '.' || $dir === '') {
-			$dir = '/';
-		}
-		// `files.view.index` resolves to '/apps/files'; the canonical URL
-		// the Files app routes to a specific file is
-		// `/apps/files/{view}/{fileid}` with `files` as the default view.
-		$base = rtrim($this->urlGenerator->linkToRoute('files.view.index'), '/');
-		return $base . '/files/' . rawurlencode((string)$fileId)
-			. '?dir=' . rawurlencode($dir)
-			. '&editing=false&openfile=true';
 	}
 
 	private function buildEmbedUrl(int $fileId): string {

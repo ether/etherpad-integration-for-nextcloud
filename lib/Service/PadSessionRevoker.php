@@ -75,9 +75,9 @@ class PadSessionRevoker {
 	}
 
 	/**
-	 * Best effort throughout, and bounded. This runs from event listeners
-	 * beside things the user asked for — a logout, an unshare — so it may
-	 * neither fail nor hang because a pad server is unreachable.
+	 * Best effort throughout, and bounded. This runs from a logout listener,
+	 * beside something the user asked for, so it may neither fail nor hang
+	 * because a pad server is unreachable.
 	 *
 	 * Bounded matters as much as best effort. Each delete is its own call
 	 * with the client's full timeout behind it, and a user who has opened

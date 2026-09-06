@@ -14,6 +14,7 @@ use OCA\EtherpadNextcloud\Exception\PadParentFolderNotWritableException;
 use OCA\EtherpadNextcloud\Exception\UnauthorizedRequestException;
 use OCA\EtherpadNextcloud\Service\EmbedResponseBuilder;
 use OCA\EtherpadNextcloud\Service\UserNodeResolver;
+use OCA\EtherpadNextcloud\Util\PadFileType;
 use OCP\AppFramework\Controller;
 use OCP\AppFramework\Http\TemplateResponse;
 use OCP\IL10N;
@@ -47,7 +48,7 @@ class EmbedController extends Controller {
 				$user = $this->requireUser();
 				$id = $this->requireNumericFileId($fileId);
 				$fileNode = $this->userNodeResolver->resolveUserFileNodeById($user->getUID(), $id);
-				if (!str_ends_with(strtolower($fileNode->getName()), '.pad')) {
+				if (!PadFileType::isPad($fileNode->getName())) {
 					throw new NotAPadFileException($this->l10n->t('Selected file is not a .pad file.'));
 				}
 				return ['file_id' => $id];

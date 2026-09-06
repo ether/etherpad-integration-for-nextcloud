@@ -11,6 +11,7 @@ namespace OCA\EtherpadNextcloud\Service;
 
 use OCA\EtherpadNextcloud\AppInfo\Application;
 use OCA\EtherpadNextcloud\Exception\TemplateExistsException;
+use OCA\EtherpadNextcloud\Util\PadFileType;
 use OCP\Files\AppData\IAppDataFactory;
 use OCP\Files\File;
 use OCP\Files\Folder;
@@ -93,7 +94,7 @@ class PadTemplateStorage {
 
 		$files = [];
 		foreach ($entries as $entry) {
-			if (!$entry instanceof File || !str_ends_with(strtolower($entry->getName()), '.pad')) {
+			if (!$entry instanceof File || !PadFileType::isPad($entry->getName())) {
 				continue;
 			}
 			$files[] = $entry;

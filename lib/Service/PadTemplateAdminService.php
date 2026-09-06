@@ -12,6 +12,7 @@ namespace OCA\EtherpadNextcloud\Service;
 use OCA\EtherpadNextcloud\Exception\AdminValidationException;
 use OCA\EtherpadNextcloud\Exception\PadFileFormatException;
 use OCA\EtherpadNextcloud\Exception\TemplateExistsException;
+use OCA\EtherpadNextcloud\Util\PadFileType;
 use OCP\Files\IFilenameValidator;
 use OCP\Files\InvalidPathException;
 use OCP\IL10N;
@@ -125,7 +126,7 @@ class PadTemplateAdminService {
 		if (mb_strlen($trimmed) > self::MAX_NAME_CHARS) {
 			throw new AdminValidationException('template', $this->l10n->t('Template name is too long.'));
 		}
-		if (!str_ends_with(strtolower($trimmed), '.pad')) {
+		if (!PadFileType::isPad($trimmed)) {
 			throw new AdminValidationException('template', $this->l10n->t('A template must be a .pad file.'));
 		}
 		if (str_contains($trimmed, '/') || str_contains($trimmed, '\\') || str_starts_with($trimmed, '.')) {

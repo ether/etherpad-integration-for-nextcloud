@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Service;
 
+use OCA\EtherpadNextcloud\Util\PadFileType;
 use OCA\EtherpadNextcloud\Util\PathNormalizer;
 use OCP\Files\File;
 use OCP\Files\NotFoundException;
@@ -47,7 +48,7 @@ class PadMetadataService {
 		} catch (NotFoundException) {
 			return new PadOriginalLookup(found: false);
 		}
-		if (!str_ends_with(strtolower($node->getName()), '.pad')) {
+		if (!PadFileType::isPad($node->getName())) {
 			return new PadOriginalLookup(found: false);
 		}
 
@@ -121,7 +122,7 @@ class PadMetadataService {
 			$normalizedPath = $this->userNodeResolver->toUserAbsolutePath($uid, $node);
 		}
 
-		if (!str_ends_with(strtolower($normalizedPath), '.pad')) {
+		if (!PadFileType::isPad($normalizedPath)) {
 			return new PadResolution(isPad: false, fileId: $resolvedFileId, path: $normalizedPath);
 		}
 
@@ -137,7 +138,7 @@ class PadMetadataService {
 			throw new \RuntimeException('Could not resolve file ID.');
 		}
 
-		if (!str_ends_with(strtolower($absolutePath), '.pad')) {
+		if (!PadFileType::isPad($absolutePath)) {
 			return new PadMeta(
 				isPad: false,
 				fileId: $fileId,
@@ -153,7 +154,7 @@ class PadMetadataService {
 			fileId: $fileId,
 			name: $node->getName(),
 			path: $absolutePath,
-			isPadMime: $node->getMimeType() === 'application/x-etherpad-nextcloud',
+			isPadMime: $node->getMimeType() === PadFileType::MIME,
 			accessMode: $metadata['access_mode'],
 			isExternal: $metadata['is_external'],
 			padId: $metadata['pad_id'],
@@ -169,7 +170,7 @@ class PadMetadataService {
 			isPad: true,
 			fileId: $fileId,
 			path: $absolutePath,
-			isPadMime: $node->getMimeType() === 'application/x-etherpad-nextcloud',
+			isPadMime: $node->getMimeType() === PadFileType::MIME,
 			accessMode: $metadata['access_mode'],
 			isExternal: $metadata['is_external'],
 			publicOpenUrl: $metadata['public_open_url'],

@@ -39,7 +39,10 @@ vi.mock('../../src/lib/pad-content.js', () => ({
 vi.mock('../../src/lib/pad-frame-srcdoc.js', () => ({
 	buildPadFrameSrcdoc: vi.fn((url) => `SRCDOC:${url}`),
 }))
-vi.mock('../../src/lib/urls.js', () => ({
+// isPadName decides which path the viewer derives, so the real one is kept;
+// only the two URL readers are stubbed.
+vi.mock('../../src/lib/urls.js', async (importOriginal) => ({
+	...await importOriginal(),
 	parsePadPathFromDavHref: vi.fn(() => ''),
 	parsePublicShareTokenFromLocation: vi.fn(() => ''),
 }))

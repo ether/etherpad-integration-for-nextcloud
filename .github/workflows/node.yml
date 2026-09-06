@@ -58,9 +58,21 @@ jobs:
       - name: Read package.json node and npm engines
         id: versions
         uses: skjnldsv/read-package-engines-version-actions@06d6baf7d8f41934ab630e97d9e6c0bc9c9ac5e4 # v3
-        with:
-          fallbackNode: '^20'
-          fallbackNpm: '^10'
+
+      # The engines fields are mandatory here, so anything but a version range
+      # means the action could not read them. Checked through env rather than
+      # interpolated into the script, so a quote in the output cannot end the
+      # string it sits in, and against a pattern rather than emptiness, so
+      # whitespace does not pass for a version.
+      - name: Fail if the engines ranges could not be read
+        env:
+          NODE_RANGE: ${{ steps.versions.outputs.nodeVersion }}
+          NPM_RANGE: ${{ steps.versions.outputs.npmVersion }}
+        run: |
+          printf '%s' "$NODE_RANGE" | grep -Eq '^[~^]?[0-9]+(\.[0-9]+){0,2}$' \
+            || { echo "::error::engines.node did not read as a version range: '$NODE_RANGE'"; exit 1; }
+          printf '%s' "$NPM_RANGE" | grep -Eq '^[~^]?[0-9]+(\.[0-9]+){0,2}$' \
+            || { echo "::error::engines.npm did not read as a version range: '$NPM_RANGE'"; exit 1; }
 
       - name: Set up node ${{ steps.versions.outputs.nodeVersion }}
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -68,11 +80,8 @@ jobs:
           node-version: ${{ steps.versions.outputs.nodeVersion }}
           cache: npm
 
-      - name: Set up npm ${{ steps.versions.outputs.npmVersion }}
-        run: npm i -g 'npm@${{ steps.versions.outputs.npmVersion }}'
-
       - name: Install dependencies
-        run: npm ci
+        run: npm ci --engine-strict
 
       - name: Run vitest
         run: npm test

@@ -16,6 +16,7 @@ use OCA\EtherpadNextcloud\Exception\NotAPadFileException;
 use OCA\EtherpadNextcloud\Exception\ShareFileNotInShareException;
 use OCA\EtherpadNextcloud\Exception\ShareItemUnavailableException;
 use OCA\EtherpadNextcloud\Exception\ShareReadForbiddenException;
+use OCA\EtherpadNextcloud\Util\PadFileType;
 use OCA\EtherpadNextcloud\Util\PathNormalizer;
 use OCP\Constants;
 use OCP\Files\File;
@@ -84,7 +85,7 @@ class PublicShareResolver {
 		if (!$node instanceof File) {
 			throw new ShareFileNotInShareException('The selected item is not a file.');
 		}
-		if (!str_ends_with(strtolower($node->getName()), '.pad')) {
+		if (!PadFileType::isPad($node->getName())) {
 			throw new NotAPadFileException('The selected file is not a .pad document.');
 		}
 

@@ -92,7 +92,9 @@ export const parsePadPathFromDavHref = (href) => {
 	} catch (error) {
 		return null
 	}
-	if (!pathname.endsWith('.pad')) {
+	// Same rule as the PHP side, which accepts `.PAD` from a desktop
+	// client or a WebDAV upload.
+	if (!isPadName(pathname)) {
 		return null
 	}
 	const markers = ['/remote.php/dav/files/', '/public.php/dav/files/']

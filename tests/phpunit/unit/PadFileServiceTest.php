@@ -74,6 +74,47 @@ class PadFileServiceTest extends TestCase {
 		$this->assertStringNotContainsString('pad_url:', $withoutPadUrl);
 	}
 
+	public static function strayLineTerminatorProvider(): array {
+		return [
+			'inside an unquoted value' => ["state: act\rive"],
+			'leading an unquoted value' => ["state: \ractive"],
+			'a trailing NUL on an unquoted value' => ["state: active\0"],
+			// Not `active\r` on its own: a CR directly before the newline is
+			// a CRLF line ending, normalised while the document is split. One
+			// followed by a space is the case trim() would silently drop.
+			'a trailing carriage return before spaces' => ["state: active\r "],
+			'inside a key' => ["sta\rte: active"],
+			'inside a quoted value' => ["state: \"act\rive\""],
+		];
+	}
+
+	/**
+	 * The line is checked before anything is matched or trimmed: the key
+	 * pattern treats a leading \r as whitespace and trim() drops one at
+	 * either end, so a later check would let the value through silently
+	 * changed instead of refusing the file.
+	 */
+	#[\PHPUnit\Framework\Attributes\DataProvider('strayLineTerminatorProvider')]
+	public function testRefusesAStrayLineTerminatorAnywhereOnAFrontmatterLine(string $line): void {
+		$service = new PadFileService(new FixedClock());
+		$document = $service->buildInitialDocument(30, 'demo-pad', BindingService::ACCESS_PUBLIC);
+		$broken = str_replace('state: "active"', $line, $document);
+		$this->assertNotSame($document, $broken, 'the fixture must actually replace the state line');
+
+		$this->expectException(PadFileFormatException::class);
+		$service->parsePadFile($broken);
+	}
+
+	/** A CRLF line ending is normalised while the document is split, and must still parse. */
+	public function testAcceptsCrlfLineEndings(): void {
+		$service = new PadFileService(new FixedClock());
+		$document = $service->buildInitialDocument(31, 'demo-pad', BindingService::ACCESS_PUBLIC);
+
+		$parsed = $service->readPad(str_replace("\n", "\r\n", $document));
+
+		$this->assertSame('demo-pad', $parsed->padId);
+	}
+
 	public function testQuotedStringScalarsRoundtripWithEscapes(): void {
 		$service = new PadFileService(new FixedClock());
 		$padUrl = 'https://pad.example.org/p/say-"hello"-path\\with\\slashes';

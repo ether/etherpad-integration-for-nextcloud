@@ -10,6 +10,7 @@ namespace OCA\EtherpadNextcloud\Listeners;
 
 use OCA\EtherpadNextcloud\AppInfo\Application;
 use OCA\EtherpadNextcloud\Service\PadTypePolicy;
+use OCA\EtherpadNextcloud\Util\PadFileType;
 use OCP\EventDispatcher\Event;
 use OCP\EventDispatcher\IEventListener;
 use OCP\Files\Template\RegisterTemplateCreatorEvent;
@@ -44,8 +45,8 @@ class RegisterTemplateCreatorListener implements IEventListener {
 		}
 
 		$event->getTemplateManager()->registerTemplateFileCreator(function (): TemplateFileCreator {
-			$creator = new TemplateFileCreator(Application::APP_ID, $this->l10n->t('New pad'), '.pad');
-			$creator->addMimetype('application/x-etherpad-nextcloud');
+			$creator = new TemplateFileCreator(Application::APP_ID, $this->l10n->t('New pad'), PadFileType::SUFFIX);
+			$creator->addMimetype(PadFileType::MIME);
 			$creator->setActionLabel($this->l10n->t('New pad'));
 			$creator->setOrder(98);
 			$iconPath = __DIR__ . '/../../img/etherpad-icon-color.svg';

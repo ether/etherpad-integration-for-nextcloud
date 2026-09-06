@@ -13,6 +13,7 @@ use OCA\EtherpadNextcloud\Exception\BindingException;
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
 use OCA\EtherpadNextcloud\Exception\PadFileLockRetryExhaustedException;
 use OCA\EtherpadNextcloud\Exception\PadFileFormatException;
+use OCA\EtherpadNextcloud\Util\PadFileType;
 use OCP\Files\File;
 use OCP\Files\NotFoundException;
 use OCP\Lock\LockedException;
@@ -43,7 +44,7 @@ class PadSyncService {
 	public function syncById(string $uid, int $fileId, bool $force): PadSyncResult {
 		$node = $this->userNodeResolver->resolveUserFileNodeById($uid, $fileId);
 		$absolutePath = $this->userNodeResolver->toUserAbsolutePath($uid, $node);
-		if (!str_ends_with(strtolower($node->getName()), '.pad')) {
+		if (!PadFileType::isPad($node->getName())) {
 			throw new \InvalidArgumentException('Selected file is not a .pad file.');
 		}
 
