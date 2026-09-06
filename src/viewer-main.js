@@ -8,7 +8,7 @@ import { fetchJsonWithTimeout } from './lib/fetch-helpers.js'
 import { ocGenerateUrl, ocRequestToken, translate } from './lib/oc-compat.js'
 import { createPadSync } from './lib/pad-sync.js'
 import { loadPadContent } from './lib/pad-content.js'
-import { assertOpenPayload, contentUrlFrom, openWithFrontmatterRecovery, syncSettingsFrom } from './lib/pad-open-flow.js'
+import { assertOpenPayload, contentUrlFrom, contentViewFrom, openWithFrontmatterRecovery, padUrlFrom, syncSettingsFrom } from './lib/pad-open-flow.js'
 import { buildPadFrameSrcdoc } from './lib/pad-frame-srcdoc.js'
 import { isPadName, parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './lib/urls.js'
 
@@ -357,14 +357,9 @@ import { isPadName, parsePadPathFromDavHref, parsePublicShareTokenFromLocation }
 
 					const contentUrl = contentUrlFrom(data)
 
-					// One branch for both read-only surfaces: they load the
-					// same way and render the same view. The only difference
-					// is whether there is an original pad to link to — and
-					// for a protected read-only pad there must not be.
-					const isExternal = Boolean(data && data.is_external === true
-						&& typeof data.url === 'string' && data.url.trim() !== '')
-					if ((data && data.is_readonly_view === true) || isExternal) {
-						this.externalOpenUrl = isExternal ? data.url.trim() : ''
+					const { isContentView, externalUrl } = contentViewFrom(data)
+					if (isContentView) {
+						this.externalOpenUrl = externalUrl
 						this.contentUrl = contentUrl
 						this.contentMode = 'content'
 						this.markLoaded()
@@ -374,7 +369,7 @@ import { isPadName, parsePadPathFromDavHref, parsePublicShareTokenFromLocation }
 						return
 					}
 
-					this.iframeSrc = data.url
+					this.iframeSrc = padUrlFrom(data)
 					this.markLoaded()
 				} catch (error) {
 					if (!isCurrent()) return

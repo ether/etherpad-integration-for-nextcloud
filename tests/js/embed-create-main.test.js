@@ -3,12 +3,9 @@
  * Copyright (c) 2026 Jacob Bühler
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { flushAsyncWork } from './flush.js'
 
-const flushMicrotasks = async () => {
-	for (let i = 0; i < 8; i += 1) {
-		await Promise.resolve()
-	}
-}
+
 
 const setupEmbedCreateDom = () => {
 	document.body.innerHTML = `
@@ -101,7 +98,7 @@ describe('embed-create-main', () => {
 		}))
 
 		await importEmbedCreate()
-		await flushMicrotasks()
+		await flushAsyncWork()
 
 		expect(fetch).toHaveBeenCalledOnce()
 		expect(fetch.mock.calls[0][0]).toBe('/api/create-by-parent')
@@ -129,7 +126,7 @@ describe('embed-create-main', () => {
 		))
 
 		await importEmbedCreate()
-		await flushMicrotasks()
+		await flushAsyncWork()
 
 		expect(parentPostSpy).toHaveBeenCalledOnce()
 		const payload = parentPostSpy.mock.calls[0][0]
@@ -153,7 +150,7 @@ describe('embed-create-main', () => {
 		))
 
 		await importEmbedCreate()
-		await flushMicrotasks()
+		await flushAsyncWork()
 
 		const payload = parentPostSpy.mock.calls[0][0]
 		expect(payload.type).toBe('epnc:create-failed')
@@ -165,7 +162,7 @@ describe('embed-create-main', () => {
 		fetch.mockRejectedValueOnce(new Error('Network unreachable'))
 
 		await importEmbedCreate()
-		await flushMicrotasks()
+		await flushAsyncWork()
 
 		const payload = parentPostSpy.mock.calls[0][0]
 		expect(payload.type).toBe('epnc:create-failed')
@@ -177,7 +174,7 @@ describe('embed-create-main', () => {
 	it('posts epnc:create-failed with reason=invalid when launcher params are missing', async () => {
 		await importEmbedCreate('?accessMode=protected') // no name param
 
-		await flushMicrotasks()
+		await flushAsyncWork()
 
 		expect(fetch).not.toHaveBeenCalled()
 		const payload = parentPostSpy.mock.calls[0][0]
@@ -207,7 +204,7 @@ describe('embed-create-main', () => {
 			</div>
 		`
 		await importEmbedCreate()
-		await flushMicrotasks()
+		await flushAsyncWork()
 
 		expect(fetch).not.toHaveBeenCalled()
 		expect(locationReplaceSpy).not.toHaveBeenCalled()
@@ -240,7 +237,7 @@ describe('embed-create-main', () => {
 		`
 		delete window.OC
 		await importEmbedCreate()
-		await flushMicrotasks()
+		await flushAsyncWork()
 
 		expect(fetch).not.toHaveBeenCalled()
 		expect(locationReplaceSpy).not.toHaveBeenCalled()
@@ -265,7 +262,7 @@ describe('embed-create-main', () => {
 		}))
 
 		await importEmbedCreate()
-		await flushMicrotasks()
+		await flushAsyncWork()
 
 		// Exactly one event, classified as a server-side response problem
 		// (not a network error — fetch itself succeeded).
@@ -288,7 +285,7 @@ describe('embed-create-main', () => {
 		}))
 
 		await importEmbedCreate()
-		await flushMicrotasks()
+		await flushAsyncWork()
 
 		expect(parentPostSpy).not.toHaveBeenCalled()
 		expect(locationReplaceSpy).toHaveBeenCalled()

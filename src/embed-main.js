@@ -6,7 +6,7 @@ import { ocRequestToken } from './lib/oc-compat.js'
 import { createPadSync } from './lib/pad-sync.js'
 import { fetchJsonWithTimeout as fetchJson } from './lib/fetch-helpers.js'
 import { loadPadContent } from './lib/pad-content.js'
-import { assertOpenPayload, contentUrlFrom, openWithFrontmatterRecovery, syncSettingsFrom } from './lib/pad-open-flow.js'
+import { assertOpenPayload, contentUrlFrom, contentViewFrom, openWithFrontmatterRecovery, padUrlFrom, syncSettingsFrom } from './lib/pad-open-flow.js'
 
 (function () {
 	const IFRAME_REVEAL_DELAY_MS = 100
@@ -489,15 +489,16 @@ import { assertOpenPayload, contentUrlFrom, openWithFrontmatterRecovery, syncSet
 				padSync.start()
 			}
 			const contentUrl = contentUrlFrom(data)
-			if (data.is_readonly_view === true || data.is_external === true) {
-				const view = showPadContentView(data.is_readonly_view === true ? '' : data.url)
+			const { isContentView, externalUrl } = contentViewFrom(data)
+			if (isContentView) {
+				const view = showPadContentView(externalUrl)
 				if (view !== null) {
 					view.refresh.addEventListener('click', () => { void loadContent(view, contentUrl) })
 				}
 				void loadContent(view, contentUrl)
 				return
 			}
-			showIframe(data.url)
+			showIframe(padUrlFrom(data))
 		} catch (error) {
 			if (error && error.code === 'missing_binding') {
 				void enterRecoveryFlow(error)

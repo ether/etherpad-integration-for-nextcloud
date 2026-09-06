@@ -4,15 +4,16 @@
  */
 
 /**
- * The band a server may ask a client to sync in.
+ * A floor, not a band. The interval decides how often every open pad calls
+ * home, so an answer below this one is taken as a mistake rather than an
+ * instruction. There is deliberately no ceiling: capping a long interval
+ * would make the client call home more often than it was asked to, which
+ * is the failure the floor exists to prevent.
  *
- * The interval decides how often every open pad calls home, so an answer
- * outside this band is taken as a mistake rather than an instruction: a
- * fraction of a second turns each viewer into a load generator, and a very
- * large one turns syncing off without saying so.
+ * AppConfigService::getSyncIntervalSeconds() already holds the setting to
+ * 5..3600 on the way out, so this only ever answers a server that does not.
  */
 const MIN_INTERVAL_MS = 5000
-const MAX_INTERVAL_MS = 3600000
 const DEFAULT_INTERVAL_MS = 120000
 
 /**
@@ -38,11 +39,19 @@ export const isMissingFrontmatterError = (error) => Boolean(error) && error.code
  * @return {any}
  */
 export const assertOpenPayload = (data) => {
-	if (!data || (data.is_readonly_view !== true && (typeof data.url !== 'string' || data.url.trim() === ''))) {
+	if (!data || (data.is_readonly_view !== true && padUrlFrom(data) === '')) {
 		throw new Error('Pad open API did not return a valid URL.')
 	}
 	return data
 }
+
+/**
+ * The pad's own URL, as the iframe should receive it.
+ *
+ * @param {any} data
+ * @return {string}
+ */
+export const padUrlFrom = (data) => ((data && typeof data.url === 'string') ? data.url.trim() : '')
 
 /**
  * Open a pad, bootstrapping the file first if it has none yet.
@@ -51,7 +60,10 @@ export const assertOpenPayload = (data) => {
  * @param {() => Promise<any>} steps.open
  * @param {() => Promise<any>} steps.initialize
  * @param {() => boolean} [steps.stillWanted] asked once, after initialising
- * @return {Promise<any>} the payload, or null when no longer wanted
+ * @return {Promise<any>} the payload - or null, but only for a caller that
+ *   supplied `stillWanted` and heard no. Without one this always resolves
+ *   to a payload, so a caller that adds a guard later has to read this
+ *   again on the same line.
  */
 export const openWithFrontmatterRecovery = async ({ open, initialize, stillWanted = () => true }) => {
 	try {
@@ -86,7 +98,7 @@ export const syncSettingsFrom = (data) => {
 	return {
 		syncUrl: (data && typeof data.sync_url === 'string') ? data.sync_url.trim() : '',
 		intervalMs: (Number.isFinite(seconds) && seconds > 0)
-			? Math.max(MIN_INTERVAL_MS, Math.min(MAX_INTERVAL_MS, seconds * 1000))
+			? Math.max(MIN_INTERVAL_MS, seconds * 1000)
 			: DEFAULT_INTERVAL_MS,
 	}
 }
@@ -98,3 +110,25 @@ export const syncSettingsFrom = (data) => {
  * @return {string}
  */
 export const contentUrlFrom = (data) => ((data && typeof data.content_url === 'string') ? data.content_url.trim() : '')
+
+/**
+ * Whether one of our own views draws this pad, and what it may link to.
+ *
+ * Both read-only surfaces load and render the same way; the only
+ * difference is whether there is an original pad to offer. A read-only
+ * view has none by definition - it is a snapshot of a pad the reader may
+ * not reach - so only an external pad carries a link, and only when it
+ * names one.
+ *
+ * @param {any} data
+ * @return {{isContentView: boolean, externalUrl: string}}
+ */
+export const contentViewFrom = (data) => {
+	const isReadOnly = Boolean(data && data.is_readonly_view === true)
+	const url = padUrlFrom(data)
+	const isExternal = Boolean(data && data.is_external === true) && url !== ''
+	return {
+		isContentView: isReadOnly || isExternal,
+		externalUrl: (isExternal && !isReadOnly) ? url : '',
+	}
+}

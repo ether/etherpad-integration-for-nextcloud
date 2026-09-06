@@ -3,6 +3,23 @@
  * Copyright (c) 2026 Jacob Bühler
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { flushAsyncWork } from './flush.js'
+
+// A successful open starts a real interval and registers document and
+// window listeners, and nothing reachable from here stops them again - so
+// every test in this file would leave a set behind. None of them assert
+// on syncing itself.
+vi.mock('../../src/lib/pad-sync.js', () => ({
+	createPadSync: () => ({
+		configure: vi.fn(),
+		start: vi.fn(),
+		stop: vi.fn(),
+		sync: vi.fn(async () => ({ status: 'ok' })),
+		fireAndForget: vi.fn(),
+		installLifecycleHandlers: vi.fn(),
+		removeLifecycleHandlers: vi.fn(),
+	}),
+}))
 
 vi.mock('../../src/lib/pad-content.js', () => ({
 	loadPadContent: vi.fn(async () => ({ html: '', isEmpty: true })),
@@ -10,14 +27,7 @@ vi.mock('../../src/lib/pad-content.js', () => ({
 
 const { loadPadContent } = await import('../../src/lib/pad-content.js')
 
-/**
- * A promise chain settles entirely before the next macrotask, so waiting
- * for one drains it whatever its depth. Counting microtask turns instead
- * pins the test to how many `await`s the code happens to have today.
- */
-const flushAsyncWork = async () => {
-	await new Promise((resolve) => { setTimeout(resolve, 0) })
-}
+
 
 const setupEmbedDom = () => {
 	document.body.innerHTML = `
