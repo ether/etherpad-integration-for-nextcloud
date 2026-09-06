@@ -197,7 +197,7 @@ class PublicShareResolverTest extends TestCase {
 		];
 	}
 
-	/** Every question asked of a candidate is one the OCP contract lets fail. */
+	/** Every question asked about a candidate is one the OCP contract lets fail. */
 	#[\PHPUnit\Framework\Attributes\DataProvider('failingCandidateCallProvider')]
 	public function testResolvePadFileSkipsACandidateThatCannotAnswer(string $method, \Throwable $thrown): void {
 		$broken = $this->padFile('A.pad', 42);
@@ -222,7 +222,6 @@ class PublicShareResolverTest extends TestCase {
 		$this->assertSame($reachable, $resolved->node);
 	}
 
-	/** getRelativePath() is the call the contract says can throw. */
 	public function testResolvePadFileSkipsACandidateWhoseMountCannotBeResolved(): void {
 		$unresolvable = $this->padFile('A.pad', 42);
 		$unresolvable->method('getPermissions')->willReturn(Constants::PERMISSION_READ);
