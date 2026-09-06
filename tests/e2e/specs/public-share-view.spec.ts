@@ -145,17 +145,9 @@ test.describe('public share access without login', () => {
 })
 
 /**
- * A public folder share is the one place where a pad is opened purely by
- * name: there is no file id in play, the anonymous visitor's browser puts
- * the name in a query parameter, and the server looks it up inside the
- * share. That makes it the sharpest test for names that survive a round
- * trip through form-encoding only if nothing decodes them twice.
- *
- * `A+B.pad` and `A B.pad` differ in exactly one character, and that
- * character is the one form-encoding overloads. Both files exist, both
- * are real pads, and the pad each one points at is recorded before the
- * share is even created — so "a viewer appeared" cannot pass for
- * "the right document opened".
+ * `A+B.pad` and `A B.pad` differ in the one character a query string
+ * overloads. Each pad's address is recorded before the share exists, so
+ * "a viewer appeared" cannot pass for "the right document opened".
  *
  * The share is handed out with edit rights on purpose. A read-only public
  * share opens the read-only pad id instead, whose address is derived
@@ -183,6 +175,9 @@ test.describe('public folder share with confusable file names', () => {
 	let shareUrl = ''
 	let plusPad = { path: '', padUrl: '' }
 	let spacePad = { path: '', padUrl: '' }
+	let plusFileId = 0
+	let outsideFileId = 0
+	const outsideName = `${uniqueName('public-folder-outsider')}.txt`
 
 	test.beforeAll(async () => {
 		await mkcolViaDav(folderName)
@@ -194,6 +189,10 @@ test.describe('public folder share with confusable file names', () => {
 		await propfindFileId(folderName)
 		plusPad = await createPadAtPath(`/${folderName}/${plusName}`)
 		spacePad = await createPadAtPath(`/${folderName}/${spaceName}`)
+		plusFileId = await propfindFileId(`${folderName}/${plusName}`)
+		// A real id the share does not contain; it need not be a pad.
+		await putFileViaDav(outsideName, 'outside the share')
+		outsideFileId = await propfindFileId(outsideName)
 		const share = await createPublicShare(folderName, SHARE_PERMISSION_READ_WRITE)
 		shareToken = share.token
 		shareUrl = share.url
@@ -209,7 +208,32 @@ test.describe('public folder share with confusable file names', () => {
 				await deletePublicShare(shareToken)
 			}
 		} finally {
-			await deleteViaDav(folderName)
+			// Each on its own: a folder delete that throws must not take the
+			// outsider's cleanup with it.
+			try {
+				await deleteViaDav(outsideName)
+			} finally {
+				await deleteViaDav(folderName)
+			}
+		}
+	})
+
+	test('refuses a file id from outside the share, with no path fallback', async ({ browser }) => {
+		expect(outsideFileId).toBeGreaterThan(0)
+
+		const publicContext = await browser.newContext()
+		try {
+			// The path names a real pad here, so a fallback would answer
+			// with it and the 404 is what says none happened.
+			const response = await publicContext.request.get(
+				`${E2E.baseURL}/apps/etherpad_nextcloud/api/v1/public/open/${shareToken}`
+				+ `?fileId=${outsideFileId}&file=${encodeURIComponent(plusName)}`,
+			)
+
+			expect(response.status()).toBe(404)
+			expect(await response.text()).not.toContain(plusPad.padUrl)
+		} finally {
+			await publicContext.close()
 		}
 	})
 
@@ -230,12 +254,17 @@ test.describe('public folder share with confusable file names', () => {
 		try {
 			await publicPage.goto(shareUrl)
 
-			// Clicked in Nextcloud's own rendering of the share. The test
-			// never builds the viewer URL itself — the encoding of the name
-			// on the way to the server is exactly what is under test.
-			await openPadFromFileList(publicPage, plusName)
+			// Clicked in Nextcloud's own rendering of the share, never a
+			// URL this test built: what the click asks for is the point.
+			const [openRequest] = await Promise.all([
+				publicPage.waitForRequest((request) => request.url().includes('/api/v1/public/open/')),
+				openPadFromFileList(publicPage, plusName),
+			])
+
 			await expectEtherpadViewerMounted(publicPage)
 			expect(await readEtherpadUrlFromViewer(publicPage)).toBe(plusPad.padUrl)
+			// Parsed, not a substring: `fileId=12` is inside `fileId=123`.
+			expect(new URL(openRequest.url()).searchParams.get('fileId')).toBe(String(plusFileId))
 			await closeViewer(publicPage)
 
 			await openPadFromFileList(publicPage, spaceName)

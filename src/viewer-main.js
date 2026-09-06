@@ -310,7 +310,13 @@ import { isPadName, parsePadPathFromDavHref, parsePublicShareTokenFromLocation }
 				const byPublicUrl = (() => {
 					if (!publicToken) return ''
 					const url = new URL(ocGenerateUrl('/apps/' + APP_ID + '/api/v1/public/open/' + encodeURIComponent(publicToken)), window.location.origin)
-					url.searchParams.set('file', openPath)
+					// One locator, not both: the server refuses a pair that
+					// disagrees rather than choosing between them.
+					if (this.resolvedFileId !== null) {
+						url.searchParams.set('fileId', String(this.resolvedFileId))
+					} else {
+						url.searchParams.set('file', openPath)
+					}
 					return url.toString()
 				})()
 				const openPostHeaders = {
@@ -408,11 +414,7 @@ import { isPadName, parsePadPathFromDavHref, parsePublicShareTokenFromLocation }
 					// or because the id is not this user's. Since the open no
 					// longer answers that by trying the path, say what the one
 					// remedy is rather than leaving a dead end.
-					// `!byPublicUrl` rather than asking the location again: it
-					// is the branch that actually ran, and an SPA route change
-					// mid-flight would make a fresh lookup disagree with it.
 					this.maybeStaleFileId = this.resolvedFileId !== null
-						&& !byPublicUrl
 						&& Boolean(error) && error.status === 404 && !error.code
 					// Recovery needs an id it may address. The Viewer's own is
 					// preferred; when it supplies none — the case the Files

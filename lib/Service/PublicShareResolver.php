@@ -21,6 +21,7 @@ use OCA\EtherpadNextcloud\Util\PathNormalizer;
 use OCP\Constants;
 use OCP\Files\File;
 use OCP\Files\Folder;
+use OCP\Files\InvalidPathException;
 use OCP\Files\NotFoundException;
 use OCP\Share\Exceptions\ShareNotFound;
 use OCP\Share\IManager;
@@ -51,7 +52,104 @@ class PublicShareResolver {
 		}
 	}
 
-	public function resolvePadFile(IShare $share, mixed $fileParam, string $token): ResolvedPadShare {
+	private function requestedFileId(mixed $fileIdParam): ?int {
+		// Absent only. `fileId=` was sent, and a sent id that cannot be
+		// used is refused rather than replaced by the path.
+		if ($fileIdParam === null) {
+			return null;
+		}
+		if (!is_int($fileIdParam) && !(is_string($fileIdParam) && ctype_digit($fileIdParam))) {
+			throw new InvalidShareFilePathException('Invalid file id.');
+		}
+
+		$fileId = (int)$fileIdParam;
+		if ($fileId <= 0) {
+			throw new InvalidShareFilePathException('Invalid file id.');
+		}
+
+		return $fileId;
+	}
+
+	private function requestedPath(mixed $fileParam, string $token): string {
+		try {
+			return $this->pathNormalizer->normalizePublicShareFilePath($fileParam, $token);
+		} catch (\InvalidArgumentException $e) {
+			throw new InvalidShareFilePathException('Invalid file path.', 0, $e);
+		}
+	}
+
+	/**
+	 * One file can be reachable by several paths with different permissions
+	 * and different names, so getById() order must not decide which one is
+	 * taken.
+	 * UserNodeResolver::resolveUserFileNodeById() answers this for a
+	 * signed-in user.
+	 *
+	 * @return array{File,string} the file and its path inside the share
+	 */
+	private function fileInShareById(Folder $shareFolder, int $fileId, string $requestedPath): array {
+		$fallback = null;
+		$nonPad = null;
+
+		foreach ($shareFolder->getById($fileId) as $candidate) {
+			if (!$candidate instanceof File) {
+				continue;
+			}
+
+			// Every question asked of a candidate can fail on a mount that
+			// has gone away since getById() listed it, and one that cannot
+			// answer takes only itself out of the running.
+			try {
+				if ((((int)$candidate->getPermissions()) & Constants::PERMISSION_READ) === 0) {
+					continue;
+				}
+				// Scoped to this folder by contract, so null should not
+				// happen; if it ever did, the id stops here rather than
+				// falling back.
+				$relativePath = $shareFolder->getRelativePath($candidate->getPath());
+				if ($relativePath === null) {
+					continue;
+				}
+
+				$match = [$candidate, ltrim($relativePath, '/')];
+				// A named path picks its mount; the preferences below only
+				// settle an id-only request.
+				if ($requestedPath !== '' && $match[1] === $requestedPath) {
+					return $match;
+				}
+				// A mount carries a name of its own, so one id can be a .pad
+				// under one path and not under another. Kept only so that an
+				// id with no pad behind it is still refused as a non-pad.
+				if (!PadFileType::isPad($candidate->getName())) {
+					$nonPad ??= $match;
+					continue;
+				}
+				if ($requestedPath === '' && $candidate->isUpdateable()) {
+					return $match;
+				}
+			} catch (NotFoundException | InvalidPathException) {
+				continue;
+			}
+
+			$fallback ??= $match;
+		}
+
+		if ($fallback !== null) {
+			return $fallback;
+		}
+		if ($nonPad !== null) {
+			return $nonPad;
+		}
+
+		throw new ShareFileNotInShareException('The selected file is not part of this share.');
+	}
+
+	public function resolvePadFile(
+		IShare $share,
+		mixed $fileParam,
+		string $token,
+		mixed $fileIdParam = null,
+	): ResolvedPadShare {
 		if ((((int)$share->getPermissions()) & Constants::PERMISSION_READ) === 0) {
 			throw new ShareReadForbiddenException('This share link does not allow reading files.');
 		}
@@ -62,21 +160,45 @@ class PublicShareResolver {
 			throw new ShareItemUnavailableException('This shared item is no longer available.');
 		}
 
-		$isFolderShare = $node instanceof Folder;
-		$selectedRelativePath = '';
+		$requestedId = $this->requestedFileId($fileIdParam);
+		$requestedPath = '';
 
-		if ($node instanceof Folder) {
-			try {
-				$normalized = $this->pathNormalizer->normalizePublicShareFilePath($fileParam, $token);
-			} catch (\InvalidArgumentException $e) {
-				throw new InvalidShareFilePathException('Invalid file path.', 0, $e);
+		if ($requestedId !== null) {
+			// Only when sent: a single-file share has nothing to select.
+			if (is_string($fileParam) && $fileParam !== '') {
+				$requestedPath = $this->requestedPath($fileParam, $token);
 			}
-			if ($normalized === '') {
+			if ($node instanceof Folder) {
+				// The whole path inside the share, not the name: `A.pad` and
+				// `Sub/A.pad` are two files, and comparing names would call
+				// them the same one.
+				[$node, $named] = $this->fileInShareById($node, $requestedId, $requestedPath);
+			} elseif ($node instanceof File) {
+				try {
+					$sharedId = (int)$node->getId();
+				} catch (NotFoundException | InvalidPathException) {
+					throw new ShareItemUnavailableException('This shared item is no longer available.');
+				}
+				if ($sharedId !== $requestedId) {
+					throw new ShareFileNotInShareException('The selected file is not part of this share.');
+				}
+				$named = $node->getName();
+			} else {
+				throw new ShareFileNotInShareException('The selected item is not a file.');
+			}
+
+			// Neither is opened: preferring one would be "the id did not
+			// work, so something else was opened".
+			if ($requestedPath !== '' && $requestedPath !== $named) {
+				throw new InvalidShareFilePathException('The file id and the file path name different files.');
+			}
+		} elseif ($node instanceof Folder) {
+			$requestedPath = $this->requestedPath($fileParam, $token);
+			if ($requestedPath === '') {
 				throw new NoShareFileSelectedException('No .pad file selected. Open a .pad file from this shared folder.');
 			}
-			$selectedRelativePath = $normalized;
 			try {
-				$node = $node->get($normalized);
+				$node = $node->get($requestedPath);
 			} catch (NotFoundException) {
 				throw new ShareFileNotInShareException('The selected file does not exist in this share.');
 			}
@@ -89,11 +211,22 @@ class PublicShareResolver {
 			throw new NotAPadFileException('The selected file is not a .pad document.');
 		}
 
+		// The mount can still go away between finding the file and reading
+		// what it is.
+		try {
+			$fileId = (int)$node->getId();
+			$updateable = $node->isUpdateable();
+		} catch (NotFoundException | InvalidPathException) {
+			throw new ShareItemUnavailableException('This shared item is no longer available.');
+		}
+
 		return new ResolvedPadShare(
 			$node,
-			$isFolderShare,
-			$selectedRelativePath,
-			(((int)$share->getPermissions()) & Constants::PERMISSION_UPDATE) === 0,
+			$fileId,
+			// Both levels: the share can allow writing where this mount
+			// does not.
+			(((int)$share->getPermissions()) & Constants::PERMISSION_UPDATE) === 0
+				|| !$updateable,
 			$node->getName(),
 		);
 	}

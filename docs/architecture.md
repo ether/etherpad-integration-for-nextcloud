@@ -169,7 +169,7 @@ Primary flow (native viewer when available):
 
 1. Public share routes stay on Nextcloud share URL (`/s/{token}`).
 2. `src/viewer-main.js` detects public share context and resolves open data via:
-   - `GET /api/v1/public/open/{token}?file=...`
+   - `GET /api/v1/public/open/{token}?fileId=...` where the Viewer knows an id, `?file=...` otherwise - one locator, never both. See "Naming the file in a public share" in `docs/api-reference.md`.
 3. Same open-target rules apply:
    - read-only share: Etherpad read-only URL
    - editable share: regular URL/session

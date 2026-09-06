@@ -226,12 +226,6 @@
       <code><![CDATA[__construct]]></code>
     </PossiblyUnusedMethod>
   </file>
-  <file src="lib/Service/ResolvedPadShare.php">
-    <PossiblyUnusedProperty>
-      <code><![CDATA[$isFolderShare]]></code>
-      <code><![CDATA[$selectedRelativePath]]></code>
-    </PossiblyUnusedProperty>
-  </file>
   <file src="lib/Service/TrustedEmbedOriginsNormalizer.php">
     <PossiblyUnusedMethod>
       <code><![CDATA[__construct]]></code>

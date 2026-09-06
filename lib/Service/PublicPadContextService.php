@@ -37,26 +37,26 @@ class PublicPadContextService {
 	 * gate and the file's membership in the share all have to hold at the
 	 * moment of the fetch, not merely at the moment the page was opened.
 	 */
-	public function resolveContent(string $token, mixed $fileParam, ?IShare $cachedShare = null): LivePadHtml {
+	public function resolveContent(string $token, mixed $fileParam, ?IShare $cachedShare = null, mixed $fileIdParam = null): LivePadHtml {
 		$share = $this->shareResolver->resolveShare($token, $cachedShare);
-		$resolved = $this->shareResolver->resolvePadFile($share, $fileParam, $token);
+		$resolved = $this->shareResolver->resolvePadFile($share, $fileParam, $token, $fileIdParam);
 		$node = $resolved->node;
 
 		// See PadContentService for the retry.
 		$pad = $this->padFileService->readPad($this->lockRetryService->readContentWithOpenLockRetry($node));
 
-		return $this->livePadHtmlFetcher->fetchForPadFile($pad, (int)$node->getId());
+		return $this->livePadHtmlFetcher->fetchForPadFile($pad, $resolved->fileId);
 	}
 
-	public function resolve(string $token, mixed $fileParam, ?IShare $cachedShare = null): PublicPadContext {
+	public function resolve(string $token, mixed $fileParam, ?IShare $cachedShare = null, mixed $fileIdParam = null): PublicPadContext {
 		$share = $this->shareResolver->resolveShare($token, $cachedShare);
-		$resolved = $this->shareResolver->resolvePadFile($share, $fileParam, $token);
+		$resolved = $this->shareResolver->resolvePadFile($share, $fileParam, $token, $fileIdParam);
 		$node = $resolved->node;
 
 		// Same retry as resolveContent(): a sync holding the file for a
 		// moment must not become a failed page load.
 		$content = $this->lockRetryService->readContentWithOpenLockRetry($node);
-		$fileId = (int)$node->getId();
+		$fileId = $resolved->fileId;
 
 		$pad = $this->padFileService->readPad($content);
 		$padId = $pad->padId;
@@ -83,21 +83,19 @@ class PublicPadContextService {
 			$openTarget->isReadOnlyView,
 			$openTarget->originalPadUrl,
 			// Same rule as the signed-in open: only where one of our own
-			// surfaces draws the pad. The `file` parameter travels with it
-			// so the retry resolves the same node inside the share.
+			// surfaces draws the pad. By id, so a rename inside the share
+			// between the two requests does not lose the file.
 			($openTarget->isReadOnlyView || $isExternal)
-				? $this->buildContentUrl($token, $fileParam)
+				? $this->buildContentUrl($token, $fileId)
 				: '',
 			$openTarget->cookieHeader,
 		);
 	}
 
-	private function buildContentUrl(string $token, mixed $fileParam): string {
-		$parameters = ['token' => $token];
-		if (is_string($fileParam) && $fileParam !== '') {
-			$parameters['file'] = $fileParam;
-		}
-
-		return $this->urlGenerator->linkToRoute('etherpad_nextcloud.publicViewer.padContent', $parameters);
+	private function buildContentUrl(string $token, int $fileId): string {
+		return $this->urlGenerator->linkToRoute(
+			'etherpad_nextcloud.publicViewer.padContent',
+			['token' => $token, 'fileId' => $fileId],
+		);
 	}
 }

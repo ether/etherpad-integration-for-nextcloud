@@ -8,6 +8,12 @@ if (!interface_exists(Folder::class)) {
 	interface Folder {
 		public function nodeExists(string $path): bool;
 
+		/**
+		 * Mirrors OCP\Files\Folder::getRelativePath(): the path below this
+		 * folder, or null when it is not below it at all.
+		 */
+		public function getRelativePath($path);
+
 		public function get(string $path): mixed;
 
 		/** Mirrors OCP\Files\Folder::getFirstNodeById(): the node or null. */
