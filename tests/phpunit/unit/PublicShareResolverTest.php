@@ -479,6 +479,39 @@ class PublicShareResolverTest extends TestCase {
 		$this->buildResolver()->resolvePadFile($this->share($folder, Constants::PERMISSION_READ), '', 'token', 42);
 	}
 
+	public static function vanishingNodeCallProvider(): array {
+		return [
+			'getId' => ['getId', new NotFoundException('mount gone')],
+			'isUpdateable' => ['isUpdateable', new InvalidPathException('bad path')],
+		];
+	}
+
+	/** The mount can go away between finding the file and reading what it is. */
+	#[\PHPUnit\Framework\Attributes\DataProvider('vanishingNodeCallProvider')]
+	public function testResolvePadFileMapsANodeThatStopsAnsweringAfterSelection(string $method, \Throwable $thrown): void {
+		$file = $this->createMock(File::class);
+		$file->method('getName')->willReturn('Shared.pad');
+		$file->method($method)->willThrowException($thrown);
+		$folder = $this->createMock(Folder::class);
+		$folder->method('get')->willReturn($file);
+		$share = $this->share($folder, Constants::PERMISSION_READ | Constants::PERMISSION_UPDATE);
+
+		$this->expectException(ShareItemUnavailableException::class);
+		$this->expectExceptionMessage('This shared item is no longer available.');
+		$this->buildResolver()->resolvePadFile($share, 'Shared.pad', 'token');
+	}
+
+	/** Same reading, from the branch that checks the id of a file share. */
+	public function testResolvePadFileMapsAFileShareThatStopsAnsweringForItsId(): void {
+		$file = $this->createMock(File::class);
+		$file->method('getName')->willReturn('Shared.pad');
+		$file->method('getId')->willThrowException(new NotFoundException('mount gone'));
+
+		$this->expectException(ShareItemUnavailableException::class);
+		$this->expectExceptionMessage('This shared item is no longer available.');
+		$this->buildResolver()->resolvePadFile($this->share($file, Constants::PERMISSION_READ), '', 'token', 42);
+	}
+
 	private function buildResolver(?IManager $manager = null): PublicShareResolver {
 		return new PublicShareResolver($manager ?? $this->createMock(IManager::class), new PathNormalizer());
 	}

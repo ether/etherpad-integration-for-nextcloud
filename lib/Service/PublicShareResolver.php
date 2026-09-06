@@ -174,7 +174,12 @@ class PublicShareResolver {
 				// them the same one.
 				[$node, $named] = $this->fileInShareById($node, $requestedId, $requestedPath);
 			} elseif ($node instanceof File) {
-				if ((int)$node->getId() !== $requestedId) {
+				try {
+					$sharedId = (int)$node->getId();
+				} catch (NotFoundException | InvalidPathException) {
+					throw new ShareItemUnavailableException('This shared item is no longer available.');
+				}
+				if ($sharedId !== $requestedId) {
 					throw new ShareFileNotInShareException('The selected file is not part of this share.');
 				}
 				$named = $node->getName();
@@ -206,13 +211,22 @@ class PublicShareResolver {
 			throw new NotAPadFileException('The selected file is not a .pad document.');
 		}
 
+		// The mount can still go away between finding the file and reading
+		// what it is.
+		try {
+			$fileId = (int)$node->getId();
+			$updateable = $node->isUpdateable();
+		} catch (NotFoundException | InvalidPathException) {
+			throw new ShareItemUnavailableException('This shared item is no longer available.');
+		}
+
 		return new ResolvedPadShare(
 			$node,
-			(int)$node->getId(),
+			$fileId,
 			// Both levels: the share can allow writing where this mount
 			// does not.
 			(((int)$share->getPermissions()) & Constants::PERMISSION_UPDATE) === 0
-				|| !$node->isUpdateable(),
+				|| !$updateable,
 			$node->getName(),
 		);
 	}
