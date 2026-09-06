@@ -23,9 +23,6 @@ use OCP\IURLGenerator;
 final class FilesViewerUrl {
 	public static function forFile(IURLGenerator $urlGenerator, int $fileId, string $absolutePath): string {
 		$dir = dirname($absolutePath);
-		if ($dir === '.' || $dir === '') {
-			$dir = '/';
-		}
 		// `files.view.index` resolves to '/apps/files'; the canonical URL
 		// the Files app routes to a specific file is
 		// `/apps/files/{view}/{fileid}` with `files` as the default view.

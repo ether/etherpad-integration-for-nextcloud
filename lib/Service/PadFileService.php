@@ -262,7 +262,7 @@ class PadFileService {
 			// either end, so a check further in would let those through with
 			// the value silently changed. CRLF is normalised while the
 			// document is split, so a \r left here was put in by hand.
-			$this->assertLineIsRoundTrippable($line);
+			$this->assertLineIsRoundTrippable($line, $lineNumber);
 
 			if (trim($line) === '' || str_starts_with(trim($line), '#')) {
 				continue;
@@ -380,9 +380,11 @@ class PadFileService {
 		return $trimmed;
 	}
 
-	private function assertLineIsRoundTrippable(string $line): void {
+	private function assertLineIsRoundTrippable(string $line, int $lineNumber): void {
 		if (preg_match('/[\x00\x0D]/', $line) === 1) {
-			throw new PadFileFormatException('Frontmatter lines must not contain a carriage return or a NUL byte.');
+			throw new PadFileFormatException(
+				'Frontmatter line ' . ($lineNumber + 1) . ' contains a carriage return or a NUL byte.',
+			);
 		}
 	}
 

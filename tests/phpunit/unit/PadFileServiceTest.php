@@ -78,7 +78,11 @@ class PadFileServiceTest extends TestCase {
 		return [
 			'inside an unquoted value' => ["state: act\rive"],
 			'leading an unquoted value' => ["state: \ractive"],
-			'trailing an unquoted value' => ["state: active\0"],
+			'a trailing NUL on an unquoted value' => ["state: active\0"],
+			// Not `active\r` on its own: a CR directly before the newline is
+			// a CRLF line ending, normalised while the document is split. One
+			// followed by a space is the case trim() would silently drop.
+			'a trailing carriage return before spaces' => ["state: active\r "],
 			'inside a key' => ["sta\rte: active"],
 			'inside a quoted value' => ["state: \"act\rive\""],
 		];
