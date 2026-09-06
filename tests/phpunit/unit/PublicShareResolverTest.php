@@ -16,6 +16,7 @@ use OCA\EtherpadNextcloud\Util\PathNormalizer;
 use OCP\Constants;
 use OCP\Files\File;
 use OCP\Files\Folder;
+use OCP\Files\InvalidPathException;
 use OCP\Files\NotFoundException;
 use OCP\Share\Exceptions\ShareNotFound;
 use OCP\Share\IManager;
@@ -187,6 +188,38 @@ class PublicShareResolverTest extends TestCase {
 		$resolved = $this->buildResolver()->resolvePadFile($this->share($file, Constants::PERMISSION_READ), '../Shared.pad', 'token');
 
 		$this->assertSame($file, $resolved->node);
+	}
+
+	public static function failingCandidateCallProvider(): array {
+		return [
+			'getPermissions' => ['getPermissions', new NotFoundException('mount gone')],
+			'isUpdateable' => ['isUpdateable', new InvalidPathException('bad path')],
+		];
+	}
+
+	/** Every question asked of a candidate is one the OCP contract lets fail. */
+	#[\PHPUnit\Framework\Attributes\DataProvider('failingCandidateCallProvider')]
+	public function testResolvePadFileSkipsACandidateThatCannotAnswer(string $method, \Throwable $thrown): void {
+		$broken = $this->padFile('A.pad', 42);
+		$broken->method('getPermissions')->willReturn(Constants::PERMISSION_READ);
+		$broken->method('getPath')->willReturn('/owner/files/Share/Gone/A.pad');
+		$broken->method('isUpdateable')->willReturn(false);
+		$broken->method($method)->willThrowException($thrown);
+
+		$reachable = $this->padFile('A.pad', 42);
+		$reachable->method('getPermissions')->willReturn(Constants::PERMISSION_READ | Constants::PERMISSION_UPDATE);
+		$reachable->method('getPath')->willReturn('/owner/files/Share/Here/A.pad');
+		$reachable->method('isUpdateable')->willReturn(true);
+
+		$folder = $this->createMock(Folder::class);
+		$folder->method('getById')->willReturn([$broken, $reachable]);
+		$folder->method('getRelativePath')->willReturnCallback(
+			static fn (string $path): string => str_replace('/owner/files/Share', '', $path)
+		);
+
+		$resolved = $this->buildResolver()->resolvePadFile($this->share($folder, Constants::PERMISSION_READ), '', 'token', 42);
+
+		$this->assertSame($reachable, $resolved->node);
 	}
 
 	/** getRelativePath() is the call the contract says can throw. */

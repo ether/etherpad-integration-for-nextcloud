@@ -21,6 +21,7 @@ use OCA\EtherpadNextcloud\Util\PathNormalizer;
 use OCP\Constants;
 use OCP\Files\File;
 use OCP\Files\Folder;
+use OCP\Files\InvalidPathException;
 use OCP\Files\NotFoundException;
 use OCP\Share\Exceptions\ShareNotFound;
 use OCP\Share\IManager;
@@ -92,29 +93,35 @@ class PublicShareResolver {
 			if (!$candidate instanceof File) {
 				continue;
 			}
-			if ((((int)$candidate->getPermissions()) & Constants::PERMISSION_READ) === 0) {
-				continue;
-			}
-			// Scoped to this folder by contract, so null should not happen;
-			// if it ever did, the id stops here rather than falling back.
+
+			// Every question asked of a candidate can fail on a mount that
+			// has gone away since getById() listed it, and one that cannot
+			// answer takes only itself out of the running.
 			try {
+				if ((((int)$candidate->getPermissions()) & Constants::PERMISSION_READ) === 0) {
+					continue;
+				}
+				// Scoped to this folder by contract, so null should not
+				// happen; if it ever did, the id stops here rather than
+				// falling back.
 				$relativePath = $shareFolder->getRelativePath($candidate->getPath());
-			} catch (NotFoundException) {
-				continue;
-			}
-			if ($relativePath === null) {
+				if ($relativePath === null) {
+					continue;
+				}
+
+				$match = [$candidate, ltrim($relativePath, '/')];
+				// A named path picks its mount; the preference below only
+				// settles an id-only request.
+				if ($requestedPath !== '' && $match[1] === $requestedPath) {
+					return $match;
+				}
+				if ($requestedPath === '' && $candidate->isUpdateable()) {
+					return $match;
+				}
+			} catch (NotFoundException | InvalidPathException) {
 				continue;
 			}
 
-			$match = [$candidate, ltrim($relativePath, '/')];
-			// A named path picks its mount; the preference below only
-			// settles an id-only request.
-			if ($requestedPath !== '' && $match[1] === $requestedPath) {
-				return $match;
-			}
-			if ($requestedPath === '' && $candidate->isUpdateable()) {
-				return $match;
-			}
 			$fallback ??= $match;
 		}
 
