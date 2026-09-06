@@ -38,11 +38,9 @@ class ManagedPadLifecycle {
 	 *
 	 * The two steps are separate calls, so a failure between them strands a
 	 * group that nothing will ever look at again — invisible from Nextcloud
-	 * and never collected. Both provisioning paths, the first open of a
-	 * `.pad` and a restore from the trash, had that gap and the same cleanup
-	 * written out twice.
+	 * and never collected.
 	 */
-	public function provisionGroupPad(string $padName): string {
+	private function provisionGroupPad(string $padName): string {
 		$groupId = $this->etherpadClient->createGroup();
 		try {
 			return $this->etherpadClient->createGroupPad($groupId, $padName);
@@ -73,7 +71,7 @@ class ManagedPadLifecycle {
 	 * there. Random ids make that vanishingly unlikely, but the cost of
 	 * being wrong is deleting someone's live pad, so it is worth the check.
 	 */
-	public function provisionPad(string $padId): void {
+	private function provisionPad(string $padId): void {
 		try {
 			$this->etherpadClient->createPad($padId);
 		} catch (\Throwable $e) {

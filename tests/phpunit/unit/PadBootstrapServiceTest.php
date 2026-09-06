@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\Tests\Unit;
 
 use OCA\EtherpadNextcloud\Exception\MissingFrontmatterException;
-use OCA\EtherpadNextcloud\Exception\PadFileFormatException;
 use OCA\EtherpadNextcloud\Exception\UnrecognisedPadContentException;
 use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\EtherpadNextcloud\Service\EtherpadClient;
@@ -158,39 +157,6 @@ class PadBootstrapServiceTest extends TestCase {
 
 		$this->expectException(\RuntimeException::class);
 		$service->initializeMissingFrontmatter('alice', $file, '');
-	}
-
-	/**
-	 * A group with no pad in it is invisible to everything afterwards, so the
-	 * failure that leaves one has to clean up after itself. Both provisioning
-	 * paths — this one and the restore — go through the same method now, so
-	 * this covers both.
-	 */
-	public function testProvisionRemovesTheGroupWhenItsPadCannotBeCreated(): void {
-		$etherpadClient = $this->createMock(EtherpadClient::class);
-		$etherpadClient->expects($this->once())->method('createGroup')->willReturn('g.ABCDEFGHIJKLMNOP');
-		$etherpadClient->expects($this->once())
-			->method('createGroupPad')
-			->willThrowException(new \RuntimeException('pad creation failed'));
-		$etherpadClient->expects($this->once())->method('deleteGroup')->with('g.ABCDEFGHIJKLMNOP');
-
-		$secureRandom = $this->createMock(ISecureRandom::class);
-		$secureRandom->method('generate')->willReturn('abcdefghijklmnopqrst');
-
-		$service = new PadBootstrapService(
-			$this->createMock(BindingService::class),
-			$this->createMock(PadFileService::class),
-			$etherpadClient,
-			new ManagedPadLifecycle($etherpadClient, $this->createMock(LoggerInterface::class)),
-			$secureRandom,
-			$this->createMock(LoggerInterface::class),
-			$this->createMock(\OCA\EtherpadNextcloud\Service\PadLegacyMigrationService::class),
-			$this->buildPadTypePolicy(true),
-			$this->resolverReturning(null),
-		);
-
-		$this->expectException(\RuntimeException::class);
-		$service->provisionPadId(BindingService::ACCESS_PROTECTED);
 	}
 
 	/**
@@ -571,35 +537,25 @@ class PadBootstrapServiceTest extends TestCase {
 	}
 
 	/**
-	 * A `createPad` that times out on the way back may still have made the
-	 * pad, and the caller never learns the id — `provisionPadId` throws
-	 * before returning it, so no rollback can name it. The public path had
-	 * no cleanup of its own; the protected one has had it since the group
-	 * was pulled into provisioning.
+	 * A row is written after the pad it names, never before: a row naming a
+	 * pad that was never made is a file nothing can open again.
 	 */
-	public function testRemovesAPublicPadWhoseCreationFailedHalfway(): void {
-		$fileId = 99;
-		$padId = 'nc-abcdefghijklmnopqrstuvwx';
-
+	public function testWritesNoBindingWhenTheProvisioningFails(): void {
 		$bindingService = $this->createMock(BindingService::class);
-		$bindingService->method('findByFileId')->with($fileId)->willReturn(null);
+		$bindingService->method('findByFileId')->willReturn(null);
 		$bindingService->expects($this->never())->method('createBinding');
 
 		$padFileService = $this->createMock(PadFileService::class);
 		$padFileService->method('parseLegacyOwnpadShortcut')->willReturn(null);
 
 		$etherpadClient = $this->createMock(EtherpadClient::class);
-		$etherpadClient->expects($this->once())
-			->method('createPad')
-			->with($padId)
-			->willThrowException(new \RuntimeException('Connection timed out'));
-		$etherpadClient->expects($this->once())->method('deletePad')->with($padId);
+		$etherpadClient->method('createPad')->willThrowException(new \RuntimeException('Connection timed out'));
 
 		$secureRandom = $this->createMock(ISecureRandom::class);
 		$secureRandom->method('generate')->willReturn('abcdefghijklmnopqrstuvwx');
 
 		$file = $this->createMock(File::class);
-		$file->method('getId')->willReturn($fileId);
+		$file->method('getId')->willReturn(99);
 
 		$service = new PadBootstrapService(
 			$bindingService,

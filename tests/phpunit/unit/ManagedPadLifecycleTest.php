@@ -25,6 +25,14 @@ class ManagedPadLifecycleTest extends TestCase {
 		return new ManagedPadLifecycle($client, $this->createMock(LoggerInterface::class));
 	}
 
+	private function provisionPublic(EtherpadClient $client, string $padId): string {
+		return $this->lifecycle($client)->provisionFor(
+			BindingService::ACCESS_PUBLIC,
+			static fn (): string => $padId,
+			static fn (): string => 'p-unused',
+		);
+	}
+
 	public function testDeletesTheWholeGroupWhenItHoldsOnlyThisPad(): void {
 		$padId = 'g.ABCDEFGHIJKLMNOP$p-abc123';
 		$client = $this->createMock(EtherpadClient::class);
@@ -143,7 +151,7 @@ class ManagedPadLifecycleTest extends TestCase {
 		$client->expects($this->once())->method('deletePad')->with('nc-abcdef0123456789');
 
 		$this->expectException(\RuntimeException::class);
-		$this->lifecycle($client)->provisionPad('nc-abcdef0123456789');
+		$this->provisionPublic($client, 'nc-abcdef0123456789');
 	}
 
 	/**
@@ -156,7 +164,27 @@ class ManagedPadLifecycleTest extends TestCase {
 		$client->expects($this->never())->method('deletePad');
 
 		$this->expectException(\RuntimeException::class);
-		$this->lifecycle($client)->provisionPad('nc-abcdef0123456789');
+		$this->provisionPublic($client, 'nc-abcdef0123456789');
+	}
+
+	/**
+	 * A group with no pad in it is invisible to everything afterwards, so the
+	 * failure that leaves one has to clean up after itself.
+	 */
+	public function testRemovesTheGroupWhosePadCouldNotBeCreated(): void {
+		$client = $this->createMock(EtherpadClient::class);
+		$client->expects($this->once())->method('createGroup')->willReturn('g.ABCDEFGHIJKLMNOP');
+		$client->expects($this->once())
+			->method('createGroupPad')
+			->willThrowException(new \RuntimeException('pad creation failed'));
+		$client->expects($this->once())->method('deleteGroup')->with('g.ABCDEFGHIJKLMNOP');
+
+		$this->expectException(\RuntimeException::class);
+		$this->lifecycle($client)->provisionFor(
+			BindingService::ACCESS_PROTECTED,
+			static fn (): string => 'nc-unused',
+			static fn (): string => 'p-abc123',
+		);
 	}
 
 	/**
