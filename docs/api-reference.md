@@ -60,6 +60,8 @@ A public folder share is the one place a pad is found by name, and a query strin
 
 An id is not a hint. One that is unusable, that names nothing in the share, or that disagrees with an accompanying `file` is refused - never answered by opening what the path names. For a folder share the comparison is the whole path inside the share, so `A.pad` and `Sub/A.pad` are two different files; a single-file share has no path inside it, so there the file name is what a caller can name.
 
+A single-file share is the exception on purpose: its token already names the file, so `file` is not an address there and never was one. Without an id it is ignored, as it always has been - normalising it would refuse links that work today. With an id it is compared, because a caller that sent both should not be handed something neither of them named.
+
 - `GET /public/{token}`
   - Controller: `PublicViewerController::showPad`
   - Query (folder share): `file=/subfolder/file.pad` - name only, and deliberately: this route builds no viewer address of its own, it hands over to Nextcloud's own share page.

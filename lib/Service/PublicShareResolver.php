@@ -55,7 +55,7 @@ class PublicShareResolver {
 		if ($fileIdParam === null || $fileIdParam === '') {
 			return null;
 		}
-		if (!is_int($fileIdParam) && !(is_string($fileIdParam) && preg_match('/^[0-9]+$/', $fileIdParam) === 1)) {
+		if (!is_int($fileIdParam) && !(is_string($fileIdParam) && ctype_digit($fileIdParam))) {
 			throw new InvalidShareFilePathException('Invalid file id.');
 		}
 
@@ -81,9 +81,29 @@ class PublicShareResolver {
 	 * the first readable one inside this share is the answer rather than
 	 * simply the first.
 	 */
-	/** @return array{File,string} the file and its path inside the share */
+	/**
+	 * The same shape as UserNodeResolver::resolveUserFileNodeById(), and for
+	 * the same reason: one file can be reachable by several paths with
+	 * different permissions, and getById() order must not decide which one
+	 * every later step works from. A writable match wins over a readable
+	 * one, since a writable share that opened the read-only entry would
+	 * silently hand out a read-only pad.
+	 *
+	 * @return array{File,string} the file and its path inside the share
+	 */
 	private function fileInShareById(Folder $shareFolder, int $fileId): array {
-		foreach ($shareFolder->getById($fileId) as $candidate) {
+		$fallback = null;
+
+		try {
+			$candidates = $shareFolder->getById($fileId);
+		} catch (NotFoundException) {
+			// A mount inside the share that is momentarily unresolvable.
+			// The path branch answers that with the same error rather than
+			// letting it surface as an unhandled failure.
+			throw new ShareItemUnavailableException('This shared item is no longer available.');
+		}
+
+		foreach ($candidates as $candidate) {
 			if (!$candidate instanceof File) {
 				continue;
 			}
@@ -98,7 +118,15 @@ class PublicShareResolver {
 				continue;
 			}
 
-			return [$candidate, ltrim($relativePath, '/')];
+			$match = [$candidate, ltrim($relativePath, '/')];
+			if ($candidate->isUpdateable()) {
+				return $match;
+			}
+			$fallback ??= $match;
+		}
+
+		if ($fallback !== null) {
+			return $fallback;
 		}
 
 		throw new ShareFileNotInShareException('The selected file is not part of this share.');
@@ -120,18 +148,21 @@ class PublicShareResolver {
 			throw new ShareItemUnavailableException('This shared item is no longer available.');
 		}
 
-		$isFolderShare = $node instanceof Folder;
-		$selectedRelativePath = '';
 		$requestedId = $this->requestedFileId($fileIdParam);
-		$requestedPath = $this->requestedPath($fileParam, $token);
+		$requestedPath = '';
 
 		if ($requestedId !== null) {
+			// Only when the caller sent one. A single-file share has nothing
+			// to select, so `file` was never read there - normalising it
+			// regardless would refuse links that have always worked.
+			if (is_string($fileParam) && $fileParam !== '') {
+				$requestedPath = $this->requestedPath($fileParam, $token);
+			}
 			if ($node instanceof Folder) {
-				[$node, $selectedRelativePath] = $this->fileInShareById($node, $requestedId);
 				// The whole path inside the share, not the name: `A.pad` and
 				// `Sub/A.pad` are two files, and comparing names would call
 				// them the same one.
-				$named = $selectedRelativePath;
+				[$node, $named] = $this->fileInShareById($node, $requestedId);
 			} elseif ($node instanceof File) {
 				if ((int)$node->getId() !== $requestedId) {
 					throw new ShareFileNotInShareException('The selected file is not part of this share.');
@@ -150,10 +181,10 @@ class PublicShareResolver {
 				throw new InvalidShareFilePathException('The file id and the file path name different files.');
 			}
 		} elseif ($node instanceof Folder) {
+			$requestedPath = $this->requestedPath($fileParam, $token);
 			if ($requestedPath === '') {
 				throw new NoShareFileSelectedException('No .pad file selected. Open a .pad file from this shared folder.');
 			}
-			$selectedRelativePath = $requestedPath;
 			try {
 				$node = $node->get($requestedPath);
 			} catch (NotFoundException) {
@@ -170,8 +201,6 @@ class PublicShareResolver {
 
 		return new ResolvedPadShare(
 			$node,
-			$isFolderShare,
-			$selectedRelativePath,
 			(((int)$share->getPermissions()) & Constants::PERMISSION_UPDATE) === 0,
 			$node->getName(),
 		);

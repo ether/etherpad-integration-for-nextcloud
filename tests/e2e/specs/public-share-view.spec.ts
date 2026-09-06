@@ -210,8 +210,13 @@ test.describe('public folder share with confusable file names', () => {
 				await deletePublicShare(shareToken)
 			}
 		} finally {
-			await deleteViaDav(folderName)
-			await deleteViaDav(outsideName)
+			// Each on its own: a folder delete that throws must not take the
+			// outsider's cleanup with it.
+			try {
+				await deleteViaDav(outsideName)
+			} finally {
+				await deleteViaDav(folderName)
+			}
 		}
 	})
 
@@ -259,14 +264,17 @@ test.describe('public folder share with confusable file names', () => {
 
 			// Clicked in Nextcloud's own rendering of the share, never a
 			// URL this test built: what the click asks for is the point.
-			const openRequest = publicPage.waitForRequest(
-				(request) => request.url().includes('/api/v1/public/open/'),
-			)
+			const [openRequest] = await Promise.all([
+				publicPage.waitForRequest((request) => request.url().includes('/api/v1/public/open/')),
+				openPadFromFileList(publicPage, plusName),
+			])
 
-			await openPadFromFileList(publicPage, plusName)
 			await expectEtherpadViewerMounted(publicPage)
 			expect(await readEtherpadUrlFromViewer(publicPage)).toBe(plusPad.padUrl)
-			expect((await openRequest).url()).toContain(`fileId=${plusFileId}`)
+			// The parsed value, not a substring: `fileId=12` is contained in
+			// `fileId=123`, and this is the assertion that says the right
+			// file id travelled.
+			expect(new URL(openRequest.url()).searchParams.get('fileId')).toBe(String(plusFileId))
 			await closeViewer(publicPage)
 
 			await openPadFromFileList(publicPage, spaceName)

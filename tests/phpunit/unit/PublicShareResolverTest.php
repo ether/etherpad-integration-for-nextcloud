@@ -48,8 +48,6 @@ class PublicShareResolverTest extends TestCase {
 		$resolved = $this->buildResolver()->resolvePadFile($share, '', 'token');
 
 		$this->assertSame($file, $resolved->node);
-		$this->assertFalse($resolved->isFolderShare);
-		$this->assertSame('', $resolved->selectedRelativePath);
 		$this->assertTrue($resolved->readOnly);
 		$this->assertSame('Shared.pad', $resolved->name);
 	}
@@ -63,8 +61,6 @@ class PublicShareResolverTest extends TestCase {
 		$resolved = $this->buildResolver()->resolvePadFile($share, '/Folder/Shared.pad', 'token');
 
 		$this->assertSame($file, $resolved->node);
-		$this->assertTrue($resolved->isFolderShare);
-		$this->assertSame('Folder/Shared.pad', $resolved->selectedRelativePath);
 		$this->assertFalse($resolved->readOnly);
 	}
 
@@ -161,7 +157,6 @@ class PublicShareResolverTest extends TestCase {
 		$resolved = $this->buildResolver()->resolvePadFile($this->share($folder, Constants::PERMISSION_READ), '', 'token', 42);
 
 		$this->assertSame($file, $resolved->node);
-		$this->assertSame('A+B.pad', $resolved->selectedRelativePath);
 	}
 
 	public function testResolvePadFileMatchesTheIdAgainstASingleFileShare(): void {
@@ -187,6 +182,51 @@ class PublicShareResolverTest extends TestCase {
 		$this->expectException(InvalidShareFilePathException::class);
 		$this->expectExceptionMessage('The file id and the file path name different files.');
 		$this->buildResolver()->resolvePadFile($share, 'Other.pad', 'token', 42);
+	}
+
+	/**
+	 * A single-file share has nothing to select: the token already names the
+	 * file. `file` was never read there, so normalising it would refuse
+	 * links that have always worked.
+	 */
+	public function testResolvePadFileIgnoresAnOddPathOnASingleFileShareWithoutAnId(): void {
+		$file = $this->padFile('Shared.pad', 42);
+
+		$resolved = $this->buildResolver()->resolvePadFile($this->share($file, Constants::PERMISSION_READ), '../Shared.pad', 'token');
+
+		$this->assertSame($file, $resolved->node);
+	}
+
+	/** A mount inside the share that cannot be resolved is the share being unavailable, not a failure. */
+	public function testResolvePadFileMapsAnUnresolvableMountDuringAnIdLookup(): void {
+		$folder = $this->createMock(Folder::class);
+		$folder->method('getById')->willThrowException(new NotFoundException('mount gone'));
+
+		$this->expectException(ShareItemUnavailableException::class);
+		$this->buildResolver()->resolvePadFile($this->share($folder, Constants::PERMISSION_READ), '', 'token', 42);
+	}
+
+	/**
+	 * One file, two paths, two permissions. A writable share that opened the
+	 * read-only entry would hand out a read-only pad without saying so.
+	 */
+	public function testResolvePadFilePrefersAWritableMatchOverAReadableOne(): void {
+		$readOnly = $this->padFile('A.pad', 42);
+		$readOnly->method('getPermissions')->willReturn(Constants::PERMISSION_READ);
+		$readOnly->method('getPath')->willReturn('/owner/files/Share/A.pad');
+		$readOnly->method('isUpdateable')->willReturn(false);
+		$writable = $this->padFile('A.pad', 42);
+		$writable->method('getPermissions')->willReturn(Constants::PERMISSION_READ | Constants::PERMISSION_UPDATE);
+		$writable->method('getPath')->willReturn('/owner/files/Share/A.pad');
+		$writable->method('isUpdateable')->willReturn(true);
+
+		$folder = $this->createMock(Folder::class);
+		$folder->method('getById')->willReturn([$readOnly, $writable]);
+		$folder->method('getRelativePath')->willReturn('/A.pad');
+
+		$resolved = $this->buildResolver()->resolvePadFile($this->share($folder, Constants::PERMISSION_READ), '', 'token', 42);
+
+		$this->assertSame($writable, $resolved->node);
 	}
 
 	public function testResolvePadFileRejectsAnIdThatIsNotTheSharedFile(): void {
@@ -295,6 +335,9 @@ class PublicShareResolverTest extends TestCase {
 			'negative' => ['-1'],
 			'float' => ['4.2'],
 			'leading plus' => ['+42'],
+			// `$` in a pattern matches before a trailing newline; ctype_digit
+			// does not, which is why this one belongs here.
+			'trailing newline' => ["42\n"],
 			'array' => [['42']],
 		];
 	}

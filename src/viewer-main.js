@@ -417,11 +417,11 @@ import { isPadName, parsePadPathFromDavHref, parsePublicShareTokenFromLocation }
 					// or because the id is not this user's. Since the open no
 					// longer answers that by trying the path, say what the one
 					// remedy is rather than leaving a dead end.
-					// `!byPublicUrl` rather than asking the location again: it
-					// is the branch that actually ran, and an SPA route change
-					// mid-flight would make a fresh lookup disagree with it.
+					// Both routes address by id when the Viewer knows one, so
+					// having one is the condition - a public visitor clicking
+					// a file the owner has since moved out of the share is
+					// exactly the case this sentence was written for.
 					this.maybeStaleFileId = this.resolvedFileId !== null
-						&& !byPublicUrl
 						&& Boolean(error) && error.status === 404 && !error.code
 					// Recovery needs an id it may address. The Viewer's own is
 					// preferred; when it supplies none — the case the Files

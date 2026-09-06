@@ -418,10 +418,23 @@ describe('viewer component — resolveOpenUrl', () => {
 		expect(vm.maybeStaleFileId).toBe(false)
 	})
 
-	it('does not suggest a reload on a public share, where no id was sent', async () => {
+	// A visitor clicking a file the owner has since moved out of the share
+	// is the case this hint was written for, and the public route addresses
+	// by id now too.
+	it('suggests a reload on a public share when the id it sent found nothing', async () => {
+		parsePublicShareTokenFromLocation.mockReturnValue('share-token')
+		stubFetch(jsonResponse({ message: 'The selected file is not part of this share.' }, false, 404))
+		const vm = makeInstance({ fileid: 42, fileInfo: { path: '/x.pad' } })
+
+		await vm.resolveOpenUrl()
+
+		expect(vm.maybeStaleFileId).toBe(true)
+	})
+
+	it('does not suggest a reload on a public share opened by path', async () => {
 		parsePublicShareTokenFromLocation.mockReturnValue('share-token')
 		stubFetch(jsonResponse({ message: 'The selected file does not exist in this share.' }, false, 404))
-		const vm = makeInstance({ fileid: 42, fileInfo: { path: '/x.pad' } })
+		const vm = makeInstance({ fileInfo: { path: '/x.pad' } })
 
 		await vm.resolveOpenUrl()
 
