@@ -145,9 +145,8 @@ class PublicShareResolverTest extends TestCase {
 	}
 
 	/**
-	 * A public folder share is the one place a pad is found by name, which
-	 * is why `A+B.pad` once opened the pad of `A B.pad`: a query string
-	 * spells a space two ways. An id has no second spelling.
+	 * A folder share finds a pad by name, and a query string spells a space
+	 * two ways - `A+B.pad` and `A B.pad`. An id has no second spelling.
 	 */
 	public function testResolvePadFileFindsAFolderSelectionById(): void {
 		$file = $this->padFile('A+B.pad', 42);

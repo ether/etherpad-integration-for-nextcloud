@@ -419,8 +419,7 @@ describe('viewer component — resolveOpenUrl', () => {
 	})
 
 	// A visitor clicking a file the owner has since moved out of the share
-	// is the case this hint was written for, and the public route addresses
-	// by id now too.
+	// is the case this hint is for.
 	it('suggests a reload on a public share when the id it sent found nothing', async () => {
 		parsePublicShareTokenFromLocation.mockReturnValue('share-token')
 		stubFetch(jsonResponse({ message: 'The selected file is not part of this share.' }, false, 404))
@@ -581,7 +580,7 @@ describe('viewer component — resolveOpenUrl', () => {
 	})
 
 	// A public share resolves inside the share, so the signed-in by-id route
-	// must not take over — but the public route itself now carries the id.
+	// must not take over; the public route carries the id itself.
 	it('stays on the public-share route and addresses the file by id', async () => {
 		parsePublicShareTokenFromLocation.mockReturnValue('share-token')
 		const fetchMock = stubFetch(jsonResponse({ url: 'https://pad.example/public', sync_url: '' }))

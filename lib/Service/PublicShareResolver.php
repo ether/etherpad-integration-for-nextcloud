@@ -76,18 +76,12 @@ class PublicShareResolver {
 	}
 
 	/**
-	 * getById() can return the same file more than once - a folder reached
-	 * through several mounts - and the entries differ in permissions, so
-	 * the first readable one inside this share is the answer rather than
-	 * simply the first.
-	 */
-	/**
-	 * The same shape as UserNodeResolver::resolveUserFileNodeById(), and for
-	 * the same reason: one file can be reachable by several paths with
-	 * different permissions, and getById() order must not decide which one
-	 * every later step works from. A writable match wins over a readable
-	 * one, since a writable share that opened the read-only entry would
-	 * silently hand out a read-only pad.
+	 * One file can be reachable by several paths with different permissions,
+	 * so getById() order must not decide which one every later step works
+	 * from. A writable match wins: a writable share that opened the
+	 * read-only entry would hand out a read-only pad without saying so.
+	 * UserNodeResolver::resolveUserFileNodeById() answers the same question
+	 * for a signed-in user.
 	 *
 	 * @return array{File,string} the file and its path inside the share
 	 */
@@ -97,9 +91,8 @@ class PublicShareResolver {
 		try {
 			$candidates = $shareFolder->getById($fileId);
 		} catch (NotFoundException) {
-			// A mount inside the share that is momentarily unresolvable.
-			// The path branch answers that with the same error rather than
-			// letting it surface as an unhandled failure.
+			// An unresolvable mount inside the share: the same answer the
+			// path branch gives for it.
 			throw new ShareItemUnavailableException('This shared item is no longer available.');
 		}
 
@@ -110,9 +103,8 @@ class PublicShareResolver {
 			if ((((int)$candidate->getPermissions()) & Constants::PERMISSION_READ) === 0) {
 				continue;
 			}
-			// getById() is scoped to this folder, so null should not happen -
-			// and if it ever did, an id from elsewhere in the owner's storage
-			// would stop here rather than fall back to the path.
+			// Scoped to this folder by contract, so null should not happen;
+			// if it ever did, the id stops here rather than falling back.
 			$relativePath = $shareFolder->getRelativePath($candidate->getPath());
 			if ($relativePath === null) {
 				continue;
@@ -152,9 +144,8 @@ class PublicShareResolver {
 		$requestedPath = '';
 
 		if ($requestedId !== null) {
-			// Only when the caller sent one. A single-file share has nothing
-			// to select, so `file` was never read there - normalising it
-			// regardless would refuse links that have always worked.
+			// Only when the caller sent one: a single-file share has nothing
+			// to select, and `file` is not an address there.
 			if (is_string($fileParam) && $fileParam !== '') {
 				$requestedPath = $this->requestedPath($fileParam, $token);
 			}
@@ -174,9 +165,9 @@ class PublicShareResolver {
 				throw new ShareFileNotInShareException('The selected item is not a file.');
 			}
 
-			// Both given and naming different files: neither is opened. A
-			// preference either way is the shape this exists to remove -
-			// "the id did not work, so something else was opened".
+			// Both given and naming different files: neither is opened.
+			// Preferring one would be "the id did not work, so something
+			// else was opened".
 			if ($requestedPath !== '' && $requestedPath !== $named) {
 				throw new InvalidShareFilePathException('The file id and the file path name different files.');
 			}

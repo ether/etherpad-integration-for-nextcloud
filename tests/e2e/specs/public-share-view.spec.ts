@@ -221,10 +221,9 @@ test.describe('public folder share with confusable file names', () => {
 	})
 
 	/**
-	 * getById() is scoped to the share folder, so an id from elsewhere finds
-	 * nothing there. What this pins is what happens next: nothing. Falling
-	 * back to the path is how a rejected id ends up opening something else,
-	 * which is why the path is sent along here.
+	 * An id from outside the share finds nothing there. What this pins is
+	 * what happens next: nothing - which is why a valid path travels with
+	 * it, as the thing a fallback would have opened.
 	 */
 	test('refuses a file id from outside the share, with no path fallback', async ({ browser }) => {
 		expect(outsideFileId).toBeGreaterThan(0)
