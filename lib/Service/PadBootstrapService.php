@@ -29,47 +29,13 @@ class PadBootstrapService {
 	) {
 	}
 
-	/**
-	 * Seeds a freshly provisioned pad with content. Tries setHTML first so
-	 * formatting (headings, lists, bold/italic) survives, and falls back to
-	 * plain-text setText if the HTML import fails or no HTML snapshot is
-	 * available.
-	 *
-	 * We intentionally do NOT also call setText after a successful setHTML:
-	 * Etherpad's `setText` replaces the pad content rather than appending, so
-	 * doing both would wipe the formatted HTML we just imported. The minor
-	 * downside — `getText` returns plain text Etherpad derived from the HTML
-	 * rather than the exact string we put into the frontmatter snapshot — is
-	 * acceptable in exchange for keeping the rich formatting.
-	 */
-	public function pushInitialSnapshot(string $padId, string $text, string $html): void {
-		if (trim($html) !== '') {
-			try {
-				$this->etherpadClient->setHTML($padId, $html);
-				return;
-			} catch (\Throwable $htmlError) {
-				$this->logger->warning('Initial HTML push failed, falling back to plain text.', [
-					'app' => 'etherpad_nextcloud',
-					'padId' => $padId,
-					'exception' => $htmlError,
-				]);
-			}
-		}
-		$this->etherpadClient->setText($padId, $text);
-	}
-
+	/** The names a pad gets when it is made for a `.pad` file's first open. */
 	public function provisionPadId(string $accessMode): string {
-		if ($accessMode === BindingService::ACCESS_PUBLIC) {
-			$padId = 'nc-' . $this->secureRandom->generate(24, ISecureRandom::CHAR_LOWER . ISecureRandom::CHAR_DIGITS);
-			$this->padLifecycle->provisionPad($padId);
-			return $padId;
-		}
-
-		if ($accessMode !== BindingService::ACCESS_PROTECTED) {
-			throw new \InvalidArgumentException('Unsupported access mode for pad provisioning.');
-		}
-
-		return $this->padLifecycle->provisionGroupPad($this->buildProtectedPadName());
+		return $this->padLifecycle->provisionFor(
+			$accessMode,
+			fn (): string => 'nc-' . $this->secureRandom->generate(24, ISecureRandom::CHAR_LOWER . ISecureRandom::CHAR_DIGITS),
+			fn (): string => $this->buildProtectedPadName(),
+		);
 	}
 
 	/**

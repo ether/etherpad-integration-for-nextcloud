@@ -57,6 +57,42 @@ class LifecycleServiceTest extends TestCase {
 		$provision->invoke($service, BindingService::ACCESS_PROTECTED, 'nc-old');
 	}
 
+	/** An access mode nobody knows must not become an unprotected pad. */
+	public function testHandleRestoreRefusesABindingWithAnUnknownAccessMode(): void {
+		$fileId = 91;
+		$bindingService = $this->createMock(BindingService::class);
+		$bindingService->method('findByFileId')->with($fileId)->willReturn([
+			'file_id' => $fileId,
+			'pad_id' => 'old-pad',
+			'access_mode' => 'something-else',
+			'state' => BindingService::STATE_PENDING_DELETE,
+		]);
+
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->expects($this->never())->method('createPad');
+		$etherpadClient->expects($this->never())->method('createGroup');
+
+		$file = $this->createMock(File::class);
+		$file->method('getId')->willReturn($fileId);
+		$file->method('getName')->willReturn('Restored.pad');
+
+		$service = new LifecycleService(
+			$bindingService,
+			$this->createMock(PadFileService::class),
+			$etherpadClient,
+			new ManagedPadLifecycle($etherpadClient, $this->createMock(LoggerInterface::class)),
+			$this->buildDeleteOnTrashEnabledConfig(),
+			$this->createMock(LoggerInterface::class),
+			$this->createMock(ISecureRandom::class),
+			$this->createMock(UserNodeResolver::class),
+			$this->createMock(PathNormalizer::class),
+			new FixedClock(),
+		);
+
+		$this->expectException(\InvalidArgumentException::class);
+		$service->handleRestore($file);
+	}
+
 	public function testHandleTrashSkipsNonPadFiles(): void {
 		$bindingService = $this->createMock(BindingService::class);
 		$bindingService->expects($this->never())->method('findByFileId');
@@ -630,7 +666,7 @@ class LifecycleServiceTest extends TestCase {
 			$bindingService,
 			$padFileService,
 			$etherpadClient,
-			new ManagedPadLifecycle($etherpadClient, $this->createMock(LoggerInterface::class)),
+			new ManagedPadLifecycle($etherpadClient, $logger),
 			$config,
 			$logger,
 			$secureRandom,

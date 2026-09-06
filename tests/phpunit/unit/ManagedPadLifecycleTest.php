@@ -8,6 +8,7 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Tests\Unit;
 
+use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\EtherpadNextcloud\Service\EtherpadClient;
 use OCA\EtherpadNextcloud\Service\ManagedPadLifecycle;
 use PHPUnit\Framework\TestCase;
@@ -180,5 +181,85 @@ class ManagedPadLifecycleTest extends TestCase {
 		$client->expects($this->once())->method('deletePad')->with('nc-abcdef0123456789');
 
 		$this->lifecycle($client)->discardProvisioned('nc-abcdef0123456789');
+	}
+
+	public function testProvisionsAPublicPadUnderTheIdItWasGiven(): void {
+		$client = $this->createMock(EtherpadClient::class);
+		$client->expects($this->once())->method('createPad')->with('nc-abcdef0123456789');
+		$client->expects($this->never())->method('createGroup');
+
+		$padId = $this->lifecycle($client)->provisionFor(
+			BindingService::ACCESS_PUBLIC,
+			static fn (): string => 'nc-abcdef0123456789',
+			static fn (): string => self::fail('the group name was built for a public pad'),
+		);
+
+		$this->assertSame('nc-abcdef0123456789', $padId);
+	}
+
+	public function testProvisionsAProtectedPadAsAGroupPad(): void {
+		$client = $this->createMock(EtherpadClient::class);
+		$client->expects($this->once())->method('createGroup')->willReturn('g.ABCDEFGHIJKLMNOP');
+		$client->expects($this->once())
+			->method('createGroupPad')
+			->with('g.ABCDEFGHIJKLMNOP', 'p-abc123')
+			->willReturn('g.ABCDEFGHIJKLMNOP$p-abc123');
+		$client->expects($this->never())->method('createPad');
+
+		$padId = $this->lifecycle($client)->provisionFor(
+			BindingService::ACCESS_PROTECTED,
+			static fn (): string => self::fail('the public id was built for a protected pad'),
+			static fn (): string => 'p-abc123',
+		);
+
+		$this->assertSame('g.ABCDEFGHIJKLMNOP$p-abc123', $padId);
+	}
+
+	/** Falling through to the public branch would hand out an unprotected pad. */
+	public function testRefusesAnAccessModeItDoesNotKnow(): void {
+		$client = $this->createMock(EtherpadClient::class);
+		$client->expects($this->never())->method('createPad');
+		$client->expects($this->never())->method('createGroup');
+
+		$this->expectException(\InvalidArgumentException::class);
+		$this->lifecycle($client)->provisionFor(
+			'something-else',
+			static fn (): string => 'nc-abcdef0123456789',
+			static fn (): string => 'p-abc123',
+		);
+	}
+
+	public function testSeedsWithHtmlSoFormattingSurvives(): void {
+		$client = $this->createMock(EtherpadClient::class);
+		$client->expects($this->once())->method('setHTML')->with('nc-pad', '<p>text</p>');
+		$client->expects($this->never())->method('setText');
+
+		$this->lifecycle($client)->seed('nc-pad', 'text', '<p>text</p>');
+	}
+
+	public function testSeedsWithPlainTextWhenThereIsNoHtml(): void {
+		$client = $this->createMock(EtherpadClient::class);
+		$client->expects($this->never())->method('setHTML');
+		$client->expects($this->once())->method('setText')->with('nc-pad', 'text');
+
+		$this->lifecycle($client)->seed('nc-pad', 'text', '   ');
+	}
+
+	/** Never both: setText replaces, so it would wipe the HTML just imported. */
+	public function testSeedsWithPlainTextOnlyAfterTheHtmlIsRefused(): void {
+		$client = $this->createMock(EtherpadClient::class);
+		$client->expects($this->once())
+			->method('setHTML')
+			->willThrowException(new \RuntimeException('setHTML unsupported'));
+		$client->expects($this->once())->method('setText')->with('nc-pad', 'text');
+
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects($this->once())
+			->method('warning')
+			->with($this->anything(), $this->callback(
+				static fn (array $context): bool => ($context['padId'] ?? '') === 'nc-pad' && ($context['fileId'] ?? 0) === 7
+			));
+
+		(new ManagedPadLifecycle($client, $logger))->seed('nc-pad', 'text', '<p>text</p>', ['fileId' => 7]);
 	}
 }

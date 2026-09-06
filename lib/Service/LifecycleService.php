@@ -323,7 +323,7 @@ class LifecycleService {
 			$snapshot = $snapshotParts['text'];
 			$htmlSnapshot = $snapshotParts['html'];
 
-			$this->restoreSnapshotToManagedPad($fileId, $oldPadId, $newPadId, $snapshot, $htmlSnapshot);
+			$this->padLifecycle->seed($newPadId, $snapshot, $htmlSnapshot, ['fileId' => $fileId, 'oldPadId' => $oldPadId]);
 
 			$updatedContent = $this->padFileService->withRestoredSnapshot(
 				$pad,
@@ -453,7 +453,7 @@ class LifecycleService {
 			$htmlSnapshot = $snapshotParts['html'];
 			$newPadId = $this->provisionRestorePadId($accessMode, $oldPadId);
 			$managedPadCreated = true;
-			$this->restoreSnapshotToManagedPad($fileId, $oldPadId, $newPadId, $snapshot, $htmlSnapshot);
+			$this->padLifecycle->seed($newPadId, $snapshot, $htmlSnapshot, ['fileId' => $fileId, 'oldPadId' => $oldPadId]);
 			$updatedContent = $this->padFileService->withRestoredSnapshot(
 				$pad,
 				$snapshot,
@@ -531,14 +531,13 @@ class LifecycleService {
 		}
 	}
 
+	/** The names a pad gets when it is made to carry a restored snapshot. */
 	private function provisionRestorePadId(string $accessMode, string $oldPadId): string {
-		if ($accessMode === BindingService::ACCESS_PROTECTED) {
-			return $this->padLifecycle->provisionGroupPad($this->buildProtectedRestorePadName());
-		}
-
-		$newPadId = $this->buildPublicRestorePadId($oldPadId);
-		$this->padLifecycle->provisionPad($newPadId);
-		return $newPadId;
+		return $this->padLifecycle->provisionFor(
+			$accessMode,
+			fn (): string => $this->buildPublicRestorePadId($oldPadId),
+			fn (): string => $this->buildProtectedRestorePadName(),
+		);
 	}
 
 	/**
@@ -646,25 +645,6 @@ class LifecycleService {
 				'exception' => $e,
 			]);
 		}
-	}
-
-	private function restoreSnapshotToManagedPad(int $fileId, string $oldPadId, string $newPadId, string $snapshot, string $htmlSnapshot): void {
-		if (trim($htmlSnapshot) !== '') {
-			try {
-				$this->etherpadClient->setHTML($newPadId, $htmlSnapshot);
-				return;
-			} catch (\Throwable $htmlRestoreError) {
-				$this->logger->warning('HTML restore failed, falling back to plain text snapshot.', [
-					'app' => 'etherpad_nextcloud',
-					'fileId' => $fileId,
-					'oldPadId' => $oldPadId,
-					'newPadId' => $newPadId,
-					'exception' => $htmlRestoreError,
-				]);
-			}
-		}
-
-		$this->etherpadClient->setText($newPadId, $snapshot);
 	}
 
 	private function writeRestoredContent(File $file, string $updatedContent): void {

@@ -15,8 +15,7 @@ import { uniqueName } from '../fixtures/nextcloud'
 /**
  * Content round-trip through the snapshot -> new-pad push that both the
  * restore and the "create new pad from this file" recovery flows rely on
- * (`LifecycleService::restoreSnapshotToManagedPad` ->
- * `EtherpadClient::setText/setHTML`).
+ * (`ManagedPadLifecycle::seed` -> `EtherpadClient::setText/setHTML`).
  *
  * This is the deterministic, credential-free way to prove "the .pad
  * content is correctly copied into the freshly provisioned pad" that a
