@@ -308,7 +308,13 @@ class LifecycleService {
 		}
 
 		$accessMode = (string)$binding['access_mode'];
-		$newPadId = $this->provisionRestorePadId($accessMode, $oldPadId);
+		try {
+			$newPadId = $this->provisionRestorePadId($accessMode, $oldPadId);
+		} catch (\InvalidArgumentException) {
+			// Leaves the row in pending_delete for a repair rather than
+			// taking the file's own restore down with it.
+			return $this->buildSkippedResult('unknown_access_mode', $fileId, $oldPadId);
+		}
 		$restored = false;
 		$fileContentUpdated = false;
 		$currentContent = '';
@@ -531,12 +537,12 @@ class LifecycleService {
 		}
 	}
 
-	/** The names a pad gets when it is made to carry a restored snapshot. */
+	/** Make the pad a restored snapshot goes into; the names say so. */
 	private function provisionRestorePadId(string $accessMode, string $oldPadId): string {
 		return $this->padLifecycle->provisionFor(
 			$accessMode,
-			fn (): string => $this->buildPublicRestorePadId($oldPadId),
-			fn (): string => $this->buildProtectedRestorePadName(),
+			padId: fn (): string => $this->buildPublicRestorePadId($oldPadId),
+			groupPadName: fn (): string => $this->buildProtectedRestorePadName(),
 		);
 	}
 

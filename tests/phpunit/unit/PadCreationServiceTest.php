@@ -265,6 +265,9 @@ class PadCreationServiceTest extends TestCase {
 
 		$etherpadClient = $this->createMock(EtherpadClient::class);
 		$etherpadClient->method('buildPadUrl')->willReturn('https://pad.example.test/p/x');
+		// The template's formatting is what reaches the pad, not its text.
+		$etherpadClient->expects($this->once())->method('setHTML')->with('g.grp$pad', '<p>hello</p>');
+		$etherpadClient->expects($this->never())->method('setText');
 
 		$bindingService = $this->createMock(BindingService::class);
 		$bindingService->expects(self::once())

@@ -29,12 +29,12 @@ class PadBootstrapService {
 	) {
 	}
 
-	/** The names a pad gets when it is made for a `.pad` file's first open. */
+	/** Make the pad a `.pad` file's first open needs; the names say so. */
 	public function provisionPadId(string $accessMode): string {
 		return $this->padLifecycle->provisionFor(
 			$accessMode,
-			fn (): string => 'nc-' . $this->secureRandom->generate(24, ISecureRandom::CHAR_LOWER . ISecureRandom::CHAR_DIGITS),
-			fn (): string => $this->buildProtectedPadName(),
+			padId: fn (): string => 'nc-' . $this->secureRandom->generate(24, ISecureRandom::CHAR_LOWER . ISecureRandom::CHAR_DIGITS),
+			groupPadName: fn (): string => $this->buildProtectedPadName(),
 		);
 	}
 

@@ -365,7 +365,7 @@ class PadCreationService {
 
 		$padId = $this->padBootstrapService->provisionPadId($accessMode);
 		try {
-			$this->padLifecycle->seed($padId, $resolvedText, $resolvedHtml);
+			$this->padLifecycle->seed($padId, $resolvedText, $resolvedHtml, ['fileId' => $fileId]);
 			$padUrl = $this->etherpadClient->buildPadUrl($padId);
 
 			$content = $this->padFileService->buildInitialDocument(

@@ -27,8 +27,12 @@ use OCA\EtherpadNextcloud\Tests\Support\FixedClock;
 
 class LifecycleServiceTest extends TestCase {
 
-	/** An access mode nobody knows must not become an unprotected pad. */
-	public function testHandleRestoreRefusesABindingWithAnUnknownAccessMode(): void {
+	/**
+	 * An access mode nobody knows must not become an unprotected pad - and
+	 * must not take the file's own restore down either, so it is skipped
+	 * the way every other unusable binding is.
+	 */
+	public function testHandleRestoreSkipsABindingWithAnUnknownAccessMode(): void {
 		$fileId = 91;
 		$bindingService = $this->createMock(BindingService::class);
 		$bindingService->method('findByFileId')->with($fileId)->willReturn([
@@ -59,7 +63,51 @@ class LifecycleServiceTest extends TestCase {
 			new FixedClock(),
 		);
 
-		$this->expectException(\InvalidArgumentException::class);
+		$result = $service->handleRestore($file);
+
+		$this->assertSame(LifecycleService::RESULT_SKIPPED, $result['status']);
+		$this->assertSame('unknown_access_mode', $result['reason']);
+	}
+
+	/**
+	 * A pad that could not be made must leave the row in pending_delete, so
+	 * the retry job still finds the old pad it names.
+	 */
+	public function testHandleRestoreLeavesTheRowPendingWhenTheNewPadCannotBeMade(): void {
+		$fileId = 87;
+		$bindingService = $this->createMock(BindingService::class);
+		$bindingService->method('findByFileId')->with($fileId)->willReturn([
+			'file_id' => $fileId,
+			'pad_id' => 'old-pad',
+			'access_mode' => BindingService::ACCESS_PUBLIC,
+			'state' => BindingService::STATE_PENDING_DELETE,
+		]);
+		$bindingService->expects($this->never())->method('markRestored');
+
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->method('createPad')->willThrowException(new \RuntimeException('Connection timed out'));
+
+		$secureRandom = $this->createMock(ISecureRandom::class);
+		$secureRandom->method('generate')->willReturn('abc123def456');
+
+		$file = $this->createMock(File::class);
+		$file->method('getId')->willReturn($fileId);
+		$file->method('getName')->willReturn('Restored.pad');
+
+		$service = new LifecycleService(
+			$bindingService,
+			$this->createMock(PadFileService::class),
+			$etherpadClient,
+			new ManagedPadLifecycle($etherpadClient, $this->createMock(LoggerInterface::class)),
+			$this->buildDeleteOnTrashEnabledConfig(),
+			$this->createMock(LoggerInterface::class),
+			$secureRandom,
+			$this->createMock(UserNodeResolver::class),
+			$this->createMock(PathNormalizer::class),
+			new FixedClock(),
+		);
+
+		$this->expectException(\RuntimeException::class);
 		$service->handleRestore($file);
 	}
 
@@ -406,13 +454,15 @@ class LifecycleServiceTest extends TestCase {
 			snapshotRev: -1,
 		);
 		$padFileService->method('readPad')->with('doc-before')->willReturn($parsedPad);
-		$padFileService->method('getSnapshotPartsFromBody')->with($parsedPad->body)->willReturn(['text' => 'plain text', 'html' => '']);
+		$padFileService->method('getSnapshotPartsFromBody')->with($parsedPad->body)->willReturn(['text' => 'plain text', 'html' => '<p>plain text</p>']);
 		$padFileService->method('withRestoredSnapshot')->willReturn('doc-after');
 
 		$etherpadClient = $this->createMock(EtherpadClient::class);
 		$etherpadClient->method('createGroup')->willReturn('g.NEWGROUPID12345');
 		$etherpadClient->method('createGroupPad')->willReturn($newPadId);
-		$etherpadClient->method('setText')->with($newPadId, 'plain text');
+		// The snapshot's formatting is what reaches the pad, not its text.
+		$etherpadClient->expects($this->once())->method('setHTML')->with($newPadId, '<p>plain text</p>');
+		$etherpadClient->expects($this->never())->method('setText');
 		$etherpadClient->method('buildPadUrl')->with($newPadId)->willReturn($newPadUrl);
 		$etherpadClient->expects($this->once())->method('listPads')->with('g.OLDGROUPID12345')->willReturn([$oldPadId]);
 		$etherpadClient->expects($this->once())->method('deleteGroup')->with('g.OLDGROUPID12345');

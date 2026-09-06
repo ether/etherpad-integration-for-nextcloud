@@ -423,7 +423,12 @@ class PadBootstrapServiceTest extends TestCase {
 		$etherpadClient->method('buildPadUrl')->willReturn('https://pad.example.test/p/nc-abcdefghijklmnopqrstuvwx');
 
 		$secureRandom = $this->createMock(ISecureRandom::class);
-		$secureRandom->method('generate')->willReturn('abcdefghijklmnopqrstuvwx');
+		// A public pad is reachable by anyone holding its id, so the length
+		// of that id is the whole of its protection.
+		$secureRandom->expects($this->once())
+			->method('generate')
+			->with(24, ISecureRandom::CHAR_LOWER . ISecureRandom::CHAR_DIGITS)
+			->willReturn('abcdefghijklmnopqrstuvwx');
 
 		$file = $this->createMock(File::class);
 		$file->method('getId')->willReturn(4321);

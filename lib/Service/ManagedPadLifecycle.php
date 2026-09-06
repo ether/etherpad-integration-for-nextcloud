@@ -123,7 +123,8 @@ class ManagedPadLifecycle {
 	 * imported. The price is that `getText` afterwards returns what Etherpad
 	 * derived from that HTML rather than the string the snapshot held.
 	 *
-	 * @param array<string,mixed> $context added to the fallback's log line
+	 * @param array<string,mixed> $context extra keys for the fallback's log
+	 *   line; `app`, `padId` and `exception` are set here and win a collision
 	 */
 	public function seed(string $padId, string $text, string $html, array $context = []): void {
 		if (trim($html) !== '') {
