@@ -32,6 +32,11 @@ final class PadFileType {
 	}
 
 	public static function withSuffix(string $nameOrPath): string {
+		if ($nameOrPath === '') {
+			// Would name a hidden dotfile rather than a pad.
+			throw new \InvalidArgumentException('Cannot add the pad suffix to an empty name.');
+		}
+
 		return self::isPad($nameOrPath) ? $nameOrPath : $nameOrPath . self::SUFFIX;
 	}
 
@@ -40,6 +45,6 @@ final class PadFileType {
 	 * slash in the mime type would otherwise end the pattern.
 	 */
 	public static function mimePattern(): string {
-		return '/^' . preg_quote(self::MIME, '/') . '$/';
+		return '/^' . preg_quote(self::MIME, '/') . '\z/';
 	}
 }

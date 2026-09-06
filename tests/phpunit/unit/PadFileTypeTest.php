@@ -41,6 +41,15 @@ class PadFileTypeTest extends TestCase {
 		$this->assertSame(0, preg_match($pattern, PadFileType::MIME . '+xml'));
 		$this->assertSame(0, preg_match($pattern, 'x-' . PadFileType::MIME));
 		$this->assertSame(0, preg_match($pattern, 'text/plain'));
+		// `$` would match before a trailing newline and let this through.
+		$this->assertSame(0, preg_match($pattern, PadFileType::MIME . "\n"));
+	}
+
+	public function testRefusesToNameAnEmptyString(): void {
+		// '.pad' alone is a hidden dotfile, not a pad. Today's callers check
+		// first; a helper shared more widely should not depend on that.
+		$this->expectException(\InvalidArgumentException::class);
+		PadFileType::withSuffix('');
 	}
 
 	public function testAppendsTheSuffixOnlyWhenItIsMissing(): void {

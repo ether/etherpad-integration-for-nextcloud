@@ -48,8 +48,8 @@ class PadTemplateStorage {
 	 * name, so a template of the same name would be a second tile nobody can
 	 * tell apart — and it is also why these strings cannot be translated.
 	 */
-	public const PUBLIC_TILE_NAME = 'Public pad' . PadFileType::SUFFIX;
-	public const EXTERNAL_TILE_NAME = 'Public pad from URL' . PadFileType::SUFFIX;
+	public const PUBLIC_TILE_NAME = 'Public pad.pad';
+	public const EXTERNAL_TILE_NAME = 'Public pad from URL.pad';
 
 	/** @return list<string> */
 	public static function reservedNames(): array {

@@ -16,96 +16,79 @@ use PHPUnit\Framework\TestCase;
  * and nothing else in the app compares strings against it. A copy written
  * out at one of those sites is invisible to Psalm and to every other test:
  * the constant still has its other callers, so nothing goes unused, and a
- * copy that drifts only shows up as previews quietly not being served.
+ * copy that drifts only shows up as previews quietly not being served, or
+ * as the Viewer offering to open nothing.
  */
 class PadFileTypeLiteralsTest extends TestCase {
-	public function testTheMimeTypeIsWrittenOutOnlyWhereItIsDefined(): void {
-		$holder = realpath(__DIR__ . '/../../../lib/Util/PadFileType.php');
-		$offenders = [];
+	/** Directories that ship, and the one file in each allowed to spell the type out. */
+	private const SCANNED = ['lib', 'src', 'templates', 'appinfo'];
+	private const HOLDERS = ['lib/Util/PadFileType.php', 'src/lib/constants.js'];
 
-		foreach ($this->phpFilesUnderLib() as $file) {
-			if ($file === $holder) {
+	public function testTheMimeTypeIsWrittenOutOnlyWhereItIsDefined(): void {
+		$offenders = [];
+		foreach ($this->shippedFiles() as $relative => $absolute) {
+			if (in_array($relative, self::HOLDERS, true)) {
 				continue;
 			}
-			// Backslashes dropped first: the two sites this guards were
+			// Backslashes dropped first: two of the sites this guards are
 			// regexes, where the type reads `application\/x-etherpad-nextcloud`
-			// or, after preg_quote(), `x\-etherpad\-nextcloud`. A plain
-			// search finds neither, which is how they stayed uncollapsed.
-			$content = str_replace('\\', '', (string)file_get_contents($file));
+			// or, after preg_quote(), `x\-etherpad\-nextcloud`. A plain search
+			// finds neither, which is how they stayed uncollapsed.
+			$content = str_replace('\\', '', (string)file_get_contents($absolute));
 			if (str_contains($content, PadFileType::MIME)) {
-				$offenders[] = substr($file, strlen((string)realpath(__DIR__ . '/../../..')) + 1);
+				$offenders[] = $relative;
 			}
 		}
 
 		$this->assertSame(
 			[],
 			$offenders,
-			'Use PadFileType::MIME (or ::mimePattern()) instead of writing the mime type out.',
+			'Use PadFileType::MIME (or ::mimePattern(), or the MIME export in src/lib/constants.js).',
 		);
 	}
 
 	/**
 	 * The browser cannot import a PHP constant, so the type is spelled once
-	 * more in src/lib/constants.js. That copy decides which files the Viewer
-	 * offers to open: if it drifts from the registered type, clicking a pad
-	 * downloads it instead, and nothing else in the suite notices.
+	 * more in JavaScript. That copy decides which files the Viewer offers to
+	 * open: if it drifts from the registered type, clicking a pad downloads
+	 * it instead, and nothing else in the suite notices.
 	 */
 	public function testTheJavaScriptCopyMatchesTheRegisteredType(): void {
-		$root = (string)realpath(__DIR__ . '/../../..');
-		$constants = $root . '/src/lib/constants.js';
+		$constants = (string)realpath(__DIR__ . '/../../../src/lib/constants.js');
 		$this->assertFileExists($constants);
-		$this->assertMatchesRegularExpression(
-			'/^export const MIME = \'' . preg_quote(PadFileType::MIME, '/') . '\'$/m',
+
+		// The exported value, not the line that exports it: quote style,
+		// semicolons and line endings are formatting, and a guard about mime
+		// drift should not fail when a formatter changes its mind.
+		$matched = preg_match(
+			'/export\s+const\s+MIME\s*=\s*([\'"])(?<value>.*?)\1/',
 			(string)file_get_contents($constants),
+			$matches,
 		);
 
-		$offenders = [];
-		foreach ($this->jsFilesUnderSrc() as $file) {
-			if ($file === realpath($constants)) {
-				continue;
-			}
-			if (str_contains((string)file_get_contents($file), PadFileType::MIME)) {
-				$offenders[] = substr($file, strlen($root) + 1);
-			}
-		}
-
-		$this->assertSame(
-			[],
-			$offenders,
-			'Import MIME from src/lib/constants.js instead of writing the mime type out.',
-		);
+		$this->assertSame(1, $matched, 'src/lib/constants.js must export a MIME string');
+		$this->assertSame(PadFileType::MIME, $matches['value']);
 	}
 
-	/** @return list<string> */
-	private function jsFilesUnderSrc(): array {
-		$src = (string)realpath(__DIR__ . '/../../../src');
+	/** @return array<string,string> relative path => absolute path */
+	private function shippedFiles(): array {
+		$root = (string)realpath(__DIR__ . '/../../..');
 		$files = [];
-		$iterator = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($src));
-		foreach ($iterator as $entry) {
-			if ($entry instanceof \SplFileInfo && $entry->getExtension() === 'js') {
-				$files[] = (string)$entry->getRealPath();
+		foreach (self::SCANNED as $directory) {
+			$base = realpath($root . '/' . $directory);
+			$this->assertIsString($base, $directory . ' is missing; the guard would scan nothing');
+			$iterator = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($base));
+			foreach ($iterator as $entry) {
+				if ($entry instanceof \SplFileInfo && $entry->isFile()) {
+					$absolute = (string)$entry->getRealPath();
+					$files[substr($absolute, strlen($root) + 1)] = $absolute;
+				}
 			}
 		}
-		sort($files);
-		$this->assertGreaterThan(5, count($files));
-
-		return $files;
-	}
-
-	/** @return list<string> */
-	private function phpFilesUnderLib(): array {
-		$lib = (string)realpath(__DIR__ . '/../../../lib');
-		$files = [];
-		$iterator = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($lib));
-		foreach ($iterator as $entry) {
-			if ($entry instanceof \SplFileInfo && $entry->getExtension() === 'php') {
-				$files[] = (string)$entry->getRealPath();
-			}
-		}
-		sort($files);
+		ksort($files);
 
 		// A guard that scanned nothing would pass forever.
-		$this->assertGreaterThan(50, count($files));
+		$this->assertGreaterThan(80, count($files));
 
 		return $files;
 	}
