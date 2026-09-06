@@ -54,6 +54,7 @@ class PublicShareResolverTest extends TestCase {
 
 	public function testResolvePadFileReturnsWritableFolderSelection(): void {
 		$file = $this->padFile('Shared.pad', 42);
+		$file->method('isUpdateable')->willReturn(true);
 		$folder = $this->createMock(Folder::class);
 		$folder->expects($this->once())->method('get')->with('Folder/Shared.pad')->willReturn($file);
 		$share = $this->share($folder, Constants::PERMISSION_READ | Constants::PERMISSION_UPDATE);
@@ -144,10 +145,6 @@ class PublicShareResolverTest extends TestCase {
 		$this->buildResolver()->resolvePadFile($share, '', 'token');
 	}
 
-	/**
-	 * A folder share finds a pad by name, and a query string spells a space
-	 * two ways - `A+B.pad` and `A B.pad`. An id has no second spelling.
-	 */
 	public function testResolvePadFileFindsAFolderSelectionById(): void {
 		$file = $this->padFile('A+B.pad', 42);
 		$folder = $this->folderResolving($file, 'A+B.pad');
@@ -183,11 +180,7 @@ class PublicShareResolverTest extends TestCase {
 		$this->buildResolver()->resolvePadFile($share, 'Other.pad', 'token', 42);
 	}
 
-	/**
-	 * A single-file share has nothing to select: the token already names the
-	 * file. `file` was never read there, so normalising it would refuse
-	 * links that have always worked.
-	 */
+	/** The token already names the file, so `file` is not an address there. */
 	public function testResolvePadFileIgnoresAnOddPathOnASingleFileShareWithoutAnId(): void {
 		$file = $this->padFile('Shared.pad', 42);
 
@@ -196,24 +189,67 @@ class PublicShareResolverTest extends TestCase {
 		$this->assertSame($file, $resolved->node);
 	}
 
-	/** A mount inside the share that cannot be resolved is the share being unavailable, not a failure. */
-	public function testResolvePadFileMapsAnUnresolvableMountDuringAnIdLookup(): void {
-		$folder = $this->createMock(Folder::class);
-		$folder->method('getById')->willThrowException(new NotFoundException('mount gone'));
+	/** getRelativePath() is the call the contract says can throw. */
+	public function testResolvePadFileSkipsACandidateWhoseMountCannotBeResolved(): void {
+		$unresolvable = $this->padFile('A.pad', 42);
+		$unresolvable->method('getPermissions')->willReturn(Constants::PERMISSION_READ);
+		$unresolvable->method('getPath')->willReturn('/owner/files/Share/Gone/A.pad');
+		$reachable = $this->padFile('A.pad', 42);
+		$reachable->method('getPermissions')->willReturn(Constants::PERMISSION_READ);
+		$reachable->method('getPath')->willReturn('/owner/files/Share/Here/A.pad');
 
-		$this->expectException(ShareItemUnavailableException::class);
-		$this->buildResolver()->resolvePadFile($this->share($folder, Constants::PERMISSION_READ), '', 'token', 42);
+		$folder = $this->createMock(Folder::class);
+		$folder->method('getById')->willReturn([$unresolvable, $reachable]);
+		$folder->method('getRelativePath')->willReturnCallback(
+			static function (string $path): string {
+				if (str_contains($path, '/Gone/')) {
+					throw new NotFoundException('mount gone');
+				}
+				return '/Here/A.pad';
+			}
+		);
+
+		$resolved = $this->buildResolver()->resolvePadFile($this->share($folder, Constants::PERMISSION_READ), '', 'token', 42);
+
+		$this->assertSame($reachable, $resolved->node);
 	}
 
-	/**
-	 * One file, two paths, two permissions. A writable share that opened the
-	 * read-only entry would hand out a read-only pad without saying so.
-	 */
-	/**
-	 * The same file can be mounted twice. A caller that named one of those
-	 * paths meant that one, so the permission preference must not overrule
-	 * it and then call the pair contradictory.
-	 */
+	public function testResolvePadFileIsReadOnlyWhenTheNamedMountIsNotWritable(): void {
+		$writable = $this->padFile('A.pad', 42);
+		$writable->method('getPermissions')->willReturn(Constants::PERMISSION_READ | Constants::PERMISSION_UPDATE);
+		$writable->method('getPath')->willReturn('/owner/files/Share/Write/A.pad');
+		$writable->method('isUpdateable')->willReturn(true);
+		$readOnly = $this->padFile('A.pad', 42);
+		$readOnly->method('getPermissions')->willReturn(Constants::PERMISSION_READ);
+		$readOnly->method('getPath')->willReturn('/owner/files/Share/Read/A.pad');
+		$readOnly->method('isUpdateable')->willReturn(false);
+
+		$folder = $this->createMock(Folder::class);
+		$folder->method('getById')->willReturn([$writable, $readOnly]);
+		$folder->method('getRelativePath')->willReturnCallback(
+			static fn (string $path): string => str_replace('/owner/files/Share', '', $path)
+		);
+		$share = $this->share($folder, Constants::PERMISSION_READ | Constants::PERMISSION_UPDATE);
+
+		$resolved = $this->buildResolver()->resolvePadFile($share, 'Read/A.pad', 'token', 42);
+
+		$this->assertSame($readOnly, $resolved->node);
+		$this->assertTrue($resolved->readOnly);
+	}
+
+	/** Same rule when only a read-only mount answers an id-only request. */
+	public function testResolvePadFileIsReadOnlyWhenTheOnlyMatchIsNotWritable(): void {
+		$file = $this->padFile('A.pad', 42);
+		$file->method('isUpdateable')->willReturn(false);
+		$folder = $this->folderResolving($file, 'A.pad');
+		$share = $this->share($folder, Constants::PERMISSION_READ | Constants::PERMISSION_UPDATE);
+
+		$resolved = $this->buildResolver()->resolvePadFile($share, '', 'token', 42);
+
+		$this->assertTrue($resolved->readOnly);
+	}
+
+	/** Otherwise the preference overrules the path and calls the pair contradictory. */
 	public function testResolvePadFilePrefersTheNamedPathOverTheWritableMount(): void {
 		$writable = $this->padFile('A.pad', 42);
 		$writable->method('getPermissions')->willReturn(Constants::PERMISSION_READ | Constants::PERMISSION_UPDATE);
@@ -261,12 +297,7 @@ class PublicShareResolverTest extends TestCase {
 		$this->buildResolver()->resolvePadFile($share, '', 'token', 43);
 	}
 
-	/**
-	 * getById() is scoped to the folder, so an id from elsewhere in the
-	 * owner's storage simply finds nothing. What this pins is what happens
-	 * next: nothing. Falling back to the path is how a refused id ends up
-	 * opening something else.
-	 */
+	/** Scoped to the folder, so it finds nothing - and nothing happens next. */
 	public function testResolvePadFileRejectsAnIdOutsideTheShare(): void {
 		$folder = $this->createMock(Folder::class);
 		$folder->method('getById')->with(99)->willReturn([]);
@@ -277,11 +308,7 @@ class PublicShareResolverTest extends TestCase {
 		$this->buildResolver()->resolvePadFile($this->share($folder, Constants::PERMISSION_READ), 'Shared.pad', 'token', 99);
 	}
 
-	/**
-	 * Belt to that brace. getById() promises results inside the folder; if
-	 * that ever stopped holding, the path check is what still refuses a
-	 * file the share does not contain.
-	 */
+	/** Belt to that brace, for the day getById()'s scoping stops holding. */
 	public function testResolvePadFileRejectsAMatchThatIsNotBelowTheShare(): void {
 		$outside = $this->padFile('Elsewhere.pad', 99);
 		$outside->method('getPermissions')->willReturn(Constants::PERMISSION_READ);
@@ -295,11 +322,6 @@ class PublicShareResolverTest extends TestCase {
 		$this->buildResolver()->resolvePadFile($this->share($folder, Constants::PERMISSION_READ), '', 'token', 99);
 	}
 
-	/**
-	 * `Sub/A.pad` and `A.pad` are two files. Comparing the name alone would
-	 * call them the same one and open the id's file while the path named
-	 * another - the disagreement this check exists to refuse.
-	 */
 	public function testResolvePadFileRefusesASubfolderIdAgainstARootPathOfTheSameName(): void {
 		$folder = $this->folderResolving($this->padFile('A.pad', 42), 'Sub/A.pad');
 
@@ -370,10 +392,7 @@ class PublicShareResolverTest extends TestCase {
 		];
 	}
 
-	/**
-	 * An unusable id is refused rather than ignored. Ignoring it would open
-	 * the path instead, which is the fallback this feature exists to avoid.
-	 */
+	/** Ignoring it would open the path instead - the fallback this avoids. */
 	#[\PHPUnit\Framework\Attributes\DataProvider('unusableFileIdProvider')]
 	public function testResolvePadFileRejectsAnUnusableFileId(mixed $fileId): void {
 		$folder = $this->createMock(Folder::class);
@@ -401,10 +420,7 @@ class PublicShareResolverTest extends TestCase {
 		return new PublicShareResolver($manager ?? $this->createMock(IManager::class), new PathNormalizer());
 	}
 
-	/**
-	 * A folder share whose getById() answers with one readable file at the
-	 * given path inside the share.
-	 */
+	/** A folder share whose getById() answers with one readable file. */
 	private function folderResolving(File $file, string $relativePath): Folder {
 		$file->method('getPermissions')->willReturn(Constants::PERMISSION_READ);
 		$file->method('getPath')->willReturn('/owner/files/Share/' . ltrim($relativePath, '/'));

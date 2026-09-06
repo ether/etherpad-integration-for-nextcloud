@@ -146,9 +146,8 @@ test.describe('public share access without login', () => {
 
 /**
  * `A+B.pad` and `A B.pad` differ in the one character a query string
- * overloads, which is the confusion this share once fell for. Both are
- * real pads and the address of each is recorded before the share exists,
- * so "a viewer appeared" cannot pass for "the right document opened".
+ * overloads. Each pad's address is recorded before the share exists, so
+ * "a viewer appeared" cannot pass for "the right document opened".
  *
  * The share is handed out with edit rights on purpose. A read-only public
  * share opens the read-only pad id instead, whose address is derived
@@ -191,8 +190,7 @@ test.describe('public folder share with confusable file names', () => {
 		plusPad = await createPadAtPath(`/${folderName}/${plusName}`)
 		spacePad = await createPadAtPath(`/${folderName}/${spaceName}`)
 		plusFileId = await propfindFileId(`${folderName}/${plusName}`)
-		// Any real file outside the share carries a real id the share does
-		// not contain; it does not have to be a pad to be the wrong answer.
+		// A real id the share does not contain; it need not be a pad.
 		await putFileViaDav(outsideName, 'outside the share')
 		outsideFileId = await propfindFileId(outsideName)
 		const share = await createPublicShare(folderName, SHARE_PERMISSION_READ_WRITE)
@@ -220,18 +218,13 @@ test.describe('public folder share with confusable file names', () => {
 		}
 	})
 
-	/**
-	 * An id from outside the share finds nothing there. What this pins is
-	 * what happens next: nothing - which is why a valid path travels with
-	 * it, as the thing a fallback would have opened.
-	 */
 	test('refuses a file id from outside the share, with no path fallback', async ({ browser }) => {
 		expect(outsideFileId).toBeGreaterThan(0)
 
 		const publicContext = await browser.newContext()
 		try {
-			// The path names a real pad in this share: a fallback would
-			// answer with it, and the 404 is what says none happened.
+			// The path names a real pad here, so a fallback would answer
+			// with it and the 404 is what says none happened.
 			const response = await publicContext.request.get(
 				`${E2E.baseURL}/apps/etherpad_nextcloud/api/v1/public/open/${shareToken}`
 				+ `?fileId=${outsideFileId}&file=${encodeURIComponent(plusName)}`,
@@ -270,9 +263,7 @@ test.describe('public folder share with confusable file names', () => {
 
 			await expectEtherpadViewerMounted(publicPage)
 			expect(await readEtherpadUrlFromViewer(publicPage)).toBe(plusPad.padUrl)
-			// The parsed value, not a substring: `fileId=12` is contained in
-			// `fileId=123`, and this is the assertion that says the right
-			// file id travelled.
+			// Parsed, not a substring: `fileId=12` is inside `fileId=123`.
 			expect(new URL(openRequest.url()).searchParams.get('fileId')).toBe(String(plusFileId))
 			await closeViewer(publicPage)
 

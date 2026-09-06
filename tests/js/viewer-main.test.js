@@ -418,8 +418,6 @@ describe('viewer component — resolveOpenUrl', () => {
 		expect(vm.maybeStaleFileId).toBe(false)
 	})
 
-	// A visitor clicking a file the owner has since moved out of the share
-	// is the case this hint is for.
 	it('suggests a reload on a public share when the id it sent found nothing', async () => {
 		parsePublicShareTokenFromLocation.mockReturnValue('share-token')
 		stubFetch(jsonResponse({ message: 'The selected file is not part of this share.' }, false, 404))
@@ -579,8 +577,6 @@ describe('viewer component — resolveOpenUrl', () => {
 		expect(vm.iframeSrc).toBe('')
 	})
 
-	// A public share resolves inside the share, so the signed-in by-id route
-	// must not take over; the public route carries the id itself.
 	it('stays on the public-share route and addresses the file by id', async () => {
 		parsePublicShareTokenFromLocation.mockReturnValue('share-token')
 		const fetchMock = stubFetch(jsonResponse({ url: 'https://pad.example/public', sync_url: '' }))
@@ -591,14 +587,10 @@ describe('viewer component — resolveOpenUrl', () => {
 		expect(fetchMock).toHaveBeenCalledTimes(1)
 		expect(fetchMock.mock.calls[0][0]).toContain('/api/v1/public/open/share-token')
 		expect(fetchMock.mock.calls[0][0]).toContain('fileId=42')
-		// One locator, not both: the server refuses a pair that disagrees
-		// rather than choosing between them, so sending both invites it.
 		expect(fetchMock.mock.calls[0][0]).not.toContain('file=')
 		expect(vm.iframeSrc).toBe('https://pad.example/public')
 	})
 
-	// A share the Viewer cannot name an id for still opens: the path is the
-	// compatibility route, not a fallback behind a failed id.
 	it('falls back to the path on the public route when no id is available', async () => {
 		parsePublicShareTokenFromLocation.mockReturnValue('share-token')
 		const fetchMock = stubFetch(jsonResponse({ url: 'https://pad.example/public', sync_url: '' }))

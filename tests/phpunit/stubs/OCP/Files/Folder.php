@@ -10,9 +10,7 @@ if (!interface_exists(Folder::class)) {
 
 		/**
 		 * Mirrors OCP\Files\Folder::getRelativePath(): the path below this
-		 * folder, or null when it is not below it at all - which is how the
-		 * public share resolver tells an id inside the share from one that
-		 * merely exists in the owner's storage.
+		 * folder, or null when it is not below it at all.
 		 */
 		public function getRelativePath($path);
 

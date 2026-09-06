@@ -310,9 +310,8 @@ import { isPadName, parsePadPathFromDavHref, parsePublicShareTokenFromLocation }
 				const byPublicUrl = (() => {
 					if (!publicToken) return ''
 					const url = new URL(ocGenerateUrl('/apps/' + APP_ID + '/api/v1/public/open/' + encodeURIComponent(publicToken)), window.location.origin)
-					// One locator, not both: a share folder finds a file by
-					// name, a query string spells a space two ways, and the
-					// server refuses a disagreeing pair rather than choosing.
+					// One locator, not both: the server refuses a pair that
+					// disagrees rather than choosing between them.
 					if (this.resolvedFileId !== null) {
 						url.searchParams.set('fileId', String(this.resolvedFileId))
 					} else {
@@ -415,9 +414,6 @@ import { isPadName, parsePadPathFromDavHref, parsePublicShareTokenFromLocation }
 					// or because the id is not this user's. Since the open no
 					// longer answers that by trying the path, say what the one
 					// remedy is rather than leaving a dead end.
-					// Having an id is the condition, on either route: a
-					// visitor clicking a file that has since left the share
-					// is exactly the case this sentence is for.
 					this.maybeStaleFileId = this.resolvedFileId !== null
 						&& Boolean(error) && error.status === 404 && !error.code
 					// Recovery needs an id it may address. The Viewer's own is

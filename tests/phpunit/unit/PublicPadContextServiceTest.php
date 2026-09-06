@@ -31,7 +31,8 @@ class PublicPadContextServiceTest extends TestCase {
 	public function testResolveBuildsPublicPadContextFromCachedShare(): void {
 		$file = $this->createMock(File::class);
 		$file->method('getName')->willReturn('Shared.pad');
-		$file->method('getId')->willReturn(42);
+		// Once: it travels on the result rather than being asked again.
+		$file->expects($this->once())->method('getId')->willReturn(42);
 		$file->method('getContent')->willReturn('frontmatter');
 
 		$share = $this->createMock(IShare::class);
@@ -70,9 +71,7 @@ class PublicPadContextServiceTest extends TestCase {
 			->willReturn(new PublicPadOpenTarget('', '', '', true));
 
 		$urlGenerator = $this->createMock(IURLGenerator::class);
-		// The id this open resolved to, not what the caller sent: a file
-		// renamed inside the share between the two requests still answers
-		// to its id.
+		// By id, so a rename between the two requests keeps the file.
 		$urlGenerator->method('linkToRoute')
 			->with('etherpad_nextcloud.publicViewer.padContent', ['token' => 'token', 'fileId' => 42])
 			->willReturn('/public/content/token');

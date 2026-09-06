@@ -83,9 +83,8 @@ class PublicPadContextService {
 			$openTarget->isReadOnlyView,
 			$openTarget->originalPadUrl,
 			// Same rule as the signed-in open: only where one of our own
-			// surfaces draws the pad. It carries the id this open resolved
-			// to, so a file renamed or moved inside the share between the
-			// two requests is still the one answered for.
+			// surfaces draws the pad. By id, so a rename inside the share
+			// between the two requests does not lose the file.
 			($openTarget->isReadOnlyView || $isExternal)
 				? $this->buildContentUrl($token, $fileId)
 				: '',

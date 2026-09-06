@@ -52,9 +52,8 @@ class PublicShareResolver {
 	}
 
 	private function requestedFileId(mixed $fileIdParam): ?int {
-		// Only an absent parameter means "no id". `fileId=` was sent, and a
-		// sent id that cannot be used is refused rather than replaced by the
-		// weaker locator.
+		// Absent only. `fileId=` was sent, and a sent id that cannot be
+		// used is refused rather than replaced by the path.
 		if ($fileIdParam === null) {
 			return null;
 		}
@@ -80,26 +79,16 @@ class PublicShareResolver {
 
 	/**
 	 * One file can be reachable by several paths with different permissions,
-	 * so getById() order must not decide which one every later step works
-	 * from. A writable match wins: a writable share that opened the
-	 * read-only entry would hand out a read-only pad without saying so.
-	 * UserNodeResolver::resolveUserFileNodeById() answers the same question
-	 * for a signed-in user.
+	 * so getById() order must not decide which one is taken.
+	 * UserNodeResolver::resolveUserFileNodeById() answers this for a
+	 * signed-in user.
 	 *
 	 * @return array{File,string} the file and its path inside the share
 	 */
 	private function fileInShareById(Folder $shareFolder, int $fileId, string $requestedPath): array {
 		$fallback = null;
 
-		try {
-			$candidates = $shareFolder->getById($fileId);
-		} catch (NotFoundException) {
-			// An unresolvable mount inside the share: the same answer the
-			// path branch gives for it.
-			throw new ShareItemUnavailableException('This shared item is no longer available.');
-		}
-
-		foreach ($candidates as $candidate) {
+		foreach ($shareFolder->getById($fileId) as $candidate) {
 			if (!$candidate instanceof File) {
 				continue;
 			}
@@ -108,16 +97,18 @@ class PublicShareResolver {
 			}
 			// Scoped to this folder by contract, so null should not happen;
 			// if it ever did, the id stops here rather than falling back.
-			$relativePath = $shareFolder->getRelativePath($candidate->getPath());
+			try {
+				$relativePath = $shareFolder->getRelativePath($candidate->getPath());
+			} catch (NotFoundException) {
+				continue;
+			}
 			if ($relativePath === null) {
 				continue;
 			}
 
 			$match = [$candidate, ltrim($relativePath, '/')];
-			// A caller that named a path meant that one of the mounts, so
-			// the permission preference below only decides an id-only
-			// request - otherwise the pair could be called contradictory
-			// while naming the same file.
+			// A named path picks its mount; the preference below only
+			// settles an id-only request.
 			if ($requestedPath !== '' && $match[1] === $requestedPath) {
 				return $match;
 			}
@@ -154,8 +145,7 @@ class PublicShareResolver {
 		$requestedPath = '';
 
 		if ($requestedId !== null) {
-			// Only when the caller sent one: a single-file share has nothing
-			// to select, and `file` is not an address there.
+			// Only when sent: a single-file share has nothing to select.
 			if (is_string($fileParam) && $fileParam !== '') {
 				$requestedPath = $this->requestedPath($fileParam, $token);
 			}
@@ -168,16 +158,13 @@ class PublicShareResolver {
 				if ((int)$node->getId() !== $requestedId) {
 					throw new ShareFileNotInShareException('The selected file is not part of this share.');
 				}
-				// A single-file share has no path inside it; what a caller
-				// can name is the file itself.
 				$named = $node->getName();
 			} else {
 				throw new ShareFileNotInShareException('The selected item is not a file.');
 			}
 
-			// Both given and naming different files: neither is opened.
-			// Preferring one would be "the id did not work, so something
-			// else was opened".
+			// Neither is opened: preferring one would be "the id did not
+			// work, so something else was opened".
 			if ($requestedPath !== '' && $requestedPath !== $named) {
 				throw new InvalidShareFilePathException('The file id and the file path name different files.');
 			}
@@ -203,7 +190,10 @@ class PublicShareResolver {
 		return new ResolvedPadShare(
 			$node,
 			(int)$node->getId(),
-			(((int)$share->getPermissions()) & Constants::PERMISSION_UPDATE) === 0,
+			// Both levels: the share can allow writing where this mount
+			// does not.
+			(((int)$share->getPermissions()) & Constants::PERMISSION_UPDATE) === 0
+				|| !$node->isUpdateable(),
 			$node->getName(),
 		);
 	}
