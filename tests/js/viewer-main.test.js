@@ -567,9 +567,9 @@ describe('viewer component — resolveOpenUrl', () => {
 		expect(vm.iframeSrc).toBe('')
 	})
 
-	// A public share resolves inside the share, by name — the id branch must
-	// not take precedence there even when the Viewer hands one over. See #204.
-	it('uses the public-share route even when a file id is available', async () => {
+	// A public share resolves inside the share, so the signed-in by-id route
+	// must not take over — but the public route itself now carries the id.
+	it('stays on the public-share route and addresses the file by id', async () => {
 		parsePublicShareTokenFromLocation.mockReturnValue('share-token')
 		const fetchMock = stubFetch(jsonResponse({ url: 'https://pad.example/public', sync_url: '' }))
 		const vm = makeInstance({ fileid: 42, fileInfo: { path: '/x.pad' } })
@@ -578,8 +578,25 @@ describe('viewer component — resolveOpenUrl', () => {
 
 		expect(fetchMock).toHaveBeenCalledTimes(1)
 		expect(fetchMock.mock.calls[0][0]).toContain('/api/v1/public/open/share-token')
-		expect(fetchMock.mock.calls[0][0]).toContain('file=%2Fx.pad')
+		expect(fetchMock.mock.calls[0][0]).toContain('fileId=42')
+		// One locator, not both: the server refuses a pair that disagrees
+		// rather than choosing between them, so sending both invites it.
+		expect(fetchMock.mock.calls[0][0]).not.toContain('file=')
 		expect(vm.iframeSrc).toBe('https://pad.example/public')
+	})
+
+	// A share the Viewer cannot name an id for still opens: the path is the
+	// compatibility route, not a fallback behind a failed id.
+	it('falls back to the path on the public route when no id is available', async () => {
+		parsePublicShareTokenFromLocation.mockReturnValue('share-token')
+		const fetchMock = stubFetch(jsonResponse({ url: 'https://pad.example/public', sync_url: '' }))
+		const vm = makeInstance({ fileInfo: { path: '/x.pad' } })
+
+		await vm.resolveOpenUrl()
+
+		expect(fetchMock.mock.calls[0][0]).toContain('/api/v1/public/open/share-token')
+		expect(fetchMock.mock.calls[0][0]).toContain('file=%2Fx.pad')
+		expect(fetchMock.mock.calls[0][0]).not.toContain('fileId=')
 	})
 
 	it('surfaces a payload without a usable URL instead of retrying by path', async () => {

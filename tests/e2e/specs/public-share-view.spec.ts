@@ -183,6 +183,10 @@ test.describe('public folder share with confusable file names', () => {
 	let shareUrl = ''
 	let plusPad = { path: '', padUrl: '' }
 	let spacePad = { path: '', padUrl: '' }
+	let plusFileId = 0
+	let outsidePad = { path: '', padUrl: '' }
+	let outsideFileId = 0
+	const outsideName = uniquePadName('public-folder-outsider')
 
 	test.beforeAll(async () => {
 		await mkcolViaDav(folderName)
@@ -194,6 +198,11 @@ test.describe('public folder share with confusable file names', () => {
 		await propfindFileId(folderName)
 		plusPad = await createPadAtPath(`/${folderName}/${plusName}`)
 		spacePad = await createPadAtPath(`/${folderName}/${spaceName}`)
+		plusFileId = await propfindFileId(`${folderName}/${plusName}`)
+		// Outside the share, in the owner's storage: getById() can reach it,
+		// the share must not.
+		outsidePad = await createPadAtPath(`/${outsideName}`)
+		outsideFileId = await propfindFileId(outsideName)
 		const share = await createPublicShare(folderName, SHARE_PERMISSION_READ_WRITE)
 		shareToken = share.token
 		shareUrl = share.url
@@ -210,6 +219,54 @@ test.describe('public folder share with confusable file names', () => {
 			}
 		} finally {
 			await deleteViaDav(folderName)
+			await deleteViaDav(outsideName)
+		}
+	})
+
+	/**
+	 * The name is the only handle a public folder share has on a file, and a
+	 * query string spells a space two ways - which is how `A+B.pad` once
+	 * opened the pad of `A B.pad`. An id has no second spelling.
+	 */
+	test('opens a pad in a public folder share by file id', async ({ browser }) => {
+		expect(plusFileId).toBeGreaterThan(0)
+
+		const publicContext = await browser.newContext()
+		try {
+			const response = await publicContext.request.get(
+				`${E2E.baseURL}/apps/etherpad_nextcloud/api/v1/public/open/${shareToken}?fileId=${plusFileId}`,
+			)
+
+			expect(response.status()).toBe(200)
+			expect((await response.json()).url).toBe(plusPad.padUrl)
+		} finally {
+			await publicContext.close()
+		}
+	})
+
+	/**
+	 * getById() answers from the owner's storage, so it can name a file the
+	 * share does not contain. Refused outright: falling back to the path is
+	 * how a rejected id ends up opening something else.
+	 */
+	test('refuses a file id from outside the share, with no path fallback', async ({ browser }) => {
+		expect(outsideFileId).toBeGreaterThan(0)
+		expect(outsidePad.padUrl).not.toBe(plusPad.padUrl)
+
+		const publicContext = await browser.newContext()
+		try {
+			const response = await publicContext.request.get(
+				`${E2E.baseURL}/apps/etherpad_nextcloud/api/v1/public/open/${shareToken}`
+				+ `?fileId=${outsideFileId}&file=${encodeURIComponent(plusName)}`,
+			)
+			const body = await response.text()
+
+			expect(response.status()).toBeGreaterThanOrEqual(400)
+			// Neither the outsider nor the file the path names.
+			expect(body).not.toContain(outsidePad.padUrl)
+			expect(body).not.toContain(plusPad.padUrl)
+		} finally {
+			await publicContext.close()
 		}
 	})
 
@@ -233,9 +290,20 @@ test.describe('public folder share with confusable file names', () => {
 			// Clicked in Nextcloud's own rendering of the share. The test
 			// never builds the viewer URL itself — the encoding of the name
 			// on the way to the server is exactly what is under test.
+			// What the click actually asked for. The name is what used to
+			// travel here, and `A+B.pad` is exactly the name a query string
+			// spells two ways.
+			const openRequests: string[] = []
+			publicPage.on('request', (request) => {
+				if (request.url().includes('/api/v1/public/open/')) {
+					openRequests.push(request.url())
+				}
+			})
+
 			await openPadFromFileList(publicPage, plusName)
 			await expectEtherpadViewerMounted(publicPage)
 			expect(await readEtherpadUrlFromViewer(publicPage)).toBe(plusPad.padUrl)
+			expect(openRequests.at(-1)).toContain(`fileId=${plusFileId}`)
 			await closeViewer(publicPage)
 
 			await openPadFromFileList(publicPage, spaceName)

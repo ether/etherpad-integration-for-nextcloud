@@ -310,7 +310,16 @@ import { isPadName, parsePadPathFromDavHref, parsePublicShareTokenFromLocation }
 				const byPublicUrl = (() => {
 					if (!publicToken) return ''
 					const url = new URL(ocGenerateUrl('/apps/' + APP_ID + '/api/v1/public/open/' + encodeURIComponent(publicToken)), window.location.origin)
-					url.searchParams.set('file', openPath)
+					// One locator, not both. A share folder finds a file by
+					// name, and a query string spells a space two ways, so an
+					// id is the address wherever the Viewer knows one. Sending
+					// both would only invite the two to disagree, and the
+					// server refuses that rather than choosing.
+					if (this.resolvedFileId !== null) {
+						url.searchParams.set('fileId', String(this.resolvedFileId))
+					} else {
+						url.searchParams.set('file', openPath)
+					}
 					return url.toString()
 				})()
 				const openPostHeaders = {

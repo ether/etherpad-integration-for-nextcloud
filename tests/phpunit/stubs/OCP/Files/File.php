@@ -14,6 +14,13 @@ if (!interface_exists(File::class)) {
 
 		public function getMimeType(): string;
 
+		/**
+		 * Untyped, like OCP\Files\Node: it declares `@return int` with no
+		 * return type, and a stub that tightened that would accept mocks the
+		 * real interface would not.
+		 */
+		public function getPermissions();
+
 		public function getContent();
 
 		public function putContent($data): void;

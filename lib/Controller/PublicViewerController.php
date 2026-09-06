@@ -83,18 +83,18 @@ class PublicViewerController extends PublicShareController {
 	#[\OCP\AppFramework\Http\Attribute\PublicPage]
 	#[\OCP\AppFramework\Http\Attribute\NoCSRFRequired]
 	#[\OCP\AppFramework\Http\Attribute\AnonRateLimit(limit: 60, period: 60)]
-	public function padContent(string $token, mixed $file = ''): DataResponse {
+	public function padContent(string $token, mixed $file = '', mixed $fileId = null): DataResponse {
 		return $this->errors->runForData(
-			fn(): LivePadHtml => $this->padContextService->resolveContent($token, $file, $this->share),
+			fn(): LivePadHtml => $this->padContextService->resolveContent($token, $file, $this->share, $fileId),
 			fn(LivePadHtml $content): DataResponse => $this->padResponses->padContentResponse($content),
 		);
 	}
 
 	#[\OCP\AppFramework\Http\Attribute\PublicPage]
 	#[\OCP\AppFramework\Http\Attribute\NoCSRFRequired]
-	public function openPadData(string $token, mixed $file = ''): DataResponse {
+	public function openPadData(string $token, mixed $file = '', mixed $fileId = null): DataResponse {
 		return $this->errors->runForData(
-			fn(): PublicPadContext => $this->padContextService->resolve($token, $file, $this->share),
+			fn(): PublicPadContext => $this->padContextService->resolve($token, $file, $this->share, $fileId),
 			function (PublicPadContext $context): DataResponse {
 				$response = new DataResponse([
 					'title' => $context->title,

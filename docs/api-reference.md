@@ -64,7 +64,8 @@ Base: `/apps/etherpad_nextcloud`
 
 - `GET /api/v1/public/open/{token}`
   - Controller: `PublicViewerController::openPadData`
-  - Query (folder share): `file=/subfolder/file.pad`
+  - Query: `fileId=<int>` addresses the file, `file=/subfolder/file.pad` is the compatibility route for callers that have no id.
+  - Addressing rules: a public folder share is the one place a pad is found by name, and a query string spells a space two ways. An id is preferred wherever the caller has one, and it is not a hint: an id that is unusable, that names nothing in the share, or that disagrees with an accompanying `file` is refused, never answered by opening what the path names.
   - Purpose: resolves a `.pad` file inside a public share for the native viewer.
   - Result:
     - writable protected share: Etherpad URL plus one `sessionID` `Set-Cookie` header
@@ -73,10 +74,12 @@ Base: `/apps/etherpad_nextcloud`
 
 - `GET /api/v1/public/content/{token}`
   - Controller: `PublicViewerController::padContent`
-  - Query (folder share): `file=/subfolder/file.pad`
+  - Query: `fileId=<int>` addresses the file, `file=/subfolder/file.pad` is the compatibility route for callers that have no id.
+  - Addressing rules: a public folder share is the one place a pad is found by name, and a query string spells a space two ways. An id is preferred wherever the caller has one, and it is not a hint: an id that is unusable, that names nothing in the share, or that disagrees with an accompanying `file` is refused, never answered by opening what the path names.
   - Purpose: the pad's current content for the read-only view of a public share.
   - Result: sanitized `html` plus `is_empty`; answered `no-store`.
   - Behavior: resolves the share and re-checks the `.pad` binding on every call, so a retry cannot outlive the access it was granted under.
+  - The `content_url` handed out by the open endpoint carries the id that open resolved to, so a file renamed or moved inside the share between the two requests is still the one answered for.
 
 Admins can switch either pad type off (see the admin settings). `POST /pads`
 and `POST /pads/create-by-parent` refuse a disabled `accessMode` with `403`.
