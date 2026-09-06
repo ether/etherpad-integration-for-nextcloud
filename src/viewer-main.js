@@ -8,6 +8,7 @@ import { fetchJsonWithTimeout } from './lib/fetch-helpers.js'
 import { ocGenerateUrl, ocRequestToken, translate } from './lib/oc-compat.js'
 import { createPadSync } from './lib/pad-sync.js'
 import { loadPadContent } from './lib/pad-content.js'
+import { assertOpenPayload, contentUrlFrom, openWithFrontmatterRecovery, syncSettingsFrom } from './lib/pad-open-flow.js'
 import { buildPadFrameSrcdoc } from './lib/pad-frame-srcdoc.js'
 import { isPadName, parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './lib/urls.js'
 
@@ -143,22 +144,10 @@ import { isPadName, parsePadPathFromDavHref, parsePublicShareTokenFromLocation }
 			 * The shared helper does the rest: Accept, merged headers, an
 			 * error carrying `.status` and `.code`, and a request timeout —
 			 * without which an unresponsive server left the viewer on
-			 * "Loading pad..." with no error and no way out. This method is
-			 * only the pad-specific part: the payload has to name a URL, or
-			 * be a read-only snapshot.
+			 * "Loading pad..." with no error and no way out.
 			 */
 			async fetchOpenPayload(url, init = {}) {
-				const data = await fetchJsonWithTimeout(url, Object.assign({ method: 'GET' }, init))
-				if (!data || (data.is_readonly_view !== true && (typeof data.url !== 'string' || data.url.trim() === ''))) {
-					throw new Error('Pad open API did not return a valid URL.')
-				}
-				return data
-			},
-			isMissingFrontmatterError(error) {
-				// The code, not the message: the server's wording is a
-				// sentence for a person, and searching it for a phrase broke
-				// the moment anyone translated or reworded it.
-				return Boolean(error) && error.code === 'missing_frontmatter'
+				return assertOpenPayload(await fetchJsonWithTimeout(url, Object.assign({ method: 'GET' }, init)))
 			},
 			async initializeMissingFrontmatter() {
 				const headers = {
@@ -351,33 +340,14 @@ import { isPadName, parsePadPathFromDavHref, parsePublicShareTokenFromLocation }
 							)
 						}
 
-					let data
-					try {
-						data = await fetchOpenData()
-						if (!isCurrent()) return
-					} catch (error) {
-						if (!this.isMissingFrontmatterError(error)) {
-							throw error
-						}
-						// Deliberately *not* abortable. It creates a pad, writes a
-						// binding row and rewrites the file; tearing the
-						// connection down mid-write leaves the server to finish
-						// (or not) with nobody left to read the outcome. A
-						// superseded read costs a wasted request — this would
-						// cost a half-applied change. recoverFromSnapshot, the
-						// other write, is not abortable either.
-						await this.initializeMissingFrontmatter()
-						if (!isCurrent()) return
-						data = await fetchOpenData()
-						if (!isCurrent()) return
-					}
+					const data = await openWithFrontmatterRecovery({
+						open: fetchOpenData,
+						initialize: () => this.initializeMissingFrontmatter(),
+						stillWanted: isCurrent,
+					})
+					if (data === null || !isCurrent()) return
 
-					const syncUrl = (data && typeof data.sync_url === 'string') ? data.sync_url : ''
-
-					const intervalSeconds = Number(data && data.sync_interval_seconds)
-					const intervalMs = (Number.isFinite(intervalSeconds) && intervalSeconds > 0)
-						? Math.max(5000, Math.min(3600000, intervalSeconds * 1000))
-						: 120000
+					const { syncUrl, intervalMs } = syncSettingsFrom(data)
 
 					this.padSync().configure({ syncUrl, intervalMs })
 					this.padSync().installLifecycleHandlers()
@@ -385,7 +355,7 @@ import { isPadName, parsePadPathFromDavHref, parsePublicShareTokenFromLocation }
 						this.padSync().start()
 					}
 
-					const contentUrl = (data && typeof data.content_url === 'string') ? data.content_url.trim() : ''
+					const contentUrl = contentUrlFrom(data)
 
 					// One branch for both read-only surfaces: they load the
 					// same way and render the same view. The only difference
