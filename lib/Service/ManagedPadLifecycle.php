@@ -14,7 +14,8 @@ use OCA\EtherpadNextcloud\Util\PadId;
 use Psr\Log\LoggerInterface;
 
 /**
- * The one place that knows how to take an Etherpad pad away again.
+ * The one place that knows how to bring an Etherpad pad into being, and how
+ * to take it away again.
  *
  * A public pad is a pad. A protected pad is a pad inside a group, plus the
  * sessions that grant access to that group — and `deletePad` removes only
@@ -37,11 +38,9 @@ class ManagedPadLifecycle {
 	 *
 	 * The two steps are separate calls, so a failure between them strands a
 	 * group that nothing will ever look at again — invisible from Nextcloud
-	 * and never collected. Both provisioning paths, the first open of a
-	 * `.pad` and a restore from the trash, had that gap and the same cleanup
-	 * written out twice.
+	 * and never collected.
 	 */
-	public function provisionGroupPad(string $padName): string {
+	private function provisionGroupPad(string $padName): string {
 		$groupId = $this->etherpadClient->createGroup();
 		try {
 			return $this->etherpadClient->createGroupPad($groupId, $padName);
@@ -72,7 +71,7 @@ class ManagedPadLifecycle {
 	 * there. Random ids make that vanishingly unlikely, but the cost of
 	 * being wrong is deleting someone's live pad, so it is worth the check.
 	 */
-	public function provisionPad(string $padId): void {
+	private function provisionPad(string $padId): void {
 		try {
 			$this->etherpadClient->createPad($padId);
 		} catch (\Throwable $e) {
@@ -89,6 +88,59 @@ class ManagedPadLifecycle {
 			}
 			throw $e;
 		}
+	}
+
+	/**
+	 * Make the kind of pad an access mode calls for.
+	 *
+	 * The names come from the caller, because a name says where its pad came
+	 * from and that is the caller's business. They arrive unbuilt so that the
+	 * branch not taken draws no randomness.
+	 *
+	 * @param callable():string $padId the id a public pad is created under
+	 * @param callable():string $groupPadName the name a protected pad carries
+	 */
+	public function provisionFor(string $accessMode, callable $padId, callable $groupPadName): string {
+		if ($accessMode === BindingService::ACCESS_PUBLIC) {
+			$newPadId = $padId();
+			$this->provisionPad($newPadId);
+			return $newPadId;
+		}
+
+		if ($accessMode !== BindingService::ACCESS_PROTECTED) {
+			throw new \InvalidArgumentException('Unsupported access mode for pad provisioning.');
+		}
+
+		return $this->provisionGroupPad($groupPadName());
+	}
+
+	/**
+	 * Put a snapshot into a pad that has just been provisioned.
+	 *
+	 * setHTML first so formatting survives, and setText only where there is
+	 * no HTML or Etherpad refuses it. Never both: `setText` replaces the
+	 * content rather than appending, so it would wipe the HTML just
+	 * imported. The price is that `getText` afterwards returns what Etherpad
+	 * derived from that HTML rather than the string the snapshot held.
+	 *
+	 * @param array<string,mixed> $context extra keys for the fallback's log
+	 *   line; `app`, `padId` and `exception` are set here and win a collision
+	 */
+	public function seed(string $padId, string $text, string $html, array $context = []): void {
+		if (trim($html) !== '') {
+			try {
+				$this->etherpadClient->setHTML($padId, $html);
+				return;
+			} catch (\Throwable $htmlError) {
+				$this->logger->warning('Could not import the HTML snapshot; falling back to plain text.', [
+					'app' => 'etherpad_nextcloud',
+					'padId' => $padId,
+					'exception' => $htmlError,
+				] + $context);
+			}
+		}
+
+		$this->etherpadClient->setText($padId, $text);
 	}
 
 	/**

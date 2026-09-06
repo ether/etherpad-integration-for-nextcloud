@@ -265,6 +265,9 @@ class PadCreationServiceTest extends TestCase {
 
 		$etherpadClient = $this->createMock(EtherpadClient::class);
 		$etherpadClient->method('buildPadUrl')->willReturn('https://pad.example.test/p/x');
+		// The template's formatting is what reaches the pad, not its text.
+		$etherpadClient->expects($this->once())->method('setHTML')->with('g.grp$pad', '<p>hello</p>');
+		$etherpadClient->expects($this->never())->method('setText');
 
 		$bindingService = $this->createMock(BindingService::class);
 		$bindingService->expects(self::once())
@@ -509,9 +512,6 @@ class PadCreationServiceTest extends TestCase {
 			->method('provisionPadId')
 			->with(BindingService::ACCESS_PROTECTED)
 			->willReturn('p-fresh');
-		$bootstrap->expects($this->once())
-			->method('pushInitialSnapshot')
-			->with('p-fresh', 'Datum: 18.05.2026', '');
 
 		$bindingService = $this->createMock(BindingService::class);
 		$bindingService->expects($this->once())
@@ -520,6 +520,8 @@ class PadCreationServiceTest extends TestCase {
 
 		$etherpadClient = $this->createMock(EtherpadClient::class);
 		$etherpadClient->method('buildPadUrl')->willReturn('https://pad.example.test/p/p-fresh');
+		// No HTML in this template, so seeding is the plain-text call.
+		$etherpadClient->expects($this->once())->method('setText')->with('p-fresh', 'Datum: 18.05.2026');
 
 		$user = $this->createMock(\OCP\IUser::class);
 		$user->method('getDisplayName')->willReturn('Alice');
