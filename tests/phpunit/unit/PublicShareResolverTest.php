@@ -209,6 +209,32 @@ class PublicShareResolverTest extends TestCase {
 	 * One file, two paths, two permissions. A writable share that opened the
 	 * read-only entry would hand out a read-only pad without saying so.
 	 */
+	/**
+	 * The same file can be mounted twice. A caller that named one of those
+	 * paths meant that one, so the permission preference must not overrule
+	 * it and then call the pair contradictory.
+	 */
+	public function testResolvePadFilePrefersTheNamedPathOverTheWritableMount(): void {
+		$writable = $this->padFile('A.pad', 42);
+		$writable->method('getPermissions')->willReturn(Constants::PERMISSION_READ | Constants::PERMISSION_UPDATE);
+		$writable->method('getPath')->willReturn('/owner/files/Share/Write/A.pad');
+		$writable->method('isUpdateable')->willReturn(true);
+		$readOnly = $this->padFile('A.pad', 42);
+		$readOnly->method('getPermissions')->willReturn(Constants::PERMISSION_READ);
+		$readOnly->method('getPath')->willReturn('/owner/files/Share/Read/A.pad');
+		$readOnly->method('isUpdateable')->willReturn(false);
+
+		$folder = $this->createMock(Folder::class);
+		$folder->method('getById')->willReturn([$writable, $readOnly]);
+		$folder->method('getRelativePath')->willReturnCallback(
+			static fn (string $path): string => str_replace('/owner/files/Share', '', $path)
+		);
+
+		$resolved = $this->buildResolver()->resolvePadFile($this->share($folder, Constants::PERMISSION_READ), 'Read/A.pad', 'token', 42);
+
+		$this->assertSame($readOnly, $resolved->node);
+	}
+
 	public function testResolvePadFilePrefersAWritableMatchOverAReadableOne(): void {
 		$readOnly = $this->padFile('A.pad', 42);
 		$readOnly->method('getPermissions')->willReturn(Constants::PERMISSION_READ);
@@ -334,6 +360,9 @@ class PublicShareResolverTest extends TestCase {
 			'negative' => ['-1'],
 			'float' => ['4.2'],
 			'leading plus' => ['+42'],
+			// Sent and empty is not the same as not sent: the controller
+			// gives null for a parameter nobody passed.
+			'empty' => [''],
 			// `$` in a pattern matches before a trailing newline; ctype_digit
 			// does not, which is why this one belongs here.
 			'trailing newline' => ["42\n"],

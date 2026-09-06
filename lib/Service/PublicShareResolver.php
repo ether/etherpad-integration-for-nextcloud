@@ -52,7 +52,10 @@ class PublicShareResolver {
 	}
 
 	private function requestedFileId(mixed $fileIdParam): ?int {
-		if ($fileIdParam === null || $fileIdParam === '') {
+		// Only an absent parameter means "no id". `fileId=` was sent, and a
+		// sent id that cannot be used is refused rather than replaced by the
+		// weaker locator.
+		if ($fileIdParam === null) {
 			return null;
 		}
 		if (!is_int($fileIdParam) && !(is_string($fileIdParam) && ctype_digit($fileIdParam))) {
@@ -85,7 +88,7 @@ class PublicShareResolver {
 	 *
 	 * @return array{File,string} the file and its path inside the share
 	 */
-	private function fileInShareById(Folder $shareFolder, int $fileId): array {
+	private function fileInShareById(Folder $shareFolder, int $fileId, string $requestedPath): array {
 		$fallback = null;
 
 		try {
@@ -111,7 +114,14 @@ class PublicShareResolver {
 			}
 
 			$match = [$candidate, ltrim($relativePath, '/')];
-			if ($candidate->isUpdateable()) {
+			// A caller that named a path meant that one of the mounts, so
+			// the permission preference below only decides an id-only
+			// request - otherwise the pair could be called contradictory
+			// while naming the same file.
+			if ($requestedPath !== '' && $match[1] === $requestedPath) {
+				return $match;
+			}
+			if ($requestedPath === '' && $candidate->isUpdateable()) {
 				return $match;
 			}
 			$fallback ??= $match;
@@ -153,7 +163,7 @@ class PublicShareResolver {
 				// The whole path inside the share, not the name: `A.pad` and
 				// `Sub/A.pad` are two files, and comparing names would call
 				// them the same one.
-				[$node, $named] = $this->fileInShareById($node, $requestedId);
+				[$node, $named] = $this->fileInShareById($node, $requestedId, $requestedPath);
 			} elseif ($node instanceof File) {
 				if ((int)$node->getId() !== $requestedId) {
 					throw new ShareFileNotInShareException('The selected file is not part of this share.');
@@ -192,6 +202,7 @@ class PublicShareResolver {
 
 		return new ResolvedPadShare(
 			$node,
+			(int)$node->getId(),
 			(((int)$share->getPermissions()) & Constants::PERMISSION_UPDATE) === 0,
 			$node->getName(),
 		);

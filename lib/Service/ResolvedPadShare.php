@@ -14,6 +14,7 @@ use OCP\Files\File;
 class ResolvedPadShare {
 	public function __construct(
 		public File $node,
+		public int $fileId,
 		public bool $readOnly,
 		public string $name,
 	) {

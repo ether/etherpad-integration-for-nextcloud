@@ -45,7 +45,7 @@ class PublicPadContextService {
 		// See PadContentService for the retry.
 		$pad = $this->padFileService->readPad($this->lockRetryService->readContentWithOpenLockRetry($node));
 
-		return $this->livePadHtmlFetcher->fetchForPadFile($pad, (int)$node->getId());
+		return $this->livePadHtmlFetcher->fetchForPadFile($pad, $resolved->fileId);
 	}
 
 	public function resolve(string $token, mixed $fileParam, ?IShare $cachedShare = null, mixed $fileIdParam = null): PublicPadContext {
@@ -56,7 +56,7 @@ class PublicPadContextService {
 		// Same retry as resolveContent(): a sync holding the file for a
 		// moment must not become a failed page load.
 		$content = $this->lockRetryService->readContentWithOpenLockRetry($node);
-		$fileId = (int)$node->getId();
+		$fileId = $resolved->fileId;
 
 		$pad = $this->padFileService->readPad($content);
 		$padId = $pad->padId;

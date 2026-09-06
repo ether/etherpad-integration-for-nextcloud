@@ -54,13 +54,24 @@ Base: `/apps/etherpad_nextcloud`
     - on success redirects itself to the returned `embed_url`
     - sets route-specific `frame-ancestors` from admin-configured trusted embed origins
 
-### Addressing a file in a public share
+### Naming the file in a public share
 
-A public folder share is the one place a pad is found by name, and a query string spells a space two ways - which is why `fileId=<int>` addresses the file wherever a caller has one, and `file=/subfolder/file.pad` remains the compatibility route for callers that do not.
+A share token identifies the share, not a file inside it. For a share of a single file that is enough. For a share of a folder the request has to say which file it means, and there are two ways to do that:
 
-An id is not a hint. One that is unusable, that names nothing in the share, or that disagrees with an accompanying `file` is refused - never answered by opening what the path names. For a folder share the comparison is the whole path inside the share, so `A.pad` and `Sub/A.pad` are two different files; a single-file share has no path inside it, so there the file name is what a caller can name.
+- `fileId=<int>` - the file's Nextcloud id. Preferred, and what the app's own viewer sends.
+- `file=/subfolder/file.pad` - the path inside the shared folder. Still supported, so links written before ids were accepted keep working.
 
-A single-file share is the exception on purpose: its token already names the file, so `file` is not an address there and never was one. Without an id it is ignored, as it always has been - normalising it would refuse links that work today. With an id it is compared, because a caller that sent both should not be handed something neither of them named.
+Prefer the id where you have one. A name has to survive being put in a query string, and a query string spells a space two ways: `A+B.pad` and `A B.pad` arrive as the same text. An id has one spelling.
+
+A request is answered when the file it names is a `.pad` the share actually contains and the visitor may read. It is refused when:
+
+- the id is not a positive integer, including when `fileId=` is sent empty;
+- the id names no file inside this share, whether it exists elsewhere or not at all;
+- both are sent and they name different files.
+
+In none of those cases does the request fall through to the other locator. A refused id is not retried as a path, because "the id did not work, so something else opened" is the outcome ids exist to prevent.
+
+When both are sent for a folder share, the path is compared in full: `A.pad` at the top of the share and `Sub/A.pad` are different files. A single-file share has no path inside it, so there the file's name is what a path can name - and without an id it is ignored entirely, as it always has been.
 
 - `GET /public/{token}`
   - Controller: `PublicViewerController::showPad`
@@ -72,7 +83,7 @@ A single-file share is the exception on purpose: its token already names the fil
 
 - `GET /api/v1/public/open/{token}`
   - Controller: `PublicViewerController::openPadData`
-  - Query: see the addressing rules above.
+  - Query: `fileId=<int>` or `file=/subfolder/file.pad` - see "Naming the file in a public share" above.
   - Purpose: resolves a `.pad` file inside a public share for the native viewer.
   - Result:
     - writable protected share: Etherpad URL plus one `sessionID` `Set-Cookie` header
@@ -81,7 +92,7 @@ A single-file share is the exception on purpose: its token already names the fil
 
 - `GET /api/v1/public/content/{token}`
   - Controller: `PublicViewerController::padContent`
-  - Query: see the addressing rules above.
+  - Query: `fileId=<int>` or `file=/subfolder/file.pad` - see "Naming the file in a public share" above.
   - Purpose: the pad's current content for the read-only view of a public share.
   - Result: sanitized `html` plus `is_empty`; answered `no-store`.
   - Behavior: resolves the share and re-checks the `.pad` binding on every call, so a retry cannot outlive the access it was granted under.
