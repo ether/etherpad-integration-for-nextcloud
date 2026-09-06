@@ -95,8 +95,9 @@ class PublicPadContextService {
 	}
 
 	private function buildContentUrl(string $token, int $fileId): string {
-		$parameters = ['token' => $token, 'fileId' => $fileId];
-
-		return $this->urlGenerator->linkToRoute('etherpad_nextcloud.publicViewer.padContent', $parameters);
+		return $this->urlGenerator->linkToRoute(
+			'etherpad_nextcloud.publicViewer.padContent',
+			['token' => $token, 'fileId' => $fileId],
+		);
 	}
 }

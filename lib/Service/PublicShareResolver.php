@@ -75,21 +75,14 @@ class PublicShareResolver {
 		}
 	}
 
-	private function sharedFileById(File $shared, int $fileId): File {
-		if ((int)$shared->getId() !== $fileId) {
-			throw new ShareFileNotInShareException('The selected file is not part of this share.');
-		}
-
-		return $shared;
-	}
-
 	/**
 	 * getById() can return the same file more than once - a folder reached
 	 * through several mounts - and the entries differ in permissions, so
 	 * the first readable one inside this share is the answer rather than
 	 * simply the first.
 	 */
-	private function fileInShareById(Folder $shareFolder, int $fileId): File {
+	/** @return array{File,string} the file and its path inside the share */
+	private function fileInShareById(Folder $shareFolder, int $fileId): array {
 		foreach ($shareFolder->getById($fileId) as $candidate) {
 			if (!$candidate instanceof File) {
 				continue;
@@ -97,14 +90,15 @@ class PublicShareResolver {
 			if ((((int)$candidate->getPermissions()) & Constants::PERMISSION_READ) === 0) {
 				continue;
 			}
-			// null when the path is not below the share: an id from
-			// elsewhere in the owner's storage stops here, and there is no
-			// path fallback behind it.
-			if ($shareFolder->getRelativePath($candidate->getPath()) === null) {
+			// getById() is scoped to this folder, so null should not happen -
+			// and if it ever did, an id from elsewhere in the owner's storage
+			// would stop here rather than fall back to the path.
+			$relativePath = $shareFolder->getRelativePath($candidate->getPath());
+			if ($relativePath === null) {
 				continue;
 			}
 
-			return $candidate;
+			return [$candidate, ltrim($relativePath, '/')];
 		}
 
 		throw new ShareFileNotInShareException('The selected file is not part of this share.');
@@ -133,15 +127,15 @@ class PublicShareResolver {
 
 		if ($requestedId !== null) {
 			if ($node instanceof Folder) {
-				$shareFolder = $node;
-				$node = $this->fileInShareById($shareFolder, $requestedId);
-				$selectedRelativePath = ltrim((string)$shareFolder->getRelativePath($node->getPath()), '/');
+				[$node, $selectedRelativePath] = $this->fileInShareById($node, $requestedId);
 				// The whole path inside the share, not the name: `A.pad` and
 				// `Sub/A.pad` are two files, and comparing names would call
 				// them the same one.
 				$named = $selectedRelativePath;
 			} elseif ($node instanceof File) {
-				$node = $this->sharedFileById($node, $requestedId);
+				if ((int)$node->getId() !== $requestedId) {
+					throw new ShareFileNotInShareException('The selected file is not part of this share.');
+				}
 				// A single-file share has no path inside it; what a caller
 				// can name is the file itself.
 				$named = $node->getName();

@@ -145,17 +145,10 @@ test.describe('public share access without login', () => {
 })
 
 /**
- * A public folder share is the one place where a pad is opened purely by
- * name: there is no file id in play, the anonymous visitor's browser puts
- * the name in a query parameter, and the server looks it up inside the
- * share. That makes it the sharpest test for names that survive a round
- * trip through form-encoding only if nothing decodes them twice.
- *
- * `A+B.pad` and `A B.pad` differ in exactly one character, and that
- * character is the one form-encoding overloads. Both files exist, both
- * are real pads, and the pad each one points at is recorded before the
- * share is even created — so "a viewer appeared" cannot pass for
- * "the right document opened".
+ * `A+B.pad` and `A B.pad` differ in the one character a query string
+ * overloads, which is the confusion this share once fell for. Both are
+ * real pads and the address of each is recorded before the share exists,
+ * so "a viewer appeared" cannot pass for "the right document opened".
  *
  * The share is handed out with edit rights on purpose. A read-only public
  * share opens the read-only pad id instead, whose address is derived
@@ -184,9 +177,8 @@ test.describe('public folder share with confusable file names', () => {
 	let plusPad = { path: '', padUrl: '' }
 	let spacePad = { path: '', padUrl: '' }
 	let plusFileId = 0
-	let outsidePad = { path: '', padUrl: '' }
 	let outsideFileId = 0
-	const outsideName = uniquePadName('public-folder-outsider')
+	const outsideName = `${uniqueName('public-folder-outsider')}.txt`
 
 	test.beforeAll(async () => {
 		await mkcolViaDav(folderName)
@@ -199,9 +191,9 @@ test.describe('public folder share with confusable file names', () => {
 		plusPad = await createPadAtPath(`/${folderName}/${plusName}`)
 		spacePad = await createPadAtPath(`/${folderName}/${spaceName}`)
 		plusFileId = await propfindFileId(`${folderName}/${plusName}`)
-		// A pad outside the share, so its id names a real file that the
-		// share does not contain.
-		outsidePad = await createPadAtPath(`/${outsideName}`)
+		// Any real file outside the share carries a real id the share does
+		// not contain; it does not have to be a pad to be the wrong answer.
+		await putFileViaDav(outsideName, 'outside the share')
 		outsideFileId = await propfindFileId(outsideName)
 		const share = await createPublicShare(folderName, SHARE_PERMISSION_READ_WRITE)
 		shareToken = share.token
@@ -231,20 +223,18 @@ test.describe('public folder share with confusable file names', () => {
 	 */
 	test('refuses a file id from outside the share, with no path fallback', async ({ browser }) => {
 		expect(outsideFileId).toBeGreaterThan(0)
-		expect(outsidePad.padUrl).not.toBe(plusPad.padUrl)
 
 		const publicContext = await browser.newContext()
 		try {
+			// The path names a real pad in this share: a fallback would
+			// answer with it, and the 404 is what says none happened.
 			const response = await publicContext.request.get(
 				`${E2E.baseURL}/apps/etherpad_nextcloud/api/v1/public/open/${shareToken}`
 				+ `?fileId=${outsideFileId}&file=${encodeURIComponent(plusName)}`,
 			)
-			const body = await response.text()
 
-			expect(response.status()).toBeGreaterThanOrEqual(400)
-			// Neither the outsider nor the file the path names.
-			expect(body).not.toContain(outsidePad.padUrl)
-			expect(body).not.toContain(plusPad.padUrl)
+			expect(response.status()).toBe(404)
+			expect(await response.text()).not.toContain(plusPad.padUrl)
 		} finally {
 			await publicContext.close()
 		}
@@ -267,12 +257,8 @@ test.describe('public folder share with confusable file names', () => {
 		try {
 			await publicPage.goto(shareUrl)
 
-			// Clicked in Nextcloud's own rendering of the share. The test
-			// never builds the viewer URL itself — the encoding of the name
-			// on the way to the server is exactly what is under test.
-			// What this click asked for. The name is what used to travel
-			// here, and `A+B.pad` is exactly the name a query string spells
-			// two ways.
+			// Clicked in Nextcloud's own rendering of the share, never a
+			// URL this test built: what the click asks for is the point.
 			const openRequest = publicPage.waitForRequest(
 				(request) => request.url().includes('/api/v1/public/open/'),
 			)
