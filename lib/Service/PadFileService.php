@@ -257,6 +257,13 @@ class PadFileService {
 		$currentMap = null;
 
 		foreach ($lines as $lineNumber => $line) {
+			// Whole line, before anything is matched or trimmed: `\s*` in the
+			// key pattern swallows a leading \r and trim() drops one at
+			// either end, so a check further in would let those through with
+			// the value silently changed. CRLF is normalised while the
+			// document is split, so a \r left here was put in by hand.
+			$this->assertScalarIsRoundTrippable($line);
+
 			if (trim($line) === '' || str_starts_with(trim($line), '#')) {
 				continue;
 			}

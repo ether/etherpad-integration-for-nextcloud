@@ -11,6 +11,7 @@ namespace OCA\EtherpadNextcloud\Service;
 
 use OCA\EtherpadNextcloud\AppInfo\Application;
 use OCA\EtherpadNextcloud\Exception\TemplateExistsException;
+use OCA\EtherpadNextcloud\Util\PadFileType;
 use OCP\Files\AppData\IAppDataFactory;
 use OCP\Files\File;
 use OCP\Files\Folder;
@@ -47,8 +48,8 @@ class PadTemplateStorage {
 	 * name, so a template of the same name would be a second tile nobody can
 	 * tell apart — and it is also why these strings cannot be translated.
 	 */
-	public const PUBLIC_TILE_NAME = 'Public pad.pad';
-	public const EXTERNAL_TILE_NAME = 'Public pad from URL.pad';
+	public const PUBLIC_TILE_NAME = 'Public pad' . PadFileType::SUFFIX;
+	public const EXTERNAL_TILE_NAME = 'Public pad from URL' . PadFileType::SUFFIX;
 
 	/** @return list<string> */
 	public static function reservedNames(): array {
@@ -93,7 +94,7 @@ class PadTemplateStorage {
 
 		$files = [];
 		foreach ($entries as $entry) {
-			if (!$entry instanceof File || !str_ends_with(strtolower($entry->getName()), '.pad')) {
+			if (!$entry instanceof File || !PadFileType::isPad($entry->getName())) {
 				continue;
 			}
 			$files[] = $entry;

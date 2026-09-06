@@ -10,7 +10,6 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\Service;
 
 use OCA\EtherpadNextcloud\Exception\MissingFrontmatterException;
-use OCA\EtherpadNextcloud\Exception\PadFileFormatException;
 use OCA\EtherpadNextcloud\Util\PathNormalizer;
 use OCP\Files\File;
 use OCP\Files\NotFoundException;
@@ -49,17 +48,16 @@ class PadInitializationService {
 		return $this->initializeNode($uid, $node);
 	}
 
-	private function initializeNode(string $uid, File $node): PadInitializationResult {
-		$fileId = (int)$node->getId();
+	private function initializeNode(string $uid, File $file): PadInitializationResult {
+		// The id first: a file this app cannot address is refused without a
+		// read, which has failure modes of its own — a lock, a storage
+		// error — that would otherwise be reported in its place.
+		$fileId = (int)$file->getId();
 		if ($fileId <= 0) {
 			throw new \RuntimeException('Could not resolve file ID.');
 		}
 
-		return $this->initialize($uid, $node, (string)$node->getContent());
-	}
-
-	public function initialize(string $uid, File $file, string $content): PadInitializationResult {
-		$fileId = (int)$file->getId();
+		$content = (string)$file->getContent();
 		$path = $this->userNodeResolver->toUserAbsolutePath($uid, $file);
 		try {
 			$pad = $this->padFileService->readPad($content);
@@ -71,9 +69,9 @@ class PadInitializationService {
 				accessMode: $pad->accessMode,
 			);
 		} catch (MissingFrontmatterException) {
-			// Explicitly continue with bootstrap flow for legacy or empty .pad files.
-		} catch (PadFileFormatException $e) {
-			throw $e;
+			// Only the narrower one: a legacy or empty .pad continues into
+			// the bootstrap below, while any other format error stays
+			// unhandled and reaches the caller.
 		}
 
 		$wasLegacyMigration = $this->padBootstrapService->initializeMissingFrontmatter($uid, $file, $content);

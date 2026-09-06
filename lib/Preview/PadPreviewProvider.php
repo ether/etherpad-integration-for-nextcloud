@@ -8,6 +8,7 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Preview;
 
+use OCA\EtherpadNextcloud\Util\PadFileType;
 use OCP\Files\File;
 use OCP\Files\FileInfo;
 use OCP\IImage;
@@ -34,9 +35,7 @@ class PadPreviewProvider implements IProviderV2 {
 	private const ASSET_PATH = __DIR__ . '/../../img/preview-fallback.png';
 
 	public function getMimeType(): string {
-		// Regex matched against the file's mime type. Anchored so it
-		// doesn't accidentally catch unrelated types.
-		return '/^application\/x-etherpad-nextcloud$/';
+		return PadFileType::mimePattern();
 	}
 
 	public function isAvailable(FileInfo $file): bool {

@@ -16,6 +16,7 @@ use OCA\EtherpadNextcloud\Exception\InvalidPadNameException;
 use OCA\EtherpadNextcloud\Exception\PadFileAlreadyExistsException;
 use OCA\EtherpadNextcloud\Exception\PadFileChangedException;
 use OCA\EtherpadNextcloud\Exception\PadParentFolderNotWritableException;
+use OCA\EtherpadNextcloud\Util\PadFileType;
 use OCA\EtherpadNextcloud\Util\PathNormalizer;
 use OCP\Files\File;
 use OCP\IUser;
@@ -335,7 +336,7 @@ class PadCreationService {
 	): array {
 		// Keep the caller's baseline; only claim the current content if none was supplied.
 		$claim ??= $this->claimTemplateTarget($target, $user);
-		if (!str_ends_with(strtolower($template->getName()), '.pad')) {
+		if (!PadFileType::isPad($template->getName())) {
 			throw new NotAPadFileException('Template is not a .pad file.');
 		}
 		$templateContent = (string)$template->getContent();

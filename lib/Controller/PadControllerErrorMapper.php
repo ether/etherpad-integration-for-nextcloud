@@ -169,12 +169,6 @@ class PadControllerErrorMapper {
 			], Http::STATUS_BAD_REQUEST);
 		} catch (PadFileFormatException|EtherpadClientException $e) {
 			return new DataResponse(['message' => $e->getMessage()], Http::STATUS_BAD_REQUEST);
-		} catch (\RuntimeException $e) {
-			$mapped = $this->mapThrowable($e, $options);
-			if ($mapped instanceof DataResponse) {
-				return $mapped;
-			}
-			return $this->genericResponse($e, $options);
 		} catch (\Throwable $e) {
 			$mapped = $this->mapThrowable($e, $options);
 			if ($mapped instanceof DataResponse) {

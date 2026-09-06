@@ -120,6 +120,8 @@ Implementation: `lib/Service/PadFileService.php`
 - `buildInitialDocument(...)` takes an optional `PadSnapshot` for a document that starts out with content; without one the document is unsnapshotted (`snapshot_rev: -1`) and its body is empty
 - `PadSnapshot` is text, an HTML half and the revision the snapshot was taken at. Its `html` is nullable, and the two empty cases write different files: `null` means a text-only snapshot and omits the `[HTML-BEGIN]`/`[HTML-END]` section entirely, `''` writes the section with nothing in it. A negative revision is refused — `-1` is what an unsnapshotted document uses
 
+Frontmatter values are held to what the format can carry back: a value containing a line terminator (`\n`, `\r`) or a NUL byte is refused with `PadFileFormatException` rather than written. The block is line-based, so a value with a newline in it would parse back as a further key on the next read, and a `.pad` that says something different after a round trip is not a `.pad`. The check runs on write, where the whole value is still in hand, and on read against each frontmatter line before anything is matched or trimmed - early enough that a `\r` a key pattern would swallow as whitespace, or one `trim()` would drop from an end, is refused rather than silently removed. A CRLF line ending is normalised while the document is split and never reaches it. A newline inside a value it cannot see at all, because the block is split into lines first: a hand-edited file that breaks a value across two lines is read as two keys, not as one broken value, and the write-side refusal is what keeps the app from ever producing one.
+
 Snapshot write flow:
 
 - `PadFileService::withExportSnapshot(...)` builds the new `.pad` content after an Etherpad export.

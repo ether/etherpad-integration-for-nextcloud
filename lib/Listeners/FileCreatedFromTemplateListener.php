@@ -15,6 +15,7 @@ use OCA\EtherpadNextcloud\Service\ExternalPadSeeder;
 use OCA\EtherpadNextcloud\Service\PadCreationService;
 use OCA\EtherpadNextcloud\Service\PadTemplateStorage;
 use OCA\EtherpadNextcloud\Template\PadTemplateProvider;
+use OCA\EtherpadNextcloud\Util\PadFileType;
 use OCP\EventDispatcher\Event;
 use OCP\EventDispatcher\IEventListener;
 use OCP\Files\File;
@@ -52,7 +53,7 @@ class FileCreatedFromTemplateListener implements IEventListener {
 		if (!$target instanceof File) {
 			return;
 		}
-		if (!str_ends_with(strtolower($target->getName()), '.pad')) {
+		if (!PadFileType::isPad($target->getName())) {
 			return;
 		}
 

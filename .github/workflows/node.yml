@@ -58,9 +58,15 @@ jobs:
       - name: Read package.json node and npm engines
         id: versions
         uses: skjnldsv/read-package-engines-version-actions@06d6baf7d8f41934ab630e97d9e6c0bc9c9ac5e4 # v3
-        with:
-          fallbackNode: '^20'
-          fallbackNpm: '^10'
+
+      # The engines fields are mandatory here, so an empty output means the
+      # action could not read them. Failing on the spot names the cause; the
+      # alternative is a Node chosen from a stale default and an install that
+      # rejects it three steps later.
+      - name: Fail if the engines range could not be read
+        run: |
+          test -n '${{ steps.versions.outputs.nodeVersion }}' || { echo '::error::could not read engines.node from package.json'; exit 1; }
+          test -n '${{ steps.versions.outputs.npmVersion }}' || { echo '::error::could not read engines.npm from package.json'; exit 1; }
 
       - name: Set up node ${{ steps.versions.outputs.nodeVersion }}
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0

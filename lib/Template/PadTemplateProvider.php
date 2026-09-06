@@ -13,6 +13,7 @@ use OCA\EtherpadNextcloud\AppInfo\Application;
 use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\EtherpadNextcloud\Service\PadTemplateStorage;
 use OCA\EtherpadNextcloud\Service\PadTypePolicy;
+use OCA\EtherpadNextcloud\Util\PadFileType;
 use OCP\Files\File;
 use OCP\Files\Template\FieldType;
 use OCP\Files\Template\Fields\RichTextField;
@@ -56,7 +57,7 @@ class PadTemplateProvider implements ICustomTemplateProvider {
 	}
 
 	public function getCustomTemplates(string $mimetype): array {
-		if ($mimetype !== 'application/x-etherpad-nextcloud') {
+		if ($mimetype !== PadFileType::MIME) {
 			return [];
 		}
 

@@ -9,7 +9,7 @@ import { ocGenerateUrl, ocRequestToken, translate } from './lib/oc-compat.js'
 import { createPadSync } from './lib/pad-sync.js'
 import { loadPadContent } from './lib/pad-content.js'
 import { buildPadFrameSrcdoc } from './lib/pad-frame-srcdoc.js'
-import { parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './lib/urls.js'
+import { isPadName, parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './lib/urls.js'
 
 (function () {
 	let attempts = 0
@@ -87,12 +87,11 @@ import { parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './li
 					const normalizedDir = normalizeDir(dir)
 					return normalizedDir === '/' ? '/' + name : normalizedDir + '/' + name
 				}
-				const isPadPath = (value) => typeof value === 'string' && value.toLowerCase().endsWith('.pad')
-				if (isPadPath(this.sourcePath)) return this.sourcePath
+				if (isPadName(this.sourcePath)) return this.sourcePath
 
 				const info = this.fileInfo && typeof this.fileInfo === 'object' ? this.fileInfo : null
 				const infoPath = info && typeof info.path === 'string' ? info.path : ''
-				if (isPadPath(infoPath)) return infoPath.startsWith('/') ? infoPath : ('/' + infoPath)
+				if (isPadName(infoPath)) return infoPath.startsWith('/') ? infoPath : ('/' + infoPath)
 
 				const baseName = String(this.filename || this.basename || (info && (info.name || info.basename)) || '')
 				if (!baseName) return ''
@@ -100,13 +99,13 @@ import { parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './li
 				const infoDir = info && typeof info.dirname === 'string' ? info.dirname : ''
 				if (infoDir) {
 					const combined = joinPath(infoDir, baseName)
-					if (isPadPath(combined)) return combined
+					if (isPadName(combined)) return combined
 				}
 
 				const params = new URLSearchParams(window.location.search || '')
 				const urlDir = params.get('dir') || '/'
 				const fromDir = joinPath(urlDir, baseName)
-				if (isPadPath(fromDir)) return fromDir
+				if (isPadName(fromDir)) return fromDir
 				return '/' + baseName
 			},
 			/** What the open depends on, as one value — see the watcher. */

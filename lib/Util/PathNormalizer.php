@@ -76,10 +76,7 @@ class PathNormalizer {
 		if ($path === '') {
 			throw new InvalidArgumentException('Invalid file path.');
 		}
-		if (!str_ends_with(strtolower($path), '.pad')) {
-			$path .= '.pad';
-		}
-		return $path;
+		return PadFileType::withSuffix($path);
 	}
 
 	/**
@@ -98,10 +95,7 @@ class PathNormalizer {
 		if (str_contains($fileName, '/') || str_contains($fileName, '\\')) {
 			throw new InvalidArgumentException('Invalid file name.');
 		}
-		if (!str_ends_with(strtolower($fileName), '.pad')) {
-			$fileName .= '.pad';
-		}
-		return $fileName;
+		return PadFileType::withSuffix($fileName);
 	}
 
 	public function normalizePublicShareFilePath(mixed $fileParam, string $shareToken): string {

@@ -9,6 +9,7 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\Migration;
 
 use OCA\EtherpadNextcloud\AppInfo\Application;
+use OCA\EtherpadNextcloud\Util\PadFileType;
 use OCP\Files\IMimeTypeLoader;
 use OCP\IConfig;
 use OCP\Migration\IOutput;
@@ -18,7 +19,6 @@ use OCP\Migration\IRepairStep;
  * @psalm-api
  */
 class RegisterMimeType implements IRepairStep {
-	private const MIME = 'application/x-etherpad-nextcloud';
 	private const MIME_ALIAS = 'etherpad-nextcloud-pad';
 	private const APP_ICON_RELATIVE = 'img/filetypes/etherpad-nextcloud-pad.svg';
 	private const CORE_ICON_DIR = 'core/img/filetypes';
@@ -34,8 +34,8 @@ class RegisterMimeType implements IRepairStep {
 	}
 
 	public function run(IOutput $output): void {
-		$mimeTypeId = $this->mimeTypeLoader->getId(self::MIME);
-		$this->mimeTypeLoader->updateFilecache('pad', $mimeTypeId);
+		$mimeTypeId = $this->mimeTypeLoader->getId(PadFileType::MIME);
+		$this->mimeTypeLoader->updateFilecache(PadFileType::EXTENSION, $mimeTypeId);
 
 		$configDir = '';
 		if (isset(\OC::$configDir) && is_string(\OC::$configDir) && \OC::$configDir !== '') {
@@ -52,10 +52,10 @@ class RegisterMimeType implements IRepairStep {
 		}
 
 		$mimetypeToExt = [
-			self::MIME => self::MIME_ALIAS,
+			PadFileType::MIME => self::MIME_ALIAS,
 		];
 		$extToMimetype = [
-			'pad' => [self::MIME],
+			PadFileType::EXTENSION => [PadFileType::MIME],
 		];
 
 		$this->appendToJsonFile($configDir . 'mimetypealiases.json', $mimetypeToExt);

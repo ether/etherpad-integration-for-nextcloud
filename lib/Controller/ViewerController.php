@@ -13,6 +13,7 @@ namespace OCA\EtherpadNextcloud\Controller;
 use OCA\EtherpadNextcloud\Exception\ControllerBadRequestException;
 use OCA\EtherpadNextcloud\Exception\UnauthorizedRequestException;
 use OCA\EtherpadNextcloud\Service\UserNodeResolver;
+use OCA\EtherpadNextcloud\Util\FilesViewerUrl;
 use OCA\EtherpadNextcloud\Util\PathNormalizer;
 use OCP\AppFramework\Controller;
 use OCP\AppFramework\Http\RedirectResponse;
@@ -58,7 +59,7 @@ class ViewerController extends Controller {
 			},
 			fn(array|RedirectResponse $result): RedirectResponse => $result instanceof RedirectResponse
 				? $result
-				: new RedirectResponse($this->buildFilesOpenUrl($result['file_id'], $result['path'])),
+				: new RedirectResponse(FilesViewerUrl::forFile($this->urlGenerator, $result['file_id'], $result['path'])),
 		);
 	}
 
@@ -74,7 +75,7 @@ class ViewerController extends Controller {
 				return ['file_id' => $id, 'path' => $path];
 			},
 			fn(array $resolved): RedirectResponse => new RedirectResponse(
-				$this->buildFilesOpenUrl($resolved['file_id'], $resolved['path'])
+				FilesViewerUrl::forFile($this->urlGenerator, $resolved['file_id'], $resolved['path'])
 			),
 			notFoundMessage: $this->l10n->t('Cannot resolve file path for file ID.'),
 		);
@@ -105,19 +106,5 @@ class ViewerController extends Controller {
 		} catch (\Throwable) {
 			throw new ControllerBadRequestException($this->l10n->t('Invalid file path.'));
 		}
-	}
-
-	private function buildFilesOpenUrl(int $fileId, string $absoluteFilePath): string {
-		$dir = dirname($absoluteFilePath);
-		if ($dir === '.' || $dir === '') {
-			$dir = '/';
-		}
-		// `files.view.index` resolves to '/apps/files'; the canonical URL
-		// the Files app routes to a specific file is
-		// `/apps/files/{view}/{fileid}` with `files` as the default view.
-		$base = rtrim($this->urlGenerator->linkToRoute('files.view.index'), '/');
-		return $base . '/files/' . rawurlencode((string)$fileId)
-			. '?dir=' . rawurlencode($dir)
-			. '&editing=false&openfile=true';
 	}
 }

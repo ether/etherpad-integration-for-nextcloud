@@ -82,10 +82,29 @@ jobs:
         with:
           persist-credentials: false
 
+      # Same source of truth as the node workflow: package.json states the
+      # range once, and a major hardcoded here could pin a Node the suite
+      # then refuses to run on.
+      - name: Read package.json node and npm engines
+        id: versions
+        uses: skjnldsv/read-package-engines-version-actions@06d6baf7d8f41934ab630e97d9e6c0bc9c9ac5e4 # v3
+
+      # The engines fields are mandatory here, so an empty output means the
+      # action could not read them. Failing on the spot names the cause; the
+      # alternative is a Node chosen from a stale default and an install that
+      # rejects it three steps later.
+      - name: Fail if the engines range could not be read
+        run: |
+          test -n '${{ steps.versions.outputs.nodeVersion }}' || { echo '::error::could not read engines.node from package.json'; exit 1; }
+          test -n '${{ steps.versions.outputs.npmVersion }}' || { echo '::error::could not read engines.npm from package.json'; exit 1; }
+
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 22
+          node-version: ${{ steps.versions.outputs.nodeVersion }}
           cache: npm
+
+      - name: Set up npm ${{ steps.versions.outputs.npmVersion }}
+        run: npm i -g 'npm@${{ steps.versions.outputs.npmVersion }}'
 
       - run: npm ci
 
