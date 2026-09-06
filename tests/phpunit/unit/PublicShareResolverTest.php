@@ -155,12 +155,7 @@ class PublicShareResolverTest extends TestCase {
 	 */
 	public function testResolvePadFileFindsAFolderSelectionById(): void {
 		$file = $this->padFile('A+B.pad', 42);
-		$file->method('getPermissions')->willReturn(Constants::PERMISSION_READ);
-		$file->method('getPath')->willReturn('/owner/files/Folder/A+B.pad');
-
-		$folder = $this->createMock(Folder::class);
-		$folder->expects($this->once())->method('getById')->with(42)->willReturn([$file]);
-		$folder->method('getRelativePath')->with('/owner/files/Folder/A+B.pad')->willReturn('/A+B.pad');
+		$folder = $this->folderResolving($file, 'A+B.pad');
 		$folder->expects($this->never())->method('get');
 
 		$resolved = $this->buildResolver()->resolvePadFile($this->share($folder, Constants::PERMISSION_READ), '', 'token', 42);
@@ -175,6 +170,23 @@ class PublicShareResolverTest extends TestCase {
 		$resolved = $this->buildResolver()->resolvePadFile($this->share($file, Constants::PERMISSION_READ), '', 'token', 42);
 
 		$this->assertSame($file, $resolved->node);
+	}
+
+	public function testResolvePadFileAcceptsAnIdAndNameThatAgreeOnASingleFileShare(): void {
+		$file = $this->padFile('Shared.pad', 42);
+
+		$resolved = $this->buildResolver()->resolvePadFile($this->share($file, Constants::PERMISSION_READ), 'Shared.pad', 'token', 42);
+
+		$this->assertSame($file, $resolved->node);
+	}
+
+	/** A file share has no path inside it, so the name is what a caller can name. */
+	public function testResolvePadFileRefusesANameThatIsNotTheSharedFile(): void {
+		$share = $this->share($this->padFile('Shared.pad', 42), Constants::PERMISSION_READ);
+
+		$this->expectException(InvalidShareFilePathException::class);
+		$this->expectExceptionMessage('The file id and the file path name different files.');
+		$this->buildResolver()->resolvePadFile($share, 'Other.pad', 'token', 42);
 	}
 
 	public function testResolvePadFileRejectsAnIdThatIsNotTheSharedFile(): void {
@@ -224,13 +236,7 @@ class PublicShareResolverTest extends TestCase {
 	 * another - the disagreement this check exists to refuse.
 	 */
 	public function testResolvePadFileRefusesASubfolderIdAgainstARootPathOfTheSameName(): void {
-		$file = $this->padFile('A.pad', 42);
-		$file->method('getPermissions')->willReturn(Constants::PERMISSION_READ);
-		$file->method('getPath')->willReturn('/owner/files/Share/Sub/A.pad');
-
-		$folder = $this->createMock(Folder::class);
-		$folder->method('getById')->willReturn([$file]);
-		$folder->method('getRelativePath')->willReturn('/Sub/A.pad');
+		$folder = $this->folderResolving($this->padFile('A.pad', 42), 'Sub/A.pad');
 
 		$this->expectException(InvalidShareFilePathException::class);
 		$this->expectExceptionMessage('The file id and the file path name different files.');
@@ -239,12 +245,7 @@ class PublicShareResolverTest extends TestCase {
 
 	public function testResolvePadFileAcceptsASubfolderIdWithItsFullRelativePath(): void {
 		$file = $this->padFile('A.pad', 42);
-		$file->method('getPermissions')->willReturn(Constants::PERMISSION_READ);
-		$file->method('getPath')->willReturn('/owner/files/Share/Sub/A.pad');
-
-		$folder = $this->createMock(Folder::class);
-		$folder->method('getById')->willReturn([$file]);
-		$folder->method('getRelativePath')->willReturn('/Sub/A.pad');
+		$folder = $this->folderResolving($file, 'Sub/A.pad');
 
 		$resolved = $this->buildResolver()->resolvePadFile($this->share($folder, Constants::PERMISSION_READ), 'Sub/A.pad', 'token', 42);
 
@@ -271,13 +272,7 @@ class PublicShareResolverTest extends TestCase {
 
 	/** Neither is opened: preferring one is the shape this exists to remove. */
 	public function testResolvePadFileRefusesWhenTheIdAndThePathNameDifferentFiles(): void {
-		$file = $this->padFile('A.pad', 42);
-		$file->method('getPermissions')->willReturn(Constants::PERMISSION_READ);
-		$file->method('getPath')->willReturn('/owner/files/Folder/A.pad');
-
-		$folder = $this->createMock(Folder::class);
-		$folder->method('getById')->willReturn([$file]);
-		$folder->method('getRelativePath')->willReturn('/A.pad');
+		$folder = $this->folderResolving($this->padFile('A.pad', 42), 'A.pad');
 
 		$this->expectException(InvalidShareFilePathException::class);
 		$this->expectExceptionMessage('The file id and the file path name different files.');
@@ -286,12 +281,7 @@ class PublicShareResolverTest extends TestCase {
 
 	public function testResolvePadFileAcceptsAnIdAndPathThatAgree(): void {
 		$file = $this->padFile('A.pad', 42);
-		$file->method('getPermissions')->willReturn(Constants::PERMISSION_READ);
-		$file->method('getPath')->willReturn('/owner/files/Folder/A.pad');
-
-		$folder = $this->createMock(Folder::class);
-		$folder->method('getById')->willReturn([$file]);
-		$folder->method('getRelativePath')->willReturn('/A.pad');
+		$folder = $this->folderResolving($file, 'A.pad');
 
 		$resolved = $this->buildResolver()->resolvePadFile($this->share($folder, Constants::PERMISSION_READ), 'A.pad', 'token', 42);
 
@@ -338,6 +328,21 @@ class PublicShareResolverTest extends TestCase {
 
 	private function buildResolver(?IManager $manager = null): PublicShareResolver {
 		return new PublicShareResolver($manager ?? $this->createMock(IManager::class), new PathNormalizer());
+	}
+
+	/**
+	 * A folder share whose getById() answers with one readable file at the
+	 * given path inside the share.
+	 */
+	private function folderResolving(File $file, string $relativePath): Folder {
+		$file->method('getPermissions')->willReturn(Constants::PERMISSION_READ);
+		$file->method('getPath')->willReturn('/owner/files/Share/' . ltrim($relativePath, '/'));
+
+		$folder = $this->createMock(Folder::class);
+		$folder->method('getById')->willReturn([$file]);
+		$folder->method('getRelativePath')->willReturn('/' . ltrim($relativePath, '/'));
+
+		return $folder;
 	}
 
 	private function padFile(string $name, int $id): File {

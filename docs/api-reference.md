@@ -54,9 +54,15 @@ Base: `/apps/etherpad_nextcloud`
     - on success redirects itself to the returned `embed_url`
     - sets route-specific `frame-ancestors` from admin-configured trusted embed origins
 
+### Addressing a file in a public share
+
+A public folder share is the one place a pad is found by name, and a query string spells a space two ways - which is why `fileId=<int>` addresses the file wherever a caller has one, and `file=/subfolder/file.pad` remains the compatibility route for callers that do not.
+
+An id is not a hint. One that is unusable, that names nothing in the share, or that disagrees with an accompanying `file` is refused - never answered by opening what the path names. For a folder share the comparison is the whole path inside the share, so `A.pad` and `Sub/A.pad` are two different files; a single-file share has no path inside it, so there the file name is what a caller can name.
+
 - `GET /public/{token}`
   - Controller: `PublicViewerController::showPad`
-  - Query (folder share): `file=/subfolder/file.pad`
+  - Query (folder share): `file=/subfolder/file.pad` - name only, and deliberately: this route builds no viewer address of its own, it hands over to Nextcloud's own share page.
   - Purpose: compatibility route for public shares; redirects to `/s/{token}` with selected file.
   - UX behavior:
     - Errors are rendered as `noviewer` template (not raw JSON).
@@ -64,8 +70,7 @@ Base: `/apps/etherpad_nextcloud`
 
 - `GET /api/v1/public/open/{token}`
   - Controller: `PublicViewerController::openPadData`
-  - Query: `fileId=<int>` addresses the file, `file=/subfolder/file.pad` is the compatibility route for callers that have no id.
-  - Addressing rules: a public folder share is the one place a pad is found by name, and a query string spells a space two ways. An id is preferred wherever the caller has one, and it is not a hint: an id that is unusable, that names nothing in the share, or that disagrees with an accompanying `file` is refused, never answered by opening what the path names.
+  - Query: see the addressing rules above.
   - Purpose: resolves a `.pad` file inside a public share for the native viewer.
   - Result:
     - writable protected share: Etherpad URL plus one `sessionID` `Set-Cookie` header
@@ -74,8 +79,7 @@ Base: `/apps/etherpad_nextcloud`
 
 - `GET /api/v1/public/content/{token}`
   - Controller: `PublicViewerController::padContent`
-  - Query: `fileId=<int>` addresses the file, `file=/subfolder/file.pad` is the compatibility route for callers that have no id.
-  - Addressing rules: a public folder share is the one place a pad is found by name, and a query string spells a space two ways. An id is preferred wherever the caller has one, and it is not a hint: an id that is unusable, that names nothing in the share, or that disagrees with an accompanying `file` is refused, never answered by opening what the path names.
+  - Query: see the addressing rules above.
   - Purpose: the pad's current content for the read-only view of a public share.
   - Result: sanitized `html` plus `is_empty`; answered `no-store`.
   - Behavior: resolves the share and re-checks the `.pad` binding on every call, so a retry cannot outlive the access it was granted under.
