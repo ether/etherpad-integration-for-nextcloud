@@ -3,6 +3,7 @@
  * Copyright (c) 2026 Jacob Bühler
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { flushAsyncWork } from './flush.js'
 
 const MODULE = '../../src/admin-settings.js'
 
@@ -79,11 +80,6 @@ const deferred = () => {
 	}
 }
 
-const flush = async () => {
-	for (let i = 0; i < 8; i += 1) {
-		await Promise.resolve()
-	}
-}
 
 describe('admin settings status areas', () => {
 	beforeEach(async () => {
@@ -103,7 +99,7 @@ describe('admin settings status areas', () => {
 		await import(MODULE)
 
 		document.getElementById('etherpad-nextcloud-health-check').click()
-		await flush()
+		await flushAsyncWork()
 
 		expect(connectionStatus().textContent).toContain('All checks passed.')
 		// Success, not the error path.
@@ -119,15 +115,15 @@ describe('admin settings status areas', () => {
 		await import(MODULE)
 
 		document.getElementById('etherpad-nextcloud-health-check').click()
-		await flush()
+		await flushAsyncWork()
 		document.getElementById('etherpad-nextcloud-admin-form').requestSubmit()
-		await flush()
+		await flushAsyncWork()
 
 		// Diagnostics finishes first, the save afterwards.
 		health.respond({ message: 'All checks passed.' })
-		await flush()
+		await flushAsyncWork()
 		save.respond({ message: 'Saved.' })
-		await flush()
+		await flushAsyncWork()
 
 		expect(connectionStatus().textContent).toContain('All checks passed.')
 		expect(connectionStatus().classList.contains('ep-status-success')).toBe(true)
@@ -140,11 +136,11 @@ describe('admin settings status areas', () => {
 		await import(MODULE)
 
 		document.getElementById('etherpad-nextcloud-health-check').click()
-		await flush()
+		await flushAsyncWork()
 		expect(connectionStatus().textContent).toContain('All checks passed.')
 
 		document.getElementById('etherpad-nextcloud-admin-form').requestSubmit()
-		await flush()
+		await flushAsyncWork()
 
 		expect(connectionStatus().textContent).toBe('')
 		expect(connectionStatus().classList.contains('ep-status-success')).toBe(false)
@@ -179,7 +175,7 @@ describe('protected pads cookie warning', () => {
 		await import(MODULE)
 
 		document.getElementById('etherpad-nextcloud-health-check').click()
-		await flush()
+		await flushAsyncWork()
 
 		const base = document.querySelector('[data-check-result="etherpad_host"]')
 		const cookie = document.querySelector('[data-check-result="etherpad_cookie_domain"]')
@@ -202,7 +198,7 @@ describe('protected pads cookie warning', () => {
 		await import(MODULE)
 
 		document.getElementById('etherpad-nextcloud-health-check').click()
-		await flush()
+		await flushAsyncWork()
 
 		const slot = document.querySelector('[data-check-result="etherpad_host"]')
 		expect(slot.classList.contains('ep-check-warning')).toBe(true)
@@ -220,7 +216,7 @@ describe('protected pads cookie warning', () => {
 		await import(MODULE)
 
 		document.getElementById('etherpad-nextcloud-health-check').click()
-		await flush()
+		await flushAsyncWork()
 
 		const slot = document.querySelector('[data-check-result="etherpad_host"]')
 		expect(slot.classList.contains('ep-check-warning')).toBe(true)
@@ -235,7 +231,7 @@ describe('protected pads cookie warning', () => {
 		await import(MODULE)
 
 		document.getElementById('etherpad-nextcloud-health-check').click()
-		await flush()
+		await flushAsyncWork()
 
 		// Still waiting: a green tick or an old problem next to "Testing…"
 		// would describe the previous values.
@@ -246,7 +242,7 @@ describe('protected pads cookie warning', () => {
 			message: 'All checks passed.',
 			checks: [{ id: 'protected_pads', status: 'ok', label: 'Protected pads: session cookie', detail: '.example.org', field: 'etherpad_cookie_domain' }],
 		})
-		await flush()
+		await flushAsyncWork()
 
 		expect(cookie.classList.contains('ep-check-ok')).toBe(true)
 	})
@@ -264,7 +260,7 @@ describe('protected pads cookie warning', () => {
 		await import(MODULE)
 
 		document.getElementById('etherpad-nextcloud-health-check').click()
-		await flush()
+		await flushAsyncWork()
 
 		const error = document.querySelector('[data-field-error="etherpad_api_key"]')
 		expect(error.classList.contains('is-visible')).toBe(true)
@@ -283,7 +279,7 @@ describe('protected pads cookie warning', () => {
 		await import(MODULE)
 
 		document.getElementById('etherpad-nextcloud-admin-form').requestSubmit()
-		await flush()
+		await flushAsyncWork()
 
 		// The form values changed, so the old verdict no longer describes them.
 		expect(cookie.textContent).toBe('')
@@ -297,13 +293,13 @@ describe('protected pads cookie warning', () => {
 			: { message: 'Saved.', checks: [{ id: 'protected_pads', status: 'ok', label: 'Protected pads: session cookie', detail: '.example.org', field: 'etherpad_cookie_domain' }] }))))
 		await import(MODULE)
 		document.getElementById('etherpad-nextcloud-health-check').click()
-		await flush()
+		await flushAsyncWork()
 		expect(document.querySelector('[data-check-result="etherpad_host"]').textContent).not.toBe('')
 
 		// Saving does not re-run the checks, so keeping them would show a
 		// verdict about values that no longer apply.
 		document.getElementById('etherpad-nextcloud-admin-form').requestSubmit()
-		await flush()
+		await flushAsyncWork()
 
 		expect(document.querySelector('[data-check-result="etherpad_host"]').textContent).toBe('')
 	})
@@ -319,7 +315,7 @@ describe('protected pads cookie warning', () => {
 		await import(MODULE)
 
 		document.getElementById('etherpad-nextcloud-health-check').click()
-		await flush()
+		await flushAsyncWork()
 
 		// The API answered, so not an error — but not an unqualified pass either.
 		const status = document.getElementById('etherpad-nextcloud-connection-status')
@@ -336,7 +332,7 @@ describe('protected pads cookie warning', () => {
 		await import(MODULE)
 
 		document.getElementById('etherpad-nextcloud-health-check').click()
-		await flush()
+		await flushAsyncWork()
 
 		const status = document.getElementById('etherpad-nextcloud-connection-status')
 		expect(status.classList.contains('ep-status-success')).toBe(true)
@@ -355,7 +351,7 @@ describe('protected pads cookie warning', () => {
 		await import(MODULE)
 
 		document.getElementById('etherpad-nextcloud-admin-form').requestSubmit()
-		await flush()
+		await flushAsyncWork()
 
 		expect(cookieSlot().classList.contains('ep-check-warning')).toBe(false)
 		expect(cookieSlot().textContent).toBe('Protected pads: session cookie')
@@ -369,7 +365,7 @@ describe('protected pads cookie warning', () => {
 		await import(MODULE)
 
 		document.getElementById('etherpad-nextcloud-admin-form').requestSubmit()
-		await flush()
+		await flushAsyncWork()
 
 		expect(cookieSlot().textContent).toBe('Hosts do not share a parent domain.')
 	})
@@ -386,7 +382,7 @@ describe('protected pads cookie warning', () => {
 		await import(MODULE)
 
 		document.getElementById('etherpad-nextcloud-admin-form').requestSubmit()
-		await flush()
+		await flushAsyncWork()
 
 		expect(cookieSlot().classList.contains('ep-check-skipped')).toBe(true)
 		expect(cookieSlot().classList.contains('ep-check-warning')).toBe(false)
@@ -450,7 +446,7 @@ describe('pad types live region', () => {
 			.observe(hint(), { childList: true, characterData: true, subtree: true })
 
 		await import(MODULE)
-		await flush()
+		await flushAsyncWork()
 
 		expect(hint().textContent).toBe('No pad type is enabled.')
 		expect(observed).toHaveLength(0)
@@ -479,7 +475,7 @@ describe('shared templates', () => {
 	it('lists what the server reports', async () => {
 		vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(templateResponse(['Meeting notes.pad', 'Retro.pad']))))
 		await import(MODULE)
-		await flush()
+		await flushAsyncWork()
 
 		expect(rows().map((row) => row.querySelector('.ep-template-name').textContent))
 			.toEqual(['Meeting notes.pad', 'Retro.pad'])
@@ -497,7 +493,7 @@ describe('shared templates', () => {
 			text: () => Promise.resolve(JSON.stringify({ ok: false, message: 'Could not read the templates.' })),
 		})))
 		await import(MODULE)
-		await flush()
+		await flushAsyncWork()
 
 		expect(status().textContent).toContain('Could not read the templates.')
 		expect(status().classList.contains('ep-status-error')).toBe(true)
@@ -509,7 +505,7 @@ describe('shared templates', () => {
 	it('names the template each delete button removes', async () => {
 		vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(templateResponse(['Meeting notes.pad']))))
 		await import(MODULE)
-		await flush()
+		await flushAsyncWork()
 
 		const remove = list().querySelector('button')
 		// Read from the page, not glued together here: the sentence differs per
@@ -524,7 +520,7 @@ describe('shared templates', () => {
 	it('keeps the template status apart from the other results', async () => {
 		vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(templateResponse([]))))
 		await import(MODULE)
-		await flush()
+		await flushAsyncWork()
 
 		const saved = document.getElementById('etherpad-nextcloud-admin-status')
 		saved.textContent = 'Settings saved.'
@@ -550,7 +546,7 @@ describe('shared templates', () => {
 			return Promise.resolve(templateResponse([]))
 		}))
 		await import(MODULE)
-		await flush()
+		await flushAsyncWork()
 
 		let read = false
 		const input = document.getElementById('epnc-template-file')
@@ -563,7 +559,7 @@ describe('shared templates', () => {
 			}],
 		})
 		input.dispatchEvent(new Event('change'))
-		await flush()
+		await flushAsyncWork()
 
 		expect(read).toBe(false)
 		expect(posts).toHaveLength(0)
@@ -587,12 +583,12 @@ describe('shared templates', () => {
 			return Promise.resolve(templateResponse(['Fresh.pad']))
 		}))
 		await import(MODULE)
-		await flush()
+		await flushAsyncWork()
 
 		// Second listing answers first, then the first one comes back late.
 		await uploadFile('Fresh.pad', '---\n---\n')
 		releaseFirst()
-		await flush()
+		await flushAsyncWork()
 
 		const names = [...list().querySelectorAll('.ep-template-name')].map((n) => n.textContent)
 		expect(names).toEqual(['Fresh.pad'])
@@ -602,7 +598,7 @@ describe('shared templates', () => {
 	it('renders a template name as text', async () => {
 		vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(templateResponse(['<img src=x onerror=alert(1)>.pad']))))
 		await import(MODULE)
-		await flush()
+		await flushAsyncWork()
 
 		const name = list().querySelector('.ep-template-name')
 		expect(name.textContent).toBe('<img src=x onerror=alert(1)>.pad')
@@ -618,7 +614,7 @@ describe('shared templates', () => {
 				: templateResponse(['Meeting notes.pad']))
 		}))
 		await import(MODULE)
-		await flush()
+		await flushAsyncWork()
 
 		await uploadFile('Meeting notes.pad', 'content')
 
@@ -645,7 +641,7 @@ describe('shared templates', () => {
 		}))
 		vi.stubGlobal('confirm', vi.fn(() => true))
 		await import(MODULE)
-		await flush()
+		await flushAsyncWork()
 
 		await uploadFile('Meeting notes.pad', 'content')
 
@@ -664,7 +660,7 @@ describe('shared templates', () => {
 		}))
 		vi.stubGlobal('confirm', vi.fn(() => false))
 		await import(MODULE)
-		await flush()
+		await flushAsyncWork()
 
 		await uploadFile('Meeting notes.pad', 'content')
 
@@ -684,15 +680,15 @@ describe('shared templates', () => {
 		const confirmMock = vi.fn(() => false)
 		vi.stubGlobal('confirm', confirmMock)
 		await import(MODULE)
-		await flush()
+		await flushAsyncWork()
 
 		rows()[0].querySelector('button').click()
-		await flush()
+		await flushAsyncWork()
 		expect(posts).toHaveLength(0)
 
 		confirmMock.mockReturnValue(true)
 		rows()[0].querySelector('button').click()
-		await flush()
+		await flushAsyncWork()
 		expect(posts).toEqual(['/templates/delete'])
 	})
 
@@ -703,6 +699,6 @@ describe('shared templates', () => {
 			value: [{ name, size, text: () => Promise.resolve(content) }],
 		})
 		input.dispatchEvent(new Event('change'))
-		await flush()
+		await flushAsyncWork()
 	}
 })

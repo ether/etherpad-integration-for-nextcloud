@@ -3,6 +3,7 @@
  * Copyright (c) 2026 Jacob Bühler
  */
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { flushAsyncWork } from './flush.js'
 
 // The viewer component is a version-agnostic Vue options object that NC's
 // Viewer mounts at runtime; we don't bundle Vue. Rather than spin up a Vue
@@ -103,12 +104,6 @@ const jsonResponse = (body, ok = true, status = 200) => ({
 	status,
 	json: () => Promise.resolve(body),
 })
-
-// Drain queued microtasks so fire-and-forget continuations (e.g. the
-// original-pad hint lookup) settle before we assert on their results.
-const flush = async () => {
-	for (let i = 0; i < 8; i += 1) await Promise.resolve()
-}
 
 // `toContain('/pads/open')` is also true of '/pads/open-by-id', and
 // '/pads/initialize' of '/pads/initialize-by-id/42' — an assertion that
@@ -370,6 +365,29 @@ describe('viewer component — resolveOpenUrl', () => {
 		expect(vm.loadError).toBe('')
 	})
 
+	/** The open after an initialise mints a session and a cookie. */
+	it('does not open again when it was superseded during the initialize', async () => {
+		let releaseInitialize = () => {}
+		const initialized = new Promise((resolve) => { releaseInitialize = resolve })
+		const fetchMock = stubFetch()
+		fetchMock
+			.mockResolvedValueOnce(jsonResponse({ message: 'Missing YAML frontmatter in .pad file.', code: 'missing_frontmatter' }, false, 400))
+			.mockImplementationOnce(async () => { await initialized; return jsonResponse({ status: 'ok' }) })
+			.mockResolvedValueOnce(jsonResponse({ url: 'https://pad.example/after-init', sync_url: '' }))
+		const vm = makeInstance({ fileInfo: { path: '/x.pad' } })
+
+		const pending = vm.resolveOpenUrl()
+		await flushAsyncWork()
+		// What a second resolve does to the first one.
+		vm.resolveGeneration += 1
+		releaseInitialize()
+		await pending
+
+		expect(fetchMock).toHaveBeenCalledTimes(2)
+		expect(fetchMock.mock.calls[1][0]).toBe(endpoint('pads/initialize'))
+		expect(vm.iframeSrc).toBe('')
+	})
+
 	it('initializes by file id (not by path) when an id is available', async () => {
 		const fetchMock = stubFetch()
 		fetchMock
@@ -539,7 +557,7 @@ describe('viewer component — resolveOpenUrl', () => {
 		const vm = makeInstance({ fileid: 42, fileInfo: { path: '/x.pad' } })
 
 		void vm.resolveOpenUrl()
-		await Promise.resolve()
+		await flushAsyncWork()
 		component.beforeDestroy.call(vm)
 
 		expect(captured.aborted).toBe(true)
@@ -634,7 +652,7 @@ describe('viewer component — resolveOpenUrl', () => {
 		const vm = makeInstance({ fileid: 42, fileInfo: { path: '/x.pad' } })
 
 		await vm.resolveOpenUrl()
-		await flush()
+		await flushAsyncWork()
 
 		expect(fetchMock).toHaveBeenCalledTimes(1)
 		expect(vm.loadError).toBe('no binding')
@@ -657,7 +675,7 @@ describe('viewer component — resolveOpenUrl', () => {
 		const vm = makeInstance({ fileid: 42, fileInfo: { path: '/copy.pad' } })
 
 		await vm.resolveOpenUrl()
-		await flush() // let the fire-and-forget original-pad hint settle
+		await flushAsyncWork() // let the fire-and-forget original-pad hint settle
 
 		expect(vm.loadError).toBe('no binding')
 		expect(vm.canRecover).toBe(true)
@@ -676,7 +694,7 @@ describe('viewer component — resolveOpenUrl', () => {
 		const vm = makeInstance({ fileInfo: { path: '/copy.pad' } })
 
 		await vm.resolveOpenUrl()
-		await flush()
+		await flushAsyncWork()
 
 		// Without the cache: the next thing this id is used for is a write.
 		expect(apiResolvePadByPath).toHaveBeenCalledWith('/copy.pad', { bypassCache: true })
@@ -691,7 +709,7 @@ describe('viewer component — resolveOpenUrl', () => {
 		const vm = makeInstance({ fileInfo: { path: '/copy.pad' } })
 
 		await vm.resolveOpenUrl()
-		await flush()
+		await flushAsyncWork()
 
 		expect(vm.recoveryFileId).toBeNull()
 		expect(vm.canRecover).toBe(false)
@@ -703,7 +721,7 @@ describe('viewer component — resolveOpenUrl', () => {
 		const vm = makeInstance({ fileid: 42, fileInfo: { path: '/copy.pad' } })
 
 		await vm.resolveOpenUrl()
-		await flush()
+		await flushAsyncWork()
 
 		expect(apiResolvePadByPath).not.toHaveBeenCalled()
 		expect(vm.recoveryFileId).toBe(42)

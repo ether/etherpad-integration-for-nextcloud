@@ -3,6 +3,7 @@
  * Copyright (c) 2026 Jacob Bühler
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { flushAsyncWork } from '../flush.js'
 
 import { createPadOpener } from '../../../src/files/pad-opener.js'
 
@@ -12,11 +13,6 @@ const PUBLIC_ROUTE = '/index.php/s/sharetoken123'
 const GUARD_REDIRECT = 'Redirected when going from "/s/x" to "/s/y" via a navigation guard.'
 
 let assignSpy
-
-const flush = async () => {
-	await Promise.resolve()
-	await Promise.resolve()
-}
 
 beforeEach(() => {
 	vi.useFakeTimers()
@@ -43,7 +39,7 @@ describe('pad opener', () => {
 		window.OCA.Viewer.open.mockReturnValue(Promise.reject(new Error(GUARD_REDIRECT)))
 
 		await createPadOpener()('/Folder/Test.pad')
-		await flush()
+		await flushAsyncWork()
 
 		expect(assignSpy).not.toHaveBeenCalled()
 	})
@@ -52,7 +48,7 @@ describe('pad opener', () => {
 		window.OCA.Viewer.open.mockReturnValue(Promise.reject(new Error('no handler for this mimetype')))
 
 		await createPadOpener()('/Folder/Test.pad')
-		await flush()
+		await flushAsyncWork()
 
 		expect(assignSpy).toHaveBeenCalledTimes(1)
 		const url = assignSpy.mock.calls[0][0]

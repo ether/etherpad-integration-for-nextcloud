@@ -3,6 +3,21 @@
  * Copyright (c) 2026 Jacob Bühler
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { flushAsyncWork } from './flush.js'
+
+// A successful open starts an interval and registers document and window
+// listeners that nothing here can stop again. No test asserts on syncing.
+vi.mock('../../src/lib/pad-sync.js', () => ({
+	createPadSync: () => ({
+		configure: vi.fn(),
+		start: vi.fn(),
+		stop: vi.fn(),
+		sync: vi.fn(async () => ({ status: 'ok' })),
+		fireAndForget: vi.fn(),
+		installLifecycleHandlers: vi.fn(),
+		removeLifecycleHandlers: vi.fn(),
+	}),
+}))
 
 vi.mock('../../src/lib/pad-content.js', () => ({
 	loadPadContent: vi.fn(async () => ({ html: '', isEmpty: true })),
@@ -10,11 +25,7 @@ vi.mock('../../src/lib/pad-content.js', () => ({
 
 const { loadPadContent } = await import('../../src/lib/pad-content.js')
 
-const flushMicrotasks = async () => {
-	for (let i = 0; i < 8; i += 1) {
-		await Promise.resolve()
-	}
-}
+
 
 const setupEmbedDom = () => {
 	document.body.innerHTML = `
@@ -92,7 +103,7 @@ describe('embed-main', () => {
 		}))
 
 		await importEmbed()
-		await flushMicrotasks()
+		await flushAsyncWork()
 
 		expect(fetch).toHaveBeenCalledOnce()
 		expect(fetch.mock.calls[0][0]).toBe('/api/open-by-id')
@@ -111,7 +122,7 @@ describe('embed-main', () => {
 		loadPadContent.mockResolvedValueOnce({ html: '<p>remote body</p>', isEmpty: false })
 
 		await importEmbed()
-		await flushMicrotasks()
+		await flushAsyncWork()
 
 		// Iframe stays hidden — external pads render our own view instead.
 		expect(iframe().hidden).toBe(true)
@@ -134,7 +145,7 @@ describe('embed-main', () => {
 		loadPadContent.mockResolvedValueOnce({ html: '<p>shared body</p>', isEmpty: false })
 
 		await importEmbed()
-		await flushMicrotasks()
+		await flushAsyncWork()
 
 		// Accepted at all: the payload carries no url, which the open used
 		// to reject outright and answer with the error card.
@@ -155,7 +166,7 @@ describe('embed-main', () => {
 		loadPadContent.mockResolvedValueOnce({ html: '<p>first</p>', isEmpty: false })
 
 		await importEmbed()
-		await flushMicrotasks()
+		await flushAsyncWork()
 		expect(document.body.textContent).toContain('first')
 
 		const refresh = document.querySelector('button.epnc-pad-doc__refresh')
@@ -164,7 +175,7 @@ describe('embed-main', () => {
 
 		loadPadContent.mockResolvedValueOnce({ html: '<p>second</p>', isEmpty: false })
 		refresh.click()
-		await flushMicrotasks()
+		await flushAsyncWork()
 
 		expect(loadPadContent).toHaveBeenCalledTimes(2)
 		expect(document.body.textContent).toContain('second')
@@ -184,13 +195,13 @@ describe('embed-main', () => {
 		loadPadContent.mockResolvedValueOnce({ html: '<p>first</p>', isEmpty: false })
 
 		await importEmbed()
-		await flushMicrotasks()
+		await flushAsyncWork()
 
 		let release
 		loadPadContent.mockImplementationOnce(() => new Promise((resolve) => { release = () => resolve({ html: '<p>second</p>', isEmpty: false }) }))
 		const refresh = document.querySelector('button.epnc-pad-doc__refresh')
 		refresh.click()
-		await flushMicrotasks()
+		await flushAsyncWork()
 
 		expect(document.body.textContent).toContain('first')
 		expect(document.body.textContent).not.toContain('Loading pad content...')
@@ -198,7 +209,7 @@ describe('embed-main', () => {
 		expect(refresh.textContent).toBe('Refreshing...')
 
 		release()
-		await flushMicrotasks()
+		await flushAsyncWork()
 
 		expect(document.body.textContent).toContain('second')
 		expect(refresh.textContent).toBe('Refresh')
@@ -213,11 +224,11 @@ describe('embed-main', () => {
 		loadPadContent.mockResolvedValueOnce({ html: '<p>first</p>', isEmpty: false })
 
 		await importEmbed()
-		await flushMicrotasks()
+		await flushAsyncWork()
 
 		loadPadContent.mockRejectedValueOnce(new Error('pad server unreachable'))
 		document.querySelector('button.epnc-pad-doc__refresh').click()
-		await flushMicrotasks()
+		await flushAsyncWork()
 
 		expect(document.body.textContent).toContain('first')
 		const toolbarError = document.querySelector('.epnc-pad-doc__toolbar-error')
@@ -230,7 +241,7 @@ describe('embed-main', () => {
 		loadPadContent.mockResolvedValueOnce({ html: '', isEmpty: true })
 
 		await importEmbed()
-		await flushMicrotasks()
+		await flushAsyncWork()
 
 		expect(document.body.textContent).toContain('This pad is still empty.')
 	})
@@ -245,7 +256,7 @@ describe('embed-main', () => {
 		loadPadContent.mockRejectedValueOnce(new Error('pad server unreachable'))
 
 		await importEmbed()
-		await flushMicrotasks()
+		await flushAsyncWork()
 
 		expect(document.body.textContent).toContain('pad server unreachable')
 		const retry = [...document.querySelectorAll('button')].find((button) => button.textContent === 'Try again')
@@ -253,7 +264,7 @@ describe('embed-main', () => {
 
 		loadPadContent.mockResolvedValueOnce({ html: '<p>second try</p>', isEmpty: false })
 		retry.click()
-		await flushMicrotasks()
+		await flushAsyncWork()
 
 		expect(loadPadContent).toHaveBeenCalledTimes(2)
 		expect(document.body.textContent).toContain('second try')
@@ -266,7 +277,7 @@ describe('embed-main', () => {
 			.mockResolvedValueOnce(jsonResponse({ url: 'https://pad.example.test/p/abc' }))
 
 		await importEmbed()
-		await flushMicrotasks()
+		await flushAsyncWork()
 
 		expect(fetch).toHaveBeenCalledTimes(3)
 		expect(fetch.mock.calls[0][0]).toBe('/api/open-by-id')
@@ -281,7 +292,7 @@ describe('embed-main', () => {
 			.mockResolvedValueOnce(jsonResponse({ found: true, embed_url: '/embed/by-id/99', viewer_url: '/files/99' }))
 
 		await importEmbed()
-		await flushMicrotasks()
+		await flushAsyncWork()
 
 		expect(isHidden('[data-epnc-embed-recovery]')).toBe(false)
 		expect(recoveryMessage()).toBe('no binding')
@@ -300,7 +311,7 @@ describe('embed-main', () => {
 			.mockResolvedValueOnce(jsonResponse({ found: false }))
 
 		await importEmbed()
-		await flushMicrotasks()
+		await flushAsyncWork()
 
 		expect(isHidden('[data-epnc-embed-recovery]')).toBe(false)
 		expect(recoveryMessage()).toBe('no binding')
@@ -315,7 +326,7 @@ describe('embed-main', () => {
 			.mockRejectedValueOnce(new Error('lookup network error'))
 
 		await importEmbed()
-		await flushMicrotasks()
+		await flushAsyncWork()
 
 		expect(isHidden('[data-epnc-embed-recovery]')).toBe(false)
 		// The recovery message stays the original missing-binding wording, not the lookup error.
@@ -332,11 +343,11 @@ describe('embed-main', () => {
 			.mockResolvedValueOnce(jsonResponse({ url: 'https://pad.example.test/p/fresh' }))
 
 		await importEmbed()
-		await flushMicrotasks()
+		await flushAsyncWork()
 
 		const button = recoveryActions().querySelector('button')
 		button.click()
-		await flushMicrotasks()
+		await flushAsyncWork()
 
 		// 1) open (400), 2) find-original (200 miss), 3) recover-from-snapshot, 4) open retry.
 		expect(fetch).toHaveBeenCalledTimes(4)
@@ -349,7 +360,7 @@ describe('embed-main', () => {
 		fetch.mockResolvedValueOnce(errorResponse({ message: 'Internal server error' }, 500))
 
 		await importEmbed()
-		await flushMicrotasks()
+		await flushAsyncWork()
 
 		expect(isHidden('[data-epnc-embed-error]')).toBe(false)
 		expect(errorMessage()).toBe('Internal server error')
@@ -361,7 +372,7 @@ describe('embed-main', () => {
 		delete window.OC
 
 		await importEmbed()
-		await flushMicrotasks()
+		await flushAsyncWork()
 
 		expect(fetch).not.toHaveBeenCalled()
 		expect(isHidden('[data-epnc-embed-error]')).toBe(false)
@@ -372,7 +383,7 @@ describe('embed-main', () => {
 		root().setAttribute('data-open-by-id-url', '')
 
 		await importEmbed()
-		await flushMicrotasks()
+		await flushAsyncWork()
 
 		expect(fetch).not.toHaveBeenCalled()
 		expect(errorMessage()).toContain('configuration is incomplete')

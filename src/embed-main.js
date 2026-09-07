@@ -6,6 +6,7 @@ import { ocRequestToken } from './lib/oc-compat.js'
 import { createPadSync } from './lib/pad-sync.js'
 import { fetchJsonWithTimeout as fetchJson } from './lib/fetch-helpers.js'
 import { loadPadContent } from './lib/pad-content.js'
+import { assertOpenPayload, contentUrlFrom, contentViewFrom, openWithFrontmatterRecovery, padUrlFrom, syncSettingsFrom } from './lib/pad-open-flow.js'
 
 (function () {
 	const IFRAME_REVEAL_DELAY_MS = 100
@@ -314,9 +315,6 @@ import { loadPadContent } from './lib/pad-content.js'
 		window.addEventListener('message', messageHandler)
 	}
 
-	// The code, not the message: see viewer-main.js.
-	const isMissingFrontmatterError = (error) => Boolean(error) && error.code === 'missing_frontmatter'
-
 	const openPad = async () => {
 		const body = new URLSearchParams()
 		body.set('fileId', String(fileId))
@@ -328,10 +326,7 @@ import { loadPadContent } from './lib/pad-content.js'
 			},
 			body: body.toString(),
 		})
-		if (!data || (data.is_readonly_view !== true && (typeof data.url !== 'string' || data.url.trim() === ''))) {
-			throw new Error('Pad open API did not return a valid URL.')
-		}
-		return data
+		return assertOpenPayload(data)
 	}
 
 	const initializePad = async () => {
@@ -483,19 +478,8 @@ import { loadPadContent } from './lib/pad-content.js'
 			return
 		}
 		try {
-			let data
-			try {
-				data = await openPad()
-			} catch (error) {
-				if (!isMissingFrontmatterError(error)) {
-					throw error
-				}
-				await initializePad()
-				data = await openPad()
-			}
-			const syncUrl = typeof data.sync_url === 'string' ? data.sync_url.trim() : ''
-			const intervalSeconds = Number(data.sync_interval_seconds ?? 0)
-			const intervalMs = Number.isFinite(intervalSeconds) && intervalSeconds > 0 ? intervalSeconds * 1000 : 120000
+			const data = await openWithFrontmatterRecovery({ open: openPad, initialize: initializePad })
+			const { syncUrl, intervalMs } = syncSettingsFrom(data)
 			padSync.configure({ syncUrl, intervalMs })
 			padSync.installLifecycleHandlers()
 			installHostMessageHandler()
@@ -504,16 +488,17 @@ import { loadPadContent } from './lib/pad-content.js'
 			if (syncUrl !== '') {
 				padSync.start()
 			}
-			const contentUrl = typeof data.content_url === 'string' ? data.content_url.trim() : ''
-			if (data.is_readonly_view === true || data.is_external === true) {
-				const view = showPadContentView(data.is_readonly_view === true ? '' : data.url)
+			const contentUrl = contentUrlFrom(data)
+			const { isContentView, externalUrl } = contentViewFrom(data)
+			if (isContentView) {
+				const view = showPadContentView(externalUrl)
 				if (view !== null) {
 					view.refresh.addEventListener('click', () => { void loadContent(view, contentUrl) })
 				}
 				void loadContent(view, contentUrl)
 				return
 			}
-			showIframe(data.url)
+			showIframe(padUrlFrom(data))
 		} catch (error) {
 			if (error && error.code === 'missing_binding') {
 				void enterRecoveryFlow(error)
