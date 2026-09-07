@@ -105,9 +105,6 @@ const jsonResponse = (body, ok = true, status = 200) => ({
 	json: () => Promise.resolve(body),
 })
 
-// Drain queued microtasks so fire-and-forget continuations (e.g. the
-// original-pad hint lookup) settle before we assert on their results.
-
 // `toContain('/pads/open')` is also true of '/pads/open-by-id', and
 // '/pads/initialize' of '/pads/initialize-by-id/42' — an assertion that
 // cannot fail. ocGenerateUrl is mocked as identity, so the endpoint is
@@ -564,7 +561,7 @@ describe('viewer component — resolveOpenUrl', () => {
 		const vm = makeInstance({ fileid: 42, fileInfo: { path: '/x.pad' } })
 
 		void vm.resolveOpenUrl()
-		await Promise.resolve()
+		await flushAsyncWork()
 		component.beforeDestroy.call(vm)
 
 		expect(captured.aborted).toBe(true)

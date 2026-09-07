@@ -4,16 +4,23 @@
  */
 
 /**
- * A floor, not a band. The interval decides how often every open pad calls
- * home, so an answer below this one is taken as a mistake rather than an
- * instruction. There is deliberately no ceiling: capping a long interval
- * would make the client call home more often than it was asked to, which
- * is the failure the floor exists to prevent.
+ * A floor, and the largest delay a timer can actually hold.
+ *
+ * The interval decides how often every open pad calls home, so an answer
+ * below the floor is taken as a mistake rather than an instruction.
+ *
+ * The upper bound is not a second opinion on how often to sync - capping a
+ * long interval would make the client call home more often than it was
+ * asked to. It is the timer's own limit: `setInterval` takes a signed
+ * 32-bit delay, and a larger one wraps, so 3_000_000_000 ms fires after
+ * 1 ms and becomes exactly the load the floor exists to prevent. Held to
+ * the limit it stays what it was meant to be, near enough to never.
  *
  * AppConfigService::getSyncIntervalSeconds() already holds the setting to
  * 5..3600 on the way out, so this only ever answers a server that does not.
  */
 const MIN_INTERVAL_MS = 5000
+const MAX_TIMER_MS = 2147483647
 const DEFAULT_INTERVAL_MS = 120000
 
 /**
@@ -60,10 +67,9 @@ export const padUrlFrom = (data) => ((data && typeof data.url === 'string') ? da
  * @param {() => Promise<any>} steps.open
  * @param {() => Promise<any>} steps.initialize
  * @param {() => boolean} [steps.stillWanted] asked once, after initialising
- * @return {Promise<any>} the payload - or null, but only for a caller that
- *   supplied `stillWanted` and heard no. Without one this always resolves
- *   to a payload, so a caller that adds a guard later has to read this
- *   again on the same line.
+ * @return {Promise<any>} the payload; null only when a supplied
+ *   `stillWanted` returns false, so a caller that adds one later has to
+ *   read this again on the same line.
  */
 export const openWithFrontmatterRecovery = async ({ open, initialize, stillWanted = () => true }) => {
 	try {
@@ -98,7 +104,7 @@ export const syncSettingsFrom = (data) => {
 	return {
 		syncUrl: (data && typeof data.sync_url === 'string') ? data.sync_url.trim() : '',
 		intervalMs: (Number.isFinite(seconds) && seconds > 0)
-			? Math.max(MIN_INTERVAL_MS, seconds * 1000)
+			? Math.min(MAX_TIMER_MS, Math.max(MIN_INTERVAL_MS, seconds * 1000))
 			: DEFAULT_INTERVAL_MS,
 	}
 }
@@ -116,8 +122,8 @@ export const contentUrlFrom = (data) => ((data && typeof data.content_url === 's
  *
  * Both read-only surfaces load and render the same way; the only
  * difference is whether there is an original pad to offer. A read-only
- * view has none by definition - it is a snapshot of a pad the reader may
- * not reach - so only an external pad carries a link, and only when it
+ * view has none by definition - it draws a pad the reader may not reach
+ * directly - so only an external pad carries a link, and only when it
  * names one.
  *
  * @param {any} data

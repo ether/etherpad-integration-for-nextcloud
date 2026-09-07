@@ -117,6 +117,11 @@ describe('syncSettingsFrom', () => {
 		expect(syncSettingsFrom({ sync_interval_seconds: 86400 }).intervalMs).toBe(86400000)
 	})
 
+	/** A delay past the signed 32-bit limit wraps and fires almost at once. */
+	it('will not hand a timer a delay it cannot hold', () => {
+		expect(syncSettingsFrom({ sync_interval_seconds: 3000000 }).intervalMs).toBe(2147483647)
+	})
+
 	it('falls back when there is no usable interval', () => {
 		expect(syncSettingsFrom({}).intervalMs).toBe(120000)
 		expect(syncSettingsFrom({ sync_interval_seconds: 0 }).intervalMs).toBe(120000)

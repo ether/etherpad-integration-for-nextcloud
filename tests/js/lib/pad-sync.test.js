@@ -1,11 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { flushAsyncWork } from '../flush.js'
 import { createPadSync, DEFAULT_SYNC_INTERVAL_MS } from '../../../src/lib/pad-sync.js'
-
-const flush = async () => {
-	await Promise.resolve()
-	await Promise.resolve()
-	await Promise.resolve()
-}
 
 const okResponse = (data = { ok: true }) => ({ ok: true, json: async () => data })
 
@@ -79,7 +74,7 @@ describe('pad-sync', () => {
 		expect(fetchImpl).toHaveBeenCalledTimes(1)
 
 		gates[0]() // finish the plain sync; the in-flight sync replays the
-		await flush() // coalesced forced flush (so `first` only settles after it)
+		await flushAsyncWork() // coalesced forced flush (so `first` only settles after it)
 
 		expect(fetchImpl).toHaveBeenCalledTimes(2)
 		expect(fetchImpl.mock.calls[1][0]).toBe('/sync/42?force=1')
@@ -108,7 +103,7 @@ describe('pad-sync', () => {
 
 		gates[0]() // finish the in-flight sync; the replay now sees no url
 		await Promise.all([inflight, forced])
-		await flush()
+		await flushAsyncWork()
 
 		expect(fetchImpl).toHaveBeenCalledTimes(1) // replay was a no-op
 		await expect(forced).resolves.toEqual({ status: 'disabled' })
@@ -154,14 +149,14 @@ describe('pad-sync', () => {
 
 		ps.installLifecycleHandlers()
 		window.dispatchEvent(new Event('pagehide'))
-		await flush()
+		await flushAsyncWork()
 		expect(fetchImpl).toHaveBeenCalledTimes(1)
 		expect(fetchImpl.mock.calls[0][0]).toBe('/sync/42?force=1')
 		expect(fetchImpl.mock.calls[0][1].keepalive).toBe(true)
 
 		ps.removeLifecycleHandlers()
 		window.dispatchEvent(new Event('pagehide'))
-		await flush()
+		await flushAsyncWork()
 		expect(fetchImpl).toHaveBeenCalledTimes(1) // no further flush after removal
 	})
 })
