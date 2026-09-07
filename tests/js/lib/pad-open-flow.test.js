@@ -161,7 +161,7 @@ describe('contentViewFrom', () => {
 			.toEqual({ isContentView: false, externalUrl: '' })
 	})
 
-	/** A snapshot of a pad the reader may not reach has no original to link. */
+	/** A pad the reader may not reach directly has no original to link. */
 	it('offers no link from a read-only view, whatever else the payload says', () => {
 		expect(contentViewFrom({ is_readonly_view: true }))
 			.toEqual({ isContentView: true, externalUrl: '' })

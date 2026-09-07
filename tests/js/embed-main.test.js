@@ -5,10 +5,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushAsyncWork } from './flush.js'
 
-// A successful open starts a real interval and registers document and
-// window listeners, and nothing reachable from here stops them again - so
-// every test in this file would leave a set behind. None of them assert
-// on syncing itself.
+// A successful open starts an interval and registers document and window
+// listeners that nothing here can stop again. No test asserts on syncing.
 vi.mock('../../src/lib/pad-sync.js', () => ({
 	createPadSync: () => ({
 		configure: vi.fn(),

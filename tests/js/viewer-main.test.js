@@ -365,11 +365,7 @@ describe('viewer component — resolveOpenUrl', () => {
 		expect(vm.loadError).toBe('')
 	})
 
-	/**
-	 * The initialise is deliberately not abortable, so a viewer that has
-	 * moved on during it must at least not open again: that open mints an
-	 * Etherpad session and a cookie nothing will ever use.
-	 */
+	/** The open after an initialise mints a session and a cookie. */
 	it('does not open again when it was superseded during the initialize', async () => {
 		let releaseInitialize = () => {}
 		const initialized = new Promise((resolve) => { releaseInitialize = resolve })

@@ -8,20 +8,14 @@ import { vi } from 'vitest'
 /**
  * Let the work a test just started run to completion.
  *
- * Every awaited step in these suites resolves in a microtask, because
- * `fetch` and the modules around it are stubbed with settled promises - so
- * yielding to the queue behind them once drains the whole chain, however
- * many links it has. Counting microtask turns instead pins a test to how
- * many `await`s the code happens to have today, and the next one added
- * silently runs the assertions before the work.
- *
- * It waits for nothing that is scheduled: a step behind a real delay still
- * needs its own advance.
+ * Yielding once to the queue behind the microtasks drains a chain of any
+ * depth, as long as every step settles in one - which holds here because
+ * `fetch` and its neighbours are stubbed. A step behind a real delay
+ * still needs its own advance.
  */
 export const flushAsyncWork = async () => {
 	if (vi.isFakeTimers()) {
-		// A faked macrotask queue only moves when it is told to, so ask for
-		// the same turn rather than a real one that would never come.
+		// A faked queue only moves when it is told to.
 		await vi.advanceTimersByTimeAsync(0)
 		return
 	}
