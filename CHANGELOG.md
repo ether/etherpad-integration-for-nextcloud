@@ -1,5 +1,48 @@
 # Changelog
 
+## 1.1.0-alpha.5 — 2026-09-07
+
+Fifth public-review release. Focus: a view-only share of a protected pad that is view-only on the pad server too, live read-only content, Etherpad session cleanup, Nextcloud 34, and one implementation each for creating, provisioning and opening a pad.
+
+### Added
+
+- **Live read-only view.** A reader without write permission sees the pad as it reads now, fetched from Etherpad, instead of the snapshot last written into the `.pad` file. It refreshes in place and its HTML is sanitised before it is rendered. (#218)
+- **Nextcloud 34.** Declared and tested range is now 31 through 34. (#227)
+- **Expired Etherpad sessions are collected** in the background, and logging out of Nextcloud revokes the user's active Etherpad sessions. (#213, #214)
+- **A public share addresses its pad by file id.** Renaming or moving a shared file no longer breaks the link, and `A+B.pad` can no longer open the pad belonging to `A B.pad`. An id that disagrees with the path, points outside the share or cannot be used is refused rather than falling back to the path. (#235)
+
+### Security
+
+- **A view-only share of a protected pad is view-only on the pad server too.** Until now it opened in the editor: nothing on the authenticated path asked whether the recipient may write, so a "can view" share was issued an ordinary Etherpad session. A protected pad now renders without a session, a public one gets Etherpad's read-only URL - presentation rather than enforcement, since a public pad is reachable by anyone holding its id - and `readOnly` asks the share and the mount it was reached through. (#217, #235)
+- **Frontmatter that would be read back as something else is refused.** Unsafe line breaks and NUL bytes are rejected instead of being silently altered or parsed as further keys. (#229, #231)
+- Live content responses are not cached, and permissions and binding are checked on every request rather than only at open time. (#218)
+- An external pad's export is capped at 5 MiB and follows no redirects, alongside the existing SSRF protections. (#218)
+- DOMPurify 3.4.14, bundles rebuilt. (#202)
+- The `child-src` override was removed: it is obsolete, interferes with Nextcloud's workers and is incompatible with Nextcloud 34. (#227)
+
+### Changed
+
+- **One way to create a file.** Creation, initialisation and rollback work from a file's identity and its expected content rather than from a path or a node object handed over earlier, so a concurrent move, replacement or duplicate request can no longer make them act on the wrong file. (#219, #220, #221, #222)
+- **One way to provision a pad.** A first open and a restore from the trash pick the Etherpad primitive and seed the snapshot through the same path; an access mode neither of them recognises is refused rather than turned into an unprotected pad. (#236)
+- **One way to read an open response.** The Viewer and the embed share the missing-metadata check, the payload validation, the read-only decision and the sync interval, which the embed had been taking unbounded. (#237)
+- **A `.pad` file is parsed once** and passed through opening and initialisation as structured data. (#230)
+- The frontend reads stable error codes such as `missing_frontmatter` instead of matching an English sentence. (#223)
+- Time-dependent services read the clock through `ITimeFactory`. (#232)
+
+### Fixed
+
+- **A public-share click on an unhandled type falls back again.** `Viewer.open()` can reject asynchronously, and every rejection was being swallowed, leaving nothing to fall back to after `preventDefault()`. (#228)
+- **Existing `.pad` files get their mime *part* repaired** during upgrade, and a folder named `Archive.pad` is no longer rewritten as a pad file. (#233)
+- **`.PAD` is a pad file**, including through a DAV link, and every rule about the suffix, the extension, the mime type and the Files address has one home. (#234)
+- The `window.OCA.Files.fileActions` registration was removed: the API exists on none of the supported majors, and Nextcloud's own Viewer answers the click. (#228)
+
+### Tooling / tests / CI
+
+- End-to-end coverage for view-only shares, live content, public shares by id, session collection and logout revocation. (#213, #214, #217, #218, #235)
+- The CI and e2e matrices cover Nextcloud 34, and `scripts/check-nextcloud-range.py` holds seven files to the range `info.xml` declares. (#227)
+- Node `^24.15.0` and npm `^11.0.0` are required and enforced by `npm ci --engine-strict`; on Node 20 two jsdom-pinned suites fail to load while the summary reads as a near miss. (#234)
+- `fast-uri`, `browserslist` and `happy-dom` updated. (#215, #216, #224)
+
 ## 1.1.0-alpha.4 — 2026-08-31
 
 Fourth public-review release. Focus: one pad-creation entry point with shared templates, a clearer admin surface, protected-pad session and lifecycle correctness, and a disposable end-to-end stack that runs the browser suite across three Nextcloud and two Etherpad majors.
