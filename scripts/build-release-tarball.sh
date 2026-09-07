@@ -18,6 +18,11 @@
 #     extracted with stray `._*` files on Linux.
 #   - --no-mac-metadata (available on newer macOS tar) is set when
 #     supported as a second line of defence.
+#   - --no-xattrs drops extended attributes, which travel as pax
+#     headers rather than as sidecar files. macOS puts
+#     com.apple.provenance on everything it downloads, and neither of
+#     the two above removes it; GNU tar warns about each one it cannot
+#     read on extraction.
 
 set -euo pipefail
 
@@ -66,12 +71,14 @@ mkdir -p "$OUTPUT_DIR"
 ARTIFACT="$OUTPUT_DIR/$APP_ID-$VERSION.tar.gz"
 
 # Build the archive with macOS metadata-pollution defences enabled.
-# `--no-mac-metadata` is a BSD-tar extension; older `tar` builds
-# don't know it, so we try it first and fall back to the plain
-# COPYFILE_DISABLE=1 path.
+# The two flags are extensions that older `tar` builds do not know, so
+# each is tried and dropped in turn down to the plain COPYFILE_DISABLE=1
+# path. The checks below decide whether what came out is clean.
 cd "$STAGE_DIR"
-if ! COPYFILE_DISABLE=1 tar --no-mac-metadata -czf "$ARTIFACT" "$APP_ID" 2>/dev/null; then
-	COPYFILE_DISABLE=1 tar -czf "$ARTIFACT" "$APP_ID"
+if ! COPYFILE_DISABLE=1 tar --no-mac-metadata --no-xattrs -czf "$ARTIFACT" "$APP_ID" 2>/dev/null; then
+	if ! COPYFILE_DISABLE=1 tar --no-mac-metadata -czf "$ARTIFACT" "$APP_ID" 2>/dev/null; then
+		COPYFILE_DISABLE=1 tar -czf "$ARTIFACT" "$APP_ID"
+	fi
 fi
 
 # Verify: zero AppleDouble or .DS_Store entries in the published
@@ -82,6 +89,19 @@ LEAKED="$(tar -tzf "$ARTIFACT" | grep -E '(^|/)\._|(^|/)\.DS_Store$' || true)"
 if [[ -n "$LEAKED" ]]; then
 	echo "ERROR: tarball contains macOS metadata files:" >&2
 	echo "$LEAKED" >&2
+	exit 1
+fi
+
+# Extended attributes carry no file of their own, so the listing above
+# cannot see them. They are in the byte stream as pax headers.
+#
+# Counted rather than matched: `grep -q` stops at the first hit, which
+# closes the pipe under the decompressor, and `pipefail` then reads that
+# as a failed pipeline - so the test would say "clean" for exactly the
+# archives it is meant to catch.
+XATTR_HEADERS="$(gzip -dc "$ARTIFACT" | grep -ac -e 'LIBARCHIVE.xattr' -e 'SCHILY.xattr' || true)"
+if [[ "$XATTR_HEADERS" != "0" ]]; then
+	echo "ERROR: tarball carries extended attributes as pax headers ($XATTR_HEADERS)." >&2
 	exit 1
 fi
 
