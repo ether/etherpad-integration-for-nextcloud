@@ -91,6 +91,20 @@ class PadTypePolicyTest extends TestCase {
 		);
 	}
 
+	/**
+	 * With both types on, the fallback order is only ever exercised by a mode
+	 * that is neither - and it has to land on the protected one, because the
+	 * other direction hands out a pad anyone holding its id can read.
+	 */
+	public function testAModeNobodyKnowsFallsBackToTheProtectedType(): void {
+		$policy = $this->buildPolicy([]);
+
+		self::assertSame(
+			BindingService::ACCESS_PROTECTED,
+			$policy->resolveCreatableMode('external')
+		);
+	}
+
 	public function testTemplateFailsWhenNoPadTypeIsEnabledAtAll(): void {
 		$policy = $this->buildPolicy([
 			PadTypePolicy::SETTING_PROTECTED => 'no',

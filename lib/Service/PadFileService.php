@@ -12,6 +12,7 @@ use OCA\EtherpadNextcloud\Util\PadId;
 
 use OCA\EtherpadNextcloud\Exception\PadFileFormatException;
 use OCA\EtherpadNextcloud\Exception\MissingFrontmatterException;
+use OCA\EtherpadNextcloud\Util\PadAccessMode;
 use OCP\AppFramework\Utility\ITimeFactory;
 
 class PadFileService {
@@ -325,7 +326,7 @@ class PadFileService {
 			throw new PadFileFormatException('Invalid created_at/updated_at in frontmatter.');
 		}
 
-		if (!in_array($accessMode, [BindingService::ACCESS_PUBLIC, BindingService::ACCESS_PROTECTED], true)) {
+		if (PadAccessMode::tryFromValue($accessMode) === null) {
 			throw new PadFileFormatException('Invalid access_mode in frontmatter.');
 		}
 

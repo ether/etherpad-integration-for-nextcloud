@@ -2,6 +2,7 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  * Copyright (c) 2026 Jacob Bühler
  */
+import { isPadAccessMode } from './lib/constants.js'
 import { ocRequestToken } from './lib/oc-compat.js'
 import { fetchJsonWithTimeout as fetchJson } from './lib/fetch-helpers.js'
 
@@ -122,7 +123,7 @@ import { fetchJsonWithTimeout as fetchJson } from './lib/fetch-helpers.js'
 			failCreate('invalid', missingNameMessage)
 			return
 		}
-		if (accessMode !== 'protected' && accessMode !== 'public') {
+		if (!isPadAccessMode(accessMode)) {
 			failCreate('invalid', invalidAccessModeMessage)
 			return
 		}

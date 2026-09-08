@@ -11,6 +11,7 @@ namespace OCA\EtherpadNextcloud\Service;
 
 use OCA\EtherpadNextcloud\Util\EtherpadErrorClassifier;
 use OCA\EtherpadNextcloud\Util\PadId;
+use OCA\EtherpadNextcloud\Util\PadAccessMode;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -101,17 +102,16 @@ class ManagedPadLifecycle {
 	 * @param callable():string $groupPadName the name a protected pad carries
 	 */
 	public function provisionFor(string $accessMode, callable $padId, callable $groupPadName): string {
-		if ($accessMode === BindingService::ACCESS_PUBLIC) {
-			$newPadId = $padId();
-			$this->provisionPad($newPadId);
-			return $newPadId;
-		}
+		return match (PadAccessMode::tryFromValue($accessMode)) {
+			PadAccessMode::Public => $this->provisionPublicPad($padId()),
+			PadAccessMode::Protected => $this->provisionGroupPad($groupPadName()),
+			null => throw new \InvalidArgumentException('Unsupported access mode for pad provisioning.'),
+		};
+	}
 
-		if ($accessMode !== BindingService::ACCESS_PROTECTED) {
-			throw new \InvalidArgumentException('Unsupported access mode for pad provisioning.');
-		}
-
-		return $this->provisionGroupPad($groupPadName());
+	private function provisionPublicPad(string $padId): string {
+		$this->provisionPad($padId);
+		return $padId;
 	}
 
 	/**

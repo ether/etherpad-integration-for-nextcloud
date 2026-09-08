@@ -12,6 +12,7 @@ namespace OCA\EtherpadNextcloud\Service;
 use OCA\EtherpadNextcloud\Exception\BindingException;
 use OCA\EtherpadNextcloud\Exception\BindingStateConflictException;
 use OCA\EtherpadNextcloud\Exception\MissingBindingException;
+use OCA\EtherpadNextcloud\Util\PadAccessMode;
 use OCP\DB\QueryBuilder\IQueryBuilder;
 use OCP\AppFramework\Utility\ITimeFactory;
 use OCP\IDBConnection;
@@ -259,7 +260,7 @@ class BindingService {
 	}
 
 	private function assertAccessMode(string $accessMode): void {
-		if (!in_array($accessMode, [self::ACCESS_PUBLIC, self::ACCESS_PROTECTED], true)) {
+		if (PadAccessMode::tryFromValue($accessMode) === null) {
 			throw new BindingException('Unsupported access mode: ' . $accessMode);
 		}
 	}

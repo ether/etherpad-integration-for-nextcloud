@@ -11,6 +11,7 @@ namespace OCA\EtherpadNextcloud\Service;
 
 use OCA\EtherpadNextcloud\AppInfo\Application;
 use OCA\EtherpadNextcloud\Exception\PadTypeDisabledException;
+use OCA\EtherpadNextcloud\Util\PadAccessMode;
 use OCP\IConfig;
 
 /**
@@ -36,11 +37,12 @@ class PadTypePolicy {
 	) {
 	}
 
+	/** A mode nobody knows counts as unavailable, like one switched off. */
 	public function isEnabled(string $accessMode): bool {
-		return match ($accessMode) {
-			BindingService::ACCESS_PROTECTED => $this->flag(self::SETTING_PROTECTED),
-			BindingService::ACCESS_PUBLIC => $this->flag(self::SETTING_PUBLIC),
-			default => false,
+		return match (PadAccessMode::tryFromValue($accessMode)) {
+			PadAccessMode::Protected => $this->flag(self::SETTING_PROTECTED),
+			PadAccessMode::Public => $this->flag(self::SETTING_PUBLIC),
+			null => false,
 		};
 	}
 
@@ -49,8 +51,12 @@ class PadTypePolicy {
 	 * pad type and are not covered — they follow `allow_external_pads`.
 	 */
 	public function hasAnyEnabledType(): bool {
-		return $this->isEnabled(BindingService::ACCESS_PROTECTED)
-			|| $this->isEnabled(BindingService::ACCESS_PUBLIC);
+		foreach (PadAccessMode::cases() as $mode) {
+			if ($this->isEnabled($mode->value)) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/** @throws PadTypeDisabledException */
@@ -80,9 +86,12 @@ class PadTypePolicy {
 		if ($this->isEnabled($requested)) {
 			return $requested;
 		}
-		foreach ([BindingService::ACCESS_PROTECTED, BindingService::ACCESS_PUBLIC] as $fallback) {
-			if ($this->isEnabled($fallback)) {
-				return $fallback;
+		// Listed rather than taken from PadAccessMode::cases(): the order is
+		// the preference, and a pad type added later must not inherit a
+		// place in it by where it was declared.
+		foreach ([PadAccessMode::Protected, PadAccessMode::Public] as $fallback) {
+			if ($this->isEnabled($fallback->value)) {
+				return $fallback->value;
 			}
 		}
 		throw new PadTypeDisabledException();
