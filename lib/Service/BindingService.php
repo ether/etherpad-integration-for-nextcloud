@@ -260,7 +260,7 @@ class BindingService {
 	}
 
 	private function assertAccessMode(string $accessMode): void {
-		if (PadAccessMode::tryFromValue($accessMode) === null) {
+		if (PadAccessMode::tryFrom($accessMode) === null) {
 			throw new BindingException('Unsupported access mode: ' . $accessMode);
 		}
 	}

@@ -102,7 +102,7 @@ class ManagedPadLifecycle {
 	 * @param callable():string $groupPadName the name a protected pad carries
 	 */
 	public function provisionFor(string $accessMode, callable $padId, callable $groupPadName): string {
-		return match (PadAccessMode::tryFromValue($accessMode)) {
+		return match (PadAccessMode::tryFrom($accessMode)) {
 			PadAccessMode::Public => $this->provisionPublicPad($padId()),
 			PadAccessMode::Protected => $this->provisionGroupPad($groupPadName()),
 			null => throw new \InvalidArgumentException('Unsupported access mode for pad provisioning.'),

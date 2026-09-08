@@ -326,7 +326,7 @@ class PadFileService {
 			throw new PadFileFormatException('Invalid created_at/updated_at in frontmatter.');
 		}
 
-		if (PadAccessMode::tryFromValue($accessMode) === null) {
+		if (PadAccessMode::tryFrom($accessMode) === null) {
 			throw new PadFileFormatException('Invalid access_mode in frontmatter.');
 		}
 

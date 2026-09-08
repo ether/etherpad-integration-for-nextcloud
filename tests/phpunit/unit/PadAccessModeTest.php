@@ -14,20 +14,11 @@ use PHPUnit\Framework\TestCase;
 
 class PadAccessModeTest extends TestCase {
 	public function testReadsTheTwoModesAndRefusesAnythingElse(): void {
-		$this->assertSame(PadAccessMode::Public, PadAccessMode::tryFromValue('public'));
-		$this->assertSame(PadAccessMode::Protected, PadAccessMode::tryFromValue('protected'));
-		$this->assertNull(PadAccessMode::tryFromValue('Public'));
-		$this->assertNull(PadAccessMode::tryFromValue('external'));
-		$this->assertNull(PadAccessMode::tryFromValue(''));
-	}
-
-	/** A value that is not a string is a caller's mistake, not a third mode. */
-	public function testReadsANonStringAsNoMode(): void {
-		$this->assertNull(PadAccessMode::tryFromValue(null));
-		$this->assertNull(PadAccessMode::tryFromValue(42));
-		$this->assertNull(PadAccessMode::tryFromValue(['public']));
-		// Casting this one would be a fatal error rather than a miss.
-		$this->assertNull(PadAccessMode::tryFromValue(new \stdClass()));
+		$this->assertSame(PadAccessMode::Public, PadAccessMode::tryFrom('public'));
+		$this->assertSame(PadAccessMode::Protected, PadAccessMode::tryFrom('protected'));
+		$this->assertNull(PadAccessMode::tryFrom('Public'));
+		$this->assertNull(PadAccessMode::tryFrom('external'));
+		$this->assertNull(PadAccessMode::tryFrom(''));
 	}
 
 	/**

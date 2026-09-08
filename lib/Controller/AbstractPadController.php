@@ -84,7 +84,7 @@ abstract class AbstractPadController extends Controller {
 	}
 
 	protected function requireAccessMode(string $accessMode): string {
-		if (PadAccessMode::tryFromValue($accessMode) === null) {
+		if (PadAccessMode::tryFrom($accessMode) === null) {
 			throw new ControllerBadRequestException('Invalid accessMode. Use public or protected.');
 		}
 		return $accessMode;

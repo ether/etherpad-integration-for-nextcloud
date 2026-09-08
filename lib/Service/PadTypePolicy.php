@@ -39,7 +39,7 @@ class PadTypePolicy {
 
 	/** A mode nobody knows counts as unavailable, like one switched off. */
 	public function isEnabled(string $accessMode): bool {
-		return match (PadAccessMode::tryFromValue($accessMode)) {
+		return match (PadAccessMode::tryFrom($accessMode)) {
 			PadAccessMode::Protected => $this->flag(self::SETTING_PROTECTED),
 			PadAccessMode::Public => $this->flag(self::SETTING_PUBLIC),
 			null => false,
@@ -83,12 +83,16 @@ class PadTypePolicy {
 	 * @throws PadTypeDisabledException when no pad type is enabled at all
 	 */
 	public function resolveCreatableMode(string $requested): string {
+		if (PadAccessMode::tryFrom($requested) === null) {
+			throw new \InvalidArgumentException('Unsupported access mode: ' . $requested);
+		}
 		if ($this->isEnabled($requested)) {
 			return $requested;
 		}
-		// Listed rather than taken from PadAccessMode::cases(): the order is
-		// the preference, and a pad type added later must not inherit a
-		// place in it by where it was declared.
+		// Whichever mode was asked for is disabled, so with two of them the
+		// order settles nothing today. It is written out rather than taken
+		// from PadAccessMode::cases() for the day there is a third: which
+		// downgrade is acceptable is a decision, not a declaration order.
 		foreach ([PadAccessMode::Protected, PadAccessMode::Public] as $fallback) {
 			if ($this->isEnabled($fallback->value)) {
 				return $fallback->value;

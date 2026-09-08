@@ -20,16 +20,4 @@ namespace OCA\EtherpadNextcloud\Util;
 enum PadAccessMode: string {
 	case Public = 'public';
 	case Protected = 'protected';
-
-	/**
-	 * The mode a stored value names, or null when it names none.
-	 *
-	 * Callers keep their own refusal: a controller answers 400, a
-	 * frontmatter parser calls the file malformed, and a provisioning
-	 * request is a programming error. What they no longer each decide is
-	 * which values exist.
-	 */
-	public static function tryFromValue(mixed $value): ?self {
-		return is_string($value) ? self::tryFrom($value) : null;
-	}
 }
