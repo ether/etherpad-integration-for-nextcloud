@@ -32,6 +32,17 @@ class PadTypePolicy {
 	public const SETTING_PROTECTED = 'enable_protected_pads';
 	public const SETTING_PUBLIC = 'enable_public_pads';
 
+	/**
+	 * Which type a pad falls back to, most preferred first.
+	 *
+	 * With two modes the loop below can never show this: whichever was asked
+	 * for is the disabled one, so a single candidate is left. It is a
+	 * constant so that the preference can be asserted directly - protected
+	 * first, because the other direction hands out a pad anyone holding its
+	 * id can read - rather than left to the order someone happened to write.
+	 */
+	public const FALLBACK_ORDER = [PadAccessMode::Protected, PadAccessMode::Public];
+
 	public function __construct(
 		private IConfig $config,
 	) {
@@ -39,10 +50,14 @@ class PadTypePolicy {
 
 	/** A mode nobody knows counts as unavailable, like one switched off. */
 	public function isEnabled(string $accessMode): bool {
-		return match (PadAccessMode::tryFrom($accessMode)) {
+		$mode = PadAccessMode::tryFrom($accessMode);
+		return $mode !== null && $this->isModeEnabled($mode);
+	}
+
+	private function isModeEnabled(PadAccessMode $mode): bool {
+		return match ($mode) {
 			PadAccessMode::Protected => $this->flag(self::SETTING_PROTECTED),
 			PadAccessMode::Public => $this->flag(self::SETTING_PUBLIC),
-			null => false,
 		};
 	}
 
@@ -52,7 +67,7 @@ class PadTypePolicy {
 	 */
 	public function hasAnyEnabledType(): bool {
 		foreach (PadAccessMode::cases() as $mode) {
-			if ($this->isEnabled($mode->value)) {
+			if ($this->isModeEnabled($mode)) {
 				return true;
 			}
 		}
@@ -70,17 +85,20 @@ class PadTypePolicy {
 	/**
 	 * Pick a mode that may actually be created, preferring the requested one.
 	 *
-	 * Used where refusing would strand the user rather than protect anything:
-	 * a template carries the mode of the pad it was made from, and a `.pad`
-	 * file that arrived outside the UI (WebDAV, another integration) has to
-	 * become *some* pad on first open. Falling back keeps the content
-	 * reachable while the policy still holds for the resulting pad.
+	 * A disabled mode falls back rather than refusing, because refusing there
+	 * would strand the user without protecting anything: a template carries
+	 * the mode of the pad it was made from, and a `.pad` file that arrived
+	 * outside the UI (WebDAV, another integration) has to become *some* pad
+	 * on first open. A mode that is not one at all is a different matter, and
+	 * is refused: no caller can produce it, and substituting for it would
+	 * hand back a pad of a type nobody asked for.
 	 *
 	 * Note this can widen access — a protected template becomes a public pad
 	 * when protected pads are off. That is the instance's only option at that
 	 * point, but it is a downgrade in the security-relevant direction.
 	 *
 	 * @throws PadTypeDisabledException when no pad type is enabled at all
+	 * @throws \InvalidArgumentException when $requested is not a known mode
 	 */
 	public function resolveCreatableMode(string $requested): string {
 		if (PadAccessMode::tryFrom($requested) === null) {
@@ -89,12 +107,8 @@ class PadTypePolicy {
 		if ($this->isEnabled($requested)) {
 			return $requested;
 		}
-		// Whichever mode was asked for is disabled, so with two of them the
-		// order settles nothing today. It is written out rather than taken
-		// from PadAccessMode::cases() for the day there is a third: which
-		// downgrade is acceptable is a decision, not a declaration order.
-		foreach ([PadAccessMode::Protected, PadAccessMode::Public] as $fallback) {
-			if ($this->isEnabled($fallback->value)) {
+		foreach (self::FALLBACK_ORDER as $fallback) {
+			if ($this->isModeEnabled($fallback)) {
 				return $fallback->value;
 			}
 		}

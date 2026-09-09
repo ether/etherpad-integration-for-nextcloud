@@ -72,7 +72,7 @@ class ManagedPadLifecycle {
 	 * there. Random ids make that vanishingly unlikely, but the cost of
 	 * being wrong is deleting someone's live pad, so it is worth the check.
 	 */
-	private function provisionPad(string $padId): void {
+	private function provisionPad(string $padId): string {
 		try {
 			$this->etherpadClient->createPad($padId);
 		} catch (\Throwable $e) {
@@ -89,6 +89,8 @@ class ManagedPadLifecycle {
 			}
 			throw $e;
 		}
+
+		return $padId;
 	}
 
 	/**
@@ -103,15 +105,10 @@ class ManagedPadLifecycle {
 	 */
 	public function provisionFor(string $accessMode, callable $padId, callable $groupPadName): string {
 		return match (PadAccessMode::tryFrom($accessMode)) {
-			PadAccessMode::Public => $this->provisionPublicPad($padId()),
+			PadAccessMode::Public => $this->provisionPad($padId()),
 			PadAccessMode::Protected => $this->provisionGroupPad($groupPadName()),
 			null => throw new \InvalidArgumentException('Unsupported access mode for pad provisioning.'),
 		};
-	}
-
-	private function provisionPublicPad(string $padId): string {
-		$this->provisionPad($padId);
-		return $padId;
 	}
 
 	/**

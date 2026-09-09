@@ -38,6 +38,10 @@ jobs:
               - 'lib/**'
               - 'tests/phpunit/**'
               - 'phpunit.xml.dist'
+              # Two tests read src/ to catch a JavaScript copy drifting from
+              # the PHP it mirrors, so a change to only that copy has to run
+              # them - which is the change they exist to catch.
+              - 'src/**'
 
   phpunit:
     runs-on: ubuntu-latest

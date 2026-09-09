@@ -22,9 +22,9 @@ class PadAccessModeTest extends TestCase {
 	}
 
 	/**
-	 * The constants are what 200-odd call sites spell, and a constant
-	 * expression cannot read an enum case before PHP 8.2 - which this app
-	 * still supports. So they are written out, and held here.
+	 * The constants are what 200-odd call sites spell. Reading an enum case's
+	 * value in a constant expression needs PHP 8.3, and this app declares 8.1
+	 * as its floor, so they are written out and held here instead.
 	 */
 	public function testTheBindingConstantsNameTheSameModes(): void {
 		$this->assertSame(PadAccessMode::Public->value, BindingService::ACCESS_PUBLIC);
@@ -42,7 +42,9 @@ class PadAccessModeTest extends TestCase {
 		$this->assertFileExists($constants);
 
 		$matched = preg_match(
-			'/export\s+const\s+PAD_ACCESS_MODES\s*=\s*\[(?<values>[^\]]*)\]/',
+			// The first bracketed list after the name, so a wrapper such as
+			// Object.freeze() does not read as "the export is missing".
+			'/export\s+const\s+PAD_ACCESS_MODES\b[^\[]*\[(?<values>[^\]]*)\]/',
 			(string)file_get_contents($constants),
 			$matches,
 		);

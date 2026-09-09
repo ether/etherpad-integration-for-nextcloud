@@ -6,10 +6,13 @@ import { describe, expect, it } from 'vitest'
 import { isPadAccessMode, PAD_ACCESS_MODES } from '../../../src/lib/constants.js'
 
 describe('isPadAccessMode', () => {
-	it('knows the two modes', () => {
-		expect(PAD_ACCESS_MODES).toEqual(['protected', 'public'])
-		expect(isPadAccessMode('protected')).toBe(true)
-		expect(isPadAccessMode('public')).toBe(true)
+	// Not a third copy of the list: PadAccessModeTest holds this one to the
+	// PHP enum, and asserting it again here would only agree with itself.
+	it('accepts every mode the list names, and nothing outside it', () => {
+		expect(PAD_ACCESS_MODES.length).toBeGreaterThan(0)
+		for (const mode of PAD_ACCESS_MODES) {
+			expect(isPadAccessMode(mode)).toBe(true)
+		}
 	})
 
 	it('refuses anything else, whatever its type', () => {

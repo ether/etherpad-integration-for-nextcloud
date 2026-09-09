@@ -85,7 +85,7 @@ class FileCreatedFromTemplateListener implements IEventListener {
 		// Our own tiles carry no content: initialise straight to the pad type
 		// instead of copying an empty marker over the new file.
 		$templateAccessMode = $this->templateStorage->accessModeForTemplateFile($template);
-		if ($templateAccessMode !== '') {
+		if ($templateAccessMode !== null) {
 			$this->initializeBlankPad($user->getUID(), $target, $templateAccessMode);
 			return;
 		}

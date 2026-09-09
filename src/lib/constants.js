@@ -8,7 +8,7 @@ export const MIME = 'application/x-etherpad-nextcloud'
 export const VIEWER_HANDLER_ID = 'etherpad_nextcloud'
 
 /** The kinds of pad this app makes. PadAccessMode.php is the same list. */
-export const PAD_ACCESS_MODES = ['protected', 'public']
+export const PAD_ACCESS_MODES = Object.freeze(['protected', 'public'])
 
 /**
  * @param {unknown} value

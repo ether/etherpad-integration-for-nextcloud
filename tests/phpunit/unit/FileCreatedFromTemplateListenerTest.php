@@ -319,7 +319,7 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 	/** A storage that recognises no template as one of ours. */
 	private function noTypeTemplates(): PadTemplateStorage {
 		$storage = $this->createMock(PadTemplateStorage::class);
-		$storage->method('accessModeForTemplateFile')->willReturn('');
+		$storage->method('accessModeForTemplateFile')->willReturn(null);
 		$storage->method('isExternalMarkerFile')->willReturn(false);
 		return $storage;
 	}

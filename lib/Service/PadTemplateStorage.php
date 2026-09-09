@@ -170,8 +170,9 @@ class PadTemplateStorage {
 	 * and the chosen type would be silently lost. Matching on the path cannot
 	 * do that, and it also keeps a user's own file of the same name apart.
 	 */
-	public function accessModeForTemplateFile(File $template): string {
-		return $this->isPublicMarkerFile($template) ? BindingService::ACCESS_PUBLIC : '';
+	/** Null where the file names no type, which is what "no preference" means. */
+	public function accessModeForTemplateFile(File $template): ?string {
+		return $this->isPublicMarkerFile($template) ? BindingService::ACCESS_PUBLIC : null;
 	}
 
 	/**

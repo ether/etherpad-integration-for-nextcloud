@@ -94,7 +94,7 @@ class PadTemplateStorageTest extends TestCase {
 		$userFile = $this->fileAt('/alice/files/Templates/' . PadTemplateStorage::PUBLIC_TILE_NAME);
 
 		$this->assertFalse($storage->isPublicMarkerFile($userFile));
-		$this->assertSame('', $storage->accessModeForTemplateFile($userFile));
+		$this->assertNull($storage->accessModeForTemplateFile($userFile));
 	}
 
 	/**

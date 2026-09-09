@@ -12,6 +12,7 @@ namespace OCA\EtherpadNextcloud\Tests\Unit;
 use OCA\EtherpadNextcloud\Exception\PadTypeDisabledException;
 use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\EtherpadNextcloud\Service\PadTypePolicy;
+use OCA\EtherpadNextcloud\Util\PadAccessMode;
 use OCP\IConfig;
 use PHPUnit\Framework\TestCase;
 
@@ -89,6 +90,17 @@ class PadTypePolicyTest extends TestCase {
 			BindingService::ACCESS_PUBLIC,
 			$policy->resolveCreatableMode(BindingService::ACCESS_PROTECTED)
 		);
+	}
+
+	/**
+	 * The loop that reads this cannot show it: whichever mode was asked for
+	 * is the disabled one, so only a single candidate is ever left. Pinned
+	 * here so that reordering it is a decision someone makes, and so that a
+	 * mode added to the enum has to be given a place in the preference.
+	 */
+	public function testTheFallbackPrefersTheProtectedType(): void {
+		self::assertSame(PadAccessMode::Protected, PadTypePolicy::FALLBACK_ORDER[0]);
+		self::assertEqualsCanonicalizing(PadAccessMode::cases(), PadTypePolicy::FALLBACK_ORDER);
 	}
 
 	/**
