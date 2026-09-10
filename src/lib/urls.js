@@ -3,36 +3,7 @@
  * Copyright (c) 2026 Jacob Bühler
  */
 
-import { APP_ID } from './constants.js'
-import { ocGenerateUrl } from './oc-compat.js'
-
-/**
- * Join a directory and a file name. Nothing else: the name is not
- * touched.
- *
- * This used to collapse " .pad" to ".pad", which meant `Notes .pad` — a
- * name Nextcloud accepts — resolved to a different file. The same
- * rewrite was removed from the PHP side; what a name may be is decided
- * when the file is created, not while opening one.
- */
-export const normalizeFilePath = (dir, filename) => {
-	const cleanDir = !dir || dir === '/' ? '' : String(dir)
-	const cleanName = String(filename || '').replace(/^\/+/, '')
-	if (cleanDir === '') {
-		return '/' + cleanName
-	}
-	return cleanDir + '/' + cleanName
-}
-
 export const isPadName = (name) => typeof name === 'string' && name.toLowerCase().endsWith('.pad')
-
-export const viewerUrlForPublicShare = (token, path) => {
-	const base = ocGenerateUrl('/apps/' + APP_ID + '/public/' + encodeURIComponent(token))
-	if (!path) {
-		return base
-	}
-	return base + '?file=' + encodeURIComponent(path)
-}
 
 export const parsePublicShareTokenFromLocation = () => {
 	const match = (window.location.pathname || '').match(/(?:\/index\.php)?\/s\/([^/]+)(?:\/.*)?$/)
@@ -40,40 +11,6 @@ export const parsePublicShareTokenFromLocation = () => {
 		return null
 	}
 	return match[1] || null
-}
-
-export const parseFileIdFromCurrentLocation = () => {
-	const match = (window.location.pathname || '').match(/\/apps\/files\/files\/(\d+)\/?$/)
-	if (!match) {
-		return null
-	}
-	const id = parseInt(match[1], 10)
-	return Number.isFinite(id) && id > 0 ? id : null
-}
-
-export const parsePublicSharePadFromHref = (href) => {
-	if (!href || typeof href !== 'string') {
-		return null
-	}
-	let url
-	try {
-		url = new URL(href, window.location.origin)
-	} catch (error) {
-		return null
-	}
-	const pathMatch = (url.pathname || '').match(/(?:\/index\.php)?\/s\/([^/]+)\/download\/?$/)
-	if (!pathMatch) {
-		return null
-	}
-	const files = url.searchParams.get('files') || ''
-	if (!isPadName(files)) {
-		return null
-	}
-	const dir = url.searchParams.get('path') || '/'
-	return {
-		token: pathMatch[1],
-		path: normalizeFilePath(dir, files),
-	}
 }
 
 export const parsePadPathFromDavHref = (href) => {

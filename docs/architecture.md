@@ -56,14 +56,15 @@ Frontend code is authored as ES modules in `src/` and built with Vite into
 checked-in runtime assets in `js/`.
 
 - Build entrypoints are defined in `vite.config.js`:
-  - `src/files-main.js`
-  - `src/viewer-main.js`
+  - `src/viewer-init.js`
+  - `src/public-share-main.js`
   - `src/embed-main.js`
   - `src/embed-create-main.js`
   - `src/admin-settings.js`
 - Shared browser/Nextcloud helpers live in `src/lib/`.
-- Files-app specific modules live in `src/files/`.
-- Nextcloud loads built assets from `js/` via `Util::addScript(...)`; blank embed templates load their built bundles explicitly.
+- Nextcloud loads the viewer registration with `Util::addInitScript(...)` before the Viewer starts. The full component is an async chunk loaded only when a `.pad` is opened.
+- `@nextcloud/viewer` 1.x declares a Vue 2 peer although its registration binding imports no Vue. The narrow `package.json` override lets that framework-free binding coexist with the Vue 3 peer used by the build tooling without weakening npm's handling of unrelated peers.
+- Blank embed templates load their built bundles explicitly.
 - After editing `src/`, run `npm test` and `npm run build` before deployment.
 
 ## Persistence Model
@@ -100,7 +101,7 @@ checked-in runtime assets in `js/`.
 
 Primary flow (native viewer):
 
-1. On an authenticated Files route, Nextcloud's own Viewer action opens the file: this app registers the `.pad` MIME type through `OCA.Viewer.registerHandler()` and contributes no file action of its own.
+1. On an authenticated Files route, Nextcloud's own Viewer action opens the file: `src/viewer-init.js` registers the `.pad` MIME type through `@nextcloud/viewer` before the Viewer starts, and the app contributes no file action of its own.
 2. `src/viewer-main.js` resolves Etherpad open data via API:
    - preferred: `POST /api/v1/pads/open-by-id` (`fileId`, CSRF `requesttoken`)
    - fallback: `POST /api/v1/pads/open` (`file`, CSRF `requesttoken`) if no stable `fileId` is available
@@ -165,16 +166,17 @@ Primary flow (minimal blank create launcher page):
 
 ### 3) Open (public share)
 
-Primary flow (native viewer when available):
+Primary flow (native viewer):
 
 1. Public share routes stay on Nextcloud share URL (`/s/{token}`).
-2. `src/viewer-main.js` detects public share context and resolves open data via:
+2. Public folder shares use Nextcloud Files Sharing's own file action. A public single-file `.pad` share explicitly opens `/`, the share root, through the Viewer after registration. Existing app compatibility links hand their `path` and `files` selection to the Viewer once after the redirect.
+3. `src/viewer-main.js` detects public share context and resolves open data via:
    - `GET /api/v1/public/open/{token}?fileId=...` where the Viewer knows an id, `?file=...` otherwise - one locator, never both. See "Naming the file in a public share" in `docs/api-reference.md`.
-3. Same open-target rules apply:
+4. Same open-target rules apply:
    - read-only share: Etherpad read-only URL
    - editable share: regular URL/session
-4. For protected share-open flows, session bootstrap uses one explicit `Set-Cookie` header.
-5. Compatibility route `/apps/etherpad_nextcloud/public/{token}` redirects to native share route `/s/{token}`.
+5. For protected share-open flows, session bootstrap uses one explicit `Set-Cookie` header.
+6. Compatibility route `/apps/etherpad_nextcloud/public/{token}` redirects to native share route `/s/{token}`.
 
 ## Cookie Header Model
 
@@ -231,22 +233,13 @@ Primary flow (native viewer when available):
 
 ## Main Frontend Modules
 
-- `src/files-main.js`
-  - Thin files-app entrypoint that wires the modules below.
-- `src/files/pad-opener.js`
-  - Opens a `.pad` on a public-share route, the only place this app opens one itself.
-  - Falls back to hard navigation to the app's public viewer URL when the native viewer cannot be used.
-- `src/files/route-controller.js`
-  - Watches Files/public-share route changes.
-  - Normalizes stale `.pad` routes without `openfile=true` back to folder routes.
-  - Opens public-share pad links through the native viewer when available.
-- `src/files/public-share-pad-links.js`
-  - Public-share click interception for download links that need remapping to the pad viewer.
-  - Authenticated Files routes intentionally do not use global click interception.
-- `src/files/public-single-share-ui.js`
-  - Public single-file share UI state refresh.
+- `src/viewer-init.js`
+  - Registers the MIME handler synchronously through `@nextcloud/viewer`.
+  - Supplies `src/viewer-main.js` as an async component.
+- `src/public-share-main.js`
+  - Opens the root file on public single-file `.pad` shares with the native Viewer context.
+  - Hands existing public folder-share links with `path` and `files` to that Viewer once; normal folder navigation remains native.
 - `src/viewer-main.js`
-  - Registers Nextcloud viewer handler for MIME `application/x-etherpad-nextcloud`.
   - Open URL resolution via CSRF-protected `POST` endpoints:
     - `open-by-id` (preferred)
     - `open` (fallback)
@@ -267,11 +260,11 @@ Primary flow (native viewer when available):
 ## Event Integration
 
 - `OCA\Files\Event\LoadAdditionalScriptsEvent`
-  - Load scripts for files app.
+  - Register the viewer handler before Files initializes.
 - `OCA\Viewer\Event\LoadViewer`
-  - Load viewer handler.
+  - Register the viewer handler on other pages that load Viewer.
 - `OCA\Files_Sharing\Event\BeforeTemplateRenderedEvent`
-  - Load scripts on public-share pages.
+  - Register the viewer handler on public-share pages and load the one-shot opener for public single-file `.pad` shares or existing compatibility links.
 - `OCA\Files_Trashbin\Events\MoveToTrashEvent`
   - Trash lifecycle.
 - `OCA\Files_Trashbin\Events\NodeRestoredEvent`

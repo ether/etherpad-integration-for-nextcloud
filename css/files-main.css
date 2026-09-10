@@ -3,8 +3,8 @@
  * Copyright (c) 2026 Jacob Bühler
  */
 
-/* NC Viewer scoped CSS sets height:auto on .modal-container.
- * Scope override to our viewer only to avoid affecting other file types. */
+/* NC Viewer reserves a header-height gap below its modal. Pads are full-height
+ * editors, so only their modal extends to the bottom of the viewport. */
 .viewer .modal-wrapper .modal-container:has(.epnc-native-shell),
 .viewer .modal-wrapper .modal-container:has(.epnc-pad-doc) {
 	height: unset !important;

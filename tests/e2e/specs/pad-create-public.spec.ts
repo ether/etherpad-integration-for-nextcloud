@@ -48,6 +48,14 @@ test.describe('public pad create + open', () => {
 
 		// Viewer mounts with an Etherpad iframe (not the no-viewer error template).
 		await expectEtherpadViewerMounted(page)
+
+		// The registered handler is mounted inside Nextcloud's ordinary Viewer,
+		// including its filename header and standard file actions.
+		const viewer = page.getByRole('dialog', { name: padName })
+		await expect(viewer).toBeVisible()
+		await viewer.getByRole('button', { name: /actions|aktionen/i }).click()
+		await page.getByRole('menuitem', { name: /open sidebar|seitenleiste öffnen/i }).click()
+		await expect(page.locator('aside.app-sidebar')).toBeVisible()
 	})
 })
 

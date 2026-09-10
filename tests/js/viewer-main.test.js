@@ -7,12 +7,10 @@ import { flushAsyncWork } from './flush.js'
 
 // The viewer component is a version-agnostic Vue options object that NC's
 // Viewer mounts at runtime; we don't bundle Vue. Rather than spin up a Vue
-// runtime, we exercise the options object directly: computed getters and
-// methods are plain functions invoked against a controlled `this`, and the
+// runtime, we exercise the exported options object directly: computed getters
+// and methods are plain functions invoked against a controlled `this`, and the
 // render function is driven with a mock `createElement` so we can assert the
-// produced vnode tree. The component is captured by stubbing
-// `OCA.Viewer.registerHandler` before importing the module (which registers
-// on load) — no source export needed.
+// produced vnode tree.
 
 vi.mock('../../src/lib/oc-compat.js', () => ({
 	ocGenerateUrl: (path) => path,
@@ -55,13 +53,7 @@ const { parsePadPathFromDavHref, parsePublicShareTokenFromLocation } = await imp
 let component
 
 beforeAll(async () => {
-	window.OCA = {
-		Viewer: {
-			availableHandlers: [],
-			registerHandler: (handler) => { component = handler.component },
-		},
-	}
-	await import('../../src/viewer-main.js')
+	component = (await import('../../src/viewer-main.js')).default
 })
 
 beforeEach(() => {

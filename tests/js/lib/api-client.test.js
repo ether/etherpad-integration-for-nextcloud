@@ -30,48 +30,6 @@ const jsonResponse = (body, ok = true) => ({
 })
 
 describe('api-client', () => {
-	it('resolves pads by file ID and caches in-flight requests', async () => {
-		const { apiResolvePadByFileId } = await importClient()
-		fetch.mockResolvedValueOnce(jsonResponse({ is_pad: true, file_id: 42 }))
-
-		const first = apiResolvePadByFileId(42)
-		const second = apiResolvePadByFileId(42)
-
-		await expect(first).resolves.toEqual({ is_pad: true, file_id: 42 })
-		await expect(second).resolves.toEqual({ is_pad: true, file_id: 42 })
-		expect(fetch).toHaveBeenCalledTimes(1)
-		expect(fetch).toHaveBeenCalledWith(
-			'/index.php/apps/etherpad_nextcloud/api/v1/pads/resolve?fileId=42',
-			expect.objectContaining({
-				method: 'GET',
-				credentials: 'same-origin',
-			})
-		)
-	})
-
-	it('drops failed resolve requests from cache', async () => {
-		const { apiResolvePadByFileId } = await importClient()
-		fetch
-			.mockResolvedValueOnce(jsonResponse({ message: 'Nope' }, false))
-			.mockResolvedValueOnce(jsonResponse({ is_pad: true }))
-
-		await expect(apiResolvePadByFileId(7)).rejects.toThrow('Nope')
-		await expect(apiResolvePadByFileId(7)).resolves.toEqual({ is_pad: true })
-		expect(fetch).toHaveBeenCalledTimes(2)
-	})
-
-	it('limits resolve cache growth', async () => {
-		const { apiResolvePadByFileId } = await importClient()
-		fetch.mockImplementation((url) => Promise.resolve(jsonResponse({ url })))
-
-		for (let fileId = 1; fileId <= 51; fileId += 1) {
-			await apiResolvePadByFileId(fileId)
-		}
-		await apiResolvePadByFileId(1)
-
-		expect(fetch).toHaveBeenCalledTimes(52)
-	})
-
 	it('resolves pads by encoded file path', async () => {
 		const { apiResolvePadByPath } = await importClient()
 		fetch.mockResolvedValueOnce(jsonResponse({ is_pad: true }))
@@ -147,12 +105,8 @@ describe('api-client', () => {
 		expect(fetch).toHaveBeenCalledTimes(4)
 	})
 
-	it('posts a recovery request and invalidates the resolve cache on success', async () => {
-		const { apiRecoverFromSnapshot, apiResolvePadByFileId } = await importClient()
-		// Seed the resolve cache so we can verify it is dropped after recover.
-		fetch.mockResolvedValueOnce(jsonResponse({ is_pad: true, file_id: 42 }))
-		await apiResolvePadByFileId(42)
-
+	it('posts a recovery request', async () => {
+		const { apiRecoverFromSnapshot } = await importClient()
 		fetch.mockResolvedValueOnce(jsonResponse({ status: 'restored', new_pad_id: 'fresh' }))
 
 		const result = await apiRecoverFromSnapshot(42)
@@ -168,10 +122,6 @@ describe('api-client', () => {
 			})
 		)
 
-		// Cache invalidated: the next resolve must hit fetch again.
-		fetch.mockResolvedValueOnce(jsonResponse({ is_pad: true, file_id: 42 }))
-		await apiResolvePadByFileId(42)
-		expect(fetch).toHaveBeenCalledTimes(3)
 	})
 
 	it('looks up the original pad by file ID with a GET request', async () => {

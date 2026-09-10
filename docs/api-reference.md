@@ -435,16 +435,12 @@ solely by the separate external-pad policy, not by these two settings.
 
 ## Frontend API Usage
 
-- `src/files-main.js`
-  - wires the Files/public-share frontend modules.
-- `src/files/pad-opener.js`
-  - opens a `.pad` on a public-share route, through the native viewer where one exists.
-  - falls back to `GET /apps/etherpad_nextcloud/public/{token}?file=…` otherwise.
-- `src/files/public-share-pad-links.js`
-  - global click interception is only used on public-share routes to remap share download links to the pad viewer.
-- `src/files/route-controller.js`
-  - normalizes stale `.pad` Files routes without `openfile=true`.
-  - opens public-share pad links through the native viewer when available.
+- `src/viewer-init.js`
+  - registers the `.pad` MIME handler synchronously through `@nextcloud/viewer` from an init script.
+  - lazy-loads `src/viewer-main.js` only when the Viewer opens a pad.
+- `src/public-share-main.js`
+  - opens `/` explicitly for a public single-file `.pad` share.
+  - hands an existing compatibility link with `path` and `files` to the native Viewer once; ordinary public folder-share navigation stays with Nextcloud Files Sharing.
 - `src/viewer-main.js`
   - prefers `POST /api/v1/pads/open-by-id` (`fileId`, requesttoken).
   - falls back to `POST /api/v1/pads/open` (`file`, requesttoken) only without `fileId`.
@@ -473,8 +469,6 @@ solely by the separate external-pad policy, not by these two settings.
 - Normal start: `/index.php/apps/files/files`
 - `.pad` open target: `/index.php/apps/files/files/{fileId}?dir=...&editing=false&openfile=true`
 - Legacy/compat fallback deep-link: `/index.php/apps/etherpad_nextcloud/by-id/{fileId}`
-- Stale URL normalization:
-  - Route `/apps/files/files/{fileId}?dir=...` without `openfile=true` is normalized (for `.pad`) to `/apps/files/files?dir=...` so future `.pad` opens continue to work correctly.
 
 ## Test Scripts
 

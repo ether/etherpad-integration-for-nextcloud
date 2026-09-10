@@ -1,0 +1,2 @@
+import{i as r}from"./urls-Cux98oqs.chunk.mjs";const c=(a=window.location)=>{const e=new URLSearchParams(a.search),t=e.get("files");if(!r(t))return null;const o=t.replace(/^\/+/,""),n=e.get("path")||"/";return`${n==="/"?"":`/${n.replace(/^\/+|\/+$/g,"")}`}/${o}`};document.addEventListener("DOMContentLoaded",()=>{window.OCA.Viewer.open({path:c()||"/"})});
+//# sourceMappingURL=etherpad_nextcloud-public-share-main.mjs.map

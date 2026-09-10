@@ -81,6 +81,7 @@ $stubFiles = [
 	__DIR__ . '/stubs/OCP/Share/Exceptions/ShareNotFound.php',
 	__DIR__ . '/stubs/OCP/Share/IManager.php',
 	__DIR__ . '/stubs/OCP/Share/IShare.php',
+	__DIR__ . '/stubs/OCA/Files_Sharing/Event/BeforeTemplateRenderedEvent.php',
 	__DIR__ . '/stubs/Psr/Log/LoggerInterface.php',
 ];
 

@@ -253,6 +253,7 @@ test.describe('public folder share with confusable file names', () => {
 		const publicPage = await publicContext.newPage()
 		try {
 			await publicPage.goto(shareUrl)
+			const sharePath = new URL(shareUrl).pathname
 
 			// Clicked in Nextcloud's own rendering of the share, never a
 			// URL this test built: what the click asks for is the point.
@@ -262,14 +263,37 @@ test.describe('public folder share with confusable file names', () => {
 			])
 
 			await expectEtherpadViewerMounted(publicPage)
+			await expect(publicPage.getByRole('dialog', { name: plusName })).toBeVisible()
 			expect(await readEtherpadUrlFromViewer(publicPage)).toBe(plusPad.padUrl)
 			// Parsed, not a substring: `fileId=12` is inside `fileId=123`.
 			expect(new URL(openRequest.url()).searchParams.get('fileId')).toBe(String(plusFileId))
 			await closeViewer(publicPage)
+			await expect.poll(() => new URL(publicPage.url()).pathname).toBe(sharePath)
+			await expect(
+				publicPage.locator(`[data-cy-files-list-row-name="${plusName}"]`).first(),
+			).toBeVisible()
 
 			await openPadFromFileList(publicPage, spaceName)
 			await expectEtherpadViewerMounted(publicPage)
+			await expect(publicPage.getByRole('dialog', { name: spaceName })).toBeVisible()
 			expect(await readEtherpadUrlFromViewer(publicPage)).toBe(spacePad.padUrl)
+		} finally {
+			await publicContext.close()
+		}
+	})
+
+	test('keeps compatibility links to pads inside a public folder share working', async ({ browser }) => {
+		const publicContext = await browser.newContext()
+		const publicPage = await publicContext.newPage()
+		try {
+			await publicPage.goto(
+				`${E2E.baseURL}/apps/etherpad_nextcloud/public/${encodeURIComponent(shareToken)}`
+				+ `?file=${encodeURIComponent(`/${plusName}`)}`,
+			)
+
+			await expectEtherpadViewerMounted(publicPage)
+			await expect(publicPage.getByRole('dialog', { name: plusName })).toBeVisible()
+			expect(await readEtherpadUrlFromViewer(publicPage)).toBe(plusPad.padUrl)
 		} finally {
 			await publicContext.close()
 		}

@@ -1,0 +1,16 @@
+SPDX-License-Identifier: AGPL-3.0-or-later
+SPDX-License-Identifier: MIT
+SPDX-FileCopyrightText: Evan You
+SPDX-FileCopyrightText: Nextcloud GmbH and Nextcloud contributors
+SPDX-FileCopyrightText: etherpad-nextcloud developers
+
+This file is generated from multiple sources. Included packages:
+- @nextcloud/viewer
+	- version: 1.0.0
+	- license: AGPL-3.0-or-later
+- etherpad-nextcloud
+	- version: 1.1.0-alpha.5
+	- license: AGPL-3.0-or-later
+- vite
+	- version: 7.3.6
+	- license: MIT

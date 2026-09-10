@@ -11,25 +11,6 @@ const RESOLVE_CACHE = new Map()
 const RESOLVE_CACHE_MAX_ENTRIES = 50
 const RESOLVE_CACHE_TTL_MS = 5 * 60 * 1000
 
-export const apiResolvePadByFileId = async (fileId) => {
-	const cacheKey = String(fileId)
-	const cached = getResolveCache(cacheKey)
-	if (cached !== null) {
-		return cached
-	}
-	const url = ocGenerateUrl('/apps/' + APP_ID + '/api/v1/pads/resolve') + '?fileId=' + encodeURIComponent(cacheKey)
-	const request = fetchJson(url, {
-		method: 'GET',
-		headers: { Accept: 'application/json' },
-	}, 'Pad resolve failed.')
-		.catch((error) => {
-			RESOLVE_CACHE.delete(cacheKey)
-			throw error
-		})
-	setResolveCache(cacheKey, request)
-	return request
-}
-
 /**
  * Resolve a path to its pad metadata.
  *
@@ -86,13 +67,9 @@ export const apiRecoverFromSnapshot = async (fileId, path = '') => {
 			requesttoken: ocRequestToken(),
 		},
 	}, { fallbackMessage: 'Recovery failed.', timeoutMs: null })
-	// A freshly recovered pad invalidates any cached resolve response: the
-	// old one carried a missing-binding marker that no longer applies.
-	RESOLVE_CACHE.delete(String(fileId))
-	// And the path the caller resolved this id by, if it named one. The
-	// same answer is cached under both keys; flushing every `path:` entry
-	// instead would throw away answers for unrelated files a session has
-	// already looked up.
+	// A freshly recovered pad invalidates the path answer the caller used,
+	// if it named one. Flushing every `path:` entry instead would throw away
+	// answers for unrelated files a session has already looked up.
 	if (typeof path === 'string' && path !== '') {
 		RESOLVE_CACHE.delete('path:' + path)
 	}

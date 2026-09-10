@@ -9,9 +9,13 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\Listeners;
 
 use OCA\EtherpadNextcloud\AppInfo\Application;
+use OCA\EtherpadNextcloud\Util\PadFileType;
 use OCA\Files_Sharing\Event\BeforeTemplateRenderedEvent;
 use OCP\EventDispatcher\Event;
 use OCP\EventDispatcher\IEventListener;
+use OCP\Files\File;
+use OCP\Files\Folder;
+use OCP\IRequest;
 use OCP\Util;
 
 /**
@@ -19,6 +23,11 @@ use OCP\Util;
  * @psalm-api
  */
 class LoadPublicShareScriptsListener implements IEventListener {
+	public function __construct(
+		private IRequest $request,
+	) {
+	}
+
 	public function handle(Event $event): void {
 		if (!$event instanceof BeforeTemplateRenderedEvent) {
 			return;
@@ -29,7 +38,17 @@ class LoadPublicShareScriptsListener implements IEventListener {
 
 		Util::addStyle(Application::APP_ID, 'pad-document');
 		Util::addStyle(Application::APP_ID, 'files-main');
-		Util::addScript(Application::APP_ID, 'etherpad_nextcloud-files-main', 'files_sharing');
-		Util::addScript(Application::APP_ID, 'etherpad_nextcloud-viewer-main', 'files_sharing');
+		Util::addInitScript(Application::APP_ID, 'etherpad_nextcloud-viewer-init');
+
+		$node = $event->getShare()->getNode();
+		$selectedFile = $this->request->getParam('files', '');
+		$isSinglePadShare = $node instanceof File && PadFileType::isPad($node->getName());
+		$isLegacyFolderSelection = $node instanceof Folder
+			&& is_string($selectedFile)
+			&& PadFileType::isPad($selectedFile);
+
+		if ($isSinglePadShare || $isLegacyFolderSelection) {
+			Util::addScript(Application::APP_ID, 'etherpad_nextcloud-public-share-main', 'viewer');
+		}
 	}
 }
