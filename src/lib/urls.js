@@ -29,8 +29,6 @@ export const parsePadPathFromDavHref = (href) => {
 	} catch (error) {
 		return null
 	}
-	// Same rule as the PHP side, which accepts `.PAD` from a desktop
-	// client or a WebDAV upload.
 	if (!isPadName(pathname)) {
 		return null
 	}

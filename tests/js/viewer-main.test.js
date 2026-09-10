@@ -5,12 +5,7 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushAsyncWork } from './flush.js'
 
-// The viewer component is a version-agnostic Vue options object that NC's
-// Viewer mounts at runtime; we don't bundle Vue. Rather than spin up a Vue
-// runtime, we exercise the exported options object directly: computed getters
-// and methods are plain functions invoked against a controlled `this`, and the
-// render function is driven with a mock `createElement` so we can assert the
-// produced vnode tree.
+// The app does not bundle Vue, so exercise the component's options object directly.
 
 vi.mock('../../src/lib/oc-compat.js', () => ({
 	ocGenerateUrl: (path) => path,
@@ -38,8 +33,7 @@ vi.mock('../../src/lib/pad-content.js', () => ({
 vi.mock('../../src/lib/pad-frame-srcdoc.js', () => ({
 	buildPadFrameSrcdoc: vi.fn((url) => `SRCDOC:${url}`),
 }))
-// isPadName decides which path the viewer derives, so the real one is kept;
-// only the two URL readers are stubbed.
+// Keep isPadName real because it participates in path derivation.
 vi.mock('../../src/lib/urls.js', async (importOriginal) => ({
 	...await importOriginal(),
 	parsePadPathFromDavHref: vi.fn(() => ''),
@@ -67,9 +61,7 @@ afterEach(() => {
 	window.happyDOM?.setURL?.('http://localhost/')
 })
 
-// Build a non-reactive stand-in for a mounted instance: data fields seeded
-// from data(), computed exposed as live getters, methods bound to the same
-// context. Overrides seed props/data before the getters are wired.
+// Build a non-reactive stand-in with live computed getters and bound methods.
 function makeInstance(overrides = {}) {
 	const ctx = {
 		filename: '',
@@ -97,10 +89,7 @@ const jsonResponse = (body, ok = true, status = 200) => ({
 	json: () => Promise.resolve(body),
 })
 
-// `toContain('/pads/open')` is also true of '/pads/open-by-id', and
-// '/pads/initialize' of '/pads/initialize-by-id/42' — an assertion that
-// cannot fail. ocGenerateUrl is mocked as identity, so the endpoint is
-// the whole path and can be compared outright.
+// Endpoint prefixes overlap, so compare their full paths.
 const endpoint = (name) => `/apps/etherpad_nextcloud/api/v1/${name}`
 const bodyOf = (call) => String(call?.[1]?.body || '')
 
@@ -110,7 +99,6 @@ const stubFetch = (impl) => {
 	return mock
 }
 
-// --- mock createElement + vnode-tree query helpers ---
 const h = (tag, data, children) => ({
 	tag,
 	data: data || {},
@@ -167,10 +155,6 @@ describe('viewer component — computed path/id derivation', () => {
 		expect(vm.filePath).toBe('/From/Dav.pad')
 	})
 
-	// Nextcloud accepts these names: its validator trims only to decide
-	// whether a name is empty or `.`/`..`, and judges the rest on the name
-	// as given. A viewer that trims asks for a neighbouring file instead,
-	// which is the plus-sign bug reached by a different character.
 	it('keeps a space before the extension', () => {
 		const vm = makeInstance({ fileInfo: { path: '/Notes/Standup .pad' } })
 		expect(vm.filePath).toBe('/Notes/Standup .pad')
@@ -194,7 +178,7 @@ describe('viewer component — computed path/id derivation', () => {
 
 	it('returns empty filePath when nothing resolves to a .pad', () => {
 		const vm = makeInstance({ filename: 'notes.txt', basename: '' })
-		expect(vm.filePath).toBe('/notes.txt') // non-pad falls through to "/" + baseName
+		expect(vm.filePath).toBe('/notes.txt')
 		const empty = makeInstance({})
 		expect(empty.filePath).toBe('')
 	})
@@ -210,12 +194,7 @@ describe('viewer component — computed path/id derivation', () => {
 		expect(makeInstance({}).resolvedFileId).toBeNull()
 	})
 
-	// The Files URL carries an id too, and this used to read it when
-	// `openfile=true`. That id belongs to whatever the route was opened
-	// with, while filePath follows the file the Viewer is showing — they
-	// part company on the next/previous arrows, and openfile=true survives
-	// until the viewer closes. With opening by id no longer retried by
-	// path, the URL's id would silently decide which document appears.
+	// The route id may describe a previous item after Viewer navigation.
 	it('ignores the file id in the Files URL, whatever openfile says', () => {
 		window.happyDOM.setURL('http://localhost/apps/files/files/77?openfile=true')
 		expect(makeInstance({}).resolvedFileId).toBeNull()
@@ -230,10 +209,6 @@ describe('viewer component — computed path/id derivation', () => {
 	})
 })
 
-// Both inputs change together on a file swap. Watching them separately
-// fired two opens, and the generation guard drops the loser's result
-// without cancelling its request — for a protected pad that is a second
-// Etherpad session and cookie nothing consumes.
 describe('viewer component — open key', () => {
 	it('watches a single key', () => {
 		expect(Object.keys(component.watch)).toEqual(['openKey'])
@@ -304,11 +279,6 @@ describe('viewer component — resolveOpenUrl', () => {
 		expect(loadPadContent).toHaveBeenCalledWith('/content/42', expect.anything())
 	})
 
-	/**
-	 * A read-only open that names no endpoint is a bug, but the reader has
-	 * to be told something — a viewer stuck on "loading" forever is the one
-	 * outcome that looks like a hang.
-	 */
 	it('read-only view: reports an error when the open names no content endpoint', async () => {
 		stubFetch(jsonResponse({ is_readonly_view: true, content_url: '' }))
 		const vm = makeInstance({ fileid: 42, fileInfo: { path: '/x.pad' } })
@@ -320,13 +290,6 @@ describe('viewer component — resolveOpenUrl', () => {
 		expect(loadPadContent).not.toHaveBeenCalled()
 	})
 
-	/**
-	 * The other half of the contract, and the one PHP cannot reach: the
-	 * client must key on the code alone. Putting `message.includes(...)`
-	 * back "to be safe" would restore exactly the coupling this removed,
-	 * and every other fixture here now carries both the code and the
-	 * phrase — so only a fixture without the code can catch it.
-	 */
 	it('does not initialize on a 400 that carries the old sentence but no code', async () => {
 		const fetchMock = stubFetch()
 		fetchMock.mockResolvedValue(jsonResponse({ message: 'Missing YAML frontmatter in .pad file.' }, false, 400))
@@ -345,7 +308,7 @@ describe('viewer component — resolveOpenUrl', () => {
 			.mockResolvedValueOnce(jsonResponse({ message: 'Missing YAML frontmatter in .pad file.', code: 'missing_frontmatter' }, false, 400))
 			.mockResolvedValueOnce(jsonResponse({ status: 'ok' }))
 			.mockResolvedValueOnce(jsonResponse({ url: 'https://pad.example/after-init', sync_url: '' }))
-		const vm = makeInstance({ fileInfo: { path: '/x.pad' } }) // resolvedFileId null -> by-path only
+		const vm = makeInstance({ fileInfo: { path: '/x.pad' } })
 
 		await vm.resolveOpenUrl()
 
@@ -357,7 +320,6 @@ describe('viewer component — resolveOpenUrl', () => {
 		expect(vm.loadError).toBe('')
 	})
 
-	/** The open after an initialise mints a session and a cookie. */
 	it('does not open again when it was superseded during the initialize', async () => {
 		let releaseInitialize = () => {}
 		const initialized = new Promise((resolve) => { releaseInitialize = resolve })
@@ -370,7 +332,6 @@ describe('viewer component — resolveOpenUrl', () => {
 
 		const pending = vm.resolveOpenUrl()
 		await flushAsyncWork()
-		// What a second resolve does to the first one.
 		vm.resolveGeneration += 1
 		releaseInitialize()
 		await pending
@@ -383,26 +344,19 @@ describe('viewer component — resolveOpenUrl', () => {
 	it('initializes by file id (not by path) when an id is available', async () => {
 		const fetchMock = stubFetch()
 		fetchMock
-			.mockResolvedValueOnce(jsonResponse({ message: 'Missing YAML frontmatter in .pad file.', code: 'missing_frontmatter' }, false, 400)) // open by-id
-			.mockResolvedValueOnce(jsonResponse({ status: 'migrated_from_legacy' }))                  // initialize-by-id
-			.mockResolvedValueOnce(jsonResponse({ url: 'https://pad.example/by-id', sync_url: '' }))   // re-open by-id
+			.mockResolvedValueOnce(jsonResponse({ message: 'Missing YAML frontmatter in .pad file.', code: 'missing_frontmatter' }, false, 400))
+			.mockResolvedValueOnce(jsonResponse({ status: 'migrated_from_legacy' }))
+			.mockResolvedValueOnce(jsonResponse({ url: 'https://pad.example/by-id', sync_url: '' }))
 		const vm = makeInstance({ fileid: 42, fileInfo: { path: '/x.pad' } })
 
 		await vm.resolveOpenUrl()
 
-		// The by-id answer is acted on directly: a 400 is a verdict about the
-		// file the id named, so there is no by-path attempt in between.
 		expect(fetchMock.mock.calls[0][0]).toBe(endpoint('pads/open-by-id'))
 		expect(fetchMock.mock.calls[1][0]).toBe(endpoint('pads/initialize-by-id/42'))
 		expect(vm.iframeSrc).toBe('https://pad.example/by-id')
 	})
 
-	// Opening by id exists so that the wrong document cannot be opened. A
-	// by-path retry after a by-id failure puts that back: the second, weaker
-	// question can succeed where the first was refused. The server answers a
-	// plain 404 both for an id that is gone and for one outside the user's
-	// own tree — it cannot separate them without disclosing that the file
-	// exists — so no by-id failure is safe to retry by path.
+	// A refused id must not fall back to a path that may identify another file.
 	it('surfaces an unresolvable file id instead of opening the file at the path', async () => {
 		const fetchMock = stubFetch()
 		fetchMock.mockResolvedValueOnce(jsonResponse({ message: 'Cannot open selected .pad file.' }, false, 404))
@@ -415,7 +369,6 @@ describe('viewer component — resolveOpenUrl', () => {
 		expect(bodyOf(fetchMock.mock.calls[0])).toBe('fileId=42')
 		expect(vm.loadError).toBe('Cannot open selected .pad file.')
 		expect(vm.iframeSrc).toBe('')
-		// Not a dead end: the one thing that can help is named.
 		expect(vm.maybeStaleFileId).toBe(true)
 	})
 
@@ -460,10 +413,6 @@ describe('viewer component — resolveOpenUrl', () => {
 		expect(vm.iframeSrc).toBe('https://pad.example/by-path')
 	})
 
-	// Nextcloud's own layers answer before the controller does. The request
-	// asks for JSON, so both come back as JSON rather than an HTML page:
-	// SecurityMiddleware returns a JSONResponse when Accept does not name
-	// html, and requireUser maps an absent session the same way.
 	it('surfaces an expired session instead of retrying by path', async () => {
 		const fetchMock = stubFetch(jsonResponse({ message: 'Not authenticated.' }, false, 401))
 		const vm = makeInstance({ fileid: 42, fileInfo: { path: '/x.pad' } })
@@ -476,12 +425,6 @@ describe('viewer component — resolveOpenUrl', () => {
 		expect(vm.iframeSrc).toBe('')
 	})
 
-	// A stale request token is a 412 from the framework, not one of the
-	// controller's own statuses — and just as unsafe to answer with a
-	// second request.
-	// The initialize step is a second chance for the file to disappear: the
-	// open said "no frontmatter", the file moved, and the retry 404s. That
-	// error has to explain itself the same way the open's would.
 	it('carries the status through an initialize that no longer finds the file', async () => {
 		const fetchMock = stubFetch()
 		fetchMock
@@ -496,14 +439,9 @@ describe('viewer component — resolveOpenUrl', () => {
 		expect(vm.maybeStaleFileId).toBe(true)
 	})
 
-	// The generation guard only discards the loser's result; the request
-	// itself used to run to completion, and for a protected pad that mints
-	// an Etherpad session and cookie nothing consumes.
 	it('aborts the request a superseded resolve left in flight', async () => {
 		const signals = []
-		// Rejects on abort, the way fetch does. A stub that resolves anyway
-		// would prove the signal was passed but never exercise the
-		// AbortError path — the only one a browser takes.
+		// Model fetch's rejection when its signal is aborted.
 		stubFetch((url, init) => {
 			const signal = init && init.signal
 			signals.push(signal)
@@ -523,7 +461,6 @@ describe('viewer component — resolveOpenUrl', () => {
 		expect(signals[0].aborted).toBe(true)
 		expect(signals[1].aborted).toBe(false)
 		expect(vm.iframeSrc).toBe('https://current')
-		// The abort is bookkeeping, not a failure the user should read.
 		expect(vm.loadError).toBe('')
 		expect(vm.isLoading).toBe(false)
 	})
@@ -555,8 +492,6 @@ describe('viewer component — resolveOpenUrl', () => {
 		expect(captured.aborted).toBe(true)
 	})
 
-	// Without a timeout an unresponsive server left the viewer on
-	// "Loading pad..." with no error and no way out.
 	it('gives up on an open that never answers', async () => {
 		vi.useFakeTimers()
 		try {
@@ -676,9 +611,6 @@ describe('viewer component — resolveOpenUrl', () => {
 		expect(vm.isCheckingOriginal).toBe(false)
 	})
 
-	// Dropping the Files-URL id took recovery's address with it. It is asked
-	// for by the path on screen instead — the same file by construction,
-	// where the URL's id need not have been.
 	it('resolves recovery\'s file id from the path when the Viewer supplies none', async () => {
 		stubFetch(jsonResponse({ message: 'no binding', code: 'missing_binding' }, false, 400))
 		apiResolvePadByPath.mockResolvedValue({ file_id: 99 })
@@ -688,7 +620,6 @@ describe('viewer component — resolveOpenUrl', () => {
 		await vm.resolveOpenUrl()
 		await flushAsyncWork()
 
-		// Without the cache: the next thing this id is used for is a write.
 		expect(apiResolvePadByPath).toHaveBeenCalledWith('/copy.pad', { bypassCache: true })
 		expect(vm.recoveryFileId).toBe(99)
 		expect(vm.canRecover).toBe(true)
@@ -737,11 +668,11 @@ describe('viewer component — resolveOpenUrl', () => {
 		const vm = makeInstance({ fileid: 42, fileInfo: { path: '/x.pad' } })
 
 		const pending = vm.resolveOpenUrl()
-		vm.resolveGeneration += 1 // a newer resolve started
+		vm.resolveGeneration += 1
 		release()
 		await pending
 
-		expect(vm.iframeSrc).toBe('') // stale result discarded
+		expect(vm.iframeSrc).toBe('')
 	})
 })
 
@@ -753,7 +684,6 @@ describe('viewer component — recoverFromSnapshot', () => {
 
 		await vm.recoverFromSnapshot()
 
-		// The path travels with the id so only that cache entry is dropped.
 		expect(apiRecoverFromSnapshot).toHaveBeenCalledWith(42, '/x.pad')
 		expect(vm.loadError).toBe('')
 		expect(vm.canRecover).toBe(false)
@@ -786,7 +716,7 @@ describe('viewer component — recoverFromSnapshot', () => {
 describe('viewer component — teardown', () => {
 	it('flushes, stops, and unhooks the sync controller on beforeUnmount', () => {
 		const vm = makeInstance({})
-		const sync = vm.padSync() // lazily create the controller
+		const sync = vm.padSync()
 		component.beforeUnmount.call(vm)
 
 		expect(sync.fireAndForget).toHaveBeenCalledWith(true, true)
@@ -811,8 +741,6 @@ describe('viewer component — render', () => {
 		expect(allText(tree)).toContain('Boom')
 	})
 
-	// The only error-card branch the assertions above do not reach: deleting
-	// the block would leave every other case green.
 	it('renders the reload hint when the file id may be stale', () => {
 		const vm = makeInstance({ loadError: 'Cannot open selected .pad file.', maybeStaleFileId: true })
 		const tree = component.render.call(vm, h)
@@ -879,11 +807,6 @@ describe('viewer component — render', () => {
 		expect(findByClass(tree, 'epnc-pad-doc__text--html').data.domProps.innerHTML).toBe('<p>t</p>')
 	})
 
-	/**
-	 * Available whatever the state, because the view shows the pad as of
-	 * the last fetch — without it the only way to catch up is to close the
-	 * file and open it again.
-	 */
 	it('offers refresh even after a successful load, and disables it while loading', () => {
 		const ready = component.render.call(
 			makeInstance({ contentMode: 'content', contentState: 'ready', content: { html: '<p>t</p>', isEmpty: false } }),
@@ -896,10 +819,6 @@ describe('viewer component — render', () => {
 		expect(findByClass(loading, 'epnc-pad-doc__refresh').data.attrs.disabled).toBe(true)
 	})
 
-	/**
-	 * A refresh replaces the text when the answer arrives. Blanking the
-	 * view first would make every refresh a flash of nothing.
-	 */
 	it('keeps showing the last content while refreshing', () => {
 		const tree = component.render.call(makeInstance({
 			contentMode: 'content',
@@ -914,7 +833,6 @@ describe('viewer component — render', () => {
 		expect(findByClass(tree, 'epnc-pad-doc__refresh').data.attrs.disabled).toBe(true)
 	})
 
-	/** Before the first answer there is nothing to keep, so this one may blank. */
 	it('shows the loading state only until the first answer', () => {
 		const tree = component.render.call(
 			makeInstance({ contentMode: 'content', contentState: 'loading', contentLoaded: false }),
@@ -924,11 +842,6 @@ describe('viewer component — render', () => {
 		expect(allText(tree)).toContain('Loading pad content...')
 	})
 
-	/**
-	 * A refresh that fails must not take the pad away — the reader had
-	 * something valid on screen, and it is still the last thing the pad
-	 * said.
-	 */
 	it('keeps the content and reports a failed refresh beside the button', () => {
 		const tree = component.render.call(makeInstance({
 			contentMode: 'content',
@@ -944,11 +857,6 @@ describe('viewer component — render', () => {
 		expect(allText(tree)).not.toContain('Try again')
 	})
 
-	/**
-	 * Two presses in flight: the earlier answer must not land on top of the
-	 * later one. The open's own counter cannot express this — refreshing
-	 * does not supersede the open.
-	 */
 	it('drops a superseded content answer', async () => {
 		const vm = makeInstance({ contentMode: 'content', contentUrl: '/content/42', contentState: 'ready' })
 		let releaseFirst

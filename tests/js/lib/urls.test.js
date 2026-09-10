@@ -36,7 +36,6 @@ describe('parsePublicShareTokenFromLocation', () => {
 	})
 
 	it('extracts tokens when Nextcloud is served from a subdirectory', () => {
-		// Why the pattern is not anchored at the start of the path.
 		setPathname('/nextcloud/s/share-token')
 
 		expect(parsePublicShareTokenFromLocation()).toBe('share-token')
@@ -57,8 +56,6 @@ describe('parsePadPathFromDavHref', () => {
 	})
 
 	it('accepts an upper-case suffix, like the PHP side does', () => {
-		// The server treats `.PAD` as a pad, so a link handler that
-		// disagreed would refuse to open a file the server opens.
 		const href = 'https://cloud.example.test/remote.php/dav/files/jacob/Folder/Test.PAD'
 
 		expect(parsePadPathFromDavHref(href)).toBe('/Folder/Test.PAD')

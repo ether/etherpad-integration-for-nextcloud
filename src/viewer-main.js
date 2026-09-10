@@ -29,52 +29,35 @@ const component = {
 			loadError: '',
 			canRecover: false,
 			maybeStaleFileId: false,
-			// The id recovery may address. Normally the Viewer's own, but
-			// resolved from the path when it supplies none.
+			// Recovery may resolve this from the path when Viewer supplies no id.
 			recoveryFileId: null,
-			// The path recoveryFileId was resolved from, so invalidating
-			// its cache entry names the same file the id does.
+			// Kept with the id so recovery invalidates the matching cache entry.
 			recoveryPath: '',
 			isRecovering: false,
 			isCheckingOriginal: false,
 			originalPad: null,
 			externalOpenUrl: '',
-			// Which read-only surface is showing, if any: '' for the
-			// editor, 'readonly' for a share without write permission,
-			// 'external' for a pad on a foreign server.
 			contentMode: '',
 			contentUrl: '',
 			contentState: 'idle',
 			contentError: '',
 			content: { html: '', isEmpty: false },
-			// "Busy" and "nothing yet" are two states, and only the
-			// second may blank the view.
+			// A refresh keeps previously loaded content visible.
 			contentLoaded: false,
-			// Separate from the open's counter: refreshing does not
-			// supersede the open, but two refreshes supersede each other.
+			// Refreshes supersede each other without superseding the open.
 			contentGeneration: 0,
 			resolveGeneration: 0,
 		}
 	},
 	computed: {
 		sourcePath() {
-			// The one place a trim is safe: `source` is a DAV href, and a
-			// URL is not a name — padding inside one is percent-encoded,
-			// so only transport noise around it can be removed here.
+			// Whitespace inside the DAV URL is encoded; only surrounding noise is trimmed.
 			const value = typeof this.source === 'string' ? this.source.trim() : ''
 			if (!value) return ''
 			return parsePadPathFromDavHref(value) || ''
 		},
 		filePath() {
-			// Names are passed through, not cleaned up. This used to
-			// collapse " .pad" to ".pad" and to trim both the name and the
-			// directory, so `Notes .pad`, ` A.pad` and a folder called
-			// `Folder ` each asked the server for a neighbour of the file
-			// that was clicked. Nextcloud accepts all three: its validator
-			// trims only to decide whether a name is empty or `.`/`..`,
-			// and judges everything else on the name as given. What a name
-			// may be is settled when the file is created, not while
-			// opening one.
+			// Preserve valid filename and directory whitespace when opening a file.
 			const normalizeDir = (dir) => {
 				if (!dir || dir === '/') return '/'
 				return dir.startsWith('/') ? dir : ('/' + dir)
@@ -106,7 +89,6 @@ const component = {
 			if (isPadName(fromDir)) return fromDir
 			return '/' + baseName
 		},
-		/** What the open depends on, as one value — see the watcher. */
 		openKey() {
 			return `${this.resolvedFileId === null ? '' : this.resolvedFileId}::${this.filePath}`
 		},
@@ -116,33 +98,15 @@ const component = {
 				const numeric = Number(candidate)
 				if (Number.isFinite(numeric) && numeric > 0) return numeric
 			}
-			// Only the props. The Files URL also carries an id, and this
-			// used to read it when `openfile=true` — but that id belongs
-			// to whatever the route was opened with, while `filePath`
-			// follows the file the Viewer is showing. The two part
-			// company as soon as the user steps to the next pad, and
-			// since opening by id no longer falls back to the path,
-			// the id would decide. A file the viewer cannot name an id
-			// for is opened by path instead.
+			// Route ids can outlive the item shown after Viewer navigation.
 			return null
 		},
 	},
 	watch: {
-		// One key, so one resolve. Watching filePath and resolvedFileId
-		// separately fired twice on every file swap — both change at
-		// once — and the generation guard discards the loser's result
-		// without cancelling its request. For a protected pad that
-		// second request had already minted an Etherpad session and a
-		// cookie that nothing would ever use.
+		// A file swap changes path and id together; open it only once.
 		openKey: { immediate: true, handler() { void this.resolveOpenUrl() } },
 	},
 	methods: {
-		/**
-		 * The shared helper does the rest: Accept, merged headers, an
-		 * error carrying `.status` and `.code`, and a request timeout —
-		 * without which an unresponsive server left the viewer on
-		 * "Loading pad..." with no error and no way out.
-		 */
 		async fetchOpenPayload(url, init = {}) {
 			return assertOpenPayload(await fetchJsonWithTimeout(url, Object.assign({ method: 'GET' }, init)))
 		},
@@ -152,22 +116,11 @@ const component = {
 				requesttoken: ocRequestToken(),
 			}
 
-			// `timeoutMs: null` because this writes: it creates a pad,
-			// writes a binding row and rewrites the file, and cutting
-			// the connection short would leave the server to finish
-			// with nobody reading the outcome. The shared helper carries
-			// `code` and `status` onto the error, which the recovery
-			// card and the retry both read — a second builder here was
-			// the same rule written twice, and the two had already
-			// drifted apart in one condition.
+			// A client timeout would not stop the server-side provisioning work.
 			const initOptions = { timeoutMs: null, fallbackMessage: 'Pad initialization failed.' }
 
 			const announceMigratedStatus = (data) => {
 				if (data && data.status === 'migrated_from_legacy') {
-					// Audit-visible on the backend; mirror it in the
-					// browser console so dev tools makes the conversion
-					// visible without surfacing a UI toast (the codebase
-					// has no toast infra wired yet).
 					console.info('Legacy Ownpad .pad migrated to managed format on first open.')
 				}
 			}
@@ -196,15 +149,7 @@ const component = {
 			announceMigratedStatus(data)
 			return data
 		},
-		/**
-		 * The file id of the path currently open, or null. Only used to
-		 * give recovery an address; a failure here just means no
-		 * recovery action, never a different file.
-		 *
-		 * Asked without the cache: recovery writes, and a five-minute-old
-		 * path-to-id answer can name a file that has since moved out of
-		 * the way of another.
-		 */
+		/** Resolve a fresh id for recovery without changing the opened file. */
 		async resolveRecoveryFileId(openPath) {
 			try {
 				const resolved = await apiResolvePadByPath(openPath, { bypassCache: true })
@@ -217,20 +162,14 @@ const component = {
 		markLoaded() {
 			this.$emit('update:loaded', true)
 		},
-		// Lazily build the shared sync controller. Kept off `data()` on
-		// purpose so it is not made reactive, and memoised on a plain
-		// instance field so it survives the immediate openKey watcher
-		// (which runs before created/mounted).
+		// Keep the sync controller non-reactive and available to the immediate watcher.
 		padSync() {
 			if (!this._padSync) {
 				this._padSync = createPadSync({ requestToken: () => ocRequestToken() })
 			}
 			return this._padSync
 		},
-		// Final flush + full teardown on destroy. Guard on the existing
-		// controller so we never spin one up just to tear it down (a viewer
-		// destroyed before its first open). The lazy create stays in the
-		// resolve path, which actually needs to sync.
+		// Do not create a controller solely to tear it down.
 		teardownSync() {
 			if (!this._padSync) {
 				return
@@ -242,13 +181,7 @@ const component = {
 		async resolveOpenUrl() {
 			const generation = ++this.resolveGeneration
 			const isCurrent = () => generation === this.resolveGeneration
-			// Abort whatever the previous resolve still has in flight.
-			// The generation guard only discards its *result*: the request
-			// itself ran to completion, and for a protected pad that means
-			// the server had already minted an Etherpad session and a
-			// cookie nothing would ever use. openKey collapses the common
-			// case to one resolve; this covers the rest — props arriving
-			// in separate ticks, or a recovery re-resolving mid-flight.
+			// Discarding a result is insufficient: a completed request may mint a session.
 			this._openAbort?.abort()
 			const abort = typeof AbortController === 'function' ? new AbortController() : null
 			this._openAbort = abort
@@ -270,10 +203,7 @@ const component = {
 			this.content = { html: '', isEmpty: false }
 			this.contentLoaded = false
 			this._contentAbort?.abort()
-			// Reset only an existing controller; don't construct one just to
-			// stop/clear it (e.g. the initial immediate watcher with no pad).
-			// The success path below lazily creates it when there's a pad to
-			// actually sync.
+			// Do not construct a sync controller while resetting viewer state.
 			if (this._padSync) {
 				this._padSync.stop()
 				this._padSync.configure({ syncUrl: '' })
@@ -286,18 +216,13 @@ const component = {
 				return
 			}
 
-			// The path this resolve is about, captured once. filePath is a
-			// computed and updates the moment the Viewer swaps props —
-			// before the watcher has flushed and bumped the generation —
-			// so re-reading it later can describe a different file than
-			// the one this open and its error card are about.
+			// Viewer props may change before the watcher starts the next open.
 			const openPath = this.filePath
 			const publicToken = parsePublicShareTokenFromLocation()
 			const byPublicUrl = (() => {
 				if (!publicToken) return ''
 				const url = new URL(ocGenerateUrl('/apps/' + APP_ID + '/api/v1/public/open/' + encodeURIComponent(publicToken)), window.location.origin)
-				// One locator, not both: the server refuses a pair that
-				// disagrees rather than choosing between them.
+				// The public endpoint rejects conflicting id and path locators.
 				if (this.resolvedFileId !== null) {
 					url.searchParams.set('fileId', String(this.resolvedFileId))
 				} else {
@@ -312,30 +237,26 @@ const component = {
 
 			try {
 				const fetchOpenData = async () => {
-						// Exactly one way in, chosen once. Opening by id
-						// used to retry by path when it failed, which is
-						// how a refused id ended up opening whatever the
-						// path pointed at — see the cases pinned in
-						// tests/js/viewer-main.test.js.
-						const signal = abort ? abort.signal : undefined
-						if (byPublicUrl) {
-							return await this.fetchOpenPayload(byPublicUrl, { signal })
-						}
-						if (this.resolvedFileId !== null) {
-							const byIdBody = new URLSearchParams()
-							byIdBody.set('fileId', String(this.resolvedFileId))
-							return await this.fetchOpenPayload(
-								ocGenerateUrl('/apps/' + APP_ID + '/api/v1/pads/open-by-id'),
-								{ method: 'POST', headers: openPostHeaders, body: byIdBody.toString(), signal },
-							)
-						}
-						const byPathBody = new URLSearchParams()
-						byPathBody.set('file', openPath)
+					// Never retry a refused id by path: it could identify a different file.
+					const signal = abort ? abort.signal : undefined
+					if (byPublicUrl) {
+						return await this.fetchOpenPayload(byPublicUrl, { signal })
+					}
+					if (this.resolvedFileId !== null) {
+						const byIdBody = new URLSearchParams()
+						byIdBody.set('fileId', String(this.resolvedFileId))
 						return await this.fetchOpenPayload(
-							ocGenerateUrl('/apps/' + APP_ID + '/api/v1/pads/open'),
-							{ method: 'POST', headers: openPostHeaders, body: byPathBody.toString(), signal },
+							ocGenerateUrl('/apps/' + APP_ID + '/api/v1/pads/open-by-id'),
+							{ method: 'POST', headers: openPostHeaders, body: byIdBody.toString(), signal },
 						)
 					}
+					const byPathBody = new URLSearchParams()
+					byPathBody.set('file', openPath)
+					return await this.fetchOpenPayload(
+						ocGenerateUrl('/apps/' + APP_ID + '/api/v1/pads/open'),
+						{ method: 'POST', headers: openPostHeaders, body: byPathBody.toString(), signal },
+					)
+				}
 
 				const data = await openWithFrontmatterRecovery({
 					open: fetchOpenData,
@@ -360,8 +281,7 @@ const component = {
 					this.contentUrl = contentUrl
 					this.contentMode = 'content'
 					this.markLoaded()
-					// Not awaited: the frame is drawn now and fills in
-					// when the pad answers.
+					// Draw the content view while its body loads.
 					void this.loadContent()
 					return
 				}
@@ -371,41 +291,22 @@ const component = {
 			} catch (error) {
 				if (!isCurrent()) return
 				this.loadError = error instanceof Error ? error.message : 'Could not load pad.'
-				// The file id named a node the server could not hand over,
-				// and it cannot say whether that is because the file moved
-				// or because the id is not this user's. Since the open no
-				// longer answers that by trying the path, say what the one
-				// remedy is rather than leaving a dead end.
+				// The server intentionally does not disclose why this id is unavailable.
 				this.maybeStaleFileId = this.resolvedFileId !== null
 					&& Boolean(error) && error.status === 404 && !error.code
-				// Recovery needs an id it may address. The Viewer's own is
-				// preferred; when it supplies none — the case the Files
-				// URL's id used to paper over, unsafely, because that id
-				// need not belong to the file on screen — the id is asked
-				// for by the path that was just opened. Same file by
-				// construction, and the server resolves it inside the
-				// user's own tree.
+				// Recovery may resolve only the same path that failed to open.
 				let recoveryFileId = this.resolvedFileId
 				this.recoveryPath = openPath
 				if (recoveryFileId === null && !byPublicUrl && error && error.code === 'missing_binding') {
 					recoveryFileId = await this.resolveRecoveryFileId(openPath)
-					// Assigned only after the guard: a slower lookup from a
-					// superseded resolve would otherwise overwrite the live
-					// card's address, and the recovery button would then
-					// create a pad for the file the user has left.
+					// A late lookup must not attach recovery to a newer Viewer item.
 					if (!isCurrent()) return
 				}
 				this.recoveryFileId = recoveryFileId
-				// Public-share visitors don't get a recovery action — only
-				// the share owner.
 				this.canRecover = Boolean(error && error.code === 'missing_binding')
 					&& recoveryFileId !== null
 					&& !byPublicUrl
 				if (this.canRecover) {
-					// Optional: check if this looks like a copy of a .pad we
-					// can already address; if so we'll offer 'Open the
-					// original' as the primary action. A miss is silent — no
-					// UI element rendered, no info leaked.
 					this.fetchOriginalPadHint(isCurrent)
 				}
 				this.markLoaded()
@@ -429,8 +330,7 @@ const component = {
 					}
 				}
 			} catch {
-				// Silent: the recovery button stays available, we just
-				// don't surface the "Open the original" affordance.
+				// Recovery remains available without an original-file hint.
 			} finally {
 				if (isCurrent()) {
 					this.isCheckingOriginal = false
@@ -453,10 +353,7 @@ const component = {
 				this.isRecovering = false
 			}
 		},
-		/**
-		 * The endpoint re-checks access on each call, so a share
-		 * withdrawn while the tab sat open stops answering.
-		 */
+		/** Refresh content through an endpoint that re-checks access. */
 		async loadContent() {
 			const openGeneration = this.resolveGeneration
 			this.contentGeneration += 1
@@ -471,7 +368,7 @@ const component = {
 			}
 
 			this._contentAbort?.abort()
-			// Guarded like the open's, a few hundred lines up.
+			// Abort superseded content refreshes.
 			const abort = typeof AbortController === 'function' ? new AbortController() : null
 			this._contentAbort = abort
 			this.contentState = 'loading'
@@ -496,16 +393,10 @@ const component = {
 			return createElement('div', { class: 'epnc-pad-doc' }, [
 				createElement('div', { class: 'epnc-pad-doc__inner' }, [
 					createElement('div', { class: 'epnc-pad-doc__toolbar' }, [
-						// A failed refresh leaves the text it could not
-						// replace on screen, so it is reported here
-						// rather than in place of the pad.
 						(this.contentState === 'error' && this.contentLoaded)
 							? createElement('span', { class: 'epnc-pad-doc__toolbar-error' },
 								this.contentError || translate('Could not load the pad content.'))
 							: null,
-						// Always available: the view shows the pad as of
-						// the last fetch, and the only other way to
-						// catch up is to close and reopen the file.
 						createElement('button', {
 							class: 'button epnc-pad-doc__refresh',
 							attrs: { type: 'button', disabled: isBusy },
@@ -518,8 +409,6 @@ const component = {
 			])
 		},
 		renderContentBody(createElement) {
-			// Once shown, it stays shown: the refresh replaces the text
-			// when the answer arrives rather than before it.
 			if (this.contentLoaded && this.contentState !== 'ready') {
 				return this.renderContentText(createElement)
 			}
@@ -540,8 +429,6 @@ const component = {
 			return this.renderContentText(createElement)
 		},
 		renderContentText(createElement) {
-			// An empty pad loaded fine, and silence would read as a
-			// failure nobody reported.
 			if (this.content.isEmpty) {
 				return createElement('div', { class: 'epnc-pad-doc__text epnc-pad-doc__status' }, translate('This pad is still empty.'))
 			}
@@ -553,8 +440,7 @@ const component = {
 	},
 	beforeDestroy() {
 		this.resolveGeneration += 1
-		// Closing the viewer mid-open is the commonest way to supersede a
-		// request; bumping the generation only drops the answer.
+		// Abort work that could otherwise finish after teardown.
 		this._openAbort?.abort()
 		this._contentAbort?.abort()
 		this.teardownSync()
@@ -579,10 +465,7 @@ const component = {
 			}
 			if (this.canRecover) {
 				if (this.isCheckingOriginal) {
-					// Don't render any action button while the lookup is in
-					// flight: a slow connection could otherwise let the user
-					// click 'Create new pad' before we know that opening the
-					// original is the better default.
+					// Wait before choosing the primary recovery action.
 					cardChildren.push(
 						createElement('div', { class: 'epnc-native-error-message' },
 							translate('Checking for the original pad...')),
@@ -638,13 +521,10 @@ const component = {
 		}
 
 		return createElement('div', { class: 'epnc-native-shell' }, [
-			// Nextcloud Viewer tries to inspect/focus direct iframe children during
-			// teardown. Keep the direct iframe same-origin via srcdoc, and put the
-			// cross-origin Etherpad frame one level deeper.
+			// Nextcloud inspects direct iframe children, so keep this wrapper same-origin.
 			createElement('iframe', {
 				attrs: { srcdoc: buildPadFrameSrcdoc(this.iframeSrc), title: 'Etherpad' },
-				// This fires when the srcdoc wrapper is ready. Etherpad then continues
-				// loading in the inner iframe and shows its own loading UI.
+				// Etherpad provides its own loading state inside the nested iframe.
 				on: { load: () => this.markLoaded(), error: () => this.markLoaded() },
 				class: 'epnc-native-iframe',
 			}),
