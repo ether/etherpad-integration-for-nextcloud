@@ -8,6 +8,8 @@ if (!class_exists(Util::class)) {
 	class Util {
 		/** @var list<array{0:string,1:string,2:?string}> */
 		public static array $scripts = [];
+		/** @var list<array{0:string,1:string}> */
+		public static array $initScripts = [];
 
 		public static function addStyle(string $application, string $file): void {
 		}
@@ -17,10 +19,12 @@ if (!class_exists(Util::class)) {
 		}
 
 		public static function addInitScript(string $application, string $file): void {
+			self::$initScripts[] = [$application, $file];
 		}
 
 		public static function reset(): void {
 			self::$scripts = [];
+			self::$initScripts = [];
 		}
 	}
 }

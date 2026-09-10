@@ -30,18 +30,36 @@ class LoadPublicShareScriptsListenerTest extends TestCase {
 
 		$this->handle($file);
 
+		$this->assertViewerInitLoaded();
 		$this->assertPublicShareBootstrapLoaded();
 	}
 
 	public function testLoadsBootstrapForLegacyFolderSelection(): void {
 		$this->handle($this->createMock(Folder::class), 'Shared.PAD');
 
+		$this->assertViewerInitLoaded();
 		$this->assertPublicShareBootstrapLoaded();
 	}
 
 	public function testLeavesOrdinaryFolderShareNavigationToNextcloud(): void {
 		$this->handle($this->createMock(Folder::class));
 
+		$this->assertViewerInitLoaded();
+		self::assertSame([], Util::$scripts);
+	}
+
+	public function testLoadsNothingForThePasswordPrompt(): void {
+		$request = $this->createMock(IRequest::class);
+		$request->expects($this->never())->method('getParam');
+		$share = $this->createMock(IShare::class);
+
+		$listener = new LoadPublicShareScriptsListener($request);
+		$listener->handle(new BeforeTemplateRenderedEvent(
+			BeforeTemplateRenderedEvent::SCOPE_PUBLIC_SHARE_AUTH,
+			$share,
+		));
+
+		self::assertSame([], Util::$initScripts);
 		self::assertSame([], Util::$scripts);
 	}
 
@@ -60,5 +78,11 @@ class LoadPublicShareScriptsListenerTest extends TestCase {
 		self::assertSame([
 			['etherpad_nextcloud', 'etherpad_nextcloud-public-share-main', 'viewer'],
 		], Util::$scripts);
+	}
+
+	private function assertViewerInitLoaded(): void {
+		self::assertSame([
+			['etherpad_nextcloud', 'etherpad_nextcloud-viewer-init'],
+		], Util::$initScripts);
 	}
 }
