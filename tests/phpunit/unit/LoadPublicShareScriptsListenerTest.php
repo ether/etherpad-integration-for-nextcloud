@@ -18,6 +18,7 @@ use OCP\Share\IShare;
 use OCP\Util;
 use PHPUnit\Framework\TestCase;
 
+/** Covers public-share asset loading and password-prompt handling. */
 class LoadPublicShareScriptsListenerTest extends TestCase {
 	protected function setUp(): void {
 		parent::setUp();

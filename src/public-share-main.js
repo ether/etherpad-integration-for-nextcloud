@@ -3,6 +3,8 @@
  * Copyright (c) 2026 Jacob Bühler
  */
 
+/** Opens public file shares in Nextcloud's native Viewer. */
+
 import { isPadName } from './lib/urls.js'
 
 export const selectedPadPath = (location = window.location) => {

@@ -3,6 +3,8 @@
  * Copyright (c) 2026 Jacob Bühler
  */
 
+/** Covers pad-name recognition and public-share and DAV URL parsing. */
+
 import { describe, expect, it } from 'vitest'
 import {
 	isPadName,

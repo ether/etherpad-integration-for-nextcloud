@@ -2,10 +2,17 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  * Copyright (c) 2026 Jacob Bühler
  */
+
+/**
+ * Covers path and id resolution, opening and recovery, request supersession,
+ * content refresh, sync teardown, and rendered Viewer states.
+ *
+ * The app does not bundle Vue, so the component's options object is exercised
+ * directly with a controlled instance and vnode factory.
+ */
+
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushAsyncWork } from './flush.js'
-
-// The app does not bundle Vue, so exercise the component's options object directly.
 
 vi.mock('../../src/lib/oc-compat.js', () => ({
 	ocGenerateUrl: (path) => path,

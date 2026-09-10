@@ -2,6 +2,9 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  * Copyright (c) 2026 Jacob Bühler
  */
+
+/** Covers public and external pad creation, reopening, and filename preservation. */
+
 import { test, expect } from '@playwright/test'
 import {
 	gotoFiles,

@@ -3,6 +3,8 @@
  * Copyright (c) 2026 Jacob Bühler
  */
 
+/* Native Viewer surfaces for editable, external, and read-only pads. */
+
 /* Extend full-height pad surfaces through the Viewer's reserved lower gap. */
 .viewer .modal-wrapper .modal-container:has(.epnc-native-shell),
 .viewer .modal-wrapper .modal-container:has(.epnc-pad-doc) {

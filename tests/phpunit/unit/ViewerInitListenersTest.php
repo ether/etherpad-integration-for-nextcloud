@@ -19,6 +19,7 @@ use OCP\Util;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
+/** Covers Viewer bootstrap registration from both Files and Viewer events. */
 class ViewerInitListenersTest extends TestCase {
 	protected function setUp(): void {
 		parent::setUp();

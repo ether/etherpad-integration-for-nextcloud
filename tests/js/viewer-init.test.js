@@ -2,6 +2,9 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  * Copyright (c) 2026 Jacob Bühler
  */
+
+/** Covers synchronous MIME registration and lazy Viewer component loading. */
+
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@nextcloud/viewer', () => ({

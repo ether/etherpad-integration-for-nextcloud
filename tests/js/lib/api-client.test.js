@@ -3,6 +3,8 @@
  * Copyright (c) 2026 Jacob Bühler
  */
 
+/** Covers request encoding, caching, invalidation, timeout, and error contracts. */
+
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const importClient = async () => {

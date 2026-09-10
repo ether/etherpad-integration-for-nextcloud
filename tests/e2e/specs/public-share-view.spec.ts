@@ -2,6 +2,9 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  * Copyright (c) 2026 Jacob Bühler
  */
+
+/** Covers native Viewer routing and access isolation for public file and folder shares. */
+
 import { test, expect } from '@playwright/test'
 import { E2E } from '../fixtures/env'
 import {

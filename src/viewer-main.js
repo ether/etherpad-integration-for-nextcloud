@@ -2,6 +2,9 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  * Copyright (c) 2026 Jacob Bühler
  */
+
+/** Nextcloud Viewer component for editable pads and read-only pad content. */
+
 import { APP_ID } from './lib/constants.js'
 import { apiFindOriginalPad, apiRecoverFromSnapshot, apiResolvePadByPath } from './lib/api-client.js'
 import { fetchJsonWithTimeout } from './lib/fetch-helpers.js'

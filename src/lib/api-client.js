@@ -3,6 +3,8 @@
  * Copyright (c) 2026 Jacob Bühler
  */
 
+/** Client helpers for pad resolution and snapshot recovery. */
+
 import { APP_ID } from './constants.js'
 import { ocGenerateUrl, ocRequestToken } from './oc-compat.js'
 import { fetchJsonWithTimeout } from './fetch-helpers.js'

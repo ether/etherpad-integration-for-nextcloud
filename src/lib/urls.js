@@ -3,6 +3,8 @@
  * Copyright (c) 2026 Jacob Bühler
  */
 
+/** Pad filename, public-share route, and DAV path helpers. */
+
 export const isPadName = (name) => typeof name === 'string' && name.toLowerCase().endsWith('.pad')
 
 export const parsePublicShareTokenFromLocation = () => {

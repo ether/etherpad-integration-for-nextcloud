@@ -2,6 +2,9 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  * Copyright (c) 2026 Jacob Bühler
  */
+
+/** Covers public-share Viewer startup and legacy folder-share selections. */
+
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 describe('public share bootstrap', () => {
