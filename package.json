@@ -22,7 +22,7 @@
 		"happy-dom": "^20.12.0",
 		"jsdom": "^30.0.1",
 		"vite": "^7.3.6",
-		"vitest": "^4.1.11"
+		"vitest": "^5.0.0"
 	},
 	"dependencies": {
 		"dompurify": "^3.4.14"
