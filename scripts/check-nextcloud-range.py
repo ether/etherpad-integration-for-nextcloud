@@ -22,20 +22,30 @@ def read(path):
 
 
 def declared_range():
+    """The floor as declared, the major it belongs to, and the ceiling.
+
+    The floor may name a patch: Nextcloud compares a requirement by its own
+    shape, so "31.0.9" is refused on 31.0.8 where a bare "31" is not. The
+    ceiling stays a major, because it is only ever used to enumerate them.
+    """
     m = re.search(
-        r'<nextcloud\s+min-version="(\d+)"\s+max-version="(\d+)"\s*/>',
+        r'<nextcloud\s+min-version="(\d+(?:\.\d+){0,2})"\s+max-version="(\d+)"\s*/>',
         read("appinfo/info.xml"),
     )
     if not m:
         sys.exit("could not read <nextcloud min-version max-version> from appinfo/info.xml")
-    return int(m.group(1)), int(m.group(2))
+    floor = m.group(1)
+    return floor, int(floor.split(".")[0]), int(m.group(2))
 
 
 def main():
-    minimum, maximum = declared_range()
+    floor, minimum, maximum = declared_range()
     if minimum > maximum:
-        sys.exit(f"appinfo/info.xml declares min-version {minimum} above max-version {maximum}")
-    majors = [str(v) for v in range(minimum, maximum + 1)]
+        sys.exit(f"appinfo/info.xml declares min-version {floor} above max-version {maximum}")
+    # The floor stands in for its own major, so the lower end of every list
+    # is the exact version the declaration admits rather than whatever the
+    # moving major tag resolves to today.
+    majors = [floor] + [str(v) for v in range(minimum + 1, maximum + 1)]
     problems = []
 
     def want(path, pattern, expected, what):
@@ -46,7 +56,7 @@ def main():
             problems.append(f"{path}: {what} is {m.group(1)!r}, expected {expected!r}")
 
     # The minimum is what gets installed and analysed by default.
-    want("composer.json", r'"nextcloud/ocp":\s*"([^"]+)"', f"^{minimum}",
+    want("composer.json", r'"nextcloud/ocp":\s*"([^"]+)"', f"^{floor}",
          "the nextcloud/ocp constraint")
 
     # The Psalm matrix names the upper bound explicitly; its lower bound is
@@ -57,7 +67,7 @@ def main():
     # Both e2e matrices: a pull request runs the two ends, the nightly run
     # covers every major in the range.
     want(".github/workflows/e2e.yml", r"pull_request'\s*\n\s*&&\s*'\[([^\]]*)\]'",
-         ", ".join(f'"{v}"' for v in (str(minimum), str(maximum))),
+         ", ".join(f'"{v}"' for v in (floor, str(maximum))),
          "the pull-request Nextcloud list")
     want(".github/workflows/e2e.yml", r"\|\|\s*'\[([^\]]*)\]'\)\s*\}\}",
          ", ".join(f'"{v}"' for v in majors),
@@ -72,16 +82,16 @@ def main():
          "the Dockerfile default")
 
     # What a reader is told to install.
-    want("README.md", r"- Nextcloud `(\d+` to `\d+)`", f"{minimum}` to `{maximum}",
+    want("README.md", r"- Nextcloud `([\d.]+` to `\d+)`", f"{floor}` to `{maximum}",
          "the supported range")
 
     if problems:
-        print(f"appinfo/info.xml declares Nextcloud {minimum} to {maximum}; it is the source of truth.")
+        print(f"appinfo/info.xml declares Nextcloud {floor} to {maximum}; it is the source of truth.")
         for problem in problems:
             print(f"::error::{problem}")
         return 1
 
-    print(f"Nextcloud {minimum} to {maximum}: info.xml, composer.json, both CI matrices, "
+    print(f"Nextcloud {floor} to {maximum}: info.xml, composer.json, both CI matrices, "
           "the three stack defaults and the README agree.")
     return 0
 
