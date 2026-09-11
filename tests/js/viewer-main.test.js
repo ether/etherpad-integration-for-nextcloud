@@ -183,7 +183,10 @@ describe('viewer component — computed path/id derivation', () => {
 		expect(vm.filePath).toBe('/Folder /A.pad')
 	})
 
-	it('returns empty filePath when nothing resolves to a .pad', () => {
+	it('builds a path from whatever name it has, and none from no name at all', () => {
+		// A non-pad name still yields a path - the handler is only ever
+		// mounted for the pad mime, so filtering here would hide a wiring
+		// mistake rather than prevent one.
 		const vm = makeInstance({ filename: 'notes.txt', basename: '' })
 		expect(vm.filePath).toBe('/notes.txt')
 		const empty = makeInstance({})

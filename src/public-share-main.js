@@ -23,6 +23,25 @@ export const selectedPadPath = (location = window.location) => {
 	return `${cleanDirectory}/${cleanName}`
 }
 
-document.addEventListener('DOMContentLoaded', () => {
-	window.OCA.Viewer.open({ path: selectedPadPath() || '/' })
-})
+const openSelectedPad = () => {
+	// The script is emitted even where the Viewer app is off: addScript's
+	// third argument orders scripts, it does not require one.
+	if (typeof window.OCA?.Viewer?.open !== 'function') {
+		return
+	}
+	try {
+		const opened = window.OCA.Viewer.open({ path: selectedPadPath() || '/' })
+		if (opened && typeof opened.catch === 'function') {
+			opened.catch(() => {})
+		}
+	} catch {
+		// Nothing to fall back to, and an unhandled rejection on a share
+		// page helps nobody.
+	}
+}
+
+if (document.readyState === 'loading') {
+	document.addEventListener('DOMContentLoaded', openSelectedPad, { once: true })
+} else {
+	openSelectedPad()
+}

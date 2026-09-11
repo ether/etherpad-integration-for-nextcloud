@@ -16,6 +16,7 @@
 		"test:e2e:ui": "playwright test --config tests/e2e/playwright.config.ts --ui"
 	},
 	"devDependencies": {
+		"@nextcloud/viewer": "^1.0.0",
 		"@nextcloud/vite-config": "^2.5.4",
 		"@playwright/test": "^1.63.0",
 		"dotenv": "^17.4.2",
@@ -25,7 +26,6 @@
 		"vitest": "^5.0.0"
 	},
 	"dependencies": {
-		"@nextcloud/viewer": "^1.0.0",
 		"dompurify": "^3.4.14"
 	},
 	"overrides": {

@@ -56,8 +56,8 @@ class LoadPublicShareScriptsListenerTest extends TestCase {
 
 		$listener = new LoadPublicShareScriptsListener($request);
 		$listener->handle(new BeforeTemplateRenderedEvent(
-			BeforeTemplateRenderedEvent::SCOPE_PUBLIC_SHARE_AUTH,
 			$share,
+			BeforeTemplateRenderedEvent::SCOPE_PUBLIC_SHARE_AUTH,
 		));
 
 		self::assertSame([], Util::$initScripts);
@@ -72,7 +72,7 @@ class LoadPublicShareScriptsListenerTest extends TestCase {
 		$share->method('getNode')->willReturn($node);
 
 		$listener = new LoadPublicShareScriptsListener($request);
-		$listener->handle(new BeforeTemplateRenderedEvent('publicShare', $share));
+		$listener->handle(new BeforeTemplateRenderedEvent($share, 'publicShare'));
 	}
 
 	private function assertPublicShareBootstrapLoaded(): void {
