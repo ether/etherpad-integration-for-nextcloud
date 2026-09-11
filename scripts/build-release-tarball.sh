@@ -85,6 +85,17 @@ if [[ -n "$LEAKED" ]]; then
 	exit 1
 fi
 
+# A symlink is a path into the machine that built the archive, so it is
+# never something to ship. Checked by type rather than by name: the
+# exclude list can only refuse names it knows, and the link that prompted
+# this check was one it let through.
+LINKS="$(tar -tvzf "$ARTIFACT" | grep '^l' || true)"
+if [[ -n "$LINKS" ]]; then
+	echo "ERROR: tarball contains symlinks:" >&2
+	echo "$LINKS" >&2
+	exit 1
+fi
+
 SIZE_HUMAN="$(du -h "$ARTIFACT" | awk '{print $1}')"
 ENTRY_COUNT="$(tar -tzf "$ARTIFACT" | wc -l | tr -d ' ')"
 

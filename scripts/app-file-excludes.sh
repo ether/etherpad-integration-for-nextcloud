@@ -11,19 +11,23 @@
 # the app, which is visible. An allow-list fails the other way, by
 # silently leaving a needed file out.
 
+# None of these end in a slash. With one, rsync matches a directory only,
+# and a symlink of the same name is copied into the tree instead - a
+# vendor or dist link on a developer's machine would reach a release
+# tarball as an absolute path into their checkout.
 RSYNC_EXCLUDES=(
-	--exclude='.git/'
-	--exclude='.github/'
+	--exclude='.git'
+	--exclude='.github'
 	--exclude='.gitignore'
 	--exclude='.gitattributes'
 	--exclude='.editorconfig'
-	--exclude='node_modules/'
-	--exclude='vendor/'
-	--exclude='tests/'
-	--exclude='src/'
-	--exclude='scripts/'
-	--exclude='.phpunit.cache/'
-	--exclude='_copy_probe/'
+	--exclude='node_modules'
+	--exclude='vendor'
+	--exclude='tests'
+	--exclude='src'
+	--exclude='scripts'
+	--exclude='.phpunit.cache'
+	--exclude='_copy_probe'
 	--exclude='.DS_Store'
 	--exclude='._*'
 	--exclude='ToDo.md'
@@ -38,11 +42,11 @@ RSYNC_EXCLUDES=(
 	--exclude='vitest.config.js'
 	--exclude='psalm.xml'
 	--exclude='psalm-baseline.xml'
-	--exclude='dist/'
+	--exclude='dist'
 	# Playwright e2e artefacts (gitignored, but rsync copies the working
 	# tree regardless) — must never end up in the app tarball.
-	--exclude='test-results/'
-	--exclude='playwright-report/'
-	--exclude='blob-report/'
-	--exclude='.playwright/'
+	--exclude='test-results'
+	--exclude='playwright-report'
+	--exclude='blob-report'
+	--exclude='.playwright'
 )

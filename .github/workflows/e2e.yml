@@ -66,7 +66,7 @@ jobs:
         # exactly what it is for.
         nextcloud: >-
           ${{ fromJSON(github.event_name == 'pull_request'
-          && '["31", "34"]' || '["31", "32", "33", "34"]') }}
+          && '["31.0.9", "34"]' || '["31.0.9", "32", "33", "34"]') }}
         etherpad: ['2']
         include:
           # Neither key can be added to an existing combination without

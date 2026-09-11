@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- **The supported Nextcloud range starts at 31.0.9**, where it named 31 before. On 31.0.0 five end-to-end specs fail - the Ownpad migration, reopening after a rename, orphan recovery, the trash round-trip, and session revocation on logout - and 31.0.9 is where the suite goes green. Nextcloud compares a requirement at whatever precision it is written, so an instance on 31.0.0 through 31.0.8 will find this app incompatible and disable it at its next upgrade check. (#249)
+
 ## 1.1.0-alpha.5 — 2026-09-07
 
 Fifth public-review release. Focus: a view-only share of a protected pad that is view-only on the pad server too, live read-only content, Etherpad session cleanup, Nextcloud 34, and one implementation each for creating, provisioning and opening a pad.
