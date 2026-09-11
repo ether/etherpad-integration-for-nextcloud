@@ -3,8 +3,9 @@
 #
 # Throwaway Nextcloud + Etherpad target for the Playwright suite. Bring
 # it up with tests/e2e/docker/up.sh, which also seeds accounts and writes
-# tests/e2e/.env.e2e. NC_VERSION selects the Nextcloud major the app is
-# tested against (31.0.9 to 34 — see appinfo/info.xml); EP_VERSION selects
+# tests/e2e/.env.e2e. NC_VERSION selects the Nextcloud version the app is
+# tested against (31.0.9 to 34 — see appinfo/info.xml); the floor is a
+# pinned patch tag, the rest are moving major tags. EP_VERSION selects
 # the Etherpad major, 2 by default.
 
 name: etherpad-nc-e2e

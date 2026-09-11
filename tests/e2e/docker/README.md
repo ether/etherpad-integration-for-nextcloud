@@ -11,7 +11,7 @@ a local run when you touch something version-sensitive, since nothing
 gates a merge on them:
 
 ```bash
-NC_VERSION=31.0.9 tests/e2e/docker/up.sh
+NC_VERSION=32 tests/e2e/docker/up.sh
 ```
 
 ## One-time host setup

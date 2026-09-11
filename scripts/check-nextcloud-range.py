@@ -3,7 +3,7 @@
 # Copyright (c) 2026 Jacob Bühler
 #
 # appinfo/info.xml declares which Nextcloud versions this app supports, and
-# nine other files restate that range: the Psalm matrix analyses its upper
+# eight other files restate that range: the Psalm matrix analyses its upper
 # bound, the e2e matrix runs stacks across it, three stack defaults pick the
 # newest, composer.json pins the oldest, the README tells a user what to
 # install, and the e2e stack's README, up.sh and compose header tell a
@@ -27,12 +27,7 @@ def read(path):
 
 
 def declared_range():
-    """The floor as declared, the major it belongs to, and the ceiling.
-
-    The floor may name a patch: Nextcloud compares a requirement by its own
-    shape, so "31.0.9" is refused on 31.0.8 where a bare "31" is not. The
-    ceiling stays a major, because it is only ever used to enumerate them.
-    """
+    """The floor as declared, the major it belongs to, and the ceiling."""
     m = re.search(
         r'<nextcloud\s+min-version="(\d+(?:\.\d+){0,2})"\s+max-version="(\d+)"\s*/>',
         read("appinfo/info.xml"),
@@ -51,10 +46,18 @@ def main():
     # is the exact version the declaration admits rather than whatever the
     # moving major tag resolves to today.
     majors = [floor] + [str(v) for v in range(minimum + 1, maximum + 1)]
+    # Both ends of a single-major range are the same version, and asking for
+    # the bare major alongside the floor would put back the moving tag.
+    ends = majors if len(majors) == 1 else [floor, str(maximum)]
     problems = []
 
     def want(path, pattern, expected, what):
-        m = re.search(pattern, read(path))
+        try:
+            text = read(path)
+        except OSError:
+            problems.append(f"{path}: file not found")
+            return
+        m = re.search(pattern, text)
         if m is None:
             problems.append(f"{path}: could not find {what}")
         elif m.group(1) != expected:
@@ -64,6 +67,13 @@ def main():
     want("composer.json", r'"nextcloud/ocp":\s*"([^"]+)"', f"^{floor}",
          "the nextcloud/ocp constraint")
 
+    # The constraint is open above, so it alone does not keep the analysed
+    # stubs at the floor: a routine update moves the lock to a newer patch,
+    # and the Psalm job documented as "the declared minimum" then accepts an
+    # API the declared minimum does not have.
+    want("composer.lock", r'"name":\s*"nextcloud/ocp",\s*\n\s*"version":\s*"v([^"]+)"',
+         floor, "the nextcloud/ocp version in the lock")
+
     # The Psalm matrix names the upper bound explicitly; its lower bound is
     # whatever composer.lock pins, which the constraint above already covers.
     want(".github/workflows/psalm.yml", r"ocp:\s*\[([^\]]*)\]", f"'locked', '^{maximum}'",
@@ -72,7 +82,7 @@ def main():
     # Both e2e matrices: a pull request runs the two ends, the nightly run
     # covers every major in the range.
     want(".github/workflows/e2e.yml", r"pull_request'\s*\n\s*&&\s*'\[([^\]]*)\]'",
-         ", ".join(f'"{v}"' for v in (floor, str(maximum))),
+         ", ".join(f'"{v}"' for v in ends),
          "the pull-request Nextcloud list")
     want(".github/workflows/e2e.yml", r"\|\|\s*'\[([^\]]*)\]'\)\s*\}\}",
          ", ".join(f'"{v}"' for v in majors),
@@ -94,10 +104,16 @@ def main():
     # check watched the four files above and not these.
     want("tests/e2e/docker/README.md", r"declares — ([\d.]+ and \d+) — and the",
          f"{floor} and {maximum}", "the range named in the e2e README")
-    want("tests/e2e/docker/README.md", r"NC_VERSION=([\d.]+) tests/e2e/docker/up\.sh",
-         floor, "the e2e README's lower-bound example")
-    want("tests/e2e/docker/README.md", r"# NC_VERSION=([\d.|]+), default",
-         "|".join(majors), "the e2e README's NC_VERSION list")
+    if len(majors) > 1:
+        # The block there recommends a major CI does not gate on, so it must
+        # name one of those rather than an end.
+        want("tests/e2e/docker/README.md",
+             r"```bash\nNC_VERSION=([\d.]+) tests/e2e/docker/up\.sh\n```",
+             majors[1], "the e2e README's middle-major example")
+    want("tests/e2e/docker/README.md",
+         r"up\.sh\s+# NC_VERSION=([\d.|]+, default \d+)",
+         f"{'|'.join(majors)}, default {maximum}",
+         "the e2e README's NC_VERSION list and default")
     want("tests/e2e/docker/up.sh", r"#\s+NC_VERSION=([\d.]+) tests/e2e/docker/up\.sh",
          floor, "the up.sh usage example")
     want("tests/e2e/docker/compose.yml", r"# tested against \(([\d.]+ to \d+) —",
