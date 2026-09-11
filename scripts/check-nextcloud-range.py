@@ -2,12 +2,17 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (c) 2026 Jacob Bühler
 #
-# appinfo/info.xml declares which Nextcloud majors this app supports, and
-# seven other files restate that range: the Psalm matrix analyses its upper
+# appinfo/info.xml declares which Nextcloud versions this app supports, and
+# nine other files restate that range: the Psalm matrix analyses its upper
 # bound, the e2e matrix runs stacks across it, three stack defaults pick the
-# newest, composer.json pins the oldest, and the README tells a user what to
-# install. This holds them to it, so widening the range stays a one-file
-# change.
+# newest, composer.json pins the oldest, the README tells a user what to
+# install, and the e2e stack's README, up.sh and compose header tell a
+# developer what to run. This holds them to it, so moving the range stays a
+# one-file change.
+#
+# The floor may name a patch. Nextcloud compares a requirement at whatever
+# precision it is written, so "31.0.9" is refused on 31.0.8 where a bare
+# "31" is not - and the majors to iterate come from its first segment.
 #
 # Run from the repository root. Prints every mismatch, exits non-zero if
 # there is one.
@@ -85,6 +90,19 @@ def main():
     want("README.md", r"- Nextcloud `([\d.]+` to `\d+)`", f"{floor}` to `{maximum}",
          "the supported range")
 
+    # And what a developer is told to run. These drifted twice while this
+    # check watched the four files above and not these.
+    want("tests/e2e/docker/README.md", r"declares — ([\d.]+ and \d+) — and the",
+         f"{floor} and {maximum}", "the range named in the e2e README")
+    want("tests/e2e/docker/README.md", r"NC_VERSION=([\d.]+) tests/e2e/docker/up\.sh",
+         floor, "the e2e README's lower-bound example")
+    want("tests/e2e/docker/README.md", r"# NC_VERSION=([\d.|]+), default",
+         "|".join(majors), "the e2e README's NC_VERSION list")
+    want("tests/e2e/docker/up.sh", r"#\s+NC_VERSION=([\d.]+) tests/e2e/docker/up\.sh",
+         floor, "the up.sh usage example")
+    want("tests/e2e/docker/compose.yml", r"# tested against \(([\d.]+ to \d+) —",
+         f"{floor} to {maximum}", "the range named in the compose header")
+
     if problems:
         print(f"appinfo/info.xml declares Nextcloud {floor} to {maximum}; it is the source of truth.")
         for problem in problems:
@@ -92,7 +110,7 @@ def main():
         return 1
 
     print(f"Nextcloud {floor} to {maximum}: info.xml, composer.json, both CI matrices, "
-          "the three stack defaults and the README agree.")
+          "the three stack defaults, the README and the e2e stack's own docs agree.")
     return 0
 
 
