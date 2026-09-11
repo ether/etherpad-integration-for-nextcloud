@@ -17,7 +17,9 @@ RSYNC_EXCLUDES=(
 	--exclude='.gitignore'
 	--exclude='.gitattributes'
 	--exclude='.editorconfig'
-	--exclude='node_modules/'
+	# No trailing slash: with one this matches a directory only, and a
+	# symlink of the same name is copied into the tree instead.
+	--exclude='node_modules'
 	--exclude='vendor/'
 	--exclude='tests/'
 	--exclude='src/'

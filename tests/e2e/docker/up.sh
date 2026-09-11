@@ -5,7 +5,7 @@
 # Bring up a throwaway Nextcloud + Etherpad target for the Playwright
 # suite, seed it, and write tests/e2e/.env.e2e pointing at it.
 #
-#   NC_VERSION=31 tests/e2e/docker/up.sh
+#   NC_VERSION=32 tests/e2e/docker/up.sh
 #
 # Requires nc.pad.test and ep.pad.test to resolve to 127.0.0.1 — see
 # tests/e2e/docker/README.md.
