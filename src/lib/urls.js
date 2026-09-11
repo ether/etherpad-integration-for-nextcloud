@@ -5,6 +5,7 @@
 
 /** Pad filename, public-share route, and DAV path helpers. */
 
+/** Case-insensitive, as on the server: `.PAD` arrives from desktop clients. */
 export const isPadName = (name) => typeof name === 'string' && name.toLowerCase().endsWith('.pad')
 
 export const parsePublicShareTokenFromLocation = () => {

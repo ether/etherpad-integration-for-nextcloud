@@ -16,8 +16,10 @@ const RESOLVE_CACHE_TTL_MS = 5 * 60 * 1000
 /**
  * Resolve a path to its pad metadata.
  *
- * Bypass the cache before a write so a replaced path cannot target a
- * different file.
+ * Bypass the cache before a write. An entry is up to five minutes old, and
+ * in five minutes a file can be moved and another `.pad` created at the
+ * same path: for a read that is stale, for recovery it would bind a pad to
+ * the wrong file.
  */
 export const apiResolvePadByPath = async (path, { bypassCache = false } = {}) => {
 	const cacheKey = 'path:' + String(path)
@@ -56,7 +58,8 @@ export const apiRecoverFromSnapshot = async (fileId, path = '') => {
 			requesttoken: ocRequestToken(),
 		},
 	}, { fallbackMessage: 'Recovery failed.', timeoutMs: null })
-	// Invalidate only the path used for recovery.
+	// Only this path: flushing every entry would throw away answers for
+	// unrelated files the session has already looked up.
 	if (typeof path === 'string' && path !== '') {
 		RESOLVE_CACHE.delete('path:' + path)
 	}

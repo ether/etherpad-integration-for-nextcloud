@@ -60,7 +60,8 @@ const component = {
 			return parsePadPathFromDavHref(value) || ''
 		},
 		filePath() {
-			// Preserve valid filename and directory whitespace when opening a file.
+			// Whitespace is part of the name, not noise: `Notes .pad` and
+			// `Notes.pad` are two files, and trimming here opened the wrong one.
 			const normalizeDir = (dir) => {
 				if (!dir || dir === '/') return '/'
 				return dir.startsWith('/') ? dir : ('/' + dir)
@@ -245,6 +246,9 @@ const component = {
 					if (byPublicUrl) {
 						return await this.fetchOpenPayload(byPublicUrl, { signal })
 					}
+					// One way in, chosen once. An open by id that retries by
+					// path is how a refused id ended up opening whatever the
+					// path pointed at.
 					if (this.resolvedFileId !== null) {
 						const byIdBody = new URLSearchParams()
 						byIdBody.set('fileId', String(this.resolvedFileId))
