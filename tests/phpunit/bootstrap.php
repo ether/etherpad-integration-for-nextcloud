@@ -99,12 +99,11 @@ spl_autoload_register(static function (string $class): void {
 		return;
 	}
 	$relative = substr($class, strlen($prefix));
-	// Tests\ lives beside this file, everything else under lib/. Composer's
-	// autoload-dev covers the first when PHPUnit is installed through it;
-	// resolving it here too lets the suite run from a PHAR, which is how the
-	// PHP floor gets tested without a toolchain that requires more than it.
+	// Tests\ lives beside this file, everything else under lib/. The first
+	// mirrors composer.json's autoload-dev mapping; moving the test root has
+	// to change both.
 	$path = str_starts_with($relative, 'Tests\\')
-		? __DIR__ . '/../../tests/phpunit/' . str_replace('\\', '/', substr($relative, strlen('Tests\\'))) . '.php'
+		? __DIR__ . '/' . str_replace('\\', '/', substr($relative, strlen('Tests\\'))) . '.php'
 		: __DIR__ . '/../../lib/' . str_replace('\\', '/', $relative) . '.php';
 	if (is_file($path)) {
 		require_once $path;

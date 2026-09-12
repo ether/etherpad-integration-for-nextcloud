@@ -10,13 +10,12 @@ namespace Psr\Http\Message;
 
 /**
  * Stands in for psr/http-message 2.0 where the suite runs without Composer's
- * autoloader - a PHPUnit PHAR on the declared PHP floor, where the installed
- * toolchain cannot run.
+ * autoloader, the same way the Psr\Clock stub beside it does. Every CI job
+ * installs dependencies, so the real interface wins there and this body never
+ * runs - it is a fallback for a reduced environment, not a checked contract.
  *
- * Every signature is copied from the real interface, parameter and return
- * types included. An emptier stub would let BoundedSinkStream satisfy a
- * contract it does not actually meet, which is the opposite of what running
- * these tests is for.
+ * Signatures are copied from the real interface by hand, so a psr/http-message
+ * major that changes one leaves this behind with nothing to catch it.
  */
 if (!interface_exists(StreamInterface::class)) {
 	interface StreamInterface {

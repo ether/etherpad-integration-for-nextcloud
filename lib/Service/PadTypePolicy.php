@@ -60,12 +60,13 @@ class PadTypePolicy {
 	 * Whether a pad can be provisioned locally at all. External pads are not a
 	 * pad type and are not covered — they follow `allow_external_pads`.
 	 *
-	 * Short-circuits, so a case with no arm in isEnabled() only reaches it
-	 * once every case before it is switched off. Psalm is what actually
-	 * holds that, not this loop.
+	 * Walks FALLBACK_ORDER rather than cases() so the class answers "which
+	 * mode do we consider first" one way. The order cannot be observed here
+	 * - this is a plain OR - but stating it twice differently invites the
+	 * two to drift.
 	 */
 	public function hasAnyEnabledType(): bool {
-		foreach (PadAccessMode::cases() as $mode) {
+		foreach (self::FALLBACK_ORDER as $mode) {
 			if ($this->isEnabled($mode)) {
 				return true;
 			}
@@ -112,7 +113,7 @@ class PadTypePolicy {
 			throw new \InvalidArgumentException('Unsupported access mode: ' . $requested);
 		}
 		if ($this->isEnabled($mode)) {
-			return $requested;
+			return $mode->value;
 		}
 		// In FALLBACK_ORDER's order, which is the preference and not an
 		// accident of iteration. No test can see that today: the requested

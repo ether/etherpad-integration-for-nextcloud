@@ -41,15 +41,12 @@ class PadAccessModeTest extends TestCase {
 	 * sees it.
 	 */
 	public function testTheJavaScriptCopyNamesTheSameModes(): void {
-		$constants = (string)realpath(__DIR__ . '/../../../src/lib/constants.js');
-		$this->assertFileExists($constants);
-
 		$matched = preg_match(
 			// Anchored to the declaration: an unanchored skip would run past
 			// this statement and read some later array instead. The optional
 			// wrapper is named rather than skipped over.
 			'/export\s+const\s+PAD_ACCESS_MODES\s*=\s*(?:Object\.freeze\(\s*)?\[(?<values>[^\]]*)\]/',
-			(string)file_get_contents($constants),
+			$this->constantsJs(),
 			$matches,
 		);
 		$this->assertSame(1, $matched, 'src/lib/constants.js must export PAD_ACCESS_MODES');
@@ -88,10 +85,10 @@ class PadAccessModeTest extends TestCase {
 		);
 		$this->assertSame(1, $matched, 'src/lib/constants.js must export DEFAULT_PAD_ACCESS_MODE');
 
-		foreach (['create' => 'accessMode', 'createByParent' => 'accessMode'] as $method => $argument) {
+		foreach (['create', 'createByParent'] as $method) {
 			$this->assertSame(
 				$matches['value'],
-				$this->defaultArgumentOf($method, $argument),
+				$this->defaultArgumentOf($method, 'accessMode'),
 				"PadCreateController::$method() defaults to a different mode than the launcher",
 			);
 		}

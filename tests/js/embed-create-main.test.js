@@ -133,7 +133,16 @@ describe('embed-create-main', () => {
 
 		expect(fetch).toHaveBeenCalledOnce()
 		expect(String(fetch.mock.calls[0][1].body)).toContain('accessMode=public')
-		expect(parentPostSpy.mock.calls[0][0].type).toBe('epnc:create-succeeded')
+
+		// The mode has to survive the round trip, not only the request.
+		expect(parentPostSpy.mock.calls[0][0]).toEqual({
+			type: 'epnc:create-succeeded',
+			embed_url: '/embed/by-id/778',
+			file_id: 778,
+			pad_id: 'nc-abc',
+			access_mode: 'public',
+		})
+		expect(locationReplaceSpy).toHaveBeenCalledWith('/embed/by-id/778')
 	})
 
 	it('posts epnc:create-failed with reason=conflict on a 409 from the API', async () => {
