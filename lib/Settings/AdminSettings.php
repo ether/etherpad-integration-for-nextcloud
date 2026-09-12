@@ -11,12 +11,12 @@ namespace OCA\EtherpadNextcloud\Settings;
 use OCA\EtherpadNextcloud\AppInfo\Application;
 use OCA\EtherpadNextcloud\Service\AdminSettingsRepository;
 use OCA\EtherpadNextcloud\Service\AppConfigService;
-use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\EtherpadNextcloud\Service\CookieDomainDecision;
 use OCA\EtherpadNextcloud\Service\CookieDomainMessages;
 use OCA\EtherpadNextcloud\Service\CookieDomainPolicy;
 use OCA\EtherpadNextcloud\Service\EtherpadClient;
 use OCA\EtherpadNextcloud\Service\PadTypePolicy;
+use OCA\EtherpadNextcloud\Util\PadAccessMode;
 use OCP\AppFramework\Http\TemplateResponse;
 use OCP\IConfig;
 use OCP\IL10N;
@@ -65,7 +65,7 @@ class AdminSettings implements ISettings {
 
 		// Only relevant when protected pads are actually offered — an instance
 		// that only serves public pads needs no session cookie at all.
-		$protectedPadsEnabled = $this->padTypePolicy->isEnabled(BindingService::ACCESS_PROTECTED);
+		$protectedPadsEnabled = $this->padTypePolicy->isEnabled(PadAccessMode::Protected);
 		$cookieWarning = ($protectedPadsEnabled && $decision->status === CookieDomainDecision::STATUS_WARNING)
 			? $this->cookieDomainMessages->describe($decision)
 			: '';

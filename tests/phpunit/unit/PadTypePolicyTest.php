@@ -22,8 +22,8 @@ class PadTypePolicyTest extends TestCase {
 		// it did before the settings existed.
 		$policy = $this->buildPolicy([]);
 
-		self::assertTrue($policy->isEnabled(BindingService::ACCESS_PROTECTED));
-		self::assertTrue($policy->isEnabled(BindingService::ACCESS_PUBLIC));
+		self::assertTrue($policy->isEnabled(PadAccessMode::Protected));
+		self::assertTrue($policy->isEnabled(PadAccessMode::Public));
 	}
 
 	public function testReflectsTheConfiguredFlags(): void {
@@ -32,14 +32,8 @@ class PadTypePolicyTest extends TestCase {
 			PadTypePolicy::SETTING_PUBLIC => 'yes',
 		]);
 
-		self::assertFalse($policy->isEnabled(BindingService::ACCESS_PROTECTED));
-		self::assertTrue($policy->isEnabled(BindingService::ACCESS_PUBLIC));
-	}
-
-	public function testUnknownAccessModeIsNeverEnabled(): void {
-		$policy = $this->buildPolicy([]);
-
-		self::assertFalse($policy->isEnabled('something-else'));
+		self::assertFalse($policy->isEnabled(PadAccessMode::Protected));
+		self::assertTrue($policy->isEnabled(PadAccessMode::Public));
 	}
 
 	public function testRequireEnabledPassesForAnEnabledType(): void {

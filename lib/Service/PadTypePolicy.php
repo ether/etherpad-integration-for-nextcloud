@@ -48,21 +48,8 @@ class PadTypePolicy {
 	) {
 	}
 
-	/**
-	 * Whether pads of this type may be created here.
-	 *
-	 * A mode nobody knows answers false, the same as one switched off. The
-	 * two are told apart by the callers that can act on the difference:
-	 * requireEnabled() and resolveCreatableMode() refuse an unknown value
-	 * outright rather than reporting a disabled pad type for something that
-	 * was never one.
-	 */
-	public function isEnabled(string $accessMode): bool {
-		$mode = PadAccessMode::tryFrom($accessMode);
-		return $mode !== null && $this->isModeEnabled($mode);
-	}
-
-	private function isModeEnabled(PadAccessMode $mode): bool {
+	/** Whether pads of this type may be created here. */
+	public function isEnabled(PadAccessMode $mode): bool {
 		return match ($mode) {
 			PadAccessMode::Protected => $this->flag(self::SETTING_PROTECTED),
 			PadAccessMode::Public => $this->flag(self::SETTING_PUBLIC),
@@ -73,13 +60,13 @@ class PadTypePolicy {
 	 * Whether a pad can be provisioned locally at all. External pads are not a
 	 * pad type and are not covered — they follow `allow_external_pads`.
 	 *
-	 * Short-circuits, so a case with no arm in isModeEnabled() only reaches
-	 * it once every case before it is switched off. Psalm is what actually
+	 * Short-circuits, so a case with no arm in isEnabled() only reaches it
+	 * once every case before it is switched off. Psalm is what actually
 	 * holds that, not this loop.
 	 */
 	public function hasAnyEnabledType(): bool {
 		foreach (PadAccessMode::cases() as $mode) {
-			if ($this->isModeEnabled($mode)) {
+			if ($this->isEnabled($mode)) {
 				return true;
 			}
 		}
@@ -95,7 +82,7 @@ class PadTypePolicy {
 		if ($mode === null) {
 			throw new \InvalidArgumentException('Unsupported access mode: ' . $accessMode);
 		}
-		if ($this->isModeEnabled($mode)) {
+		if ($this->isEnabled($mode)) {
 			return;
 		}
 		throw new PadTypeDisabledException($accessMode);
@@ -124,7 +111,7 @@ class PadTypePolicy {
 		if ($mode === null) {
 			throw new \InvalidArgumentException('Unsupported access mode: ' . $requested);
 		}
-		if ($this->isModeEnabled($mode)) {
+		if ($this->isEnabled($mode)) {
 			return $requested;
 		}
 		// In FALLBACK_ORDER's order, which is the preference and not an
@@ -133,7 +120,7 @@ class PadTypePolicy {
 		// is ever left. Reversing this line is invisible until a third mode
 		// exists, which is when it starts deciding something.
 		foreach (self::FALLBACK_ORDER as $fallback) {
-			if ($this->isModeEnabled($fallback)) {
+			if ($this->isEnabled($fallback)) {
 				return $fallback->value;
 			}
 		}
