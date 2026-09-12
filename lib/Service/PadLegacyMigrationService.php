@@ -18,30 +18,10 @@ use OCP\Files\NotFoundException;
 use Psr\Log\LoggerInterface;
 
 /**
- * Lazy per-file migration of legacy Ownpad `.pad` files (those holding an
+ * Lazy per-file migration of legacy Ownpad `.pad` files (an
  * `[InternetShortcut]` block instead of YAML frontmatter) into the current
- * binding-and-`.pad` model. Called from `PadBootstrapService` when the
- * detection in `PadFileService::parseLegacyOwnpadShortcut` matches.
- *
- * Three branches, all silent in the happy path:
- *
- * 1. **Cross-origin** — the source URL points at a different Etherpad
- *    server than the one we manage. We can't apply protected-mode auth to
- *    a server we don't control, so we route through the existing external
- *    pad shape: write `ext.*` frontmatter, no binding row. Public-only.
- *
- * 2. **Same-origin, no collision** — the source pad-id is not yet bound
- *    to any NC file. We write fresh YAML frontmatter referencing the
- *    same pad-id and create a binding row. The access mode is derived
- *    from the pad-id format (g.X$Y → protected, anything else → public).
- *
- * 3. **Same-origin, collision** — another NC file already owns the
- *    binding for this pad-id. If the requesting user can read that
- *    original file we write frontmatter only (no new binding) and the
- *    file behaves like a copy-of-a-pad; the existing copy-handling in
- *    the open flow takes over. If the user has no access we throw
- *    `LegacyPadCollisionException` and the `.pad` file is left
- *    untouched — subsequent opens see the same legacy state.
+ * binding-and-`.pad` model, called from `PadBootstrapService`. The branches
+ * and what each leaves behind are in docs/legacy-ownpad-migration.md.
  */
 class PadLegacyMigrationService {
 	public function __construct(
@@ -57,22 +37,9 @@ class PadLegacyMigrationService {
 
 	/**
 	 * A group pad this file names has to be a group pad that is there.
-	 *
-	 * The pad id in a legacy `.pad` is written by whoever wrote the file,
-	 * and for a group pad it decides which Etherpad group a session is
-	 * later minted for. Binding someone else's *existing* pad is already
-	 * refused: `pad_id` is unique, so it collides with their binding and
-	 * comes out as a collision the access check handles. Inventing a suffix
-	 * walked around that — `g.<their-group>$anything` collides with nothing
-	 * while naming their group, and the session issued on open grants
-	 * access to everything in it.
-	 *
-	 * Asking whether the pad is in the group keeps the honest case intact:
-	 * a real Ownpad pad is in its group, which is why the file names it. A
-	 * made-up one is not.
-	 *
-	 * Fails closed. A refused migration is retried on the next open; a
-	 * migration waved through on a failed read cannot be taken back.
+	 * `g.<their-group>$invented` collides with no binding while naming a
+	 * real group, and the session issued on open grants all of it. Fails
+	 * closed: a refused migration is retried, a waved-through one is not.
 	 */
 	private function assertGroupPadExists(string $sourcePadId): void {
 		$groupId = PadId::groupIdOf($sourcePadId);
@@ -151,17 +118,11 @@ class PadLegacyMigrationService {
 		$existingBinding = $this->bindingService->findByPadId($sourcePadId, BindingService::STATE_ACTIVE);
 
 		if ($existingBinding === null) {
-			// A pad nothing here points at yet. An existing binding is left
-			// alone deliberately - which file may claim it is the collision
-			// rule's question further down, and refusing there would strand
-			// a migration that made the row and died before the file write.
+			// Unbound pads only; a bound one is the collision rule's
+			// question below.
 			$this->refuseProtectedImportIfSwitchedOff($uid, $fileId, $sourceUrl, $sourcePadId, $accessMode);
-			// After the refusal, so a switched-off import asks Etherpad
-			// nothing: the three answers this can give - pad there, pad
-			// missing, group missing - reach the client as 403, 400 and a
-			// different 400, which is an existence oracle on a privileged
-			// API. A binding that already exists named a pad that existed
-			// when it was written, so the collision paths need no check.
+			// After the refusal: asking first would answer three ways and
+			// make this an existence oracle on a privileged API.
 			$this->assertGroupPadExists($sourcePadId);
 			// Create the binding first, then write the file. If the binding
 			// fails (e.g. a concurrent migration claimed the same pad-id

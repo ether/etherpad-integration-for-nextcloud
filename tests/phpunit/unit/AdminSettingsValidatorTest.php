@@ -278,10 +278,7 @@ class AdminSettingsValidatorTest extends TestCase {
 		$this->assertFalse($result->allowLegacyProtectedImport);
 	}
 
-	/**
-	 * Without this, hardcoding the field to false passes the whole suite -
-	 * every admin pressing Save would silently switch legacy imports off.
-	 */
+	/** Otherwise a save that silently switched the import off would pass. */
 	public function testTheLegacyProtectedImportSwitchCanBeTurnedBackOn(): void {
 		$stored = new StoredAdminSettings('stored-key', '', true, false, '', true, true, false, false);
 
@@ -296,9 +293,8 @@ class AdminSettingsValidatorTest extends TestCase {
 	}
 
 	/**
-	 * The form always sends the field, so this is about every other caller:
-	 * an absent field leaves the setting as it was. Both directions, because
-	 * a stored false alone cannot be told apart from a hardcoded one.
+	 * The form always sends the field; this is about every other caller.
+	 * Both directions, so a hardcoded false cannot pass.
 	 */
 	#[\PHPUnit\Framework\Attributes\DataProvider('storedLegacyProtectedImport')]
 	public function testAnAbsentLegacyProtectedImportFieldKeepsWhatWasStored(bool $stored): void {

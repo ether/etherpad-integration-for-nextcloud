@@ -9,11 +9,7 @@ use OCP\IConfig;
 use PHPUnit\Framework\TestCase;
 
 class LegacyImportPolicyTest extends TestCase {
-	/**
-	 * An instance that never opens the settings does not import group pads.
-	 * The risk needs a shared Etherpad server, and one that has it cannot be
-	 * asked to notice a setting first.
-	 */
+	/** Opt-in: an instance that never opens the settings imports nothing. */
 	public function testProtectedImportIsRefusedWhenNothingIsConfigured(): void {
 		self::assertFalse($this->buildPolicy([])->allowsProtectedImport());
 	}

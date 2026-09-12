@@ -109,10 +109,8 @@ test.describe('legacy migration and the group a pad id claims', () => {
 		expect(realContent).not.toContain('[InternetShortcut]')
 		expect(realContent).toContain(realPadId)
 
-		// Same group, a pad name nobody has used - and the import is on, so
-		// only the group-membership check can refuse it. Nothing in
-		// Nextcloud collides with it, and before that check this bound and
-		// then minted a session for the group above.
+		// Same group, a pad name nobody has used: the import is on, so only
+		// the group-membership check can refuse it.
 		await putFileViaDav(forgedName, `[InternetShortcut]\nURL=${origin}/p/${groupId}$never-created\n`)
 		const forgedFileId = await propfindFileId(forgedName)
 		const refused = await padApiPost(`pads/initialize-by-id/${forgedFileId}`)

@@ -7,11 +7,8 @@ namespace OCA\EtherpadNextcloud\Tests\Unit;
 use PHPUnit\Framework\TestCase;
 
 /**
- * docs/i18n.md states two rules about `l10n/`: every maintained locale holds
- * the same keys, and a locale's `.js` and `.json` agree on keys and values.
- * Both are kept by hand - the formats are written separately - so a string
- * added to one file and forgotten in another is silent until a user sees
- * English where a translation was expected.
+ * docs/i18n.md requires every maintained locale to hold the same keys, and
+ * a locale's `.js` and `.json` to agree. Both are kept by hand.
  */
 class TranslationCatalogTest extends TestCase {
 	private const LOCALES = ['de', 'es', 'fr', 'it'];

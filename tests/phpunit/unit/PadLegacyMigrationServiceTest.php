@@ -173,10 +173,8 @@ class PadLegacyMigrationServiceTest extends TestCase {
 	}
 
 	public function testSameOriginNoCollisionCreatesBindingBeforeFile(): void {
-		// The reviewer's concern: if a partial failure leaves the .pad with
-		// managed frontmatter but no binding row, the copy-recovery flow
-		// can't help (it needs *some* binding for the pad-id to exist).
-		// So binding goes first; the file write goes second.
+		// Binding first: managed frontmatter with no binding row leaves the
+		// copy-recovery flow nothing to work with.
 		$callOrder = [];
 
 		$file = $this->createMock(File::class);
@@ -393,9 +391,8 @@ class PadLegacyMigrationServiceTest extends TestCase {
 	}
 
 	/**
-	 * A binding this instance already holds is one this instance made, so the
-	 * switch has nothing to protect - and refusing would strand a migration
-	 * that created the row but died before the file write.
+	 * Existing bindings are left alone, so a migration that made the row and
+	 * died before the file write can still finish.
 	 */
 	public function testFinishesAHalfMigratedFileEvenWithProtectedImportSwitchedOff(): void {
 		$file = $this->createMock(File::class);

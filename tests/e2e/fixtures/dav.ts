@@ -185,11 +185,9 @@ const appConfigUrl = (key: string): string =>
 	`${E2E.baseURL}/ocs/v2.php/apps/provisioning_api/api/v1/config/apps/etherpad_nextcloud/${key}`
 
 /**
- * The app-config endpoints authenticate with the login password rather than
- * the app password every other helper here uses. Writing carries Nextcloud's
- * PasswordConfirmationRequired, and a session opened with an app password
- * never holds the confirmation it looks for - `Session::logClientIn` records
- * `last-password-confirm` only when the password is not a token.
+ * The login password, not the app password the helpers around this use:
+ * writing app config needs Nextcloud's password confirmation, which a
+ * session opened with a token never holds.
  */
 const adminAuthHeader = (): string =>
 	`Basic ${Buffer.from(`${E2E.user}:${E2E.password}`).toString('base64')}`
@@ -214,19 +212,11 @@ const ocsAppConfig = async (key: string, init: RequestInit, what: string): Promi
 	return payload?.ocs?.data
 }
 
-/**
- * Read one of the app's config values. An unset key answers the empty
- * string, which is what a spec restores it to.
- */
+/** Read one of the app's config values; an unset key answers ''. */
 export const getAppConfig = async (key: string): Promise<string> =>
 	String(await ocsAppConfig(key, { method: 'GET' }, 'Reading') ?? '')
 
-/**
- * Set one of the app's config values. The primary E2E account is the
- * instance admin, so a spec can put the server into the state it is about
- * instead of depending on up.sh for it - and restore what it found, since
- * the suite also runs against instances somebody else configured.
- */
+/** Set one of the app's config values; the E2E account is the admin. */
 export const setAppConfig = async (key: string, value: string): Promise<void> => {
 	await ocsAppConfig(key, {
 		method: 'POST',
