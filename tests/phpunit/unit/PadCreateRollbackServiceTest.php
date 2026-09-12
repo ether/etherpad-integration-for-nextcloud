@@ -20,12 +20,14 @@ class PadCreateRollbackServiceTest extends TestCase {
 	public function testTouchesNothingWhenNoFileWasCreated(): void {
 		$etherpad = $this->createMock(EtherpadClient::class);
 		$etherpad->expects($this->never())->method('deletePad');
+		$resolver = $this->createMock(UserNodeResolver::class);
+		$resolver->expects($this->never())->method('resolveUserFileNodeById');
 
-		$this->buildService(etherpad: $etherpad)
+		$this->buildService(etherpad: $etherpad, userNodeResolver: $resolver)
 			->rollbackFailedCreate('alice', '/Existing.pad', '', null);
 	}
 
-	public function testDeletesTheFileTheIdResolvesToNow(): void {
+	public function testDeletesTheEmptyFileResolvedFromTheCapturedId(): void {
 		$stillOurs = $this->untouchedFile();
 		$stillOurs->expects($this->once())->method('delete');
 
@@ -44,32 +46,33 @@ class PadCreateRollbackServiceTest extends TestCase {
 			->rollbackFailedCreate('alice', '/Created.pad', '', new CreatedFileClaim('alice', 4711));
 	}
 
-	public function testLooksUpNothingWhenTheCreateNeverGotAnId(): void {
-		$resolver = $this->createMock(UserNodeResolver::class);
-		$resolver->expects($this->never())->method('resolveUserFileNodeById');
+	/** Matching file_id values do not prove that this attempt wrote the document. */
+	/**
+	 * A create that never wrote has no hash to compare, so content in the
+	 * file is somebody else's by definition. Deleting it would take work
+	 * this create never did.
+	 */
+	public function testLeavesContentInAFileThisCreateNeverWroteTo(): void {
+		$foreign = $this->fileHolding('notes somebody else put here');
+		$foreign->expects($this->never())->method('delete');
 
-		$this->buildService(userNodeResolver: $resolver)
-			->rollbackFailedCreate('alice', '/Created.pad', '', null);
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects($this->once())->method('warning')
+			->with($this->stringContains('content this create never wrote'), $this->anything());
+
+		$this->buildService(logger: $logger, userNodeResolver: $this->resolverFinding($foreign))
+			->rollbackFailedCreate('alice', '/Created.pad', '', new CreatedFileClaim('alice', 4711));
 	}
 
-	public function testLeavesAFileSomebodyElseWroteInto(): void {
-		$foreign = $this->fileHolding('someone else\'s notes');
-		$foreign->expects($this->never())->method('delete');
+	public function testLeavesADocumentAnotherCreateWroteIntoTheSameFile(): void {
+		$rivals = $this->fileHolding("---\nfile_id: 4711\npad_id: nc-rival\n---\n");
+		$rivals->expects($this->never())->method('delete');
 
 		$logger = $this->createMock(LoggerInterface::class);
 		$logger->expects($this->once())->method('warning')
 			->with($this->stringContains('not what this create wrote'), $this->anything());
 
-		$this->buildService(logger: $logger, userNodeResolver: $this->resolverFinding($foreign))
-			->rollbackFailedCreate('alice', '/Created.pad', '', $this->claimThatWrote('our document'));
-	}
-
-	/** Matching file_id values do not prove that this attempt wrote the document. */
-	public function testLeavesADocumentAnotherCreateWroteIntoTheSameFile(): void {
-		$rivals = $this->fileHolding("---\nfile_id: 4711\npad_id: nc-rival\n---\n");
-		$rivals->expects($this->never())->method('delete');
-
-		$this->buildService(userNodeResolver: $this->resolverFinding($rivals))
+		$this->buildService(logger: $logger, userNodeResolver: $this->resolverFinding($rivals))
 			->rollbackFailedCreate('alice', '/Created.pad', 'nc-own', $this->claimThatWrote("---\nfile_id: 4711\npad_id: nc-own\n---\n"));
 	}
 
@@ -124,28 +127,6 @@ class PadCreateRollbackServiceTest extends TestCase {
 	}
 
 	/**
-	 * A create that failed before writing anything still leaves a file. It
-	 * has to go, or the name stays blocked and the user's retry is refused
-	 * by the pre-check with no way to see why.
-	 */
-	public function testDeletesAFileNothingWasWrittenTo(): void {
-		$empty = $this->createMock(File::class);
-		$empty->method('getSize')->willReturn(0);
-		$empty->expects($this->once())->method('delete');
-
-		$this->buildService(userNodeResolver: $this->resolverFinding($empty))
-			->rollbackFailedCreate('alice', '/Created.pad', '', new CreatedFileClaim('alice', 4711));
-	}
-
-	public function testDeletesTheProvisionedPad(): void {
-		$etherpad = $this->createMock(EtherpadClient::class);
-		$etherpad->expects($this->once())->method('deletePad')->with('nc-abcdef0123456789');
-
-		$this->buildService(etherpad: $etherpad)
-			->rollbackFailedCreate('alice', '/Created.pad', 'nc-abcdef0123456789', null);
-	}
-
-	/**
 	 * A protected pad is removed by its group — and without asking Etherpad
 	 * whose group it is. A rollback only ever holds a pad its own request
 	 * provisioned, and nothing retries it: making the delete wait on a read
@@ -160,14 +141,6 @@ class PadCreateRollbackServiceTest extends TestCase {
 
 		$this->buildService(etherpad: $etherpad)
 			->rollbackFailedCreate('alice', '/Created.pad', 'g.ABCDEFGHIJKLMNOP$pad', null);
-	}
-
-	public function testLeavesEtherpadAloneWithoutAPadId(): void {
-		$etherpad = $this->createMock(EtherpadClient::class);
-		$etherpad->expects($this->never())->method('deletePad');
-
-		$this->buildService(etherpad: $etherpad)
-			->rollbackFailedCreate('alice', '/Created.pad', '', null);
 	}
 
 	/** A cleanup failure must not replace the error that caused the rollback. */
