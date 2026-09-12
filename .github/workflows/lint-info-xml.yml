@@ -76,3 +76,9 @@ jobs:
       # it and eight other files restate it.
       - name: Compare info.xml and the Nextcloud range everything else assumes
         run: python3 scripts/check-nextcloud-range.py
+
+      # And for the PHP range, which the two test workflows restate as
+      # literals - a floor nothing checks is what the floor job exists to
+      # rule out.
+      - name: Compare info.xml and the PHP range the workflows test
+        run: python3 scripts/check-php-range.py

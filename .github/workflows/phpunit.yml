@@ -38,10 +38,10 @@ jobs:
               - 'lib/**'
               - 'tests/phpunit/**'
               - 'phpunit.xml.dist'
-              # Two tests read src/ to catch a JavaScript copy drifting from
-              # the PHP it mirrors, so a change to only that copy has to run
-              # them - which is the change they exist to catch.
-              - 'src/**'
+              # PadAccessModeTest reads this one file to catch the JavaScript
+              # copy drifting from the PHP it mirrors. Naming the file rather
+              # than src/** keeps a frontend-only change off four PHP jobs.
+              - 'src/lib/constants.js'
 
   phpunit:
     runs-on: ubuntu-latest
@@ -52,7 +52,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        php-versions: ['8.2', '8.3', '8.4']
+        php-versions: ['8.2', '8.3', '8.4', '8.5']
 
     name: PHP ${{ matrix.php-versions }} unit tests
 
@@ -131,10 +131,11 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-composer-8.1-
 
-      # phpunit/phpunit ^11.5 in require-dev does not install on 8.1; it is
-      # not what runs here, the pinned PHAR below is.
+      # Resolves against composer.json's config.platform (8.2.27), not the
+      # 8.1 runner, so this installs the same tree as the other jobs. What is
+      # being tested here is the interpreter, not the dependency set.
       - name: Install dependencies
-        run: composer install --no-progress --prefer-dist --ignore-platform-req=php
+        run: composer install --no-progress --prefer-dist
 
       - name: Fetch PHPUnit 10
         run: |
