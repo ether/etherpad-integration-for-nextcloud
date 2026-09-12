@@ -13,7 +13,6 @@ use OCA\EtherpadNextcloud\Exception\PadFileChangedException;
 use OCA\EtherpadNextcloud\Exception\PadFileFormatException;
 use OCP\Files\File;
 use OCP\Security\ISecureRandom;
-use Psr\Log\LoggerInterface;
 
 class PadBootstrapService {
 	public function __construct(
@@ -22,10 +21,10 @@ class PadBootstrapService {
 		private EtherpadClient $etherpadClient,
 		private ManagedPadLifecycle $padLifecycle,
 		private ISecureRandom $secureRandom,
-		private LoggerInterface $logger,
 		private PadLegacyMigrationService $legacyMigrationService,
 		private PadTypePolicy $padTypePolicy,
 		private UserNodeResolver $userNodeResolver,
+			private ProvisionedPadRollback $provisionedPadRollback,
 	) {
 	}
 
@@ -119,14 +118,11 @@ class PadBootstrapService {
 	}
 
 	private function rollbackProvisionedPad(int $fileId, string $padId): void {
-		$this->rollback()->discardUnlessBoundToFile($fileId, $padId, 'first init');
+		$this->provisionedPadRollback->discardUnlessBoundToFile($fileId, $padId, 'first init');
 	}
 
 	private function buildProtectedPadName(): string {
 		return 'p-' . $this->secureRandom->generate(20, ISecureRandom::CHAR_LOWER . ISecureRandom::CHAR_DIGITS);
 	}
 
-	private function rollback(): ProvisionedPadRollback {
-		return new ProvisionedPadRollback($this->bindingService, $this->padLifecycle, $this->logger);
-	}
 }

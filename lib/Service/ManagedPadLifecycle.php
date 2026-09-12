@@ -172,6 +172,13 @@ class ManagedPadLifecycle {
 	 *
 	 * Only for a pad provisioned in the same call. Anything read back out of
 	 * a binding goes through `discard`.
+	 *
+	 * What that rule protects: a group pad id names a whole Etherpad group,
+	 * and this deletes the group, not the pad. For a pad this app made, the
+	 * group holds nothing else. For an adopted one - the legacy Ownpad
+	 * migration, and any import built on it - the group is Ownpad's and holds
+	 * other people's pads, so calling this on one destroys them. Nothing here
+	 * can tell the two apart; the caller has to know which it has.
 	 */
 	public function discardProvisioned(string $padId): void {
 		$groupId = PadId::groupIdOf($padId);

@@ -24,14 +24,14 @@ use Psr\Log\LoggerInterface;
  */
 class PadCreateRollbackService {
 	public function __construct(
-		private BindingService $bindingService,
 		private ManagedPadLifecycle $padLifecycle,
 		private UserNodeResolver $userNodeResolver,
 		private LoggerInterface $logger,
+			private ProvisionedPadRollback $provisionedPadRollback,
 	) {
 	}
 
-	public function rollbackFailedCreate(string $uid, string $path, string $padId, ?CreatedFileClaim $claim, bool $bindingAttempted = false): void {
+	public function rollbackFailedCreate(string $uid, string $path, string $padId, ?CreatedFileClaim $claim, ?int $bindingAttemptFileId = null): void {
 		$this->rollbackCreatedFileOnly($uid, $path, $claim);
 
 		if ($padId === '') {
@@ -42,8 +42,8 @@ class PadCreateRollbackService {
 		// one: createBinding can commit and still throw. Failing earlier, the
 		// pad is ours beyond doubt and goes without a database question -
 		// which is what happens when that question cannot be answered.
-		if ($bindingAttempted && $claim !== null) {
-			$this->provisionedPadRollback()->removeMatchingBindingAndDiscard($claim->fileId, $padId, 'create');
+		if ($bindingAttemptFileId !== null) {
+			$this->provisionedPadRollback->removeMatchingBindingAndDiscard($bindingAttemptFileId, $padId, 'create');
 			return;
 		}
 
@@ -156,7 +156,4 @@ class PadCreateRollbackService {
 		return false;
 	}
 
-	private function provisionedPadRollback(): ProvisionedPadRollback {
-		return new ProvisionedPadRollback($this->bindingService, $this->padLifecycle, $this->logger);
-	}
 }

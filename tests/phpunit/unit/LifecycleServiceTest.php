@@ -14,6 +14,7 @@ use OCA\EtherpadNextcloud\Service\EtherpadClient;
 use OCA\EtherpadNextcloud\Service\ManagedPadLifecycle;
 use OCA\EtherpadNextcloud\Service\LifecycleService;
 use OCA\EtherpadNextcloud\Service\PadFileService;
+use OCA\EtherpadNextcloud\Service\ProvisionedPadRollback;
 use OCA\EtherpadNextcloud\Service\PadSnapshot;
 use OCA\EtherpadNextcloud\Service\ParsedPadFile;
 use OCA\EtherpadNextcloud\Service\UserNodeResolver;
@@ -61,6 +62,7 @@ class LifecycleServiceTest extends TestCase {
 			$this->createMock(UserNodeResolver::class),
 			$this->createMock(PathNormalizer::class),
 			new FixedClock(),
+			new ProvisionedPadRollback($bindingService, new ManagedPadLifecycle($etherpadClient, $this->createMock(LoggerInterface::class)), $this->createMock(LoggerInterface::class)),
 		);
 
 		$result = $service->handleRestore($file);
@@ -105,6 +107,7 @@ class LifecycleServiceTest extends TestCase {
 			$this->createMock(UserNodeResolver::class),
 			$this->createMock(PathNormalizer::class),
 			new FixedClock(),
+			new ProvisionedPadRollback($bindingService, new ManagedPadLifecycle($etherpadClient, $this->createMock(LoggerInterface::class)), $this->createMock(LoggerInterface::class)),
 		);
 
 		$this->expectException(\RuntimeException::class);
@@ -137,6 +140,7 @@ class LifecycleServiceTest extends TestCase {
 			$this->createMock(UserNodeResolver::class),
 			$this->createMock(PathNormalizer::class),
 			new FixedClock(),
+			new ProvisionedPadRollback($bindingService, new ManagedPadLifecycle($etherpadClient, $this->createMock(LoggerInterface::class)), $this->createMock(LoggerInterface::class)),
 		);
 
 		$result = $service->handleTrash($file);
@@ -215,6 +219,7 @@ class LifecycleServiceTest extends TestCase {
 			$this->createMock(UserNodeResolver::class),
 			$this->createMock(PathNormalizer::class),
 			new FixedClock(),
+			new ProvisionedPadRollback($bindingService, new ManagedPadLifecycle($etherpadClient, $this->createMock(LoggerInterface::class)), $this->createMock(LoggerInterface::class)),
 		);
 
 		$result = $service->handleTrash($file);
@@ -273,6 +278,7 @@ class LifecycleServiceTest extends TestCase {
 			$this->createMock(UserNodeResolver::class),
 			$this->createMock(PathNormalizer::class),
 			new FixedClock(),
+			new ProvisionedPadRollback($bindingService, new ManagedPadLifecycle($etherpadClient, $this->createMock(LoggerInterface::class)), $this->createMock(LoggerInterface::class)),
 		);
 
 		$result = $service->handleTrash($file);
@@ -347,6 +353,7 @@ class LifecycleServiceTest extends TestCase {
 			$this->createMock(UserNodeResolver::class),
 			$this->createMock(PathNormalizer::class),
 			new FixedClock(),
+			new ProvisionedPadRollback($bindingService, new ManagedPadLifecycle($etherpadClient, $this->createMock(LoggerInterface::class)), $this->createMock(LoggerInterface::class)),
 		);
 
 		try {
@@ -415,6 +422,7 @@ class LifecycleServiceTest extends TestCase {
 			$this->createMock(UserNodeResolver::class),
 			$this->createMock(PathNormalizer::class),
 			new FixedClock(),
+			new ProvisionedPadRollback($bindingService, new ManagedPadLifecycle($etherpadClient, $this->createMock(LoggerInterface::class)), $this->createMock(LoggerInterface::class)),
 		);
 
 		$this->expectException(LifecycleException::class);
@@ -491,6 +499,7 @@ class LifecycleServiceTest extends TestCase {
 			$this->createMock(UserNodeResolver::class),
 			$this->createMock(PathNormalizer::class),
 			new FixedClock(),
+			new ProvisionedPadRollback($bindingService, new ManagedPadLifecycle($etherpadClient, $this->createMock(LoggerInterface::class)), $this->createMock(LoggerInterface::class)),
 		);
 
 		$result = $service->handleRestore($file);
@@ -564,6 +573,7 @@ class LifecycleServiceTest extends TestCase {
 			$this->createMock(UserNodeResolver::class),
 			$this->createMock(PathNormalizer::class),
 			new FixedClock(),
+			new ProvisionedPadRollback($bindingService, new ManagedPadLifecycle($etherpadClient, $this->createMock(LoggerInterface::class)), $this->createMock(LoggerInterface::class)),
 		);
 
 		$result = $service->handleRestore($file);
@@ -638,6 +648,7 @@ class LifecycleServiceTest extends TestCase {
 			$this->createMock(UserNodeResolver::class),
 			$this->createMock(PathNormalizer::class),
 			new FixedClock(),
+			new ProvisionedPadRollback($bindingService, new ManagedPadLifecycle($etherpadClient, $this->createMock(LoggerInterface::class)), $this->createMock(LoggerInterface::class)),
 		))->handleRestore($file);
 
 		$this->assertSame(LifecycleService::RESULT_RESTORED, $result['status']);
@@ -740,6 +751,7 @@ class LifecycleServiceTest extends TestCase {
 			$this->createMock(UserNodeResolver::class),
 			$this->createMock(PathNormalizer::class),
 			new FixedClock(),
+			new ProvisionedPadRollback($bindingService, new ManagedPadLifecycle($etherpadClient, $this->createMock(LoggerInterface::class)), $this->createMock(LoggerInterface::class)),
 		);
 	}
 
@@ -797,6 +809,7 @@ class LifecycleServiceTest extends TestCase {
 			$this->createMock(UserNodeResolver::class),
 			$this->createMock(PathNormalizer::class),
 			new FixedClock(),
+			new ProvisionedPadRollback($bindingService, new ManagedPadLifecycle($etherpadClient, $this->createMock(LoggerInterface::class)), $this->createMock(LoggerInterface::class)),
 		))->handleRestore($file);
 
 		$this->assertSame(LifecycleService::RESULT_SKIPPED, $result['status']);
@@ -858,6 +871,7 @@ class LifecycleServiceTest extends TestCase {
 			$this->createMock(UserNodeResolver::class),
 			$this->createMock(PathNormalizer::class),
 			new FixedClock(),
+			new ProvisionedPadRollback($bindingService, new ManagedPadLifecycle($etherpadClient, $this->createMock(LoggerInterface::class)), $this->createMock(LoggerInterface::class)),
 		))->handleRestore($file);
 
 		$this->assertSame(LifecycleService::RESULT_SKIPPED, $result['status']);
@@ -924,6 +938,7 @@ class LifecycleServiceTest extends TestCase {
 			$this->createMock(UserNodeResolver::class),
 			$this->createMock(PathNormalizer::class),
 			new FixedClock(),
+			new ProvisionedPadRollback($bindingService, new ManagedPadLifecycle($etherpadClient, $this->createMock(LoggerInterface::class)), $this->createMock(LoggerInterface::class)),
 		))->handleRestore($file);
 
 		$this->assertSame(LifecycleService::RESULT_SKIPPED, $result['status']);
@@ -991,6 +1006,7 @@ class LifecycleServiceTest extends TestCase {
 			$this->createMock(UserNodeResolver::class),
 			$this->createMock(PathNormalizer::class),
 			new FixedClock(),
+			new ProvisionedPadRollback($bindingService, new ManagedPadLifecycle($etherpadClient, $this->createMock(LoggerInterface::class)), $this->createMock(LoggerInterface::class)),
 		))->recoverFromSnapshot($file);
 
 		$this->assertSame(LifecycleService::RESULT_RESTORED, $result['status']);
@@ -1060,6 +1076,7 @@ class LifecycleServiceTest extends TestCase {
 			$this->createMock(UserNodeResolver::class),
 			$this->createMock(PathNormalizer::class),
 			new FixedClock(),
+			new ProvisionedPadRollback($bindingService, new ManagedPadLifecycle($etherpadClient, $this->createMock(LoggerInterface::class)), $this->createMock(LoggerInterface::class)),
 		))->recoverFromSnapshot($file);
 	}
 
@@ -1089,6 +1106,7 @@ class LifecycleServiceTest extends TestCase {
 			$this->createMock(UserNodeResolver::class),
 			$this->createMock(PathNormalizer::class),
 			new FixedClock(),
+			new ProvisionedPadRollback($bindingService, new ManagedPadLifecycle($this->createMock(EtherpadClient::class), $this->createMock(LoggerInterface::class)), $this->createMock(LoggerInterface::class)),
 		);
 
 		$this->expectException(PadAlreadyHasBindingException::class);
@@ -1114,6 +1132,7 @@ class LifecycleServiceTest extends TestCase {
 			$this->createMock(UserNodeResolver::class),
 			$this->createMock(PathNormalizer::class),
 			new FixedClock(),
+			new ProvisionedPadRollback($bindingService, new ManagedPadLifecycle($this->createMock(EtherpadClient::class), $this->createMock(LoggerInterface::class)), $this->createMock(LoggerInterface::class)),
 		);
 
 		$this->expectException(NotAPadFileException::class);
@@ -1169,6 +1188,7 @@ class LifecycleServiceTest extends TestCase {
 			$userNodeResolver,
 			new PathNormalizer(),
 			new FixedClock(),
+			new ProvisionedPadRollback($bindingService, new ManagedPadLifecycle($etherpadClient, $this->createMock(LoggerInterface::class)), $this->createMock(LoggerInterface::class)),
 		);
 
 		$result = $service->trashByPath('alice', '/Test.pad');
@@ -1223,6 +1243,7 @@ class LifecycleServiceTest extends TestCase {
 			$userNodeResolver,
 			new PathNormalizer(),
 			new FixedClock(),
+			new ProvisionedPadRollback($bindingService, new ManagedPadLifecycle($etherpadClient, $this->createMock(LoggerInterface::class)), $this->createMock(LoggerInterface::class)),
 		);
 
 		$result = $service->trashByPath('alice', '/Test.pad');
@@ -1247,6 +1268,7 @@ class LifecycleServiceTest extends TestCase {
 			$this->createMock(UserNodeResolver::class),
 			new PathNormalizer(),
 			new FixedClock(),
+			new ProvisionedPadRollback($this->createMock(BindingService::class), new ManagedPadLifecycle($this->createMock(EtherpadClient::class), $this->createMock(LoggerInterface::class)), $this->createMock(LoggerInterface::class)),
 		);
 
 		$this->expectException(\InvalidArgumentException::class);
@@ -1278,6 +1300,7 @@ class LifecycleServiceTest extends TestCase {
 			$userNodeResolver,
 			new PathNormalizer(),
 			new FixedClock(),
+			new ProvisionedPadRollback($bindingService, new ManagedPadLifecycle($this->createMock(EtherpadClient::class), $this->createMock(LoggerInterface::class)), $this->createMock(LoggerInterface::class)),
 		);
 
 		$result = $service->restoreByPath('alice', '/Test.pad');
@@ -1334,6 +1357,7 @@ class LifecycleServiceTest extends TestCase {
 			$userNodeResolver,
 			new PathNormalizer(),
 			new FixedClock(),
+			new ProvisionedPadRollback($bindingService, new ManagedPadLifecycle($this->createMock(EtherpadClient::class), $this->createMock(LoggerInterface::class)), $this->createMock(LoggerInterface::class)),
 		);
 
 		$result = $service->recoverByFileId('alice', $fileId);

@@ -45,6 +45,7 @@ class LifecycleService {
 		private UserNodeResolver $userNodeResolver,
 		private \OCA\EtherpadNextcloud\Util\PathNormalizer $padPaths,
 		private ITimeFactory $timeFactory,
+			private ProvisionedPadRollback $provisionedPadRollback,
 	) {
 	}
 
@@ -578,7 +579,7 @@ class LifecycleService {
 	 * new pad while the `.pad` still names the old one.
 	 */
 	private function unwindUnwrittenRestore(int $fileId, string $newPadId): void {
-		$this->rollback()->removeMatchingBindingAndDiscard($fileId, $newPadId, 'restore without binding');
+		$this->provisionedPadRollback->removeMatchingBindingAndDiscard($fileId, $newPadId, 'restore without binding');
 	}
 
 	/**
@@ -660,7 +661,4 @@ class LifecycleService {
 	}
 
 
-	private function rollback(): ProvisionedPadRollback {
-		return new ProvisionedPadRollback($this->bindingService, $this->padLifecycle, $this->logger);
-	}
 }

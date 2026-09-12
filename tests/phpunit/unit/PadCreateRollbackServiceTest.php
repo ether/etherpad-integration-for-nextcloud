@@ -14,6 +14,7 @@ use OCP\Files\File;
 use OCP\Files\NotFoundException;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
+use OCA\EtherpadNextcloud\Service\ProvisionedPadRollback;
 
 class PadCreateRollbackServiceTest extends TestCase {
 	public function testTouchesNothingWhenNoFileWasCreated(): void {
@@ -246,7 +247,7 @@ class PadCreateRollbackServiceTest extends TestCase {
 			bindingService: $binding,
 			etherpad: $etherpad,
 			userNodeResolver: $this->resolverFinding($this->untouchedFile()),
-		)->rollbackFailedCreate('alice', '/Created.pad', 'nc-abc', new CreatedFileClaim('alice', 4711), bindingAttempted: true);
+		)->rollbackFailedCreate('alice', '/Created.pad', 'nc-abc', new CreatedFileClaim('alice', 4711), bindingAttemptFileId: 4711);
 	}
 
 	/** A row naming a different pad belongs to whoever won the file. */
@@ -262,7 +263,7 @@ class PadCreateRollbackServiceTest extends TestCase {
 			bindingService: $binding,
 			etherpad: $etherpad,
 			userNodeResolver: $this->resolverFinding($this->untouchedFile()),
-		)->rollbackFailedCreate('alice', '/Created.pad', 'nc-abc', new CreatedFileClaim('alice', 4711), bindingAttempted: true);
+		)->rollbackFailedCreate('alice', '/Created.pad', 'nc-abc', new CreatedFileClaim('alice', 4711), bindingAttemptFileId: 4711);
 	}
 
 	/**
@@ -292,10 +293,10 @@ class PadCreateRollbackServiceTest extends TestCase {
 		?UserNodeResolver $userNodeResolver = null,
 	): PadCreateRollbackService {
 		return new PadCreateRollbackService(
-			$bindingService ?? $this->createMock(BindingService::class),
 			new ManagedPadLifecycle($etherpad ?? $this->createMock(EtherpadClient::class), $this->createMock(LoggerInterface::class)),
 			$userNodeResolver ?? $this->createMock(UserNodeResolver::class),
 			$logger ?? $this->createMock(LoggerInterface::class),
+			new ProvisionedPadRollback($bindingService ?? $this->createMock(BindingService::class), new ManagedPadLifecycle($etherpad ?? $this->createMock(EtherpadClient::class), $this->createMock(LoggerInterface::class)), $this->createMock(LoggerInterface::class)),
 		);
 	}
 

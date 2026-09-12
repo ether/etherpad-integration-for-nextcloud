@@ -37,6 +37,7 @@ class PadCreationService {
 		private ExternalPadSeeder $externalPadSeeder,
 		private PadTypePolicy $padTypePolicy,
 		private LoggerInterface $logger,
+			private ProvisionedPadRollback $provisionedPadRollback,
 	) {
 	}
 
@@ -55,7 +56,7 @@ class PadCreationService {
 				return $this->provisionPadForNewFile($attempt, $uid, $fileNode, $accessMode, $path);
 			},
 			function (PadCreateAttempt $attempt) use ($uid): void {
-				$this->rollbackService->rollbackFailedCreate($uid, $attempt->path(), $attempt->padId(), $attempt->claim(), $attempt->bindingWasAttempted());
+				$this->rollbackService->rollbackFailedCreate($uid, $attempt->path(), $attempt->padId(), $attempt->claim(), $attempt->bindingAttemptFileId());
 			},
 			function (\Throwable $e, PadCreateAttempt $attempt) use ($path, $accessMode): ?array {
 				if ($e instanceof BindingException) {
@@ -112,7 +113,7 @@ class PadCreationService {
 				];
 			},
 			function (PadCreateAttempt $attempt) use ($uid): void {
-				$this->rollbackService->rollbackFailedCreate($uid, $attempt->path(), $attempt->padId(), $attempt->claim(), $attempt->bindingWasAttempted());
+				$this->rollbackService->rollbackFailedCreate($uid, $attempt->path(), $attempt->padId(), $attempt->claim(), $attempt->bindingAttemptFileId());
 			},
 			function (\Throwable $e, PadCreateAttempt $attempt) use ($parentFolderId, $name, $accessMode): ?array {
 				if ($e instanceof BindingException) {
@@ -266,7 +267,7 @@ class PadCreationService {
 
 	/** The file and the row were both made here, so neither outlives the other. */
 	private function unwindMaterializedPad(int $fileId, string $padId): void {
-		$this->rollback()->removeMatchingBindingAndDiscard($fileId, $padId, 'template materialization');
+		$this->provisionedPadRollback->removeMatchingBindingAndDiscard($fileId, $padId, 'template materialization');
 	}
 
 	/**
@@ -419,7 +420,7 @@ class PadCreationService {
 
 		$content = $this->padFileService->buildInitialDocument($fileId, $padId, $accessMode, padUrl: $padUrl);
 		$this->writeCreatedFile($claim, $content);
-		$attempt->recordBindingAttempt();
+		$attempt->recordBindingAttempt($fileId);
 		$this->bindingService->createBinding($fileId, $padId, $accessMode);
 
 		return [
@@ -581,7 +582,4 @@ class PadCreationService {
 		}
 	}
 
-	private function rollback(): ProvisionedPadRollback {
-		return new ProvisionedPadRollback($this->bindingService, $this->padLifecycle, $this->logger);
-	}
 }

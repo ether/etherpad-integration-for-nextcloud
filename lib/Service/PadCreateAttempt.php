@@ -28,7 +28,7 @@ namespace OCA\EtherpadNextcloud\Service;
 class PadCreateAttempt {
 	private ?CreatedFileClaim $claim = null;
 	private string $padId = '';
-	private bool $bindingAttempted = false;
+	private ?int $bindingAttemptFileId = null;
 	private string $path = '';
 
 	/** The file this attempt created, from now until it is disowned. */
@@ -51,13 +51,22 @@ class PadCreateAttempt {
 		return $this->claim;
 	}
 
-	/** Set immediately before createBinding, which can commit and throw. */
-	public function recordBindingAttempt(): void {
-		$this->bindingAttempted = true;
+	/**
+	 * The file a binding write began for, recorded immediately before
+	 * createBinding, which can commit and still throw.
+	 *
+	 * The id rather than a flag: the rollback needs it to ask about the row,
+	 * and reading it off the claim instead would tie that question to the
+	 * claim still being owned - a coupling nothing states and a later
+	 * disownFile() would quietly break.
+	 */
+	public function recordBindingAttempt(int $fileId): void {
+		$this->bindingAttemptFileId = $fileId;
 	}
 
-	public function bindingWasAttempted(): bool {
-		return $this->bindingAttempted;
+	/** The file a binding write began for, or null if none did. */
+	public function bindingAttemptFileId(): ?int {
+		return $this->bindingAttemptFileId;
 	}
 
 	public function padId(): string {
