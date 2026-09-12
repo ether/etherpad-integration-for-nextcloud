@@ -42,14 +42,27 @@ describe('public share bootstrap', () => {
 		expect(window.OCA.Viewer.open).toHaveBeenCalledWith({ path: '/Folder/Sub/A+B.pad' })
 	})
 
-	/** The bundle can evaluate after parsing has finished, and used not to run at all then. */
-	it('waits for the document when it is still parsing', async () => {
-		setReadyState('loading')
+	/**
+	 * The Viewer takes its handlers on DOMContentLoaded, so opening before
+	 * that finds none and it closes itself again. Neither of these states is
+	 * past that event.
+	 */
+	it.each(['loading', 'interactive'])('waits for the Viewer when the document is %s', async (state) => {
+		setReadyState(state)
 
 		await importBootstrap()
 		expect(window.OCA.Viewer.open).not.toHaveBeenCalled()
 
 		document.dispatchEvent(new Event('DOMContentLoaded'))
+		expect(window.OCA.Viewer.open).toHaveBeenCalledOnce()
+	})
+
+	/** The event has been and gone by then, so waiting would wait forever. */
+	it('opens straight away once the page is complete', async () => {
+		setReadyState('complete')
+
+		await importBootstrap()
+
 		expect(window.OCA.Viewer.open).toHaveBeenCalledOnce()
 	})
 

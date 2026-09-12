@@ -437,7 +437,7 @@ solely by the separate external-pad policy, not by these two settings.
 
 - `src/viewer-init.js`
   - registers the `.pad` MIME handler synchronously through `@nextcloud/viewer` from an init script.
-  - lazy-loads `src/viewer-main.js` only when the Viewer opens a pad.
+  - hands `src/viewer-main.js` over as the handler's component.
 - `src/public-share-main.js`
   - opens `/` explicitly for a public single-file `.pad` share.
   - hands an existing compatibility link with `path` and `files` to the native Viewer once; ordinary public folder-share navigation stays with Nextcloud Files Sharing.

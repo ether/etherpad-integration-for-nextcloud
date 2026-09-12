@@ -62,7 +62,7 @@ checked-in runtime assets in `js/`.
   - `src/embed-create-main.js`
   - `src/admin-settings.js`
 - Shared browser/Nextcloud helpers live in `src/lib/`.
-- Nextcloud loads the viewer registration with `Util::addInitScript(...)` before the Viewer starts. The full component is an async chunk loaded only when a `.pad` is opened.
+- Nextcloud loads the viewer registration with `Util::addInitScript(...)` before the Viewer starts. The handler carries the component itself rather than a loader for it: the Viewer assigns its Mime mixin onto what it is given and registers it under `component.name`, and a function takes neither.
 - `@nextcloud/viewer` 1.x declares a Vue 2 peer although its registration binding imports no Vue. The narrow `package.json` override lets that framework-free binding coexist with the Vue 3 peer used by the build tooling without weakening npm's handling of unrelated peers.
 - Blank embed templates load their built bundles explicitly.
 - After editing `src/`, run `npm test` and `npm run build` before deployment.
@@ -235,7 +235,7 @@ Primary flow (native viewer):
 
 - `src/viewer-init.js`
   - Registers the MIME handler synchronously through `@nextcloud/viewer`.
-  - Supplies `src/viewer-main.js` as an async component.
+  - Supplies `src/viewer-main.js` as the handler's component.
 - `src/public-share-main.js`
   - Opens the root file on public single-file `.pad` shares with the native Viewer context.
   - Hands existing public folder-share links with `path` and `files` to that Viewer once; normal folder navigation remains native.

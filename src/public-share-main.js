@@ -40,8 +40,14 @@ const openSelectedPad = () => {
 	}
 }
 
-if (document.readyState === 'loading') {
-	document.addEventListener('DOMContentLoaded', openSelectedPad, { once: true })
-} else {
+// Not "has the document been parsed" but "has the Viewer taken its
+// handlers", which it does on DOMContentLoaded. At `interactive` that
+// event is still pending, so opening there finds no handler for the pad
+// mime and the Viewer closes itself again. Only `complete` is past it.
+// This listener is registered after the Viewer's own, and listeners on
+// the same event run in registration order.
+if (document.readyState === 'complete') {
 	openSelectedPad()
+} else {
+	document.addEventListener('DOMContentLoaded', openSelectedPad, { once: true })
 }
