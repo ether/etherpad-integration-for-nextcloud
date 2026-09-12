@@ -88,11 +88,12 @@ jobs:
         run: composer test:phpunit
 
   # appinfo/info.xml declares 8.1 as the floor, and the installed toolchain
-  # cannot run there: PHPUnit 11 requires 8.2. A pinned PHPUnit 10 PHAR can,
-  # and the suite needs no Composer autoloader - tests/phpunit/bootstrap.php
-  # resolves both the app and its own Tests\ namespace, and stubs the few
-  # vendor interfaces the code implements. Without this job the declared
-  # floor is a claim nothing checks.
+  # cannot run there: PHPUnit 11 requires 8.2. A pinned PHPUnit 10 PHAR can.
+  # The dependencies still have to be installed for real, because the tests
+  # exercise OCP classes that no stub in tests/phpunit/stubs replaces, so the
+  # php platform requirement is ignored for the install and only the PHAR is
+  # used to run. Without this job the declared floor is a claim nothing
+  # checks.
   phpunit-floor:
     runs-on: ubuntu-latest
     needs: changes
@@ -116,6 +117,24 @@ jobs:
         with:
           php-version: '8.1'
           coverage: none
+          tools: composer:v2
+
+      - name: Get composer cache directory
+        id: composer-cache
+        run: echo "dir=$(composer config cache-files-dir)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache composer dependencies
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.composer-cache.outputs.dir }}
+          key: ${{ runner.os }}-composer-8.1-${{ hashFiles('**/composer.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-composer-8.1-
+
+      # phpunit/phpunit ^11.5 in require-dev does not install on 8.1; it is
+      # not what runs here, the pinned PHAR below is.
+      - name: Install dependencies
+        run: composer install --no-progress --prefer-dist --ignore-platform-req=php
 
       - name: Fetch PHPUnit 10
         run: |
