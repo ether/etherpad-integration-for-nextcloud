@@ -160,8 +160,8 @@ class PadTemplateStorage {
 	}
 
 	/**
-	 * The pad type a template file stands for, or an empty string when the
-	 * file is not the public marker.
+	 * The pad type a template file stands for, or null where it names none -
+	 * which is what "no preference" means to the caller.
 	 *
 	 * Read-only, and deliberately so: this runs while another file is being
 	 * created, and resolving the marker through publicMarker() could write — a
@@ -170,8 +170,8 @@ class PadTemplateStorage {
 	 * and the chosen type would be silently lost. Matching on the path cannot
 	 * do that, and it also keeps a user's own file of the same name apart.
 	 */
-	public function accessModeForTemplateFile(File $template): string {
-		return $this->isPublicMarkerFile($template) ? BindingService::ACCESS_PUBLIC : '';
+	public function accessModeForTemplateFile(File $template): ?string {
+		return $this->isPublicMarkerFile($template) ? BindingService::ACCESS_PUBLIC : null;
 	}
 
 	/**

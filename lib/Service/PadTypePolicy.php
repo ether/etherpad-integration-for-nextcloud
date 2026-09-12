@@ -11,6 +11,7 @@ namespace OCA\EtherpadNextcloud\Service;
 
 use OCA\EtherpadNextcloud\AppInfo\Application;
 use OCA\EtherpadNextcloud\Exception\PadTypeDisabledException;
+use OCA\EtherpadNextcloud\Util\PadAccessMode;
 use OCP\IConfig;
 
 /**
@@ -31,16 +32,26 @@ class PadTypePolicy {
 	public const SETTING_PROTECTED = 'enable_protected_pads';
 	public const SETTING_PUBLIC = 'enable_public_pads';
 
+	/**
+	 * Which type a pad falls back to, most preferred first.
+	 *
+	 * Protected first, because the other direction hands out a pad anyone
+	 * holding its id can read. With only two modes the order decides nothing
+	 * - whichever was asked for is the disabled one - so it starts mattering
+	 * when a third mode is added.
+	 */
+	public const FALLBACK_ORDER = [PadAccessMode::Protected, PadAccessMode::Public];
+
 	public function __construct(
 		private IConfig $config,
 	) {
 	}
 
-	public function isEnabled(string $accessMode): bool {
-		return match ($accessMode) {
-			BindingService::ACCESS_PROTECTED => $this->flag(self::SETTING_PROTECTED),
-			BindingService::ACCESS_PUBLIC => $this->flag(self::SETTING_PUBLIC),
-			default => false,
+	/** Whether pads of this type may be created here. */
+	public function isEnabled(PadAccessMode $mode): bool {
+		return match ($mode) {
+			PadAccessMode::Protected => $this->flag(self::SETTING_PROTECTED),
+			PadAccessMode::Public => $this->flag(self::SETTING_PUBLIC),
 		};
 	}
 
@@ -49,13 +60,24 @@ class PadTypePolicy {
 	 * pad type and are not covered — they follow `allow_external_pads`.
 	 */
 	public function hasAnyEnabledType(): bool {
-		return $this->isEnabled(BindingService::ACCESS_PROTECTED)
-			|| $this->isEnabled(BindingService::ACCESS_PUBLIC);
+		foreach (self::FALLBACK_ORDER as $mode) {
+			if ($this->isEnabled($mode)) {
+				return true;
+			}
+		}
+		return false;
 	}
 
-	/** @throws PadTypeDisabledException */
+	/**
+	 * @throws PadTypeDisabledException when pads of this type are switched off
+	 * @throws \InvalidArgumentException when $accessMode is not a known mode
+	 */
 	public function requireEnabled(string $accessMode): void {
-		if ($this->isEnabled($accessMode)) {
+		$mode = PadAccessMode::tryFrom($accessMode);
+		if ($mode === null) {
+			throw new \InvalidArgumentException('Unsupported access mode: ' . $accessMode);
+		}
+		if ($this->isEnabled($mode)) {
 			return;
 		}
 		throw new PadTypeDisabledException($accessMode);
@@ -64,25 +86,32 @@ class PadTypePolicy {
 	/**
 	 * Pick a mode that may actually be created, preferring the requested one.
 	 *
-	 * Used where refusing would strand the user rather than protect anything:
-	 * a template carries the mode of the pad it was made from, and a `.pad`
-	 * file that arrived outside the UI (WebDAV, another integration) has to
-	 * become *some* pad on first open. Falling back keeps the content
-	 * reachable while the policy still holds for the resulting pad.
+	 * A disabled mode falls back rather than refusing, because refusing there
+	 * would strand the user without protecting anything: a template carries
+	 * the mode of the pad it was made from, and a `.pad` file that arrived
+	 * outside the UI (WebDAV, another integration) has to become *some* pad
+	 * on first open. A mode that is not one at all is a different matter, and
+	 * is refused: no caller can produce it, and substituting for it would
+	 * hand back a pad of a type nobody asked for.
 	 *
 	 * Note this can widen access — a protected template becomes a public pad
 	 * when protected pads are off. That is the instance's only option at that
 	 * point, but it is a downgrade in the security-relevant direction.
 	 *
 	 * @throws PadTypeDisabledException when no pad type is enabled at all
+	 * @throws \InvalidArgumentException when $requested is not a known mode
 	 */
 	public function resolveCreatableMode(string $requested): string {
-		if ($this->isEnabled($requested)) {
-			return $requested;
+		$mode = PadAccessMode::tryFrom($requested);
+		if ($mode === null) {
+			throw new \InvalidArgumentException('Unsupported access mode: ' . $requested);
 		}
-		foreach ([BindingService::ACCESS_PROTECTED, BindingService::ACCESS_PUBLIC] as $fallback) {
+		if ($this->isEnabled($mode)) {
+			return $mode->value;
+		}
+		foreach (self::FALLBACK_ORDER as $fallback) {
 			if ($this->isEnabled($fallback)) {
-				return $fallback;
+				return $fallback->value;
 			}
 		}
 		throw new PadTypeDisabledException();

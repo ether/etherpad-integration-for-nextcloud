@@ -5,6 +5,9 @@ node_modules
 _copy_probe
 dist
 
+# Downloaded by hand when reproducing the PHP 8.1 job locally.
+phpunit.phar
+
 # Playwright E2E (tests/e2e)
 tests/e2e/.env.e2e
 tests/e2e/.auth

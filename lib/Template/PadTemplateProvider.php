@@ -10,9 +10,9 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\Template;
 
 use OCA\EtherpadNextcloud\AppInfo\Application;
-use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\EtherpadNextcloud\Service\PadTemplateStorage;
 use OCA\EtherpadNextcloud\Service\PadTypePolicy;
+use OCA\EtherpadNextcloud\Util\PadAccessMode;
 use OCA\EtherpadNextcloud\Util\PadFileType;
 use OCP\Files\File;
 use OCP\Files\Template\FieldType;
@@ -66,8 +66,8 @@ class PadTemplateProvider implements ICustomTemplateProvider {
 
 	/** @return list<Template> */
 	private function typeTile(): array {
-		$bothEnabled = $this->padTypePolicy->isEnabled(BindingService::ACCESS_PROTECTED)
-			&& $this->padTypePolicy->isEnabled(BindingService::ACCESS_PUBLIC);
+		$bothEnabled = $this->padTypePolicy->isEnabled(PadAccessMode::Protected)
+			&& $this->padTypePolicy->isEnabled(PadAccessMode::Public);
 		if (!$bothEnabled) {
 			return [];
 		}

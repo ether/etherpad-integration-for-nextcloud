@@ -11,8 +11,8 @@ namespace OCA\EtherpadNextcloud\Controller;
 
 use OCA\EtherpadNextcloud\Exception\ControllerBadRequestException;
 use OCA\EtherpadNextcloud\Exception\UnauthorizedRequestException;
-use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\EtherpadNextcloud\Service\PadResponseService;
+use OCA\EtherpadNextcloud\Util\PadAccessMode;
 use OCP\AppFramework\Controller;
 use OCP\AppFramework\Http\DataResponse;
 use OCP\IL10N;
@@ -84,7 +84,7 @@ abstract class AbstractPadController extends Controller {
 	}
 
 	protected function requireAccessMode(string $accessMode): string {
-		if (!in_array($accessMode, [BindingService::ACCESS_PUBLIC, BindingService::ACCESS_PROTECTED], true)) {
+		if (PadAccessMode::tryFrom($accessMode) === null) {
 			throw new ControllerBadRequestException('Invalid accessMode. Use public or protected.');
 		}
 		return $accessMode;

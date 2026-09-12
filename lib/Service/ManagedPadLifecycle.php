@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\Service;
 
 use OCA\EtherpadNextcloud\Util\EtherpadErrorClassifier;
+use OCA\EtherpadNextcloud\Util\PadAccessMode;
 use OCA\EtherpadNextcloud\Util\PadId;
 use Psr\Log\LoggerInterface;
 
@@ -99,19 +100,31 @@ class ManagedPadLifecycle {
 	 *
 	 * @param callable():string $padId the id a public pad is created under
 	 * @param callable():string $groupPadName the name a protected pad carries
+	 * @throws \InvalidArgumentException when $accessMode is not a known mode
 	 */
 	public function provisionFor(string $accessMode, callable $padId, callable $groupPadName): string {
-		if ($accessMode === BindingService::ACCESS_PUBLIC) {
-			$newPadId = $padId();
-			$this->provisionPad($newPadId);
-			return $newPadId;
-		}
-
-		if ($accessMode !== BindingService::ACCESS_PROTECTED) {
+		$mode = PadAccessMode::tryFrom($accessMode);
+		if ($mode === null) {
 			throw new \InvalidArgumentException('Unsupported access mode for pad provisioning.');
 		}
 
-		return $this->provisionGroupPad($groupPadName());
+		// Exhaustive over the enum on purpose: a case added without an arm
+		// here is a Psalm error rather than a pad quietly made the wrong way.
+		return match ($mode) {
+			PadAccessMode::Public => $this->provisionPublicPadId($padId()),
+			PadAccessMode::Protected => $this->provisionGroupPad($groupPadName()),
+		};
+	}
+
+	/**
+	 * Make a pad under an id that was chosen here, and hand that id back.
+	 *
+	 * Two steps rather than one, which is the asymmetry with the group case:
+	 * there Etherpad picks the id and the call is the only way to learn it.
+	 */
+	private function provisionPublicPadId(string $padId): string {
+		$this->provisionPad($padId);
+		return $padId;
 	}
 
 	/**

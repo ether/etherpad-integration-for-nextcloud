@@ -12,6 +12,7 @@ namespace OCA\EtherpadNextcloud\Tests\Unit;
 use OCA\EtherpadNextcloud\Exception\PadTypeDisabledException;
 use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\EtherpadNextcloud\Service\PadTypePolicy;
+use OCA\EtherpadNextcloud\Util\PadAccessMode;
 use OCP\IConfig;
 use PHPUnit\Framework\TestCase;
 
@@ -21,8 +22,8 @@ class PadTypePolicyTest extends TestCase {
 		// it did before the settings existed.
 		$policy = $this->buildPolicy([]);
 
-		self::assertTrue($policy->isEnabled(BindingService::ACCESS_PROTECTED));
-		self::assertTrue($policy->isEnabled(BindingService::ACCESS_PUBLIC));
+		self::assertTrue($policy->isEnabled(PadAccessMode::Protected));
+		self::assertTrue($policy->isEnabled(PadAccessMode::Public));
 	}
 
 	public function testReflectsTheConfiguredFlags(): void {
@@ -31,14 +32,8 @@ class PadTypePolicyTest extends TestCase {
 			PadTypePolicy::SETTING_PUBLIC => 'yes',
 		]);
 
-		self::assertFalse($policy->isEnabled(BindingService::ACCESS_PROTECTED));
-		self::assertTrue($policy->isEnabled(BindingService::ACCESS_PUBLIC));
-	}
-
-	public function testUnknownAccessModeIsNeverEnabled(): void {
-		$policy = $this->buildPolicy([]);
-
-		self::assertFalse($policy->isEnabled('something-else'));
+		self::assertFalse($policy->isEnabled(PadAccessMode::Protected));
+		self::assertTrue($policy->isEnabled(PadAccessMode::Public));
 	}
 
 	public function testRequireEnabledPassesForAnEnabledType(): void {
@@ -89,6 +84,38 @@ class PadTypePolicyTest extends TestCase {
 			BindingService::ACCESS_PUBLIC,
 			$policy->resolveCreatableMode(BindingService::ACCESS_PROTECTED)
 		);
+	}
+
+	/**
+	 * Unobservable while two modes exist, so nothing else would notice a
+	 * reorder - and a mode added to the enum has to be given a place here.
+	 */
+	public function testTheFallbackPrefersTheProtectedType(): void {
+		self::assertSame(PadAccessMode::Protected, PadTypePolicy::FALLBACK_ORDER[0]);
+		self::assertEqualsCanonicalizing(PadAccessMode::cases(), PadTypePolicy::FALLBACK_ORDER);
+	}
+
+	/**
+	 * Reporting it as a disabled pad type would send an admin to the
+	 * settings page looking for a switch that was never a pad type.
+	 */
+	public function testRequireEnabledRefusesAModeNobodyKnows(): void {
+		$policy = $this->buildPolicy([]);
+
+		$this->expectException(\InvalidArgumentException::class);
+		$policy->requireEnabled('external');
+	}
+
+	/**
+	 * Falling back would answer "that type does not exist" with a pad of
+	 * another type. Every caller passes a mode that was validated on the way
+	 * in, so this is a caller's mistake rather than a choice to make for it.
+	 */
+	public function testAModeNobodyKnowsIsRefusedRatherThanSubstituted(): void {
+		$policy = $this->buildPolicy([]);
+
+		$this->expectException(\InvalidArgumentException::class);
+		$policy->resolveCreatableMode('external');
 	}
 
 	public function testTemplateFailsWhenNoPadTypeIsEnabledAtAll(): void {

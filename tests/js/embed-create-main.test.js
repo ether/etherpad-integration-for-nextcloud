@@ -119,6 +119,32 @@ describe('embed-create-main', () => {
 		expect(locationReplaceSpy).toHaveBeenCalledWith('/embed/by-id/777')
 	})
 
+	/** The other mode reaches the server too, not only the default one. */
+	it('sends a public pad through as readily as a protected one', async () => {
+		fetch.mockResolvedValueOnce(jsonResponse({
+			embed_url: '/embed/by-id/778',
+			file_id: 778,
+			pad_id: 'nc-abc',
+			access_mode: 'public',
+		}))
+
+		await importEmbedCreate('?name=Test&accessMode=public')
+		await flushAsyncWork()
+
+		expect(fetch).toHaveBeenCalledOnce()
+		expect(String(fetch.mock.calls[0][1].body)).toContain('accessMode=public')
+
+		// The mode has to survive the round trip, not only the request.
+		expect(parentPostSpy.mock.calls[0][0]).toEqual({
+			type: 'epnc:create-succeeded',
+			embed_url: '/embed/by-id/778',
+			file_id: 778,
+			pad_id: 'nc-abc',
+			access_mode: 'public',
+		})
+		expect(locationReplaceSpy).toHaveBeenCalledWith('/embed/by-id/778')
+	})
+
 	it('posts epnc:create-failed with reason=conflict on a 409 from the API', async () => {
 		fetch.mockResolvedValueOnce(errorResponse(
 			{ message: 'A file with this name already exists.' },
@@ -181,6 +207,20 @@ describe('embed-create-main', () => {
 		expect(payload.type).toBe('epnc:create-failed')
 		expect(payload.reason).toBe('invalid')
 		expect(payload.message).toBe('Pad name is required.')
+	})
+
+	/** Refused here, not by the server, so the host gets `invalid` not `server`. */
+	it('posts epnc:create-failed with reason=invalid for an access mode that is not one', async () => {
+		await importEmbedCreate('?name=Test&accessMode=external')
+
+		await flushAsyncWork()
+
+		expect(fetch).not.toHaveBeenCalled()
+		expect(parentPostSpy).toHaveBeenCalledTimes(1)
+		const payload = parentPostSpy.mock.calls[0][0]
+		expect(payload.type).toBe('epnc:create-failed')
+		expect(payload.reason).toBe('invalid')
+		expect(payload.message).toBe('Invalid access mode.')
 	})
 
 	it('emits epnc:create-failed with reason=invalid when embed config is incomplete', async () => {

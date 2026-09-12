@@ -84,6 +84,7 @@ $stubFiles = [
 	__DIR__ . '/stubs/OCA/Files_Sharing/Event/BeforeTemplateRenderedEvent.php',
 	__DIR__ . '/stubs/OCA/Viewer/Event/LoadViewer.php',
 	__DIR__ . '/stubs/Psr/Log/LoggerInterface.php',
+	__DIR__ . '/stubs/Psr/Http/Message/StreamInterface.php',
 ];
 
 foreach ($stubFiles as $stubFile) {
@@ -98,7 +99,12 @@ spl_autoload_register(static function (string $class): void {
 		return;
 	}
 	$relative = substr($class, strlen($prefix));
-	$path = __DIR__ . '/../../lib/' . str_replace('\\', '/', $relative) . '.php';
+	// Tests\ lives beside this file, everything else under lib/. The first
+	// mirrors composer.json's autoload-dev mapping; moving the test root has
+	// to change both.
+	$path = str_starts_with($relative, 'Tests\\')
+		? __DIR__ . '/' . str_replace('\\', '/', substr($relative, strlen('Tests\\'))) . '.php'
+		: __DIR__ . '/../../lib/' . str_replace('\\', '/', $relative) . '.php';
 	if (is_file($path)) {
 		require_once $path;
 	}
