@@ -181,6 +181,34 @@ export const padApiPost = async (endpoint: string): Promise<{ status: number, bo
 	return { status: res.status, body }
 }
 
+/**
+ * Set one of the app's config values through the provisioning API. The
+ * primary E2E account is the instance admin, so a spec can put the server
+ * into the state it is about instead of depending on up.sh for it.
+ */
+export const setAppConfig = async (key: string, value: string): Promise<void> => {
+	const res = await fetch(
+		`${E2E.baseURL}/ocs/v2.php/apps/provisioning_api/api/v1/config/apps/etherpad_nextcloud/${key}`,
+		{
+			method: 'POST',
+			headers: {
+				Authorization: basicAuthHeader(),
+				'OCS-APIRequest': 'true',
+				Accept: 'application/json',
+				'Content-Type': 'application/x-www-form-urlencoded',
+			},
+			body: new URLSearchParams({ value }).toString(),
+		},
+	)
+	const payload = await parseJsonResponse(res) as {
+		ocs?: { meta?: { statuscode?: number, message?: string } }
+	}
+	const statusCode = Number(payload?.ocs?.meta?.statuscode ?? 0)
+	if (!res.ok || statusCode < 100 || statusCode >= 300) {
+		throw new Error(`Setting ${key} failed with HTTP ${res.status} / OCS ${statusCode}: ${payload?.ocs?.meta?.message || 'unknown error'}`)
+	}
+}
+
 /** Return the display name NC exposes for the primary E2E account. */
 export const getCurrentUserDisplayName = async (): Promise<string> => {
 	const res = await fetch(`${E2E.baseURL}/ocs/v2.php/cloud/user?format=json`, {

@@ -11,6 +11,7 @@ import {
 	padApiPost,
 	propfindFileId,
 	putFileViaDav,
+	setAppConfig,
 } from '../fixtures/dav'
 import { uniquePadName } from '../fixtures/nextcloud'
 
@@ -33,6 +34,7 @@ test.describe('legacy migration and the group a pad id claims', () => {
 	let groupId = ''
 
 	test.afterAll(async () => {
+		await setAppConfig('allow_legacy_protected_import', 'no').catch(() => {})
 		await deleteViaDav(probeName).catch(() => {})
 		await deleteViaDav(realName).catch(() => {})
 		await deleteViaDav(forgedName).catch(() => {})
@@ -75,15 +77,27 @@ test.describe('legacy migration and the group a pad id claims', () => {
 
 		await putFileViaDav(realName, `[InternetShortcut]\nURL=${origin}/p/${realPadId}\n`)
 		const realFileId = await propfindFileId(realName)
+
+		// Off is the default, and a group pad is what it is about: refused
+		// before Etherpad is asked anything, with the file left as it was.
+		const refusedByPolicy = await padApiPost(`pads/initialize-by-id/${realFileId}`)
+		expect(refusedByPolicy.status, JSON.stringify(refusedByPolicy.body)).toBe(403)
+		expect((refusedByPolicy.body as { code?: string })?.code).toBe('legacy_protected_import_disabled')
+		expect(await getFileViaDav(realName)).toContain('[InternetShortcut]')
+
+		// Switching it on migrates the same file on the next open, which is
+		// what the setting promises an admin migrating from Ownpad.
+		await setAppConfig('allow_legacy_protected_import', 'yes')
 		const migrated = await padApiPost(`pads/initialize-by-id/${realFileId}`)
 		expect(migrated.status, JSON.stringify(migrated.body)).toBe(200)
 		const realContent = await getFileViaDav(realName)
 		expect(realContent).not.toContain('[InternetShortcut]')
 		expect(realContent).toContain(realPadId)
 
-		// Same group, a pad name nobody has used. Nothing in Nextcloud
-		// collides with it, and before the check this bound and then minted
-		// a session for the group above.
+		// Same group, a pad name nobody has used - and the import is on, so
+		// only the group-membership check can refuse it. Nothing in
+		// Nextcloud collides with it, and before that check this bound and
+		// then minted a session for the group above.
 		await putFileViaDav(forgedName, `[InternetShortcut]\nURL=${origin}/p/${groupId}$never-created\n`)
 		const forgedFileId = await propfindFileId(forgedName)
 		const refused = await padApiPost(`pads/initialize-by-id/${forgedFileId}`)
