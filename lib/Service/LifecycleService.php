@@ -660,7 +660,6 @@ class LifecycleService {
 	}
 
 
-	/** Built from what this service already holds; it keeps no state. */
 	private function unwind(): PadMaterialisationUnwind {
 		return new PadMaterialisationUnwind($this->bindingService, $this->padLifecycle, $this->logger);
 	}

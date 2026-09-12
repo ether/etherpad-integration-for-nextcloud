@@ -6,6 +6,7 @@ namespace OCA\EtherpadNextcloud\Tests\Unit;
 
 use OCA\EtherpadNextcloud\Service\EtherpadClient;
 use OCA\EtherpadNextcloud\Service\CreatedFileClaim;
+use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\EtherpadNextcloud\Service\ManagedPadLifecycle;
 use OCA\EtherpadNextcloud\Service\PadCreateRollbackService;
 use OCA\EtherpadNextcloud\Service\UserNodeResolver;
@@ -229,12 +230,49 @@ class PadCreateRollbackServiceTest extends TestCase {
 			->rollbackExternalCreate('alice', '/Created.pad', new CreatedFileClaim('alice', 4711));
 	}
 
+	/**
+	 * createBinding can commit and still throw, so a failed create can leave
+	 * a row naming the pad it is about to take away.
+	 */
+	public function testRemovesARowThatNamesThePadTheFailedCreateMade(): void {
+		$binding = $this->createMock(BindingService::class);
+		$binding->method('isBoundTo')->with(4711, 'nc-abc')->willReturn(true);
+		$binding->expects($this->once())->method('deleteByFileId')->with(4711);
+
+		$etherpad = $this->createMock(EtherpadClient::class);
+		$etherpad->expects($this->once())->method('deletePad')->with('nc-abc');
+
+		$this->buildService(
+			bindingService: $binding,
+			etherpad: $etherpad,
+			userNodeResolver: $this->resolverFinding($this->untouchedFile()),
+		)->rollbackFailedCreate('alice', '/Created.pad', 'nc-abc', new CreatedFileClaim('alice', 4711));
+	}
+
+	/** A row naming a different pad belongs to whoever won the file. */
+	public function testLeavesARowThatNamesAnotherPadAlone(): void {
+		$binding = $this->createMock(BindingService::class);
+		$binding->method('isBoundTo')->willReturn(false);
+		$binding->expects($this->never())->method('deleteByFileId');
+
+		$etherpad = $this->createMock(EtherpadClient::class);
+		$etherpad->expects($this->once())->method('deletePad')->with('nc-abc');
+
+		$this->buildService(
+			bindingService: $binding,
+			etherpad: $etherpad,
+			userNodeResolver: $this->resolverFinding($this->untouchedFile()),
+		)->rollbackFailedCreate('alice', '/Created.pad', 'nc-abc', new CreatedFileClaim('alice', 4711));
+	}
+
 	private function buildService(
+		?BindingService $bindingService = null,
 		?EtherpadClient $etherpad = null,
 		?LoggerInterface $logger = null,
 		?UserNodeResolver $userNodeResolver = null,
 	): PadCreateRollbackService {
 		return new PadCreateRollbackService(
+			$bindingService ?? $this->createMock(BindingService::class),
 			new ManagedPadLifecycle($etherpad ?? $this->createMock(EtherpadClient::class), $this->createMock(LoggerInterface::class)),
 			$userNodeResolver ?? $this->createMock(UserNodeResolver::class),
 			$logger ?? $this->createMock(LoggerInterface::class),

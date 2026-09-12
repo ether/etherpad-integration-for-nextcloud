@@ -22,10 +22,10 @@ use Psr\Log\LoggerInterface;
  * other flow has written the file, or has one naming a different pad, so a
  * row pointing at this pad contradicts it and goes.
  *
- * Both then discard the pad, and only ever a pad provisioned in the same
- * call: `discardProvisioned` removes a group outright, which is safe here
- * and nowhere else. A flow that adopted an existing pad - the legacy Ownpad
- * migration, and any import built on it - must not use this.
+ * Either way the pad goes, unless the row is kept - and only ever a pad
+ * provisioned in the same call, since `discardProvisioned` removes a group
+ * outright. A flow that adopted an existing pad - the legacy Ownpad
+ * migration, and any import built on it - must not come through here.
  */
 class PadMaterialisationUnwind {
 	public function __construct(

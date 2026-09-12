@@ -264,31 +264,22 @@ class PadCreationService {
 		);
 	}
 
-	/**
-	 * Shared core of the template materialization pipeline. Validates the
-	 * template, resolves placeholders, provisions a fresh pad, seeds its
-	 * content, writes the target file, and creates the binding. The target
-	 * file must already exist on disk (the callers either create it via
-	 * `PadFileCreator` or receive it pre-populated from NC's native template
-	 * copy flow).
-	 *
-	 * On any failure between provisioning and binding, the freshly created
-	 * Etherpad pad is best-effort deleted before rethrowing.
-	 *
-	 * Pad-lifecycle ownership: this method **owns the Etherpad-side lifecycle**
-	 * of any pad it provisions — callers that wrap the call in an outer
-	 * rollback (e.g. `withCreateRollback`) must NOT also try to delete the
-	 * pad in their rollback path. The outer wrapper's job is limited to the
-	 * Nextcloud file it created; the pad is already cleaned up internally if
-	 * we throw out of here.
-	 *
-	 * @return array{file_id:int,pad_id:string,access_mode:string,pad_url:string}
-	 */
 	/** The file and the row were both made here, so neither outlives the other. */
 	private function unwindMaterializedPad(int $fileId, string $padId): void {
 		$this->unwind()->takingBackWhatTheRowClaims($fileId, $padId, 'template materialisation');
 	}
 
+	/**
+	 * Shared core of the template materialisation pipeline: validate the
+	 * template, resolve placeholders, provision a pad, seed it, write the
+	 * target file, bind it. The target file must already exist.
+	 *
+	 * This method owns the Etherpad-side lifecycle of the pad it provisions.
+	 * A caller wrapping it in an outer rollback must not also delete that
+	 * pad - the outer wrapper's job is the Nextcloud file it created.
+	 *
+	 * @return array{file_id:int,pad_id:string,access_mode:string,pad_url:string}
+	 */
 	public function materializeTemplateInto(
 		File $target,
 		File $template,
@@ -589,7 +580,6 @@ class PadCreationService {
 		}
 	}
 
-	/** Built from what this service already holds; it keeps no state. */
 	private function unwind(): PadMaterialisationUnwind {
 		return new PadMaterialisationUnwind($this->bindingService, $this->padLifecycle, $this->logger);
 	}

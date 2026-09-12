@@ -126,7 +126,6 @@ class PadBootstrapService {
 		return 'p-' . $this->secureRandom->generate(20, ISecureRandom::CHAR_LOWER . ISecureRandom::CHAR_DIGITS);
 	}
 
-	/** Built from what this service already holds; it keeps no state. */
 	private function unwind(): PadMaterialisationUnwind {
 		return new PadMaterialisationUnwind($this->bindingService, $this->padLifecycle, $this->logger);
 	}

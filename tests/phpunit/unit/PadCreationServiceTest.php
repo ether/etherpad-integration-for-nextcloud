@@ -677,6 +677,7 @@ class PadCreationServiceTest extends TestCase {
 		$etherpadClient->expects($this->once())->method('deletePad')->with('p-fresh');
 
 		$rollbackService = new PadCreateRollbackService(
+			$bindingService ?? $this->createMock(BindingService::class),
 			new ManagedPadLifecycle($etherpadClient, $this->createMock(LoggerInterface::class)),
 			$this->createMock(UserNodeResolver::class),
 			$this->createMock(\Psr\Log\LoggerInterface::class),
@@ -734,6 +735,7 @@ class PadCreationServiceTest extends TestCase {
 			bindingService: $bindingService,
 			bootstrap: $bootstrap,
 			rollbackService: new PadCreateRollbackService(
+			$bindingService ?? $this->createMock(BindingService::class),
 				new ManagedPadLifecycle($this->createMock(EtherpadClient::class), $this->createMock(LoggerInterface::class)),
 				$this->createMock(UserNodeResolver::class),
 				$this->createMock(\Psr\Log\LoggerInterface::class),
@@ -878,6 +880,7 @@ class PadCreationServiceTest extends TestCase {
 			fileCreator: $fileCreator,
 			bootstrap: $bootstrap,
 			rollbackService: new PadCreateRollbackService(
+			$this->createMock(BindingService::class),
 				new ManagedPadLifecycle($this->createMock(EtherpadClient::class), $this->createMock(LoggerInterface::class)),
 				$this->createMock(UserNodeResolver::class),
 				$this->createMock(\Psr\Log\LoggerInterface::class),
@@ -997,6 +1000,7 @@ class PadCreationServiceTest extends TestCase {
 		$resolver->expects($this->never())->method('resolveUserFileNodeById');
 
 		$rollbackService = new PadCreateRollbackService(
+			$this->createMock(BindingService::class),
 			new ManagedPadLifecycle($this->createMock(EtherpadClient::class), $this->createMock(LoggerInterface::class)),
 			$resolver,
 			$this->createMock(\Psr\Log\LoggerInterface::class),
