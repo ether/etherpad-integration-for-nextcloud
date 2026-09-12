@@ -28,6 +28,7 @@ namespace OCA\EtherpadNextcloud\Service;
 class PadCreateAttempt {
 	private ?CreatedFileClaim $claim = null;
 	private string $padId = '';
+	private bool $bindingAttempted = false;
 	private string $path = '';
 
 	/** The file this attempt created, from now until it is disowned. */
@@ -48,6 +49,15 @@ class PadCreateAttempt {
 
 	public function claim(): ?CreatedFileClaim {
 		return $this->claim;
+	}
+
+	/** Set immediately before createBinding, which can commit and throw. */
+	public function recordBindingAttempt(): void {
+		$this->bindingAttempted = true;
+	}
+
+	public function bindingWasAttempted(): bool {
+		return $this->bindingAttempted;
 	}
 
 	public function padId(): string {

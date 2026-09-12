@@ -55,7 +55,7 @@ class PadCreationService {
 				return $this->provisionPadForNewFile($attempt, $uid, $fileNode, $accessMode, $path);
 			},
 			function (PadCreateAttempt $attempt) use ($uid): void {
-				$this->rollbackService->rollbackFailedCreate($uid, $attempt->path(), $attempt->padId(), $attempt->claim());
+				$this->rollbackService->rollbackFailedCreate($uid, $attempt->path(), $attempt->padId(), $attempt->claim(), $attempt->bindingWasAttempted());
 			},
 			function (\Throwable $e, PadCreateAttempt $attempt) use ($path, $accessMode): ?array {
 				if ($e instanceof BindingException) {
@@ -112,7 +112,7 @@ class PadCreationService {
 				];
 			},
 			function (PadCreateAttempt $attempt) use ($uid): void {
-				$this->rollbackService->rollbackFailedCreate($uid, $attempt->path(), $attempt->padId(), $attempt->claim());
+				$this->rollbackService->rollbackFailedCreate($uid, $attempt->path(), $attempt->padId(), $attempt->claim(), $attempt->bindingWasAttempted());
 			},
 			function (\Throwable $e, PadCreateAttempt $attempt) use ($parentFolderId, $name, $accessMode): ?array {
 				if ($e instanceof BindingException) {
@@ -419,6 +419,7 @@ class PadCreationService {
 
 		$content = $this->padFileService->buildInitialDocument($fileId, $padId, $accessMode, padUrl: $padUrl);
 		$this->writeCreatedFile($claim, $content);
+		$attempt->recordBindingAttempt();
 		$this->bindingService->createBinding($fileId, $padId, $accessMode);
 
 		return [

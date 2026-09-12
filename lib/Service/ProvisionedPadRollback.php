@@ -38,7 +38,7 @@ class ProvisionedPadRollback {
 		$this->rollback($fileId, $padId, $operation, keepBinding: true);
 	}
 
-	/** A row naming this pad goes, then the pad. Another file's row stays. */
+	/** A row naming this pad goes, then the pad. One naming another stays. */
 	public function removeMatchingBindingAndDiscard(int $fileId, string $padId, string $operation): void {
 		$this->rollback($fileId, $padId, $operation, keepBinding: false);
 	}

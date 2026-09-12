@@ -31,16 +31,18 @@ class PadCreateRollbackService {
 	) {
 	}
 
-	public function rollbackFailedCreate(string $uid, string $path, string $padId, ?CreatedFileClaim $claim): void {
+	public function rollbackFailedCreate(string $uid, string $path, string $padId, ?CreatedFileClaim $claim, bool $bindingAttempted = false): void {
 		$this->rollbackCreatedFileOnly($uid, $path, $claim);
 
 		if ($padId === '') {
 			return;
 		}
 
-		// createBinding can commit and still throw, so a row may name this
-		// pad even though the call that wrote it failed.
-		if ($claim !== null) {
+		// Only a create that got as far as writing the row has to ask about
+		// one: createBinding can commit and still throw. Failing earlier, the
+		// pad is ours beyond doubt and goes without a database question -
+		// which is what happens when that question cannot be answered.
+		if ($bindingAttempted && $claim !== null) {
 			$this->provisionedPadRollback()->removeMatchingBindingAndDiscard($claim->fileId, $padId, 'create');
 			return;
 		}

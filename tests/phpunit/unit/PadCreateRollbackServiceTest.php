@@ -246,13 +246,33 @@ class PadCreateRollbackServiceTest extends TestCase {
 			bindingService: $binding,
 			etherpad: $etherpad,
 			userNodeResolver: $this->resolverFinding($this->untouchedFile()),
-		)->rollbackFailedCreate('alice', '/Created.pad', 'nc-abc', new CreatedFileClaim('alice', 4711));
+		)->rollbackFailedCreate('alice', '/Created.pad', 'nc-abc', new CreatedFileClaim('alice', 4711), bindingAttempted: true);
 	}
 
 	/** A row naming a different pad belongs to whoever won the file. */
 	public function testLeavesARowThatNamesAnotherPadAlone(): void {
 		$binding = $this->createMock(BindingService::class);
 		$binding->method('isBoundTo')->willReturn(false);
+		$binding->expects($this->never())->method('deleteByFileId');
+
+		$etherpad = $this->createMock(EtherpadClient::class);
+		$etherpad->expects($this->once())->method('deletePad')->with('nc-abc');
+
+		$this->buildService(
+			bindingService: $binding,
+			etherpad: $etherpad,
+			userNodeResolver: $this->resolverFinding($this->untouchedFile()),
+		)->rollbackFailedCreate('alice', '/Created.pad', 'nc-abc', new CreatedFileClaim('alice', 4711), bindingAttempted: true);
+	}
+
+	/**
+	 * A create that failed before it wrote the row owns its pad beyond
+	 * doubt, so it goes without asking the database - and still goes when
+	 * the database cannot answer.
+	 */
+	public function testDiscardsWithoutAskingWhenNoRowWasEverWritten(): void {
+		$binding = $this->createMock(BindingService::class);
+		$binding->expects($this->never())->method('isBoundTo');
 		$binding->expects($this->never())->method('deleteByFileId');
 
 		$etherpad = $this->createMock(EtherpadClient::class);
