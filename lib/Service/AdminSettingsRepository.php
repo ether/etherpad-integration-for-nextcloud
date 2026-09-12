@@ -32,7 +32,7 @@ class AdminSettingsRepository {
 			(string)$this->config->getAppValue(Application::APP_ID, PadTypePolicy::SETTING_PROTECTED, 'yes') === 'yes',
 			(string)$this->config->getAppValue(Application::APP_ID, PadTypePolicy::SETTING_PUBLIC, 'yes') === 'yes',
 			(string)$this->config->getAppValue(Application::APP_ID, 'etherpad_cookie_domain_configured', 'no') === 'yes',
-			(string)$this->config->getAppValue(Application::APP_ID, LegacyImportPolicy::SETTING_PROTECTED_IMPORT, 'yes') === 'yes',
+			(string)$this->config->getAppValue(Application::APP_ID, LegacyImportPolicy::SETTING_PROTECTED_IMPORT, LegacyImportPolicy::DEFAULT_PROTECTED_IMPORT) === 'yes',
 		);
 	}
 

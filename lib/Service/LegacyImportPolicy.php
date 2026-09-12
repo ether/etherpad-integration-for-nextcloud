@@ -34,6 +34,9 @@ use OCP\IConfig;
 class LegacyImportPolicy {
 	public const SETTING_PROTECTED_IMPORT = 'allow_legacy_protected_import';
 
+	/** The settings page and its repository read the key too, so it is stated once. */
+	public const DEFAULT_PROTECTED_IMPORT = 'yes';
+
 	public function __construct(
 		private IConfig $config,
 	) {
@@ -43,7 +46,7 @@ class LegacyImportPolicy {
 		return (string)$this->config->getAppValue(
 			Application::APP_ID,
 			self::SETTING_PROTECTED_IMPORT,
-			'yes',
+			self::DEFAULT_PROTECTED_IMPORT,
 		) === 'yes';
 	}
 }

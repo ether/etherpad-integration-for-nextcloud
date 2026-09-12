@@ -86,6 +86,36 @@ class PadLegacyMigrationService {
 	}
 
 	/**
+	 * @throws LegacyProtectedImportDisabledException when the file names a
+	 *   group pad this instance does not import
+	 */
+	private function refuseProtectedImportIfSwitchedOff(
+		string $uid,
+		int $fileId,
+		string $sourceUrl,
+		string $sourcePadId,
+		string $accessMode,
+	): void {
+		if ($accessMode !== BindingService::ACCESS_PROTECTED) {
+			return;
+		}
+		if ($this->legacyImportPolicy->allowsProtectedImport()) {
+			return;
+		}
+		$this->logger->warning('Refused legacy Ownpad migration - protected import is switched off.', [
+			'app' => 'etherpad_nextcloud',
+			'fileId' => $fileId,
+			'sourceUrl' => $sourceUrl,
+			'originBranch' => 'same',
+			'accessMode' => $accessMode,
+			'padId' => $sourcePadId,
+			'collision' => 'none',
+			'uid' => $uid,
+		]);
+		throw new LegacyProtectedImportDisabledException('Importing protected Ownpad pads is switched off on this server.');
+	}
+
+	/**
 	 * Migrate the legacy `.pad` file in place.
 	 *
 	 * @param array{url:string,pad_id:string} $legacyShortcut output of
@@ -117,23 +147,17 @@ class PadLegacyMigrationService {
 			return;
 		}
 
-		$accessMode = $this->padFileService->inferAccessModeFromPadId($sourcePadId);
-		// Before assertGroupPadExists(), so a refused import does not ask
-		// Etherpad about a group it is not going to bind either way.
-		if ($accessMode === BindingService::ACCESS_PROTECTED && !$this->legacyImportPolicy->allowsProtectedImport()) {
-			$this->logger->warning('Refused a legacy Ownpad import naming a group pad; protected import is switched off.', [
-				'app' => 'etherpad_nextcloud',
-				'fileId' => $fileId,
-				'padId' => $sourcePadId,
-				'uid' => $uid,
-			]);
-			throw new LegacyProtectedImportDisabledException('Importing protected Ownpad pads is switched off on this server.');
-		}
-
 		$this->assertGroupPadExists($sourcePadId);
+
+		$accessMode = $this->padFileService->inferAccessModeFromPadId($sourcePadId);
 		$existingBinding = $this->bindingService->findByPadId($sourcePadId, BindingService::STATE_ACTIVE);
 
 		if ($existingBinding === null) {
+			// Only a pad nothing here points at yet. One that is already
+			// bound was bound by this instance, and which file may claim it
+			// is the collision rule's question further down, not this
+			// switch's - refusing there would strand a half-migrated file.
+			$this->refuseProtectedImportIfSwitchedOff($uid, $fileId, $sourceUrl, $sourcePadId, $accessMode);
 			// Create the binding first, then write the file. If the binding
 			// fails (e.g. a concurrent migration claimed the same pad-id
 			// between findByPadId and createBinding), we re-classify as a

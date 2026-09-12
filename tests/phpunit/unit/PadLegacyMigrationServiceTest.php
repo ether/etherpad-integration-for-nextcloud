@@ -392,6 +392,40 @@ class PadLegacyMigrationServiceTest extends TestCase {
 		);
 	}
 
+	/**
+	 * A binding this instance already holds is one this instance made, so the
+	 * switch has nothing to protect - and refusing would strand a migration
+	 * that created the row but died before the file write.
+	 */
+	public function testFinishesAHalfMigratedFileEvenWithProtectedImportSwitchedOff(): void {
+		$file = $this->createMock(File::class);
+		$file->method('getId')->willReturn(204);
+
+		$padFileService = $this->createMock(PadFileService::class);
+		$padFileService->method('inferAccessModeFromPadId')
+			->willReturn(BindingService::ACCESS_PROTECTED);
+
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->method('getConfiguredOrigin')->willReturn('https://pad.our-server.test');
+		$etherpadClient->method('normalizeOrigin')->willReturn('https://pad.our-server.test');
+		$etherpadClient->method('listPads')->willReturn(['g.ourgroup$notes']);
+
+		$binding = $this->createMock(BindingService::class);
+		$binding->method('findByPadId')->willReturn(['file_id' => 204, 'pad_id' => 'g.ourgroup$notes']);
+		$binding->expects($this->never())->method('createBinding');
+		$file->expects($this->once())->method('putContent');
+
+		$this->buildService(
+			binding: $binding,
+			padFileService: $padFileService,
+			etherpadClient: $etherpadClient,
+			legacyImportPolicy: $this->policyAllowing(false),
+		)->migrate('alice', $file, [
+			'url' => 'https://pad.our-server.test/p/g.ourgroup$notes',
+			'pad_id' => 'g.ourgroup$notes',
+		]);
+	}
+
 	private function policyAllowing(bool $protectedImport): LegacyImportPolicy {
 		$policy = $this->createMock(LegacyImportPolicy::class);
 		$policy->method('allowsProtectedImport')->willReturn($protectedImport);
@@ -413,13 +447,16 @@ class PadLegacyMigrationServiceTest extends TestCase {
 		$etherpadClient = $this->createMock(EtherpadClient::class);
 		$etherpadClient->method('getConfiguredOrigin')->willReturn('https://pad.our-server.test');
 		$etherpadClient->method('normalizeOrigin')->willReturn('https://pad.our-server.test');
-		// The refusal comes before any question about the group: a pad this
-		// instance will not bind is not worth an API call, and asking would
-		// report on a group the caller has no business probing.
-		$etherpadClient->expects($this->never())->method('listPads');
+		// A real pad in a real group - the case assertGroupPadExists() lets
+		// through and only the switch stops.
+		$etherpadClient->method('listPads')->willReturn(['g.someone-elses$notes']);
 
 		$binding = $this->createMock(BindingService::class);
+		$binding->method('findByPadId')->willReturn(null);
 		$binding->expects($this->never())->method('createBinding');
+		// The placement is justified by the file surviving untouched, so
+		// that switching the setting on migrates it on the next open.
+		$file->expects($this->never())->method('putContent');
 
 		$this->expectException(LegacyProtectedImportDisabledException::class);
 
@@ -451,6 +488,7 @@ class PadLegacyMigrationServiceTest extends TestCase {
 		// The switch is about group pads. A pad anyone holding its id can
 		// read is no more reachable for having a file bound to it.
 		$binding->expects($this->once())->method('createBinding');
+		$file->expects($this->once())->method('putContent');
 
 		$this->buildService(
 			binding: $binding,

@@ -82,7 +82,7 @@ class AdminSettings implements ISettings {
 			'sync_interval_seconds' => $syncInterval,
 			'enable_protected_pads' => (string)$this->config->getAppValue(Application::APP_ID, PadTypePolicy::SETTING_PROTECTED, 'yes') === 'yes',
 			'enable_public_pads' => (string)$this->config->getAppValue(Application::APP_ID, PadTypePolicy::SETTING_PUBLIC, 'yes') === 'yes',
-			'allow_legacy_protected_import' => (string)$this->config->getAppValue(Application::APP_ID, LegacyImportPolicy::SETTING_PROTECTED_IMPORT, 'yes') === 'yes',
+			'allow_legacy_protected_import' => (string)$this->config->getAppValue(Application::APP_ID, LegacyImportPolicy::SETTING_PROTECTED_IMPORT, LegacyImportPolicy::DEFAULT_PROTECTED_IMPORT) === 'yes',
 			'delete_on_trash' => (string)$this->config->getAppValue(Application::APP_ID, 'delete_on_trash', 'yes') === 'yes',
 			'allow_external_pads' => (string)$this->config->getAppValue(Application::APP_ID, 'allow_external_pads', 'no') === 'yes',
 			'external_pad_allowlist' => (string)$this->config->getAppValue(Application::APP_ID, 'external_pad_allowlist', ''),

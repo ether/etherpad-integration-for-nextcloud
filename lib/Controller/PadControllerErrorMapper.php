@@ -140,12 +140,12 @@ class PadControllerErrorMapper {
 				$payload,
 				(int)($options['binding_status'] ?? Http::STATUS_BAD_REQUEST),
 			);
-		} catch (LegacyProtectedImportDisabledException $e) {
+		} catch (LegacyProtectedImportDisabledException) {
 			// 403, not 409: nothing conflicts, the instance does not offer
-			// this import at all. The file is left as it was, so switching
-			// the setting back on makes the next open migrate it.
+			// this import at all. Fixed wording plus a stable code, like the
+			// structured errors around it.
 			return new DataResponse([
-				'message' => $e->getMessage(),
+				'message' => 'Importing protected pads from legacy Ownpad files is disabled on this instance.',
 				'code' => 'legacy_protected_import_disabled',
 			], Http::STATUS_FORBIDDEN);
 		} catch (LegacyPadCollisionException $e) {

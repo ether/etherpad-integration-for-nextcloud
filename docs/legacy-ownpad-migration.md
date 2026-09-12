@@ -37,6 +37,14 @@ If the pad-id is already bound to another Nextcloud file, the unique constraint 
 
 This prevents the legacy format from being a backdoor: a malicious user can't drop a hand-crafted `[InternetShortcut]` file pointing at another user's pad and "claim" the binding.
 
+### Same origin — protected import switch
+
+The pad-id in a legacy `.pad` is written by whoever wrote the file, and for a group pad it also names the Etherpad group a later session is minted for — a session grants what the group holds, not only the pad the file named. Where this Nextcloud is the only writer on its Etherpad server, every group pad already has a binding and the collision rule above covers it. Where it is not, a foreign group pad has no binding here, and nothing distinguishes it from the pads this migration exists for: a genuine Ownpad pad lives in a group Ownpad created, never in one of ours, so provenance is exactly what cannot be checked.
+
+`allow_legacy_protected_import` (default `yes`) therefore refuses the import outright. It applies only where no binding exists yet — a pad already bound here was bound by this instance, and which file may claim it stays the collision rule's question. Public pads are unaffected: a pad anyone holding its id can read is no more reachable for having a file bound to it.
+
+Refused imports surface as HTTP 403 with `code: "legacy_protected_import_disabled"`. The `.pad` file is left untouched, so switching the setting back on migrates it on the next open.
+
 ## Audit log
 
 Every branch emits a single log line at `info` level (or `warning` for the refusal). Fields:
@@ -51,11 +59,11 @@ Every branch emits a single log line at `info` level (or `warning` for the refus
 | `collision` | `none` / `with_access` / `no_access` / `self` |
 | `uid` | Migrating user |
 
-Grep `app:etherpad_nextcloud` + `Migrated legacy Ownpad` in `nextcloud.log` to reconstruct what was imported when.
+Grep `app:etherpad_nextcloud` + `legacy Ownpad` in `nextcloud.log` to reconstruct what was imported when. `Migrated legacy Ownpad` alone finds the successes only - both refusals are worded `Refused legacy Ownpad migration`.
 
 ## Out of scope
 
-- **Admin bulk-migration CLI / `occ` command.** Each file migrates on its own first-open; admins don't need to coordinate.
+- **Admin bulk-migration CLI / `occ` command.** Each file migrates on its own first-open, so no coordination is needed while `allow_legacy_protected_import` is on. An instance that switches it off has no way to take over existing protected Ownpad files, which is what such a command would be for.
 - **Public → protected conversion of an already-managed pad.** Etherpad's pad-id format encodes the type and can't be renamed in place; converting would require content copy + a new pad. If needed, that lives in a separate "Convert pad access mode" feature.
 - **Real-time mirroring** between legacy and current pads.
 

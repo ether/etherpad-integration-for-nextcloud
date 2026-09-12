@@ -72,10 +72,13 @@ const okResponse = (body) => ({
  * The save posts form-encoded, so a boolean reaches the server as a string.
  * Picked by URL because loading the module fetches the template list first.
  */
-const sentField = (fetchMock, name) => {
+const savedBody = (fetchMock) => {
 	const call = fetchMock.mock.calls.find(([url]) => url === '/save')
-	return new URLSearchParams(call[1].body).get(name)
+	return call && call[1].body
 }
+
+const sentField = (fetchMock, name) =>
+	new URLSearchParams(savedBody(fetchMock)).get(name)
 
 /** A response the test resolves itself, to complete overlapping requests
  * in a deliberately reversed order. */
@@ -111,13 +114,13 @@ describe('admin settings status areas', () => {
 
 		const box = document.querySelector('[name="allow_legacy_protected_import"]')
 		document.querySelector('form').requestSubmit()
-		await vi.waitFor(() => expect(fetchMock).toHaveBeenCalled())
+		await vi.waitFor(() => expect(savedBody(fetchMock)).toBeDefined())
 		expect(sentField(fetchMock, 'allow_legacy_protected_import')).toBe('true')
 
 		fetchMock.mockClear()
 		box.checked = false
 		document.querySelector('form').requestSubmit()
-		await vi.waitFor(() => expect(fetchMock).toHaveBeenCalled())
+		await vi.waitFor(() => expect(savedBody(fetchMock)).toBeDefined())
 		expect(sentField(fetchMock, 'allow_legacy_protected_import')).toBe('false')
 	})
 

@@ -283,6 +283,23 @@ class AdminSettingsValidatorTest extends TestCase {
 	 * not read as "leave it as it was" - but a caller that is not the form
 	 * must. The form always sends the field; this covers everything else.
 	 */
+	/**
+	 * Without this, hardcoding the field to false passes the whole suite -
+	 * every admin pressing Save would silently switch legacy imports off.
+	 */
+	public function testTheLegacyProtectedImportSwitchCanBeTurnedBackOn(): void {
+		$stored = new StoredAdminSettings('stored-key', '', true, false, '', true, true, false, false);
+
+		$result = $this->buildValidator()->validateForSave([
+			'etherpad_host' => 'https://pad.example.test',
+			'etherpad_api_version' => '1.3.0',
+			'sync_interval_seconds' => '60',
+			LegacyImportPolicy::SETTING_PROTECTED_IMPORT => 'true',
+		], $stored);
+
+		$this->assertTrue($result->allowLegacyProtectedImport);
+	}
+
 	public function testAnAbsentLegacyProtectedImportFieldKeepsWhatWasStored(): void {
 		$stored = new StoredAdminSettings('stored-key', '', true, false, '', true, true, false, false);
 
