@@ -84,6 +84,7 @@ $stubFiles = [
 	__DIR__ . '/stubs/OCA/Files_Sharing/Event/BeforeTemplateRenderedEvent.php',
 	__DIR__ . '/stubs/OCA/Viewer/Event/LoadViewer.php',
 	__DIR__ . '/stubs/Psr/Log/LoggerInterface.php',
+	__DIR__ . '/stubs/Psr/Http/Message/StreamInterface.php',
 ];
 
 foreach ($stubFiles as $stubFile) {

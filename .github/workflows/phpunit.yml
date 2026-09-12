@@ -87,16 +87,56 @@ jobs:
       - name: Run PHPUnit
         run: composer test:phpunit
 
+  # appinfo/info.xml declares 8.1 as the floor, and the installed toolchain
+  # cannot run there: PHPUnit 11 requires 8.2. A pinned PHPUnit 10 PHAR can,
+  # and the suite needs no Composer autoloader - tests/phpunit/bootstrap.php
+  # resolves both the app and its own Tests\ namespace, and stubs the few
+  # vendor interfaces the code implements. Without this job the declared
+  # floor is a claim nothing checks.
+  phpunit-floor:
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.src != 'false'
+
+    name: PHP 8.1 unit tests
+
+    env:
+      PHPUNIT_PHAR_VERSION: 10.5.45
+      # Signed by the PHPUnit release key; re-derive with sha256sum after a bump.
+      PHPUNIT_PHAR_SHA256: 8db3e6db1e713cd49deb2af697e83b0160839f263a2246bae50af5c9992c21e4
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2.37.2
+        with:
+          php-version: '8.1'
+          coverage: none
+
+      - name: Fetch PHPUnit 10
+        run: |
+          curl -sSLf -o phpunit.phar \
+            "https://phar.phpunit.de/phpunit-${PHPUNIT_PHAR_VERSION}.phar"
+          echo "${PHPUNIT_PHAR_SHA256}  phpunit.phar" | sha256sum --check --strict -
+
+      - name: Run PHPUnit
+        run: php phpunit.phar --testsuite unit
+
   summary:
     runs-on: ubuntu-latest
-    needs: phpunit
+    needs: [phpunit, phpunit-floor]
     if: always()
 
     name: phpunit-summary
 
     steps:
       - run: |
-          result="${{ needs.phpunit.result }}"
-          if [ "$result" != "success" ] && [ "$result" != "skipped" ]; then
-            exit 1
-          fi
+          for result in "${{ needs.phpunit.result }}" "${{ needs.phpunit-floor.result }}"; do
+            if [ "$result" != "success" ] && [ "$result" != "skipped" ]; then
+              exit 1
+            fi
+          done

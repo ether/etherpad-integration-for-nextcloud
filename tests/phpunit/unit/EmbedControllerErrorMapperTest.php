@@ -35,7 +35,7 @@ class EmbedControllerErrorMapperTest extends TestCase {
 
 	public function testRunMapsUnauthorizedToNoviewer(): void {
 		$response = $this->buildMapper()->runForTemplate(
-			static fn (): never => throw new UnauthorizedRequestException(),
+			static function (): never { throw new UnauthorizedRequestException(); },
 			static fn ($value) => $this->fail('success handler must not run on error'),
 			errorTitle: 'Could not open pad',
 		);
@@ -47,7 +47,7 @@ class EmbedControllerErrorMapperTest extends TestCase {
 
 	public function testRunMapsControllerBadRequestUsingException(): void {
 		$response = $this->buildMapper()->runForTemplate(
-			static fn (): never => throw new ControllerBadRequestException('Invalid file ID.'),
+			static function (): never { throw new ControllerBadRequestException('Invalid file ID.'); },
 			static fn ($value) => $this->fail('unreachable'),
 			errorTitle: 'Could not open pad',
 		);
@@ -57,7 +57,7 @@ class EmbedControllerErrorMapperTest extends TestCase {
 
 	public function testRunMapsNotFoundExceptionToNoviewer(): void {
 		$response = $this->buildMapper()->runForTemplate(
-			static fn (): never => throw new NotFoundException(),
+			static function (): never { throw new NotFoundException(); },
 			static fn ($value) => $this->fail('unreachable'),
 			errorTitle: 'Could not open pad',
 		);
@@ -67,7 +67,7 @@ class EmbedControllerErrorMapperTest extends TestCase {
 
 	public function testRunUsesEndpointSpecificNotFoundMessageWhenProvided(): void {
 		$response = $this->buildMapper()->runForTemplate(
-			static fn (): never => throw new NotFoundException(),
+			static function (): never { throw new NotFoundException(); },
 			static fn ($value) => $this->fail('unreachable'),
 			errorTitle: 'Could not create pad',
 			notFoundMessage: 'Cannot resolve selected parent folder.',
@@ -79,7 +79,7 @@ class EmbedControllerErrorMapperTest extends TestCase {
 
 	public function testRunMapsNotAPadFile(): void {
 		$response = $this->buildMapper()->runForTemplate(
-			static fn (): never => throw new NotAPadFileException('Selected file is not a .pad file.'),
+			static function (): never { throw new NotAPadFileException('Selected file is not a .pad file.'); },
 			static fn ($value) => $this->fail('unreachable'),
 			errorTitle: 'Could not open pad',
 		);
@@ -89,7 +89,7 @@ class EmbedControllerErrorMapperTest extends TestCase {
 
 	public function testRunMapsParentFolderNotWritable(): void {
 		$response = $this->buildMapper()->runForTemplate(
-			static fn (): never => throw new PadParentFolderNotWritableException(),
+			static function (): never { throw new PadParentFolderNotWritableException(); },
 			static fn ($value) => $this->fail('unreachable'),
 			errorTitle: 'Could not create pad',
 		);
@@ -105,7 +105,7 @@ class EmbedControllerErrorMapperTest extends TestCase {
 			->with('Unhandled embed controller error', $this->callback(static fn (array $context): bool => ($context['exception'] ?? null) instanceof \RuntimeException));
 
 		$response = $this->buildMapper($logger)->runForTemplate(
-			static fn (): never => throw new \RuntimeException('Internal pipe burst'),
+			static function (): never { throw new \RuntimeException('Internal pipe burst'); },
 			static fn ($value) => $this->fail('unreachable'),
 			errorTitle: 'Could not open pad',
 		);

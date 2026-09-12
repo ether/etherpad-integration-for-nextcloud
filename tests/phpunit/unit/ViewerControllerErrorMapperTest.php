@@ -27,7 +27,7 @@ class ViewerControllerErrorMapperTest extends TestCase {
 
 	public function testRunMapsUnauthorizedToNoviewerTemplate(): void {
 		$response = $this->buildMapper()->runForTemplate(
-			static fn (): never => throw new UnauthorizedRequestException(),
+			static function (): never { throw new UnauthorizedRequestException(); },
 			static fn ($value) => $this->fail('unreachable'),
 		);
 
@@ -38,7 +38,7 @@ class ViewerControllerErrorMapperTest extends TestCase {
 
 	public function testRunMapsControllerBadRequestWithExceptionMessage(): void {
 		$response = $this->buildMapper()->runForTemplate(
-			static fn (): never => throw new ControllerBadRequestException('Invalid file path.'),
+			static function (): never { throw new ControllerBadRequestException('Invalid file path.'); },
 			static fn ($value) => $this->fail('unreachable'),
 		);
 
@@ -48,7 +48,7 @@ class ViewerControllerErrorMapperTest extends TestCase {
 
 	public function testRunMapsNotFoundException(): void {
 		$response = $this->buildMapper()->runForTemplate(
-			static fn (): never => throw new NotFoundException(),
+			static function (): never { throw new NotFoundException(); },
 			static fn ($value) => $this->fail('unreachable'),
 		);
 
@@ -58,7 +58,7 @@ class ViewerControllerErrorMapperTest extends TestCase {
 
 	public function testRunUsesEndpointSpecificNotFoundMessageWhenProvided(): void {
 		$response = $this->buildMapper()->runForTemplate(
-			static fn (): never => throw new NotFoundException(),
+			static function (): never { throw new NotFoundException(); },
 			static fn ($value) => $this->fail('unreachable'),
 			notFoundMessage: 'Cannot resolve file path for file ID.',
 		);
@@ -74,7 +74,7 @@ class ViewerControllerErrorMapperTest extends TestCase {
 			->with('Unhandled viewer controller error', $this->callback(static fn (array $context): bool => ($context['exception'] ?? null) instanceof \RuntimeException));
 
 		$response = $this->buildMapper($logger)->runForTemplate(
-			static fn (): never => throw new \RuntimeException('Internal pipe burst'),
+			static function (): never { throw new \RuntimeException('Internal pipe burst'); },
 			static fn ($value) => $this->fail('unreachable'),
 		);
 
