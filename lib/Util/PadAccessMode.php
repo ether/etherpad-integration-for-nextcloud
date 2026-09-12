@@ -17,10 +17,12 @@ namespace OCA\EtherpadNextcloud\Util;
  * be is decided here, so the checks that let one in no longer each carry
  * their own copy of the answer.
  *
- * Reading a mode is a separate question. Several paths ask "is this the
- * protected kind?" and treat everything else as the other one, so a third
- * case added here would be served as a public pad until those are converted
- * too - see #241.
+ * Reading a mode is a separate question. Several paths ask whether a value
+ * is one particular kind and treat everything else as the other, so a third
+ * case added here would be served as one of these two until they are
+ * converted - and which one depends on the site: those asking for
+ * `protected` widen it to public, the one asking for `public` narrows it to
+ * protected. See #241.
  */
 enum PadAccessMode: string {
 	case Public = 'public';

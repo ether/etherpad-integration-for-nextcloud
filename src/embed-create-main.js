@@ -2,7 +2,7 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  * Copyright (c) 2026 Jacob Bühler
  */
-import { isPadAccessMode } from './lib/constants.js'
+import { DEFAULT_PAD_ACCESS_MODE, isPadAccessMode } from './lib/constants.js'
 import { ocRequestToken } from './lib/oc-compat.js'
 import { fetchJsonWithTimeout as fetchJson } from './lib/fetch-helpers.js'
 
@@ -89,7 +89,7 @@ import { fetchJsonWithTimeout as fetchJson } from './lib/fetch-helpers.js'
 		const params = new URL(window.location.href).searchParams
 		return {
 			name: String(params.get('name') || '').trim(),
-			accessMode: String(params.get('accessMode') || 'protected').trim(),
+			accessMode: String(params.get('accessMode') || DEFAULT_PAD_ACCESS_MODE).trim(),
 		}
 	}
 

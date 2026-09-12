@@ -104,6 +104,17 @@ class PadTypePolicyTest extends TestCase {
 	}
 
 	/**
+	 * Reporting it as a disabled pad type would send an admin to the
+	 * settings page looking for a switch that was never a pad type.
+	 */
+	public function testRequireEnabledRefusesAModeNobodyKnows(): void {
+		$policy = $this->buildPolicy([]);
+
+		$this->expectException(\InvalidArgumentException::class);
+		$policy->requireEnabled('external');
+	}
+
+	/**
 	 * Falling back would answer "that type does not exist" with a pad of
 	 * another type. Every caller passes a mode that was validated on the way
 	 * in, so this is a caller's mistake rather than a choice to make for it.

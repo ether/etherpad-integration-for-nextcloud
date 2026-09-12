@@ -48,7 +48,15 @@ class PadTypePolicy {
 	) {
 	}
 
-	/** A mode nobody knows counts as unavailable, like one switched off. */
+	/**
+	 * Whether pads of this type may be created here.
+	 *
+	 * A mode nobody knows answers false, the same as one switched off. The
+	 * two are told apart by the callers that can act on the difference:
+	 * requireEnabled() and resolveCreatableMode() refuse an unknown value
+	 * outright rather than reporting a disabled pad type for something that
+	 * was never one.
+	 */
 	public function isEnabled(string $accessMode): bool {
 		$mode = PadAccessMode::tryFrom($accessMode);
 		return $mode !== null && $this->isModeEnabled($mode);
@@ -65,6 +73,11 @@ class PadTypePolicy {
 	 * Whether a pad can be provisioned locally at all. External pads are not a
 	 * pad type and are not covered — they follow `allow_external_pads`.
 	 */
+	/**
+	 * Short-circuits, so a case with no arm in isModeEnabled() only reaches
+	 * it once every case before it is switched off. Psalm is what actually
+	 * holds that, not this loop.
+	 */
 	public function hasAnyEnabledType(): bool {
 		foreach (PadAccessMode::cases() as $mode) {
 			if ($this->isModeEnabled($mode)) {
@@ -74,9 +87,16 @@ class PadTypePolicy {
 		return false;
 	}
 
-	/** @throws PadTypeDisabledException */
+	/**
+	 * @throws PadTypeDisabledException when pads of this type are switched off
+	 * @throws \InvalidArgumentException when $accessMode is not a known mode
+	 */
 	public function requireEnabled(string $accessMode): void {
-		if ($this->isEnabled($accessMode)) {
+		$mode = PadAccessMode::tryFrom($accessMode);
+		if ($mode === null) {
+			throw new \InvalidArgumentException('Unsupported access mode: ' . $accessMode);
+		}
+		if ($this->isModeEnabled($mode)) {
 			return;
 		}
 		throw new PadTypeDisabledException($accessMode);
@@ -101,12 +121,18 @@ class PadTypePolicy {
 	 * @throws \InvalidArgumentException when $requested is not a known mode
 	 */
 	public function resolveCreatableMode(string $requested): string {
-		if (PadAccessMode::tryFrom($requested) === null) {
+		$mode = PadAccessMode::tryFrom($requested);
+		if ($mode === null) {
 			throw new \InvalidArgumentException('Unsupported access mode: ' . $requested);
 		}
-		if ($this->isEnabled($requested)) {
+		if ($this->isModeEnabled($mode)) {
 			return $requested;
 		}
+		// In FALLBACK_ORDER's order, which is the preference and not an
+		// accident of iteration. No test can see that today: the requested
+		// mode is one of the two and it is disabled, so a single candidate
+		// is ever left. Reversing this line is invisible until a third mode
+		// exists, which is when it starts deciding something.
 		foreach (self::FALLBACK_ORDER as $fallback) {
 			if ($this->isModeEnabled($fallback)) {
 				return $fallback->value;

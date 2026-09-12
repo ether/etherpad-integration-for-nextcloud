@@ -42,9 +42,10 @@ class PadAccessModeTest extends TestCase {
 		$this->assertFileExists($constants);
 
 		$matched = preg_match(
-			// The first bracketed list after the name, so a wrapper such as
-			// Object.freeze() does not read as "the export is missing".
-			'/export\s+const\s+PAD_ACCESS_MODES\b[^\[]*\[(?<values>[^\]]*)\]/',
+			// Anchored to the declaration: an unanchored skip would run past
+			// this statement and read some later array instead. The optional
+			// wrapper is named rather than skipped over.
+			'/export\s+const\s+PAD_ACCESS_MODES\s*=\s*(?:Object\.freeze\(\s*)?\[(?<values>[^\]]*)\]/',
 			(string)file_get_contents($constants),
 			$matches,
 		);
@@ -58,5 +59,33 @@ class PadAccessModeTest extends TestCase {
 		sort($fromPhp);
 
 		$this->assertSame($fromPhp, $fromJs);
+	}
+
+	/**
+	 * The launcher refuses a mode the list does not name, so an importer
+	 * appending to it widens what every other importer accepts.
+	 */
+	public function testTheJavaScriptCopyCannotBeAppendedTo(): void {
+		$this->assertMatchesRegularExpression(
+			'/export\s+const\s+PAD_ACCESS_MODES\s*=\s*Object\.freeze\(/',
+			$this->constantsJs(),
+		);
+	}
+
+	/** Two defaults for one idea, agreeing today by nothing but habit. */
+	public function testTheJavaScriptDefaultIsTheOneTheControllersUse(): void {
+		$matched = preg_match(
+			'/export\s+const\s+DEFAULT_PAD_ACCESS_MODE\s*=\s*([\'"])(?<value>.*?)\1/',
+			$this->constantsJs(),
+			$matches,
+		);
+		$this->assertSame(1, $matched, 'src/lib/constants.js must export DEFAULT_PAD_ACCESS_MODE');
+		$this->assertSame(BindingService::ACCESS_PROTECTED, $matches['value']);
+	}
+
+	private function constantsJs(): string {
+		$path = (string)realpath(__DIR__ . '/../../../src/lib/constants.js');
+		$this->assertFileExists($path);
+		return (string)file_get_contents($path);
 	}
 }
