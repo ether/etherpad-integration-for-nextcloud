@@ -130,6 +130,42 @@ class BindingServiceTest extends TestCase {
 		return new BindingService($db, $this->buildTimeFactory($now), $this->createMock(LoggerInterface::class));
 	}
 
+	/**
+	 * Both predicates and the state belong in the statement. Without the pad
+	 * id a delete by file id alone takes the row a concurrent rebind just
+	 * won; without `state` it takes the row a trash left as pending_delete,
+	 * which is what PendingDeleteRetryService retries from.
+	 */
+	public function testDeletingAnActiveBindingNamesFileAndPadAndState(): void {
+		$qb = new BindingServiceTestQueryBuilder([]);
+		$db = $this->createMock(IDBConnection::class);
+		$db->method('getQueryBuilder')->willReturn($qb);
+		$service = new BindingService($db, $this->buildTimeFactory(0), $this->createMock(LoggerInterface::class));
+
+		self::assertTrue($service->deleteActiveBinding(4711, 'nc-abc'));
+
+		self::assertTrue($qb->deleted);
+		self::assertSame(
+			[['eq', 'file_id', 'param1'], ['eq', 'pad_id', 'param2'], ['eq', 'state', 'param3']],
+			$qb->conditions,
+		);
+		self::assertSame(
+			[4711, 'nc-abc', BindingService::STATE_ACTIVE],
+			array_map(static fn (array $p): mixed => $p[1], $qb->parameters),
+		);
+	}
+
+	/** No row matched: absent, another pad's, or pending_delete. */
+	public function testDeletingAnActiveBindingReportsWhenNothingMatched(): void {
+		$qb = new BindingServiceTestQueryBuilder([]);
+		$qb->affectedRows = 0;
+		$db = $this->createMock(IDBConnection::class);
+		$db->method('getQueryBuilder')->willReturn($qb);
+		$service = new BindingService($db, $this->buildTimeFactory(0), $this->createMock(LoggerInterface::class));
+
+		self::assertFalse($service->deleteActiveBinding(4711, 'nc-abc'));
+	}
+
 	private function buildTimeFactory(int $now): ITimeFactory {
 		return new FixedClock($now);
 	}
@@ -143,8 +179,20 @@ class BindingServiceTestQueryBuilder implements IQueryBuilder {
 	public int $maxResults = 0;
 	private int $parameterCounter = 0;
 
+	public int $affectedRows = 1;
+	public bool $deleted = false;
+
 	/** @param array<int,array<string,mixed>> $rows */
 	public function __construct(private array $rows) {
+	}
+
+	public function delete(string $table): self {
+		$this->deleted = true;
+		return $this;
+	}
+
+	public function executeStatement(): int {
+		return $this->affectedRows;
 	}
 
 	public function select(string $select): self {

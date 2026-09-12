@@ -211,7 +211,7 @@ class PadCreateRollbackServiceTest extends TestCase {
 	public function testRemovesARowThatNamesThePadTheFailedCreateMade(): void {
 		$binding = $this->createMock(BindingService::class);
 		$binding->method('isBoundTo')->with(4711, 'nc-abc')->willReturn(true);
-		$binding->expects($this->once())->method('deleteByFileId')->with(4711);
+		$binding->expects($this->once())->method('deleteActiveBinding')->with(4711, 'nc-abc')->willReturn(true);
 
 		$etherpad = $this->createMock(EtherpadClient::class);
 		$etherpad->expects($this->once())->method('deletePad')->with('nc-abc');
@@ -227,7 +227,7 @@ class PadCreateRollbackServiceTest extends TestCase {
 	public function testLeavesARowThatNamesAnotherPadAlone(): void {
 		$binding = $this->createMock(BindingService::class);
 		$binding->method('isBoundTo')->willReturn(false);
-		$binding->expects($this->never())->method('deleteByFileId');
+		$binding->expects($this->never())->method('deleteActiveBinding');
 
 		$etherpad = $this->createMock(EtherpadClient::class);
 		$etherpad->expects($this->once())->method('deletePad')->with('nc-abc');
@@ -247,7 +247,7 @@ class PadCreateRollbackServiceTest extends TestCase {
 	public function testDiscardsWithoutAskingWhenNoRowWasEverWritten(): void {
 		$binding = $this->createMock(BindingService::class);
 		$binding->expects($this->never())->method('isBoundTo');
-		$binding->expects($this->never())->method('deleteByFileId');
+		$binding->expects($this->never())->method('deleteActiveBinding');
 
 		$etherpad = $this->createMock(EtherpadClient::class);
 		$etherpad->expects($this->once())->method('deletePad')->with('nc-abc');

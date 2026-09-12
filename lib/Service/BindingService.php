@@ -243,6 +243,25 @@ class BindingService {
 		}
 	}
 
+	/**
+	 * Remove one file's active row, and only while it still names this pad.
+	 *
+	 * Both predicates are in the statement rather than read first and
+	 * deleted after: between those two the unique index on `file_id` can be
+	 * handed to another pad, and a delete by file id alone would take the
+	 * winner's row. Answering false also covers the row a trash that could
+	 * not reach Etherpad left as `pending_delete` - that one belongs to
+	 * PendingDeleteRetryService, together with the pad it names.
+	 */
+	public function deleteActiveBinding(int $fileId, string $padId): bool {
+		$qb = $this->db->getQueryBuilder();
+		$qb->delete(self::TABLE)
+			->where($qb->expr()->eq('file_id', $qb->createNamedParameter($fileId, IQueryBuilder::PARAM_INT)))
+			->andWhere($qb->expr()->eq('pad_id', $qb->createNamedParameter($padId)))
+			->andWhere($qb->expr()->eq('state', $qb->createNamedParameter(self::STATE_ACTIVE)));
+		return $qb->executeStatement() > 0;
+	}
+
 	public function deleteByFileId(int $fileId): void {
 		$qb = $this->db->getQueryBuilder();
 		$qb->delete(self::TABLE)

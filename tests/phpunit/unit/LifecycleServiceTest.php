@@ -672,7 +672,7 @@ class LifecycleServiceTest extends TestCase {
 		$bindingService->method('findByFileId')->with($fileId)->willReturn(null);
 		$bindingService->method('createBinding')->willThrowException(new \RuntimeException('connection lost'));
 		$bindingService->method('isBoundTo')->with($fileId, $newPadId)->willReturn(true);
-		$bindingService->expects($this->once())->method('deleteByFileId')->with($fileId);
+		$bindingService->expects($this->once())->method('deleteActiveBinding')->willReturn(true);
 
 		$etherpadClient = $this->createMock(EtherpadClient::class);
 		$etherpadClient->method('buildPadUrl')->willReturn('https://pad.example.test/p/' . $newPadId);
@@ -702,7 +702,7 @@ class LifecycleServiceTest extends TestCase {
 		$bindingService->method('findByFileId')->with($fileId)->willReturn(null);
 		$bindingService->method('createBinding')->willThrowException(new \RuntimeException('unique constraint violation'));
 		$bindingService->method('isBoundTo')->with($fileId, $newPadId)->willReturn(false);
-		$bindingService->expects($this->never())->method('deleteByFileId');
+		$bindingService->expects($this->never())->method('deleteActiveBinding');
 
 		$etherpadClient = $this->createMock(EtherpadClient::class);
 		$etherpadClient->method('buildPadUrl')->willReturn('https://pad.example.test/p/' . $newPadId);
@@ -1032,7 +1032,7 @@ class LifecycleServiceTest extends TestCase {
 			->method('createBinding')
 			->willThrowException(new BindingException('duplicate key on file_id'));
 		// File content must not be overwritten if we lose the race.
-		$bindingService->expects($this->never())->method('deleteByFileId');
+		$bindingService->expects($this->never())->method('deleteActiveBinding');
 
 		$padFileService = $this->createMock(PadFileService::class);
 		$padFileService->method('readPad')->willReturn(new ParsedPadFile(

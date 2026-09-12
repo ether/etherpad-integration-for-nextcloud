@@ -823,7 +823,7 @@ class PadCreationServiceTest extends TestCase {
 		$bindingService = $this->createMock(BindingService::class);
 		$bindingService->method('createBinding')->willThrowException(new \RuntimeException('connection lost'));
 		$bindingService->method('isBoundTo')->with(4321, $padId)->willReturn(true);
-		$bindingService->expects(self::once())->method('deleteByFileId')->with(4321);
+		$bindingService->expects(self::once())->method('deleteActiveBinding')->willReturn(true);
 
 		$etherpadClient = $this->createMock(EtherpadClient::class);
 		$etherpadClient->method('buildPadUrl')->willReturn('https://pad.example.test/p/x');
@@ -841,7 +841,7 @@ class PadCreationServiceTest extends TestCase {
 		$bindingService = $this->createMock(BindingService::class);
 		$bindingService->method('createBinding')->willThrowException(new \RuntimeException('unique constraint violation'));
 		$bindingService->method('isBoundTo')->with(4321, $padId)->willReturn(false);
-		$bindingService->expects(self::never())->method('deleteByFileId');
+		$bindingService->expects(self::never())->method('deleteActiveBinding');
 
 		$etherpadClient = $this->createMock(EtherpadClient::class);
 		$etherpadClient->method('buildPadUrl')->willReturn('https://pad.example.test/p/x');

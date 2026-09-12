@@ -56,7 +56,14 @@ class ProvisionedPadRollback {
 				if ($keepBinding) {
 					return;
 				}
-				$this->bindingService->deleteByFileId($fileId);
+				if (!$this->bindingService->deleteActiveBinding($fileId, $padId)) {
+					// The row moved on between the two statements, or a trash
+					// that could not reach Etherpad left it pending_delete.
+					// Either way it is not ours to take, and neither is the
+					// pad it still names.
+					$this->logger->warning('Left the binding and its pad while rolling back; the row is no longer this attempt\'s to remove.', $context);
+					return;
+				}
 			}
 		} catch (\Throwable $bindingError) {
 			// Without an answer nothing is destroyed: a pad whose row may
