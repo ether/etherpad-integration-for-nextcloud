@@ -41,7 +41,7 @@ class PadCreateRollbackService {
 		// createBinding can commit and still throw, so a row may name this
 		// pad even though the call that wrote it failed.
 		if ($claim !== null) {
-			$this->unwind()->takingBackWhatTheRowClaims($claim->fileId, $padId, 'create');
+			$this->provisionedPadRollback()->removeMatchingBindingAndDiscard($claim->fileId, $padId, 'create');
 			return;
 		}
 
@@ -154,7 +154,7 @@ class PadCreateRollbackService {
 		return false;
 	}
 
-	private function unwind(): PadMaterialisationUnwind {
-		return new PadMaterialisationUnwind($this->bindingService, $this->padLifecycle, $this->logger);
+	private function provisionedPadRollback(): ProvisionedPadRollback {
+		return new ProvisionedPadRollback($this->bindingService, $this->padLifecycle, $this->logger);
 	}
 }

@@ -119,14 +119,14 @@ class PadBootstrapService {
 	}
 
 	private function rollbackProvisionedPad(int $fileId, string $padId): void {
-		$this->unwind()->keepingWhatTheRowClaims($fileId, $padId, 'first init');
+		$this->rollback()->discardUnlessBoundToFile($fileId, $padId, 'first init');
 	}
 
 	private function buildProtectedPadName(): string {
 		return 'p-' . $this->secureRandom->generate(20, ISecureRandom::CHAR_LOWER . ISecureRandom::CHAR_DIGITS);
 	}
 
-	private function unwind(): PadMaterialisationUnwind {
-		return new PadMaterialisationUnwind($this->bindingService, $this->padLifecycle, $this->logger);
+	private function rollback(): ProvisionedPadRollback {
+		return new ProvisionedPadRollback($this->bindingService, $this->padLifecycle, $this->logger);
 	}
 }

@@ -578,7 +578,7 @@ class LifecycleService {
 	 * new pad while the `.pad` still names the old one.
 	 */
 	private function unwindUnwrittenRestore(int $fileId, string $newPadId): void {
-		$this->unwind()->takingBackWhatTheRowClaims($fileId, $newPadId, 'restore without binding');
+		$this->rollback()->removeMatchingBindingAndDiscard($fileId, $newPadId, 'restore without binding');
 	}
 
 	/**
@@ -660,7 +660,7 @@ class LifecycleService {
 	}
 
 
-	private function unwind(): PadMaterialisationUnwind {
-		return new PadMaterialisationUnwind($this->bindingService, $this->padLifecycle, $this->logger);
+	private function rollback(): ProvisionedPadRollback {
+		return new ProvisionedPadRollback($this->bindingService, $this->padLifecycle, $this->logger);
 	}
 }

@@ -266,11 +266,11 @@ class PadCreationService {
 
 	/** The file and the row were both made here, so neither outlives the other. */
 	private function unwindMaterializedPad(int $fileId, string $padId): void {
-		$this->unwind()->takingBackWhatTheRowClaims($fileId, $padId, 'template materialisation');
+		$this->rollback()->removeMatchingBindingAndDiscard($fileId, $padId, 'template materialization');
 	}
 
 	/**
-	 * Shared core of the template materialisation pipeline: validate the
+	 * Shared core of the template materialization pipeline: validate the
 	 * template, resolve placeholders, provision a pad, seed it, write the
 	 * target file, bind it. The target file must already exist.
 	 *
@@ -580,7 +580,7 @@ class PadCreationService {
 		}
 	}
 
-	private function unwind(): PadMaterialisationUnwind {
-		return new PadMaterialisationUnwind($this->bindingService, $this->padLifecycle, $this->logger);
+	private function rollback(): ProvisionedPadRollback {
+		return new ProvisionedPadRollback($this->bindingService, $this->padLifecycle, $this->logger);
 	}
 }
