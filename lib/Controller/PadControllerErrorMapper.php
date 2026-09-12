@@ -12,6 +12,7 @@ namespace OCA\EtherpadNextcloud\Controller;
 use OCA\EtherpadNextcloud\Exception\BindingException;
 use OCA\EtherpadNextcloud\Exception\ControllerBadRequestException;
 use OCA\EtherpadNextcloud\Exception\LegacyPadCollisionException;
+use OCA\EtherpadNextcloud\Exception\LegacyProtectedImportDisabledException;
 use OCA\EtherpadNextcloud\Exception\MissingBindingException;
 use OCA\EtherpadNextcloud\Exception\MissingFrontmatterException;
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
@@ -139,6 +140,14 @@ class PadControllerErrorMapper {
 				$payload,
 				(int)($options['binding_status'] ?? Http::STATUS_BAD_REQUEST),
 			);
+		} catch (LegacyProtectedImportDisabledException $e) {
+			// 403, not 409: nothing conflicts, the instance does not offer
+			// this import at all. The file is left as it was, so switching
+			// the setting back on makes the next open migrate it.
+			return new DataResponse([
+				'message' => $e->getMessage(),
+				'code' => 'legacy_protected_import_disabled',
+			], Http::STATUS_FORBIDDEN);
 		} catch (LegacyPadCollisionException $e) {
 			// The legacy Ownpad shortcut points at a pad-id that is already
 			// bound to another file the requesting user has no access to.

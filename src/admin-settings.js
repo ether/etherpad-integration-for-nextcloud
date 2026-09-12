@@ -116,6 +116,7 @@
 			sync_interval_seconds: Number(data.get('sync_interval_seconds') || 120),
 			delete_on_trash: data.has('delete_on_trash'),
 			enable_protected_pads: data.has('enable_protected_pads'),
+			allow_legacy_protected_import: data.has('allow_legacy_protected_import'),
 			enable_public_pads: data.has('enable_public_pads'),
 			allow_external_pads: data.has('allow_external_pads'),
 			external_pad_allowlist: String(data.get('external_pad_allowlist') || ''),

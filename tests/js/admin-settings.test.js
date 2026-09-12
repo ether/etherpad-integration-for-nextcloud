@@ -35,6 +35,7 @@ const setupAdminDom = () => {
 				<input name="sync_interval_seconds" value="120">
 				<input type="checkbox" name="enable_protected_pads" checked>
 				<input type="checkbox" name="enable_public_pads" checked>
+				<input type="checkbox" name="allow_legacy_protected_import" checked>
 				<p id="pad-types-none-hint" class="ep-field-hint" role="status" data-message="No pad type is enabled."></p>
 				<input type="checkbox" name="delete_on_trash" checked>
 				<input type="checkbox" name="allow_external_pads">
@@ -67,6 +68,15 @@ const okResponse = (body) => ({
 	text: () => Promise.resolve(JSON.stringify({ ok: true, ...body })),
 })
 
+/**
+ * The save posts form-encoded, so a boolean reaches the server as a string.
+ * Picked by URL because loading the module fetches the template list first.
+ */
+const sentField = (fetchMock, name) => {
+	const call = fetchMock.mock.calls.find(([url]) => url === '/save')
+	return new URLSearchParams(call[1].body).get(name)
+}
+
 /** A response the test resolves itself, to complete overlapping requests
  * in a deliberately reversed order. */
 const deferred = () => {
@@ -92,6 +102,23 @@ describe('admin settings status areas', () => {
 		document.body.innerHTML = ''
 		delete global.OC
 		vi.unstubAllGlobals()
+	})
+
+	it('submits the legacy import switch as a boolean, checked or not', async () => {
+		const fetchMock = vi.fn(() => Promise.resolve(okResponse({})))
+		vi.stubGlobal('fetch', fetchMock)
+		await import(MODULE)
+
+		const box = document.querySelector('[name="allow_legacy_protected_import"]')
+		document.querySelector('form').requestSubmit()
+		await vi.waitFor(() => expect(fetchMock).toHaveBeenCalled())
+		expect(sentField(fetchMock, 'allow_legacy_protected_import')).toBe('true')
+
+		fetchMock.mockClear()
+		box.checked = false
+		document.querySelector('form').requestSubmit()
+		await vi.waitFor(() => expect(fetchMock).toHaveBeenCalled())
+		expect(sentField(fetchMock, 'allow_legacy_protected_import')).toBe('false')
 	})
 
 	it('reports saving and diagnostics next to their own actions', async () => {

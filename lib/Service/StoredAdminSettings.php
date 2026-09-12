@@ -20,6 +20,7 @@ class StoredAdminSettings {
 		public readonly bool $enablePublicPads = true,
 		/** False while no cookie domain was ever saved, so it may be derived. */
 		public readonly bool $cookieDomainConfigured = false,
+		public readonly bool $allowLegacyProtectedImport = true,
 	) {
 	}
 }

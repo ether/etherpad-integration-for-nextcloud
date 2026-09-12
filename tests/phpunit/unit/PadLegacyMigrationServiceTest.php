@@ -6,10 +6,12 @@ namespace OCA\EtherpadNextcloud\Tests\Unit;
 
 use OCA\EtherpadNextcloud\Exception\BindingException;
 use OCA\EtherpadNextcloud\Exception\LegacyPadCollisionException;
+use OCA\EtherpadNextcloud\Exception\LegacyProtectedImportDisabledException;
 use OCA\EtherpadNextcloud\Exception\PadFileFormatException;
 use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\EtherpadNextcloud\Service\EtherpadClient;
 use OCA\EtherpadNextcloud\Service\ExternalPadSeeder;
+use OCA\EtherpadNextcloud\Service\LegacyImportPolicy;
 use OCA\EtherpadNextcloud\Service\PadFileService;
 use OCA\EtherpadNextcloud\Service\PadLegacyMigrationService;
 use OCA\EtherpadNextcloud\Service\UserNodeResolver;
@@ -377,14 +379,87 @@ class PadLegacyMigrationServiceTest extends TestCase {
 		?EtherpadClient $etherpadClient = null,
 		?ExternalPadSeeder $externalPadSeeder = null,
 		?UserNodeResolver $resolver = null,
+		?LegacyImportPolicy $legacyImportPolicy = null,
 	): PadLegacyMigrationService {
 		return new PadLegacyMigrationService(
 			$binding ?? $this->createMock(BindingService::class),
+			$legacyImportPolicy ?? $this->allowingPolicy(),
 			$padFileService ?? $this->createMock(PadFileService::class),
 			$etherpadClient ?? $this->createMock(EtherpadClient::class),
 			$externalPadSeeder ?? $this->createMock(ExternalPadSeeder::class),
 			$resolver ?? $this->createMock(UserNodeResolver::class),
 			$this->createMock(LoggerInterface::class),
 		);
+	}
+
+	private function policyAllowing(bool $protectedImport): LegacyImportPolicy {
+		$policy = $this->createMock(LegacyImportPolicy::class);
+		$policy->method('allowsProtectedImport')->willReturn($protectedImport);
+		return $policy;
+	}
+
+	private function allowingPolicy(): LegacyImportPolicy {
+		return $this->policyAllowing(true);
+	}
+
+	public function testRefusesAGroupPadWhenProtectedImportIsSwitchedOff(): void {
+		$file = $this->createMock(File::class);
+		$file->method('getId')->willReturn(202);
+
+		$padFileService = $this->createMock(PadFileService::class);
+		$padFileService->method('inferAccessModeFromPadId')
+			->willReturn(BindingService::ACCESS_PROTECTED);
+
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->method('getConfiguredOrigin')->willReturn('https://pad.our-server.test');
+		$etherpadClient->method('normalizeOrigin')->willReturn('https://pad.our-server.test');
+		// The refusal comes before any question about the group: a pad this
+		// instance will not bind is not worth an API call, and asking would
+		// report on a group the caller has no business probing.
+		$etherpadClient->expects($this->never())->method('listPads');
+
+		$binding = $this->createMock(BindingService::class);
+		$binding->expects($this->never())->method('createBinding');
+
+		$this->expectException(LegacyProtectedImportDisabledException::class);
+
+		$this->buildService(
+			binding: $binding,
+			padFileService: $padFileService,
+			etherpadClient: $etherpadClient,
+			legacyImportPolicy: $this->policyAllowing(false),
+		)->migrate('mallory', $file, [
+			'url' => 'https://pad.our-server.test/p/g.someone-elses$notes',
+			'pad_id' => 'g.someone-elses$notes',
+		]);
+	}
+
+	public function testStillImportsAPublicPadWhenProtectedImportIsSwitchedOff(): void {
+		$file = $this->createMock(File::class);
+		$file->method('getId')->willReturn(203);
+
+		$padFileService = $this->createMock(PadFileService::class);
+		$padFileService->method('inferAccessModeFromPadId')
+			->willReturn(BindingService::ACCESS_PUBLIC);
+
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->method('getConfiguredOrigin')->willReturn('https://pad.our-server.test');
+		$etherpadClient->method('normalizeOrigin')->willReturn('https://pad.our-server.test');
+
+		$binding = $this->createMock(BindingService::class);
+		$binding->method('findByPadId')->willReturn(null);
+		// The switch is about group pads. A pad anyone holding its id can
+		// read is no more reachable for having a file bound to it.
+		$binding->expects($this->once())->method('createBinding');
+
+		$this->buildService(
+			binding: $binding,
+			padFileService: $padFileService,
+			etherpadClient: $etherpadClient,
+			legacyImportPolicy: $this->policyAllowing(false),
+		)->migrate('alice', $file, [
+			'url' => 'https://pad.our-server.test/p/team-notes',
+			'pad_id' => 'team-notes',
+		]);
 	}
 }

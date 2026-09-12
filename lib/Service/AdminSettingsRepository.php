@@ -32,6 +32,7 @@ class AdminSettingsRepository {
 			(string)$this->config->getAppValue(Application::APP_ID, PadTypePolicy::SETTING_PROTECTED, 'yes') === 'yes',
 			(string)$this->config->getAppValue(Application::APP_ID, PadTypePolicy::SETTING_PUBLIC, 'yes') === 'yes',
 			(string)$this->config->getAppValue(Application::APP_ID, 'etherpad_cookie_domain_configured', 'no') === 'yes',
+			(string)$this->config->getAppValue(Application::APP_ID, LegacyImportPolicy::SETTING_PROTECTED_IMPORT, 'yes') === 'yes',
 		);
 	}
 
@@ -63,6 +64,7 @@ class AdminSettingsRepository {
 		$this->config->setAppValue(Application::APP_ID, 'trusted_embed_origins', $settings->trustedEmbedOrigins);
 		$this->config->setAppValue(Application::APP_ID, PadTypePolicy::SETTING_PROTECTED, $settings->enableProtectedPads ? 'yes' : 'no');
 		$this->config->setAppValue(Application::APP_ID, PadTypePolicy::SETTING_PUBLIC, $settings->enablePublicPads ? 'yes' : 'no');
+		$this->config->setAppValue(Application::APP_ID, LegacyImportPolicy::SETTING_PROTECTED_IMPORT, $settings->allowLegacyProtectedImport ? 'yes' : 'no');
 	}
 
 	public function hasApiKey(): bool {

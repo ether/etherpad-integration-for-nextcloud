@@ -10,6 +10,7 @@ namespace OCA\EtherpadNextcloud\Service;
 
 use OCA\EtherpadNextcloud\Exception\BindingException;
 use OCA\EtherpadNextcloud\Exception\LegacyPadCollisionException;
+use OCA\EtherpadNextcloud\Exception\LegacyProtectedImportDisabledException;
 use OCA\EtherpadNextcloud\Exception\PadFileFormatException;
 use OCA\EtherpadNextcloud\Util\PadId;
 use OCP\Files\File;
@@ -45,6 +46,7 @@ use Psr\Log\LoggerInterface;
 class PadLegacyMigrationService {
 	public function __construct(
 		private BindingService $bindingService,
+		private LegacyImportPolicy $legacyImportPolicy,
 		private PadFileService $padFileService,
 		private EtherpadClient $etherpadClient,
 		private ExternalPadSeeder $externalPadSeeder,
@@ -91,6 +93,8 @@ class PadLegacyMigrationService {
 	 *
 	 * @throws LegacyPadCollisionException when the pad is already bound to
 	 *   a file the requesting user has no access to.
+	 * @throws LegacyProtectedImportDisabledException when the file names a
+	 *   group pad and this instance does not import those.
 	 */
 	public function migrate(string $uid, File $file, array $legacyShortcut): void {
 		$fileId = (int)$file->getId();
@@ -113,9 +117,20 @@ class PadLegacyMigrationService {
 			return;
 		}
 
-		$this->assertGroupPadExists($sourcePadId);
-
 		$accessMode = $this->padFileService->inferAccessModeFromPadId($sourcePadId);
+		// Before assertGroupPadExists(), so a refused import does not ask
+		// Etherpad about a group it is not going to bind either way.
+		if ($accessMode === BindingService::ACCESS_PROTECTED && !$this->legacyImportPolicy->allowsProtectedImport()) {
+			$this->logger->warning('Refused a legacy Ownpad import naming a group pad; protected import is switched off.', [
+				'app' => 'etherpad_nextcloud',
+				'fileId' => $fileId,
+				'padId' => $sourcePadId,
+				'uid' => $uid,
+			]);
+			throw new LegacyProtectedImportDisabledException('Importing protected Ownpad pads is switched off on this server.');
+		}
+
+		$this->assertGroupPadExists($sourcePadId);
 		$existingBinding = $this->bindingService->findByPadId($sourcePadId, BindingService::STATE_ACTIVE);
 
 		if ($existingBinding === null) {

@@ -103,6 +103,11 @@
       <code><![CDATA[__construct]]></code>
     </PossiblyUnusedMethod>
   </file>
+  <file src="lib/Service/LegacyImportPolicy.php">
+    <PossiblyUnusedMethod>
+      <code><![CDATA[__construct]]></code>
+    </PossiblyUnusedMethod>
+  </file>
   <file src="lib/Service/LifecycleService.php">
     <PossiblyUnusedMethod>
       <code><![CDATA[__construct]]></code>
