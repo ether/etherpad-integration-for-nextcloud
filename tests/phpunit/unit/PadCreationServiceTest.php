@@ -86,7 +86,7 @@ class PadCreationServiceTest extends TestCase {
 					&& $claim->fileId === 123
 					&& $claim->expectedBefore === ''
 					&& $claim->writtenHash !== null
-			));
+			), 123);
 
 		$bootstrap = $this->createMock(PadBootstrapService::class);
 		$bootstrap->method('provisionPadId')->willReturn('g.ABC$pad');
@@ -101,6 +101,44 @@ class PadCreationServiceTest extends TestCase {
 		$bindingService->method('createBinding')->willThrowException(new BindingException('Duplicate binding.'));
 
 		$this->expectException(BindingException::class);
+
+		$this->buildService($padFileService, $padPaths, $fileCreator, null, $rollbackService, $bindingService, $etherpadClient, $bootstrap)
+			->create('alice', '/Test', BindingService::ACCESS_PROTECTED);
+	}
+
+	/**
+	 * The file id reaches the rollback only once the binding write begins.
+	 * Failing before it, the pad is ours beyond doubt and is discarded
+	 * without asking the database about a row that cannot exist.
+	 */
+	public function testCreateThatFailsBeforeTheBindingWriteReportsNoAttempt(): void {
+		$fileNode = $this->createMock(File::class);
+		$fileNode->method('getId')->willReturn(123);
+
+		$padPaths = $this->createMock(PathNormalizer::class);
+		$padPaths->method('normalizeCreatePath')->with('/Test')->willReturn('/Test.pad');
+		$fileCreator = $this->createMock(PadFileCreator::class);
+		$fileCreator->method('createUserFile')->with('alice', '/Test.pad')->willReturn($fileNode);
+
+		$rollbackService = $this->createMock(PadCreateRollbackService::class);
+		$rollbackService->expects($this->once())
+			->method('rollbackFailedCreate')
+			->with('alice', '/Test.pad', 'g.ABC$pad', $this->anything(), null);
+
+		$bootstrap = $this->createMock(PadBootstrapService::class);
+		$bootstrap->method('provisionPadId')->willReturn('g.ABC$pad');
+
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->method('buildPadUrl')->willReturn('https://pad.example.test/p/g.ABC$pad');
+
+		$bindingService = $this->createMock(BindingService::class);
+		$bindingService->expects($this->never())->method('createBinding');
+
+		$padFileService = $this->createMock(PadFileService::class);
+		$padFileService->method('buildInitialDocument')
+			->willThrowException(new \RuntimeException('cannot build the document'));
+
+		$this->expectException(\RuntimeException::class);
 
 		$this->buildService($padFileService, $padPaths, $fileCreator, null, $rollbackService, $bindingService, $etherpadClient, $bootstrap)
 			->create('alice', '/Test', BindingService::ACCESS_PROTECTED);
