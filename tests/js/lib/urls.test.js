@@ -3,15 +3,13 @@
  * Copyright (c) 2026 Jacob Bühler
  */
 
+/** Covers pad-name recognition and public-share and DAV URL parsing. */
+
 import { describe, expect, it } from 'vitest'
 import {
 	isPadName,
-	normalizeFilePath,
-	parseFileIdFromCurrentLocation,
 	parsePadPathFromDavHref,
-	parsePublicSharePadFromHref,
 	parsePublicShareTokenFromLocation,
-	viewerUrlForPublicShare,
 } from '../../../src/lib/urls.js'
 
 const setPathname = (pathname) => {
@@ -19,25 +17,10 @@ const setPathname = (pathname) => {
 }
 
 describe('path helpers', () => {
-	it('normalizes file paths from directory and file name', () => {
-		expect(normalizeFilePath('/Folder', 'Test.pad')).toBe('/Folder/Test.pad')
-		// The name is joined, never rewritten: " Test .pad" is a name
-		// Nextcloud accepts, and changing it here would point at another file.
-		expect(normalizeFilePath('/', ' Test .pad')).toBe('/ Test .pad')
-		expect(normalizeFilePath('', '/Nested/Test.pad')).toBe('/Nested/Test.pad')
-	})
-
 	it('detects pad names case-insensitively', () => {
 		expect(isPadName('Test.PAD')).toBe(true)
 		expect(isPadName('Test.txt')).toBe(false)
 		expect(isPadName(null)).toBe(false)
-	})
-})
-
-describe('viewer URL builders', () => {
-	it('builds public viewer URLs', () => {
-		expect(viewerUrlForPublicShare('abc', '')).toBe('/index.php/apps/etherpad_nextcloud/public/abc')
-		expect(viewerUrlForPublicShare('abc', '/Shared/Test.pad')).toBe('/index.php/apps/etherpad_nextcloud/public/abc?file=%2FShared%2FTest.pad')
 	})
 })
 
@@ -55,7 +38,6 @@ describe('parsePublicShareTokenFromLocation', () => {
 	})
 
 	it('extracts tokens when Nextcloud is served from a subdirectory', () => {
-		// Why the pattern is not anchored at the start of the path.
 		setPathname('/nextcloud/s/share-token')
 
 		expect(parsePublicShareTokenFromLocation()).toBe('share-token')
@@ -68,31 +50,6 @@ describe('parsePublicShareTokenFromLocation', () => {
 	})
 })
 
-describe('parseFileIdFromCurrentLocation', () => {
-	it('extracts file ids from the current route', () => {
-		setPathname('/apps/files/files/321')
-
-		expect(parseFileIdFromCurrentLocation()).toBe(321)
-	})
-})
-
-describe('parsePublicSharePadFromHref', () => {
-	it('extracts pad paths from public download links', () => {
-		const href = '/s/share-token/download?path=/Shared&files=Pad.pad'
-
-		expect(parsePublicSharePadFromHref(href)).toEqual({
-			token: 'share-token',
-			path: '/Shared/Pad.pad',
-		})
-	})
-
-	it('ignores non-pad public download links', () => {
-		const href = '/s/share-token/download?path=/Shared&files=Readme.md'
-
-		expect(parsePublicSharePadFromHref(href)).toBeNull()
-	})
-})
-
 describe('parsePadPathFromDavHref', () => {
 	it('extracts user DAV pad paths', () => {
 		const href = 'https://cloud.example.test/remote.php/dav/files/jacob/Folder/Test.pad'
@@ -101,8 +58,6 @@ describe('parsePadPathFromDavHref', () => {
 	})
 
 	it('accepts an upper-case suffix, like the PHP side does', () => {
-		// The server treats `.PAD` as a pad, so a link handler that
-		// disagreed would refuse to open a file the server opens.
 		const href = 'https://cloud.example.test/remote.php/dav/files/jacob/Folder/Test.PAD'
 
 		expect(parsePadPathFromDavHref(href)).toBe('/Folder/Test.PAD')
@@ -134,22 +89,5 @@ describe('parsePadPathFromDavHref', () => {
 		const href = 'https://cloud.example.test/remote.php/dav/files/jacob/Folder/%E0%A4%A.pad'
 
 		expect(parsePadPathFromDavHref(href)).toBeNull()
-	})
-})
-
-describe('query parameters in share links', () => {
-	// A query string is form-encoded: `+` means space, and a literal plus
-	// is `%2B`. Reading it any other way trades one wrong name for
-	// another — `A+B.pad` really does mean `A B.pad`.
-	it('reads a plus as a space and %2B as a plus', () => {
-		expect(parsePublicSharePadFromHref('https://nc.test/s/tok/download?path=/M&files=A+B.pad'))
-			.toEqual({ token: 'tok', path: '/M/A B.pad' })
-		expect(parsePublicSharePadFromHref('https://nc.test/s/tok/download?path=/M&files=C%2B%2B.pad'))
-			.toEqual({ token: 'tok', path: '/M/C++.pad' })
-	})
-
-	it('keeps a name whose spaces sit before the extension', () => {
-		expect(parsePublicSharePadFromHref('https://nc.test/s/tok/download?path=/M&files=Notes%20.pad'))
-			.toEqual({ token: 'tok', path: '/M/Notes .pad' })
 	})
 })

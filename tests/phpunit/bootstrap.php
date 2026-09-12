@@ -23,8 +23,7 @@ $stubFiles = [
 	__DIR__ . '/stubs/OCP/AppFramework/Http/Attribute/NoAdminRequired.php',
 	__DIR__ . '/stubs/OCP/AppFramework/Http/Attribute/NoCSRFRequired.php',
 	__DIR__ . '/stubs/OCP/AppFramework/Http/Attribute/PublicPage.php',
-	// Before ITimeFactory: the stub mirrors the real interface, which
-	// extends the PSR-20 clock.
+	// Load the parent PSR-20 interface before the ITimeFactory stub.
 	__DIR__ . '/stubs/Psr/Clock/ClockInterface.php',
 	__DIR__ . '/stubs/OCP/AppFramework/Utility/ITimeFactory.php',
 	__DIR__ . '/stubs/OCP/ICache.php',
@@ -81,6 +80,9 @@ $stubFiles = [
 	__DIR__ . '/stubs/OCP/Share/Exceptions/ShareNotFound.php',
 	__DIR__ . '/stubs/OCP/Share/IManager.php',
 	__DIR__ . '/stubs/OCP/Share/IShare.php',
+	__DIR__ . '/stubs/OCA/Files/Event/LoadAdditionalScriptsEvent.php',
+	__DIR__ . '/stubs/OCA/Files_Sharing/Event/BeforeTemplateRenderedEvent.php',
+	__DIR__ . '/stubs/OCA/Viewer/Event/LoadViewer.php',
 	__DIR__ . '/stubs/Psr/Log/LoggerInterface.php',
 ];
 

@@ -15,6 +15,8 @@ use OCP\EventDispatcher\IEventListener;
 use OCP\Util;
 
 /**
+ * Registers the pad Viewer when Nextcloud's Viewer is loaded.
+ *
  * @template-implements IEventListener<Event>
  * @psalm-api
  */
@@ -24,6 +26,6 @@ class LoadViewerListener implements IEventListener {
 			return;
 		}
 
-		Util::addScript(Application::APP_ID, 'etherpad_nextcloud-viewer-main', 'viewer');
+		Util::addInitScript(Application::APP_ID, 'etherpad_nextcloud-viewer-init');
 	}
 }

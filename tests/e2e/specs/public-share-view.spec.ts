@@ -2,6 +2,9 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  * Copyright (c) 2026 Jacob Bühler
  */
+
+/** Covers native Viewer routing and access isolation for public file and folder shares. */
+
 import { test, expect } from '@playwright/test'
 import { E2E } from '../fixtures/env'
 import {
@@ -145,30 +148,13 @@ test.describe('public share access without login', () => {
 })
 
 /**
- * `A+B.pad` and `A B.pad` differ in the one character a query string
- * overloads. Each pad's address is recorded before the share exists, so
- * "a viewer appeared" cannot pass for "the right document opened".
- *
- * The share is handed out with edit rights on purpose. A read-only public
- * share opens the read-only pad id instead, whose address is derived
- * server-side and cannot be compared against what create returned. That
- * makes the spec depend on `shareapi_allow_public_upload`, which
- * Nextcloud defaults to `yes` and tests/e2e/docker/up.sh sets explicitly;
- * against an instance that forbids public upload, the share create fails.
- *
- * Reading the frame with `iframe[title="Etherpad"]` is safe even with two
- * viewable pads in one folder: measured on Nextcloud 33, an open viewer
- * carries exactly one iframe — the Viewer does not mount a neighbour's
- * handler for prefetch. Were that ever untrue, the second assertion
- * expects a different address than the first, so a stale or neighbouring
- * frame fails the spec rather than passing it.
+ * Confusable names prove that the share opens the selected file, not merely
+ * any pad whose viewer can mount. Write access preserves the created pad URL
+ * for that comparison.
  */
 test.describe('public folder share with confusable file names', () => {
 	const folderName = uniqueName('public-folder-plus-space')
-	// Deliberately not fixture names: they have to differ in one
-	// character, and a timestamp in each would differ in fourteen. The
-	// folder around them carries the run id, and deleting it takes both
-	// with it as a single trash entry the sweep recognises.
+	// The parent carries the run id because these names must differ by one character.
 	const plusName = 'A+B.pad'
 	const spaceName = 'A B.pad'
 	let shareToken = ''
@@ -181,16 +167,11 @@ test.describe('public folder share with confusable file names', () => {
 
 	test.beforeAll(async () => {
 		await mkcolViaDav(folderName)
-		// PROPFIND before creating inside it. MKCOL answering 201 is not
-		// quite the same as the folder being resolvable by the next
-		// request — createUserReadShare in the same fixtures file carries a
-		// comment about that class of lag on a CI runner — and the retry in
-		// propfindFileId turns a race into a bounded wait.
+		// Wait until the newly created folder is resolvable on slower storage.
 		await propfindFileId(folderName)
 		plusPad = await createPadAtPath(`/${folderName}/${plusName}`)
 		spacePad = await createPadAtPath(`/${folderName}/${spaceName}`)
 		plusFileId = await propfindFileId(`${folderName}/${plusName}`)
-		// A real id the share does not contain; it need not be a pad.
 		await putFileViaDav(outsideName, 'outside the share')
 		outsideFileId = await propfindFileId(outsideName)
 		const share = await createPublicShare(folderName, SHARE_PERMISSION_READ_WRITE)
@@ -199,17 +180,13 @@ test.describe('public folder share with confusable file names', () => {
 	})
 
 	test.afterAll(async () => {
-		// The folder delete is the only thing that can clean up these two
-		// pads — their names carry no run id, so the trash sweep would not
-		// recognise them on their own. It must not be skipped because
-		// revoking the share threw.
+		// Always remove the run-tagged parent, even when share revocation fails.
 		try {
 			if (shareToken !== '') {
 				await deletePublicShare(shareToken)
 			}
 		} finally {
-			// Each on its own: a folder delete that throws must not take the
-			// outsider's cleanup with it.
+			// Keep both cleanups independent.
 			try {
 				await deleteViaDav(outsideName)
 			} finally {
@@ -223,8 +200,7 @@ test.describe('public folder share with confusable file names', () => {
 
 		const publicContext = await browser.newContext()
 		try {
-			// The path names a real pad here, so a fallback would answer
-			// with it and the 404 is what says none happened.
+			// A path fallback would open the real pad named alongside the foreign id.
 			const response = await publicContext.request.get(
 				`${E2E.baseURL}/apps/etherpad_nextcloud/api/v1/public/open/${shareToken}`
 				+ `?fileId=${outsideFileId}&file=${encodeURIComponent(plusName)}`,
@@ -238,38 +214,53 @@ test.describe('public folder share with confusable file names', () => {
 	})
 
 	test('opens plus and space filenames from a public folder share without confusing their pads', async ({ browser }) => {
-		// Create gave back the names it was asked for, at the path it was
-		// asked for. A rewrite here would be the same bug one step earlier,
-		// and the comparison below would then be measuring the wrong thing.
 		expect(plusPad.path).toBe(`/${folderName}/${plusName}`)
 		expect(spacePad.path).toBe(`/${folderName}/${spaceName}`)
-		// Two creates cannot share a pad id — an existing name is refused
-		// with 409 rather than reused — so this only fails if the binding
-		// side ever hands the same pad to two files. Cheap, and without it
-		// every comparison below could be vacuously true.
 		expect(plusPad.padUrl).not.toBe(spacePad.padUrl)
 
 		const publicContext = await browser.newContext()
 		const publicPage = await publicContext.newPage()
 		try {
 			await publicPage.goto(shareUrl)
+			const sharePath = new URL(shareUrl).pathname
 
-			// Clicked in Nextcloud's own rendering of the share, never a
-			// URL this test built: what the click asks for is the point.
+			// Capture the request generated by Nextcloud's own file-list click.
 			const [openRequest] = await Promise.all([
 				publicPage.waitForRequest((request) => request.url().includes('/api/v1/public/open/')),
 				openPadFromFileList(publicPage, plusName),
 			])
 
 			await expectEtherpadViewerMounted(publicPage)
+			await expect(publicPage.getByRole('dialog', { name: plusName })).toBeVisible()
 			expect(await readEtherpadUrlFromViewer(publicPage)).toBe(plusPad.padUrl)
-			// Parsed, not a substring: `fileId=12` is inside `fileId=123`.
 			expect(new URL(openRequest.url()).searchParams.get('fileId')).toBe(String(plusFileId))
 			await closeViewer(publicPage)
+			await expect.poll(() => new URL(publicPage.url()).pathname).toBe(sharePath)
+			await expect(
+				publicPage.locator(`[data-cy-files-list-row-name="${plusName}"]`).first(),
+			).toBeVisible()
 
 			await openPadFromFileList(publicPage, spaceName)
 			await expectEtherpadViewerMounted(publicPage)
+			await expect(publicPage.getByRole('dialog', { name: spaceName })).toBeVisible()
 			expect(await readEtherpadUrlFromViewer(publicPage)).toBe(spacePad.padUrl)
+		} finally {
+			await publicContext.close()
+		}
+	})
+
+	test('keeps compatibility links to pads inside a public folder share working', async ({ browser }) => {
+		const publicContext = await browser.newContext()
+		const publicPage = await publicContext.newPage()
+		try {
+			await publicPage.goto(
+				`${E2E.baseURL}/apps/etherpad_nextcloud/public/${encodeURIComponent(shareToken)}`
+				+ `?file=${encodeURIComponent(`/${plusName}`)}`,
+			)
+
+			await expectEtherpadViewerMounted(publicPage)
+			await expect(publicPage.getByRole('dialog', { name: plusName })).toBeVisible()
+			expect(await readEtherpadUrlFromViewer(publicPage)).toBe(plusPad.padUrl)
 		} finally {
 			await publicContext.close()
 		}

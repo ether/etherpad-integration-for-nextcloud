@@ -3,8 +3,9 @@
  * Copyright (c) 2026 Jacob Bühler
  */
 
-/* NC Viewer scoped CSS sets height:auto on .modal-container.
- * Scope override to our viewer only to avoid affecting other file types. */
+/* Native Viewer surfaces for editable, external, and read-only pads. */
+
+/* Extend full-height pad surfaces through the Viewer's reserved lower gap. */
 .viewer .modal-wrapper .modal-container:has(.epnc-native-shell),
 .viewer .modal-wrapper .modal-container:has(.epnc-pad-doc) {
 	height: unset !important;
@@ -80,7 +81,6 @@
 	background: var(--color-main-background, #fff);
 	color: var(--color-main-text, #111827);
 
-	/* What the shared document stylesheet paints with, from the theme. */
 	--epnc-doc-text: var(--color-main-text, #111827);
 	--epnc-doc-muted: var(--color-text-maxcontrast, #6b7280);
 	--epnc-doc-accent: var(--color-primary-element, #0082c9);
