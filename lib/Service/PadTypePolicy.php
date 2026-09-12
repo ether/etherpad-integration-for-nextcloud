@@ -35,11 +35,10 @@ class PadTypePolicy {
 	/**
 	 * Which type a pad falls back to, most preferred first.
 	 *
-	 * With two modes the loop below can never show this: whichever was asked
-	 * for is the disabled one, so a single candidate is left. It is a
-	 * constant so that the preference can be asserted directly - protected
-	 * first, because the other direction hands out a pad anyone holding its
-	 * id can read - rather than left to the order someone happened to write.
+	 * Protected first, because the other direction hands out a pad anyone
+	 * holding its id can read. With only two modes the order decides nothing
+	 * - whichever was asked for is the disabled one - so it starts mattering
+	 * when a third mode is added.
 	 */
 	public const FALLBACK_ORDER = [PadAccessMode::Protected, PadAccessMode::Public];
 
@@ -59,11 +58,6 @@ class PadTypePolicy {
 	/**
 	 * Whether a pad can be provisioned locally at all. External pads are not a
 	 * pad type and are not covered — they follow `allow_external_pads`.
-	 *
-	 * Walks FALLBACK_ORDER rather than cases() so the class answers "which
-	 * mode do we consider first" one way. The order cannot be observed here
-	 * - this is a plain OR - but stating it twice differently invites the
-	 * two to drift.
 	 */
 	public function hasAnyEnabledType(): bool {
 		foreach (self::FALLBACK_ORDER as $mode) {
@@ -115,11 +109,6 @@ class PadTypePolicy {
 		if ($this->isEnabled($mode)) {
 			return $mode->value;
 		}
-		// In FALLBACK_ORDER's order, which is the preference and not an
-		// accident of iteration. No test can see that today: the requested
-		// mode is one of the two and it is disabled, so a single candidate
-		// is ever left. Reversing this line is invisible until a third mode
-		// exists, which is when it starts deciding something.
 		foreach (self::FALLBACK_ORDER as $fallback) {
 			if ($this->isEnabled($fallback)) {
 				return $fallback->value;

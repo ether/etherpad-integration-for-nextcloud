@@ -5,9 +5,7 @@
 # appinfo/info.xml declares which PHP versions this app supports, and two
 # workflows restate that range as literals: the PHPUnit floor job names the
 # oldest, and both test matrices have to reach the newest. This holds them to
-# it, so moving the range stays a one-file change - without it, raising
-# min-version leaves the jobs testing a floor nobody declares any more, which
-# is the gap the floor job was added to close.
+# it, so moving the range stays a one-file change.
 #
 # Run from the repository root. Prints every mismatch, exits non-zero if
 # there is one.

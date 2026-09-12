@@ -6,9 +6,9 @@ import { describe, expect, it } from 'vitest'
 import { isPadAccessMode, PAD_ACCESS_MODES } from '../../../src/lib/constants.js'
 
 describe('isPadAccessMode', () => {
-	// Not a third copy of the list - PadAccessModeTest holds this one to the
-	// PHP enum. What is left to check here is that the predicate keeps
-	// answering from the list rather than from a copy of its contents.
+	// Deliberately not a third copy of the values - PadAccessModeTest holds
+	// this list to the PHP enum. What is left is that the predicate answers
+	// from the list rather than from a copy of its contents.
 	it('answers from the list rather than from a list of its own', () => {
 		expect(PAD_ACCESS_MODES.length).toBeGreaterThan(0)
 		for (const mode of PAD_ACCESS_MODES) {

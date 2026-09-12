@@ -38,11 +38,9 @@ jobs:
               - 'lib/**'
               - 'tests/phpunit/**'
               - 'phpunit.xml.dist'
-              # Two tests read files outside lib/: PadAccessModeTest reads
-              # src/lib/constants.js, and PadFileTypeLiteralsTest walks
-              # everything in its SCANNED list looking for a MIME type
-              # written out by hand. These are that list, so a change it
-              # would catch cannot skip the job that runs it.
+              # PadFileTypeLiteralsTest walks its SCANNED list for a MIME
+              # type written out by hand, and PadAccessModeTest reads
+              # src/lib/constants.js. These entries are that list.
               - 'src/**'
               - 'templates/**'
               - 'appinfo/**'
@@ -91,13 +89,10 @@ jobs:
       - name: Run PHPUnit
         run: composer test:phpunit
 
-  # appinfo/info.xml declares 8.1 as the floor, and the installed toolchain
-  # cannot run there: PHPUnit 11 requires 8.2. A pinned PHPUnit 10 PHAR can.
-  # The dependencies still have to be installed for real, because the tests
-  # exercise OCP classes that no stub in tests/phpunit/stubs replaces, so the
-  # php platform requirement is ignored for the install and only the PHAR is
-  # used to run. Without this job the declared floor is a claim nothing
-  # checks.
+  # appinfo/info.xml declares 8.1 as the floor and the installed toolchain
+  # cannot run there, because PHPUnit 11 requires 8.2. A pinned PHPUnit 10
+  # PHAR can, so this job is what keeps the declared floor from being a claim
+  # nothing checks.
   phpunit-floor:
     runs-on: ubuntu-latest
     needs: changes

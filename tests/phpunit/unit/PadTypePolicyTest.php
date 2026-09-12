@@ -87,10 +87,8 @@ class PadTypePolicyTest extends TestCase {
 	}
 
 	/**
-	 * The loop that reads this cannot show it: whichever mode was asked for
-	 * is the disabled one, so only a single candidate is ever left. Pinned
-	 * here so that reordering it is a decision someone makes, and so that a
-	 * mode added to the enum has to be given a place in the preference.
+	 * Unobservable while two modes exist, so nothing else would notice a
+	 * reorder - and a mode added to the enum has to be given a place here.
 	 */
 	public function testTheFallbackPrefersTheProtectedType(): void {
 		self::assertSame(PadAccessMode::Protected, PadTypePolicy::FALLBACK_ORDER[0]);

@@ -23,11 +23,10 @@ class PadAccessModeTest extends TestCase {
 	}
 
 	/**
-	 * The constants are what 200-odd call sites spell. Reading an enum case's
-	 * value in a constant expression needs PHP 8.2, and this app declares 8.1
-	 * as its floor, so they are written out and held here instead. (Enum
-	 * cases themselves are constant expressions on 8.1, which is why
-	 * PadTypePolicy::FALLBACK_ORDER can hold them.)
+	 * The constants cannot be derived from the enum: reading a case's value
+	 * in a constant expression needs PHP 8.2 and the declared floor is 8.1.
+	 * (Cases themselves are constant expressions on 8.1, which is why
+	 * FALLBACK_ORDER can hold them.) So they are written out, and held here.
 	 */
 	public function testTheBindingConstantsNameTheSameModes(): void {
 		$this->assertSame(PadAccessMode::Public->value, BindingService::ACCESS_PUBLIC);
@@ -42,9 +41,8 @@ class PadAccessModeTest extends TestCase {
 	 */
 	public function testTheJavaScriptCopyNamesTheSameModes(): void {
 		$matched = preg_match(
-			// Anchored to the declaration: an unanchored skip would run past
-			// this statement and read some later array instead. The optional
-			// wrapper is named rather than skipped over.
+			// Anchored to the declaration: an unanchored pattern runs past
+			// this statement and reads some later array instead.
 			'/export\s+const\s+PAD_ACCESS_MODES\s*=\s*(?:Object\.freeze\(\s*)?\[(?<values>[^\]]*)\]/',
 			$this->constantsJs(),
 			$matches,
@@ -73,9 +71,8 @@ class PadAccessModeTest extends TestCase {
 	}
 
 	/**
-	 * Two defaults for one idea, agreeing today by nothing but habit. Read
-	 * off the controller signatures rather than off the constant they happen
-	 * to use, so changing one of them is what fails this.
+	 * Read off the controller signatures rather than off the constant they
+	 * happen to use, so changing either default is what fails this.
 	 */
 	public function testTheJavaScriptDefaultIsTheOneTheControllersUse(): void {
 		$matched = preg_match(

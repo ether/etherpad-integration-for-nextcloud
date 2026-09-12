@@ -10,12 +10,9 @@ namespace Psr\Http\Message;
 
 /**
  * Stands in for psr/http-message 2.0 where the suite runs without Composer's
- * autoloader, the same way the Psr\Clock stub beside it does. Every CI job
- * installs dependencies, so the real interface wins there and this body never
- * runs - it is a fallback for a reduced environment, not a checked contract.
- *
- * Signatures are copied from the real interface by hand, so a psr/http-message
- * major that changes one leaves this behind with nothing to catch it.
+ * autoloader, as the Psr\Clock stub beside it does. The real interface wins
+ * wherever it is installed, so this body does not run in CI - and its
+ * signatures are a hand-copy that nothing holds to the original.
  */
 if (!interface_exists(StreamInterface::class)) {
 	interface StreamInterface {
