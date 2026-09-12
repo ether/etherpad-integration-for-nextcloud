@@ -63,7 +63,7 @@ Grep `app:etherpad_nextcloud` + `legacy Ownpad` in `nextcloud.log` to reconstruc
 
 ## Out of scope
 
-- **Admin bulk-migration CLI / `occ` command.** Each file migrates on its own first-open while `allow_legacy_protected_import` is on. Since it is off by default, taking over protected Ownpad files means switching it on for a while, which is what such a command would replace.
+- **Admin bulk-migration CLI / `occ` command.** Each file migrates on its own first-open while `allow_legacy_protected_import` is on, which is the arrangement for an instance that does not share its Etherpad server. An instance that does share one has no supported way to take over protected Ownpad files: switching the policy on for a while is not that way, because the forgery is open to every user for as long as it is on. Such a command — an admin converting files whose origin they can vouch for, without opening the path to everyone — is what would close that gap.
 - **Public → protected conversion of an already-managed pad.** Etherpad's pad-id format encodes the type and can't be renamed in place; converting would require content copy + a new pad. If needed, that lives in a separate "Convert pad access mode" feature.
 - **Real-time mirroring** between legacy and current pads.
 

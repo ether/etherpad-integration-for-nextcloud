@@ -181,32 +181,58 @@ export const padApiPost = async (endpoint: string): Promise<{ status: number, bo
 	return { status: res.status, body }
 }
 
+const appConfigUrl = (key: string): string =>
+	`${E2E.baseURL}/ocs/v2.php/apps/provisioning_api/api/v1/config/apps/etherpad_nextcloud/${key}`
+
 /**
- * Set one of the app's config values through the provisioning API. The
- * primary E2E account is the instance admin, so a spec can put the server
- * into the state it is about instead of depending on up.sh for it.
+ * The app-config endpoints authenticate with the login password rather than
+ * the app password every other helper here uses. Writing carries Nextcloud's
+ * PasswordConfirmationRequired, and a session opened with an app password
+ * never holds the confirmation it looks for - `Session::logClientIn` records
+ * `last-password-confirm` only when the password is not a token.
  */
-export const setAppConfig = async (key: string, value: string): Promise<void> => {
-	const res = await fetch(
-		`${E2E.baseURL}/ocs/v2.php/apps/provisioning_api/api/v1/config/apps/etherpad_nextcloud/${key}`,
-		{
-			method: 'POST',
-			headers: {
-				Authorization: basicAuthHeader(),
-				'OCS-APIRequest': 'true',
-				Accept: 'application/json',
-				'Content-Type': 'application/x-www-form-urlencoded',
-			},
-			body: new URLSearchParams({ value }).toString(),
+const adminAuthHeader = (): string =>
+	`Basic ${Buffer.from(`${E2E.user}:${E2E.password}`).toString('base64')}`
+
+const ocsAppConfig = async (key: string, init: RequestInit, what: string): Promise<unknown> => {
+	const res = await fetch(appConfigUrl(key), {
+		...init,
+		headers: {
+			Authorization: adminAuthHeader(),
+			'OCS-APIRequest': 'true',
+			Accept: 'application/json',
+			...(init.headers ?? {}),
 		},
-	)
+	})
 	const payload = await parseJsonResponse(res) as {
-		ocs?: { meta?: { statuscode?: number, message?: string } }
+		ocs?: { meta?: { statuscode?: number, message?: string }, data?: unknown }
 	}
 	const statusCode = Number(payload?.ocs?.meta?.statuscode ?? 0)
 	if (!res.ok || statusCode < 100 || statusCode >= 300) {
-		throw new Error(`Setting ${key} failed with HTTP ${res.status} / OCS ${statusCode}: ${payload?.ocs?.meta?.message || 'unknown error'}`)
+		throw new Error(`${what} ${key} failed with HTTP ${res.status} / OCS ${statusCode}: ${payload?.ocs?.meta?.message || 'unknown error'}`)
 	}
+	return payload?.ocs?.data
+}
+
+/**
+ * Read one of the app's config values. An unset key answers the empty
+ * string, which is what a spec restores it to.
+ */
+export const getAppConfig = async (key: string): Promise<string> =>
+	String(await ocsAppConfig(key, { method: 'GET' }, 'Reading') ?? '')
+
+/**
+ * Set one of the app's config values. The primary E2E account is the
+ * instance admin, so a spec can put the server into the state it is about
+ * instead of depending on up.sh for it - and restore what it found, since
+ * the suite also runs against instances somebody else configured.
+ */
+export const setAppConfig = async (key: string, value: string): Promise<void> => {
+	await ocsAppConfig(key, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+		body: new URLSearchParams({ value }).toString(),
+	}, 'Setting')
 }
 
 /** Return the display name NC exposes for the primary E2E account. */
