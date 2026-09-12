@@ -15,6 +15,7 @@ use OCA\EtherpadNextcloud\Service\CookieDomainDecision;
 use OCA\EtherpadNextcloud\Service\CookieDomainMessages;
 use OCA\EtherpadNextcloud\Service\CookieDomainPolicy;
 use OCA\EtherpadNextcloud\Service\EtherpadClient;
+use OCA\EtherpadNextcloud\Service\LegacyImportPolicy;
 use OCA\EtherpadNextcloud\Service\PadTypePolicy;
 use OCA\EtherpadNextcloud\Util\PadAccessMode;
 use OCP\AppFramework\Http\TemplateResponse;
@@ -81,6 +82,7 @@ class AdminSettings implements ISettings {
 			'sync_interval_seconds' => $syncInterval,
 			'enable_protected_pads' => (string)$this->config->getAppValue(Application::APP_ID, PadTypePolicy::SETTING_PROTECTED, 'yes') === 'yes',
 			'enable_public_pads' => (string)$this->config->getAppValue(Application::APP_ID, PadTypePolicy::SETTING_PUBLIC, 'yes') === 'yes',
+			'allow_legacy_protected_import' => (string)$this->config->getAppValue(Application::APP_ID, LegacyImportPolicy::SETTING_PROTECTED_IMPORT, LegacyImportPolicy::DEFAULT_PROTECTED_IMPORT) === 'yes',
 			'delete_on_trash' => (string)$this->config->getAppValue(Application::APP_ID, 'delete_on_trash', 'yes') === 'yes',
 			'allow_external_pads' => (string)$this->config->getAppValue(Application::APP_ID, 'allow_external_pads', 'no') === 'yes',
 			'external_pad_allowlist' => (string)$this->config->getAppValue(Application::APP_ID, 'external_pad_allowlist', ''),
@@ -131,6 +133,8 @@ class AdminSettings implements ISettings {
 				'enable_public_pads' => $this->l10n->t('Public pads'),
 				'enable_public_pads_hint' => $this->l10n->t('Anyone with the pad link can open it, without a Nextcloud account. Created as ordinary Etherpad pads.'),
 				'pad_types_none_hint' => $this->l10n->t('With both types switched off, no new pads can be created. Existing pads keep working.'),
+				'allow_legacy_protected_import' => $this->l10n->t('Allow importing protected pads from legacy Ownpad files'),
+				'allow_legacy_protected_import_hint' => $this->l10n->t('Safe only where this Nextcloud alone creates group pads on your Etherpad server. Anywhere else, a hand-written .pad file can reach another group while this is on.'),
 				'delete_on_trash' => $this->l10n->t('Delete linked Etherpad pad when .pad file is moved to trash'),
 				'delete_on_trash_hint' => $this->l10n->t('If enabled, moving a .pad file to the trash also deletes the linked Etherpad pad.'),
 				'allow_external_pads' => $this->l10n->t('Allow linking external public pads'),

@@ -7,6 +7,7 @@ namespace OCA\EtherpadNextcloud\Tests\Unit;
 use OCA\EtherpadNextcloud\Exception\AdminValidationException;
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
 use OCA\EtherpadNextcloud\Service\AdminSettingsValidator;
+use OCA\EtherpadNextcloud\Service\LegacyImportPolicy;
 use OCA\EtherpadNextcloud\Service\AllowlistNormalizer;
 use OCA\EtherpadNextcloud\Service\EtherpadClient;
 use OCA\EtherpadNextcloud\Service\StoredAdminSettings;
@@ -263,6 +264,53 @@ class AdminSettingsValidatorTest extends TestCase {
 		], $this->stored());
 
 		$this->assertSame(EtherpadClient::DEFAULT_API_VERSION, $result->etherpadApiVersion);
+	}
+
+	public function testTheLegacyProtectedImportSwitchFollowsThePayload(): void {
+		$result = $this->buildValidator()->validateForSave([
+			'etherpad_host' => 'https://pad.example.test',
+			'etherpad_api_version' => '1.3.0',
+			'sync_interval_seconds' => '60',
+			// What the form actually posts: URLSearchParams stringifies it.
+			LegacyImportPolicy::SETTING_PROTECTED_IMPORT => 'false',
+		], $this->stored());
+
+		$this->assertFalse($result->allowLegacyProtectedImport);
+	}
+
+	/** Otherwise a save that silently switched the import off would pass. */
+	public function testTheLegacyProtectedImportSwitchCanBeTurnedBackOn(): void {
+		$stored = new StoredAdminSettings('stored-key', '', true, false, '', true, true, false, false);
+
+		$result = $this->buildValidator()->validateForSave([
+			'etherpad_host' => 'https://pad.example.test',
+			'etherpad_api_version' => '1.3.0',
+			'sync_interval_seconds' => '60',
+			LegacyImportPolicy::SETTING_PROTECTED_IMPORT => 'true',
+		], $stored);
+
+		$this->assertTrue($result->allowLegacyProtectedImport);
+	}
+
+	/**
+	 * The form always sends the field; this is about every other caller.
+	 * Both directions, so a hardcoded false cannot pass.
+	 */
+	#[\PHPUnit\Framework\Attributes\DataProvider('storedLegacyProtectedImport')]
+	public function testAnAbsentLegacyProtectedImportFieldKeepsWhatWasStored(bool $stored): void {
+		$result = $this->buildValidator()->validateForSave([
+			'etherpad_host' => 'https://pad.example.test',
+			'etherpad_api_version' => '1.3.0',
+			'sync_interval_seconds' => '60',
+		], new StoredAdminSettings('stored-key', '', true, false, '', true, true, false, $stored));
+
+		$this->assertSame($stored, $result->allowLegacyProtectedImport);
+	}
+
+	/** @return iterable<string,array{bool}> */
+	public static function storedLegacyProtectedImport(): iterable {
+		yield 'stored off' => [false];
+		yield 'stored on' => [true];
 	}
 
 	private function buildValidator(?EtherpadClient $etherpadClient = null, ?LoggerInterface $logger = null): AdminSettingsValidator {

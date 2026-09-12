@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\Tests\Unit;
 
 use OCA\EtherpadNextcloud\Service\AdminSettingsRepository;
+use OCA\EtherpadNextcloud\Service\LegacyImportPolicy;
 use OCA\EtherpadNextcloud\Service\ValidatedAdminSettings;
 use OCP\IAppConfig;
 use OCP\IConfig;
@@ -190,6 +191,54 @@ class AdminSettingsRepositoryTest extends TestCase {
 		$stored = $repository->getStoredSettings();
 		$this->assertFalse($stored->enableProtectedPads);
 		$this->assertFalse($stored->enablePublicPads);
+	}
+
+	public function testTheLegacyProtectedImportSwitchSurvivesARoundTrip(): void {
+		$saved = [];
+		$config = $this->createMock(IConfig::class);
+		$config->method('setAppValue')->willReturnCallback(
+			static function (string $appName, string $key, string $value) use (&$saved): void {
+				$saved[$key] = $value;
+			}
+		);
+		$config->method('getAppValue')->willReturnCallback(
+			static function (string $appName, string $key, string $default = '') use (&$saved): string {
+				return $saved[$key] ?? $default;
+			}
+		);
+
+		$repository = new AdminSettingsRepository($config, $this->createMock(IAppConfig::class));
+		$repository->persist(new ValidatedAdminSettings(
+			'https://pad.example.test',
+			'https://pad-api.example.test',
+			'.example.test',
+			'key',
+			'key',
+			'1.3.0',
+			90,
+			true,
+			false,
+			'',
+			'',
+			true,
+			true,
+			false,
+			allowLegacyProtectedImport: false,
+		));
+
+		$this->assertSame('no', $saved[LegacyImportPolicy::SETTING_PROTECTED_IMPORT]);
+		$this->assertFalse($repository->getStoredSettings()->allowLegacyProtectedImport);
+	}
+
+	/** Opt-in, like allow_external_pads beside it. */
+	public function testTheLegacyProtectedImportDefaultsToRefused(): void {
+		$config = $this->createMock(IConfig::class);
+		$config->method('getAppValue')->willReturnCallback(
+			static fn (string $appName, string $key, string $default = ''): string => $default
+		);
+
+		$repository = new AdminSettingsRepository($config, $this->createMock(IAppConfig::class));
+		$this->assertFalse($repository->getStoredSettings()->allowLegacyProtectedImport);
 	}
 
 	public function testPadTypeSettingsDefaultToEnabled(): void {

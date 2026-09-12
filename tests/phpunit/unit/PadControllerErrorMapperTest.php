@@ -7,6 +7,7 @@ namespace OCA\EtherpadNextcloud\Tests\Unit;
 use OCA\EtherpadNextcloud\Controller\PadControllerErrorMapper;
 use OCA\EtherpadNextcloud\Exception\BindingException;
 use OCA\EtherpadNextcloud\Exception\LegacyPadCollisionException;
+use OCA\EtherpadNextcloud\Exception\LegacyProtectedImportDisabledException;
 use OCA\EtherpadNextcloud\Exception\MissingBindingException;
 use OCA\EtherpadNextcloud\Exception\MissingFrontmatterException;
 use OCA\EtherpadNextcloud\Exception\ControllerBadRequestException;
@@ -135,6 +136,35 @@ class PadControllerErrorMapperTest extends TestCase {
 		$this->assertSame(Http::STATUS_CONFLICT, $response->getStatus());
 		$this->assertSame('legacy_collision_no_access', $response->getData()['code']);
 		$this->assertSame('not your pad', $response->getData()['message']);
+	}
+
+	public function testRunMapsADisabledLegacyImportToForbiddenWithTheEndpointWording(): void {
+		$response = $this->buildMapper()->run(
+			static function (): array {
+				throw new LegacyProtectedImportDisabledException('internal wording');
+			},
+			static fn(array $result): DataResponse => new DataResponse($result),
+			// Endpoints pass this translated; the exception's own message is
+			// internal and must not reach the client.
+			['legacy_protected_import_disabled' => 'Bitte an die Administration wenden.'],
+		);
+
+		$this->assertSame(Http::STATUS_FORBIDDEN, $response->getStatus());
+		$this->assertSame('legacy_protected_import_disabled', $response->getData()['code']);
+		$this->assertSame('Bitte an die Administration wenden.', $response->getData()['message']);
+	}
+
+	/** Without a wording from the endpoint the client still gets a sentence. */
+	public function testRunFallsBackToEnglishWhenTheEndpointPassesNoWording(): void {
+		$response = $this->buildMapper()->run(
+			static function (): array {
+				throw new LegacyProtectedImportDisabledException('internal wording');
+			},
+			static fn(array $result): DataResponse => new DataResponse($result),
+		);
+
+		$this->assertStringNotContainsString('internal wording', (string)$response->getData()['message']);
+		$this->assertNotSame('', (string)$response->getData()['message']);
 	}
 
 	public function testRunMapsPadAlreadyHasBinding(): void {

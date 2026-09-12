@@ -107,6 +107,7 @@ class PadSessionController extends AbstractPadController {
 				'invalid_argument' => $this->l10n->t('Invalid file path.'),
 				'not_found' => $this->l10n->t('Cannot open selected .pad file.'),
 				'missing_frontmatter' => $this->l10n->t('This .pad file has no pad metadata yet.'),
+				'legacy_protected_import_disabled' => $this->l10n->t('This file is a legacy Ownpad link to a protected pad, and importing those is disabled on this server. Please contact your administrator.'),
 				'generic' => $this->l10n->t('Could not initialize .pad file.'),
 				'on_throwable' => fn(\Throwable $e) => $this->logError('Pad frontmatter initialization failed in API initialize', [
 					'file' => $file,
@@ -124,6 +125,7 @@ class PadSessionController extends AbstractPadController {
 			[
 				'not_found' => $this->l10n->t('Cannot open selected .pad file.'),
 				'missing_frontmatter' => $this->l10n->t('This .pad file has no pad metadata yet.'),
+				'legacy_protected_import_disabled' => $this->l10n->t('This file is a legacy Ownpad link to a protected pad, and importing those is disabled on this server. Please contact your administrator.'),
 				'generic' => $this->l10n->t('Could not initialize .pad file.'),
 				'on_throwable' => fn(\Throwable $e) => $this->logError('Pad frontmatter initialization failed in API initialize-by-id', [
 					'fileId' => $fileId,

@@ -420,6 +420,7 @@ solely by the separate external-pad policy, not by these two settings.
   - `pad_file_changed` (`PadFileChangedException`) — the target file changed while the pad was being created; retry against a different name.
   - `pad_type_disabled` (`PadTypeDisabledException`) — `403`; carries `access_mode` naming the disabled type, absent when neither type is enabled. See the pad-type settings section.
   - `legacy_collision_no_access` (`LegacyPadCollisionException`) — see the legacy migration section.
+  - `legacy_protected_import_disabled` (`LegacyProtectedImportDisabledException`) — `403`; the legacy `.pad` names a group pad and this instance does not import those. The file is left untouched, so the same open succeeds once an admin switches the import back on. See the legacy migration section.
 
   A response without a `code` may still be machine-readable through its HTTP status and other documented fields — a locked `.pad` answers `503` with `retryable: true`, for instance. What is never a stable identifier is the `message` text.
 
@@ -521,7 +522,8 @@ Registered in `lib/AppInfo/Application.php`.
     - recommendation: set explicitly for complex proxy/subdomain setups
 - `delete_on_trash` (`yes|no`, default `yes`)
 - `sync_interval_seconds` (default `120`, clamp `5..3600`)
-- `allow_external_pads` (`yes|no`, default `yes`)
+- `allow_external_pads` (`yes|no`, default `no`)
+- `allow_legacy_protected_import` (`yes|no`, default `no`) — whether a legacy Ownpad `.pad` naming a group pad may bring that pad in. Turn on only where this Nextcloud is the only thing creating group pads on the Etherpad server; see the legacy migration doc.
 - `external_pad_allowlist` (newline-separated host list, optional)
 - `trusted_embed_origins` (newline-separated absolute `https://origin` list, optional)
   - used for the route-specific `frame-ancestors` policy on:

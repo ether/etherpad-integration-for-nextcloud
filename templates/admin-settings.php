@@ -141,6 +141,19 @@
 			p((string)$_['l10n']['pad_types_none_hint']);
 		} ?></p>
 
+		<p id="allow-legacy-protected-import-row" class="ep-checkbox-row">
+			<label class="checkbox">
+				<input
+					type="checkbox"
+					name="allow_legacy_protected_import"
+					aria-describedby="epnc-hint-legacy-protected-import"
+					value="1"
+					<?php if ((bool)$_['allow_legacy_protected_import']): ?>checked<?php endif; ?>>
+				<?php p((string)$_['l10n']['allow_legacy_protected_import']); ?>
+			</label>
+		</p>
+		<p class="settings-hint ep-field-hint ep-checkbox-hint" id="epnc-hint-legacy-protected-import"><?php p((string)$_['l10n']['allow_legacy_protected_import_hint']); ?></p>
+
 		<p class="ep-field-row">
 			<label for="sync-interval-seconds"><?php p((string)$_['l10n']['copy_interval']); ?></label>
 			<input

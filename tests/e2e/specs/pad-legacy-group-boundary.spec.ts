@@ -11,6 +11,8 @@ import {
 	padApiPost,
 	propfindFileId,
 	putFileViaDav,
+	getAppConfig,
+	setAppConfig,
 } from '../fixtures/dav'
 import { uniquePadName } from '../fixtures/nextcloud'
 
@@ -31,8 +33,17 @@ test.describe('legacy migration and the group a pad id claims', () => {
 	const realName = uniquePadName('legacy-real-group-pad')
 	const forgedName = uniquePadName('legacy-forged-suffix')
 	let groupId = ''
+	// What the instance had before this spec touched it. The suite also
+	// runs against long-lived instances, so the admin's value goes back.
+	const IMPORT_KEY = 'allow_legacy_protected_import'
+	let importPolicyBefore: string | null = null
 
 	test.afterAll(async () => {
+		// Deliberately not swallowed: a failed restore leaves someone else's
+		// instance with a policy this spec chose.
+		if (importPolicyBefore !== null) {
+			await setAppConfig(IMPORT_KEY, importPolicyBefore)
+		}
 		await deleteViaDav(probeName).catch(() => {})
 		await deleteViaDav(realName).catch(() => {})
 		await deleteViaDav(forgedName).catch(() => {})
@@ -75,15 +86,31 @@ test.describe('legacy migration and the group a pad id claims', () => {
 
 		await putFileViaDav(realName, `[InternetShortcut]\nURL=${origin}/p/${realPadId}\n`)
 		const realFileId = await propfindFileId(realName)
+
+		// Set rather than assumed: the default is off, but this instance may
+		// have been configured otherwise, and the assertion below is about
+		// the switch and not about what someone left behind.
+		importPolicyBefore = await getAppConfig(IMPORT_KEY)
+		await setAppConfig(IMPORT_KEY, 'no')
+
+		// A group pad is what the switch is about: refused before Etherpad
+		// is asked anything, with the file left as it was.
+		const refusedByPolicy = await padApiPost(`pads/initialize-by-id/${realFileId}`)
+		expect(refusedByPolicy.status, JSON.stringify(refusedByPolicy.body)).toBe(403)
+		expect((refusedByPolicy.body as { code?: string })?.code).toBe('legacy_protected_import_disabled')
+		expect(await getFileViaDav(realName)).toContain('[InternetShortcut]')
+
+		// Switching it on migrates the same file on the next open, which is
+		// what the setting promises an admin migrating from Ownpad.
+		await setAppConfig(IMPORT_KEY, 'yes')
 		const migrated = await padApiPost(`pads/initialize-by-id/${realFileId}`)
 		expect(migrated.status, JSON.stringify(migrated.body)).toBe(200)
 		const realContent = await getFileViaDav(realName)
 		expect(realContent).not.toContain('[InternetShortcut]')
 		expect(realContent).toContain(realPadId)
 
-		// Same group, a pad name nobody has used. Nothing in Nextcloud
-		// collides with it, and before the check this bound and then minted
-		// a session for the group above.
+		// Same group, a pad name nobody has used: the import is on, so only
+		// the group-membership check can refuse it.
 		await putFileViaDav(forgedName, `[InternetShortcut]\nURL=${origin}/p/${groupId}$never-created\n`)
 		const forgedFileId = await propfindFileId(forgedName)
 		const refused = await padApiPost(`pads/initialize-by-id/${forgedFileId}`)

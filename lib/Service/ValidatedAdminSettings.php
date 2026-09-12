@@ -25,6 +25,7 @@ class ValidatedAdminSettings {
 		public readonly bool $enableProtectedPads = true,
 		public readonly bool $enablePublicPads = true,
 		public readonly bool $cookieDomainConfigured = false,
+		public readonly bool $allowLegacyProtectedImport = false,
 	) {
 	}
 }

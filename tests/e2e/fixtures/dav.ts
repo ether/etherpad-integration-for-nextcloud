@@ -181,6 +181,50 @@ export const padApiPost = async (endpoint: string): Promise<{ status: number, bo
 	return { status: res.status, body }
 }
 
+const appConfigUrl = (key: string): string =>
+	`${E2E.baseURL}/ocs/v2.php/apps/provisioning_api/api/v1/config/apps/etherpad_nextcloud/${key}`
+
+/**
+ * The login password, not the app password the helpers around this use:
+ * writing app config needs Nextcloud's password confirmation, which a
+ * session opened with a token never holds.
+ */
+const adminAuthHeader = (): string =>
+	`Basic ${Buffer.from(`${E2E.user}:${E2E.password}`).toString('base64')}`
+
+const ocsAppConfig = async (key: string, init: RequestInit, what: string): Promise<unknown> => {
+	const res = await fetch(appConfigUrl(key), {
+		...init,
+		headers: {
+			Authorization: adminAuthHeader(),
+			'OCS-APIRequest': 'true',
+			Accept: 'application/json',
+			...(init.headers ?? {}),
+		},
+	})
+	const payload = await parseJsonResponse(res) as {
+		ocs?: { meta?: { statuscode?: number, message?: string }, data?: unknown }
+	}
+	const statusCode = Number(payload?.ocs?.meta?.statuscode ?? 0)
+	if (!res.ok || statusCode < 100 || statusCode >= 300) {
+		throw new Error(`${what} ${key} failed with HTTP ${res.status} / OCS ${statusCode}: ${payload?.ocs?.meta?.message || 'unknown error'}`)
+	}
+	return payload?.ocs?.data
+}
+
+/** Read one of the app's config values; an unset key answers ''. */
+export const getAppConfig = async (key: string): Promise<string> =>
+	String(await ocsAppConfig(key, { method: 'GET' }, 'Reading') ?? '')
+
+/** Set one of the app's config values; the E2E account is the admin. */
+export const setAppConfig = async (key: string, value: string): Promise<void> => {
+	await ocsAppConfig(key, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+		body: new URLSearchParams({ value }).toString(),
+	}, 'Setting')
+}
+
 /** Return the display name NC exposes for the primary E2E account. */
 export const getCurrentUserDisplayName = async (): Promise<string> => {
 	const res = await fetch(`${E2E.baseURL}/ocs/v2.php/cloud/user?format=json`, {

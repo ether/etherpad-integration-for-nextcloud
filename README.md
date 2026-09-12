@@ -50,6 +50,7 @@ Pads live alongside your other files and behave like any other Nextcloud file:
   - Same Etherpad server, free-form pad-id → re-bound as a managed public pad.
   - Same Etherpad server, group pad-id (`g.<group>$<name>`) → re-bound as a managed protected pad.
   - Different Etherpad server → converted to an external (`ext.*`) public pad pointing at the original URL.
+- **Importing protected (group) pads is off by default.** A legacy `.pad` names the pad it opens, and for a group pad that name also picks the Etherpad group a session is minted for. Turn **Allow importing protected pads from legacy Ownpad files** on only where this Nextcloud is the only thing creating group pads on its Etherpad server. Public pads are imported either way, and a refused import leaves the `.pad` untouched.
 - If two Ownpad `.pad` files point at the same pad, only the first one to be opened gets the binding; the second is treated like a copied pad (no second binding row, the existing copy-of-a-pad flow handles open from there). See [`docs/legacy-ownpad-migration.md`](docs/legacy-ownpad-migration.md) for the full state table, audit-log shape, and the security rationale.
 
 ## Install

@@ -10,6 +10,7 @@ namespace OCA\EtherpadNextcloud\Service;
 
 use OCA\EtherpadNextcloud\Exception\BindingException;
 use OCA\EtherpadNextcloud\Exception\LegacyPadCollisionException;
+use OCA\EtherpadNextcloud\Exception\LegacyProtectedImportDisabledException;
 use OCA\EtherpadNextcloud\Exception\PadFileFormatException;
 use OCA\EtherpadNextcloud\Util\PadId;
 use OCP\Files\File;
@@ -17,34 +18,15 @@ use OCP\Files\NotFoundException;
 use Psr\Log\LoggerInterface;
 
 /**
- * Lazy per-file migration of legacy Ownpad `.pad` files (those holding an
+ * Lazy per-file migration of legacy Ownpad `.pad` files (an
  * `[InternetShortcut]` block instead of YAML frontmatter) into the current
- * binding-and-`.pad` model. Called from `PadBootstrapService` when the
- * detection in `PadFileService::parseLegacyOwnpadShortcut` matches.
- *
- * Three branches, all silent in the happy path:
- *
- * 1. **Cross-origin** — the source URL points at a different Etherpad
- *    server than the one we manage. We can't apply protected-mode auth to
- *    a server we don't control, so we route through the existing external
- *    pad shape: write `ext.*` frontmatter, no binding row. Public-only.
- *
- * 2. **Same-origin, no collision** — the source pad-id is not yet bound
- *    to any NC file. We write fresh YAML frontmatter referencing the
- *    same pad-id and create a binding row. The access mode is derived
- *    from the pad-id format (g.X$Y → protected, anything else → public).
- *
- * 3. **Same-origin, collision** — another NC file already owns the
- *    binding for this pad-id. If the requesting user can read that
- *    original file we write frontmatter only (no new binding) and the
- *    file behaves like a copy-of-a-pad; the existing copy-handling in
- *    the open flow takes over. If the user has no access we throw
- *    `LegacyPadCollisionException` and the `.pad` file is left
- *    untouched — subsequent opens see the same legacy state.
+ * binding-and-`.pad` model, called from `PadBootstrapService`. The branches
+ * and what each leaves behind are in docs/legacy-ownpad-migration.md.
  */
 class PadLegacyMigrationService {
 	public function __construct(
 		private BindingService $bindingService,
+		private LegacyImportPolicy $legacyImportPolicy,
 		private PadFileService $padFileService,
 		private EtherpadClient $etherpadClient,
 		private ExternalPadSeeder $externalPadSeeder,
@@ -55,22 +37,9 @@ class PadLegacyMigrationService {
 
 	/**
 	 * A group pad this file names has to be a group pad that is there.
-	 *
-	 * The pad id in a legacy `.pad` is written by whoever wrote the file,
-	 * and for a group pad it decides which Etherpad group a session is
-	 * later minted for. Binding someone else's *existing* pad is already
-	 * refused: `pad_id` is unique, so it collides with their binding and
-	 * comes out as a collision the access check handles. Inventing a suffix
-	 * walked around that — `g.<their-group>$anything` collides with nothing
-	 * while naming their group, and the session issued on open grants
-	 * access to everything in it.
-	 *
-	 * Asking whether the pad is in the group keeps the honest case intact:
-	 * a real Ownpad pad is in its group, which is why the file names it. A
-	 * made-up one is not.
-	 *
-	 * Fails closed. A refused migration is retried on the next open; a
-	 * migration waved through on a failed read cannot be taken back.
+	 * `g.<their-group>$invented` collides with no binding while naming a
+	 * real group, and the session issued on open grants all of it. Fails
+	 * closed: a refused migration is retried, a waved-through one is not.
 	 */
 	private function assertGroupPadExists(string $sourcePadId): void {
 		$groupId = PadId::groupIdOf($sourcePadId);
@@ -84,6 +53,36 @@ class PadLegacyMigrationService {
 	}
 
 	/**
+	 * @throws LegacyProtectedImportDisabledException when the file names a
+	 *   group pad this instance does not import
+	 */
+	private function refuseProtectedImportIfSwitchedOff(
+		string $uid,
+		int $fileId,
+		string $sourceUrl,
+		string $sourcePadId,
+		string $accessMode,
+	): void {
+		if ($accessMode !== BindingService::ACCESS_PROTECTED) {
+			return;
+		}
+		if ($this->legacyImportPolicy->allowsProtectedImport()) {
+			return;
+		}
+		$this->logger->warning('Refused legacy Ownpad migration - protected import is switched off.', [
+			'app' => 'etherpad_nextcloud',
+			'fileId' => $fileId,
+			'sourceUrl' => $sourceUrl,
+			'originBranch' => 'same',
+			'accessMode' => $accessMode,
+			'padId' => $sourcePadId,
+			'collision' => 'none',
+			'uid' => $uid,
+		]);
+		throw new LegacyProtectedImportDisabledException('Importing protected Ownpad pads is switched off on this server.');
+	}
+
+	/**
 	 * Migrate the legacy `.pad` file in place.
 	 *
 	 * @param array{url:string,pad_id:string} $legacyShortcut output of
@@ -91,6 +90,8 @@ class PadLegacyMigrationService {
 	 *
 	 * @throws LegacyPadCollisionException when the pad is already bound to
 	 *   a file the requesting user has no access to.
+	 * @throws LegacyProtectedImportDisabledException when the file names a
+	 *   group pad and this instance does not import those.
 	 */
 	public function migrate(string $uid, File $file, array $legacyShortcut): void {
 		$fileId = (int)$file->getId();
@@ -113,12 +114,16 @@ class PadLegacyMigrationService {
 			return;
 		}
 
-		$this->assertGroupPadExists($sourcePadId);
-
 		$accessMode = $this->padFileService->inferAccessModeFromPadId($sourcePadId);
 		$existingBinding = $this->bindingService->findByPadId($sourcePadId, BindingService::STATE_ACTIVE);
 
 		if ($existingBinding === null) {
+			// Unbound pads only; a bound one is the collision rule's
+			// question below.
+			$this->refuseProtectedImportIfSwitchedOff($uid, $fileId, $sourceUrl, $sourcePadId, $accessMode);
+			// After the refusal: asking first would answer three ways and
+			// make this an existence oracle on a privileged API.
+			$this->assertGroupPadExists($sourcePadId);
 			// Create the binding first, then write the file. If the binding
 			// fails (e.g. a concurrent migration claimed the same pad-id
 			// between findByPadId and createBinding), we re-classify as a
