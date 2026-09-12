@@ -46,7 +46,6 @@ class PadCreateRollbackServiceTest extends TestCase {
 			->rollbackFailedCreate('alice', '/Created.pad', '', new CreatedFileClaim('alice', 4711));
 	}
 
-	/** Matching file_id values do not prove that this attempt wrote the document. */
 	/**
 	 * A create that never wrote has no hash to compare, so content in the
 	 * file is somebody else's by definition. Deleting it would take work
@@ -64,6 +63,7 @@ class PadCreateRollbackServiceTest extends TestCase {
 			->rollbackFailedCreate('alice', '/Created.pad', '', new CreatedFileClaim('alice', 4711));
 	}
 
+	/** Matching file_id values do not prove that this attempt wrote the document. */
 	public function testLeavesADocumentAnotherCreateWroteIntoTheSameFile(): void {
 		$rivals = $this->fileHolding("---\nfile_id: 4711\npad_id: nc-rival\n---\n");
 		$rivals->expects($this->never())->method('delete');
