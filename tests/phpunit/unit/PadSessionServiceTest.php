@@ -281,12 +281,11 @@ class PadSessionServiceTest extends TestCase {
 	}
 
 	/**
-	 * Strictly longer than the new session's hour, so this cannot pass with
-	 * the expiry taken from the new session alone — and cannot fail because
-	 * a second ticked between two FixedClock::NOW calls.
+	 * Derived from the TTL rather than a literal: it has to outlast the new
+	 * session whatever that is, or the expiry could come from it alone.
 	 */
 	public function testTheCookieOutlivesEveryIdItCarries(): void {
-		$longer = FixedClock::NOW + 7200;
+		$longer = FixedClock::NOW + PadSessionService::SESSION_TTL_SECONDS + 3600;
 		$other = $this->sid('other');
 
 		$cookie = $this->openContextCookie(

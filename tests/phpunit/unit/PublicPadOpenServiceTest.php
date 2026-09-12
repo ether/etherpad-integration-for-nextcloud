@@ -35,7 +35,7 @@ class PublicPadOpenServiceTest extends TestCase {
 		$sessions = $this->createMock(PadSessionService::class);
 		$sessions->expects($this->once())
 			->method('createProtectedOpenContext')
-			->with('public-share:token', 'Public share', 'g.group$pad', 3600)
+			->with('public-share:token', 'Public share', 'g.group$pad', self::shareTtl())
 			->willReturn(['url' => 'https://pad.example/p/g.group$pad', 'cookie' => ['name' => 'sessionID']]);
 		$sessions->expects($this->once())
 			->method('buildSetCookieHeader')
@@ -154,5 +154,23 @@ class PublicPadOpenServiceTest extends TestCase {
 			$externalPadExportFetcher ?? $this->createMock(ExternalPadExportFetcher::class),
 			$padSessionService ?? $this->createMock(PadSessionService::class),
 		);
+	}
+
+	/**
+	 * Nothing revokes a share session, so its length is the whole exposure
+	 * of a withdrawn share. Both numbers are pinned, not just their order:
+	 * "shorter than the other" is satisfied by values far too long.
+	 */
+	public function testTheSessionLifetimesAreWhatWasChosen(): void {
+		$this->assertSame(10800, self::shareTtl());
+		$this->assertSame(21600, PadSessionService::SESSION_TTL_SECONDS);
+		$this->assertLessThan(PadSessionService::SESSION_TTL_SECONDS, self::shareTtl());
+	}
+
+	private static function shareTtl(): int {
+		$ttl = (new \ReflectionClass(PublicPadOpenService::class))
+			->getConstant('PUBLIC_SHARE_SESSION_TTL_SECONDS');
+		self::assertIsInt($ttl);
+		return $ttl;
 	}
 }

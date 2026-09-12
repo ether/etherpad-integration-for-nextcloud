@@ -215,7 +215,8 @@ away itself:
   every socket message and keeps the session id it was handed when the pad
   connected – read in 2.7.3, 3.0.0 and 3.3.3 – so a session that expires
   mid-edit rejects the next keystroke, and no later cookie reaches that
-  socket. What bounds the window is revocation, not a shorter lifetime.
+  socket. Revocation fires on an explicit logout and nowhere else, and is
+  capped, so for most sessions the lifetime is what bounds the window.
 - Expired sessions are left to the background sweep described below. Only
   what is expired by both clocks counts as expired: Etherpad judges
   `validUntil` with its own, so a session ours calls dead may still be

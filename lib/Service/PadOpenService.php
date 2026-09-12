@@ -155,7 +155,7 @@ class PadOpenService {
 
 		$cookieHeader = '';
 		if ($accessMode === BindingService::ACCESS_PROTECTED) {
-			$openContext = $this->padSessionService->createProtectedOpenContext($uid, $displayName, $padId, 3600);
+			$openContext = $this->padSessionService->createProtectedOpenContext($uid, $displayName, $padId);
 			$url = $openContext['url'];
 			$cookieHeader = $this->padSessionService->buildSetCookieHeader($openContext['cookie']);
 		} else {

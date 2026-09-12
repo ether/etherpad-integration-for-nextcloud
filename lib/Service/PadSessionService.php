@@ -41,6 +41,13 @@ class PadSessionService {
 	 */
 	public const MAX_SESSION_IDS = 25;
 
+	/**
+	 * How long a session an authenticated open mints stays valid. Chosen,
+	 * not derived: revocation fires on an explicit logout and nowhere else,
+	 * so for most sessions this is the bound.
+	 */
+	public const SESSION_TTL_SECONDS = 21600;
+
 	/** `lax` (default) or `none`; see sameSiteMode(). */
 	public const SAME_SITE_KEY = 'etherpad_session_cookie_samesite';
 	public const SAME_SITE_LAX = 'Lax';
@@ -69,7 +76,7 @@ class PadSessionService {
 	}
 
 	/** @return array{url:string,cookie:array{name:string,value:string,expires:int,path:string,domain:string,secure:bool,http_only:bool,same_site:string}} */
-	public function createProtectedOpenContext(string $uid, string $displayName, string $padId, int $ttlSeconds = 3600): array {
+	public function createProtectedOpenContext(string $uid, string $displayName, string $padId, int $ttlSeconds = self::SESSION_TTL_SECONDS): array {
 		$groupId = $this->extractGroupId($padId);
 		$effectiveDisplayName = trim($displayName) !== '' ? $displayName : $uid;
 		$safeTtlSeconds = max(60, $ttlSeconds);

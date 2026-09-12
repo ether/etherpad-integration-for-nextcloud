@@ -20,7 +20,12 @@ use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
  */
 class PublicPadOpenService {
 	private const PUBLIC_SHARE_AUTHOR_NAME = 'Public share';
-	private const PUBLIC_SHARE_SESSION_TTL_SECONDS = 3600;
+	/**
+	 * Nothing revokes this one - a visitor never logs out - so it is the
+	 * whole lifetime of a withdrawn share's write access. Shorter than an
+	 * authenticated session for that reason.
+	 */
+	private const PUBLIC_SHARE_SESSION_TTL_SECONDS = 10800;
 
 	public function __construct(
 		private EtherpadClient $etherpadClient,
