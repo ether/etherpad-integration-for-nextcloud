@@ -134,7 +134,7 @@ class AdminSettings implements ISettings {
 				'enable_public_pads_hint' => $this->l10n->t('Anyone with the pad link can open it, without a Nextcloud account. Created as ordinary Etherpad pads.'),
 				'pad_types_none_hint' => $this->l10n->t('With both types switched off, no new pads can be created. Existing pads keep working.'),
 				'allow_legacy_protected_import' => $this->l10n->t('Import protected pads from legacy Ownpad files'),
-				'allow_legacy_protected_import_hint' => $this->l10n->t('A legacy Ownpad .pad file names the Etherpad pad it opens, and for a protected pad that name also picks an Etherpad group – opening it grants access to everything in that group. Switch this off if anything other than this Nextcloud creates group pads on your Etherpad server, because a genuine Ownpad pad cannot be told apart from someone else\'s. Public pads are unaffected.'),
+				'allow_legacy_protected_import_hint' => $this->l10n->t('A legacy Ownpad .pad file names the Etherpad pad it opens, and for a protected pad that name also picks an Etherpad group – opening it grants access to everything in that group. Switch this on only while migrating, and only if this Nextcloud is the only thing creating group pads on your Etherpad server: a genuine Ownpad pad cannot be told apart from someone else\'s. Public pads are imported either way.'),
 				'delete_on_trash' => $this->l10n->t('Delete linked Etherpad pad when .pad file is moved to trash'),
 				'delete_on_trash_hint' => $this->l10n->t('If enabled, moving a .pad file to the trash also deletes the linked Etherpad pad.'),
 				'allow_external_pads' => $this->l10n->t('Allow linking external public pads'),

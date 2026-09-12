@@ -10,11 +10,12 @@ use PHPUnit\Framework\TestCase;
 
 class LegacyImportPolicyTest extends TestCase {
 	/**
-	 * An instance that never opens the settings keeps migrating, which is
-	 * what the upgrade path from Ownpad needs.
+	 * An instance that never opens the settings does not import group pads.
+	 * The risk needs a shared Etherpad server, and one that has it cannot be
+	 * asked to notice a setting first.
 	 */
-	public function testProtectedImportIsAllowedWhenNothingIsConfigured(): void {
-		self::assertTrue($this->buildPolicy([])->allowsProtectedImport());
+	public function testProtectedImportIsRefusedWhenNothingIsConfigured(): void {
+		self::assertFalse($this->buildPolicy([])->allowsProtectedImport());
 	}
 
 	public function testProtectedImportFollowsTheSetting(): void {

@@ -279,11 +279,6 @@ class AdminSettingsValidatorTest extends TestCase {
 	}
 
 	/**
-	 * An unchecked box submits no field at all, so a payload without it must
-	 * not read as "leave it as it was" - but a caller that is not the form
-	 * must. The form always sends the field; this covers everything else.
-	 */
-	/**
 	 * Without this, hardcoding the field to false passes the whole suite -
 	 * every admin pressing Save would silently switch legacy imports off.
 	 */
@@ -300,16 +295,26 @@ class AdminSettingsValidatorTest extends TestCase {
 		$this->assertTrue($result->allowLegacyProtectedImport);
 	}
 
-	public function testAnAbsentLegacyProtectedImportFieldKeepsWhatWasStored(): void {
-		$stored = new StoredAdminSettings('stored-key', '', true, false, '', true, true, false, false);
-
+	/**
+	 * The form always sends the field, so this is about every other caller:
+	 * an absent field leaves the setting as it was. Both directions, because
+	 * a stored false alone cannot be told apart from a hardcoded one.
+	 */
+	#[\PHPUnit\Framework\Attributes\DataProvider('storedLegacyProtectedImport')]
+	public function testAnAbsentLegacyProtectedImportFieldKeepsWhatWasStored(bool $stored): void {
 		$result = $this->buildValidator()->validateForSave([
 			'etherpad_host' => 'https://pad.example.test',
 			'etherpad_api_version' => '1.3.0',
 			'sync_interval_seconds' => '60',
-		], $stored);
+		], new StoredAdminSettings('stored-key', '', true, false, '', true, true, false, $stored));
 
-		$this->assertFalse($result->allowLegacyProtectedImport);
+		$this->assertSame($stored, $result->allowLegacyProtectedImport);
+	}
+
+	/** @return iterable<string,array{bool}> */
+	public static function storedLegacyProtectedImport(): iterable {
+		yield 'stored off' => [false];
+		yield 'stored on' => [true];
 	}
 
 	private function buildValidator(?EtherpadClient $etherpadClient = null, ?LoggerInterface $logger = null): AdminSettingsValidator {

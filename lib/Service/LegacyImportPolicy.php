@@ -34,8 +34,13 @@ use OCP\IConfig;
 class LegacyImportPolicy {
 	public const SETTING_PROTECTED_IMPORT = 'allow_legacy_protected_import';
 
-	/** The settings page and its repository read the key too, so it is stated once. */
-	public const DEFAULT_PROTECTED_IMPORT = 'yes';
+	/**
+	 * Off until an admin says otherwise, like allow_external_pads: the risk
+	 * needs a shared Etherpad server, and an instance that has one cannot be
+	 * asked to notice a setting first. The settings page and its repository
+	 * read the key too, so it is stated once.
+	 */
+	public const DEFAULT_PROTECTED_IMPORT = 'no';
 
 	public function __construct(
 		private IConfig $config,

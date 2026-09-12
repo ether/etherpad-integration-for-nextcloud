@@ -230,15 +230,15 @@ class AdminSettingsRepositoryTest extends TestCase {
 		$this->assertFalse($repository->getStoredSettings()->allowLegacyProtectedImport);
 	}
 
-	/** Nothing configured has to keep migrating, or an upgrade loses its pads. */
-	public function testTheLegacyProtectedImportDefaultsToAllowed(): void {
+	/** Opt-in, like allow_external_pads beside it. */
+	public function testTheLegacyProtectedImportDefaultsToRefused(): void {
 		$config = $this->createMock(IConfig::class);
 		$config->method('getAppValue')->willReturnCallback(
 			static fn (string $appName, string $key, string $default = ''): string => $default
 		);
 
 		$repository = new AdminSettingsRepository($config, $this->createMock(IAppConfig::class));
-		$this->assertTrue($repository->getStoredSettings()->allowLegacyProtectedImport);
+		$this->assertFalse($repository->getStoredSettings()->allowLegacyProtectedImport);
 	}
 
 	public function testPadTypeSettingsDefaultToEnabled(): void {
