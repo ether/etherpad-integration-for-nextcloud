@@ -37,6 +37,7 @@ class PadCreationService {
 		private ExternalPadSeeder $externalPadSeeder,
 		private PadTypePolicy $padTypePolicy,
 		private LoggerInterface $logger,
+			private ProvisionedPadRollback $provisionedPadRollback,
 	) {
 	}
 
@@ -55,7 +56,7 @@ class PadCreationService {
 				return $this->provisionPadForNewFile($attempt, $uid, $fileNode, $accessMode, $path);
 			},
 			function (PadCreateAttempt $attempt) use ($uid): void {
-				$this->rollbackService->rollbackFailedCreate($uid, $attempt->path(), $attempt->padId(), $attempt->claim());
+				$this->rollbackService->rollbackFailedCreate($uid, $attempt->path(), $attempt->padId(), $attempt->claim(), $attempt->bindingAttemptFileId());
 			},
 			function (\Throwable $e, PadCreateAttempt $attempt) use ($path, $accessMode): ?array {
 				if ($e instanceof BindingException) {
@@ -112,7 +113,7 @@ class PadCreationService {
 				];
 			},
 			function (PadCreateAttempt $attempt) use ($uid): void {
-				$this->rollbackService->rollbackFailedCreate($uid, $attempt->path(), $attempt->padId(), $attempt->claim());
+				$this->rollbackService->rollbackFailedCreate($uid, $attempt->path(), $attempt->padId(), $attempt->claim(), $attempt->bindingAttemptFileId());
 			},
 			function (\Throwable $e, PadCreateAttempt $attempt) use ($parentFolderId, $name, $accessMode): ?array {
 				if ($e instanceof BindingException) {
@@ -264,70 +265,22 @@ class PadCreationService {
 		);
 	}
 
+	/** The file and the row were both made here, so neither outlives the other. */
+	private function unwindMaterializedPad(int $fileId, string $padId): void {
+		$this->provisionedPadRollback->removeMatchingBindingAndDiscard($fileId, $padId, 'template materialization');
+	}
+
 	/**
-	 * Shared core of the template materialization pipeline. Validates the
-	 * template, resolves placeholders, provisions a fresh pad, seeds its
-	 * content, writes the target file, and creates the binding. The target
-	 * file must already exist on disk (the callers either create it via
-	 * `PadFileCreator` or receive it pre-populated from NC's native template
-	 * copy flow).
+	 * Shared core of the template materialization pipeline: validate the
+	 * template, resolve placeholders, provision a pad, seed it, write the
+	 * target file, bind it. The target file must already exist.
 	 *
-	 * On any failure between provisioning and binding, the freshly created
-	 * Etherpad pad is best-effort deleted before rethrowing.
-	 *
-	 * Pad-lifecycle ownership: this method **owns the Etherpad-side lifecycle**
-	 * of any pad it provisions — callers that wrap the call in an outer
-	 * rollback (e.g. `withCreateRollback`) must NOT also try to delete the
-	 * pad in their rollback path. The outer wrapper's job is limited to the
-	 * Nextcloud file it created; the pad is already cleaned up internally if
-	 * we throw out of here.
+	 * This method owns the Etherpad-side lifecycle of the pad it provisions.
+	 * A caller wrapping it in an outer rollback must not also delete that
+	 * pad - the outer wrapper's job is the Nextcloud file it created.
 	 *
 	 * @return array{file_id:int,pad_id:string,access_mode:string,pad_url:string}
 	 */
-	/**
-	 * The pad and the binding row a failed materialization made.
-	 *
-	 * Both callers give up on the file: the create flow deletes the node it
-	 * made, and the template listener wipes it and re-initialises. So there
-	 * is no consistent pair to keep here — a surviving row would send that
-	 * re-initialisation straight at a pad that no longer exists.
-	 *
-	 * The row is looked up rather than remembered. `createBinding` is the
-	 * last step and can commit and still throw, and a flag would then say
-	 * no row while a row names the pad about to go. A row naming a
-	 * different pad belongs to a request that won the file, and stays.
-	 *
-	 * Without an answer, nothing is destroyed: a pad an admin can find
-	 * beats a binding pointing at a pad that is gone.
-	 */
-	private function unwindMaterializedPad(int $fileId, string $padId): void {
-		try {
-			if ($this->bindingService->isBoundTo($fileId, $padId)) {
-				$this->bindingService->deleteByFileId($fileId);
-			}
-		} catch (\Throwable $bindingError) {
-			$this->logger->warning('Could not rollback the binding after template materialization failure; keeping its pad.', [
-				'app' => 'etherpad_nextcloud',
-				'fileId' => $fileId,
-				'padId' => $padId,
-				'exception' => $bindingError,
-			]);
-			return;
-		}
-
-		try {
-			// Provisioned in this call, so no ownership check is needed —
-			// and none may be required: nothing retries this.
-			$this->padLifecycle->discardProvisioned($padId);
-		} catch (\Throwable $cleanupError) {
-			$this->logger->warning('Could not cleanup Etherpad pad after template materialization failure.', [
-				'app' => 'etherpad_nextcloud',
-				'padId' => $padId,
-				'exception' => $cleanupError,
-			]);
-		}
-	}
-
 	public function materializeTemplateInto(
 		File $target,
 		File $template,
@@ -467,6 +420,7 @@ class PadCreationService {
 
 		$content = $this->padFileService->buildInitialDocument($fileId, $padId, $accessMode, padUrl: $padUrl);
 		$this->writeCreatedFile($claim, $content);
+		$attempt->recordBindingAttempt($fileId);
 		$this->bindingService->createBinding($fileId, $padId, $accessMode);
 
 		return [
@@ -627,4 +581,5 @@ class PadCreationService {
 			throw $e;
 		}
 	}
+
 }

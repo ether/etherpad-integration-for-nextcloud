@@ -221,6 +221,11 @@
       <code><![CDATA[__construct]]></code>
     </PossiblyUnusedMethod>
   </file>
+  <file src="lib/Service/ProvisionedPadRollback.php">
+    <PossiblyUnusedMethod>
+      <code><![CDATA[__construct]]></code>
+    </PossiblyUnusedMethod>
+  </file>
   <file src="lib/Service/PublicShareResolver.php">
     <PossiblyUnusedMethod>
       <code><![CDATA[__construct]]></code>

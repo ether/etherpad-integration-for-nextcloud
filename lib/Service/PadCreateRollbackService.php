@@ -27,25 +27,34 @@ class PadCreateRollbackService {
 		private ManagedPadLifecycle $padLifecycle,
 		private UserNodeResolver $userNodeResolver,
 		private LoggerInterface $logger,
+			private ProvisionedPadRollback $provisionedPadRollback,
 	) {
 	}
 
-	public function rollbackFailedCreate(string $uid, string $path, string $padId, ?CreatedFileClaim $claim): void {
+	public function rollbackFailedCreate(string $uid, string $path, string $padId, ?CreatedFileClaim $claim, ?int $bindingAttemptFileId = null): void {
 		$this->rollbackCreatedFileOnly($uid, $path, $claim);
 
-		if ($padId !== '') {
-			try {
-				// A failed create, so this pad was provisioned by the same
-				// request — its group needs no ownership check, and must not
-				// wait on one, because nothing retries a rollback.
-				$this->padLifecycle->discardProvisioned($padId);
-			} catch (\Throwable $cleanupError) {
-				$this->logger->warning('Could not cleanup failed Etherpad create', [
-					'app' => 'etherpad_nextcloud',
-					'padId' => $padId,
-					'exception' => $cleanupError,
-				]);
-			}
+		if ($padId === '') {
+			return;
+		}
+
+		// Only a create that got as far as writing the row has to ask about
+		// one: createBinding can commit and still throw. Failing earlier, the
+		// pad is ours beyond doubt and goes without a database question -
+		// which is what happens when that question cannot be answered.
+		if ($bindingAttemptFileId !== null) {
+			$this->provisionedPadRollback->removeMatchingBindingAndDiscard($bindingAttemptFileId, $padId, 'create');
+			return;
+		}
+
+		try {
+			$this->padLifecycle->discardProvisioned($padId);
+		} catch (\Throwable $cleanupError) {
+			$this->logger->warning('Could not cleanup failed Etherpad create', [
+				'app' => 'etherpad_nextcloud',
+				'padId' => $padId,
+				'exception' => $cleanupError,
+			]);
 		}
 	}
 
@@ -146,4 +155,5 @@ class PadCreateRollbackService {
 
 		return false;
 	}
+
 }

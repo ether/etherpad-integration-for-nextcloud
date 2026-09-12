@@ -18,6 +18,7 @@ use OCA\EtherpadNextcloud\Service\PadCreateRollbackService;
 use OCA\EtherpadNextcloud\Service\PadCreationService;
 use OCA\EtherpadNextcloud\Service\PadFileCreator;
 use OCA\EtherpadNextcloud\Service\PadFileService;
+use OCA\EtherpadNextcloud\Service\ProvisionedPadRollback;
 use OCA\EtherpadNextcloud\Service\PadSnapshot;
 use OCA\EtherpadNextcloud\Service\ParsedPadFile;
 use OCA\EtherpadNextcloud\Service\UserNodeResolver;
@@ -85,7 +86,7 @@ class PadCreationServiceTest extends TestCase {
 					&& $claim->fileId === 123
 					&& $claim->expectedBefore === ''
 					&& $claim->writtenHash !== null
-			));
+			), 123);
 
 		$bootstrap = $this->createMock(PadBootstrapService::class);
 		$bootstrap->method('provisionPadId')->willReturn('g.ABC$pad');
@@ -100,6 +101,44 @@ class PadCreationServiceTest extends TestCase {
 		$bindingService->method('createBinding')->willThrowException(new BindingException('Duplicate binding.'));
 
 		$this->expectException(BindingException::class);
+
+		$this->buildService($padFileService, $padPaths, $fileCreator, null, $rollbackService, $bindingService, $etherpadClient, $bootstrap)
+			->create('alice', '/Test', BindingService::ACCESS_PROTECTED);
+	}
+
+	/**
+	 * The file id reaches the rollback only once the binding write begins.
+	 * Failing before it, the pad is ours beyond doubt and is discarded
+	 * without asking the database about a row that cannot exist.
+	 */
+	public function testCreateThatFailsBeforeTheBindingWriteReportsNoAttempt(): void {
+		$fileNode = $this->createMock(File::class);
+		$fileNode->method('getId')->willReturn(123);
+
+		$padPaths = $this->createMock(PathNormalizer::class);
+		$padPaths->method('normalizeCreatePath')->with('/Test')->willReturn('/Test.pad');
+		$fileCreator = $this->createMock(PadFileCreator::class);
+		$fileCreator->method('createUserFile')->with('alice', '/Test.pad')->willReturn($fileNode);
+
+		$rollbackService = $this->createMock(PadCreateRollbackService::class);
+		$rollbackService->expects($this->once())
+			->method('rollbackFailedCreate')
+			->with('alice', '/Test.pad', 'g.ABC$pad', $this->anything(), null);
+
+		$bootstrap = $this->createMock(PadBootstrapService::class);
+		$bootstrap->method('provisionPadId')->willReturn('g.ABC$pad');
+
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->method('buildPadUrl')->willReturn('https://pad.example.test/p/g.ABC$pad');
+
+		$bindingService = $this->createMock(BindingService::class);
+		$bindingService->expects($this->never())->method('createBinding');
+
+		$padFileService = $this->createMock(PadFileService::class);
+		$padFileService->method('buildInitialDocument')
+			->willThrowException(new \RuntimeException('cannot build the document'));
+
+		$this->expectException(\RuntimeException::class);
 
 		$this->buildService($padFileService, $padPaths, $fileCreator, null, $rollbackService, $bindingService, $etherpadClient, $bootstrap)
 			->create('alice', '/Test', BindingService::ACCESS_PROTECTED);
@@ -680,6 +719,7 @@ class PadCreationServiceTest extends TestCase {
 			new ManagedPadLifecycle($etherpadClient, $this->createMock(LoggerInterface::class)),
 			$this->createMock(UserNodeResolver::class),
 			$this->createMock(\Psr\Log\LoggerInterface::class),
+			new ProvisionedPadRollback($bindingService ?? $this->createMock(BindingService::class), new ManagedPadLifecycle($etherpadClient, $this->createMock(LoggerInterface::class)), $this->createMock(LoggerInterface::class)),
 		);
 
 		$this->expectException(\RuntimeException::class);
@@ -737,7 +777,8 @@ class PadCreationServiceTest extends TestCase {
 				new ManagedPadLifecycle($this->createMock(EtherpadClient::class), $this->createMock(LoggerInterface::class)),
 				$this->createMock(UserNodeResolver::class),
 				$this->createMock(\Psr\Log\LoggerInterface::class),
-			),
+			new ProvisionedPadRollback($bindingService ?? $this->createMock(BindingService::class), new ManagedPadLifecycle($this->createMock(EtherpadClient::class), $this->createMock(LoggerInterface::class)), $this->createMock(LoggerInterface::class)),
+		),
 		)->create('alice', '/Notes.pad', BindingService::ACCESS_PUBLIC);
 	}
 
@@ -782,7 +823,7 @@ class PadCreationServiceTest extends TestCase {
 		$bindingService = $this->createMock(BindingService::class);
 		$bindingService->method('createBinding')->willThrowException(new \RuntimeException('connection lost'));
 		$bindingService->method('isBoundTo')->with(4321, $padId)->willReturn(true);
-		$bindingService->expects(self::once())->method('deleteByFileId')->with(4321);
+		$bindingService->expects(self::once())->method('deleteActiveBinding')->willReturn(true);
 
 		$etherpadClient = $this->createMock(EtherpadClient::class);
 		$etherpadClient->method('buildPadUrl')->willReturn('https://pad.example.test/p/x');
@@ -800,7 +841,7 @@ class PadCreationServiceTest extends TestCase {
 		$bindingService = $this->createMock(BindingService::class);
 		$bindingService->method('createBinding')->willThrowException(new \RuntimeException('unique constraint violation'));
 		$bindingService->method('isBoundTo')->with(4321, $padId)->willReturn(false);
-		$bindingService->expects(self::never())->method('deleteByFileId');
+		$bindingService->expects(self::never())->method('deleteActiveBinding');
 
 		$etherpadClient = $this->createMock(EtherpadClient::class);
 		$etherpadClient->method('buildPadUrl')->willReturn('https://pad.example.test/p/x');
@@ -881,7 +922,8 @@ class PadCreationServiceTest extends TestCase {
 				new ManagedPadLifecycle($this->createMock(EtherpadClient::class), $this->createMock(LoggerInterface::class)),
 				$this->createMock(UserNodeResolver::class),
 				$this->createMock(\Psr\Log\LoggerInterface::class),
-			),
+			new ProvisionedPadRollback($this->createMock(BindingService::class), new ManagedPadLifecycle($this->createMock(EtherpadClient::class), $this->createMock(LoggerInterface::class)), $this->createMock(LoggerInterface::class)),
+		),
 		);
 	}
 
@@ -1000,6 +1042,7 @@ class PadCreationServiceTest extends TestCase {
 			new ManagedPadLifecycle($this->createMock(EtherpadClient::class), $this->createMock(LoggerInterface::class)),
 			$resolver,
 			$this->createMock(\Psr\Log\LoggerInterface::class),
+			new ProvisionedPadRollback($this->createMock(BindingService::class), new ManagedPadLifecycle($this->createMock(EtherpadClient::class), $this->createMock(LoggerInterface::class)), $this->createMock(LoggerInterface::class)),
 		);
 
 		$this->expectException(\RuntimeException::class);
@@ -1064,6 +1107,7 @@ class PadCreationServiceTest extends TestCase {
 			$externalPadSeeder,
 			$padTypePolicy ?? $this->buildPadTypePolicy(true, true),
 			$this->createMock(LoggerInterface::class),
+			new ProvisionedPadRollback($bindingService ?? $this->createMock(BindingService::class), new ManagedPadLifecycle($etherpadClient, $this->createMock(LoggerInterface::class)), $this->createMock(LoggerInterface::class)),
 		);
 	}
 

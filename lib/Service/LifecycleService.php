@@ -45,6 +45,7 @@ class LifecycleService {
 		private UserNodeResolver $userNodeResolver,
 		private \OCA\EtherpadNextcloud\Util\PathNormalizer $padPaths,
 		private ITimeFactory $timeFactory,
+			private ProvisionedPadRollback $provisionedPadRollback,
 	) {
 	}
 
@@ -574,46 +575,11 @@ class LifecycleService {
 	}
 
 	/**
-	 * The row and the pad a recovery made when the file was never written.
-	 *
-	 * Nothing consistent to keep here, unlike a first init: the row names
-	 * the new pad while the `.pad` still names the old one. No binding at
-	 * all is the state this recovery is built to start from, so that is
-	 * what it goes back to.
-	 *
-	 * Which row to remove is read, not remembered. `createBinding` can
-	 * commit and still throw, and the flag then says no row while a row is
-	 * there naming the pad about to be deleted. A row naming a different
-	 * pad belongs to the concurrent recovery that won the file — the unique
-	 * constraint is the serialization point here — and stays.
-	 *
-	 * Without an answer nothing is destroyed.
+	 * Nothing consistent to keep, unlike a first init: the row names the
+	 * new pad while the `.pad` still names the old one.
 	 */
 	private function unwindUnwrittenRestore(int $fileId, string $newPadId): void {
-		try {
-			if ($this->bindingService->isBoundTo($fileId, $newPadId)) {
-				$this->bindingService->deleteByFileId($fileId);
-			}
-		} catch (\Throwable $bindingRollbackError) {
-			$this->logger->warning('Could not rollback binding row after failed restore-without-binding write; keeping its pad.', [
-				'app' => 'etherpad_nextcloud',
-				'fileId' => $fileId,
-				'newPadId' => $newPadId,
-				'exception' => $bindingRollbackError,
-			]);
-			return;
-		}
-
-		try {
-			$this->padLifecycle->discardProvisioned($newPadId);
-		} catch (\Throwable $cleanupError) {
-			$this->logger->warning('Could not cleanup newly provisioned restore pad after failed no-binding restore.', [
-				'app' => 'etherpad_nextcloud',
-				'fileId' => $fileId,
-				'newPadId' => $newPadId,
-				'exception' => $cleanupError,
-			]);
-		}
+		$this->provisionedPadRollback->removeMatchingBindingAndDiscard($fileId, $newPadId, 'restore without binding');
 	}
 
 	/**
@@ -693,5 +659,6 @@ class LifecycleService {
 		$active = trim((string)$this->config->getAppValue('etherpad_nextcloud', 'test_fault', ''));
 		return $active !== '' && hash_equals($active, $fault);
 	}
+
 
 }

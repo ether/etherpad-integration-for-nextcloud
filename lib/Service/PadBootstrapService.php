@@ -13,7 +13,6 @@ use OCA\EtherpadNextcloud\Exception\PadFileChangedException;
 use OCA\EtherpadNextcloud\Exception\PadFileFormatException;
 use OCP\Files\File;
 use OCP\Security\ISecureRandom;
-use Psr\Log\LoggerInterface;
 
 class PadBootstrapService {
 	public function __construct(
@@ -22,10 +21,10 @@ class PadBootstrapService {
 		private EtherpadClient $etherpadClient,
 		private ManagedPadLifecycle $padLifecycle,
 		private ISecureRandom $secureRandom,
-		private LoggerInterface $logger,
 		private PadLegacyMigrationService $legacyMigrationService,
 		private PadTypePolicy $padTypePolicy,
 		private UserNodeResolver $userNodeResolver,
+			private ProvisionedPadRollback $provisionedPadRollback,
 	) {
 	}
 
@@ -118,56 +117,12 @@ class PadBootstrapService {
 		$node->putContent($doc);
 	}
 
-	/**
-	 * What to undo after a failed first init, decided by what the binding
-	 * row says.
-	 *
-	 * A row naming this pad is not damage — it is the finished half of the
-	 * job. The file is still empty, so the next open comes back through this
-	 * method, finds the binding and writes the frontmatter it did not manage
-	 * to write; the template listener says as much where it swallows this
-	 * error. Removing anything there means giving up a working file for a
-	 * best-effort remote call that can fail and leave the pad unreachable
-	 * with the last reference to it already deleted. So: leave both.
-	 *
-	 * That covers the two ways `createBinding` fails without saying so — an
-	 * insert that committed before the connection dropped, and an insert the
-	 * unique constraint refused because a concurrent first-open won the
-	 * race. Only the first leaves a row naming *this* pad. The other, and a
-	 * failure before any row was written, leave the pad with nothing
-	 * pointing at it, and that is the one to clean up.
-	 */
 	private function rollbackProvisionedPad(int $fileId, string $padId): void {
-		try {
-			if ($this->bindingService->isBoundTo($fileId, $padId)) {
-				return;
-			}
-		} catch (\Throwable $cleanupError) {
-			$this->logger->warning('Could not read the binding after frontmatter init failure; keeping its pad.', [
-				'app' => 'etherpad_nextcloud',
-				'fileId' => $fileId,
-				'padId' => $padId,
-				'exception' => $cleanupError,
-			]);
-			return;
-		}
-
-		try {
-			// Provisioned by this call, so the group needs no ownership
-			// check — and must not depend on one, because nothing retries
-			// this.
-			$this->padLifecycle->discardProvisioned($padId);
-		} catch (\Throwable $cleanupError) {
-			$this->logger->warning('Could not cleanup Etherpad pad after frontmatter init failure.', [
-				'app' => 'etherpad_nextcloud',
-				'fileId' => $fileId,
-				'padId' => $padId,
-				'exception' => $cleanupError,
-			]);
-		}
+		$this->provisionedPadRollback->discardUnlessBoundToFile($fileId, $padId, 'first init');
 	}
 
 	private function buildProtectedPadName(): string {
 		return 'p-' . $this->secureRandom->generate(20, ISecureRandom::CHAR_LOWER . ISecureRandom::CHAR_DIGITS);
 	}
+
 }
