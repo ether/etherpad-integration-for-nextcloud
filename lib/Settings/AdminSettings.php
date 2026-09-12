@@ -134,7 +134,7 @@ class AdminSettings implements ISettings {
 				'enable_public_pads_hint' => $this->l10n->t('Anyone with the pad link can open it, without a Nextcloud account. Created as ordinary Etherpad pads.'),
 				'pad_types_none_hint' => $this->l10n->t('With both types switched off, no new pads can be created. Existing pads keep working.'),
 				'allow_legacy_protected_import' => $this->l10n->t('Allow importing protected pads from legacy Ownpad files'),
-				'allow_legacy_protected_import_hint' => $this->l10n->t('Only while migrating, and only if this Nextcloud alone creates group pads on your Etherpad server – otherwise a hand-written .pad file can reach another group.'),
+				'allow_legacy_protected_import_hint' => $this->l10n->t('Safe only where this Nextcloud alone creates group pads on your Etherpad server. Anywhere else, a hand-written .pad file can reach another group while this is on.'),
 				'delete_on_trash' => $this->l10n->t('Delete linked Etherpad pad when .pad file is moved to trash'),
 				'delete_on_trash_hint' => $this->l10n->t('If enabled, moving a .pad file to the trash also deletes the linked Etherpad pad.'),
 				'allow_external_pads' => $this->l10n->t('Allow linking external public pads'),

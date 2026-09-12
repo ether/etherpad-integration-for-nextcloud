@@ -523,7 +523,7 @@ Registered in `lib/AppInfo/Application.php`.
 - `delete_on_trash` (`yes|no`, default `yes`)
 - `sync_interval_seconds` (default `120`, clamp `5..3600`)
 - `allow_external_pads` (`yes|no`, default `no`)
-- `allow_legacy_protected_import` (`yes|no`, default `no`) — whether a legacy Ownpad `.pad` naming a group pad may bring that pad in. Switch on while migrating, and only where this Nextcloud is the only thing creating group pads on the Etherpad server; see the legacy migration doc.
+- `allow_legacy_protected_import` (`yes|no`, default `no`) — whether a legacy Ownpad `.pad` naming a group pad may bring that pad in. Turn on only where this Nextcloud is the only thing creating group pads on the Etherpad server; see the legacy migration doc.
 - `external_pad_allowlist` (newline-separated host list, optional)
 - `trusted_embed_origins` (newline-separated absolute `https://origin` list, optional)
   - used for the route-specific `frame-ancestors` policy on:
