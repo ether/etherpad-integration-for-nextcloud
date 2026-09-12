@@ -72,8 +72,7 @@ class PadTypePolicy {
 	/**
 	 * Whether a pad can be provisioned locally at all. External pads are not a
 	 * pad type and are not covered — they follow `allow_external_pads`.
-	 */
-	/**
+	 *
 	 * Short-circuits, so a case with no arm in isModeEnabled() only reaches
 	 * it once every case before it is switched off. Psalm is what actually
 	 * holds that, not this loop.

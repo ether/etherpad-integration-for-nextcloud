@@ -8,6 +8,7 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Tests\Unit;
 
+use OCA\EtherpadNextcloud\Controller\PadCreateController;
 use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\EtherpadNextcloud\Util\PadAccessMode;
 use PHPUnit\Framework\TestCase;
@@ -23,8 +24,10 @@ class PadAccessModeTest extends TestCase {
 
 	/**
 	 * The constants are what 200-odd call sites spell. Reading an enum case's
-	 * value in a constant expression needs PHP 8.3, and this app declares 8.1
-	 * as its floor, so they are written out and held here instead.
+	 * value in a constant expression needs PHP 8.2, and this app declares 8.1
+	 * as its floor, so they are written out and held here instead. (Enum
+	 * cases themselves are constant expressions on 8.1, which is why
+	 * PadTypePolicy::FALLBACK_ORDER can hold them.)
 	 */
 	public function testTheBindingConstantsNameTheSameModes(): void {
 		$this->assertSame(PadAccessMode::Public->value, BindingService::ACCESS_PUBLIC);
@@ -72,7 +75,11 @@ class PadAccessModeTest extends TestCase {
 		);
 	}
 
-	/** Two defaults for one idea, agreeing today by nothing but habit. */
+	/**
+	 * Two defaults for one idea, agreeing today by nothing but habit. Read
+	 * off the controller signatures rather than off the constant they happen
+	 * to use, so changing one of them is what fails this.
+	 */
 	public function testTheJavaScriptDefaultIsTheOneTheControllersUse(): void {
 		$matched = preg_match(
 			'/export\s+const\s+DEFAULT_PAD_ACCESS_MODE\s*=\s*([\'"])(?<value>.*?)\1/',
@@ -80,7 +87,25 @@ class PadAccessModeTest extends TestCase {
 			$matches,
 		);
 		$this->assertSame(1, $matched, 'src/lib/constants.js must export DEFAULT_PAD_ACCESS_MODE');
-		$this->assertSame(BindingService::ACCESS_PROTECTED, $matches['value']);
+
+		foreach (['create' => 'accessMode', 'createByParent' => 'accessMode'] as $method => $argument) {
+			$this->assertSame(
+				$matches['value'],
+				$this->defaultArgumentOf($method, $argument),
+				"PadCreateController::$method() defaults to a different mode than the launcher",
+			);
+		}
+	}
+
+	private function defaultArgumentOf(string $method, string $argument): mixed {
+		$reflected = new \ReflectionMethod(PadCreateController::class, $method);
+		foreach ($reflected->getParameters() as $parameter) {
+			if ($parameter->getName() === $argument) {
+				$this->assertTrue($parameter->isDefaultValueAvailable(), "$method(\$$argument) has no default");
+				return $parameter->getDefaultValue();
+			}
+		}
+		$this->fail("$method() has no \$$argument parameter");
 	}
 
 	private function constantsJs(): string {
