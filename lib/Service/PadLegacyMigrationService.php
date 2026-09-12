@@ -147,17 +147,22 @@ class PadLegacyMigrationService {
 			return;
 		}
 
-		$this->assertGroupPadExists($sourcePadId);
-
 		$accessMode = $this->padFileService->inferAccessModeFromPadId($sourcePadId);
 		$existingBinding = $this->bindingService->findByPadId($sourcePadId, BindingService::STATE_ACTIVE);
 
 		if ($existingBinding === null) {
-			// Only a pad nothing here points at yet. One that is already
-			// bound was bound by this instance, and which file may claim it
-			// is the collision rule's question further down, not this
-			// switch's - refusing there would strand a half-migrated file.
+			// A pad nothing here points at yet. An existing binding is left
+			// alone deliberately - which file may claim it is the collision
+			// rule's question further down, and refusing there would strand
+			// a migration that made the row and died before the file write.
 			$this->refuseProtectedImportIfSwitchedOff($uid, $fileId, $sourceUrl, $sourcePadId, $accessMode);
+			// After the refusal, so a switched-off import asks Etherpad
+			// nothing: the three answers this can give - pad there, pad
+			// missing, group missing - reach the client as 403, 400 and a
+			// different 400, which is an existence oracle on a privileged
+			// API. A binding that already exists named a pad that existed
+			// when it was written, so the collision paths need no check.
+			$this->assertGroupPadExists($sourcePadId);
 			// Create the binding first, then write the file. If the binding
 			// fails (e.g. a concurrent migration claimed the same pad-id
 			// between findByPadId and createBinding), we re-classify as a

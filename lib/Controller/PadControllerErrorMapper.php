@@ -52,6 +52,7 @@ class PadControllerErrorMapper {
 	 *   not_found?: string,
 	 *   too_large?: string,
 	 *   missing_frontmatter?: string,
+	 *   legacy_protected_import_disabled?: string,
 	 *   file_changed?: string,
 	 *   binding_message?: string,
 	 *   binding_status?: int,
@@ -145,7 +146,8 @@ class PadControllerErrorMapper {
 			// this import at all. Fixed wording plus a stable code, like the
 			// structured errors around it.
 			return new DataResponse([
-				'message' => 'Importing protected pads from legacy Ownpad files is disabled on this instance.',
+				'message' => (string)($options['legacy_protected_import_disabled']
+					?? 'Importing protected pads from legacy Ownpad files is disabled on this instance.'),
 				'code' => 'legacy_protected_import_disabled',
 			], Http::STATUS_FORBIDDEN);
 		} catch (LegacyPadCollisionException $e) {

@@ -447,9 +447,10 @@ class PadLegacyMigrationServiceTest extends TestCase {
 		$etherpadClient = $this->createMock(EtherpadClient::class);
 		$etherpadClient->method('getConfiguredOrigin')->willReturn('https://pad.our-server.test');
 		$etherpadClient->method('normalizeOrigin')->willReturn('https://pad.our-server.test');
-		// A real pad in a real group - the case assertGroupPadExists() lets
-		// through and only the switch stops.
-		$etherpadClient->method('listPads')->willReturn(['g.someone-elses$notes']);
+		// Nothing is asked of Etherpad: whether the pad is there, whether
+		// the group is, and whether the import is allowed would otherwise
+		// come back as three different responses.
+		$etherpadClient->expects($this->never())->method('listPads');
 
 		$binding = $this->createMock(BindingService::class);
 		$binding->method('findByPadId')->willReturn(null);
