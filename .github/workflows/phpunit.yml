@@ -38,10 +38,14 @@ jobs:
               - 'lib/**'
               - 'tests/phpunit/**'
               - 'phpunit.xml.dist'
-              # PadAccessModeTest reads this one file to catch the JavaScript
-              # copy drifting from the PHP it mirrors. Naming the file rather
-              # than src/** keeps a frontend-only change off four PHP jobs.
-              - 'src/lib/constants.js'
+              # Two tests read files outside lib/: PadAccessModeTest reads
+              # src/lib/constants.js, and PadFileTypeLiteralsTest walks
+              # everything in its SCANNED list looking for a MIME type
+              # written out by hand. These are that list, so a change it
+              # would catch cannot skip the job that runs it.
+              - 'src/**'
+              - 'templates/**'
+              - 'appinfo/**'
 
   phpunit:
     runs-on: ubuntu-latest

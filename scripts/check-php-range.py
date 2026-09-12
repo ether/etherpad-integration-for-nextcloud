@@ -18,10 +18,42 @@ from pathlib import Path
 
 PHPUNIT = ".github/workflows/phpunit.yml"
 LINT = ".github/workflows/lint-php.yml"
+FLOOR_JOB = "phpunit-floor"
 
 
 def read(path):
-    return Path(path).read_text(encoding="utf-8")
+    """The file with comments stripped, so a commented-out setting cannot
+    answer for the active one."""
+    out = []
+    for line in Path(path).read_text(encoding="utf-8").splitlines():
+        quote = None
+        for i, ch in enumerate(line):
+            if quote:
+                if ch == quote:
+                    quote = None
+            elif ch in "'\"":
+                quote = ch
+            elif ch == "#":
+                line = line[:i]
+                break
+        out.append(line.rstrip())
+    return "\n".join(out)
+
+
+def job(path, name):
+    """One job's own block, so a setting cannot be read from its neighbour."""
+    lines = read(path).splitlines()
+    for i, line in enumerate(lines):
+        if line.strip() == f"{name}:" and line.startswith("  ") and line[2] != " ":
+            end = i + 1
+            while end < len(lines) and not (
+                lines[end].startswith("  ")
+                and lines[end][2] != " "
+                and lines[end].rstrip().endswith(":")
+            ):
+                end += 1
+            return "\n".join(lines[i:end])
+    return None
 
 
 def declared_range():
@@ -36,16 +68,19 @@ def declared_range():
 
 def matrix(path):
     """The php-versions list of a workflow's test matrix."""
-    m = re.search(r"php-versions:\s*\[(?P<values>[^\]]*)\]", read(path))
-    if not m:
+    found = re.findall(r"php-versions:\s*\[(?P<values>[^\]]*)\]", read(path))
+    if len(found) != 1:
         return None
-    return re.findall(r"['\"]([^'\"]+)['\"]", m.group("values"))
+    return re.findall(r"['\"]([^'\"]+)['\"]", found[0])
 
 
 def floor_job():
     """The version the dedicated floor job pins."""
-    m = re.search(r"php-version:\s*['\"](\d+\.\d+)['\"]", read(PHPUNIT))
-    return m.group(1) if m else None
+    block = job(PHPUNIT, FLOOR_JOB)
+    if block is None:
+        return None
+    found = re.findall(r"php-version:\s*['\"](\d+\.\d+)['\"]", block)
+    return found[0] if len(found) == 1 else None
 
 
 def main():
@@ -67,7 +102,10 @@ def main():
 
     pinned = floor_job()
     if pinned is None:
-        problems.append(f"{PHPUNIT}: no dedicated floor job (php-version) found")
+        problems.append(
+            f"{PHPUNIT}: job {FLOOR_JOB} is missing, or does not pin exactly one "
+            f"php-version"
+        )
     elif pinned != floor:
         problems.append(
             f"{PHPUNIT}: floor job runs {pinned}, but appinfo/info.xml "
