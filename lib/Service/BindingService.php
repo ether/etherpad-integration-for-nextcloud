@@ -47,7 +47,6 @@ class BindingService {
 		return $row === false ? null : $row;
 	}
 
-	/** @return array<string,mixed>|null */
 	/**
 	 * Whether this file's binding names this pad.
 	 *
