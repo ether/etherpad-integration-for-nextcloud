@@ -126,9 +126,13 @@ bash "$here/sync-app.sh"
 
 occ app:enable etherpad_nextcloud
 
-# Enabling registers the mime type, its icon and its name. Only the
-# browser's copy of that mapping is left, and nothing but this command
-# writes core/js/mimetypelist.js.
+# Enabling runs the install repair steps, but not the post-migration ones -
+# those need an upgrade, or this. The stack should match an instance that
+# has had both.
+occ maintenance:repair >/dev/null
+
+# Nothing in either path writes core/js/mimetypelist.js, the browser's copy
+# of the icon mapping. Only this command does.
 occ maintenance:mimetype:update-js >/dev/null
 
 echo "==> configuring the app"

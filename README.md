@@ -130,7 +130,7 @@ existing content takes precedence.
 Linking external public pads is governed separately by the external pad
 policy and is unaffected by these two settings.
 
-### 5) Check iframe and cookie setup for protected pads
+### 4) Check iframe and cookie setup for protected pads
 
 If protected pads should open inside the Nextcloud viewer iframe:
 

@@ -114,8 +114,8 @@ class RegisterMimeTypeTest extends TestCase {
 	public function testRejectsInvalidRequiredConfigurationWithoutReportingSuccess(): void {
 		file_put_contents($this->configDir . '/mimetypemapping.json', '{invalid');
 		$mimeTypeLoader = $this->createMock(IMimeTypeLoader::class);
-		$mimeTypeLoader->expects(self::never())->method('getId');
-		$mimeTypeLoader->expects(self::never())->method('updateFilecache');
+		$mimeTypeLoader->method('getId')->willReturn(42);
+		$mimeTypeLoader->expects(self::once())->method('updateFilecache');
 		$output = new RegisterMimeTypeTestOutput();
 
 		try {
@@ -125,7 +125,7 @@ class RegisterMimeTypeTest extends TestCase {
 			$this->assertStringContainsString('contains invalid JSON', $e->getMessage());
 		}
 
-		$this->assertNotContains('Registered .pad files and backfilled their MIME type.', $output->infos);
+		$this->assertSame([], $output->infos);
 	}
 
 	public function testAlreadyCorrectReadOnlyConfigurationSucceeds(): void {
@@ -139,6 +139,7 @@ class RegisterMimeTypeTest extends TestCase {
 			PadFileType::MIME => 'Etherpad',
 		]);
 
+		$before = $this->configContents();
 		foreach (glob($this->configDir . '/*.json') ?: [] as $file) {
 			chmod($file, 0444);
 		}
@@ -147,15 +148,30 @@ class RegisterMimeTypeTest extends TestCase {
 		$output = new RegisterMimeTypeTestOutput();
 		$this->step()->run($output);
 
+		// The permissions alone would prove nothing as root, where chmod is
+		// not enforced. What has to hold either way is that nothing was
+		// rewritten, because every mapping was already there.
+		$this->assertSame($before, $this->configContents());
 		$this->assertSame([], $output->warnings);
 		$this->assertContains('Registered .pad files and backfilled their MIME type.', $output->infos);
+	}
+
+	/** What an interrupted write leaves behind; the step has to heal it, not refuse it. */
+	public function testHealsATruncatedMappingFile(): void {
+		file_put_contents($this->configDir . '/mimetypemapping.json', '');
+		$output = new RegisterMimeTypeTestOutput();
+
+		$this->step()->run($output);
+
+		$this->assertSame([PadFileType::MIME], $this->jsonFile('mimetypemapping.json')[PadFileType::EXTENSION]);
+		$this->assertSame([], $output->warnings);
 	}
 
 	public function testARequiredWriteFailureAbortsRegistration(): void {
 		\OC::$configDir = '/dev/null';
 		$mimeTypeLoader = $this->createMock(IMimeTypeLoader::class);
-		$mimeTypeLoader->expects(self::never())->method('getId');
-		$mimeTypeLoader->expects(self::never())->method('updateFilecache');
+		$mimeTypeLoader->method('getId')->willReturn(42);
+		$mimeTypeLoader->expects(self::once())->method('updateFilecache');
 		$output = new RegisterMimeTypeTestOutput();
 
 		try {
@@ -165,7 +181,7 @@ class RegisterMimeTypeTest extends TestCase {
 			$this->assertStringContainsString('Could not write MIME configuration file', $e->getMessage());
 		}
 
-		$this->assertNotContains('Registered .pad files and backfilled their MIME type.', $output->infos);
+		$this->assertSame([], $output->infos);
 	}
 
 	public function testRejectsAJsonListWhereAMappingObjectIsRequired(): void {
@@ -197,7 +213,7 @@ class RegisterMimeTypeTest extends TestCase {
 		$this->assertCount(1, $output->warnings);
 		$this->assertStringContainsString('optional Etherpad file-type icon', $output->warnings[0]);
 		$this->assertSame('Etherpad', $this->jsonFile('mimetypenames.json')[PadFileType::MIME]);
-		$this->assertContains('Registered .pad files and backfilled their MIME type.', $output->infos);
+		$this->assertContains('Registered .pad files, but some of it was skipped - see the warnings above.', $output->infos);
 	}
 
 	public function testWarnsWhenTheAppPathCannotBeResolved(): void {
@@ -210,7 +226,7 @@ class RegisterMimeTypeTest extends TestCase {
 		$this->assertCount(1, $output->warnings);
 		$this->assertStringContainsString('the app path is unavailable', $output->warnings[0]);
 		$this->assertFileDoesNotExist($this->root . '/core/img/filetypes/etherpad-nextcloud-pad.svg');
-		$this->assertContains('Registered .pad files and backfilled their MIME type.', $output->infos);
+		$this->assertContains('Registered .pad files, but some of it was skipped - see the warnings above.', $output->infos);
 	}
 
 	/** Without one there is no core icon directory to copy into, so nothing is looked up. */
@@ -232,9 +248,13 @@ class RegisterMimeTypeTest extends TestCase {
 		$this->assertSame(1, preg_match('/<install>(.*?)<\/install>/s', $infoXml, $install));
 		$this->assertSame(1, preg_match('/<post-migration>(.*?)<\/post-migration>/s', $infoXml, $postMigration));
 
-		$class = 'OCA\\EtherpadNextcloud\\Migration\\RegisterMimeType';
-		$this->assertStringContainsString($class, $install[1]);
-		$this->assertStringContainsString($class, $postMigration[1]);
+		// Installing runs only the install steps, so everything a fresh
+		// instance needs has to be named there as well as after a migration.
+		foreach (['RegisterMimeType', 'BackfillPadMimeType'] as $step) {
+			$class = 'OCA\\EtherpadNextcloud\\Migration\\' . $step;
+			$this->assertStringContainsString($class, $install[1]);
+			$this->assertStringContainsString($class, $postMigration[1]);
+		}
 	}
 
 	private function step(
