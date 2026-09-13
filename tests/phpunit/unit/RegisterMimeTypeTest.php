@@ -244,6 +244,14 @@ class RegisterMimeTypeTest extends TestCase {
 		$this->assertSame(1, preg_match('/<install>(.*?)<\/install>/s', $infoXml, $install));
 		$this->assertSame(1, preg_match('/<post-migration>(.*?)<\/post-migration>/s', $infoXml, $postMigration));
 
+		// The schema fixes the order of these sections, and only the linter
+		// sees a violation - the sections themselves read the same either way.
+		$this->assertLessThan(
+			strpos($infoXml, '<install>'),
+			strpos($infoXml, '<post-migration>'),
+			'<install> has to follow <post-migration>, as info.xsd sequences them.',
+		);
+
 		// Installing runs only the install steps, so everything a fresh
 		// instance needs has to be named there as well as after a migration.
 		foreach (['RegisterMimeType', 'BackfillPadMimeType'] as $step) {
