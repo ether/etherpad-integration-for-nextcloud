@@ -202,6 +202,20 @@ class RegisterMimeTypeTest extends TestCase {
 		$this->assertSame([], $output->warnings);
 	}
 
+	/** An admin who points one of these at a managed file means the file, not the link. */
+	public function testWritesThroughASymlinkedConfigurationFile(): void {
+		$managed = $this->root . '/managed/mimetypemapping.json';
+		mkdir(dirname($managed), 0777, true);
+		file_put_contents($managed, "{}\n");
+		symlink($managed, $this->configDir . '/mimetypemapping.json');
+
+		$this->step()->run(new RegisterMimeTypeTestOutput());
+
+		$this->assertTrue(is_link($this->configDir . '/mimetypemapping.json'));
+		$decoded = json_decode((string)file_get_contents($managed), true, 512, JSON_THROW_ON_ERROR);
+		$this->assertSame([PadFileType::MIME], $decoded[PadFileType::EXTENSION]);
+	}
+
 	public function testAnInvalidOptionalConfigurationWarnsButDoesNotAbort(): void {
 		file_put_contents($this->configDir . '/mimetypealiases.json', '{invalid');
 		$output = new RegisterMimeTypeTestOutput();
@@ -328,7 +342,9 @@ class RegisterMimeTypeTest extends TestCase {
 				continue;
 			}
 
-			chmod($item->getPathname(), 0666);
+			if (!$item->isLink()) {
+				chmod($item->getPathname(), 0666);
+			}
 			unlink($item->getPathname());
 		}
 		rmdir($path);

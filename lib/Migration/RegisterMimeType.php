@@ -140,6 +140,16 @@ class RegisterMimeType implements IRepairStep {
 	 * which rename() would otherwise replace with the temporary file's.
 	 */
 	private function writeAtomically(string $file, string $contents): bool {
+		if (is_link($file)) {
+			// Renaming over a link replaces the link. An admin who points one
+			// of these at a managed file means the file, so follow it.
+			$resolved = @realpath($file);
+			if ($resolved === false) {
+				return false;
+			}
+			$file = $resolved;
+		}
+
 		$temporary = $file . '.' . bin2hex(random_bytes(6)) . '.tmp';
 		if (@file_put_contents($temporary, $contents, LOCK_EX) === false) {
 			return false;
