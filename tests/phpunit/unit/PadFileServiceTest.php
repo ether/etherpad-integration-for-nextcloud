@@ -532,16 +532,17 @@ class PadFileServiceTest extends TestCase {
 	}
 
 	/**
-	 * The opening marker is not what says a section is there - a pad's own
-	 * text can contain that line. A body that ends in the terminator without
-	 * ever opening one is the shape that is genuinely broken.
+	 * Neither marker is what says a section is there: both are lines a pad's
+	 * own text may hold, and a text-only snapshot that happens to end in the
+	 * terminator must not lose everything that came before it.
 	 */
-	public function testSnapshotSectionsRejectATerminatorThatWasNeverOpened(): void {
+	public function testSnapshotTextMayEndWithTheTerminalMarker(): void {
 		$service = new PadFileService(new FixedClock());
 
-		$this->expectException(PadFileFormatException::class);
-		$this->expectExceptionMessage('terminated but never opened');
-		$service->getSnapshotPartsFromBody("[TEXT]\nplain text\n[HTML-END]");
+		$this->assertSame(
+			['text' => "plain text\n[HTML-END]", 'html' => ''],
+			$service->getSnapshotPartsFromBody("[TEXT]\nplain text\n[HTML-END]"),
+		);
 	}
 
 	/** A pad whose own text holds that line keeps all of it. */

@@ -246,11 +246,7 @@ class PadFileService {
 		return (int)$rev;
 	}
 
-	/**
-	 * @return array{text:string,html:string}
-	 * @throws PadFileFormatException when the body ends in the HTML
-	 *   terminator without ever opening a section
-	 */
+	/** @return array{text:string,html:string} */
 	public function getSnapshotPartsFromBody(string $body): array {
 		return $this->splitSnapshotBody($body);
 	}
@@ -466,8 +462,6 @@ class PadFileService {
 	 * one belongs to the text.
 	 *
 	 * @return array{text: string, html: string}
-	 * @throws PadFileFormatException when a body ends in the terminator but
-	 *   carries no opening marker at all
 	 */
 	private function splitSnapshotBody(string $body): array {
 		$textHeader = self::TEXT_SECTION . "\n";
@@ -493,7 +487,9 @@ class PadFileService {
 		$htmlStart = "\n" . self::HTML_BEGIN_SECTION . "\n";
 		$openedAt = strrpos($candidate, $htmlStart);
 		if ($openedAt === false) {
-			throw new PadFileFormatException('Snapshot HTML section is terminated but never opened.');
+			// Both markers are ordinary lines a pad's text may hold, so a
+			// terminator without an opening one says there is no section.
+			return ['text' => $withoutHeader, 'html' => ''];
 		}
 
 		return [
