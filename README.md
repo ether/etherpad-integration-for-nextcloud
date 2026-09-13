@@ -10,6 +10,7 @@ This plugin lets you surface pads from an Etherpad instance inside Nextcloud and
 - Protected and public pad modes
 - Public folder/file share support for `.pad`
 - Periodic sync from Etherpad into `.pad` snapshots
+- Pad text is searchable through Nextcloud's full-text search, where that is set up
 - Trash deletes on Etherpad (with deferred retry when Etherpad is temporarily unavailable)
 - Restore recreates pads from `.pad` snapshot data
 
@@ -226,6 +227,19 @@ existing name asks for confirmation because the previous file is gone for good.
 - No automatic reverse sync from `.pad` file content back into Etherpad.
 - Automatic while viewer is open (interval from admin settings) and on viewer hide / page unload.
 - Backend endpoint `POST /api/v1/pads/sync/{fileId}` remains available for programmatic syncs.
+
+### Full-text search
+
+- Where Nextcloud's full-text search is set up (`fulltextsearch` and `files_fulltextsearch` plus a search backend such as `fulltextsearch_elasticsearch`), `.pad` files are findable by what the pad says, not only by their name.
+- Nothing has to be configured for it, and the plugin does not look for a search engine. Files FullTextSearch offers every app the chance to supply the content of a file it does not recognise by itself, and this plugin takes that offer for `.pad`. Without those apps the offer is never made and nothing changes.
+- Only the plain-text snapshot is indexed. The YAML frontmatter and the stored HTML are left out, so a search matches on what somebody wrote in the pad rather than on a pad id or on markup.
+- A pad is indexed with the content of its last snapshot, so a pad that has never synced has nothing to find yet. A new snapshot makes the file eligible for indexing again.
+- Whether file content is indexed at all is a Files FullTextSearch setting, made separately for local files, external storages and team folders. A `.pad` follows the same setting as every other file on that storage.
+- Pads that already existed when the search apps were set up are indexed by their names only until something writes to them. To pick up their text without waiting for that, reindex once:
+
+```bash
+php occ fulltextsearch:index
+```
 
 ### Trash/Restore
 
