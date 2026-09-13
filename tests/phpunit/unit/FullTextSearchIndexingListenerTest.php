@@ -96,17 +96,16 @@ class FullTextSearchIndexingListenerTest extends TestCase {
 	}
 
 	/**
-	 * Saying "empty" settles the document as indexed, and the pad then stays
-	 * out of search until its own mtime changes. Leaving the field alone
-	 * keeps it eligible for the next pass, which is what these failures are:
-	 * a sync holding the lock, a file deleted while the run walked the list.
+	 * Letting the failure through would cost the indexing run the rest of its
+	 * files, so it is logged and the pad is left without content. Whatever
+	 * finishes the write that held the lock marks the file for indexing again.
 	 */
 	#[DataProvider('recoverableFileReadErrors')]
-	public function testLeavesTemporarilyUnreadablePadsForTheNextPass(\Throwable $error): void {
+	public function testLogsAPadItCannotReadAndIndexesNoContent(\Throwable $error): void {
 		$file = $this->file('Notes.pad', 'unused');
 		$file->method('getContent')->willThrowException($error);
 		$document = $this->createMock(IIndexDocument::class);
-		$document->expects(self::never())->method('setContent');
+		$document->expects(self::once())->method('setContent')->with('', IIndexDocument::NOT_ENCODED);
 
 		$logger = $this->createMock(LoggerInterface::class);
 		$logger->expects(self::once())->method('debug');

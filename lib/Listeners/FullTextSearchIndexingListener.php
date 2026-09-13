@@ -74,15 +74,15 @@ class FullTextSearchIndexingListener implements IEventListener {
 			$document->setContent('');
 			return;
 		} catch (NotFoundException|LockedException|NotPermittedException|GenericFileException $readError) {
-			// Transient: deleted mid-run, locked by a sync, permissions in
-			// flux. Deliberately leaves the content field alone - claiming it
-			// is empty would settle the document as indexed, and the pad would
-			// stay out of search until its own mtime changes.
-			$this->logger->debug('Skipped indexing a .pad that could not be read; leaving it for a later pass.', [
+			// Deleted mid-run, locked by a sync, permissions in flux. Logged
+			// rather than thrown, so one unreadable pad does not cost the run
+			// the rest of its files.
+			$this->logger->debug('Skipped indexing a .pad that could not be read.', [
 				'app' => 'etherpad_nextcloud',
 				'file' => $file->getName(),
 				'exception' => $readError,
 			]);
+			$document->setContent('');
 			return;
 		}
 
