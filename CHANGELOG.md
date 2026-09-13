@@ -4,7 +4,7 @@
 
 ### Added
 
-- **Pad text is searchable through Nextcloud's full-text search.** Where `fulltextsearch`, `files_fulltextsearch` and a search backend such as `fulltextsearch_elasticsearch` are installed, a `.pad` file is found by its content rather than only by its name. Only the plain-text snapshot reaches the index: YAML frontmatter, pad ids and the stored HTML stay out of it. Whether pad content is indexed at all follows the Files FullTextSearch setting for the storage a file sits on, so external storages and team folders stay out until an admin turns them on. Nothing has to be configured in this app, and an instance without those apps is unaffected. (#225)
+- **Pad text is searchable through Nextcloud's full-text search.** Where `fulltextsearch`, `files_fulltextsearch` and a search backend such as `fulltextsearch_elasticsearch` are installed, a `.pad` file is found by its content rather than only by its name. Only the plain-text snapshot reaches the index: YAML frontmatter, pad ids and the stored HTML stay out of it. Whether pad content is indexed at all follows the Files FullTextSearch setting for the storage a file sits on, so external storages and team folders stay out until an admin turns them on. Nothing has to be configured in this app, and an instance without those apps is unaffected. On an instance that already indexes its files, existing pads keep their current index entry until their next snapshot; `php occ fulltextsearch:index '{"provider":"files","force":true}'` backfills them in one go, which can take a while on a large instance. (#225)
 
 ### Fixed
 

@@ -232,8 +232,6 @@ existing name asks for confirmation because the previous file is gone for good.
 
 - With Nextcloud's full-text search installed (`fulltextsearch`, `files_fulltextsearch` and a backend such as `fulltextsearch_elasticsearch`), `.pad` files are found by their content and not only by their name. No Etherpad-specific search configuration is required.
 - Only the plain-text snapshot stored in the file is indexed, never the frontmatter, the pad id or the stored HTML, and Etherpad is not contacted. A pad becomes searchable with its first snapshot.
-- Whether file content is indexed at all is a Files FullTextSearch setting, made separately per storage. A `.pad` follows the same setting as every other file there.
-- Pads that were indexed before this app version keep their old entry until their next snapshot. `php occ fulltextsearch:index '{"provider":"files","force":true}'` backfills them in one go, which can take a while on a large instance.
 
 ### Trash/Restore
 
