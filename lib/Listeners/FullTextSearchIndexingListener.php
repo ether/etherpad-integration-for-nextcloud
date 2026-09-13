@@ -27,10 +27,11 @@ use Psr\Log\LoggerInterface;
 /**
  * Gives Files FullTextSearch the stored plain-text pad snapshot.
  *
- * Files FullTextSearch does not treat the app's application/* MIME type as
- * text. Its extension event lets us provide the useful part without sending
- * YAML frontmatter or snapshot HTML through Elasticsearch's attachment
- * processor.
+ * Files FullTextSearch classifies files by MIME type and knows nothing of
+ * the app's own. Its extension event is where an app supplies the content of
+ * a file it does not recognise, so only the snapshot text is indexed - never
+ * the frontmatter or the stored HTML. Which search backend stores the result
+ * does not enter into it.
  *
  * @template-implements IEventListener<Event>
  * @psalm-api

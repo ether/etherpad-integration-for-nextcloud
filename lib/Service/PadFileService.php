@@ -454,12 +454,8 @@ class PadFileService {
 	}
 
 	/**
-	 * The terminator decides whether there is an HTML section, not the
-	 * opening marker: a pad's own text can contain a line reading
-	 * `[HTML-BEGIN]`, and treating that as the start of the section loses
-	 * everything after it. Only a body ending in `[HTML-END]` has one, and
-	 * then the *last* opening marker before it is the real one - an earlier
-	 * one belongs to the text.
+	 * A body carries an HTML section only if it ends in the terminating
+	 * marker. Either marker is a line a pad's own text may contain.
 	 *
 	 * @return array{text: string, html: string}
 	 */
