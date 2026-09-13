@@ -107,8 +107,11 @@ class RegisterMimeType implements IRepairStep {
 			$appIcon = '';
 		}
 
-		$ours = $appIcon !== '' && is_file($appIcon)
-			&& @file_get_contents($coreIcon) === @file_get_contents($appIcon);
+		// Two failed reads both return false and would compare equal, which
+		// would call somebody else's file ours and delete it.
+		$installed = @file_get_contents($coreIcon);
+		$ours = $installed !== false && $appIcon !== '' && is_file($appIcon)
+			&& $installed === @file_get_contents($appIcon);
 		if (!$ours) {
 			$output->warning(sprintf(
 				'Left %s in place: it is not the icon this app installed.',

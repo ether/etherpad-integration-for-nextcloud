@@ -240,6 +240,26 @@ class RegisterMimeTypeTest extends TestCase {
 		$this->assertSame([], $output->warnings);
 	}
 
+	/** Two failed reads compare equal, which must not read as "ours". */
+	public function testLeavesACoreIconItCannotRead(): void {
+		$coreIcon = $this->root . '/core/img/filetypes/etherpad-nextcloud-pad.svg';
+		file_put_contents($coreIcon, '<svg>pad</svg>');
+		$appIcon = $this->appDir . '/img/filetypes/etherpad-nextcloud-pad.svg';
+		// Both of them: two failed reads are what compares equal.
+		chmod($coreIcon, 0000);
+		chmod($appIcon, 0000);
+		if (is_string(@file_get_contents($coreIcon)) || is_string(@file_get_contents($appIcon))) {
+			$this->markTestSkipped('Running as a user that ignores file permissions.');
+		}
+		$output = new RegisterMimeTypeTestOutput();
+
+		$this->step()->run($output);
+
+		$this->assertFileExists($coreIcon);
+		$this->assertCount(1, $output->warnings);
+		$this->assertStringContainsString('not the icon this app installed', $output->warnings[0]);
+	}
+
 	public function testLeavesACoreIconSomebodyElseInstalled(): void {
 		$coreIcon = $this->root . '/core/img/filetypes/etherpad-nextcloud-pad.svg';
 		file_put_contents($coreIcon, '<svg>somebody else</svg>');
