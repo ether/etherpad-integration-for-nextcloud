@@ -10,6 +10,7 @@ This plugin lets you surface pads from an Etherpad instance inside Nextcloud and
 - Protected and public pad modes
 - Public folder/file share support for `.pad`
 - Periodic sync from Etherpad into `.pad` snapshots
+- Pad text is searchable through Nextcloud's full-text search, where that is set up
 - Trash deletes on Etherpad (with deferred retry when Etherpad is temporarily unavailable)
 - Restore recreates pads from `.pad` snapshot data
 
@@ -226,6 +227,11 @@ existing name asks for confirmation because the previous file is gone for good.
 - No automatic reverse sync from `.pad` file content back into Etherpad.
 - Automatic while viewer is open (interval from admin settings) and on viewer hide / page unload.
 - Backend endpoint `POST /api/v1/pads/sync/{fileId}` remains available for programmatic syncs.
+
+### Full-text search
+
+- With Nextcloud's full-text search installed (`fulltextsearch`, `files_fulltextsearch` and a backend such as `fulltextsearch_elasticsearch`), `.pad` files are found by their content and not only by their name. No Etherpad-specific search configuration is required.
+- Only the plain-text snapshot stored in the file is indexed, never the frontmatter, the pad id or the stored HTML, and Etherpad is not contacted. A pad becomes searchable with its first snapshot.
 
 ### Trash/Restore
 

@@ -275,6 +275,20 @@ class PadFileServiceTest extends TestCase {
 		);
 	}
 
+	public function testTextOnlySnapshotsPreserveATrailingContentNewline(): void {
+		$service = new PadFileService(new FixedClock());
+		$base = $service->buildInitialDocument(1, 'demo-pad', BindingService::ACCESS_PUBLIC);
+		$textOnly = $service->withExportSnapshot(
+			$service->readPad($base),
+			new PadSnapshot("just text\n", null, 1),
+		);
+
+		$this->assertSame(
+			['text' => "just text\n", 'html' => ''],
+			$service->getSnapshotPartsFromBody($service->readPad($textOnly)->body),
+		);
+	}
+
 	public function testBuildInitialDocumentWithSnapshotMatchesTheTwoStepItReplaces(): void {
 		// The one-step form claims to write exactly what the two-step one
 		// wrote, so the two are compared rather than sampled.
@@ -471,6 +485,81 @@ class PadFileServiceTest extends TestCase {
 
 		$this->assertSame('raw text without sections', $parts['text']);
 		$this->assertSame('', $parts['html']);
+	}
+
+	public function testSnapshotSectionsAllowAFileEndingNewline(): void {
+		$service = new PadFileService(new FixedClock());
+		$document = $service->buildInitialDocument(
+			1,
+			'demo-pad',
+			BindingService::ACCESS_PUBLIC,
+			new PadSnapshot('plain text', '<p>HTML</p>', 1),
+		) . "\n";
+
+		$this->assertSame(
+			['text' => 'plain text', 'html' => '<p>HTML</p>'],
+			$service->getSnapshotPartsFromBody($service->readPad($document)->body),
+		);
+	}
+
+	public static function toleratedHtmlSectionEndings(): array {
+		return [
+			'one file-ending newline' => ["\n"],
+			'two file-ending newlines' => ["\n\n"],
+			'space after the terminal marker' => [' '],
+		];
+	}
+
+	/**
+	 * Whitespace an editor left after the terminal marker is not part of the
+	 * snapshot, and refusing the file over it would throw away the HTML the
+	 * section does carry.
+	 */
+	#[DataProvider('toleratedHtmlSectionEndings')]
+	public function testSnapshotSectionsTolerateWhitespaceAfterTheTerminalMarker(string $ending): void {
+		$service = new PadFileService(new FixedClock());
+		$document = $service->buildInitialDocument(
+			1,
+			'demo-pad',
+			BindingService::ACCESS_PUBLIC,
+			new PadSnapshot('plain text', '<p>HTML</p>', 1),
+		) . $ending;
+
+		$parts = $service->getSnapshotPartsFromBody($service->readPad($document)->body);
+
+		$this->assertSame('plain text', $parts['text']);
+		$this->assertSame('<p>HTML</p>', $parts['html']);
+	}
+
+	/**
+	 * Neither marker is what says a section is there: both are lines a pad's
+	 * own text may hold, and a text-only snapshot that happens to end in the
+	 * terminator must not lose everything that came before it.
+	 */
+	public function testSnapshotTextMayEndWithTheTerminalMarker(): void {
+		$service = new PadFileService(new FixedClock());
+
+		$this->assertSame(
+			['text' => "plain text\n[HTML-END]", 'html' => ''],
+			$service->getSnapshotPartsFromBody("[TEXT]\nplain text\n[HTML-END]"),
+		);
+	}
+
+	/** A pad whose own text holds that line keeps all of it. */
+	public function testSnapshotTextMayContainTheOpeningMarker(): void {
+		$service = new PadFileService(new FixedClock());
+		$text = "hello\n[HTML-BEGIN]\nworld";
+
+		$document = $service->buildInitialDocument(
+			1,
+			'demo-pad',
+			BindingService::ACCESS_PUBLIC,
+			new PadSnapshot($text, '<p>HTML</p>', 1),
+		);
+		$parts = $service->getSnapshotPartsFromBody($service->readPad($document)->body);
+
+		$this->assertSame($text, $parts['text']);
+		$this->assertSame('<p>HTML</p>', $parts['html']);
 	}
 
 	public function testWithRestoredSnapshotWritesTheRestoreInvariant(): void {

@@ -10,6 +10,8 @@ namespace OCA\EtherpadNextcloud\Migration;
 
 use OCA\EtherpadNextcloud\AppInfo\Application;
 use OCA\EtherpadNextcloud\Util\PadFileType;
+use OCP\App\AppPathNotFoundException;
+use OCP\App\IAppManager;
 use OCP\Files\IMimeTypeLoader;
 use OCP\IConfig;
 use OCP\Migration\IOutput;
@@ -26,6 +28,7 @@ class RegisterMimeType implements IRepairStep {
 	public function __construct(
 		private IConfig $config,
 		private IMimeTypeLoader $mimeTypeLoader,
+		private IAppManager $appManager,
 	) {
 	}
 
@@ -71,9 +74,15 @@ class RegisterMimeType implements IRepairStep {
 			$output->info('Skipping core filetype icon sync: server root is not available.');
 			return;
 		}
+		try {
+			$appPath = $this->appManager->getAppPath(Application::APP_ID);
+		} catch (AppPathNotFoundException) {
+			$output->info('Skipping core filetype icon sync: app path could not be resolved.');
+			return;
+		}
 
 		$serverRoot = rtrim(\OC::$SERVERROOT, '/');
-		$appIcon = $serverRoot . '/apps/' . Application::APP_ID . '/' . self::APP_ICON_RELATIVE;
+		$appIcon = rtrim($appPath, '/') . '/' . self::APP_ICON_RELATIVE;
 		$coreIconDir = $serverRoot . '/' . self::CORE_ICON_DIR;
 		$coreIcon = $coreIconDir . '/' . self::MIME_ALIAS . '.svg';
 

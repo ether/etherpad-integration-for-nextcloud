@@ -1,0 +1,67 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (c) 2026 Jacob Bühler
+name: e2e-fulltextsearch
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - 'appinfo/info.xml'
+      - 'lib/AppInfo/Application.php'
+      - 'lib/Listeners/FullTextSearchIndexingListener.php'
+      - 'lib/Migration/RegisterMimeType.php'
+      - 'lib/Service/PadFileService.php'
+      - 'lib/Util/PadFileType.php'
+      - 'img/filetypes/etherpad-nextcloud-pad.svg'
+      - 'scripts/app-file-excludes.sh'
+      - 'tests/e2e/docker/**'
+      - '.github/workflows/e2e-fulltextsearch.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e2e-fulltextsearch-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fulltextsearch:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    name: Nextcloud 34 + Elasticsearch 8
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Resolve the stack hostnames
+        run: echo '127.0.0.1 nc.pad.test ep.pad.test' | sudo tee -a /etc/hosts
+
+      - name: Bring up Nextcloud 34 with full-text search
+        env:
+          FULLTEXTSEARCH: '1'
+          NC_VERSION: '34'
+          EP_VERSION: '2'
+        run: bash tests/e2e/docker/up.sh
+
+      - name: Test pad indexing and search results
+        run: bash tests/e2e/docker/test-fulltextsearch.sh
+
+      - name: Collect stack logs on failure
+        if: failure()
+        run: docker compose -f tests/e2e/docker/compose.yml logs --no-color --tail=400 > stack-logs.txt
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: failure()
+        with:
+          name: e2e-fulltextsearch
+          path: stack-logs.txt
+          retention-days: 7
+
+      - name: Tear the stack down
+        if: always()
+        run: docker compose -f tests/e2e/docker/compose.yml down -v --remove-orphans

@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Added
+
+- **Pad text is searchable through Nextcloud's full-text search.** Where `fulltextsearch`, `files_fulltextsearch` and a search backend such as `fulltextsearch_elasticsearch` are installed, a `.pad` file is found by its content rather than only by its name. Only the plain-text snapshot reaches the index: YAML frontmatter, pad ids and the stored HTML stay out of it. Whether pad content is indexed at all follows the Files FullTextSearch setting for the storage a file sits on, so external storages and team folders stay out until an admin turns them on. Nothing has to be configured in this app, and an instance without those apps is unaffected. On an instance that already indexes its files, existing pads keep their current index entry until their next snapshot; `php occ fulltextsearch:index '{"provider":"files","force":true}'` backfills them in one go, which can take a while on a large instance. (#225)
+
+### Fixed
+
+- **A pad whose own text contains `[HTML-BEGIN]` keeps all of it.** The snapshot parser split at the first occurrence of that line, so everything after it was cut from the text and filed as snapshot HTML. Reading the file back – in the read-only view, and when a trashed pad is restored – returned a truncated pad. The split now keys on the terminating marker and the last opening one, and both markers are accepted as ordinary lines of pad text. (#225)
+- **The `.pad` file-type icon is taken from wherever the app is installed.** The repair step that copies it into core looked under `apps/`, so on an instance that keeps its apps in `custom_apps/` the copy was silently skipped and file lists and search results fell back to the generic icon. (#225)
+
 ### Changed
 
 - **The supported Nextcloud range starts at 31.0.9**, where it named 31 before. On 31.0.0 five end-to-end specs fail - the Ownpad migration, reopening after a rename, orphan recovery, the trash round-trip, and session revocation on logout - and 31.0.9 is where the suite goes green. Nextcloud compares a requirement at whatever precision it is written, so an instance on 31.0.0 through 31.0.8 will find this app incompatible and disable it at its next upgrade check. (#249)

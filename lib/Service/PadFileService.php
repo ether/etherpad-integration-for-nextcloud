@@ -453,36 +453,50 @@ class PadFileService {
 			. self::HTML_END_SECTION;
 	}
 
-	/** @return array{text: string, html: string} */
+	/**
+	 * A body carries an HTML section only if it ends in the terminating
+	 * marker. Either marker is a line a pad's own text may contain.
+	 *
+	 * @return array{text: string, html: string}
+	 */
 	private function splitSnapshotBody(string $body): array {
 		$textHeader = self::TEXT_SECTION . "\n";
-		if (str_starts_with($body, $textHeader)) {
-			$withoutHeader = substr($body, strlen($textHeader));
-			$htmlStart = "\n" . self::HTML_BEGIN_SECTION . "\n";
-			if (str_contains($withoutHeader, $htmlStart)) {
-				$parts = explode($htmlStart, $withoutHeader, 2);
-				$text = (string)$parts[0];
-				$htmlPart = (string)$parts[1];
-				$htmlEnd = "\n" . self::HTML_END_SECTION;
-				if (str_ends_with($htmlPart, $htmlEnd)) {
-					$html = substr($htmlPart, 0, -strlen($htmlEnd));
-					return [
-						'text' => $text,
-						'html' => $html,
-					];
-				}
-			}
+		if (!str_starts_with($body, $textHeader)) {
+			return ['text' => $body, 'html' => ''];
+		}
 
-			// Support text-only snapshots without HTML section markers.
-			return [
-				'text' => $withoutHeader,
-				'html' => '',
-			];
+		$withoutHeader = substr($body, strlen($textHeader));
+		$htmlEnd = "\n" . self::HTML_END_SECTION;
+
+		// Editors leave trailing whitespace after the terminal marker - a
+		// file-ending newline, sometimes two, sometimes a space. None of it
+		// is part of the snapshot, and refusing the file over it would lose
+		// the HTML a well-formed section does carry.
+		$candidate = rtrim($withoutHeader);
+
+		if (!str_ends_with($candidate, $htmlEnd)) {
+			// No section here. A text-only snapshot has no terminator, so a
+			// final newline cannot be told from content and is kept.
+			return ['text' => $withoutHeader, 'html' => ''];
+		}
+
+		// The last opening marker, not the first: pad text may hold that line,
+		// an exported HTML half may not - Etherpad returns HTML on one line.
+		// See docs/pad-format.md.
+		$htmlStart = "\n" . self::HTML_BEGIN_SECTION . "\n";
+		$openedAt = strrpos($candidate, $htmlStart);
+		if ($openedAt === false) {
+			// A terminator without an opening marker says there is no section.
+			return ['text' => $withoutHeader, 'html' => ''];
 		}
 
 		return [
-			'text' => $body,
-			'html' => '',
+			'text' => substr($candidate, 0, $openedAt),
+			'html' => substr(
+				$candidate,
+				$openedAt + strlen($htmlStart),
+				-strlen($htmlEnd),
+			),
 		];
 	}
 }
