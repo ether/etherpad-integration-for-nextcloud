@@ -189,7 +189,7 @@ if any(item.get('title') == file_name for item in frontmatter.get('files', [])):
     raise SystemExit('The unique part of the frontmatter pad id was indexed.')
 PY
 
-echo "Full-text search found only the plain snapshot and returned the pad icon."
+echo "Full-text search found only the plain snapshot, with the icon the pad type is aliased to."
 
 echo "==> checking that a newer snapshot replaces what was indexed"
 second_marker="secondsearch${RANDOM}$(date +%s)"

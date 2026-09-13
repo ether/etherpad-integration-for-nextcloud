@@ -63,7 +63,10 @@ if [[ -n "$(compose ps -aq 2>/dev/null)" ]]; then
 	cat >&2 <<MSG
 An existing e2e stack was found. Remove it with:
 
-  docker compose -f tests/e2e/docker/compose.yml down -v --remove-orphans
+  COMPOSE_PROFILES=fulltextsearch docker compose -f tests/e2e/docker/compose.yml down -v --remove-orphans
+
+The profile has to be named, or a stack brought up with FULLTEXTSEARCH=1
+leaves its Elasticsearch container behind and this check keeps refusing.
 
 For code changes in the running stack, use tests/e2e/docker/sync-app.sh instead.
 MSG
