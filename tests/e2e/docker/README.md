@@ -107,9 +107,12 @@ checks the pad icon, and removes its fixture again:
 tests/e2e/docker/test-fulltextsearch.sh
 ```
 
-On GitHub, `e2e-fulltextsearch.yml` runs that check only when the indexing
-integration or its search-specific stack files change. It is also available
-through `workflow_dispatch`; ordinary pull requests do not start Elasticsearch.
+On GitHub, `e2e-fulltextsearch.yml` runs that check when the indexing
+integration changes — and, because its paths filter names `tests/e2e/docker/**`,
+whenever anything in this directory does. A change to `compose.yml`, the
+`Caddyfile` or `run-suite.sh` therefore starts a Nextcloud 34 stack with
+Elasticsearch even though it is not search-specific. It is also available
+through `workflow_dispatch`.
 
 This profile is deliberately not part of the regular Playwright matrix. It
 downloads the checksummed 34.0.1 releases of `fulltextsearch`,

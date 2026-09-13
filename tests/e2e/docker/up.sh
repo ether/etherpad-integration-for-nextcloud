@@ -35,12 +35,15 @@ if [[ "$FULLTEXTSEARCH" == 1 && "$NC_VERSION" != 34 ]]; then
 	exit 1
 fi
 if [[ "$FULLTEXTSEARCH" == 1 ]]; then
-	export COMPOSE_PROFILES=fulltextsearch
+	stack_profiles=fulltextsearch
 else
-	unset COMPOSE_PROFILES
+	stack_profiles=
 fi
 
-compose() { docker compose -f "$here/compose.yml" "$@"; }
+# Scoped to this stack's own calls. A COMPOSE_PROFILES the caller exported
+# for an overlay of their own is theirs, and unsetting it here would reach
+# out of this script and into their shell.
+compose() { COMPOSE_PROFILES="$stack_profiles" docker compose -f "$here/compose.yml" "$@"; }
 # OC_PASS has to be forwarded explicitly: setting it on the host does
 # nothing, `docker compose exec` only passes what -e names.
 occ() { compose exec -T -u www-data -e OC_PASS="${OC_PASS:-}" nextcloud php occ "$@"; }
@@ -79,7 +82,7 @@ NC_VERSION=$NC_VERSION
 EP_VERSION=$EP_VERSION
 FULLTEXTSEARCH=$FULLTEXTSEARCH
 ELASTICSEARCH_VERSION=$ELASTICSEARCH_VERSION
-COMPOSE_PROFILES=${COMPOSE_PROFILES:-}
+COMPOSE_PROFILES=$stack_profiles
 ENV
 
 echo "==> certificates"
@@ -143,7 +146,6 @@ occ config:app:set etherpad_nextcloud delete_on_trash --value='yes'
 
 if [[ "$FULLTEXTSEARCH" == 1 ]]; then
 	echo "==> installing and configuring full-text search"
-	occ config:app:set etherpad_nextcloud sync_interval_seconds --value='5' >/dev/null
 	download_dir="$(mktemp -d)"
 	trap 'rm -rf "$download_dir"' EXIT
 	install_release_app() {
