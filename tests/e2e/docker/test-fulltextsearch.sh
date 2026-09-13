@@ -179,15 +179,17 @@ matches = [item for item in plain.get('files', []) if item.get('title') == file_
 if len(matches) != 1:
     raise SystemExit(f'Expected exactly one plain-text result for {file_name}, got: {plain}')
 icon = matches[0].get('info', {}).get('unified', {}).get('icon', '')
-if 'etherpad-nextcloud-pad.svg' not in icon:
-    raise SystemExit(f'Expected the pad icon, got: {icon!r}')
+# Search results carry no preview, so without the result listener this would
+# be whatever the MIME alias resolves to inside Nextcloud.
+if 'etherpad_nextcloud/img/filetypes/etherpad-nextcloud-pad.svg' not in icon:
+    raise SystemExit(f'Expected the pad icon served from the app, got: {icon!r}')
 if any(item.get('title') == file_name for item in html.get('files', [])):
     raise SystemExit('The HTML-only marker was indexed.')
 if any(item.get('title') == file_name for item in frontmatter.get('files', [])):
     raise SystemExit('The unique part of the frontmatter pad id was indexed.')
 PY
 
-echo "Full-text search found only the plain snapshot and returned the pad icon."
+echo "Full-text search found only the plain snapshot, with the pad icon served from the app."
 
 echo "==> checking that a newer snapshot replaces what was indexed"
 second_marker="secondsearch${RANDOM}$(date +%s)"

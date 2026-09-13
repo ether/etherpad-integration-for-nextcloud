@@ -25,19 +25,6 @@
       <code><![CDATA[__construct]]></code>
     </PossiblyUnusedMethod>
   </file>
-  <file src="lib/Migration/RegisterMimeType.php">
-    <UnusedMethod>
-      <code><![CDATA[appendToJsonFile]]></code>
-      <code><![CDATA[ensureCoreFiletypeIcon]]></code>
-    </UnusedMethod>
-    <UnusedParam>
-      <code><![CDATA[$output]]></code>
-    </UnusedParam>
-    <UnusedProperty>
-      <code><![CDATA[$appManager]]></code>
-      <code><![CDATA[$config]]></code>
-    </UnusedProperty>
-  </file>
   <file src="lib/Service/AdminConsistencyCheckResponseBuilder.php">
     <PossiblyUnusedMethod>
       <code><![CDATA[__construct]]></code>

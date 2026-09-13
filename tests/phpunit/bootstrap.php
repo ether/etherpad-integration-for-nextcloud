@@ -41,6 +41,7 @@ $stubFiles = [
 	__DIR__ . '/stubs/OCP/EventDispatcher/IEventListener.php',
 	__DIR__ . '/stubs/OCP/FullTextSearch/Model/IIndex.php',
 	__DIR__ . '/stubs/OCP/FullTextSearch/Model/IIndexDocument.php',
+	__DIR__ . '/stubs/OCP/FullTextSearch/Model/ISearchResult.php',
 	__DIR__ . '/stubs/OCP/Constants.php',
 	__DIR__ . '/stubs/OCP/Files/File.php',
 	__DIR__ . '/stubs/OCP/Files/Folder.php',

@@ -63,7 +63,10 @@ if [[ -n "$(compose ps -aq 2>/dev/null)" ]]; then
 	cat >&2 <<MSG
 An existing e2e stack was found. Remove it with:
 
-  docker compose -f tests/e2e/docker/compose.yml down -v --remove-orphans
+  COMPOSE_PROFILES=fulltextsearch docker compose -f tests/e2e/docker/compose.yml down -v --remove-orphans
+
+The profile has to be named, or a stack brought up with FULLTEXTSEARCH=1
+leaves its Elasticsearch container behind and this check keeps refusing.
 
 For code changes in the running stack, use tests/e2e/docker/sync-app.sh instead.
 MSG
@@ -126,11 +129,13 @@ bash "$here/sync-app.sh"
 
 occ app:enable etherpad_nextcloud
 
-# app:enable does not run the repair steps, so .pad stays an unknown
-# extension and the Viewer never opens for it — which looks like a
-# broken app rather than a missing setup step.
+# Enabling runs the install repair steps, but not the post-migration ones -
+# those need an upgrade, or this. The stack should match an instance that
+# has had both.
 occ maintenance:repair >/dev/null
-occ maintenance:mimetype:update-db >/dev/null
+
+# Nothing in either path writes core/js/mimetypelist.js, the browser's copy
+# of the icon mapping. Only this command does.
 occ maintenance:mimetype:update-js >/dev/null
 
 echo "==> configuring the app"

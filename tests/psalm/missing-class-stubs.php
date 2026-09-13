@@ -14,9 +14,13 @@ declare(strict_types=1);
  * actual OCP API instead of treating it as undefined.
  *
  * Genuinely-external classes that can't be loaded this way (the Doctrine DBAL
- * schema type, the `\OC` accessor, `OCP\Image`'s concrete internal base, and a
- * few other apps' events) are handled by targeted suppressions in psalm.xml
- * instead.
+ * schema type, `OCP\Image`'s concrete internal base, and a few other apps'
+ * events) are handled by targeted suppressions in psalm.xml instead.
+ *
+ * `\OC` is stubbed rather than suppressed: the app reads two untyped static
+ * properties off it and nothing else, and suppressing the class left the only
+ * method that reads them unanalysed - Psalm took the guard around them as
+ * always throwing and everything after it as dead.
  *
  * Runtime/PHPUnit is unaffected — this file is loaded only by the Psalm
  * autoloader (tests/psalm/ocp-autoload.php), never by the app.
@@ -32,6 +36,16 @@ namespace OC\Hooks {
 namespace OC\User {
 	if (!class_exists(NoUserException::class)) {
 		class NoUserException extends \Exception {
+		}
+	}
+}
+
+namespace {
+	if (!class_exists(OC::class)) {
+		class OC {
+			/** Untyped, as in Nextcloud: a caller has to check before using it. */
+			public static $configDir;
+			public static $SERVERROOT;
 		}
 	}
 }
