@@ -4,10 +4,11 @@
 
 ### Added
 
-- **Pad text is searchable through Nextcloud's full-text search.** Where `fulltextsearch`, `files_fulltextsearch` and a search backend such as `fulltextsearch_elasticsearch` are installed, a `.pad` file is found by what the pad says rather than only by its name. Only the plain-text snapshot reaches the index: YAML frontmatter, pad ids and the stored HTML stay out of it. Whether pad content is indexed at all follows the Files FullTextSearch setting for the storage a file sits on, so external storages and team folders stay out until an admin turns them on. Nothing has to be configured in this app, and an instance without those apps is unaffected. (#225)
+- **Pad text is searchable through Nextcloud's full-text search.** Where `fulltextsearch`, `files_fulltextsearch` and a search backend such as `fulltextsearch_elasticsearch` are installed, a `.pad` file is found by its content rather than only by its name. Only the plain-text snapshot reaches the index: YAML frontmatter, pad ids and the stored HTML stay out of it. Whether pad content is indexed at all follows the Files FullTextSearch setting for the storage a file sits on, so external storages and team folders stay out until an admin turns them on. Nothing has to be configured in this app, and an instance without those apps is unaffected. (#225)
 
 ### Fixed
 
+- **A pad whose own text contains `[HTML-BEGIN]` keeps all of it.** The snapshot parser split at the first occurrence of that line, so everything after it was cut from the text and filed as snapshot HTML. Reading the file back – in the read-only view, and when a trashed pad is restored – returned a truncated pad. The split now keys on the terminating marker and the last opening one, and both markers are accepted as ordinary lines of pad text. (#225)
 - **The `.pad` file-type icon is taken from wherever the app is installed.** The repair step that copies it into core looked under `apps/`, so on an instance that keeps its apps in `custom_apps/` the copy was silently skipped and file lists and search results fell back to the generic icon. (#225)
 
 ### Changed
