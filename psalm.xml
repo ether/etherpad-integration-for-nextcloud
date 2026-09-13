@@ -33,7 +33,6 @@
         <UndefinedClass>
             <errorLevel type="suppress">
                 <referencedClass name="OCP\Image" />
-                <referencedClass name="OC" />
                 <referencedClass name="OC\Security\CSRF\CsrfTokenManager" />
                 <referencedClass name="Doctrine\DBAL\Schema\Table" />
                 <referencedClass name="OCA\Files\Event\LoadAdditionalScriptsEvent" />

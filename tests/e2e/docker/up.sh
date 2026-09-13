@@ -126,11 +126,9 @@ bash "$here/sync-app.sh"
 
 occ app:enable etherpad_nextcloud
 
-# app:enable does not run the repair steps, so .pad stays an unknown
-# extension and the Viewer never opens for it — which looks like a
-# broken app rather than a missing setup step.
-occ maintenance:repair >/dev/null
-occ maintenance:mimetype:update-db >/dev/null
+# Enabling registers the mime type, its icon and its name. Only the
+# browser's copy of that mapping is left, and nothing but this command
+# writes core/js/mimetypelist.js.
 occ maintenance:mimetype:update-js >/dev/null
 
 echo "==> configuring the app"

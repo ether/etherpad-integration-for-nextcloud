@@ -76,16 +76,18 @@ Place this repository as:
 php occ app:enable etherpad_nextcloud
 ```
 
-### 3) (If needed) rebuild mimetype caches
-
-Run this if `.pad` icons/actions do not appear correctly after install/upgrade:
+Enabling the app registers the `.pad` type, its icon and its name with
+Nextcloud. One step is not part of that, because only an `occ` command writes
+the browser's copy of the icon mapping:
 
 ```bash
 php occ maintenance:mimetype:update-js
-php occ maintenance:mimetype:update-db
 ```
 
-### 4) Open admin settings
+If `.pad` files still open or look wrong afterwards, see
+[Troubleshooting](#pad-downloads-instead-of-opening-in-viewer).
+
+### 3) Open admin settings
 
 Go to:
 
@@ -174,8 +176,6 @@ settings page shows it without running the test.
 ```bash
 php occ app:disable etherpad_nextcloud
 php occ app:enable etherpad_nextcloud
-php occ maintenance:mimetype:update-js
-php occ maintenance:mimetype:update-db
 ```
 
 For deployment, copy the app to `apps/etherpad_nextcloud` and exclude development-only content such as `.git/`, `node_modules/`, `tests/`, `docs/`, `.phpunit.cache/`, and local temp files. Keep the built `js/` assets in the deployed app.
@@ -247,14 +247,14 @@ existing name asks for confirmation because the previous file is gone for good.
   - `php occ app:list | grep etherpad_nextcloud`
 - Rebuild mimetype caches:
   - `php occ maintenance:mimetype:update-js`
-  - `php occ maintenance:mimetype:update-db`
+  - `php occ maintenance:mimetype:update-db --repair-filecache`
 - Reload browser with hard refresh
 
 ### Wrong `.pad` icon (fallback/red icon)
 
-- Re-run mimetype update commands above
+- Re-run the MIME maintenance commands above
 - Check that app CSS loads
-- Confirm app migration alias is applied (app re-enable usually handles this)
+- Confirm the app's MIME repair step completed without warnings
 
 ### `+ New` entries missing
 

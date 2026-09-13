@@ -19,6 +19,9 @@
 		<nextcloud min-version="31.0.9" max-version="34"/>
 	</dependencies>
 	<repair-steps>
+		<install>
+			<step>OCA\EtherpadNextcloud\Migration\RegisterMimeType</step>
+		</install>
 		<post-migration>
 			<step>OCA\EtherpadNextcloud\Migration\RegisterMimeType</step>
 			<step>OCA\EtherpadNextcloud\Migration\BackfillPadMimeType</step>

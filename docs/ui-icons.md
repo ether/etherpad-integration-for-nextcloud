@@ -35,13 +35,13 @@ This note describes how icons are wired in the `+ New` menu and in pad sync acti
 - Filetype icon rendering is native Nextcloud (`core/img/filetypes/{alias}.svg`).
 - Alias used by this app: `etherpad-nextcloud-pad`.
 - App source icon: `img/filetypes/etherpad-nextcloud-pad.svg`.
-- `RegisterMimeType` repair step synchronizes this icon into core filetypes so native sizing/spacing matches other file types (for example `.md`).
+- `RegisterMimeType` synchronizes this icon into core filetypes during app enable and upgrades so native sizing/spacing matches other file types (for example `.md`).
 
 Important after icon changes:
 
 1. `occ app:disable etherpad_nextcloud && occ app:enable etherpad_nextcloud`
 2. `occ maintenance:mimetype:update-js`
-3. `occ maintenance:mimetype:update-db`
+3. `occ maintenance:mimetype:update-db --repair-filecache`
 
 ## Sync Actions (Authenticated Files Flow)
 
