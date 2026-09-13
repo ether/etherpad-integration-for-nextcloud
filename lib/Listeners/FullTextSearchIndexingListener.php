@@ -59,7 +59,10 @@ class FullTextSearchIndexingListener implements IEventListener {
 			return;
 		}
 
-		if (!$this->indexesContentOf($document->getSource())) {
+		$source = $document->getSource();
+		$mayIndexContent = $this->indexesContentOf($source);
+		$this->recordStorageDecision($document, $source, $mayIndexContent);
+		if (!$mayIndexContent) {
 			$document->setContent('');
 			return;
 		}
@@ -87,6 +90,19 @@ class FullTextSearchIndexingListener implements IEventListener {
 		}
 
 		$document->setContent($snapshot['text']);
+	}
+
+	/**
+	 * Files FullTextSearch records the same answer on the index and reindexes
+	 * a file whose recorded answer no longer matches the setting. A pad
+	 * without one would keep whatever it was last indexed with.
+	 */
+	private function recordStorageDecision(IIndexDocument $document, string $source, bool $mayIndexContent): void {
+		if ($source === '' || !$document->hasIndex()) {
+			return;
+		}
+
+		$document->getIndex()->addOption('_' . $source, $mayIndexContent ? '1' : '0');
 	}
 
 	/**

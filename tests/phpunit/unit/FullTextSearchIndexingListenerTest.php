@@ -18,6 +18,7 @@ use OCP\Files\File;
 use OCP\Files\GenericFileException;
 use OCP\Files\NotFoundException;
 use OCP\Files\NotPermittedException;
+use OCP\FullTextSearch\Model\IIndex;
 use OCP\FullTextSearch\Model\IIndexDocument;
 use OCP\IAppConfig;
 use OCP\Lock\LockedException;
@@ -37,7 +38,7 @@ class FullTextSearchIndexingListenerTest extends TestCase {
 				new PadSnapshot("searchable words\nsecond line", '<p>HTML must not be indexed</p>', 3),
 			),
 		);
-		$document = $this->createMock(IIndexDocument::class);
+		$document = $this->document();
 		$document->expects(self::once())
 			->method('setContent')
 			->with("searchable words\nsecond line", IIndexDocument::NOT_ENCODED);
@@ -51,7 +52,7 @@ class FullTextSearchIndexingListenerTest extends TestCase {
 			'Notes.PAD',
 			$service->buildInitialDocument(42, 'demo-pad', BindingService::ACCESS_PUBLIC),
 		);
-		$document = $this->createMock(IIndexDocument::class);
+		$document = $this->document();
 		$document->expects(self::once())->method('setContent')->with('', IIndexDocument::NOT_ENCODED);
 
 		$this->listener($service)->handle($this->indexingEvent($file, $document));
@@ -60,7 +61,7 @@ class FullTextSearchIndexingListenerTest extends TestCase {
 	public function testIgnoresOtherFiles(): void {
 		$file = $this->file('Notes.txt', 'plain text');
 		$file->expects(self::never())->method('getContent');
-		$document = $this->createMock(IIndexDocument::class);
+		$document = $this->document();
 		$document->expects(self::never())->method('setContent');
 
 		$this->listener()->handle($this->indexingEvent($file, $document));
@@ -69,7 +70,7 @@ class FullTextSearchIndexingListenerTest extends TestCase {
 	public function testIgnoresOtherGenericEvents(): void {
 		$file = $this->file('Notes.pad', 'not read');
 		$file->expects(self::never())->method('getContent');
-		$document = $this->createMock(IIndexDocument::class);
+		$document = $this->document();
 		$document->expects(self::never())->method('setContent');
 
 		$this->listener()->handle(new GenericEvent('Files_FullTextSearch.onSearchResult', [
@@ -80,7 +81,7 @@ class FullTextSearchIndexingListenerTest extends TestCase {
 
 	public function testLeavesMalformedPadContentUnindexed(): void {
 		$file = $this->file('Broken.pad', 'not a pad document');
-		$document = $this->createMock(IIndexDocument::class);
+		$document = $this->document();
 		$document->expects(self::once())->method('setContent')->with('', IIndexDocument::NOT_ENCODED);
 
 		$this->listener()->handle($this->indexingEvent($file, $document));
@@ -104,7 +105,7 @@ class FullTextSearchIndexingListenerTest extends TestCase {
 	public function testLogsAPadItCannotReadAndIndexesNoContent(\Throwable $error): void {
 		$file = $this->file('Notes.pad', 'unused');
 		$file->method('getContent')->willThrowException($error);
-		$document = $this->createMock(IIndexDocument::class);
+		$document = $this->document();
 		$document->expects(self::once())->method('setContent')->with('', IIndexDocument::NOT_ENCODED);
 
 		$logger = $this->createMock(LoggerInterface::class);
@@ -120,7 +121,7 @@ class FullTextSearchIndexingListenerTest extends TestCase {
 	 */
 	public function testRecordsAFileWithoutFrontmatterAsEmpty(): void {
 		$file = $this->file('Notes.pad', 'no frontmatter here');
-		$document = $this->createMock(IIndexDocument::class);
+		$document = $this->document();
 		$document->expects(self::once())->method('setContent')->with('', IIndexDocument::NOT_ENCODED);
 
 		$this->listener()->handle($this->indexingEvent($file, $document));
@@ -131,7 +132,7 @@ class FullTextSearchIndexingListenerTest extends TestCase {
 		$file->method('getContent')->willThrowException(new \RuntimeException('unexpected failure'));
 
 		$this->expectExceptionMessage('unexpected failure');
-		$this->listener()->handle($this->indexingEvent($file, $this->createMock(IIndexDocument::class)));
+		$this->listener()->handle($this->indexingEvent($file, $this->document()));
 	}
 
 	public static function contentIndexingDecisions(): array {
@@ -165,13 +166,44 @@ class FullTextSearchIndexingListenerTest extends TestCase {
 				new PadSnapshot('searchable words', '', 3),
 			),
 		);
-		$document = $this->createMock(IIndexDocument::class);
+		$document = $this->document();
 		$document->expects(self::once())
 			->method('setContent')
 			->with($indexed ? 'searchable words' : '', IIndexDocument::NOT_ENCODED);
 
 		$this->listener($service, appConfig: $this->appConfig($settings))
 			->handle($this->indexingEvent($file, $document, $source));
+	}
+
+	/**
+	 * The decision has to be left on the index, not only acted on: that is
+	 * what Files FullTextSearch compares against the current setting to find
+	 * the files an admin's change has to reach.
+	 *
+	 * @param array<string, bool|int> $settings
+	 */
+	#[DataProvider('contentIndexingDecisions')]
+	public function testRecordsTheStorageDecisionOnTheIndex(string $source, array $settings, bool $indexed): void {
+		$index = $this->createMock(IIndex::class);
+		if ($source === '') {
+			$index->expects(self::never())->method('addOption');
+		} else {
+			$index->expects(self::once())
+				->method('addOption')
+				->with('_' . $source, $indexed ? '1' : '0');
+		}
+		$document = $this->document($index);
+
+		$this->listener(appConfig: $this->appConfig($settings))
+			->handle($this->indexingEvent($this->file('Notes.pad', 'unused'), $document, $source));
+	}
+
+	public function testSkipsTheIndexOptionWhenTheDocumentCarriesNoIndex(): void {
+		$document = $this->createMock(IIndexDocument::class);
+		$document->method('hasIndex')->willReturn(false);
+		$document->expects(self::never())->method('getIndex');
+
+		$this->listener()->handle($this->indexingEvent($this->file('Notes.pad', 'unused'), $document));
 	}
 
 	private function listener(
@@ -200,6 +232,13 @@ class FullTextSearchIndexingListenerTest extends TestCase {
 				fn (string $app, string $key, int $default = 0, bool $lazy = false): int => (int)($values[$key] ?? $default)
 			);
 		return $appConfig;
+	}
+
+	private function document(?IIndex $index = null): IIndexDocument {
+		$document = $this->createMock(IIndexDocument::class);
+		$document->method('hasIndex')->willReturn(true);
+		$document->method('getIndex')->willReturn($index ?? $this->createMock(IIndex::class));
+		return $document;
 	}
 
 	private function file(string $name, string $content): File {

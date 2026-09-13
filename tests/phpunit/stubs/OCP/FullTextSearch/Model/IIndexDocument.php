@@ -12,5 +12,9 @@ if (!interface_exists(IIndexDocument::class)) {
 		public function setContent(string $content, int $encoded = 0): IIndexDocument;
 
 		public function getSource(): string;
+
+		public function hasIndex(): bool;
+
+		public function getIndex(): IIndex;
 	}
 }
