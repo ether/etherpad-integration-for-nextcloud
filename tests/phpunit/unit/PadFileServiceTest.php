@@ -502,15 +502,21 @@ class PadFileServiceTest extends TestCase {
 		);
 	}
 
-	public static function invalidHtmlSectionEndings(): array {
+	public static function toleratedHtmlSectionEndings(): array {
 		return [
+			'one file-ending newline' => ["\n"],
 			'two file-ending newlines' => ["\n\n"],
 			'space after the terminal marker' => [' '],
 		];
 	}
 
-	#[DataProvider('invalidHtmlSectionEndings')]
-	public function testSnapshotSectionsRejectAnInvalidTerminalMarker(string $ending): void {
+	/**
+	 * Whitespace an editor left after the terminal marker is not part of the
+	 * snapshot, and refusing the file over it would throw away the HTML the
+	 * section does carry.
+	 */
+	#[DataProvider('toleratedHtmlSectionEndings')]
+	public function testSnapshotSectionsTolerateWhitespaceAfterTheTerminalMarker(string $ending): void {
 		$service = new PadFileService(new FixedClock());
 		$document = $service->buildInitialDocument(
 			1,
@@ -519,9 +525,40 @@ class PadFileServiceTest extends TestCase {
 			new PadSnapshot('plain text', '<p>HTML</p>', 1),
 		) . $ending;
 
+		$parts = $service->getSnapshotPartsFromBody($service->readPad($document)->body);
+
+		$this->assertSame('plain text', $parts['text']);
+		$this->assertSame('<p>HTML</p>', $parts['html']);
+	}
+
+	/**
+	 * The opening marker is not what says a section is there - a pad's own
+	 * text can contain that line. A body that ends in the terminator without
+	 * ever opening one is the shape that is genuinely broken.
+	 */
+	public function testSnapshotSectionsRejectATerminatorThatWasNeverOpened(): void {
+		$service = new PadFileService(new FixedClock());
+
 		$this->expectException(PadFileFormatException::class);
-		$this->expectExceptionMessage('Invalid snapshot HTML section terminator.');
-		$service->getSnapshotPartsFromBody($service->readPad($document)->body);
+		$this->expectExceptionMessage('terminated but never opened');
+		$service->getSnapshotPartsFromBody("[TEXT]\nplain text\n[HTML-END]");
+	}
+
+	/** A pad whose own text holds that line keeps all of it. */
+	public function testSnapshotTextMayContainTheOpeningMarker(): void {
+		$service = new PadFileService(new FixedClock());
+		$text = "hello\n[HTML-BEGIN]\nworld";
+
+		$document = $service->buildInitialDocument(
+			1,
+			'demo-pad',
+			BindingService::ACCESS_PUBLIC,
+			new PadSnapshot($text, '<p>HTML</p>', 1),
+		);
+		$parts = $service->getSnapshotPartsFromBody($service->readPad($document)->body);
+
+		$this->assertSame($text, $parts['text']);
+		$this->assertSame('<p>HTML</p>', $parts['html']);
 	}
 
 	public function testWithRestoredSnapshotWritesTheRestoreInvariant(): void {

@@ -246,7 +246,11 @@ class PadFileService {
 		return (int)$rev;
 	}
 
-	/** @return array{text:string,html:string} */
+	/**
+	 * @return array{text:string,html:string}
+	 * @throws PadFileFormatException when the body ends in the HTML
+	 *   terminator without ever opening a section
+	 */
 	public function getSnapshotPartsFromBody(string $body): array {
 		return $this->splitSnapshotBody($body);
 	}
@@ -453,43 +457,52 @@ class PadFileService {
 			. self::HTML_END_SECTION;
 	}
 
-	/** @return array{text: string, html: string} */
+	/**
+	 * The terminator decides whether there is an HTML section, not the
+	 * opening marker: a pad's own text can contain a line reading
+	 * `[HTML-BEGIN]`, and treating that as the start of the section loses
+	 * everything after it. Only a body ending in `[HTML-END]` has one, and
+	 * then the *last* opening marker before it is the real one - an earlier
+	 * one belongs to the text.
+	 *
+	 * @return array{text: string, html: string}
+	 * @throws PadFileFormatException when a body ends in the terminator but
+	 *   carries no opening marker at all
+	 */
 	private function splitSnapshotBody(string $body): array {
 		$textHeader = self::TEXT_SECTION . "\n";
-		if (str_starts_with($body, $textHeader)) {
-			$withoutHeader = substr($body, strlen($textHeader));
-			$htmlStart = "\n" . self::HTML_BEGIN_SECTION . "\n";
-			if (str_contains($withoutHeader, $htmlStart)) {
-				$parts = explode($htmlStart, $withoutHeader, 2);
-				$text = (string)$parts[0];
-				$htmlPart = (string)$parts[1];
-				$htmlEnd = "\n" . self::HTML_END_SECTION;
-				// Text editors commonly leave one file-ending newline after
-				// the terminal marker; it is not part of the snapshot HTML.
-				if (str_ends_with($htmlPart, "\n")) {
-					$htmlPart = substr($htmlPart, 0, -1);
-				}
-				if (!str_ends_with($htmlPart, $htmlEnd)) {
-					throw new PadFileFormatException('Invalid snapshot HTML section terminator.');
-				}
+		if (!str_starts_with($body, $textHeader)) {
+			return ['text' => $body, 'html' => ''];
+		}
 
-				return [
-					'text' => $text,
-					'html' => substr($htmlPart, 0, -strlen($htmlEnd)),
-				];
-			}
+		$withoutHeader = substr($body, strlen($textHeader));
+		$htmlEnd = "\n" . self::HTML_END_SECTION;
 
-			// Text-only snapshots have no terminator, so a final newline cannot
-			// be distinguished from content and must be preserved.
-			return [
-				'text' => $withoutHeader,
-				'html' => '',
-			];
+		// Editors leave trailing whitespace after the terminal marker - a
+		// file-ending newline, sometimes two, sometimes a space. None of it
+		// is part of the snapshot, and refusing the file over it would lose
+		// the HTML a well-formed section does carry.
+		$candidate = rtrim($withoutHeader);
+
+		if (!str_ends_with($candidate, $htmlEnd)) {
+			// No section here. A text-only snapshot has no terminator, so a
+			// final newline cannot be told from content and is kept.
+			return ['text' => $withoutHeader, 'html' => ''];
+		}
+
+		$htmlStart = "\n" . self::HTML_BEGIN_SECTION . "\n";
+		$openedAt = strrpos($candidate, $htmlStart);
+		if ($openedAt === false) {
+			throw new PadFileFormatException('Snapshot HTML section is terminated but never opened.');
 		}
 
 		return [
-			'text' => $body,
-			'html' => '',
+			'text' => substr($candidate, 0, $openedAt),
+			'html' => substr(
+				$candidate,
+				$openedAt + strlen($htmlStart),
+				-strlen($htmlEnd),
+			),
 		];
 	}
 }

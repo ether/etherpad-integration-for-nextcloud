@@ -8,6 +8,7 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Listeners;
 
+use OCA\EtherpadNextcloud\Exception\MissingFrontmatterException;
 use OCA\EtherpadNextcloud\Exception\PadFileFormatException;
 use OCA\EtherpadNextcloud\Service\PadFileService;
 use OCA\EtherpadNextcloud\Util\PadFileType;
@@ -16,9 +17,11 @@ use OCP\EventDispatcher\GenericEvent;
 use OCP\EventDispatcher\IEventListener;
 use OCP\Files\File;
 use OCP\Files\GenericFileException;
+use OCP\Files\NotFoundException;
 use OCP\Files\NotPermittedException;
 use OCP\FullTextSearch\Model\IIndexDocument;
 use OCP\Lock\LockedException;
+use Psr\Log\LoggerInterface;
 
 /**
  * Gives Files FullTextSearch the stored plain-text pad snapshot.
@@ -36,6 +39,7 @@ class FullTextSearchIndexingListener implements IEventListener {
 
 	public function __construct(
 		private PadFileService $padFileService,
+		private LoggerInterface $logger,
 	) {
 	}
 
@@ -55,10 +59,22 @@ class FullTextSearchIndexingListener implements IEventListener {
 		try {
 			$pad = $this->padFileService->readPad((string)$file->getContent());
 			$snapshot = $this->padFileService->getSnapshotPartsFromBody($pad->body);
-		} catch (PadFileFormatException|GenericFileException|NotPermittedException|LockedException) {
-			// Empty, legacy or hand-edited files may be repaired on their next
-			// open; temporarily unreadable files can be retried on the next pass.
+		} catch (MissingFrontmatterException|PadFileFormatException) {
+			// Not a managed pad yet - empty, legacy, or hand-edited. There is
+			// no snapshot to index and there will not be until someone opens
+			// it, so an empty content field is the honest answer.
 			$document->setContent('');
+			return;
+		} catch (NotFoundException|LockedException|NotPermittedException|GenericFileException $readError) {
+			// Transient: deleted mid-run, locked by a sync, permissions in
+			// flux. Deliberately leaves the content field alone - claiming it
+			// is empty would settle the document as indexed, and the pad would
+			// stay out of search until its own mtime changes.
+			$this->logger->debug('Skipped indexing a .pad that could not be read; leaving it for a later pass.', [
+				'app' => 'etherpad_nextcloud',
+				'file' => $file->getName(),
+				'exception' => $readError,
+			]);
 			return;
 		}
 
