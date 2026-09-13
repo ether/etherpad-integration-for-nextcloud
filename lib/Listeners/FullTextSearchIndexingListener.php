@@ -79,8 +79,8 @@ class FullTextSearchIndexingListener implements IEventListener {
 			return;
 		} catch (NotFoundException|LockedException|NotPermittedException|GenericFileException $readError) {
 			// Deleted mid-run, locked by a sync, permissions in flux. Logged
-			// rather than thrown, so one unreadable pad does not cost the run
-			// the rest of its files.
+			// rather than thrown: an exception is recorded on the index, and
+			// a document carrying one is skipped by every ordinary run after.
 			$this->logger->debug('Skipped indexing a .pad that could not be read.', [
 				'app' => 'etherpad_nextcloud',
 				'file' => $file->getName(),
