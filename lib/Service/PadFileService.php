@@ -484,11 +484,13 @@ class PadFileService {
 			return ['text' => $withoutHeader, 'html' => ''];
 		}
 
+		// The last opening marker, not the first: pad text may hold that line,
+		// an exported HTML half may not - Etherpad returns HTML on one line.
+		// See docs/pad-format.md.
 		$htmlStart = "\n" . self::HTML_BEGIN_SECTION . "\n";
 		$openedAt = strrpos($candidate, $htmlStart);
 		if ($openedAt === false) {
-			// Both markers are ordinary lines a pad's text may hold, so a
-			// terminator without an opening one says there is no section.
+			// A terminator without an opening marker says there is no section.
 			return ['text' => $withoutHeader, 'html' => ''];
 		}
 
