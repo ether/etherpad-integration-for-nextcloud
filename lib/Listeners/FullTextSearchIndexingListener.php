@@ -20,6 +20,7 @@ use OCP\Files\GenericFileException;
 use OCP\Files\NotFoundException;
 use OCP\Files\NotPermittedException;
 use OCP\FullTextSearch\Model\IIndexDocument;
+use OCP\IAppConfig;
 use OCP\Lock\LockedException;
 use Psr\Log\LoggerInterface;
 
@@ -36,9 +37,11 @@ use Psr\Log\LoggerInterface;
  */
 class FullTextSearchIndexingListener implements IEventListener {
 	private const INDEXING_EVENT = 'Files_FullTextSearch.onFileIndexing';
+	private const FILES_FULLTEXTSEARCH = 'files_fulltextsearch';
 
 	public function __construct(
 		private PadFileService $padFileService,
+		private IAppConfig $appConfig,
 		private LoggerInterface $logger,
 	) {
 	}
@@ -53,6 +56,11 @@ class FullTextSearchIndexingListener implements IEventListener {
 		if (!$file instanceof File
 			|| !$document instanceof IIndexDocument
 			|| !PadFileType::isPad($file->getName())) {
+			return;
+		}
+
+		if (!$this->indexesContentOf($document->getSource())) {
+			$document->setContent('');
 			return;
 		}
 
@@ -79,5 +87,21 @@ class FullTextSearchIndexingListener implements IEventListener {
 		}
 
 		$document->setContent($snapshot['text']);
+	}
+
+	/**
+	 * Whether the admin has content indexing on for the storage a file sits on.
+	 *
+	 * Files FullTextSearch asks this before every extractor it has, but each
+	 * of them returns on our MIME type before getting there. Reading its
+	 * settings mirrors what its own text extractor would have decided.
+	 */
+	private function indexesContentOf(string $source): bool {
+		return match ($source) {
+			'files_local' => $this->appConfig->getValueBool(self::FILES_FULLTEXTSEARCH, 'files_local', true),
+			'files_external' => $this->appConfig->getValueInt(self::FILES_FULLTEXTSEARCH, 'files_external') === 1,
+			'files_group_folders' => $this->appConfig->getValueBool(self::FILES_FULLTEXTSEARCH, 'files_group_folders'),
+			default => false,
+		};
 	}
 }

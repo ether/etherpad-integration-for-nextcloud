@@ -10,5 +10,7 @@ if (!interface_exists(IIndexDocument::class)) {
 		public const ENCODED_BASE64 = 1;
 
 		public function setContent(string $content, int $encoded = 0): IIndexDocument;
+
+		public function getSource(): string;
 	}
 }

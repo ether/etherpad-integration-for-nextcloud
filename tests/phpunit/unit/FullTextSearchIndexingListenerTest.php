@@ -19,6 +19,7 @@ use OCP\Files\GenericFileException;
 use OCP\Files\NotFoundException;
 use OCP\Files\NotPermittedException;
 use OCP\FullTextSearch\Model\IIndexDocument;
+use OCP\IAppConfig;
 use OCP\Lock\LockedException;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
@@ -134,11 +135,72 @@ class FullTextSearchIndexingListenerTest extends TestCase {
 		$this->listener()->handle($this->indexingEvent($file, $this->createMock(IIndexDocument::class)));
 	}
 
-	private function listener(?PadFileService $service = null, ?LoggerInterface $logger = null): FullTextSearchIndexingListener {
+	public static function contentIndexingDecisions(): array {
+		return [
+			'local files, on by default' => ['files_local', [], true],
+			'local files switched off' => ['files_local', ['files_local' => false], false],
+			'external storage, off by default' => ['files_external', [], false],
+			'external storage switched on' => ['files_external', ['files_external' => 1], true],
+			'team folders, off by default' => ['files_group_folders', [], false],
+			'team folders switched on' => ['files_group_folders', ['files_group_folders' => true], true],
+			'a storage nobody claimed' => ['', [], false],
+		];
+	}
+
+	/**
+	 * Files FullTextSearch asks per storage whether file content may be
+	 * indexed, but every extractor it has returns on our MIME type before it
+	 * gets that far - so the answer has to be honoured here instead.
+	 *
+	 * @param array<string, bool|int> $settings
+	 */
+	#[DataProvider('contentIndexingDecisions')]
+	public function testIndexesContentOnlyWhereTheAdminAllowedIt(string $source, array $settings, bool $indexed): void {
+		$service = new PadFileService(new FixedClock());
+		$file = $this->file(
+			'Meeting.pad',
+			$service->buildInitialDocument(
+				42,
+				'demo-pad',
+				BindingService::ACCESS_PUBLIC,
+				new PadSnapshot('searchable words', '', 3),
+			),
+		);
+		$document = $this->createMock(IIndexDocument::class);
+		$document->expects(self::once())
+			->method('setContent')
+			->with($indexed ? 'searchable words' : '', IIndexDocument::NOT_ENCODED);
+
+		$this->listener($service, appConfig: $this->appConfig($settings))
+			->handle($this->indexingEvent($file, $document, $source));
+	}
+
+	private function listener(
+		?PadFileService $service = null,
+		?LoggerInterface $logger = null,
+		?IAppConfig $appConfig = null,
+	): FullTextSearchIndexingListener {
 		return new FullTextSearchIndexingListener(
 			$service ?? new PadFileService(new FixedClock()),
+			$appConfig ?? $this->appConfig(),
 			$logger ?? $this->createMock(LoggerInterface::class),
 		);
+	}
+
+	/**
+	 * @param array<string, bool|int> $values keyed by the files_fulltextsearch setting
+	 */
+	private function appConfig(array $values = []): IAppConfig {
+		$appConfig = $this->createMock(IAppConfig::class);
+		$appConfig->method('getValueBool')
+			->willReturnCallback(
+				fn (string $app, string $key, bool $default = false, bool $lazy = false): bool => (bool)($values[$key] ?? $default)
+			);
+		$appConfig->method('getValueInt')
+			->willReturnCallback(
+				fn (string $app, string $key, int $default = 0, bool $lazy = false): int => (int)($values[$key] ?? $default)
+			);
+		return $appConfig;
 	}
 
 	private function file(string $name, string $content): File {
@@ -148,7 +210,8 @@ class FullTextSearchIndexingListenerTest extends TestCase {
 		return $file;
 	}
 
-	private function indexingEvent(File $file, IIndexDocument $document): GenericEvent {
+	private function indexingEvent(File $file, IIndexDocument $document, string $source = 'files_local'): GenericEvent {
+		$document->method('getSource')->willReturn($source);
 		return new GenericEvent('Files_FullTextSearch.onFileIndexing', [
 			'file' => $file,
 			'document' => $document,
