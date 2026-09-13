@@ -464,16 +464,23 @@ class PadFileService {
 				$text = (string)$parts[0];
 				$htmlPart = (string)$parts[1];
 				$htmlEnd = "\n" . self::HTML_END_SECTION;
-				if (str_ends_with($htmlPart, $htmlEnd)) {
-					$html = substr($htmlPart, 0, -strlen($htmlEnd));
-					return [
-						'text' => $text,
-						'html' => $html,
-					];
+				// Text editors commonly leave one file-ending newline after
+				// the terminal marker; it is not part of the snapshot HTML.
+				if (str_ends_with($htmlPart, "\n")) {
+					$htmlPart = substr($htmlPart, 0, -1);
 				}
+				if (!str_ends_with($htmlPart, $htmlEnd)) {
+					throw new PadFileFormatException('Invalid snapshot HTML section terminator.');
+				}
+
+				return [
+					'text' => $text,
+					'html' => substr($htmlPart, 0, -strlen($htmlEnd)),
+				];
 			}
 
-			// Support text-only snapshots without HTML section markers.
+			// Text-only snapshots have no terminator, so a final newline cannot
+			// be distinguished from content and must be preserved.
 			return [
 				'text' => $withoutHeader,
 				'html' => '',

@@ -16,6 +16,7 @@ use OCP\AppFramework\Bootstrap\IBootContext;
 use OCP\AppFramework\Bootstrap\IBootstrap;
 use OCP\AppFramework\Bootstrap\IRegistrationContext;
 use OCP\BackgroundJob\IJobList;
+use OCP\EventDispatcher\GenericEvent;
 use OCP\Files\Template\FileCreatedFromTemplateEvent;
 use OCP\Files\Template\RegisterTemplateCreatorEvent;
 use OCP\Security\CSP\AddContentSecurityPolicyEvent;
@@ -37,6 +38,14 @@ class Application extends App implements IBootstrap {
 	}
 
 	public function register(IRegistrationContext $context): void {
+		// Files FullTextSearch exposes content extraction extensions through
+		// this legacy generic event. GenericEvent is server-wide, so the
+		// listener rejects every other subject before inspecting its payload.
+		$context->registerEventListener(
+			GenericEvent::class,
+			\OCA\EtherpadNextcloud\Listeners\FullTextSearchIndexingListener::class,
+		);
+
 		// Suppresses 4xx noise from NC's /core/preview endpoint when the
 		// Files app or template picker lists .pad files.
 		$context->registerPreviewProvider(

@@ -88,3 +88,47 @@ errors fatal.
 
 Both are throwaway by construction: `down -v` drops the volumes and the
 next `up.sh` starts from an empty instance.
+
+## Optional full-text search
+
+The NC 34 target can also install the three Nextcloud full-text-search apps
+and run Elasticsearch 8 alongside the normal stack:
+
+```bash
+FULLTEXTSEARCH=1 NC_VERSION=34 tests/e2e/docker/up.sh
+tests/e2e/docker/index-fulltextsearch.sh
+```
+
+The focused CI contract can be run locally as well. It creates a real pad,
+syncs a unique phrase, verifies that only the plain snapshot is searchable,
+checks the pad icon, and removes its fixture again:
+
+```bash
+tests/e2e/docker/test-fulltextsearch.sh
+```
+
+On GitHub, `e2e-fulltextsearch.yml` runs that check only when the indexing
+integration or its search-specific stack files change. It is also available
+through `workflow_dispatch`; ordinary pull requests do not start Elasticsearch.
+
+This profile is deliberately not part of the regular Playwright matrix. It
+downloads the checksummed 34.0.1 releases of `fulltextsearch`,
+`files_fulltextsearch` and `fulltextsearch_elasticsearch` from their official
+GitHub release repositories while the stack is created, and gives
+Elasticsearch a 512 MiB Java heap. `ELASTICSEARCH_VERSION` can override the
+pinned 8.x image when needed.
+
+To exercise it in the browser, open <https://nc.pad.test>, create a pad and
+put a distinctive phrase in it. Keep the pad open for at least five seconds
+so the content is copied into the `.pad` file, run
+`index-fulltextsearch.sh`, then use Nextcloud's global search. The app
+contributes only the plain-text snapshot to the index: YAML frontmatter and
+the stored HTML are excluded. Consequently search reflects the latest stored
+snapshot, not Etherpad changes that have not yet synced.
+
+As with the normal stack, remove everything including the Elasticsearch
+index with:
+
+```bash
+docker compose -f tests/e2e/docker/compose.yml down -v --remove-orphans
+```

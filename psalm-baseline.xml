@@ -34,6 +34,7 @@
       <code><![CDATA[$output]]></code>
     </UnusedParam>
     <UnusedProperty>
+      <code><![CDATA[$appManager]]></code>
       <code><![CDATA[$config]]></code>
     </UnusedProperty>
   </file>

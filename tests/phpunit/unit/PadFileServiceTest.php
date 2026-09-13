@@ -275,6 +275,20 @@ class PadFileServiceTest extends TestCase {
 		);
 	}
 
+	public function testTextOnlySnapshotsPreserveATrailingContentNewline(): void {
+		$service = new PadFileService(new FixedClock());
+		$base = $service->buildInitialDocument(1, 'demo-pad', BindingService::ACCESS_PUBLIC);
+		$textOnly = $service->withExportSnapshot(
+			$service->readPad($base),
+			new PadSnapshot("just text\n", null, 1),
+		);
+
+		$this->assertSame(
+			['text' => "just text\n", 'html' => ''],
+			$service->getSnapshotPartsFromBody($service->readPad($textOnly)->body),
+		);
+	}
+
 	public function testBuildInitialDocumentWithSnapshotMatchesTheTwoStepItReplaces(): void {
 		// The one-step form claims to write exactly what the two-step one
 		// wrote, so the two are compared rather than sampled.
@@ -471,6 +485,43 @@ class PadFileServiceTest extends TestCase {
 
 		$this->assertSame('raw text without sections', $parts['text']);
 		$this->assertSame('', $parts['html']);
+	}
+
+	public function testSnapshotSectionsAllowAFileEndingNewline(): void {
+		$service = new PadFileService(new FixedClock());
+		$document = $service->buildInitialDocument(
+			1,
+			'demo-pad',
+			BindingService::ACCESS_PUBLIC,
+			new PadSnapshot('plain text', '<p>HTML</p>', 1),
+		) . "\n";
+
+		$this->assertSame(
+			['text' => 'plain text', 'html' => '<p>HTML</p>'],
+			$service->getSnapshotPartsFromBody($service->readPad($document)->body),
+		);
+	}
+
+	public static function invalidHtmlSectionEndings(): array {
+		return [
+			'two file-ending newlines' => ["\n\n"],
+			'space after the terminal marker' => [' '],
+		];
+	}
+
+	#[DataProvider('invalidHtmlSectionEndings')]
+	public function testSnapshotSectionsRejectAnInvalidTerminalMarker(string $ending): void {
+		$service = new PadFileService(new FixedClock());
+		$document = $service->buildInitialDocument(
+			1,
+			'demo-pad',
+			BindingService::ACCESS_PUBLIC,
+			new PadSnapshot('plain text', '<p>HTML</p>', 1),
+		) . $ending;
+
+		$this->expectException(PadFileFormatException::class);
+		$this->expectExceptionMessage('Invalid snapshot HTML section terminator.');
+		$service->getSnapshotPartsFromBody($service->readPad($document)->body);
 	}
 
 	public function testWithRestoredSnapshotWritesTheRestoreInvariant(): void {
