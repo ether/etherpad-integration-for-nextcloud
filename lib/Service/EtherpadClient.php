@@ -239,11 +239,9 @@ class EtherpadClient {
 	 * protected pads for a while accumulates hundreds, nearly all expired —
 	 * so callers must filter by validUntil rather than trust the list.
 	 *
-	 * @return array<string,array{groupID:string,validUntil:int}>
-	 */
-	/**
 	 * @param ?int $unreadableEntries set to how many ids the index listed
 	 *   that Etherpad could not describe — see below
+	 * @return array<string,array{groupID:string,validUntil:int}>
 	 */
 	public function listSessionsOfAuthor(
 		string $authorId,
@@ -542,6 +540,15 @@ class EtherpadClient {
 		return (string)$response->getBody();
 	}
 
+	/** At least a second, never more than any other call in this app. */
+	private function boundedTimeout(?int $timeoutSeconds): int {
+		if ($timeoutSeconds === null) {
+			return self::REQUEST_TIMEOUT_SECONDS;
+		}
+
+		return max(1, min($timeoutSeconds, self::REQUEST_TIMEOUT_SECONDS));
+	}
+
 	/**
 	 * Shared request options for every Etherpad call: a fixed timeout, the
 	 * JSON Accept header, and redirects disabled (Etherpad never legitimately
@@ -558,15 +565,6 @@ class EtherpadClient {
 	 *
 	 * @return array<string,mixed>
 	 */
-	/** At least a second, never more than any other call in this app. */
-	private function boundedTimeout(?int $timeoutSeconds): int {
-		if ($timeoutSeconds === null) {
-			return self::REQUEST_TIMEOUT_SECONDS;
-		}
-
-		return max(1, min($timeoutSeconds, self::REQUEST_TIMEOUT_SECONDS));
-	}
-
 	private function baseRequestOptions(int $timeoutSeconds = self::REQUEST_TIMEOUT_SECONDS): array {
 		return [
 			'timeout' => $timeoutSeconds,

@@ -174,11 +174,10 @@ class PadFileCreatorTest extends TestCase {
 	 * `..`. Everything past that is per instance — configured forbidden
 	 * characters and names, control characters, what the storage allows —
 	 * and asking turns a 500 from deep in the storage into a sentence.
-	 */
-	/**
-	 * The filename validator's refusal is Nextcloud's own and translated,
-	 * so it is shown: "\"COM1\" is a reserved name" tells the user what to
-	 * change, "Invalid pad name" does not.
+	 *
+	 * The validator's refusal is Nextcloud's own and translated, so it is
+	 * shown: "\"COM1\" is a reserved name" tells the user what to change,
+	 * "Invalid pad name" does not.
 	 */
 	public function testPassesTheValidatorsReasonThrough(): void {
 		$validator = $this->createMock(IFilenameValidator::class);

@@ -29,8 +29,9 @@ class UserNodeResolver {
 	}
 
 	/**
-	 * Resolved through the user's own folder, not the global root.
+	 * The user's own view of a file id, preferring a path they may write.
 	 *
+	 * Resolved through the user's own folder, not the global root.
 	 * getUserFolder() is what sets the user's filesystem up and registers
 	 * their mount providers; asking the global root for an id before that
 	 * has happened answers "no such file" for a pad on external storage, in
@@ -43,20 +44,16 @@ class UserNodeResolver {
 	 * Scoping to the user folder also makes the answer theirs by
 	 * construction. The prefix test stays as a second pair of eyes.
 	 *
+	 * Which node, when several match: one file can be reachable by several
+	 * paths at once — shared to this user directly and again inside a shared
+	 * folder — and the two can carry different permissions. Taking whichever
+	 * came first would let the read-only path decide for a user who also
+	 * holds a writable one, and every later step works from the node this
+	 * returns: the open, the metadata, the sync. Picking the writable one
+	 * keeps all three on the same mount. This is the pattern Nextcloud Text
+	 * uses for the same reason.
+	 *
 	 * @throws NotFoundException
-	 */
-	/**
-	 * The user's own view of a file id, preferring a path they may write.
-	 *
-	 * One file can be reachable by several paths at once — shared to this
-	 * user directly and again inside a shared folder — and the two can carry
-	 * different permissions. Taking whichever came first would let the
-	 * read-only path decide for a user who also holds a writable one, and
-	 * every later step works from the node this returns: the open, the
-	 * metadata, the sync. Picking the writable one keeps all three on the
-	 * same mount.
-	 *
-	 * This is the pattern Nextcloud Text uses for the same reason.
 	 */
 	public function resolveUserFileNodeById(string $uid, int $fileId): File {
 		$nodes = $this->userFolder($uid)->getById($fileId);
