@@ -27,6 +27,7 @@ source "$env_file"
 set +a
 
 compose() { docker compose -f "$here/compose.yml" "$@"; }
+occ() { compose exec -T -u www-data nextcloud php occ "$@"; }
 
 require_stack_env() {
 	local variable

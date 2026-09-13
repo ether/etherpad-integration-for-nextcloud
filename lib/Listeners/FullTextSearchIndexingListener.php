@@ -114,11 +114,25 @@ class FullTextSearchIndexingListener implements IEventListener {
 	 * settings mirrors what its own text extractor would have decided.
 	 */
 	private function indexesContentOf(string $source): bool {
-		return match ($source) {
-			'files_local' => $this->appConfig->getValueBool(self::FILES_FULLTEXTSEARCH, 'files_local', true),
-			'files_external' => $this->appConfig->getValueInt(self::FILES_FULLTEXTSEARCH, 'files_external') === 1,
-			'files_group_folders' => $this->appConfig->getValueBool(self::FILES_FULLTEXTSEARCH, 'files_group_folders'),
-			default => false,
-		};
+		try {
+			return match ($source) {
+				'files_local' => $this->appConfig->getValueBool(self::FILES_FULLTEXTSEARCH, 'files_local', true),
+				'files_external' => $this->appConfig->getValueInt(self::FILES_FULLTEXTSEARCH, 'files_external') === 1,
+				'files_group_folders' => $this->appConfig->getValueBool(self::FILES_FULLTEXTSEARCH, 'files_group_folders'),
+				default => false,
+			};
+		} catch (\Throwable $typeMismatch) {
+			// The value types are theirs, and files_external has already
+			// changed from bool to int once. Reading one the other way round
+			// throws, and letting it through would have the indexer record an
+			// error and then skip every pad on later runs.
+			$this->logger->warning('Could not read Files FullTextSearch\'s setting for this storage; indexing no pad content for it.', [
+				'app' => 'etherpad_nextcloud',
+				'source' => $source,
+				'exception' => $typeMismatch,
+			]);
+
+			return false;
+		}
 	}
 }

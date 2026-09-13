@@ -206,6 +206,25 @@ class FullTextSearchIndexingListenerTest extends TestCase {
 		$this->listener()->handle($this->indexingEvent($this->file('Notes.pad', 'unused'), $document));
 	}
 
+	/**
+	 * The value types belong to Files FullTextSearch, and files_external has
+	 * already changed from bool to int once. Reading one the other way round
+	 * throws, and the indexer skips a document that records an error.
+	 */
+	public function testIndexesNoContentWhenTheSettingCannotBeRead(): void {
+		$appConfig = $this->createMock(IAppConfig::class);
+		$appConfig->method('getValueBool')
+			->willThrowException(new \RuntimeException('Type conflict for key files_local'));
+		$document = $this->document();
+		$document->expects(self::once())->method('setContent')->with('', IIndexDocument::NOT_ENCODED);
+
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects(self::once())->method('warning');
+
+		$this->listener(logger: $logger, appConfig: $appConfig)
+			->handle($this->indexingEvent($this->file('Notes.pad', 'unused'), $document));
+	}
+
 	private function listener(
 		?PadFileService $service = null,
 		?LoggerInterface $logger = null,
