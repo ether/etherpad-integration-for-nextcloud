@@ -253,7 +253,7 @@ existing name asks for confirmation because the previous file is gone for good.
 ### Wrong `.pad` icon (fallback/red icon)
 
 - In the file list the icon comes from the app's preview provider; run `occ preview:cleanup` if an old one is cached
-- Elsewhere it is the MIME alias, which resolves to an icon Nextcloud ships; re-run the MIME maintenance commands above
+- Search results carry the app's icon through a listener; everywhere else without a preview it is the MIME alias, which resolves to an icon Nextcloud ships. Re-run the MIME maintenance commands above
 - Confirm the app's MIME repair step completed without warnings
 
 ### `+ New` entries missing

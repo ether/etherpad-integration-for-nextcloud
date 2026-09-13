@@ -66,7 +66,7 @@ class RegisterMimeTypeTest extends TestCase {
 			$this->jsonFile('mimetypemapping.json')[PadFileType::EXTENSION],
 		);
 		$this->assertSame(
-			'x-office/document',
+			'text',
 			$this->jsonFile('mimetypealiases.json')[PadFileType::MIME],
 		);
 		$this->assertSame(
@@ -131,7 +131,7 @@ class RegisterMimeTypeTest extends TestCase {
 			PadFileType::EXTENSION => [PadFileType::MIME],
 		]);
 		$this->writeJson('mimetypealiases.json', [
-			PadFileType::MIME => 'x-office/document',
+			PadFileType::MIME => 'text',
 		]);
 		$this->writeJson('mimetypenames.json', [
 			PadFileType::MIME => 'Etherpad',

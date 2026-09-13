@@ -39,11 +39,15 @@ view uses decides what is shown.
   unified search, dashboard tiles – `PadPreviewProvider` answers with
   `img/preview-fallback.png`, the pad glyph. This is the app's own icon and
   it lives inside the app.
-- **Where only the MIME icon is available** – `IMimeTypeDetector::mimeTypeIcon()`
-  and `IMimeIconProvider`, used for example by Files FullTextSearch results –
+- **In a full-text search result** – which carries no preview –
+  `FullTextSearchResultListener` replaces the icon Files FullTextSearch chose
+  with the app's own, through the `Files_FullTextSearch.onSearchResult`
+  extension event that fires right after that choice.
+- **Everywhere else without a preview** – file-picker dialogs, for example –
   Nextcloud resolves the MIME alias to `core/img/filetypes/{alias}.svg` and
-  looks nowhere else. The alias registered by `RegisterMimeType` is therefore
-  `x-office/document`, an icon Nextcloud already ships.
+  looks nowhere else. The alias is `text`: a pad is a text document, and
+  `x-office/document` was declined deliberately because it would also file
+  pads under the Files type filter's "Documents" (#27, #130).
 
 There is no public API for an app to register a file-type icon of its own
 (nextcloud/server#52742). Copying one into `core/img/filetypes/` works, and

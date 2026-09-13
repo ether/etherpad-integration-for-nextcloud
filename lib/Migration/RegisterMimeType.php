@@ -21,11 +21,11 @@ use OCP\Migration\IRepairStep;
  */
 class RegisterMimeType implements IRepairStep {
 	/**
-	 * An icon Nextcloud already ships. There is no public way to register
-	 * one from an app directory, and the only place the mime-icon path
-	 * looks is core's own - see docs/ui-icons.md.
+	 * A text document, not an office one: aliasing onto x-office/document
+	 * would also file pads under the Files type filter's "Documents", and
+	 * Nextcloud does not put its own Markdown there either (#27).
 	 */
-	private const MIME_ALIAS = 'x-office/document';
+	private const MIME_ALIAS = 'text';
 	/** What earlier versions of this app copied into core. */
 	private const LEGACY_ICON_NAME = 'etherpad-nextcloud-pad';
 	/** Read from mimetypenames.json, which Nextcloud only loads from 32 on. */

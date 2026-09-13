@@ -13,6 +13,13 @@ if (!interface_exists(IIndexDocument::class)) {
 
 		public function getSource(): string;
 
+		public function getTitle(): string;
+
+		/** @return array<string,mixed> */
+		public function getInfoArray(string $info, array $default = []): array;
+
+		public function setInfoArray(string $info, array $value): IIndexDocument;
+
 		public function hasIndex(): bool;
 
 		public function getIndex(): IIndex;

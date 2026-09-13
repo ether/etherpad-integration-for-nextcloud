@@ -45,6 +45,10 @@ class Application extends App implements IBootstrap {
 			GenericEvent::class,
 			\OCA\EtherpadNextcloud\Listeners\FullTextSearchIndexingListener::class,
 		);
+		$context->registerEventListener(
+			GenericEvent::class,
+			\OCA\EtherpadNextcloud\Listeners\FullTextSearchResultListener::class,
+		);
 
 		// Suppresses 4xx noise from NC's /core/preview endpoint when the
 		// Files app or template picker lists .pad files.
