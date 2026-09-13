@@ -179,8 +179,10 @@ matches = [item for item in plain.get('files', []) if item.get('title') == file_
 if len(matches) != 1:
     raise SystemExit(f'Expected exactly one plain-text result for {file_name}, got: {plain}')
 icon = matches[0].get('info', {}).get('unified', {}).get('icon', '')
-if 'etherpad-nextcloud-pad.svg' not in icon:
-    raise SystemExit(f'Expected the pad icon, got: {icon!r}')
+# Search results have no preview, so this is the MIME alias the repair step
+# registered resolving to an icon Nextcloud ships.
+if 'x-office-document.svg' not in icon:
+    raise SystemExit(f'Expected the document icon the pad type is aliased to, got: {icon!r}')
 if any(item.get('title') == file_name for item in html.get('files', [])):
     raise SystemExit('The HTML-only marker was indexed.')
 if any(item.get('title') == file_name for item in frontmatter.get('files', [])):

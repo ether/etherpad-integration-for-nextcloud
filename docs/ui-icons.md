@@ -32,16 +32,40 @@ This note describes how icons are wired in the `+ New` menu and in pad sync acti
 
 ## File List / File Type Icon (`.pad`)
 
-- Filetype icon rendering is native Nextcloud (`core/img/filetypes/{alias}.svg`).
-- Alias used by this app: `etherpad-nextcloud-pad`.
-- App source icon: `img/filetypes/etherpad-nextcloud-pad.svg`.
-- `RegisterMimeType` synchronizes this icon into core filetypes during app enable and upgrades so native sizing/spacing matches other file types (for example `.md`).
+Two different mechanisms put a picture next to a `.pad`, and which one a
+view uses decides what is shown.
+
+- **Where a preview is asked for** – the file list, public folder shares,
+  unified search, dashboard tiles – `PadPreviewProvider` answers with
+  `img/preview-fallback.png`, the pad glyph. This is the app's own icon and
+  it lives inside the app.
+- **Where only the MIME icon is available** – `IMimeTypeDetector::mimeTypeIcon()`
+  and `IMimeIconProvider`, used for example by Files FullTextSearch results –
+  Nextcloud resolves the MIME alias to `core/img/filetypes/{alias}.svg` and
+  looks nowhere else. The alias registered by `RegisterMimeType` is therefore
+  `x-office/document`, an icon Nextcloud already ships.
+
+There is no public API for an app to register a file-type icon of its own
+(nextcloud/server#52742). Copying one into `core/img/filetypes/` works, and
+earlier versions of this app did it, but core is signed: the file is reported
+as an extra file by `occ integrity:check-core` and is removed by the next
+server upgrade. `RegisterMimeType` now takes such a leftover back out again,
+unless its content differs from the icon this app ships – then it belongs to
+whoever put it there and is only reported.
+
+`themes/<theme>/core/img/filetypes/` is not a way around this. `imagePath()`
+does look there, and `OC_Util::getTheme()` falls back to `default` when
+`themes/default` exists, but `MimeIconProvider::searchfileName()` reads the
+`theme` system value directly and skips the theme path when it is empty.
 
 Important after icon changes:
 
 1. `occ app:disable etherpad_nextcloud && occ app:enable etherpad_nextcloud`
 2. `occ maintenance:mimetype:update-js`
 3. `occ maintenance:mimetype:update-db --repair-filecache`
+
+A preview is cached per file and does not change with a new app version, so
+`occ preview:cleanup` is needed to see a changed `preview-fallback.png`.
 
 ## Sync Actions (Authenticated Files Flow)
 

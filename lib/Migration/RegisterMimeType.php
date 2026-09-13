@@ -20,7 +20,14 @@ use OCP\Migration\IRepairStep;
  * @psalm-api
  */
 class RegisterMimeType implements IRepairStep {
-	private const MIME_ALIAS = 'etherpad-nextcloud-pad';
+	/**
+	 * An icon Nextcloud already ships. There is no public way to register
+	 * one from an app directory, and the only place the mime-icon path
+	 * looks is core's own - see docs/ui-icons.md.
+	 */
+	private const MIME_ALIAS = 'x-office/document';
+	/** What earlier versions of this app copied into core. */
+	private const LEGACY_ICON_NAME = 'etherpad-nextcloud-pad';
 	/** Read from mimetypenames.json, which Nextcloud only loads from 32 on. */
 	private const MIME_NAME = 'Etherpad';
 	private const APP_ICON_RELATIVE = 'img/filetypes/etherpad-nextcloud-pad.svg';
@@ -66,61 +73,58 @@ class RegisterMimeType implements IRepairStep {
 			[PadFileType::MIME => self::MIME_NAME],
 			'file-type name',
 		) && $complete;
-		$complete = $this->ensureCoreFiletypeIcon($output) && $complete;
+		$complete = $this->removeLegacyCoreIcon($output) && $complete;
 
 		$output->info($complete
 			? 'Registered .pad files and backfilled their MIME type.'
 			: 'Registered .pad files, but some of it was skipped - see the warnings above.');
 	}
 
-	/** @return bool whether the icon is in place */
-	private function ensureCoreFiletypeIcon(IOutput $output): bool {
+	/**
+	 * Take back the icon earlier versions copied into core.
+	 *
+	 * Core is signed: a file an app adds there is reported as an extra file
+	 * by the integrity check and is lost on the next server upgrade. An icon
+	 * that is not the one this app wrote belongs to whoever put it there.
+	 *
+	 * @return bool whether core is clean
+	 */
+	private function removeLegacyCoreIcon(IOutput $output): bool {
 		if (!isset(\OC::$SERVERROOT) || !is_string(\OC::$SERVERROOT) || \OC::$SERVERROOT === '') {
-			$output->warning('Could not synchronize the Etherpad file-type icon: the server root is unavailable.');
-			return false;
+			return true;
+		}
+
+		$coreIcon = rtrim(\OC::$SERVERROOT, '/') . '/' . self::CORE_ICON_DIR
+			. '/' . self::LEGACY_ICON_NAME . '.svg';
+		if (!is_file($coreIcon) && !is_link($coreIcon)) {
+			return true;
 		}
 
 		try {
-			$appPath = $this->appManager->getAppPath(Application::APP_ID);
+			$appIcon = rtrim($this->appManager->getAppPath(Application::APP_ID), '/')
+				. '/' . self::APP_ICON_RELATIVE;
 		} catch (AppPathNotFoundException) {
-			$output->warning('Could not synchronize the Etherpad file-type icon: the app path is unavailable.');
+			$appIcon = '';
+		}
+
+		$ours = $appIcon !== '' && is_file($appIcon)
+			&& @file_get_contents($coreIcon) === @file_get_contents($appIcon);
+		if (!$ours) {
+			$output->warning(sprintf(
+				'Left %s in place: it is not the icon this app installed.',
+				$coreIcon,
+			));
+
 			return false;
 		}
 
-		$serverRoot = rtrim(\OC::$SERVERROOT, '/');
-		$appIcon = rtrim($appPath, '/') . '/' . self::APP_ICON_RELATIVE;
-		$coreIconDir = $serverRoot . '/' . self::CORE_ICON_DIR;
-		$coreIcon = $coreIconDir . '/' . self::MIME_ALIAS . '.svg';
+		if (!@unlink($coreIcon)) {
+			$output->warning(sprintf('Could not remove %s, which this app should no longer install.', $coreIcon));
 
-		if (!is_file($appIcon)) {
-			$output->warning('Could not synchronize the Etherpad file-type icon: the app icon is missing.');
 			return false;
 		}
 
-		$iconContents = @file_get_contents($appIcon);
-		if (!is_string($iconContents) || $iconContents === '') {
-			$output->warning('Could not synchronize the Etherpad file-type icon: the app icon is empty or unreadable.');
-			return false;
-		}
-
-		if (is_file($coreIcon) || is_link($coreIcon)) {
-			$existing = @file_get_contents($coreIcon);
-			if (is_string($existing) && $existing === $iconContents) {
-				return true;
-			}
-		}
-
-		if (!is_dir($coreIconDir) || !is_writable($coreIconDir)) {
-			$output->warning('Could not synchronize the Etherpad file-type icon: the core icon directory is not writable.');
-			return false;
-		}
-
-		if (!$this->writeAtomically($coreIcon, $iconContents)) {
-			$output->warning('Could not synchronize the Etherpad file-type icon.');
-			return false;
-		}
-
-		$output->info('Synchronized the Etherpad file-type icon into core.');
+		$output->info('Removed the Etherpad file-type icon this app used to copy into core.');
 
 		return true;
 	}
@@ -128,14 +132,30 @@ class RegisterMimeType implements IRepairStep {
 	/**
 	 * Write through a sibling temporary file.
 	 *
-	 * The targets are shared with other apps and with the server itself, and
-	 * a plain write truncates first: an interrupted one leaves the file empty
-	 * and takes every unrelated entry in it with it.
+	 * The target is shared with other apps and with the server itself, and a
+	 * plain write truncates first: an interrupted one leaves the file empty
+	 * and takes every unrelated entry in it along. This cannot stop another
+	 * writer from overwriting our entry - it only rules out a half-written
+	 * file. The replacement carries the mode, owner and group the target had,
+	 * which rename() would otherwise replace with the temporary file's.
 	 */
 	private function writeAtomically(string $file, string $contents): bool {
 		$temporary = $file . '.' . bin2hex(random_bytes(6)) . '.tmp';
 		if (@file_put_contents($temporary, $contents, LOCK_EX) === false) {
 			return false;
+		}
+
+		$mode = @fileperms($file);
+		if ($mode !== false) {
+			@chmod($temporary, $mode & 07777);
+			$owner = @fileowner($file);
+			$group = @filegroup($file);
+			if ($owner !== false) {
+				@chown($temporary, $owner);
+			}
+			if ($group !== false) {
+				@chgrp($temporary, $group);
+			}
 		}
 
 		if (!@rename($temporary, $file)) {

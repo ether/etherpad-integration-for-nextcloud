@@ -66,17 +66,15 @@ class RegisterMimeTypeTest extends TestCase {
 			$this->jsonFile('mimetypemapping.json')[PadFileType::EXTENSION],
 		);
 		$this->assertSame(
-			'etherpad-nextcloud-pad',
+			'x-office/document',
 			$this->jsonFile('mimetypealiases.json')[PadFileType::MIME],
 		);
 		$this->assertSame(
 			'Etherpad',
 			$this->jsonFile('mimetypenames.json')[PadFileType::MIME],
 		);
-		$this->assertSame(
-			'<svg>pad</svg>',
-			file_get_contents($this->root . '/core/img/filetypes/etherpad-nextcloud-pad.svg'),
-		);
+		// Core is signed; nothing of ours belongs in it.
+		$this->assertFileDoesNotExist($this->root . '/core/img/filetypes/etherpad-nextcloud-pad.svg');
 		$this->assertSame([], $output->warnings);
 		$this->assertContains('Registered .pad files and backfilled their MIME type.', $output->infos);
 	}
@@ -133,7 +131,7 @@ class RegisterMimeTypeTest extends TestCase {
 			PadFileType::EXTENSION => [PadFileType::MIME],
 		]);
 		$this->writeJson('mimetypealiases.json', [
-			PadFileType::MIME => 'etherpad-nextcloud-pad',
+			PadFileType::MIME => 'x-office/document',
 		]);
 		$this->writeJson('mimetypenames.json', [
 			PadFileType::MIME => 'Etherpad',
@@ -216,30 +214,28 @@ class RegisterMimeTypeTest extends TestCase {
 		$this->assertContains('Registered .pad files, but some of it was skipped - see the warnings above.', $output->infos);
 	}
 
-	public function testWarnsWhenTheAppPathCannotBeResolved(): void {
-		$appManager = $this->createStub(IAppManager::class);
-		$appManager->method('getAppPath')->willThrowException(new AppPathNotFoundException());
+	/** Earlier versions copied it there; the integrity check reports it and an upgrade deletes it. */
+	public function testTakesBackTheIconItUsedToCopyIntoCore(): void {
+		$coreIcon = $this->root . '/core/img/filetypes/etherpad-nextcloud-pad.svg';
+		file_put_contents($coreIcon, '<svg>pad</svg>');
 		$output = new RegisterMimeTypeTestOutput();
 
-		$this->step(appManager: $appManager)->run($output);
+		$this->step()->run($output);
 
-		$this->assertCount(1, $output->warnings);
-		$this->assertStringContainsString('the app path is unavailable', $output->warnings[0]);
-		$this->assertFileDoesNotExist($this->root . '/core/img/filetypes/etherpad-nextcloud-pad.svg');
-		$this->assertContains('Registered .pad files, but some of it was skipped - see the warnings above.', $output->infos);
+		$this->assertFileDoesNotExist($coreIcon);
+		$this->assertSame([], $output->warnings);
 	}
 
-	/** Without one there is no core icon directory to copy into, so nothing is looked up. */
-	public function testDoesNotResolveTheAppPathWithoutAServerRoot(): void {
-		\OC::$SERVERROOT = '';
-		$appManager = $this->createMock(IAppManager::class);
-		$appManager->expects(self::never())->method('getAppPath');
+	public function testLeavesACoreIconSomebodyElseInstalled(): void {
+		$coreIcon = $this->root . '/core/img/filetypes/etherpad-nextcloud-pad.svg';
+		file_put_contents($coreIcon, '<svg>somebody else</svg>');
 		$output = new RegisterMimeTypeTestOutput();
 
-		$this->step(appManager: $appManager)->run($output);
+		$this->step()->run($output);
 
+		$this->assertFileExists($coreIcon);
 		$this->assertCount(1, $output->warnings);
-		$this->assertStringContainsString('the server root is unavailable', $output->warnings[0]);
+		$this->assertStringContainsString('not the icon this app installed', $output->warnings[0]);
 	}
 
 	public function testTheRepairStepRunsOnInstallAndAfterMigrations(): void {
@@ -299,9 +295,14 @@ class RegisterMimeTypeTest extends TestCase {
 	private function configContents(): array {
 		$contents = [];
 		foreach (['mimetypemapping.json', 'mimetypealiases.json', 'mimetypenames.json'] as $name) {
-			$content = file_get_contents($this->configDir . '/' . $name);
+			$path = $this->configDir . '/' . $name;
+			$content = file_get_contents($path);
 			$this->assertIsString($content);
-			$contents[$name] = $content;
+			clearstatcache(true, $path);
+			// The inode too: the step writes through a temporary file and
+			// renames, so an unnecessary rewrite produces identical bytes in
+			// a different file.
+			$contents[$name] = [$content, fileinode($path)];
 		}
 
 		return $contents;
