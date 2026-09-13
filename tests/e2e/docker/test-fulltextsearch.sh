@@ -137,26 +137,35 @@ curl --silent --show-error --fail-with-body --cacert "$ca_file" \
 echo "==> indexing and checking the search contract"
 "$here/index-fulltextsearch.sh"
 
-# Elasticsearch refreshes on its own schedule - a second by default - and
-# fulltextsearch_elasticsearch neither forces a refresh nor waits for one.
-# Searching straight after indexing therefore races it, so the first query
-# is retried until the document this run just wrote shows up.
 search() {
 	compose exec -T -u www-data nextcloud php occ fulltextsearch:search --output=json \
 		"$E2E_USER" "$1"
 }
-for attempt in $(seq 1 20); do
-	search "$plain_marker" > "$tmp/plain.json" || true
-	if grep -q "$file_name" "$tmp/plain.json" 2>/dev/null; then
-		break
-	fi
-	if [[ "$attempt" == 20 ]]; then
-		echo "The indexed pad did not become searchable within 20 tries." >&2
-		cat "$tmp/plain.json" >&2
-		exit 1
-	fi
-	sleep 1
-done
+
+# Elasticsearch refreshes on its own schedule - a second by default - and
+# fulltextsearch_elasticsearch neither forces a refresh nor waits for one.
+# Searching straight after indexing therefore races it, so every assertion
+# about a document this run just wrote has to be retried.
+wait_for() {
+	local marker="$1" expected="$2" out="$3" attempt
+	for attempt in $(seq 1 20); do
+		search "$marker" > "$out" || true
+		if grep -q "$file_name" "$out" 2>/dev/null; then
+			if [[ "$expected" == found ]]; then
+				return 0
+			fi
+		elif [[ "$expected" == gone ]]; then
+			return 0
+		fi
+		sleep 1
+	done
+
+	echo "Searching for $marker did not settle on \"$expected\" within 20 tries." >&2
+	cat "$out" >&2
+	exit 1
+}
+
+wait_for "$plain_marker" found "$tmp/plain.json"
 search "$html_marker" > "$tmp/html.json"
 search "$frontmatter_marker" > "$tmp/frontmatter.json"
 
@@ -179,3 +188,22 @@ if any(item.get('title') == file_name for item in frontmatter.get('files', [])):
 PY
 
 echo "Full-text search found only the plain snapshot and returned the pad icon."
+
+echo "==> checking that a newer snapshot replaces what was indexed"
+second_marker="secondsearch${RANDOM}$(date +%s)"
+curl --silent --show-error --fail-with-body --cacert "$ca_file" \
+	--request POST \
+	--data-urlencode "apikey=$E2E_ETHERPAD_API_KEY" \
+	--data-urlencode "padID=$pad_id" \
+	--data-urlencode "text=$second_marker" \
+	"$E2E_ETHERPAD_URL/api/1.2.15/setText" > "$tmp/etherpad-second.json"
+curl --silent --show-error --fail-with-body --cacert "$ca_file" \
+	--user "$E2E_USER:$E2E_APP_PASSWORD" --request POST \
+	--header 'Accept: application/json' \
+	--header 'OCS-APIRequest: true' \
+	"$E2E_BASE_URL/index.php/apps/etherpad_nextcloud/api/v1/pads/sync/$file_id?force=1" \
+	> "$tmp/sync-second.json"
+"$here/index-fulltextsearch.sh"
+wait_for "$second_marker" found "$tmp/second.json"
+wait_for "$plain_marker" gone "$tmp/replaced.json"
+echo "The newer snapshot is searchable and the text it replaced is not."
