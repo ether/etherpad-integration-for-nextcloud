@@ -159,7 +159,7 @@ class PadSyncService {
 
 		$previousRev = $pad->snapshotRev;
 		$nextRev = max(0, $previousRev + 1);
-		$updatedContent = $this->padFileService->withExportSnapshot($pad, new PadSnapshot($text, null, $nextRev));
+		$updatedContent = $this->padFileService->withExportSnapshot($pad, new PadSnapshot($text, '', $nextRev));
 		$lockRetries = $this->lockRetryService->putContentWithSyncLockRetry($node, $updatedContent);
 
 		return new PadSyncResult(

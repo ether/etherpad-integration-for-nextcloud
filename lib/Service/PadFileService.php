@@ -112,7 +112,7 @@ class PadFileService {
 		// sectioned body here rather than building a document and parsing it
 		// straight back to put the snapshot in.
 		$frontmatter['snapshot_rev'] = $snapshot->revision;
-		return $this->serialize($frontmatter, $this->snapshotBody($snapshot));
+		return $this->serialize($frontmatter, $this->buildSnapshotBody($snapshot->text, $snapshot->html));
 	}
 
 	/** @return array{url: string, pad_id: string}|null */
@@ -234,7 +234,7 @@ class PadFileService {
 		$frontmatter['updated_at'] = $this->nowIso();
 		$frontmatter['snapshot_rev'] = $snapshot->revision;
 
-		return $this->serialize($frontmatter, $this->snapshotBody($snapshot));
+		return $this->serialize($frontmatter, $this->buildSnapshotBody($snapshot->text, $snapshot->html));
 	}
 
 	/** @param array<string,mixed> $frontmatter */
@@ -437,15 +437,22 @@ class PadFileService {
 		return (string)$value;
 	}
 
-	private function snapshotBody(PadSnapshot $snapshot): string {
-		return $this->buildSnapshotBody($snapshot->text, $snapshot->html ?? '', $snapshot->html !== null);
-	}
-
-	private function buildSnapshotBody(string $text, string $html, bool $includeHtmlSection = true): string {
-		if (!$includeHtmlSection) {
-			return self::TEXT_SECTION . "\n" . $text;
-		}
-
+	/**
+	 * Always both sections, so a body always ends in the terminating marker
+	 * and always holds an opening one. Either marker is a line a pad's own
+	 * text may contain, and the markers alone could not say which of them
+	 * was structure as long as a body could also carry none.
+	 *
+	 * A snapshot with no HTML - an external pad, whose HTML is deliberately
+	 * never fetched - gets the section with nothing in it.
+	 *
+	 * The split takes the last opening marker, so it relies on the HTML half
+	 * carrying none: Etherpad assembles its export without line separators.
+	 * That is a property of the export, not one this format enforces - the
+	 * same class of assumption as every other thing a hand-edited file can
+	 * break.
+	 */
+	private function buildSnapshotBody(string $text, string $html): string {
 		return self::TEXT_SECTION . "\n"
 			. $text . "\n"
 			. self::HTML_BEGIN_SECTION . "\n"

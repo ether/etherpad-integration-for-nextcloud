@@ -46,7 +46,7 @@ class ExternalPadSeeder {
 			$fileId,
 			$externalPadId,
 			BindingService::ACCESS_PUBLIC,
-			snapshot: new PadSnapshot($external['text'], null, 0),
+			snapshot: new PadSnapshot($external['text'], '', 0),
 			padUrl: $external['pad_url'],
 			extraFrontmatter: [
 				'pad_origin' => $external['origin'],
