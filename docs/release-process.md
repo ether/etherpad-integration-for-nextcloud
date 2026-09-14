@@ -7,6 +7,16 @@ This project uses a lightweight release flow:
 3. Tag the release.
 4. Deploy and run post-deploy smoke checks.
 
+Pushing the tag is the last manual step. `.github/workflows/release.yml` then
+builds the tarball with `scripts/build-release-tarball.sh` - the same script as
+locally - and publishes a GitHub release with it attached, taking the notes
+from this version's `CHANGELOG.md` section and marking anything with a
+pre-release suffix as a pre-release.
+
+The workflow refuses a tag that does not match `appinfo/info.xml`, and a tag
+whose `js/` bundles are not a fresh build of `src/`, so the bump has to be
+committed before the tag is placed.
+
 ## 1) Reproducible Check (Required)
 
 Run from repo root:

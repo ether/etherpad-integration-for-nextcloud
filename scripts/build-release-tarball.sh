@@ -63,6 +63,9 @@ source "$(dirname "${BASH_SOURCE[0]}")/app-file-excludes.sh"
 rsync -a "${RSYNC_EXCLUDES[@]}" "$ROOT_DIR/" "$APP_STAGE/"
 
 mkdir -p "$OUTPUT_DIR"
+# Absolute from here on: the archive is written after a cd into the stage
+# directory, so a relative output directory would land inside it.
+OUTPUT_DIR="$(cd "$OUTPUT_DIR" && pwd)"
 ARTIFACT="$OUTPUT_DIR/$APP_ID-$VERSION.tar.gz"
 
 # Build the archive with macOS metadata-pollution defences enabled.

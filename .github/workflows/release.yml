@@ -1,0 +1,122 @@
+# SPDX-FileCopyrightText: 2026 Etherpad contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# Turns a pushed v* tag into a GitHub release with the app tarball attached.
+# The tarball itself is built by scripts/build-release-tarball.sh, the same
+# script a maintainer runs locally, so the released artefact and a local one
+# are built the same way.
+
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Build the tarball and publish the release
+    runs-on: ubuntu-latest
+    permissions:
+      # Creating the release and uploading the tarball.
+      contents: write
+
+    steps:
+      - name: Checkout the tag
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # The tarball is named from appinfo/info.xml, and the release from the
+      # tag. A tag that disagrees would publish etherpad_nextcloud-<a>.tar.gz
+      # under v<b>, so it is refused here rather than shipped.
+      - name: Read the version and check it against the tag
+        id: version
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          version="$(grep -oE '<version>[^<]+</version>' appinfo/info.xml | sed -E 's|</?version>||g' | head -n1)"
+          if [ -z "$version" ]; then
+            echo "::error::could not read <version> from appinfo/info.xml"
+            exit 1
+          fi
+          if [ "$TAG" != "v$version" ]; then
+            echo "::error::tag $TAG does not match appinfo/info.xml version $version"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          # Semver says everything after the first hyphen is a pre-release.
+          case "$version" in
+            *-*) echo 'prerelease=true' >> "$GITHUB_OUTPUT" ;;
+            *) echo 'prerelease=false' >> "$GITHUB_OUTPUT" ;;
+          esac
+
+      - name: Read package.json node and npm engines
+        id: versions
+        uses: skjnldsv/read-package-engines-version-actions@06d6baf7d8f41934ab630e97d9e6c0bc9c9ac5e4 # v3
+
+      - name: Set up node ${{ steps.versions.outputs.nodeVersion }}
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ steps.versions.outputs.nodeVersion }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --engine-strict
+
+      - name: Production build
+        run: npm run build
+
+      # The committed js/ ships in the tarball, and the eight js/*.license
+      # files carry the app version - so a tag placed without rebuilding
+      # would release bundles that name the previous version.
+      - name: Fail if built assets are stale
+        run: |
+          changes="$(git status --porcelain -- js/)"
+          if [ -n "$changes" ]; then
+            echo "::error::built js/ assets are out of date with src/ at this tag"
+            echo "$changes" >&2
+            exit 1
+          fi
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2.37.2
+        with:
+          php-version: '8.1'
+          coverage: none
+
+      # Nothing ships from vendor/ today; this is here so a future runtime
+      # dependency is installed rather than silently missing from the tarball.
+      - name: Install runtime dependencies
+        run: composer install --no-dev --no-progress --prefer-dist
+
+      - name: Build the release tarball
+        run: scripts/build-release-tarball.sh dist
+
+      - name: Take the release notes from the CHANGELOG
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: scripts/changelog-section.py "$VERSION" > release-notes.md
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+          VERSION: ${{ steps.version.outputs.version }}
+          PRERELEASE: ${{ steps.version.outputs.prerelease }}
+        run: |
+          flags=''
+          if [ "$PRERELEASE" = 'true' ]; then
+            flags='--prerelease'
+          fi
+          # shellcheck disable=SC2086
+          gh release create "$TAG" "dist/etherpad_nextcloud-$VERSION.tar.gz" \
+            --title "$VERSION" \
+            --notes-file release-notes.md \
+            $flags
