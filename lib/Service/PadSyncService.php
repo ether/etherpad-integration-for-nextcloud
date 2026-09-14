@@ -144,7 +144,10 @@ class PadSyncService {
 		// External sync already performs a live upstream text fetch on every call.
 		// force=1 therefore only marks caller intent while preserving the no-blind-rewrite invariant.
 		$external = $this->externalPadExportFetcher->normalizeAndFetchExternalPublicPadText($padUrl);
-		$text = $external['text'];
+		// Compared against what is stored, and a stored snapshot has its
+		// newlines normalized - otherwise upstream CRLF reads as a change on
+		// every single sync.
+		$text = PadFileService::normalizeSnapshotNewlines($external['text']);
 
 		$existingText = $this->padFileService->getSnapshotPartsFromBody($pad->body, $pad->frontmatter)['text'];
 		if ($existingText === $text) {
@@ -194,8 +197,8 @@ class PadSyncService {
 			);
 		}
 
-		$text = $this->etherpadClient->getText($padId);
-		$html = $this->etherpadClient->getHTML($padId);
+		$text = PadFileService::normalizeSnapshotNewlines($this->etherpadClient->getText($padId));
+		$html = PadFileService::normalizeSnapshotNewlines($this->etherpadClient->getHTML($padId));
 		if ($force && $snapshotRev >= $currentRev) {
 			// force=1 bypasses the cheap revision short-circuit and performs a live content re-check.
 			$existing = $this->padFileService->getSnapshotPartsFromBody($pad->body, $pad->frontmatter);

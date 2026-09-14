@@ -576,6 +576,29 @@ class PadFileServiceTest extends TestCase {
 		);
 	}
 
+	/**
+	 * Reading a document normalizes CRLF, so a length measured on the raw
+	 * text would never match what the reader sees - and the marker fallback
+	 * it dropped to is exactly the reading this length exists to replace.
+	 */
+	public function testATextHoldingBothMarkersSurvivesCrlf(): void {
+		$service = new PadFileService(new FixedClock());
+		$text = "a\r\nb\n[HTML-BEGIN]\nx\n[HTML-END]";
+
+		$document = $service->buildInitialDocument(
+			1,
+			'demo-pad',
+			BindingService::ACCESS_PUBLIC,
+			new PadSnapshot($text, null, 1),
+		);
+		$pad = $service->readPad($document);
+
+		$this->assertSame(
+			['text' => "a\nb\n[HTML-BEGIN]\nx\n[HTML-END]", 'html' => ''],
+			$service->getSnapshotPartsFromBody($pad->body, $pad->frontmatter),
+		);
+	}
+
 	/** Etherpad exports HTML on one line, but a hand-written file need not. */
 	public function testAnHtmlHalfHoldingTheOpeningMarkerKeepsAllOfIt(): void {
 		$service = new PadFileService(new FixedClock());

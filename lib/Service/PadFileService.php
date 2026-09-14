@@ -45,6 +45,17 @@ class PadFileService {
 		];
 	}
 
+	/**
+	 * What a snapshot looks like once it is stored.
+	 *
+	 * Reading a document normalizes CRLF across the whole of it, so a writer
+	 * that stores or measures anything else records a length the reader will
+	 * not agree with.
+	 */
+	public static function normalizeSnapshotNewlines(string $value): string {
+		return str_replace("\r\n", "\n", $value);
+	}
+
 	/** @param array<string,mixed> $frontmatter */
 	public function serialize(array $frontmatter, string $body): string {
 		$this->validateFrontmatter($frontmatter);
@@ -117,8 +128,14 @@ class PadFileService {
 		// sectioned body here rather than building a document and parsing it
 		// straight back to put the snapshot in.
 		$frontmatter['snapshot_rev'] = $snapshot->revision;
-		$frontmatter[self::TEXT_BYTES_KEY] = strlen($snapshot->text);
-		return $this->serialize($frontmatter, $this->snapshotBody($snapshot));
+		$text = self::normalizeSnapshotNewlines($snapshot->text);
+		$frontmatter[self::TEXT_BYTES_KEY] = strlen($text);
+
+		return $this->serialize($frontmatter, $this->buildSnapshotBody(
+			$text,
+			$snapshot->html === null ? '' : self::normalizeSnapshotNewlines($snapshot->html),
+			$snapshot->html !== null,
+		));
 	}
 
 	/** @return array{url: string, pad_id: string}|null */
@@ -232,18 +249,27 @@ class PadFileService {
 			$frontmatter['pad_url'] = $padUrl;
 		}
 
+		$text = self::normalizeSnapshotNewlines($text);
 		$frontmatter[self::TEXT_BYTES_KEY] = strlen($text);
 
-		return $this->serialize($frontmatter, $this->buildSnapshotBody($text, $html));
+		return $this->serialize($frontmatter, $this->buildSnapshotBody(
+			$text,
+			self::normalizeSnapshotNewlines($html),
+		));
 	}
 
 	public function withExportSnapshot(ParsedPadFile $pad, PadSnapshot $snapshot): string {
 		$frontmatter = $pad->frontmatter;
 		$frontmatter['updated_at'] = $this->nowIso();
 		$frontmatter['snapshot_rev'] = $snapshot->revision;
-		$frontmatter[self::TEXT_BYTES_KEY] = strlen($snapshot->text);
+		$text = self::normalizeSnapshotNewlines($snapshot->text);
+		$frontmatter[self::TEXT_BYTES_KEY] = strlen($text);
 
-		return $this->serialize($frontmatter, $this->snapshotBody($snapshot));
+		return $this->serialize($frontmatter, $this->buildSnapshotBody(
+			$text,
+			$snapshot->html === null ? '' : self::normalizeSnapshotNewlines($snapshot->html),
+			$snapshot->html !== null,
+		));
 	}
 
 	/** @param array<string,mixed> $frontmatter */
@@ -497,10 +523,6 @@ class PadFileService {
 			throw new PadFileFormatException('Invalid ' . $key . ' in frontmatter.');
 		}
 		return (string)$value;
-	}
-
-	private function snapshotBody(PadSnapshot $snapshot): string {
-		return $this->buildSnapshotBody($snapshot->text, $snapshot->html ?? '', $snapshot->html !== null);
 	}
 
 	private function buildSnapshotBody(string $text, string $html, bool $includeHtmlSection = true): string {
