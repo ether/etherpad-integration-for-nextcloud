@@ -17,7 +17,9 @@ permissions:
   contents: read
 
 concurrency:
-  group: release-tarball-${{ github.head_ref || github.run_id }}
+  # github.ref is refs/pull/<n>/merge here, so the group is one pull
+  # request. A branch name is not: two forks can both call it patch-1.
+  group: release-tarball-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
