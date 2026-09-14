@@ -27,7 +27,7 @@ First beta release for 1.1.0. Focus: searchable pad content, native Nextcloud Vi
 
 ### Tooling / tests / CI
 
-- **Pushing a `v*` tag publishes the release.** The tarball is built with `scripts/build-release-tarball.sh`, the same script as locally, and attached to a GitHub release whose body comes from `docs/release-notes/<version>.md`, or from that version's changelog section where no such file exists. A tag is refused before anything is built when it disagrees with `appinfo/info.xml`, when `package.json` or `package-lock.json` have drifted from it, when `js/` is not a fresh build, or when there are no release notes to publish. (#80)
+- **Pushing a `v*` tag publishes the release.** The tarball is built with `scripts/build-release-tarball.sh`, the same script as locally, and attached to a GitHub release whose body comes from `docs/release-notes/<version>.md`, or from that version's changelog section where no such file exists. A tag is refused before anything is built when it disagrees with `appinfo/info.xml`, when `package.json` or `package-lock.json` have drifted from it, or when there are no release notes to publish; `js/` that is not a fresh build is caught after the build, which is the earliest it can be. (#80)
 - CI now exercises the exact Nextcloud floor, the declared PHP 8.1-8.5 range and a Nextcloud 34 full-text-search stack with Elasticsearch. Search checks cover initial indexing, updated snapshots, storage settings and file icons, and fail when the underlying commands or backend fail. (#249, #250, #255, #258)
 - Source checks detect consecutive PHP docblocks before annotations or documentation can silently attach to the wrong declaration. (#254)
 - Playwright, Vitest and happy-dom updated. (#245, #246, #247)
