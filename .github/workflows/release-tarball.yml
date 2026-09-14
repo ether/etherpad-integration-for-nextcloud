@@ -1,0 +1,41 @@
+# SPDX-FileCopyrightText: 2026 Etherpad contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# Builds the release tarball on a pull request and throws it away.
+#
+# The release workflow is the only other caller, and it runs on a tag push -
+# so the script's first run on Linux was a release, and a command spelled
+# the BSD way failed there instead of here. Building it on every pull
+# request means the platform the release is cut on is the platform the script
+# is tested on.
+
+name: Build the release tarball
+
+on: pull_request
+
+permissions:
+  contents: read
+
+concurrency:
+  # github.ref is refs/pull/<n>/merge here, so the group is one pull
+  # request. A branch name is not: two forks can both call it patch-1.
+  group: release-tarball-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tarball:
+    runs-on: ubuntu-latest
+
+    name: release tarball
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Written outside the checkout, or the archive is rsynced into itself.
+      # The script checks its own output for macOS metadata and symlinks and
+      # exits non-zero, so running it is the whole assertion.
+      - name: Build the release tarball
+        run: scripts/build-release-tarball.sh "$RUNNER_TEMP/dist"
