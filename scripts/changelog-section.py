@@ -52,8 +52,13 @@ def main() -> int:
         print(missing, file=sys.stderr)
         return 1
 
-    if body.strip() == "":
-        print(f"CHANGELOG.md section for {arguments.version} is empty.", file=sys.stderr)
+    # Category headings are not content: a section left as "### Fixed" with
+    # nothing under it would otherwise be published as the release notes.
+    if not any(
+        line.strip() != "" and not line.lstrip().startswith("#")
+        for line in body.split("\n")
+    ):
+        print(f"CHANGELOG.md section for {arguments.version} has no entries.", file=sys.stderr)
         return 1
 
     print(body)

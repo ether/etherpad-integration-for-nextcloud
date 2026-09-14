@@ -9,9 +9,13 @@ This project uses a lightweight release flow:
 
 Pushing the tag is the last manual step. `.github/workflows/release.yml` then
 builds the tarball with `scripts/build-release-tarball.sh` - the same script as
-locally - and publishes a GitHub release with it attached, taking the notes
-from this version's `CHANGELOG.md` section and marking anything with a
-pre-release suffix as a pre-release.
+locally - and publishes a GitHub release with it attached, marking anything
+with a pre-release suffix as a pre-release.
+
+The release body comes from `docs/release-notes/<version>.md` where that file
+exists, which is where a release gets the prose its readers see. Without one it
+falls back to the version's `CHANGELOG.md` section, so a release still says
+something; see `docs/release-notes/README.md`.
 
 The workflow refuses a tag that does not match `appinfo/info.xml`, and a tag
 whose `js/` bundles are not a fresh build of `src/`, so the bump has to be

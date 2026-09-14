@@ -85,24 +85,37 @@ jobs:
             exit 1
           fi
 
-      - name: Set up PHP
-        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2.37.2
-        with:
-          php-version: '8.1'
-          coverage: none
-
-      # Nothing ships from vendor/ today; this is here so a future runtime
-      # dependency is installed rather than silently missing from the tarball.
-      - name: Install runtime dependencies
-        run: composer install --no-dev --no-progress --prefer-dist
+      # The tarball excludes vendor/ (scripts/app-file-excludes.sh), which is
+      # correct while composer.json requires nothing at runtime. The day it
+      # does, that exclusion and this workflow both need a decision - so the
+      # release stops here rather than shipping an app without its dependency.
+      - name: Fail if a runtime dependency appeared
+        run: |
+          requires="$(python3 -c "import json; print(' '.join(k for k in json.load(open('composer.json')).get('require', {}) if k != 'php'))")"
+          if [ -n "$requires" ]; then
+            echo "::error::composer.json now requires $requires at runtime, but the tarball excludes vendor/"
+            exit 1
+          fi
 
       - name: Build the release tarball
         run: scripts/build-release-tarball.sh dist
 
-      - name: Take the release notes from the CHANGELOG
+      # A release usually gets prose written for its readers, which is not the
+      # same text as the CHANGELOG entry - that one is terse and carries issue
+      # numbers. Where it exists it wins; where nobody wrote one the CHANGELOG
+      # section still makes a release that says something.
+      - name: Collect the release notes
         env:
           VERSION: ${{ steps.version.outputs.version }}
-        run: scripts/changelog-section.py "$VERSION" > release-notes.md
+        run: |
+          written="docs/release-notes/$VERSION.md"
+          if [ -f "$written" ]; then
+            echo "Using $written"
+            cp "$written" release-notes.md
+          else
+            echo "No $written; using the CHANGELOG section"
+            scripts/changelog-section.py "$VERSION" > release-notes.md
+          fi
 
       - name: Publish the release
         env:
