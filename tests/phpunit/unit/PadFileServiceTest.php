@@ -56,7 +56,7 @@ class PadFileServiceTest extends TestCase {
 		$this->assertSame('demo-pad', $parsed['frontmatter']['pad_id']);
 		$this->assertSame(
 			['text' => 'body', 'html' => ''],
-			$service->getSnapshotPartsFromBody($parsed['body']),
+			$service->getSnapshotPartsFromBody($parsed['body'], []),
 		);
 	}
 
@@ -242,7 +242,7 @@ class PadFileServiceTest extends TestCase {
 		$this->assertSame(7, $parsed->frontmatter['snapshot_rev']);
 		$this->assertSame(
 			['text' => "line-a\nline-b", 'html' => '<p>line-a</p>'],
-			$service->getSnapshotPartsFromBody($parsed->body),
+			$service->getSnapshotPartsFromBody($parsed->body, []),
 		);
 	}
 
@@ -257,7 +257,7 @@ class PadFileServiceTest extends TestCase {
 		$cleared = $service->withExportSnapshot($service->readPad($withContent), new PadSnapshot('', '', 6));
 
 		$parsed = $service->readPad($cleared);
-		$this->assertSame(['text' => '', 'html' => ''], $service->getSnapshotPartsFromBody($parsed->body));
+		$this->assertSame(['text' => '', 'html' => ''], $service->getSnapshotPartsFromBody($parsed->body, []));
 		$this->assertSame(6, $parsed->frontmatter['snapshot_rev']);
 	}
 
@@ -271,7 +271,7 @@ class PadFileServiceTest extends TestCase {
 		$this->assertStringNotContainsString('[HTML-END]', $textOnly);
 		$this->assertSame(
 			['text' => 'just text', 'html' => ''],
-			$service->getSnapshotPartsFromBody($service->readPad($textOnly)->body),
+			$service->getSnapshotPartsFromBody($service->readPad($textOnly)->body, []),
 		);
 	}
 
@@ -285,7 +285,7 @@ class PadFileServiceTest extends TestCase {
 
 		$this->assertSame(
 			['text' => "just text\n", 'html' => ''],
-			$service->getSnapshotPartsFromBody($service->readPad($textOnly)->body),
+			$service->getSnapshotPartsFromBody($service->readPad($textOnly)->body, []),
 		);
 	}
 
@@ -317,7 +317,7 @@ class PadFileServiceTest extends TestCase {
 		$this->assertSame(0, $parsed->frontmatter['snapshot_rev']);
 		$this->assertSame(
 			['text' => 'hello', 'html' => '<p>hello</p>'],
-			$service->getSnapshotPartsFromBody($parsed->body),
+			$service->getSnapshotPartsFromBody($parsed->body, []),
 		);
 	}
 
@@ -340,7 +340,7 @@ class PadFileServiceTest extends TestCase {
 
 		$parsed = $service->readPad($document);
 
-		$this->assertSame($text, $service->getSnapshotPartsFromBody($parsed->body)['text']);
+		$this->assertSame($text, $service->getSnapshotPartsFromBody($parsed->body, [])['text']);
 		// And the real ones are still the ones the frontmatter carries.
 		$this->assertNotSame('in the body', $parsed->frontmatter['created_at']);
 	}
@@ -375,7 +375,7 @@ class PadFileServiceTest extends TestCase {
 		$this->assertSame(0, $parsed->frontmatter['snapshot_rev']);
 		$this->assertSame(
 			['text' => 'remote text', 'html' => ''],
-			$service->getSnapshotPartsFromBody($parsed->body),
+			$service->getSnapshotPartsFromBody($parsed->body, []),
 		);
 	}
 
@@ -481,7 +481,7 @@ class PadFileServiceTest extends TestCase {
 
 	public function testGetSnapshotPartsFromBodyHandlesBodyWithoutMarkers(): void {
 		$service = new PadFileService(new FixedClock());
-		$parts = $service->getSnapshotPartsFromBody('raw text without sections');
+		$parts = $service->getSnapshotPartsFromBody('raw text without sections', []);
 
 		$this->assertSame('raw text without sections', $parts['text']);
 		$this->assertSame('', $parts['html']);
@@ -498,7 +498,7 @@ class PadFileServiceTest extends TestCase {
 
 		$this->assertSame(
 			['text' => 'plain text', 'html' => '<p>HTML</p>'],
-			$service->getSnapshotPartsFromBody($service->readPad($document)->body),
+			$service->getSnapshotPartsFromBody($service->readPad($document)->body, []),
 		);
 	}
 
@@ -525,7 +525,7 @@ class PadFileServiceTest extends TestCase {
 			new PadSnapshot('plain text', '<p>HTML</p>', 1),
 		) . $ending;
 
-		$parts = $service->getSnapshotPartsFromBody($service->readPad($document)->body);
+		$parts = $service->getSnapshotPartsFromBody($service->readPad($document)->body, []);
 
 		$this->assertSame('plain text', $parts['text']);
 		$this->assertSame('<p>HTML</p>', $parts['html']);
@@ -541,7 +541,7 @@ class PadFileServiceTest extends TestCase {
 
 		$this->assertSame(
 			['text' => "plain text\n[HTML-END]", 'html' => ''],
-			$service->getSnapshotPartsFromBody("[TEXT]\nplain text\n[HTML-END]"),
+			$service->getSnapshotPartsFromBody("[TEXT]\nplain text\n[HTML-END]", []),
 		);
 	}
 
@@ -618,6 +618,112 @@ class PadFileServiceTest extends TestCase {
 		);
 	}
 
+	public static function whitespaceLeftOnTheFile(): array {
+		return [
+			'one file-ending newline' => ["\n"],
+			'two file-ending newlines' => ["\n\n"],
+			'a trailing space' => [' '],
+		];
+	}
+
+	/**
+	 * Files pick up a trailing newline routinely, and whatever follows the
+	 * recorded text is not text - so this must not drop to the marker
+	 * reading, which is the truncation the length exists to prevent.
+	 */
+	#[DataProvider('whitespaceLeftOnTheFile')]
+	public function testKeepsTheTextWhenWhitespaceIsLeftOnTheFile(string $trailing): void {
+		$service = new PadFileService(new FixedClock());
+		$text = "hallo\n[HTML-BEGIN]\nwelt\n[HTML-END]";
+
+		$document = $service->buildInitialDocument(
+			1,
+			'demo-pad',
+			BindingService::ACCESS_PUBLIC,
+			new PadSnapshot($text, null, 1),
+		) . $trailing;
+		$pad = $service->readPad($document);
+
+		$this->assertSame($text, $service->getSnapshotPartsFromBody($pad->body, $pad->frontmatter)['text']);
+	}
+
+	public static function unusableRecordedLengths(): array {
+		return [
+			'a quoted number' => ['"42"'],
+			'null' => ['null'],
+			'not a number' => ['abc'],
+			'negative' => ['-1'],
+			'fractional' => ['1.5'],
+		];
+	}
+
+	/**
+	 * A hand-edited value is read past, not refused: refusing would leave the
+	 * pad unopenable, unsyncable and unrestorable over a key that only ever
+	 * disambiguates a reading the markers can still give.
+	 */
+	#[DataProvider('unusableRecordedLengths')]
+	public function testReadsPastAnUnusableRecordedLength(string $value): void {
+		$service = new PadFileService(new FixedClock());
+		$document = $service->buildInitialDocument(
+			1,
+			'demo-pad',
+			BindingService::ACCESS_PUBLIC,
+			new PadSnapshot('hallo', 'welt', 1),
+		);
+		$edited = preg_replace('/snapshot_text_bytes: \d+/', 'snapshot_text_bytes: ' . $value, $document);
+		$this->assertIsString($edited);
+
+		$pad = $service->readPad($edited);
+
+		$this->assertSame(
+			['text' => 'hallo', 'html' => 'welt'],
+			$service->getSnapshotPartsFromBody($pad->body, $pad->frontmatter),
+		);
+	}
+
+	/**
+	 * A section is joined on with a newline, so a carriage return at the end
+	 * of the text pairs with it and is collapsed when the document is read.
+	 * A length that counted it would never match the body again.
+	 */
+	public function testRecordsTheTextAsItWillBeStoredWhenItEndsInACarriageReturn(): void {
+		$service = new PadFileService(new FixedClock());
+
+		$document = $service->buildInitialDocument(
+			1,
+			'demo-pad',
+			BindingService::ACCESS_PUBLIC,
+			new PadSnapshot("hallo\r", '<p>x</p>', 1),
+		);
+		$pad = $service->readPad($document);
+
+		$this->assertSame(strlen('hallo'), $pad->frontmatter['snapshot_text_bytes']);
+		$this->assertSame(
+			['text' => 'hallo', 'html' => '<p>x</p>'],
+			$service->getSnapshotPartsFromBody($pad->body, $pad->frontmatter),
+		);
+	}
+
+	/**
+	 * It is the one key that describes the body, and serialize() is where the
+	 * two are joined - a caller copying a parsed frontmatter onto a different
+	 * body would otherwise record a length for text that is no longer there.
+	 */
+	public function testDoesNotCarryARecordedLengthOntoADifferentBody(): void {
+		$service = new PadFileService(new FixedClock());
+		$pad = $service->readPad($service->buildInitialDocument(
+			1,
+			'demo-pad',
+			BindingService::ACCESS_PUBLIC,
+			new PadSnapshot('hallo', 'welt', 1),
+		));
+
+		$rewritten = $service->serialize($pad->frontmatter, "[TEXT]\nsomething else entirely");
+
+		$this->assertStringNotContainsString('snapshot_text_bytes', $rewritten);
+	}
+
 	public static function bodiesReadByTheirMarkers(): array {
 		return [
 			'written before the length was recorded' => [null],
@@ -653,7 +759,7 @@ class PadFileServiceTest extends TestCase {
 			BindingService::ACCESS_PUBLIC,
 			new PadSnapshot($text, '<p>HTML</p>', 1),
 		);
-		$parts = $service->getSnapshotPartsFromBody($service->readPad($document)->body);
+		$parts = $service->getSnapshotPartsFromBody($service->readPad($document)->body, []);
 
 		$this->assertSame($text, $parts['text']);
 		$this->assertSame('<p>HTML</p>', $parts['html']);
@@ -681,7 +787,7 @@ class PadFileServiceTest extends TestCase {
 		$this->assertSame('https://pad.example.test/p/new-pad', $restored->padUrl);
 		$this->assertSame(
 			['text' => 'replaced text', 'html' => '<p>replaced html</p>'],
-			$service->getSnapshotPartsFromBody($restored->body),
+			$service->getSnapshotPartsFromBody($restored->body, []),
 		);
 	}
 

@@ -244,7 +244,10 @@ export const expectFileInList = async (page: Page, fileName: string): Promise<vo
 
 export const closeViewer = async (page: Page): Promise<void> => {
 	const viewer = page.locator('.viewer__content, .viewer, [data-cy-viewer]').first()
-	const closeButton = page.getByRole('button', { name: /close|schließen/i }).last()
+	// Scoped to the viewer: Nextcloud's navigation toggle is labelled
+	// "Close navigation", and clicking that one leaves the modal open to
+	// intercept every retry until the test times out.
+	const closeButton = viewer.getByRole('button', { name: /close|schließen/i }).last()
 	// waitFor (not isVisible({timeout}), whose timeout is a documented no-op)
 	// so a close button that paints slightly late is still clicked rather
 	// than falling through to Escape; only a truly absent button uses Escape.

@@ -30,6 +30,7 @@ Additional fields:
 - `pad_url` (optional, absolute `http(s)` URL)
 - `pad_origin` (optional, origin of external Etherpad server, e.g. `https://pad.example.org`)
 - `remote_pad_id` (optional, actual pad ID on external server)
+- `snapshot_text_bytes` (optional, non-negative int: how many bytes of the body are the text half; absent in files written before it, and read past rather than refused when it does not fit the body)
 
 Example:
 
@@ -44,6 +45,7 @@ deleted_at: null
 created_at: "2026-03-05T00:40:36+00:00"
 updated_at: "2026-03-05T11:10:21+00:00"
 snapshot_rev: 42
+snapshot_text_bytes: 128
 ---
 ```
 

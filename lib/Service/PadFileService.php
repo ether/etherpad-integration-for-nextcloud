@@ -56,6 +56,19 @@ class PadFileService {
 		return str_replace("\r\n", "\n", $value);
 	}
 
+	/**
+	 * The text half as it will come back out.
+	 *
+	 * A section is joined on with a newline, so a carriage return left at the
+	 * end of the text pairs with it and is collapsed when the document is
+	 * read - recording a length that counts it would never match again.
+	 */
+	private static function storedTextHalf(string $text, bool $sectionFollows): string {
+		$text = self::normalizeSnapshotNewlines($text);
+
+		return $sectionFollows && str_ends_with($text, "\r") ? substr($text, 0, -1) : $text;
+	}
+
 	/** @param array<string,mixed> $frontmatter */
 	public function serialize(array $frontmatter, string $body): string {
 		$this->validateFrontmatter($frontmatter);
@@ -71,7 +84,10 @@ class PadFileService {
 			'updated_at: ' . $this->stringScalar((string)$frontmatter['updated_at']),
 			'snapshot_rev: ' . (int)$frontmatter['snapshot_rev'],
 		];
-		if (isset($frontmatter[self::TEXT_BYTES_KEY]) && is_int($frontmatter[self::TEXT_BYTES_KEY])) {
+		// The only key that describes the body, so it is written only where
+		// it describes the body being written - a caller that copied a
+		// parsed frontmatter onto a different body would otherwise ship a lie.
+		if ($this->splitAtRecordedLength($body, $frontmatter) !== null) {
 			$lines[] = self::TEXT_BYTES_KEY . ': ' . $frontmatter[self::TEXT_BYTES_KEY];
 		}
 		if (isset($frontmatter['pad_url']) && is_string($frontmatter['pad_url']) && $frontmatter['pad_url'] !== '') {
@@ -128,7 +144,7 @@ class PadFileService {
 		// sectioned body here rather than building a document and parsing it
 		// straight back to put the snapshot in.
 		$frontmatter['snapshot_rev'] = $snapshot->revision;
-		$text = self::normalizeSnapshotNewlines($snapshot->text);
+		$text = self::storedTextHalf($snapshot->text, $snapshot->html !== null);
 		$frontmatter[self::TEXT_BYTES_KEY] = strlen($text);
 
 		return $this->serialize($frontmatter, $this->buildSnapshotBody(
@@ -249,7 +265,7 @@ class PadFileService {
 			$frontmatter['pad_url'] = $padUrl;
 		}
 
-		$text = self::normalizeSnapshotNewlines($text);
+		$text = self::storedTextHalf($text, true);
 		$frontmatter[self::TEXT_BYTES_KEY] = strlen($text);
 
 		return $this->serialize($frontmatter, $this->buildSnapshotBody(
@@ -262,7 +278,7 @@ class PadFileService {
 		$frontmatter = $pad->frontmatter;
 		$frontmatter['updated_at'] = $this->nowIso();
 		$frontmatter['snapshot_rev'] = $snapshot->revision;
-		$text = self::normalizeSnapshotNewlines($snapshot->text);
+		$text = self::storedTextHalf($snapshot->text, $snapshot->html !== null);
 		$frontmatter[self::TEXT_BYTES_KEY] = strlen($text);
 
 		return $this->serialize($frontmatter, $this->buildSnapshotBody(
@@ -282,11 +298,12 @@ class PadFileService {
 	}
 
 	/**
-	 * @param array<string,mixed> $frontmatter the document's own, where the
-	 *                                         caller has it to hand
+	 * @param array<string,mixed> $frontmatter the document's own - required,
+	 *         because without it the markers are all there is and a pad whose
+	 *         text holds one reads back truncated
 	 * @return array{text:string,html:string}
 	 */
-	public function getSnapshotPartsFromBody(string $body, array $frontmatter = []): array {
+	public function getSnapshotPartsFromBody(string $body, array $frontmatter): array {
 		return $this->splitAtRecordedLength($body, $frontmatter) ?? $this->splitSnapshotBody($body);
 	}
 
@@ -318,7 +335,10 @@ class PadFileService {
 			return null;
 		}
 
-		$rest = substr($body, strlen($header) + $recorded);
+		// Whatever follows the recorded text is not text, so trailing
+		// whitespace an editor left on the file can be dropped here the way
+		// the marker reading drops it.
+		$rest = rtrim(substr($body, strlen($header) + $recorded));
 		if ($rest === '') {
 			return ['text' => $text, 'html' => ''];
 		}
@@ -420,10 +440,6 @@ class PadFileService {
 			throw new PadFileFormatException('Invalid state in frontmatter.');
 		}
 
-		if (array_key_exists(self::TEXT_BYTES_KEY, $frontmatter)
-			&& (!is_int($frontmatter[self::TEXT_BYTES_KEY]) || $frontmatter[self::TEXT_BYTES_KEY] < 0)) {
-			throw new PadFileFormatException('Invalid ' . self::TEXT_BYTES_KEY . ' in frontmatter.');
-		}
 		if (!is_numeric($frontmatter['snapshot_rev'])) {
 			throw new PadFileFormatException('Invalid snapshot_rev in frontmatter.');
 		}

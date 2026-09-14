@@ -27,8 +27,6 @@ test.describe('pad file-list icon', () => {
 		await gotoFiles(page)
 		await createPublicPad(page, padName)
 
-		// Navigating unmounts the viewer; closing it by its button is not
-		// needed here and the shared helper can hit the navigation toggle.
 		await gotoFiles(page)
 		await expectFileInList(page, padName)
 
