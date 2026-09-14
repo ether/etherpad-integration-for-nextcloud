@@ -68,8 +68,13 @@ ARTIFACT="$OUTPUT_DIR/$APP_ID-$VERSION.tar.gz"
 
 # Resolved and excluded before the copy, or an output directory inside the
 # repository ends up in the next archive with the previous tarball in it.
-# `dist` is excluded by name; this covers wherever the caller asked for.
-case "$OUTPUT_DIR/" in
+# `dist` is excluded by name; this covers wherever the caller asked for,
+# including the repository root itself - where the directory cannot be
+# excluded, so the archives in it are.
+case "$OUTPUT_DIR" in
+	"$ROOT_DIR")
+		RSYNC_EXCLUDES+=(--exclude="/$APP_ID-*.tar.gz")
+		;;
 	"$ROOT_DIR"/*)
 		RSYNC_EXCLUDES+=(--exclude="/${OUTPUT_DIR#"$ROOT_DIR"/}")
 		;;
