@@ -1,28 +1,36 @@
 # Changelog
 
-## Unreleased
+## 1.1.0-beta.1 — 2026-09-14
 
-### Tooling / tests / CI
-
-- **Pushing a `v*` tag publishes the release.** The tarball is built with `scripts/build-release-tarball.sh`, the same script as locally, and attached to a GitHub release whose body comes from `docs/release-notes/<version>.md` - or, without one, from that version's changelog section. A tag is refused before anything is built when it disagrees with `appinfo/info.xml`, when `package.json` or `package-lock.json` have drifted from it, when `js/` is not a fresh build, or when there are no release notes to publish. (#80)
-- **`scripts/build-release-tarball.sh` accepts the output directory it documents.** It wrote the archive after changing into its staging directory, so a relative output directory - the documented usage - resolved inside that directory and `tar` failed; and an output directory inside the repository was copied into the next archive, previous tarball and all. Only the default argument had ever been used. (#80)
+First beta release for 1.1.0. Focus: searchable pad content, native Nextcloud Viewer integration, safer legacy imports, and reliable file-type registration on fresh installations.
 
 ### Added
 
-- **Pad text is searchable through Nextcloud's full-text search.** Where `fulltextsearch`, `files_fulltextsearch` and a search backend such as `fulltextsearch_elasticsearch` are installed, a `.pad` file is found by its content rather than only by its name. Only the plain-text snapshot reaches the index: YAML frontmatter, pad ids and the stored HTML stay out of it. Whether pad content is indexed at all follows the Files FullTextSearch setting for the storage a file sits on, so external storages and team folders stay out until an admin turns them on. Nothing has to be configured in this app, and an instance without those apps is unaffected. On an instance that already indexes its files, existing pads keep their current index entry until their next snapshot; `php occ fulltextsearch:index '{"provider":"files","force":true}'` backfills them in one go, which can take a while on a large instance. (#225)
+- **Pad text is searchable through Nextcloud's full-text search.** When `fulltextsearch`, `files_fulltextsearch` and a search backend such as `fulltextsearch_elasticsearch` are installed, `.pad` files can be found by their stored text instead of only by name. Only the plain-text snapshot is indexed; YAML frontmatter, pad ids and stored HTML remain excluded. Content indexing follows the Files FullTextSearch setting for each storage, so external storages and team folders stay out until an admin turns them on, and installations without the optional search apps are unaffected. Existing pads can be backfilled with `php occ fulltextsearch:index '{"provider":"files","force":true}'`. (#225)
 
-### Fixed
+### Security
 
-- **An external pad no longer loses text that looks like the snapshot delimiters.** The two halves of a snapshot are separated by `[HTML-BEGIN]` / `[HTML-END]` lines, and a body could carry no HTML section at all - which only external pads wrote, since their HTML is deliberately never fetched. Such a body whose text held those lines read back truncated: the full-text index received the shortened text, and because the stored text no longer matched the remote one, every sync rewrote the file and left another file version behind. Every stored snapshot now writes both sections, empty for an external pad, which makes the last opening marker always the structural one. A file written before this keeps being read the way it was; an already-truncated one is rewritten on its next sync and then stops reporting changes. (#256)
-
-- **`.pad` files are registered when the app is installed, not only when it is upgraded.** The repair step that teaches Nextcloud the `.pad` extension ran on upgrades and on `occ maintenance:repair`, but never on a first installation, so an instance that installed the app from the App Store downloaded pads instead of opening them in the viewer. It now runs on installation as well, together with the mimepart backfill, and it registers the human-readable file type name `Etherpad` alongside the extension and the icon – Nextcloud 32 and newer show it, 31 keeps displaying the raw MIME type. The step also stopped reporting plain success over failures it had ignored: reads, writes and JSON are checked, the required mapping is read back after writing, files are written through a temporary file so an interrupted write cannot empty a shared configuration file, and the closing line says when something was skipped. (#242)
-- **The file-type icon is no longer copied into Nextcloud's core directory.** Core is signed, so the copy was reported as an extra file by `occ integrity:check-core` and was removed by every server upgrade. The file list and every other view that asks for a preview show the pad icon through the app's own preview provider; where only a MIME icon is available, the type now resolves to a text document icon Nextcloud ships. Full-text search results keep the pad icon: it is supplied from the app through the extension event Files FullTextSearch fires after choosing one. An upgrade removes the copy earlier versions left in core, unless its content differs from the icon this app ships. (#242)
-- **A pad whose own text contains `[HTML-BEGIN]` keeps all of it.** The snapshot parser split at the first occurrence of that line, so everything after it was cut from the text and filed as snapshot HTML. Reading the file back – in the read-only view, and when a trashed pad is restored – returned a truncated pad. The split now keys on the terminating marker and the last opening one, and both markers are accepted as ordinary lines of pad text. (#225)
-- **The `.pad` file-type icon is taken from wherever the app is installed.** The repair step that copies it into core looked under `apps/`, so on an instance that keeps its apps in `custom_apps/` the copy was silently skipped and file lists and search results fell back to the generic icon. (#225)
+- **Protected legacy Ownpad imports are disabled by default.** Administrators can enable them where this Nextcloud instance is the only system creating group pads on the Etherpad server. Public legacy pads and existing bindings are unaffected. (#251)
+- DOMPurify updated to 3.4.15 and the shipped frontend bundles rebuilt. (#248)
 
 ### Changed
 
-- **The supported Nextcloud range starts at 31.0.9**, where it named 31 before. On 31.0.0 five end-to-end specs fail - the Ownpad migration, reopening after a rename, orphan recovery, the trash round-trip, and session revocation on logout - and 31.0.9 is where the suite goes green. Nextcloud compares a requirement at whatever precision it is written, so an instance on 31.0.0 through 31.0.8 will find this app incompatible and disable it at its next upgrade check. (#249)
+- **The pad Viewer now uses Nextcloud's supported Viewer API.** Public shares use Nextcloud's native opening and file actions instead of custom click interception, route watching and public-share UI workarounds. Existing direct links into shared folders remain supported. (#243)
+- **Etherpad sessions last longer during normal use.** Sessions for authenticated protected pads now last six hours, while sessions issued through public shares last three hours. Both previously expired after one hour. (#252)
+- **The supported Nextcloud range now starts at 31.0.9.** Earlier Nextcloud 31 patch releases fail several lifecycle and migration flows and will no longer be considered compatible. The upper supported release remains Nextcloud 34. (#249)
+
+### Fixed
+
+- **`.pad` files are registered when the app is installed.** A fresh installation now registers the extension, the mimepart used for filtering, and the human-readable `Etherpad` file type — which Nextcloud 32 and newer display, while 31 keeps showing the raw MIME type. The pad icon is served from the app instead of being copied into Nextcloud's signed core directory, avoiding integrity warnings and removal during server upgrades; an upgrade removes a copy an earlier version left behind. Search results receive the app icon through the Full Text Search extension event. (#242)
+- **External pad snapshots no longer confuse pad text with snapshot markers.** Both snapshot sections are now always written, with an empty HTML section where necessary. Text containing `[HTML-BEGIN]` or `[HTML-END]` is preserved, no longer reaches the search index truncated and no longer causes repeated no-op synchronisations and file versions. Existing external pads are corrected on their next real sync where needed. (#256)
+- **Partial pad creation and restoration failures are cleaned up more safely.** Access-mode decisions and rollback rules now have one implementation, active bindings are removed atomically, and concurrent or pending-delete bindings are preserved. (#238, #241)
+
+### Tooling / tests / CI
+
+- **Pushing a `v*` tag publishes the release.** The tarball is built with `scripts/build-release-tarball.sh`, the same script as locally, and attached to a GitHub release whose body comes from `docs/release-notes/<version>.md`, or from that version's changelog section where no such file exists. A tag is refused before anything is built when it disagrees with `appinfo/info.xml`, when `package.json` or `package-lock.json` have drifted from it, when `js/` is not a fresh build, or when there are no release notes to publish. (#80)
+- CI now exercises the exact Nextcloud floor, the declared PHP 8.1-8.5 range and a Nextcloud 34 full-text-search stack with Elasticsearch. Search checks cover initial indexing, updated snapshots, storage settings and file icons, and fail when the underlying commands or backend fail. (#249, #250, #255, #258)
+- Source checks detect consecutive PHP docblocks before annotations or documentation can silently attach to the wrong declaration. (#254)
+- Playwright, Vitest and happy-dom updated. (#245, #246, #247)
 
 ## 1.1.0-alpha.5 — 2026-09-07
 
