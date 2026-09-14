@@ -146,7 +146,7 @@ class PadSyncService {
 		$external = $this->externalPadExportFetcher->normalizeAndFetchExternalPublicPadText($padUrl);
 		$text = $external['text'];
 
-		$existingText = $this->padFileService->getSnapshotPartsFromBody($pad->body)['text'];
+		$existingText = $this->padFileService->getSnapshotPartsFromBody($pad->body, $pad->frontmatter)['text'];
 		if ($existingText === $text) {
 			return new PadSyncResult(
 				status: self::STATUS_UNCHANGED,
@@ -198,7 +198,7 @@ class PadSyncService {
 		$html = $this->etherpadClient->getHTML($padId);
 		if ($force && $snapshotRev >= $currentRev) {
 			// force=1 bypasses the cheap revision short-circuit and performs a live content re-check.
-			$existing = $this->padFileService->getSnapshotPartsFromBody($pad->body);
+			$existing = $this->padFileService->getSnapshotPartsFromBody($pad->body, $pad->frontmatter);
 			if ($existing['text'] === $text && $existing['html'] === $html) {
 				return new PadSyncResult(
 					status: self::STATUS_UNCHANGED,

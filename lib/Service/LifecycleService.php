@@ -326,7 +326,7 @@ class LifecycleService {
 			}
 			$currentContent = (string)$file->getContent();
 			$pad = $this->padFileService->readPad($currentContent);
-			$snapshotParts = $this->padFileService->getSnapshotPartsFromBody($pad->body);
+			$snapshotParts = $this->padFileService->getSnapshotPartsFromBody($pad->body, $pad->frontmatter);
 			$snapshot = $snapshotParts['text'];
 			$htmlSnapshot = $snapshotParts['html'];
 
@@ -455,7 +455,7 @@ class LifecycleService {
 			if (str_starts_with($oldPadId, 'ext.') || $pad->isExternal) {
 				return $this->buildSkippedResult('external_pad', $fileId, $oldPadId);
 			}
-			$snapshotParts = $this->padFileService->getSnapshotPartsFromBody($pad->body);
+			$snapshotParts = $this->padFileService->getSnapshotPartsFromBody($pad->body, $pad->frontmatter);
 			$snapshot = $snapshotParts['text'];
 			$htmlSnapshot = $snapshotParts['html'];
 			$newPadId = $this->provisionRestorePadId($accessMode, $oldPadId);

@@ -13,7 +13,7 @@
  */
 
 import { test, expect } from '@playwright/test'
-import { gotoFiles, closeViewer, createPublicPad, expectFileInList, uniquePadName } from '../fixtures/nextcloud'
+import { gotoFiles, createPublicPad, expectFileInList, uniquePadName } from '../fixtures/nextcloud'
 import { deleteViaDav } from '../fixtures/dav'
 
 test.describe('pad file-list icon', () => {
@@ -26,8 +26,9 @@ test.describe('pad file-list icon', () => {
 	test('renders the app preview rather than a core mime icon', async ({ page }) => {
 		await gotoFiles(page)
 		await createPublicPad(page, padName)
-		await closeViewer(page)
 
+		// Navigating unmounts the viewer; closing it by its button is not
+		// needed here and the shared helper can hit the navigation toggle.
 		await gotoFiles(page)
 		await expectFileInList(page, padName)
 

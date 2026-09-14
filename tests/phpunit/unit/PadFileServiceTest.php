@@ -545,6 +545,80 @@ class PadFileServiceTest extends TestCase {
 		);
 	}
 
+	/**
+	 * The markers are lines a pad's text may contain, so a body carrying them
+	 * is byte-for-byte a body with two halves. The recorded text length is
+	 * what tells the two apart.
+	 */
+	public function testATextHoldingBothMarkersIsNotReadAsAnHtmlSection(): void {
+		$service = new PadFileService(new FixedClock());
+		$text = "hallo\n[HTML-BEGIN]\nwelt\n[HTML-END]";
+
+		$textOnly = $service->buildInitialDocument(
+			1,
+			'demo-pad',
+			BindingService::ACCESS_PUBLIC,
+			new PadSnapshot($text, null, 1),
+		);
+		$withHtml = $service->buildInitialDocument(
+			1,
+			'demo-pad',
+			BindingService::ACCESS_PUBLIC,
+			new PadSnapshot('hallo', 'welt', 1),
+		);
+
+		$this->assertNotSame($textOnly, $withHtml);
+
+		$pad = $service->readPad($textOnly);
+		$this->assertSame(
+			['text' => $text, 'html' => ''],
+			$service->getSnapshotPartsFromBody($pad->body, $pad->frontmatter),
+		);
+	}
+
+	/** Etherpad exports HTML on one line, but a hand-written file need not. */
+	public function testAnHtmlHalfHoldingTheOpeningMarkerKeepsAllOfIt(): void {
+		$service = new PadFileService(new FixedClock());
+		$html = "<p>x</p>\n[HTML-BEGIN]\n<p>y</p>";
+
+		$document = $service->buildInitialDocument(
+			1,
+			'demo-pad',
+			BindingService::ACCESS_PUBLIC,
+			new PadSnapshot('hallo', $html, 1),
+		);
+		$pad = $service->readPad($document);
+
+		$this->assertSame(
+			['text' => 'hallo', 'html' => $html],
+			$service->getSnapshotPartsFromBody($pad->body, $pad->frontmatter),
+		);
+	}
+
+	public static function bodiesReadByTheirMarkers(): array {
+		return [
+			'written before the length was recorded' => [null],
+			'a length the body does not fit' => [999],
+			'a length landing inside the text' => [3],
+		];
+	}
+
+	/**
+	 * Without a usable length the markers are all there is, which is how
+	 * every file written before this key is read, and how one whose body was
+	 * edited by hand is read rather than refused.
+	 */
+	#[DataProvider('bodiesReadByTheirMarkers')]
+	public function testFallsBackToTheMarkers(?int $recorded): void {
+		$service = new PadFileService(new FixedClock());
+		$frontmatter = $recorded === null ? [] : ['snapshot_text_bytes' => $recorded];
+
+		$this->assertSame(
+			['text' => 'hallo', 'html' => 'welt'],
+			$service->getSnapshotPartsFromBody("[TEXT]\nhallo\n[HTML-BEGIN]\nwelt\n[HTML-END]", $frontmatter),
+		);
+	}
+
 	/** A pad whose own text holds that line keeps all of it. */
 	public function testSnapshotTextMayContainTheOpeningMarker(): void {
 		$service = new PadFileService(new FixedClock());

@@ -310,7 +310,7 @@ class PadCreationService {
 		// mode rather than refusing — the template's content is the point.
 		$accessMode = $this->padTypePolicy->resolveCreatableMode($pad->accessMode);
 
-		$snapshot = $this->padFileService->getSnapshotPartsFromBody($pad->body);
+		$snapshot = $this->padFileService->getSnapshotPartsFromBody($pad->body, $pad->frontmatter);
 		$resolvedText = $this->placeholderResolver->applyForContent($snapshot['text'], $user);
 		$resolvedHtml = $this->placeholderResolver->applyForContent($snapshot['html'], $user);
 

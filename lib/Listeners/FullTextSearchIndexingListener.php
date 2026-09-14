@@ -70,7 +70,7 @@ class FullTextSearchIndexingListener implements IEventListener {
 
 		try {
 			$pad = $this->padFileService->readPad((string)$file->getContent());
-			$snapshot = $this->padFileService->getSnapshotPartsFromBody($pad->body);
+			$snapshot = $this->padFileService->getSnapshotPartsFromBody($pad->body, $pad->frontmatter);
 		} catch (MissingFrontmatterException|PadFileFormatException) {
 			// Not a managed pad yet - empty, legacy, or hand-edited. There is
 			// no snapshot to index and there will not be until someone opens
