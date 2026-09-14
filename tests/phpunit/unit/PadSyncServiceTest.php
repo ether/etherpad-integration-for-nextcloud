@@ -92,6 +92,67 @@ class PadSyncServiceTest extends TestCase {
 		$this->assertSame(5, $result->currentRev);
 	}
 
+	/**
+	 * An external pad written before both sections were always present keeps
+	 * its section-less body until something rewrites it. A body that was
+	 * ambiguous read back short, so it no longer matches the remote text and
+	 * the next sync rewrites it into the current shape - a body that read
+	 * back correctly is left alone rather than churned.
+	 */
+	public function testAnAmbiguousLegacyExternalSnapshotIsRewrittenOnTheNextSync(): void {
+		$file = $this->createMock(File::class);
+		$file->method('getName')->willReturn('Remote.pad');
+		$file->method('getContent')->willReturn('frontmatter');
+
+		$userNodeResolver = $this->createMock(UserNodeResolver::class);
+		$userNodeResolver->method('resolveUserFileNodeById')->with('alice', 138)->willReturn($file);
+		$userNodeResolver->method('toUserAbsolutePath')->with('alice', $file)->willReturn('/Remote.pad');
+
+		$padFileService = $this->createMock(PadFileService::class);
+		$parsedPad = new ParsedPadFile(
+			frontmatter: ['pad_id' => 'ext.remote', 'access_mode' => BindingService::ACCESS_PUBLIC],
+			body: "[TEXT]\nhallo\n[HTML-BEGIN]\nwelt\n[HTML-END]",
+			padId: 'ext.remote',
+			accessMode: BindingService::ACCESS_PUBLIC,
+			padUrl: 'https://pad.example.test/p/remote',
+			isExternal: true,
+			snapshotRev: 4,
+		);
+		$padFileService->method('readPad')->with('frontmatter')->willReturn($parsedPad);
+		// The legacy body read back short - the markers took part of the text.
+		$padFileService->method('getSnapshotPartsFromBody')->willReturn(['text' => 'hallo', 'html' => '']);
+		$padFileService->expects($this->once())
+			->method('withExportSnapshot')
+			->with($this->identicalTo($parsedPad), new PadSnapshot("hallo\n[HTML-BEGIN]\nwelt\n[HTML-END]", '', 5))
+			->willReturn('rewritten');
+
+		$externalPadExportFetcher = $this->createMock(ExternalPadExportFetcher::class);
+		$externalPadExportFetcher->method('normalizeAndFetchExternalPublicPadText')
+			->willReturn([
+				'origin' => 'https://pad.example.test',
+				'pad_id' => 'remote',
+				'pad_url' => 'https://pad.example.test/p/remote',
+				'text' => "hallo\n[HTML-BEGIN]\nwelt\n[HTML-END]",
+			]);
+
+		$lockRetryService = $this->createMock(PadFileLockRetryService::class);
+		$lockRetryService->expects($this->once())
+			->method('putContentWithSyncLockRetry')
+			->with($file, 'rewritten')
+			->willReturn(1);
+
+		$result = $this->buildService(
+			$padFileService,
+			$userNodeResolver,
+			$this->createMock(BindingService::class),
+			$this->createMock(EtherpadClient::class),
+			$lockRetryService,
+			$externalPadExportFetcher,
+		)->syncById('alice', 138, true);
+
+		$this->assertSame('updated', $result->status);
+	}
+
 	public function testSyncExternalPadStoresOnlyTextSnapshot(): void {
 		$file = $this->createMock(File::class);
 		$file->method('getName')->willReturn('Remote.pad');
@@ -121,7 +182,7 @@ class PadSyncServiceTest extends TestCase {
 			->willReturn(['text' => 'previous text', 'html' => '']);
 		$padFileService->expects($this->once())
 			->method('withExportSnapshot')
-			->with($this->identicalTo($parsedPad), new PadSnapshot("remote text\nfrom export", null, 5))
+			->with($this->identicalTo($parsedPad), new PadSnapshot("remote text\nfrom export", '', 5))
 			->willReturn('updated-frontmatter');
 
 		$bindingService = $this->createMock(BindingService::class);

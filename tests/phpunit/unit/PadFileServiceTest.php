@@ -47,7 +47,7 @@ class PadFileServiceTest extends TestCase {
 				1,
 				'demo-pad',
 				BindingService::ACCESS_PUBLIC,
-				snapshot: new PadSnapshot('body', null, 0),
+				snapshot: new PadSnapshot('body', '', 0),
 			)
 		);
 
@@ -270,7 +270,7 @@ class PadFileServiceTest extends TestCase {
 		$service = new PadFileService(new FixedClock());
 		$base = $service->buildInitialDocument(1, 'demo-pad', BindingService::ACCESS_PUBLIC);
 
-		$textOnly = $service->withExportSnapshot($service->readPad($base), new PadSnapshot('just text', null, 1));
+		$textOnly = $service->withExportSnapshot($service->readPad($base), new PadSnapshot('just text', '', 1));
 
 		$this->assertStringEndsWith("[TEXT]\njust text\n[HTML-BEGIN]\n\n[HTML-END]", $textOnly);
 		$this->assertSame(
@@ -284,7 +284,7 @@ class PadFileServiceTest extends TestCase {
 		$base = $service->buildInitialDocument(1, 'demo-pad', BindingService::ACCESS_PUBLIC);
 		$textOnly = $service->withExportSnapshot(
 			$service->readPad($base),
-			new PadSnapshot("just text\n", null, 1),
+			new PadSnapshot("just text\n", '', 1),
 		);
 
 		$this->assertSame(
@@ -339,7 +339,7 @@ class PadFileServiceTest extends TestCase {
 			1,
 			'demo-pad',
 			BindingService::ACCESS_PUBLIC,
-			snapshot: new PadSnapshot($text, null, 0),
+			snapshot: new PadSnapshot($text, '', 0),
 		);
 
 		$parsed = $service->readPad($document);
@@ -356,7 +356,7 @@ class PadFileServiceTest extends TestCase {
 			2,
 			'ext.RemotePad',
 			BindingService::ACCESS_PUBLIC,
-			snapshot: new PadSnapshot('remote text', null, 0),
+			snapshot: new PadSnapshot('remote text', '', 0),
 			padUrl: 'https://pad.remote.test/p/RemotePad',
 			extraFrontmatter: ['pad_origin' => 'https://pad.remote.test'],
 		);
@@ -368,7 +368,7 @@ class PadFileServiceTest extends TestCase {
 				padUrl: 'https://pad.remote.test/p/RemotePad',
 				extraFrontmatter: ['pad_origin' => 'https://pad.remote.test'],
 			)),
-			new PadSnapshot('remote text', null, 0),
+			new PadSnapshot('remote text', '', 0),
 		);
 
 		$this->assertSame($twoStep, $oneStep);
@@ -386,7 +386,7 @@ class PadFileServiceTest extends TestCase {
 		// revision would make a never-synced pad look synced to the next
 		// sync's `$snapshotRev >= $currentRev` short circuit.
 		$this->expectException(\InvalidArgumentException::class);
-		new PadSnapshot('text', null, -1);
+		new PadSnapshot('text', '', -1);
 	}
 
 	public function testFrontmatterValuesThatWouldBecomeMoreKeysAreRefused(): void {
@@ -560,7 +560,7 @@ class PadFileServiceTest extends TestCase {
 			1,
 			'demo-pad',
 			BindingService::ACCESS_PUBLIC,
-			new PadSnapshot($text, null, 1),
+			new PadSnapshot($text, '', 1),
 		);
 		$withHtml = $service->buildInitialDocument(
 			1,
@@ -577,12 +577,13 @@ class PadFileServiceTest extends TestCase {
 	}
 
 	/**
-	 * The split takes the last opening marker, so the HTML half must not
-	 * carry one on a line of its own. Etherpad exports a single line, and
-	 * this is what makes that a property of the format rather than of
-	 * Etherpad - the stored HTML keeps rendering the same either way.
+	 * The documented limit of a delimiter format: the split takes the last
+	 * opening marker, so an HTML half carrying one on a line of its own takes
+	 * the split with it. Etherpad assembles its export without line
+	 * separators, so nothing this app fetches produces that shape - a
+	 * hand-written HTML half can, and is read the way the markers say.
 	 */
-	public function testAnHtmlHalfCannotCarryAMarkerLine(): void {
+	public function testAnHtmlHalfCarryingAMarkerLineTakesTheSplitWithIt(): void {
 		$service = new PadFileService(new FixedClock());
 
 		$document = $service->buildInitialDocument(
@@ -593,8 +594,8 @@ class PadFileServiceTest extends TestCase {
 		);
 		$parts = $service->getSnapshotPartsFromBody($service->readPad($document)->body);
 
-		$this->assertSame('hallo', $parts['text']);
-		$this->assertSame("<p>x</p>\n [HTML-BEGIN]\n<p>y</p>", $parts['html']);
+		$this->assertSame("hallo\n[HTML-BEGIN]\n<p>x</p>", $parts['text']);
+		$this->assertSame('<p>y</p>', $parts['html']);
 	}
 
 	/** A pad whose own text holds that line keeps all of it. */

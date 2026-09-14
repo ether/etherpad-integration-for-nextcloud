@@ -37,7 +37,7 @@ class ExternalPadSeederTest extends TestCase {
 				999,
 				'ext.RemotePad',
 				BindingService::ACCESS_PUBLIC,
-				new PadSnapshot('snapshot-body', null, 0),
+				new PadSnapshot('snapshot-body', '', 0),
 				'https://pad.remote.test/p/RemotePad',
 				[
 					'pad_origin' => 'https://pad.remote.test',

@@ -11,19 +11,20 @@ namespace OCA\EtherpadNextcloud\Service;
 /**
  * Content a `.pad` starts out with, as one value.
  *
- * A document either carries a snapshot or does not, and the two cases write
- * different bodies. Passing the text, its HTML half and the revision
- * separately let a caller ask for half of one and half of the other.
+ * A document either carries a snapshot or does not. Passing the text, its
+ * HTML half and the revision separately let a caller ask for half of one and
+ * half of the other.
  */
 class PadSnapshot {
 	/**
-	 * @param ?string $html the HTML half, or null for a text-only snapshot —
-	 *                      which is not the same as an empty HTML half
+	 * @param string $html the HTML half, empty where there is none - an
+	 *                     external pad's HTML is deliberately never fetched.
+	 *                     A stored snapshot writes the section either way.
 	 * @throws \InvalidArgumentException
 	 */
 	public function __construct(
 		public readonly string $text,
-		public readonly ?string $html,
+		public readonly string $html,
 		public readonly int $revision,
 	) {
 		// -1 is how the format says "no snapshot yet"; a snapshot that exists

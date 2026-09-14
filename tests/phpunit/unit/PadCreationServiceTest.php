@@ -352,7 +352,7 @@ class PadCreationServiceTest extends TestCase {
 				321,
 				'ext.RemotePad',
 				BindingService::ACCESS_PUBLIC,
-				new PadSnapshot("Initial snapshot\nfrom remote pad", null, 0),
+				new PadSnapshot("Initial snapshot\nfrom remote pad", '', 0),
 				'https://pad.remote.test/p/RemotePad',
 				[
 					'pad_origin' => 'https://pad.remote.test',
@@ -408,7 +408,7 @@ class PadCreationServiceTest extends TestCase {
 				$this->anything(),
 				$this->anything(),
 				BindingService::ACCESS_PUBLIC,
-				new PadSnapshot('', null, 0),
+				new PadSnapshot('', '', 0),
 				$this->anything(),
 				$this->anything(),
 			)
