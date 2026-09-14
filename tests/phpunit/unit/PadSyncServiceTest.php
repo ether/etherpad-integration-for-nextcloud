@@ -153,6 +153,54 @@ class PadSyncServiceTest extends TestCase {
 		$this->assertSame('updated', $result->status);
 	}
 
+	/** The other half of that: a legacy body that reads back whole is left alone. */
+	public function testAnUnambiguousLegacyExternalSnapshotIsLeftAlone(): void {
+		$file = $this->createMock(File::class);
+		$file->method('getName')->willReturn('Remote.pad');
+		$file->method('getContent')->willReturn('frontmatter');
+
+		$userNodeResolver = $this->createMock(UserNodeResolver::class);
+		$userNodeResolver->method('resolveUserFileNodeById')->with('alice', 138)->willReturn($file);
+		$userNodeResolver->method('toUserAbsolutePath')->with('alice', $file)->willReturn('/Remote.pad');
+
+		$padFileService = $this->createMock(PadFileService::class);
+		$parsedPad = new ParsedPadFile(
+			frontmatter: ['pad_id' => 'ext.remote', 'access_mode' => BindingService::ACCESS_PUBLIC],
+			body: "[TEXT]\nremote text",
+			padId: 'ext.remote',
+			accessMode: BindingService::ACCESS_PUBLIC,
+			padUrl: 'https://pad.example.test/p/remote',
+			isExternal: true,
+			snapshotRev: 4,
+		);
+		$padFileService->method('readPad')->with('frontmatter')->willReturn($parsedPad);
+		$padFileService->method('getSnapshotPartsFromBody')->willReturn(['text' => 'remote text', 'html' => '']);
+		$padFileService->expects($this->never())->method('withExportSnapshot');
+
+		$externalPadExportFetcher = $this->createMock(ExternalPadExportFetcher::class);
+		$externalPadExportFetcher->method('normalizeAndFetchExternalPublicPadText')
+			->willReturn([
+				'origin' => 'https://pad.example.test',
+				'pad_id' => 'remote',
+				'pad_url' => 'https://pad.example.test/p/remote',
+				'text' => 'remote text',
+			]);
+
+		$lockRetryService = $this->createMock(PadFileLockRetryService::class);
+		$lockRetryService->expects($this->never())->method('putContentWithSyncLockRetry');
+
+		$result = $this->buildService(
+			$padFileService,
+			$userNodeResolver,
+			$this->createMock(BindingService::class),
+			$this->createMock(EtherpadClient::class),
+			$lockRetryService,
+			$externalPadExportFetcher,
+		)->syncById('alice', 138, true);
+
+		$this->assertSame('unchanged', $result->status);
+	}
+
 	public function testSyncExternalPadStoresOnlyTextSnapshot(): void {
 		$file = $this->createMock(File::class);
 		$file->method('getName')->willReturn('Remote.pad');
