@@ -261,14 +261,18 @@ class PadFileServiceTest extends TestCase {
 		$this->assertSame(6, $parsed->frontmatter['snapshot_rev']);
 	}
 
-	public function testWithExportSnapshotOmitsHtmlSectionWhenRequested(): void {
+	/**
+	 * A snapshot with no HTML half still gets the section, empty. Without it
+	 * a body could end anywhere, and then neither marker could say which
+	 * occurrence of it was structure.
+	 */
+	public function testASnapshotWithoutHtmlStillCarriesTheSection(): void {
 		$service = new PadFileService(new FixedClock());
 		$base = $service->buildInitialDocument(1, 'demo-pad', BindingService::ACCESS_PUBLIC);
 
 		$textOnly = $service->withExportSnapshot($service->readPad($base), new PadSnapshot('just text', null, 1));
 
-		$this->assertStringNotContainsString('[HTML-BEGIN]', $textOnly);
-		$this->assertStringNotContainsString('[HTML-END]', $textOnly);
+		$this->assertStringEndsWith("[TEXT]\njust text\n[HTML-BEGIN]\n\n[HTML-END]", $textOnly);
 		$this->assertSame(
 			['text' => 'just text', 'html' => ''],
 			$service->getSnapshotPartsFromBody($service->readPad($textOnly)->body),
@@ -345,8 +349,7 @@ class PadFileServiceTest extends TestCase {
 		$this->assertNotSame('in the body', $parsed->frontmatter['created_at']);
 	}
 
-	public function testBuildInitialDocumentWithoutHtmlOmitsTheHtmlSection(): void {
-		// snapshotHtml: null means text only, not "an empty HTML half".
+	public function testBuildInitialDocumentWithoutHtmlWritesAnEmptySection(): void {
 		$service = new PadFileService(new FixedClock());
 
 		$oneStep = $service->buildInitialDocument(
@@ -369,7 +372,6 @@ class PadFileServiceTest extends TestCase {
 		);
 
 		$this->assertSame($twoStep, $oneStep);
-		$this->assertStringNotContainsString('[HTML-BEGIN]', $oneStep);
 
 		$parsed = $service->readPad($oneStep);
 		$this->assertSame(0, $parsed->frontmatter['snapshot_rev']);
@@ -543,6 +545,56 @@ class PadFileServiceTest extends TestCase {
 			['text' => "plain text\n[HTML-END]", 'html' => ''],
 			$service->getSnapshotPartsFromBody("[TEXT]\nplain text\n[HTML-END]"),
 		);
+	}
+
+	/**
+	 * Both markers are lines a pad's text may contain. Because every body
+	 * carries the section, the last opening marker is always the structural
+	 * one, and the two shapes cannot collide.
+	 */
+	public function testATextHoldingBothMarkersIsNotReadAsAnHtmlSection(): void {
+		$service = new PadFileService(new FixedClock());
+		$text = "hallo\n[HTML-BEGIN]\nwelt\n[HTML-END]";
+
+		$textOnly = $service->buildInitialDocument(
+			1,
+			'demo-pad',
+			BindingService::ACCESS_PUBLIC,
+			new PadSnapshot($text, null, 1),
+		);
+		$withHtml = $service->buildInitialDocument(
+			1,
+			'demo-pad',
+			BindingService::ACCESS_PUBLIC,
+			new PadSnapshot('hallo', 'welt', 1),
+		);
+
+		$this->assertNotSame($textOnly, $withHtml);
+		$this->assertSame(
+			['text' => $text, 'html' => ''],
+			$service->getSnapshotPartsFromBody($service->readPad($textOnly)->body),
+		);
+	}
+
+	/**
+	 * The split takes the last opening marker, so the HTML half must not
+	 * carry one on a line of its own. Etherpad exports a single line, and
+	 * this is what makes that a property of the format rather than of
+	 * Etherpad - the stored HTML keeps rendering the same either way.
+	 */
+	public function testAnHtmlHalfCannotCarryAMarkerLine(): void {
+		$service = new PadFileService(new FixedClock());
+
+		$document = $service->buildInitialDocument(
+			1,
+			'demo-pad',
+			BindingService::ACCESS_PUBLIC,
+			new PadSnapshot('hallo', "<p>x</p>\n[HTML-BEGIN]\n<p>y</p>", 1),
+		);
+		$parts = $service->getSnapshotPartsFromBody($service->readPad($document)->body);
+
+		$this->assertSame('hallo', $parts['text']);
+		$this->assertSame("<p>x</p>\n [HTML-BEGIN]\n<p>y</p>", $parts['html']);
 	}
 
 	/** A pad whose own text holds that line keeps all of it. */

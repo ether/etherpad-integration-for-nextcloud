@@ -438,19 +438,42 @@ class PadFileService {
 	}
 
 	private function snapshotBody(PadSnapshot $snapshot): string {
-		return $this->buildSnapshotBody($snapshot->text, $snapshot->html ?? '', $snapshot->html !== null);
+		return $this->buildSnapshotBody($snapshot->text, $snapshot->html ?? '');
 	}
 
-	private function buildSnapshotBody(string $text, string $html, bool $includeHtmlSection = true): string {
-		if (!$includeHtmlSection) {
-			return self::TEXT_SECTION . "\n" . $text;
-		}
-
+	/**
+	 * Always both sections, so a body always ends in the terminating marker
+	 * and always holds an opening one. Either marker is a line a pad's own
+	 * text may contain, and the markers alone could not say which of them
+	 * was structure as long as a body could also carry none.
+	 *
+	 * A snapshot with no HTML half - an external pad, whose HTML is
+	 * deliberately never fetched - gets the section with nothing in it.
+	 */
+	private function buildSnapshotBody(string $text, string $html): string {
 		return self::TEXT_SECTION . "\n"
 			. $text . "\n"
 			. self::HTML_BEGIN_SECTION . "\n"
-			. $html . "\n"
+			. self::htmlHalfWithoutMarkerLines($html) . "\n"
 			. self::HTML_END_SECTION;
+	}
+
+	/**
+	 * Keep the HTML half from carrying a marker on a line of its own.
+	 *
+	 * The split takes the last opening marker, which is only the structural
+	 * one while the HTML half contributes none. Etherpad exports HTML as a
+	 * single line, so this never fires on anything this app fetches - it is
+	 * what makes that a property of the format rather than of Etherpad. A
+	 * leading space is invisible where HTML collapses whitespace.
+	 */
+	private static function htmlHalfWithoutMarkerLines(string $html): string {
+		$markers = implode('|', array_map(
+			static fn (string $marker): string => preg_quote($marker, '/'),
+			[self::TEXT_SECTION, self::HTML_BEGIN_SECTION, self::HTML_END_SECTION],
+		));
+
+		return (string)preg_replace('/^(' . $markers . ')$/m', ' $1', $html);
 	}
 
 	/**

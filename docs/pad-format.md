@@ -71,8 +71,11 @@ Notes:
 
 - Text is the primary restore snapshot.
 - HTML is an additional structure/format snapshot.
-- External pads (`pad_origin` + `remote_pad_id`) are imported and synced as text only for security reasons; HTML sections are omitted when the app writes external snapshots.
-- The parser expects exact `[HTML-BEGIN] ... [HTML-END]` markers for the HTML part. A section is recognised by its terminator and the last opening marker before it, so pad text containing either line on its own keeps all of it. The markers are delimiters rather than an escaped encoding, so one shape stays ambiguous: a text-only snapshot whose text both contains `[HTML-BEGIN]` on its own line and ends with `[HTML-END]` is indistinguishable from a snapshot that carries an HTML section, and is read as the latter. Nothing the app writes produces that shape from Etherpad content - an exported HTML half is a single line without newlines - but a hand-edited file can. #256 tracks giving the two halves an unambiguous encoding.
+- External pads (`pad_origin` + `remote_pad_id`) are imported and synced as text only for security reasons; their HTML section is written empty rather than omitted.
+- **Both sections are always written.** A snapshot with no HTML half - an external pad, whose HTML is deliberately never fetched - gets `[HTML-BEGIN]` / `[HTML-END]` with nothing between them. That is what lets the markers say where a half ends: a body always ends in the terminator and always holds an opening marker, so the last opening marker before the terminator is always the structural one, whatever the pad's own text contains.
+- **The HTML half never carries a marker on a line of its own.** Etherpad exports HTML as a single line, so this never arises from anything the app fetches; a line that would look like a marker is written with one leading space, which HTML collapses. Without that, an HTML half holding `[HTML-BEGIN]` on its own line would take the split with it.
+- The pad's *text* may contain either marker freely, on as many lines as it likes. It is only ever the last occurrence that is structure.
+- A body written before this - a text-only snapshot with no section at all - is read as all text. That reading stays ambiguous for the one shape it always was: a text ending in `[HTML-END]`. Nothing the app writes produces that shape any more.
 - Viewer/API responses never expose stored HTML. The read-only viewer is served by `LivePadHtmlFetcher`, which fetches the pad's current HTML and runs `SnapshotHtmlSanitizer` over it. That sanitizer allowlists simple formatting tags and drops every attribute **except `href` on `<a>`**, which survives only for `http`, `https` and `mailto`; the browser applies the same allowlist again before the HTML is injected.
 
 ## Mode Variants
