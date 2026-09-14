@@ -47,7 +47,9 @@ if [[ "$VERSION" == *-dev ]]; then
 	exit 1
 fi
 
-STAGE_DIR="$(mktemp -d -t epnc-release-stage)"
+# `-t` with a bare prefix is BSD-only; GNU mktemp wants the X's in a
+# template. This spelling works on both.
+STAGE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/epnc-release-stage.XXXXXX")"
 trap 'rm -rf "$STAGE_DIR"' EXIT
 
 APP_STAGE="$STAGE_DIR/$APP_ID"
