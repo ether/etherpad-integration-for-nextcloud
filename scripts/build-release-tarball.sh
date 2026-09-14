@@ -60,13 +60,22 @@ mkdir -p "$APP_STAGE"
 # The shipped-tree definition lives next door; see that file for why.
 source "$(dirname "${BASH_SOURCE[0]}")/app-file-excludes.sh"
 
-rsync -a "${RSYNC_EXCLUDES[@]}" "$ROOT_DIR/" "$APP_STAGE/"
-
 mkdir -p "$OUTPUT_DIR"
 # Absolute from here on: the archive is written after a cd into the stage
 # directory, so a relative output directory would land inside it.
 OUTPUT_DIR="$(cd "$OUTPUT_DIR" && pwd)"
 ARTIFACT="$OUTPUT_DIR/$APP_ID-$VERSION.tar.gz"
+
+# Resolved and excluded before the copy, or an output directory inside the
+# repository ends up in the next archive with the previous tarball in it.
+# `dist` is excluded by name; this covers wherever the caller asked for.
+case "$OUTPUT_DIR/" in
+	"$ROOT_DIR"/*)
+		RSYNC_EXCLUDES+=(--exclude="/${OUTPUT_DIR#"$ROOT_DIR"/}")
+		;;
+esac
+
+rsync -a "${RSYNC_EXCLUDES[@]}" "$ROOT_DIR/" "$APP_STAGE/"
 
 # Build the archive with macOS metadata-pollution defences enabled.
 # `--no-mac-metadata` is a BSD-tar extension; older `tar` builds

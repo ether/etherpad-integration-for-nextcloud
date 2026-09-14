@@ -49,28 +49,11 @@ jobs:
 
       # appinfo/info.xml is the single source of truth for the app version.
       # package.json / package-lock.json are aligned manually, so guard against
-      # drift (#119): fail the build if they disagree.
-      - name: Compare info.xml and package.json versions
-        run: |
-          INFO_VERSION="$(grep -oE '<version>[^<]+</version>' appinfo/info.xml | sed -E 's|</?version>||g' | head -n1)"
-          PKG_VERSION="$(jq -r '.version' package.json)"
-          LOCK_VERSION="$(jq -r '.version' package-lock.json)"
-          # npm stores the version twice in the lockfile: the top-level
-          # .version and the root package entry .packages[""].version. Check
-          # both so drift inside the lockfile is caught too.
-          LOCK_PKG_VERSION="$(jq -r '.packages[""].version' package-lock.json)"
-          echo "info.xml:                       $INFO_VERSION"
-          echo "package.json:                   $PKG_VERSION"
-          echo "package-lock.json (.version):   $LOCK_VERSION"
-          echo "package-lock.json (packages[\"\"]): $LOCK_PKG_VERSION"
-          if [ -z "$INFO_VERSION" ]; then
-            echo "::error::could not read <version> from appinfo/info.xml" >&2
-            exit 1
-          fi
-          if [ "$PKG_VERSION" != "$INFO_VERSION" ] || [ "$LOCK_VERSION" != "$INFO_VERSION" ] || [ "$LOCK_PKG_VERSION" != "$INFO_VERSION" ]; then
-            echo "::error::Version mismatch. appinfo/info.xml is the source of truth ($INFO_VERSION); align package.json and both version fields in package-lock.json to it." >&2
-            exit 1
-          fi
+      # drift (#119): fail the build if they disagree. The release workflow
+      # runs the same check, since a tag can sit on a commit no pull request
+      # ever saw.
+      - name: Compare info.xml and the versions everything else restates
+        run: python3 scripts/check-version-alignment.py
 
       # The same argument for the supported Nextcloud range: info.xml declares
       # it and eight other files restate it.

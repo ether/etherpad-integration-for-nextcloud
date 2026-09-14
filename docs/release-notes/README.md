@@ -16,3 +16,11 @@ carries the issue references the repository needs.
 
 Where no file exists for a version, the workflow falls back to that version's
 `CHANGELOG.md` section, so a release still says something.
+
+Write no licence header in these files. They are published verbatim, so one
+would head the release page and every notification mail; a leading HTML comment
+is stripped, but a visible `SPDX-License-Identifier:` line - the style most of
+`docs/` uses - would be published as written.
+
+A file that holds nothing but headers or headings fails the release rather than
+publishing an empty body.

@@ -7,15 +7,9 @@ This project uses a lightweight release flow:
 3. Tag the release.
 4. Deploy and run post-deploy smoke checks.
 
-Pushing the tag is the last manual step. `.github/workflows/release.yml` then
-builds the tarball with `scripts/build-release-tarball.sh` - the same script as
-locally - and publishes a GitHub release with it attached, marking anything
-with a pre-release suffix as a pre-release.
-
-The release body comes from `docs/release-notes/<version>.md` where that file
-exists, which is where a release gets the prose its readers see. Without one it
-falls back to the version's `CHANGELOG.md` section, so a release still says
-something; see `docs/release-notes/README.md`.
+Pushing the tag is the last manual step: `.github/workflows/release.yml` builds
+the tarball and publishes the release. What has to be true before the tag is
+pushed is listed under [3) Tagging](#3-tagging).
 
 The workflow refuses a tag that does not match `appinfo/info.xml`, and a tag
 whose `js/` bundles are not a fresh build of `src/`, so the bump has to be
@@ -118,13 +112,31 @@ Notes:
 
 ## 3) Tagging
 
-After checks pass:
+Pushing the tag publishes the release, so everything it reads has to be on the
+tagged commit already:
+
+- `appinfo/info.xml` carries the new version, and `package.json` plus both
+  version fields in `package-lock.json` agree with it. The bundles take their
+  version from `package.json`, so `npm run build` has to have run after that
+  bump and `js/` has to be committed.
+- `CHANGELOG.md` has a section for the version, with entries under it.
+- `docs/release-notes/<version>.md` holds the prose readers get. Without it the
+  CHANGELOG section is published instead, and afterwards is too late - the
+  notes are read when the tag arrives.
+
+Then:
 
 ```bash
 git tag -a vX.Y.Z -m "Etherpad Integration for Nextcloud vX.Y.Z"
 git push origin HEAD
 git push origin vX.Y.Z
 ```
+
+`.github/workflows/release.yml` refuses the tag if any of the above is missing,
+before it builds anything. Otherwise it builds the tarball with
+`scripts/build-release-tarball.sh` and publishes the release with it attached,
+marking a pre-release suffix as a pre-release. Re-running the workflow after a
+failed upload is safe; it does not try to create a release that already exists.
 
 ## 4) Post-Deploy Smoke
 

@@ -2,9 +2,14 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
 # Turns a pushed v* tag into a GitHub release with the app tarball attached.
-# The tarball itself is built by scripts/build-release-tarball.sh, the same
-# script a maintainer runs locally, so the released artefact and a local one
-# are built the same way.
+# The tarball is built by scripts/build-release-tarball.sh, the same script a
+# maintainer runs locally, so a released artefact and a local one come out of
+# the same code.
+#
+# Two jobs on purpose. The build installs the full devDependency tree, whose
+# lifecycle scripts run arbitrary code; it holds no write permission and hands
+# its output on as a workflow artifact. Only the publish job may write to the
+# repository, and it runs nothing but gh.
 
 name: Release
 
@@ -20,12 +25,15 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  release:
-    name: Build the tarball and publish the release
+  build:
+    name: Check the tag and build the tarball
     runs-on: ubuntu-latest
     permissions:
-      # Creating the release and uploading the tarball.
-      contents: write
+      contents: read
+
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      prerelease: ${{ steps.version.outputs.prerelease }}
 
     steps:
       - name: Checkout the tag
@@ -33,33 +41,84 @@ jobs:
         with:
           persist-credentials: false
 
-      # The tarball is named from appinfo/info.xml, and the release from the
+      # Everything that can refuse a tag reads files and nothing else, so it
+      # all runs before npm: a tag prepared wrong fails in seconds rather than
+      # after a full install and build.
+
+      # The tarball is named from appinfo/info.xml and the release from the
       # tag. A tag that disagrees would publish etherpad_nextcloud-<a>.tar.gz
-      # under v<b>, so it is refused here rather than shipped.
+      # under v<b>.
       - name: Read the version and check it against the tag
         id: version
         env:
           TAG: ${{ github.ref_name }}
         run: |
-          version="$(grep -oE '<version>[^<]+</version>' appinfo/info.xml | sed -E 's|</?version>||g' | head -n1)"
-          if [ -z "$version" ]; then
-            echo "::error::could not read <version> from appinfo/info.xml"
-            exit 1
-          fi
+          version="$(python3 scripts/check-version-alignment.py --print)"
           if [ "$TAG" != "v$version" ]; then
             echo "::error::tag $TAG does not match appinfo/info.xml version $version"
             exit 1
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
-          # Semver says everything after the first hyphen is a pre-release.
+          # Semver: everything after the first hyphen is a pre-release.
           case "$version" in
             *-*) echo 'prerelease=true' >> "$GITHUB_OUTPUT" ;;
             *) echo 'prerelease=false' >> "$GITHUB_OUTPUT" ;;
           esac
 
+      # The bundles take their version from package.json, not from info.xml,
+      # so a bump that missed it builds cleanly and ships js/*.license naming
+      # the previous release. The pull-request workflow checks this too - but
+      # a tag can sit on a commit no pull request ever saw.
+      - name: Check every file restating the version
+        run: python3 scripts/check-version-alignment.py
+
+      # The tarball excludes vendor/ (scripts/app-file-excludes.sh), which is
+      # right while nothing but platform packages are required at runtime. The
+      # day a real dependency appears, that exclusion and this workflow both
+      # need a decision, so the release stops instead of shipping an app
+      # without it.
+      - name: Fail if a runtime dependency appeared
+        run: |
+          requires="$(python3 - <<'PY'
+          import json
+          platform = ('php', 'hhvm')
+          required = json.load(open('composer.json')).get('require', {})
+          print(' '.join(
+              name for name in required
+              if name not in platform and not name.startswith(('ext-', 'lib-', 'composer-'))
+          ))
+          PY
+          )"
+          if [ -n "$requires" ]; then
+            echo "::error::composer.json now requires $requires at runtime, but the tarball excludes vendor/"
+            exit 1
+          fi
+
+      # Written outside the checkout: anything left in the working tree would
+      # be rsynced into the tarball by a later build.
+      - name: Collect the release notes
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/release"
+          python3 scripts/release-notes.py "$VERSION" > "$RUNNER_TEMP/release/release-notes.md"
+
       - name: Read package.json node and npm engines
         id: versions
         uses: skjnldsv/read-package-engines-version-actions@06d6baf7d8f41934ab630e97d9e6c0bc9c9ac5e4 # v3
+
+      # Anything but a version range means the action could not read them, and
+      # an empty node-version silently builds the release on whatever Node the
+      # runner happens to ship.
+      - name: Fail if the engines ranges could not be read
+        env:
+          NODE_RANGE: ${{ steps.versions.outputs.nodeVersion }}
+          NPM_RANGE: ${{ steps.versions.outputs.npmVersion }}
+        run: |
+          printf '%s' "$NODE_RANGE" | grep -Eq '^[~^]?[0-9]+(\.[0-9]+){0,2}$' \
+            || { echo "::error::engines.node did not read as a version range: '$NODE_RANGE'"; exit 1; }
+          printf '%s' "$NPM_RANGE" | grep -Eq '^[~^]?[0-9]+(\.[0-9]+){0,2}$' \
+            || { echo "::error::engines.npm did not read as a version range: '$NPM_RANGE'"; exit 1; }
 
       - name: Set up node ${{ steps.versions.outputs.nodeVersion }}
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -73,9 +132,9 @@ jobs:
       - name: Production build
         run: npm run build
 
-      # The committed js/ ships in the tarball, and the eight js/*.license
-      # files carry the app version - so a tag placed without rebuilding
-      # would release bundles that name the previous version.
+      # The committed js/ ships in the tarball. This catches a tag placed on a
+      # commit whose bundles were never rebuilt; the version inside them is
+      # covered by the alignment check above.
       - name: Fail if built assets are stale
         run: |
           changes="$(git status --porcelain -- js/)"
@@ -85,51 +144,64 @@ jobs:
             exit 1
           fi
 
-      # The tarball excludes vendor/ (scripts/app-file-excludes.sh), which is
-      # correct while composer.json requires nothing at runtime. The day it
-      # does, that exclusion and this workflow both need a decision - so the
-      # release stops here rather than shipping an app without its dependency.
-      - name: Fail if a runtime dependency appeared
+      # The script owns the app id and the artefact name and prints the path
+      # it wrote, so the name is not restated here.
+      - name: Build the release tarball
         run: |
-          requires="$(python3 -c "import json; print(' '.join(k for k in json.load(open('composer.json')).get('require', {}) if k != 'php'))")"
-          if [ -n "$requires" ]; then
-            echo "::error::composer.json now requires $requires at runtime, but the tarball excludes vendor/"
+          scripts/build-release-tarball.sh "$RUNNER_TEMP/dist" | tee "$RUNNER_TEMP/build.log"
+          artifact="$(sed -n 's/^Built: //p' "$RUNNER_TEMP/build.log" | head -n1)"
+          if [ ! -f "$artifact" ]; then
+            echo "::error::the tarball builder reported no archive"
             exit 1
           fi
+          mv "$artifact" "$RUNNER_TEMP/release/"
 
-      - name: Build the release tarball
-        run: scripts/build-release-tarball.sh dist
+      - name: Hand the release over
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release
+          path: ${{ runner.temp }}/release
+          if-no-files-found: error
+          retention-days: 7
 
-      # A release usually gets prose written for its readers, which is not the
-      # same text as the CHANGELOG entry - that one is terse and carries issue
-      # numbers. Where it exists it wins; where nobody wrote one the CHANGELOG
-      # section still makes a release that says something.
-      - name: Collect the release notes
-        env:
-          VERSION: ${{ steps.version.outputs.version }}
-        run: |
-          written="docs/release-notes/$VERSION.md"
-          if [ -f "$written" ]; then
-            echo "Using $written"
-            cp "$written" release-notes.md
-          else
-            echo "No $written; using the CHANGELOG section"
-            scripts/changelog-section.py "$VERSION" > release-notes.md
-          fi
+  publish:
+    name: Publish the release
+    runs-on: ubuntu-latest
+    needs: build
+    permissions:
+      # Creating the release and uploading the tarball.
+      contents: write
 
-      - name: Publish the release
+    steps:
+      - name: Take the release over
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: release
+          path: release
+
+      # gh release create makes the release and then uploads the asset, so a
+      # failure in between leaves a release that a re-run cannot create again.
+      # Creating first and uploading separately is resumable: a re-run finds
+      # the release, skips creating it, and replaces the asset.
+      - name: Publish
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
           TAG: ${{ github.ref_name }}
-          VERSION: ${{ steps.version.outputs.version }}
-          PRERELEASE: ${{ steps.version.outputs.prerelease }}
+          VERSION: ${{ needs.build.outputs.version }}
+          PRERELEASE: ${{ needs.build.outputs.prerelease }}
         run: |
           flags=''
           if [ "$PRERELEASE" = 'true' ]; then
             flags='--prerelease'
           fi
-          # shellcheck disable=SC2086
-          gh release create "$TAG" "dist/etherpad_nextcloud-$VERSION.tar.gz" \
-            --title "$VERSION" \
-            --notes-file release-notes.md \
-            $flags
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            # shellcheck disable=SC2086
+            gh release create "$TAG" \
+              --title "$VERSION" \
+              --notes-file release/release-notes.md \
+              $flags
+          fi
+          # Globbed: the archive's name is the builder's business, not this
+          # workflow's, and there is exactly one in the handover.
+          gh release upload "$TAG" release/*.tar.gz --clobber
