@@ -97,9 +97,11 @@ class FullTextSearchIndexingListenerTest extends TestCase {
 	}
 
 	/**
-	 * Letting the failure through would cost the indexing run the rest of its
-	 * files, so it is logged and the pad is left without content. Whatever
-	 * finishes the write that held the lock marks the file for indexing again.
+	 * Letting the failure through would record an error on the index, and a
+	 * document carrying one is skipped by every ordinary run after. Empty
+	 * content is not a retry either: a locked file is reindexed when the
+	 * write that held the lock finishes, but a permission or storage failure
+	 * waits for the next write to the file, or for a forced reindex.
 	 */
 	#[DataProvider('recoverableFileReadErrors')]
 	public function testLogsAPadItCannotReadAndIndexesNoContent(\Throwable $error): void {
@@ -204,6 +206,25 @@ class FullTextSearchIndexingListenerTest extends TestCase {
 		$document->expects(self::never())->method('getIndex');
 
 		$this->listener()->handle($this->indexingEvent($this->file('Notes.pad', 'unused'), $document));
+	}
+
+	/**
+	 * The value types belong to Files FullTextSearch, and files_external has
+	 * already changed from bool to int once. Reading one the other way round
+	 * throws, and the indexer skips a document that records an error.
+	 */
+	public function testIndexesNoContentWhenTheSettingCannotBeRead(): void {
+		$appConfig = $this->createMock(IAppConfig::class);
+		$appConfig->method('getValueBool')
+			->willThrowException(new \RuntimeException('Type conflict for key files_local'));
+		$document = $this->document();
+		$document->expects(self::once())->method('setContent')->with('', IIndexDocument::NOT_ENCODED);
+
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects(self::once())->method('warning');
+
+		$this->listener(logger: $logger, appConfig: $appConfig)
+			->handle($this->indexingEvent($this->file('Notes.pad', 'unused'), $document));
 	}
 
 	private function listener(

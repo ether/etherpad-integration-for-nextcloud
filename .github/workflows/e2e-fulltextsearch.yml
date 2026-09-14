@@ -12,6 +12,9 @@ on:
       - 'lib/Migration/RegisterMimeType.php'
       - 'lib/Service/PadFileService.php'
       - 'lib/Util/PadFileType.php'
+      # the API the check drives to create and sync its fixture
+      - 'appinfo/routes.php'
+      - 'lib/Controller/**'
       - 'img/filetypes/etherpad-nextcloud-pad.svg'
       - 'scripts/app-file-excludes.sh'
       - 'tests/e2e/docker/**'

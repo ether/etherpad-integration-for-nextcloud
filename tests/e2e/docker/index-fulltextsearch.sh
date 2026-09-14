@@ -10,5 +10,5 @@ source "$here/stack-env.sh"
 require_stack_env E2E_USER
 require_elasticsearch
 
-compose exec -T -u www-data nextcloud php occ fulltextsearch:index "{\"user\":\"$E2E_USER\"}" --no-readline --quiet
+occ fulltextsearch:index "{\"user\":\"$E2E_USER\"}" --no-readline --quiet
 echo "Full-text index for $E2E_USER is up to date."

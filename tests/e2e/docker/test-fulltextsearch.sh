@@ -138,8 +138,7 @@ echo "==> indexing and checking the search contract"
 "$here/index-fulltextsearch.sh"
 
 search() {
-	compose exec -T -u www-data nextcloud php occ fulltextsearch:search --output=json \
-		"$E2E_USER" "$1"
+	occ fulltextsearch:search --output=json "$E2E_USER" "$1"
 }
 
 # Elasticsearch refreshes on its own schedule - a second by default - and
@@ -149,13 +148,17 @@ search() {
 wait_for() {
 	local marker="$1" expected="$2" out="$3" attempt
 	for attempt in $(seq 1 20); do
-		search "$marker" > "$out" || true
-		if grep -q "$file_name" "$out" 2>/dev/null; then
-			if [[ "$expected" == found ]]; then
+		# Only a search that ran says anything. Without this, an occ or
+		# Elasticsearch failure leaves $out empty, and "gone" would be
+		# satisfied by never having looked.
+		if search "$marker" > "$out"; then
+			if grep -q "$file_name" "$out" 2>/dev/null; then
+				if [[ "$expected" == found ]]; then
+					return 0
+				fi
+			elif [[ "$expected" == gone ]]; then
 				return 0
 			fi
-		elif [[ "$expected" == gone ]]; then
-			return 0
 		fi
 		sleep 1
 	done
@@ -199,6 +202,14 @@ curl --silent --show-error --fail-with-body --cacert "$ca_file" \
 	--data-urlencode "padID=$pad_id" \
 	--data-urlencode "text=$second_marker" \
 	"$E2E_ETHERPAD_URL/api/1.2.15/setText" > "$tmp/etherpad-second.json"
+python3 - "$tmp/etherpad-second.json" <<'CHECK'
+import json
+import sys
+
+data = json.load(open(sys.argv[1], encoding='utf-8'))
+if data.get('code') != 0:
+    raise SystemExit(f"Etherpad setText failed: {data}")
+CHECK
 curl --silent --show-error --fail-with-body --cacert "$ca_file" \
 	--user "$E2E_USER:$E2E_APP_PASSWORD" --request POST \
 	--header 'Accept: application/json' \
