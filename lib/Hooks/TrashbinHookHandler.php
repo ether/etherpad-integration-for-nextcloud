@@ -10,6 +10,7 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Hooks;
 
+use OCA\EtherpadNextcloud\Util\SafeError;
 use OCA\EtherpadNextcloud\Listeners\RestoreFromTrashListener;
 use Psr\Log\LoggerInterface;
 
@@ -26,7 +27,7 @@ class TrashbinHookHandler {
 		} catch (\Throwable $e) {
 			\OCP\Server::get(LoggerInterface::class)->error('Legacy trashbin restore hook failed.', [
 				'app' => 'etherpad_nextcloud',
-				'exception' => $e,
+				...SafeError::context($e),
 			]);
 			throw $e;
 		}

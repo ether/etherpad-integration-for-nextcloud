@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Controller;
 
+use OCA\EtherpadNextcloud\Util\SafeError;
 use OCA\EtherpadNextcloud\AppInfo\Application;
 use OCA\EtherpadNextcloud\Exception\BindingException;
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
@@ -125,7 +126,7 @@ class PublicViewerControllerErrorMapper {
 
 		$this->logger->error('Unhandled public viewer error', [
 			'app' => Application::APP_ID,
-			'exception' => $e,
+			...SafeError::context($e),
 		]);
 	}
 

@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Service;
 
+use OCA\EtherpadNextcloud\Util\SafeError;
 use OCP\Files\File;
 use OCP\Files\NotFoundException;
 use Psr\Log\LoggerInterface;
@@ -53,7 +54,7 @@ class PadCreateRollbackService {
 			$this->logger->warning('Could not cleanup failed Etherpad create', [
 				'app' => 'etherpad_nextcloud',
 				'padId' => $padId,
-				'exception' => $cleanupError,
+				...SafeError::context($cleanupError),
 			]);
 		}
 	}
@@ -88,7 +89,7 @@ class PadCreateRollbackService {
 				'uid' => $uid,
 				'file' => $path,
 				'fileId' => $claim->fileId,
-				'exception' => $lookupError,
+				...SafeError::context($lookupError),
 			]);
 			return;
 		}
@@ -104,7 +105,7 @@ class PadCreateRollbackService {
 				'app' => 'etherpad_nextcloud',
 				'uid' => $uid,
 				'file' => $path,
-				'exception' => $cleanupError,
+				...SafeError::context($cleanupError),
 			]);
 		}
 	}
@@ -139,7 +140,7 @@ class PadCreateRollbackService {
 			$this->logger->warning('Left a .pad file in place because its content could not be read', [
 				'app' => 'etherpad_nextcloud',
 				'file' => $path,
-				'exception' => $readError,
+				...SafeError::context($readError),
 			]);
 			return false;
 		}

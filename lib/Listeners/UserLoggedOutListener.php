@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Listeners;
 
+use OCA\EtherpadNextcloud\Util\SafeError;
 use OCA\EtherpadNextcloud\Service\PadSessionRevoker;
 use OCP\EventDispatcher\Event;
 use OCP\EventDispatcher\IEventListener;
@@ -63,7 +64,7 @@ class UserLoggedOutListener implements IEventListener {
 			// A logout does not fail because a pad server is unreachable.
 			$this->logger->warning('Could not revoke Etherpad sessions on logout.', [
 				'app' => 'etherpad_nextcloud',
-				'exception' => $e,
+				...SafeError::context($e),
 			]);
 		}
 	}

@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Controller;
 
+use OCA\EtherpadNextcloud\Util\SafeError;
 use OCA\EtherpadNextcloud\Exception\BindingException;
 use OCA\EtherpadNextcloud\Exception\ControllerBadRequestException;
 use OCA\EtherpadNextcloud\Exception\LegacyPadCollisionException;
@@ -209,7 +210,7 @@ class PadControllerErrorMapper {
 		} else {
 			$this->logger->error('Unhandled pad controller error', [
 				'app' => 'etherpad_nextcloud',
-				'exception' => $e,
+				...SafeError::context($e),
 			]);
 		}
 		return new DataResponse([

@@ -8,6 +8,7 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Listeners;
 
+use OCA\EtherpadNextcloud\Util\SafeError;
 use OCA\EtherpadNextcloud\Exception\PadFileChangedException;
 use OCA\EtherpadNextcloud\Exception\PadTypeDisabledException;
 use OCA\EtherpadNextcloud\Service\PadBootstrapService;
@@ -101,7 +102,7 @@ class FileCreatedFromTemplateListener implements IEventListener {
 		} catch (\Throwable $e) {
 			$this->logger->warning('Pad template create skipped: the target could not be identified.', [
 				'app' => 'etherpad_nextcloud',
-				'exception' => $e,
+				...SafeError::context($e),
 			]);
 			return;
 		}
@@ -116,7 +117,7 @@ class FileCreatedFromTemplateListener implements IEventListener {
 			$this->logger->warning('Pad template create refused: no pad type is enabled.', [
 				'app' => 'etherpad_nextcloud',
 				'targetFileId' => $claim->fileId,
-				'exception' => $e,
+				...SafeError::context($e),
 			]);
 			$unchanged = $this->padCreationService->resolveUnchangedClaim($claim);
 			if ($unchanged !== null) {
@@ -128,7 +129,7 @@ class FileCreatedFromTemplateListener implements IEventListener {
 			$this->logger->warning('Pad template create stopped: the target file changed while the pad was provisioned.', [
 				'app' => 'etherpad_nextcloud',
 				'targetFileId' => $claim->fileId,
-				'exception' => $e,
+				...SafeError::context($e),
 			]);
 			return;
 		} catch (\Throwable $e) {
@@ -136,7 +137,7 @@ class FileCreatedFromTemplateListener implements IEventListener {
 				'app' => 'etherpad_nextcloud',
 				'targetFileId' => $claim->fileId,
 				'templateFileId' => $templateFileId,
-				'exception' => $e,
+				...SafeError::context($e),
 			]);
 			// Other failures do not imply unchanged content: check before resetting.
 			$unchanged = $this->padCreationService->resolveUnchangedClaim($claim);
@@ -165,7 +166,7 @@ class FileCreatedFromTemplateListener implements IEventListener {
 			$this->logger->warning('Blank pad create refused: no pad type is enabled.', [
 				'app' => 'etherpad_nextcloud',
 				'fileId' => (int)$target->getId(),
-				'exception' => $e,
+				...SafeError::context($e),
 			]);
 			$this->deleteTarget($target);
 			throw $e;
@@ -176,7 +177,7 @@ class FileCreatedFromTemplateListener implements IEventListener {
 			$this->logger->warning('Could not initialise frontmatter for blank-template .pad — falling back to viewer init-retry path.', [
 				'app' => 'etherpad_nextcloud',
 				'fileId' => (int)$target->getId(),
-				'exception' => $e,
+				...SafeError::context($e),
 			]);
 		}
 	}
@@ -219,7 +220,7 @@ class FileCreatedFromTemplateListener implements IEventListener {
 			$this->logger->warning('Could not link a new .pad file to an external pad.', [
 				'app' => 'etherpad_nextcloud',
 				'fileId' => $fileId,
-				'exception' => $e,
+				...SafeError::context($e),
 			]);
 			$this->deleteTarget($target);
 			throw $e;
@@ -253,7 +254,7 @@ class FileCreatedFromTemplateListener implements IEventListener {
 			$this->logger->warning('Could not remove the .pad file of a failed template create.', [
 				'app' => 'etherpad_nextcloud',
 				'fileId' => $fileId ?? $this->idOrNull($target),
-				'exception' => $e,
+				...SafeError::context($e),
 			]);
 		}
 	}
@@ -274,7 +275,7 @@ class FileCreatedFromTemplateListener implements IEventListener {
 			$this->logger->warning('Could not reset target file content after rejected template.', [
 				'app' => 'etherpad_nextcloud',
 				'fileId' => $fileId ?? $this->idOrNull($target),
-				'exception' => $e,
+				...SafeError::context($e),
 			]);
 		}
 	}

@@ -10,6 +10,7 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Listeners;
 
+use OCA\EtherpadNextcloud\Util\SafeError;
 use OCA\EtherpadNextcloud\Service\LifecycleService;
 use OCP\EventDispatcher\Event;
 use OCP\EventDispatcher\IEventListener;
@@ -50,7 +51,7 @@ class MoveToTrashListener implements IEventListener {
 			$this->logger->error('MoveToTrash listener aborted due to lifecycle error', [
 				'app' => 'etherpad_nextcloud',
 				'fileId' => (int)$node->getId(),
-				'exception' => $e,
+				...SafeError::context($e),
 			]);
 			throw $e;
 		}

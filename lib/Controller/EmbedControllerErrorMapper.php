@@ -8,6 +8,7 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Controller;
 
+use OCA\EtherpadNextcloud\Util\SafeError;
 use OCA\EtherpadNextcloud\AppInfo\Application;
 use OCA\EtherpadNextcloud\Exception\ControllerBadRequestException;
 use OCA\EtherpadNextcloud\Exception\NotAPadFileException;
@@ -73,7 +74,7 @@ class EmbedControllerErrorMapper {
 		} catch (\Throwable $e) {
 			$this->logger->error('Unhandled embed controller error', [
 				'app' => Application::APP_ID,
-				'exception' => $e,
+				...SafeError::context($e),
 			]);
 			return $this->errorTemplate($this->l10n->t('Could not open pad'), $errorTitle);
 		}

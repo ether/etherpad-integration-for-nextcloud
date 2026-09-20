@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Controller;
 
+use OCA\EtherpadNextcloud\Util\SafeError;
 use OCA\EtherpadNextcloud\AppInfo\Application;
 use OCA\EtherpadNextcloud\Exception\AdminDebugModeRequiredException;
 use OCA\EtherpadNextcloud\Exception\AdminHealthCheckException;
@@ -22,12 +23,6 @@ use OCP\IL10N;
 use Psr\Log\LoggerInterface;
 
 class AdminControllerErrorMapper {
-	/** Enough to place a failure, short enough to stay one log entry. */
-	private const TRACE_FRAMES = 12;
-
-	/** The same bound for the other half of the line. */
-	private const CHAIN_LINKS = 6;
-
 	public function __construct(
 		private IL10N $l10n,
 		private LoggerInterface $logger,
@@ -100,9 +95,7 @@ class AdminControllerErrorMapper {
 			// in theirs. The origin is reported without them.
 			$this->logger->error((string)($options['log_message'] ?? 'Admin request failed'), [
 				'app' => Application::APP_ID,
-				'error' => get_class($e),
-				'error_message' => $e->getMessage(),
-				'error_origin' => $this->originOf($e),
+				...SafeError::context($e),
 			]);
 			return new DataResponse([
 				'ok' => false,
@@ -111,31 +104,4 @@ class AdminControllerErrorMapper {
 		}
 	}
 
-	/**
-	 * Where a failure came from: the causal chain with what each link said,
-	 * then the frames that led to it as file, line and callee. The arguments
-	 * are left out on purpose - they are what carries the api key.
-	 *
-	 * The chain matters as much as the location here: this app wraps a
-	 * transport failure as "Etherpad API request failed: <method>", so the
-	 * outermost message alone never says what actually went wrong.
-	 *
-	 * One string rather than a list, because Nextcloud json-encodes a list
-	 * into the context and the escaping is what a reader then has to get
-	 * past.
-	 */
-	private function originOf(\Throwable $e): string {
-		$origin = [];
-		$current = $e;
-		for ($link = 0; $current !== null && $link < self::CHAIN_LINKS; $link++) {
-			$origin[] = get_class($current) . ' at ' . $current->getFile() . ':' . $current->getLine()
-				. ' - ' . $current->getMessage();
-			$current = $current->getPrevious();
-		}
-		foreach (array_slice($e->getTrace(), 0, self::TRACE_FRAMES) as $frame) {
-			$origin[] = ($frame['file'] ?? '?') . ':' . ($frame['line'] ?? '?')
-				. ' ' . ($frame['class'] ?? '') . ($frame['type'] ?? '') . ($frame['function'] ?? '?');
-		}
-		return implode(' | ', $origin);
-	}
 }

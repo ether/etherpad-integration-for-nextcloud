@@ -8,6 +8,7 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Listeners;
 
+use OCA\EtherpadNextcloud\Util\SafeError;
 use OCA\EtherpadNextcloud\Exception\MissingFrontmatterException;
 use OCA\EtherpadNextcloud\Exception\PadFileFormatException;
 use OCA\EtherpadNextcloud\Service\PadFileService;
@@ -84,7 +85,7 @@ class FullTextSearchIndexingListener implements IEventListener {
 			$this->logger->debug('Skipped indexing a .pad that could not be read.', [
 				'app' => 'etherpad_nextcloud',
 				'file' => $file->getName(),
-				'exception' => $readError,
+				...SafeError::context($readError),
 			]);
 			$document->setContent('');
 			return;
@@ -129,7 +130,7 @@ class FullTextSearchIndexingListener implements IEventListener {
 			$this->logger->warning('Could not read Files FullTextSearch\'s setting for this storage; indexing no pad content for it.', [
 				'app' => 'etherpad_nextcloud',
 				'source' => $source,
-				'exception' => $typeMismatch,
+				...SafeError::context($typeMismatch),
 			]);
 
 			return false;

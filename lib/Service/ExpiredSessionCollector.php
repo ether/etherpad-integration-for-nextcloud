@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Service;
 
+use OCA\EtherpadNextcloud\Util\SafeError;
 use OCA\EtherpadNextcloud\BackgroundJob\CollectExpiredSessionsJob;
 use OCA\EtherpadNextcloud\Util\EtherpadErrorClassifier;
 use OCP\AppFramework\Utility\ITimeFactory;
@@ -70,7 +71,7 @@ class ExpiredSessionCollector {
 			$this->logger->warning('Could not queue the Etherpad session sweep.', [
 				'app' => 'etherpad_nextcloud',
 				'authorId' => $authorId,
-				'exception' => $e,
+				...SafeError::context($e),
 			]);
 		}
 	}
@@ -100,7 +101,7 @@ class ExpiredSessionCollector {
 			$this->logger->warning('Could not list the Etherpad sessions to collect.', [
 				'app' => 'etherpad_nextcloud',
 				'authorId' => $authorId,
-				'exception' => $e,
+				...SafeError::context($e),
 			]);
 			return ['deleted' => 0, 'remaining' => 0, 'retry' => true, 'nextDueAt' => null];
 		}
@@ -171,7 +172,7 @@ class ExpiredSessionCollector {
 					'app' => 'etherpad_nextcloud',
 					'authorId' => $authorId,
 					'sessionRef' => substr(hash('sha256', $sessionId), 0, 12),
-					'exception' => $e,
+					...SafeError::context($e),
 				]);
 				if ($failures >= self::MAX_FAILURES_PER_RUN) {
 					break;

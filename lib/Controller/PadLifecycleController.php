@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Controller;
 
+use OCA\EtherpadNextcloud\Util\SafeError;
 use OCA\EtherpadNextcloud\Service\LifecycleService;
 use OCA\EtherpadNextcloud\Service\PadMetadataService;
 use OCA\EtherpadNextcloud\Service\PadOriginalLookup;
@@ -56,7 +57,7 @@ class PadLifecycleController extends AbstractPadController {
 				'generic' => $this->l10n->t('Could not move pad to trash.'),
 				'on_throwable' => fn(\Throwable $e) => $this->logError('Pad trash API failed', [
 					'file' => $file,
-					'exception' => $e,
+					...SafeError::context($e),
 				]),
 			],
 		);
@@ -73,7 +74,7 @@ class PadLifecycleController extends AbstractPadController {
 				'generic' => $this->l10n->t('Could not restore pad from trash.'),
 				'on_throwable' => fn(\Throwable $e) => $this->logError('Pad restore API failed', [
 					'file' => $file,
-					'exception' => $e,
+					...SafeError::context($e),
 				]),
 			],
 		);
@@ -89,7 +90,7 @@ class PadLifecycleController extends AbstractPadController {
 				'generic' => $this->l10n->t('Could not recover pad from this file.'),
 				'on_throwable' => fn(\Throwable $e) => $this->logError('Pad recovery API failed', [
 					'fileId' => $fileId,
-					'exception' => $e,
+					...SafeError::context($e),
 				]),
 			],
 		);

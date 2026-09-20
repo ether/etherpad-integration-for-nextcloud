@@ -10,6 +10,7 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Service;
 
+use OCA\EtherpadNextcloud\Util\SafeError;
 use OCA\EtherpadNextcloud\Exception\BindingStateConflictException;
 use OCA\EtherpadNextcloud\Exception\LifecycleException;
 use OCA\EtherpadNextcloud\Exception\NotAPadFileException;
@@ -179,7 +180,7 @@ class LifecycleService {
 					'app' => 'etherpad_nextcloud',
 					'fileId' => $fileId,
 					'padId' => $padId,
-					'exception' => $readLockError,
+					...SafeError::context($readLockError),
 				]);
 			}
 
@@ -198,7 +199,7 @@ class LifecycleService {
 						'app' => 'etherpad_nextcloud',
 						'fileId' => $fileId,
 						'padId' => $padId,
-						'exception' => $snapshotError,
+						...SafeError::context($snapshotError),
 					]);
 				}
 
@@ -218,14 +219,14 @@ class LifecycleService {
 							'app' => 'etherpad_nextcloud',
 							'fileId' => $fileId,
 							'padId' => $padId,
-							'exception' => $e,
+							...SafeError::context($e),
 						]);
 					} catch (\Throwable $writeError) {
 						$this->logger->warning('Could not persist trash snapshot to .pad file. Continuing with pad deletion.', [
 							'app' => 'etherpad_nextcloud',
 							'fileId' => $fileId,
 							'padId' => $padId,
-							'exception' => $writeError,
+							...SafeError::context($writeError),
 						]);
 					}
 				}
@@ -239,7 +240,7 @@ class LifecycleService {
 						'app' => 'etherpad_nextcloud',
 						'fileId' => $fileId,
 						'padId' => $padId,
-						'exception' => $deleteError,
+						...SafeError::context($deleteError),
 					]);
 				} else {
 					$this->bindingService->markPendingDelete($fileId, $deletedAt);
@@ -247,7 +248,7 @@ class LifecycleService {
 						'app' => 'etherpad_nextcloud',
 						'fileId' => $fileId,
 						'padId' => $padId,
-						'exception' => $deleteError,
+						...SafeError::context($deleteError),
 					]);
 					return [
 						'status' => self::RESULT_TRASHED,
@@ -273,7 +274,7 @@ class LifecycleService {
 				'app' => 'etherpad_nextcloud',
 				'fileId' => $fileId,
 				'padId' => $padId,
-				'exception' => $e,
+				...SafeError::context($e),
 			]);
 			return $this->buildSkippedResult('binding_state_transition_conflict', $fileId, $padId);
 		} catch (\Throwable $e) {
@@ -281,7 +282,7 @@ class LifecycleService {
 				'app' => 'etherpad_nextcloud',
 				'fileId' => $fileId,
 				'padId' => $padId,
-				'exception' => $e,
+				...SafeError::context($e),
 			]);
 			throw new LifecycleException('Trash flow failed before completion.', 0, $e);
 		}
@@ -366,7 +367,7 @@ class LifecycleService {
 							'fileId' => $fileId,
 							'oldPadId' => $oldPadId,
 							'newPadId' => $newPadId,
-							'exception' => $fileRollbackError,
+							...SafeError::context($fileRollbackError),
 						]);
 					}
 				}
@@ -377,7 +378,7 @@ class LifecycleService {
 						'app' => 'etherpad_nextcloud',
 						'fileId' => $fileId,
 						'newPadId' => $newPadId,
-						'exception' => $cleanupError,
+						...SafeError::context($cleanupError),
 					]);
 				}
 			}
@@ -387,7 +388,7 @@ class LifecycleService {
 					'fileId' => $fileId,
 					'oldPadId' => $oldPadId,
 					'newPadId' => $newPadId,
-					'exception' => $e,
+					...SafeError::context($e),
 				]);
 				return $this->buildSkippedResult('binding_state_transition_conflict', $fileId, $oldPadId);
 			}
@@ -395,7 +396,7 @@ class LifecycleService {
 				'app' => 'etherpad_nextcloud',
 				'fileId' => $fileId,
 				'newPadId' => $newPadId,
-				'exception' => $e,
+				...SafeError::context($e),
 			]);
 			throw new LifecycleException('Restore flow failed before completion.', 0, $e);
 		}
@@ -492,7 +493,7 @@ class LifecycleService {
 				'fileId' => $fileId,
 				'oldPadId' => $oldPadId,
 				'newPadId' => $newPadId,
-				'exception' => $e,
+				...SafeError::context($e),
 			]);
 			throw new LifecycleException('Restore flow failed before completion.', 0, $e);
 		}
@@ -568,7 +569,7 @@ class LifecycleService {
 				'app' => 'etherpad_nextcloud',
 				'fileId' => $fileId,
 				'newPadId' => $newPadId,
-				'exception' => $readError,
+				...SafeError::context($readError),
 			]);
 			return true;
 		}
@@ -614,7 +615,7 @@ class LifecycleService {
 				'fileId' => $fileId,
 				'oldPadId' => $oldPadId,
 				'newPadId' => $newPadId,
-				'exception' => $e,
+				...SafeError::context($e),
 			]);
 		}
 	}

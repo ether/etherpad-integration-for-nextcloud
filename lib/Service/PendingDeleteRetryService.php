@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Service;
 
+use OCA\EtherpadNextcloud\Util\SafeError;
 use OCA\EtherpadNextcloud\Util\EtherpadErrorClassifier;
 use Psr\Log\LoggerInterface;
 
@@ -123,7 +124,7 @@ class PendingDeleteRetryService {
 					'app' => 'etherpad_nextcloud',
 					'fileId' => $fileId,
 					'padId' => $padId,
-					'exception' => $e,
+					...SafeError::context($e),
 				]);
 			}
 		}

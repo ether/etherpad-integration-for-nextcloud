@@ -150,7 +150,8 @@ class PublicViewerControllerErrorMapperTest extends TestCase {
 			$this->callback(static function ($context): bool {
 				return is_array($context)
 					&& ($context['app'] ?? '') === 'etherpad_nextcloud'
-					&& ($context['exception'] ?? null) instanceof \RuntimeException;
+					&& ($context['error'] ?? '') === \RuntimeException::class
+					&& !isset($context['exception']);
 			}),
 		);
 
@@ -170,7 +171,8 @@ class PublicViewerControllerErrorMapperTest extends TestCase {
 			$this->callback(static function ($context): bool {
 				return is_array($context)
 					&& ($context['app'] ?? '') === 'etherpad_nextcloud'
-					&& ($context['exception'] ?? null) instanceof \RuntimeException;
+					&& ($context['error'] ?? '') === \RuntimeException::class
+					&& !isset($context['exception']);
 			}),
 		);
 

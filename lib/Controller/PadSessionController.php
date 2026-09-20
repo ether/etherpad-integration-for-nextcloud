@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Controller;
 
+use OCA\EtherpadNextcloud\Util\SafeError;
 use OCA\EtherpadNextcloud\Service\LivePadHtml;
 use OCA\EtherpadNextcloud\Service\PadContentService;
 use OCA\EtherpadNextcloud\Service\PadInitializationResult;
@@ -111,7 +112,7 @@ class PadSessionController extends AbstractPadController {
 				'generic' => $this->l10n->t('Could not initialize .pad file.'),
 				'on_throwable' => fn(\Throwable $e) => $this->logError('Pad frontmatter initialization failed in API initialize', [
 					'file' => $file,
-					'exception' => $e,
+					...SafeError::context($e),
 				]),
 			],
 		);
@@ -129,7 +130,7 @@ class PadSessionController extends AbstractPadController {
 				'generic' => $this->l10n->t('Could not initialize .pad file.'),
 				'on_throwable' => fn(\Throwable $e) => $this->logError('Pad frontmatter initialization failed in API initialize-by-id', [
 					'fileId' => $fileId,
-					'exception' => $e,
+					...SafeError::context($e),
 				]),
 			],
 		);

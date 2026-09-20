@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Service;
 
+use OCA\EtherpadNextcloud\Util\SafeError;
 use OCA\EtherpadNextcloud\Util\EtherpadErrorClassifier;
 use OCP\AppFramework\Utility\ITimeFactory;
 use Psr\Log\LoggerInterface;
@@ -123,7 +124,7 @@ class PadSessionRevoker {
 			$this->logger->warning('Could not list the Etherpad sessions to revoke; they will expire on their own.', [
 				'app' => 'etherpad_nextcloud',
 				'uid' => $uid,
-				'exception' => $e,
+				...SafeError::context($e),
 			]);
 			return 0;
 		}
@@ -184,7 +185,7 @@ class PadSessionRevoker {
 					'app' => 'etherpad_nextcloud',
 					'uid' => $uid,
 					'groupId' => $info['groupID'],
-					'exception' => $e,
+					...SafeError::context($e),
 				]);
 			}
 		}

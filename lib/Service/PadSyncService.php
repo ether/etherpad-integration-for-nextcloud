@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Service;
 
+use OCA\EtherpadNextcloud\Util\SafeError;
 use OCA\EtherpadNextcloud\Exception\BindingException;
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
 use OCA\EtherpadNextcloud\Exception\PadFileLockRetryExhaustedException;
@@ -80,7 +81,7 @@ class PadSyncService {
 				'fileId' => $fileId,
 				'path' => $absolutePath,
 				'force' => $force,
-				'exception' => $e,
+				...SafeError::context($e),
 			]);
 			throw $e;
 		}
@@ -124,7 +125,7 @@ class PadSyncService {
 			$this->logger->error('Pad sync status check failed', [
 				'app' => 'etherpad_nextcloud',
 				'fileId' => $fileId,
-				'exception' => $e,
+				...SafeError::context($e),
 			]);
 			throw $e;
 		}
@@ -245,7 +246,7 @@ class PadSyncService {
 			'external' => $isExternal,
 			'force' => $force,
 			'lockRetryAttempts' => $lockRetries,
-			'exception' => $e,
+			...SafeError::context($e),
 		]);
 
 		return new PadSyncResult(

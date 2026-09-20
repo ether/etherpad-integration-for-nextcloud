@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Service;
 
+use OCA\EtherpadNextcloud\Util\SafeError;
 use OCA\EtherpadNextcloud\Util\EtherpadErrorClassifier;
 use OCA\EtherpadNextcloud\Util\PadAccessMode;
 use OCA\EtherpadNextcloud\Util\PadId;
@@ -52,7 +53,7 @@ class ManagedPadLifecycle {
 				$this->logger->warning('Could not remove the Etherpad group after its pad failed to be created.', [
 					'app' => 'etherpad_nextcloud',
 					'groupId' => $groupId,
-					'exception' => $cleanupError,
+					...SafeError::context($cleanupError),
 				]);
 			}
 			throw $e;
@@ -83,7 +84,7 @@ class ManagedPadLifecycle {
 					$this->logger->warning('Could not remove the Etherpad pad after its creation failed.', [
 						'app' => 'etherpad_nextcloud',
 						'padId' => $padId,
-						'exception' => $cleanupError,
+						...SafeError::context($cleanupError),
 					]);
 				}
 			}
@@ -148,7 +149,7 @@ class ManagedPadLifecycle {
 				$this->logger->warning('Could not import the HTML snapshot; falling back to plain text.', [
 					'app' => 'etherpad_nextcloud',
 					'padId' => $padId,
-					'exception' => $htmlError,
+					...SafeError::context($htmlError),
 				] + $context);
 			}
 		}
@@ -275,7 +276,7 @@ class ManagedPadLifecycle {
 				'app' => 'etherpad_nextcloud',
 				'padId' => $padId,
 				'groupId' => $groupId,
-				'exception' => $e,
+				...SafeError::context($e),
 			]);
 			return null;
 		}

@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Service;
 
+use OCA\EtherpadNextcloud\Util\SafeError;
 use OCA\EtherpadNextcloud\Exception\BindingException;
 use OCA\EtherpadNextcloud\Exception\BindingStateConflictException;
 use OCA\EtherpadNextcloud\Exception\MissingBindingException;
@@ -185,7 +186,7 @@ class BindingService {
 				'app' => 'etherpad_nextcloud',
 				'fileId' => $fileId,
 				'padId' => $padId,
-				'exception' => $e,
+				...SafeError::context($e),
 			]);
 			throw new BindingException('Could not create unique pad binding.', 0, $e);
 		}

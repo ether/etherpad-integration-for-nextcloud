@@ -8,6 +8,7 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Service;
 
+use OCA\EtherpadNextcloud\Util\SafeError;
 use OCA\EtherpadNextcloud\AppInfo\Application;
 use OCP\Files\File;
 use OCP\Files\Folder;
@@ -160,7 +161,7 @@ class UserNodeResolver {
 			$this->logger->debug('Cannot access the user file tree', [
 				'app' => Application::APP_ID,
 				'uid' => $uid,
-				'exception' => $e,
+				...SafeError::context($e),
 			]);
 			throw new NotFoundException('Cannot access the user file tree.', 0, $e);
 		}
@@ -185,7 +186,7 @@ class UserNodeResolver {
 			$this->logger->debug('Not permitted to read the path', [
 				'app' => Application::APP_ID,
 				'uid' => $uid,
-				'exception' => $e,
+				...SafeError::context($e),
 			]);
 			throw new NotFoundException('Cannot access the requested path.', 0, $e);
 		}
