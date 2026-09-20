@@ -485,7 +485,7 @@ class EtherpadClientTest extends TestCase {
 
 		$this->assertSame('POST', $captured['method']);
 		$this->assertSame(
-			$client->buildApiUrl('https://pad.example.test/', '1.3.0', EtherpadClient::API_KEY_PROBE_METHOD),
+			EtherpadClient::buildApiUrl('https://pad.example.test/', '1.3.0', EtherpadClient::API_KEY_PROBE_METHOD),
 			$captured['url'],
 		);
 		$this->assertStringContainsString('/api/1.3.0/checkToken', $captured['url']);
@@ -509,7 +509,7 @@ class EtherpadClientTest extends TestCase {
 
 		$client->assertApiKeyAccepted('  https://pad.example.test/  ', 'probe-key', ' 1.3.0 ');
 
-		$this->assertSame($captured['url'], $client->buildApiUrl('  https://pad.example.test/  ', ' 1.3.0 ', 'checkToken'));
+		$this->assertSame($captured['url'], EtherpadClient::buildApiUrl('  https://pad.example.test/  ', ' 1.3.0 ', 'checkToken'));
 		$this->assertSame('https://pad.example.test/api/1.3.0/checkToken', $captured['url']);
 	}
 

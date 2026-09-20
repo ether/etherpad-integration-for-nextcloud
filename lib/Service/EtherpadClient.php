@@ -286,10 +286,11 @@ class EtherpadClient {
 	}
 
 	/**
-	 * The address an api call goes to. Public so the connection test can
-	 * name the address that was actually requested.
+	 * The address an api call goes to, normalised here and nowhere else.
+	 * Public so the connection test can name the address that was actually
+	 * requested; static so mocking the client cannot make it disappear.
 	 */
-	public function buildApiUrl(string $host, string $apiVersion, string $method): string {
+	public static function buildApiUrl(string $host, string $apiVersion, string $method): string {
 		return sprintf('%s/api/%s/%s', rtrim(trim($host), '/'), trim($apiVersion), $method);
 	}
 
@@ -382,12 +383,12 @@ class EtherpadClient {
 			? trim($apiVersionOverride)
 			: (string)$this->config->getAppValue('etherpad_nextcloud', 'etherpad_api_version', self::DEFAULT_API_VERSION);
 		$host = $hostOverride !== null && trim($hostOverride) !== ''
-			? rtrim(trim($hostOverride), '/')
+			? $hostOverride
 			: $this->getApiHost();
 		$apiKey = $apiKeyOverride !== null && trim($apiKeyOverride) !== ''
 			? trim($apiKeyOverride)
 			: $this->getApiKey();
-		$url = $this->buildApiUrl($host, $apiVersion, $method);
+		$url = self::buildApiUrl($host, $apiVersion, $method);
 
 		$query = array_merge($params, [
 			'apikey' => $apiKey,

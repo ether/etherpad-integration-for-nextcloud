@@ -24,6 +24,11 @@ class AdminHealthCheckException extends \RuntimeException {
 		 * and free of anything the admin typed, so it can be logged.
 		 */
 		private readonly string $reason = '',
+		/**
+		 * The untranslated cause, with the api key removed. Two failures the
+		 * matcher does not recognise read alike without it.
+		 */
+		private readonly string $cause = '',
 	) {
 		parent::__construct($message, $code, $previous);
 	}
@@ -34,5 +39,9 @@ class AdminHealthCheckException extends \RuntimeException {
 
 	public function getReason(): string {
 		return $this->reason;
+	}
+
+	public function getCause(): string {
+		return $this->cause;
 	}
 }

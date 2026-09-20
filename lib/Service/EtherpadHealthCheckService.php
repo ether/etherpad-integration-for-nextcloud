@@ -35,6 +35,9 @@ class EtherpadHealthCheckService {
 	private const REASON_UNKNOWN = 'unknown';
 	private const DETAIL_MAX_LENGTH = 160;
 
+	/** Below this a key is not distinctive enough to replace safely. */
+	private const REDACTABLE_MIN_LENGTH = 8;
+
 	public function __construct(
 		private EtherpadClient $etherpadClient,
 		private PendingDeleteRetryService $pendingDeleteRetryService,
@@ -73,7 +76,12 @@ class EtherpadHealthCheckService {
 			// admin reads is shortened — a transport failure can carry a long
 			// tail of internal hostnames and addresses.
 			$reason = $this->classifyFailure($detail);
+			// Redacted before it is cut, or a key straddling the cut survives
+			// as a prefix, and before the hint is appended, which is
+			// translated and would make the log follow the admin's language.
+			$detail = $this->withoutApiKey($detail, $settings->effectiveApiKey);
 			$detail = $this->shorten($detail);
+			$cause = $detail;
 			$hint = $this->hintForReason($reason);
 			if ($hint !== '') {
 				$detail .= ' ' . $hint;
@@ -92,6 +100,7 @@ class EtherpadHealthCheckService {
 				$e,
 				$this->fieldForReason($reason, $settings),
 				$reason,
+				$cause,
 			);
 		}
 
@@ -107,7 +116,7 @@ class EtherpadHealthCheckService {
 			: null;
 
 		$latencyMs = (int)round(($this->nowSeconds() - $startedAt) * 1000.0);
-		$target = $this->etherpadClient->buildApiUrl(
+		$target = EtherpadClient::buildApiUrl(
 			$settings->etherpadApiHost,
 			$settings->etherpadApiVersion,
 			EtherpadClient::API_KEY_PROBE_METHOD,
@@ -432,6 +441,23 @@ class EtherpadHealthCheckService {
 	}
 
 	/**
+	 * The matcher reads upstream wording, so nothing can be assumed about
+	 * what a message holds - only the one secret in scope can be taken out
+	 * of it, in the spellings a request carries it in.
+	 *
+	 * Short values are left alone: str_replace knows no word boundaries, so
+	 * a key like "key" would blank unrelated words out of the one message
+	 * that says what went wrong.
+	 */
+	private function withoutApiKey(string $text, string $apiKey): string {
+		$apiKey = trim($apiKey);
+		if (mb_strlen($apiKey) < self::REDACTABLE_MIN_LENGTH) {
+			return $text;
+		}
+		return str_replace([$apiKey, rawurlencode($apiKey), urlencode($apiKey)], '***', $text);
+	}
+
+	/**
 	 * Classify a failure once, then derive both the hint and the field from
 	 * the result. Two separate matchers over the same strings could hand out
 	 * a correct hint with the wrong field.
@@ -535,11 +561,17 @@ class EtherpadHealthCheckService {
 		};
 	}
 
-	/** Same cap as BaseUrlReachabilityCheck; these end up in the same panel. */
+	/**
+	 * Same cap as BaseUrlReachabilityCheck; these end up in the same panel.
+	 *
+	 * By characters, not bytes: a cut inside a multi-byte sequence leaves
+	 * invalid UTF-8, which json_encode refuses - the log then stores null
+	 * and the response body can come back empty.
+	 */
 	private function shorten(string $message): string {
 		$message = trim($message);
-		return strlen($message) > self::DETAIL_MAX_LENGTH
-			? substr($message, 0, self::DETAIL_MAX_LENGTH) . '…'
+		return mb_strlen($message, 'UTF-8') > self::DETAIL_MAX_LENGTH
+			? mb_substr($message, 0, self::DETAIL_MAX_LENGTH, 'UTF-8') . '…'
 			: $message;
 	}
 

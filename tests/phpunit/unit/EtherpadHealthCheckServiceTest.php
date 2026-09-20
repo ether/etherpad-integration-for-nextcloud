@@ -496,13 +496,6 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 		$etherpad->expects($this->once())
 			->method('assertApiKeyAccepted')
 			->with('https://pad-api.example.test', 'key', '1.3.0');
-		// The address is the client's to build, so what is asserted here is
-		// that the service asks for the right one and shows the answer.
-		$etherpad->expects($this->once())
-			->method('buildApiUrl')
-			->with('https://pad-api.example.test', '1.3.0', 'checkToken')
-			->willReturn('https://pad-api.example.test/api/1.3.0/checkToken');
-
 		$pending = $this->createMock(PendingDeleteRetryService::class);
 		$pending->expects($this->once())->method('countPendingDeletes')->willReturn(3);
 
@@ -635,6 +628,71 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 	}
 
 	/**
+	 * The reason alone cannot separate two failures the matcher does not
+	 * recognise, so the cause carries the wording - untranslated, and with
+	 * the one secret in scope taken out of it.
+	 */
+	public function testUnknownFailuresCarryDistinguishableCauses(): void {
+		$causes = [];
+		foreach (['something new upstream', 'something else entirely'] as $message) {
+			$etherpad = $this->createMock(EtherpadClient::class);
+			$etherpad->method('assertApiKeyAccepted')
+				->willThrowException(new EtherpadClientException('Etherpad API request failed: ' . $message));
+			try {
+				$this->buildService($etherpad, $this->createMock(PendingDeleteRetryService::class))
+					->check($this->settings());
+				$this->fail('Expected health check exception.');
+			} catch (AdminHealthCheckException $e) {
+				$this->assertSame('unknown', $e->getReason());
+				$causes[] = $e->getCause();
+			}
+		}
+
+		$this->assertNotSame($causes[0], $causes[1]);
+		$this->assertStringContainsString('something new upstream', $causes[0]);
+	}
+
+	/**
+	 * Redaction has to happen before the text is cut: a key that straddles
+	 * the cut is no longer there to be matched, and its prefix travels on.
+	 */
+	public function testAKeyStraddlingTheLengthCutIsStillRedacted(): void {
+		$secret = 'abcdefghijklmnopqrstuvwxyz0123';
+		$etherpad = $this->createMock(EtherpadClient::class);
+		$etherpad->method('assertApiKeyAccepted')->willThrowException(
+			new EtherpadClientException(str_repeat('x', 145) . ' apikey=' . $secret . ' tail'),
+		);
+
+		try {
+			$this->buildService($etherpad, $this->createMock(PendingDeleteRetryService::class))
+				->check($this->settings('https://pad.example.test', true, '.example.test', $secret));
+			$this->fail('Expected health check exception.');
+		} catch (AdminHealthCheckException $e) {
+			// A prefix, not the whole value: the cut is what makes the whole
+			// value absent, so looking for it would pass against the defect.
+			$this->assertStringNotContainsString(substr($secret, 0, 6), $e->getCause());
+			$this->assertStringNotContainsString(substr($secret, 0, 6), $e->getMessage());
+		}
+	}
+
+	public function testTheCauseDoesNotCarryTheApiKey(): void {
+		$secret = 'super-secret-etherpad-key-987';
+		$etherpad = $this->createMock(EtherpadClient::class);
+		$etherpad->method('assertApiKeyAccepted')->willThrowException(
+			new EtherpadClientException('Etherpad transport error: rejected apikey=' . $secret),
+		);
+
+		try {
+			$this->buildService($etherpad, $this->createMock(PendingDeleteRetryService::class))
+				->check($this->settings('https://pad.example.test', true, '.example.test', $secret));
+			$this->fail('Expected health check exception.');
+		} catch (AdminHealthCheckException $e) {
+			$this->assertStringNotContainsString($secret, $e->getCause());
+			$this->assertStringContainsString('***', $e->getCause());
+		}
+	}
+
+	/**
 	 * Hint, field and reason come from one classification, so they are
 	 * asserted from one table — separate matchers over the same strings could
 	 * hand out a correct hint with the wrong field or reason.
@@ -687,13 +745,14 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 		string $etherpadHost = 'https://pad.example.test',
 		bool $enableProtectedPads = true,
 		string $cookieDomain = '.example.test',
+		string $apiKey = 'key',
 	): ValidatedAdminSettings {
 		return new ValidatedAdminSettings(
 			$etherpadHost,
 			'https://pad-api.example.test',
 			$cookieDomain,
-			'key',
-			'key',
+			$apiKey,
+			$apiKey,
 			'1.3.0',
 			120,
 			true,

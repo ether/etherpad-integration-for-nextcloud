@@ -134,6 +134,41 @@ class AdminControllerErrorMapperTest extends TestCase {
 		$this->assertSame('Failed.', $response->getData()['message']);
 	}
 
+	/**
+	 * A failure has to stay placeable without its frame arguments, because
+	 * those are what carries the api key - getTraceAsString() prints them
+	 * and so does a serialized exception.
+	 */
+	public function testGenericFailureOriginPlacesTheErrorWithoutItsArguments(): void {
+		$captured = [];
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->method('error')->willReturnCallback(
+			static function (string $message, array $context) use (&$captured): void {
+				$captured = $context;
+			}
+		);
+
+		$this->buildMapper($logger)->run(
+			static fn(): array => self::failWith('LEAKME-abcdefghijklmnopqrst'),
+			static fn(array $data): DataResponse => new DataResponse($data),
+		);
+
+		$this->assertNotEmpty($captured['error_origin']);
+		$this->assertStringContainsString(__FILE__, $captured['error_origin']);
+		// A prefix, not the whole value: getTraceAsString() truncates an
+		// argument to fifteen characters, so a test looking for all of it
+		// would pass against exactly the output this must not produce.
+		$this->assertStringNotContainsString(
+			'LEAKME-',
+			$captured['error_origin'],
+		);
+	}
+
+	/** Takes a secret so the frame above has one to leak. */
+	private static function failWith(string $apiKey): array {
+		throw new \RuntimeException('boom');
+	}
+
 	private function buildMapper(?LoggerInterface $logger = null): AdminControllerErrorMapper {
 		return new AdminControllerErrorMapper($this->buildL10n(), $logger ?? $this->createMock(LoggerInterface::class));
 	}
