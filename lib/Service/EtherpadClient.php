@@ -300,7 +300,7 @@ class EtherpadClient {
 	 * that answers with nothing, so the reply is the same size on an
 	 * instance of any age - it proves the key, not that pads can be read.
 	 */
-	public function assertApiKeyAccepted(string $host, string $apiKey, string $apiVersion = self::DEFAULT_API_VERSION): void {
+	public function assertApiKeyAccepted(string $host, ApiKey $apiKey, string $apiVersion = self::DEFAULT_API_VERSION): void {
 		$this->apiCall(self::API_KEY_PROBE_METHOD, [], $host, $apiKey, $apiVersion);
 	}
 
@@ -374,7 +374,7 @@ class EtherpadClient {
 		string $method,
 		array $params = [],
 		?string $hostOverride = null,
-		?string $apiKeyOverride = null,
+		?ApiKey $apiKeyOverride = null,
 		?string $apiVersionOverride = null,
 		?int $timeoutSeconds = null,
 		?int $maxBytes = null
@@ -385,13 +385,11 @@ class EtherpadClient {
 		$host = $hostOverride !== null && trim($hostOverride) !== ''
 			? $hostOverride
 			: $this->getApiHost();
-		$apiKey = $apiKeyOverride !== null && trim($apiKeyOverride) !== ''
-			? trim($apiKeyOverride)
-			: $this->getApiKey();
+		$apiKey = $apiKeyOverride ?? new ApiKey($this->getApiKey());
 		$url = self::buildApiUrl($host, $apiVersion, $method);
 
 		try {
-			$rawBody = $this->sendRequest($url, $params, new ApiKey($apiKey), $timeoutSeconds, $maxBytes);
+			$rawBody = $this->sendRequest($url, $params, $apiKey, $timeoutSeconds, $maxBytes);
 		} catch (\Throwable $e) {
 			// The size refusal is thrown from inside the sink, so the HTTP
 			// client hands it back wrapped. It has to survive as its own
@@ -454,7 +452,7 @@ class EtherpadClient {
 		// A stream rather than the string it holds: a string body would be
 		// an argument of the call below and printed with that frame, while
 		// a stream handle serializes as the handle.
-		$options['body'] = $this->formBody(array_merge($params, ['apikey' => $apiKey->reveal()]));
+		$options['body'] = $this->formBody($params, $apiKey);
 		$options['headers']['Content-Type'] = 'application/x-www-form-urlencoded';
 
 		$response = $this->doRequest('POST', $url, $options);
@@ -473,15 +471,30 @@ class EtherpadClient {
 	 * The form-encoded request body, as a stream. Etherpad has always been
 	 * sent `apikey` plus the parameters this way.
 	 *
-	 * @param array<string,mixed> $fields
+	 * The key stays wrapped until it is inside: revealing it into an array
+	 * first would make it an argument of this call, which is the one thing
+	 * ApiKey exists to prevent.
+	 *
+	 * @param array<string,mixed> $params
 	 * @return resource
 	 */
-	private function formBody(array $fields) {
+	private function formBody(array $params, ApiKey $apiKey) {
 		$body = fopen('php://temp', 'r+');
 		if ($body === false) {
 			throw new EtherpadClientException('Could not open a request body stream.');
 		}
-		fwrite($body, http_build_query($fields, '', '&', PHP_QUERY_RFC3986));
+		$encoded = http_build_query(
+			array_merge($params, ['apikey' => $apiKey->reveal()]),
+			'',
+			'&',
+			PHP_QUERY_RFC3986,
+		);
+		// A short write would send a body without the trailing apikey, and
+		// Etherpad would answer "no or wrong API Key" for a full disk.
+		if (fwrite($body, $encoded) !== strlen($encoded)) {
+			fclose($body);
+			throw new EtherpadClientException('Could not write the request body.');
+		}
 		rewind($body);
 		return $body;
 	}

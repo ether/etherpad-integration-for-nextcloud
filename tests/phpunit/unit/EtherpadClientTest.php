@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Tests\Unit;
 
+use OCA\EtherpadNextcloud\Util\ApiKey;
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
 use OCA\EtherpadNextcloud\Service\AdminSettingsRepository;
 use OCA\EtherpadNextcloud\Service\EtherpadClient;
@@ -481,7 +482,7 @@ class EtherpadClientTest extends TestCase {
 		$captured = null;
 		$client = $this->clientWithResponse($this->response(200, '{"code":0,"message":"ok","data":null}'), $captured);
 
-		$client->assertApiKeyAccepted('https://pad.example.test/', 'probe-key', '1.3.0');
+		$client->assertApiKeyAccepted('https://pad.example.test/', new ApiKey('probe-key'), '1.3.0');
 
 		$this->assertSame('POST', $captured['method']);
 		$this->assertSame(
@@ -500,14 +501,14 @@ class EtherpadClientTest extends TestCase {
 
 		$this->expectException(EtherpadClientException::class);
 		$this->expectExceptionMessage('no or wrong API Key');
-		$client->assertApiKeyAccepted('https://pad.example.test', 'wrong-key', '1.3.0');
+		$client->assertApiKeyAccepted('https://pad.example.test', new ApiKey('wrong-key'), '1.3.0');
 	}
 
 	public function testBuildApiUrlTrimsTheHostAndVersionTheSameWayACallDoes(): void {
 		$captured = null;
 		$client = $this->clientWithResponse($this->response(200, '{"code":0,"data":null}'), $captured);
 
-		$client->assertApiKeyAccepted('  https://pad.example.test/  ', 'probe-key', ' 1.3.0 ');
+		$client->assertApiKeyAccepted('  https://pad.example.test/  ', new ApiKey('probe-key'), ' 1.3.0 ');
 
 		$this->assertSame($captured['url'], EtherpadClient::buildApiUrl('  https://pad.example.test/  ', ' 1.3.0 ', 'checkToken'));
 		$this->assertSame('https://pad.example.test/api/1.3.0/checkToken', $captured['url']);

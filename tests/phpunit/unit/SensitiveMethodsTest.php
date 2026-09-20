@@ -9,6 +9,8 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Tests\Unit;
 
+use OCA\EtherpadNextcloud\Service\StoredAdminSettings;
+use OCA\EtherpadNextcloud\Service\ValidatedAdminSettings;
 use OCA\EtherpadNextcloud\Util\SensitiveMethods;
 use PHPUnit\Framework\TestCase;
 
@@ -37,12 +39,32 @@ class SensitiveMethodsTest extends TestCase {
 		);
 	}
 
-	public function testTheApiKeyCarryingMethodsAreRegistered(): void {
-		$client = SensitiveMethods::ALL[\OCA\EtherpadNextcloud\Service\EtherpadClient::class] ?? [];
+	/**
+	 * The api key is on no list, because no frame holds it: it travels as
+	 * ApiKey and the request body leaves as a stream. That only holds while
+	 * the settings objects keep it out of get_object_vars(), which is what
+	 * a serialized trace reads.
+	 */
+	public function testTheSettingsObjectsDoNotExposeTheApiKey(): void {
+		$validated = new ValidatedAdminSettings(
+			'https://pad.example.test',
+			'https://pad-api.example.test',
+			'.example.test',
+			'secret-to-store',
+			'secret-in-use',
+			'1.3.0',
+			120,
+			true,
+			false,
+			'',
+			'',
+		);
+		$stored = new StoredAdminSettings('stored-secret', '.example.test', true, false, '');
 
-		// The request path is what carries the key into a frame; everything
-		// else in the list is there for content or session values.
-		$this->assertContains('apiCall', $client);
-		$this->assertContains('sendRequest', $client);
+		$this->assertStringNotContainsString('secret', (string)json_encode(get_object_vars($validated)));
+		$this->assertStringNotContainsString('secret', (string)json_encode(get_object_vars($stored)));
+		// And they are still reachable where they are needed.
+		$this->assertSame('secret-in-use', $validated->effectiveApiKey()->reveal());
+		$this->assertSame('stored-secret', $stored->apiKey()->reveal());
 	}
 }

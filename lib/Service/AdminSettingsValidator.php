@@ -91,7 +91,7 @@ class AdminSettingsValidator {
 	 */
 	private function resolveApiKey(array $payload, StoredAdminSettings $stored): array {
 		$rawApiKey = trim((string)($payload['etherpad_api_key'] ?? ''));
-		$effectiveApiKey = $rawApiKey !== '' ? $rawApiKey : $stored->apiKey;
+		$effectiveApiKey = $rawApiKey !== '' ? $rawApiKey : $stored->apiKey()->reveal();
 		if ($effectiveApiKey === '') {
 			throw new AdminValidationException('etherpad_api_key', $this->l10n->t('Etherpad API key is required.'));
 		}

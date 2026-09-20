@@ -9,9 +9,11 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Service;
 
+use OCA\EtherpadNextcloud\Util\ApiKey;
+
 class StoredAdminSettings {
 	public function __construct(
-		public readonly string $apiKey,
+		private readonly string $apiKey,
 		public readonly string $cookieDomain,
 		public readonly bool $deleteOnTrash,
 		public readonly bool $allowExternalPads,
@@ -22,5 +24,9 @@ class StoredAdminSettings {
 		public readonly bool $cookieDomainConfigured = false,
 		public readonly bool $allowLegacyProtectedImport = false,
 	) {
+	}
+
+	public function apiKey(): ApiKey {
+		return new ApiKey($this->apiKey);
 	}
 }

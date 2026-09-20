@@ -29,10 +29,10 @@ namespace OCA\EtherpadNextcloud\Util;
 final class SensitiveMethods {
 	/** @var array<class-string, list<string>> */
 	public const ALL = [
-		// The api key, on every path that carries it.
-		\OCA\EtherpadNextcloud\Service\EtherpadClient::class => [
-			'apiCall', 'sendRequest', 'doRequest', 'assertApiKeyAccepted',
-		],
+		// A live session id, which deleteSession takes as a plain string.
+		// The api key needs no entry: it travels as ApiKey and leaves as a
+		// stream, so no frame holds it - measured, not assumed.
+		\OCA\EtherpadNextcloud\Service\EtherpadClient::class => ['deleteSession'],
 		// The Etherpad session cookie, which is a live credential.
 		\OCA\EtherpadNextcloud\Service\PadSessionService::class => [
 			'buildEtherpadSessionCookie', 'buildSetCookieHeader',

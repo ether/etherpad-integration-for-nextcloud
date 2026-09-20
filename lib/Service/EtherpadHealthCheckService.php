@@ -54,7 +54,7 @@ class EtherpadHealthCheckService {
 		try {
 			$this->etherpadClient->assertApiKeyAccepted(
 				$settings->etherpadApiHost,
-				$settings->effectiveApiKey,
+				$settings->effectiveApiKey(),
 				$settings->etherpadApiVersion,
 			);
 		} catch (EtherpadClientException $e) {
@@ -76,7 +76,7 @@ class EtherpadHealthCheckService {
 			// Redacted before it is cut, or a key straddling the cut survives
 			// as a prefix, and before the hint is appended, which is
 			// translated and would make the log follow the admin's language.
-			$detail = DiagnosticText::withoutSecret($detail, $settings->effectiveApiKey);
+			$detail = DiagnosticText::withoutSecret($detail, $settings->effectiveApiKey()->reveal());
 			$detail = DiagnosticText::shorten($detail);
 			$cause = $detail;
 			$hint = $this->hintForReason($reason);

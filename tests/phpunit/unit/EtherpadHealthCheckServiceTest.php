@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Tests\Unit;
 
+use OCA\EtherpadNextcloud\Util\ApiKey;
 use OCA\EtherpadNextcloud\Exception\AdminHealthCheckException;
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
 use OCA\EtherpadNextcloud\Service\BaseUrlReachabilityCheck;
@@ -495,7 +496,7 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 		$etherpad = $this->createMock(EtherpadClient::class);
 		$etherpad->expects($this->once())
 			->method('assertApiKeyAccepted')
-			->with('https://pad-api.example.test', 'ep-api-0123456789abcdef', '1.3.0');
+			->with('https://pad-api.example.test', new ApiKey('ep-api-0123456789abcdef'), '1.3.0');
 		$pending = $this->createMock(PendingDeleteRetryService::class);
 		$pending->expects($this->once())->method('countPendingDeletes')->willReturn(3);
 

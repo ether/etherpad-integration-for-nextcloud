@@ -37,8 +37,8 @@ class AdminSettingsValidatorTest extends TestCase {
 		$this->assertSame('https://pad.example.test/base', $result->etherpadHost);
 		$this->assertSame('https://pad.example.test/base', $result->etherpadApiHost);
 		$this->assertSame('.example.test', $result->etherpadCookieDomain);
-		$this->assertSame('new-key', $result->etherpadApiKey);
-		$this->assertSame('new-key', $result->effectiveApiKey);
+		$this->assertSame('new-key', $result->apiKeyToStore()?->reveal());
+		$this->assertSame('new-key', $result->effectiveApiKey()->reveal());
 		$this->assertSame('1.3.0', $result->etherpadApiVersion);
 		$this->assertSame(60, $result->syncIntervalSeconds);
 		$this->assertFalse($result->deleteOnTrash);
@@ -54,8 +54,8 @@ class AdminSettingsValidatorTest extends TestCase {
 			'etherpad_api_version' => '1.3.0',
 		], $this->stored(apiKey: 'stored-key'));
 
-		$this->assertNull($result->etherpadApiKey);
-		$this->assertSame('stored-key', $result->effectiveApiKey);
+		$this->assertNull($result->apiKeyToStore());
+		$this->assertSame('stored-key', $result->effectiveApiKey()->reveal());
 	}
 
 	public function testValidateForSaveUsesStoredDefaultsForOptionalSettings(): void {
