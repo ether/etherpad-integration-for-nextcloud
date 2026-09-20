@@ -8,6 +8,7 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Service;
 
+use OCA\EtherpadNextcloud\Util\DiagnosticText;
 use OCA\EtherpadNextcloud\Exception\BindingException;
 use OCA\EtherpadNextcloud\Exception\LegacyPadCollisionException;
 use OCA\EtherpadNextcloud\Exception\LegacyProtectedImportDisabledException;
@@ -72,7 +73,7 @@ class PadLegacyMigrationService {
 		$this->logger->warning('Refused legacy Ownpad migration - protected import is switched off.', [
 			'app' => 'etherpad_nextcloud',
 			'fileId' => $fileId,
-			'sourceUrl' => $sourceUrl,
+			'sourceHost' => DiagnosticText::hostOf($sourceUrl),
 			'originBranch' => 'same',
 			'accessMode' => $accessMode,
 			'padId' => $sourcePadId,
@@ -107,7 +108,7 @@ class PadLegacyMigrationService {
 			$this->logger->info('Migrated legacy Ownpad .pad as external public pad.', [
 				'app' => 'etherpad_nextcloud',
 				'fileId' => $fileId,
-				'sourceUrl' => $sourceUrl,
+				'sourceHost' => DiagnosticText::hostOf($sourceUrl),
 				'originBranch' => 'cross',
 				'uid' => $uid,
 			]);
@@ -156,7 +157,7 @@ class PadLegacyMigrationService {
 				$this->logger->info('Migrated legacy Ownpad .pad as managed pad (re-bind).', [
 					'app' => 'etherpad_nextcloud',
 					'fileId' => $fileId,
-					'sourceUrl' => $sourceUrl,
+					'sourceHost' => DiagnosticText::hostOf($sourceUrl),
 					'originBranch' => 'same',
 					'accessMode' => $accessMode,
 					'padId' => $sourcePadId,
@@ -177,7 +178,7 @@ class PadLegacyMigrationService {
 			$this->logger->info('Migrated legacy Ownpad .pad — finishing partially-completed prior migration.', [
 				'app' => 'etherpad_nextcloud',
 				'fileId' => $fileId,
-				'sourceUrl' => $sourceUrl,
+				'sourceHost' => DiagnosticText::hostOf($sourceUrl),
 				'originBranch' => 'same',
 				'accessMode' => $accessMode,
 				'padId' => $sourcePadId,
@@ -193,7 +194,7 @@ class PadLegacyMigrationService {
 			$this->logger->warning('Refused legacy Ownpad migration — pad already bound to a file the user cannot read.', [
 				'app' => 'etherpad_nextcloud',
 				'fileId' => $fileId,
-				'sourceUrl' => $sourceUrl,
+				'sourceHost' => DiagnosticText::hostOf($sourceUrl),
 				'padId' => $sourcePadId,
 				'boundFileId' => $boundFileId,
 				'collision' => 'no_access',
@@ -211,7 +212,7 @@ class PadLegacyMigrationService {
 		$this->logger->info('Migrated legacy Ownpad .pad as copy of an already-bound pad.', [
 			'app' => 'etherpad_nextcloud',
 			'fileId' => $fileId,
-			'sourceUrl' => $sourceUrl,
+			'sourceHost' => DiagnosticText::hostOf($sourceUrl),
 			'originBranch' => 'same',
 			'accessMode' => $accessMode,
 			'padId' => $sourcePadId,

@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Service;
 
+use OCA\EtherpadNextcloud\Util\DiagnosticText;
 use OCA\EtherpadNextcloud\Exception\BindingException;
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
 use OCA\EtherpadNextcloud\Exception\NotAPadFileException;
@@ -179,7 +180,7 @@ class PadCreationService {
 						'message' => 'External pad URL validation failed',
 						'context' => [
 							'file' => $path,
-							'padUrl' => $padUrl,
+							'padHost' => DiagnosticText::hostOf($padUrl),
 						],
 					];
 				}
@@ -191,7 +192,7 @@ class PadCreationService {
 					'message' => 'External pad create failed',
 					'context' => [
 						'file' => $path,
-						'padUrl' => $padUrl,
+						'padHost' => DiagnosticText::hostOf($padUrl),
 					],
 				];
 			},

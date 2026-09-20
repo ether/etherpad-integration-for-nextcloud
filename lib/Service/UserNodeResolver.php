@@ -8,6 +8,7 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Service;
 
+use OCA\EtherpadNextcloud\AppInfo\Application;
 use OCP\Files\File;
 use OCP\Files\Folder;
 use OCP\Files\IRootFolder;
@@ -156,7 +157,11 @@ class UserNodeResolver {
 			if (!$e instanceof NotPermittedException && !is_a($e, self::NO_USER_EXCEPTION)) {
 				throw $e;
 			}
-			$this->logger->debug('Cannot access the user file tree', ['uid' => $uid, 'exception' => $e]);
+			$this->logger->debug('Cannot access the user file tree', [
+				'app' => Application::APP_ID,
+				'uid' => $uid,
+				'exception' => $e,
+			]);
 			throw new NotFoundException('Cannot access the user file tree.', 0, $e);
 		}
 	}
@@ -177,7 +182,11 @@ class UserNodeResolver {
 			// Same rule as above: not being allowed to look is, to every
 			// caller here, the same answer as the file not being there. A
 			// sub-mount that is *down* still surfaces as itself.
-			$this->logger->debug('Not permitted to read the path', ['uid' => $uid, 'exception' => $e]);
+			$this->logger->debug('Not permitted to read the path', [
+				'app' => Application::APP_ID,
+				'uid' => $uid,
+				'exception' => $e,
+			]);
 			throw new NotFoundException('Cannot access the requested path.', 0, $e);
 		}
 		if (!$node instanceof File) {

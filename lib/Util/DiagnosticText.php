@@ -31,6 +31,23 @@ class DiagnosticText {
 	}
 
 	/**
+	 * Where a url points, and nothing else. An admin-supplied address can
+	 * carry credentials in its userinfo, a token in its query and a pad id
+	 * in its path - and for a public pad the path is itself the
+	 * permission. Callers already log the file or pad the address belongs
+	 * to, so the host is what a log is missing.
+	 */
+	public static function hostOf(string $url): string {
+		$parts = parse_url(trim($url));
+		if (!is_array($parts) || !isset($parts['host'])) {
+			return '(no host)';
+		}
+		$scheme = isset($parts['scheme']) ? $parts['scheme'] . '://' : '';
+		$port = isset($parts['port']) ? ':' . $parts['port'] : '';
+		return $scheme . $parts['host'] . $port;
+	}
+
+	/**
 	 * Takes one known secret out of text nobody can vouch for, in the
 	 * spellings a request carries it in. Call it before shortening: a
 	 * secret straddling the cut is no longer whole to be matched, and its

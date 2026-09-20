@@ -27,6 +27,23 @@ class DiagnosticTextTest extends TestCase {
 		$this->assertSame('short enough', DiagnosticText::shorten('  short enough  ', 20));
 	}
 
+	/** @return iterable<string, array{string, string}> */
+	public static function urlProvider(): iterable {
+		yield 'credentials in the userinfo' => ['https://bob:hunter2@pad.example.test/p/x', 'https://pad.example.test'];
+		yield 'token in the query' => ['https://pad.example.test/p/x?token=secret', 'https://pad.example.test'];
+		yield 'secret in the fragment' => ['https://pad.example.test/p/x#t=secret', 'https://pad.example.test'];
+		// For a public pad the path is the permission, so it goes too.
+		yield 'pad id in the path' => ['https://pad.example.test/p/g.abc$private', 'https://pad.example.test'];
+		yield 'a port is kept' => ['http://pad.example.test:9001/p/x', 'http://pad.example.test:9001'];
+		yield 'nothing to read' => ['not a url at all', '(no host)'];
+		yield 'empty' => ['', '(no host)'];
+	}
+
+	#[\PHPUnit\Framework\Attributes\DataProvider('urlProvider')]
+	public function testHostOfKeepsOnlyWhereAUrlPoints(string $url, string $expected): void {
+		$this->assertSame($expected, DiagnosticText::hostOf($url));
+	}
+
 	public function testWithoutSecretReplacesEverySpellingARequestCarries(): void {
 		$secret = 'a b/c';
 
