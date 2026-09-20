@@ -185,7 +185,7 @@ class PadSessionRevoker {
 					'app' => 'etherpad_nextcloud',
 					'uid' => $uid,
 					'groupId' => $info['groupID'],
-					...SafeError::context($e),
+					...SafeError::context($e, [$sessionId]),
 				]);
 			}
 		}

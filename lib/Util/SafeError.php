@@ -40,13 +40,25 @@ final class SafeError {
 	 *   $this->logger->warning('...', ['app' => ..., 'padId' => $id]
 	 *       + SafeError::context($e));
 	 *
+	 * Values a caller knows to be secret are taken out of both. Upstream
+	 * wording is nothing to rely on: that Etherpad answers "sessionID does
+	 * not exist" rather than quoting the id is its choice, not ours.
+	 *
+	 * @param list<string> $secrets
 	 * @return array{error: string, error_message: string, error_origin: string}
 	 */
-	public static function context(\Throwable $e): array {
+	public static function context(\Throwable $e, array $secrets = []): array {
+		$scrub = static function (string $text) use ($secrets): string {
+			foreach ($secrets as $secret) {
+				$text = DiagnosticText::withoutSecret($text, $secret);
+			}
+			return $text;
+		};
+
 		return [
 			'error' => get_class($e),
-			'error_message' => DiagnosticText::shorten($e->getMessage(), self::MESSAGE_MAX_LENGTH),
-			'error_origin' => self::originOf($e),
+			'error_message' => $scrub(DiagnosticText::shorten($e->getMessage(), self::MESSAGE_MAX_LENGTH)),
+			'error_origin' => $scrub(self::originOf($e)),
 		];
 	}
 

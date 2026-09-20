@@ -172,7 +172,7 @@ class ExpiredSessionCollector {
 					'app' => 'etherpad_nextcloud',
 					'authorId' => $authorId,
 					'sessionRef' => substr(hash('sha256', $sessionId), 0, 12),
-					...SafeError::context($e),
+					...SafeError::context($e, [$sessionId]),
 				]);
 				if ($failures >= self::MAX_FAILURES_PER_RUN) {
 					break;
