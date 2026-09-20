@@ -23,13 +23,16 @@ class EtherpadClient {
 	 * server accepts any older version while rejecting one higher than it
 	 * supports. Requesting a low version therefore maximises compatibility in
 	 * exactly the degraded path where this constant matters, and the plugin
-	 * uses no method newer than ~1.2.1 (it never passes the authorId param that
+	 * uses no method newer than ~1.2 (it never passes the authorId param that
 	 * 1.3.0 added). Only raise this if we start relying on a newer-API feature.
 	 */
 	public const DEFAULT_API_VERSION = '1.2.15';
 
 	/** Public so the admin connection test can ask for the same patience. */
 	public const REQUEST_TIMEOUT_SECONDS = 15;
+
+	/** Public so the connection test names the endpoint it actually calls. */
+	public const API_KEY_PROBE_METHOD = 'checkToken';
 
 	/**
 	 * How far the two clocks are allowed to disagree.
@@ -282,12 +285,21 @@ class EtherpadClient {
 		return $this->buildPadUrl($readOnlyId);
 	}
 
-	/** @return array{pad_count:int} */
-	public function healthCheck(string $host, string $apiKey, string $apiVersion = self::DEFAULT_API_VERSION): array {
-		$data = $this->apiCall('listAllPads', [], 'POST', $host, $apiKey, $apiVersion);
-		$padIds = $data['padIDs'] ?? [];
-		$padCount = is_array($padIds) ? count($padIds) : 0;
-		return ['pad_count' => $padCount];
+	/**
+	 * The address an api call goes to. Public so the connection test can
+	 * name the address that was actually requested.
+	 */
+	public function buildApiUrl(string $host, string $apiVersion, string $method): string {
+		return sprintf('%s/api/%s/%s', rtrim(trim($host), '/'), trim($apiVersion), $method);
+	}
+
+	/**
+	 * Throws unless the api key is accepted. The call Etherpad offers for
+	 * that answers with nothing, so the reply is the same size on an
+	 * instance of any age - it proves the key, not that pads can be read.
+	 */
+	public function assertApiKeyAccepted(string $host, string $apiKey, string $apiVersion = self::DEFAULT_API_VERSION): void {
+		$this->apiCall(self::API_KEY_PROBE_METHOD, [], 'POST', $host, $apiKey, $apiVersion);
 	}
 
 	/**
@@ -375,7 +387,7 @@ class EtherpadClient {
 		$apiKey = $apiKeyOverride !== null && trim($apiKeyOverride) !== ''
 			? trim($apiKeyOverride)
 			: $this->getApiKey();
-		$url = sprintf('%s/api/%s/%s', $host, $apiVersion, $method);
+		$url = $this->buildApiUrl($host, $apiVersion, $method);
 
 		$query = array_merge($params, [
 			'apikey' => $apiKey,

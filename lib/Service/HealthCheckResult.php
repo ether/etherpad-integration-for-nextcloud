@@ -14,7 +14,6 @@ class HealthCheckResult {
 		public readonly string $host,
 		public readonly string $apiHost,
 		public readonly string $apiVersion,
-		public readonly int $padCount,
 		public readonly int $latencyMs,
 		public readonly string $target,
 		public readonly int $pendingDeleteCount,

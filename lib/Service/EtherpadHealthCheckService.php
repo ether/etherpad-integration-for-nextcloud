@@ -27,7 +27,12 @@ class EtherpadHealthCheckService {
 	private const REASON_TRANSPORT = 'transport';
 	private const REASON_INVALID_JSON = 'invalid_json';
 	private const REASON_API_KEY_OTHER = 'api_key_other';
-	private const REASON_UNKNOWN = '';
+	/**
+	 * Named rather than empty: the reason is the only machine-readable
+	 * record of a failure, and '' is what a thrower that passed none
+	 * would log.
+	 */
+	private const REASON_UNKNOWN = 'unknown';
 	private const DETAIL_MAX_LENGTH = 160;
 
 	public function __construct(
@@ -47,7 +52,7 @@ class EtherpadHealthCheckService {
 	public function check(ValidatedAdminSettings $settings): HealthCheckResult {
 		$startedAt = $this->nowSeconds();
 		try {
-			$result = $this->etherpadClient->healthCheck(
+			$this->etherpadClient->assertApiKeyAccepted(
 				$settings->etherpadApiHost,
 				$settings->effectiveApiKey,
 				$settings->etherpadApiVersion,
@@ -86,6 +91,7 @@ class EtherpadHealthCheckService {
 				0,
 				$e,
 				$this->fieldForReason($reason, $settings),
+				$reason,
 			);
 		}
 
@@ -100,9 +106,12 @@ class EtherpadHealthCheckService {
 			)
 			: null;
 
-		$padCount = (int)($result['pad_count'] ?? 0);
 		$latencyMs = (int)round(($this->nowSeconds() - $startedAt) * 1000.0);
-		$target = rtrim($settings->etherpadApiHost, '/') . '/api/' . $settings->etherpadApiVersion . '/listAllPads';
+		$target = $this->etherpadClient->buildApiUrl(
+			$settings->etherpadApiHost,
+			$settings->etherpadApiVersion,
+			EtherpadClient::API_KEY_PROBE_METHOD,
+		);
 
 		// Each part gets its own line, tied to the field it came from. The
 		// protected-pads line is added by the caller from $cookieDomain, so the
@@ -118,8 +127,8 @@ class EtherpadHealthCheckService {
 				HealthCheckItem::STATUS_OK,
 				$this->l10n->t('Etherpad API reachable'),
 				$this->fill(
-					$this->l10n->t('{target} — {count} pads, {latency} ms'),
-					['target' => $target, 'count' => (string)$padCount, 'latency' => (string)$latencyMs],
+					$this->l10n->t('{target} — {latency} ms'),
+					['target' => $target, 'latency' => (string)$latencyMs],
 				),
 				$apiField,
 			),
@@ -138,7 +147,6 @@ class EtherpadHealthCheckService {
 			$settings->etherpadHost,
 			$settings->etherpadApiHost,
 			$settings->etherpadApiVersion,
-			$padCount,
 			$latencyMs,
 			$target,
 			$this->pendingDeleteRetryService->countPendingDeletes(),

@@ -69,18 +69,34 @@ class AdminControllerErrorMapperTest extends TestCase {
 		$this->assertSame(['after_file_delete', 'after_pad_delete'], $response->getData()['supported_faults']);
 	}
 
-	public function testMapsHealthCheckExceptionToBadGateway(): void {
-		$response = $this->buildMapper()->run(
+	public function testMapsHealthCheckExceptionToOkWithAFailureFlag(): void {
+		// Logged as well as answered: the response is gone with the browser
+		// tab, the log entry is not.
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects($this->once())->method('warning')->with(
+			$this->anything(),
+			$this->callback(static function (array $context): bool {
+				// The reason, and neither the exception nor the translated
+				// message: a serialized trace carries the api key.
+				return ($context['reason'] ?? '') === 'api_key_rejected'
+					&& !isset($context['exception']);
+			}),
+		);
+		$response = $this->buildMapper($logger)->run(
 			static fn(): array => throw new AdminHealthCheckException(
 				'Etherpad connection test failed: bad key',
 				0,
 				null,
 				'etherpad_api_key',
+				'api_key_rejected',
 			),
 			static fn(array $data): DataResponse => new DataResponse($data),
 		);
 
-		$this->assertSame(Http::STATUS_BAD_GATEWAY, $response->getStatus());
+		// A verdict about the configured server, not a failure of this
+		// request, so the page reads ok rather than the status.
+		$this->assertSame(Http::STATUS_OK, $response->getStatus());
+		$this->assertFalse($response->getData()['ok']);
 		$this->assertSame('Etherpad connection test failed: bad key', $response->getData()['message']);
 		// Same shape validation errors use, so the page marks the input.
 		$this->assertSame('etherpad_api_key', $response->getData()['field']);
@@ -97,7 +113,16 @@ class AdminControllerErrorMapperTest extends TestCase {
 
 	public function testLogsGenericFailures(): void {
 		$logger = $this->createMock(LoggerInterface::class);
-		$logger->expects($this->once())->method('error')->with('Admin failed');
+		$logger->expects($this->once())->method('error')->with(
+			'Admin failed',
+			$this->callback(static function (array $context): bool {
+				// These routes carry the api key in their arguments, and a
+				// serialized trace prints every frame's arguments.
+				return !isset($context['exception'])
+					&& ($context['error'] ?? '') === \RuntimeException::class
+					&& ($context['error_message'] ?? '') === 'boom';
+			}),
+		);
 
 		$response = $this->buildMapper($logger)->run(
 			static fn(): array => throw new \RuntimeException('boom'),

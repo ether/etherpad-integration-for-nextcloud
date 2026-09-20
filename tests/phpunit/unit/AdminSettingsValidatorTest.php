@@ -256,7 +256,16 @@ class AdminSettingsValidatorTest extends TestCase {
 		$etherpadClient = $this->createMock(EtherpadClient::class);
 		$etherpadClient->method('detectApiVersion')->willThrowException(new EtherpadClientException('down'));
 		$logger = $this->createMock(LoggerInterface::class);
-		$logger->expects($this->once())->method('info')->with('Etherpad API version auto-detection failed; using default API version.');
+		$logger->expects($this->once())->method('info')->with(
+			'Etherpad API version auto-detection failed; using default API version.',
+			$this->callback(static function (array $context): bool {
+				// Never the exception object: the settings payload sits in a
+				// caller's frame, and a serialized trace prints every frame's
+				// arguments - including the api key the admin just typed.
+				return !isset($context['exception'])
+					&& ($context['error_message'] ?? '') === 'down';
+			}),
+		);
 
 		$result = $this->buildValidator($etherpadClient, $logger)->validateForHealthCheck([
 			'etherpad_host' => 'https://pad.example.test',

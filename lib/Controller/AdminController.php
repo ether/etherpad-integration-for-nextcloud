@@ -110,7 +110,6 @@ class AdminController extends Controller {
 					'host' => $result->host,
 					'api_host' => $result->apiHost,
 					'api_version' => $result->apiVersion,
-					'pad_count' => $result->padCount,
 					'latency_ms' => $result->latencyMs,
 					'target' => $result->target,
 					'pending_delete_count' => $result->pendingDeleteCount,

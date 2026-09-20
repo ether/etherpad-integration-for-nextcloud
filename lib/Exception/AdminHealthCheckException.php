@@ -19,11 +19,20 @@ class AdminHealthCheckException extends \RuntimeException {
 		 * where it can be fixed. Empty when it belongs to no single field.
 		 */
 		private readonly string $field = '',
+		/**
+		 * Why it failed, as one of the service's reason constants. Untranslated
+		 * and free of anything the admin typed, so it can be logged.
+		 */
+		private readonly string $reason = '',
 	) {
 		parent::__construct($message, $code, $previous);
 	}
 
 	public function getField(): string {
 		return $this->field;
+	}
+
+	public function getReason(): string {
+		return $this->reason;
 	}
 }

@@ -473,6 +473,47 @@ class EtherpadClientTest extends TestCase {
 	}
 
 	/**
+	 * The probe behind the admin connection test. Asserted here because the
+	 * settings page renders the address separately from the call that goes
+	 * out, and only a test over both keeps them the same.
+	 */
+	public function testAssertApiKeyAcceptedProbesTheAdvertisedUrlWithTheKey(): void {
+		$captured = null;
+		$client = $this->clientWithResponse($this->response(200, '{"code":0,"message":"ok","data":null}'), $captured);
+
+		$client->assertApiKeyAccepted('https://pad.example.test/', 'probe-key', '1.3.0');
+
+		$this->assertSame('POST', $captured['method']);
+		$this->assertSame(
+			$client->buildApiUrl('https://pad.example.test/', '1.3.0', EtherpadClient::API_KEY_PROBE_METHOD),
+			$captured['url'],
+		);
+		$this->assertStringContainsString('/api/1.3.0/checkToken', $captured['url']);
+		$this->assertStringNotContainsString('probe-key', $captured['url']);
+		$this->assertStringContainsString('apikey=probe-key', (string)$captured['options']['body']);
+	}
+
+	public function testAssertApiKeyAcceptedThrowsWhenEtherpadRejectsTheKey(): void {
+		$client = $this->clientWithResponse(
+			$this->response(200, '{"code":4,"message":"no or wrong API Key","data":null}'),
+		);
+
+		$this->expectException(EtherpadClientException::class);
+		$this->expectExceptionMessage('no or wrong API Key');
+		$client->assertApiKeyAccepted('https://pad.example.test', 'wrong-key', '1.3.0');
+	}
+
+	public function testBuildApiUrlTrimsTheHostAndVersionTheSameWayACallDoes(): void {
+		$captured = null;
+		$client = $this->clientWithResponse($this->response(200, '{"code":0,"data":null}'), $captured);
+
+		$client->assertApiKeyAccepted('  https://pad.example.test/  ', 'probe-key', ' 1.3.0 ');
+
+		$this->assertSame($captured['url'], $client->buildApiUrl('  https://pad.example.test/  ', ' 1.3.0 ', 'checkToken'));
+		$this->assertSame('https://pad.example.test/api/1.3.0/checkToken', $captured['url']);
+	}
+
+	/**
 	 * Build a client whose single HTTP call returns the given response.
 	 * Optionally captures the outgoing [method, url, options].
 	 *

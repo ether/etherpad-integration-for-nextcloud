@@ -70,17 +70,30 @@ class AdminControllerErrorMapper {
 				'message' => $e->getMessage(),
 			], Http::STATUS_BAD_REQUEST);
 		} catch (AdminHealthCheckException $e) {
+			// A record that outlives the browser tab. The reason code, never
+			// the exception and never the message: a serialized trace carries
+			// the api key in its arguments, and the message is translated.
+			$this->logger->warning((string)($options['log_message'] ?? 'Admin health check failed'), [
+				'app' => Application::APP_ID,
+				'reason' => $e->getReason(),
+				'field' => $e->getField(),
+			]);
 			$payload = ['ok' => false, 'message' => $e->getMessage()];
 			// Same shape the validator uses, so the page marks the field the
 			// failure came from instead of reporting it only at the bottom.
 			if ($e->getField() !== '') {
 				$payload['field'] = $e->getField();
 			}
-			return new DataResponse($payload, Http::STATUS_BAD_GATEWAY);
+			// 200 with ok:false: a verdict about the configured server is not
+			// a failure of this request, and the page keys on ok anyway.
+			return new DataResponse($payload);
 		} catch (\Throwable $e) {
+			// Class and message, not the object: a serialized trace carries
+			// the api key in its frames.
 			$this->logger->error((string)($options['log_message'] ?? 'Admin request failed'), [
 				'app' => Application::APP_ID,
-				'exception' => $e,
+				'error' => get_class($e),
+				'error_message' => $e->getMessage(),
 			]);
 			return new DataResponse([
 				'ok' => false,
