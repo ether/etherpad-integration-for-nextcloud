@@ -184,7 +184,7 @@
         "With both types switched off, no new pads can be created. Existing pads keep working.": "Si les deux types sont désactivés, aucun nouveau pad ne peut être créé. Les pads existants continuent de fonctionner.",
         "{domain} looks like a public suffix such as co.uk, which browsers refuse as a cookie domain. If it is one, protected pads will not open.": "{domain} ressemble à un suffixe public tel que co.uk, que les navigateurs refusent comme domaine de cookie. Si c'en est un, les pads protégés ne s'ouvriront pas.",
         "{domain} would cover both.": "{domain} couvrirait les deux.",
-        "{target} — {count} pads, {latency} ms": "{target} – {count} pads, {latency} ms",
+        "{target} — {latency} ms": "{target} – {latency} ms",
         "{url} answered with HTTP {status}.": "{url} a répondu avec HTTP {status}.",
         "{url} did not answer: {error}. If Nextcloud cannot reach the public URL by design, ignore this — but check the URL for typos, because pad links in the browser use it.": "{url} n'a pas répondu : {error}. Si Nextcloud ne peut pas atteindre l'URL publique par conception, ignorez ce message ; vérifiez toutefois les fautes de frappe, car les liens de pad du navigateur l'utilisent.",
         "{url} was not contacted: Nextcloud blocks requests into its own network. Check that your users' browsers can reach this address.": "{url} n'a pas été contactée : Nextcloud bloque les requêtes vers son propre réseau. Vérifiez que les navigateurs de vos utilisateurs peuvent atteindre cette adresse."

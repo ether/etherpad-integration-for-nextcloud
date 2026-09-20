@@ -228,10 +228,12 @@ class AdminSettingsValidator {
 		try {
 			return $this->normalizeApiVersion($this->etherpadClient->detectApiVersion($host));
 		} catch (EtherpadClientException $e) {
+			// No exception object: the settings payload in a caller's frame
+			// holds the api key the admin just typed.
 			$this->logger->info('Etherpad API version auto-detection failed; using default API version.', [
 				'app' => 'etherpad_nextcloud',
 				'host' => $host,
-				'exception' => $e,
+				'error_message' => $e->getMessage(),
 			]);
 			return EtherpadClient::DEFAULT_API_VERSION;
 		}

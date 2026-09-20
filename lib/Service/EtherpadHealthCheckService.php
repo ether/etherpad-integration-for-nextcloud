@@ -11,6 +11,7 @@ namespace OCA\EtherpadNextcloud\Service;
 
 use OCA\EtherpadNextcloud\Exception\AdminHealthCheckException;
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
+use OCA\EtherpadNextcloud\Util\DiagnosticText;
 use OCP\AppFramework\Utility\ITimeFactory;
 use OCP\IL10N;
 use OCP\IURLGenerator;
@@ -27,8 +28,12 @@ class EtherpadHealthCheckService {
 	private const REASON_TRANSPORT = 'transport';
 	private const REASON_INVALID_JSON = 'invalid_json';
 	private const REASON_API_KEY_OTHER = 'api_key_other';
-	private const REASON_UNKNOWN = '';
-	private const DETAIL_MAX_LENGTH = 160;
+	/**
+	 * Named rather than empty: the reason is the only machine-readable
+	 * record of a failure, and '' is what a thrower that passed none
+	 * would log.
+	 */
+	private const REASON_UNKNOWN = 'unknown';
 
 	public function __construct(
 		private EtherpadClient $etherpadClient,
@@ -47,7 +52,7 @@ class EtherpadHealthCheckService {
 	public function check(ValidatedAdminSettings $settings): HealthCheckResult {
 		$startedAt = $this->nowSeconds();
 		try {
-			$result = $this->etherpadClient->healthCheck(
+			$this->etherpadClient->assertApiKeyAccepted(
 				$settings->etherpadApiHost,
 				$settings->effectiveApiKey,
 				$settings->etherpadApiVersion,
@@ -68,7 +73,12 @@ class EtherpadHealthCheckService {
 			// admin reads is shortened — a transport failure can carry a long
 			// tail of internal hostnames and addresses.
 			$reason = $this->classifyFailure($detail);
-			$detail = $this->shorten($detail);
+			// Redacted before it is cut, or a key straddling the cut survives
+			// as a prefix, and before the hint is appended, which is
+			// translated and would make the log follow the admin's language.
+			$detail = DiagnosticText::withoutSecret($detail, $settings->effectiveApiKey);
+			$detail = DiagnosticText::shorten($detail);
+			$cause = $detail;
 			$hint = $this->hintForReason($reason);
 			if ($hint !== '') {
 				$detail .= ' ' . $hint;
@@ -86,6 +96,8 @@ class EtherpadHealthCheckService {
 				0,
 				$e,
 				$this->fieldForReason($reason, $settings),
+				$reason,
+				$cause,
 			);
 		}
 
@@ -100,9 +112,12 @@ class EtherpadHealthCheckService {
 			)
 			: null;
 
-		$padCount = (int)($result['pad_count'] ?? 0);
 		$latencyMs = (int)round(($this->nowSeconds() - $startedAt) * 1000.0);
-		$target = rtrim($settings->etherpadApiHost, '/') . '/api/' . $settings->etherpadApiVersion . '/listAllPads';
+		$target = EtherpadClient::buildApiUrl(
+			$settings->etherpadApiHost,
+			$settings->etherpadApiVersion,
+			EtherpadClient::API_KEY_PROBE_METHOD,
+		);
 
 		// Each part gets its own line, tied to the field it came from. The
 		// protected-pads line is added by the caller from $cookieDomain, so the
@@ -118,8 +133,8 @@ class EtherpadHealthCheckService {
 				HealthCheckItem::STATUS_OK,
 				$this->l10n->t('Etherpad API reachable'),
 				$this->fill(
-					$this->l10n->t('{target} — {count} pads, {latency} ms'),
-					['target' => $target, 'count' => (string)$padCount, 'latency' => (string)$latencyMs],
+					$this->l10n->t('{target} — {latency} ms'),
+					['target' => $target, 'latency' => (string)$latencyMs],
 				),
 				$apiField,
 			),
@@ -138,7 +153,6 @@ class EtherpadHealthCheckService {
 			$settings->etherpadHost,
 			$settings->etherpadApiHost,
 			$settings->etherpadApiVersion,
-			$padCount,
 			$latencyMs,
 			$target,
 			$this->pendingDeleteRetryService->countPendingDeletes(),
@@ -231,7 +245,7 @@ class EtherpadHealthCheckService {
 					EtherpadReleasePolicy::allowsHttpOnly($release)
 						? $this->l10n->t('Session cookie: this address reports Etherpad {release} and would be sent an HttpOnly cookie')
 						: $this->l10n->t('Session cookie: this address reports Etherpad {release} and would be sent a script-readable cookie'),
-					['release' => $this->shorten($release)],
+					['release' => DiagnosticText::shorten($release)],
 				),
 				$this->l10n->t('Not the address currently in use — save the settings to switch pads over to it.'),
 			);
@@ -243,7 +257,7 @@ class EtherpadHealthCheckService {
 				HealthCheckItem::STATUS_OK,
 				$this->fill(
 					$this->l10n->t('Session cookie: Etherpad {release}, checked on the first protected pad open'),
-					['release' => $this->shorten($release)],
+					['release' => DiagnosticText::shorten($release)],
 				),
 			);
 		}
@@ -257,7 +271,7 @@ class EtherpadHealthCheckService {
 					$sending
 						? $this->l10n->t('Pads are being sent an HttpOnly cookie, from Etherpad {known} seen earlier, but this server reports {release}, which reads the cookie in the browser. Protected pads will not open until that is checked again.')
 						: $this->l10n->t('This server reports Etherpad {release}, which reads the session server-side, but pads are still being sent a script-readable cookie from Etherpad {known} seen earlier.'),
-					['release' => $this->shorten($release), 'known' => $this->shorten($knownRelease)],
+					['release' => DiagnosticText::shorten($release), 'known' => DiagnosticText::shorten($knownRelease)],
 				),
 			);
 		}
@@ -268,7 +282,7 @@ class EtherpadHealthCheckService {
 				$sending
 					? $this->l10n->t('Session cookie kept from scripts (Etherpad {release})')
 					: $this->l10n->t('Session cookie readable by scripts (Etherpad {release})'),
-				['release' => $this->shorten($knownRelease)],
+				['release' => DiagnosticText::shorten($knownRelease)],
 			),
 		);
 	}
@@ -361,7 +375,7 @@ class EtherpadHealthCheckService {
 
 		return $this->fill(
 			$this->l10n->t('{origins} may frame the embed routes but is not covered by the session cookie domain {domain}. If it is on another site, the embedded pad gets no Etherpad session unless etherpad_session_cookie_samesite is set to none.'),
-			['origins' => $this->shorten(implode(', ', $outside)), 'domain' => $cookieDomain !== '' ? $cookieDomain : '(host-only)'],
+			['origins' => DiagnosticText::shorten(implode(', ', $outside)), 'domain' => $cookieDomain !== '' ? $cookieDomain : '(host-only)'],
 		);
 	}
 
@@ -383,7 +397,7 @@ class EtherpadHealthCheckService {
 		}
 		$hint = $this->hintForReason($this->classifyFailure($detail));
 
-		return $this->shorten($detail) . ($hint !== '' ? ' ' . $hint : '');
+		return DiagnosticText::shorten($detail) . ($hint !== '' ? ' ' . $hint : '');
 	}
 
 	/**
@@ -401,7 +415,7 @@ class EtherpadHealthCheckService {
 				EtherpadReleasePolicy::allowsHttpOnly($release)
 					? $this->l10n->t('This server reports Etherpad {release}, which reads the session server-side — automatic detection would set the same thing.')
 					: $this->l10n->t('This server reports Etherpad {release}, which reads the session in the browser.'),
-				['release' => $this->shorten($release)],
+				['release' => DiagnosticText::shorten($release)],
 			);
 
 		if (!$forcedOn) {
@@ -525,14 +539,6 @@ class EtherpadHealthCheckService {
 			self::REASON_TRANSPORT => $apiField,
 			default => '',
 		};
-	}
-
-	/** Same cap as BaseUrlReachabilityCheck; these end up in the same panel. */
-	private function shorten(string $message): string {
-		$message = trim($message);
-		return strlen($message) > self::DETAIL_MAX_LENGTH
-			? substr($message, 0, self::DETAIL_MAX_LENGTH) . '…'
-			: $message;
 	}
 
 	/** @param array<string,string> $parameters */

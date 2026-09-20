@@ -295,24 +295,38 @@ solely by the separate external-pad policy, not by these two settings.
     - `host`
     - `api_host`
     - `api_version`
-    - `pad_count`
     - `latency_ms`
     - `target`
     - `pending_delete_count`
+    - `session_cookie_release` — the Etherpad release the open path is going
+      by, which can differ from the one this run probed
     - `checks` — one entry per verified part, so a failure points at the field
-      that caused it: `api`, `api_key`, `base_url`, `protected_pads`. Each has
+      that caused it: `api`, `api_key`, `base_url`, `session_cookie` and
+      `protected_pads`. Each has
       `id`, `status` (`ok|warning|skipped`), `label`, `detail` and `field`,
       all already translated for display. `field` names the form input the
       line belongs to, so the result can be rendered at that input; it is
       empty when the line belongs to no single field.
 
-      `base_url` is the only entry that performs additional I/O: a short GET
-      against the browser-facing Etherpad URL, which nothing else contacts.
-      Unlike the API host it gets no local-address exemption — that exemption
-      is what would let an admin-supplied address probe the server's own
-      network. Redirects are not followed and the body is not buffered, since
-      neither is needed for a status code. The protection is Nextcloud's, so
+      `api` and `api_key` both come from one `checkToken` call, which proves
+      the address answers and the key is accepted and nothing else. Etherpad
+      implements `checkToken` as an empty function, so a passing line says
+      nothing about whether the pad store can be read. A cheap storage probe
+      would be possible — `getRevisionsCount` reads one key and answers
+      `code: 1, padID does not exist` for an absent pad, which is a pass for
+      that purpose — but no check does it today. A green panel is not a
+      statement about Etherpad's storage.
+
+      `base_url` performs a short GET against the browser-facing Etherpad
+      URL, which nothing else contacts. Unlike the API host it gets no
+      local-address exemption — that exemption is what would let an
+      admin-supplied address probe the server's own network. Redirects are not
+      followed and the body is not buffered, since neither is needed for a
+      status code. The protection is Nextcloud's, so
       `allow_local_remote_servers=true` disables it instance-wide.
+
+      `session_cookie` reaches out as well: it reads Etherpad's `/health` for
+      the release the cookie decision depends on.
 
       The line is never an error. Nextcloud may be unable to reach the public
       URL by design (split-horizon DNS, egress firewall), and a blocked local
@@ -335,10 +349,13 @@ solely by the separate external-pad policy, not by these two settings.
       public suffixes are recognised by a conservative heuristic rather than a
       Public Suffix List lookup, so `common_parent_may_be_public_suffix` is a
       warning rather than a verdict.
-  - A failed connection test answers `502` with `message` and, where the cause
-    can be attributed, `field` — the same shape validation errors use, so the
-    page marks the input rather than reporting only at the bottom. No other
-    fields are present on that response.
+  - A failed connection test answers `200` with `ok: false`, a `message` and,
+    where the cause can be attributed, `field` — the same shape validation
+    errors use, so the page marks the input rather than reporting only at the
+    bottom. No other fields are present on that response. The status is
+    deliberately not a `5xx`: the verdict is about the configured Etherpad and
+    not about this request, and a gateway status invites a reverse proxy to
+    replace the body that carries the reason. Read `ok`, never the status.
 
 - `GET /api/v1/admin/templates`
   - Controller: `AdminController::listPadTemplates`

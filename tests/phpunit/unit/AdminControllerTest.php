@@ -103,9 +103,8 @@ class AdminControllerTest extends TestCase {
 				'https://pad.example.test',
 				'https://pad-api.internal',
 				'1.3.0',
-				72,
 				123,
-				'https://pad-api.internal/api/1.3.0/listAllPads',
+				'https://pad-api.internal/api/1.3.0/checkToken',
 				3,
 				'3.3.3',
 				new CookieDomainDecision(
@@ -127,13 +126,12 @@ class AdminControllerTest extends TestCase {
 
 		$this->assertSame(Http::STATUS_OK, $response->getStatus());
 		$this->assertTrue((bool)$data['ok']);
-		$this->assertSame(72, $data['pad_count']);
 		$this->assertSame(3, $data['pending_delete_count']);
 		// The release the open path is going by, machine-readable, because
 		// it can differ from whatever this check just probed.
 		$this->assertSame('3.3.3', $data['session_cookie_release']);
 		$this->assertArrayNotHasKey('trashed_without_file_count', $data);
-		$this->assertSame('https://pad-api.internal/api/1.3.0/listAllPads', $data['target']);
+		$this->assertSame('https://pad-api.internal/api/1.3.0/checkToken', $data['target']);
 		// A protected-pads problem is reported beside the result, not as a
 		// failed connection test, and the controller renders its text.
 		$this->assertFalse($data['protected_pads']['ok']);

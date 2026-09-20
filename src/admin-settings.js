@@ -375,9 +375,12 @@
 		}
 
 		if (!response.ok || !data || data.ok !== true) {
+			// Only our own JSON is quoted: another body came from something
+			// between the browser and the app, and showing its markup reads
+			// as an app failure. The status says more than the markup does.
 			const message = (data && data.message)
 				? String(data.message)
-				: (responseText !== '' ? responseText.slice(0, 200) : l10n.requestFailed)
+				: `${l10n.requestFailed} (HTTP ${response.status})`
 			const err = new Error(message)
 			err.field = (data && typeof data.field === 'string') ? data.field : ''
 			throw err
@@ -454,8 +457,8 @@
 			if (typeof data.pending_delete_count !== 'undefined') {
 				updatePendingDeleteUi(Number(data.pending_delete_count))
 			}
-			// The per-field results carry the target, pad count and latency, and
-			// the protected-pads verdict, so the summary stays a summary.
+			// The per-field results carry the target and latency and the
+			// protected-pads verdict, so the summary stays a summary.
 			renderConnectionChecks(data.checks)
 			const needsAttention = Array.isArray(data.checks)
 				&& data.checks.some((check) => check && check.status === 'warning')

@@ -185,7 +185,7 @@ OC.L10N.register(
     "With both types switched off, no new pads can be created. Existing pads keep working.": "Con ambos tipos desactivados, no se pueden crear pads nuevos. Los pads existentes siguen funcionando.",
     "{domain} looks like a public suffix such as co.uk, which browsers refuse as a cookie domain. If it is one, protected pads will not open.": "{domain} parece un sufijo público como co.uk, que los navegadores rechazan como dominio de cookie. Si lo es, los pads protegidos no se abrirán.",
     "{domain} would cover both.": "{domain} cubriría ambos.",
-    "{target} — {count} pads, {latency} ms": "{target}: {count} pads, {latency} ms",
+    "{target} — {latency} ms": "{target}: {latency} ms",
     "{url} answered with HTTP {status}.": "{url} respondió con HTTP {status}.",
     "{url} did not answer: {error}. If Nextcloud cannot reach the public URL by design, ignore this — but check the URL for typos, because pad links in the browser use it.": "{url} no respondió: {error}. Si Nextcloud no puede alcanzar la URL pública por diseño, ignóralo; pero revisa la URL por si hay erratas, porque los enlaces de pad del navegador la utilizan.",
     "{url} was not contacted: Nextcloud blocks requests into its own network. Check that your users' browsers can reach this address.": "{url} no se contactó: Nextcloud bloquea las peticiones hacia su propia red. Comprueba que los navegadores de tus usuarios puedan alcanzar esta dirección."

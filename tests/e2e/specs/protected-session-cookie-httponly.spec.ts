@@ -99,9 +99,15 @@ test.describe('the session cookie and the Etherpad that reads it', () => {
 			)
 			expect(connectionTest.status(), await connectionTest.text()).toBe(200)
 			const body = (await connectionTest.json()) as {
+				ok?: boolean,
+				message?: string,
 				session_cookie_release?: string,
 				checks?: Array<{ id: string }>,
 			}
+			// A failed test answers 200 too, so the status alone says nothing.
+			// Without this the run fails further down on a missing `checks`
+			// and blames session-cookie detection for a rejected api key.
+			expect(body.ok, body.message).toBe(true)
 			expect(
 				body.checks?.some((c) => c.id === 'session_cookie'),
 				'the connection test should report on the session cookie',

@@ -30,14 +30,12 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 	 */
 	public function testCheckReportsACookieProblemWhenProtectedPadsAreSubmittedAsEnabled(): void {
 		$etherpad = $this->createMock(EtherpadClient::class);
-		$etherpad->method('healthCheck')->willReturn(['pad_count' => 3]);
 
 		// Unrelated domains and no saved cookie domain: the API answers, but
 		// the policy cannot derive one that spans both hosts.
 		$result = $this->buildService($etherpad, $this->pendingCounts(0), 'https://cloud.example.test')
 			->check($this->settings('https://pad.unrelated.test', true, ''));
 
-		$this->assertSame(3, $result->padCount);
 		$this->assertNotNull($result->cookieDomain);
 		$this->assertFalse($result->cookieDomain->isOk());
 		$this->assertSame(CookieDomainDecision::REASON_NO_COMMON_PARENT, $result->cookieDomain->reason);
@@ -48,7 +46,6 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 
 	public function testCheckSkipsTheCookieVerdictWhenProtectedPadsAreSubmittedAsDisabled(): void {
 		$etherpad = $this->createMock(EtherpadClient::class);
-		$etherpad->method('healthCheck')->willReturn(['pad_count' => 1]);
 
 		$result = $this->buildService($etherpad, $this->pendingCounts(0))
 			->check($this->settings('https://pad.unrelated.test', false));
@@ -61,14 +58,14 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 	/** With no separate API URL the address failure is about the base URL. */
 	public function testTransportFailureFallsBackToTheBaseUrlFieldWhenNoApiUrlIsSet(): void {
 		$etherpad = $this->createMock(EtherpadClient::class);
-		$etherpad->method('healthCheck')->willThrowException(new EtherpadClientException('Etherpad transport error: connection refused'));
+		$etherpad->method('assertApiKeyAccepted')->willThrowException(new EtherpadClientException('Etherpad transport error: connection refused'));
 
 		$settings = new ValidatedAdminSettings(
 			'https://pad.example.test',
 			'https://pad.example.test',
 			'.example.test',
-			'key',
-			'key',
+			'ep-api-0123456789abcdef',
+			'ep-api-0123456789abcdef',
 			'1.3.0',
 			120,
 			true,
@@ -87,7 +84,6 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 
 	public function testCheckReportsEachPartOnItsOwnLine(): void {
 		$etherpad = $this->createMock(EtherpadClient::class);
-		$etherpad->method('healthCheck')->willReturn(['pad_count' => 1]);
 
 		$result = $this->buildService($etherpad, $this->pendingCounts(0))->check($this->settings());
 
@@ -215,7 +211,6 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 
 	public function testSessionCookieLineNamesTheReleaseThatAllowsHttpOnly(): void {
 		$etherpad = $this->createMock(EtherpadClient::class);
-		$etherpad->method('healthCheck')->willReturn(['pad_count' => 1]);
 		$etherpad->method('detectReleaseVersion')->willReturn('3.3.3');
 
 		$line = $this->sessionCookieLine($etherpad, knownRelease: '3.3.3');
@@ -228,7 +223,6 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 
 	public function testSessionCookieLineNamesTheReleaseThatNeedsAReadableCookie(): void {
 		$etherpad = $this->createMock(EtherpadClient::class);
-		$etherpad->method('healthCheck')->willReturn(['pad_count' => 1]);
 		$etherpad->method('detectReleaseVersion')->willReturn('2.7.3');
 
 		$line = $this->sessionCookieLine($etherpad, knownRelease: '2.7.3');
@@ -246,7 +240,6 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 	 */
 	public function testSessionCookieLineWarnsWhenTheCookieDisagreesWithTheServer(): void {
 		$etherpad = $this->createMock(EtherpadClient::class);
-		$etherpad->method('healthCheck')->willReturn(['pad_count' => 1]);
 		$etherpad->method('detectReleaseVersion')->willReturn('2.7.3');
 
 		$line = $this->sessionCookieLine($etherpad, knownRelease: '3.3.3');
@@ -258,7 +251,6 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 	/** The admin test is as patient as the calls beside it. */
 	public function testSessionCookieLineGivesThePadServerTheFullTimeout(): void {
 		$etherpad = $this->createMock(EtherpadClient::class);
-		$etherpad->method('healthCheck')->willReturn(['pad_count' => 1]);
 		$etherpad->expects(self::once())
 			->method('detectReleaseVersion')
 			->with(self::anything(), EtherpadClient::REQUEST_TIMEOUT_SECONDS)
@@ -270,7 +262,6 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 	/** The case with no other signal at all: /health unreachable. */
 	public function testSessionCookieLineIsSkippedWhenTheReleaseCannotBeRead(): void {
 		$etherpad = $this->createMock(EtherpadClient::class);
-		$etherpad->method('healthCheck')->willReturn(['pad_count' => 1]);
 		$etherpad->method('detectReleaseVersion')
 			->willThrowException(new EtherpadClientException('Connection timed out'));
 
@@ -292,8 +283,8 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 			'https://pad.example.test',
 			'https://pad.example.test',
 			'.example.test',
-			'key',
-			'key',
+			'ep-api-0123456789abcdef',
+			'ep-api-0123456789abcdef',
 			'1.3.0',
 			120,
 			true,
@@ -312,7 +303,6 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 	 */
 	public function testSessionCookieLineDoesNotCallAnUnsavedAddressALockout(): void {
 		$etherpad = $this->createMock(EtherpadClient::class);
-		$etherpad->method('healthCheck')->willReturn(['pad_count' => 1]);
 		$etherpad->method('detectReleaseVersion')->willReturn('2.7.3');
 
 		// Saved: a different server, which is still an Etherpad 3 as far as
@@ -335,7 +325,6 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 	 */
 	public function testSessionCookieLineCarriesTheReasonTheProbeFailed(): void {
 		$etherpad = $this->createMock(EtherpadClient::class);
-		$etherpad->method('healthCheck')->willReturn(['pad_count' => 1]);
 		$etherpad->method('detectReleaseVersion')
 			->willThrowException(new EtherpadClientException('cURL error 6: Could not resolve host: pad.example.test'));
 
@@ -353,7 +342,6 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 	 */
 	public function testSessionCookieLineWarnsWhenTheCookieIsSentToOtherSites(): void {
 		$etherpad = $this->createMock(EtherpadClient::class);
-		$etherpad->method('healthCheck')->willReturn(['pad_count' => 1]);
 		$etherpad->method('detectReleaseVersion')->willReturn('2.7.3');
 
 		$line = $this->sessionCookieLine($etherpad, sameSiteSetting: 'none');
@@ -369,7 +357,6 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 	 */
 	public function testTheCrossSiteNoteKeepsWhatThePassingLineSaid(): void {
 		$etherpad = $this->createMock(EtherpadClient::class);
-		$etherpad->method('healthCheck')->willReturn(['pad_count' => 1]);
 		$etherpad->method('detectReleaseVersion')->willReturn('3.3.3');
 
 		$line = $this->sessionCookieLine($etherpad, knownRelease: '3.3.3', sameSiteSetting: 'none');
@@ -381,7 +368,6 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 	/** The runtime read, in both directions. */
 	public function testTheCrossSiteNoteNamesWhatNextcloudDoesWithItsOwnCookie(): void {
 		$etherpad = $this->createMock(EtherpadClient::class);
-		$etherpad->method('healthCheck')->willReturn(['pad_count' => 1]);
 		$etherpad->method('detectReleaseVersion')->willReturn('2.7.3');
 
 		$named = $this->sessionCookieLine($etherpad, sameSiteSetting: 'none', nextcloudSameSite: 'lax');
@@ -398,7 +384,6 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 	 */
 	public function testAnEmbedOriginOutsideTheCookieDomainIsNamed(): void {
 		$etherpad = $this->createMock(EtherpadClient::class);
-		$etherpad->method('healthCheck')->willReturn(['pad_count' => 1]);
 		$etherpad->method('detectReleaseVersion')->willReturn('2.7.3');
 		$etherpad->method('getConfiguredOrigin')->willReturn('https://pad.example.test');
 
@@ -410,7 +395,6 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 	/** One the cookie already reaches is certainly fine and stays quiet. */
 	public function testAnEmbedOriginInsideTheCookieDomainIsNotNamed(): void {
 		$etherpad = $this->createMock(EtherpadClient::class);
-		$etherpad->method('healthCheck')->willReturn(['pad_count' => 1]);
 		$etherpad->method('detectReleaseVersion')->willReturn('2.7.3');
 		$etherpad->method('getConfiguredOrigin')->willReturn('https://pad.example.test');
 
@@ -421,7 +405,6 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 	/** A value that is neither lax nor none is said out loud, like its sibling. */
 	public function testAnUnrecognisedSameSiteValueIsNamed(): void {
 		$etherpad = $this->createMock(EtherpadClient::class);
-		$etherpad->method('healthCheck')->willReturn(['pad_count' => 1]);
 		$etherpad->method('detectReleaseVersion')->willReturn('2.7.3');
 
 		$line = $this->sessionCookieLine($etherpad, unrecognisedSameSite: 'strict');
@@ -436,7 +419,6 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 	 */
 	public function testTheCrossSiteNoteDoesNotHideALockout(): void {
 		$etherpad = $this->createMock(EtherpadClient::class);
-		$etherpad->method('healthCheck')->willReturn(['pad_count' => 1]);
 		$etherpad->method('detectReleaseVersion')->willReturn('2.7.3');
 
 		$line = $this->sessionCookieLine($etherpad, 'yes', sameSiteSetting: 'none');
@@ -451,7 +433,6 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 	/** Same for a value nobody meant: the ignored setting still gets named. */
 	public function testTheCrossSiteNoteDoesNotHideAnUnrecognisedOverride(): void {
 		$etherpad = $this->createMock(EtherpadClient::class);
-		$etherpad->method('healthCheck')->willReturn(['pad_count' => 1]);
 
 		$line = $this->sessionCookieLine($etherpad, unrecognisedOverride: 'true', sameSiteSetting: 'none');
 		self::assertStringContainsString('true', $line->detail);
@@ -465,7 +446,6 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 	 */
 	public function testSessionCookieLineWarnsWhenHttpOnlyIsForcedOn(): void {
 		$etherpad = $this->createMock(EtherpadClient::class);
-		$etherpad->method('healthCheck')->willReturn(['pad_count' => 1]);
 		$etherpad->method('detectReleaseVersion')->willReturn('2.7.3');
 
 		$line = $this->sessionCookieLine($etherpad, 'yes');
@@ -481,7 +461,6 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 	 */
 	public function testSessionCookieLineDoesNotWarnWhenHttpOnlyIsForcedOff(): void {
 		$etherpad = $this->createMock(EtherpadClient::class);
-		$etherpad->method('healthCheck')->willReturn(['pad_count' => 1]);
 		$etherpad->method('detectReleaseVersion')->willReturn('3.3.3');
 
 		$line = $this->sessionCookieLine($etherpad, 'no');
@@ -496,7 +475,6 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 	 */
 	public function testSessionCookieLineNamesAnUnrecognisedOverride(): void {
 		$etherpad = $this->createMock(EtherpadClient::class);
-		$etherpad->method('healthCheck')->willReturn(['pad_count' => 1]);
 
 		$line = $this->sessionCookieLine($etherpad, unrecognisedOverride: 'true');
 		self::assertSame(HealthCheckItem::STATUS_WARNING, $line->status);
@@ -516,24 +494,20 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 	public function testCheckReturnsHealthCheckResult(): void {
 		$etherpad = $this->createMock(EtherpadClient::class);
 		$etherpad->expects($this->once())
-			->method('healthCheck')
-			->with('https://pad-api.example.test', 'key', '1.3.0')
-			->willReturn(['pad_count' => 42]);
-
+			->method('assertApiKeyAccepted')
+			->with('https://pad-api.example.test', 'ep-api-0123456789abcdef', '1.3.0');
 		$pending = $this->createMock(PendingDeleteRetryService::class);
 		$pending->expects($this->once())->method('countPendingDeletes')->willReturn(3);
 
 		$result = ($this->buildService($etherpad, $pending))->check($this->settings());
 
-		$this->assertSame(42, $result->padCount);
 		$this->assertSame(3, $result->pendingDeleteCount);
-		$this->assertSame('https://pad-api.example.test/api/1.3.0/listAllPads', $result->target);
+		$this->assertSame('https://pad-api.example.test/api/1.3.0/checkToken', $result->target);
 	}
 
 
 	public function testCheckRoundsLatencyMilliseconds(): void {
 		$etherpad = $this->createMock(EtherpadClient::class);
-		$etherpad->method('healthCheck')->willReturn(['pad_count' => 1]);
 
 		$urlGenerator = $this->createMock(IURLGenerator::class);
 		$urlGenerator->method('getBaseUrl')->willReturn('https://cloud.example.test');
@@ -564,7 +538,7 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 	public function testLongFailuresAreShortenedWithoutLosingTheClassification(): void {
 		$tail = str_repeat('internal-host.example.invalid ', 20);
 		$etherpad = $this->createMock(EtherpadClient::class);
-		$etherpad->method('healthCheck')->willThrowException(
+		$etherpad->method('assertApiKeyAccepted')->willThrowException(
 			new EtherpadClientException('Etherpad transport error: ' . $tail . 'Connection refused')
 		);
 
@@ -586,36 +560,43 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 			'no or wrong API Key',
 			'authenticationMethod',
 			'etherpad_api_key',
+			'api_key_mode',
 		];
 		yield 'dns failure' => [
 			'Etherpad transport error: php_network_getaddresses: getaddrinfo for pad.example failed',
 			'did not resolve',
 			'etherpad_api_host',
+			'dns',
 		];
 		yield 'connection refused' => [
 			'Etherpad transport error: Connection refused',
 			'Etherpad does not appear to be running',
 			'etherpad_api_host',
+			'connection_refused',
 		];
 		yield 'timeout' => [
 			'Etherpad transport error: stream_socket_client(): timed out',
 			'Connection timed out',
 			'etherpad_api_host',
+			'timeout',
 		];
 		yield 'tls handshake' => [
 			'Etherpad transport error: SSL operation failed with code 1. OpenSSL Error',
 			'TLS handshake failed',
 			'etherpad_api_host',
+			'tls',
 		];
 		yield 'http 401' => [
 			'Etherpad API HTTP error (401)',
 			'rejected the API key',
 			'etherpad_api_key',
+			'api_key_rejected',
 		];
 		yield 'http 404' => [
 			'Etherpad API HTTP error (404)',
 			'API endpoint not found',
 			'etherpad_api_host',
+			'api_not_found',
 		];
 		// Etherpad answered, so the address is right and something behind it
 		// is not: no field to mark.
@@ -623,34 +604,121 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 			'Etherpad API HTTP error (502)',
 			'server error',
 			'',
+			'server_error',
 		];
 		yield 'invalid json' => [
 			'Invalid JSON response from Etherpad API.',
 			'non-JSON',
 			'',
+			'invalid_json',
 		];
 		// No advice to give, but still about the key: the field must survive.
 		yield 'other api key trouble' => [
 			'Etherpad API request failed: API key file could not be read',
 			'',
 			'etherpad_api_key',
+			'api_key_other',
 		];
 		yield 'unrecognised' => [
 			'Etherpad API request failed: something new upstream',
 			'',
 			'',
+			'unknown',
 		];
 	}
 
 	/**
-	 * Hint and field come from one classification, so they are asserted from
-	 * one table — two matchers over the same strings could hand out a correct
-	 * hint with the wrong field.
+	 * The reason alone cannot separate two failures the matcher does not
+	 * recognise, so the cause carries the wording - untranslated, and with
+	 * the one secret in scope taken out of it.
+	 */
+	public function testUnknownFailuresCarryDistinguishableCauses(): void {
+		$causes = [];
+		foreach (['something new upstream', 'something else entirely'] as $message) {
+			$etherpad = $this->createMock(EtherpadClient::class);
+			$etherpad->method('assertApiKeyAccepted')
+				->willThrowException(new EtherpadClientException('Etherpad API request failed: ' . $message));
+			try {
+				$this->buildService($etherpad, $this->createMock(PendingDeleteRetryService::class))
+					->check($this->settings());
+				$this->fail('Expected health check exception.');
+			} catch (AdminHealthCheckException $e) {
+				$this->assertSame('unknown', $e->getReason());
+				$causes[] = $e->getCause();
+			}
+		}
+
+		$this->assertNotSame($causes[0], $causes[1]);
+		$this->assertStringContainsString('something new upstream', $causes[0]);
+	}
+
+	/**
+	 * Redaction has to happen before the text is cut: a key that straddles
+	 * the cut is no longer there to be matched, and its prefix travels on.
+	 */
+	public function testAShortApiKeyIsRedactedToo(): void {
+		// The validator accepts any non-empty key, so a short one is a real
+		// configuration - and just as much a credential as a long one.
+		$secret = 'k7xq2pd';
+		$etherpad = $this->createMock(EtherpadClient::class);
+		$etherpad->method('assertApiKeyAccepted')->willThrowException(
+			new EtherpadClientException('Etherpad transport error: rejected apikey=' . $secret),
+		);
+
+		try {
+			$this->buildService($etherpad, $this->createMock(PendingDeleteRetryService::class))
+				->check($this->settings('https://pad.example.test', true, '.example.test', $secret));
+			$this->fail('Expected health check exception.');
+		} catch (AdminHealthCheckException $e) {
+			$this->assertStringNotContainsString($secret, $e->getCause());
+		}
+	}
+
+	public function testAKeyStraddlingTheLengthCutIsStillRedacted(): void {
+		$secret = 'abcdefghijklmnopqrstuvwxyz0123';
+		$etherpad = $this->createMock(EtherpadClient::class);
+		$etherpad->method('assertApiKeyAccepted')->willThrowException(
+			new EtherpadClientException(str_repeat('x', 145) . ' apikey=' . $secret . ' tail'),
+		);
+
+		try {
+			$this->buildService($etherpad, $this->createMock(PendingDeleteRetryService::class))
+				->check($this->settings('https://pad.example.test', true, '.example.test', $secret));
+			$this->fail('Expected health check exception.');
+		} catch (AdminHealthCheckException $e) {
+			// A prefix, not the whole value: the cut is what makes the whole
+			// value absent, so looking for it would pass against the defect.
+			$this->assertStringNotContainsString(substr($secret, 0, 6), $e->getCause());
+			$this->assertStringNotContainsString(substr($secret, 0, 6), $e->getMessage());
+		}
+	}
+
+	public function testTheCauseDoesNotCarryTheApiKey(): void {
+		$secret = 'super-secret-etherpad-key-987';
+		$etherpad = $this->createMock(EtherpadClient::class);
+		$etherpad->method('assertApiKeyAccepted')->willThrowException(
+			new EtherpadClientException('Etherpad transport error: rejected apikey=' . $secret),
+		);
+
+		try {
+			$this->buildService($etherpad, $this->createMock(PendingDeleteRetryService::class))
+				->check($this->settings('https://pad.example.test', true, '.example.test', $secret));
+			$this->fail('Expected health check exception.');
+		} catch (AdminHealthCheckException $e) {
+			$this->assertStringNotContainsString($secret, $e->getCause());
+			$this->assertStringContainsString('***', $e->getCause());
+		}
+	}
+
+	/**
+	 * Hint, field and reason come from one classification, so they are
+	 * asserted from one table — separate matchers over the same strings could
+	 * hand out a correct hint with the wrong field or reason.
 	 */
 	#[\PHPUnit\Framework\Attributes\DataProvider('failureCaseProvider')]
-	public function testCheckClassifiesAFailureOnce(string $clientMessage, string $expectedHintFragment, string $expectedField): void {
+	public function testCheckClassifiesAFailureOnce(string $clientMessage, string $expectedHintFragment, string $expectedField, string $expectedReason): void {
 		$etherpad = $this->createMock(EtherpadClient::class);
-		$etherpad->method('healthCheck')->willThrowException(new EtherpadClientException($clientMessage));
+		$etherpad->method('assertApiKeyAccepted')->willThrowException(new EtherpadClientException($clientMessage));
 
 		try {
 			$this->buildService($etherpad, $this->createMock(PendingDeleteRetryService::class))->check($this->settings());
@@ -663,6 +731,9 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 				$this->assertStringContainsString($expectedHintFragment, $e->getMessage());
 			}
 			$this->assertSame($expectedField, $e->getField());
+			// The reason is what the log gets, and the only machine-readable
+			// record of why: a thrower that drops it would leave no trace.
+			$this->assertSame($expectedReason, $e->getReason());
 		}
 	}
 
@@ -671,17 +742,17 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 		// 'Etherpad API request failed: <method>' with the real cause as
 		// previous. The hint matcher must read through the chain.
 		$inner = new EtherpadClientException('Etherpad transport error: php_network_getaddresses: getaddrinfo for pad.does-not-exist.invalid failed');
-		$wrapped = new EtherpadClientException('Etherpad API request failed: listAllPads', 0, $inner);
+		$wrapped = new EtherpadClientException('Etherpad API request failed: checkToken', 0, $inner);
 
 		$etherpad = $this->createMock(EtherpadClient::class);
-		$etherpad->method('healthCheck')->willThrowException($wrapped);
+		$etherpad->method('assertApiKeyAccepted')->willThrowException($wrapped);
 
 		try {
 			($this->buildService($etherpad, $this->createMock(PendingDeleteRetryService::class)))
 				->check($this->settings());
 			$this->fail('Expected health check exception.');
 		} catch (AdminHealthCheckException $e) {
-			$this->assertStringContainsString('Etherpad API request failed: listAllPads', $e->getMessage());
+			$this->assertStringContainsString('Etherpad API request failed: checkToken', $e->getMessage());
 			$this->assertStringContainsString('getaddrinfo', $e->getMessage());
 			$this->assertStringContainsString('did not resolve', $e->getMessage());
 		}
@@ -692,13 +763,14 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 		string $etherpadHost = 'https://pad.example.test',
 		bool $enableProtectedPads = true,
 		string $cookieDomain = '.example.test',
+		string $apiKey = 'ep-api-0123456789abcdef',
 	): ValidatedAdminSettings {
 		return new ValidatedAdminSettings(
 			$etherpadHost,
 			'https://pad-api.example.test',
 			$cookieDomain,
-			'key',
-			'key',
+			$apiKey,
+			$apiKey,
 			'1.3.0',
 			120,
 			true,

@@ -278,9 +278,12 @@ describe('protected pads cookie warning', () => {
 	})
 
 	it('marks the field a failed connection test points at', async () => {
+		// 200 with ok:false is what the server sends: a verdict about the
+		// configured Etherpad is not a failure of this request, and a 5xx
+		// would invite a proxy to replace the body carrying the reason.
 		vi.stubGlobal('fetch', vi.fn(() => Promise.resolve({
-			ok: false,
-			status: 502,
+			ok: true,
+			status: 200,
 			text: () => Promise.resolve(JSON.stringify({
 				ok: false,
 				message: 'Etherpad connection test failed: no or wrong API Key',
@@ -295,6 +298,22 @@ describe('protected pads cookie warning', () => {
 		const error = document.querySelector('[data-field-error="etherpad_api_key"]')
 		expect(error.classList.contains('is-visible')).toBe(true)
 		expect(error.textContent).toContain('wrong API Key')
+	})
+
+	it('names the status instead of quoting a body that is not ours', async () => {
+		vi.stubGlobal('fetch', vi.fn(() => Promise.resolve({
+			ok: false,
+			status: 504,
+			text: () => Promise.resolve('<!DOCTYPE html>\n<html style="font-family: sans-serif;">'),
+		})))
+		await import(MODULE)
+
+		document.getElementById('etherpad-nextcloud-health-check').click()
+		await flushAsyncWork()
+
+		const status = document.getElementById('etherpad-nextcloud-connection-status')
+		expect(status.textContent).toContain('504')
+		expect(status.textContent).not.toContain('DOCTYPE')
 	})
 
 	it('drops field results when a save fails', async () => {
