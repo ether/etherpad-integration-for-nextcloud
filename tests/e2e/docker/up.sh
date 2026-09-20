@@ -185,19 +185,36 @@ fi
 occ config:app:set core shareapi_allow_public_upload --value='yes'
 
 echo "==> app passwords"
-app_password() {
-	OC_PASS="$2" occ user:add-app-password "$1" --password-from-env \
-		| grep -oE '[A-Za-z0-9]{29,}' | tail -1
+# `format=json` rather than an Accept header: OCS negotiates the format
+# only without that parameter, and defaults to XML. Credentials go in on
+# stdin so they stay out of the argv of both processes.
+app_password_response() {
+	# occ answers while the web tier is still starting, so the readiness
+	# check above says nothing about a request that goes over HTTP.
+	compose exec -T -u www-data nextcloud curl --silent --show-error --fail-with-body \
+		--config - \
+		--header 'OCS-APIRequest: true' \
+		--retry 5 --retry-connrefused --max-time 30 \
+		'http://localhost/ocs/v2.php/core/getapppassword?format=json' 2>&1 <<-CURLRC
+		user = "$1:$2"
+	CURLRC
 }
-# `|| true`: without it the grep inside app_password fails the pipeline,
-# errexit kills the script here, and the message below never prints.
-ADMIN_APP_PW="$(app_password "$ADMIN_USER" "$ADMIN_PASS" || true)"
-USER2_APP_PW="$(app_password "$USER2" "$USER2_PASS" || true)"
 
-if [[ -z "$ADMIN_APP_PW" || -z "$USER2_APP_PW" ]]; then
-	echo "could not read an app password out of occ output" >&2
-	exit 1
-fi
+# On a failure the response body is the only thing that says why, so it is
+# read into a variable rather than piped into the extraction.
+app_password() {
+	local response password
+	response="$(app_password_response "$1" "$2" || true)"
+	password="$(printf '%s' "$response" | sed -n 's/.*"apppassword":"\([^"]*\)".*/\1/p' | head -n1)"
+	if [[ -z "$password" ]]; then
+		echo "no app password for $1 in the OCS response: $response" >&2
+		return 1
+	fi
+	printf '%s' "$password"
+}
+
+ADMIN_APP_PW="$(app_password "$ADMIN_USER" "$ADMIN_PASS")"
+USER2_APP_PW="$(app_password "$USER2" "$USER2_PASS")"
 
 # Deliberately not .env.e2e: that file points at whatever long-lived
 # instance the maintainer uses, and clobbering it would be a nasty
