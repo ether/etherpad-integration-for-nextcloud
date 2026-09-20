@@ -11,6 +11,7 @@ namespace OCA\EtherpadNextcloud\Service;
 
 use OCA\EtherpadNextcloud\Exception\AdminHealthCheckException;
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
+use OCA\EtherpadNextcloud\Util\DiagnosticText;
 use OCP\AppFramework\Utility\ITimeFactory;
 use OCP\IL10N;
 use OCP\IURLGenerator;
@@ -33,10 +34,6 @@ class EtherpadHealthCheckService {
 	 * would log.
 	 */
 	private const REASON_UNKNOWN = 'unknown';
-	private const DETAIL_MAX_LENGTH = 160;
-
-	/** Below this a key is not distinctive enough to replace safely. */
-	private const REDACTABLE_MIN_LENGTH = 8;
 
 	public function __construct(
 		private EtherpadClient $etherpadClient,
@@ -79,8 +76,8 @@ class EtherpadHealthCheckService {
 			// Redacted before it is cut, or a key straddling the cut survives
 			// as a prefix, and before the hint is appended, which is
 			// translated and would make the log follow the admin's language.
-			$detail = $this->withoutApiKey($detail, $settings->effectiveApiKey);
-			$detail = $this->shorten($detail);
+			$detail = DiagnosticText::withoutSecret($detail, $settings->effectiveApiKey);
+			$detail = DiagnosticText::shorten($detail);
 			$cause = $detail;
 			$hint = $this->hintForReason($reason);
 			if ($hint !== '') {
@@ -248,7 +245,7 @@ class EtherpadHealthCheckService {
 					EtherpadReleasePolicy::allowsHttpOnly($release)
 						? $this->l10n->t('Session cookie: this address reports Etherpad {release} and would be sent an HttpOnly cookie')
 						: $this->l10n->t('Session cookie: this address reports Etherpad {release} and would be sent a script-readable cookie'),
-					['release' => $this->shorten($release)],
+					['release' => DiagnosticText::shorten($release)],
 				),
 				$this->l10n->t('Not the address currently in use — save the settings to switch pads over to it.'),
 			);
@@ -260,7 +257,7 @@ class EtherpadHealthCheckService {
 				HealthCheckItem::STATUS_OK,
 				$this->fill(
 					$this->l10n->t('Session cookie: Etherpad {release}, checked on the first protected pad open'),
-					['release' => $this->shorten($release)],
+					['release' => DiagnosticText::shorten($release)],
 				),
 			);
 		}
@@ -274,7 +271,7 @@ class EtherpadHealthCheckService {
 					$sending
 						? $this->l10n->t('Pads are being sent an HttpOnly cookie, from Etherpad {known} seen earlier, but this server reports {release}, which reads the cookie in the browser. Protected pads will not open until that is checked again.')
 						: $this->l10n->t('This server reports Etherpad {release}, which reads the session server-side, but pads are still being sent a script-readable cookie from Etherpad {known} seen earlier.'),
-					['release' => $this->shorten($release), 'known' => $this->shorten($knownRelease)],
+					['release' => DiagnosticText::shorten($release), 'known' => DiagnosticText::shorten($knownRelease)],
 				),
 			);
 		}
@@ -285,7 +282,7 @@ class EtherpadHealthCheckService {
 				$sending
 					? $this->l10n->t('Session cookie kept from scripts (Etherpad {release})')
 					: $this->l10n->t('Session cookie readable by scripts (Etherpad {release})'),
-				['release' => $this->shorten($knownRelease)],
+				['release' => DiagnosticText::shorten($knownRelease)],
 			),
 		);
 	}
@@ -378,7 +375,7 @@ class EtherpadHealthCheckService {
 
 		return $this->fill(
 			$this->l10n->t('{origins} may frame the embed routes but is not covered by the session cookie domain {domain}. If it is on another site, the embedded pad gets no Etherpad session unless etherpad_session_cookie_samesite is set to none.'),
-			['origins' => $this->shorten(implode(', ', $outside)), 'domain' => $cookieDomain !== '' ? $cookieDomain : '(host-only)'],
+			['origins' => DiagnosticText::shorten(implode(', ', $outside)), 'domain' => $cookieDomain !== '' ? $cookieDomain : '(host-only)'],
 		);
 	}
 
@@ -400,7 +397,7 @@ class EtherpadHealthCheckService {
 		}
 		$hint = $this->hintForReason($this->classifyFailure($detail));
 
-		return $this->shorten($detail) . ($hint !== '' ? ' ' . $hint : '');
+		return DiagnosticText::shorten($detail) . ($hint !== '' ? ' ' . $hint : '');
 	}
 
 	/**
@@ -418,7 +415,7 @@ class EtherpadHealthCheckService {
 				EtherpadReleasePolicy::allowsHttpOnly($release)
 					? $this->l10n->t('This server reports Etherpad {release}, which reads the session server-side — automatic detection would set the same thing.')
 					: $this->l10n->t('This server reports Etherpad {release}, which reads the session in the browser.'),
-				['release' => $this->shorten($release)],
+				['release' => DiagnosticText::shorten($release)],
 			);
 
 		if (!$forcedOn) {
@@ -438,23 +435,6 @@ class EtherpadHealthCheckService {
 
 	private function sessionCookieItem(string $status, string $label, string $detail = ''): HealthCheckItem {
 		return new HealthCheckItem('session_cookie', $status, $label, $detail, 'etherpad_session_cookie');
-	}
-
-	/**
-	 * The matcher reads upstream wording, so nothing can be assumed about
-	 * what a message holds - only the one secret in scope can be taken out
-	 * of it, in the spellings a request carries it in.
-	 *
-	 * Short values are left alone: str_replace knows no word boundaries, so
-	 * a key like "key" would blank unrelated words out of the one message
-	 * that says what went wrong.
-	 */
-	private function withoutApiKey(string $text, string $apiKey): string {
-		$apiKey = trim($apiKey);
-		if (mb_strlen($apiKey) < self::REDACTABLE_MIN_LENGTH) {
-			return $text;
-		}
-		return str_replace([$apiKey, rawurlencode($apiKey), urlencode($apiKey)], '***', $text);
 	}
 
 	/**
@@ -559,20 +539,6 @@ class EtherpadHealthCheckService {
 			self::REASON_TRANSPORT => $apiField,
 			default => '',
 		};
-	}
-
-	/**
-	 * Same cap as BaseUrlReachabilityCheck; these end up in the same panel.
-	 *
-	 * By characters, not bytes: a cut inside a multi-byte sequence leaves
-	 * invalid UTF-8, which json_encode refuses - the log then stores null
-	 * and the response body can come back empty.
-	 */
-	private function shorten(string $message): string {
-		$message = trim($message);
-		return mb_strlen($message, 'UTF-8') > self::DETAIL_MAX_LENGTH
-			? mb_substr($message, 0, self::DETAIL_MAX_LENGTH, 'UTF-8') . '…'
-			: $message;
 	}
 
 	/** @param array<string,string> $parameters */

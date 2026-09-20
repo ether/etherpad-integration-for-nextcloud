@@ -64,8 +64,8 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 			'https://pad.example.test',
 			'https://pad.example.test',
 			'.example.test',
-			'key',
-			'key',
+			'ep-api-0123456789abcdef',
+			'ep-api-0123456789abcdef',
 			'1.3.0',
 			120,
 			true,
@@ -283,8 +283,8 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 			'https://pad.example.test',
 			'https://pad.example.test',
 			'.example.test',
-			'key',
-			'key',
+			'ep-api-0123456789abcdef',
+			'ep-api-0123456789abcdef',
 			'1.3.0',
 			120,
 			true,
@@ -495,7 +495,7 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 		$etherpad = $this->createMock(EtherpadClient::class);
 		$etherpad->expects($this->once())
 			->method('assertApiKeyAccepted')
-			->with('https://pad-api.example.test', 'key', '1.3.0');
+			->with('https://pad-api.example.test', 'ep-api-0123456789abcdef', '1.3.0');
 		$pending = $this->createMock(PendingDeleteRetryService::class);
 		$pending->expects($this->once())->method('countPendingDeletes')->willReturn(3);
 
@@ -656,6 +656,24 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 	 * Redaction has to happen before the text is cut: a key that straddles
 	 * the cut is no longer there to be matched, and its prefix travels on.
 	 */
+	public function testAShortApiKeyIsRedactedToo(): void {
+		// The validator accepts any non-empty key, so a short one is a real
+		// configuration - and just as much a credential as a long one.
+		$secret = 'k7xq2pd';
+		$etherpad = $this->createMock(EtherpadClient::class);
+		$etherpad->method('assertApiKeyAccepted')->willThrowException(
+			new EtherpadClientException('Etherpad transport error: rejected apikey=' . $secret),
+		);
+
+		try {
+			$this->buildService($etherpad, $this->createMock(PendingDeleteRetryService::class))
+				->check($this->settings('https://pad.example.test', true, '.example.test', $secret));
+			$this->fail('Expected health check exception.');
+		} catch (AdminHealthCheckException $e) {
+			$this->assertStringNotContainsString($secret, $e->getCause());
+		}
+	}
+
 	public function testAKeyStraddlingTheLengthCutIsStillRedacted(): void {
 		$secret = 'abcdefghijklmnopqrstuvwxyz0123';
 		$etherpad = $this->createMock(EtherpadClient::class);
@@ -745,7 +763,7 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 		string $etherpadHost = 'https://pad.example.test',
 		bool $enableProtectedPads = true,
 		string $cookieDomain = '.example.test',
-		string $apiKey = 'key',
+		string $apiKey = 'ep-api-0123456789abcdef',
 	): ValidatedAdminSettings {
 		return new ValidatedAdminSettings(
 			$etherpadHost,

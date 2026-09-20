@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Service;
 
+use OCA\EtherpadNextcloud\Util\DiagnosticText;
 use OCP\Http\Client\IClientService;
 use OCP\Http\Client\LocalServerException;
 use OCP\IL10N;
@@ -43,7 +44,6 @@ use OCP\IL10N;
 class BaseUrlReachabilityCheck {
 	private const TIMEOUT_SECONDS = 5;
 	private const FIELD = 'etherpad_host';
-	private const DETAIL_MAX_LENGTH = 160;
 
 	public function __construct(
 		private IClientService $clientService,
@@ -126,10 +126,7 @@ class BaseUrlReachabilityCheck {
 	}
 
 	private function shorten(string $message): string {
-		$message = trim($message);
-		return strlen($message) > self::DETAIL_MAX_LENGTH
-			? substr($message, 0, self::DETAIL_MAX_LENGTH) . '…'
-			: $message;
+		return DiagnosticText::shorten($message);
 	}
 
 	/** @param array<string,string> $parameters */
