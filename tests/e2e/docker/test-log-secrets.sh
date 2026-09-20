@@ -2,17 +2,18 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (c) 2026 Jacob Bühler
 #
-# Does a secret in a stack frame reach nextcloud.log?
+# Two properties that only hold inside a running Nextcloud.
 #
-# Nextcloud serializes an exception by printing every frame's arguments,
-# including frames far below the failure. The app declares the methods
-# that carry a secret (lib/Util/SensitiveMethods.php) so the serializer
-# replaces theirs - a declaration nothing else verifies, because a unit
-# test cannot boot Nextcloud's logger.
+# One: the methods this app declares in lib/Util/SensitiveMethods.php are
+# actually registered. The declaration is a constant nothing else proves
+# reaches Nextcloud - delete the loop in Application::register() and every
+# unit test still passes.
 #
-# The case reproduced here is the one that needs no failed api call: a
-# pad session is built, the release probe behind it fails, and the
-# warning it writes carries the frame holding the session id.
+# Two: a failure logged while a session is in scope does not write it out.
+# That is SafeError's job rather than the registration's, and this is the
+# case that needs no failed api call for it: a pad session is built, the
+# release probe behind it fails, and the warning it writes is raised from
+# the frame holding the session id.
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -44,6 +45,36 @@ try {
 PHP
 )
 
+echo "==> checking that the declared methods are registered"
+registration=$(cat <<'PHP'
+<?php
+require '/var/www/html/lib/base.php';
+$coordinator = \OCP\Server::get(\OC\AppFramework\Bootstrap\Coordinator::class);
+$coordinator->runInitialRegistration();
+$registered = [];
+foreach ($coordinator->getRegistrationContext()->getSensitiveMethods() as $registration) {
+    if ($registration->getAppId() !== 'etherpad_nextcloud') {
+        continue;
+    }
+    $registered[$registration->getName()] = $registration->getValue();
+}
+$missing = [];
+foreach (\OCA\EtherpadNextcloud\Util\SensitiveMethods::ALL as $class => $methods) {
+    foreach ($methods as $method) {
+        if (!in_array($method, $registered[$class] ?? [], true)) {
+            $missing[] = $class . '::' . $method;
+        }
+    }
+}
+echo $missing === [] ? 'ok' : 'missing: ' . implode(', ', $missing);
+PHP
+)
+verdict="$(printf '%s' "$registration" | compose exec -T nextcloud php -d error_reporting=E_ERROR | tail -n1)"
+if [[ "$verdict" != ok ]]; then
+	echo "Declared but not registered - $verdict" >&2
+	exit 1
+fi
+
 log=/var/www/html/data/nextcloud.log
 before="$(compose exec -T nextcloud sh -c "wc -l < $log" | tr -d ' \r')"
 
@@ -66,4 +97,4 @@ if grep -q "$marker" <<<"$written"; then
 	exit 1
 fi
 
-echo "The probe failed and was logged, and the session id was not."
+echo "The declarations are registered, and the session id stayed out of the log."
