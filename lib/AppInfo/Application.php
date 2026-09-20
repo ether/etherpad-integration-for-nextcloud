@@ -38,6 +38,21 @@ class Application extends App implements IBootstrap {
 	}
 
 	public function register(IRegistrationContext $context): void {
+		// Nextcloud prints every stack frame's arguments when it serializes
+		// an exception. These methods carry an api key, a session id, a
+		// share token or a whole pad through their arguments, so they are
+		// declared here and the serializer replaces those arguments instead.
+		foreach ([
+			\OCA\EtherpadNextcloud\Service\EtherpadClient::class => [
+				'apiCall', 'sendRequest', 'doRequest', 'assertApiKeyAccepted',
+				'createSession', 'deleteSession', 'listSessionsOfAuthor',
+				'setText', 'setHTML', 'getText', 'getHTML', 'getHTMLForPreview',
+			],
+		] as $class => $methods) {
+			$context->registerSensitiveMethods($class, $methods);
+		}
+
+
 		// Files FullTextSearch exposes content extraction extensions through
 		// this legacy generic event. GenericEvent is server-wide, so the
 		// listener rejects every other subject before inspecting its payload.

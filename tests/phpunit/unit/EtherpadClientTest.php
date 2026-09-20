@@ -86,7 +86,7 @@ class EtherpadClientTest extends TestCase {
 
 		$this->assertNotNull($captured);
 		// createGroup is a POST: apikey travels in the form-urlencoded body.
-		$this->assertStringContainsString('apikey=stored-key', (string)$captured['options']['body']);
+		$this->assertStringContainsString('apikey=stored-key', self::bodyOf($captured));
 	}
 
 	/**
@@ -106,8 +106,8 @@ class EtherpadClientTest extends TestCase {
 		$this->assertSame('POST', $captured['method']);
 		$this->assertStringNotContainsString('apikey', $captured['url']);
 		$this->assertArrayNotHasKey('query', $captured['options']);
-		$this->assertStringContainsString('apikey=stored-key', (string)$captured['options']['body']);
-		$this->assertStringContainsString('authorID=a.x', (string)$captured['options']['body']);
+		$this->assertStringContainsString('apikey=stored-key', self::bodyOf($captured));
+		$this->assertStringContainsString('authorID=a.x', self::bodyOf($captured));
 		$this->assertSame(['s.one' => ['groupID' => 'g.aaa', 'validUntil' => 99]], $sessions);
 	}
 
@@ -490,7 +490,7 @@ class EtherpadClientTest extends TestCase {
 		);
 		$this->assertStringContainsString('/api/1.3.0/checkToken', $captured['url']);
 		$this->assertStringNotContainsString('probe-key', $captured['url']);
-		$this->assertStringContainsString('apikey=probe-key', (string)$captured['options']['body']);
+		$this->assertStringContainsString('apikey=probe-key', self::bodyOf($captured));
 	}
 
 	public function testAssertApiKeyAcceptedThrowsWhenEtherpadRejectsTheKey(): void {
@@ -511,6 +511,20 @@ class EtherpadClientTest extends TestCase {
 
 		$this->assertSame($captured['url'], EtherpadClient::buildApiUrl('  https://pad.example.test/  ', ' 1.3.0 ', 'checkToken'));
 		$this->assertSame('https://pad.example.test/api/1.3.0/checkToken', $captured['url']);
+	}
+
+	/**
+	 * The request body as text. It travels as a stream handle so it cannot
+	 * be printed from a stack frame, which is also why casting it to string
+	 * would yield the handle rather than what was sent.
+	 *
+	 * @param array{method:string,url:string,options:array<string,mixed>} $captured
+	 */
+	private static function bodyOf(array $captured): string {
+		$body = $captured['options']['body'];
+		self::assertIsResource($body);
+		rewind($body);
+		return (string)stream_get_contents($body);
 	}
 
 	/**

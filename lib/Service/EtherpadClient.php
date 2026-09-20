@@ -12,6 +12,7 @@ use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
 use OCA\EtherpadNextcloud\Exception\EtherpadTooLargeException;
 use OCA\EtherpadNextcloud\Http\BoundedSinkStream;
 use OCP\Http\Client\IClientService;
+use OCA\EtherpadNextcloud\Util\ApiKey;
 use OCP\Http\Client\IResponse;
 use OCP\IConfig;
 
@@ -114,11 +115,11 @@ class EtherpadClient {
 	}
 
 	public function setText(string $padId, string $text): void {
-		$this->apiCall('setText', ['padID' => $padId, 'text' => $text], 'POST');
+		$this->apiCall('setText', ['padID' => $padId, 'text' => $text]);
 	}
 
 	public function setHTML(string $padId, string $html): void {
-		$this->apiCall('setHTML', ['padID' => $padId, 'html' => $html], 'POST');
+		$this->apiCall('setHTML', ['padID' => $padId, 'html' => $html]);
 	}
 
 	public function deletePad(string $padId): void {
@@ -231,7 +232,7 @@ class EtherpadClient {
 	 * length, which a call carrying the standard timeout would overrun.
 	 */
 	public function deleteSession(string $sessionId, ?int $timeoutSeconds = null): void {
-		$this->apiCall('deleteSession', ['sessionID' => $sessionId], 'POST', null, null, null, $timeoutSeconds);
+		$this->apiCall('deleteSession', ['sessionID' => $sessionId], timeoutSeconds: $timeoutSeconds);
 	}
 
 	/**
@@ -253,7 +254,7 @@ class EtherpadClient {
 	): array {
 		// POST like every other authenticated call: a GET would put the
 		// apikey in the URL, and from there into proxy and access logs.
-		$data = $this->apiCall('listSessionsOfAuthor', ['authorID' => $authorId], 'POST', null, null, null, $timeoutSeconds);
+		$data = $this->apiCall('listSessionsOfAuthor', ['authorID' => $authorId], timeoutSeconds: $timeoutSeconds);
 
 		$sessions = [];
 		// Every entry the index listed that cannot be turned into a session,
@@ -300,7 +301,7 @@ class EtherpadClient {
 	 * instance of any age - it proves the key, not that pads can be read.
 	 */
 	public function assertApiKeyAccepted(string $host, string $apiKey, string $apiVersion = self::DEFAULT_API_VERSION): void {
-		$this->apiCall(self::API_KEY_PROBE_METHOD, [], 'POST', $host, $apiKey, $apiVersion);
+		$this->apiCall(self::API_KEY_PROBE_METHOD, [], $host, $apiKey, $apiVersion);
 	}
 
 	/**
@@ -372,7 +373,6 @@ class EtherpadClient {
 	private function apiCall(
 		string $method,
 		array $params = [],
-		string $httpMethod = 'POST',
 		?string $hostOverride = null,
 		?string $apiKeyOverride = null,
 		?string $apiVersionOverride = null,
@@ -390,12 +390,8 @@ class EtherpadClient {
 			: $this->getApiKey();
 		$url = self::buildApiUrl($host, $apiVersion, $method);
 
-		$query = array_merge($params, [
-			'apikey' => $apiKey,
-		]);
-
 		try {
-			$rawBody = $this->sendRequest($url, $query, $httpMethod, $timeoutSeconds, $maxBytes);
+			$rawBody = $this->sendRequest($url, $params, new ApiKey($apiKey), $timeoutSeconds, $maxBytes);
 		} catch (\Throwable $e) {
 			// The size refusal is thrown from inside the sink, so the HTTP
 			// client hands it back wrapped. It has to survive as its own
@@ -433,14 +429,18 @@ class EtherpadClient {
 		return null;
 	}
 
+	/**
+	 * The key arrives wrapped and leaves as a stream, and neither is
+	 * readable from a stack frame - see ApiKey. Every api call is a POST
+	 * with the key in the body, so there is no query-string shape to guard.
+	 */
 	private function sendRequest(
 		string $url,
-		array $query,
-		string $httpMethod,
+		array $params,
+		ApiKey $apiKey,
 		?int $timeoutSeconds = null,
 		?int $maxBytes = null,
 	): string {
-		$method = strtoupper($httpMethod);
 		// Clamped: Guzzle reads `timeout => 0` as no timeout at all.
 		$options = $this->baseRequestOptions($this->boundedTimeout($timeoutSeconds));
 		$sink = null;
@@ -451,16 +451,13 @@ class EtherpadClient {
 			$sink = new BoundedSinkStream($maxBytes);
 			$options['sink'] = $sink;
 		}
-		if ($method === 'GET') {
-			$options['query'] = $query;
-		} else {
-			// Keep the historical form-urlencoded body so the Etherpad API
-			// (apikey + params) is sent exactly as before.
-			$options['body'] = http_build_query($query, '', '&', PHP_QUERY_RFC3986);
-			$options['headers']['Content-Type'] = 'application/x-www-form-urlencoded';
-		}
+		// A stream rather than the string it holds: a string body would be
+		// an argument of the call below and printed with that frame, while
+		// a stream handle serializes as the handle.
+		$options['body'] = $this->formBody(array_merge($params, ['apikey' => $apiKey->reveal()]));
+		$options['headers']['Content-Type'] = 'application/x-www-form-urlencoded';
 
-		$response = $this->doRequest($method, $url, $options);
+		$response = $this->doRequest('POST', $url, $options);
 		$statusCode = $response->getStatusCode();
 		if ($statusCode >= 400) {
 			throw new EtherpadClientException('Etherpad API HTTP error (' . $statusCode . ')');
@@ -471,6 +468,23 @@ class EtherpadClient {
 		return $sink === null ? (string)$response->getBody() : $sink->getContents();
 	}
 
+
+	/**
+	 * The form-encoded request body, as a stream. Etherpad has always been
+	 * sent `apikey` plus the parameters this way.
+	 *
+	 * @param array<string,mixed> $fields
+	 * @return resource
+	 */
+	private function formBody(array $fields) {
+		$body = fopen('php://temp', 'r+');
+		if ($body === false) {
+			throw new EtherpadClientException('Could not open a request body stream.');
+		}
+		fwrite($body, http_build_query($fields, '', '&', PHP_QUERY_RFC3986));
+		rewind($body);
+		return $body;
+	}
 
 	private function getPublicHost(): string {
 		$host = rtrim((string)$this->config->getAppValue('etherpad_nextcloud', 'etherpad_host', ''), '/');
