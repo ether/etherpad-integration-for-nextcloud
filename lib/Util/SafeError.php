@@ -70,16 +70,23 @@ final class SafeError {
 	 * The chain matters as much as the location: this app wraps a
 	 * transport failure as "Etherpad API request failed: <method>", so the
 	 * outermost message alone never names the cause.
+	 *
+	 * And the frames come from the innermost cause, not the wrapper. A
+	 * trace begins where its exception was constructed, so a wrapper's
+	 * trace starts at the catch and walks back through the callers - the
+	 * frames that produced the failure are only in the one thrown there.
 	 */
 	public static function originOf(\Throwable $e): string {
 		$origin = [];
 		$current = $e;
+		$innermost = $e;
 		for ($link = 0; $current !== null && $link < self::CHAIN_LINKS; $link++) {
 			$origin[] = get_class($current) . ' at ' . $current->getFile() . ':' . $current->getLine()
 				. ' - ' . DiagnosticText::shorten($current->getMessage(), self::MESSAGE_MAX_LENGTH);
+			$innermost = $current;
 			$current = $current->getPrevious();
 		}
-		foreach (array_slice($e->getTrace(), 0, self::TRACE_FRAMES) as $frame) {
+		foreach (array_slice($innermost->getTrace(), 0, self::TRACE_FRAMES) as $frame) {
 			$origin[] = ($frame['file'] ?? '?') . ':' . ($frame['line'] ?? '?')
 				. ' ' . ($frame['class'] ?? '') . ($frame['type'] ?? '') . ($frame['function'] ?? '?');
 		}
