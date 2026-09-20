@@ -123,6 +123,12 @@ jobs:
           EP_VERSION: ${{ matrix.etherpad }}
         run: bash tests/e2e/docker/up.sh
 
+      # Cheap, and it guards a property no unit test can: the declaration in
+      # lib/Util/SensitiveMethods.php only has an effect inside a running
+      # Nextcloud, through its own exception serializer.
+      - name: Check that secrets stay out of the log
+        run: bash tests/e2e/docker/test-log-secrets.sh
+
       - name: Run the Playwright suite
         # run-suite.sh wires up the generated env file, the CA for node's
         # fetch, and the browser-side exemption for the per-run CA.
