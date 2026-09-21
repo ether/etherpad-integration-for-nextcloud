@@ -10,6 +10,7 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\AppInfo;
 
+use OCA\EtherpadNextcloud\Util\SensitiveMethods;
 use OCA\Files\Event\LoadAdditionalScriptsEvent;
 use OCP\AppFramework\App;
 use OCP\AppFramework\Bootstrap\IBootContext;
@@ -38,6 +39,10 @@ class Application extends App implements IBootstrap {
 	}
 
 	public function register(IRegistrationContext $context): void {
+		foreach (SensitiveMethods::ALL as $class => $methods) {
+			$context->registerSensitiveMethods($class, $methods);
+		}
+
 		// Files FullTextSearch exposes content extraction extensions through
 		// this legacy generic event. GenericEvent is server-wide, so the
 		// listener rejects every other subject before inspecting its payload.

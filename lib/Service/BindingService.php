@@ -13,6 +13,7 @@ use OCA\EtherpadNextcloud\Exception\BindingException;
 use OCA\EtherpadNextcloud\Exception\BindingStateConflictException;
 use OCA\EtherpadNextcloud\Exception\MissingBindingException;
 use OCA\EtherpadNextcloud\Util\PadAccessMode;
+use OCA\EtherpadNextcloud\Util\SafeError;
 use OCP\DB\QueryBuilder\IQueryBuilder;
 use OCP\AppFramework\Utility\ITimeFactory;
 use OCP\IDBConnection;
@@ -145,23 +146,6 @@ class BindingService {
 		return $rows;
 	}
 
-	public function hasFileCacheEntry(int $fileId): bool {
-		$qb = $this->db->getQueryBuilder();
-		$qb->selectAlias($qb->createFunction('COUNT(*)'), 'cnt')
-			->from('filecache')
-			->where($qb->expr()->eq('fileid', $qb->createNamedParameter($fileId, IQueryBuilder::PARAM_INT)))
-			->setMaxResults(1);
-
-		$result = $qb->executeQuery();
-		$row = $result->fetch();
-		$result->closeCursor();
-
-		if (!is_array($row) || !isset($row['cnt'])) {
-			return false;
-		}
-		return (int)$row['cnt'] > 0;
-	}
-
 	public function createBinding(int $fileId, string $padId, string $accessMode): void {
 		$this->assertAccessMode($accessMode);
 		$now = $this->timeFactory->getTime();
@@ -181,11 +165,13 @@ class BindingService {
 		try {
 			$qb->executeStatement();
 		} catch (\Throwable $e) {
+			// The insert is what failed, so no row exists to look the pad up
+			// through - and by here it has already been created upstream.
 			$this->logger->error('Could not create pad binding', [
 				'app' => 'etherpad_nextcloud',
 				'fileId' => $fileId,
 				'padId' => $padId,
-				'exception' => $e,
+				...SafeError::context($e),
 			]);
 			throw new BindingException('Could not create unique pad binding.', 0, $e);
 		}

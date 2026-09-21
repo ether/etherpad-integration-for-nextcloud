@@ -19,6 +19,7 @@ use OCA\EtherpadNextcloud\Service\PadOpenService;
 use OCA\EtherpadNextcloud\Service\PadOpenTarget;
 use OCA\EtherpadNextcloud\Service\PadResolution;
 use OCA\EtherpadNextcloud\Service\PadResponseService;
+use OCA\EtherpadNextcloud\Util\SafeError;
 use OCP\AppFramework\Http\DataResponse;
 use OCP\IL10N;
 use OCP\IRequest;
@@ -111,7 +112,7 @@ class PadSessionController extends AbstractPadController {
 				'generic' => $this->l10n->t('Could not initialize .pad file.'),
 				'on_throwable' => fn(\Throwable $e) => $this->logError('Pad frontmatter initialization failed in API initialize', [
 					'file' => $file,
-					'exception' => $e,
+					...SafeError::context($e),
 				]),
 			],
 		);
@@ -129,7 +130,7 @@ class PadSessionController extends AbstractPadController {
 				'generic' => $this->l10n->t('Could not initialize .pad file.'),
 				'on_throwable' => fn(\Throwable $e) => $this->logError('Pad frontmatter initialization failed in API initialize-by-id', [
 					'fileId' => $fileId,
-					'exception' => $e,
+					...SafeError::context($e),
 				]),
 			],
 		);

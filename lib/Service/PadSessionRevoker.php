@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\Service;
 
 use OCA\EtherpadNextcloud\Util\EtherpadErrorClassifier;
+use OCA\EtherpadNextcloud\Util\SafeError;
 use OCP\AppFramework\Utility\ITimeFactory;
 use Psr\Log\LoggerInterface;
 
@@ -123,7 +124,7 @@ class PadSessionRevoker {
 			$this->logger->warning('Could not list the Etherpad sessions to revoke; they will expire on their own.', [
 				'app' => 'etherpad_nextcloud',
 				'uid' => $uid,
-				'exception' => $e,
+				...SafeError::context($e),
 			]);
 			return 0;
 		}
@@ -143,6 +144,9 @@ class PadSessionRevoker {
 		$skipped = 0;
 		$failed = 0;
 		foreach ($sessions as $sessionId => $info) {
+			// An all-digit id would arrive as an int: php casts numeric
+			// array keys, and everything downstream is typed string.
+			$sessionId = (string)$sessionId;
 			if ($info['validUntil'] <= $expiredBefore) {
 				// Grants nothing already. Etherpad keeps expired sessions
 				// until something deletes them, so an author who has used
@@ -184,7 +188,7 @@ class PadSessionRevoker {
 					'app' => 'etherpad_nextcloud',
 					'uid' => $uid,
 					'groupId' => $info['groupID'],
-					'exception' => $e,
+					...SafeError::context($e, [$sessionId]),
 				]);
 			}
 		}

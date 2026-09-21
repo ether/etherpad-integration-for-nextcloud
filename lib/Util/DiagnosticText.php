@@ -31,6 +31,27 @@ class DiagnosticText {
 	}
 
 	/**
+	 * Where a url points, and nothing else. An address can carry
+	 * credentials in its userinfo, a token in its query and a pad id in
+	 * its path, which for a public pad is itself the permission. Callers
+	 * log what the address belongs to, so the host is what is missing.
+	 */
+	public static function hostOf(string $url): string {
+		$trimmed = trim($url);
+		$parts = parse_url($trimmed);
+		if (is_array($parts) && isset($parts['host'])) {
+			$scheme = isset($parts['scheme']) ? $parts['scheme'] . '://' : '';
+			$port = isset($parts['port']) ? ':' . $parts['port'] : '';
+			return $scheme . $parts['host'] . $port;
+		}
+
+		// Nothing is read back: what parse_url could not take apart may
+		// still hold any of those, and picking them out of a string no
+		// parser understood is guesswork.
+		return '(invalid URL)';
+	}
+
+	/**
 	 * Takes one known secret out of text nobody can vouch for, in the
 	 * spellings a request carries it in. Call it before shortening: a
 	 * secret straddling the cut is no longer whole to be matched, and its

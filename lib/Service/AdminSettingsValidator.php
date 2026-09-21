@@ -11,6 +11,7 @@ namespace OCA\EtherpadNextcloud\Service;
 
 use OCA\EtherpadNextcloud\Exception\AdminValidationException;
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
+use OCA\EtherpadNextcloud\Util\SafeError;
 use OCP\IL10N;
 use Psr\Log\LoggerInterface;
 
@@ -91,7 +92,7 @@ class AdminSettingsValidator {
 	 */
 	private function resolveApiKey(array $payload, StoredAdminSettings $stored): array {
 		$rawApiKey = trim((string)($payload['etherpad_api_key'] ?? ''));
-		$effectiveApiKey = $rawApiKey !== '' ? $rawApiKey : $stored->apiKey;
+		$effectiveApiKey = $rawApiKey !== '' ? $rawApiKey : $stored->apiKey()->reveal();
 		if ($effectiveApiKey === '') {
 			throw new AdminValidationException('etherpad_api_key', $this->l10n->t('Etherpad API key is required.'));
 		}
@@ -228,12 +229,10 @@ class AdminSettingsValidator {
 		try {
 			return $this->normalizeApiVersion($this->etherpadClient->detectApiVersion($host));
 		} catch (EtherpadClientException $e) {
-			// No exception object: the settings payload in a caller's frame
-			// holds the api key the admin just typed.
 			$this->logger->info('Etherpad API version auto-detection failed; using default API version.', [
 				'app' => 'etherpad_nextcloud',
 				'host' => $host,
-				'error_message' => $e->getMessage(),
+				...SafeError::context($e),
 			]);
 			return EtherpadClient::DEFAULT_API_VERSION;
 		}

@@ -101,7 +101,7 @@ class BaseUrlReachabilityCheck {
 					$label,
 					$this->fill(
 						$this->l10n->t('{url} did not answer: {error}. If Nextcloud cannot reach the public URL by design, ignore this — but check the URL for typos, because pad links in the browser use it.'),
-						['url' => $trimmed, 'error' => $this->shorten($e->getMessage())],
+						['url' => $trimmed, 'error' => DiagnosticText::shorten($e->getMessage())],
 					),
 					self::FIELD,
 				);
@@ -123,10 +123,6 @@ class BaseUrlReachabilityCheck {
 		}
 
 		return new HealthCheckItem('base_url', HealthCheckItem::STATUS_OK, $label, $trimmed, self::FIELD);
-	}
-
-	private function shorten(string $message): string {
-		return DiagnosticText::shorten($message);
 	}
 
 	/** @param array<string,string> $parameters */

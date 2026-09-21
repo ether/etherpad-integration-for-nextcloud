@@ -24,6 +24,7 @@ use OCA\EtherpadNextcloud\Exception\ShareFileNotInShareException;
 use OCA\EtherpadNextcloud\Exception\ShareItemUnavailableException;
 use OCA\EtherpadNextcloud\Exception\ShareReadForbiddenException;
 use OCA\EtherpadNextcloud\Service\PublicShareUrlBuilder;
+use OCA\EtherpadNextcloud\Util\SafeError;
 use OCP\AppFramework\Http;
 use OCP\AppFramework\Http\DataResponse;
 use OCP\AppFramework\Http\RedirectResponse;
@@ -76,6 +77,12 @@ class PublicViewerControllerErrorMapper {
 		}
 	}
 
+	/**
+	 * The four the match below can reach. DataResponse takes the set of
+	 * valid HTTP codes, not any int, so a wider type would not pass.
+	 *
+	 * @return 400|403|404|500
+	 */
 	private function statusFor(\Throwable $e): int {
 		return match (true) {
 			$e instanceof InvalidShareTokenException,
@@ -125,7 +132,7 @@ class PublicViewerControllerErrorMapper {
 
 		$this->logger->error('Unhandled public viewer error', [
 			'app' => Application::APP_ID,
-			'exception' => $e,
+			...SafeError::context($e),
 		]);
 	}
 

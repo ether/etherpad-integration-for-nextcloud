@@ -27,6 +27,29 @@ class DiagnosticTextTest extends TestCase {
 		$this->assertSame('short enough', DiagnosticText::shorten('  short enough  ', 20));
 	}
 
+	/** @return iterable<string, array{string, string}> */
+	public static function urlProvider(): iterable {
+		yield 'credentials in the userinfo' => ['https://bob:hunter2@pad.example.test/p/x', 'https://pad.example.test'];
+		yield 'token in the query' => ['https://pad.example.test/p/x?token=secret', 'https://pad.example.test'];
+		yield 'secret in the fragment' => ['https://pad.example.test/p/x#t=secret', 'https://pad.example.test'];
+		// For a public pad the path is the permission, so it goes too.
+		yield 'pad id in the path' => ['https://pad.example.test/p/g.abc$private', 'https://pad.example.test'];
+		yield 'a port is kept' => ['http://pad.example.test:9001/p/x', 'http://pad.example.test:9001'];
+		// Nothing parse_url could not take apart is read back: such a
+		// string can still hold credentials, a token or a pad path, and
+		// picking those out of it is guesswork.
+		yield 'schemeless' => ['pad.example.test/p/x', '(invalid URL)'];
+		yield 'schemeless with credentials' => ['bob:hunter2@pad.example.test/p/x', '(invalid URL)'];
+		yield 'a port no parser accepts' => ['https://bob:pw@pad.example:999999/p/private', '(invalid URL)'];
+		yield 'nothing at all' => ['   ', '(invalid URL)'];
+		yield 'empty' => ['', '(invalid URL)'];
+	}
+
+	#[\PHPUnit\Framework\Attributes\DataProvider('urlProvider')]
+	public function testHostOfKeepsOnlyWhereAUrlPoints(string $url, string $expected): void {
+		$this->assertSame($expected, DiagnosticText::hostOf($url));
+	}
+
 	public function testWithoutSecretReplacesEverySpellingARequestCarries(): void {
 		$secret = 'a b/c';
 

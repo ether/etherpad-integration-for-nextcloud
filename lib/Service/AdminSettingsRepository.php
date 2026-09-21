@@ -49,12 +49,13 @@ class AdminSettingsRepository {
 			'etherpad_cookie_domain_configured',
 			$settings->cookieDomainConfigured ? 'yes' : 'no',
 		);
-		if ($settings->etherpadApiKey !== null) {
+		$apiKeyToStore = $settings->apiKeyToStore();
+		if ($apiKeyToStore !== null) {
 			// Store the API key with the sensitive flag so it is redacted in
 			// `occ config:list` and support dumps. IAppConfig and IConfig
 			// share the same underlying app-config storage, so the other
 			// reads/writes here are unaffected.
-			$this->appConfig->setValueString(Application::APP_ID, self::API_KEY, $settings->etherpadApiKey, sensitive: true);
+			$this->appConfig->setValueString(Application::APP_ID, self::API_KEY, $apiKeyToStore->reveal(), sensitive: true);
 		}
 		$this->config->setAppValue(Application::APP_ID, 'etherpad_api_version', $settings->etherpadApiVersion);
 		$this->config->setAppValue(Application::APP_ID, 'sync_interval_seconds', (string)$settings->syncIntervalSeconds);

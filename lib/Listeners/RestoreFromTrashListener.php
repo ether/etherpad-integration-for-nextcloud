@@ -11,6 +11,7 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\Listeners;
 
 use OCA\EtherpadNextcloud\Service\LifecycleService;
+use OCA\EtherpadNextcloud\Util\SafeError;
 use OCP\EventDispatcher\Event;
 use OCP\EventDispatcher\IEventListener;
 use OCP\Files\File;
@@ -86,7 +87,7 @@ class RestoreFromTrashListener implements IEventListener {
 			$this->logger->error('RestoreFromTrash listener aborted due to lifecycle error', [
 				'app' => 'etherpad_nextcloud',
 				'fileId' => $this->loggableFileId($node),
-				'exception' => $e,
+				...SafeError::context($e),
 			]);
 			throw $e;
 		}
@@ -173,7 +174,7 @@ class RestoreFromTrashListener implements IEventListener {
 			$context['filePath'] = $path;
 		}
 		if ($e !== null) {
-			$context['exception'] = $e;
+			$context = array_merge($context, SafeError::context($e));
 		}
 		$this->logger->warning('RestoreFromTrash listener skipped a restored node.', $context);
 	}
@@ -205,7 +206,7 @@ class RestoreFromTrashListener implements IEventListener {
 			$this->logger->warning('RestoreFromTrash listener could not resolve legacy restore path.', [
 				'app' => 'etherpad_nextcloud',
 				'filePath' => $path,
-				'exception' => $e,
+				...SafeError::context($e),
 			]);
 			return null;
 		}

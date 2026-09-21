@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\BackgroundJob;
 
 use OCA\EtherpadNextcloud\Service\ExpiredSessionCollector;
+use OCA\EtherpadNextcloud\Util\SafeError;
 use OCP\BackgroundJob\IJobList;
 use OCP\BackgroundJob\QueuedJob;
 
@@ -142,7 +143,7 @@ class CollectExpiredSessionsJob extends QueuedJob {
 			$this->logger->warning('Could not queue the next Etherpad session sweep; the rest waits for another open.', [
 				'app' => 'etherpad_nextcloud',
 				'authorId' => $authorId,
-				'exception' => $e,
+				...SafeError::context($e),
 			]);
 		}
 	}

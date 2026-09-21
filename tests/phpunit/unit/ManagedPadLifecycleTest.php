@@ -285,7 +285,11 @@ class ManagedPadLifecycleTest extends TestCase {
 		$logger->expects($this->once())
 			->method('warning')
 			->with($this->anything(), $this->callback(
-				static fn (array $context): bool => ($context['padId'] ?? '') === 'nc-pad' && ($context['fileId'] ?? 0) === 7
+				// The file, not the pad: a pad id plus the configured host is
+				// a link into a public pad, and the caller's fileId leads to
+				// it through ep_pad_bindings anyway.
+				static fn (array $context): bool => ($context['fileId'] ?? 0) === 7
+					&& !isset($context['padId'])
 			));
 
 		(new ManagedPadLifecycle($client, $logger))->seed('nc-pad', 'text', '<p>text</p>', ['fileId' => 7]);

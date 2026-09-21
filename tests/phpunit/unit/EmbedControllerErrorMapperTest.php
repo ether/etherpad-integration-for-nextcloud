@@ -102,7 +102,7 @@ class EmbedControllerErrorMapperTest extends TestCase {
 		$logger = $this->createMock(LoggerInterface::class);
 		$logger->expects($this->once())
 			->method('error')
-			->with('Unhandled embed controller error', $this->callback(static fn (array $context): bool => ($context['exception'] ?? null) instanceof \RuntimeException));
+			->with('Unhandled embed controller error', $this->callback(static fn (array $context): bool => ($context['error'] ?? '') === \RuntimeException::class && !isset($context['exception'])));
 
 		$response = $this->buildMapper($logger)->runForTemplate(
 			static function (): never { throw new \RuntimeException('Internal pipe burst'); },

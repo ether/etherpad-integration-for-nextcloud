@@ -13,18 +13,10 @@ use OCP\Files\Folder;
 use OCP\Files\IRootFolder;
 use OCP\Files\NotFoundException;
 use OCP\Files\NotPermittedException;
-use Psr\Log\LoggerInterface;
 
 class UserNodeResolver {
-	/**
-	 * Thrown by IRootFolder::getUserFolder(), and not referenceable: it is
-	 * an `OC\` class, so it is matched by name rather than in a catch.
-	 */
-	private const NO_USER_EXCEPTION = 'OC\\User\\NoUserException';
-
 	public function __construct(
 		private IRootFolder $rootFolder,
-		private LoggerInterface $logger,
 	) {
 	}
 
@@ -153,10 +145,11 @@ class UserNodeResolver {
 		try {
 			return $this->rootFolder->getUserFolder($uid);
 		} catch (\Exception $e) {
-			if (!$e instanceof NotPermittedException && !is_a($e, self::NO_USER_EXCEPTION)) {
+			// Not a catch: NoUserException is an `OC\` class and may not
+			// exist, which instanceof answers with false rather than a load.
+			if (!$e instanceof NotPermittedException && !$e instanceof \OC\User\NoUserException) {
 				throw $e;
 			}
-			$this->logger->debug('Cannot access the user file tree', ['uid' => $uid, 'exception' => $e]);
 			throw new NotFoundException('Cannot access the user file tree.', 0, $e);
 		}
 	}
@@ -177,7 +170,6 @@ class UserNodeResolver {
 			// Same rule as above: not being allowed to look is, to every
 			// caller here, the same answer as the file not being there. A
 			// sub-mount that is *down* still surfaces as itself.
-			$this->logger->debug('Not permitted to read the path', ['uid' => $uid, 'exception' => $e]);
 			throw new NotFoundException('Cannot access the requested path.', 0, $e);
 		}
 		if (!$node instanceof File) {

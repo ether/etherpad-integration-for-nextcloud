@@ -13,6 +13,7 @@ use OCA\EtherpadNextcloud\Exception\BindingException;
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
 use OCA\EtherpadNextcloud\Exception\PadFileFormatException;
 use OCA\EtherpadNextcloud\Util\PathNormalizer;
+use OCA\EtherpadNextcloud\Util\SafeError;
 use OCP\Files\File;
 use OCP\Files\NotFoundException;
 use OCP\Lock\LockedException;
@@ -91,7 +92,7 @@ class PadOpenService {
 				'app' => 'etherpad_nextcloud',
 				'fileId' => (int)$node->getId(),
 				'path' => $absolutePath,
-				'exception' => $e,
+				...SafeError::context($e),
 			]);
 			throw $e;
 		}
@@ -147,7 +148,7 @@ class PadOpenService {
 				$this->logger->warning('Could not resolve the read-only pad URL; showing the read-only view instead.', [
 					'app' => 'etherpad_nextcloud',
 					'fileId' => $fileId,
-					'exception' => $e,
+					...SafeError::context($e),
 				]);
 				return $this->readOnlyViewTarget($path, $fileId, $padId, $accessMode);
 			}

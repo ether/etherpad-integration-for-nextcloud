@@ -12,6 +12,7 @@ namespace OCA\EtherpadNextcloud\Service;
 use OCA\EtherpadNextcloud\AppInfo\Application;
 use OCA\EtherpadNextcloud\Exception\InvalidPadNameException;
 use OCA\EtherpadNextcloud\Exception\PadFileAlreadyExistsException;
+use OCA\EtherpadNextcloud\Util\SafeError;
 use OCP\Files\File;
 use OCP\Files\Folder;
 use OCP\Files\IFilenameValidator;
@@ -213,7 +214,7 @@ class PadFileCreator {
 		$this->logger->warning('Could not ask the storage whether it accepts a pad name', [
 			'app' => 'etherpad_nextcloud',
 			'file' => $fileName,
-			'exception' => $e,
+			...SafeError::context($e),
 		]);
 	}
 

@@ -32,6 +32,8 @@ use Psr\Log\LoggerInterface;
  *
  * Each concrete controller keeps its constructor narrow — it only
  * declares the services it actually uses on top of the base deps.
+ *
+ * @psalm-import-type ErrorWording from PadControllerErrorMapper
  * @psalm-api
  */
 abstract class AbstractPadController extends Controller {
@@ -50,7 +52,7 @@ abstract class AbstractPadController extends Controller {
 	/**
 	 * @param callable(IUser): mixed $action
 	 * @param callable(mixed): DataResponse $success
-	 * @param array<string,mixed> $options
+	 * @param ErrorWording $options
 	 */
 	protected function runForUser(callable $action, callable $success, array $options = []): DataResponse {
 		return $this->errors->run(

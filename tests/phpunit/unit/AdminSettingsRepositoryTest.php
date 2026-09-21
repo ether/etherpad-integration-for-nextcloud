@@ -148,7 +148,7 @@ class AdminSettingsRepositoryTest extends TestCase {
 		// getApiKey() is the single read path EtherpadClient uses; it returns
 		// the raw decrypted value, getStoredSettings() trims for display.
 		$this->assertSame('  stored-key  ', $repository->getApiKey());
-		$this->assertSame('stored-key', $repository->getStoredSettings()->apiKey);
+		$this->assertSame('stored-key', $repository->getStoredSettings()->apiKey()->reveal());
 	}
 
 	public function testPadTypeSettingsSurviveTheRoundTripWhenSwitchedOff(): void {

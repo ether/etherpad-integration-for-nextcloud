@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Service;
 
+use OCA\EtherpadNextcloud\Util\SafeError;
 use OCP\AppFramework\Utility\ITimeFactory;
 use OCP\ICacheFactory;
 use OCP\IMemcache;
@@ -112,7 +113,7 @@ class EtherpadReleasePolicy {
 			// the first app-config read there is.
 			$this->logger->warning('Could not work out the Etherpad release; writing a script-readable session cookie.', [
 				'app' => self::APP_ID,
-				'exception' => $e,
+				...SafeError::context($e),
 			]);
 			return false;
 		}
@@ -248,7 +249,7 @@ class EtherpadReleasePolicy {
 				'app' => self::APP_ID,
 				'host' => $host,
 				'cachedRelease' => $cached,
-				'exception' => $e,
+				...SafeError::context($e),
 			]);
 			return $cached;
 		}

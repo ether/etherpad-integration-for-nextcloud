@@ -11,6 +11,7 @@ namespace OCA\EtherpadNextcloud\Service;
 
 use OCA\EtherpadNextcloud\Util\PadFileType;
 use OCA\EtherpadNextcloud\Util\PathNormalizer;
+use OCA\EtherpadNextcloud\Util\SafeError;
 use OCP\Files\File;
 use OCP\Files\NotFoundException;
 use OCP\Lock\LockedException;
@@ -254,7 +255,7 @@ class PadMetadataService {
 		} catch (\Throwable $e) {
 			$this->logger->warning('Could not resolve the read-only pad URL for metadata.', [
 				'app' => 'etherpad_nextcloud',
-				'exception' => $e,
+				...SafeError::context($e),
 			]);
 			return '';
 		}
@@ -276,7 +277,7 @@ class PadMetadataService {
 			'app' => 'etherpad_nextcloud',
 			'fileId' => $fileId,
 			'path' => $absolutePath,
-			'exception' => $e,
+			...SafeError::context($e),
 		]);
 	}
 }

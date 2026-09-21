@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Service;
 
+use OCA\EtherpadNextcloud\Util\SafeError;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -47,7 +48,6 @@ class ProvisionedPadRollback {
 		$context = [
 			'app' => 'etherpad_nextcloud',
 			'fileId' => $fileId,
-			'padId' => $padId,
 			'operation' => $operation,
 		];
 
@@ -69,15 +69,17 @@ class ProvisionedPadRollback {
 			// Without an answer nothing is destroyed: a pad whose row may
 			// still name it is reachable, an orphan is only wasted.
 			$this->logger->warning('Could not read or remove the binding while rolling back; keeping its pad.',
-				$context + ['exception' => $bindingError]);
+				array_merge($context, SafeError::context($bindingError)));
 			return;
 		}
 
 		try {
 			$this->padLifecycle->discardProvisioned($padId);
 		} catch (\Throwable $cleanupError) {
+			// The active row is gone by here, so nothing maps the file id
+			// back to this pad any more: the orphan is only findable by name.
 			$this->logger->warning('Could not remove the Etherpad pad while rolling back.',
-				$context + ['exception' => $cleanupError]);
+				array_merge($context, ['padId' => $padId], SafeError::context($cleanupError)));
 		}
 	}
 }

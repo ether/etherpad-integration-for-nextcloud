@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Template;
 
+use OCA\EtherpadNextcloud\Util\SafeError;
 use OCA\EtherpadNextcloud\AppInfo\Application;
 use OCA\EtherpadNextcloud\Service\PadTemplateStorage;
 use OCA\EtherpadNextcloud\Service\PadTypePolicy;
@@ -129,7 +130,7 @@ class PadTemplateProvider implements ICustomTemplateProvider {
 			$this->logger->warning('Could not offer a pad template tile.', [
 				'app' => 'etherpad_nextcloud',
 				'templateId' => $templateId,
-				'exception' => $e,
+				...SafeError::context($e),
 			]);
 			return [];
 		}
@@ -158,7 +159,7 @@ class PadTemplateProvider implements ICustomTemplateProvider {
 			// acted on.
 			$this->logger->warning('Could not list the shared pad templates.', [
 				'app' => 'etherpad_nextcloud',
-				'exception' => $e,
+				...SafeError::context($e),
 			]);
 			return [];
 		}

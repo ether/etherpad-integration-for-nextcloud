@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\Service;
 
 use OCA\EtherpadNextcloud\Util\EtherpadErrorClassifier;
+use OCA\EtherpadNextcloud\Util\SafeError;
 use Psr\Log\LoggerInterface;
 
 class PendingDeleteRetryService {
@@ -43,25 +44,17 @@ class PendingDeleteRetryService {
 	}
 
 	/**
-	 * @return array{
-	 *   attempted:int,
-	 *   resolved:int,
-	 *   failed:int,
-	 *   remaining:int
-	 * }
+	 * Nothing comes back: the background job that calls this is the only
+	 * caller and discards what it gets, and the figure it used to build
+	 * cost a count query of its own. The admin panel wants one and asks
+	 * retry() for it.
 	 */
-	public function retryByAge(int $minAgeSeconds, ?int $maxAgeSeconds, int $limit = 200): array {
+	public function retryByAge(int $minAgeSeconds, ?int $maxAgeSeconds, int $limit = 200): void {
 		$safeLimit = max(1, $limit);
-		$pendingResult = $this->retryPendingDeleteRows(
+
+		$this->retryPendingDeleteRows(
 			$this->bindingService->findPendingDeleteByAge($minAgeSeconds, $maxAgeSeconds, $safeLimit),
 		);
-
-		return [
-			'attempted' => $pendingResult['attempted'],
-			'resolved' => $pendingResult['resolved'],
-			'failed' => $pendingResult['failed'],
-			'remaining' => $this->countPendingDeletes(),
-		];
 	}
 
 	public function countPendingDeletes(): int {
@@ -89,7 +82,6 @@ class PendingDeleteRetryService {
 					$this->logger->info('Skipped stale pending delete binding after successful pad delete.', [
 						'app' => 'etherpad_nextcloud',
 						'fileId' => $fileId,
-						'padId' => $padId,
 					]);
 					continue;
 				}
@@ -97,7 +89,6 @@ class PendingDeleteRetryService {
 				$this->logger->info('Resolved pending pad delete.', [
 					'app' => 'etherpad_nextcloud',
 					'fileId' => $fileId,
-					'padId' => $padId,
 				]);
 				continue;
 			} catch (\Throwable $e) {
@@ -106,7 +97,6 @@ class PendingDeleteRetryService {
 						$this->logger->info('Skipped stale pending delete binding after already-deleted response.', [
 							'app' => 'etherpad_nextcloud',
 							'fileId' => $fileId,
-							'padId' => $padId,
 						]);
 						continue;
 					}
@@ -114,7 +104,6 @@ class PendingDeleteRetryService {
 					$this->logger->info('Resolved pending delete because pad is already gone.', [
 						'app' => 'etherpad_nextcloud',
 						'fileId' => $fileId,
-						'padId' => $padId,
 					]);
 					continue;
 				}
@@ -122,8 +111,7 @@ class PendingDeleteRetryService {
 				$this->logger->warning('Pending pad delete retry failed.', [
 					'app' => 'etherpad_nextcloud',
 					'fileId' => $fileId,
-					'padId' => $padId,
-					'exception' => $e,
+					...SafeError::context($e),
 				]);
 			}
 		}

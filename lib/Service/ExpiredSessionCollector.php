@@ -11,6 +11,7 @@ namespace OCA\EtherpadNextcloud\Service;
 
 use OCA\EtherpadNextcloud\BackgroundJob\CollectExpiredSessionsJob;
 use OCA\EtherpadNextcloud\Util\EtherpadErrorClassifier;
+use OCA\EtherpadNextcloud\Util\SafeError;
 use OCP\AppFramework\Utility\ITimeFactory;
 use OCP\BackgroundJob\IJobList;
 use Psr\Log\LoggerInterface;
@@ -70,7 +71,7 @@ class ExpiredSessionCollector {
 			$this->logger->warning('Could not queue the Etherpad session sweep.', [
 				'app' => 'etherpad_nextcloud',
 				'authorId' => $authorId,
-				'exception' => $e,
+				...SafeError::context($e),
 			]);
 		}
 	}
@@ -100,7 +101,7 @@ class ExpiredSessionCollector {
 			$this->logger->warning('Could not list the Etherpad sessions to collect.', [
 				'app' => 'etherpad_nextcloud',
 				'authorId' => $authorId,
-				'exception' => $e,
+				...SafeError::context($e),
 			]);
 			return ['deleted' => 0, 'remaining' => 0, 'retry' => true, 'nextDueAt' => null];
 		}
@@ -121,6 +122,9 @@ class ExpiredSessionCollector {
 		$expired = [];
 		$nextDueAt = null;
 		foreach ($sessions as $sessionId => $info) {
+			// An all-digit id would arrive as an int: php casts numeric
+			// array keys, and everything downstream is typed string.
+			$sessionId = (string)$sessionId;
 			// Live sessions are left alone: ending someone's access is not a
 			// housekeeping decision.
 			if ($info['validUntil'] <= $cutoff) {
@@ -171,7 +175,7 @@ class ExpiredSessionCollector {
 					'app' => 'etherpad_nextcloud',
 					'authorId' => $authorId,
 					'sessionRef' => substr(hash('sha256', $sessionId), 0, 12),
-					'exception' => $e,
+					...SafeError::context($e, [$sessionId]),
 				]);
 				if ($failures >= self::MAX_FAILURES_PER_RUN) {
 					break;

@@ -58,7 +58,6 @@
   <file src="lib/Service/BindingService.php">
     <PossiblyUnusedMethod>
       <code><![CDATA[__construct]]></code>
-      <code><![CDATA[hasFileCacheEntry]]></code>
     </PossiblyUnusedMethod>
   </file>
   <file src="lib/Service/ConsistencyCheckService.php">
@@ -190,14 +189,6 @@
     <PossiblyUnusedMethod>
       <code><![CDATA[__construct]]></code>
     </PossiblyUnusedMethod>
-    <PossiblyUnusedReturnValue>
-      <code><![CDATA[array{
-	 *   attempted:int,
-	 *   resolved:int,
-	 *   failed:int,
-	 *   remaining:int
-	 * }]]></code>
-    </PossiblyUnusedReturnValue>
   </file>
   <file src="lib/Service/PublicPadContextService.php">
     <PossiblyUnusedMethod>

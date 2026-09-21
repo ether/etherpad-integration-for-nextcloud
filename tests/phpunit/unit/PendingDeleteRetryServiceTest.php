@@ -28,7 +28,7 @@ class PendingDeleteRetryServiceTest extends TestCase {
 				$deletedPads[] = $padId;
 			});
 
-		$result = (new PendingDeleteRetryService(
+		(new PendingDeleteRetryService(
 			$binding,
 			new ManagedPadLifecycle($etherpad, $this->createMock(LoggerInterface::class)),
 			$this->createMock(LoggerInterface::class),
@@ -36,12 +36,7 @@ class PendingDeleteRetryServiceTest extends TestCase {
 
 		$this->assertSame([3600, 86400, 50], $binding->lastAgeQuery);
 		$this->assertSame(['pad-a', 'pad-b'], $deletedPads);
-		$this->assertSame([
-			'attempted' => 2,
-			'resolved' => 2,
-			'failed' => 0,
-			'remaining' => 0,
-		], $result);
+		$this->assertSame(2, $binding->deletedBindings);
 	}
 
 	public function testAlreadyDeletedPadResolvesPendingBinding(): void {
@@ -51,15 +46,13 @@ class PendingDeleteRetryServiceTest extends TestCase {
 		$etherpad = $this->createMock(EtherpadClient::class);
 		$etherpad->method('deletePad')->willThrowException(new \RuntimeException('padID does not exist'));
 
-		$result = (new PendingDeleteRetryService(
+		(new PendingDeleteRetryService(
 			$binding,
 			new ManagedPadLifecycle($etherpad, $this->createMock(LoggerInterface::class)),
 			$this->createMock(LoggerInterface::class),
 		))->retryByAge(86400, null, 10);
 
 		$this->assertSame(1, $binding->deletedBindings);
-		$this->assertSame(1, $result['resolved']);
-		$this->assertSame(0, $result['failed']);
 	}
 
 	/**
@@ -82,15 +75,13 @@ class PendingDeleteRetryServiceTest extends TestCase {
 			->willThrowException(new \RuntimeException('groupID does not exist'));
 		$etherpad->expects($this->never())->method('deleteGroup');
 
-		$result = (new PendingDeleteRetryService(
+		(new PendingDeleteRetryService(
 			$binding,
 			new ManagedPadLifecycle($etherpad, $this->createMock(LoggerInterface::class)),
 			$this->createMock(LoggerInterface::class),
 		))->retryByAge(86400, null, 10);
 
 		$this->assertSame(1, $binding->deletedBindings);
-		$this->assertSame(1, $result['resolved']);
-		$this->assertSame(0, $result['failed']);
 	}
 
 	public function testUnclassifiedEtherpadErrorIsCountedAsFailureAndKeepsBinding(): void {
@@ -102,20 +93,19 @@ class PendingDeleteRetryServiceTest extends TestCase {
 		]);
 		$etherpad = $this->createMock(EtherpadClient::class);
 		$etherpad->method('deletePad')->willThrowException(new \RuntimeException('connection refused'));
+		// Counting it is what the warning stands for now that nothing comes
+		// back from retryByAge - without this the count could stop and the
+		// binding would still look untouched.
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects($this->once())->method('warning')->with('Pending pad delete retry failed.', $this->anything());
 
-		$result = (new PendingDeleteRetryService(
+		(new PendingDeleteRetryService(
 			$binding,
 			new ManagedPadLifecycle($etherpad, $this->createMock(LoggerInterface::class)),
-			$this->createMock(LoggerInterface::class),
+			$logger,
 		))->retryByAge(0, 3600, 10);
 
 		$this->assertSame(0, $binding->deletedBindings);
-		$this->assertSame([
-			'attempted' => 1,
-			'resolved' => 0,
-			'failed' => 1,
-			'remaining' => 0,
-		], $result);
 	}
 
 	public function testRowsWithMissingFileIdOrPadIdAreSkippedSilently(): void {
@@ -128,33 +118,29 @@ class PendingDeleteRetryServiceTest extends TestCase {
 		$etherpad = $this->createMock(EtherpadClient::class);
 		$etherpad->expects($this->once())->method('deletePad')->with('pad-good');
 
-		$result = (new PendingDeleteRetryService(
+		(new PendingDeleteRetryService(
 			$binding,
 			new ManagedPadLifecycle($etherpad, $this->createMock(LoggerInterface::class)),
 			$this->createMock(LoggerInterface::class),
 		))->retryByAge(0, null, 10);
 
-		$this->assertSame(1, $result['attempted']);
-		$this->assertSame(1, $result['resolved']);
+		$this->assertSame(1, $binding->deletedBindings);
 	}
 
-	public function testEmptyResultReturnsAllZeroes(): void {
+	public function testNothingPendingTouchesNeitherEtherpadNorTheRows(): void {
 		$binding = $this->buildBindingService([]);
 		$etherpad = $this->createMock(EtherpadClient::class);
 		$etherpad->expects($this->never())->method('deletePad');
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects($this->never())->method('warning');
 
-		$result = (new PendingDeleteRetryService(
+		(new PendingDeleteRetryService(
 			$binding,
 			new ManagedPadLifecycle($etherpad, $this->createMock(LoggerInterface::class)),
-			$this->createMock(LoggerInterface::class),
+			$logger,
 		))->retryByAge(0, 3600, 10);
 
-		$this->assertSame([
-			'attempted' => 0,
-			'resolved' => 0,
-			'failed' => 0,
-			'remaining' => 0,
-		], $result);
+		$this->assertSame(0, $binding->deletedBindings);
 	}
 
 	public function testRetryWithoutAgeFilterProcessesAllPendingDeletes(): void {
@@ -167,6 +153,7 @@ class PendingDeleteRetryServiceTest extends TestCase {
 		$etherpad = $this->createMock(EtherpadClient::class);
 		$etherpad->expects($this->once())->method('deletePad')->with('pad-pending');
 
+		// retry() still answers with a figure - the admin panel shows it.
 		$result = (new PendingDeleteRetryService(
 			$binding,
 			new ManagedPadLifecycle($etherpad, $this->createMock(LoggerInterface::class)),

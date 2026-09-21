@@ -272,7 +272,8 @@ class PadControllerErrorMapperTest extends TestCase {
 			->with(
 				'Unhandled pad controller error',
 				$this->callback(static fn(array $context): bool => ($context['app'] ?? '') === 'etherpad_nextcloud'
-					&& ($context['exception'] ?? null) instanceof \RuntimeException)
+					&& ($context['error'] ?? '') === \RuntimeException::class
+					&& !isset($context['exception']))
 			);
 
 		$response = $this->buildMapper($logger)->run(

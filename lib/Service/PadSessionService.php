@@ -9,6 +9,7 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\Service;
 
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
+use OCA\EtherpadNextcloud\Util\SafeError;
 use OCP\AppFramework\Utility\ITimeFactory;
 use OCP\IConfig;
 use OCA\EtherpadNextcloud\Util\PadId;
@@ -204,7 +205,7 @@ class PadSessionService {
 			// a symptom nothing else would explain.
 			$this->logger->warning('Could not list Etherpad sessions; this open drops the other pads\' sessions from the cookie', [
 				'app' => 'etherpad_nextcloud',
-				'exception' => $e,
+				...SafeError::context($e),
 			]);
 			return [];
 		}

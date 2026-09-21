@@ -12,6 +12,7 @@ namespace OCA\EtherpadNextcloud\Service;
 use OCA\EtherpadNextcloud\Util\EtherpadErrorClassifier;
 use OCA\EtherpadNextcloud\Util\PadAccessMode;
 use OCA\EtherpadNextcloud\Util\PadId;
+use OCA\EtherpadNextcloud\Util\SafeError;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -52,7 +53,7 @@ class ManagedPadLifecycle {
 				$this->logger->warning('Could not remove the Etherpad group after its pad failed to be created.', [
 					'app' => 'etherpad_nextcloud',
 					'groupId' => $groupId,
-					'exception' => $cleanupError,
+					...SafeError::context($cleanupError),
 				]);
 			}
 			throw $e;
@@ -80,10 +81,12 @@ class ManagedPadLifecycle {
 				try {
 					$this->etherpadClient->deletePad($padId);
 				} catch (\Throwable $cleanupError) {
+					// Against the rule everywhere else: no binding row was
+					// written, so nothing else can name the pad left behind.
 					$this->logger->warning('Could not remove the Etherpad pad after its creation failed.', [
 						'app' => 'etherpad_nextcloud',
 						'padId' => $padId,
-						'exception' => $cleanupError,
+						...SafeError::context($cleanupError),
 					]);
 				}
 			}
@@ -137,7 +140,9 @@ class ManagedPadLifecycle {
 	 * derived from that HTML rather than the string the snapshot held.
 	 *
 	 * @param array<string,mixed> $context extra keys for the fallback's log
-	 *   line; `app`, `padId` and `exception` are set here and win a collision
+	 *   line; `app` and SafeError's `error`, `error_message` and
+	 *   `error_origin` are set here and win a collision. Do not pass a pad
+	 *   id - the fileId every caller already supplies is the handle
 	 */
 	public function seed(string $padId, string $text, string $html, array $context = []): void {
 		if (trim($html) !== '') {
@@ -145,10 +150,12 @@ class ManagedPadLifecycle {
 				$this->etherpadClient->setHTML($padId, $html);
 				return;
 			} catch (\Throwable $htmlError) {
+				// Every caller supplies a fileId in $context, which is the
+				// handle to keep: a pad id plus the configured host is a
+				// working link into a public pad.
 				$this->logger->warning('Could not import the HTML snapshot; falling back to plain text.', [
 					'app' => 'etherpad_nextcloud',
-					'padId' => $padId,
-					'exception' => $htmlError,
+					...SafeError::context($htmlError),
 				] + $context);
 			}
 		}
@@ -226,6 +233,9 @@ class ManagedPadLifecycle {
 			// Worth a line: this removed a group, its pad and every session
 			// issued for it, and an admin tracing a vanished pad has nothing
 			// else to go on.
+			// The pad id stays here and in the two lines below: these are
+			// group pads, and a group pad's url opens for nobody without a
+			// session, so it is a name rather than a way in.
 			$this->logger->debug('Removed the Etherpad group holding a protected pad.', [
 				'app' => 'etherpad_nextcloud',
 				'padId' => $padId,
@@ -275,7 +285,7 @@ class ManagedPadLifecycle {
 				'app' => 'etherpad_nextcloud',
 				'padId' => $padId,
 				'groupId' => $groupId,
-				'exception' => $e,
+				...SafeError::context($e),
 			]);
 			return null;
 		}

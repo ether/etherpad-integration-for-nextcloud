@@ -16,6 +16,7 @@ use OCA\EtherpadNextcloud\Exception\NotAPadFileException;
 use OCA\EtherpadNextcloud\Exception\PadAlreadyHasBindingException;
 use OCA\EtherpadNextcloud\Util\PadFileType;
 use OCA\EtherpadNextcloud\Util\EtherpadErrorClassifier;
+use OCA\EtherpadNextcloud\Util\SafeError;
 use OCP\AppFramework\Utility\ITimeFactory;
 use OCP\Files\File;
 use OCP\IConfig;
@@ -178,8 +179,7 @@ class LifecycleService {
 				$this->logger->warning('Could not read .pad content during trash because file is locked. Continuing without snapshot persistence.', [
 					'app' => 'etherpad_nextcloud',
 					'fileId' => $fileId,
-					'padId' => $padId,
-					'exception' => $readLockError,
+					...SafeError::context($readLockError),
 				]);
 			}
 
@@ -197,8 +197,7 @@ class LifecycleService {
 					$this->logger->warning('Could not fetch fresh Etherpad snapshot during trash. Using current .pad snapshot/body.', [
 						'app' => 'etherpad_nextcloud',
 						'fileId' => $fileId,
-						'padId' => $padId,
-						'exception' => $snapshotError,
+						...SafeError::context($snapshotError),
 					]);
 				}
 
@@ -217,15 +216,13 @@ class LifecycleService {
 						$this->logger->warning('Could not persist trash snapshot due to file lock. Continuing with pad deletion.', [
 							'app' => 'etherpad_nextcloud',
 							'fileId' => $fileId,
-							'padId' => $padId,
-							'exception' => $e,
+							...SafeError::context($e),
 						]);
 					} catch (\Throwable $writeError) {
 						$this->logger->warning('Could not persist trash snapshot to .pad file. Continuing with pad deletion.', [
 							'app' => 'etherpad_nextcloud',
 							'fileId' => $fileId,
-							'padId' => $padId,
-							'exception' => $writeError,
+							...SafeError::context($writeError),
 						]);
 					}
 				}
@@ -238,16 +235,14 @@ class LifecycleService {
 					$this->logger->info('Pad already deleted while processing trash; deleting binding row.', [
 						'app' => 'etherpad_nextcloud',
 						'fileId' => $fileId,
-						'padId' => $padId,
-						'exception' => $deleteError,
+						...SafeError::context($deleteError),
 					]);
 				} else {
 					$this->bindingService->markPendingDelete($fileId, $deletedAt);
 					$this->logger->warning('Pad delete deferred after trash. Will retry via background job.', [
 						'app' => 'etherpad_nextcloud',
 						'fileId' => $fileId,
-						'padId' => $padId,
-						'exception' => $deleteError,
+						...SafeError::context($deleteError),
 					]);
 					return [
 						'status' => self::RESULT_TRASHED,
@@ -272,16 +267,14 @@ class LifecycleService {
 			$this->logger->warning('Trash lifecycle state transition conflict. Returning skipped.', [
 				'app' => 'etherpad_nextcloud',
 				'fileId' => $fileId,
-				'padId' => $padId,
-				'exception' => $e,
+				...SafeError::context($e),
 			]);
 			return $this->buildSkippedResult('binding_state_transition_conflict', $fileId, $padId);
 		} catch (\Throwable $e) {
 			$this->logger->error('Trash lifecycle failed. Snapshot/delete aborted.', [
 				'app' => 'etherpad_nextcloud',
 				'fileId' => $fileId,
-				'padId' => $padId,
-				'exception' => $e,
+				...SafeError::context($e),
 			]);
 			throw new LifecycleException('Trash flow failed before completion.', 0, $e);
 		}
@@ -330,7 +323,7 @@ class LifecycleService {
 			$snapshot = $snapshotParts['text'];
 			$htmlSnapshot = $snapshotParts['html'];
 
-			$this->padLifecycle->seed($newPadId, $snapshot, $htmlSnapshot, ['fileId' => $fileId, 'oldPadId' => $oldPadId]);
+			$this->padLifecycle->seed($newPadId, $snapshot, $htmlSnapshot, ['fileId' => $fileId]);
 
 			$updatedContent = $this->padFileService->withRestoredSnapshot(
 				$pad,
@@ -364,9 +357,7 @@ class LifecycleService {
 						$this->logger->warning('Could not rollback .pad content after failed restore.', [
 							'app' => 'etherpad_nextcloud',
 							'fileId' => $fileId,
-							'oldPadId' => $oldPadId,
-							'newPadId' => $newPadId,
-							'exception' => $fileRollbackError,
+							...SafeError::context($fileRollbackError),
 						]);
 					}
 				}
@@ -376,8 +367,10 @@ class LifecycleService {
 					$this->logger->warning('Could not cleanup newly provisioned restore pad after failure.', [
 						'app' => 'etherpad_nextcloud',
 						'fileId' => $fileId,
-						'newPadId' => $newPadId,
-						'exception' => $cleanupError,
+						// markRestored never ran, so the row still names the
+						// old pad and nothing else names this one.
+						'padId' => $newPadId,
+						...SafeError::context($cleanupError),
 					]);
 				}
 			}
@@ -385,17 +378,14 @@ class LifecycleService {
 				$this->logger->warning('Restore lifecycle state transition conflict. Returning skipped.', [
 					'app' => 'etherpad_nextcloud',
 					'fileId' => $fileId,
-					'oldPadId' => $oldPadId,
-					'newPadId' => $newPadId,
-					'exception' => $e,
+					...SafeError::context($e),
 				]);
 				return $this->buildSkippedResult('binding_state_transition_conflict', $fileId, $oldPadId);
 			}
 			$this->logger->error('Restore lifecycle failed. Pad was not fully restored.', [
 				'app' => 'etherpad_nextcloud',
 				'fileId' => $fileId,
-				'newPadId' => $newPadId,
-				'exception' => $e,
+				...SafeError::context($e),
 			]);
 			throw new LifecycleException('Restore flow failed before completion.', 0, $e);
 		}
@@ -432,7 +422,6 @@ class LifecycleService {
 			$this->logger->info('Pad recovered from snapshot.', [
 				'app' => 'etherpad_nextcloud',
 				'fileId' => $fileId,
-				'newPadId' => $result['new_pad_id'] ?? null,
 			]);
 		}
 		return $result;
@@ -440,7 +429,6 @@ class LifecycleService {
 
 	/** @return array{status: string, reason?: string, file_id: int, pad_id?: string, old_pad_id?: string, new_pad_id?: string} */
 	private function restoreWithoutBinding(File $file, int $fileId): array {
-		$oldPadId = '';
 		$newPadId = '';
 		$fileContentUpdated = false;
 		$managedPadCreated = false;
@@ -460,7 +448,7 @@ class LifecycleService {
 			$htmlSnapshot = $snapshotParts['html'];
 			$newPadId = $this->provisionRestorePadId($accessMode, $oldPadId);
 			$managedPadCreated = true;
-			$this->padLifecycle->seed($newPadId, $snapshot, $htmlSnapshot, ['fileId' => $fileId, 'oldPadId' => $oldPadId]);
+			$this->padLifecycle->seed($newPadId, $snapshot, $htmlSnapshot, ['fileId' => $fileId]);
 			$updatedContent = $this->padFileService->withRestoredSnapshot(
 				$pad,
 				$snapshot,
@@ -490,9 +478,7 @@ class LifecycleService {
 			$this->logger->error('Restore lifecycle failed without existing binding.', [
 				'app' => 'etherpad_nextcloud',
 				'fileId' => $fileId,
-				'oldPadId' => $oldPadId,
-				'newPadId' => $newPadId,
-				'exception' => $e,
+				...SafeError::context($e),
 			]);
 			throw new LifecycleException('Restore flow failed before completion.', 0, $e);
 		}
@@ -512,7 +498,6 @@ class LifecycleService {
 			'app' => 'etherpad_nextcloud',
 			'reason' => $reason,
 			'fileId' => $fileId,
-			'padId' => $padId,
 		]);
 		return $result;
 	}
@@ -567,8 +552,7 @@ class LifecycleService {
 			$this->logger->warning('Could not read the binding after a failed restore; leaving the new pad in place.', [
 				'app' => 'etherpad_nextcloud',
 				'fileId' => $fileId,
-				'newPadId' => $newPadId,
-				'exception' => $readError,
+				...SafeError::context($readError),
 			]);
 			return true;
 		}
@@ -609,12 +593,13 @@ class LifecycleService {
 			if (EtherpadErrorClassifier::isPadAlreadyDeleted($e)) {
 				return;
 			}
+			// No longer referenced is the whole point: the row for this file
+			// names the new pad, so the old one has no other handle left.
 			$this->logger->warning('Could not remove the pad a restore replaced. It is no longer referenced.', [
 				'app' => 'etherpad_nextcloud',
 				'fileId' => $fileId,
-				'oldPadId' => $oldPadId,
-				'newPadId' => $newPadId,
-				'exception' => $e,
+				'padId' => $oldPadId,
+				...SafeError::context($e),
 			]);
 		}
 	}
@@ -640,7 +625,7 @@ class LifecycleService {
 		return 'restored-' . $suffix;
 	}
 
-	/** @return array<int,string> */
+	/** @return list<string> */
 	public static function getSupportedTestFaults(): array {
 		return [
 			self::TEST_FAULT_TRASH_READ_LOCK,

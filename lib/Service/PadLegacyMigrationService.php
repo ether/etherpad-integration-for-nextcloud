@@ -12,6 +12,7 @@ use OCA\EtherpadNextcloud\Exception\BindingException;
 use OCA\EtherpadNextcloud\Exception\LegacyPadCollisionException;
 use OCA\EtherpadNextcloud\Exception\LegacyProtectedImportDisabledException;
 use OCA\EtherpadNextcloud\Exception\PadFileFormatException;
+use OCA\EtherpadNextcloud\Util\DiagnosticText;
 use OCA\EtherpadNextcloud\Util\PadId;
 use OCP\Files\File;
 use OCP\Files\NotFoundException;
@@ -60,7 +61,6 @@ class PadLegacyMigrationService {
 		string $uid,
 		int $fileId,
 		string $sourceUrl,
-		string $sourcePadId,
 		string $accessMode,
 	): void {
 		if ($accessMode !== BindingService::ACCESS_PROTECTED) {
@@ -72,10 +72,9 @@ class PadLegacyMigrationService {
 		$this->logger->warning('Refused legacy Ownpad migration - protected import is switched off.', [
 			'app' => 'etherpad_nextcloud',
 			'fileId' => $fileId,
-			'sourceUrl' => $sourceUrl,
+			'sourceHost' => DiagnosticText::hostOf($sourceUrl),
 			'originBranch' => 'same',
 			'accessMode' => $accessMode,
-			'padId' => $sourcePadId,
 			'collision' => 'none',
 			'uid' => $uid,
 		]);
@@ -107,7 +106,7 @@ class PadLegacyMigrationService {
 			$this->logger->info('Migrated legacy Ownpad .pad as external public pad.', [
 				'app' => 'etherpad_nextcloud',
 				'fileId' => $fileId,
-				'sourceUrl' => $sourceUrl,
+				'sourceHost' => DiagnosticText::hostOf($sourceUrl),
 				'originBranch' => 'cross',
 				'uid' => $uid,
 			]);
@@ -120,7 +119,7 @@ class PadLegacyMigrationService {
 		if ($existingBinding === null) {
 			// Unbound pads only; a bound one is the collision rule's
 			// question below.
-			$this->refuseProtectedImportIfSwitchedOff($uid, $fileId, $sourceUrl, $sourcePadId, $accessMode);
+			$this->refuseProtectedImportIfSwitchedOff($uid, $fileId, $sourceUrl, $accessMode);
 			// After the refusal: asking first would answer three ways and
 			// make this an existence oracle on a privileged API.
 			$this->assertGroupPadExists($sourcePadId);
@@ -146,7 +145,6 @@ class PadLegacyMigrationService {
 				$this->logger->info('Legacy Ownpad migration lost a race for the pad-id; reclassifying as collision.', [
 					'app' => 'etherpad_nextcloud',
 					'fileId' => $fileId,
-					'padId' => $sourcePadId,
 					'uid' => $uid,
 				]);
 				// Fall through to the collision-with-access handling below.
@@ -156,10 +154,9 @@ class PadLegacyMigrationService {
 				$this->logger->info('Migrated legacy Ownpad .pad as managed pad (re-bind).', [
 					'app' => 'etherpad_nextcloud',
 					'fileId' => $fileId,
-					'sourceUrl' => $sourceUrl,
+					'sourceHost' => DiagnosticText::hostOf($sourceUrl),
 					'originBranch' => 'same',
 					'accessMode' => $accessMode,
-					'padId' => $sourcePadId,
 					'collision' => 'none',
 					'uid' => $uid,
 				]);
@@ -177,10 +174,9 @@ class PadLegacyMigrationService {
 			$this->logger->info('Migrated legacy Ownpad .pad — finishing partially-completed prior migration.', [
 				'app' => 'etherpad_nextcloud',
 				'fileId' => $fileId,
-				'sourceUrl' => $sourceUrl,
+				'sourceHost' => DiagnosticText::hostOf($sourceUrl),
 				'originBranch' => 'same',
 				'accessMode' => $accessMode,
-				'padId' => $sourcePadId,
 				'collision' => 'self',
 				'uid' => $uid,
 			]);
@@ -193,8 +189,7 @@ class PadLegacyMigrationService {
 			$this->logger->warning('Refused legacy Ownpad migration — pad already bound to a file the user cannot read.', [
 				'app' => 'etherpad_nextcloud',
 				'fileId' => $fileId,
-				'sourceUrl' => $sourceUrl,
-				'padId' => $sourcePadId,
+				'sourceHost' => DiagnosticText::hostOf($sourceUrl),
 				'boundFileId' => $boundFileId,
 				'collision' => 'no_access',
 				'uid' => $uid,
@@ -211,10 +206,9 @@ class PadLegacyMigrationService {
 		$this->logger->info('Migrated legacy Ownpad .pad as copy of an already-bound pad.', [
 			'app' => 'etherpad_nextcloud',
 			'fileId' => $fileId,
-			'sourceUrl' => $sourceUrl,
+			'sourceHost' => DiagnosticText::hostOf($sourceUrl),
 			'originBranch' => 'same',
 			'accessMode' => $accessMode,
-			'padId' => $sourcePadId,
 			'collision' => 'with_access',
 			'boundFileId' => $boundFileId,
 			'uid' => $uid,

@@ -450,17 +450,27 @@ class ExpiredSessionCollectorTest extends TestCase {
 	 * itself — and this branch is reached for sessions the pad server may
 	 * still accept. A digest correlates the same entry across runs without
 	 * writing the credential into a log that outlives it.
+	 *
+	 * The failure is raised from inside the call rather than handed to the
+	 * mock ready-made: an exception built beforehand carries a stack that
+	 * never entered this collector, so a leak through the frames would
+	 * have nothing to leak from and the check would pass on nothing.
 	 */
 	public function testDoesNotWriteASessionIdIntoTheLog(): void {
+		$sessionId = 's.secretsecret123';
 		$client = $this->createMock(EtherpadClient::class);
-		$client->method('listSessionsOfAuthor')->willReturn(['s.secretsecret123' => self::expired()]);
-		$client->method('deleteSession')->willThrowException(new EtherpadClientException('internal error'));
+		$client->method('listSessionsOfAuthor')->willReturn([$sessionId => self::expired()]);
+		$client->method('deleteSession')->willReturnCallback(
+			static function (string $id): void {
+				throw new EtherpadClientException('internal error while deleting ' . $id);
+			}
+		);
 
 		$seen = [];
 		$logger = $this->createMock(LoggerInterface::class);
 		$logger->method('warning')->willReturnCallback(
 			static function (string $message, array $context) use (&$seen): void {
-				$seen[] = json_encode($context);
+				$seen[] = $context;
 			}
 		);
 
@@ -468,8 +478,20 @@ class ExpiredSessionCollectorTest extends TestCase {
 
 		self::assertNotSame([], $seen, 'the refusal should have been logged at all');
 		foreach ($seen as $context) {
-			self::assertStringNotContainsString('s.secretsecret123', $context);
+			// Every value, not just the ones this test thought to name: the
+			// context is strings now, so encoding it hides nothing.
+			self::assertStringNotContainsString(
+				$sessionId,
+				(string)json_encode($context),
+				'the session id reached the log context',
+			);
 		}
+		// And the entry is still worth having: the digest is what makes the
+		// same session recognisable across runs.
+		self::assertSame(
+			substr(hash('sha256', $sessionId), 0, 12),
+			$seen[0]['sessionRef'] ?? null,
+		);
 	}
 
 	/** Nothing about collecting may take a pad server outage further. */

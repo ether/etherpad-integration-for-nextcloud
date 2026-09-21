@@ -16,8 +16,10 @@ use OCA\EtherpadNextcloud\Exception\InvalidPadNameException;
 use OCA\EtherpadNextcloud\Exception\PadFileAlreadyExistsException;
 use OCA\EtherpadNextcloud\Exception\PadFileChangedException;
 use OCA\EtherpadNextcloud\Exception\PadParentFolderNotWritableException;
+use OCA\EtherpadNextcloud\Util\DiagnosticText;
 use OCA\EtherpadNextcloud\Util\PadFileType;
 use OCA\EtherpadNextcloud\Util\PathNormalizer;
+use OCA\EtherpadNextcloud\Util\SafeError;
 use OCP\Files\File;
 use OCP\IUser;
 use Psr\Log\LoggerInterface;
@@ -179,7 +181,7 @@ class PadCreationService {
 						'message' => 'External pad URL validation failed',
 						'context' => [
 							'file' => $path,
-							'padUrl' => $padUrl,
+							'padHost' => DiagnosticText::hostOf($padUrl),
 						],
 					];
 				}
@@ -191,7 +193,7 @@ class PadCreationService {
 					'message' => 'External pad create failed',
 					'context' => [
 						'file' => $path,
-						'padUrl' => $padUrl,
+						'padHost' => DiagnosticText::hostOf($padUrl),
 					],
 				];
 			},
@@ -473,7 +475,7 @@ class PadCreationService {
 			$this->logger->warning('Could not read the ID of a freshly created .pad file', [
 				'app' => 'etherpad_nextcloud',
 				'file' => $path,
-				'exception' => $e,
+				...SafeError::context($e),
 			]);
 			throw new \RuntimeException('Could not resolve new file ID.', 0, $e);
 		}
@@ -513,7 +515,7 @@ class PadCreationService {
 			$this->logger->warning('Could not read the size of a freshly created .pad file; treating it as not ours', [
 				'app' => 'etherpad_nextcloud',
 				'file' => $path,
-				'exception' => $e,
+				...SafeError::context($e),
 			]);
 			return true;
 		}
@@ -566,14 +568,14 @@ class PadCreationService {
 				$this->logger->warning($warning['message'], array_merge(
 					['app' => 'etherpad_nextcloud'],
 					$warning['context'],
-					['exception' => $e],
+					SafeError::context($e),
 				));
 			} elseif (!($e instanceof PadFileAlreadyExistsException) && !($e instanceof InvalidPadNameException)) {
 				$error = $errorFor($attempt);
 				$this->logger->error($error['message'], array_merge(
 					['app' => 'etherpad_nextcloud'],
 					$error['context'],
-					['exception' => $e],
+					SafeError::context($e),
 				));
 			}
 

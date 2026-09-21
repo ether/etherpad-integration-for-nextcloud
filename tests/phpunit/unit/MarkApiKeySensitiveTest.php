@@ -32,6 +32,31 @@ class MarkApiKeySensitiveTest extends TestCase {
 		$this->assertTrue($written['sensitive']);
 	}
 
+	/**
+	 * A repair step runs outside anything of ours that catches, so what it
+	 * throws is serialized by Nextcloud with every frame - and the frame
+	 * that failed is setValueString, which takes the key as a string.
+	 * Registering a method would not reach it: the frame belongs to
+	 * Nextcloud. Cutting the chain is what keeps the key out, so the cut
+	 * is what the test holds on to.
+	 */
+	public function testAFailedWriteIsRethrownWithoutTheFrameThatHeldTheKey(): void {
+		$appConfig = $this->createMock(IAppConfig::class);
+		$appConfig->method('getValueString')->willReturn('GEHEIM-KEY-4711');
+		$cause = new \RuntimeException('write failed for GEHEIM-KEY-4711');
+		$appConfig->method('setValueString')->willThrowException($cause);
+
+		try {
+			(new MarkApiKeySensitive($appConfig))->run($this->createMock(IOutput::class));
+			$this->fail('the failed write was swallowed');
+		} catch (\RuntimeException $rethrown) {
+			$this->assertNull($rethrown->getPrevious());
+			$this->assertStringNotContainsString('GEHEIM-KEY-4711', $rethrown->getMessage());
+			// Still worth reading: which failure it was, without its wording.
+			$this->assertStringContainsString('RuntimeException', $rethrown->getMessage());
+		}
+	}
+
 	public function testDoesNothingWhenNoKeyStored(): void {
 		$appConfig = $this->createMock(IAppConfig::class);
 		$appConfig->method('getValueString')->willReturn('');
