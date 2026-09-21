@@ -79,9 +79,15 @@ final class SafeError {
 	}
 
 	/**
-	 * The causal chain with what each link said, then the frames that led
-	 * there as file, line and callee. The arguments are left out on
-	 * purpose - they are the whole point.
+	 * Where it was thrown, the causal chain with what each link said, and
+	 * the frames that led there as file, line and callee. The arguments
+	 * are left out on purpose - they are the whole point.
+	 *
+	 * The throw site comes first because no trace holds it: getTrace()
+	 * begins at the caller of the frame that constructed the exception, so
+	 * an exception with no cause would otherwise be placed one call too
+	 * early - at the line that called the failing function rather than the
+	 * line that failed.
 	 *
 	 * The chain matters as much as the location: this app wraps a
 	 * transport failure as "Etherpad API request failed: <method>", so the
@@ -95,9 +101,10 @@ final class SafeError {
 	 * @param list<string> $secrets
 	 */
 	public static function originOf(\Throwable $e, array $secrets = []): string {
-		$origin = [];
-		// From the cause, not from $e: its message is already error_message,
-		// and repeating it would spend half the line saying it twice.
+		$origin = ['thrown at ' . $e->getFile() . ':' . $e->getLine()];
+		// The chain from the cause, not from $e: its message is already
+		// error_message, and repeating it would spend half the line saying
+		// it twice. Its location is above, which no message repeats.
 		$current = $e->getPrevious();
 		$innermost = $e;
 		for ($link = 0; $current !== null && $link < self::CHAIN_LINKS; $link++) {

@@ -33,6 +33,27 @@ class SafeErrorTest extends TestCase {
 		$this->assertStringContainsString('connection refused', $origin);
 	}
 
+	/**
+	 * getTrace() starts at the caller of the frame that built the
+	 * exception, so the line that threw is in no frame at all. Most of what
+	 * this app logs has no cause to fall back on, which would leave the
+	 * origin pointing one call too early.
+	 */
+	public function testAFailureWithNoCauseIsPlacedAtTheLineThatThrew(): void {
+		try {
+			$this->deepestCall();
+			self::fail('expected the call to throw');
+		} catch (\Throwable $e) {
+			$origin = SafeError::originOf($e);
+		}
+
+		$this->assertStringContainsString($e->getFile() . ':' . $e->getLine(), $origin);
+		// And that is not the same place as the first frame, which is what
+		// made the miss invisible: both are in this file, a line apart.
+		$first = $e->getTrace()[0];
+		$this->assertNotSame($e->getLine(), $first['line']);
+	}
+
 	public function testKnownSecretsAreRemovedFromBothHalves(): void {
 		$context = SafeError::context(
 			new \RuntimeException('rejected sekrit-value-123'),
