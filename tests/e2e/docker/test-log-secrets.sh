@@ -9,6 +9,14 @@
 # reaches Nextcloud - delete the loop in Application::register() and every
 # unit test still passes.
 #
+# That reads them back through OC\AppFramework\Bootstrap\Coordinator,
+# which is private, on purpose: Nextcloud exposes registerSensitiveMethods
+# but nothing to ask what it took, and the public alternative - standing
+# up the app's Application against a stub of a thirty-eight method
+# interface - would only prove this app hands the list over, not that
+# Nextcloud holds it. If the class ever moves, this fails loudly here
+# rather than going quiet in production.
+#
 # Two: a failure logged while a session is in scope does not write it out.
 # That is SafeError's job rather than the registration's, and this is the
 # case that needs no failed api call for it: a pad session is built, the

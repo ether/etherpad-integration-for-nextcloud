@@ -19,6 +19,13 @@ use PHPUnit\Framework\TestCase;
  * credential or a document. SafeError::context() is the shape that
  * replaces it - what failed, what it said, where it came from.
  *
+ * The key does not save it. Under 'exception' Nextcloud runs the
+ * serializer, which at least honours registerSensitiveMethods(); under
+ * any other key lognormalizer takes the throwable instead and writes
+ * getTraceAsString(), where the registration has no say and every string
+ * argument keeps its first fifteen characters. So the rule reads the
+ * value, not the key.
+ *
  * This cannot see a secret written into a context key by hand; that
  * stays a matter of reading the line.
  */
@@ -30,10 +37,21 @@ class LogContextTest extends TestCase {
 	 */
 	private const CARRIES_AN_EXCEPTION = '/([\'"])exception\\1\\s*(=>|\\]\\s*=)/';
 
+	/**
+	 * What binds a throwable to a name. Read per file rather than kept as
+	 * a list here: this app catches under thirteen different names, and a
+	 * list of them would go stale the first time someone picks a
+	 * fourteenth - silently, which is the failure mode worth avoiding.
+	 */
+	private const BINDS_A_THROWABLE = [
+		'/catch\\s*\\([^)]*?\\$([A-Za-z_][A-Za-z0-9_]*)\\s*\\)/',
+		'/\\\\?(?:[A-Za-z_][A-Za-z0-9_]*)?(?:Throwable|Exception|Error)\\s+\\$([A-Za-z_][A-Za-z0-9_]*)/',
+	];
+
 	/** Every php file the app ships, not just the ones under lib. */
 	private const SEARCHED = ['lib', 'appinfo', 'templates'];
 
-	public function testNoLoggerContextCarriesAnExceptionObject(): void {
+	public function testNoLoggerContextCarriesAThrowable(): void {
 		$offenders = [];
 		$scanned = 0;
 		$repository = dirname(__DIR__, 3);
@@ -50,8 +68,10 @@ class LogContextTest extends TestCase {
 				}
 				$scanned++;
 				$source = (string)file_get_contents($file->getPathname());
+				$carriesOne = $this->carriesAThrowable($source);
 				foreach (explode("\n", $source) as $number => $line) {
-					if (preg_match(self::CARRIES_AN_EXCEPTION, $line) === 1) {
+					if (preg_match(self::CARRIES_AN_EXCEPTION, $line) === 1
+						|| preg_match($carriesOne, $line) === 1) {
 						$offenders[] = substr($file->getPathname(), strlen($repository) + 1) . ':' . ($number + 1);
 					}
 				}
@@ -60,5 +80,26 @@ class LogContextTest extends TestCase {
 
 		$this->assertGreaterThan(50, $scanned, 'the rule found almost nothing to read');
 		$this->assertSame([], $offenders, "Use SafeError::context() instead:\n" . implode("\n", $offenders));
+	}
+
+	/**
+	 * A pattern for the names this one file binds a throwable to, in value
+	 * position. Whole names only, and only where the value ends there:
+	 * ->getMessage() on the same name is the point of the rule, not a
+	 * breach of it. A name reused for something else in the same file
+	 * reads as a hit too, which errs the safe way round.
+	 */
+	private function carriesAThrowable(string $source): string {
+		$names = [];
+		foreach (self::BINDS_A_THROWABLE as $binding) {
+			if (preg_match_all($binding, $source, $matches) > 0) {
+				$names = array_merge($names, $matches[1]);
+			}
+		}
+		if ($names === []) {
+			// Nothing can hold a throwable here, so nothing can pass one on.
+			return '/(*FAIL)/';
+		}
+		return '/=>\\s*\\$(' . implode('|', array_map('preg_quote', array_unique($names))) . ')\\s*(,|\\)|\\]|$)/';
 	}
 }

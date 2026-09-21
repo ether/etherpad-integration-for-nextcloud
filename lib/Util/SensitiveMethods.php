@@ -17,11 +17,14 @@ namespace OCA\EtherpadNextcloud\Util;
  * and LogContextTest enforces it. An exception that escapes reaches
  * Nextcloud's own handler, which serializes it with every frame's
  * arguments no matter how this app logs, and that is the one case
- * discipline cannot cover. Hence a list, and hence a short one: only
- * what is a credential if it is read.
+ * discipline cannot cover. Hence a list.
  *
- * Not the methods that carry a pad. A document in a log is a size and a
- * privacy problem, and not logging the exception already solves it.
+ * What earns an entry is not how secret an argument reads but whether it
+ * can still be read once the app has lost the exception: credentials,
+ * and the documents on the routes that rethrow rather than handle. It
+ * covers the serializer alone - a throwable handed to the logger under
+ * any key but 'exception' is normalized elsewhere, where no registration
+ * reaches it.
  *
  * A list of names goes stale in silence, so SensitiveMethodsTest checks
  * that every entry still resolves.
@@ -31,8 +34,10 @@ final class SensitiveMethods {
 	public const ALL = [
 		// A live session id, which deleteSession takes as a plain string,
 		// and whole pads on their way to Etherpad. The api key needs no
-		// entry: it travels as ApiKey and leaves as a stream, so no frame
-		// holds it - measured, not assumed.
+		// entry here: it travels as ApiKey and leaves as a stream, so no
+		// frame of this class holds it - measured, not assumed. Where one
+		// does hold it, a list is no answer anyway: the frame belongs to
+		// whoever was called, and a registration only covers its own.
 		\OCA\EtherpadNextcloud\Service\EtherpadClient::class => [
 			'deleteSession', 'setText', 'setHTML', 'apiCall', 'sendRequest', 'formBody',
 		],

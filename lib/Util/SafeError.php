@@ -22,6 +22,14 @@ namespace OCA\EtherpadNextcloud\Util;
  * This is the shape that replaces it. `getTraceAsString()` is no
  * alternative: it prints each argument truncated to fifteen characters,
  * which is plenty of a credential.
+ *
+ * It takes away the arguments, not the wording. Messages still travel,
+ * this app's own and the cause's, because "Etherpad API request failed:
+ * createPad" alone never names a reason and the cause does - and a
+ * message is written by whoever threw it, so it can carry a url or a
+ * path nobody here chose. A caller that knows a value to be secret says
+ * so and both halves lose it; past that, the wording is a judgement, not
+ * a guarantee.
  */
 final class SafeError {
 	/** Enough to place a failure, short enough to stay one log entry. */
