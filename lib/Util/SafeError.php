@@ -88,7 +88,9 @@ final class SafeError {
 	 */
 	public static function originOf(\Throwable $e, array $secrets = []): string {
 		$origin = [];
-		$current = $e;
+		// From the cause, not from $e: its message is already error_message,
+		// and repeating it would spend half the line saying it twice.
+		$current = $e->getPrevious();
 		$innermost = $e;
 		for ($link = 0; $current !== null && $link < self::CHAIN_LINKS; $link++) {
 			$origin[] = get_class($current) . ' at ' . $current->getFile() . ':' . $current->getLine()

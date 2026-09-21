@@ -4,6 +4,7 @@
     phpVersion="8.1"
     resolveFromConfigFile="true"
     findUnusedCode="true"
+    findUnusedVariables="true"
     autoloader="tests/psalm/ocp-autoload.php"
     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
     xmlns="https://getpsalm.org/schema/config"

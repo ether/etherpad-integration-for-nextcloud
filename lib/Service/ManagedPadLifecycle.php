@@ -9,10 +9,10 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Service;
 
-use OCA\EtherpadNextcloud\Util\SafeError;
 use OCA\EtherpadNextcloud\Util\EtherpadErrorClassifier;
 use OCA\EtherpadNextcloud\Util\PadAccessMode;
 use OCA\EtherpadNextcloud\Util\PadId;
+use OCA\EtherpadNextcloud\Util\SafeError;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -81,12 +81,14 @@ class ManagedPadLifecycle {
 				try {
 					$this->etherpadClient->deletePad($padId);
 				} catch (\Throwable $cleanupError) {
-					// No pad id: this one can be a public pad, whose id plus
-					// the configured host is a link anyone can open. The line
-					// is worth keeping without it - it says an orphan may be
-					// left behind, and the context says where it broke.
+					// The pad id, against the rule everywhere else: nothing
+					// persisted it - no binding row was written - so without
+					// it the pad left behind on the server cannot be found
+					// again by any means. An orphan nobody can reach is the
+					// worse outcome.
 					$this->logger->warning('Could not remove the Etherpad pad after its creation failed.', [
 						'app' => 'etherpad_nextcloud',
+						'padId' => $padId,
 						...SafeError::context($cleanupError),
 					]);
 				}
@@ -141,7 +143,9 @@ class ManagedPadLifecycle {
 	 * derived from that HTML rather than the string the snapshot held.
 	 *
 	 * @param array<string,mixed> $context extra keys for the fallback's log
-	 *   line; `app`, `padId` and `exception` are set here and win a collision
+	 *   line; `app` and SafeError's `error`, `error_message` and
+	 *   `error_origin` are set here and win a collision. Do not pass a pad
+	 *   id - the fileId every caller already supplies is the handle
 	 */
 	public function seed(string $padId, string $text, string $html, array $context = []): void {
 		if (trim($html) !== '') {

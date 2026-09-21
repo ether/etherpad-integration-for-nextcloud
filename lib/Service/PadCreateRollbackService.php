@@ -51,13 +51,14 @@ class PadCreateRollbackService {
 		try {
 			$this->padLifecycle->discardProvisioned($padId);
 		} catch (\Throwable $cleanupError) {
-			// The claim's file, not the pad: a pad id plus the configured
-			// host is a link into a public pad. Not $bindingAttemptFileId -
-			// reaching here means it was null, since any other value
-			// returned above.
+			// Both, and the pad id against the rule everywhere else:
+			// reaching here means no binding row was written, so
+			// ep_pad_bindings cannot lead from the one to the other, and the
+			// claim is null whenever the create failed before it was taken.
 			$this->logger->warning('Could not cleanup failed Etherpad create', [
 				'app' => 'etherpad_nextcloud',
 				'fileId' => $claim?->fileId,
+				'padId' => $padId,
 				...SafeError::context($cleanupError),
 			]);
 		}

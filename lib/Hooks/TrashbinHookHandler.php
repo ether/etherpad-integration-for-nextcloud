@@ -10,8 +10,8 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Hooks;
 
-use OCA\EtherpadNextcloud\Util\SafeError;
 use OCA\EtherpadNextcloud\Listeners\RestoreFromTrashListener;
+use OCA\EtherpadNextcloud\Util\SafeError;
 use Psr\Log\LoggerInterface;
 
 /**

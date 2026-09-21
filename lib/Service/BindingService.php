@@ -9,11 +9,11 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Service;
 
-use OCA\EtherpadNextcloud\Util\SafeError;
 use OCA\EtherpadNextcloud\Exception\BindingException;
 use OCA\EtherpadNextcloud\Exception\BindingStateConflictException;
 use OCA\EtherpadNextcloud\Exception\MissingBindingException;
 use OCA\EtherpadNextcloud\Util\PadAccessMode;
+use OCA\EtherpadNextcloud\Util\SafeError;
 use OCP\DB\QueryBuilder\IQueryBuilder;
 use OCP\AppFramework\Utility\ITimeFactory;
 use OCP\IDBConnection;
@@ -145,7 +145,6 @@ class BindingService {
 		$result->closeCursor();
 		return $rows;
 	}
-
 
 	public function createBinding(int $fileId, string $padId, string $accessMode): void {
 		$this->assertAccessMode($accessMode);

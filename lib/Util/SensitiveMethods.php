@@ -34,12 +34,18 @@ final class SensitiveMethods {
 		// entry: it travels as ApiKey and leaves as a stream, so no frame
 		// holds it - measured, not assumed.
 		\OCA\EtherpadNextcloud\Service\EtherpadClient::class => [
-			'deleteSession', 'setText', 'setHTML', 'apiCall', 'sendRequest',
+			'deleteSession', 'setText', 'setHTML', 'apiCall', 'sendRequest', 'formBody',
 		],
 		// The document itself, as arguments. Not logging the exception is
 		// no answer here: these failures are rethrown, and Nextcloud
 		// serializes what it catches with every frame it finds.
 		\OCA\EtherpadNextcloud\Service\ManagedPadLifecycle::class => ['seed'],
+		// And on its way out of the file, which is the half a pad travels
+		// when a trash or restore listener rethrows what it caught.
+		\OCA\EtherpadNextcloud\Service\PadFileService::class => [
+			'parsePadFile', 'readPad', 'serialize',
+			'withExportSnapshot', 'withRestoredSnapshot', 'buildSnapshotBody',
+		],
 		// The Etherpad session cookie, which is a live credential.
 		\OCA\EtherpadNextcloud\Service\PadSessionService::class => [
 			'buildEtherpadSessionCookie', 'buildSetCookieHeader',

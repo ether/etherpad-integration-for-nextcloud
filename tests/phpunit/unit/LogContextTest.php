@@ -35,18 +35,20 @@ class LogContextTest extends TestCase {
 
 	public function testNoLoggerContextCarriesAnExceptionObject(): void {
 		$offenders = [];
+		$scanned = 0;
 		$repository = dirname(__DIR__, 3);
 		foreach (self::SEARCHED as $directory) {
 			$root = $repository . '/' . $directory;
-			if (!is_dir($root)) {
-				continue;
-			}
+			// Not skipped: a rule that quietly stops looking is the failure
+			// this whole change exists to stop repeating.
+			$this->assertDirectoryExists($root);
 			/** @var iterable<\SplFileInfo> $files */
 			$files = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($root));
 			foreach ($files as $file) {
 				if ($file->getExtension() !== 'php') {
 					continue;
 				}
+				$scanned++;
 				$source = (string)file_get_contents($file->getPathname());
 				foreach (explode("\n", $source) as $number => $line) {
 					if (preg_match(self::CARRIES_AN_EXCEPTION, $line) === 1) {
@@ -56,6 +58,7 @@ class LogContextTest extends TestCase {
 			}
 		}
 
+		$this->assertGreaterThan(50, $scanned, 'the rule found almost nothing to read');
 		$this->assertSame([], $offenders, "Use SafeError::context() instead:\n" . implode("\n", $offenders));
 	}
 }

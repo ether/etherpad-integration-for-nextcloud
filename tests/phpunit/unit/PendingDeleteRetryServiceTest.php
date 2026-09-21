@@ -53,7 +53,6 @@ class PendingDeleteRetryServiceTest extends TestCase {
 		))->retryByAge(86400, null, 10);
 
 		$this->assertSame(1, $binding->deletedBindings);
-		$this->assertSame(1, $binding->deletedBindings);
 	}
 
 	/**
@@ -83,7 +82,6 @@ class PendingDeleteRetryServiceTest extends TestCase {
 		))->retryByAge(86400, null, 10);
 
 		$this->assertSame(1, $binding->deletedBindings);
-		$this->assertSame(1, $binding->deletedBindings);
 	}
 
 	public function testUnclassifiedEtherpadErrorIsCountedAsFailureAndKeepsBinding(): void {
@@ -95,11 +93,16 @@ class PendingDeleteRetryServiceTest extends TestCase {
 		]);
 		$etherpad = $this->createMock(EtherpadClient::class);
 		$etherpad->method('deletePad')->willThrowException(new \RuntimeException('connection refused'));
+		// Counting it is what the warning stands for now that nothing comes
+		// back from retryByAge - without this the count could stop and the
+		// binding would still look untouched.
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects($this->once())->method('warning')->with('Pending pad delete retry failed.', $this->anything());
 
 		(new PendingDeleteRetryService(
 			$binding,
 			new ManagedPadLifecycle($etherpad, $this->createMock(LoggerInterface::class)),
-			$this->createMock(LoggerInterface::class),
+			$logger,
 		))->retryByAge(0, 3600, 10);
 
 		$this->assertSame(0, $binding->deletedBindings);
@@ -124,17 +127,20 @@ class PendingDeleteRetryServiceTest extends TestCase {
 		$this->assertSame(1, $binding->deletedBindings);
 	}
 
-	public function testEmptyResultReturnsAllZeroes(): void {
+	public function testNothingPendingTouchesNeitherEtherpadNorTheRows(): void {
 		$binding = $this->buildBindingService([]);
 		$etherpad = $this->createMock(EtherpadClient::class);
 		$etherpad->expects($this->never())->method('deletePad');
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects($this->never())->method('warning');
 
 		(new PendingDeleteRetryService(
 			$binding,
 			new ManagedPadLifecycle($etherpad, $this->createMock(LoggerInterface::class)),
-			$this->createMock(LoggerInterface::class),
+			$logger,
 		))->retryByAge(0, 3600, 10);
 
+		$this->assertSame(0, $binding->deletedBindings);
 	}
 
 	public function testRetryWithoutAgeFilterProcessesAllPendingDeletes(): void {

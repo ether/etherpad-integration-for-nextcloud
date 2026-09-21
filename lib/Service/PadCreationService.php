@@ -9,8 +9,6 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Service;
 
-use OCA\EtherpadNextcloud\Util\SafeError;
-use OCA\EtherpadNextcloud\Util\DiagnosticText;
 use OCA\EtherpadNextcloud\Exception\BindingException;
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
 use OCA\EtherpadNextcloud\Exception\NotAPadFileException;
@@ -18,8 +16,10 @@ use OCA\EtherpadNextcloud\Exception\InvalidPadNameException;
 use OCA\EtherpadNextcloud\Exception\PadFileAlreadyExistsException;
 use OCA\EtherpadNextcloud\Exception\PadFileChangedException;
 use OCA\EtherpadNextcloud\Exception\PadParentFolderNotWritableException;
+use OCA\EtherpadNextcloud\Util\DiagnosticText;
 use OCA\EtherpadNextcloud\Util\PadFileType;
 use OCA\EtherpadNextcloud\Util\PathNormalizer;
+use OCA\EtherpadNextcloud\Util\SafeError;
 use OCP\Files\File;
 use OCP\IUser;
 use Psr\Log\LoggerInterface;
@@ -568,14 +568,14 @@ class PadCreationService {
 				$this->logger->warning($warning['message'], array_merge(
 					['app' => 'etherpad_nextcloud'],
 					$warning['context'],
-					[...SafeError::context($e)],
+					SafeError::context($e),
 				));
 			} elseif (!($e instanceof PadFileAlreadyExistsException) && !($e instanceof InvalidPadNameException)) {
 				$error = $errorFor($attempt);
 				$this->logger->error($error['message'], array_merge(
 					['app' => 'etherpad_nextcloud'],
 					$error['context'],
-					[...SafeError::context($e)],
+					SafeError::context($e),
 				));
 			}
 

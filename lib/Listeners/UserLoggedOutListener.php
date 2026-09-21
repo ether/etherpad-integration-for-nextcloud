@@ -9,8 +9,8 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Listeners;
 
-use OCA\EtherpadNextcloud\Util\SafeError;
 use OCA\EtherpadNextcloud\Service\PadSessionRevoker;
+use OCA\EtherpadNextcloud\Util\SafeError;
 use OCP\EventDispatcher\Event;
 use OCP\EventDispatcher\IEventListener;
 use OCP\User\Events\UserLoggedOutEvent;

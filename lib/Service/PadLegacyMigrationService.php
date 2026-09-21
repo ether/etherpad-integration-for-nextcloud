@@ -8,11 +8,11 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Service;
 
-use OCA\EtherpadNextcloud\Util\DiagnosticText;
 use OCA\EtherpadNextcloud\Exception\BindingException;
 use OCA\EtherpadNextcloud\Exception\LegacyPadCollisionException;
 use OCA\EtherpadNextcloud\Exception\LegacyProtectedImportDisabledException;
 use OCA\EtherpadNextcloud\Exception\PadFileFormatException;
+use OCA\EtherpadNextcloud\Util\DiagnosticText;
 use OCA\EtherpadNextcloud\Util\PadId;
 use OCP\Files\File;
 use OCP\Files\NotFoundException;
@@ -61,7 +61,6 @@ class PadLegacyMigrationService {
 		string $uid,
 		int $fileId,
 		string $sourceUrl,
-		string $sourcePadId,
 		string $accessMode,
 	): void {
 		if ($accessMode !== BindingService::ACCESS_PROTECTED) {
@@ -120,7 +119,7 @@ class PadLegacyMigrationService {
 		if ($existingBinding === null) {
 			// Unbound pads only; a bound one is the collision rule's
 			// question below.
-			$this->refuseProtectedImportIfSwitchedOff($uid, $fileId, $sourceUrl, $sourcePadId, $accessMode);
+			$this->refuseProtectedImportIfSwitchedOff($uid, $fileId, $sourceUrl, $accessMode);
 			// After the refusal: asking first would answer three ways and
 			// make this an existence oracle on a privileged API.
 			$this->assertGroupPadExists($sourcePadId);
