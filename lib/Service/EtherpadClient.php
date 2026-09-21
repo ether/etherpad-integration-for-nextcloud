@@ -385,7 +385,9 @@ class EtherpadClient {
 		$host = $hostOverride !== null && trim($hostOverride) !== ''
 			? $hostOverride
 			: $this->getApiHost();
-		$apiKey = $apiKeyOverride ?? new ApiKey($this->getApiKey());
+		$apiKey = $apiKeyOverride !== null && !$apiKeyOverride->isEmpty()
+			? $apiKeyOverride
+			: new ApiKey($this->getApiKey());
 		$url = self::buildApiUrl($host, $apiVersion, $method);
 
 		try {

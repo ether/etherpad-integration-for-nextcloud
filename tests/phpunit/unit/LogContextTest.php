@@ -84,10 +84,12 @@ class LogContextTest extends TestCase {
 
 	/**
 	 * A pattern for the names this one file binds a throwable to, in value
-	 * position. Whole names only, and only where the value ends there:
-	 * ->getMessage() on the same name is the point of the rule, not a
-	 * breach of it. A name reused for something else in the same file
-	 * reads as a hit too, which errs the safe way round.
+	 * position - as a literal entry, as an assignment into an existing
+	 * context, and through compact(), which are the three ways a value
+	 * reaches a context array. Whole names only, and only where the value
+	 * ends there: ->getMessage() on the same name is the point of the
+	 * rule, not a breach of it. A name reused for something else in the
+	 * same file reads as a hit too, which errs the safe way round.
 	 */
 	private function carriesAThrowable(string $source): string {
 		$names = [];
@@ -100,6 +102,8 @@ class LogContextTest extends TestCase {
 			// Nothing can hold a throwable here, so nothing can pass one on.
 			return '/(*FAIL)/';
 		}
-		return '/=>\\s*\\$(' . implode('|', array_map('preg_quote', array_unique($names))) . ')\\s*(,|\\)|\\]|$)/';
+		$alternatives = implode('|', array_map('preg_quote', array_unique($names)));
+		return '/(?:=>|\\]\\s*=)\\s*\\$(' . $alternatives . ')\\s*(,|\\)|\\]|;|$)'
+			. '|compact\\([^)]*[\\\'"](' . $alternatives . ')[\\\'"]/';
 	}
 }

@@ -51,6 +51,12 @@ final class SensitiveMethods {
 			'parsePadFile', 'readPad', 'serialize',
 			'withExportSnapshot', 'withRestoredSnapshot', 'buildSnapshotBody',
 		],
+		// The same document one frame further on, where it is handed to the
+		// file rather than parsed out of it. These are the frames a locked
+		// or failing write leaves behind, and both trash listeners rethrow.
+		\OCA\EtherpadNextcloud\Service\LifecycleService::class => ['writeRestoredContent'],
+		\OCA\EtherpadNextcloud\Service\PadFileLockRetryService::class => ['putContentWithSyncLockRetry'],
+		\OCA\EtherpadNextcloud\Service\PadCreationService::class => ['writeCreatedFile'],
 		// The Etherpad session cookie, which is a live credential.
 		\OCA\EtherpadNextcloud\Service\PadSessionService::class => [
 			'buildEtherpadSessionCookie', 'buildSetCookieHeader',

@@ -24,10 +24,19 @@ namespace OCA\EtherpadNextcloud\Util;
  * the same mistake stops at the line that made it.
  */
 final class ApiKey {
-	public function __construct(private readonly string $value) {
+	private readonly string $value;
+
+	/** Trimmed on the way in: a pasted key carries whitespace, the wire does not. */
+	public function __construct(string $value) {
+		$this->value = trim($value);
 	}
 
 	public function reveal(): string {
 		return $this->value;
+	}
+
+	/** So a caller can fall back rather than send an empty apikey. */
+	public function isEmpty(): bool {
+		return $this->value === '';
 	}
 }

@@ -76,8 +76,10 @@ class ProvisionedPadRollback {
 		try {
 			$this->padLifecycle->discardProvisioned($padId);
 		} catch (\Throwable $cleanupError) {
+			// The active row is gone by here, so nothing maps the file id
+			// back to this pad any more: the orphan is only findable by name.
 			$this->logger->warning('Could not remove the Etherpad pad while rolling back.',
-				array_merge($context, SafeError::context($cleanupError)));
+				array_merge($context, ['padId' => $padId], SafeError::context($cleanupError)));
 		}
 	}
 }

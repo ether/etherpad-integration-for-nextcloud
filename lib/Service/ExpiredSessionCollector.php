@@ -122,6 +122,9 @@ class ExpiredSessionCollector {
 		$expired = [];
 		$nextDueAt = null;
 		foreach ($sessions as $sessionId => $info) {
+			// An all-digit id would arrive as an int: php casts numeric
+			// array keys, and everything downstream is typed string.
+			$sessionId = (string)$sessionId;
 			// Live sessions are left alone: ending someone's access is not a
 			// housekeeping decision.
 			if ($info['validUntil'] <= $cutoff) {

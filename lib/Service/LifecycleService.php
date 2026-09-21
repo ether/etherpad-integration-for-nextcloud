@@ -367,6 +367,9 @@ class LifecycleService {
 					$this->logger->warning('Could not cleanup newly provisioned restore pad after failure.', [
 						'app' => 'etherpad_nextcloud',
 						'fileId' => $fileId,
+						// markRestored never ran, so the row still names the
+						// old pad and nothing else names this one.
+						'padId' => $newPadId,
 						...SafeError::context($cleanupError),
 					]);
 				}
@@ -590,9 +593,12 @@ class LifecycleService {
 			if (EtherpadErrorClassifier::isPadAlreadyDeleted($e)) {
 				return;
 			}
+			// No longer referenced is the whole point: the row for this file
+			// names the new pad, so the old one has no other handle left.
 			$this->logger->warning('Could not remove the pad a restore replaced. It is no longer referenced.', [
 				'app' => 'etherpad_nextcloud',
 				'fileId' => $fileId,
+				'padId' => $oldPadId,
 				...SafeError::context($e),
 			]);
 		}

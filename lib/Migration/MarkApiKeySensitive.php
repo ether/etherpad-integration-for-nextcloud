@@ -10,6 +10,7 @@ namespace OCA\EtherpadNextcloud\Migration;
 
 use OCA\EtherpadNextcloud\AppInfo\Application;
 use OCA\EtherpadNextcloud\Service\AdminSettingsRepository;
+use OCA\EtherpadNextcloud\Util\SafeError;
 use OCP\IAppConfig;
 use OCP\Migration\IOutput;
 use OCP\Migration\IRepairStep;
@@ -54,8 +55,11 @@ class MarkApiKeySensitive implements IRepairStep {
 			// outside anything of ours that catches, so its failure is
 			// serialized by Nextcloud - and the frame that failed holds the
 			// key as an argument, because setValueString takes a string.
+			// What the chain said still fits in the message, which carries
+			// no frames and loses the key on the way.
 			throw new \RuntimeException(
-				'Could not mark the Etherpad API key as sensitive: ' . get_class($e),
+				'Could not mark the Etherpad API key as sensitive: '
+				. get_class($e) . ' - ' . SafeError::originOf($e, [$value]),
 			);
 		}
 		$output->info('Marked the stored Etherpad API key as sensitive.');

@@ -165,9 +165,12 @@ class BindingService {
 		try {
 			$qb->executeStatement();
 		} catch (\Throwable $e) {
+			// The insert is what failed, so no row exists to look the pad up
+			// through - and by here it has already been created upstream.
 			$this->logger->error('Could not create pad binding', [
 				'app' => 'etherpad_nextcloud',
 				'fileId' => $fileId,
+				'padId' => $padId,
 				...SafeError::context($e),
 			]);
 			throw new BindingException('Could not create unique pad binding.', 0, $e);

@@ -102,16 +102,27 @@ final class SafeError {
 	 */
 	public static function originOf(\Throwable $e, array $secrets = []): string {
 		$origin = ['thrown at ' . $e->getFile() . ':' . $e->getLine()];
-		// The chain from the cause, not from $e: its message is already
+		// The whole chain, walked before anything is dropped: the cap is on
+		// what gets written, not on how far it looks. Stopping the walk
+		// itself would take the frames from whichever wrapper the cap fell
+		// on, whose trace starts at its own catch.
+		$chain = [];
+		for ($cause = $e->getPrevious(); $cause !== null; $cause = $cause->getPrevious()) {
+			$chain[] = $cause;
+		}
+		$innermost = $chain === [] ? $e : $chain[array_key_last($chain)];
+		// Over the cap, the head and the root are kept and the wrappers
+		// between them go: those repeat this app's own phrasing, while the
+		// root is the one that names a reason.
+		if (count($chain) > self::CHAIN_LINKS) {
+			$chain = array_merge(array_slice($chain, 0, self::CHAIN_LINKS - 1), [$innermost]);
+		}
+		// From the causes, not from $e: its message is already
 		// error_message, and repeating it would spend half the line saying
 		// it twice. Its location is above, which no message repeats.
-		$current = $e->getPrevious();
-		$innermost = $e;
-		for ($link = 0; $current !== null && $link < self::CHAIN_LINKS; $link++) {
-			$origin[] = get_class($current) . ' at ' . $current->getFile() . ':' . $current->getLine()
-				. ' - ' . self::readable($current->getMessage(), $secrets);
-			$innermost = $current;
-			$current = $current->getPrevious();
+		foreach ($chain as $cause) {
+			$origin[] = get_class($cause) . ' at ' . $cause->getFile() . ':' . $cause->getLine()
+				. ' - ' . self::readable($cause->getMessage(), $secrets);
 		}
 		foreach (array_slice($innermost->getTrace(), 0, self::TRACE_FRAMES) as $frame) {
 			$origin[] = ($frame['file'] ?? '?') . ':' . ($frame['line'] ?? '?')
