@@ -37,7 +37,7 @@ final class SafeError {
 	 * Log context for a failure: what it was, what it said, where it came
 	 * from. Merge it into the caller's own keys.
 	 *
-	 *   $this->logger->warning('...', ['app' => ..., 'padId' => $id]
+	 *   $this->logger->warning('...', ['app' => ..., 'fileId' => $id]
 	 *       + SafeError::context($e));
 	 *
 	 * Values a caller knows to be secret are taken out of both. Upstream

@@ -241,7 +241,6 @@ class PadSyncService {
 			'app' => 'etherpad_nextcloud',
 			'fileId' => $fileId,
 			'path' => $absolutePath,
-			'padId' => $padId,
 			'accessMode' => $accessMode,
 			'external' => $isExternal,
 			'force' => $force,

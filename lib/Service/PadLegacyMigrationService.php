@@ -76,7 +76,6 @@ class PadLegacyMigrationService {
 			'sourceHost' => DiagnosticText::hostOf($sourceUrl),
 			'originBranch' => 'same',
 			'accessMode' => $accessMode,
-			'padId' => $sourcePadId,
 			'collision' => 'none',
 			'uid' => $uid,
 		]);
@@ -147,7 +146,6 @@ class PadLegacyMigrationService {
 				$this->logger->info('Legacy Ownpad migration lost a race for the pad-id; reclassifying as collision.', [
 					'app' => 'etherpad_nextcloud',
 					'fileId' => $fileId,
-					'padId' => $sourcePadId,
 					'uid' => $uid,
 				]);
 				// Fall through to the collision-with-access handling below.
@@ -160,7 +158,6 @@ class PadLegacyMigrationService {
 					'sourceHost' => DiagnosticText::hostOf($sourceUrl),
 					'originBranch' => 'same',
 					'accessMode' => $accessMode,
-					'padId' => $sourcePadId,
 					'collision' => 'none',
 					'uid' => $uid,
 				]);
@@ -181,7 +178,6 @@ class PadLegacyMigrationService {
 				'sourceHost' => DiagnosticText::hostOf($sourceUrl),
 				'originBranch' => 'same',
 				'accessMode' => $accessMode,
-				'padId' => $sourcePadId,
 				'collision' => 'self',
 				'uid' => $uid,
 			]);
@@ -195,7 +191,6 @@ class PadLegacyMigrationService {
 				'app' => 'etherpad_nextcloud',
 				'fileId' => $fileId,
 				'sourceHost' => DiagnosticText::hostOf($sourceUrl),
-				'padId' => $sourcePadId,
 				'boundFileId' => $boundFileId,
 				'collision' => 'no_access',
 				'uid' => $uid,
@@ -215,7 +210,6 @@ class PadLegacyMigrationService {
 			'sourceHost' => DiagnosticText::hostOf($sourceUrl),
 			'originBranch' => 'same',
 			'accessMode' => $accessMode,
-			'padId' => $sourcePadId,
 			'collision' => 'with_access',
 			'boundFileId' => $boundFileId,
 			'uid' => $uid,

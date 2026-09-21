@@ -90,7 +90,6 @@ class PendingDeleteRetryService {
 					$this->logger->info('Skipped stale pending delete binding after successful pad delete.', [
 						'app' => 'etherpad_nextcloud',
 						'fileId' => $fileId,
-						'padId' => $padId,
 					]);
 					continue;
 				}
@@ -98,7 +97,6 @@ class PendingDeleteRetryService {
 				$this->logger->info('Resolved pending pad delete.', [
 					'app' => 'etherpad_nextcloud',
 					'fileId' => $fileId,
-					'padId' => $padId,
 				]);
 				continue;
 			} catch (\Throwable $e) {
@@ -107,7 +105,6 @@ class PendingDeleteRetryService {
 						$this->logger->info('Skipped stale pending delete binding after already-deleted response.', [
 							'app' => 'etherpad_nextcloud',
 							'fileId' => $fileId,
-							'padId' => $padId,
 						]);
 						continue;
 					}
@@ -115,7 +112,6 @@ class PendingDeleteRetryService {
 					$this->logger->info('Resolved pending delete because pad is already gone.', [
 						'app' => 'etherpad_nextcloud',
 						'fileId' => $fileId,
-						'padId' => $padId,
 					]);
 					continue;
 				}
@@ -123,7 +119,6 @@ class PendingDeleteRetryService {
 				$this->logger->warning('Pending pad delete retry failed.', [
 					'app' => 'etherpad_nextcloud',
 					'fileId' => $fileId,
-					'padId' => $padId,
 					...SafeError::context($e),
 				]);
 			}

@@ -179,7 +179,6 @@ class LifecycleService {
 				$this->logger->warning('Could not read .pad content during trash because file is locked. Continuing without snapshot persistence.', [
 					'app' => 'etherpad_nextcloud',
 					'fileId' => $fileId,
-					'padId' => $padId,
 					...SafeError::context($readLockError),
 				]);
 			}
@@ -198,7 +197,6 @@ class LifecycleService {
 					$this->logger->warning('Could not fetch fresh Etherpad snapshot during trash. Using current .pad snapshot/body.', [
 						'app' => 'etherpad_nextcloud',
 						'fileId' => $fileId,
-						'padId' => $padId,
 						...SafeError::context($snapshotError),
 					]);
 				}
@@ -218,14 +216,12 @@ class LifecycleService {
 						$this->logger->warning('Could not persist trash snapshot due to file lock. Continuing with pad deletion.', [
 							'app' => 'etherpad_nextcloud',
 							'fileId' => $fileId,
-							'padId' => $padId,
 							...SafeError::context($e),
 						]);
 					} catch (\Throwable $writeError) {
 						$this->logger->warning('Could not persist trash snapshot to .pad file. Continuing with pad deletion.', [
 							'app' => 'etherpad_nextcloud',
 							'fileId' => $fileId,
-							'padId' => $padId,
 							...SafeError::context($writeError),
 						]);
 					}
@@ -239,7 +235,6 @@ class LifecycleService {
 					$this->logger->info('Pad already deleted while processing trash; deleting binding row.', [
 						'app' => 'etherpad_nextcloud',
 						'fileId' => $fileId,
-						'padId' => $padId,
 						...SafeError::context($deleteError),
 					]);
 				} else {
@@ -247,7 +242,6 @@ class LifecycleService {
 					$this->logger->warning('Pad delete deferred after trash. Will retry via background job.', [
 						'app' => 'etherpad_nextcloud',
 						'fileId' => $fileId,
-						'padId' => $padId,
 						...SafeError::context($deleteError),
 					]);
 					return [
@@ -273,7 +267,6 @@ class LifecycleService {
 			$this->logger->warning('Trash lifecycle state transition conflict. Returning skipped.', [
 				'app' => 'etherpad_nextcloud',
 				'fileId' => $fileId,
-				'padId' => $padId,
 				...SafeError::context($e),
 			]);
 			return $this->buildSkippedResult('binding_state_transition_conflict', $fileId, $padId);
@@ -281,7 +274,6 @@ class LifecycleService {
 			$this->logger->error('Trash lifecycle failed. Snapshot/delete aborted.', [
 				'app' => 'etherpad_nextcloud',
 				'fileId' => $fileId,
-				'padId' => $padId,
 				...SafeError::context($e),
 			]);
 			throw new LifecycleException('Trash flow failed before completion.', 0, $e);
@@ -513,7 +505,6 @@ class LifecycleService {
 			'app' => 'etherpad_nextcloud',
 			'reason' => $reason,
 			'fileId' => $fileId,
-			'padId' => $padId,
 		]);
 		return $result;
 	}

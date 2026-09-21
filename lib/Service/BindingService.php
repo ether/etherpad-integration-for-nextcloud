@@ -185,7 +185,6 @@ class BindingService {
 			$this->logger->error('Could not create pad binding', [
 				'app' => 'etherpad_nextcloud',
 				'fileId' => $fileId,
-				'padId' => $padId,
 				...SafeError::context($e),
 			]);
 			throw new BindingException('Could not create unique pad binding.', 0, $e);
