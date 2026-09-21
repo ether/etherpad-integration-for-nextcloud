@@ -480,8 +480,8 @@ class EtherpadClient {
 
 
 	/**
-	 * The form-encoded request body, as a stream. Etherpad has always been
-	 * sent `apikey` plus the parameters this way.
+	 * The form-encoded request body, as a stream: `apikey` plus the
+	 * parameters.
 	 *
 	 * The key stays wrapped until it is inside: revealing it into an array
 	 * first would make it an argument of this call, which is the one thing

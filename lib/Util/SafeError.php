@@ -23,13 +23,11 @@ namespace OCA\EtherpadNextcloud\Util;
  * alternative: it prints each argument truncated to fifteen characters,
  * which is plenty of a credential.
  *
- * It takes away the arguments, not the wording. Messages still travel,
- * this app's own and the cause's, because "Etherpad API request failed:
- * createPad" alone never names a reason and the cause does - and a
- * message is written by whoever threw it, so it can carry a url or a
- * path nobody here chose. A caller that knows a value to be secret says
- * so and both halves lose it; past that, the wording is a judgement, not
- * a guarantee.
+ * It takes away the arguments, not the wording. Messages travel, this
+ * app's own and the cause's, because a wrapper alone never names a
+ * reason - and a message is written by whoever threw it, so it can carry
+ * a url or a path nobody here chose. A caller that knows a value to be
+ * secret says so; past that the wording is a judgement, not a guarantee.
  */
 final class SafeError {
 	/** Enough to place a failure, short enough to stay one log entry. */
@@ -48,9 +46,7 @@ final class SafeError {
 	 *   $this->logger->warning('...', ['app' => ..., 'fileId' => $id]
 	 *       + SafeError::context($e));
 	 *
-	 * Values a caller knows to be secret are taken out of both. Upstream
-	 * wording is nothing to rely on: that Etherpad answers "sessionID does
-	 * not exist" rather than quoting the id is its choice, not ours.
+	 * Values a caller knows to be secret are taken out of both halves.
 	 *
 	 * @param list<string> $secrets
 	 * @return array{error: string, error_message: string, error_origin: string}
@@ -84,28 +80,16 @@ final class SafeError {
 	 * are left out on purpose - they are the whole point.
 	 *
 	 * The throw site comes first because no trace holds it: getTrace()
-	 * begins at the caller of the frame that constructed the exception, so
-	 * an exception with no cause would otherwise be placed one call too
-	 * early - at the line that called the failing function rather than the
-	 * line that failed.
-	 *
-	 * The chain matters as much as the location: this app wraps a
-	 * transport failure as "Etherpad API request failed: <method>", so the
-	 * outermost message alone never names the cause.
-	 *
-	 * And the frames come from the innermost cause, not the wrapper. A
-	 * trace begins where its exception was constructed, so a wrapper's
-	 * trace starts at the catch and walks back through the callers - the
-	 * frames that produced the failure are only in the one thrown there.
+	 * begins at the caller of the frame that built the exception.
 	 *
 	 * @param list<string> $secrets
 	 */
 	public static function originOf(\Throwable $e, array $secrets = []): string {
 		$origin = ['thrown at ' . $e->getFile() . ':' . $e->getLine()];
-		// The whole chain, walked before anything is dropped: the cap is on
-		// what gets written, not on how far it looks. Stopping the walk
-		// itself would take the frames from whichever wrapper the cap fell
-		// on, whose trace starts at its own catch.
+		// Walked whole before anything is dropped: the frames have to come
+		// from the innermost cause, because a trace begins where its own
+		// exception was built and a wrapper's therefore starts at the
+		// catch. Capping the walk would take them from a wrapper.
 		$chain = [];
 		for ($cause = $e->getPrevious(); $cause !== null; $cause = $cause->getPrevious()) {
 			$chain[] = $cause;
@@ -118,8 +102,7 @@ final class SafeError {
 			$chain = array_merge(array_slice($chain, 0, self::CHAIN_LINKS - 1), [$innermost]);
 		}
 		// From the causes, not from $e: its message is already
-		// error_message, and repeating it would spend half the line saying
-		// it twice. Its location is above, which no message repeats.
+		// error_message and its location is already above.
 		foreach ($chain as $cause) {
 			$origin[] = get_class($cause) . ' at ' . $cause->getFile() . ':' . $cause->getLine()
 				. ' - ' . self::readable($cause->getMessage(), $secrets);

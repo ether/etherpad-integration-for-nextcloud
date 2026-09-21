@@ -14,17 +14,14 @@ use PHPUnit\Framework\TestCase;
 /**
  * One rule, checked over the source rather than per call site.
  *
- * Handing an exception object to the logger hands Nextcloud every stack
- * frame's arguments, and almost everything this app passes around is a
- * credential or a document. SafeError::context() is the shape that
- * replaces it - what failed, what it said, where it came from.
+ * An exception object in a log context costs what SafeError describes,
+ * and SafeError::context() is the shape that replaces it.
  *
- * The key does not save it. Under 'exception' Nextcloud runs the
- * serializer, which at least honours registerSensitiveMethods(); under
- * any other key lognormalizer takes the throwable instead and writes
- * getTraceAsString(), where the registration has no say and every string
- * argument keeps its first fifteen characters. So the rule reads the
- * value, not the key.
+ * The key does not save it, which is why the rule reads the value. Under
+ * 'exception' Nextcloud runs the serializer, which at least honours
+ * registerSensitiveMethods(); under any other key lognormalizer takes
+ * the throwable and writes getTraceAsString(), where no registration has
+ * a say and every string argument keeps its first fifteen characters.
  *
  * This cannot see a secret written into a context key by hand; that
  * stays a matter of reading the line.
@@ -38,10 +35,9 @@ class LogContextTest extends TestCase {
 	private const CARRIES_AN_EXCEPTION = '/([\'"])exception\\1\\s*(=>|\\]\\s*=)/';
 
 	/**
-	 * What binds a throwable to a name. Read per file rather than kept as
-	 * a list here: this app catches under thirteen different names, and a
-	 * list of them would go stale the first time someone picks a
-	 * fourteenth - silently, which is the failure mode worth avoiding.
+	 * What binds a throwable to a name, read per file rather than listed
+	 * here: this app catches under thirteen different names, and the
+	 * fourteenth would pass a list in silence.
 	 */
 	private const BINDS_A_THROWABLE = [
 		'/catch\\s*\\([^)]*?\\$([A-Za-z_][A-Za-z0-9_]*)\\s*\\)/',

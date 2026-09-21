@@ -21,10 +21,13 @@ namespace OCA\EtherpadNextcloud\Util;
  *
  * What earns an entry is not how secret an argument reads but whether it
  * can still be read once the app has lost the exception: credentials,
- * and the documents on the routes that rethrow rather than handle. It
- * covers the serializer alone - a throwable handed to the logger under
- * any key but 'exception' is normalized elsewhere, where no registration
- * reaches it.
+ * and the documents on the routes that rethrow rather than handle.
+ *
+ * Two limits. It reaches the serializer only, so a throwable logged
+ * under any key but 'exception' is normalized elsewhere and no entry
+ * here applies. And it covers the frames of the class it names, never
+ * the callee's - where a method of Nextcloud's own holds the value, no
+ * list helps and the chain has to be cut instead.
  *
  * A list of names goes stale in silence, so SensitiveMethodsTest checks
  * that every entry still resolves.
@@ -34,16 +37,12 @@ final class SensitiveMethods {
 	public const ALL = [
 		// A live session id, which deleteSession takes as a plain string,
 		// and whole pads on their way to Etherpad. The api key needs no
-		// entry here: it travels as ApiKey and leaves as a stream, so no
-		// frame of this class holds it - measured, not assumed. Where one
-		// does hold it, a list is no answer anyway: the frame belongs to
-		// whoever was called, and a registration only covers its own.
+		// entry: it travels as ApiKey and leaves as a stream, so no frame
+		// here holds it - measured, not assumed.
 		\OCA\EtherpadNextcloud\Service\EtherpadClient::class => [
 			'deleteSession', 'setText', 'setHTML', 'apiCall', 'sendRequest', 'formBody',
 		],
-		// The document itself, as arguments. Not logging the exception is
-		// no answer here: these failures are rethrown, and Nextcloud
-		// serializes what it catches with every frame it finds.
+		// The document itself, as an argument.
 		\OCA\EtherpadNextcloud\Service\ManagedPadLifecycle::class => ['seed'],
 		// And on its way out of the file, which is the half a pad travels
 		// when a trash or restore listener rethrows what it caught.
@@ -51,9 +50,8 @@ final class SensitiveMethods {
 			'parsePadFile', 'readPad', 'serialize',
 			'withExportSnapshot', 'withRestoredSnapshot', 'buildSnapshotBody',
 		],
-		// The same document one frame further on, where it is handed to the
-		// file rather than parsed out of it. These are the frames a locked
-		// or failing write leaves behind, and both trash listeners rethrow.
+		// The same document one frame on, handed to the file rather than
+		// parsed out of it: what a locked or failing write leaves behind.
 		\OCA\EtherpadNextcloud\Service\LifecycleService::class => ['writeRestoredContent'],
 		\OCA\EtherpadNextcloud\Service\PadFileLockRetryService::class => ['putContentWithSyncLockRetry'],
 		\OCA\EtherpadNextcloud\Service\PadCreationService::class => ['writeCreatedFile'],

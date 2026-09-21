@@ -12,16 +12,13 @@ namespace OCA\EtherpadNextcloud\Util;
 /**
  * The Etherpad api key, carried so that a stack trace cannot print it.
  *
- * Nextcloud serializes an exception by walking its frames and expanding
- * each argument - scalars verbatim, objects through get_object_vars(),
- * which from outside the class yields only public properties. A private
- * one therefore serializes as `{}`, while the same value passed as a
- * string or inside an array is written to the log in full.
+ * Nextcloud expands each frame argument when it serializes an exception:
+ * a string verbatim, an object through get_object_vars(), which from
+ * outside yields only public properties. A private one is therefore `{}`.
  *
- * Deliberately not stringable. Interpolating it where reveal() was meant
- * would then send `***` as the key and Etherpad would answer "no or
- * wrong API Key" - a credential problem that does not exist. Without it
- * the same mistake stops at the line that made it.
+ * Deliberately not stringable. A __toString returning `***` would send
+ * that as the key where reveal() was meant, and Etherpad would answer
+ * "no or wrong API Key" - a credential problem that does not exist.
  */
 final class ApiKey {
 	private readonly string $value;

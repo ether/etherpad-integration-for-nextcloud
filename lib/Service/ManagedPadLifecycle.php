@@ -81,11 +81,8 @@ class ManagedPadLifecycle {
 				try {
 					$this->etherpadClient->deletePad($padId);
 				} catch (\Throwable $cleanupError) {
-					// The pad id, against the rule everywhere else: nothing
-					// persisted it - no binding row was written - so without
-					// it the pad left behind on the server cannot be found
-					// again by any means. An orphan nobody can reach is the
-					// worse outcome.
+					// Against the rule everywhere else: no binding row was
+					// written, so nothing else can name the pad left behind.
 					$this->logger->warning('Could not remove the Etherpad pad after its creation failed.', [
 						'app' => 'etherpad_nextcloud',
 						'padId' => $padId,

@@ -31,11 +31,10 @@ class DiagnosticText {
 	}
 
 	/**
-	 * Where a url points, and nothing else. An admin-supplied address can
-	 * carry credentials in its userinfo, a token in its query and a pad id
-	 * in its path - and for a public pad the path is itself the
-	 * permission. Callers already log the file or pad the address belongs
-	 * to, so the host is what a log is missing.
+	 * Where a url points, and nothing else. An address can carry
+	 * credentials in its userinfo, a token in its query and a pad id in
+	 * its path, which for a public pad is itself the permission. Callers
+	 * log what the address belongs to, so the host is what is missing.
 	 */
 	public static function hostOf(string $url): string {
 		$trimmed = trim($url);
@@ -46,10 +45,9 @@ class DiagnosticText {
 			return $scheme . $parts['host'] . $port;
 		}
 
-		// Nothing is read back. Whatever parse_url could not take apart can
-		// still hold credentials, a token or a pad path, and picking those
-		// out of a string no parser understood is guesswork - the caller
-		// logs the file this address came with.
+		// Nothing is read back: what parse_url could not take apart may
+		// still hold any of those, and picking them out of a string no
+		// parser understood is guesswork.
 		return '(invalid URL)';
 	}
 
