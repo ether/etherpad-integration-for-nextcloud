@@ -19,13 +19,21 @@ use Psr\Log\LoggerInterface;
  * including log(), which takes the level as an argument.
  */
 trait WatchesTheWholeLogger {
-	private const LOGGER_SURFACE = [
-		'emergency', 'alert', 'critical', 'error',
-		'warning', 'notice', 'info', 'debug', 'log',
-	];
+	/**
+	 * A method rather than a constant: the app supports PHP 8.1, where a
+	 * trait cannot hold one.
+	 *
+	 * @return list<string>
+	 */
+	private function loggerSurface(): array {
+		return [
+			'emergency', 'alert', 'critical', 'error',
+			'warning', 'notice', 'info', 'debug', 'log',
+		];
+	}
 
 	private function closeEveryLevelExcept(LoggerInterface&MockObject $logger, string $kept): void {
-		foreach (self::LOGGER_SURFACE as $level) {
+		foreach ($this->loggerSurface() as $level) {
 			if ($level !== $kept) {
 				$logger->expects($this->never())->method($level);
 			}
