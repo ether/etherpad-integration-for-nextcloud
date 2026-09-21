@@ -46,11 +46,11 @@ class DiagnosticText {
 			return $scheme . $parts['host'] . $port;
 		}
 
-		// No host to read - which is the shape the one caller logging this
-		// is reporting on, so saying nothing would erase the diagnosis.
-		// Enough of it to recognise, without the parts that carry secrets.
-		$withoutSecrets = preg_replace('/^[^\/@]*@/', '', (string)preg_replace('/[?#].*$/', '', $trimmed));
-		return $withoutSecrets === '' ? '(no host)' : self::shorten($withoutSecrets, 60);
+		// Nothing is read back. Whatever parse_url could not take apart can
+		// still hold credentials, a token or a pad path, and picking those
+		// out of a string no parser understood is guesswork - the caller
+		// logs the file this address came with.
+		return '(invalid URL)';
 	}
 
 	/**

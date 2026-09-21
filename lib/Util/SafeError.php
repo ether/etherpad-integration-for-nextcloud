@@ -48,18 +48,26 @@ final class SafeError {
 	 * @return array{error: string, error_message: string, error_origin: string}
 	 */
 	public static function context(\Throwable $e, array $secrets = []): array {
-		$scrub = static function (string $text) use ($secrets): string {
-			foreach ($secrets as $secret) {
-				$text = DiagnosticText::withoutSecret($text, $secret);
-			}
-			return $text;
-		};
-
 		return [
 			'error' => get_class($e),
-			'error_message' => $scrub(DiagnosticText::shorten($e->getMessage(), self::MESSAGE_MAX_LENGTH)),
-			'error_origin' => $scrub(self::originOf($e)),
+			'error_message' => self::readable($e->getMessage(), $secrets),
+			'error_origin' => self::originOf($e, $secrets),
 		];
+	}
+
+	/**
+	 * One message, fit for a log. Redacted before it is cut, and cut per
+	 * message rather than over the assembled line: a secret straddling the
+	 * cut is no longer whole for str_replace to find, and its prefix would
+	 * travel on.
+	 *
+	 * @param list<string> $secrets
+	 */
+	private static function readable(string $message, array $secrets): string {
+		foreach ($secrets as $secret) {
+			$message = DiagnosticText::withoutSecret($message, $secret);
+		}
+		return DiagnosticText::shorten($message, self::MESSAGE_MAX_LENGTH);
 	}
 
 	/**
@@ -75,14 +83,16 @@ final class SafeError {
 	 * trace begins where its exception was constructed, so a wrapper's
 	 * trace starts at the catch and walks back through the callers - the
 	 * frames that produced the failure are only in the one thrown there.
+	 *
+	 * @param list<string> $secrets
 	 */
-	public static function originOf(\Throwable $e): string {
+	public static function originOf(\Throwable $e, array $secrets = []): string {
 		$origin = [];
 		$current = $e;
 		$innermost = $e;
 		for ($link = 0; $current !== null && $link < self::CHAIN_LINKS; $link++) {
 			$origin[] = get_class($current) . ' at ' . $current->getFile() . ':' . $current->getLine()
-				. ' - ' . DiagnosticText::shorten($current->getMessage(), self::MESSAGE_MAX_LENGTH);
+				. ' - ' . self::readable($current->getMessage(), $secrets);
 			$innermost = $current;
 			$current = $current->getPrevious();
 		}

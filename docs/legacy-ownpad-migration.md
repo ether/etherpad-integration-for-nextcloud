@@ -52,12 +52,17 @@ Every branch emits a single log line at `info` level (or `warning` for the refus
 | Field | Meaning |
 |---|---|
 | `fileId` | NC file ID being migrated |
-| `sourceUrl` | URL parsed from the legacy shortcut |
+| `sourceHost` | Scheme and host of the legacy shortcut's URL |
 | `originBranch` | `same` or `cross` |
 | `accessMode` | `public` / `protected` / unset for cross-origin |
-| `padId` | Source pad-id (same as new pad-id in same-origin re-bind) |
 | `collision` | `none` / `with_access` / `no_access` / `self` |
 | `uid` | Migrating user |
+
+Neither the URL nor the pad id is written out. A legacy shortcut can carry
+credentials in its userinfo and a token in its query, and for a public pad the
+path is the permission - `sourceHost` plus the pad id would put that link back
+together. To go from a log line to the pad, read `pad_id` from `ep_pad_bindings`
+for that `file_id`.
 
 Grep `app:etherpad_nextcloud` + `legacy Ownpad` in `nextcloud.log` to reconstruct what was imported when. `Migrated legacy Ownpad` alone finds the successes only - both refusals are worded `Refused legacy Ownpad migration`.
 

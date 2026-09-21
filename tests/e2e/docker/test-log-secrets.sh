@@ -37,6 +37,10 @@ restore_stack() {
 	set +e
 	if [[ -n "$saved_api_host" ]]; then
 		occ config:app:set etherpad_nextcloud etherpad_api_host --value="$saved_api_host" >/dev/null
+	else
+		# Unset before, and unset again: left behind, the unroutable host
+		# would stand in for the fallback to etherpad_host for good.
+		occ config:app:delete etherpad_nextcloud etherpad_api_host >/dev/null
 	fi
 	if [[ -n "$saved_cookie_mode" ]]; then
 		occ config:app:set etherpad_nextcloud etherpad_http_only_session_cookie --value="$saved_cookie_mode" >/dev/null

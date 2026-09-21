@@ -146,22 +146,6 @@ class BindingService {
 		return $rows;
 	}
 
-	public function hasFileCacheEntry(int $fileId): bool {
-		$qb = $this->db->getQueryBuilder();
-		$qb->selectAlias($qb->createFunction('COUNT(*)'), 'cnt')
-			->from('filecache')
-			->where($qb->expr()->eq('fileid', $qb->createNamedParameter($fileId, IQueryBuilder::PARAM_INT)))
-			->setMaxResults(1);
-
-		$result = $qb->executeQuery();
-		$row = $result->fetch();
-		$result->closeCursor();
-
-		if (!is_array($row) || !isset($row['cnt'])) {
-			return false;
-		}
-		return (int)$row['cnt'] > 0;
-	}
 
 	public function createBinding(int $fileId, string $padId, string $accessMode): void {
 		$this->assertAccessMode($accessMode);

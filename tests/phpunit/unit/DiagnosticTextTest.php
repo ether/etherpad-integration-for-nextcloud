@@ -35,13 +35,14 @@ class DiagnosticTextTest extends TestCase {
 		// For a public pad the path is the permission, so it goes too.
 		yield 'pad id in the path' => ['https://pad.example.test/p/g.abc$private', 'https://pad.example.test'];
 		yield 'a port is kept' => ['http://pad.example.test:9001/p/x', 'http://pad.example.test:9001'];
-		// No host to read is the shape the one caller reports on, so enough
-		// is kept to recognise it - without the parts that carry secrets.
-		yield 'schemeless' => ['pad.example.test/p/x', 'pad.example.test/p/x'];
-		yield 'schemeless with credentials' => ['bob:hunter2@pad.example.test/p/x', 'pad.example.test/p/x'];
-		yield 'schemeless with a token' => ['pad.example.test/p/x?token=secret', 'pad.example.test/p/x'];
-		yield 'nothing at all' => ['   ', '(no host)'];
-		yield 'empty' => ['', '(no host)'];
+		// Nothing parse_url could not take apart is read back: such a
+		// string can still hold credentials, a token or a pad path, and
+		// picking those out of it is guesswork.
+		yield 'schemeless' => ['pad.example.test/p/x', '(invalid URL)'];
+		yield 'schemeless with credentials' => ['bob:hunter2@pad.example.test/p/x', '(invalid URL)'];
+		yield 'a port no parser accepts' => ['https://bob:pw@pad.example:999999/p/private', '(invalid URL)'];
+		yield 'nothing at all' => ['   ', '(invalid URL)'];
+		yield 'empty' => ['', '(invalid URL)'];
 	}
 
 	#[\PHPUnit\Framework\Attributes\DataProvider('urlProvider')]

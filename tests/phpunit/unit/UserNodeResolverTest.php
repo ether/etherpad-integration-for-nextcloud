@@ -17,7 +17,6 @@ use OCP\Files\NotPermittedException;
 use OCP\Files\StorageNotAvailableException;
 use OC\User\NoUserException;
 use PHPUnit\Framework\TestCase;
-use Psr\Log\LoggerInterface;
 
 class UserNodeResolverTest extends TestCase {
 	/**
@@ -38,7 +37,7 @@ class UserNodeResolverTest extends TestCase {
 		$rootFolder->method('getById')->willThrowException(
 			new \LogicException('An id must be resolved through the user folder, not the global root.')
 		);
-		return new UserNodeResolver($rootFolder, $this->createMock(LoggerInterface::class));
+		return new UserNodeResolver($rootFolder);
 	}
 
 	/**
@@ -50,7 +49,7 @@ class UserNodeResolverTest extends TestCase {
 		};
 		$rootFolder = $this->createMock(IRootFolder::class);
 		$rootFolder->method('getUserFolder')->willThrowException($thrown);
-		$resolver = new UserNodeResolver($rootFolder, $this->createMock(LoggerInterface::class));
+		$resolver = new UserNodeResolver($rootFolder);
 
 		$this->expectException(NotFoundException::class);
 		$resolver->resolveUserFileNodeById('alice', 138);
@@ -64,7 +63,7 @@ class UserNodeResolverTest extends TestCase {
 	public function testLeavesAnUnavailableStorageAlone(): void {
 		$rootFolder = $this->createMock(IRootFolder::class);
 		$rootFolder->method('getUserFolder')->willThrowException(new StorageNotAvailableException('down'));
-		$resolver = new UserNodeResolver($rootFolder, $this->createMock(LoggerInterface::class));
+		$resolver = new UserNodeResolver($rootFolder);
 
 		$this->expectException(StorageNotAvailableException::class);
 		$resolver->resolveUserFileNodeById('alice', 138);
@@ -75,7 +74,7 @@ class UserNodeResolverTest extends TestCase {
 		$userFolder->method('get')->willThrowException(new NotPermittedException('denied'));
 		$rootFolder = $this->createMock(IRootFolder::class);
 		$rootFolder->method('getUserFolder')->willReturn($userFolder);
-		$resolver = new UserNodeResolver($rootFolder, $this->createMock(LoggerInterface::class));
+		$resolver = new UserNodeResolver($rootFolder);
 
 		$this->expectException(NotFoundException::class);
 		$resolver->resolveUserFileNodeByPath('alice', '/Notes.pad');
@@ -90,7 +89,7 @@ class UserNodeResolverTest extends TestCase {
 		foreach ([new NoUserException('gone'), new NotPermittedException('denied')] as $thrown) {
 			$rootFolder = $this->createMock(IRootFolder::class);
 			$rootFolder->method('getUserFolder')->willThrowException($thrown);
-			$resolver = new UserNodeResolver($rootFolder, $this->createMock(LoggerInterface::class));
+			$resolver = new UserNodeResolver($rootFolder);
 
 			try {
 				$resolver->resolveUserFileNodeById('alice', 138);
@@ -113,7 +112,7 @@ class UserNodeResolverTest extends TestCase {
 		$rootFolder = $this->createMock(IRootFolder::class);
 		$rootFolder->method('getUserFolder')->willReturn($userFolder);
 
-		$resolver = new UserNodeResolver($rootFolder, $this->createMock(LoggerInterface::class));
+		$resolver = new UserNodeResolver($rootFolder);
 
 		$this->assertSame($userFolder, $resolver->resolveUserFolderNodeById('alice', 7));
 	}
@@ -232,7 +231,7 @@ class UserNodeResolverTest extends TestCase {
 		$rootFolder = $this->createMock(IRootFolder::class);
 		$rootFolder->method('getUserFolder')->with('alice')->willReturn($userFolder);
 
-		$resolver = new UserNodeResolver($rootFolder, $this->createMock(LoggerInterface::class));
+		$resolver = new UserNodeResolver($rootFolder);
 
 		$this->assertSame($writable, $resolver->resolveUserFolderNodeById('alice', 42));
 	}

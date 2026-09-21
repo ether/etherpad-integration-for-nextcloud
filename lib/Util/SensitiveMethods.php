@@ -29,10 +29,17 @@ namespace OCA\EtherpadNextcloud\Util;
 final class SensitiveMethods {
 	/** @var array<class-string, list<string>> */
 	public const ALL = [
-		// A live session id, which deleteSession takes as a plain string.
-		// The api key needs no entry: it travels as ApiKey and leaves as a
-		// stream, so no frame holds it - measured, not assumed.
-		\OCA\EtherpadNextcloud\Service\EtherpadClient::class => ['deleteSession'],
+		// A live session id, which deleteSession takes as a plain string,
+		// and whole pads on their way to Etherpad. The api key needs no
+		// entry: it travels as ApiKey and leaves as a stream, so no frame
+		// holds it - measured, not assumed.
+		\OCA\EtherpadNextcloud\Service\EtherpadClient::class => [
+			'deleteSession', 'setText', 'setHTML', 'apiCall', 'sendRequest',
+		],
+		// The document itself, as arguments. Not logging the exception is
+		// no answer here: these failures are rethrown, and Nextcloud
+		// serializes what it catches with every frame it finds.
+		\OCA\EtherpadNextcloud\Service\ManagedPadLifecycle::class => ['seed'],
 		// The Etherpad session cookie, which is a live credential.
 		\OCA\EtherpadNextcloud\Service\PadSessionService::class => [
 			'buildEtherpadSessionCookie', 'buildSetCookieHeader',

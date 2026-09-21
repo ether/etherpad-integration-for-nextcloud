@@ -323,7 +323,7 @@ class LifecycleService {
 			$snapshot = $snapshotParts['text'];
 			$htmlSnapshot = $snapshotParts['html'];
 
-			$this->padLifecycle->seed($newPadId, $snapshot, $htmlSnapshot, ['fileId' => $fileId, 'oldPadId' => $oldPadId]);
+			$this->padLifecycle->seed($newPadId, $snapshot, $htmlSnapshot, ['fileId' => $fileId]);
 
 			$updatedContent = $this->padFileService->withRestoredSnapshot(
 				$pad,
@@ -445,7 +445,7 @@ class LifecycleService {
 			$htmlSnapshot = $snapshotParts['html'];
 			$newPadId = $this->provisionRestorePadId($accessMode, $oldPadId);
 			$managedPadCreated = true;
-			$this->padLifecycle->seed($newPadId, $snapshot, $htmlSnapshot, ['fileId' => $fileId, 'oldPadId' => $oldPadId]);
+			$this->padLifecycle->seed($newPadId, $snapshot, $htmlSnapshot, ['fileId' => $fileId]);
 			$updatedContent = $this->padFileService->withRestoredSnapshot(
 				$pad,
 				$snapshot,

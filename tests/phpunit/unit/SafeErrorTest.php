@@ -43,6 +43,23 @@ class SafeErrorTest extends TestCase {
 		$this->assertStringNotContainsString('sekrit-value-123', $context['error_origin']);
 	}
 
+	/**
+	 * The cut is what makes a straddling secret unmatchable, so looking for
+	 * the whole value would pass against exactly the defect.
+	 */
+	public function testASecretStraddlingTheCutIsStillRemoved(): void {
+		$secret = 'sekrit-session-abcdefghijklmnop';
+		// Placed so a long piece of it sits on either side of the 400
+		// character cut: with the order reversed, str_replace no longer
+		// finds the whole value and that piece is what survives.
+		$long = str_repeat('x', 360) . ' sessionID=' . $secret . ' ' . str_repeat('y', 60);
+
+		$context = SafeError::context(new \RuntimeException($long), [$secret]);
+
+		$this->assertStringNotContainsString(substr($secret, 0, 12), $context['error_message']);
+		$this->assertStringNotContainsString(substr($secret, 0, 12), $context['error_origin']);
+	}
+
 	private function wrapped(): \Throwable {
 		try {
 			$this->deepestCall();
