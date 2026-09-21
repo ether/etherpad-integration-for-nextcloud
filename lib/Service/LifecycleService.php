@@ -357,8 +357,6 @@ class LifecycleService {
 						$this->logger->warning('Could not rollback .pad content after failed restore.', [
 							'app' => 'etherpad_nextcloud',
 							'fileId' => $fileId,
-							'oldPadId' => $oldPadId,
-							'newPadId' => $newPadId,
 							...SafeError::context($fileRollbackError),
 						]);
 					}
@@ -369,7 +367,6 @@ class LifecycleService {
 					$this->logger->warning('Could not cleanup newly provisioned restore pad after failure.', [
 						'app' => 'etherpad_nextcloud',
 						'fileId' => $fileId,
-						'newPadId' => $newPadId,
 						...SafeError::context($cleanupError),
 					]);
 				}
@@ -378,8 +375,6 @@ class LifecycleService {
 				$this->logger->warning('Restore lifecycle state transition conflict. Returning skipped.', [
 					'app' => 'etherpad_nextcloud',
 					'fileId' => $fileId,
-					'oldPadId' => $oldPadId,
-					'newPadId' => $newPadId,
 					...SafeError::context($e),
 				]);
 				return $this->buildSkippedResult('binding_state_transition_conflict', $fileId, $oldPadId);
@@ -387,7 +382,6 @@ class LifecycleService {
 			$this->logger->error('Restore lifecycle failed. Pad was not fully restored.', [
 				'app' => 'etherpad_nextcloud',
 				'fileId' => $fileId,
-				'newPadId' => $newPadId,
 				...SafeError::context($e),
 			]);
 			throw new LifecycleException('Restore flow failed before completion.', 0, $e);
@@ -425,7 +419,6 @@ class LifecycleService {
 			$this->logger->info('Pad recovered from snapshot.', [
 				'app' => 'etherpad_nextcloud',
 				'fileId' => $fileId,
-				'newPadId' => $result['new_pad_id'] ?? null,
 			]);
 		}
 		return $result;
@@ -433,7 +426,6 @@ class LifecycleService {
 
 	/** @return array{status: string, reason?: string, file_id: int, pad_id?: string, old_pad_id?: string, new_pad_id?: string} */
 	private function restoreWithoutBinding(File $file, int $fileId): array {
-		$oldPadId = '';
 		$newPadId = '';
 		$fileContentUpdated = false;
 		$managedPadCreated = false;
@@ -483,8 +475,6 @@ class LifecycleService {
 			$this->logger->error('Restore lifecycle failed without existing binding.', [
 				'app' => 'etherpad_nextcloud',
 				'fileId' => $fileId,
-				'oldPadId' => $oldPadId,
-				'newPadId' => $newPadId,
 				...SafeError::context($e),
 			]);
 			throw new LifecycleException('Restore flow failed before completion.', 0, $e);
@@ -559,7 +549,6 @@ class LifecycleService {
 			$this->logger->warning('Could not read the binding after a failed restore; leaving the new pad in place.', [
 				'app' => 'etherpad_nextcloud',
 				'fileId' => $fileId,
-				'newPadId' => $newPadId,
 				...SafeError::context($readError),
 			]);
 			return true;
@@ -604,8 +593,6 @@ class LifecycleService {
 			$this->logger->warning('Could not remove the pad a restore replaced. It is no longer referenced.', [
 				'app' => 'etherpad_nextcloud',
 				'fileId' => $fileId,
-				'oldPadId' => $oldPadId,
-				'newPadId' => $newPadId,
 				...SafeError::context($e),
 			]);
 		}

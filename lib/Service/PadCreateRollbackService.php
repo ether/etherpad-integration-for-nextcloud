@@ -51,9 +51,12 @@ class PadCreateRollbackService {
 		try {
 			$this->padLifecycle->discardProvisioned($padId);
 		} catch (\Throwable $cleanupError) {
+			// The file, not the pad: a pad id plus the configured host is a
+			// link into a public pad, and ep_pad_bindings maps the one to
+			// the other for anyone who needs it.
 			$this->logger->warning('Could not cleanup failed Etherpad create', [
 				'app' => 'etherpad_nextcloud',
-				'padId' => $padId,
+				'fileId' => $bindingAttemptFileId,
 				...SafeError::context($cleanupError),
 			]);
 		}

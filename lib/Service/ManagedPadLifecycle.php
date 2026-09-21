@@ -81,9 +81,12 @@ class ManagedPadLifecycle {
 				try {
 					$this->etherpadClient->deletePad($padId);
 				} catch (\Throwable $cleanupError) {
+					// No pad id: this one can be a public pad, whose id plus
+					// the configured host is a link anyone can open. The line
+					// is worth keeping without it - it says an orphan may be
+					// left behind, and the context says where it broke.
 					$this->logger->warning('Could not remove the Etherpad pad after its creation failed.', [
 						'app' => 'etherpad_nextcloud',
-						'padId' => $padId,
 						...SafeError::context($cleanupError),
 					]);
 				}
@@ -146,9 +149,11 @@ class ManagedPadLifecycle {
 				$this->etherpadClient->setHTML($padId, $html);
 				return;
 			} catch (\Throwable $htmlError) {
+				// Every caller supplies a fileId in $context, which is the
+				// handle to keep: a pad id plus the configured host is a
+				// working link into a public pad.
 				$this->logger->warning('Could not import the HTML snapshot; falling back to plain text.', [
 					'app' => 'etherpad_nextcloud',
-					'padId' => $padId,
 					...SafeError::context($htmlError),
 				] + $context);
 			}
@@ -227,6 +232,9 @@ class ManagedPadLifecycle {
 			// Worth a line: this removed a group, its pad and every session
 			// issued for it, and an admin tracing a vanished pad has nothing
 			// else to go on.
+			// The pad id stays here and in the two lines below: these are
+			// group pads, and a group pad's url opens for nobody without a
+			// session, so it is a name rather than a way in.
 			$this->logger->debug('Removed the Etherpad group holding a protected pad.', [
 				'app' => 'etherpad_nextcloud',
 				'padId' => $padId,
