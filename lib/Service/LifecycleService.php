@@ -271,11 +271,10 @@ class LifecycleService {
 			]);
 			return $this->buildSkippedResult('binding_state_transition_conflict', $fileId, $padId);
 		} catch (\Throwable $e) {
-			$this->logger->error('Trash lifecycle failed. Snapshot/delete aborted.', [
-				'app' => 'etherpad_nextcloud',
-				'fileId' => $fileId,
-				...SafeError::context($e),
-			]);
+			// Not reported here. Every caller catches to log, and a caller
+			// also sees the ways out that end above this try - reporting
+			// from in here would be the same failure a second time, from
+			// the one of the two places that cannot see all of them.
 			throw new LifecycleException('Trash flow failed before completion.', 0, $e);
 		}
 	}
@@ -382,11 +381,6 @@ class LifecycleService {
 				]);
 				return $this->buildSkippedResult('binding_state_transition_conflict', $fileId, $oldPadId);
 			}
-			$this->logger->error('Restore lifecycle failed. Pad was not fully restored.', [
-				'app' => 'etherpad_nextcloud',
-				'fileId' => $fileId,
-				...SafeError::context($e),
-			]);
 			throw new LifecycleException('Restore flow failed before completion.', 0, $e);
 		}
 
@@ -475,11 +469,6 @@ class LifecycleService {
 			if ($managedPadCreated && $newPadId !== '' && !$fileContentUpdated) {
 				$this->unwindUnwrittenRestore($fileId, $newPadId);
 			}
-			$this->logger->error('Restore lifecycle failed without existing binding.', [
-				'app' => 'etherpad_nextcloud',
-				'fileId' => $fileId,
-				...SafeError::context($e),
-			]);
 			throw new LifecycleException('Restore flow failed before completion.', 0, $e);
 		}
 	}

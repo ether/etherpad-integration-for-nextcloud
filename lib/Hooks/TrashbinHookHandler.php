@@ -11,8 +11,6 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\Hooks;
 
 use OCA\EtherpadNextcloud\Listeners\RestoreFromTrashListener;
-use OCA\EtherpadNextcloud\Util\SafeError;
-use Psr\Log\LoggerInterface;
 
 /**
  * @psalm-api
@@ -22,14 +20,10 @@ class TrashbinHookHandler {
 	 * @param array<string,mixed> $params
 	 */
 	public static function postRestore(array $params): void {
-		try {
-			\OCP\Server::get(RestoreFromTrashListener::class)->handleLegacyHook($params);
-		} catch (\Throwable $e) {
-			\OCP\Server::get(LoggerInterface::class)->error('Legacy trashbin restore hook failed.', [
-				'app' => 'etherpad_nextcloud',
-				...SafeError::context($e),
-			]);
-			throw $e;
-		}
+		// No catch: the listener reports what it could not do, and a second
+		// entry here would be that same failure again. What is left to fail
+		// in this frame is the lookup, which is Nextcloud's own and is
+		// reported by whoever could not answer it.
+		\OCP\Server::get(RestoreFromTrashListener::class)->handleLegacyHook($params);
 	}
 }

@@ -5,7 +5,10 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\Tests\Unit;
 
 use OCA\EtherpadNextcloud\Listeners\RestoreFromTrashListener;
+use OCA\EtherpadNextcloud\Exception\LifecycleException;
+use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\EtherpadNextcloud\Service\LifecycleService;
+use OCA\EtherpadNextcloud\Tests\Support\WiresALifecycleService;
 use OCP\EventDispatcher\Event;
 use OCP\Files\File;
 use OCP\Files\Folder;
@@ -17,6 +20,82 @@ use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 
 class RestoreFromTrashListenerTest extends TestCase {
+	use WiresALifecycleService;
+
+	/**
+	 * One failure, one entry. The flow no longer reports its own, because
+	 * it cannot see the ways out that end above its try; the caller can,
+	 * and does. Both halves have to be watched by the same logger, or the
+	 * test agrees with any arrangement of the two - and the failure has to
+	 * be raised inside the flow's try, because that is where the entry
+	 * that was removed used to be written.
+	 *
+	 * A real service rather than a mock: a mocked one has no inside.
+	 */
+	public function testAFlowFailureIsReportedOnceAndOnlyByTheCaller(): void {
+		$fileId = 4711;
+		$boom = new \RuntimeException('the storage went away');
+
+		$bindingService = $this->createMock(BindingService::class);
+		$bindingService->method('findByFileId')->willReturn([
+			'file_id' => $fileId,
+			'pad_id' => 'old-pad',
+			'access_mode' => BindingService::ACCESS_PUBLIC,
+			'state' => BindingService::STATE_PENDING_DELETE,
+		]);
+
+		$file = $this->createMock(File::class);
+		$file->method('getId')->willReturn($fileId);
+		$file->method('getName')->willReturn('Notes.pad');
+		// Inside restoreFlow's own try, which is where the removed entry
+		// was written and the only place it could ever have fired.
+		$file->method('getContent')->willThrowException($boom);
+
+		$logger = $this->createMock(LoggerInterface::class);
+		$this->closeEveryLevelExcept($logger, 'error');
+		$logger->expects($this->once())
+			->method('error')
+			->with(
+				$this->anything(),
+				$this->callback(function (array $context) use ($fileId, $boom): bool {
+					$this->assertSame($fileId, $context['fileId']);
+					// The cause, not just the wrapper the flow threw.
+					$this->assertStringContainsString($boom->getMessage(), $context['error_origin']);
+					return true;
+				}),
+			);
+
+		$listener = new RestoreFromTrashListener(
+			$this->lifecycleServiceOver($bindingService, $logger),
+			$this->createMock(IUserSession::class),
+			$this->createMock(IRootFolder::class),
+			$logger,
+		);
+
+		$this->expectException(LifecycleException::class);
+		$listener->handle($this->restoreEventFor($file));
+	}
+
+	/** Every reporting level but one, so a repeat cannot hide on another. */
+	private function closeEveryLevelExcept(LoggerInterface&\PHPUnit\Framework\MockObject\MockObject $logger, string $kept): void {
+		foreach (['emergency', 'alert', 'critical', 'error', 'warning', 'notice', 'info', 'debug', 'log'] as $level) {
+			if ($level !== $kept) {
+				$logger->expects($this->never())->method($level);
+			}
+		}
+	}
+
+	private function restoreEventFor(File $file): Event {
+		return new class($file) extends Event {
+			public function __construct(private File $file) {
+			}
+
+			public function getTarget(): File {
+				return $this->file;
+			}
+		};
+	}
+
 	public function testTypedRestoreEventRestoresTargetFile(): void {
 		$file = $this->createMock(File::class);
 		$file->method('getId')->willReturn(42);
