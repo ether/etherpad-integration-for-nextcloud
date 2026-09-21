@@ -13,6 +13,7 @@ use OCA\EtherpadNextcloud\Exception\LifecycleException;
 use OCA\EtherpadNextcloud\Listeners\MoveToTrashListener;
 use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\EtherpadNextcloud\Service\LifecycleService;
+use OCA\EtherpadNextcloud\Tests\Support\WatchesTheWholeLogger;
 use OCA\EtherpadNextcloud\Tests\Support\WiresALifecycleService;
 use OCP\EventDispatcher\Event;
 use OCP\Files\File;
@@ -26,6 +27,7 @@ use Psr\Log\LoggerInterface;
  * thing standing between one and the log.
  */
 class MoveToTrashListenerTest extends TestCase {
+	use WatchesTheWholeLogger;
 	use WiresALifecycleService;
 
 	public function testAFlowFailureIsReportedOnceAndPassedOn(): void {
@@ -46,6 +48,7 @@ class MoveToTrashListenerTest extends TestCase {
 		$file->method('getContent')->willThrowException($boom);
 
 		$logger = $this->createMock(LoggerInterface::class);
+		$this->closeEveryLevelExcept($logger, 'error');
 		$logger->expects($this->once())
 			->method('error')
 			->with(
@@ -73,6 +76,7 @@ class MoveToTrashListenerTest extends TestCase {
 		$file->method('getId')->willThrowException(new NotFoundException());
 
 		$logger = $this->createMock(LoggerInterface::class);
+		$this->closeEveryLevelExcept($logger, 'error');
 		$logger->expects($this->once())
 			->method('error')
 			->with(
