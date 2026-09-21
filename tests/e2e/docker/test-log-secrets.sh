@@ -21,27 +21,46 @@ source "$here/stack-env.sh"
 require_stack_env E2E_USER
 
 marker="log-secret-probe-$$-$(date +%s)"
+# TEST-NET-1, and a different address every run: the release probe claims
+# itself in a distributed cache under a key derived from the host, so a
+# claim left by a run in the last minute would make this one skip.
+unroutable="http://192.0.2.$((RANDOM % 250 + 1)):9"
+
+# occ from the shell, not a finally in the probe: a fatal or an OOM kill
+# ends php without unwinding, and a stack left pointing at an unroutable
+# api host fails every protected-pad test after this one.
+# `|| true`: occ exits non-zero for a key that is not set, and an unset
+# override is the ordinary case.
+saved_api_host="$(occ config:app:get etherpad_nextcloud etherpad_api_host 2>/dev/null | tr -d '\r\n' || true)"
+saved_cookie_mode="$(occ config:app:get etherpad_nextcloud etherpad_http_only_session_cookie 2>/dev/null | tr -d '\r\n' || true)"
+restore_stack() {
+	set +e
+	if [[ -n "$saved_api_host" ]]; then
+		occ config:app:set etherpad_nextcloud etherpad_api_host --value="$saved_api_host" >/dev/null
+	fi
+	if [[ -n "$saved_cookie_mode" ]]; then
+		occ config:app:set etherpad_nextcloud etherpad_http_only_session_cookie --value="$saved_cookie_mode" >/dev/null
+	else
+		occ config:app:delete etherpad_nextcloud etherpad_http_only_session_cookie >/dev/null
+	fi
+	occ config:app:delete etherpad_nextcloud etherpad_release_state >/dev/null
+	occ config:app:delete etherpad_nextcloud etherpad_release_failed >/dev/null
+}
+trap restore_stack EXIT
+
+# An override short-circuits supportsHttpOnlySessionCookie() before it
+# ever probes, and the protected-cookie spec sets one.
+occ config:app:delete etherpad_nextcloud etherpad_http_only_session_cookie >/dev/null
+occ config:app:set etherpad_nextcloud etherpad_api_host --value="$unroutable" >/dev/null
 
 probe=$(cat <<PHP
 <?php
 require '/var/www/html/lib/base.php';
 \OC_App::loadApp('etherpad_nextcloud');
-\$config = \OCP\Server::get(\OCP\IConfig::class);
-\$restore = \$config->getAppValue('etherpad_nextcloud', 'etherpad_api_host', '');
-try {
-    // An unroutable api host is what makes the /health probe fail.
-    \$config->setAppValue('etherpad_nextcloud', 'etherpad_api_host', 'http://127.0.0.1:9');
-    \$config->deleteAppValue('etherpad_nextcloud', 'etherpad_release_state');
-    \$config->deleteAppValue('etherpad_nextcloud', 'etherpad_release_failed');
-    \$service = \OCP\Server::get(\OCA\EtherpadNextcloud\Service\PadSessionService::class);
-    \$method = new ReflectionMethod(\$service, 'buildEtherpadSessionCookie');
-    \$method->setAccessible(true);
-    \$method->invoke(\$service, ['value' => '${marker}', 'expires' => time() + 3600]);
-} finally {
-    \$config->setAppValue('etherpad_nextcloud', 'etherpad_api_host', \$restore);
-    \$config->deleteAppValue('etherpad_nextcloud', 'etherpad_release_state');
-    \$config->deleteAppValue('etherpad_nextcloud', 'etherpad_release_failed');
-}
+\$service = \OCP\Server::get(\OCA\EtherpadNextcloud\Service\PadSessionService::class);
+\$method = new ReflectionMethod(\$service, 'buildEtherpadSessionCookie');
+\$method->setAccessible(true);
+\$method->invoke(\$service, ['value' => '${marker}', 'expires' => time() + 3600]);
 PHP
 )
 

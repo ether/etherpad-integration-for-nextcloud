@@ -455,7 +455,17 @@ class EtherpadClient {
 		$options['body'] = $this->formBody($params, $apiKey);
 		$options['headers']['Content-Type'] = 'application/x-www-form-urlencoded';
 
-		$response = $this->doRequest('POST', $url, $options);
+		try {
+			$response = $this->doRequest('POST', $url, $options);
+		} catch (\Throwable $e) {
+			// The handle is Guzzle's once the request is under way, and
+			// ours until then - a throw before that would leave it and its
+			// temp file open for the rest of the request.
+			if (is_resource($options['body'])) {
+				fclose($options['body']);
+			}
+			throw $e;
+		}
 		$statusCode = $response->getStatusCode();
 		if ($statusCode >= 400) {
 			throw new EtherpadClientException('Etherpad API HTTP error (' . $statusCode . ')');

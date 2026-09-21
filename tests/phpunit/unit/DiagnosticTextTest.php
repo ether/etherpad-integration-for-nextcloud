@@ -35,7 +35,12 @@ class DiagnosticTextTest extends TestCase {
 		// For a public pad the path is the permission, so it goes too.
 		yield 'pad id in the path' => ['https://pad.example.test/p/g.abc$private', 'https://pad.example.test'];
 		yield 'a port is kept' => ['http://pad.example.test:9001/p/x', 'http://pad.example.test:9001'];
-		yield 'nothing to read' => ['not a url at all', '(no host)'];
+		// No host to read is the shape the one caller reports on, so enough
+		// is kept to recognise it - without the parts that carry secrets.
+		yield 'schemeless' => ['pad.example.test/p/x', 'pad.example.test/p/x'];
+		yield 'schemeless with credentials' => ['bob:hunter2@pad.example.test/p/x', 'pad.example.test/p/x'];
+		yield 'schemeless with a token' => ['pad.example.test/p/x?token=secret', 'pad.example.test/p/x'];
+		yield 'nothing at all' => ['   ', '(no host)'];
 		yield 'empty' => ['', '(no host)'];
 	}
 

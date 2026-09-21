@@ -17,6 +17,11 @@ namespace OCA\EtherpadNextcloud\Util;
  * which from outside the class yields only public properties. A private
  * one therefore serializes as `{}`, while the same value passed as a
  * string or inside an array is written to the log in full.
+ *
+ * Deliberately not stringable. Interpolating it where reveal() was meant
+ * would then send `***` as the key and Etherpad would answer "no or
+ * wrong API Key" - a credential problem that does not exist. Without it
+ * the same mistake stops at the line that made it.
  */
 final class ApiKey {
 	public function __construct(private readonly string $value) {
@@ -24,10 +29,5 @@ final class ApiKey {
 
 	public function reveal(): string {
 		return $this->value;
-	}
-
-	/** So an accidental interpolation cannot put the key in a message. */
-	public function __toString(): string {
-		return '***';
 	}
 }

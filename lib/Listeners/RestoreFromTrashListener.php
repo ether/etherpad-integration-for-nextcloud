@@ -174,7 +174,7 @@ class RestoreFromTrashListener implements IEventListener {
 			$context['filePath'] = $path;
 		}
 		if ($e !== null) {
-			$context['exception'] = $e;
+			$context = array_merge($context, SafeError::context($e));
 		}
 		$this->logger->warning('RestoreFromTrash listener skipped a restored node.', $context);
 	}

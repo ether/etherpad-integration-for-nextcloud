@@ -38,13 +38,19 @@ class DiagnosticText {
 	 * to, so the host is what a log is missing.
 	 */
 	public static function hostOf(string $url): string {
-		$parts = parse_url(trim($url));
-		if (!is_array($parts) || !isset($parts['host'])) {
-			return '(no host)';
+		$trimmed = trim($url);
+		$parts = parse_url($trimmed);
+		if (is_array($parts) && isset($parts['host'])) {
+			$scheme = isset($parts['scheme']) ? $parts['scheme'] . '://' : '';
+			$port = isset($parts['port']) ? ':' . $parts['port'] : '';
+			return $scheme . $parts['host'] . $port;
 		}
-		$scheme = isset($parts['scheme']) ? $parts['scheme'] . '://' : '';
-		$port = isset($parts['port']) ? ':' . $parts['port'] : '';
-		return $scheme . $parts['host'] . $port;
+
+		// No host to read - which is the shape the one caller logging this
+		// is reporting on, so saying nothing would erase the diagnosis.
+		// Enough of it to recognise, without the parts that carry secrets.
+		$withoutSecrets = preg_replace('/^[^\/@]*@/', '', (string)preg_replace('/[?#].*$/', '', $trimmed));
+		return $withoutSecrets === '' ? '(no host)' : self::shorten($withoutSecrets, 60);
 	}
 
 	/**

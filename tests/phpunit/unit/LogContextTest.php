@@ -23,19 +23,35 @@ use PHPUnit\Framework\TestCase;
  * stays a matter of reading the line.
  */
 class LogContextTest extends TestCase {
+	/**
+	 * Either quoting, any spacing, and assignment as well as a literal - a
+	 * rule that only knows one spelling is a rule the next person writes
+	 * around without meaning to.
+	 */
+	private const CARRIES_AN_EXCEPTION = '/([\'"])exception\\1\\s*(=>|\\]\\s*=)/';
+
+	/** Every php file the app ships, not just the ones under lib. */
+	private const SEARCHED = ['lib', 'appinfo', 'templates'];
+
 	public function testNoLoggerContextCarriesAnExceptionObject(): void {
 		$offenders = [];
-		$root = dirname(__DIR__, 3) . '/lib';
-		/** @var iterable<\SplFileInfo> $files */
-		$files = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($root));
-		foreach ($files as $file) {
-			if ($file->getExtension() !== 'php') {
+		$repository = dirname(__DIR__, 3);
+		foreach (self::SEARCHED as $directory) {
+			$root = $repository . '/' . $directory;
+			if (!is_dir($root)) {
 				continue;
 			}
-			$source = (string)file_get_contents($file->getPathname());
-			foreach (explode("\n", $source) as $number => $line) {
-				if (str_contains($line, "'exception' =>")) {
-					$offenders[] = substr($file->getPathname(), strlen($root) + 1) . ':' . ($number + 1);
+			/** @var iterable<\SplFileInfo> $files */
+			$files = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($root));
+			foreach ($files as $file) {
+				if ($file->getExtension() !== 'php') {
+					continue;
+				}
+				$source = (string)file_get_contents($file->getPathname());
+				foreach (explode("\n", $source) as $number => $line) {
+					if (preg_match(self::CARRIES_AN_EXCEPTION, $line) === 1) {
+						$offenders[] = substr($file->getPathname(), strlen($repository) + 1) . ':' . ($number + 1);
+					}
 				}
 			}
 		}

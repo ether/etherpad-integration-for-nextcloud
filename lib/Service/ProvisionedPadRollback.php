@@ -48,7 +48,6 @@ class ProvisionedPadRollback {
 		$context = [
 			'app' => 'etherpad_nextcloud',
 			'fileId' => $fileId,
-			'padId' => $padId,
 			'operation' => $operation,
 		];
 
@@ -70,7 +69,7 @@ class ProvisionedPadRollback {
 			// Without an answer nothing is destroyed: a pad whose row may
 			// still name it is reachable, an orphan is only wasted.
 			$this->logger->warning('Could not read or remove the binding while rolling back; keeping its pad.',
-				$context + [...SafeError::context($bindingError)]);
+				array_merge($context, SafeError::context($bindingError)));
 			return;
 		}
 
@@ -78,7 +77,7 @@ class ProvisionedPadRollback {
 			$this->padLifecycle->discardProvisioned($padId);
 		} catch (\Throwable $cleanupError) {
 			$this->logger->warning('Could not remove the Etherpad pad while rolling back.',
-				$context + [...SafeError::context($cleanupError)]);
+				array_merge($context, SafeError::context($cleanupError)));
 		}
 	}
 }
