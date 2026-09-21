@@ -4,16 +4,29 @@
 # Modeled on https://github.com/nextcloud/notes/blob/main/.github/workflows/lint-php.yml
 # Parse-lint every PHP file with the lowest supported PHP toolchain, then
 # repeat on the highest to catch version-specific syntax issues.
+#
+# Which files, and why that set, is in scripts/lint-php.sh - the same
+# script a developer can run before pushing, so the two cannot disagree.
 
 name: Lint PHP
 
-on: pull_request
+# Pushes as well as pull requests: a tag is what gets released, and a
+# push to main is what a tag is cut from, so both have to have been
+# parsed on the floor before anyone can ship them.
+on:
+  pull_request:
+  push:
+    branches: [main]
+    tags: ['v*']
 
 permissions:
   contents: read
 
+# Keyed on github.ref, as every workflow here that can fire on a push
+# is: head_ref is empty for one, so a fallback to run_id would hand each
+# run its own group and nothing would ever supersede anything.
 concurrency:
-  group: lint-php-${{ github.head_ref || github.run_id }}
+  group: lint-php-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -41,7 +54,7 @@ jobs:
           tools: none
 
       - name: Lint
-        run: |
-          set -euo pipefail
-          find lib tests scripts -type f -name '*.php' -print0 \
-            | xargs -0 -n1 -P4 php -l > /dev/null
+        # Through bash rather than as an executable: a lost file mode
+        # would redden every job with a permission error that reads
+        # nothing like a lint.
+        run: bash scripts/lint-php.sh
