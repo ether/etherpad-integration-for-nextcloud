@@ -15,12 +15,6 @@ use OCP\Files\NotFoundException;
 use OCP\Files\NotPermittedException;
 
 class UserNodeResolver {
-	/**
-	 * Thrown by IRootFolder::getUserFolder(), and not referenceable: it is
-	 * an `OC\` class, so it is matched by name rather than in a catch.
-	 */
-	private const NO_USER_EXCEPTION = 'OC\\User\\NoUserException';
-
 	public function __construct(
 		private IRootFolder $rootFolder,
 	) {
@@ -151,7 +145,9 @@ class UserNodeResolver {
 		try {
 			return $this->rootFolder->getUserFolder($uid);
 		} catch (\Exception $e) {
-			if (!$e instanceof NotPermittedException && !is_a($e, self::NO_USER_EXCEPTION)) {
+			// Not a catch: NoUserException is an `OC\` class and may not
+			// exist, which instanceof answers with false rather than a load.
+			if (!$e instanceof NotPermittedException && !$e instanceof \OC\User\NoUserException) {
 				throw $e;
 			}
 			throw new NotFoundException('Cannot access the user file tree.', 0, $e);

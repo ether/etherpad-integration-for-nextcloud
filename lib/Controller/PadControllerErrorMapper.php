@@ -37,6 +37,24 @@ use Psr\Log\LoggerInterface;
  * Centralizes mapping domain and framework exceptions to HTTP DataResponses.
  * Endpoints only provide wording per category; RuntimeException messages are
  * intentionally not exposed to clients to avoid leaking internal details.
+ *
+ * The wording an endpoint may override is named once, here, and imported by
+ * everything that passes it along: a caller typing it as a plain array hands
+ * DataResponse an int where it takes the set of valid HTTP codes.
+ *
+ * @psalm-type ErrorWording = array{
+ *   invalid_argument?: string,
+ *   not_found?: string,
+ *   too_large?: string,
+ *   missing_frontmatter?: string,
+ *   legacy_protected_import_disabled?: string,
+ *   file_changed?: string,
+ *   binding_message?: string,
+ *   binding_status?: 400|403|404|409|500,
+ *   generic?: string,
+ *   map_throwable?: callable(\Throwable): ?DataResponse,
+ *   on_throwable?: callable(\Throwable): void
+ * }
  */
 class PadControllerErrorMapper {
 	public function __construct(
@@ -48,19 +66,7 @@ class PadControllerErrorMapper {
 	/**
 	 * @param callable(): mixed $action
 	 * @param callable(mixed): DataResponse $success
-	 * @param array{
-	 *   invalid_argument?: string,
-	 *   not_found?: string,
-	 *   too_large?: string,
-	 *   missing_frontmatter?: string,
-	 *   legacy_protected_import_disabled?: string,
-	 *   file_changed?: string,
-	 *   binding_message?: string,
-	 *   binding_status?: int,
-	 *   generic?: string,
-	 *   map_throwable?: callable(\Throwable): ?DataResponse,
-	 *   on_throwable?: callable(\Throwable): void
-	 * } $options
+	 * @param ErrorWording $options
 	 */
 	public function run(callable $action, callable $success, array $options = []): DataResponse {
 		try {
@@ -140,7 +146,7 @@ class PadControllerErrorMapper {
 			}
 			return new DataResponse(
 				$payload,
-				(int)($options['binding_status'] ?? Http::STATUS_BAD_REQUEST),
+				$options['binding_status'] ?? Http::STATUS_BAD_REQUEST,
 			);
 		} catch (LegacyProtectedImportDisabledException) {
 			// 403, not 409: nothing conflicts, the instance does not offer

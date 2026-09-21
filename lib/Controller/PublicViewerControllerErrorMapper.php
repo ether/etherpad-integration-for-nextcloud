@@ -77,6 +77,12 @@ class PublicViewerControllerErrorMapper {
 		}
 	}
 
+	/**
+	 * The four the match below can reach. DataResponse takes the set of
+	 * valid HTTP codes, not any int, so a wider type would not pass.
+	 *
+	 * @return 400|403|404|500
+	 */
 	private function statusFor(\Throwable $e): int {
 		return match (true) {
 			$e instanceof InvalidShareTokenException,

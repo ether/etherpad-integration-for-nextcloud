@@ -619,7 +619,7 @@ class LifecycleService {
 		return 'restored-' . $suffix;
 	}
 
-	/** @return array<int,string> */
+	/** @return list<string> */
 	public static function getSupportedTestFaults(): array {
 		return [
 			self::TEST_FAULT_TRASH_READ_LOCK,
