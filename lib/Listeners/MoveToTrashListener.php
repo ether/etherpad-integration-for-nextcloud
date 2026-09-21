@@ -43,17 +43,31 @@ class MoveToTrashListener implements IEventListener {
 			if (($result['status'] ?? '') === LifecycleService::RESULT_SKIPPED) {
 				$this->logger->debug('MoveToTrash listener skipped lifecycle action.', [
 					'app' => 'etherpad_nextcloud',
-					'fileId' => (int)$node->getId(),
+					'fileId' => $this->loggableFileId($node),
 					'reason' => (string)($result['reason'] ?? 'unknown'),
 				]);
 			}
 		} catch (\Throwable $e) {
 			$this->logger->error('MoveToTrash listener aborted due to lifecycle error', [
 				'app' => 'etherpad_nextcloud',
-				'fileId' => (int)$node->getId(),
+				'fileId' => $this->loggableFileId($node),
 				...SafeError::context($e),
 			]);
 			throw $e;
+		}
+	}
+
+	/**
+	 * The id for a log line, or null when the node cannot supply one.
+	 * Reading it is one of the ways handleTrash fails, so reading it again
+	 * to report that failure must not throw a second exception over the
+	 * one being reported.
+	 */
+	private function loggableFileId(File $node): ?int {
+		try {
+			return (int)$node->getId();
+		} catch (\Throwable) {
+			return null;
 		}
 	}
 }

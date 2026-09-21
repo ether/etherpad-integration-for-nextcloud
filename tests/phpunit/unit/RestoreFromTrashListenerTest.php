@@ -5,7 +5,11 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\Tests\Unit;
 
 use OCA\EtherpadNextcloud\Listeners\RestoreFromTrashListener;
+use OCA\EtherpadNextcloud\Exception\LifecycleException;
+use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\EtherpadNextcloud\Service\LifecycleService;
+use OCA\EtherpadNextcloud\Tests\Support\WatchesTheWholeLogger;
+use OCA\EtherpadNextcloud\Tests\Support\WiresALifecycleService;
 use OCP\EventDispatcher\Event;
 use OCP\Files\File;
 use OCP\Files\Folder;
@@ -17,6 +21,74 @@ use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 
 class RestoreFromTrashListenerTest extends TestCase {
+	use WatchesTheWholeLogger;
+	use WiresALifecycleService;
+
+	/**
+	 * One failure, one entry. The flow no longer reports its own, because
+	 * it cannot see the ways out that end above its try; the caller can,
+	 * and does. Both halves have to be watched by the same logger, or the
+	 * test agrees with any arrangement of the two - and the failure has to
+	 * be raised inside the flow's try, because that is where the entry
+	 * that was removed used to be written.
+	 *
+	 * A real service rather than a mock: a mocked one has no inside.
+	 */
+	public function testAFlowFailureIsReportedOnceAndOnlyByTheCaller(): void {
+		$fileId = 4711;
+		$boom = new \RuntimeException('the storage went away');
+
+		$bindingService = $this->createMock(BindingService::class);
+		$bindingService->method('findByFileId')->willReturn([
+			'file_id' => $fileId,
+			'pad_id' => 'old-pad',
+			'access_mode' => BindingService::ACCESS_PUBLIC,
+			'state' => BindingService::STATE_PENDING_DELETE,
+		]);
+
+		$file = $this->createMock(File::class);
+		$file->method('getId')->willReturn($fileId);
+		$file->method('getName')->willReturn('Notes.pad');
+		// Inside restoreFlow's own try, which is where the removed entry
+		// was written and the only place it could ever have fired.
+		$file->method('getContent')->willThrowException($boom);
+
+		$logger = $this->createMock(LoggerInterface::class);
+		$this->closeEveryLevelExcept($logger, 'error');
+		$logger->expects($this->once())
+			->method('error')
+			->with(
+				$this->anything(),
+				$this->callback(function (array $context) use ($fileId, $boom): bool {
+					$this->assertSame($fileId, $context['fileId']);
+					// The cause, not just the wrapper the flow threw.
+					$this->assertStringContainsString($boom->getMessage(), $context['error_origin']);
+					return true;
+				}),
+			);
+
+		$listener = new RestoreFromTrashListener(
+			$this->lifecycleServiceOver($bindingService, $logger),
+			$this->createMock(IUserSession::class),
+			$this->createMock(IRootFolder::class),
+			$logger,
+		);
+
+		$this->expectException(LifecycleException::class);
+		$listener->handle($this->restoreEventFor($file));
+	}
+
+	private function restoreEventFor(File $file): Event {
+		return new class($file) extends Event {
+			public function __construct(private File $file) {
+			}
+
+			public function getTarget(): File {
+				return $this->file;
+			}
+		};
+	}
+
 	public function testTypedRestoreEventRestoresTargetFile(): void {
 		$file = $this->createMock(File::class);
 		$file->method('getId')->willReturn(42);
@@ -146,8 +218,13 @@ class RestoreFromTrashListenerTest extends TestCase {
 	 * Logging that threw a second time used to replace the exception being
 	 * reported, which is why the Nextcloud 31 failure showed up in the log
 	 * as a bare NotFoundException with nothing about its cause.
+	 *
+	 * Surviving is half of it. Since the flow stopped reporting its own
+	 * failures this listener is the only one left that can, so the entry
+	 * has to be there too - an id that cannot be read leaves it out rather
+	 * than standing in for it.
 	 */
-	public function testLifecycleErrorIsRethrownEvenWhenTheIdCannotBeLogged(): void {
+	public function testLifecycleErrorIsRethrownAndStillReportedWhenTheIdCannotBeRead(): void {
 		$reads = 0;
 		$file = $this->createMock(File::class);
 		$file->method('getId')->willReturnCallback(function () use (&$reads): int {
@@ -162,11 +239,25 @@ class RestoreFromTrashListenerTest extends TestCase {
 		$lifecycleService = $this->createMock(LifecycleService::class);
 		$lifecycleService->method('handleRestore')->willThrowException($boom);
 
+		$logger = $this->createMock(LoggerInterface::class);
+		$this->closeEveryLevelExcept($logger, 'error');
+		$logger->expects($this->once())
+			->method('error')
+			->with(
+				$this->anything(),
+				$this->callback(function (array $context) use ($boom): bool {
+					$this->assertNull($context['fileId'], 'an id that cannot be read is absent, not invented');
+					$this->assertSame(\RuntimeException::class, $context['error']);
+					$this->assertStringContainsString($boom->getMessage(), $context['error_message']);
+					return true;
+				}),
+			);
+
 		$listener = new RestoreFromTrashListener(
 			$lifecycleService,
 			$this->createMock(IUserSession::class),
 			$this->createMock(IRootFolder::class),
-			$this->createMock(LoggerInterface::class),
+			$logger,
 		);
 
 		$this->expectExceptionObject($boom);

@@ -10,6 +10,7 @@ $stubFiles = [
 	__DIR__ . '/stubs/OCP/BackgroundJob/IJobList.php',
 	__DIR__ . '/stubs/OCP/BackgroundJob/QueuedJob.php',
 	__DIR__ . '/stubs/OCP/ISession.php',
+	__DIR__ . '/stubs/OCP/Server.php',
 	__DIR__ . '/stubs/OCP/Util.php',
 	__DIR__ . '/stubs/OCP/Files/Template/ICustomTemplateProvider.php',
 	__DIR__ . '/stubs/OCP/Files/Template/Template.php',
