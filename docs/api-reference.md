@@ -297,7 +297,10 @@ solely by the separate external-pad policy, not by these two settings.
     - `api_version`
     - `latency_ms`
     - `target`
-    - `pending_delete_count`
+    - `pending_delete_count` — rows whose pad deletion the trash could not
+      carry out
+    - `restore_pending_count` — restored files whose pad Etherpad could not
+      confirm or deny
     - `session_cookie_release` — the Etherpad release the open path is going
       by, which can differ from the one this run probed
     - `checks` — one entry per verified part, so a failure points at the field
@@ -394,15 +397,14 @@ solely by the separate external-pad policy, not by these two settings.
     - `frontmatter_skipped`
     - `samples` (bounded debug sample lists per issue class)
 
-- `POST /api/v1/admin/retry-pending-deletes`
-  - Controller: `AdminController::retryPendingDeletes`
+- `POST /api/v1/admin/recheck-restores`
+  - Controller: `AdminController::recheckRestores`
   - Auth: admin only
-  - Purpose: immediate retry of deferred Etherpad deletions:
-    - `state=pending_delete`
+  - Purpose: immediate recheck of restores left undecided (`state=restore_pending`).
+    Changes only binding rows; no pad is deleted.
   - Result:
-    - `attempted`
-    - `resolved`
-    - `failed`
+    - `checked`
+    - `settled`
     - `remaining`
 
 - `POST /api/v1/admin/test-fault`

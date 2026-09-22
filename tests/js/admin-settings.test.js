@@ -13,7 +13,7 @@ const setupAdminDom = () => {
 			data-save-url="/save"
 			data-health-url="/health"
 			data-consistency-url="/consistency"
-			data-retry-pending-url="/retry"
+			data-recheck-restores-url="/recheck"
 			data-l10n-saving="Saving..."
 			data-l10n-saved="Saved."
 			data-l10n-checking="Checking..."
@@ -47,6 +47,11 @@ const setupAdminDom = () => {
 				<button type="button" id="etherpad-nextcloud-consistency-check">Check</button>
 				<p id="etherpad-nextcloud-connection-status" class="ep-status"></p>
 				<p id="etherpad-nextcloud-diagnostics-status" class="ep-status"></p>
+				<div id="etherpad-nextcloud-pending-actions" style="display:none;">
+					<button type="button" id="etherpad-nextcloud-recheck-restores">Re-check</button>
+					<span id="etherpad-nextcloud-restore-pending-count"></span>
+					<span id="etherpad-nextcloud-pending-count"></span>
+				</div>
 				<ul id="epnc-template-list"></ul>
 				<p id="epnc-template-empty"></p>
 				<input type="file" id="epnc-template-file">
@@ -176,7 +181,31 @@ describe('admin settings status areas', () => {
 		expect(connectionStatus().classList.contains('ep-status-success')).toBe(false)
 	})
 
+	it('counts deferred deletions apart from restores, and re-checks only the restores', async () => {
+		const fetchMock = vi.fn((url) => Promise.resolve(okResponse({
+			'/health': { message: 'All checks passed.', pending_delete_count: 2, restore_pending_count: 1 },
+			'/recheck': { message: 'Restore check finished.', checked: 1, settled: 1, remaining: 0 },
+		}[url] || {})))
+		vi.stubGlobal('fetch', fetchMock)
+		await import(MODULE)
+		const recheckButton = document.getElementById('etherpad-nextcloud-recheck-restores')
 
+		document.getElementById('etherpad-nextcloud-health-check').click()
+		await flushAsyncWork()
+
+		expect(document.getElementById('etherpad-nextcloud-pending-count').textContent).toBe('Pending Etherpad deletes: 2')
+		expect(document.getElementById('etherpad-nextcloud-restore-pending-count').textContent).toBe('Unresolved restores: 1')
+		expect(recheckButton.disabled).toBe(false)
+
+		recheckButton.click()
+		await flushAsyncWork()
+
+		expect(diagnosticsStatus().textContent).toContain('remaining=0')
+		expect(document.getElementById('etherpad-nextcloud-restore-pending-count').textContent).toBe('Unresolved restores: 0')
+		// The deletions stay on show, with nothing here to act on them.
+		expect(document.getElementById('etherpad-nextcloud-pending-actions').style.display).toBe('')
+		expect(recheckButton.disabled).toBe(true)
+	})
 })
 
 describe('protected pads cookie warning', () => {

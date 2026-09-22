@@ -57,7 +57,7 @@ class ProvisionedPadRollbackTest extends TestCase {
 	 * The row is no longer this attempt's to remove - the file was rebound
 	 * between the read and the delete, or a trash that could not reach
 	 * Etherpad left the row pending_delete. Either way the pad it still
-	 * names stays too, so PendingDeleteRetryService has something to retry
+	 * names stays too: a pending_delete row may be the only record of it,
 	 * and a rival's file keeps its mapping.
 	 */
 	public function testLeavesThePadWhenTheRowIsNoLongerItsToRemove(): void {

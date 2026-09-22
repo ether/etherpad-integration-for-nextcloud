@@ -380,8 +380,8 @@ class ExpiredSessionCollectorTest extends TestCase {
 	 * Stopping at the first refusal put that entry in front of everything
 	 * behind it for good: the next run re-lists, meets it first, stops
 	 * again, and the backlog never moves while every pad open re-queues the
-	 * same doomed sweep. The sibling loop in PendingDeleteRetryService
-	 * counts a failure and carries on for the same reason.
+	 * same doomed sweep. The sibling loop in RestoreRecheckService carries
+	 * on past a row that fails for the same reason.
 	 */
 	public function testAPoisonEntryDoesNotShadowTheOnesBehindIt(): void {
 		$client = $this->createMock(EtherpadClient::class);

@@ -198,6 +198,20 @@ class ManagedPadLifecycle {
 	}
 
 	/**
+	 * Whether the pad still exists, as far as Etherpad will say. Only its
+	 * own answer that there is no such pad counts as absent; a request that
+	 * got no answer is unknown, because the pad may well be there.
+	 */
+	public function presenceOf(string $padId): PadPresence {
+		try {
+			$this->etherpadClient->getRevisionsCount($padId);
+			return PadPresence::Present;
+		} catch (\Throwable $e) {
+			return EtherpadErrorClassifier::isPadAlreadyDeleted($e) ? PadPresence::Absent : PadPresence::Unknown;
+		}
+	}
+
+	/**
 	 * Remove a pad the app is bound to, whatever kind it is.
 	 *
 	 * The group is only removed once Etherpad has confirmed it holds nothing

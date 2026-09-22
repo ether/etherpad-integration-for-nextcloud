@@ -185,11 +185,6 @@
       <code><![CDATA[__construct]]></code>
     </PossiblyUnusedMethod>
   </file>
-  <file src="lib/Service/PendingDeleteRetryService.php">
-    <PossiblyUnusedMethod>
-      <code><![CDATA[__construct]]></code>
-    </PossiblyUnusedMethod>
-  </file>
   <file src="lib/Service/PublicPadContextService.php">
     <PossiblyUnusedMethod>
       <code><![CDATA[__construct]]></code>

@@ -17,6 +17,7 @@ class HealthCheckResult {
 		public readonly int $latencyMs,
 		public readonly string $target,
 		public readonly int $pendingDeleteCount,
+		public readonly int $restorePendingCount,
 		/**
 		 * The Etherpad release the open path is currently going by, or ''
 		 * when it has none. Not the release this check just probed: the

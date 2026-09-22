@@ -30,8 +30,8 @@ use Psr\Log\LoggerInterface;
  * does not reproduce the graph proves less than it looks.
  */
 trait WiresALifecycleService {
-	private function lifecycleServiceOver(BindingService $bindingService, LoggerInterface $logger): LifecycleService {
-		$etherpadClient = $this->createMock(EtherpadClient::class);
+	private function lifecycleServiceOver(BindingService $bindingService, LoggerInterface $logger, ?EtherpadClient $etherpadClient = null): LifecycleService {
+		$etherpadClient ??= $this->createMock(EtherpadClient::class);
 		$padLifecycle = new ManagedPadLifecycle($etherpadClient, $logger);
 
 		return new LifecycleService(

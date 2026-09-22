@@ -37,7 +37,7 @@ class EtherpadHealthCheckService {
 
 	public function __construct(
 		private EtherpadClient $etherpadClient,
-		private PendingDeleteRetryService $pendingDeleteRetryService,
+		private BindingService $bindingService,
 		private IL10N $l10n,
 		private CookieDomainPolicy $cookieDomainPolicy,
 		private BaseUrlReachabilityCheck $baseUrlCheck,
@@ -155,7 +155,8 @@ class EtherpadHealthCheckService {
 			$settings->etherpadApiVersion,
 			$latencyMs,
 			$target,
-			$this->pendingDeleteRetryService->countPendingDeletes(),
+			$this->bindingService->countByState(BindingService::STATE_PENDING_DELETE),
+			$this->bindingService->countByState(BindingService::STATE_RESTORE_PENDING),
 			$this->releasePolicy->knownRelease(),
 			$cookieDomain,
 			$checks,

@@ -11,16 +11,19 @@ Etherpad is the editing source of truth; the `.pad` file acts as binding storage
 
 - `lib/Service/BindingService.php`
   - Manages the central DB table `ep_pad_bindings`.
-  - Owns mapping `file_id <-> pad_id` and states (`active`, `pending_delete`).
+  - Owns mapping `file_id <-> pad_id` and states (`active`, `pending_delete`, `restore_pending`).
   - Only managed internal pads are bound. External pads are represented solely by `.pad` frontmatter and snapshots.
 - `lib/Service/LifecycleService.php`
   - Trash/restore flow.
   - Snapshot on trash, re-provisioning on restore.
   - On Etherpad delete failures: `pending_delete` instead of blocking Nextcloud trash.
+  - On restore of a `pending_delete` row: its own pad while Etherpad still has it, `restore_pending` while Etherpad cannot say.
+- `lib/Service/RestoreRecheckService.php`
+  - Settles `restore_pending` rows by asking Etherpad again. Changes only rows, never deletes a pad.
 - `lib/BackgroundJob/*PendingDeleteRetryJob.php`
-  - Bucketed retry for deferred Etherpad deletions:
-    - hot rows: every 5 minutes for the first hour after trash (`deleted_at <= 1h ago`)
-    - warm rows: hourly from 1h to 24h after trash
+  - Bucketed recheck of `restore_pending` rows, aged by `updated_at`. Named for what they did first; the job list stores the class name.
+    - hot rows: every 5 minutes for the first hour
+    - warm rows: hourly from 1h to 24h
     - cold rows: daily after 24h
 - `lib/Service/EtherpadClient.php`
   - Adapter for Etherpad HTTP API (pad create/delete/session/read-only/export).
@@ -219,10 +222,15 @@ Primary flow (native viewer):
 ### 5) Trash/Restore
 
 - Trash: persist a fresh snapshot if possible, delete the managed Etherpad pad, then delete the binding row.
-- If Etherpad is unavailable during delete: switch state to `pending_delete`, keep Nextcloud trash successful.
-- Restore: provision a new pad from `.pad` frontmatter/snapshot when no binding row exists, or finish a `pending_delete` row if one remains.
+- If Etherpad is unavailable during delete: switch state to `pending_delete`, keep Nextcloud trash successful. The row and its pad are kept; the admin page counts them.
+- Restore without a binding row: provision a new pad from `.pad` frontmatter/snapshot.
+- Restore of a `pending_delete` row: ask Etherpad whether the row's pad still exists. The pad id comes from the row, never from the file.
+  - It exists: the row becomes `active` again on that same pad, which may hold edits the snapshot missed.
+  - Etherpad answers that it does not: a new pad from the file's snapshot. The row is claimed for it before the file is written, so of two concurrent restores only one writes; a write that fails after the claim returns the row to the old pad as `restore_pending`.
+  - No answer: `restore_pending`, and neither pad nor file is touched.
+- `restore_pending` rows are rechecked in age buckets (every 5 minutes, then hourly, then daily) and from the admin page: pad there → `active`; pad gone → row removed, and opening the file offers a new pad from its snapshot; no answer → unchanged.
+- Trashing a file whose row is `restore_pending` leaves the pad alone and returns the row to `pending_delete`.
 - External pads skip lifecycle side effects entirely. Trash/restore only affects the Nextcloud file; the remote Etherpad server is never mutated.
-- Pending-delete cleanup is retried in age buckets: first every 5 minutes, then hourly, then daily.
 
 ### 6) Admin Integrity Check (optional)
 

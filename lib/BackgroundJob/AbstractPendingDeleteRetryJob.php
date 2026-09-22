@@ -9,11 +9,14 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\BackgroundJob;
 
-use OCA\EtherpadNextcloud\Service\PendingDeleteRetryService;
+use OCA\EtherpadNextcloud\Service\RestoreRecheckService;
 use OCP\AppFramework\Utility\ITimeFactory;
 use OCP\BackgroundJob\TimedJob;
 
 /**
+ * Rechecks restores left undecided. Named for what these jobs did first;
+ * the job list stores the class name, so the name stays.
+ *
  * @psalm-api
  */
 abstract class AbstractPendingDeleteRetryJob extends TimedJob {
@@ -24,7 +27,7 @@ abstract class AbstractPendingDeleteRetryJob extends TimedJob {
 
 	public function __construct(
 		ITimeFactory $time,
-		private PendingDeleteRetryService $retryService,
+		private RestoreRecheckService $recheckService,
 	) {
 		parent::__construct($time);
 		$this->setInterval(static::INTERVAL_SECONDS);
@@ -34,6 +37,6 @@ abstract class AbstractPendingDeleteRetryJob extends TimedJob {
 	 * @param mixed $argument
 	 */
 	protected function run($argument): void {
-		$this->retryService->retryByAge(static::MIN_AGE_SECONDS, static::MAX_AGE_SECONDS, static::LIMIT);
+		$this->recheckService->recheckByAge(static::MIN_AGE_SECONDS, static::MAX_AGE_SECONDS, static::LIMIT);
 	}
 }

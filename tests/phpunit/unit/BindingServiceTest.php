@@ -62,34 +62,34 @@ class BindingServiceTest extends TestCase {
 		$service->assertConsistentMapping(12, 'pad-a', 'legacy');
 	}
 
-	public function testFindPendingDeleteByAgeAddsUpperAndLowerAgeBounds(): void {
+	public function testFindRestorePendingByAgeAddsUpperAndLowerAgeBounds(): void {
 		$qb = new BindingServiceTestQueryBuilder([['file_id' => 10, 'pad_id' => 'pad-a']]);
 		$service = $this->buildServiceWithQueryBuilder($qb, 100000);
 
-		$rows = $service->findPendingDeleteByAge(3600, 86400, 50);
+		$rows = $service->findRestorePendingByAge(3600, 86400, 50);
 
 		$this->assertSame([['file_id' => 10, 'pad_id' => 'pad-a']], $rows);
 		$this->assertSame(50, $qb->maxResults);
-		$this->assertContains(['lte', 'deleted_at', 'param2'], $qb->conditions);
-		$this->assertContains(['gt', 'deleted_at', 'param3'], $qb->conditions);
+		$this->assertContains(['lte', 'updated_at', 'param2'], $qb->conditions);
+		$this->assertContains(['gt', 'updated_at', 'param3'], $qb->conditions);
 		$this->assertSame([
-			['param1', BindingService::STATE_PENDING_DELETE, null],
+			['param1', BindingService::STATE_RESTORE_PENDING, null],
 			['param2', 96400, IQueryBuilder::PARAM_INT],
 			['param3', 13600, IQueryBuilder::PARAM_INT],
 		], $qb->parameters);
 	}
 
-	public function testFindPendingDeleteByAgeOmitsUpperBoundForColdBucketAndClampsNegativeAge(): void {
+	public function testFindRestorePendingByAgeOmitsUpperBoundForColdBucketAndClampsNegativeAge(): void {
 		$qb = new BindingServiceTestQueryBuilder([]);
 		$service = $this->buildServiceWithQueryBuilder($qb, 100000);
 
-		$service->findPendingDeleteByAge(-1, null, 0);
+		$service->findRestorePendingByAge(-1, null, 0);
 
 		$this->assertSame(1, $qb->maxResults);
-		$this->assertContains(['lte', 'deleted_at', 'param2'], $qb->conditions);
-		$this->assertNotContains(['gt', 'deleted_at', 'param3'], $qb->conditions);
+		$this->assertContains(['lte', 'updated_at', 'param2'], $qb->conditions);
+		$this->assertNotContains(['gt', 'updated_at', 'param3'], $qb->conditions);
 		$this->assertSame([
-			['param1', BindingService::STATE_PENDING_DELETE, null],
+			['param1', BindingService::STATE_RESTORE_PENDING, null],
 			['param2', 100000, IQueryBuilder::PARAM_INT],
 		], $qb->parameters);
 	}
@@ -134,7 +134,7 @@ class BindingServiceTest extends TestCase {
 	 * Both predicates and the state belong in the statement. Without the pad
 	 * id a delete by file id alone takes the row a concurrent rebind just
 	 * won; without `state` it takes the row a trash left as pending_delete,
-	 * which is what PendingDeleteRetryService retries from.
+	 * the only record of a deletion still owed.
 	 */
 	public function testDeletingAnActiveBindingNamesFileAndPadAndState(): void {
 		$qb = new BindingServiceTestQueryBuilder([]);
@@ -241,11 +241,6 @@ class BindingServiceTestExpressionBuilder {
 	/** @return array{string,string,string} */
 	public function eq(string $field, string $parameter): array {
 		return ['eq', $field, $parameter];
-	}
-
-	/** @return array{string,string} */
-	public function isNotNull(string $field): array {
-		return ['isNotNull', $field];
 	}
 
 	/** @return array{string,string,string} */
