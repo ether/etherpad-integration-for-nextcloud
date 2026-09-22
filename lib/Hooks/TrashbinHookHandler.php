@@ -30,8 +30,9 @@ class TrashbinHookHandler {
 			$listener = \OCP\Server::get(RestoreFromTrashListener::class);
 		} catch (\Throwable $e) {
 			// OC_Hook::emit swallows what a slot throws and lets the restore
-			// go on, and the entry it writes carries no app - so a hook that
-			// never started is silent unless it says so here.
+			// go on - any exception, and from Nextcloud 32 any error as well -
+			// and the entry it writes carries no app, so a hook that never
+			// started is silent unless it says so here.
 			$logger->error('Legacy trashbin restore hook could not start.', [
 				'app' => 'etherpad_nextcloud',
 				...SafeError::context($e),

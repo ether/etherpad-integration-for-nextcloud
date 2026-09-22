@@ -129,7 +129,11 @@ class Application extends App implements IBootstrap {
 			\OCA\EtherpadNextcloud\Listeners\RestoreFromTrashListener::class,
 		);
 
-		// Groupfolders still emits this legacy trashbin restore hook instead of NodeRestoredEvent.
+		// Groupfolders restores through this legacy hook alone and fires no
+		// NodeRestoredEvent. Core fires both, the hook first, so a core restore
+		// reaches the listener twice - the second pass finds the binding no
+		// longer pending and returns.
+		// Its filePath is relative to the user's files root in both.
 		\OCP\Util::connectHook(
 			'\OCA\Files_Trashbin\Trashbin',
 			'post_restore',

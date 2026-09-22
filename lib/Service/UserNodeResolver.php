@@ -180,6 +180,25 @@ class UserNodeResolver {
 	}
 
 	/**
+	 * The owner and the path below their files root, read off a node's
+	 * absolute path - the inverse of toUserAbsolutePath - or null when the
+	 * path is not /<user>/files/<something>. One place for that shape, so
+	 * what counts as a user's file cannot mean two things.
+	 *
+	 * Static because it is a reading of a string and nothing else: a test
+	 * that mocks this class should not be able to mock what a path means.
+	 *
+	 * @return array{0: string, 1: string}|null
+	 */
+	public static function splitUserFilesPath(string $absolutePath): ?array {
+		$parts = explode('/', ltrim($absolutePath, '/'), 3);
+		if (count($parts) !== 3 || $parts[0] === '' || $parts[1] !== 'files' || $parts[2] === '') {
+			return null;
+		}
+		return [$parts[0], $parts[2]];
+	}
+
+	/**
 	 * @throws NotFoundException
 	 */
 	public function toUserAbsolutePath(string $uid, File $node): string {
