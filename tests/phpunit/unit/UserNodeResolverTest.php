@@ -81,6 +81,46 @@ class UserNodeResolverTest extends TestCase {
 	}
 
 	/**
+	 * Both restore paths rely on this to keep a folder away from
+	 * handleRestore, which takes a File: a folder that got through would
+	 * be a TypeError, and on the event path that aborts the restore.
+	 */
+	public function testAFolderAtTheRequestedPathIsNotAFile(): void {
+		$userFolder = $this->createMock(Folder::class);
+		$userFolder->method('get')->willReturn($this->createMock(Folder::class));
+		$rootFolder = $this->createMock(IRootFolder::class);
+		$rootFolder->method('getUserFolder')->willReturn($userFolder);
+		$resolver = new UserNodeResolver($rootFolder);
+
+		$this->expectException(NotFoundException::class);
+		$this->expectExceptionMessage('Path does not reference a file.');
+		$resolver->resolveUserFileNodeByPath('alice', '/Projects.pad');
+	}
+
+	/** @return iterable<string, array{string, ?array{0: string, 1: string}}> */
+	public static function userFilesPathProvider(): iterable {
+		yield 'a file below the root' => ['/alice/files/Notes.pad', ['alice', 'Notes.pad']];
+		yield 'nested, and a folder named files' => ['/alice/files/files/Notes.pad', ['alice', 'files/Notes.pad']];
+		yield 'no leading slash' => ['alice/files/Notes.pad', ['alice', 'Notes.pad']];
+		yield 'not under files' => ['/alice/files_trashbin/Notes.pad', null];
+		yield 'the files root itself' => ['/alice/files/', null];
+		yield 'no owner' => ['//files/Notes.pad', null];
+		yield 'too short' => ['/alice/files', null];
+	}
+
+	/**
+	 * The shape both restore paths read a user's file from. A folder named
+	 * `files` below the root is only a folder: the one segment that means
+	 * anything is the second.
+	 *
+	 * @param array{0: string, 1: string}|null $expected
+	 */
+	#[\PHPUnit\Framework\Attributes\DataProvider('userFilesPathProvider')]
+	public function testSplitsAUserFilesPathIntoOwnerAndRest(string $path, ?array $expected): void {
+		$this->assertSame($expected, UserNodeResolver::splitUserFilesPath($path));
+	}
+
+	/**
 	 * getUserFolder() answers with its own exception types, and callers of
 	 * this class catch NotFoundException to degrade gracefully. Letting
 	 * either escape turns an unavailable home storage into a 500.

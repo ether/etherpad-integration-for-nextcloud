@@ -16,9 +16,10 @@ use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 
 /**
- * OC_Hook::emit swallows what a slot throws and lets the restore go on,
- * and the entry it writes carries no app - so this handler is the only
- * thing that can say whose hook never started. Everything after the
+ * OC_Hook::emit swallows an exception a slot throws - an error too, from
+ * Nextcloud 32 - and lets the restore go on, and the entry it writes
+ * carries no app, so this handler is the only thing that can say whose
+ * hook never started. Everything after the
  * lookup belongs to the listener, which reports its own failures.
  */
 class TrashbinHookHandlerTest extends TestCase {
@@ -51,7 +52,7 @@ class TrashbinHookHandlerTest extends TestCase {
 		];
 
 		$this->expectExceptionObject($boom);
-		TrashbinHookHandler::postRestore(['filePath' => '/admin/files/Notes.pad']);
+		TrashbinHookHandler::postRestore(['filePath' => '/Notes.pad']);
 	}
 
 	/**
@@ -73,11 +74,11 @@ class TrashbinHookHandlerTest extends TestCase {
 		];
 
 		$this->expectExceptionObject($boom);
-		TrashbinHookHandler::postRestore(['filePath' => '/admin/files/Notes.pad']);
+		TrashbinHookHandler::postRestore(['filePath' => '/Notes.pad']);
 	}
 
 	public function testTheParametersReachTheListener(): void {
-		$params = ['filePath' => '/admin/files/Notes.pad'];
+		$params = ['filePath' => '/Notes.pad'];
 
 		$listener = $this->createMock(RestoreFromTrashListener::class);
 		$listener->expects($this->once())->method('handleLegacyHook')->with($params);
