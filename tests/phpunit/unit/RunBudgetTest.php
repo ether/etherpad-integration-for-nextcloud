@@ -44,4 +44,16 @@ class RunBudgetTest extends TestCase {
 		$this->assertTrue($budget->exhausted());
 		$this->assertSame(5, $budget->failures());
 	}
+
+	/** A call after the first gets a timeout only while it could still finish. */
+	public function testGivesTheNextCallATimeoutOnlyWhileItFits(): void {
+		$clock = new FixedClock();
+		$budget = new RunBudget($clock, 20.0);
+
+		$this->assertSame(15, $budget->nextCallTimeout());
+		$clock->advance(18);
+		$this->assertSame(2, $budget->nextCallTimeout());
+		$clock->advance(1);
+		$this->assertNull($budget->nextCallTimeout());
+	}
 }

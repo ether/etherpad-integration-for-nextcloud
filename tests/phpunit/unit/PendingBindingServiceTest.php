@@ -216,6 +216,68 @@ class PendingBindingServiceTest extends TestCase {
 		}
 	}
 
+	/**
+	 * A failure of the database or a storage says nothing about Etherpad,
+	 * so however many rows meet one, the run does not read it as an outage
+	 * and the rows behind them still get their turn.
+	 */
+	public function testLocalFailuresDoNotEndTheRun(): void {
+		$rows = [];
+		$paths = [];
+		for ($id = 1; $id <= 8; $id++) {
+			$rows[] = $this->row($id, BindingService::STATE_RESTORE_PENDING, 'files/' . $id . '.pad');
+			$paths[$id] = ['/alice/files/' . $id . '.pad'];
+		}
+		$lifecycle = $this->createMock(LifecycleService::class);
+		$lifecycle->expects($this->exactly(8))
+			->method('settleWaitingFile')
+			->willThrowException(new \RuntimeException('database went away'));
+
+		$this->service($this->bindings(restores: $rows), $lifecycle, $this->root($paths))->settleByAge(0, null, 50);
+	}
+
+	/** The limit counts both kinds together: restores first, deletions owed from what is left. */
+	public function testTheLimitCountsBothKindsTogether(): void {
+		foreach ([2 => null, 3 => 1] as $limit => $deletesAskedFor) {
+			$bindings = $this->createMock(BindingService::class);
+			$bindings->method('findRestorePendingByAge')->willReturn([
+				$this->row(1, BindingService::STATE_RESTORE_PENDING, 'files/1.pad'),
+				$this->row(2, BindingService::STATE_RESTORE_PENDING, 'files/2.pad'),
+			]);
+			if ($deletesAskedFor === null) {
+				$bindings->expects($this->never())->method('findPendingDeleteByAge');
+			} else {
+				$bindings->expects($this->once())->method('findPendingDeleteByAge')->with(0, null, $deletesAskedFor)->willReturn([]);
+			}
+
+			$this->service($bindings, $this->createMock(LifecycleService::class), $this->root([]))->settleByAge(0, null, $limit);
+		}
+	}
+
+	/**
+	 * A run whose time is spent by the time the pad should go stops there:
+	 * no call is started that could not finish, and the row waits for the
+	 * next run rather than being taken without its pad.
+	 */
+	public function testADeletionOutOfTimeLeavesPadAndRow(): void {
+		$clock = new FixedClock();
+		$bindings = $this->bindings(deletes: [$this->row(3, BindingService::STATE_PENDING_DELETE, null, 'g.ABCDEFGHIJKLMNOP$p-gone')]);
+		$bindings->expects($this->never())->method('deleteInState');
+		$client = $this->createMock(EtherpadClient::class);
+		$client->method('getRevisionsCount')->willReturnCallback(static function () use ($clock): int {
+			$clock->advance(19);
+			return 3;
+		});
+		$client->expects($this->never())->method('listPads');
+		$client->expects($this->never())->method('deleteGroup');
+		$client->expects($this->never())->method('deletePad');
+
+		$result = $this->service($bindings, $this->createMock(LifecycleService::class), $this->root([]), $client, clock: $clock)
+			->settleByAge(0, null, 50);
+
+		$this->assertSame(['checked' => 1, 'settled' => 0], $result);
+	}
+
 	/** A row that throws is logged and counted, and the rows behind it still get their turn. */
 	public function testARowThatThrowsDoesNotStopTheRest(): void {
 		$bindings = $this->bindings(restores: [

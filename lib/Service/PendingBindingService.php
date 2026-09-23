@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Service;
 
+use OCA\EtherpadNextcloud\Exception\RunBudgetSpentException;
 use OCA\EtherpadNextcloud\Util\EtherpadErrorClassifier;
 use OCA\EtherpadNextcloud\Util\SafeError;
 use OCP\AppFramework\Utility\ITimeFactory;
@@ -62,16 +63,17 @@ class PendingBindingService {
 
 	/**
 	 * Restores first: a row that waits keeps its file from opening, a
-	 * deletion owed keeps nothing from anyone.
+	 * deletion owed keeps nothing from anyone. $limit counts rows of both
+	 * kinds together.
 	 *
 	 * @return array{checked:int, settled:int}
 	 */
 	public function settleByAge(int $minAgeSeconds, ?int $maxAgeSeconds, int $limit = 200): array {
 		$budget = new RunBudget($this->timeFactory, $this->budgetSeconds);
-		$rows = [
-			...$this->bindingService->findRestorePendingByAge($minAgeSeconds, $maxAgeSeconds, $limit),
-			...$this->bindingService->findPendingDeleteByAge($minAgeSeconds, $maxAgeSeconds, $limit),
-		];
+		$rows = $this->bindingService->findRestorePendingByAge($minAgeSeconds, $maxAgeSeconds, $limit);
+		if (count($rows) < $limit) {
+			$rows = [...$rows, ...$this->bindingService->findPendingDeleteByAge($minAgeSeconds, $maxAgeSeconds, $limit - count($rows))];
+		}
 
 		$checked = 0;
 		$settled = 0;
@@ -108,12 +110,15 @@ class PendingBindingService {
 			$file = $this->fileOutsideTrash($fileId);
 			return $file === null ? null : $this->lifecycleService->settleWaitingFile($file, $budget->callTimeout());
 		} catch (\Throwable $e) {
+			// Etherpad's silence is caught where it is met; what arrives here
+			// is local - the database, a storage - and says nothing about
+			// Etherpad, so it does not count towards the outage stop.
 			$this->logger->warning('Could not settle a pad binding that waits.', [
 				'app' => 'etherpad_nextcloud',
 				'fileId' => $fileId,
 				...SafeError::context($e),
 			]);
-			return SettleOutcome::Unanswered;
+			return SettleOutcome::Left;
 		}
 	}
 
@@ -152,6 +157,9 @@ class PendingBindingService {
 			if ($presence !== PadPresence::Absent) {
 				$this->padLifecycle->discard($padId, $budget);
 			}
+		} catch (RunBudgetSpentException) {
+			// Out of time before the pad could go; the row waits for the next run.
+			return SettleOutcome::Left;
 		} catch (\Throwable $e) {
 			if (!EtherpadErrorClassifier::isPadAlreadyDeleted($e)) {
 				$this->logger->warning('Could not delete the pad of a file that is gone for good.', [

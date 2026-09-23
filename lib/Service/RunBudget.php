@@ -59,6 +59,15 @@ final class RunBudget {
 	}
 
 	/**
+	 * The timeout for a call about to start, or null when none would finish
+	 * in time any more. For every call after a sweep's first, which the loop
+	 * has already checked with exhausted().
+	 */
+	public function nextCallTimeout(): ?int {
+		return $this->fitsAnotherCall() ? $this->callTimeout() : null;
+	}
+
+	/**
 	 * The rest of the budget as a call's timeout, capped so housekeeping is
 	 * never more patient than the calls a user waits on.
 	 */
