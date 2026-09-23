@@ -18,6 +18,7 @@ Etherpad is the editing source of truth; the `.pad` file acts as binding storage
   - Snapshot on trash; the pad is deleted only once the snapshot is in the file, written now or there already.
   - No fresh snapshot, or Etherpad cannot delete: `pending_delete` instead of blocking Nextcloud trash; the sweep finishes the trash.
   - On restore: the file's own pad while Etherpad still has it at the file's snapshot revision or later, a new pad from the snapshot when it is gone or behind, `restore_pending` while Etherpad cannot say.
+  - The snapshot into a trashed file, at trash time and in the sweep, is `TrashSnapshotWriter`: one file, one pad, and the reason when it does not get there (`TrashSnapshotMiss`). It knows nothing about bindings; what a miss means for the row and the pad stays here.
 - `lib/Service/PendingBindingService.php`
   - Settles rows that wait, by where their file is now (see Trash/Restore), handing each to `LifecycleService` (`settleWaitingFile`, `finishTrash`, `finishGoneFile`). The only file it writes is a trashed one, with the snapshot its trash could not take; the only pads it deletes are those of files in a trash or gone for good.
   - Bounded per run by `RunBudget`: 20 s, each Etherpad call gets what is left, none is started that could not finish - except the deletion of a pad whose row is already taken, which finishes on the client's own timeouts - and a run stops after five rows Etherpad gave no answer for.

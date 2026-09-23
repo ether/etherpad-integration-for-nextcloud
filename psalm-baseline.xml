@@ -349,7 +349,6 @@
       <code><![CDATA[(int)($result['deleted_at'] ?? 0)]]></code>
       <code><![CDATA[(string)$file->getContent()]]></code>
       <code><![CDATA[(string)$file->getContent()]]></code>
-      <code><![CDATA[(string)$file->getContent()]]></code>
       <code><![CDATA[(string)$this->config->getAppValue('etherpad_nextcloud', 'delete_on_trash', 'yes')]]></code>
       <code><![CDATA[(string)$this->config->getAppValue('etherpad_nextcloud', 'test_fault', '')]]></code>
       <code><![CDATA[(string)($result['new_pad_id'] ?? '')]]></code>
