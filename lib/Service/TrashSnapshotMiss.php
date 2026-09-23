@@ -46,6 +46,14 @@ enum TrashSnapshotMiss: string {
 	}
 
 	/**
+	 * News each time, whatever the row says: Etherpad's silence is not the
+	 * file's, and the next run may find it answering.
+	 */
+	public function reportedEachTime(): bool {
+		return $this === self::SnapshotNotFetched;
+	}
+
+	/**
 	 * The file's own trouble, which does not pass by itself: the row moves
 	 * to the back, and counts as reported from then on. What passes by
 	 * itself - a lock, a pad that changed while it was read, a file that

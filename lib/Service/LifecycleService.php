@@ -11,7 +11,6 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\Service;
 
 use OCA\EtherpadNextcloud\Exception\BindingStateConflictException;
-use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
 use OCA\EtherpadNextcloud\Exception\LifecycleException;
 use OCA\EtherpadNextcloud\Exception\NotAPadFileException;
 use OCA\EtherpadNextcloud\Exception\PadAlreadyHasBindingException;
@@ -32,9 +31,6 @@ class LifecycleService {
 	public const RESULT_TRASHED = 'trashed';
 	public const RESULT_RESTORED = 'restored';
 	public const RESULT_SKIPPED = 'skipped';
-	public const TEST_FAULT_TRASH_READ_LOCK = 'trash_read_lock';
-	public const TEST_FAULT_TRASH_WRITE_LOCK = 'trash_write_lock';
-	public const TEST_FAULT_TRASH_WRITE_FAIL = 'trash_write_fail';
 	public const TEST_FAULT_RESTORE_READ_LOCK = 'restore_read_lock';
 	public const TEST_FAULT_RESTORE_WRITE_LOCK = 'restore_write_lock';
 	public const TEST_FAULT_RESTORE_WRITE_FAIL = 'restore_write_fail';
@@ -194,9 +190,9 @@ class LifecycleService {
 		$deletedAt = $this->timeFactory->getTime();
 
 		try {
-			$context = ['app' => 'etherpad_nextcloud', 'fileId' => $fileId];
-			$pad = $this->readForTrash($file, $context);
-			if ($pad instanceof TrashSnapshotMiss || !$this->writeTrashSnapshot($file, $pad, $padId, $context)) {
+			$snapshots = $this->snapshotWriter($file, $padId);
+			$pad = $snapshots->read();
+			if ($pad instanceof TrashSnapshotMiss || !$snapshots->writeAtTrash($pad)) {
 				// Without a fresh snapshot the pad may hold what the file lacks,
 				// so it stays as it is and its deletion is owed. The sweep takes
 				// the snapshot once the file sits in the trash and deletes the
@@ -281,10 +277,10 @@ class LifecycleService {
 			return SettleOutcome::Left;
 		}
 		$padId = (string)$binding['pad_id'];
-		$context = ['app' => 'etherpad_nextcloud', 'fileId' => $fileId];
 		$deletedAt = $binding['deleted_at'] ?? null;
 		$news = $deletedAt === null || (int)($binding['updated_at'] ?? 0) <= (int)$deletedAt;
-		$pad = $this->readForTrash($file, $context, $news);
+		$snapshots = $this->snapshotWriter($file, $padId, $news);
+		$pad = $snapshots->read();
 		if ($pad instanceof TrashSnapshotMiss) {
 			return $this->waitAgain($fileId, $padId, $pad);
 		}
@@ -306,22 +302,15 @@ class LifecycleService {
 		}
 		if ($probe->presence === PadPresence::Present) {
 			try {
-				$snapshot = $this->freshSnapshot($pad, $padId, $context, $budget, $probe->revisions);
-				if ($snapshot instanceof PadSnapshot) {
-					// A restore may have taken the file back since it was read, and
-					// a write through the old node would make a new file where it was.
-					$snapshot = $this->userNodeResolver->hasMoved($file)
-						? $this->snapshotMissed(TrashSnapshotMiss::FileMoved, $news, $context)
-						: $this->writeAndRecount($file, $pad, $padId, $snapshot, $context, $news, $budget);
-				}
+				$written = $snapshots->writeInTrash($pad, $probe->revisions, $budget, fn (): bool => $this->userNodeResolver->hasMoved($file));
 			} catch (RunBudgetSpentException) {
 				return SettleOutcome::Left;
-			} catch (EtherpadClientException $etherpadError) {
-				$this->snapshotMissed(TrashSnapshotMiss::SnapshotNotFetched, true, [...$context, ...SafeError::context($etherpadError)]);
+			}
+			if ($written === TrashSnapshotMiss::SnapshotNotFetched) {
 				return SettleOutcome::Unanswered;
 			}
-			if ($snapshot instanceof TrashSnapshotMiss) {
-				return $this->waitAgain($fileId, $padId, $snapshot);
+			if ($written instanceof TrashSnapshotMiss) {
+				return $this->waitAgain($fileId, $padId, $written);
 			}
 		}
 		return $this->deleteOwed($fileId, $padId, BindingService::STATE_PENDING_DELETE, $probe->presence, $budget, claimFirst: true);
@@ -424,155 +413,11 @@ class LifecycleService {
 	}
 
 	/**
-	 * The .pad as a trash reads it, or why there is nothing to take a
-	 * snapshot into yet. A delete through WebDAV holds the file's lock while
-	 * the trash is decided, so a locked file is the ordinary case here. A
-	 * file that cannot be read for another reason is treated the same: the
-	 * pad stays, and its deletion is owed.
-	 *
-	 * $news, here and in the steps after: whether the file's trouble would
-	 * be news (warning) or a repeat (debug). finishTrash reads it off the row.
-	 *
-	 * @param array<string,mixed> $context
+	 * The snapshot steps for one file and its pad (TrashSnapshotWriter),
+	 * with $news when a sweep takes them.
 	 */
-	private function readForTrash(File $file, array $context, bool $news = true): ParsedPadFile|TrashSnapshotMiss {
-		try {
-			if ($this->isTestFaultActive(self::TEST_FAULT_TRASH_READ_LOCK)) {
-				throw new LockedException('Injected test fault: trash_read_lock');
-			}
-			$content = (string)$file->getContent();
-		} catch (LockedException) {
-			return $this->snapshotMissed(TrashSnapshotMiss::FileLocked, $news, $context);
-		} catch (\Throwable $readError) {
-			return $this->snapshotMissed(TrashSnapshotMiss::FileUnreadable, $news, [...$context, ...SafeError::context($readError)]);
-		}
-		if ($content === '') {
-			return $this->snapshotMissed(TrashSnapshotMiss::FileEmpty, $news, $context);
-		}
-		try {
-			return $this->padFileService->readPad($content);
-		} catch (\Throwable $parseError) {
-			return $this->snapshotMissed(TrashSnapshotMiss::FileUnparsable, $news, [...$context, ...SafeError::context($parseError)]);
-		}
-	}
-
-	/**
-	 * Take the pad's current content into the file at trash time. True once
-	 * the file holds it, written now or there already: a pad is not deleted
-	 * on anything less.
-	 *
-	 * @param array<string,mixed> $context
-	 */
-	private function writeTrashSnapshot(File $file, ParsedPadFile $pad, string $padId, array $context): bool {
-		try {
-			$snapshot = $this->freshSnapshot($pad, $padId, $context);
-			if ($snapshot instanceof PadSnapshot) {
-				$snapshot = $this->writeAndRecount($file, $pad, $padId, $snapshot, $context);
-			}
-		} catch (\Throwable $fetchError) {
-			$this->snapshotMissed(TrashSnapshotMiss::SnapshotNotFetched, true, [...$context, ...SafeError::context($fetchError)]);
-			return false;
-		}
-		return $snapshot === true;
-	}
-
-	/**
-	 * The pad's current content for a trashed file: true when the file holds
-	 * it already - the pad has not moved past the file's snapshot revision -
-	 * a snapshot to write, or a miss: the pad is behind the file's snapshot,
-	 * or changed while it was read. A snapshot is never older than the one
-	 * the file has. Etherpad's errors are the caller's to place.
-	 *
-	 * $revisions: the pad's count, when the caller has just asked for it.
-	 *
-	 * @param array<string,mixed> $context
-	 * @return PadSnapshot|TrashSnapshotMiss|true
-	 */
-	private function freshSnapshot(ParsedPadFile $pad, string $padId, array $context, ?RunBudget $budget = null, ?int $revisions = null): PadSnapshot|TrashSnapshotMiss|bool {
-		$revisions ??= $this->etherpadClient->getRevisionsCount($padId, RunBudget::timeoutOf($budget));
-		if ($revisions === $pad->snapshotRev) {
-			return true;
-		}
-		if ($revisions < $pad->snapshotRev) {
-			return $this->snapshotMissed(TrashSnapshotMiss::PadBehind, true, $context);
-		}
-		return $this->fetchStableSnapshot($padId, $revisions, $budget)
-			?? $this->snapshotMissed(TrashSnapshotMiss::PadChanged, true, $context);
-	}
-
-	/**
-	 * The pad's text and HTML with the revision they belong to, or null when
-	 * the pad changed while they were read: the count taken before them has
-	 * to hold after.
-	 */
-	private function fetchStableSnapshot(string $padId, int $before, ?RunBudget $budget): ?PadSnapshot {
-		$text = $this->etherpadClient->getText($padId, RunBudget::timeoutOf($budget));
-		$html = $this->etherpadClient->getHTML($padId, RunBudget::timeoutOf($budget));
-		$after = $this->etherpadClient->getRevisionsCount($padId, RunBudget::timeoutOf($budget));
-		return $before === $after ? new PadSnapshot($text, $html, $after) : null;
-	}
-
-	/**
-	 * Write the snapshot, then count the pad once more before it may go: an
-	 * edit that came while the file was written is not in it, and the pad
-	 * waits for another snapshot. Etherpad cannot hold a pad still, so an
-	 * edit in the moment between this count and the delete is still lost;
-	 * counting after the write keeps the write, the slowest step, out of
-	 * that moment. Etherpad's errors are the caller's to place.
-	 *
-	 * @param array<string,mixed> $context
-	 * @return TrashSnapshotMiss|true
-	 */
-	private function writeAndRecount(File $file, ParsedPadFile $pad, string $padId, PadSnapshot $snapshot, array $context, bool $news = true, ?RunBudget $budget = null): TrashSnapshotMiss|bool {
-		$written = $this->writeSnapshot($file, $pad, $snapshot, $context, $news);
-		if ($written !== true) {
-			return $written;
-		}
-		return $this->etherpadClient->getRevisionsCount($padId, RunBudget::timeoutOf($budget)) === $snapshot->revision
-			? true
-			: $this->snapshotMissed(TrashSnapshotMiss::PadChanged, $news, $context);
-	}
-
-	/**
-	 * Write the snapshot into a file on its way to the trash, or in it. True
-	 * once it is written.
-	 *
-	 * @param array<string,mixed> $context
-	 * @return TrashSnapshotMiss|true
-	 */
-	private function writeSnapshot(File $file, ParsedPadFile $pad, PadSnapshot $snapshot, array $context, bool $news = true): TrashSnapshotMiss|bool {
-		try {
-			if ($this->isTestFaultActive(self::TEST_FAULT_TRASH_WRITE_LOCK)) {
-				throw new LockedException('Injected test fault: trash_write_lock');
-			}
-			if ($this->isTestFaultActive(self::TEST_FAULT_TRASH_WRITE_FAIL)) {
-				throw new \RuntimeException('Injected test fault: trash_write_fail');
-			}
-			$file->putContent($this->padFileService->withExportSnapshot($pad, $snapshot));
-			return true;
-		} catch (LockedException) {
-			return $this->snapshotMissed(TrashSnapshotMiss::FileLocked, $news, $context);
-		} catch (\Throwable $writeError) {
-			return $this->snapshotMissed(TrashSnapshotMiss::WriteFailed, $news, [...$context, ...SafeError::context($writeError)]);
-		}
-	}
-
-	/**
-	 * A trashed file that did not get its snapshot this time, in one line
-	 * to filter by `reason`: a warning when it needs a look and is news,
-	 * debug otherwise. Returns the miss, for the caller to pass on.
-	 *
-	 * @param array<string,mixed> $context
-	 */
-	private function snapshotMissed(TrashSnapshotMiss $miss, bool $news, array $context): TrashSnapshotMiss {
-		$message = 'A trashed .pad file did not get its snapshot. Its pad is kept for now.';
-		$context = [...$context, 'reason' => $miss->value];
-		if ($miss->needsALook() && $news) {
-			$this->logger->warning($message, $context);
-		} else {
-			$this->logger->debug($message, $context);
-		}
-		return $miss;
+	private function snapshotWriter(File $file, string $padId, bool $news = true): TrashSnapshotWriter {
+		return new TrashSnapshotWriter($this->etherpadClient, $this->padFileService, $this->logger, $this->isTestFaultActive(...), $file, $padId, $news);
 	}
 
 	/**
@@ -1124,9 +969,9 @@ class LifecycleService {
 	/** @return list<string> */
 	public static function getSupportedTestFaults(): array {
 		return [
-			self::TEST_FAULT_TRASH_READ_LOCK,
-			self::TEST_FAULT_TRASH_WRITE_LOCK,
-			self::TEST_FAULT_TRASH_WRITE_FAIL,
+			TrashSnapshotWriter::FAULT_READ_LOCK,
+			TrashSnapshotWriter::FAULT_WRITE_LOCK,
+			TrashSnapshotWriter::FAULT_WRITE_FAIL,
 			self::TEST_FAULT_RESTORE_READ_LOCK,
 			self::TEST_FAULT_RESTORE_WRITE_LOCK,
 			self::TEST_FAULT_RESTORE_WRITE_FAIL,

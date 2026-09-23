@@ -30,30 +30,59 @@ use Psr\Log\LoggerInterface;
  * does not reproduce the graph proves less than it looks.
  */
 trait WiresALifecycleService {
-	private function lifecycleServiceOver(BindingService $bindingService, LoggerInterface $logger, ?EtherpadClient $etherpadClient = null): LifecycleService {
-		$etherpadClient ??= $this->createMock(EtherpadClient::class);
-		$padLifecycle = new ManagedPadLifecycle($etherpadClient, $logger);
+	/**
+	 * A LifecycleService with a mock for every collaborator the test does
+	 * not name. The pad lifecycle and the rollback are built over the same
+	 * Etherpad client and bindings; they log into $padLifecycleLogger, a
+	 * mock of its own unless the test wants their lines in $logger too. The
+	 * config is deleteOnTrashConfig($deleteOnTrash).
+	 */
+	private function lifecycleService(
+		?BindingService $bindings = null,
+		?EtherpadClient $etherpad = null,
+		?PadFileService $padFiles = null,
+		bool $deleteOnTrash = true,
+		?LoggerInterface $logger = null,
+		?LoggerInterface $padLifecycleLogger = null,
+		?ISecureRandom $secureRandom = null,
+		?UserNodeResolver $nodes = null,
+		?PathNormalizer $paths = null,
+	): LifecycleService {
+		$bindings ??= $this->createMock(BindingService::class);
+		$etherpad ??= $this->createMock(EtherpadClient::class);
+		$padLifecycleLogger ??= $this->createMock(LoggerInterface::class);
+		$padLifecycle = new ManagedPadLifecycle($etherpad, $padLifecycleLogger);
 
 		return new LifecycleService(
-			$bindingService,
-			$this->createMock(PadFileService::class),
-			$etherpadClient,
+			$bindings,
+			$padFiles ?? $this->createMock(PadFileService::class),
+			$etherpad,
 			$padLifecycle,
-			$this->deleteOnTrashEnabledConfig(),
-			$logger,
-			$this->createMock(ISecureRandom::class),
-			$this->createMock(UserNodeResolver::class),
-			$this->createMock(PathNormalizer::class),
+			$this->deleteOnTrashConfig($deleteOnTrash),
+			$logger ?? $this->createMock(LoggerInterface::class),
+			$secureRandom ?? $this->createMock(ISecureRandom::class),
+			$nodes ?? $this->createMock(UserNodeResolver::class),
+			$paths ?? $this->createMock(PathNormalizer::class),
 			new FixedClock(),
-			new ProvisionedPadRollback($bindingService, $padLifecycle, $logger),
+			new ProvisionedPadRollback($bindings, $padLifecycle, $padLifecycleLogger),
 		);
 	}
 
-	private function deleteOnTrashEnabledConfig(): IConfig {
+	/** One whose pad lifecycle and rollback log where the service does. */
+	private function lifecycleServiceOver(BindingService $bindingService, LoggerInterface $logger, ?EtherpadClient $etherpadClient = null): LifecycleService {
+		return $this->lifecycleService(bindings: $bindingService, etherpad: $etherpadClient, logger: $logger, padLifecycleLogger: $logger);
+	}
+
+	/** Deleting on trash switched on or off; no test fault, debug off. */
+	private function deleteOnTrashConfig(bool $enabled = true): IConfig {
 		$config = $this->createMock(IConfig::class);
 		$config->method('getAppValue')->willReturnCallback(
-			static fn(string $app, string $key, string $default = ''): string
-				=> $key === 'delete_on_trash' ? 'yes' : $default
+			static function (string $appName, string $key, string $default = '') use ($enabled): string {
+				if ($appName === 'etherpad_nextcloud' && $key === 'delete_on_trash') {
+					return $enabled ? 'yes' : 'no';
+				}
+				return $default;
+			}
 		);
 		$config->method('getSystemValueBool')->willReturn(false);
 		return $config;

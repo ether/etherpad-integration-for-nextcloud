@@ -11,10 +11,8 @@ use OCA\EtherpadNextcloud\Exception\NotAPadFileException;
 use OCA\EtherpadNextcloud\Exception\PadAlreadyHasBindingException;
 use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\EtherpadNextcloud\Service\EtherpadClient;
-use OCA\EtherpadNextcloud\Service\ManagedPadLifecycle;
 use OCA\EtherpadNextcloud\Service\LifecycleService;
 use OCA\EtherpadNextcloud\Service\PadFileService;
-use OCA\EtherpadNextcloud\Service\ProvisionedPadRollback;
 use OCA\EtherpadNextcloud\Service\RunBudget;
 use OCA\EtherpadNextcloud\Service\SettleOutcome;
 use OCA\EtherpadNextcloud\Service\PadSnapshot;
@@ -22,15 +20,17 @@ use OCA\EtherpadNextcloud\Service\ParsedPadFile;
 use OCA\EtherpadNextcloud\Service\UserNodeResolver;
 use OCA\EtherpadNextcloud\Util\PathNormalizer;
 use OCP\Files\File;
-use OCP\IConfig;
 use OCP\Lock\LockedException;
 use OCP\Security\ISecureRandom;
 use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 use OCA\EtherpadNextcloud\Tests\Support\FixedClock;
+use OCA\EtherpadNextcloud\Tests\Support\WiresALifecycleService;
 
 class LifecycleServiceTest extends TestCase {
+	use WiresALifecycleService;
+
 	/** The revision the restored document was given, as the builder's formatter last saw it. */
 	private ?int $restoredRevision = null;
 	/** The snapshot revision the trash formatter reads a file at. */
@@ -632,18 +632,10 @@ class LifecycleServiceTest extends TestCase {
 		$etherpadClient = $this->createMock(EtherpadClient::class);
 		$etherpadClient->expects($this->once())->method('deletePad')->with('old-pad');
 
-		$service = new LifecycleService(
-			$bindingService,
-			$this->buildSnapshotWritingPadFileService(),
-			$etherpadClient,
-			new ManagedPadLifecycle($etherpadClient, $this->createMock(LoggerInterface::class)),
-			$this->buildDeleteOnTrashEnabledConfig(),
-			$this->createMock(LoggerInterface::class),
-			$this->createMock(ISecureRandom::class),
-			$this->createMock(UserNodeResolver::class),
-			$this->createMock(PathNormalizer::class),
-			new FixedClock(),
-			new ProvisionedPadRollback($bindingService, new ManagedPadLifecycle($etherpadClient, $this->createMock(LoggerInterface::class)), $this->createMock(LoggerInterface::class)),
+		$service = $this->lifecycleService(
+			bindings: $bindingService,
+			etherpad: $etherpadClient,
+			padFiles: $this->buildSnapshotWritingPadFileService(),
 		);
 		$file = $this->createMock(File::class);
 		$file->method('getId')->willReturn(109);
@@ -710,13 +702,13 @@ class LifecycleServiceTest extends TestCase {
 	/**
 	 * A pad is deleted on trash only once its content is in the file. A
 	 * delete through WebDAV holds the file's lock, and the snapshot can fail
-	 * in other ways too; each time the pad stays as it is, and its deletion
-	 * is owed - a restore takes it back, and the sweep takes the snapshot
-	 * once the file sits in the trash. A file that cannot be read is one of
-	 * those ways, not a reason to fail the user's delete.
+	 * in other ways too, each a TrashSnapshotMiss (TrashSnapshotWriterTest);
+	 * whether the file could not be read or not be written, the pad stays as
+	 * it is and its deletion is owed - a restore takes it back, and the
+	 * sweep takes the snapshot once the file sits in the trash.
 	 */
 	public function testHandleTrashKeepsThePadWhenNoFreshSnapshotCanBeWritten(): void {
-		foreach (['file locked by its delete', 'file unreadable', 'file empty', 'snapshot not fetched', 'pad changed while read', 'pad changed right after the write', 'write locked', 'write refused'] as $case) {
+		foreach (['file locked by its delete', 'write refused'] as $case) {
 			$bindingService = $this->createMock(BindingService::class);
 			$bindingService->method('findByFileId')->willReturn([
 				'file_id' => 110,
@@ -732,33 +724,20 @@ class LifecycleServiceTest extends TestCase {
 
 			$etherpadClient = $this->createMock(EtherpadClient::class);
 			$etherpadClient->expects($this->never())->method('deletePad');
-			if ($case === 'snapshot not fetched') {
-				$etherpadClient->method('getText')->willThrowException(new \RuntimeException('Connection reset'));
-			}
-			if ($case === 'pad changed while read') {
-				// The text would belong to neither count.
-				$etherpadClient->method('getRevisionsCount')->willReturnOnConsecutiveCalls(3, 4);
-			}
-			if ($case === 'pad changed right after the write') {
-				// The edit is not in the file: the pad stays for the sweep's snapshot.
-				$etherpadClient->method('getRevisionsCount')->willReturnOnConsecutiveCalls(3, 3, 4);
-			}
+			// Past the file's snapshot, and still there after the text: a snapshot to write.
+			$etherpadClient->method('getRevisionsCount')->willReturn(3);
+			$etherpadClient->method('getText')->willReturn('text');
+			$this->trashedSnapshotRev = 2;
 
 			$file = $this->createMock(File::class);
 			$file->method('getId')->willReturn(110);
 			$file->method('getName')->willReturn('Kept.pad');
 			if ($case === 'file locked by its delete') {
 				$file->method('getContent')->willThrowException(new LockedException('Kept.pad'));
-			} elseif ($case === 'file unreadable') {
-				$file->method('getContent')->willThrowException(new \RuntimeException('storage unavailable'));
+				$file->expects($this->never())->method('putContent');
 			} else {
-				$file->method('getContent')->willReturn($case === 'file empty' ? '' : 'doc-before');
-			}
-			if ($case === 'write locked') {
-				$file->method('putContent')->willThrowException(new LockedException('Kept.pad'));
-			}
-			if ($case === 'write refused') {
-				$file->method('putContent')->willThrowException(new \RuntimeException('disk full'));
+				$file->method('getContent')->willReturn('doc-before');
+				$file->expects($this->once())->method('putContent')->with('doc-after')->willThrowException(new \RuntimeException('disk full'));
 			}
 
 			$result = $this->buildTrashService($bindingService, $etherpadClient)->handleTrash($file);
@@ -1381,18 +1360,13 @@ class LifecycleServiceTest extends TestCase {
 	}
 
 	private function buildTrashService(BindingService $bindingService, EtherpadClient $etherpadClient, bool $deleteOnTrash = true, ?LoggerInterface $logger = null, ?UserNodeResolver $nodes = null): LifecycleService {
-		return new LifecycleService(
-			$bindingService,
-			$this->buildSnapshotWritingPadFileService(),
-			$etherpadClient,
-			new ManagedPadLifecycle($etherpadClient, $this->createMock(LoggerInterface::class)),
-			$this->buildDeleteOnTrashEnabledConfig($deleteOnTrash),
-			$logger ?? $this->createMock(LoggerInterface::class),
-			$this->createMock(ISecureRandom::class),
-			$nodes ?? $this->createMock(UserNodeResolver::class),
-			$this->createMock(PathNormalizer::class),
-			new FixedClock(),
-			new ProvisionedPadRollback($bindingService, new ManagedPadLifecycle($etherpadClient, $this->createMock(LoggerInterface::class)), $this->createMock(LoggerInterface::class)),
+		return $this->lifecycleService(
+			bindings: $bindingService,
+			etherpad: $etherpadClient,
+			padFiles: $this->buildSnapshotWritingPadFileService(),
+			deleteOnTrash: $deleteOnTrash,
+			logger: $logger,
+			nodes: $nodes,
 		);
 	}
 
@@ -1471,18 +1445,13 @@ class LifecycleServiceTest extends TestCase {
 		$secureRandom = $this->createMock(ISecureRandom::class);
 		$secureRandom->method('generate')->willReturn('abc123def456');
 
-		return new LifecycleService(
-			$bindingService,
-			$padFileService,
-			$etherpadClient,
-			new ManagedPadLifecycle($etherpadClient, $this->createMock(LoggerInterface::class)),
-			$this->buildDeleteOnTrashEnabledConfig($deleteOnTrash),
-			$logger ?? $this->createMock(LoggerInterface::class),
-			$secureRandom,
-			$this->createMock(UserNodeResolver::class),
-			$this->createMock(PathNormalizer::class),
-			new FixedClock(),
-			new ProvisionedPadRollback($bindingService, new ManagedPadLifecycle($etherpadClient, $this->createMock(LoggerInterface::class)), $this->createMock(LoggerInterface::class)),
+		return $this->lifecycleService(
+			bindings: $bindingService,
+			etherpad: $etherpadClient,
+			padFiles: $padFileService,
+			deleteOnTrash: $deleteOnTrash,
+			logger: $logger,
+			secureRandom: $secureRandom,
 		);
 	}
 
@@ -1492,7 +1461,6 @@ class LifecycleServiceTest extends TestCase {
 
 		$padFileService = $this->createMock(PadFileService::class);
 		$etherpadClient = $this->createMock(EtherpadClient::class);
-		$config = $this->buildDeleteOnTrashEnabledConfig();
 		$secureRandom = $this->createMock(ISecureRandom::class);
 		$logger = $this->createMock(LoggerInterface::class);
 		$logger->expects($this->once())->method('debug');
@@ -1501,18 +1469,12 @@ class LifecycleServiceTest extends TestCase {
 		$file->method('getId')->willReturn(12);
 		$file->method('getName')->willReturn('Notes.txt');
 
-		$service = new LifecycleService(
-			$bindingService,
-			$padFileService,
-			$etherpadClient,
-			new ManagedPadLifecycle($etherpadClient, $this->createMock(LoggerInterface::class)),
-			$config,
-			$logger,
-			$secureRandom,
-			$this->createMock(UserNodeResolver::class),
-			$this->createMock(PathNormalizer::class),
-			new FixedClock(),
-			new ProvisionedPadRollback($bindingService, new ManagedPadLifecycle($etherpadClient, $this->createMock(LoggerInterface::class)), $this->createMock(LoggerInterface::class)),
+		$service = $this->lifecycleService(
+			bindings: $bindingService,
+			etherpad: $etherpadClient,
+			padFiles: $padFileService,
+			logger: $logger,
+			secureRandom: $secureRandom,
 		);
 
 		$result = $service->handleTrash($file);
@@ -1569,7 +1531,6 @@ class LifecycleServiceTest extends TestCase {
 			->with($padId)
 			->willThrowException(new \RuntimeException('temporary failure'));
 
-		$config = $this->buildDeleteOnTrashEnabledConfig();
 		$secureRandom = $this->createMock(ISecureRandom::class);
 		$logger = $this->createMock(LoggerInterface::class);
 		$logger->expects($this->atLeastOnce())->method('warning');
@@ -1580,18 +1541,12 @@ class LifecycleServiceTest extends TestCase {
 		$file->expects($this->once())->method('getContent')->willReturn('doc-current');
 		$file->expects($this->once())->method('putContent')->with('doc-trash-updated');
 
-		$service = new LifecycleService(
-			$bindingService,
-			$padFileService,
-			$etherpadClient,
-			new ManagedPadLifecycle($etherpadClient, $this->createMock(LoggerInterface::class)),
-			$config,
-			$logger,
-			$secureRandom,
-			$this->createMock(UserNodeResolver::class),
-			$this->createMock(PathNormalizer::class),
-			new FixedClock(),
-			new ProvisionedPadRollback($bindingService, new ManagedPadLifecycle($etherpadClient, $this->createMock(LoggerInterface::class)), $this->createMock(LoggerInterface::class)),
+		$service = $this->lifecycleService(
+			bindings: $bindingService,
+			etherpad: $etherpadClient,
+			padFiles: $padFileService,
+			logger: $logger,
+			secureRandom: $secureRandom,
 		);
 
 		$result = $service->handleTrash($file);
@@ -1629,7 +1584,6 @@ class LifecycleServiceTest extends TestCase {
 		$etherpadClient = $this->createMock(EtherpadClient::class);
 		$etherpadClient->expects($this->never())->method('deletePad');
 
-		$config = $this->buildDeleteOnTrashEnabledConfig();
 		$secureRandom = $this->createMock(ISecureRandom::class);
 		$logger = $this->createMock(LoggerInterface::class);
 		$logger->expects($this->once())->method('warning');
@@ -1639,18 +1593,12 @@ class LifecycleServiceTest extends TestCase {
 		$file->method('getName')->willReturn('Pad.pad');
 		$file->expects($this->once())->method('getContent')->willReturn('');
 
-		$service = new LifecycleService(
-			$bindingService,
-			$padFileService,
-			$etherpadClient,
-			new ManagedPadLifecycle($etherpadClient, $this->createMock(LoggerInterface::class)),
-			$config,
-			$logger,
-			$secureRandom,
-			$this->createMock(UserNodeResolver::class),
-			$this->createMock(PathNormalizer::class),
-			new FixedClock(),
-			new ProvisionedPadRollback($bindingService, new ManagedPadLifecycle($etherpadClient, $this->createMock(LoggerInterface::class)), $this->createMock(LoggerInterface::class)),
+		$service = $this->lifecycleService(
+			bindings: $bindingService,
+			etherpad: $etherpadClient,
+			padFiles: $padFileService,
+			logger: $logger,
+			secureRandom: $secureRandom,
 		);
 
 		$result = $service->handleTrash($file);
@@ -1686,19 +1634,7 @@ class LifecycleServiceTest extends TestCase {
 		$file = $this->buildRestoredPadFile($fileId);
 		$file->expects($this->never())->method('putContent');
 
-		$service = new LifecycleService(
-			$bindingService,
-			$this->createMock(PadFileService::class),
-			$etherpadClient,
-			new ManagedPadLifecycle($etherpadClient, $this->createMock(LoggerInterface::class)),
-			$this->buildDeleteOnTrashEnabledConfig(),
-			$this->createMock(LoggerInterface::class),
-			$this->createMock(ISecureRandom::class),
-			$this->createMock(UserNodeResolver::class),
-			$this->createMock(PathNormalizer::class),
-			new FixedClock(),
-			new ProvisionedPadRollback($bindingService, new ManagedPadLifecycle($etherpadClient, $this->createMock(LoggerInterface::class)), $this->createMock(LoggerInterface::class)),
-		);
+		$service = $this->lifecycleService(bindings: $bindingService, etherpad: $etherpadClient);
 
 		$result = $service->handleTrash($file);
 		$this->assertSame(LifecycleService::RESULT_TRASHED, $result['status']);
@@ -1762,19 +1698,12 @@ class LifecycleServiceTest extends TestCase {
 		$file->expects($this->once())->method('getContent')->willReturn('doc-before');
 		$file->expects($this->once())->method('putContent')->with('doc-after');
 
-		$result = (new LifecycleService(
-			$bindingService,
-			$padFileService,
-			$etherpadClient,
-			new ManagedPadLifecycle($etherpadClient, $this->createMock(LoggerInterface::class)),
-			$this->buildDeleteOnTrashEnabledConfig(),
-			$this->createMock(LoggerInterface::class),
-			$secureRandom,
-			$this->createMock(UserNodeResolver::class),
-			$this->createMock(PathNormalizer::class),
-			new FixedClock(),
-			new ProvisionedPadRollback($bindingService, new ManagedPadLifecycle($etherpadClient, $this->createMock(LoggerInterface::class)), $this->createMock(LoggerInterface::class)),
-		))->handleRestore($file);
+		$result = $this->lifecycleService(
+			bindings: $bindingService,
+			etherpad: $etherpadClient,
+			padFiles: $padFileService,
+			secureRandom: $secureRandom,
+		)->handleRestore($file);
 
 		$this->assertSame(LifecycleService::RESULT_RESTORED, $result['status']);
 		$this->assertSame($fileId, $result['file_id']);
@@ -1865,18 +1794,11 @@ class LifecycleServiceTest extends TestCase {
 		$secureRandom = $this->createMock(ISecureRandom::class);
 		$secureRandom->method('generate')->willReturn('abc123def456');
 
-		return new LifecycleService(
-			$bindingService,
-			$padFileService,
-			$etherpadClient,
-			new ManagedPadLifecycle($etherpadClient, $this->createMock(LoggerInterface::class)),
-			$this->buildDeleteOnTrashEnabledConfig(),
-			$this->createMock(LoggerInterface::class),
-			$secureRandom,
-			$this->createMock(UserNodeResolver::class),
-			$this->createMock(PathNormalizer::class),
-			new FixedClock(),
-			new ProvisionedPadRollback($bindingService, new ManagedPadLifecycle($etherpadClient, $this->createMock(LoggerInterface::class)), $this->createMock(LoggerInterface::class)),
+		return $this->lifecycleService(
+			bindings: $bindingService,
+			etherpad: $etherpadClient,
+			padFiles: $padFileService,
+			secureRandom: $secureRandom,
 		);
 	}
 
@@ -1923,19 +1845,7 @@ class LifecycleServiceTest extends TestCase {
 		$file->expects($this->once())->method('getContent')->willReturn('doc-before');
 		$file->expects($this->never())->method('putContent');
 
-		$result = (new LifecycleService(
-			$bindingService,
-			$padFileService,
-			$etherpadClient,
-			new ManagedPadLifecycle($etherpadClient, $this->createMock(LoggerInterface::class)),
-			$this->buildDeleteOnTrashEnabledConfig(),
-			$this->createMock(LoggerInterface::class),
-			$this->createMock(ISecureRandom::class),
-			$this->createMock(UserNodeResolver::class),
-			$this->createMock(PathNormalizer::class),
-			new FixedClock(),
-			new ProvisionedPadRollback($bindingService, new ManagedPadLifecycle($etherpadClient, $this->createMock(LoggerInterface::class)), $this->createMock(LoggerInterface::class)),
-		))->handleRestore($file);
+		$result = $this->lifecycleService(bindings: $bindingService, etherpad: $etherpadClient, padFiles: $padFileService)->handleRestore($file);
 
 		$this->assertSame(LifecycleService::RESULT_SKIPPED, $result['status']);
 		$this->assertSame('external_pad', $result['reason']);
@@ -1985,19 +1895,7 @@ class LifecycleServiceTest extends TestCase {
 		$file->expects($this->once())->method('getContent')->willReturn('doc-before');
 		$file->expects($this->never())->method('putContent');
 
-		$result = (new LifecycleService(
-			$bindingService,
-			$padFileService,
-			$etherpadClient,
-			new ManagedPadLifecycle($etherpadClient, $this->createMock(LoggerInterface::class)),
-			$this->buildDeleteOnTrashEnabledConfig(),
-			$this->createMock(LoggerInterface::class),
-			$this->createMock(ISecureRandom::class),
-			$this->createMock(UserNodeResolver::class),
-			$this->createMock(PathNormalizer::class),
-			new FixedClock(),
-			new ProvisionedPadRollback($bindingService, new ManagedPadLifecycle($etherpadClient, $this->createMock(LoggerInterface::class)), $this->createMock(LoggerInterface::class)),
-		))->handleRestore($file);
+		$result = $this->lifecycleService(bindings: $bindingService, etherpad: $etherpadClient, padFiles: $padFileService)->handleRestore($file);
 
 		$this->assertSame(LifecycleService::RESULT_SKIPPED, $result['status']);
 		$this->assertSame('external_pad', $result['reason']);
@@ -2052,19 +1950,7 @@ class LifecycleServiceTest extends TestCase {
 		$file->expects($this->once())->method('getContent')->willReturn('doc-before');
 		$file->expects($this->never())->method('putContent');
 
-		$result = (new LifecycleService(
-			$bindingService,
-			$padFileService,
-			$etherpadClient,
-			new ManagedPadLifecycle($etherpadClient, $this->createMock(LoggerInterface::class)),
-			$this->buildDeleteOnTrashEnabledConfig(),
-			$this->createMock(LoggerInterface::class),
-			$this->createMock(ISecureRandom::class),
-			$this->createMock(UserNodeResolver::class),
-			$this->createMock(PathNormalizer::class),
-			new FixedClock(),
-			new ProvisionedPadRollback($bindingService, new ManagedPadLifecycle($etherpadClient, $this->createMock(LoggerInterface::class)), $this->createMock(LoggerInterface::class)),
-		))->handleRestore($file);
+		$result = $this->lifecycleService(bindings: $bindingService, etherpad: $etherpadClient, padFiles: $padFileService)->handleRestore($file);
 
 		$this->assertSame(LifecycleService::RESULT_SKIPPED, $result['status']);
 		$this->assertSame('external_pad', $result['reason']);
@@ -2120,19 +2006,12 @@ class LifecycleServiceTest extends TestCase {
 		$file->method('getContent')->willReturn('doc-before');
 		$file->expects($this->once())->method('putContent')->with('doc-after');
 
-		$result = (new LifecycleService(
-			$bindingService,
-			$padFileService,
-			$etherpadClient,
-			new ManagedPadLifecycle($etherpadClient, $this->createMock(LoggerInterface::class)),
-			$this->buildDeleteOnTrashEnabledConfig(),
-			$this->createMock(LoggerInterface::class),
-			$secureRandom,
-			$this->createMock(UserNodeResolver::class),
-			$this->createMock(PathNormalizer::class),
-			new FixedClock(),
-			new ProvisionedPadRollback($bindingService, new ManagedPadLifecycle($etherpadClient, $this->createMock(LoggerInterface::class)), $this->createMock(LoggerInterface::class)),
-		))->recoverFromSnapshot($file);
+		$result = $this->lifecycleService(
+			bindings: $bindingService,
+			etherpad: $etherpadClient,
+			padFiles: $padFileService,
+			secureRandom: $secureRandom,
+		)->recoverFromSnapshot($file);
 
 		$this->assertSame(LifecycleService::RESULT_RESTORED, $result['status']);
 		$this->assertSame($fileId, $result['file_id']);
@@ -2190,19 +2069,12 @@ class LifecycleServiceTest extends TestCase {
 		$file->expects($this->never())->method('putContent');
 
 		$this->expectException(LifecycleException::class);
-		(new LifecycleService(
-			$bindingService,
-			$padFileService,
-			$etherpadClient,
-			new ManagedPadLifecycle($etherpadClient, $this->createMock(LoggerInterface::class)),
-			$this->buildDeleteOnTrashEnabledConfig(),
-			$this->createMock(LoggerInterface::class),
-			$secureRandom,
-			$this->createMock(UserNodeResolver::class),
-			$this->createMock(PathNormalizer::class),
-			new FixedClock(),
-			new ProvisionedPadRollback($bindingService, new ManagedPadLifecycle($etherpadClient, $this->createMock(LoggerInterface::class)), $this->createMock(LoggerInterface::class)),
-		))->recoverFromSnapshot($file);
+		$this->lifecycleService(
+			bindings: $bindingService,
+			etherpad: $etherpadClient,
+			padFiles: $padFileService,
+			secureRandom: $secureRandom,
+		)->recoverFromSnapshot($file);
 	}
 
 	public function testRecoverFromSnapshotRefusesWhenBindingAlreadyExists(): void {
@@ -2220,19 +2092,7 @@ class LifecycleServiceTest extends TestCase {
 		$file->method('getName')->willReturn('Linked.pad');
 		$file->expects($this->never())->method('putContent');
 
-		$service = new LifecycleService(
-			$bindingService,
-			$this->createMock(PadFileService::class),
-			$this->createMock(EtherpadClient::class),
-			new ManagedPadLifecycle($this->createMock(EtherpadClient::class), $this->createMock(LoggerInterface::class)),
-			$this->buildDeleteOnTrashEnabledConfig(),
-			$this->createMock(LoggerInterface::class),
-			$this->createMock(ISecureRandom::class),
-			$this->createMock(UserNodeResolver::class),
-			$this->createMock(PathNormalizer::class),
-			new FixedClock(),
-			new ProvisionedPadRollback($bindingService, new ManagedPadLifecycle($this->createMock(EtherpadClient::class), $this->createMock(LoggerInterface::class)), $this->createMock(LoggerInterface::class)),
-		);
+		$service = $this->lifecycleService(bindings: $bindingService);
 
 		$this->expectException(PadAlreadyHasBindingException::class);
 		$service->recoverFromSnapshot($file);
@@ -2246,19 +2106,7 @@ class LifecycleServiceTest extends TestCase {
 		$file->method('getId')->willReturn(703);
 		$file->method('getName')->willReturn('Notes.txt');
 
-		$service = new LifecycleService(
-			$bindingService,
-			$this->createMock(PadFileService::class),
-			$this->createMock(EtherpadClient::class),
-			new ManagedPadLifecycle($this->createMock(EtherpadClient::class), $this->createMock(LoggerInterface::class)),
-			$this->buildDeleteOnTrashEnabledConfig(),
-			$this->createMock(LoggerInterface::class),
-			$this->createMock(ISecureRandom::class),
-			$this->createMock(UserNodeResolver::class),
-			$this->createMock(PathNormalizer::class),
-			new FixedClock(),
-			new ProvisionedPadRollback($bindingService, new ManagedPadLifecycle($this->createMock(EtherpadClient::class), $this->createMock(LoggerInterface::class)), $this->createMock(LoggerInterface::class)),
-		);
+		$service = $this->lifecycleService(bindings: $bindingService);
 
 		$this->expectException(NotAPadFileException::class);
 		$service->recoverFromSnapshot($file);
@@ -2294,36 +2142,20 @@ class LifecycleServiceTest extends TestCase {
 		$etherpadClient = $this->createMock(EtherpadClient::class);
 		$etherpadClient->expects($this->never())->method($this->anything());
 
-		// delete_on_trash disabled => skipped before any Etherpad work.
-		$config = $this->createMock(IConfig::class);
-		$config->method('getAppValue')->willReturnCallback(
-			static function (string $appName, string $key, string $default = ''): string {
-				if ($appName === 'etherpad_nextcloud' && $key === 'delete_on_trash') {
-					return 'no';
-				}
-				return $default;
-			}
-		);
-		$config->method('getSystemValueBool')->willReturn(false);
-
 		$userNodeResolver = $this->createMock(UserNodeResolver::class);
 		$userNodeResolver->expects($this->once())
 			->method('resolveUserFileNodeByPath')
 			->with('alice', '/Test.pad')
 			->willReturn($file);
 
-		$service = new LifecycleService(
-			$bindingService,
-			$padFileService,
-			$etherpadClient,
-			new ManagedPadLifecycle($etherpadClient, $this->createMock(LoggerInterface::class)),
-			$config,
-			$this->createMock(LoggerInterface::class),
-			$this->createMock(ISecureRandom::class),
-			$userNodeResolver,
-			new PathNormalizer(),
-			new FixedClock(),
-			new ProvisionedPadRollback($bindingService, new ManagedPadLifecycle($etherpadClient, $this->createMock(LoggerInterface::class)), $this->createMock(LoggerInterface::class)),
+		$service = $this->lifecycleService(
+			bindings: $bindingService,
+			etherpad: $etherpadClient,
+			padFiles: $padFileService,
+			// delete_on_trash disabled => skipped before any Etherpad work.
+			deleteOnTrash: false,
+			nodes: $userNodeResolver,
+			paths: new PathNormalizer(),
 		);
 
 		$result = $service->trashByPath('alice', '/Test.pad');
@@ -2368,18 +2200,12 @@ class LifecycleServiceTest extends TestCase {
 			->with('alice', '/Test.pad')
 			->willReturn($file);
 
-		$service = new LifecycleService(
-			$bindingService,
-			$padFileService,
-			$etherpadClient,
-			new ManagedPadLifecycle($etherpadClient, $this->createMock(LoggerInterface::class)),
-			$this->buildDeleteOnTrashEnabledConfig(),
-			$this->createMock(LoggerInterface::class),
-			$this->createMock(ISecureRandom::class),
-			$userNodeResolver,
-			new PathNormalizer(),
-			new FixedClock(),
-			new ProvisionedPadRollback($bindingService, new ManagedPadLifecycle($etherpadClient, $this->createMock(LoggerInterface::class)), $this->createMock(LoggerInterface::class)),
+		$service = $this->lifecycleService(
+			bindings: $bindingService,
+			etherpad: $etherpadClient,
+			padFiles: $padFileService,
+			nodes: $userNodeResolver,
+			paths: new PathNormalizer(),
 		);
 
 		$result = $service->trashByPath('alice', '/Test.pad');
@@ -2393,19 +2219,7 @@ class LifecycleServiceTest extends TestCase {
 	}
 
 	public function testTrashByPathRejectsEmptyPath(): void {
-		$service = new LifecycleService(
-			$this->createMock(BindingService::class),
-			$this->createMock(PadFileService::class),
-			$this->createMock(EtherpadClient::class),
-			new ManagedPadLifecycle($this->createMock(EtherpadClient::class), $this->createMock(LoggerInterface::class)),
-			$this->buildDeleteOnTrashEnabledConfig(),
-			$this->createMock(LoggerInterface::class),
-			$this->createMock(ISecureRandom::class),
-			$this->createMock(UserNodeResolver::class),
-			new PathNormalizer(),
-			new FixedClock(),
-			new ProvisionedPadRollback($this->createMock(BindingService::class), new ManagedPadLifecycle($this->createMock(EtherpadClient::class), $this->createMock(LoggerInterface::class)), $this->createMock(LoggerInterface::class)),
-		);
+		$service = $this->lifecycleService(paths: new PathNormalizer());
 
 		$this->expectException(\InvalidArgumentException::class);
 		$service->trashByPath('alice', '   ');
@@ -2425,19 +2239,7 @@ class LifecycleServiceTest extends TestCase {
 			->with('alice', '/Test.pad')
 			->willReturn($file);
 
-		$service = new LifecycleService(
-			$bindingService,
-			$this->createMock(PadFileService::class),
-			$this->createMock(EtherpadClient::class),
-			new ManagedPadLifecycle($this->createMock(EtherpadClient::class), $this->createMock(LoggerInterface::class)),
-			$this->buildDeleteOnTrashEnabledConfig(),
-			$this->createMock(LoggerInterface::class),
-			$this->createMock(ISecureRandom::class),
-			$userNodeResolver,
-			new PathNormalizer(),
-			new FixedClock(),
-			new ProvisionedPadRollback($bindingService, new ManagedPadLifecycle($this->createMock(EtherpadClient::class), $this->createMock(LoggerInterface::class)), $this->createMock(LoggerInterface::class)),
-		);
+		$service = $this->lifecycleService(bindings: $bindingService, nodes: $userNodeResolver, paths: new PathNormalizer());
 
 		$result = $service->restoreByPath('alice', '/Test.pad');
 
@@ -2482,18 +2284,11 @@ class LifecycleServiceTest extends TestCase {
 			->with('alice', $fileId)
 			->willReturn($file);
 
-		$service = new LifecycleService(
-			$bindingService,
-			$padFileService,
-			$this->createMock(EtherpadClient::class),
-			new ManagedPadLifecycle($this->createMock(EtherpadClient::class), $this->createMock(LoggerInterface::class)),
-			$this->buildDeleteOnTrashEnabledConfig(),
-			$this->createMock(LoggerInterface::class),
-			$this->createMock(ISecureRandom::class),
-			$userNodeResolver,
-			new PathNormalizer(),
-			new FixedClock(),
-			new ProvisionedPadRollback($bindingService, new ManagedPadLifecycle($this->createMock(EtherpadClient::class), $this->createMock(LoggerInterface::class)), $this->createMock(LoggerInterface::class)),
+		$service = $this->lifecycleService(
+			bindings: $bindingService,
+			padFiles: $padFileService,
+			nodes: $userNodeResolver,
+			paths: new PathNormalizer(),
 		);
 
 		$result = $service->recoverByFileId('alice', $fileId);
@@ -2505,20 +2300,4 @@ class LifecycleServiceTest extends TestCase {
 		], $result);
 	}
 
-	private function buildDeleteOnTrashEnabledConfig(bool $enabled = true): IConfig {
-		$config = $this->createMock(IConfig::class);
-		$config->method('getAppValue')->willReturnCallback(
-			static function (string $appName, string $key, string $default = '') use ($enabled): string {
-				if ($appName === 'etherpad_nextcloud' && $key === 'delete_on_trash') {
-					return $enabled ? 'yes' : 'no';
-				}
-				if ($appName === 'etherpad_nextcloud' && $key === 'test_fault') {
-					return '';
-				}
-				return $default;
-			}
-		);
-		$config->method('getSystemValueBool')->willReturn(false);
-		return $config;
-	}
 }
