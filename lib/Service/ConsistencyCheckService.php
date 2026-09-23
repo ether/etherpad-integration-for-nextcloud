@@ -8,6 +8,7 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Service;
 
+use OCA\EtherpadNextcloud\Util\DbRows;
 use OCP\IDBConnection;
 
 class ConsistencyCheckService {
@@ -41,10 +42,10 @@ class ConsistencyCheckService {
 			->where($qb->expr()->isNull('fc.fileid'));
 
 		$result = $qb->executeQuery();
-		$row = $result->fetch();
+		$row = DbRows::one($result->fetch());
 		$result->closeCursor();
 
-		if (!is_array($row) || !isset($row['cnt'])) {
+		if ($row === null || !isset($row['cnt'])) {
 			return 0;
 		}
 		return max(0, (int)$row['cnt']);
@@ -61,7 +62,7 @@ class ConsistencyCheckService {
 			->setMaxResults(max(1, $limit));
 
 		$result = $qb->executeQuery();
-		$rows = $result->fetchAll();
+		$rows = DbRows::all($result->fetchAll());
 		$result->closeCursor();
 		return $rows;
 	}
