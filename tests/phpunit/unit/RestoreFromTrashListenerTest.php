@@ -7,6 +7,7 @@ namespace OCA\EtherpadNextcloud\Tests\Unit;
 use OCA\EtherpadNextcloud\Listeners\RestoreFromTrashListener;
 use OCA\EtherpadNextcloud\Exception\LifecycleException;
 use OCA\EtherpadNextcloud\Service\BindingService;
+use OCA\EtherpadNextcloud\Service\EtherpadClient;
 use OCA\EtherpadNextcloud\Service\LifecycleService;
 use OCA\EtherpadNextcloud\Service\UserNodeResolver;
 use OCA\EtherpadNextcloud\Tests\Support\WatchesTheWholeLogger;
@@ -46,13 +47,18 @@ class RestoreFromTrashListenerTest extends TestCase {
 			'access_mode' => BindingService::ACCESS_PUBLIC,
 			'state' => BindingService::STATE_PENDING_DELETE,
 		]);
+		// Inside the restore's own try, which is where the removed entry
+		// was written and the only place it could ever have fired: an
+		// unreadable file leaves the row for a later check, and moving it
+		// there is what fails.
+		$bindingService->method('transition')->willThrowException($boom);
+
+		$etherpadClient = $this->createMock(EtherpadClient::class);
 
 		$file = $this->createMock(File::class);
 		$file->method('getId')->willReturn($fileId);
 		$file->method('getName')->willReturn('Notes.pad');
-		// Inside restoreFlow's own try, which is where the removed entry
-		// was written and the only place it could ever have fired.
-		$file->method('getContent')->willThrowException($boom);
+		$file->method('getContent')->willThrowException(new \RuntimeException('locked'));
 
 		$logger = $this->createMock(LoggerInterface::class);
 		$this->closeEveryLevelExcept($logger, 'error');
@@ -69,7 +75,7 @@ class RestoreFromTrashListenerTest extends TestCase {
 			);
 
 		$listener = new RestoreFromTrashListener(
-			$this->lifecycleServiceOver($bindingService, $logger),
+			$this->lifecycleServiceOver($bindingService, $logger, $etherpadClient),
 			$this->createMock(IUserSession::class),
 			$this->createMock(UserNodeResolver::class),
 			$logger,

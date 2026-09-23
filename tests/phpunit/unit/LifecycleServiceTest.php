@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\Tests\Unit;
 
 use OCA\EtherpadNextcloud\Exception\BindingException;
-use OCA\EtherpadNextcloud\Exception\BindingStateConflictException;
 use OCA\EtherpadNextcloud\Exception\LifecycleException;
 use OCA\EtherpadNextcloud\Exception\NotAPadFileException;
 use OCA\EtherpadNextcloud\Exception\PadAlreadyHasBindingException;
@@ -15,6 +14,7 @@ use OCA\EtherpadNextcloud\Service\ManagedPadLifecycle;
 use OCA\EtherpadNextcloud\Service\LifecycleService;
 use OCA\EtherpadNextcloud\Service\PadFileService;
 use OCA\EtherpadNextcloud\Service\ProvisionedPadRollback;
+use OCA\EtherpadNextcloud\Service\SettleOutcome;
 use OCA\EtherpadNextcloud\Service\PadSnapshot;
 use OCA\EtherpadNextcloud\Service\ParsedPadFile;
 use OCA\EtherpadNextcloud\Service\UserNodeResolver;
@@ -22,11 +22,71 @@ use OCA\EtherpadNextcloud\Util\PathNormalizer;
 use OCP\Files\File;
 use OCP\IConfig;
 use OCP\Security\ISecureRandom;
+use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 use OCA\EtherpadNextcloud\Tests\Support\FixedClock;
 
 class LifecycleServiceTest extends TestCase {
+	/** The revision the restored document was given, as the builder's formatter last saw it. */
+	private ?int $restoredRevision = null;
+
+	/**
+	 * A binding waits in pending_delete because its pad could not be deleted,
+	 * and that pad may hold edits the snapshot missed. While Etherpad still
+	 * has it, the file gets it back as it is.
+	 */
+	public function testHandleRestoreGivesTheFileBackItsOwnPadWhileItExists(): void {
+		$fileId = 81;
+		$bindingService = $this->createMock(BindingService::class);
+		$bindingService->expects($this->once())
+			->method('transition')
+			->with($fileId, 'old-pad', BindingService::STATE_PENDING_DELETE, BindingService::STATE_ACTIVE)
+			->willReturn(true);
+
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->method('getRevisionsCount')->with('old-pad')->willReturn(7);
+		$etherpadClient->expects($this->never())->method('createPad');
+		$etherpadClient->expects($this->never())->method('deletePad');
+
+		$file = $this->buildRestoredPadFile($fileId);
+		$file->expects($this->never())->method('putContent');
+
+		$result = $this->buildPendingDeleteRestoreService($fileId, 'old-pad', $bindingService, $etherpadClient)->handleRestore($file);
+
+		$this->assertSame(LifecycleService::RESULT_RESTORED, $result['status']);
+		$this->assertSame('old-pad', $result['old_pad_id']);
+		$this->assertSame('old-pad', $result['new_pad_id']);
+	}
+
+	/** No answer is not an answer: the pad is neither reused nor replaced. */
+	public function testHandleRestoreKeepsThePadForALaterCheckWhenEtherpadCannotSay(): void {
+		$fileId = 82;
+		$bindingService = $this->createMock(BindingService::class);
+		$bindingService->expects($this->once())
+			->method('transition')
+			->with($fileId, 'old-pad', BindingService::STATE_PENDING_DELETE, BindingService::STATE_RESTORE_PENDING)
+			->willReturn(true);
+
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->method('getRevisionsCount')->willThrowException(new \RuntimeException('Connection refused'));
+		$etherpadClient->expects($this->never())->method('createPad');
+		$etherpadClient->expects($this->never())->method('deletePad');
+
+		$file = $this->buildRestoredPadFile($fileId);
+		$file->expects($this->never())->method('putContent');
+
+		// Etherpad's silence is warned about, with its cause, where it is met;
+		// the restore adds a note, not a second warning for the same event.
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects($this->never())->method('warning');
+		$logger->expects($this->once())->method('info')->with($this->stringContains('later check'), $this->anything());
+
+		$result = $this->buildPendingDeleteRestoreService($fileId, 'old-pad', $bindingService, $etherpadClient, logger: $logger)->handleRestore($file);
+
+		$this->assertSame(LifecycleService::RESULT_SKIPPED, $result['status']);
+		$this->assertSame('pad_presence_unknown', $result['reason']);
+	}
 
 	/**
 	 * An access mode nobody knows must not become an unprotected pad - and
@@ -35,21 +95,537 @@ class LifecycleServiceTest extends TestCase {
 	 */
 	public function testHandleRestoreSkipsABindingWithAnUnknownAccessMode(): void {
 		$fileId = 91;
-		$bindingService = $this->createMock(BindingService::class);
-		$bindingService->method('findByFileId')->with($fileId)->willReturn([
-			'file_id' => $fileId,
-			'pad_id' => 'old-pad',
-			'access_mode' => 'something-else',
-			'state' => BindingService::STATE_PENDING_DELETE,
-		]);
-
-		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient = $this->buildEtherpadWithoutThePad();
 		$etherpadClient->expects($this->never())->method('createPad');
 		$etherpadClient->expects($this->never())->method('createGroup');
+
+		$result = $this->buildPendingDeleteRestoreService($fileId, 'old-pad', $this->createMock(BindingService::class), $etherpadClient, accessMode: 'something-else')
+			->handleRestore($this->buildRestoredPadFile($fileId));
+
+		$this->assertSame(LifecycleService::RESULT_SKIPPED, $result['status']);
+		$this->assertSame('unknown_access_mode', $result['reason']);
+	}
+
+	/**
+	 * Etherpad has already said the row's pad is gone, so a row still
+	 * naming it is released when no replacement can be made: a later check
+	 * could only reach the same answer, and without the row the file offers
+	 * its own recovery at once.
+	 */
+	public function testHandleRestoreReleasesTheRowWhenNoReplacementCanBeMade(): void {
+		$fileId = 87;
+		$bindingService = $this->createMock(BindingService::class);
+		$bindingService->expects($this->once())
+			->method('deleteInState')
+			->with($fileId, 'old-pad', BindingService::STATE_PENDING_DELETE)
+			->willReturn(true);
+		$bindingService->expects($this->never())->method('transition');
+		$bindingService->expects($this->never())->method('rebind');
+
+		$etherpadClient = $this->buildEtherpadWithoutThePad();
+		$etherpadClient->method('createPad')->willThrowException(new \RuntimeException('Connection timed out'));
+
+		$file = $this->buildRestoredPadFile($fileId);
+		$file->expects($this->never())->method('putContent');
+
+		$this->expectException(LifecycleException::class);
+		$this->buildPendingDeleteRestoreService($fileId, 'old-pad', $bindingService, $etherpadClient)->handleRestore($file);
+	}
+
+	/**
+	 * Seeding can fail after the pad is made. Nothing names it yet - the
+	 * claim comes later - so it goes, and the file is left as it was.
+	 */
+	public function testHandleRestoreRemovesAReplacementItCouldNotSeed(): void {
+		$fileId = 95;
+		$newPadId = 'r-old-pad-abc123def456';
+		$bindingService = $this->createMock(BindingService::class);
+		$bindingService->expects($this->never())->method('rebind');
+		$bindingService->expects($this->once())
+			->method('deleteInState')
+			->with($fileId, 'old-pad', BindingService::STATE_PENDING_DELETE)
+			->willReturn(true);
+
+		$etherpadClient = $this->buildEtherpadWithoutThePad();
+		$etherpadClient->expects($this->once())->method('createPad')->with($newPadId);
+		$etherpadClient->method('setText')->willThrowException(new \RuntimeException('Connection reset'));
+		$etherpadClient->expects($this->once())->method('deletePad')->with($newPadId);
+
+		$file = $this->buildRestoredPadFile($fileId);
+		$file->expects($this->never())->method('putContent');
+
+		$this->expectException(LifecycleException::class);
+		$this->buildPendingDeleteRestoreService($fileId, 'old-pad', $bindingService, $etherpadClient)->handleRestore($file);
+	}
+
+	/**
+	 * Two restores of one file can both get as far as a replacement pad. The
+	 * row decides which of them writes; the other leaves the file to the
+	 * winner and takes its own pad with it.
+	 */
+	public function testHandleRestoreWritesNothingWhenAnotherRestoreClaimedTheRow(): void {
+		$fileId = 83;
+		$newPadId = 'r-old-pad-abc123def456';
+		$bindingService = $this->createMock(BindingService::class);
+		$bindingService->expects($this->once())
+			->method('rebind')
+			->with($fileId, 'old-pad', BindingService::STATE_PENDING_DELETE, $newPadId, BindingService::STATE_ACTIVE)
+			->willReturn(false);
+		$bindingService->expects($this->never())->method('transition');
+
+		$etherpadClient = $this->buildEtherpadWithoutThePad();
+		$etherpadClient->expects($this->once())->method('deletePad')->with($newPadId);
+
+		$file = $this->buildRestoredPadFile($fileId);
+		$file->expects($this->never())->method('putContent');
+
+		$result = $this->buildPendingDeleteRestoreService($fileId, 'old-pad', $bindingService, $etherpadClient)->handleRestore($file);
+
+		$this->assertSame(LifecycleService::RESULT_SKIPPED, $result['status']);
+		$this->assertSame('binding_state_transition_conflict', $result['reason']);
+	}
+
+	/**
+	 * A write that fails after the claim leaves the row naming a pad the
+	 * file never learned of. That row goes, and the replacement with it.
+	 */
+	public function testHandleRestoreRemovesTheClaimWhenTheWriteFails(): void {
+		$fileId = 88;
+		$newPadId = 'r-old-pad-abc123def456';
+		$bindingService = $this->createMock(BindingService::class);
+		$bindingService->expects($this->once())
+			->method('rebind')
+			->with($fileId, 'old-pad', BindingService::STATE_PENDING_DELETE, $newPadId, BindingService::STATE_ACTIVE)
+			->willReturn(true);
+		$bindingService->method('isBoundTo')->with($fileId, $newPadId)->willReturn(true);
+		$bindingService->expects($this->once())->method('deleteActiveBinding')->with($fileId, $newPadId)->willReturn(true);
+
+		$etherpadClient = $this->buildEtherpadWithoutThePad();
+		$etherpadClient->expects($this->once())->method('deletePad')->with($newPadId);
+
+		$file = $this->buildRestoredPadFile($fileId);
+		$file->expects($this->once())->method('putContent')->willThrowException(new \RuntimeException('disk full'));
+
+		$this->expectException(LifecycleException::class);
+		$this->buildPendingDeleteRestoreService($fileId, 'old-pad', $bindingService, $etherpadClient)->handleRestore($file);
+	}
+
+	/**
+	 * A claim can commit and still throw. Taken for a refusal, it would
+	 * discard the very pad the row now names - so the row is asked.
+	 */
+	public function testHandleRestoreKeepsAClaimThatLandedWithoutSayingSo(): void {
+		$fileId = 89;
+		$newPadId = 'r-old-pad-abc123def456';
+		$bindingService = $this->createMock(BindingService::class);
+		$bindingService->method('rebind')->willThrowException(new \RuntimeException('connection lost'));
+		$bindingService->method('isBoundTo')->with($fileId, $newPadId)->willReturn(true);
+
+		$etherpadClient = $this->buildEtherpadWithoutThePad();
+		// Only what is left of the old pad, never the replacement.
+		$etherpadClient->expects($this->once())->method('deletePad')->with('old-pad');
+
+		$file = $this->buildRestoredPadFile($fileId);
+		$file->expects($this->once())->method('putContent')->with('doc-after');
+
+		$result = $this->buildPendingDeleteRestoreService($fileId, 'old-pad', $bindingService, $etherpadClient)->handleRestore($file);
+
+		$this->assertSame(LifecycleService::RESULT_RESTORED, $result['status']);
+		$this->assertSame($newPadId, $result['new_pad_id']);
+	}
+
+	/**
+	 * A claim that throws, on a row that then cannot be read, is a claim
+	 * nobody has seen. The file is not written and the restore fails; the
+	 * replacement stays, since the row may be naming it.
+	 */
+	public function testHandleRestoreWritesNothingOnAClaimThatCannotBeSettled(): void {
+		$fileId = 92;
+		$bindingService = $this->createMock(BindingService::class);
+		$bindingService->method('rebind')->willThrowException(new \RuntimeException('connection lost'));
+		$bindingService->method('deleteInState')->willThrowException(new \RuntimeException('connection lost'));
+		$bindingService->method('isBoundTo')->willThrowException(new \RuntimeException('connection lost'));
+
+		$etherpadClient = $this->buildEtherpadWithoutThePad();
+		$etherpadClient->expects($this->once())->method('createPad')->with('r-old-pad-abc123def456');
+		$etherpadClient->expects($this->never())->method('deletePad');
+
+		$file = $this->buildRestoredPadFile($fileId);
+		$file->expects($this->never())->method('putContent');
+
+		$this->expectException(LifecycleException::class);
+		$this->buildPendingDeleteRestoreService($fileId, 'old-pad', $bindingService, $etherpadClient)->handleRestore($file);
+	}
+
+	/**
+	 * A claim that throws on a row that answers with another pad did not
+	 * land - but that is a failure, not a lost race: the file is not
+	 * written, the row still naming the old pad is released, and the
+	 * replacement, known not to be named, goes.
+	 */
+	public function testHandleRestoreReleasesTheRowOfAClaimThatFailedWithoutLanding(): void {
+		$fileId = 94;
+		$newPadId = 'r-old-pad-abc123def456';
+		$bindingService = $this->createMock(BindingService::class);
+		$bindingService->method('rebind')->willThrowException(new \RuntimeException('connection lost'));
+		$bindingService->method('isBoundTo')->with($fileId, $newPadId)->willReturn(false);
+		$bindingService->expects($this->once())
+			->method('deleteInState')
+			->with($fileId, 'old-pad', BindingService::STATE_PENDING_DELETE)
+			->willReturn(true);
+		$bindingService->expects($this->never())->method('transition');
+
+		$etherpadClient = $this->buildEtherpadWithoutThePad();
+		$etherpadClient->expects($this->once())->method('deletePad')->with($newPadId);
+
+		$file = $this->buildRestoredPadFile($fileId);
+		$file->expects($this->never())->method('putContent');
+
+		$this->expectException(LifecycleException::class);
+		$this->buildPendingDeleteRestoreService($fileId, 'old-pad', $bindingService, $etherpadClient)->handleRestore($file);
+	}
+
+	/**
+	 * A trash can reach the file while its restore is still writing, and
+	 * leave the row naming the replacement in pending_delete. That pad is
+	 * the row's now, not the failed restore's to throw away.
+	 */
+	public function testHandleRestoreLeavesAReplacementATrashHasTakenOver(): void {
+		$fileId = 93;
+		$newPadId = 'r-old-pad-abc123def456';
+		$bindingService = $this->createMock(BindingService::class);
+		$bindingService->method('rebind')->willReturn(true);
+		// The trash moved the row on from active, so it is not removed.
+		$bindingService->method('isBoundTo')->with($fileId, $newPadId)->willReturn(true);
+		$bindingService->method('deleteActiveBinding')->willReturn(false);
+
+		$etherpadClient = $this->buildEtherpadWithoutThePad();
+		$etherpadClient->expects($this->never())->method('deletePad');
+
+		$file = $this->buildRestoredPadFile($fileId);
+		$file->expects($this->once())->method('putContent')->willThrowException(new \RuntimeException('disk full'));
+
+		// Nothing is left for the restore to release, and the log says so.
+		$debug = [];
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->method('debug')->willReturnCallback(static function (string $message) use (&$debug): void {
+			$debug[] = $message;
+		});
+
+		try {
+			$this->buildPendingDeleteRestoreService($fileId, 'old-pad', $bindingService, $etherpadClient, logger: $logger)->handleRestore($file);
+			$this->fail('Expected the restore to fail.');
+		} catch (LifecycleException) {
+		}
+		$this->assertContains('Left a binding a failed restore no longer holds.', $debug);
+	}
+
+	/**
+	 * Etherpad has said the old pad is gone, but a protected pad's group can
+	 * outlive it with nothing in it - and once the row names the replacement,
+	 * nothing leads back to that group.
+	 */
+	public function testHandleRestoreTakesTheSupersededGroupWithIt(): void {
+		$fileId = 84;
+		$oldPadId = 'g.OLDGROUPID12345$p-old';
+		$newPadId = 'g.NEWGROUPID12345$restored-abc123def456';
+
+		$bindingService = $this->createMock(BindingService::class);
+		$bindingService->expects($this->once())
+			->method('rebind')
+			->with($fileId, $oldPadId, BindingService::STATE_PENDING_DELETE, $newPadId, BindingService::STATE_ACTIVE)
+			->willReturn(true);
+
+		$etherpadClient = $this->buildEtherpadWithoutThePad();
+		$etherpadClient->method('createGroup')->willReturn('g.NEWGROUPID12345');
+		$etherpadClient->method('createGroupPad')->willReturn($newPadId);
+		// The snapshot's formatting is what reaches the pad, not its text.
+		$etherpadClient->expects($this->once())->method('setHTML')->with($newPadId, '<p>plain text</p>');
+		$etherpadClient->expects($this->never())->method('setText');
+		$etherpadClient->expects($this->once())->method('listPads')->with('g.OLDGROUPID12345')->willReturn([]);
+		$etherpadClient->expects($this->once())->method('deleteGroup')->with('g.OLDGROUPID12345');
+		$etherpadClient->expects($this->never())->method('deletePad');
+
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects($this->never())->method('warning');
+
+		$file = $this->buildRestoredPadFile($fileId);
+		$file->expects($this->once())->method('putContent')->with('doc-after');
+
+		$result = $this->buildPendingDeleteRestoreService(
+			$fileId,
+			$oldPadId,
+			$bindingService,
+			$etherpadClient,
+			accessMode: BindingService::ACCESS_PROTECTED,
+			html: '<p>plain text</p>',
+			logger: $logger,
+		)->handleRestore($file);
+
+		$this->assertSame(LifecycleService::RESULT_RESTORED, $result['status']);
+		$this->assertSame($oldPadId, $result['old_pad_id']);
+		$this->assertSame($newPadId, $result['new_pad_id']);
+	}
+
+	/**
+	 * And it stays a success when that leftover cannot be removed: the
+	 * restore is already recorded, and the user's file works either way.
+	 */
+	public function testHandleRestoreStillSucceedsWhenTheSupersededPadSurvives(): void {
+		$fileId = 85;
+		$newPadId = 'r-old-pad-abc123def456';
+
+		$bindingService = $this->createMock(BindingService::class);
+		$bindingService->expects($this->once())->method('rebind')->willReturn(true);
+
+		$etherpadClient = $this->buildEtherpadWithoutThePad();
+		$etherpadClient->expects($this->once())->method('createPad')->with($newPadId);
+		$etherpadClient->expects($this->once())->method('setText')->with($newPadId, 'plain text');
+		$etherpadClient->method('deletePad')->willReturnCallback(static function (string $padId): void {
+			if ($padId === 'old-pad') {
+				throw new \RuntimeException('still down');
+			}
+		});
+
+		$file = $this->buildRestoredPadFile($fileId);
+		$file->expects($this->once())->method('putContent')->with('doc-after');
+
+		$result = $this->buildPendingDeleteRestoreService($fileId, 'old-pad', $bindingService, $etherpadClient)->handleRestore($file);
+		$this->assertSame(LifecycleService::RESULT_RESTORED, $result['status']);
+	}
+
+	/**
+	 * A pad under the row's id with fewer revisions than the file's
+	 * snapshot is not the pad the file knew: created again since, or back
+	 * from an older backup. Taken back, it would show the file empty or old
+	 * and let a sync write that over the snapshot. The file gets a pad made
+	 * from its snapshot, and the other is left to whoever wrote into it.
+	 */
+	public function testHandleRestoreReplacesAPadThatIsBehindTheSnapshot(): void {
+		$fileId = 96;
+		$newPadId = 'r-old-pad-abc123def456';
+		$bindingService = $this->createMock(BindingService::class);
+		$bindingService->expects($this->never())->method('transition');
+		$bindingService->expects($this->once())
+			->method('rebind')
+			->with($fileId, 'old-pad', BindingService::STATE_PENDING_DELETE, $newPadId, BindingService::STATE_ACTIVE)
+			->willReturn(true);
+
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->method('getRevisionsCount')->willReturnCallback(
+			static fn (string $padId): int => $padId === 'old-pad' ? 0 : 1,
+		);
+		$etherpadClient->expects($this->once())->method('createPad')->with($newPadId);
+		$etherpadClient->expects($this->never())->method('deletePad');
+
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects($this->once())->method('warning')->with($this->stringContains('fewer revisions'), $this->anything());
+
+		$file = $this->buildRestoredPadFile($fileId);
+		$file->expects($this->once())->method('putContent')->with('doc-after');
+
+		$result = $this->buildPendingDeleteRestoreService($fileId, 'old-pad', $bindingService, $etherpadClient, logger: $logger, snapshotRev: 500)
+			->handleRestore($file);
+
+		$this->assertSame(LifecycleService::RESULT_RESTORED, $result['status']);
+		$this->assertSame($newPadId, $result['new_pad_id']);
+		// The new pad's own count, so the file is in sync with it at once.
+		$this->assertSame(1, $this->restoredRevision);
+	}
+
+	/**
+	 * Without the file there is no revision to hold the pad to, so the row
+	 * waits for a later check rather than being settled blind.
+	 */
+	public function testHandleRestoreKeepsTheRowWaitingWhileTheFileCannotBeRead(): void {
+		$fileId = 97;
+		$bindingService = $this->createMock(BindingService::class);
+		$bindingService->expects($this->once())
+			->method('transition')
+			->with($fileId, 'old-pad', BindingService::STATE_PENDING_DELETE, BindingService::STATE_RESTORE_PENDING)
+			->willReturn(true);
+
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->expects($this->never())->method('getRevisionsCount');
 
 		$file = $this->createMock(File::class);
 		$file->method('getId')->willReturn($fileId);
 		$file->method('getName')->willReturn('Restored.pad');
+		$file->method('getContent')->willThrowException(new \RuntimeException('locked'));
+
+		$result = $this->buildPendingDeleteRestoreService($fileId, 'old-pad', $bindingService, $etherpadClient)->handleRestore($file);
+
+		$this->assertSame(LifecycleService::RESULT_SKIPPED, $result['status']);
+		$this->assertSame('file_unreadable', $result['reason']);
+	}
+
+	/**
+	 * A deletion owed is settled on restore even once deleting on trash is
+	 * switched off: the file is back, and a row left in pending_delete
+	 * would keep it from opening for good.
+	 */
+	public function testHandleRestoreSettlesAnOwedDeletionWithTheSettingOff(): void {
+		$fileId = 98;
+		$bindingService = $this->createMock(BindingService::class);
+		$bindingService->expects($this->once())
+			->method('transition')
+			->with($fileId, 'old-pad', BindingService::STATE_PENDING_DELETE, BindingService::STATE_ACTIVE)
+			->willReturn(true);
+
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->method('getRevisionsCount')->willReturn(3);
+
+		$result = $this->buildPendingDeleteRestoreService($fileId, 'old-pad', $bindingService, $etherpadClient, deleteOnTrash: false)
+			->handleRestore($this->buildRestoredPadFile($fileId));
+
+		$this->assertSame(LifecycleService::RESULT_RESTORED, $result['status']);
+	}
+
+	/** The sweep settles a restore that had to wait, by the same rules. */
+	public function testSettleWaitingFileTakesThePadBackOnceEtherpadAnswers(): void {
+		$fileId = 99;
+		$bindingService = $this->createMock(BindingService::class);
+		$bindingService->expects($this->once())
+			->method('transition')
+			->with($fileId, 'old-pad', BindingService::STATE_RESTORE_PENDING, BindingService::STATE_ACTIVE)
+			->willReturn(true);
+
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->expects($this->once())->method('getRevisionsCount')->with('old-pad', 5)->willReturn(3);
+
+		$outcome = $this->buildPendingDeleteRestoreService($fileId, 'old-pad', $bindingService, $etherpadClient, state: BindingService::STATE_RESTORE_PENDING)
+			->settleWaitingFile($this->buildRestoredPadFile($fileId), 5);
+
+		$this->assertSame(SettleOutcome::Settled, $outcome);
+	}
+
+	/**
+	 * The sweep reads an outage from this, so only Etherpad's silence counts
+	 * as one. A file it cannot read says nothing about Etherpad, and five of
+	 * them at the front of the queue would otherwise end every run there.
+	 * Either way the row moves to the back.
+	 */
+	public function testSettleWaitingFileCountsOnlyEtherpadsSilenceAsAnOutage(): void {
+		$outcomes = [];
+		foreach (['no answer', 'unreadable'] as $case) {
+			$bindingService = $this->createMock(BindingService::class);
+			$bindingService->expects($this->once())
+				->method('transition')
+				->with(105, 'old-pad', BindingService::STATE_RESTORE_PENDING, BindingService::STATE_RESTORE_PENDING)
+				->willReturn(true);
+			$etherpadClient = $this->createMock(EtherpadClient::class);
+			$etherpadClient->method('getRevisionsCount')->willThrowException(new \RuntimeException('Connection refused'));
+			$file = $this->createMock(File::class);
+			$file->method('getId')->willReturn(105);
+			$file->method('getName')->willReturn('Restored.pad');
+			if ($case === 'unreadable') {
+				$file->method('getContent')->willThrowException(new \RuntimeException('locked'));
+			} else {
+				$file->method('getContent')->willReturn('doc-before');
+			}
+			$outcomes[$case] = $this->buildPendingDeleteRestoreService(105, 'old-pad', $bindingService, $etherpadClient, state: BindingService::STATE_RESTORE_PENDING)
+				->settleWaitingFile($file, 5);
+		}
+
+		$this->assertSame(['no answer' => SettleOutcome::Unanswered, 'unreadable' => SettleOutcome::Left], $outcomes);
+	}
+
+	/**
+	 * A sweep writes no file. A pad Etherpad has given up on, or one behind
+	 * the snapshot, releases the row instead, and the file makes its own pad
+	 * when it is next opened - by someone who can write to it.
+	 */
+	public function testSettleWaitingFileReleasesARowWhosePadIsNotTheFilesAnyMore(): void {
+		foreach (['gone' => 'padID does not exist', 'behind' => 0] as $case => $answer) {
+			$bindingService = $this->createMock(BindingService::class);
+			$bindingService->expects($this->once())
+				->method('deleteInState')
+				->with(106, 'old-pad', BindingService::STATE_RESTORE_PENDING)
+				->willReturn(true);
+			$bindingService->expects($this->never())->method('rebind');
+			$etherpadClient = $this->createMock(EtherpadClient::class);
+			$etherpadClient->method('getRevisionsCount')->willReturnCallback(static function () use ($answer): int {
+				return is_int($answer) ? $answer : throw new \RuntimeException($answer);
+			});
+			$etherpadClient->expects($this->never())->method('createPad');
+			$etherpadClient->expects($this->never())->method('deletePad');
+			$logger = $this->createMock(LoggerInterface::class);
+			$logger->expects($case === 'behind' ? $this->once() : $this->never())
+				->method('warning')
+				->with($this->stringContains('fewer revisions'), $this->callback(static fn (array $context): bool => ($context['padId'] ?? '') === 'old-pad'));
+			// An admin asking why the file suddenly wants recovering finds this.
+			$logger->expects($this->once())
+				->method('info')
+				->with($this->stringContains('Released the binding'), $this->callback(
+					static fn (array $context): bool => ($context['fileId'] ?? 0) === 106 && ($context['padId'] ?? '') === 'old-pad'
+				));
+			$file = $this->buildRestoredPadFile(106);
+			$file->expects($this->never())->method('putContent');
+
+			$outcome = $this->buildPendingDeleteRestoreService(106, 'old-pad', $bindingService, $etherpadClient, logger: $logger, snapshotRev: 7, state: BindingService::STATE_RESTORE_PENDING)
+				->settleWaitingFile($file, 5);
+
+			$this->assertSame(SettleOutcome::Settled, $outcome, $case);
+		}
+	}
+
+	/**
+	 * Trashing a file whose restore is undecided hands the row back as a
+	 * deletion owed even with deleting on trash switched off: nothing is
+	 * deleted by it, and a row left waiting would keep the file from
+	 * opening once it is back.
+	 */
+	public function testHandleTrashHandsAnUndecidedRestoreBackWithTheSettingOff(): void {
+		$bindingService = $this->createMock(BindingService::class);
+		$bindingService->expects($this->once())
+			->method('transition')
+			->with(107, 'old-pad', BindingService::STATE_RESTORE_PENDING, BindingService::STATE_PENDING_DELETE)
+			->willReturn(true);
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->expects($this->never())->method($this->anything());
+
+		$result = $this->buildPendingDeleteRestoreService(107, 'old-pad', $bindingService, $etherpadClient, state: BindingService::STATE_RESTORE_PENDING, deleteOnTrash: false)
+			->handleTrash($this->buildRestoredPadFile(107));
+
+		$this->assertSame(LifecycleService::RESULT_TRASHED, $result['status']);
+		$this->assertTrue($result['delete_pending']);
+	}
+
+	/** And a restore settles a row that still waits undecided, with the setting off as well. */
+	public function testHandleRestoreSettlesAnUndecidedRestoreWithTheSettingOff(): void {
+		$bindingService = $this->createMock(BindingService::class);
+		$bindingService->expects($this->once())
+			->method('transition')
+			->with(108, 'old-pad', BindingService::STATE_RESTORE_PENDING, BindingService::STATE_ACTIVE)
+			->willReturn(true);
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->method('getRevisionsCount')->willReturn(3);
+
+		$result = $this->buildPendingDeleteRestoreService(108, 'old-pad', $bindingService, $etherpadClient, state: BindingService::STATE_RESTORE_PENDING, deleteOnTrash: false)
+			->handleRestore($this->buildRestoredPadFile(108));
+
+		$this->assertSame(LifecycleService::RESULT_RESTORED, $result['status']);
+	}
+
+	/**
+	 * A sweep can settle an undecided row while the same file goes to the
+	 * trash. The trash then finds the row active and trashes the file as
+	 * what it is now, rather than leaving an active row behind a file in
+	 * the trash, with its pad orphaned once the trash is emptied.
+	 */
+	public function testHandleTrashTrashesARowASweepSettledMeanwhile(): void {
+		$rows = [
+			['file_id' => 109, 'pad_id' => 'old-pad', 'access_mode' => BindingService::ACCESS_PUBLIC, 'state' => BindingService::STATE_RESTORE_PENDING],
+			['file_id' => 109, 'pad_id' => 'old-pad', 'access_mode' => BindingService::ACCESS_PUBLIC, 'state' => BindingService::STATE_ACTIVE],
+		];
+		$bindingService = $this->createMock(BindingService::class);
+		$bindingService->method('findByFileId')->willReturnCallback(static function () use (&$rows): array {
+			return count($rows) > 1 ? array_shift($rows) : $rows[0];
+		});
+		$bindingService->method('transition')->willReturn(false);
+		$bindingService->expects($this->once())->method('deleteByFileId')->with(109);
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->expects($this->once())->method('deletePad')->with('old-pad');
 
 		$service = new LifecycleService(
 			$bindingService,
@@ -64,54 +640,140 @@ class LifecycleServiceTest extends TestCase {
 			new FixedClock(),
 			new ProvisionedPadRollback($bindingService, new ManagedPadLifecycle($etherpadClient, $this->createMock(LoggerInterface::class)), $this->createMock(LoggerInterface::class)),
 		);
+		$file = $this->createMock(File::class);
+		$file->method('getId')->willReturn(109);
+		$file->method('getName')->willReturn('Raced.pad');
+		$file->method('getContent')->willReturn('');
 
-		$result = $service->handleRestore($file);
+		$result = $service->handleTrash($file);
 
-		$this->assertSame(LifecycleService::RESULT_SKIPPED, $result['status']);
-		$this->assertSame('unknown_access_mode', $result['reason']);
+		$this->assertSame(LifecycleService::RESULT_TRASHED, $result['status']);
+		$this->assertFalse($result['delete_pending']);
 	}
 
 	/**
-	 * A pad that could not be made must leave the row in pending_delete, so
-	 * the retry job still finds the old pad it names.
+	 * A database that fails on the way reaches the caller as the restore's
+	 * failure, like every other one - not as a driver exception carrying
+	 * its statement.
 	 */
-	public function testHandleRestoreLeavesTheRowPendingWhenTheNewPadCannotBeMade(): void {
-		$fileId = 87;
+	public function testHandleRestoreReportsABindingFailureAsItsOwn(): void {
+		$fileId = 100;
 		$bindingService = $this->createMock(BindingService::class);
-		$bindingService->method('findByFileId')->with($fileId)->willReturn([
-			'file_id' => $fileId,
-			'pad_id' => 'old-pad',
-			'access_mode' => BindingService::ACCESS_PUBLIC,
-			'state' => BindingService::STATE_PENDING_DELETE,
-		]);
-		$bindingService->expects($this->never())->method('markRestored');
+		$bindingService->method('transition')->willThrowException(new \RuntimeException('connection lost'));
 
 		$etherpadClient = $this->createMock(EtherpadClient::class);
-		$etherpadClient->method('createPad')->willThrowException(new \RuntimeException('Connection timed out'));
+		$etherpadClient->method('getRevisionsCount')->willReturn(3);
+
+		$this->expectException(LifecycleException::class);
+		$this->buildPendingDeleteRestoreService($fileId, 'old-pad', $bindingService, $etherpadClient)->handleRestore($this->buildRestoredPadFile($fileId));
+	}
+
+	/** And so does a trash of a file whose restore is still undecided. */
+	public function testHandleTrashReportsABindingFailureOnAnUndecidedRestoreAsItsOwn(): void {
+		$fileId = 101;
+		$bindingService = $this->createMock(BindingService::class);
+		$bindingService->method('transition')->willThrowException(new \RuntimeException('connection lost'));
+
+		$this->expectException(LifecycleException::class);
+		$this->buildPendingDeleteRestoreService($fileId, 'old-pad', $bindingService, $this->createMock(EtherpadClient::class), state: BindingService::STATE_RESTORE_PENDING)
+			->handleTrash($this->buildRestoredPadFile($fileId));
+	}
+
+	/**
+	 * Each replacement is named after the pad before it. Built on an earlier
+	 * restore's name it grew by fifteen characters each time, and Etherpad
+	 * refuses a pad name past fifty: the second replacement of one file
+	 * already failed.
+	 */
+	public function testAReplacementNameDoesNotGrowAndFitsEtherpad(): void {
+		$created = [];
+		foreach (['r-nc-abcdefghijklmnopqrstuvwx-zyxwvutsrqpo', 'legacy-' . str_repeat('x', 80)] as $oldPadId) {
+			$bindingService = $this->createMock(BindingService::class);
+			$bindingService->method('rebind')->willReturn(true);
+			$etherpadClient = $this->buildEtherpadWithoutThePad();
+			$etherpadClient->method('createPad')->willReturnCallback(static function (string $padId) use (&$created): void {
+				$created[] = $padId;
+			});
+			$this->buildPendingDeleteRestoreService(104, $oldPadId, $bindingService, $etherpadClient)->handleRestore($this->buildRestoredPadFile(104));
+		}
+
+		$this->assertSame('r-nc-abcdefghijklmnopqrstuvwx-abc123def456', $created[0]);
+		$this->assertSame('r-legacy-' . str_repeat('x', 28) . '-abc123def456', $created[1]);
+		$this->assertSame(50, strlen($created[1]));
+	}
+
+	/** Etherpad answers for the old pad that it does not exist. */
+	private function buildEtherpadWithoutThePad(): EtherpadClient&MockObject {
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->method('getRevisionsCount')->willThrowException(new \RuntimeException('padID does not exist'));
+		$etherpadClient->method('buildPadUrl')->willReturnCallback(static fn (string $padId): string => 'https://pad.example.test/p/' . rawurlencode($padId));
+		return $etherpadClient;
+	}
+
+	/** A .pad file back from the trash, holding 'doc-before'. */
+	private function buildRestoredPadFile(int $fileId): File&MockObject {
+		$file = $this->createMock(File::class);
+		$file->method('getId')->willReturn($fileId);
+		$file->method('getName')->willReturn('Restored.pad');
+		$file->method('getContent')->willReturn('doc-before');
+		return $file;
+	}
+
+	/** A restore of a file whose row waits in pending_delete, naming $oldPadId. Restored, the file reads 'doc-after'. */
+	private function buildPendingDeleteRestoreService(
+		int $fileId,
+		string $oldPadId,
+		BindingService&MockObject $bindingService,
+		EtherpadClient $etherpadClient,
+		string $accessMode = BindingService::ACCESS_PUBLIC,
+		string $html = '',
+		?LoggerInterface $logger = null,
+		int $snapshotRev = -1,
+		string $state = BindingService::STATE_PENDING_DELETE,
+		bool $deleteOnTrash = true,
+	): LifecycleService {
+		$bindingService->method('findByFileId')->with($fileId)->willReturn([
+			'file_id' => $fileId,
+			'pad_id' => $oldPadId,
+			'access_mode' => $accessMode,
+			'state' => $state,
+		]);
+
+		$padFileService = $this->createMock(PadFileService::class);
+		$parsedPad = new ParsedPadFile(
+			frontmatter: [],
+			body: 'body',
+			padId: $oldPadId,
+			accessMode: BindingService::ACCESS_PUBLIC,
+			padUrl: '',
+			isExternal: false,
+			snapshotRev: $snapshotRev,
+		);
+		$padFileService->method('readPad')->with('doc-before')->willReturn($parsedPad);
+		$padFileService->method('getSnapshotPartsFromBody')->with($parsedPad->body)->willReturn(['text' => 'plain text', 'html' => $html]);
+		$padFileService->method('withRestoredSnapshot')->willReturnCallback(
+			function (ParsedPadFile $pad, string $text, string $html, string $padId, string $padUrl, int $revision = -1): string {
+				$this->restoredRevision = $revision;
+				return 'doc-after';
+			},
+		);
 
 		$secureRandom = $this->createMock(ISecureRandom::class);
 		$secureRandom->method('generate')->willReturn('abc123def456');
 
-		$file = $this->createMock(File::class);
-		$file->method('getId')->willReturn($fileId);
-		$file->method('getName')->willReturn('Restored.pad');
-
-		$service = new LifecycleService(
+		return new LifecycleService(
 			$bindingService,
-			$this->createMock(PadFileService::class),
+			$padFileService,
 			$etherpadClient,
 			new ManagedPadLifecycle($etherpadClient, $this->createMock(LoggerInterface::class)),
-			$this->buildDeleteOnTrashEnabledConfig(),
-			$this->createMock(LoggerInterface::class),
+			$this->buildDeleteOnTrashEnabledConfig($deleteOnTrash),
+			$logger ?? $this->createMock(LoggerInterface::class),
 			$secureRandom,
 			$this->createMock(UserNodeResolver::class),
 			$this->createMock(PathNormalizer::class),
 			new FixedClock(),
 			new ProvisionedPadRollback($bindingService, new ManagedPadLifecycle($etherpadClient, $this->createMock(LoggerInterface::class)), $this->createMock(LoggerInterface::class)),
 		);
-
-		$this->expectException(\RuntimeException::class);
-		$service->handleRestore($file);
 	}
 
 	public function testHandleTrashSkipsNonPadFiles(): void {
@@ -164,11 +826,9 @@ class LifecycleServiceTest extends TestCase {
 				'state' => BindingService::STATE_ACTIVE,
 			]);
 		$bindingService->expects($this->once())
-			->method('markPendingDelete')
-			->with(
-				$fileId,
-				$this->callback(static fn ($deletedAt): bool => is_int($deletedAt) && $deletedAt > 0)
-			);
+			->method('transition')
+			->with($fileId, $padId, BindingService::STATE_ACTIVE, BindingService::STATE_PENDING_DELETE)
+			->willReturn(true);
 
 		$padFileService = $this->createMock(PadFileService::class);
 		$padFileService->expects($this->never())->method('parsePadFile');
@@ -244,9 +904,10 @@ class LifecycleServiceTest extends TestCase {
 				'access_mode' => BindingService::ACCESS_PUBLIC,
 				'state' => BindingService::STATE_ACTIVE,
 			]);
+		// Another flow moved the row first.
 		$bindingService->expects($this->once())
-			->method('markPendingDelete')
-			->willThrowException(new BindingStateConflictException('race'));
+			->method('transition')
+			->willReturn(false);
 
 		$padFileService = $this->createMock(PadFileService::class);
 		$padFileService->expects($this->never())->method('withExportSnapshot');
@@ -289,295 +950,48 @@ class LifecycleServiceTest extends TestCase {
 	}
 
 	/**
-	 * `markRestored` is the last step and can commit and still throw. By
-	 * then the file already names the new pad, so row, file and pad agree —
-	 * and the rollback would put the old content back and delete the pad
-	 * the row now points at.
+	 * Trashed again while its restore is still undecided. The pad may hold
+	 * the only current copy, so Etherpad is not touched; the row is owed a
+	 * deletion again, as it was before the restore.
 	 */
-	public function testHandleRestorePutsTheOriginalContentBackWhenTheRestoreFails(): void {
-		// The mirror of the test below: the update did not land, so the file
-		// must not be left holding the restored document.
-		$fileId = 88;
-		$oldPadId = 'old-pad';
-		$newPadId = 'r-old-pad-abc123def456';
-
+	public function testHandleTrashLeavesAnUndecidedPadAlone(): void {
+		$fileId = 56;
 		$bindingService = $this->createMock(BindingService::class);
 		$bindingService->method('findByFileId')->with($fileId)->willReturn([
 			'file_id' => $fileId,
-			'pad_id' => $oldPadId,
+			'pad_id' => 'old-pad',
 			'access_mode' => BindingService::ACCESS_PUBLIC,
-			'state' => BindingService::STATE_PENDING_DELETE,
+			'state' => BindingService::STATE_RESTORE_PENDING,
 		]);
-		$bindingService->method('markRestored')->willThrowException(new \RuntimeException('connection lost'));
-		$bindingService->method('isBoundTo')->with($fileId, $newPadId)->willReturn(false);
-
-		$padFileService = $this->createMock(PadFileService::class);
-		$parsedPad = new ParsedPadFile(
-			frontmatter: [],
-			body: 'body',
-			padId: $oldPadId,
-			accessMode: BindingService::ACCESS_PUBLIC,
-			padUrl: '',
-			isExternal: false,
-			snapshotRev: -1,
-		);
-		$padFileService->method('readPad')->with('doc-before')->willReturn($parsedPad);
-		$padFileService->method('getSnapshotPartsFromBody')->with($parsedPad->body)->willReturn(['text' => 'plain text', 'html' => '']);
-		$padFileService->method('withRestoredSnapshot')->willReturn('doc-after');
+		$bindingService->expects($this->once())
+			->method('transition')
+			->with($fileId, 'old-pad', BindingService::STATE_RESTORE_PENDING, BindingService::STATE_PENDING_DELETE)
+			->willReturn(true);
+		$bindingService->expects($this->never())->method('deleteByFileId');
 
 		$etherpadClient = $this->createMock(EtherpadClient::class);
-		$etherpadClient->method('buildPadUrl')->willReturn('https://pad.example.test/p/' . $newPadId);
+		$etherpadClient->expects($this->never())->method($this->anything());
 
-		$secureRandom = $this->createMock(ISecureRandom::class);
-		$secureRandom->method('generate')->willReturn('abc123def456');
-
-		$written = [];
-		$file = $this->createMock(File::class);
-		$file->method('getId')->willReturn($fileId);
-		$file->method('getName')->willReturn('Restored.pad');
-		$file->method('getContent')->willReturn('doc-before');
-		$file->expects($this->exactly(2))
-			->method('putContent')
-			->willReturnCallback(static function (string $content) use (&$written): void {
-				$written[] = $content;
-			});
+		$file = $this->buildRestoredPadFile($fileId);
+		$file->expects($this->never())->method('putContent');
 
 		$service = new LifecycleService(
 			$bindingService,
-			$padFileService,
+			$this->createMock(PadFileService::class),
 			$etherpadClient,
 			new ManagedPadLifecycle($etherpadClient, $this->createMock(LoggerInterface::class)),
 			$this->buildDeleteOnTrashEnabledConfig(),
 			$this->createMock(LoggerInterface::class),
-			$secureRandom,
+			$this->createMock(ISecureRandom::class),
 			$this->createMock(UserNodeResolver::class),
 			$this->createMock(PathNormalizer::class),
 			new FixedClock(),
 			new ProvisionedPadRollback($bindingService, new ManagedPadLifecycle($etherpadClient, $this->createMock(LoggerInterface::class)), $this->createMock(LoggerInterface::class)),
 		);
 
-		try {
-			$service->handleRestore($file);
-			$this->fail('Expected the restore to fail.');
-		} catch (LifecycleException) {
-			// The point of the test is what the file holds afterwards.
-		}
-
-		$this->assertSame(['doc-after', 'doc-before'], $written);
-	}
-
-	public function testHandleRestoreDoesNotUndoARestoreThatLanded(): void {
-		$fileId = 87;
-		$oldPadId = 'old-pad';
-		$newPadId = 'r-old-pad-abc123def456';
-
-		$bindingService = $this->createMock(BindingService::class);
-		$bindingService->method('findByFileId')->with($fileId)->willReturn([
-			'file_id' => $fileId,
-			'pad_id' => $oldPadId,
-			'access_mode' => BindingService::ACCESS_PUBLIC,
-			'state' => BindingService::STATE_PENDING_DELETE,
-		]);
-		$bindingService->method('markRestored')->willThrowException(new \RuntimeException('connection lost'));
-		// The update landed even though its answer did not.
-		$bindingService->method('isBoundTo')->with($fileId, $newPadId)->willReturn(true);
-
-		$padFileService = $this->createMock(PadFileService::class);
-		$parsedPad = new ParsedPadFile(
-			frontmatter: [],
-			body: 'body',
-			padId: $oldPadId,
-			accessMode: BindingService::ACCESS_PUBLIC,
-			padUrl: '',
-			isExternal: false,
-			snapshotRev: -1,
-		);
-		$padFileService->method('readPad')->with('doc-before')->willReturn($parsedPad);
-		$padFileService->method('getSnapshotPartsFromBody')->with($parsedPad->body)->willReturn(['text' => 'plain text', 'html' => '']);
-		$padFileService->method('withRestoredSnapshot')->willReturn('doc-after');
-
-		$etherpadClient = $this->createMock(EtherpadClient::class);
-		$etherpadClient->method('buildPadUrl')->willReturn('https://pad.example.test/p/' . $newPadId);
-		$etherpadClient->expects($this->never())->method('deletePad');
-		$etherpadClient->expects($this->never())->method('deleteGroup');
-
-		$secureRandom = $this->createMock(ISecureRandom::class);
-		$secureRandom->method('generate')->willReturn('abc123def456');
-
-		$file = $this->createMock(File::class);
-		$file->method('getId')->willReturn($fileId);
-		$file->method('getName')->willReturn('Restored.pad');
-		$file->method('getContent')->willReturn('doc-before');
-		// Written once, with the restored content — and not put back.
-		$file->expects($this->once())->method('putContent')->with('doc-after');
-
-		$service = new LifecycleService(
-			$bindingService,
-			$padFileService,
-			$etherpadClient,
-			new ManagedPadLifecycle($etherpadClient, $this->createMock(LoggerInterface::class)),
-			$this->buildDeleteOnTrashEnabledConfig(),
-			$this->createMock(LoggerInterface::class),
-			$secureRandom,
-			$this->createMock(UserNodeResolver::class),
-			$this->createMock(PathNormalizer::class),
-			new FixedClock(),
-			new ProvisionedPadRollback($bindingService, new ManagedPadLifecycle($etherpadClient, $this->createMock(LoggerInterface::class)), $this->createMock(LoggerInterface::class)),
-		);
-
-		$this->expectException(LifecycleException::class);
-		$service->handleRestore($file);
-	}
-
-	/**
-	 * A binding only sits in `pending_delete` because its pad delete failed,
-	 * so on restore the old pad is usually still there — and `markRestored`
-	 * points the row at the new one, which was the last thing naming it. The
-	 * retry job walks `pending_delete` rows and will never see it again, so
-	 * for a protected pad a whole group and its sessions would be stranded.
-	 */
-	public function testHandleRestoreTakesTheSupersededGroupWithIt(): void {
-		$fileId = 84;
-		$oldPadId = 'g.OLDGROUPID12345$p-old';
-		$newPadId = 'g.NEWGROUPID12345$restored-abc123def456';
-		$newPadUrl = 'https://pad.example.test/p/' . rawurlencode($newPadId);
-
-		$bindingService = $this->createMock(BindingService::class);
-		$bindingService->method('findByFileId')->with($fileId)->willReturn([
-			'file_id' => $fileId,
-			'pad_id' => $oldPadId,
-			'access_mode' => BindingService::ACCESS_PROTECTED,
-			'state' => BindingService::STATE_PENDING_DELETE,
-		]);
-		$bindingService->expects($this->once())->method('markRestored')->with($fileId, $newPadId);
-
-		$padFileService = $this->createMock(PadFileService::class);
-		$parsedPad = new ParsedPadFile(
-			frontmatter: [],
-			body: 'body',
-			padId: $oldPadId,
-			accessMode: BindingService::ACCESS_PUBLIC,
-			padUrl: '',
-			isExternal: false,
-			snapshotRev: -1,
-		);
-		$padFileService->method('readPad')->with('doc-before')->willReturn($parsedPad);
-		$padFileService->method('getSnapshotPartsFromBody')->with($parsedPad->body)->willReturn(['text' => 'plain text', 'html' => '<p>plain text</p>']);
-		$padFileService->method('withRestoredSnapshot')->willReturn('doc-after');
-
-		$etherpadClient = $this->createMock(EtherpadClient::class);
-		$etherpadClient->method('createGroup')->willReturn('g.NEWGROUPID12345');
-		$etherpadClient->method('createGroupPad')->willReturn($newPadId);
-		// The snapshot's formatting is what reaches the pad, not its text.
-		$etherpadClient->expects($this->once())->method('setHTML')->with($newPadId, '<p>plain text</p>');
-		$etherpadClient->expects($this->never())->method('setText');
-		$etherpadClient->method('buildPadUrl')->with($newPadId)->willReturn($newPadUrl);
-		$etherpadClient->expects($this->once())->method('listPads')->with('g.OLDGROUPID12345')->willReturn([$oldPadId]);
-		$etherpadClient->expects($this->once())->method('deleteGroup')->with('g.OLDGROUPID12345');
-		$etherpadClient->expects($this->never())->method('deletePad');
-
-		$secureRandom = $this->createMock(ISecureRandom::class);
-		$secureRandom->method('generate')->willReturn('abc123def456');
-
-		$logger = $this->createMock(LoggerInterface::class);
-		$logger->expects($this->never())->method('warning');
-
-		$file = $this->createMock(File::class);
-		$file->method('getId')->willReturn($fileId);
-		$file->method('getName')->willReturn('Restored.pad');
-		$file->method('getContent')->willReturn('doc-before');
-		$file->expects($this->once())->method('putContent')->with('doc-after');
-
-		$service = new LifecycleService(
-			$bindingService,
-			$padFileService,
-			$etherpadClient,
-			new ManagedPadLifecycle($etherpadClient, $this->createMock(LoggerInterface::class)),
-			$this->buildDeleteOnTrashEnabledConfig(),
-			$logger,
-			$secureRandom,
-			$this->createMock(UserNodeResolver::class),
-			$this->createMock(PathNormalizer::class),
-			new FixedClock(),
-			new ProvisionedPadRollback($bindingService, new ManagedPadLifecycle($etherpadClient, $this->createMock(LoggerInterface::class)), $this->createMock(LoggerInterface::class)),
-		);
-
-		$result = $service->handleRestore($file);
-		$this->assertSame(LifecycleService::RESULT_RESTORED, $result['status']);
-		$this->assertSame($oldPadId, $result['old_pad_id']);
-		$this->assertSame($newPadId, $result['new_pad_id']);
-	}
-
-	/**
-	 * And it stays a success when that leftover cannot be removed: the
-	 * restore is already recorded, and the user's file works either way.
-	 */
-	public function testHandleRestoreStillSucceedsWhenTheSupersededPadSurvives(): void {
-		$fileId = 85;
-		$oldPadId = 'old-pad';
-		$newPadId = 'r-old-pad-abc123def456';
-
-		$bindingService = $this->createMock(BindingService::class);
-		$bindingService->method('findByFileId')->with($fileId)->willReturn([
-			'file_id' => $fileId,
-			'pad_id' => $oldPadId,
-			'access_mode' => BindingService::ACCESS_PUBLIC,
-			'state' => BindingService::STATE_PENDING_DELETE,
-		]);
-		$bindingService->expects($this->once())->method('markRestored')->with($fileId, $newPadId);
-
-		$padFileService = $this->createMock(PadFileService::class);
-		$parsedPad = new ParsedPadFile(
-			frontmatter: [],
-			body: 'body',
-			padId: $oldPadId,
-			accessMode: BindingService::ACCESS_PUBLIC,
-			padUrl: '',
-			isExternal: false,
-			snapshotRev: -1,
-		);
-		$padFileService->method('readPad')->with('doc-before')->willReturn($parsedPad);
-		$padFileService->method('getSnapshotPartsFromBody')->with($parsedPad->body)->willReturn(['text' => 'plain text', 'html' => '']);
-		$padFileService->method('withRestoredSnapshot')->willReturn('doc-after');
-
-		$etherpadClient = $this->createMock(EtherpadClient::class);
-		$etherpadClient->expects($this->once())->method('createPad')->with($newPadId);
-		$etherpadClient->expects($this->once())->method('setText')->with($newPadId, 'plain text');
-		$etherpadClient->method('buildPadUrl')->willReturn('https://pad.example.test/p/' . $newPadId);
-		$etherpadClient->method('deletePad')->willReturnCallback(function (string $padId) use ($oldPadId): void {
-			if ($padId === $oldPadId) {
-				throw new \RuntimeException('still down');
-			}
-		});
-
-		$secureRandom = $this->createMock(ISecureRandom::class);
-		$secureRandom->expects($this->once())
-			->method('generate')
-			->with(12, ISecureRandom::CHAR_LOWER . ISecureRandom::CHAR_DIGITS)
-			->willReturn('abc123def456');
-
-		$file = $this->createMock(File::class);
-		$file->method('getId')->willReturn($fileId);
-		$file->method('getName')->willReturn('Restored.pad');
-		$file->method('getContent')->willReturn('doc-before');
-		$file->expects($this->once())->method('putContent')->with('doc-after');
-
-		$service = new LifecycleService(
-			$bindingService,
-			$padFileService,
-			$etherpadClient,
-			new ManagedPadLifecycle($etherpadClient, $this->createMock(LoggerInterface::class)),
-			$this->buildDeleteOnTrashEnabledConfig(),
-			$this->createMock(LoggerInterface::class),
-			$secureRandom,
-			$this->createMock(UserNodeResolver::class),
-			$this->createMock(PathNormalizer::class),
-			new FixedClock(),
-			new ProvisionedPadRollback($bindingService, new ManagedPadLifecycle($etherpadClient, $this->createMock(LoggerInterface::class)), $this->createMock(LoggerInterface::class)),
-		);
-
-		$result = $service->handleRestore($file);
-		$this->assertSame(LifecycleService::RESULT_RESTORED, $result['status']);
+		$result = $service->handleTrash($file);
+		$this->assertSame(LifecycleService::RESULT_TRASHED, $result['status']);
+		$this->assertTrue($result['delete_pending']);
 	}
 
 	public function testHandleRestoreWithoutBindingRecreatesManagedPublicPad(): void {
@@ -1153,13 +1567,23 @@ class LifecycleServiceTest extends TestCase {
 		$file->method('getId')->willReturn(42);
 		$file->method('getName')->willReturn('Test.pad');
 
+		// The row is read - an undecided restore is handed back whatever the
+		// setting says - but an active one is left as it is.
 		$bindingService = $this->createMock(BindingService::class);
-		$bindingService->expects($this->never())->method('findByFileId');
+		$bindingService->method('findByFileId')->willReturn([
+			'file_id' => 42,
+			'pad_id' => 'pad-a',
+			'access_mode' => BindingService::ACCESS_PUBLIC,
+			'state' => BindingService::STATE_ACTIVE,
+		]);
+		$bindingService->expects($this->never())->method('transition');
+		$bindingService->expects($this->never())->method('deleteByFileId');
 
 		$padFileService = $this->createMock(PadFileService::class);
 		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->expects($this->never())->method($this->anything());
 
-		// delete_on_trash disabled => skipped before any binding/etherpad work.
+		// delete_on_trash disabled => skipped before any Etherpad work.
 		$config = $this->createMock(IConfig::class);
 		$config->method('getAppValue')->willReturnCallback(
 			static function (string $appName, string $key, string $default = ''): string {
@@ -1369,12 +1793,12 @@ class LifecycleServiceTest extends TestCase {
 		], $result);
 	}
 
-	private function buildDeleteOnTrashEnabledConfig(): IConfig {
+	private function buildDeleteOnTrashEnabledConfig(bool $enabled = true): IConfig {
 		$config = $this->createMock(IConfig::class);
 		$config->method('getAppValue')->willReturnCallback(
-			static function (string $appName, string $key, string $default = ''): string {
+			static function (string $appName, string $key, string $default = '') use ($enabled): string {
 				if ($appName === 'etherpad_nextcloud' && $key === 'delete_on_trash') {
-					return 'yes';
+					return $enabled ? 'yes' : 'no';
 				}
 				if ($appName === 'etherpad_nextcloud' && $key === 'test_fault') {
 					return '';

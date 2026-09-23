@@ -22,7 +22,7 @@ use OCA\EtherpadNextcloud\Service\EtherpadHealthCheckService;
 use OCA\EtherpadNextcloud\Service\HealthCheckItem;
 use OCA\EtherpadNextcloud\Service\HealthCheckResult;
 use OCA\EtherpadNextcloud\Service\PadTemplateAdminService;
-use OCA\EtherpadNextcloud\Service\PendingDeleteRetryService;
+use OCA\EtherpadNextcloud\Service\PendingBindingService;
 use OCA\EtherpadNextcloud\Service\ValidatedAdminSettings;
 use OCP\AppFramework\Controller;
 use OCP\AppFramework\Http\DataResponse;
@@ -37,7 +37,7 @@ use OCP\IUserSession;
  */
 class AdminController extends Controller {
 	private const CONSISTENCY_SAMPLE_LIMIT = 25;
-	private const PENDING_DELETE_RETRY_BATCH_SIZE = 500;
+	private const PENDING_BINDING_BATCH_SIZE = 500;
 
 	public function __construct(
 		string $appName,
@@ -48,7 +48,7 @@ class AdminController extends Controller {
 		private AdminSettingsValidator $settingsValidator,
 		private AdminSettingsRepository $settingsRepository,
 		private EtherpadHealthCheckService $healthCheckService,
-		private PendingDeleteRetryService $pendingDeleteRetryService,
+		private PendingBindingService $pendingBindings,
 		private ConsistencyCheckService $consistencyCheckService,
 		private AdminConsistencyCheckResponseBuilder $consistencyResponseBuilder,
 		private AdminTestFaultService $testFaultService,
@@ -113,6 +113,7 @@ class AdminController extends Controller {
 					'latency_ms' => $result->latencyMs,
 					'target' => $result->target,
 					'pending_delete_count' => $result->pendingDeleteCount,
+					'restore_pending_count' => $result->restorePendingCount,
 					// Machine-readable form of the protected-pads line above.
 					'protected_pads' => $this->describeCookieDomain($result->cookieDomain),
 					'session_cookie_release' => $result->sessionCookieRelease,
@@ -126,23 +127,23 @@ class AdminController extends Controller {
 		);
 	}
 
-	public function retryPendingDeletes(): DataResponse {
+	public function settlePending(): DataResponse {
 		return $this->errors->run(
 			function (): array {
 				$this->requireAdmin();
-				return $this->pendingDeleteRetryService->retry(self::PENDING_DELETE_RETRY_BATCH_SIZE);
+				return $this->pendingBindings->settle(self::PENDING_BINDING_BATCH_SIZE);
 			},
 			fn(array $result): DataResponse => new DataResponse([
 				'ok' => true,
-				'message' => $this->l10n->t('Pending delete retry finished.'),
-				'attempted' => $result['attempted'],
-				'resolved' => $result['resolved'],
-				'failed' => $result['failed'],
-				'remaining' => $result['remaining'],
+				'message' => $this->l10n->t('Pending pad check finished.'),
+				'checked' => $result['checked'],
+				'settled' => $result['settled'],
+				'pending_delete_count' => $result['pending_delete_count'],
+				'restore_pending_count' => $result['restore_pending_count'],
 			]),
 			[
-				'generic' => $this->l10n->t('Pending delete retry failed.'),
-				'log_message' => 'Pending delete retry failed',
+				'generic' => $this->l10n->t('Pending pad check failed.'),
+				'log_message' => 'Pending pad check failed',
 			],
 		);
 	}

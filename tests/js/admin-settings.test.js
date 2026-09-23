@@ -13,7 +13,7 @@ const setupAdminDom = () => {
 			data-save-url="/save"
 			data-health-url="/health"
 			data-consistency-url="/consistency"
-			data-retry-pending-url="/retry"
+			data-settle-pending-url="/settle"
 			data-l10n-saving="Saving..."
 			data-l10n-saved="Saved."
 			data-l10n-checking="Checking..."
@@ -47,6 +47,11 @@ const setupAdminDom = () => {
 				<button type="button" id="etherpad-nextcloud-consistency-check">Check</button>
 				<p id="etherpad-nextcloud-connection-status" class="ep-status"></p>
 				<p id="etherpad-nextcloud-diagnostics-status" class="ep-status"></p>
+				<div id="etherpad-nextcloud-pending-actions" style="display:none;">
+					<button type="button" id="etherpad-nextcloud-settle-pending">Check</button>
+					<span id="etherpad-nextcloud-restore-pending-count"></span>
+					<span id="etherpad-nextcloud-pending-count"></span>
+				</div>
 				<ul id="epnc-template-list"></ul>
 				<p id="epnc-template-empty"></p>
 				<input type="file" id="epnc-template-file">
@@ -176,7 +181,44 @@ describe('admin settings status areas', () => {
 		expect(connectionStatus().classList.contains('ep-status-success')).toBe(false)
 	})
 
+	it('counts deferred deletions apart from restores, and checks both', async () => {
+		const fetchMock = vi.fn((url) => Promise.resolve(okResponse({
+			'/health': { message: 'All checks passed.', pending_delete_count: 2, restore_pending_count: 1 },
+			'/settle': { message: 'Pending pad check finished.', checked: 2, settled: 2, restore_pending_count: 0, pending_delete_count: 1 },
+		}[url] || {})))
+		vi.stubGlobal('fetch', fetchMock)
+		await import(MODULE)
+		const settleButton = document.getElementById('etherpad-nextcloud-settle-pending')
 
+		document.getElementById('etherpad-nextcloud-health-check').click()
+		await flushAsyncWork()
+
+		expect(document.getElementById('etherpad-nextcloud-pending-count').textContent).toBe('Pending Etherpad deletes: 2')
+		expect(document.getElementById('etherpad-nextcloud-restore-pending-count').textContent).toBe('Unresolved restores: 1')
+		expect(settleButton.disabled).toBe(false)
+
+		settleButton.click()
+		await flushAsyncWork()
+
+		expect(diagnosticsStatus().textContent).toContain('settled=2')
+		expect(document.getElementById('etherpad-nextcloud-restore-pending-count').textContent).toBe('Unresolved restores: 0')
+		expect(document.getElementById('etherpad-nextcloud-pending-count').textContent).toBe('Pending Etherpad deletes: 1')
+		// A deletion still waits for its file, so there is still something to check.
+		expect(document.getElementById('etherpad-nextcloud-pending-actions').style.display).toBe('')
+		expect(settleButton.disabled).toBe(false)
+	})
+
+	it('leaves the counts alone when a response carries none', async () => {
+		// An older server, or a partial payload: no counts is not zero counts.
+		vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(okResponse({ message: 'All checks passed.' }))))
+		await import(MODULE)
+
+		document.getElementById('etherpad-nextcloud-health-check').click()
+		await flushAsyncWork()
+
+		expect(document.getElementById('etherpad-nextcloud-pending-count').textContent).toBe('')
+		expect(document.getElementById('etherpad-nextcloud-restore-pending-count').textContent).toBe('')
+	})
 })
 
 describe('protected pads cookie warning', () => {

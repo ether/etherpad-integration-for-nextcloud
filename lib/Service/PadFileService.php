@@ -206,6 +206,11 @@ class PadFileService {
 	 * The document a restore writes: active again, no deletion timestamp, and
 	 * pointed at the pad that was provisioned to replace the old one.
 	 *
+	 * The new pad counts revisions from zero, so the old pad's count cannot
+	 * carry over: the sync would take every revision below it as already
+	 * held. The file records the new pad's count once the snapshot is in it,
+	 * or -1 (not synced yet) when that is not known.
+	 *
 	 * The caller has already split the snapshot it is restoring, so both
 	 * halves arrive here rather than the body being taken apart a second time
 	 * to recover the HTML.
@@ -216,12 +221,14 @@ class PadFileService {
 		string $html,
 		string $padId,
 		string $padUrl,
+		int $revision = -1,
 	): string {
 		$frontmatter = $pad->frontmatter;
 		$frontmatter['state'] = BindingService::STATE_ACTIVE;
 		$frontmatter['updated_at'] = $this->nowIso();
 		$frontmatter['deleted_at'] = null;
 		$frontmatter['pad_id'] = $padId;
+		$frontmatter['snapshot_rev'] = max(-1, $revision);
 		if ($padUrl !== '') {
 			$frontmatter['pad_url'] = $padUrl;
 		}

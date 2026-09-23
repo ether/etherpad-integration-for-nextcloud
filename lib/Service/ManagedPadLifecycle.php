@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Service;
 
+use OCA\EtherpadNextcloud\Exception\RunBudgetSpentException;
 use OCA\EtherpadNextcloud\Util\EtherpadErrorClassifier;
 use OCA\EtherpadNextcloud\Util\PadAccessMode;
 use OCA\EtherpadNextcloud\Util\PadId;
@@ -198,6 +199,38 @@ class ManagedPadLifecycle {
 	}
 
 	/**
+	 * Whether the pad a file's snapshot was taken from still exists, as far
+	 * as Etherpad will say. Only its own answer that there is no such pad
+	 * counts as absent; a request that got no answer is unknown, because
+	 * the pad may well be there.
+	 *
+	 * Revisions only grow, so a pad under that id with fewer of them than
+	 * the snapshot was taken at is behind: created again since, empty, or
+	 * brought back from an older backup. A snapshot revision of -1, from a
+	 * file never synced, says nothing, and any pad counts as present.
+	 *
+	 * An unknown answer is logged here, with its cause, since no caller
+	 * gets to see the exception it came from.
+	 *
+	 * @param array<string,mixed> $context what the log line should carry, fileId above all
+	 */
+	public function presenceOf(string $padId, int $snapshotRevision = -1, array $context = [], ?int $timeoutSeconds = null): PadPresence {
+		try {
+			$revisions = $this->etherpadClient->getRevisionsCount($padId, $timeoutSeconds);
+		} catch (\Throwable $e) {
+			if (EtherpadErrorClassifier::isPadAlreadyDeleted($e)) {
+				return PadPresence::Absent;
+			}
+			$this->logger->warning('Could not ask Etherpad whether a pad still exists.', [
+				'app' => 'etherpad_nextcloud',
+				...SafeError::context($e),
+			] + $context);
+			return PadPresence::Unknown;
+		}
+		return $revisions < $snapshotRevision ? PadPresence::Behind : PadPresence::Present;
+	}
+
+	/**
 	 * Remove a pad the app is bound to, whatever kind it is.
 	 *
 	 * The group is only removed once Etherpad has confirmed it holds nothing
@@ -214,22 +247,30 @@ class ManagedPadLifecycle {
 	 * not exist`, which the callers already read as "already gone" — correct
 	 * here, since a pad inside a group that does not exist cannot exist
 	 * either.
+	 *
+	 * A sweep passes its budget: each call gets what is left of it, and one
+	 * that would not finish in time is not made (RunBudgetSpentException).
+	 * Nothing is removed before the last call, so stopping between two
+	 * leaves the pad as it was.
 	 */
-	public function discard(string $padId): void {
+	public function discard(string $padId, ?RunBudget $budget = null): void {
+		$timeout = static fn (): ?int => $budget === null
+			? null
+			: ($budget->nextCallTimeout() ?? throw new RunBudgetSpentException('No time left in the run for another Etherpad call.'));
 		$groupId = PadId::groupIdOf($padId);
 		if ($groupId === null) {
-			$this->etherpadClient->deletePad($padId);
+			$this->etherpadClient->deletePad($padId, $timeout());
 			return;
 		}
 
-		$pads = $this->padsInGroup($groupId, $padId);
+		$pads = $this->padsInGroup($groupId, $padId, $timeout());
 		// An empty group counts too, and it is the only way the pads deleted
 		// before this existed are ever collected: their group is still there
 		// with nothing in it, and a retry that only deleted the pad again
 		// would leave it standing for good. A group holding no pads has no
 		// content to lose, and its sessions grant access to nothing.
 		if ($pads !== null && ($pads === [] || $pads === [$padId])) {
-			$this->etherpadClient->deleteGroup($groupId);
+			$this->etherpadClient->deleteGroup($groupId, $timeout());
 			// Worth a line: this removed a group, its pad and every session
 			// issued for it, and an admin tracing a vanished pad has nothing
 			// else to go on.
@@ -255,7 +296,7 @@ class ManagedPadLifecycle {
 			'groupId' => $groupId,
 			'padsInGroup' => $pads === null ? 'unknown' : count($pads),
 		]);
-		$this->etherpadClient->deletePad($padId);
+		$this->etherpadClient->deletePad($padId, $timeout());
 	}
 
 	/**
@@ -274,9 +315,9 @@ class ManagedPadLifecycle {
 	 *
 	 * @return list<string>|null null when the group could not be read
 	 */
-	private function padsInGroup(string $groupId, string $padId): ?array {
+	private function padsInGroup(string $groupId, string $padId, ?int $timeoutSeconds): ?array {
 		try {
-			return $this->etherpadClient->listPads($groupId);
+			return $this->etherpadClient->listPads($groupId, $timeoutSeconds);
 		} catch (\Throwable $e) {
 			if (EtherpadErrorClassifier::isPadAlreadyDeleted($e)) {
 				throw $e;

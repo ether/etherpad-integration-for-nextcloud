@@ -8,9 +8,10 @@
 	const connectionTarget = document.getElementById('etherpad-nextcloud-connection-status')
 	const healthButton = document.getElementById('etherpad-nextcloud-health-check')
 	const consistencyButton = document.getElementById('etherpad-nextcloud-consistency-check')
-	const retryPendingButton = document.getElementById('etherpad-nextcloud-retry-pending')
+	const settlePendingButton = document.getElementById('etherpad-nextcloud-settle-pending')
 	const pendingActions = document.getElementById('etherpad-nextcloud-pending-actions')
 	const pendingCountNode = document.getElementById('etherpad-nextcloud-pending-count')
+	const restorePendingCountNode = document.getElementById('etherpad-nextcloud-restore-pending-count')
 	const allowExternalCheckbox = form ? form.querySelector('input[name="allow_external_pads"]') : null
 	const protectedPadsCheckbox = form ? form.querySelector('input[name="enable_protected_pads"]') : null
 	const publicPadsCheckbox = form ? form.querySelector('input[name="enable_public_pads"]') : null
@@ -40,7 +41,7 @@
 	const saveUrl = root.getAttribute('data-save-url') || ''
 	const healthUrl = root.getAttribute('data-health-url') || ''
 	const consistencyUrl = root.getAttribute('data-consistency-url') || ''
-	const retryPendingUrl = root.getAttribute('data-retry-pending-url') || ''
+	const settlePendingUrl = root.getAttribute('data-settle-pending-url') || ''
 	const l10n = {
 		saving: root.getAttribute('data-l10n-saving') || 'Saving settings...',
 		saved: root.getAttribute('data-l10n-saved') || 'Settings saved.',
@@ -52,7 +53,8 @@
 		healthFailed: root.getAttribute('data-l10n-health-failed') || 'Etherpad connection test failed.',
 		consistencyFailed: root.getAttribute('data-l10n-consistency-failed') || 'Consistency check failed.',
 		pendingDeleteLabel: root.getAttribute('data-l10n-pending-delete-label') || 'Pending Etherpad deletes',
-		retryFailed: root.getAttribute('data-l10n-retry-failed') || 'Pending delete retry failed.',
+		restorePendingLabel: root.getAttribute('data-l10n-restore-pending-label') || 'Unresolved restores',
+		settleFailed: root.getAttribute('data-l10n-settle-failed') || 'Pending pad check failed.',
 		templateUploading: root.getAttribute('data-l10n-template-uploading') || 'Uploading template...',
 		templateDelete: root.getAttribute('data-l10n-template-delete') || 'Delete',
 		templateTooLarge: root.getAttribute('data-l10n-template-too-large') || 'Template file is too large.',
@@ -64,7 +66,7 @@
 	const templatesUrl = root.getAttribute('data-templates-url') || ''
 	const templatesDeleteUrl = root.getAttribute('data-templates-delete-url') || ''
 
-	if (saveUrl === '' || healthUrl === '' || consistencyUrl === '' || retryPendingUrl === '') {
+	if (saveUrl === '' || healthUrl === '' || consistencyUrl === '' || settlePendingUrl === '') {
 		return
 	}
 
@@ -350,16 +352,38 @@
 		}
 	}
 
-	function updatePendingDeleteUi(count) {
-		const pendingCount = Number.isFinite(Number(count)) ? Number(count) : 0
+	const bindingCounts = { pendingDeletes: 0, pendingRestores: 0 }
+
+	// Only the counts a response carries; one that carries none leaves the
+	// panel as it was rather than repainting it from what this page assumed.
+	// The health check and the pending pad check name them the same.
+	function updateBindingCounts(data) {
+		const counts = {}
+		if (typeof data.pending_delete_count !== 'undefined') {
+			counts.pendingDeletes = data.pending_delete_count
+		}
+		if (typeof data.restore_pending_count !== 'undefined') {
+			counts.pendingRestores = data.restore_pending_count
+		}
+		if (Object.keys(counts).length === 0) {
+			return
+		}
+		for (const [key, value] of Object.entries(counts)) {
+			bindingCounts[key] = Number.isFinite(Number(value)) ? Number(value) : 0
+		}
 		if (pendingActions instanceof HTMLElement) {
-			pendingActions.style.display = pendingCount > 0 ? '' : 'none'
+			pendingActions.style.display = bindingCounts.pendingDeletes > 0 || bindingCounts.pendingRestores > 0 ? '' : 'none'
 		}
 		if (pendingCountNode instanceof HTMLElement) {
-			pendingCountNode.textContent = `${l10n.pendingDeleteLabel}: ${String(pendingCount)}`
+			pendingCountNode.textContent = `${l10n.pendingDeleteLabel}: ${String(bindingCounts.pendingDeletes)}`
 		}
-		if (retryPendingButton instanceof HTMLButtonElement) {
-			retryPendingButton.disabled = pendingCount <= 0
+		if (restorePendingCountNode instanceof HTMLElement) {
+			restorePendingCountNode.textContent = `${l10n.restorePendingLabel}: ${String(bindingCounts.pendingRestores)}`
+		}
+		// The check deletes a pad only once its file is gone for good, and
+		// nothing here is more than a nudge to the job that does the same.
+		if (settlePendingButton instanceof HTMLButtonElement) {
+			settlePendingButton.disabled = bindingCounts.pendingDeletes <= 0 && bindingCounts.pendingRestores <= 0
 		}
 	}
 
@@ -454,9 +478,7 @@
 		beginStatus(l10n.checking, connectionTarget)
 		try {
 			const data = await postJson(healthUrl, getPayload())
-			if (typeof data.pending_delete_count !== 'undefined') {
-				updatePendingDeleteUi(Number(data.pending_delete_count))
-			}
+			updateBindingCounts(data)
 			// The per-field results carry the target and latency and the
 			// protected-pads verdict, so the summary stays a summary.
 			renderConnectionChecks(data.checks)
@@ -486,32 +508,23 @@
 		})
 	}
 
-	if (retryPendingButton instanceof HTMLElement) {
-		retryPendingButton.addEventListener('click', async () => {
+	if (settlePendingButton instanceof HTMLElement) {
+		settlePendingButton.addEventListener('click', async () => {
 			clearFieldErrors()
 			beginStatus(l10n.checking, diagnosticsTarget)
 			try {
-				const data = await postJson(retryPendingUrl, {})
+				const data = await postJson(settlePendingUrl, {})
 				const details = []
-				if (typeof data.attempted !== 'undefined') {
-					details.push(`attempted=${String(data.attempted)}`)
+				for (const key of ['checked', 'settled', 'restore_pending_count', 'pending_delete_count']) {
+					if (typeof data[key] !== 'undefined') {
+						details.push(`${key}=${String(data[key])}`)
+					}
 				}
-				if (typeof data.resolved !== 'undefined') {
-					details.push(`resolved=${String(data.resolved)}`)
-				}
-				if (typeof data.failed !== 'undefined') {
-					details.push(`failed=${String(data.failed)}`)
-				}
-				if (typeof data.remaining !== 'undefined') {
-					details.push(`remaining=${String(data.remaining)}`)
-				}
-				if (typeof data.remaining !== 'undefined') {
-					updatePendingDeleteUi(Number(data.remaining || 0))
-				}
+				updateBindingCounts(data)
 				const suffix = details.length > 0 ? ` ${details.join(' | ')}` : ''
 				setStatus(`${String(data.message || 'OK')}${suffix}`, 'success', diagnosticsTarget)
 			} catch (error) {
-				setStatus(error instanceof Error ? error.message : l10n.retryFailed, 'error', diagnosticsTarget)
+				setStatus(error instanceof Error ? error.message : l10n.settleFailed, 'error', diagnosticsTarget)
 			}
 		})
 	}

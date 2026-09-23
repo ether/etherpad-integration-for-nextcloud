@@ -19,9 +19,9 @@ use OCA\EtherpadNextcloud\Service\CookieDomainMessages;
 use OCA\EtherpadNextcloud\Exception\AdminValidationException;
 use OCA\EtherpadNextcloud\Service\CookieDomainPolicy;
 use OCA\EtherpadNextcloud\Service\PadTemplateAdminService;
+use OCA\EtherpadNextcloud\Service\PendingBindingService;
 use OCA\EtherpadNextcloud\Service\EtherpadHealthCheckService;
 use OCA\EtherpadNextcloud\Service\HealthCheckResult;
-use OCA\EtherpadNextcloud\Service\PendingDeleteRetryService;
 use OCA\EtherpadNextcloud\Service\StoredAdminSettings;
 use OCA\EtherpadNextcloud\Service\ValidatedAdminSettings;
 use OCP\AppFramework\Http;
@@ -106,6 +106,7 @@ class AdminControllerTest extends TestCase {
 				123,
 				'https://pad-api.internal/api/1.3.0/checkToken',
 				3,
+				2,
 				'3.3.3',
 				new CookieDomainDecision(
 					'.example.tests',
@@ -127,6 +128,7 @@ class AdminControllerTest extends TestCase {
 		$this->assertSame(Http::STATUS_OK, $response->getStatus());
 		$this->assertTrue((bool)$data['ok']);
 		$this->assertSame(3, $data['pending_delete_count']);
+		$this->assertSame(2, $data['restore_pending_count']);
 		// The release the open path is going by, machine-readable, because
 		// it can differ from whatever this check just probed.
 		$this->assertSame('3.3.3', $data['session_cookie_release']);
@@ -149,22 +151,20 @@ class AdminControllerTest extends TestCase {
 		$this->assertStringContainsString('need attention', $data['message']);
 	}
 
-	public function testRetryPendingDeletesUsesConfiguredBatchSize(): void {
-		$pendingDeletes = $this->createMock(PendingDeleteRetryService::class);
-		$pendingDeletes->expects($this->once())
-			->method('retry')
+	public function testSettlePendingUsesConfiguredBatchSize(): void {
+		$pending = $this->createMock(PendingBindingService::class);
+		$pending->expects($this->once())
+			->method('settle')
 			->with(500)
-			->willReturn([
-				'attempted' => 1,
-				'resolved' => 1,
-				'failed' => 0,
-				'remaining' => 0,
-			]);
+			->willReturn(['checked' => 2, 'settled' => 1, 'pending_delete_count' => 3, 'restore_pending_count' => 1]);
 
-		$response = $this->buildController(pendingDeletes: $pendingDeletes)->retryPendingDeletes();
+		$response = $this->buildController(pendingBindings: $pending)->settlePending();
 
 		$this->assertSame(Http::STATUS_OK, $response->getStatus());
-		$this->assertSame(1, $response->getData()['attempted']);
+		$this->assertSame(2, $response->getData()['checked']);
+		$this->assertSame(1, $response->getData()['settled']);
+		$this->assertSame(3, $response->getData()['pending_delete_count']);
+		$this->assertSame(1, $response->getData()['restore_pending_count']);
 	}
 
 	public function testSetTestFaultRequiresDebugMode(): void {
@@ -275,7 +275,7 @@ class AdminControllerTest extends TestCase {
 		?AdminSettingsValidator $validator = null,
 		?AdminSettingsRepository $repository = null,
 		?EtherpadHealthCheckService $healthCheck = null,
-		?PendingDeleteRetryService $pendingDeletes = null,
+		?PendingBindingService $pendingBindings = null,
 		?ConsistencyCheckService $consistencyCheck = null,
 		?AdminConsistencyCheckResponseBuilder $consistencyResponses = null,
 		?AdminTestFaultService $testFaults = null,
@@ -292,7 +292,7 @@ class AdminControllerTest extends TestCase {
 			$validator ?? $this->createMock(AdminSettingsValidator::class),
 			$repository ?? $this->createMock(AdminSettingsRepository::class),
 			$healthCheck ?? $this->createMock(EtherpadHealthCheckService::class),
-			$pendingDeletes ?? $this->createMock(PendingDeleteRetryService::class),
+			$pendingBindings ?? $this->createMock(PendingBindingService::class),
 			$consistencyCheck ?? $this->createMock(ConsistencyCheckService::class),
 			$consistencyResponses ?? new AdminConsistencyCheckResponseBuilder($l10n),
 			$testFaults ?? $this->createMock(AdminTestFaultService::class),

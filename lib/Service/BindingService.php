@@ -10,7 +10,6 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\Service;
 
 use OCA\EtherpadNextcloud\Exception\BindingException;
-use OCA\EtherpadNextcloud\Exception\BindingStateConflictException;
 use OCA\EtherpadNextcloud\Exception\MissingBindingException;
 use OCA\EtherpadNextcloud\Util\PadAccessMode;
 use OCA\EtherpadNextcloud\Util\SafeError;
@@ -25,6 +24,13 @@ class BindingService {
 	public const ACCESS_PROTECTED = 'protected';
 	public const STATE_ACTIVE = 'active';
 	public const STATE_PENDING_DELETE = 'pending_delete';
+	/**
+	 * The file is in Files, but whether its pad is still its own could not
+	 * be told: Etherpad gave no answer, or the file could not be read. Kept
+	 * rather than guessed, since the pad may hold the only current copy, or
+	 * be gone.
+	 */
+	public const STATE_RESTORE_PENDING = 'restore_pending';
 
 	public function __construct(
 		private IDBConnection $db,
@@ -52,7 +58,7 @@ class BindingService {
 	 * Whether this file's binding names this pad.
 	 *
 	 * The question a cleanup has to ask before destroying a pad it just
-	 * provisioned. `createBinding` and `markRestored` can commit and still
+	 * provisioned. `createBinding` and `rebind` can commit and still
 	 * throw — the connection drops between the write and its answer — so a
 	 * flag set alongside the call says "no row" while a row is sitting
 	 * there naming the pad about to be deleted. Only reading it back knows.
@@ -88,56 +94,121 @@ class BindingService {
 		return $row === false ? null : $row;
 	}
 
-	/** @return array<int,array<string,mixed>> */
-	public function findByState(string $state, int $limit = 100): array {
-		$qb = $this->db->getQueryBuilder();
-		$qb->select('*')
-			->from(self::TABLE)
-			->where($qb->expr()->eq('state', $qb->createNamedParameter($state)))
-			->orderBy('updated_at', 'ASC')
-			->setMaxResults(max(1, $limit));
-
-		$result = $qb->executeQuery();
-		$rows = $result->fetchAll();
-		$result->closeCursor();
-		return $rows;
+	/**
+	 * Move one binding from one state to another, but only if it is still
+	 * in the first and still names this pad. Whoever finds the row changed
+	 * has lost to whoever changed it, and gets false rather than an
+	 * exception: that is an answer here, not a fault.
+	 */
+	public function transition(int $fileId, string $padId, string $from, string $to): bool {
+		return $this->rebind($fileId, $padId, $from, $padId, $to);
 	}
 
-	public function countByState(string $state): int {
-		$qb = $this->db->getQueryBuilder();
-		$qb->selectAlias($qb->createFunction('COUNT(*)'), 'cnt')
-			->from(self::TABLE)
-			->where($qb->expr()->eq('state', $qb->createNamedParameter($state)));
-
-		$result = $qb->executeQuery();
-		$row = $result->fetch();
-		$result->closeCursor();
-		if (!is_array($row) || !isset($row['cnt'])) {
-			return 0;
-		}
-		return max(0, (int)$row['cnt']);
-	}
-
-	/** @return array<int,array<string,mixed>> */
-	public function findPendingDeleteByAge(int $minAgeSeconds, ?int $maxAgeSeconds, int $limit = 100): array {
+	/**
+	 * transition(), where the row ends up naming another pad. Checked
+	 * against the pad it names now as well as its state, so a row that
+	 * moved on to a different pad in the meantime is left alone.
+	 *
+	 * deleted_at says the file is in the trash, and of the states only
+	 * pending_delete means that: going there sets it anew, going anywhere
+	 * else clears it.
+	 */
+	public function rebind(int $fileId, string $fromPadId, string $from, string $toPadId, string $to): bool {
 		$now = $this->timeFactory->getTime();
 		$qb = $this->db->getQueryBuilder();
-		$qb->select('*')
-			->from(self::TABLE)
-			->where($qb->expr()->eq('state', $qb->createNamedParameter(self::STATE_PENDING_DELETE)))
-			->andWhere($qb->expr()->isNotNull('deleted_at'))
-			->andWhere($qb->expr()->lte(
-				'deleted_at',
-				$qb->createNamedParameter($now - max(0, $minAgeSeconds), IQueryBuilder::PARAM_INT),
-			))
-			->orderBy('deleted_at', 'ASC')
-			->setMaxResults(max(1, $limit));
+		$qb->update(self::TABLE)
+			->set('pad_id', $qb->createNamedParameter($toPadId))
+			->set('state', $qb->createNamedParameter($to))
+			->set('updated_at', $qb->createNamedParameter($now, IQueryBuilder::PARAM_INT));
+		$qb->set('deleted_at', $to === self::STATE_PENDING_DELETE
+			? $qb->createNamedParameter($now, IQueryBuilder::PARAM_INT)
+			: $qb->createNamedParameter(null, IQueryBuilder::PARAM_NULL));
+		$qb->where($qb->expr()->eq('file_id', $qb->createNamedParameter($fileId, IQueryBuilder::PARAM_INT)))
+			->andWhere($qb->expr()->eq('pad_id', $qb->createNamedParameter($fromPadId)))
+			->andWhere($qb->expr()->eq('state', $qb->createNamedParameter($from)));
+		return $qb->executeStatement() > 0;
+	}
 
+	/** Remove a binding only if it is still in this state and names this pad. */
+	public function deleteInState(int $fileId, string $padId, string $state): bool {
+		$qb = $this->db->getQueryBuilder();
+		$qb->delete(self::TABLE)
+			->where($qb->expr()->eq('file_id', $qb->createNamedParameter($fileId, IQueryBuilder::PARAM_INT)))
+			->andWhere($qb->expr()->eq('pad_id', $qb->createNamedParameter($padId)))
+			->andWhere($qb->expr()->eq('state', $qb->createNamedParameter($state)));
+		return $qb->executeStatement() > 0;
+	}
+
+	/**
+	 * How many rows wait, of either kind, in one query - the two figures the
+	 * health check and the admin page's check both report.
+	 *
+	 * @return array{pending_delete_count:int, restore_pending_count:int}
+	 */
+	public function countWaiting(): array {
+		$qb = $this->db->getQueryBuilder();
+		$qb->select('state')
+			->selectAlias($qb->createFunction('COUNT(*)'), 'cnt')
+			->from(self::TABLE)
+			->groupBy('state');
+
+		$result = $qb->executeQuery();
+		$byState = [];
+		foreach ($result->fetchAll() as $row) {
+			$byState[(string)$row['state']] = max(0, (int)$row['cnt']);
+		}
+		$result->closeCursor();
+		return [
+			'pending_delete_count' => $byState[self::STATE_PENDING_DELETE] ?? 0,
+			'restore_pending_count' => $byState[self::STATE_RESTORE_PENDING] ?? 0,
+		];
+	}
+
+	/**
+	 * Deletions owed, aged by when the trash recorded them.
+	 *
+	 * A row that never had a deleted_at is reached only by a run with
+	 * neither bound - the admin page's. Every age bucket compares the date.
+	 *
+	 * @return array<int,array<string,mixed>>
+	 */
+	public function findPendingDeleteByAge(int $minAgeSeconds, ?int $maxAgeSeconds, int $limit = 100): array {
+		return $this->findWaitingByAge(self::STATE_PENDING_DELETE, 'deleted_at', $minAgeSeconds, $maxAgeSeconds, $limit);
+	}
+
+	/**
+	 * Restores left undecided, aged by when the row last changed: when the
+	 * restore left it waiting, or when a check last found no answer for it.
+	 *
+	 * @return array<int,array<string,mixed>>
+	 */
+	public function findRestorePendingByAge(int $minAgeSeconds, ?int $maxAgeSeconds, int $limit = 100): array {
+		return $this->findWaitingByAge(self::STATE_RESTORE_PENDING, 'updated_at', $minAgeSeconds, $maxAgeSeconds, $limit);
+	}
+
+	/**
+	 * Rows in one waiting state, oldest first, each with the path its file
+	 * has in the file cache now - null once nothing is left of the file.
+	 * Left, not inner: a row whose file is gone has no file cache row to
+	 * join, and that is the row a sweep most needs to see.
+	 *
+	 * @return array<int,array<string,mixed>>
+	 */
+	private function findWaitingByAge(string $state, string $ageColumn, int $minAgeSeconds, ?int $maxAgeSeconds, int $limit): array {
+		$now = $this->timeFactory->getTime();
+		$qb = $this->db->getQueryBuilder();
+		$qb->select('b.file_id', 'b.pad_id', 'b.state')
+			->selectAlias('fc.path', 'file_path')
+			->from(self::TABLE, 'b')
+			->leftJoin('b', 'filecache', 'fc', $qb->expr()->eq('b.file_id', 'fc.fileid'))
+			->where($qb->expr()->eq('b.state', $qb->createNamedParameter($state)))
+			->orderBy('b.' . $ageColumn, 'ASC')
+			->setMaxResults(max(1, $limit));
+		if ($minAgeSeconds > 0) {
+			$qb->andWhere($qb->expr()->lte('b.' . $ageColumn, $qb->createNamedParameter($now - $minAgeSeconds, IQueryBuilder::PARAM_INT)));
+		}
 		if ($maxAgeSeconds !== null) {
-			$qb->andWhere($qb->expr()->gt(
-				'deleted_at',
-				$qb->createNamedParameter($now - max(0, $maxAgeSeconds), IQueryBuilder::PARAM_INT),
-			));
+			$qb->andWhere($qb->expr()->gt('b.' . $ageColumn, $qb->createNamedParameter($now - max(0, $maxAgeSeconds), IQueryBuilder::PARAM_INT)));
 		}
 
 		$result = $qb->executeQuery();
@@ -195,56 +266,17 @@ class BindingService {
 	}
 
 	/**
-	 * Transitions `pending_delete → active` only. Any other state raises
-	 * `BindingStateConflictException` so concurrent restores can't double-flip.
-	 * For the no-binding-row recovery path use `createBinding` instead.
-	 */
-	public function markRestored(int $fileId, string $newPadId): void {
-		$qb = $this->db->getQueryBuilder();
-		$qb->update(self::TABLE)
-			->set('pad_id', $qb->createNamedParameter($newPadId))
-			->set('state', $qb->createNamedParameter(self::STATE_ACTIVE))
-			->set('deleted_at', $qb->createNamedParameter(null, IQueryBuilder::PARAM_NULL))
-			->set('updated_at', $qb->createNamedParameter($this->timeFactory->getTime(), IQueryBuilder::PARAM_INT))
-			->where($qb->expr()->eq('file_id', $qb->createNamedParameter($fileId, IQueryBuilder::PARAM_INT)))
-			->andWhere($qb->expr()->eq('state', $qb->createNamedParameter(self::STATE_PENDING_DELETE)));
-		$updated = $qb->executeStatement();
-		if ($updated < 1) {
-			throw new BindingStateConflictException('State transition conflict while restoring (expected pending_delete).');
-		}
-	}
-
-	public function markPendingDelete(int $fileId, int $deletedAtTs): void {
-		$qb = $this->db->getQueryBuilder();
-		$qb->update(self::TABLE)
-			->set('state', $qb->createNamedParameter(self::STATE_PENDING_DELETE))
-			->set('deleted_at', $qb->createNamedParameter($deletedAtTs, IQueryBuilder::PARAM_INT))
-			->set('updated_at', $qb->createNamedParameter($this->timeFactory->getTime(), IQueryBuilder::PARAM_INT))
-			->where($qb->expr()->eq('file_id', $qb->createNamedParameter($fileId, IQueryBuilder::PARAM_INT)))
-			->andWhere($qb->expr()->eq('state', $qb->createNamedParameter(self::STATE_ACTIVE)));
-		$updated = $qb->executeStatement();
-		if ($updated < 1) {
-			throw new BindingStateConflictException('State transition conflict while marking pending_delete (expected active).');
-		}
-	}
-
-	/**
 	 * Remove one file's active row, and only while it still names this pad.
 	 *
 	 * Both predicates are in the statement rather than read first and
 	 * deleted after: between those two the unique index on `file_id` can be
 	 * handed to another pad, and a delete by file id alone would take the
 	 * winner's row. Answering false also covers the row a trash that could
-	 * not reach Etherpad left as `pending_delete` - that one belongs to
-	 * PendingDeleteRetryService, together with the pad it names.
+	 * not reach Etherpad left as `pending_delete`: that row is the only
+	 * record of a deletion still owed, and of the pad it is owed for.
 	 */
 	public function deleteActiveBinding(int $fileId, string $padId): bool {
-		$qb = $this->db->getQueryBuilder();
-		$qb->delete(self::TABLE)
-			->where($qb->expr()->eq('file_id', $qb->createNamedParameter($fileId, IQueryBuilder::PARAM_INT)))
-			->andWhere($qb->expr()->eq('pad_id', $qb->createNamedParameter($padId)))
-			->andWhere($qb->expr()->eq('state', $qb->createNamedParameter(self::STATE_ACTIVE)));
-		return $qb->executeStatement() > 0;
+		return $this->deleteInState($fileId, $padId, self::STATE_ACTIVE);
 	}
 
 	public function deleteByFileId(int $fileId): void {
@@ -252,15 +284,6 @@ class BindingService {
 		$qb->delete(self::TABLE)
 			->where($qb->expr()->eq('file_id', $qb->createNamedParameter($fileId, IQueryBuilder::PARAM_INT)));
 		$qb->executeStatement();
-	}
-
-	public function deletePendingDeleteBinding(int $fileId, string $padId): bool {
-		$qb = $this->db->getQueryBuilder();
-		$qb->delete(self::TABLE)
-			->where($qb->expr()->eq('file_id', $qb->createNamedParameter($fileId, IQueryBuilder::PARAM_INT)))
-			->andWhere($qb->expr()->eq('pad_id', $qb->createNamedParameter($padId)))
-			->andWhere($qb->expr()->eq('state', $qb->createNamedParameter(self::STATE_PENDING_DELETE)));
-		return $qb->executeStatement() > 0;
 	}
 
 	private function assertAccessMode(string $accessMode): void {

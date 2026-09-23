@@ -18,8 +18,7 @@ final class EtherpadErrorClassifier {
 	 * and a protected one is removed by its group, which answers `groupID
 	 * does not exist` — measured against Etherpad rather than read from the
 	 * docs. Without the group half, a protected pad whose delete succeeded
-	 * but whose response was lost would sit in `pending_delete` and fail
-	 * every retry for good.
+	 * but whose response was lost would sit in `pending_delete` for good.
 	 */
 	public static function isPadAlreadyDeleted(\Throwable $error): bool {
 		return self::mentions($error, [

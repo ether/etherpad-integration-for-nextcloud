@@ -9,11 +9,15 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\BackgroundJob;
 
-use OCA\EtherpadNextcloud\Service\PendingDeleteRetryService;
+use OCA\EtherpadNextcloud\Service\PendingBindingService;
 use OCP\AppFramework\Utility\ITimeFactory;
 use OCP\BackgroundJob\TimedJob;
 
 /**
+ * Settles the pad bindings that wait - restores left undecided, and
+ * deletions owed once their file is gone for good. Named for what these
+ * jobs did first; the job list stores the class name, so the name stays.
+ *
  * @psalm-api
  */
 abstract class AbstractPendingDeleteRetryJob extends TimedJob {
@@ -24,7 +28,7 @@ abstract class AbstractPendingDeleteRetryJob extends TimedJob {
 
 	public function __construct(
 		ITimeFactory $time,
-		private PendingDeleteRetryService $retryService,
+		private PendingBindingService $pendingBindings,
 	) {
 		parent::__construct($time);
 		$this->setInterval(static::INTERVAL_SECONDS);
@@ -34,6 +38,6 @@ abstract class AbstractPendingDeleteRetryJob extends TimedJob {
 	 * @param mixed $argument
 	 */
 	protected function run($argument): void {
-		$this->retryService->retryByAge(static::MIN_AGE_SECONDS, static::MAX_AGE_SECONDS, static::LIMIT);
+		$this->pendingBindings->settleByAge(static::MIN_AGE_SECONDS, static::MAX_AGE_SECONDS, static::LIMIT);
 	}
 }

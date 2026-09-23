@@ -245,8 +245,8 @@ solely by the separate external-pad policy, not by these two settings.
   - Params: `file=/path/file.pad`
   - Result:
     - `200` with `status=trashed` for successful trash flow.
-      - includes `snapshot_persisted` (`true|false`) if file lock prevented snapshot write.
-      - includes `delete_pending` (`true|false`): `true` when Etherpad delete is deferred to background job.
+      - includes `snapshot_persisted` (`true|false`): `false` when no fresh snapshot was written - the file was locked, Etherpad did not answer, or the file's restore was still undecided, which leaves the pad alone.
+      - includes `delete_pending` (`true|false`): `true` when the pad is kept and its deletion recorded as owed.
     - `409` with `status=skipped` + `reason` on invalid lifecycle state (for example already pending delete).
       - includes transition-race guard reason `binding_state_transition_conflict` on concurrent state updates.
 
@@ -297,7 +297,10 @@ solely by the separate external-pad policy, not by these two settings.
     - `api_version`
     - `latency_ms`
     - `target`
-    - `pending_delete_count`
+    - `pending_delete_count` — rows whose pad deletion the trash could not
+      carry out
+    - `restore_pending_count` — restored files whose pad Etherpad could not
+      confirm or deny
     - `session_cookie_release` — the Etherpad release the open path is going
       by, which can differ from the one this run probed
     - `checks` — one entry per verified part, so a failure points at the field
@@ -394,16 +397,15 @@ solely by the separate external-pad policy, not by these two settings.
     - `frontmatter_skipped`
     - `samples` (bounded debug sample lists per issue class)
 
-- `POST /api/v1/admin/retry-pending-deletes`
-  - Controller: `AdminController::retryPendingDeletes`
+- `POST /api/v1/admin/settle-pending`
+  - Controller: `AdminController::settlePending`
   - Auth: admin only
-  - Purpose: immediate retry of deferred Etherpad deletions:
-    - `state=pending_delete`
+  - Purpose: an immediate run of what the background jobs do for waiting rows
+    (`restore_pending` and `pending_delete`), within the same time budget. It
+    writes no file, and a pad is deleted only when its file is gone for good.
   - Result:
-    - `attempted`
-    - `resolved`
-    - `failed`
-    - `remaining`
+    - `checked`, `settled`
+    - `pending_delete_count`, `restore_pending_count`: what is left, named as in the health check
 
 - `POST /api/v1/admin/test-fault`
   - Controller: `AdminController::setTestFault`

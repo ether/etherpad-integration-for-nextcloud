@@ -108,8 +108,8 @@ class EtherpadClient {
 		return $data[$field];
 	}
 
-	public function getRevisionsCount(string $padId): int {
-		$data = $this->apiCall('getRevisionsCount', ['padID' => $padId]);
+	public function getRevisionsCount(string $padId, ?int $timeoutSeconds = null): int {
+		$data = $this->apiCall('getRevisionsCount', ['padID' => $padId], timeoutSeconds: $timeoutSeconds);
 		$revisions = (int)($data['revisions'] ?? 0);
 		return max(0, $revisions);
 	}
@@ -122,8 +122,8 @@ class EtherpadClient {
 		$this->apiCall('setHTML', ['padID' => $padId, 'html' => $html]);
 	}
 
-	public function deletePad(string $padId): void {
-		$this->apiCall('deletePad', ['padID' => $padId]);
+	public function deletePad(string $padId, ?int $timeoutSeconds = null): void {
+		$this->apiCall('deletePad', ['padID' => $padId], timeoutSeconds: $timeoutSeconds);
 	}
 
 	public function createPad(string $padId): void {
@@ -154,8 +154,8 @@ class EtherpadClient {
 	 *
 	 * @return list<string>
 	 */
-	public function listPads(string $groupId): array {
-		$data = $this->apiCall('listPads', ['groupID' => $groupId]);
+	public function listPads(string $groupId, ?int $timeoutSeconds = null): array {
+		$data = $this->apiCall('listPads', ['groupID' => $groupId], timeoutSeconds: $timeoutSeconds);
 		if (!array_key_exists('padIDs', $data) || !is_array($data['padIDs']) || !array_is_list($data['padIDs'])) {
 			throw new EtherpadClientException('Etherpad did not return a pad list for the group.');
 		}
@@ -176,8 +176,8 @@ class EtherpadClient {
 	 * pad. deletePad() on a group pad leaves the group and its sessions
 	 * behind, and nothing else ever collects them.
 	 */
-	public function deleteGroup(string $groupId): void {
-		$this->apiCall('deleteGroup', ['groupID' => $groupId]);
+	public function deleteGroup(string $groupId, ?int $timeoutSeconds = null): void {
+		$this->apiCall('deleteGroup', ['groupID' => $groupId], timeoutSeconds: $timeoutSeconds);
 	}
 
 	public function createGroupPad(string $groupId, string $padName): string {
@@ -369,7 +369,12 @@ class EtherpadClient {
 		return $version;
 	}
 
-	/** @return array<string,mixed> */
+	/**
+	 * $timeoutSeconds is for the sweeps, which promise a total run length
+	 * and give each call what is left of it.
+	 *
+	 * @return array<string,mixed>
+	 */
 	private function apiCall(
 		string $method,
 		array $params = [],

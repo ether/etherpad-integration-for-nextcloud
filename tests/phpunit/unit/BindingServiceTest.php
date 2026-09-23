@@ -11,6 +11,7 @@ use OCP\AppFramework\Utility\ITimeFactory;
 use OCP\DB\QueryBuilder\IQueryBuilder;
 use OCP\IDBConnection;
 use OCA\EtherpadNextcloud\Tests\Support\FixedClock;
+use OCA\EtherpadNextcloud\Tests\Support\InMemoryBindingTable;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 
@@ -62,36 +63,41 @@ class BindingServiceTest extends TestCase {
 		$service->assertConsistentMapping(12, 'pad-a', 'legacy');
 	}
 
-	public function testFindPendingDeleteByAgeAddsUpperAndLowerAgeBounds(): void {
-		$qb = new BindingServiceTestQueryBuilder([['file_id' => 10, 'pad_id' => 'pad-a']]);
+	/**
+	 * Undecided restores are aged by when they last changed, and come with
+	 * their file's path like the deletions owed: a restore whose file has
+	 * since gone for good has to be seen as that.
+	 */
+	public function testFindRestorePendingByAgeAddsUpperAndLowerAgeBounds(): void {
+		$qb = new BindingServiceTestQueryBuilder([['file_id' => 10, 'pad_id' => 'pad-a', 'file_path' => null]]);
 		$service = $this->buildServiceWithQueryBuilder($qb, 100000);
 
-		$rows = $service->findPendingDeleteByAge(3600, 86400, 50);
+		$rows = $service->findRestorePendingByAge(3600, 86400, 50);
 
-		$this->assertSame([['file_id' => 10, 'pad_id' => 'pad-a']], $rows);
+		$this->assertSame([['file_id' => 10, 'pad_id' => 'pad-a', 'file_path' => null]], $rows);
 		$this->assertSame(50, $qb->maxResults);
-		$this->assertContains(['lte', 'deleted_at', 'param2'], $qb->conditions);
-		$this->assertContains(['gt', 'deleted_at', 'param3'], $qb->conditions);
+		$this->assertSame([['b', 'filecache', 'fc', ['eq', 'b.file_id', 'fc.fileid']]], $qb->leftJoins);
 		$this->assertSame([
-			['param1', BindingService::STATE_PENDING_DELETE, null],
+			['eq', 'b.state', 'param1'],
+			['lte', 'b.updated_at', 'param2'],
+			['gt', 'b.updated_at', 'param3'],
+		], $qb->conditions);
+		$this->assertSame([
+			['param1', BindingService::STATE_RESTORE_PENDING, null],
 			['param2', 96400, IQueryBuilder::PARAM_INT],
 			['param3', 13600, IQueryBuilder::PARAM_INT],
 		], $qb->parameters);
 	}
 
-	public function testFindPendingDeleteByAgeOmitsUpperBoundForColdBucketAndClampsNegativeAge(): void {
+	/** Unaged, and with a limit that makes no sense, every waiting row is still in reach, one at least. */
+	public function testFindRestorePendingByAgeWithoutBoundsComparesNoDate(): void {
 		$qb = new BindingServiceTestQueryBuilder([]);
 		$service = $this->buildServiceWithQueryBuilder($qb, 100000);
 
-		$service->findPendingDeleteByAge(-1, null, 0);
+		$service->findRestorePendingByAge(-1, null, 0);
 
 		$this->assertSame(1, $qb->maxResults);
-		$this->assertContains(['lte', 'deleted_at', 'param2'], $qb->conditions);
-		$this->assertNotContains(['gt', 'deleted_at', 'param3'], $qb->conditions);
-		$this->assertSame([
-			['param1', BindingService::STATE_PENDING_DELETE, null],
-			['param2', 100000, IQueryBuilder::PARAM_INT],
-		], $qb->parameters);
+		$this->assertSame([['eq', 'b.state', 'param1']], $qb->conditions);
 	}
 
 	/** @param array<string,mixed>|null $binding */
@@ -134,7 +140,7 @@ class BindingServiceTest extends TestCase {
 	 * Both predicates and the state belong in the statement. Without the pad
 	 * id a delete by file id alone takes the row a concurrent rebind just
 	 * won; without `state` it takes the row a trash left as pending_delete,
-	 * which is what PendingDeleteRetryService retries from.
+	 * the only record of a deletion still owed.
 	 */
 	public function testDeletingAnActiveBindingNamesFileAndPadAndState(): void {
 		$qb = new BindingServiceTestQueryBuilder([]);
@@ -166,6 +172,129 @@ class BindingServiceTest extends TestCase {
 		self::assertFalse($service->deleteActiveBinding(4711, 'nc-abc'));
 	}
 
+	/**
+	 * The conditional writes are all that stands between two flows that
+	 * each take a row for theirs, so what proves them is the rows they
+	 * leave alone. File 2 names the pad the first call asks for: without
+	 * the file in the statement that call takes file 2's row, without the
+	 * pad it takes file 1's.
+	 */
+	public function testRebindMovesARowOnlyWhileItNamesThatPadInThatState(): void {
+		$table = new InMemoryBindingTable([
+			self::bindingRow(1, 'old', BindingService::STATE_PENDING_DELETE),
+			self::bindingRow(2, 'other', BindingService::STATE_PENDING_DELETE),
+		]);
+		$service = new BindingService($table, new FixedClock(500), $this->createMock(LoggerInterface::class));
+		$before = $table->rows;
+
+		self::assertFalse($service->rebind(1, 'other', BindingService::STATE_PENDING_DELETE, 'new', BindingService::STATE_ACTIVE), 'another pad');
+		self::assertFalse($service->rebind(1, 'old', BindingService::STATE_ACTIVE, 'new', BindingService::STATE_ACTIVE), 'another state');
+		self::assertSame($before, $table->rows);
+
+		self::assertTrue($service->rebind(1, 'old', BindingService::STATE_PENDING_DELETE, 'new', BindingService::STATE_ACTIVE));
+		self::assertSame([
+			['file_id' => 1, 'pad_id' => 'new', 'state' => BindingService::STATE_ACTIVE, 'deleted_at' => null, 'updated_at' => 500],
+			self::bindingRow(2, 'other', BindingService::STATE_PENDING_DELETE),
+		], $table->rows);
+	}
+
+	/**
+	 * deleted_at says the file is in the trash. A restore that has to wait
+	 * has its file back, so the date goes, whichever way the row got there.
+	 */
+	public function testARestoreLeftWaitingIsNotDatedAsDeleted(): void {
+		$table = new InMemoryBindingTable([self::bindingRow(1, 'pad', BindingService::STATE_PENDING_DELETE)]);
+		$service = new BindingService($table, new FixedClock(500), $this->createMock(LoggerInterface::class));
+
+		self::assertTrue($service->transition(1, 'pad', BindingService::STATE_PENDING_DELETE, BindingService::STATE_RESTORE_PENDING));
+
+		self::assertNull($table->rows[0]['deleted_at']);
+	}
+
+	/** Back in the trash is a deletion owed again, dated from now. */
+	public function testTransitionToPendingDeleteDatesTheDeletionAnew(): void {
+		$table = new InMemoryBindingTable([self::bindingRow(1, 'pad', BindingService::STATE_RESTORE_PENDING)]);
+		$service = new BindingService($table, new FixedClock(500), $this->createMock(LoggerInterface::class));
+
+		self::assertTrue($service->transition(1, 'pad', BindingService::STATE_RESTORE_PENDING, BindingService::STATE_PENDING_DELETE));
+
+		self::assertSame(
+			['file_id' => 1, 'pad_id' => 'pad', 'state' => BindingService::STATE_PENDING_DELETE, 'deleted_at' => 500, 'updated_at' => 500],
+			$table->rows[0],
+		);
+	}
+
+	/** The same three conditions, for the recheck's delete of a row whose pad is gone. */
+	public function testDeleteInStateRemovesARowOnlyWhileItNamesThatPadInThatState(): void {
+		$table = new InMemoryBindingTable([
+			self::bindingRow(1, 'old', BindingService::STATE_RESTORE_PENDING),
+			self::bindingRow(2, 'other', BindingService::STATE_RESTORE_PENDING),
+		]);
+		$service = new BindingService($table, new FixedClock(500), $this->createMock(LoggerInterface::class));
+		$before = $table->rows;
+
+		self::assertFalse($service->deleteInState(1, 'other', BindingService::STATE_RESTORE_PENDING), 'another pad');
+		self::assertFalse($service->deleteInState(1, 'old', BindingService::STATE_ACTIVE), 'another state');
+		self::assertSame($before, $table->rows);
+
+		self::assertTrue($service->deleteInState(1, 'old', BindingService::STATE_RESTORE_PENDING));
+		self::assertSame([self::bindingRow(2, 'other', BindingService::STATE_RESTORE_PENDING)], $table->rows);
+	}
+
+	/**
+	 * A sweep has to know where each owed deletion's file is now, and a row
+	 * whose file is gone has no file cache row to join: left, not inner.
+	 * Aged by when the trash recorded it.
+	 */
+	public function testOwedDeletionsComeWithTheirFilesPath(): void {
+		$qb = new BindingServiceTestQueryBuilder([['file_id' => 10, 'pad_id' => 'pad-a', 'state' => BindingService::STATE_PENDING_DELETE, 'file_path' => null]]);
+		$service = $this->buildServiceWithQueryBuilder($qb, 100000);
+
+		$rows = $service->findPendingDeleteByAge(3600, 86400, 50);
+
+		$this->assertNull($rows[0]['file_path']);
+		$this->assertSame([['fc.path', 'file_path']], $qb->aliases);
+		$this->assertSame([['b', 'filecache', 'fc', ['eq', 'b.file_id', 'fc.fileid']]], $qb->leftJoins);
+		$this->assertSame([
+			['eq', 'b.state', 'param1'],
+			['lte', 'b.deleted_at', 'param2'],
+			['gt', 'b.deleted_at', 'param3'],
+		], $qb->conditions);
+		$this->assertSame([96400, 13600], [$qb->parameters[1][1], $qb->parameters[2][1]]);
+	}
+
+	/**
+	 * Unaged, there is no condition on the date at all, so a row that never
+	 * had one is reached too.
+	 */
+	public function testAnUnagedSweepReachesOwedDeletionsWithoutADate(): void {
+		$qb = new BindingServiceTestQueryBuilder([]);
+		$this->buildServiceWithQueryBuilder($qb, 100000)->findPendingDeleteByAge(0, null, 50);
+
+		$this->assertSame([['eq', 'b.state', 'param1']], $qb->conditions);
+	}
+
+	/**
+	 * Both figures in one grouped query, and a state with no rows is a
+	 * zero rather than a missing key.
+	 */
+	public function testCountsTheWaitingRowsOfEitherKindInOneQuery(): void {
+		$qb = new BindingServiceTestQueryBuilder([
+			['state' => BindingService::STATE_ACTIVE, 'cnt' => '9'],
+			['state' => BindingService::STATE_PENDING_DELETE, 'cnt' => '3'],
+		]);
+
+		$counts = $this->buildServiceWithQueryBuilder($qb, 100000)->countWaiting();
+
+		$this->assertSame(['pending_delete_count' => 3, 'restore_pending_count' => 0], $counts);
+		$this->assertSame(['state'], $qb->groupBy);
+	}
+
+	/** @return array<string,mixed> */
+	private static function bindingRow(int $fileId, string $padId, string $state): array {
+		return ['file_id' => $fileId, 'pad_id' => $padId, 'state' => $state, 'deleted_at' => 100, 'updated_at' => 100];
+	}
+
 	private function buildTimeFactory(int $now): ITimeFactory {
 		return new FixedClock($now);
 	}
@@ -195,11 +324,38 @@ class BindingServiceTestQueryBuilder implements IQueryBuilder {
 		return $this->affectedRows;
 	}
 
-	public function select(string $select): self {
+	/** @var list<array{string,string}> */
+	public array $aliases = [];
+	/** @var list<array{string,string,string,mixed}> */
+	public array $leftJoins = [];
+
+	public function select(string ...$select): self {
 		return $this;
 	}
 
-	public function from(string $table): self {
+	public function selectAlias(string $select, string $alias): self {
+		$this->aliases[] = [$select, $alias];
+		return $this;
+	}
+
+	public function from(string $table, ?string $alias = null): self {
+		return $this;
+	}
+
+	/** @var list<string> */
+	public array $groupBy = [];
+
+	public function createFunction(string $call): string {
+		return $call;
+	}
+
+	public function groupBy(string $column): self {
+		$this->groupBy[] = $column;
+		return $this;
+	}
+
+	public function leftJoin(string $fromAlias, string $join, string $alias, mixed $condition): self {
+		$this->leftJoins[] = [$fromAlias, $join, $alias, $condition];
 		return $this;
 	}
 
@@ -241,11 +397,6 @@ class BindingServiceTestExpressionBuilder {
 	/** @return array{string,string,string} */
 	public function eq(string $field, string $parameter): array {
 		return ['eq', $field, $parameter];
-	}
-
-	/** @return array{string,string} */
-	public function isNotNull(string $field): array {
-		return ['isNotNull', $field];
 	}
 
 	/** @return array{string,string,string} */
