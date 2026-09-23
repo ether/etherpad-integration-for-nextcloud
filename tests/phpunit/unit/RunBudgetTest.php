@@ -31,4 +31,17 @@ class RunBudgetTest extends TestCase {
 		$clock->advance(5);
 		$this->assertSame(0, $budget->callTimeout());
 	}
+
+	/** A few items without an answer read as an outage, however much time is left. */
+	public function testEndsTheRunAfterAFewFailures(): void {
+		$budget = new RunBudget(new FixedClock(), 20.0);
+
+		for ($i = 0; $i < 4; $i++) {
+			$budget->noteFailure();
+		}
+		$this->assertFalse($budget->exhausted());
+		$budget->noteFailure();
+		$this->assertTrue($budget->exhausted());
+		$this->assertSame(5, $budget->failures());
+	}
 }

@@ -19,8 +19,8 @@ Etherpad is the editing source of truth; the `.pad` file acts as binding storage
   - On Etherpad delete failures: `pending_delete` instead of blocking Nextcloud trash.
   - On restore of a `pending_delete` row: its own pad while Etherpad still has it at the file's snapshot revision or later, `restore_pending` while Etherpad cannot say.
 - `lib/Service/PendingBindingService.php`
-  - Settles rows that wait, by where their file is now (see Trash/Restore). The only place a pad is deleted after the trash itself: once its file is gone for good.
-  - Bounded per run: a 20 s budget, the probe timeout cut to what is left, and a stop after five rows Etherpad gave no answer for.
+  - Settles rows that wait, by where their file is now (see Trash/Restore). Writes no file. The only place a pad is deleted after the trash itself: once its file is gone for good.
+  - Bounded per run by `RunBudget`: 20 s, each Etherpad call gets what is left, none is started that could not finish, and a run stops after five rows Etherpad gave no answer for.
 - `lib/BackgroundJob/*PendingDeleteRetryJob.php`
   - Bucketed runs of `PendingBindingService`: `restore_pending` rows aged by `updated_at`, `pending_delete` rows by `deleted_at`. Named for what they did first; the job list stores the class name.
     - hot rows: every 5 minutes for the first hour
@@ -225,17 +225,19 @@ Primary flow (native viewer):
 - Trash: persist a fresh snapshot if possible, delete the managed Etherpad pad, then delete the binding row.
 - If Etherpad is unavailable during delete: switch state to `pending_delete`, keep Nextcloud trash successful. The row and its pad are kept until the file is restored or gone for good.
 - Restore without a binding row: provision a new pad from `.pad` frontmatter/snapshot.
-- Restore of a `pending_delete` row, whatever `delete_on_trash` says now: read the file's `snapshot_rev`, then ask Etherpad about the row's pad. The pad id comes from the row, never from the file.
+- Restore of a waiting row (`pending_delete` or `restore_pending`), whatever `delete_on_trash` says now: read the file's `snapshot_rev`, then ask Etherpad about the row's pad. The pad id comes from the row, never from the file.
   - It exists with at least that many revisions: the row becomes `active` again on that same pad, which may hold edits the snapshot missed.
   - Etherpad answers that it does not exist, or it has fewer revisions (created again since, or back from an older backup): a new pad from the file's snapshot, and the file records the new pad's revision count. A pad with fewer revisions is left in place and logged; whoever wrote into it has only that copy. The row is claimed for the new pad before the file is written, so of two concurrent restores only one writes.
     - A claim that throws is settled by reading the row. Only a row naming the new pad counts as claimed; otherwise the file is not written and the restore fails.
     - After a failed claim or write, an active row naming the new pad is removed with it (`ProvisionedPadRollback::removeMatchingBindingAndDiscard`), and one still naming the old pad is removed too: Etherpad has already said that pad is not the file's, and without a row the file offers its own recovery at once. A row a trash took over in the meantime keeps its pad.
-  - No answer, or the file cannot be read: `restore_pending`, and neither pad nor file is touched.
+  - No answer, or the file cannot be read: `restore_pending`, and neither pad nor file is touched. A row that waits again moves to the back of the queue (`updated_at`).
+  - The pad has fewer revisions: logged with its id before anything else is tried, since that pad is left in place either way.
 - `PendingBindingService` settles waiting rows in age buckets (every 5 minutes, then hourly, then daily) and from the admin page, by where the file is now:
-  - in Files (`restore_pending`, or `pending_delete` whose restore never came): the decision a restore takes, taken again.
-  - in the trash: nothing yet.
-  - gone for good, with no `filecache` row left: pad deleted, then row. Not while `delete_on_trash` is off.
-- Trashing a file whose row is `restore_pending` leaves the pad alone and returns the row to `pending_delete`, without a snapshot: which pad is the file's is what is undecided.
+  - in Files (`restore_pending`, or `pending_delete` whose restore never came): the decision a restore takes, except that a sweep writes no file. A pad that is gone or behind releases the row, and the file offers its own recovery when it is next opened. The file is read through any node outside a trash.
+  - in a trash: nothing yet. A user's trash is recognised in the file cache (`files_trashbin/`) and by node path; a team folder with its own storage keeps trashed files under a bare `trash/`, and those are found by no node, so the sweep leaves them.
+  - gone for good, with no `filecache` row left, in either waiting state: pad deleted, then row. Not while `delete_on_trash` is off.
+  - Only Etherpad's silence counts towards the five-row stop; a file that cannot be read does not.
+- Trashing a file whose row is `restore_pending` returns the row to `pending_delete`, whatever `delete_on_trash` says, and leaves the pad alone, without a snapshot: which pad is the file's is what is undecided. If a sweep settled the row a moment earlier, the trash reads it again and trashes the file as what it is now.
 - `deleted_at` is set only in `pending_delete`.
 - External pads skip lifecycle side effects entirely. Trash/restore only affects the Nextcloud file; the remote Etherpad server is never mutated.
 

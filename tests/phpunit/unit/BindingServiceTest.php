@@ -63,16 +63,25 @@ class BindingServiceTest extends TestCase {
 		$service->assertConsistentMapping(12, 'pad-a', 'legacy');
 	}
 
+	/**
+	 * Undecided restores are aged by when they last changed, and come with
+	 * their file's path like the deletions owed: a restore whose file has
+	 * since gone for good has to be seen as that.
+	 */
 	public function testFindRestorePendingByAgeAddsUpperAndLowerAgeBounds(): void {
-		$qb = new BindingServiceTestQueryBuilder([['file_id' => 10, 'pad_id' => 'pad-a']]);
+		$qb = new BindingServiceTestQueryBuilder([['file_id' => 10, 'pad_id' => 'pad-a', 'file_path' => null]]);
 		$service = $this->buildServiceWithQueryBuilder($qb, 100000);
 
 		$rows = $service->findRestorePendingByAge(3600, 86400, 50);
 
-		$this->assertSame([['file_id' => 10, 'pad_id' => 'pad-a']], $rows);
+		$this->assertSame([['file_id' => 10, 'pad_id' => 'pad-a', 'file_path' => null]], $rows);
 		$this->assertSame(50, $qb->maxResults);
-		$this->assertContains(['lte', 'updated_at', 'param2'], $qb->conditions);
-		$this->assertContains(['gt', 'updated_at', 'param3'], $qb->conditions);
+		$this->assertSame([['b', 'filecache', 'fc', ['eq', 'b.file_id', 'fc.fileid']]], $qb->leftJoins);
+		$this->assertSame([
+			['eq', 'b.state', 'param1'],
+			['lte', 'b.updated_at', 'param2'],
+			['gt', 'b.updated_at', 'param3'],
+		], $qb->conditions);
 		$this->assertSame([
 			['param1', BindingService::STATE_RESTORE_PENDING, null],
 			['param2', 96400, IQueryBuilder::PARAM_INT],
@@ -80,19 +89,15 @@ class BindingServiceTest extends TestCase {
 		], $qb->parameters);
 	}
 
-	public function testFindRestorePendingByAgeOmitsUpperBoundForColdBucketAndClampsNegativeAge(): void {
+	/** Unaged, and with a limit that makes no sense, every waiting row is still in reach, one at least. */
+	public function testFindRestorePendingByAgeWithoutBoundsComparesNoDate(): void {
 		$qb = new BindingServiceTestQueryBuilder([]);
 		$service = $this->buildServiceWithQueryBuilder($qb, 100000);
 
 		$service->findRestorePendingByAge(-1, null, 0);
 
 		$this->assertSame(1, $qb->maxResults);
-		$this->assertContains(['lte', 'updated_at', 'param2'], $qb->conditions);
-		$this->assertNotContains(['gt', 'updated_at', 'param3'], $qb->conditions);
-		$this->assertSame([
-			['param1', BindingService::STATE_RESTORE_PENDING, null],
-			['param2', 100000, IQueryBuilder::PARAM_INT],
-		], $qb->parameters);
+		$this->assertSame([['eq', 'b.state', 'param1']], $qb->conditions);
 	}
 
 	/** @param array<string,mixed>|null $binding */

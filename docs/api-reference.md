@@ -401,8 +401,8 @@ solely by the separate external-pad policy, not by these two settings.
   - Controller: `AdminController::settlePending`
   - Auth: admin only
   - Purpose: an immediate run of what the background jobs do for waiting rows
-    (`restore_pending` and `pending_delete`), within the same time budget. A
-    pad is deleted only when its file is gone for good.
+    (`restore_pending` and `pending_delete`), within the same time budget. It
+    writes no file, and a pad is deleted only when its file is gone for good.
   - Result:
     - `checked`, `settled`
     - `pending_restores`, `pending_deletes`: what is left

@@ -155,63 +155,50 @@ class BindingService {
 	}
 
 	/**
-	 * Deletions owed, aged by when the trash recorded them, each with the
-	 * path its file has in the file cache now: under `files_trashbin/` while
-	 * it waits in the trash, elsewhere once it is back without a restore
-	 * having settled the row, and null once nothing is left of it.
+	 * Deletions owed, aged by when the trash recorded them.
 	 *
-	 * Without a lower age bound there is no condition on deleted_at at all,
-	 * so a row that never had one is still reached by an unaged sweep.
+	 * A row that never had a deleted_at is reached only by a run with
+	 * neither bound - the admin page's. Every age bucket compares the date.
 	 *
 	 * @return array<int,array<string,mixed>>
 	 */
 	public function findPendingDeleteByAge(int $minAgeSeconds, ?int $maxAgeSeconds, int $limit = 100): array {
+		return $this->findWaitingByAge(self::STATE_PENDING_DELETE, 'deleted_at', $minAgeSeconds, $maxAgeSeconds, $limit);
+	}
+
+	/**
+	 * Restores left undecided, aged by when the row last changed: when the
+	 * restore left it waiting, or when a check last found no answer for it.
+	 *
+	 * @return array<int,array<string,mixed>>
+	 */
+	public function findRestorePendingByAge(int $minAgeSeconds, ?int $maxAgeSeconds, int $limit = 100): array {
+		return $this->findWaitingByAge(self::STATE_RESTORE_PENDING, 'updated_at', $minAgeSeconds, $maxAgeSeconds, $limit);
+	}
+
+	/**
+	 * Rows in one waiting state, oldest first, each with the path its file
+	 * has in the file cache now - null once nothing is left of the file.
+	 * Left, not inner: a row whose file is gone has no file cache row to
+	 * join, and that is the row a sweep most needs to see.
+	 *
+	 * @return array<int,array<string,mixed>>
+	 */
+	private function findWaitingByAge(string $state, string $ageColumn, int $minAgeSeconds, ?int $maxAgeSeconds, int $limit): array {
 		$now = $this->timeFactory->getTime();
 		$qb = $this->db->getQueryBuilder();
 		$qb->select('b.file_id', 'b.pad_id', 'b.state')
 			->selectAlias('fc.path', 'file_path')
 			->from(self::TABLE, 'b')
 			->leftJoin('b', 'filecache', 'fc', $qb->expr()->eq('b.file_id', 'fc.fileid'))
-			->where($qb->expr()->eq('b.state', $qb->createNamedParameter(self::STATE_PENDING_DELETE)))
-			->orderBy('b.deleted_at', 'ASC')
+			->where($qb->expr()->eq('b.state', $qb->createNamedParameter($state)))
+			->orderBy('b.' . $ageColumn, 'ASC')
 			->setMaxResults(max(1, $limit));
 		if ($minAgeSeconds > 0) {
-			$qb->andWhere($qb->expr()->lte('b.deleted_at', $qb->createNamedParameter($now - $minAgeSeconds, IQueryBuilder::PARAM_INT)));
+			$qb->andWhere($qb->expr()->lte('b.' . $ageColumn, $qb->createNamedParameter($now - $minAgeSeconds, IQueryBuilder::PARAM_INT)));
 		}
 		if ($maxAgeSeconds !== null) {
-			$qb->andWhere($qb->expr()->gt('b.deleted_at', $qb->createNamedParameter($now - max(0, $maxAgeSeconds), IQueryBuilder::PARAM_INT)));
-		}
-
-		$result = $qb->executeQuery();
-		$rows = $result->fetchAll();
-		$result->closeCursor();
-		return $rows;
-	}
-
-	/**
-	 * Aged by when the row last changed, which for this state is when the
-	 * restore left it undecided.
-	 *
-	 * @return array<int,array<string,mixed>>
-	 */
-	public function findRestorePendingByAge(int $minAgeSeconds, ?int $maxAgeSeconds, int $limit = 100): array {
-		$now = $this->timeFactory->getTime();
-		$qb = $this->db->getQueryBuilder();
-		$qb->select('*')
-			->from(self::TABLE)
-			->where($qb->expr()->eq('state', $qb->createNamedParameter(self::STATE_RESTORE_PENDING)))
-			->andWhere($qb->expr()->lte(
-				'updated_at',
-				$qb->createNamedParameter($now - max(0, $minAgeSeconds), IQueryBuilder::PARAM_INT),
-			))
-			->orderBy('updated_at', 'ASC')
-			->setMaxResults(max(1, $limit));
-
-		if ($maxAgeSeconds !== null) {
-			$qb->andWhere($qb->expr()->gt(
-				'updated_at',
-				$qb->createNamedParameter($now - max(0, $maxAgeSeconds), IQueryBuilder::PARAM_INT),
-			));
+			$qb->andWhere($qb->expr()->gt('b.' . $ageColumn, $qb->createNamedParameter($now - max(0, $maxAgeSeconds), IQueryBuilder::PARAM_INT)));
 		}
 
 		$result = $qb->executeQuery();

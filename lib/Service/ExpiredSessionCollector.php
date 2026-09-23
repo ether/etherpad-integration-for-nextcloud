@@ -30,18 +30,13 @@ use Psr\Log\LoggerInterface;
 class ExpiredSessionCollector {
 
 	private const MAX_PER_RUN = 250;
-	private const BUDGET_SECONDS = 20.0;
-
-	/** Refusals a run puts up with before reading them as an outage. */
-	private const MAX_FAILURES_PER_RUN = 5;
-
 	/** The budget is a parameter so a test can reach it, not a setting. */
 	public function __construct(
 		private EtherpadClient $etherpadClient,
 		private IJobList $jobList,
 		private LoggerInterface $logger,
 		private ITimeFactory $timeFactory,
-		private float $budgetSeconds = self::BUDGET_SECONDS,
+		private float $budgetSeconds = RunBudget::DEFAULT_SECONDS,
 	) {
 	}
 
@@ -139,9 +134,8 @@ class ExpiredSessionCollector {
 		// the only honest basis for what is left over.
 		$handled = 0;
 		$deleted = 0;
-		$failures = 0;
 		foreach ($expired as $sessionId) {
-			if ($handled >= self::MAX_PER_RUN || !$budget->fitsAnotherCall()) {
+			if ($handled >= self::MAX_PER_RUN || $budget->exhausted()) {
 				break;
 			}
 
@@ -158,7 +152,7 @@ class ExpiredSessionCollector {
 				// Carrying on past a refusal: stopping at the first would let
 				// one undeletable record shadow everything behind it for
 				// good, since the next run meets it first again.
-				$failures++;
+				$budget->noteFailure();
 				// A digest, not the id: a session id is the value of the
 				// `sessionID` cookie, so it is the credential itself — and
 				// this branch is reached for sessions the pad server may
@@ -171,9 +165,6 @@ class ExpiredSessionCollector {
 					'sessionRef' => substr(hash('sha256', $sessionId), 0, 12),
 					...SafeError::context($e, [$sessionId]),
 				]);
-				if ($failures >= self::MAX_FAILURES_PER_RUN) {
-					break;
-				}
 			}
 		}
 		$remaining = count($expired) - $handled;
@@ -186,7 +177,7 @@ class ExpiredSessionCollector {
 			]);
 		}
 
-		return ['deleted' => $deleted, 'remaining' => $remaining, 'retry' => $failures > 0, 'nextDueAt' => $nextDueAt];
+		return ['deleted' => $deleted, 'remaining' => $remaining, 'retry' => $budget->failures() > 0, 'nextDueAt' => $nextDueAt];
 	}
 
 	/**

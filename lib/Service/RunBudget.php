@@ -12,16 +12,25 @@ namespace OCA\EtherpadNextcloud\Service;
 use OCP\AppFramework\Utility\ITimeFactory;
 
 /**
- * The time a background run may take, for sweeps that call Etherpad item
- * by item and promise a total run length. A deadline alone bounds when the
- * last call starts, not when it ends: each call is given what is left, and
- * one that could not finish in it is not started.
+ * What a background run may spend, for sweeps that call Etherpad item by
+ * item and promise a total run length: time, and patience with an Etherpad
+ * that does not answer. A deadline alone bounds when the last call starts,
+ * not when it ends, so each call is given what is left, and one that could
+ * not finish in it is not started. A few items without an answer read as an
+ * outage, and the run ends there rather than paying a timeout for each.
  */
 final class RunBudget {
+	/** The whole run, as both sweeps promise it. */
+	public const DEFAULT_SECONDS = 20.0;
+
 	/** Below this, a call cannot finish inside the budget. */
 	private const MIN_CALL_TIMEOUT_SECONDS = 2;
 
+	/** Items without an answer a run puts up with before reading them as an outage. */
+	private const MAX_FAILURES = 5;
+
 	private float $deadline;
+	private int $failures = 0;
 
 	public function __construct(
 		private ITimeFactory $clock,
@@ -33,6 +42,20 @@ final class RunBudget {
 	/** Whether a call started now could still finish in time. */
 	public function fitsAnotherCall(): bool {
 		return $this->deadline - $this->now() >= self::MIN_CALL_TIMEOUT_SECONDS;
+	}
+
+	/** An item Etherpad gave no answer for. */
+	public function noteFailure(): void {
+		$this->failures++;
+	}
+
+	public function failures(): int {
+		return $this->failures;
+	}
+
+	/** Out of time, or out of patience: no further item is started. */
+	public function exhausted(): bool {
+		return $this->failures >= self::MAX_FAILURES || !$this->fitsAnotherCall();
 	}
 
 	/**
