@@ -40,7 +40,7 @@ final class RunBudget {
 	}
 
 	/** Whether a call started now could still finish in time. */
-	public function fitsAnotherCall(): bool {
+	private function fitsAnotherCall(): bool {
 		return $this->deadline - $this->now() >= self::MIN_CALL_TIMEOUT_SECONDS;
 	}
 

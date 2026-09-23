@@ -17,15 +17,15 @@ class RunBudgetTest extends TestCase {
 		$clock = new FixedClock();
 		$budget = new RunBudget($clock, 20.0);
 
-		$this->assertTrue($budget->fitsAnotherCall());
+		$this->assertFalse($budget->exhausted());
 		$this->assertSame(15, $budget->callTimeout());
 
 		$clock->advance(12);
-		$this->assertTrue($budget->fitsAnotherCall());
+		$this->assertFalse($budget->exhausted());
 		$this->assertSame(8, $budget->callTimeout());
 
 		$clock->advance(7);
-		$this->assertFalse($budget->fitsAnotherCall());
+		$this->assertTrue($budget->exhausted());
 		$this->assertSame(1, $budget->callTimeout());
 
 		$clock->advance(5);

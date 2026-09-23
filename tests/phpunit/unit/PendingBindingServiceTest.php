@@ -241,14 +241,11 @@ class PendingBindingServiceTest extends TestCase {
 	/** The admin page shows what a run did and what is left of either kind. */
 	public function testSettleReportsWhatIsLeft(): void {
 		$bindings = $this->bindings();
-		$bindings->method('countByState')->willReturnMap([
-			[BindingService::STATE_RESTORE_PENDING, 1],
-			[BindingService::STATE_PENDING_DELETE, 4],
-		]);
+		$bindings->method('countWaiting')->willReturn(['pending_delete_count' => 4, 'restore_pending_count' => 1]);
 
 		$result = $this->service($bindings, $this->createMock(LifecycleService::class), $this->root([]))->settle(50);
 
-		$this->assertSame(['checked' => 0, 'settled' => 0, 'pending_restores' => 1, 'pending_deletes' => 4], $result);
+		$this->assertSame(['checked' => 0, 'settled' => 0, 'pending_delete_count' => 4, 'restore_pending_count' => 1], $result);
 	}
 
 	/** @return array<string,mixed> */

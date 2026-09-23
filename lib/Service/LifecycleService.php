@@ -169,7 +169,7 @@ class LifecycleService {
 				$binding = $this->bindingService->findByFileId($fileId);
 			}
 		} catch (\Throwable $e) {
-			throw new LifecycleException('Trash flow failed before completion.', 0, $e);
+			throw $this->failed('Trash', $e);
 		}
 
 		if (!$this->isDeleteOnTrashEnabled()) {
@@ -261,31 +261,19 @@ class LifecycleService {
 						...SafeError::context($deleteError),
 					]);
 				} else {
-					$this->bindingService->markPendingDelete($fileId, $deletedAt);
+					if (!$this->bindingService->transition($fileId, $padId, BindingService::STATE_ACTIVE, BindingService::STATE_PENDING_DELETE)) {
+						throw new BindingStateConflictException('State transition conflict while marking pending_delete (expected active).');
+					}
 					$this->logger->warning('Could not delete the pad after trash. It is kept, and its deletion recorded as pending.', [
 						'app' => 'etherpad_nextcloud',
 						'fileId' => $fileId,
 						...SafeError::context($deleteError),
 					]);
-					return [
-						'status' => self::RESULT_TRASHED,
-						'file_id' => $fileId,
-						'pad_id' => $padId,
-						'deleted_at' => $deletedAt,
-						'snapshot_persisted' => $snapshotPersisted,
-						'delete_pending' => true,
-					];
+					return $this->buildTrashedResult($fileId, $padId, $deletedAt, $snapshotPersisted, true);
 				}
 			}
 			$this->bindingService->deleteByFileId($fileId);
-			return [
-				'status' => self::RESULT_TRASHED,
-				'file_id' => $fileId,
-				'pad_id' => $padId,
-				'deleted_at' => $deletedAt,
-				'snapshot_persisted' => $snapshotPersisted,
-				'delete_pending' => false,
-			];
+			return $this->buildTrashedResult($fileId, $padId, $deletedAt, $snapshotPersisted, false);
 		} catch (BindingStateConflictException $e) {
 			$this->logger->warning('Trash lifecycle state transition conflict. Returning skipped.', [
 				'app' => 'etherpad_nextcloud',
@@ -298,7 +286,7 @@ class LifecycleService {
 			// also sees the ways out that end above this try - reporting
 			// from in here would be the same failure a second time, from
 			// the one of the two places that cannot see all of them.
-			throw new LifecycleException('Trash flow failed before completion.', 0, $e);
+			throw $this->failed('Trash', $e);
 		}
 	}
 
@@ -322,14 +310,7 @@ class LifecycleService {
 		if (!$this->bindingService->transition($fileId, $padId, BindingService::STATE_RESTORE_PENDING, BindingService::STATE_PENDING_DELETE)) {
 			return null;
 		}
-		return [
-			'status' => self::RESULT_TRASHED,
-			'file_id' => $fileId,
-			'pad_id' => $padId,
-			'deleted_at' => $deletedAt,
-			'snapshot_persisted' => false,
-			'delete_pending' => true,
-		];
+		return $this->buildTrashedResult($fileId, $padId, $deletedAt, false, true);
 	}
 
 	/** @return array{status: string, reason?: string, file_id: int, pad_id?: string, old_pad_id?: string, new_pad_id?: string} */
@@ -395,7 +376,7 @@ class LifecycleService {
 		try {
 			return $this->bindingService->findByFileId($fileId);
 		} catch (\Throwable $e) {
-			throw new LifecycleException('Restore flow failed before completion.', 0, $e);
+			throw $this->failed('Restore', $e);
 		}
 	}
 
@@ -444,7 +425,7 @@ class LifecycleService {
 		} catch (LifecycleException $e) {
 			throw $e;
 		} catch (\Throwable $e) {
-			throw new LifecycleException('Restore flow failed before completion.', 0, $e);
+			throw $this->failed('Restore', $e);
 		}
 	}
 
@@ -453,12 +434,7 @@ class LifecycleService {
 		if (!$this->bindingService->transition($fileId, $padId, $fromState, BindingService::STATE_ACTIVE)) {
 			return $this->buildSkippedResult('binding_state_transition_conflict', $fileId, $padId);
 		}
-		return [
-			'status' => self::RESULT_RESTORED,
-			'file_id' => $fileId,
-			'old_pad_id' => $padId,
-			'new_pad_id' => $padId,
-		];
+		return $this->buildRestoredResult($fileId, $padId, $padId);
 	}
 
 	/**
@@ -479,11 +455,14 @@ class LifecycleService {
 			if (!$this->bindingService->transition($fileId, $padId, $fromState, BindingService::STATE_RESTORE_PENDING)) {
 				return $this->buildSkippedResult('binding_state_transition_conflict', $fileId, $padId);
 			}
-			$this->logger->warning('Could not tell whether a restored file\'s pad is still its own. Kept it for a later check.', [
-				'app' => 'etherpad_nextcloud',
-				'fileId' => $fileId,
-				...($readError === null ? [] : SafeError::context($readError)),
-			]);
+			// Etherpad's silence was logged with its cause where it was met;
+			// only an unreadable file is news here.
+			$context = ['app' => 'etherpad_nextcloud', 'fileId' => $fileId];
+			if ($readError === null) {
+				$this->logger->info('Kept a restored file\'s pad for a later check.', $context);
+			} else {
+				$this->logger->warning('Could not read a restored .pad file. Kept its pad for a later check.', [...$context, ...SafeError::context($readError)]);
+			}
 		}
 		return $this->buildSkippedResult($readError === null ? self::REASON_PRESENCE_UNKNOWN : self::REASON_FILE_UNREADABLE, $fileId, $padId);
 	}
@@ -512,7 +491,7 @@ class LifecycleService {
 			[$newPadId, $updatedContent] = $this->seedFromSnapshot($fileId, $pad, $accessMode, $oldPadId);
 		} catch (\Throwable $e) {
 			$this->releaseReplacedRow($fileId, $oldPadId, $fromState);
-			throw new LifecycleException('Restore flow failed before completion.', 0, $e);
+			throw $this->failed('Restore', $e);
 		}
 
 		try {
@@ -530,7 +509,7 @@ class LifecycleService {
 			// file's, and without a row the file offers its own recovery.
 			$this->provisionedPadRollback->removeMatchingBindingAndDiscard($fileId, $newPadId, 'restore with replacement');
 			$this->releaseReplacedRow($fileId, $oldPadId, $fromState);
-			throw new LifecycleException('Restore flow failed before completion.', 0, $e);
+			throw $this->failed('Restore', $e);
 		}
 
 		// Outside the try on purpose: the restore is done and recorded, and
@@ -538,12 +517,7 @@ class LifecycleService {
 		if ($presence === PadPresence::Absent) {
 			$this->discardSupersededPad($fileId, $oldPadId);
 		}
-		return [
-			'status' => self::RESULT_RESTORED,
-			'file_id' => $fileId,
-			'old_pad_id' => $oldPadId,
-			'new_pad_id' => $newPadId,
-		];
+		return $this->buildRestoredResult($fileId, $oldPadId, $newPadId);
 	}
 
 	/**
@@ -737,7 +711,7 @@ class LifecycleService {
 			}
 			[$newPadId, $updatedContent] = $this->seedFromSnapshot($fileId, $pad, $pad->accessMode, $pad->padId);
 		} catch (\Throwable $e) {
-			throw new LifecycleException('Restore flow failed before completion.', 0, $e);
+			throw $this->failed('Restore', $e);
 		}
 
 		try {
@@ -752,15 +726,37 @@ class LifecycleService {
 			// Nothing consistent to keep, unlike a first init: a row naming
 			// the new pad would contradict a `.pad` that still names the old.
 			$this->provisionedPadRollback->removeMatchingBindingAndDiscard($fileId, $newPadId, 'restore without binding');
-			throw new LifecycleException('Restore flow failed before completion.', 0, $e);
+			throw $this->failed('Restore', $e);
 		}
 
+		return $this->buildRestoredResult($fileId, $pad->padId, $newPadId);
+	}
+
+	/** @return array{status: string, file_id: int, old_pad_id: string, new_pad_id: string} */
+	private function buildRestoredResult(int $fileId, string $oldPadId, string $newPadId): array {
 		return [
 			'status' => self::RESULT_RESTORED,
 			'file_id' => $fileId,
-			'old_pad_id' => $pad->padId,
+			'old_pad_id' => $oldPadId,
 			'new_pad_id' => $newPadId,
 		];
+	}
+
+	/** @return array{status: string, file_id: int, pad_id: string, deleted_at: int, snapshot_persisted: bool, delete_pending: bool} */
+	private function buildTrashedResult(int $fileId, string $padId, int $deletedAt, bool $snapshotPersisted, bool $deletePending): array {
+		return [
+			'status' => self::RESULT_TRASHED,
+			'file_id' => $fileId,
+			'pad_id' => $padId,
+			'deleted_at' => $deletedAt,
+			'snapshot_persisted' => $snapshotPersisted,
+			'delete_pending' => $deletePending,
+		];
+	}
+
+	/** What a trash or restore that did not finish throws. Every caller reports it, so it carries its cause. */
+	private function failed(string $flow, \Throwable $cause): LifecycleException {
+		return new LifecycleException($flow . ' flow failed before completion.', 0, $cause);
 	}
 
 	/** @return array{status: string, reason: string, file_id: int, pad_id?: string} */

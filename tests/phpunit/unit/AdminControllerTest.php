@@ -156,15 +156,15 @@ class AdminControllerTest extends TestCase {
 		$pending->expects($this->once())
 			->method('settle')
 			->with(500)
-			->willReturn(['checked' => 2, 'settled' => 1, 'pending_restores' => 1, 'pending_deletes' => 3]);
+			->willReturn(['checked' => 2, 'settled' => 1, 'pending_delete_count' => 3, 'restore_pending_count' => 1]);
 
 		$response = $this->buildController(pendingBindings: $pending)->settlePending();
 
 		$this->assertSame(Http::STATUS_OK, $response->getStatus());
 		$this->assertSame(2, $response->getData()['checked']);
 		$this->assertSame(1, $response->getData()['settled']);
-		$this->assertSame(1, $response->getData()['pending_restores']);
-		$this->assertSame(3, $response->getData()['pending_deletes']);
+		$this->assertSame(3, $response->getData()['pending_delete_count']);
+		$this->assertSame(1, $response->getData()['restore_pending_count']);
 	}
 
 	public function testSetTestFaultRequiresDebugMode(): void {

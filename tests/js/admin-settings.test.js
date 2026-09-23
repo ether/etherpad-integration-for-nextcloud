@@ -184,7 +184,7 @@ describe('admin settings status areas', () => {
 	it('counts deferred deletions apart from restores, and checks both', async () => {
 		const fetchMock = vi.fn((url) => Promise.resolve(okResponse({
 			'/health': { message: 'All checks passed.', pending_delete_count: 2, restore_pending_count: 1 },
-			'/settle': { message: 'Pending pad check finished.', checked: 2, settled: 2, pending_restores: 0, pending_deletes: 1 },
+			'/settle': { message: 'Pending pad check finished.', checked: 2, settled: 2, restore_pending_count: 0, pending_delete_count: 1 },
 		}[url] || {})))
 		vi.stubGlobal('fetch', fetchMock)
 		await import(MODULE)

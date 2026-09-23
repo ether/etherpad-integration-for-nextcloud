@@ -50,13 +50,14 @@ class PendingBindingService {
 	) {
 	}
 
-	/** @return array{checked:int, settled:int, pending_restores:int, pending_deletes:int} */
+	/**
+	 * What a run did and what is left, under the names the health check
+	 * reports the same figures by.
+	 *
+	 * @return array{checked:int, settled:int, pending_delete_count:int, restore_pending_count:int}
+	 */
 	public function settle(int $limit = 200): array {
-		return [
-			...$this->settleByAge(0, null, $limit),
-			'pending_restores' => $this->bindingService->countByState(BindingService::STATE_RESTORE_PENDING),
-			'pending_deletes' => $this->bindingService->countByState(BindingService::STATE_PENDING_DELETE),
-		];
+		return [...$this->settleByAge(0, null, $limit), ...$this->bindingService->countWaiting()];
 	}
 
 	/**
@@ -68,8 +69,8 @@ class PendingBindingService {
 	public function settleByAge(int $minAgeSeconds, ?int $maxAgeSeconds, int $limit = 200): array {
 		$budget = new RunBudget($this->timeFactory, $this->budgetSeconds);
 		$rows = [
-			...$this->bindingService->findRestorePendingByAge($minAgeSeconds, $maxAgeSeconds, max(1, $limit)),
-			...$this->bindingService->findPendingDeleteByAge($minAgeSeconds, $maxAgeSeconds, max(1, $limit)),
+			...$this->bindingService->findRestorePendingByAge($minAgeSeconds, $maxAgeSeconds, $limit),
+			...$this->bindingService->findPendingDeleteByAge($minAgeSeconds, $maxAgeSeconds, $limit),
 		];
 
 		$checked = 0;

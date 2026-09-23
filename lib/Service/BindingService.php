@@ -10,7 +10,6 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\Service;
 
 use OCA\EtherpadNextcloud\Exception\BindingException;
-use OCA\EtherpadNextcloud\Exception\BindingStateConflictException;
 use OCA\EtherpadNextcloud\Exception\MissingBindingException;
 use OCA\EtherpadNextcloud\Util\PadAccessMode;
 use OCA\EtherpadNextcloud\Util\SafeError;
@@ -139,19 +138,29 @@ class BindingService {
 		return $qb->executeStatement() > 0;
 	}
 
-	public function countByState(string $state): int {
+	/**
+	 * How many rows wait, of either kind, in one query - the two figures the
+	 * health check and the admin page's check both report.
+	 *
+	 * @return array{pending_delete_count:int, restore_pending_count:int}
+	 */
+	public function countWaiting(): array {
 		$qb = $this->db->getQueryBuilder();
-		$qb->selectAlias($qb->createFunction('COUNT(*)'), 'cnt')
+		$qb->select('state')
+			->selectAlias($qb->createFunction('COUNT(*)'), 'cnt')
 			->from(self::TABLE)
-			->where($qb->expr()->eq('state', $qb->createNamedParameter($state)));
+			->groupBy('state');
 
 		$result = $qb->executeQuery();
-		$row = $result->fetch();
-		$result->closeCursor();
-		if (!is_array($row) || !isset($row['cnt'])) {
-			return 0;
+		$byState = [];
+		foreach ($result->fetchAll() as $row) {
+			$byState[(string)$row['state']] = max(0, (int)$row['cnt']);
 		}
-		return max(0, (int)$row['cnt']);
+		$result->closeCursor();
+		return [
+			'pending_delete_count' => $byState[self::STATE_PENDING_DELETE] ?? 0,
+			'restore_pending_count' => $byState[self::STATE_RESTORE_PENDING] ?? 0,
+		];
 	}
 
 	/**
@@ -255,20 +264,6 @@ class BindingService {
 		}
 	}
 
-	public function markPendingDelete(int $fileId, int $deletedAtTs): void {
-		$qb = $this->db->getQueryBuilder();
-		$qb->update(self::TABLE)
-			->set('state', $qb->createNamedParameter(self::STATE_PENDING_DELETE))
-			->set('deleted_at', $qb->createNamedParameter($deletedAtTs, IQueryBuilder::PARAM_INT))
-			->set('updated_at', $qb->createNamedParameter($this->timeFactory->getTime(), IQueryBuilder::PARAM_INT))
-			->where($qb->expr()->eq('file_id', $qb->createNamedParameter($fileId, IQueryBuilder::PARAM_INT)))
-			->andWhere($qb->expr()->eq('state', $qb->createNamedParameter(self::STATE_ACTIVE)));
-		$updated = $qb->executeStatement();
-		if ($updated < 1) {
-			throw new BindingStateConflictException('State transition conflict while marking pending_delete (expected active).');
-		}
-	}
-
 	/**
 	 * Remove one file's active row, and only while it still names this pad.
 	 *
@@ -280,12 +275,7 @@ class BindingService {
 	 * record of a deletion still owed, and of the pad it is owed for.
 	 */
 	public function deleteActiveBinding(int $fileId, string $padId): bool {
-		$qb = $this->db->getQueryBuilder();
-		$qb->delete(self::TABLE)
-			->where($qb->expr()->eq('file_id', $qb->createNamedParameter($fileId, IQueryBuilder::PARAM_INT)))
-			->andWhere($qb->expr()->eq('pad_id', $qb->createNamedParameter($padId)))
-			->andWhere($qb->expr()->eq('state', $qb->createNamedParameter(self::STATE_ACTIVE)));
-		return $qb->executeStatement() > 0;
+		return $this->deleteInState($fileId, $padId, self::STATE_ACTIVE);
 	}
 
 	public function deleteByFileId(int $fileId): void {

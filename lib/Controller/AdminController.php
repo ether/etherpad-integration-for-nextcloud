@@ -138,8 +138,8 @@ class AdminController extends Controller {
 				'message' => $this->l10n->t('Pending pad check finished.'),
 				'checked' => $result['checked'],
 				'settled' => $result['settled'],
-				'pending_restores' => $result['pending_restores'],
-				'pending_deletes' => $result['pending_deletes'],
+				'pending_delete_count' => $result['pending_delete_count'],
+				'restore_pending_count' => $result['restore_pending_count'],
 			]),
 			[
 				'generic' => $this->l10n->t('Pending pad check failed.'),

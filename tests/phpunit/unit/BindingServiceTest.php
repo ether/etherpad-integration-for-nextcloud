@@ -274,6 +274,22 @@ class BindingServiceTest extends TestCase {
 		$this->assertSame([['eq', 'b.state', 'param1']], $qb->conditions);
 	}
 
+	/**
+	 * Both figures in one grouped query, and a state with no rows is a
+	 * zero rather than a missing key.
+	 */
+	public function testCountsTheWaitingRowsOfEitherKindInOneQuery(): void {
+		$qb = new BindingServiceTestQueryBuilder([
+			['state' => BindingService::STATE_ACTIVE, 'cnt' => '9'],
+			['state' => BindingService::STATE_PENDING_DELETE, 'cnt' => '3'],
+		]);
+
+		$counts = $this->buildServiceWithQueryBuilder($qb, 100000)->countWaiting();
+
+		$this->assertSame(['pending_delete_count' => 3, 'restore_pending_count' => 0], $counts);
+		$this->assertSame(['state'], $qb->groupBy);
+	}
+
 	/** @return array<string,mixed> */
 	private static function bindingRow(int $fileId, string $padId, string $state): array {
 		return ['file_id' => $fileId, 'pad_id' => $padId, 'state' => $state, 'deleted_at' => 100, 'updated_at' => 100];
@@ -323,6 +339,18 @@ class BindingServiceTestQueryBuilder implements IQueryBuilder {
 	}
 
 	public function from(string $table, ?string $alias = null): self {
+		return $this;
+	}
+
+	/** @var list<string> */
+	public array $groupBy = [];
+
+	public function createFunction(string $call): string {
+		return $call;
+	}
+
+	public function groupBy(string $column): self {
+		$this->groupBy[] = $column;
 		return $this;
 	}
 

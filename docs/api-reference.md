@@ -405,7 +405,7 @@ solely by the separate external-pad policy, not by these two settings.
     writes no file, and a pad is deleted only when its file is gone for good.
   - Result:
     - `checked`, `settled`
-    - `pending_restores`, `pending_deletes`: what is left
+    - `pending_delete_count`, `restore_pending_count`: what is left, named as in the health check
 
 - `POST /api/v1/admin/test-fault`
   - Controller: `AdminController::setTestFault`

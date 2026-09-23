@@ -356,13 +356,14 @@
 
 	// Only the counts a response carries; one that carries none leaves the
 	// panel as it was rather than repainting it from what this page assumed.
-	function updateBindingCounts(data, deletesKey, restoresKey) {
+	// The health check and the pending pad check name them the same.
+	function updateBindingCounts(data) {
 		const counts = {}
-		if (typeof data[deletesKey] !== 'undefined') {
-			counts.pendingDeletes = data[deletesKey]
+		if (typeof data.pending_delete_count !== 'undefined') {
+			counts.pendingDeletes = data.pending_delete_count
 		}
-		if (typeof data[restoresKey] !== 'undefined') {
-			counts.pendingRestores = data[restoresKey]
+		if (typeof data.restore_pending_count !== 'undefined') {
+			counts.pendingRestores = data.restore_pending_count
 		}
 		if (Object.keys(counts).length === 0) {
 			return
@@ -477,7 +478,7 @@
 		beginStatus(l10n.checking, connectionTarget)
 		try {
 			const data = await postJson(healthUrl, getPayload())
-			updateBindingCounts(data, 'pending_delete_count', 'restore_pending_count')
+			updateBindingCounts(data)
 			// The per-field results carry the target and latency and the
 			// protected-pads verdict, so the summary stays a summary.
 			renderConnectionChecks(data.checks)
@@ -514,12 +515,12 @@
 			try {
 				const data = await postJson(settlePendingUrl, {})
 				const details = []
-				for (const key of ['checked', 'settled', 'pending_restores', 'pending_deletes']) {
+				for (const key of ['checked', 'settled', 'restore_pending_count', 'pending_delete_count']) {
 					if (typeof data[key] !== 'undefined') {
 						details.push(`${key}=${String(data[key])}`)
 					}
 				}
-				updateBindingCounts(data, 'pending_deletes', 'pending_restores')
+				updateBindingCounts(data)
 				const suffix = details.length > 0 ? ` ${details.join(' | ')}` : ''
 				setStatus(`${String(data.message || 'OK')}${suffix}`, 'success', diagnosticsTarget)
 			} catch (error) {

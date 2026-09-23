@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\Tests\Unit;
 
 use OCA\EtherpadNextcloud\Exception\BindingException;
-use OCA\EtherpadNextcloud\Exception\BindingStateConflictException;
 use OCA\EtherpadNextcloud\Exception\LifecycleException;
 use OCA\EtherpadNextcloud\Exception\NotAPadFileException;
 use OCA\EtherpadNextcloud\Exception\PadAlreadyHasBindingException;
@@ -77,7 +76,13 @@ class LifecycleServiceTest extends TestCase {
 		$file = $this->buildRestoredPadFile($fileId);
 		$file->expects($this->never())->method('putContent');
 
-		$result = $this->buildPendingDeleteRestoreService($fileId, 'old-pad', $bindingService, $etherpadClient)->handleRestore($file);
+		// Etherpad's silence is warned about, with its cause, where it is met;
+		// the restore adds a note, not a second warning for the same event.
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects($this->never())->method('warning');
+		$logger->expects($this->once())->method('info')->with($this->stringContains('later check'), $this->anything());
+
+		$result = $this->buildPendingDeleteRestoreService($fileId, 'old-pad', $bindingService, $etherpadClient, logger: $logger)->handleRestore($file);
 
 		$this->assertSame(LifecycleService::RESULT_SKIPPED, $result['status']);
 		$this->assertSame('pad_presence_unknown', $result['reason']);
@@ -821,11 +826,9 @@ class LifecycleServiceTest extends TestCase {
 				'state' => BindingService::STATE_ACTIVE,
 			]);
 		$bindingService->expects($this->once())
-			->method('markPendingDelete')
-			->with(
-				$fileId,
-				$this->callback(static fn ($deletedAt): bool => is_int($deletedAt) && $deletedAt > 0)
-			);
+			->method('transition')
+			->with($fileId, $padId, BindingService::STATE_ACTIVE, BindingService::STATE_PENDING_DELETE)
+			->willReturn(true);
 
 		$padFileService = $this->createMock(PadFileService::class);
 		$padFileService->expects($this->never())->method('parsePadFile');
@@ -901,9 +904,10 @@ class LifecycleServiceTest extends TestCase {
 				'access_mode' => BindingService::ACCESS_PUBLIC,
 				'state' => BindingService::STATE_ACTIVE,
 			]);
+		// Another flow moved the row first.
 		$bindingService->expects($this->once())
-			->method('markPendingDelete')
-			->willThrowException(new BindingStateConflictException('race'));
+			->method('transition')
+			->willReturn(false);
 
 		$padFileService = $this->createMock(PadFileService::class);
 		$padFileService->expects($this->never())->method('withExportSnapshot');

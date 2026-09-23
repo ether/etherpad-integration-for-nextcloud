@@ -34,7 +34,7 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 
 		// Unrelated domains and no saved cookie domain: the API answers, but
 		// the policy cannot derive one that spans both hosts.
-		$result = $this->buildService($etherpad, $this->createMock(BindingService::class), 'https://cloud.example.test')
+		$result = $this->buildService($etherpad, $this->bindingCounts(), 'https://cloud.example.test')
 			->check($this->settings('https://pad.unrelated.test', true, ''));
 
 		$this->assertNotNull($result->cookieDomain);
@@ -48,7 +48,7 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 	public function testCheckSkipsTheCookieVerdictWhenProtectedPadsAreSubmittedAsDisabled(): void {
 		$etherpad = $this->createMock(EtherpadClient::class);
 
-		$result = $this->buildService($etherpad, $this->createMock(BindingService::class))
+		$result = $this->buildService($etherpad, $this->bindingCounts())
 			->check($this->settings('https://pad.unrelated.test', false));
 
 		$this->assertNull($result->cookieDomain);
@@ -76,7 +76,7 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 		);
 
 		try {
-			$this->buildService($etherpad, $this->createMock(BindingService::class))->check($settings);
+			$this->buildService($etherpad, $this->bindingCounts())->check($settings);
 			$this->fail('Expected AdminHealthCheckException');
 		} catch (AdminHealthCheckException $e) {
 			$this->assertSame('etherpad_host', $e->getField());
@@ -86,7 +86,7 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 	public function testCheckReportsEachPartOnItsOwnLine(): void {
 		$etherpad = $this->createMock(EtherpadClient::class);
 
-		$result = $this->buildService($etherpad, $this->createMock(BindingService::class))->check($this->settings());
+		$result = $this->buildService($etherpad, $this->bindingCounts())->check($this->settings());
 
 		$byId = [];
 		foreach ($result->checks as $item) {
@@ -192,7 +192,7 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 	): HealthCheckItem {
 		$result = $this->buildService(
 			$etherpad,
-			$this->createMock(BindingService::class),
+			$this->bindingCounts(),
 			httpOnlyOverride: $override,
 			knownRelease: $knownRelease,
 			unrecognisedOverride: $unrecognisedOverride,
@@ -512,7 +512,7 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 		$urlGenerator->method('getBaseUrl')->willReturn('https://cloud.example.test');
 		$service = new EtherpadHealthCheckService(
 			$etherpad,
-			$this->createMock(BindingService::class),
+			$this->bindingCounts(),
 			$this->buildL10n(),
 			new CookieDomainPolicy(),
 			$this->baseUrlCheck(),
@@ -542,7 +542,7 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 		);
 
 		try {
-			$this->buildService($etherpad, $this->createMock(BindingService::class))->check($this->settings());
+			$this->buildService($etherpad, $this->bindingCounts())->check($this->settings());
 			$this->fail('Expected health check exception.');
 		} catch (AdminHealthCheckException $e) {
 			$this->assertStringContainsString('…', $e->getMessage());
@@ -638,7 +638,7 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 			$etherpad->method('assertApiKeyAccepted')
 				->willThrowException(new EtherpadClientException('Etherpad API request failed: ' . $message));
 			try {
-				$this->buildService($etherpad, $this->createMock(BindingService::class))
+				$this->buildService($etherpad, $this->bindingCounts())
 					->check($this->settings());
 				$this->fail('Expected health check exception.');
 			} catch (AdminHealthCheckException $e) {
@@ -665,7 +665,7 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 		);
 
 		try {
-			$this->buildService($etherpad, $this->createMock(BindingService::class))
+			$this->buildService($etherpad, $this->bindingCounts())
 				->check($this->settings('https://pad.example.test', true, '.example.test', $secret));
 			$this->fail('Expected health check exception.');
 		} catch (AdminHealthCheckException $e) {
@@ -681,7 +681,7 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 		);
 
 		try {
-			$this->buildService($etherpad, $this->createMock(BindingService::class))
+			$this->buildService($etherpad, $this->bindingCounts())
 				->check($this->settings('https://pad.example.test', true, '.example.test', $secret));
 			$this->fail('Expected health check exception.');
 		} catch (AdminHealthCheckException $e) {
@@ -700,7 +700,7 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 		);
 
 		try {
-			$this->buildService($etherpad, $this->createMock(BindingService::class))
+			$this->buildService($etherpad, $this->bindingCounts())
 				->check($this->settings('https://pad.example.test', true, '.example.test', $secret));
 			$this->fail('Expected health check exception.');
 		} catch (AdminHealthCheckException $e) {
@@ -720,7 +720,7 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 		$etherpad->method('assertApiKeyAccepted')->willThrowException(new EtherpadClientException($clientMessage));
 
 		try {
-			$this->buildService($etherpad, $this->createMock(BindingService::class))->check($this->settings());
+			$this->buildService($etherpad, $this->bindingCounts())->check($this->settings());
 			$this->fail('Expected health check exception.');
 		} catch (AdminHealthCheckException $e) {
 			$this->assertStringContainsString($clientMessage, $e->getMessage());
@@ -747,7 +747,7 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 		$etherpad->method('assertApiKeyAccepted')->willThrowException($wrapped);
 
 		try {
-			($this->buildService($etherpad, $this->createMock(BindingService::class)))
+			($this->buildService($etherpad, $this->bindingCounts()))
 				->check($this->settings());
 			$this->fail('Expected health check exception.');
 		} catch (AdminHealthCheckException $e) {
@@ -780,11 +780,11 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 		);
 	}
 
-	private function bindingCounts(int $pendingDeletes, int $pendingRestores): BindingService {
+	private function bindingCounts(int $pendingDeletes = 0, int $pendingRestores = 0): BindingService {
 		$bindings = $this->createMock(BindingService::class);
-		$bindings->method('countByState')->willReturnMap([
-			[BindingService::STATE_PENDING_DELETE, $pendingDeletes],
-			[BindingService::STATE_RESTORE_PENDING, $pendingRestores],
+		$bindings->method('countWaiting')->willReturn([
+			'pending_delete_count' => $pendingDeletes,
+			'restore_pending_count' => $pendingRestores,
 		]);
 		return $bindings;
 	}
