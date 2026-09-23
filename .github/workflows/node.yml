@@ -12,7 +12,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: node-${{ github.head_ref || github.run_id }}
+  group: node-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
