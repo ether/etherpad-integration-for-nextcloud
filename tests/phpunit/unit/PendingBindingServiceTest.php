@@ -360,6 +360,41 @@ class PendingBindingServiceTest extends TestCase {
 		$this->assertSame(['checked' => 0, 'settled' => 0], $result);
 	}
 
+	/**
+	 * A lock that cannot be taken or let go - the database gone, not
+	 * another run - costs its row, logged, and the rows behind it still get
+	 * their turn, as with any local failure.
+	 */
+	public function testALockThatFailsCostsItsRowNotTheRun(): void {
+		$bindings = $this->bindings(restores: [
+			$this->row(1, BindingService::STATE_RESTORE_PENDING, 'files/1.pad'),
+			$this->row(2, BindingService::STATE_RESTORE_PENDING, 'files/2.pad'),
+		]);
+		$locks = $this->createMock(ILockingProvider::class);
+		$locks->method('acquireLock')->willReturnCallback(static function (string $lock): void {
+			if ($lock === 'etherpad_nextcloud:settle:1') {
+				throw new \RuntimeException('database went away');
+			}
+		});
+		$locks->method('releaseLock')->willThrowException(new \RuntimeException('database went away'));
+		$lifecycle = $this->createMock(LifecycleService::class);
+		$lifecycle->expects($this->once())->method('settleWaitingFile')->willReturn(SettleOutcome::Settled);
+		$lifecycle->method('isDeleteOnTrashEnabled')->willReturn(true);
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects($this->exactly(2))->method('warning');
+
+		$result = (new PendingBindingService(
+			$bindings,
+			$lifecycle,
+			$this->root([1 => ['/a/files/1.pad'], 2 => ['/a/files/2.pad']]),
+			$locks,
+			$logger,
+			new FixedClock(),
+		))->settleByAge(0, null, 50);
+
+		$this->assertSame(['checked' => 2, 'settled' => 1], $result);
+	}
+
 	/** The admin page shows what a run did and what is left of either kind. */
 	public function testSettleReportsWhatIsLeft(): void {
 		$bindings = $this->bindings();

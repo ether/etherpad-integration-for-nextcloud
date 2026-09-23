@@ -147,19 +147,31 @@ class PendingBindingService {
 	 * holding the older snapshot could write it last. Null when another run
 	 * holds the row: it is neither counted nor moved.
 	 *
+	 * A lock that cannot be taken or let go for another reason - the
+	 * database, say - costs this row, not the run, as any local failure
+	 * does. One not let go is held until it expires, and the row waits.
+	 *
 	 * @param callable(): ?SettleOutcome $settle
 	 */
 	private function whileHeld(int $fileId, callable $settle): ?SettleOutcome {
 		$lock = Application::APP_ID . ':settle:' . $fileId;
+		$context = ['app' => 'etherpad_nextcloud', 'fileId' => $fileId];
 		try {
 			$this->locks->acquireLock($lock, ILockingProvider::LOCK_EXCLUSIVE);
 		} catch (LockedException) {
 			return null;
+		} catch (\Throwable $e) {
+			$this->logger->warning('Could not settle a pad binding that waits.', [...$context, ...SafeError::context($e)]);
+			return SettleOutcome::Left;
 		}
 		try {
 			return $settle();
 		} finally {
-			$this->locks->releaseLock($lock, ILockingProvider::LOCK_EXCLUSIVE);
+			try {
+				$this->locks->releaseLock($lock, ILockingProvider::LOCK_EXCLUSIVE);
+			} catch (\Throwable $e) {
+				$this->logger->warning('Could not release the lock on a pad binding. It waits until the lock expires.', [...$context, ...SafeError::context($e)]);
+			}
 		}
 	}
 
