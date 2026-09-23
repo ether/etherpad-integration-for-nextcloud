@@ -14,15 +14,15 @@ namespace OCA\EtherpadNextcloud\Service;
  * the sweep needs to count its work and to tell an outage from the rest.
  */
 enum SettleOutcome {
-	/** Taken back, replaced, or deleted along with its file. */
+	/** Taken back, released for the file to recover itself, or deleted along with its file. */
 	case Settled;
 
-	/** Etherpad gave no answer, or the file could not be read; the row waits on. */
+	/** Etherpad gave no answer; the row waits on. */
 	case Unanswered;
 
 	/**
-	 * Left as it was, for a reason that is no outage: another flow has the
-	 * row, the setting keeps the pad, the file is not where it should be.
+	 * Left as it was, for a reason that is no outage: the file could not be
+	 * read, another flow has the row, the setting keeps the pad.
 	 */
 	case Left;
 }

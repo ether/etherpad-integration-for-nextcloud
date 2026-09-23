@@ -609,11 +609,16 @@ class LifecycleService {
 	 * @return array{status: string, reason: string, file_id: int, pad_id?: string}
 	 */
 	private function releaseWaitingRow(int $fileId, string $padId, string $state): array {
-		return $this->buildSkippedResult(
-			$this->releaseReplacedRow($fileId, $padId, $state) ? self::REASON_RELEASED : 'binding_state_transition_conflict',
-			$fileId,
-			$padId,
-		);
+		if (!$this->releaseReplacedRow($fileId, $padId, $state)) {
+			return $this->buildSkippedResult('binding_state_transition_conflict', $fileId, $padId);
+		}
+		// The answer to an admin asking why a file suddenly wants recovering.
+		$this->logger->info('Released the binding of a file whose pad is no longer its own. The file offers its own recovery.', [
+			'app' => 'etherpad_nextcloud',
+			'fileId' => $fileId,
+			'padId' => $padId,
+		]);
+		return $this->buildSkippedResult(self::REASON_RELEASED, $fileId, $padId);
 	}
 
 	/**

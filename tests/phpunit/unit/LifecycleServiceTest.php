@@ -548,6 +548,12 @@ class LifecycleServiceTest extends TestCase {
 			$logger->expects($case === 'behind' ? $this->once() : $this->never())
 				->method('warning')
 				->with($this->stringContains('fewer revisions'), $this->callback(static fn (array $context): bool => ($context['padId'] ?? '') === 'old-pad'));
+			// An admin asking why the file suddenly wants recovering finds this.
+			$logger->expects($this->once())
+				->method('info')
+				->with($this->stringContains('Released the binding'), $this->callback(
+					static fn (array $context): bool => ($context['fileId'] ?? 0) === 106 && ($context['padId'] ?? '') === 'old-pad'
+				));
 			$file = $this->buildRestoredPadFile(106);
 			$file->expects($this->never())->method('putContent');
 
