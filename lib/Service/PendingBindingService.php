@@ -26,7 +26,7 @@ use Psr\Log\LoggerInterface;
  *   sweep writes no file (LifecycleService::settleWaitingFile);
  * - in a trash: nothing yet, the row waits for the file;
  * - gone for good, with nothing left of it in the file cache: the pad is
- *   deleted, then the row. The only place a pad is deleted from here.
+ *   deleted, then the row. The only pad deletion this service makes.
  *
  * Bounded by a RunBudget: each Etherpad call gets what is left of the run,
  * none is started that could not finish, and a run ends after a few rows
@@ -118,9 +118,9 @@ class PendingBindingService {
 	}
 
 	/**
-	 * The file by its id, across every user's files. Any node will do - a
-	 * sweep only reads the file - except one in a trash, which is where
-	 * the file is not supposed to be for a row that is settled here.
+	 * The file by its id, through any mount. A sweep only reads, so any node
+	 * will do, except one in a trash: a row settled here belongs to a file
+	 * in Files.
 	 */
 	private function fileOutsideTrash(int $fileId): ?File {
 		foreach ($this->rootFolder->getById($fileId) as $node) {
@@ -162,24 +162,20 @@ class PendingBindingService {
 				return SettleOutcome::Unanswered;
 			}
 		}
-		// Unconditional on the answer: a file with no file cache row does not
-		// come back, so no other flow is racing for this one.
+		// The result is not checked: a file with no file cache row does not
+		// come back, so no other flow races for this row.
 		$this->bindingService->deleteInState($fileId, $padId, $state);
 		return SettleOutcome::Settled;
 	}
 
 	/**
-	 * A file cache path, relative to its storage: a user's trash is
-	 * `files_trashbin/`, a team folder's `__groupfolders/trash/` where team
-	 * folders share the root storage.
-	 *
-	 * A team folder with a storage of its own - groupfolders 22 on Nextcloud
-	 * 34, measured - keeps its trash under a bare `trash/`, which the path
-	 * alone cannot tell from a folder of that name at the root of an
-	 * external storage; taken for a trash, such a file would never be
-	 * settled. Its trashed files are found by no node, not even in their
-	 * owner's session, so the lookup leaves them, and the file id they keep
-	 * holds the deletion off until the team folder's trash removes them.
+	 * A file cache path, relative to its storage. A user's trash is
+	 * `files_trashbin/`; a team folder on the root storage keeps its trash
+	 * under `__groupfolders/trash/`. A team folder with its own storage
+	 * (groupfolders 22 on Nextcloud 34, measured) uses a bare `trash/`, which
+	 * no path can tell from a folder of that name on an external storage, so
+	 * it is not matched. Its trashed files resolve to no node anyway, and the
+	 * lookup leaves them until the team folder's trash removes them.
 	 */
 	private static function isTrashCachePath(string $path): bool {
 		return str_starts_with($path, 'files_trashbin/') || str_starts_with($path, '__groupfolders/trash/');

@@ -108,7 +108,6 @@ class EtherpadClient {
 		return $data[$field];
 	}
 
-	/** The timeout is a parameter for a sweep that promises a total run length. */
 	public function getRevisionsCount(string $padId, ?int $timeoutSeconds = null): int {
 		$data = $this->apiCall('getRevisionsCount', ['padID' => $padId], timeoutSeconds: $timeoutSeconds);
 		$revisions = (int)($data['revisions'] ?? 0);
@@ -370,7 +369,12 @@ class EtherpadClient {
 		return $version;
 	}
 
-	/** @return array<string,mixed> */
+	/**
+	 * $timeoutSeconds is for the sweeps, which promise a total run length
+	 * and give each call what is left of it.
+	 *
+	 * @return array<string,mixed>
+	 */
 	private function apiCall(
 		string $method,
 		array $params = [],

@@ -291,17 +291,13 @@ class LifecycleService {
 	}
 
 	/**
-	 * Trashed again before anyone could tell whether its pad is still there.
-	 * The pad is left alone, since it may hold the only current copy, and the
-	 * row goes back to what it was before the restore: a deletion still owed.
+	 * Trashed again while its restore is undecided. The pad may hold the only
+	 * current copy, so it is left alone, and no snapshot is taken: one of a
+	 * pad that is not the file's would overwrite the only good copy. The row
+	 * goes back to a deletion owed.
 	 *
-	 * No snapshot is taken either. Whether the pad is the one the file knew
-	 * is exactly what is undecided, and one that is not would write its own
-	 * content over the only good copy. The pad itself is kept, so nothing it
-	 * holds is lost by leaving the file's snapshot as it is.
-	 *
-	 * Null when the row moved on first - a sweep settling it - so that the
-	 * caller can trash the file as what its row says now.
+	 * Null when the row moved on first, a sweep having settled it, so the
+	 * caller trashes the file as what its row says now.
 	 *
 	 * @return array{status: string, file_id: int, pad_id: string, deleted_at: int, snapshot_persisted: bool, delete_pending: bool}|null
 	 */
@@ -322,8 +318,8 @@ class LifecycleService {
 
 		$binding = $this->findBindingForRestore($fileId);
 		if ($binding === null) {
-			// Nothing owed to settle, and a new pad is what the trash would
-			// have had to make room for - the setting's call.
+			// No row to settle. Whether to make a new pad is the setting's
+			// call, as deleting the old one was.
 			if (!$this->isDeleteOnTrashEnabled()) {
 				return $this->buildSkippedResult('delete_on_trash_disabled', $fileId);
 			}
@@ -338,13 +334,12 @@ class LifecycleService {
 	}
 
 	/**
-	 * Settle the row of a file that is in Files while its row still waits -
-	 * restore_pending, or pending_delete where no restore ever came to it.
-	 * The decision a restore takes, taken again by a sweep that has no
-	 * restore event to go by - except that a sweep writes no file. A pad
-	 * Etherpad has given up on, or one behind the snapshot, releases the
-	 * row instead, and the file offers its own recovery when it is next
-	 * opened: in its owner's hands, through a node that can be written.
+	 * Settle the row of a file that is in Files while its row still waits:
+	 * restore_pending, or pending_delete where no restore came. The decision
+	 * a restore takes, except that a sweep writes no file. A pad that is gone
+	 * or behind the snapshot releases the row instead, and the file offers
+	 * its own recovery to whoever next opens it, through a node they can
+	 * write.
 	 *
 	 * An unreadable file is left rather than counted against the run: it
 	 * says nothing about whether Etherpad answers.
@@ -381,14 +376,13 @@ class LifecycleService {
 	}
 
 	/**
-	 * The row names the pad this file had before the trash, and that pad
-	 * may hold its only current copy: the deletion was owed rather than
-	 * done, and the snapshot the trash tried to take can be older than the
-	 * pad. Taken from the row, never from the file - a pad id a file
-	 * carries is anyone's to write, the row is this app's own record.
+	 * The row names the pad the file had before the trash, and that pad may
+	 * hold its only current copy: the deletion was owed, not done, and the
+	 * trash's snapshot may be older than the pad. The pad id comes from the
+	 * row, never from the file: a pad id in a file is anyone's to write.
 	 *
-	 * The file is read first, for the revision its snapshot was taken at:
-	 * a pad under that id with fewer revisions is not the pad it knew.
+	 * The file is read first for its snapshot revision: a pad under that id
+	 * with fewer revisions is not the pad the file knew.
 	 *
 	 * @param array<string,mixed> $binding
 	 * @return array{status: string, reason?: string, file_id: int, pad_id?: string, old_pad_id?: string, new_pad_id?: string}
@@ -439,10 +433,9 @@ class LifecycleService {
 
 	/**
 	 * Etherpad could not be asked, or the file could not be read, so which
-	 * pad is the file's is not known - and a guess either way is wrong for
-	 * someone: reactivating binds the file to a pad that may be gone or
-	 * another one, replacing gives up one that may hold the only current
-	 * copy. The file is in Files all the same; the row waits for an answer.
+	 * pad is the file's is not known. Reactivating could bind the file to a
+	 * pad that is gone or another one; replacing could give up the only
+	 * current copy. The row waits for an answer.
 	 *
 	 * @return array{status: string, reason?: string, file_id: int, pad_id?: string, old_pad_id?: string, new_pad_id?: string}
 	 */
@@ -502,11 +495,11 @@ class LifecycleService {
 			}
 			$this->writeRestoredContent($file, $updatedContent);
 		} catch (\Throwable $e) {
-			// Claimed, perhaps claimed, or claimed and since taken by a
-			// trash. An active row naming the replacement goes with it; one a
-			// trash has taken over keeps it. A row still naming the old pad
-			// goes as well: Etherpad has already said that pad is not the
-			// file's, and without a row the file offers its own recovery.
+			// The claim may have landed, landed without saying so, or since
+			// been taken over by a trash. An active row naming the replacement
+			// goes with it; one a trash took over keeps it. The row still
+			// naming the old pad goes too: that pad is not the file's, and
+			// without a row the file offers its own recovery.
 			$this->provisionedPadRollback->removeMatchingBindingAndDiscard($fileId, $newPadId, 'restore with replacement');
 			$this->releaseReplacedRow($fileId, $oldPadId, $fromState);
 			throw $this->failed('Restore', $e);
@@ -548,11 +541,11 @@ class LifecycleService {
 	}
 
 	/**
-	 * A row whose pad Etherpad has already given up on, left by a
-	 * replacement that did not happen. Removed rather than kept waiting: a
-	 * later check could only reach the same answer, and without the row the
-	 * file offers its own recovery at once. Conditional, so a row a trash or
-	 * another restore has since taken stays as they left it.
+	 * A row whose pad is no longer the file's, gone or behind its snapshot,
+	 * left by a replacement that did not happen or by a sweep. Removed
+	 * rather than kept waiting: a later check would reach the same answer,
+	 * and without the row the file offers its own recovery. Conditional, so
+	 * a row a trash or another restore has taken since stays as they left it.
 	 */
 	private function releaseReplacedRow(int $fileId, string $oldPadId, string $state): bool {
 		try {
@@ -628,13 +621,10 @@ class LifecycleService {
 	}
 
 	/**
-	 * A new pad holding the file's snapshot, and the `.pad` content that
-	 * names it: what both restores from a snapshot share. Which row the pad
-	 * then gets, and how that is undone, stays with each of them.
-	 *
-	 * The pad is this method's until it returns, so a failure here removes
-	 * it here, through the same guard as every other rollback. No row names
-	 * it yet - the claim comes after.
+	 * A new pad holding the file's snapshot, and the `.pad` content naming
+	 * it: what both restores from a snapshot share. Which row the pad gets,
+	 * and how that is undone, stays with each caller. A failure here removes
+	 * the pad here; no row names it yet.
 	 *
 	 * @return array{string,string} the new pad's id, and the content that names it
 	 */
@@ -676,10 +666,10 @@ class LifecycleService {
 	 * binding row (backup restore via WebDAV, `occ files:scan`, manual DB
 	 * intervention, or a file copy that never received a restore event).
 	 *
-	 * Reuses the same "frontmatter → fresh pad" path as the NodeRestoredEvent
-	 * flow but is guarded so it cannot replace an existing binding: the
-	 * caller has already verified the user owns the file, and the security
-	 * model demands we never reuse the `pad_id` from frontmatter.
+	 * Takes the path a restore takes for a file without a row
+	 * (restoreWithoutBinding), guarded so it never replaces an existing
+	 * binding: the caller has already verified the user owns the file, and
+	 * the `pad_id` in the frontmatter is never reused.
 	 *
 	 * @return array{status: string, reason?: string, file_id: int, pad_id?: string, old_pad_id?: string, new_pad_id?: string}
 	 */

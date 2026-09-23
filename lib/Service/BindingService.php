@@ -25,9 +25,10 @@ class BindingService {
 	public const STATE_ACTIVE = 'active';
 	public const STATE_PENDING_DELETE = 'pending_delete';
 	/**
-	 * The file is back from the trash, but whether its pad still exists
-	 * could not be told when it came back. Kept rather than guessed: the
-	 * pad may hold the only current copy, or may be gone.
+	 * The file is in Files, but whether its pad is still its own could not
+	 * be told: Etherpad gave no answer, or the file could not be read. Kept
+	 * rather than guessed, since the pad may hold the only current copy, or
+	 * be gone.
 	 */
 	public const STATE_RESTORE_PENDING = 'restore_pending';
 

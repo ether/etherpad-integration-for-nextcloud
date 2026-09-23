@@ -206,11 +206,10 @@ class PadFileService {
 	 * The document a restore writes: active again, no deletion timestamp, and
 	 * pointed at the pad that was provisioned to replace the old one.
 	 *
-	 * That pad counts its revisions from nothing, so the old pad's count
-	 * cannot come with it: the regular sync would take every edit below it
-	 * for one the file already holds. It carries the count the new pad had
-	 * once the snapshot was in it, or -1 - not synced yet - when that is
-	 * not known.
+	 * The new pad counts revisions from zero, so the old pad's count cannot
+	 * carry over: the sync would take every revision below it as already
+	 * held. The file records the new pad's count once the snapshot is in it,
+	 * or -1 (not synced yet) when that is not known.
 	 *
 	 * The caller has already split the snapshot it is restoring, so both
 	 * halves arrive here rather than the body being taken apart a second time
