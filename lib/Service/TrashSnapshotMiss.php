@@ -16,6 +16,11 @@ namespace OCA\EtherpadNextcloud\Service;
  */
 enum TrashSnapshotMiss: string {
 	case FileLocked = 'file_locked';
+	/**
+	 * Waits until its trash lets it go: there is nothing to write a
+	 * snapshot into, and an empty file says nothing about the pad, which
+	 * may hold the only copy.
+	 */
 	case FileEmpty = 'file_empty';
 	case FileUnreadable = 'file_unreadable';
 	case FileUnparsable = 'file_unparsable';
@@ -43,7 +48,9 @@ enum TrashSnapshotMiss: string {
 	 * The file's own trouble, which does not pass by itself: the row moves
 	 * to the back, and counts as reported from then on. What passes by
 	 * itself - a lock, a pad that changed while it was read, a file that
-	 * moved - is tried again where the row is.
+	 * moved - is tried again where the row is. So are a pad behind the
+	 * file's snapshot and Etherpad's silence: the next run's question to
+	 * Etherpad settles those.
 	 */
 	public function movesTheRowBack(): bool {
 		return match ($this) {

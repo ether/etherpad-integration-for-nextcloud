@@ -21,8 +21,9 @@ enum SettleOutcome {
 	case Unanswered;
 
 	/**
-	 * Left as it was, for a reason that is no outage: the file could not be
-	 * read, another flow has the row, the setting keeps the pad.
+	 * Left as it was, for a reason that is no outage: the file's own
+	 * trouble, another flow holding the row, the setting, or the run's
+	 * budget.
 	 */
 	case Left;
 }

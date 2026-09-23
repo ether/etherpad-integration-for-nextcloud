@@ -249,31 +249,24 @@ class LifecycleService {
 	/**
 	 * The second half of a trash that could not write its snapshot, taken
 	 * by the sweep: the file sits in its owner's trash now, no longer locked
-	 * by its delete. The pad's content goes into it, and only then do row
-	 * and pad go, in that order - a restore after that makes a new pad from
-	 * this snapshot.
+	 * by its delete. The pad's content goes into it, then the row goes,
+	 * then the pad - a restore after that makes a new pad from this
+	 * snapshot.
 	 *
-	 * Held to the file's snapshot revision like a restore. A pad behind it
-	 * is not the file's, and a pad that is gone has nothing to give; either
-	 * way the row is released and the file keeps the snapshot it has.
-	 * Etherpad giving no answer, to the question or while the snapshot is
-	 * read, is an answer missed, not the file's trouble.
+	 * Held to the file's snapshot revision like a restore: a pad behind it
+	 * is not the file's and a pad that is gone has nothing to give, so the
+	 * row is released and the file keeps the snapshot it has. Etherpad
+	 * giving no answer, to the question or while the snapshot is read, is
+	 * Unanswered. A file that did not get its snapshot waits as its
+	 * TrashSnapshotMiss says; whether its trouble is news is read off the
+	 * row - updated_at still at deleted_at, or no deleted_at at all. A row a
+	 * trash before 1.1.0 wrote may have them seconds apart, and reports at
+	 * debug level.
 	 *
-	 * A file that did not get its snapshot waits for a later run; what that
-	 * means for the row goes by TrashSnapshotMiss. The file's own trouble
-	 * moves it to the back and is reported at warning level once: until
-	 * then its row's updated_at is its deleted_at. A row a trash before
-	 * 1.1.0 wrote may have them seconds apart, and reports at debug level;
-	 * one without a deleted_at reports each time. An empty file waits until
-	 * its trash lets it go. There is nothing to write a snapshot into, and
-	 * an empty file says nothing about the pad, which may hold the only copy.
-	 *
-	 * Nothing happens while deleting on trash is switched off: this is the
-	 * deletion that setting governs, only later. The sweep does not fetch
-	 * these rows then at all; the check holds for any other caller.
-	 *
-	 * One call at a time per file: two that overlap could each write their
-	 * snapshot, and the older one last. The sweep holds a lock on the row.
+	 * Nothing happens while deleting on trash is switched off; the sweep
+	 * does not fetch these rows then at all. One call at a time per file:
+	 * two that overlap could each write their snapshot, the older one last,
+	 * so the sweep holds a lock on the row.
 	 */
 	public function finishTrash(File $file, RunBudget $budget): SettleOutcome {
 		if (!$this->isDeleteOnTrashEnabled()) {
@@ -298,12 +291,7 @@ class LifecycleService {
 			return SettleOutcome::Unanswered;
 		}
 		if ($probe->presence === PadPresence::Behind) {
-			// Someone may have written into it since it came back; it is theirs.
-			$this->logger->warning('A pad has fewer revisions than its file\'s snapshot and is no longer the file\'s. It is left in place.', [
-				'app' => 'etherpad_nextcloud',
-				'fileId' => $fileId,
-				'padId' => $padId,
-			]);
+			$this->reportPadBehind($fileId, $padId);
 			return $this->bindingService->deleteInState($fileId, $padId, BindingService::STATE_PENDING_DELETE)
 				? SettleOutcome::Settled
 				: SettleOutcome::Left;
@@ -411,6 +399,20 @@ class LifecycleService {
 			$this->bindingService->transition($fileId, $padId, BindingService::STATE_PENDING_DELETE, BindingService::STATE_PENDING_DELETE);
 		}
 		return SettleOutcome::Left;
+	}
+
+	/**
+	 * A pad under the row's id with fewer revisions than the file's
+	 * snapshot: not the file's. Someone may have written into it since it
+	 * came back, so it is left in place, and logged with its id - the last
+	 * record of where it is.
+	 */
+	private function reportPadBehind(int $fileId, string $padId): void {
+		$this->logger->warning('A pad has fewer revisions than its file\'s snapshot and is no longer the file\'s. It is left in place.', [
+			'app' => 'etherpad_nextcloud',
+			'fileId' => $fileId,
+			'padId' => $padId,
+		]);
 	}
 
 	/**
@@ -654,14 +656,8 @@ class LifecycleService {
 			}
 			$presence = $this->padLifecycle->presenceOf($padId, $pad->snapshotRev, ['fileId' => $fileId], $probeTimeoutSeconds);
 			if ($presence === PadPresence::Behind) {
-				// Logged before anything is tried, since whatever follows may
-				// fail: someone may have written into it since it came back,
-				// and this is the last record of where it is.
-				$this->logger->warning('A pad has fewer revisions than its file\'s snapshot and is no longer the file\'s. It is left in place.', [
-					'app' => 'etherpad_nextcloud',
-					'fileId' => $fileId,
-					'padId' => $padId,
-				]);
+				// Logged before anything is tried, since whatever follows may fail.
+				$this->reportPadBehind($fileId, $padId);
 			}
 			return match ($presence) {
 				PadPresence::Present => $this->resumeOwnPad($fileId, $padId, $state),
