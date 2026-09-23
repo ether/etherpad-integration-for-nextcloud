@@ -25,7 +25,7 @@
   },
   "scripts": {
     "test:phpunit": "phpunit --testsuite unit",
-    "psalm": "psalm --no-progress",
-    "psalm:baseline": "psalm --set-baseline=psalm-baseline.xml --no-progress"
+    "psalm": "psalm --no-progress --no-cache",
+    "psalm:baseline": "psalm --set-baseline=psalm-baseline.xml --no-progress --no-cache"
   }
 }

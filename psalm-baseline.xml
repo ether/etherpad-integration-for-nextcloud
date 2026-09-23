@@ -1,223 +1,559 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <files psalm-version="6.16.1@f1f5de594dc76faf8784e02d3dc4716c91c6f6ac">
-  <file src="lib/Controller/AdminControllerErrorMapper.php">
-    <PossiblyUnusedMethod>
-      <code><![CDATA[__construct]]></code>
-    </PossiblyUnusedMethod>
+  <file src="lib/BackgroundJob/AbstractPendingDeleteRetryJob.php">
+    <MixedArgument>
+      <code><![CDATA[static::INTERVAL_SECONDS]]></code>
+      <code><![CDATA[static::LIMIT]]></code>
+      <code><![CDATA[static::MAX_AGE_SECONDS]]></code>
+      <code><![CDATA[static::MIN_AGE_SECONDS]]></code>
+    </MixedArgument>
   </file>
-  <file src="lib/Controller/EmbedControllerErrorMapper.php">
-    <PossiblyUnusedMethod>
-      <code><![CDATA[__construct]]></code>
-    </PossiblyUnusedMethod>
+  <file src="lib/BackgroundJob/ColdPendingDeleteRetryJob.php">
+    <InvalidClassConstantType>
+      <code><![CDATA[MIN_AGE_SECONDS]]></code>
+    </InvalidClassConstantType>
+  </file>
+  <file src="lib/BackgroundJob/HotPendingDeleteRetryJob.php">
+    <InvalidClassConstantType>
+      <code><![CDATA[INTERVAL_SECONDS]]></code>
+      <code><![CDATA[MAX_AGE_SECONDS]]></code>
+    </InvalidClassConstantType>
+  </file>
+  <file src="lib/BackgroundJob/WarmPendingDeleteRetryJob.php">
+    <InvalidClassConstantType>
+      <code><![CDATA[INTERVAL_SECONDS]]></code>
+      <code><![CDATA[MAX_AGE_SECONDS]]></code>
+      <code><![CDATA[MIN_AGE_SECONDS]]></code>
+    </InvalidClassConstantType>
+  </file>
+  <file src="lib/Controller/AdminController.php">
+    <MixedArgumentTypeCoercion>
+      <code><![CDATA[$result]]></code>
+    </MixedArgumentTypeCoercion>
+    <MixedReturnTypeCoercion>
+      <code><![CDATA[$this->request->getParams()]]></code>
+      <code><![CDATA[array<string,mixed>]]></code>
+    </MixedReturnTypeCoercion>
+  </file>
+  <file src="lib/Controller/AdminControllerErrorMapper.php">
+    <RedundantCastGivenDocblockType>
+      <code><![CDATA[(string)($options['generic'] ?? $this->l10n->t('Request failed.'))]]></code>
+      <code><![CDATA[(string)($options['log_message'] ?? 'Admin health check failed')]]></code>
+      <code><![CDATA[(string)($options['log_message'] ?? 'Admin request failed')]]></code>
+    </RedundantCastGivenDocblockType>
   </file>
   <file src="lib/Controller/PadControllerErrorMapper.php">
-    <PossiblyUnusedMethod>
-      <code><![CDATA[__construct]]></code>
-    </PossiblyUnusedMethod>
+    <MixedAssignment>
+      <code><![CDATA[$logger]]></code>
+      <code><![CDATA[$mapper]]></code>
+      <code><![CDATA[$response]]></code>
+    </MixedAssignment>
+    <RedundantCastGivenDocblockType>
+      <code><![CDATA[(string)$options['binding_message']]]></code>
+      <code><![CDATA[(string)$options['invalid_argument']]]></code>
+      <code><![CDATA[(string)($options['legacy_protected_import_disabled']
+					?? 'Importing protected pads from legacy Ownpad files is disabled on this instance.')]]></code>
+      <code><![CDATA[(string)($options['not_found'] ?? 'Resource not found.')]]></code>
+    </RedundantCastGivenDocblockType>
   </file>
-  <file src="lib/Controller/PublicViewerControllerErrorMapper.php">
-    <PossiblyUnusedMethod>
-      <code><![CDATA[__construct]]></code>
-    </PossiblyUnusedMethod>
+  <file src="lib/Controller/PadCreateController.php">
+    <MixedArgumentTypeCoercion>
+      <code><![CDATA[$result]]></code>
+      <code><![CDATA[$result]]></code>
+      <code><![CDATA[$result]]></code>
+      <code><![CDATA[$result]]></code>
+    </MixedArgumentTypeCoercion>
   </file>
-  <file src="lib/Controller/ViewerControllerErrorMapper.php">
-    <PossiblyUnusedMethod>
-      <code><![CDATA[__construct]]></code>
-    </PossiblyUnusedMethod>
+  <file src="lib/Controller/PadLifecycleController.php">
+    <MixedArgumentTypeCoercion>
+      <code><![CDATA[$result]]></code>
+      <code><![CDATA[$result]]></code>
+      <code><![CDATA[$result]]></code>
+    </MixedArgumentTypeCoercion>
   </file>
-  <file src="lib/Service/AdminConsistencyCheckResponseBuilder.php">
-    <PossiblyUnusedMethod>
-      <code><![CDATA[__construct]]></code>
-    </PossiblyUnusedMethod>
+  <file src="lib/Controller/ViewerController.php">
+    <MixedArgument>
+      <code><![CDATA[$resolved['file_id']]]></code>
+      <code><![CDATA[$resolved['path']]]></code>
+      <code><![CDATA[$result['file_id']]]></code>
+      <code><![CDATA[$result['path']]]></code>
+    </MixedArgument>
+    <RedundantCastGivenDocblockType>
+      <code><![CDATA[(int)$fileNode->getId()]]></code>
+    </RedundantCastGivenDocblockType>
+  </file>
+  <file src="lib/Listeners/CSPListener.php">
+    <DeprecatedMethod>
+      <code><![CDATA[getAppValue]]></code>
+      <code><![CDATA[getAppValue]]></code>
+      <code><![CDATA[getAppValue]]></code>
+    </DeprecatedMethod>
+    <RedundantCastGivenDocblockType>
+      <code><![CDATA[(string)$entry]]></code>
+      <code><![CDATA[(string)$this->config->getAppValue('etherpad_nextcloud', 'allow_external_pads', 'no')]]></code>
+      <code><![CDATA[(string)$this->config->getAppValue('etherpad_nextcloud', 'etherpad_host', '')]]></code>
+      <code><![CDATA[(string)$this->config->getAppValue('etherpad_nextcloud', 'external_pad_allowlist', '')]]></code>
+    </RedundantCastGivenDocblockType>
+  </file>
+  <file src="lib/Listeners/FileCreatedFromTemplateListener.php">
+    <MixedArgumentTypeCoercion>
+      <code><![CDATA[$event->getTemplateFields()]]></code>
+    </MixedArgumentTypeCoercion>
+    <MixedAssignment>
+      <code><![CDATA[$field]]></code>
+    </MixedAssignment>
+    <RedundantCastGivenDocblockType>
+      <code><![CDATA[(int)$file->getId()]]></code>
+      <code><![CDATA[(int)$target->getId()]]></code>
+      <code><![CDATA[(int)$target->getId()]]></code>
+      <code><![CDATA[(int)$target->getId()]]></code>
+      <code><![CDATA[(int)$target->getId()]]></code>
+      <code><![CDATA[(int)$template->getId()]]></code>
+      <code><![CDATA[(string)($seeded['pad_url'] ?? '')]]></code>
+    </RedundantCastGivenDocblockType>
+    <RiskyTruthyFalsyComparison>
+      <code><![CDATA[parse_url((string)($seeded['pad_url'] ?? ''), PHP_URL_HOST)]]></code>
+    </RiskyTruthyFalsyComparison>
+  </file>
+  <file src="lib/Listeners/FullTextSearchIndexingListener.php">
+    <RedundantCastGivenDocblockType>
+      <code><![CDATA[(string)$file->getContent()]]></code>
+    </RedundantCastGivenDocblockType>
+  </file>
+  <file src="lib/Listeners/LoadFilesScriptsListener.php">
+    <RedundantConditionGivenDocblockType>
+      <code><![CDATA[$event instanceof LoadAdditionalScriptsEvent]]></code>
+    </RedundantConditionGivenDocblockType>
+  </file>
+  <file src="lib/Listeners/LoadPublicShareScriptsListener.php">
+    <MixedAssignment>
+      <code><![CDATA[$node]]></code>
+      <code><![CDATA[$selectedFile]]></code>
+    </MixedAssignment>
+    <MixedMethodCall>
+      <code><![CDATA[getNode]]></code>
+    </MixedMethodCall>
+    <RedundantConditionGivenDocblockType>
+      <code><![CDATA[$event instanceof BeforeTemplateRenderedEvent]]></code>
+    </RedundantConditionGivenDocblockType>
+  </file>
+  <file src="lib/Listeners/LoadViewerListener.php">
+    <RedundantConditionGivenDocblockType>
+      <code><![CDATA[$event instanceof LoadViewer]]></code>
+    </RedundantConditionGivenDocblockType>
+  </file>
+  <file src="lib/Listeners/MoveToTrashListener.php">
+    <RedundantCastGivenDocblockType>
+      <code><![CDATA[(int)$node->getId()]]></code>
+      <code><![CDATA[(string)($result['reason'] ?? 'unknown')]]></code>
+    </RedundantCastGivenDocblockType>
+  </file>
+  <file src="lib/Listeners/RegisterTemplateCreatorListener.php">
+    <DeprecatedMethod>
+      <code><![CDATA[getAppValue]]></code>
+    </DeprecatedMethod>
+    <RedundantCastGivenDocblockType>
+      <code><![CDATA[(string)$this->config->getAppValue(Application::APP_ID, 'allow_external_pads', 'no')]]></code>
+    </RedundantCastGivenDocblockType>
+  </file>
+  <file src="lib/Listeners/RestoreFromTrashListener.php">
+    <RedundantCastGivenDocblockType>
+      <code><![CDATA[(int)$node->getId()]]></code>
+      <code><![CDATA[(string)($result['reason'] ?? 'unknown')]]></code>
+    </RedundantCastGivenDocblockType>
+  </file>
+  <file src="lib/Migration/BackfillPadMimeType.php">
+    <MixedAssignment>
+      <code><![CDATA[$found]]></code>
+      <code><![CDATA[$rawValue]]></code>
+    </MixedAssignment>
+  </file>
+  <file src="lib/Migration/RegisterMimeType.php">
+    <MixedAssignment>
+      <code><![CDATA[$decoded]]></code>
+      <code><![CDATA[$value]]></code>
+    </MixedAssignment>
+    <MixedReturnStatement>
+      <code><![CDATA[$decoded]]></code>
+    </MixedReturnStatement>
   </file>
   <file src="lib/Service/AdminSettingsRepository.php">
-    <PossiblyUnusedMethod>
-      <code><![CDATA[__construct]]></code>
-    </PossiblyUnusedMethod>
-  </file>
-  <file src="lib/Service/AdminSettingsValidator.php">
-    <PossiblyUnusedMethod>
-      <code><![CDATA[__construct]]></code>
-    </PossiblyUnusedMethod>
+    <DeprecatedMethod>
+      <code><![CDATA[getAppValue]]></code>
+      <code><![CDATA[getAppValue]]></code>
+      <code><![CDATA[getAppValue]]></code>
+      <code><![CDATA[getAppValue]]></code>
+      <code><![CDATA[getAppValue]]></code>
+      <code><![CDATA[getAppValue]]></code>
+      <code><![CDATA[getAppValue]]></code>
+      <code><![CDATA[getAppValue]]></code>
+      <code><![CDATA[setAppValue]]></code>
+      <code><![CDATA[setAppValue]]></code>
+      <code><![CDATA[setAppValue]]></code>
+      <code><![CDATA[setAppValue]]></code>
+      <code><![CDATA[setAppValue]]></code>
+      <code><![CDATA[setAppValue]]></code>
+      <code><![CDATA[setAppValue]]></code>
+      <code><![CDATA[setAppValue]]></code>
+      <code><![CDATA[setAppValue]]></code>
+      <code><![CDATA[setAppValue]]></code>
+      <code><![CDATA[setAppValue]]></code>
+      <code><![CDATA[setAppValue]]></code>
+      <code><![CDATA[setAppValue]]></code>
+    </DeprecatedMethod>
+    <RedundantCastGivenDocblockType>
+      <code><![CDATA[(string)$this->config->getAppValue(Application::APP_ID, 'allow_external_pads', 'no')]]></code>
+      <code><![CDATA[(string)$this->config->getAppValue(Application::APP_ID, 'delete_on_trash', 'yes')]]></code>
+      <code><![CDATA[(string)$this->config->getAppValue(Application::APP_ID, 'etherpad_cookie_domain', '')]]></code>
+      <code><![CDATA[(string)$this->config->getAppValue(Application::APP_ID, 'etherpad_cookie_domain_configured', 'no')]]></code>
+      <code><![CDATA[(string)$this->config->getAppValue(Application::APP_ID, 'trusted_embed_origins', '')]]></code>
+      <code><![CDATA[(string)$this->config->getAppValue(Application::APP_ID, LegacyImportPolicy::SETTING_PROTECTED_IMPORT, LegacyImportPolicy::DEFAULT_PROTECTED_IMPORT)]]></code>
+      <code><![CDATA[(string)$this->config->getAppValue(Application::APP_ID, PadTypePolicy::SETTING_PROTECTED, 'yes')]]></code>
+      <code><![CDATA[(string)$this->config->getAppValue(Application::APP_ID, PadTypePolicy::SETTING_PUBLIC, 'yes')]]></code>
+    </RedundantCastGivenDocblockType>
   </file>
   <file src="lib/Service/AdminTestFaultService.php">
-    <PossiblyUnusedMethod>
-      <code><![CDATA[__construct]]></code>
-    </PossiblyUnusedMethod>
-  </file>
-  <file src="lib/Service/AllowlistNormalizer.php">
-    <PossiblyUnusedMethod>
-      <code><![CDATA[__construct]]></code>
-    </PossiblyUnusedMethod>
+    <DeprecatedMethod>
+      <code><![CDATA[setAppValue]]></code>
+    </DeprecatedMethod>
   </file>
   <file src="lib/Service/AppConfigService.php">
-    <PossiblyUnusedMethod>
-      <code><![CDATA[__construct]]></code>
-    </PossiblyUnusedMethod>
-  </file>
-  <file src="lib/Service/BindingService.php">
-    <PossiblyUnusedMethod>
-      <code><![CDATA[__construct]]></code>
-    </PossiblyUnusedMethod>
-  </file>
-  <file src="lib/Service/ConsistencyCheckService.php">
-    <PossiblyUnusedMethod>
-      <code><![CDATA[__construct]]></code>
-    </PossiblyUnusedMethod>
+    <DeprecatedMethod>
+      <code><![CDATA[getAppValue]]></code>
+      <code><![CDATA[getAppValue]]></code>
+    </DeprecatedMethod>
+    <RedundantCastGivenDocblockType>
+      <code><![CDATA[(string)$this->config->getAppValue(Application::APP_ID, 'trusted_embed_origins', '')]]></code>
+    </RedundantCastGivenDocblockType>
   </file>
   <file src="lib/Service/EmbedResponseBuilder.php">
-    <PossiblyUnusedMethod>
-      <code><![CDATA[__construct]]></code>
-    </PossiblyUnusedMethod>
+    <MixedMethodCall>
+      <code><![CDATA[getEncryptedValue]]></code>
+    </MixedMethodCall>
+    <MixedPropertyTypeCoercion>
+      <code><![CDATA[[
+			'requesttoken' => $this->csrfTokenManager->getToken()->getEncryptedValue(),
+			'trusted_embed_origins' => $this->appConfigService->getTrustedEmbedOrigins(),
+		]]]></code>
+    </MixedPropertyTypeCoercion>
+    <MixedReturnTypeCoercion>
+      <code><![CDATA[$this->embedBaseData]]></code>
+      <code><![CDATA[array{requesttoken:string,trusted_embed_origins:list<string>}]]></code>
+    </MixedReturnTypeCoercion>
   </file>
   <file src="lib/Service/EtherpadClient.php">
-    <PossiblyUnusedMethod>
-      <code><![CDATA[__construct]]></code>
-    </PossiblyUnusedMethod>
+    <DeprecatedMethod>
+      <code><![CDATA[getAppValue]]></code>
+      <code><![CDATA[getAppValue]]></code>
+      <code><![CDATA[getAppValue]]></code>
+      <code><![CDATA[getAppValue]]></code>
+    </DeprecatedMethod>
+    <DocblockTypeContradiction>
+      <code><![CDATA[!is_string($sessionId)]]></code>
+    </DocblockTypeContradiction>
+    <MixedArgument>
+      <code><![CDATA[$decoded['releaseId']]]></code>
+    </MixedArgument>
+    <MixedArgumentTypeCoercion>
+      <code><![CDATA[$params]]></code>
+    </MixedArgumentTypeCoercion>
+    <MixedArrayAssignment>
+      <code><![CDATA[$options['headers']['Content-Type']]]></code>
+    </MixedArrayAssignment>
+    <MixedAssignment>
+      <code><![CDATA[$data]]></code>
+      <code><![CDATA[$decoded]]></code>
+      <code><![CDATA[$info]]></code>
+    </MixedAssignment>
+    <MixedReturnTypeCoercion>
+      <code><![CDATA[array<string,mixed>]]></code>
+      <code><![CDATA[is_array($data) ? $data : []]]></code>
+    </MixedReturnTypeCoercion>
+    <RedundantCastGivenDocblockType>
+      <code><![CDATA[(string)$this->config->getAppValue('etherpad_nextcloud', 'etherpad_api_host', '')]]></code>
+      <code><![CDATA[(string)$this->config->getAppValue('etherpad_nextcloud', 'etherpad_api_version', self::DEFAULT_API_VERSION)]]></code>
+      <code><![CDATA[(string)$this->config->getAppValue('etherpad_nextcloud', 'etherpad_host', '')]]></code>
+      <code><![CDATA[(string)$this->config->getAppValue('etherpad_nextcloud', 'etherpad_host', '')]]></code>
+    </RedundantCastGivenDocblockType>
+    <RiskyTruthyFalsyComparison>
+      <code><![CDATA[empty($parts['host'])]]></code>
+      <code><![CDATA[empty($parts['scheme'])]]></code>
+    </RiskyTruthyFalsyComparison>
   </file>
-  <file src="lib/Service/EtherpadHealthCheckService.php">
-    <PossiblyUnusedMethod>
-      <code><![CDATA[__construct]]></code>
-    </PossiblyUnusedMethod>
+  <file src="lib/Service/EtherpadReleasePolicy.php">
+    <DeprecatedMethod>
+      <code><![CDATA[getAppValue]]></code>
+      <code><![CDATA[setAppValue]]></code>
+      <code><![CDATA[setAppValue]]></code>
+      <code><![CDATA[setAppValue]]></code>
+    </DeprecatedMethod>
+    <MixedAssignment>
+      <code><![CDATA[$decoded]]></code>
+      <code><![CDATA[$release]]></code>
+    </MixedAssignment>
+    <RedundantCastGivenDocblockType>
+      <code><![CDATA[(string)$this->config->getAppValue(self::APP_ID, $key, '')]]></code>
+    </RedundantCastGivenDocblockType>
+  </file>
+  <file src="lib/Service/ExpiredSessionCollector.php">
+    <RedundantCastGivenDocblockType>
+      <code><![CDATA[(int)$info['validUntil']]]></code>
+      <code><![CDATA[(string)$sessionId]]></code>
+    </RedundantCastGivenDocblockType>
   </file>
   <file src="lib/Service/ExternalPadExportFetcher.php">
-    <PossiblyUnusedMethod>
-      <code><![CDATA[__construct]]></code>
-    </PossiblyUnusedMethod>
-  </file>
-  <file src="lib/Service/ExternalPadSeeder.php">
-    <PossiblyUnusedMethod>
-      <code><![CDATA[__construct]]></code>
-    </PossiblyUnusedMethod>
+    <DeprecatedMethod>
+      <code><![CDATA[getAppValue]]></code>
+      <code><![CDATA[getAppValue]]></code>
+    </DeprecatedMethod>
+    <MissingClosureParamType>
+      <code><![CDATA[$ch]]></code>
+      <code><![CDATA[$ch]]></code>
+    </MissingClosureParamType>
+    <RedundantCastGivenDocblockType>
+      <code><![CDATA[(string)$this->config->getAppValue('etherpad_nextcloud', 'allow_external_pads', 'no')]]></code>
+      <code><![CDATA[(string)$this->config->getAppValue('etherpad_nextcloud', 'external_pad_allowlist', '')]]></code>
+      <code><![CDATA[(string)explode(';', $raw, 2)[0]]]></code>
+      <code><![CDATA[(string)substr($line, strlen('Content-Type:'))]]></code>
+    </RedundantCastGivenDocblockType>
   </file>
   <file src="lib/Service/LegacyImportPolicy.php">
-    <PossiblyUnusedMethod>
-      <code><![CDATA[__construct]]></code>
-    </PossiblyUnusedMethod>
+    <DeprecatedMethod>
+      <code><![CDATA[getAppValue]]></code>
+    </DeprecatedMethod>
+    <RedundantCastGivenDocblockType>
+      <code><![CDATA[(string)$this->config->getAppValue(
+			Application::APP_ID,
+			self::SETTING_PROTECTED_IMPORT,
+			self::DEFAULT_PROTECTED_IMPORT,
+		)]]></code>
+    </RedundantCastGivenDocblockType>
   </file>
   <file src="lib/Service/LifecycleService.php">
-    <PossiblyUnusedMethod>
-      <code><![CDATA[__construct]]></code>
-    </PossiblyUnusedMethod>
-  </file>
-  <file src="lib/Service/LivePadHtmlFetcher.php">
-    <PossiblyUnusedMethod>
-      <code><![CDATA[__construct]]></code>
-    </PossiblyUnusedMethod>
+    <DeprecatedMethod>
+      <code><![CDATA[getAppValue]]></code>
+      <code><![CDATA[getAppValue]]></code>
+    </DeprecatedMethod>
+    <MixedAssignment>
+      <code><![CDATA[$deletedAt]]></code>
+    </MixedAssignment>
+    <RedundantCastGivenDocblockType>
+      <code><![CDATA[(bool)($result['delete_pending'] ?? false)]]></code>
+      <code><![CDATA[(bool)($result['snapshot_persisted'] ?? false)]]></code>
+      <code><![CDATA[(int)$file->getId()]]></code>
+      <code><![CDATA[(int)$file->getId()]]></code>
+      <code><![CDATA[(int)$file->getId()]]></code>
+      <code><![CDATA[(int)$file->getId()]]></code>
+      <code><![CDATA[(int)$file->getId()]]></code>
+      <code><![CDATA[(int)$file->getId()]]></code>
+      <code><![CDATA[(int)($result['deleted_at'] ?? 0)]]></code>
+      <code><![CDATA[(string)$file->getContent()]]></code>
+      <code><![CDATA[(string)$file->getContent()]]></code>
+      <code><![CDATA[(string)$file->getContent()]]></code>
+      <code><![CDATA[(string)$this->config->getAppValue('etherpad_nextcloud', 'delete_on_trash', 'yes')]]></code>
+      <code><![CDATA[(string)$this->config->getAppValue('etherpad_nextcloud', 'test_fault', '')]]></code>
+      <code><![CDATA[(string)($result['new_pad_id'] ?? '')]]></code>
+      <code><![CDATA[(string)($result['new_pad_id'] ?? '')]]></code>
+      <code><![CDATA[(string)($result['old_pad_id'] ?? '')]]></code>
+      <code><![CDATA[(string)($result['old_pad_id'] ?? '')]]></code>
+      <code><![CDATA[(string)($result['reason'] ?? 'unknown')]]></code>
+      <code><![CDATA[(string)($result['reason'] ?? 'unknown')]]></code>
+      <code><![CDATA[(string)($result['reason'] ?? 'unknown')]]></code>
+    </RedundantCastGivenDocblockType>
   </file>
   <file src="lib/Service/PadBootstrapService.php">
-    <PossiblyUnusedMethod>
-      <code><![CDATA[__construct]]></code>
-    </PossiblyUnusedMethod>
+    <RedundantCastGivenDocblockType>
+      <code><![CDATA[(int)$file->getId()]]></code>
+      <code><![CDATA[(string)$node->getContent()]]></code>
+    </RedundantCastGivenDocblockType>
   </file>
   <file src="lib/Service/PadContentService.php">
-    <PossiblyUnusedMethod>
-      <code><![CDATA[__construct]]></code>
-    </PossiblyUnusedMethod>
+    <RedundantCastGivenDocblockType>
+      <code><![CDATA[(int)$node->getId()]]></code>
+    </RedundantCastGivenDocblockType>
   </file>
   <file src="lib/Service/PadCreateRollbackService.php">
-    <PossiblyUnusedMethod>
-      <code><![CDATA[__construct]]></code>
-    </PossiblyUnusedMethod>
+    <RedundantCastGivenDocblockType>
+      <code><![CDATA[(string)$node->getContent()]]></code>
+    </RedundantCastGivenDocblockType>
   </file>
   <file src="lib/Service/PadCreationService.php">
-    <PossiblyUnusedMethod>
-      <code><![CDATA[__construct]]></code>
-    </PossiblyUnusedMethod>
-  </file>
-  <file src="lib/Service/PadFileCreator.php">
-    <PossiblyUnusedMethod>
-      <code><![CDATA[__construct]]></code>
-    </PossiblyUnusedMethod>
-  </file>
-  <file src="lib/Service/PadFileService.php">
-    <PossiblyUnusedMethod>
-      <code><![CDATA[__construct]]></code>
-    </PossiblyUnusedMethod>
+    <RedundantCastGivenDocblockType>
+      <code><![CDATA[(int)$fileNode->getId()]]></code>
+      <code><![CDATA[(string)$node->getContent()]]></code>
+      <code><![CDATA[(string)$node->getContent()]]></code>
+      <code><![CDATA[(string)$target->getContent()]]></code>
+      <code><![CDATA[(string)$template->getContent()]]></code>
+    </RedundantCastGivenDocblockType>
   </file>
   <file src="lib/Service/PadFileLockRetryService.php">
-    <PossiblyUnusedMethod>
-      <code><![CDATA[__construct]]></code>
-    </PossiblyUnusedMethod>
+    <MixedPropertyTypeCoercion>
+      <code><![CDATA[$sleeper ?? static function (int $delay): void {
+			\usleep($delay);
+		}]]></code>
+    </MixedPropertyTypeCoercion>
+    <RedundantCastGivenDocblockType>
+      <code><![CDATA[(string)$node->getContent()]]></code>
+      <code><![CDATA[(string)$node->getContent()]]></code>
+    </RedundantCastGivenDocblockType>
+  </file>
+  <file src="lib/Service/PadFileService.php">
+    <MixedAssignment>
+      <code><![CDATA[$data[$currentMap][$matches[1]]]]></code>
+      <code><![CDATA[$data[$key]]]></code>
+      <code><![CDATA[$value]]></code>
+    </MixedAssignment>
+    <RedundantCastGivenDocblockType>
+      <code><![CDATA[(string)($parsed['body'] ?? '')]]></code>
+    </RedundantCastGivenDocblockType>
+    <RedundantConditionGivenDocblockType>
+      <code><![CDATA[is_string($key)]]></code>
+    </RedundantConditionGivenDocblockType>
   </file>
   <file src="lib/Service/PadInitializationService.php">
-    <PossiblyUnusedMethod>
-      <code><![CDATA[__construct]]></code>
-    </PossiblyUnusedMethod>
+    <RedundantCastGivenDocblockType>
+      <code><![CDATA[(int)$file->getId()]]></code>
+      <code><![CDATA[(string)$file->getContent()]]></code>
+      <code><![CDATA[(string)$file->getContent()]]></code>
+    </RedundantCastGivenDocblockType>
   </file>
   <file src="lib/Service/PadLegacyMigrationService.php">
-    <PossiblyUnusedMethod>
-      <code><![CDATA[__construct]]></code>
-    </PossiblyUnusedMethod>
+    <RedundantCastGivenDocblockType>
+      <code><![CDATA[(int)$file->getId()]]></code>
+    </RedundantCastGivenDocblockType>
   </file>
   <file src="lib/Service/PadMetadataService.php">
-    <PossiblyUnusedMethod>
-      <code><![CDATA[__construct]]></code>
-    </PossiblyUnusedMethod>
+    <RedundantCastGivenDocblockType>
+      <code><![CDATA[(int)$node->getId()]]></code>
+      <code><![CDATA[(int)$node->getId()]]></code>
+      <code><![CDATA[(string)$content]]></code>
+      <code><![CDATA[(string)$node->getContent()]]></code>
+      <code><![CDATA[(string)$node->getContent()]]></code>
+      <code><![CDATA[(string)$normalized['pad_url']]]></code>
+    </RedundantCastGivenDocblockType>
   </file>
   <file src="lib/Service/PadOpenService.php">
-    <PossiblyUnusedMethod>
-      <code><![CDATA[__construct]]></code>
-    </PossiblyUnusedMethod>
+    <RedundantCastGivenDocblockType>
+      <code><![CDATA[(int)$node->getId()]]></code>
+      <code><![CDATA[(int)$node->getId()]]></code>
+    </RedundantCastGivenDocblockType>
   </file>
-  <file src="lib/Service/PadPlaceholderResolver.php">
-    <PossiblyUnusedMethod>
-      <code><![CDATA[__construct]]></code>
-    </PossiblyUnusedMethod>
-  </file>
-  <file src="lib/Service/PadResponseService.php">
-    <PossiblyUnusedMethod>
-      <code><![CDATA[__construct]]></code>
-    </PossiblyUnusedMethod>
+  <file src="lib/Service/PadSessionRevoker.php">
+    <RedundantCastGivenDocblockType>
+      <code><![CDATA[(string)$sessionId]]></code>
+    </RedundantCastGivenDocblockType>
   </file>
   <file src="lib/Service/PadSessionService.php">
-    <PossiblyUnusedMethod>
-      <code><![CDATA[__construct]]></code>
-    </PossiblyUnusedMethod>
+    <DeprecatedMethod>
+      <code><![CDATA[getAppValue]]></code>
+      <code><![CDATA[getAppValue]]></code>
+      <code><![CDATA[getAppValue]]></code>
+      <code><![CDATA[getAppValue]]></code>
+    </DeprecatedMethod>
+    <RedundantCastGivenDocblockType>
+      <code><![CDATA[(string)$this->config->getAppValue(
+			'etherpad_nextcloud',
+			self::SAME_SITE_KEY,
+			'lax',
+		)]]></code>
+      <code><![CDATA[(string)$this->config->getAppValue('etherpad_nextcloud', 'etherpad_cookie_domain', '')]]></code>
+      <code><![CDATA[(string)$this->config->getAppValue('etherpad_nextcloud', 'etherpad_cookie_domain_configured', 'no')]]></code>
+      <code><![CDATA[(string)$this->config->getAppValue('etherpad_nextcloud', 'etherpad_host', '')]]></code>
+      <code><![CDATA[(string)$this->config->getUserValue(
+			$uid,
+			'etherpad_nextcloud',
+			self::USER_CONFIG_AUTHOR_ID_KEY,
+			''
+		)]]></code>
+      <code><![CDATA[(string)$this->config->getUserValue(
+			$uid,
+			'etherpad_nextcloud',
+			self::USER_CONFIG_AUTHOR_NAME_KEY,
+			''
+		)]]></code>
+      <code><![CDATA[(string)($this->request->getCookie('sessionID') ?? '')]]></code>
+    </RedundantCastGivenDocblockType>
   </file>
   <file src="lib/Service/PadSyncService.php">
-    <PossiblyUnusedMethod>
-      <code><![CDATA[__construct]]></code>
-    </PossiblyUnusedMethod>
+    <RedundantCastGivenDocblockType>
+      <code><![CDATA[(string)$node->getContent()]]></code>
+      <code><![CDATA[(string)$node->getContent()]]></code>
+    </RedundantCastGivenDocblockType>
   </file>
   <file src="lib/Service/PadTypePolicy.php">
-    <PossiblyUnusedMethod>
-      <code><![CDATA[__construct]]></code>
-    </PossiblyUnusedMethod>
+    <DeprecatedMethod>
+      <code><![CDATA[getAppValue]]></code>
+    </DeprecatedMethod>
+    <RedundantCastGivenDocblockType>
+      <code><![CDATA[(string)$this->config->getAppValue(Application::APP_ID, $key, 'yes')]]></code>
+    </RedundantCastGivenDocblockType>
   </file>
-  <file src="lib/Service/PublicPadContextService.php">
-    <PossiblyUnusedMethod>
-      <code><![CDATA[__construct]]></code>
-    </PossiblyUnusedMethod>
-  </file>
-  <file src="lib/Service/PublicPadOpenService.php">
-    <PossiblyUnusedMethod>
-      <code><![CDATA[__construct]]></code>
-    </PossiblyUnusedMethod>
-  </file>
-  <file src="lib/Service/ProvisionedPadRollback.php">
-    <PossiblyUnusedMethod>
-      <code><![CDATA[__construct]]></code>
-    </PossiblyUnusedMethod>
+  <file src="lib/Service/PendingBindingService.php">
+    <MixedAssignment>
+      <code><![CDATA[$path]]></code>
+    </MixedAssignment>
   </file>
   <file src="lib/Service/PublicShareResolver.php">
-    <PossiblyUnusedMethod>
-      <code><![CDATA[__construct]]></code>
-    </PossiblyUnusedMethod>
+    <RedundantCastGivenDocblockType>
+      <code><![CDATA[(int)$candidate->getPermissions()]]></code>
+      <code><![CDATA[(int)$node->getId()]]></code>
+      <code><![CDATA[(int)$node->getId()]]></code>
+      <code><![CDATA[(int)$share->getPermissions()]]></code>
+      <code><![CDATA[(int)$share->getPermissions()]]></code>
+    </RedundantCastGivenDocblockType>
   </file>
-  <file src="lib/Service/PublicShareUrlBuilder.php">
-    <PossiblyUnusedMethod>
-      <code><![CDATA[__construct]]></code>
-    </PossiblyUnusedMethod>
-  </file>
-  <file src="lib/Service/TrustedEmbedOriginsNormalizer.php">
-    <PossiblyUnusedMethod>
-      <code><![CDATA[__construct]]></code>
-    </PossiblyUnusedMethod>
+  <file src="lib/Service/SnapshotHtmlSanitizer.php">
+    <MixedArgument>
+      <code><![CDATA[$child]]></code>
+      <code><![CDATA[$child]]></code>
+    </MixedArgument>
+    <MixedAssignment>
+      <code><![CDATA[$child]]></code>
+      <code><![CDATA[$child]]></code>
+    </MixedAssignment>
   </file>
   <file src="lib/Service/UserNodeResolver.php">
-    <PossiblyUnusedMethod>
-      <code><![CDATA[__construct]]></code>
-    </PossiblyUnusedMethod>
+    <RedundantCastGivenDocblockType>
+      <code><![CDATA[(string)$node->getPath()]]></code>
+      <code><![CDATA[(string)$node->getPath()]]></code>
+      <code><![CDATA[(string)$node->getPath()]]></code>
+    </RedundantCastGivenDocblockType>
+  </file>
+  <file src="lib/Settings/AdminSettings.php">
+    <DeprecatedMethod>
+      <code><![CDATA[getAppValue]]></code>
+      <code><![CDATA[getAppValue]]></code>
+      <code><![CDATA[getAppValue]]></code>
+      <code><![CDATA[getAppValue]]></code>
+      <code><![CDATA[getAppValue]]></code>
+      <code><![CDATA[getAppValue]]></code>
+      <code><![CDATA[getAppValue]]></code>
+      <code><![CDATA[getAppValue]]></code>
+      <code><![CDATA[getAppValue]]></code>
+      <code><![CDATA[getAppValue]]></code>
+      <code><![CDATA[getAppValue]]></code>
+      <code><![CDATA[getAppValue]]></code>
+    </DeprecatedMethod>
+    <RedundantCastGivenDocblockType>
+      <code><![CDATA[(string)$this->config->getAppValue(Application::APP_ID, 'allow_external_pads', 'no')]]></code>
+      <code><![CDATA[(string)$this->config->getAppValue(Application::APP_ID, 'delete_on_trash', 'yes')]]></code>
+      <code><![CDATA[(string)$this->config->getAppValue(Application::APP_ID, 'etherpad_api_host', '')]]></code>
+      <code><![CDATA[(string)$this->config->getAppValue(Application::APP_ID, 'etherpad_api_version', EtherpadClient::DEFAULT_API_VERSION)]]></code>
+      <code><![CDATA[(string)$this->config->getAppValue(Application::APP_ID, 'etherpad_cookie_domain', '')]]></code>
+      <code><![CDATA[(string)$this->config->getAppValue(Application::APP_ID, 'etherpad_cookie_domain_configured', 'no')]]></code>
+      <code><![CDATA[(string)$this->config->getAppValue(Application::APP_ID, 'etherpad_host', '')]]></code>
+      <code><![CDATA[(string)$this->config->getAppValue(Application::APP_ID, 'external_pad_allowlist', '')]]></code>
+      <code><![CDATA[(string)$this->config->getAppValue(Application::APP_ID, LegacyImportPolicy::SETTING_PROTECTED_IMPORT, LegacyImportPolicy::DEFAULT_PROTECTED_IMPORT)]]></code>
+      <code><![CDATA[(string)$this->config->getAppValue(Application::APP_ID, PadTypePolicy::SETTING_PROTECTED, 'yes')]]></code>
+      <code><![CDATA[(string)$this->config->getAppValue(Application::APP_ID, PadTypePolicy::SETTING_PUBLIC, 'yes')]]></code>
+    </RedundantCastGivenDocblockType>
+  </file>
+  <file src="lib/Template/PadTemplateProvider.php">
+    <DeprecatedMethod>
+      <code><![CDATA[getAppValue]]></code>
+    </DeprecatedMethod>
+    <RedundantCastGivenDocblockType>
+      <code><![CDATA[(string)$this->config->getAppValue(Application::APP_ID, 'allow_external_pads', 'no')]]></code>
+    </RedundantCastGivenDocblockType>
   </file>
 </files>

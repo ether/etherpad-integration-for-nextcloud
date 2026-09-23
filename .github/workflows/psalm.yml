@@ -1,9 +1,12 @@
 # SPDX-FileCopyrightText: 2026 Etherpad contributors
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
-# Static analysis with Psalm. The check is baseline-backed (psalm-baseline.xml):
-# the existing issues are suppressed and the build only fails on NEW ones, so
-# the codebase improves gradually without a blocking up-front cleanup.
+# Static analysis with Psalm on its strictest level (1), baseline-backed
+# (psalm-baseline.xml): the existing issues are suppressed, and the build fails
+# on a new one, and on a fixed one whose baseline entry was left behind. The
+# baseline can only shrink, so the codebase improves as code is reworked,
+# without a blocking up-front cleanup. See psalm.xml for why each issue type is
+# suppressed where it is.
 
 name: Psalm
 

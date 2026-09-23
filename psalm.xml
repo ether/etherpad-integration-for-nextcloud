@@ -1,6 +1,6 @@
 <?xml version="1.0"?>
 <psalm
-    errorLevel="3"
+    errorLevel="1"
     phpVersion="8.1"
     resolveFromConfigFile="true"
     findUnusedCode="true"
@@ -17,6 +17,16 @@
             <directory name="vendor" />
         </ignoreFiles>
     </projectFiles>
+    <!-- Level 1 with a baseline that can only shrink. New code has to be clean
+         on the strictest level, and an issue that gets fixed has to leave the
+         baseline with it: Psalm reports a baseline entry that no longer matches
+         anything (findUnusedBaselineEntry). The baseline holds what code due for
+         rework still has, and each rework takes its entries out.
+
+         One baseline serves both ends of the OCP range the CI matrix analyses,
+         so nothing in it may depend on the OCP version. Where OCP's types
+         differ, the code checks the value itself (Util\DbRows); where a
+         deprecation exists on one end only, it is suppressed below. -->
     <issueHandlers>
         <!-- The #[\Override] attribute is PHP 8.3+, but the app supports PHP
              8.1+ (see appinfo/info.xml), so requiring it project-wide isn't
@@ -46,5 +56,44 @@
                 <referencedClass name="Doctrine\DBAL\Schema\Table" />
             </errorLevel>
         </UndefinedDocblockClass>
+        <!-- Constructors are called by Nextcloud's DI container, which Psalm
+             does not see, so every service's constructor looks unused. Other
+             unused methods are still reported, and UnusedClass still finds a
+             class nothing uses. -->
+        <PossiblyUnusedMethod>
+            <errorLevel type="suppress">
+                <referencedMethod name="*::__construct" />
+            </errorLevel>
+        </PossiblyUnusedMethod>
+        <!-- `final` would keep PHPUnit's createMock() from doubling the class,
+             and most services here are mocked in some test. Value objects and
+             helpers that no test doubles are final by choice. -->
+        <ClassMustBeFinal errorLevel="suppress" />
+        <!-- Files FullTextSearch hands its indexing and search-result events
+             over as GenericEvent with a subject string; there is no typed event
+             to listen for (Application::register, the two FullTextSearch
+             listeners). Only the class and the three methods they use. -->
+        <DeprecatedClass>
+            <errorLevel type="suppress">
+                <referencedClass name="OCP\EventDispatcher\GenericEvent" />
+            </errorLevel>
+        </DeprecatedClass>
+        <DeprecatedMethod>
+            <errorLevel type="suppress">
+                <referencedMethod name="OCP\EventDispatcher\GenericEvent::getSubject" />
+                <referencedMethod name="OCP\EventDispatcher\GenericEvent::hasArgument" />
+                <referencedMethod name="OCP\EventDispatcher\GenericEvent::getArgument" />
+                <!-- Groupfolders restores through the legacy post_restore hook
+                     alone and fires no NodeRestoredEvent (Application::register,
+                     above the call). Goes when that path does. -->
+                <referencedMethod name="OCP\Util::connectHook" />
+                <!-- Deprecated from OCP 33 only, so a baseline entry would be
+                     unused on the lower end of the range; the successor,
+                     IUserConfig, exists from 32 while the app supports 31.
+                     Remove once the lower bound reaches 32. -->
+                <referencedMethod name="OCP\IConfig::getUserValue" />
+                <referencedMethod name="OCP\IConfig::setUserValue" />
+            </errorLevel>
+        </DeprecatedMethod>
     </issueHandlers>
 </psalm>
