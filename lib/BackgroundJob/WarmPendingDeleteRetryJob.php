@@ -9,9 +9,6 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\BackgroundJob;
 
-/**
- * @psalm-api
- */
 class WarmPendingDeleteRetryJob extends AbstractPendingDeleteRetryJob {
 	protected const INTERVAL_SECONDS = 60 * 60;
 	protected const MIN_AGE_SECONDS = 60 * 60;

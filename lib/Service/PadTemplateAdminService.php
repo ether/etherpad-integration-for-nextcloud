@@ -25,8 +25,6 @@ use OCP\IL10N;
  * is not a pad, or one whose frontmatter carries no usable pad id, would give
  * the user an error instead of a document. Rejecting it at upload time puts
  * the message where it can be acted on.
- *
- * @psalm-api
  */
 class PadTemplateAdminService {
 	/** Generous, but enough to stop an accidental upload of something huge. */

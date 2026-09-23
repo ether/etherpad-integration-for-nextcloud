@@ -39,7 +39,6 @@ use Psr\Log\LoggerInterface;
  * get through, nothing comes back to either of them.
  *
  * @template-implements IEventListener<Event>
- * @psalm-api
  */
 class UserLoggedOutListener implements IEventListener {
 	public function __construct(

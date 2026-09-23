@@ -21,8 +21,6 @@ use OCP\BackgroundJob\QueuedJob;
  * collecting, so no sweep over every account is needed. The argument
  * carries the author id and nothing else — for a public link the uid is
  * `public-share:<token>`, and job arguments are persisted.
- *
- * @psalm-api
  */
 class CollectExpiredSessionsJob extends QueuedJob {
 	/** Seconds to wait before the next pass of a sweep that had more to do. */

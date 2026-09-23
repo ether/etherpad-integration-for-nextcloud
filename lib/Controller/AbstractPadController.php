@@ -34,7 +34,6 @@ use Psr\Log\LoggerInterface;
  * declares the services it actually uses on top of the base deps.
  *
  * @psalm-import-type ErrorWording from PadControllerErrorMapper
- * @psalm-api
  */
 abstract class AbstractPadController extends Controller {
 	public function __construct(

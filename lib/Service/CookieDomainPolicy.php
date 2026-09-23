@@ -19,8 +19,6 @@ namespace OCA\EtherpadNextcloud\Service;
  * with that: it governs whether an accepted cookie is sent cross-site.
  *
  * Pure string handling, no I/O — callers pass the hosts in.
- *
- * @psalm-api
  */
 class CookieDomainPolicy {
 	/**

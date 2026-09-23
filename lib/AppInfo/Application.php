@@ -22,9 +22,6 @@ use OCP\Files\Template\FileCreatedFromTemplateEvent;
 use OCP\Files\Template\RegisterTemplateCreatorEvent;
 use OCP\Security\CSP\AddContentSecurityPolicyEvent;
 
-/**
- * @psalm-api
- */
 class Application extends App implements IBootstrap {
 	public const APP_ID = 'etherpad_nextcloud';
 

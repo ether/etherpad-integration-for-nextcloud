@@ -18,7 +18,6 @@ use OCP\Util;
  * Loads the native pad Viewer where Files app scripts are available.
  *
  * @template-implements IEventListener<Event>
- * @psalm-api
  */
 class LoadFilesScriptsListener implements IEventListener {
 	public function handle(Event $event): void {

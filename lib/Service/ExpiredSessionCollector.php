@@ -24,8 +24,6 @@ use Psr\Log\LoggerInterface;
  * which every protected open makes, grows with past opens rather than with
  * live access. Neither the listing nor the deleting happens in a request:
  * an open leaves the author's id, and the job does both.
- *
- * @psalm-api
  */
 class ExpiredSessionCollector {
 

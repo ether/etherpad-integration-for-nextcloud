@@ -20,7 +20,6 @@ use OCP\IL10N;
 
 /**
  * @template-implements IEventListener<Event>
- * @psalm-api
  */
 class RegisterTemplateCreatorListener implements IEventListener {
 	public function __construct(
