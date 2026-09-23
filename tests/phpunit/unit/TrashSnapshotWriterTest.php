@@ -113,17 +113,17 @@ class TrashSnapshotWriterTest extends TestCase {
 		$this->file->expects($this->never())->method('putContent');
 		$this->etherpad->expects($this->never())->method('getRevisionsCount');
 		$this->etherpad->expects($this->never())->method('getText');
-		$this->assertTrue($this->writer()->writeInTrash($this->pad(snapshotRev: 4), 4, $this->notMoved()), 'held already');
+		$this->assertTrue($this->writer()->writeInTrash($this->pad(snapshotRev: 4), 4, $this->aRun(), $this->notMoved()), 'held already');
 
 		$this->setUp();
 		$this->file->expects($this->never())->method('putContent');
 		$this->etherpad->method('getRevisionsCount')->willReturn(4);
-		$this->assertTrue($this->writer()->writeInTrash($this->pad(snapshotRev: 4), null, $this->notMoved()), 'counted here');
+		$this->assertTrue($this->writer()->writeInTrash($this->pad(snapshotRev: 4), null, $this->aRun(), $this->notMoved()), 'counted here');
 
 		$this->setUp();
 		$this->file->expects($this->never())->method('putContent');
 		$this->etherpad->expects($this->never())->method('getText');
-		$this->assertSame(TrashSnapshotMiss::PadBehind, $this->writer()->writeInTrash($this->pad(snapshotRev: 4), 2, $this->notMoved()));
+		$this->assertSame(TrashSnapshotMiss::PadBehind, $this->writer()->writeInTrash($this->pad(snapshotRev: 4), 2, $this->aRun(), $this->notMoved()));
 		$this->assertSame([['debug', 'pad_behind']], $this->logged);
 
 		$this->setUp();
@@ -131,7 +131,7 @@ class TrashSnapshotWriterTest extends TestCase {
 		$this->etherpad->method('getRevisionsCount')->willReturn(6);
 		$this->etherpad->method('getText')->willReturn('text');
 		$this->etherpad->method('getHTML')->willReturn('<p>text</p>');
-		$this->assertSame(TrashSnapshotMiss::PadChanged, $this->writer()->writeInTrash($this->pad(snapshotRev: 4), 5, $this->notMoved()));
+		$this->assertSame(TrashSnapshotMiss::PadChanged, $this->writer()->writeInTrash($this->pad(snapshotRev: 4), 5, $this->aRun(), $this->notMoved()));
 		$this->assertSame([['debug', 'pad_changed']], $this->logged);
 	}
 
@@ -162,7 +162,7 @@ class TrashSnapshotWriterTest extends TestCase {
 			return false;
 		};
 
-		$this->assertTrue($this->writer()->writeInTrash($this->pad(snapshotRev: 4), 5, $moved));
+		$this->assertTrue($this->writer()->writeInTrash($this->pad(snapshotRev: 4), 5, $this->aRun(), $moved));
 
 		$this->assertSame(['text', 'html', 'count', 'moved?', 'write', 'count'], $steps);
 		$this->assertEquals([new PadSnapshot('text', '<p>text</p>', 5)], $this->written);
@@ -176,7 +176,7 @@ class TrashSnapshotWriterTest extends TestCase {
 		$this->etherpad->method('getHTML')->willReturn('<p>text</p>');
 		$this->file->expects($this->never())->method('putContent');
 
-		$this->assertSame(TrashSnapshotMiss::FileMoved, $this->writer()->writeInTrash($this->pad(snapshotRev: 4), 5, static fn (): bool => true));
+		$this->assertSame(TrashSnapshotMiss::FileMoved, $this->writer()->writeInTrash($this->pad(snapshotRev: 4), 5, $this->aRun(), static fn (): bool => true));
 		$this->assertSame([['debug', 'file_moved']], $this->logged);
 	}
 
@@ -200,7 +200,7 @@ class TrashSnapshotWriterTest extends TestCase {
 		$this->etherpad->expects($this->never())->method('getRevisionsCount');
 
 		try {
-			$this->writer(budget: new RunBudget($clock, 20.0))->writeInTrash($this->pad(snapshotRev: 4), 5, $this->notMoved());
+			$this->writer()->writeInTrash($this->pad(snapshotRev: 4), 5, new RunBudget($clock, 20.0), $this->notMoved());
 			$this->fail('A call that could not finish in the run was made.');
 		} catch (RunBudgetSpentException) {
 		}
@@ -220,7 +220,7 @@ class TrashSnapshotWriterTest extends TestCase {
 			$this->etherpad->method('getHTML')->willReturn('');
 			$this->etherpad->method('getRevisionsCount')->willReturnOnConsecutiveCalls(5, $recount);
 
-			$this->assertSame($expected, $this->writer()->writeInTrash($this->pad(snapshotRev: 4), 5, $this->notMoved()), "recount $recount");
+			$this->assertSame($expected, $this->writer()->writeInTrash($this->pad(snapshotRev: 4), 5, $this->aRun(), $this->notMoved()), "recount $recount");
 		}
 	}
 
@@ -245,7 +245,7 @@ class TrashSnapshotWriterTest extends TestCase {
 			// After the text only.
 			$this->etherpad->expects($this->once())->method('getRevisionsCount')->willReturn(5);
 
-			$this->assertSame($miss, $this->writer()->writeInTrash($this->pad(snapshotRev: 4), 5, $this->notMoved()), $case);
+			$this->assertSame($miss, $this->writer()->writeInTrash($this->pad(snapshotRev: 4), 5, $this->aRun(), $this->notMoved()), $case);
 			$this->assertSame([[$level, $miss->value]], $this->logged, $case);
 		}
 	}
@@ -259,13 +259,13 @@ class TrashSnapshotWriterTest extends TestCase {
 		$this->etherpad->method('getText')->willThrowException(new EtherpadClientException('Operation timed out'));
 		$this->file->expects($this->never())->method('putContent');
 
-		$this->assertSame(TrashSnapshotMiss::SnapshotNotFetched, $this->writer(news: false)->writeInTrash($this->pad(snapshotRev: 4), 5, $this->notMoved()));
+		$this->assertSame(TrashSnapshotMiss::SnapshotNotFetched, $this->writer(news: false)->writeInTrash($this->pad(snapshotRev: 4), 5, $this->aRun(), $this->notMoved()));
 		$this->assertSame([['warning', 'snapshot_not_fetched']], $this->logged);
 
 		$this->setUp();
 		$this->etherpad->method('getText')->willThrowException(new \LogicException('a bug'));
 		try {
-			$this->writer()->writeInTrash($this->pad(snapshotRev: 4), 5, $this->notMoved());
+			$this->writer()->writeInTrash($this->pad(snapshotRev: 4), 5, $this->aRun(), $this->notMoved());
 			$this->fail('An error that is not Etherpad\'s was placed as its silence.');
 		} catch (\LogicException) {
 		}
@@ -284,22 +284,11 @@ class TrashSnapshotWriterTest extends TestCase {
 		$this->assertSame([['warning', 'snapshot_not_fetched']], $this->logged);
 	}
 
-	/** A spent budget is the caller's, at trash time as in the sweep: not a snapshot Etherpad did not give. */
-	public function testAtTrashASpentBudgetIsNotAnError(): void {
-		$this->etherpad->expects($this->never())->method('getRevisionsCount');
-
-		try {
-			$this->writer(budget: new RunBudget(new FixedClock(), 1.0))->writeAtTrash($this->pad(snapshotRev: 4));
-			$this->fail('A spent budget was taken for a snapshot not taken.');
-		} catch (RunBudgetSpentException) {
-		}
-		$this->assertSame([], $this->logged);
-	}
-
+	/** At trash time there is no run to keep to: each call gets the client's own timeout. */
 	public function testAtTrashTheFileHoldsThePadOnceWritten(): void {
-		$this->etherpad->method('getRevisionsCount')->willReturn(5);
-		$this->etherpad->method('getText')->willReturn('text');
-		$this->etherpad->method('getHTML')->willReturn('<p>text</p>');
+		$this->etherpad->method('getRevisionsCount')->with('pad-a', null)->willReturn(5);
+		$this->etherpad->method('getText')->with('pad-a', null)->willReturn('text');
+		$this->etherpad->method('getHTML')->with('pad-a', null)->willReturn('<p>text</p>');
 		$this->file->expects($this->once())->method('putContent')->with('doc-after');
 
 		$this->assertTrue($this->writer()->writeAtTrash($this->pad(snapshotRev: 4)));
@@ -330,7 +319,7 @@ class TrashSnapshotWriterTest extends TestCase {
 		$this->assertSame([['debug', 'pad_changed']], $this->logged);
 	}
 
-	private function writer(bool $news = true, ?RunBudget $budget = null): TrashSnapshotWriter {
+	private function writer(bool $news = true): TrashSnapshotWriter {
 		$fault = &$this->fault;
 		return new TrashSnapshotWriter(
 			$this->etherpad,
@@ -342,8 +331,12 @@ class TrashSnapshotWriterTest extends TestCase {
 			$this->file,
 			'pad-a',
 			$news,
-			$budget,
 		);
+	}
+
+	/** A sweep's run with time to spare. */
+	private function aRun(): RunBudget {
+		return new RunBudget(new FixedClock(), RunBudget::DEFAULT_SECONDS);
 	}
 
 	/** @return \Closure(): bool */

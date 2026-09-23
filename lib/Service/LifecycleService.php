@@ -279,7 +279,7 @@ class LifecycleService {
 		$padId = (string)$binding['pad_id'];
 		$deletedAt = $binding['deleted_at'] ?? null;
 		$news = $deletedAt === null || (int)($binding['updated_at'] ?? 0) <= (int)$deletedAt;
-		$snapshots = $this->snapshotWriter($file, $padId, $news, $budget);
+		$snapshots = $this->snapshotWriter($file, $padId, $news);
 		$pad = $snapshots->read();
 		if ($pad instanceof TrashSnapshotMiss) {
 			return $this->waitAgain($fileId, $padId, $pad);
@@ -302,7 +302,7 @@ class LifecycleService {
 		}
 		if ($probe->presence === PadPresence::Present) {
 			try {
-				$written = $snapshots->writeInTrash($pad, $probe->revisions, fn (): bool => $this->userNodeResolver->hasMoved($file));
+				$written = $snapshots->writeInTrash($pad, $probe->revisions, $budget, fn (): bool => $this->userNodeResolver->hasMoved($file));
 			} catch (RunBudgetSpentException) {
 				return SettleOutcome::Left;
 			}
@@ -414,10 +414,10 @@ class LifecycleService {
 
 	/**
 	 * The snapshot steps for one file and its pad (TrashSnapshotWriter),
-	 * with $news and the run's budget when a sweep takes them.
+	 * with $news when a sweep takes them.
 	 */
-	private function snapshotWriter(File $file, string $padId, bool $news = true, ?RunBudget $budget = null): TrashSnapshotWriter {
-		return new TrashSnapshotWriter($this->etherpadClient, $this->padFileService, $this->logger, $this->isTestFaultActive(...), $file, $padId, $news, $budget);
+	private function snapshotWriter(File $file, string $padId, bool $news = true): TrashSnapshotWriter {
+		return new TrashSnapshotWriter($this->etherpadClient, $this->padFileService, $this->logger, $this->isTestFaultActive(...), $file, $padId, $news);
 	}
 
 	/**

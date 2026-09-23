@@ -27,8 +27,7 @@ use Psr\Log\LoggerInterface;
  * admin can filter by `reason`, and handed back.
  *
  * $news: whether the file's trouble would be news (warning) or a repeat
- * (debug); a sweep reads it off the row. $budget: the sweep's run, whose
- * rest each Etherpad call gets; none at trash time.
+ * (debug); a sweep reads it off the row.
  */
 final class TrashSnapshotWriter {
 	/** Test faults, injected on a debug instance through the admin API. */
@@ -50,7 +49,6 @@ final class TrashSnapshotWriter {
 		private File $file,
 		private string $padId,
 		private bool $news = true,
-		private ?RunBudget $budget = null,
 	) {
 		$this->context = ['app' => 'etherpad_nextcloud', 'fileId' => $file->getId()];
 	}
@@ -87,16 +85,12 @@ final class TrashSnapshotWriter {
 	 * Take the pad's current content into the file at trash time. True once
 	 * the file holds it, written now or there already: a pad is not deleted
 	 * on anything less. Any error on the way is a snapshot not taken, so a
-	 * trash never fails on it. A spent budget is not an error of the
-	 * snapshot and goes to the caller, as in the sweep.
-	 *
-	 * @throws RunBudgetSpentException
+	 * trash never fails on it. There is no run to keep to: each Etherpad
+	 * call gets the client's own timeout.
 	 */
 	public function writeAtTrash(ParsedPadFile $pad): bool {
 		try {
-			return $this->take($pad) === true;
-		} catch (RunBudgetSpentException $spent) {
-			throw $spent;
+			return $this->take($pad, null, null, null) === true;
 		} catch (\Throwable $fetchError) {
 			$this->missed(TrashSnapshotMiss::SnapshotNotFetched, SafeError::context($fetchError));
 			return false;
@@ -110,6 +104,7 @@ final class TrashSnapshotWriter {
 	 * error, goes to the caller.
 	 *
 	 * $revisions: the pad's count, when the caller has just asked for it.
+	 * $budget: the sweep's run, whose rest each Etherpad call gets.
 	 * $moved: whether a restore has taken the file back since it was read,
 	 * asked right before the write - one through the old node would make a
 	 * new file where it was.
@@ -118,9 +113,9 @@ final class TrashSnapshotWriter {
 	 * @return TrashSnapshotMiss|true
 	 * @throws RunBudgetSpentException
 	 */
-	public function writeInTrash(ParsedPadFile $pad, ?int $revisions, \Closure $moved): TrashSnapshotMiss|bool {
+	public function writeInTrash(ParsedPadFile $pad, ?int $revisions, RunBudget $budget, \Closure $moved): TrashSnapshotMiss|bool {
 		try {
-			return $this->take($pad, $revisions, $moved);
+			return $this->take($pad, $revisions, $budget, $moved);
 		} catch (EtherpadClientException $etherpadError) {
 			return $this->missed(TrashSnapshotMiss::SnapshotNotFetched, SafeError::context($etherpadError));
 		}
@@ -134,15 +129,15 @@ final class TrashSnapshotWriter {
 	 * @return TrashSnapshotMiss|true
 	 * @throws RunBudgetSpentException
 	 */
-	private function take(ParsedPadFile $pad, ?int $revisions = null, ?\Closure $moved = null): TrashSnapshotMiss|bool {
-		$snapshot = $this->fresh($pad, $revisions);
+	private function take(ParsedPadFile $pad, ?int $revisions, ?RunBudget $budget, ?\Closure $moved): TrashSnapshotMiss|bool {
+		$snapshot = $this->fresh($pad, $revisions, $budget);
 		if (!$snapshot instanceof PadSnapshot) {
 			return $snapshot;
 		}
 		if ($moved !== null && $moved()) {
 			return $this->missed(TrashSnapshotMiss::FileMoved);
 		}
-		return $this->writeAndRecount($pad, $snapshot);
+		return $this->writeAndRecount($pad, $snapshot, $budget);
 	}
 
 	/**
@@ -155,15 +150,15 @@ final class TrashSnapshotWriter {
 	 * @return PadSnapshot|TrashSnapshotMiss|true
 	 * @throws RunBudgetSpentException
 	 */
-	private function fresh(ParsedPadFile $pad, ?int $revisions = null): PadSnapshot|TrashSnapshotMiss|bool {
-		$revisions ??= $this->etherpadClient->getRevisionsCount($this->padId, RunBudget::timeoutOf($this->budget));
+	private function fresh(ParsedPadFile $pad, ?int $revisions, ?RunBudget $budget): PadSnapshot|TrashSnapshotMiss|bool {
+		$revisions ??= $this->etherpadClient->getRevisionsCount($this->padId, RunBudget::timeoutOf($budget));
 		if ($revisions === $pad->snapshotRev) {
 			return true;
 		}
 		if ($revisions < $pad->snapshotRev) {
 			return $this->missed(TrashSnapshotMiss::PadBehind);
 		}
-		return $this->fetchStable($revisions) ?? $this->missed(TrashSnapshotMiss::PadChanged);
+		return $this->fetchStable($revisions, $budget) ?? $this->missed(TrashSnapshotMiss::PadChanged);
 	}
 
 	/**
@@ -177,12 +172,12 @@ final class TrashSnapshotWriter {
 	 * @return TrashSnapshotMiss|true
 	 * @throws RunBudgetSpentException
 	 */
-	private function writeAndRecount(ParsedPadFile $pad, PadSnapshot $snapshot): TrashSnapshotMiss|bool {
+	private function writeAndRecount(ParsedPadFile $pad, PadSnapshot $snapshot, ?RunBudget $budget): TrashSnapshotMiss|bool {
 		$written = $this->write($pad, $snapshot);
 		if ($written !== true) {
 			return $written;
 		}
-		return $this->etherpadClient->getRevisionsCount($this->padId, RunBudget::timeoutOf($this->budget)) === $snapshot->revision
+		return $this->etherpadClient->getRevisionsCount($this->padId, RunBudget::timeoutOf($budget)) === $snapshot->revision
 			? true
 			: $this->missed(TrashSnapshotMiss::PadChanged);
 	}
@@ -210,10 +205,10 @@ final class TrashSnapshotWriter {
 	 * the pad changed while they were read: the count taken before them has
 	 * to hold after.
 	 */
-	private function fetchStable(int $before): ?PadSnapshot {
-		$text = $this->etherpadClient->getText($this->padId, RunBudget::timeoutOf($this->budget));
-		$html = $this->etherpadClient->getHTML($this->padId, RunBudget::timeoutOf($this->budget));
-		$after = $this->etherpadClient->getRevisionsCount($this->padId, RunBudget::timeoutOf($this->budget));
+	private function fetchStable(int $before, ?RunBudget $budget): ?PadSnapshot {
+		$text = $this->etherpadClient->getText($this->padId, RunBudget::timeoutOf($budget));
+		$html = $this->etherpadClient->getHTML($this->padId, RunBudget::timeoutOf($budget));
+		$after = $this->etherpadClient->getRevisionsCount($this->padId, RunBudget::timeoutOf($budget));
 		return $before === $after ? new PadSnapshot($text, $html, $after) : null;
 	}
 
