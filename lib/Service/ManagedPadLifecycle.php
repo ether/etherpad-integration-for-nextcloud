@@ -215,19 +215,28 @@ class ManagedPadLifecycle {
 	 * @param array<string,mixed> $context what the log line should carry, fileId above all
 	 */
 	public function presenceOf(string $padId, int $snapshotRevision = -1, array $context = [], ?int $timeoutSeconds = null): PadPresence {
+		return $this->probe($padId, $snapshotRevision, $context, $timeoutSeconds)->presence;
+	}
+
+	/**
+	 * presenceOf(), with the revision count the answer came from.
+	 *
+	 * @param array<string,mixed> $context what the log line should carry, fileId above all
+	 */
+	public function probe(string $padId, int $snapshotRevision = -1, array $context = [], ?int $timeoutSeconds = null): PadProbe {
 		try {
 			$revisions = $this->etherpadClient->getRevisionsCount($padId, $timeoutSeconds);
 		} catch (\Throwable $e) {
 			if (EtherpadErrorClassifier::isPadAlreadyDeleted($e)) {
-				return PadPresence::Absent;
+				return new PadProbe(PadPresence::Absent, null);
 			}
 			$this->logger->warning('Could not ask Etherpad whether a pad still exists.', [
 				'app' => 'etherpad_nextcloud',
 				...SafeError::context($e),
 			] + $context);
-			return PadPresence::Unknown;
+			return new PadProbe(PadPresence::Unknown, null);
 		}
-		return $revisions < $snapshotRevision ? PadPresence::Behind : PadPresence::Present;
+		return new PadProbe($revisions < $snapshotRevision ? PadPresence::Behind : PadPresence::Present, $revisions);
 	}
 
 	/**

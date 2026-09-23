@@ -75,15 +75,15 @@ test.describe('protected pad cleanup on the Etherpad side', () => {
 			await etherpadApiPost('setText', { padID: padId, text: marker })
 
 			await deleteViaDav(padName)
-
-			// In the trash, the pad is kept as it is: a restore takes it back.
-			expect(await groupIds(), 'the trash keeps the pad and its group').toContain(group)
 			const entry = await findTrashbinEntry(padName)
 			expect(entry, 'the .pad should be in the trash').not.toBeNull()
 
-			// What the background jobs do within minutes. delete_on_trash is on
-			// in this stack, so the pad goes - and with it, the group and its
-			// sessions - once its content is in the trashed file.
+			// What the background jobs do within minutes, so no check between
+			// the delete and here: a cron run may have finished the trash
+			// already. The end state proves the order either way - had the pad
+			// gone before its snapshot, the marker would not be in the file.
+			// delete_on_trash is on in this stack, so the pad goes, and with it
+			// the group and its sessions.
 			const settled = await padApiPost('admin/settle-pending')
 			test.skip(settled.status === 403, 'E2E_USER is not a Nextcloud admin; the pending pads cannot be settled from here.')
 			expect(settled.status, JSON.stringify(settled.body)).toBe(200)

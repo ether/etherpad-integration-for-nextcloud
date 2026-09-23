@@ -710,11 +710,12 @@ class LifecycleServiceTest extends TestCase {
 	 * A pad is deleted on trash only once its content is in the file. A
 	 * delete through WebDAV holds the file's lock, and the snapshot can fail
 	 * in other ways too; each time the pad stays as it is, and its deletion
-	 * is owed - a restore takes it back, the sweep deletes it once the file
-	 * is gone for good.
+	 * is owed - a restore takes it back, and the sweep takes the snapshot
+	 * once the file sits in the trash. A file that cannot be read is one of
+	 * those ways, not a reason to fail the user's delete.
 	 */
 	public function testHandleTrashKeepsThePadWhenNoFreshSnapshotCanBeWritten(): void {
-		foreach (['file locked by its delete', 'file empty', 'snapshot not fetched', 'pad changed while read', 'write locked', 'write refused'] as $case) {
+		foreach (['file locked by its delete', 'file unreadable', 'file empty', 'snapshot not fetched', 'pad changed while read', 'write locked', 'write refused'] as $case) {
 			$bindingService = $this->createMock(BindingService::class);
 			$bindingService->method('findByFileId')->willReturn([
 				'file_id' => 110,
@@ -743,6 +744,8 @@ class LifecycleServiceTest extends TestCase {
 			$file->method('getName')->willReturn('Kept.pad');
 			if ($case === 'file locked by its delete') {
 				$file->method('getContent')->willThrowException(new LockedException('Kept.pad'));
+			} elseif ($case === 'file unreadable') {
+				$file->method('getContent')->willThrowException(new \RuntimeException('storage unavailable'));
 			} else {
 				$file->method('getContent')->willReturn($case === 'file empty' ? '' : 'doc-before');
 			}
@@ -762,11 +765,55 @@ class LifecycleServiceTest extends TestCase {
 	}
 
 	/**
+	 * A file that already holds the pad's revision needs no new snapshot:
+	 * the pad goes without a fetch or a write, at trash time as much as in
+	 * the sweep.
+	 */
+	public function testNoSnapshotIsTakenThatTheFileHasAlready(): void {
+		$bindingService = $this->createMock(BindingService::class);
+		$bindingService->method('findByFileId')->willReturn([
+			'file_id' => 110,
+			'pad_id' => 'pad-current',
+			'access_mode' => BindingService::ACCESS_PUBLIC,
+			'state' => BindingService::STATE_ACTIVE,
+		]);
+		$bindingService->expects($this->once())->method('deleteByFileId')->with(110);
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->expects($this->once())->method('getRevisionsCount')->willReturn(4);
+		$etherpadClient->expects($this->never())->method('getText');
+		$etherpadClient->expects($this->once())->method('deletePad')->with('pad-current');
+		// Still in Files at trash time, under its own name.
+		$this->trashedSnapshotRev = 4;
+		$file = $this->createMock(File::class);
+		$file->method('getId')->willReturn(110);
+		$file->method('getName')->willReturn('Current.pad');
+		$file->method('getContent')->willReturn('doc-before');
+		$file->expects($this->never())->method('putContent');
+
+		$result = $this->buildTrashService($bindingService, $etherpadClient)->handleTrash($file);
+
+		$this->assertTrue($result['snapshot_persisted']);
+		$this->assertFalse($result['delete_pending']);
+
+		$bindingService = $this->pendingTrashRow(111, 'pad-current');
+		$bindingService->expects($this->once())->method('deleteInState')->willReturn(true);
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->expects($this->once())->method('getRevisionsCount')->willReturn(4);
+		$etherpadClient->expects($this->never())->method('getText');
+		$etherpadClient->expects($this->once())->method('deletePad');
+		$file = $this->trashedFile(111, snapshotRev: 4);
+		$file->expects($this->never())->method('putContent');
+
+		$this->assertSame(SettleOutcome::Settled, $this->buildTrashService($bindingService, $etherpadClient)->finishTrash($file, new RunBudget(new FixedClock(), 20.0)));
+	}
+
+	/**
 	 * The sweep's half of a trash: the file sits in its owner's trash, and
-	 * the pad's content goes into it before pad and row go. A restore after
+	 * the pad's content goes into it before row and pad go. The row goes
+	 * first: it is what a restore takes the pad back by. A restore after
 	 * that makes a new pad from this snapshot.
 	 */
-	public function testFinishTrashWritesTheSnapshotBeforeThePadGoes(): void {
+	public function testFinishTrashWritesTheSnapshotThenTakesTheRowBeforeThePad(): void {
 		$order = [];
 		$bindingService = $this->pendingTrashRow(111, 'pad-trashed');
 		$bindingService->expects($this->once())
@@ -790,7 +837,63 @@ class LifecycleServiceTest extends TestCase {
 		$outcome = $this->buildTrashService($bindingService, $etherpadClient)->finishTrash($file, new RunBudget(new FixedClock(), 20.0));
 
 		$this->assertSame(SettleOutcome::Settled, $outcome);
-		$this->assertSame(['snapshot', 'pad', 'row'], $order);
+		$this->assertSame(['snapshot', 'row', 'pad'], $order);
+	}
+
+	/**
+	 * A restore that took the row between the sweep's read and its delete
+	 * has the pad: the sweep's delete finds no row in pending_delete, and
+	 * the pad is not touched.
+	 */
+	public function testARestoreThatTookTheRowKeepsThePad(): void {
+		$bindingService = $this->pendingTrashRow(111, 'pad-back');
+		$bindingService->expects($this->once())->method('deleteInState')->willReturn(false);
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->method('getRevisionsCount')->willReturn(5);
+		$etherpadClient->expects($this->never())->method('deletePad');
+
+		$outcome = $this->buildTrashService($bindingService, $etherpadClient)->finishTrash($this->trashedFile(111), new RunBudget(new FixedClock(), 20.0));
+
+		$this->assertSame(SettleOutcome::Left, $outcome);
+	}
+
+	/**
+	 * Past the row, a pad that cannot be deleted is left over, and nothing
+	 * leads to it any more: its id goes into the log. Its content is in the
+	 * file, so the row is settled all the same.
+	 */
+	public function testAPadLeftOverPastItsRowIsLoggedWithItsId(): void {
+		$bindingService = $this->pendingTrashRow(111, 'pad-left');
+		$bindingService->expects($this->once())->method('deleteInState')->willReturn(true);
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->method('getRevisionsCount')->willReturn(5);
+		$etherpadClient->method('deletePad')->willThrowException(new \RuntimeException('Connection reset'));
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects($this->once())->method('warning')->with(
+			'Could not delete a pad whose binding is gone. It is left over.',
+			$this->callback(static fn (array $context): bool => $context['padId'] === 'pad-left' && $context['fileId'] === 111),
+		);
+
+		$outcome = $this->buildTrashService($bindingService, $etherpadClient, logger: $logger)->finishTrash($this->trashedFile(111), new RunBudget(new FixedClock(), 20.0));
+
+		$this->assertSame(SettleOutcome::Settled, $outcome);
+	}
+
+	/** No row is taken when no call would fit in the run any more: both wait for the next one. */
+	public function testNoRowIsTakenWithoutTimeToDeleteThePad(): void {
+		$clock = new FixedClock();
+		$bindingService = $this->pendingTrashRow(111, 'pad-late');
+		$bindingService->expects($this->never())->method('deleteInState');
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->method('getRevisionsCount')->willReturnCallback(static function () use ($clock): int {
+			$clock->advance(19);
+			return 4;
+		});
+		$etherpadClient->expects($this->never())->method('deletePad');
+
+		$outcome = $this->buildTrashService($bindingService, $etherpadClient)->finishTrash($this->trashedFile(111, snapshotRev: 4), new RunBudget($clock, 20.0));
+
+		$this->assertSame(SettleOutcome::Left, $outcome);
 	}
 
 	/**
@@ -805,7 +908,8 @@ class LifecycleServiceTest extends TestCase {
 			'behind' => [[2], SettleOutcome::Settled, true, false],
 			'gone' => ['padID does not exist', SettleOutcome::Settled, true, true],
 			'no answer' => ['Connection refused', SettleOutcome::Unanswered, false, false],
-			'changed while read' => [[5, 5, 6], SettleOutcome::Left, false, false],
+			// The count the presence was read from, and the one after the text.
+			'changed while read' => [[5, 6], SettleOutcome::Left, false, false],
 		];
 		foreach ($cases as $case => [$answer, $expected, $released, $deleteTried]) {
 			$bindingService = $this->pendingTrashRow(112, 'pad-trashed');
@@ -855,13 +959,138 @@ class LifecycleServiceTest extends TestCase {
 		$this->assertSame(SettleOutcome::Left, $this->buildTrashService($switchedOff, $etherpadClient, deleteOnTrash: false)->finishTrash($file, new RunBudget(new FixedClock(), 20.0)));
 	}
 
-	private function pendingTrashRow(int $fileId, string $padId): BindingService&MockObject {
+	/**
+	 * A trashed file the sweep cannot use is tried again each run, from the
+	 * back of the queue, but reported at warning level only the first time:
+	 * after that its row's updated_at has moved past its deleted_at.
+	 */
+	public function testATrashedFileThatCannotBeReadIsReportedOnce(): void {
+		foreach ([false => 'warning', true => 'debug'] as $triedBefore => $level) {
+			$bindingService = $this->pendingTrashRow(116, 'pad-d', triedBefore: (bool)$triedBefore);
+			$bindingService->expects($this->once())
+				->method('transition')
+				->with(116, 'pad-d', BindingService::STATE_PENDING_DELETE, BindingService::STATE_PENDING_DELETE)
+				->willReturn(true);
+			$bindingService->expects($this->never())->method('deleteInState');
+			$file = $this->createMock(File::class);
+			$file->method('getId')->willReturn(116);
+			$file->method('getContent')->willThrowException(new \RuntimeException('no key for this user'));
+			$logger = $this->createMock(LoggerInterface::class);
+			$logger->expects($this->once())->method($level)->with('Could not read a trashed .pad file. Its pad is kept until its snapshot can be taken.');
+			$logger->expects($this->never())->method($level === 'warning' ? 'debug' : 'warning');
+
+			$outcome = $this->buildTrashService($bindingService, $this->createMock(EtherpadClient::class), logger: $logger)
+				->finishTrash($file, new RunBudget(new FixedClock(), 20.0));
+
+			$this->assertSame(SettleOutcome::Left, $outcome, $level);
+		}
+	}
+
+	/**
+	 * A file gone for good takes its pad first, then its row: no restore
+	 * can come for it, and a pad that could not be deleted keeps its row,
+	 * so the next run tries again. What Etherpad says decides the rest; with
+	 * deleting on trash switched off nothing is asked or taken at all.
+	 */
+	public function testAGoneFilesDeletionGoesByEtherpadsAnswerAndTheSetting(): void {
+		$cases = [
+			'there' => [3, true, SettleOutcome::Settled, ['pad', 'row']],
+			'gone' => ['padID does not exist', true, SettleOutcome::Settled, ['pad', 'row']],
+			'no answer' => ['Connection refused', true, SettleOutcome::Unanswered, []],
+			'delete refused' => [3, true, SettleOutcome::Unanswered, ['pad']],
+			'setting off' => [3, false, SettleOutcome::Left, []],
+		];
+		foreach ($cases as $case => [$answer, $enabled, $expected, $steps]) {
+			$order = [];
+			$bindingService = $this->createMock(BindingService::class);
+			$bindingService->method('deleteInState')->willReturnCallback(static function (int $fileId, string $padId, string $state) use (&$order): bool {
+				$order[] = 'row';
+				return true;
+			});
+			$etherpadClient = $this->createMock(EtherpadClient::class);
+			$etherpadClient->expects($case === 'setting off' ? $this->never() : $this->once())
+				->method('getRevisionsCount')
+				->willReturnCallback(static fn (): int => is_int($answer) ? $answer : throw new \RuntimeException($answer));
+			$etherpadClient->method('deletePad')->willReturnCallback(static function () use (&$order, $case, $answer): void {
+				$order[] = 'pad';
+				if ($case === 'delete refused') {
+					throw new \RuntimeException('Connection reset');
+				}
+				if (!is_int($answer)) {
+					throw new \RuntimeException($answer);
+				}
+			});
+
+			$outcome = $this->buildTrashService($bindingService, $etherpadClient, deleteOnTrash: $enabled)
+				->finishGoneFile(120, 'pad-gone', BindingService::STATE_PENDING_DELETE, new RunBudget(new FixedClock(), 20.0));
+
+			$this->assertSame($expected, $outcome, $case);
+			$this->assertSame($steps, $order, $case);
+		}
+	}
+
+	/**
+	 * Deleting a group pad asks Etherpad what the group holds, then takes
+	 * it: each of those calls gets what is left of the run too, not the
+	 * client's own timeout.
+	 */
+	public function testTheDeletionsCallsStayInsideTheRun(): void {
+		$bindingService = $this->createMock(BindingService::class);
+		$bindingService->method('deleteInState')->willReturn(true);
+		$calls = [];
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->method('getRevisionsCount')->willReturnCallback(static function (string $padId, ?int $timeout) use (&$calls): int {
+			$calls['getRevisionsCount'] = $timeout;
+			return 3;
+		});
+		$etherpadClient->method('listPads')->willReturnCallback(static function (string $groupId, ?int $timeout) use (&$calls): array {
+			$calls['listPads'] = $timeout;
+			return ['g.ABCDEFGHIJKLMNOP$p-gone'];
+		});
+		$etherpadClient->method('deleteGroup')->willReturnCallback(static function (string $groupId, ?int $timeout) use (&$calls): void {
+			$calls['deleteGroup'] = $timeout;
+		});
+
+		$this->buildTrashService($bindingService, $etherpadClient)
+			->finishGoneFile(121, 'g.ABCDEFGHIJKLMNOP$p-gone', BindingService::STATE_PENDING_DELETE, new RunBudget(new FixedClock(), 20.0));
+
+		$this->assertSame(['getRevisionsCount' => 15, 'listPads' => 15, 'deleteGroup' => 15], $calls);
+	}
+
+	/**
+	 * A run whose time is spent by the time the pad should go stops there:
+	 * no call is started that could not finish, and the row waits for the
+	 * next run rather than being taken without its pad.
+	 */
+	public function testADeletionOutOfTimeLeavesPadAndRow(): void {
+		$clock = new FixedClock();
+		$bindingService = $this->createMock(BindingService::class);
+		$bindingService->expects($this->never())->method('deleteInState');
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->method('getRevisionsCount')->willReturnCallback(static function () use ($clock): int {
+			$clock->advance(19);
+			return 3;
+		});
+		$etherpadClient->expects($this->never())->method('listPads');
+		$etherpadClient->expects($this->never())->method('deleteGroup');
+		$etherpadClient->expects($this->never())->method('deletePad');
+
+		$outcome = $this->buildTrashService($bindingService, $etherpadClient)
+			->finishGoneFile(122, 'g.ABCDEFGHIJKLMNOP$p-gone', BindingService::STATE_PENDING_DELETE, new RunBudget($clock, 20.0));
+
+		$this->assertSame(SettleOutcome::Left, $outcome);
+	}
+
+	/** $triedBefore: a run has tried it already, and moved its updated_at past its deleted_at. */
+	private function pendingTrashRow(int $fileId, string $padId, bool $triedBefore = false): BindingService&MockObject {
 		$bindingService = $this->createMock(BindingService::class);
 		$bindingService->method('findByFileId')->with($fileId)->willReturn([
 			'file_id' => $fileId,
 			'pad_id' => $padId,
 			'access_mode' => BindingService::ACCESS_PUBLIC,
 			'state' => BindingService::STATE_PENDING_DELETE,
+			'deleted_at' => 100,
+			'updated_at' => $triedBefore ? 400 : 100,
 		]);
 		return $bindingService;
 	}
@@ -876,14 +1105,14 @@ class LifecycleServiceTest extends TestCase {
 		return $file;
 	}
 
-	private function buildTrashService(BindingService $bindingService, EtherpadClient $etherpadClient, bool $deleteOnTrash = true): LifecycleService {
+	private function buildTrashService(BindingService $bindingService, EtherpadClient $etherpadClient, bool $deleteOnTrash = true, ?LoggerInterface $logger = null): LifecycleService {
 		return new LifecycleService(
 			$bindingService,
 			$this->buildSnapshotWritingPadFileService(),
 			$etherpadClient,
 			new ManagedPadLifecycle($etherpadClient, $this->createMock(LoggerInterface::class)),
 			$this->buildDeleteOnTrashEnabledConfig($deleteOnTrash),
-			$this->createMock(LoggerInterface::class),
+			$logger ?? $this->createMock(LoggerInterface::class),
 			$this->createMock(ISecureRandom::class),
 			$this->createMock(UserNodeResolver::class),
 			$this->createMock(PathNormalizer::class),

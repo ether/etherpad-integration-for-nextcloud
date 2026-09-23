@@ -5,15 +5,12 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\Tests\Unit;
 
 use OCA\EtherpadNextcloud\Service\BindingService;
-use OCA\EtherpadNextcloud\Service\EtherpadClient;
 use OCA\EtherpadNextcloud\Service\LifecycleService;
-use OCA\EtherpadNextcloud\Service\ManagedPadLifecycle;
 use OCA\EtherpadNextcloud\Service\PendingBindingService;
 use OCA\EtherpadNextcloud\Service\SettleOutcome;
 use OCA\EtherpadNextcloud\Tests\Support\FixedClock;
 use OCP\Files\File;
 use OCP\Files\IRootFolder;
-use OCP\IConfig;
 use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
@@ -38,18 +35,6 @@ class PendingBindingServiceTest extends TestCase {
 				$this->row(4, BindingService::STATE_PENDING_DELETE, 'files/Four.pad'),
 			],
 		);
-		$released = [];
-		$bindings->method('deleteInState')->willReturnCallback(static function (int $fileId, string $padId, string $state) use (&$released): bool {
-			$released[] = [$fileId, $state];
-			return true;
-		});
-		$client = $this->createMock(EtherpadClient::class);
-		$client->method('getRevisionsCount')->willReturn(3);
-		$deleted = [];
-		$client->method('deletePad')->willReturnCallback(static function (string $padId) use (&$deleted): void {
-			$deleted[] = $padId;
-		});
-
 		$settled = [];
 		$lifecycle = $this->createMock(LifecycleService::class);
 		$lifecycle->method('settleWaitingFile')->willReturnCallback(static function (File $file) use (&$settled): SettleOutcome {
@@ -61,18 +46,22 @@ class PendingBindingServiceTest extends TestCase {
 			$trashed[] = $file->getPath();
 			return SettleOutcome::Settled;
 		});
+		$gone = [];
+		$lifecycle->method('finishGoneFile')->willReturnCallback(static function (int $fileId, string $padId, string $state) use (&$gone): SettleOutcome {
+			$gone[] = [$fileId, $padId, $state];
+			return SettleOutcome::Settled;
+		});
 
 		$root = $this->root([
 			1 => ['/alice/files/One.pad'],
 			2 => ['/alice/files_trashbin/files/Two.pad.d100'],
 			4 => ['/alice/files/Four.pad'],
 		]);
-		$result = $this->service($bindings, $lifecycle, $root, $client)->settleByAge(0, 3600, 50);
+		$result = $this->service($bindings, $lifecycle, $root)->settleByAge(0, 3600, 50);
 
 		$this->assertSame([1, 4], $settled);
 		$this->assertSame(['/alice/files_trashbin/files/Two.pad.d100'], $trashed);
-		$this->assertSame(['pad-5', 'pad-3'], $deleted);
-		$this->assertSame([[5, BindingService::STATE_RESTORE_PENDING], [3, BindingService::STATE_PENDING_DELETE]], $released);
+		$this->assertSame([[5, 'pad-5', BindingService::STATE_RESTORE_PENDING], [3, 'pad-3', BindingService::STATE_PENDING_DELETE]], $gone);
 		$this->assertSame(['checked' => 5, 'settled' => 5], $result);
 	}
 
@@ -86,8 +75,8 @@ class PendingBindingServiceTest extends TestCase {
 			restores: [
 				$this->row(1, BindingService::STATE_RESTORE_PENDING, 'files/files_trashbin/Notes.pad'),
 				$this->row(2, BindingService::STATE_RESTORE_PENDING, 'files/Elsewhere.pad'),
+				$this->row(3, BindingService::STATE_RESTORE_PENDING, '__groupfolders/trash/7/Team.pad.d100'),
 			],
-			deletes: [$this->row(3, BindingService::STATE_PENDING_DELETE, '__groupfolders/trash/7/Team.pad.d100')],
 		);
 		$settled = [];
 		$lifecycle = $this->createMock(LifecycleService::class);
@@ -177,57 +166,6 @@ class PendingBindingServiceTest extends TestCase {
 	}
 
 	/**
-	 * Deleting a group pad asks Etherpad what the group holds, then takes
-	 * it: each of those calls gets what is left of the run too, not the
-	 * client's own timeout.
-	 */
-	public function testTheDeletionsCallsStayInsideTheRun(): void {
-		$bindings = $this->bindings(deletes: [$this->row(3, BindingService::STATE_PENDING_DELETE, null, 'g.ABCDEFGHIJKLMNOP$p-gone')]);
-		$bindings->method('deleteInState')->willReturn(true);
-		$calls = [];
-		$client = $this->createMock(EtherpadClient::class);
-		$client->method('getRevisionsCount')->willReturnCallback(static function (string $padId, ?int $timeout) use (&$calls): int {
-			$calls['getRevisionsCount'] = $timeout;
-			return 3;
-		});
-		$client->method('listPads')->willReturnCallback(static function (string $groupId, ?int $timeout) use (&$calls): array {
-			$calls['listPads'] = $timeout;
-			return ['g.ABCDEFGHIJKLMNOP$p-gone'];
-		});
-		$client->method('deleteGroup')->willReturnCallback(static function (string $groupId, ?int $timeout) use (&$calls): void {
-			$calls['deleteGroup'] = $timeout;
-		});
-
-		$this->service($bindings, $this->createMock(LifecycleService::class), $this->root([]), $client)->settleByAge(0, null, 50);
-
-		$this->assertSame(['getRevisionsCount' => 15, 'listPads' => 15, 'deleteGroup' => 15], $calls);
-	}
-
-	/**
-	 * The deletion goes by what Etherpad says: a pad it no longer has only
-	 * takes the row, no answer leaves both, and with deleting on trash
-	 * switched off nothing is asked or taken at all.
-	 */
-	public function testAnOwedDeletionGoesByEtherpadsAnswerAndTheSetting(): void {
-		foreach (['gone' => ['padID does not exist', true], 'no answer' => ['Connection refused', true], 'setting off' => [3, false]] as $case => [$answer, $enabled]) {
-			$bindings = $this->bindings(deletes: [$this->row(3, BindingService::STATE_PENDING_DELETE, null)]);
-			$bindings->expects($case === 'gone' ? $this->once() : $this->never())->method('deleteInState')->willReturn(true);
-			$client = $this->createMock(EtherpadClient::class);
-			$client->expects($case === 'setting off' ? $this->never() : $this->once())
-				->method('getRevisionsCount')
-				->willReturnCallback(static function () use ($answer): int {
-					return is_int($answer) ? $answer : throw new \RuntimeException($answer);
-				});
-			$client->expects($this->never())->method('deletePad');
-
-			$result = $this->service($bindings, $this->createMock(LifecycleService::class), $this->root([]), $client, deleteOnTrash: $enabled)
-				->settleByAge(0, null, 50);
-
-			$this->assertSame($case === 'gone' ? 1 : 0, $result['settled'], $case);
-		}
-	}
-
-	/**
 	 * A failure of the database or a storage says nothing about Etherpad,
 	 * so however many rows meet one, the run does not read it as an outage
 	 * and the rows behind them still get their turn.
@@ -272,30 +210,6 @@ class PendingBindingServiceTest extends TestCase {
 		}
 	}
 
-	/**
-	 * A run whose time is spent by the time the pad should go stops there:
-	 * no call is started that could not finish, and the row waits for the
-	 * next run rather than being taken without its pad.
-	 */
-	public function testADeletionOutOfTimeLeavesPadAndRow(): void {
-		$clock = new FixedClock();
-		$bindings = $this->bindings(deletes: [$this->row(3, BindingService::STATE_PENDING_DELETE, null, 'g.ABCDEFGHIJKLMNOP$p-gone')]);
-		$bindings->expects($this->never())->method('deleteInState');
-		$client = $this->createMock(EtherpadClient::class);
-		$client->method('getRevisionsCount')->willReturnCallback(static function () use ($clock): int {
-			$clock->advance(19);
-			return 3;
-		});
-		$client->expects($this->never())->method('listPads');
-		$client->expects($this->never())->method('deleteGroup');
-		$client->expects($this->never())->method('deletePad');
-
-		$result = $this->service($bindings, $this->createMock(LifecycleService::class), $this->root([]), $client, clock: $clock)
-			->settleByAge(0, null, 50);
-
-		$this->assertSame(['checked' => 1, 'settled' => 0], $result);
-	}
-
 	/** A row that throws is logged and counted, and the rows behind it still get their turn. */
 	public function testARowThatThrowsDoesNotStopTheRest(): void {
 		$bindings = $this->bindings(restores: [
@@ -316,6 +230,56 @@ class PendingBindingServiceTest extends TestCase {
 			->settleByAge(0, null, 50);
 
 		$this->assertSame(['checked' => 2, 'settled' => 1], $result);
+	}
+
+	/**
+	 * With deleting on trash switched off, rows gone for good or in a
+	 * user's trash could only be deleted, so they are not asked for: they
+	 * would take the places of rows in Files, which are settled either way.
+	 */
+	public function testWithDeletingOnTrashOffOnlyRowsInFilesAreAskedFor(): void {
+		$bindings = $this->createMock(BindingService::class);
+		$asked = [];
+		$bindings->method('findPendingDeleteByAge')->willReturnCallback(function (int $min, ?int $max, int $limit, ?string $fileLocation) use (&$asked): array {
+			$asked[] = $fileLocation;
+			return [];
+		});
+
+		$this->service($bindings, $this->createMock(LifecycleService::class), $this->root([]), deleteOnTrash: false)->settleByAge(0, null, 50);
+
+		$this->assertSame([BindingService::FILE_ELSEWHERE], $asked);
+	}
+
+	/**
+	 * A deletion owed whose file no node reaches - a team folder's own
+	 * trash above all - moves to the back, so the rows behind it get their
+	 * turn in later runs. A restore left undecided is aged by that very
+	 * date, so it is not moved.
+	 */
+	public function testARowNotReachedMovesToTheBack(): void {
+		$bindings = $this->bindings(
+			restores: [$this->row(1, BindingService::STATE_RESTORE_PENDING, 'trash/One.pad.d100')],
+			deletes: [
+				$this->row(2, BindingService::STATE_PENDING_DELETE, 'trash/Two.pad.d100'),
+				$this->row(3, BindingService::STATE_PENDING_DELETE, 'files_trashbin/files/Three.pad.d100'),
+			],
+		);
+		$moved = [];
+		$bindings->method('transition')->willReturnCallback(static function (int $fileId, string $padId, string $from, string $to) use (&$moved): bool {
+			$moved[] = [$fileId, $from, $to];
+			return true;
+		});
+		$lifecycle = $this->createMock(LifecycleService::class);
+		$lifecycle->expects($this->never())->method('settleWaitingFile');
+		$lifecycle->expects($this->never())->method('finishTrash');
+
+		$result = $this->service($bindings, $lifecycle, $this->root([]))->settleByAge(0, null, 50);
+
+		$this->assertSame([
+			[3, BindingService::STATE_PENDING_DELETE, BindingService::STATE_PENDING_DELETE],
+			[2, BindingService::STATE_PENDING_DELETE, BindingService::STATE_PENDING_DELETE],
+		], $moved);
+		$this->assertSame(['checked' => 0, 'settled' => 0], $result);
 	}
 
 	/** The admin page shows what a run did and what is left of either kind. */
@@ -347,7 +311,9 @@ class PendingBindingServiceTest extends TestCase {
 				static fn (array $row): bool => match ($fileLocation) {
 					BindingService::FILE_GONE => $row['file_path'] === null,
 					BindingService::FILE_IN_USER_TRASH => str_starts_with((string)$row['file_path'], 'files_trashbin/'),
-					BindingService::FILE_ELSEWHERE => $row['file_path'] !== null && !str_starts_with((string)$row['file_path'], 'files_trashbin/'),
+					BindingService::FILE_ELSEWHERE => $row['file_path'] !== null
+						&& !str_starts_with((string)$row['file_path'], 'files_trashbin/')
+						&& !str_starts_with((string)$row['file_path'], '__groupfolders/trash/'),
 					default => true,
 				},
 			)),
@@ -376,23 +342,17 @@ class PendingBindingServiceTest extends TestCase {
 
 	private function service(
 		BindingService $bindings,
-		LifecycleService $lifecycle,
+		LifecycleService&MockObject $lifecycle,
 		IRootFolder $root,
-		?EtherpadClient $client = null,
 		bool $deleteOnTrash = true,
 		?FixedClock $clock = null,
 		?LoggerInterface $logger = null,
 	): PendingBindingService {
-		$config = $this->createMock(IConfig::class);
-		$config->method('getAppValue')->willReturnCallback(
-			static fn (string $app, string $key, string $default = ''): string => $key === 'delete_on_trash' ? ($deleteOnTrash ? 'yes' : 'no') : $default,
-		);
+		$lifecycle->method('isDeleteOnTrashEnabled')->willReturn($deleteOnTrash);
 		return new PendingBindingService(
 			$bindings,
 			$lifecycle,
-			new ManagedPadLifecycle($client ?? $this->createMock(EtherpadClient::class), $this->createMock(LoggerInterface::class)),
 			$root,
-			$config,
 			$logger ?? $this->createMock(LoggerInterface::class),
 			$clock ?? new FixedClock(),
 		);

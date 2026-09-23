@@ -9,13 +9,10 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Service;
 
-use OCA\EtherpadNextcloud\Exception\RunBudgetSpentException;
-use OCA\EtherpadNextcloud\Util\EtherpadErrorClassifier;
 use OCA\EtherpadNextcloud\Util\SafeError;
 use OCP\AppFramework\Utility\ITimeFactory;
 use OCP\Files\File;
 use OCP\Files\IRootFolder;
-use OCP\IConfig;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -32,9 +29,11 @@ use Psr\Log\LoggerInterface;
  * - in a team folder's trash: nothing, since no node reaches it; the row
  *   waits until that trash lets the file go;
  * - gone for good, with nothing left of it in the file cache: the pad is
- *   deleted, then the row.
+ *   deleted, then the row (LifecycleService::finishGoneFile).
  *
- * Both deletions wait while deleting on trash is switched off.
+ * Both deletions wait while deleting on trash is switched off, and their
+ * rows are not even fetched then: they would only take the places of
+ * rows in Files, which are settled either way.
  *
  * Bounded by a RunBudget: each Etherpad call gets what is left of the run,
  * none is started that could not finish, and a run ends after a few rows
@@ -45,24 +44,11 @@ use Psr\Log\LoggerInterface;
  * @psalm-api
  */
 class PendingBindingService {
-	/**
-	 * Where trashes keep files, as file cache paths relative to their
-	 * storage: a user's, and a team folder's on the root storage. A team
-	 * folder with its own storage (groupfolders 22 on Nextcloud 34,
-	 * measured) uses a bare `trash/`, which no path can tell from a folder
-	 * of that name on an external storage, so it is not matched; its
-	 * trashed files resolve to no node anyway and are left the same way.
-	 */
-	private const USER_TRASH_PREFIX = 'files_trashbin/';
-	private const TEAM_TRASH_PREFIX = '__groupfolders/trash/';
-
 	/** The budget is a parameter so a test can reach it, not a setting. */
 	public function __construct(
 		private BindingService $bindingService,
 		private LifecycleService $lifecycleService,
-		private ManagedPadLifecycle $padLifecycle,
 		private IRootFolder $rootFolder,
-		private IConfig $config,
 		private LoggerInterface $logger,
 		private ITimeFactory $timeFactory,
 		private float $budgetSeconds = RunBudget::DEFAULT_SECONDS,
@@ -91,7 +77,10 @@ class PendingBindingService {
 		$rows = $this->bindingService->findRestorePendingByAge($minAgeSeconds, $maxAgeSeconds, $limit);
 		// Deletions owed by kind, each from what is left of the limit, so
 		// rows that wait on a trash cannot crowd out the ones that can go.
-		foreach ([BindingService::FILE_GONE, BindingService::FILE_IN_USER_TRASH, BindingService::FILE_ELSEWHERE] as $fileLocation) {
+		$fileLocations = $this->lifecycleService->isDeleteOnTrashEnabled()
+			? [BindingService::FILE_GONE, BindingService::FILE_IN_USER_TRASH, BindingService::FILE_ELSEWHERE]
+			: [BindingService::FILE_ELSEWHERE];
+		foreach ($fileLocations as $fileLocation) {
 			if (count($rows) >= $limit) {
 				break;
 			}
@@ -124,21 +113,26 @@ class PendingBindingService {
 		return ['checked' => $checked, 'settled' => $settled];
 	}
 
-	/** Null when the row was not looked at: its file cannot be reached where the file cache says it is. */
+	/**
+	 * Null when the row was not looked at: its file cannot be reached where
+	 * the file cache says it is. A deletion owed moves to the back then, so
+	 * rows like it - a team folder's trash above all - take their turn
+	 * after the others rather than before them.
+	 */
 	private function settleRow(int $fileId, string $padId, string $state, ?string $cachePath, RunBudget $budget): ?SettleOutcome {
 		try {
 			if ($cachePath === null) {
-				return $this->finishOwedDeletion($fileId, $padId, $state, $budget);
+				return $this->lifecycleService->finishGoneFile($fileId, $padId, $state, $budget);
 			}
-			if (str_starts_with($cachePath, self::USER_TRASH_PREFIX)) {
+			if (str_starts_with($cachePath, BindingService::USER_TRASH_PATH)) {
 				$file = $state === BindingService::STATE_PENDING_DELETE ? $this->fileInUserTrash($fileId) : null;
-				return $file === null ? null : $this->lifecycleService->finishTrash($file, $budget);
+				return $file === null ? $this->notReached($fileId, $padId, $state) : $this->lifecycleService->finishTrash($file, $budget);
 			}
-			if (str_starts_with($cachePath, self::TEAM_TRASH_PREFIX)) {
-				return null;
+			if (str_starts_with($cachePath, BindingService::TEAM_TRASH_PATH)) {
+				return $this->notReached($fileId, $padId, $state);
 			}
 			$file = $this->fileOutsideTrash($fileId);
-			return $file === null ? null : $this->lifecycleService->settleWaitingFile($file, $budget->callTimeout());
+			return $file === null ? $this->notReached($fileId, $padId, $state) : $this->lifecycleService->settleWaitingFile($file, $budget->callTimeout());
 		} catch (\Throwable $e) {
 			// Etherpad's silence is caught where it is met; what arrives here
 			// is local - the database, a storage - and says nothing about
@@ -181,43 +175,15 @@ class PendingBindingService {
 	}
 
 	/**
-	 * A deletion owed for a file that is gone for good: nothing is left in
-	 * the file cache under its id, in Files or in any trash. The pad goes,
-	 * then the row, and a pad Etherpad no longer has only takes the row.
-	 * Asked first, so an Etherpad that does not answer costs one call.
-	 *
-	 * Nothing happens while deleting on trash is switched off: this is the
-	 * deletion that setting governs, only later.
+	 * Null, and a deletion owed to the back of the queue. A restore left
+	 * undecided is aged by updated_at itself, so moving it would only make
+	 * it younger.
 	 */
-	private function finishOwedDeletion(int $fileId, string $padId, string $state, RunBudget $budget): SettleOutcome {
-		if ((string)$this->config->getAppValue('etherpad_nextcloud', 'delete_on_trash', 'yes') !== 'yes') {
-			return SettleOutcome::Left;
+	private function notReached(int $fileId, string $padId, string $state): ?SettleOutcome {
+		if ($state === BindingService::STATE_PENDING_DELETE) {
+			$this->bindingService->transition($fileId, $padId, $state, $state);
 		}
-		$presence = $this->padLifecycle->presenceOf($padId, -1, ['fileId' => $fileId], $budget->callTimeout());
-		if ($presence === PadPresence::Unknown) {
-			return SettleOutcome::Unanswered;
-		}
-		try {
-			if ($presence !== PadPresence::Absent) {
-				$this->padLifecycle->discard($padId, $budget);
-			}
-		} catch (RunBudgetSpentException) {
-			// Out of time before the pad could go; the row waits for the next run.
-			return SettleOutcome::Left;
-		} catch (\Throwable $e) {
-			if (!EtherpadErrorClassifier::isPadAlreadyDeleted($e)) {
-				$this->logger->warning('Could not delete the pad of a file that is gone for good.', [
-					'app' => 'etherpad_nextcloud',
-					'fileId' => $fileId,
-					...SafeError::context($e),
-				]);
-				return SettleOutcome::Unanswered;
-			}
-		}
-		// The result is not checked: a file with no file cache row does not
-		// come back, so no other flow races for this row.
-		$this->bindingService->deleteInState($fileId, $padId, $state);
-		return SettleOutcome::Settled;
+		return null;
 	}
 
 	/**
