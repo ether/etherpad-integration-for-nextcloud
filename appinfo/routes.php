@@ -30,7 +30,7 @@ return ['routes' => [
 	['name' => 'admin#saveSettings', 'url' => '/api/v1/admin/settings', 'verb' => 'POST'],
 	['name' => 'admin#healthCheck', 'url' => '/api/v1/admin/health', 'verb' => 'POST'],
 	['name' => 'admin#consistencyCheck', 'url' => '/api/v1/admin/consistency-check', 'verb' => 'POST'],
-	['name' => 'admin#recheckRestores', 'url' => '/api/v1/admin/recheck-restores', 'verb' => 'POST'],
+	['name' => 'admin#settlePending', 'url' => '/api/v1/admin/settle-pending', 'verb' => 'POST'],
 	['name' => 'admin#setTestFault', 'url' => '/api/v1/admin/test-fault', 'verb' => 'POST'],
 	['name' => 'admin#listPadTemplates', 'url' => '/api/v1/admin/templates', 'verb' => 'GET'],
 	['name' => 'admin#uploadPadTemplate', 'url' => '/api/v1/admin/templates', 'verb' => 'POST'],

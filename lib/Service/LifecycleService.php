@@ -35,6 +35,8 @@ class LifecycleService {
 	public const TEST_FAULT_RESTORE_READ_LOCK = 'restore_read_lock';
 	public const TEST_FAULT_RESTORE_WRITE_LOCK = 'restore_write_lock';
 	public const TEST_FAULT_RESTORE_WRITE_FAIL = 'restore_write_fail';
+	/** Etherpad refuses a longer pad name, measured against 2.x. */
+	private const MAX_PAD_NAME_LENGTH = 50;
 
 	public function __construct(
 		private BindingService $bindingService,
@@ -152,7 +154,14 @@ class LifecycleService {
 			return $this->buildSkippedResult('delete_on_trash_disabled', $fileId);
 		}
 
-		$binding = $this->bindingService->findByFileId($fileId);
+		try {
+			$binding = $this->bindingService->findByFileId($fileId);
+			if ($binding !== null && (string)$binding['state'] === BindingService::STATE_RESTORE_PENDING) {
+				return $this->retrashUndecided($fileId, (string)$binding['pad_id']);
+			}
+		} catch (\Throwable $e) {
+			throw new LifecycleException('Trash flow failed before completion.', 0, $e);
+		}
 		if ($binding === null) {
 			if ($this->isExternalPadFile($file)) {
 				return $this->buildSkippedResult('external_pad', $fileId);
@@ -160,9 +169,6 @@ class LifecycleService {
 			return $this->buildSkippedResult('binding_not_found', $fileId);
 		}
 		$padId = (string)$binding['pad_id'];
-		if ((string)$binding['state'] === BindingService::STATE_RESTORE_PENDING) {
-			return $this->retrashUndecided($fileId, $padId);
-		}
 		if ((string)$binding['state'] !== BindingService::STATE_ACTIVE) {
 			return $this->buildSkippedResult('binding_not_active', $fileId, $padId);
 		}
@@ -288,6 +294,11 @@ class LifecycleService {
 	 * The pad is left alone, since it may hold the only current copy, and the
 	 * row goes back to what it was before the restore: a deletion still owed.
 	 *
+	 * No snapshot is taken either. Whether the pad is the one the file knew
+	 * is exactly what is undecided, and one that is not would write its own
+	 * content over the only good copy. The pad itself is kept, so nothing it
+	 * holds is lost by leaving the file's snapshot as it is.
+	 *
 	 * @return array{status: string, reason?: string, file_id: int, pad_id?: string, deleted_at?: int, snapshot_persisted?: bool, delete_pending?: bool}
 	 */
 	private function retrashUndecided(int $fileId, string $padId): array {
@@ -312,34 +323,93 @@ class LifecycleService {
 			return $this->buildSkippedResult('not_pad_file', $fileId);
 		}
 
-		if (!$this->isDeleteOnTrashEnabled()) {
-			return $this->buildSkippedResult('delete_on_trash_disabled', $fileId);
-		}
-
-		$binding = $this->bindingService->findByFileId($fileId);
+		$binding = $this->findBindingForRestore($fileId);
 		if ($binding === null) {
+			// Nothing owed to settle, and a new pad is what the trash would
+			// have had to make room for - the setting's call.
+			if (!$this->isDeleteOnTrashEnabled()) {
+				return $this->buildSkippedResult('delete_on_trash_disabled', $fileId);
+			}
 			return $this->restoreWithoutBinding($file, $fileId);
 		}
-		$padId = (string)$binding['pad_id'];
 		if ((string)$binding['state'] !== BindingService::STATE_PENDING_DELETE) {
-			return $this->buildSkippedResult('binding_not_pending_delete', $fileId, $padId);
+			return $this->buildSkippedResult('binding_not_pending_delete', $fileId, (string)$binding['pad_id']);
 		}
+		// Settled whatever the setting says now: the file is back, and a row
+		// left in pending_delete would keep it from opening.
+		return $this->settleWaitingBinding($file, $binding);
+	}
 
-		// The row names the pad this file had before the trash, and that pad
-		// may hold its only current copy: the deletion was owed rather than
-		// done, and the snapshot the trash tried to take can be older than
-		// the pad. Taken from the row, never from the file - a pad id a file
-		// carries is anyone's to write, the row is this app's own record.
-		return match ($this->padLifecycle->presenceOf($padId)) {
-			PadPresence::Present => $this->resumeOwnPad($fileId, $padId),
-			PadPresence::Unknown => $this->deferRestore($fileId, $padId),
-			PadPresence::Absent => $this->restoreWithReplacement($file, $fileId, $padId, (string)$binding['access_mode']),
-		};
+	/**
+	 * Settle the row of a file that is in Files while its row still waits -
+	 * restore_pending, or pending_delete where no restore ever came to it.
+	 * The decision a restore takes, taken again by a sweep that has no
+	 * restore event to go by.
+	 *
+	 * @return array{status: string, reason?: string, file_id: int, pad_id?: string, old_pad_id?: string, new_pad_id?: string}
+	 */
+	public function settleWaitingFile(File $file, ?int $probeTimeoutSeconds = null): array {
+		$fileId = (int)$file->getId();
+		if (!$this->isPadFile($file)) {
+			return $this->buildSkippedResult('not_pad_file', $fileId);
+		}
+		$binding = $this->findBindingForRestore($fileId);
+		$state = $binding === null ? '' : (string)$binding['state'];
+		if ($binding === null || !in_array($state, [BindingService::STATE_PENDING_DELETE, BindingService::STATE_RESTORE_PENDING], true)) {
+			return $this->buildSkippedResult('binding_not_waiting', $fileId);
+		}
+		return $this->settleWaitingBinding($file, $binding, $probeTimeoutSeconds);
+	}
+
+	/** @return array<string,mixed>|null */
+	private function findBindingForRestore(int $fileId): ?array {
+		try {
+			return $this->bindingService->findByFileId($fileId);
+		} catch (\Throwable $e) {
+			throw new LifecycleException('Restore flow failed before completion.', 0, $e);
+		}
+	}
+
+	/**
+	 * The row names the pad this file had before the trash, and that pad
+	 * may hold its only current copy: the deletion was owed rather than
+	 * done, and the snapshot the trash tried to take can be older than the
+	 * pad. Taken from the row, never from the file - a pad id a file
+	 * carries is anyone's to write, the row is this app's own record.
+	 *
+	 * The file is read first, for the revision its snapshot was taken at:
+	 * a pad under that id with fewer revisions is not the pad it knew.
+	 *
+	 * @param array<string,mixed> $binding
+	 * @return array{status: string, reason?: string, file_id: int, pad_id?: string, old_pad_id?: string, new_pad_id?: string}
+	 */
+	private function settleWaitingBinding(File $file, array $binding, ?int $probeTimeoutSeconds = null): array {
+		$fileId = (int)$file->getId();
+		$padId = (string)$binding['pad_id'];
+		$state = (string)$binding['state'];
+		try {
+			try {
+				$pad = $this->readRestoredPad($file);
+			} catch (\Throwable $readError) {
+				// No revision to hold the pad to, so no decision either.
+				return $this->deferRestore($fileId, $padId, $state, $readError);
+			}
+			$presence = $this->padLifecycle->presenceOf($padId, $pad->snapshotRev, ['fileId' => $fileId], $probeTimeoutSeconds);
+			return match ($presence) {
+				PadPresence::Present => $this->resumeOwnPad($fileId, $padId, $state),
+				PadPresence::Unknown => $this->deferRestore($fileId, $padId, $state),
+				PadPresence::Absent, PadPresence::Behind => $this->restoreWithReplacement($file, $pad, $fileId, $padId, $state, (string)$binding['access_mode'], $presence),
+			};
+		} catch (LifecycleException $e) {
+			throw $e;
+		} catch (\Throwable $e) {
+			throw new LifecycleException('Restore flow failed before completion.', 0, $e);
+		}
 	}
 
 	/** @return array{status: string, reason?: string, file_id: int, pad_id?: string, old_pad_id?: string, new_pad_id?: string} */
-	private function resumeOwnPad(int $fileId, string $padId): array {
-		if (!$this->bindingService->transition($fileId, $padId, BindingService::STATE_PENDING_DELETE, BindingService::STATE_ACTIVE)) {
+	private function resumeOwnPad(int $fileId, string $padId, string $fromState): array {
+		if (!$this->bindingService->transition($fileId, $padId, $fromState, BindingService::STATE_ACTIVE)) {
 			return $this->buildSkippedResult('binding_state_transition_conflict', $fileId, $padId);
 		}
 		return [
@@ -351,28 +421,32 @@ class LifecycleService {
 	}
 
 	/**
-	 * Etherpad could not be asked, so whether the pad is there is not
-	 * known - and a guess either way is wrong for someone: reactivating
-	 * binds the file to a pad that may be gone, replacing discards one that
-	 * may hold the only current copy. The file is restored all the same;
-	 * the row waits for an answer.
+	 * Etherpad could not be asked, or the file could not be read, so which
+	 * pad is the file's is not known - and a guess either way is wrong for
+	 * someone: reactivating binds the file to a pad that may be gone or
+	 * another one, replacing gives up one that may hold the only current
+	 * copy. The file is in Files all the same; the row waits for an answer.
 	 *
 	 * @return array{status: string, reason?: string, file_id: int, pad_id?: string, old_pad_id?: string, new_pad_id?: string}
 	 */
-	private function deferRestore(int $fileId, string $padId): array {
-		if (!$this->bindingService->transition($fileId, $padId, BindingService::STATE_PENDING_DELETE, BindingService::STATE_RESTORE_PENDING)) {
-			return $this->buildSkippedResult('binding_state_transition_conflict', $fileId, $padId);
+	private function deferRestore(int $fileId, string $padId, string $fromState, ?\Throwable $readError = null): array {
+		if ($fromState !== BindingService::STATE_RESTORE_PENDING) {
+			if (!$this->bindingService->transition($fileId, $padId, $fromState, BindingService::STATE_RESTORE_PENDING)) {
+				return $this->buildSkippedResult('binding_state_transition_conflict', $fileId, $padId);
+			}
+			$this->logger->warning('Could not tell whether a restored file\'s pad is still its own. Kept it for a later check.', [
+				'app' => 'etherpad_nextcloud',
+				'fileId' => $fileId,
+				...($readError === null ? [] : SafeError::context($readError)),
+			]);
 		}
-		$this->logger->warning('Could not tell whether a restored pad still exists. Kept it for a later check.', [
-			'app' => 'etherpad_nextcloud',
-			'fileId' => $fileId,
-		]);
-		return $this->buildSkippedResult('pad_presence_unknown', $fileId, $padId);
+		return $this->buildSkippedResult($readError === null ? 'pad_presence_unknown' : 'file_unreadable', $fileId, $padId);
 	}
 
 	/**
-	 * Etherpad has confirmed the old pad is gone, so the file's snapshot is
-	 * all that is left, and a new pad is made from it.
+	 * The row's pad is not the file's any more: Etherpad has no such pad, or
+	 * one with fewer revisions than the file's snapshot. The snapshot is all
+	 * that is left of the file's pad, and a new pad is made from it.
 	 *
 	 * The row is claimed before the file is touched, as restoreWithoutBinding
 	 * does it: whoever loses the claim has written nothing, and so has
@@ -381,22 +455,23 @@ class LifecycleService {
 	 *
 	 * @return array{status: string, reason?: string, file_id: int, pad_id?: string, old_pad_id?: string, new_pad_id?: string}
 	 */
-	private function restoreWithReplacement(File $file, int $fileId, string $oldPadId, string $accessMode): array {
+	private function restoreWithReplacement(File $file, ParsedPadFile $pad, int $fileId, string $oldPadId, string $fromState, string $accessMode, PadPresence $presence): array {
 		if (PadAccessMode::tryFrom($accessMode) === null) {
-			// Leaves the row in pending_delete for a repair rather than
-			// taking the file's own restore down with it.
+			// No pad can be made on this row. It goes, and the file offers
+			// its own recovery, which goes by the file's access mode.
+			$this->releaseReplacedRow($fileId, $oldPadId, $fromState);
 			return $this->buildSkippedResult('unknown_access_mode', $fileId, $oldPadId);
 		}
 
 		try {
-			[$newPadId, $updatedContent] = $this->seedFromSnapshot($fileId, $this->readRestoredPad($file), $accessMode, $oldPadId);
+			[$newPadId, $updatedContent] = $this->seedFromSnapshot($fileId, $pad, $accessMode, $oldPadId);
 		} catch (\Throwable $e) {
-			$this->handOverFailedRestore($fileId, $oldPadId);
+			$this->releaseReplacedRow($fileId, $oldPadId, $fromState);
 			throw new LifecycleException('Restore flow failed before completion.', 0, $e);
 		}
 
 		try {
-			if (!$this->claimForReplacement($fileId, $oldPadId, $newPadId)) {
+			if (!$this->claimForReplacement($fileId, $oldPadId, $fromState, $newPadId)) {
 				// Another flow holds the row, and the file is its to write.
 				$this->provisionedPadRollback->discardUnlessBoundToFile($fileId, $newPadId, 'restore with replacement');
 				return $this->buildSkippedResult('binding_state_transition_conflict', $fileId, $oldPadId);
@@ -404,17 +479,28 @@ class LifecycleService {
 			$this->writeRestoredContent($file, $updatedContent);
 		} catch (\Throwable $e) {
 			// Claimed, perhaps claimed, or claimed and since taken by a
-			// trash: the row goes back to the old pad where it still can,
-			// and the replacement goes only once the row is known not to
-			// name it.
-			$this->handOverFailedRestore($fileId, $oldPadId, $newPadId);
-			$this->provisionedPadRollback->discardUnlessBoundToFile($fileId, $newPadId, 'restore with replacement');
+			// trash. An active row naming the replacement goes with it; one a
+			// trash has taken over keeps it. A row still naming the old pad
+			// goes as well: Etherpad has already said that pad is not the
+			// file's, and without a row the file offers its own recovery.
+			$this->provisionedPadRollback->removeMatchingBindingAndDiscard($fileId, $newPadId, 'restore with replacement');
+			$this->releaseReplacedRow($fileId, $oldPadId, $fromState);
 			throw new LifecycleException('Restore flow failed before completion.', 0, $e);
 		}
 
 		// Outside the try on purpose: the restore is done and recorded, and
 		// nothing about clearing up after it may turn that into a failure.
-		$this->discardSupersededPad($fileId, $oldPadId);
+		if ($presence === PadPresence::Absent) {
+			$this->discardSupersededPad($fileId, $oldPadId);
+		} else {
+			// Someone may have written into it since it came back; it is
+			// theirs, and this is the last record of where it is.
+			$this->logger->warning('Replaced a pad with fewer revisions than its file\'s snapshot. The pad is left in place.', [
+				'app' => 'etherpad_nextcloud',
+				'fileId' => $fileId,
+				'padId' => $oldPadId,
+			]);
+		}
 		return [
 			'status' => self::RESULT_RESTORED,
 			'file_id' => $fileId,
@@ -424,20 +510,20 @@ class LifecycleService {
 	}
 
 	/**
-	 * Point the row at the replacement, if it still names the old pad.
-	 * Three outcomes, kept apart: true when this restore holds the row,
-	 * false when another flow moved it first, and an exception when neither
-	 * can be told - which the caller treats as the failure it is, so the
-	 * file is not written on a claim nobody has seen.
+	 * Point the row at the replacement, if it still names the old pad in
+	 * the state it was read in. Three outcomes, kept apart: true when this
+	 * restore holds the row, false when another flow moved it first, and an
+	 * exception when neither can be told - which the caller treats as the
+	 * failure it is, so the file is not written on a claim nobody has seen.
 	 *
 	 * An update can commit and still fail to say so, so a throw is settled
 	 * by asking the row. Only a row that names the replacement settles it as
 	 * claimed; one that names another pad, or cannot be read, leaves the
 	 * claim's own error standing.
 	 */
-	private function claimForReplacement(int $fileId, string $oldPadId, string $newPadId): bool {
+	private function claimForReplacement(int $fileId, string $oldPadId, string $fromState, string $newPadId): bool {
 		try {
-			return $this->bindingService->rebind($fileId, $oldPadId, BindingService::STATE_PENDING_DELETE, $newPadId, BindingService::STATE_ACTIVE);
+			return $this->bindingService->rebind($fileId, $oldPadId, $fromState, $newPadId, BindingService::STATE_ACTIVE);
 		} catch (\Throwable $claimError) {
 			try {
 				if ($this->bindingService->isBoundTo($fileId, $newPadId)) {
@@ -451,39 +537,22 @@ class LifecycleService {
 	}
 
 	/**
-	 * The file is back in Files whatever happened here, so the row must
-	 * neither stay in pending_delete, where nothing comes for it any more,
-	 * nor name a replacement the file was never given. It goes back to the
-	 * old pad as a restore still to be settled, from whichever of the two
-	 * it is in. Both moves are conditional, so a row a trash or another
-	 * restore has since taken stays as they left it.
+	 * A row whose pad Etherpad has already given up on, left by a
+	 * replacement that did not happen. Removed rather than kept waiting: a
+	 * later check could only reach the same answer, and without the row the
+	 * file offers its own recovery at once. Conditional, so a row a trash or
+	 * another restore has since taken stays as they left it.
 	 */
-	private function handOverFailedRestore(int $fileId, string $oldPadId, ?string $replacementPadId = null): void {
-		$error = null;
-		// From the replacement first, where a claim that landed left it. Each
-		// move is tried on its own: one that throws says nothing about the
-		// row the other one would find.
-		if ($replacementPadId !== null) {
-			try {
-				if ($this->bindingService->rebind($fileId, $replacementPadId, BindingService::STATE_ACTIVE, $oldPadId, BindingService::STATE_RESTORE_PENDING)) {
-					return;
-				}
-			} catch (\Throwable $e) {
-				$error = $e;
-			}
-		}
+	private function releaseReplacedRow(int $fileId, string $oldPadId, string $state): void {
 		try {
-			if ($this->bindingService->transition($fileId, $oldPadId, BindingService::STATE_PENDING_DELETE, BindingService::STATE_RESTORE_PENDING)) {
-				return;
-			}
+			$this->bindingService->deleteInState($fileId, $oldPadId, $state);
 		} catch (\Throwable $e) {
-			$error = $e;
+			$this->logger->warning('Could not release the binding of a restore that failed.', [
+				'app' => 'etherpad_nextcloud',
+				'fileId' => $fileId,
+				...SafeError::context($e),
+			]);
 		}
-		$this->logger->warning('Could not hand a failed restore over for a later check.', [
-			'app' => 'etherpad_nextcloud',
-			'fileId' => $fileId,
-			...($error === null ? [] : SafeError::context($error)),
-		]);
 	}
 
 	/**
@@ -494,10 +563,6 @@ class LifecycleService {
 	 * not a way in - there is no pad in it for a session to open.
 	 */
 	private function discardSupersededPad(int $fileId, string $oldPadId): void {
-		if ($oldPadId === '' || str_starts_with($oldPadId, 'ext.')) {
-			return;
-		}
-
 		try {
 			$this->padLifecycle->discard($oldPadId);
 		} catch (\Throwable $e) {
@@ -512,6 +577,44 @@ class LifecycleService {
 				...SafeError::context($e),
 			]);
 		}
+	}
+
+	/**
+	 * A deletion owed for a file that is gone for good: nothing is left in
+	 * the file cache under its id, in Files or in the trash. The pad goes,
+	 * then the row, and a pad Etherpad no longer has only takes the row.
+	 * Asked first, with the sweep's timeout, so an Etherpad that does not
+	 * answer costs one bounded call rather than every call a delete makes.
+	 *
+	 * Nothing happens while deleting on trash is switched off: this is the
+	 * deletion that setting governs, only later.
+	 *
+	 * @return 'deleted'|'kept'|'unknown'
+	 */
+	public function finishOwedDeletion(int $fileId, string $padId, ?int $probeTimeoutSeconds = null): string {
+		if (!$this->isDeleteOnTrashEnabled()) {
+			return 'kept';
+		}
+		$presence = $this->padLifecycle->presenceOf($padId, -1, ['fileId' => $fileId], $probeTimeoutSeconds);
+		if ($presence === PadPresence::Unknown) {
+			return 'unknown';
+		}
+		try {
+			if ($presence !== PadPresence::Absent) {
+				$this->padLifecycle->discard($padId);
+			}
+		} catch (\Throwable $e) {
+			if (!EtherpadErrorClassifier::isPadAlreadyDeleted($e)) {
+				$this->logger->warning('Could not delete the pad of a file that is gone for good.', [
+					'app' => 'etherpad_nextcloud',
+					'fileId' => $fileId,
+					...SafeError::context($e),
+				]);
+				return 'unknown';
+			}
+		}
+		$this->bindingService->deleteInState($fileId, $padId, BindingService::STATE_PENDING_DELETE);
+		return 'deleted';
 	}
 
 	/** The `.pad` back from the trash, as a restore from its snapshot reads it. */
@@ -544,12 +647,26 @@ class LifecycleService {
 				$snapshot['html'],
 				$newPadId,
 				$this->etherpadClient->buildPadUrl($newPadId),
+				$this->revisionsOfSeededPad($newPadId),
 			);
 		} catch (\Throwable $e) {
 			$this->provisionedPadRollback->discardUnlessBoundToFile($fileId, $newPadId, 'restore from snapshot');
 			throw $e;
 		}
 		return [$newPadId, $content];
+	}
+
+	/**
+	 * What the file records as synced: the new pad holds exactly its
+	 * snapshot, and nobody else knows the pad's id yet to have changed it.
+	 * Without an answer the file is left to its first sync, as a new one is.
+	 */
+	private function revisionsOfSeededPad(string $newPadId): int {
+		try {
+			return $this->etherpadClient->getRevisionsCount($newPadId);
+		} catch (\Throwable) {
+			return -1;
+		}
 	}
 
 	/**
@@ -676,10 +793,19 @@ class LifecycleService {
 		$file->putContent($updatedContent);
 	}
 
+	/**
+	 * `r-<base>-<suffix>`, within the 50 characters Etherpad allows a pad
+	 * name. The base is the old id without an earlier restore's `r-` and
+	 * suffix, so a pad restored again does not grow by them each time, and
+	 * is cut to what is left. `$` stays out: in a public id Etherpad refuses
+	 * it, since it marks a group pad.
+	 */
 	private function buildPublicRestorePadId(string $oldPadId): string {
 		$suffix = $this->secureRandom->generate(12, ISecureRandom::CHAR_LOWER . ISecureRandom::CHAR_DIGITS);
-		$normalized = preg_replace('/[^a-zA-Z0-9._$-]+/', '-', $oldPadId) ?? 'pad';
-		return 'r-' . trim($normalized, '-') . '-' . $suffix;
+		$base = preg_replace('/^r-(.+)-[a-z0-9]{12}$/', '$1', $oldPadId) ?? $oldPadId;
+		$normalized = trim(preg_replace('/[^a-zA-Z0-9._-]+/', '-', $base) ?? '', '-');
+		$normalized = rtrim(substr($normalized, 0, self::MAX_PAD_NAME_LENGTH - strlen('r--') - strlen($suffix)), '-');
+		return 'r-' . ($normalized === '' ? 'pad' : $normalized) . '-' . $suffix;
 	}
 
 	private function buildProtectedRestorePadName(): string {

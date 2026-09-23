@@ -108,8 +108,9 @@ class EtherpadClient {
 		return $data[$field];
 	}
 
-	public function getRevisionsCount(string $padId): int {
-		$data = $this->apiCall('getRevisionsCount', ['padID' => $padId]);
+	/** The timeout is a parameter for a sweep that promises a total run length. */
+	public function getRevisionsCount(string $padId, ?int $timeoutSeconds = null): int {
+		$data = $this->apiCall('getRevisionsCount', ['padID' => $padId], timeoutSeconds: $timeoutSeconds);
 		$revisions = (int)($data['revisions'] ?? 0);
 		return max(0, $revisions);
 	}

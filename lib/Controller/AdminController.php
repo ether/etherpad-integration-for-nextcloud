@@ -22,7 +22,7 @@ use OCA\EtherpadNextcloud\Service\EtherpadHealthCheckService;
 use OCA\EtherpadNextcloud\Service\HealthCheckItem;
 use OCA\EtherpadNextcloud\Service\HealthCheckResult;
 use OCA\EtherpadNextcloud\Service\PadTemplateAdminService;
-use OCA\EtherpadNextcloud\Service\RestoreRecheckService;
+use OCA\EtherpadNextcloud\Service\PendingBindingService;
 use OCA\EtherpadNextcloud\Service\ValidatedAdminSettings;
 use OCP\AppFramework\Controller;
 use OCP\AppFramework\Http\DataResponse;
@@ -37,7 +37,7 @@ use OCP\IUserSession;
  */
 class AdminController extends Controller {
 	private const CONSISTENCY_SAMPLE_LIMIT = 25;
-	private const RESTORE_RECHECK_BATCH_SIZE = 500;
+	private const PENDING_BINDING_BATCH_SIZE = 500;
 
 	public function __construct(
 		string $appName,
@@ -48,7 +48,7 @@ class AdminController extends Controller {
 		private AdminSettingsValidator $settingsValidator,
 		private AdminSettingsRepository $settingsRepository,
 		private EtherpadHealthCheckService $healthCheckService,
-		private RestoreRecheckService $restoreRecheckService,
+		private PendingBindingService $pendingBindings,
 		private ConsistencyCheckService $consistencyCheckService,
 		private AdminConsistencyCheckResponseBuilder $consistencyResponseBuilder,
 		private AdminTestFaultService $testFaultService,
@@ -127,22 +127,23 @@ class AdminController extends Controller {
 		);
 	}
 
-	public function recheckRestores(): DataResponse {
+	public function settlePending(): DataResponse {
 		return $this->errors->run(
 			function (): array {
 				$this->requireAdmin();
-				return $this->restoreRecheckService->recheck(self::RESTORE_RECHECK_BATCH_SIZE);
+				return $this->pendingBindings->settle(self::PENDING_BINDING_BATCH_SIZE);
 			},
 			fn(array $result): DataResponse => new DataResponse([
 				'ok' => true,
-				'message' => $this->l10n->t('Restore check finished.'),
+				'message' => $this->l10n->t('Pending pad check finished.'),
 				'checked' => $result['checked'],
 				'settled' => $result['settled'],
-				'remaining' => $result['remaining'],
+				'pending_restores' => $result['pending_restores'],
+				'pending_deletes' => $result['pending_deletes'],
 			]),
 			[
-				'generic' => $this->l10n->t('Restore check failed.'),
-				'log_message' => 'Restore recheck failed',
+				'generic' => $this->l10n->t('Pending pad check failed.'),
+				'log_message' => 'Pending pad check failed',
 			],
 		);
 	}

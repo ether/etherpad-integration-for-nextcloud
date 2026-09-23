@@ -198,17 +198,35 @@ class ManagedPadLifecycle {
 	}
 
 	/**
-	 * Whether the pad still exists, as far as Etherpad will say. Only its
-	 * own answer that there is no such pad counts as absent; a request that
-	 * got no answer is unknown, because the pad may well be there.
+	 * Whether the pad a file's snapshot was taken from still exists, as far
+	 * as Etherpad will say. Only its own answer that there is no such pad
+	 * counts as absent; a request that got no answer is unknown, because
+	 * the pad may well be there.
+	 *
+	 * Revisions only grow, so a pad under that id with fewer of them than
+	 * the snapshot was taken at is behind: created again since, empty, or
+	 * brought back from an older backup. A snapshot revision of -1, from a
+	 * file never synced, says nothing, and any pad counts as present.
+	 *
+	 * An unknown answer is logged here, with its cause, since no caller
+	 * gets to see the exception it came from.
+	 *
+	 * @param array<string,mixed> $context what the log line should carry, fileId above all
 	 */
-	public function presenceOf(string $padId): PadPresence {
+	public function presenceOf(string $padId, int $snapshotRevision = -1, array $context = [], ?int $timeoutSeconds = null): PadPresence {
 		try {
-			$this->etherpadClient->getRevisionsCount($padId);
-			return PadPresence::Present;
+			$revisions = $this->etherpadClient->getRevisionsCount($padId, $timeoutSeconds);
 		} catch (\Throwable $e) {
-			return EtherpadErrorClassifier::isPadAlreadyDeleted($e) ? PadPresence::Absent : PadPresence::Unknown;
+			if (EtherpadErrorClassifier::isPadAlreadyDeleted($e)) {
+				return PadPresence::Absent;
+			}
+			$this->logger->warning('Could not ask Etherpad whether a pad still exists.', [
+				'app' => 'etherpad_nextcloud',
+				...SafeError::context($e),
+			] + $context);
+			return PadPresence::Unknown;
 		}
+		return $revisions < $snapshotRevision ? PadPresence::Behind : PadPresence::Present;
 	}
 
 	/**

@@ -11,6 +11,7 @@ namespace OCA\EtherpadNextcloud\Tests\Unit;
 use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\EtherpadNextcloud\Service\EtherpadClient;
 use OCA\EtherpadNextcloud\Service\ManagedPadLifecycle;
+use OCA\EtherpadNextcloud\Service\PadPresence;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 
@@ -293,5 +294,42 @@ class ManagedPadLifecycleTest extends TestCase {
 			));
 
 		(new ManagedPadLifecycle($client, $logger))->seed('nc-pad', 'text', '<p>text</p>', ['fileId' => 7]);
+	}
+
+	/**
+	 * Revisions only grow. A pad with fewer than the file's snapshot was
+	 * taken at is not the pad the file knew; as many or more is. A file
+	 * never synced says nothing, and any pad counts.
+	 */
+	public function testHoldsAPadToTheRevisionItsSnapshotWasTakenAt(): void {
+		$client = $this->createMock(EtherpadClient::class);
+		$client->method('getRevisionsCount')->willReturn(7);
+		$lifecycle = $this->lifecycle($client);
+
+		$this->assertSame(PadPresence::Behind, $lifecycle->presenceOf('nc-pad', 8));
+		$this->assertSame(PadPresence::Present, $lifecycle->presenceOf('nc-pad', 7));
+		$this->assertSame(PadPresence::Present, $lifecycle->presenceOf('nc-pad', -1));
+	}
+
+	/**
+	 * No caller sees why Etherpad gave no answer, so the cause is logged
+	 * here - and its own "does not exist" is an answer, not a failure.
+	 */
+	public function testLogsWhyEtherpadGaveNoAnswer(): void {
+		$client = $this->createMock(EtherpadClient::class);
+		$client->method('getRevisionsCount')->willReturnCallback(static function (string $padId, ?int $timeout): int {
+			throw new \RuntimeException($padId === 'nc-gone' ? 'padID does not exist' : 'certificate has expired');
+		});
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects($this->once())
+			->method('warning')
+			->with($this->anything(), $this->callback(
+				static fn (array $context): bool => ($context['fileId'] ?? 0) === 7
+					&& str_contains((string)($context['error_message'] ?? ''), 'certificate has expired')
+			));
+		$lifecycle = new ManagedPadLifecycle($client, $logger);
+
+		$this->assertSame(PadPresence::Absent, $lifecycle->presenceOf('nc-gone', -1, ['fileId' => 7]));
+		$this->assertSame(PadPresence::Unknown, $lifecycle->presenceOf('nc-pad', -1, ['fileId' => 7], 3));
 	}
 }

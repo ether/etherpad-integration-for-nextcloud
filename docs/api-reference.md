@@ -245,8 +245,8 @@ solely by the separate external-pad policy, not by these two settings.
   - Params: `file=/path/file.pad`
   - Result:
     - `200` with `status=trashed` for successful trash flow.
-      - includes `snapshot_persisted` (`true|false`) if file lock prevented snapshot write.
-      - includes `delete_pending` (`true|false`): `true` when Etherpad delete is deferred to background job.
+      - includes `snapshot_persisted` (`true|false`): `false` when no fresh snapshot was written - the file was locked, Etherpad did not answer, or the file's restore was still undecided, which leaves the pad alone.
+      - includes `delete_pending` (`true|false`): `true` when the pad is kept and its deletion recorded as owed.
     - `409` with `status=skipped` + `reason` on invalid lifecycle state (for example already pending delete).
       - includes transition-race guard reason `binding_state_transition_conflict` on concurrent state updates.
 
@@ -397,15 +397,15 @@ solely by the separate external-pad policy, not by these two settings.
     - `frontmatter_skipped`
     - `samples` (bounded debug sample lists per issue class)
 
-- `POST /api/v1/admin/recheck-restores`
-  - Controller: `AdminController::recheckRestores`
+- `POST /api/v1/admin/settle-pending`
+  - Controller: `AdminController::settlePending`
   - Auth: admin only
-  - Purpose: immediate recheck of restores left undecided (`state=restore_pending`).
-    Changes only binding rows; no pad is deleted.
+  - Purpose: an immediate run of what the background jobs do for waiting rows
+    (`restore_pending` and `pending_delete`), within the same time budget. A
+    pad is deleted only when its file is gone for good.
   - Result:
-    - `checked`
-    - `settled`
-    - `remaining`
+    - `checked`, `settled`
+    - `pending_restores`, `pending_deletes`: what is left
 
 - `POST /api/v1/admin/test-fault`
   - Controller: `AdminController::setTestFault`

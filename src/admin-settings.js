@@ -8,7 +8,7 @@
 	const connectionTarget = document.getElementById('etherpad-nextcloud-connection-status')
 	const healthButton = document.getElementById('etherpad-nextcloud-health-check')
 	const consistencyButton = document.getElementById('etherpad-nextcloud-consistency-check')
-	const recheckRestoresButton = document.getElementById('etherpad-nextcloud-recheck-restores')
+	const settlePendingButton = document.getElementById('etherpad-nextcloud-settle-pending')
 	const pendingActions = document.getElementById('etherpad-nextcloud-pending-actions')
 	const pendingCountNode = document.getElementById('etherpad-nextcloud-pending-count')
 	const restorePendingCountNode = document.getElementById('etherpad-nextcloud-restore-pending-count')
@@ -41,7 +41,7 @@
 	const saveUrl = root.getAttribute('data-save-url') || ''
 	const healthUrl = root.getAttribute('data-health-url') || ''
 	const consistencyUrl = root.getAttribute('data-consistency-url') || ''
-	const recheckRestoresUrl = root.getAttribute('data-recheck-restores-url') || ''
+	const settlePendingUrl = root.getAttribute('data-settle-pending-url') || ''
 	const l10n = {
 		saving: root.getAttribute('data-l10n-saving') || 'Saving settings...',
 		saved: root.getAttribute('data-l10n-saved') || 'Settings saved.',
@@ -54,7 +54,7 @@
 		consistencyFailed: root.getAttribute('data-l10n-consistency-failed') || 'Consistency check failed.',
 		pendingDeleteLabel: root.getAttribute('data-l10n-pending-delete-label') || 'Pending Etherpad deletes',
 		restorePendingLabel: root.getAttribute('data-l10n-restore-pending-label') || 'Unresolved restores',
-		recheckFailed: root.getAttribute('data-l10n-recheck-failed') || 'Restore check failed.',
+		settleFailed: root.getAttribute('data-l10n-settle-failed') || 'Pending pad check failed.',
 		templateUploading: root.getAttribute('data-l10n-template-uploading') || 'Uploading template...',
 		templateDelete: root.getAttribute('data-l10n-template-delete') || 'Delete',
 		templateTooLarge: root.getAttribute('data-l10n-template-too-large') || 'Template file is too large.',
@@ -66,7 +66,7 @@
 	const templatesUrl = root.getAttribute('data-templates-url') || ''
 	const templatesDeleteUrl = root.getAttribute('data-templates-delete-url') || ''
 
-	if (saveUrl === '' || healthUrl === '' || consistencyUrl === '' || recheckRestoresUrl === '') {
+	if (saveUrl === '' || healthUrl === '' || consistencyUrl === '' || settlePendingUrl === '') {
 		return
 	}
 
@@ -354,7 +354,19 @@
 
 	const bindingCounts = { pendingDeletes: 0, pendingRestores: 0 }
 
-	function updateBindingCounts(counts) {
+	// Only the counts a response carries; one that carries none leaves the
+	// panel as it was rather than repainting it from what this page assumed.
+	function updateBindingCounts(data, deletesKey, restoresKey) {
+		const counts = {}
+		if (typeof data[deletesKey] !== 'undefined') {
+			counts.pendingDeletes = data[deletesKey]
+		}
+		if (typeof data[restoresKey] !== 'undefined') {
+			counts.pendingRestores = data[restoresKey]
+		}
+		if (Object.keys(counts).length === 0) {
+			return
+		}
 		for (const [key, value] of Object.entries(counts)) {
 			bindingCounts[key] = Number.isFinite(Number(value)) ? Number(value) : 0
 		}
@@ -367,9 +379,10 @@
 		if (restorePendingCountNode instanceof HTMLElement) {
 			restorePendingCountNode.textContent = `${l10n.restorePendingLabel}: ${String(bindingCounts.pendingRestores)}`
 		}
-		// Deletions still owed are only shown: nothing here may delete a pad.
-		if (recheckRestoresButton instanceof HTMLButtonElement) {
-			recheckRestoresButton.disabled = bindingCounts.pendingRestores <= 0
+		// The check deletes a pad only once its file is gone for good, and
+		// nothing here is more than a nudge to the job that does the same.
+		if (settlePendingButton instanceof HTMLButtonElement) {
+			settlePendingButton.disabled = bindingCounts.pendingDeletes <= 0 && bindingCounts.pendingRestores <= 0
 		}
 	}
 
@@ -464,14 +477,7 @@
 		beginStatus(l10n.checking, connectionTarget)
 		try {
 			const data = await postJson(healthUrl, getPayload())
-			const counts = {}
-			if (typeof data.pending_delete_count !== 'undefined') {
-				counts.pendingDeletes = data.pending_delete_count
-			}
-			if (typeof data.restore_pending_count !== 'undefined') {
-				counts.pendingRestores = data.restore_pending_count
-			}
-			updateBindingCounts(counts)
+			updateBindingCounts(data, 'pending_delete_count', 'restore_pending_count')
 			// The per-field results carry the target and latency and the
 			// protected-pads verdict, so the summary stays a summary.
 			renderConnectionChecks(data.checks)
@@ -501,25 +507,23 @@
 		})
 	}
 
-	if (recheckRestoresButton instanceof HTMLElement) {
-		recheckRestoresButton.addEventListener('click', async () => {
+	if (settlePendingButton instanceof HTMLElement) {
+		settlePendingButton.addEventListener('click', async () => {
 			clearFieldErrors()
 			beginStatus(l10n.checking, diagnosticsTarget)
 			try {
-				const data = await postJson(recheckRestoresUrl, {})
+				const data = await postJson(settlePendingUrl, {})
 				const details = []
-				for (const key of ['checked', 'settled', 'remaining']) {
+				for (const key of ['checked', 'settled', 'pending_restores', 'pending_deletes']) {
 					if (typeof data[key] !== 'undefined') {
 						details.push(`${key}=${String(data[key])}`)
 					}
 				}
-				if (typeof data.remaining !== 'undefined') {
-					updateBindingCounts({ pendingRestores: data.remaining || 0 })
-				}
+				updateBindingCounts(data, 'pending_deletes', 'pending_restores')
 				const suffix = details.length > 0 ? ` ${details.join(' | ')}` : ''
 				setStatus(`${String(data.message || 'OK')}${suffix}`, 'success', diagnosticsTarget)
 			} catch (error) {
-				setStatus(error instanceof Error ? error.message : l10n.recheckFailed, 'error', diagnosticsTarget)
+				setStatus(error instanceof Error ? error.message : l10n.settleFailed, 'error', diagnosticsTarget)
 			}
 		})
 	}

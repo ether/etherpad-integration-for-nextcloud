@@ -9,7 +9,7 @@
 	data-save-url="<?php p((string)$_['save_settings_url']); ?>"
 	data-health-url="<?php p((string)$_['health_check_url']); ?>"
 	data-consistency-url="<?php p((string)$_['consistency_check_url']); ?>"
-	data-recheck-restores-url="<?php p((string)$_['recheck_restores_url']); ?>"
+	data-settle-pending-url="<?php p((string)$_['settle_pending_url']); ?>"
 	data-l10n-saving="<?php p((string)$_['l10n']['saving']); ?>"
 	data-l10n-saved="<?php p((string)$_['l10n']['saved']); ?>"
 	data-l10n-checking="<?php p((string)$_['l10n']['checking']); ?>"
@@ -21,7 +21,7 @@
 	data-l10n-consistency-failed="<?php p((string)$_['l10n']['consistency_failed']); ?>"
 	data-l10n-pending-delete-label="<?php p((string)$_['l10n']['pending_delete_label']); ?>"
 	data-l10n-restore-pending-label="<?php p((string)$_['l10n']['restore_pending_label']); ?>"
-	data-l10n-recheck-failed="<?php p((string)$_['l10n']['recheck_failed']); ?>"
+	data-l10n-settle-failed="<?php p((string)$_['l10n']['settle_failed']); ?>"
 	data-templates-url="<?php p((string)$_['templates_url']); ?>"
 	data-templates-delete-url="<?php p((string)$_['templates_delete_url']); ?>"
 	data-l10n-template-uploading="<?php p((string)$_['l10n']['templates_uploading']); ?>"
@@ -246,7 +246,7 @@
 			<button type="button" id="etherpad-nextcloud-consistency-check"><?php p((string)$_['l10n']['consistency_button']); ?></button>
 		</div>
 		<div id="etherpad-nextcloud-pending-actions" class="etherpad-nextcloud-admin-actions" style="display:none;">
-			<button type="button" id="etherpad-nextcloud-recheck-restores"><?php p((string)$_['l10n']['recheck_restores_button']); ?></button>
+			<button type="button" id="etherpad-nextcloud-settle-pending"><?php p((string)$_['l10n']['settle_pending_button']); ?></button>
 			<span id="etherpad-nextcloud-restore-pending-count" class="settings-hint"></span>
 			<span id="etherpad-nextcloud-pending-count" class="settings-hint"></span>
 		</div>

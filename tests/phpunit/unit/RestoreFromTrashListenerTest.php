@@ -47,18 +47,18 @@ class RestoreFromTrashListenerTest extends TestCase {
 			'access_mode' => BindingService::ACCESS_PUBLIC,
 			'state' => BindingService::STATE_PENDING_DELETE,
 		]);
-		$bindingService->method('transition')->willReturn(true);
+		// Inside the restore's own try, which is where the removed entry
+		// was written and the only place it could ever have fired: an
+		// unreadable file leaves the row for a later check, and moving it
+		// there is what fails.
+		$bindingService->method('transition')->willThrowException($boom);
 
-		// Gone, so the restore makes a new pad from the file.
 		$etherpadClient = $this->createMock(EtherpadClient::class);
-		$etherpadClient->method('getRevisionsCount')->willThrowException(new \RuntimeException('padID does not exist'));
 
 		$file = $this->createMock(File::class);
 		$file->method('getId')->willReturn($fileId);
 		$file->method('getName')->willReturn('Notes.pad');
-		// Inside the restore's own try, which is where the removed entry
-		// was written and the only place it could ever have fired.
-		$file->method('getContent')->willThrowException($boom);
+		$file->method('getContent')->willThrowException(new \RuntimeException('locked'));
 
 		$logger = $this->createMock(LoggerInterface::class);
 		$this->closeEveryLevelExcept($logger, 'error');

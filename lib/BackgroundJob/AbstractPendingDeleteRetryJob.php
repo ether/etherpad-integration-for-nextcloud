@@ -9,13 +9,14 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\BackgroundJob;
 
-use OCA\EtherpadNextcloud\Service\RestoreRecheckService;
+use OCA\EtherpadNextcloud\Service\PendingBindingService;
 use OCP\AppFramework\Utility\ITimeFactory;
 use OCP\BackgroundJob\TimedJob;
 
 /**
- * Rechecks restores left undecided. Named for what these jobs did first;
- * the job list stores the class name, so the name stays.
+ * Settles the pad bindings that wait - restores left undecided, and
+ * deletions owed once their file is gone for good. Named for what these
+ * jobs did first; the job list stores the class name, so the name stays.
  *
  * @psalm-api
  */
@@ -27,7 +28,7 @@ abstract class AbstractPendingDeleteRetryJob extends TimedJob {
 
 	public function __construct(
 		ITimeFactory $time,
-		private RestoreRecheckService $recheckService,
+		private PendingBindingService $pendingBindings,
 	) {
 		parent::__construct($time);
 		$this->setInterval(static::INTERVAL_SECONDS);
@@ -37,6 +38,6 @@ abstract class AbstractPendingDeleteRetryJob extends TimedJob {
 	 * @param mixed $argument
 	 */
 	protected function run($argument): void {
-		$this->recheckService->recheckByAge(static::MIN_AGE_SECONDS, static::MAX_AGE_SECONDS, static::LIMIT);
+		$this->pendingBindings->settleByAge(static::MIN_AGE_SECONDS, static::MAX_AGE_SECONDS, static::LIMIT);
 	}
 }

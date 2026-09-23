@@ -91,7 +91,7 @@ class AdminSettings implements ISettings {
 			'save_settings_url' => $this->urlGenerator->linkToRoute('etherpad_nextcloud.admin.saveSettings'),
 			'health_check_url' => $this->urlGenerator->linkToRoute('etherpad_nextcloud.admin.healthCheck'),
 			'consistency_check_url' => $this->urlGenerator->linkToRoute('etherpad_nextcloud.admin.consistencyCheck'),
-			'recheck_restores_url' => $this->urlGenerator->linkToRoute('etherpad_nextcloud.admin.recheckRestores'),
+			'settle_pending_url' => $this->urlGenerator->linkToRoute('etherpad_nextcloud.admin.settlePending'),
 			'templates_url' => $this->urlGenerator->linkToRoute('etherpad_nextcloud.admin.listPadTemplates'),
 			'templates_delete_url' => $this->urlGenerator->linkToRoute('etherpad_nextcloud.admin.deletePadTemplate'),
 			'l10n' => [
@@ -145,7 +145,7 @@ class AdminSettings implements ISettings {
 				'save_button' => $this->l10n->t('Save settings'),
 				'health_button' => $this->l10n->t('Test Etherpad connection'),
 				'consistency_button' => $this->l10n->t('Consistency check'),
-				'recheck_restores_button' => $this->l10n->t('Re-check restores'),
+				'settle_pending_button' => $this->l10n->t('Check pending pads'),
 				'pending_delete_label' => $this->l10n->t('Pending Etherpad deletes'),
 				'restore_pending_label' => $this->l10n->t('Unresolved restores'),
 				'saving' => $this->l10n->t('Saving settings...'),
@@ -157,7 +157,7 @@ class AdminSettings implements ISettings {
 				'saving_failed' => $this->l10n->t('Failed to save settings.'),
 				'health_failed' => $this->l10n->t('Etherpad connection test failed.'),
 				'consistency_failed' => $this->l10n->t('Consistency check failed.'),
-				'recheck_failed' => $this->l10n->t('Restore check failed.'),
+				'settle_failed' => $this->l10n->t('Pending pad check failed.'),
 			],
 		]);
 	}

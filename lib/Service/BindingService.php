@@ -124,8 +124,9 @@ class BindingService {
 	 * against the pad it names now as well as its state, so a row that
 	 * moved on to a different pad in the meantime is left alone.
 	 *
-	 * Leaving for active clears deleted_at; returning to pending_delete
-	 * sets it anew, since the trash is where the file is again.
+	 * deleted_at says the file is in the trash, and of the states only
+	 * pending_delete means that: going there sets it anew, going anywhere
+	 * else clears it.
 	 */
 	public function rebind(int $fileId, string $fromPadId, string $from, string $toPadId, string $to): bool {
 		$now = $this->timeFactory->getTime();
@@ -134,11 +135,9 @@ class BindingService {
 			->set('pad_id', $qb->createNamedParameter($toPadId))
 			->set('state', $qb->createNamedParameter($to))
 			->set('updated_at', $qb->createNamedParameter($now, IQueryBuilder::PARAM_INT));
-		if ($to === self::STATE_ACTIVE) {
-			$qb->set('deleted_at', $qb->createNamedParameter(null, IQueryBuilder::PARAM_NULL));
-		} elseif ($to === self::STATE_PENDING_DELETE) {
-			$qb->set('deleted_at', $qb->createNamedParameter($now, IQueryBuilder::PARAM_INT));
-		}
+		$qb->set('deleted_at', $to === self::STATE_PENDING_DELETE
+			? $qb->createNamedParameter($now, IQueryBuilder::PARAM_INT)
+			: $qb->createNamedParameter(null, IQueryBuilder::PARAM_NULL));
 		$qb->where($qb->expr()->eq('file_id', $qb->createNamedParameter($fileId, IQueryBuilder::PARAM_INT)))
 			->andWhere($qb->expr()->eq('pad_id', $qb->createNamedParameter($fromPadId)))
 			->andWhere($qb->expr()->eq('state', $qb->createNamedParameter($from)));
@@ -168,6 +167,40 @@ class BindingService {
 			return 0;
 		}
 		return max(0, (int)$row['cnt']);
+	}
+
+	/**
+	 * Deletions owed, aged by when the trash recorded them, each with the
+	 * path its file has in the file cache now: under `files_trashbin/` while
+	 * it waits in the trash, elsewhere once it is back without a restore
+	 * having settled the row, and null once nothing is left of it.
+	 *
+	 * Without a lower age bound there is no condition on deleted_at at all,
+	 * so a row that never had one is still reached by an unaged sweep.
+	 *
+	 * @return array<int,array<string,mixed>>
+	 */
+	public function findPendingDeleteByAge(int $minAgeSeconds, ?int $maxAgeSeconds, int $limit = 100): array {
+		$now = $this->timeFactory->getTime();
+		$qb = $this->db->getQueryBuilder();
+		$qb->select('b.file_id', 'b.pad_id', 'b.state')
+			->selectAlias('fc.path', 'file_path')
+			->from(self::TABLE, 'b')
+			->leftJoin('b', 'filecache', 'fc', $qb->expr()->eq('b.file_id', 'fc.fileid'))
+			->where($qb->expr()->eq('b.state', $qb->createNamedParameter(self::STATE_PENDING_DELETE)))
+			->orderBy('b.deleted_at', 'ASC')
+			->setMaxResults(max(1, $limit));
+		if ($minAgeSeconds > 0) {
+			$qb->andWhere($qb->expr()->lte('b.deleted_at', $qb->createNamedParameter($now - $minAgeSeconds, IQueryBuilder::PARAM_INT)));
+		}
+		if ($maxAgeSeconds !== null) {
+			$qb->andWhere($qb->expr()->gt('b.deleted_at', $qb->createNamedParameter($now - max(0, $maxAgeSeconds), IQueryBuilder::PARAM_INT)));
+		}
+
+		$result = $qb->executeQuery();
+		$rows = $result->fetchAll();
+		$result->closeCursor();
+		return $rows;
 	}
 
 	/**

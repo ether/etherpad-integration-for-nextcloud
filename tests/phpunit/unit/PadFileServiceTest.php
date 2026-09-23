@@ -635,8 +635,17 @@ class PadFileServiceTest extends TestCase {
 		$this->assertNull($restored->frontmatter['deleted_at']);
 		$this->assertSame('new-pad', $restored->padId);
 		$this->assertSame('https://pad.example.test/p/new-pad', $restored->padUrl);
-		// The old pad's revision 4 means nothing to the new one.
+		// The old pad's revision 4 means nothing to the new one: without the
+		// new pad's own count, the document has not been synced yet.
 		$this->assertSame(-1, $restored->snapshotRev);
+		$this->assertSame(2, $service->readPad($service->withRestoredSnapshot(
+			$trashed,
+			'replaced text',
+			'<p>replaced html</p>',
+			'new-pad',
+			'https://pad.example.test/p/new-pad',
+			2,
+		))->snapshotRev);
 		$this->assertSame(
 			['text' => 'replaced text', 'html' => '<p>replaced html</p>'],
 			$service->getSnapshotPartsFromBody($restored->body),
