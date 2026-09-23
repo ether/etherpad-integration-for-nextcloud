@@ -24,10 +24,17 @@ use Psr\Log\LoggerInterface;
  * is now:
  *
  * - in Files: the decision a restore takes, taken again, except that a
- *   sweep writes no file (LifecycleService::settleWaitingFile);
- * - in a trash: nothing yet, the row waits for the file;
+ *   sweep writes no file there (LifecycleService::settleWaitingFile);
+ * - in its owner's trash: the snapshot the trash could not take, written
+ *   into the trashed file, then pad and row deleted
+ *   (LifecycleService::finishTrash). The one file a sweep writes, and
+ *   always on its owner's own storage;
+ * - in a team folder's trash: nothing, since no node reaches it; the row
+ *   waits until that trash lets the file go;
  * - gone for good, with nothing left of it in the file cache: the pad is
- *   deleted, then the row. The only pad deletion this service makes.
+ *   deleted, then the row.
+ *
+ * Both deletions wait while deleting on trash is switched off.
  *
  * Bounded by a RunBudget: each Etherpad call gets what is left of the run,
  * none is started that could not finish, and a run ends after a few rows
@@ -38,6 +45,17 @@ use Psr\Log\LoggerInterface;
  * @psalm-api
  */
 class PendingBindingService {
+	/**
+	 * Where trashes keep files, as file cache paths relative to their
+	 * storage: a user's, and a team folder's on the root storage. A team
+	 * folder with its own storage (groupfolders 22 on Nextcloud 34,
+	 * measured) uses a bare `trash/`, which no path can tell from a folder
+	 * of that name on an external storage, so it is not matched; its
+	 * trashed files resolve to no node anyway and are left the same way.
+	 */
+	private const USER_TRASH_PREFIX = 'files_trashbin/';
+	private const TEAM_TRASH_PREFIX = '__groupfolders/trash/';
+
 	/** The budget is a parameter so a test can reach it, not a setting. */
 	public function __construct(
 		private BindingService $bindingService,
@@ -71,8 +89,13 @@ class PendingBindingService {
 	public function settleByAge(int $minAgeSeconds, ?int $maxAgeSeconds, int $limit = 200): array {
 		$budget = new RunBudget($this->timeFactory, $this->budgetSeconds);
 		$rows = $this->bindingService->findRestorePendingByAge($minAgeSeconds, $maxAgeSeconds, $limit);
-		if (count($rows) < $limit) {
-			$rows = [...$rows, ...$this->bindingService->findPendingDeleteByAge($minAgeSeconds, $maxAgeSeconds, $limit - count($rows))];
+		// Deletions owed by kind, each from what is left of the limit, so
+		// rows that wait on a trash cannot crowd out the ones that can go.
+		foreach ([BindingService::FILE_GONE, BindingService::FILE_IN_USER_TRASH, BindingService::FILE_ELSEWHERE] as $fileLocation) {
+			if (count($rows) >= $limit) {
+				break;
+			}
+			$rows = [...$rows, ...$this->bindingService->findPendingDeleteByAge($minAgeSeconds, $maxAgeSeconds, $limit - count($rows), $fileLocation)];
 		}
 
 		$checked = 0;
@@ -80,14 +103,14 @@ class PendingBindingService {
 		foreach ($rows as $row) {
 			$fileId = (int)($row['file_id'] ?? 0);
 			$padId = (string)($row['pad_id'] ?? '');
-			$path = $row['file_path'] ?? null;
-			if ($fileId <= 0 || $padId === '' || (is_string($path) && self::isTrashCachePath($path))) {
+			if ($fileId <= 0 || $padId === '') {
 				continue;
 			}
 			if ($budget->exhausted()) {
 				break;
 			}
-			$outcome = $this->settleRow($fileId, $padId, (string)($row['state'] ?? ''), is_string($path), $budget);
+			$path = $row['file_path'] ?? null;
+			$outcome = $this->settleRow($fileId, $padId, (string)($row['state'] ?? ''), is_string($path) ? $path : null, $budget);
 			if ($outcome === null) {
 				continue;
 			}
@@ -101,11 +124,18 @@ class PendingBindingService {
 		return ['checked' => $checked, 'settled' => $settled];
 	}
 
-	/** Null when the row was not looked at: its file cannot be found outside a trash. */
-	private function settleRow(int $fileId, string $padId, string $state, bool $fileInCache, RunBudget $budget): ?SettleOutcome {
+	/** Null when the row was not looked at: its file cannot be reached where the file cache says it is. */
+	private function settleRow(int $fileId, string $padId, string $state, ?string $cachePath, RunBudget $budget): ?SettleOutcome {
 		try {
-			if (!$fileInCache) {
+			if ($cachePath === null) {
 				return $this->finishOwedDeletion($fileId, $padId, $state, $budget);
+			}
+			if (str_starts_with($cachePath, self::USER_TRASH_PREFIX)) {
+				$file = $state === BindingService::STATE_PENDING_DELETE ? $this->fileInUserTrash($fileId) : null;
+				return $file === null ? null : $this->lifecycleService->finishTrash($file, $budget);
+			}
+			if (str_starts_with($cachePath, self::TEAM_TRASH_PREFIX)) {
+				return null;
 			}
 			$file = $this->fileOutsideTrash($fileId);
 			return $file === null ? null : $this->lifecycleService->settleWaitingFile($file, $budget->callTimeout());
@@ -123,9 +153,23 @@ class PendingBindingService {
 	}
 
 	/**
-	 * The file by its id, through any mount. A sweep only reads, so any node
-	 * will do, except one in a trash: a row settled here belongs to a file
-	 * in Files.
+	 * The file by its id, in its owner's trash: the node a trash's snapshot
+	 * is written into. Found without a session, and always on the owner's
+	 * own storage, never through a share.
+	 */
+	private function fileInUserTrash(int $fileId): ?File {
+		foreach ($this->rootFolder->getById($fileId) as $node) {
+			if ($node instanceof File && self::isTrashNodePath($node->getPath())) {
+				return $node;
+			}
+		}
+		return null;
+	}
+
+	/**
+	 * The file by its id, through any mount. A sweep only reads it, so any
+	 * node will do, except one in a trash: a row settled here belongs to a
+	 * file in Files.
 	 */
 	private function fileOutsideTrash(int $fileId): ?File {
 		foreach ($this->rootFolder->getById($fileId) as $node) {
@@ -174,19 +218,6 @@ class PendingBindingService {
 		// come back, so no other flow races for this row.
 		$this->bindingService->deleteInState($fileId, $padId, $state);
 		return SettleOutcome::Settled;
-	}
-
-	/**
-	 * A file cache path, relative to its storage. A user's trash is
-	 * `files_trashbin/`; a team folder on the root storage keeps its trash
-	 * under `__groupfolders/trash/`. A team folder with its own storage
-	 * (groupfolders 22 on Nextcloud 34, measured) uses a bare `trash/`, which
-	 * no path can tell from a folder of that name on an external storage, so
-	 * it is not matched. Its trashed files resolve to no node anyway, and the
-	 * lookup leaves them until the team folder's trash removes them.
-	 */
-	private static function isTrashCachePath(string $path): bool {
-		return str_starts_with($path, 'files_trashbin/') || str_starts_with($path, '__groupfolders/trash/');
 	}
 
 	/**

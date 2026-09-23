@@ -32,6 +32,13 @@ class BindingService {
 	 */
 	public const STATE_RESTORE_PENDING = 'restore_pending';
 
+	/** Where a waiting row's file is: no file cache row left at all. */
+	public const FILE_GONE = 'gone';
+	/** Where a waiting row's file is: in its owner's trash. */
+	public const FILE_IN_USER_TRASH = 'user_trash';
+	/** Where a waiting row's file is: anywhere else - in Files, or a trash of another kind. */
+	public const FILE_ELSEWHERE = 'elsewhere';
+
 	public function __construct(
 		private IDBConnection $db,
 		private ITimeFactory $timeFactory,
@@ -165,15 +172,18 @@ class BindingService {
 	}
 
 	/**
-	 * Deletions owed, aged by when the trash recorded them.
+	 * Deletions owed, aged by when the trash recorded them, and narrowed to
+	 * where the file is - one of the FILE_* constants - so a sweep can ask
+	 * for each kind in turn and rows it cannot settle yet do not crowd out
+	 * the ones it can.
 	 *
 	 * A row that never had a deleted_at is reached only by a run with
 	 * neither bound - the admin page's. Every age bucket compares the date.
 	 *
 	 * @return array<int,array<string,mixed>>
 	 */
-	public function findPendingDeleteByAge(int $minAgeSeconds, ?int $maxAgeSeconds, int $limit = 100): array {
-		return $this->findWaitingByAge(self::STATE_PENDING_DELETE, 'deleted_at', $minAgeSeconds, $maxAgeSeconds, $limit);
+	public function findPendingDeleteByAge(int $minAgeSeconds, ?int $maxAgeSeconds, int $limit = 100, ?string $fileLocation = null): array {
+		return $this->findWaitingByAge(self::STATE_PENDING_DELETE, 'deleted_at', $minAgeSeconds, $maxAgeSeconds, $limit, $fileLocation);
 	}
 
 	/**
@@ -194,7 +204,7 @@ class BindingService {
 	 *
 	 * @return array<int,array<string,mixed>>
 	 */
-	private function findWaitingByAge(string $state, string $ageColumn, int $minAgeSeconds, ?int $maxAgeSeconds, int $limit): array {
+	private function findWaitingByAge(string $state, string $ageColumn, int $minAgeSeconds, ?int $maxAgeSeconds, int $limit, ?string $fileLocation = null): array {
 		$now = $this->timeFactory->getTime();
 		$qb = $this->db->getQueryBuilder();
 		$qb->select('b.file_id', 'b.pad_id', 'b.state')
@@ -209,6 +219,16 @@ class BindingService {
 		}
 		if ($maxAgeSeconds !== null) {
 			$qb->andWhere($qb->expr()->gt('b.' . $ageColumn, $qb->createNamedParameter($now - max(0, $maxAgeSeconds), IQueryBuilder::PARAM_INT)));
+		}
+		// The underscore is LIKE's single-character wildcard; it matches itself too.
+		$userTrash = 'files_trashbin/%';
+		if ($fileLocation === self::FILE_GONE) {
+			$qb->andWhere($qb->expr()->isNull('fc.fileid'));
+		} elseif ($fileLocation === self::FILE_IN_USER_TRASH) {
+			$qb->andWhere($qb->expr()->like('fc.path', $qb->createNamedParameter($userTrash)));
+		} elseif ($fileLocation === self::FILE_ELSEWHERE) {
+			$qb->andWhere($qb->expr()->isNotNull('fc.fileid'))
+				->andWhere($qb->expr()->notLike('fc.path', $qb->createNamedParameter($userTrash)));
 		}
 
 		$result = $qb->executeQuery();

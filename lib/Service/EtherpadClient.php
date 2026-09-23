@@ -75,12 +75,12 @@ class EtherpadClient {
 		return $this->getPublicHost() . '/p/' . rawurlencode($padId);
 	}
 
-	public function getText(string $padId): string {
-		return $this->requireStringField($this->apiCall('getText', ['padID' => $padId]), 'text', 'getText');
+	public function getText(string $padId, ?int $timeoutSeconds = null): string {
+		return $this->requireStringField($this->apiCall('getText', ['padID' => $padId], timeoutSeconds: $timeoutSeconds), 'text', 'getText');
 	}
 
-	public function getHTML(string $padId): string {
-		return $this->requireStringField($this->apiCall('getHTML', ['padID' => $padId]), 'html', 'getHTML');
+	public function getHTML(string $padId, ?int $timeoutSeconds = null): string {
+		return $this->requireStringField($this->apiCall('getHTML', ['padID' => $padId], timeoutSeconds: $timeoutSeconds), 'html', 'getHTML');
 	}
 
 	/**

@@ -21,9 +21,10 @@ use Psr\Log\LoggerInterface;
 class PendingBindingServiceTest extends TestCase {
 	/**
 	 * Where a waiting row's file is now decides what happens to it: in
-	 * Files it is settled as a restore would, in a trash it waits, and gone
-	 * for good its pad and row are deleted - for an undecided restore as
-	 * much as for a deletion owed. Only that last case deletes a pad.
+	 * Files it is settled as a restore would, in its owner's trash the
+	 * snapshot the trash could not take is taken there, and gone for good
+	 * its pad and row are deleted - for an undecided restore as much as for
+	 * a deletion owed.
 	 */
 	public function testEachRowGoesByWhereItsFileIsNow(): void {
 		$bindings = $this->bindings(
@@ -55,14 +56,24 @@ class PendingBindingServiceTest extends TestCase {
 			$settled[] = $file->getId();
 			return SettleOutcome::Settled;
 		});
+		$trashed = [];
+		$lifecycle->method('finishTrash')->willReturnCallback(static function (File $file) use (&$trashed): SettleOutcome {
+			$trashed[] = $file->getPath();
+			return SettleOutcome::Settled;
+		});
 
-		$result = $this->service($bindings, $lifecycle, $this->root([1 => ['/alice/files/One.pad'], 4 => ['/alice/files/Four.pad']]), $client)
-			->settleByAge(0, 3600, 50);
+		$root = $this->root([
+			1 => ['/alice/files/One.pad'],
+			2 => ['/alice/files_trashbin/files/Two.pad.d100'],
+			4 => ['/alice/files/Four.pad'],
+		]);
+		$result = $this->service($bindings, $lifecycle, $root, $client)->settleByAge(0, 3600, 50);
 
 		$this->assertSame([1, 4], $settled);
+		$this->assertSame(['/alice/files_trashbin/files/Two.pad.d100'], $trashed);
 		$this->assertSame(['pad-5', 'pad-3'], $deleted);
 		$this->assertSame([[5, BindingService::STATE_RESTORE_PENDING], [3, BindingService::STATE_PENDING_DELETE]], $released);
-		$this->assertSame(['checked' => 4, 'settled' => 4], $result);
+		$this->assertSame(['checked' => 5, 'settled' => 5], $result);
 	}
 
 	/**
@@ -236,21 +247,28 @@ class PendingBindingServiceTest extends TestCase {
 		$this->service($this->bindings(restores: $rows), $lifecycle, $this->root($paths))->settleByAge(0, null, 50);
 	}
 
-	/** The limit counts both kinds together: restores first, deletions owed from what is left. */
+	/**
+	 * The limit counts every row together: restores first, then deletions
+	 * owed by kind - gone for good, in a user's trash, anywhere else - each
+	 * from what is left, so rows that wait on a trash cannot crowd out the
+	 * ones that can go.
+	 */
 	public function testTheLimitCountsBothKindsTogether(): void {
-		foreach ([2 => null, 3 => 1] as $limit => $deletesAskedFor) {
+		foreach ([2 => [], 5 => [[BindingService::FILE_GONE, 3], [BindingService::FILE_IN_USER_TRASH, 2], [BindingService::FILE_ELSEWHERE, 1]]] as $limit => $expected) {
 			$bindings = $this->createMock(BindingService::class);
 			$bindings->method('findRestorePendingByAge')->willReturn([
 				$this->row(1, BindingService::STATE_RESTORE_PENDING, 'files/1.pad'),
 				$this->row(2, BindingService::STATE_RESTORE_PENDING, 'files/2.pad'),
 			]);
-			if ($deletesAskedFor === null) {
-				$bindings->expects($this->never())->method('findPendingDeleteByAge');
-			} else {
-				$bindings->expects($this->once())->method('findPendingDeleteByAge')->with(0, null, $deletesAskedFor)->willReturn([]);
-			}
+			$asked = [];
+			$bindings->method('findPendingDeleteByAge')->willReturnCallback(function (int $min, ?int $max, int $limit, ?string $fileLocation) use (&$asked): array {
+				$asked[] = [$fileLocation, $limit];
+				return [$this->row(10 + count($asked), BindingService::STATE_PENDING_DELETE, 'files/x.pad')];
+			});
 
 			$this->service($bindings, $this->createMock(LifecycleService::class), $this->root([]))->settleByAge(0, null, $limit);
+
+			$this->assertSame($expected, $asked, "limit $limit");
 		}
 	}
 
@@ -322,7 +340,18 @@ class PendingBindingServiceTest extends TestCase {
 	private function bindings(array $restores = [], array $deletes = []): BindingService&MockObject {
 		$bindings = $this->createMock(BindingService::class);
 		$bindings->method('findRestorePendingByAge')->willReturn($restores);
-		$bindings->method('findPendingDeleteByAge')->willReturn($deletes);
+		// Each kind answered from the rows' file paths, as the query narrows them.
+		$bindings->method('findPendingDeleteByAge')->willReturnCallback(
+			static fn (int $min, ?int $max, int $limit, ?string $fileLocation = null): array => array_values(array_filter(
+				$deletes,
+				static fn (array $row): bool => match ($fileLocation) {
+					BindingService::FILE_GONE => $row['file_path'] === null,
+					BindingService::FILE_IN_USER_TRASH => str_starts_with((string)$row['file_path'], 'files_trashbin/'),
+					BindingService::FILE_ELSEWHERE => $row['file_path'] !== null && !str_starts_with((string)$row['file_path'], 'files_trashbin/'),
+					default => true,
+				},
+			)),
+		);
 		return $bindings;
 	}
 

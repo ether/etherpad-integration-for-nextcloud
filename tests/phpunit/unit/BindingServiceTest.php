@@ -290,6 +290,29 @@ class BindingServiceTest extends TestCase {
 		$this->assertSame(['state'], $qb->groupBy);
 	}
 
+	/**
+	 * A sweep asks for owed deletions by where the file is, so rows that
+	 * wait on a trash cannot crowd out the ones that can go: gone for good
+	 * has no file cache row, a user's trash is under files_trashbin/, and
+	 * the rest is everything else that is still there.
+	 */
+	public function testOwedDeletionsCanBeAskedForByWhereTheFileIs(): void {
+		$expected = [
+			BindingService::FILE_GONE => [['eq', 'b.state', 'param1'], ['isNull', 'fc.fileid']],
+			BindingService::FILE_IN_USER_TRASH => [['eq', 'b.state', 'param1'], ['like', 'fc.path', 'param2']],
+			BindingService::FILE_ELSEWHERE => [['eq', 'b.state', 'param1'], ['isNotNull', 'fc.fileid'], ['notLike', 'fc.path', 'param2']],
+		];
+		foreach ($expected as $fileLocation => $conditions) {
+			$qb = new BindingServiceTestQueryBuilder([]);
+			$this->buildServiceWithQueryBuilder($qb, 100000)->findPendingDeleteByAge(0, null, 50, $fileLocation);
+
+			$this->assertSame($conditions, $qb->conditions, $fileLocation);
+			if ($fileLocation !== BindingService::FILE_GONE) {
+				$this->assertSame('files_trashbin/%', $qb->parameters[1][1], $fileLocation);
+			}
+		}
+	}
+
 	/** @return array<string,mixed> */
 	private static function bindingRow(int $fileId, string $padId, string $state): array {
 		return ['file_id' => $fileId, 'pad_id' => $padId, 'state' => $state, 'deleted_at' => 100, 'updated_at' => 100];
@@ -407,6 +430,26 @@ class BindingServiceTestExpressionBuilder {
 	/** @return array{string,string,string} */
 	public function gt(string $field, string $parameter): array {
 		return ['gt', $field, $parameter];
+	}
+
+	/** @return array{string,string} */
+	public function isNull(string $field): array {
+		return ['isNull', $field];
+	}
+
+	/** @return array{string,string} */
+	public function isNotNull(string $field): array {
+		return ['isNotNull', $field];
+	}
+
+	/** @return array{string,string,string} */
+	public function like(string $field, string $parameter): array {
+		return ['like', $field, $parameter];
+	}
+
+	/** @return array{string,string,string} */
+	public function notLike(string $field, string $parameter): array {
+		return ['notLike', $field, $parameter];
 	}
 }
 

@@ -334,6 +334,19 @@ export const listTrashbinEntries = async (): Promise<{ entry: string, originalNa
 	return entries
 }
 
+/** What a trashed entry holds now. `entry` is a path as returned by `listTrashbinEntries`. */
+export const getTrashbinEntryContent = async (entry: string): Promise<string> => {
+	const res = await withDavRetry(
+		() => fetch(trashbinUrl(entry), {
+			method: 'GET',
+			headers: { Authorization: basicAuthHeader() },
+			signal: AbortSignal.timeout(TRASH_REQUEST_TIMEOUT_MS),
+		}),
+		{ retryOn: [423], accept: (status) => status >= 200 && status < 300, label: `GET ${entry}` },
+	)
+	return res.text()
+}
+
 /**
  * Permanently remove one trashed entry, the way the trash view's "Delete
  * permanently" action does. `entry` is a path as returned by

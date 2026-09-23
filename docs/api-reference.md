@@ -246,7 +246,7 @@ solely by the separate external-pad policy, not by these two settings.
   - Result:
     - `200` with `status=trashed` for successful trash flow.
       - includes `snapshot_persisted` (`true|false`): `false` when no fresh snapshot was written - the file was locked, Etherpad did not answer, or the file's restore was still undecided, which leaves the pad alone.
-      - includes `delete_pending` (`true|false`): `true` when the pad is kept and its deletion recorded as owed: always when no fresh snapshot was written, since a pad is deleted only after its snapshot is.
+      - includes `delete_pending` (`true|false`): `true` when the pad is kept and its deletion owed, always the case when no fresh snapshot was written. The background sweep then writes the snapshot into the trashed file and deletes the pad, usually within five minutes.
     - `409` with `status=skipped` + `reason` on invalid lifecycle state (for example already pending delete).
       - includes transition-race guard reason `binding_state_transition_conflict` on concurrent state updates.
 
@@ -297,8 +297,8 @@ solely by the separate external-pad policy, not by these two settings.
     - `api_version`
     - `latency_ms`
     - `target`
-    - `pending_delete_count` — pads the trash kept, their deletion owed until
-      the file is restored or gone for good
+    - `pending_delete_count` — pads a trash kept, their deletion owed until
+      the sweep finishes it or the file is restored
     - `restore_pending_count` — restored files whose pad Etherpad could not
       confirm or deny
     - `session_cookie_release` — the Etherpad release the open path is going
@@ -401,8 +401,10 @@ solely by the separate external-pad policy, not by these two settings.
   - Controller: `AdminController::settlePending`
   - Auth: admin only
   - Purpose: an immediate run of what the background jobs do for waiting rows
-    (`restore_pending` and `pending_delete`), within the same time budget. It
-    writes no file, and a pad is deleted only when its file is gone for good.
+    (`restore_pending` and `pending_delete`), within the same time budget. The
+    only file it writes is a trashed one, with the snapshot its trash could
+    not take; the only pads it deletes are those of files in a trash or
+    gone for good.
   - Result:
     - `checked`, `settled`
     - `pending_delete_count`, `restore_pending_count`: what is left, named as in the health check

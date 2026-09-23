@@ -16,10 +16,10 @@ Etherpad is the editing source of truth; the `.pad` file acts as binding storage
 - `lib/Service/LifecycleService.php`
   - Trash/restore flow.
   - Snapshot on trash; the pad is deleted only once the snapshot is written.
-  - No fresh snapshot, or Etherpad cannot delete: `pending_delete` instead of blocking Nextcloud trash.
+  - No fresh snapshot, or Etherpad cannot delete: `pending_delete` instead of blocking Nextcloud trash; the sweep finishes the trash.
   - On restore: the file's own pad while Etherpad still has it at the file's snapshot revision or later, a new pad from the snapshot when it is gone or behind, `restore_pending` while Etherpad cannot say.
 - `lib/Service/PendingBindingService.php`
-  - Settles rows that wait, by where their file is now (see Trash/Restore). Writes no file. The only place a pad is deleted after the trash itself: once its file is gone for good.
+  - Settles rows that wait, by where their file is now (see Trash/Restore). The only file it writes is a trashed one, with the snapshot its trash could not take; the only pads it deletes are those of files in a trash or gone for good.
   - Bounded per run by `RunBudget`: 20 s, each Etherpad call gets what is left, none is started that could not finish, and a run stops after five rows Etherpad gave no answer for.
 - `lib/BackgroundJob/*PendingDeleteRetryJob.php`
   - Bucketed runs of `PendingBindingService`: `restore_pending` rows aged by `updated_at`, `pending_delete` rows by `deleted_at`. Named for what they did first; the job list stores the class name.
@@ -223,7 +223,7 @@ Primary flow (native viewer):
 ### 5) Trash/Restore
 
 - Trash: write a fresh snapshot into the file, then delete the managed Etherpad pad and the binding row.
-- No fresh snapshot, or the delete fails: the pad stays as it is and the row becomes `pending_delete`; Nextcloud's trash succeeds either way. A delete through WebDAV (Files UI, clients) holds the file's lock while the trash is decided, so there it is always this path. The pad is kept until the file is restored (the restore takes it back) or gone for good (the sweep deletes it). Until then a public pad stays reachable by its URL, and the admin page counts it as a pending delete.
+- No fresh snapshot, or the delete fails: the pad stays as it is and the row becomes `pending_delete`; Nextcloud's trash succeeds either way. A delete through WebDAV (Files UI, clients) holds the file's lock while the trash is decided, so there it is always this path. The sweep finishes the trash on its next run, usually within five minutes: the pad's content goes into the trashed file, then pad and row go (see below). Until then a public pad stays reachable by its URL, a restore takes the pad back, and the admin page counts it as a pending delete.
 - Restore without a binding row: provision a new pad from `.pad` frontmatter/snapshot.
 - Restore of a waiting row (`pending_delete` or `restore_pending`), whatever `delete_on_trash` says now: read the file's `snapshot_rev`, then ask Etherpad about the row's pad. The pad id comes from the row, never from the file.
   - It exists with at least that many revisions: the row becomes `active` again on that same pad, which may hold edits the snapshot missed.
@@ -232,8 +232,11 @@ Primary flow (native viewer):
   - No answer, or the file cannot be read: `restore_pending`, and neither pad nor file is touched. A row that waits again moves to the back of the queue (`updated_at`).
 - `PendingBindingService` settles waiting rows in age buckets (every 5 minutes, then hourly, then daily) and from the admin page, by where the file is now:
   - in Files (`restore_pending`, or `pending_delete` whose restore never came): the decision a restore takes, except that a sweep writes no file. A pad that is gone or behind releases the row, and the file offers its own recovery when it is next opened. The file is read through any node outside a trash.
-  - in a trash: nothing yet. A user's trash is recognised in the file cache (`files_trashbin/`) and by node path; a team folder with its own storage keeps trashed files under a bare `trash/`, and those are found by no node, so the sweep leaves them.
-  - gone for good, with no `filecache` row left, in either waiting state: pad deleted, then row. Not while `delete_on_trash` is off.
+  - in its owner's trash (`pending_delete`): the rest of the trash. The file is recognised in the file cache (`files_trashbin/`) and by node path, found by id without a session, and written on its owner's own storage. Held to the file's `snapshot_rev` like a restore: a pad at or past it goes into the file, then the pad is deleted, then the row. A pad that is gone: what is left of it (an empty group) goes, then the row. A pad that is behind is logged and left in place, and the row goes. Either way the file keeps the snapshot it has. No answer, a file that cannot be read or written, or a pad that changes while it is read: the row waits for the next run.
+  - in a team folder's trash: nothing yet. A team folder with its own storage keeps trashed files under a bare `trash/`; they are found by no node, so the row waits until that trash lets the file go. With groupfolders' `auto` retention and no quota that is never, and a public pad stays reachable until the trash is emptied.
+  - gone for good, with no `filecache` row left, in either waiting state: pad deleted, then row.
+  - While `delete_on_trash` is off, no pad is deleted here: rows in a trash or gone for good wait.
+  - A run takes `restore_pending` rows first, then `pending_delete` rows gone for good, then those in a user's trash, then the rest, each by age, so rows that cannot be settled yet do not crowd out those that can.
   - Only Etherpad's silence counts towards the five-row stop; a file that cannot be read does not.
 - Trashing a file whose row is `restore_pending` returns the row to `pending_delete`, whatever `delete_on_trash` says, and leaves the pad alone, without a snapshot: which pad is the file's is what is undecided. If a sweep settled the row a moment earlier, the trash reads it again and trashes the file as what it is now.
 - `deleted_at` is set only in `pending_delete`.
