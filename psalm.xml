@@ -5,6 +5,7 @@
     resolveFromConfigFile="true"
     findUnusedCode="true"
     findUnusedVariables="true"
+    findUnusedBaselineEntry="true"
     autoloader="tests/psalm/ocp-autoload.php"
     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
     xmlns="https://getpsalm.org/schema/config"
@@ -20,8 +21,9 @@
     <!-- Level 1 with a baseline that can only shrink. New code has to be clean
          on the strictest level, and an issue that gets fixed has to leave the
          baseline with it: Psalm reports a baseline entry that no longer matches
-         anything (findUnusedBaselineEntry). The baseline holds what code due for
-         rework still has, and each rework takes its entries out.
+         anything (findUnusedBaselineEntry, set above rather than left to Psalm's
+         default, which a major version may change). The baseline holds what
+         code due for rework still has, and each rework takes its entries out.
 
          One baseline serves both ends of the OCP range the CI matrix analyses,
          so nothing in it may depend on the OCP version. Where OCP's types

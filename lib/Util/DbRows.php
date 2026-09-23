@@ -41,6 +41,8 @@ final class DbRows {
 	 * @return list<array<string,mixed>>
 	 */
 	public static function all(array $rows): array {
+		// Through one() rather than a loop over $rows: on OCP 31 each element
+		// is mixed, and a foreach would assign it as mixed, an issue of its own.
 		$typed = [];
 		foreach (array_map(self::one(...), $rows) as $row) {
 			if ($row !== null) {
