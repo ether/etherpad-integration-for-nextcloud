@@ -26,4 +26,8 @@ final class InMemoryBindingTable implements IDBConnection {
 	public function getQueryBuilder(): IQueryBuilder {
 		return new InMemoryBindingQuery($this);
 	}
+
+	public function escapeLikeParameter(string $param): string {
+		return addcslashes($param, '\\_%');
+	}
 }

@@ -105,6 +105,10 @@ class BackfillPadMimeTypeTest extends TestCase {
 			public function getQueryBuilder(): IQueryBuilder {
 				return $this->qb;
 			}
+
+			public function escapeLikeParameter(string $param): string {
+				return addcslashes($param, '\\_%');
+			}
 		};
 	}
 }

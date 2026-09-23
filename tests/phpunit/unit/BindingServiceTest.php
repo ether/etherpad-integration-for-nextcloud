@@ -131,6 +131,10 @@ class BindingServiceTest extends TestCase {
 			public function getQueryBuilder(): IQueryBuilder {
 				return $this->qb;
 			}
+
+			public function escapeLikeParameter(string $param): string {
+				return addcslashes($param, '\\_%');
+			}
 		};
 
 		return new BindingService($db, $this->buildTimeFactory($now), $this->createMock(LoggerInterface::class));
@@ -290,6 +294,51 @@ class BindingServiceTest extends TestCase {
 		$this->assertSame(['state'], $qb->groupBy);
 	}
 
+	/**
+	 * A sweep asks for owed deletions by where the file is, so rows that
+	 * wait on a trash cannot crowd out the ones that can go: gone for good
+	 * has no file cache row, a user's trash is under files_trashbin/, and
+	 * the rest is everything else that is still there.
+	 */
+	public function testOwedDeletionsCanBeAskedForByWhereTheFileIs(): void {
+		$expected = [
+			BindingService::FILE_GONE => [[['eq', 'b.state', 'param1'], ['isNull', 'fc.fileid']], []],
+			BindingService::FILE_IN_USER_TRASH => [[['eq', 'b.state', 'param1'], ['like', 'fc.path', 'param2']], ['files\\_trashbin/%']],
+			BindingService::FILE_ELSEWHERE => [
+				[['eq', 'b.state', 'param1'], ['isNotNull', 'fc.fileid'], ['notLike', 'fc.path', 'param2'], ['notLike', 'fc.path', 'param3']],
+				// A team folder's trash on the root storage waits for that trash, not for a turn.
+				['files\\_trashbin/%', '\\_\\_groupfolders/trash/%'],
+			],
+		];
+		foreach ($expected as $fileLocation => [$conditions, $patterns]) {
+			$qb = new BindingServiceTestQueryBuilder([]);
+			$this->buildServiceWithQueryBuilder($qb, 100000)->findPendingDeleteByAge(0, null, 50, $fileLocation);
+
+			$this->assertSame($conditions, $qb->conditions, $fileLocation);
+			// Escaped: `_` is LIKE's wildcard for any one character.
+			$this->assertSame($patterns, array_map(static fn (array $p): mixed => $p[1], array_slice($qb->parameters, 1)), $fileLocation);
+			// Aged by deleted_at, taken by updated_at: a row that waits again goes to the back.
+			$this->assertSame([['b.updated_at', 'ASC']], $qb->orderedBy, $fileLocation);
+		}
+	}
+
+	/**
+	 * A row that stays owed keeps the date it became owed: its age decides
+	 * how often a sweep tries it. Only updated_at moves, which puts it at
+	 * the back of the queue.
+	 */
+	public function testARowThatStaysOwedKeepsItsDate(): void {
+		$table = new InMemoryBindingTable([self::bindingRow(1, 'pad', BindingService::STATE_PENDING_DELETE)]);
+		$service = new BindingService($table, new FixedClock(500), $this->createMock(LoggerInterface::class));
+
+		self::assertTrue($service->transition(1, 'pad', BindingService::STATE_PENDING_DELETE, BindingService::STATE_PENDING_DELETE));
+
+		self::assertSame(
+			['file_id' => 1, 'pad_id' => 'pad', 'state' => BindingService::STATE_PENDING_DELETE, 'deleted_at' => 100, 'updated_at' => 500],
+			$table->rows[0],
+		);
+	}
+
 	/** @return array<string,mixed> */
 	private static function bindingRow(int $fileId, string $padId, string $state): array {
 		return ['file_id' => $fileId, 'pad_id' => $padId, 'state' => $state, 'deleted_at' => 100, 'updated_at' => 100];
@@ -369,7 +418,11 @@ class BindingServiceTestQueryBuilder implements IQueryBuilder {
 		return $this;
 	}
 
+	/** @var list<array{string,string}> */
+	public array $orderedBy = [];
+
 	public function orderBy(string $field, string $direction): self {
+		$this->orderedBy[] = [$field, $direction];
 		return $this;
 	}
 
@@ -407,6 +460,26 @@ class BindingServiceTestExpressionBuilder {
 	/** @return array{string,string,string} */
 	public function gt(string $field, string $parameter): array {
 		return ['gt', $field, $parameter];
+	}
+
+	/** @return array{string,string} */
+	public function isNull(string $field): array {
+		return ['isNull', $field];
+	}
+
+	/** @return array{string,string} */
+	public function isNotNull(string $field): array {
+		return ['isNotNull', $field];
+	}
+
+	/** @return array{string,string,string} */
+	public function like(string $field, string $parameter): array {
+		return ['like', $field, $parameter];
+	}
+
+	/** @return array{string,string,string} */
+	public function notLike(string $field, string $parameter): array {
+		return ['notLike', $field, $parameter];
 	}
 }
 

@@ -32,20 +32,16 @@ class MoveToTrashListenerTest extends TestCase {
 
 	public function testAFlowFailureIsReportedOnceAndPassedOn(): void {
 		$fileId = 4711;
-		$boom = new \RuntimeException('the storage went away');
+		// A file that cannot be read only keeps its pad; a binding that
+		// cannot be read stops the flow.
+		$boom = new \RuntimeException('the database went away');
 
 		$bindingService = $this->createMock(BindingService::class);
-		$bindingService->method('findByFileId')->willReturn([
-			'file_id' => $fileId,
-			'pad_id' => 'a-pad',
-			'access_mode' => BindingService::ACCESS_PUBLIC,
-			'state' => BindingService::STATE_ACTIVE,
-		]);
+		$bindingService->method('findByFileId')->willThrowException($boom);
 
 		$file = $this->createMock(File::class);
 		$file->method('getId')->willReturn($fileId);
 		$file->method('getName')->willReturn('Notes.pad');
-		$file->method('getContent')->willThrowException($boom);
 
 		$logger = $this->createMock(LoggerInterface::class);
 		$this->closeEveryLevelExcept($logger, 'error');
