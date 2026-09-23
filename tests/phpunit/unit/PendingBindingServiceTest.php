@@ -258,7 +258,10 @@ class PendingBindingServiceTest extends TestCase {
 	 */
 	public function testARowNotReachedMovesToTheBack(): void {
 		$bindings = $this->bindings(
-			restores: [$this->row(1, BindingService::STATE_RESTORE_PENDING, 'trash/One.pad.d100')],
+			restores: [
+				$this->row(1, BindingService::STATE_RESTORE_PENDING, 'trash/One.pad.d100'),
+				$this->row(4, BindingService::STATE_RESTORE_PENDING, 'files_trashbin/files/Four.pad.d100'),
+			],
 			deletes: [
 				$this->row(2, BindingService::STATE_PENDING_DELETE, 'trash/Two.pad.d100'),
 				$this->row(3, BindingService::STATE_PENDING_DELETE, 'files_trashbin/files/Three.pad.d100'),

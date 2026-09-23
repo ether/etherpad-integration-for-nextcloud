@@ -128,8 +128,8 @@ class PendingBindingService {
 			$inUserTrash = str_starts_with($cachePath, BindingService::USER_TRASH_PATH);
 			$file = match (true) {
 				str_starts_with($cachePath, BindingService::TEAM_TRASH_PATH) => null,
-				$inUserTrash => $state === BindingService::STATE_PENDING_DELETE ? $this->fileInUserTrash($fileId) : null,
-				default => $this->fileOutsideTrash($fileId),
+				$inUserTrash => $state === BindingService::STATE_PENDING_DELETE ? $this->nodeById($fileId, inTrash: true) : null,
+				default => $this->nodeById($fileId, inTrash: false),
 			};
 			if ($file === null) {
 				return $this->notReached($fileId, $padId, $state);
@@ -151,27 +151,15 @@ class PendingBindingService {
 	}
 
 	/**
-	 * The file by its id, in its owner's trash: the node a trash's snapshot
-	 * is written into. Found without a session, and always on the owner's
-	 * own storage, never through a share.
+	 * The file by its id, found without a session, in a trash or outside
+	 * one. In its owner's trash it is the node a trash's snapshot is
+	 * written into, always on the owner's own storage, never through a
+	 * share. Outside, a sweep only reads it, so any mount will do: a row
+	 * settled there belongs to a file in Files.
 	 */
-	private function fileInUserTrash(int $fileId): ?File {
+	private function nodeById(int $fileId, bool $inTrash): ?File {
 		foreach ($this->rootFolder->getById($fileId) as $node) {
-			if ($node instanceof File && self::isTrashNodePath($node->getPath())) {
-				return $node;
-			}
-		}
-		return null;
-	}
-
-	/**
-	 * The file by its id, through any mount. A sweep only reads it, so any
-	 * node will do, except one in a trash: a row settled here belongs to a
-	 * file in Files.
-	 */
-	private function fileOutsideTrash(int $fileId): ?File {
-		foreach ($this->rootFolder->getById($fileId) as $node) {
-			if ($node instanceof File && !self::isTrashNodePath($node->getPath())) {
+			if ($node instanceof File && self::isTrashNodePath($node->getPath()) === $inTrash) {
 				return $node;
 			}
 		}
