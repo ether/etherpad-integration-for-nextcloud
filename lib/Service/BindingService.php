@@ -94,21 +94,6 @@ class BindingService {
 		return $row === false ? null : $row;
 	}
 
-	/** @return array<int,array<string,mixed>> */
-	public function findByState(string $state, int $limit = 100): array {
-		$qb = $this->db->getQueryBuilder();
-		$qb->select('*')
-			->from(self::TABLE)
-			->where($qb->expr()->eq('state', $qb->createNamedParameter($state)))
-			->orderBy('updated_at', 'ASC')
-			->setMaxResults(max(1, $limit));
-
-		$result = $qb->executeQuery();
-		$rows = $result->fetchAll();
-		$result->closeCursor();
-		return $rows;
-	}
-
 	/**
 	 * Move one binding from one state to another, but only if it is still
 	 * in the first and still names this pad. Whoever finds the row changed

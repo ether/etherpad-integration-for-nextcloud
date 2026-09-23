@@ -300,8 +300,19 @@ class LifecycleServiceTest extends TestCase {
 		$file = $this->buildRestoredPadFile($fileId);
 		$file->expects($this->once())->method('putContent')->willThrowException(new \RuntimeException('disk full'));
 
-		$this->expectException(LifecycleException::class);
-		$this->buildPendingDeleteRestoreService($fileId, 'old-pad', $bindingService, $etherpadClient)->handleRestore($file);
+		// Nothing is left for the restore to release, and the log says so.
+		$debug = [];
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->method('debug')->willReturnCallback(static function (string $message) use (&$debug): void {
+			$debug[] = $message;
+		});
+
+		try {
+			$this->buildPendingDeleteRestoreService($fileId, 'old-pad', $bindingService, $etherpadClient, logger: $logger)->handleRestore($file);
+			$this->fail('Expected the restore to fail.');
+		} catch (LifecycleException) {
+		}
+		$this->assertContains('Left a binding a failed restore no longer holds.', $debug);
 	}
 
 	/**

@@ -550,7 +550,14 @@ class LifecycleService {
 	 */
 	private function releaseReplacedRow(int $fileId, string $oldPadId, string $state): void {
 		try {
-			$this->bindingService->deleteInState($fileId, $oldPadId, $state);
+			if (!$this->bindingService->deleteInState($fileId, $oldPadId, $state)) {
+				// Gone with the replacement's rollback already, or taken by a
+				// trash or another restore since - not this restore's either way.
+				$this->logger->debug('Left a binding a failed restore no longer holds.', [
+					'app' => 'etherpad_nextcloud',
+					'fileId' => $fileId,
+				]);
+			}
 		} catch (\Throwable $e) {
 			$this->logger->warning('Could not release the binding of a restore that failed.', [
 				'app' => 'etherpad_nextcloud',
