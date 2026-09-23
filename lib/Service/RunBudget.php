@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Service;
 
+use OCA\EtherpadNextcloud\Exception\RunBudgetSpentException;
 use OCP\AppFramework\Utility\ITimeFactory;
 
 /**
@@ -65,6 +66,19 @@ final class RunBudget {
 	 */
 	public function nextCallTimeout(): ?int {
 		return $this->fitsAnotherCall() ? $this->callTimeout() : null;
+	}
+
+	/**
+	 * The timeout for a call about to start under $budget; null without one,
+	 * and the client's own applies.
+	 *
+	 * @throws RunBudgetSpentException when no call would finish in time any more
+	 */
+	public static function timeoutOf(?self $budget): ?int {
+		if ($budget === null) {
+			return null;
+		}
+		return $budget->nextCallTimeout() ?? throw new RunBudgetSpentException('No time left in the run for another Etherpad call.');
 	}
 
 	/**

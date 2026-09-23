@@ -210,4 +210,21 @@ class UserNodeResolver {
 
 		return '/' . ltrim(substr($nodePath, strlen($prefix)), '/');
 	}
+
+	/**
+	 * Whether a node found by id earlier is no longer where it was: moved
+	 * since - restored from the trash, say - or gone. A write through the
+	 * old node would then make a new file at its old path.
+	 *
+	 * Asked of the global root, as a sweep finds its files: only for a node
+	 * that came from there.
+	 */
+	public function hasMoved(File $node): bool {
+		foreach ($this->rootFolder->getById($node->getId()) as $current) {
+			if ($current->getPath() === $node->getPath()) {
+				return false;
+			}
+		}
+		return true;
+	}
 }

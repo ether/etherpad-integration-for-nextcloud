@@ -280,4 +280,29 @@ class UserNodeResolverTest extends TestCase {
 	public static function shareOrders(): array {
 		return ['writable first' => [true], 'read-only first' => [false]];
 	}
+
+	/**
+	 * A node found by id earlier has moved when the id no longer resolves
+	 * to its path: restored from the trash since, or gone. Asked of the
+	 * global root, where a sweep found it.
+	 */
+	public function testANodeHasMovedWhenItsIdNoLongerResolvesToItsPath(): void {
+		$trashed = $this->createMock(File::class);
+		$trashed->method('getId')->willReturn(42);
+		$trashed->method('getPath')->willReturn('/alice/files_trashbin/files/Notes.pad.d100');
+		foreach ([
+			'still there' => [['/bob/files/Shared/Notes.pad', '/alice/files_trashbin/files/Notes.pad.d100'], false],
+			'restored' => [['/alice/files/Notes.pad'], true],
+			'gone' => [[], true],
+		] as $case => [$paths, $moved]) {
+			$rootFolder = $this->createMock(IRootFolder::class);
+			$rootFolder->method('getById')->with(42)->willReturn(array_map(function (string $path): File {
+				$node = $this->createMock(File::class);
+				$node->method('getPath')->willReturn($path);
+				return $node;
+			}, $paths));
+
+			$this->assertSame($moved, (new UserNodeResolver($rootFolder))->hasMoved($trashed), $case);
+		}
+	}
 }

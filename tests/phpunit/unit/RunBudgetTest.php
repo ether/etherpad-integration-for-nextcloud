@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Tests\Unit;
 
+use OCA\EtherpadNextcloud\Exception\RunBudgetSpentException;
 use OCA\EtherpadNextcloud\Service\RunBudget;
 use OCA\EtherpadNextcloud\Tests\Support\FixedClock;
 use PHPUnit\Framework\TestCase;
@@ -55,5 +56,17 @@ class RunBudgetTest extends TestCase {
 		$this->assertSame(2, $budget->nextCallTimeout());
 		$clock->advance(1);
 		$this->assertNull($budget->nextCallTimeout());
+	}
+
+	/** One way to ask for a call's timeout, with a budget or without one. */
+	public function testTimeoutOfFollowsTheBudgetOrLeavesTheClientsOwn(): void {
+		$clock = new FixedClock();
+		$budget = new RunBudget($clock, 20.0);
+
+		$this->assertNull(RunBudget::timeoutOf(null));
+		$this->assertSame(15, RunBudget::timeoutOf($budget));
+		$clock->advance(19);
+		$this->expectException(RunBudgetSpentException::class);
+		RunBudget::timeoutOf($budget);
 	}
 }

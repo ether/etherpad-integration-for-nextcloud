@@ -124,15 +124,18 @@ class PendingBindingService {
 			if ($cachePath === null) {
 				return $this->lifecycleService->finishGoneFile($fileId, $padId, $state, $budget);
 			}
-			if (str_starts_with($cachePath, BindingService::USER_TRASH_PATH)) {
-				$file = $state === BindingService::STATE_PENDING_DELETE ? $this->fileInUserTrash($fileId) : null;
-				return $file === null ? $this->notReached($fileId, $padId, $state) : $this->lifecycleService->finishTrash($file, $budget);
-			}
-			if (str_starts_with($cachePath, BindingService::TEAM_TRASH_PATH)) {
+			$inUserTrash = str_starts_with($cachePath, BindingService::USER_TRASH_PATH);
+			$file = match (true) {
+				str_starts_with($cachePath, BindingService::TEAM_TRASH_PATH) => null,
+				$inUserTrash => $state === BindingService::STATE_PENDING_DELETE ? $this->fileInUserTrash($fileId) : null,
+				default => $this->fileOutsideTrash($fileId),
+			};
+			if ($file === null) {
 				return $this->notReached($fileId, $padId, $state);
 			}
-			$file = $this->fileOutsideTrash($fileId);
-			return $file === null ? $this->notReached($fileId, $padId, $state) : $this->lifecycleService->settleWaitingFile($file, $budget->callTimeout());
+			return $inUserTrash
+				? $this->lifecycleService->finishTrash($file, $budget)
+				: $this->lifecycleService->settleWaitingFile($file, $budget->callTimeout());
 		} catch (\Throwable $e) {
 			// Etherpad's silence is caught where it is met; what arrives here
 			// is local - the database, a storage - and says nothing about
@@ -193,6 +196,7 @@ class PendingBindingService {
 	 */
 	private static function isTrashNodePath(string $path): bool {
 		$segments = explode('/', ltrim($path, '/'), 3);
-		return ($segments[1] ?? '') === 'files_trashbin' || str_starts_with($path, '/__groupfolders/trash/');
+		return ($segments[1] ?? '') === rtrim(BindingService::USER_TRASH_PATH, '/')
+			|| str_starts_with($path, '/' . BindingService::TEAM_TRASH_PATH);
 	}
 }
