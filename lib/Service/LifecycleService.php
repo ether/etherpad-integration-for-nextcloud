@@ -37,6 +37,9 @@ class LifecycleService {
 	public const TEST_FAULT_RESTORE_WRITE_FAIL = 'restore_write_fail';
 	/** Etherpad refuses a longer pad name, measured against 2.x. */
 	private const MAX_PAD_NAME_LENGTH = 50;
+	/** Why a waiting row waits on: no answer to go by, which a sweep counts as an outage. */
+	private const REASON_PRESENCE_UNKNOWN = 'pad_presence_unknown';
+	private const REASON_FILE_UNREADABLE = 'file_unreadable';
 
 	public function __construct(
 		private BindingService $bindingService,
@@ -345,20 +348,22 @@ class LifecycleService {
 	 * restore_pending, or pending_delete where no restore ever came to it.
 	 * The decision a restore takes, taken again by a sweep that has no
 	 * restore event to go by.
-	 *
-	 * @return array{status: string, reason?: string, file_id: int, pad_id?: string, old_pad_id?: string, new_pad_id?: string}
 	 */
-	public function settleWaitingFile(File $file, ?int $probeTimeoutSeconds = null): array {
-		$fileId = (int)$file->getId();
+	public function settleWaitingFile(File $file, ?int $probeTimeoutSeconds = null): SettleOutcome {
 		if (!$this->isPadFile($file)) {
-			return $this->buildSkippedResult('not_pad_file', $fileId);
+			return SettleOutcome::Left;
 		}
-		$binding = $this->findBindingForRestore($fileId);
+		$binding = $this->findBindingForRestore((int)$file->getId());
 		$state = $binding === null ? '' : (string)$binding['state'];
 		if ($binding === null || !in_array($state, [BindingService::STATE_PENDING_DELETE, BindingService::STATE_RESTORE_PENDING], true)) {
-			return $this->buildSkippedResult('binding_not_waiting', $fileId);
+			return SettleOutcome::Left;
 		}
-		return $this->settleWaitingBinding($file, $binding, $probeTimeoutSeconds);
+		$result = $this->settleWaitingBinding($file, $binding, $probeTimeoutSeconds);
+		return match (true) {
+			($result['status'] ?? '') === self::RESULT_RESTORED => SettleOutcome::Settled,
+			in_array($result['reason'] ?? '', [self::REASON_PRESENCE_UNKNOWN, self::REASON_FILE_UNREADABLE], true) => SettleOutcome::Unanswered,
+			default => SettleOutcome::Left,
+		};
 	}
 
 	/** @return array<string,mixed>|null */
@@ -440,7 +445,7 @@ class LifecycleService {
 				...($readError === null ? [] : SafeError::context($readError)),
 			]);
 		}
-		return $this->buildSkippedResult($readError === null ? 'pad_presence_unknown' : 'file_unreadable', $fileId, $padId);
+		return $this->buildSkippedResult($readError === null ? self::REASON_PRESENCE_UNKNOWN : self::REASON_FILE_UNREADABLE, $fileId, $padId);
 	}
 
 	/**
@@ -588,16 +593,14 @@ class LifecycleService {
 	 *
 	 * Nothing happens while deleting on trash is switched off: this is the
 	 * deletion that setting governs, only later.
-	 *
-	 * @return 'deleted'|'kept'|'unknown'
 	 */
-	public function finishOwedDeletion(int $fileId, string $padId, ?int $probeTimeoutSeconds = null): string {
+	public function finishOwedDeletion(int $fileId, string $padId, ?int $probeTimeoutSeconds = null): SettleOutcome {
 		if (!$this->isDeleteOnTrashEnabled()) {
-			return 'kept';
+			return SettleOutcome::Left;
 		}
 		$presence = $this->padLifecycle->presenceOf($padId, -1, ['fileId' => $fileId], $probeTimeoutSeconds);
 		if ($presence === PadPresence::Unknown) {
-			return 'unknown';
+			return SettleOutcome::Unanswered;
 		}
 		try {
 			if ($presence !== PadPresence::Absent) {
@@ -610,11 +613,11 @@ class LifecycleService {
 					'fileId' => $fileId,
 					...SafeError::context($e),
 				]);
-				return 'unknown';
+				return SettleOutcome::Unanswered;
 			}
 		}
 		$this->bindingService->deleteInState($fileId, $padId, BindingService::STATE_PENDING_DELETE);
-		return 'deleted';
+		return SettleOutcome::Settled;
 	}
 
 	/** The `.pad` back from the trash, as a restore from its snapshot reads it. */

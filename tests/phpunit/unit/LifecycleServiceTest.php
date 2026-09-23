@@ -15,6 +15,7 @@ use OCA\EtherpadNextcloud\Service\ManagedPadLifecycle;
 use OCA\EtherpadNextcloud\Service\LifecycleService;
 use OCA\EtherpadNextcloud\Service\PadFileService;
 use OCA\EtherpadNextcloud\Service\ProvisionedPadRollback;
+use OCA\EtherpadNextcloud\Service\SettleOutcome;
 use OCA\EtherpadNextcloud\Service\PadSnapshot;
 use OCA\EtherpadNextcloud\Service\ParsedPadFile;
 use OCA\EtherpadNextcloud\Service\UserNodeResolver;
@@ -476,10 +477,35 @@ class LifecycleServiceTest extends TestCase {
 		$etherpadClient = $this->createMock(EtherpadClient::class);
 		$etherpadClient->expects($this->once())->method('getRevisionsCount')->with('old-pad', 5)->willReturn(3);
 
-		$result = $this->buildPendingDeleteRestoreService($fileId, 'old-pad', $bindingService, $etherpadClient, state: BindingService::STATE_RESTORE_PENDING)
+		$outcome = $this->buildPendingDeleteRestoreService($fileId, 'old-pad', $bindingService, $etherpadClient, state: BindingService::STATE_RESTORE_PENDING)
 			->settleWaitingFile($this->buildRestoredPadFile($fileId), 5);
 
-		$this->assertSame(LifecycleService::RESULT_RESTORED, $result['status']);
+		$this->assertSame(SettleOutcome::Settled, $outcome);
+	}
+
+	/**
+	 * The sweep reads an outage from this: no answer from Etherpad, or a
+	 * file it cannot read, is not the same as a row it chose to leave.
+	 */
+	public function testSettleWaitingFileTellsNoAnswerFromTheRest(): void {
+		$outcomes = [];
+		foreach (['no answer', 'unreadable'] as $case) {
+			$bindingService = $this->createMock(BindingService::class);
+			$etherpadClient = $this->createMock(EtherpadClient::class);
+			$etherpadClient->method('getRevisionsCount')->willThrowException(new \RuntimeException('Connection refused'));
+			$file = $this->createMock(File::class);
+			$file->method('getId')->willReturn(105);
+			$file->method('getName')->willReturn('Restored.pad');
+			if ($case === 'unreadable') {
+				$file->method('getContent')->willThrowException(new \RuntimeException('locked'));
+			} else {
+				$file->method('getContent')->willReturn('doc-before');
+			}
+			$outcomes[$case] = $this->buildPendingDeleteRestoreService(105, 'old-pad', $bindingService, $etherpadClient, state: BindingService::STATE_RESTORE_PENDING)
+				->settleWaitingFile($file, 5);
+		}
+
+		$this->assertSame(['no answer' => SettleOutcome::Unanswered, 'unreadable' => SettleOutcome::Unanswered], $outcomes);
 	}
 
 	/**
@@ -534,7 +560,7 @@ class LifecycleServiceTest extends TestCase {
 				->finishOwedDeletion(102, 'old-pad', 5);
 		}
 
-		$this->assertSame(['there' => 'deleted', 'gone' => 'deleted', 'no answer' => 'unknown'], $outcomes);
+		$this->assertSame(['there' => SettleOutcome::Settled, 'gone' => SettleOutcome::Settled, 'no answer' => SettleOutcome::Unanswered], $outcomes);
 	}
 
 	/** With deleting on trash switched off, the pad stays however long the file is gone. */
@@ -547,7 +573,7 @@ class LifecycleServiceTest extends TestCase {
 		$outcome = $this->buildPendingDeleteRestoreService(103, 'old-pad', $bindingService, $etherpadClient, deleteOnTrash: false)
 			->finishOwedDeletion(103, 'old-pad');
 
-		$this->assertSame('kept', $outcome);
+		$this->assertSame(SettleOutcome::Left, $outcome);
 	}
 
 	/**

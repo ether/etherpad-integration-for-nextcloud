@@ -7,6 +7,7 @@ namespace OCA\EtherpadNextcloud\Tests\Unit;
 use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\EtherpadNextcloud\Service\LifecycleService;
 use OCA\EtherpadNextcloud\Service\PendingBindingService;
+use OCA\EtherpadNextcloud\Service\SettleOutcome;
 use OCA\EtherpadNextcloud\Tests\Support\FixedClock;
 use OCP\Files\File;
 use OCP\Files\IRootFolder;
@@ -34,11 +35,11 @@ class PendingBindingServiceTest extends TestCase {
 
 		$lifecycle = $this->createMock(LifecycleService::class);
 		$settled = [];
-		$lifecycle->method('settleWaitingFile')->willReturnCallback(static function (File $file) use (&$settled): array {
+		$lifecycle->method('settleWaitingFile')->willReturnCallback(static function (File $file) use (&$settled): SettleOutcome {
 			$settled[] = $file->getId();
-			return ['status' => LifecycleService::RESULT_RESTORED, 'file_id' => $file->getId()];
+			return SettleOutcome::Settled;
 		});
-		$lifecycle->expects($this->once())->method('finishOwedDeletion')->with(3, 'pad-3', 15)->willReturn('deleted');
+		$lifecycle->expects($this->once())->method('finishOwedDeletion')->with(3, 'pad-3', 15)->willReturn(SettleOutcome::Settled);
 
 		$result = $this->service($bindings, $lifecycle, $this->root($files))->settleByAge(0, 3600, 50);
 
@@ -79,7 +80,7 @@ class PendingBindingServiceTest extends TestCase {
 		$lifecycle = $this->createMock(LifecycleService::class);
 		$lifecycle->expects($this->exactly(5))
 			->method('settleWaitingFile')
-			->willReturn(['status' => LifecycleService::RESULT_SKIPPED, 'reason' => 'pad_presence_unknown', 'file_id' => 0]);
+			->willReturn(SettleOutcome::Unanswered);
 
 		$result = $this->service($this->bindings(restores: $rows), $lifecycle, $this->root($files))->settleByAge(0, null, 50);
 
@@ -100,10 +101,10 @@ class PendingBindingServiceTest extends TestCase {
 		}
 		$timeouts = [];
 		$lifecycle = $this->createMock(LifecycleService::class);
-		$lifecycle->method('settleWaitingFile')->willReturnCallback(static function (File $file, ?int $timeout) use ($clock, &$timeouts): array {
+		$lifecycle->method('settleWaitingFile')->willReturnCallback(static function (File $file, ?int $timeout) use ($clock, &$timeouts): SettleOutcome {
 			$timeouts[] = $timeout;
 			$clock->advance(10);
-			return ['status' => LifecycleService::RESULT_RESTORED, 'file_id' => $file->getId()];
+			return SettleOutcome::Settled;
 		});
 
 		$this->service($this->bindings(restores: $rows), $lifecycle, $this->root($files), $clock)->settleByAge(0, null, 50);
@@ -118,11 +119,11 @@ class PendingBindingServiceTest extends TestCase {
 			['file_id' => 2, 'pad_id' => 'pad-2', 'state' => BindingService::STATE_RESTORE_PENDING],
 		]);
 		$lifecycle = $this->createMock(LifecycleService::class);
-		$lifecycle->method('settleWaitingFile')->willReturnCallback(static function (File $file): array {
+		$lifecycle->method('settleWaitingFile')->willReturnCallback(static function (File $file): SettleOutcome {
 			if ($file->getId() === 1) {
 				throw new \RuntimeException('database went away');
 			}
-			return ['status' => LifecycleService::RESULT_RESTORED, 'file_id' => 2];
+			return SettleOutcome::Settled;
 		});
 		$logger = $this->createMock(LoggerInterface::class);
 		$logger->expects($this->once())->method('warning')->with('Could not settle a pad binding that waits.', $this->anything());

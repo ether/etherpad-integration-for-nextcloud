@@ -26,9 +26,8 @@ use Psr\Log\LoggerInterface;
  * - gone for good, with nothing left of it in the file cache: the
  *   deletion is carried out. The only place a pad is deleted from here.
  *
- * Bounded the way ExpiredSessionCollector is: a time budget, the probe's
- * timeout cut to what is left of it, and a run that gives up after a few
- * rows Etherpad gave no answer for. The rows stay until they are settled,
+ * Bounded the way ExpiredSessionCollector is: a RunBudget for the time,
+ * and a run that gives up after a few rows Etherpad gave no answer for. The rows stay until they are settled,
  * so without the bound an Etherpad that is down would cost every run a
  * full timeout per row.
  *
@@ -39,9 +38,6 @@ class PendingBindingService {
 
 	/** Rows without an answer a run puts up with before reading them as an outage. */
 	private const MAX_FAILURES_PER_RUN = 5;
-
-	/** Below this, a probe cannot finish inside the budget and is not made. */
-	private const MIN_CALL_TIMEOUT_SECONDS = 2;
 
 	private const TRASH_PREFIX = 'files_trashbin/';
 
@@ -72,104 +68,68 @@ class PendingBindingService {
 	 * @return array{checked:int, settled:int}
 	 */
 	public function settleByAge(int $minAgeSeconds, ?int $maxAgeSeconds, int $limit = 200): array {
-		$deadline = $this->nowSeconds() + $this->budgetSeconds;
-		$tally = ['checked' => 0, 'settled' => 0, 'failed' => 0];
+		$budget = new RunBudget($this->timeFactory, $this->budgetSeconds);
+		$checked = 0;
+		$settled = 0;
+		$unanswered = 0;
 
-		foreach ($this->bindingService->findRestorePendingByAge($minAgeSeconds, $maxAgeSeconds, max(1, $limit)) as $row) {
-			if (!$this->settleRow($row, null, $deadline, $tally)) {
-				return $this->report($tally);
-			}
-		}
+		$rows = $this->bindingService->findRestorePendingByAge($minAgeSeconds, $maxAgeSeconds, max(1, $limit));
 		foreach ($this->bindingService->findPendingDeleteByAge($minAgeSeconds, $maxAgeSeconds, max(1, $limit)) as $row) {
 			$path = $row['file_path'] ?? null;
-			if (is_string($path) && str_starts_with($path, self::TRASH_PREFIX)) {
-				continue;
-			}
-			if (!$this->settleRow($row, is_string($path) ? $path : null, $deadline, $tally)) {
-				return $this->report($tally);
+			if (!is_string($path) || !str_starts_with($path, self::TRASH_PREFIX)) {
+				$rows[] = $row;
 			}
 		}
-		return $this->report($tally);
+
+		foreach ($rows as $row) {
+			$fileId = (int)($row['file_id'] ?? 0);
+			$padId = (string)($row['pad_id'] ?? '');
+			if ($fileId <= 0 || $padId === '') {
+				continue;
+			}
+			if (!$budget->fitsAnotherCall() || $unanswered >= self::MAX_FAILURES_PER_RUN) {
+				break;
+			}
+			$outcome = $this->settleRow($row, $fileId, $padId, $budget->callTimeout());
+			if ($outcome === null) {
+				continue;
+			}
+			$checked++;
+			if ($outcome === SettleOutcome::Settled) {
+				$settled++;
+			} elseif ($outcome === SettleOutcome::Unanswered) {
+				$unanswered++;
+			}
+		}
+		return ['checked' => $checked, 'settled' => $settled];
 	}
 
 	/**
-	 * One row, if the run can still afford it. False ends the run: out of
-	 * time, or too many rows without an answer.
+	 * A deletion owed whose file has left no trace in the file cache is
+	 * carried out; every other row belongs to a file in Files. Null when
+	 * the row was not looked at at all.
 	 *
 	 * @param array<string,mixed> $row
-	 * @param array{checked:int, settled:int, failed:int} $tally
 	 */
-	private function settleRow(array $row, ?string $cachedPath, float $deadline, array &$tally): bool {
-		$fileId = (int)($row['file_id'] ?? 0);
-		$padId = (string)($row['pad_id'] ?? '');
-		if ($fileId <= 0 || $padId === '') {
-			return true;
-		}
-		$left = $deadline - $this->nowSeconds();
-		if ($left < self::MIN_CALL_TIMEOUT_SECONDS || $tally['failed'] >= self::MAX_FAILURES_PER_RUN) {
-			return false;
-		}
-		$timeout = (int)min(floor($left), EtherpadClient::REQUEST_TIMEOUT_SECONDS);
-
+	private function settleRow(array $row, int $fileId, string $padId, int $timeout): ?SettleOutcome {
 		try {
-			if ((string)($row['state'] ?? '') === BindingService::STATE_PENDING_DELETE && $cachedPath === null) {
-				$outcome = match ($this->lifecycleService->finishOwedDeletion($fileId, $padId, $timeout)) {
-					'deleted' => 'settled',
-					'kept' => 'skipped',
-					default => 'unknown',
-				};
-			} else {
-				$outcome = $this->settleFileInFiles($fileId, $timeout);
+			if ((string)($row['state'] ?? '') === BindingService::STATE_PENDING_DELETE && ($row['file_path'] ?? null) === null) {
+				return $this->lifecycleService->finishOwedDeletion($fileId, $padId, $timeout);
 			}
+			$node = $this->rootFolder->getFirstNodeById($fileId);
+			// One that cannot be found, or sits in a trash after all, is left
+			// for a later run rather than guessed at.
+			if (!$node instanceof File || str_contains($node->getPath(), '/files_trashbin/')) {
+				return null;
+			}
+			return $this->lifecycleService->settleWaitingFile($node, $timeout);
 		} catch (\Throwable $e) {
 			$this->logger->warning('Could not settle a pad binding that waits.', [
 				'app' => 'etherpad_nextcloud',
 				'fileId' => $fileId,
 				...SafeError::context($e),
 			]);
-			$outcome = 'unknown';
+			return SettleOutcome::Unanswered;
 		}
-
-		if ($outcome !== 'skipped') {
-			$tally['checked']++;
-		}
-		if ($outcome === 'settled') {
-			$tally['settled']++;
-		} elseif ($outcome === 'unknown') {
-			$tally['failed']++;
-		}
-		return true;
-	}
-
-	/**
-	 * A file in Files whose row still waits. Found by its id across every
-	 * user's files; one that cannot be found, or sits in a trash after all,
-	 * is left for a later run rather than guessed at.
-	 *
-	 * @return 'settled'|'unknown'|'skipped'
-	 */
-	private function settleFileInFiles(int $fileId, int $timeout): string {
-		$node = $this->rootFolder->getFirstNodeById($fileId);
-		if (!$node instanceof File || str_contains($node->getPath(), '/files_trashbin/')) {
-			return 'skipped';
-		}
-		$result = $this->lifecycleService->settleWaitingFile($node, $timeout);
-		if (($result['status'] ?? '') === LifecycleService::RESULT_RESTORED) {
-			return 'settled';
-		}
-		return in_array($result['reason'] ?? '', ['pad_presence_unknown', 'file_unreadable'], true) ? 'unknown' : 'skipped';
-	}
-
-	/**
-	 * @param array{checked:int, settled:int, failed:int} $tally
-	 * @return array{checked:int, settled:int}
-	 */
-	private function report(array $tally): array {
-		return ['checked' => $tally['checked'], 'settled' => $tally['settled']];
-	}
-
-	/** The budget's clock, sub-second, through the same factory as the rest. */
-	private function nowSeconds(): float {
-		return (float)$this->timeFactory->now()->format('U.u');
 	}
 }

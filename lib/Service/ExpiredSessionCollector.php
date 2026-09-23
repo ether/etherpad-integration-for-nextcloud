@@ -35,9 +35,6 @@ class ExpiredSessionCollector {
 	/** Refusals a run puts up with before reading them as an outage. */
 	private const MAX_FAILURES_PER_RUN = 5;
 
-	/** Below this, a call cannot finish inside the budget and is not made. */
-	private const MIN_CALL_TIMEOUT_SECONDS = 2;
-
 	/** The budget is a parameter so a test can reach it, not a setting. */
 	public function __construct(
 		private EtherpadClient $etherpadClient,
@@ -89,12 +86,12 @@ class ExpiredSessionCollector {
 	 * @return array{deleted:int,remaining:int,retry:bool,nextDueAt:?int}
 	 */
 	public function collect(string $authorId): array {
-		$deadline = $this->nowSeconds() + $this->budgetSeconds;
+		$budget = new RunBudget($this->timeFactory, $this->budgetSeconds);
 
 		try {
 			$sessions = $this->etherpadClient->listSessionsOfAuthor(
 				$authorId,
-				$this->callTimeout($deadline - $this->nowSeconds()),
+				$budget->callTimeout(),
 				$unreadable,
 			);
 		} catch (\Throwable $e) {
@@ -144,15 +141,12 @@ class ExpiredSessionCollector {
 		$deleted = 0;
 		$failures = 0;
 		foreach ($expired as $sessionId) {
-			// A deadline alone bounds when the last call starts, not when it
-			// ends. One that no longer fits is not made.
-			$left = $deadline - $this->nowSeconds();
-			if ($handled >= self::MAX_PER_RUN || $left < self::MIN_CALL_TIMEOUT_SECONDS) {
+			if ($handled >= self::MAX_PER_RUN || !$budget->fitsAnotherCall()) {
 				break;
 			}
 
 			try {
-				$this->etherpadClient->deleteSession($sessionId, $this->callTimeout($left));
+				$this->etherpadClient->deleteSession($sessionId, $budget->callTimeout());
 				$deleted++;
 				$handled++;
 			} catch (\Throwable $e) {
@@ -213,18 +207,5 @@ class ExpiredSessionCollector {
 		}
 
 		return false;
-	}
-
-	/**
-	 * The rest of the budget, capped so housekeeping is never more patient
-	 * than the calls a user waits on.
-	 */
-	private function callTimeout(float $left): int {
-		return (int)min(floor($left), EtherpadClient::REQUEST_TIMEOUT_SECONDS);
-	}
-
-	/** The budget's clock, sub-second, through the same factory as the rest. */
-	private function nowSeconds(): float {
-		return (float)$this->timeFactory->now()->format('U.u');
 	}
 }
