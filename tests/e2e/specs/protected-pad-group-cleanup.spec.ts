@@ -4,7 +4,7 @@
  */
 import { test, expect, request as playwrightRequest } from '@playwright/test'
 import { E2E } from '../fixtures/env'
-import { createPadAtPath, deleteViaDav, propfindFileId } from '../fixtures/dav'
+import { createPadAtPath, deleteViaDav, findTrashbinEntry, padApiPost, propfindFileId, purgeTrashbinEntry } from '../fixtures/dav'
 import { uniquePadName } from '../fixtures/nextcloud'
 
 /**
@@ -16,6 +16,10 @@ import { uniquePadName } from '../fixtures/nextcloud'
  * The unit tests pin which API call is made. This asks the pad server
  * whether the group is actually gone, which is the only place that can
  * answer it.
+ *
+ * A delete through WebDAV holds the file's lock, so the trash cannot write
+ * a fresh snapshot and keeps the pad - with its group - until the file is
+ * gone for good. The group goes then, when the pending pads are settled.
  */
 test.describe('protected pad cleanup on the Etherpad side', () => {
 	const padName = uniquePadName('group-cleanup')
@@ -24,7 +28,7 @@ test.describe('protected pad cleanup on the Etherpad side', () => {
 		await deleteViaDav(padName).catch(() => {})
 	})
 
-	test('takes the Etherpad group with it when the pad is deleted', async () => {
+	test('takes the Etherpad group with it once the file is gone for good', async () => {
 		const etherpad = E2E.etherpadApi
 		test.skip(etherpad === null, 'E2E_ETHERPAD_URL / E2E_ETHERPAD_API_KEY not configured; Etherpad-side spec skipped.')
 
@@ -57,8 +61,19 @@ test.describe('protected pad cleanup on the Etherpad side', () => {
 
 			await deleteViaDav(padName)
 
-			// delete_on_trash is on in this stack, so the trash move removes
-			// the pad — and with it, the group and its sessions.
+			// In the trash, the pad is kept as it is: a restore takes it back.
+			expect(await groupIds(), 'the trash keeps the pad and its group').toContain(decodeURIComponent(group))
+
+			// Gone for good: out of the trash, then settled. delete_on_trash is
+			// on in this stack, so settling removes the pad — and with it, the
+			// group and its sessions.
+			const entry = await findTrashbinEntry(padName)
+			expect(entry, 'the .pad should be in the trash').not.toBeNull()
+			await purgeTrashbinEntry(entry!)
+			const settled = await padApiPost('admin/settle-pending')
+			test.skip(settled.status === 403, 'E2E_USER is not a Nextcloud admin; the pending pads cannot be settled from here.')
+			expect(settled.status, JSON.stringify(settled.body)).toBe(200)
+
 			await expect.poll(groupIds, { timeout: 20_000 })
 				.not.toContain(decodeURIComponent(group))
 			// Not a count: another suite run against the same instance may add

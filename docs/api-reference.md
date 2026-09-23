@@ -246,7 +246,7 @@ solely by the separate external-pad policy, not by these two settings.
   - Result:
     - `200` with `status=trashed` for successful trash flow.
       - includes `snapshot_persisted` (`true|false`): `false` when no fresh snapshot was written - the file was locked, Etherpad did not answer, or the file's restore was still undecided, which leaves the pad alone.
-      - includes `delete_pending` (`true|false`): `true` when the pad is kept and its deletion recorded as owed.
+      - includes `delete_pending` (`true|false`): `true` when the pad is kept and its deletion recorded as owed: always when no fresh snapshot was written, since a pad is deleted only after its snapshot is.
     - `409` with `status=skipped` + `reason` on invalid lifecycle state (for example already pending delete).
       - includes transition-race guard reason `binding_state_transition_conflict` on concurrent state updates.
 
@@ -297,8 +297,8 @@ solely by the separate external-pad policy, not by these two settings.
     - `api_version`
     - `latency_ms`
     - `target`
-    - `pending_delete_count` — rows whose pad deletion the trash could not
-      carry out
+    - `pending_delete_count` — pads the trash kept, their deletion owed until
+      the file is restored or gone for good
     - `restore_pending_count` — restored files whose pad Etherpad could not
       confirm or deny
     - `session_cookie_release` — the Etherpad release the open path is going

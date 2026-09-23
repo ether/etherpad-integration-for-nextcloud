@@ -187,68 +187,16 @@ class LifecycleService {
 		}
 
 		$deletedAt = $this->timeFactory->getTime();
-		$currentContent = '';
-		$snapshotPersisted = false;
-		$canPersistSnapshotToFile = true;
 
 		try {
-			try {
-				if ($this->isTestFaultActive(self::TEST_FAULT_TRASH_READ_LOCK)) {
-					throw new LockedException('Injected test fault: trash_read_lock');
+			if (!$this->persistTrashSnapshot($file, $fileId, $padId)) {
+				// Without a fresh snapshot the pad may hold what the file lacks,
+				// so it stays as it is and its deletion is owed: a restore takes
+				// it back, and the sweep deletes it once the file is gone for good.
+				if (!$this->bindingService->transition($fileId, $padId, BindingService::STATE_ACTIVE, BindingService::STATE_PENDING_DELETE)) {
+					throw new BindingStateConflictException('State transition conflict while marking pending_delete (expected active).');
 				}
-				$currentContent = (string)$file->getContent();
-			} catch (LockedException $readLockError) {
-				$canPersistSnapshotToFile = false;
-				$this->logger->warning('Could not read .pad content during trash because file is locked. Continuing without snapshot persistence.', [
-					'app' => 'etherpad_nextcloud',
-					'fileId' => $fileId,
-					...SafeError::context($readLockError),
-				]);
-			}
-
-			if ($canPersistSnapshotToFile && $currentContent !== '') {
-				$updatedContent = null;
-				try {
-					$snapshot = $this->etherpadClient->getText($padId);
-					$html = $this->etherpadClient->getHTML($padId);
-					$revision = $this->etherpadClient->getRevisionsCount($padId);
-					$updatedContent = $this->padFileService->withExportSnapshot(
-						$this->padFileService->readPad($currentContent),
-						new PadSnapshot($snapshot, $html, $revision),
-					);
-				} catch (\Throwable $snapshotError) {
-					$this->logger->warning('Could not fetch fresh Etherpad snapshot during trash. Using current .pad snapshot/body.', [
-						'app' => 'etherpad_nextcloud',
-						'fileId' => $fileId,
-						...SafeError::context($snapshotError),
-					]);
-				}
-
-				if ($updatedContent !== null) {
-					try {
-						if ($this->isTestFaultActive(self::TEST_FAULT_TRASH_WRITE_LOCK)) {
-							throw new LockedException('Injected test fault: trash_write_lock');
-						}
-						if ($this->isTestFaultActive(self::TEST_FAULT_TRASH_WRITE_FAIL)) {
-							throw new \RuntimeException('Injected test fault: trash_write_fail');
-						}
-						$file->putContent($updatedContent);
-						$snapshotPersisted = true;
-					} catch (LockedException $e) {
-						// Trash operation can hold a lock on the file node; do not block state transition/deletion.
-						$this->logger->warning('Could not persist trash snapshot due to file lock. Continuing with pad deletion.', [
-							'app' => 'etherpad_nextcloud',
-							'fileId' => $fileId,
-							...SafeError::context($e),
-						]);
-					} catch (\Throwable $writeError) {
-						$this->logger->warning('Could not persist trash snapshot to .pad file. Continuing with pad deletion.', [
-							'app' => 'etherpad_nextcloud',
-							'fileId' => $fileId,
-							...SafeError::context($writeError),
-						]);
-					}
-				}
+				return $this->buildTrashedResult($fileId, $padId, $deletedAt, false, true);
 			}
 
 			try {
@@ -269,11 +217,11 @@ class LifecycleService {
 						'fileId' => $fileId,
 						...SafeError::context($deleteError),
 					]);
-					return $this->buildTrashedResult($fileId, $padId, $deletedAt, $snapshotPersisted, true);
+					return $this->buildTrashedResult($fileId, $padId, $deletedAt, true, true);
 				}
 			}
 			$this->bindingService->deleteByFileId($fileId);
-			return $this->buildTrashedResult($fileId, $padId, $deletedAt, $snapshotPersisted, false);
+			return $this->buildTrashedResult($fileId, $padId, $deletedAt, true, false);
 		} catch (BindingStateConflictException $e) {
 			$this->logger->warning('Trash lifecycle state transition conflict. Returning skipped.', [
 				'app' => 'etherpad_nextcloud',
@@ -288,6 +236,60 @@ class LifecycleService {
 			// the one of the two places that cannot see all of them.
 			throw $this->failed('Trash', $e);
 		}
+	}
+
+	/**
+	 * Take the pad's current content into the file, as the snapshot a trash
+	 * leaves behind. True only once it is written: a pad is not deleted on
+	 * anything less.
+	 *
+	 * A delete through WebDAV holds the file's lock while the trash is
+	 * decided, so a locked file is the ordinary case here, not a fault.
+	 */
+	private function persistTrashSnapshot(File $file, int $fileId, string $padId): bool {
+		$context = ['app' => 'etherpad_nextcloud', 'fileId' => $fileId];
+		try {
+			if ($this->isTestFaultActive(self::TEST_FAULT_TRASH_READ_LOCK)) {
+				throw new LockedException('Injected test fault: trash_read_lock');
+			}
+			$currentContent = (string)$file->getContent();
+		} catch (LockedException) {
+			$this->logger->debug('A trashed .pad file is locked by its delete. Its pad is kept as it is.', $context);
+			return false;
+		}
+		if ($currentContent === '') {
+			return false;
+		}
+
+		try {
+			$updatedContent = $this->padFileService->withExportSnapshot(
+				$this->padFileService->readPad($currentContent),
+				new PadSnapshot(
+					$this->etherpadClient->getText($padId),
+					$this->etherpadClient->getHTML($padId),
+					$this->etherpadClient->getRevisionsCount($padId),
+				),
+			);
+		} catch (\Throwable $snapshotError) {
+			$this->logger->warning('Could not fetch a fresh snapshot for a trashed .pad file. Its pad is kept as it is.', [...$context, ...SafeError::context($snapshotError)]);
+			return false;
+		}
+
+		try {
+			if ($this->isTestFaultActive(self::TEST_FAULT_TRASH_WRITE_LOCK)) {
+				throw new LockedException('Injected test fault: trash_write_lock');
+			}
+			if ($this->isTestFaultActive(self::TEST_FAULT_TRASH_WRITE_FAIL)) {
+				throw new \RuntimeException('Injected test fault: trash_write_fail');
+			}
+			$file->putContent($updatedContent);
+			return true;
+		} catch (LockedException) {
+			$this->logger->debug('A trashed .pad file is locked by its delete. Its pad is kept as it is.', $context);
+		} catch (\Throwable $writeError) {
+			$this->logger->warning('Could not write the snapshot of a trashed .pad file. Its pad is kept as it is.', [...$context, ...SafeError::context($writeError)]);
+		}
+		return false;
 	}
 
 	/**

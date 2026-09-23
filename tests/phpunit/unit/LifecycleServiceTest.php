@@ -21,6 +21,7 @@ use OCA\EtherpadNextcloud\Service\UserNodeResolver;
 use OCA\EtherpadNextcloud\Util\PathNormalizer;
 use OCP\Files\File;
 use OCP\IConfig;
+use OCP\Lock\LockedException;
 use OCP\Security\ISecureRandom;
 use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
@@ -629,7 +630,7 @@ class LifecycleServiceTest extends TestCase {
 
 		$service = new LifecycleService(
 			$bindingService,
-			$this->createMock(PadFileService::class),
+			$this->buildSnapshotWritingPadFileService(),
 			$etherpadClient,
 			new ManagedPadLifecycle($etherpadClient, $this->createMock(LoggerInterface::class)),
 			$this->buildDeleteOnTrashEnabledConfig(),
@@ -643,7 +644,7 @@ class LifecycleServiceTest extends TestCase {
 		$file = $this->createMock(File::class);
 		$file->method('getId')->willReturn(109);
 		$file->method('getName')->willReturn('Raced.pad');
-		$file->method('getContent')->willReturn('');
+		$file->method('getContent')->willReturn('doc-before');
 
 		$result = $service->handleTrash($file);
 
@@ -700,6 +701,86 @@ class LifecycleServiceTest extends TestCase {
 		$this->assertSame('r-nc-abcdefghijklmnopqrstuvwx-abc123def456', $created[0]);
 		$this->assertSame('r-legacy-' . str_repeat('x', 28) . '-abc123def456', $created[1]);
 		$this->assertSame(50, strlen($created[1]));
+	}
+
+	/**
+	 * A pad is deleted on trash only once its content is in the file. A
+	 * delete through WebDAV holds the file's lock, and the snapshot can fail
+	 * in other ways too; each time the pad stays as it is, and its deletion
+	 * is owed - a restore takes it back, the sweep deletes it once the file
+	 * is gone for good.
+	 */
+	public function testHandleTrashKeepsThePadWhenNoFreshSnapshotCanBeWritten(): void {
+		foreach (['file locked by its delete', 'snapshot not fetched', 'write locked'] as $case) {
+			$bindingService = $this->createMock(BindingService::class);
+			$bindingService->method('findByFileId')->willReturn([
+				'file_id' => 110,
+				'pad_id' => 'pad-kept',
+				'access_mode' => BindingService::ACCESS_PUBLIC,
+				'state' => BindingService::STATE_ACTIVE,
+			]);
+			$bindingService->expects($this->once())
+				->method('transition')
+				->with(110, 'pad-kept', BindingService::STATE_ACTIVE, BindingService::STATE_PENDING_DELETE)
+				->willReturn(true);
+			$bindingService->expects($this->never())->method('deleteByFileId');
+
+			$etherpadClient = $this->createMock(EtherpadClient::class);
+			$etherpadClient->expects($this->never())->method('deletePad');
+			if ($case === 'snapshot not fetched') {
+				$etherpadClient->method('getText')->willThrowException(new \RuntimeException('Connection reset'));
+			}
+
+			$file = $this->createMock(File::class);
+			$file->method('getId')->willReturn(110);
+			$file->method('getName')->willReturn('Kept.pad');
+			if ($case === 'file locked by its delete') {
+				$file->method('getContent')->willThrowException(new LockedException('Kept.pad'));
+			} else {
+				$file->method('getContent')->willReturn('doc-before');
+			}
+			if ($case === 'write locked') {
+				$file->method('putContent')->willThrowException(new LockedException('Kept.pad'));
+			}
+
+			$result = $this->buildTrashService($bindingService, $etherpadClient)->handleTrash($file);
+
+			$this->assertSame(LifecycleService::RESULT_TRASHED, $result['status'], $case);
+			$this->assertTrue($result['delete_pending'], $case);
+			$this->assertFalse($result['snapshot_persisted'], $case);
+		}
+	}
+
+	private function buildTrashService(BindingService $bindingService, EtherpadClient $etherpadClient): LifecycleService {
+		return new LifecycleService(
+			$bindingService,
+			$this->buildSnapshotWritingPadFileService(),
+			$etherpadClient,
+			new ManagedPadLifecycle($etherpadClient, $this->createMock(LoggerInterface::class)),
+			$this->buildDeleteOnTrashEnabledConfig(),
+			$this->createMock(LoggerInterface::class),
+			$this->createMock(ISecureRandom::class),
+			$this->createMock(UserNodeResolver::class),
+			$this->createMock(PathNormalizer::class),
+			new FixedClock(),
+			new ProvisionedPadRollback($bindingService, new ManagedPadLifecycle($etherpadClient, $this->createMock(LoggerInterface::class)), $this->createMock(LoggerInterface::class)),
+		);
+	}
+
+	/** A formatter that reads 'doc-before' and writes a fresh snapshot into it as 'doc-after'. */
+	private function buildSnapshotWritingPadFileService(): PadFileService&MockObject {
+		$padFileService = $this->createMock(PadFileService::class);
+		$padFileService->method('readPad')->willReturn(new ParsedPadFile(
+			frontmatter: [],
+			body: 'body',
+			padId: 'pad',
+			accessMode: BindingService::ACCESS_PUBLIC,
+			padUrl: '',
+			isExternal: false,
+			snapshotRev: -1,
+		));
+		$padFileService->method('withExportSnapshot')->willReturn('doc-after');
+		return $padFileService;
 	}
 
 	/** Etherpad answers for the old pad that it does not exist. */
@@ -912,11 +993,10 @@ class LifecycleServiceTest extends TestCase {
 		$padFileService = $this->createMock(PadFileService::class);
 		$padFileService->expects($this->never())->method('withExportSnapshot');
 
+		// No snapshot, so the pad is kept: marking its deletion owed is what
+		// loses the race.
 		$etherpadClient = $this->createMock(EtherpadClient::class);
-		$etherpadClient->expects($this->once())
-			->method('deletePad')
-			->with($padId)
-			->willThrowException(new \RuntimeException('temporary failure'));
+		$etherpadClient->expects($this->never())->method('deletePad');
 
 		$config = $this->buildDeleteOnTrashEnabledConfig();
 		$secureRandom = $this->createMock(ISecureRandom::class);
@@ -1640,7 +1720,7 @@ class LifecycleServiceTest extends TestCase {
 			]);
 		$bindingService->expects($this->once())->method('deleteByFileId')->with($fileId);
 
-		$padFileService = $this->createMock(PadFileService::class);
+		$padFileService = $this->buildSnapshotWritingPadFileService();
 
 		$etherpadClient = $this->createMock(EtherpadClient::class);
 		$etherpadClient->expects($this->once())->method('deletePad')->with($padId);
@@ -1648,7 +1728,8 @@ class LifecycleServiceTest extends TestCase {
 		$file = $this->createMock(File::class);
 		$file->method('getId')->willReturn($fileId);
 		$file->method('getName')->willReturn('Test.pad');
-		$file->method('getContent')->willReturn('');
+		$file->method('getContent')->willReturn('doc-before');
+		$file->expects($this->once())->method('putContent')->with('doc-after');
 
 		$userNodeResolver = $this->createMock(UserNodeResolver::class);
 		$userNodeResolver->expects($this->once())
@@ -1675,7 +1756,7 @@ class LifecycleServiceTest extends TestCase {
 		$this->assertSame('/Test.pad', $result['file']);
 		$this->assertSame(LifecycleService::RESULT_TRASHED, $result['status']);
 		$this->assertIsInt($result['deleted_at']);
-		$this->assertFalse($result['snapshot_persisted']);
+		$this->assertTrue($result['snapshot_persisted']);
 		$this->assertFalse($result['delete_pending']);
 		$this->assertArrayNotHasKey('reason', $result);
 	}

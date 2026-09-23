@@ -15,8 +15,8 @@ Etherpad is the editing source of truth; the `.pad` file acts as binding storage
   - Only managed internal pads are bound. External pads are represented solely by `.pad` frontmatter and snapshots.
 - `lib/Service/LifecycleService.php`
   - Trash/restore flow.
-  - Snapshot on trash.
-  - On Etherpad delete failures: `pending_delete` instead of blocking Nextcloud trash.
+  - Snapshot on trash; the pad is deleted only once the snapshot is written.
+  - No fresh snapshot, or Etherpad cannot delete: `pending_delete` instead of blocking Nextcloud trash.
   - On restore: the file's own pad while Etherpad still has it at the file's snapshot revision or later, a new pad from the snapshot when it is gone or behind, `restore_pending` while Etherpad cannot say.
 - `lib/Service/PendingBindingService.php`
   - Settles rows that wait, by where their file is now (see Trash/Restore). Writes no file. The only place a pad is deleted after the trash itself: once its file is gone for good.
@@ -222,8 +222,8 @@ Primary flow (native viewer):
 
 ### 5) Trash/Restore
 
-- Trash: persist a fresh snapshot if possible, delete the managed Etherpad pad, then delete the binding row.
-- If Etherpad is unavailable during delete: switch state to `pending_delete`, keep Nextcloud trash successful. The row and its pad are kept until the file is restored or gone for good.
+- Trash: write a fresh snapshot into the file, then delete the managed Etherpad pad and the binding row.
+- No fresh snapshot, or the delete fails: the pad stays as it is and the row becomes `pending_delete`; Nextcloud's trash succeeds either way. A delete through WebDAV (Files UI, clients) holds the file's lock while the trash is decided, so there it is always this path. The pad is kept until the file is restored (the restore takes it back) or gone for good (the sweep deletes it). Until then a public pad stays reachable by its URL, and the admin page counts it as a pending delete.
 - Restore without a binding row: provision a new pad from `.pad` frontmatter/snapshot.
 - Restore of a waiting row (`pending_delete` or `restore_pending`), whatever `delete_on_trash` says now: read the file's `snapshot_rev`, then ask Etherpad about the row's pad. The pad id comes from the row, never from the file.
   - It exists with at least that many revisions: the row becomes `active` again on that same pad, which may hold edits the snapshot missed.
