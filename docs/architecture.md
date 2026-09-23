@@ -226,7 +226,9 @@ Primary flow (native viewer):
 - Restore without a binding row: provision a new pad from `.pad` frontmatter/snapshot.
 - Restore of a `pending_delete` row: ask Etherpad whether the row's pad still exists. The pad id comes from the row, never from the file.
   - It exists: the row becomes `active` again on that same pad, which may hold edits the snapshot missed.
-  - Etherpad answers that it does not: a new pad from the file's snapshot. The row is claimed for it before the file is written, so of two concurrent restores only one writes; a write that fails after the claim returns the row to the old pad as `restore_pending`.
+  - Etherpad answers that it does not: a new pad from the file's snapshot. The row is claimed for it before the file is written, so of two concurrent restores only one writes.
+    - A claim that throws is settled by reading the row. Only a row naming the new pad counts as claimed; otherwise the file is not written and the restore fails.
+    - After a failed claim or write the row goes back to the old pad as `restore_pending` where it still can. The new pad is removed only once the row is known not to name it (`ProvisionedPadRollback::discardUnlessBoundToFile`), so a trash that took the row over keeps it.
   - No answer: `restore_pending`, and neither pad nor file is touched.
 - `restore_pending` rows are rechecked in age buckets (every 5 minutes, then hourly, then daily) and from the admin page: pad there → `active`; pad gone → row removed, and opening the file offers a new pad from its snapshot; no answer → unchanged.
 - Trashing a file whose row is `restore_pending` leaves the pad alone and returns the row to `pending_delete`.

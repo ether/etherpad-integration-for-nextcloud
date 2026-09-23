@@ -11,6 +11,7 @@ use OCP\AppFramework\Utility\ITimeFactory;
 use OCP\DB\QueryBuilder\IQueryBuilder;
 use OCP\IDBConnection;
 use OCA\EtherpadNextcloud\Tests\Support\FixedClock;
+use OCA\EtherpadNextcloud\Tests\Support\InMemoryBindingTable;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 
@@ -164,6 +165,67 @@ class BindingServiceTest extends TestCase {
 		$service = new BindingService($db, $this->buildTimeFactory(0), $this->createMock(LoggerInterface::class));
 
 		self::assertFalse($service->deleteActiveBinding(4711, 'nc-abc'));
+	}
+
+	/**
+	 * The conditional writes are all that stands between two flows that
+	 * each take a row for theirs, so what proves them is the rows they
+	 * leave alone. File 2 names the pad the first call asks for: without
+	 * the file in the statement that call takes file 2's row, without the
+	 * pad it takes file 1's.
+	 */
+	public function testRebindMovesARowOnlyWhileItNamesThatPadInThatState(): void {
+		$table = new InMemoryBindingTable([
+			self::bindingRow(1, 'old', BindingService::STATE_PENDING_DELETE),
+			self::bindingRow(2, 'other', BindingService::STATE_PENDING_DELETE),
+		]);
+		$service = new BindingService($table, new FixedClock(500), $this->createMock(LoggerInterface::class));
+		$before = $table->rows;
+
+		self::assertFalse($service->rebind(1, 'other', BindingService::STATE_PENDING_DELETE, 'new', BindingService::STATE_ACTIVE), 'another pad');
+		self::assertFalse($service->rebind(1, 'old', BindingService::STATE_ACTIVE, 'new', BindingService::STATE_ACTIVE), 'another state');
+		self::assertSame($before, $table->rows);
+
+		self::assertTrue($service->rebind(1, 'old', BindingService::STATE_PENDING_DELETE, 'new', BindingService::STATE_ACTIVE));
+		self::assertSame([
+			['file_id' => 1, 'pad_id' => 'new', 'state' => BindingService::STATE_ACTIVE, 'deleted_at' => null, 'updated_at' => 500],
+			self::bindingRow(2, 'other', BindingService::STATE_PENDING_DELETE),
+		], $table->rows);
+	}
+
+	/** Back in the trash is a deletion owed again, dated from now. */
+	public function testTransitionToPendingDeleteDatesTheDeletionAnew(): void {
+		$table = new InMemoryBindingTable([self::bindingRow(1, 'pad', BindingService::STATE_RESTORE_PENDING)]);
+		$service = new BindingService($table, new FixedClock(500), $this->createMock(LoggerInterface::class));
+
+		self::assertTrue($service->transition(1, 'pad', BindingService::STATE_RESTORE_PENDING, BindingService::STATE_PENDING_DELETE));
+
+		self::assertSame(
+			['file_id' => 1, 'pad_id' => 'pad', 'state' => BindingService::STATE_PENDING_DELETE, 'deleted_at' => 500, 'updated_at' => 500],
+			$table->rows[0],
+		);
+	}
+
+	/** The same three conditions, for the recheck's delete of a row whose pad is gone. */
+	public function testDeleteInStateRemovesARowOnlyWhileItNamesThatPadInThatState(): void {
+		$table = new InMemoryBindingTable([
+			self::bindingRow(1, 'old', BindingService::STATE_RESTORE_PENDING),
+			self::bindingRow(2, 'other', BindingService::STATE_RESTORE_PENDING),
+		]);
+		$service = new BindingService($table, new FixedClock(500), $this->createMock(LoggerInterface::class));
+		$before = $table->rows;
+
+		self::assertFalse($service->deleteInState(1, 'other', BindingService::STATE_RESTORE_PENDING), 'another pad');
+		self::assertFalse($service->deleteInState(1, 'old', BindingService::STATE_ACTIVE), 'another state');
+		self::assertSame($before, $table->rows);
+
+		self::assertTrue($service->deleteInState(1, 'old', BindingService::STATE_RESTORE_PENDING));
+		self::assertSame([self::bindingRow(2, 'other', BindingService::STATE_RESTORE_PENDING)], $table->rows);
+	}
+
+	/** @return array<string,mixed> */
+	private static function bindingRow(int $fileId, string $padId, string $state): array {
+		return ['file_id' => $fileId, 'pad_id' => $padId, 'state' => $state, 'deleted_at' => 100, 'updated_at' => 100];
 	}
 
 	private function buildTimeFactory(int $now): ITimeFactory {

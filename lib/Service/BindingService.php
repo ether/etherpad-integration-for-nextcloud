@@ -58,7 +58,7 @@ class BindingService {
 	 * Whether this file's binding names this pad.
 	 *
 	 * The question a cleanup has to ask before destroying a pad it just
-	 * provisioned. `createBinding` and `markRestored` can commit and still
+	 * provisioned. `createBinding` and `rebind` can commit and still
 	 * throw — the connection drops between the write and its answer — so a
 	 * flag set alongside the call says "no row" while a row is sitting
 	 * there naming the pad about to be deleted. Only reading it back knows.

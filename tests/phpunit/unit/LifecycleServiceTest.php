@@ -210,6 +210,82 @@ class LifecycleServiceTest extends TestCase {
 	}
 
 	/**
+	 * A claim that throws, on a row that then cannot be read, is a claim
+	 * nobody has seen. The file is not written and the restore fails; the
+	 * replacement stays, since the row may be naming it.
+	 */
+	public function testHandleRestoreWritesNothingOnAClaimThatCannotBeSettled(): void {
+		$fileId = 92;
+		$bindingService = $this->createMock(BindingService::class);
+		$bindingService->method('rebind')->willThrowException(new \RuntimeException('connection lost'));
+		$bindingService->method('transition')->willThrowException(new \RuntimeException('connection lost'));
+		$bindingService->method('isBoundTo')->willThrowException(new \RuntimeException('connection lost'));
+
+		$etherpadClient = $this->buildEtherpadWithoutThePad();
+		$etherpadClient->expects($this->once())->method('createPad')->with('r-old-pad-abc123def456');
+		$etherpadClient->expects($this->never())->method('deletePad');
+
+		$file = $this->buildRestoredPadFile($fileId);
+		$file->expects($this->never())->method('putContent');
+
+		$this->expectException(LifecycleException::class);
+		$this->buildPendingDeleteRestoreService($fileId, 'old-pad', $bindingService, $etherpadClient)->handleRestore($file);
+	}
+
+	/**
+	 * A claim that throws on a row that answers with another pad did not
+	 * land - but that is a failure, not a lost race: the row is handed over,
+	 * and only then, known not to name it, does the replacement go.
+	 */
+	public function testHandleRestoreHandsOverAClaimThatFailedWithoutLanding(): void {
+		$fileId = 94;
+		$newPadId = 'r-old-pad-abc123def456';
+		$bindingService = $this->createMock(BindingService::class);
+		$bindingService->method('rebind')->willThrowException(new \RuntimeException('connection lost'));
+		$bindingService->method('isBoundTo')->with($fileId, $newPadId)->willReturn(false);
+		$bindingService->expects($this->once())
+			->method('transition')
+			->with($fileId, 'old-pad', BindingService::STATE_PENDING_DELETE, BindingService::STATE_RESTORE_PENDING)
+			->willReturn(true);
+
+		$etherpadClient = $this->buildEtherpadWithoutThePad();
+		$etherpadClient->expects($this->once())->method('deletePad')->with($newPadId);
+
+		$file = $this->buildRestoredPadFile($fileId);
+		$file->expects($this->never())->method('putContent');
+
+		$this->expectException(LifecycleException::class);
+		$this->buildPendingDeleteRestoreService($fileId, 'old-pad', $bindingService, $etherpadClient)->handleRestore($file);
+	}
+
+	/**
+	 * A trash can reach the file while its restore is still writing, and
+	 * leave the row naming the replacement in pending_delete. That pad is
+	 * the row's now, not the failed restore's to throw away.
+	 */
+	public function testHandleRestoreLeavesAReplacementATrashHasTakenOver(): void {
+		$fileId = 93;
+		$newPadId = 'r-old-pad-abc123def456';
+		$bindingService = $this->createMock(BindingService::class);
+		$bindingService->method('rebind')->willReturnCallback(
+			// The claim lands; by the time the row is handed back, the trash
+			// has moved it on from active.
+			static fn (int $id, string $fromPadId): bool => $fromPadId === 'old-pad',
+		);
+		$bindingService->method('transition')->willReturn(false);
+		$bindingService->method('isBoundTo')->with($fileId, $newPadId)->willReturn(true);
+
+		$etherpadClient = $this->buildEtherpadWithoutThePad();
+		$etherpadClient->expects($this->never())->method('deletePad');
+
+		$file = $this->buildRestoredPadFile($fileId);
+		$file->expects($this->once())->method('putContent')->willThrowException(new \RuntimeException('disk full'));
+
+		$this->expectException(LifecycleException::class);
+		$this->buildPendingDeleteRestoreService($fileId, 'old-pad', $bindingService, $etherpadClient)->handleRestore($file);
+	}
+
+	/**
 	 * Etherpad has said the old pad is gone, but a protected pad's group can
 	 * outlive it with nothing in it - and once the row names the replacement,
 	 * nothing leads back to that group.
