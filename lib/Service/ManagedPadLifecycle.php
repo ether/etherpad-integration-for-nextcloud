@@ -259,7 +259,8 @@ class ManagedPadLifecycle {
 	 * A sweep passes its budget: each call gets what is left of it, and one
 	 * that would not finish in time is not made (RunBudgetSpentException).
 	 * Nothing is removed before the last call, so stopping between two
-	 * leaves the pad as it was.
+	 * leaves the pad as it was. Once the sweep holds the row it passes
+	 * none, and each call has the client's own timeout.
 	 */
 	public function discard(string $padId, ?RunBudget $budget = null): void {
 		$groupId = PadId::groupIdOf($padId);

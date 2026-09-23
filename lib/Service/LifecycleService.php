@@ -320,7 +320,7 @@ class LifecycleService {
 				return $this->waitAgain($fileId, $padId);
 			}
 		}
-		// What is left of a pad that is gone - an empty group - goes too.
+		// The pad goes, or what is left of one that is gone: an empty group.
 		return $this->deleteOwed($fileId, $padId, BindingService::STATE_PENDING_DELETE, $budget, claimFirst: true);
 	}
 
@@ -401,6 +401,9 @@ class LifecycleService {
 	 * the trash is decided, so a locked file is the ordinary case here. A
 	 * file that cannot be read for another reason is treated the same: the
 	 * pad stays, and its deletion is owed.
+	 *
+	 * $firstTry, here and in the steps after: whether a failure worth a look
+	 * is news (warning) or a repeat (debug). finishTrash reads it off the row.
 	 *
 	 * @param array<string,mixed> $context
 	 */
@@ -484,7 +487,8 @@ class LifecycleService {
 	}
 
 	/**
-	 * Write a trashed file's snapshot into it. True once it is written.
+	 * Write the snapshot into a file on its way to the trash, or in it. True
+	 * once it is written.
 	 *
 	 * @param array<string,mixed> $context
 	 */
@@ -509,8 +513,9 @@ class LifecycleService {
 	/**
 	 * A trashed file that did not get its snapshot this time, in one line
 	 * to filter by `reason`. What only needs another try - a lock, a pad
-	 * that changed while it was read, a file that moved - is debug. What
-	 * needs a look is a warning, the first time the file is met.
+	 * that changed while it was read, a file that moved - is debug, and so
+	 * is an empty file, which waits for its trash. What needs a look is a
+	 * warning, the first time the file is met.
 	 *
 	 * @param array<string,mixed> $context
 	 */

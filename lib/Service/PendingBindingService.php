@@ -23,7 +23,7 @@ use Psr\Log\LoggerInterface;
  * - in Files: the decision a restore takes, taken again, except that a
  *   sweep writes no file there (LifecycleService::settleWaitingFile);
  * - in its owner's trash: the snapshot the trash could not take, written
- *   into the trashed file, then pad and row deleted
+ *   into the trashed file, then row and pad deleted, in that order
  *   (LifecycleService::finishTrash). The one file a sweep writes, and
  *   always on its owner's own storage;
  * - in a team folder's trash: nothing, since no node reaches it; the row
@@ -36,8 +36,9 @@ use Psr\Log\LoggerInterface;
  * rows in Files, which are settled either way.
  *
  * Bounded by a RunBudget: each Etherpad call gets what is left of the run,
- * none is started that could not finish, and a run ends after a few rows
- * Etherpad gave no answer for. The rows stay until they are settled, so
+ * none is started that could not finish - except the deletion of a pad
+ * whose row is already taken, which finishes on the client's own
+ * timeouts - and a run ends after a few rows Etherpad gave no answer for. The rows stay until they are settled, so
  * without that an Etherpad that is down would cost every run a full
  * timeout per row.
  *
