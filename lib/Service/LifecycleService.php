@@ -17,8 +17,6 @@ use OCA\EtherpadNextcloud\Exception\PadAlreadyHasBindingException;
 use OCA\EtherpadNextcloud\Exception\RunBudgetSpentException;
 use OCA\EtherpadNextcloud\Util\PadAccessMode;
 use OCA\EtherpadNextcloud\Util\PadFileType;
-use OCA\EtherpadNextcloud\Util\PadId;
-use OCA\EtherpadNextcloud\Util\EtherpadErrorClassifier;
 use OCA\EtherpadNextcloud\Util\SafeError;
 use OCP\AppFramework\Utility\ITimeFactory;
 use OCP\Files\File;
@@ -202,23 +200,21 @@ class LifecycleService {
 			}
 
 			try {
-				$this->padLifecycle->discard($padId);
+				$wasThere = $this->padLifecycle->discardIfPresent($padId);
 			} catch (\Throwable $deleteError) {
-				if (EtherpadErrorClassifier::isPadAlreadyDeleted($deleteError)) {
-					$this->logger->info('Pad already deleted while processing trash; deleting binding row.', [
-						'app' => 'etherpad_nextcloud',
-						'fileId' => $fileId,
-						...SafeError::context($deleteError),
-					]);
-				} else {
-					$this->oweDeletion($fileId, $padId);
-					$this->logger->warning('Could not delete the pad after trash. It is kept, and its deletion recorded as pending.', [
-						'app' => 'etherpad_nextcloud',
-						'fileId' => $fileId,
-						...SafeError::context($deleteError),
-					]);
-					return $this->buildTrashedResult($fileId, $padId, $deletedAt, true, true);
-				}
+				$this->oweDeletion($fileId, $padId);
+				$this->logger->warning('Could not delete the pad after trash. It is kept, and its deletion recorded as pending.', [
+					'app' => 'etherpad_nextcloud',
+					'fileId' => $fileId,
+					...SafeError::context($deleteError),
+				]);
+				return $this->buildTrashedResult($fileId, $padId, $deletedAt, true, true);
+			}
+			if (!$wasThere) {
+				$this->logger->info('Pad already deleted while processing trash; deleting binding row.', [
+					'app' => 'etherpad_nextcloud',
+					'fileId' => $fileId,
+				]);
 			}
 			$this->bindingService->deleteByFileId($fileId);
 			return $this->buildTrashedResult($fileId, $padId, $deletedAt, true, false);
@@ -338,9 +334,7 @@ class LifecycleService {
 	}
 
 	/**
-	 * The last step of a deletion owed: row and pad. A public pad Etherpad
-	 * has just called absent takes no further call; a group pad does, since
-	 * what is left of one that is gone is its empty group.
+	 * The last step of a deletion owed: row and pad.
 	 *
 	 * $claimFirst, for a file in a trash: the row goes first. It is what a
 	 * restore takes the pad back by, and whichever of the two moves it
@@ -360,23 +354,19 @@ class LifecycleService {
 		if ($claimFirst && ($budget->nextCallTimeout() === null || !$this->bindingService->deleteInState($fileId, $padId, $state))) {
 			return SettleOutcome::Left;
 		}
-		if ($presence !== PadPresence::Absent || PadId::isGroupPad($padId)) {
-			try {
-				$this->padLifecycle->discard($padId, $claimFirst ? null : $budget);
-			} catch (\Throwable $e) {
-				if (!EtherpadErrorClassifier::isPadAlreadyDeleted($e)) {
-					$context = ['app' => 'etherpad_nextcloud', 'fileId' => $fileId, ...SafeError::context($e)];
-					if ($claimFirst) {
-						$this->logger->warning('Could not delete a pad whose binding is gone. It is left over.', [...$context, 'padId' => $padId]);
-						return SettleOutcome::Settled;
-					}
-					if ($e instanceof RunBudgetSpentException) {
-						return SettleOutcome::Left;
-					}
-					$this->logger->warning('Could not delete the pad of a file that is gone for good. Its row stays for the next run.', $context);
-					return SettleOutcome::Unanswered;
-				}
+		try {
+			$this->padLifecycle->discardIfPresent($padId, $claimFirst ? null : $budget, knownAbsent: $presence === PadPresence::Absent);
+		} catch (\Throwable $e) {
+			$context = ['app' => 'etherpad_nextcloud', 'fileId' => $fileId, ...SafeError::context($e)];
+			if ($claimFirst) {
+				$this->logger->warning('Could not delete a pad whose binding is gone. It is left over.', [...$context, 'padId' => $padId]);
+				return SettleOutcome::Settled;
 			}
+			if ($e instanceof RunBudgetSpentException) {
+				return SettleOutcome::Left;
+			}
+			$this->logger->warning('Could not delete the pad of a file that is gone for good. Its row stays for the next run.', $context);
+			return SettleOutcome::Unanswered;
 		}
 		if (!$claimFirst) {
 			// The result is not checked: a file with no file cache row does
@@ -728,18 +718,16 @@ class LifecycleService {
 
 	/**
 	 * The pad a replacement stood in for. Etherpad has already said it does
-	 * not exist, but for a protected pad its group can still be standing
-	 * with nothing in it, and discard() is what takes an empty group down.
+	 * not exist, so a public one takes no call; for a protected pad its
+	 * group can still be standing with nothing in it, and discardIfPresent()
+	 * is what takes an empty group down.
 	 * Best effort: the restore is done, and a group left over is garbage,
 	 * not a way in - there is no pad in it for a session to open.
 	 */
 	private function discardSupersededPad(int $fileId, string $oldPadId): void {
 		try {
-			$this->padLifecycle->discard($oldPadId);
+			$this->padLifecycle->discardIfPresent($oldPadId, knownAbsent: true);
 		} catch (\Throwable $e) {
-			if (EtherpadErrorClassifier::isPadAlreadyDeleted($e)) {
-				return;
-			}
 			// The row names the replacement now, so nothing else leads here.
 			$this->logger->warning('Could not remove what was left of the pad a restore replaced.', [
 				'app' => 'etherpad_nextcloud',

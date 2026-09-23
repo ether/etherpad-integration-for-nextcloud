@@ -39,23 +39,26 @@ first of those three. Every delete used to call it, so a protected pad left
 its group and every session ever issued for it behind, with nothing in
 Nextcloud pointing at them and nothing to collect them.
 
-`ManagedPadLifecycle::discard()` is the one place that decides:
+`ManagedPadLifecycle::discardIfPresent()` is the one place that decides:
 
 - pad id not shaped `g.<group>$<name>` → `deletePad`;
 - otherwise ask Etherpad what the group holds. Exactly this pad and nothing
-  else → `deleteGroup`, which removes the group, its pad and its sessions in
-  one call. Anything else → `deletePad`.
+  else, or nothing at all → `deleteGroup`, which removes the group, its pad
+  and its sessions in one call. Anything else → `deletePad`.
 
 The question is asked rather than inferred, because a binding's pad id does
 not have to name a group this app created. A legacy Ownpad `.pad` file names
 its own pad id and the migration binds it as given, so a file written by hand
 naming another user's group would, on a plain shape check, have made deleting
 that file destroy their group, their pad and their sessions. A group that
-holds only the pad being deleted has nothing else to lose.
+holds only the pad being deleted, or nothing at all, has nothing else to
+lose.
 
-A group that is not there at all answers `groupID does not exist`, which the
-callers read as "already gone" — correct, since a pad inside a group that
-does not exist cannot exist either.
+It answers true when it removed something, the pad or the empty group a
+protected pad left behind, and false when Etherpad says there was nothing
+left: no such pad, or no such group. A caller that has just heard the pad
+is gone says so (`knownAbsent`); a public pad then costs no call, a
+protected one is still asked about its group.
 
 The shape rule itself lives in `Util\PadId` and is the same one that
 classifies a binding as protected. It used to be stricter here, so a pad
