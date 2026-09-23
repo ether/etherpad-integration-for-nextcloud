@@ -7,6 +7,7 @@ namespace OCA\EtherpadNextcloud\Tests\Unit;
 use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\EtherpadNextcloud\Service\LifecycleService;
 use OCA\EtherpadNextcloud\Service\PendingBindingService;
+use OCA\EtherpadNextcloud\Service\RunBudget;
 use OCA\EtherpadNextcloud\Service\SettleOutcome;
 use OCA\EtherpadNextcloud\Tests\Support\FixedClock;
 use OCA\EtherpadNextcloud\Tests\Support\InMemoryLockingProvider;
@@ -157,8 +158,8 @@ class PendingBindingServiceTest extends TestCase {
 		}
 		$timeouts = [];
 		$lifecycle = $this->createMock(LifecycleService::class);
-		$lifecycle->method('settleWaitingFile')->willReturnCallback(static function (File $file, ?int $timeout) use ($clock, &$timeouts): SettleOutcome {
-			$timeouts[] = $timeout;
+		$lifecycle->method('settleWaitingFile')->willReturnCallback(static function (File $file, ?RunBudget $budget) use ($clock, &$timeouts): SettleOutcome {
+			$timeouts[] = $budget?->nextCallTimeout();
 			$clock->advance(10);
 			return SettleOutcome::Settled;
 		});

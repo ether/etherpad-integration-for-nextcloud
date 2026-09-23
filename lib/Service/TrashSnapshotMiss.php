@@ -25,6 +25,7 @@ enum TrashSnapshotMiss: string {
 	case FileUnreadable = 'file_unreadable';
 	case FileUnparsable = 'file_unparsable';
 	case SnapshotNotFetched = 'snapshot_not_fetched';
+	/** The pad moved on while it was read, or right after it was written into the file. */
 	case PadChanged = 'pad_changed';
 	/**
 	 * Fewer revisions than the file's snapshot: not the pad the file knew.

@@ -197,7 +197,7 @@ class PendingBindingService {
 			}
 			return $inUserTrash
 				? $this->lifecycleService->finishTrash($file, $budget)
-				: $this->lifecycleService->settleWaitingFile($file, $budget->callTimeout());
+				: $this->lifecycleService->settleWaitingFile($file, $budget);
 		} catch (\Throwable $e) {
 			// Etherpad's silence is caught where it is met; what arrives here
 			// is local - the database, a storage - and says nothing about

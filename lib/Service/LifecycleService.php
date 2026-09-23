@@ -11,6 +11,7 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\Service;
 
 use OCA\EtherpadNextcloud\Exception\BindingStateConflictException;
+use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
 use OCA\EtherpadNextcloud\Exception\LifecycleException;
 use OCA\EtherpadNextcloud\Exception\NotAPadFileException;
 use OCA\EtherpadNextcloud\Exception\PadAlreadyHasBindingException;
@@ -45,6 +46,8 @@ class LifecycleService {
 	private const REASON_FILE_UNREADABLE = 'file_unreadable';
 	/** A sweep let go of a row whose pad is not the file's; the file makes its own. */
 	private const REASON_RELEASED = 'binding_released';
+	/** The run had no time left for Etherpad once the file was read. */
+	private const REASON_OUT_OF_TIME = 'run_budget_spent';
 
 	public function __construct(
 		private BindingService $bindingService,
@@ -286,7 +289,12 @@ class LifecycleService {
 			return $this->waitAgain($fileId, $padId, $pad);
 		}
 
-		$probe = $this->padLifecycle->probe($padId, $pad->snapshotRev, ['fileId' => $fileId], $budget->callTimeout());
+		$timeout = $budget->nextCallTimeout();
+		if ($timeout === null) {
+			// Reading the file took what the run had left.
+			return SettleOutcome::Left;
+		}
+		$probe = $this->padLifecycle->probe($padId, $pad->snapshotRev, ['fileId' => $fileId], $timeout);
 		if ($probe->presence === PadPresence::Unknown) {
 			return SettleOutcome::Unanswered;
 		}
@@ -299,18 +307,18 @@ class LifecycleService {
 		if ($probe->presence === PadPresence::Present) {
 			try {
 				$snapshot = $this->freshSnapshot($pad, $padId, $context, $budget, $probe->revisions);
+				if ($snapshot instanceof PadSnapshot) {
+					// A restore may have taken the file back since it was read, and
+					// a write through the old node would make a new file where it was.
+					$snapshot = $this->userNodeResolver->hasMoved($file)
+						? $this->snapshotMissed(TrashSnapshotMiss::FileMoved, $news, $context)
+						: $this->writeAndRecount($file, $pad, $padId, $snapshot, $context, $news, $budget);
+				}
 			} catch (RunBudgetSpentException) {
 				return SettleOutcome::Left;
-			} catch (\Throwable $fetchError) {
-				$this->snapshotMissed(TrashSnapshotMiss::SnapshotNotFetched, true, [...$context, ...SafeError::context($fetchError)]);
+			} catch (EtherpadClientException $etherpadError) {
+				$this->snapshotMissed(TrashSnapshotMiss::SnapshotNotFetched, true, [...$context, ...SafeError::context($etherpadError)]);
 				return SettleOutcome::Unanswered;
-			}
-			if ($snapshot instanceof PadSnapshot) {
-				// A restore may have taken the file back since it was read, and
-				// a write through the old node would make a new file where it was.
-				$snapshot = $this->userNodeResolver->hasMoved($file)
-					? $this->snapshotMissed(TrashSnapshotMiss::FileMoved, $news, $context)
-					: $this->writeSnapshot($file, $pad, $snapshot, $context, $news);
 			}
 			if ($snapshot instanceof TrashSnapshotMiss) {
 				return $this->waitAgain($fileId, $padId, $snapshot);
@@ -458,12 +466,12 @@ class LifecycleService {
 	private function writeTrashSnapshot(File $file, ParsedPadFile $pad, string $padId, array $context): bool {
 		try {
 			$snapshot = $this->freshSnapshot($pad, $padId, $context);
+			if ($snapshot instanceof PadSnapshot) {
+				$snapshot = $this->writeAndRecount($file, $pad, $padId, $snapshot, $context);
+			}
 		} catch (\Throwable $fetchError) {
 			$this->snapshotMissed(TrashSnapshotMiss::SnapshotNotFetched, true, [...$context, ...SafeError::context($fetchError)]);
 			return false;
-		}
-		if ($snapshot instanceof PadSnapshot) {
-			$snapshot = $this->writeSnapshot($file, $pad, $snapshot, $context);
 		}
 		return $snapshot === true;
 	}
@@ -502,6 +510,27 @@ class LifecycleService {
 		$html = $this->etherpadClient->getHTML($padId, RunBudget::timeoutOf($budget));
 		$after = $this->etherpadClient->getRevisionsCount($padId, RunBudget::timeoutOf($budget));
 		return $before === $after ? new PadSnapshot($text, $html, $after) : null;
+	}
+
+	/**
+	 * Write the snapshot, then count the pad once more before it may go: an
+	 * edit that came while the file was written is not in it, and the pad
+	 * waits for another snapshot. Etherpad cannot hold a pad still, so an
+	 * edit in the moment between this count and the delete is still lost;
+	 * counting after the write keeps the write, the slowest step, out of
+	 * that moment. Etherpad's errors are the caller's to place.
+	 *
+	 * @param array<string,mixed> $context
+	 * @return TrashSnapshotMiss|true
+	 */
+	private function writeAndRecount(File $file, ParsedPadFile $pad, string $padId, PadSnapshot $snapshot, array $context, bool $news = true, ?RunBudget $budget = null): TrashSnapshotMiss|bool {
+		$written = $this->writeSnapshot($file, $pad, $snapshot, $context, $news);
+		if ($written !== true) {
+			return $written;
+		}
+		return $this->etherpadClient->getRevisionsCount($padId, RunBudget::timeoutOf($budget)) === $snapshot->revision
+			? true
+			: $this->snapshotMissed(TrashSnapshotMiss::PadChanged, $news, $context);
 	}
 
 	/**
@@ -598,9 +627,11 @@ class LifecycleService {
 	 * write.
 	 *
 	 * An unreadable file is left rather than counted against the run: it
-	 * says nothing about whether Etherpad answers.
+	 * says nothing about whether Etherpad answers. Etherpad is asked with
+	 * what the run has left once the file is read; nothing left, and the
+	 * row keeps its place.
 	 */
-	public function settleWaitingFile(File $file, ?int $probeTimeoutSeconds = null): SettleOutcome {
+	public function settleWaitingFile(File $file, ?RunBudget $budget = null): SettleOutcome {
 		if (!$this->isPadFile($file)) {
 			return SettleOutcome::Left;
 		}
@@ -608,7 +639,7 @@ class LifecycleService {
 		if ($binding === null || !$this->isWaiting($binding)) {
 			return SettleOutcome::Left;
 		}
-		$result = $this->settleWaitingBinding($file, $binding, mayReplace: false, probeTimeoutSeconds: $probeTimeoutSeconds);
+		$result = $this->settleWaitingBinding($file, $binding, mayReplace: false, budget: $budget);
 		$reason = $result['reason'] ?? '';
 		return match (true) {
 			($result['status'] ?? '') === self::RESULT_RESTORED, $reason === self::REASON_RELEASED => SettleOutcome::Settled,
@@ -643,7 +674,7 @@ class LifecycleService {
 	 * @param array<string,mixed> $binding
 	 * @return array{status: string, reason?: string, file_id: int, pad_id?: string, old_pad_id?: string, new_pad_id?: string}
 	 */
-	private function settleWaitingBinding(File $file, array $binding, bool $mayReplace, ?int $probeTimeoutSeconds = null): array {
+	private function settleWaitingBinding(File $file, array $binding, bool $mayReplace, ?RunBudget $budget = null): array {
 		$fileId = (int)$file->getId();
 		$padId = (string)$binding['pad_id'];
 		$state = (string)$binding['state'];
@@ -654,13 +685,18 @@ class LifecycleService {
 				// No revision to hold the pad to, so no decision either.
 				return $this->deferRestore($fileId, $padId, $state, $readError);
 			}
-			$presence = $this->padLifecycle->presenceOf($padId, $pad->snapshotRev, ['fileId' => $fileId], $probeTimeoutSeconds);
+			$timeout = $budget?->nextCallTimeout();
+			if ($budget !== null && $timeout === null) {
+				// Reading the file took what the run had left.
+				return $this->buildSkippedResult(self::REASON_OUT_OF_TIME, $fileId, $padId);
+			}
+			$presence = $this->padLifecycle->presenceOf($padId, $pad->snapshotRev, ['fileId' => $fileId], $timeout);
 			if ($presence === PadPresence::Behind) {
 				// Logged before anything is tried, since whatever follows may fail.
 				$this->reportPadBehind($fileId, $padId);
 			}
 			return match ($presence) {
-				PadPresence::Present => $this->resumeOwnPad($fileId, $padId, $state),
+				PadPresence::Present => $this->resumeOwnPad($file, $fileId, $padId, $state, $mayReplace),
 				PadPresence::Unknown => $this->deferRestore($fileId, $padId, $state),
 				PadPresence::Absent, PadPresence::Behind => $mayReplace
 					? $this->restoreWithReplacement($file, $pad, $fileId, $padId, $state, (string)$binding['access_mode'], $presence)
@@ -674,11 +710,18 @@ class LifecycleService {
 	}
 
 	/** @return array{status: string, reason?: string, file_id: int, pad_id?: string, old_pad_id?: string, new_pad_id?: string} */
-	private function resumeOwnPad(int $fileId, string $padId, string $fromState): array {
-		if (!$this->bindingService->transition($fileId, $padId, $fromState, BindingService::STATE_ACTIVE)) {
-			return $this->buildSkippedResult('binding_state_transition_conflict', $fileId, $padId);
+	private function resumeOwnPad(File $file, int $fileId, string $padId, string $fromState, bool $mayReplace): array {
+		if ($this->bindingService->transition($fileId, $padId, $fromState, BindingService::STATE_ACTIVE)) {
+			return $this->buildRestoredResult($fileId, $padId, $padId);
 		}
-		return $this->buildRestoredResult($fileId, $padId, $padId);
+		// Lost to the sweep finishing the trash: it took row and pad after
+		// this restore asked about the pad, and wrote the pad's content into
+		// the file first. The file makes a new pad from that, as a restore
+		// without a binding does.
+		if ($mayReplace && $this->bindingService->findByFileId($fileId) === null) {
+			return $this->restoreWithoutBinding($file, $fileId);
+		}
+		return $this->buildSkippedResult('binding_state_transition_conflict', $fileId, $padId);
 	}
 
 	/**
