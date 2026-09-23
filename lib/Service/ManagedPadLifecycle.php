@@ -162,21 +162,16 @@ class ManagedPadLifecycle {
 	}
 
 	/**
-	 * Remove a pad this request has just provisioned.
-	 *
-	 * There is nothing to find out here. The group was made by
-	 * `provisionGroupPad` a few lines earlier in the same call, and it holds
-	 * the one pad that call put in it — so the ownership question `discard`
-	 * has to ask Etherpad is already answered, by control flow rather than
-	 * by the shape of an id.
-	 *
-	 * Which matters because these are rollbacks: nothing retries them. Under
-	 * `discard`, a `listPads` that timed out would give up the group and its
-	 * sessions for good, on a group this app made seconds ago and nothing
-	 * else has ever seen.
+	 * Remove a pad this request has just provisioned, without asking what
+	 * its group holds: `provisionGroupPad` made the group earlier in the same
+	 * call, with the one pad that call put in it, so control flow has
+	 * answered the ownership question `discardIfPresent` asks Etherpad.
+	 * Asking would only make it breakable: these are rollbacks, nothing
+	 * retries them, and a `listPads` that timed out would give up the group
+	 * and its sessions for good.
 	 *
 	 * Only for a pad provisioned in the same call. Anything read back out of
-	 * a binding goes through `discard`.
+	 * a binding goes through `discardIfPresent`.
 	 *
 	 * What that rule protects: a group pad id names a whole Etherpad group,
 	 * and this deletes the group, not the pad. For a pad this app made, the
@@ -237,30 +232,44 @@ class ManagedPadLifecycle {
 	}
 
 	/**
-	 * Remove a pad the app is bound to, whatever kind it is.
+	 * Remove a pad the app is bound to, whatever kind it is: true when this
+	 * call removed something - the pad, or the empty group a protected pad
+	 * left behind - and false when nothing was left to remove, because
+	 * Etherpad says the pad does not exist, or its group does not (a group
+	 * that is not there cannot hold the pad either). Every caller reads
+	 * false as done; what differs between them is what they do when the
+	 * delete fails, and every other error is theirs.
 	 *
-	 * The group is only removed once Etherpad has confirmed it holds nothing
-	 * but this pad. The id alone cannot carry that: a binding's pad id does
-	 * not have to be one this app provisioned. A legacy Ownpad `.pad` file
-	 * names its own pad id, and the migration binds it as given — so a file
-	 * written by hand naming `g.<someone-elses-group>$anything` would, on a
-	 * plain shape check, have made deleting that file destroy another user's
-	 * group, their pad and their sessions. Asking first turns a guess about
-	 * ownership into a fact about content: a group that holds only the pad
-	 * being deleted — or nothing at all — has nothing else to lose.
+	 * $knownAbsent: Etherpad has just said there is no such pad. A public
+	 * pad leaves nothing else behind, so that takes no call; a protected
+	 * one can leave its group, which is still looked for.
 	 *
-	 * A group that is not there at all surfaces as Etherpad's `groupID does
-	 * not exist`, which the callers already read as "already gone" — correct
-	 * here, since a pad inside a group that does not exist cannot exist
-	 * either.
-	 *
-	 * A sweep passes its budget: each call gets what is left of it, and one
-	 * that would not finish in time is not made (RunBudgetSpentException).
-	 * Nothing is removed before the last call, so stopping between two
-	 * leaves the pad as it was. Once the sweep holds the row it passes
-	 * none, and each call has the client's own timeout.
+	 * $budget: a sweep's run; each call gets what is left, and one that
+	 * would not finish is not made. Nothing is removed before the last
+	 * call, so stopping leaves the pad as it was.
 	 */
-	public function discard(string $padId, ?RunBudget $budget = null): void {
+	public function discardIfPresent(string $padId, ?RunBudget $budget = null, bool $knownAbsent = false): bool {
+		if ($knownAbsent && !PadId::isGroupPad($padId)) {
+			return false;
+		}
+		try {
+			$this->discard($padId, $budget);
+			return true;
+		} catch (\Throwable $e) {
+			if (EtherpadErrorClassifier::isPadAlreadyDeleted($e)) {
+				return false;
+			}
+			throw $e;
+		}
+	}
+
+	/**
+	 * Remove a pad, whatever kind it is. Its group goes only once Etherpad
+	 * has confirmed it holds this pad alone, or nothing: a binding's pad id
+	 * need not name a group this app made (docs/etherpad-integration.md,
+	 * "Removing a pad").
+	 */
+	private function discard(string $padId, ?RunBudget $budget): void {
 		$groupId = PadId::groupIdOf($padId);
 		if ($groupId === null) {
 			$this->etherpadClient->deletePad($padId, RunBudget::timeoutOf($budget));
@@ -308,14 +317,14 @@ class ManagedPadLifecycle {
 	 *
 	 * Reading the group is what makes removing the *group* safe. It is not
 	 * what makes removing the *pad* safe — that was a plain `deletePad`
-	 * before any of this. So a read that fails for its own reasons must not
-	 * veto the delete: most callers here are rollbacks with no retry behind
-	 * them, and a single timed-out read would strand the very pad they exist
-	 * to reclaim. Not knowing gives up the group and keeps the pad delete,
-	 * which is the half that was always safe.
+	 * before any of this. So a read that fails for its own reasons does not
+	 * veto the delete: not knowing gives up the group and keeps the pad
+	 * delete, which is the half that was always safe. The group then stays
+	 * behind, empty once the pad is gone, and nothing leads back to it; its
+	 * sessions open nothing.
 	 *
-	 * `groupID does not exist` is different: it is an answer, not a failure,
-	 * and the callers already know how to read it.
+	 * An answer that the group does not exist is no failed read: it goes to
+	 * the caller as it came.
 	 *
 	 * @return list<string>|null null when the group could not be read
 	 */

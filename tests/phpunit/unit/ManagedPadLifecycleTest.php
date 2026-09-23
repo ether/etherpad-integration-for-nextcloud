@@ -8,10 +8,13 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Tests\Unit;
 
+use OCA\EtherpadNextcloud\Exception\RunBudgetSpentException;
 use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\EtherpadNextcloud\Service\EtherpadClient;
 use OCA\EtherpadNextcloud\Service\ManagedPadLifecycle;
 use OCA\EtherpadNextcloud\Service\PadPresence;
+use OCA\EtherpadNextcloud\Service\RunBudget;
+use OCA\EtherpadNextcloud\Tests\Support\FixedClock;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 
@@ -41,7 +44,7 @@ class ManagedPadLifecycleTest extends TestCase {
 		$client->expects($this->once())->method('deleteGroup')->with('g.ABCDEFGHIJKLMNOP');
 		$client->expects($this->never())->method('deletePad');
 
-		$this->lifecycle($client)->discard($padId);
+		$this->assertTrue($this->lifecycle($client)->discardIfPresent($padId));
 	}
 
 	/**
@@ -49,26 +52,22 @@ class ManagedPadLifecycleTest extends TestCase {
 	 * created. A legacy Ownpad `.pad` names its own pad id and the migration
 	 * binds it as given, so a hand-written file naming someone else's group
 	 * would otherwise have made deleting that file destroy their group, their
-	 * pad and their sessions.
+	 * pad and their sessions. A group of ours that holds more than this pad
+	 * keeps the rest the same way.
 	 */
 	public function testLeavesAGroupAloneWhenItHoldsSomethingElse(): void {
-		$padId = 'g.VICTIMGROUPID12$made-up';
-		$client = $this->createMock(EtherpadClient::class);
-		$client->method('listPads')->with('g.VICTIMGROUPID12')->willReturn(['g.VICTIMGROUPID12$their-real-pad']);
-		$client->expects($this->never())->method('deleteGroup');
-		$client->expects($this->once())->method('deletePad')->with($padId);
+		$cases = [
+			'someone else\'s group' => ['g.VICTIMGROUPID12$made-up', ['g.VICTIMGROUPID12$their-real-pad']],
+			'more than this pad' => ['g.ABCDEFGHIJKLMNOP$p-abc123', ['g.ABCDEFGHIJKLMNOP$p-abc123', 'g.ABCDEFGHIJKLMNOP$another']],
+		];
+		foreach ($cases as $case => [$padId, $listed]) {
+			$client = $this->createMock(EtherpadClient::class);
+			$client->method('listPads')->with(strstr($padId, '$', true))->willReturn($listed);
+			$client->expects($this->never())->method('deleteGroup');
+			$client->expects($this->once())->method('deletePad')->with($padId);
 
-		$this->lifecycle($client)->discard($padId);
-	}
-
-	public function testLeavesAGroupAloneWhenItHoldsMoreThanThisPad(): void {
-		$padId = 'g.ABCDEFGHIJKLMNOP$p-abc123';
-		$client = $this->createMock(EtherpadClient::class);
-		$client->method('listPads')->willReturn([$padId, 'g.ABCDEFGHIJKLMNOP$another']);
-		$client->expects($this->never())->method('deleteGroup');
-		$client->expects($this->once())->method('deletePad')->with($padId);
-
-		$this->lifecycle($client)->discard($padId);
+			$this->assertTrue($this->lifecycle($client)->discardIfPresent($padId), $case);
+		}
 	}
 
 	/**
@@ -84,14 +83,13 @@ class ManagedPadLifecycleTest extends TestCase {
 		$client->expects($this->once())->method('deleteGroup')->with('g.ABCDEFGHIJKLMNOP');
 		$client->expects($this->never())->method('deletePad');
 
-		$this->lifecycle($client)->discard($padId);
+		$this->assertTrue($this->lifecycle($client)->discardIfPresent($padId));
 	}
 
 	/**
 	 * Reading the group is what makes removing the group safe, not what
-	 * makes removing the pad safe. Most callers are rollbacks with no retry
-	 * behind them, so a read that times out must cost the group, not the
-	 * delete.
+	 * makes removing the pad safe, so a read that times out costs the group,
+	 * not the delete.
 	 */
 	public function testStillRemovesThePadWhenTheGroupCannotBeRead(): void {
 		$padId = 'g.ABCDEFGHIJKLMNOP$p-abc123';
@@ -100,7 +98,7 @@ class ManagedPadLifecycleTest extends TestCase {
 		$client->expects($this->never())->method('deleteGroup');
 		$client->expects($this->once())->method('deletePad')->with($padId);
 
-		$this->lifecycle($client)->discard($padId);
+		$this->assertTrue($this->lifecycle($client)->discardIfPresent($padId));
 	}
 
 	public function testDeletesOnlyThePadForAPublicOne(): void {
@@ -109,22 +107,102 @@ class ManagedPadLifecycleTest extends TestCase {
 		$client->expects($this->once())->method('deletePad')->with('nc-abcdef0123456789');
 		$client->expects($this->never())->method('deleteGroup');
 
-		$this->lifecycle($client)->discard('nc-abcdef0123456789');
+		$this->assertTrue($this->lifecycle($client)->discardIfPresent('nc-abcdef0123456789'));
 	}
 
 	/**
-	 * A group that is not there means the pad inside it is not there either,
-	 * so the error travels to the caller, whose classifier reads it as
-	 * "already gone".
+	 * A pad Etherpad says does not exist is gone already, and so is one in a
+	 * group that does not exist - also when the group goes between reading it
+	 * and deleting it. No caller has anything left to do, and none has to
+	 * read Etherpad's error for it.
 	 */
-	public function testLetsAMissingGroupReachTheCaller(): void {
-		$client = $this->createMock(EtherpadClient::class);
-		$client->method('listPads')->willThrowException(new \RuntimeException('groupID does not exist'));
-		$client->expects($this->never())->method('deleteGroup');
-		$client->expects($this->never())->method('deletePad');
+	public function testAPadOrGroupGoneAlreadyIsNoError(): void {
+		$group = 'g.ABCDEFGHIJKLMNOP';
+		$padId = $group . '$p-abc123';
+		$cases = [
+			'public pad' => ['nc-abcdef0123456789', null, 'padID does not exist', null],
+			'group' => [$padId, new \RuntimeException('groupID does not exist'), null, null],
+			'group gone after it was read' => [$padId, [$padId], null, 'groupID does not exist'],
+			'pad gone from a group that holds others' => [$padId, [$group . '$other'], 'padID does not exist', null],
+		];
+		foreach ($cases as $case => [$id, $listed, $padAnswer, $groupAnswer]) {
+			$client = $this->createMock(EtherpadClient::class);
+			if ($listed instanceof \Throwable) {
+				$client->method('listPads')->willThrowException($listed);
+			} elseif ($listed !== null) {
+				$client->method('listPads')->willReturn($listed);
+			}
+			$deletePad = $client->expects($padAnswer === null ? $this->never() : $this->once())->method('deletePad')->with($id);
+			if ($padAnswer !== null) {
+				$deletePad->willThrowException(new \RuntimeException($padAnswer));
+			}
+			$deleteGroup = $client->expects($groupAnswer === null ? $this->never() : $this->once())->method('deleteGroup');
+			if ($groupAnswer !== null) {
+				$deleteGroup->willThrowException(new \RuntimeException($groupAnswer));
+			}
 
-		$this->expectExceptionMessage('groupID does not exist');
-		$this->lifecycle($client)->discard('g.ABCDEFGHIJKLMNOP$p-abc123');
+			$this->assertFalse($this->lifecycle($client)->discardIfPresent($id), $case);
+		}
+	}
+
+	/**
+	 * Any other failure is the caller's, on every way a pad goes: each caller
+	 * does something different about it.
+	 */
+	public function testAFailedDeleteReachesTheCaller(): void {
+		$group = 'g.ABCDEFGHIJKLMNOP';
+		$padId = $group . '$p-abc123';
+		$cases = [
+			'public pad' => ['nc-abcdef0123456789', null, 'deletePad'],
+			'the group' => [$padId, [$padId], 'deleteGroup'],
+			'the pad in a group that holds others' => [$padId, [$padId, $group . '$other'], 'deletePad'],
+		];
+		foreach ($cases as $case => [$id, $listed, $failing]) {
+			$client = $this->createMock(EtherpadClient::class);
+			if ($listed !== null) {
+				$client->method('listPads')->willReturn($listed);
+			}
+			$client->expects($this->once())->method($failing)->willThrowException(new \RuntimeException('Connection timed out'));
+
+			try {
+				$this->lifecycle($client)->discardIfPresent($id);
+				$this->fail($case . ': the failure did not reach the caller.');
+			} catch (\RuntimeException $e) {
+				$this->assertSame('Connection timed out', $e->getMessage(), $case);
+			}
+		}
+	}
+
+	/** A sweep's run with no time left makes no call at all, for either kind of pad, and says so. */
+	public function testASpentRunMakesNoCall(): void {
+		foreach (['g.ABCDEFGHIJKLMNOP$p-abc123', 'nc-abcdef0123456789'] as $padId) {
+			$client = $this->createMock(EtherpadClient::class);
+			$client->expects($this->never())->method('listPads');
+			$client->expects($this->never())->method('deletePad');
+			$client->expects($this->never())->method('deleteGroup');
+
+			try {
+				$this->lifecycle($client)->discardIfPresent($padId, new RunBudget(new FixedClock(), 1.0));
+				$this->fail($padId . ': a call was made without the time to finish it.');
+			} catch (RunBudgetSpentException) {
+			}
+		}
+	}
+
+	/**
+	 * A caller that has just heard the pad does not exist: a public pad
+	 * leaves nothing behind and takes no call, a protected one may have left
+	 * its group, which is still looked for and taken when it is empty.
+	 */
+	public function testAPadKnownAbsentIsOnlyLookedForByItsGroup(): void {
+		$client = $this->createMock(EtherpadClient::class);
+		$client->expects($this->never())->method($this->anything());
+		$this->assertFalse($this->lifecycle($client)->discardIfPresent('nc-abcdef0123456789', knownAbsent: true), 'public pad');
+
+		$client = $this->createMock(EtherpadClient::class);
+		$client->expects($this->once())->method('listPads')->with('g.ABCDEFGHIJKLMNOP')->willReturn([]);
+		$client->expects($this->once())->method('deleteGroup')->with('g.ABCDEFGHIJKLMNOP');
+		$this->assertTrue($this->lifecycle($client)->discardIfPresent('g.ABCDEFGHIJKLMNOP$p-abc123', knownAbsent: true), 'protected pad');
 	}
 
 	/**
@@ -138,7 +216,7 @@ class ManagedPadLifecycleTest extends TestCase {
 		$client->expects($this->once())->method('listPads')->with('g.abc123')->willReturn([$padId]);
 		$client->expects($this->once())->method('deleteGroup')->with('g.abc123');
 
-		$this->lifecycle($client)->discard($padId);
+		$this->assertTrue($this->lifecycle($client)->discardIfPresent($padId));
 	}
 
 	/**
@@ -189,11 +267,11 @@ class ManagedPadLifecycleTest extends TestCase {
 	}
 
 	/**
-	 * The ownership question `discard` asks Etherpad is already answered
-	 * here, by control flow: the group was made by `provisionGroupPad` in
-	 * the same call. Asking again would not make it safer, only breakable —
-	 * these are rollbacks, nothing retries them, and a read that timed out
-	 * would cost the group and its sessions for good.
+	 * The ownership question `discardIfPresent` asks Etherpad is already
+	 * answered here, by control flow: the group was made by
+	 * `provisionGroupPad` in the same call. Asking again would not make it
+	 * safer, only breakable — these are rollbacks, nothing retries them, and
+	 * a read that timed out would cost the group and its sessions for good.
 	 */
 	public function testTakesAProvisionedGroupWithoutAskingWhatIsInIt(): void {
 		$client = $this->createMock(EtherpadClient::class);

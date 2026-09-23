@@ -227,8 +227,9 @@ class LifecycleServiceTest extends TestCase {
 		$bindingService->method('isBoundTo')->with($fileId, $newPadId)->willReturn(true);
 
 		$etherpadClient = $this->buildEtherpadWithoutThePad();
-		// Only what is left of the old pad, never the replacement.
-		$etherpadClient->expects($this->once())->method('deletePad')->with('old-pad');
+		// Never the replacement; and the old pad, which Etherpad has called
+		// gone, takes no call either.
+		$etherpadClient->expects($this->never())->method('deletePad');
 
 		$file = $this->buildRestoredPadFile($fileId);
 		$file->expects($this->once())->method('putContent')->with('doc-after');
@@ -378,6 +379,36 @@ class LifecycleServiceTest extends TestCase {
 	 */
 	public function testHandleRestoreStillSucceedsWhenTheSupersededPadSurvives(): void {
 		$fileId = 85;
+		$oldPadId = 'g.OLDGROUPID12345$p-old';
+		$newPadId = 'g.NEWGROUPID12345$restored-abc123def456';
+
+		$bindingService = $this->createMock(BindingService::class);
+		$bindingService->expects($this->once())->method('rebind')->willReturn(true);
+
+		$etherpadClient = $this->buildEtherpadWithoutThePad();
+		$etherpadClient->method('createGroup')->willReturn('g.NEWGROUPID12345');
+		$etherpadClient->method('createGroupPad')->willReturn($newPadId);
+		$etherpadClient->method('listPads')->with('g.OLDGROUPID12345')->willReturn([]);
+		$etherpadClient->expects($this->once())->method('deleteGroup')->with('g.OLDGROUPID12345')
+			->willThrowException(new \RuntimeException('still down'));
+
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects($this->once())->method('warning')->with('Could not remove what was left of the pad a restore replaced.');
+
+		$file = $this->buildRestoredPadFile($fileId);
+		$file->expects($this->once())->method('putContent')->with('doc-after');
+
+		$result = $this->buildPendingDeleteRestoreService($fileId, $oldPadId, $bindingService, $etherpadClient, accessMode: BindingService::ACCESS_PROTECTED, logger: $logger)->handleRestore($file);
+		$this->assertSame(LifecycleService::RESULT_RESTORED, $result['status']);
+	}
+
+	/**
+	 * A public pad Etherpad has just called gone leaves nothing behind to
+	 * clear up, so the restore asks nothing more about it. A call would only
+	 * wait for Etherpad on the user's restore, to hear the same answer.
+	 */
+	public function testARestoreAsksNothingMoreAboutAPublicPadThatIsGone(): void {
+		$fileId = 86;
 		$newPadId = 'r-old-pad-abc123def456';
 
 		$bindingService = $this->createMock(BindingService::class);
@@ -386,17 +417,14 @@ class LifecycleServiceTest extends TestCase {
 		$etherpadClient = $this->buildEtherpadWithoutThePad();
 		$etherpadClient->expects($this->once())->method('createPad')->with($newPadId);
 		$etherpadClient->expects($this->once())->method('setText')->with($newPadId, 'plain text');
-		$etherpadClient->method('deletePad')->willReturnCallback(static function (string $padId): void {
-			if ($padId === 'old-pad') {
-				throw new \RuntimeException('still down');
-			}
-		});
+		$etherpadClient->expects($this->never())->method('deletePad');
 
 		$file = $this->buildRestoredPadFile($fileId);
 		$file->expects($this->once())->method('putContent')->with('doc-after');
 
 		$result = $this->buildPendingDeleteRestoreService($fileId, 'old-pad', $bindingService, $etherpadClient)->handleRestore($file);
 		$this->assertSame(LifecycleService::RESULT_RESTORED, $result['status']);
+		$this->assertSame($newPadId, $result['new_pad_id']);
 	}
 
 	/**
@@ -785,6 +813,47 @@ class LifecycleServiceTest extends TestCase {
 		$this->assertSame(LifecycleService::RESULT_TRASHED, $result['status']);
 		$this->assertFalse($result['snapshot_persisted']);
 		$this->assertTrue($result['delete_pending']);
+	}
+
+	/**
+	 * A pad Etherpad no longer has when the trash deletes it is gone as
+	 * surely as one the trash deleted: the row goes either way, and only an
+	 * info line tells the two apart.
+	 */
+	public function testATrashFindingThePadGoneAlreadyTakesTheRow(): void {
+		foreach (['gone already' => true, 'deleted now' => false] as $case => $gone) {
+			$bindingService = $this->createMock(BindingService::class);
+			$bindingService->method('findByFileId')->willReturn([
+				'file_id' => 110,
+				'pad_id' => 'pad-gone',
+				'access_mode' => BindingService::ACCESS_PUBLIC,
+				'state' => BindingService::STATE_ACTIVE,
+			]);
+			$bindingService->expects($this->never())->method('transition');
+			$bindingService->expects($this->once())->method('deleteByFileId')->with(110);
+			$etherpadClient = $this->createMock(EtherpadClient::class);
+			// The file holds the pad's revision already, so nothing is written first.
+			$etherpadClient->method('getRevisionsCount')->willReturn(4);
+			$this->trashedSnapshotRev = 4;
+			$delete = $etherpadClient->expects($this->once())->method('deletePad')->with('pad-gone');
+			if ($gone) {
+				$delete->willThrowException(new \RuntimeException('padID does not exist'));
+			}
+			$logger = $this->createMock(LoggerInterface::class);
+			$logger->expects($this->never())->method('warning');
+			$logger->expects($gone ? $this->once() : $this->never())->method('info')
+				->with('Pad already deleted while processing trash; deleting binding row.');
+			$file = $this->createMock(File::class);
+			$file->method('getId')->willReturn(110);
+			$file->method('getName')->willReturn('Gone.pad');
+			$file->method('getContent')->willReturn('doc-before');
+
+			$result = $this->buildTrashService($bindingService, $etherpadClient, logger: $logger)->handleTrash($file);
+
+			$this->assertSame(LifecycleService::RESULT_TRASHED, $result['status'], $case);
+			$this->assertTrue($result['snapshot_persisted'], $case);
+			$this->assertFalse($result['delete_pending'], $case);
+		}
 	}
 
 	/**
