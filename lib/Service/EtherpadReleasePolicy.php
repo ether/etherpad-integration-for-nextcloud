@@ -22,8 +22,6 @@ use Psr\Log\LoggerInterface;
  * 2.7.3 and 3.3.3, so only `/health`'s `releaseId` tells them apart.
  *
  * docs/etherpad-integration.md has the operator's version.
- *
- * @psalm-api
  */
 class EtherpadReleasePolicy {
 	private const APP_ID = 'etherpad_nextcloud';

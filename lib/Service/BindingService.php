@@ -11,6 +11,7 @@ namespace OCA\EtherpadNextcloud\Service;
 
 use OCA\EtherpadNextcloud\Exception\BindingException;
 use OCA\EtherpadNextcloud\Exception\MissingBindingException;
+use OCA\EtherpadNextcloud\Util\DbRows;
 use OCA\EtherpadNextcloud\Util\PadAccessMode;
 use OCA\EtherpadNextcloud\Util\SafeError;
 use OCP\DB\QueryBuilder\IQueryBuilder;
@@ -66,10 +67,10 @@ class BindingService {
 			->setMaxResults(1);
 
 		$result = $qb->executeQuery();
-		$row = $result->fetch();
+		$row = DbRows::one($result->fetch());
 		$result->closeCursor();
 
-		return $row === false ? null : $row;
+		return $row;
 	}
 
 	/**
@@ -106,10 +107,10 @@ class BindingService {
 		}
 
 		$result = $qb->executeQuery();
-		$row = $result->fetch();
+		$row = DbRows::one($result->fetch());
 		$result->closeCursor();
 
-		return $row === false ? null : $row;
+		return $row;
 	}
 
 	/**
@@ -175,7 +176,7 @@ class BindingService {
 
 		$result = $qb->executeQuery();
 		$byState = [];
-		foreach ($result->fetchAll() as $row) {
+		foreach (DbRows::all($result->fetchAll()) as $row) {
 			$byState[(string)$row['state']] = max(0, (int)$row['cnt']);
 		}
 		$result->closeCursor();
@@ -251,7 +252,7 @@ class BindingService {
 		}
 
 		$result = $qb->executeQuery();
-		$rows = $result->fetchAll();
+		$rows = DbRows::all($result->fetchAll());
 		$result->closeCursor();
 		return $rows;
 	}

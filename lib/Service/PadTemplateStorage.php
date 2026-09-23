@@ -27,8 +27,6 @@ use OCP\Lock\LockedException;
  * `IAppData` owns the folder; the nodes come from `IRootFolder`, because
  * Nextcloud's template API needs a real `OCP\Files\File` and the
  * simple-filesystem view cannot give one.
- *
- * @psalm-api
  */
 class PadTemplateStorage {
 	public const TEMPLATE_DIR = 'templates';

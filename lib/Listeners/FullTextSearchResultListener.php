@@ -25,7 +25,6 @@ use OCP\IURLGenerator;
  * the app rather than in Nextcloud's signed core directory.
  *
  * @template-implements IEventListener<Event>
- * @psalm-api
  */
 class FullTextSearchResultListener implements IEventListener {
 	private const SEARCH_RESULT_EVENT = 'Files_FullTextSearch.onSearchResult';

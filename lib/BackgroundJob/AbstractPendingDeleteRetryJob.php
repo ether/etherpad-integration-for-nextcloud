@@ -17,8 +17,6 @@ use OCP\BackgroundJob\TimedJob;
  * Settles the pad bindings that wait - restores left undecided, and
  * deletions owed once their file is gone for good. Named for what these
  * jobs did first; the job list stores the class name, so the name stays.
- *
- * @psalm-api
  */
 abstract class AbstractPendingDeleteRetryJob extends TimedJob {
 	protected const INTERVAL_SECONDS = 24 * 60 * 60;

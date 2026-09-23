@@ -33,7 +33,6 @@ use Psr\Log\LoggerInterface;
  * pad loads, which is visible noise for anyone with dev tools open.
  *
  * @template-implements IEventListener<Event>
- * @psalm-api
  */
 class FileCreatedFromTemplateListener implements IEventListener {
 	public function __construct(

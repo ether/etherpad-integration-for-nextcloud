@@ -29,7 +29,6 @@ use OCP\Preview\IProviderV2;
  * A future iteration could render the actual snapshot text into the
  * preview (similar to how the Text app previews Markdown), but that's
  * a separate feature — this exists to silence the 4xx noise.
- * @psalm-api
  */
 class PadPreviewProvider implements IProviderV2 {
 	private const ASSET_PATH = __DIR__ . '/../../img/preview-fallback.png';

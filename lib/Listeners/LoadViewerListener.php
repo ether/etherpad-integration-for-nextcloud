@@ -18,7 +18,6 @@ use OCP\Util;
  * Registers the pad Viewer when Nextcloud's Viewer is loaded.
  *
  * @template-implements IEventListener<Event>
- * @psalm-api
  */
 class LoadViewerListener implements IEventListener {
 	public function handle(Event $event): void {

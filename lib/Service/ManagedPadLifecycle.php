@@ -24,8 +24,6 @@ use Psr\Log\LoggerInterface;
  * the first of those three. Every delete in the app used to call it, so a
  * protected pad left its group and every session ever issued for it behind,
  * and nothing collected them afterwards.
- *
- * @psalm-api
  */
 class ManagedPadLifecycle {
 	public function __construct(

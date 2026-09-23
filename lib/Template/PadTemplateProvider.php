@@ -31,8 +31,6 @@ use Psr\Log\LoggerInterface;
  *
  * There is no tile for protected pads: the blank entry already creates one, so
  * the public tile only appears while both types are enabled.
- *
- * @psalm-api
  */
 class PadTemplateProvider implements ICustomTemplateProvider {
 	/**

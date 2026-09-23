@@ -15,8 +15,6 @@ use OCP\IL10N;
  * Turns a CookieDomainDecision into admin-facing text. Kept apart from the
  * policy so the decision stays free of translations, and shared between the
  * settings page and the health check so both word it the same way.
- *
- * @psalm-api
  */
 class CookieDomainMessages {
 	public function __construct(

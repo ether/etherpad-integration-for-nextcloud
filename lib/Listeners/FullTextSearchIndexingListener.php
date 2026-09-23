@@ -35,7 +35,6 @@ use Psr\Log\LoggerInterface;
  * does not enter into it.
  *
  * @template-implements IEventListener<Event>
- * @psalm-api
  */
 class FullTextSearchIndexingListener implements IEventListener {
 	private const INDEXING_EVENT = 'Files_FullTextSearch.onFileIndexing';

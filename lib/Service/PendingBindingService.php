@@ -47,8 +47,6 @@ use Psr\Log\LoggerInterface;
  *
  * A row is settled by one run at a time: the jobs and the admin page can
  * run at once, and each holds a lock on the row while it works on it.
- *
- * @psalm-api
  */
 class PendingBindingService {
 	/** The budget is a parameter so a test can reach it, not a setting. */

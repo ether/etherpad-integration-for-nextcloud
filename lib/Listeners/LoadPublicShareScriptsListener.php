@@ -22,7 +22,6 @@ use OCP\Util;
  * Loads the pad Viewer and compatibility bootstrap on public share pages.
  *
  * @template-implements IEventListener<Event>
- * @psalm-api
  */
 class LoadPublicShareScriptsListener implements IEventListener {
 	public function __construct(

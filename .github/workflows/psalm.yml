@@ -1,9 +1,12 @@
 # SPDX-FileCopyrightText: 2026 Etherpad contributors
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
-# Static analysis with Psalm. The check is baseline-backed (psalm-baseline.xml):
-# the existing issues are suppressed and the build only fails on NEW ones, so
-# the codebase improves gradually without a blocking up-front cleanup.
+# Static analysis with Psalm on its strictest level (1), baseline-backed
+# (psalm-baseline.xml): the existing issues are suppressed, and the build fails
+# on a new one, and on a fixed one whose baseline entry was left behind. The
+# baseline can only shrink, so the codebase improves as code is reworked,
+# without a blocking up-front cleanup. See psalm.xml for why each issue type is
+# suppressed where it is.
 
 name: Psalm
 
@@ -34,7 +37,7 @@ jobs:
           filters: |
             src:
               - '.github/workflows/psalm.yml'
-              # The upper bound the matrix analyses comes from here.
+              # Declares the range the matrix below has to follow.
               - 'appinfo/info.xml'
               - 'composer.*'
               - 'lib/**'
@@ -55,7 +58,9 @@ jobs:
         # catches an API that only exists on newer servers, the upper bound one
         # that has since been removed. `locked` is whatever composer.lock pins,
         # which is the declared minimum and the version every other job here
-        # installs.
+        # installs. The upper bound is kept at info.xml's max-version by hand:
+        # a new major resolves only once it is released, and the step below
+        # fails when the two part.
         ocp: ['locked', '^34']
 
     name: Psalm static analysis (OCP ${{ matrix.ocp }})
@@ -87,6 +92,19 @@ jobs:
 
       - name: Install dependencies
         run: composer install --no-progress --prefer-dist
+
+      # Without it, a max-version raised in info.xml would leave this job
+      # analysing the old major, and an API the new one removed would pass.
+      - name: Check the upper bound against appinfo/info.xml
+        if: matrix.ocp != 'locked'
+        env:
+          OCP_UNDER_TEST: ${{ matrix.ocp }}
+        run: |
+          max=$(sed -n 's/.*<nextcloud [^>]*max-version="\([0-9][0-9]*\)".*/\1/p' appinfo/info.xml)
+          if [ -z "$max" ] || [ "^$max" != "$OCP_UNDER_TEST" ]; then
+            echo "::error file=.github/workflows/psalm.yml::The matrix analyses OCP $OCP_UNDER_TEST, but appinfo/info.xml declares max-version=\"$max\"."
+            exit 1
+          fi
 
       # Only the upper bound is resolved fresh. Re-requiring the lower one
       # would step outside the lock and analyse whatever patch release happens

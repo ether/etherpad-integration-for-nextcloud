@@ -26,7 +26,6 @@ use OCP\IL10N;
  * listener and after any other that kept the default.
  *
  * @template-implements IEventListener<Event>
- * @psalm-api
  */
 class BeforeGetTemplatesListener implements IEventListener {
 	public function __construct(

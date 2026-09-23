@@ -38,8 +38,6 @@ use OCP\IL10N;
  * The protection is Nextcloud's, so an instance running with
  * `allow_local_remote_servers=true` disables it for every request including
  * this one.
- *
- * @psalm-api
  */
 class BaseUrlReachabilityCheck {
 	private const TIMEOUT_SECONDS = 5;
