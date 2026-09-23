@@ -243,7 +243,7 @@ class LifecycleService {
 					]);
 				} else {
 					$this->bindingService->markPendingDelete($fileId, $deletedAt);
-					$this->logger->warning('Pad delete deferred after trash. Will retry via background job.', [
+					$this->logger->warning('Could not delete the pad after trash. It is kept, and its deletion recorded as pending.', [
 						'app' => 'etherpad_nextcloud',
 						'fileId' => $fileId,
 						...SafeError::context($deleteError),
