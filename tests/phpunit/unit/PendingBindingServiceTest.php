@@ -9,8 +9,10 @@ use OCA\EtherpadNextcloud\Service\LifecycleService;
 use OCA\EtherpadNextcloud\Service\PendingBindingService;
 use OCA\EtherpadNextcloud\Service\SettleOutcome;
 use OCA\EtherpadNextcloud\Tests\Support\FixedClock;
+use OCA\EtherpadNextcloud\Tests\Support\InMemoryLockingProvider;
 use OCP\Files\File;
 use OCP\Files\IRootFolder;
+use OCP\Lock\ILockingProvider;
 use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
@@ -61,7 +63,8 @@ class PendingBindingServiceTest extends TestCase {
 
 		$this->assertSame([1, 4], $settled);
 		$this->assertSame(['/alice/files_trashbin/files/Two.pad.d100'], $trashed);
-		$this->assertSame([[5, 'pad-5', BindingService::STATE_RESTORE_PENDING], [3, 'pad-3', BindingService::STATE_PENDING_DELETE]], $gone);
+		// One of each kind in turn: the owed deletion comes up before the second restore.
+		$this->assertSame([[3, 'pad-3', BindingService::STATE_PENDING_DELETE], [5, 'pad-5', BindingService::STATE_RESTORE_PENDING]], $gone);
 		$this->assertSame(['checked' => 5, 'settled' => 5], $result);
 	}
 
@@ -186,28 +189,100 @@ class PendingBindingServiceTest extends TestCase {
 	}
 
 	/**
-	 * The limit counts every row together: restores first, then deletions
-	 * owed by kind - gone for good, in a user's trash, anywhere else - each
-	 * from what is left, so rows that wait on a trash cannot crowd out the
-	 * ones that can go.
+	 * Each kind is asked for the whole limit, and the rows are taken one of
+	 * each kind in turn until the limit is reached: what one kind leaves,
+	 * the others get, and a run that ends early has reached every kind.
 	 */
-	public function testTheLimitCountsBothKindsTogether(): void {
-		foreach ([2 => [], 5 => [[BindingService::FILE_GONE, 3], [BindingService::FILE_IN_USER_TRASH, 2], [BindingService::FILE_ELSEWHERE, 1]]] as $limit => $expected) {
-			$bindings = $this->createMock(BindingService::class);
-			$bindings->method('findRestorePendingByAge')->willReturn([
-				$this->row(1, BindingService::STATE_RESTORE_PENDING, 'files/1.pad'),
-				$this->row(2, BindingService::STATE_RESTORE_PENDING, 'files/2.pad'),
-			]);
-			$asked = [];
-			$bindings->method('findPendingDeleteByAge')->willReturnCallback(function (int $min, ?int $max, int $limit, ?string $fileLocation) use (&$asked): array {
-				$asked[] = [$fileLocation, $limit];
-				return [$this->row(10 + count($asked), BindingService::STATE_PENDING_DELETE, 'files/x.pad')];
-			});
+	public function testTheRowsOfEachKindAreTakenInTurn(): void {
+		$bindings = $this->createMock(BindingService::class);
+		$asked = [];
+		$bindings->method('findRestorePendingByAge')->willReturnCallback(function (int $min, ?int $max, int $limit) use (&$asked): array {
+			$asked[] = ['restores', $limit];
+			return [$this->row(1, BindingService::STATE_RESTORE_PENDING, 'files/1.pad'), $this->row(2, BindingService::STATE_RESTORE_PENDING, 'files/2.pad')];
+		});
+		$bindings->method('findPendingDeleteByAge')->willReturnCallback(function (int $min, ?int $max, int $limit, ?string $fileLocation) use (&$asked): array {
+			$asked[] = [$fileLocation, $limit];
+			return match ($fileLocation) {
+				BindingService::FILE_GONE => [$this->row(10, BindingService::STATE_PENDING_DELETE, null), $this->row(11, BindingService::STATE_PENDING_DELETE, null), $this->row(12, BindingService::STATE_PENDING_DELETE, null)],
+				BindingService::FILE_ELSEWHERE => [$this->row(30, BindingService::STATE_PENDING_DELETE, 'files/30.pad')],
+				default => [],
+			};
+		});
+		$seen = [];
+		$lifecycle = $this->createMock(LifecycleService::class);
+		$lifecycle->method('settleWaitingFile')->willReturnCallback(static function (File $file) use (&$seen): SettleOutcome {
+			$seen[] = $file->getId();
+			return SettleOutcome::Left;
+		});
+		$lifecycle->method('finishGoneFile')->willReturnCallback(static function (int $fileId) use (&$seen): SettleOutcome {
+			$seen[] = $fileId;
+			return SettleOutcome::Left;
+		});
+		$root = $this->root([1 => ['/a/files/1.pad'], 2 => ['/a/files/2.pad'], 30 => ['/a/files/30.pad']]);
 
-			$this->service($bindings, $this->createMock(LifecycleService::class), $this->root([]))->settleByAge(0, null, $limit);
+		$this->service($bindings, $lifecycle, $root)->settleByAge(0, null, 5);
 
-			$this->assertSame($expected, $asked, "limit $limit");
+		$this->assertSame([['restores', 5], [BindingService::FILE_GONE, 5], [BindingService::FILE_IN_USER_TRASH, 5], [BindingService::FILE_ELSEWHERE, 5]], $asked);
+		$this->assertSame([1, 10, 30, 2, 11], $seen);
+	}
+
+	/**
+	 * A user's trash full of files no run can use fills only its own turns:
+	 * a file back in Files whose deletion is still owed is reached in the
+	 * first run all the same.
+	 */
+	public function testRowsThatCannotBeSettledCrowdOutOnlyTheirOwnKind(): void {
+		$trashed = [];
+		$paths = [];
+		for ($id = 100; $id < 110; $id++) {
+			$trashed[] = $this->row($id, BindingService::STATE_PENDING_DELETE, 'files_trashbin/files/' . $id . '.pad.d1');
+			$paths[$id] = ['/a/files_trashbin/files/' . $id . '.pad.d1'];
 		}
+		$bindings = $this->bindings(deletes: [...$trashed, $this->row(7, BindingService::STATE_PENDING_DELETE, 'files/Back.pad')]);
+		$lifecycle = $this->createMock(LifecycleService::class);
+		$lifecycle->method('finishTrash')->willReturn(SettleOutcome::Left);
+		$lifecycle->expects($this->once())->method('settleWaitingFile')->willReturn(SettleOutcome::Settled);
+		$paths[7] = ['/a/files/Back.pad'];
+
+		$result = $this->service($bindings, $lifecycle, $this->root($paths))->settleByAge(0, null, 4);
+
+		$this->assertSame(['checked' => 4, 'settled' => 1], $result);
+	}
+
+	/**
+	 * Two runs at once - a job and the admin page - never work on the same
+	 * row together: the second finds it held and passes it by, uncounted
+	 * and unmoved, so only one of them writes its snapshot and takes the row.
+	 */
+	public function testARowIsSettledByOneRunAtATime(): void {
+		$locks = new InMemoryLockingProvider();
+		$row = $this->row(2, BindingService::STATE_PENDING_DELETE, 'files_trashbin/files/Two.pad.d100');
+		$root = $this->root([2 => ['/alice/files_trashbin/files/Two.pad.d100']]);
+		$second = null;
+		$secondResult = null;
+		$finishing = 0;
+		$lifecycle = $this->createMock(LifecycleService::class);
+		$lifecycle->method('finishTrash')->willReturnCallback(function () use (&$second, &$secondResult, &$finishing): SettleOutcome {
+			$finishing++;
+			// The other run starts while this one is between its read and its write.
+			if ($second !== null) {
+				$run = $second;
+				$second = null;
+				$secondResult = $run->settleByAge(0, null, 50);
+			}
+			return SettleOutcome::Settled;
+		});
+		$otherBindings = $this->bindings(deletes: [$row]);
+		$otherBindings->expects($this->never())->method('transition');
+		$second = $this->service($otherBindings, $lifecycle, $root, locks: $locks);
+
+		$first = $this->service($this->bindings(deletes: [$row]), $lifecycle, $root, locks: $locks)->settleByAge(0, null, 50);
+
+		$this->assertSame(1, $finishing);
+		$this->assertSame(['checked' => 0, 'settled' => 0], $secondResult);
+		$this->assertSame(['checked' => 1, 'settled' => 1], $first);
+		// Let go afterwards: the next run gets the row.
+		$this->assertFalse($locks->isLocked('etherpad_nextcloud:settle:2', ILockingProvider::LOCK_EXCLUSIVE));
 	}
 
 	/** A row that throws is logged and counted, and the rows behind it still get their turn. */
@@ -350,12 +425,14 @@ class PendingBindingServiceTest extends TestCase {
 		bool $deleteOnTrash = true,
 		?FixedClock $clock = null,
 		?LoggerInterface $logger = null,
+		?InMemoryLockingProvider $locks = null,
 	): PendingBindingService {
 		$lifecycle->method('isDeleteOnTrashEnabled')->willReturn($deleteOnTrash);
 		return new PendingBindingService(
 			$bindings,
 			$lifecycle,
 			$root,
+			$locks ?? new InMemoryLockingProvider(),
 			$logger ?? $this->createMock(LoggerInterface::class),
 			$clock ?? new FixedClock(),
 		);

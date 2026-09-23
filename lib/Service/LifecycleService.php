@@ -271,6 +271,9 @@ class LifecycleService {
 	 * Nothing happens while deleting on trash is switched off: this is the
 	 * deletion that setting governs, only later. The sweep does not fetch
 	 * these rows then at all; the check holds for any other caller.
+	 *
+	 * One call at a time per file: two that overlap could each write their
+	 * snapshot, and the older one last. The sweep holds a lock on the row.
 	 */
 	public function finishTrash(File $file, RunBudget $budget): SettleOutcome {
 		if (!$this->isDeleteOnTrashEnabled()) {
@@ -466,8 +469,9 @@ class LifecycleService {
 	/**
 	 * The pad's current content for a trashed file: true when the file holds
 	 * it already - the pad has not moved past the file's snapshot revision -
-	 * a snapshot to write, or a miss when the pad changed while it was read.
-	 * Etherpad's errors are the caller's to place.
+	 * a snapshot to write, or a miss: the pad is behind the file's snapshot,
+	 * or changed while it was read. A snapshot is never older than the one
+	 * the file has. Etherpad's errors are the caller's to place.
 	 *
 	 * $revisions: the pad's count, when the caller has just asked for it.
 	 *
@@ -478,6 +482,9 @@ class LifecycleService {
 		$revisions ??= $this->etherpadClient->getRevisionsCount($padId, RunBudget::timeoutOf($budget));
 		if ($revisions === $pad->snapshotRev) {
 			return true;
+		}
+		if ($revisions < $pad->snapshotRev) {
+			return $this->snapshotMissed(TrashSnapshotMiss::PadBehind, true, $context);
 		}
 		return $this->fetchStableSnapshot($padId, $revisions, $budget)
 			?? $this->snapshotMissed(TrashSnapshotMiss::PadChanged, true, $context);

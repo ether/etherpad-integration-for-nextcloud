@@ -21,6 +21,13 @@ enum TrashSnapshotMiss: string {
 	case FileUnparsable = 'file_unparsable';
 	case SnapshotNotFetched = 'snapshot_not_fetched';
 	case PadChanged = 'pad_changed';
+	/**
+	 * Fewer revisions than the file's snapshot: not the pad the file knew.
+	 * Its content would take the file's place, so nothing is written. At
+	 * trash time the deletion is owed, and the sweep's rule for such a pad
+	 * decides: logged, left in place, the row let go.
+	 */
+	case PadBehind = 'pad_behind';
 	case FileMoved = 'file_moved';
 	case WriteFailed = 'write_failed';
 

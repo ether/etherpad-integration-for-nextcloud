@@ -9,10 +9,13 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Service;
 
+use OCA\EtherpadNextcloud\AppInfo\Application;
 use OCA\EtherpadNextcloud\Util\SafeError;
 use OCP\AppFramework\Utility\ITimeFactory;
 use OCP\Files\File;
 use OCP\Files\IRootFolder;
+use OCP\Lock\ILockingProvider;
+use OCP\Lock\LockedException;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -38,9 +41,12 @@ use Psr\Log\LoggerInterface;
  * Bounded by a RunBudget: each Etherpad call gets what is left of the run,
  * none is started that could not finish - except the deletion of a pad
  * whose row is already taken, which finishes on the client's own
- * timeouts - and a run ends after a few rows Etherpad gave no answer for. The rows stay until they are settled, so
- * without that an Etherpad that is down would cost every run a full
- * timeout per row.
+ * timeouts - and a run ends after a few rows Etherpad gave no answer for.
+ * The rows stay until they are settled, so without that an Etherpad that
+ * is down would cost every run a full timeout per row.
+ *
+ * A row is settled by one run at a time: the jobs and the admin page can
+ * run at once, and each holds a lock on the row while it works on it.
  *
  * @psalm-api
  */
@@ -50,6 +56,7 @@ class PendingBindingService {
 		private BindingService $bindingService,
 		private LifecycleService $lifecycleService,
 		private IRootFolder $rootFolder,
+		private ILockingProvider $locks,
 		private LoggerInterface $logger,
 		private ITimeFactory $timeFactory,
 		private float $budgetSeconds = RunBudget::DEFAULT_SECONDS,
@@ -67,30 +74,15 @@ class PendingBindingService {
 	}
 
 	/**
-	 * Restores first: a row that waits keeps its file from opening, a
-	 * deletion owed keeps nothing from anyone. $limit counts rows of both
-	 * kinds together.
+	 * $limit counts rows of every kind together.
 	 *
 	 * @return array{checked:int, settled:int}
 	 */
 	public function settleByAge(int $minAgeSeconds, ?int $maxAgeSeconds, int $limit = 200): array {
 		$budget = new RunBudget($this->timeFactory, $this->budgetSeconds);
-		$rows = $this->bindingService->findRestorePendingByAge($minAgeSeconds, $maxAgeSeconds, $limit);
-		// Deletions owed by kind, each from what is left of the limit, so
-		// rows that wait on a trash cannot crowd out the ones that can go.
-		$fileLocations = $this->lifecycleService->isDeleteOnTrashEnabled()
-			? [BindingService::FILE_GONE, BindingService::FILE_IN_USER_TRASH, BindingService::FILE_ELSEWHERE]
-			: [BindingService::FILE_ELSEWHERE];
-		foreach ($fileLocations as $fileLocation) {
-			if (count($rows) >= $limit) {
-				break;
-			}
-			$rows = [...$rows, ...$this->bindingService->findPendingDeleteByAge($minAgeSeconds, $maxAgeSeconds, $limit - count($rows), $fileLocation)];
-		}
-
 		$checked = 0;
 		$settled = 0;
-		foreach ($rows as $row) {
+		foreach ($this->rowsInTurn($minAgeSeconds, $maxAgeSeconds, $limit) as $row) {
 			$fileId = (int)($row['file_id'] ?? 0);
 			$padId = (string)($row['pad_id'] ?? '');
 			if ($fileId <= 0 || $padId === '') {
@@ -100,7 +92,7 @@ class PendingBindingService {
 				break;
 			}
 			$path = $row['file_path'] ?? null;
-			$outcome = $this->settleRow($fileId, $padId, (string)($row['state'] ?? ''), is_string($path) ? $path : null, $budget);
+			$outcome = $this->whileHeld($fileId, fn (): ?SettleOutcome => $this->settleRow($fileId, $padId, (string)($row['state'] ?? ''), is_string($path) ? $path : null, $budget));
 			if ($outcome === null) {
 				continue;
 			}
@@ -112,6 +104,63 @@ class PendingBindingService {
 			}
 		}
 		return ['checked' => $checked, 'settled' => $settled];
+	}
+
+	/**
+	 * The rows a run takes, one of each kind in turn: restores left
+	 * undecided, then deletions owed by where the file is - gone for good,
+	 * in a user's trash, anywhere else. Each kind is asked for the whole
+	 * limit, and what one leaves goes to the others. Rows no run can settle
+	 * yet then crowd out only rows of their own kind, which move to the
+	 * back, and a run that ends on its budget has still reached every kind.
+	 *
+	 * @return list<array<string,mixed>>
+	 */
+	private function rowsInTurn(int $minAgeSeconds, ?int $maxAgeSeconds, int $limit): array {
+		$fileLocations = $this->lifecycleService->isDeleteOnTrashEnabled()
+			? [BindingService::FILE_GONE, BindingService::FILE_IN_USER_TRASH, BindingService::FILE_ELSEWHERE]
+			: [BindingService::FILE_ELSEWHERE];
+		$kinds = [$this->bindingService->findRestorePendingByAge($minAgeSeconds, $maxAgeSeconds, $limit)];
+		foreach ($fileLocations as $fileLocation) {
+			$kinds[] = $this->bindingService->findPendingDeleteByAge($minAgeSeconds, $maxAgeSeconds, $limit, $fileLocation);
+		}
+
+		$rows = [];
+		for ($turn = 0; count($rows) < $limit; $turn++) {
+			$taken = 0;
+			foreach ($kinds as $kind) {
+				if (isset($kind[$turn]) && count($rows) < $limit) {
+					$rows[] = $kind[$turn];
+					$taken++;
+				}
+			}
+			if ($taken === 0) {
+				break;
+			}
+		}
+		return $rows;
+	}
+
+	/**
+	 * $settle with this row to itself. Two runs at once - a job and the
+	 * admin page - would otherwise both finish the same trash, and the one
+	 * holding the older snapshot could write it last. Null when another run
+	 * holds the row: it is neither counted nor moved.
+	 *
+	 * @param callable(): ?SettleOutcome $settle
+	 */
+	private function whileHeld(int $fileId, callable $settle): ?SettleOutcome {
+		$lock = Application::APP_ID . ':settle:' . $fileId;
+		try {
+			$this->locks->acquireLock($lock, ILockingProvider::LOCK_EXCLUSIVE);
+		} catch (LockedException) {
+			return null;
+		}
+		try {
+			return $settle();
+		} finally {
+			$this->locks->releaseLock($lock, ILockingProvider::LOCK_EXCLUSIVE);
+		}
 	}
 
 	/**

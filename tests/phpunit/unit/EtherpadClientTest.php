@@ -166,6 +166,35 @@ class EtherpadClientTest extends TestCase {
 		];
 	}
 
+	public function testReadsARevisionCount(): void {
+		$client = $this->clientWithResponse($this->response(200, '{"code":0,"data":{"revisions":12}}'));
+		$this->assertSame(12, $client->getRevisionsCount('pad'));
+	}
+
+	/**
+	 * Not 0: a sweep holds a pad to its file's snapshot revision, and 0
+	 * reads as a pad behind it - one it lets go of. An answer without a
+	 * count says nothing about the pad.
+	 */
+	#[\PHPUnit\Framework\Attributes\DataProvider('provideUnreadableRevisionCounts')]
+	public function testGetRevisionsCountRefusesAnAnswerWithoutACount(string $payload): void {
+		$client = $this->clientWithResponse($this->response(200, $payload));
+		$this->expectException(EtherpadClientException::class);
+		$client->getRevisionsCount('pad');
+	}
+
+	/** @return array<string,array{string}> */
+	public static function provideUnreadableRevisionCounts(): array {
+		return [
+			'no revisions field' => ['{"code":0,"data":{}}'],
+			'null data' => ['{"code":0,"data":null}'],
+			'revisions is null' => ['{"code":0,"data":{"revisions":null}}'],
+			'revisions is not a number' => ['{"code":0,"data":{"revisions":"many"}}'],
+			'revisions is negative' => ['{"code":0,"data":{"revisions":-1}}'],
+			'revisions is a fraction' => ['{"code":0,"data":{"revisions":1.5}}'],
+		];
+	}
+
 	/**
 	 * Measured: `/api` answers `{"currentVersion":"1.3.1"}` on both Etherpad
 	 * 2.7.3 and 3.3.3, so the API version cannot tell the two apart.

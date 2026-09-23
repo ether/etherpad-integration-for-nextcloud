@@ -245,7 +245,7 @@ solely by the separate external-pad policy, not by these two settings.
   - Params: `file=/path/file.pad`
   - Result:
     - `200` with `status=trashed` for successful trash flow.
-      - includes `snapshot_persisted` (`true|false`): whether the file holds the pad's current content - written now, or there already when the file's `snapshot_rev` is the pad's revision count. `false` when no fresh snapshot was written: the file was locked or could not be read, Etherpad did not answer, or the file's restore was still undecided, which leaves the pad alone.
+      - includes `snapshot_persisted` (`true|false`): whether the file holds the pad's current content - written now, or there already when the file's `snapshot_rev` is the pad's revision count. `false` when no fresh snapshot was written: the file was locked or could not be read, Etherpad did not answer, the pad is behind the file's snapshot (not the pad the file knew), or the file's restore was still undecided, which leaves the pad alone.
       - includes `delete_pending` (`true|false`): `true` when the pad is kept and its deletion owed, always the case when no fresh snapshot was written. The background sweep then writes the snapshot into the trashed file and deletes the pad, usually within five minutes.
     - `409` with `status=skipped` + `reason` on invalid lifecycle state (for example already pending delete).
       - includes transition-race guard reason `binding_state_transition_conflict` on concurrent state updates.

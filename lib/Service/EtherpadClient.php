@@ -108,10 +108,21 @@ class EtherpadClient {
 		return $data[$field];
 	}
 
+	/**
+	 * An answer without a count is not revision 0: that would read as a pad
+	 * behind any snapshot, and a sweep would let go of a pad Etherpad said
+	 * nothing about. It is no answer, and throws like one.
+	 */
 	public function getRevisionsCount(string $padId, ?int $timeoutSeconds = null): int {
 		$data = $this->apiCall('getRevisionsCount', ['padID' => $padId], timeoutSeconds: $timeoutSeconds);
-		$revisions = (int)($data['revisions'] ?? 0);
-		return max(0, $revisions);
+		$revisions = $data['revisions'] ?? null;
+		if (is_string($revisions) && ctype_digit($revisions)) {
+			$revisions = (int)$revisions;
+		}
+		if (!is_int($revisions) || $revisions < 0) {
+			throw new EtherpadClientException('Etherpad API response for getRevisionsCount has no revision count.');
+		}
+		return $revisions;
 	}
 
 	public function setText(string $padId, string $text): void {
