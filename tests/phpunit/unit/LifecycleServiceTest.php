@@ -123,6 +123,32 @@ class LifecycleServiceTest extends TestCase {
 	}
 
 	/**
+	 * Seeding can fail after the pad is made. Nothing names it yet - the
+	 * claim comes later - so it goes, and the file is left as it was.
+	 */
+	public function testHandleRestoreRemovesAReplacementItCouldNotSeed(): void {
+		$fileId = 95;
+		$newPadId = 'r-old-pad-abc123def456';
+		$bindingService = $this->createMock(BindingService::class);
+		$bindingService->expects($this->never())->method('rebind');
+		$bindingService->expects($this->once())
+			->method('transition')
+			->with($fileId, 'old-pad', BindingService::STATE_PENDING_DELETE, BindingService::STATE_RESTORE_PENDING)
+			->willReturn(true);
+
+		$etherpadClient = $this->buildEtherpadWithoutThePad();
+		$etherpadClient->expects($this->once())->method('createPad')->with($newPadId);
+		$etherpadClient->method('setText')->willThrowException(new \RuntimeException('Connection reset'));
+		$etherpadClient->expects($this->once())->method('deletePad')->with($newPadId);
+
+		$file = $this->buildRestoredPadFile($fileId);
+		$file->expects($this->never())->method('putContent');
+
+		$this->expectException(LifecycleException::class);
+		$this->buildPendingDeleteRestoreService($fileId, 'old-pad', $bindingService, $etherpadClient)->handleRestore($file);
+	}
+
+	/**
 	 * Two restores of one file can both get as far as a replacement pad. The
 	 * row decides which of them writes; the other leaves the file to the
 	 * winner and takes its own pad with it.

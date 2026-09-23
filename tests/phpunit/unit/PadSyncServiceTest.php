@@ -13,6 +13,7 @@ use OCA\EtherpadNextcloud\Service\PadSyncService;
 use OCA\EtherpadNextcloud\Service\PadSnapshot;
 use OCA\EtherpadNextcloud\Service\ParsedPadFile;
 use OCA\EtherpadNextcloud\Service\UserNodeResolver;
+use OCA\EtherpadNextcloud\Tests\Support\FixedClock;
 use OCP\Files\File;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
@@ -264,6 +265,50 @@ class PadSyncServiceTest extends TestCase {
 		$this->assertTrue($result->forced);
 		$this->assertSame(5, $result->snapshotRev);
 		$this->assertSame(1, $result->lockRetries);
+	}
+
+	/**
+	 * A restore from the snapshot points the file at a new pad, whose
+	 * revisions start again from nothing. Carried over, the old pad's count
+	 * had the regular sync take the new pad's edits for ones the file
+	 * already held, until a forced sync.
+	 */
+	public function testTheFirstSyncAfterARestoreFromTheSnapshotFetchesTheNewPad(): void {
+		$formatter = new PadFileService(new FixedClock());
+		$trashed = $formatter->readPad($formatter->withExportSnapshot(
+			$formatter->readPad($formatter->buildInitialDocument(138, 'old-pad', BindingService::ACCESS_PUBLIC)),
+			new PadSnapshot('old text', '', 500),
+		));
+		$restored = $formatter->withRestoredSnapshot($trashed, 'old text', '', 'r-new-pad', 'https://pad.example.test/p/r-new-pad');
+
+		$file = $this->createMock(File::class);
+		$file->method('getName')->willReturn('Notes.pad');
+		$file->method('getContent')->willReturn($restored);
+
+		$userNodeResolver = $this->createMock(UserNodeResolver::class);
+		$userNodeResolver->method('resolveUserFileNodeById')->with('alice', 138)->willReturn($file);
+		$userNodeResolver->method('toUserAbsolutePath')->willReturn('/Notes.pad');
+
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->method('getRevisionsCount')->with('r-new-pad')->willReturn(3);
+		$etherpadClient->expects($this->once())->method('getText')->with('r-new-pad')->willReturn('new edit');
+		$etherpadClient->method('getHTML')->willReturn('<p>new edit</p>');
+
+		$written = null;
+		$lockRetryService = $this->createMock(PadFileLockRetryService::class);
+		$lockRetryService->expects($this->once())
+			->method('putContentWithSyncLockRetry')
+			->willReturnCallback(static function (File $node, string $content) use (&$written): int {
+				$written = $content;
+				return 0;
+			});
+
+		$result = $this->buildService($formatter, $userNodeResolver, null, $etherpadClient, $lockRetryService)
+			->syncById('alice', 138, false);
+
+		$this->assertSame(PadSyncService::STATUS_UPDATED, $result->status);
+		$this->assertSame(3, $formatter->readPad((string)$written)->snapshotRev);
+		$this->assertSame('new edit', $formatter->getSnapshotPartsFromBody($formatter->readPad((string)$written)->body)['text']);
 	}
 
 	private function buildService(

@@ -635,6 +635,8 @@ class PadFileServiceTest extends TestCase {
 		$this->assertNull($restored->frontmatter['deleted_at']);
 		$this->assertSame('new-pad', $restored->padId);
 		$this->assertSame('https://pad.example.test/p/new-pad', $restored->padUrl);
+		// The old pad's revision 4 means nothing to the new one.
+		$this->assertSame(-1, $restored->snapshotRev);
 		$this->assertSame(
 			['text' => 'replaced text', 'html' => '<p>replaced html</p>'],
 			$service->getSnapshotPartsFromBody($restored->body),
