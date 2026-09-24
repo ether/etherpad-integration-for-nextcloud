@@ -107,11 +107,8 @@ class RestoreService {
 	 * The same decision, for an open of the file (SettleOnOpen), which
 	 * someone waits for: on $binding, the row as the open read and checked
 	 * it, so a row a trash has changed since is left to the trash; from
-	 * $pad, the file as the open read it; and all of it within $budget.
-	 * What is left of a pad that is gone is removed before the row goes,
-	 * not after it on the client's own timeouts; a clean-up that does not
-	 * finish in time keeps the row for a later try, since nothing would
-	 * lead to what it left once the row was gone.
+	 * $pad, the file as the open read it; and all of it within $budget, the
+	 * clean-up after a pad that is gone included (releaseWaitingRow()).
 	 */
 	public function settleOpenedFile(File $file, Binding $binding, ParsedPadFile $pad, RunBudget $budget): SettleOutcome {
 		if (!PadFileType::isPad($file->getName())) {
@@ -333,8 +330,11 @@ class RestoreService {
 	 * is.
 	 *
 	 * A sweep lets the row go first and clears up after it on the client's
-	 * own timeouts. An open ($openBudget) clears up first, within its
-	 * budget, and keeps the row when that does not finish.
+	 * own timeouts: no one waits, and once the row is gone a call cut short
+	 * by a budget would leave the group for good. An open ($openBudget),
+	 * which someone waits for, clears up first, within its budget, and
+	 * keeps the row when that does not finish (keepForLater()): once the
+	 * row was gone, nothing would lead to the group.
 	 *
 	 * @return array{status: string, reason: string}
 	 */
@@ -363,13 +363,10 @@ class RestoreService {
 	}
 
 	/**
-	 * An open that could not remove what was left of a pad that is gone
-	 * keeps the row for a later try, and touches it, as a row that waits
-	 * again is touched: the next open within the minute leaves it
-	 * (SettleOnOpen), and the sweep, which clears up on the client's own
-	 * timeouts, gets to it sooner. Time running out is to be expected, and
-	 * a debug line; a failure of Etherpad's is worth one at info level,
-	 * with its cause.
+	 * The row an open keeps, touched as a row that waits again is: the next
+	 * open within the minute leaves it (SettleOnOpen), and the sweep gets
+	 * to it sooner. Time running out is to be expected, and a debug line; a
+	 * failure of Etherpad's is worth one at info level, with its cause.
 	 *
 	 * @return array{status: string, reason: string}
 	 */
@@ -390,10 +387,9 @@ class RestoreService {
 	 * Etherpad has said does not exist. A public one takes no call; for a
 	 * protected pad its group can still be standing with nothing in it, and
 	 * discardIfPresent() is what takes an empty group down.
-	 * Best effort: the row is settled, and a group left over is garbage,
-	 * not a way in - there is no pad in it for a session to open. On the
-	 * client's own timeouts, not what a sweep's run has left: the row is
-	 * released already, so a call cut short would leave the group for good.
+	 * Best effort, after the row: the row is settled, and a group left over
+	 * is garbage, not a way in - there is no pad in it for a session to
+	 * open. On the client's own timeouts (releaseWaitingRow() says why).
 	 */
 	private function discardWhatIsLeftOf(int $fileId, string $padId): void {
 		try {

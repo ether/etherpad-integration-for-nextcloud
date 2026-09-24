@@ -18,28 +18,19 @@ use Psr\Log\LoggerInterface;
 
 /**
  * An open that finds its file's row waiting decides the row itself, once,
- * instead of answering waiting_binding until the sweep comes round - after
- * an outage of more than a day that is the daily run, and for a file the
- * sweep cannot read (encrypted with its owner's key, on a storage whose
- * credentials live in the session) it is never. The open runs as someone
- * who can read the file.
+ * rather than wait for the sweep (docs/architecture.md says what that
+ * reaches). The decision is the sweep's, on the row as it was checked here
+ * and from the file as the open read it (RestoreService::settleOpenedFile()).
  *
- * The decision is the sweep's (RestoreService::settleOpenedFile()), and
- * writes no file: a pad that is there takes the row back, and the file
- * opens; one that is gone or behind lets the row go, and the file offers
- * its own recovery. Under the row's SettleLock, never waited for: a row
- * someone else is deciding is theirs, and the open answers that it waits.
- * Etherpad gets a few seconds; no answer, and the row waits as before.
- *
- * Only a row nobody has touched for a minute: one a trash has just made a
- * deletion owed is its to finish, while the file may still be on its way
- * to the trash, and one tried a moment ago - by the sweep, or by an open
- * whose reader keeps asking - would get the same answer. So an outage
- * costs a call to Etherpad and a log line per row and minute, however
- * often the file is opened, anonymously through a share included.
- *
- * Nothing here fails an open: what goes wrong while deciding is logged,
- * and the row answers as it is.
+ * - Under the row's SettleLock, only ever tried: a row someone else is
+ *   deciding is theirs.
+ * - Within BUDGET_SECONDS, the clean-up after a pad that is gone included.
+ * - Only a row nobody has touched for UNTOUCHED_FOR_SECONDS: one a trash
+ *   has just made a deletion owed is the trash's to finish, and one tried
+ *   a moment ago would get the same answer - which also keeps an outage
+ *   to one Etherpad call per row and minute, however often it is opened.
+ * - Nothing here fails an open: what goes wrong while deciding is logged,
+ *   and the row answers as it is.
  */
 class SettleOnOpen {
 	/** What an open gives Etherpad to decide a row, the clean-up after it included. */

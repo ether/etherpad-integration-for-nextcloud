@@ -6,7 +6,6 @@ namespace OCA\EtherpadNextcloud\Tests\Unit;
 
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
 use OCA\EtherpadNextcloud\Exception\WaitingBindingException;
-use OCA\EtherpadNextcloud\Service\Binding;
 use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\EtherpadNextcloud\Service\EtherpadClient;
 use OCA\EtherpadNextcloud\Service\ExternalPadExportFetcher;
@@ -19,7 +18,6 @@ use OCA\EtherpadNextcloud\Service\SettleOutcome;
 use OCA\EtherpadNextcloud\Service\UserNodeResolver;
 use OCA\EtherpadNextcloud\Util\PathNormalizer;
 use OCA\EtherpadNextcloud\Service\ParsedPadFile;
-use OCA\EtherpadNextcloud\Tests\Support\FixedClock;
 use OCA\EtherpadNextcloud\Tests\Support\SettlesOnOpen;
 use OCP\Files\File;
 use PHPUnit\Framework\TestCase;
@@ -159,7 +157,7 @@ class PadOpenServiceTest extends TestCase {
 		$waiting = new WaitingBindingException('Pad binding is not active.');
 		$bindings = $this->createMock(BindingService::class);
 		$bindings->method('assertConsistentMapping')->willThrowException($waiting);
-		$bindings->method('findByFileId')->willReturn(self::rowWaitingAnHour());
+		$bindings->method('findByFileId')->willReturn(self::waitingRow(138, 'pad-1', BindingService::ACCESS_PUBLIC));
 		$restores = $this->createMock(RestoreService::class);
 		$restores->expects($this->once())->method('settleOpenedFile')->willReturn(SettleOutcome::Unanswered);
 		$session = $this->createMock(PadSessionService::class);
@@ -191,7 +189,7 @@ class PadOpenServiceTest extends TestCase {
 				throw new WaitingBindingException('Pad binding is not active.');
 			}
 		});
-		$bindings->method('findByFileId')->willReturn(self::rowWaitingAnHour());
+		$bindings->method('findByFileId')->willReturn(self::waitingRow(138, 'pad-1', BindingService::ACCESS_PUBLIC));
 		$restores = $this->createMock(RestoreService::class);
 		$restores->expects($this->once())
 			->method('settleOpenedFile')
@@ -210,10 +208,6 @@ class PadOpenServiceTest extends TestCase {
 		);
 
 		$this->assertSame('https://pad.example.test/p/pad-1', $target->url);
-	}
-
-	private static function rowWaitingAnHour(): Binding {
-		return new Binding(fileId: 138, padId: 'pad-1', accessMode: BindingService::ACCESS_PUBLIC, state: BindingService::STATE_RESTORE_PENDING, updatedAt: FixedClock::NOW - 3600);
 	}
 
 	private function openWith(

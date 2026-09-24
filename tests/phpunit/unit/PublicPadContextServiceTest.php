@@ -8,7 +8,6 @@ use OCA\EtherpadNextcloud\Exception\WaitingBindingException;
 use OCA\EtherpadNextcloud\Service\RestoreService;
 use OCA\EtherpadNextcloud\Service\SettleOutcome;
 use PHPUnit\Framework\MockObject\MockObject;
-use OCA\EtherpadNextcloud\Service\Binding;
 use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\EtherpadNextcloud\Service\LivePadHtml;
 use OCA\EtherpadNextcloud\Service\LivePadHtmlFetcher;
@@ -20,7 +19,6 @@ use OCA\EtherpadNextcloud\Service\PublicPadOpenService;
 use OCA\EtherpadNextcloud\Service\PublicPadOpenTarget;
 use OCA\EtherpadNextcloud\Service\PublicShareResolver;
 use OCA\EtherpadNextcloud\Util\PathNormalizer;
-use OCA\EtherpadNextcloud\Tests\Support\FixedClock;
 use OCA\EtherpadNextcloud\Tests\Support\SettlesOnOpen;
 use OCP\Constants;
 use OCP\Files\File;
@@ -168,7 +166,7 @@ class PublicPadContextServiceTest extends TestCase {
 					throw new WaitingBindingException('Pad binding is not active.');
 				}
 			});
-		$bindings->method('findByFileId')->willReturn(self::rowWaitingAnHour());
+		$bindings->method('findByFileId')->willReturn(self::waitingRow(42, 'g.group$pad', BindingService::ACCESS_PROTECTED));
 		$restores = $this->createMock(RestoreService::class);
 		$restores->expects($this->once())->method('settleOpenedFile')->with($this->identicalTo($file))->willReturn(SettleOutcome::Settled);
 		$openService = $this->createMock(PublicPadOpenService::class);
@@ -183,7 +181,7 @@ class PublicPadContextServiceTest extends TestCase {
 		$waiting = new WaitingBindingException('Pad binding is not active.');
 		$bindings = $this->createMock(BindingService::class);
 		$bindings->method('assertConsistentMapping')->willThrowException($waiting);
-		$bindings->method('findByFileId')->willReturn(self::rowWaitingAnHour());
+		$bindings->method('findByFileId')->willReturn(self::waitingRow(42, 'g.group$pad', BindingService::ACCESS_PROTECTED));
 		$restores = $this->createMock(RestoreService::class);
 		$restores->expects($this->once())->method('settleOpenedFile')->willReturn(SettleOutcome::Unanswered);
 		$openService = $this->createMock(PublicPadOpenService::class);
@@ -192,10 +190,6 @@ class PublicPadContextServiceTest extends TestCase {
 		$this->expectExceptionObject($waiting);
 
 		$this->contextService($file, $bindings, $restores, $openService)->resolve('token', '', $this->shareOf($file));
-	}
-
-	private static function rowWaitingAnHour(): Binding {
-		return new Binding(fileId: 42, padId: 'g.group$pad', accessMode: BindingService::ACCESS_PROTECTED, state: BindingService::STATE_RESTORE_PENDING, updatedAt: FixedClock::NOW - 3600);
 	}
 
 	private function sharedFile(): File&MockObject {

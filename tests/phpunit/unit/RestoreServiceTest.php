@@ -715,8 +715,17 @@ class RestoreServiceTest extends TestCase {
 		});
 		$etherpadClient = $this->createMock(EtherpadClient::class);
 		$etherpadClient->method('getRevisionsCount')->willReturnCallback(static fn (): int => is_int($answer) ? $answer : throw new \RuntimeException($answer));
-		$etherpadClient->method('listPads')->willReturn([]);
-		$etherpadClient->method('deleteGroup')->willReturnCallback(static function () use (&$order, $removable): void {
+		// A sweep clears up on the client's own timeouts: a call given a timeout of the run's would show.
+		$etherpadClient->method('listPads')->willReturnCallback(static function (string $groupId, ?int $timeout) use (&$order): array {
+			if ($timeout !== null) {
+				$order[] = 'list within ' . $timeout;
+			}
+			return [];
+		});
+		$etherpadClient->method('deleteGroup')->willReturnCallback(static function (string $groupId, ?int $timeout) use (&$order, $removable): void {
+			if ($timeout !== null) {
+				$order[] = 'delete within ' . $timeout;
+			}
 			if (!$removable) {
 				throw new \RuntimeException('Connection reset');
 			}
@@ -742,7 +751,6 @@ class RestoreServiceTest extends TestCase {
 		$undecided = BindingService::STATE_RESTORE_PENDING;
 		$owed = BindingService::STATE_PENDING_DELETE;
 		// An open or a sweep, the seconds the question to Etherpad takes, whether the group can be read, the row's state, then the steps.
-		yield 'a sweep' => [false, 0, true, $undecided, SettleOutcome::Settled, ['row', 'list:', 'delete group:']];
 		yield 'an open' => [true, 0, true, $undecided, SettleOutcome::Settled, ['list:5', 'delete group:5', 'row']];
 		yield 'an open out of time' => [true, 4, true, $undecided, SettleOutcome::Left, ['touch', 'debug']];
 		// Touched in its own state: a deletion owed stays one, its deleted_at kept.
@@ -751,14 +759,11 @@ class RestoreServiceTest extends TestCase {
 	}
 
 	/**
-	 * A sweep lets the row go first and clears up after it on the client's
-	 * own timeouts: no one waits, and a call cut short would give the group
-	 * up. An open, which someone waits for, clears up first, within its
-	 * budget, and keeps the row when that does not finish - nothing would
-	 * lead to the group once the row was gone - touched, so the next open
-	 * within the minute leaves it to the sweep, and logged: at debug level
-	 * when time ran out, at info level with its cause when Etherpad
-	 * failed. It decides from the file as the open read it.
+	 * An open, unlike the sweep (testAReleasedRowTakesTheEmptyGroupOfAPadThatIsGone),
+	 * clears up first, within its budget, and keeps the row when that does
+	 * not finish: touched in its own state, and logged at debug level when
+	 * time ran out, at info level with its cause when Etherpad failed. It
+	 * decides from the file as the open read it.
 	 *
 	 * @param list<string> $steps
 	 */

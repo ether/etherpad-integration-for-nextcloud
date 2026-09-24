@@ -8,6 +8,7 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Tests\Support;
 
+use OCA\EtherpadNextcloud\Service\Binding;
 use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\EtherpadNextcloud\Service\RestoreService;
 use OCA\EtherpadNextcloud\Service\SettleLock;
@@ -31,6 +32,11 @@ trait SettlesOnOpen {
 			new FixedClock(),
 			$logger,
 		);
+	}
+
+	/** A row that waits, last touched $touchedAgo seconds ago - long enough for an open to decide it. */
+	private static function waitingRow(int $fileId, string $padId, string $accessMode, int $touchedAgo = 3600): Binding {
+		return new Binding(fileId: $fileId, padId: $padId, accessMode: $accessMode, state: BindingService::STATE_RESTORE_PENDING, updatedAt: FixedClock::NOW - $touchedAgo);
 	}
 
 	private function silentRestores(): RestoreService {
