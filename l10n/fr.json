@@ -172,6 +172,7 @@
         "This file is a legacy Ownpad link to a protected pad, and importing those is disabled on this server. Please contact your administrator.": "Ce fichier est un ancien lien Ownpad vers un pad protégé et l'importation de ces pads est désactivée sur ce serveur. Veuillez contacter votre administration.",
         "This file looks like a copy of an existing .pad file in your account. Open the original to keep editing the linked pad, or create a new pad to fork the content stored in this file.": "Ce fichier ressemble à une copie d'un fichier .pad existant dans votre compte. Ouvrez l'original pour continuer à modifier le pad lié, ou créez un nouveau pad pour dupliquer le contenu stocké dans ce fichier.",
         "This file may have been moved or replaced since the list was loaded. Reload the page and open it again.": "Ce fichier a peut-être été déplacé ou remplacé depuis le chargement de la liste. Rechargez la page et rouvrez le fichier.",
+        "This pad is still being restored. Try again later.": "Ce pad est encore en cours de restauration. Réessayez plus tard.",
         "This pad is still empty.": "Ce pad est encore vide.",
         "This pad is too large to show here. Open it in Etherpad instead.": "Ce pad est trop volumineux pour être affiché ici. Ouvrez-le dans Etherpad.",
         "Trusted embed origins (optional)": "Origines d'intégration de confiance (optionnel)",

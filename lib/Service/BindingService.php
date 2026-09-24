@@ -11,6 +11,7 @@ namespace OCA\EtherpadNextcloud\Service;
 
 use OCA\EtherpadNextcloud\Exception\BindingException;
 use OCA\EtherpadNextcloud\Exception\MissingBindingException;
+use OCA\EtherpadNextcloud\Exception\WaitingBindingException;
 use OCA\EtherpadNextcloud\Util\DbRows;
 use OCA\EtherpadNextcloud\Util\PadAccessMode;
 use OCA\EtherpadNextcloud\Util\SafeError;
@@ -293,7 +294,11 @@ class BindingService {
 		if ($binding->accessMode !== $accessMode) {
 			throw new BindingException('Binding access mode mismatch.');
 		}
+		if ($binding->isWaiting()) {
+			throw new WaitingBindingException('Pad binding is not active.');
+		}
 		if ($binding->state !== self::STATE_ACTIVE) {
+			// A state the sweep never takes up, so nothing to wait for either.
 			throw new BindingException('Pad binding is not active.');
 		}
 	}

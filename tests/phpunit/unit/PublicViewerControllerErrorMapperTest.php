@@ -9,18 +9,22 @@ use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
 use OCA\EtherpadNextcloud\Exception\InvalidShareFilePathException;
 use OCA\EtherpadNextcloud\Exception\InvalidShareTokenException;
 use OCA\EtherpadNextcloud\Exception\MissingBindingException;
+use OCA\EtherpadNextcloud\Exception\WaitingBindingException;
 use OCA\EtherpadNextcloud\Exception\NotAPadFileException;
 use OCA\EtherpadNextcloud\Exception\MissingFrontmatterException;
 use OCA\EtherpadNextcloud\Exception\PadFileFormatException;
 use OCA\EtherpadNextcloud\Exception\UnrecognisedPadContentException;
 use OCA\EtherpadNextcloud\Exception\ShareFileNotInShareException;
 use OCA\EtherpadNextcloud\Exception\ShareReadForbiddenException;
+use OCA\EtherpadNextcloud\Service\AppConfigService;
+use OCA\EtherpadNextcloud\Service\PadResponseService;
 use OCA\EtherpadNextcloud\Service\PublicShareUrlBuilder;
 use OCA\EtherpadNextcloud\Util\PathNormalizer;
 use OCP\AppFramework\Http;
 use OCP\AppFramework\Http\DataResponse;
 use OCP\AppFramework\Http\RedirectResponse;
 use OCP\AppFramework\Http\TemplateResponse;
+use OCP\IL10N;
 use OCP\IURLGenerator;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
@@ -104,6 +108,24 @@ class PublicViewerControllerErrorMapperTest extends TestCase {
 		$this->assertSame(
 			'The selected .pad file is a copied file without an active pad binding. Please open the original shared .pad file.',
 			$response->getData()['message']
+		);
+	}
+
+	/**
+	 * A waiting row answers the public reader as it answers the signed-in
+	 * one: the same translated sentence, a conflict worth trying again, and
+	 * its code.
+	 */
+	public function testRunForDataMapsAWaitingBindingAsTheSignedInSideDoes(): void {
+		$response = $this->buildMapper()->runForData(
+			static fn(): array => throw new WaitingBindingException('Pad binding is not active.'),
+			static fn(array $result): DataResponse => new DataResponse($result),
+		);
+
+		$this->assertSame(Http::STATUS_CONFLICT, $response->getStatus());
+		$this->assertSame(
+			['message' => '[de] This pad is still being restored. Try again later.', 'code' => 'waiting_binding', 'retryable' => true],
+			$response->getData(),
 		);
 	}
 
@@ -191,8 +213,12 @@ class PublicViewerControllerErrorMapperTest extends TestCase {
 	private function buildMapper(string $webroot = '', ?LoggerInterface $logger = null): PublicViewerControllerErrorMapper {
 		$urlGenerator = $this->createMock(IURLGenerator::class);
 		$urlGenerator->method('getWebroot')->willReturn($webroot);
+		// A translation that shows: what went through t() comes back marked.
+		$l10n = $this->createMock(IL10N::class);
+		$l10n->method('t')->willReturnCallback(static fn (string $text): string => '[de] ' . $text);
 		return new PublicViewerControllerErrorMapper(
 			new PublicShareUrlBuilder($urlGenerator, new PathNormalizer()),
+			new PadResponseService($urlGenerator, $this->createMock(AppConfigService::class), $l10n),
 			$logger ?? $this->createMock(LoggerInterface::class),
 		);
 	}

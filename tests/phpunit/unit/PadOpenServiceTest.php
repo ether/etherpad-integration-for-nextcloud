@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\Tests\Unit;
 
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
+use OCA\EtherpadNextcloud\Exception\WaitingBindingException;
 use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\EtherpadNextcloud\Service\EtherpadClient;
 use OCA\EtherpadNextcloud\Service\ExternalPadExportFetcher;
@@ -142,12 +143,37 @@ class PadOpenServiceTest extends TestCase {
 		$this->assertSame('', $target->cookieHeader, 'and no session');
 	}
 
+	/**
+	 * A file whose row waits opens on no pad: the open hands out neither a
+	 * session nor an address, and lets the mapper say why.
+	 */
+	public function testAWaitingBindingReachesTheCallerAsItIs(): void {
+		$waiting = new WaitingBindingException('Pad binding is not active.');
+		$bindings = $this->createMock(BindingService::class);
+		$bindings->method('assertConsistentMapping')->willThrowException($waiting);
+		$session = $this->createMock(PadSessionService::class);
+		$session->expects($this->never())->method($this->anything());
+		$client = $this->createMock(EtherpadClient::class);
+		$client->expects($this->never())->method($this->anything());
+
+		$this->expectExceptionObject($waiting);
+
+		$this->openWith(
+			BindingService::ACCESS_PROTECTED,
+			updateable: true,
+			padSessionService: $session,
+			etherpadClient: $client,
+			bindingService: $bindings,
+		);
+	}
+
 	private function openWith(
 		string $accessMode,
 		bool $updateable,
 		?PadSessionService $padSessionService = null,
 		?EtherpadClient $etherpadClient = null,
 		string $padId = 'g.ABCDEFGHIJKLMNOP$pad-1',
+		?BindingService $bindingService = null,
 	): \OCA\EtherpadNextcloud\Service\PadOpenTarget {
 		$file = $this->createMock(File::class);
 		$file->method('getId')->willReturn(138);
@@ -175,7 +201,7 @@ class PadOpenServiceTest extends TestCase {
 			$userNodeResolver,
 			new PadFileLockRetryService(static function (int $delay): void {
 			}),
-			$this->createMock(BindingService::class),
+			$bindingService ?? $this->createMock(BindingService::class),
 			$client,
 			$this->createMock(ExternalPadExportFetcher::class),
 			$padSessionService ?? $this->createMock(PadSessionService::class),

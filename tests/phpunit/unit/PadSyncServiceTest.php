@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Tests\Unit;
 
+use OCA\EtherpadNextcloud\Exception\WaitingBindingException;
 use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\EtherpadNextcloud\Service\EtherpadClient;
 use OCA\EtherpadNextcloud\Service\ExternalPadExportFetcher;
@@ -49,6 +50,34 @@ class PadSyncServiceTest extends TestCase {
 		$this->assertSame(PadSyncService::STATUS_UNAVAILABLE, $result->status);
 		$this->assertNull($result->inSync);
 		$this->assertSame('external_no_revision', $result->reason);
+	}
+
+	/**
+	 * A row that still waits reaches the caller as it was thrown, for a sync
+	 * and for its status alike: its code is the error mapper's to give, and
+	 * a service that wrapped it would take the code away.
+	 */
+	public function testAWaitingBindingReachesTheCallerAsItIs(): void {
+		$waiting = new WaitingBindingException('Pad binding is not active.');
+		$file = $this->createMock(File::class);
+		$file->method('getName')->willReturn('Notes.pad');
+		$file->method('getContent')->willReturn('frontmatter');
+		$userNodeResolver = $this->createMock(UserNodeResolver::class);
+		$userNodeResolver->method('resolveUserFileNodeById')->with('alice', 138)->willReturn($file);
+		$padFileService = $this->createMock(PadFileService::class);
+		$padFileService->method('readPad')->willReturn(new ParsedPadFile([], '', 'pad-a', BindingService::ACCESS_PUBLIC, '', false, 3));
+		$bindingService = $this->createMock(BindingService::class);
+		$bindingService->method('assertConsistentMapping')->willThrowException($waiting);
+		$service = $this->buildService($padFileService, $userNodeResolver, $bindingService);
+
+		foreach (['sync' => static fn () => $service->syncById('alice', 138, false), 'status' => static fn () => $service->syncStatusById('alice', 138)] as $case => $call) {
+			try {
+				$call();
+				$this->fail($case . ': nothing thrown');
+			} catch (WaitingBindingException $e) {
+				$this->assertSame($waiting, $e, $case);
+			}
+		}
 	}
 
 	public function testSyncStatusReportsOutOfSyncInternalPad(): void {

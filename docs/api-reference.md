@@ -436,6 +436,7 @@ solely by the separate external-pad policy, not by these two settings.
 - `sync_status_url` (open/open-by-id): endpoint for revision-based sync status in viewer.
 - `code` (errors): stable identifier on selected error responses. Branch on this, never on `message` — messages are written for people and are translated. The full set:
   - `missing_binding` (`MissingBindingException`) — the viewer and embed swap the dead-end error for the recovery UI (`POST /api/v1/pads/recover-from-snapshot/{fileId}` + optional `GET /api/v1/pads/find-original/{fileId}` lookup).
+  - `waiting_binding` (`WaitingBindingException`) — `409` with `retryable: true`; the file's row still waits for the sweep. Try again later: once the row is settled the same request opens the pad, or answers `missing_binding` when the pad had to be let go. On open, sync, sync status and the read-only content view, signed in and public; the viewer offers "Try again".
   - `missing_frontmatter` (`MissingFrontmatterException`) — the file has no pad metadata yet; clients call `POST /api/v1/pads/initialize-by-id/{fileId}` once and retry the open. A file whose content is neither metadata nor a legacy shortcut cannot be initialised and is refused *without* this code.
   - `pad_too_large` (`EtherpadTooLargeException`) — the pad is past the 5 MiB preview ceiling; it stays editable in Etherpad.
   - `pad_file_changed` (`PadFileChangedException`) — the target file changed while the pad was being created; retry against a different name.
