@@ -28,11 +28,13 @@ class DbRowsTest extends TestCase {
 		$this->assertSame([], DbRows::all([]));
 	}
 
-	/** An integer column as the driver gave it, an int or a numeric string; a string column as it is. */
+	/** An integer column as the driver gave it, an int or a string of digits; a string column as it is. */
 	public function testReadsAColumnAsWhatItHolds(): void {
-		$row = ['file_id' => '7', 'updated_at' => 200, 'deleted_at' => null, 'pad_id' => 'nc-abc', 'file_path' => null];
+		$row = ['file_id' => '7', 'updated_at' => 200, 'deleted_at' => null, 'pad_id' => 'nc-abc', 'file_path' => null, 'zero' => '0', 'below' => '-3'];
 
 		$this->assertSame(7, DbRows::int($row, 'file_id'));
+		$this->assertSame(0, DbRows::int($row, 'zero'));
+		$this->assertSame(-3, DbRows::int($row, 'below'));
 		$this->assertSame(200, DbRows::int($row, 'updated_at'));
 		$this->assertNull(DbRows::nullableInt($row, 'deleted_at'));
 		$this->assertSame('nc-abc', DbRows::string($row, 'pad_id'));
@@ -49,6 +51,12 @@ class DbRowsTest extends TestCase {
 			'null in an int' => static fn (): mixed => DbRows::int(['file_id' => null], 'file_id'),
 			'null in a string' => static fn (): mixed => DbRows::string(['pad_id' => null], 'pad_id'),
 			'not a number' => static fn (): mixed => DbRows::int(['file_id' => '7a'], 'file_id'),
+			// Numeric to is_numeric(), and bent into another integer by a cast.
+			'a decimal' => static fn (): mixed => DbRows::int(['file_id' => '1.5'], 'file_id'),
+			'an exponent' => static fn (): mixed => DbRows::int(['file_id' => '1e3'], 'file_id'),
+			'padded' => static fn (): mixed => DbRows::int(['file_id' => ' 7'], 'file_id'),
+			'a plus sign' => static fn (): mixed => DbRows::int(['file_id' => '+7'], 'file_id'),
+			'out of range' => static fn (): mixed => DbRows::int(['file_id' => '99999999999999999999'], 'file_id'),
 			'not a string' => static fn (): mixed => DbRows::string(['pad_id' => 7], 'pad_id'),
 		];
 		foreach ($reads as $case => $read) {

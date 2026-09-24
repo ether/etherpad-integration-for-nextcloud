@@ -21,7 +21,7 @@ namespace OCA\EtherpadNextcloud\Util;
  * that differs, and the tests' fake results need not implement it.
  *
  * The column readers read a column as what it holds - an integer as an int
- * or the numeric string a driver may give - and refuse what it cannot hold:
+ * or the string of digits a driver may give - and refuse what it cannot hold:
  * a column the query did not select, null in a NOT NULL column, or a value
  * of another kind.
  */
@@ -59,7 +59,7 @@ final class DbRows {
 
 	/**
 	 * A NOT NULL integer column. Drivers hand integers back as ints or as
-	 * numeric strings, so both are read.
+	 * strings of digits, so both are read.
 	 *
 	 * @param array<string,mixed> $row
 	 * @throws \UnexpectedValueException when the row lacks the column, or holds null or something else
@@ -117,12 +117,15 @@ final class DbRows {
 	 * local would be an issue of its own.
 	 */
 	private static function asNullableInt(mixed $value, string $column): ?int {
-		return match (true) {
-			$value === null => null,
-			is_int($value) => $value,
-			is_string($value) && is_numeric($value) => (int)$value,
-			default => throw new \UnexpectedValueException("Column $column holds no integer."),
-		};
+		if ($value === null || is_int($value)) {
+			return $value;
+		}
+		// What a driver gives for an integer column: digits, a minus at most.
+		// is_numeric() would also pass a decimal, an exponent or padding, and
+		// (int) would turn each into another integer; filter_var() refuses
+		// one out of range, and leading zeros.
+		$int = is_string($value) && preg_match('/\A-?[0-9]+\z/', $value) === 1 ? filter_var($value, FILTER_VALIDATE_INT) : false;
+		return $int !== false ? $int : throw new \UnexpectedValueException("Column $column holds no integer.");
 	}
 
 	private static function asNullableString(mixed $value, string $column): ?string {
