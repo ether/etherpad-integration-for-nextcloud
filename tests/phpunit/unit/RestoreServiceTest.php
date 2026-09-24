@@ -715,8 +715,17 @@ class RestoreServiceTest extends TestCase {
 		});
 		$etherpadClient = $this->createMock(EtherpadClient::class);
 		$etherpadClient->method('getRevisionsCount')->willReturnCallback(static fn (): int => is_int($answer) ? $answer : throw new \RuntimeException($answer));
-		$etherpadClient->method('listPads')->willReturn([]);
-		$etherpadClient->method('deleteGroup')->willReturnCallback(static function () use (&$order, $removable): void {
+		// A sweep clears up on the client's own timeouts: a call given a timeout of the run's would show.
+		$etherpadClient->method('listPads')->willReturnCallback(static function (string $groupId, ?int $timeout) use (&$order): array {
+			if ($timeout !== null) {
+				$order[] = 'list within ' . $timeout;
+			}
+			return [];
+		});
+		$etherpadClient->method('deleteGroup')->willReturnCallback(static function (string $groupId, ?int $timeout) use (&$order, $removable): void {
+			if ($timeout !== null) {
+				$order[] = 'delete within ' . $timeout;
+			}
 			if (!$removable) {
 				throw new \RuntimeException('Connection reset');
 			}
@@ -735,6 +744,107 @@ class RestoreServiceTest extends TestCase {
 
 		$this->assertSame($expected, $outcome);
 		$this->assertSame($steps, $order);
+	}
+
+	/** @return iterable<string, array{bool, int, bool, string, SettleOutcome, list<string>}> */
+	public static function clearingUpAfterAReleasedRow(): iterable {
+		$undecided = BindingService::STATE_RESTORE_PENDING;
+		$owed = BindingService::STATE_PENDING_DELETE;
+		// An open or a sweep, the seconds the question to Etherpad takes, whether the group can be read, the row's state, then the steps.
+		yield 'an open' => [true, 0, true, $undecided, SettleOutcome::Settled, ['list:5', 'delete group:5', 'row']];
+		yield 'an open out of time' => [true, 4, true, $undecided, SettleOutcome::Left, ['touch', 'debug']];
+		// Touched in its own state: a deletion owed stays one, its deleted_at kept.
+		yield 'an open out of time, a deletion owed' => [true, 4, true, $owed, SettleOutcome::Left, ['touch', 'debug']];
+		yield 'an open that cannot read the group' => [true, 0, false, $undecided, SettleOutcome::Left, ['list:5', 'touch', 'info: Connection timed out']];
+	}
+
+	/**
+	 * An open, unlike the sweep (testAReleasedRowTakesTheEmptyGroupOfAPadThatIsGone),
+	 * clears up first, within its budget, and keeps the row when that does
+	 * not finish: touched in its own state, and logged at debug level when
+	 * time ran out, at info level with its cause when Etherpad failed. It
+	 * decides from the file as the open read it.
+	 *
+	 * @param list<string> $steps
+	 */
+	#[\PHPUnit\Framework\Attributes\DataProvider('clearingUpAfterAReleasedRow')]
+	public function testAnOpenClearsUpFirstWithinItsBudget(bool $open, int $questionTakes, bool $readable, string $state, SettleOutcome $expected, array $steps): void {
+		$padId = 'g.ABCDEFGHIJKLMNOP$old-pad';
+		$clock = new FixedClock();
+		$seen = [];
+		$bindingService = $this->createMock(BindingService::class);
+		$bindingService->method('deleteInState')->willReturnCallback(static function () use (&$seen): bool {
+			$seen[] = 'row';
+			return true;
+		});
+		$bindingService->method('transition')->willReturnCallback(static function (int $fileId, string $padId, string $from, string $to) use (&$seen, $state): bool {
+			$seen[] = $from === $state && $to === $state ? 'touch' : 'transition from ' . $from . ' to ' . $to;
+			return true;
+		});
+		$logger = $this->createMock(LoggerInterface::class);
+		foreach (['debug', 'info'] as $level) {
+			$logger->method($level)->willReturnCallback(static function (string $message, array $context = []) use (&$seen, $level): void {
+				if (str_starts_with($message, 'Could not remove what was left of a pad that is gone while opening')) {
+					// The cause travels with a line at info level.
+					$seen[] = $level === 'info' ? 'info: ' . $context['error_message'] : $level;
+				}
+			});
+		}
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->method('getRevisionsCount')->willReturnCallback(static function () use ($clock, $questionTakes): int {
+			$clock->advance($questionTakes);
+			throw new \RuntimeException('padID does not exist');
+		});
+		$etherpadClient->method('listPads')->willReturnCallback(static function (string $groupId, ?int $timeout) use (&$seen, $readable): array {
+			$seen[] = 'list:' . $timeout;
+			return $readable ? [] : throw new \RuntimeException('Connection timed out');
+		});
+		$etherpadClient->method('deleteGroup')->willReturnCallback(static function (string $groupId, ?int $timeout) use (&$seen): void {
+			$seen[] = 'delete group:' . $timeout;
+		});
+		$file = $this->padFile(106, 'Restored.pad');
+		$file->expects($open ? $this->never() : $this->once())->method('getContent');
+		$restores = $this->buildPendingDeleteRestoreService(106, $padId, $bindingService, $etherpadClient, accessMode: BindingService::ACCESS_PROTECTED, logger: $logger, state: $state);
+		$budget = new RunBudget($clock, 5.0);
+
+		$outcome = $open
+			? $restores->settleOpenedFile(
+				$file,
+				new Binding(fileId: 106, padId: $padId, accessMode: BindingService::ACCESS_PROTECTED, state: $state),
+				new ParsedPadFile(frontmatter: [], body: '', padId: $padId, accessMode: BindingService::ACCESS_PROTECTED, padUrl: '', isExternal: false, snapshotRev: -1),
+				$budget,
+			)
+			: $restores->settleWaitingFile($file, $budget);
+
+		$this->assertSame($expected, $outcome);
+		$this->assertSame($steps, $seen);
+	}
+
+	/**
+	 * An open decides on the row as it read and checked it, not a fresh
+	 * read: a row a trash has changed since - from an undecided restore to a
+	 * deletion owed, say - is the trash's, and every change the decision
+	 * makes is bound to the state it was read in, so it comes to nothing.
+	 */
+	public function testAnOpenDecidesOnTheRowAsItCheckedIt(): void {
+		$bindingService = $this->createMock(BindingService::class);
+		$bindingService->expects($this->never())->method('findByFileId');
+		$bindingService->expects($this->once())
+			->method('transition')
+			->with(106, 'old-pad', BindingService::STATE_RESTORE_PENDING, BindingService::STATE_ACTIVE)
+			->willReturn(false);
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->method('getRevisionsCount')->willReturn(7);
+
+		$outcome = $this->buildPendingDeleteRestoreService(106, 'old-pad', $bindingService, $etherpadClient, state: BindingService::STATE_PENDING_DELETE)
+			->settleOpenedFile(
+				$this->padFile(106, 'Restored.pad'),
+				new Binding(fileId: 106, padId: 'old-pad', accessMode: BindingService::ACCESS_PUBLIC, state: BindingService::STATE_RESTORE_PENDING),
+				new ParsedPadFile(frontmatter: [], body: '', padId: 'old-pad', accessMode: BindingService::ACCESS_PUBLIC, padUrl: '', isExternal: false, snapshotRev: 5),
+				new RunBudget(new FixedClock(), 5.0),
+			);
+
+		$this->assertSame(SettleOutcome::Left, $outcome);
 	}
 
 	/** And a restore settles a row that still waits undecided, with the setting off as well. */

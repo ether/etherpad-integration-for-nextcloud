@@ -24,6 +24,8 @@ Etherpad is the editing source of truth; the `.pad` file acts as binding storage
   - The sweep: settles rows that wait, by where their file is now, each under its `SettleLock`, bounded per run by `RunBudget` (see Trash/Restore). It writes only into trashed files, and deletes only the pads of files in a trash or gone for good.
 - `lib/Service/OwedDeletions.php`
   - The deletions a trash owed, for the sweep: a trashed file's snapshot, then row and pad; for a file gone for good, pad and row.
+- `lib/Service/SettleOnOpen.php`
+  - An open, signed in or through a public share, that finds its file's row waiting decides the row itself first, as the sweep would (see Trash/Restore).
 - `lib/BackgroundJob/*PendingDeleteRetryJob.php`
   - Bucketed runs of `PendingBindingService`: `restore_pending` rows aged by `updated_at`, `pending_delete` rows by `deleted_at`. Named for what they did first; the job list stores the class name.
     - hot rows: every 5 minutes for the first hour
@@ -240,7 +242,13 @@ Primary flow (native viewer):
   - `Legacy trashbin restore hook could not start.`, or `Legacy trashbin restore hook failed.` for anything the listener let through, at `error`.
   - `RestoreFromTrash listener skipped a restored node.` at `warning`, with its reason, when the restored node cannot be resolved.
   - A restore that leaves the pad alone on purpose says so at `debug` only, as `Lifecycle step skipped.` with its reason: `delete_on_trash` off for a file without a row, a row whose access mode is unknown, a row another flow holds.
-- What the pad's restore left unfinished waits for the sweep, or the file offers its own recovery. Opened meanwhile, a file whose row waits says the pad is still being restored and offers to try again (`waiting_binding`). Only a database that fails again in the middle of the rollback can leave a row naming a pad the file does not; opening the file then answers `Binding pad ID mismatch.` A restore through the API (`POST /api/v1/pads/restore`) still answers such a failure with an error.
+- What the pad's restore left unfinished waits for the sweep, or the file offers its own recovery. An open that comes first decides the row itself (`SettleOnOpen`), signed in or through a public share:
+  - The sweep's decision for a file in Files, and no file written: a pad that is there takes the row back and the file opens; one that is behind lets the row go and the file offers its recovery. For one that is gone, what is left of it (an empty group) is removed first, and only then does the row go; a clean-up that does not finish keeps the row for a later try.
+  - Under the row's `SettleLock`, never waited for, and within five seconds.
+  - Only a row nobody has touched for a minute: a trash that has just made it a deletion owed finishes it undisturbed, and an outage costs one call to Etherpad and one log line per row and minute, however often the file is opened, anonymously through a share included.
+  - It reaches what the sweep cannot, or only late: a file only its owner's session can read (encrypted with the owner's key, or on a storage whose credentials live in the session), and a deletion owed that only the daily run would reach.
+  - A row it did not decide says the pad is still being restored and offers to try again (`waiting_binding`); `docs/api-reference.md` lists why.
+- Only a database that fails again in the middle of the rollback can leave a row naming a pad the file does not; opening the file then answers `Binding pad ID mismatch.` A restore through the API (`POST /api/v1/pads/restore`) still answers such a failure with an error.
 - `PendingBindingService` settles waiting rows in age buckets (every 5 minutes, then hourly, then daily) and from the admin page, by where the file is now:
   - in Files (`restore_pending`, or `pending_delete` whose restore never came): the decision a restore takes, except that a sweep writes no file. A pad that is gone or behind releases the row, and the file offers its own recovery when it is next opened; of a pad that is gone, what is left (an empty group) goes too.
   - in its owner's trash (`pending_delete`): the rest of the trash, written on the owner's own storage. A pad past the file's `snapshot_rev` goes into the file (one at it is there already), then row and pad are deleted; a restore that comes first keeps the pad. A pad that is gone: the row goes, and for a group pad what is left of it (an empty group). A pad that is behind is logged with its id and left in place, and the row goes. Either way the file keeps the snapshot it has. A pad that cannot be deleted once its row is gone is left over and logged with its id; its content is in the file.

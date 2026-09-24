@@ -20,6 +20,7 @@ use OCA\EtherpadNextcloud\Service\PublicPadOpenService;
 use OCA\EtherpadNextcloud\Service\PublicShareResolver;
 use OCA\EtherpadNextcloud\Service\PublicShareUrlBuilder;
 use OCA\EtherpadNextcloud\Util\PathNormalizer;
+use OCA\EtherpadNextcloud\Tests\Support\SettlesOnOpen;
 use OCP\AppFramework\Http;
 use OCP\Constants;
 use OCP\Files\File;
@@ -32,6 +33,8 @@ use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 
 class PublicViewerControllerTest extends TestCase {
+	use SettlesOnOpen;
+
 	public function testProtectedReadOnlyPublicShareReturnsSnapshotWithoutEtherpadSessionCookie(): void {
 		$file = $this->createMock(File::class);
 		$file->method('getName')->willReturn('Shared.pad');
@@ -228,7 +231,7 @@ class PublicViewerControllerTest extends TestCase {
 			new PublicPadContextService(
 				$shareResolver,
 				$padFileService,
-				$bindingService,
+				$this->settleOnOpen($bindingService),
 				$publicPadOpenService,
 				$this->createMock(LivePadHtmlFetcher::class),
 				new PadFileLockRetryService(static function (int $delay): void {
@@ -334,7 +337,7 @@ class PublicViewerControllerTest extends TestCase {
 			new PublicPadContextService(
 				$shareResolver,
 				$padFileService,
-				$bindingService,
+				$this->settleOnOpen($bindingService),
 				$publicPadOpenService,
 				$this->createMock(LivePadHtmlFetcher::class),
 				new PadFileLockRetryService(static function (int $delay): void {

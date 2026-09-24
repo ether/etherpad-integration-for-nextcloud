@@ -21,6 +21,7 @@ use OCA\EtherpadNextcloud\Service\PadSessionService;
 use OCA\EtherpadNextcloud\Service\ParsedPadFile;
 use OCA\EtherpadNextcloud\Service\UserNodeResolver;
 use OCA\EtherpadNextcloud\Util\PathNormalizer;
+use OCA\EtherpadNextcloud\Tests\Support\SettlesOnOpen;
 use OCP\AppFramework\Http;
 use OCP\Files\File;
 use OCP\Files\IRootFolder;
@@ -33,6 +34,8 @@ use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 
 class PadSessionControllerTest extends TestCase {
+	use SettlesOnOpen;
+
 	public function testOpenByIdRejectsInvalidFileId(): void {
 		$user = $this->createMock(IUser::class);
 		$userSession = $this->createMock(IUserSession::class);
@@ -119,7 +122,7 @@ class PadSessionControllerTest extends TestCase {
 			$padPaths,
 			$userNodeResolver,
 			$lockRetryService,
-			$bindingService,
+			$this->settleOnOpen($bindingService),
 			$etherpadClient,
 			$this->createMock(ExternalPadExportFetcher::class),
 			$this->createMock(PadSessionService::class),
@@ -244,7 +247,7 @@ class PadSessionControllerTest extends TestCase {
 			$padPaths,
 			$userNodeResolver,
 			$lockRetryService,
-			$bindingService,
+			$this->settleOnOpen($bindingService),
 			$etherpadClient,
 			$externalPadExportFetcher,
 			$this->createMock(PadSessionService::class),
@@ -355,7 +358,7 @@ class PadSessionControllerTest extends TestCase {
 			$padPaths,
 			$userNodeResolver,
 			$lockRetryService,
-			$resolvedBindingService,
+			$this->settleOnOpen($resolvedBindingService),
 			$resolvedEtherpadClient,
 			$resolvedExternalPadExportFetcher,
 			$this->createMock(PadSessionService::class),

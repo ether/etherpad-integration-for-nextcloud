@@ -25,7 +25,7 @@ class PadOpenService {
 		private PathNormalizer $padPaths,
 		private UserNodeResolver $userNodeResolver,
 		private PadFileLockRetryService $lockRetryService,
-		private BindingService $bindingService,
+		private SettleOnOpen $settleOnOpen,
 		private EtherpadClient $etherpadClient,
 		private ExternalPadExportFetcher $externalPadExportFetcher,
 		private PadSessionService $padSessionService,
@@ -83,7 +83,7 @@ class PadOpenService {
 			// not issue a session that writes on the pad server.
 			$mayWrite = $node->isUpdateable();
 			if (!$pad->isExternal) {
-				$this->bindingService->assertConsistentMapping($fileId, $pad->padId, $pad->accessMode);
+				$this->settleOnOpen->settleThenAssert($node, $fileId, $pad);
 			}
 
 			return $this->buildOpenContext($uid, $displayName, $absolutePath, $fileId, $pad, $mayWrite);

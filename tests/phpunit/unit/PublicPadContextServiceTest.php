@@ -4,6 +4,10 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Tests\Unit;
 
+use OCA\EtherpadNextcloud\Exception\WaitingBindingException;
+use OCA\EtherpadNextcloud\Service\RestoreService;
+use OCA\EtherpadNextcloud\Service\SettleOutcome;
+use PHPUnit\Framework\MockObject\MockObject;
 use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\EtherpadNextcloud\Service\LivePadHtml;
 use OCA\EtherpadNextcloud\Service\LivePadHtmlFetcher;
@@ -15,6 +19,7 @@ use OCA\EtherpadNextcloud\Service\PublicPadOpenService;
 use OCA\EtherpadNextcloud\Service\PublicPadOpenTarget;
 use OCA\EtherpadNextcloud\Service\PublicShareResolver;
 use OCA\EtherpadNextcloud\Util\PathNormalizer;
+use OCA\EtherpadNextcloud\Tests\Support\SettlesOnOpen;
 use OCP\Constants;
 use OCP\Files\File;
 use OCP\IURLGenerator;
@@ -23,6 +28,8 @@ use OCP\Share\IShare;
 use PHPUnit\Framework\TestCase;
 
 class PublicPadContextServiceTest extends TestCase {
+	use SettlesOnOpen;
+
 	private function buildNoSleepLockRetryService(): PadFileLockRetryService {
 		return new PadFileLockRetryService(static function (int $delay): void {
 		});
@@ -79,7 +86,7 @@ class PublicPadContextServiceTest extends TestCase {
 		$service = new PublicPadContextService(
 			$shareResolver,
 			$padFiles,
-			$bindings,
+			$this->settleOnOpen($bindings),
 			$openService,
 			$this->createMock(LivePadHtmlFetcher::class),
 			$this->buildNoSleepLockRetryService(),
@@ -134,7 +141,7 @@ class PublicPadContextServiceTest extends TestCase {
 		$service = new PublicPadContextService(
 			$shareResolver,
 			$padFiles,
-			$this->createMock(BindingService::class),
+			$this->settleOnOpen($this->createMock(BindingService::class)),
 			$this->createMock(PublicPadOpenService::class),
 			$fetcher,
 			$this->buildNoSleepLockRetryService(),
@@ -143,5 +150,82 @@ class PublicPadContextServiceTest extends TestCase {
 
 		// No cached share: this call resolves the token itself.
 		$this->assertSame('<p>Now</p>', $service->resolveContent('token', '')->html);
+	}
+	/**
+	 * A public open decides a row that waits, as a signed-in one does, with
+	 * the file the share reaches - the share's reader may be the only one
+	 * who opens it - and opens once the row has taken its pad back.
+	 */
+	public function testAPublicOpenDecidesAWaitingRowWithTheSharedFile(): void {
+		$file = $this->sharedFile();
+		$bindings = $this->createMock(BindingService::class);
+		$calls = 0;
+		$bindings->expects($this->exactly(2))->method('assertConsistentMapping')->with(42, 'g.group$pad', BindingService::ACCESS_PROTECTED)
+			->willReturnCallback(static function () use (&$calls): void {
+				if (++$calls === 1) {
+					throw new WaitingBindingException('Pad binding is not active.');
+				}
+			});
+		$bindings->method('findByFileId')->willReturn(self::waitingRow(42, 'g.group$pad', BindingService::ACCESS_PROTECTED));
+		$restores = $this->createMock(RestoreService::class);
+		$restores->expects($this->once())->method('settleOpenedFile')->with($this->identicalTo($file))->willReturn(SettleOutcome::Settled);
+		$openService = $this->createMock(PublicPadOpenService::class);
+		$openService->expects($this->once())->method('open')->willReturn(new PublicPadOpenTarget('', '', '', true));
+
+		$this->contextService($file, $bindings, $restores, $openService)->resolve('token', '', $this->shareOf($file));
+	}
+
+	/** A row that still waits once decided reaches the caller as it is, and nothing is opened. */
+	public function testARowThatStillWaitsReachesTheCallerAsItIs(): void {
+		$file = $this->sharedFile();
+		$waiting = new WaitingBindingException('Pad binding is not active.');
+		$bindings = $this->createMock(BindingService::class);
+		$bindings->method('assertConsistentMapping')->willThrowException($waiting);
+		$bindings->method('findByFileId')->willReturn(self::waitingRow(42, 'g.group$pad', BindingService::ACCESS_PROTECTED));
+		$restores = $this->createMock(RestoreService::class);
+		$restores->expects($this->once())->method('settleOpenedFile')->willReturn(SettleOutcome::Unanswered);
+		$openService = $this->createMock(PublicPadOpenService::class);
+		$openService->expects($this->never())->method('open');
+
+		$this->expectExceptionObject($waiting);
+
+		$this->contextService($file, $bindings, $restores, $openService)->resolve('token', '', $this->shareOf($file));
+	}
+
+	private function sharedFile(): File&MockObject {
+		$file = $this->createMock(File::class);
+		$file->method('getName')->willReturn('Shared.pad');
+		$file->method('getId')->willReturn(42);
+		$file->method('getContent')->willReturn('frontmatter');
+		return $file;
+	}
+
+	private function shareOf(File $file): IShare {
+		$share = $this->createMock(IShare::class);
+		$share->method('getPermissions')->willReturn(Constants::PERMISSION_READ);
+		$share->method('getNode')->willReturn($file);
+		return $share;
+	}
+
+	private function contextService(File $file, BindingService $bindings, RestoreService $restores, PublicPadOpenService $openService): PublicPadContextService {
+		$padFiles = $this->createMock(PadFileService::class);
+		$padFiles->method('readPad')->willReturn(new ParsedPadFile(
+			frontmatter: ['pad_id' => 'g.group$pad', 'access_mode' => BindingService::ACCESS_PROTECTED],
+			body: '',
+			padId: 'g.group$pad',
+			accessMode: BindingService::ACCESS_PROTECTED,
+			padUrl: '',
+			isExternal: false,
+			snapshotRev: -1,
+		));
+		return new PublicPadContextService(
+			new PublicShareResolver($this->createMock(IManager::class), new PathNormalizer()),
+			$padFiles,
+			$this->settleOnOpen($bindings, $restores),
+			$openService,
+			$this->createMock(LivePadHtmlFetcher::class),
+			$this->buildNoSleepLockRetryService(),
+			$this->createMock(IURLGenerator::class),
+		);
 	}
 }

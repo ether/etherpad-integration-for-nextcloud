@@ -12,6 +12,7 @@ namespace OCA\EtherpadNextcloud\Service;
 use OCA\EtherpadNextcloud\Exception\LifecycleException;
 use OCA\EtherpadNextcloud\Exception\NotAPadFileException;
 use OCA\EtherpadNextcloud\Exception\PadAlreadyHasBindingException;
+use OCA\EtherpadNextcloud\Exception\RunBudgetSpentException;
 use OCA\EtherpadNextcloud\Util\PadAccessMode;
 use OCA\EtherpadNextcloud\Util\PadFileType;
 use OCA\EtherpadNextcloud\Util\SafeError;
@@ -26,10 +27,11 @@ use Psr\Log\LoggerInterface;
  * snapshot when it is gone or behind, and the row left waiting while
  * Etherpad cannot say. The pad id comes from the row, never from the file.
  *
- * Three ways in: a restore from the trash, which arrives at
+ * Four ways in: a restore from the trash, which arrives at
  * LifecycleService (restore()); the sweep, for a file in Files whose row
- * still waits (settleWaitingFile()); and the recovery of a file that has no
- * row at all (recoverFromSnapshot()).
+ * still waits (settleWaitingFile()); an open of such a file
+ * (settleOpenedFile()); and the recovery of a file that has no row at all
+ * (recoverFromSnapshot()).
  */
 class RestoreService {
 	/** Etherpad refuses a longer pad name, measured against 2.x. */
@@ -42,6 +44,8 @@ class RestoreService {
 	private const REASON_RELEASED = 'binding_released';
 	/** The run had no time left for Etherpad once the file was read. */
 	private const REASON_OUT_OF_TIME = 'run_budget_spent';
+	/** An open could not remove what was left of a pad that is gone, so it kept the row for a later try. */
+	private const REASON_LEFTOVER_KEPT = 'leftover_not_removed';
 
 	public function __construct(
 		private BindingService $bindingService,
@@ -96,11 +100,28 @@ class RestoreService {
 		if (!PadFileType::isPad($file->getName())) {
 			return SettleOutcome::Left;
 		}
-		$binding = $this->findBindingForRestore($file->getId());
+		return $this->settleWaiting($file, $this->findBindingForRestore($file->getId()), null, $budget, inRequest: false);
+	}
+
+	/**
+	 * The same decision, for an open of the file (SettleOnOpen), which
+	 * someone waits for: on $binding, the row as the open read and checked
+	 * it, so a row a trash has changed since is left to the trash; from
+	 * $pad, the file as the open read it; and all of it within $budget, the
+	 * clean-up after a pad that is gone included (releaseWaitingRow()).
+	 */
+	public function settleOpenedFile(File $file, Binding $binding, ParsedPadFile $pad, RunBudget $budget): SettleOutcome {
+		if (!PadFileType::isPad($file->getName())) {
+			return SettleOutcome::Left;
+		}
+		return $this->settleWaiting($file, $binding, $pad, $budget, inRequest: true);
+	}
+
+	private function settleWaiting(File $file, ?Binding $binding, ?ParsedPadFile $pad, ?RunBudget $budget, bool $inRequest): SettleOutcome {
 		if ($binding === null || !$binding->isWaiting()) {
 			return SettleOutcome::Left;
 		}
-		$result = $this->settleWaitingBinding($file, $binding, mayReplace: false, budget: $budget);
+		$result = $this->settleWaitingBinding($file, $binding, mayReplace: false, budget: $budget, read: $pad, inRequest: $inRequest);
 		$reason = $result['reason'] ?? '';
 		return match (true) {
 			($result['status'] ?? '') === LifecycleResult::RESTORED, $reason === self::REASON_RELEASED => SettleOutcome::Settled,
@@ -123,18 +144,19 @@ class RestoreService {
 	 * trash's snapshot may be older than the pad. The pad id comes from the
 	 * row, never from the file: a pad id in a file is anyone's to write.
 	 *
-	 * The file is read first for its snapshot revision: a pad under that id
-	 * with fewer revisions is not the pad the file knew.
+	 * The file is read first for its snapshot revision, unless $read is the
+	 * file as its caller has just read it: a pad under that id with fewer
+	 * revisions is not the pad the file knew.
 	 *
 	 * @return array{status: string, reason?: string, old_pad_id?: string, new_pad_id?: string}
 	 */
-	private function settleWaitingBinding(File $file, Binding $binding, bool $mayReplace, ?RunBudget $budget = null): array {
+	private function settleWaitingBinding(File $file, Binding $binding, bool $mayReplace, ?RunBudget $budget = null, ?ParsedPadFile $read = null, bool $inRequest = false): array {
 		$fileId = $file->getId();
 		$padId = $binding->padId;
 		$state = $binding->state;
 		try {
 			try {
-				$pad = $this->readRestoredPad($file);
+				$pad = $read ?? $this->readRestoredPad($file);
 			} catch (\Throwable $readError) {
 				// No revision to hold the pad to, so no decision either.
 				return $this->deferRestore($fileId, $padId, $state, $readError);
@@ -150,7 +172,7 @@ class RestoreService {
 				PadPresence::Unknown => $this->deferRestore($fileId, $padId, $state),
 				PadPresence::Absent, PadPresence::Behind => $mayReplace
 					? $this->restoreWithReplacement($file, $pad, $fileId, $padId, $state, $binding->accessMode, $presence)
-					: $this->releaseWaitingRow($fileId, $padId, $state, $presence),
+					: $this->releaseWaitingRow($fileId, $padId, $state, $presence, $inRequest ? $budget : null),
 			};
 		} catch (LifecycleException $e) {
 			throw $e;
@@ -301,14 +323,30 @@ class RestoreService {
 	}
 
 	/**
-	 * A sweep's answer to a pad that is not the file's any more: the row
-	 * goes, and the file makes its own pad from its snapshot when someone
-	 * opens it. A pad that is gone takes what is left of it along, as after
-	 * a replacement; one that is behind stays where it is.
+	 * The answer to a pad that is not the file's any more, where no file is
+	 * written: the row goes, and the file makes its own pad from its
+	 * snapshot when someone opens it. A pad that is gone takes what is left
+	 * of it along, as after a replacement; one that is behind stays where it
+	 * is.
+	 *
+	 * A sweep lets the row go first and clears up after it on the client's
+	 * own timeouts: no one waits, and once the row is gone a call cut short
+	 * by a budget would leave the group for good. An open ($openBudget),
+	 * which someone waits for, clears up first, within its budget, and
+	 * keeps the row when that does not finish (keepForLater()): once the
+	 * row was gone, nothing would lead to the group.
 	 *
 	 * @return array{status: string, reason: string}
 	 */
-	private function releaseWaitingRow(int $fileId, string $padId, string $state, PadPresence $presence): array {
+	private function releaseWaitingRow(int $fileId, string $padId, string $state, PadPresence $presence, ?RunBudget $openBudget): array {
+		$gone = $presence === PadPresence::Absent;
+		if ($gone && $openBudget !== null) {
+			try {
+				$this->padLifecycle->discardIfPresent($padId, $openBudget, knownAbsent: true, retried: true);
+			} catch (\Throwable $e) {
+				return $this->keepForLater($fileId, $padId, $state, $e);
+			}
+		}
 		if (!$this->releaseReplacedRow($fileId, $padId, $state)) {
 			return LifecycleResult::skipped('binding_state_transition_conflict', $fileId, $this->logger);
 		}
@@ -318,10 +356,30 @@ class RestoreService {
 			'fileId' => $fileId,
 			'padId' => $padId,
 		]);
-		if ($presence === PadPresence::Absent) {
+		if ($gone && $openBudget === null) {
 			$this->discardWhatIsLeftOf($fileId, $padId);
 		}
 		return LifecycleResult::skipped(self::REASON_RELEASED, $fileId, $this->logger);
+	}
+
+	/**
+	 * The row an open keeps, touched as a row that waits again is: the next
+	 * open within the minute leaves it (SettleOnOpen), and the sweep gets
+	 * to it sooner. Time running out is to be expected, and a debug line; a
+	 * failure of Etherpad's is worth one at info level, with its cause.
+	 *
+	 * @return array{status: string, reason: string}
+	 */
+	private function keepForLater(int $fileId, string $padId, string $state, \Throwable $cause): array {
+		$this->bindingService->transition($fileId, $padId, $state, $state);
+		$context = ['app' => 'etherpad_nextcloud', 'fileId' => $fileId, 'padId' => $padId, ...SafeError::context($cause)];
+		$message = 'Could not remove what was left of a pad that is gone while opening its file. Its binding is kept for a later try.';
+		if ($cause instanceof RunBudgetSpentException) {
+			$this->logger->debug($message, $context);
+		} else {
+			$this->logger->info($message, $context);
+		}
+		return LifecycleResult::skipped(self::REASON_LEFTOVER_KEPT, $fileId, $this->logger);
 	}
 
 	/**
@@ -329,10 +387,9 @@ class RestoreService {
 	 * Etherpad has said does not exist. A public one takes no call; for a
 	 * protected pad its group can still be standing with nothing in it, and
 	 * discardIfPresent() is what takes an empty group down.
-	 * Best effort: the row is settled, and a group left over is garbage,
-	 * not a way in - there is no pad in it for a session to open. On the
-	 * client's own timeouts, not what a sweep's run has left: the row is
-	 * released already, so a call cut short would leave the group for good.
+	 * Best effort, after the row: the row is settled, and a group left over
+	 * is garbage, not a way in - there is no pad in it for a session to
+	 * open. On the client's own timeouts (releaseWaitingRow() says why).
 	 */
 	private function discardWhatIsLeftOf(int $fileId, string $padId): void {
 		try {
