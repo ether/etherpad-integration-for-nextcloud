@@ -173,6 +173,7 @@ OC.L10N.register(
     "This file is a legacy Ownpad link to a protected pad, and importing those is disabled on this server. Please contact your administrator.": "Este archivo es un enlace heredado de Ownpad a un pad protegido y su importación está desactivada en este servidor. Ponte en contacto con tu administración.",
     "This file looks like a copy of an existing .pad file in your account. Open the original to keep editing the linked pad, or create a new pad to fork the content stored in this file.": "Este archivo parece ser una copia de un archivo .pad existente en tu cuenta. Abre el original para seguir editando el pad enlazado, o crea un nuevo pad para crear una copia independiente del contenido almacenado en este archivo.",
     "This file may have been moved or replaced since the list was loaded. Reload the page and open it again.": "Es posible que este archivo se haya movido o reemplazado desde que se cargó la lista. Recarga la página y vuelve a abrir el archivo.",
+    "This pad is still being restored. Try again later.": "Este pad todavía se está restaurando. Vuelve a intentarlo más tarde.",
     "This pad is still empty.": "Este pad todavía está vacío.",
     "This pad is too large to show here. Open it in Etherpad instead.": "Este pad es demasiado grande para mostrarlo aquí. Ábrelo en Etherpad.",
     "Trusted embed origins (optional)": "Orígenes de incrustación de confianza (opcional)",

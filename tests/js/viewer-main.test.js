@@ -382,6 +382,31 @@ describe('viewer component — resolveOpenUrl', () => {
 		expect(vm.maybeStaleFileId).toBe(true)
 	})
 
+	it('offers a second try, not recovery, when the file\'s row still waits', async () => {
+		stubFetch(jsonResponse({ message: 'This pad is still being restored. Try again later.', code: 'waiting_binding', retryable: true }, false, 409))
+		const vm = makeInstance({ fileid: 42, fileInfo: { path: '/x.pad' } })
+
+		await vm.resolveOpenUrl()
+
+		expect(vm.loadError).toBe('This pad is still being restored. Try again later.')
+		expect(vm.canRetryOpen).toBe(true)
+		expect(vm.canRecover).toBe(false)
+	})
+
+	it.each([
+		['without a code', { message: 'Could not open pad' }, 500],
+		['with another code', { message: 'no binding', code: 'missing_binding' }, 400],
+	])('does not offer a second try for an error %s', async (_, body, status) => {
+		stubFetch(jsonResponse(body, false, status))
+		apiFindOriginalPad.mockResolvedValue({ found: false })
+		const vm = makeInstance({ fileid: 42, fileInfo: { path: '/x.pad' } })
+
+		await vm.resolveOpenUrl()
+		await flushAsyncWork()
+
+		expect(vm.canRetryOpen).toBe(false)
+	})
+
 	it('does not suggest a reload for an error that a reload cannot fix', async () => {
 		stubFetch(jsonResponse({ message: 'Could not open pad' }, false, 500))
 		const vm = makeInstance({ fileid: 42, fileInfo: { path: '/x.pad' } })
@@ -749,6 +774,25 @@ describe('viewer component — render', () => {
 		expect(findByClass(tree, 'epnc-native-status--error')).toBeTruthy()
 		expect(allText(tree)).toContain('Could not open pad')
 		expect(allText(tree)).toContain('Boom')
+	})
+
+	it('offers to try the open again while the file\'s row waits', () => {
+		const vm = makeInstance({ loadError: 'This pad is still being restored. Try again later.', canRetryOpen: true })
+		vm.resolveOpenUrl = vi.fn()
+		const tree = component.render.call(vm, h)
+
+		const buttons = findByTag(tree, 'button')
+		expect(buttons).toHaveLength(1)
+		expect(allText(tree)).toContain('Try again')
+		buttons[0].data.on.click()
+		expect(vm.resolveOpenUrl).toHaveBeenCalledTimes(1)
+	})
+
+	it('offers no second try for an error a second try cannot fix', () => {
+		const vm = makeInstance({ loadError: 'Boom' })
+		const tree = component.render.call(vm, h)
+
+		expect(findByTag(tree, 'button')).toHaveLength(0)
 	})
 
 	it('renders the reload hint when the file id may be stale', () => {

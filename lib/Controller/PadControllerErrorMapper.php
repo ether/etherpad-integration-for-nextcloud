@@ -14,6 +14,7 @@ use OCA\EtherpadNextcloud\Exception\ControllerBadRequestException;
 use OCA\EtherpadNextcloud\Exception\LegacyPadCollisionException;
 use OCA\EtherpadNextcloud\Exception\LegacyProtectedImportDisabledException;
 use OCA\EtherpadNextcloud\Exception\MissingBindingException;
+use OCA\EtherpadNextcloud\Exception\WaitingBindingException;
 use OCA\EtherpadNextcloud\Exception\MissingFrontmatterException;
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
 use OCA\EtherpadNextcloud\Exception\EtherpadTooLargeException;
@@ -135,19 +136,26 @@ class PadControllerErrorMapper {
 			}
 			return new DataResponse($payload, Http::STATUS_FORBIDDEN);
 		} catch (BindingException $e) {
-			$message = isset($options['binding_message'])
-				? (string)$options['binding_message']
-				: $this->padResponses->bindingErrorMessage($e);
-			$payload = ['message' => $message];
+			$status = $options['binding_status'] ?? Http::STATUS_BAD_REQUEST;
+			if (isset($options['binding_message'])) {
+				// The caller's wording for its own conflict. No code of ours
+				// goes with a message that is not ours.
+				return new DataResponse(['message' => (string)$options['binding_message']], $status);
+			}
+			$payload = ['message' => $this->padResponses->bindingErrorMessage($e)];
 			if ($e instanceof MissingBindingException) {
 				// Surface a stable code so the UI can offer a recovery action
 				// instead of showing a dead-end error.
 				$payload['code'] = 'missing_binding';
+			} elseif ($e instanceof WaitingBindingException) {
+				// Not a dead end: once the sweep has settled the row, the same
+				// request opens the pad - or answers missing_binding, when the
+				// pad had to be let go.
+				$payload['code'] = 'waiting_binding';
+				$payload['retryable'] = true;
+				$status = Http::STATUS_CONFLICT;
 			}
-			return new DataResponse(
-				$payload,
-				$options['binding_status'] ?? Http::STATUS_BAD_REQUEST,
-			);
+			return new DataResponse($payload, $status);
 		} catch (LegacyProtectedImportDisabledException) {
 			// 403, not 409: nothing conflicts, the instance does not offer
 			// this import at all. Fixed wording plus a stable code, like the

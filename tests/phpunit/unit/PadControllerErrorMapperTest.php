@@ -9,6 +9,7 @@ use OCA\EtherpadNextcloud\Exception\BindingException;
 use OCA\EtherpadNextcloud\Exception\LegacyPadCollisionException;
 use OCA\EtherpadNextcloud\Exception\LegacyProtectedImportDisabledException;
 use OCA\EtherpadNextcloud\Exception\MissingBindingException;
+use OCA\EtherpadNextcloud\Exception\WaitingBindingException;
 use OCA\EtherpadNextcloud\Exception\MissingFrontmatterException;
 use OCA\EtherpadNextcloud\Exception\ControllerBadRequestException;
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
@@ -125,6 +126,42 @@ class PadControllerErrorMapperTest extends TestCase {
 
 		$this->assertSame(Http::STATUS_BAD_REQUEST, $response->getStatus());
 		$this->assertSame('missing_binding', $response->getData()['code']);
+	}
+
+	/**
+	 * A file whose row still waits is on its way back, not a dead end: the
+	 * reader is told so in words, and a client sees a conflict worth trying
+	 * again, by its code and its status.
+	 */
+	public function testRunMapsAWaitingBindingAsAConflictToTryAgain(): void {
+		$response = $this->buildMapper()->run(
+			static fn(): array => throw new WaitingBindingException('Pad binding is not active.'),
+			static fn(array $result): DataResponse => new DataResponse($result),
+		);
+
+		$this->assertSame(Http::STATUS_CONFLICT, $response->getStatus());
+		$this->assertSame(
+			['message' => 'This pad is still being restored. Try again later.', 'code' => 'waiting_binding', 'retryable' => true],
+			$response->getData(),
+		);
+	}
+
+	/**
+	 * A caller's own wording for its own conflict carries none of our codes:
+	 * a code tells a client what the message means, and this message is
+	 * not the one the code stands for.
+	 */
+	public function testACallersOwnWordingCarriesNoCodeOfOurs(): void {
+		foreach ([new MissingBindingException('no binding'), new WaitingBindingException('waiting')] as $e) {
+			$response = $this->buildMapper()->run(
+				static fn(): array => throw $e,
+				static fn(array $result): DataResponse => new DataResponse($result),
+				['binding_message' => 'A file with this name already exists.', 'binding_status' => Http::STATUS_CONFLICT],
+			);
+
+			$this->assertSame(Http::STATUS_CONFLICT, $response->getStatus(), $e::class);
+			$this->assertSame(['message' => 'A file with this name already exists.'], $response->getData(), $e::class);
+		}
 	}
 
 	public function testRunMapsLegacyPadCollision(): void {

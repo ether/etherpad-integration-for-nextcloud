@@ -31,6 +31,7 @@ const component = {
 			isLoading: true,
 			loadError: '',
 			canRecover: false,
+			canRetryOpen: false,
 			maybeStaleFileId: false,
 			// Recovery may resolve this from the path when Viewer supplies no id.
 			recoveryFileId: null,
@@ -193,6 +194,7 @@ const component = {
 			this.isLoading = true
 			this.loadError = ''
 			this.canRecover = false
+			this.canRetryOpen = false
 			this.maybeStaleFileId = false
 			this.recoveryFileId = null
 			this.recoveryPath = ''
@@ -301,6 +303,9 @@ const component = {
 				// The server intentionally does not disclose why this id is unavailable.
 				this.maybeStaleFileId = this.resolvedFileId !== null
 					&& Boolean(error) && error.status === 404 && !error.code
+				// The file's row still waits for the sweep: the same open can
+				// succeed later, so offer it rather than a dead end.
+				this.canRetryOpen = Boolean(error) && error.code === 'waiting_binding'
 				// Recovery may resolve only the same path that failed to open.
 				let recoveryFileId = this.resolvedFileId
 				this.recoveryPath = openPath
@@ -468,6 +473,15 @@ const component = {
 				cardChildren.push(
 					createElement('div', { class: 'epnc-native-error-message' },
 						translate('This file may have been moved or replaced since the list was loaded. Reload the page and open it again.')),
+				)
+			}
+			if (this.canRetryOpen) {
+				cardChildren.push(
+					createElement('button', {
+						class: 'button primary epnc-native-error-action',
+						attrs: { type: 'button' },
+						on: { click: () => { void this.resolveOpenUrl() } },
+					}, translate('Try again')),
 				)
 			}
 			if (this.canRecover) {

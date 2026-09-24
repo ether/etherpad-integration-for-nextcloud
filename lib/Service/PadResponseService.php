@@ -11,6 +11,7 @@ namespace OCA\EtherpadNextcloud\Service;
 
 use OCA\EtherpadNextcloud\Exception\BindingException;
 use OCA\EtherpadNextcloud\Exception\MissingBindingException;
+use OCA\EtherpadNextcloud\Exception\WaitingBindingException;
 use OCA\EtherpadNextcloud\Util\FilesViewerUrl;
 use OCP\AppFramework\Http;
 use OCP\AppFramework\Http\DataResponse;
@@ -228,6 +229,9 @@ class PadResponseService {
 		$message = trim($e->getMessage());
 		if ($e instanceof MissingBindingException) {
 			return $this->l10n->t('This .pad file has no matching pad in this Nextcloud.');
+		}
+		if ($e instanceof WaitingBindingException) {
+			return $this->l10n->t('This pad is still being restored. Try again later.');
 		}
 		return $message;
 	}

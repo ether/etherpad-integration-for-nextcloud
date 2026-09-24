@@ -16,6 +16,7 @@ use OCA\EtherpadNextcloud\Exception\EtherpadTooLargeException;
 use OCA\EtherpadNextcloud\Exception\InvalidShareFilePathException;
 use OCA\EtherpadNextcloud\Exception\InvalidShareTokenException;
 use OCA\EtherpadNextcloud\Exception\MissingBindingException;
+use OCA\EtherpadNextcloud\Exception\WaitingBindingException;
 use OCA\EtherpadNextcloud\Exception\MissingFrontmatterException;
 use OCA\EtherpadNextcloud\Exception\NoShareFileSelectedException;
 use OCA\EtherpadNextcloud\Exception\NotAPadFileException;
@@ -23,6 +24,7 @@ use OCA\EtherpadNextcloud\Exception\PadFileFormatException;
 use OCA\EtherpadNextcloud\Exception\ShareFileNotInShareException;
 use OCA\EtherpadNextcloud\Exception\ShareItemUnavailableException;
 use OCA\EtherpadNextcloud\Exception\ShareReadForbiddenException;
+use OCA\EtherpadNextcloud\Service\PadResponseService;
 use OCA\EtherpadNextcloud\Service\PublicShareUrlBuilder;
 use OCA\EtherpadNextcloud\Util\SafeError;
 use OCP\AppFramework\Http;
@@ -34,6 +36,7 @@ use Psr\Log\LoggerInterface;
 class PublicViewerControllerErrorMapper {
 	public function __construct(
 		private PublicShareUrlBuilder $shareUrlBuilder,
+		private PadResponseService $padResponses,
 		private LoggerInterface $logger,
 	) {
 	}
@@ -53,6 +56,9 @@ class PublicViewerControllerErrorMapper {
 			// able to see it, and a message is not something to branch on.
 			if ($e instanceof EtherpadTooLargeException) {
 				$payload['code'] = 'pad_too_large';
+			} elseif ($e instanceof WaitingBindingException) {
+				$payload['code'] = 'waiting_binding';
+				$payload['retryable'] = true;
 			}
 			return new DataResponse($payload, $this->statusFor($e));
 		}
@@ -78,10 +84,10 @@ class PublicViewerControllerErrorMapper {
 	}
 
 	/**
-	 * The four the match below can reach. DataResponse takes the set of
+	 * The five the match below can reach. DataResponse takes the set of
 	 * valid HTTP codes, not any int, so a wider type would not pass.
 	 *
-	 * @return 400|403|404|500
+	 * @return 400|403|404|409|500
 	 */
 	private function statusFor(\Throwable $e): int {
 		return match (true) {
@@ -89,6 +95,7 @@ class PublicViewerControllerErrorMapper {
 			$e instanceof ShareItemUnavailableException,
 			$e instanceof ShareFileNotInShareException => Http::STATUS_NOT_FOUND,
 			$e instanceof ShareReadForbiddenException => Http::STATUS_FORBIDDEN,
+			$e instanceof WaitingBindingException => Http::STATUS_CONFLICT,
 			$e instanceof InvalidShareFilePathException,
 			$e instanceof NoShareFileSelectedException,
 			$e instanceof NotAPadFileException,
@@ -108,6 +115,10 @@ class PublicViewerControllerErrorMapper {
 		if ($e instanceof BindingException) {
 			if ($e instanceof MissingBindingException) {
 				return 'The selected .pad file is a copied file without an active pad binding. Please open the original shared .pad file.';
+			}
+			if ($e instanceof WaitingBindingException) {
+				// The signed-in sentence, translated like it.
+				return $this->padResponses->bindingErrorMessage($e);
 			}
 			return 'Pad binding is inconsistent. Please contact the share owner.';
 		}
