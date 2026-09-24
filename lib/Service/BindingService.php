@@ -219,6 +219,7 @@ class BindingService {
 		$qb = $this->db->getQueryBuilder();
 		$qb->select('b.file_id', 'b.pad_id', 'b.state')
 			->selectAlias('fc.path', 'file_path')
+			->selectAlias('b.' . $ageColumn, 'waiting_since')
 			->from(self::TABLE, 'b')
 			->leftJoin('b', 'filecache', 'fc', $qb->expr()->eq('b.file_id', 'fc.fileid'))
 			->where($qb->expr()->eq('b.state', $qb->createNamedParameter($state)))

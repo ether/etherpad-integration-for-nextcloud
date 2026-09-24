@@ -264,15 +264,27 @@ class LifecycleServiceTest extends TestCase {
 		$this->assertSame('not_pad_file', $result['reason']);
 	}
 
-	public function testHandleTrashMarksPendingDeleteWhenEtherpadDeleteFails(): void {
+	/** @return iterable<string, array{string, string}> */
+	public static function deletesThatFail(): iterable {
+		yield 'the delete refused' => ['pad-abc', BindingService::ACCESS_PUBLIC];
+		yield 'a group that cannot be read' => ['g.ABCDEFGHIJKLMNOP$pad-abc', BindingService::ACCESS_PROTECTED];
+	}
+
+	/**
+	 * A pad that cannot be deleted stays, and its deletion is owed for the
+	 * sweep. So does a protected pad whose group cannot be read: the sweep
+	 * tries again, where giving the group up for the pad alone would leave
+	 * it standing for good.
+	 */
+	#[\PHPUnit\Framework\Attributes\DataProvider('deletesThatFail')]
+	public function testHandleTrashMarksPendingDeleteWhenEtherpadDeleteFails(string $padId, string $accessMode): void {
 		$fileId = 21;
-		$padId = 'pad-abc';
 
 		$bindingService = $this->createMock(BindingService::class);
 		$bindingService->expects($this->once())
 			->method('findByFileId')
 			->with($fileId)
-			->willReturn(new Binding(fileId: $fileId, padId: $padId, accessMode: BindingService::ACCESS_PUBLIC, state: BindingService::STATE_ACTIVE));
+			->willReturn(new Binding(fileId: $fileId, padId: $padId, accessMode: $accessMode, state: BindingService::STATE_ACTIVE));
 		$bindingService->expects($this->once())
 			->method('transition')
 			->with($fileId, $padId, BindingService::STATE_ACTIVE, BindingService::STATE_PENDING_DELETE)
@@ -285,7 +297,7 @@ class LifecycleServiceTest extends TestCase {
 			frontmatter: [],
 			body: '',
 			padId: $padId,
-			accessMode: BindingService::ACCESS_PUBLIC,
+			accessMode: $accessMode,
 			padUrl: '',
 			isExternal: false,
 			snapshotRev: -1,
@@ -302,10 +314,16 @@ class LifecycleServiceTest extends TestCase {
 		// Before and after the text: the snapshot is kept only when they agree.
 		// Before the text, after it, and once more after the write.
 		$etherpadClient->expects($this->exactly(3))->method('getRevisionsCount')->with($padId)->willReturn(7);
-		$etherpadClient->expects($this->once())
-			->method('deletePad')
-			->with($padId)
-			->willThrowException(new \RuntimeException('temporary failure'));
+		if ($accessMode === BindingService::ACCESS_PROTECTED) {
+			$etherpadClient->expects($this->once())->method('listPads')->willThrowException(new \RuntimeException('Connection timed out'));
+			$etherpadClient->expects($this->never())->method('deletePad');
+			$etherpadClient->expects($this->never())->method('deleteGroup');
+		} else {
+			$etherpadClient->expects($this->once())
+				->method('deletePad')
+				->with($padId)
+				->willThrowException(new \RuntimeException('temporary failure'));
+		}
 
 		$secureRandom = $this->createMock(ISecureRandom::class);
 		$logger = $this->createMock(LoggerInterface::class);

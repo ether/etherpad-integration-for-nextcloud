@@ -150,7 +150,7 @@ class RestoreService {
 				PadPresence::Unknown => $this->deferRestore($fileId, $padId, $state),
 				PadPresence::Absent, PadPresence::Behind => $mayReplace
 					? $this->restoreWithReplacement($file, $pad, $fileId, $padId, $state, $binding->accessMode, $presence)
-					: $this->releaseWaitingRow($fileId, $padId, $state),
+					: $this->releaseWaitingRow($fileId, $padId, $state, $presence),
 			};
 		} catch (LifecycleException $e) {
 			throw $e;
@@ -240,7 +240,7 @@ class RestoreService {
 		// Outside the try on purpose: the restore is done and recorded, and
 		// nothing about clearing up after it may turn that into a failure.
 		if ($result['status'] === LifecycleResult::RESTORED && $presence === PadPresence::Absent) {
-			$this->discardSupersededPad($fileId, $oldPadId);
+			$this->discardWhatIsLeftOf($fileId, $oldPadId);
 		}
 		return $result;
 	}
@@ -303,11 +303,12 @@ class RestoreService {
 	/**
 	 * A sweep's answer to a pad that is not the file's any more: the row
 	 * goes, and the file makes its own pad from its snapshot when someone
-	 * opens it.
+	 * opens it. A pad that is gone takes what is left of it along, as after
+	 * a replacement; one that is behind stays where it is.
 	 *
 	 * @return array{status: string, reason: string}
 	 */
-	private function releaseWaitingRow(int $fileId, string $padId, string $state): array {
+	private function releaseWaitingRow(int $fileId, string $padId, string $state, PadPresence $presence): array {
 		if (!$this->releaseReplacedRow($fileId, $padId, $state)) {
 			return LifecycleResult::skipped('binding_state_transition_conflict', $fileId, $this->logger);
 		}
@@ -317,26 +318,31 @@ class RestoreService {
 			'fileId' => $fileId,
 			'padId' => $padId,
 		]);
+		if ($presence === PadPresence::Absent) {
+			$this->discardWhatIsLeftOf($fileId, $padId);
+		}
 		return LifecycleResult::skipped(self::REASON_RELEASED, $fileId, $this->logger);
 	}
 
 	/**
-	 * The pad a replacement stood in for. Etherpad has already said it does
-	 * not exist, so a public one takes no call; for a protected pad its
-	 * group can still be standing with nothing in it, and discardIfPresent()
-	 * is what takes an empty group down.
-	 * Best effort: the restore is done, and a group left over is garbage,
-	 * not a way in - there is no pad in it for a session to open.
+	 * A pad no row names any more - replaced, or released by a sweep - that
+	 * Etherpad has said does not exist. A public one takes no call; for a
+	 * protected pad its group can still be standing with nothing in it, and
+	 * discardIfPresent() is what takes an empty group down.
+	 * Best effort: the row is settled, and a group left over is garbage,
+	 * not a way in - there is no pad in it for a session to open. On the
+	 * client's own timeouts, not what a sweep's run has left: the row is
+	 * released already, so a call cut short would leave the group for good.
 	 */
-	private function discardSupersededPad(int $fileId, string $oldPadId): void {
+	private function discardWhatIsLeftOf(int $fileId, string $padId): void {
 		try {
-			$this->padLifecycle->discardIfPresent($oldPadId, knownAbsent: true);
+			$this->padLifecycle->discardIfPresent($padId, knownAbsent: true);
 		} catch (\Throwable $e) {
-			// The row names the replacement now, so nothing else leads here.
-			$this->logger->warning('Could not remove what was left of the pad a restore replaced.', [
+			// No row names the pad now, so nothing else leads here.
+			$this->logger->warning('Could not remove what was left of a pad that is gone.', [
 				'app' => 'etherpad_nextcloud',
 				'fileId' => $fileId,
-				'padId' => $oldPadId,
+				'padId' => $padId,
 				...SafeError::context($e),
 			]);
 		}

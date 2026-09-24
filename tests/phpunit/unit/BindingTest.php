@@ -49,7 +49,7 @@ class BindingTest extends TestCase {
 	 * error where the row is read instead.
 	 */
 	public function testAColumnTheQueryLeftOutIsAnError(): void {
-		$row = ['file_id' => 7, 'pad_id' => 'nc-abc', 'access_mode' => BindingService::ACCESS_PUBLIC, 'state' => BindingService::STATE_PENDING_DELETE, 'deleted_at' => 100, 'updated_at' => 200, 'file_path' => null];
+		$row = ['file_id' => 7, 'pad_id' => 'nc-abc', 'access_mode' => BindingService::ACCESS_PUBLIC, 'state' => BindingService::STATE_PENDING_DELETE, 'deleted_at' => 100, 'updated_at' => 200, 'file_path' => null, 'waiting_since' => 100];
 		$reads = [
 			'Binding' => static fn (array $r): mixed => Binding::fromRow($r),
 			'WaitingBinding' => static fn (array $r): mixed => WaitingBinding::fromRow($r),
@@ -116,12 +116,17 @@ class BindingTest extends TestCase {
 		}
 	}
 
-	/** A file gone for good has no file cache row, so the joined path comes back null. */
+	/**
+	 * A file gone for good has no file cache row, so the joined path comes
+	 * back null; a row a trash before 1.1.0 wrote may have no deleted_at.
+	 */
 	public function testAWaitingRowCarriesItsFilesPathOrNone(): void {
 		$this->assertEquals(
-			new WaitingBinding(7, 'nc-abc', BindingService::STATE_PENDING_DELETE, 'files_trashbin/files/a.pad.d1'),
-			WaitingBinding::fromRow(['file_id' => 7, 'pad_id' => 'nc-abc', 'state' => BindingService::STATE_PENDING_DELETE, 'file_path' => 'files_trashbin/files/a.pad.d1']),
+			new WaitingBinding(7, 'nc-abc', BindingService::STATE_PENDING_DELETE, 'files_trashbin/files/a.pad.d1', 100),
+			WaitingBinding::fromRow(['file_id' => 7, 'pad_id' => 'nc-abc', 'state' => BindingService::STATE_PENDING_DELETE, 'file_path' => 'files_trashbin/files/a.pad.d1', 'waiting_since' => 100]),
 		);
-		$this->assertNull(WaitingBinding::fromRow(['file_id' => 7, 'pad_id' => 'nc-abc', 'state' => BindingService::STATE_PENDING_DELETE, 'file_path' => null])->filePath);
+		$gone = WaitingBinding::fromRow(['file_id' => 7, 'pad_id' => 'nc-abc', 'state' => BindingService::STATE_PENDING_DELETE, 'file_path' => null, 'waiting_since' => null]);
+		$this->assertNull($gone->filePath);
+		$this->assertNull($gone->waitingSince);
 	}
 }

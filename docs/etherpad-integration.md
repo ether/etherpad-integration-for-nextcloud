@@ -60,6 +60,15 @@ left: no such pad, or no such group. A caller that has just heard the pad
 is gone says so (`knownAbsent`); a public pad then costs no call, a
 protected one is still asked about its group.
 
+A group Etherpad cannot list is given up by default: the pad goes alone,
+the half that was always safe, and the empty group stays. A caller that
+keeps its row and tries again says so (`retried`) and gets the failed read
+instead, with nothing removed: the trash, which then owes the deletion,
+and the sweep for a file gone for good while the deletion has been owed
+for less than a day, counted from the trash. One that cannot try again -
+the sweep once it has taken a trashed file's row, the clean-up after a
+replacement or a released row - takes the default.
+
 The shape rule itself lives in `Util\PadId` and is the same one that
 classifies a binding as protected. It used to be stricter here, so a pad
 bound as protected by the loose rule was not recognised as a group pad by

@@ -455,7 +455,7 @@ class RestoreServiceTest extends TestCase {
 			->willThrowException(new \RuntimeException('still down'));
 
 		$logger = $this->createMock(LoggerInterface::class);
-		$logger->expects($this->once())->method('warning')->with('Could not remove what was left of the pad a restore replaced.');
+		$logger->expects($this->once())->method('warning')->with('Could not remove what was left of a pad that is gone.');
 
 		$file = $this->padFile($fileId, 'Restored.pad');
 		$file->expects($this->once())->method('putContent')->with('doc-after');
@@ -682,6 +682,59 @@ class RestoreServiceTest extends TestCase {
 
 			$this->assertSame(SettleOutcome::Settled, $outcome, $case);
 		}
+	}
+
+	/** @return iterable<string, array{int|string, bool, bool, SettleOutcome, list<string>}> */
+	public static function groupsOfAReleasedRow(): iterable {
+		// Etherpad's answer, whether the row is still the sweep's to release, whether the group can be removed.
+		yield 'gone' => ['padID does not exist', true, true, SettleOutcome::Settled, ['row', 'group']];
+		yield 'gone, the group stays' => ['padID does not exist', true, false, SettleOutcome::Settled, ['row']];
+		yield 'behind' => [0, true, true, SettleOutcome::Settled, ['row']];
+		yield 'gone, the row taken meanwhile' => ['padID does not exist', false, true, SettleOutcome::Left, []];
+	}
+
+	/**
+	 * A protected pad that is gone leaves its group, and once the sweep has
+	 * released the row, what is left of it goes, as after a replacement. A
+	 * pad behind the snapshot is there and stays; a row another flow took
+	 * is not the sweep's to clear up after. A group that cannot be removed
+	 * is logged, and the row stays released.
+	 *
+	 * @param list<string> $steps
+	 */
+	#[\PHPUnit\Framework\Attributes\DataProvider('groupsOfAReleasedRow')]
+	public function testAReleasedRowTakesTheEmptyGroupOfAPadThatIsGone(int|string $answer, bool $released, bool $removable, SettleOutcome $expected, array $steps): void {
+		$padId = 'g.ABCDEFGHIJKLMNOP$old-pad';
+		$order = [];
+		$bindingService = $this->createMock(BindingService::class);
+		$bindingService->method('deleteInState')->willReturnCallback(static function () use (&$order, $released): bool {
+			if ($released) {
+				$order[] = 'row';
+			}
+			return $released;
+		});
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->method('getRevisionsCount')->willReturnCallback(static fn (): int => is_int($answer) ? $answer : throw new \RuntimeException($answer));
+		$etherpadClient->method('listPads')->willReturn([]);
+		$etherpadClient->method('deleteGroup')->willReturnCallback(static function () use (&$order, $removable): void {
+			if (!$removable) {
+				throw new \RuntimeException('Connection reset');
+			}
+			$order[] = 'group';
+		});
+		$etherpadClient->expects($this->never())->method('deletePad');
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects($removable ? $this->never() : $this->once())
+			->method('warning')
+			->with('Could not remove what was left of a pad that is gone.', $this->callback(
+				static fn (array $context): bool => $context['fileId'] === 106 && $context['padId'] === $padId
+			));
+
+		$outcome = $this->buildPendingDeleteRestoreService(106, $padId, $bindingService, $etherpadClient, accessMode: BindingService::ACCESS_PROTECTED, logger: $logger, snapshotRev: 7, state: BindingService::STATE_RESTORE_PENDING)
+			->settleWaitingFile($this->padFile(106, 'Restored.pad'), new RunBudget(new FixedClock(), 5.0));
+
+		$this->assertSame($expected, $outcome);
+		$this->assertSame($steps, $order);
 	}
 
 	/** And a restore settles a row that still waits undecided, with the setting off as well. */

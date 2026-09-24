@@ -193,6 +193,26 @@ class OwedDeletionsTest extends TestCase {
 	}
 
 	/**
+	 * Past its row, a group that cannot be read gives way to the pad alone:
+	 * nothing is left to try again by, and the pad is the half that has
+	 * content.
+	 */
+	public function testPastItsRowAGroupThatCannotBeReadGivesWayToThePad(): void {
+		$padId = 'g.ABCDEFGHIJKLMNOP$p-trashed';
+		$bindingService = $this->pendingTrashRow(117, $padId);
+		$bindingService->expects($this->once())->method('deleteInState')->willReturn(true);
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->method('getRevisionsCount')->willReturn(4);
+		$etherpadClient->method('listPads')->willThrowException(new \RuntimeException('Connection timed out'));
+		$etherpadClient->expects($this->never())->method('deleteGroup');
+		$etherpadClient->expects($this->once())->method('deletePad')->with($padId);
+
+		$outcome = $this->owed($bindingService, $etherpadClient)->finishTrash($this->trashedFile(117, snapshotRev: 4), new RunBudget(new FixedClock(), 20.0));
+
+		$this->assertSame(SettleOutcome::Settled, $outcome);
+	}
+
+	/**
 	 * Once its row is gone, a group pad goes whole whatever the run has
 	 * left: stopping between asking what the group holds and deleting it
 	 * would leave group, pad and sessions behind for good. Each call still
@@ -402,6 +422,11 @@ class OwedDeletionsTest extends TestCase {
 			'gone, a group pad' => [$groupPad, 'padID does not exist', true, SettleOutcome::Settled, ['group', 'row']],
 			'no answer' => ['pad-gone', 'Connection refused', true, SettleOutcome::Unanswered, []],
 			'delete refused' => ['pad-gone', 3, true, SettleOutcome::Unanswered, ['pad']],
+			// Its row stays for the next run, so the group is not given up for the pad alone -
+			// for a day: from then on the pad goes alone, and a group that is never read holds nothing up.
+			'a group that cannot be read' => [$groupPad, 3, true, SettleOutcome::Unanswered, []],
+			'a group that cannot be read, owed for a day' => [$groupPad, 3, true, SettleOutcome::Settled, ['pad', 'row']],
+			'a group that cannot be read, no time to go by' => [$groupPad, 3, true, SettleOutcome::Settled, ['pad', 'row']],
 			'setting off' => ['pad-gone', 3, false, SettleOutcome::Left, []],
 		];
 		foreach ($cases as $case => [$padId, $answer, $enabled, $expected, $steps]) {
@@ -425,13 +450,17 @@ class OwedDeletionsTest extends TestCase {
 					throw new \RuntimeException($answer);
 				}
 			});
-			$etherpadClient->method('listPads')->willReturn([]);
+			$etherpadClient->method('listPads')->willReturnCallback(static fn (): array => str_starts_with($case, 'a group that cannot be read') ? throw new \RuntimeException('Connection timed out') : []);
 			$etherpadClient->method('deleteGroup')->willReturnCallback(static function () use (&$order): void {
 				$order[] = 'group';
 			});
 
 			$outcome = $this->owed($bindingService, $etherpadClient, deleteOnTrash: $enabled)
-				->finishGoneFile(self::goneRow(120, $padId, $state), new RunBudget(new FixedClock(), 20.0));
+				->finishGoneFile(self::goneRow(120, $padId, $state, waitingFor: match ($case) {
+					'a group that cannot be read, owed for a day' => 86400,
+					'a group that cannot be read, no time to go by' => null,
+					default => 100,
+				}), new RunBudget(new FixedClock(), 20.0));
 
 			$this->assertSame($expected, $outcome, $case);
 			$this->assertSame($steps, $order, $case);
@@ -518,9 +547,13 @@ class OwedDeletionsTest extends TestCase {
 		return $bindingService;
 	}
 
-	/** A waiting row whose file has no file cache row left, as the sweep fetches it. */
-	private static function goneRow(int $fileId, string $padId, string $state = BindingService::STATE_PENDING_DELETE): WaitingBinding {
-		return new WaitingBinding($fileId, $padId, $state, null);
+	/**
+	 * A waiting row whose file has no file cache row left, as the sweep
+	 * fetches it, waiting for $waitingFor seconds - or with no time to go
+	 * by, as a row from before 1.1.0 may be.
+	 */
+	private static function goneRow(int $fileId, string $padId, string $state = BindingService::STATE_PENDING_DELETE, ?int $waitingFor = 100): WaitingBinding {
+		return new WaitingBinding($fileId, $padId, $state, null, $waitingFor === null ? null : FixedClock::NOW - $waitingFor);
 	}
 
 	/** An Etherpad whose count takes $seconds of the run on $clock, then answers $revisions. */
@@ -549,6 +582,7 @@ class OwedDeletionsTest extends TestCase {
 			new TrashSnapshotWriters($etherpad, $this->buildSnapshotWritingPadFileService(), $logger, new TestFaults($this->createMock(IConfig::class), $appConfig)),
 			$nodes ?? $this->createMock(UserNodeResolver::class),
 			$logger,
+			new FixedClock(),
 		);
 	}
 }
