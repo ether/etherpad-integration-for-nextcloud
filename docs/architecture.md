@@ -15,7 +15,9 @@ Etherpad is the editing source of truth; the `.pad` file acts as binding storage
   - Hands a row out as a `Binding`, and a row the sweep takes as a `WaitingBinding` with its file's path; the sweep asks for deletions owed by `FileLocation`.
   - Only managed internal pads are bound. External pads are represented solely by `.pad` frontmatter and snapshots.
 - `lib/Service/LifecycleService.php`
-  - Trash and restore of a bound `.pad` file: the pad goes only once its snapshot is in the file, else its deletion is owed (`pending_delete`); a restore takes the file's own pad back while Etherpad still has it, and makes a new one from the snapshot otherwise (see Trash/Restore).
+  - Where a `.pad` file's trash and restore arrive, from the listeners and the API; the trash is done here (see Trash/Restore).
+- `lib/Service/RestoreService.php`
+  - The restore: from the trash, in the sweep, and for a file without a row (see Trash/Restore).
 - `lib/Service/TrashSnapshotWriter.php`
   - The snapshot into a trashed file, at trash time and in the sweep, made by `TrashSnapshotWriters`: one file, one pad, and the reason when it does not get there (`TrashSnapshotMiss`). What a miss means for the row and the pad is its caller's.
 - `lib/Service/PendingBindingService.php`

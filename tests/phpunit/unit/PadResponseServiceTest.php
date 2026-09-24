@@ -6,7 +6,7 @@ namespace OCA\EtherpadNextcloud\Tests\Unit;
 
 use OCA\EtherpadNextcloud\Exception\MissingBindingException;
 use OCA\EtherpadNextcloud\Service\AppConfigService;
-use OCA\EtherpadNextcloud\Service\LifecycleService;
+use OCA\EtherpadNextcloud\Service\LifecycleResult;
 use OCA\EtherpadNextcloud\Service\PadResponseService;
 use OCP\AppFramework\Http;
 use OCP\IL10N;
@@ -161,7 +161,7 @@ class PadResponseServiceTest extends TestCase {
 			$this->createMock(AppConfigService::class),
 			$this->l10nEcho(),
 		))->lifecycleResponse([
-			'status' => LifecycleService::RESULT_SKIPPED,
+			'status' => LifecycleResult::SKIPPED,
 			'reason' => 'binding_not_active',
 		]);
 

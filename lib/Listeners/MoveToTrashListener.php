@@ -10,6 +10,7 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Listeners;
 
+use OCA\EtherpadNextcloud\Service\LifecycleResult;
 use OCA\EtherpadNextcloud\Service\LifecycleService;
 use OCA\EtherpadNextcloud\Util\SafeError;
 use OCP\EventDispatcher\Event;
@@ -39,7 +40,7 @@ class MoveToTrashListener implements IEventListener {
 
 		try {
 			$result = $this->lifecycleService->handleTrash($node);
-			if (($result['status'] ?? '') === LifecycleService::RESULT_SKIPPED) {
+			if (($result['status'] ?? '') === LifecycleResult::SKIPPED) {
 				$this->logger->debug('MoveToTrash listener skipped lifecycle action.', [
 					'app' => 'etherpad_nextcloud',
 					'fileId' => $this->loggableFileId($node),

@@ -16,10 +16,10 @@ use OCP\Files\File;
 use PHPUnit\Framework\MockObject\MockObject;
 
 /**
- * Trashed .pad files, for the trash and for the sweep that finishes it: the
- * file, and a formatter that writes a fresh snapshot into it.
+ * .pad files as the lifecycle meets them - in Files, back from the trash,
+ * or in it - and a formatter that writes a fresh snapshot into one.
  */
-trait TrashedPadFiles {
+trait PadFiles {
 	/** The snapshot revision the formatter reads a trashed file at; trashedFile() sets it. */
 	private int $trashedSnapshotRev = -1;
 
@@ -42,10 +42,15 @@ trait TrashedPadFiles {
 	/** A .pad in its owner's trash, holding 'doc-before'; the formatter reads it at $snapshotRev. */
 	private function trashedFile(int $fileId, int $snapshotRev = -1): File&MockObject {
 		$this->trashedSnapshotRev = $snapshotRev;
+		return $this->padFile($fileId, 'Trashed.pad.d100');
+	}
+
+	/** A file by that name, holding $content. */
+	private function padFile(int $fileId, string $name, string $content = 'doc-before'): File&MockObject {
 		$file = $this->createMock(File::class);
 		$file->method('getId')->willReturn($fileId);
-		$file->method('getName')->willReturn('Trashed.pad.d100');
-		$file->method('getContent')->willReturn('doc-before');
+		$file->method('getName')->willReturn($name);
+		$file->method('getContent')->willReturn($content);
 		return $file;
 	}
 }

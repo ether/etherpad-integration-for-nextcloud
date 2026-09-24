@@ -14,7 +14,7 @@ use OCA\EtherpadNextcloud\Listeners\MoveToTrashListener;
 use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\EtherpadNextcloud\Service\LifecycleService;
 use OCA\EtherpadNextcloud\Tests\Support\WatchesTheWholeLogger;
-use OCA\EtherpadNextcloud\Tests\Support\WiresALifecycleService;
+use OCA\EtherpadNextcloud\Tests\Support\WiresTheLifecycle;
 use OCP\EventDispatcher\Event;
 use OCP\Files\File;
 use OCP\Files\NotFoundException;
@@ -28,7 +28,7 @@ use Psr\Log\LoggerInterface;
  */
 class MoveToTrashListenerTest extends TestCase {
 	use WatchesTheWholeLogger;
-	use WiresALifecycleService;
+	use WiresTheLifecycle;
 
 	public function testAFlowFailureIsReportedOnceAndPassedOn(): void {
 		$fileId = 4711;

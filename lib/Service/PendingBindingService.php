@@ -33,7 +33,7 @@ class PendingBindingService {
 	public function __construct(
 		private BindingService $bindingService,
 		private AppConfigService $appConfig,
-		private LifecycleService $lifecycleService,
+		private RestoreService $restoreService,
 		private OwedDeletions $owedDeletions,
 		private IRootFolder $rootFolder,
 		private ILockingProvider $locks,
@@ -190,7 +190,7 @@ class PendingBindingService {
 	 */
 	private function settleElsewhere(WaitingBinding $row, RunBudget $budget): ?SettleOutcome {
 		$file = $this->nodeById($row->fileId, inTrash: false);
-		return $file === null ? $this->notReached($row) : $this->lifecycleService->settleWaitingFile($file, $budget);
+		return $file === null ? $this->notReached($row) : $this->restoreService->settleWaitingFile($file, $budget);
 	}
 
 	/**

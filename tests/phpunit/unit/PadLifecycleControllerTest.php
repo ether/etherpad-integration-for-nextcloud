@@ -12,6 +12,7 @@ use OCA\EtherpadNextcloud\Service\Binding;
 use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\EtherpadNextcloud\Service\EtherpadClient;
 use OCA\EtherpadNextcloud\Service\ExternalPadExportFetcher;
+use OCA\EtherpadNextcloud\Service\LifecycleResult;
 use OCA\EtherpadNextcloud\Service\LifecycleService;
 use OCA\EtherpadNextcloud\Service\PadFileLockRetryService;
 use OCA\EtherpadNextcloud\Service\PadFileService;
@@ -447,7 +448,7 @@ class PadLifecycleControllerTest extends TestCase {
 			->with('alice', 99)
 			->willReturn([
 				'file_id' => 99,
-				'status' => LifecycleService::RESULT_RESTORED,
+				'status' => LifecycleResult::RESTORED,
 				'old_pad_id' => 'orphan',
 				'new_pad_id' => 'fresh',
 			]);
@@ -460,7 +461,7 @@ class PadLifecycleControllerTest extends TestCase {
 		$response = $controller->recoverByFileId(99);
 
 		$this->assertSame(Http::STATUS_OK, $response->getStatus());
-		$this->assertSame(LifecycleService::RESULT_RESTORED, $response->getData()['status']);
+		$this->assertSame(LifecycleResult::RESTORED, $response->getData()['status']);
 		$this->assertSame('fresh', $response->getData()['new_pad_id']);
 	}
 

@@ -7,9 +7,9 @@ namespace OCA\EtherpadNextcloud\Tests\Unit;
 use OCA\EtherpadNextcloud\Service\AppConfigService;
 use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\EtherpadNextcloud\Service\FileLocation;
-use OCA\EtherpadNextcloud\Service\LifecycleService;
 use OCA\EtherpadNextcloud\Service\OwedDeletions;
 use OCA\EtherpadNextcloud\Service\PendingBindingService;
+use OCA\EtherpadNextcloud\Service\RestoreService;
 use OCA\EtherpadNextcloud\Service\RunBudget;
 use OCA\EtherpadNextcloud\Service\SettleOutcome;
 use OCA\EtherpadNextcloud\Service\WaitingBinding;
@@ -43,8 +43,8 @@ class PendingBindingServiceTest extends TestCase {
 			],
 		);
 		$settled = [];
-		$lifecycle = $this->createMock(LifecycleService::class);
-		$lifecycle->method('settleWaitingFile')->willReturnCallback(static function (File $file) use (&$settled): SettleOutcome {
+		$restores = $this->createMock(RestoreService::class);
+		$restores->method('settleWaitingFile')->willReturnCallback(static function (File $file) use (&$settled): SettleOutcome {
 			$settled[] = $file->getId();
 			return SettleOutcome::Settled;
 		});
@@ -54,7 +54,7 @@ class PendingBindingServiceTest extends TestCase {
 			4 => ['/alice/files/Four.pad'],
 		]);
 		$owed = $this->createMock(OwedDeletions::class);
-		$sweep = $this->service($bindings, $lifecycle, $root, owed: $owed);
+		$sweep = $this->service($bindings, $restores, $root, owed: $owed);
 		$trashed = [];
 		$owed->method('finishTrash')->willReturnCallback(static function (File $file) use (&$trashed): SettleOutcome {
 			$trashed[] = $file->getPath();
@@ -89,12 +89,11 @@ class PendingBindingServiceTest extends TestCase {
 			],
 		);
 		$settled = [];
-		$lifecycle = $this->createMock(LifecycleService::class);
-		$lifecycle->method('settleWaitingFile')->willReturnCallback(static function (File $file) use (&$settled): SettleOutcome {
+		$restores = $this->createMock(RestoreService::class);
+		$restores->method('settleWaitingFile')->willReturnCallback(static function (File $file) use (&$settled): SettleOutcome {
 			$settled[] = $file->getId();
 			return SettleOutcome::Settled;
 		});
-		$lifecycle->expects($this->never())->method('handleTrash');
 
 		$root = $this->root([
 			1 => ['/alice/files/files_trashbin/Notes.pad'],
@@ -102,7 +101,7 @@ class PendingBindingServiceTest extends TestCase {
 			2 => ['/alice/files_trashbin/files/Elsewhere.pad.d100'],
 			3 => ['/alice/files/Team/Team.pad'],
 		], $lookedUp);
-		$this->service($bindings, $lifecycle, $root)->settleByAge(0, null, 50);
+		$this->service($bindings, $restores, $root)->settleByAge(0, null, 50);
 
 		$this->assertSame([1], $settled);
 		// The file cache said trash, so the file was not even looked for.
@@ -117,13 +116,13 @@ class PendingBindingServiceTest extends TestCase {
 	public function testReadsTheFileThroughAMountOutsideTheTrash(): void {
 		$bindings = $this->bindings(restores: [$this->row(1, BindingService::STATE_RESTORE_PENDING, 'files/One.pad')]);
 		$seen = [];
-		$lifecycle = $this->createMock(LifecycleService::class);
-		$lifecycle->method('settleWaitingFile')->willReturnCallback(static function (File $file) use (&$seen): SettleOutcome {
+		$restores = $this->createMock(RestoreService::class);
+		$restores->method('settleWaitingFile')->willReturnCallback(static function (File $file) use (&$seen): SettleOutcome {
 			$seen[] = $file->getPath();
 			return SettleOutcome::Settled;
 		});
 
-		$this->service($bindings, $lifecycle, $this->root([1 => ['/bob/files_trashbin/files/One.pad.d9', '/alice/files/One.pad']]))
+		$this->service($bindings, $restores, $this->root([1 => ['/bob/files_trashbin/files/One.pad.d9', '/alice/files/One.pad']]))
 			->settleByAge(0, null, 50);
 
 		$this->assertSame(['/alice/files/One.pad'], $seen);
@@ -143,10 +142,10 @@ class PendingBindingServiceTest extends TestCase {
 				$rows[] = $this->row($id, BindingService::STATE_RESTORE_PENDING, 'files/' . $id . '.pad');
 				$paths[$id] = ['/alice/files/' . $id . '.pad'];
 			}
-			$lifecycle = $this->createMock(LifecycleService::class);
-			$lifecycle->expects($this->exactly($expected))->method('settleWaitingFile')->willReturn($case);
+			$restores = $this->createMock(RestoreService::class);
+			$restores->expects($this->exactly($expected))->method('settleWaitingFile')->willReturn($case);
 
-			$this->service($this->bindings(restores: $rows), $lifecycle, $this->root($paths))->settleByAge(0, null, 50);
+			$this->service($this->bindings(restores: $rows), $restores, $this->root($paths))->settleByAge(0, null, 50);
 		}
 	}
 
@@ -163,14 +162,14 @@ class PendingBindingServiceTest extends TestCase {
 			$paths[$id] = ['/alice/files/' . $id . '.pad'];
 		}
 		$timeouts = [];
-		$lifecycle = $this->createMock(LifecycleService::class);
-		$lifecycle->method('settleWaitingFile')->willReturnCallback(static function (File $file, ?RunBudget $budget) use ($clock, &$timeouts): SettleOutcome {
+		$restores = $this->createMock(RestoreService::class);
+		$restores->method('settleWaitingFile')->willReturnCallback(static function (File $file, ?RunBudget $budget) use ($clock, &$timeouts): SettleOutcome {
 			$timeouts[] = $budget?->nextCallTimeout();
 			$clock->advance(10);
 			return SettleOutcome::Settled;
 		});
 
-		$this->service($this->bindings(restores: $rows), $lifecycle, $this->root($paths), clock: $clock)->settleByAge(0, null, 50);
+		$this->service($this->bindings(restores: $rows), $restores, $this->root($paths), clock: $clock)->settleByAge(0, null, 50);
 
 		$this->assertSame([15, 10], $timeouts);
 	}
@@ -187,12 +186,12 @@ class PendingBindingServiceTest extends TestCase {
 			$rows[] = $this->row($id, BindingService::STATE_RESTORE_PENDING, 'files/' . $id . '.pad');
 			$paths[$id] = ['/alice/files/' . $id . '.pad'];
 		}
-		$lifecycle = $this->createMock(LifecycleService::class);
-		$lifecycle->expects($this->exactly(8))
+		$restores = $this->createMock(RestoreService::class);
+		$restores->expects($this->exactly(8))
 			->method('settleWaitingFile')
 			->willThrowException(new \RuntimeException('database went away'));
 
-		$this->service($this->bindings(restores: $rows), $lifecycle, $this->root($paths))->settleByAge(0, null, 50);
+		$this->service($this->bindings(restores: $rows), $restores, $this->root($paths))->settleByAge(0, null, 50);
 	}
 
 	/**
@@ -216,13 +215,13 @@ class PendingBindingServiceTest extends TestCase {
 			};
 		});
 		$seen = [];
-		$lifecycle = $this->createMock(LifecycleService::class);
-		$lifecycle->method('settleWaitingFile')->willReturnCallback(static function (File $file) use (&$seen): SettleOutcome {
+		$restores = $this->createMock(RestoreService::class);
+		$restores->method('settleWaitingFile')->willReturnCallback(static function (File $file) use (&$seen): SettleOutcome {
 			$seen[] = $file->getId();
 			return SettleOutcome::Left;
 		});
 		$owed = $this->createMock(OwedDeletions::class);
-		$sweep = $this->service($bindings, $lifecycle, $this->root([1 => ['/a/files/1.pad'], 2 => ['/a/files/2.pad'], 30 => ['/a/files/30.pad']]), owed: $owed);
+		$sweep = $this->service($bindings, $restores, $this->root([1 => ['/a/files/1.pad'], 2 => ['/a/files/2.pad'], 30 => ['/a/files/30.pad']]), owed: $owed);
 		$owed->method('finishGoneFile')->willReturnCallback(static function (WaitingBinding $row) use (&$seen): SettleOutcome {
 			$seen[] = $row->fileId;
 			return SettleOutcome::Left;
@@ -247,11 +246,11 @@ class PendingBindingServiceTest extends TestCase {
 			$paths[$id] = ['/a/files_trashbin/files/' . $id . '.pad.d1'];
 		}
 		$bindings = $this->bindings(deletes: [...$trashed, $this->row(7, BindingService::STATE_PENDING_DELETE, 'files/Back.pad')]);
-		$lifecycle = $this->createMock(LifecycleService::class);
-		$lifecycle->expects($this->once())->method('settleWaitingFile')->willReturn(SettleOutcome::Settled);
+		$restores = $this->createMock(RestoreService::class);
+		$restores->expects($this->once())->method('settleWaitingFile')->willReturn(SettleOutcome::Settled);
 		$paths[7] = ['/a/files/Back.pad'];
 		$owed = $this->createMock(OwedDeletions::class);
-		$sweep = $this->service($bindings, $lifecycle, $this->root($paths), owed: $owed);
+		$sweep = $this->service($bindings, $restores, $this->root($paths), owed: $owed);
 		$owed->method('finishTrash')->willReturn(SettleOutcome::Left);
 
 		$result = $sweep->settleByAge(0, null, 4);
@@ -284,10 +283,10 @@ class PendingBindingServiceTest extends TestCase {
 		$otherBindings = $this->bindings(deletes: [$row]);
 		$otherBindings->expects($this->never())->method('transition');
 		$secondOwed = $this->createMock(OwedDeletions::class);
-		$second = $this->service($otherBindings, $this->createMock(LifecycleService::class), $root, locks: $locks, owed: $secondOwed);
+		$second = $this->service($otherBindings, $this->createMock(RestoreService::class), $root, locks: $locks, owed: $secondOwed);
 		$secondOwed->method('finishTrash')->willReturnCallback($finish);
 		$owed = $this->createMock(OwedDeletions::class);
-		$sweep = $this->service($this->bindings(deletes: [$row]), $this->createMock(LifecycleService::class), $root, locks: $locks, owed: $owed);
+		$sweep = $this->service($this->bindings(deletes: [$row]), $this->createMock(RestoreService::class), $root, locks: $locks, owed: $owed);
 		$owed->method('finishTrash')->willReturnCallback($finish);
 
 		$first = $sweep->settleByAge(0, null, 50);
@@ -305,8 +304,8 @@ class PendingBindingServiceTest extends TestCase {
 			$this->row(1, BindingService::STATE_RESTORE_PENDING, 'files/1.pad'),
 			$this->row(2, BindingService::STATE_RESTORE_PENDING, 'files/2.pad'),
 		]);
-		$lifecycle = $this->createMock(LifecycleService::class);
-		$lifecycle->method('settleWaitingFile')->willReturnCallback(static function (File $file): SettleOutcome {
+		$restores = $this->createMock(RestoreService::class);
+		$restores->method('settleWaitingFile')->willReturnCallback(static function (File $file): SettleOutcome {
 			if ($file->getId() === 1) {
 				throw new \RuntimeException('database went away');
 			}
@@ -315,7 +314,7 @@ class PendingBindingServiceTest extends TestCase {
 		$logger = $this->createMock(LoggerInterface::class);
 		$logger->expects($this->once())->method('warning')->with('Could not settle a pad binding that waits.', $this->anything());
 
-		$result = $this->service($bindings, $lifecycle, $this->root([1 => ['/a/files/1.pad'], 2 => ['/a/files/2.pad']]), logger: $logger)
+		$result = $this->service($bindings, $restores, $this->root([1 => ['/a/files/1.pad'], 2 => ['/a/files/2.pad']]), logger: $logger)
 			->settleByAge(0, null, 50);
 
 		$this->assertSame(['checked' => 2, 'settled' => 1], $result);
@@ -334,7 +333,7 @@ class PendingBindingServiceTest extends TestCase {
 			return [];
 		});
 
-		$this->service($bindings, $this->createMock(LifecycleService::class), $this->root([]), deleteOnTrash: false)->settleByAge(0, null, 50);
+		$this->service($bindings, $this->createMock(RestoreService::class), $this->root([]), deleteOnTrash: false)->settleByAge(0, null, 50);
 
 		$this->assertSame([FileLocation::Elsewhere], $asked);
 	}
@@ -361,11 +360,11 @@ class PendingBindingServiceTest extends TestCase {
 			$moved[] = [$fileId, $from, $to];
 			return true;
 		});
-		$lifecycle = $this->createMock(LifecycleService::class);
-		$lifecycle->expects($this->never())->method('settleWaitingFile');
+		$restores = $this->createMock(RestoreService::class);
+		$restores->expects($this->never())->method('settleWaitingFile');
 		// An undecided restore has nothing to be done in a trash, even where its node is found.
 		$owed = $this->createMock(OwedDeletions::class);
-		$sweep = $this->service($bindings, $lifecycle, $this->root([4 => ['/alice/files_trashbin/files/Four.pad.d100']]), owed: $owed);
+		$sweep = $this->service($bindings, $restores, $this->root([4 => ['/alice/files_trashbin/files/Four.pad.d100']]), owed: $owed);
 		$owed->expects($this->never())->method('finishTrash');
 
 		$result = $sweep->settleByAge(0, null, 50);
@@ -394,26 +393,26 @@ class PendingBindingServiceTest extends TestCase {
 			}
 		});
 		$locks->method('releaseLock')->willThrowException(new \RuntimeException('database went away'));
-		$lifecycle = $this->createMock(LifecycleService::class);
-		$lifecycle->expects($this->once())->method('settleWaitingFile')->willReturn(SettleOutcome::Settled);
+		$restores = $this->createMock(RestoreService::class);
+		$restores->expects($this->once())->method('settleWaitingFile')->willReturn(SettleOutcome::Settled);
 		$logger = $this->createMock(LoggerInterface::class);
 		$logger->expects($this->exactly(2))->method('warning');
 
-		$result = $this->service($bindings, $lifecycle, $this->root([1 => ['/a/files/1.pad'], 2 => ['/a/files/2.pad']]), logger: $logger, locks: $locks)->settleByAge(0, null, 50);
+		$result = $this->service($bindings, $restores, $this->root([1 => ['/a/files/1.pad'], 2 => ['/a/files/2.pad']]), logger: $logger, locks: $locks)->settleByAge(0, null, 50);
 
 		$this->assertSame(['checked' => 2, 'settled' => 1], $result);
 	}
 
 	/** A row without a file or without a pad names nothing to settle: it is passed over, and not counted. */
 	public function testARowThatNamesNothingIsPassedOver(): void {
-		$lifecycle = $this->createMock(LifecycleService::class);
-		$lifecycle->expects($this->never())->method('settleWaitingFile');
+		$restores = $this->createMock(RestoreService::class);
+		$restores->expects($this->never())->method('settleWaitingFile');
 		$bindings = $this->bindings([], [
 			$this->row(0, BindingService::STATE_PENDING_DELETE, null),
 			$this->row(40, BindingService::STATE_PENDING_DELETE, null, padId: ''),
 		]);
 		$owed = $this->createMock(OwedDeletions::class);
-		$sweep = $this->service($bindings, $lifecycle, $this->root([]), owed: $owed);
+		$sweep = $this->service($bindings, $restores, $this->root([]), owed: $owed);
 		$owed->expects($this->never())->method('finishGoneFile');
 		$owed->expects($this->never())->method('finishTrash');
 
@@ -427,7 +426,7 @@ class PendingBindingServiceTest extends TestCase {
 		$bindings = $this->bindings();
 		$bindings->method('countWaiting')->willReturn(['pending_delete_count' => 4, 'restore_pending_count' => 1]);
 
-		$result = $this->service($bindings, $this->createMock(LifecycleService::class), $this->root([]))->settle(50);
+		$result = $this->service($bindings, $this->createMock(RestoreService::class), $this->root([]))->settle(50);
 
 		$this->assertSame(['checked' => 0, 'settled' => 0, 'pending_delete_count' => 4, 'restore_pending_count' => 1], $result);
 	}
@@ -438,7 +437,7 @@ class PendingBindingServiceTest extends TestCase {
 	 */
 	private function service(
 		BindingService $bindings,
-		LifecycleService&MockObject $lifecycle,
+		RestoreService&MockObject $restores,
 		IRootFolder $root,
 		bool $deleteOnTrash = true,
 		?FixedClock $clock = null,
@@ -451,7 +450,7 @@ class PendingBindingServiceTest extends TestCase {
 		return new PendingBindingService(
 			$bindings,
 			$appConfig,
-			$lifecycle,
+			$restores,
 			$owed ?? $this->createMock(OwedDeletions::class),
 			$root,
 			$locks ?? new InMemoryLockingProvider(),
