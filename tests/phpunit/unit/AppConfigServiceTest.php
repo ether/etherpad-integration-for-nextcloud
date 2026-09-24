@@ -14,6 +14,16 @@ use OCP\IConfig;
 use PHPUnit\Framework\TestCase;
 
 class AppConfigServiceTest extends TestCase {
+	/** On unless the admin switched it off: only 'no' turns it off, and a value never set is on. */
+	public function testDeletingOnTrashIsOnUnlessSwitchedOff(): void {
+		foreach (['yes' => true, 'no' => false] as $stored => $enabled) {
+			$config = $this->createMock(IConfig::class);
+			$config->method('getAppValue')->with('etherpad_nextcloud', 'delete_on_trash', 'yes')->willReturn($stored);
+
+			$this->assertSame($enabled, $this->service($config)->isDeleteOnTrashEnabled(), $stored);
+		}
+	}
+
 	/** Read as the admin API stored it, surrounding blanks aside. */
 	public function testTheTestFaultIsReadTrimmed(): void {
 		$config = $this->createMock(IConfig::class);

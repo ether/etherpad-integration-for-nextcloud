@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Tests\Unit;
 
+use OCA\EtherpadNextcloud\Service\AppConfigService;
 use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\EtherpadNextcloud\Service\FileLocation;
 use OCA\EtherpadNextcloud\Service\LifecycleService;
+use OCA\EtherpadNextcloud\Service\OwedDeletions;
 use OCA\EtherpadNextcloud\Service\PendingBindingService;
 use OCA\EtherpadNextcloud\Service\RunBudget;
 use OCA\EtherpadNextcloud\Service\SettleOutcome;
@@ -46,23 +48,25 @@ class PendingBindingServiceTest extends TestCase {
 			$settled[] = $file->getId();
 			return SettleOutcome::Settled;
 		});
-		$trashed = [];
-		$lifecycle->method('finishTrash')->willReturnCallback(static function (File $file) use (&$trashed): SettleOutcome {
-			$trashed[] = $file->getPath();
-			return SettleOutcome::Settled;
-		});
-		$gone = [];
-		$lifecycle->method('finishGoneFile')->willReturnCallback(static function (int $fileId, string $padId, string $state) use (&$gone): SettleOutcome {
-			$gone[] = [$fileId, $padId, $state];
-			return SettleOutcome::Settled;
-		});
-
 		$root = $this->root([
 			1 => ['/alice/files/One.pad'],
 			2 => ['/alice/files_trashbin/files/Two.pad.d100'],
 			4 => ['/alice/files/Four.pad'],
 		]);
-		$result = $this->service($bindings, $lifecycle, $root)->settleByAge(0, 3600, 50);
+		$owed = $this->createMock(OwedDeletions::class);
+		$sweep = $this->service($bindings, $lifecycle, $root, owed: $owed);
+		$trashed = [];
+		$owed->method('finishTrash')->willReturnCallback(static function (File $file) use (&$trashed): SettleOutcome {
+			$trashed[] = $file->getPath();
+			return SettleOutcome::Settled;
+		});
+		$gone = [];
+		$owed->method('finishGoneFile')->willReturnCallback(static function (WaitingBinding $row) use (&$gone): SettleOutcome {
+			$gone[] = [$row->fileId, $row->padId, $row->state];
+			return SettleOutcome::Settled;
+		});
+
+		$result = $sweep->settleByAge(0, 3600, 50);
 
 		$this->assertSame([1, 4], $settled);
 		$this->assertSame(['/alice/files_trashbin/files/Two.pad.d100'], $trashed);
@@ -217,13 +221,14 @@ class PendingBindingServiceTest extends TestCase {
 			$seen[] = $file->getId();
 			return SettleOutcome::Left;
 		});
-		$lifecycle->method('finishGoneFile')->willReturnCallback(static function (int $fileId) use (&$seen): SettleOutcome {
-			$seen[] = $fileId;
+		$owed = $this->createMock(OwedDeletions::class);
+		$sweep = $this->service($bindings, $lifecycle, $this->root([1 => ['/a/files/1.pad'], 2 => ['/a/files/2.pad'], 30 => ['/a/files/30.pad']]), owed: $owed);
+		$owed->method('finishGoneFile')->willReturnCallback(static function (WaitingBinding $row) use (&$seen): SettleOutcome {
+			$seen[] = $row->fileId;
 			return SettleOutcome::Left;
 		});
-		$root = $this->root([1 => ['/a/files/1.pad'], 2 => ['/a/files/2.pad'], 30 => ['/a/files/30.pad']]);
 
-		$this->service($bindings, $lifecycle, $root)->settleByAge(0, null, 5);
+		$sweep->settleByAge(0, null, 5);
 
 		$this->assertSame([['restores', 5], ['Gone', 5], ['InUserTrash', 5], ['Elsewhere', 5]], $asked);
 		$this->assertSame([1, 10, 30, 2, 11], $seen);
@@ -243,11 +248,13 @@ class PendingBindingServiceTest extends TestCase {
 		}
 		$bindings = $this->bindings(deletes: [...$trashed, $this->row(7, BindingService::STATE_PENDING_DELETE, 'files/Back.pad')]);
 		$lifecycle = $this->createMock(LifecycleService::class);
-		$lifecycle->method('finishTrash')->willReturn(SettleOutcome::Left);
 		$lifecycle->expects($this->once())->method('settleWaitingFile')->willReturn(SettleOutcome::Settled);
 		$paths[7] = ['/a/files/Back.pad'];
+		$owed = $this->createMock(OwedDeletions::class);
+		$sweep = $this->service($bindings, $lifecycle, $this->root($paths), owed: $owed);
+		$owed->method('finishTrash')->willReturn(SettleOutcome::Left);
 
-		$result = $this->service($bindings, $lifecycle, $this->root($paths))->settleByAge(0, null, 4);
+		$result = $sweep->settleByAge(0, null, 4);
 
 		$this->assertSame(['checked' => 4, 'settled' => 1], $result);
 	}
@@ -264,8 +271,7 @@ class PendingBindingServiceTest extends TestCase {
 		$second = null;
 		$secondResult = null;
 		$finishing = 0;
-		$lifecycle = $this->createMock(LifecycleService::class);
-		$lifecycle->method('finishTrash')->willReturnCallback(function () use (&$second, &$secondResult, &$finishing): SettleOutcome {
+		$finish = function () use (&$second, &$secondResult, &$finishing): SettleOutcome {
 			$finishing++;
 			// The other run starts while this one is between its read and its write.
 			if ($second !== null) {
@@ -274,12 +280,17 @@ class PendingBindingServiceTest extends TestCase {
 				$secondResult = $run->settleByAge(0, null, 50);
 			}
 			return SettleOutcome::Settled;
-		});
+		};
 		$otherBindings = $this->bindings(deletes: [$row]);
 		$otherBindings->expects($this->never())->method('transition');
-		$second = $this->service($otherBindings, $lifecycle, $root, locks: $locks);
+		$secondOwed = $this->createMock(OwedDeletions::class);
+		$second = $this->service($otherBindings, $this->createMock(LifecycleService::class), $root, locks: $locks, owed: $secondOwed);
+		$secondOwed->method('finishTrash')->willReturnCallback($finish);
+		$owed = $this->createMock(OwedDeletions::class);
+		$sweep = $this->service($this->bindings(deletes: [$row]), $this->createMock(LifecycleService::class), $root, locks: $locks, owed: $owed);
+		$owed->method('finishTrash')->willReturnCallback($finish);
 
-		$first = $this->service($this->bindings(deletes: [$row]), $lifecycle, $root, locks: $locks)->settleByAge(0, null, 50);
+		$first = $sweep->settleByAge(0, null, 50);
 
 		$this->assertSame(1, $finishing);
 		$this->assertSame(['checked' => 0, 'settled' => 0], $secondResult);
@@ -352,9 +363,12 @@ class PendingBindingServiceTest extends TestCase {
 		});
 		$lifecycle = $this->createMock(LifecycleService::class);
 		$lifecycle->expects($this->never())->method('settleWaitingFile');
-		$lifecycle->expects($this->never())->method('finishTrash');
+		// An undecided restore has nothing to be done in a trash, even where its node is found.
+		$owed = $this->createMock(OwedDeletions::class);
+		$sweep = $this->service($bindings, $lifecycle, $this->root([4 => ['/alice/files_trashbin/files/Four.pad.d100']]), owed: $owed);
+		$owed->expects($this->never())->method('finishTrash');
 
-		$result = $this->service($bindings, $lifecycle, $this->root([]))->settleByAge(0, null, 50);
+		$result = $sweep->settleByAge(0, null, 50);
 
 		$this->assertSame([
 			[3, BindingService::STATE_PENDING_DELETE, BindingService::STATE_PENDING_DELETE],
@@ -382,18 +396,10 @@ class PendingBindingServiceTest extends TestCase {
 		$locks->method('releaseLock')->willThrowException(new \RuntimeException('database went away'));
 		$lifecycle = $this->createMock(LifecycleService::class);
 		$lifecycle->expects($this->once())->method('settleWaitingFile')->willReturn(SettleOutcome::Settled);
-		$lifecycle->method('isDeleteOnTrashEnabled')->willReturn(true);
 		$logger = $this->createMock(LoggerInterface::class);
 		$logger->expects($this->exactly(2))->method('warning');
 
-		$result = (new PendingBindingService(
-			$bindings,
-			$lifecycle,
-			$this->root([1 => ['/a/files/1.pad'], 2 => ['/a/files/2.pad']]),
-			$locks,
-			$logger,
-			new FixedClock(),
-		))->settleByAge(0, null, 50);
+		$result = $this->service($bindings, $lifecycle, $this->root([1 => ['/a/files/1.pad'], 2 => ['/a/files/2.pad']]), logger: $logger, locks: $locks)->settleByAge(0, null, 50);
 
 		$this->assertSame(['checked' => 2, 'settled' => 1], $result);
 	}
@@ -401,15 +407,17 @@ class PendingBindingServiceTest extends TestCase {
 	/** A row without a file or without a pad names nothing to settle: it is passed over, and not counted. */
 	public function testARowThatNamesNothingIsPassedOver(): void {
 		$lifecycle = $this->createMock(LifecycleService::class);
-		$lifecycle->expects($this->never())->method('finishGoneFile');
-		$lifecycle->expects($this->never())->method('finishTrash');
 		$lifecycle->expects($this->never())->method('settleWaitingFile');
 		$bindings = $this->bindings([], [
 			$this->row(0, BindingService::STATE_PENDING_DELETE, null),
 			$this->row(40, BindingService::STATE_PENDING_DELETE, null, padId: ''),
 		]);
+		$owed = $this->createMock(OwedDeletions::class);
+		$sweep = $this->service($bindings, $lifecycle, $this->root([]), owed: $owed);
+		$owed->expects($this->never())->method('finishGoneFile');
+		$owed->expects($this->never())->method('finishTrash');
 
-		$result = $this->service($bindings, $lifecycle, $this->root([]))->settleByAge(0, null, 50);
+		$result = $sweep->settleByAge(0, null, 50);
 
 		$this->assertSame(['checked' => 0, 'settled' => 0], $result);
 	}
@@ -422,6 +430,34 @@ class PendingBindingServiceTest extends TestCase {
 		$result = $this->service($bindings, $this->createMock(LifecycleService::class), $this->root([]))->settle(50);
 
 		$this->assertSame(['checked' => 0, 'settled' => 0, 'pending_delete_count' => 4, 'restore_pending_count' => 1], $result);
+	}
+
+	/**
+	 * The sweep, finishing what it owes through $owed - a mock unless the
+	 * test gives one, since what becomes of a row there is OwedDeletionsTest's.
+	 */
+	private function service(
+		BindingService $bindings,
+		LifecycleService&MockObject $lifecycle,
+		IRootFolder $root,
+		bool $deleteOnTrash = true,
+		?FixedClock $clock = null,
+		?LoggerInterface $logger = null,
+		?ILockingProvider $locks = null,
+		?OwedDeletions $owed = null,
+	): PendingBindingService {
+		$appConfig = $this->createMock(AppConfigService::class);
+		$appConfig->method('isDeleteOnTrashEnabled')->willReturn($deleteOnTrash);
+		return new PendingBindingService(
+			$bindings,
+			$appConfig,
+			$lifecycle,
+			$owed ?? $this->createMock(OwedDeletions::class),
+			$root,
+			$locks ?? new InMemoryLockingProvider(),
+			$logger ?? $this->createMock(LoggerInterface::class),
+			$clock ?? new FixedClock(),
+		);
 	}
 
 	private function row(int $fileId, string $state, ?string $path, ?string $padId = null): WaitingBinding {
@@ -439,14 +475,7 @@ class PendingBindingServiceTest extends TestCase {
 		$bindings->method('findPendingDeleteByAge')->willReturnCallback(
 			static fn (int $min, ?int $max, int $limit, ?FileLocation $fileLocation = null): array => array_values(array_filter(
 				$deletes,
-				static fn (WaitingBinding $row): bool => match ($fileLocation) {
-					FileLocation::Gone => $row->filePath === null,
-					FileLocation::InUserTrash => str_starts_with((string)$row->filePath, 'files_trashbin/'),
-					FileLocation::Elsewhere => $row->filePath !== null
-						&& !str_starts_with($row->filePath, 'files_trashbin/')
-						&& !str_starts_with($row->filePath, '__groupfolders/trash/'),
-					null => true,
-				},
+				static fn (WaitingBinding $row): bool => $fileLocation === null || $row->location() === $fileLocation,
 			)),
 		);
 		return $bindings;
@@ -471,23 +500,4 @@ class PendingBindingServiceTest extends TestCase {
 		return $root;
 	}
 
-	private function service(
-		BindingService $bindings,
-		LifecycleService&MockObject $lifecycle,
-		IRootFolder $root,
-		bool $deleteOnTrash = true,
-		?FixedClock $clock = null,
-		?LoggerInterface $logger = null,
-		?InMemoryLockingProvider $locks = null,
-	): PendingBindingService {
-		$lifecycle->method('isDeleteOnTrashEnabled')->willReturn($deleteOnTrash);
-		return new PendingBindingService(
-			$bindings,
-			$lifecycle,
-			$root,
-			$locks ?? new InMemoryLockingProvider(),
-			$logger ?? $this->createMock(LoggerInterface::class),
-			$clock ?? new FixedClock(),
-		);
-	}
 }

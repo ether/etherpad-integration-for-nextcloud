@@ -180,8 +180,7 @@ class BindingService {
 	/**
 	 * Deletions owed, aged by when the trash recorded them, and narrowed to
 	 * where the file is (FileLocation). A team folder's trash on the root
-	 * storage is left out: nothing settles a row there until that trash
-	 * lets the file go.
+	 * storage is in none of them (TEAM_TRASH_PATH).
 	 *
 	 * A row that never had a deleted_at is reached only by a run with
 	 * neither bound - the admin page's. Every age bucket compares the date.

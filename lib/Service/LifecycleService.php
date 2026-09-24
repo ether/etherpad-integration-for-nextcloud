@@ -14,13 +14,11 @@ use OCA\EtherpadNextcloud\Exception\BindingStateConflictException;
 use OCA\EtherpadNextcloud\Exception\LifecycleException;
 use OCA\EtherpadNextcloud\Exception\NotAPadFileException;
 use OCA\EtherpadNextcloud\Exception\PadAlreadyHasBindingException;
-use OCA\EtherpadNextcloud\Exception\RunBudgetSpentException;
 use OCA\EtherpadNextcloud\Util\PadAccessMode;
 use OCA\EtherpadNextcloud\Util\PadFileType;
 use OCA\EtherpadNextcloud\Util\SafeError;
 use OCP\AppFramework\Utility\ITimeFactory;
 use OCP\Files\File;
-use OCP\IConfig;
 use OCP\Lock\LockedException;
 use OCP\Security\ISecureRandom;
 use Psr\Log\LoggerInterface;
@@ -45,7 +43,7 @@ class LifecycleService {
 		private PadFileService $padFileService,
 		private EtherpadClient $etherpadClient,
 		private ManagedPadLifecycle $padLifecycle,
-		private IConfig $config,
+		private AppConfigService $appConfig,
 		private LoggerInterface $logger,
 		private ISecureRandom $secureRandom,
 		private UserNodeResolver $userNodeResolver,
@@ -170,7 +168,7 @@ class LifecycleService {
 			throw $this->failed('Trash', $e);
 		}
 
-		if (!$this->isDeleteOnTrashEnabled()) {
+		if (!$this->appConfig->isDeleteOnTrashEnabled()) {
 			return $this->buildSkippedResult('delete_on_trash_disabled', $fileId);
 		}
 		if ($binding === null) {
@@ -241,148 +239,6 @@ class LifecycleService {
 	}
 
 	/**
-	 * The second half of a trash that could not write its snapshot, taken
-	 * by the sweep: the file sits in its owner's trash now, no longer locked
-	 * by its delete. The pad's content goes into it, then the row goes,
-	 * then the pad - a restore after that makes a new pad from this
-	 * snapshot.
-	 *
-	 * Held to the file's snapshot revision like a restore: a pad behind it
-	 * is not the file's and a pad that is gone has nothing to give, so the
-	 * row is released and the file keeps the snapshot it has. Etherpad
-	 * giving no answer, to the question or while the snapshot is read, is
-	 * Unanswered. A file that did not get its snapshot waits as its
-	 * TrashSnapshotMiss says; whether its trouble is news is
-	 * Binding::untouchedSinceOwed().
-	 *
-	 * Nothing happens while deleting on trash is switched off; the sweep
-	 * does not fetch these rows then at all. One call at a time per file:
-	 * two that overlap could each write their snapshot, the older one last,
-	 * so the sweep holds a lock on the row.
-	 */
-	public function finishTrash(File $file, RunBudget $budget): SettleOutcome {
-		if (!$this->isDeleteOnTrashEnabled()) {
-			return SettleOutcome::Left;
-		}
-		$fileId = (int)$file->getId();
-		$binding = $this->bindingService->findByFileId($fileId);
-		if ($binding === null || $binding->state !== BindingService::STATE_PENDING_DELETE) {
-			return SettleOutcome::Left;
-		}
-		$padId = $binding->padId;
-		$snapshots = $this->snapshotWriters->for($file, $padId, news: $binding->untouchedSinceOwed());
-		$pad = $snapshots->read();
-		if ($pad instanceof TrashSnapshotMiss) {
-			return $this->waitAgain($fileId, $padId, $pad);
-		}
-
-		$timeout = $budget->nextCallTimeout();
-		if ($timeout === null) {
-			// Reading the file took what the run had left.
-			return SettleOutcome::Left;
-		}
-		$probe = $this->padLifecycle->probe($padId, $pad->snapshotRev, ['fileId' => $fileId], $timeout);
-		if ($probe->presence === PadPresence::Unknown) {
-			return SettleOutcome::Unanswered;
-		}
-		if ($probe->presence === PadPresence::Behind) {
-			return $this->bindingService->deleteInState($fileId, $padId, BindingService::STATE_PENDING_DELETE)
-				? SettleOutcome::Settled
-				: SettleOutcome::Left;
-		}
-		if ($probe->presence === PadPresence::Present) {
-			try {
-				$written = $snapshots->writeInTrash($pad, $probe->revisions, $budget, fn (): bool => $this->userNodeResolver->hasMoved($file));
-			} catch (RunBudgetSpentException) {
-				return SettleOutcome::Left;
-			}
-			if ($written === TrashSnapshotMiss::SnapshotNotFetched) {
-				return SettleOutcome::Unanswered;
-			}
-			if ($written instanceof TrashSnapshotMiss) {
-				return $this->waitAgain($fileId, $padId, $written);
-			}
-		}
-		return $this->deleteOwed($fileId, $padId, BindingService::STATE_PENDING_DELETE, $probe->presence, $budget, claimFirst: true);
-	}
-
-	/**
-	 * A deletion owed for a file that is gone for good: nothing is left in
-	 * the file cache under its id, in Files or in any trash. Etherpad is
-	 * asked first, so one that does not answer costs one call; then the pad
-	 * goes, then the row.
-	 *
-	 * Nothing happens while deleting on trash is switched off: this is the
-	 * deletion that setting governs, only later. The sweep does not fetch
-	 * these rows then at all; the check holds for any other caller.
-	 */
-	public function finishGoneFile(int $fileId, string $padId, string $state, RunBudget $budget): SettleOutcome {
-		if (!$this->isDeleteOnTrashEnabled()) {
-			return SettleOutcome::Left;
-		}
-		$presence = $this->padLifecycle->presenceOf($padId, -1, ['fileId' => $fileId], $budget->callTimeout());
-		if ($presence === PadPresence::Unknown) {
-			return SettleOutcome::Unanswered;
-		}
-		return $this->deleteOwed($fileId, $padId, $state, $presence, $budget, claimFirst: false);
-	}
-
-	/**
-	 * The last step of a deletion owed: row and pad.
-	 *
-	 * $claimFirst, for a file in a trash: the row goes first. It is what a
-	 * restore takes the pad back by, and whichever of the two moves it
-	 * first has the pad - the other leaves it be. Not started when no call
-	 * would fit in the run any more. Once the row is gone the pad goes
-	 * whatever the run has left, each call bounded by the client's own
-	 * timeout: stopping between the two calls a group pad takes would
-	 * leave the group for good. A pad that still cannot be deleted is left
-	 * over, and nothing leads to it: it is logged with its id. Its content
-	 * is in the file.
-	 *
-	 * Without it, for a file gone for good, the pad goes first. No restore
-	 * can come for that file, and a pad that could not be deleted keeps its
-	 * row, so the next run tries again.
-	 */
-	private function deleteOwed(int $fileId, string $padId, string $state, PadPresence $presence, RunBudget $budget, bool $claimFirst): SettleOutcome {
-		if ($claimFirst && ($budget->nextCallTimeout() === null || !$this->bindingService->deleteInState($fileId, $padId, $state))) {
-			return SettleOutcome::Left;
-		}
-		try {
-			$this->padLifecycle->discardIfPresent($padId, $claimFirst ? null : $budget, knownAbsent: $presence === PadPresence::Absent);
-		} catch (\Throwable $e) {
-			$context = ['app' => 'etherpad_nextcloud', 'fileId' => $fileId, ...SafeError::context($e)];
-			if ($claimFirst) {
-				$this->logger->warning('Could not delete a pad whose binding is gone. It is left over.', [...$context, 'padId' => $padId]);
-				return SettleOutcome::Settled;
-			}
-			if ($e instanceof RunBudgetSpentException) {
-				return SettleOutcome::Left;
-			}
-			$this->logger->warning('Could not delete the pad of a file that is gone for good. Its row stays for the next run.', $context);
-			return SettleOutcome::Unanswered;
-		}
-		if (!$claimFirst) {
-			// The result is not checked: a file with no file cache row does
-			// not come back, so no other flow races for this row.
-			$this->bindingService->deleteInState($fileId, $padId, $state);
-		}
-		return SettleOutcome::Settled;
-	}
-
-	/**
-	 * A row left for a later run. The file's own trouble moves it to the
-	 * back of the queue, its deleted_at kept; what passes by itself is
-	 * tried again where the row is.
-	 */
-	private function waitAgain(int $fileId, string $padId, TrashSnapshotMiss $miss): SettleOutcome {
-		if ($miss->movesTheRowBack()) {
-			$this->bindingService->transition($fileId, $padId, BindingService::STATE_PENDING_DELETE, BindingService::STATE_PENDING_DELETE);
-		}
-		return SettleOutcome::Left;
-	}
-
-	/**
 	 * Trashed again while its restore is undecided. The pad may hold the only
 	 * current copy, so it is left alone, and no snapshot is taken: one of a
 	 * pad that is not the file's would overwrite the only good copy. The row
@@ -412,7 +268,7 @@ class LifecycleService {
 		if ($binding === null) {
 			// No row to settle. Whether to make a new pad is the setting's
 			// call, as deleting the old one was.
-			if (!$this->isDeleteOnTrashEnabled()) {
+			if (!$this->appConfig->isDeleteOnTrashEnabled()) {
 				return $this->buildSkippedResult('delete_on_trash_disabled', $fileId);
 			}
 			return $this->restoreWithoutBinding($file, $fileId);
@@ -852,11 +708,6 @@ class LifecycleService {
 			'fileId' => $fileId,
 		]);
 		return $result;
-	}
-
-	/** Whether a trash deletes pads at all. The sweep asks too, to leave out the rows only a deletion settles. */
-	public function isDeleteOnTrashEnabled(): bool {
-		return (string)$this->config->getAppValue('etherpad_nextcloud', 'delete_on_trash', 'yes') === 'yes';
 	}
 
 	private function isPadFile(File $file): bool {
