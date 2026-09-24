@@ -331,22 +331,6 @@
 		)]]></code>
     </RedundantCastGivenDocblockType>
   </file>
-  <file src="lib/Service/LifecycleService.php">
-    <RedundantCastGivenDocblockType>
-      <code><![CDATA[(bool)($result['delete_pending'] ?? false)]]></code>
-      <code><![CDATA[(bool)($result['snapshot_persisted'] ?? false)]]></code>
-      <code><![CDATA[(int)$file->getId()]]></code>
-      <code><![CDATA[(int)($result['deleted_at'] ?? 0)]]></code>
-      <code><![CDATA[(string)$file->getContent()]]></code>
-      <code><![CDATA[(string)($result['new_pad_id'] ?? '')]]></code>
-      <code><![CDATA[(string)($result['new_pad_id'] ?? '')]]></code>
-      <code><![CDATA[(string)($result['old_pad_id'] ?? '')]]></code>
-      <code><![CDATA[(string)($result['old_pad_id'] ?? '')]]></code>
-      <code><![CDATA[(string)($result['reason'] ?? 'unknown')]]></code>
-      <code><![CDATA[(string)($result['reason'] ?? 'unknown')]]></code>
-      <code><![CDATA[(string)($result['reason'] ?? 'unknown')]]></code>
-    </RedundantCastGivenDocblockType>
-  </file>
   <file src="lib/Service/PadBootstrapService.php">
     <RedundantCastGivenDocblockType>
       <code><![CDATA[(int)$file->getId()]]></code>

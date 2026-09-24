@@ -11,6 +11,7 @@ use OCA\EtherpadNextcloud\Service\EtherpadClient;
 use OCA\EtherpadNextcloud\Service\LifecycleResult;
 use OCA\EtherpadNextcloud\Service\LifecycleService;
 use OCA\EtherpadNextcloud\Service\PadFileService;
+use OCA\EtherpadNextcloud\Service\RestoreService;
 use OCA\EtherpadNextcloud\Service\PadSnapshot;
 use OCA\EtherpadNextcloud\Service\ParsedPadFile;
 use OCA\EtherpadNextcloud\Service\UserNodeResolver;
@@ -401,22 +402,47 @@ class LifecycleServiceTest extends TestCase {
 		}
 	}
 
+	/**
+	 * A file without a row is left alone. It says why: it names a pad on
+	 * another server, or no row is found for it - which is what a file that
+	 * cannot be read says too, since nothing shows it is external.
+	 */
+	public function testHandleTrashSaysWhyAFileWithoutARowIsLeft(): void {
+		$cases = [
+			'external' => [new ParsedPadFile([], '', 'ext.abc', BindingService::ACCESS_PUBLIC, '', true, -1), 'external_pad'],
+			'managed' => [new ParsedPadFile([], '', 'pad-a', BindingService::ACCESS_PUBLIC, '', false, -1), 'binding_not_found'],
+			'unreadable' => [new \RuntimeException('no key for this user'), 'binding_not_found'],
+		];
+		foreach ($cases as $case => [$read, $reason]) {
+			$bindingService = $this->createMock(BindingService::class);
+			$bindingService->method('findByFileId')->willReturn(null);
+			$padFileService = $this->createMock(PadFileService::class);
+			$file = $this->createMock(File::class);
+			$file->method('getId')->willReturn(57);
+			$file->method('getName')->willReturn('Unbound.pad');
+			if ($read instanceof ParsedPadFile) {
+				$file->method('getContent')->willReturn('doc');
+				$padFileService->method('readPad')->with('doc')->willReturn($read);
+			} else {
+				$file->method('getContent')->willThrowException($read);
+			}
+
+			$result = $this->lifecycleService(bindings: $bindingService, padFiles: $padFileService)->handleTrash($file);
+
+			$this->assertSame(['status' => LifecycleResult::SKIPPED, 'reason' => $reason], $result, $case);
+		}
+	}
+
 	/** A .pad file whose row waits undecided, naming 'old-pad'. */
 	private function undecidedPadFile(int $fileId, BindingService&MockObject $bindingService): File&MockObject {
 		$bindingService->method('findByFileId')->with($fileId)->willReturn(new Binding(fileId: $fileId, padId: 'old-pad', accessMode: BindingService::ACCESS_PUBLIC, state: BindingService::STATE_RESTORE_PENDING));
 		return $this->padFile($fileId, 'Undecided.pad');
 	}
 
-	// ------------------------------------------------------------------
-	// Wrapper tests for trashByPath / restoreByPath / recoverByFileId.
-	// These were previously in PadLifecycleOperationServiceTest and now
-	// live here since the reshape logic moved into LifecycleService.
-	// They verify that the public wrappers resolve the node, call the
-	// underlying lifecycle step, and reshape the result into the public
-	// shape expected by controllers.
-	// ------------------------------------------------------------------
+	// The API's ways in resolve the node and hand out the step's result
+	// after the file as the caller named it.
 
-	public function testTrashByPathReshapesSkippedResult(): void {
+	public function testTrashByPathHandsOutASkippedTrash(): void {
 		$file = $this->createMock(File::class);
 		$file->method('getId')->willReturn(42);
 		$file->method('getName')->willReturn('Test.pad');
@@ -457,7 +483,7 @@ class LifecycleServiceTest extends TestCase {
 		], $result);
 	}
 
-	public function testTrashByPathReshapesTrashedResult(): void {
+	public function testTrashByPathHandsOutATrash(): void {
 		$fileId = 21;
 		$padId = 'pad-abc';
 
@@ -500,7 +526,7 @@ class LifecycleServiceTest extends TestCase {
 		$this->assertIsInt($result['deleted_at']);
 		$this->assertTrue($result['snapshot_persisted']);
 		$this->assertFalse($result['delete_pending']);
-		$this->assertArrayNotHasKey('reason', $result);
+		$this->assertSame(['file', 'status', 'deleted_at', 'snapshot_persisted', 'delete_pending'], array_keys($result));
 	}
 
 	public function testTrashByPathRejectsEmptyPath(): void {
@@ -510,79 +536,28 @@ class LifecycleServiceTest extends TestCase {
 		$service->trashByPath('alice', '   ');
 	}
 
-	public function testRestoreByPathReshapesSkippedResult(): void {
-		$file = $this->createMock(File::class);
-		$file->method('getId')->willReturn(42);
-		$file->method('getName')->willReturn('Notes.txt'); // not a .pad => skipped
+	/**
+	 * A restore or a recovery the API asked for comes back as the restore
+	 * answered it, after the file as the caller named it - restored, or
+	 * skipped with its reason.
+	 */
+	public function testTheRestoreWaysInHandOutWhatTheRestoreAnswers(): void {
+		$cases = [
+			'restored' => [LifecycleResult::restored('pad-old', 'pad-new'), LifecycleResult::restored('pad-old', 'pad-recovered')],
+			'skipped' => [['status' => LifecycleResult::SKIPPED, 'reason' => 'not_pad_file'], ['status' => LifecycleResult::SKIPPED, 'reason' => 'external_pad']],
+		];
+		foreach ($cases as $case => [$restored, $recovered]) {
+			$file = $this->createMock(File::class);
+			$restores = $this->createMock(RestoreService::class);
+			$restores->method('restore')->with($file)->willReturn($restored);
+			$restores->method('recoverFromSnapshot')->with($file)->willReturn($recovered);
+			$userNodeResolver = $this->createMock(UserNodeResolver::class);
+			$userNodeResolver->method('resolveUserFileNodeByPath')->with('alice', '/Test.pad')->willReturn($file);
+			$userNodeResolver->method('resolveUserFileNodeById')->with('alice', 42)->willReturn($file);
+			$service = $this->lifecycleService(nodes: $userNodeResolver, paths: new PathNormalizer(), restores: $restores);
 
-		$bindingService = $this->createMock(BindingService::class);
-		$bindingService->expects($this->never())->method('findByFileId');
-
-		$userNodeResolver = $this->createMock(UserNodeResolver::class);
-		$userNodeResolver->expects($this->once())
-			->method('resolveUserFileNodeByPath')
-			->with('alice', '/Test.pad')
-			->willReturn($file);
-
-		$service = $this->lifecycleService(bindings: $bindingService, nodes: $userNodeResolver, paths: new PathNormalizer());
-
-		$result = $service->restoreByPath('alice', '/Test.pad');
-
-		$this->assertSame([
-			'file' => '/Test.pad',
-			'status' => LifecycleResult::SKIPPED,
-			'reason' => 'not_pad_file',
-		], $result);
+			$this->assertSame(['file' => '/Test.pad', ...$restored], $service->restoreByPath('alice', '/Test.pad'), $case);
+			$this->assertSame(['file_id' => 42, ...$recovered], $service->recoverByFileId('alice', 42), $case);
+		}
 	}
-
-	public function testRecoverByFileIdReshapesSkippedExternalPadResult(): void {
-		$fileId = 51;
-
-		$bindingService = $this->createMock(BindingService::class);
-		$bindingService->expects($this->once())
-			->method('findByFileId')
-			->with($fileId)
-			->willReturn(null);
-
-		$padFileService = $this->createMock(PadFileService::class);
-		$padFileService->expects($this->once())
-			->method('readPad')
-			->with('doc')
-			->willReturn(new ParsedPadFile(
-				frontmatter: ['pad_id' => 'ext.abc', 'access_mode' => BindingService::ACCESS_PUBLIC],
-				body: '',
-				padId: 'ext.abc',
-				accessMode: BindingService::ACCESS_PUBLIC,
-				padUrl: '',
-				isExternal: true,
-				snapshotRev: -1,
-			));
-
-		$file = $this->createMock(File::class);
-		$file->method('getId')->willReturn($fileId);
-		$file->method('getName')->willReturn('Ext.pad');
-		$file->method('getContent')->willReturn('doc');
-
-		$userNodeResolver = $this->createMock(UserNodeResolver::class);
-		$userNodeResolver->expects($this->once())
-			->method('resolveUserFileNodeById')
-			->with('alice', $fileId)
-			->willReturn($file);
-
-		$service = $this->lifecycleService(
-			bindings: $bindingService,
-			padFiles: $padFileService,
-			nodes: $userNodeResolver,
-			paths: new PathNormalizer(),
-		);
-
-		$result = $service->recoverByFileId('alice', $fileId);
-
-		$this->assertSame([
-			'file_id' => $fileId,
-			'status' => LifecycleResult::SKIPPED,
-			'reason' => 'external_pad',
-		], $result);
-	}
-
 }

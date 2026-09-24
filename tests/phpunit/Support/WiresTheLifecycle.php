@@ -42,6 +42,7 @@ trait WiresTheLifecycle {
 	 * bindings; they log into $padLifecycleLogger, a mock of its own unless
 	 * the test wants their lines in $logger too. Deleting on trash is
 	 * $deleteOnTrash; no test fault strikes unless the test gives its own.
+	 * A test of the API's ways in alone gives its own $restores.
 	 */
 	private function lifecycleService(
 		?BindingService $bindings = null,
@@ -54,6 +55,7 @@ trait WiresTheLifecycle {
 		?UserNodeResolver $nodes = null,
 		?PathNormalizer $paths = null,
 		?TestFaults $testFaults = null,
+		?RestoreService $restores = null,
 	): LifecycleService {
 		$bindings ??= $this->createMock(BindingService::class);
 		$etherpad ??= $this->createMock(EtherpadClient::class);
@@ -74,7 +76,7 @@ trait WiresTheLifecycle {
 			$paths ?? $this->createMock(PathNormalizer::class),
 			new FixedClock(),
 			new TrashSnapshotWriters($etherpad, $padFiles, $logger, $testFaults),
-			$this->wireRestoreService($bindings, $etherpad, $padFiles, $padLifecycle, $appConfig, $logger, $padLifecycleLogger, $secureRandom, $testFaults),
+			$restores ?? $this->wireRestoreService($bindings, $etherpad, $padFiles, $padLifecycle, $appConfig, $logger, $padLifecycleLogger, $secureRandom, $testFaults),
 		);
 	}
 

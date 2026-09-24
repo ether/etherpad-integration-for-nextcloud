@@ -40,85 +40,35 @@ class LifecycleService {
 	}
 
 	// ------------------------------------------------------------------
-	// Public wrappers that take (uid, path/fileId), resolve the node
-	// internally, and reshape the result so controllers don't have to.
-	// Mirrors the surface that `PadLifecycleOperationService` used to
-	// expose before it was folded into this service.
+	// The API's ways in, which name the file by the user's path or by its
+	// id. Each hands out the step's result as it is, after the file as the
+	// caller named it.
 	// ------------------------------------------------------------------
 
 	/**
-	 * @return array{file:string,status:string,reason?:string,deleted_at?:int,snapshot_persisted?:bool,delete_pending?:bool}
+	 * @return array{file: string, status: string, reason?: string, deleted_at?: int, snapshot_persisted?: bool, delete_pending?: bool}
 	 * @throws \OCP\Files\NotFoundException
 	 */
 	public function trashByPath(string $uid, string $file): array {
 		$path = $this->normalizeLifecyclePath($file);
-		$node = $this->userNodeResolver->resolveUserFileNodeByPath($uid, $path);
-		$result = $this->handleTrash($node);
-
-		if (($result['status'] ?? '') === LifecycleResult::SKIPPED) {
-			return [
-				'file' => $path,
-				'status' => LifecycleResult::SKIPPED,
-				'reason' => (string)($result['reason'] ?? 'unknown'),
-			];
-		}
-
-		return [
-			'file' => $path,
-			'status' => LifecycleResult::TRASHED,
-			'deleted_at' => (int)($result['deleted_at'] ?? 0),
-			'snapshot_persisted' => (bool)($result['snapshot_persisted'] ?? false),
-			'delete_pending' => (bool)($result['delete_pending'] ?? false),
-		];
+		return ['file' => $path] + $this->handleTrash($this->userNodeResolver->resolveUserFileNodeByPath($uid, $path));
 	}
 
 	/**
-	 * @return array{file:string,status:string,reason?:string,old_pad_id?:string,new_pad_id?:string}
+	 * @return array{file: string, status: string, reason?: string, old_pad_id?: string, new_pad_id?: string}
 	 * @throws \OCP\Files\NotFoundException
 	 */
 	public function restoreByPath(string $uid, string $file): array {
 		$path = $this->normalizeLifecyclePath($file);
-		$node = $this->userNodeResolver->resolveUserFileNodeByPath($uid, $path);
-		$result = $this->handleRestore($node);
-
-		if (($result['status'] ?? '') === LifecycleResult::SKIPPED) {
-			return [
-				'file' => $path,
-				'status' => LifecycleResult::SKIPPED,
-				'reason' => (string)($result['reason'] ?? 'unknown'),
-			];
-		}
-
-		return [
-			'file' => $path,
-			'status' => LifecycleResult::RESTORED,
-			'old_pad_id' => (string)($result['old_pad_id'] ?? ''),
-			'new_pad_id' => (string)($result['new_pad_id'] ?? ''),
-		];
+		return ['file' => $path] + $this->handleRestore($this->userNodeResolver->resolveUserFileNodeByPath($uid, $path));
 	}
 
 	/**
-	 * @return array{file_id:int,status:string,reason?:string,old_pad_id?:string,new_pad_id?:string}
+	 * @return array{file_id: int, status: string, reason?: string, old_pad_id?: string, new_pad_id?: string}
 	 * @throws \OCP\Files\NotFoundException
 	 */
 	public function recoverByFileId(string $uid, int $fileId): array {
-		$node = $this->userNodeResolver->resolveUserFileNodeById($uid, $fileId);
-		$result = $this->restoreService->recoverFromSnapshot($node);
-
-		if (($result['status'] ?? '') === LifecycleResult::SKIPPED) {
-			return [
-				'file_id' => $fileId,
-				'status' => LifecycleResult::SKIPPED,
-				'reason' => (string)($result['reason'] ?? 'unknown'),
-			];
-		}
-
-		return [
-			'file_id' => $fileId,
-			'status' => LifecycleResult::RESTORED,
-			'old_pad_id' => (string)($result['old_pad_id'] ?? ''),
-			'new_pad_id' => (string)($result['new_pad_id'] ?? ''),
-		];
+		return ['file_id' => $fileId] + $this->restoreService->recoverFromSnapshot($this->userNodeResolver->resolveUserFileNodeById($uid, $fileId));
 	}
 
 	private function normalizeLifecyclePath(string $file): string {
@@ -131,7 +81,7 @@ class LifecycleService {
 
 	/** @return array{status: string, reason?: string, deleted_at?: int, snapshot_persisted?: bool, delete_pending?: bool} */
 	public function handleTrash(File $file): array {
-		$fileId = (int)$file->getId();
+		$fileId = $file->getId();
 		if (!PadFileType::isPad($file->getName())) {
 			return LifecycleResult::skipped('not_pad_file', $fileId, $this->logger);
 		}
@@ -251,14 +201,10 @@ class LifecycleService {
 		return $this->restoreService->restore($file);
 	}
 
-	/** Callers that already have `getContent()` can pass it to skip a re-read. */
-	private function isExternalPadFile(File $file, ?string $content = null): bool {
+	/** Whether the file names an external pad. One that cannot be read does not. */
+	private function isExternalPadFile(File $file): bool {
 		try {
-			if ($content === null) {
-				$content = (string)$file->getContent();
-			}
-			$pad = $this->padFileService->readPad($content);
-			return $pad->namesAnExternalPad();
+			return $this->padFileService->readPad($file->getContent())->namesAnExternalPad();
 		} catch (\Throwable) {
 			return false;
 		}
