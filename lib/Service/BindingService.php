@@ -235,9 +235,13 @@ class BindingService {
 		} elseif ($fileLocation === FileLocation::InUserTrash) {
 			$qb->andWhere($qb->expr()->like('fc.path', $qb->createNamedParameter($userTrash)));
 		} elseif ($fileLocation === FileLocation::Elsewhere) {
+			// NOT (LIKE), not notLike(): on SQLite and Oracle Nextcloud's
+			// notLike() leaves out the ESCAPE that like() adds, so the escaped
+			// prefix would match no path and a trashed file pass for one here.
+			$teamTrash = $this->db->escapeLikeParameter(self::TEAM_TRASH_PATH) . '%';
 			$qb->andWhere($qb->expr()->isNotNull('fc.fileid'))
-				->andWhere($qb->expr()->notLike('fc.path', $qb->createNamedParameter($userTrash)))
-				->andWhere($qb->expr()->notLike('fc.path', $qb->createNamedParameter($this->db->escapeLikeParameter(self::TEAM_TRASH_PATH) . '%')));
+				->andWhere($qb->createFunction('NOT (' . $qb->expr()->like('fc.path', $qb->createNamedParameter($userTrash)) . ')'))
+				->andWhere($qb->createFunction('NOT (' . $qb->expr()->like('fc.path', $qb->createNamedParameter($teamTrash)) . ')'));
 		}
 
 		$result = $qb->executeQuery();

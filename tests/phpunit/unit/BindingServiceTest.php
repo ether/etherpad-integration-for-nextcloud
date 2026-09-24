@@ -256,10 +256,11 @@ class BindingServiceTest extends TestCase {
 	public function testOwedDeletionsCanBeAskedForByWhereTheFileIs(): void {
 		$expected = [
 			[FileLocation::Gone, [['eq', 'b.state', 'param1'], ['isNull', 'fc.fileid']], []],
-			[FileLocation::InUserTrash, [['eq', 'b.state', 'param1'], ['like', 'fc.path', 'param2']], ['files\\_trashbin/%']],
+			[FileLocation::InUserTrash, [['eq', 'b.state', 'param1'], 'fc.path LIKE param2'], ['files\\_trashbin/%']],
 			[
 				FileLocation::Elsewhere,
-				[['eq', 'b.state', 'param1'], ['isNotNull', 'fc.fileid'], ['notLike', 'fc.path', 'param2'], ['notLike', 'fc.path', 'param3']],
+				// The negated like(), which carries the ESCAPE on every database; notLike() does not on SQLite and Oracle.
+				[['eq', 'b.state', 'param1'], ['isNotNull', 'fc.fileid'], 'NOT (fc.path LIKE param2)', 'NOT (fc.path LIKE param3)'],
 				// A team folder's trash on the root storage waits for that trash, not for a turn.
 				['files\\_trashbin/%', '\\_\\_groupfolders/trash/%'],
 			],
@@ -305,7 +306,7 @@ class BindingServiceTest extends TestCase {
 class BindingServiceTestQueryBuilder implements IQueryBuilder {
 	/** @var array<int,array{string,mixed,int|null}> */
 	public array $parameters = [];
-	/** @var array<int,array<int,string>> */
+	/** @var array<int,array<int,string>|string> */
 	public array $conditions = [];
 	public int $maxResults = 0;
 	private int $parameterCounter = 0;
@@ -413,14 +414,9 @@ class BindingServiceTestExpressionBuilder {
 		return ['isNotNull', $field];
 	}
 
-	/** @return array{string,string,string} */
-	public function like(string $field, string $parameter): array {
-		return ['like', $field, $parameter];
-	}
-
-	/** @return array{string,string,string} */
-	public function notLike(string $field, string $parameter): array {
-		return ['notLike', $field, $parameter];
+	/** SQL, as the real one returns it: the query negates it inside a function. */
+	public function like(string $field, string $parameter): string {
+		return $field . ' LIKE ' . $parameter;
 	}
 }
 
