@@ -161,10 +161,10 @@ final class TrashSnapshotWriter {
 	 * that moment.
 	 *
 	 * Then, for the sweep, whether the file moved while it was written, also
-	 * when the count fails: if so the pad stays, and the caller has a copy
-	 * to clear. Asked after the count, so that less gets past both
-	 * questions; what still does, and what would close it, is in
-	 * docs/architecture.md.
+	 * when the count gets no answer or no time: if so the pad stays, and the
+	 * caller has a copy to clear. Any other error goes on as it is. Asked
+	 * after the count, so that less gets past both questions; what still
+	 * does, and what would close it, is in docs/architecture.md.
 	 *
 	 * @param ?\Closure(): bool $moved
 	 * @return TrashSnapshotMiss|true
@@ -177,7 +177,7 @@ final class TrashSnapshotWriter {
 		}
 		try {
 			$unchanged = $this->etherpadClient->getRevisionsCount($this->padId, RunBudget::timeoutOf($budget)) === $snapshot->revision;
-		} catch (\Throwable $countError) {
+		} catch (EtherpadClientException|RunBudgetSpentException $countError) {
 			return $this->movedWhileWritten($moved) ?? throw $countError;
 		}
 		return $this->movedWhileWritten($moved) ?? ($unchanged ? true : $this->missed(TrashSnapshotMiss::PadChanged));

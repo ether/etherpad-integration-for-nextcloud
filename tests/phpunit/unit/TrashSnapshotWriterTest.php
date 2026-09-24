@@ -216,6 +216,28 @@ class TrashSnapshotWriterTest extends TestCase {
 		$this->assertSame([['debug', 'file_moved_while_written']], $this->logged);
 	}
 
+	/**
+	 * An error on the count after the write that is neither Etherpad's
+	 * silence nor the run's end reaches the caller, whether or not the file
+	 * moved: taken for a move, it would never be reported.
+	 */
+	public function testAnyOtherErrorOnTheCountReachesTheCaller(): void {
+		$this->etherpad->method('getRevisionsCount')->willReturnOnConsecutiveCalls(5, $this->throwException(new \LogicException('a bug')));
+		$this->etherpad->method('getText')->willReturn('text');
+		$this->etherpad->method('getHTML')->willReturn('<p>text</p>');
+		$asked = 0;
+		$moved = static function () use (&$asked): bool {
+			return ++$asked === 2;
+		};
+
+		try {
+			$this->writer()->writeInTrash($this->pad(snapshotRev: 4), 5, $this->aRun(), $moved);
+			$this->fail('An error that is not Etherpad\'s was taken for a move.');
+		} catch (\LogicException) {
+		}
+		$this->assertSame([], $this->logged);
+	}
+
 	/** A count after the write that fails with the file still in place goes on as before. */
 	public function testAFailedCountWithTheFileInPlaceIsNoMove(): void {
 		$this->etherpad->method('getRevisionsCount')->willReturnOnConsecutiveCalls(5, $this->throwException(new EtherpadClientException('Operation timed out')));
