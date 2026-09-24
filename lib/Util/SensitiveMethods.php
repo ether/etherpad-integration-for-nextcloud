@@ -55,7 +55,7 @@ final class SensitiveMethods {
 		// behind, and carried from frame to frame as the parsed file, whose
 		// public fields the serializer writes out.
 		\OCA\EtherpadNextcloud\Service\RestoreService::class => [
-			'writeRestoredContent', 'restoreWithReplacement', 'seedFromSnapshot',
+			'writeRestoredContent', 'restoreWithReplacement', 'restoreOntoNewPad', 'seedFromSnapshot',
 		],
 		\OCA\EtherpadNextcloud\Service\PadFileLockRetryService::class => ['putContentWithSyncLockRetry'],
 		\OCA\EtherpadNextcloud\Service\PadCreationService::class => ['writeCreatedFile'],

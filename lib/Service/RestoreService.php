@@ -206,12 +206,8 @@ class RestoreService {
 	/**
 	 * The row's pad is not the file's any more: Etherpad has no such pad, or
 	 * one with fewer revisions than the file's snapshot. The snapshot is all
-	 * that is left of the file's pad, and a new pad is made from it.
-	 *
-	 * The row is claimed before the file is touched, as restoreWithoutBinding
-	 * does it: whoever loses the claim has written nothing, and so has
-	 * nothing to put back over someone else's content. After the claim the
-	 * only step left is the write, so there is no file to roll back either.
+	 * that is left of the file's pad, and a new pad is made from it, on the
+	 * row as it was read.
 	 *
 	 * @return array{status: string, reason?: string, old_pad_id?: string, new_pad_id?: string}
 	 */
@@ -224,36 +220,29 @@ class RestoreService {
 		}
 
 		try {
-			[$newPadId, $updatedContent] = $this->seedFromSnapshot($fileId, $pad, $accessMode, $oldPadId);
-		} catch (\Throwable $e) {
+			$result = $this->restoreOntoNewPad(
+				$file,
+				$fileId,
+				$pad,
+				$accessMode,
+				$oldPadId,
+				'restore with replacement',
+				fn (string $newPadId): bool => $this->claimForReplacement($fileId, $oldPadId, $fromState, $newPadId),
+			);
+		} catch (LifecycleException $e) {
+			// Besides the new pad, a failure takes the row still naming the
+			// old one: that pad is not the file's, and without a row the file
+			// offers its own recovery.
 			$this->releaseReplacedRow($fileId, $oldPadId, $fromState);
-			throw LifecycleException::failed('Restore', $e);
-		}
-
-		try {
-			if (!$this->claimForReplacement($fileId, $oldPadId, $fromState, $newPadId)) {
-				// Another flow holds the row, and the file is its to write.
-				$this->provisionedPadRollback->discardUnlessBoundToFile($fileId, $newPadId, 'restore with replacement');
-				return LifecycleResult::skipped('binding_state_transition_conflict', $fileId, $this->logger);
-			}
-			$this->writeRestoredContent($file, $updatedContent);
-		} catch (\Throwable $e) {
-			// The claim may have landed, landed without saying so, or since
-			// been taken over by a trash. An active row naming the replacement
-			// goes with it; one a trash took over keeps it. The row still
-			// naming the old pad goes too: that pad is not the file's, and
-			// without a row the file offers its own recovery.
-			$this->provisionedPadRollback->removeMatchingBindingAndDiscard($fileId, $newPadId, 'restore with replacement');
-			$this->releaseReplacedRow($fileId, $oldPadId, $fromState);
-			throw LifecycleException::failed('Restore', $e);
+			throw $e;
 		}
 
 		// Outside the try on purpose: the restore is done and recorded, and
 		// nothing about clearing up after it may turn that into a failure.
-		if ($presence === PadPresence::Absent) {
+		if ($result['status'] === LifecycleResult::RESTORED && $presence === PadPresence::Absent) {
 			$this->discardSupersededPad($fileId, $oldPadId);
 		}
-		return LifecycleResult::restored($oldPadId, $newPadId);
+		return $result;
 	}
 
 	/**
@@ -363,9 +352,7 @@ class RestoreService {
 
 	/**
 	 * A new pad holding the file's snapshot, and the `.pad` content naming
-	 * it: what both restores from a snapshot share. Which row the pad gets,
-	 * and how that is undone, stays with each caller. A failure here removes
-	 * the pad here; no row names it yet.
+	 * it. A failure here removes the pad here; no row names it yet.
 	 *
 	 * @return array{string,string} the new pad's id, and the content that names it
 	 */
@@ -433,30 +420,64 @@ class RestoreService {
 	private function restoreWithoutBinding(File $file, int $fileId): array {
 		try {
 			$pad = $this->readRestoredPad($file);
-			if ($pad->namesAnExternalPad()) {
-				return LifecycleResult::skipped('external_pad', $fileId, $this->logger);
-			}
-			[$newPadId, $updatedContent] = $this->seedFromSnapshot($fileId, $pad, $pad->accessMode, $pad->padId);
+		} catch (\Throwable $e) {
+			throw LifecycleException::failed('Restore', $e);
+		}
+		if ($pad->namesAnExternalPad()) {
+			return LifecycleResult::skipped('external_pad', $fileId, $this->logger);
+		}
+		// The unique constraint on file_id is the claim: of two recoveries of
+		// one file, the second's createBinding throws, and it writes nothing
+		// over the first's content.
+		return $this->restoreOntoNewPad(
+			$file,
+			$fileId,
+			$pad,
+			$pad->accessMode,
+			$pad->padId,
+			'restore without binding',
+			function (string $newPadId) use ($fileId, $pad): bool {
+				$this->bindingService->createBinding($fileId, $newPadId, $pad->accessMode);
+				return true;
+			},
+		);
+	}
+
+	/**
+	 * The file restored onto a new pad made from its snapshot: what both
+	 * restores from a snapshot share. The row is claimed for the new pad
+	 * before the file is touched ($claim, true when this restore holds the
+	 * row): whoever loses the claim has written nothing, and so has nothing
+	 * to put back over someone else's content. After the claim the only
+	 * step left is the write, so there is no file to roll back either.
+	 *
+	 * A claim lost to another flow leaves the row and the file to it. One
+	 * that fails, or a write that fails, takes the new pad down, and an
+	 * active row naming it with it - that row would contradict a `.pad` that
+	 * still names the old pad - while a row a trash took over keeps it.
+	 *
+	 * @param \Closure(string): bool $claim
+	 * @return array{status: string, reason?: string, old_pad_id?: string, new_pad_id?: string}
+	 * @throws LifecycleException
+	 */
+	private function restoreOntoNewPad(File $file, int $fileId, ParsedPadFile $pad, string $accessMode, string $oldPadId, string $flow, \Closure $claim): array {
+		try {
+			[$newPadId, $updatedContent] = $this->seedFromSnapshot($fileId, $pad, $accessMode, $oldPadId);
 		} catch (\Throwable $e) {
 			throw LifecycleException::failed('Restore', $e);
 		}
 
 		try {
-			// Claim the binding row before touching the file. The unique
-			// constraint on file_id is our serialization point against a
-			// concurrent recovery for the same file — if another request
-			// got here first, createBinding throws and we abort cleanly
-			// without overwriting their .pad content.
-			$this->bindingService->createBinding($fileId, $newPadId, $pad->accessMode);
+			if (!$claim($newPadId)) {
+				$this->provisionedPadRollback->discardUnlessBoundToFile($fileId, $newPadId, $flow);
+				return LifecycleResult::skipped('binding_state_transition_conflict', $fileId, $this->logger);
+			}
 			$this->writeRestoredContent($file, $updatedContent);
 		} catch (\Throwable $e) {
-			// Nothing consistent to keep, unlike a first init: a row naming
-			// the new pad would contradict a `.pad` that still names the old.
-			$this->provisionedPadRollback->removeMatchingBindingAndDiscard($fileId, $newPadId, 'restore without binding');
+			$this->provisionedPadRollback->removeMatchingBindingAndDiscard($fileId, $newPadId, $flow);
 			throw LifecycleException::failed('Restore', $e);
 		}
-
-		return LifecycleResult::restored($pad->padId, $newPadId);
+		return LifecycleResult::restored($oldPadId, $newPadId);
 	}
 
 	/** Make the pad a restored snapshot goes into; the names say so. */
