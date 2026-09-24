@@ -522,13 +522,19 @@ solely by the separate external-pad policy, not by these two settings.
 
 Registered in `lib/AppInfo/Application.php`.
 
-- `OCA\Files\Event\LoadAdditionalScriptsEvent` -> `LoadFilesScriptsListener`
-- `OCA\Viewer\Event\LoadViewer` -> `LoadViewerListener`
-- `OCA\Files_Sharing\Event\BeforeTemplateRenderedEvent` -> `LoadPublicShareScriptsListener`
-- `OCA\Files_Trashbin\Events\MoveToTrashEvent` -> `MoveToTrashListener`
-- `OCA\Files_Trashbin\Events\NodeRestoredEvent` -> `RestoreFromTrashListener`
+- `OCP\EventDispatcher\GenericEvent` (Files FullTextSearch's legacy events) -> `FullTextSearchIndexingListener`, `FullTextSearchResultListener`
 - `OCP\Security\CSP\AddContentSecurityPolicyEvent` -> `CSPListener`
+- `OCA\Files\Event\LoadAdditionalScriptsEvent` -> `LoadFilesScriptsListener`
+- `OCA\Files_Sharing\Event\BeforeTemplateRenderedEvent` -> `LoadPublicShareScriptsListener`
 - `OCP\Files\Template\RegisterTemplateCreatorEvent` -> `RegisterTemplateCreatorListener`
+- `OCP\Files\Template\BeforeGetTemplatesEvent` -> `BeforeGetTemplatesListener` (priority -100)
+- `OCP\Files\Template\FileCreatedFromTemplateEvent` -> `FileCreatedFromTemplateListener`
+- `OCA\Viewer\Event\LoadViewer` -> `LoadViewerListener`
+- `OCP\User\Events\UserLoggedOutEvent` -> `UserLoggedOutListener`
+- `OCA\Files_Trashbin\Events\MoveToTrashEvent` -> `MoveToTrashListener`
+- legacy event `OCA\Files_Trashbin::moveToTrash` -> `MoveToTrashListener`
+- `OCA\Files_Trashbin\Events\NodeRestoredEvent` -> `RestoreFromTrashListener`
+- legacy hook `\OCA\Files_Trashbin\Trashbin::post_restore` -> `TrashbinHookHandler::postRestore` -> `RestoreFromTrashListener::handleLegacyHook`
 
 ## App Config Keys
 

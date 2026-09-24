@@ -40,21 +40,20 @@ class RestoreFromTrashListener implements IEventListener {
 		}
 
 		$node = $event->getTarget();
-		if (!$node instanceof File) {
+		if (!$node instanceof File || !$this->mayBeAPad($node)) {
 			return;
 		}
 
 		// On Nextcloud 31 the event carries a node that is not resolvable
-		// yet, so anything reading its id throws and takes the whole restore
-		// down with it — a .pad then cannot be restored from the trash at
-		// all, through the web UI, WebDAV or occ alike. Re-resolve it from
-		// its path before handing it on.
+		// yet, so anything reading its id throws: every .pad restored through
+		// the event would get no pad back, through the web UI, WebDAV or occ
+		// alike. Re-resolve it from its path before handing it on.
 		$node = $this->materialize($node);
 		if ($node === null) {
 			return;
 		}
 
-		$this->restoreNode($node);
+		$this->restoreNode($node, 'event');
 	}
 
 	/**
@@ -71,10 +70,24 @@ class RestoreFromTrashListener implements IEventListener {
 			return;
 		}
 
-		$this->restoreNode($node);
+		$this->restoreNode($node, 'hook');
 	}
 
-	private function restoreNode(File $node): void {
+	/**
+	 * The pad's half of a restore. Nextcloud has put the file back before
+	 * either way in fires, so a failure here cannot stop the restore: thrown
+	 * on, it would only stop what Nextcloud does after the hook and the
+	 * event - the file's versions would stay in the trash, and the user be
+	 * told of a failed restore that succeeded. It is reported here and goes
+	 * no further. What the pad's restore left unfinished waits for the
+	 * sweep, or the file offers its own recovery - save after a database
+	 * that fails again in the middle of the rollback, which can leave a row
+	 * naming a pad the file does not.
+	 *
+	 * $via names the way in, `hook` or `event`, for the log: a core restore
+	 * takes both (Application::register()).
+	 */
+	private function restoreNode(File $node, string $via): void {
 		try {
 			$result = $this->lifecycleService->handleRestore($node);
 			if (($result['status'] ?? '') === LifecycleResult::SKIPPED) {
@@ -85,12 +98,25 @@ class RestoreFromTrashListener implements IEventListener {
 				]);
 			}
 		} catch (\Throwable $e) {
-			$this->logger->error('RestoreFromTrash listener aborted due to lifecycle error', [
+			$this->logger->error('Could not restore the pad of a file back from the trash. The file itself is restored.', [
 				'app' => 'etherpad_nextcloud',
 				'fileId' => $this->loggableFileId($node),
+				'via' => $via,
 				...SafeError::context($e),
 			]);
-			throw $e;
+		}
+	}
+
+	/**
+	 * Whether the restored node can be a .pad, by its name alone: every
+	 * other restored file is passed over before it costs a lookup. A name
+	 * that cannot be read lets the node through, for materialize() to judge.
+	 */
+	private function mayBeAPad(File $node): bool {
+		try {
+			return PadFileType::isPad($node->getName());
+		} catch (\Throwable) {
+			return true;
 		}
 	}
 
@@ -171,8 +197,8 @@ class RestoreFromTrashListener implements IEventListener {
 	 * A node handleRestore can take, or a skip that says why - the one
 	 * standard both ways in are held to. handleRestore reads the id on its
 	 * first line, so a node that cannot answer for one would throw there
-	 * instead: through the event that fails the restore, and through the
-	 * hook it is swallowed and reported twice.
+	 * instead, and be reported as a failed restore of its pad rather than
+	 * passed over with its reason.
 	 */
 	private function acceptRestored(string $uid, string $relativePath, string $loggedPath): ?File {
 		try {

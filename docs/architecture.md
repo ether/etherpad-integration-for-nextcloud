@@ -225,6 +225,7 @@ Primary flow (native viewer):
 
 ### 5) Trash/Restore
 
+- When the pad's step fails - an exception, the database gone, say - the file operation stops only while stopping still protects something. A trash is decided before the file moves (`MoveToTrashEvent`), so such a failure stops the delete and the file stays where it was; a pad Etherpad cannot delete is not one, its deletion is owed instead (see below). A restore is heard of after the file is back, so a failure there is logged, and the sweep or the file's own recovery takes up the pad.
 - Trash: write a fresh snapshot into the file, then delete the managed Etherpad pad and the binding row. A file that already holds the pad's revision is not written again. A snapshot is never older than the file's: a pad behind the file's `snapshot_rev` (created again under its id, or back from an older backup) is not written into it, and its deletion is owed, for the sweep's rule on such a pad. After a write the pad is counted once more; if it moved on while the file was written, it is not deleted, and the sweep writes another snapshot. Etherpad cannot hold a pad still, so an edit in the moment between that count and the delete is still lost; the count keeps the write, the slowest step, out of that moment.
 - A file that cannot be read, for any reason, is one more way to have no fresh snapshot: the user's delete goes through.
 - No fresh snapshot, or the delete fails: the pad stays as it is and the row becomes `pending_delete`; Nextcloud's trash succeeds either way. A delete through WebDAV (Files UI, clients) holds the file's lock while the trash is decided, so there it is always this path. The sweep finishes the trash on its next run, usually within five minutes: the pad's content goes into the trashed file, then row and pad go (see below). Until then a public pad stays reachable by its URL, a restore takes the pad back, and the admin page counts it as a pending delete.
@@ -234,6 +235,12 @@ Primary flow (native viewer):
   - Etherpad answers that it does not exist, or it has fewer revisions (created again since, or back from an older backup): a new pad from the file's snapshot, and the file records the new pad's revision count. A pad with fewer revisions is left in place and logged before anything else is tried; whoever wrote into it has only that copy.
     - Of two restores that race for one file only one writes it, and a restore that fails takes back what it made (`RestoreService::restoreOntoNewPad`).
   - No answer, or the file cannot be read: `restore_pending`, and neither pad nor file is touched. A row that waits again moves to the back of the queue (`updated_at`).
+- A restore whose pad's step fails still restores the file, with its versions and without its trash entry; the failure goes no further than the log. A pad left unrestored shows there as one of these lines:
+  - `Could not restore the pad of a file back from the trash. The file itself is restored.` at `error`, once for each way in that fails, `via` naming it (`hook` or `event`). A core restore passes twice (see Event Integration), so a line from the hook can be followed by an event pass that restored the pad after all.
+  - `Legacy trashbin restore hook could not start.`, or `Legacy trashbin restore hook failed.` for anything the listener let through, at `error`.
+  - `RestoreFromTrash listener skipped a restored node.` at `warning`, with its reason, when the restored node cannot be resolved.
+  - A restore that leaves the pad alone on purpose says so at `debug` only, as `Lifecycle step skipped.` with its reason: `delete_on_trash` off for a file without a row, a row whose access mode is unknown, a row another flow holds.
+- What the pad's restore left unfinished waits for the sweep, or the file offers its own recovery. Only a database that fails again in the middle of the rollback can leave a row naming a pad the file does not; opening the file then answers `Binding pad ID mismatch.` A restore through the API (`POST /api/v1/pads/restore`) still answers such a failure with an error.
 - `PendingBindingService` settles waiting rows in age buckets (every 5 minutes, then hourly, then daily) and from the admin page, by where the file is now:
   - in Files (`restore_pending`, or `pending_delete` whose restore never came): the decision a restore takes, except that a sweep writes no file. A pad that is gone or behind releases the row, and the file offers its own recovery when it is next opened.
   - in its owner's trash (`pending_delete`): the rest of the trash, written on the owner's own storage. A pad past the file's `snapshot_rev` goes into the file (one at it is there already), then row and pad are deleted; a restore that comes first keeps the pad. A pad that is gone: the row goes, and for a group pad what is left of it (an empty group). A pad that is behind is logged with its id and left in place, and the row goes. Either way the file keeps the snapshot it has. A pad that cannot be deleted once its row is gone is left over and logged with its id; its content is in the file.
@@ -290,7 +297,9 @@ Primary flow (native viewer):
   - Register the viewer handler on other pages that load Viewer.
 - `OCA\Files_Sharing\Event\BeforeTemplateRenderedEvent`
   - Register the viewer handler on public-share pages and load the one-shot opener for public single-file `.pad` shares or existing compatibility links.
-- `OCA\Files_Trashbin\Events\MoveToTrashEvent`
+- `OCA\Files_Trashbin\Events\MoveToTrashEvent`, and the legacy event `OCA\Files_Trashbin::moveToTrash`
   - Trash lifecycle.
 - `OCA\Files_Trashbin\Events\NodeRestoredEvent`
   - Restore lifecycle.
+- `\OCA\Files_Trashbin\Trashbin::post_restore` (legacy hook)
+  - Restore lifecycle for groupfolders, which fires no `NodeRestoredEvent`. Core fires both, the hook first: once the first pass has restored the pad the second finds nothing left to do, and after a first pass that failed, or left the row waiting for Etherpad's answer, it tries again, asking Etherpad a second time.

@@ -45,7 +45,9 @@ final class SensitiveMethods {
 		// The document itself, as an argument.
 		\OCA\EtherpadNextcloud\Service\ManagedPadLifecycle::class => ['seed'],
 		// And on its way out of the file, which is the half a pad travels
-		// when a trash or restore listener rethrows what it caught.
+		// when the trash listener rethrows what it caught. A restore reads
+		// and writes it through these too, kept for the reason given at
+		// RestoreService below.
 		\OCA\EtherpadNextcloud\Service\PadFileService::class => [
 			'parsePadFile', 'readPad', 'serialize',
 			'withExportSnapshot', 'withRestoredSnapshot', 'buildSnapshotBody',
@@ -53,7 +55,10 @@ final class SensitiveMethods {
 		// The same document one frame on: handed to the file rather than
 		// parsed out of it, which is what a locked or failing write leaves
 		// behind, and carried from frame to frame as the parsed file, whose
-		// public fields the serializer writes out.
+		// public fields the serializer writes out. No restore route lets an
+		// exception go since its listener reports what it catches; these stay
+		// until the document leaves public fields, so that a route that lets
+		// go again does not bring the document back into the log.
 		\OCA\EtherpadNextcloud\Service\RestoreService::class => [
 			'writeRestoredContent', 'restoreWithReplacement', 'restoreOntoNewPad', 'seedFromSnapshot',
 		],
