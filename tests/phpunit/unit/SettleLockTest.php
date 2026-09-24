@@ -28,7 +28,9 @@ class SettleLockTest extends TestCase {
 		$this->assertFalse($locks->isLocked(self::KEY, ILockingProvider::LOCK_EXCLUSIVE));
 
 		try {
-			$lock->holding(7, static fn (): never => throw new \RuntimeException('the database went away'), static fn (): string => 'busy');
+			$lock->holding(7, static function (): never {
+				throw new \RuntimeException('the database went away');
+			}, static fn (): string => 'busy');
 			$this->fail('The failure goes to the caller.');
 		} catch (\RuntimeException $e) {
 			$this->assertSame('the database went away', $e->getMessage());
