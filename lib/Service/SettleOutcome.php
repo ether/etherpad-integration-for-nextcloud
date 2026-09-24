@@ -10,8 +10,9 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\Service;
 
 /**
- * What became of a waiting binding when a sweep came to it: as much as
- * the sweep needs to count its work and to tell an outage from the rest.
+ * What became of a waiting binding when a sweep, or an open, came to it:
+ * as much as the sweep needs to count its work and to tell an outage from
+ * the rest.
  */
 enum SettleOutcome {
 	/** Taken back, released for the file to recover itself, or deleted along with its file. */

@@ -254,9 +254,9 @@ class ManagedPadLifecycle {
 	 * pad leaves nothing else behind, so that takes no call; a protected
 	 * one can leave its group, which is still looked for.
 	 *
-	 * $budget: a sweep's run; each call gets what is left, and one that
-	 * would not finish is not made. Nothing is removed before the last
-	 * call, so stopping leaves the pad as it was.
+	 * $budget: a sweep's run, or an open's few seconds; each call gets what
+	 * is left, and one that would not finish is not made. Nothing is
+	 * removed before the last call, so stopping leaves the pad as it was.
 	 *
 	 * $retried: the caller keeps its row when this throws, and tries again.
 	 * A group that cannot be read then fails the call, with nothing
