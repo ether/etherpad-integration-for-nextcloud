@@ -458,7 +458,7 @@ class LifecycleServiceTest extends TestCase {
 		$file = $this->buildRestoredPadFile($fileId);
 		$file->expects($this->once())->method('putContent')->with('doc-after');
 
-		$result = $this->buildPendingDeleteRestoreService($fileId, 'old-pad', $bindingService, $etherpadClient, logger: $logger, snapshotRev: 500)
+		$result = $this->buildPendingDeleteRestoreService($fileId, 'old-pad', $bindingService, $etherpadClient, logger: $logger, snapshotRev: 500, padLifecycleLogger: $logger)
 			->handleRestore($file);
 
 		$this->assertSame(LifecycleService::RESULT_RESTORED, $result['status']);
@@ -596,7 +596,7 @@ class LifecycleServiceTest extends TestCase {
 			$file = $this->buildRestoredPadFile(106);
 			$file->expects($this->never())->method('putContent');
 
-			$outcome = $this->buildPendingDeleteRestoreService(106, 'old-pad', $bindingService, $etherpadClient, logger: $logger, snapshotRev: 7, state: BindingService::STATE_RESTORE_PENDING)
+			$outcome = $this->buildPendingDeleteRestoreService(106, 'old-pad', $bindingService, $etherpadClient, logger: $logger, snapshotRev: 7, state: BindingService::STATE_RESTORE_PENDING, padLifecycleLogger: $logger)
 				->settleWaitingFile($file, new RunBudget(new FixedClock(), 5.0));
 
 			$this->assertSame(SettleOutcome::Settled, $outcome, $case);
@@ -1457,6 +1457,7 @@ class LifecycleServiceTest extends TestCase {
 		int $snapshotRev = -1,
 		string $state = BindingService::STATE_PENDING_DELETE,
 		bool $deleteOnTrash = true,
+		?LoggerInterface $padLifecycleLogger = null,
 	): LifecycleService {
 		$bindingService->method('findByFileId')->with($fileId)->willReturn(new Binding(fileId: $fileId, padId: $oldPadId, accessMode: $accessMode, state: $state));
 
@@ -1488,6 +1489,7 @@ class LifecycleServiceTest extends TestCase {
 			padFiles: $padFileService,
 			deleteOnTrash: $deleteOnTrash,
 			logger: $logger,
+			padLifecycleLogger: $padLifecycleLogger,
 			secureRandom: $secureRandom,
 		);
 	}

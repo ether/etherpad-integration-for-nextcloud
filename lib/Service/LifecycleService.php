@@ -286,7 +286,6 @@ class LifecycleService {
 			return SettleOutcome::Unanswered;
 		}
 		if ($probe->presence === PadPresence::Behind) {
-			$this->reportPadBehind($fileId, $padId);
 			return $this->bindingService->deleteInState($fileId, $padId, BindingService::STATE_PENDING_DELETE)
 				? SettleOutcome::Settled
 				: SettleOutcome::Left;
@@ -381,20 +380,6 @@ class LifecycleService {
 			$this->bindingService->transition($fileId, $padId, BindingService::STATE_PENDING_DELETE, BindingService::STATE_PENDING_DELETE);
 		}
 		return SettleOutcome::Left;
-	}
-
-	/**
-	 * A pad under the row's id with fewer revisions than the file's
-	 * snapshot: not the file's. Someone may have written into it since it
-	 * came back, so it is left in place, and logged with its id - the last
-	 * record of where it is.
-	 */
-	private function reportPadBehind(int $fileId, string $padId): void {
-		$this->logger->warning('A pad has fewer revisions than its file\'s snapshot and is no longer the file\'s. It is left in place.', [
-			'app' => 'etherpad_nextcloud',
-			'fileId' => $fileId,
-			'padId' => $padId,
-		]);
 	}
 
 	/**
@@ -506,10 +491,6 @@ class LifecycleService {
 				return $this->buildSkippedResult(self::REASON_OUT_OF_TIME, $fileId, $padId);
 			}
 			$presence = $this->padLifecycle->presenceOf($padId, $pad->snapshotRev, ['fileId' => $fileId], $timeout);
-			if ($presence === PadPresence::Behind) {
-				// Logged before anything is tried, since whatever follows may fail.
-				$this->reportPadBehind($fileId, $padId);
-			}
 			return match ($presence) {
 				PadPresence::Present => $this->resumeOwnPad($file, $fileId, $padId, $state, $mayReplace),
 				PadPresence::Unknown => $this->deferRestore($fileId, $padId, $state),
