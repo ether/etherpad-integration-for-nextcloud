@@ -74,7 +74,7 @@ class PadTemplateAdminService {
 			// file, not a server fault — say so instead of answering 500.
 			throw new AdminValidationException('template', $this->l10n->t('Not a pad file: the frontmatter could not be read.'));
 		}
-		if ($pad->isExternal || str_starts_with($pad->padId, 'ext.')) {
+		if ($pad->namesAnExternalPad()) {
 			throw new AdminValidationException('template', $this->l10n->t('A pad on another Etherpad server cannot be used as a template.'));
 		}
 

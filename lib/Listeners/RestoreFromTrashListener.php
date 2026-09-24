@@ -10,6 +10,7 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Listeners;
 
+use OCA\EtherpadNextcloud\Service\LifecycleResult;
 use OCA\EtherpadNextcloud\Service\LifecycleService;
 use OCA\EtherpadNextcloud\Service\UserNodeResolver;
 use OCA\EtherpadNextcloud\Util\PadFileType;
@@ -76,7 +77,7 @@ class RestoreFromTrashListener implements IEventListener {
 	private function restoreNode(File $node): void {
 		try {
 			$result = $this->lifecycleService->handleRestore($node);
-			if (($result['status'] ?? '') === LifecycleService::RESULT_SKIPPED) {
+			if (($result['status'] ?? '') === LifecycleResult::SKIPPED) {
 				$this->logger->debug('RestoreFromTrash listener skipped lifecycle action.', [
 					'app' => 'etherpad_nextcloud',
 					'fileId' => $this->loggableFileId($node),

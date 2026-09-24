@@ -15,7 +15,9 @@ Etherpad is the editing source of truth; the `.pad` file acts as binding storage
   - Hands a row out as a `Binding`, and a row the sweep takes as a `WaitingBinding` with its file's path; the sweep asks for deletions owed by `FileLocation`.
   - Only managed internal pads are bound. External pads are represented solely by `.pad` frontmatter and snapshots.
 - `lib/Service/LifecycleService.php`
-  - Trash and restore of a bound `.pad` file: the pad goes only once its snapshot is in the file, else its deletion is owed (`pending_delete`); a restore takes the file's own pad back while Etherpad still has it, and makes a new one from the snapshot otherwise (see Trash/Restore).
+  - Where a `.pad` file's trash and restore arrive, from the listeners and the API; the trash is done here (see Trash/Restore).
+- `lib/Service/RestoreService.php`
+  - The restore: from the trash, in the sweep, and for a file without a row (see Trash/Restore).
 - `lib/Service/TrashSnapshotWriter.php`
   - The snapshot into a trashed file, at trash time and in the sweep, made by `TrashSnapshotWriters`: one file, one pad, and the reason when it does not get there (`TrashSnapshotMiss`). What a miss means for the row and the pad is its caller's.
 - `lib/Service/PendingBindingService.php`
@@ -230,7 +232,7 @@ Primary flow (native viewer):
 - Restore of a waiting row (`pending_delete` or `restore_pending`), whatever `delete_on_trash` says now: read the file's `snapshot_rev`, then ask Etherpad about the row's pad. The pad id comes from the row, never from the file.
   - It exists with at least that many revisions: the row becomes `active` again on that same pad, which may hold edits the snapshot missed. If the sweep took row and pad in the meantime, finishing the trash, the restore finds no row when it reads again and makes a new pad from the file, which holds the snapshot the sweep wrote first.
   - Etherpad answers that it does not exist, or it has fewer revisions (created again since, or back from an older backup): a new pad from the file's snapshot, and the file records the new pad's revision count. A pad with fewer revisions is left in place and logged before anything else is tried; whoever wrote into it has only that copy.
-    - The row is claimed for the new pad before the file is written, so of two concurrent restores only one writes. A claim that throws counts only if the row reads back naming the new pad. After a failed claim or write, the new pad and an active row naming it are removed, and so is a row still naming the old pad: without one, the file offers its own recovery. A row a trash took over meanwhile keeps its pad.
+    - Of two restores that race for one file only one writes it, and a restore that fails takes back what it made (`RestoreService::restoreOntoNewPad`).
   - No answer, or the file cannot be read: `restore_pending`, and neither pad nor file is touched. A row that waits again moves to the back of the queue (`updated_at`).
 - `PendingBindingService` settles waiting rows in age buckets (every 5 minutes, then hourly, then daily) and from the admin page, by where the file is now:
   - in Files (`restore_pending`, or `pending_delete` whose restore never came): the decision a restore takes, except that a sweep writes no file. A pad that is gone or behind releases the row, and the file offers its own recovery when it is next opened.

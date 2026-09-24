@@ -46,7 +46,7 @@ class PadResponseService {
 
 	/** @param array<string,mixed> $data */
 	public function lifecycleResponse(array $data): DataResponse {
-		$status = ($data['status'] ?? '') === LifecycleService::RESULT_SKIPPED
+		$status = ($data['status'] ?? '') === LifecycleResult::SKIPPED
 			? Http::STATUS_CONFLICT
 			: Http::STATUS_OK;
 		return new DataResponse($data, $status);

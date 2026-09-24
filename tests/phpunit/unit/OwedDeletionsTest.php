@@ -22,7 +22,7 @@ use OCA\EtherpadNextcloud\Service\TrashSnapshotWriters;
 use OCA\EtherpadNextcloud\Service\UserNodeResolver;
 use OCA\EtherpadNextcloud\Service\WaitingBinding;
 use OCA\EtherpadNextcloud\Tests\Support\FixedClock;
-use OCA\EtherpadNextcloud\Tests\Support\TrashedPadFiles;
+use OCA\EtherpadNextcloud\Tests\Support\PadFiles;
 use OCP\Files\File;
 use OCP\IConfig;
 use OCP\Lock\LockedException;
@@ -37,7 +37,7 @@ use Psr\Log\LoggerInterface;
  * Unanswered when Etherpad gave none.
  */
 class OwedDeletionsTest extends TestCase {
-	use TrashedPadFiles;
+	use PadFiles;
 
 	/**
 	 * A trashed file that already holds the pad's revision needs no new

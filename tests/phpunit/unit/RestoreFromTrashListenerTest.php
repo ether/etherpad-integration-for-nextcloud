@@ -9,10 +9,11 @@ use OCA\EtherpadNextcloud\Exception\LifecycleException;
 use OCA\EtherpadNextcloud\Service\Binding;
 use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\EtherpadNextcloud\Service\EtherpadClient;
+use OCA\EtherpadNextcloud\Service\LifecycleResult;
 use OCA\EtherpadNextcloud\Service\LifecycleService;
 use OCA\EtherpadNextcloud\Service\UserNodeResolver;
 use OCA\EtherpadNextcloud\Tests\Support\WatchesTheWholeLogger;
-use OCA\EtherpadNextcloud\Tests\Support\WiresALifecycleService;
+use OCA\EtherpadNextcloud\Tests\Support\WiresTheLifecycle;
 use OCP\EventDispatcher\Event;
 use OCP\Files\File;
 use OCP\Files\IRootFolder;
@@ -25,7 +26,7 @@ use Psr\Log\LoggerInterface;
 
 class RestoreFromTrashListenerTest extends TestCase {
 	use WatchesTheWholeLogger;
-	use WiresALifecycleService;
+	use WiresTheLifecycle;
 
 	/**
 	 * One failure, one entry. The flow no longer reports its own, because
@@ -100,7 +101,7 @@ class RestoreFromTrashListenerTest extends TestCase {
 		$lifecycleService->expects($this->once())
 			->method('handleRestore')
 			->with($file)
-			->willReturn(['status' => LifecycleService::RESULT_RESTORED]);
+			->willReturn(['status' => LifecycleResult::RESTORED]);
 
 		$listener = new RestoreFromTrashListener(
 			$lifecycleService,
@@ -141,7 +142,7 @@ class RestoreFromTrashListenerTest extends TestCase {
 		$lifecycleService->expects($this->once())
 			->method('handleRestore')
 			->with($file)
-			->willReturn(['status' => LifecycleService::RESULT_RESTORED]);
+			->willReturn(['status' => LifecycleResult::RESTORED]);
 
 		$listener = new RestoreFromTrashListener(
 			$lifecycleService,
@@ -182,7 +183,7 @@ class RestoreFromTrashListenerTest extends TestCase {
 		$lifecycleService->expects($this->once())
 			->method('handleRestore')
 			->with($file)
-			->willReturn(['status' => LifecycleService::RESULT_RESTORED]);
+			->willReturn(['status' => LifecycleResult::RESTORED]);
 
 		$listener = new RestoreFromTrashListener(
 			$lifecycleService,
@@ -222,7 +223,7 @@ class RestoreFromTrashListenerTest extends TestCase {
 		$lifecycleService->expects($this->once())
 			->method('handleRestore')
 			->with($this->identicalTo($inFolder))
-			->willReturn(['status' => LifecycleService::RESULT_RESTORED]);
+			->willReturn(['status' => LifecycleResult::RESTORED]);
 
 		$listener = new RestoreFromTrashListener(
 			$lifecycleService,
@@ -408,7 +409,7 @@ class RestoreFromTrashListenerTest extends TestCase {
 		$lifecycleService->expects($this->once())
 			->method('handleRestore')
 			->with($resolved)
-			->willReturn(['status' => LifecycleService::RESULT_RESTORED]);
+			->willReturn(['status' => LifecycleResult::RESTORED]);
 
 		$listener = new RestoreFromTrashListener(
 			$lifecycleService,
