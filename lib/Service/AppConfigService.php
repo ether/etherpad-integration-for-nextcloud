@@ -34,6 +34,19 @@ class AppConfigService {
 	}
 
 	/**
+	 * Whether a trash deletes the file's pad, once its content is in the
+	 * file - now, or through the sweep. On unless the admin switched it off.
+	 */
+	public function isDeleteOnTrashEnabled(): bool {
+		return $this->config->getAppValue(Application::APP_ID, 'delete_on_trash', 'yes') === 'yes';
+	}
+
+	/** The test fault a debug instance injects (TestFaults), or '' for none. */
+	public function getTestFault(): string {
+		return trim($this->config->getAppValue(Application::APP_ID, 'test_fault', ''));
+	}
+
+	/**
 	 * @return list<string>
 	 */
 	public function getTrustedEmbedOrigins(): array {

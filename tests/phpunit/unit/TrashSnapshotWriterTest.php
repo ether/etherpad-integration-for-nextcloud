@@ -16,6 +16,7 @@ use OCA\EtherpadNextcloud\Service\PadFileService;
 use OCA\EtherpadNextcloud\Service\PadSnapshot;
 use OCA\EtherpadNextcloud\Service\ParsedPadFile;
 use OCA\EtherpadNextcloud\Service\RunBudget;
+use OCA\EtherpadNextcloud\Service\TestFaults;
 use OCA\EtherpadNextcloud\Service\TrashSnapshotMiss;
 use OCA\EtherpadNextcloud\Service\TrashSnapshotWriter;
 use OCA\EtherpadNextcloud\Tests\Support\FixedClock;
@@ -98,7 +99,7 @@ class TrashSnapshotWriterTest extends TestCase {
 	/** The injected read lock of a debug instance reads as the lock of a WebDAV delete. */
 	public function testTheReadLockFaultReadsAsALock(): void {
 		$this->file->expects($this->never())->method('getContent');
-		$this->fault = TrashSnapshotWriter::FAULT_READ_LOCK;
+		$this->fault = TestFaults::TRASH_READ_LOCK;
 
 		$this->assertSame(TrashSnapshotMiss::FileLocked, $this->writer()->read());
 	}
@@ -229,8 +230,8 @@ class TrashSnapshotWriterTest extends TestCase {
 		$cases = [
 			'locked' => [new LockedException('x.pad'), null, TrashSnapshotMiss::FileLocked, 'debug'],
 			'refused' => [new \RuntimeException('disk full'), null, TrashSnapshotMiss::WriteFailed, 'warning'],
-			'lock fault' => [null, TrashSnapshotWriter::FAULT_WRITE_LOCK, TrashSnapshotMiss::FileLocked, 'debug'],
-			'fail fault' => [null, TrashSnapshotWriter::FAULT_WRITE_FAIL, TrashSnapshotMiss::WriteFailed, 'warning'],
+			'lock fault' => [null, TestFaults::TRASH_WRITE_LOCK, TrashSnapshotMiss::FileLocked, 'debug'],
+			'fail fault' => [null, TestFaults::TRASH_WRITE_FAIL, TrashSnapshotMiss::WriteFailed, 'warning'],
 		];
 		foreach ($cases as $case => [$error, $fault, $miss, $level]) {
 			$this->setUp();
@@ -320,14 +321,13 @@ class TrashSnapshotWriterTest extends TestCase {
 	}
 
 	private function writer(bool $news = true): TrashSnapshotWriter {
-		$fault = &$this->fault;
+		$testFaults = $this->createMock(TestFaults::class);
+		$testFaults->method('isActive')->willReturnCallback(fn (string $fault): bool => $fault === $this->fault);
 		return new TrashSnapshotWriter(
 			$this->etherpad,
 			$this->padFiles,
 			$this->logger,
-			static function (string $candidate) use (&$fault): bool {
-				return $candidate === $fault;
-			},
+			$testFaults,
 			$this->file,
 			'pad-a',
 			$news,

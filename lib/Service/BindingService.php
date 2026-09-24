@@ -180,8 +180,7 @@ class BindingService {
 	/**
 	 * Deletions owed, aged by when the trash recorded them, and narrowed to
 	 * where the file is (FileLocation). A team folder's trash on the root
-	 * storage is left out: nothing settles a row there until that trash
-	 * lets the file go.
+	 * storage is in none of them (TEAM_TRASH_PATH).
 	 *
 	 * A row that never had a deleted_at is reached only by a run with
 	 * neither bound - the admin page's. Every age bucket compares the date.
@@ -236,9 +235,13 @@ class BindingService {
 		} elseif ($fileLocation === FileLocation::InUserTrash) {
 			$qb->andWhere($qb->expr()->like('fc.path', $qb->createNamedParameter($userTrash)));
 		} elseif ($fileLocation === FileLocation::Elsewhere) {
+			// NOT (LIKE), not notLike(): on SQLite and Oracle Nextcloud's
+			// notLike() leaves out the ESCAPE that like() adds, so the escaped
+			// prefix would match no path and a trashed file pass for one here.
+			$teamTrash = $this->db->escapeLikeParameter(self::TEAM_TRASH_PATH) . '%';
 			$qb->andWhere($qb->expr()->isNotNull('fc.fileid'))
-				->andWhere($qb->expr()->notLike('fc.path', $qb->createNamedParameter($userTrash)))
-				->andWhere($qb->expr()->notLike('fc.path', $qb->createNamedParameter($this->db->escapeLikeParameter(self::TEAM_TRASH_PATH) . '%')));
+				->andWhere($qb->createFunction('NOT (' . $qb->expr()->like('fc.path', $qb->createNamedParameter($userTrash)) . ')'))
+				->andWhere($qb->createFunction('NOT (' . $qb->expr()->like('fc.path', $qb->createNamedParameter($teamTrash)) . ')'));
 		}
 
 		$result = $qb->executeQuery();

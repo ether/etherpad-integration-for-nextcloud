@@ -10,6 +10,7 @@ namespace OCA\EtherpadNextcloud\Tests\Unit;
 
 use OCA\EtherpadNextcloud\Service\Binding;
 use OCA\EtherpadNextcloud\Service\BindingService;
+use OCA\EtherpadNextcloud\Service\FileLocation;
 use OCA\EtherpadNextcloud\Service\WaitingBinding;
 use PHPUnit\Framework\TestCase;
 
@@ -92,6 +93,26 @@ class BindingTest extends TestCase {
 		];
 		foreach ($states as $state => $waits) {
 			$this->assertSame($waits, (new Binding(7, 'nc-abc', BindingService::ACCESS_PUBLIC, $state))->isWaiting(), $state);
+		}
+	}
+
+	/**
+	 * Where a waiting row's file is, by the path the file cache has for it,
+	 * with the prefixes the query narrows by. A team folder's trash on the
+	 * root storage is none of the kinds a sweep asks for; one with a storage
+	 * of its own, and a folder merely named like a trash, are elsewhere.
+	 */
+	public function testAWaitingRowKnowsWhereItsFileIs(): void {
+		$paths = [
+			'gone for good' => [null, FileLocation::Gone],
+			'in the owner\'s trash' => ['files_trashbin/files/a.pad.d1', FileLocation::InUserTrash],
+			'in a team folder\'s trash' => ['__groupfolders/trash/3/a.pad.d1', null],
+			'in a team folder\'s own trash storage' => ['trash/a.pad.d1', FileLocation::Elsewhere],
+			'in Files' => ['files/a.pad', FileLocation::Elsewhere],
+			'in a folder named like a trash' => ['files/files_trashbin/a.pad', FileLocation::Elsewhere],
+		];
+		foreach ($paths as $case => [$path, $location]) {
+			$this->assertSame($location, (new WaitingBinding(7, 'nc-abc', BindingService::STATE_PENDING_DELETE, $path))->location(), $case);
 		}
 	}
 

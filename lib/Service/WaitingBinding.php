@@ -26,6 +26,20 @@ final class WaitingBinding {
 	}
 
 	/**
+	 * Where the file is, by the path the file cache has for it: the prefixes
+	 * BindingService's query narrows by. Null for a file in a team folder's
+	 * trash on the root storage, which no kind of FileLocation holds.
+	 */
+	public function location(): ?FileLocation {
+		return match (true) {
+			$this->filePath === null => FileLocation::Gone,
+			str_starts_with($this->filePath, BindingService::USER_TRASH_PATH) => FileLocation::InUserTrash,
+			str_starts_with($this->filePath, BindingService::TEAM_TRASH_PATH) => null,
+			default => FileLocation::Elsewhere,
+		};
+	}
+
+	/**
 	 * A fetched row, every column it is read from selected.
 	 *
 	 * @param array<string,mixed> $row

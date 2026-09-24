@@ -19,40 +19,22 @@ use OCP\Lock\LockedException;
 use Psr\Log\LoggerInterface;
 
 /**
- * Settles the bindings that wait: restores Etherpad could not answer for,
- * and deletions a trash owed. What becomes of each goes by where its file
- * is now:
+ * The sweep: settles the bindings that wait - restores Etherpad could not
+ * answer for, and deletions a trash owed - for the background jobs and the
+ * admin page. Each row goes by where its file is now (settleRow): to the
+ * decision a restore takes, for a file in Files, or to the deletion its
+ * trash owed (OwedDeletions).
  *
- * - in Files: the decision a restore takes, taken again, except that a
- *   sweep writes no file there (LifecycleService::settleWaitingFile);
- * - in its owner's trash: the snapshot the trash could not take, written
- *   into the trashed file, then row and pad deleted, in that order
- *   (LifecycleService::finishTrash). The one file a sweep writes, and
- *   always on its owner's own storage;
- * - in a team folder's trash: nothing, since no node reaches it; the row
- *   waits until that trash lets the file go;
- * - gone for good, with nothing left of it in the file cache: the pad is
- *   deleted, then the row (LifecycleService::finishGoneFile).
- *
- * Both deletions wait while deleting on trash is switched off, and their
- * rows are not even fetched then: they would only take the places of
- * rows in Files, which are settled either way.
- *
- * Bounded by a RunBudget: each Etherpad call gets what is left of the run,
- * none is started that could not finish - except the deletion of a pad
- * whose row is already taken, which finishes on the client's own
- * timeouts - and a run ends after a few rows Etherpad gave no answer for.
- * The rows stay until they are settled, so without that an Etherpad that
- * is down would cost every run a full timeout per row.
- *
- * A row is settled by one run at a time: the jobs and the admin page can
- * run at once, and each holds a lock on the row while it works on it.
+ * A run takes the kinds in turn (rowsInTurn) and each row under a lock
+ * (whileHeld), and is bounded by a RunBudget.
  */
 class PendingBindingService {
 	/** The budget is a parameter so a test can reach it, not a setting. */
 	public function __construct(
 		private BindingService $bindingService,
+		private AppConfigService $appConfig,
 		private LifecycleService $lifecycleService,
+		private OwedDeletions $owedDeletions,
 		private IRootFolder $rootFolder,
 		private ILockingProvider $locks,
 		private LoggerInterface $logger,
@@ -88,7 +70,7 @@ class PendingBindingService {
 			if ($budget->exhausted()) {
 				break;
 			}
-			$outcome = $this->whileHeld($row->fileId, fn (): ?SettleOutcome => $this->settleRow($row->fileId, $row->padId, $row->state, $row->filePath, $budget));
+			$outcome = $this->whileHeld($row->fileId, fn (): ?SettleOutcome => $this->settleRow($row, $budget));
 			if ($outcome === null) {
 				continue;
 			}
@@ -109,10 +91,14 @@ class PendingBindingService {
 	 * the others, so a run that ends on its budget has still reached every
 	 * kind.
 	 *
+	 * While deleting on trash is switched off, deletions owed in a trash or
+	 * gone for good are not fetched: they could only wait, in the places of
+	 * rows in Files, which are settled either way.
+	 *
 	 * @return list<WaitingBinding>
 	 */
 	private function rowsInTurn(int $minAgeSeconds, ?int $maxAgeSeconds, int $limit): array {
-		$fileLocations = $this->lifecycleService->isDeleteOnTrashEnabled()
+		$fileLocations = $this->appConfig->isDeleteOnTrashEnabled()
 			? [FileLocation::Gone, FileLocation::InUserTrash, FileLocation::Elsewhere]
 			: [FileLocation::Elsewhere];
 		$kinds = [$this->bindingService->findRestorePendingByAge($minAgeSeconds, $maxAgeSeconds, $limit)];
@@ -171,39 +157,52 @@ class PendingBindingService {
 	}
 
 	/**
-	 * Null when the row was not looked at: its file cannot be reached where
-	 * the file cache says it is. A deletion owed moves to the back then, so
-	 * rows like it - a team folder's trash above all - take their turn
-	 * after the others rather than before them.
+	 * The row settled by where its file is now (WaitingBinding::location()).
+	 * Null when it was not looked at: its file cannot be reached where the
+	 * file cache says it is, as in a team folder's trash
+	 * (BindingService::TEAM_TRASH_PATH). A deletion owed moves to the back
+	 * then, so rows like it take their turn after the others.
 	 */
-	private function settleRow(int $fileId, string $padId, string $state, ?string $cachePath, RunBudget $budget): ?SettleOutcome {
+	private function settleRow(WaitingBinding $row, RunBudget $budget): ?SettleOutcome {
 		try {
-			if ($cachePath === null) {
-				return $this->lifecycleService->finishGoneFile($fileId, $padId, $state, $budget);
-			}
-			$inUserTrash = str_starts_with($cachePath, BindingService::USER_TRASH_PATH);
-			$file = match (true) {
-				str_starts_with($cachePath, BindingService::TEAM_TRASH_PATH) => null,
-				$inUserTrash => $state === BindingService::STATE_PENDING_DELETE ? $this->nodeById($fileId, inTrash: true) : null,
-				default => $this->nodeById($fileId, inTrash: false),
+			return match ($row->location()) {
+				FileLocation::Gone => $this->owedDeletions->finishGoneFile($row, $budget),
+				FileLocation::InUserTrash => $this->settleInUserTrash($row, $budget),
+				FileLocation::Elsewhere => $this->settleElsewhere($row, $budget),
+				null => $this->notReached($row),
 			};
-			if ($file === null) {
-				return $this->notReached($fileId, $padId, $state);
-			}
-			return $inUserTrash
-				? $this->lifecycleService->finishTrash($file, $budget)
-				: $this->lifecycleService->settleWaitingFile($file, $budget);
 		} catch (\Throwable $e) {
 			// Etherpad's silence is caught where it is met; what arrives here
 			// is local - the database, a storage - and says nothing about
 			// Etherpad, so it does not count towards the outage stop.
 			$this->logger->warning('Could not settle a pad binding that waits.', [
 				'app' => 'etherpad_nextcloud',
-				'fileId' => $fileId,
+				'fileId' => $row->fileId,
 				...SafeError::context($e),
 			]);
 			return SettleOutcome::Left;
 		}
+	}
+
+	/**
+	 * A file anywhere else is settled as a restore would settle it, once a
+	 * node outside every trash reaches it.
+	 */
+	private function settleElsewhere(WaitingBinding $row, RunBudget $budget): ?SettleOutcome {
+		$file = $this->nodeById($row->fileId, inTrash: false);
+		return $file === null ? $this->notReached($row) : $this->lifecycleService->settleWaitingFile($file, $budget);
+	}
+
+	/**
+	 * A deletion owed whose file is in its owner's trash is finished there;
+	 * a restore left undecided has nothing to be done in a trash.
+	 */
+	private function settleInUserTrash(WaitingBinding $row, RunBudget $budget): ?SettleOutcome {
+		if ($row->state !== BindingService::STATE_PENDING_DELETE) {
+			return $this->notReached($row);
+		}
+		$file = $this->nodeById($row->fileId, inTrash: true);
+		return $file === null ? $this->notReached($row) : $this->owedDeletions->finishTrash($file, $budget);
 	}
 
 	/**
@@ -227,9 +226,9 @@ class PendingBindingService {
 	 * undecided is aged by updated_at itself, so moving it would only make
 	 * it younger.
 	 */
-	private function notReached(int $fileId, string $padId, string $state): ?SettleOutcome {
-		if ($state === BindingService::STATE_PENDING_DELETE) {
-			$this->bindingService->transition($fileId, $padId, $state, $state);
+	private function notReached(WaitingBinding $row): ?SettleOutcome {
+		if ($row->state === BindingService::STATE_PENDING_DELETE) {
+			$this->bindingService->transition($row->fileId, $row->padId, $row->state, $row->state);
 		}
 		return null;
 	}

@@ -202,7 +202,10 @@ class ManagedPadLifecycle {
 	 * file never synced, says nothing, and any pad counts as present.
 	 *
 	 * An unknown answer is logged here, with its cause, since no caller
-	 * gets to see the exception it came from.
+	 * gets to see the exception it came from. So is a pad behind, with its
+	 * id: someone may have written into it since it came back, so every
+	 * caller leaves it in place, and this line is the last record of where
+	 * it is.
 	 *
 	 * @param array<string,mixed> $context what the log line should carry, fileId above all
 	 */
@@ -228,7 +231,14 @@ class ManagedPadLifecycle {
 			] + $context);
 			return new PadProbe(PadPresence::Unknown, null);
 		}
-		return new PadProbe($revisions < $snapshotRevision ? PadPresence::Behind : PadPresence::Present, $revisions);
+		if ($revisions < $snapshotRevision) {
+			$this->logger->warning('A pad has fewer revisions than its file\'s snapshot and is no longer the file\'s. It is left in place.', [
+				'app' => 'etherpad_nextcloud',
+				'padId' => $padId,
+			] + $context);
+			return new PadProbe(PadPresence::Behind, $revisions);
+		}
+		return new PadProbe(PadPresence::Present, $revisions);
 	}
 
 	/**

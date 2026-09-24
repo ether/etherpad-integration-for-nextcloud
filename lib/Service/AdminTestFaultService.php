@@ -17,15 +17,16 @@ use OCP\IConfig;
 class AdminTestFaultService {
 	public function __construct(
 		private IConfig $config,
+		private TestFaults $testFaults,
 	) {
 	}
 
 	public function setFault(string $fault): string {
-		if (!$this->config->getSystemValueBool('debug', false)) {
+		if (!$this->testFaults->onDebugInstance()) {
 			throw new AdminDebugModeRequiredException();
 		}
 
-		$allowed = LifecycleService::getSupportedTestFaults();
+		$allowed = TestFaults::supported();
 		if ($fault !== '' && !in_array($fault, $allowed, true)) {
 			throw new UnsupportedTestFaultException($allowed);
 		}

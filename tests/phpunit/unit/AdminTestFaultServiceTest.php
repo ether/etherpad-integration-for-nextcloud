@@ -7,6 +7,8 @@ namespace OCA\EtherpadNextcloud\Tests\Unit;
 use OCA\EtherpadNextcloud\Exception\AdminDebugModeRequiredException;
 use OCA\EtherpadNextcloud\Exception\UnsupportedTestFaultException;
 use OCA\EtherpadNextcloud\Service\AdminTestFaultService;
+use OCA\EtherpadNextcloud\Service\AppConfigService;
+use OCA\EtherpadNextcloud\Service\TestFaults;
 use OCP\IConfig;
 use PHPUnit\Framework\TestCase;
 
@@ -18,7 +20,7 @@ class AdminTestFaultServiceTest extends TestCase {
 
 		$this->expectException(AdminDebugModeRequiredException::class);
 
-		(new AdminTestFaultService($config))->setFault('trash_read_lock');
+		$this->service($config)->setFault('trash_read_lock');
 	}
 
 	public function testSetFaultRejectsUnsupportedFault(): void {
@@ -27,7 +29,7 @@ class AdminTestFaultServiceTest extends TestCase {
 		$config->expects($this->never())->method('setAppValue');
 
 		try {
-			(new AdminTestFaultService($config))->setFault('unknown_fault');
+			$this->service($config)->setFault('unknown_fault');
 			$this->fail('Expected unsupported test fault exception.');
 		} catch (UnsupportedTestFaultException $e) {
 			$this->assertContains('trash_read_lock', $e->getSupportedFaults());
@@ -41,7 +43,7 @@ class AdminTestFaultServiceTest extends TestCase {
 			->method('setAppValue')
 			->with('etherpad_nextcloud', 'test_fault', 'trash_read_lock');
 
-		$result = (new AdminTestFaultService($config))->setFault('trash_read_lock');
+		$result = $this->service($config)->setFault('trash_read_lock');
 
 		$this->assertSame('trash_read_lock', $result);
 	}
@@ -53,8 +55,13 @@ class AdminTestFaultServiceTest extends TestCase {
 			->method('setAppValue')
 			->with('etherpad_nextcloud', 'test_fault', '');
 
-		$result = (new AdminTestFaultService($config))->setFault('');
+		$result = $this->service($config)->setFault('');
 
 		$this->assertSame('', $result);
+	}
+
+	/** Debug mode is TestFaults' to tell, as for every fault it is asked about. */
+	private function service(IConfig $config): AdminTestFaultService {
+		return new AdminTestFaultService($config, new TestFaults($config, $this->createMock(AppConfigService::class)));
 	}
 }

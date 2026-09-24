@@ -390,6 +390,27 @@ class ManagedPadLifecycleTest extends TestCase {
 	}
 
 	/**
+	 * A pad behind is left in place by every caller - someone may have
+	 * written into it since it came back - so it is logged here, once, with
+	 * its id: the last record of where it is. A pad that is the file's is not.
+	 */
+	public function testLogsAPadBehindWithItsId(): void {
+		$client = $this->createMock(EtherpadClient::class);
+		$client->method('getRevisionsCount')->willReturn(7);
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects($this->once())
+			->method('warning')
+			->with(
+				'A pad has fewer revisions than its file\'s snapshot and is no longer the file\'s. It is left in place.',
+				['app' => 'etherpad_nextcloud', 'padId' => 'nc-pad', 'fileId' => 7],
+			);
+		$lifecycle = new ManagedPadLifecycle($client, $logger);
+
+		$this->assertSame(PadPresence::Behind, $lifecycle->probe('nc-pad', 8, ['fileId' => 7])->presence);
+		$this->assertSame(PadPresence::Present, $lifecycle->probe('nc-pad', 7, ['fileId' => 7])->presence);
+	}
+
+	/**
 	 * No caller sees why Etherpad gave no answer, so the cause is logged
 	 * here - and its own "does not exist" is an answer, not a failure.
 	 */
