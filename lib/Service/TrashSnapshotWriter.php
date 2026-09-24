@@ -98,8 +98,7 @@ final class TrashSnapshotWriter {
 	 * $revisions: the pad's count, when the caller has just asked for it.
 	 * $budget: the sweep's run, whose rest each Etherpad call gets.
 	 * $moved: whether a restore has taken the file back since it was read,
-	 * asked right before the write - one through the old node would make a
-	 * new file where it was.
+	 * asked right before the write and once more after it (writeAndRecount()).
 	 *
 	 * @param \Closure(): bool $moved
 	 * @return TrashSnapshotMiss|true
@@ -129,7 +128,7 @@ final class TrashSnapshotWriter {
 		if ($moved !== null && $moved()) {
 			return $this->missed(TrashSnapshotMiss::FileMoved);
 		}
-		return $this->writeAndRecount($pad, $snapshot, $budget);
+		return $this->writeAndRecount($pad, $snapshot, $budget, $moved);
 	}
 
 	/**
@@ -161,17 +160,32 @@ final class TrashSnapshotWriter {
 	 * counting after the write keeps the write, the slowest step, out of
 	 * that moment.
 	 *
+	 * Then, for the sweep, whether the file moved while it was written, also
+	 * when the count fails: if so the pad stays, and the caller has a copy
+	 * to clear. Asked after the count, so that less gets past both
+	 * questions; what still does, and what would close it, is in
+	 * docs/architecture.md.
+	 *
+	 * @param ?\Closure(): bool $moved
 	 * @return TrashSnapshotMiss|true
 	 * @throws RunBudgetSpentException
 	 */
-	private function writeAndRecount(ParsedPadFile $pad, PadSnapshot $snapshot, ?RunBudget $budget): TrashSnapshotMiss|bool {
+	private function writeAndRecount(ParsedPadFile $pad, PadSnapshot $snapshot, ?RunBudget $budget, ?\Closure $moved): TrashSnapshotMiss|bool {
 		$written = $this->write($pad, $snapshot);
 		if ($written !== true) {
 			return $written;
 		}
-		return $this->etherpadClient->getRevisionsCount($this->padId, RunBudget::timeoutOf($budget)) === $snapshot->revision
-			? true
-			: $this->missed(TrashSnapshotMiss::PadChanged);
+		try {
+			$unchanged = $this->etherpadClient->getRevisionsCount($this->padId, RunBudget::timeoutOf($budget)) === $snapshot->revision;
+		} catch (\Throwable $countError) {
+			return $this->movedWhileWritten($moved) ?? throw $countError;
+		}
+		return $this->movedWhileWritten($moved) ?? ($unchanged ? true : $this->missed(TrashSnapshotMiss::PadChanged));
+	}
+
+	/** @param ?\Closure(): bool $moved */
+	private function movedWhileWritten(?\Closure $moved): ?TrashSnapshotMiss {
+		return $moved !== null && $moved() ? $this->missed(TrashSnapshotMiss::FileMovedWhileWritten) : null;
 	}
 
 	/**

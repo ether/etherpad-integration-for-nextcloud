@@ -212,19 +212,40 @@ class UserNodeResolver {
 	}
 
 	/**
-	 * Whether a node found by id earlier is no longer where it was: moved
-	 * since - restored from the trash, say - or gone. A write through the
-	 * old node would then make a new file at its old path.
+	 * Whether the file $fileId, found by id earlier at $path, is no longer
+	 * there: moved since - restored from the trash, say - or gone. A write
+	 * through the old node would then make a new file at its old path.
+	 *
+	 * By id and path as they were read, not by the node: after a write that
+	 * made such a new file, the node reads its id again by its path and
+	 * answers with the new file's.
 	 *
 	 * Asked of the global root, as a sweep finds its files: only for a node
 	 * that came from there.
 	 */
-	public function hasMoved(File $node): bool {
-		foreach ($this->rootFolder->getById($node->getId()) as $current) {
-			if ($current->getPath() === $node->getPath()) {
+	public function hasMoved(int $fileId, string $path): bool {
+		foreach ($this->rootFolder->getById($fileId) as $current) {
+			if ($current->getPath() === $path) {
 				return false;
 			}
 		}
 		return true;
+	}
+
+	/**
+	 * Delete what a write through a node that had moved made at its old
+	 * $path (hasMoved()): only a file under another id than $fileId is such
+	 * a copy; the file itself, a folder, or nothing stays. In a trash the
+	 * delete is final, not a move to the trash.
+	 */
+	public function removeStrayCopy(int $fileId, string $path): void {
+		try {
+			$current = $this->rootFolder->get($path);
+		} catch (NotFoundException) {
+			return;
+		}
+		if ($current instanceof File && $current->getId() !== $fileId) {
+			$current->delete();
+		}
 	}
 }

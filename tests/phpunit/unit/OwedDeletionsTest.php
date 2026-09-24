@@ -108,6 +108,56 @@ class OwedDeletionsTest extends TestCase {
 	}
 
 	/**
+	 * A restore that took the file back while its snapshot was written
+	 * leaves row and pad to the restore, which takes the pad back. What the
+	 * write may have made in the trash where the file was goes, so the
+	 * trash lists no second copy; one that cannot be removed is logged.
+	 *
+	 * Both are asked by the id and path read before the write, which the
+	 * file answers differently after it (UserNodeResolver::hasMoved()).
+	 */
+	public function testAFileRestoredWhileWrittenKeepsRowAndPadAndClearsTheCopy(): void {
+		foreach (['copy removed' => null, 'copy left' => new \RuntimeException('storage gone')] as $case => $removeError) {
+			$bindingService = $this->pendingTrashRow(111, 'pad-back');
+			$bindingService->expects($this->never())->method('deleteInState');
+			$bindingService->expects($this->never())->method('transition');
+			$etherpadClient = $this->createMock(EtherpadClient::class);
+			$etherpadClient->method('getRevisionsCount')->willReturn(5);
+			$etherpadClient->method('getText')->willReturn('the unsynced edit');
+			$etherpadClient->expects($this->never())->method('deletePad');
+			$written = false;
+			$file = $this->createMock(File::class);
+			$file->method('getId')->willReturnCallback(static function () use (&$written): int {
+				return $written ? 112 : 111;
+			});
+			$file->method('getName')->willReturn('Trashed.pad.d100');
+			$file->method('getPath')->willReturn('/alice/files_trashbin/files/Trashed.pad.d100');
+			$file->method('getContent')->willReturn('doc-before');
+			$file->expects($this->once())->method('putContent')->willReturnCallback(static function () use (&$written): void {
+				$written = true;
+			});
+			$nodes = $this->createMock(UserNodeResolver::class);
+			// Still there right before the write, gone right after it.
+			$nodes->method('hasMoved')->with(111, '/alice/files_trashbin/files/Trashed.pad.d100')->willReturnOnConsecutiveCalls(false, true);
+			$removal = $nodes->expects($this->once())->method('removeStrayCopy')->with(111, '/alice/files_trashbin/files/Trashed.pad.d100');
+			if ($removeError !== null) {
+				$removal->willThrowException($removeError);
+			}
+			$logger = $this->createMock(LoggerInterface::class);
+			$logger->expects($removeError === null ? $this->never() : $this->once())
+				->method('warning')
+				->with(
+					'Could not remove the copy a sweep wrote into the trash after its file was restored.',
+					$this->callback(static fn (array $context): bool => $context['fileId'] === 111 && $context['error_message'] === 'storage gone'),
+				);
+
+			$outcome = $this->owed($bindingService, $etherpadClient, logger: $logger, nodes: $nodes)->finishTrash($file, new RunBudget(new FixedClock(), 20.0));
+
+			$this->assertSame(SettleOutcome::Left, $outcome, $case);
+		}
+	}
+
+	/**
 	 * Past the row, a pad that cannot be deleted is left over, and nothing
 	 * leads to it any more: its id goes into the log. Its content is in the
 	 * file, so the row is settled all the same.
@@ -324,7 +374,9 @@ class OwedDeletionsTest extends TestCase {
 				default => $file->method('getContent')->willReturn('doc-before'),
 			};
 			$nodes = $this->createMock(UserNodeResolver::class);
-			$nodes->method('hasMoved')->with($file)->willReturn($case === 'file moved');
+			$nodes->method('hasMoved')->with(119)->willReturn($case === 'file moved');
+			// Moved before anything was written: whatever is at its old path is not the sweep's.
+			$nodes->expects($this->never())->method('removeStrayCopy');
 
 			$outcome = $this->owed($bindingService, $etherpadClient, nodes: $nodes)->finishTrash($file, new RunBudget(new FixedClock(), 20.0));
 

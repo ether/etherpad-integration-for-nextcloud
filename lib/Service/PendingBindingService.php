@@ -9,13 +9,10 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Service;
 
-use OCA\EtherpadNextcloud\AppInfo\Application;
 use OCA\EtherpadNextcloud\Util\SafeError;
 use OCP\AppFramework\Utility\ITimeFactory;
 use OCP\Files\File;
 use OCP\Files\IRootFolder;
-use OCP\Lock\ILockingProvider;
-use OCP\Lock\LockedException;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -25,8 +22,8 @@ use Psr\Log\LoggerInterface;
  * decision a restore takes, for a file in Files, or to the deletion its
  * trash owed (OwedDeletions).
  *
- * A run takes the kinds in turn (rowsInTurn) and each row under a lock
- * (whileHeld), and is bounded by a RunBudget.
+ * A run takes the kinds in turn (rowsInTurn) and each row under its
+ * SettleLock (whileHeld), and is bounded by a RunBudget.
  */
 class PendingBindingService {
 	/** The budget is a parameter so a test can reach it, not a setting. */
@@ -36,7 +33,7 @@ class PendingBindingService {
 		private RestoreService $restoreService,
 		private OwedDeletions $owedDeletions,
 		private IRootFolder $rootFolder,
-		private ILockingProvider $locks,
+		private SettleLock $settleLock,
 		private LoggerInterface $logger,
 		private ITimeFactory $timeFactory,
 		private float $budgetSeconds = RunBudget::DEFAULT_SECONDS,
@@ -128,31 +125,21 @@ class PendingBindingService {
 	 * holding the older snapshot could write it last. Null when another run
 	 * holds the row: it is neither counted nor moved.
 	 *
-	 * A lock that cannot be taken or let go for another reason - the
-	 * database, say - costs this row, not the run, as any local failure
-	 * does. One not let go is held until it expires, and the row waits.
+	 * A lock that cannot be taken for another reason - the database, say -
+	 * costs this row, not the run, as any local failure does.
 	 *
-	 * @param callable(): ?SettleOutcome $settle
+	 * @param \Closure(): ?SettleOutcome $settle
 	 */
-	private function whileHeld(int $fileId, callable $settle): ?SettleOutcome {
-		$lock = Application::APP_ID . ':settle:' . $fileId;
-		$context = ['app' => 'etherpad_nextcloud', 'fileId' => $fileId];
+	private function whileHeld(int $fileId, \Closure $settle): ?SettleOutcome {
 		try {
-			$this->locks->acquireLock($lock, ILockingProvider::LOCK_EXCLUSIVE);
-		} catch (LockedException) {
-			return null;
+			return $this->settleLock->holding($fileId, $settle, static fn (): ?SettleOutcome => null);
 		} catch (\Throwable $e) {
-			$this->logger->warning('Could not settle a pad binding that waits.', [...$context, ...SafeError::context($e)]);
+			$this->logger->warning('Could not settle a pad binding that waits.', [
+				'app' => 'etherpad_nextcloud',
+				'fileId' => $fileId,
+				...SafeError::context($e),
+			]);
 			return SettleOutcome::Left;
-		}
-		try {
-			return $settle();
-		} finally {
-			try {
-				$this->locks->releaseLock($lock, ILockingProvider::LOCK_EXCLUSIVE);
-			} catch (\Throwable $e) {
-				$this->logger->warning('Could not release the lock on a pad binding. It waits until the lock expires.', [...$context, ...SafeError::context($e)]);
-			}
 		}
 	}
 

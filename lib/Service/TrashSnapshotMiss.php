@@ -35,6 +35,8 @@ enum TrashSnapshotMiss: string {
 	 */
 	case PadBehind = 'pad_behind';
 	case FileMoved = 'file_moved';
+	/** A restore took the file back while its snapshot was written; the pad stays for the restore. */
+	case FileMovedWhileWritten = 'file_moved_while_written';
 	case WriteFailed = 'write_failed';
 
 	/** Someone has to look, at the file or at Etherpad: a warning the first time. */
