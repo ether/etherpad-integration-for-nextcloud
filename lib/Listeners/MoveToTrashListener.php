@@ -28,6 +28,12 @@ class MoveToTrashListener implements IEventListener {
 	) {
 	}
 
+	/**
+	 * A failure of the trash's pad step is thrown on: the event comes before
+	 * the file moves, so throwing stops the trash, and the file stays where
+	 * it was. The restore's listener, told after the file is back, only
+	 * reports.
+	 */
 	public function handle(Event $event): void {
 		if (!method_exists($event, 'getNode')) {
 			return;

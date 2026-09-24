@@ -555,6 +555,26 @@ class RestoreServiceTest extends TestCase {
 	}
 
 	/**
+	 * And when the row cannot be moved to wait either, the restore fails
+	 * without a word of its own: the warning about the unreadable file is
+	 * for a row that waits, and this one does not. The failure is the
+	 * caller's to report, once.
+	 */
+	public function testAnUnreadableFileWhoseRowCannotWaitFailsWithoutAWordOfItsOwn(): void {
+		$bindingService = $this->createMock(BindingService::class);
+		$bindingService->method('transition')->willThrowException(new \RuntimeException('connection lost'));
+		$file = $this->createMock(File::class);
+		$file->method('getId')->willReturn(98);
+		$file->method('getName')->willReturn('Restored.pad');
+		$file->method('getContent')->willThrowException(new \RuntimeException('locked'));
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects($this->never())->method($this->anything());
+
+		$this->expectException(LifecycleException::class);
+		$this->buildPendingDeleteRestoreService(98, 'old-pad', $bindingService, $this->createMock(EtherpadClient::class), logger: $logger)->restore($file);
+	}
+
+	/**
 	 * A deletion owed is settled on restore even once deleting on trash is
 	 * switched off: the file is back, and a row left in pending_delete
 	 * would keep it from opening for good.
