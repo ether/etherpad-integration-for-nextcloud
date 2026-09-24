@@ -28,4 +28,13 @@ class ParsedPadFile {
 		public readonly int $snapshotRev,
 	) {
 	}
+
+	/**
+	 * Whether the file names a pad on another Etherpad server: by its
+	 * frontmatter, or by an `ext.` pad id alone, which one with incomplete
+	 * metadata still has. No such pad is the app's to bind, seed or delete.
+	 */
+	public function namesAnExternalPad(): bool {
+		return $this->isExternal || str_starts_with($this->padId, 'ext.');
+	}
 }

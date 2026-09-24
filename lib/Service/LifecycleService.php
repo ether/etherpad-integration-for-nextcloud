@@ -639,7 +639,7 @@ class LifecycleService {
 	private function restoreWithoutBinding(File $file, int $fileId): array {
 		try {
 			$pad = $this->readRestoredPad($file);
-			if (str_starts_with($pad->padId, 'ext.') || $pad->isExternal) {
+			if ($pad->namesAnExternalPad()) {
 				return $this->buildSkippedResult('external_pad', $fileId, $pad->padId);
 			}
 			[$newPadId, $updatedContent] = $this->seedFromSnapshot($fileId, $pad, $pad->accessMode, $pad->padId);
@@ -721,7 +721,7 @@ class LifecycleService {
 				$content = (string)$file->getContent();
 			}
 			$pad = $this->padFileService->readPad($content);
-			return str_starts_with($pad->padId, 'ext.') || $pad->isExternal;
+			return $pad->namesAnExternalPad();
 		} catch (\Throwable) {
 			return false;
 		}

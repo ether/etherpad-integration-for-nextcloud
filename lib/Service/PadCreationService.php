@@ -303,7 +303,7 @@ class PadCreationService {
 		// that is neither public nor protected, so what is left to check here
 		// is what only a template cares about.
 		$pad = $this->padFileService->readPad($templateContent);
-		if (str_starts_with($pad->padId, 'ext.') || $pad->isExternal) {
+		if ($pad->namesAnExternalPad()) {
 			throw new \InvalidArgumentException('External pads cannot be used as a template.');
 		}
 
