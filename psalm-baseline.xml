@@ -221,6 +221,7 @@
     <DeprecatedMethod>
       <code><![CDATA[getAppValue]]></code>
       <code><![CDATA[getAppValue]]></code>
+      <code><![CDATA[getAppValue]]></code>
     </DeprecatedMethod>
     <RedundantCastGivenDocblockType>
       <code><![CDATA[(string)$this->config->getAppValue(Application::APP_ID, 'trusted_embed_origins', '')]]></code>
@@ -332,7 +333,6 @@
   <file src="lib/Service/LifecycleService.php">
     <DeprecatedMethod>
       <code><![CDATA[getAppValue]]></code>
-      <code><![CDATA[getAppValue]]></code>
     </DeprecatedMethod>
     <RedundantCastGivenDocblockType>
       <code><![CDATA[(bool)($result['delete_pending'] ?? false)]]></code>
@@ -347,7 +347,6 @@
       <code><![CDATA[(string)$file->getContent()]]></code>
       <code><![CDATA[(string)$file->getContent()]]></code>
       <code><![CDATA[(string)$this->config->getAppValue('etherpad_nextcloud', 'delete_on_trash', 'yes')]]></code>
-      <code><![CDATA[(string)$this->config->getAppValue('etherpad_nextcloud', 'test_fault', '')]]></code>
       <code><![CDATA[(string)($result['new_pad_id'] ?? '')]]></code>
       <code><![CDATA[(string)($result['new_pad_id'] ?? '')]]></code>
       <code><![CDATA[(string)($result['old_pad_id'] ?? '')]]></code>

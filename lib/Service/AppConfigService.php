@@ -33,6 +33,11 @@ class AppConfigService {
 		return (string)$this->config->getAppValue(Application::APP_ID, 'trusted_embed_origins', '');
 	}
 
+	/** The test fault a debug instance injects (TestFaults), or '' for none. */
+	public function getTestFault(): string {
+		return trim($this->config->getAppValue(Application::APP_ID, 'test_fault', ''));
+	}
+
 	/**
 	 * @return list<string>
 	 */

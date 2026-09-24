@@ -30,22 +30,14 @@ use Psr\Log\LoggerInterface;
  * (debug); a sweep reads it off the row.
  */
 final class TrashSnapshotWriter {
-	/** Test faults, injected on a debug instance through the admin API. */
-	public const FAULT_READ_LOCK = 'trash_read_lock';
-	public const FAULT_WRITE_LOCK = 'trash_write_lock';
-	public const FAULT_WRITE_FAIL = 'trash_write_fail';
-
 	/** @var array<string,mixed> */
 	private array $context;
 
-	/**
-	 * @param \Closure(string): bool $faultActive
-	 */
 	public function __construct(
 		private EtherpadClient $etherpadClient,
 		private PadFileService $padFileService,
 		private LoggerInterface $logger,
-		private \Closure $faultActive,
+		private TestFaults $testFaults,
 		private File $file,
 		private string $padId,
 		private bool $news = true,
@@ -62,7 +54,7 @@ final class TrashSnapshotWriter {
 	 */
 	public function read(): ParsedPadFile|TrashSnapshotMiss {
 		try {
-			if (($this->faultActive)(self::FAULT_READ_LOCK)) {
+			if ($this->testFaults->isActive(TestFaults::TRASH_READ_LOCK)) {
 				throw new LockedException('Injected test fault: trash_read_lock');
 			}
 			$content = $this->file->getContent();
@@ -219,10 +211,10 @@ final class TrashSnapshotWriter {
 	 */
 	private function write(ParsedPadFile $pad, PadSnapshot $snapshot): TrashSnapshotMiss|bool {
 		try {
-			if (($this->faultActive)(self::FAULT_WRITE_LOCK)) {
+			if ($this->testFaults->isActive(TestFaults::TRASH_WRITE_LOCK)) {
 				throw new LockedException('Injected test fault: trash_write_lock');
 			}
-			if (($this->faultActive)(self::FAULT_WRITE_FAIL)) {
+			if ($this->testFaults->isActive(TestFaults::TRASH_WRITE_FAIL)) {
 				throw new \RuntimeException('Injected test fault: trash_write_fail');
 			}
 			$this->file->putContent($this->padFileService->withExportSnapshot($pad, $snapshot));

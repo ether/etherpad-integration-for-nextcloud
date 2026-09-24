@@ -29,9 +29,6 @@ class LifecycleService {
 	public const RESULT_TRASHED = 'trashed';
 	public const RESULT_RESTORED = 'restored';
 	public const RESULT_SKIPPED = 'skipped';
-	public const TEST_FAULT_RESTORE_READ_LOCK = 'restore_read_lock';
-	public const TEST_FAULT_RESTORE_WRITE_LOCK = 'restore_write_lock';
-	public const TEST_FAULT_RESTORE_WRITE_FAIL = 'restore_write_fail';
 	/** Etherpad refuses a longer pad name, measured against 2.x. */
 	private const MAX_PAD_NAME_LENGTH = 50;
 	/** Etherpad gave no answer for a waiting row's pad: the one reason a sweep counts as an outage. */
@@ -54,7 +51,9 @@ class LifecycleService {
 		private UserNodeResolver $userNodeResolver,
 		private \OCA\EtherpadNextcloud\Util\PathNormalizer $padPaths,
 		private ITimeFactory $timeFactory,
-			private ProvisionedPadRollback $provisionedPadRollback,
+		private ProvisionedPadRollback $provisionedPadRollback,
+		private TrashSnapshotWriters $snapshotWriters,
+		private TestFaults $testFaults,
 	) {
 	}
 
@@ -188,7 +187,7 @@ class LifecycleService {
 		$deletedAt = $this->timeFactory->getTime();
 
 		try {
-			$snapshots = $this->snapshotWriter($file, $padId);
+			$snapshots = $this->snapshotWriters->for($file, $padId);
 			$pad = $snapshots->read();
 			if ($pad instanceof TrashSnapshotMiss || !$snapshots->writeAtTrash($pad)) {
 				// Without a fresh snapshot the pad may hold what the file lacks,
@@ -271,7 +270,7 @@ class LifecycleService {
 			return SettleOutcome::Left;
 		}
 		$padId = $binding->padId;
-		$snapshots = $this->snapshotWriter($file, $padId, news: $binding->untouchedSinceOwed());
+		$snapshots = $this->snapshotWriters->for($file, $padId, news: $binding->untouchedSinceOwed());
 		$pad = $snapshots->read();
 		if ($pad instanceof TrashSnapshotMiss) {
 			return $this->waitAgain($fileId, $padId, $pad);
@@ -396,14 +395,6 @@ class LifecycleService {
 			'fileId' => $fileId,
 			'padId' => $padId,
 		]);
-	}
-
-	/**
-	 * The snapshot steps for one file and its pad (TrashSnapshotWriter),
-	 * with $news when a sweep takes them.
-	 */
-	private function snapshotWriter(File $file, string $padId, bool $news = true): TrashSnapshotWriter {
-		return new TrashSnapshotWriter($this->etherpadClient, $this->padFileService, $this->logger, $this->isTestFaultActive(...), $file, $padId, $news);
 	}
 
 	/**
@@ -729,7 +720,7 @@ class LifecycleService {
 
 	/** The `.pad` back from the trash, as a restore from its snapshot reads it. */
 	private function readRestoredPad(File $file): ParsedPadFile {
-		if ($this->isTestFaultActive(self::TEST_FAULT_RESTORE_READ_LOCK)) {
+		if ($this->testFaults->isActive(TestFaults::RESTORE_READ_LOCK)) {
 			throw new LockedException('Injected test fault: restore_read_lock');
 		}
 		return $this->padFileService->readPad((string)$file->getContent());
@@ -914,10 +905,10 @@ class LifecycleService {
 	}
 
 	private function writeRestoredContent(File $file, string $updatedContent): void {
-		if ($this->isTestFaultActive(self::TEST_FAULT_RESTORE_WRITE_LOCK)) {
+		if ($this->testFaults->isActive(TestFaults::RESTORE_WRITE_LOCK)) {
 			throw new LockedException('Injected test fault: restore_write_lock');
 		}
-		if ($this->isTestFaultActive(self::TEST_FAULT_RESTORE_WRITE_FAIL)) {
+		if ($this->testFaults->isActive(TestFaults::RESTORE_WRITE_FAIL)) {
 			throw new \RuntimeException('Injected test fault: restore_write_fail');
 		}
 		$file->putContent($updatedContent);
@@ -941,26 +932,6 @@ class LifecycleService {
 	private function buildProtectedRestorePadName(): string {
 		$suffix = $this->secureRandom->generate(14, ISecureRandom::CHAR_LOWER . ISecureRandom::CHAR_DIGITS);
 		return 'restored-' . $suffix;
-	}
-
-	/** @return list<string> */
-	public static function getSupportedTestFaults(): array {
-		return [
-			TrashSnapshotWriter::FAULT_READ_LOCK,
-			TrashSnapshotWriter::FAULT_WRITE_LOCK,
-			TrashSnapshotWriter::FAULT_WRITE_FAIL,
-			self::TEST_FAULT_RESTORE_READ_LOCK,
-			self::TEST_FAULT_RESTORE_WRITE_LOCK,
-			self::TEST_FAULT_RESTORE_WRITE_FAIL,
-		];
-	}
-
-	private function isTestFaultActive(string $fault): bool {
-		if (!$this->config->getSystemValueBool('debug', false)) {
-			return false;
-		}
-		$active = trim((string)$this->config->getAppValue('etherpad_nextcloud', 'test_fault', ''));
-		return $active !== '' && hash_equals($active, $fault);
 	}
 
 }

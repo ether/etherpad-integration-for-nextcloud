@@ -9,12 +9,15 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Tests\Support;
 
+use OCA\EtherpadNextcloud\Service\AppConfigService;
 use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\EtherpadNextcloud\Service\EtherpadClient;
 use OCA\EtherpadNextcloud\Service\LifecycleService;
 use OCA\EtherpadNextcloud\Service\ManagedPadLifecycle;
 use OCA\EtherpadNextcloud\Service\PadFileService;
 use OCA\EtherpadNextcloud\Service\ProvisionedPadRollback;
+use OCA\EtherpadNextcloud\Service\TestFaults;
+use OCA\EtherpadNextcloud\Service\TrashSnapshotWriters;
 use OCA\EtherpadNextcloud\Service\UserNodeResolver;
 use OCA\EtherpadNextcloud\Util\PathNormalizer;
 use OCP\IConfig;
@@ -50,21 +53,27 @@ trait WiresALifecycleService {
 	): LifecycleService {
 		$bindings ??= $this->createMock(BindingService::class);
 		$etherpad ??= $this->createMock(EtherpadClient::class);
+		$padFiles ??= $this->createMock(PadFileService::class);
+		$logger ??= $this->createMock(LoggerInterface::class);
 		$padLifecycleLogger ??= $this->createMock(LoggerInterface::class);
 		$padLifecycle = new ManagedPadLifecycle($etherpad, $padLifecycleLogger);
+		$config = $this->deleteOnTrashConfig($deleteOnTrash);
+		$testFaults = new TestFaults($config, $this->createMock(AppConfigService::class));
 
 		return new LifecycleService(
 			$bindings,
-			$padFiles ?? $this->createMock(PadFileService::class),
+			$padFiles,
 			$etherpad,
 			$padLifecycle,
-			$this->deleteOnTrashConfig($deleteOnTrash),
-			$logger ?? $this->createMock(LoggerInterface::class),
+			$config,
+			$logger,
 			$secureRandom ?? $this->createMock(ISecureRandom::class),
 			$nodes ?? $this->createMock(UserNodeResolver::class),
 			$paths ?? $this->createMock(PathNormalizer::class),
 			new FixedClock(),
 			new ProvisionedPadRollback($bindings, $padLifecycle, $padLifecycleLogger),
+			new TrashSnapshotWriters($etherpad, $padFiles, $logger, $testFaults),
+			$testFaults,
 		);
 	}
 
