@@ -78,7 +78,8 @@ class BindingServiceTest extends TestCase {
 	 * Both kinds of waiting row come with the path their file has now, and a
 	 * row whose file is gone for good has no file cache row to join: left,
 	 * not inner. A deletion owed is aged by when the trash recorded it, an
-	 * undecided restore by when it last changed.
+	 * undecided restore by when it last changed, and the row carries that
+	 * time along.
 	 */
 	public function testWaitingRowsComeAgedWithTheirFilesPath(): void {
 		$kinds = [
@@ -86,14 +87,14 @@ class BindingServiceTest extends TestCase {
 			'deletions owed' => [BindingService::STATE_PENDING_DELETE, 'b.deleted_at', static fn (BindingService $s): array => $s->findPendingDeleteByAge(3600, 86400, 50)],
 		];
 		foreach ($kinds as $kind => [$state, $ageColumn, $find]) {
-			$qb = new BindingServiceTestQueryBuilder([['file_id' => 10, 'pad_id' => 'pad-a', 'state' => $state, 'file_path' => null]]);
+			$qb = new BindingServiceTestQueryBuilder([['file_id' => 10, 'pad_id' => 'pad-a', 'state' => $state, 'file_path' => null, 'waiting_since' => 90000]]);
 
 			$rows = $find($this->buildServiceWithQueryBuilder($qb, 100000));
 
-			$this->assertEquals([new WaitingBinding(10, 'pad-a', $state, null)], $rows, $kind);
+			$this->assertEquals([new WaitingBinding(10, 'pad-a', $state, null, 90000)], $rows, $kind);
 			// Every column a WaitingBinding is read from; one left out would read as a row without it.
 			$this->assertSame(['b.file_id', 'b.pad_id', 'b.state'], $qb->selected, $kind);
-			$this->assertSame([['fc.path', 'file_path']], $qb->aliases, $kind);
+			$this->assertSame([['fc.path', 'file_path'], [$ageColumn, 'waiting_since']], $qb->aliases, $kind);
 			$this->assertSame([['b', 'filecache', 'fc', ['eq', 'b.file_id', 'fc.fileid']]], $qb->leftJoins, $kind);
 			$this->assertSame(50, $qb->maxResults, $kind);
 			$this->assertSame([['eq', 'b.state', 'param1'], ['lte', $ageColumn, 'param2'], ['gt', $ageColumn, 'param3']], $qb->conditions, $kind);

@@ -131,10 +131,11 @@ class LifecycleService {
 			}
 
 			try {
-				$wasThere = $this->padLifecycle->discardIfPresent($padId);
+				// Retried: a delete that fails leaves the deletion owed, for the sweep.
+				$wasThere = $this->padLifecycle->discardIfPresent($padId, retried: true);
 			} catch (\Throwable $deleteError) {
 				$this->oweDeletion($fileId, $padId);
-				$this->logger->warning('Could not delete the pad after trash. It is kept, and its deletion recorded as pending.', [
+				$this->logger->warning('Could not delete the pad after trash, or read its group. It is kept, and its deletion recorded as pending.', [
 					'app' => 'etherpad_nextcloud',
 					'fileId' => $fileId,
 					...SafeError::context($deleteError),

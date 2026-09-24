@@ -257,13 +257,18 @@ class ManagedPadLifecycle {
 	 * $budget: a sweep's run; each call gets what is left, and one that
 	 * would not finish is not made. Nothing is removed before the last
 	 * call, so stopping leaves the pad as it was.
+	 *
+	 * $retried: the caller keeps its row when this throws, and tries again.
+	 * A group that cannot be read then fails the call, with nothing
+	 * removed, instead of being given up for the pad alone: the next try
+	 * may read it, and a group given up is never looked at again.
 	 */
-	public function discardIfPresent(string $padId, ?RunBudget $budget = null, bool $knownAbsent = false): bool {
+	public function discardIfPresent(string $padId, ?RunBudget $budget = null, bool $knownAbsent = false, bool $retried = false): bool {
 		if ($knownAbsent && !PadId::isGroupPad($padId)) {
 			return false;
 		}
 		try {
-			$this->discard($padId, $budget);
+			$this->discard($padId, $budget, $retried);
 			return true;
 		} catch (\Throwable $e) {
 			if (EtherpadErrorClassifier::isPadAlreadyDeleted($e)) {
@@ -279,14 +284,14 @@ class ManagedPadLifecycle {
 	 * need not name a group this app made (docs/etherpad-integration.md,
 	 * "Removing a pad").
 	 */
-	private function discard(string $padId, ?RunBudget $budget): void {
+	private function discard(string $padId, ?RunBudget $budget, bool $retried): void {
 		$groupId = PadId::groupIdOf($padId);
 		if ($groupId === null) {
 			$this->etherpadClient->deletePad($padId, RunBudget::timeoutOf($budget));
 			return;
 		}
 
-		$pads = $this->padsInGroup($groupId, $padId, RunBudget::timeoutOf($budget));
+		$pads = $this->padsInGroup($groupId, $padId, RunBudget::timeoutOf($budget), $retried);
 		// An empty group counts too, and it is the only way the pads deleted
 		// before this existed are ever collected: their group is still there
 		// with nothing in it, and a retry that only deleted the pad again
@@ -331,18 +336,19 @@ class ManagedPadLifecycle {
 	 * veto the delete: not knowing gives up the group and keeps the pad
 	 * delete, which is the half that was always safe. The group then stays
 	 * behind, empty once the pad is gone, and nothing leads back to it; its
-	 * sessions open nothing.
+	 * sessions open nothing. Only a caller that will try again ($retried)
+	 * gets the failed read instead, to report, and loses nothing.
 	 *
 	 * An answer that the group does not exist is no failed read: it goes to
 	 * the caller as it came.
 	 *
 	 * @return list<string>|null null when the group could not be read
 	 */
-	private function padsInGroup(string $groupId, string $padId, ?int $timeoutSeconds): ?array {
+	private function padsInGroup(string $groupId, string $padId, ?int $timeoutSeconds, bool $retried): ?array {
 		try {
 			return $this->etherpadClient->listPads($groupId, $timeoutSeconds);
 		} catch (\Throwable $e) {
-			if (EtherpadErrorClassifier::isPadAlreadyDeleted($e)) {
+			if ($retried || EtherpadErrorClassifier::isPadAlreadyDeleted($e)) {
 				throw $e;
 			}
 			$this->logger->warning('Could not read the Etherpad group; removing only the pad.', [

@@ -11,6 +11,7 @@ namespace OCA\EtherpadNextcloud\Service;
 
 use OCA\EtherpadNextcloud\Exception\RunBudgetSpentException;
 use OCA\EtherpadNextcloud\Util\SafeError;
+use OCP\AppFramework\Utility\ITimeFactory;
 use OCP\Files\File;
 use Psr\Log\LoggerInterface;
 
@@ -26,6 +27,13 @@ use Psr\Log\LoggerInterface;
  * nothing while it is off: a setting switched off during a run stops there.
  */
 class OwedDeletions {
+	/**
+	 * How long after the trash that owed it a file gone for good keeps its
+	 * row while its pad's group cannot be read: a day, after which only the
+	 * daily run reaches the row.
+	 */
+	private const GROUP_TRIED_FOR_SECONDS = 86400;
+
 	public function __construct(
 		private BindingService $bindingService,
 		private AppConfigService $appConfig,
@@ -33,6 +41,7 @@ class OwedDeletions {
 		private TrashSnapshotWriters $snapshotWriters,
 		private UserNodeResolver $userNodeResolver,
 		private LoggerInterface $logger,
+		private ITimeFactory $timeFactory,
 	) {
 	}
 
@@ -98,7 +107,7 @@ class OwedDeletions {
 				return $this->waitAgain($fileId, $padId, $written);
 			}
 		}
-		return $this->deleteOwed($fileId, $padId, BindingService::STATE_PENDING_DELETE, $probe->presence, $budget, claimFirst: true);
+		return $this->deleteOwed($fileId, $padId, BindingService::STATE_PENDING_DELETE, $probe->presence, $budget, claimFirst: true, retried: false);
 	}
 
 	/**
@@ -106,6 +115,14 @@ class OwedDeletions {
 	 * the file cache under its id, in Files or in any trash. Etherpad is
 	 * asked first, so one that does not answer costs one call; then the pad
 	 * goes, then the row.
+	 *
+	 * A pad whose group cannot be read keeps its row for another try while
+	 * its deletion has been owed for less than a day, counted from the
+	 * trash: a trash emptied soon after, not a file that expired from a
+	 * trash or left a team folder's. From then on the pad goes alone and
+	 * the group is given up, as before, so a group that can never be read
+	 * does not hold the row, and every run after it, for good. A row with
+	 * no time to go by, from before 1.1.0, gives the group up at once.
 	 */
 	public function finishGoneFile(WaitingBinding $row, RunBudget $budget): SettleOutcome {
 		if (!$this->appConfig->isDeleteOnTrashEnabled()) {
@@ -115,7 +132,8 @@ class OwedDeletions {
 		if ($presence === PadPresence::Unknown) {
 			return SettleOutcome::Unanswered;
 		}
-		return $this->deleteOwed($row->fileId, $row->padId, $row->state, $presence, $budget, claimFirst: false);
+		$retried = $row->waitingSince !== null && $this->timeFactory->getTime() - $row->waitingSince < self::GROUP_TRIED_FOR_SECONDS;
+		return $this->deleteOwed($row->fileId, $row->padId, $row->state, $presence, $budget, claimFirst: false, retried: $retried);
 	}
 
 	/**
@@ -133,14 +151,15 @@ class OwedDeletions {
 	 *
 	 * Without it, for a file gone for good, the pad goes first. No restore
 	 * can come for that file, and a pad that could not be deleted keeps its
-	 * row, so the next run tries again.
+	 * row, so the next run tries again - as does one whose group could not
+	 * be read, while $retried.
 	 */
-	private function deleteOwed(int $fileId, string $padId, string $state, PadPresence $presence, RunBudget $budget, bool $claimFirst): SettleOutcome {
+	private function deleteOwed(int $fileId, string $padId, string $state, PadPresence $presence, RunBudget $budget, bool $claimFirst, bool $retried): SettleOutcome {
 		if ($claimFirst && ($budget->nextCallTimeout() === null || !$this->bindingService->deleteInState($fileId, $padId, $state))) {
 			return SettleOutcome::Left;
 		}
 		try {
-			$this->padLifecycle->discardIfPresent($padId, $claimFirst ? null : $budget, knownAbsent: $presence === PadPresence::Absent);
+			$this->padLifecycle->discardIfPresent($padId, $claimFirst ? null : $budget, knownAbsent: $presence === PadPresence::Absent, retried: $retried);
 		} catch (\Throwable $e) {
 			$context = ['app' => 'etherpad_nextcloud', 'fileId' => $fileId, ...SafeError::context($e)];
 			if ($claimFirst) {
@@ -150,7 +169,7 @@ class OwedDeletions {
 			if ($e instanceof RunBudgetSpentException) {
 				return SettleOutcome::Left;
 			}
-			$this->logger->warning('Could not delete the pad of a file that is gone for good. Its row stays for the next run.', $context);
+			$this->logger->warning('Could not delete the pad of a file that is gone for good, or read its group. Its row stays for the next run.', $context);
 			return SettleOutcome::Unanswered;
 		}
 		if (!$claimFirst) {

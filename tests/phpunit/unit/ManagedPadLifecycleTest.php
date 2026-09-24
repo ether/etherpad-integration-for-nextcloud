@@ -101,6 +101,25 @@ class ManagedPadLifecycleTest extends TestCase {
 		$this->assertTrue($this->lifecycle($client)->discardIfPresent($padId));
 	}
 
+	/**
+	 * A caller that keeps its row and tries again gets the failed read
+	 * instead, with nothing removed: the next try may read the group, and
+	 * one given up for the pad alone is never looked at again. The caller
+	 * reports it, so nothing is logged here.
+	 */
+	public function testARetriedDiscardRemovesNothingWhenTheGroupCannotBeRead(): void {
+		$client = $this->createMock(EtherpadClient::class);
+		$client->method('listPads')->willThrowException(new \RuntimeException('Connection timed out'));
+		$client->expects($this->never())->method('deleteGroup');
+		$client->expects($this->never())->method('deletePad');
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects($this->never())->method($this->anything());
+
+		$this->expectExceptionMessage('Connection timed out');
+
+		(new ManagedPadLifecycle($client, $logger))->discardIfPresent('g.ABCDEFGHIJKLMNOP$p-abc123', retried: true);
+	}
+
 	public function testDeletesOnlyThePadForAPublicOne(): void {
 		$client = $this->createMock(EtherpadClient::class);
 		$client->expects($this->never())->method('listPads');
@@ -114,7 +133,8 @@ class ManagedPadLifecycleTest extends TestCase {
 	 * A pad Etherpad says does not exist is gone already, and so is one in a
 	 * group that does not exist - also when the group goes between reading it
 	 * and deleting it. No caller has anything left to do, and none has to
-	 * read Etherpad's error for it.
+	 * read Etherpad's error for it - not even one that passes on a group it
+	 * cannot read (retried).
 	 */
 	public function testAPadOrGroupGoneAlreadyIsNoError(): void {
 		$group = 'g.ABCDEFGHIJKLMNOP';
@@ -122,6 +142,7 @@ class ManagedPadLifecycleTest extends TestCase {
 		$cases = [
 			'public pad' => ['nc-abcdef0123456789', null, 'padID does not exist', null],
 			'group' => [$padId, new \RuntimeException('groupID does not exist'), null, null],
+			'group, retried' => [$padId, new \RuntimeException('groupID does not exist'), null, null],
 			'group gone after it was read' => [$padId, [$padId], null, 'groupID does not exist'],
 			'pad gone from a group that holds others' => [$padId, [$group . '$other'], 'padID does not exist', null],
 		];
@@ -141,7 +162,7 @@ class ManagedPadLifecycleTest extends TestCase {
 				$deleteGroup->willThrowException(new \RuntimeException($groupAnswer));
 			}
 
-			$this->assertFalse($this->lifecycle($client)->discardIfPresent($id), $case);
+			$this->assertFalse($this->lifecycle($client)->discardIfPresent($id, retried: $case === 'group, retried'), $case);
 		}
 	}
 

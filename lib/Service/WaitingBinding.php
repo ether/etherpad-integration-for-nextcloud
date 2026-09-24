@@ -12,9 +12,10 @@ namespace OCA\EtherpadNextcloud\Service;
 use OCA\EtherpadNextcloud\Util\DbRows;
 
 /**
- * A row the sweep takes: the binding's file, pad and state, and the path
- * its file has in the file cache now - null once nothing is left of the
- * file.
+ * A row the sweep takes: the binding's file, pad and state, the path its
+ * file has in the file cache now - null once nothing is left of the file -
+ * and the time the row is aged by: deleted_at for a deletion owed,
+ * updated_at for a restore left undecided.
  */
 final class WaitingBinding {
 	public function __construct(
@@ -22,6 +23,7 @@ final class WaitingBinding {
 		public readonly string $padId,
 		public readonly string $state,
 		public readonly ?string $filePath,
+		public readonly ?int $waitingSince = null,
 	) {
 	}
 
@@ -51,6 +53,7 @@ final class WaitingBinding {
 			padId: DbRows::string($row, 'pad_id'),
 			state: DbRows::string($row, 'state'),
 			filePath: DbRows::nullableString($row, 'file_path'),
+			waitingSince: DbRows::nullableInt($row, 'waiting_since'),
 		);
 	}
 }
