@@ -157,10 +157,10 @@ class LifecycleService {
 
 		try {
 			$binding = $this->bindingService->findByFileId($fileId);
-			if ($binding !== null && (string)$binding['state'] === BindingService::STATE_RESTORE_PENDING) {
+			if ($binding !== null && $binding->state === BindingService::STATE_RESTORE_PENDING) {
 				// Whatever the setting says: nothing is deleted here, and a row
 				// left waiting would keep the file from opening once it is back.
-				$retrashed = $this->retrashUndecided($fileId, (string)$binding['pad_id']);
+				$retrashed = $this->retrashUndecided($fileId, $binding->padId);
 				if ($retrashed !== null) {
 					return $retrashed;
 				}
@@ -180,8 +180,8 @@ class LifecycleService {
 			}
 			return $this->buildSkippedResult('binding_not_found', $fileId);
 		}
-		$padId = (string)$binding['pad_id'];
-		if ((string)$binding['state'] !== BindingService::STATE_ACTIVE) {
+		$padId = $binding->padId;
+		if ($binding->state !== BindingService::STATE_ACTIVE) {
 			return $this->buildSkippedResult('binding_not_active', $fileId, $padId);
 		}
 
@@ -253,10 +253,8 @@ class LifecycleService {
 	 * row is released and the file keeps the snapshot it has. Etherpad
 	 * giving no answer, to the question or while the snapshot is read, is
 	 * Unanswered. A file that did not get its snapshot waits as its
-	 * TrashSnapshotMiss says; whether its trouble is news is read off the
-	 * row - updated_at still at deleted_at, or no deleted_at at all. A row a
-	 * trash before 1.1.0 wrote may have them seconds apart, and reports at
-	 * debug level.
+	 * TrashSnapshotMiss says; whether its trouble is news is
+	 * Binding::untouchedSinceOwed().
 	 *
 	 * Nothing happens while deleting on trash is switched off; the sweep
 	 * does not fetch these rows then at all. One call at a time per file:
@@ -269,13 +267,11 @@ class LifecycleService {
 		}
 		$fileId = (int)$file->getId();
 		$binding = $this->bindingService->findByFileId($fileId);
-		if ($binding === null || (string)$binding['state'] !== BindingService::STATE_PENDING_DELETE) {
+		if ($binding === null || $binding->state !== BindingService::STATE_PENDING_DELETE) {
 			return SettleOutcome::Left;
 		}
-		$padId = (string)$binding['pad_id'];
-		$deletedAt = $binding['deleted_at'] ?? null;
-		$news = $deletedAt === null || (int)($binding['updated_at'] ?? 0) <= (int)$deletedAt;
-		$snapshots = $this->snapshotWriter($file, $padId, $news);
+		$padId = $binding->padId;
+		$snapshots = $this->snapshotWriter($file, $padId, news: $binding->untouchedSinceOwed());
 		$pad = $snapshots->read();
 		if ($pad instanceof TrashSnapshotMiss) {
 			return $this->waitAgain($fileId, $padId, $pad);
@@ -445,8 +441,8 @@ class LifecycleService {
 			}
 			return $this->restoreWithoutBinding($file, $fileId);
 		}
-		if (!$this->isWaiting($binding)) {
-			return $this->buildSkippedResult('binding_not_pending_delete', $fileId, (string)$binding['pad_id']);
+		if (!$binding->isWaiting()) {
+			return $this->buildSkippedResult('binding_not_pending_delete', $fileId, $binding->padId);
 		}
 		// Settled whatever the setting says now: the file is back, and a row
 		// left waiting would keep it from opening.
@@ -471,7 +467,7 @@ class LifecycleService {
 			return SettleOutcome::Left;
 		}
 		$binding = $this->findBindingForRestore((int)$file->getId());
-		if ($binding === null || !$this->isWaiting($binding)) {
+		if ($binding === null || !$binding->isWaiting()) {
 			return SettleOutcome::Left;
 		}
 		$result = $this->settleWaitingBinding($file, $binding, mayReplace: false, budget: $budget);
@@ -483,13 +479,7 @@ class LifecycleService {
 		};
 	}
 
-	/** @param array<string,mixed> $binding */
-	private function isWaiting(array $binding): bool {
-		return in_array((string)$binding['state'], [BindingService::STATE_PENDING_DELETE, BindingService::STATE_RESTORE_PENDING], true);
-	}
-
-	/** @return array<string,mixed>|null */
-	private function findBindingForRestore(int $fileId): ?array {
+	private function findBindingForRestore(int $fileId): ?Binding {
 		try {
 			return $this->bindingService->findByFileId($fileId);
 		} catch (\Throwable $e) {
@@ -506,13 +496,12 @@ class LifecycleService {
 	 * The file is read first for its snapshot revision: a pad under that id
 	 * with fewer revisions is not the pad the file knew.
 	 *
-	 * @param array<string,mixed> $binding
 	 * @return array{status: string, reason?: string, file_id: int, pad_id?: string, old_pad_id?: string, new_pad_id?: string}
 	 */
-	private function settleWaitingBinding(File $file, array $binding, bool $mayReplace, ?RunBudget $budget = null): array {
+	private function settleWaitingBinding(File $file, Binding $binding, bool $mayReplace, ?RunBudget $budget = null): array {
 		$fileId = (int)$file->getId();
-		$padId = (string)$binding['pad_id'];
-		$state = (string)$binding['state'];
+		$padId = $binding->padId;
+		$state = $binding->state;
 		try {
 			try {
 				$pad = $this->readRestoredPad($file);
@@ -534,7 +523,7 @@ class LifecycleService {
 				PadPresence::Present => $this->resumeOwnPad($file, $fileId, $padId, $state, $mayReplace),
 				PadPresence::Unknown => $this->deferRestore($fileId, $padId, $state),
 				PadPresence::Absent, PadPresence::Behind => $mayReplace
-					? $this->restoreWithReplacement($file, $pad, $fileId, $padId, $state, (string)$binding['access_mode'], $presence)
+					? $this->restoreWithReplacement($file, $pad, $fileId, $padId, $state, $binding->accessMode, $presence)
 					: $this->releaseWaitingRow($fileId, $padId, $state),
 			};
 		} catch (LifecycleException $e) {

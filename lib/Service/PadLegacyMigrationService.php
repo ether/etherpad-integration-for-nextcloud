@@ -164,7 +164,7 @@ class PadLegacyMigrationService {
 			}
 		}
 
-		$boundFileId = (int)$existingBinding['file_id'];
+		$boundFileId = $existingBinding->fileId;
 		if ($boundFileId === $fileId) {
 			// Self-collision: an earlier migration attempt for this file
 			// succeeded in creating the binding but failed before the file

@@ -27,4 +27,37 @@ class DbRowsTest extends TestCase {
 		);
 		$this->assertSame([], DbRows::all([]));
 	}
+
+	/** An integer column as the driver gave it, an int or a numeric string; a string column as it is. */
+	public function testReadsAColumnAsWhatItHolds(): void {
+		$row = ['file_id' => '7', 'updated_at' => 200, 'deleted_at' => null, 'pad_id' => 'nc-abc', 'file_path' => null];
+
+		$this->assertSame(7, DbRows::int($row, 'file_id'));
+		$this->assertSame(200, DbRows::int($row, 'updated_at'));
+		$this->assertNull(DbRows::nullableInt($row, 'deleted_at'));
+		$this->assertSame('nc-abc', DbRows::string($row, 'pad_id'));
+		$this->assertNull(DbRows::nullableString($row, 'file_path'));
+	}
+
+	/**
+	 * A column the query did not select, null where the column is NOT NULL,
+	 * or a value of another kind: none is read as data.
+	 */
+	public function testRefusesWhatAColumnCannotHold(): void {
+		$reads = [
+			'not selected' => static fn (): mixed => DbRows::nullableInt([], 'deleted_at'),
+			'null in an int' => static fn (): mixed => DbRows::int(['file_id' => null], 'file_id'),
+			'null in a string' => static fn (): mixed => DbRows::string(['pad_id' => null], 'pad_id'),
+			'not a number' => static fn (): mixed => DbRows::int(['file_id' => '7a'], 'file_id'),
+			'not a string' => static fn (): mixed => DbRows::string(['pad_id' => 7], 'pad_id'),
+		];
+		foreach ($reads as $case => $read) {
+			try {
+				$read();
+				$this->fail('Read: ' . $case);
+			} catch (\UnexpectedValueException) {
+				$this->addToAssertionCount(1);
+			}
+		}
+	}
 }

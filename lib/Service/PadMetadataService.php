@@ -67,7 +67,7 @@ class PadMetadataService {
 			return new PadOriginalLookup(found: false);
 		}
 
-		$boundFileId = (int)$binding['file_id'];
+		$boundFileId = $binding->fileId;
 		if ($boundFileId <= 0 || $boundFileId === $fileId) {
 			return new PadOriginalLookup(found: false);
 		}

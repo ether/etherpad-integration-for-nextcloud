@@ -8,6 +8,7 @@ use OCA\EtherpadNextcloud\Exception\BindingException;
 use OCA\EtherpadNextcloud\Exception\LegacyPadCollisionException;
 use OCA\EtherpadNextcloud\Exception\LegacyProtectedImportDisabledException;
 use OCA\EtherpadNextcloud\Exception\PadFileFormatException;
+use OCA\EtherpadNextcloud\Service\Binding;
 use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\EtherpadNextcloud\Service\EtherpadClient;
 use OCA\EtherpadNextcloud\Service\ExternalPadSeeder;
@@ -148,11 +149,7 @@ class PadLegacyMigrationServiceTest extends TestCase {
 		$etherpadClient->method('listPads')->with('g.abc')->willReturn(['g.abc$x']);
 
 		$binding = $this->createMock(BindingService::class);
-		$binding->method('findByPadId')->willReturn([
-			'file_id' => 999,
-			'pad_id' => 'g.abc$x',
-			'access_mode' => 'protected',
-		]);
+		$binding->method('findByPadId')->willReturn(new Binding(fileId: 999, padId: 'g.abc$x', accessMode: 'protected', state: BindingService::STATE_ACTIVE));
 		$binding->expects($this->never())->method('createBinding');
 
 		$resolver = $this->createMock(UserNodeResolver::class);
@@ -235,12 +232,12 @@ class PadLegacyMigrationServiceTest extends TestCase {
 		$binding = $this->createMock(BindingService::class);
 		$findCalls = 0;
 		$binding->method('findByPadId')->willReturnCallback(
-			static function () use (&$findCalls): ?array {
+			static function () use (&$findCalls): ?Binding {
 				$findCalls++;
 				if ($findCalls === 1) {
 					return null; // initial check: no binding
 				}
-				return ['file_id' => 808, 'pad_id' => 'race-pad', 'access_mode' => 'public'];
+				return new Binding(808, 'race-pad', BindingService::ACCESS_PUBLIC, BindingService::STATE_ACTIVE);
 			}
 		);
 		$binding->expects($this->once())
@@ -346,11 +343,7 @@ class PadLegacyMigrationServiceTest extends TestCase {
 		$etherpadClient->method('listPads')->with('g.abc')->willReturn(['g.abc$x']);
 
 		$binding = $this->createMock(BindingService::class);
-		$binding->method('findByPadId')->willReturn([
-			'file_id' => 888,
-			'pad_id' => 'g.abc$x',
-			'access_mode' => 'protected',
-		]);
+		$binding->method('findByPadId')->willReturn(new Binding(fileId: 888, padId: 'g.abc$x', accessMode: 'protected', state: BindingService::STATE_ACTIVE));
 		$binding->expects($this->never())->method('createBinding');
 
 		$resolver = $this->createMock(UserNodeResolver::class);
@@ -408,7 +401,7 @@ class PadLegacyMigrationServiceTest extends TestCase {
 		$etherpadClient->method('listPads')->willReturn(['g.ourgroup$notes']);
 
 		$binding = $this->createMock(BindingService::class);
-		$binding->method('findByPadId')->willReturn(['file_id' => 204, 'pad_id' => 'g.ourgroup$notes']);
+		$binding->method('findByPadId')->willReturn(new Binding(fileId: 204, padId: 'g.ourgroup$notes', accessMode: BindingService::ACCESS_PROTECTED, state: BindingService::STATE_ACTIVE));
 		$binding->expects($this->never())->method('createBinding');
 		$file->expects($this->once())->method('putContent');
 

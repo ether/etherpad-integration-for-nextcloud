@@ -9,6 +9,7 @@ use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
 use OCA\EtherpadNextcloud\Exception\LifecycleException;
 use OCA\EtherpadNextcloud\Exception\NotAPadFileException;
 use OCA\EtherpadNextcloud\Exception\PadAlreadyHasBindingException;
+use OCA\EtherpadNextcloud\Service\Binding;
 use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\EtherpadNextcloud\Service\EtherpadClient;
 use OCA\EtherpadNextcloud\Service\LifecycleService;
@@ -648,11 +649,11 @@ class LifecycleServiceTest extends TestCase {
 	 */
 	public function testHandleTrashTrashesARowASweepSettledMeanwhile(): void {
 		$rows = [
-			['file_id' => 109, 'pad_id' => 'old-pad', 'access_mode' => BindingService::ACCESS_PUBLIC, 'state' => BindingService::STATE_RESTORE_PENDING],
-			['file_id' => 109, 'pad_id' => 'old-pad', 'access_mode' => BindingService::ACCESS_PUBLIC, 'state' => BindingService::STATE_ACTIVE],
+			new Binding(109, 'old-pad', BindingService::ACCESS_PUBLIC, BindingService::STATE_RESTORE_PENDING),
+			new Binding(109, 'old-pad', BindingService::ACCESS_PUBLIC, BindingService::STATE_ACTIVE),
 		];
 		$bindingService = $this->createMock(BindingService::class);
-		$bindingService->method('findByFileId')->willReturnCallback(static function () use (&$rows): array {
+		$bindingService->method('findByFileId')->willReturnCallback(static function () use (&$rows): Binding {
 			return count($rows) > 1 ? array_shift($rows) : $rows[0];
 		});
 		$bindingService->method('transition')->willReturn(false);
@@ -738,12 +739,7 @@ class LifecycleServiceTest extends TestCase {
 	public function testHandleTrashKeepsThePadWhenNoFreshSnapshotCanBeWritten(): void {
 		foreach (['file locked by its delete', 'write refused'] as $case) {
 			$bindingService = $this->createMock(BindingService::class);
-			$bindingService->method('findByFileId')->willReturn([
-				'file_id' => 110,
-				'pad_id' => 'pad-kept',
-				'access_mode' => BindingService::ACCESS_PUBLIC,
-				'state' => BindingService::STATE_ACTIVE,
-			]);
+			$bindingService->method('findByFileId')->willReturn(new Binding(fileId: 110, padId: 'pad-kept', accessMode: BindingService::ACCESS_PUBLIC, state: BindingService::STATE_ACTIVE));
 			$bindingService->expects($this->once())
 				->method('transition')
 				->with(110, 'pad-kept', BindingService::STATE_ACTIVE, BindingService::STATE_PENDING_DELETE)
@@ -786,12 +782,7 @@ class LifecycleServiceTest extends TestCase {
 	 */
 	public function testATrashDoesNotWriteAPadBehindTheFilesSnapshot(): void {
 		$bindingService = $this->createMock(BindingService::class);
-		$bindingService->method('findByFileId')->willReturn([
-			'file_id' => 110,
-			'pad_id' => 'pad-again',
-			'access_mode' => BindingService::ACCESS_PUBLIC,
-			'state' => BindingService::STATE_ACTIVE,
-		]);
+		$bindingService->method('findByFileId')->willReturn(new Binding(fileId: 110, padId: 'pad-again', accessMode: BindingService::ACCESS_PUBLIC, state: BindingService::STATE_ACTIVE));
 		$bindingService->expects($this->once())
 			->method('transition')
 			->with(110, 'pad-again', BindingService::STATE_ACTIVE, BindingService::STATE_PENDING_DELETE)
@@ -823,12 +814,7 @@ class LifecycleServiceTest extends TestCase {
 	public function testATrashFindingThePadGoneAlreadyTakesTheRow(): void {
 		foreach (['gone already' => true, 'deleted now' => false] as $case => $gone) {
 			$bindingService = $this->createMock(BindingService::class);
-			$bindingService->method('findByFileId')->willReturn([
-				'file_id' => 110,
-				'pad_id' => 'pad-gone',
-				'access_mode' => BindingService::ACCESS_PUBLIC,
-				'state' => BindingService::STATE_ACTIVE,
-			]);
+			$bindingService->method('findByFileId')->willReturn(new Binding(fileId: 110, padId: 'pad-gone', accessMode: BindingService::ACCESS_PUBLIC, state: BindingService::STATE_ACTIVE));
 			$bindingService->expects($this->never())->method('transition');
 			$bindingService->expects($this->once())->method('deleteByFileId')->with(110);
 			$etherpadClient = $this->createMock(EtherpadClient::class);
@@ -863,12 +849,7 @@ class LifecycleServiceTest extends TestCase {
 	 */
 	public function testNoSnapshotIsTakenThatTheFileHasAlready(): void {
 		$bindingService = $this->createMock(BindingService::class);
-		$bindingService->method('findByFileId')->willReturn([
-			'file_id' => 110,
-			'pad_id' => 'pad-current',
-			'access_mode' => BindingService::ACCESS_PUBLIC,
-			'state' => BindingService::STATE_ACTIVE,
-		]);
+		$bindingService->method('findByFileId')->willReturn(new Binding(fileId: 110, padId: 'pad-current', accessMode: BindingService::ACCESS_PUBLIC, state: BindingService::STATE_ACTIVE));
 		$bindingService->expects($this->once())->method('deleteByFileId')->with(110);
 		$etherpadClient = $this->createMock(EtherpadClient::class);
 		$etherpadClient->expects($this->once())->method('getRevisionsCount')->willReturn(4);
@@ -1081,7 +1062,7 @@ class LifecycleServiceTest extends TestCase {
 	/** A row that is not a deletion owed any more, or a file that cannot be read, is left for later. */
 	public function testFinishTrashLeavesWhatItCannotSettle(): void {
 		$active = $this->createMock(BindingService::class);
-		$active->method('findByFileId')->willReturn(['file_id' => 113, 'pad_id' => 'pad-a', 'access_mode' => BindingService::ACCESS_PUBLIC, 'state' => BindingService::STATE_ACTIVE]);
+		$active->method('findByFileId')->willReturn(new Binding(fileId: 113, padId: 'pad-a', accessMode: BindingService::ACCESS_PUBLIC, state: BindingService::STATE_ACTIVE));
 		$active->expects($this->never())->method('deleteInState');
 		$etherpadClient = $this->createMock(EtherpadClient::class);
 		$etherpadClient->expects($this->never())->method('getRevisionsCount');
@@ -1108,15 +1089,14 @@ class LifecycleServiceTest extends TestCase {
 
 	/**
 	 * A trashed file the sweep cannot use is tried again each run, from the
-	 * back of the queue, but reported at warning level only the first time:
-	 * after that its row's updated_at has moved past its deleted_at.
+	 * back of the queue, but reported at warning level only the first time.
+	 * When a row counts as reported is Binding::untouchedSinceOwed(); here,
+	 * that its answer reaches the log line.
 	 */
 	public function testATrashedFileThatCannotBeReadIsReportedOnce(): void {
 		$cases = [
 			'first time' => [100, 100, 'warning'],
 			'reported before' => [100, 400, 'debug'],
-			// Nothing to tell a repeat by: each run the admin page makes reports it.
-			'no deleted_at' => [null, 400, 'warning'],
 		];
 		foreach ($cases as $case => [$deletedAt, $updatedAt, $level]) {
 			$bindingService = $this->pendingTrashRow(116, 'pad-d', updatedAt: $updatedAt, deletedAt: $deletedAt);
@@ -1268,7 +1248,7 @@ class LifecycleServiceTest extends TestCase {
 	 * than leave the file with no pad. A sweep in its place writes nothing.
 	 */
 	public function testARestoreThatLostItsRowToTheSweepMakesANewPadFromTheFile(): void {
-		$row = ['file_id' => 125, 'pad_id' => 'old-pad', 'access_mode' => BindingService::ACCESS_PUBLIC, 'state' => BindingService::STATE_PENDING_DELETE];
+		$row = new Binding(125, 'old-pad', BindingService::ACCESS_PUBLIC, BindingService::STATE_PENDING_DELETE);
 		$bindingService = $this->createMock(BindingService::class);
 		$bindingService->method('findByFileId')->willReturnOnConsecutiveCalls($row, null);
 		$bindingService->expects($this->once())->method('transition')->willReturn(false);
@@ -1407,14 +1387,7 @@ class LifecycleServiceTest extends TestCase {
 	/** Owed since $deletedAt; $updatedAt past that once a run moved it back. */
 	private function pendingTrashRow(int $fileId, string $padId, int $updatedAt = 100, ?int $deletedAt = 100): BindingService&MockObject {
 		$bindingService = $this->createMock(BindingService::class);
-		$bindingService->method('findByFileId')->with($fileId)->willReturn([
-			'file_id' => $fileId,
-			'pad_id' => $padId,
-			'access_mode' => BindingService::ACCESS_PUBLIC,
-			'state' => BindingService::STATE_PENDING_DELETE,
-			'deleted_at' => $deletedAt,
-			'updated_at' => $updatedAt,
-		]);
+		$bindingService->method('findByFileId')->with($fileId)->willReturn(new Binding(fileId: $fileId, padId: $padId, accessMode: BindingService::ACCESS_PUBLIC, state: BindingService::STATE_PENDING_DELETE, deletedAt: $deletedAt, updatedAt: $updatedAt));
 		return $bindingService;
 	}
 
@@ -1485,12 +1458,7 @@ class LifecycleServiceTest extends TestCase {
 		string $state = BindingService::STATE_PENDING_DELETE,
 		bool $deleteOnTrash = true,
 	): LifecycleService {
-		$bindingService->method('findByFileId')->with($fileId)->willReturn([
-			'file_id' => $fileId,
-			'pad_id' => $oldPadId,
-			'access_mode' => $accessMode,
-			'state' => $state,
-		]);
+		$bindingService->method('findByFileId')->with($fileId)->willReturn(new Binding(fileId: $fileId, padId: $oldPadId, accessMode: $accessMode, state: $state));
 
 		$padFileService = $this->createMock(PadFileService::class);
 		$parsedPad = new ParsedPadFile(
@@ -1560,12 +1528,7 @@ class LifecycleServiceTest extends TestCase {
 		$bindingService->expects($this->once())
 			->method('findByFileId')
 			->with($fileId)
-			->willReturn([
-				'file_id' => $fileId,
-				'pad_id' => $padId,
-				'access_mode' => BindingService::ACCESS_PUBLIC,
-				'state' => BindingService::STATE_ACTIVE,
-			]);
+			->willReturn(new Binding(fileId: $fileId, padId: $padId, accessMode: BindingService::ACCESS_PUBLIC, state: BindingService::STATE_ACTIVE));
 		$bindingService->expects($this->once())
 			->method('transition')
 			->with($fileId, $padId, BindingService::STATE_ACTIVE, BindingService::STATE_PENDING_DELETE)
@@ -1634,12 +1597,7 @@ class LifecycleServiceTest extends TestCase {
 		$bindingService->expects($this->once())
 			->method('findByFileId')
 			->with($fileId)
-			->willReturn([
-				'file_id' => $fileId,
-				'pad_id' => $padId,
-				'access_mode' => BindingService::ACCESS_PUBLIC,
-				'state' => BindingService::STATE_ACTIVE,
-			]);
+			->willReturn(new Binding(fileId: $fileId, padId: $padId, accessMode: BindingService::ACCESS_PUBLIC, state: BindingService::STATE_ACTIVE));
 		// Another flow moved the row first.
 		$bindingService->expects($this->once())
 			->method('transition')
@@ -1685,12 +1643,7 @@ class LifecycleServiceTest extends TestCase {
 	public function testHandleTrashLeavesAnUndecidedPadAlone(): void {
 		$fileId = 56;
 		$bindingService = $this->createMock(BindingService::class);
-		$bindingService->method('findByFileId')->with($fileId)->willReturn([
-			'file_id' => $fileId,
-			'pad_id' => 'old-pad',
-			'access_mode' => BindingService::ACCESS_PUBLIC,
-			'state' => BindingService::STATE_RESTORE_PENDING,
-		]);
+		$bindingService->method('findByFileId')->with($fileId)->willReturn(new Binding(fileId: $fileId, padId: 'old-pad', accessMode: BindingService::ACCESS_PUBLIC, state: BindingService::STATE_RESTORE_PENDING));
 		$bindingService->expects($this->once())
 			->method('transition')
 			->with($fileId, 'old-pad', BindingService::STATE_RESTORE_PENDING, BindingService::STATE_PENDING_DELETE)
@@ -2149,11 +2102,7 @@ class LifecycleServiceTest extends TestCase {
 	public function testRecoverFromSnapshotRefusesWhenBindingAlreadyExists(): void {
 		$fileId = 702;
 		$bindingService = $this->createMock(BindingService::class);
-		$bindingService->method('findByFileId')->with($fileId)->willReturn([
-			'pad_id' => 'already-linked',
-			'state' => BindingService::STATE_ACTIVE,
-			'access_mode' => BindingService::ACCESS_PUBLIC,
-		]);
+		$bindingService->method('findByFileId')->with($fileId)->willReturn(new Binding(fileId: $fileId, padId: 'already-linked', accessMode: BindingService::ACCESS_PUBLIC, state: BindingService::STATE_ACTIVE));
 		$bindingService->expects($this->never())->method('createBinding');
 
 		$file = $this->createMock(File::class);
@@ -2198,12 +2147,7 @@ class LifecycleServiceTest extends TestCase {
 		// The row is read - an undecided restore is handed back whatever the
 		// setting says - but an active one is left as it is.
 		$bindingService = $this->createMock(BindingService::class);
-		$bindingService->method('findByFileId')->willReturn([
-			'file_id' => 42,
-			'pad_id' => 'pad-a',
-			'access_mode' => BindingService::ACCESS_PUBLIC,
-			'state' => BindingService::STATE_ACTIVE,
-		]);
+		$bindingService->method('findByFileId')->willReturn(new Binding(fileId: 42, padId: 'pad-a', accessMode: BindingService::ACCESS_PUBLIC, state: BindingService::STATE_ACTIVE));
 		$bindingService->expects($this->never())->method('transition');
 		$bindingService->expects($this->never())->method('deleteByFileId');
 
@@ -2244,12 +2188,7 @@ class LifecycleServiceTest extends TestCase {
 		$bindingService->expects($this->once())
 			->method('findByFileId')
 			->with($fileId)
-			->willReturn([
-				'file_id' => $fileId,
-				'pad_id' => $padId,
-				'access_mode' => BindingService::ACCESS_PUBLIC,
-				'state' => BindingService::STATE_ACTIVE,
-			]);
+			->willReturn(new Binding(fileId: $fileId, padId: $padId, accessMode: BindingService::ACCESS_PUBLIC, state: BindingService::STATE_ACTIVE));
 		$bindingService->expects($this->once())->method('deleteByFileId')->with($fileId);
 
 		$padFileService = $this->buildSnapshotWritingPadFileService();

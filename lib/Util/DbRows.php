@@ -19,6 +19,11 @@ namespace OCA\EtherpadNextcloud\Util;
  *
  * It takes the fetched value, not the result: the result's type is the part
  * that differs, and the tests' fake results need not implement it.
+ *
+ * The column readers read a column as what it holds - an integer as an int
+ * or the numeric string a driver may give - and refuse what it cannot hold:
+ * a column the query did not select, null in a NOT NULL column, or a value
+ * of another kind.
  */
 final class DbRows {
 	/**
@@ -50,5 +55,81 @@ final class DbRows {
 			}
 		}
 		return $typed;
+	}
+
+	/**
+	 * A NOT NULL integer column. Drivers hand integers back as ints or as
+	 * numeric strings, so both are read.
+	 *
+	 * @param array<string,mixed> $row
+	 * @throws \UnexpectedValueException when the row lacks the column, or holds null or something else
+	 */
+	public static function int(array $row, string $column): int {
+		return self::nullableInt($row, $column) ?? throw self::missing($column);
+	}
+
+	/**
+	 * A nullable integer column.
+	 *
+	 * @param array<string,mixed> $row
+	 * @throws \UnexpectedValueException when the row lacks the column, or holds something else
+	 */
+	public static function nullableInt(array $row, string $column): ?int {
+		return self::asNullableInt(self::column($row, $column), $column);
+	}
+
+	/**
+	 * A NOT NULL string column.
+	 *
+	 * @param array<string,mixed> $row
+	 * @throws \UnexpectedValueException when the row lacks the column, or holds null or something else
+	 */
+	public static function string(array $row, string $column): string {
+		return self::nullableString($row, $column) ?? throw self::missing($column);
+	}
+
+	/**
+	 * A nullable string column.
+	 *
+	 * @param array<string,mixed> $row
+	 * @throws \UnexpectedValueException when the row lacks the column, or holds something else
+	 */
+	public static function nullableString(array $row, string $column): ?string {
+		return self::asNullableString(self::column($row, $column), $column);
+	}
+
+	/**
+	 * A column the query selected. Missing, it was not selected, and a value
+	 * made up in its place would be read as data.
+	 *
+	 * @param array<string,mixed> $row
+	 * @throws \UnexpectedValueException
+	 */
+	private static function column(array $row, string $column): mixed {
+		if (!array_key_exists($column, $row)) {
+			throw new \UnexpectedValueException("The row has no column $column: the query did not select it.");
+		}
+		return $row[$column];
+	}
+
+	/**
+	 * Taken as a parameter rather than a local, as one() does it: a mixed
+	 * local would be an issue of its own.
+	 */
+	private static function asNullableInt(mixed $value, string $column): ?int {
+		return match (true) {
+			$value === null => null,
+			is_int($value) => $value,
+			is_string($value) && is_numeric($value) => (int)$value,
+			default => throw new \UnexpectedValueException("Column $column holds no integer."),
+		};
+	}
+
+	private static function asNullableString(mixed $value, string $column): ?string {
+		return $value === null || is_string($value) ? $value : throw new \UnexpectedValueException("Column $column holds no string.");
+	}
+
+	private static function missing(string $column): \UnexpectedValueException {
+		return new \UnexpectedValueException("Column $column is NOT NULL, and the row holds no value for it.");
 	}
 }

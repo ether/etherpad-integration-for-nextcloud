@@ -8,6 +8,7 @@ use OCA\EtherpadNextcloud\Exception\BindingException;
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
 use OCA\EtherpadNextcloud\Exception\PadParentFolderNotWritableException;
 use OCA\EtherpadNextcloud\Exception\PadTypeDisabledException;
+use OCA\EtherpadNextcloud\Service\Binding;
 use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\EtherpadNextcloud\Service\EtherpadClient;
 use OCA\EtherpadNextcloud\Service\ManagedPadLifecycle;
@@ -760,7 +761,7 @@ class PadCreationServiceTest extends TestCase {
 		$padPaths->method('normalizeCreatePath')->willReturn('/Notes.pad');
 
 		$bindingService = $this->createMock(BindingService::class);
-		$bindingService->method('findByFileId')->with(4242)->willReturn(['pad_id' => 'g.someone$pad']);
+		$bindingService->method('findByFileId')->with(4242)->willReturn(new Binding(fileId: 4242, padId: 'g.someone$pad', accessMode: BindingService::ACCESS_PROTECTED, state: BindingService::STATE_ACTIVE));
 		$bindingService->expects($this->never())->method('createBinding');
 
 		$bootstrap = $this->createMock(PadBootstrapService::class);
