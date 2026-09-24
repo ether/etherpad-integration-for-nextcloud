@@ -5,10 +5,12 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\Tests\Unit;
 
 use OCA\EtherpadNextcloud\Service\BindingService;
+use OCA\EtherpadNextcloud\Service\FileLocation;
 use OCA\EtherpadNextcloud\Service\LifecycleService;
 use OCA\EtherpadNextcloud\Service\PendingBindingService;
 use OCA\EtherpadNextcloud\Service\RunBudget;
 use OCA\EtherpadNextcloud\Service\SettleOutcome;
+use OCA\EtherpadNextcloud\Service\WaitingBinding;
 use OCA\EtherpadNextcloud\Tests\Support\FixedClock;
 use OCA\EtherpadNextcloud\Tests\Support\InMemoryLockingProvider;
 use OCP\Files\File;
@@ -201,11 +203,11 @@ class PendingBindingServiceTest extends TestCase {
 			$asked[] = ['restores', $limit];
 			return [$this->row(1, BindingService::STATE_RESTORE_PENDING, 'files/1.pad'), $this->row(2, BindingService::STATE_RESTORE_PENDING, 'files/2.pad')];
 		});
-		$bindings->method('findPendingDeleteByAge')->willReturnCallback(function (int $min, ?int $max, int $limit, ?string $fileLocation) use (&$asked): array {
-			$asked[] = [$fileLocation, $limit];
+		$bindings->method('findPendingDeleteByAge')->willReturnCallback(function (int $min, ?int $max, int $limit, ?FileLocation $fileLocation) use (&$asked): array {
+			$asked[] = [$fileLocation?->name, $limit];
 			return match ($fileLocation) {
-				BindingService::FILE_GONE => [$this->row(10, BindingService::STATE_PENDING_DELETE, null), $this->row(11, BindingService::STATE_PENDING_DELETE, null), $this->row(12, BindingService::STATE_PENDING_DELETE, null)],
-				BindingService::FILE_ELSEWHERE => [$this->row(30, BindingService::STATE_PENDING_DELETE, 'files/30.pad')],
+				FileLocation::Gone => [$this->row(10, BindingService::STATE_PENDING_DELETE, null), $this->row(11, BindingService::STATE_PENDING_DELETE, null), $this->row(12, BindingService::STATE_PENDING_DELETE, null)],
+				FileLocation::Elsewhere => [$this->row(30, BindingService::STATE_PENDING_DELETE, 'files/30.pad')],
 				default => [],
 			};
 		});
@@ -223,7 +225,7 @@ class PendingBindingServiceTest extends TestCase {
 
 		$this->service($bindings, $lifecycle, $root)->settleByAge(0, null, 5);
 
-		$this->assertSame([['restores', 5], [BindingService::FILE_GONE, 5], [BindingService::FILE_IN_USER_TRASH, 5], [BindingService::FILE_ELSEWHERE, 5]], $asked);
+		$this->assertSame([['restores', 5], ['Gone', 5], ['InUserTrash', 5], ['Elsewhere', 5]], $asked);
 		$this->assertSame([1, 10, 30, 2, 11], $seen);
 	}
 
@@ -316,14 +318,14 @@ class PendingBindingServiceTest extends TestCase {
 	public function testWithDeletingOnTrashOffOnlyRowsInFilesAreAskedFor(): void {
 		$bindings = $this->createMock(BindingService::class);
 		$asked = [];
-		$bindings->method('findPendingDeleteByAge')->willReturnCallback(function (int $min, ?int $max, int $limit, ?string $fileLocation) use (&$asked): array {
+		$bindings->method('findPendingDeleteByAge')->willReturnCallback(function (int $min, ?int $max, int $limit, ?FileLocation $fileLocation) use (&$asked): array {
 			$asked[] = $fileLocation;
 			return [];
 		});
 
 		$this->service($bindings, $this->createMock(LifecycleService::class), $this->root([]), deleteOnTrash: false)->settleByAge(0, null, 50);
 
-		$this->assertSame([BindingService::FILE_ELSEWHERE], $asked);
+		$this->assertSame([FileLocation::Elsewhere], $asked);
 	}
 
 	/**
@@ -396,6 +398,22 @@ class PendingBindingServiceTest extends TestCase {
 		$this->assertSame(['checked' => 2, 'settled' => 1], $result);
 	}
 
+	/** A row without a file or without a pad names nothing to settle: it is passed over, and not counted. */
+	public function testARowThatNamesNothingIsPassedOver(): void {
+		$lifecycle = $this->createMock(LifecycleService::class);
+		$lifecycle->expects($this->never())->method('finishGoneFile');
+		$lifecycle->expects($this->never())->method('finishTrash');
+		$lifecycle->expects($this->never())->method('settleWaitingFile');
+		$bindings = $this->bindings([], [
+			$this->row(0, BindingService::STATE_PENDING_DELETE, null),
+			$this->row(40, BindingService::STATE_PENDING_DELETE, null, padId: ''),
+		]);
+
+		$result = $this->service($bindings, $lifecycle, $this->root([]))->settleByAge(0, null, 50);
+
+		$this->assertSame(['checked' => 0, 'settled' => 0], $result);
+	}
+
 	/** The admin page shows what a run did and what is left of either kind. */
 	public function testSettleReportsWhatIsLeft(): void {
 		$bindings = $this->bindings();
@@ -406,29 +424,28 @@ class PendingBindingServiceTest extends TestCase {
 		$this->assertSame(['checked' => 0, 'settled' => 0, 'pending_delete_count' => 4, 'restore_pending_count' => 1], $result);
 	}
 
-	/** @return array<string,mixed> */
-	private function row(int $fileId, string $state, ?string $path, ?string $padId = null): array {
-		return ['file_id' => $fileId, 'pad_id' => $padId ?? 'pad-' . $fileId, 'state' => $state, 'file_path' => $path];
+	private function row(int $fileId, string $state, ?string $path, ?string $padId = null): WaitingBinding {
+		return new WaitingBinding($fileId, $padId ?? 'pad-' . $fileId, $state, $path);
 	}
 
 	/**
-	 * @param list<array<string,mixed>> $restores
-	 * @param list<array<string,mixed>> $deletes
+	 * @param list<WaitingBinding> $restores
+	 * @param list<WaitingBinding> $deletes
 	 */
 	private function bindings(array $restores = [], array $deletes = []): BindingService&MockObject {
 		$bindings = $this->createMock(BindingService::class);
 		$bindings->method('findRestorePendingByAge')->willReturn($restores);
 		// Each kind answered from the rows' file paths, as the query narrows them.
 		$bindings->method('findPendingDeleteByAge')->willReturnCallback(
-			static fn (int $min, ?int $max, int $limit, ?string $fileLocation = null): array => array_values(array_filter(
+			static fn (int $min, ?int $max, int $limit, ?FileLocation $fileLocation = null): array => array_values(array_filter(
 				$deletes,
-				static fn (array $row): bool => match ($fileLocation) {
-					BindingService::FILE_GONE => $row['file_path'] === null,
-					BindingService::FILE_IN_USER_TRASH => str_starts_with((string)$row['file_path'], 'files_trashbin/'),
-					BindingService::FILE_ELSEWHERE => $row['file_path'] !== null
-						&& !str_starts_with((string)$row['file_path'], 'files_trashbin/')
-						&& !str_starts_with((string)$row['file_path'], '__groupfolders/trash/'),
-					default => true,
+				static fn (WaitingBinding $row): bool => match ($fileLocation) {
+					FileLocation::Gone => $row->filePath === null,
+					FileLocation::InUserTrash => str_starts_with((string)$row->filePath, 'files_trashbin/'),
+					FileLocation::Elsewhere => $row->filePath !== null
+						&& !str_starts_with($row->filePath, 'files_trashbin/')
+						&& !str_starts_with($row->filePath, '__groupfolders/trash/'),
+					null => true,
 				},
 			)),
 		);

@@ -6,8 +6,10 @@ namespace OCA\EtherpadNextcloud\Tests\Unit;
 
 use OCA\EtherpadNextcloud\Exception\BindingException;
 use OCA\EtherpadNextcloud\Exception\MissingBindingException;
+use OCA\EtherpadNextcloud\Service\Binding;
 use OCA\EtherpadNextcloud\Service\BindingService;
-use OCP\AppFramework\Utility\ITimeFactory;
+use OCA\EtherpadNextcloud\Service\FileLocation;
+use OCA\EtherpadNextcloud\Service\WaitingBinding;
 use OCP\DB\QueryBuilder\IQueryBuilder;
 use OCP\IDBConnection;
 use OCA\EtherpadNextcloud\Tests\Support\FixedClock;
@@ -16,111 +18,111 @@ use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 
 class BindingServiceTest extends TestCase {
-	public function testAssertConsistentMappingAcceptsActiveConsistentBinding(): void {
-		$service = $this->buildServiceWithBinding([
-			'file_id' => 10,
-			'pad_id' => 'pad-123',
-			'access_mode' => BindingService::ACCESS_PUBLIC,
-			'state' => BindingService::STATE_ACTIVE,
-		]);
-
-		$service->assertConsistentMapping(10, 'pad-123', BindingService::ACCESS_PUBLIC);
-		$this->addToAssertionCount(1);
+	/**
+	 * The file's own row is the one compared, and it has to name the pad,
+	 * in the access mode, and be active. Another file's row is no binding
+	 * for this one, and a mode the app does not know is refused first.
+	 */
+	public function testAssertConsistentMappingHoldsTheFilesRowToPadModeAndState(): void {
+		$cases = [
+			'consistent' => [self::bindingRow(10, 'pad-a', BindingService::STATE_ACTIVE), 'pad-a', BindingService::ACCESS_PUBLIC, null, null],
+			'another pad' => [self::bindingRow(10, 'pad-a', BindingService::STATE_ACTIVE), 'pad-b', BindingService::ACCESS_PUBLIC, BindingException::class, 'Binding pad ID mismatch.'],
+			'another mode' => [self::bindingRow(10, 'pad-a', BindingService::STATE_ACTIVE, BindingService::ACCESS_PROTECTED), 'pad-a', BindingService::ACCESS_PUBLIC, BindingException::class, 'Binding access mode mismatch.'],
+			'waiting' => [self::bindingRow(10, 'pad-a', BindingService::STATE_PENDING_DELETE), 'pad-a', BindingService::ACCESS_PUBLIC, BindingException::class, 'Pad binding is not active.'],
+			'another file\'s row' => [self::bindingRow(11, 'pad-a', BindingService::STATE_ACTIVE), 'pad-a', BindingService::ACCESS_PUBLIC, MissingBindingException::class, 'No binding exists for this file.'],
+			'unknown mode' => [self::bindingRow(10, 'pad-a', BindingService::STATE_ACTIVE), 'pad-a', 'legacy', BindingException::class, 'Unsupported access mode: legacy'],
+		];
+		foreach ($cases as $case => [$row, $padId, $accessMode, $exception, $message]) {
+			// A waiting row of another file sits alongside: only file 10's is compared.
+			$service = $this->serviceOver([self::bindingRow(9, 'pad-9', BindingService::STATE_PENDING_DELETE), $row]);
+			try {
+				$service->assertConsistentMapping(10, $padId, $accessMode);
+				$this->assertNull($exception, $case . ': accepted');
+			} catch (BindingException $e) {
+				$this->assertSame([$exception, $message], [$e::class, $e->getMessage()], $case);
+			}
+		}
 	}
 
-	public function testAssertConsistentMappingRejectsPadIdMismatch(): void {
-		$service = $this->buildServiceWithBinding([
-			'file_id' => 11,
-			'pad_id' => 'pad-a',
-			'access_mode' => BindingService::ACCESS_PROTECTED,
-			'state' => BindingService::STATE_ACTIVE,
-		]);
+	/** Whether the file's row names this pad: another pad, or no row at all, is not. */
+	public function testTellsWhetherAFilesRowNamesAPad(): void {
+		$service = $this->serviceOver([self::bindingRow(1, 'pad', BindingService::STATE_ACTIVE)]);
 
-		$this->expectException(BindingException::class);
-		$this->expectExceptionMessage('Binding pad ID mismatch.');
-		$service->assertConsistentMapping(11, 'pad-b', BindingService::ACCESS_PROTECTED);
-	}
-
-	public function testAssertConsistentMappingRejectsMissingBindingWithSpecificException(): void {
-		$service = $this->buildServiceWithBinding(null);
-
-		$this->expectException(MissingBindingException::class);
-		$this->expectExceptionMessage('No binding exists for this file.');
-
-		$service->assertConsistentMapping(10, 'pad-123', BindingService::ACCESS_PUBLIC);
-	}
-
-	public function testAssertConsistentMappingRejectsUnsupportedAccessMode(): void {
-		$service = $this->buildServiceWithBinding([
-			'file_id' => 12,
-			'pad_id' => 'pad-a',
-			'access_mode' => BindingService::ACCESS_PUBLIC,
-			'state' => BindingService::STATE_ACTIVE,
-		]);
-
-		$this->expectException(BindingException::class);
-		$this->expectExceptionMessage('Unsupported access mode: legacy');
-		$service->assertConsistentMapping(12, 'pad-a', 'legacy');
+		$this->assertTrue($service->isBoundTo(1, 'pad'));
+		$this->assertFalse($service->isBoundTo(1, 'other'), 'another pad');
+		$this->assertFalse($service->isBoundTo(2, 'pad'), 'no row');
 	}
 
 	/**
-	 * Undecided restores are aged by when they last changed, and come with
-	 * their file's path like the deletions owed: a restore whose file has
-	 * since gone for good has to be seen as that.
+	 * Asked for in a state, a pad's row counts only in that state: the
+	 * original a copy recovers from, or the owner a migration collides
+	 * with, is an active row, not one in a trash.
 	 */
-	public function testFindRestorePendingByAgeAddsUpperAndLowerAgeBounds(): void {
-		$qb = new BindingServiceTestQueryBuilder([['file_id' => 10, 'pad_id' => 'pad-a', 'file_path' => null]]);
-		$service = $this->buildServiceWithQueryBuilder($qb, 100000);
+	public function testFindsAPadsRowInTheStateAskedFor(): void {
+		$service = $this->serviceOver([self::bindingRow(5, 'pad-trashed', BindingService::STATE_PENDING_DELETE, BindingService::ACCESS_PROTECTED)]);
 
-		$rows = $service->findRestorePendingByAge(3600, 86400, 50);
-
-		$this->assertSame([['file_id' => 10, 'pad_id' => 'pad-a', 'file_path' => null]], $rows);
-		$this->assertSame(50, $qb->maxResults);
-		$this->assertSame([['b', 'filecache', 'fc', ['eq', 'b.file_id', 'fc.fileid']]], $qb->leftJoins);
-		$this->assertSame([
-			['eq', 'b.state', 'param1'],
-			['lte', 'b.updated_at', 'param2'],
-			['gt', 'b.updated_at', 'param3'],
-		], $qb->conditions);
-		$this->assertSame([
-			['param1', BindingService::STATE_RESTORE_PENDING, null],
-			['param2', 96400, IQueryBuilder::PARAM_INT],
-			['param3', 13600, IQueryBuilder::PARAM_INT],
-		], $qb->parameters);
+		$this->assertNull($service->findByPadId('pad-trashed', BindingService::STATE_ACTIVE));
+		$this->assertEquals(
+			new Binding(5, 'pad-trashed', BindingService::ACCESS_PROTECTED, BindingService::STATE_PENDING_DELETE, 100, 100),
+			$service->findByPadId('pad-trashed'),
+		);
+		$this->assertNull($service->findByPadId('pad-other'));
 	}
 
-	/** Unaged, and with a limit that makes no sense, every waiting row is still in reach, one at least. */
-	public function testFindRestorePendingByAgeWithoutBoundsComparesNoDate(): void {
-		$qb = new BindingServiceTestQueryBuilder([]);
-		$service = $this->buildServiceWithQueryBuilder($qb, 100000);
+	/**
+	 * Both kinds of waiting row come with the path their file has now, and a
+	 * row whose file is gone for good has no file cache row to join: left,
+	 * not inner. A deletion owed is aged by when the trash recorded it, an
+	 * undecided restore by when it last changed.
+	 */
+	public function testWaitingRowsComeAgedWithTheirFilesPath(): void {
+		$kinds = [
+			'restores' => [BindingService::STATE_RESTORE_PENDING, 'b.updated_at', static fn (BindingService $s): array => $s->findRestorePendingByAge(3600, 86400, 50)],
+			'deletions owed' => [BindingService::STATE_PENDING_DELETE, 'b.deleted_at', static fn (BindingService $s): array => $s->findPendingDeleteByAge(3600, 86400, 50)],
+		];
+		foreach ($kinds as $kind => [$state, $ageColumn, $find]) {
+			$qb = new BindingServiceTestQueryBuilder([['file_id' => 10, 'pad_id' => 'pad-a', 'state' => $state, 'file_path' => null]]);
 
-		$service->findRestorePendingByAge(-1, null, 0);
+			$rows = $find($this->buildServiceWithQueryBuilder($qb, 100000));
 
-		$this->assertSame(1, $qb->maxResults);
-		$this->assertSame([['eq', 'b.state', 'param1']], $qb->conditions);
+			$this->assertEquals([new WaitingBinding(10, 'pad-a', $state, null)], $rows, $kind);
+			// Every column a WaitingBinding is read from; one left out would read as a row without it.
+			$this->assertSame(['b.file_id', 'b.pad_id', 'b.state'], $qb->selected, $kind);
+			$this->assertSame([['fc.path', 'file_path']], $qb->aliases, $kind);
+			$this->assertSame([['b', 'filecache', 'fc', ['eq', 'b.file_id', 'fc.fileid']]], $qb->leftJoins, $kind);
+			$this->assertSame(50, $qb->maxResults, $kind);
+			$this->assertSame([['eq', 'b.state', 'param1'], ['lte', $ageColumn, 'param2'], ['gt', $ageColumn, 'param3']], $qb->conditions, $kind);
+			$this->assertSame([
+				['param1', $state, null],
+				['param2', 96400, IQueryBuilder::PARAM_INT],
+				['param3', 13600, IQueryBuilder::PARAM_INT],
+			], $qb->parameters, $kind);
+		}
 	}
 
-	/** @param array<string,mixed>|null $binding */
-	private function buildServiceWithBinding(?array $binding): BindingService {
-		$db = $this->createMock(IDBConnection::class);
-		$logger = $this->createMock(LoggerInterface::class);
-		$timeFactory = $this->buildTimeFactory(100000);
+	/**
+	 * Unaged, there is no condition on the date at all, so a row that never
+	 * had one is reached too; and a limit that makes no sense still reaches
+	 * one row.
+	 */
+	public function testAnUnagedRunComparesNoDate(): void {
+		$kinds = [
+			'restores' => static fn (BindingService $s): array => $s->findRestorePendingByAge(-1, null, 0),
+			'deletions owed' => static fn (BindingService $s): array => $s->findPendingDeleteByAge(-1, null, 0),
+		];
+		foreach ($kinds as $kind => $find) {
+			$qb = new BindingServiceTestQueryBuilder([]);
 
-		return new class ($db, $timeFactory, $logger, $binding) extends BindingService {
-			/** @param array<string,mixed>|null $binding */
-			public function __construct(
-				IDBConnection $db,
-				ITimeFactory $timeFactory,
-				LoggerInterface $logger,
-				private ?array $binding,
-			) {
-				parent::__construct($db, $timeFactory, $logger);
-			}
+			$find($this->buildServiceWithQueryBuilder($qb, 100000));
 
-			public function findByFileId(int $fileId): ?array {
-				return $this->binding;
-			}
-		};
+			$this->assertSame([['eq', 'b.state', 'param1']], $qb->conditions, $kind);
+			$this->assertSame(1, $qb->maxResults, $kind);
+		}
+	}
+
+	/** @param list<array<string,mixed>> $rows */
+	private function serviceOver(array $rows): BindingService {
+		return new BindingService(new InMemoryBindingTable($rows), new FixedClock(500), $this->createMock(LoggerInterface::class));
 	}
 
 	private function buildServiceWithQueryBuilder(BindingServiceTestQueryBuilder $qb, int $now): BindingService {
@@ -137,7 +139,7 @@ class BindingServiceTest extends TestCase {
 			}
 		};
 
-		return new BindingService($db, $this->buildTimeFactory($now), $this->createMock(LoggerInterface::class));
+		return new BindingService($db, new FixedClock($now), $this->createMock(LoggerInterface::class));
 	}
 
 	/**
@@ -146,34 +148,18 @@ class BindingServiceTest extends TestCase {
 	 * won; without `state` it takes the row a trash left as pending_delete,
 	 * the only record of a deletion still owed.
 	 */
-	public function testDeletingAnActiveBindingNamesFileAndPadAndState(): void {
-		$qb = new BindingServiceTestQueryBuilder([]);
-		$db = $this->createMock(IDBConnection::class);
-		$db->method('getQueryBuilder')->willReturn($qb);
-		$service = new BindingService($db, $this->buildTimeFactory(0), $this->createMock(LoggerInterface::class));
+	public function testDeletingAnActiveBindingLeavesAnOwedDeletionAlone(): void {
+		$table = new InMemoryBindingTable([
+			self::bindingRow(4711, 'nc-owed', BindingService::STATE_PENDING_DELETE),
+			self::bindingRow(4712, 'nc-abc', BindingService::STATE_ACTIVE),
+		]);
+		$service = new BindingService($table, new FixedClock(500), $this->createMock(LoggerInterface::class));
 
-		self::assertTrue($service->deleteActiveBinding(4711, 'nc-abc'));
-
-		self::assertTrue($qb->deleted);
-		self::assertSame(
-			[['eq', 'file_id', 'param1'], ['eq', 'pad_id', 'param2'], ['eq', 'state', 'param3']],
-			$qb->conditions,
-		);
-		self::assertSame(
-			[4711, 'nc-abc', BindingService::STATE_ACTIVE],
-			array_map(static fn (array $p): mixed => $p[1], $qb->parameters),
-		);
-	}
-
-	/** No row matched: absent, another pad's, or pending_delete. */
-	public function testDeletingAnActiveBindingReportsWhenNothingMatched(): void {
-		$qb = new BindingServiceTestQueryBuilder([]);
-		$qb->affectedRows = 0;
-		$db = $this->createMock(IDBConnection::class);
-		$db->method('getQueryBuilder')->willReturn($qb);
-		$service = new BindingService($db, $this->buildTimeFactory(0), $this->createMock(LoggerInterface::class));
-
-		self::assertFalse($service->deleteActiveBinding(4711, 'nc-abc'));
+		self::assertFalse($service->deleteActiveBinding(4711, 'nc-owed'), 'owed');
+		self::assertFalse($service->deleteActiveBinding(4712, 'nc-other'), 'another pad');
+		self::assertFalse($service->deleteActiveBinding(4713, 'nc-abc'), 'another file');
+		self::assertTrue($service->deleteActiveBinding(4712, 'nc-abc'));
+		self::assertSame([self::bindingRow(4711, 'nc-owed', BindingService::STATE_PENDING_DELETE)], $table->rows);
 	}
 
 	/**
@@ -197,7 +183,7 @@ class BindingServiceTest extends TestCase {
 
 		self::assertTrue($service->rebind(1, 'old', BindingService::STATE_PENDING_DELETE, 'new', BindingService::STATE_ACTIVE));
 		self::assertSame([
-			['file_id' => 1, 'pad_id' => 'new', 'state' => BindingService::STATE_ACTIVE, 'deleted_at' => null, 'updated_at' => 500],
+			['file_id' => 1, 'pad_id' => 'new', 'access_mode' => BindingService::ACCESS_PUBLIC, 'state' => BindingService::STATE_ACTIVE, 'deleted_at' => null, 'updated_at' => 500],
 			self::bindingRow(2, 'other', BindingService::STATE_PENDING_DELETE),
 		], $table->rows);
 	}
@@ -223,7 +209,7 @@ class BindingServiceTest extends TestCase {
 		self::assertTrue($service->transition(1, 'pad', BindingService::STATE_RESTORE_PENDING, BindingService::STATE_PENDING_DELETE));
 
 		self::assertSame(
-			['file_id' => 1, 'pad_id' => 'pad', 'state' => BindingService::STATE_PENDING_DELETE, 'deleted_at' => 500, 'updated_at' => 500],
+			['file_id' => 1, 'pad_id' => 'pad', 'access_mode' => BindingService::ACCESS_PUBLIC, 'state' => BindingService::STATE_PENDING_DELETE, 'deleted_at' => 500, 'updated_at' => 500],
 			$table->rows[0],
 		);
 	}
@@ -243,39 +229,6 @@ class BindingServiceTest extends TestCase {
 
 		self::assertTrue($service->deleteInState(1, 'old', BindingService::STATE_RESTORE_PENDING));
 		self::assertSame([self::bindingRow(2, 'other', BindingService::STATE_RESTORE_PENDING)], $table->rows);
-	}
-
-	/**
-	 * A sweep has to know where each owed deletion's file is now, and a row
-	 * whose file is gone has no file cache row to join: left, not inner.
-	 * Aged by when the trash recorded it.
-	 */
-	public function testOwedDeletionsComeWithTheirFilesPath(): void {
-		$qb = new BindingServiceTestQueryBuilder([['file_id' => 10, 'pad_id' => 'pad-a', 'state' => BindingService::STATE_PENDING_DELETE, 'file_path' => null]]);
-		$service = $this->buildServiceWithQueryBuilder($qb, 100000);
-
-		$rows = $service->findPendingDeleteByAge(3600, 86400, 50);
-
-		$this->assertNull($rows[0]['file_path']);
-		$this->assertSame([['fc.path', 'file_path']], $qb->aliases);
-		$this->assertSame([['b', 'filecache', 'fc', ['eq', 'b.file_id', 'fc.fileid']]], $qb->leftJoins);
-		$this->assertSame([
-			['eq', 'b.state', 'param1'],
-			['lte', 'b.deleted_at', 'param2'],
-			['gt', 'b.deleted_at', 'param3'],
-		], $qb->conditions);
-		$this->assertSame([96400, 13600], [$qb->parameters[1][1], $qb->parameters[2][1]]);
-	}
-
-	/**
-	 * Unaged, there is no condition on the date at all, so a row that never
-	 * had one is reached too.
-	 */
-	public function testAnUnagedSweepReachesOwedDeletionsWithoutADate(): void {
-		$qb = new BindingServiceTestQueryBuilder([]);
-		$this->buildServiceWithQueryBuilder($qb, 100000)->findPendingDeleteByAge(0, null, 50);
-
-		$this->assertSame([['eq', 'b.state', 'param1']], $qb->conditions);
 	}
 
 	/**
@@ -302,23 +255,24 @@ class BindingServiceTest extends TestCase {
 	 */
 	public function testOwedDeletionsCanBeAskedForByWhereTheFileIs(): void {
 		$expected = [
-			BindingService::FILE_GONE => [[['eq', 'b.state', 'param1'], ['isNull', 'fc.fileid']], []],
-			BindingService::FILE_IN_USER_TRASH => [[['eq', 'b.state', 'param1'], ['like', 'fc.path', 'param2']], ['files\\_trashbin/%']],
-			BindingService::FILE_ELSEWHERE => [
+			[FileLocation::Gone, [['eq', 'b.state', 'param1'], ['isNull', 'fc.fileid']], []],
+			[FileLocation::InUserTrash, [['eq', 'b.state', 'param1'], ['like', 'fc.path', 'param2']], ['files\\_trashbin/%']],
+			[
+				FileLocation::Elsewhere,
 				[['eq', 'b.state', 'param1'], ['isNotNull', 'fc.fileid'], ['notLike', 'fc.path', 'param2'], ['notLike', 'fc.path', 'param3']],
 				// A team folder's trash on the root storage waits for that trash, not for a turn.
 				['files\\_trashbin/%', '\\_\\_groupfolders/trash/%'],
 			],
 		];
-		foreach ($expected as $fileLocation => [$conditions, $patterns]) {
+		foreach ($expected as [$fileLocation, $conditions, $patterns]) {
 			$qb = new BindingServiceTestQueryBuilder([]);
 			$this->buildServiceWithQueryBuilder($qb, 100000)->findPendingDeleteByAge(0, null, 50, $fileLocation);
 
-			$this->assertSame($conditions, $qb->conditions, $fileLocation);
+			$this->assertSame($conditions, $qb->conditions, $fileLocation->name);
 			// Escaped: `_` is LIKE's wildcard for any one character.
-			$this->assertSame($patterns, array_map(static fn (array $p): mixed => $p[1], array_slice($qb->parameters, 1)), $fileLocation);
+			$this->assertSame($patterns, array_map(static fn (array $p): mixed => $p[1], array_slice($qb->parameters, 1)), $fileLocation->name);
 			// Aged by deleted_at, taken by updated_at: a row that waits again goes to the back.
-			$this->assertSame([['b.updated_at', 'ASC']], $qb->orderedBy, $fileLocation);
+			$this->assertSame([['b.updated_at', 'ASC']], $qb->orderedBy, $fileLocation->name);
 		}
 	}
 
@@ -334,19 +288,18 @@ class BindingServiceTest extends TestCase {
 		self::assertTrue($service->transition(1, 'pad', BindingService::STATE_PENDING_DELETE, BindingService::STATE_PENDING_DELETE));
 
 		self::assertSame(
-			['file_id' => 1, 'pad_id' => 'pad', 'state' => BindingService::STATE_PENDING_DELETE, 'deleted_at' => 100, 'updated_at' => 500],
+			['file_id' => 1, 'pad_id' => 'pad', 'access_mode' => BindingService::ACCESS_PUBLIC, 'state' => BindingService::STATE_PENDING_DELETE, 'deleted_at' => 100, 'updated_at' => 500],
 			$table->rows[0],
 		);
 	}
 
 	/** @return array<string,mixed> */
-	private static function bindingRow(int $fileId, string $padId, string $state): array {
-		return ['file_id' => $fileId, 'pad_id' => $padId, 'state' => $state, 'deleted_at' => 100, 'updated_at' => 100];
+	private static function bindingRow(int $fileId, string $padId, string $state, string $accessMode = BindingService::ACCESS_PUBLIC): array {
+		// Dated only as a deletion owed, as the table holds it: leaving that state clears the date.
+		$deletedAt = $state === BindingService::STATE_PENDING_DELETE ? 100 : null;
+		return ['file_id' => $fileId, 'pad_id' => $padId, 'access_mode' => $accessMode, 'state' => $state, 'deleted_at' => $deletedAt, 'updated_at' => 100];
 	}
 
-	private function buildTimeFactory(int $now): ITimeFactory {
-		return new FixedClock($now);
-	}
 }
 
 class BindingServiceTestQueryBuilder implements IQueryBuilder {
@@ -356,29 +309,23 @@ class BindingServiceTestQueryBuilder implements IQueryBuilder {
 	public array $conditions = [];
 	public int $maxResults = 0;
 	private int $parameterCounter = 0;
-
-	public int $affectedRows = 1;
-	public bool $deleted = false;
+	/** @var list<string> */
+	public array $selected = [];
+	/** @var list<array{string,string}> */
+	public array $aliases = [];
+	/** @var list<array{string,string,string,mixed}> */
+	public array $leftJoins = [];
+	/** @var list<string> */
+	public array $groupBy = [];
+	/** @var list<array{string,string}> */
+	public array $orderedBy = [];
 
 	/** @param array<int,array<string,mixed>> $rows */
 	public function __construct(private array $rows) {
 	}
 
-	public function delete(string $table): self {
-		$this->deleted = true;
-		return $this;
-	}
-
-	public function executeStatement(): int {
-		return $this->affectedRows;
-	}
-
-	/** @var list<array{string,string}> */
-	public array $aliases = [];
-	/** @var list<array{string,string,string,mixed}> */
-	public array $leftJoins = [];
-
 	public function select(string ...$select): self {
+		$this->selected = array_values($select);
 		return $this;
 	}
 
@@ -390,9 +337,6 @@ class BindingServiceTestQueryBuilder implements IQueryBuilder {
 	public function from(string $table, ?string $alias = null): self {
 		return $this;
 	}
-
-	/** @var list<string> */
-	public array $groupBy = [];
 
 	public function createFunction(string $call): string {
 		return $call;
@@ -417,9 +361,6 @@ class BindingServiceTestQueryBuilder implements IQueryBuilder {
 		$this->conditions[] = $condition;
 		return $this;
 	}
-
-	/** @var list<array{string,string}> */
-	public array $orderedBy = [];
 
 	public function orderBy(string $field, string $direction): self {
 		$this->orderedBy[] = [$field, $direction];

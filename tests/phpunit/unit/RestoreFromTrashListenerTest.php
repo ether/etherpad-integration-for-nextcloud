@@ -6,6 +6,7 @@ namespace OCA\EtherpadNextcloud\Tests\Unit;
 
 use OCA\EtherpadNextcloud\Listeners\RestoreFromTrashListener;
 use OCA\EtherpadNextcloud\Exception\LifecycleException;
+use OCA\EtherpadNextcloud\Service\Binding;
 use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\EtherpadNextcloud\Service\EtherpadClient;
 use OCA\EtherpadNextcloud\Service\LifecycleService;
@@ -41,12 +42,7 @@ class RestoreFromTrashListenerTest extends TestCase {
 		$boom = new \RuntimeException('the storage went away');
 
 		$bindingService = $this->createMock(BindingService::class);
-		$bindingService->method('findByFileId')->willReturn([
-			'file_id' => $fileId,
-			'pad_id' => 'old-pad',
-			'access_mode' => BindingService::ACCESS_PUBLIC,
-			'state' => BindingService::STATE_PENDING_DELETE,
-		]);
+		$bindingService->method('findByFileId')->willReturn(new Binding(fileId: $fileId, padId: 'old-pad', accessMode: BindingService::ACCESS_PUBLIC, state: BindingService::STATE_PENDING_DELETE));
 		// Inside the restore's own try, which is where the removed entry
 		// was written and the only place it could ever have fired: an
 		// unreadable file leaves the row for a later check, and moving it

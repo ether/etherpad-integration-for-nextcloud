@@ -71,8 +71,8 @@ class PadBootstrapService {
 		// failure in this method that produced an orphan rather than an error.
 		try {
 			if ($binding !== null) {
-				$padId = (string)$binding['pad_id'];
-				$accessMode = (string)$binding['access_mode'];
+				$padId = $binding->padId;
+				$accessMode = $binding->accessMode;
 			} else {
 				// No binding yet, so this provisions a brand-new pad rather than
 				// re-initialising an existing one — the policy applies. Files that

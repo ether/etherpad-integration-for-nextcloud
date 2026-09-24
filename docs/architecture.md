@@ -12,6 +12,7 @@ Etherpad is the editing source of truth; the `.pad` file acts as binding storage
 - `lib/Service/BindingService.php`
   - Manages the central DB table `ep_pad_bindings`.
   - Owns mapping `file_id <-> pad_id` and states (`active`, `pending_delete`, `restore_pending`).
+  - Hands a row out as a `Binding`, and a row the sweep takes as a `WaitingBinding` with its file's path; the sweep asks for deletions owed by `FileLocation`.
   - Only managed internal pads are bound. External pads are represented solely by `.pad` frontmatter and snapshots.
 - `lib/Service/LifecycleService.php`
   - Trash/restore flow.

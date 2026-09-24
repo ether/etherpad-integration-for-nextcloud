@@ -33,13 +33,6 @@ class BindingService {
 	 */
 	public const STATE_RESTORE_PENDING = 'restore_pending';
 
-	/** Where a waiting row's file is: no file cache row left at all. */
-	public const FILE_GONE = 'gone';
-	/** Where a waiting row's file is: in its owner's trash. */
-	public const FILE_IN_USER_TRASH = 'user_trash';
-	/** Where a waiting row's file is: anywhere else - in Files, or a team folder's trash with a storage of its own. */
-	public const FILE_ELSEWHERE = 'elsewhere';
-
 	/**
 	 * Where trashes keep files, as file cache paths relative to their
 	 * storage: a user's, and a team folder's on the root storage. A team
@@ -58,8 +51,7 @@ class BindingService {
 	) {
 	}
 
-	/** @return array<string,mixed>|null */
-	public function findByFileId(int $fileId): ?array {
+	public function findByFileId(int $fileId): ?Binding {
 		$qb = $this->db->getQueryBuilder();
 		$qb->select('*')
 			->from(self::TABLE)
@@ -70,7 +62,7 @@ class BindingService {
 		$row = DbRows::one($result->fetch());
 		$result->closeCursor();
 
-		return $row;
+		return $row === null ? null : Binding::fromRow($row);
 	}
 
 	/**
@@ -92,11 +84,10 @@ class BindingService {
 	 * same way — destroy nothing.
 	 */
 	public function isBoundTo(int $fileId, string $padId): bool {
-		$binding = $this->findByFileId($fileId);
-		return $binding !== null && (string)$binding['pad_id'] === $padId;
+		return $this->findByFileId($fileId)?->padId === $padId;
 	}
 
-	public function findByPadId(string $padId, ?string $state = null): ?array {
+	public function findByPadId(string $padId, ?string $state = null): ?Binding {
 		$qb = $this->db->getQueryBuilder();
 		$qb->select('*')
 			->from(self::TABLE)
@@ -110,7 +101,7 @@ class BindingService {
 		$row = DbRows::one($result->fetch());
 		$result->closeCursor();
 
-		return $row;
+		return $row === null ? null : Binding::fromRow($row);
 	}
 
 	/**
@@ -177,7 +168,7 @@ class BindingService {
 		$result = $qb->executeQuery();
 		$byState = [];
 		foreach (DbRows::all($result->fetchAll()) as $row) {
-			$byState[(string)$row['state']] = max(0, (int)$row['cnt']);
+			$byState[DbRows::string($row, 'state')] = max(0, DbRows::int($row, 'cnt'));
 		}
 		$result->closeCursor();
 		return [
@@ -188,17 +179,16 @@ class BindingService {
 
 	/**
 	 * Deletions owed, aged by when the trash recorded them, and narrowed to
-	 * where the file is - one of the FILE_* constants - so a sweep can ask
-	 * for each kind in turn and rows it cannot settle yet do not crowd out
-	 * the ones it can. A team folder's trash on the root storage is left
-	 * out: nothing settles a row there until that trash lets the file go.
+	 * where the file is (FileLocation). A team folder's trash on the root
+	 * storage is left out: nothing settles a row there until that trash
+	 * lets the file go.
 	 *
 	 * A row that never had a deleted_at is reached only by a run with
 	 * neither bound - the admin page's. Every age bucket compares the date.
 	 *
-	 * @return array<int,array<string,mixed>>
+	 * @return list<WaitingBinding>
 	 */
-	public function findPendingDeleteByAge(int $minAgeSeconds, ?int $maxAgeSeconds, int $limit = 100, ?string $fileLocation = null): array {
+	public function findPendingDeleteByAge(int $minAgeSeconds, ?int $maxAgeSeconds, int $limit = 100, ?FileLocation $fileLocation = null): array {
 		return $this->findWaitingByAge(self::STATE_PENDING_DELETE, 'deleted_at', $minAgeSeconds, $maxAgeSeconds, $limit, $fileLocation);
 	}
 
@@ -206,7 +196,7 @@ class BindingService {
 	 * Restores left undecided, aged by when the row last changed: when the
 	 * restore left it waiting, or when a check last found no answer for it.
 	 *
-	 * @return array<int,array<string,mixed>>
+	 * @return list<WaitingBinding>
 	 */
 	public function findRestorePendingByAge(int $minAgeSeconds, ?int $maxAgeSeconds, int $limit = 100): array {
 		return $this->findWaitingByAge(self::STATE_RESTORE_PENDING, 'updated_at', $minAgeSeconds, $maxAgeSeconds, $limit);
@@ -222,9 +212,9 @@ class BindingService {
 	 * waits again moves to the back, so rows no run can settle yet do not
 	 * keep the others from their turn.
 	 *
-	 * @return array<int,array<string,mixed>>
+	 * @return list<WaitingBinding>
 	 */
-	private function findWaitingByAge(string $state, string $ageColumn, int $minAgeSeconds, ?int $maxAgeSeconds, int $limit, ?string $fileLocation = null): array {
+	private function findWaitingByAge(string $state, string $ageColumn, int $minAgeSeconds, ?int $maxAgeSeconds, int $limit, ?FileLocation $fileLocation = null): array {
 		$now = $this->timeFactory->getTime();
 		$qb = $this->db->getQueryBuilder();
 		$qb->select('b.file_id', 'b.pad_id', 'b.state')
@@ -241,18 +231,18 @@ class BindingService {
 			$qb->andWhere($qb->expr()->gt('b.' . $ageColumn, $qb->createNamedParameter($now - max(0, $maxAgeSeconds), IQueryBuilder::PARAM_INT)));
 		}
 		$userTrash = $this->db->escapeLikeParameter(self::USER_TRASH_PATH) . '%';
-		if ($fileLocation === self::FILE_GONE) {
+		if ($fileLocation === FileLocation::Gone) {
 			$qb->andWhere($qb->expr()->isNull('fc.fileid'));
-		} elseif ($fileLocation === self::FILE_IN_USER_TRASH) {
+		} elseif ($fileLocation === FileLocation::InUserTrash) {
 			$qb->andWhere($qb->expr()->like('fc.path', $qb->createNamedParameter($userTrash)));
-		} elseif ($fileLocation === self::FILE_ELSEWHERE) {
+		} elseif ($fileLocation === FileLocation::Elsewhere) {
 			$qb->andWhere($qb->expr()->isNotNull('fc.fileid'))
 				->andWhere($qb->expr()->notLike('fc.path', $qb->createNamedParameter($userTrash)))
 				->andWhere($qb->expr()->notLike('fc.path', $qb->createNamedParameter($this->db->escapeLikeParameter(self::TEAM_TRASH_PATH) . '%')));
 		}
 
 		$result = $qb->executeQuery();
-		$rows = DbRows::all($result->fetchAll());
+		$rows = array_map(WaitingBinding::fromRow(...), DbRows::all($result->fetchAll()));
 		$result->closeCursor();
 		return $rows;
 	}
@@ -294,13 +284,13 @@ class BindingService {
 		if ($binding === null) {
 			throw new MissingBindingException('No binding exists for this file.');
 		}
-		if ((string)$binding['pad_id'] !== $padId) {
+		if ($binding->padId !== $padId) {
 			throw new BindingException('Binding pad ID mismatch.');
 		}
-		if ((string)$binding['access_mode'] !== $accessMode) {
+		if ($binding->accessMode !== $accessMode) {
 			throw new BindingException('Binding access mode mismatch.');
 		}
-		if ((string)$binding['state'] !== self::STATE_ACTIVE) {
+		if ($binding->state !== self::STATE_ACTIVE) {
 			throw new BindingException('Pad binding is not active.');
 		}
 	}

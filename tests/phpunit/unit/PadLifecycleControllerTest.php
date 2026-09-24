@@ -8,6 +8,7 @@ use OCA\EtherpadNextcloud\Controller\PadControllerErrorMapper;
 use OCA\EtherpadNextcloud\Controller\PadLifecycleController;
 use OCA\EtherpadNextcloud\Exception\PadAlreadyHasBindingException;
 use OCA\EtherpadNextcloud\Service\AppConfigService;
+use OCA\EtherpadNextcloud\Service\Binding;
 use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\EtherpadNextcloud\Service\EtherpadClient;
 use OCA\EtherpadNextcloud\Service\ExternalPadExportFetcher;
@@ -311,7 +312,7 @@ class PadLifecycleControllerTest extends TestCase {
 		$bindingService = $this->createMock(BindingService::class);
 		$bindingService->method('findByPadId')
 			->with('orig', BindingService::STATE_ACTIVE)
-			->willReturn(['file_id' => 42, 'pad_id' => 'orig']);
+			->willReturn(new Binding(fileId: 42, padId: 'orig', accessMode: BindingService::ACCESS_PUBLIC, state: BindingService::STATE_ACTIVE));
 
 		$orphan = $this->createConfiguredMock(File::class, [
 			'getId' => 700,

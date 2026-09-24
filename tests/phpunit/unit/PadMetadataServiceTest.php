@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Tests\Unit;
 
+use OCA\EtherpadNextcloud\Service\Binding;
 use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\EtherpadNextcloud\Service\EtherpadClient;
 use OCA\EtherpadNextcloud\Service\ExternalPadExportFetcher;
@@ -232,7 +233,7 @@ class PadMetadataServiceTest extends TestCase {
 		$bindingService->expects($this->once())
 			->method('findByPadId')
 			->with('original-pad', BindingService::STATE_ACTIVE)
-			->willReturn(['file_id' => 42, 'pad_id' => 'original-pad', 'state' => BindingService::STATE_ACTIVE]);
+			->willReturn(new Binding(fileId: 42, padId: 'original-pad', accessMode: BindingService::ACCESS_PUBLIC, state: BindingService::STATE_ACTIVE));
 
 		$result = $this->buildService(
 			padFileService: $padFileService,
@@ -275,7 +276,7 @@ class PadMetadataServiceTest extends TestCase {
 		));
 
 		$bindingService = $this->createMock(BindingService::class);
-		$bindingService->method('findByPadId')->willReturn(['file_id' => 9999, 'pad_id' => 'original-pad']);
+		$bindingService->method('findByPadId')->willReturn(new Binding(fileId: 9999, padId: 'original-pad', accessMode: BindingService::ACCESS_PUBLIC, state: BindingService::STATE_ACTIVE));
 
 		$result = $this->buildService(
 			padFileService: $padFileService,
@@ -398,7 +399,7 @@ class PadMetadataServiceTest extends TestCase {
 		));
 
 		$bindingService = $this->createMock(BindingService::class);
-		$bindingService->method('findByPadId')->willReturn(['file_id' => 707, 'pad_id' => 'self-pad']);
+		$bindingService->method('findByPadId')->willReturn(new Binding(fileId: 707, padId: 'self-pad', accessMode: BindingService::ACCESS_PUBLIC, state: BindingService::STATE_ACTIVE));
 
 		$result = $this->buildService(
 			padFileService: $padFileService,

@@ -81,16 +81,14 @@ class PendingBindingService {
 		$checked = 0;
 		$settled = 0;
 		foreach ($this->rowsInTurn($minAgeSeconds, $maxAgeSeconds, $limit) as $row) {
-			$fileId = (int)($row['file_id'] ?? 0);
-			$padId = (string)($row['pad_id'] ?? '');
-			if ($fileId <= 0 || $padId === '') {
+			// A row the database holds with no file or no pad names nothing to settle.
+			if ($row->fileId <= 0 || $row->padId === '') {
 				continue;
 			}
 			if ($budget->exhausted()) {
 				break;
 			}
-			$path = $row['file_path'] ?? null;
-			$outcome = $this->whileHeld($fileId, fn (): ?SettleOutcome => $this->settleRow($fileId, $padId, (string)($row['state'] ?? ''), is_string($path) ? $path : null, $budget));
+			$outcome = $this->whileHeld($row->fileId, fn (): ?SettleOutcome => $this->settleRow($row->fileId, $row->padId, $row->state, $row->filePath, $budget));
 			if ($outcome === null) {
 				continue;
 			}
@@ -106,18 +104,17 @@ class PendingBindingService {
 
 	/**
 	 * The rows a run takes, one of each kind in turn: restores left
-	 * undecided, then deletions owed by where the file is - gone for good,
-	 * in a user's trash, anywhere else. Each kind is asked for the whole
-	 * limit, and what one leaves goes to the others. Rows no run can settle
-	 * yet then crowd out only rows of their own kind, which move to the
-	 * back, and a run that ends on its budget has still reached every kind.
+	 * undecided, then deletions owed by where the file is (FileLocation).
+	 * Each kind is asked for the whole limit, and what one leaves goes to
+	 * the others, so a run that ends on its budget has still reached every
+	 * kind.
 	 *
-	 * @return list<array<string,mixed>>
+	 * @return list<WaitingBinding>
 	 */
 	private function rowsInTurn(int $minAgeSeconds, ?int $maxAgeSeconds, int $limit): array {
 		$fileLocations = $this->lifecycleService->isDeleteOnTrashEnabled()
-			? [BindingService::FILE_GONE, BindingService::FILE_IN_USER_TRASH, BindingService::FILE_ELSEWHERE]
-			: [BindingService::FILE_ELSEWHERE];
+			? [FileLocation::Gone, FileLocation::InUserTrash, FileLocation::Elsewhere]
+			: [FileLocation::Elsewhere];
 		$kinds = [$this->bindingService->findRestorePendingByAge($minAgeSeconds, $maxAgeSeconds, $limit)];
 		foreach ($fileLocations as $fileLocation) {
 			$kinds[] = $this->bindingService->findPendingDeleteByAge($minAgeSeconds, $maxAgeSeconds, $limit, $fileLocation);

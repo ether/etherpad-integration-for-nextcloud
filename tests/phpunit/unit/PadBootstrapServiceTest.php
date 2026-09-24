@@ -6,6 +6,7 @@ namespace OCA\EtherpadNextcloud\Tests\Unit;
 
 use OCA\EtherpadNextcloud\Exception\MissingFrontmatterException;
 use OCA\EtherpadNextcloud\Exception\UnrecognisedPadContentException;
+use OCA\EtherpadNextcloud\Service\Binding;
 use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\EtherpadNextcloud\Service\EtherpadClient;
 use OCA\EtherpadNextcloud\Service\ManagedPadLifecycle;
@@ -172,10 +173,7 @@ class PadBootstrapServiceTest extends TestCase {
 		$padId = 'g.ABCDEFGHIJKLMNOP$p-existing';
 
 		$bindingService = $this->createMock(BindingService::class);
-		$bindingService->method('findByFileId')->with($fileId)->willReturn([
-			'pad_id' => $padId,
-			'access_mode' => BindingService::ACCESS_PROTECTED,
-		]);
+		$bindingService->method('findByFileId')->with($fileId)->willReturn(new Binding(fileId: $fileId, padId: $padId, accessMode: BindingService::ACCESS_PROTECTED, state: BindingService::STATE_ACTIVE));
 		$bindingService->expects($this->never())->method('createBinding');
 		$bindingService->expects($this->never())->method('deleteByFileId');
 
@@ -472,16 +470,15 @@ class PadBootstrapServiceTest extends TestCase {
 		// file must keep opening.
 		$fileId = 4321;
 		$bindingService = $this->createMock(BindingService::class);
-		$bindingService->method('findByFileId')->willReturn([
-			'pad_id' => 'g.group$existing',
-			'access_mode' => BindingService::ACCESS_PROTECTED,
-		]);
+		$bindingService->method('findByFileId')->willReturn(new Binding(fileId: $fileId, padId: 'g.group$existing', accessMode: BindingService::ACCESS_PROTECTED, state: BindingService::STATE_ACTIVE));
 		$bindingService->expects($this->never())->method('createBinding');
 
 		$padFileService = $this->createMock(PadFileService::class);
 		$padFileService->method('parseLegacyOwnpadShortcut')->willReturn(null);
+		// Written as what the binding says it is, not as what may be created now.
 		$padFileService->expects($this->once())
 			->method('buildInitialDocument')
+			->with($fileId, 'g.group$existing', BindingService::ACCESS_PROTECTED)
 			->willReturn('doc-content');
 
 		$etherpadClient = $this->createMock(EtherpadClient::class);

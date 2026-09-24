@@ -334,9 +334,6 @@
       <code><![CDATA[getAppValue]]></code>
       <code><![CDATA[getAppValue]]></code>
     </DeprecatedMethod>
-    <MixedAssignment>
-      <code><![CDATA[$deletedAt]]></code>
-    </MixedAssignment>
     <RedundantCastGivenDocblockType>
       <code><![CDATA[(bool)($result['delete_pending'] ?? false)]]></code>
       <code><![CDATA[(bool)($result['snapshot_persisted'] ?? false)]]></code>
@@ -486,11 +483,6 @@
     <RedundantCastGivenDocblockType>
       <code><![CDATA[(string)$this->config->getAppValue(Application::APP_ID, $key, 'yes')]]></code>
     </RedundantCastGivenDocblockType>
-  </file>
-  <file src="lib/Service/PendingBindingService.php">
-    <MixedAssignment>
-      <code><![CDATA[$path]]></code>
-    </MixedAssignment>
   </file>
   <file src="lib/Service/PublicShareResolver.php">
     <RedundantCastGivenDocblockType>
