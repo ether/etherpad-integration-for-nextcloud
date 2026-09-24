@@ -81,13 +81,18 @@ class OwedDeletions {
 				: SettleOutcome::Left;
 		}
 		if ($probe->presence === PadPresence::Present) {
+			// Read before the write; hasMoved() says why.
+			$path = $file->getPath();
 			try {
-				$written = $snapshots->writeInTrash($pad, $probe->revisions, $budget, fn (): bool => $this->userNodeResolver->hasMoved($file));
+				$written = $snapshots->writeInTrash($pad, $probe->revisions, $budget, fn (): bool => $this->userNodeResolver->hasMoved($fileId, $path));
 			} catch (RunBudgetSpentException) {
 				return SettleOutcome::Left;
 			}
 			if ($written === TrashSnapshotMiss::SnapshotNotFetched) {
 				return SettleOutcome::Unanswered;
+			}
+			if ($written === TrashSnapshotMiss::FileMovedWhileWritten) {
+				$this->removeStrayCopy($fileId, $path);
 			}
 			if ($written instanceof TrashSnapshotMiss) {
 				return $this->waitAgain($fileId, $padId, $written);
@@ -154,6 +159,22 @@ class OwedDeletions {
 			$this->bindingService->deleteInState($fileId, $padId, $state);
 		}
 		return SettleOutcome::Settled;
+	}
+
+	/**
+	 * The copy a write left where the file was, removed. One that stays is
+	 * only logged: the pad holds its content.
+	 */
+	private function removeStrayCopy(int $fileId, string $path): void {
+		try {
+			$this->userNodeResolver->removeStrayCopy($fileId, $path);
+		} catch (\Throwable $e) {
+			$this->logger->warning('Could not remove the copy a sweep wrote into the trash after its file was restored.', [
+				'app' => 'etherpad_nextcloud',
+				'fileId' => $fileId,
+				...SafeError::context($e),
+			]);
+		}
 	}
 
 	/**

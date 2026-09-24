@@ -287,9 +287,6 @@ class UserNodeResolverTest extends TestCase {
 	 * global root, where a sweep found it.
 	 */
 	public function testANodeHasMovedWhenItsIdNoLongerResolvesToItsPath(): void {
-		$trashed = $this->createMock(File::class);
-		$trashed->method('getId')->willReturn(42);
-		$trashed->method('getPath')->willReturn('/alice/files_trashbin/files/Notes.pad.d100');
 		foreach ([
 			'still there' => [['/bob/files/Shared/Notes.pad', '/alice/files_trashbin/files/Notes.pad.d100'], false],
 			'restored' => [['/alice/files/Notes.pad'], true],
@@ -302,7 +299,28 @@ class UserNodeResolverTest extends TestCase {
 				return $node;
 			}, $paths));
 
-			$this->assertSame($moved, (new UserNodeResolver($rootFolder))->hasMoved($trashed), $case);
+			$this->assertSame($moved, (new UserNodeResolver($rootFolder))->hasMoved(42, '/alice/files_trashbin/files/Notes.pad.d100'), $case);
+		}
+	}
+
+	/**
+	 * What a write through a node that had moved made at its old path goes;
+	 * the node itself, a folder, or nothing there is left alone.
+	 */
+	public function testOnlyAnotherFileAtTheOldPathIsRemoved(): void {
+		foreach (['a copy' => [File::class, 43, true], 'the node itself' => [File::class, 42, false], 'a folder' => [Folder::class, 43, false], 'nothing' => [null, 0, false]] as $case => [$type, $id, $removed]) {
+			$rootFolder = $this->createMock(IRootFolder::class);
+			$get = $rootFolder->expects($this->once())->method('get')->with('/alice/files_trashbin/files/Notes.pad.d100');
+			if ($type === null) {
+				$get->willThrowException(new NotFoundException());
+			} else {
+				$current = $this->createMock($type);
+				$current->method('getId')->willReturn($id);
+				$current->expects($removed ? $this->once() : $this->never())->method('delete');
+				$get->willReturn($current);
+			}
+
+			(new UserNodeResolver($rootFolder))->removeStrayCopy(42, '/alice/files_trashbin/files/Notes.pad.d100');
 		}
 	}
 }

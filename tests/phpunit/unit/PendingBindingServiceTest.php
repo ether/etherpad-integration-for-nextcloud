@@ -11,6 +11,7 @@ use OCA\EtherpadNextcloud\Service\OwedDeletions;
 use OCA\EtherpadNextcloud\Service\PendingBindingService;
 use OCA\EtherpadNextcloud\Service\RestoreService;
 use OCA\EtherpadNextcloud\Service\RunBudget;
+use OCA\EtherpadNextcloud\Service\SettleLock;
 use OCA\EtherpadNextcloud\Service\SettleOutcome;
 use OCA\EtherpadNextcloud\Service\WaitingBinding;
 use OCA\EtherpadNextcloud\Tests\Support\FixedClock;
@@ -260,42 +261,22 @@ class PendingBindingServiceTest extends TestCase {
 
 	/**
 	 * Two runs at once - a job and the admin page - never work on the same
-	 * row together: the second finds it held and passes it by, uncounted
-	 * and unmoved, so only one of them writes its snapshot and takes the row.
+	 * row together: one that finds the row held by the other passes it by,
+	 * uncounted and unmoved, so only one of them writes its snapshot and
+	 * takes the row. How the lock is held is SettleLockTest's.
 	 */
-	public function testARowIsSettledByOneRunAtATime(): void {
+	public function testARowAnotherRunHoldsIsPassedBy(): void {
 		$locks = new InMemoryLockingProvider();
-		$row = $this->row(2, BindingService::STATE_PENDING_DELETE, 'files_trashbin/files/Two.pad.d100');
-		$root = $this->root([2 => ['/alice/files_trashbin/files/Two.pad.d100']]);
-		$second = null;
-		$secondResult = null;
-		$finishing = 0;
-		$finish = function () use (&$second, &$secondResult, &$finishing): SettleOutcome {
-			$finishing++;
-			// The other run starts while this one is between its read and its write.
-			if ($second !== null) {
-				$run = $second;
-				$second = null;
-				$secondResult = $run->settleByAge(0, null, 50);
-			}
-			return SettleOutcome::Settled;
-		};
-		$otherBindings = $this->bindings(deletes: [$row]);
-		$otherBindings->expects($this->never())->method('transition');
-		$secondOwed = $this->createMock(OwedDeletions::class);
-		$second = $this->service($otherBindings, $this->createMock(RestoreService::class), $root, locks: $locks, owed: $secondOwed);
-		$secondOwed->method('finishTrash')->willReturnCallback($finish);
+		$locks->acquireLock('etherpad_nextcloud:settle:2', ILockingProvider::LOCK_EXCLUSIVE);
+		$bindings = $this->bindings(deletes: [$this->row(2, BindingService::STATE_PENDING_DELETE, 'files_trashbin/files/Two.pad.d100')]);
+		$bindings->expects($this->never())->method('transition');
 		$owed = $this->createMock(OwedDeletions::class);
-		$sweep = $this->service($this->bindings(deletes: [$row]), $this->createMock(RestoreService::class), $root, locks: $locks, owed: $owed);
-		$owed->method('finishTrash')->willReturnCallback($finish);
+		$owed->expects($this->never())->method('finishTrash');
 
-		$first = $sweep->settleByAge(0, null, 50);
+		$result = $this->service($bindings, $this->createMock(RestoreService::class), $this->root([2 => ['/alice/files_trashbin/files/Two.pad.d100']]), locks: $locks, owed: $owed)
+			->settleByAge(0, null, 50);
 
-		$this->assertSame(1, $finishing);
-		$this->assertSame(['checked' => 0, 'settled' => 0], $secondResult);
-		$this->assertSame(['checked' => 1, 'settled' => 1], $first);
-		// Let go afterwards: the next run gets the row.
-		$this->assertFalse($locks->isLocked('etherpad_nextcloud:settle:2', ILockingProvider::LOCK_EXCLUSIVE));
+		$this->assertSame(['checked' => 0, 'settled' => 0], $result);
 	}
 
 	/** A row that throws is logged and counted, and the rows behind it still get their turn. */
@@ -377,9 +358,9 @@ class PendingBindingServiceTest extends TestCase {
 	}
 
 	/**
-	 * A lock that cannot be taken or let go - the database gone, not
-	 * another run - costs its row, logged, and the rows behind it still get
-	 * their turn, as with any local failure.
+	 * A lock that cannot be taken - the database gone, not another run -
+	 * costs its row, logged, and the rows behind it still get their turn,
+	 * as with any local failure.
 	 */
 	public function testALockThatFailsCostsItsRowNotTheRun(): void {
 		$bindings = $this->bindings(restores: [
@@ -392,11 +373,10 @@ class PendingBindingServiceTest extends TestCase {
 				throw new \RuntimeException('database went away');
 			}
 		});
-		$locks->method('releaseLock')->willThrowException(new \RuntimeException('database went away'));
 		$restores = $this->createMock(RestoreService::class);
 		$restores->expects($this->once())->method('settleWaitingFile')->willReturn(SettleOutcome::Settled);
 		$logger = $this->createMock(LoggerInterface::class);
-		$logger->expects($this->exactly(2))->method('warning');
+		$logger->expects($this->once())->method('warning')->with('Could not settle a pad binding that waits.', $this->callback(static fn (array $context): bool => $context['fileId'] === 1));
 
 		$result = $this->service($bindings, $restores, $this->root([1 => ['/a/files/1.pad'], 2 => ['/a/files/2.pad']]), logger: $logger, locks: $locks)->settleByAge(0, null, 50);
 
@@ -447,14 +427,15 @@ class PendingBindingServiceTest extends TestCase {
 	): PendingBindingService {
 		$appConfig = $this->createMock(AppConfigService::class);
 		$appConfig->method('isDeleteOnTrashEnabled')->willReturn($deleteOnTrash);
+		$logger ??= $this->createMock(LoggerInterface::class);
 		return new PendingBindingService(
 			$bindings,
 			$appConfig,
 			$restores,
 			$owed ?? $this->createMock(OwedDeletions::class),
 			$root,
-			$locks ?? new InMemoryLockingProvider(),
-			$logger ?? $this->createMock(LoggerInterface::class),
+			new SettleLock($locks ?? new InMemoryLockingProvider(), $logger),
+			$logger,
 			$clock ?? new FixedClock(),
 		);
 	}

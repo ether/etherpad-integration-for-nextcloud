@@ -138,8 +138,9 @@ class TrashSnapshotWriterTest extends TestCase {
 
 	/**
 	 * The text between two counts, the question whether the file moved
-	 * right before the write, and one count more after it. The count the
-	 * caller has just taken is the first.
+	 * right before the write, one count more after it, and the question
+	 * once more after that count. The count the caller has just taken is
+	 * the first.
 	 */
 	public function testTheSweepWritesWhatItReadBetweenTwoCounts(): void {
 		$steps = [];
@@ -165,7 +166,7 @@ class TrashSnapshotWriterTest extends TestCase {
 
 		$this->assertTrue($this->writer()->writeInTrash($this->pad(snapshotRev: 4), 5, $this->aRun(), $moved));
 
-		$this->assertSame(['text', 'html', 'count', 'moved?', 'write', 'count'], $steps);
+		$this->assertSame(['text', 'html', 'count', 'moved?', 'write', 'count', 'moved?'], $steps);
 		$this->assertEquals([new PadSnapshot('text', '<p>text</p>', 5)], $this->written);
 		$this->assertSame([], $this->logged);
 	}
@@ -179,6 +180,72 @@ class TrashSnapshotWriterTest extends TestCase {
 
 		$this->assertSame(TrashSnapshotMiss::FileMoved, $this->writer()->writeInTrash($this->pad(snapshotRev: 4), 5, $this->aRun(), static fn (): bool => true));
 		$this->assertSame([['debug', 'file_moved']], $this->logged);
+	}
+
+	/** @return iterable<string, array{int|\Throwable}> what the count after the write answers */
+	public static function countsAfterTheWrite(): iterable {
+		yield 'pad unchanged' => [5];
+		yield 'pad changed too' => [6];
+		yield 'no answer' => [new EtherpadClientException('Operation timed out')];
+		yield 'no time left' => [new RunBudgetSpentException('No time left in the run for another Etherpad call.')];
+	}
+
+	/**
+	 * A restore took the file back while it was written: the snapshot went
+	 * into a new file where the old one was, or along with the file, and the
+	 * pad stays either way - whatever the count after the write says, or
+	 * when it says nothing, since the caller has a copy to clear away in
+	 * every case.
+	 */
+	#[\PHPUnit\Framework\Attributes\DataProvider('countsAfterTheWrite')]
+	public function testAFileRestoredWhileWrittenKeepsThePad(int|\Throwable $recount): void {
+		$counts = $this->etherpad->method('getRevisionsCount');
+		$recount instanceof \Throwable
+			// The count after the text answers, the one after the write does not.
+			? $counts->willReturnOnConsecutiveCalls(5, $this->throwException($recount))
+			: $counts->willReturnOnConsecutiveCalls(5, $recount);
+		$this->etherpad->method('getText')->willReturn('text');
+		$this->etherpad->method('getHTML')->willReturn('<p>text</p>');
+		$this->file->expects($this->once())->method('putContent');
+		$asked = 0;
+		$moved = static function () use (&$asked): bool {
+			return ++$asked === 2;
+		};
+
+		$this->assertSame(TrashSnapshotMiss::FileMovedWhileWritten, $this->writer()->writeInTrash($this->pad(snapshotRev: 4), 5, $this->aRun(), $moved));
+		$this->assertSame([['debug', 'file_moved_while_written']], $this->logged);
+	}
+
+	/**
+	 * An error on the count after the write that is neither Etherpad's
+	 * silence nor the run's end reaches the caller, whether or not the file
+	 * moved: taken for a move, it would never be reported.
+	 */
+	public function testAnyOtherErrorOnTheCountReachesTheCaller(): void {
+		$this->etherpad->method('getRevisionsCount')->willReturnOnConsecutiveCalls(5, $this->throwException(new \LogicException('a bug')));
+		$this->etherpad->method('getText')->willReturn('text');
+		$this->etherpad->method('getHTML')->willReturn('<p>text</p>');
+		$asked = 0;
+		$moved = static function () use (&$asked): bool {
+			return ++$asked === 2;
+		};
+
+		try {
+			$this->writer()->writeInTrash($this->pad(snapshotRev: 4), 5, $this->aRun(), $moved);
+			$this->fail('An error that is not Etherpad\'s was taken for a move.');
+		} catch (\LogicException) {
+		}
+		$this->assertSame([], $this->logged);
+	}
+
+	/** A count after the write that fails with the file still in place goes on as before. */
+	public function testAFailedCountWithTheFileInPlaceIsNoMove(): void {
+		$this->etherpad->method('getRevisionsCount')->willReturnOnConsecutiveCalls(5, $this->throwException(new EtherpadClientException('Operation timed out')));
+		$this->etherpad->method('getText')->willReturn('text');
+		$this->etherpad->method('getHTML')->willReturn('<p>text</p>');
+
+		$this->assertSame(TrashSnapshotMiss::SnapshotNotFetched, $this->writer()->writeInTrash($this->pad(snapshotRev: 4), 5, $this->aRun(), $this->notMoved()));
+		$this->assertSame([['warning', 'snapshot_not_fetched']], $this->logged);
 	}
 
 	/**
