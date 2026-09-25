@@ -56,10 +56,14 @@ import { assertOpenPayload, contentUrlFrom, contentViewFrom, openWithFrontmatter
 
 	/**
 	 * $retry, when given: the same request may succeed later - a row still
-	 * waiting, a file locked for a moment, Etherpad not reachable - so the
-	 * panel offers it rather than a dead end, as the viewer does.
+	 * waiting, a file locked for a moment, Etherpad not reachable, no answer
+	 * in time - so the panel offers it rather than a dead end, as the viewer
+	 * does. $afterRetry: this follows a second try, whose button went away
+	 * with the focus on it - the new button, or the message, takes it, so a
+	 * keyboard or screen reader keeps its place. Not on the first load: an
+	 * embed that takes the focus scrolls the page it sits in.
 	 */
-	const showError = (message, retry = null) => {
+	const showError = (message, retry = null, afterRetry = false) => {
 		if (loadingNode instanceof HTMLElement) {
 			loadingNode.hidden = true
 			loadingNode.classList.remove('epnc-embed__loading--pad-doc')
@@ -71,24 +75,24 @@ import { assertOpenPayload, contentUrlFrom, contentViewFrom, openWithFrontmatter
 		if (errorMessageNode instanceof HTMLElement) {
 			errorMessageNode.textContent = String(message || 'Unknown error.')
 		}
+		let focusTarget = errorMessageNode
 		if (errorActionsNode instanceof HTMLElement) {
 			errorActionsNode.replaceChildren()
 			if (typeof retry === 'function') {
-				const button = buildRecoveryButton(contentRetryText, () => {
-					if (errorNode instanceof HTMLElement) {
-						errorNode.hidden = true
-					}
-					if (loadingNode instanceof HTMLElement) {
-						loadingNode.hidden = false
-					}
-					retry()
-				})
+				const button = buildRecoveryButton(contentRetryText, retry)
 				button.classList.add('epnc-embed__recovery-button--primary')
 				errorActionsNode.appendChild(button)
+				focusTarget = button
 			}
 		}
 		if (errorNode instanceof HTMLElement) {
 			errorNode.hidden = false
+		}
+		if (afterRetry && focusTarget instanceof HTMLElement) {
+			if (focusTarget === errorMessageNode) {
+				focusTarget.tabIndex = -1
+			}
+			focusTarget.focus()
 		}
 	}
 
@@ -455,9 +459,7 @@ import { assertOpenPayload, contentUrlFrom, contentViewFrom, openWithFrontmatter
 				headers: { requesttoken: requestToken() },
 			})
 			// Restart the open flow now that the binding exists.
-			hideAllPanels()
-			if (loadingNode instanceof HTMLElement) loadingNode.hidden = false
-			void run()
+			restartOpen()
 		} catch (error) {
 			setRecoveryActionsBusy(false)
 			if (recoveryMessageNode instanceof HTMLElement) {
@@ -490,7 +492,19 @@ import { assertOpenPayload, contentUrlFrom, contentViewFrom, openWithFrontmatter
 		showRecoveryWithoutOriginal(errorMessage)
 	}
 
-	const run = async () => {
+	/**
+	 * The open again, from the loading state: after a recovery made the
+	 * binding, or as a second try the server said may work ($retried).
+	 */
+	const restartOpen = (retried = false) => {
+		hideAllPanels()
+		if (loadingNode instanceof HTMLElement) {
+			loadingNode.hidden = false
+		}
+		void run(retried)
+	}
+
+	const run = async (retried = false) => {
 		if (!Number.isFinite(fileId) || fileId <= 0 || openByIdUrl === '' || initializeByIdUrlTemplate === '') {
 			showError('Embed configuration is incomplete.')
 			return
@@ -528,7 +542,8 @@ import { assertOpenPayload, contentUrlFrom, contentViewFrom, openWithFrontmatter
 			}
 			showError(
 				error instanceof Error ? error.message : 'Pad open failed.',
-				error && error.retryable === true ? () => { void run() } : null,
+				error && error.retryable === true ? () => restartOpen(true) : null,
+				retried,
 			)
 		}
 	}

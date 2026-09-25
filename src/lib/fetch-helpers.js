@@ -66,7 +66,17 @@ export const fetchJsonWithTimeout = async (url, init = {}, options = {}) => {
 			if (timeoutId === null || (callerSignal && callerSignal.aborted)) {
 				throw error
 			}
-			throw new Error('Request timed out.')
+			// Our own limit, not the server's answer: the same request may
+			// well get through in a moment, as after the server's own
+			// retryable.
+			const timedOut = new Error('Request timed out.')
+			timedOut.retryable = true
+			throw timedOut
+		}
+		// fetch() rejects with a TypeError when the network fails - nothing
+		// came back to say otherwise, and the same request may work later.
+		if (error instanceof TypeError) {
+			error.retryable = true
 		}
 		throw error
 	} finally {

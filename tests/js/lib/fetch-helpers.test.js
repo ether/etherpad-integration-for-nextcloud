@@ -79,9 +79,16 @@ describe('fetchJsonWithTimeout', () => {
 		}))
 
 		const pending = fetchJsonWithTimeout('/x')
-		const assertion = expect(pending).rejects.toThrow('Request timed out.')
+		// Our own limit, not the server's answer: worth another try.
+		const assertion = expect(pending).rejects.toMatchObject({ message: 'Request timed out.', retryable: true })
 		await vi.advanceTimersByTimeAsync(11_000)
 		await assertion
+	})
+
+	it('takes a failed network for something worth another try', async () => {
+		stubFetch(() => Promise.reject(new TypeError('Failed to fetch')))
+
+		await expect(fetchJsonWithTimeout('/x')).rejects.toMatchObject({ name: 'TypeError', retryable: true })
 	})
 
 	// Writes wait. Cutting one short applies the change with nobody left to
@@ -137,7 +144,10 @@ describe('fetchJsonWithTimeout', () => {
 		const pending = fetchJsonWithTimeout('/x', { signal: controller.signal })
 		controller.abort()
 
-		await expect(pending).rejects.toMatchObject({ name: 'AbortError' })
+		const error = await pending.catch((e) => e)
+		expect(error.name).toBe('AbortError')
+		// The caller moved on; nobody is to be offered this again.
+		expect(error.retryable).toBeUndefined()
 	})
 
 	it('removes its listener from the caller signal when the request settles', async () => {

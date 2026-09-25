@@ -473,14 +473,14 @@ solely by the separate external-pad policy, not by these two settings.
   - falls back to `POST /api/v1/pads/open` (`file`, requesttoken) only without `fileId`.
   - if open fails with missing frontmatter, calls `POST /api/v1/pads/initialize*` and retries open once.
   - if open fails with `code=missing_binding`, renders a recovery card with an optional `GET /api/v1/pads/find-original/{fileId}` lookup and a `POST /api/v1/pads/recover-from-snapshot/{fileId}` action.
-  - if open fails with `retryable: true` (a row still waiting, a locked file, Etherpad not reachable), offers "Try again", which runs the same open again.
+  - if open fails with `retryable: true` (a row still waiting, a locked file, Etherpad not reachable), or gets no answer in time or fails on the network, offers "Try again", which runs the same open again.
   - uses `POST /api/v1/pads/sync/{fileId}` periodically and on unload.
 - `src/embed-main.js`
   - powers the minimal `/embed/by-id/{fileId}` page.
   - uses same-origin `POST /api/v1/pads/open-by-id`.
   - if open fails with missing frontmatter, calls `POST /api/v1/pads/initialize-by-id/{fileId}` and retries once.
   - if open fails with `code=missing_binding`, renders the same recovery flow as the inline viewer (lookup + recover).
-  - if open fails with `retryable: true`, offers "Try again" on its error panel, as the viewer does.
+  - if open fails with `retryable: true`, or gets no answer in time or fails on the network, offers "Try again" on its error panel, as the viewer does. After a second try the new button, or the message, takes the focus.
   - sets the returned `response.url` directly on the internal iframe.
   - uses the returned `sync_url` / `sync_interval_seconds` to trigger the same snapshot sync contract as the native viewer.
   - listens for trusted parent-frame `postMessage` events:
