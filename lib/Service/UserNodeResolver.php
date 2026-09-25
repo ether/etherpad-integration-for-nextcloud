@@ -220,8 +220,9 @@ class UserNodeResolver {
 	 * made such a new file, the node reads its id again by its path and
 	 * answers with the new file's.
 	 *
-	 * Asked of the global root, as a sweep finds its files: only for a node
-	 * that came from there.
+	 * Asked of the global root, so $path is a node's full path from there -
+	 * `/<user>/files/...` or `/<user>/files_trashbin/...` - as getPath()
+	 * gives it for a node found through the root or a user's folder alike.
 	 */
 	public function hasMoved(int $fileId, string $path): bool {
 		foreach ($this->rootFolder->getById($fileId) as $current) {

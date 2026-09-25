@@ -36,8 +36,8 @@ use Psr\Log\LoggerInterface;
 class RestoreService {
 	/** Etherpad refuses a longer pad name, measured against 2.x. */
 	private const MAX_PAD_NAME_LENGTH = 50;
-	/** Etherpad gave no answer for a waiting row's pad: the one reason a sweep counts as an outage. */
-	private const REASON_PRESENCE_UNKNOWN = 'pad_presence_unknown';
+	/** Etherpad gave no answer for a waiting row's pad: the one reason a sweep counts as an outage, and a restore's event pass leaves (RestoreFromTrashListener). */
+	public const REASON_PRESENCE_UNKNOWN = 'pad_presence_unknown';
 	/** The file could not be read, so there was no revision to hold its pad to. */
 	private const REASON_FILE_UNREADABLE = 'file_unreadable';
 	/** A sweep let go of a row whose pad is not the file's; the file makes its own. */
@@ -46,6 +46,8 @@ class RestoreService {
 	private const REASON_OUT_OF_TIME = 'run_budget_spent';
 	/** An open could not remove what was left of a pad that is gone, so it kept the row for a later try. */
 	private const REASON_LEFTOVER_KEPT = 'leftover_not_removed';
+	/** The file moved while Etherpad was asked - deleted again, say - so its row is no longer the restore's to change. */
+	private const REASON_FILE_MOVED = 'file_moved';
 
 	public function __construct(
 		private BindingService $bindingService,
@@ -57,6 +59,7 @@ class RestoreService {
 		private ISecureRandom $secureRandom,
 		private ProvisionedPadRollback $provisionedPadRollback,
 		private TestFaults $testFaults,
+		private UserNodeResolver $userNodeResolver,
 	) {
 	}
 
@@ -148,16 +151,28 @@ class RestoreService {
 	 * file as its caller has just read it: a pad under that id with fewer
 	 * revisions is not the pad the file knew.
 	 *
+	 * Asking Etherpad takes a while. Where no file lock holds the file
+	 * meanwhile - file locking switched off, say - it can be deleted again,
+	 * and a trash leaves a row that waits as it is, for it is no row of an
+	 * active pad. So, whatever the answer, the row is changed only while
+	 * the file is still where it was; moved, and the row is its trash's to
+	 * finish. That holds for a file that could not be read too: one deleted
+	 * before the read cannot be.
+	 *
 	 * @return array{status: string, reason?: string, old_pad_id?: string, new_pad_id?: string}
 	 */
 	private function settleWaitingBinding(File $file, Binding $binding, bool $mayReplace, ?RunBudget $budget = null, ?ParsedPadFile $read = null, bool $inRequest = false): array {
 		$fileId = $file->getId();
+		$path = $file->getPath();
 		$padId = $binding->padId;
 		$state = $binding->state;
 		try {
 			try {
 				$pad = $read ?? $this->readRestoredPad($file);
 			} catch (\Throwable $readError) {
+				if ($this->userNodeResolver->hasMoved($fileId, $path)) {
+					return LifecycleResult::skipped(self::REASON_FILE_MOVED, $fileId, $this->logger);
+				}
 				// No revision to hold the pad to, so no decision either.
 				return $this->deferRestore($fileId, $padId, $state, $readError);
 			}
@@ -167,11 +182,14 @@ class RestoreService {
 				return LifecycleResult::skipped(self::REASON_OUT_OF_TIME, $fileId, $this->logger);
 			}
 			$presence = $this->padLifecycle->presenceOf($padId, $pad->snapshotRev, ['fileId' => $fileId], $timeout);
+			if ($this->userNodeResolver->hasMoved($fileId, $path)) {
+				return LifecycleResult::skipped(self::REASON_FILE_MOVED, $fileId, $this->logger);
+			}
 			return match ($presence) {
 				PadPresence::Present => $this->resumeOwnPad($file, $fileId, $padId, $state, $mayReplace),
 				PadPresence::Unknown => $this->deferRestore($fileId, $padId, $state),
 				PadPresence::Absent, PadPresence::Behind => $mayReplace
-					? $this->restoreWithReplacement($file, $pad, $fileId, $padId, $state, $binding->accessMode, $presence)
+					? $this->restoreWithReplacement($file, $path, $pad, $fileId, $padId, $state, $binding->accessMode, $presence)
 					: $this->releaseWaitingRow($fileId, $padId, $state, $presence, $inRequest ? $budget : null),
 			};
 		} catch (LifecycleException $e) {
@@ -233,7 +251,7 @@ class RestoreService {
 	 *
 	 * @return array{status: string, reason?: string, old_pad_id?: string, new_pad_id?: string}
 	 */
-	private function restoreWithReplacement(File $file, ParsedPadFile $pad, int $fileId, string $oldPadId, string $fromState, string $accessMode, PadPresence $presence): array {
+	private function restoreWithReplacement(File $file, string $path, ParsedPadFile $pad, int $fileId, string $oldPadId, string $fromState, string $accessMode, PadPresence $presence): array {
 		if (PadAccessMode::tryFrom($accessMode) === null) {
 			// No pad can be made on this row. It goes, and the file offers
 			// its own recovery, which goes by the file's access mode.
@@ -244,6 +262,7 @@ class RestoreService {
 		try {
 			$result = $this->restoreOntoNewPad(
 				$file,
+				$path,
 				$fileId,
 				$pad,
 				$accessMode,
@@ -494,6 +513,7 @@ class RestoreService {
 		// over the first's content.
 		return $this->restoreOntoNewPad(
 			$file,
+			$file->getPath(),
 			$fileId,
 			$pad,
 			$pad->accessMode,
@@ -519,15 +539,31 @@ class RestoreService {
 	 * active row naming it with it - that row would contradict a `.pad` that
 	 * still names the old pad - while a row a trash took over keeps it.
 	 *
+	 * Seeding the new pad takes a while, so the file is asked once more
+	 * before the claim, as settleWaitingBinding() asks it: moved - deleted
+	 * again, say - and the new pad goes, with nothing claimed or written. A
+	 * write through the old node would make a new file where it was.
+	 *
 	 * @param \Closure(string): bool $claim
 	 * @return array{status: string, reason?: string, old_pad_id?: string, new_pad_id?: string}
 	 * @throws LifecycleException
 	 */
-	private function restoreOntoNewPad(File $file, int $fileId, ParsedPadFile $pad, string $accessMode, string $oldPadId, string $flow, \Closure $claim): array {
+	private function restoreOntoNewPad(File $file, string $path, int $fileId, ParsedPadFile $pad, string $accessMode, string $oldPadId, string $flow, \Closure $claim): array {
 		try {
 			[$newPadId, $updatedContent] = $this->seedFromSnapshot($fileId, $pad, $accessMode, $oldPadId);
 		} catch (\Throwable $e) {
 			throw LifecycleException::failed('Restore', $e);
+		}
+
+		try {
+			$moved = $this->userNodeResolver->hasMoved($fileId, $path);
+		} catch (\Throwable $e) {
+			$this->provisionedPadRollback->discardUnlessBoundToFile($fileId, $newPadId, $flow);
+			throw LifecycleException::failed('Restore', $e);
+		}
+		if ($moved) {
+			$this->provisionedPadRollback->discardUnlessBoundToFile($fileId, $newPadId, $flow);
+			return LifecycleResult::skipped(self::REASON_FILE_MOVED, $fileId, $this->logger);
 		}
 
 		try {

@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Tests\Unit;
 
+use OCA\EtherpadNextcloud\Service\RestoreService;
+use OCA\EtherpadNextcloud\Exception\LifecycleException;
+use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
 use OCA\EtherpadNextcloud\Listeners\RestoreFromTrashListener;
 use OCA\EtherpadNextcloud\Service\Binding;
 use OCA\EtherpadNextcloud\Service\BindingService;
@@ -403,6 +406,156 @@ class RestoreFromTrashListenerTest extends TestCase {
 
 		$listener->handleLegacyHook(['filePath' => '/Notes.pad']);
 		$listener->handle($this->restoreEventFor($file));
+	}
+
+	/** @return iterable<string, array{array{status: string, reason?: string}|\Throwable, bool}> */
+	public static function hookOutcomes(): iterable {
+		// What the hook pass came to, and whether the event pass after it goes ahead.
+		yield 'Etherpad did not answer, the row left waiting' => [['status' => LifecycleResult::SKIPPED, 'reason' => RestoreService::REASON_PRESENCE_UNKNOWN], false];
+		yield 'Etherpad failed' => [LifecycleException::failed('Restore', new EtherpadClientException('Etherpad API request failed: createPad', 0, new \RuntimeException('Operation timed out'))), false];
+		yield 'the pad restored' => [['status' => LifecycleResult::RESTORED], true];
+		yield 'the file could not be read' => [['status' => LifecycleResult::SKIPPED, 'reason' => 'file_unreadable'], true];
+		yield 'the database failed' => [LifecycleException::failed('Restore', new \RuntimeException('connection lost')), true];
+	}
+
+	/**
+	 * The event pass of a core restore is a second try at what the hook
+	 * pass left undone, save a hook pass that asked Etherpad and got no
+	 * answer or an error: asking again would only cost a second timeout
+	 * with an Etherpad that hangs. It then leaves that file, once; a hook
+	 * pass is never left out - for groupfolders, which fires no event, it
+	 * is the only one - and each starts afresh, so what an earlier hook
+	 * pass left behind speaks for no later one.
+	 *
+	 * @param array{status: string, reason?: string}|\Throwable $outcome
+	 */
+	#[\PHPUnit\Framework\Attributes\DataProvider('hookOutcomes')]
+	public function testTheEventLeavesOnlyAFileEtherpadFailedTheHookOn(array|\Throwable $outcome, bool $eventGoesAhead): void {
+		$file = $this->createMock(File::class);
+		$file->method('getId')->willReturn(4712);
+		$file->method('getName')->willReturn('Notes.pad');
+		// The same file as the hook resolves it, to tell the two ways in apart.
+		$hookFile = $this->createMock(File::class);
+		$hookFile->method('getId')->willReturn(4712);
+		$passes = [];
+		$lifecycleService = $this->createMock(LifecycleService::class);
+		$lifecycleService->method('handleRestore')->willReturnCallback(static function (File $node) use (&$passes, $outcome, $hookFile): array {
+			$passes[] = $node === $hookFile ? 'hook' : 'event';
+			if ($node === $hookFile && $outcome instanceof \Throwable) {
+				throw $outcome;
+			}
+			return $node === $hookFile && is_array($outcome) ? $outcome : ['status' => LifecycleResult::RESTORED];
+		});
+		$resolver = $this->createMock(UserNodeResolver::class);
+		$resolver->method('resolveUserFileNodeByPath')->with('alice', '/Notes.pad')->willReturn($hookFile);
+		$listener = new RestoreFromTrashListener($lifecycleService, $this->sessionFor('alice'), $resolver, $this->createMock(LoggerInterface::class));
+
+		$listener->handleLegacyHook(['filePath' => '/Notes.pad']);
+		$listener->handle($this->restoreEventFor($file));
+		// A later restore of the same file: its event goes ahead whatever came before.
+		$listener->handle($this->restoreEventFor($file));
+
+		$this->assertSame($eventGoesAhead ? ['hook', 'event', 'event'] : ['hook', 'event'], $passes);
+	}
+
+	/**
+	 * Every hook pass starts afresh: one whose Etherpad failed, with no
+	 * event after it (groupfolders), does not make a later restore's event
+	 * pass leave the file after a hook pass that failed for another reason.
+	 */
+	public function testNothingAHookPassLeftSpeaksForALaterOne(): void {
+		$file = $this->createMock(File::class);
+		$file->method('getId')->willReturn(4712);
+		$file->method('getName')->willReturn('Notes.pad');
+		$outcomes = [
+			LifecycleException::failed('Restore', new EtherpadClientException('Etherpad API request failed: getRevisionsCount')),
+			LifecycleException::failed('Restore', new \RuntimeException('connection lost')),
+		];
+		$passes = 0;
+		$lifecycleService = $this->createMock(LifecycleService::class);
+		$lifecycleService->method('handleRestore')->willReturnCallback(static function () use (&$passes, &$outcomes): array {
+			$passes++;
+			$outcome = array_shift($outcomes);
+			return $outcome === null ? ['status' => LifecycleResult::RESTORED] : throw $outcome;
+		});
+		$resolver = $this->createMock(UserNodeResolver::class);
+		$resolver->method('resolveUserFileNodeByPath')->willReturn($file);
+		$listener = new RestoreFromTrashListener($lifecycleService, $this->sessionFor('alice'), $resolver, $this->createMock(LoggerInterface::class));
+
+		$listener->handleLegacyHook(['filePath' => '/Notes.pad']);
+		$listener->handleLegacyHook(['filePath' => '/Notes.pad']);
+		$listener->handle($this->restoreEventFor($file));
+
+		$this->assertSame(3, $passes, 'the event after the second hook pass goes ahead');
+	}
+
+	/**
+	 * What a hook pass left is its own file's: after a groupfolder's
+	 * restore that Etherpad failed - a hook and no event - a core restore
+	 * of another file goes ahead in both its passes.
+	 */
+	public function testAHookPassSpeaksOnlyForItsOwnFile(): void {
+		$first = $this->createMock(File::class);
+		$first->method('getId')->willReturn(4712);
+		$other = $this->createMock(File::class);
+		$other->method('getId')->willReturn(4713);
+		$other->method('getName')->willReturn('Other.pad');
+		$passes = [];
+		$lifecycleService = $this->createMock(LifecycleService::class);
+		$lifecycleService->method('handleRestore')->willReturnCallback(static function (File $node) use (&$passes, $first): array {
+			$passes[] = $node->getId();
+			return $node === $first ? throw LifecycleException::failed('Restore', new EtherpadClientException('Etherpad API request failed: createPad')) : ['status' => LifecycleResult::RESTORED];
+		});
+		$resolver = $this->createMock(UserNodeResolver::class);
+		$resolver->method('resolveUserFileNodeByPath')->willReturnMap([['alice', '/Notes.pad', $first], ['alice', '/Other.pad', $other]]);
+		$listener = new RestoreFromTrashListener($lifecycleService, $this->sessionFor('alice'), $resolver, $this->createMock(LoggerInterface::class));
+
+		$listener->handleLegacyHook(['filePath' => '/Notes.pad']);
+		$listener->handleLegacyHook(['filePath' => '/Other.pad']);
+		$listener->handle($this->restoreEventFor($other));
+
+		$this->assertSame([4712, 4713, 4713], $passes);
+	}
+
+	/**
+	 * Only a hook pass speaks for the event after it: an event pass that
+	 * Etherpad did not answer leaves nothing behind, and a later restore's
+	 * event goes ahead.
+	 */
+	public function testAnEventPassLeavesNothingBehind(): void {
+		$file = $this->createMock(File::class);
+		$file->method('getId')->willReturn(4712);
+		$file->method('getName')->willReturn('Notes.pad');
+		$lifecycleService = $this->createMock(LifecycleService::class);
+		$lifecycleService->expects($this->exactly(2))
+			->method('handleRestore')
+			->willReturn(['status' => LifecycleResult::SKIPPED, 'reason' => RestoreService::REASON_PRESENCE_UNKNOWN]);
+		$listener = new RestoreFromTrashListener($lifecycleService, $this->createMock(IUserSession::class), $this->createMock(UserNodeResolver::class), $this->createMock(LoggerInterface::class));
+
+		$listener->handle($this->restoreEventFor($file));
+		$listener->handle($this->restoreEventFor($file));
+	}
+
+	/** A node without an id answers -1, as every such node does, so it is never remembered. */
+	public function testANodeWithoutAnIdIsNeverRemembered(): void {
+		$hookNode = $this->createMock(File::class);
+		$hookNode->method('getId')->willReturn(-1);
+		$eventNode = $this->createMock(File::class);
+		$eventNode->method('getId')->willReturn(-1);
+		$eventNode->method('getName')->willReturn('Other.pad');
+		$passes = 0;
+		$lifecycleService = $this->createMock(LifecycleService::class);
+		$lifecycleService->method('handleRestore')->willReturnCallback(static function () use (&$passes): array {
+			return ++$passes === 1 ? throw LifecycleException::failed('Restore', new EtherpadClientException('Etherpad API request failed: createPad')) : ['status' => LifecycleResult::RESTORED];
+		});
+		$resolver = $this->createMock(UserNodeResolver::class);
+		$resolver->method('resolveUserFileNodeByPath')->willReturn($hookNode);
+		$listener = new RestoreFromTrashListener($lifecycleService, $this->sessionFor('alice'), $resolver, $this->createMock(LoggerInterface::class));
+
+		$listener->handleLegacyHook(['filePath' => '/Notes.pad']);
+		$listener->handle($this->restoreEventFor($eventNode));
+
+		$this->assertSame(2, $passes);
 	}
 
 	/**
