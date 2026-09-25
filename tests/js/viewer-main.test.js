@@ -382,23 +382,12 @@ describe('viewer component — resolveOpenUrl', () => {
 		expect(vm.maybeStaleFileId).toBe(true)
 	})
 
-	it('offers a second try, not recovery, when the file\'s row still waits', async () => {
-		stubFetch(jsonResponse({ message: 'This pad is still being restored. Try again later.', code: 'waiting_binding', retryable: true }, false, 409))
-		const vm = makeInstance({ fileid: 42, fileInfo: { path: '/x.pad' } })
-
-		await vm.resolveOpenUrl()
-
-		expect(vm.loadError).toBe('This pad is still being restored. Try again later.')
-		expect(vm.canRetryOpen).toBe(true)
-		expect(vm.canRecover).toBe(false)
-	})
-
-	// Not by its code: the server's `retryable` says the same open may work
-	// later, for a row still waiting and for these.
+	// By the server's `retryable`, not by a code; a second try, not recovery.
 	it.each([
-		['Etherpad not reachable', { message: 'Etherpad cannot be reached right now. Try again later.', retryable: true }, 503],
-		['a file locked for a moment', { message: 'Pad file is temporarily locked. Please retry.', retryable: true }, 503],
-	])('offers a second try when %s', async (_, body, status) => {
+		['the file\'s row still waits', { message: 'This pad is still being restored. Try again later.', code: 'waiting_binding', retryable: true }, 409],
+		['Etherpad is not reachable', { message: 'Etherpad cannot be reached right now. Try again later.', retryable: true }, 503],
+		['the file is locked for a moment', { message: 'Pad file is temporarily locked. Please retry.', retryable: true }, 503],
+	])('offers a second try, not recovery, when %s', async (_, body, status) => {
 		stubFetch(jsonResponse(body, false, status))
 		const vm = makeInstance({ fileid: 42, fileInfo: { path: '/x.pad' } })
 
@@ -406,6 +395,7 @@ describe('viewer component — resolveOpenUrl', () => {
 
 		expect(vm.loadError).toBe(body.message)
 		expect(vm.canRetryOpen).toBe(true)
+		expect(vm.canRecover).toBe(false)
 	})
 
 	it.each([

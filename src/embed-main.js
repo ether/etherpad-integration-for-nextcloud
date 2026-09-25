@@ -54,23 +54,29 @@ import { assertOpenPayload, contentUrlFrom, contentViewFrom, openWithFrontmatter
 	const requestToken = () => ocRequestToken(templateRequestToken)
 	const padSync = createPadSync({ requestToken })
 
+	/** Every button of this page: the content's retry, the error panel's, the recovery card's. */
+	const buildButton = (label, onClick, className = 'epnc-embed__recovery-button') => {
+		const button = document.createElement('button')
+		button.type = 'button'
+		button.className = className
+		button.textContent = label
+		button.addEventListener('click', onClick)
+		return button
+	}
+
 	/**
-	 * $retry, when given: the same request may succeed later - a row still
-	 * waiting, a file locked for a moment, Etherpad not reachable, no answer
-	 * in time - so the panel offers it rather than a dead end, as the viewer
-	 * does. $afterRetry: this follows a second try, whose button went away
-	 * with the focus on it - the new button, or the message, takes it, so a
+	 * $retry, when given: the open may succeed later - the server said so,
+	 * or no answer came (the cases are in docs/api-reference.md) - so the
+	 * panel offers it rather than a dead end, as the viewer does.
+	 * $afterRetry: this follows a second try, whose button went away with
+	 * the focus on it - the new button, or the message, takes it, so a
 	 * keyboard or screen reader keeps its place. Not on the first load: an
 	 * embed that takes the focus scrolls the page it sits in.
 	 */
 	const showError = (message, retry = null, afterRetry = false) => {
+		hideAllPanels()
 		if (loadingNode instanceof HTMLElement) {
-			loadingNode.hidden = true
 			loadingNode.classList.remove('epnc-embed__loading--pad-doc')
-		}
-		if (iframe instanceof HTMLIFrameElement) {
-			iframe.hidden = true
-			iframe.removeAttribute('src')
 		}
 		if (errorMessageNode instanceof HTMLElement) {
 			errorMessageNode.textContent = String(message || 'Unknown error.')
@@ -79,8 +85,7 @@ import { assertOpenPayload, contentUrlFrom, contentViewFrom, openWithFrontmatter
 		if (errorActionsNode instanceof HTMLElement) {
 			errorActionsNode.replaceChildren()
 			if (typeof retry === 'function') {
-				const button = buildRecoveryButton(contentRetryText, retry)
-				button.classList.add('epnc-embed__recovery-button--primary')
+				const button = buildButton(contentRetryText, retry, 'epnc-embed__recovery-button epnc-embed__recovery-button--primary')
 				errorActionsNode.appendChild(button)
 				focusTarget = button
 			}
@@ -234,12 +239,7 @@ import { assertOpenPayload, contentUrlFrom, contentViewFrom, openWithFrontmatter
 
 		body.appendChild(text)
 		if (canRetry) {
-			const retry = document.createElement('button')
-			retry.type = 'button'
-			retry.className = 'button primary'
-			retry.textContent = contentRetryText
-			retry.addEventListener('click', () => { void loadContent(view, contentUrl) })
-			body.appendChild(retry)
+			body.appendChild(buildButton(contentRetryText, () => { void loadContent(view, contentUrl) }, 'button primary'))
 		}
 	}
 
@@ -389,15 +389,6 @@ import { assertOpenPayload, contentUrlFrom, contentViewFrom, openWithFrontmatter
 		if (recoveryActionsNode instanceof HTMLElement) recoveryActionsNode.replaceChildren()
 	}
 
-	const buildRecoveryButton = (label, onClick) => {
-		const button = document.createElement('button')
-		button.type = 'button'
-		button.className = 'epnc-embed__recovery-button'
-		button.textContent = label
-		button.addEventListener('click', onClick)
-		return button
-	}
-
 	const showRecoveryWithOriginal = (originalEmbedUrl, errorMessage) => {
 		if (!(recoveryNode instanceof HTMLElement)) return
 		hideAllPanels()
@@ -413,7 +404,7 @@ import { assertOpenPayload, contentUrlFrom, contentViewFrom, openWithFrontmatter
 			openLink.textContent = recoveryOpenOriginalText
 			recoveryActionsNode.replaceChildren(
 				openLink,
-				buildRecoveryButton(recoveryCreateNewText, () => { void triggerRecovery() }),
+				buildButton(recoveryCreateNewText, () => { void triggerRecovery() }),
 			)
 		}
 	}
@@ -425,9 +416,9 @@ import { assertOpenPayload, contentUrlFrom, contentViewFrom, openWithFrontmatter
 		if (recoveryMessageNode instanceof HTMLElement) recoveryMessageNode.textContent = errorMessage
 		if (recoveryBodyNode instanceof HTMLElement) recoveryBodyNode.textContent = recoveryOrphanBodyText
 		if (recoveryActionsNode instanceof HTMLElement) {
-			const button = buildRecoveryButton(recoveryCreateNewText, () => { void triggerRecovery() })
-			button.classList.add('epnc-embed__recovery-button--primary')
-			recoveryActionsNode.replaceChildren(button)
+			recoveryActionsNode.replaceChildren(
+				buildButton(recoveryCreateNewText, () => { void triggerRecovery() }, 'epnc-embed__recovery-button epnc-embed__recovery-button--primary'),
+			)
 		}
 	}
 

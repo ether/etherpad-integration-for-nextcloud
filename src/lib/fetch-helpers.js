@@ -47,9 +47,9 @@ export const fetchJsonWithTimeout = async (url, init = {}, options = {}) => {
 			if (data && typeof data.code === 'string') {
 				error.code = data.code
 			}
-			// The server's word that the same request may succeed later: a
-			// row still waiting, a file locked for a moment, Etherpad not
-			// reachable. Clients offer to try again on it, not on the code.
+			// The server's word that the same request may succeed later (the
+			// cases are in docs/api-reference.md). Clients offer to try again
+			// on it, not on the code.
 			if (data && data.retryable === true) {
 				error.retryable = true
 			}

@@ -63,6 +63,9 @@ const errorResponse = (body, status = 400) => jsonResponse(body, false, status)
 const root = () => document.getElementById('etherpad-nextcloud-embed')
 const errorMessage = () => document.querySelector('[data-epnc-embed-error-message]').textContent
 const errorActions = () => document.querySelector('[data-epnc-embed-error-actions]')
+
+/** A row still waiting, as the server answers it: retryable. */
+const WAITING = { message: 'This pad is still being restored. Try again later.', code: 'waiting_binding', retryable: true }
 const recoveryMessage = () => document.querySelector('[data-epnc-embed-recovery-message]').textContent
 const recoveryBody = () => document.querySelector('[data-epnc-embed-recovery-body]').textContent
 const recoveryActions = () => document.querySelector('[data-epnc-embed-recovery-actions]')
@@ -366,19 +369,19 @@ describe('embed-main', () => {
 
 		expect(isHidden('[data-epnc-embed-error]')).toBe(false)
 		expect(errorMessage()).toBe('Internal server error')
+		// The error panel alone: no loading state left up, no recovery card.
+		expect(isHidden('[data-epnc-embed-loading]')).toBe(true)
 		expect(isHidden('[data-epnc-embed-recovery]')).toBe(true)
 		// Nothing says the same open would do better later.
 		expect(errorActions().children).toHaveLength(0)
 	})
 
 	/**
-	 * The server's `retryable` - a row still waiting, a file locked for a
-	 * moment, Etherpad not reachable - is a second try on the error panel,
-	 * as in the viewer. It runs the whole open again, and a success clears
-	 * the panel.
+	 * The server's `retryable` is a second try on the error panel, as in the
+	 * viewer. It runs the whole open again, and a success clears the panel.
 	 */
 	it.each([
-		['a row still waiting', { message: 'This pad is still being restored. Try again later.', code: 'waiting_binding', retryable: true }, 409],
+		['a row still waiting', WAITING, 409],
 		['Etherpad not reachable', { message: 'Etherpad cannot be reached right now. Try again later.', retryable: true }, 503],
 	])('offers to try the open again after %s', async (_, body, status) => {
 		fetch
@@ -401,35 +404,6 @@ describe('embed-main', () => {
 		expect(isHidden('[data-epnc-embed-error]')).toBe(true)
 	})
 
-	/**
-	 * The button that was clicked goes away with the focus on it. After a
-	 * second try that fails, the new button - or the message, when there is
-	 * none - takes the focus, so a keyboard or screen reader keeps its place.
-	 * Not on the first load: an embed that takes the focus scrolls its host.
-	 */
-	it('hands the focus on after a second try, and only then', async () => {
-		const waiting = { message: 'This pad is still being restored. Try again later.', code: 'waiting_binding', retryable: true }
-		fetch
-			.mockResolvedValueOnce(errorResponse(waiting, 409))
-			.mockResolvedValueOnce(errorResponse(waiting, 409))
-			.mockResolvedValueOnce(errorResponse({ message: 'Internal server error' }, 500))
-
-		await importEmbed()
-		await flushAsyncWork()
-
-		expect(document.activeElement).toBe(document.body)
-
-		errorActions().querySelector('button').click()
-		await flushAsyncWork()
-
-		expect(document.activeElement).toBe(errorActions().querySelector('button'))
-
-		errorActions().querySelector('button').click()
-		await flushAsyncWork()
-
-		expect(document.activeElement).toBe(document.querySelector('[data-epnc-embed-error-message]'))
-	})
-
 	/** No answer at all - the network failed - is worth another try too. */
 	it('offers to try again when the network fails', async () => {
 		fetch.mockRejectedValueOnce(new TypeError('Failed to fetch'))
@@ -440,26 +414,36 @@ describe('embed-main', () => {
 		expect(errorActions().querySelectorAll('button')).toHaveLength(1)
 	})
 
-	/** A second try that fails again offers one more, not two; one that fails for good offers none. */
-	it('keeps one second try at a time', async () => {
-		const waiting = { message: 'This pad is still being restored. Try again later.', code: 'waiting_binding', retryable: true }
+	/**
+	 * Over two failures in a row: one button at a time, none once the
+	 * failure is for good. The clicked button goes away with the focus on
+	 * it, so after a second try the new button - or the message, when there
+	 * is none - takes it; not on the first load, where an embed that takes
+	 * the focus scrolls its host.
+	 */
+	it('keeps one second try at a time and hands the focus on after one', async () => {
 		fetch
-			.mockResolvedValueOnce(errorResponse(waiting, 409))
-			.mockResolvedValueOnce(errorResponse(waiting, 409))
+			.mockResolvedValueOnce(errorResponse(WAITING, 409))
+			.mockResolvedValueOnce(errorResponse(WAITING, 409))
 			.mockResolvedValueOnce(errorResponse({ message: 'Internal server error' }, 500))
 
 		await importEmbed()
 		await flushAsyncWork()
+
+		expect(document.activeElement).toBe(document.body)
+
 		errorActions().querySelector('button').click()
 		await flushAsyncWork()
 
 		expect(errorActions().querySelectorAll('button')).toHaveLength(1)
+		expect(document.activeElement).toBe(errorActions().querySelector('button'))
 
 		errorActions().querySelector('button').click()
 		await flushAsyncWork()
 
 		expect(errorMessage()).toBe('Internal server error')
 		expect(errorActions().querySelectorAll('button')).toHaveLength(0)
+		expect(document.activeElement).toBe(document.querySelector('[data-epnc-embed-error-message]'))
 	})
 
 	it('refuses to run without a CSRF request token', async () => {

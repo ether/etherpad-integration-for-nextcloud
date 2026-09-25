@@ -303,9 +303,8 @@ const component = {
 				// The server intentionally does not disclose why this id is unavailable.
 				this.maybeStaleFileId = this.resolvedFileId !== null
 					&& Boolean(error) && error.status === 404 && !error.code
-				// The same open may succeed later - a row still waiting, a file
-				// locked for a moment, Etherpad not reachable - so offer it
-				// rather than a dead end. The server says which, by `retryable`.
+				// The same open may succeed later - the server's `retryable`, or
+				// no answer at all - so offer it rather than a dead end.
 				this.canRetryOpen = Boolean(error) && error.retryable === true
 				// Recovery may resolve only the same path that failed to open.
 				let recoveryFileId = this.resolvedFileId
