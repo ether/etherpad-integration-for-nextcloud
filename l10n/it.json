@@ -116,6 +116,7 @@
         "Looks for pad links whose .pad file no longer exists.": "Cerca collegamenti a pad il cui file .pad non esiste più.",
         "New pad": "Nuovo pad",
         "Nextcloud and Etherpad share no parent domain, so the browser cannot send the session cookie to Etherpad and protected pads will not open. If a proxy exposes Etherpad under the Nextcloud domain, use that address as the base URL. Otherwise, place both services under a shared parent domain or switch protected pads off.": "Nextcloud ed Etherpad non condividono alcun parent domain, quindi il browser non può inviare il cookie di sessione a Etherpad e i pad protetti non si apriranno. Se un proxy espone Etherpad sotto il dominio di Nextcloud, usa quell'indirizzo come URL base. Altrimenti colloca entrambi i servizi sotto un parent domain comune, oppure disattiva i pad protetti.",
+        "Nextcloud did not answer. Check your connection and try again.": "Nextcloud non ha risposto. Controlla la connessione e riprova.",
         "Nextcloud runs on {nextcloud_host}, Etherpad on {etherpad_host}.": "Nextcloud è in esecuzione su {nextcloud_host}, Etherpad su {etherpad_host}.",
         "No .pad file selected. Open a .pad file from this shared folder.": "Nessun file .pad selezionato. Apri un file .pad da questa cartella condivisa.",
         "No shared templates yet.": "Non ci sono ancora modelli condivisi.",

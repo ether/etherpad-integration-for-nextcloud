@@ -85,6 +85,7 @@ class EmbedController extends Controller {
 					'recovery_open_original' => $this->l10n->t('Open the original .pad file'),
 					'recovery_create_new' => $this->l10n->t('Create new pad from this file'),
 					'recovery_creating' => $this->l10n->t('Creating new pad...'),
+					'unanswered' => $this->l10n->t('Nextcloud did not answer. Check your connection and try again.'),
 				],
 			]),
 			errorTitle: $this->l10n->t('Could not open pad'),

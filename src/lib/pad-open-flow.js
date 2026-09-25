@@ -23,6 +23,28 @@ const DEFAULT_INTERVAL_MS = 120000
 export const isMissingFrontmatterError = (error) => Boolean(error) && error.code === 'missing_frontmatter'
 
 /**
+ * Whether the same open may work later, so a client offers to try it
+ * again: the server said so (`retryable`), the file changed while it was
+ * being initialised (the server undid its part), or no answer came. An
+ * open reads, so one that went unanswered may simply run again.
+ * Initialising writes: unanswered, its pad may be set up by now or still
+ * being set up, and another open would start a second one, so there only
+ * the server's word counts.
+ *
+ * @param {unknown} error
+ * @return {boolean}
+ */
+export const isRetryableOpenError = (error) => {
+	if (!error) {
+		return false
+	}
+	if (error.retryable === true || error.code === 'pad_file_changed') {
+		return true
+	}
+	return error.unanswered === true && error.whileInitializing !== true
+}
+
+/**
  * A read-only view carries no pad URL by design; anything else without one
  * would reach an iframe as `undefined`.
  *
@@ -61,7 +83,14 @@ export const openWithFrontmatterRecovery = async ({ open, initialize, stillWante
 		}
 		// Not abortable: it creates a pad, writes a binding row and
 		// rewrites the file.
-		await initialize()
+		try {
+			await initialize()
+		} catch (initializeError) {
+			if (initializeError && typeof initializeError === 'object') {
+				initializeError.whileInitializing = true
+			}
+			throw initializeError
+		}
 		// The open after it mints a session and a cookie, so a caller that
 		// has moved on should not pay for one.
 		if (!stillWanted()) {

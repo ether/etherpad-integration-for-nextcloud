@@ -34,11 +34,12 @@
 	data-l10n-recovery-orphan-body="<?php p((string)($_['l10n']['recovery_orphan_body'] ?? '')); ?>"
 	data-l10n-recovery-open-original="<?php p((string)($_['l10n']['recovery_open_original'] ?? 'Open the original .pad file')); ?>"
 	data-l10n-recovery-create-new="<?php p((string)($_['l10n']['recovery_create_new'] ?? 'Create new pad from this file')); ?>"
-	data-l10n-recovery-creating="<?php p((string)($_['l10n']['recovery_creating'] ?? 'Creating new pad...')); ?>">
+	data-l10n-recovery-creating="<?php p((string)($_['l10n']['recovery_creating'] ?? 'Creating new pad...')); ?>"
+	data-l10n-unanswered="<?php p((string)($_['l10n']['unanswered'] ?? 'Nextcloud did not answer. Check your connection and try again.')); ?>">
 	<div class="epnc-embed__loading" data-epnc-embed-loading>
 		<?php p((string)$_['l10n']['loading']); ?>
 	</div>
-	<div class="epnc-embed__error" data-epnc-embed-error hidden>
+	<div class="epnc-embed__error" data-epnc-embed-error role="alert" hidden>
 		<h2 class="epnc-embed__error-title"><?php p((string)$_['l10n']['error_title']); ?></h2>
 		<p class="epnc-embed__error-message" data-epnc-embed-error-message></p>
 		<div class="epnc-embed__error-actions" data-epnc-embed-error-actions></div>

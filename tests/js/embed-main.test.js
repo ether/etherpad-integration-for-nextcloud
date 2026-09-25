@@ -71,6 +71,19 @@ const recoveryBody = () => document.querySelector('[data-epnc-embed-recovery-bod
 const recoveryActions = () => document.querySelector('[data-epnc-embed-recovery-actions]')
 const iframe = () => document.querySelector('[data-epnc-embed-iframe]')
 
+const MISSING_FRONTMATTER = { message: 'Missing YAML frontmatter in .pad file.', code: 'missing_frontmatter' }
+const PAD = { url: 'https://pad.example.test/p/abc' }
+
+/** A write that answers only when told to, and fails on an abort as fetch does. */
+const slowWrite = (answer) => {
+	const write = { settle: null }
+	write.fetch = (url, init) => new Promise((resolve, reject) => {
+		init.signal.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')))
+		write.settle = () => resolve(jsonResponse(answer))
+	})
+	return write
+}
+
 const isHidden = (selector) => {
 	const el = document.querySelector(selector)
 	return el === null || el.hidden === true
@@ -308,6 +321,8 @@ describe('embed-main', () => {
 		expect(link.getAttribute('href')).toBe('/embed/by-id/99')
 		const button = recoveryActions().querySelector('button')
 		expect(button).not.toBeNull()
+		// Nobody clicked anything yet.
+		expect(document.activeElement).toBe(document.body)
 	})
 
 	it('renders the orphan body when find-original misses', async () => {
@@ -404,9 +419,22 @@ describe('embed-main', () => {
 		expect(isHidden('[data-epnc-embed-error]')).toBe(true)
 	})
 
-	/** No answer at all - the network failed - is worth another try too. */
-	it('offers to try again when the network fails', async () => {
+	/** No answer at all is worth another try too, said in the page's own words. */
+	it('offers to try again when no answer comes, in its own words', async () => {
+		root().setAttribute('data-l10n-unanswered', 'Nextcloud hat nicht geantwortet.')
 		fetch.mockRejectedValueOnce(new TypeError('Failed to fetch'))
+
+		await importEmbed()
+		await flushAsyncWork()
+
+		expect(errorMessage()).toBe('Nextcloud hat nicht geantwortet.')
+		expect(errorActions().querySelectorAll('button')).toHaveLength(1)
+	})
+
+	it('offers to try again when the file changed while it was being set up', async () => {
+		fetch
+			.mockResolvedValueOnce(errorResponse(MISSING_FRONTMATTER))
+			.mockResolvedValueOnce(errorResponse({ message: 'The file changed while its pad was being set up. Try again.', code: 'pad_file_changed' }, 409))
 
 		await importEmbed()
 		await flushAsyncWork()
@@ -414,18 +442,75 @@ describe('embed-main', () => {
 		expect(errorActions().querySelectorAll('button')).toHaveLength(1)
 	})
 
-	/**
-	 * Over two failures in a row: one button at a time, none once the
-	 * failure is for good. The clicked button goes away with the focus on
-	 * it, so after a second try the new button - or the message, when there
-	 * is none - takes it; not on the first load, where an embed that takes
-	 * the focus scrolls its host.
-	 */
+	// Its pad may be set up by now; another open would start a second one.
+	it('offers no second try after an initialise that got no answer', async () => {
+		fetch
+			.mockResolvedValueOnce(errorResponse(MISSING_FRONTMATTER))
+			.mockRejectedValueOnce(new TypeError('Failed to fetch'))
+
+		await importEmbed()
+		await flushAsyncWork()
+
+		expect(errorMessage()).toBe('Nextcloud did not answer. Check your connection and try again.')
+		expect(errorActions().children).toHaveLength(0)
+	})
+
+	it.each([
+		['an initialise', (write) => {
+			fetch
+				.mockResolvedValueOnce(errorResponse(MISSING_FRONTMATTER))
+				.mockImplementationOnce(write.fetch)
+				.mockResolvedValueOnce(jsonResponse(PAD))
+		}, async () => {}],
+		['a recovery', (write) => {
+			fetch
+				.mockResolvedValueOnce(errorResponse({ message: 'no binding', code: 'missing_binding' }))
+				.mockResolvedValueOnce(jsonResponse({ found: false }))
+				.mockImplementationOnce(write.fetch)
+				.mockResolvedValueOnce(jsonResponse(PAD))
+		}, async () => {
+			recoveryActions().querySelector('button').click()
+		}],
+	])('waits for %s however long it takes', async (_, stub, start) => {
+		vi.useFakeTimers()
+		try {
+			const write = slowWrite({ status: 'ok' })
+			stub(write)
+
+			await importEmbed()
+			await flushAsyncWork()
+			await start()
+			await vi.advanceTimersByTimeAsync(60_000)
+			write.settle()
+			await flushAsyncWork()
+
+			expect(iframe().src).toContain(PAD.url)
+		} finally {
+			vi.useRealTimers()
+		}
+	})
+
+	it('says in its own words that a recovery got no answer', async () => {
+		fetch
+			.mockResolvedValueOnce(errorResponse({ message: 'no binding', code: 'missing_binding' }))
+			.mockResolvedValueOnce(jsonResponse({ found: false }))
+			.mockRejectedValueOnce(new TypeError('Load failed'))
+
+		await importEmbed()
+		await flushAsyncWork()
+		recoveryActions().querySelector('button').click()
+		await flushAsyncWork()
+
+		expect(recoveryMessage()).toBe('Nextcloud did not answer. Check your connection and try again.')
+	})
+
+	/** One button at a time over two failures; the focus moves only after a click. */
 	it('keeps one second try at a time and hands the focus on after one', async () => {
 		fetch
 			.mockResolvedValueOnce(errorResponse(WAITING, 409))
 			.mockResolvedValueOnce(errorResponse(WAITING, 409))
 			.mockResolvedValueOnce(errorResponse({ message: 'Internal server error' }, 500))
+		const focus = vi.spyOn(HTMLElement.prototype, 'focus')
 
 		await importEmbed()
 		await flushAsyncWork()
@@ -437,6 +522,9 @@ describe('embed-main', () => {
 
 		expect(errorActions().querySelectorAll('button')).toHaveLength(1)
 		expect(document.activeElement).toBe(errorActions().querySelector('button'))
+		// A retry can take long enough for the host page to have scrolled on.
+		expect(focus).toHaveBeenCalledWith({ preventScroll: true })
+		focus.mockRestore()
 
 		errorActions().querySelector('button').click()
 		await flushAsyncWork()
@@ -444,6 +532,57 @@ describe('embed-main', () => {
 		expect(errorMessage()).toBe('Internal server error')
 		expect(errorActions().querySelectorAll('button')).toHaveLength(0)
 		expect(document.activeElement).toBe(document.querySelector('[data-epnc-embed-error-message]'))
+		// A paragraph takes the focus in a browser only with a tabindex.
+		expect(document.activeElement.getAttribute('tabindex')).toBe('-1')
+	})
+
+	it('hands the focus on when the open after a recovery fails', async () => {
+		fetch
+			.mockResolvedValueOnce(errorResponse({ message: 'no binding', code: 'missing_binding' }))
+			.mockResolvedValueOnce(jsonResponse({ found: false }))
+			.mockResolvedValueOnce(jsonResponse({ status: 'restored' }))
+			.mockResolvedValueOnce(errorResponse(WAITING, 409))
+
+		await importEmbed()
+		await flushAsyncWork()
+		recoveryActions().querySelector('button').click()
+		await flushAsyncWork()
+
+		expect(document.activeElement).toBe(errorActions().querySelector('button'))
+	})
+
+	it('hands the focus to the recovery card when a second try finds no pad', async () => {
+		fetch
+			.mockResolvedValueOnce(errorResponse(WAITING, 409))
+			.mockResolvedValueOnce(errorResponse({ message: 'no binding', code: 'missing_binding' }))
+			.mockResolvedValueOnce(jsonResponse({ found: true, embed_url: '/embed/by-id/99' }))
+
+		await importEmbed()
+		await flushAsyncWork()
+		errorActions().querySelector('button').click()
+		await flushAsyncWork()
+
+		expect(document.activeElement).toBe(recoveryActions().querySelector('a'))
+	})
+
+	it('lets an open that answers late not undo a newer one', async () => {
+		let answerFirst
+		fetch
+			.mockResolvedValueOnce(errorResponse(WAITING, 409))
+			.mockImplementationOnce(() => new Promise((resolve) => { answerFirst = resolve }))
+			.mockResolvedValueOnce(jsonResponse(PAD))
+
+		await importEmbed()
+		await flushAsyncWork()
+		const retry = errorActions().querySelector('button')
+		retry.click()
+		retry.click()
+		await flushAsyncWork()
+		answerFirst(errorResponse(WAITING, 409))
+		await flushAsyncWork()
+
+		expect(iframe().src).toContain(PAD.url)
+		expect(isHidden('[data-epnc-embed-error]')).toBe(true)
 	})
 
 	it('refuses to run without a CSRF request token', async () => {

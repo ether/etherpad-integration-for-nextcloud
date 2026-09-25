@@ -3,7 +3,7 @@
  * Copyright (c) 2026 Jacob Bühler
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { fetchJsonWithTimeout } from '../../../src/lib/fetch-helpers.js'
+import { fetchJsonWithTimeout, requestErrorMessage } from '../../../src/lib/fetch-helpers.js'
 
 /**
  * The signal chaining is the subtlest part of this module and it now
@@ -23,6 +23,13 @@ const stubFetch = (impl) => {
 }
 
 const abortError = () => new DOMException('The operation was aborted.', 'AbortError')
+
+/** An answer whose body is not JSON: a proxy's or Nextcloud's own page. */
+const pageResponse = (status) => ({
+	ok: status < 400,
+	status,
+	json: () => Promise.reject(new SyntaxError('Unexpected token < in JSON at position 0')),
+})
 
 afterEach(() => {
 	vi.unstubAllGlobals()
@@ -79,16 +86,66 @@ describe('fetchJsonWithTimeout', () => {
 		}))
 
 		const pending = fetchJsonWithTimeout('/x')
-		// Our own limit, not the server's answer: worth another try.
-		const assertion = expect(pending).rejects.toMatchObject({ message: 'Request timed out.', retryable: true })
+		const error = pending.catch((e) => e)
 		await vi.advanceTimersByTimeAsync(11_000)
-		await assertion
+
+		// No answer, which is not the server's word that trying again helps.
+		expect(await error).toMatchObject({ message: 'Request timed out.', unanswered: true })
+		expect((await error).retryable).toBeUndefined()
 	})
 
-	it('takes a failed network for something worth another try', async () => {
+	it('marks a failed network as no answer', async () => {
 		stubFetch(() => Promise.reject(new TypeError('Failed to fetch')))
 
-		await expect(fetchJsonWithTimeout('/x')).rejects.toMatchObject({ name: 'TypeError', retryable: true })
+		const error = await fetchJsonWithTimeout('/x').catch((e) => e)
+
+		expect(error).toMatchObject({ name: 'TypeError', unanswered: true })
+		expect(error.retryable).toBeUndefined()
+	})
+
+	// The headers came, the body did not: still no answer, not an empty one.
+	it('takes a timeout while the body streams in for no answer', async () => {
+		vi.useFakeTimers()
+		stubFetch((url, init) => Promise.resolve({
+			ok: true,
+			status: 200,
+			json: () => new Promise((resolve, reject) => {
+				init.signal.addEventListener('abort', () => reject(abortError()))
+			}),
+		}))
+
+		const error = fetchJsonWithTimeout('/x').catch((e) => e)
+		await vi.advanceTimersByTimeAsync(11_000)
+
+		expect(await error).toMatchObject({ message: 'Request timed out.', unanswered: true })
+	})
+
+	it('takes a network failure while the body streams in for no answer', async () => {
+		stubFetch({ ok: false, status: 503, json: () => Promise.reject(new TypeError('network error')) })
+
+		await expect(fetchJsonWithTimeout('/x')).rejects.toMatchObject({ name: 'TypeError', unanswered: true })
+	})
+
+	it('reads a body that is not JSON as an empty one', async () => {
+		stubFetch(pageResponse(200))
+
+		await expect(fetchJsonWithTimeout('/x')).resolves.toEqual({})
+	})
+
+	// This app answers in JSON. A gateway page in its place is no answer from
+	// it; its own 503 is, and so is a server error of any other kind.
+	it.each([
+		['a proxy whose backend is gone', pageResponse(502), true],
+		['Nextcloud in maintenance', pageResponse(503), true],
+		['a proxy that gave up waiting', pageResponse(504), true],
+		['this app, not reachable further on', jsonResponse({ message: 'Etherpad cannot be reached right now. Try again later.', retryable: true }, false, 503), undefined],
+		['a server error page', pageResponse(500), undefined],
+	])('tells whether %s answered', async (_, response, unanswered) => {
+		stubFetch(response)
+
+		const error = await fetchJsonWithTimeout('/x').catch((e) => e)
+
+		expect(error.unanswered).toBe(unanswered)
 	})
 
 	// Writes wait. Cutting one short applies the change with nobody left to
@@ -147,7 +204,7 @@ describe('fetchJsonWithTimeout', () => {
 		const error = await pending.catch((e) => e)
 		expect(error.name).toBe('AbortError')
 		// The caller moved on; nobody is to be offered this again.
-		expect(error.retryable).toBeUndefined()
+		expect(error.unanswered).toBeUndefined()
 	})
 
 	it('removes its listener from the caller signal when the request settles', async () => {
@@ -160,5 +217,18 @@ describe('fetchJsonWithTimeout', () => {
 		expect(removeSpy).toHaveBeenCalledWith('abort', expect.any(Function))
 		// And a later abort no longer reaches anything this call created.
 		controller.abort()
+	})
+})
+
+describe('requestErrorMessage', () => {
+	const timedOut = Object.assign(new Error('Request timed out.'), { unanswered: true })
+
+	it.each([
+		['no answer came', timedOut, 'No answer.'],
+		['the server said why', new Error('no binding'), 'no binding'],
+		['nothing says why', new Error(''), 'Failed.'],
+		['what failed is no error', 'boom', 'Failed.'],
+	])('says what went wrong when %s', (_, error, expected) => {
+		expect(requestErrorMessage(error, 'No answer.', 'Failed.')).toBe(expected)
 	})
 })

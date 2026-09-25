@@ -398,6 +398,33 @@ describe('viewer component — resolveOpenUrl', () => {
 		expect(vm.canRecover).toBe(false)
 	})
 
+	it('offers a second try when the file changed while it was being set up', async () => {
+		const fetchMock = stubFetch()
+		fetchMock
+			.mockResolvedValueOnce(jsonResponse({ message: 'Missing YAML frontmatter in .pad file.', code: 'missing_frontmatter' }, false, 400))
+			.mockResolvedValueOnce(jsonResponse({ message: 'The file changed while its pad was being set up. Try again.', code: 'pad_file_changed' }, false, 409))
+		const vm = makeInstance({ fileid: 42, fileInfo: { path: '/x.pad' } })
+
+		await vm.resolveOpenUrl()
+
+		expect(vm.loadError).toBe('The file changed while its pad was being set up. Try again.')
+		expect(vm.canRetryOpen).toBe(true)
+	})
+
+	// Its pad may be set up by now; another open would start a second one.
+	it('offers no second try after an initialise that got no answer', async () => {
+		const fetchMock = stubFetch()
+		fetchMock
+			.mockResolvedValueOnce(jsonResponse({ message: 'Missing YAML frontmatter in .pad file.', code: 'missing_frontmatter' }, false, 400))
+			.mockRejectedValueOnce(new TypeError('Failed to fetch'))
+		const vm = makeInstance({ fileid: 42, fileInfo: { path: '/x.pad' } })
+
+		await vm.resolveOpenUrl()
+
+		expect(vm.loadError).toBe('Nextcloud did not answer. Check your connection and try again.')
+		expect(vm.canRetryOpen).toBe(false)
+	})
+
 	it.each([
 		['without a code', { message: 'Could not open pad' }, 500],
 		['with another code', { message: 'no binding', code: 'missing_binding' }, 400],
@@ -545,7 +572,10 @@ describe('viewer component — resolveOpenUrl', () => {
 			await vi.advanceTimersByTimeAsync(11_000)
 			await pending
 
-			expect(vm.loadError).toBe('Request timed out.')
+			// In its own words rather than the client's English, and worth
+			// another try: an open only reads.
+			expect(vm.loadError).toBe('Nextcloud did not answer. Check your connection and try again.')
+			expect(vm.canRetryOpen).toBe(true)
 			expect(vm.isLoading).toBe(false)
 		} finally {
 			vi.useRealTimers()

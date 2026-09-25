@@ -7,13 +7,16 @@
 
 import { APP_ID } from './lib/constants.js'
 import { apiFindOriginalPad, apiRecoverFromSnapshot, apiResolvePadByPath } from './lib/api-client.js'
-import { fetchJsonWithTimeout } from './lib/fetch-helpers.js'
+import { fetchJsonWithTimeout, requestErrorMessage } from './lib/fetch-helpers.js'
 import { ocGenerateUrl, ocRequestToken, translate } from './lib/oc-compat.js'
 import { createPadSync } from './lib/pad-sync.js'
 import { loadPadContent } from './lib/pad-content.js'
-import { assertOpenPayload, contentUrlFrom, contentViewFrom, openWithFrontmatterRecovery, padUrlFrom, syncSettingsFrom } from './lib/pad-open-flow.js'
+import { assertOpenPayload, contentUrlFrom, contentViewFrom, isRetryableOpenError, openWithFrontmatterRecovery, padUrlFrom, syncSettingsFrom } from './lib/pad-open-flow.js'
 import { buildPadFrameSrcdoc } from './lib/pad-frame-srcdoc.js'
 import { isPadName, parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './lib/urls.js'
+
+// For a request nothing came back for; see requestErrorMessage().
+const unansweredText = () => translate('Nextcloud did not answer. Check your connection and try again.')
 
 const component = {
 	name: 'EtherpadNextcloudViewer',
@@ -299,13 +302,11 @@ const component = {
 				this.markLoaded()
 			} catch (error) {
 				if (!isCurrent()) return
-				this.loadError = error instanceof Error ? error.message : 'Could not load pad.'
+				this.loadError = requestErrorMessage(error, unansweredText(), 'Could not load pad.')
 				// The server intentionally does not disclose why this id is unavailable.
 				this.maybeStaleFileId = this.resolvedFileId !== null
 					&& Boolean(error) && error.status === 404 && !error.code
-				// The same open may succeed later - the server's `retryable`, or
-				// no answer at all - so offer it rather than a dead end.
-				this.canRetryOpen = Boolean(error) && error.retryable === true
+				this.canRetryOpen = isRetryableOpenError(error)
 				// Recovery may resolve only the same path that failed to open.
 				let recoveryFileId = this.resolvedFileId
 				this.recoveryPath = openPath
@@ -360,7 +361,7 @@ const component = {
 				this.canRecover = false
 				await this.resolveOpenUrl()
 			} catch (error) {
-				this.loadError = error instanceof Error ? error.message : 'Could not load pad.'
+				this.loadError = requestErrorMessage(error, unansweredText(), 'Could not load pad.')
 			} finally {
 				this.isRecovering = false
 			}
@@ -395,7 +396,7 @@ const component = {
 			} catch (error) {
 				if (!isCurrent() || (error && error.name === 'AbortError')) return
 				this.contentState = 'error'
-				this.contentError = error instanceof Error ? error.message : translate('Could not load the pad content.')
+				this.contentError = requestErrorMessage(error, unansweredText(), translate('Could not load the pad content.'))
 			}
 		},
 		renderContentView(createElement, options) {

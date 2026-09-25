@@ -8,12 +8,14 @@ import {
 	contentUrlFrom,
 	contentViewFrom,
 	isMissingFrontmatterError,
+	isRetryableOpenError,
 	openWithFrontmatterRecovery,
 	padUrlFrom,
 	syncSettingsFrom,
 } from '../../../src/lib/pad-open-flow.js'
 
 const withCode = (code) => Object.assign(new Error('nope'), { code })
+const unanswered = () => Object.assign(new Error('Request timed out.'), { unanswered: true })
 
 describe('isMissingFrontmatterError', () => {
 	it('reads the code, not the sentence written for a person', () => {
@@ -21,6 +23,21 @@ describe('isMissingFrontmatterError', () => {
 		expect(isMissingFrontmatterError(new Error('This .pad file has no pad metadata yet.'))).toBe(false)
 		expect(isMissingFrontmatterError(withCode('missing_binding'))).toBe(false)
 		expect(isMissingFrontmatterError(null)).toBe(false)
+	})
+})
+
+describe('isRetryableOpenError', () => {
+	it.each([
+		['the server says it may work later', Object.assign(new Error('locked'), { retryable: true }), true],
+		['the file changed while it was being initialised', withCode('pad_file_changed'), true],
+		['an open got no answer', unanswered(), true],
+		['an initialise got no answer', Object.assign(unanswered(), { whileInitializing: true }), false],
+		['the server says so of an initialise', Object.assign(new Error('locked'), { retryable: true, whileInitializing: true }), true],
+		['the server refused', withCode('missing_binding'), false],
+		['nothing says more', new Error('Internal server error'), false],
+		['there is no error', null, false],
+	])('offers another try, or not, when %s', (_, error, expected) => {
+		expect(isRetryableOpenError(error)).toBe(expected)
 	})
 })
 
@@ -76,6 +93,30 @@ describe('openWithFrontmatterRecovery', () => {
 
 		await expect(openWithFrontmatterRecovery({ open, initialize })).rejects.toThrow('could not write the file')
 		expect(open).toHaveBeenCalledTimes(1)
+	})
+
+	/** Unanswered, its pad may be set up by now; another open would start a second one. */
+	it('offers no second try after an initialise that got no answer', async () => {
+		const open = vi.fn().mockRejectedValue(withCode('missing_frontmatter'))
+		const initialize = vi.fn().mockRejectedValue(unanswered())
+
+		const error = await openWithFrontmatterRecovery({ open, initialize }).catch((e) => e)
+
+		expect(error.unanswered).toBe(true)
+		expect(isRetryableOpenError(error)).toBe(false)
+	})
+
+	it.each([
+		['before initialising', [unanswered()]],
+		['after initialising', [withCode('missing_frontmatter'), unanswered()]],
+	])('still offers one after an open that got no answer %s', async (_, failures) => {
+		const open = vi.fn()
+		failures.forEach((failure) => open.mockRejectedValueOnce(failure))
+		const initialize = vi.fn().mockResolvedValue(undefined)
+
+		const error = await openWithFrontmatterRecovery({ open, initialize }).catch((e) => e)
+
+		expect(isRetryableOpenError(error)).toBe(true)
 	})
 
 	/** The card the viewer shows is built from whatever comes back out. */
