@@ -20,6 +20,7 @@ use OCA\EtherpadNextcloud\Service\ApiErrorLog;
 use OCP\ICache;
 use OCP\ICacheFactory;
 use OCP\IMemcache;
+use OCP\IRequest;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 
@@ -34,9 +35,8 @@ class ApiErrorLogTest extends TestCase {
 	 * An outage reaches every open viewer's sync: one warning a minute for
 	 * the instance, claimed in the distributed cache, and debug for the rest
 	 * of that minute. A refusal is a case of its own for each file - a pad
-	 * deleted in Etherpad, a group gone - so it gets its own minute for each,
-	 * and is a warning each time when the request names no file. Neither
-	 * swallows the other.
+	 * deleted in Etherpad, a group gone - so it gets its own minute for each;
+	 * refusals that name no file share one. Neither swallows the other.
 	 */
 	public function testOneWarningAMinuteForAnOutageAndForEachFileRefused(): void {
 		$claimed = [];
@@ -64,7 +64,7 @@ class ApiErrorLogTest extends TestCase {
 		$log->report(new EtherpadRefusedException('Etherpad API error (getHTML): padID does not exist'));
 
 		$this->assertSame(
-			[['warning', self::UNREACHABLE, 42], ['debug', self::UNREACHABLE, 43], ['warning', self::REFUSED, 44], ['debug', self::REFUSED, 44], ['warning', self::REFUSED, 45], ['warning', self::REFUSED, '/Notes.pad'], ['debug', self::REFUSED, '/Notes.pad'], ['warning', self::REFUSED, null], ['warning', self::REFUSED, null]],
+			[['warning', self::UNREACHABLE, 42], ['debug', self::UNREACHABLE, 43], ['warning', self::REFUSED, 44], ['debug', self::REFUSED, 44], ['warning', self::REFUSED, 45], ['warning', self::REFUSED, '/Notes.pad'], ['debug', self::REFUSED, '/Notes.pad'], ['warning', self::REFUSED, null], ['debug', self::REFUSED, null]],
 			array_map(static fn (array $line): array => [$line[0], $line[1], $line[2]['fileId'] ?? $line[2]['file'] ?? null], $this->logged),
 		);
 		$this->assertSame(['app' => 'etherpad_nextcloud', 'fileId' => 42, 'error' => EtherpadClientException::class], array_intersect_key($this->logged[0][2], ['app' => 1, 'fileId' => 1, 'error' => 1]));
@@ -135,6 +135,25 @@ class ApiErrorLogTest extends TestCase {
 		] as $e) {
 			$this->assertFalse(EtherpadClientException::isEtherpadUnreachable($e), $e::class);
 		}
+	}
+
+	/**
+	 * What a log line names of the request: the file by id, and by path only
+	 * where asked - on a public share the path may be a DAV URL carrying the
+	 * share token.
+	 */
+	public function testALogLineNamesTheRequestsFileByIdAndOnlyWhereAskedByPath(): void {
+		$request = $this->createMock(IRequest::class);
+		$request->method('getParam')->willReturnMap([
+			['fileId', null, '42'],
+			['file', null, 'https://nc.example/public.php/dav/files/SECRETTOKEN/Notes.pad'],
+		]);
+		$bogus = $this->createMock(IRequest::class);
+		$bogus->method('getParam')->willReturnMap([['fileId', null, 'abc'], ['file', null, ['a', 'b']]]);
+
+		$this->assertSame(['fileId' => 42, 'file' => 'https://nc.example/public.php/dav/files/SECRETTOKEN/Notes.pad'], ApiErrorLog::fileNamedBy($request, byPath: true));
+		$this->assertSame(['fileId' => 42], ApiErrorLog::fileNamedBy($request, byPath: false));
+		$this->assertSame([], ApiErrorLog::fileNamedBy($bogus, byPath: true));
 	}
 
 	private function logger(): LoggerInterface {

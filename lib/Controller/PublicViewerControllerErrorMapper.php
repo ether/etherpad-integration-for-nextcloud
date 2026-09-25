@@ -44,8 +44,8 @@ use OCP\Lock\LockedException;
  * from ApiErrorCode, less the codes whose action needs a signed-in user.
  *
  * Each is reported once through ApiErrorLog, which picks the level; a 500
- * is unforeseen. No file in the context: the request names it by a share
- * token, which stays out of the log.
+ * is unforeseen. The log line names the file by id where the request gave
+ * one, and never by path or token: a public path may carry the token.
  */
 class PublicViewerControllerErrorMapper {
 	public function __construct(
@@ -59,13 +59,14 @@ class PublicViewerControllerErrorMapper {
 	/**
 	 * @param callable(): mixed $action
 	 * @param callable(mixed): DataResponse $success
+	 * @param array<string, int|string> $context what the log line names: the file, never the token
 	 */
-	public function runForData(callable $action, callable $success): DataResponse {
+	public function runForData(callable $action, callable $success, array $context = []): DataResponse {
 		try {
 			return $success($action());
 		} catch (\Throwable $e) {
 			[$status, $message] = $this->answerFor($e);
-			$this->report($e, $status);
+			$this->report($e, $status, $context);
 			// Same shape as the signed-in endpoint: a client that wants to
 			// treat "too large" differently from any other 400 has to be
 			// able to see it, and a message is not something to branch on.
@@ -76,13 +77,14 @@ class PublicViewerControllerErrorMapper {
 	/**
 	 * @param callable(): mixed $action
 	 * @param callable(mixed): (RedirectResponse|TemplateResponse) $success
+	 * @param array<string, int|string> $context what the log line names: the file, never the token
 	 */
-	public function runForTemplate(callable $action, callable $success, string $token): RedirectResponse|TemplateResponse {
+	public function runForTemplate(callable $action, callable $success, string $token, array $context = []): RedirectResponse|TemplateResponse {
 		try {
 			return $success($action());
 		} catch (\Throwable $e) {
 			[$status, $message] = $this->answerFor($e);
-			$this->report($e, $status);
+			$this->report($e, $status, $context);
 			$response = new TemplateResponse(Application::APP_ID, 'noviewer', [
 				'error' => $message,
 				'back_url' => $this->shareUrlBuilder->buildShareBaseUrl($token),
@@ -133,7 +135,8 @@ class PublicViewerControllerErrorMapper {
 		};
 	}
 
-	private function report(\Throwable $e, int $status): void {
-		$this->errorLog->report($e, [], $status === Http::STATUS_INTERNAL_SERVER_ERROR ? 'Unhandled public viewer error' : null);
+	/** @param array<string, int|string> $context */
+	private function report(\Throwable $e, int $status, array $context): void {
+		$this->errorLog->report($e, $context, $status === Http::STATUS_INTERNAL_SERVER_ERROR ? 'Unhandled public viewer error' : null);
 	}
 }

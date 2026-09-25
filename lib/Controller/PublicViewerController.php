@@ -11,6 +11,7 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\Controller;
 
 use OCA\EtherpadNextcloud\Exception\InvalidShareTokenException;
+use OCA\EtherpadNextcloud\Service\ApiErrorLog;
 use OCA\EtherpadNextcloud\Service\LivePadHtml;
 use OCA\EtherpadNextcloud\Service\PublicPadContext;
 use OCA\EtherpadNextcloud\Service\PublicPadContextService;
@@ -69,6 +70,7 @@ class PublicViewerController extends PublicShareController {
 			fn(): string => $this->shareUrlBuilder->buildShareRedirectUrl($token, $this->request->getParam('file', '')),
 			static fn(string $target): RedirectResponse => new RedirectResponse($target),
 			$token,
+			ApiErrorLog::fileNamedBy($this->request, byPath: false),
 		);
 	}
 
@@ -87,6 +89,7 @@ class PublicViewerController extends PublicShareController {
 		return $this->errors->runForData(
 			fn(): LivePadHtml => $this->padContextService->resolveContent($token, $file, $this->share, $fileId),
 			fn(LivePadHtml $content): DataResponse => $this->padResponses->padContentResponse($content),
+			ApiErrorLog::fileNamedBy($this->request, byPath: false),
 		);
 	}
 
@@ -109,6 +112,7 @@ class PublicViewerController extends PublicShareController {
 				}
 				return $response;
 			},
+			ApiErrorLog::fileNamedBy($this->request, byPath: false),
 		);
 	}
 

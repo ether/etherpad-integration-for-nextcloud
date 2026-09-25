@@ -18,6 +18,7 @@ use OCA\EtherpadNextcloud\Exception\WaitingBindingException;
 use OCA\EtherpadNextcloud\Util\SafeError;
 use OCP\ICacheFactory;
 use OCP\IMemcache;
+use OCP\IRequest;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -29,8 +30,9 @@ use Psr\Log\LoggerInterface;
  *   the instance, at debug for the rest of that minute. An outage reaches
  *   every open viewer's sync and every visitor of a share, and each would
  *   otherwise write its own. Refusing: once a minute for each file, since
- *   each is a case of its own. Without a distributed cache to share the
- *   minute with - or one that fails - each is a warning.
+ *   each is a case of its own, and once a minute for all refusals that
+ *   name none. Without a distributed cache to share the minute with - or
+ *   one that fails - each is a warning.
  * - A `.pad` and its row that do not match: a warning. That is data an
  *   admin has to mend.
  * - The unforeseen, which the mapper names with the endpoint's line: an
@@ -61,13 +63,9 @@ final class ApiErrorLog {
 		} elseif ($e instanceof EtherpadRefusedException) {
 			// Each file refused is a case of its own - a pad deleted in
 			// Etherpad, a group gone - and its reader was told to ask the
-			// admin: once a minute for each file, and each time for a
-			// request that names none.
-			if ($file !== null) {
-				$this->onceAMinute(self::ETHERPAD_REFUSED, 'refused-' . md5($file), $context);
-			} else {
-				$this->logger->warning(self::ETHERPAD_REFUSED, $context);
-			}
+			// admin: once a minute for each file. A request naming none -
+			// a single-file share, say - shares one minute with the rest.
+			$this->onceAMinute(self::ETHERPAD_REFUSED, $file === null ? 'refused' : 'refused-' . md5($file), $context);
 		} elseif ($failure !== null) {
 			$this->logger->error($failure, $context);
 		} elseif ($e instanceof BindingException && !$e instanceof MissingBindingException && !$e instanceof WaitingBindingException) {
@@ -75,6 +73,30 @@ final class ApiErrorLog {
 		} else {
 			$this->logger->debug('A request was refused.', $context);
 		}
+	}
+
+	/**
+	 * What the log line of a failed request names: its file, as the request
+	 * gave it. By path only where $byPath: on a public share the path may
+	 * be a DAV URL that carries the share token, which stays out of the log.
+	 *
+	 * @return array<string, int|string>
+	 */
+	public static function fileNamedBy(IRequest $request, bool $byPath): array {
+		$context = [];
+		$fileId = self::scalar($request->getParam('fileId'));
+		if (ctype_digit($fileId)) {
+			$context['fileId'] = (int)$fileId;
+		}
+		$file = self::scalar($request->getParam('file'));
+		if ($byPath && $file !== '') {
+			$context['file'] = $file;
+		}
+		return $context;
+	}
+
+	private static function scalar(mixed $param): string {
+		return is_scalar($param) ? (string)$param : '';
 	}
 
 	/**

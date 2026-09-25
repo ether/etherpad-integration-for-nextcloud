@@ -11,6 +11,7 @@ namespace OCA\EtherpadNextcloud\Controller;
 
 use OCA\EtherpadNextcloud\Exception\ControllerBadRequestException;
 use OCA\EtherpadNextcloud\Exception\UnauthorizedRequestException;
+use OCA\EtherpadNextcloud\Service\ApiErrorLog;
 use OCA\EtherpadNextcloud\Service\PadResponseService;
 use OCA\EtherpadNextcloud\Util\PadAccessMode;
 use OCP\AppFramework\Controller;
@@ -65,31 +66,8 @@ abstract class AbstractPadController extends Controller {
 	 * @return ErrorWording
 	 */
 	private function withTheRequestsFile(array $options): array {
-		$options['context'] = $this->fileOfTheRequest();
+		$options['context'] = ApiErrorLog::fileNamedBy($this->request, byPath: true);
 		return $options;
-	}
-
-	/**
-	 * What the log line of a request that failed names: its file, as the
-	 * request gave it - by id, by path, or both.
-	 *
-	 * @return array<string, int|string>
-	 */
-	private function fileOfTheRequest(): array {
-		$context = [];
-		$fileId = self::scalar($this->request->getParam('fileId'));
-		if (ctype_digit($fileId)) {
-			$context['fileId'] = (int)$fileId;
-		}
-		$file = self::scalar($this->request->getParam('file'));
-		if ($file !== '') {
-			$context['file'] = $file;
-		}
-		return $context;
-	}
-
-	private static function scalar(mixed $param): string {
-		return is_scalar($param) ? (string)$param : '';
 	}
 
 	protected function requireUser(): IUser {

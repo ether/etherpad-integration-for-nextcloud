@@ -312,6 +312,31 @@ class PublicViewerControllerTest extends TestCase {
 		$this->assertSame('This share link does not allow reading files.', $response->getData()['message']);
 	}
 
+	/**
+	 * A public request's log line names its file by the id it gave, never by
+	 * its path: that may be a DAV URL carrying the share token.
+	 */
+	public function testALogLineNamesTheFileByIdAndNeverByPath(): void {
+		$share = $this->createMock(IShare::class);
+		$share->method('getPermissions')->willReturn(Constants::PERMISSION_UPDATE);
+		$shareManager = $this->createMock(IManager::class);
+		$shareManager->method('getShareByToken')->willReturn($share);
+		$path = 'https://nc.example/public.php/dav/files/share-token/Notes.pad';
+		$request = $this->createMock(IRequest::class);
+		$request->method('getParam')->willReturnMap([['fileId', null, '7'], ['file', null, $path]]);
+		$seen = [];
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->method('debug')->willReturnCallback(static function (string $message, array $context) use (&$seen): void {
+			$seen[] = $context;
+		});
+
+		$this->buildController($shareManager, request: $request, logger: $logger)->openPadData('share-token', $path, '7');
+
+		$this->assertCount(1, $seen);
+		$this->assertSame(7, $seen[0]['fileId']);
+		$this->assertStringNotContainsString('share-token', json_encode($seen[0], JSON_THROW_ON_ERROR));
+	}
+
 	private function buildController(
 		IManager $shareManager,
 		?PadFileService $padFileService = null,
@@ -320,6 +345,8 @@ class PublicViewerControllerTest extends TestCase {
 		?PadSessionService $padSessionService = null,
 		?ISession $session = null,
 		?ExternalPadExportFetcher $externalPadExportFetcher = null,
+		?IRequest $request = null,
+		?LoggerInterface $logger = null,
 	): PublicViewerController {
 		$urlGenerator = $this->createMock(IURLGenerator::class);
 		$urlGenerator->method('getWebroot')->willReturn('');
@@ -335,7 +362,7 @@ class PublicViewerControllerTest extends TestCase {
 
 		return new PublicViewerController(
 			'etherpad_nextcloud',
-			$this->createMock(IRequest::class),
+			$request ?? $this->createMock(IRequest::class),
 			$shareResolver,
 			new PublicPadContextService(
 				$shareResolver,
@@ -349,7 +376,7 @@ class PublicViewerControllerTest extends TestCase {
 			),
 			$shareUrlBuilder,
 			$this->buildPadResponseService($urlGenerator),
-			$this->publicErrorMapper($shareUrlBuilder, $this->buildPadResponseService($urlGenerator), $this->untranslated()),
+			$this->publicErrorMapper($shareUrlBuilder, $this->buildPadResponseService($urlGenerator), $this->untranslated(), $logger),
 			$session ?? $this->createMock(ISession::class),
 		);
 	}
