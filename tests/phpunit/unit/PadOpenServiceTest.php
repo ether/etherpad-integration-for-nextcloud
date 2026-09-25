@@ -211,24 +211,10 @@ class PadOpenServiceTest extends TestCase {
 		$this->assertSame('https://pad.example.test/p/pad-1', $target->url);
 	}
 
-	/**
-	 * A .pad linking a pad on another server that says too little to
-	 * reach it - no link, or a protected pad there - is the link's problem,
-	 * not Etherpad failing: its reason reaches the user, and no warning goes
-	 * out.
-	 */
+	/** The rule for an external pad's metadata is ParsedPadFile::externalPadUrl()'s; the open holds it. */
 	public function testAForeignPadWithBrokenMetadataIsTheLinksProblem(): void {
-		foreach ([
-			'no link' => [BindingService::ACCESS_PUBLIC, 'External pad URL metadata is missing or invalid.'],
-			'a protected pad there' => [BindingService::ACCESS_PROTECTED, 'External pad metadata requires public access_mode.'],
-		] as $case => [$accessMode, $reason]) {
-			try {
-				$this->openWith($accessMode, updateable: true, padId: 'ext.remote', isExternal: true);
-				$this->fail($case . ': opened.');
-			} catch (ExternalPadException $e) {
-				$this->assertSame($reason, $e->getMessage(), $case);
-			}
-		}
+		$this->expectException(ExternalPadException::class);
+		$this->openWith(BindingService::ACCESS_PROTECTED, updateable: true, padId: 'ext.remote', isExternal: true);
 	}
 
 	private function openWith(

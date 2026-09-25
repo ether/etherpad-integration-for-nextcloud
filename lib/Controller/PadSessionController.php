@@ -54,7 +54,6 @@ class PadSessionController extends AbstractPadController {
 			fn(IUser $user): PadOpenTarget => $this->padOpenService->openByPath($user->getUID(), $user->getDisplayName(), $file),
 			fn(PadOpenTarget $result): DataResponse => $this->padResponses->openResponse($result),
 			[
-				'invalid_argument' => $this->l10n->t('Invalid file path.'),
 				'generic' => $this->l10n->t('Could not open pad'),
 			],
 		);
@@ -95,7 +94,6 @@ class PadSessionController extends AbstractPadController {
 			fn(IUser $user): PadInitializationResult => $this->padInitializationService->initializeByPath($user->getUID(), $file),
 			fn(PadInitializationResult $result): DataResponse => new DataResponse($this->padResponses->initializationResponse($result)),
 			[
-				'invalid_argument' => $this->l10n->t('Invalid file path.'),
 				'generic' => $this->l10n->t('Could not initialize .pad file.'),
 				'failure' => 'Pad frontmatter initialization failed in API initialize',
 			],
@@ -133,7 +131,6 @@ class PadSessionController extends AbstractPadController {
 			fn(IUser $user): PadResolution => $this->padMetadataService->resolve($user->getUID(), $fileId, $file),
 			fn(PadResolution $resolution): DataResponse => new DataResponse($this->padResponses->resolveResponse($resolution)),
 			[
-				'invalid_argument' => $this->l10n->t('Invalid file path.'),
 				'generic' => $this->l10n->t('Could not resolve .pad file.'),
 			],
 		);

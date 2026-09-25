@@ -9,6 +9,7 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\Service;
 
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
+use OCA\EtherpadNextcloud\Exception\EtherpadRefusedException;
 use OCA\EtherpadNextcloud\Exception\EtherpadTooLargeException;
 use OCA\EtherpadNextcloud\Http\BoundedSinkStream;
 use OCA\EtherpadNextcloud\Util\ApiKey;
@@ -428,7 +429,7 @@ class EtherpadClient {
 		$code = (int)($decoded['code'] ?? -1);
 		if ($code !== 0) {
 			$message = (string)($decoded['message'] ?? 'Unknown Etherpad API error');
-			throw new EtherpadClientException(sprintf('Etherpad API error (%s): %s', $method, $message));
+			throw new EtherpadRefusedException(sprintf('Etherpad API error (%s): %s', $method, $message));
 		}
 
 		$data = $decoded['data'] ?? [];

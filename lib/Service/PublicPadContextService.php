@@ -59,22 +59,12 @@ class PublicPadContextService {
 		$fileId = $resolved->fileId;
 
 		$pad = $this->padFileService->readPad($content);
-		$padId = $pad->padId;
-		$accessMode = $pad->accessMode;
-		$padUrl = $pad->padUrl;
 		$isExternal = $pad->isExternal;
 
 		if (!$isExternal) {
 			$this->settleOnOpen->settleThenAssert($node, $fileId, $pad);
 		}
-		$openTarget = $this->publicPadOpenService->open(
-			$padId,
-			$accessMode,
-			$resolved->readOnly,
-			$token,
-			$isExternal,
-			$padUrl,
-		);
+		$openTarget = $this->publicPadOpenService->open($pad, $resolved->readOnly, $token);
 
 		return new PublicPadContext(
 			$resolved->name,

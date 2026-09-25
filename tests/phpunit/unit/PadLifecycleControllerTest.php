@@ -35,6 +35,8 @@ use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 
 class PadLifecycleControllerTest extends TestCase {
+	use \OCA\EtherpadNextcloud\Tests\Support\BuildsErrorMappers;
+
 	public function testSyncByIdRejectsInvalidFileId(): void {
 		$user = $this->createMock(IUser::class);
 		$userSession = $this->createMock(IUserSession::class);
@@ -467,7 +469,7 @@ class PadLifecycleControllerTest extends TestCase {
 
 		$this->assertSame([
 			['error', 'Pad restore API failed', '/Notes.pad', null],
-			['warning', 'Etherpad failed while answering a pad request.', '/Notes.pad', null],
+			['warning', 'Etherpad could not be reached while answering a request.', '/Notes.pad', null],
 		], $seen);
 	}
 
@@ -549,7 +551,7 @@ class PadLifecycleControllerTest extends TestCase {
 			$userSession,
 			$l10n,
 			$padResponseService,
-			new PadControllerErrorMapper($padResponseService, $l10n, new \OCA\EtherpadNextcloud\Service\EtherpadFailureLog($this->createMock(\OCP\ICacheFactory::class), $logger), $logger),
+			$this->padErrorMapper($padResponseService, $l10n, $logger),
 			$padLifecycleOperations,
 			$padSyncService,
 			$padMetadataService,

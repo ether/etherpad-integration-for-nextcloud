@@ -49,7 +49,6 @@ class PadLifecycleController extends AbstractPadController {
 			fn(IUser $user): array => $this->lifecycleService->trashByPath($user->getUID(), $file),
 			fn(array $result): DataResponse => $this->padResponses->lifecycleResponse($result),
 			[
-				'invalid_argument' => $this->l10n->t('Invalid file path.'),
 				'generic' => $this->l10n->t('Could not move pad to trash.'),
 				'failure' => 'Pad trash API failed',
 			],
@@ -62,7 +61,6 @@ class PadLifecycleController extends AbstractPadController {
 			fn(IUser $user): array => $this->lifecycleService->restoreByPath($user->getUID(), $file),
 			fn(array $result): DataResponse => $this->padResponses->lifecycleResponse($result),
 			[
-				'invalid_argument' => $this->l10n->t('Invalid file path.'),
 				'generic' => $this->l10n->t('Could not restore pad from trash.'),
 				'failure' => 'Pad restore API failed',
 			],
@@ -91,6 +89,7 @@ class PadLifecycleController extends AbstractPadController {
 			fn(PadSyncResult $result): DataResponse => new DataResponse($this->padResponses->syncResponse($result)),
 			[
 				'generic' => $this->l10n->t('Could not sync pad content.'),
+				'failure' => 'Pad sync failed',
 			],
 		);
 	}
@@ -103,6 +102,7 @@ class PadLifecycleController extends AbstractPadController {
 			fn(PadSyncStatus $result): DataResponse => new DataResponse($this->padResponses->syncStatusResponse($result)),
 			[
 				'generic' => $this->l10n->t('Could not check pad sync status.'),
+				'failure' => 'Pad sync status check failed',
 			],
 		);
 	}

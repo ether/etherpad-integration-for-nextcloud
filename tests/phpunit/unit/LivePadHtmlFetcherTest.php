@@ -79,6 +79,7 @@ class LivePadHtmlFetcherTest extends TestCase {
 		$this->assertSame('<p>Remote</p>', $result->html);
 	}
 
+	/** The rule for an external pad's metadata is ParsedPadFile::externalPadUrl()'s; the fetcher holds it. */
 	public function testForeignPadWithoutAUrlIsRejected(): void {
 		$external = $this->createMock(ExternalPadExportFetcher::class);
 		$external->expects($this->never())->method('fetchExternalPublicPadHtml');
@@ -87,15 +88,6 @@ class LivePadHtmlFetcherTest extends TestCase {
 		$this->expectException(ExternalPadException::class);
 		$this->buildFetcher(externalPadExportFetcher: $external)
 			->fetchForPadFile($this->externalPad(padUrl: ''), 138);
-	}
-
-	public function testForeignPadClaimingProtectedAccessIsRejected(): void {
-		$external = $this->createMock(ExternalPadExportFetcher::class);
-		$external->expects($this->never())->method('fetchExternalPublicPadHtml');
-
-		$this->expectException(ExternalPadException::class);
-		$this->buildFetcher(externalPadExportFetcher: $external)
-			->fetchForPadFile($this->externalPad(accessMode: BindingService::ACCESS_PROTECTED), 138);
 	}
 
 	/**

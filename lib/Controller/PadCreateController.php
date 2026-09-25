@@ -43,10 +43,10 @@ class PadCreateController extends AbstractPadController {
 			fn(IUser $user): array => $this->padCreationService->create($user->getUID(), $file, $this->requireAccessMode($accessMode)),
 			fn(array $result): DataResponse => new DataResponse($this->padResponses->withViewerUrl($result)),
 			[
-				'invalid_argument' => $this->l10n->t('Invalid file path.'),
 				'binding_message' => $this->l10n->t('A file with this name already exists.'),
 				'binding_status' => Http::STATUS_CONFLICT,
 				'generic' => $this->l10n->t('Could not create pad'),
+				'failure' => 'Pad creation failed',
 			],
 		);
 	}
@@ -67,6 +67,7 @@ class PadCreateController extends AbstractPadController {
 				'binding_message' => $this->l10n->t('A file with this name already exists.'),
 				'binding_status' => Http::STATUS_CONFLICT,
 				'generic' => $this->l10n->t('Could not create pad'),
+				'failure' => 'Pad creation by parent failed',
 			],
 		);
 	}
@@ -82,10 +83,13 @@ class PadCreateController extends AbstractPadController {
 			),
 			fn(array $result): DataResponse => new DataResponse($this->padResponses->withViewerUrl($result)),
 			[
+				// Not only a path: the template itself can be refused.
+				'invalid_argument' => $this->l10n->t('Invalid input.'),
 				'not_found' => $this->l10n->t('Template file not found.'),
 				'binding_message' => $this->l10n->t('A file with this name already exists.'),
 				'binding_status' => Http::STATUS_CONFLICT,
 				'generic' => $this->l10n->t('Could not create pad from template.'),
+				'failure' => 'Pad create-from-template failed',
 			],
 		);
 	}
@@ -97,6 +101,7 @@ class PadCreateController extends AbstractPadController {
 			fn(array $result): DataResponse => new DataResponse($this->padResponses->withViewerUrl($result)),
 			[
 				'generic' => $this->l10n->t('Could not import external pad.'),
+				'failure' => 'External pad create failed',
 			],
 		);
 	}

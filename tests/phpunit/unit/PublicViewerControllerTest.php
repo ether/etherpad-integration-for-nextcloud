@@ -33,6 +33,8 @@ use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 
 class PublicViewerControllerTest extends TestCase {
+	use \OCA\EtherpadNextcloud\Tests\Support\BuildsErrorMappers;
+
 	use SettlesOnOpen;
 
 	public function testProtectedReadOnlyPublicShareReturnsSnapshotWithoutEtherpadSessionCookie(): void {
@@ -240,7 +242,7 @@ class PublicViewerControllerTest extends TestCase {
 			),
 			$shareUrlBuilder,
 			$this->buildPadResponseService($urlGenerator),
-			new PublicViewerControllerErrorMapper($shareUrlBuilder, $this->buildPadResponseService($urlGenerator), $this->untranslated(), new \OCA\EtherpadNextcloud\Service\EtherpadFailureLog($this->createMock(\OCP\ICacheFactory::class), $this->createMock(LoggerInterface::class)), $this->createMock(LoggerInterface::class)),
+			$this->publicErrorMapper($shareUrlBuilder, $this->buildPadResponseService($urlGenerator), $this->untranslated()),
 			$this->createMock(ISession::class),
 		);
 
@@ -347,7 +349,7 @@ class PublicViewerControllerTest extends TestCase {
 			),
 			$shareUrlBuilder,
 			$this->buildPadResponseService($urlGenerator),
-			new PublicViewerControllerErrorMapper($shareUrlBuilder, $this->buildPadResponseService($urlGenerator), $this->untranslated(), new \OCA\EtherpadNextcloud\Service\EtherpadFailureLog($this->createMock(\OCP\ICacheFactory::class), $this->createMock(LoggerInterface::class)), $this->createMock(LoggerInterface::class)),
+			$this->publicErrorMapper($shareUrlBuilder, $this->buildPadResponseService($urlGenerator), $this->untranslated()),
 			$session ?? $this->createMock(ISession::class),
 		);
 	}

@@ -8,10 +8,12 @@ use OCA\EtherpadNextcloud\Controller\PadControllerErrorMapper;
 use OCA\EtherpadNextcloud\Exception\BindingException;
 use OCA\EtherpadNextcloud\Exception\ControllerBadRequestException;
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
+use OCA\EtherpadNextcloud\Exception\EtherpadRefusedException;
 use OCA\EtherpadNextcloud\Exception\EtherpadTooLargeException;
 use OCA\EtherpadNextcloud\Exception\ExternalPadException;
 use OCA\EtherpadNextcloud\Exception\InvalidPadNameException;
 use OCA\EtherpadNextcloud\Exception\LegacyPadCollisionException;
+use OCA\EtherpadNextcloud\Exception\LegacyPadNotFoundException;
 use OCA\EtherpadNextcloud\Exception\LegacyProtectedImportDisabledException;
 use OCA\EtherpadNextcloud\Exception\MissingBindingException;
 use OCA\EtherpadNextcloud\Exception\MissingFrontmatterException;
@@ -26,12 +28,11 @@ use OCA\EtherpadNextcloud\Exception\UnauthorizedRequestException;
 use OCA\EtherpadNextcloud\Exception\UnrecognisedPadContentException;
 use OCA\EtherpadNextcloud\Exception\WaitingBindingException;
 use OCA\EtherpadNextcloud\Service\AppConfigService;
-use OCA\EtherpadNextcloud\Service\EtherpadFailureLog;
 use OCA\EtherpadNextcloud\Service\PadResponseService;
+use OCA\EtherpadNextcloud\Tests\Support\BuildsErrorMappers;
 use OCP\AppFramework\Http;
 use OCP\AppFramework\Http\DataResponse;
 use OCP\Files\NotFoundException;
-use OCP\ICacheFactory;
 use OCP\IL10N;
 use OCP\IURLGenerator;
 use OCP\Lock\LockedException;
@@ -39,6 +40,8 @@ use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 
 class PadControllerErrorMapperTest extends TestCase {
+	use BuildsErrorMappers;
+
 	/**
 	 * @return iterable<string, array{\Throwable, int, string, array<string,mixed>}>
 	 *   what a client gets: the status, the sentence before it is
@@ -47,7 +50,8 @@ class PadControllerErrorMapperTest extends TestCase {
 	public static function answers(): iterable {
 		yield 'not signed in' => [new UnauthorizedRequestException('internal wording'), Http::STATUS_UNAUTHORIZED, 'Authentication required.', []];
 		yield 'not a pad' => [new NotAPadFileException('internal wording'), Http::STATUS_BAD_REQUEST, 'Selected file is not a .pad file.', []];
-		yield 'bad input' => [new \InvalidArgumentException('internal wording'), Http::STATUS_BAD_REQUEST, 'Invalid input.', []];
+		// Most of them are: a path the controller or PathNormalizer refused.
+		yield 'bad input' => [new \InvalidArgumentException('internal wording'), Http::STATUS_BAD_REQUEST, 'Invalid file path.', []];
 		yield 'not found' => [new NotFoundException('internal wording'), Http::STATUS_NOT_FOUND, '.pad file not found.', []];
 		yield 'locked' => [new LockedException('internal wording'), Http::STATUS_SERVICE_UNAVAILABLE, 'Pad file is temporarily locked. Please retry.', ['retryable' => true]];
 		// Creating and initialising a file both throw it; trying again is
@@ -62,15 +66,20 @@ class PadControllerErrorMapperTest extends TestCase {
 		yield 'no pad' => [new MissingBindingException('internal wording'), Http::STATUS_BAD_REQUEST, 'This .pad file has no matching pad in this Nextcloud.', ['code' => 'missing_binding']];
 		// Not a dead end: a conflict worth trying again.
 		yield 'a pad still being restored' => [new WaitingBindingException('internal wording'), Http::STATUS_CONFLICT, 'This pad is still being restored. Try again later.', ['code' => 'waiting_binding', 'retryable' => true]];
-		yield 'a row naming another pad' => [new BindingException('Binding pad ID mismatch.'), Http::STATUS_BAD_REQUEST, 'This .pad file does not match its pad. Please contact your administrator.', []];
+		// Or a row another request made at the same moment: trying again may do.
+		yield 'a row naming another pad' => [new BindingException('Binding pad ID mismatch.'), Http::STATUS_BAD_REQUEST, 'This .pad file and its pad could not be matched. Try again, or contact your administrator if it keeps happening.', []];
 		yield 'a legacy import switched off' => [new LegacyProtectedImportDisabledException('internal wording'), Http::STATUS_FORBIDDEN, 'This file is a legacy Ownpad link to a protected pad, and importing those is disabled on this server. Please contact your administrator.', ['code' => 'legacy_protected_import_disabled']];
+		yield 'a legacy pad missing from its group' => [new LegacyPadNotFoundException('internal wording'), Http::STATUS_BAD_REQUEST, 'This legacy Ownpad file names a pad that does not exist in Etherpad.', []];
 		yield 'a legacy pad bound elsewhere' => [new LegacyPadCollisionException('internal wording'), Http::STATUS_CONFLICT, 'This pad is already linked to another file you do not have access to.', ['code' => 'legacy_collision_no_access']];
 		yield 'too large to show' => [new EtherpadTooLargeException('internal wording'), Http::STATUS_BAD_REQUEST, 'This pad is too large to show here. Open it in Etherpad instead.', ['code' => 'pad_too_large']];
 		// The clients initialise the file and retry, by the code.
 		yield 'no metadata' => [new MissingFrontmatterException('internal wording'), Http::STATUS_BAD_REQUEST, 'This .pad file has no pad metadata yet.', ['code' => 'missing_frontmatter']];
 		yield 'another format problem' => [new PadFileFormatException('internal wording'), Http::STATUS_BAD_REQUEST, 'The selected .pad file has an invalid format.', []];
 		yield 'content neither metadata nor a shortcut' => [new UnrecognisedPadContentException('internal wording'), Http::STATUS_BAD_REQUEST, 'The selected .pad file has an invalid format.', []];
-		yield 'Etherpad failing' => [new EtherpadClientException('Etherpad API request failed: createPad'), Http::STATUS_BAD_REQUEST, 'Etherpad could not complete the request. Try again later.', []];
+		// Not reachable: the same request may work once it is back.
+		yield 'Etherpad not reachable' => [new EtherpadClientException('Etherpad API request failed: createPad'), Http::STATUS_SERVICE_UNAVAILABLE, 'Etherpad cannot be reached right now. Try again later.', ['retryable' => true]];
+		// It answered, and trying again gives the same answer.
+		yield 'Etherpad refusing' => [new EtherpadRefusedException('Etherpad API error (getHTML): padID does not exist'), Http::STATUS_BAD_REQUEST, 'Etherpad refused the request. Please contact your administrator.', []];
 		yield 'anything else' => [new \RuntimeException('internal wording'), Http::STATUS_INTERNAL_SERVER_ERROR, 'Request failed.', []];
 	}
 
@@ -116,9 +125,9 @@ class PadControllerErrorMapperTest extends TestCase {
 
 	/** An endpoint's own word for what the same exception means there. */
 	public function testAnEndpointsOwnWording(): void {
-		$wording = ['invalid_argument' => 'Invalid file path.', 'not_found' => 'Template file not found.', 'generic' => 'Could not create pad'];
+		$wording = ['invalid_argument' => 'Invalid pad name.', 'not_found' => 'Template file not found.', 'generic' => 'Could not create pad'];
 		foreach ([
-			'Invalid file path.' => new \InvalidArgumentException('raw'),
+			'Invalid pad name.' => new \InvalidArgumentException('raw'),
 			'Template file not found.' => new NotFoundException('missing'),
 			'Could not create pad' => new \RuntimeException('Detailed failure.'),
 		] as $sentence => $e) {
@@ -147,24 +156,44 @@ class PadControllerErrorMapperTest extends TestCase {
 	}
 
 	/**
-	 * This instance's Etherpad failing is one warning, naming the request's
-	 * file - whatever the endpoint's own line for its failures, which is
-	 * for the unforeseen.
+	 * This instance's Etherpad not reachable, or refusing, is a warning
+	 * naming the request's file - whatever the endpoint's own line for its
+	 * failures, which is for the unforeseen.
 	 */
-	public function testEtherpadFailingIsAWarningNamingTheFile(): void {
+	public function testEtherpadNotReachableOrRefusingIsAWarningNamingTheFile(): void {
+		foreach ([
+			'Etherpad could not be reached while answering a request.' => new EtherpadClientException('Etherpad API request failed: getRevisionsCount'),
+			'Etherpad refused a request.' => new EtherpadRefusedException('Etherpad API error (getRevisionsCount): padID does not exist'),
+		] as $line => $e) {
+			$logger = $this->createMock(LoggerInterface::class);
+			$logger->expects($this->once())->method('warning')->with(
+				$line,
+				$this->callback(static fn (array $context): bool => $context['app'] === 'etherpad_nextcloud'
+					&& $context['file'] === '/Notes.pad'
+					&& $context['error'] === $e::class),
+			);
+			$logger->expects($this->never())->method('error');
+
+			$this->buildMapper($logger)->run(
+				static fn (): array => throw $e,
+				static fn (array $result): DataResponse => new DataResponse($result),
+				['failure' => 'Pad restore API failed', 'context' => ['file' => '/Notes.pad']],
+			);
+		}
+	}
+
+	/** A .pad and its row that do not match are data an admin has to mend: a warning naming the file. */
+	public function testARowThatDoesNotMatchItsFileIsAWarning(): void {
 		$logger = $this->createMock(LoggerInterface::class);
 		$logger->expects($this->once())->method('warning')->with(
-			'Etherpad failed while answering a pad request.',
-			$this->callback(static fn (array $context): bool => $context['app'] === 'etherpad_nextcloud'
-				&& $context['file'] === '/Notes.pad'
-				&& $context['error'] === EtherpadClientException::class),
+			'A .pad file and its pad binding could not be matched.',
+			$this->callback(static fn (array $context): bool => $context['fileId'] === 42 && $context['error_message'] === 'Binding pad ID mismatch.'),
 		);
-		$logger->expects($this->never())->method('error');
 
 		$this->buildMapper($logger)->run(
-			static fn (): array => throw new EtherpadClientException('Etherpad API request failed: getRevisionsCount'),
+			static fn (): array => throw new BindingException('Binding pad ID mismatch.'),
 			static fn (array $result): DataResponse => new DataResponse($result),
-			['failure' => 'Pad restore API failed', 'context' => ['file' => '/Notes.pad']],
+			['context' => ['fileId' => 42]],
 		);
 	}
 
@@ -194,21 +223,35 @@ class PadControllerErrorMapperTest extends TestCase {
 	}
 
 	/**
-	 * A pad on another server, a pad too large to show, and anything the
-	 * request itself got wrong are no failure here: nothing is logged.
+	 * What the request itself got wrong, a pad on another server, a pad too
+	 * large to show: a debug line with the reason the answer leaves out,
+	 * nothing louder. An endpoint's own wording for its own conflict is not
+	 * logged at all.
 	 */
-	public function testWhatIsNotAFailureHereIsNotLogged(): void {
+	public function testARefusalIsADebugLineWithItsReason(): void {
 		foreach ([
 			new ExternalPadException('Public export HTTP error (500)'),
 			new EtherpadTooLargeException('Pad export is larger than 5242880 bytes.'),
 			new NotFoundException('missing'),
 			new MissingBindingException('No binding exists for this file.'),
+			new \InvalidArgumentException('Template is empty.'),
 		] as $e) {
 			$logger = $this->createMock(LoggerInterface::class);
-			$logger->expects($this->never())->method($this->anything());
+			$logger->expects($this->once())->method('debug')->with('A request was refused.', $this->callback(static fn (array $context): bool => $context['error_message'] === $e->getMessage() && $context['fileId'] === 42));
+			foreach (['warning', 'error', 'info'] as $louder) {
+				$logger->expects($this->never())->method($louder);
+			}
 
-			$this->buildMapper($logger)->run(static fn (): array => throw $e, static fn (array $result): DataResponse => new DataResponse($result));
+			$this->buildMapper($logger)->run(static fn (): array => throw $e, static fn (array $result): DataResponse => new DataResponse($result), ['context' => ['fileId' => 42]]);
 		}
+
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects($this->never())->method($this->anything());
+		$this->buildMapper($logger)->run(
+			static fn (): array => throw new BindingException('Could not create unique pad binding.'),
+			static fn (array $result): DataResponse => new DataResponse($result),
+			['binding_message' => 'A file with this name already exists.', 'binding_status' => Http::STATUS_CONFLICT],
+		);
 	}
 
 	private function buildMapper(?LoggerInterface $logger = null, ?IL10N $l10n = null): PadControllerErrorMapper {
@@ -216,16 +259,9 @@ class PadControllerErrorMapperTest extends TestCase {
 			$l10n = $this->createMock(IL10N::class);
 			$l10n->method('t')->willReturnCallback(static fn (string $text, array $params = []): string => $text);
 		}
-		$logger ??= $this->createMock(LoggerInterface::class);
-		return new PadControllerErrorMapper(
-			new PadResponseService(
-				$this->createMock(IURLGenerator::class),
-				$this->createMock(AppConfigService::class),
-				$l10n,
-			),
+		return $this->padErrorMapper(
+			new PadResponseService($this->createMock(IURLGenerator::class), $this->createMock(AppConfigService::class), $l10n),
 			$l10n,
-			// No cache: every failure is a warning, one call, one line.
-			new EtherpadFailureLog($this->createMock(ICacheFactory::class), $logger),
 			$logger,
 		);
 	}

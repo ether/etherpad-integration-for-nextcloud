@@ -146,15 +146,15 @@ class PadCreationServiceTest extends TestCase {
 	}
 
 	/**
-	 * A create that fails reports itself, with its pad and access mode -
-	 * save when this instance's Etherpad failed: the error mapper reports
-	 * that, once a minute, and an outage is no creation's own error.
+	 * A create that fails takes back what it made and hands the failure on
+	 * as it is: the error mapper reports it once, at the level it deserves.
+	 * Logged here too, it was one failure in two lines.
 	 */
-	public function testACreateReportsItsFailureButNotEtherpadFailing(): void {
+	public function testACreateLeavesItsFailureToTheErrorMapper(): void {
 		foreach ([
-			'Etherpad failing' => [new EtherpadClientException('Etherpad API request failed: createGroupPad'), 0],
-			'anything else' => [new \RuntimeException('cannot build the document'), 1],
-		] as $case => [$failure, $errors]) {
+			'Etherpad failing' => new EtherpadClientException('Etherpad API request failed: createGroupPad'),
+			'anything else' => new \RuntimeException('cannot build the document'),
+		] as $case => $failure) {
 			$fileNode = $this->createMock(File::class);
 			$fileNode->method('getId')->willReturn(123);
 			$padPaths = $this->createMock(PathNormalizer::class);
@@ -164,10 +164,12 @@ class PadCreationServiceTest extends TestCase {
 			$bootstrap = $this->createMock(PadBootstrapService::class);
 			$bootstrap->method('provisionPadId')->willThrowException($failure);
 			$logger = $this->createMock(LoggerInterface::class);
-			$logger->expects($this->exactly($errors))->method('error')->with('Pad creation failed', $this->anything());
+			$logger->expects($this->never())->method($this->anything());
+			$rollback = $this->createMock(PadCreateRollbackService::class);
+			$rollback->expects($this->once())->method('rollbackFailedCreate');
 
 			try {
-				$this->buildService(padPaths: $padPaths, fileCreator: $fileCreator, bootstrap: $bootstrap, logger: $logger)
+				$this->buildService(padPaths: $padPaths, fileCreator: $fileCreator, rollbackService: $rollback, bootstrap: $bootstrap, logger: $logger)
 					->create('alice', '/Test', BindingService::ACCESS_PROTECTED);
 				$this->fail($case . ': the create went through.');
 			} catch (\Throwable $e) {

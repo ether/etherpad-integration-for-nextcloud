@@ -8,6 +8,8 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Service;
 
+use OCA\EtherpadNextcloud\Exception\ExternalPadException;
+
 /**
  * Result of `PadFileService::readPad()`. Wraps the 3-step
  * `parsePadFile + extractPadMetadata + isExternalFrontmatter` read that
@@ -36,5 +38,24 @@ class ParsedPadFile {
 	 */
 	public function namesAnExternalPad(): bool {
 		return $this->isExternal || str_starts_with($this->padId, 'ext.');
+	}
+
+	/**
+	 * The link of a pad on another server ($isExternal), as the file has it:
+	 * the one rule every way of opening, reading and syncing such a pad
+	 * holds it to. A file that says too little to reach it - no link, or a
+	 * protected pad there - is the link's problem, and its reason is the
+	 * user's only hint.
+	 *
+	 * @throws ExternalPadException
+	 */
+	public function externalPadUrl(): string {
+		if ($this->accessMode !== BindingService::ACCESS_PUBLIC) {
+			throw new ExternalPadException('External pad metadata requires public access_mode.');
+		}
+		if ($this->padUrl === '') {
+			throw new ExternalPadException('External pad URL metadata is missing or invalid.');
+		}
+		return $this->padUrl;
 	}
 }

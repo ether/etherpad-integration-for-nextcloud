@@ -18,6 +18,8 @@ use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 
 class PadCreateControllerTest extends TestCase {
+	use \OCA\EtherpadNextcloud\Tests\Support\BuildsErrorMappers;
+
 	public function testCreateReturnsUnauthorizedWhenNoUserSession(): void {
 		$userSession = $this->createMock(IUserSession::class);
 		$userSession->method('getUser')->willReturn(null);
@@ -92,7 +94,7 @@ class PadCreateControllerTest extends TestCase {
 			$userSession,
 			$l10n,
 			$padResponseService,
-			new PadControllerErrorMapper($padResponseService, $l10n, new \OCA\EtherpadNextcloud\Service\EtherpadFailureLog($this->createMock(\OCP\ICacheFactory::class), $logger), $logger),
+			$this->padErrorMapper($padResponseService, $l10n, $logger),
 			$padCreationService ?? $this->createMock(PadCreationService::class),
 		);
 	}

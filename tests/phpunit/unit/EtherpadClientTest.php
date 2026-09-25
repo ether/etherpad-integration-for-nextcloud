@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Tests\Unit;
 
+use OCA\EtherpadNextcloud\Exception\EtherpadRefusedException;
 use OCA\EtherpadNextcloud\Util\ApiKey;
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
 use OCA\EtherpadNextcloud\Service\AdminSettingsRepository;
@@ -338,20 +339,26 @@ class EtherpadClientTest extends TestCase {
 		];
 	}
 
+	/** Etherpad answered, and refused: its own type, since trying again gives the same answer. */
 	public function testApiCallThrowsOnNonZeroApiCode(): void {
 		$client = $this->clientWithResponse(
 			$this->response(200, '{"code":1,"message":"groupID does not exist"}')
 		);
-		$this->expectException(EtherpadClientException::class);
+		$this->expectException(EtherpadRefusedException::class);
 		$this->expectExceptionMessage('Etherpad API error (createGroup): groupID does not exist');
 		$client->createGroup();
 	}
 
+	/** No answer it could have meant is no refusal: trying again may help. */
 	public function testApiCallThrowsOnInvalidJson(): void {
 		$client = $this->clientWithResponse($this->response(200, '<html>nope</html>'));
-		$this->expectException(EtherpadClientException::class);
-		$this->expectExceptionMessage('Invalid JSON response from Etherpad API.');
-		$client->createGroup();
+		try {
+			$client->createGroup();
+			$this->fail('No exception.');
+		} catch (EtherpadClientException $e) {
+			$this->assertNotInstanceOf(EtherpadRefusedException::class, $e);
+			$this->assertSame('Invalid JSON response from Etherpad API.', $e->getMessage());
+		}
 	}
 
 	public function testApiCallSurfacesHttpErrorStatusAsCause(): void {

@@ -17,6 +17,8 @@ use OCA\EtherpadNextcloud\Exception\MissingFrontmatterException;
 use OCA\EtherpadNextcloud\Exception\PadFileChangedException;
 use OCA\EtherpadNextcloud\Exception\PadTypeDisabledException;
 use OCA\EtherpadNextcloud\Exception\WaitingBindingException;
+use OCA\EtherpadNextcloud\Service\ApiErrorLog;
+use OCP\Lock\LockedException;
 
 /**
  * The `code` of an error response, and the exception it stands for: the
@@ -37,23 +39,33 @@ enum ApiErrorCode: string {
 	case LegacyProtectedImportDisabled = 'legacy_protected_import_disabled';
 
 	/**
-	 * $payload with the code for $e and, where the code says so,
-	 * `retryable` - on a public share without the codes that need a
-	 * signed-in user.
+	 * $payload with the code for $e - on a public share without the codes
+	 * that need a signed-in user - and `retryable` where the same request
+	 * may succeed later.
 	 *
 	 * @param array<string,mixed> $payload
 	 * @return array<string,mixed>
 	 */
 	public static function addTo(array $payload, \Throwable $e, bool $onAPublicShare = false): array {
 		$code = self::of($e);
-		if ($code === null || ($onAPublicShare && $code->needsASignedInUser())) {
-			return $payload;
+		if ($code !== null && !($onAPublicShare && $code->needsASignedInUser())) {
+			$payload['code'] = $code->value;
 		}
-		$payload['code'] = $code->value;
-		if ($code->retryable()) {
+		if (self::retryable($e)) {
 			$payload['retryable'] = true;
 		}
 		return $payload;
+	}
+
+	/**
+	 * The same request may succeed later: a row that waits, a file locked
+	 * for a moment, this instance's Etherpad not reachable. The one place
+	 * that says so, for both mappers.
+	 */
+	public static function retryable(\Throwable $e): bool {
+		return self::of($e) === self::WaitingBinding
+			|| $e instanceof LockedException
+			|| ApiErrorLog::isEtherpadUnreachable($e);
 	}
 
 	/**
@@ -82,11 +94,6 @@ enum ApiErrorCode: string {
 			self::LegacyCollisionNoAccess => LegacyPadCollisionException::class,
 			self::LegacyProtectedImportDisabled => LegacyProtectedImportDisabledException::class,
 		};
-	}
-
-	/** The same request may succeed later: the response says `retryable`. */
-	public function retryable(): bool {
-		return $this === self::WaitingBinding;
 	}
 
 	/**

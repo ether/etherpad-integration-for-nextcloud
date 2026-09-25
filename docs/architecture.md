@@ -301,6 +301,17 @@ Primary flow (native viewer):
 - `src/lib/*`
   - Shared constants, URL builders/parsers, Nextcloud runtime helpers, OC compatibility helpers, DOM helpers, and API client code.
 
+## Errors of the API
+
+- `PadControllerErrorMapper` (signed in) and `PublicViewerControllerErrorMapper` (public shares) answer an error with a translated sentence of their own; `code` and `retryable` come from `ApiErrorCode`, and `docs/api-reference.md` lists the codes. An exception's message is for the log; only a refusal translated where it is thrown, and the reason a pad on another server cannot be linked or read, reach the reader as they are.
+- This instance's Etherpad not reachable answers `503` with `retryable`; a refusal from it (`EtherpadRefusedException`: a pad or group it does not have, a key it does not take) `400`. A pad on another server (`ExternalPadException`) is neither.
+- Each error answered is logged once, by `ApiErrorLog`; the services under the mappers leave it to it:
+  - Etherpad not reachable, or refusing: `Etherpad could not be reached while answering a request.` or `Etherpad refused a request.`, a warning once a minute for the instance and at debug for the rest of that minute, since an outage reaches every open viewer's sync. Without a distributed cache, or with one that fails, each is a warning.
+  - A `.pad` and its row that do not match: `A .pad file and its pad binding could not be matched.`, a warning.
+  - The unforeseen: an error under the endpoint's line (`Pad restore API failed`, `Pad sync failed`, ...), or `Unhandled pad controller error` / `Unhandled public viewer error`.
+  - Anything else - what the request got wrong, a pad on another server: `A request was refused.` at debug, with the reason the answer leaves out.
+  - Signed in, the line names the request's file (`fileId`, `file`); a public share's names none, since the request names it by a share token.
+
 ## Event Integration
 
 - `OCA\Files\Event\LoadAdditionalScriptsEvent`

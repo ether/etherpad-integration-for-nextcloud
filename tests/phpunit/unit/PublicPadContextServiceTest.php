@@ -74,7 +74,7 @@ class PublicPadContextServiceTest extends TestCase {
 		$openService = $this->createMock(PublicPadOpenService::class);
 		$openService->expects($this->once())
 			->method('open')
-			->with('g.group$pad', BindingService::ACCESS_PROTECTED, true, 'token', false, '')
+			->with($this->callback(static fn (ParsedPadFile $pad): bool => $pad->padId === 'g.group$pad' && $pad->accessMode === BindingService::ACCESS_PROTECTED && !$pad->isExternal), true, 'token')
 			->willReturn(new PublicPadOpenTarget('', '', '', true));
 
 		$urlGenerator = $this->createMock(IURLGenerator::class);

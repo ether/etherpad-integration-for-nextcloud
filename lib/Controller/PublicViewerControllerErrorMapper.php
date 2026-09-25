@@ -12,6 +12,7 @@ namespace OCA\EtherpadNextcloud\Controller;
 use OCA\EtherpadNextcloud\AppInfo\Application;
 use OCA\EtherpadNextcloud\Exception\BindingException;
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
+use OCA\EtherpadNextcloud\Exception\EtherpadRefusedException;
 use OCA\EtherpadNextcloud\Exception\EtherpadTooLargeException;
 use OCA\EtherpadNextcloud\Exception\ExternalPadException;
 use OCA\EtherpadNextcloud\Exception\InvalidShareFilePathException;
@@ -25,17 +26,16 @@ use OCA\EtherpadNextcloud\Exception\ShareFileNotInShareException;
 use OCA\EtherpadNextcloud\Exception\ShareItemUnavailableException;
 use OCA\EtherpadNextcloud\Exception\ShareReadForbiddenException;
 use OCA\EtherpadNextcloud\Exception\WaitingBindingException;
-use OCA\EtherpadNextcloud\Service\EtherpadFailureLog;
+use OCA\EtherpadNextcloud\Service\ApiErrorLog;
 use OCA\EtherpadNextcloud\Service\PadResponseService;
 use OCA\EtherpadNextcloud\Service\PublicShareUrlBuilder;
-use OCA\EtherpadNextcloud\Util\SafeError;
 use OCP\AppFramework\Http;
 use OCP\AppFramework\Http\DataResponse;
 use OCP\AppFramework\Http\RedirectResponse;
 use OCP\AppFramework\Http\TemplateResponse;
+use OCP\Files\NotFoundException;
 use OCP\IL10N;
 use OCP\Lock\LockedException;
-use Psr\Log\LoggerInterface;
 
 /**
  * Maps what a public share's endpoints throw to what an anonymous visitor
@@ -43,17 +43,16 @@ use Psr\Log\LoggerInterface;
  * in answerFor(); an exception's message is for the log. The `code` comes
  * from ApiErrorCode, less the codes whose action needs a signed-in user.
  *
- * This instance's Etherpad failing is logged through EtherpadFailureLog;
- * a 500 is unforeseen and an error. Anything else is the visitor's link or
- * file, and not logged.
+ * Each is reported once through ApiErrorLog, which picks the level; a 500
+ * is unforeseen. No file in the context: the request names it by a share
+ * token, which stays out of the log.
  */
 class PublicViewerControllerErrorMapper {
 	public function __construct(
 		private PublicShareUrlBuilder $shareUrlBuilder,
 		private PadResponseService $padResponses,
 		private IL10N $l10n,
-		private EtherpadFailureLog $etherpadFailures,
-		private LoggerInterface $logger,
+		private ApiErrorLog $errorLog,
 	) {
 	}
 
@@ -70,11 +69,7 @@ class PublicViewerControllerErrorMapper {
 			// Same shape as the signed-in endpoint: a client that wants to
 			// treat "too large" differently from any other 400 has to be
 			// able to see it, and a message is not something to branch on.
-			$payload = ApiErrorCode::addTo(['message' => $message], $e, onAPublicShare: true);
-			if ($e instanceof LockedException) {
-				$payload['retryable'] = true;
-			}
-			return new DataResponse($payload, $status);
+			return new DataResponse(ApiErrorCode::addTo(['message' => $message], $e, onAPublicShare: true), $status);
 		}
 	}
 
@@ -109,6 +104,8 @@ class PublicViewerControllerErrorMapper {
 			$e instanceof InvalidShareTokenException => [Http::STATUS_NOT_FOUND, $this->l10n->t('This share link is invalid or has expired.')],
 			$e instanceof ShareItemUnavailableException => [Http::STATUS_NOT_FOUND, $this->l10n->t('This shared item is no longer available.')],
 			$e instanceof ShareFileNotInShareException => [Http::STATUS_NOT_FOUND, $this->l10n->t('The selected file is not part of this share.')],
+			// Gone after the share found it: deleted in between, say.
+			$e instanceof NotFoundException => [Http::STATUS_NOT_FOUND, $this->l10n->t('This shared item is no longer available.')],
 			$e instanceof ShareReadForbiddenException => [Http::STATUS_FORBIDDEN, $this->l10n->t('This share link does not allow reading files.')],
 			// By id, by path, or the two naming different files.
 			$e instanceof InvalidShareFilePathException => [Http::STATUS_BAD_REQUEST, $this->l10n->t('This link does not point to a valid file.')],
@@ -128,21 +125,15 @@ class PublicViewerControllerErrorMapper {
 			// Not an outage: the pad answered, and this preview will not
 			// read that much of it.
 			$e instanceof EtherpadTooLargeException => [Http::STATUS_BAD_REQUEST, $this->l10n->t('This pad is too large to show here. Open it in Etherpad instead.')],
+			$e instanceof EtherpadRefusedException => [Http::STATUS_BAD_REQUEST, $this->l10n->t('Etherpad refused to open this shared pad. Please contact the share owner.')],
 			$e instanceof ExternalPadException => [Http::STATUS_BAD_REQUEST, $this->l10n->t('The pad this file links to on another server could not be read.')],
-			$e instanceof EtherpadClientException => [Http::STATUS_BAD_REQUEST, $this->l10n->t('Etherpad is currently unavailable for this shared pad.')],
+			// Not reachable: worth trying again, as a locked file is.
+			$e instanceof EtherpadClientException => [Http::STATUS_SERVICE_UNAVAILABLE, $this->l10n->t('Etherpad is currently unavailable for this shared pad.')],
 			default => [Http::STATUS_INTERNAL_SERVER_ERROR, $this->l10n->t('Could not open pad')],
 		};
 	}
 
-	/** No file in the context: the request names it by a share token, which stays out of the log. */
 	private function report(\Throwable $e, int $status): void {
-		if (EtherpadFailureLog::isOwnEtherpadFailing($e)) {
-			$this->etherpadFailures->report('Etherpad failed while answering a public share request.', $e);
-		} elseif ($status === Http::STATUS_INTERNAL_SERVER_ERROR) {
-			$this->logger->error('Unhandled public viewer error', [
-				'app' => Application::APP_ID,
-				...SafeError::context($e),
-			]);
-		}
+		$this->errorLog->report($e, [], $status === Http::STATUS_INTERNAL_SERVER_ERROR ? 'Unhandled public viewer error' : null);
 	}
 }
