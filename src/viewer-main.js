@@ -170,6 +170,23 @@ const component = {
 		markLoaded() {
 			this.$emit('update:loaded', true)
 		},
+		/**
+		 * After a click whose button went away with the focus on it - a
+		 * second try, a recovery - the card's first action, or its message,
+		 * takes the focus (docs/architecture.md, "Errors of the API").
+		 */
+		handFocusToErrorCard() {
+			this.$nextTick(() => {
+				const card = this.$refs.errorCard
+				if (!(card instanceof HTMLElement)) return
+				const target = card.querySelector('a, button') || card.querySelector('.epnc-native-error-message')
+				if (!(target instanceof HTMLElement)) return
+				if (!target.matches('a, button')) {
+					target.tabIndex = -1
+				}
+				target.focus()
+			})
+		},
 		// Keep the sync controller non-reactive and available to the immediate watcher.
 		padSync() {
 			if (!this._padSync) {
@@ -186,7 +203,8 @@ const component = {
 			this._padSync.stop()
 			this._padSync.removeLifecycleHandlers()
 		},
-		async resolveOpenUrl() {
+		/** $afterClick: see handFocusToErrorCard(). */
+		async resolveOpenUrl(afterClick = false) {
 			const generation = ++this.resolveGeneration
 			const isCurrent = () => generation === this.resolveGeneration
 			// Discarding a result is insufficient: a completed request may mint a session.
@@ -320,7 +338,9 @@ const component = {
 					&& recoveryFileId !== null
 					&& !byPublicUrl
 				if (this.canRecover) {
-					this.fetchOriginalPadHint(isCurrent)
+					this.fetchOriginalPadHint(isCurrent, afterClick)
+				} else if (afterClick) {
+					this.handFocusToErrorCard()
 				}
 				this.markLoaded()
 			} finally {
@@ -328,7 +348,8 @@ const component = {
 				this.isLoading = false
 			}
 		},
-		async fetchOriginalPadHint(isCurrent) {
+		/** $afterClick: the focus waits for the card's final actions. */
+		async fetchOriginalPadHint(isCurrent, afterClick = false) {
 			if (this.recoveryFileId === null) {
 				return
 			}
@@ -347,6 +368,9 @@ const component = {
 			} finally {
 				if (isCurrent()) {
 					this.isCheckingOriginal = false
+					if (afterClick) {
+						this.handFocusToErrorCard()
+					}
 				}
 			}
 		},
@@ -359,7 +383,7 @@ const component = {
 				await apiRecoverFromSnapshot(this.recoveryFileId, this.recoveryPath)
 				this.loadError = ''
 				this.canRecover = false
-				await this.resolveOpenUrl()
+				await this.resolveOpenUrl(true)
 			} catch (error) {
 				this.loadError = requestErrorMessage(error, unansweredText(), 'Could not load pad.')
 			} finally {
@@ -481,7 +505,7 @@ const component = {
 					createElement('button', {
 						class: 'button primary epnc-native-error-action',
 						attrs: { type: 'button' },
-						on: { click: () => { void this.resolveOpenUrl() } },
+						on: { click: () => { void this.resolveOpenUrl(true) } },
 					}, translate('Try again')),
 				)
 			}
@@ -519,7 +543,7 @@ const component = {
 				}
 			}
 			return createElement('div', { class: 'epnc-native-status epnc-native-status--error' }, [
-				createElement('div', { class: 'epnc-native-error-card' }, cardChildren),
+				createElement('div', { class: 'epnc-native-error-card', ref: 'errorCard' }, cardChildren),
 			])
 		}
 		if (this.contentMode === 'content') {

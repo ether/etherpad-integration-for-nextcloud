@@ -79,6 +79,9 @@ function makeInstance(overrides = {}) {
 		fileInfo: null,
 		...component.data(),
 		$emit: vi.fn(),
+		$refs: {},
+		// Vue would have drawn the card by then; tests put it into $refs.
+		$nextTick: (fn) => { fn() },
 		...overrides,
 	}
 	for (const [key, getter] of Object.entries(component.computed)) {
@@ -821,7 +824,14 @@ describe('viewer component — render', () => {
 		expect(buttons).toHaveLength(1)
 		expect(allText(tree)).toContain('Try again')
 		buttons[0].data.on.click()
-		expect(vm.resolveOpenUrl).toHaveBeenCalledTimes(1)
+		// A click, so a failure hands the focus on.
+		expect(vm.resolveOpenUrl).toHaveBeenCalledWith(true)
+	})
+
+	it('names the card, so the focus can be handed to it', () => {
+		const tree = component.render.call(makeInstance({ loadError: 'Boom' }), h)
+
+		expect(findByClass(tree, 'epnc-native-error-card').data.ref).toBe('errorCard')
 	})
 
 	it('offers no second try for an error a second try cannot fix', () => {
@@ -998,5 +1008,77 @@ describe('viewer component — render', () => {
 		const iframe = findByTag(tree, 'iframe')[0]
 		expect(iframe.data.attrs.srcdoc).toBe('SRCDOC:https://pad/p')
 		expect(iframe.data.attrs.title).toBe('Etherpad')
+	})
+})
+
+/**
+ * The button a click went to goes away with the focus on it, so the card
+ * drawn after the failure takes the focus; not on the first load.
+ */
+describe('viewer component — focus after a click', () => {
+	const WAITING = { message: 'This pad is still being restored. Try again later.', code: 'waiting_binding', retryable: true }
+
+	// Stands in for the card Vue draws before the next tick.
+	const drawCard = (vm, html) => {
+		const card = document.createElement('div')
+		card.innerHTML = html
+		document.body.appendChild(card)
+		vm.$refs.errorCard = card
+		return card
+	}
+
+	afterEach(() => {
+		document.body.innerHTML = ''
+	})
+
+	it('hands it to the new button after a second try that fails, and only then', async () => {
+		stubFetch(jsonResponse(WAITING, false, 409))
+		const vm = makeInstance({ fileid: 42, fileInfo: { path: '/x.pad' } })
+		const card = drawCard(vm, '<div class="epnc-native-error-message">m</div><button>Try again</button>')
+
+		await vm.resolveOpenUrl()
+		expect(document.activeElement).toBe(document.body)
+
+		await vm.resolveOpenUrl(true)
+		expect(document.activeElement).toBe(card.querySelector('button'))
+	})
+
+	it('hands it to the message when the card has no action', async () => {
+		stubFetch(jsonResponse({ message: 'Boom' }, false, 500))
+		const vm = makeInstance({ fileid: 42, fileInfo: { path: '/x.pad' } })
+		const card = drawCard(vm, '<div class="epnc-native-error-message">Boom</div>')
+
+		await vm.resolveOpenUrl(true)
+
+		const message = card.querySelector('.epnc-native-error-message')
+		expect(document.activeElement).toBe(message)
+		// A div takes the focus in a browser only with a tabindex.
+		expect(message.getAttribute('tabindex')).toBe('-1')
+	})
+
+	it('waits for the recovery card\'s actions when a second try finds no pad', async () => {
+		stubFetch(jsonResponse({ message: 'no binding', code: 'missing_binding' }, false, 400))
+		let answer
+		apiFindOriginalPad.mockImplementation(() => new Promise((resolve) => { answer = resolve }))
+		const vm = makeInstance({ fileid: 42, fileInfo: { path: '/copy.pad' } })
+		const card = drawCard(vm, '<div class="epnc-native-error-message">no binding</div><a href="/o">Open the original .pad file</a><button>Create new pad from this file</button>')
+
+		await vm.resolveOpenUrl(true)
+		expect(document.activeElement).toBe(document.body)
+
+		answer({ found: true, viewer_url: '/o' })
+		await flushAsyncWork()
+		expect(document.activeElement).toBe(card.querySelector('a'))
+	})
+
+	it('hands it on when the open after a recovery fails', async () => {
+		apiRecoverFromSnapshot.mockResolvedValue({ status: 'restored' })
+		stubFetch(jsonResponse(WAITING, false, 409))
+		const vm = makeInstance({ fileid: 42, fileInfo: { path: '/copy.pad' }, canRecover: true, recoveryFileId: 42 })
+		const card = drawCard(vm, '<div class="epnc-native-error-message">m</div><button>Try again</button>')
+
+		await vm.recoverFromSnapshot()
+
+		expect(document.activeElement).toBe(card.querySelector('button'))
 	})
 })
