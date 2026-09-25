@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Controller;
 
+use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
 use OCA\EtherpadNextcloud\Exception\EtherpadTooLargeException;
 use OCA\EtherpadNextcloud\Exception\LegacyPadCollisionException;
 use OCA\EtherpadNextcloud\Exception\LegacyProtectedImportDisabledException;
@@ -17,7 +18,6 @@ use OCA\EtherpadNextcloud\Exception\MissingFrontmatterException;
 use OCA\EtherpadNextcloud\Exception\PadFileChangedException;
 use OCA\EtherpadNextcloud\Exception\PadTypeDisabledException;
 use OCA\EtherpadNextcloud\Exception\WaitingBindingException;
-use OCA\EtherpadNextcloud\Service\ApiErrorLog;
 use OCP\Lock\LockedException;
 
 /**
@@ -65,7 +65,7 @@ enum ApiErrorCode: string {
 	public static function retryable(\Throwable $e): bool {
 		return self::of($e) === self::WaitingBinding
 			|| $e instanceof LockedException
-			|| ApiErrorLog::isEtherpadUnreachable($e);
+			|| EtherpadClientException::isEtherpadUnreachable($e);
 	}
 
 	/**

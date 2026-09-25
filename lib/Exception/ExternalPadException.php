@@ -16,4 +16,8 @@ namespace OCA\EtherpadNextcloud\Exception;
  * can mend; the message says what was wrong with the link.
  */
 class ExternalPadException extends EtherpadClientException {
+	/** Not this instance's Etherpad. */
+	public function meansEtherpadUnreachable(): bool {
+		return false;
+	}
 }

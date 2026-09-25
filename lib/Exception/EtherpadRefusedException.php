@@ -16,4 +16,8 @@ namespace OCA\EtherpadNextcloud\Exception;
  * own Etherpad is one it did not answer properly.
  */
 class EtherpadRefusedException extends EtherpadClientException {
+	/** Etherpad answered. */
+	public function meansEtherpadUnreachable(): bool {
+		return false;
+	}
 }

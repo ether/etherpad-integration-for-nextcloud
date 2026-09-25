@@ -15,4 +15,8 @@ namespace OCA\EtherpadNextcloud\Exception;
  * the pad is fine, and stays editable.
  */
 class EtherpadTooLargeException extends EtherpadClientException {
+	/** The pad answered, and is fine. */
+	public function meansEtherpadUnreachable(): bool {
+		return false;
+	}
 }

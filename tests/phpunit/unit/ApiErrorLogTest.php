@@ -32,11 +32,13 @@ class ApiErrorLogTest extends TestCase {
 
 	/**
 	 * An outage reaches every open viewer's sync: one warning a minute for
-	 * the instance, claimed in the distributed cache, and debug for the
-	 * rest of that minute - each kind on its own, so a refusal is not
-	 * swallowed by an outage in the same minute.
+	 * the instance, claimed in the distributed cache, and debug for the rest
+	 * of that minute. A refusal is a case of its own for each file - a pad
+	 * deleted in Etherpad, a group gone - so it gets its own minute for each,
+	 * and is a warning each time when the request names no file. Neither
+	 * swallows the other.
 	 */
-	public function testOneWarningAMinuteForEachKindAndTheRestAtDebug(): void {
+	public function testOneWarningAMinuteForAnOutageAndForEachFileRefused(): void {
 		$claimed = [];
 		$cache = $this->createMock(IMemcache::class);
 		$cache->method('add')->willReturnCallback(static function (string $key, mixed $value, int $ttl) use (&$claimed): bool {
@@ -53,10 +55,17 @@ class ApiErrorLogTest extends TestCase {
 		$log->report(new EtherpadClientException('Etherpad API request failed: getText'), ['fileId' => 42]);
 		$log->report(new EtherpadClientException('Etherpad API request failed: getText'), ['fileId' => 43]);
 		$log->report(new EtherpadRefusedException('Etherpad API error (getText): padID does not exist'), ['fileId' => 44]);
+		$log->report(new EtherpadRefusedException('Etherpad API error (getText): padID does not exist'), ['fileId' => 44]);
+		$log->report(new EtherpadRefusedException('Etherpad API error (getHTML): padID does not exist'), ['fileId' => 45]);
+		// A file named by its path counts as one too.
+		$log->report(new EtherpadRefusedException('Etherpad API error (getHTML): padID does not exist'), ['file' => '/Notes.pad']);
+		$log->report(new EtherpadRefusedException('Etherpad API error (getHTML): padID does not exist'), ['file' => '/Notes.pad']);
+		$log->report(new EtherpadRefusedException('Etherpad API error (getHTML): padID does not exist'));
+		$log->report(new EtherpadRefusedException('Etherpad API error (getHTML): padID does not exist'));
 
 		$this->assertSame(
-			[['warning', self::UNREACHABLE, 42], ['debug', self::UNREACHABLE, 43], ['warning', self::REFUSED, 44]],
-			array_map(static fn (array $line): array => [$line[0], $line[1], $line[2]['fileId']], $this->logged),
+			[['warning', self::UNREACHABLE, 42], ['debug', self::UNREACHABLE, 43], ['warning', self::REFUSED, 44], ['debug', self::REFUSED, 44], ['warning', self::REFUSED, 45], ['warning', self::REFUSED, '/Notes.pad'], ['debug', self::REFUSED, '/Notes.pad'], ['warning', self::REFUSED, null], ['warning', self::REFUSED, null]],
+			array_map(static fn (array $line): array => [$line[0], $line[1], $line[2]['fileId'] ?? $line[2]['file'] ?? null], $this->logged),
 		);
 		$this->assertSame(['app' => 'etherpad_nextcloud', 'fileId' => 42, 'error' => EtherpadClientException::class], array_intersect_key($this->logged[0][2], ['app' => 1, 'fileId' => 1, 'error' => 1]));
 	}
@@ -110,9 +119,13 @@ class ApiErrorLogTest extends TestCase {
 		], array_map(static fn (array $line): array => [$line[0], $line[1], $line[2]['error_message']], $this->logged));
 	}
 
-	/** Not reachable is this instance's Etherpad only: not a refusal, not a pad too large, not a pad on another server. */
+	/**
+	 * Not reachable is this instance's Etherpad only: not a refusal, not a
+	 * pad too large, not a pad on another server. The exceptions say so, and
+	 * the answer's `retryable` and the log's line both go by it.
+	 */
 	public function testWhatCountsAsEtherpadNotReachable(): void {
-		$this->assertTrue(ApiErrorLog::isEtherpadUnreachable(new EtherpadClientException('Etherpad API request failed: createPad')));
+		$this->assertTrue(EtherpadClientException::isEtherpadUnreachable(new EtherpadClientException('Etherpad API request failed: createPad')));
 		foreach ([
 			new EtherpadRefusedException('Etherpad API error (createPad): padID does already exist'),
 			new EtherpadTooLargeException('Pad export is larger than 5242880 bytes.'),
@@ -120,7 +133,7 @@ class ApiErrorLogTest extends TestCase {
 			new ExternalPadExportNotFoundException('Public export returned 404.'),
 			new \RuntimeException('down'),
 		] as $e) {
-			$this->assertFalse(ApiErrorLog::isEtherpadUnreachable($e), $e::class);
+			$this->assertFalse(EtherpadClientException::isEtherpadUnreachable($e), $e::class);
 		}
 	}
 
