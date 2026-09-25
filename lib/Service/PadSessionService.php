@@ -8,6 +8,7 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Service;
 
+use OCA\EtherpadNextcloud\Exception\PadFileFormatException;
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
 use OCA\EtherpadNextcloud\Util\SafeError;
 use OCP\AppFramework\Utility\ITimeFactory;
@@ -316,7 +317,7 @@ class PadSessionService {
 	public function extractGroupId(string $padId): string {
 		$groupId = PadId::groupIdOf($padId);
 		if ($groupId === null) {
-			throw new EtherpadClientException('Protected pad ID is invalid (group prefix missing).');
+			throw new PadFileFormatException('Protected pad ID is invalid (group prefix missing).');
 		}
 		return $groupId;
 	}

@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Service;
 
+use OCA\EtherpadNextcloud\Exception\ExternalPadException;
 use OCA\EtherpadNextcloud\Exception\BindingException;
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
 use OCA\EtherpadNextcloud\Exception\PadFileFormatException;
@@ -113,7 +114,7 @@ class PadOpenService {
 		$isExternal = $pad->isExternal;
 
 		if ($isExternal && $accessMode !== BindingService::ACCESS_PUBLIC) {
-			throw new EtherpadClientException('External pad metadata requires public access_mode.');
+			throw new ExternalPadException('External pad metadata requires public access_mode.');
 		}
 
 		// Before any address is built. A protected pad without write
@@ -128,7 +129,7 @@ class PadOpenService {
 
 		if ($isExternal) {
 			if ($pad->padUrl === '') {
-				throw new EtherpadClientException('External pad URL metadata is missing or invalid.');
+				throw new ExternalPadException('External pad URL metadata is missing or invalid.');
 			}
 			$normalized = $this->externalPadExportFetcher->normalizeAndValidateExternalPublicPadUrl($pad->padUrl);
 			$effectivePadUrl = $normalized['pad_url'];

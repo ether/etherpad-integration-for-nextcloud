@@ -9,6 +9,8 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Service;
 
+use OCA\EtherpadNextcloud\Exception\NotAPadFileException;
+use OCA\EtherpadNextcloud\Exception\ExternalPadException;
 use OCA\EtherpadNextcloud\Exception\BindingException;
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
 use OCA\EtherpadNextcloud\Exception\PadFileLockRetryExhaustedException;
@@ -46,7 +48,7 @@ class PadSyncService {
 		$node = $this->userNodeResolver->resolveUserFileNodeById($uid, $fileId);
 		$absolutePath = $this->userNodeResolver->toUserAbsolutePath($uid, $node);
 		if (!PadFileType::isPad($node->getName())) {
-			throw new \InvalidArgumentException('Selected file is not a .pad file.');
+			throw new NotAPadFileException('Selected file is not a .pad file.');
 		}
 
 		$padId = '';
@@ -140,7 +142,7 @@ class PadSyncService {
 		$padId = $pad->padId;
 		$padUrl = $pad->padUrl;
 		if ($padUrl === '') {
-			throw new EtherpadClientException('External pad URL metadata is missing or invalid.');
+			throw new ExternalPadException('External pad URL metadata is missing or invalid.');
 		}
 		// External sync already performs a live upstream text fetch on every call.
 		// force=1 therefore only marks caller intent while preserving the no-blind-rewrite invariant.

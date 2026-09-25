@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Tests\Unit;
 
+use OCA\EtherpadNextcloud\Exception\ExternalPadException;
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
 use OCA\EtherpadNextcloud\Exception\WaitingBindingException;
 use OCA\EtherpadNextcloud\Service\BindingService;
@@ -210,6 +211,26 @@ class PadOpenServiceTest extends TestCase {
 		$this->assertSame('https://pad.example.test/p/pad-1', $target->url);
 	}
 
+	/**
+	 * A .pad linking a pad on another server that says too little to
+	 * reach it - no link, or a protected pad there - is the link's problem,
+	 * not Etherpad failing: its reason reaches the user, and no warning goes
+	 * out.
+	 */
+	public function testAForeignPadWithBrokenMetadataIsTheLinksProblem(): void {
+		foreach ([
+			'no link' => [BindingService::ACCESS_PUBLIC, 'External pad URL metadata is missing or invalid.'],
+			'a protected pad there' => [BindingService::ACCESS_PROTECTED, 'External pad metadata requires public access_mode.'],
+		] as $case => [$accessMode, $reason]) {
+			try {
+				$this->openWith($accessMode, updateable: true, padId: 'ext.remote', isExternal: true);
+				$this->fail($case . ': opened.');
+			} catch (ExternalPadException $e) {
+				$this->assertSame($reason, $e->getMessage(), $case);
+			}
+		}
+	}
+
 	private function openWith(
 		string $accessMode,
 		bool $updateable,
@@ -218,6 +239,7 @@ class PadOpenServiceTest extends TestCase {
 		string $padId = 'g.ABCDEFGHIJKLMNOP$pad-1',
 		?BindingService $bindingService = null,
 		?RestoreService $restoreService = null,
+		bool $isExternal = false,
 	): \OCA\EtherpadNextcloud\Service\PadOpenTarget {
 		$file = $this->createMock(File::class);
 		$file->method('getId')->willReturn(138);
@@ -234,7 +256,7 @@ class PadOpenServiceTest extends TestCase {
 			padId: $padId,
 			accessMode: $accessMode,
 			padUrl: '',
-			isExternal: false,
+			isExternal: $isExternal,
 			snapshotRev: -1,
 		));
 

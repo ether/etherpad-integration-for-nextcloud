@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Tests\Unit;
 
+use OCA\EtherpadNextcloud\Exception\ExternalPadException;
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
 use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\EtherpadNextcloud\Service\EtherpadClient;
@@ -76,7 +77,7 @@ class PublicPadOpenServiceTest extends TestCase {
 	}
 
 	public function testExternalProtectedMetadataIsRejected(): void {
-		$this->expectException(EtherpadClientException::class);
+		$this->expectException(ExternalPadException::class);
 		$this->expectExceptionMessage('External pad metadata requires public access_mode.');
 
 		$this->buildService()->open(
@@ -90,7 +91,7 @@ class PublicPadOpenServiceTest extends TestCase {
 	}
 
 	public function testExternalPadWithoutUrlIsRejected(): void {
-		$this->expectException(EtherpadClientException::class);
+		$this->expectException(ExternalPadException::class);
 		$this->expectExceptionMessage('External pad URL metadata is missing or invalid.');
 
 		$this->buildService()->open(

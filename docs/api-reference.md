@@ -444,9 +444,9 @@ solely by the separate external-pad policy, not by these two settings.
   - `legacy_collision_no_access` (`LegacyPadCollisionException`) — see the legacy migration section.
   - `legacy_protected_import_disabled` (`LegacyProtectedImportDisabledException`) — `403`; the legacy `.pad` names a group pad and this instance does not import those. The file is left untouched, so the same open succeeds once an admin switches the import back on. See the legacy migration section.
 
-  The answers of a public share (`/api/v1/public/...`) carry the codes that can come up there - `waiting_binding` and `pad_too_large` - but not `missing_binding` or `missing_frontmatter`: what a client does on those needs a signed-in user. A locked `.pad` answers `503` with `retryable: true` there too. Their messages are translated, one sentence for each kind of trouble.
+  The answers of a public share (`/api/v1/public/...`) carry the codes that can come up there - `waiting_binding` and `pad_too_large` - but not `missing_binding` or `missing_frontmatter`: what a client does on those needs a signed-in user. Their messages are translated, one sentence for each kind of trouble.
 
-  A response without a `code` may still be machine-readable through its HTTP status and other documented fields — a locked `.pad` answers `503` with `retryable: true`, for instance. What is never a stable identifier is the `message` text.
+  A response without a `code` may still be machine-readable through its HTTP status and other documented fields — a locked `.pad` answers `503` with `retryable: true`, signed in and public alike, for instance. What is never a stable identifier is the `message` text.
 
 ## Cookie Behavior (Protected Pads)
 

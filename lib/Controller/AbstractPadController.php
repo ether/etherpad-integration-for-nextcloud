@@ -26,8 +26,9 @@ use OCP\IUserSession;
  *
  * Holds the cross-cutting deps (user session, l10n, response builder,
  * error mapper) and the small set of helpers every action in
- * those controllers reaches for (`runForUser`, parameter guards,
- * structured error logging).
+ * those controllers reaches for (`runForUser`, which also names the
+ * request's file for the error mapper's log lines, and the parameter
+ * guards).
  *
  * Each concrete controller keeps its constructor narrow — it only
  * declares the services it actually uses on top of the base deps.

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Tests\Unit;
 
+use OCA\EtherpadNextcloud\Exception\ExternalPadException;
 use OCA\EtherpadNextcloud\Exception\BindingException;
 use OCA\EtherpadNextcloud\Exception\WaitingBindingException;
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
@@ -82,7 +83,8 @@ class LivePadHtmlFetcherTest extends TestCase {
 		$external = $this->createMock(ExternalPadExportFetcher::class);
 		$external->expects($this->never())->method('fetchExternalPublicPadHtml');
 
-		$this->expectException(EtherpadClientException::class);
+		// The link's problem, not Etherpad failing: its reason reaches the user.
+		$this->expectException(ExternalPadException::class);
 		$this->buildFetcher(externalPadExportFetcher: $external)
 			->fetchForPadFile($this->externalPad(padUrl: ''), 138);
 	}
@@ -91,7 +93,7 @@ class LivePadHtmlFetcherTest extends TestCase {
 		$external = $this->createMock(ExternalPadExportFetcher::class);
 		$external->expects($this->never())->method('fetchExternalPublicPadHtml');
 
-		$this->expectException(EtherpadClientException::class);
+		$this->expectException(ExternalPadException::class);
 		$this->buildFetcher(externalPadExportFetcher: $external)
 			->fetchForPadFile($this->externalPad(accessMode: BindingService::ACCESS_PROTECTED), 138);
 	}

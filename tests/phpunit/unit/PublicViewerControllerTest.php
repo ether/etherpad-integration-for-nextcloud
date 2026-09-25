@@ -247,7 +247,8 @@ class PublicViewerControllerTest extends TestCase {
 		$response = $controller->openPadData('share-token');
 
 		$this->assertSame(Http::STATUS_BAD_REQUEST, $response->getStatus());
-		$this->assertSame('Etherpad is currently unavailable for this shared pad.', $response->getData()['message']);
+		// The link's problem, not Etherpad down: trying again would not help.
+		$this->assertSame('The pad this file links to on another server could not be read.', $response->getData()['message']);
 	}
 
 	public function testPasswordProtectedShareRequiresAuthenticatedSession(): void {

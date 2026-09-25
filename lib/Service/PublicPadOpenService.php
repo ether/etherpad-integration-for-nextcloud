@@ -9,7 +9,7 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Service;
 
-use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
+use OCA\EtherpadNextcloud\Exception\ExternalPadException;
 
 /**
  * Applies public-share-specific open rules for internal, protected and external pads.
@@ -43,7 +43,7 @@ class PublicPadOpenService {
 		string $padUrl = '',
 	): PublicPadOpenTarget {
 		if ($isExternal && $accessMode !== BindingService::ACCESS_PUBLIC) {
-			throw new EtherpadClientException('External pad metadata requires public access_mode.');
+			throw new ExternalPadException('External pad metadata requires public access_mode.');
 		}
 
 		if ($accessMode === BindingService::ACCESS_PROTECTED) {
@@ -68,7 +68,7 @@ class PublicPadOpenService {
 
 		if ($isExternal) {
 			if ($padUrl === '') {
-				throw new EtherpadClientException('External pad URL metadata is missing or invalid.');
+				throw new ExternalPadException('External pad URL metadata is missing or invalid.');
 			}
 			$normalized = $this->externalPadExportFetcher->normalizeAndValidateExternalPublicPadUrl($padUrl);
 			return new PublicPadOpenTarget(
