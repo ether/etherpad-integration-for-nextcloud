@@ -18,7 +18,6 @@ use OCP\IL10N;
 use OCP\IRequest;
 use OCP\IUser;
 use OCP\IUserSession;
-use Psr\Log\LoggerInterface;
 
 /**
  * Create-side endpoints for `.pad` files. Spans empty creates, copies in
@@ -30,13 +29,12 @@ class PadCreateController extends AbstractPadController {
 		string $appName,
 		IRequest $request,
 		IUserSession $userSession,
-		LoggerInterface $logger,
 		IL10N $l10n,
 		PadResponseService $padResponses,
 		PadControllerErrorMapper $errors,
 		private PadCreationService $padCreationService,
 	) {
-		parent::__construct($appName, $request, $userSession, $logger, $l10n, $padResponses, $errors);
+		parent::__construct($appName, $request, $userSession, $l10n, $padResponses, $errors);
 	}
 
 	#[\OCP\AppFramework\Http\Attribute\NoAdminRequired]
@@ -84,7 +82,6 @@ class PadCreateController extends AbstractPadController {
 			),
 			fn(array $result): DataResponse => new DataResponse($this->padResponses->withViewerUrl($result)),
 			[
-				'invalid_argument' => $this->l10n->t('Invalid input.'),
 				'not_found' => $this->l10n->t('Template file not found.'),
 				'binding_message' => $this->l10n->t('A file with this name already exists.'),
 				'binding_status' => Http::STATUS_CONFLICT,
@@ -99,7 +96,6 @@ class PadCreateController extends AbstractPadController {
 			fn(IUser $user): array => $this->padCreationService->createFromUrl($user->getUID(), $file, $padUrl),
 			fn(array $result): DataResponse => new DataResponse($this->padResponses->withViewerUrl($result)),
 			[
-				'invalid_argument' => $this->l10n->t('Invalid input.'),
 				'generic' => $this->l10n->t('Could not import external pad.'),
 			],
 		);

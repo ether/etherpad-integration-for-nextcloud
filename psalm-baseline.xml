@@ -42,13 +42,6 @@
       <code><![CDATA[(string)($options['log_message'] ?? 'Admin request failed')]]></code>
     </RedundantCastGivenDocblockType>
   </file>
-  <file src="lib/Controller/PadControllerErrorMapper.php">
-    <MixedAssignment>
-      <code><![CDATA[$logger]]></code>
-      <code><![CDATA[$mapper]]></code>
-      <code><![CDATA[$response]]></code>
-    </MixedAssignment>
-  </file>
   <file src="lib/Controller/PadCreateController.php">
     <MixedArgumentTypeCoercion>
       <code><![CDATA[$result]]></code>

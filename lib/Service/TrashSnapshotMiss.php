@@ -53,17 +53,13 @@ enum TrashSnapshotMiss: string {
 		};
 	}
 
-	/** Etherpad gave no answer, while the snapshot was read or after it was written. */
+	/**
+	 * Etherpad gave no answer, while the snapshot was read or after it was
+	 * written. News each time, whatever the row says: Etherpad's silence is
+	 * not the file's, and the next run may find it answering.
+	 */
 	public function isEtherpadsSilence(): bool {
 		return $this === self::SnapshotNotFetched || $this === self::PadNotRecounted;
-	}
-
-	/**
-	 * News each time, whatever the row says: Etherpad's silence is not the
-	 * file's, and the next run may find it answering.
-	 */
-	public function reportedEachTime(): bool {
-		return $this->isEtherpadsSilence();
 	}
 
 	/**

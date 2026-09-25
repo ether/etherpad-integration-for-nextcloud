@@ -26,7 +26,7 @@ class PadCreateControllerTest extends TestCase {
 		$response = $controller->create('/Test.pad');
 
 		$this->assertSame(Http::STATUS_UNAUTHORIZED, $response->getStatus());
-		$this->assertSame('Authentication required.', $response->getData()['message']);
+		$this->assertSame('[de] Authentication required.', $response->getData()['message']);
 	}
 
 	public function testCreateByParentReturnsUnauthorizedWhenNoUserSession(): void {
@@ -37,7 +37,7 @@ class PadCreateControllerTest extends TestCase {
 		$response = $controller->createByParent(123, 'Test');
 
 		$this->assertSame(Http::STATUS_UNAUTHORIZED, $response->getStatus());
-		$this->assertSame('Authentication required.', $response->getData()['message']);
+		$this->assertSame('[de] Authentication required.', $response->getData()['message']);
 	}
 
 	public function testCreateByParentRejectsInvalidParentFolderId(): void {
@@ -49,7 +49,7 @@ class PadCreateControllerTest extends TestCase {
 		$response = $controller->createByParent(0, 'Test');
 
 		$this->assertSame(Http::STATUS_BAD_REQUEST, $response->getStatus());
-		$this->assertSame('Invalid parentFolderId.', $response->getData()['message']);
+		$this->assertSame('[de] Invalid parentFolderId.', $response->getData()['message']);
 	}
 
 	public function testCreateByParentRejectsInvalidAccessMode(): void {
@@ -61,7 +61,16 @@ class PadCreateControllerTest extends TestCase {
 		$response = $controller->createByParent(12, 'Test', 'invalid');
 
 		$this->assertSame(Http::STATUS_BAD_REQUEST, $response->getStatus());
-		$this->assertSame('Invalid accessMode. Use public or protected.', $response->getData()['message']);
+		$this->assertSame('[de] Invalid accessMode. Use public or protected.', $response->getData()['message']);
+	}
+
+	public function testCreateFromTemplateRejectsInvalidTemplateFileId(): void {
+		$userSession = $this->createMock(IUserSession::class);
+		$userSession->method('getUser')->willReturn($this->createMock(IUser::class));
+
+		$response = $this->buildController($this->createMock(IRequest::class), $userSession)->createFromTemplate('/New.pad', 0);
+
+		$this->assertSame([Http::STATUS_BAD_REQUEST, '[de] Invalid file ID.'], [$response->getStatus(), $response->getData()['message']]);
 	}
 
 	private function buildController(
@@ -73,16 +82,17 @@ class PadCreateControllerTest extends TestCase {
 		$urlGenerator = $this->createMock(IURLGenerator::class);
 		$appConfigService = $this->createMock(AppConfigService::class);
 		$l10n = $this->createMock(\OCP\IL10N::class);
-		$l10n->method('t')->willReturnCallback(static fn (string $text, array $params = []): string => $text);
+		// A translation that shows: a refusal reaches the client as it was
+		// thrown, so it has to be translated there.
+		$l10n->method('t')->willReturnCallback(static fn (string $text, array $params = []): string => '[de] ' . $text);
 		$padResponseService = new PadResponseService($urlGenerator, $appConfigService, $l10n);
 		return new PadCreateController(
 			'etherpad_nextcloud',
 			$request,
 			$userSession,
-			$logger,
 			$l10n,
 			$padResponseService,
-			new PadControllerErrorMapper($padResponseService, $l10n, $logger),
+			new PadControllerErrorMapper($padResponseService, $l10n, new \OCA\EtherpadNextcloud\Service\EtherpadFailureLog($this->createMock(\OCP\ICacheFactory::class), $logger), $logger),
 			$padCreationService ?? $this->createMock(PadCreationService::class),
 		);
 	}

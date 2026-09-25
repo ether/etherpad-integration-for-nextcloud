@@ -434,17 +434,17 @@ solely by the separate external-pad policy, not by these two settings.
 - `status` (sync): `updated` or `unchanged`.
 - `snapshot_rev` (sync): Etherpad revision currently persisted in `.pad`.
 - `sync_status_url` (open/open-by-id): endpoint for revision-based sync status in viewer.
-- `code` (errors): stable identifier on selected error responses. Branch on this, never on `message` — messages are written for people and are translated. The full set:
+- `code` (errors): stable identifier on selected error responses. Branch on this, never on `message` — messages are written for people and are translated, save the reason a pad on another server could not be linked or read, which comes in English. The full set:
   - `missing_binding` (`MissingBindingException`) — the viewer and embed swap the dead-end error for the recovery UI (`POST /api/v1/pads/recover-from-snapshot/{fileId}` + optional `GET /api/v1/pads/find-original/{fileId}` lookup).
   - `waiting_binding` (`WaitingBindingException`) — `409` with `retryable: true`; the file's row still waits. An open decides such a row itself first, so there it means the open did not: the row was touched within the last minute (by the sweep, a trash, or an earlier open), someone else was deciding it, Etherpad gave no answer within a few seconds, what was left of a pad that is gone could not be removed in time, or deciding failed, the database gone say, which is logged. Try again later: once the row is settled the same request opens the pad, or answers `missing_binding` when the pad had to be let go. On open, sync, sync status and the read-only content view, signed in and public; the viewer offers "Try again".
   - `missing_frontmatter` (`MissingFrontmatterException`) — the file has no pad metadata yet; clients call `POST /api/v1/pads/initialize-by-id/{fileId}` once and retry the open. A file whose content is neither metadata nor a legacy shortcut cannot be initialised and is refused *without* this code.
   - `pad_too_large` (`EtherpadTooLargeException`) — the pad is past the 5 MiB preview ceiling; it stays editable in Etherpad.
-  - `pad_file_changed` (`PadFileChangedException`) — the target file changed while the pad was being created; retry against a different name.
+  - `pad_file_changed` (`PadFileChangedException`) — the file changed while its pad was being created or initialised; try again. On create, a file may now exist under that name, and the retry says so.
   - `pad_type_disabled` (`PadTypeDisabledException`) — `403`; carries `access_mode` naming the disabled type, absent when neither type is enabled. See the pad-type settings section.
   - `legacy_collision_no_access` (`LegacyPadCollisionException`) — see the legacy migration section.
   - `legacy_protected_import_disabled` (`LegacyProtectedImportDisabledException`) — `403`; the legacy `.pad` names a group pad and this instance does not import those. The file is left untouched, so the same open succeeds once an admin switches the import back on. See the legacy migration section.
 
-  The answers of a public share (`/api/v1/public/...`) carry the same codes, save `missing_binding` and `missing_frontmatter`: what a client does on those needs a signed-in user. Their messages are translated too, one sentence for each kind of trouble.
+  The answers of a public share (`/api/v1/public/...`) carry the codes that can come up there - `waiting_binding` and `pad_too_large` - but not `missing_binding` or `missing_frontmatter`: what a client does on those needs a signed-in user. A locked `.pad` answers `503` with `retryable: true` there too. Their messages are translated, one sentence for each kind of trouble.
 
   A response without a `code` may still be machine-readable through its HTTP status and other documented fields — a locked `.pad` answers `503` with `retryable: true`, for instance. What is never a stable identifier is the `message` text.
 

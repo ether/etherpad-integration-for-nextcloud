@@ -184,7 +184,7 @@ class PublicShareResolver {
 				}
 				$named = $node->getName();
 			} else {
-				throw new ShareFileNotInShareException('The selected item is not a file.');
+				throw new NotAPadFileException('The selected item is not a file.');
 			}
 
 			// Neither is opened: preferring one would be "the id did not
@@ -205,7 +205,7 @@ class PublicShareResolver {
 		}
 
 		if (!$node instanceof File) {
-			throw new ShareFileNotInShareException('The selected item is not a file.');
+			throw new NotAPadFileException('The selected item is not a file.');
 		}
 		if (!PadFileType::isPad($node->getName())) {
 			throw new NotAPadFileException('The selected file is not a .pad document.');

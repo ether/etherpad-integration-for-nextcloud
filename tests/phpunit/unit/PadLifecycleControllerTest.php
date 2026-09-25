@@ -437,6 +437,40 @@ class PadLifecycleControllerTest extends TestCase {
 		$this->assertSame('This .pad file is already linked to a pad.', $response->getData()['message']);
 	}
 
+	/**
+	 * A failure's log line names the request's file, as the request gave
+	 * it, under the endpoint's own line - and Etherpad failing under
+	 * Etherpad's, so a restore's outage reads as the open's does.
+	 */
+	public function testALogLineNamesTheFileOfTheRequest(): void {
+		$user = $this->createConfiguredMock(IUser::class, ['getUID' => 'alice']);
+		$userSession = $this->createMock(IUserSession::class);
+		$userSession->method('getUser')->willReturn($user);
+		$request = $this->createMock(IRequest::class);
+		$request->method('getParam')->willReturnMap([['fileId', null, null], ['file', null, '/Notes.pad']]);
+		$seen = [];
+		$logger = $this->createMock(LoggerInterface::class);
+		foreach (['error', 'warning'] as $level) {
+			$logger->method($level)->willReturnCallback(static function (string $message, array $context) use (&$seen, $level): void {
+				$seen[] = [$level, $message, $context['file'] ?? null, $context['fileId'] ?? null];
+			});
+		}
+		$lifecycleOps = $this->createMock(LifecycleService::class);
+		$lifecycleOps->method('restoreByPath')->willReturnOnConsecutiveCalls(
+			$this->throwException(new \OCA\EtherpadNextcloud\Exception\LifecycleException('Restore flow failed before completion.')),
+			$this->throwException(new \OCA\EtherpadNextcloud\Exception\EtherpadClientException('Etherpad API request failed: createPad')),
+		);
+		$controller = $this->buildController($request, $userSession, padLifecycleOperations: $lifecycleOps, logger: $logger);
+
+		$controller->restore('/Notes.pad');
+		$controller->restore('/Notes.pad');
+
+		$this->assertSame([
+			['error', 'Pad restore API failed', '/Notes.pad', null],
+			['warning', 'Etherpad failed while answering a pad request.', '/Notes.pad', null],
+		], $seen);
+	}
+
 	public function testRecoverByFileIdSurfacesRestoredResult(): void {
 		$user = $this->createConfiguredMock(IUser::class, ['getUID' => 'alice']);
 		$userSession = $this->createMock(IUserSession::class);
@@ -474,6 +508,7 @@ class PadLifecycleControllerTest extends TestCase {
 		?EtherpadClient $etherpadClient = null,
 		?LifecycleService $padLifecycleOperations = null,
 		?ExternalPadExportFetcher $externalPadExportFetcher = null,
+		?LoggerInterface $logger = null,
 	): PadLifecycleController {
 		$resolvedRootFolder = $rootFolder ?? $this->createMock(IRootFolder::class);
 		// IRootFolder is a Folder, so the root doubles as the user's own
@@ -484,7 +519,7 @@ class PadLifecycleControllerTest extends TestCase {
 		$resolvedExternalPadExportFetcher = $externalPadExportFetcher ?? $this->createMock(ExternalPadExportFetcher::class);
 		$resolvedPadFileService = $padFileService ?? $this->createMock(PadFileService::class);
 		$resolvedBindingService = $bindingService ?? $this->createMock(BindingService::class);
-		$logger = $this->createMock(LoggerInterface::class);
+		$logger ??= $this->createMock(LoggerInterface::class);
 		$padPaths = new PathNormalizer();
 		$userNodeResolver = new UserNodeResolver($resolvedRootFolder, $this->createMock(LoggerInterface::class));
 		$lockRetryService = $this->buildNoSleepLockRetryService();
@@ -512,10 +547,9 @@ class PadLifecycleControllerTest extends TestCase {
 			'etherpad_nextcloud',
 			$request,
 			$userSession,
-			$logger,
 			$l10n,
 			$padResponseService,
-			new PadControllerErrorMapper($padResponseService, $l10n, $logger),
+			new PadControllerErrorMapper($padResponseService, $l10n, new \OCA\EtherpadNextcloud\Service\EtherpadFailureLog($this->createMock(\OCP\ICacheFactory::class), $logger), $logger),
 			$padLifecycleOperations,
 			$padSyncService,
 			$padMetadataService,

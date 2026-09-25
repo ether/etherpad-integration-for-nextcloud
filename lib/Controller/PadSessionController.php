@@ -19,13 +19,11 @@ use OCA\EtherpadNextcloud\Service\PadOpenService;
 use OCA\EtherpadNextcloud\Service\PadOpenTarget;
 use OCA\EtherpadNextcloud\Service\PadResolution;
 use OCA\EtherpadNextcloud\Service\PadResponseService;
-use OCA\EtherpadNextcloud\Util\SafeError;
 use OCP\AppFramework\Http\DataResponse;
 use OCP\IL10N;
 use OCP\IRequest;
 use OCP\IUser;
 use OCP\IUserSession;
-use Psr\Log\LoggerInterface;
 
 /**
  * Open / initialize / meta endpoints — anything that materializes the
@@ -39,7 +37,6 @@ class PadSessionController extends AbstractPadController {
 		string $appName,
 		IRequest $request,
 		IUserSession $userSession,
-		LoggerInterface $logger,
 		IL10N $l10n,
 		PadResponseService $padResponses,
 		PadControllerErrorMapper $errors,
@@ -48,7 +45,7 @@ class PadSessionController extends AbstractPadController {
 		private PadMetadataService $padMetadataService,
 		private PadContentService $padContentService,
 	) {
-		parent::__construct($appName, $request, $userSession, $logger, $l10n, $padResponses, $errors);
+		parent::__construct($appName, $request, $userSession, $l10n, $padResponses, $errors);
 	}
 
 	#[\OCP\AppFramework\Http\Attribute\NoAdminRequired]
@@ -58,7 +55,6 @@ class PadSessionController extends AbstractPadController {
 			fn(PadOpenTarget $result): DataResponse => $this->padResponses->openResponse($result),
 			[
 				'invalid_argument' => $this->l10n->t('Invalid file path.'),
-				'not_found' => $this->l10n->t('Cannot open selected .pad file.'),
 				'generic' => $this->l10n->t('Could not open pad'),
 			],
 		);
@@ -70,7 +66,6 @@ class PadSessionController extends AbstractPadController {
 			fn(IUser $user): PadOpenTarget => $this->padOpenService->openById($user->getUID(), $user->getDisplayName(), $this->requireFileId($fileId)),
 			fn(PadOpenTarget $result): DataResponse => $this->padResponses->openResponse($result),
 			[
-				'not_found' => $this->l10n->t('Cannot open selected .pad file.'),
 				'generic' => $this->l10n->t('Could not open pad'),
 			],
 		);
@@ -89,7 +84,6 @@ class PadSessionController extends AbstractPadController {
 			fn(IUser $user): LivePadHtml => $this->padContentService->contentById($user->getUID(), $this->requireFileId($fileId)),
 			fn(LivePadHtml $content): DataResponse => $this->padResponses->padContentResponse($content),
 			[
-				'not_found' => $this->l10n->t('Cannot open selected .pad file.'),
 				'generic' => $this->l10n->t('Could not load the pad content.'),
 			],
 		);
@@ -102,12 +96,8 @@ class PadSessionController extends AbstractPadController {
 			fn(PadInitializationResult $result): DataResponse => new DataResponse($this->padResponses->initializationResponse($result)),
 			[
 				'invalid_argument' => $this->l10n->t('Invalid file path.'),
-				'not_found' => $this->l10n->t('Cannot open selected .pad file.'),
 				'generic' => $this->l10n->t('Could not initialize .pad file.'),
-				'on_throwable' => fn(\Throwable $e) => $this->logError('Pad frontmatter initialization failed in API initialize', [
-					'file' => $file,
-					...SafeError::context($e),
-				]),
+				'failure' => 'Pad frontmatter initialization failed in API initialize',
 			],
 		);
 	}
@@ -118,12 +108,8 @@ class PadSessionController extends AbstractPadController {
 			fn(IUser $user): PadInitializationResult => $this->padInitializationService->initializeById($user->getUID(), $this->requireFileId($fileId)),
 			fn(PadInitializationResult $result): DataResponse => new DataResponse($this->padResponses->initializationResponse($result)),
 			[
-				'not_found' => $this->l10n->t('Cannot open selected .pad file.'),
 				'generic' => $this->l10n->t('Could not initialize .pad file.'),
-				'on_throwable' => fn(\Throwable $e) => $this->logError('Pad frontmatter initialization failed in API initialize-by-id', [
-					'fileId' => $fileId,
-					...SafeError::context($e),
-				]),
+				'failure' => 'Pad frontmatter initialization failed in API initialize-by-id',
 			],
 		);
 	}
@@ -135,7 +121,6 @@ class PadSessionController extends AbstractPadController {
 			fn(IUser $user): PadMeta => $this->padMetadataService->metaById($user->getUID(), $this->requireFileId($fileId)),
 			fn(PadMeta $meta): DataResponse => new DataResponse($this->padResponses->metaResponse($meta)),
 			[
-				'not_found' => $this->l10n->t('Cannot resolve selected .pad file.'),
 				'generic' => $this->l10n->t('Could not read pad metadata.'),
 			],
 		);

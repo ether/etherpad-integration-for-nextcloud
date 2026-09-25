@@ -126,12 +126,13 @@ class PublicShareResolverTest extends TestCase {
 		$this->buildResolver()->resolvePadFile($share, 'Missing.pad', 'token');
 	}
 
+	/** A folder in the share is in it: it is refused as not being a .pad, not as missing. */
 	public function testResolvePadFileRejectsFolderSelectionThatIsNotAFile(): void {
 		$folder = $this->createMock(Folder::class);
 		$folder->method('get')->willReturn($this->createMock(Folder::class));
 		$share = $this->share($folder, Constants::PERMISSION_READ);
 
-		$this->expectException(ShareFileNotInShareException::class);
+		$this->expectException(NotAPadFileException::class);
 		$this->expectExceptionMessage('The selected item is not a file.');
 
 		$this->buildResolver()->resolvePadFile($share, 'NestedFolder', 'token');

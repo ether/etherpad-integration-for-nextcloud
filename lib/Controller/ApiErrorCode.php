@@ -56,7 +56,11 @@ enum ApiErrorCode: string {
 		return $payload;
 	}
 
-	/** The code for $e, or null: most errors carry none. */
+	/**
+	 * The code for $e, or null: most errors carry none. The first case whose
+	 * exception $e is wins, so should one listed exception come to extend
+	 * another, the more specific case goes first.
+	 */
 	public static function of(\Throwable $e): ?self {
 		foreach (self::cases() as $code) {
 			if (is_a($e, $code->exceptionClass())) {

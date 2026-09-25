@@ -10,7 +10,7 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\Service;
 
 use OCA\EtherpadNextcloud\Exception\BindingException;
-use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
+use OCA\EtherpadNextcloud\Exception\ExternalPadException;
 use OCA\EtherpadNextcloud\Exception\NotAPadFileException;
 use OCA\EtherpadNextcloud\Exception\InvalidPadNameException;
 use OCA\EtherpadNextcloud\Exception\PadFileAlreadyExistsException;
@@ -176,7 +176,7 @@ class PadCreationService {
 			// No pad of ours here — an external create links one that already
 			// exists — so neither log closure has an attempt to read.
 			function (\Throwable $e) use ($path, $padUrl): ?array {
-				if ($e instanceof EtherpadClientException) {
+				if ($e instanceof ExternalPadException) {
 					return [
 						'message' => 'External pad URL validation failed',
 						'context' => [
@@ -570,7 +570,9 @@ class PadCreationService {
 					$warning['context'],
 					SafeError::context($e),
 				));
-			} elseif (!($e instanceof PadFileAlreadyExistsException) && !($e instanceof InvalidPadNameException)) {
+			} elseif (!($e instanceof PadFileAlreadyExistsException) && !($e instanceof InvalidPadNameException) && !EtherpadFailureLog::isOwnEtherpadFailing($e)) {
+				// This instance's Etherpad failing is the error mapper's to
+				// report, once a minute: an outage is not a creation's own.
 				$error = $errorFor($attempt);
 				$this->logger->error($error['message'], array_merge(
 					['app' => 'etherpad_nextcloud'],

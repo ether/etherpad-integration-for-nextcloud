@@ -8,7 +8,7 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Service;
 
-use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
+use OCA\EtherpadNextcloud\Exception\ExternalPadException;
 use OCA\EtherpadNextcloud\Exception\EtherpadTooLargeException;
 use OCA\EtherpadNextcloud\Exception\ExternalPadExportNotFoundException;
 use OCP\AppFramework\Utility\ITimeFactory;
@@ -128,7 +128,7 @@ class ExternalPadExportFetcher {
 		$parsed = $this->parsePublicPadUrl($padUrl);
 		$padId = $parsed['pad_id'];
 		if (preg_match('/^g\.[^$]+\$.+$/', $padId) === 1) {
-			throw new EtherpadClientException('Only public pad URLs can be linked from external servers.');
+			throw new ExternalPadException('Only public pad URLs can be linked from external servers.');
 		}
 
 		return [
@@ -153,7 +153,7 @@ class ExternalPadExportFetcher {
 		float $deadline
 	): string {
 		if (!function_exists('curl_init')) {
-			throw new EtherpadClientException('External pad sync requires PHP cURL extension.');
+			throw new ExternalPadException('External pad sync requires PHP cURL extension.');
 		}
 
 		$errors = [];
@@ -170,7 +170,7 @@ class ExternalPadExportFetcher {
 			$maxBytes = self::EXTERNAL_EXPORT_MAX_BYTES;
 			$curl = curl_init($url);
 			if ($curl === false) {
-				throw new EtherpadClientException('Could not initialize external export request.');
+				throw new ExternalPadException('Could not initialize external export request.');
 			}
 			$curlOptions = [
 				CURLOPT_RETURNTRANSFER => false,
@@ -237,7 +237,7 @@ class ExternalPadExportFetcher {
 		}
 
 		$detail = $errors !== [] ? implode('; ', $errors) : 'all resolved targets failed';
-		throw new EtherpadClientException('Public export transport error: ' . $detail);
+		throw new ExternalPadException('Public export transport error: ' . $detail);
 	}
 
 	/**
@@ -253,7 +253,7 @@ class ExternalPadExportFetcher {
 			);
 		}
 		if ($httpCode < 200 || $httpCode > 299) {
-			throw new EtherpadClientException('Public export HTTP error (' . $httpCode . ')');
+			throw new ExternalPadException('Public export HTTP error (' . $httpCode . ')');
 		}
 	}
 
@@ -273,7 +273,7 @@ class ExternalPadExportFetcher {
 	private function assertAllowedExternalExportContentType(string $contentTypeHeader, string $format = 'txt'): void {
 		$raw = trim($contentTypeHeader);
 		if ($raw === '') {
-			throw new EtherpadClientException('Public export did not provide a Content-Type header.');
+			throw new ExternalPadException('Public export did not provide a Content-Type header.');
 		}
 
 		$normalized = strtolower(trim((string)explode(';', $raw, 2)[0]));
@@ -282,11 +282,11 @@ class ExternalPadExportFetcher {
 			if (in_array($normalized, ['text/html', 'application/xhtml+xml'], true)) {
 				return;
 			}
-			throw new EtherpadClientException('Public HTML export returned unsupported Content-Type: ' . $normalized);
+			throw new ExternalPadException('Public HTML export returned unsupported Content-Type: ' . $normalized);
 		}
 
 		if ($normalized === 'text/html') {
-			throw new EtherpadClientException('Public export returned unsupported Content-Type: text/html');
+			throw new ExternalPadException('Public export returned unsupported Content-Type: text/html');
 		}
 		if (str_starts_with($normalized, 'text/')) {
 			return;
@@ -295,31 +295,31 @@ class ExternalPadExportFetcher {
 			return;
 		}
 
-		throw new EtherpadClientException('Public export returned unsupported Content-Type: ' . $normalized);
+		throw new ExternalPadException('Public export returned unsupported Content-Type: ' . $normalized);
 	}
 
 	/** @return list<string> */
 	private function resolveAndValidateExternalHost(string $host, string $origin): array {
 		if ((string)$this->config->getAppValue('etherpad_nextcloud', 'allow_external_pads', 'no') !== 'yes') {
-			throw new EtherpadClientException('External pad linking is disabled by admin settings.');
+			throw new ExternalPadException('External pad linking is disabled by admin settings.');
 		}
 		if (!$this->isAllowlistedExternalHost($host, $origin)) {
-			throw new EtherpadClientException('External pad host is not in the allowlist.');
+			throw new ExternalPadException('External pad host is not in the allowlist.');
 		}
 		if ($host === 'localhost' || str_ends_with($host, '.localhost') || str_ends_with($host, '.local')) {
-			throw new EtherpadClientException('Local hosts are not allowed for external pad sync.');
+			throw new ExternalPadException('Local hosts are not allowed for external pad sync.');
 		}
 
 		if (filter_var($host, FILTER_VALIDATE_IP) !== false) {
 			if (!$this->isPublicIp($host)) {
-				throw new EtherpadClientException('Private/reserved IPs are not allowed for external pad sync.');
+				throw new ExternalPadException('Private/reserved IPs are not allowed for external pad sync.');
 			}
 			return [$host];
 		}
 
 		$records = @dns_get_record($host, DNS_A + DNS_AAAA);
 		if (!is_array($records) || $records === []) {
-			throw new EtherpadClientException('Could not resolve external pad host.');
+			throw new ExternalPadException('Could not resolve external pad host.');
 		}
 
 		$resolvedIps = [];
@@ -332,12 +332,12 @@ class ExternalPadExportFetcher {
 			}
 		}
 		if ($resolvedIps === []) {
-			throw new EtherpadClientException('Could not resolve external pad host to IP.');
+			throw new ExternalPadException('Could not resolve external pad host to IP.');
 		}
 
 		foreach ($resolvedIps as $ip) {
 			if (!$this->isPublicIp($ip)) {
-				throw new EtherpadClientException('Private/reserved IPs are not allowed for external pad sync.');
+				throw new ExternalPadException('Private/reserved IPs are not allowed for external pad sync.');
 			}
 		}
 
@@ -394,15 +394,15 @@ class ExternalPadExportFetcher {
 	private function parsePublicPadUrl(string $padUrl): array {
 		$trimmed = trim($padUrl);
 		if ($trimmed === '' || preg_match('#^https?://#i', $trimmed) !== 1) {
-			throw new EtherpadClientException('Invalid public pad URL.');
+			throw new ExternalPadException('Invalid public pad URL.');
 		}
 
 		$parts = parse_url($trimmed);
 		if (!is_array($parts)) {
-			throw new EtherpadClientException('Invalid public pad URL.');
+			throw new ExternalPadException('Invalid public pad URL.');
 		}
 		if (isset($parts['user']) || isset($parts['pass'])) {
-			throw new EtherpadClientException('Public pad URL must not contain credentials.');
+			throw new ExternalPadException('Public pad URL must not contain credentials.');
 		}
 
 		$scheme = strtolower($parts['scheme'] ?? '');
@@ -416,17 +416,17 @@ class ExternalPadExportFetcher {
 		$decodedPath = rawurldecode($path);
 		if ($scheme !== 'https' || $host === '' || $decodedPath === '' || $port <= 0 || $port > 65535
 			|| preg_match('/[\x00-\x1F\x7F]/', $decodedPath) === 1) {
-			throw new EtherpadClientException('Invalid public pad URL.');
+			throw new ExternalPadException('Invalid public pad URL.');
 		}
 
 		if (preg_match('~^(.*)/p/([^/]+)$~', $decodedPath, $matches) !== 1) {
-			throw new EtherpadClientException('Public pad URL must match /p/{padId}.');
+			throw new ExternalPadException('Public pad URL must match /p/{padId}.');
 		}
 
 		$basePath = rtrim($matches[1], '/');
 		$padId = trim($matches[2]);
 		if ($padId === '') {
-			throw new EtherpadClientException('Invalid public pad URL.');
+			throw new ExternalPadException('Invalid public pad URL.');
 		}
 
 		$origin = $scheme . '://' . $host;

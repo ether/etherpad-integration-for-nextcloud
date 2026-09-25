@@ -77,9 +77,8 @@ final class TrashSnapshotWriter {
 	 * Take the pad's current content into the file at trash time. True once
 	 * the file holds it, written now or there already: a pad is not deleted
 	 * on anything less. Any error on the way is a snapshot not taken, so a
-	 * trash never fails on it; one on the count after the write is its own
-	 * miss. There is no run to keep to: each Etherpad call gets the
-	 * client's own timeout.
+	 * trash never fails on it. There is no run to keep to: each Etherpad
+	 * call gets the client's own timeout.
 	 */
 	public function writeAtTrash(ParsedPadFile $pad): bool {
 		try {
@@ -164,8 +163,7 @@ final class TrashSnapshotWriter {
 	 * Then, for the sweep, whether the file moved while it was written, also
 	 * when the count gets no answer or no time: if so the pad stays, and the
 	 * caller has a copy to clear. Otherwise a count Etherpad does not answer
-	 * is the miss PadNotRecounted - the snapshot is written, only whether
-	 * the pad moved on is not known - and any other error goes on as it is.
+	 * is the miss PadNotRecounted, and any other error goes on as it is.
 	 * Asked after the count, so that less gets past both questions; what
 	 * still does, and what would close it, is in docs/architecture.md.
 	 *
@@ -203,7 +201,7 @@ final class TrashSnapshotWriter {
 	private function missed(TrashSnapshotMiss $miss, array $cause = []): TrashSnapshotMiss {
 		$message = 'A trashed .pad file did not get its snapshot. Its pad is kept for now.';
 		$context = [...$this->context, ...$cause, 'reason' => $miss->value];
-		if ($miss->needsALook() && ($this->news || $miss->reportedEachTime())) {
+		if ($miss->needsALook() && ($this->news || $miss->isEtherpadsSilence())) {
 			$this->logger->warning($message, $context);
 		} else {
 			$this->logger->debug($message, $context);

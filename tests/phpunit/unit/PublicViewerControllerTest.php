@@ -240,7 +240,7 @@ class PublicViewerControllerTest extends TestCase {
 			),
 			$shareUrlBuilder,
 			$this->buildPadResponseService($urlGenerator),
-			new PublicViewerControllerErrorMapper($shareUrlBuilder, $this->buildPadResponseService($urlGenerator), $this->untranslated(), $this->createMock(LoggerInterface::class)),
+			new PublicViewerControllerErrorMapper($shareUrlBuilder, $this->buildPadResponseService($urlGenerator), $this->untranslated(), new \OCA\EtherpadNextcloud\Service\EtherpadFailureLog($this->createMock(\OCP\ICacheFactory::class), $this->createMock(LoggerInterface::class)), $this->createMock(LoggerInterface::class)),
 			$this->createMock(ISession::class),
 		);
 
@@ -346,7 +346,7 @@ class PublicViewerControllerTest extends TestCase {
 			),
 			$shareUrlBuilder,
 			$this->buildPadResponseService($urlGenerator),
-			new PublicViewerControllerErrorMapper($shareUrlBuilder, $this->buildPadResponseService($urlGenerator), $this->untranslated(), $this->createMock(LoggerInterface::class)),
+			new PublicViewerControllerErrorMapper($shareUrlBuilder, $this->buildPadResponseService($urlGenerator), $this->untranslated(), new \OCA\EtherpadNextcloud\Service\EtherpadFailureLog($this->createMock(\OCP\ICacheFactory::class), $this->createMock(LoggerInterface::class)), $this->createMock(LoggerInterface::class)),
 			$session ?? $this->createMock(ISession::class),
 		);
 	}

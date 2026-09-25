@@ -26,6 +26,10 @@ use Psr\Log\LoggerInterface;
  * Endpoints provide an `error_title` so the noviewer template can show a
  * context-appropriate heading (e.g. "Could not open pad" vs. "Could not create
  * pad"). Unhandled errors are logged and rendered with a generic message.
+ *
+ * The embed page only resolves its file here; Etherpad, the binding and
+ * the file's content are the pad API's, which the page calls next and
+ * whose PadControllerErrorMapper answers and logs for them.
  */
 class EmbedControllerErrorMapper {
 	public function __construct(
