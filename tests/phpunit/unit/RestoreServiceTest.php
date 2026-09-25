@@ -676,6 +676,32 @@ class RestoreServiceTest extends TestCase {
 	}
 
 	/**
+	 * A file deleted again before it was read cannot be read either: its row
+	 * is the trash's, as it is when the file goes while Etherpad is asked,
+	 * and is left as it is - made to wait, it would wait in a trash, where
+	 * no run takes it up again.
+	 */
+	public function testAFileDeletedAgainBeforeItWasReadLeavesItsRowAlone(): void {
+		$bindingService = $this->createMock(BindingService::class);
+		foreach (['transition', 'rebind', 'deleteInState', 'createBinding'] as $change) {
+			$bindingService->expects($this->never())->method($change);
+		}
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->expects($this->never())->method('getRevisionsCount');
+		$nodes = $this->createMock(UserNodeResolver::class);
+		$nodes->expects($this->once())->method('hasMoved')->with(96, '/alice/files/Restored.pad')->willReturn(true);
+		$file = $this->createMock(File::class);
+		$file->method('getId')->willReturn(96);
+		$file->method('getName')->willReturn('Restored.pad');
+		$file->method('getPath')->willReturn('/alice/files/Restored.pad');
+		$file->method('getContent')->willThrowException(new \RuntimeException('file not found'));
+
+		$result = $this->buildPendingDeleteRestoreService(96, 'old-pad', $bindingService, $etherpadClient, nodes: $nodes)->restore($file);
+
+		$this->assertSame(['status' => LifecycleResult::SKIPPED, 'reason' => 'file_moved'], $result);
+	}
+
+	/**
 	 * And when the row cannot be moved to wait either, the restore fails
 	 * without a word of its own: the warning about the unreadable file is
 	 * for a row that waits, and this one does not. The failure is the
@@ -1223,6 +1249,35 @@ class RestoreServiceTest extends TestCase {
 	}
 
 	/**
+	 * A file without a row is asked again after the seeding too: deleted
+	 * meanwhile, and the new pad goes, with no row made and nothing written.
+	 */
+	public function testRestoreWithoutBindingLetsTheNewPadGoWhenTheFileWasDeletedWhileItWasSeeded(): void {
+		$fileId = 94;
+		$newPadId = 'r-old-public-pad-abc123def456';
+
+		$bindingService = $this->createMock(BindingService::class);
+		$bindingService->method('findByFileId')->with($fileId)->willReturn(null);
+		$bindingService->expects($this->never())->method('createBinding');
+		$bindingService->method('isBoundTo')->with($fileId, $newPadId)->willReturn(false);
+
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->method('buildPadUrl')->willReturn('https://pad.example.test/p/' . $newPadId);
+		$etherpadClient->expects($this->once())->method('createPad')->with($newPadId);
+		$etherpadClient->expects($this->once())->method('deletePad')->with($newPadId);
+
+		$nodes = $this->createMock(UserNodeResolver::class);
+		$nodes->expects($this->once())->method('hasMoved')->with($fileId, '/alice/files/Restored.pad')->willReturn(true);
+		$file = $this->padFile($fileId, 'Restored.pad');
+		$file->method('getPath')->willReturn('/alice/files/Restored.pad');
+		$file->expects($this->never())->method('putContent');
+
+		$result = $this->buildNoBindingRestoreService($bindingService, $etherpadClient, 'old-public-pad', nodes: $nodes)->restore($file);
+
+		$this->assertSame(['status' => LifecycleResult::SKIPPED, 'reason' => 'file_moved'], $result);
+	}
+
+	/**
 	 * With deleting on trash switched off, a file back without a row gets no
 	 * new pad: whether to make one is the setting's call, as deleting the old
 	 * one was.
@@ -1427,6 +1482,7 @@ class RestoreServiceTest extends TestCase {
 		EtherpadClient $etherpadClient,
 		string $oldPadId,
 		?LoggerInterface $logger = null,
+		?UserNodeResolver $nodes = null,
 	): RestoreService {
 		$padFileService = $this->createMock(PadFileService::class);
 		$padFileService->method('readPad')->willReturn(new ParsedPadFile(
@@ -1450,6 +1506,7 @@ class RestoreServiceTest extends TestCase {
 			padFiles: $padFileService,
 			logger: $logger,
 			secureRandom: $secureRandom,
+			nodes: $nodes,
 		);
 	}
 }

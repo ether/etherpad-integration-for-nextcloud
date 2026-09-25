@@ -155,8 +155,9 @@ class RestoreService {
 	 * meanwhile - file locking switched off, say - it can be deleted again,
 	 * and a trash leaves a row that waits as it is, for it is no row of an
 	 * active pad. So, whatever the answer, the row is changed only while
-	 * the file is still where it was read; moved, and the row is its
-	 * trash's to finish.
+	 * the file is still where it was; moved, and the row is its trash's to
+	 * finish. That holds for a file that could not be read too: one deleted
+	 * before the read cannot be.
 	 *
 	 * @return array{status: string, reason?: string, old_pad_id?: string, new_pad_id?: string}
 	 */
@@ -169,6 +170,9 @@ class RestoreService {
 			try {
 				$pad = $read ?? $this->readRestoredPad($file);
 			} catch (\Throwable $readError) {
+				if ($this->userNodeResolver->hasMoved($fileId, $path)) {
+					return LifecycleResult::skipped(self::REASON_FILE_MOVED, $fileId, $this->logger);
+				}
 				// No revision to hold the pad to, so no decision either.
 				return $this->deferRestore($fileId, $padId, $state, $readError);
 			}
