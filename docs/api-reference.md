@@ -245,7 +245,7 @@ solely by the separate external-pad policy, not by these two settings.
   - Params: `file=/path/file.pad`
   - Result:
     - `200` with `status=trashed` for successful trash flow.
-      - includes `snapshot_persisted` (`true|false`): whether the file holds the pad's current content - written now, or there already when the file's `snapshot_rev` is the pad's revision count. `false` when no fresh snapshot was written: the file was locked or could not be read, Etherpad did not answer, the pad is behind the file's snapshot (not the pad the file knew), the pad changed right after its snapshot was written, or the file's restore was still undecided, which leaves the pad alone.
+      - includes `snapshot_persisted` (`true|false`): whether the file holds the pad's current content - written now, or there already when the file's `snapshot_rev` is the pad's revision count. `false` when no fresh snapshot was written: the file was locked or could not be read, Etherpad did not answer, the pad is behind the file's snapshot (not the pad the file knew), the pad changed right after its snapshot was written, or the file's restore was still undecided, which leaves the pad alone. Also `false` when the snapshot was written but Etherpad gave no count after it: whether an edit came while it was written is not known, so the file is not taken to hold the current content.
       - includes `delete_pending` (`true|false`): `true` when the pad is kept and its deletion owed, always the case when no fresh snapshot was written. The background sweep then writes the snapshot into the trashed file and deletes the pad, usually within five minutes.
     - `409` with `status=skipped` + `reason` on invalid lifecycle state (for example already pending delete).
       - includes transition-race guard reason `binding_state_transition_conflict` on concurrent state updates.
@@ -443,6 +443,8 @@ solely by the separate external-pad policy, not by these two settings.
   - `pad_type_disabled` (`PadTypeDisabledException`) — `403`; carries `access_mode` naming the disabled type, absent when neither type is enabled. See the pad-type settings section.
   - `legacy_collision_no_access` (`LegacyPadCollisionException`) — see the legacy migration section.
   - `legacy_protected_import_disabled` (`LegacyProtectedImportDisabledException`) — `403`; the legacy `.pad` names a group pad and this instance does not import those. The file is left untouched, so the same open succeeds once an admin switches the import back on. See the legacy migration section.
+
+  The answers of a public share (`/api/v1/public/...`) carry the same codes, save `missing_binding` and `missing_frontmatter`: what a client does on those needs a signed-in user. Their messages are translated too, one sentence for each kind of trouble.
 
   A response without a `code` may still be machine-readable through its HTTP status and other documented fields — a locked `.pad` answers `503` with `retryable: true`, for instance. What is never a stable identifier is the `message` text.
 

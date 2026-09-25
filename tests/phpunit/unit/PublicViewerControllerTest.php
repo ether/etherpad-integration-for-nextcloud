@@ -240,7 +240,7 @@ class PublicViewerControllerTest extends TestCase {
 			),
 			$shareUrlBuilder,
 			$this->buildPadResponseService($urlGenerator),
-			new PublicViewerControllerErrorMapper($shareUrlBuilder, $this->buildPadResponseService($urlGenerator), $this->createMock(LoggerInterface::class)),
+			new PublicViewerControllerErrorMapper($shareUrlBuilder, $this->buildPadResponseService($urlGenerator), $this->untranslated(), $this->createMock(LoggerInterface::class)),
 			$this->createMock(ISession::class),
 		);
 
@@ -346,15 +346,19 @@ class PublicViewerControllerTest extends TestCase {
 			),
 			$shareUrlBuilder,
 			$this->buildPadResponseService($urlGenerator),
-			new PublicViewerControllerErrorMapper($shareUrlBuilder, $this->buildPadResponseService($urlGenerator), $this->createMock(LoggerInterface::class)),
+			new PublicViewerControllerErrorMapper($shareUrlBuilder, $this->buildPadResponseService($urlGenerator), $this->untranslated(), $this->createMock(LoggerInterface::class)),
 			$session ?? $this->createMock(ISession::class),
 		);
 	}
 
 	private function buildPadResponseService(IURLGenerator $urlGenerator): PadResponseService {
+		return new PadResponseService($urlGenerator, $this->createMock(\OCA\EtherpadNextcloud\Service\AppConfigService::class), $this->untranslated());
+	}
+
+	/** English, as t() gets it. */
+	private function untranslated(): \OCP\IL10N {
 		$l10n = $this->createMock(\OCP\IL10N::class);
 		$l10n->method('t')->willReturnCallback(static fn (string $text): string => $text);
-
-		return new PadResponseService($urlGenerator, $this->createMock(\OCA\EtherpadNextcloud\Service\AppConfigService::class), $l10n);
+		return $l10n;
 	}
 }

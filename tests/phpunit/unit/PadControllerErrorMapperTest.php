@@ -13,6 +13,9 @@ use OCA\EtherpadNextcloud\Exception\WaitingBindingException;
 use OCA\EtherpadNextcloud\Exception\MissingFrontmatterException;
 use OCA\EtherpadNextcloud\Exception\ControllerBadRequestException;
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
+use OCA\EtherpadNextcloud\Exception\EtherpadTooLargeException;
+use OCA\EtherpadNextcloud\Exception\PadFileChangedException;
+use OCA\EtherpadNextcloud\Exception\PadTypeDisabledException;
 use OCA\EtherpadNextcloud\Exception\PadAlreadyHasBindingException;
 use OCA\EtherpadNextcloud\Exception\PadFileAlreadyExistsException;
 use OCA\EtherpadNextcloud\Exception\PadFileFormatException;
@@ -175,33 +178,53 @@ class PadControllerErrorMapperTest extends TestCase {
 		$this->assertSame('not your pad', $response->getData()['message']);
 	}
 
-	public function testRunMapsADisabledLegacyImportToForbiddenWithTheEndpointWording(): void {
+	/**
+	 * 403 and its code, with the mapper's own sentence: the exception's
+	 * message is internal and must not reach the client.
+	 */
+	public function testRunMapsADisabledLegacyImportToForbidden(): void {
 		$response = $this->buildMapper()->run(
 			static function (): array {
 				throw new LegacyProtectedImportDisabledException('internal wording');
 			},
 			static fn(array $result): DataResponse => new DataResponse($result),
-			// Endpoints pass this translated; the exception's own message is
-			// internal and must not reach the client.
-			['legacy_protected_import_disabled' => 'Bitte an die Administration wenden.'],
 		);
 
 		$this->assertSame(Http::STATUS_FORBIDDEN, $response->getStatus());
 		$this->assertSame('legacy_protected_import_disabled', $response->getData()['code']);
-		$this->assertSame('Bitte an die Administration wenden.', $response->getData()['message']);
+		$this->assertStringNotContainsString('internal wording', (string)$response->getData()['message']);
 	}
 
-	/** Without a wording from the endpoint the client still gets a sentence. */
-	public function testRunFallsBackToEnglishWhenTheEndpointPassesNoWording(): void {
-		$response = $this->buildMapper()->run(
-			static function (): array {
-				throw new LegacyProtectedImportDisabledException('internal wording');
-			},
-			static fn(array $result): DataResponse => new DataResponse($result),
-		);
+	/** @return iterable<string, array{\Throwable, string}> an exception whose sentence is the mapper's own, and that sentence */
+	public static function sentencesOfItsOwn(): iterable {
+		yield 'not signed in' => [new UnauthorizedRequestException(''), 'Authentication required.'];
+		yield 'bad input' => [new ControllerBadRequestException(''), 'Invalid input.'];
+		yield 'not found' => [new NotFoundException('internal wording'), 'Resource not found.'];
+		yield 'locked' => [new LockedException('internal wording'), 'Pad file is temporarily locked. Please retry.'];
+		yield 'the target changed' => [new PadFileChangedException('internal wording'), 'The target file changed while the pad was being created. Try again with a new name.'];
+		yield 'a file by that name' => [new PadFileAlreadyExistsException('internal wording'), 'A file with this name already exists.'];
+		yield 'linked already' => [new PadAlreadyHasBindingException('internal wording'), 'This .pad file is already linked to a pad.'];
+		yield 'a folder not writable' => [new PadParentFolderNotWritableException('internal wording'), 'Selected parent folder is not writable.'];
+		yield 'a pad type switched off' => [new PadTypeDisabledException('internal wording'), 'This pad type is disabled on this instance.'];
+		yield 'a legacy import switched off' => [new LegacyProtectedImportDisabledException('internal wording'), 'This file is a legacy Ownpad link to a protected pad, and importing those is disabled on this server. Please contact your administrator.'];
+		yield 'too large to show' => [new EtherpadTooLargeException('internal wording'), 'This pad is too large to show here. Open it in Etherpad instead.'];
+		yield 'no metadata' => [new MissingFrontmatterException('internal wording'), 'This .pad file has no pad metadata yet.'];
+		yield 'anything else' => [new \RuntimeException('internal wording'), 'Request failed.'];
+	}
 
-		$this->assertStringNotContainsString('internal wording', (string)$response->getData()['message']);
-		$this->assertNotSame('', (string)$response->getData()['message']);
+	/**
+	 * The sentence for an exception the mapper knows is its own, and
+	 * translated: endpoints no longer pass the same sentence in five
+	 * places to get it translated.
+	 */
+	#[\PHPUnit\Framework\Attributes\DataProvider('sentencesOfItsOwn')]
+	public function testTheMappersOwnSentencesAreTranslated(\Throwable $e, string $sentence): void {
+		$l10n = $this->createMock(\OCP\IL10N::class);
+		$l10n->method('t')->willReturnCallback(static fn (string $text): string => '[de] ' . $text);
+
+		$response = $this->buildMapper(l10n: $l10n)->run(static fn (): array => throw $e, static fn (array $result): DataResponse => new DataResponse($result));
+
+		$this->assertSame('[de] ' . $sentence, $response->getData()['message']);
 	}
 
 	public function testRunMapsPadAlreadyHasBinding(): void {
@@ -259,14 +282,56 @@ class PadControllerErrorMapperTest extends TestCase {
 		$this->assertSame('Invalid .pad file.', $response->getData()['message']);
 	}
 
-	public function testRunMapsEtherpadClientException(): void {
-		$response = $this->buildMapper()->run(
+	/**
+	 * Etherpad failing answers 400 with its own sentence - for a pad on
+	 * another server it says what was wrong with the link - and is logged
+	 * once: it used to reach the client and nobody else.
+	 */
+	public function testRunMapsEtherpadClientExceptionAndLogsIt(): void {
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects($this->once())->method('warning')->with(
+			'Etherpad failed while answering a pad request.',
+			$this->callback(static fn (array $context): bool => $context['app'] === 'etherpad_nextcloud' && $context['error'] === EtherpadClientException::class),
+		);
+		$logger->expects($this->never())->method('error');
+
+		$response = $this->buildMapper($logger)->run(
 			static fn(): array => throw new EtherpadClientException('Etherpad rejected request.'),
 			static fn(array $result): DataResponse => new DataResponse($result),
 		);
 
 		$this->assertSame(Http::STATUS_BAD_REQUEST, $response->getStatus());
 		$this->assertSame('Etherpad rejected request.', $response->getData()['message']);
+	}
+
+	/** An endpoint that reports its own failures, naming its file, reports Etherpad's too - once. */
+	public function testAnEndpointsOwnReportTakesEtherpadFailingToo(): void {
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects($this->never())->method($this->anything());
+		$reported = [];
+
+		$this->buildMapper($logger)->run(
+			static fn(): array => throw new EtherpadClientException('Etherpad API request failed: createPad'),
+			static fn(array $result): DataResponse => new DataResponse($result),
+			['on_throwable' => static function (\Throwable $e) use (&$reported): void {
+				$reported[] = $e->getMessage();
+			}],
+		);
+
+		$this->assertSame(['Etherpad API request failed: createPad'], $reported);
+	}
+
+	/** A pad too large to show is no failure of Etherpad's: nothing is logged. */
+	public function testAPadTooLargeToShowIsNotLogged(): void {
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects($this->never())->method($this->anything());
+
+		$response = $this->buildMapper($logger)->run(
+			static fn(): array => throw new EtherpadTooLargeException('Pad export is larger than 5242880 bytes.'),
+			static fn(array $result): DataResponse => new DataResponse($result),
+		);
+
+		$this->assertSame('pad_too_large', $response->getData()['code']);
 	}
 
 	public function testRunAllowsThrowableOverride(): void {
@@ -361,15 +426,18 @@ class PadControllerErrorMapperTest extends TestCase {
 		$this->assertArrayNotHasKey('code', $response->getData());
 	}
 
-	private function buildMapper(?LoggerInterface $logger = null): PadControllerErrorMapper {
-		$l10n = $this->createMock(\OCP\IL10N::class);
-		$l10n->method('t')->willReturnCallback(static fn (string $text, array $params = []): string => $text);
+	private function buildMapper(?LoggerInterface $logger = null, ?\OCP\IL10N $l10n = null): PadControllerErrorMapper {
+		if ($l10n === null) {
+			$l10n = $this->createMock(\OCP\IL10N::class);
+			$l10n->method('t')->willReturnCallback(static fn (string $text, array $params = []): string => $text);
+		}
 		return new PadControllerErrorMapper(
 			new PadResponseService(
 				$this->createMock(IURLGenerator::class),
 				$this->createMock(AppConfigService::class),
 				$l10n,
 			),
+			$l10n,
 			$logger ?? $this->createMock(LoggerInterface::class),
 		);
 	}

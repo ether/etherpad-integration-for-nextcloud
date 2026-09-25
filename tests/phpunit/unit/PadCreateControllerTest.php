@@ -82,7 +82,7 @@ class PadCreateControllerTest extends TestCase {
 			$logger,
 			$l10n,
 			$padResponseService,
-			new PadControllerErrorMapper($padResponseService, $logger),
+			new PadControllerErrorMapper($padResponseService, $l10n, $logger),
 			$padCreationService ?? $this->createMock(PadCreationService::class),
 		);
 	}

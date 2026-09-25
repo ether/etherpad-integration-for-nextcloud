@@ -97,7 +97,7 @@ class OwedDeletions {
 			} catch (RunBudgetSpentException) {
 				return SettleOutcome::Left;
 			}
-			if ($written === TrashSnapshotMiss::SnapshotNotFetched) {
+			if ($written instanceof TrashSnapshotMiss && $written->isEtherpadsSilence()) {
 				return SettleOutcome::Unanswered;
 			}
 			if ($written === TrashSnapshotMiss::FileMovedWhileWritten) {

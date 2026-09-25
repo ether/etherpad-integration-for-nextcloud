@@ -25,6 +25,12 @@ enum TrashSnapshotMiss: string {
 	case FileUnreadable = 'file_unreadable';
 	case FileUnparsable = 'file_unparsable';
 	case SnapshotNotFetched = 'snapshot_not_fetched';
+	/**
+	 * The snapshot is in the file, but Etherpad gave no count after it: an
+	 * edit that came while it was written would not be in it, so the pad
+	 * stays as if the snapshot had not been taken.
+	 */
+	case PadNotRecounted = 'pad_not_recounted';
 	/** The pad moved on while it was read, or right after it was written into the file. */
 	case PadChanged = 'pad_changed';
 	/**
@@ -42,9 +48,14 @@ enum TrashSnapshotMiss: string {
 	/** Someone has to look, at the file or at Etherpad: a warning the first time. */
 	public function needsALook(): bool {
 		return match ($this) {
-			self::FileUnreadable, self::FileUnparsable, self::WriteFailed, self::SnapshotNotFetched => true,
+			self::FileUnreadable, self::FileUnparsable, self::WriteFailed, self::SnapshotNotFetched, self::PadNotRecounted => true,
 			default => false,
 		};
+	}
+
+	/** Etherpad gave no answer, while the snapshot was read or after it was written. */
+	public function isEtherpadsSilence(): bool {
+		return $this === self::SnapshotNotFetched || $this === self::PadNotRecounted;
 	}
 
 	/**
@@ -52,7 +63,7 @@ enum TrashSnapshotMiss: string {
 	 * file's, and the next run may find it answering.
 	 */
 	public function reportedEachTime(): bool {
-		return $this === self::SnapshotNotFetched;
+		return $this->isEtherpadsSilence();
 	}
 
 	/**

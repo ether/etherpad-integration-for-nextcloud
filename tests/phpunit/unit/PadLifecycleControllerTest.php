@@ -515,7 +515,7 @@ class PadLifecycleControllerTest extends TestCase {
 			$logger,
 			$l10n,
 			$padResponseService,
-			new PadControllerErrorMapper($padResponseService, $logger),
+			new PadControllerErrorMapper($padResponseService, $l10n, $logger),
 			$padLifecycleOperations,
 			$padSyncService,
 			$padMetadataService,
