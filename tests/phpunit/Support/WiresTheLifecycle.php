@@ -95,6 +95,7 @@ trait WiresTheLifecycle {
 		?LoggerInterface $padLifecycleLogger = null,
 		?ISecureRandom $secureRandom = null,
 		?TestFaults $testFaults = null,
+		?UserNodeResolver $nodes = null,
 	): RestoreService {
 		$etherpad ??= $this->createMock(EtherpadClient::class);
 		$padLifecycleLogger ??= $this->createMock(LoggerInterface::class);
@@ -109,6 +110,7 @@ trait WiresTheLifecycle {
 			$padLifecycleLogger,
 			$secureRandom,
 			$testFaults ?? new TestFaults($this->createMock(IConfig::class), $appConfig),
+			$nodes,
 		);
 	}
 
@@ -122,6 +124,7 @@ trait WiresTheLifecycle {
 		LoggerInterface $padLifecycleLogger,
 		?ISecureRandom $secureRandom,
 		TestFaults $testFaults,
+		?UserNodeResolver $nodes = null,
 	): RestoreService {
 		return new RestoreService(
 			$bindings,
@@ -133,6 +136,8 @@ trait WiresTheLifecycle {
 			$secureRandom ?? $this->createMock(ISecureRandom::class),
 			new ProvisionedPadRollback($bindings, $padLifecycle, $padLifecycleLogger),
 			$testFaults,
+			// Unless a test says otherwise, a file stays where it was read.
+			$nodes ?? $this->createMock(UserNodeResolver::class),
 		);
 	}
 

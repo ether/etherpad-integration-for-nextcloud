@@ -10,8 +10,10 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Listeners;
 
+use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
 use OCA\EtherpadNextcloud\Service\LifecycleResult;
 use OCA\EtherpadNextcloud\Service\LifecycleService;
+use OCA\EtherpadNextcloud\Service\RestoreService;
 use OCA\EtherpadNextcloud\Service\UserNodeResolver;
 use OCA\EtherpadNextcloud\Util\PadFileType;
 use OCA\EtherpadNextcloud\Util\SafeError;
@@ -26,6 +28,17 @@ use Psr\Log\LoggerInterface;
  * @template-implements IEventListener<Event>
  */
 class RestoreFromTrashListener implements IEventListener {
+	private const VIA_HOOK = 'hook';
+	private const VIA_EVENT = 'event';
+
+	/**
+	 * The files whose hook pass Etherpad did not answer (restoreNode()).
+	 * One instance serves both ways in: the container shares it.
+	 *
+	 * @var array<int,true>
+	 */
+	private array $etherpadFailedHook = [];
+
 	public function __construct(
 		private LifecycleService $lifecycleService,
 		private IUserSession $userSession,
@@ -53,7 +66,7 @@ class RestoreFromTrashListener implements IEventListener {
 			return;
 		}
 
-		$this->restoreNode($node, 'event');
+		$this->restoreNode($node, self::VIA_EVENT);
 	}
 
 	/**
@@ -70,7 +83,7 @@ class RestoreFromTrashListener implements IEventListener {
 			return;
 		}
 
-		$this->restoreNode($node, 'hook');
+		$this->restoreNode($node, self::VIA_HOOK);
 	}
 
 	/**
@@ -84,23 +97,45 @@ class RestoreFromTrashListener implements IEventListener {
 	 * that fails again in the middle of the rollback, which can leave a row
 	 * naming a pad the file does not.
 	 *
-	 * $via names the way in, `hook` or `event`, for the log: a core restore
-	 * takes both (Application::register()).
+	 * $via names the way in, `hook` or `event`: a core restore takes both,
+	 * the hook first (Application::register()). The event pass is a second
+	 * try at whatever the hook pass left undone, save one thing: after a
+	 * hook pass that asked Etherpad and got no answer, or an error, it
+	 * would only ask again - with an Etherpad that hangs, a second timeout -
+	 * so it leaves that file. Every hook pass starts afresh.
 	 */
 	private function restoreNode(File $node, string $via): void {
+		$fileId = $this->loggableFileId($node);
+		if ($fileId !== null && $via === self::VIA_EVENT && isset($this->etherpadFailedHook[$fileId])) {
+			unset($this->etherpadFailedHook[$fileId]);
+			$this->logger->debug('RestoreFromTrash listener left a restore whose hook pass Etherpad did not answer.', [
+				'app' => 'etherpad_nextcloud',
+				'fileId' => $fileId,
+			]);
+			return;
+		}
+		if ($fileId !== null && $via === self::VIA_HOOK) {
+			unset($this->etherpadFailedHook[$fileId]);
+		}
 		try {
 			$result = $this->lifecycleService->handleRestore($node);
+			if ($fileId !== null && $via === self::VIA_HOOK && ($result['reason'] ?? '') === RestoreService::REASON_PRESENCE_UNKNOWN) {
+				$this->etherpadFailedHook[$fileId] = true;
+			}
 			if (($result['status'] ?? '') === LifecycleResult::SKIPPED) {
 				$this->logger->debug('RestoreFromTrash listener skipped lifecycle action.', [
 					'app' => 'etherpad_nextcloud',
-					'fileId' => $this->loggableFileId($node),
+					'fileId' => $fileId,
 					'reason' => (string)($result['reason'] ?? 'unknown'),
 				]);
 			}
 		} catch (\Throwable $e) {
+			if ($fileId !== null && $via === self::VIA_HOOK && self::etherpadFailed($e)) {
+				$this->etherpadFailedHook[$fileId] = true;
+			}
 			$this->logger->error('Could not restore the pad of a file back from the trash. The file itself is restored.', [
 				'app' => 'etherpad_nextcloud',
-				'fileId' => $this->loggableFileId($node),
+				'fileId' => $fileId,
 				'via' => $via,
 				...SafeError::context($e),
 			]);
@@ -128,10 +163,22 @@ class RestoreFromTrashListener implements IEventListener {
 	 */
 	private function loggableFileId(File $node): ?int {
 		try {
-			return (int)$node->getId();
+			$id = (int)$node->getId();
+			// A node without an id answers -1: one id for many nodes.
+			return $id > 0 ? $id : null;
 		} catch (\Throwable) {
 			return null;
 		}
+	}
+
+	/** Whether Etherpad's failure is at the root of $e: no answer, or an error. */
+	private static function etherpadFailed(\Throwable $e): bool {
+		for ($cause = $e; $cause !== null; $cause = $cause->getPrevious()) {
+			if ($cause instanceof EtherpadClientException) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/**

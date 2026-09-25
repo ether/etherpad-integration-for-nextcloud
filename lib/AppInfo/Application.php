@@ -128,10 +128,8 @@ class Application extends App implements IBootstrap {
 
 		// Groupfolders restores through this legacy hook alone and fires no
 		// NodeRestoredEvent. Core fires both, the hook first, so a core restore
-		// reaches the listener twice: once the first pass has restored the pad
-		// the second finds the binding no longer pending and returns, and
-		// after a first pass that failed, or left the row waiting for an
-		// answer, it tries again - asking Etherpad a second time.
+		// reaches the listener twice (RestoreFromTrashListener::restoreNode()
+		// says what the second pass does).
 		// Its filePath is relative to the user's files root in both.
 		\OCP\Util::connectHook(
 			'\OCA\Files_Trashbin\Trashbin',
