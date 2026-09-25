@@ -145,6 +145,39 @@ class PadCreationServiceTest extends TestCase {
 			->create('alice', '/Test', BindingService::ACCESS_PROTECTED);
 	}
 
+	/**
+	 * A create that fails takes back what it made and hands the failure on
+	 * as it is: the error mapper reports it once, at the level it deserves.
+	 * Logged here too, it was one failure in two lines.
+	 */
+	public function testACreateLeavesItsFailureToTheErrorMapper(): void {
+		foreach ([
+			'Etherpad failing' => new EtherpadClientException('Etherpad API request failed: createGroupPad'),
+			'anything else' => new \RuntimeException('cannot build the document'),
+		] as $case => $failure) {
+			$fileNode = $this->createMock(File::class);
+			$fileNode->method('getId')->willReturn(123);
+			$padPaths = $this->createMock(PathNormalizer::class);
+			$padPaths->method('normalizeCreatePath')->willReturn('/Test.pad');
+			$fileCreator = $this->createMock(PadFileCreator::class);
+			$fileCreator->method('createUserFile')->willReturn($fileNode);
+			$bootstrap = $this->createMock(PadBootstrapService::class);
+			$bootstrap->method('provisionPadId')->willThrowException($failure);
+			$logger = $this->createMock(LoggerInterface::class);
+			$logger->expects($this->never())->method($this->anything());
+			$rollback = $this->createMock(PadCreateRollbackService::class);
+			$rollback->expects($this->once())->method('rollbackFailedCreate');
+
+			try {
+				$this->buildService(padPaths: $padPaths, fileCreator: $fileCreator, rollbackService: $rollback, bootstrap: $bootstrap, logger: $logger)
+					->create('alice', '/Test', BindingService::ACCESS_PROTECTED);
+				$this->fail($case . ': the create went through.');
+			} catch (\Throwable $e) {
+				$this->assertSame($failure, $e, $case);
+			}
+		}
+	}
+
 	public function testCreateInParentRejectsNonCreatableFolder(): void {
 		$parent = $this->createMock(Folder::class);
 		$parent->method('isCreatable')->willReturn(false);
@@ -1081,6 +1114,7 @@ class PadCreationServiceTest extends TestCase {
 		?\OCA\EtherpadNextcloud\Service\ExternalPadSeeder $externalPadSeeder = null,
 		?ExternalPadExportFetcher $externalPadExportFetcher = null,
 		?\OCA\EtherpadNextcloud\Service\PadTypePolicy $padTypePolicy = null,
+		?LoggerInterface $logger = null,
 	): PadCreationService {
 		if ($placeholderResolver === null) {
 			$placeholderResolver = new \OCA\EtherpadNextcloud\Service\PadPlaceholderResolver(new FixedClock(1778976000));
@@ -1107,7 +1141,7 @@ class PadCreationServiceTest extends TestCase {
 			$placeholderResolver,
 			$externalPadSeeder,
 			$padTypePolicy ?? $this->buildPadTypePolicy(true, true),
-			$this->createMock(LoggerInterface::class),
+			$logger ?? $this->createMock(LoggerInterface::class),
 			new ProvisionedPadRollback($bindingService ?? $this->createMock(BindingService::class), new ManagedPadLifecycle($etherpadClient, $this->createMock(LoggerInterface::class)), $this->createMock(LoggerInterface::class)),
 		);
 	}

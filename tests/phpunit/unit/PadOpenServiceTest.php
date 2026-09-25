@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Tests\Unit;
 
+use OCA\EtherpadNextcloud\Exception\ExternalPadException;
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
 use OCA\EtherpadNextcloud\Exception\WaitingBindingException;
 use OCA\EtherpadNextcloud\Service\BindingService;
@@ -210,6 +211,12 @@ class PadOpenServiceTest extends TestCase {
 		$this->assertSame('https://pad.example.test/p/pad-1', $target->url);
 	}
 
+	/** The rule for an external pad's metadata is ParsedPadFile::externalPadUrl()'s; the open holds it. */
+	public function testAForeignPadWithBrokenMetadataIsTheLinksProblem(): void {
+		$this->expectException(ExternalPadException::class);
+		$this->openWith(BindingService::ACCESS_PROTECTED, updateable: true, padId: 'ext.remote', isExternal: true);
+	}
+
 	private function openWith(
 		string $accessMode,
 		bool $updateable,
@@ -218,6 +225,7 @@ class PadOpenServiceTest extends TestCase {
 		string $padId = 'g.ABCDEFGHIJKLMNOP$pad-1',
 		?BindingService $bindingService = null,
 		?RestoreService $restoreService = null,
+		bool $isExternal = false,
 	): \OCA\EtherpadNextcloud\Service\PadOpenTarget {
 		$file = $this->createMock(File::class);
 		$file->method('getId')->willReturn(138);
@@ -234,7 +242,7 @@ class PadOpenServiceTest extends TestCase {
 			padId: $padId,
 			accessMode: $accessMode,
 			padUrl: '',
-			isExternal: false,
+			isExternal: $isExternal,
 			snapshotRev: -1,
 		));
 

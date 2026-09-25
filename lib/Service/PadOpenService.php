@@ -62,40 +62,30 @@ class PadOpenService {
 	 * @throws PadFileFormatException
 	 */
 	private function openNode(string $uid, string $displayName, File $node, string $absolutePath): PadOpenTarget {
-		try {
-			$content = $this->lockRetryService->readContentWithOpenLockRetry($node);
-			$fileId = (int)$node->getId();
-			if ($fileId <= 0) {
-				throw new \RuntimeException('Could not resolve file ID.');
-			}
-
-			$pad = $this->padFileService->readPad($content);
-			// Not "what the share granted": this is the update permission bit
-			// on the file as this user sees it — `(permissions & UPDATE)` —
-			// which the share and the mount both feed into. It is not a lock
-			// check; Nextcloud treats locks separately, and so does the sync
-			// path here.
-			//
-			// It is the right question anyway, though not because edits would
-			// be lost — Etherpad stores the pad itself, and a failed sync
-			// leaves a stale copy here rather than lost text. The point is
-			// narrower: without write permission in Nextcloud, this open may
-			// not issue a session that writes on the pad server.
-			$mayWrite = $node->isUpdateable();
-			if (!$pad->isExternal) {
-				$this->settleOnOpen->settleThenAssert($node, $fileId, $pad);
-			}
-
-			return $this->buildOpenContext($uid, $displayName, $absolutePath, $fileId, $pad, $mayWrite);
-		} catch (LockedException $e) {
-			$this->logger->info('Pad open deferred because .pad file is locked', [
-				'app' => 'etherpad_nextcloud',
-				'fileId' => (int)$node->getId(),
-				'path' => $absolutePath,
-				...SafeError::context($e),
-			]);
-			throw $e;
+		$content = $this->lockRetryService->readContentWithOpenLockRetry($node);
+		$fileId = (int)$node->getId();
+		if ($fileId <= 0) {
+			throw new \RuntimeException('Could not resolve file ID.');
 		}
+
+		$pad = $this->padFileService->readPad($content);
+		// Not "what the share granted": this is the update permission bit
+		// on the file as this user sees it — `(permissions & UPDATE)` —
+		// which the share and the mount both feed into. It is not a lock
+		// check; Nextcloud treats locks separately, and so does the sync
+		// path here.
+		//
+		// It is the right question anyway, though not because edits would
+		// be lost — Etherpad stores the pad itself, and a failed sync
+		// leaves a stale copy here rather than lost text. The point is
+		// narrower: without write permission in Nextcloud, this open may
+		// not issue a session that writes on the pad server.
+		$mayWrite = $node->isUpdateable();
+		if (!$pad->isExternal) {
+			$this->settleOnOpen->settleThenAssert($node, $fileId, $pad);
+		}
+
+		return $this->buildOpenContext($uid, $displayName, $absolutePath, $fileId, $pad, $mayWrite);
 	}
 
 	private function buildOpenContext(
@@ -112,9 +102,7 @@ class PadOpenService {
 		$accessMode = $pad->accessMode;
 		$isExternal = $pad->isExternal;
 
-		if ($isExternal && $accessMode !== BindingService::ACCESS_PUBLIC) {
-			throw new EtherpadClientException('External pad metadata requires public access_mode.');
-		}
+		$externalPadUrl = $isExternal ? $pad->externalPadUrl() : '';
 
 		// Before any address is built. A protected pad without write
 		// permission gets no address of any kind, so this should not depend
@@ -127,10 +115,7 @@ class PadOpenService {
 		$originalPadUrl = '';
 
 		if ($isExternal) {
-			if ($pad->padUrl === '') {
-				throw new EtherpadClientException('External pad URL metadata is missing or invalid.');
-			}
-			$normalized = $this->externalPadExportFetcher->normalizeAndValidateExternalPublicPadUrl($pad->padUrl);
+			$normalized = $this->externalPadExportFetcher->normalizeAndValidateExternalPublicPadUrl($externalPadUrl);
 			$effectivePadUrl = $normalized['pad_url'];
 			$originalPadUrl = $normalized['pad_url'];
 		} elseif ($mayWrite) {

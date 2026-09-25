@@ -8,5 +8,5 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Exception;
 
-class ExternalPadExportNotFoundException extends EtherpadClientException {
+class ExternalPadExportNotFoundException extends ExternalPadException {
 }

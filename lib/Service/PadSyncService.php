@@ -9,10 +9,8 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Service;
 
-use OCA\EtherpadNextcloud\Exception\BindingException;
-use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
+use OCA\EtherpadNextcloud\Exception\NotAPadFileException;
 use OCA\EtherpadNextcloud\Exception\PadFileLockRetryExhaustedException;
-use OCA\EtherpadNextcloud\Exception\PadFileFormatException;
 use OCA\EtherpadNextcloud\Util\PadFileType;
 use OCA\EtherpadNextcloud\Util\SafeError;
 use OCP\Files\File;
@@ -46,7 +44,7 @@ class PadSyncService {
 		$node = $this->userNodeResolver->resolveUserFileNodeById($uid, $fileId);
 		$absolutePath = $this->userNodeResolver->toUserAbsolutePath($uid, $node);
 		if (!PadFileType::isPad($node->getName())) {
-			throw new \InvalidArgumentException('Selected file is not a .pad file.');
+			throw new NotAPadFileException('Selected file is not a .pad file.');
 		}
 
 		$padId = '';
@@ -73,18 +71,8 @@ class PadSyncService {
 			return $this->lockedSyncResponse($e->getLockedException(), $fileId, $absolutePath, $padId, $accessMode, $isExternal, $force, $lockRetries);
 		} catch (LockedException $e) {
 			return $this->lockedSyncResponse($e, $fileId, $absolutePath, $padId, $accessMode, $isExternal, $force, $lockRetries);
-		} catch (BindingException|PadFileFormatException|EtherpadClientException $e) {
-			throw $e;
-		} catch (\Throwable $e) {
-			$this->logger->error('Pad sync failed', [
-				'app' => 'etherpad_nextcloud',
-				'fileId' => $fileId,
-				'path' => $absolutePath,
-				'force' => $force,
-				...SafeError::context($e),
-			]);
-			throw $e;
 		}
+		// Anything else reaches the error mapper, which reports it once.
 	}
 
 	/**
@@ -93,42 +81,31 @@ class PadSyncService {
 	public function syncStatusById(string $uid, int $fileId): PadSyncStatus {
 		$node = $this->userNodeResolver->resolveUserFileNodeById($uid, $fileId);
 
-		try {
-			$pad = $this->padFileService->readPad((string)$node->getContent());
-			$padId = $pad->padId;
-			$accessMode = $pad->accessMode;
-			$isExternal = $pad->isExternal;
-			if (!$isExternal) {
-				$this->bindingService->assertConsistentMapping($fileId, $padId, $accessMode);
-			}
-			if ($isExternal) {
-				return new PadSyncStatus(
-					status: self::STATUS_UNAVAILABLE,
-					inSync: null,
-					reason: 'external_no_revision',
-				);
-			}
-
-			$currentRev = $this->etherpadClient->getRevisionsCount($padId);
-			$snapshotRev = $pad->snapshotRev;
-			$inSync = $snapshotRev >= $currentRev;
-
-			return new PadSyncStatus(
-				status: $inSync ? self::STATUS_SYNCED : self::STATUS_OUT_OF_SYNC,
-				inSync: $inSync,
-				snapshotRev: $snapshotRev,
-				currentRev: $currentRev,
-			);
-		} catch (BindingException|PadFileFormatException|EtherpadClientException $e) {
-			throw $e;
-		} catch (\Throwable $e) {
-			$this->logger->error('Pad sync status check failed', [
-				'app' => 'etherpad_nextcloud',
-				'fileId' => $fileId,
-				...SafeError::context($e),
-			]);
-			throw $e;
+		$pad = $this->padFileService->readPad((string)$node->getContent());
+		$padId = $pad->padId;
+		$accessMode = $pad->accessMode;
+		$isExternal = $pad->isExternal;
+		if (!$isExternal) {
+			$this->bindingService->assertConsistentMapping($fileId, $padId, $accessMode);
 		}
+		if ($isExternal) {
+			return new PadSyncStatus(
+				status: self::STATUS_UNAVAILABLE,
+				inSync: null,
+				reason: 'external_no_revision',
+			);
+		}
+
+		$currentRev = $this->etherpadClient->getRevisionsCount($padId);
+		$snapshotRev = $pad->snapshotRev;
+		$inSync = $snapshotRev >= $currentRev;
+
+		return new PadSyncStatus(
+			status: $inSync ? self::STATUS_SYNCED : self::STATUS_OUT_OF_SYNC,
+			inSync: $inSync,
+			snapshotRev: $snapshotRev,
+			currentRev: $currentRev,
+		);
 	}
 
 	private function syncExternalPad(
@@ -138,10 +115,7 @@ class PadSyncService {
 		bool $force,
 	): PadSyncResult {
 		$padId = $pad->padId;
-		$padUrl = $pad->padUrl;
-		if ($padUrl === '') {
-			throw new EtherpadClientException('External pad URL metadata is missing or invalid.');
-		}
+		$padUrl = $pad->externalPadUrl();
 		// External sync already performs a live upstream text fetch on every call.
 		// force=1 therefore only marks caller intent while preserving the no-blind-rewrite invariant.
 		$external = $this->externalPadExportFetcher->normalizeAndFetchExternalPublicPadText($padUrl);

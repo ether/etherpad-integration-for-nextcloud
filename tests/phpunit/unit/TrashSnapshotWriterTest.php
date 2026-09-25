@@ -238,14 +238,43 @@ class TrashSnapshotWriterTest extends TestCase {
 		$this->assertSame([], $this->logged);
 	}
 
-	/** A count after the write that fails with the file still in place goes on as before. */
-	public function testAFailedCountWithTheFileInPlaceIsNoMove(): void {
+	/**
+	 * A count after the write that Etherpad does not answer, with the file
+	 * still in place, is no move: the snapshot is written, and only whether
+	 * the pad moved on meanwhile is not known - its own reason, not a
+	 * snapshot that was never fetched. At trash time and in the sweep alike,
+	 * and reported each time, as Etherpad's silence is, however often the
+	 * file was tried before. A run with no time left for the count is the
+	 * caller's to place.
+	 */
+	public function testAFailedCountWithTheFileInPlaceSaysTheSnapshotIsWritten(): void {
 		$this->etherpad->method('getRevisionsCount')->willReturnOnConsecutiveCalls(5, $this->throwException(new EtherpadClientException('Operation timed out')));
 		$this->etherpad->method('getText')->willReturn('text');
 		$this->etherpad->method('getHTML')->willReturn('<p>text</p>');
+		$this->file->expects($this->once())->method('putContent');
 
-		$this->assertSame(TrashSnapshotMiss::SnapshotNotFetched, $this->writer()->writeInTrash($this->pad(snapshotRev: 4), 5, $this->aRun(), $this->notMoved()));
-		$this->assertSame([['warning', 'snapshot_not_fetched']], $this->logged);
+		$this->assertSame(TrashSnapshotMiss::PadNotRecounted, $this->writer(news: false)->writeInTrash($this->pad(snapshotRev: 4), 5, $this->aRun(), $this->notMoved()));
+		$this->assertSame([['warning', 'pad_not_recounted']], $this->logged);
+
+		$this->setUp();
+		$this->etherpad->method('getRevisionsCount')->willReturnOnConsecutiveCalls(5, $this->throwException(new RunBudgetSpentException('No time left in the run for another Etherpad call.')));
+		$this->etherpad->method('getText')->willReturn('text');
+		$this->etherpad->method('getHTML')->willReturn('<p>text</p>');
+		try {
+			$this->writer()->writeInTrash($this->pad(snapshotRev: 4), 5, $this->aRun(), $this->notMoved());
+			$this->fail('A run with no time left was taken for Etherpad\'s silence.');
+		} catch (RunBudgetSpentException) {
+		}
+		$this->assertSame([], $this->logged);
+
+		$this->setUp();
+		$this->etherpad->method('getRevisionsCount')->willReturnOnConsecutiveCalls(5, 5, $this->throwException(new EtherpadClientException('Operation timed out')));
+		$this->etherpad->method('getText')->willReturn('text');
+		$this->etherpad->method('getHTML')->willReturn('<p>text</p>');
+		$this->file->expects($this->once())->method('putContent');
+
+		$this->assertFalse($this->writer()->writeAtTrash($this->pad(snapshotRev: 4)), 'at trash time the pad stays');
+		$this->assertSame([['warning', 'pad_not_recounted']], $this->logged);
 	}
 
 	/**

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Tests\Unit;
 
+use OCA\EtherpadNextcloud\Exception\PadFileFormatException;
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
 use OCA\EtherpadNextcloud\Service\CookieDomainPolicy;
 use OCA\EtherpadNextcloud\Service\EtherpadClient;
@@ -467,7 +468,8 @@ class PadSessionServiceTest extends TestCase {
 		$config = $this->createMock(IConfig::class);
 		$service = $this->buildService($etherpadClient, $config);
 
-		$this->expectException(EtherpadClientException::class);
+		// The file's own metadata contradict themselves: not Etherpad failing.
+		$this->expectException(PadFileFormatException::class);
 		$this->expectExceptionMessage('Protected pad ID is invalid');
 		$service->extractGroupId('not-a-group-pad-id');
 	}

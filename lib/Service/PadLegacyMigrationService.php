@@ -10,6 +10,7 @@ namespace OCA\EtherpadNextcloud\Service;
 
 use OCA\EtherpadNextcloud\Exception\BindingException;
 use OCA\EtherpadNextcloud\Exception\LegacyPadCollisionException;
+use OCA\EtherpadNextcloud\Exception\LegacyPadNotFoundException;
 use OCA\EtherpadNextcloud\Exception\LegacyProtectedImportDisabledException;
 use OCA\EtherpadNextcloud\Exception\PadFileFormatException;
 use OCA\EtherpadNextcloud\Util\DiagnosticText;
@@ -49,7 +50,7 @@ class PadLegacyMigrationService {
 		}
 
 		if (!in_array($sourcePadId, $this->etherpadClient->listPads($groupId), true)) {
-			throw new PadFileFormatException('The legacy .pad file names a pad that does not exist in its Etherpad group.');
+			throw new LegacyPadNotFoundException('The legacy .pad file names a pad that does not exist in its Etherpad group.');
 		}
 	}
 

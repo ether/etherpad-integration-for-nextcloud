@@ -9,7 +9,6 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Service;
 
-use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
 
 /**
  * Applies public-share-specific open rules for internal, protected and external pads.
@@ -34,19 +33,19 @@ class PublicPadOpenService {
 	) {
 	}
 
-	public function open(
-		string $padId,
-		string $accessMode,
-		bool $readOnly,
-		string $token,
-		bool $isExternal,
-		string $padUrl = '',
-	): PublicPadOpenTarget {
-		if ($isExternal && $accessMode !== BindingService::ACCESS_PUBLIC) {
-			throw new EtherpadClientException('External pad metadata requires public access_mode.');
+	public function open(ParsedPadFile $pad, bool $readOnly, string $token): PublicPadOpenTarget {
+		if ($pad->isExternal) {
+			$normalized = $this->externalPadExportFetcher->normalizeAndValidateExternalPublicPadUrl($pad->externalPadUrl());
+			return new PublicPadOpenTarget(
+				$normalized['pad_url'],
+				$normalized['pad_url'],
+				'',
+				false,
+			);
 		}
 
-		if ($accessMode === BindingService::ACCESS_PROTECTED) {
+		$padId = $pad->padId;
+		if ($pad->accessMode === BindingService::ACCESS_PROTECTED) {
 			if ($readOnly) {
 				return new PublicPadOpenTarget('', '', '', true);
 			}
@@ -62,19 +61,6 @@ class PublicPadOpenService {
 				$openContext['url'],
 				'',
 				$this->padSessionService->buildSetCookieHeader($openContext['cookie']),
-				false,
-			);
-		}
-
-		if ($isExternal) {
-			if ($padUrl === '') {
-				throw new EtherpadClientException('External pad URL metadata is missing or invalid.');
-			}
-			$normalized = $this->externalPadExportFetcher->normalizeAndValidateExternalPublicPadUrl($padUrl);
-			return new PublicPadOpenTarget(
-				$normalized['pad_url'],
-				$normalized['pad_url'],
-				'',
 				false,
 			);
 		}

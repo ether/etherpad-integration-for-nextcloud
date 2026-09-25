@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Tests\Unit;
 
+use OCA\EtherpadNextcloud\Exception\ExternalPadException;
 use OCA\EtherpadNextcloud\Exception\BindingException;
 use OCA\EtherpadNextcloud\Exception\WaitingBindingException;
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
@@ -78,22 +79,15 @@ class LivePadHtmlFetcherTest extends TestCase {
 		$this->assertSame('<p>Remote</p>', $result->html);
 	}
 
+	/** The rule for an external pad's metadata is ParsedPadFile::externalPadUrl()'s; the fetcher holds it. */
 	public function testForeignPadWithoutAUrlIsRejected(): void {
 		$external = $this->createMock(ExternalPadExportFetcher::class);
 		$external->expects($this->never())->method('fetchExternalPublicPadHtml');
 
-		$this->expectException(EtherpadClientException::class);
+		// The link's problem, not Etherpad failing: its reason reaches the user.
+		$this->expectException(ExternalPadException::class);
 		$this->buildFetcher(externalPadExportFetcher: $external)
 			->fetchForPadFile($this->externalPad(padUrl: ''), 138);
-	}
-
-	public function testForeignPadClaimingProtectedAccessIsRejected(): void {
-		$external = $this->createMock(ExternalPadExportFetcher::class);
-		$external->expects($this->never())->method('fetchExternalPublicPadHtml');
-
-		$this->expectException(EtherpadClientException::class);
-		$this->buildFetcher(externalPadExportFetcher: $external)
-			->fetchForPadFile($this->externalPad(accessMode: BindingService::ACCESS_PROTECTED), 138);
 	}
 
 	/**

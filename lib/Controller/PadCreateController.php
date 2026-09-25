@@ -18,7 +18,6 @@ use OCP\IL10N;
 use OCP\IRequest;
 use OCP\IUser;
 use OCP\IUserSession;
-use Psr\Log\LoggerInterface;
 
 /**
  * Create-side endpoints for `.pad` files. Spans empty creates, copies in
@@ -30,13 +29,12 @@ class PadCreateController extends AbstractPadController {
 		string $appName,
 		IRequest $request,
 		IUserSession $userSession,
-		LoggerInterface $logger,
 		IL10N $l10n,
 		PadResponseService $padResponses,
 		PadControllerErrorMapper $errors,
 		private PadCreationService $padCreationService,
 	) {
-		parent::__construct($appName, $request, $userSession, $logger, $l10n, $padResponses, $errors);
+		parent::__construct($appName, $request, $userSession, $l10n, $padResponses, $errors);
 	}
 
 	#[\OCP\AppFramework\Http\Attribute\NoAdminRequired]
@@ -45,11 +43,10 @@ class PadCreateController extends AbstractPadController {
 			fn(IUser $user): array => $this->padCreationService->create($user->getUID(), $file, $this->requireAccessMode($accessMode)),
 			fn(array $result): DataResponse => new DataResponse($this->padResponses->withViewerUrl($result)),
 			[
-				'invalid_argument' => $this->l10n->t('Invalid file path.'),
 				'binding_message' => $this->l10n->t('A file with this name already exists.'),
 				'binding_status' => Http::STATUS_CONFLICT,
-				'file_changed' => $this->l10n->t('The target file changed while the pad was being created. Try again with a new name.'),
 				'generic' => $this->l10n->t('Could not create pad'),
+				'failure' => 'Pad creation failed',
 			],
 		);
 	}
@@ -69,8 +66,8 @@ class PadCreateController extends AbstractPadController {
 				'not_found' => $this->l10n->t('Cannot resolve selected parent folder.'),
 				'binding_message' => $this->l10n->t('A file with this name already exists.'),
 				'binding_status' => Http::STATUS_CONFLICT,
-				'file_changed' => $this->l10n->t('The target file changed while the pad was being created. Try again with a new name.'),
 				'generic' => $this->l10n->t('Could not create pad'),
+				'failure' => 'Pad creation by parent failed',
 			],
 		);
 	}
@@ -86,12 +83,13 @@ class PadCreateController extends AbstractPadController {
 			),
 			fn(array $result): DataResponse => new DataResponse($this->padResponses->withViewerUrl($result)),
 			[
+				// Not only a path: the template itself can be refused.
 				'invalid_argument' => $this->l10n->t('Invalid input.'),
 				'not_found' => $this->l10n->t('Template file not found.'),
 				'binding_message' => $this->l10n->t('A file with this name already exists.'),
 				'binding_status' => Http::STATUS_CONFLICT,
-				'file_changed' => $this->l10n->t('The target file changed while the pad was being created. Try again with a new name.'),
 				'generic' => $this->l10n->t('Could not create pad from template.'),
+				'failure' => 'Pad create-from-template failed',
 			],
 		);
 	}
@@ -102,9 +100,8 @@ class PadCreateController extends AbstractPadController {
 			fn(IUser $user): array => $this->padCreationService->createFromUrl($user->getUID(), $file, $padUrl),
 			fn(array $result): DataResponse => new DataResponse($this->padResponses->withViewerUrl($result)),
 			[
-				'invalid_argument' => $this->l10n->t('Invalid input.'),
-				'file_changed' => $this->l10n->t('The target file changed while the pad was being created. Try again with a new name.'),
 				'generic' => $this->l10n->t('Could not import external pad.'),
+				'failure' => 'External pad create failed',
 			],
 		);
 	}

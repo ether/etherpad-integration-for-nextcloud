@@ -92,8 +92,8 @@ final class TrashSnapshotWriter {
 	/**
 	 * Take the pad's current content into the file in the trash, for the
 	 * sweep: true once the file holds it, or the miss. Etherpad giving no
-	 * answer is the miss SnapshotNotFetched; a spent budget, and any other
-	 * error, goes to the caller.
+	 * answer is the miss SnapshotNotFetched, or PadNotRecounted after the
+	 * write; a spent budget, and any other error, goes to the caller.
 	 *
 	 * $revisions: the pad's count, when the caller has just asked for it.
 	 * $budget: the sweep's run, whose rest each Etherpad call gets.
@@ -162,9 +162,10 @@ final class TrashSnapshotWriter {
 	 *
 	 * Then, for the sweep, whether the file moved while it was written, also
 	 * when the count gets no answer or no time: if so the pad stays, and the
-	 * caller has a copy to clear. Any other error goes on as it is. Asked
-	 * after the count, so that less gets past both questions; what still
-	 * does, and what would close it, is in docs/architecture.md.
+	 * caller has a copy to clear. Otherwise a count Etherpad does not answer
+	 * is the miss PadNotRecounted, and any other error goes on as it is.
+	 * Asked after the count, so that less gets past both questions; what
+	 * still does, and what would close it, is in docs/architecture.md.
 	 *
 	 * @param ?\Closure(): bool $moved
 	 * @return TrashSnapshotMiss|true
@@ -177,8 +178,10 @@ final class TrashSnapshotWriter {
 		}
 		try {
 			$unchanged = $this->etherpadClient->getRevisionsCount($this->padId, RunBudget::timeoutOf($budget)) === $snapshot->revision;
-		} catch (EtherpadClientException|RunBudgetSpentException $countError) {
-			return $this->movedWhileWritten($moved) ?? throw $countError;
+		} catch (EtherpadClientException $countError) {
+			return $this->movedWhileWritten($moved) ?? $this->missed(TrashSnapshotMiss::PadNotRecounted, SafeError::context($countError));
+		} catch (RunBudgetSpentException $spent) {
+			return $this->movedWhileWritten($moved) ?? throw $spent;
 		}
 		return $this->movedWhileWritten($moved) ?? ($unchanged ? true : $this->missed(TrashSnapshotMiss::PadChanged));
 	}
@@ -198,7 +201,7 @@ final class TrashSnapshotWriter {
 	private function missed(TrashSnapshotMiss $miss, array $cause = []): TrashSnapshotMiss {
 		$message = 'A trashed .pad file did not get its snapshot. Its pad is kept for now.';
 		$context = [...$this->context, ...$cause, 'reason' => $miss->value];
-		if ($miss->needsALook() && ($this->news || $miss->reportedEachTime())) {
+		if ($miss->needsALook() && ($this->news || $miss->isEtherpadsSilence())) {
 			$this->logger->warning($message, $context);
 		} else {
 			$this->logger->debug($message, $context);

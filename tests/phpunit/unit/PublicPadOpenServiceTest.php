@@ -4,11 +4,12 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Tests\Unit;
 
-use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
+use OCA\EtherpadNextcloud\Exception\ExternalPadException;
 use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\EtherpadNextcloud\Service\EtherpadClient;
 use OCA\EtherpadNextcloud\Service\ExternalPadExportFetcher;
 use OCA\EtherpadNextcloud\Service\PadSessionService;
+use OCA\EtherpadNextcloud\Service\ParsedPadFile;
 use OCA\EtherpadNextcloud\Service\PublicPadOpenService;
 use PHPUnit\Framework\TestCase;
 
@@ -18,13 +19,7 @@ class PublicPadOpenServiceTest extends TestCase {
 		$etherpad->expects($this->never())->method('buildPadUrl');
 		$etherpad->expects($this->never())->method('getReadOnlyPadUrl');
 
-		$result = $this->buildService(etherpadClient: $etherpad)->open(
-			'g.group$pad',
-			BindingService::ACCESS_PROTECTED,
-			true,
-			'token',
-			false,
-		);
+		$result = $this->buildService(etherpadClient: $etherpad)->open($this->pad('g.group$pad', BindingService::ACCESS_PROTECTED, false, ''), true, 'token');
 
 		$this->assertSame('', $result->url);
 		$this->assertTrue($result->isReadOnlyView);
@@ -42,13 +37,7 @@ class PublicPadOpenServiceTest extends TestCase {
 			->with(['name' => 'sessionID'])
 			->willReturn('sessionID=abc; Path=/');
 
-		$result = $this->buildService(padSessionService: $sessions)->open(
-			'g.group$pad',
-			BindingService::ACCESS_PROTECTED,
-			false,
-			'token',
-			false,
-		);
+		$result = $this->buildService(padSessionService: $sessions)->open($this->pad('g.group$pad', BindingService::ACCESS_PROTECTED, false, ''), false, 'token');
 
 		$this->assertSame('https://pad.example/p/g.group$pad', $result->url);
 		$this->assertSame('sessionID=abc; Path=/', $result->cookieHeader);
@@ -62,45 +51,18 @@ class PublicPadOpenServiceTest extends TestCase {
 			->with('https://remote.example/p/Test')
 			->willReturn(['pad_url' => 'https://remote.example/p/Test']);
 
-		$result = $this->buildService(externalPadExportFetcher: $fetcher)->open(
-			'ext.abc',
-			BindingService::ACCESS_PUBLIC,
-			true,
-			'token',
-			true,
-			'https://remote.example/p/Test',
-		);
+		$result = $this->buildService(externalPadExportFetcher: $fetcher)->open($this->pad('ext.abc', BindingService::ACCESS_PUBLIC, true, 'https://remote.example/p/Test'), true, 'token');
 
 		$this->assertSame('https://remote.example/p/Test', $result->url);
 		$this->assertSame('https://remote.example/p/Test', $result->originalPadUrl);
 	}
 
-	public function testExternalProtectedMetadataIsRejected(): void {
-		$this->expectException(EtherpadClientException::class);
-		$this->expectExceptionMessage('External pad metadata requires public access_mode.');
-
-		$this->buildService()->open(
-			'ext.abc',
-			BindingService::ACCESS_PROTECTED,
-			false,
-			'token',
-			true,
-			'https://remote.example/p/Test',
-		);
-	}
-
+	/** The rule for an external pad's metadata is ParsedPadFile::externalPadUrl()'s; the open holds it. */
 	public function testExternalPadWithoutUrlIsRejected(): void {
-		$this->expectException(EtherpadClientException::class);
+		$this->expectException(ExternalPadException::class);
 		$this->expectExceptionMessage('External pad URL metadata is missing or invalid.');
 
-		$this->buildService()->open(
-			'ext.abc',
-			BindingService::ACCESS_PUBLIC,
-			false,
-			'token',
-			true,
-			'',
-		);
+		$this->buildService()->open($this->pad('ext.abc', BindingService::ACCESS_PUBLIC, true, ''), false, 'token');
 	}
 
 	public function testInternalReadOnlyUsesEtherpadReadOnlyUrl(): void {
@@ -110,13 +72,7 @@ class PublicPadOpenServiceTest extends TestCase {
 			->with('public-pad')
 			->willReturn('https://pad.example/p/r.public-pad');
 
-		$result = $this->buildService(etherpadClient: $etherpad)->open(
-			'public-pad',
-			BindingService::ACCESS_PUBLIC,
-			true,
-			'token',
-			false,
-		);
+		$result = $this->buildService(etherpadClient: $etherpad)->open($this->pad('public-pad', BindingService::ACCESS_PUBLIC, false, ''), true, 'token');
 
 		$this->assertSame('https://pad.example/p/r.public-pad', $result->url);
 		$this->assertSame('', $result->cookieHeader);
@@ -132,13 +88,7 @@ class PublicPadOpenServiceTest extends TestCase {
 		$sessions = $this->createMock(PadSessionService::class);
 		$sessions->expects($this->never())->method('createProtectedOpenContext');
 
-		$result = $this->buildService(etherpadClient: $etherpad, padSessionService: $sessions)->open(
-			'public-pad',
-			BindingService::ACCESS_PUBLIC,
-			false,
-			'token',
-			false,
-		);
+		$result = $this->buildService(etherpadClient: $etherpad, padSessionService: $sessions)->open($this->pad('public-pad', BindingService::ACCESS_PUBLIC, false, ''), false, 'token');
 
 		$this->assertSame('https://pad.example/p/public-pad', $result->url);
 		$this->assertSame('', $result->cookieHeader);
@@ -172,5 +122,9 @@ class PublicPadOpenServiceTest extends TestCase {
 			->getConstant('PUBLIC_SHARE_SESSION_TTL_SECONDS');
 		self::assertIsInt($ttl);
 		return $ttl;
+	}
+
+	private function pad(string $padId, string $accessMode, bool $isExternal = false, string $padUrl = ''): ParsedPadFile {
+		return new ParsedPadFile([], '', $padId, $accessMode, $padUrl, $isExternal, -1);
 	}
 }

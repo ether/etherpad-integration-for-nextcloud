@@ -69,6 +69,8 @@ A request is answered when the file it names is a `.pad` the share actually cont
 - the id names no file inside this share, whether it exists elsewhere or not at all;
 - both are sent and they name different files.
 
+A folder named in place of a file is refused as not being a `.pad` (`400`), not as missing (`404`).
+
 In none of those cases does the request fall through to the other locator. A refused id is not retried as a path, because "the id did not work, so something else opened" is the outcome ids exist to prevent.
 
 When both are sent for a folder share, the path is compared in full: `A.pad` at the top of the share and `Sub/A.pad` are different files. A single-file share has no path inside it, so there the file's name is what a path can name - and without an id it is ignored entirely, as it always has been.
@@ -245,7 +247,7 @@ solely by the separate external-pad policy, not by these two settings.
   - Params: `file=/path/file.pad`
   - Result:
     - `200` with `status=trashed` for successful trash flow.
-      - includes `snapshot_persisted` (`true|false`): whether the file holds the pad's current content - written now, or there already when the file's `snapshot_rev` is the pad's revision count. `false` when no fresh snapshot was written: the file was locked or could not be read, Etherpad did not answer, the pad is behind the file's snapshot (not the pad the file knew), the pad changed right after its snapshot was written, or the file's restore was still undecided, which leaves the pad alone.
+      - includes `snapshot_persisted` (`true|false`): whether the file holds the pad's current content - written now, or there already when the file's `snapshot_rev` is the pad's revision count. `false` when no fresh snapshot was written: the file was locked or could not be read, Etherpad did not answer, the pad is behind the file's snapshot (not the pad the file knew), the pad changed right after its snapshot was written, or the file's restore was still undecided, which leaves the pad alone. Also `false` when the snapshot was written but Etherpad gave no count after it: whether an edit came while it was written is not known, so the file is not taken to hold the current content.
       - includes `delete_pending` (`true|false`): `true` when the pad is kept and its deletion owed, always the case when no fresh snapshot was written. The background sweep then writes the snapshot into the trashed file and deletes the pad, usually within five minutes.
     - `409` with `status=skipped` + `reason` on invalid lifecycle state (for example already pending delete).
       - includes transition-race guard reason `binding_state_transition_conflict` on concurrent state updates.
@@ -434,17 +436,19 @@ solely by the separate external-pad policy, not by these two settings.
 - `status` (sync): `updated` or `unchanged`.
 - `snapshot_rev` (sync): Etherpad revision currently persisted in `.pad`.
 - `sync_status_url` (open/open-by-id): endpoint for revision-based sync status in viewer.
-- `code` (errors): stable identifier on selected error responses. Branch on this, never on `message` — messages are written for people and are translated. The full set:
+- `code` (errors): stable identifier on selected error responses. Branch on this, never on `message` — messages are written for people and are translated, save the reason a pad on another server could not be linked or read, which comes in English. The full set:
   - `missing_binding` (`MissingBindingException`) — the viewer and embed swap the dead-end error for the recovery UI (`POST /api/v1/pads/recover-from-snapshot/{fileId}` + optional `GET /api/v1/pads/find-original/{fileId}` lookup).
   - `waiting_binding` (`WaitingBindingException`) — `409` with `retryable: true`; the file's row still waits. An open decides such a row itself first, so there it means the open did not: the row was touched within the last minute (by the sweep, a trash, or an earlier open), someone else was deciding it, Etherpad gave no answer within a few seconds, what was left of a pad that is gone could not be removed in time, or deciding failed, the database gone say, which is logged. Try again later: once the row is settled the same request opens the pad, or answers `missing_binding` when the pad had to be let go. On open, sync, sync status and the read-only content view, signed in and public; the viewer offers "Try again".
   - `missing_frontmatter` (`MissingFrontmatterException`) — the file has no pad metadata yet; clients call `POST /api/v1/pads/initialize-by-id/{fileId}` once and retry the open. A file whose content is neither metadata nor a legacy shortcut cannot be initialised and is refused *without* this code.
   - `pad_too_large` (`EtherpadTooLargeException`) — the pad is past the 5 MiB preview ceiling; it stays editable in Etherpad.
-  - `pad_file_changed` (`PadFileChangedException`) — the target file changed while the pad was being created; retry against a different name.
+  - `pad_file_changed` (`PadFileChangedException`) — the file changed while its pad was being created or initialised; try again. On create, a file may now exist under that name, and the retry says so.
   - `pad_type_disabled` (`PadTypeDisabledException`) — `403`; carries `access_mode` naming the disabled type, absent when neither type is enabled. See the pad-type settings section.
   - `legacy_collision_no_access` (`LegacyPadCollisionException`) — see the legacy migration section.
   - `legacy_protected_import_disabled` (`LegacyProtectedImportDisabledException`) — `403`; the legacy `.pad` names a group pad and this instance does not import those. The file is left untouched, so the same open succeeds once an admin switches the import back on. See the legacy migration section.
 
-  A response without a `code` may still be machine-readable through its HTTP status and other documented fields — a locked `.pad` answers `503` with `retryable: true`, for instance. What is never a stable identifier is the `message` text.
+  The answers of a public share (`/api/v1/public/...`) carry the codes that can come up there - `waiting_binding` and `pad_too_large` - but not `missing_binding` or `missing_frontmatter`: what a client does on those needs a signed-in user. Their messages are translated, one sentence for each kind of trouble.
+
+  A response without a `code` may still be machine-readable through its HTTP status and other documented fields — a locked `.pad` answers `503` with `retryable: true`, signed in and public alike, for instance, and so does a request this instance's Etherpad could not be reached for. One Etherpad answered and refused answers `400` without it: trying again gives the same answer. What is never a stable identifier is the `message` text.
 
 ## Cookie Behavior (Protected Pads)
 

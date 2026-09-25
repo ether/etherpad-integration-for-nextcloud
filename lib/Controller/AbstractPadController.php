@@ -11,6 +11,7 @@ namespace OCA\EtherpadNextcloud\Controller;
 
 use OCA\EtherpadNextcloud\Exception\ControllerBadRequestException;
 use OCA\EtherpadNextcloud\Exception\UnauthorizedRequestException;
+use OCA\EtherpadNextcloud\Service\ApiErrorLog;
 use OCA\EtherpadNextcloud\Service\PadResponseService;
 use OCA\EtherpadNextcloud\Util\PadAccessMode;
 use OCP\AppFramework\Controller;
@@ -19,16 +20,16 @@ use OCP\IL10N;
 use OCP\IRequest;
 use OCP\IUser;
 use OCP\IUserSession;
-use Psr\Log\LoggerInterface;
 
 /**
  * Shared infrastructure for the three pad-API controllers:
  * `PadCreateController`, `PadSessionController`, `PadLifecycleController`.
  *
- * Holds the cross-cutting deps (user session, logger, l10n, response
- * builder, error mapper) and the small set of helpers every action in
- * those controllers reaches for (`runForUser`, parameter guards,
- * structured error logging).
+ * Holds the cross-cutting deps (user session, l10n, response builder,
+ * error mapper) and the small set of helpers every action in
+ * those controllers reaches for (`runForUser`, which also names the
+ * request's file for the error mapper's log lines, and the parameter
+ * guards).
  *
  * Each concrete controller keeps its constructor narrow — it only
  * declares the services it actually uses on top of the base deps.
@@ -40,7 +41,6 @@ abstract class AbstractPadController extends Controller {
 		string $appName,
 		IRequest $request,
 		protected IUserSession $userSession,
-		protected LoggerInterface $logger,
 		protected IL10N $l10n,
 		protected PadResponseService $padResponses,
 		protected PadControllerErrorMapper $errors,
@@ -57,8 +57,17 @@ abstract class AbstractPadController extends Controller {
 		return $this->errors->run(
 			fn(): mixed => $action($this->requireUser()),
 			$success,
-			$options,
+			$this->withTheRequestsFile($options),
 		);
+	}
+
+	/**
+	 * @param ErrorWording $options
+	 * @return ErrorWording
+	 */
+	private function withTheRequestsFile(array $options): array {
+		$options['context'] = ApiErrorLog::fileNamedBy($this->request, byPath: true);
+		return $options;
 	}
 
 	protected function requireUser(): IUser {
@@ -70,13 +79,14 @@ abstract class AbstractPadController extends Controller {
 	}
 
 	protected function requireFileId(int $fileId): int {
-		return $this->requirePositiveInt($fileId, 'Invalid file ID.');
+		return $this->requirePositiveInt($fileId, $this->l10n->t('Invalid file ID.'));
 	}
 
 	protected function requireParentFolderId(int $parentFolderId): int {
-		return $this->requirePositiveInt($parentFolderId, 'Invalid parentFolderId.');
+		return $this->requirePositiveInt($parentFolderId, $this->l10n->t('Invalid parentFolderId.'));
 	}
 
+	/** $message is translated: it reaches the client as it is. */
 	protected function requirePositiveInt(int $value, string $message): int {
 		if ($value <= 0) {
 			throw new ControllerBadRequestException($message);
@@ -86,13 +96,9 @@ abstract class AbstractPadController extends Controller {
 
 	protected function requireAccessMode(string $accessMode): string {
 		if (PadAccessMode::tryFrom($accessMode) === null) {
-			throw new ControllerBadRequestException('Invalid accessMode. Use public or protected.');
+			throw new ControllerBadRequestException($this->l10n->t('Invalid accessMode. Use public or protected.'));
 		}
 		return $accessMode;
 	}
 
-	/** @param array<string,mixed> $context */
-	protected function logError(string $message, array $context): void {
-		$this->logger->error($message, ['app' => 'etherpad_nextcloud'] + $context);
-	}
 }

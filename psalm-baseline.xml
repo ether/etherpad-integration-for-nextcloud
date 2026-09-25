@@ -42,20 +42,6 @@
       <code><![CDATA[(string)($options['log_message'] ?? 'Admin request failed')]]></code>
     </RedundantCastGivenDocblockType>
   </file>
-  <file src="lib/Controller/PadControllerErrorMapper.php">
-    <MixedAssignment>
-      <code><![CDATA[$logger]]></code>
-      <code><![CDATA[$mapper]]></code>
-      <code><![CDATA[$response]]></code>
-    </MixedAssignment>
-    <RedundantCastGivenDocblockType>
-      <code><![CDATA[(string)$options['binding_message']]]></code>
-      <code><![CDATA[(string)$options['invalid_argument']]]></code>
-      <code><![CDATA[(string)($options['legacy_protected_import_disabled']
-					?? 'Importing protected pads from legacy Ownpad files is disabled on this instance.')]]></code>
-      <code><![CDATA[(string)($options['not_found'] ?? 'Resource not found.')]]></code>
-    </RedundantCastGivenDocblockType>
-  </file>
   <file src="lib/Controller/PadCreateController.php">
     <MixedArgumentTypeCoercion>
       <code><![CDATA[$result]]></code>
@@ -404,7 +390,6 @@
   </file>
   <file src="lib/Service/PadOpenService.php">
     <RedundantCastGivenDocblockType>
-      <code><![CDATA[(int)$node->getId()]]></code>
       <code><![CDATA[(int)$node->getId()]]></code>
     </RedundantCastGivenDocblockType>
   </file>

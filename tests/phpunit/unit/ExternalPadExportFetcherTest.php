@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Tests\Unit;
 
-use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
+use OCA\EtherpadNextcloud\Exception\ExternalPadException;
 use OCA\EtherpadNextcloud\Exception\ExternalPadExportNotFoundException;
 use OCA\EtherpadNextcloud\Service\ExternalPadExportFetcher;
 use OCP\IConfig;
@@ -50,7 +50,7 @@ class ExternalPadExportFetcherTest extends TestCase {
 	public function testNormalizeAndValidateExternalPublicPadUrlRejectsNonMatchingAllowlistedOriginPort(): void {
 		$fetcher = new ExternalPadExportFetcher($this->buildExternalEnabledConfig('https://1.1.1.1:8443'), new FixedClock());
 
-		$this->expectException(EtherpadClientException::class);
+		$this->expectException(ExternalPadException::class);
 		$this->expectExceptionMessage('External pad host is not in the allowlist.');
 		$fetcher->normalizeAndValidateExternalPublicPadUrl('https://1.1.1.1:9443/p/public-pad');
 	}
@@ -58,7 +58,7 @@ class ExternalPadExportFetcherTest extends TestCase {
 	public function testNormalizeAndValidateExternalPublicPadUrlRejectsAPadIdWithANewline(): void {
 		$fetcher = new ExternalPadExportFetcher($this->buildExternalEnabledConfig(), new FixedClock());
 
-		$this->expectException(EtherpadClientException::class);
+		$this->expectException(ExternalPadException::class);
 		$fetcher->normalizeAndValidateExternalPublicPadUrl(
 			'https://1.1.1.1/p/a%0Apad_id:%20g.victim$secret',
 		);
@@ -67,14 +67,14 @@ class ExternalPadExportFetcherTest extends TestCase {
 	public function testNormalizeAndValidateExternalPublicPadUrlRejectsAControlCharacterBeforeThePadId(): void {
 		$fetcher = new ExternalPadExportFetcher($this->buildExternalEnabledConfig(), new FixedClock());
 
-		$this->expectException(EtherpadClientException::class);
+		$this->expectException(ExternalPadException::class);
 		$fetcher->normalizeAndValidateExternalPublicPadUrl('https://1.1.1.1/base%01/p/demo');
 	}
 
 	public function testNormalizeAndValidateExternalPublicPadUrlRejectsProtectedPadIds(): void {
 		$fetcher = new ExternalPadExportFetcher($this->buildExternalEnabledConfig(), new FixedClock());
 
-		$this->expectException(EtherpadClientException::class);
+		$this->expectException(ExternalPadException::class);
 		$this->expectExceptionMessage('Only public pad URLs can be linked from external servers.');
 		$fetcher->normalizeAndValidateExternalPublicPadUrl('https://1.1.1.1/p/g.group$protected-pad');
 	}
@@ -92,7 +92,7 @@ class ExternalPadExportFetcherTest extends TestCase {
 
 		$fetcher = new ExternalPadExportFetcher($config, new FixedClock());
 
-		$this->expectException(EtherpadClientException::class);
+		$this->expectException(ExternalPadException::class);
 		$this->expectExceptionMessage('External pad linking is disabled by admin settings.');
 		$fetcher->normalizeAndValidateExternalPublicPadUrl('https://1.1.1.1/p/public-pad');
 	}
@@ -106,7 +106,7 @@ class ExternalPadExportFetcherTest extends TestCase {
 		$send = new \ReflectionMethod(ExternalPadExportFetcher::class, 'sendPinnedPublicGetRequest');
 		$fetcher = new ExternalPadExportFetcher($this->buildExternalEnabledConfig(), new FixedClock());
 
-		$this->expectException(EtherpadClientException::class);
+		$this->expectException(ExternalPadException::class);
 		$this->expectExceptionMessage('no time left');
 		$send->invoke(
 			$fetcher,
@@ -135,7 +135,7 @@ class ExternalPadExportFetcherTest extends TestCase {
 		$fetcher = new ExternalPadExportFetcher($this->buildExternalEnabledConfig(), new FixedClock());
 
 		if (!$accepted) {
-			$this->expectException(EtherpadClientException::class);
+			$this->expectException(ExternalPadException::class);
 		}
 		$assert->invoke($fetcher, $contentType, $format);
 
@@ -169,12 +169,12 @@ class ExternalPadExportFetcherTest extends TestCase {
 		return [
 			'200 is the export' => [200, null],
 			'204 is still a success' => [204, null],
-			'301 is a redirect, not content' => [301, EtherpadClientException::class],
-			'302 is a redirect, not content' => [302, EtherpadClientException::class],
-			'307 is a redirect, not content' => [307, EtherpadClientException::class],
-			'401 is a login wall' => [401, EtherpadClientException::class],
+			'301 is a redirect, not content' => [301, ExternalPadException::class],
+			'302 is a redirect, not content' => [302, ExternalPadException::class],
+			'307 is a redirect, not content' => [307, ExternalPadException::class],
+			'401 is a login wall' => [401, ExternalPadException::class],
 			'404 says the pad is not exportable' => [404, ExternalPadExportNotFoundException::class],
-			'500 is the far side failing' => [500, EtherpadClientException::class],
+			'500 is the far side failing' => [500, ExternalPadException::class],
 		];
 	}
 

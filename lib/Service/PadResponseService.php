@@ -225,15 +225,18 @@ class PadResponseService {
 		return $response;
 	}
 
+	/** The signed-in sentence for a binding error; the waiting one is the public side's too. */
 	public function bindingErrorMessage(BindingException $e): string {
-		$message = trim($e->getMessage());
 		if ($e instanceof MissingBindingException) {
 			return $this->l10n->t('This .pad file has no matching pad in this Nextcloud.');
 		}
 		if ($e instanceof WaitingBindingException) {
 			return $this->l10n->t('This pad is still being restored. Try again later.');
 		}
-		return $message;
+		// A row naming another pad or access mode than the file - or, once,
+		// a row another request made at the same moment. What went wrong is
+		// for the log, not the reader.
+		return $this->l10n->t('This .pad file and its pad could not be matched. Try again, or contact your administrator if it keeps happening.');
 	}
 
 	private function buildEmbedUrl(int $fileId): string {

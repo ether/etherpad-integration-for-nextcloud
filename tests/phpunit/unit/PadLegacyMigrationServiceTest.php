@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Tests\Unit;
 
+use OCA\EtherpadNextcloud\Exception\LegacyPadNotFoundException;
 use OCA\EtherpadNextcloud\Exception\BindingException;
 use OCA\EtherpadNextcloud\Exception\LegacyPadCollisionException;
 use OCA\EtherpadNextcloud\Exception\LegacyProtectedImportDisabledException;
-use OCA\EtherpadNextcloud\Exception\PadFileFormatException;
 use OCA\EtherpadNextcloud\Service\Binding;
 use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\EtherpadNextcloud\Service\EtherpadClient;
@@ -286,7 +286,9 @@ class PadLegacyMigrationServiceTest extends TestCase {
 		$binding = $this->createMock(BindingService::class);
 		$binding->expects($this->never())->method('createBinding');
 
-		$this->expectException(PadFileFormatException::class);
+		// A format problem to everything that catches those, with a sentence
+		// of its own: the file is well-formed, the pad is not there.
+		$this->expectException(LegacyPadNotFoundException::class);
 
 		$this->buildService(
 			binding: $binding,

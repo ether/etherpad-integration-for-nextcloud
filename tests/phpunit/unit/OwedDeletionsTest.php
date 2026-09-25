@@ -276,7 +276,7 @@ class OwedDeletionsTest extends TestCase {
 			// The count that goes unanswered - the question is the first - or the text, whether the file was written, and the writer's reason.
 			'to the question' => [1, false, false, null],
 			'while the snapshot is read' => [null, true, false, 'snapshot_not_fetched'],
-			'to the count after the write' => [3, false, true, 'snapshot_not_fetched'],
+			'to the count after the write' => [3, false, true, 'pad_not_recounted'],
 		];
 		foreach ($cases as $case => [$silentCount, $silentText, $written, $reason]) {
 			$bindingService = $this->pendingTrashRow(120, 'pad-f');

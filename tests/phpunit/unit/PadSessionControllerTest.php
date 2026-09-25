@@ -34,6 +34,8 @@ use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 
 class PadSessionControllerTest extends TestCase {
+	use \OCA\EtherpadNextcloud\Tests\Support\BuildsErrorMappers;
+
 	use SettlesOnOpen;
 
 	public function testOpenByIdRejectsInvalidFileId(): void {
@@ -136,10 +138,9 @@ class PadSessionControllerTest extends TestCase {
 			'etherpad_nextcloud',
 			$this->createMock(IRequest::class),
 			$userSession,
-			$logger,
 			$l10n,
 			$padResponseService,
-			new PadControllerErrorMapper($padResponseService, $logger),
+			$this->padErrorMapper($padResponseService, $l10n, $logger),
 			$padOpenService,
 			$this->createMock(PadInitializationService::class),
 			$this->createMock(PadMetadataService::class),
@@ -261,10 +262,9 @@ class PadSessionControllerTest extends TestCase {
 			'etherpad_nextcloud',
 			$this->createMock(IRequest::class),
 			$userSession,
-			$logger,
 			$l10n,
 			$padResponseService,
-			new PadControllerErrorMapper($padResponseService, $logger),
+			$this->padErrorMapper($padResponseService, $l10n, $logger),
 			$padOpenService,
 			$this->createMock(PadInitializationService::class),
 			$this->createMock(PadMetadataService::class),
@@ -384,10 +384,9 @@ class PadSessionControllerTest extends TestCase {
 			'etherpad_nextcloud',
 			$request,
 			$userSession,
-			$logger,
 			$l10n,
 			$padResponseService,
-			new PadControllerErrorMapper($padResponseService, $logger),
+			$this->padErrorMapper($padResponseService, $l10n, $logger),
 			$padOpenService,
 			$this->createMock(PadInitializationService::class),
 			$padMetadataService,

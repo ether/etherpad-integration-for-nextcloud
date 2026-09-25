@@ -9,7 +9,6 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Service;
 
-use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
 
 /**
  * Loads what a pad says right now, for the read-only views.
@@ -40,14 +39,7 @@ class LivePadHtmlFetcher {
 	 */
 	public function fetchForPadFile(ParsedPadFile $pad, int $fileId): LivePadHtml {
 		if ($pad->isExternal) {
-			if ($pad->accessMode !== BindingService::ACCESS_PUBLIC) {
-				throw new EtherpadClientException('External pad metadata requires public access_mode.');
-			}
-			if ($pad->padUrl === '') {
-				throw new EtherpadClientException('External pad URL metadata is missing or invalid.');
-			}
-
-			return $this->toPayload($this->externalPadExportFetcher->fetchExternalPublicPadHtml($pad->padUrl));
+			return $this->toPayload($this->externalPadExportFetcher->fetchExternalPublicPadHtml($pad->externalPadUrl()));
 		}
 
 		$this->bindingService->assertConsistentMapping($fileId, $pad->padId, $pad->accessMode);

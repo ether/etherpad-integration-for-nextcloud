@@ -9,16 +9,16 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Service;
 
+use OCA\EtherpadNextcloud\Exception\BindingNotCreatedException;
+use OCA\EtherpadNextcloud\Exception\BindingMismatchException;
 use OCA\EtherpadNextcloud\Exception\BindingException;
 use OCA\EtherpadNextcloud\Exception\MissingBindingException;
 use OCA\EtherpadNextcloud\Exception\WaitingBindingException;
 use OCA\EtherpadNextcloud\Util\DbRows;
 use OCA\EtherpadNextcloud\Util\PadAccessMode;
-use OCA\EtherpadNextcloud\Util\SafeError;
 use OCP\DB\QueryBuilder\IQueryBuilder;
 use OCP\AppFramework\Utility\ITimeFactory;
 use OCP\IDBConnection;
-use Psr\Log\LoggerInterface;
 
 class BindingService {
 	public const TABLE = 'ep_pad_bindings';
@@ -48,7 +48,6 @@ class BindingService {
 	public function __construct(
 		private IDBConnection $db,
 		private ITimeFactory $timeFactory,
-		private LoggerInterface $logger,
 	) {
 	}
 
@@ -272,14 +271,10 @@ class BindingService {
 			$qb->executeStatement();
 		} catch (\Throwable $e) {
 			// The insert is what failed, so no row exists to look the pad up
-			// through - and by here it has already been created upstream.
-			$this->logger->error('Could not create pad binding', [
-				'app' => 'etherpad_nextcloud',
-				'fileId' => $fileId,
-				'padId' => $padId,
-				...SafeError::context($e),
-			]);
-			throw new BindingException('Could not create unique pad binding.', 0, $e);
+			// through - and by here it has already been created upstream. Not
+			// logged here: every caller reports it, the API's through
+			// ApiErrorLog, with this as its cause.
+			throw new BindingNotCreatedException('Could not create unique pad binding.', 0, $e);
 		}
 	}
 
@@ -290,10 +285,10 @@ class BindingService {
 			throw new MissingBindingException('No binding exists for this file.');
 		}
 		if ($binding->padId !== $padId) {
-			throw new BindingException('Binding pad ID mismatch.');
+			throw new BindingMismatchException('Binding pad ID mismatch.');
 		}
 		if ($binding->accessMode !== $accessMode) {
-			throw new BindingException('Binding access mode mismatch.');
+			throw new BindingMismatchException('Binding access mode mismatch.');
 		}
 		if ($binding->isWaiting()) {
 			throw new WaitingBindingException('Pad binding is not active.');

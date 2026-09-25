@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Tests\Unit;
 
+use OCA\EtherpadNextcloud\Exception\NotAPadFileException;
+use OCA\EtherpadNextcloud\Exception\ExternalPadException;
 use OCA\EtherpadNextcloud\Exception\WaitingBindingException;
 use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\EtherpadNextcloud\Service\EtherpadClient;
@@ -338,6 +340,33 @@ class PadSyncServiceTest extends TestCase {
 		$this->assertSame(PadSyncService::STATUS_UPDATED, $result->status);
 		$this->assertSame(3, $formatter->readPad((string)$written)->snapshotRev);
 		$this->assertSame('new edit', $formatter->getSnapshotPartsFromBody($formatter->readPad((string)$written)->body)['text']);
+	}
+
+	/**
+	 * An external .pad without a link is the link's problem, not Etherpad
+	 * failing; a file that is no .pad is refused as such.
+	 */
+	public function testSyncRefusesWhatIsNoPadToSyncForWhatItIs(): void {
+		foreach ([
+			'no link' => ['Remote.pad', ExternalPadException::class],
+			'no .pad' => ['Notes.txt', NotAPadFileException::class],
+		] as $case => [$name, $expected]) {
+			$file = $this->createMock(File::class);
+			$file->method('getName')->willReturn($name);
+			$file->method('getContent')->willReturn('frontmatter');
+			$userNodeResolver = $this->createMock(UserNodeResolver::class);
+			$userNodeResolver->method('resolveUserFileNodeById')->willReturn($file);
+			$userNodeResolver->method('toUserAbsolutePath')->willReturn('/' . $name);
+			$padFileService = $this->createMock(PadFileService::class);
+			$padFileService->method('readPad')->willReturn(new ParsedPadFile(['pad_id' => 'ext.remote'], '', 'ext.remote', BindingService::ACCESS_PUBLIC, '', true, -1));
+
+			try {
+				$this->buildService($padFileService, $userNodeResolver)->syncById('alice', 138, false);
+				$this->fail($case . ': synced.');
+			} catch (\Throwable $e) {
+				$this->assertSame($expected, $e::class, $case);
+			}
+		}
 	}
 
 	private function buildService(
