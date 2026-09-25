@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Tests\Unit;
 
+use OCA\EtherpadNextcloud\Exception\BindingNotCreatedException;
+use OCA\EtherpadNextcloud\Exception\BindingMismatchException;
 use OCA\EtherpadNextcloud\Exception\BindingException;
 use OCA\EtherpadNextcloud\Exception\MissingBindingException;
 use OCA\EtherpadNextcloud\Exception\WaitingBindingException;
@@ -16,7 +18,6 @@ use OCP\IDBConnection;
 use OCA\EtherpadNextcloud\Tests\Support\FixedClock;
 use OCA\EtherpadNextcloud\Tests\Support\InMemoryBindingTable;
 use PHPUnit\Framework\TestCase;
-use Psr\Log\LoggerInterface;
 
 class BindingServiceTest extends TestCase {
 	/**
@@ -27,8 +28,8 @@ class BindingServiceTest extends TestCase {
 	public function testAssertConsistentMappingHoldsTheFilesRowToPadModeAndState(): void {
 		$cases = [
 			'consistent' => [self::bindingRow(10, 'pad-a', BindingService::STATE_ACTIVE), 'pad-a', BindingService::ACCESS_PUBLIC, null, null],
-			'another pad' => [self::bindingRow(10, 'pad-a', BindingService::STATE_ACTIVE), 'pad-b', BindingService::ACCESS_PUBLIC, BindingException::class, 'Binding pad ID mismatch.'],
-			'another mode' => [self::bindingRow(10, 'pad-a', BindingService::STATE_ACTIVE, BindingService::ACCESS_PROTECTED), 'pad-a', BindingService::ACCESS_PUBLIC, BindingException::class, 'Binding access mode mismatch.'],
+			'another pad' => [self::bindingRow(10, 'pad-a', BindingService::STATE_ACTIVE), 'pad-b', BindingService::ACCESS_PUBLIC, BindingMismatchException::class, 'Binding pad ID mismatch.'],
+			'another mode' => [self::bindingRow(10, 'pad-a', BindingService::STATE_ACTIVE, BindingService::ACCESS_PROTECTED), 'pad-a', BindingService::ACCESS_PUBLIC, BindingMismatchException::class, 'Binding access mode mismatch.'],
 			// Waiting is its own kind, so the one who opens the file is told it is on its way back.
 			'a deletion owed' => [self::bindingRow(10, 'pad-a', BindingService::STATE_PENDING_DELETE), 'pad-a', BindingService::ACCESS_PUBLIC, WaitingBindingException::class, 'Pad binding is not active.'],
 			'a restore undecided' => [self::bindingRow(10, 'pad-a', BindingService::STATE_RESTORE_PENDING), 'pad-a', BindingService::ACCESS_PUBLIC, WaitingBindingException::class, 'Pad binding is not active.'],
@@ -46,6 +47,56 @@ class BindingServiceTest extends TestCase {
 			} catch (BindingException $e) {
 				$this->assertSame([$exception, $message], [$e::class, $e->getMessage()], $case);
 			}
+		}
+	}
+
+	/**
+	 * An insert the database does not take - a row another request made at
+	 * the same moment, or the database gone - is its own exception, with the
+	 * database's error as the cause and no line of its own: every caller
+	 * reports it.
+	 */
+	public function testAFailedInsertIsItsOwnErrorWithTheDatabasesCause(): void {
+		$cause = new \RuntimeException('duplicate key value violates unique constraint');
+		// An insert whose statement the database refuses.
+		$qb = new class ($cause) implements IQueryBuilder {
+			public function __construct(private \Throwable $cause) {
+			}
+
+			public function insert(string $table): self {
+				return $this;
+			}
+
+			public function values(array $values): self {
+				return $this;
+			}
+
+			public function createNamedParameter(mixed $value, mixed $type = null): string {
+				return ':p';
+			}
+
+			public function executeStatement(): int {
+				throw $this->cause;
+			}
+		};
+		$db = new class ($qb) implements IDBConnection {
+			public function __construct(private IQueryBuilder $qb) {
+			}
+
+			public function getQueryBuilder(): IQueryBuilder {
+				return $this->qb;
+			}
+
+			public function escapeLikeParameter(string $param): string {
+				return $param;
+			}
+		};
+
+		try {
+			(new BindingService($db, new FixedClock(500)))->createBinding(10, 'pad-a', BindingService::ACCESS_PUBLIC);
+			$this->fail('The insert went through.');
+		} catch (BindingNotCreatedException $e) {
+			$this->assertSame($cause, $e->getPrevious());
 		}
 	}
 
@@ -128,7 +179,7 @@ class BindingServiceTest extends TestCase {
 
 	/** @param list<array<string,mixed>> $rows */
 	private function serviceOver(array $rows): BindingService {
-		return new BindingService(new InMemoryBindingTable($rows), new FixedClock(500), $this->createMock(LoggerInterface::class));
+		return new BindingService(new InMemoryBindingTable($rows), new FixedClock(500));
 	}
 
 	private function buildServiceWithQueryBuilder(BindingServiceTestQueryBuilder $qb, int $now): BindingService {
@@ -145,7 +196,7 @@ class BindingServiceTest extends TestCase {
 			}
 		};
 
-		return new BindingService($db, new FixedClock($now), $this->createMock(LoggerInterface::class));
+		return new BindingService($db, new FixedClock($now));
 	}
 
 	/**
@@ -159,7 +210,7 @@ class BindingServiceTest extends TestCase {
 			self::bindingRow(4711, 'nc-owed', BindingService::STATE_PENDING_DELETE),
 			self::bindingRow(4712, 'nc-abc', BindingService::STATE_ACTIVE),
 		]);
-		$service = new BindingService($table, new FixedClock(500), $this->createMock(LoggerInterface::class));
+		$service = new BindingService($table, new FixedClock(500));
 
 		self::assertFalse($service->deleteActiveBinding(4711, 'nc-owed'), 'owed');
 		self::assertFalse($service->deleteActiveBinding(4712, 'nc-other'), 'another pad');
@@ -180,7 +231,7 @@ class BindingServiceTest extends TestCase {
 			self::bindingRow(1, 'old', BindingService::STATE_PENDING_DELETE),
 			self::bindingRow(2, 'other', BindingService::STATE_PENDING_DELETE),
 		]);
-		$service = new BindingService($table, new FixedClock(500), $this->createMock(LoggerInterface::class));
+		$service = new BindingService($table, new FixedClock(500));
 		$before = $table->rows;
 
 		self::assertFalse($service->rebind(1, 'other', BindingService::STATE_PENDING_DELETE, 'new', BindingService::STATE_ACTIVE), 'another pad');
@@ -200,7 +251,7 @@ class BindingServiceTest extends TestCase {
 	 */
 	public function testARestoreLeftWaitingIsNotDatedAsDeleted(): void {
 		$table = new InMemoryBindingTable([self::bindingRow(1, 'pad', BindingService::STATE_PENDING_DELETE)]);
-		$service = new BindingService($table, new FixedClock(500), $this->createMock(LoggerInterface::class));
+		$service = new BindingService($table, new FixedClock(500));
 
 		self::assertTrue($service->transition(1, 'pad', BindingService::STATE_PENDING_DELETE, BindingService::STATE_RESTORE_PENDING));
 
@@ -210,7 +261,7 @@ class BindingServiceTest extends TestCase {
 	/** Back in the trash is a deletion owed again, dated from now. */
 	public function testTransitionToPendingDeleteDatesTheDeletionAnew(): void {
 		$table = new InMemoryBindingTable([self::bindingRow(1, 'pad', BindingService::STATE_RESTORE_PENDING)]);
-		$service = new BindingService($table, new FixedClock(500), $this->createMock(LoggerInterface::class));
+		$service = new BindingService($table, new FixedClock(500));
 
 		self::assertTrue($service->transition(1, 'pad', BindingService::STATE_RESTORE_PENDING, BindingService::STATE_PENDING_DELETE));
 
@@ -226,7 +277,7 @@ class BindingServiceTest extends TestCase {
 			self::bindingRow(1, 'old', BindingService::STATE_RESTORE_PENDING),
 			self::bindingRow(2, 'other', BindingService::STATE_RESTORE_PENDING),
 		]);
-		$service = new BindingService($table, new FixedClock(500), $this->createMock(LoggerInterface::class));
+		$service = new BindingService($table, new FixedClock(500));
 		$before = $table->rows;
 
 		self::assertFalse($service->deleteInState(1, 'other', BindingService::STATE_RESTORE_PENDING), 'another pad');
@@ -290,7 +341,7 @@ class BindingServiceTest extends TestCase {
 	 */
 	public function testARowThatStaysOwedKeepsItsDate(): void {
 		$table = new InMemoryBindingTable([self::bindingRow(1, 'pad', BindingService::STATE_PENDING_DELETE)]);
-		$service = new BindingService($table, new FixedClock(500), $this->createMock(LoggerInterface::class));
+		$service = new BindingService($table, new FixedClock(500));
 
 		self::assertTrue($service->transition(1, 'pad', BindingService::STATE_PENDING_DELETE, BindingService::STATE_PENDING_DELETE));
 

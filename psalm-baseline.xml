@@ -391,7 +391,6 @@
   <file src="lib/Service/PadOpenService.php">
     <RedundantCastGivenDocblockType>
       <code><![CDATA[(int)$node->getId()]]></code>
-      <code><![CDATA[(int)$node->getId()]]></code>
     </RedundantCastGivenDocblockType>
   </file>
   <file src="lib/Service/PadSessionRevoker.php">

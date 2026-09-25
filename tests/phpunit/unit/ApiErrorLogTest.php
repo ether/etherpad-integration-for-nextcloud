@@ -8,6 +8,8 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Tests\Unit;
 
+use OCA\EtherpadNextcloud\Exception\BindingNotCreatedException;
+use OCA\EtherpadNextcloud\Exception\BindingMismatchException;
 use OCA\EtherpadNextcloud\Exception\BindingException;
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
 use OCA\EtherpadNextcloud\Exception\EtherpadRefusedException;
@@ -98,21 +100,26 @@ class ApiErrorLogTest extends TestCase {
 	}
 
 	/**
-	 * The unforeseen is an error under the line the mapper gives; a .pad and
-	 * its row that do not match are a warning; anything else is what the
+	 * The unforeseen is an error under the line the mapper gives, and so is a
+	 * row that could not be written; a .pad and its row that do not match
+	 * are a warning - and only that binding error; anything else is what the
 	 * request itself got wrong, a debug line with its reason.
 	 */
 	public function testEachOtherErrorAtTheLevelItDeserves(): void {
 		$log = new ApiErrorLog($this->createMock(ICacheFactory::class), $this->logger());
 		$log->report(new \RuntimeException('Detailed failure.'), [], 'Pad restore API failed');
-		$log->report(new BindingException('Binding pad ID mismatch.'));
+		$log->report(new BindingNotCreatedException('Could not create unique pad binding.'));
+		$log->report(new BindingMismatchException('Binding pad ID mismatch.'));
+		$log->report(new BindingException('Pad binding is not active.'));
 		$log->report(new MissingBindingException('No binding exists for this file.'));
 		$log->report(new WaitingBindingException('Pad binding is not active.'));
 		$log->report(new ExternalPadException('Public export HTTP error (500)'));
 
 		$this->assertSame([
 			['error', 'Pad restore API failed', 'Detailed failure.'],
+			['error', 'Could not create pad binding.', 'Could not create unique pad binding.'],
 			['warning', 'A .pad file and its pad binding could not be matched.', 'Binding pad ID mismatch.'],
+			['debug', 'A request was refused.', 'Pad binding is not active.'],
 			['debug', 'A request was refused.', 'No binding exists for this file.'],
 			['debug', 'A request was refused.', 'Pad binding is not active.'],
 			['debug', 'A request was refused.', 'Public export HTTP error (500)'],

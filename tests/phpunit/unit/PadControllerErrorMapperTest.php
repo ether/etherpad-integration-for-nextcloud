@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Tests\Unit;
 
+use OCA\EtherpadNextcloud\Exception\BindingNotCreatedException;
+use OCA\EtherpadNextcloud\Exception\BindingMismatchException;
 use OCA\EtherpadNextcloud\Controller\PadControllerErrorMapper;
 use OCA\EtherpadNextcloud\Exception\BindingException;
 use OCA\EtherpadNextcloud\Exception\ControllerBadRequestException;
@@ -191,7 +193,7 @@ class PadControllerErrorMapperTest extends TestCase {
 		);
 
 		$this->buildMapper($logger)->run(
-			static fn (): array => throw new BindingException('Binding pad ID mismatch.'),
+			static fn (): array => throw new BindingMismatchException('Binding pad ID mismatch.'),
 			static fn (array $result): DataResponse => new DataResponse($result),
 			['context' => ['fileId' => 42]],
 		);
@@ -225,8 +227,8 @@ class PadControllerErrorMapperTest extends TestCase {
 	/**
 	 * What the request itself got wrong, a pad on another server, a pad too
 	 * large to show: a debug line with the reason the answer leaves out,
-	 * nothing louder. An endpoint's own wording for its own conflict is not
-	 * logged at all.
+	 * nothing louder. An endpoint's own wording for its own conflict is still
+	 * reported, once, as what it is: a row that could not be written.
 	 */
 	public function testARefusalIsADebugLineWithItsReason(): void {
 		foreach ([
@@ -246,9 +248,9 @@ class PadControllerErrorMapperTest extends TestCase {
 		}
 
 		$logger = $this->createMock(LoggerInterface::class);
-		$logger->expects($this->never())->method($this->anything());
+		$logger->expects($this->once())->method('error')->with('Could not create pad binding.', $this->anything());
 		$this->buildMapper($logger)->run(
-			static fn (): array => throw new BindingException('Could not create unique pad binding.'),
+			static fn (): array => throw new BindingNotCreatedException('Could not create unique pad binding.'),
 			static fn (array $result): DataResponse => new DataResponse($result),
 			['binding_message' => 'A file with this name already exists.', 'binding_status' => Http::STATUS_CONFLICT],
 		);

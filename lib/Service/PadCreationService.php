@@ -251,7 +251,7 @@ class PadCreationService {
 			throw new \RuntimeException('Cannot materialize a template without a user to resolve the file by.');
 		}
 
-		return new CreatedFileClaim($uid, $this->requireFileId($target, $target->getName()), (string)$target->getContent());
+		return new CreatedFileClaim($uid, $this->requireFileId($target), (string)$target->getContent());
 	}
 
 	/**
@@ -341,7 +341,7 @@ class PadCreationService {
 	 * the file exists; deriving it can throw, hence after the claim.
 	 */
 	private function claimCreatedFile(PadCreateAttempt $attempt, string $uid, File $fileNode, string $path = ''): CreatedFileClaim {
-		$fileId = $this->requireFileId($fileNode, $path !== '' ? $path : $fileNode->getName());
+		$fileId = $this->requireFileId($fileNode);
 		$claim = $attempt->claimFile($uid, $fileId);
 
 		if ($path === '') {
@@ -364,24 +364,16 @@ class PadCreationService {
 	 *
 	 * @throws \RuntimeException
 	 */
-	private function requireFileId(File $fileNode, string $path): int {
+	private function requireFileId(File $fileNode): int {
+		// Not logged here: whoever called the create reports the failure.
 		try {
 			$fileId = (int)$fileNode->getId();
 		} catch (\Throwable $e) {
-			$this->logger->warning('Could not read the ID of a freshly created .pad file', [
-				'app' => 'etherpad_nextcloud',
-				'file' => $path,
-				...SafeError::context($e),
-			]);
 			throw new \RuntimeException('Could not resolve new file ID.', 0, $e);
 		}
 		if ($fileId > 0) {
 			return $fileId;
 		}
-		$this->logger->warning('A freshly created .pad file reported no ID', [
-			'app' => 'etherpad_nextcloud',
-			'file' => $path,
-		]);
 		throw new \RuntimeException('Could not resolve new file ID.');
 	}
 

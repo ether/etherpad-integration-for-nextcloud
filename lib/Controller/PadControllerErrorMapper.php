@@ -129,8 +129,10 @@ class PadControllerErrorMapper {
 		} catch (BindingException $e) {
 			$status = $options['binding_status'] ?? Http::STATUS_BAD_REQUEST;
 			if (isset($options['binding_message'])) {
-				// The caller's wording for its own conflict, an ordinary one.
-				// No code of ours goes with a message that is not ours.
+				// The caller's wording for its own conflict. No code of ours goes
+				// with a message that is not ours, but the error is reported
+				// like any other.
+				$this->errorLog->report($e, $options['context'] ?? []);
 				return new DataResponse(['message' => $options['binding_message']], $status);
 			}
 			if ($e instanceof WaitingBindingException) {

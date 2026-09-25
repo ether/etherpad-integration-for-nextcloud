@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Tests\Unit;
 
+use OCA\EtherpadNextcloud\Exception\BindingMismatchException;
 use OCA\EtherpadNextcloud\Controller\PublicViewerControllerErrorMapper;
 use OCA\EtherpadNextcloud\Exception\BindingException;
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
@@ -135,7 +136,8 @@ class PublicViewerControllerErrorMapperTest extends TestCase {
 	public function testEachAnswerIsReportedOnceAtItsLevel(): void {
 		foreach ([
 			'Etherpad not reachable' => [new EtherpadClientException('Etherpad API request failed: getHTML'), 'warning', 'Etherpad could not be reached while answering a request.'],
-			'another binding problem' => [new BindingException('Binding pad ID mismatch.'), 'warning', 'A .pad file and its pad binding could not be matched.'],
+			'a row naming another pad' => [new BindingMismatchException('Binding pad ID mismatch.'), 'warning', 'A .pad file and its pad binding could not be matched.'],
+			'another binding problem' => [new BindingException('Pad binding is not active.'), 'debug', 'A request was refused.'],
 			'a pad too large to show' => [new EtherpadTooLargeException('Pad export is larger than 5242880 bytes.'), 'debug', 'A request was refused.'],
 			'a pad on another server' => [new ExternalPadException('Public export HTTP error (500)'), 'debug', 'A request was refused.'],
 			'a file locked' => [new LockedException('locked'), 'debug', 'A request was refused.'],
