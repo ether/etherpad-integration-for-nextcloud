@@ -41,6 +41,7 @@
 	<div class="epnc-embed__error" data-epnc-embed-error hidden>
 		<h2 class="epnc-embed__error-title"><?php p((string)$_['l10n']['error_title']); ?></h2>
 		<p class="epnc-embed__error-message" data-epnc-embed-error-message></p>
+		<div class="epnc-embed__error-actions" data-epnc-embed-error-actions></div>
 	</div>
 	<div class="epnc-embed__recovery" data-epnc-embed-recovery hidden>
 		<h2 class="epnc-embed__recovery-title"><?php p((string)$_['l10n']['error_title']); ?></h2>

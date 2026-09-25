@@ -51,6 +51,20 @@ describe('fetchJsonWithTimeout', () => {
 		})
 	})
 
+	// The server's word that the same request may succeed later, carried
+	// as it is; anything but true is no such word.
+	it.each([
+		['says so', { message: 'Etherpad cannot be reached right now. Try again later.', retryable: true }, 503, true],
+		['says nothing', { message: 'Request failed.' }, 500, undefined],
+		['says something else', { message: 'no binding', retryable: 'yes' }, 400, undefined],
+	])('carries retryable out of an error response that %s', async (_, body, status, retryable) => {
+		stubFetch(jsonResponse(body, false, status))
+
+		const error = await fetchJsonWithTimeout('/x').catch((e) => e)
+
+		expect(error.retryable).toBe(retryable)
+	})
+
 	it('uses the caller wording when the response carries no message', async () => {
 		stubFetch(jsonResponse({}, false, 500))
 

@@ -393,9 +393,25 @@ describe('viewer component — resolveOpenUrl', () => {
 		expect(vm.canRecover).toBe(false)
 	})
 
+	// Not by its code: the server's `retryable` says the same open may work
+	// later, for a row still waiting and for these.
+	it.each([
+		['Etherpad not reachable', { message: 'Etherpad cannot be reached right now. Try again later.', retryable: true }, 503],
+		['a file locked for a moment', { message: 'Pad file is temporarily locked. Please retry.', retryable: true }, 503],
+	])('offers a second try when %s', async (_, body, status) => {
+		stubFetch(jsonResponse(body, false, status))
+		const vm = makeInstance({ fileid: 42, fileInfo: { path: '/x.pad' } })
+
+		await vm.resolveOpenUrl()
+
+		expect(vm.loadError).toBe(body.message)
+		expect(vm.canRetryOpen).toBe(true)
+	})
+
 	it.each([
 		['without a code', { message: 'Could not open pad' }, 500],
 		['with another code', { message: 'no binding', code: 'missing_binding' }, 400],
+		['Etherpad refusing', { message: 'Etherpad refused the request. Please contact your administrator.' }, 400],
 	])('does not offer a second try for an error %s', async (_, body, status) => {
 		stubFetch(jsonResponse(body, false, status))
 		apiFindOriginalPad.mockResolvedValue({ found: false })

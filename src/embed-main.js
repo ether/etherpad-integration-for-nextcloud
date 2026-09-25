@@ -29,6 +29,7 @@ import { assertOpenPayload, contentUrlFrom, contentViewFrom, openWithFrontmatter
 	const loadingNode = root.querySelector('[data-epnc-embed-loading]')
 	const errorNode = root.querySelector('[data-epnc-embed-error]')
 	const errorMessageNode = root.querySelector('[data-epnc-embed-error-message]')
+	const errorActionsNode = root.querySelector('[data-epnc-embed-error-actions]')
 	const recoveryNode = root.querySelector('[data-epnc-embed-recovery]')
 	const recoveryMessageNode = root.querySelector('[data-epnc-embed-recovery-message]')
 	const recoveryBodyNode = root.querySelector('[data-epnc-embed-recovery-body]')
@@ -53,7 +54,12 @@ import { assertOpenPayload, contentUrlFrom, contentViewFrom, openWithFrontmatter
 	const requestToken = () => ocRequestToken(templateRequestToken)
 	const padSync = createPadSync({ requestToken })
 
-	const showError = (message) => {
+	/**
+	 * $retry, when given: the same request may succeed later - a row still
+	 * waiting, a file locked for a moment, Etherpad not reachable - so the
+	 * panel offers it rather than a dead end, as the viewer does.
+	 */
+	const showError = (message, retry = null) => {
 		if (loadingNode instanceof HTMLElement) {
 			loadingNode.hidden = true
 			loadingNode.classList.remove('epnc-embed__loading--pad-doc')
@@ -64,6 +70,22 @@ import { assertOpenPayload, contentUrlFrom, contentViewFrom, openWithFrontmatter
 		}
 		if (errorMessageNode instanceof HTMLElement) {
 			errorMessageNode.textContent = String(message || 'Unknown error.')
+		}
+		if (errorActionsNode instanceof HTMLElement) {
+			errorActionsNode.replaceChildren()
+			if (typeof retry === 'function') {
+				const button = buildRecoveryButton(contentRetryText, () => {
+					if (errorNode instanceof HTMLElement) {
+						errorNode.hidden = true
+					}
+					if (loadingNode instanceof HTMLElement) {
+						loadingNode.hidden = false
+					}
+					retry()
+				})
+				button.classList.add('epnc-embed__recovery-button--primary')
+				errorActionsNode.appendChild(button)
+			}
 		}
 		if (errorNode instanceof HTMLElement) {
 			errorNode.hidden = false
@@ -504,7 +526,10 @@ import { assertOpenPayload, contentUrlFrom, contentViewFrom, openWithFrontmatter
 				void enterRecoveryFlow(error)
 				return
 			}
-			showError(error instanceof Error ? error.message : 'Pad open failed.')
+			showError(
+				error instanceof Error ? error.message : 'Pad open failed.',
+				error && error.retryable === true ? () => { void run() } : null,
+			)
 		}
 	}
 

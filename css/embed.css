@@ -79,7 +79,8 @@ body,
 	color: var(--epnc-embed-text);
 }
 
-.epnc-embed__recovery-actions {
+.epnc-embed__recovery-actions,
+.epnc-embed__error-actions {
 	display: flex;
 	gap: 8px;
 	flex-wrap: wrap;
@@ -153,6 +154,11 @@ body,
 .epnc-embed__error-message {
 	margin: 0;
 	white-space: pre-wrap;
+}
+
+/* The same room above the buttons as the recovery card gives them. */
+.epnc-embed__error-actions:not(:empty) {
+	margin-top: 16px;
 }
 
 .epnc-embed__iframe {

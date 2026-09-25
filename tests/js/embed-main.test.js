@@ -40,6 +40,7 @@ const setupEmbedDom = () => {
 			<div data-epnc-embed-loading>loading</div>
 			<div data-epnc-embed-error hidden>
 				<p data-epnc-embed-error-message></p>
+				<div data-epnc-embed-error-actions></div>
 			</div>
 			<div data-epnc-embed-recovery hidden>
 				<p data-epnc-embed-recovery-message></p>
@@ -61,6 +62,7 @@ const errorResponse = (body, status = 400) => jsonResponse(body, false, status)
 
 const root = () => document.getElementById('etherpad-nextcloud-embed')
 const errorMessage = () => document.querySelector('[data-epnc-embed-error-message]').textContent
+const errorActions = () => document.querySelector('[data-epnc-embed-error-actions]')
 const recoveryMessage = () => document.querySelector('[data-epnc-embed-recovery-message]').textContent
 const recoveryBody = () => document.querySelector('[data-epnc-embed-recovery-body]').textContent
 const recoveryActions = () => document.querySelector('[data-epnc-embed-recovery-actions]')
@@ -365,6 +367,60 @@ describe('embed-main', () => {
 		expect(isHidden('[data-epnc-embed-error]')).toBe(false)
 		expect(errorMessage()).toBe('Internal server error')
 		expect(isHidden('[data-epnc-embed-recovery]')).toBe(true)
+		// Nothing says the same open would do better later.
+		expect(errorActions().children).toHaveLength(0)
+	})
+
+	/**
+	 * The server's `retryable` - a row still waiting, a file locked for a
+	 * moment, Etherpad not reachable - is a second try on the error panel,
+	 * as in the viewer. It runs the whole open again, and a success clears
+	 * the panel.
+	 */
+	it.each([
+		['a row still waiting', { message: 'This pad is still being restored. Try again later.', code: 'waiting_binding', retryable: true }, 409],
+		['Etherpad not reachable', { message: 'Etherpad cannot be reached right now. Try again later.', retryable: true }, 503],
+	])('offers to try the open again after %s', async (_, body, status) => {
+		fetch
+			.mockResolvedValueOnce(errorResponse(body, status))
+			.mockResolvedValueOnce(jsonResponse({ url: 'https://pad.example.test/p/abc', sync_url: '', sync_interval_seconds: 60 }))
+
+		await importEmbed()
+		await flushAsyncWork()
+
+		expect(errorMessage()).toBe(body.message)
+		const retry = [...errorActions().querySelectorAll('button')].find((button) => button.textContent === 'Try again')
+		expect(retry).toBeDefined()
+
+		retry.click()
+		await flushAsyncWork()
+
+		expect(fetch).toHaveBeenCalledTimes(2)
+		expect(fetch.mock.calls[1][0]).toBe('/api/open-by-id')
+		expect(iframe().src).toContain('https://pad.example.test/p/abc')
+		expect(isHidden('[data-epnc-embed-error]')).toBe(true)
+	})
+
+	/** A second try that fails again offers one more, not two; one that fails for good offers none. */
+	it('keeps one second try at a time', async () => {
+		const waiting = { message: 'This pad is still being restored. Try again later.', code: 'waiting_binding', retryable: true }
+		fetch
+			.mockResolvedValueOnce(errorResponse(waiting, 409))
+			.mockResolvedValueOnce(errorResponse(waiting, 409))
+			.mockResolvedValueOnce(errorResponse({ message: 'Internal server error' }, 500))
+
+		await importEmbed()
+		await flushAsyncWork()
+		errorActions().querySelector('button').click()
+		await flushAsyncWork()
+
+		expect(errorActions().querySelectorAll('button')).toHaveLength(1)
+
+		errorActions().querySelector('button').click()
+		await flushAsyncWork()
+
+		expect(errorMessage()).toBe('Internal server error')
+		expect(errorActions().querySelectorAll('button')).toHaveLength(0)
 	})
 
 	it('refuses to run without a CSRF request token', async () => {
