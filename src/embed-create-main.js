@@ -4,7 +4,7 @@
  */
 import { DEFAULT_PAD_ACCESS_MODE, isPadAccessMode } from './lib/constants.js'
 import { ocRequestToken } from './lib/oc-compat.js'
-import { fetchJsonWithTimeout as fetchJson } from './lib/fetch-helpers.js'
+import { fetchJsonWithTimeout as fetchJson, requestErrorMessage } from './lib/fetch-helpers.js'
 
 (function () {
 	const root = document.getElementById('etherpad-nextcloud-embed-create')
@@ -18,6 +18,7 @@ import { fetchJsonWithTimeout as fetchJson } from './lib/fetch-helpers.js'
 	const missingNameMessage = String(root.getAttribute('data-l10n-missing-name') || 'Pad name is required.')
 	const invalidAccessModeMessage = String(root.getAttribute('data-l10n-invalid-access-mode') || 'Invalid access mode.')
 	const incompleteConfigMessage = String(root.getAttribute('data-l10n-incomplete-config') || 'Embed configuration is incomplete.')
+	const unansweredMessage = String(root.getAttribute('data-l10n-unanswered') || 'Nextcloud did not answer. The pad may have been created anyway; look in the folder before you try again.')
 	const loadingNode = root.querySelector('[data-epnc-embed-create-loading]')
 	const errorNode = root.querySelector('[data-epnc-embed-create-error]')
 	const errorMessageNode = root.querySelector('[data-epnc-embed-create-error-message]')
@@ -72,8 +73,11 @@ import { fetchJsonWithTimeout as fetchJson } from './lib/fetch-helpers.js'
 	 * HTTP status:
 	 *   - 'invalid' — client-side validation failed (missing name, etc.)
 	 *   - 'conflict' — backend returned 409 (e.g. duplicate filename)
-	 *   - 'server'  — any other 4xx / 5xx
-	 *   - 'network' — fetch itself failed (offline, CORS, timeout)
+	 *   - 'server'  — any other 4xx / 5xx this app answered; nothing was
+	 *     created, the server rolls a failed create back
+	 *   - 'network' — no answer from this app: fetch failed, or a proxy
+	 *     answered in its place (`status` is then its 502, 503 or 504).
+	 *     The pad may have been created anyway.
 	 */
 	const failCreate = (reason, message, status) => {
 		const normalizedMessage = String(message || 'Unknown error.')
@@ -133,9 +137,10 @@ import { fetchJsonWithTimeout as fetchJson } from './lib/fetch-helpers.js'
 		body.set('name', name)
 		body.set('accessMode', accessMode)
 
-		// Step 1: server-side create. Failures here are either network
-		// (fetch threw — no HTTP status reached us) or server (we got a
-		// status code back, including the 409 on duplicate filename).
+		// Step 1: server-side create. A write, so it has no time limit (see
+		// fetchJsonWithTimeout()): cut short, it would go on creating with
+		// nobody told, and a second try would meet the file it made. A slow
+		// create is not a failed one.
 		let data
 		try {
 			data = await fetchJson(createByParentUrl, {
@@ -145,12 +150,13 @@ import { fetchJsonWithTimeout as fetchJson } from './lib/fetch-helpers.js'
 					requesttoken: requestToken(),
 				},
 				body: body.toString(),
-			})
+			}, { timeoutMs: null })
 		} catch (error) {
 			const status = (error && typeof error.status === 'number') ? error.status : null
-			const message = error instanceof Error ? error.message : 'Pad creation failed.'
-			const reason = status === null ? 'network' : classifyHttpStatus(status)
-			failCreate(reason, message, status)
+			// This app answered, including the 409 on a duplicate name, or
+			// nothing came back from it and the outcome is not known.
+			const reason = status === null || (error && error.unanswered === true) ? 'network' : classifyHttpStatus(status)
+			failCreate(reason, requestErrorMessage(error, unansweredMessage, 'Pad creation failed.'), status)
 			return
 		}
 

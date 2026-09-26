@@ -490,8 +490,9 @@ solely by the separate external-pad policy, not by these two settings.
     - `epnc:host-sync-now`
 - `src/embed-create-main.js`
   - powers the minimal `/embed/create-by-parent/{parentFolderId}` page.
-  - uses same-origin `POST /api/v1/pads/create-by-parent`.
+  - uses same-origin `POST /api/v1/pads/create-by-parent`, without a time limit, as it writes.
   - redirects to returned `embed_url` after successful pad creation.
+  - tells the host `epnc:create-succeeded` or `epnc:create-failed`; after `reason: 'network'` the outcome is not known (`docs/architecture.md`, the create flow).
 
 ## URL Control in Files App
 

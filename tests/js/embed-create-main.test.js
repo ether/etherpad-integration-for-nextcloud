@@ -16,7 +16,8 @@ const setupEmbedCreateDom = () => {
 			data-request-token="csrf"
 			data-l10n-missing-name="Pad name is required."
 			data-l10n-invalid-access-mode="Invalid access mode."
-			data-l10n-incomplete-config="Embed configuration is incomplete.">
+			data-l10n-incomplete-config="Embed configuration is incomplete."
+			data-l10n-unanswered="No answer; look in the folder first.">
 			<div data-epnc-embed-create-loading>loading</div>
 			<div data-epnc-embed-create-error hidden>
 				<p data-epnc-embed-create-error-message></p>
@@ -32,6 +33,13 @@ const jsonResponse = (body, ok = true, status = 200) => ({
 })
 
 const errorResponse = (body, status = 400) => jsonResponse(body, false, status)
+
+/** A proxy's or a maintenance page in place of this app's answer. */
+const pageResponse = (status) => ({
+	ok: false,
+	status,
+	json: () => Promise.reject(new SyntaxError('Unexpected token < in JSON at position 0')),
+})
 
 const errorMessageText = () => document.querySelector('[data-epnc-embed-create-error-message]').textContent
 const errorPanelHidden = () => document.querySelector('[data-epnc-embed-create-error]').hidden
@@ -195,6 +203,61 @@ describe('embed-create-main', () => {
 		expect(payload.reason).toBe('network')
 		expect(payload.status).toBe(null)
 		expect(payload.message).toBe('Network unreachable')
+	})
+
+	// No answer, so no knowing whether the pad was made: the page says so.
+	it('says the pad may exist when no answer came', async () => {
+		fetch.mockRejectedValueOnce(new TypeError('Failed to fetch'))
+
+		await importEmbedCreate()
+		await flushAsyncWork()
+
+		const payload = parentPostSpy.mock.calls[0][0]
+		expect(payload).toEqual({ type: 'epnc:create-failed', reason: 'network', status: null, message: 'No answer; look in the folder first.' })
+		expect(errorMessageText()).toBe('No answer; look in the folder first.')
+	})
+
+	/**
+	 * A proxy answering in this app's place is no answer from it either,
+	 * whatever it sends; its status goes along. This app's own 503 is an
+	 * answer: nothing was created.
+	 */
+	it.each([
+		['a proxy whose backend is gone', pageResponse(502), 'network', 502],
+		['a proxy that gave up waiting', pageResponse(504), 'network', 504],
+		['a gateway answering JSON of its own', errorResponse({ message: 'An invalid response was received from the upstream server' }, 503), 'network', 503],
+		['this app, the folder locked', errorResponse({ message: 'Pad file is temporarily locked. Please retry.', retryable: true }, 503), 'server', 503],
+	])('tells the host whether %s answered', async (_, response, reason, status) => {
+		fetch.mockResolvedValueOnce(response)
+
+		await importEmbedCreate()
+		await flushAsyncWork()
+
+		expect(parentPostSpy.mock.calls[0][0]).toMatchObject({ type: 'epnc:create-failed', reason, status })
+	})
+
+	// A write: cut short, it would go on creating with nobody told.
+	it('waits for a slow create instead of calling it failed', async () => {
+		vi.useFakeTimers()
+		try {
+			let settle
+			fetch.mockImplementationOnce((url, init) => new Promise((resolve, reject) => {
+				init.signal.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')))
+				settle = () => resolve(jsonResponse({ embed_url: '/embed/by-id/777', file_id: 777, pad_id: 'g.abc$mypad', access_mode: 'protected' }))
+			}))
+
+			await importEmbedCreate()
+			await vi.advanceTimersByTimeAsync(60_000)
+			expect(parentPostSpy).not.toHaveBeenCalled()
+			settle()
+			await flushAsyncWork()
+
+			expect(parentPostSpy).toHaveBeenCalledOnce()
+			expect(parentPostSpy.mock.calls[0][0].type).toBe('epnc:create-succeeded')
+			expect(locationReplaceSpy).toHaveBeenCalledWith('/embed/by-id/777')
+		} finally {
+			vi.useRealTimers()
+		}
 	})
 
 	it('posts epnc:create-failed with reason=invalid when launcher params are missing', async () => {
