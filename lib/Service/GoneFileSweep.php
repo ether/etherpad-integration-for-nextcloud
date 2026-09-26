@@ -28,7 +28,8 @@ use Psr\Log\LoggerInterface;
  *   cursor that starts over at the end. It marks a file it finds under a
  *   trash path, which a listener missed, and clears the mark of one back
  *   in Files, so a file that later goes some other way is not taken for
- *   one gone through a trash.
+ *   one gone through a trash. A path it cannot place keeps what it has
+ *   (SweptBinding::isInFiles()).
  *
  * A file gone without a mark is left alone, pad and row with it.
  *
@@ -116,7 +117,7 @@ class GoneFileSweep {
 			$last = $row->id;
 			if ($row->isInTrash() && $row->binding->trashedAt === null) {
 				$this->bindingService->markTrashed($row->binding->fileId);
-			} elseif (!$row->isInTrash() && $row->binding->trashedAt !== null) {
+			} elseif ($row->isInFiles() && $row->binding->trashedAt !== null) {
 				$this->bindingService->clearTrashed($row->binding->fileId);
 			}
 		}

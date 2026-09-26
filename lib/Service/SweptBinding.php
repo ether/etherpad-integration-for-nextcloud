@@ -35,4 +35,15 @@ final class SweptBinding {
 	public function isInTrash(): bool {
 		return str_starts_with($this->filePath, BindingService::USER_TRASH_PATH) || str_starts_with($this->filePath, BindingService::TEAM_TRASH_PATH);
 	}
+
+	/**
+	 * In Files for sure: a home's `files/`, which a team folder with its own
+	 * storage has too, or a team folder's on the root storage. Anything else
+	 * the sweep cannot place: the bare `trash/` of a team folder with its
+	 * own storage, which no path tells from a folder named so on an
+	 * external storage, and any file on an external storage.
+	 */
+	public function isInFiles(): bool {
+		return str_starts_with($this->filePath, 'files/') || preg_match('#^__groupfolders/\d+/#', $this->filePath) === 1;
+	}
 }

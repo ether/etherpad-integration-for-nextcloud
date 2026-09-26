@@ -63,8 +63,11 @@ class GoneFileSweepTest extends TestCase {
 
 	/**
 	 * The pass keeps the marks in step with the file cache: a file under a
-	 * user's or a team folder's trash gets one, a file back in Files loses
-	 * it. A file gone without a mark keeps none, and its pad stays.
+	 * user's or a team folder's trash gets one, a file back in Files - a
+	 * home's, or a team folder's - loses it. A path it cannot place keeps
+	 * what it has: the bare `trash/` of a team folder with its own storage,
+	 * which only the listener marks, and a file on an external storage. A
+	 * file gone without a mark keeps none, and its pad stays.
 	 */
 	public function testThePassKeepsTheMarksInStepWithTheFileCache(): void {
 		$this->table(
@@ -74,12 +77,20 @@ class GoneFileSweepTest extends TestCase {
 				self::row(3, 13, 'pad-restored', trashedAt: 100),
 				self::row(4, 14, 'pad-in-files'),
 				self::row(5, 15, 'pad-unmarked'),
+				self::row(6, 16, 'pad-team-restored', trashedAt: 100),
+				self::row(7, 17, 'pad-own-storage-trash', trashedAt: 100),
+				self::row(8, 18, 'pad-own-storage-unmarked'),
+				self::row(9, 19, 'pad-external', trashedAt: 100),
 			],
 			[
 				self::cached(11, 'files_trashbin/files/A.pad.d100'),
 				self::cached(12, '__groupfolders/trash/3/B.pad.d100'),
 				self::cached(13, 'files/C.pad'),
 				self::cached(14, 'files/D.pad'),
+				self::cached(16, '__groupfolders/3/F.pad'),
+				self::cached(17, 'trash/G.pad.d100'),
+				self::cached(18, 'trash/H.pad'),
+				self::cached(19, 'Documents/I.pad'),
 			],
 		);
 
@@ -87,7 +98,7 @@ class GoneFileSweepTest extends TestCase {
 		$this->sweep();
 
 		$this->assertSame([], $this->deletedPads);
-		$this->assertSame([11 => FixedClock::NOW, 12 => FixedClock::NOW, 13 => null, 14 => null, 15 => null], $this->marks());
+		$this->assertSame([11 => FixedClock::NOW, 12 => FixedClock::NOW, 13 => null, 14 => null, 15 => null, 16 => null, 17 => 100, 18 => null, 19 => 100], $this->marks());
 	}
 
 	/**
