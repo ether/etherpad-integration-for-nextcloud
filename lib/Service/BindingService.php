@@ -30,8 +30,8 @@ class BindingService {
 	 * be gone.
 	 */
 	public const STATE_RESTORE_PENDING = 'restore_pending';
-	/** What pad_id and replaced_pad_id hold at most; bytes, so it holds on every database. */
-	private const PAD_ID_MAX_BYTES = 255;
+	/** The length of replaced_pad_id; a pad id is measured against it in bytes, so it fits on every database. */
+	public const PAD_ID_MAX_LENGTH = 255;
 
 	/**
 	 * Where trashes keep files, as file cache paths relative to their
@@ -263,7 +263,7 @@ class BindingService {
 	 */
 	public function createBinding(int $fileId, string $padId, string $accessMode, ?string $replacedPadId = null): void {
 		$this->assertAccessMode($accessMode);
-		if ($replacedPadId !== null && strlen($replacedPadId) > self::PAD_ID_MAX_BYTES) {
+		if ($replacedPadId !== null && strlen($replacedPadId) > self::PAD_ID_MAX_LENGTH) {
 			$replacedPadId = null;
 		}
 		$now = $this->timeFactory->getTime();

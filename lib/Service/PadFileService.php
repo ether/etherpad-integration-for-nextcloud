@@ -204,12 +204,9 @@ class PadFileService {
 
 	/**
 	 * The document a restore writes: the file as namingPad() makes it for
-	 * the pad provisioned to replace the old one, holding the snapshot.
-	 *
-	 * The new pad counts revisions from zero, so the old pad's count cannot
-	 * carry over: the sync would take every revision below it as already
-	 * held. The file records the new pad's count once the snapshot is in it,
-	 * or -1 (not synced yet) when that is not known.
+	 * the pad provisioned to replace the old one, with the snapshot as its
+	 * body and $revision, the new pad's count once the snapshot is in it,
+	 * or -1 when that is not known.
 	 *
 	 * The caller has already split the snapshot it is restoring, so both
 	 * halves arrive here rather than the body being taken apart a second time

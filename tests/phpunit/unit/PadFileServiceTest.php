@@ -660,13 +660,7 @@ class PadFileServiceTest extends TestCase {
 			'https://pad.example.test/p/new-pad',
 		));
 
-		// Active and undeleted are not the caller's to get wrong any more.
-		$this->assertSame(BindingService::STATE_ACTIVE, $restored->frontmatter['state']);
-		$this->assertNull($restored->frontmatter['deleted_at']);
-		$this->assertSame('new-pad', $restored->padId);
-		// The mode the new pad was made in, not the one the file had.
-		$this->assertSame(BindingService::ACCESS_PROTECTED, $restored->accessMode);
-		$this->assertSame('https://pad.example.test/p/new-pad', $restored->padUrl);
+		// The rest is namingPad()'s (testNamingPadMakesTheFileNameAnotherPad).
 		// The old pad's revision 4 means nothing to the new one: without the
 		// new pad's own count, the document has not been synced yet.
 		$this->assertSame(-1, $restored->snapshotRev);

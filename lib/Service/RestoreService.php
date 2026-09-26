@@ -177,7 +177,8 @@ class RestoreService {
 				// No revision to hold the pad to, so no decision either.
 				return $this->deferRestore($fileId, $padId, $state, $readError);
 			}
-			// As its row has it; an open hands the file over as it read it.
+			// Here rather than in readRestoredPad(): an open hands the file
+			// over as it read it.
 			$pad = $this->boundPads->followingRow($pad, $binding);
 			$timeout = $budget?->nextCallTimeout();
 			if ($budget !== null && $timeout === null) {

@@ -94,17 +94,11 @@ class PadOpenService {
 	}
 
 	/**
-	 * The file named the pad its row replaced, and whoever opens it may
-	 * write it: it is written to name the row's pad, once, over what this
-	 * open read and nothing newer. Should that not work, the row's pad
-	 * opens all the same, and the next open or sync tries again.
-	 *
-	 * The file is found again by its id, as the initialise finds it: one
-	 * moved or deleted since the read is written where it is now, or not at
-	 * all, never as a new file where it was. Compared and written without a
-	 * lock, as there: a sync that writes between the two is written over
-	 * with the older text and no revision, and the next sync writes it
-	 * again; the pad holds the text either way.
+	 * The rewrite of a file that named the pad its row replaced
+	 * (docs/architecture.md, "Which pad a file reaches"). Found again by its
+	 * id, so the old node never writes a new file where the file was; no
+	 * lock between comparing and writing, as for the initialise, since what
+	 * a sync in between loses the next sync writes again.
 	 */
 	private function followRow(string $uid, int $fileId, string $read, ParsedPadFile $bound): void {
 		try {

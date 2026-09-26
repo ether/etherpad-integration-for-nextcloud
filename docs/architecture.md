@@ -85,7 +85,7 @@ checked-in runtime assets in `js/`.
   - `deleted_at`
   - `created_at`
   - `updated_at`
-  - `replaced_pad_id` (migration `Version000004Date20260926120000`): the pad the row's pad replaced, when a restore or a recovery put a new one in its place (see "Which pad a file reaches"). Rows from before it remember no pad. Nextcloud runs the migration when the app's version rises; `tests/e2e/docker/sync-app.sh` runs it for a working tree synced into the test stack.
+  - `replaced_pad_id` (migration `Version000004Date20260926120000`): the pad the row's pad replaced, when a restore or a recovery put a new one in its place (see "Which pad a file reaches", also for rows from before it). Nextcloud runs the migration when the app's version rises; `tests/e2e/docker/sync-app.sh` runs it for a working tree synced into the test stack.
   - stores internal managed pads only; external `ext.*` rows from earlier development versions are removed by `Version000003Date20260512230000`
 - `.pad` file
   - Frontmatter: format, binding metadata, state, export metadata.

@@ -36,7 +36,7 @@ class Version000004Date20260926120000 extends SimpleMigrationStep {
 			return null;
 		}
 		$table->addColumn('replaced_pad_id', 'string', [
-			'length' => 255,
+			'length' => BindingService::PAD_ID_MAX_LENGTH,
 			'notnull' => false,
 		]);
 		return $schema;

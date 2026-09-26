@@ -53,8 +53,7 @@ final class TrashSnapshotWriter {
 	 * snapshot into yet. A delete through WebDAV holds the file's lock while
 	 * the trash is decided, so a locked file is the ordinary case here. A
 	 * file that cannot be read for another reason is a miss of its own,
-	 * reported as the file's trouble. The file comes as its row has it
-	 * (BoundPadResolver::followingRow()).
+	 * reported as the file's trouble.
 	 */
 	public function read(): ParsedPadFile|TrashSnapshotMiss {
 		try {
