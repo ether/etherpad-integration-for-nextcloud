@@ -99,8 +99,9 @@ class LeavingPadsListenerTest extends TestCase {
 
 	/**
 	 * A move to the trash comes after the delete it is part of, and marks
-	 * what that looked up, rather than looking it up again. It then has
-	 * nothing left to hand on once the delete is done.
+	 * what that looked up, rather than looking it up again. It still hands
+	 * it on once the delete is done: a move to the trash that fails falls
+	 * back to a delete past it, and the sweep passes by what the trash took.
 	 */
 	public function testATrashMarksWhatItsDeleteLookedUp(): void {
 		$listener = $this->listener();
@@ -110,7 +111,7 @@ class LeavingPadsListenerTest extends TestCase {
 		$listener->handle($this->trashEvent($folder));
 		$listener->handle(new NodeDeletedEvent($folder));
 
-		$this->assertSame([['under', [9]], ['mark', [21, 22]], ['discard', []]], $this->calls);
+		$this->assertSame([['under', [9]], ['mark', [21, 22]], ['discard', [21, 22]]], $this->calls);
 	}
 
 	/**
@@ -134,15 +135,15 @@ class LeavingPadsListenerTest extends TestCase {
 
 	/**
 	 * A restore clears the marks of what it brings back: a .pad file, or
-	 * every file under a folder. A node that cannot give its id yet - as
-	 * the event's on Nextcloud 31 - is looked up again by its path. The
-	 * legacy hook's path is the restoring user's.
+	 * every file under a folder, once in a request. A node that cannot give
+	 * its id yet - as the event's on Nextcloud 31 - is looked up again by
+	 * its path. The legacy hook's path is the restoring user's.
 	 */
 	public function testARestoreClearsItsMarks(): void {
 		$unresolved = $this->createMock(File::class);
 		$unresolved->method('getId')->willThrowException(new \RuntimeException('not resolvable yet'));
-		$unresolved->method('getPath')->willReturn('/alice/files/Notes.pad');
-		$this->rootFolder->method('get')->with('/alice/files/Notes.pad')->willReturn($this->file(7, 'Notes.pad'));
+		$unresolved->method('getPath')->willReturn('/alice/files/Other.pad');
+		$this->rootFolder->method('get')->with('/alice/files/Other.pad')->willReturn($this->file(17, 'Other.pad'));
 		$home = $this->createMock(Folder::class);
 		$home->method('get')->with('/Team/sub')->willReturn($this->folder(9));
 		$this->rootFolder->method('getUserFolder')->with('alice')->willReturn($home);
@@ -154,8 +155,9 @@ class LeavingPadsListenerTest extends TestCase {
 		$listener->handle($this->restoreEvent($this->folder(3)));
 		$listener->handle($this->restoreEvent($unresolved));
 		$listener->restoredPath('/Team/sub');
+		$listener->handle($this->restoreEvent($this->folder(9)));
 
-		$this->assertSame([['clear', [7]], ['clear', []], ['under', [3]], ['clear', [31, 7]], ['clear', [7]], ['under', [9]], ['clear', [21, 22]]], $this->calls);
+		$this->assertSame([['clear', [7]], ['clear', []], ['under', [3]], ['clear', [31, 7]], ['clear', [17]], ['under', [9]], ['clear', [21, 22]]], $this->calls, 'each node once: core raises the hook and the event');
 	}
 
 	/** Without a user to restore for, the hook's path says nothing. */

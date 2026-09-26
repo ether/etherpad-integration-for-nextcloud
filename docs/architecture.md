@@ -83,7 +83,7 @@ checked-in runtime assets in `js/`.
   - `deleted_at`
   - `created_at`
   - `updated_at`
-  - `trashed_at`: when the file was seen leaving Files (`Version000005Date20260926150000`, see "Files gone for good")
+  - `trashed_at`: when the file was seen leaving Files (`Version000005Date20260926150000`, see "Files gone for good"); after Etherpad refused to delete the pad of a file gone for good, the time of the next try, ahead
   - stores internal managed pads only; external `ext.*` rows from earlier development versions are removed by `Version000003Date20260512230000`
 - `.pad` file
   - Frontmatter: format, binding metadata, state, export metadata.
@@ -278,10 +278,10 @@ Primary flow (native viewer):
 - A pad goes once its `.pad` file is gone for good: seen leaving Files, and then gone from the file cache. For now this covers active rows, beside the trash flow above: files whose trash that flow never saw, such as a file deleted past the trash, a folder's files, or the files of a deleted user. What each way of deleting a file does to its pad: [deleting-pads.md](deleting-pads.md).
 - `LeavingPadsListener` keeps the marks (`trashed_at`). It never stops a trash, a delete or a restore: a mark that fails is a warning, and the sweep's pass sets things right later.
   - A file or folder moved to a trash (`MoveToTrashEvent`) marks the file, or every file under the folder. A folder's files are found in the file cache by the folder's storage and path.
-  - Before any delete (`BeforeNodeDeletedEvent`, which a move to the trash raises first) the files it takes along are only looked up. A move to the trash then marks those, rather than looking them up again.
+  - Before any delete (`BeforeNodeDeletedEvent`, which a move to the trash raises first) the files it takes along are only looked up. A move to the trash then marks those, rather than looking them up again, and keeps them for the end of the delete: a move to the trash that fails falls back to a delete past it.
   - A delete past the trash (for example a WebDAV `DELETE` with `X-NC-Skip-Trashbin`) does not wait for a run. Once Nextcloud reports it done (`NodeDeletedEvent`), `GoneFileSweep::discardDeleted()` marks the looked-up files gone from the file cache - a file the trash took is still there, and is passed by - and deletes their pads, in the same request and within 5 s. After the delete Nextcloud reports a folder as a file, so what counts is what was looked up before. What does not fit in the 5 s, or finds Etherpad not answering, keeps its mark for the next run; nothing is thrown at the delete, which has succeeded (measured with Etherpad stopped). Marking only after the delete keeps the pass from clearing a mark on a file still in Files that the delete is about to take.
   - A user about to be deleted (`BeforeUserDeletedEvent`) marks every file on their home storage, found through the mount cache (`IUserMountCache`) rather than a home set up just to be deleted.
-  - A restore clears the marks of what it brings back: `NodeRestoredEvent` for core's trash (its node looked up again by path on Nextcloud 31, which cannot give its id yet), and the legacy `post_restore` hook for groupfolders, which raises nothing else (`TrashbinHookHandler`, for every restored item, folders included).
+  - A restore clears the marks of what it brings back: `NodeRestoredEvent` (its node looked up again by path on Nextcloud 31, which cannot give its id yet), and the legacy `post_restore` hook (`TrashbinHookHandler`, for every restored item, folders included), which groupfolders alone raises. Core raises both, the hook first; the listener remembers what it cleared in the request, and the event clears nothing again.
   - All of these reach one instance of the listener, as Nextcloud's container keeps the one it made.
 - `GoneFileSweep` runs every five minutes (`GoneFileSweepJob`), within 20 s (`RunBudget`):
   - Active rows with `trashed_at` whose file the file cache has nothing of are gone for good, however their trash was emptied: by a user, by expiry, by `occ trashbin:cleanup`, or by groupfolders, which sends no event. Pad, then row, the earliest mark first.

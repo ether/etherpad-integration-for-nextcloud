@@ -30,7 +30,9 @@ final class Binding {
 		public readonly int $updatedAt = 0,
 		/**
 		 * When the file was seen going to a trash or being deleted: once it is
-		 * gone from the file cache after that, it is gone for good.
+		 * gone from the file cache after that, it is gone for good. After
+		 * Etherpad refused to delete its pad, a time ahead: the next try is
+		 * not before (BindingService::postponeGone()).
 		 */
 		public readonly ?int $trashedAt = null,
 	) {
