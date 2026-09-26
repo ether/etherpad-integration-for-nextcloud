@@ -7,12 +7,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { loadPadContent } from '../../../src/lib/pad-content.js'
-
-const jsonResponse = (body, ok = true, status = 200) => ({
-	ok,
-	status,
-	json: () => Promise.resolve(body),
-})
+import { jsonResponse } from '../responses.js'
 
 describe('loadPadContent', () => {
 	beforeEach(() => {

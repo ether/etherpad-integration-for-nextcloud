@@ -14,6 +14,7 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushAsyncWork } from './flush.js'
 import { FILE_CHANGED, LOCKED, LOST_RACE, MISSING_BINDING, MISSING_FRONTMATTER, UNANSWERED_TEXT, UNREACHABLE, WAITING } from './answers.js'
+import { jsonResponse } from './responses.js'
 
 vi.mock('../../src/lib/oc-compat.js', () => ({
 	ocGenerateUrl: (path) => path,
@@ -93,12 +94,6 @@ function makeInstance(overrides = {}) {
 	}
 	return ctx
 }
-
-const jsonResponse = (body, ok = true, status = 200) => ({
-	ok,
-	status,
-	json: () => Promise.resolve(body),
-})
 
 // Endpoint prefixes overlap, so compare their full paths.
 const endpoint = (name) => `/apps/etherpad_nextcloud/api/v1/${name}`

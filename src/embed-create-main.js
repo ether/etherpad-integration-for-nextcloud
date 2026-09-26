@@ -4,7 +4,7 @@
  */
 import { DEFAULT_PAD_ACCESS_MODE, isPadAccessMode } from './lib/constants.js'
 import { ocRequestToken } from './lib/oc-compat.js'
-import { fetchJsonWithTimeout as fetchJson } from './lib/fetch-helpers.js'
+import { fetchJsonWithTimeout as fetchJson, isUnanswered } from './lib/fetch-helpers.js'
 
 (function () {
 	const root = document.getElementById('etherpad-nextcloud-embed-create')
@@ -18,6 +18,8 @@ import { fetchJsonWithTimeout as fetchJson } from './lib/fetch-helpers.js'
 	const missingNameMessage = String(root.getAttribute('data-l10n-missing-name') || 'Pad name is required.')
 	const invalidAccessModeMessage = String(root.getAttribute('data-l10n-invalid-access-mode') || 'Invalid access mode.')
 	const incompleteConfigMessage = String(root.getAttribute('data-l10n-incomplete-config') || 'Embed configuration is incomplete.')
+	const unansweredMessage = String(root.getAttribute('data-l10n-unanswered') || 'Nextcloud did not answer. The pad may have been created anyway; look in the folder before you try again.')
+	const failedMessage = String(root.getAttribute('data-l10n-failed') || 'Pad creation failed.')
 	const loadingNode = root.querySelector('[data-epnc-embed-create-loading]')
 	const errorNode = root.querySelector('[data-epnc-embed-create-error]')
 	const errorMessageNode = root.querySelector('[data-epnc-embed-create-error-message]')
@@ -68,20 +70,23 @@ import { fetchJsonWithTimeout as fetchJson } from './lib/fetch-helpers.js'
 	 * land in the iframe as "Unknown error." but in the postMessage payload as
 	 * the empty string).
 	 *
-	 * `reason` is a coarse bucket so hosts can branch without parsing the
-	 * HTTP status:
-	 *   - 'invalid' — client-side validation failed (missing name, etc.)
-	 *   - 'conflict' — backend returned 409 (e.g. duplicate filename)
-	 *   - 'server'  — any other 4xx / 5xx
-	 *   - 'network' — fetch itself failed (offline, CORS, timeout)
+	 * The host contract is in docs/architecture.md (the create flow);
+	 * `reason` in short:
+	 *   - 'invalid' — client-side validation failed
+	 *   - 'conflict' — a 409
+	 *   - 'server' — refused with another 4xx, or this app's own 5xx
+	 *   - 'network' — no answer from this app; the pad may exist
+	 * `code` and `retryable` are the server's, `null` and `false` without.
 	 */
-	const failCreate = (reason, message, status) => {
+	const failCreate = (reason, message, status, answer = null) => {
 		const normalizedMessage = String(message || 'Unknown error.')
 		showError(normalizedMessage)
 		postHostMessage('epnc:create-failed', {
 			reason,
 			status: typeof status === 'number' ? status : null,
 			message: normalizedMessage,
+			code: answer && typeof answer.code === 'string' ? answer.code : null,
+			retryable: Boolean(answer) && answer.retryable === true,
 		})
 	}
 
@@ -99,13 +104,6 @@ import { fetchJsonWithTimeout as fetchJson } from './lib/fetch-helpers.js'
 			throw new Error('Invalid embed URL origin.')
 		}
 		return url.pathname + url.search + url.hash
-	}
-
-	const classifyHttpStatus = (status) => {
-		if (status === 409) {
-			return 'conflict'
-		}
-		return 'server'
 	}
 
 	const run = async () => {
@@ -133,9 +131,10 @@ import { fetchJsonWithTimeout as fetchJson } from './lib/fetch-helpers.js'
 		body.set('name', name)
 		body.set('accessMode', accessMode)
 
-		// Step 1: server-side create. Failures here are either network
-		// (fetch threw — no HTTP status reached us) or server (we got a
-		// status code back, including the 409 on duplicate filename).
+		// Step 1: server-side create. A write, so it has no time limit (see
+		// fetchJsonWithTimeout()): cut short, it would go on creating with
+		// nobody told, and a second try would meet the file it made. A slow
+		// create is not a failed one.
 		let data
 		try {
 			data = await fetchJson(createByParentUrl, {
@@ -145,12 +144,23 @@ import { fetchJsonWithTimeout as fetchJson } from './lib/fetch-helpers.js'
 					requesttoken: requestToken(),
 				},
 				body: body.toString(),
-			})
+			}, { timeoutMs: null, fallbackMessage: failedMessage })
 		} catch (error) {
 			const status = (error && typeof error.status === 'number') ? error.status : null
-			const message = error instanceof Error ? error.message : 'Pad creation failed.'
-			const reason = status === null ? 'network' : classifyHttpStatus(status)
-			failCreate(reason, message, status)
+			const unanswered = isUnanswered(error)
+			const message = !unanswered && error instanceof Error && error.message ? error.message : failedMessage
+			// Refused, even if the body then broke off: nothing was made.
+			if (status !== null && status >= 400 && status < 500) {
+				failCreate(status === 409 ? 'conflict' : 'server', message, status, error)
+				return
+			}
+			// No answer from this app: whether the pad was made is not known.
+			if (status === null || unanswered) {
+				failCreate('network', unansweredMessage, status)
+				return
+			}
+			// This app's own 5xx, rolled back as far as it could.
+			failCreate('server', message, status, error)
 			return
 		}
 

@@ -7,7 +7,7 @@
 
 import { APP_ID } from './lib/constants.js'
 import { apiFindOriginalPad, apiRecoverFromSnapshot, apiResolvePadByPath } from './lib/api-client.js'
-import { fetchJsonWithTimeout, requestErrorMessage } from './lib/fetch-helpers.js'
+import { fetchJsonWithTimeout, isUnanswered, requestErrorMessage } from './lib/fetch-helpers.js'
 import { handFocusTo } from './lib/hand-focus.js'
 import { ocGenerateUrl, ocRequestToken, translate } from './lib/oc-compat.js'
 import { createPadSync } from './lib/pad-sync.js'
@@ -383,7 +383,7 @@ const component = {
 			} catch (error) {
 				// No answer: the pad may be set up by now, and another
 				// recovery would meet it. Opening tells, and is safe to repeat.
-				if (error && error.unanswered === true) {
+				if (isUnanswered(error)) {
 					await this.resolveOpenUrl(true)
 					return
 				}

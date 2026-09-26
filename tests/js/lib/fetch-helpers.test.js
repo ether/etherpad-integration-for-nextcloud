@@ -3,19 +3,15 @@
  * Copyright (c) 2026 Jacob Bühler
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { fetchJsonWithTimeout, requestErrorMessage } from '../../../src/lib/fetch-helpers.js'
+import { fetchJsonWithTimeout, isUnanswered, requestErrorMessage } from '../../../src/lib/fetch-helpers.js'
 import { MISSING_BINDING, UNREACHABLE } from '../answers.js'
+import { brokenBody, jsonResponse, pageResponse } from '../responses.js'
 
 /**
  * The signal chaining is the subtlest part of this module and it now
  * carries both frontends: the viewer aborts a superseded open, the embed
  * relies on the timeout, and both go through here.
  */
-const jsonResponse = (body, ok = true, status = 200) => ({
-	ok,
-	status,
-	json: () => Promise.resolve(body),
-})
 
 const stubFetch = (impl) => {
 	const mock = typeof impl === 'function' ? vi.fn(impl) : vi.fn().mockResolvedValue(impl)
@@ -24,13 +20,6 @@ const stubFetch = (impl) => {
 }
 
 const abortError = () => new DOMException('The operation was aborted.', 'AbortError')
-
-/** An answer whose body is not JSON: a proxy's or Nextcloud's own page. */
-const pageResponse = (status) => ({
-	ok: status < 400,
-	status,
-	json: () => Promise.reject(new SyntaxError('Unexpected token < in JSON at position 0')),
-})
 
 afterEach(() => {
 	vi.unstubAllGlobals()
@@ -102,6 +91,8 @@ describe('fetchJsonWithTimeout', () => {
 
 		expect(error).toMatchObject({ name: 'TypeError', unanswered: true })
 		expect(error.retryable).toBeUndefined()
+		// Nothing came, so there is no status to give.
+		expect(error.status).toBeUndefined()
 	})
 
 	// The headers came, the body did not: still no answer, not an empty one.
@@ -118,13 +109,14 @@ describe('fetchJsonWithTimeout', () => {
 		const error = fetchJsonWithTimeout('/x').catch((e) => e)
 		await vi.advanceTimersByTimeAsync(11_000)
 
-		expect(await error).toMatchObject({ message: 'Request timed out.', unanswered: true })
+		// The status came before the body broke off, and goes along.
+		expect(await error).toMatchObject({ message: 'Request timed out.', unanswered: true, status: 200 })
 	})
 
-	it('takes a network failure while the body streams in for no answer', async () => {
-		stubFetch({ ok: false, status: 503, json: () => Promise.reject(new TypeError('network error')) })
+	it('takes a network failure while the body streams in for no answer, with the status that came', async () => {
+		stubFetch(brokenBody(409))
 
-		await expect(fetchJsonWithTimeout('/x')).rejects.toMatchObject({ name: 'TypeError', unanswered: true })
+		await expect(fetchJsonWithTimeout('/x')).rejects.toMatchObject({ name: 'TypeError', unanswered: true, status: 409 })
 	})
 
 	it('reads a body that is not JSON as an empty one', async () => {
@@ -133,9 +125,7 @@ describe('fetchJsonWithTimeout', () => {
 		await expect(fetchJsonWithTimeout('/x')).resolves.toEqual({})
 	})
 
-	// This app never answers 502 or 504, and its every 503 is retryable. A
-	// gateway in its place is no answer from it, whatever it sends - its
-	// JSON may carry a message too; a server error of any other kind is one.
+	// The rule in docs/architecture.md ("Errors of the API"), row by row.
 	it.each([
 		['a proxy whose backend is gone', pageResponse(502), true],
 		['Nextcloud in maintenance', pageResponse(503), true],
@@ -146,7 +136,10 @@ describe('fetchJsonWithTimeout', () => {
 		['a load balancer out of peers', jsonResponse({ message: 'failure to get a peer from the ring-balancer' }, false, 503), true],
 		['a gateway answering JSON null', jsonResponse(null, false, 503), true],
 		['this app, not reachable further on', jsonResponse(UNREACHABLE, false, 503), undefined],
-		['a server error page', pageResponse(500), undefined],
+		['PHP dying midway', pageResponse(500), true],
+		['a proxy that gave up on a slow origin', pageResponse(524), true],
+		['this app failing', jsonResponse({ message: 'Request failed.' }, false, 500), undefined],
+		['a proxy refusing a body too large', pageResponse(413), undefined],
 	])('tells whether %s answered', async (_, response, unanswered) => {
 		stubFetch(response)
 
@@ -239,5 +232,16 @@ describe('requestErrorMessage', () => {
 		['what failed is no error', 'boom', 'Failed.'],
 	])('says what went wrong when %s', (_, error, expected) => {
 		expect(requestErrorMessage(error, 'No answer.', 'Failed.')).toBe(expected)
+	})
+})
+
+describe('isUnanswered', () => {
+	it.each([
+		['nothing came back', Object.assign(new Error('Request timed out.'), { unanswered: true }), true],
+		['this app answered', Object.assign(new Error('no binding'), { status: 400 }), false],
+		['the flag is not quite true', Object.assign(new Error('x'), { unanswered: 'yes' }), false],
+		['there is no error', null, false],
+	])('when %s', (_, error, expected) => {
+		expect(isUnanswered(error)).toBe(expected)
 	})
 })

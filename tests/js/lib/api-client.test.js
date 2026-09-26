@@ -6,6 +6,7 @@
 /** Covers request encoding, caching, invalidation, timeout, and error contracts. */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { jsonResponse, pageResponse } from '../responses.js'
 
 const importClient = async () => {
 	vi.resetModules()
@@ -24,11 +25,6 @@ afterEach(() => {
 	vi.restoreAllMocks()
 	delete window.OC
 	delete globalThis.fetch
-})
-
-const jsonResponse = (body, ok = true) => ({
-	ok,
-	json: () => Promise.resolve(body),
 })
 
 describe('api-client', () => {
@@ -143,10 +139,7 @@ describe('api-client', () => {
 
 	it('uses fallback messages for non-json errors', async () => {
 		const { apiRecoverFromSnapshot } = await importClient()
-		fetch.mockResolvedValueOnce({
-			ok: false,
-			json: () => Promise.reject(new SyntaxError('Unexpected token < in JSON')),
-		})
+		fetch.mockResolvedValueOnce(pageResponse(400))
 
 		await expect(apiRecoverFromSnapshot(10)).rejects.toThrow('Recovery failed.')
 	})

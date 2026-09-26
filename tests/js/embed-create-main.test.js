@@ -4,8 +4,12 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushAsyncWork } from './flush.js'
+import { FILE_CHANGED, LOCKED } from './answers.js'
+import { brokenBody, errorResponse, jsonResponse, pageResponse } from './responses.js'
 
-
+// The page's sentences for no answer and for a failure without one.
+const NO_ANSWER = 'No answer; look in the folder first.'
+const CREATE_FAILED = 'Anlegen fehlgeschlagen.'
 
 const setupEmbedCreateDom = () => {
 	document.body.innerHTML = `
@@ -16,7 +20,9 @@ const setupEmbedCreateDom = () => {
 			data-request-token="csrf"
 			data-l10n-missing-name="Pad name is required."
 			data-l10n-invalid-access-mode="Invalid access mode."
-			data-l10n-incomplete-config="Embed configuration is incomplete.">
+			data-l10n-incomplete-config="Embed configuration is incomplete."
+			data-l10n-unanswered="${NO_ANSWER}"
+			data-l10n-failed="${CREATE_FAILED}">
 			<div data-epnc-embed-create-loading>loading</div>
 			<div data-epnc-embed-create-error hidden>
 				<p data-epnc-embed-create-error-message></p>
@@ -24,14 +30,6 @@ const setupEmbedCreateDom = () => {
 		</div>
 	`
 }
-
-const jsonResponse = (body, ok = true, status = 200) => ({
-	ok,
-	status,
-	json: () => Promise.resolve(body),
-})
-
-const errorResponse = (body, status = 400) => jsonResponse(body, false, status)
 
 const errorMessageText = () => document.querySelector('[data-epnc-embed-create-error-message]').textContent
 const errorPanelHidden = () => document.querySelector('[data-epnc-embed-create-error]').hidden
@@ -145,56 +143,71 @@ describe('embed-create-main', () => {
 		expect(locationReplaceSpy).toHaveBeenCalledWith('/embed/by-id/778')
 	})
 
-	it('posts epnc:create-failed with reason=conflict on a 409 from the API', async () => {
-		fetch.mockResolvedValueOnce(errorResponse(
-			{ message: 'A file with this name already exists.' },
-			409,
-		))
+	/**
+	 * What the host is told, and the page shows, for each way a create can
+	 * fail. Which failures count as no answer is the helper's to test; here
+	 * one of each kind.
+	 */
+	it.each([
+		['the network failing', new TypeError('Failed to fetch'), 'network', null, NO_ANSWER],
+		['the browser stopping the request', new DOMException('The operation was aborted.', 'AbortError'), 'network', null, NO_ANSWER],
+		['a proxy whose backend is gone', pageResponse(502), 'network', 502, NO_ANSWER],
+		['a success whose body broke off', brokenBody(200), 'network', 200, NO_ANSWER],
+		['a name taken', errorResponse({ message: 'A file with this name already exists.' }, 409), 'conflict', 409, 'A file with this name already exists.'],
+		['a file changed while its pad was set up', errorResponse(FILE_CHANGED, 409), 'conflict', 409, FILE_CHANGED.message, { code: 'pad_file_changed' }],
+		['a name taken whose body broke off', brokenBody(409), 'conflict', 409, CREATE_FAILED],
+		['a pad type switched off', errorResponse({ message: 'This pad type is disabled on this instance.', code: 'pad_type_disabled', access_mode: 'protected' }, 403), 'server', 403, 'This pad type is disabled on this instance.', { code: 'pad_type_disabled' }],
+		['a proxy refusing a body too large', pageResponse(413), 'server', 413, CREATE_FAILED],
+		['this app failing', errorResponse({ message: 'Could not create pad' }, 500), 'server', 500, 'Could not create pad'],
+		['this app failing without a sentence', errorResponse({}, 500), 'server', 500, CREATE_FAILED],
+		['this app, the folder locked', errorResponse(LOCKED, 503), 'server', 503, LOCKED.message, { retryable: true }],
+	])('tells the host what came of %s', async (_, outcome, reason, status, message, answer = {}) => {
+		if (outcome instanceof Error) {
+			fetch.mockRejectedValueOnce(outcome)
+		} else {
+			fetch.mockResolvedValueOnce(outcome)
+		}
 
 		await importEmbedCreate()
 		await flushAsyncWork()
 
 		expect(parentPostSpy).toHaveBeenCalledOnce()
-		const payload = parentPostSpy.mock.calls[0][0]
-		expect(payload.type).toBe('epnc:create-failed')
-		expect(payload.reason).toBe('conflict')
-		expect(payload.status).toBe(409)
-		expect(payload.message).toBe('A file with this name already exists.')
-
-		// Inline error stays visible for users who can actually see the iframe.
+		expect(parentPostSpy.mock.calls[0][0]).toEqual({
+			type: 'epnc:create-failed',
+			reason,
+			status,
+			message,
+			code: answer.code ?? null,
+			retryable: answer.retryable ?? false,
+		})
+		// Inline too, for those who can see the iframe, and no redirect.
 		expect(errorPanelHidden()).toBe(false)
-		expect(errorMessageText()).toBe('A file with this name already exists.')
-
-		// No redirect on failure.
+		expect(errorMessageText()).toBe(message)
 		expect(locationReplaceSpy).not.toHaveBeenCalled()
 	})
 
-	it('posts epnc:create-failed with reason=server on a 5xx response', async () => {
-		fetch.mockResolvedValueOnce(errorResponse(
-			{ message: 'Could not create pad' },
-			500,
-		))
+	// A write: cut short, it would go on creating with nobody told.
+	it('waits for a slow create instead of calling it failed', async () => {
+		vi.useFakeTimers()
+		try {
+			let settle
+			fetch.mockImplementationOnce((url, init) => new Promise((resolve, reject) => {
+				init.signal.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')))
+				settle = () => resolve(jsonResponse({ embed_url: '/embed/by-id/777', file_id: 777, pad_id: 'g.abc$mypad', access_mode: 'protected' }))
+			}))
 
-		await importEmbedCreate()
-		await flushAsyncWork()
+			await importEmbedCreate()
+			await vi.advanceTimersByTimeAsync(60_000)
+			expect(parentPostSpy).not.toHaveBeenCalled()
+			settle()
+			await flushAsyncWork()
 
-		const payload = parentPostSpy.mock.calls[0][0]
-		expect(payload.type).toBe('epnc:create-failed')
-		expect(payload.reason).toBe('server')
-		expect(payload.status).toBe(500)
-	})
-
-	it('posts epnc:create-failed with reason=network when fetch itself throws', async () => {
-		fetch.mockRejectedValueOnce(new Error('Network unreachable'))
-
-		await importEmbedCreate()
-		await flushAsyncWork()
-
-		const payload = parentPostSpy.mock.calls[0][0]
-		expect(payload.type).toBe('epnc:create-failed')
-		expect(payload.reason).toBe('network')
-		expect(payload.status).toBe(null)
-		expect(payload.message).toBe('Network unreachable')
+			expect(parentPostSpy).toHaveBeenCalledOnce()
+			expect(parentPostSpy.mock.calls[0][0].type).toBe('epnc:create-succeeded')
+			expect(locationReplaceSpy).toHaveBeenCalledWith('/embed/by-id/777')
+		} finally {
+			vi.useRealTimers()
+		}
 	})
 
 	it('posts epnc:create-failed with reason=invalid when launcher params are missing', async () => {
