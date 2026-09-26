@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Service;
 
+use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
 use OCA\EtherpadNextcloud\Exception\LifecycleException;
 use OCA\EtherpadNextcloud\Exception\NotAPadFileException;
 use OCA\EtherpadNextcloud\Exception\PadAlreadyHasBindingException;
@@ -54,7 +55,6 @@ class RestoreService {
 		private PadFileService $padFileService,
 		private EtherpadClient $etherpadClient,
 		private ManagedPadLifecycle $padLifecycle,
-		private AppConfigService $appConfig,
 		private LoggerInterface $logger,
 		private ISecureRandom $secureRandom,
 		private ProvisionedPadRollback $provisionedPadRollback,
@@ -72,15 +72,13 @@ class RestoreService {
 
 		$binding = $this->findBindingForRestore($fileId);
 		if ($binding === null) {
-			// No row to settle. Whether to make a new pad is the setting's
-			// call, as deleting the old one was.
-			if (!$this->appConfig->isDeleteOnTrashEnabled()) {
-				return LifecycleResult::skipped('delete_on_trash_disabled', $fileId, $this->logger);
-			}
+			// Back from the trash with no pad of its own - its pad went with
+			// the trash, as in 1.1.0-beta.1 - so it gets one from its content,
+			// whatever the setting says now: nothing is left to keep.
 			return $this->restoreWithoutBinding($file, $fileId);
 		}
 		if (!$binding->isWaiting()) {
-			return LifecycleResult::skipped('binding_not_pending_delete', $fileId, $this->logger);
+			return $this->restoreActiveRow($file, $fileId, $binding);
 		}
 		// Settled whatever the setting says now: the file is back, and a row
 		// left waiting would keep it from opening.
@@ -501,12 +499,12 @@ class RestoreService {
 	}
 
 	/**
-	 * A new pad from the file's content for an active row whose pad
-	 * Etherpad has lost (ManagedPadLifecycle::howLost()), the row moved onto
-	 * it: what a restore does for a row whose pad is gone. Asked here again,
-	 * not taken from the open that sent the user: the answer must hold for
-	 * the row as it is now. A row that waits, one naming another pad than
-	 * the file, or one whose pad Etherpad has, is left alone.
+	 * The API's recovery of an active row whose pad Etherpad has lost
+	 * (ManagedPadLifecycle::howLost()): a new pad from the file's content,
+	 * the row moved onto it. Asked here again, not taken from the open that
+	 * sent the user: the answer must hold for the row as it is now. A row
+	 * that waits, one naming another pad than the file, or one whose pad
+	 * Etherpad has, is refused.
 	 *
 	 * @return array{status: string, reason?: string, old_pad_id?: string, new_pad_id?: string}
 	 * @throws PadAlreadyHasBindingException
@@ -528,6 +526,52 @@ class RestoreService {
 		if ($lost === null) {
 			throw new PadAlreadyHasBindingException('A binding already exists for this file.');
 		}
+		return $this->replaceLostPad($file, $fileId, $binding, $pad, $lost);
+	}
+
+	/**
+	 * A file back from the trash whose row stayed active: its pad is taken
+	 * back as it is - unless Etherpad has lost it while the file was away.
+	 * Then the file gets a new pad from its content at once, as an open
+	 * would only offer: coming back from the trash, the file is surely the
+	 * one the pad was. Etherpad not answering leaves the row as it is, and
+	 * the next open asks again.
+	 *
+	 * @return array{status: string, reason?: string, old_pad_id?: string, new_pad_id?: string}
+	 * @throws LifecycleException
+	 */
+	private function restoreActiveRow(File $file, int $fileId, Binding $binding): array {
+		try {
+			$pad = $this->readRestoredPad($file);
+		} catch (\Throwable) {
+			// The open reads it again, and says what is wrong with it.
+			return LifecycleResult::skipped(self::REASON_FILE_UNREADABLE, $fileId, $this->logger);
+		}
+		if ($pad->isExternal || $pad->padId !== $binding->padId) {
+			return LifecycleResult::skipped('binding_not_pending_delete', $fileId, $this->logger);
+		}
+		try {
+			$lost = $this->padLifecycle->howLost($binding->padId, $binding->accessMode, $pad->snapshotRev);
+		} catch (\Throwable $e) {
+			if (EtherpadClientException::isEtherpadUnreachable($e)) {
+				return LifecycleResult::skipped(self::REASON_PRESENCE_UNKNOWN, $fileId, $this->logger);
+			}
+			throw LifecycleException::failed('Restore', $e);
+		}
+		if ($lost === null) {
+			return LifecycleResult::skipped('binding_not_pending_delete', $fileId, $this->logger);
+		}
+		return $this->replaceLostPad($file, $fileId, $binding, $pad, $lost);
+	}
+
+	/**
+	 * The file's new pad in place of the one Etherpad lost: what a restore
+	 * does for a row whose pad is gone (restoreWithReplacement()).
+	 *
+	 * @return array{status: string, reason?: string, old_pad_id?: string, new_pad_id?: string}
+	 * @throws LifecycleException
+	 */
+	private function replaceLostPad(File $file, int $fileId, Binding $binding, ParsedPadFile $pad, PadPresence $lost): array {
 		$result = $this->restoreWithReplacement($file, $file->getPath(), $pad, $fileId, $binding->padId, BindingService::STATE_ACTIVE, $binding->accessMode, $lost);
 		if (($result['status'] ?? '') === LifecycleResult::RESTORED) {
 			$this->logger->info('A pad Etherpad had lost was made anew from its file.', [

@@ -30,11 +30,15 @@ folder. So does a file replaced by moving another file onto it (WebDAV
 ## Restored from the trash
 
 - **A `.pad` file whose pad was deleted:** a new pad is made from the
-  snapshot in the file. It holds the content, not the pad's history.
+  snapshot in the file, at once. It holds the content, not the pad's
+  history. This is also how files deleted under 1.1.0-beta.1 come back.
 - **A `.pad` file restored before the background job deleted its pad:** the
-  file has its pad back, with any edits the snapshot missed.
+  file has its pad back, with any edits the snapshot missed. Should
+  Etherpad have lost the pad meanwhile, a new one is made from the file at
+  once.
 - **A folder:** its pads were never touched, and the files have them as
-  before.
+  before. A file among them whose pad Etherpad has lost offers a new one
+  when it is opened.
 
 ## Deleted for good
 
@@ -68,8 +72,8 @@ database - opening its file says so. Whoever may edit the file can make a
 new pad from the content saved in it; from then on the file opens the new
 pad. The same happens for a public pad that someone visited by its link
 after it was lost, which Etherpad makes anew, empty. A copied `.pad` file,
-which has no pad of its own, offers the same; one restored from the trash
-without a pad gets a new one from its content on its own.
+which has no pad of its own, offers the same. A file restored from the
+trash does not ask: it gets its new pad on its own.
 
 ## With `delete_on_trash` off
 

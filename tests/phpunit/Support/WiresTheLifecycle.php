@@ -131,7 +131,6 @@ trait WiresTheLifecycle {
 			$padFiles,
 			$etherpad,
 			$padLifecycle,
-			$appConfig,
 			$logger,
 			$secureRandom ?? $this->createMock(ISecureRandom::class),
 			new ProvisionedPadRollback($bindings, $padLifecycle, $padLifecycleLogger),
