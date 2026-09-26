@@ -10,6 +10,10 @@
 	data-health-url="<?php p((string)$_['health_check_url']); ?>"
 	data-consistency-url="<?php p((string)$_['consistency_check_url']); ?>"
 	data-settle-pending-url="<?php p((string)$_['settle_pending_url']); ?>"
+	data-release-brake-url="<?php p((string)$_['release_brake_url']); ?>"
+	data-l10n-release-brake-confirm="<?php p((string)$_['l10n']['release_brake_confirm']); ?>"
+	data-l10n-releasing-brake="<?php p((string)$_['l10n']['releasing_brake']); ?>"
+	data-l10n-release-brake-failed="<?php p((string)$_['l10n']['release_brake_failed']); ?>"
 	data-l10n-saving="<?php p((string)$_['l10n']['saving']); ?>"
 	data-l10n-saved="<?php p((string)$_['l10n']['saved']); ?>"
 	data-l10n-checking="<?php p((string)$_['l10n']['checking']); ?>"
@@ -244,6 +248,9 @@
 
 		<div class="etherpad-nextcloud-admin-actions">
 			<button type="button" id="etherpad-nextcloud-consistency-check"><?php p((string)$_['l10n']['consistency_button']); ?></button>
+		</div>
+		<div id="etherpad-nextcloud-brake-actions" class="etherpad-nextcloud-admin-actions" style="display:none;">
+			<button type="button" id="etherpad-nextcloud-release-brake"><?php p((string)$_['l10n']['release_brake_button']); ?></button>
 		</div>
 		<div id="etherpad-nextcloud-pending-actions" class="etherpad-nextcloud-admin-actions" style="display:none;">
 			<button type="button" id="etherpad-nextcloud-settle-pending"><?php p((string)$_['l10n']['settle_pending_button']); ?></button>

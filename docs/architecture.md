@@ -86,6 +86,7 @@ checked-in runtime assets in `js/`.
   - `deleted_at`
   - `created_at`
   - `updated_at`
+  - `trashed_at`, `missing_since`: when the file was seen leaving Files, and when a sweep first missed it without that (`Version000005Date20260926150000`, see "Files gone for good")
   - stores internal managed pads only; external `ext.*` rows from earlier development versions are removed by `Version000003Date20260512230000`
 - `.pad` file
   - Frontmatter: format, binding metadata, state, export metadata.
@@ -275,11 +276,31 @@ Primary flow (native viewer):
 - `deleted_at` is set only in `pending_delete`, when a row gets there, and kept while it stays.
 - External pads skip lifecycle side effects entirely. Trash/restore only affects the Nextcloud file; the remote Etherpad server is never mutated.
 
+### 5b) Files gone for good
+
+- A pad goes once its `.pad` file is gone for good: the file cache has nothing left of it. For now this covers active rows, beside the trash flow above: files whose trash that flow never saw, such as a team folder deleted as a whole, a file deleted past the trash, a user deleted, or a file cache rebuilt.
+- The row of a `.pad` file seen leaving Files gets `trashed_at` (`MarkLeavingPadsListener`): a file or folder moved to a trash (`MoveToTrashEvent`), one deleted past it (`BeforeNodeDeletedEvent`), and every file of a user about to be deleted (`BeforeUserDeletedEvent`). A folder's files are found in the file cache by the folder's storage and path. The listener never stops a trash or a delete: a mark that fails is a warning, and the sweep finds the file later.
+- `GoneFileSweep` runs every five minutes (`GoneFileSweepJob`), within 20 s (`RunBudget`):
+  - Active rows with `trashed_at` whose file the file cache has nothing of are gone for good, however their trash was emptied: by a user, by expiry, by `occ trashbin:cleanup`, or by groupfolders, which sends no event. Pad, then row, the earliest mark first.
+  - Then a slice of 200 active rows, in id order from where the last one stopped, starting over after the last. It sets `trashed_at` for a file under `files_trashbin/` or `__groupfolders/trash/` and clears it for one back in Files. It sets `missing_since` for a file the file cache has nothing of and that was never seen leaving, and clears it for one found again. Only the listener marks the trash of a team folder with its own storage (a bare `trash/`).
+  - A file missing without a mark keeps its pad for a grace period (`gone_file_grace_seconds`, seven days). After it, pad and row go, with a warning that names the pad: `The file of a pad has been missing past the grace period without passing a trash; the pad is deleted.`
+  - The brake holds when more rows have gone missing without a mark since its last release than its threshold (`gone_file_brake_threshold`, 20), as when a file cache is lost or a storage is gone. While it holds, no pad goes after its grace period.
+    - It is checked once a slice, after the slice's dates are in, so it holds while the files go missing and an admin has the grace period to look.
+    - `Many .pad files went missing at once without passing a trash; their pads are kept until an admin releases the brake.` is logged once, when it starts to hold.
+    - The consistency check shows it, and the admin page releases it (`POST /api/v1/admin/gone-file-brake/release`). Rows missing until then no longer count, and their pads go once past their grace period.
+    - Files seen leaving are never held.
+  - Right before a pad goes, the file cache is asked once more.
+    - A pad Etherpad no longer has counts as deleted, and its row goes.
+    - A pad Etherpad refuses to delete keeps its row and is tried again next run, with a warning.
+    - Etherpad not answering ends the run with one `info` line, and the slice it cut short is taken again.
+  - With `delete_on_trash` off no pad goes here, but the dates and the brake are kept, so switching it on does not start a grace period over.
+- The settings live in the app config: `gone_file_grace_seconds` and `gone_file_brake_threshold`. The sweep keeps `gone_file_brake_released_at`, `gone_file_brake_engaged` and `gone_file_sweep_cursor` there too.
+
 ### 6) Admin Integrity Check (optional)
 
 1. Admin runs `POST /api/v1/admin/consistency-check`.
 2. Service scans DB/file metadata consistency.
-3. Returns aggregate counters and bounded sample lists for diagnostics.
+3. Returns aggregate counters and bounded sample lists for diagnostics: rows whose file is gone, and among the active ones those missing without a mark (in their grace period, or held), with the state of the brake. While the brake holds, the admin page offers to release it.
 4. External `.pad` files without bindings are expected and are excluded from missing-binding diagnostics.
 
 ## Main Frontend Modules
@@ -332,6 +353,8 @@ Primary flow (native viewer):
   - Register the viewer handler on public-share pages and load the one-shot opener for public single-file `.pad` shares or existing compatibility links.
 - `OCA\Files_Trashbin\Events\MoveToTrashEvent`, and the legacy event `OCA\Files_Trashbin::moveToTrash`
   - Trash lifecycle.
+- `OCA\Files_Trashbin\Events\MoveToTrashEvent`, `OCP\Files\Events\Node\BeforeNodeDeletedEvent`, `OCP\User\Events\BeforeUserDeletedEvent`
+  - Mark the rows of `.pad` files leaving Files (see "Files gone for good").
 - `OCA\Files_Trashbin\Events\NodeRestoredEvent`
   - Restore lifecycle.
 - `\OCA\Files_Trashbin\Trashbin::post_restore` (legacy hook)

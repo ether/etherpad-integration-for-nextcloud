@@ -63,6 +63,9 @@ class AppConfigServiceTest extends TestCase {
 		$service->setGoneFileSweepCursor(400);
 		$service->setGoneFileBrakeEngaged(true);
 		$this->assertSame([400, true], [$service->getGoneFileSweepCursor(), $service->isGoneFileBrakeEngaged()]);
+
+		$service->releaseGoneFileBrake(1200);
+		$this->assertSame([1200, false], [$service->getGoneFileBrakeReleasedAt(), $service->isGoneFileBrakeEngaged()]);
 	}
 
 	private function service(IConfig $config, ?IAppConfig $appConfig = null): AppConfigService {

@@ -21,6 +21,7 @@ use OCA\EtherpadNextcloud\Service\CookieDomainPolicy;
 use OCA\EtherpadNextcloud\Service\PadTemplateAdminService;
 use OCA\EtherpadNextcloud\Service\PendingBindingService;
 use OCA\EtherpadNextcloud\Service\EtherpadHealthCheckService;
+use OCA\EtherpadNextcloud\Service\GoneFileSweep;
 use OCA\EtherpadNextcloud\Service\HealthCheckResult;
 use OCA\EtherpadNextcloud\Service\StoredAdminSettings;
 use OCA\EtherpadNextcloud\Service\ValidatedAdminSettings;
@@ -167,6 +168,21 @@ class AdminControllerTest extends TestCase {
 		$this->assertSame(1, $response->getData()['restore_pending_count']);
 	}
 
+	/** An admin releases the brake of the sweep of files gone for good; nobody else can. */
+	public function testReleasesTheBrakeForAnAdminOnly(): void {
+		$sweep = $this->createMock(GoneFileSweep::class);
+		$sweep->expects($this->once())->method('releaseBrake');
+
+		$response = $this->buildController(goneFileSweep: $sweep)->releaseGoneFileBrake();
+		$this->assertSame(Http::STATUS_OK, $response->getStatus());
+		$this->assertTrue($response->getData()['ok']);
+
+		$refused = $this->createMock(GoneFileSweep::class);
+		$refused->expects($this->never())->method('releaseBrake');
+		$response = $this->buildController(groupManager: $this->adminGroup(false), goneFileSweep: $refused)->releaseGoneFileBrake();
+		$this->assertSame(Http::STATUS_FORBIDDEN, $response->getStatus());
+	}
+
 	public function testSetTestFaultRequiresDebugMode(): void {
 		$testFaults = $this->createMock(AdminTestFaultService::class);
 		$testFaults->method('setFault')->willThrowException(new AdminDebugModeRequiredException());
@@ -280,6 +296,7 @@ class AdminControllerTest extends TestCase {
 		?AdminConsistencyCheckResponseBuilder $consistencyResponses = null,
 		?AdminTestFaultService $testFaults = null,
 		?PadTemplateAdminService $padTemplateAdmin = null,
+		?GoneFileSweep $goneFileSweep = null,
 	): AdminController {
 		$l10n = $this->buildL10n();
 		$logger = $this->createMock(LoggerInterface::class);
@@ -301,6 +318,7 @@ class AdminControllerTest extends TestCase {
 			new CookieDomainMessages($l10n),
 			$this->urlGenerator(),
 			$padTemplateAdmin ?? $this->createMock(PadTemplateAdminService::class),
+			$goneFileSweep ?? $this->createMock(GoneFileSweep::class),
 		);
 	}
 

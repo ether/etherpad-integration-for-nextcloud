@@ -147,11 +147,9 @@ class GoneFileSweepTest extends TestCase {
 		$this->assertSame(['pad-trashed'], $this->deletedPads, 'held past their grace period');
 		$this->assertSame([], $this->lines, 'warned once');
 
-		$this->config['released_at'] = $this->clock->getTime();
-		$this->config['engaged'] = false;
-		$this->sweep();
+		$this->sweep(release: true);
 		$this->assertSame(['pad-trashed', 'pad-old', 'pad-3', 'pad-4', 'pad-5'], $this->deletedPads, 'released');
-		$this->assertFalse($this->config['engaged']);
+		$this->assertSame([$this->clock->getTime(), false], [$this->config['released_at'], $this->config['engaged']]);
 	}
 
 	/**
@@ -312,7 +310,8 @@ class GoneFileSweepTest extends TestCase {
 		$this->db = new InMemoryBindingTable($rows, $fileCache);
 	}
 
-	private function sweep(?BindingService $bindings = null): void {
+	/** A run, or with $release an admin's release of the brake first. */
+	private function sweep(?BindingService $bindings = null, bool $release = false): void {
 		$etherpad = $this->createMock(EtherpadClient::class);
 		$etherpad->method('deletePad')->willReturnCallback(function (string $padId): void {
 			if (isset($this->padErrors[$padId])) {
@@ -332,6 +331,10 @@ class GoneFileSweepTest extends TestCase {
 		$config->method('setGoneFileBrakeEngaged')->willReturnCallback(function (bool $engaged): void {
 			$this->config['engaged'] = $engaged;
 		});
+		$config->method('releaseGoneFileBrake')->willReturnCallback(function (int $now): void {
+			$this->config['released_at'] = $now;
+			$this->config['engaged'] = false;
+		});
 		$config->method('getGoneFileSweepCursor')->willReturnCallback(fn (): int => (int)$this->config['cursor']);
 		$config->method('setGoneFileSweepCursor')->willReturnCallback(function (int $cursor): void {
 			$this->config['cursor'] = $cursor;
@@ -342,13 +345,17 @@ class GoneFileSweepTest extends TestCase {
 				$this->lines[] = [$level, $message, $context['fileId'] ?? null];
 			});
 		}
-		(new GoneFileSweep(
+		$sweep = new GoneFileSweep(
 			$bindings ?? new BindingService($this->db, $this->clock),
 			new ManagedPadLifecycle($etherpad, $this->createMock(LoggerInterface::class)),
 			$config,
 			$this->clock,
 			$logger,
-		))->run();
+		);
+		if ($release) {
+			$sweep->releaseBrake();
+		}
+		$sweep->run();
 	}
 
 	/** @return list<int> the files that still have a row */

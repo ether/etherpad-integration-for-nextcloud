@@ -12,6 +12,8 @@
 	const pendingActions = document.getElementById('etherpad-nextcloud-pending-actions')
 	const pendingCountNode = document.getElementById('etherpad-nextcloud-pending-count')
 	const restorePendingCountNode = document.getElementById('etherpad-nextcloud-restore-pending-count')
+	const brakeActions = document.getElementById('etherpad-nextcloud-brake-actions')
+	const releaseBrakeButton = document.getElementById('etherpad-nextcloud-release-brake')
 	const allowExternalCheckbox = form ? form.querySelector('input[name="allow_external_pads"]') : null
 	const protectedPadsCheckbox = form ? form.querySelector('input[name="enable_protected_pads"]') : null
 	const publicPadsCheckbox = form ? form.querySelector('input[name="enable_public_pads"]') : null
@@ -42,6 +44,7 @@
 	const healthUrl = root.getAttribute('data-health-url') || ''
 	const consistencyUrl = root.getAttribute('data-consistency-url') || ''
 	const settlePendingUrl = root.getAttribute('data-settle-pending-url') || ''
+	const releaseBrakeUrl = root.getAttribute('data-release-brake-url') || ''
 	const l10n = {
 		saving: root.getAttribute('data-l10n-saving') || 'Saving settings...',
 		saved: root.getAttribute('data-l10n-saved') || 'Settings saved.',
@@ -55,6 +58,9 @@
 		pendingDeleteLabel: root.getAttribute('data-l10n-pending-delete-label') || 'Pending Etherpad deletes',
 		restorePendingLabel: root.getAttribute('data-l10n-restore-pending-label') || 'Unresolved restores',
 		settleFailed: root.getAttribute('data-l10n-settle-failed') || 'Pending pad check failed.',
+		releaseBrakeConfirm: root.getAttribute('data-l10n-release-brake-confirm') || 'Pads whose .pad file has been missing past the grace period will be deleted. Release the brake?',
+		releasingBrake: root.getAttribute('data-l10n-releasing-brake') || 'Releasing the brake...',
+		releaseBrakeFailed: root.getAttribute('data-l10n-release-brake-failed') || 'Releasing the brake failed.',
 		templateUploading: root.getAttribute('data-l10n-template-uploading') || 'Uploading template...',
 		templateDelete: root.getAttribute('data-l10n-template-delete') || 'Delete',
 		templateTooLarge: root.getAttribute('data-l10n-template-too-large') || 'Template file is too large.',
@@ -500,10 +506,37 @@
 			try {
 				const data = await postJson(consistencyUrl, {})
 				const bindingWithoutFile = Number(data.binding_without_file_count || 0)
-				const message = `${String(data.message || l10n.consistencyOk)} binding_without_file=${String(bindingWithoutFile)}`
-				setStatus(message, bindingWithoutFile > 0 ? 'error' : 'success', diagnosticsTarget)
+				const missingFile = Number(data.missing_file_count || 0)
+				const brakeEngaged = data.gone_file_brake_engaged === true
+				const message = `${String(data.message || l10n.consistencyOk)} binding_without_file=${String(bindingWithoutFile)} | missing_file=${String(missingFile)}`
+				setStatus(message, brakeEngaged || bindingWithoutFile > 0 ? 'error' : 'success', diagnosticsTarget)
+				showBrakeActions(brakeEngaged)
 			} catch (error) {
 				setStatus(error instanceof Error ? error.message : l10n.consistencyFailed, 'error', diagnosticsTarget)
+			}
+		})
+	}
+
+	/** The brake of the sweep of files gone for good: released only here, and offered only while it holds. */
+	function showBrakeActions(engaged) {
+		if (brakeActions instanceof HTMLElement) {
+			brakeActions.style.display = engaged && releaseBrakeUrl !== '' ? '' : 'none'
+		}
+	}
+
+	if (releaseBrakeButton instanceof HTMLElement) {
+		releaseBrakeButton.addEventListener('click', async () => {
+			if (!window.confirm(l10n.releaseBrakeConfirm)) {
+				return
+			}
+			clearFieldErrors()
+			beginStatus(l10n.releasingBrake, diagnosticsTarget)
+			try {
+				const data = await postJson(releaseBrakeUrl, {})
+				showBrakeActions(false)
+				setStatus(String(data.message || 'OK'), 'success', diagnosticsTarget)
+			} catch (error) {
+				setStatus(error instanceof Error ? error.message : l10n.releaseBrakeFailed, 'error', diagnosticsTarget)
 			}
 		})
 	}

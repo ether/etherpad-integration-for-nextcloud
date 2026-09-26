@@ -61,7 +61,13 @@ class AppConfigService {
 		return $this->appConfig->getValueInt(Application::APP_ID, 'gone_file_brake_released_at');
 	}
 
-	/** Whether the last sweep found the brake on: so it warns once, and the health check can say so. */
+	/** An admin lets the sweep go on: files missed until $now no longer hold it. */
+	public function releaseGoneFileBrake(int $now): void {
+		$this->appConfig->setValueInt(Application::APP_ID, 'gone_file_brake_released_at', $now);
+		$this->setGoneFileBrakeEngaged(false);
+	}
+
+	/** Whether the last sweep found the brake on: so it warns once, and the consistency check can say so. */
 	public function isGoneFileBrakeEngaged(): bool {
 		return $this->appConfig->getValueBool(Application::APP_ID, 'gone_file_brake_engaged');
 	}

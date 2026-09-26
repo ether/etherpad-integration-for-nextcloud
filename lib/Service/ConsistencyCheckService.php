@@ -9,17 +9,21 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\Service;
 
 use OCA\EtherpadNextcloud\Util\DbRows;
+use OCP\DB\QueryBuilder\IQueryBuilder;
 use OCP\IDBConnection;
 
 class ConsistencyCheckService {
 	public function __construct(
 		private IDBConnection $db,
+		private AppConfigService $appConfig,
 	) {
 	}
 
 	/**
 	 * @return array{
 	 *   binding_without_file_count:int,
+	 *   missing_file_count:int,
+	 *   gone_file_brake_engaged:bool,
 	 *   samples:array{bindings_without_file:array<int,array<string,mixed>>}
 	 * }
 	 */
@@ -28,6 +32,8 @@ class ConsistencyCheckService {
 
 		return [
 			'binding_without_file_count' => $this->countBindingsWithoutFile(),
+			'missing_file_count' => $this->countMissingFiles(),
+			'gone_file_brake_engaged' => $this->appConfig->isGoneFileBrakeEngaged(),
 			'samples' => [
 				'bindings_without_file' => $this->sampleBindingsWithoutFile($limit),
 			],
@@ -40,7 +46,24 @@ class ConsistencyCheckService {
 			->from(BindingService::TABLE, 'b')
 			->leftJoin('b', 'filecache', 'fc', $qb->expr()->eq('b.file_id', 'fc.fileid'))
 			->where($qb->expr()->isNull('fc.fileid'));
+		return $this->count($qb);
+	}
 
+	/**
+	 * Active rows whose file went missing without being seen leaving Files:
+	 * in their grace period, or held by the brake (GoneFileSweep).
+	 */
+	private function countMissingFiles(): int {
+		$qb = $this->db->getQueryBuilder();
+		$qb->selectAlias($qb->createFunction('COUNT(*)'), 'cnt')
+			->from(BindingService::TABLE)
+			->where($qb->expr()->isNotNull('missing_since'))
+			->andWhere($qb->expr()->isNull('trashed_at'))
+			->andWhere($qb->expr()->eq('state', $qb->createNamedParameter(BindingService::STATE_ACTIVE)));
+		return $this->count($qb);
+	}
+
+	private function count(IQueryBuilder $qb): int {
 		$result = $qb->executeQuery();
 		$row = DbRows::one($result->fetch());
 		$result->closeCursor();

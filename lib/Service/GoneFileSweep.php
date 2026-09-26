@@ -71,6 +71,15 @@ class GoneFileSweep {
 	}
 
 	/**
+	 * An admin's release of the brake: the files missing until now no longer
+	 * count, and their pads go once past their grace period. The next slices
+	 * find out whether it holds again.
+	 */
+	public function releaseBrake(): void {
+		$this->appConfig->releaseGoneFileBrake($this->timeFactory->getTime());
+	}
+
+	/**
 	 * One slice of the pass over every active row, from where the last one
 	 * stopped. The dates first, then the brake, so files going missing in
 	 * this slice count, then the pads past their grace period. The cursor
