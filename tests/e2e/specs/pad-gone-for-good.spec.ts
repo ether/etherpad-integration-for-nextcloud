@@ -12,8 +12,9 @@ import {
 	padApiPost,
 	propfindFileId,
 	purgeTrashbinEntry,
+	restoreFromTrashViaDav,
 } from '../fixtures/dav'
-import { groupExists, groupIdOfPadUrl, padExists, padIdOfPadUrl } from '../fixtures/etherpad'
+import { etherpadApiPost, groupExists, groupIdOfPadUrl, padExists, padIdOfPadUrl } from '../fixtures/etherpad'
 import {
 	addToGroup,
 	createAccount,
@@ -192,6 +193,38 @@ test.describe('pads of team folder files deleted for good', () => {
 		await purgeTrashbinEntry(entry!)
 		await settle()
 		expect(await padExists(padId), 'deleted from the trash, the folder should take its pads').toBe(false)
+	})
+
+	/**
+	 * A restore takes back the mark of the move to the trash. A team folder
+	 * deleted as a whole tells no app about it, so its pads stay - a
+	 * restored one too, which a mark left behind would have let the sweep
+	 * delete.
+	 */
+	test('a folder restored from the trash is not taken for one gone through it', async () => {
+		const other = uniqueName('gone-team-other')
+		const otherId = await createTeamFolder(other, group)
+		let padId: string | null = null
+		try {
+			const folder = uniqueName('gone-team-restored')
+			await mkcolViaDav(`${other}/${folder}`)
+			const pad = await padInTeam(`${other}/${folder}/${uniquePadName('restored')}`)
+			made.pop()
+			padId = padIdOfPadUrl(pad.padUrl)
+
+			await deleteViaDav(`${other}/${folder}`)
+			await restoreFromTrashViaDav(folder)
+			await deleteTeamFolder(otherId)
+			await settle()
+
+			expect(await padExists(padId), 'a pad whose file went unseen should stay').toBe(true)
+		} finally {
+			await deleteTeamFolder(otherId)
+			// What the app leaves on purpose, taken away by hand - if it did.
+			if (padId !== null && await padExists(padId)) {
+				await etherpadApiPost('deletePad', { padID: padId })
+			}
+		}
 	})
 
 	test('a pad an account made in a team folder stays when the account is deleted', async () => {

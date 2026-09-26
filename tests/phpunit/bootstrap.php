@@ -45,6 +45,8 @@ $stubFiles = [
 	__DIR__ . '/stubs/OCP/FullTextSearch/Model/ISearchResult.php',
 	__DIR__ . '/stubs/OCP/Constants.php',
 	__DIR__ . '/stubs/OCP/Files/Node.php',
+	__DIR__ . '/stubs/OCP/Files/Config/ICachedMountInfo.php',
+	__DIR__ . '/stubs/OCP/Files/Config/IUserMountCache.php',
 	__DIR__ . '/stubs/OCP/Files/File.php',
 	__DIR__ . '/stubs/OCP/Files/Folder.php',
 	__DIR__ . '/stubs/OCP/Files/IMimeTypeLoader.php',

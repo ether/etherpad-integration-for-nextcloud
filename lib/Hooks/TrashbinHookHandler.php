@@ -10,6 +10,7 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Hooks;
 
+use OCA\EtherpadNextcloud\Listeners\LeavingPadsListener;
 use OCA\EtherpadNextcloud\Listeners\RestoreFromTrashListener;
 use OCA\EtherpadNextcloud\Util\PadFileType;
 use OCA\EtherpadNextcloud\Util\SafeError;
@@ -28,17 +29,29 @@ use Psr\Log\LoggerInterface;
 class TrashbinHookHandler {
 	/** @param array<string,mixed> $params */
 	public static function postRestore(array $params): void {
-		// The hook fires for every restored item, folders included. Only a
-		// .pad is this app's business, and its name says so before anything
-		// is built for it.
 		$path = $params['filePath'] ?? null;
-		if (!is_string($path) || !PadFileType::isPad($path)) {
+		if (!is_string($path)) {
 			return;
 		}
 
 		// Fetched before the one that may fail, so reporting that failure
 		// cannot be the second one.
 		$logger = self::logger();
+
+		// Every restored item, folders included, brings back what it takes
+		// along: the marks of its pads go (LeavingPadsListener). Groupfolders
+		// raises nothing else on a restore.
+		try {
+			\OCP\Server::get(LeavingPadsListener::class)->restoredPath($path);
+		} catch (\Throwable $e) {
+			self::report($logger, 'Legacy trashbin restore hook could not start.', $path, $e);
+		}
+
+		// The pad's own restore is only a .pad's, and its name says so before
+		// anything is built for it.
+		if (!PadFileType::isPad($path)) {
+			return;
+		}
 
 		try {
 			$listener = \OCP\Server::get(RestoreFromTrashListener::class);

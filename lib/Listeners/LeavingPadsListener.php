@@ -15,44 +15,54 @@ use OCA\EtherpadNextcloud\Util\PadFileType;
 use OCA\EtherpadNextcloud\Util\SafeError;
 use OCP\EventDispatcher\Event;
 use OCP\EventDispatcher\IEventListener;
+use OCP\Files\Config\IUserMountCache;
 use OCP\Files\Events\Node\BeforeNodeDeletedEvent;
 use OCP\Files\Events\Node\NodeDeletedEvent;
 use OCP\Files\File;
 use OCP\Files\Folder;
 use OCP\Files\IRootFolder;
 use OCP\Files\Node;
+use OCP\IUser;
+use OCP\IUserSession;
 use OCP\User\Events\BeforeUserDeletedEvent;
 use Psr\Log\LoggerInterface;
 
 /**
- * Marks the rows of `.pad` files as they leave Files (BindingService::
- * markTrashed()): a file moved to a trash (MoveToTrashEvent), deleted past
- * the trash (BeforeNodeDeletedEvent, which a move to the trash raises too),
- * and every file of a user about to be deleted (BeforeUserDeletedEvent). A
- * file gone from the file cache after that is gone for good, however its
- * trash was emptied (GoneFileSweep).
+ * Keeps the marks of `.pad` files leaving Files (Binding::$trashedAt), for
+ * the sweep of files gone for good (GoneFileSweep):
  *
- * A delete past the trash takes the files at once, so their pads go at once
- * too: the files marked before a delete are held until Nextcloud reports it
- * done (NodeDeletedEvent, raised after a move to the trash as well), and
- * the pads of those gone from the file cache are deleted then
- * (GoneFileSweep::discardDeleted()). Nextcloud reports a folder deleted as
- * a file by then, so what was marked is what counts, not the node.
+ * - A move to a trash (MoveToTrashEvent) marks the file, or every file
+ *   under a folder: once gone from the file cache after that, a file is
+ *   gone for good, however its trash was emptied.
+ * - A delete past the trash takes the files at once, so their pads go at
+ *   once too. Before it (BeforeNodeDeletedEvent, which a move to the trash
+ *   raises too, first) the files it takes along are only looked up; the
+ *   move to the trash then marks those, and a delete past it hands them on
+ *   once done (NodeDeletedEvent), to be marked and deleted while surely
+ *   gone (GoneFileSweep::discardDeleted()). Nextcloud reports a folder as a
+ *   file after the delete, so what counts is what was looked up before.
+ * - A user about to be deleted (BeforeUserDeletedEvent): every file on
+ *   their home storage, found through the mount cache rather than a home
+ *   set up just to be deleted.
+ * - A restore (NodeRestoredEvent, and the legacy hook groupfolders alone
+ *   raises, TrashbinHookHandler) clears the marks it brings back.
  *
- * Only a head start: the sweep marks what it finds under a trash path
- * itself, and deletes what is left. So nothing here may stop a trash or a
- * delete, and nothing throws.
+ * Nothing here may stop a trash, a delete or a restore, and nothing throws:
+ * the sweep's own pass marks what it finds in a trash and clears what it
+ * finds back in Files.
  *
  * @template-implements IEventListener<Event>
  */
 class LeavingPadsListener implements IEventListener {
-	/** @var list<int> the files marked before a delete, until it is done */
+	/** @var array<int,list<int>> by the id of a node about to be deleted, the files it takes along */
 	private array $deleting = [];
 
 	public function __construct(
 		private BindingService $bindingService,
 		private GoneFileSweep $goneFileSweep,
 		private IRootFolder $rootFolder,
+		private IUserMountCache $userMountCache,
+		private IUserSession $userSession,
 		private LoggerInterface $logger,
 	) {
 	}
@@ -60,30 +70,52 @@ class LeavingPadsListener implements IEventListener {
 	public function handle(Event $event): void {
 		try {
 			if ($event instanceof BeforeUserDeletedEvent) {
-				$this->bindingService->markTrashedUnder($this->rootFolder->getUserFolder($event->getUser()->getUID())->getId(), wholeStorage: true);
-				return;
-			}
-			if ($event instanceof BeforeNodeDeletedEvent) {
-				$this->deleting = array_values(array_unique([...$this->deleting, ...$this->mark($event->getNode())]));
-				return;
-			}
-			if ($event instanceof NodeDeletedEvent) {
-				$deleted = $this->deleting;
+				$this->bindingService->markTrashed($this->filesOfHome($event->getUser()));
+			} elseif ($event instanceof BeforeNodeDeletedEvent) {
+				$node = $event->getNode();
+				$this->deleting[$node->getId()] = $this->padsOf($node);
+			} elseif ($event instanceof NodeDeletedEvent) {
+				$deleted = array_values(array_unique(array_merge([], ...array_values($this->deleting))));
 				$this->deleting = [];
 				$this->goneFileSweep->discardDeleted($deleted);
-				return;
+			} elseif (method_exists($event, 'getTarget')) {
+				$this->restored($event->getTarget());
+			} else {
+				$this->trashed($event);
 			}
-			$this->markNodeOf($event);
 		} catch (\Throwable $e) {
-			$this->logger->warning('Could not mark the pads of files leaving Files; the sweep finds them later.', [
+			$this->logger->warning('Could not keep the marks of pads leaving Files; the sweep finds them later.', [
 				'app' => 'etherpad_nextcloud',
 				...SafeError::context($e),
 			]);
 		}
 	}
 
-	/** MoveToTrashEvent is the trash app's, not OCP's: its node, asked for by name. */
-	private function markNodeOf(Event $event): void {
+	/**
+	 * The legacy restore hook's path, relative to the files of the user who
+	 * restores: groupfolders raises no NodeRestoredEvent. Never throws.
+	 */
+	public function restoredPath(string $path): void {
+		try {
+			$user = $this->userSession->getUser();
+			if ($user === null) {
+				return;
+			}
+			$this->restored($this->rootFolder->getUserFolder($user->getUID())->get($path));
+		} catch (\Throwable $e) {
+			$this->logger->warning('Could not keep the marks of pads leaving Files; the sweep finds them later.', [
+				'app' => 'etherpad_nextcloud',
+				...SafeError::context($e),
+			]);
+		}
+	}
+
+	/**
+	 * MoveToTrashEvent is the trash app's, not OCP's: its node, asked for by
+	 * name. What the delete before it looked up is marked, rather than
+	 * looked up again.
+	 */
+	private function trashed(Event $event): void {
 		if (!method_exists($event, 'getNode')) {
 			return;
 		}
@@ -91,17 +123,46 @@ class LeavingPadsListener implements IEventListener {
 		if (!$node instanceof Node) {
 			return;
 		}
-		$this->mark($node);
+		$id = $node->getId();
+		$files = $this->deleting[$id] ?? $this->padsOf($node);
+		unset($this->deleting[$id]);
+		$this->bindingService->markTrashed($files);
 	}
 
-	/** @return list<int> the files whose rows it marked, or found marked */
-	private function mark(Node $node): array {
+	/**
+	 * A restored node, looked up again by its path when it cannot give its
+	 * id: on Nextcloud 31 the event's node is not resolvable yet.
+	 */
+	private function restored(mixed $node): void {
+		if (!$node instanceof Node) {
+			return;
+		}
+		try {
+			$node->getId();
+		} catch (\Throwable) {
+			$node = $this->rootFolder->get($node->getPath());
+		}
+		$this->bindingService->clearTrashed($this->padsOf($node));
+	}
+
+	/** @return list<int> the files of the rows a node takes along */
+	private function padsOf(Node $node): array {
 		if ($node instanceof Folder) {
-			return $this->bindingService->markTrashedUnder($node->getId());
+			return $this->bindingService->fileIdsUnder($node->getId());
 		}
 		if ($node instanceof File && PadFileType::isPad($node->getName())) {
-			$this->bindingService->markTrashed($node->getId());
 			return [$node->getId()];
+		}
+		return [];
+	}
+
+	/** @return list<int> the files of the rows on a user's home storage */
+	private function filesOfHome(IUser $user): array {
+		$home = '/' . $user->getUID() . '/';
+		foreach ($this->userMountCache->getMountsForUser($user) as $mount) {
+			if ($mount->getMountPoint() === $home) {
+				return $this->bindingService->fileIdsOnStorage($mount->getStorageId());
+			}
 		}
 		return [];
 	}

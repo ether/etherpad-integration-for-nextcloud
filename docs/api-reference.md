@@ -407,7 +407,8 @@ solely by the separate external-pad policy, not by these two settings.
     only file it writes is a trashed one, with the snapshot its trash could
     not take; the only pads it deletes are those of files in a trash or
     gone for good. It then runs the sweep of files gone for good
-    (`docs/architecture.md`, "Files gone for good") as its job would.
+    (`docs/architecture.md`, "Files gone for good") as its job would, in
+    what is left of that budget.
   - Result:
     - `checked`, `settled`
     - `pending_delete_count`, `restore_pending_count`: what is left, named as in the health check
@@ -542,8 +543,9 @@ Registered in `lib/AppInfo/Application.php`.
 - `OCP\User\Events\UserLoggedOutEvent` -> `UserLoggedOutListener`
 - `OCA\Files_Trashbin\Events\MoveToTrashEvent` -> `MoveToTrashListener`
 - legacy event `OCA\Files_Trashbin::moveToTrash` -> `MoveToTrashListener`
-- `OCA\Files_Trashbin\Events\NodeRestoredEvent` -> `RestoreFromTrashListener`
-- legacy hook `\OCA\Files_Trashbin\Trashbin::post_restore` -> `TrashbinHookHandler::postRestore` -> `RestoreFromTrashListener::handleLegacyHook`
+- `OCA\Files_Trashbin\Events\NodeRestoredEvent` -> `RestoreFromTrashListener`, `LeavingPadsListener`
+- legacy hook `\OCA\Files_Trashbin\Trashbin::post_restore` -> `TrashbinHookHandler::postRestore` -> `LeavingPadsListener::restoredPath` (every restored item), `RestoreFromTrashListener::handleLegacyHook` (a `.pad`)
+- `OCA\Files_Trashbin\Events\MoveToTrashEvent`, `OCP\Files\Events\Node\BeforeNodeDeletedEvent`, `OCP\Files\Events\Node\NodeDeletedEvent`, `OCP\User\Events\BeforeUserDeletedEvent` -> `LeavingPadsListener` (the marks of files leaving Files, and the pads of files deleted past the trash; `docs/architecture.md`, "Files gone for good")
 
 ## App Config Keys
 
@@ -567,3 +569,4 @@ Registered in `lib/AppInfo/Application.php`.
     - `/embed/create-by-parent/{parentFolderId}`
   - when empty, no external embedding origin is added beyond `'self'`
 - `test_fault` (debug-only E2E fault injection; empty by default)
+- `gone_file_sweep_cursor` (the last row the sweep of files gone for good passed; kept by the sweep, 0 to start over)

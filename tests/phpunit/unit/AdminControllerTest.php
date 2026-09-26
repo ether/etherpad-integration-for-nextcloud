@@ -22,6 +22,7 @@ use OCA\EtherpadNextcloud\Service\PadTemplateAdminService;
 use OCA\EtherpadNextcloud\Service\PendingBindingService;
 use OCA\EtherpadNextcloud\Service\EtherpadHealthCheckService;
 use OCA\EtherpadNextcloud\Service\GoneFileSweep;
+use OCA\EtherpadNextcloud\Service\RunBudget;
 use OCA\EtherpadNextcloud\Service\HealthCheckResult;
 use OCA\EtherpadNextcloud\Service\StoredAdminSettings;
 use OCA\EtherpadNextcloud\Service\ValidatedAdminSettings;
@@ -32,6 +33,7 @@ use OCP\IRequest;
 use OCP\IURLGenerator;
 use OCP\IUser;
 use OCP\IUserSession;
+use OCA\EtherpadNextcloud\Tests\Support\FixedClock;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 
@@ -152,18 +154,28 @@ class AdminControllerTest extends TestCase {
 		$this->assertStringContainsString('need attention', $data['message']);
 	}
 
-	/** The batch size is the endpoint's; the sweep of files gone for good runs with it, as the jobs run it. */
+	/**
+	 * The batch size is the endpoint's; the sweep of files gone for good
+	 * runs with it, as the jobs run it, in what the settle left of one
+	 * budget.
+	 */
 	public function testSettlePendingUsesConfiguredBatchSize(): void {
+		$clock = new FixedClock();
 		$pending = $this->createMock(PendingBindingService::class);
 		$pending->expects($this->once())
 			->method('settle')
 			->with(500)
-			->willReturn(['checked' => 2, 'settled' => 1, 'pending_delete_count' => 3, 'restore_pending_count' => 1]);
-
+			->willReturnCallback(static function () use ($clock): array {
+				$clock->advance(15);
+				return ['checked' => 2, 'settled' => 1, 'pending_delete_count' => 3, 'restore_pending_count' => 1];
+			});
 		$sweep = $this->createMock(GoneFileSweep::class);
-		$sweep->expects($this->once())->method('run');
+		$sweep->expects($this->once())->method('run')->with($this->callback(
+			// What the settle left of the one budget: 5 of 20 seconds.
+			static fn (RunBudget $budget): bool => $budget->callTimeout() === 5,
+		));
 
-		$response = $this->buildController(pendingBindings: $pending, goneFileSweep: $sweep)->settlePending();
+		$response = $this->buildController(pendingBindings: $pending, goneFileSweep: $sweep, clock: $clock)->settlePending();
 
 		$this->assertSame(Http::STATUS_OK, $response->getStatus());
 		$this->assertSame(2, $response->getData()['checked']);
@@ -286,6 +298,7 @@ class AdminControllerTest extends TestCase {
 		?AdminTestFaultService $testFaults = null,
 		?PadTemplateAdminService $padTemplateAdmin = null,
 		?GoneFileSweep $goneFileSweep = null,
+		?FixedClock $clock = null,
 	): AdminController {
 		$l10n = $this->buildL10n();
 		$logger = $this->createMock(LoggerInterface::class);
@@ -308,6 +321,7 @@ class AdminControllerTest extends TestCase {
 			$this->urlGenerator(),
 			$padTemplateAdmin ?? $this->createMock(PadTemplateAdminService::class),
 			$goneFileSweep ?? $this->createMock(GoneFileSweep::class),
+			$clock ?? new FixedClock(),
 		);
 	}
 

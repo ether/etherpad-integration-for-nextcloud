@@ -11,6 +11,7 @@ use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\EtherpadNextcloud\Service\EtherpadClient;
 use OCA\EtherpadNextcloud\Service\GoneFileSweep;
 use OCA\EtherpadNextcloud\Service\ManagedPadLifecycle;
+use OCA\EtherpadNextcloud\Service\RunBudget;
 use OCA\EtherpadNextcloud\Tests\Support\FixedClock;
 use OCA\EtherpadNextcloud\Tests\Support\InMemoryBindingTable;
 use PHPUnit\Framework\TestCase;
@@ -81,6 +82,8 @@ class GoneFileSweepTest extends TestCase {
 				self::row(7, 17, 'pad-own-storage-trash', trashedAt: 100),
 				self::row(8, 18, 'pad-own-storage-unmarked'),
 				self::row(9, 19, 'pad-external', trashedAt: 100),
+				self::row(10, 20, 'pad-just-trashed', trashedAt: FixedClock::NOW - 299),
+				self::row(11, 21, 'pad-long-in-team-trash', trashedAt: 100),
 			],
 			[
 				self::cached(11, 'files_trashbin/files/A.pad.d100'),
@@ -91,6 +94,8 @@ class GoneFileSweepTest extends TestCase {
 				self::cached(17, 'trash/G.pad.d100'),
 				self::cached(18, 'trash/H.pad'),
 				self::cached(19, 'Documents/I.pad'),
+				self::cached(20, 'files/J.pad'),
+				self::cached(21, '__groupfolders/trash/3/K.pad.d100'),
 			],
 		);
 
@@ -98,7 +103,7 @@ class GoneFileSweepTest extends TestCase {
 		$this->sweep();
 
 		$this->assertSame([], $this->deletedPads);
-		$this->assertSame([11 => FixedClock::NOW, 12 => FixedClock::NOW, 13 => null, 14 => null, 15 => null, 16 => null, 17 => 100, 18 => null, 19 => 100], $this->marks());
+		$this->assertSame([11 => FixedClock::NOW, 12 => FixedClock::NOW, 13 => null, 14 => null, 15 => null, 16 => null, 17 => 100, 18 => null, 19 => 100, 20 => FixedClock::NOW - 299, 21 => 100], $this->marks());
 	}
 
 	/**
@@ -121,8 +126,8 @@ class GoneFileSweepTest extends TestCase {
 
 	/**
 	 * A pad Etherpad no longer has is gone as surely: its row goes. A pad
-	 * Etherpad refuses to delete keeps its row for another try, with a
-	 * warning, and the run goes on.
+	 * Etherpad refuses to delete keeps its row for another try an hour
+	 * later, with a warning, and the run goes on.
 	 */
 	public function testAPadAlreadyGoneCountsAndARefusalIsTriedAgain(): void {
 		$this->table([
@@ -141,9 +146,19 @@ class GoneFileSweepTest extends TestCase {
 		$this->assertSame([12], $this->fileIds());
 		$this->assertSame([
 			['info', 'The file of a pad is gone for good; the pad is deleted.', 11],
-			['warning', 'Could not delete the pad of a file gone for good; it is tried again.', 12],
+			['warning', 'Could not delete the pad of a file gone for good; it is tried again in an hour.', 12],
 			['info', 'The file of a pad is gone for good; the pad is deleted.', 13],
 		], $this->lines);
+
+		// Not before the hour is up: a refusal neither holds the queue's
+		// head nor warns every run.
+		$this->lines = [];
+		$this->clock->advance(3599);
+		$this->sweep();
+		$this->assertSame([], $this->lines);
+		$this->clock->advance(1);
+		$this->sweep();
+		$this->assertSame([['warning', 'Could not delete the pad of a file gone for good; it is tried again in an hour.', 12]], $this->lines);
 	}
 
 	/**
@@ -201,26 +216,39 @@ class GoneFileSweepTest extends TestCase {
 	}
 
 	/**
-	 * The pass takes 200 rows a run, from where the last one stopped, and
-	 * starts over after a slice shorter than that. Rows that wait are the
-	 * older sweep's and are not passed.
+	 * The pass takes its slices from where the last run stopped, as many as
+	 * a run allows, and starts over after a slice shorter than a full one.
+	 * Rows that wait are the older sweep's and are not passed.
 	 */
 	public function testThePassGoesOnWhereItStoppedAndStartsOver(): void {
 		$rows = [];
-		for ($id = 1; $id <= 250; $id++) {
+		for ($id = 1; $id <= 11; $id++) {
 			$rows[] = self::row($id, 1000 + $id, 'pad-' . $id);
 		}
-		$rows[] = self::row(251, 2000, 'pad-waiting', state: BindingService::STATE_PENDING_DELETE);
-		$cached = array_map(static fn (int $id): array => self::cached(1000 + $id, 'files/' . $id . '.pad'), range(1, 250));
+		$rows[] = self::row(12, 2000, 'pad-waiting', state: BindingService::STATE_PENDING_DELETE);
+		$cached = array_map(static fn (int $id): array => self::cached(1000 + $id, 'files_trashbin/files/' . $id . '.pad.d1'), range(1, 11));
 		$cached[] = self::cached(2000, 'files_trashbin/files/waiting.pad.d100');
 		$this->table($rows, $cached);
+		$sweep = $this->smallSlices();
 
-		$this->sweep();
-		$this->assertSame(200, $this->config['cursor']);
+		$sweep->run();
+		$this->assertSame(6, $this->config['cursor'], 'three slices of two');
+		$this->assertSame(6, count(array_filter($this->marks())));
 
-		$this->sweep();
-		$this->assertSame(0, $this->config['cursor']);
+		$sweep->run();
+		$this->assertSame(0, $this->config['cursor'], 'the end of the table, and over');
+		$this->assertSame(11, count(array_filter($this->marks())));
 		$this->assertNull($this->marks()[2000]);
+	}
+
+	/** A run out of time still takes one slice - it asks only the database - and no more. */
+	public function testARunOutOfTimeTakesOneSlice(): void {
+		$rows = array_map(static fn (int $id): array => self::row($id, 1000 + $id, 'pad-' . $id), range(1, 10));
+		$this->table($rows, array_map(static fn (int $id): array => self::cached(1000 + $id, 'files/' . $id . '.pad'), range(1, 10)));
+
+		$this->smallSlices()->run(new RunBudget($this->clock, 1.0));
+
+		$this->assertSame(2, $this->config['cursor']);
 	}
 
 	/**
@@ -241,15 +269,20 @@ class GoneFileSweepTest extends TestCase {
 		$this->build()->discardDeleted([11, 12, 13, 15]);
 
 		$this->assertSame(['pad-deleted', 'pad-unmarked'], $this->deletedPads);
+		$this->assertSame([12 => 100, 13 => 100, 14 => 100], $this->marks());
 		$this->assertSame([12, 13, 14], $this->fileIds());
 		$this->assertSame([
 			['info', 'The file of a pad is gone for good; the pad is deleted.', 11],
 			['info', 'The file of a pad is gone for good; the pad is deleted.', 15],
 		], $this->lines);
 
+		// Switched off, the files deleted are marked all the same, and
+		// wait for it to be switched on.
 		$this->config['delete_on_trash'] = false;
-		$this->build()->discardDeleted([14]);
-		$this->assertSame([12, 13, 14], $this->fileIds());
+		$this->db->rows[] = self::row(6, 16, 'pad-off');
+		$this->build()->discardDeleted([14, 16]);
+		$this->assertSame([12, 13, 14, 16], $this->fileIds());
+		$this->assertSame(FixedClock::NOW, $this->marks()[16]);
 	}
 
 	/**
@@ -269,13 +302,24 @@ class GoneFileSweepTest extends TestCase {
 		$this->assertSame([12 => 100], $this->marks());
 
 		$this->setUp();
-		$this->table([self::row(1, 11, 'pad-1', trashedAt: 100)], []);
+		$this->table([self::row(1, 11, 'pad-1')], []);
 		$this->padErrors = ['pad-1' => new EtherpadClientException('Etherpad API request failed: deletePad')];
 
 		$this->build()->discardDeleted([11]);
 
-		$this->assertSame([11 => 100], $this->marks());
-		$this->assertSame([['info', 'Could not delete the pads of files deleted past the trash; the sweep tries again.', null]], $this->lines);
+		$this->assertSame([11 => FixedClock::NOW], $this->marks(), 'marked for the sweep before the pad was tried');
+		$this->assertSame([['info', 'Etherpad did not answer for the pads of files deleted past the trash; the sweep tries again.', null]], $this->lines);
+	}
+
+	/** Anything else that stops it - the database, say - is a warning, and still nothing is thrown. */
+	public function testTheRequestWarnsOfWhatElseStopsIt(): void {
+		$this->table([], []);
+		$bindings = $this->createMock(BindingService::class);
+		$bindings->method('findActiveGone')->willThrowException(new \RuntimeException('the database went away'));
+
+		$this->build($bindings)->discardDeleted([11]);
+
+		$this->assertSame([['warning', 'Could not delete the pads of files deleted past the trash; the sweep tries again.', null]], $this->lines);
 	}
 
 	/**
@@ -290,7 +334,12 @@ class GoneFileSweepTest extends TestCase {
 		$this->build($bindings)->run();
 	}
 
-	private function build(?BindingService $bindings = null): GoneFileSweep {
+	/** The sweep with slices of two rows and three of them a run, so a table of eleven shows their edges. */
+	private function smallSlices(): GoneFileSweep {
+		return $this->build(smallSlices: true);
+	}
+
+	private function build(?BindingService $bindings = null, bool $smallSlices = false): GoneFileSweep {
 		$etherpad = $this->createMock(EtherpadClient::class);
 		$etherpad->method('deletePad')->willReturnCallback(function (string $padId): void {
 			if (isset($this->padErrors[$padId])) {
@@ -313,13 +362,19 @@ class GoneFileSweepTest extends TestCase {
 				$this->lines[] = [$level, $message, $context['fileId'] ?? null];
 			});
 		}
-		return new GoneFileSweep(
+		$args = [
 			$bindings ?? new BindingService($this->db, $this->clock),
 			new ManagedPadLifecycle($etherpad, $this->createMock(LoggerInterface::class)),
 			$config,
 			$this->clock,
 			$logger,
-		);
+		];
+		return $smallSlices
+			? new class(...$args) extends GoneFileSweep {
+				protected const SLICE = 2;
+				protected const SLICES = 3;
+			}
+			: new GoneFileSweep(...$args);
 	}
 
 	/** @return list<int> the files that still have a row */

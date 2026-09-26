@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\Tests\Unit;
 
 use OCA\EtherpadNextcloud\Hooks\TrashbinHookHandler;
+use OCA\EtherpadNextcloud\Listeners\LeavingPadsListener;
 use OCA\EtherpadNextcloud\Listeners\RestoreFromTrashListener;
 use OCA\EtherpadNextcloud\Tests\Support\WatchesTheWholeLogger;
 use OCP\Server;
@@ -40,6 +41,7 @@ class TrashbinHookHandlerTest extends TestCase {
 		$logger = $this->loggerExpecting('Legacy trashbin restore hook could not start.', $boom);
 		Server::$registered = [
 			LoggerInterface::class => $logger,
+			LeavingPadsListener::class => $this->createMock(LeavingPadsListener::class),
 			RestoreFromTrashListener::class => $boom,
 		];
 
@@ -58,6 +60,7 @@ class TrashbinHookHandlerTest extends TestCase {
 		$listener->method('handleLegacyHook')->willThrowException($boom);
 		Server::$registered = [
 			LoggerInterface::class => $this->loggerExpecting('Legacy trashbin restore hook failed.', $boom),
+			LeavingPadsListener::class => $this->createMock(LeavingPadsListener::class),
 			RestoreFromTrashListener::class => $listener,
 		];
 
@@ -80,6 +83,7 @@ class TrashbinHookHandlerTest extends TestCase {
 	public function testNothingLeavesWithoutALoggerEither(object $listener): void {
 		Server::$registered = [
 			LoggerInterface::class => new \TypeError('no logger'),
+			LeavingPadsListener::class => new \TypeError('no listener either'),
 			RestoreFromTrashListener::class => $listener,
 		];
 
@@ -88,22 +92,45 @@ class TrashbinHookHandlerTest extends TestCase {
 	}
 
 	/**
-	 * The hook fires for every restored item, folders included. Anything
-	 * but a .pad is left before the listener is built, and without a word.
+	 * The hook fires for every restored item, folders included. Each brings
+	 * back the marks of what it takes along; anything but a .pad is left
+	 * there, before the restore's listener is built, and without a word.
 	 */
-	public function testAnotherItemBuildsNothing(): void {
+	public function testAnotherItemOnlyHasItsMarksCleared(): void {
 		$listener = $this->createMock(RestoreFromTrashListener::class);
 		$listener->expects($this->never())->method('handleLegacyHook');
+		$leaving = $this->createMock(LeavingPadsListener::class);
+		$paths = [];
+		$leaving->method('restoredPath')->willReturnCallback(static function (string $path) use (&$paths): void {
+			$paths[] = $path;
+		});
 		$logger = $this->createMock(LoggerInterface::class);
 		$logger->expects($this->never())->method($this->anything());
 		Server::$registered = [
 			LoggerInterface::class => $logger,
+			LeavingPadsListener::class => $leaving,
 			RestoreFromTrashListener::class => $listener,
 		];
 
 		foreach ([['filePath' => '/Photos'], ['filePath' => '/Photos/Holiday.jpg'], [], ['filePath' => 42]] as $params) {
 			TrashbinHookHandler::postRestore($params);
 		}
+
+		$this->assertSame(['/Photos', '/Photos/Holiday.jpg'], $paths);
+	}
+
+	/** Marks that cannot be cleared are reported, and the pad's restore goes on. */
+	public function testAFailedMarkLookupStillRestoresThePad(): void {
+		$boom = new \RuntimeException('the container is broken');
+		$listener = $this->createMock(RestoreFromTrashListener::class);
+		$listener->expects($this->once())->method('handleLegacyHook');
+		Server::$registered = [
+			LoggerInterface::class => $this->loggerExpecting('Legacy trashbin restore hook could not start.', $boom),
+			LeavingPadsListener::class => $boom,
+			RestoreFromTrashListener::class => $listener,
+		];
+
+		TrashbinHookHandler::postRestore(['filePath' => '/Notes.pad']);
 	}
 
 	public function testTheParametersReachTheListener(): void {
@@ -111,9 +138,12 @@ class TrashbinHookHandlerTest extends TestCase {
 
 		$listener = $this->createMock(RestoreFromTrashListener::class);
 		$listener->expects($this->once())->method('handleLegacyHook')->with($params);
+		$leaving = $this->createMock(LeavingPadsListener::class);
+		$leaving->expects($this->once())->method('restoredPath')->with('/Notes.pad');
 
 		Server::$registered = [
 			LoggerInterface::class => $this->createMock(LoggerInterface::class),
+			LeavingPadsListener::class => $leaving,
 			RestoreFromTrashListener::class => $listener,
 		];
 

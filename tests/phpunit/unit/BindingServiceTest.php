@@ -179,34 +179,42 @@ class BindingServiceTest extends TestCase {
 	}
 
 	/**
-	 * A file seen leaving Files marks its row once: a row marked already
-	 * keeps its first mark, and the other rows are left alone.
+	 * Files seen leaving Files mark their rows once: a row marked already
+	 * keeps its first mark, and the other rows are left alone. Back in
+	 * Files, they lose it. Any number of files, in chunks the database
+	 * takes.
 	 */
-	public function testAFileLeavingFilesMarksItsRowOnce(): void {
-		$table = new InMemoryBindingTable([
-			self::bindingRow(1, 'pad-a', BindingService::STATE_ACTIVE),
-			['trashed_at' => 300] + self::bindingRow(2, 'pad-b', BindingService::STATE_ACTIVE),
-			self::bindingRow(3, 'pad-c', BindingService::STATE_ACTIVE),
-		]);
+	public function testFilesLeavingFilesMarkTheirRowsOnce(): void {
+		$rows = array_map(static fn (int $id): array => self::bindingRow($id, 'pad-' . $id, BindingService::STATE_ACTIVE), range(1, 1200));
+		$rows[1]['trashed_at'] = 300;
+		$table = new InMemoryBindingTable($rows);
 		$service = new BindingService($table, new FixedClock(500));
 
-		$service->markTrashed(1);
-		$service->markTrashed(2);
+		$service->markTrashed([1, 2, 1100]);
+		$this->assertSame([1 => 500, 2 => 300, 3 => null, 1100 => 500], array_intersect_key(array_column($table->rows, 'trashed_at', 'file_id'), [1 => 0, 2 => 0, 3 => 0, 1100 => 0]));
 
-		$this->assertSame([500, 300, null], array_column($table->rows, 'trashed_at'));
+		$service->markTrashed(range(1, 1200));
+		$this->assertSame(array_fill(0, 1200, 500), array_map(static fn (?int $at): int => $at === 300 ? 500 : (int)$at, array_column($table->rows, 'trashed_at')), 'every chunk');
+
+		$service->clearTrashed([2, 1100]);
+		$this->assertSame([1 => 500, 2 => null, 3 => 500, 1100 => null], array_intersect_key(array_column($table->rows, 'trashed_at', 'file_id'), [1 => 0, 2 => 0, 3 => 0, 1100 => 0]));
+
+		$service->markTrashed([]);
+		$service->clearTrashed([]);
 	}
 
 	/**
-	 * A folder leaving Files marks the row of every file under it, as the
-	 * file cache has it: on the folder's storage, below its path and not
-	 * beside it. A `_` in the folder's name is a character, not any one. A
-	 * user deleted marks every row on their storage, and an id the file
-	 * cache does not know marks nothing. It names the files of the rows under
-	 * the folder, one marked before too, which keeps its first mark.
+	 * The files of the rows under a folder, as the file cache has them: on
+	 * the folder's storage, below its path and not beside it. A `_` in the
+	 * folder's name is a character, not any one. A folder at the root of
+	 * its storage has the whole storage, and so does a storage asked for as
+	 * a whole; an id the file cache does not know has nothing. Nothing is
+	 * marked by asking.
 	 */
-	public function testAFolderLeavingFilesMarksTheRowsUnderIt(): void {
+	public function testTheFilesUnderAFolderAndOnAStorage(): void {
 		$fileCache = [
 			['fileid' => 100, 'storage' => 1, 'path' => 'files/Te_m'],
+			['fileid' => 101, 'storage' => 1, 'path' => ''],
 			['fileid' => 1, 'storage' => 1, 'path' => 'files/Te_m/a.pad'],
 			['fileid' => 2, 'storage' => 1, 'path' => 'files/Te_m/sub/b.pad'],
 			['fileid' => 3, 'storage' => 1, 'path' => 'files/Te_mwork/c.pad'],
@@ -215,24 +223,14 @@ class BindingServiceTest extends TestCase {
 			['fileid' => 6, 'storage' => 1, 'path' => 'files/f.pad'],
 		];
 		$rows = array_map(static fn (int $id): array => self::bindingRow($id, 'pad-' . $id, BindingService::STATE_ACTIVE), [1, 2, 3, 4, 5, 6]);
-		$rows[1]['trashed_at'] = 300;
-		$marked = static fn (InMemoryBindingTable $table): array => array_values(array_map(
-			static fn (array $row): int => $row['file_id'],
-			array_filter($table->rows, static fn (array $row): bool => $row['trashed_at'] !== null),
-		));
-
 		$table = new InMemoryBindingTable($rows, $fileCache);
-		$this->assertSame([1, 2], (new BindingService($table, new FixedClock(500)))->markTrashedUnder(100), 'the folder');
-		$this->assertSame([1, 2], $marked($table), 'the folder');
-		$this->assertSame([500, 300], array_slice(array_column($table->rows, 'trashed_at'), 0, 2), 'the first mark stays');
+		$service = new BindingService($table, new FixedClock(500));
 
-		$table = new InMemoryBindingTable($rows, $fileCache);
-		$this->assertSame([1, 2, 3, 4, 6], (new BindingService($table, new FixedClock(500)))->markTrashedUnder(100, wholeStorage: true), 'the whole storage');
-		$this->assertSame([1, 2, 3, 4, 6], $marked($table), 'the whole storage');
-
-		$table = new InMemoryBindingTable($rows, $fileCache);
-		$this->assertSame([], (new BindingService($table, new FixedClock(500)))->markTrashedUnder(999), 'an unknown folder');
-		$this->assertSame([2], $marked($table), 'an unknown folder');
+		$this->assertSame([1, 2], $service->fileIdsUnder(100), 'the folder');
+		$this->assertSame([1, 2, 3, 4, 6], $service->fileIdsUnder(101), 'the storage root');
+		$this->assertSame([5], $service->fileIdsOnStorage(2), 'a storage');
+		$this->assertSame([], $service->fileIdsUnder(999), 'an unknown folder');
+		$this->assertSame(array_fill(0, 6, null), array_column($table->rows, 'trashed_at'));
 	}
 
 	/**
@@ -271,16 +269,26 @@ class BindingServiceTest extends TestCase {
 		$this->assertSame([11, 14], array_map(static fn (Binding $b): int => $b->fileId, $service->findActiveGone([11, 13, 14, 15, 16])));
 	}
 
-	/** A file back in Files: its row loses the mark, and the other rows keep theirs. */
-	public function testAMarkIsClearedForItsFileAlone(): void {
+	/**
+	 * A gone file's pad Etherpad refused: its mark moves on to the next try,
+	 * and the file is not found gone till then. An unmarked row stays so.
+	 */
+	public function testAPostponedFileWaitsForItsTry(): void {
 		$table = new InMemoryBindingTable([
 			['trashed_at' => 300] + self::bindingRow(1, 'pad-a', BindingService::STATE_ACTIVE),
 			['trashed_at' => 300] + self::bindingRow(2, 'pad-b', BindingService::STATE_ACTIVE),
+			self::bindingRow(3, 'pad-c', BindingService::STATE_ACTIVE),
 		]);
+		$clock = new FixedClock(500);
+		$service = new BindingService($table, $clock);
 
-		(new BindingService($table, new FixedClock(500)))->clearTrashed(1);
+		$service->postponeGone(1, 1000);
+		$service->postponeGone(3, 1000);
 
-		$this->assertSame([null, 300], array_column($table->rows, 'trashed_at'));
+		$this->assertSame([1000, 300, null], array_column($table->rows, 'trashed_at'));
+		$this->assertSame([2], array_map(static fn (Binding $b): int => $b->fileId, $service->findMarkedGone(10)));
+		$clock->advance(500);
+		$this->assertSame([2, 1], array_map(static fn (Binding $b): int => $b->fileId, $service->findMarkedGone(10)));
 	}
 
 	/** @param list<array<string,mixed>> $rows */

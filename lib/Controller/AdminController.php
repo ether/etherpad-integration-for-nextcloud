@@ -24,9 +24,11 @@ use OCA\EtherpadNextcloud\Service\HealthCheckItem;
 use OCA\EtherpadNextcloud\Service\HealthCheckResult;
 use OCA\EtherpadNextcloud\Service\PadTemplateAdminService;
 use OCA\EtherpadNextcloud\Service\PendingBindingService;
+use OCA\EtherpadNextcloud\Service\RunBudget;
 use OCA\EtherpadNextcloud\Service\ValidatedAdminSettings;
 use OCP\AppFramework\Controller;
 use OCP\AppFramework\Http\DataResponse;
+use OCP\AppFramework\Utility\ITimeFactory;
 use OCP\IGroupManager;
 use OCP\IL10N;
 use OCP\IRequest;
@@ -59,6 +61,7 @@ class AdminController extends Controller {
 		private IURLGenerator $urlGenerator,
 		private PadTemplateAdminService $padTemplateAdmin,
 		private GoneFileSweep $goneFileSweep,
+		private ITimeFactory $timeFactory,
 	) {
 		parent::__construct($appName, $request);
 	}
@@ -133,10 +136,11 @@ class AdminController extends Controller {
 		return $this->errors->run(
 			function (): array {
 				$this->requireAdmin();
+				// What the background jobs do, all of it - the pads of files
+				// gone for good too - within the one budget a run has.
+				$budget = new RunBudget($this->timeFactory, RunBudget::DEFAULT_SECONDS);
 				$result = $this->pendingBindings->settle(self::PENDING_BINDING_BATCH_SIZE);
-				// What the background jobs do, all of it: the pads of files
-				// gone for good too.
-				$this->goneFileSweep->run();
+				$this->goneFileSweep->run($budget);
 				return $result;
 			},
 			fn(array $result): DataResponse => new DataResponse([
