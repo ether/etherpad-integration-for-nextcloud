@@ -6,6 +6,7 @@ namespace OCA\EtherpadNextcloud\Tests\Unit;
 
 use OCA\EtherpadNextcloud\Controller\PublicViewerController;
 use OCA\EtherpadNextcloud\Controller\PublicViewerControllerErrorMapper;
+use OCA\EtherpadNextcloud\Service\Binding;
 use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\EtherpadNextcloud\Service\EtherpadClient;
 use OCA\EtherpadNextcloud\Service\ExternalPadExportFetcher;
@@ -77,9 +78,10 @@ class PublicViewerControllerTest extends TestCase {
 		$padFileService->expects($this->never())->method('getSnapshotPartsFromBody');
 
 		$bindingService = $this->createMock(BindingService::class);
-		$bindingService->expects($this->once())
-			->method('assertConsistentMapping')
-			->with(42, 'g.abcdefghijklmnop$Shared', BindingService::ACCESS_PROTECTED);
+		$bindingService->expects($this->atLeastOnce())
+			->method('findByFileId')
+			->with(42)
+			->willReturn(new Binding(42, 'g.abcdefghijklmnop$Shared', BindingService::ACCESS_PROTECTED, BindingService::STATE_ACTIVE));
 
 		$etherpadClient = $this->createMock(EtherpadClient::class);
 		$etherpadClient->expects($this->never())->method('getReadOnlyPadUrl');
@@ -144,7 +146,8 @@ class PublicViewerControllerTest extends TestCase {
 		$padFileService->expects($this->never())->method('getSnapshotPartsFromBody');
 
 		$bindingService = $this->createMock(BindingService::class);
-		$bindingService->expects($this->never())->method('assertConsistentMapping');
+		// A pad on another server has no row to ask.
+		$bindingService->expects($this->never())->method('findByFileId');
 
 		$fetcher = $this->createMock(ExternalPadExportFetcher::class);
 		$fetcher->expects($this->once())
@@ -210,7 +213,8 @@ class PublicViewerControllerTest extends TestCase {
 			));
 
 		$bindingService = $this->createMock(BindingService::class);
-		$bindingService->expects($this->never())->method('assertConsistentMapping');
+		// A pad on another server has no row to ask.
+		$bindingService->expects($this->never())->method('findByFileId');
 
 		$etherpadClient = $this->createMock(EtherpadClient::class);
 		$fetcher = $this->createMock(ExternalPadExportFetcher::class);

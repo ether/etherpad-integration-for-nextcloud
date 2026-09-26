@@ -14,6 +14,8 @@ Etherpad is the editing source of truth; the `.pad` file acts as binding storage
   - Owns mapping `file_id <-> pad_id` and states (`active`, `pending_delete`, `restore_pending`).
   - Hands a row out as a `Binding`, and a row the sweep takes as a `WaitingBinding` with its file's path; the sweep asks for deletions owed by `FileLocation`.
   - Only managed internal pads are bound. External pads are represented solely by `.pad` frontmatter and snapshots.
+- `lib/Service/BoundPadResolver.php`
+  - Which pad a `.pad` file of this app's opens, reads and syncs: the one its row names (see "Which pad a file reaches").
 - `lib/Service/LifecycleService.php`
   - Where a `.pad` file's trash and restore arrive, from the listeners and the API; the trash is done here (see Trash/Restore).
 - `lib/Service/RestoreService.php`
@@ -43,10 +45,7 @@ Etherpad is the editing source of truth; the `.pad` file acts as binding storage
   - Guards creation only; existing pads of a disabled type keep working.
   - Resolves a template's access mode to an enabled one instead of failing.
 - `lib/Service/ConsistencyCheckService.php`
-  - Optional admin integrity scan:
-    - bindings without file
-    - `.pad` files without binding
-    - invalid/mismatching frontmatter on bound files
+  - Optional admin integrity check: binding rows whose file is gone from the file cache, counted, with a bounded sample.
 - `lib/Controller/ViewerController.php`
   - Compatibility redirect adapter:
     - resolves `.pad` path/id to stable Nextcloud files viewer URL.
@@ -86,6 +85,7 @@ checked-in runtime assets in `js/`.
   - `deleted_at`
   - `created_at`
   - `updated_at`
+  - `replaced_pad_id` (migration `Version000004Date20260926120000`): the pad the row's pad replaced, when a restore or a recovery put a new one in its place (see "Which pad a file reaches"). Nextcloud runs the migration when the app's version rises; `tests/e2e/docker/sync-app.sh` runs it for a working tree synced into the test stack.
   - stores internal managed pads only; external `ext.*` rows from earlier development versions are removed by `Version000003Date20260512230000`
 - `.pad` file
   - Frontmatter: format, binding metadata, state, export metadata.
@@ -95,6 +95,23 @@ checked-in runtime assets in `js/`.
   - `PadFileService::withExportSnapshot(...)` constructs updated `.pad` content for snapshot writes.
   - `PadFileLockRetryService::putContentWithSyncLockRetry(...)` persists that content to the Nextcloud file.
   - Stored snapshots are read only by restore and by the forced-sync comparison; the read-only viewer no longer uses them at all (see `LivePadHtmlFetcher`).
+
+## Which pad a file reaches
+
+A `.pad` file names a pad, and whoever may write the file can make it name any pad. Its row in `ep_pad_bindings` is written only by the server, so the row decides which of this app's pads the file opens, reads and syncs (`BoundPadResolver`). The row never follows the file, and the file follows the row only where the row can prove it replaced the pad the file names.
+
+- The file names the row's pad, in the row's access mode: that pad.
+- The file names the pad the row replaced (`replaced_pad_id`): the row's pad. A restore that put a new pad in place of one that was gone or behind remembers the old one, and so does the recovery of a file without a row, which makes a new pad. A file that still names the old pad reaches the new one: an older version of it restored through Nextcloud's versions, or one whose rewrite failed.
+  - An open that may write the file rewrites it to name the row's pad, with the row's access mode and link and no snapshot revision, if the file still holds what the open read. It logs `A .pad file named the pad its row replaced; it now names the row's.` as a warning. A rewrite that fails is logged at debug, and the row's pad opens all the same.
+  - A sync writes the row's pad's snapshot into the file, under the row's pad, with the same line.
+  - Whatever only reads - an open without write permission, a public share, the read-only content view, sync status - leaves the file as it is, and says so at debug.
+- The file names any other pad, or the row's pad in another access mode: refused, `Binding pad ID mismatch.` or `Binding access mode mismatch.` (see "Errors of the API"). This comes before the row's state is looked at, so such a file neither decides nor waits for a row that is not its own.
+
+A row remembers one pad, the one its latest change of pad replaced. A file that names a pad from before that is refused like any other.
+
+A file that names the pad its row replaced holds that pad's `snapshot_rev`, not one of the row's pad. Wherever the file's revision is held against the row's pad - sync and sync status, the trash, the sweep's rest of a trash, a restore - it counts as none: a higher revision of the old pad would make the row's pad look behind, and a trash would leave the old pad's text in the file and the row's pad over. Only then; a file that names the row's pad keeps its revision.
+
+Pads on another server have no row, and none of this applies to them: their frontmatter decides. The legacy migration is the only way a pad goes from a file into a row (`docs/legacy-ownpad-migration.md`); a restore and a recovery always make a new pad.
 
 ## Main Flows
 
@@ -114,7 +131,7 @@ Primary flow (native viewer):
 2. `src/viewer-main.js` resolves Etherpad open data via API:
    - preferred: `POST /api/v1/pads/open-by-id` (`fileId`, CSRF `requesttoken`)
    - fallback: `POST /api/v1/pads/open` (`file`, CSRF `requesttoken`) if no stable `fileId` is available
-3. `PadSessionController` validates frontmatter/binding and resolves secure open URL:
+3. `PadSessionController` validates the frontmatter, has the row decide which pad it opens (see "Which pad a file reaches"), and resolves a secure open URL:
    - `protected`: session URL via `PadSessionService`
    - external: validate the stored external URL and return a read-only snapshot/open target without DB binding lookup
    - `public`: direct/read-only URL as appropriate
@@ -239,12 +256,12 @@ Primary flow (native viewer):
 - A file that cannot be read, for any reason, is one more way to have no fresh snapshot: the user's delete goes through.
 - No fresh snapshot, or the delete fails: the pad stays as it is and the row becomes `pending_delete`; Nextcloud's trash succeeds either way. A protected pad whose group Etherpad cannot list counts as a delete that failed, so the sweep asks once more; past the row it has taken by then, a group it still cannot list is given up and the pad goes alone. A delete through WebDAV (Files UI, clients) holds the file's lock while the trash is decided, so there it is always this path. The sweep finishes the trash on its next run, usually within five minutes: the pad's content goes into the trashed file, then row and pad go (see below). Until then a public pad stays reachable by its URL, a restore takes the pad back, and the admin page counts it as a pending delete.
 - Restore without a binding row: provision a new pad from `.pad` frontmatter/snapshot.
-- Restore of a waiting row (`pending_delete` or `restore_pending`), whatever `delete_on_trash` says now: read the file's `snapshot_rev`, then ask Etherpad about the row's pad. The pad id comes from the row, never from the file.
+- Restore of a waiting row (`pending_delete` or `restore_pending`), whatever `delete_on_trash` says now: read the file's `snapshot_rev`, then ask Etherpad about the row's pad. The pad id comes from the row, never from the file; a file that names the pad the row replaced holds no revision of the row's pad (see "Which pad a file reaches").
   - It exists with at least that many revisions: the row becomes `active` again on that same pad, which may hold edits the snapshot missed. If the sweep took row and pad in the meantime, finishing the trash, the restore finds no row when it reads again and makes a new pad from the file, which holds the snapshot the sweep wrote first.
   - Etherpad answers that it does not exist, or it has fewer revisions (created again since, or back from an older backup): a new pad from the file's snapshot, and the file records the new pad's revision count. A pad with fewer revisions is left in place and logged before anything else is tried; whoever wrote into it has only that copy. Of a pad that does not exist, what is left - an empty group - goes.
     - Of two restores that race for one file only one writes it, and a restore that fails takes back what it made (`RestoreService::restoreOntoNewPad`).
     - Reading the file, asking Etherpad, and seeding a new pad take a while. Through WebDAV the file stays locked meanwhile, and a delete is refused (423, measured against NC 34.0.3); without that lock - file locking switched off, or a way in that takes none - the file can be deleted again, and its trash leaves a row that waits as it is. So the row is changed, and a new pad claimed, only while the file is still where it was - also when it could not be read: moved, and the row is left to its trash (`file_moved`), and a new pad let go.
-    - That leaves the moment between the claim and the write, which follow each other directly. A delete of the file there holds the file's lock, so the write fails. Usually the rollback takes the row and the new pad back before the delete's trash gets to the row; the file then goes to the trash without a row, and a later restore makes a pad from its snapshot. Should the trash owe the row first, row and new pad stay with it, and the sweep holds the new pad to the file's snapshot revision - still the old pad's - as it holds any pad it deletes. A new pad with fewer revisions, the usual case, is behind: the row goes, and the pad is left in place, logged with its id. One with as many goes with the row; one with more - a file that records no revision - has its content written into the file first. Nothing is lost either way: the new pad was seeded from the file. A trash that knew the new pad for the file's own copy belongs to the repair path.
+    - That leaves the moment between the claim and the write, which follow each other directly. A delete of the file there holds the file's lock, so the write fails. Usually the rollback takes the row and the new pad back before the delete's trash gets to the row; the file then goes to the trash without a row, and a later restore makes a pad from its snapshot. Should the trash owe the row first, row and new pad stay with it. The file still names the old pad, the one the row replaced, so its snapshot revision counts for none (see "Which pad a file reaches"): the sweep writes the new pad, seeded from the file, into it, and row and pad go.
   - No answer, or the file cannot be read: `restore_pending`, and neither pad nor file is touched. A row that waits again moves to the back of the queue (`updated_at`).
 - A restore whose pad's step fails still restores the file, with its versions and without its trash entry; the failure goes no further than the log. A pad left unrestored shows there as one of these lines:
   - `Could not restore the pad of a file back from the trash. The file itself is restored.` at `error`, once for each way in that fails, `via` naming it (`hook` or `event`). A core restore passes twice (see Event Integration), so a line from the hook can be followed by an event pass that restored the pad after all.
@@ -257,7 +274,7 @@ Primary flow (native viewer):
   - Only a row nobody has touched for a minute: a trash that has just made it a deletion owed finishes it undisturbed, and an outage costs one call to Etherpad and one log line per row and minute, however often the file is opened, anonymously through a share included.
   - It reaches what the sweep cannot, or only late: a file only its owner's session can read (encrypted with the owner's key, or on a storage whose credentials live in the session), and a deletion owed that only the daily run would reach.
   - A row it did not decide says the pad is still being restored (`waiting_binding`), `retryable` (see "Errors of the API"); `docs/api-reference.md` lists why.
-- Only a database that fails again in the middle of the rollback can leave a row naming a pad the file does not; opening the file then answers `Binding pad ID mismatch.` A restore through the API (`POST /api/v1/pads/restore`) still answers such a failure with an error.
+- Only a database that fails again in the middle of the rollback can leave a row naming the new pad while the file still names the old one. The row remembers the old one, so the file opens the new pad, and an open that may write the file rewrites it (see "Which pad a file reaches"). A restore through the API (`POST /api/v1/pads/restore`) still answers such a failure with an error.
 - `PendingBindingService` settles waiting rows in age buckets (every 5 minutes, then hourly, then daily) and from the admin page, by where the file is now:
   - in Files (`restore_pending`, or `pending_delete` whose restore never came): the decision a restore takes, except that a sweep writes no file. A pad that is gone or behind releases the row, and the file offers its own recovery when it is next opened; of a pad that is gone, what is left (an empty group) goes too.
   - in its owner's trash (`pending_delete`): the rest of the trash, written on the owner's own storage. A pad past the file's `snapshot_rev` goes into the file (one at it is there already), then row and pad are deleted; a restore that comes first keeps the pad. A pad that is gone: the row goes, and for a group pad what is left of it (an empty group). A pad that is behind is logged with its id and left in place, and the row goes. Either way the file keeps the snapshot it has. A pad that cannot be deleted once its row is gone is left over and logged with its id; its content is in the file.
@@ -278,9 +295,8 @@ Primary flow (native viewer):
 ### 6) Admin Integrity Check (optional)
 
 1. Admin runs `POST /api/v1/admin/consistency-check`.
-2. Service scans DB/file metadata consistency.
-3. Returns aggregate counters and bounded sample lists for diagnostics.
-4. External `.pad` files without bindings are expected and are excluded from missing-binding diagnostics.
+2. `ConsistencyCheckService` counts binding rows whose file is gone from the file cache, and returns the count with a bounded sample.
+3. It reads no `.pad` file: a file without a row, or one that names another pad than its row, shows only when it is opened.
 
 ## Main Frontend Modules
 

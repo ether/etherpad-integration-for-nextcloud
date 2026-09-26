@@ -60,6 +60,7 @@ class RestoreService {
 		private ProvisionedPadRollback $provisionedPadRollback,
 		private TestFaults $testFaults,
 		private UserNodeResolver $userNodeResolver,
+		private BoundPadResolver $boundPads,
 	) {
 	}
 
@@ -176,6 +177,10 @@ class RestoreService {
 				// No revision to hold the pad to, so no decision either.
 				return $this->deferRestore($fileId, $padId, $state, $readError);
 			}
+			// A file that names the pad its row replaced holds no revision of
+			// the row's pad: a higher one of the pad before would make the
+			// row's pad look behind.
+			$pad = $this->boundPads->followingRow($pad, $binding);
 			$timeout = $budget?->nextCallTimeout();
 			if ($budget !== null && $timeout === null) {
 				// Reading the file took what the run had left.
@@ -520,7 +525,9 @@ class RestoreService {
 			$pad->padId,
 			'restore without binding',
 			function (string $newPadId) use ($fileId, $pad): bool {
-				$this->bindingService->createBinding($fileId, $newPadId, $pad->accessMode);
+				// The file may still name the pad it named, in an older
+				// version say: the row remembers it (BoundPadResolver).
+				$this->bindingService->createBinding($fileId, $newPadId, $pad->accessMode, replacedPadId: $pad->padId);
 				return true;
 			},
 		);

@@ -4,10 +4,13 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Tests\Unit;
 
+use OCA\EtherpadNextcloud\Exception\BindingMismatchException;
 use OCA\EtherpadNextcloud\Exception\NotAPadFileException;
 use OCA\EtherpadNextcloud\Exception\ExternalPadException;
 use OCA\EtherpadNextcloud\Exception\WaitingBindingException;
+use OCA\EtherpadNextcloud\Service\Binding;
 use OCA\EtherpadNextcloud\Service\BindingService;
+use OCA\EtherpadNextcloud\Service\BoundPadResolver;
 use OCA\EtherpadNextcloud\Service\EtherpadClient;
 use OCA\EtherpadNextcloud\Service\ExternalPadExportFetcher;
 use OCA\EtherpadNextcloud\Service\PadFileLockRetryService;
@@ -16,12 +19,16 @@ use OCA\EtherpadNextcloud\Service\PadSyncService;
 use OCA\EtherpadNextcloud\Service\PadSnapshot;
 use OCA\EtherpadNextcloud\Service\ParsedPadFile;
 use OCA\EtherpadNextcloud\Service\UserNodeResolver;
+use OCA\EtherpadNextcloud\Tests\Support\BuildsBoundPads;
 use OCA\EtherpadNextcloud\Tests\Support\FixedClock;
 use OCP\Files\File;
+use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 
 class PadSyncServiceTest extends TestCase {
+	use BuildsBoundPads;
+
 	public function testSyncStatusReturnsUnavailableForExternalPads(): void {
 		$file = $this->createMock(File::class);
 		$file->method('getContent')->willReturn('frontmatter');
@@ -44,7 +51,7 @@ class PadSyncServiceTest extends TestCase {
 		));
 
 		$bindingService = $this->createMock(BindingService::class);
-		$bindingService->expects($this->never())->method('assertConsistentMapping');
+		$bindingService->expects($this->never())->method('findByFileId');
 
 		$result = $this->buildService($padFileService, $userNodeResolver, $bindingService)
 			->syncStatusById('alice', 138);
@@ -60,7 +67,6 @@ class PadSyncServiceTest extends TestCase {
 	 * a service that wrapped it would take the code away.
 	 */
 	public function testAWaitingBindingReachesTheCallerAsItIs(): void {
-		$waiting = new WaitingBindingException('Pad binding is not active.');
 		$file = $this->createMock(File::class);
 		$file->method('getName')->willReturn('Notes.pad');
 		$file->method('getContent')->willReturn('frontmatter');
@@ -69,15 +75,15 @@ class PadSyncServiceTest extends TestCase {
 		$padFileService = $this->createMock(PadFileService::class);
 		$padFileService->method('readPad')->willReturn(new ParsedPadFile([], '', 'pad-a', BindingService::ACCESS_PUBLIC, '', false, 3));
 		$bindingService = $this->createMock(BindingService::class);
-		$bindingService->method('assertConsistentMapping')->willThrowException($waiting);
+		$bindingService->method('findByFileId')->willReturn(new Binding(138, 'pad-a', BindingService::ACCESS_PUBLIC, BindingService::STATE_RESTORE_PENDING));
 		$service = $this->buildService($padFileService, $userNodeResolver, $bindingService);
 
 		foreach (['sync' => static fn () => $service->syncById('alice', 138, false), 'status' => static fn () => $service->syncStatusById('alice', 138)] as $case => $call) {
 			try {
 				$call();
 				$this->fail($case . ': nothing thrown');
-			} catch (WaitingBindingException $e) {
-				$this->assertSame($waiting, $e, $case);
+			} catch (WaitingBindingException) {
+				$this->addToAssertionCount(1);
 			}
 		}
 	}
@@ -106,8 +112,9 @@ class PadSyncServiceTest extends TestCase {
 
 		$bindingService = $this->createMock(BindingService::class);
 		$bindingService->expects($this->once())
-			->method('assertConsistentMapping')
-			->with(138, 'g.ABC$pad', BindingService::ACCESS_PROTECTED);
+			->method('findByFileId')
+			->with(138)
+			->willReturn(new Binding(138, 'g.ABC$pad', BindingService::ACCESS_PROTECTED, BindingService::STATE_ACTIVE));
 
 		$etherpadClient = $this->createMock(EtherpadClient::class);
 		$etherpadClient->expects($this->once())
@@ -266,7 +273,7 @@ class PadSyncServiceTest extends TestCase {
 			->willReturn('updated-frontmatter');
 
 		$bindingService = $this->createMock(BindingService::class);
-		$bindingService->expects($this->never())->method('assertConsistentMapping');
+		$bindingService->expects($this->never())->method('findByFileId');
 
 		$etherpadClient = $this->createMock(EtherpadClient::class);
 		$externalPadExportFetcher = $this->createMock(ExternalPadExportFetcher::class);
@@ -343,6 +350,101 @@ class PadSyncServiceTest extends TestCase {
 	}
 
 	/**
+	 * A file that still names the pad its row replaced has no revision of
+	 * the row's pad, however high its own: the sync writes the row's pad
+	 * into it, name and all, and says so once. Its status is out of sync.
+	 */
+	public function testAFileNamingThePadItsRowReplacedIsSyncedFromTheRowsPad(): void {
+		$formatter = new PadFileService(new FixedClock());
+		$stale = $formatter->withExportSnapshot(
+			$formatter->readPad($formatter->buildInitialDocument(138, 'old-pad', BindingService::ACCESS_PUBLIC)),
+			new PadSnapshot('old text', '', 500),
+		);
+		$file = $this->createMock(File::class);
+		$file->method('getName')->willReturn('Notes.pad');
+		$file->method('getContent')->willReturn($stale);
+		$userNodeResolver = $this->createMock(UserNodeResolver::class);
+		$userNodeResolver->method('resolveUserFileNodeById')->with('alice', 138)->willReturn($file);
+		$userNodeResolver->method('toUserAbsolutePath')->willReturn('/Notes.pad');
+		$bindingService = $this->createMock(BindingService::class);
+		$bindingService->method('findByFileId')->with(138)->willReturn(new Binding(138, 'r-new-pad', BindingService::ACCESS_PUBLIC, BindingService::STATE_ACTIVE, replacedPadId: 'old-pad'));
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->method('getRevisionsCount')->with('r-new-pad')->willReturn(3);
+		$etherpadClient->method('getText')->with('r-new-pad')->willReturn('the pad now');
+		$etherpadClient->method('getHTML')->with('r-new-pad')->willReturn('<p>the pad now</p>');
+		$written = null;
+		$lockRetryService = $this->createMock(PadFileLockRetryService::class);
+		$lockRetryService->expects($this->once())->method('putContentWithSyncLockRetry')->willReturnCallback(static function (File $node, string $content) use (&$written): int {
+			$written = $content;
+			return 0;
+		});
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects($this->once())->method('warning')->with('A .pad file named the pad its row replaced; it now names the row\'s.', $this->anything());
+		$service = $this->buildService($formatter, $userNodeResolver, $bindingService, $etherpadClient, $lockRetryService, logger: $logger);
+
+		$status = $service->syncStatusById('alice', 138);
+		$result = $service->syncById('alice', 138, false);
+
+		$this->assertSame([PadSyncService::STATUS_OUT_OF_SYNC, -1], [$status->status, $status->snapshotRev]);
+		$this->assertSame([PadSyncService::STATUS_UPDATED, 'r-new-pad'], [$result->status, $result->padId]);
+		$after = $formatter->readPad((string)$written);
+		$this->assertSame(['r-new-pad', 3, 'the pad now'], [$after->padId, $after->snapshotRev, $formatter->getSnapshotPartsFromBody($after->body)['text']]);
+		$this->assertSame(138, (int)$after->frontmatter['file_id']);
+	}
+
+	/** A file that names its row's pad is synced as ever, whatever pad the row replaced: no repair to speak of. */
+	public function testASyncOfAFileNamingItsRowsPadSpeaksOfNoRepair(): void {
+		$formatter = new PadFileService(new FixedClock());
+		$file = $this->createMock(File::class);
+		$file->method('getName')->willReturn('Notes.pad');
+		$file->method('getContent')->willReturn($formatter->withExportSnapshot(
+			$formatter->readPad($formatter->buildInitialDocument(138, 'r-new-pad', BindingService::ACCESS_PUBLIC)),
+			new PadSnapshot('text', '', 1),
+		));
+		$userNodeResolver = $this->createMock(UserNodeResolver::class);
+		$userNodeResolver->method('resolveUserFileNodeById')->willReturn($file);
+		$userNodeResolver->method('toUserAbsolutePath')->willReturn('/Notes.pad');
+		$bindingService = $this->createMock(BindingService::class);
+		$bindingService->method('findByFileId')->willReturn(new Binding(138, 'r-new-pad', BindingService::ACCESS_PUBLIC, BindingService::STATE_ACTIVE, replacedPadId: 'old-pad'));
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->method('getRevisionsCount')->willReturn(3);
+		$etherpadClient->method('getText')->willReturn('the pad now');
+		$etherpadClient->method('getHTML')->willReturn('');
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects($this->never())->method('warning');
+
+		$result = $this->buildService($formatter, $userNodeResolver, $bindingService, $etherpadClient, $this->createMock(PadFileLockRetryService::class), logger: $logger)->syncById('alice', 138, false);
+
+		$this->assertSame(PadSyncService::STATUS_UPDATED, $result->status);
+	}
+
+	/** A file that names any other pad than its row's, or the one that replaced, is not synced. */
+	public function testAFileNamingAPadItsRowDoesNotGiveItIsNotSynced(): void {
+		$file = $this->createMock(File::class);
+		$file->method('getName')->willReturn('Notes.pad');
+		$file->method('getContent')->willReturn('frontmatter');
+		$userNodeResolver = $this->createMock(UserNodeResolver::class);
+		$userNodeResolver->method('resolveUserFileNodeById')->willReturn($file);
+		$userNodeResolver->method('toUserAbsolutePath')->willReturn('/Notes.pad');
+		$padFileService = $this->createMock(PadFileService::class);
+		$padFileService->method('readPad')->willReturn(new ParsedPadFile(['pad_id' => 'somebody-elses'], '', 'somebody-elses', BindingService::ACCESS_PUBLIC, '', false, 3));
+		$bindingService = $this->createMock(BindingService::class);
+		$bindingService->method('findByFileId')->willReturn(new Binding(138, 'r-new-pad', BindingService::ACCESS_PUBLIC, BindingService::STATE_ACTIVE, replacedPadId: 'old-pad'));
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->expects($this->never())->method('getRevisionsCount');
+		$service = $this->buildService($padFileService, $userNodeResolver, $bindingService, $etherpadClient);
+
+		foreach (['sync' => static fn () => $service->syncById('alice', 138, false), 'status' => static fn () => $service->syncStatusById('alice', 138)] as $case => $call) {
+			try {
+				$call();
+				$this->fail($case . ': synced');
+			} catch (BindingMismatchException) {
+				$this->addToAssertionCount(1);
+			}
+		}
+	}
+
+	/**
 	 * An external .pad without a link is the link's problem, not Etherpad
 	 * failing; a file that is no .pad is refused as such.
 	 */
@@ -369,6 +471,10 @@ class PadSyncServiceTest extends TestCase {
 		}
 	}
 
+	/**
+	 * Over $bindingService, the real BoundPadResolver; without one, a
+	 * resolver that takes each file as its row has it.
+	 */
 	private function buildService(
 		?PadFileService $padFileService = null,
 		?UserNodeResolver $userNodeResolver = null,
@@ -376,15 +482,23 @@ class PadSyncServiceTest extends TestCase {
 		?EtherpadClient $etherpadClient = null,
 		?PadFileLockRetryService $lockRetryService = null,
 		?ExternalPadExportFetcher $externalPadExportFetcher = null,
+		?LoggerInterface $logger = null,
 	): PadSyncService {
+		$logger ??= $this->createMock(LoggerInterface::class);
+		if ($bindingService !== null) {
+			$boundPads = $this->boundPads($bindingService, $logger, $padFileService instanceof MockObject ? null : $padFileService);
+		} else {
+			$boundPads = $this->createMock(BoundPadResolver::class);
+			$boundPads->method('resolve')->willReturnArgument(1);
+		}
 		return new PadSyncService(
 			$padFileService ?? $this->createMock(PadFileService::class),
 			$userNodeResolver ?? $this->createMock(UserNodeResolver::class),
 			$lockRetryService ?? $this->createMock(PadFileLockRetryService::class),
-			$bindingService ?? $this->createMock(BindingService::class),
+			$boundPads,
 			$etherpadClient ?? $this->createMock(EtherpadClient::class),
 			$externalPadExportFetcher ?? $this->createMock(ExternalPadExportFetcher::class),
-			$this->createMock(LoggerInterface::class),
+			$logger,
 		);
 	}
 }

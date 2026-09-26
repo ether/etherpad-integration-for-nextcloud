@@ -4,8 +4,9 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Tests\Unit;
 
+use OCA\EtherpadNextcloud\Exception\BindingMismatchException;
 use OCA\EtherpadNextcloud\Exception\ExternalPadException;
-use OCA\EtherpadNextcloud\Exception\BindingException;
+use OCA\EtherpadNextcloud\Exception\MissingBindingException;
 use OCA\EtherpadNextcloud\Exception\WaitingBindingException;
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
 use OCA\EtherpadNextcloud\Service\BindingService;
@@ -14,9 +15,14 @@ use OCA\EtherpadNextcloud\Service\ExternalPadExportFetcher;
 use OCA\EtherpadNextcloud\Service\LivePadHtmlFetcher;
 use OCA\EtherpadNextcloud\Service\ParsedPadFile;
 use OCA\EtherpadNextcloud\Service\SnapshotHtmlSanitizer;
+use OCA\EtherpadNextcloud\Tests\Support\BuildsBoundPads;
+use OCA\EtherpadNextcloud\Tests\Support\FixedClock;
+use OCA\EtherpadNextcloud\Tests\Support\InMemoryBindingTable;
 use PHPUnit\Framework\TestCase;
 
 class LivePadHtmlFetcherTest extends TestCase {
+	use BuildsBoundPads;
+
 	public function testOwnPadIsFetchedOverTheApiAndSanitized(): void {
 		$client = $this->createMock(EtherpadClient::class);
 		$client->expects($this->once())
@@ -30,42 +36,52 @@ class LivePadHtmlFetcherTest extends TestCase {
 		$this->assertFalse($result->isEmpty);
 	}
 
-	/** A row that still waits reaches the caller as it was thrown, and nothing is fetched. */
+	/** A row that still waits reaches the caller, and nothing is fetched. */
 	public function testAWaitingBindingReachesTheCallerAsItIs(): void {
-		$waiting = new WaitingBindingException('Pad binding is not active.');
-		$bindings = $this->createMock(BindingService::class);
-		$bindings->method('assertConsistentMapping')->willThrowException($waiting);
 		$client = $this->createMock(EtherpadClient::class);
 		$client->expects($this->never())->method('getHTMLForPreview');
 
-		$this->expectExceptionObject($waiting);
-		$this->buildFetcher($client, bindingService: $bindings)->fetchForPadFile($this->pad(padId: 'pad-a'), 138);
+		$this->expectException(WaitingBindingException::class);
+		$this->buildFetcher($client, rows: [self::row('g.group$pad', BindingService::STATE_RESTORE_PENDING)])->fetchForPadFile($this->pad(), 138);
 	}
 
 	/**
 	 * The check that stops a `.pad` file from pointing this app's API key
 	 * at somebody else's pad. It runs on every content request, not only
 	 * when the file was opened — the file is writable by whoever may write
-	 * it, and the fetch is what does the reading.
+	 * it, and the fetch is what does the reading. Neither a pad the row
+	 * never named nor one without a row is read.
 	 */
-	public function testAPadIdThatDoesNotMatchTheBindingIsNotFetched(): void {
-		$bindings = $this->createMock(BindingService::class);
-		$bindings->expects($this->once())
-			->method('assertConsistentMapping')
-			->with(138, 'g.group$somebody-elses', BindingService::ACCESS_PROTECTED)
-			->willThrowException(new BindingException('pad_id does not match the stored binding.'));
+	public function testAPadNoRowGivesTheFileIsNotFetched(): void {
+		foreach ([
+			'another pad than the row\'s' => [[self::row('g.group$pad', replaced: 'g.group$before')], BindingMismatchException::class],
+			'no row at all' => [[], MissingBindingException::class],
+		] as $case => [$rows, $refusal]) {
+			$client = $this->createMock(EtherpadClient::class);
+			$client->expects($this->never())->method('getHTMLForPreview');
+			try {
+				$this->buildFetcher($client, rows: $rows)->fetchForPadFile($this->pad(padId: 'g.group$somebody-elses'), 138);
+				$this->fail($case . ': fetched');
+			} catch (\Exception $e) {
+				$this->assertInstanceOf($refusal, $e, $case);
+			}
+		}
+	}
 
+	/** A file that still names the pad its row replaced shows the row's. */
+	public function testAFileNamingThePadItsRowReplacedShowsTheRowsPad(): void {
 		$client = $this->createMock(EtherpadClient::class);
-		$client->expects($this->never())->method('getHTMLForPreview');
+		$client->expects($this->once())->method('getHTMLForPreview')->with('g.group$new')->willReturn('<p>Now</p>');
 
-		$this->expectException(BindingException::class);
-		$this->buildFetcher($client, bindingService: $bindings)
-			->fetchForPadFile($this->pad(padId: 'g.group$somebody-elses'), 138);
+		$result = $this->buildFetcher($client, rows: [self::row('g.group$new', replaced: 'g.group$old')])
+			->fetchForPadFile($this->pad(padId: 'g.group$old'), 138);
+
+		$this->assertSame('<p>Now</p>', $result->html);
 	}
 
 	public function testForeignPadIsFetchedOverItsPublicExportWithoutABindingCheck(): void {
 		$bindings = $this->createMock(BindingService::class);
-		$bindings->expects($this->never())->method('assertConsistentMapping');
+		$bindings->expects($this->never())->method('findByFileId');
 
 		$external = $this->createMock(ExternalPadExportFetcher::class);
 		$external->expects($this->once())
@@ -73,7 +89,7 @@ class LivePadHtmlFetcherTest extends TestCase {
 			->with('https://remote.example/p/Test')
 			->willReturn('<p>Remote</p><iframe src="x"></iframe>');
 
-		$result = $this->buildFetcher(externalPadExportFetcher: $external, bindingService: $bindings)
+		$result = $this->buildFetcher(externalPadExportFetcher: $external, bindings: $bindings)
 			->fetchForPadFile($this->externalPad(), 138);
 
 		$this->assertSame('<p>Remote</p>', $result->html);
@@ -142,16 +158,29 @@ class LivePadHtmlFetcherTest extends TestCase {
 		);
 	}
 
+	/** File 138's row. */
+	private static function row(string $padId, string $state = BindingService::STATE_ACTIVE, ?string $replaced = null): array {
+		return ['file_id' => 138, 'pad_id' => $padId, 'access_mode' => BindingService::ACCESS_PROTECTED, 'state' => $state, 'deleted_at' => null, 'updated_at' => 100, 'replaced_pad_id' => $replaced];
+	}
+
+	/**
+	 * Over $rows, or $bindings; unless a test says otherwise, file 138's row
+	 * names the pad the file does.
+	 *
+	 * @param ?list<array<string,mixed>> $rows
+	 */
 	private function buildFetcher(
 		?EtherpadClient $etherpadClient = null,
 		?ExternalPadExportFetcher $externalPadExportFetcher = null,
-		?BindingService $bindingService = null,
+		?array $rows = null,
+		?BindingService $bindings = null,
 	): LivePadHtmlFetcher {
+		$bindings ??= new BindingService(new InMemoryBindingTable($rows ?? [self::row('g.group$pad')]), new FixedClock());
 		return new LivePadHtmlFetcher(
 			$etherpadClient ?? $this->createMock(EtherpadClient::class),
 			$externalPadExportFetcher ?? $this->createMock(ExternalPadExportFetcher::class),
 			new SnapshotHtmlSanitizer(),
-			$bindingService ?? $this->createMock(BindingService::class),
+			$this->boundPads($bindings),
 		);
 	}
 }

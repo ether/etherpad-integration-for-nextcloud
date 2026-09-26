@@ -7,6 +7,7 @@ namespace OCA\EtherpadNextcloud\Tests\Unit;
 use OCA\EtherpadNextcloud\Controller\PadControllerErrorMapper;
 use OCA\EtherpadNextcloud\Controller\PadSessionController;
 use OCA\EtherpadNextcloud\Service\AppConfigService;
+use OCA\EtherpadNextcloud\Service\Binding;
 use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\EtherpadNextcloud\Service\EtherpadClient;
 use OCA\EtherpadNextcloud\Service\ExternalPadExportFetcher;
@@ -32,10 +33,12 @@ use OCP\IUserSession;
 use OCP\Lock\LockedException;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
+use OCA\EtherpadNextcloud\Tests\Support\BuildsBoundPads;
 
 class PadSessionControllerTest extends TestCase {
 	use \OCA\EtherpadNextcloud\Tests\Support\BuildsErrorMappers;
 
+	use BuildsBoundPads;
 	use SettlesOnOpen;
 
 	public function testOpenByIdRejectsInvalidFileId(): void {
@@ -89,9 +92,10 @@ class PadSessionControllerTest extends TestCase {
 			));
 
 		$bindingService = $this->createMock(BindingService::class);
-		$bindingService->expects($this->once())
-			->method('assertConsistentMapping')
-			->with(138, 'g.ABCDEFGHIJKLMNOP$pad-1', BindingService::ACCESS_PUBLIC);
+		$bindingService->expects($this->atLeastOnce())
+			->method('findByFileId')
+			->with(138)
+			->willReturn(new Binding(138, 'g.ABCDEFGHIJKLMNOP$pad-1', BindingService::ACCESS_PUBLIC, BindingService::STATE_ACTIVE));
 
 		$etherpadClient = $this->createMock(EtherpadClient::class);
 		$etherpadClient->expects($this->once())
@@ -129,6 +133,7 @@ class PadSessionControllerTest extends TestCase {
 			$this->createMock(ExternalPadExportFetcher::class),
 			$this->createMock(PadSessionService::class),
 			$logger,
+			$this->boundPads($bindingService, $logger),
 		);
 		$l10n = $this->createMock(\OCP\IL10N::class);
 		$l10n->method('t')->willReturnCallback(static fn (string $text, array $params = []): string => $text);
@@ -216,7 +221,8 @@ class PadSessionControllerTest extends TestCase {
 		$padFileService->expects($this->never())->method('getSnapshotPartsFromBody');
 
 		$bindingService = $this->createMock(BindingService::class);
-		$bindingService->expects($this->never())->method('assertConsistentMapping');
+		// A pad on another server has no row to ask.
+		$bindingService->expects($this->never())->method('findByFileId');
 
 		$etherpadClient = $this->createMock(EtherpadClient::class);
 		$etherpadClient->expects($this->never())->method('buildPadUrl');
@@ -253,6 +259,7 @@ class PadSessionControllerTest extends TestCase {
 			$externalPadExportFetcher,
 			$this->createMock(PadSessionService::class),
 			$logger,
+			$this->boundPads($bindingService, $logger),
 		);
 		$l10n = $this->createMock(\OCP\IL10N::class);
 		$l10n->method('t')->willReturnCallback(static fn (string $text, array $params = []): string => $text);
@@ -363,6 +370,7 @@ class PadSessionControllerTest extends TestCase {
 			$resolvedExternalPadExportFetcher,
 			$this->createMock(PadSessionService::class),
 			$logger,
+			$this->boundPads($resolvedBindingService, $logger),
 		);
 		$urlGenerator = $this->createMock(IURLGenerator::class);
 		$urlGenerator->method('linkToRoute')->willReturnCallback(

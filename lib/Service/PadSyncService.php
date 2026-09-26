@@ -30,7 +30,7 @@ class PadSyncService {
 		private PadFileService $padFileService,
 		private UserNodeResolver $userNodeResolver,
 		private PadFileLockRetryService $lockRetryService,
-		private BindingService $bindingService,
+		private BoundPadResolver $boundPads,
 		private EtherpadClient $etherpadClient,
 		private ExternalPadExportFetcher $externalPadExportFetcher,
 		private LoggerInterface $logger,
@@ -54,18 +54,21 @@ class PadSyncService {
 
 		try {
 			$pad = $this->padFileService->readPad((string)$node->getContent());
-			$padId = $pad->padId;
-			$accessMode = $pad->accessMode;
 			$isExternal = $pad->isExternal;
-			if (!$isExternal) {
-				$this->bindingService->assertConsistentMapping($fileId, $padId, $accessMode);
-			}
-
+			$synced = $isExternal ? $pad : $this->boundPads->resolve($fileId, $pad);
+			$padId = $synced->padId;
+			$accessMode = $synced->accessMode;
 			if ($isExternal) {
 				return $this->syncExternalPad($node, $fileId, $pad, $force);
 			}
 
-			return $this->syncInternalPad($node, $fileId, $pad, $force);
+			// A file that named the pad its row replaced has no revision of
+			// the row's pad, so this always writes the pad's content and name.
+			$result = $this->syncInternalPad($node, $fileId, $synced, $force);
+			if ($synced !== $pad) {
+				$this->boundPads->repaired($fileId);
+			}
+			return $result;
 		} catch (PadFileLockRetryExhaustedException $e) {
 			$lockRetries = $e->getRetryAttempts();
 			return $this->lockedSyncResponse($e->getLockedException(), $fileId, $absolutePath, $padId, $accessMode, $isExternal, $force, $lockRetries);
@@ -82,21 +85,18 @@ class PadSyncService {
 		$node = $this->userNodeResolver->resolveUserFileNodeById($uid, $fileId);
 
 		$pad = $this->padFileService->readPad((string)$node->getContent());
-		$padId = $pad->padId;
-		$accessMode = $pad->accessMode;
-		$isExternal = $pad->isExternal;
-		if (!$isExternal) {
-			$this->bindingService->assertConsistentMapping($fileId, $padId, $accessMode);
-		}
-		if ($isExternal) {
+		if ($pad->isExternal) {
 			return new PadSyncStatus(
 				status: self::STATUS_UNAVAILABLE,
 				inSync: null,
 				reason: 'external_no_revision',
 			);
 		}
+		// A file that named the pad its row replaced is out of sync with the
+		// row's pad, whatever its revision says.
+		$pad = $this->boundPads->resolve($fileId, $pad);
 
-		$currentRev = $this->etherpadClient->getRevisionsCount($padId);
+		$currentRev = $this->etherpadClient->getRevisionsCount($pad->padId);
 		$snapshotRev = $pad->snapshotRev;
 		$inSync = $snapshotRev >= $currentRev;
 

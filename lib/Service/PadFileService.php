@@ -236,6 +236,30 @@ class PadFileService {
 		return $this->serialize($frontmatter, $this->buildSnapshotBody($text, $html));
 	}
 
+	/**
+	 * $pad as it reads once it names another pad: that pad's id, mode and
+	 * address, and no snapshot revision, since the one it has counts the
+	 * pad it named before. Its text stays until a sync or a trash writes the
+	 * new pad's into it. Nothing is written here.
+	 */
+	public function namingPad(ParsedPadFile $pad, string $padId, string $accessMode, string $padUrl): ParsedPadFile {
+		$frontmatter = $pad->frontmatter;
+		$frontmatter['pad_id'] = $padId;
+		$frontmatter['access_mode'] = $accessMode;
+		$frontmatter['pad_url'] = $padUrl;
+		$frontmatter['snapshot_rev'] = -1;
+		$frontmatter['updated_at'] = $this->nowIso();
+		return new ParsedPadFile(
+			frontmatter: $frontmatter,
+			body: $pad->body,
+			padId: $padId,
+			accessMode: $accessMode,
+			padUrl: $padUrl,
+			isExternal: false,
+			snapshotRev: -1,
+		);
+	}
+
 	public function withExportSnapshot(ParsedPadFile $pad, PadSnapshot $snapshot): string {
 		$frontmatter = $pad->frontmatter;
 		$frontmatter['updated_at'] = $this->nowIso();

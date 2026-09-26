@@ -19,8 +19,17 @@ use OCP\IDBConnection;
  * a condition left out changes which rows are hit, and a test sees it.
  */
 final class InMemoryBindingTable implements IDBConnection {
-	/** @param list<array<string,mixed>> $rows */
-	public function __construct(public array $rows) {
+	/** @var list<array<string,mixed>> */
+	public array $rows;
+
+	/**
+	 * A row given without replaced_pad_id has it NULL, as the column
+	 * defaults to in the table.
+	 *
+	 * @param list<array<string,mixed>> $rows
+	 */
+	public function __construct(array $rows) {
+		$this->rows = array_map(static fn (array $row): array => $row + ['replaced_pad_id' => null], $rows);
 	}
 
 	public function getQueryBuilder(): IQueryBuilder {

@@ -42,6 +42,7 @@ class OwedDeletions {
 		private UserNodeResolver $userNodeResolver,
 		private LoggerInterface $logger,
 		private ITimeFactory $timeFactory,
+		private BoundPadResolver $boundPads,
 	) {
 	}
 
@@ -74,6 +75,9 @@ class OwedDeletions {
 		if ($pad instanceof TrashSnapshotMiss) {
 			return $this->waitAgain($fileId, $padId, $pad);
 		}
+		// A file that names the pad its row replaced holds no revision of the
+		// row's pad, and takes the row's pad's content and name.
+		$pad = $this->boundPads->followingRow($pad, $binding);
 
 		$timeout = $budget->nextCallTimeout();
 		if ($timeout === null) {

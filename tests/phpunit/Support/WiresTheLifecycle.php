@@ -11,6 +11,7 @@ namespace OCA\EtherpadNextcloud\Tests\Support;
 
 use OCA\EtherpadNextcloud\Service\AppConfigService;
 use OCA\EtherpadNextcloud\Service\BindingService;
+use OCA\EtherpadNextcloud\Service\BoundPadResolver;
 use OCA\EtherpadNextcloud\Service\EtherpadClient;
 use OCA\EtherpadNextcloud\Service\LifecycleService;
 use OCA\EtherpadNextcloud\Service\ManagedPadLifecycle;
@@ -77,6 +78,7 @@ trait WiresTheLifecycle {
 			new FixedClock(),
 			new TrashSnapshotWriters($etherpad, $padFiles, $logger, $testFaults),
 			$restores ?? $this->wireRestoreService($bindings, $etherpad, $padFiles, $padLifecycle, $appConfig, $logger, $padLifecycleLogger, $secureRandom, $testFaults),
+			new BoundPadResolver($bindings, $padFiles, $etherpad, $logger),
 		);
 	}
 
@@ -138,6 +140,7 @@ trait WiresTheLifecycle {
 			$testFaults,
 			// Unless a test says otherwise, a file stays where it was read.
 			$nodes ?? $this->createMock(UserNodeResolver::class),
+			new BoundPadResolver($bindings, $padFiles, $etherpad, $logger),
 		);
 	}
 

@@ -30,16 +30,19 @@ class BindingTest extends TestCase {
 			'deleted_at' => 100,
 			'created_at' => 50,
 			'updated_at' => 200,
+			'replaced_pad_id' => 'nc-before',
 		]);
 
-		$this->assertEquals(new Binding(7, 'nc-abc', BindingService::ACCESS_PROTECTED, BindingService::STATE_PENDING_DELETE, 100, 200), $binding);
+		$this->assertEquals(new Binding(7, 'nc-abc', BindingService::ACCESS_PROTECTED, BindingService::STATE_PENDING_DELETE, 100, 200, 'nc-before'), $binding);
 	}
 
 	/** Only a deletion owed has a date for it; a row without one says so, not 0. */
 	public function testARowWithoutADeletionOwedHasNoDateForIt(): void {
-		$binding = Binding::fromRow(['file_id' => 7, 'pad_id' => 'nc-abc', 'access_mode' => BindingService::ACCESS_PUBLIC, 'state' => BindingService::STATE_ACTIVE, 'deleted_at' => null, 'updated_at' => 200]);
+		$binding = Binding::fromRow(['file_id' => 7, 'pad_id' => 'nc-abc', 'access_mode' => BindingService::ACCESS_PUBLIC, 'state' => BindingService::STATE_ACTIVE, 'deleted_at' => null, 'updated_at' => 200, 'replaced_pad_id' => null]);
 
 		$this->assertNull($binding->deletedAt);
+		// Nor has a row that replaced no pad a pad it replaced.
+		$this->assertNull($binding->replacedPadId);
 	}
 
 	/**
@@ -49,7 +52,7 @@ class BindingTest extends TestCase {
 	 * error where the row is read instead.
 	 */
 	public function testAColumnTheQueryLeftOutIsAnError(): void {
-		$row = ['file_id' => 7, 'pad_id' => 'nc-abc', 'access_mode' => BindingService::ACCESS_PUBLIC, 'state' => BindingService::STATE_PENDING_DELETE, 'deleted_at' => 100, 'updated_at' => 200, 'file_path' => null, 'waiting_since' => 100];
+		$row = ['file_id' => 7, 'pad_id' => 'nc-abc', 'access_mode' => BindingService::ACCESS_PUBLIC, 'state' => BindingService::STATE_PENDING_DELETE, 'deleted_at' => 100, 'updated_at' => 200, 'replaced_pad_id' => null, 'file_path' => null, 'waiting_since' => 100];
 		$reads = [
 			'Binding' => static fn (array $r): mixed => Binding::fromRow($r),
 			'WaitingBinding' => static fn (array $r): mixed => WaitingBinding::fromRow($r),

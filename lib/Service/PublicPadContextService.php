@@ -62,7 +62,8 @@ class PublicPadContextService {
 		$isExternal = $pad->isExternal;
 
 		if (!$isExternal) {
-			$this->settleOnOpen->settleThenAssert($node, $fileId, $pad);
+			// A visitor never writes the file; the row's pad opens all the same.
+			$pad = $this->settleOnOpen->settleThenResolve($node, $fileId, $pad);
 		}
 		$openTarget = $this->publicPadOpenService->open($pad, $resolved->readOnly, $token);
 

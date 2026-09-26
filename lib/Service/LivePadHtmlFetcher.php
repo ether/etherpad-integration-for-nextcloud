@@ -25,7 +25,7 @@ class LivePadHtmlFetcher {
 		private EtherpadClient $etherpadClient,
 		private ExternalPadExportFetcher $externalPadExportFetcher,
 		private SnapshotHtmlSanitizer $htmlSanitizer,
-		private BindingService $bindingService,
+		private BoundPadResolver $boundPads,
 	) {
 	}
 
@@ -35,16 +35,16 @@ class LivePadHtmlFetcher {
 	 * The binding check lives here, not at each call site: it is what stops
 	 * an edited `.pad` file from pointing this app's API key at somebody
 	 * else's pad, and the signed-in and public paths must not be able to
-	 * disagree about it.
+	 * disagree about it. The pad read is the one BoundPadResolver says.
 	 */
 	public function fetchForPadFile(ParsedPadFile $pad, int $fileId): LivePadHtml {
 		if ($pad->isExternal) {
 			return $this->toPayload($this->externalPadExportFetcher->fetchExternalPublicPadHtml($pad->externalPadUrl()));
 		}
 
-		$this->bindingService->assertConsistentMapping($fileId, $pad->padId, $pad->accessMode);
+		$bound = $this->boundPads->resolve($fileId, $pad);
 
-		return $this->toPayload($this->etherpadClient->getHTMLForPreview($pad->padId));
+		return $this->toPayload($this->etherpadClient->getHTMLForPreview($bound->padId));
 	}
 
 	private function toPayload(string $html): LivePadHtml {

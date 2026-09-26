@@ -5,10 +5,6 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\Tests\Unit;
 
 use OCA\EtherpadNextcloud\Exception\BindingNotCreatedException;
-use OCA\EtherpadNextcloud\Exception\BindingMismatchException;
-use OCA\EtherpadNextcloud\Exception\BindingException;
-use OCA\EtherpadNextcloud\Exception\MissingBindingException;
-use OCA\EtherpadNextcloud\Exception\WaitingBindingException;
 use OCA\EtherpadNextcloud\Service\Binding;
 use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\EtherpadNextcloud\Service\FileLocation;
@@ -20,36 +16,6 @@ use OCA\EtherpadNextcloud\Tests\Support\InMemoryBindingTable;
 use PHPUnit\Framework\TestCase;
 
 class BindingServiceTest extends TestCase {
-	/**
-	 * The file's own row is the one compared, and it has to name the pad,
-	 * in the access mode, and be active. Another file's row is no binding
-	 * for this one, and a mode the app does not know is refused first.
-	 */
-	public function testAssertConsistentMappingHoldsTheFilesRowToPadModeAndState(): void {
-		$cases = [
-			'consistent' => [self::bindingRow(10, 'pad-a', BindingService::STATE_ACTIVE), 'pad-a', BindingService::ACCESS_PUBLIC, null, null],
-			'another pad' => [self::bindingRow(10, 'pad-a', BindingService::STATE_ACTIVE), 'pad-b', BindingService::ACCESS_PUBLIC, BindingMismatchException::class, 'Binding pad ID mismatch.'],
-			'another mode' => [self::bindingRow(10, 'pad-a', BindingService::STATE_ACTIVE, BindingService::ACCESS_PROTECTED), 'pad-a', BindingService::ACCESS_PUBLIC, BindingMismatchException::class, 'Binding access mode mismatch.'],
-			// Waiting is its own kind, so the one who opens the file is told it is on its way back.
-			'a deletion owed' => [self::bindingRow(10, 'pad-a', BindingService::STATE_PENDING_DELETE), 'pad-a', BindingService::ACCESS_PUBLIC, WaitingBindingException::class, 'Pad binding is not active.'],
-			'a restore undecided' => [self::bindingRow(10, 'pad-a', BindingService::STATE_RESTORE_PENDING), 'pad-a', BindingService::ACCESS_PUBLIC, WaitingBindingException::class, 'Pad binding is not active.'],
-			// No sweep takes up a state it does not know, so nothing waits for one either.
-			'a state the app does not know' => [self::bindingRow(10, 'pad-a', 'trashed'), 'pad-a', BindingService::ACCESS_PUBLIC, BindingException::class, 'Pad binding is not active.'],
-			'another file\'s row' => [self::bindingRow(11, 'pad-a', BindingService::STATE_ACTIVE), 'pad-a', BindingService::ACCESS_PUBLIC, MissingBindingException::class, 'No binding exists for this file.'],
-			'unknown mode' => [self::bindingRow(10, 'pad-a', BindingService::STATE_ACTIVE), 'pad-a', 'legacy', BindingException::class, 'Unsupported access mode: legacy'],
-		];
-		foreach ($cases as $case => [$row, $padId, $accessMode, $exception, $message]) {
-			// A waiting row of another file sits alongside: only file 10's is compared.
-			$service = $this->serviceOver([self::bindingRow(9, 'pad-9', BindingService::STATE_PENDING_DELETE), $row]);
-			try {
-				$service->assertConsistentMapping(10, $padId, $accessMode);
-				$this->assertNull($exception, $case . ': accepted');
-			} catch (BindingException $e) {
-				$this->assertSame([$exception, $message], [$e::class, $e->getMessage()], $case);
-			}
-		}
-	}
-
 	/**
 	 * An insert the database does not take - a row another request made at
 	 * the same moment, or the database gone - is its own exception, with the
@@ -240,9 +206,72 @@ class BindingServiceTest extends TestCase {
 
 		self::assertTrue($service->rebind(1, 'old', BindingService::STATE_PENDING_DELETE, 'new', BindingService::STATE_ACTIVE));
 		self::assertSame([
-			['file_id' => 1, 'pad_id' => 'new', 'access_mode' => BindingService::ACCESS_PUBLIC, 'state' => BindingService::STATE_ACTIVE, 'deleted_at' => null, 'updated_at' => 500],
+			// The pad it named is the one its file may still name.
+			['file_id' => 1, 'pad_id' => 'new', 'access_mode' => BindingService::ACCESS_PUBLIC, 'state' => BindingService::STATE_ACTIVE, 'deleted_at' => null, 'updated_at' => 500, 'replaced_pad_id' => 'old'],
 			self::bindingRow(2, 'other', BindingService::STATE_PENDING_DELETE),
 		], $table->rows);
+	}
+
+	/**
+	 * Only a pad put in another's place replaces it: a row that keeps its pad
+	 * through a change of state keeps the pad it replaced too.
+	 */
+	public function testAChangeOfStateKeepsThePadTheRowReplaced(): void {
+		$table = new InMemoryBindingTable([['replaced_pad_id' => 'before'] + self::bindingRow(1, 'pad', BindingService::STATE_ACTIVE)]);
+		$service = new BindingService($table, new FixedClock(500));
+
+		self::assertTrue($service->transition(1, 'pad', BindingService::STATE_ACTIVE, BindingService::STATE_PENDING_DELETE));
+
+		self::assertSame('before', $table->rows[0]['replaced_pad_id']);
+	}
+
+	/** A recovery's row says which pad the file named; any other new row replaced none. */
+	public function testANewRowSaysWhichPadItReplaced(): void {
+		foreach (['a recovery' => ['old', 'old'], 'a create' => [null, null]] as $case => [$replaced, $written]) {
+			$qb = new class implements IQueryBuilder {
+				/** @var array<string,mixed> */
+				public array $values = [];
+				/** @var list<mixed> */
+				private array $parameters = [];
+
+				public function insert(string $table): self {
+					return $this;
+				}
+
+				public function values(array $values): self {
+					foreach ($values as $column => $parameter) {
+						$this->values[$column] = $this->parameters[(int)substr($parameter, 2)];
+					}
+					return $this;
+				}
+
+				public function createNamedParameter(mixed $value, mixed $type = null): string {
+					$this->parameters[] = $value;
+					return ':p' . (count($this->parameters) - 1);
+				}
+
+				public function executeStatement(): int {
+					return 1;
+				}
+			};
+			$db = new class ($qb) implements IDBConnection {
+				public function __construct(private IQueryBuilder $qb) {
+				}
+
+				public function getQueryBuilder(): IQueryBuilder {
+					return $this->qb;
+				}
+
+				public function escapeLikeParameter(string $param): string {
+					return $param;
+				}
+			};
+
+			(new BindingService($db, new FixedClock(500)))->createBinding(10, 'new', BindingService::ACCESS_PUBLIC, replacedPadId: $replaced);
+
+			self::assertSame($written, $qb->values['replaced_pad_id'], $case);
+			self::assertSame('new', $qb->values['pad_id'], $case);
+		}
 	}
 
 	/**
@@ -266,7 +295,7 @@ class BindingServiceTest extends TestCase {
 		self::assertTrue($service->transition(1, 'pad', BindingService::STATE_RESTORE_PENDING, BindingService::STATE_PENDING_DELETE));
 
 		self::assertSame(
-			['file_id' => 1, 'pad_id' => 'pad', 'access_mode' => BindingService::ACCESS_PUBLIC, 'state' => BindingService::STATE_PENDING_DELETE, 'deleted_at' => 500, 'updated_at' => 500],
+			['file_id' => 1, 'pad_id' => 'pad', 'access_mode' => BindingService::ACCESS_PUBLIC, 'state' => BindingService::STATE_PENDING_DELETE, 'deleted_at' => 500, 'updated_at' => 500, 'replaced_pad_id' => null],
 			$table->rows[0],
 		);
 	}
@@ -346,7 +375,7 @@ class BindingServiceTest extends TestCase {
 		self::assertTrue($service->transition(1, 'pad', BindingService::STATE_PENDING_DELETE, BindingService::STATE_PENDING_DELETE));
 
 		self::assertSame(
-			['file_id' => 1, 'pad_id' => 'pad', 'access_mode' => BindingService::ACCESS_PUBLIC, 'state' => BindingService::STATE_PENDING_DELETE, 'deleted_at' => 100, 'updated_at' => 500],
+			['file_id' => 1, 'pad_id' => 'pad', 'access_mode' => BindingService::ACCESS_PUBLIC, 'state' => BindingService::STATE_PENDING_DELETE, 'deleted_at' => 100, 'updated_at' => 500, 'replaced_pad_id' => null],
 			$table->rows[0],
 		);
 	}
@@ -355,7 +384,7 @@ class BindingServiceTest extends TestCase {
 	private static function bindingRow(int $fileId, string $padId, string $state, string $accessMode = BindingService::ACCESS_PUBLIC): array {
 		// Dated only as a deletion owed, as the table holds it: leaving that state clears the date.
 		$deletedAt = $state === BindingService::STATE_PENDING_DELETE ? 100 : null;
-		return ['file_id' => $fileId, 'pad_id' => $padId, 'access_mode' => $accessMode, 'state' => $state, 'deleted_at' => $deletedAt, 'updated_at' => 100];
+		return ['file_id' => $fileId, 'pad_id' => $padId, 'access_mode' => $accessMode, 'state' => $state, 'deleted_at' => $deletedAt, 'updated_at' => 100, 'replaced_pad_id' => null];
 	}
 
 }

@@ -650,6 +650,33 @@ class RestoreServiceTest extends TestCase {
 	}
 
 	/**
+	 * A file that still names the pad its row replaced holds no revision of
+	 * the row's pad, however high the one it has: while Etherpad has the
+	 * row's pad, the file gets it back as it is. Held against the old pad's
+	 * revision, the row's pad looked behind and was replaced by a new pad
+	 * made from the old pad's text.
+	 */
+	public function testARestoreDoesNotHoldTheRowsPadToThePadItReplaced(): void {
+		$fileId = 98;
+		$bindingService = $this->createMock(BindingService::class);
+		$bindingService->expects($this->once())
+			->method('transition')
+			->with($fileId, 'old-pad', BindingService::STATE_PENDING_DELETE, BindingService::STATE_ACTIVE)
+			->willReturn(true);
+		$bindingService->expects($this->never())->method('rebind');
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->method('getRevisionsCount')->with('old-pad')->willReturn(7);
+		$etherpadClient->expects($this->never())->method('createPad');
+		$file = $this->padFile($fileId, 'Restored.pad');
+		$file->expects($this->never())->method('putContent');
+
+		$result = $this->buildPendingDeleteRestoreService($fileId, 'old-pad', $bindingService, $etherpadClient, snapshotRev: 500, replaced: 'pad-before', filePadId: 'pad-before')
+			->restore($file);
+
+		$this->assertSame(['status' => LifecycleResult::RESTORED, 'old_pad_id' => 'old-pad', 'new_pad_id' => 'old-pad'], array_intersect_key($result, array_flip(['status', 'old_pad_id', 'new_pad_id'])));
+	}
+
+	/**
 	 * Without the file there is no revision to hold the pad to, so the row
 	 * waits for a later check rather than being settled blind.
 	 */
@@ -1131,9 +1158,10 @@ class RestoreServiceTest extends TestCase {
 			->method('findByFileId')
 			->with($fileId)
 			->willReturn(null);
+		// The pad the file named is the one it may still name, in an older version say.
 		$bindingService->expects($this->once())
 			->method('createBinding')
-			->with($fileId, $newPadId, BindingService::ACCESS_PUBLIC);
+			->with($fileId, $newPadId, BindingService::ACCESS_PUBLIC, $oldPadId);
 
 		$padFileService = $this->createMock(PadFileService::class);
 		$parsedPad = new ParsedPadFile(
@@ -1438,14 +1466,16 @@ class RestoreServiceTest extends TestCase {
 		?LoggerInterface $padLifecycleLogger = null,
 		?TestFaults $testFaults = null,
 		?UserNodeResolver $nodes = null,
+		?string $replaced = null,
+		?string $filePadId = null,
 	): RestoreService {
-		$bindingService->method('findByFileId')->with($fileId)->willReturn(new Binding(fileId: $fileId, padId: $oldPadId, accessMode: $accessMode, state: $state));
+		$bindingService->method('findByFileId')->with($fileId)->willReturn(new Binding(fileId: $fileId, padId: $oldPadId, accessMode: $accessMode, state: $state, replacedPadId: $replaced));
 
 		$padFileService = $this->createMock(PadFileService::class);
 		$parsedPad = new ParsedPadFile(
 			frontmatter: [],
 			body: 'body',
-			padId: $oldPadId,
+			padId: $filePadId ?? $oldPadId,
 			accessMode: BindingService::ACCESS_PUBLIC,
 			padUrl: '',
 			isExternal: false,
@@ -1458,6 +1488,9 @@ class RestoreServiceTest extends TestCase {
 				$this->restoredRevision = $revision;
 				return 'doc-after';
 			},
+		);
+		$padFileService->method('namingPad')->willReturnCallback(
+			static fn (ParsedPadFile $pad, string $padId, string $accessMode, string $padUrl): ParsedPadFile => (new PadFileService(new FixedClock()))->namingPad($pad, $padId, $accessMode, $padUrl),
 		);
 
 		$secureRandom = $this->createMock(ISecureRandom::class);

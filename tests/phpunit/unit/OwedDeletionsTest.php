@@ -21,6 +21,7 @@ use OCA\EtherpadNextcloud\Service\TestFaults;
 use OCA\EtherpadNextcloud\Service\TrashSnapshotWriters;
 use OCA\EtherpadNextcloud\Service\UserNodeResolver;
 use OCA\EtherpadNextcloud\Service\WaitingBinding;
+use OCA\EtherpadNextcloud\Tests\Support\BuildsBoundPads;
 use OCA\EtherpadNextcloud\Tests\Support\FixedClock;
 use OCA\EtherpadNextcloud\Tests\Support\PadFiles;
 use OCP\Files\File;
@@ -37,6 +38,7 @@ use Psr\Log\LoggerInterface;
  * Unanswered when Etherpad gave none.
  */
 class OwedDeletionsTest extends TestCase {
+	use BuildsBoundPads;
 	use PadFiles;
 
 	/**
@@ -88,6 +90,27 @@ class OwedDeletionsTest extends TestCase {
 
 		$this->assertSame(SettleOutcome::Settled, $outcome);
 		$this->assertSame(['snapshot', 'row', 'pad'], $order);
+	}
+
+	/**
+	 * A trashed file that still names the pad its row replaced holds no
+	 * revision of the row's pad, however high the one it has: the row's pad
+	 * is written into it and goes as any other. Held against the old pad's
+	 * revision, the row's pad looked behind, and the row was let go with the
+	 * pad left over and the file holding the old pad's text.
+	 */
+	public function testATrashedFileNamingThePadItsRowReplacedGetsTheRowsPad(): void {
+		// The formatter reads the file as naming 'pad'.
+		$bindingService = $this->pendingTrashRow(111, 'pad-new', replaced: 'pad');
+		$bindingService->expects($this->once())->method('deleteInState')->with(111, 'pad-new', BindingService::STATE_PENDING_DELETE)->willReturn(true);
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->method('getRevisionsCount')->with('pad-new')->willReturn(5);
+		$etherpadClient->expects($this->once())->method('getText')->with('pad-new')->willReturn('the row\'s pad');
+		$etherpadClient->expects($this->once())->method('deletePad')->with('pad-new');
+		$file = $this->trashedFile(111, snapshotRev: 50);
+		$file->expects($this->once())->method('putContent')->with('doc-after');
+
+		$this->assertSame(SettleOutcome::Settled, $this->owed($bindingService, $etherpadClient)->finishTrash($file, new RunBudget(new FixedClock(), 20.0)));
 	}
 
 	/**
@@ -541,9 +564,9 @@ class OwedDeletionsTest extends TestCase {
 	}
 
 	/** Owed since $deletedAt; $updatedAt past that once a run moved it back. */
-	private function pendingTrashRow(int $fileId, string $padId, int $updatedAt = 100, ?int $deletedAt = 100): BindingService&MockObject {
+	private function pendingTrashRow(int $fileId, string $padId, int $updatedAt = 100, ?int $deletedAt = 100, ?string $replaced = null): BindingService&MockObject {
 		$bindingService = $this->createMock(BindingService::class);
-		$bindingService->method('findByFileId')->with($fileId)->willReturn(new Binding(fileId: $fileId, padId: $padId, accessMode: BindingService::ACCESS_PUBLIC, state: BindingService::STATE_PENDING_DELETE, deletedAt: $deletedAt, updatedAt: $updatedAt));
+		$bindingService->method('findByFileId')->with($fileId)->willReturn(new Binding(fileId: $fileId, padId: $padId, accessMode: BindingService::ACCESS_PUBLIC, state: BindingService::STATE_PENDING_DELETE, deletedAt: $deletedAt, updatedAt: $updatedAt, replacedPadId: $replaced));
 		return $bindingService;
 	}
 
@@ -583,6 +606,7 @@ class OwedDeletionsTest extends TestCase {
 			$nodes ?? $this->createMock(UserNodeResolver::class),
 			$logger,
 			new FixedClock(),
+			$this->boundPads($bindings, $logger),
 		);
 	}
 }
