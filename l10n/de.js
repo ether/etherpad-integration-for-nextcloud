@@ -196,6 +196,8 @@ OC.L10N.register(
     "This legacy Ownpad file names a pad that does not exist in Etherpad.": "Diese alte Ownpad-Datei nennt ein Pad, das es in Etherpad nicht gibt.",
     "This link does not point to a valid file.": "Dieser Link verweist auf keine gültige Datei.",
     "This pad is already linked to another file you do not have access to.": "Dieses Pad ist bereits mit einer anderen Datei verknüpft, auf die du keinen Zugriff hast.",
+    "This pad is no longer on the Etherpad server. A new pad can be made from the content saved in this file.": "Dieses Pad ist nicht mehr auf dem Etherpad-Server. Aus dem in dieser Datei gespeicherten Inhalt kann ein neues Pad entstehen.",
+    "This pad is no longer on the Etherpad server. Its owner can open the file to make a new pad from its content.": "Dieses Pad ist nicht mehr auf dem Etherpad-Server. Wem die Datei gehört, kann sie öffnen und aus ihrem Inhalt ein neues Pad anlegen.",
     "This pad is still being restored. Try again later.": "Dieses Pad wird noch wiederhergestellt. Versuche es später erneut.",
     "This pad is still empty.": "Dieses Pad ist noch leer.",
     "This pad is too large to show here. Open it in Etherpad instead.": "Dieses Pad ist zu groß, um es hier anzuzeigen. Öffne es stattdessen in Etherpad.",

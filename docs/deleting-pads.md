@@ -61,6 +61,16 @@ consistency check on the admin page counts these pads and lists them by pad
 id (`vanished_file_count`), so an admin can delete the ones no longer
 needed in Etherpad.
 
+## When Etherpad has lost a pad
+
+If Etherpad no longer has a pad - deleted there by hand, or lost with its
+database - opening its file says so. Whoever may edit the file can make a
+new pad from the content saved in it; from then on the file opens the new
+pad. The same happens for a public pad that someone visited by its link
+after it was lost, which Etherpad makes anew, empty. A copied `.pad` file,
+which has no pad of its own, offers the same; one restored from the trash
+without a pad gets a new one from its content on its own.
+
 ## With `delete_on_trash` off
 
 The app deletes no pad at all. A `.pad` file moved to the trash keeps its

@@ -18,6 +18,7 @@ use OCA\EtherpadNextcloud\Exception\LegacyPadCollisionException;
 use OCA\EtherpadNextcloud\Exception\LegacyPadNotFoundException;
 use OCA\EtherpadNextcloud\Exception\LegacyProtectedImportDisabledException;
 use OCA\EtherpadNextcloud\Exception\MissingBindingException;
+use OCA\EtherpadNextcloud\Exception\PadLostException;
 use OCA\EtherpadNextcloud\Exception\MissingFrontmatterException;
 use OCA\EtherpadNextcloud\Exception\NotAPadFileException;
 use OCA\EtherpadNextcloud\Exception\PadAlreadyHasBindingException;
@@ -66,6 +67,7 @@ class PadControllerErrorMapperTest extends TestCase {
 		yield 'both pad types switched off' => [new PadTypeDisabledException(), Http::STATUS_FORBIDDEN, 'This pad type is disabled on this instance.', ['code' => 'pad_type_disabled']];
 		// The recovery card hangs off the code.
 		yield 'no pad' => [new MissingBindingException('internal wording'), Http::STATUS_BAD_REQUEST, 'This .pad file has no matching pad in this Nextcloud.', ['code' => 'missing_binding']];
+		yield 'pad lost' => [new PadLostException('internal wording'), Http::STATUS_BAD_REQUEST, 'This pad is no longer on the Etherpad server. A new pad can be made from the content saved in this file.', ['code' => 'pad_missing']];
 		// Not a dead end: a conflict worth trying again.
 		yield 'a pad still being restored' => [new WaitingBindingException('internal wording'), Http::STATUS_CONFLICT, 'This pad is still being restored. Try again later.', ['code' => 'waiting_binding', 'retryable' => true]];
 		// Or a row another request made at the same moment: trying again may do.

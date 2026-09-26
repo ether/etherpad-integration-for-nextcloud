@@ -118,6 +118,12 @@ Primary flow (native viewer):
    - `public`: direct/read-only URL as appropriate
 4. For protected pads, response includes one Etherpad session `Set-Cookie` header.
 5. Legacy app routes (`/apps/etherpad_nextcloud`, `/by-id/{fileId}`) redirect into the same native files viewer URL.
+6. An open that may write asks Etherpad once whether it has lost the pad (`ManagedPadLifecycle::howLost()`), before any address or session:
+   - Lost is no pad under that id - for a protected pad, whose session would open nothing, or for a public pad whose file holds saved content (`snapshot_rev` above 0) - or one without a single revision while the file's snapshot was taken at a later one: a public pad is reachable by its address, and Etherpad makes it anew, empty, when someone visits it. A public pad with nothing saved in its file, an Ownpad link to a pad nobody opened yet say, Etherpad makes on the first visit as ever. A pad merely behind the snapshot is not lost, since files a restore in 1.1.0-beta.1 left kept the old pad's revision count.
+   - A lost pad answers `pad_missing` (`PadLostException`); the viewer and the embed page offer to make a new pad from the file's content (`POST /api/v1/pads/recover-from-snapshot/{fileId}`). That asks Etherpad again and takes the path a restore takes for a row whose pad is gone (`RestoreService::recoverFromSnapshot()` → `restoreWithReplacement()` → `restoreOntoNewPad()`): a new pad from the snapshot, the row moved onto it, the file naming it. The lost pad, or the empty one Etherpad made anew, is left alone. No other way of making a pad is added.
+   - A reader, who could not make a new pad, is not asked, and is shown what the pad server has. A public share that may write answers the same, without the code: only the file's owner can make the new pad.
+   - An older version of the file still names the lost pad, and opening it after the recovery is refused as a mismatch.
+   - Logged once a minute for each file (`ApiErrorLog`), as a refusal is.
 
 ### 2b) Open (trusted embed integration)
 

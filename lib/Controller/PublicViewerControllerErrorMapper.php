@@ -18,6 +18,7 @@ use OCA\EtherpadNextcloud\Exception\ExternalPadException;
 use OCA\EtherpadNextcloud\Exception\InvalidShareFilePathException;
 use OCA\EtherpadNextcloud\Exception\InvalidShareTokenException;
 use OCA\EtherpadNextcloud\Exception\MissingBindingException;
+use OCA\EtherpadNextcloud\Exception\PadLostException;
 use OCA\EtherpadNextcloud\Exception\MissingFrontmatterException;
 use OCA\EtherpadNextcloud\Exception\NoShareFileSelectedException;
 use OCA\EtherpadNextcloud\Exception\NotAPadFileException;
@@ -119,6 +120,7 @@ class PublicViewerControllerErrorMapper {
 			// A copy, or an original whose pad the sweep let go: either way
 			// its owner, opening it, is offered the pad back.
 			$e instanceof MissingBindingException => [Http::STATUS_BAD_REQUEST, $this->l10n->t('This .pad file has no pad in this Nextcloud. Its owner can open it to restore the pad.')],
+			$e instanceof PadLostException => [Http::STATUS_BAD_REQUEST, $this->l10n->t('This pad is no longer on the Etherpad server. Its owner can open the file to make a new pad from its content.')],
 			// The signed-in sentence, translated like it.
 			$e instanceof WaitingBindingException => [Http::STATUS_CONFLICT, $this->padResponses->bindingErrorMessage($e)],
 			$e instanceof BindingException => [Http::STATUS_BAD_REQUEST, $this->l10n->t('Pad binding is inconsistent. Please contact the share owner.')],

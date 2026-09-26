@@ -16,6 +16,7 @@ use OCA\EtherpadNextcloud\Exception\ExternalPadExportNotFoundException;
 use OCA\EtherpadNextcloud\Exception\InvalidShareFilePathException;
 use OCA\EtherpadNextcloud\Exception\InvalidShareTokenException;
 use OCA\EtherpadNextcloud\Exception\MissingBindingException;
+use OCA\EtherpadNextcloud\Exception\PadLostException;
 use OCA\EtherpadNextcloud\Exception\WaitingBindingException;
 use OCA\EtherpadNextcloud\Exception\NoShareFileSelectedException;
 use OCA\EtherpadNextcloud\Exception\NotAPadFileException;
@@ -74,6 +75,7 @@ class PublicViewerControllerErrorMapperTest extends TestCase {
 		// A copy, or an original whose pad the sweep let go: the visitor cannot
 		// tell, and the owner opening it is offered the pad back either way.
 		yield 'no pad' => [new MissingBindingException('internal wording'), Http::STATUS_BAD_REQUEST, 'This .pad file has no pad in this Nextcloud. Its owner can open it to restore the pad.'];
+		yield 'pad lost' => [new PadLostException('internal wording'), Http::STATUS_BAD_REQUEST, 'This pad is no longer on the Etherpad server. Its owner can open the file to make a new pad from its content.'];
 		// The signed-in sentence, a conflict worth trying again.
 		yield 'a pad still being restored' => [new WaitingBindingException('internal wording'), Http::STATUS_CONFLICT, 'This pad is still being restored. Try again later.'];
 		yield 'another binding problem' => [new BindingException('internal wording'), Http::STATUS_BAD_REQUEST, 'Pad binding is inconsistent. Please contact the share owner.'];
@@ -122,7 +124,7 @@ class PublicViewerControllerErrorMapperTest extends TestCase {
 
 	/**
 	 * A public answer carries the codes a visitor's client can act on, from
-	 * the same place as the signed-in one - and not the two whose action
+	 * the same place as the signed-in one - and not those whose action
 	 * needs a signed-in user: the viewer opens public pads through the flow
 	 * that initialises a file on missing_frontmatter.
 	 */
@@ -131,6 +133,7 @@ class PublicViewerControllerErrorMapperTest extends TestCase {
 			'a pad still being restored' => [new WaitingBindingException('Pad binding is not active.'), ['code' => 'waiting_binding', 'retryable' => true]],
 			'a pad too large to show' => [new EtherpadTooLargeException('Pad export is larger than 5242880 bytes.'), ['code' => 'pad_too_large']],
 			'no pad' => [new MissingBindingException('No binding exists for this file.'), []],
+			'pad lost' => [new PadLostException('Etherpad has lost the pad of this file.'), []],
 			'no metadata' => [new MissingFrontmatterException('Missing YAML frontmatter.'), []],
 			// No code, but as on the signed-in side a retry is worth it.
 			'a file locked' => [new LockedException('locked'), ['retryable' => true]],

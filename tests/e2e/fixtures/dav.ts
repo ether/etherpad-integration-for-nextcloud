@@ -166,9 +166,10 @@ export const getFileViaDav = async (relativePath: string): Promise<string> => {
 /**
  * POST to one of the plugin's authenticated `/api/v1/pads/...` endpoints
  * using the app password (same BasicAuth surface the integration bash
- * specs use). Returns the parsed JSON body plus the HTTP status.
+ * specs use), with $form as its body. Returns the parsed JSON body plus
+ * the HTTP status.
  */
-export const padApiPost = async (endpoint: string): Promise<{ status: number, body: unknown }> => {
+export const padApiPost = async (endpoint: string, form: Record<string, string> | null = null): Promise<{ status: number, body: unknown }> => {
 	const url = `${E2E.baseURL}/index.php/apps/etherpad_nextcloud/api/v1/${endpoint.replace(/^\/+/, '')}`
 	const res = await fetch(url, {
 		method: 'POST',
@@ -176,7 +177,9 @@ export const padApiPost = async (endpoint: string): Promise<{ status: number, bo
 			Authorization: basicAuthHeader(),
 			Accept: 'application/json',
 			'OCS-APIRequest': 'true',
+			...(form === null ? {} : { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' }),
 		},
+		body: form === null ? undefined : new URLSearchParams(form).toString(),
 	})
 	const text = await res.text()
 	let body: unknown = null

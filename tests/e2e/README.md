@@ -105,6 +105,10 @@ Each `specs/*.spec.ts` covers one flow:
   marker into a new pad and sync reads it back (the content copy that
   restore and recover share).
 - **pad-trash-restore** — trash + restore round-trip, pad reopens.
+- **pad-lost** — a pad Etherpad has lost (deleted there, or made anew empty
+  by a visit to a public pad's address) answers `pad_missing`, and a new
+  pad is made from the file's content, in the API and in the viewer.
+  Container stack only (asks Etherpad).
 - **pad-gone-for-good** — a pad goes with its file deleted for good:
   past the trash in the same request, from the trash once it is deleted
   there, with the account that owned it; a pad in a team folder stays

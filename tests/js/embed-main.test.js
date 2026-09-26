@@ -314,6 +314,21 @@ describe('embed-main', () => {
 		expect(document.activeElement).toBe(document.body)
 	})
 
+	// The file is the original: no lookup, no body under the server's message.
+	it('offers a new pad when Etherpad has lost the pad, without looking for an original', async () => {
+		fetch.mockResolvedValueOnce(errorResponse({ message: 'pad lost', code: 'pad_missing' }))
+
+		await importEmbed()
+		await flushAsyncWork()
+
+		expect(isHidden('[data-epnc-embed-recovery]')).toBe(false)
+		expect(recoveryMessage()).toBe('pad lost')
+		expect(recoveryBody()).toBe('')
+		expect(recoveryActions().querySelector('a')).toBeNull()
+		expect(recoveryActions().querySelectorAll('button')).toHaveLength(1)
+		expect(fetch).toHaveBeenCalledTimes(1)
+	})
+
 	it('renders the orphan body when find-original misses', async () => {
 		fetch
 			.mockResolvedValueOnce(errorResponse(MISSING_BINDING))

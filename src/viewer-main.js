@@ -12,7 +12,7 @@ import { handFocusTo } from './lib/hand-focus.js'
 import { ocGenerateUrl, ocRequestToken, translate } from './lib/oc-compat.js'
 import { createPadSync } from './lib/pad-sync.js'
 import { loadPadContent } from './lib/pad-content.js'
-import { assertOpenPayload, contentUrlFrom, contentViewFrom, isMissingBindingError, isRetryableOpenError, openWithFrontmatterRecovery, padUrlFrom, syncSettingsFrom } from './lib/pad-open-flow.js'
+import { assertOpenPayload, contentUrlFrom, contentViewFrom, isMissingBindingError, isPadMissingError, isRetryableOpenError, openWithFrontmatterRecovery, padUrlFrom, syncSettingsFrom } from './lib/pad-open-flow.js'
 import { buildPadFrameSrcdoc } from './lib/pad-frame-srcdoc.js'
 import { isPadName, parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './lib/urls.js'
 
@@ -35,6 +35,7 @@ const component = {
 			isLoading: true,
 			loadError: '',
 			canRecover: false,
+			padLost: false,
 			canRetryOpen: false,
 			maybeStaleFileId: false,
 			// Recovery may resolve this from the path when Viewer supplies no id.
@@ -211,6 +212,7 @@ const component = {
 			this.isLoading = true
 			this.loadError = ''
 			this.canRecover = false
+			this.padLost = false
 			this.canRetryOpen = false
 			this.maybeStaleFileId = false
 			this.recoveryFileId = null
@@ -324,16 +326,18 @@ const component = {
 				// Recovery may resolve only the same path that failed to open.
 				let recoveryFileId = this.resolvedFileId
 				this.recoveryPath = openPath
-				if (recoveryFileId === null && !byPublicUrl && isMissingBindingError(error)) {
+				const recoverable = isMissingBindingError(error) || isPadMissingError(error)
+				if (recoveryFileId === null && !byPublicUrl && recoverable) {
 					recoveryFileId = await this.resolveRecoveryFileId(openPath)
 					// A late lookup must not attach recovery to a newer Viewer item.
 					if (!isCurrent()) return
 				}
 				this.recoveryFileId = recoveryFileId
-				this.canRecover = isMissingBindingError(error)
+				this.padLost = isPadMissingError(error)
+				this.canRecover = recoverable
 					&& recoveryFileId !== null
 					&& !byPublicUrl
-				if (this.canRecover) {
+				if (this.canRecover && !this.padLost) {
 					this.fetchOriginalPadHint(isCurrent, afterClick)
 				} else if (afterClick) {
 					this.handFocusToErrorCard()
@@ -516,7 +520,16 @@ const component = {
 					}, translate('Try again')),
 				)
 			}
-			if (this.canRecover) {
+			if (this.canRecover && this.padLost) {
+				// The message says what happened; the file is the original.
+				cardChildren.push(
+					createElement('button', {
+						class: 'button primary epnc-native-error-action',
+						attrs: { type: 'button', disabled: this.isRecovering },
+						on: { click: () => { void this.recoverFromSnapshot() } },
+					}, this.isRecovering ? translate('Creating new pad...') : translate('Create new pad from this file')),
+				)
+			} else if (this.canRecover) {
 				if (this.isCheckingOriginal) {
 					// Wait before choosing the primary recovery action.
 					cardChildren.push(

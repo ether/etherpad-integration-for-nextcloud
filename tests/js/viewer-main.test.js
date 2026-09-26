@@ -696,6 +696,21 @@ describe('viewer component — resolveOpenUrl', () => {
 		expect(vm.isCheckingOriginal).toBe(false)
 	})
 
+	// The file is the original: nothing to look for, only a new pad to make.
+	it('pad_missing: offers recovery without looking up an original', async () => {
+		stubFetch(jsonResponse({ message: 'pad lost', code: 'pad_missing' }, false, 400))
+		const vm = makeInstance({ fileid: 42, fileInfo: { path: '/notes.pad' } })
+
+		await vm.resolveOpenUrl()
+		await flushAsyncWork()
+
+		expect(vm.loadError).toBe('pad lost')
+		expect(vm.canRecover).toBe(true)
+		expect(vm.padLost).toBe(true)
+		expect(vm.recoveryFileId).toBe(42)
+		expect(apiFindOriginalPad).not.toHaveBeenCalled()
+	})
+
 	it('resolves recovery\'s file id from the path when the Viewer supplies none', async () => {
 		stubFetch(jsonResponse(MISSING_BINDING, false, 400))
 		apiResolvePadByPath.mockResolvedValue({ file_id: 99 })

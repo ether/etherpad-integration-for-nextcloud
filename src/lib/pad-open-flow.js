@@ -32,6 +32,16 @@ export const isMissingFrontmatterError = (error) => Boolean(error) && error.code
 export const isMissingBindingError = (error) => Boolean(error) && error.code === 'missing_binding'
 
 /**
+ * Etherpad has lost the file's pad: the clients offer to make a new one
+ * from the file's content. The file is the original, so there is none to
+ * look for.
+ *
+ * @param {unknown} error
+ * @return {boolean}
+ */
+export const isPadMissingError = (error) => Boolean(error) && error.code === 'pad_missing'
+
+/**
  * Whether the same open may work later, so a client offers to try it
  * again: the server said so (`retryable`), the file changed while it was
  * being initialised (the server undid its part), or no answer came.

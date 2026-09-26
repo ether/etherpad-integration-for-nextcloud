@@ -262,11 +262,12 @@ solely by the separate external-pad policy, not by these two settings.
 
 - `POST /api/v1/pads/recover-from-snapshot/{fileId}`
   - Controller: `PadLifecycleController::recoverByFileId`
-  - Purpose: manual recovery entry point for `.pad` files that ended up without a binding row (WebDAV backup restore, `occ files:scan`, direct DB intervention, file copy). Reuses the same "frontmatter → fresh pad" path as `NodeRestoredEvent` but is guarded so it refuses when a binding row already exists.
+  - Purpose: manual recovery entry point for `.pad` files that ended up without a binding row (WebDAV backup restore, `occ files:scan`, direct DB intervention, file copy), and for a file whose active row names a pad Etherpad has lost (`pad_missing`). Reuses the paths a restore from the trash takes: "frontmatter → fresh pad" for a file without a row, the replacement of a pad that is gone for the other, which moves the row onto the new pad. Etherpad is asked again here whether the pad is lost.
   - Result:
     - `200` with `status=restored`, `old_pad_id`, `new_pad_id` on success. Always provisions a fresh pad — `pad_id` from frontmatter is never reused.
     - `409` with `status=skipped` + `reason=external_pad` for external (`ext.*`) frontmatter; recovery doesn't apply there.
-    - `409` with `message` and the `PadAlreadyHasBindingException` mapping if a binding row already exists for the file.
+    - `409` with `message` and the `PadAlreadyHasBindingException` mapping if the file has a row and its pad is not lost: Etherpad has it, the row waits, or it names another pad than the file.
+    - `503` with `retryable` when Etherpad does not answer.
 
 - `GET /api/v1/pads/find-original/{fileId}`
   - Controller: `PadLifecycleController::findOriginalByFileId`
@@ -437,6 +438,7 @@ solely by the separate external-pad policy, not by these two settings.
 - `sync_status_url` (open/open-by-id): endpoint for revision-based sync status in viewer.
 - `code` (errors): stable identifier on selected error responses. Branch on this, never on `message` — messages are written for people and are translated, save the reason a pad on another server could not be linked or read, which comes in English. The full set:
   - `missing_binding` (`MissingBindingException`) — the viewer and embed swap the dead-end error for the recovery UI (`POST /api/v1/pads/recover-from-snapshot/{fileId}` + optional `GET /api/v1/pads/find-original/{fileId}` lookup).
+  - `pad_missing` (`PadLostException`) — the file's row names a pad Etherpad has lost: it has none under that id (a protected pad, or a public one whose file holds saved content), or one with no revision while the file's snapshot holds more (a public pad Etherpad made anew, empty, when someone visited its address). Only an open that may write asks, once per open. The viewer and embed show the recovery UI without the original-file lookup; `POST /api/v1/pads/recover-from-snapshot/{fileId}` makes a new pad from the file's content and moves the row onto it.
   - `waiting_binding` (`WaitingBindingException`) — `409` with `retryable: true`; the file's row still waits. An open decides such a row itself first, so there it means the open did not: the row was touched within the last minute (by the sweep, a trash, or an earlier open), someone else was deciding it, Etherpad gave no answer within a few seconds, what was left of a pad that is gone could not be removed in time, or deciding failed, the database gone say, which is logged. Try again later: once the row is settled the same request opens the pad, or answers `missing_binding` when the pad had to be let go. On open, sync, sync status and the read-only content view, signed in and public.
   - `missing_frontmatter` (`MissingFrontmatterException`) — the file has no pad metadata yet; clients call `POST /api/v1/pads/initialize-by-id/{fileId}` once and retry the open. A file whose content is neither metadata nor a legacy shortcut cannot be initialised and is refused *without* this code.
   - `pad_too_large` (`EtherpadTooLargeException`) — the pad is past the 5 MiB preview ceiling; it stays editable in Etherpad.
@@ -445,7 +447,7 @@ solely by the separate external-pad policy, not by these two settings.
   - `legacy_collision_no_access` (`LegacyPadCollisionException`) — see the legacy migration section.
   - `legacy_protected_import_disabled` (`LegacyProtectedImportDisabledException`) — `403`; the legacy `.pad` names a group pad and this instance does not import those. The file is left untouched, so the same open succeeds once an admin switches the import back on. See the legacy migration section.
 
-  The answers of a public share (`/api/v1/public/...`) carry the codes that can come up there - `waiting_binding` and `pad_too_large` - but not `missing_binding` or `missing_frontmatter`: what a client does on those needs a signed-in user. Their messages are translated, one sentence for each kind of trouble.
+  The answers of a public share (`/api/v1/public/...`) carry the codes that can come up there - `waiting_binding` and `pad_too_large` - but not `missing_binding`, `pad_missing` or `missing_frontmatter`: what a client does on those needs a signed-in user. Their messages are translated, one sentence for each kind of trouble.
 
   A response without a `code` may still be machine-readable through its HTTP status and other documented fields — a locked `.pad` answers `503` with `retryable: true`, signed in and public alike, for instance, and so does a request this instance's Etherpad could not be reached for. Every error this app answers is JSON, it never answers `502` or `504`, and every `503` of its own carries `retryable: true`; what the clients make of a 5xx that is none of these is in `docs/architecture.md` ("Errors of the API"). A file's row that another request made first (`BindingNotCreatedException`, two initialisations at once, say) answers `400` with `retryable: true` too: the next open finds that request's pad. The create endpoints answer it with their own sentence and neither field. One Etherpad answered and refused answers `400` without it: trying again gives the same answer. What is never a stable identifier is the `message` text.
 
@@ -471,14 +473,14 @@ solely by the separate external-pad policy, not by these two settings.
   - prefers `POST /api/v1/pads/open-by-id` (`fileId`, requesttoken).
   - falls back to `POST /api/v1/pads/open` (`file`, requesttoken) only without `fileId`.
   - if open fails with missing frontmatter, calls `POST /api/v1/pads/initialize*` and retries open once.
-  - if open fails with `code=missing_binding`, renders a recovery card with an optional `GET /api/v1/pads/find-original/{fileId}` lookup and a `POST /api/v1/pads/recover-from-snapshot/{fileId}` action.
+  - if open fails with `code=missing_binding`, renders a recovery card with an optional `GET /api/v1/pads/find-original/{fileId}` lookup and a `POST /api/v1/pads/recover-from-snapshot/{fileId}` action; with `code=pad_missing`, the same card without the lookup.
   - offers "Try again" where the open may work later (`docs/architecture.md`, "Errors of the API").
   - uses `POST /api/v1/pads/sync/{fileId}` periodically and on unload.
 - `src/embed-main.js`
   - powers the minimal `/embed/by-id/{fileId}` page.
   - uses same-origin `POST /api/v1/pads/open-by-id`.
   - if open fails with missing frontmatter, calls `POST /api/v1/pads/initialize-by-id/{fileId}` and retries once.
-  - if open fails with `code=missing_binding`, renders the same recovery flow as the inline viewer (lookup + recover).
+  - if open fails with `code=missing_binding` or `pad_missing`, renders the same recovery flow as the inline viewer.
   - offers "Try again" on its error panel where the open may work later, as the viewer does.
   - sets the returned `response.url` directly on the internal iframe.
   - uses the returned `sync_url` / `sync_interval_seconds` to trigger the same snapshot sync contract as the native viewer.

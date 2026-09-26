@@ -195,6 +195,8 @@
         "This legacy Ownpad file names a pad that does not exist in Etherpad.": "Questo file Ownpad legacy indica un pad che non esiste in Etherpad.",
         "This link does not point to a valid file.": "Questo link non punta a un file valido.",
         "This pad is already linked to another file you do not have access to.": "Questo pad è già collegato a un altro file a cui non hai accesso.",
+        "This pad is no longer on the Etherpad server. A new pad can be made from the content saved in this file.": "Questo pad non è più sul server Etherpad. Si può creare un nuovo pad dal contenuto salvato in questo file.",
+        "This pad is no longer on the Etherpad server. Its owner can open the file to make a new pad from its content.": "Questo pad non è più sul server Etherpad. Il proprietario può aprire il file per creare un nuovo pad dal suo contenuto.",
         "This pad is still being restored. Try again later.": "Questo pad è ancora in fase di ripristino. Riprova più tardi.",
         "This pad is still empty.": "Questo pad è ancora vuoto.",
         "This pad is too large to show here. Open it in Etherpad instead.": "Questo pad è troppo grande per essere mostrato qui. Aprilo in Etherpad.",

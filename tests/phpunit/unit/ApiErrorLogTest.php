@@ -13,6 +13,7 @@ use OCA\EtherpadNextcloud\Exception\BindingMismatchException;
 use OCA\EtherpadNextcloud\Exception\BindingException;
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
 use OCA\EtherpadNextcloud\Exception\EtherpadRefusedException;
+use OCA\EtherpadNextcloud\Exception\PadLostException;
 use OCA\EtherpadNextcloud\Exception\EtherpadTooLargeException;
 use OCA\EtherpadNextcloud\Exception\ExternalPadException;
 use OCA\EtherpadNextcloud\Exception\ExternalPadExportNotFoundException;
@@ -70,6 +71,37 @@ class ApiErrorLogTest extends TestCase {
 			array_map(static fn (array $line): array => [$line[0], $line[1], $line[2]['fileId'] ?? $line[2]['file'] ?? null], $this->logged),
 		);
 		$this->assertSame(['app' => 'etherpad_nextcloud', 'fileId' => 42, 'error' => EtherpadClientException::class], array_intersect_key($this->logged[0][2], ['app' => 1, 'fileId' => 1, 'error' => 1]));
+	}
+
+	/**
+	 * A pad Etherpad has lost gets its own minute for each file, apart from
+	 * a refusal of the same file: an admin hears of it however often the
+	 * file is opened before someone makes the new pad.
+	 */
+	public function testOneWarningAMinuteForEachFileWhosePadIsLost(): void {
+		$claimed = [];
+		$cache = $this->createMock(IMemcache::class);
+		$cache->method('add')->willReturnCallback(static function (string $key) use (&$claimed): bool {
+			if (isset($claimed[$key])) {
+				return false;
+			}
+			return $claimed[$key] = true;
+		});
+		$factory = $this->createMock(ICacheFactory::class);
+		$factory->method('isAvailable')->willReturn(true);
+		$factory->method('createDistributed')->willReturn($cache);
+
+		$log = new ApiErrorLog($factory, $this->logger());
+		$log->report(new EtherpadRefusedException('Etherpad API error (getText): padID does not exist'), ['fileId' => 44]);
+		$log->report(new PadLostException('Etherpad has lost the pad of this file.'), ['fileId' => 44]);
+		$log->report(new PadLostException('Etherpad has lost the pad of this file.'), ['fileId' => 44]);
+		$log->report(new PadLostException('Etherpad has lost the pad of this file.'), ['fileId' => 45]);
+
+		$lost = 'Etherpad has lost the pad of a file; opening the file offers a new one from its content.';
+		$this->assertSame(
+			[['warning', self::REFUSED, 44], ['warning', $lost, 44], ['debug', $lost, 44], ['warning', $lost, 45]],
+			array_map(static fn (array $line): array => [$line[0], $line[1], $line[2]['fileId'] ?? null], $this->logged),
+		);
 	}
 
 	/**

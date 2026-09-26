@@ -6,6 +6,7 @@ namespace OCA\EtherpadNextcloud\Tests\Unit;
 
 use OCA\EtherpadNextcloud\Controller\PadControllerErrorMapper;
 use OCA\EtherpadNextcloud\Controller\PadSessionController;
+use OCA\EtherpadNextcloud\Service\ManagedPadLifecycle;
 use OCA\EtherpadNextcloud\Service\AppConfigService;
 use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\EtherpadNextcloud\Service\EtherpadClient;
@@ -126,6 +127,7 @@ class PadSessionControllerTest extends TestCase {
 			$lockRetryService,
 			$this->settleOnOpen($bindingService),
 			$etherpadClient,
+			$this->createMock(ManagedPadLifecycle::class),
 			$this->createMock(ExternalPadExportFetcher::class),
 			$this->createMock(PadSessionService::class),
 			$logger,
@@ -250,6 +252,7 @@ class PadSessionControllerTest extends TestCase {
 			$lockRetryService,
 			$this->settleOnOpen($bindingService),
 			$etherpadClient,
+			$this->createMock(ManagedPadLifecycle::class),
 			$externalPadExportFetcher,
 			$this->createMock(PadSessionService::class),
 			$logger,
@@ -360,6 +363,7 @@ class PadSessionControllerTest extends TestCase {
 			$lockRetryService,
 			$this->settleOnOpen($resolvedBindingService),
 			$resolvedEtherpadClient,
+			$this->createMock(ManagedPadLifecycle::class),
 			$resolvedExternalPadExportFetcher,
 			$this->createMock(PadSessionService::class),
 			$logger,

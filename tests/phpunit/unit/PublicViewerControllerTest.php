@@ -6,6 +6,7 @@ namespace OCA\EtherpadNextcloud\Tests\Unit;
 
 use OCA\EtherpadNextcloud\Controller\PublicViewerController;
 use OCA\EtherpadNextcloud\Controller\PublicViewerControllerErrorMapper;
+use OCA\EtherpadNextcloud\Service\ManagedPadLifecycle;
 use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\EtherpadNextcloud\Service\EtherpadClient;
 use OCA\EtherpadNextcloud\Service\ExternalPadExportFetcher;
@@ -224,7 +225,7 @@ class PublicViewerControllerTest extends TestCase {
 		$urlGenerator->method('linkToRoute')->willReturn('/public/content/share-token');
 		$shareUrlBuilder = new PublicShareUrlBuilder($urlGenerator, new PathNormalizer());
 		$shareResolver = new PublicShareResolver($shareManager, new PathNormalizer());
-		$publicPadOpenService = new PublicPadOpenService($etherpadClient, $fetcher, $padSessionService);
+		$publicPadOpenService = new PublicPadOpenService($etherpadClient, $this->createMock(ManagedPadLifecycle::class), $fetcher, $padSessionService);
 
 		$controller = new PublicViewerController(
 			'etherpad_nextcloud',
@@ -358,7 +359,7 @@ class PublicViewerControllerTest extends TestCase {
 		$padSessionService ??= $this->createMock(PadSessionService::class);
 		$bindingService ??= $this->createMock(BindingService::class);
 		$shareResolver = new PublicShareResolver($shareManager, new PathNormalizer());
-		$publicPadOpenService = new PublicPadOpenService($etherpadClient, $externalPadExportFetcher, $padSessionService);
+		$publicPadOpenService = new PublicPadOpenService($etherpadClient, $this->createMock(ManagedPadLifecycle::class), $externalPadExportFetcher, $padSessionService);
 
 		return new PublicViewerController(
 			'etherpad_nextcloud',

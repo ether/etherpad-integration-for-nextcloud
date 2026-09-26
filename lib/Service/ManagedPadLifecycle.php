@@ -214,6 +214,36 @@ class ManagedPadLifecycle {
 	}
 
 	/**
+	 * How Etherpad has lost the pad a file's row names, or null when it has
+	 * not:
+	 * - Absent when it has no pad under that id: a protected pad, whose
+	 *   session would open nothing, or a public pad whose file holds saved
+	 *   content. A public pad with nothing saved in its file - an Ownpad
+	 *   link to a pad nobody opened yet, say - Etherpad makes on the first
+	 *   visit, as ever, and nothing is lost.
+	 * - Behind when it has one without a single revision while the file's
+	 *   snapshot was taken at a later one: a public pad Etherpad made anew,
+	 *   empty, when someone visited its address.
+	 *
+	 * A pad merely behind the snapshot is not lost: files a restore in
+	 * 1.1.0-beta.1 left kept the old pad's revision count. Quiet, unlike
+	 * probe(): an open asks this every time.
+	 *
+	 * @throws \Throwable when Etherpad gives any other answer, or none
+	 */
+	public function howLost(string $padId, string $accessMode, int $snapshotRevision, ?int $timeoutSeconds = null): ?PadPresence {
+		try {
+			$revisions = $this->etherpadClient->getRevisionsCount($padId, $timeoutSeconds);
+		} catch (\Throwable $e) {
+			if (!EtherpadErrorClassifier::isPadAlreadyDeleted($e)) {
+				throw $e;
+			}
+			return $accessMode === BindingService::ACCESS_PROTECTED || $snapshotRevision > 0 ? PadPresence::Absent : null;
+		}
+		return $revisions === 0 && $snapshotRevision > 0 ? PadPresence::Behind : null;
+	}
+
+	/**
 	 * presenceOf(), with the revision count the answer came from.
 	 *
 	 * @param array<string,mixed> $context what the log line should carry, fileId above all

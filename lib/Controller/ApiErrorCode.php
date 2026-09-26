@@ -17,6 +17,7 @@ use OCA\EtherpadNextcloud\Exception\LegacyProtectedImportDisabledException;
 use OCA\EtherpadNextcloud\Exception\MissingBindingException;
 use OCA\EtherpadNextcloud\Exception\MissingFrontmatterException;
 use OCA\EtherpadNextcloud\Exception\PadFileChangedException;
+use OCA\EtherpadNextcloud\Exception\PadLostException;
 use OCA\EtherpadNextcloud\Exception\PadTypeDisabledException;
 use OCA\EtherpadNextcloud\Exception\WaitingBindingException;
 use OCP\Lock\LockedException;
@@ -31,6 +32,7 @@ use OCP\Lock\LockedException;
  */
 enum ApiErrorCode: string {
 	case MissingBinding = 'missing_binding';
+	case PadMissing = 'pad_missing';
 	case WaitingBinding = 'waiting_binding';
 	case MissingFrontmatter = 'missing_frontmatter';
 	case PadTooLarge = 'pad_too_large';
@@ -89,6 +91,7 @@ enum ApiErrorCode: string {
 	public function exceptionClass(): string {
 		return match ($this) {
 			self::MissingBinding => MissingBindingException::class,
+			self::PadMissing => PadLostException::class,
 			self::WaitingBinding => WaitingBindingException::class,
 			self::MissingFrontmatter => MissingFrontmatterException::class,
 			self::PadTooLarge => EtherpadTooLargeException::class,
@@ -106,6 +109,6 @@ enum ApiErrorCode: string {
 	 * start that action.
 	 */
 	public function needsASignedInUser(): bool {
-		return $this === self::MissingBinding || $this === self::MissingFrontmatter;
+		return $this === self::MissingBinding || $this === self::PadMissing || $this === self::MissingFrontmatter;
 	}
 }

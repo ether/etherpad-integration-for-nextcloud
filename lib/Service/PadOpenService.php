@@ -11,6 +11,7 @@ namespace OCA\EtherpadNextcloud\Service;
 
 use OCA\EtherpadNextcloud\Exception\BindingException;
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
+use OCA\EtherpadNextcloud\Exception\PadLostException;
 use OCA\EtherpadNextcloud\Exception\PadFileFormatException;
 use OCA\EtherpadNextcloud\Util\PathNormalizer;
 use OCA\EtherpadNextcloud\Util\SafeError;
@@ -27,6 +28,7 @@ class PadOpenService {
 		private PadFileLockRetryService $lockRetryService,
 		private SettleOnOpen $settleOnOpen,
 		private EtherpadClient $etherpadClient,
+		private ManagedPadLifecycle $padLifecycle,
 		private ExternalPadExportFetcher $externalPadExportFetcher,
 		private PadSessionService $padSessionService,
 		private LoggerInterface $logger,
@@ -56,7 +58,7 @@ class PadOpenService {
 	}
 
 	/**
-	 * @throws BindingException
+	 * @throws BindingException PadLostException when Etherpad has lost the pad
 	 * @throws EtherpadClientException
 	 * @throws LockedException
 	 * @throws PadFileFormatException
@@ -110,6 +112,15 @@ class PadOpenService {
 		// here would only be discarded.
 		if (!$mayWrite && $accessMode === BindingService::ACCESS_PROTECTED) {
 			return $this->readOnlyViewTarget($path, $fileId, $padId, $accessMode);
+		}
+
+		// Etherpad may have lost the pad: without a word, a public pad's
+		// address would bring back an empty one, and a protected pad's
+		// session a page that says nothing. The file's own content is what
+		// is left, and someone who may write the file can make a new pad
+		// from it. A reader is shown what the pad server has, as ever.
+		if (!$isExternal && $mayWrite && $this->padLifecycle->howLost($padId, $accessMode, $pad->snapshotRev) !== null) {
+			throw new PadLostException('Etherpad has lost the pad of this file.');
 		}
 
 		$originalPadUrl = '';

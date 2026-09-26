@@ -52,7 +52,7 @@ class ApiErrorCodeTest extends TestCase {
 
 	/**
 	 * A payload gets the code and, for a row that waits, `retryable`; on a
-	 * public share not the two whose action needs a signed-in user.
+	 * public share not the three whose action needs a signed-in user.
 	 */
 	public function testAPayloadGetsTheCodeAVisitorMayActOn(): void {
 		$payload = ['message' => 'm'];
@@ -65,7 +65,7 @@ class ApiErrorCodeTest extends TestCase {
 
 			$this->assertSame($marked, ApiErrorCode::addTo($payload, $e), $code->value);
 			$this->assertSame(
-				in_array($code, [ApiErrorCode::MissingBinding, ApiErrorCode::MissingFrontmatter], true) ? $payload : $marked,
+				in_array($code, [ApiErrorCode::MissingBinding, ApiErrorCode::PadMissing, ApiErrorCode::MissingFrontmatter], true) ? $payload : $marked,
 				ApiErrorCode::addTo($payload, $e, onAPublicShare: true),
 				$code->value . ' on a public share',
 			);

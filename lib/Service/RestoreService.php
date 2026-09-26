@@ -472,10 +472,12 @@ class RestoreService {
 	}
 
 	/**
-	 * The API's recovery of a file that has no row (docs/api-reference.md
-	 * says when one needs it): the path a restore takes for such a file
-	 * (restoreWithoutBinding), refused while the file has a row. The pad id
-	 * the file names is never reused.
+	 * The API's recovery of a file from its own content (docs/api-reference.md
+	 * says when one needs it). A file without a row takes the path a
+	 * restore takes for such a file (restoreWithoutBinding); a file whose
+	 * row names a pad Etherpad has lost, the path a restore takes for a row
+	 * whose pad is gone (recoverLostPad). Refused for any other row. The
+	 * pad id the file names is never reused.
 	 *
 	 * @return array{status: string, reason?: string, old_pad_id?: string, new_pad_id?: string}
 	 */
@@ -486,13 +488,52 @@ class RestoreService {
 		}
 		$binding = $this->bindingService->findByFileId($fileId);
 		if ($binding !== null) {
-			throw new PadAlreadyHasBindingException('A binding already exists for this file.');
+			return $this->recoverLostPad($file, $fileId, $binding);
 		}
 		$result = $this->restoreWithoutBinding($file, $fileId);
 		if (($result['status'] ?? '') === LifecycleResult::RESTORED) {
 			$this->logger->info('Pad recovered from snapshot.', [
 				'app' => 'etherpad_nextcloud',
 				'fileId' => $fileId,
+			]);
+		}
+		return $result;
+	}
+
+	/**
+	 * A new pad from the file's content for an active row whose pad
+	 * Etherpad has lost (ManagedPadLifecycle::howLost()), the row moved onto
+	 * it: what a restore does for a row whose pad is gone. Asked here again,
+	 * not taken from the open that sent the user: the answer must hold for
+	 * the row as it is now. A row that waits, one naming another pad than
+	 * the file, or one whose pad Etherpad has, is left alone.
+	 *
+	 * @return array{status: string, reason?: string, old_pad_id?: string, new_pad_id?: string}
+	 * @throws PadAlreadyHasBindingException
+	 * @throws LifecycleException
+	 */
+	private function recoverLostPad(File $file, int $fileId, Binding $binding): array {
+		if ($binding->state !== BindingService::STATE_ACTIVE) {
+			throw new PadAlreadyHasBindingException('A binding already exists for this file.');
+		}
+		try {
+			$pad = $this->readRestoredPad($file);
+		} catch (\Throwable $e) {
+			throw LifecycleException::failed('Restore', $e);
+		}
+		if ($pad->isExternal || $pad->padId !== $binding->padId) {
+			throw new PadAlreadyHasBindingException('A binding already exists for this file.');
+		}
+		$lost = $this->padLifecycle->howLost($binding->padId, $binding->accessMode, $pad->snapshotRev);
+		if ($lost === null) {
+			throw new PadAlreadyHasBindingException('A binding already exists for this file.');
+		}
+		$result = $this->restoreWithReplacement($file, $file->getPath(), $pad, $fileId, $binding->padId, BindingService::STATE_ACTIVE, $binding->accessMode, $lost);
+		if (($result['status'] ?? '') === LifecycleResult::RESTORED) {
+			$this->logger->info('A pad Etherpad had lost was made anew from its file.', [
+				'app' => 'etherpad_nextcloud',
+				'fileId' => $fileId,
+				'padId' => $binding->padId,
 			]);
 		}
 		return $result;

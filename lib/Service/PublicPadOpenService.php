@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Service;
 
+use OCA\EtherpadNextcloud\Exception\PadLostException;
 
 /**
  * Applies public-share-specific open rules for internal, protected and external pads.
@@ -28,6 +29,7 @@ class PublicPadOpenService {
 
 	public function __construct(
 		private EtherpadClient $etherpadClient,
+		private ManagedPadLifecycle $padLifecycle,
 		private ExternalPadExportFetcher $externalPadExportFetcher,
 		private PadSessionService $padSessionService,
 	) {
@@ -45,6 +47,13 @@ class PublicPadOpenService {
 		}
 
 		$padId = $pad->padId;
+		// A pad Etherpad has lost would come back empty, or not at all: only
+		// the file's owner can make a new pad from its content. A reader is
+		// shown what the pad server has, as ever.
+		if (!$readOnly && $this->padLifecycle->howLost($padId, $pad->accessMode, $pad->snapshotRev) !== null) {
+			throw new PadLostException('Etherpad has lost the pad of this file.');
+		}
+
 		if ($pad->accessMode === BindingService::ACCESS_PROTECTED) {
 			if ($readOnly) {
 				return new PublicPadOpenTarget('', '', '', true);

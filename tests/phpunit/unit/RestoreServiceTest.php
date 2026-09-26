@@ -6,6 +6,8 @@ namespace OCA\EtherpadNextcloud\Tests\Unit;
 
 use OCA\EtherpadNextcloud\Exception\LifecycleException;
 use OCA\EtherpadNextcloud\Exception\NotAPadFileException;
+use OCA\EtherpadNextcloud\Exception\EtherpadRefusedException;
+use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
 use OCA\EtherpadNextcloud\Exception\PadAlreadyHasBindingException;
 use OCA\EtherpadNextcloud\Service\Binding;
 use OCA\EtherpadNextcloud\Service\BindingService;
@@ -1377,21 +1379,104 @@ class RestoreServiceTest extends TestCase {
 		$this->assertSame(['status' => LifecycleResult::SKIPPED, 'reason' => 'external_pad'], $result);
 	}
 
-	public function testRecoverFromSnapshotRefusesWhenBindingAlreadyExists(): void {
-		$fileId = 702;
+	/**
+	 * A file whose row names a pad Etherpad has lost gets a new pad from its
+	 * own content: the row moves onto it, the file names it. Lost is gone
+	 * altogether, or - a public pad visited at its address - made anew with
+	 * no revision while the file's snapshot holds more; the empty pad made
+	 * anew is left alone.
+	 */
+	public function testRecoveryMakesANewPadForARowWhosePadIsLost(): void {
+		foreach (['gone' => null, 'made anew empty' => 0] as $case => $revisions) {
+			$fileId = 700;
+			$newPadId = 'r-old-pad-abc123def456';
+			$bindingService = $this->createMock(BindingService::class);
+			$bindingService->expects($this->once())
+				->method('rebind')
+				->with($fileId, 'old-pad', BindingService::STATE_ACTIVE, $newPadId, BindingService::STATE_ACTIVE)
+				->willReturn(true);
+
+			$etherpadClient = $this->createMock(EtherpadClient::class);
+			$etherpadClient->method('getRevisionsCount')->willReturnCallback(static function (string $padId) use ($revisions): int {
+				if ($padId !== 'old-pad') {
+					return 1;
+				}
+				return $revisions ?? throw new EtherpadRefusedException('padID does not exist');
+			});
+			$etherpadClient->expects($this->once())->method('createPad')->with($newPadId);
+			$etherpadClient->expects($this->never())->method('deletePad');
+			$logger = $this->createMock(LoggerInterface::class);
+			$logger->expects($this->once())->method('info')->with('A pad Etherpad had lost was made anew from its file.', $this->anything());
+
+			$file = $this->padFile($fileId, 'Lost.pad');
+			$file->expects($this->once())->method('putContent')->with('doc-after');
+
+			$result = $this->buildPendingDeleteRestoreService($fileId, 'old-pad', $bindingService, $etherpadClient, logger: $logger, snapshotRev: 5, state: BindingService::STATE_ACTIVE)
+				->recoverFromSnapshot($file);
+
+			$this->assertSame(LifecycleResult::RESTORED, $result['status'], $case);
+			$this->assertSame($newPadId, $result['new_pad_id'], $case);
+		}
+	}
+
+	/**
+	 * A row is refused as before unless its pad is lost: a pad Etherpad
+	 * has, even one behind the file's snapshot (as restores in 1.1.0-beta.1
+	 * left them); a row that waits; a row naming another pad than the file.
+	 */
+	public function testRecoveryRefusesARowWhosePadIsNotLost(): void {
+		// The last two with a pad that is lost: only the row can refuse them.
+		$cases = [
+			'there' => [BindingService::STATE_ACTIVE, 'old-pad', 7],
+			'behind, not empty' => [BindingService::STATE_ACTIVE, 'old-pad', 2],
+			'waiting' => [BindingService::STATE_PENDING_DELETE, 'old-pad', null],
+			'another pad in the file' => [BindingService::STATE_ACTIVE, 'row-pad', null],
+		];
+		foreach ($cases as $case => [$state, $rowPad, $revisions]) {
+			$bindingService = $this->createMock(BindingService::class);
+			$bindingService->expects($this->never())->method('rebind');
+			$bindingService->expects($this->never())->method('createBinding');
+			$etherpadClient = $this->createMock(EtherpadClient::class);
+			$etherpadClient->method('getRevisionsCount')->willReturnCallback(
+				static fn (): int => $revisions ?? throw new EtherpadRefusedException('padID does not exist'),
+			);
+			$etherpadClient->expects($this->never())->method('createPad');
+			$file = $this->padFile(702, 'Linked.pad');
+			$file->expects($this->never())->method('putContent');
+			if ($rowPad === 'old-pad') {
+				$service = $this->buildPendingDeleteRestoreService(702, 'old-pad', $bindingService, $etherpadClient, snapshotRev: 5, state: $state);
+			} else {
+				$bindingService->method('findByFileId')->willReturn(new Binding(fileId: 702, padId: $rowPad, accessMode: BindingService::ACCESS_PUBLIC, state: $state));
+				$service = $this->restoreServiceReadingOldPad($bindingService, $etherpadClient);
+			}
+
+			try {
+				$service->recoverFromSnapshot($file);
+				$this->fail($case . ': not refused');
+			} catch (PadAlreadyHasBindingException) {
+				$this->addToAssertionCount(1);
+			}
+		}
+	}
+
+	/** Etherpad not answering is no answer at all: nothing is made, and the caller hears of it. */
+	public function testRecoveryStopsWhenEtherpadDoesNotAnswer(): void {
 		$bindingService = $this->createMock(BindingService::class);
-		$bindingService->method('findByFileId')->with($fileId)->willReturn(new Binding(fileId: $fileId, padId: 'already-linked', accessMode: BindingService::ACCESS_PUBLIC, state: BindingService::STATE_ACTIVE));
-		$bindingService->expects($this->never())->method('createBinding');
+		$bindingService->expects($this->never())->method('rebind');
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->method('getRevisionsCount')->willThrowException(new EtherpadClientException('Etherpad API request failed'));
+		$etherpadClient->expects($this->never())->method('createPad');
 
-		$file = $this->createMock(File::class);
-		$file->method('getId')->willReturn($fileId);
-		$file->method('getName')->willReturn('Linked.pad');
-		$file->expects($this->never())->method('putContent');
+		$this->expectException(EtherpadClientException::class);
+		$this->buildPendingDeleteRestoreService(703, 'old-pad', $bindingService, $etherpadClient, snapshotRev: 5, state: BindingService::STATE_ACTIVE)
+			->recoverFromSnapshot($this->padFile(703, 'Lost.pad'));
+	}
 
-		$service = $this->restoreService(bindings: $bindingService);
-
-		$this->expectException(PadAlreadyHasBindingException::class);
-		$service->recoverFromSnapshot($file);
+	/** A restore service whose file names 'old-pad', over the row $bindings holds. */
+	private function restoreServiceReadingOldPad(BindingService $bindings, EtherpadClient $etherpadClient): RestoreService {
+		$padFileService = $this->createMock(PadFileService::class);
+		$padFileService->method('readPad')->willReturn(new ParsedPadFile(frontmatter: [], body: 'body', padId: 'old-pad', accessMode: BindingService::ACCESS_PUBLIC, padUrl: '', isExternal: false, snapshotRev: 5));
+		return $this->restoreService(bindings: $bindings, etherpad: $etherpadClient, padFiles: $padFileService);
 	}
 
 	public function testRecoverFromSnapshotRejectsNonPadFile(): void {
