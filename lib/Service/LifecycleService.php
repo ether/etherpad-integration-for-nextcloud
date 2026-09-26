@@ -119,7 +119,7 @@ class LifecycleService {
 		$deletedAt = $this->timeFactory->getTime();
 
 		try {
-			$snapshots = $this->snapshotWriters->for($file, $padId);
+			$snapshots = $this->snapshotWriters->for($file, $binding);
 			$pad = $snapshots->read();
 			if ($pad instanceof TrashSnapshotMiss || !$snapshots->writeAtTrash($pad)) {
 				// Without a fresh snapshot the pad may hold what the file lacks,

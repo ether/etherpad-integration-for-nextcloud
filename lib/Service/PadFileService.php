@@ -203,13 +203,10 @@ class PadFileService {
 	}
 
 	/**
-	 * The document a restore writes: active again, no deletion timestamp, and
-	 * pointed at the pad that was provisioned to replace the old one.
-	 *
-	 * The new pad counts revisions from zero, so the old pad's count cannot
-	 * carry over: the sync would take every revision below it as already
-	 * held. The file records the new pad's count once the snapshot is in it,
-	 * or -1 (not synced yet) when that is not known.
+	 * The document a restore writes: the file as namingPad() makes it for
+	 * the pad provisioned to replace the old one, with the snapshot as its
+	 * body and $revision, the new pad's count once the snapshot is in it,
+	 * or -1 when that is not known.
 	 *
 	 * The caller has already split the snapshot it is restoring, so both
 	 * halves arrive here rather than the body being taken apart a second time
@@ -220,20 +217,45 @@ class PadFileService {
 		string $text,
 		string $html,
 		string $padId,
+		string $accessMode,
 		string $padUrl,
 		int $revision = -1,
 	): string {
-		$frontmatter = $pad->frontmatter;
-		$frontmatter['state'] = BindingService::STATE_ACTIVE;
-		$frontmatter['updated_at'] = $this->nowIso();
-		$frontmatter['deleted_at'] = null;
-		$frontmatter['pad_id'] = $padId;
+		$frontmatter = $this->namingPad($pad, $padId, $accessMode, $padUrl)->frontmatter;
 		$frontmatter['snapshot_rev'] = max(-1, $revision);
-		if ($padUrl !== '') {
-			$frontmatter['pad_url'] = $padUrl;
-		}
 
 		return $this->serialize($frontmatter, $this->buildSnapshotBody($text, $html));
+	}
+
+	/**
+	 * $pad as it reads once it names another pad: that pad's id, mode and
+	 * address (none when $padUrl is empty), active, and no snapshot
+	 * revision, since the one it has counts the pad it named before. Its
+	 * text stays until a sync, a trash or a restore writes the new pad's
+	 * into it. Nothing is written here.
+	 */
+	public function namingPad(ParsedPadFile $pad, string $padId, string $accessMode, string $padUrl): ParsedPadFile {
+		$frontmatter = $pad->frontmatter;
+		$frontmatter['pad_id'] = $padId;
+		$frontmatter['access_mode'] = $accessMode;
+		if ($padUrl === '') {
+			unset($frontmatter['pad_url']);
+		} else {
+			$frontmatter['pad_url'] = $padUrl;
+		}
+		$frontmatter['state'] = BindingService::STATE_ACTIVE;
+		$frontmatter['deleted_at'] = null;
+		$frontmatter['snapshot_rev'] = -1;
+		$frontmatter['updated_at'] = $this->nowIso();
+		return new ParsedPadFile(
+			frontmatter: $frontmatter,
+			body: $pad->body,
+			padId: $padId,
+			accessMode: $accessMode,
+			padUrl: $padUrl,
+			isExternal: false,
+			snapshotRev: -1,
+		);
 	}
 
 	public function withExportSnapshot(ParsedPadFile $pad, PadSnapshot $snapshot): string {

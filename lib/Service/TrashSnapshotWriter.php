@@ -22,8 +22,10 @@ use Psr\Log\LoggerInterface;
  * then writes into it at trash time or, when the trash could not, in the
  * sweep.
  *
- * Knows nothing about bindings. What a miss means for the row and the pad
- * is the caller's to decide; here a miss is only logged, in one line an
+ * Of the file's row it knows which pad that is, and which one the file may
+ * still name: read() hands the file over as the row has it
+ * (BoundPadResolver::followingRow()). What a miss means for the row and the
+ * pad is the caller's to decide; here a miss is only logged, in one line an
  * admin can filter by `reason`, and handed back.
  *
  * $news: whether the file's trouble would be news (warning) or a repeat
@@ -39,7 +41,8 @@ final class TrashSnapshotWriter {
 		private LoggerInterface $logger,
 		private TestFaults $testFaults,
 		private File $file,
-		private string $padId,
+		private Binding $binding,
+		private BoundPadResolver $boundPads,
 		private bool $news = true,
 	) {
 		$this->context = ['app' => 'etherpad_nextcloud', 'fileId' => $file->getId()];
@@ -67,10 +70,11 @@ final class TrashSnapshotWriter {
 			return $this->missed(TrashSnapshotMiss::FileEmpty);
 		}
 		try {
-			return $this->padFileService->readPad($content);
+			$pad = $this->padFileService->readPad($content);
 		} catch (\Throwable $parseError) {
 			return $this->missed(TrashSnapshotMiss::FileUnparsable, SafeError::context($parseError));
 		}
+		return $this->boundPads->followingRow($pad, $this->binding);
 	}
 
 	/**
@@ -142,7 +146,7 @@ final class TrashSnapshotWriter {
 	 * @throws RunBudgetSpentException
 	 */
 	private function fresh(ParsedPadFile $pad, ?int $revisions, ?RunBudget $budget): PadSnapshot|TrashSnapshotMiss|bool {
-		$revisions ??= $this->etherpadClient->getRevisionsCount($this->padId, RunBudget::timeoutOf($budget));
+		$revisions ??= $this->etherpadClient->getRevisionsCount($this->binding->padId, RunBudget::timeoutOf($budget));
 		if ($revisions === $pad->snapshotRev) {
 			return true;
 		}
@@ -177,7 +181,7 @@ final class TrashSnapshotWriter {
 			return $written;
 		}
 		try {
-			$unchanged = $this->etherpadClient->getRevisionsCount($this->padId, RunBudget::timeoutOf($budget)) === $snapshot->revision;
+			$unchanged = $this->etherpadClient->getRevisionsCount($this->binding->padId, RunBudget::timeoutOf($budget)) === $snapshot->revision;
 		} catch (EtherpadClientException $countError) {
 			return $this->movedWhileWritten($moved) ?? $this->missed(TrashSnapshotMiss::PadNotRecounted, SafeError::context($countError));
 		} catch (RunBudgetSpentException $spent) {
@@ -215,9 +219,9 @@ final class TrashSnapshotWriter {
 	 * to hold after.
 	 */
 	private function fetchStable(int $before, ?RunBudget $budget): ?PadSnapshot {
-		$text = $this->etherpadClient->getText($this->padId, RunBudget::timeoutOf($budget));
-		$html = $this->etherpadClient->getHTML($this->padId, RunBudget::timeoutOf($budget));
-		$after = $this->etherpadClient->getRevisionsCount($this->padId, RunBudget::timeoutOf($budget));
+		$text = $this->etherpadClient->getText($this->binding->padId, RunBudget::timeoutOf($budget));
+		$html = $this->etherpadClient->getHTML($this->binding->padId, RunBudget::timeoutOf($budget));
+		$after = $this->etherpadClient->getRevisionsCount($this->binding->padId, RunBudget::timeoutOf($budget));
 		return $before === $after ? new PadSnapshot($text, $html, $after) : null;
 	}
 

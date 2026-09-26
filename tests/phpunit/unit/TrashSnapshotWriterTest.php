@@ -10,6 +10,7 @@ namespace OCA\EtherpadNextcloud\Tests\Unit;
 
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
 use OCA\EtherpadNextcloud\Exception\RunBudgetSpentException;
+use OCA\EtherpadNextcloud\Service\Binding;
 use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\EtherpadNextcloud\Service\EtherpadClient;
 use OCA\EtherpadNextcloud\Service\PadFileService;
@@ -19,6 +20,7 @@ use OCA\EtherpadNextcloud\Service\RunBudget;
 use OCA\EtherpadNextcloud\Service\TestFaults;
 use OCA\EtherpadNextcloud\Service\TrashSnapshotMiss;
 use OCA\EtherpadNextcloud\Service\TrashSnapshotWriter;
+use OCA\EtherpadNextcloud\Tests\Support\BuildsBoundPads;
 use OCA\EtherpadNextcloud\Tests\Support\FixedClock;
 use OCP\Files\File;
 use OCP\Lock\LockedException;
@@ -27,6 +29,8 @@ use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 
 class TrashSnapshotWriterTest extends TestCase {
+	use BuildsBoundPads;
+
 	private EtherpadClient&MockObject $etherpad;
 	private PadFileService&MockObject $padFiles;
 	private LoggerInterface&MockObject $logger;
@@ -93,6 +97,18 @@ class TrashSnapshotWriterTest extends TestCase {
 		$this->padFiles->method('readPad')->with('doc-before')->willReturn($pad);
 
 		$this->assertSame($pad, $this->writer()->read());
+		$this->assertSame([], $this->logged);
+	}
+
+	/** A file that names the pad its row replaced, at a higher revision, reads as naming the row's pad, with none. */
+	public function testReadTakesAFileNamingThePadItsRowReplacedForTheRows(): void {
+		$this->file->method('getContent')->willReturn('doc-before');
+		$this->padFiles->method('readPad')->willReturn($this->pad(snapshotRev: 50, padId: 'pad-before'));
+
+		$pad = $this->writer(replaced: 'pad-before')->read();
+
+		$this->assertInstanceOf(ParsedPadFile::class, $pad);
+		$this->assertSame(['pad-a', -1, self::padUrlOf('pad-a'), 'body'], [$pad->padId, $pad->snapshotRev, $pad->padUrl, $pad->body]);
 		$this->assertSame([], $this->logged);
 	}
 
@@ -416,7 +432,8 @@ class TrashSnapshotWriterTest extends TestCase {
 		$this->assertSame([['debug', 'pad_changed']], $this->logged);
 	}
 
-	private function writer(bool $news = true): TrashSnapshotWriter {
+	/** For the row of file 7 naming 'pad-a', which replaced $replaced. */
+	private function writer(bool $news = true, ?string $replaced = null): TrashSnapshotWriter {
 		$testFaults = $this->createMock(TestFaults::class);
 		$testFaults->method('isActive')->willReturnCallback(fn (string $fault): bool => $fault === $this->fault);
 		return new TrashSnapshotWriter(
@@ -425,7 +442,8 @@ class TrashSnapshotWriterTest extends TestCase {
 			$this->logger,
 			$testFaults,
 			$this->file,
-			'pad-a',
+			new Binding(7, 'pad-a', BindingService::ACCESS_PUBLIC, BindingService::STATE_ACTIVE, replacedPadId: $replaced),
+			$this->boundPads($this->createMock(BindingService::class)),
 			$news,
 		);
 	}
@@ -440,11 +458,11 @@ class TrashSnapshotWriterTest extends TestCase {
 		return static fn (): bool => false;
 	}
 
-	private function pad(int $snapshotRev): ParsedPadFile {
+	private function pad(int $snapshotRev, string $padId = 'pad-a'): ParsedPadFile {
 		return new ParsedPadFile(
 			frontmatter: [],
 			body: 'body',
-			padId: 'pad-a',
+			padId: $padId,
 			accessMode: BindingService::ACCESS_PUBLIC,
 			padUrl: '',
 			isExternal: false,

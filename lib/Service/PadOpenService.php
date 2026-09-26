@@ -30,6 +30,7 @@ class PadOpenService {
 		private ExternalPadExportFetcher $externalPadExportFetcher,
 		private PadSessionService $padSessionService,
 		private LoggerInterface $logger,
+		private BoundPadResolver $boundPads,
 	) {
 	}
 
@@ -82,10 +83,42 @@ class PadOpenService {
 		// not issue a session that writes on the pad server.
 		$mayWrite = $node->isUpdateable();
 		if (!$pad->isExternal) {
-			$this->settleOnOpen->settleThenAssert($node, $fileId, $pad);
+			$bound = $this->settleOnOpen->settleThenResolve($node, $fileId, $pad);
+			if ($bound->padId !== $pad->padId && $mayWrite) {
+				$this->followRow($uid, $fileId, $content, $bound);
+			}
+			$pad = $bound;
 		}
 
 		return $this->buildOpenContext($uid, $displayName, $absolutePath, $fileId, $pad, $mayWrite);
+	}
+
+	/**
+	 * The rewrite of a file that named the pad its row replaced
+	 * (docs/architecture.md, "Which pad a file reaches"). Found again by its
+	 * id, so the old node never writes a new file where the file was; no
+	 * lock between comparing and writing, as for the initialise, since what
+	 * a sync in between loses the next sync writes again.
+	 */
+	private function followRow(string $uid, int $fileId, string $read, ParsedPadFile $bound): void {
+		try {
+			$node = $this->userNodeResolver->resolveUserFileNodeById($uid, $fileId);
+			if ($node->getContent() !== $read) {
+				$this->logger->debug('A .pad file changed since it was opened; it is not rewritten to its row\'s pad.', [
+					'app' => 'etherpad_nextcloud',
+					'fileId' => $fileId,
+				]);
+				return;
+			}
+			$node->putContent($this->padFileService->serialize($bound->frontmatter, $bound->body));
+			$this->boundPads->repaired($fileId);
+		} catch (\Throwable $e) {
+			$this->logger->debug('Could not rewrite a .pad file to its row\'s pad; the row\'s pad opens all the same.', [
+				'app' => 'etherpad_nextcloud',
+				'fileId' => $fileId,
+				...SafeError::context($e),
+			]);
+		}
 	}
 
 	private function buildOpenContext(

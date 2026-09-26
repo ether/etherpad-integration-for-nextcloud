@@ -8,6 +8,7 @@ use OCA\EtherpadNextcloud\Exception\WaitingBindingException;
 use OCA\EtherpadNextcloud\Service\RestoreService;
 use OCA\EtherpadNextcloud\Service\SettleOutcome;
 use PHPUnit\Framework\MockObject\MockObject;
+use OCA\EtherpadNextcloud\Service\Binding;
 use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\EtherpadNextcloud\Service\LivePadHtml;
 use OCA\EtherpadNextcloud\Service\LivePadHtmlFetcher;
@@ -68,8 +69,9 @@ class PublicPadContextServiceTest extends TestCase {
 
 		$bindings = $this->createMock(BindingService::class);
 		$bindings->expects($this->once())
-			->method('assertConsistentMapping')
-			->with(42, 'g.group$pad', BindingService::ACCESS_PROTECTED);
+			->method('findByFileId')
+			->with(42)
+			->willReturn(new Binding(42, 'g.group$pad', BindingService::ACCESS_PROTECTED, BindingService::STATE_ACTIVE));
 
 		$openService = $this->createMock(PublicPadOpenService::class);
 		$openService->expects($this->once())
@@ -159,14 +161,12 @@ class PublicPadContextServiceTest extends TestCase {
 	public function testAPublicOpenDecidesAWaitingRowWithTheSharedFile(): void {
 		$file = $this->sharedFile();
 		$bindings = $this->createMock(BindingService::class);
-		$calls = 0;
-		$bindings->expects($this->exactly(2))->method('assertConsistentMapping')->with(42, 'g.group$pad', BindingService::ACCESS_PROTECTED)
-			->willReturnCallback(static function () use (&$calls): void {
-				if (++$calls === 1) {
-					throw new WaitingBindingException('Pad binding is not active.');
-				}
-			});
-		$bindings->method('findByFileId')->willReturn(self::waitingRow(42, 'g.group$pad', BindingService::ACCESS_PROTECTED));
+		// Waiting at the first look and while it is decided, taken back after.
+		$bindings->expects($this->exactly(3))->method('findByFileId')->with(42)->willReturnOnConsecutiveCalls(
+			self::waitingRow(42, 'g.group$pad', BindingService::ACCESS_PROTECTED),
+			self::waitingRow(42, 'g.group$pad', BindingService::ACCESS_PROTECTED),
+			new Binding(42, 'g.group$pad', BindingService::ACCESS_PROTECTED, BindingService::STATE_ACTIVE),
+		);
 		$restores = $this->createMock(RestoreService::class);
 		$restores->expects($this->once())->method('settleOpenedFile')->with($this->identicalTo($file))->willReturn(SettleOutcome::Settled);
 		$openService = $this->createMock(PublicPadOpenService::class);
@@ -178,18 +178,34 @@ class PublicPadContextServiceTest extends TestCase {
 	/** A row that still waits once decided reaches the caller as it is, and nothing is opened. */
 	public function testARowThatStillWaitsReachesTheCallerAsItIs(): void {
 		$file = $this->sharedFile();
-		$waiting = new WaitingBindingException('Pad binding is not active.');
 		$bindings = $this->createMock(BindingService::class);
-		$bindings->method('assertConsistentMapping')->willThrowException($waiting);
 		$bindings->method('findByFileId')->willReturn(self::waitingRow(42, 'g.group$pad', BindingService::ACCESS_PROTECTED));
 		$restores = $this->createMock(RestoreService::class);
 		$restores->expects($this->once())->method('settleOpenedFile')->willReturn(SettleOutcome::Unanswered);
 		$openService = $this->createMock(PublicPadOpenService::class);
 		$openService->expects($this->never())->method('open');
 
-		$this->expectExceptionObject($waiting);
+		$this->expectException(WaitingBindingException::class);
 
 		$this->contextService($file, $bindings, $restores, $openService)->resolve('token', '', $this->shareOf($file));
+	}
+
+	/**
+	 * A shared file that still names the pad its row replaced opens the
+	 * row's pad for the visitor, who never writes the file.
+	 */
+	public function testAPublicOpenOfAFileNamingThePadItsRowReplacedOpensTheRowsPad(): void {
+		$file = $this->sharedFile();
+		$file->expects($this->never())->method('putContent');
+		$bindings = $this->createMock(BindingService::class);
+		$bindings->method('findByFileId')->willReturn(new Binding(42, 'g.group$new', BindingService::ACCESS_PROTECTED, BindingService::STATE_ACTIVE, replacedPadId: 'g.group$pad'));
+		$openService = $this->createMock(PublicPadOpenService::class);
+		$openService->expects($this->once())
+			->method('open')
+			->with($this->callback(static fn (ParsedPadFile $pad): bool => $pad->padId === 'g.group$new' && $pad->snapshotRev === -1), true, 'token')
+			->willReturn(new PublicPadOpenTarget('', '', '', true));
+
+		$this->contextService($file, $bindings, $this->createMock(RestoreService::class), $openService)->resolve('token', '', $this->shareOf($file));
 	}
 
 	private function sharedFile(): File&MockObject {

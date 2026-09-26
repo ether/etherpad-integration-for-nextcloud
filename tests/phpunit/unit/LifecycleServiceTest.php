@@ -22,6 +22,8 @@ use OCP\Security\ISecureRandom;
 use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
+use OCA\EtherpadNextcloud\Tests\Support\FixedClock;
+use OCA\EtherpadNextcloud\Tests\Support\InMemoryBindingTable;
 use OCA\EtherpadNextcloud\Tests\Support\PadFiles;
 use OCA\EtherpadNextcloud\Tests\Support\WiresTheLifecycle;
 
@@ -224,6 +226,43 @@ class LifecycleServiceTest extends TestCase {
 		$this->assertTrue($result['snapshot_persisted']);
 		$this->assertFalse($result['delete_pending']);
 
+	}
+
+	/**
+	 * A file that still names the pad its row replaced, at that pad's higher
+	 * revision, holds nothing of the row's pad: the trash writes the row's
+	 * pad into it, under the row's name, and the pad and row go as for any
+	 * file. Held against the old pad's revision, the row's pad looked behind,
+	 * and the file went to the trash with the old pad's text and name.
+	 */
+	public function testATrashOfAFileNamingThePadItsRowReplacedTakesTheRowsPad(): void {
+		$table = new InMemoryBindingTable([[
+			'file_id' => 110, 'pad_id' => 'pad-new', 'access_mode' => BindingService::ACCESS_PUBLIC,
+			'state' => BindingService::STATE_ACTIVE, 'deleted_at' => null, 'updated_at' => 100, 'replaced_pad_id' => 'pad-old',
+		]]);
+		$padFiles = new PadFileService(new FixedClock());
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->method('getRevisionsCount')->with('pad-new')->willReturn(3);
+		$etherpadClient->method('getText')->with('pad-new')->willReturn('Text of the new pad');
+		$etherpadClient->method('getHTML')->with('pad-new')->willReturn('<p>Text of the new pad</p>');
+		$etherpadClient->expects($this->once())->method('deletePad')->with('pad-new');
+		$written = null;
+		$file = $this->createMock(File::class);
+		$file->method('getId')->willReturn(110);
+		$file->method('getName')->willReturn('Old.pad');
+		$file->method('getContent')->willReturn($padFiles->buildInitialDocument(110, 'pad-old', BindingService::ACCESS_PUBLIC, new PadSnapshot('Text of the old pad', '<p>Text of the old pad</p>', 50), self::padUrlOf('pad-old')));
+		$file->expects($this->once())->method('putContent')->willReturnCallback(static function (string $content) use (&$written): void {
+			$written = $content;
+		});
+
+		$result = $this->lifecycleService(bindings: new BindingService($table, new FixedClock()), etherpad: $etherpadClient, padFiles: $padFiles)->handleTrash($file);
+
+		$this->assertSame([LifecycleResult::TRASHED, true, false], [$result['status'], $result['snapshot_persisted'], $result['delete_pending']]);
+		$this->assertSame([], $table->rows);
+		$pad = $padFiles->readPad((string)$written);
+		$this->assertSame(['pad-new', 3, self::padUrlOf('pad-new')], [$pad->padId, $pad->snapshotRev, $pad->padUrl]);
+		$this->assertStringContainsString('Text of the new pad', $pad->body);
+		$this->assertStringNotContainsString('Text of the old pad', $pad->body);
 	}
 
 	private function buildTrashService(BindingService $bindingService, EtherpadClient $etherpadClient, bool $deleteOnTrash = true, ?LoggerInterface $logger = null, ?UserNodeResolver $nodes = null): LifecycleService {

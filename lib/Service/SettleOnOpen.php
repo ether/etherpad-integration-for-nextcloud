@@ -44,28 +44,28 @@ class SettleOnOpen {
 		private SettleLock $settleLock,
 		private ITimeFactory $timeFactory,
 		private LoggerInterface $logger,
+		private BoundPadResolver $boundPads,
 	) {
 	}
 
 	/**
-	 * BindingService::assertConsistentMapping() for the file an open has
-	 * just read ($pad), after a row that waits has been decided once: the
-	 * row then answers as it is - active, gone, or still waiting. Deciding
-	 * costs Etherpad calls and writes to the row, so this is for an open,
-	 * never for a path that polls.
+	 * BoundPadResolver::resolve() for the file an open has just read ($pad),
+	 * after a row that waits has been decided once: the row then answers as
+	 * it is - active, gone, or still waiting. Deciding costs Etherpad calls
+	 * and writes to the row, so this is for an open, never for a path that
+	 * polls.
 	 *
 	 * $fileId is $file's, as the caller has it already.
 	 *
 	 * @throws BindingException
 	 */
-	public function settleThenAssert(File $file, int $fileId, ParsedPadFile $pad): void {
+	public function settleThenResolve(File $file, int $fileId, ParsedPadFile $pad): ParsedPadFile {
 		try {
-			$this->bindingService->assertConsistentMapping($fileId, $pad->padId, $pad->accessMode);
-			return;
+			return $this->boundPads->resolve($fileId, $pad);
 		} catch (WaitingBindingException) {
 			$this->settle($file, $fileId, $pad);
 		}
-		$this->bindingService->assertConsistentMapping($fileId, $pad->padId, $pad->accessMode);
+		return $this->boundPads->resolve($fileId, $pad);
 	}
 
 	private function settle(File $file, int $fileId, ParsedPadFile $pad): void {

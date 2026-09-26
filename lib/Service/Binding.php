@@ -28,6 +28,12 @@ final class Binding {
 		 */
 		public readonly ?int $deletedAt = null,
 		public readonly int $updatedAt = 0,
+		/**
+		 * The pad this row's pad replaced, when a restore or a recovery put
+		 * it in its place: the one other pad a file of this row may still
+		 * name (docs/architecture.md, "Which pad a file reaches").
+		 */
+		public readonly ?string $replacedPadId = null,
 	) {
 	}
 
@@ -45,6 +51,7 @@ final class Binding {
 			state: DbRows::string($row, 'state'),
 			deletedAt: DbRows::nullableInt($row, 'deleted_at'),
 			updatedAt: DbRows::int($row, 'updated_at'),
+			replacedPadId: DbRows::nullableString($row, 'replaced_pad_id'),
 		);
 	}
 

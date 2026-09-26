@@ -69,7 +69,7 @@ class OwedDeletions {
 			return SettleOutcome::Left;
 		}
 		$padId = $binding->padId;
-		$snapshots = $this->snapshotWriters->for($file, $padId, news: $binding->untouchedSinceOwed());
+		$snapshots = $this->snapshotWriters->for($file, $binding, news: $binding->untouchedSinceOwed());
 		$pad = $snapshots->read();
 		if ($pad instanceof TrashSnapshotMiss) {
 			return $this->waitAgain($fileId, $padId, $pad);

@@ -10,10 +10,7 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\Service;
 
 use OCA\EtherpadNextcloud\Exception\BindingNotCreatedException;
-use OCA\EtherpadNextcloud\Exception\BindingMismatchException;
 use OCA\EtherpadNextcloud\Exception\BindingException;
-use OCA\EtherpadNextcloud\Exception\MissingBindingException;
-use OCA\EtherpadNextcloud\Exception\WaitingBindingException;
 use OCA\EtherpadNextcloud\Util\DbRows;
 use OCA\EtherpadNextcloud\Util\PadAccessMode;
 use OCP\DB\QueryBuilder\IQueryBuilder;
@@ -33,6 +30,8 @@ class BindingService {
 	 * be gone.
 	 */
 	public const STATE_RESTORE_PENDING = 'restore_pending';
+	/** The length of replaced_pad_id; a pad id is measured against it in bytes, so it fits on every database. */
+	public const PAD_ID_MAX_LENGTH = 255;
 
 	/**
 	 * Where trashes keep files, as file cache paths relative to their
@@ -123,6 +122,9 @@ class BindingService {
 	 * pending_delete means that: going there sets it anew, going anywhere
 	 * else clears it. A row that stays there keeps it: its age decides how
 	 * often a sweep tries it, and only updated_at moves.
+	 *
+	 * A row that ends up naming another pad remembers the one it named
+	 * (replaced_pad_id): its file may still name that one.
 	 */
 	public function rebind(int $fileId, string $fromPadId, string $from, string $toPadId, string $to): bool {
 		$now = $this->timeFactory->getTime();
@@ -131,6 +133,9 @@ class BindingService {
 			->set('pad_id', $qb->createNamedParameter($toPadId))
 			->set('state', $qb->createNamedParameter($to))
 			->set('updated_at', $qb->createNamedParameter($now, IQueryBuilder::PARAM_INT));
+		if ($toPadId !== $fromPadId) {
+			$qb->set('replaced_pad_id', $qb->createNamedParameter($fromPadId));
+		}
 		if ($to !== self::STATE_PENDING_DELETE) {
 			$qb->set('deleted_at', $qb->createNamedParameter(null, IQueryBuilder::PARAM_NULL));
 		} elseif ($from !== self::STATE_PENDING_DELETE) {
@@ -251,8 +256,16 @@ class BindingService {
 		return $rows;
 	}
 
-	public function createBinding(int $fileId, string $padId, string $accessMode): void {
+	/**
+	 * $replacedPadId: the pad the file named, when the new pad takes its
+	 * place (a recovery); see rebind(). It comes from the file, so one longer
+	 * than the column is no pad of this app's, and is not remembered.
+	 */
+	public function createBinding(int $fileId, string $padId, string $accessMode, ?string $replacedPadId = null): void {
 		$this->assertAccessMode($accessMode);
+		if ($replacedPadId !== null && strlen($replacedPadId) > self::PAD_ID_MAX_LENGTH) {
+			$replacedPadId = null;
+		}
 		$now = $this->timeFactory->getTime();
 
 		$qb = $this->db->getQueryBuilder();
@@ -265,6 +278,9 @@ class BindingService {
 				'deleted_at' => $qb->createNamedParameter(null, IQueryBuilder::PARAM_NULL),
 				'created_at' => $qb->createNamedParameter($now, IQueryBuilder::PARAM_INT),
 				'updated_at' => $qb->createNamedParameter($now, IQueryBuilder::PARAM_INT),
+				'replaced_pad_id' => $replacedPadId === null
+					? $qb->createNamedParameter(null, IQueryBuilder::PARAM_NULL)
+					: $qb->createNamedParameter($replacedPadId),
 			]);
 
 		try {
@@ -275,27 +291,6 @@ class BindingService {
 			// logged here: every caller reports it, the API's through
 			// ApiErrorLog, with this as its cause.
 			throw new BindingNotCreatedException('Could not create unique pad binding.', 0, $e);
-		}
-	}
-
-	public function assertConsistentMapping(int $fileId, string $padId, string $accessMode): void {
-		$this->assertAccessMode($accessMode);
-		$binding = $this->findByFileId($fileId);
-		if ($binding === null) {
-			throw new MissingBindingException('No binding exists for this file.');
-		}
-		if ($binding->padId !== $padId) {
-			throw new BindingMismatchException('Binding pad ID mismatch.');
-		}
-		if ($binding->accessMode !== $accessMode) {
-			throw new BindingMismatchException('Binding access mode mismatch.');
-		}
-		if ($binding->isWaiting()) {
-			throw new WaitingBindingException('Pad binding is not active.');
-		}
-		if ($binding->state !== self::STATE_ACTIVE) {
-			// A state the sweep never takes up, so nothing to wait for either.
-			throw new BindingException('Pad binding is not active.');
 		}
 	}
 

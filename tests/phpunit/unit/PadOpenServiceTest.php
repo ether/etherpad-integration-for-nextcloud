@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Tests\Unit;
 
+use OCA\EtherpadNextcloud\Exception\BindingMismatchException;
 use OCA\EtherpadNextcloud\Exception\ExternalPadException;
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
 use OCA\EtherpadNextcloud\Exception\WaitingBindingException;
+use OCA\EtherpadNextcloud\Service\Binding;
 use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\EtherpadNextcloud\Service\EtherpadClient;
 use OCA\EtherpadNextcloud\Service\ExternalPadExportFetcher;
@@ -19,12 +21,17 @@ use OCA\EtherpadNextcloud\Service\SettleOutcome;
 use OCA\EtherpadNextcloud\Service\UserNodeResolver;
 use OCA\EtherpadNextcloud\Util\PathNormalizer;
 use OCA\EtherpadNextcloud\Service\ParsedPadFile;
+use OCA\EtherpadNextcloud\Service\PadSnapshot;
+use OCA\EtherpadNextcloud\Tests\Support\BuildsBoundPads;
+use OCA\EtherpadNextcloud\Tests\Support\FixedClock;
 use OCA\EtherpadNextcloud\Tests\Support\SettlesOnOpen;
 use OCP\Files\File;
+use OCP\Files\NotFoundException;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 
 class PadOpenServiceTest extends TestCase {
+	use BuildsBoundPads;
 	use SettlesOnOpen;
 
 	public function testOpenByPathRejectsEmptyNormalizedPath(): void {
@@ -155,10 +162,8 @@ class PadOpenServiceTest extends TestCase {
 	 * address, and lets the mapper say why.
 	 */
 	public function testAWaitingBindingReachesTheCallerAsItIs(): void {
-		$waiting = new WaitingBindingException('Pad binding is not active.');
 		$bindings = $this->createMock(BindingService::class);
-		$bindings->method('assertConsistentMapping')->willThrowException($waiting);
-		$bindings->method('findByFileId')->willReturn(self::waitingRow(138, 'pad-1', BindingService::ACCESS_PUBLIC));
+		$bindings->method('findByFileId')->willReturn(self::waitingRow(138, 'g.ABCDEFGHIJKLMNOP$pad-1', BindingService::ACCESS_PROTECTED));
 		$restores = $this->createMock(RestoreService::class);
 		$restores->expects($this->once())->method('settleOpenedFile')->willReturn(SettleOutcome::Unanswered);
 		$session = $this->createMock(PadSessionService::class);
@@ -166,7 +171,7 @@ class PadOpenServiceTest extends TestCase {
 		$client = $this->createMock(EtherpadClient::class);
 		$client->expects($this->never())->method($this->anything());
 
-		$this->expectExceptionObject($waiting);
+		$this->expectException(WaitingBindingException::class);
 
 		$this->openWith(
 			BindingService::ACCESS_PROTECTED,
@@ -184,13 +189,12 @@ class PadOpenServiceTest extends TestCase {
 	 */
 	public function testAWaitingRowTheOpenTakesBackOpens(): void {
 		$bindings = $this->createMock(BindingService::class);
-		$calls = 0;
-		$bindings->expects($this->exactly(2))->method('assertConsistentMapping')->willReturnCallback(static function () use (&$calls): void {
-			if (++$calls === 1) {
-				throw new WaitingBindingException('Pad binding is not active.');
-			}
-		});
-		$bindings->method('findByFileId')->willReturn(self::waitingRow(138, 'pad-1', BindingService::ACCESS_PUBLIC));
+		// Waiting at the first look and while it is decided, taken back after.
+		$bindings->method('findByFileId')->willReturnOnConsecutiveCalls(
+			self::waitingRow(138, 'pad-1', BindingService::ACCESS_PUBLIC),
+			self::waitingRow(138, 'pad-1', BindingService::ACCESS_PUBLIC),
+			new Binding(138, 'pad-1', BindingService::ACCESS_PUBLIC, BindingService::STATE_ACTIVE),
+		);
 		$restores = $this->createMock(RestoreService::class);
 		$restores->expects($this->once())
 			->method('settleOpenedFile')
@@ -209,6 +213,149 @@ class PadOpenServiceTest extends TestCase {
 		);
 
 		$this->assertSame('https://pad.example.test/p/pad-1', $target->url);
+	}
+
+	/**
+	 * A file that still names the pad its row replaced opens the row's pad.
+	 * Whoever may write the file gets it rewritten to name that pad, once,
+	 * and only over what the open read; anyone else opens the row's pad
+	 * and leaves the file as it is. A rewrite that fails keeps nothing from
+	 * opening.
+	 */
+	public function testAFileNamingThePadItsRowReplacedOpensTheRowsPad(): void {
+		foreach ([
+			'may write' => [true, false, true, false],
+			'may only read' => [false, false, false, false],
+			'changed meanwhile' => [true, true, false, false],
+			'the write fails' => [true, false, false, true],
+		] as $case => [$updateable, $changedMeanwhile, $rewritten, $writeFails]) {
+			$formatter = new PadFileService(new FixedClock());
+			$stale = $formatter->withExportSnapshot(
+				$formatter->readPad($formatter->buildInitialDocument(138, 'old-pad', BindingService::ACCESS_PUBLIC)),
+				new PadSnapshot('old text', '', 500),
+			);
+			$file = $this->createMock(File::class);
+			$file->method('getId')->willReturn(138);
+			$file->method('isUpdateable')->willReturn($updateable);
+			$file->method('getContent')->willReturnOnConsecutiveCalls($stale, $changedMeanwhile ? $stale . 'edited' : $stale);
+			$written = null;
+			$file->method('putContent')->willReturnCallback(static function (string $content) use (&$written, $writeFails): void {
+				if ($writeFails) {
+					throw new \RuntimeException('disk full');
+				}
+				$written = $content;
+			});
+			$bindings = $this->createMock(BindingService::class);
+			$bindings->method('findByFileId')->willReturn(new Binding(138, 'r-new-pad', BindingService::ACCESS_PUBLIC, BindingService::STATE_ACTIVE, replacedPadId: 'old-pad'));
+			$client = $this->createMock(EtherpadClient::class);
+			$client->method('buildPadUrl')->willReturnCallback(static fn (string $padId): string => 'https://pad.example.test/p/' . $padId);
+			$client->method('getReadOnlyPadUrl')->willReturnCallback(static fn (string $padId): string => 'https://pad.example.test/p/' . $padId . '/ro');
+			$logger = $this->createMock(LoggerInterface::class);
+			$logger->expects($rewritten ? $this->once() : $this->never())->method('warning')->with('A .pad file named the pad its row replaced; it now names the row\'s.', $this->anything());
+			$debugs = [];
+			$logger->method('debug')->willReturnCallback(static function (string $message) use (&$debugs): void {
+				$debugs[] = $message;
+			});
+
+			$target = $this->openService($formatter, $file, $bindings, $client, $logger)->openById('alice', 'Alice', 138);
+
+			$this->assertSame('r-new-pad', $target->padId, $case);
+			$this->assertStringStartsWith('https://pad.example.test/p/r-new-pad', $target->url, $case);
+			$this->assertSame($writeFails, in_array('Could not rewrite a .pad file to its row\'s pad; the row\'s pad opens all the same.', $debugs, true), $case);
+			$this->assertSame($changedMeanwhile, in_array('A .pad file changed since it was opened; it is not rewritten to its row\'s pad.', $debugs, true), $case);
+			if ($rewritten) {
+				$after = $formatter->readPad((string)$written);
+				$this->assertSame(['r-new-pad', -1, 'old text'], [$after->padId, $after->snapshotRev, $formatter->getSnapshotPartsFromBody($after->body)['text']], $case);
+			} else {
+				$this->assertNull($written, $case);
+			}
+		}
+	}
+
+	/**
+	 * A row that waits is decided first, then the file follows it: a file
+	 * that names the pad the row replaced is rewritten once the open has
+	 * taken the row back.
+	 */
+	public function testAFileNamingThePadItsRowReplacedIsRewrittenAfterItsRowIsDecided(): void {
+		$formatter = new PadFileService(new FixedClock());
+		$stale = $formatter->buildInitialDocument(138, 'old-pad', BindingService::ACCESS_PUBLIC);
+		$file = $this->createMock(File::class);
+		$file->method('getId')->willReturn(138);
+		$file->method('isUpdateable')->willReturn(true);
+		$file->method('getContent')->willReturn($stale);
+		$written = null;
+		$file->expects($this->once())->method('putContent')->willReturnCallback(static function (string $content) use (&$written): void {
+			$written = $content;
+		});
+		$waiting = new Binding(138, 'r-new-pad', BindingService::ACCESS_PUBLIC, BindingService::STATE_RESTORE_PENDING, updatedAt: FixedClock::NOW - 3600, replacedPadId: 'old-pad');
+		$bindings = $this->createMock(BindingService::class);
+		$bindings->method('findByFileId')->willReturnOnConsecutiveCalls(
+			$waiting,
+			$waiting,
+			new Binding(138, 'r-new-pad', BindingService::ACCESS_PUBLIC, BindingService::STATE_ACTIVE, replacedPadId: 'old-pad'),
+		);
+		$restores = $this->createMock(RestoreService::class);
+		$restores->expects($this->once())->method('settleOpenedFile')->willReturn(SettleOutcome::Settled);
+		$client = $this->createMock(EtherpadClient::class);
+		$client->method('buildPadUrl')->willReturnCallback(static fn (string $padId): string => self::padUrlOf($padId));
+
+		$target = $this->openService($formatter, $file, $bindings, $client, $this->createMock(LoggerInterface::class), $restores)->openById('alice', 'Alice', 138);
+
+		$this->assertSame('r-new-pad', $target->padId);
+		$this->assertSame('r-new-pad', $formatter->readPad((string)$written)->padId);
+	}
+
+	/**
+	 * The rewrite finds the file by its id again: one moved since the open
+	 * read it is written where it is now, and one deleted is not written at
+	 * all, never made anew where it was. The row's pad opens either way.
+	 */
+	public function testTheRewriteGoesToTheFileWhereItIsNow(): void {
+		foreach (['moved' => true, 'deleted' => false] as $case => $stillThere) {
+			$formatter = new PadFileService(new FixedClock());
+			$stale = $formatter->buildInitialDocument(138, 'old-pad', BindingService::ACCESS_PUBLIC);
+			$opened = $this->createMock(File::class);
+			$opened->method('getId')->willReturn(138);
+			$opened->method('isUpdateable')->willReturn(true);
+			$opened->method('getContent')->willReturn($stale);
+			$opened->expects($this->never())->method('putContent');
+			$now = $this->createMock(File::class);
+			$now->method('getContent')->willReturn($stale);
+			$now->expects($stillThere ? $this->once() : $this->never())->method('putContent');
+			// The open finds the file it reads; the rewrite finds it again.
+			$calls = 0;
+			$nodes = $this->createMock(UserNodeResolver::class);
+			$nodes->method('resolveUserFileNodeById')->with('alice', 138)->willReturnCallback(static function () use ($opened, $now, $stillThere, &$calls): File {
+				if (++$calls === 1) {
+					return $opened;
+				}
+				if (!$stillThere) {
+					throw new NotFoundException('gone');
+				}
+				return $now;
+			});
+			$bindings = $this->createMock(BindingService::class);
+			$bindings->method('findByFileId')->willReturn(new Binding(138, 'r-new-pad', BindingService::ACCESS_PUBLIC, BindingService::STATE_ACTIVE, replacedPadId: 'old-pad'));
+			$client = $this->createMock(EtherpadClient::class);
+			$client->method('buildPadUrl')->willReturnCallback(static fn (string $padId): string => self::padUrlOf($padId));
+
+			$target = $this->openService($formatter, $opened, $bindings, $client, $this->createMock(LoggerInterface::class), userNodeResolver: $nodes)->openById('alice', 'Alice', 138);
+
+			$this->assertSame('r-new-pad', $target->padId, $case);
+		}
+	}
+
+	/** A file that names any other pad than its row's, or the one that replaced, opens nothing. */
+	public function testAFileNamingAPadItsRowDoesNotGiveOpensNothing(): void {
+		$bindings = $this->createMock(BindingService::class);
+		$bindings->method('findByFileId')->willReturn(new Binding(138, 'r-new-pad', BindingService::ACCESS_PROTECTED, BindingService::STATE_ACTIVE, replacedPadId: 'old-pad'));
+		$session = $this->createMock(PadSessionService::class);
+		$session->expects($this->never())->method($this->anything());
+
+		$this->expectException(BindingMismatchException::class);
+
+		$this->openWith(BindingService::ACCESS_PROTECTED, updateable: true, padSessionService: $session, padId: 'g.ABCDEFGHIJKLMNOP$somebody-elses', bindingService: $bindings);
 	}
 
 	/** The rule for an external pad's metadata is ParsedPadFile::externalPadUrl()'s; the open holds it. */
@@ -247,20 +394,47 @@ class PadOpenServiceTest extends TestCase {
 		));
 
 		$client = $etherpadClient ?? $this->createMock(EtherpadClient::class);
+		// Unless a test says otherwise, the file's row names the pad the file does.
+		if ($bindingService === null) {
+			$bindingService = $this->createMock(BindingService::class);
+			$bindingService->method('findByFileId')->willReturn(new Binding(138, $padId, $accessMode, BindingService::STATE_ACTIVE));
+		}
 		$service = new PadOpenService(
 			$padFileService,
 			$this->createMock(PathNormalizer::class),
 			$userNodeResolver,
 			new PadFileLockRetryService(static function (int $delay): void {
 			}),
-			$this->settleOnOpen($bindingService ?? $this->createMock(BindingService::class), $restoreService),
+			$this->settleOnOpen($bindingService, $restoreService),
 			$client,
 			$this->createMock(ExternalPadExportFetcher::class),
 			$padSessionService ?? $this->createMock(PadSessionService::class),
 			$this->createMock(LoggerInterface::class),
+			$this->boundPads($bindingService),
 		);
 
 		return $service->openById('alice', 'Alice', 138);
+	}
+
+	/** Over a real PadFileService, a file of its own and rows of its own. */
+	private function openService(PadFileService $formatter, File $file, BindingService $bindings, EtherpadClient $client, LoggerInterface $logger, ?RestoreService $restores = null, ?UserNodeResolver $userNodeResolver = null): PadOpenService {
+		if ($userNodeResolver === null) {
+			$userNodeResolver = $this->createMock(UserNodeResolver::class);
+			$userNodeResolver->method('resolveUserFileNodeById')->willReturn($file);
+		}
+		return new PadOpenService(
+			$formatter,
+			$this->createMock(PathNormalizer::class),
+			$userNodeResolver,
+			new PadFileLockRetryService(static function (int $delay): void {
+			}),
+			$this->settleOnOpen($bindings, $restores, $logger),
+			$client,
+			$this->createMock(ExternalPadExportFetcher::class),
+			$this->createMock(PadSessionService::class),
+			$logger,
+			$this->boundPads($bindings, $logger),
+		);
 	}
 
 	private function buildService(PathNormalizer $padPaths, UserNodeResolver $userNodeResolver): PadOpenService {
@@ -275,6 +449,7 @@ class PadOpenServiceTest extends TestCase {
 			$this->createMock(ExternalPadExportFetcher::class),
 			$this->createMock(PadSessionService::class),
 			$this->createMock(LoggerInterface::class),
+			$this->boundPads($this->createMock(BindingService::class)),
 		);
 	}
 }

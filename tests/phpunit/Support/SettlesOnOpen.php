@@ -23,14 +23,17 @@ use Psr\Log\LoggerInterface;
  * as an enum cannot be doubled.
  */
 trait SettlesOnOpen {
-	private function settleOnOpen(BindingService $bindings, ?RestoreService $restores = null): SettleOnOpen {
-		$logger = $this->createMock(LoggerInterface::class);
+	use BuildsBoundPads;
+
+	private function settleOnOpen(BindingService $bindings, ?RestoreService $restores = null, ?LoggerInterface $logger = null): SettleOnOpen {
+		$logger ??= $this->createMock(LoggerInterface::class);
 		return new SettleOnOpen(
 			$bindings,
 			$restores ?? $this->silentRestores(),
 			new SettleLock(new InMemoryLockingProvider(), $logger),
 			new FixedClock(),
 			$logger,
+			$this->boundPads($bindings, $logger),
 		);
 	}
 

@@ -8,6 +8,7 @@ use OCA\EtherpadNextcloud\Exception\MissingFrontmatterException;
 use OCA\EtherpadNextcloud\Exception\PadFileFormatException;
 use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\EtherpadNextcloud\Service\PadFileService;
+use OCA\EtherpadNextcloud\Service\ParsedPadFile;
 use OCA\EtherpadNextcloud\Service\PadSnapshot;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
@@ -615,6 +616,34 @@ class PadFileServiceTest extends TestCase {
 		$this->assertSame('<p>HTML</p>', $parts['html']);
 	}
 
+	/**
+	 * A file read as naming another pad: that pad's id, mode and address,
+	 * active and undeleted like a restored one, whatever the file said, and
+	 * no snapshot revision. Its text and everything else stay. Without an
+	 * address the file gives none rather than the old pad's.
+	 */
+	public function testNamingPadMakesTheFileNameAnotherPad(): void {
+		$service = new PadFileService(new FixedClock());
+		$old = new ParsedPadFile(
+			frontmatter: ['format' => PadFileService::FORMAT_V1, 'file_id' => 1, 'pad_id' => 'old-pad', 'access_mode' => BindingService::ACCESS_PUBLIC, 'state' => 'trashed', 'deleted_at' => 1700000000, 'snapshot_rev' => 9, 'pad_url' => 'https://pad.example.test/p/old-pad', 'created_at' => '2026-01-01T00:00:00+00:00'],
+			body: 'the text',
+			padId: 'old-pad',
+			accessMode: BindingService::ACCESS_PUBLIC,
+			padUrl: 'https://pad.example.test/p/old-pad',
+			isExternal: false,
+			snapshotRev: 9,
+		);
+
+		$named = $service->namingPad($old, 'new-pad', BindingService::ACCESS_PROTECTED, 'https://pad.example.test/p/new-pad');
+
+		$this->assertSame(['new-pad', BindingService::ACCESS_PROTECTED, 'https://pad.example.test/p/new-pad', -1, 'the text'], [$named->padId, $named->accessMode, $named->padUrl, $named->snapshotRev, $named->body]);
+		$this->assertSame(
+			['pad_id' => 'new-pad', 'access_mode' => BindingService::ACCESS_PROTECTED, 'state' => BindingService::STATE_ACTIVE, 'deleted_at' => null, 'snapshot_rev' => -1, 'pad_url' => 'https://pad.example.test/p/new-pad', 'created_at' => '2026-01-01T00:00:00+00:00'],
+			array_intersect_key($named->frontmatter, array_flip(['pad_id', 'access_mode', 'state', 'deleted_at', 'snapshot_rev', 'pad_url', 'created_at'])),
+		);
+		$this->assertArrayNotHasKey('pad_url', $service->namingPad($old, 'new-pad', BindingService::ACCESS_PROTECTED, '')->frontmatter);
+	}
+
 	public function testWithRestoredSnapshotWritesTheRestoreInvariant(): void {
 		$service = new PadFileService(new FixedClock());
 		$trashed = $service->readPad($service->withExportSnapshot(
@@ -627,14 +656,11 @@ class PadFileServiceTest extends TestCase {
 			'replaced text',
 			'<p>replaced html</p>',
 			'new-pad',
+			BindingService::ACCESS_PROTECTED,
 			'https://pad.example.test/p/new-pad',
 		));
 
-		// Active and undeleted are not the caller's to get wrong any more.
-		$this->assertSame(BindingService::STATE_ACTIVE, $restored->frontmatter['state']);
-		$this->assertNull($restored->frontmatter['deleted_at']);
-		$this->assertSame('new-pad', $restored->padId);
-		$this->assertSame('https://pad.example.test/p/new-pad', $restored->padUrl);
+		// The rest is namingPad()'s (testNamingPadMakesTheFileNameAnotherPad).
 		// The old pad's revision 4 means nothing to the new one: without the
 		// new pad's own count, the document has not been synced yet.
 		$this->assertSame(-1, $restored->snapshotRev);
@@ -643,6 +669,7 @@ class PadFileServiceTest extends TestCase {
 			'replaced text',
 			'<p>replaced html</p>',
 			'new-pad',
+			BindingService::ACCESS_PUBLIC,
 			'https://pad.example.test/p/new-pad',
 			2,
 		))->snapshotRev);

@@ -175,15 +175,14 @@ solely by the separate external-pad policy, not by these two settings.
   - Controller: `PadSessionController::open`
   - Params: `file=/path/file.pad`
   - Result: secure open URL.
-  - Behavior: read-only (no auto-mutation of `.pad` metadata), CSRF-protected.
+  - Behavior: CSRF-protected. The file's row decides which pad opens. The `.pad` file is written only when it names the pad its row replaced and the user may write it: it then names the row's pad (see "Which pad a file reaches" in `docs/architecture.md`).
   - Protected mode: response includes one Etherpad session `Set-Cookie` header.
 
 - `POST /api/v1/pads/open-by-id`
   - Controller: `PadSessionController::openById`
   - Params: `fileId=<int>`
   - Result: secure open URL via stable Nextcloud `fileId`.
-  - Behavior: read-only (no auto-mutation of `.pad` metadata), CSRF-protected.
-  - Protected mode: response includes one Etherpad session `Set-Cookie` header.
+  - Behavior and protected mode: as `open`.
 
 - `GET /api/v1/pads/content/{fileId}`
   - Controller: `PadSessionController::contentById`
@@ -390,14 +389,11 @@ solely by the separate external-pad policy, not by these two settings.
 - `POST /api/v1/admin/consistency-check`
   - Controller: `AdminController::consistencyCheck`
   - Auth: admin only
-  - Purpose: optional structural integrity check across binding table and `.pad` files.
-  - Result includes:
+  - Purpose: optional integrity check of the binding table: rows whose file is gone from the file cache. No `.pad` file is read.
+  - Result:
+    - `ok`, and a translated `message` that says whether anything was found
     - `binding_without_file_count`
-    - `file_without_binding_count`
-    - `invalid_frontmatter_count`
-    - `frontmatter_scanned`
-    - `frontmatter_skipped`
-    - `samples` (bounded debug sample lists per issue class)
+    - `samples.bindings_without_file`: up to 25 such rows (`file_id`, `pad_id`, `access_mode`, `state`)
 
 - `POST /api/v1/admin/settle-pending`
   - Controller: `AdminController::settlePending`

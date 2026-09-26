@@ -21,6 +21,7 @@ use OCA\EtherpadNextcloud\Service\TestFaults;
 use OCA\EtherpadNextcloud\Service\TrashSnapshotWriters;
 use OCA\EtherpadNextcloud\Service\UserNodeResolver;
 use OCA\EtherpadNextcloud\Service\WaitingBinding;
+use OCA\EtherpadNextcloud\Tests\Support\BuildsBoundPads;
 use OCA\EtherpadNextcloud\Tests\Support\FixedClock;
 use OCA\EtherpadNextcloud\Tests\Support\PadFiles;
 use OCP\Files\File;
@@ -37,6 +38,7 @@ use Psr\Log\LoggerInterface;
  * Unanswered when Etherpad gave none.
  */
 class OwedDeletionsTest extends TestCase {
+	use BuildsBoundPads;
 	use PadFiles;
 
 	/**
@@ -579,7 +581,7 @@ class OwedDeletionsTest extends TestCase {
 			$bindings,
 			$appConfig,
 			new ManagedPadLifecycle($etherpad, $this->createMock(LoggerInterface::class)),
-			new TrashSnapshotWriters($etherpad, $this->buildSnapshotWritingPadFileService(), $logger, new TestFaults($this->createMock(IConfig::class), $appConfig)),
+			new TrashSnapshotWriters($etherpad, $this->buildSnapshotWritingPadFileService(), $logger, new TestFaults($this->createMock(IConfig::class), $appConfig), $this->boundPads($bindings, $logger)),
 			$nodes ?? $this->createMock(UserNodeResolver::class),
 			$logger,
 			new FixedClock(),

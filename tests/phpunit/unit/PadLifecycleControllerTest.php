@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Tests\Unit;
 
-use OCA\EtherpadNextcloud\Controller\PadControllerErrorMapper;
 use OCA\EtherpadNextcloud\Controller\PadLifecycleController;
 use OCA\EtherpadNextcloud\Exception\PadAlreadyHasBindingException;
 use OCA\EtherpadNextcloud\Service\AppConfigService;
@@ -33,8 +32,10 @@ use OCP\IUserSession;
 use OCP\Lock\LockedException;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
+use OCA\EtherpadNextcloud\Tests\Support\BuildsBoundPads;
 
 class PadLifecycleControllerTest extends TestCase {
+	use BuildsBoundPads;
 	use \OCA\EtherpadNextcloud\Tests\Support\BuildsErrorMappers;
 
 	public function testSyncByIdRejectsInvalidFileId(): void {
@@ -86,8 +87,9 @@ class PadLifecycleControllerTest extends TestCase {
 
 		$bindingService = $this->createMock(BindingService::class);
 		$bindingService->expects($this->once())
-			->method('assertConsistentMapping')
-			->with(138, 'g.ABCDEFGHIJKLMNOP$pad-1', BindingService::ACCESS_PROTECTED);
+			->method('findByFileId')
+			->with(138)
+			->willReturn(new Binding(138, 'g.ABCDEFGHIJKLMNOP$pad-1', BindingService::ACCESS_PROTECTED, BindingService::STATE_ACTIVE));
 
 		$etherpadClient = $this->createMock(EtherpadClient::class);
 		$etherpadClient->method('getRevisionsCount')->with('g.ABCDEFGHIJKLMNOP$pad-1')->willReturn(5);
@@ -140,7 +142,7 @@ class PadLifecycleControllerTest extends TestCase {
 		$padFileService->method('withExportSnapshot')->with($this->identicalTo($parsedPad), new PadSnapshot('hello', '<p>hello</p>', 5))->willReturn('updated-content');
 
 		$bindingService = $this->createMock(BindingService::class);
-		$bindingService->method('assertConsistentMapping');
+		$bindingService->method('findByFileId')->willReturn(new Binding(138, 'g.ABCDEFGHIJKLMNOP$pad-1', BindingService::ACCESS_PROTECTED, BindingService::STATE_ACTIVE));
 
 		$etherpadClient = $this->createMock(EtherpadClient::class);
 		$etherpadClient->method('getRevisionsCount')->willReturn(5);
@@ -189,7 +191,7 @@ class PadLifecycleControllerTest extends TestCase {
 		$padFileService->method('getSnapshotPartsFromBody')->with($parsedPad->body)->willReturn(['text' => 'hello', 'html' => '<p>hello</p>']);
 
 		$bindingService = $this->createMock(BindingService::class);
-		$bindingService->method('assertConsistentMapping');
+		$bindingService->method('findByFileId')->willReturn(new Binding(138, 'g.ABCDEFGHIJKLMNOP$pad-1', BindingService::ACCESS_PROTECTED, BindingService::STATE_ACTIVE));
 
 		$etherpadClient = $this->createMock(EtherpadClient::class);
 		$etherpadClient->expects($this->once())
@@ -246,7 +248,8 @@ class PadLifecycleControllerTest extends TestCase {
 		$padFileService->method('getSnapshotPartsFromBody')->with($parsedPad->body)->willReturn(['text' => 'same text', 'html' => '']);
 
 		$bindingService = $this->createMock(BindingService::class);
-		$bindingService->method('assertConsistentMapping');
+		// A pad on another server has no row to ask.
+		$bindingService->expects($this->never())->method('findByFileId');
 
 		$externalPadExportFetcher = $this->createMock(ExternalPadExportFetcher::class);
 		$externalPadExportFetcher->expects($this->once())
@@ -526,7 +529,7 @@ class PadLifecycleControllerTest extends TestCase {
 		$userNodeResolver = new UserNodeResolver($resolvedRootFolder, $this->createMock(LoggerInterface::class));
 		$lockRetryService = $this->buildNoSleepLockRetryService();
 		$padMetadataService = new PadMetadataService($resolvedPadFileService, $padPaths, $userNodeResolver, $lockRetryService, $resolvedEtherpadClient, $resolvedExternalPadExportFetcher, $resolvedBindingService, $logger);
-		$padSyncService = new PadSyncService($resolvedPadFileService, $userNodeResolver, $lockRetryService, $resolvedBindingService, $resolvedEtherpadClient, $resolvedExternalPadExportFetcher, $logger);
+		$padSyncService = new PadSyncService($resolvedPadFileService, $userNodeResolver, $lockRetryService, $this->boundPads($resolvedBindingService, $logger), $resolvedEtherpadClient, $resolvedExternalPadExportFetcher, $logger);
 		$padLifecycleOperations = $padLifecycleOperations
 			?? $this->createMock(LifecycleService::class);
 		$urlGenerator = $this->createMock(IURLGenerator::class);
