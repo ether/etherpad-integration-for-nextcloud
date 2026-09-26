@@ -204,33 +204,26 @@ class BindingServiceTest extends TestCase {
 	}
 
 	/**
-	 * The files of the rows under a folder, as the file cache has them: on
-	 * the folder's storage, below its path and not beside it. A `_` in the
-	 * folder's name is a character, not any one. A folder at the root of
-	 * its storage has the whole storage, and so does a storage asked for as
-	 * a whole; an id the file cache does not know has nothing. Nothing is
-	 * marked by asking.
+	 * The files of the rows on a storage, as the file cache has them, and
+	 * those of some files that have a row, in their order. Nothing is marked
+	 * by asking.
 	 */
-	public function testTheFilesUnderAFolderAndOnAStorage(): void {
+	public function testTheFilesOnAStorageAndThoseWithARow(): void {
 		$fileCache = [
-			['fileid' => 100, 'storage' => 1, 'path' => 'files/Te_m'],
-			['fileid' => 101, 'storage' => 1, 'path' => ''],
-			['fileid' => 1, 'storage' => 1, 'path' => 'files/Te_m/a.pad'],
-			['fileid' => 2, 'storage' => 1, 'path' => 'files/Te_m/sub/b.pad'],
-			['fileid' => 3, 'storage' => 1, 'path' => 'files/Te_mwork/c.pad'],
-			['fileid' => 4, 'storage' => 1, 'path' => 'files/Team/d.pad'],
-			['fileid' => 5, 'storage' => 2, 'path' => 'files/Te_m/e.pad'],
-			['fileid' => 6, 'storage' => 1, 'path' => 'files/f.pad'],
+			['fileid' => 1, 'storage' => 1, 'path' => 'files/a.pad'],
+			['fileid' => 2, 'storage' => 1, 'path' => 'files/sub/b.pad'],
+			['fileid' => 5, 'storage' => 2, 'path' => 'files/e.pad'],
 		];
-		$rows = array_map(static fn (int $id): array => self::bindingRow($id, 'pad-' . $id, BindingService::STATE_ACTIVE), [1, 2, 3, 4, 5, 6]);
+		$rows = array_map(static fn (int $id): array => self::bindingRow($id, 'pad-' . $id, BindingService::STATE_ACTIVE), [1, 2, 5, 6]);
 		$table = new InMemoryBindingTable($rows, $fileCache);
 		$service = new BindingService($table, new FixedClock(500));
 
-		$this->assertSame([1, 2], $service->fileIdsUnder(100), 'the folder');
-		$this->assertSame([1, 2, 3, 4, 6], $service->fileIdsUnder(101), 'the storage root');
-		$this->assertSame([5], $service->fileIdsOnStorage(2), 'a storage');
-		$this->assertSame([], $service->fileIdsUnder(999), 'an unknown folder');
-		$this->assertSame(array_fill(0, 6, null), array_column($table->rows, 'trashed_at'));
+		$this->assertSame([1, 2], $service->fileIdsOnStorage(1));
+		$this->assertSame([5], $service->fileIdsOnStorage(2));
+		$this->assertSame([], $service->fileIdsOnStorage(3));
+		$this->assertSame([6, 1, 5], $service->boundAmong([6, 3, 1, 5, 4]));
+		$this->assertSame(range(1, 1200), (new BindingService(new InMemoryBindingTable(array_map(static fn (int $id): array => self::bindingRow($id, 'pad-' . $id, BindingService::STATE_ACTIVE), range(1, 1200))), new FixedClock(500)))->boundAmong(range(1, 1200)), 'in chunks');
+		$this->assertSame(array_fill(0, 4, null), array_column($table->rows, 'trashed_at'));
 	}
 
 	/**

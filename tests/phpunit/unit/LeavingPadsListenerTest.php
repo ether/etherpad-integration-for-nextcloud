@@ -6,6 +6,7 @@ namespace OCA\EtherpadNextcloud\Tests\Unit;
 
 use OCA\EtherpadNextcloud\Listeners\LeavingPadsListener;
 use OCA\EtherpadNextcloud\Service\BindingService;
+use OCA\EtherpadNextcloud\Service\FolderPadFiles;
 use OCA\EtherpadNextcloud\Service\GoneFileSweep;
 use OCP\EventDispatcher\Event;
 use OCP\Files\Config\ICachedMountInfo;
@@ -31,6 +32,7 @@ class LeavingPadsListenerTest extends TestCase {
 	/** @var list<array{string,list<int>}> what the listener did, in order */
 	private array $calls = [];
 	private BindingService $bindings;
+	private FolderPadFiles $folderPads;
 	private GoneFileSweep $sweep;
 	private IRootFolder $rootFolder;
 	private IUserMountCache $mounts;
@@ -40,7 +42,8 @@ class LeavingPadsListenerTest extends TestCase {
 	protected function setUp(): void {
 		$this->calls = [];
 		$this->bindings = $this->createMock(BindingService::class);
-		$this->bindings->method('fileIdsUnder')->willReturnCallback(function (int $folderId): array {
+		$this->folderPads = $this->createMock(FolderPadFiles::class);
+		$this->folderPads->method('under')->willReturnCallback(function (int $folderId): array {
 			$this->calls[] = ['under', [$folderId]];
 			return [9 => [21, 22], 3 => [31, 7]][$folderId] ?? [];
 		});
@@ -175,7 +178,7 @@ class LeavingPadsListenerTest extends TestCase {
 		$this->session->method('getUser')->willReturn($this->user('alice'));
 		$this->rootFolder->method('getUserFolder')->willThrowException(new \RuntimeException('no home'));
 		$this->logger->expects($this->exactly(3))->method('warning')->with('Could not keep the marks of pads leaving Files; the sweep finds them later.', $this->anything());
-		$listener = new LeavingPadsListener($bindings, $this->sweep, $this->rootFolder, $this->mounts, $this->session, $this->logger);
+		$listener = new LeavingPadsListener($bindings, $this->folderPads, $this->sweep, $this->rootFolder, $this->mounts, $this->session, $this->logger);
 
 		$listener->handle($this->trashEvent($this->file(7, 'Notes.pad')));
 		$listener->handle($this->restoreEvent($this->file(7, 'Notes.pad')));
@@ -183,7 +186,7 @@ class LeavingPadsListenerTest extends TestCase {
 	}
 
 	private function listener(): LeavingPadsListener {
-		return new LeavingPadsListener($this->bindings, $this->sweep, $this->rootFolder, $this->mounts, $this->session, $this->logger);
+		return new LeavingPadsListener($this->bindings, $this->folderPads, $this->sweep, $this->rootFolder, $this->mounts, $this->session, $this->logger);
 	}
 
 	private function file(int $id, string $name): File {

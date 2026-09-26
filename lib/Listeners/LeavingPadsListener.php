@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\Listeners;
 
 use OCA\EtherpadNextcloud\Service\BindingService;
+use OCA\EtherpadNextcloud\Service\FolderPadFiles;
 use OCA\EtherpadNextcloud\Service\GoneFileSweep;
 use OCA\EtherpadNextcloud\Util\PadFileType;
 use OCA\EtherpadNextcloud\Util\SafeError;
@@ -64,6 +65,7 @@ class LeavingPadsListener implements IEventListener {
 
 	public function __construct(
 		private BindingService $bindingService,
+		private FolderPadFiles $folderPadFiles,
 		private GoneFileSweep $goneFileSweep,
 		private IRootFolder $rootFolder,
 		private IUserMountCache $userMountCache,
@@ -156,7 +158,7 @@ class LeavingPadsListener implements IEventListener {
 	/** @return list<int> the files of the rows a node takes along */
 	private function padsOf(Node $node): array {
 		if ($node instanceof Folder) {
-			return $this->bindingService->fileIdsUnder($node->getId());
+			return $this->folderPadFiles->under($node->getId());
 		}
 		if ($node instanceof File && PadFileType::isPad($node->getName())) {
 			return [$node->getId()];

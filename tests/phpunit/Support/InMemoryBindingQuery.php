@@ -165,24 +165,37 @@ final class InMemoryBindingQuery implements IQueryBuilder {
 	 * @return \Closure(array<string,mixed>): bool
 	 */
 	public function like(string $column, string $parameter): \Closure {
-		return function (array $row) use ($column, $parameter): bool {
-			$pattern = (string)$this->parameters[$parameter];
-			$regex = '';
-			for ($i = 0, $n = strlen($pattern); $i < $n; $i++) {
-				$char = $pattern[$i];
-				if ($char === '\\' && $i + 1 < $n) {
-					$regex .= preg_quote($pattern[++$i], '/');
-				} elseif ($char === '%') {
-					$regex .= '.*';
-				} elseif ($char === '_') {
-					$regex .= '.';
-				} else {
-					$regex .= preg_quote($char, '/');
-				}
+		return fn (array $row): bool => $this->matches($row, $column, $parameter, '');
+	}
+
+	/**
+	 * like(), without regard to case, as Nextcloud's iLike() is on every
+	 * database.
+	 *
+	 * @return \Closure(array<string,mixed>): bool
+	 */
+	public function iLike(string $column, string $parameter): \Closure {
+		return fn (array $row): bool => $this->matches($row, $column, $parameter, 'i');
+	}
+
+	/** @param array<string,mixed> $row */
+	private function matches(array $row, string $column, string $parameter, string $flags): bool {
+		$pattern = (string)$this->parameters[$parameter];
+		$regex = '';
+		for ($i = 0, $n = strlen($pattern); $i < $n; $i++) {
+			$char = $pattern[$i];
+			if ($char === '\\' && $i + 1 < $n) {
+				$regex .= preg_quote($pattern[++$i], '/');
+			} elseif ($char === '%') {
+				$regex .= '.*';
+			} elseif ($char === '_') {
+				$regex .= '.';
+			} else {
+				$regex .= preg_quote($char, '/');
 			}
-			$value = $this->value($row, $column);
-			return $value !== null && preg_match('/^' . $regex . '$/s', (string)$value) === 1;
-		};
+		}
+		$value = $this->value($row, $column);
+		return $value !== null && preg_match('/^' . $regex . '$/s' . $flags, (string)$value) === 1;
 	}
 
 	/**

@@ -272,48 +272,40 @@ class BindingService {
 	}
 
 	/**
-	 * The files of the rows under the folder $folderId, as the file cache
-	 * has them now: what a trash, a delete or a restore of the folder takes
-	 * along. A folder at the root of its storage has the whole storage
-	 * under it.
-	 *
-	 * @return list<int>
-	 */
-	public function fileIdsUnder(int $folderId): array {
-		$folder = $this->db->getQueryBuilder();
-		$folder->select('storage', 'path')
-			->from('filecache')
-			->where($folder->expr()->eq('fileid', $folder->createNamedParameter($folderId, IQueryBuilder::PARAM_INT)));
-		$result = $folder->executeQuery();
-		$row = DbRows::one($result->fetch());
-		$result->closeCursor();
-		if ($row === null) {
-			return [];
-		}
-		$path = DbRows::string($row, 'path');
-		return $this->fileIdsOn(DbRows::int($row, 'storage'), $path === '' ? null : $path . '/');
-	}
-
-	/**
 	 * The files of the rows on the storage $storageId: all a deleted user's
 	 * home takes along.
 	 *
 	 * @return list<int>
 	 */
 	public function fileIdsOnStorage(int $storageId): array {
-		return $this->fileIdsOn($storageId, null);
-	}
-
-	/** @return list<int> */
-	private function fileIdsOn(int $storageId, ?string $pathPrefix): array {
 		$qb = $this->db->getQueryBuilder();
 		$qb->select('b.file_id')
 			->from(self::TABLE, 'b')
 			->innerJoin('b', 'filecache', 'fc', $qb->expr()->eq('b.file_id', 'fc.fileid'))
 			->where($qb->expr()->eq('fc.storage', $qb->createNamedParameter($storageId, IQueryBuilder::PARAM_INT)));
-		if ($pathPrefix !== null) {
-			$qb->andWhere($qb->expr()->like('fc.path', $qb->createNamedParameter($this->db->escapeLikeParameter($pathPrefix) . '%')));
+		return $this->fileIdsOf($qb);
+	}
+
+	/**
+	 * Those of $fileIds that have a row, in their order.
+	 *
+	 * @param list<int> $fileIds
+	 * @return list<int>
+	 */
+	public function boundAmong(array $fileIds): array {
+		$bound = [];
+		foreach (array_chunk($fileIds, 500) as $chunk) {
+			$qb = $this->db->getQueryBuilder();
+			$qb->select('file_id')
+				->from(self::TABLE)
+				->where($qb->expr()->in('file_id', $qb->createNamedParameter($chunk, IQueryBuilder::PARAM_INT_ARRAY)));
+			$bound = [...$bound, ...$this->fileIdsOf($qb)];
 		}
+		return array_values(array_intersect($fileIds, $bound));
+	}
+
+	/** @return list<int> */
+	private function fileIdsOf(IQueryBuilder $qb): array {
 		$result = $qb->executeQuery();
 		$fileIds = array_map(static fn (array $found): int => DbRows::int($found, 'file_id'), DbRows::all($result->fetchAll()));
 		$result->closeCursor();
