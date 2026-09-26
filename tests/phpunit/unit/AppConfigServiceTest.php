@@ -10,6 +10,7 @@ namespace OCA\EtherpadNextcloud\Tests\Unit;
 
 use OCA\EtherpadNextcloud\Service\AppConfigService;
 use OCA\EtherpadNextcloud\Service\TrustedEmbedOriginsNormalizer;
+use OCP\IAppConfig;
 use OCP\IConfig;
 use PHPUnit\Framework\TestCase;
 
@@ -32,7 +33,39 @@ class AppConfigServiceTest extends TestCase {
 		$this->assertSame('trash_read_lock', $this->service($config)->getTestFault());
 	}
 
-	private function service(IConfig $config): AppConfigService {
-		return new AppConfigService($config, $this->createMock(TrustedEmbedOriginsNormalizer::class));
+	/**
+	 * The sweep of files gone for good: seven days' grace and a brake past
+	 * 20 files unless set otherwise, neither below 0; the cursor and the
+	 * brake as the sweep left them.
+	 */
+	public function testTheGoneFileSweepSettings(): void {
+		$stored = [];
+		$appConfig = $this->createMock(IAppConfig::class);
+		$appConfig->method('getValueInt')->willReturnCallback(static function (string $app, string $key, int $default = 0) use (&$stored): int {
+			return (int)($stored[$app . '/' . $key] ?? $default);
+		});
+		$appConfig->method('getValueBool')->willReturnCallback(static function (string $app, string $key, bool $default = false) use (&$stored): bool {
+			return (bool)($stored[$app . '/' . $key] ?? $default);
+		});
+		$set = static function (string $app, string $key, int|bool $value) use (&$stored): bool {
+			$stored[$app . '/' . $key] = $value;
+			return true;
+		};
+		$appConfig->method('setValueInt')->willReturnCallback($set);
+		$appConfig->method('setValueBool')->willReturnCallback($set);
+		$service = $this->service($this->createMock(IConfig::class), $appConfig);
+
+		$this->assertSame([7 * 24 * 60 * 60, 20, 0, false, 0], [$service->getGoneFileGraceSeconds(), $service->getGoneFileBrakeThreshold(), $service->getGoneFileBrakeReleasedAt(), $service->isGoneFileBrakeEngaged(), $service->getGoneFileSweepCursor()]);
+
+		$stored = ['etherpad_nextcloud/gone_file_grace_seconds' => -5, 'etherpad_nextcloud/gone_file_brake_threshold' => -1, 'etherpad_nextcloud/gone_file_brake_released_at' => 900, 'etherpad_nextcloud/gone_file_sweep_cursor' => -3];
+		$this->assertSame([0, 0, 900, 0], [$service->getGoneFileGraceSeconds(), $service->getGoneFileBrakeThreshold(), $service->getGoneFileBrakeReleasedAt(), $service->getGoneFileSweepCursor()]);
+
+		$service->setGoneFileSweepCursor(400);
+		$service->setGoneFileBrakeEngaged(true);
+		$this->assertSame([400, true], [$service->getGoneFileSweepCursor(), $service->isGoneFileBrakeEngaged()]);
+	}
+
+	private function service(IConfig $config, ?IAppConfig $appConfig = null): AppConfigService {
+		return new AppConfigService($config, $this->createMock(TrustedEmbedOriginsNormalizer::class), $appConfig ?? $this->createMock(IAppConfig::class));
 	}
 }

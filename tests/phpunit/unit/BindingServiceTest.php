@@ -12,6 +12,7 @@ use OCA\EtherpadNextcloud\Exception\WaitingBindingException;
 use OCA\EtherpadNextcloud\Service\Binding;
 use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\EtherpadNextcloud\Service\FileLocation;
+use OCA\EtherpadNextcloud\Service\SweptBinding;
 use OCA\EtherpadNextcloud\Service\WaitingBinding;
 use OCP\DB\QueryBuilder\IQueryBuilder;
 use OCP\IDBConnection;
@@ -229,6 +230,78 @@ class BindingServiceTest extends TestCase {
 		$table = new InMemoryBindingTable($rows, $fileCache);
 		(new BindingService($table, new FixedClock(500)))->markTrashedUnder(999);
 		$this->assertSame([], $marked($table), 'an unknown folder');
+	}
+
+	/**
+	 * The sweep of files gone for good asks the file cache through the
+	 * binding table. Marked and gone: the earliest marked first, active rows
+	 * only. The pass: active rows after the cursor in id order, each with its
+	 * file's path, null once gone.
+	 */
+	public function testTheSweepFindsWhatTheFileCacheNoLongerHas(): void {
+		$row = static fn (int $id, int $fileId, string $state, ?int $trashedAt): array => ['id' => $id, 'trashed_at' => $trashedAt] + self::bindingRow($fileId, 'pad-' . $fileId, $state);
+		$table = new InMemoryBindingTable([
+			$row(1, 11, BindingService::STATE_ACTIVE, 300),
+			$row(2, 12, BindingService::STATE_ACTIVE, 200),
+			$row(3, 13, BindingService::STATE_ACTIVE, 100),
+			$row(4, 14, BindingService::STATE_ACTIVE, null),
+			$row(5, 15, BindingService::STATE_PENDING_DELETE, 50),
+		], [
+			['fileid' => 13, 'storage' => 1, 'path' => 'files_trashbin/files/13.pad.d100'],
+			['fileid' => 99, 'storage' => 1, 'path' => 'files/99.pad'],
+		]);
+		$service = new BindingService($table, new FixedClock(500));
+		$pass = static fn (array $swept): array => array_map(static fn (SweptBinding $s): array => [$s->id, $s->binding->fileId, $s->filePath], $swept);
+
+		$this->assertSame([12, 11], array_map(static fn (Binding $b): int => $b->fileId, $service->findMarkedGone(10)));
+		$this->assertSame([12], array_map(static fn (Binding $b): int => $b->fileId, $service->findMarkedGone(1)));
+		$this->assertSame([[1, 11, null], [2, 12, null], [3, 13, 'files_trashbin/files/13.pad.d100'], [4, 14, null]], $pass($service->findActiveAfter(0, 10)));
+		$this->assertSame([[3, 13, 'files_trashbin/files/13.pad.d100']], $pass($service->findActiveAfter(2, 1)));
+		$this->assertSame([], $service->findActiveAfter(4, 10));
+		$this->assertTrue($service->isFileGone(11));
+		$this->assertFalse($service->isFileGone(13));
+	}
+
+	/**
+	 * A date the sweep sets stays as first set; cleared, it is gone. Other
+	 * rows are left alone.
+	 */
+	public function testTheSweepsDatesAreSetOnceAndCleared(): void {
+		$table = new InMemoryBindingTable([
+			['trashed_at' => 300] + self::bindingRow(1, 'pad-a', BindingService::STATE_ACTIVE),
+			['trashed_at' => 300, 'missing_since' => 300] + self::bindingRow(2, 'pad-b', BindingService::STATE_ACTIVE),
+		]);
+		$clock = new FixedClock(500);
+		$service = new BindingService($table, $clock);
+
+		$service->markMissing(1);
+		$clock->advance(100);
+		$service->markMissing(1);
+		$this->assertSame([[300, 500], [300, 300]], array_map(static fn (array $r): array => [$r['trashed_at'], $r['missing_since']], $table->rows));
+
+		$service->clearMissing(1);
+		$service->clearTrashed(1);
+		$this->assertSame([[null, null], [300, 300]], array_map(static fn (array $r): array => [$r['trashed_at'], $r['missing_since']], $table->rows));
+	}
+
+	/**
+	 * The brake counts active rows without a mark missed after its release,
+	 * no further than it asks.
+	 */
+	public function testTheBrakeCountsRowsMissingSinceItsRelease(): void {
+		$row = static fn (int $fileId, int $missingSince, string $state = BindingService::STATE_ACTIVE, ?int $trashedAt = null): array => ['missing_since' => $missingSince, 'trashed_at' => $trashedAt] + self::bindingRow($fileId, 'pad-' . $fileId, $state);
+		$service = $this->serviceOver([
+			$row(1, 200),
+			$row(2, 201),
+			$row(3, 400),
+			$row(4, 400, trashedAt: 400),
+			$row(5, 400, BindingService::STATE_PENDING_DELETE),
+			self::bindingRow(6, 'pad-6', BindingService::STATE_ACTIVE),
+		]);
+
+		$this->assertSame(2, $service->countMissingSince(200, 10));
+		$this->assertSame(1, $service->countMissingSince(200, 1));
+		$this->assertSame(0, $service->countMissingSince(400, 10));
 	}
 
 	/** @param list<array<string,mixed>> $rows */

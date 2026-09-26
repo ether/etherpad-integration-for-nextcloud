@@ -158,6 +158,7 @@ class Application extends App implements IBootstrap {
 			$jobList->add(\OCA\EtherpadNextcloud\BackgroundJob\HotPendingDeleteRetryJob::class);
 			$jobList->add(\OCA\EtherpadNextcloud\BackgroundJob\WarmPendingDeleteRetryJob::class);
 			$jobList->add(\OCA\EtherpadNextcloud\BackgroundJob\ColdPendingDeleteRetryJob::class);
+			$jobList->add(\OCA\EtherpadNextcloud\BackgroundJob\GoneFileSweepJob::class);
 		});
 	}
 }
