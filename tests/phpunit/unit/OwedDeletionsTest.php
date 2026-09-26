@@ -602,11 +602,10 @@ class OwedDeletionsTest extends TestCase {
 			$bindings,
 			$appConfig,
 			new ManagedPadLifecycle($etherpad, $this->createMock(LoggerInterface::class)),
-			new TrashSnapshotWriters($etherpad, $this->buildSnapshotWritingPadFileService(), $logger, new TestFaults($this->createMock(IConfig::class), $appConfig)),
+			new TrashSnapshotWriters($etherpad, $this->buildSnapshotWritingPadFileService(), $logger, new TestFaults($this->createMock(IConfig::class), $appConfig), $this->boundPads($bindings, $logger)),
 			$nodes ?? $this->createMock(UserNodeResolver::class),
 			$logger,
 			new FixedClock(),
-			$this->boundPads($bindings, $logger),
 		);
 	}
 }

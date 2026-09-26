@@ -36,7 +36,6 @@ class LifecycleService {
 		private ITimeFactory $timeFactory,
 		private TrashSnapshotWriters $snapshotWriters,
 		private RestoreService $restoreService,
-		private BoundPadResolver $boundPads,
 	) {
 	}
 
@@ -120,13 +119,8 @@ class LifecycleService {
 		$deletedAt = $this->timeFactory->getTime();
 
 		try {
-			$snapshots = $this->snapshotWriters->for($file, $padId);
+			$snapshots = $this->snapshotWriters->for($file, $binding);
 			$pad = $snapshots->read();
-			if (!$pad instanceof TrashSnapshotMiss) {
-				// A file that names the pad its row replaced holds no revision
-				// of the row's pad, and takes the row's pad's content and name.
-				$pad = $this->boundPads->followingRow($pad, $binding);
-			}
 			if ($pad instanceof TrashSnapshotMiss || !$snapshots->writeAtTrash($pad)) {
 				// Without a fresh snapshot the pad may hold what the file lacks,
 				// so it stays as it is and its deletion is owed. The sweep takes

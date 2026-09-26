@@ -76,9 +76,8 @@ trait WiresTheLifecycle {
 			$nodes ?? $this->createMock(UserNodeResolver::class),
 			$paths ?? $this->createMock(PathNormalizer::class),
 			new FixedClock(),
-			new TrashSnapshotWriters($etherpad, $padFiles, $logger, $testFaults),
+			new TrashSnapshotWriters($etherpad, $padFiles, $logger, $testFaults, new BoundPadResolver($bindings, $padFiles, $etherpad, $logger)),
 			$restores ?? $this->wireRestoreService($bindings, $etherpad, $padFiles, $padLifecycle, $appConfig, $logger, $padLifecycleLogger, $secureRandom, $testFaults),
-			new BoundPadResolver($bindings, $padFiles, $etherpad, $logger),
 		);
 	}
 

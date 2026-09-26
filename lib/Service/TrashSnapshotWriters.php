@@ -22,11 +22,12 @@ class TrashSnapshotWriters {
 		private PadFileService $padFileService,
 		private LoggerInterface $logger,
 		private TestFaults $testFaults,
+		private BoundPadResolver $boundPads,
 	) {
 	}
 
-	/** $news as TrashSnapshotWriter takes it. */
-	public function for(File $file, string $padId, bool $news = true): TrashSnapshotWriter {
-		return new TrashSnapshotWriter($this->etherpadClient, $this->padFileService, $this->logger, $this->testFaults, $file, $padId, $news);
+	/** For $file and the pad its row ($binding) names; $news as TrashSnapshotWriter takes it. */
+	public function for(File $file, Binding $binding, bool $news = true): TrashSnapshotWriter {
+		return new TrashSnapshotWriter($this->etherpadClient, $this->padFileService, $this->logger, $this->testFaults, $file, $binding, $this->boundPads, $news);
 	}
 }

@@ -60,6 +60,23 @@ class BoundPadResolverTest extends TestCase {
 	}
 
 	/**
+	 * A row remembers one pad: the one its latest change of pad replaced.
+	 * Moved from A to B and then to C, it takes a file that names B for C,
+	 * and refuses one that still names A like any other.
+	 */
+	public function testARowRemembersOnlyThePadItsLatestChangeReplaced(): void {
+		$bindings = new BindingService(new InMemoryBindingTable([self::row(10, 'pad-a')]), new FixedClock());
+		$this->assertTrue($bindings->rebind(10, 'pad-a', BindingService::STATE_ACTIVE, 'pad-b', BindingService::STATE_ACTIVE));
+		$this->assertTrue($bindings->rebind(10, 'pad-b', BindingService::STATE_ACTIVE, 'pad-c', BindingService::STATE_ACTIVE));
+		$resolver = $this->boundPads($bindings);
+
+		$this->assertSame('pad-c', $resolver->resolve(10, self::pad('pad-c', BindingService::ACCESS_PUBLIC))->padId);
+		$this->assertSame('pad-c', $resolver->resolve(10, self::pad('pad-b', BindingService::ACCESS_PUBLIC))->padId);
+		$this->expectExceptionObject(new BindingMismatchException('Binding pad ID mismatch.'));
+		$resolver->resolve(10, self::pad('pad-a', BindingService::ACCESS_PUBLIC));
+	}
+
+	/**
 	 * A file that names the pad its row replaced is read as naming the
 	 * row's: its id, mode and link, and no revision of its own, since the
 	 * one it has is the replaced pad's. The rest of the file stays, and
