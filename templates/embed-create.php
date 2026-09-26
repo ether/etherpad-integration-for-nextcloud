@@ -18,7 +18,7 @@
 	data-l10n-missing-name="<?php p((string)$_['l10n']['missing_name']); ?>"
 	data-l10n-invalid-access-mode="<?php p((string)$_['l10n']['invalid_access_mode']); ?>"
 	data-l10n-incomplete-config="<?php p((string)$_['l10n']['incomplete_config']); ?>"
-	data-l10n-unanswered="<?php p((string)($_['l10n']['unanswered'] ?? 'Nextcloud did not answer. The pad may have been created anyway; look in the folder before you try again.')); ?>">
+	data-l10n-unanswered="<?php p((string)$_['l10n']['unanswered']); ?>">
 	<div class="epnc-embed__loading" data-epnc-embed-create-loading>
 		<?php p((string)$_['l10n']['loading']); ?>
 	</div>

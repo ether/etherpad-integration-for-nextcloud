@@ -4,7 +4,7 @@
  */
 import { DEFAULT_PAD_ACCESS_MODE, isPadAccessMode } from './lib/constants.js'
 import { ocRequestToken } from './lib/oc-compat.js'
-import { fetchJsonWithTimeout as fetchJson, requestErrorMessage } from './lib/fetch-helpers.js'
+import { fetchJsonWithTimeout as fetchJson, isUnanswered } from './lib/fetch-helpers.js'
 
 (function () {
 	const root = document.getElementById('etherpad-nextcloud-embed-create')
@@ -73,11 +73,13 @@ import { fetchJsonWithTimeout as fetchJson, requestErrorMessage } from './lib/fe
 	 * HTTP status:
 	 *   - 'invalid' — client-side validation failed (missing name, etc.)
 	 *   - 'conflict' — backend returned 409 (e.g. duplicate filename)
-	 *   - 'server'  — any other 4xx / 5xx this app answered; nothing was
-	 *     created, the server rolls a failed create back
-	 *   - 'network' — no answer from this app: fetch failed, or a proxy
-	 *     answered in its place (`status` is then its 502, 503 or 504).
-	 *     The pad may have been created anyway.
+	 *   - 'server'  — this app refused or failed the create with any other
+	 *     4xx / 5xx (it rolls a failed create back as far as it can), or
+	 *     answered in a way this page cannot use
+	 *   - 'network' — no answer from this app, so the pad may have been
+	 *     created anyway: fetch failed, the answer broke off, or a proxy or
+	 *     PHP itself answered in its place (see fetchJsonWithTimeout();
+	 *     `status` then carries what came)
 	 */
 	const failCreate = (reason, message, status) => {
 		const normalizedMessage = String(message || 'Unknown error.')
@@ -150,13 +152,19 @@ import { fetchJsonWithTimeout as fetchJson, requestErrorMessage } from './lib/fe
 					requesttoken: requestToken(),
 				},
 				body: body.toString(),
-			}, { timeoutMs: null })
+			}, { timeoutMs: null, fallbackMessage: 'Pad creation failed.' })
 		} catch (error) {
 			const status = (error && typeof error.status === 'number') ? error.status : null
-			// This app answered, including the 409 on a duplicate name, or
-			// nothing came back from it and the outcome is not known.
-			const reason = status === null || (error && error.unanswered === true) ? 'network' : classifyHttpStatus(status)
-			failCreate(reason, requestErrorMessage(error, unansweredMessage, 'Pad creation failed.'), status)
+			// A 4xx refuses the create, even if its body then broke off, so
+			// nothing was made. Anything else without this app's answer leaves
+			// the outcome open.
+			const refused = status !== null && status >= 400 && status < 500
+			if (!refused && (status === null || isUnanswered(error))) {
+				failCreate('network', unansweredMessage, status)
+				return
+			}
+			const message = !isUnanswered(error) && error instanceof Error && error.message ? error.message : 'Pad creation failed.'
+			failCreate(classifyHttpStatus(status), message, status)
 			return
 		}
 

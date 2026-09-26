@@ -47,6 +47,8 @@ class EmbedControllerTest extends TestCase {
 			$params['open_by_id_url'],
 			$params['initialize_by_id_url_template'],
 		]);
+		// The page's own sentence for a request nothing came back for.
+		$this->assertSame('Nextcloud did not answer. Check your connection and try again.', $params['l10n']['unanswered']);
 	}
 
 	public function testShowByIdReturnsNoviewerOnInvalidFileId(): void {
@@ -162,6 +164,8 @@ class EmbedControllerTest extends TestCase {
 		$this->assertSame('embed-create', $response->getTemplateName());
 		$this->assertSame(99, $params['parent_folder_id']);
 		$this->assertSame('csrf-token-value', $params['requesttoken']);
+		// No answer to a create leaves its outcome open, and the page says so.
+		$this->assertSame('Nextcloud did not answer. The pad may have been created anyway; look in the folder before you try again.', $params['l10n']['unanswered']);
 	}
 
 	private function buildController(UserNodeResolver $userNodeResolver, bool $anonymous = false): EmbedController {

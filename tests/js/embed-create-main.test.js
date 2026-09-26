@@ -192,6 +192,7 @@ describe('embed-create-main', () => {
 		expect(payload.status).toBe(500)
 	})
 
+	// Whatever fetch rejects with, no answer came: the page says the pad may exist.
 	it('posts epnc:create-failed with reason=network when fetch itself throws', async () => {
 		fetch.mockRejectedValueOnce(new Error('Network unreachable'))
 
@@ -202,7 +203,7 @@ describe('embed-create-main', () => {
 		expect(payload.type).toBe('epnc:create-failed')
 		expect(payload.reason).toBe('network')
 		expect(payload.status).toBe(null)
-		expect(payload.message).toBe('Network unreachable')
+		expect(payload.message).toBe('No answer; look in the folder first.')
 	})
 
 	// No answer, so no knowing whether the pad was made: the page says so.
@@ -218,22 +219,30 @@ describe('embed-create-main', () => {
 	})
 
 	/**
-	 * A proxy answering in this app's place is no answer from it either,
-	 * whatever it sends; its status goes along. This app's own 503 is an
-	 * answer: nothing was created.
+	 * A proxy or PHP answering in this app's place is no answer from it
+	 * either, whatever it sends, and neither is an answer that broke off;
+	 * what came goes along as the status. A 4xx refused the create, even
+	 * one whose body broke off, and so did this app's own 5xx.
 	 */
+	const NO_ANSWER = 'No answer; look in the folder first.'
 	it.each([
-		['a proxy whose backend is gone', pageResponse(502), 'network', 502],
-		['a proxy that gave up waiting', pageResponse(504), 'network', 504],
-		['a gateway answering JSON of its own', errorResponse({ message: 'An invalid response was received from the upstream server' }, 503), 'network', 503],
-		['this app, the folder locked', errorResponse({ message: 'Pad file is temporarily locked. Please retry.', retryable: true }, 503), 'server', 503],
-	])('tells the host whether %s answered', async (_, response, reason, status) => {
+		['a proxy whose backend is gone', pageResponse(502), 'network', 502, NO_ANSWER],
+		['a proxy that gave up waiting', pageResponse(504), 'network', 504, NO_ANSWER],
+		['a gateway answering JSON of its own', errorResponse({ message: 'An invalid response was received from the upstream server' }, 503), 'network', 503, NO_ANSWER],
+		['PHP dying midway', pageResponse(500), 'network', 500, NO_ANSWER],
+		['a success whose body broke off', { ok: true, status: 200, json: () => Promise.reject(new TypeError('network error')) }, 'network', 200, NO_ANSWER],
+		['this app, the folder locked', errorResponse({ message: 'Pad file is temporarily locked. Please retry.', retryable: true }, 503), 'server', 503, 'Pad file is temporarily locked. Please retry.'],
+		['this app failing without a sentence', errorResponse({}, 500), 'server', 500, 'Pad creation failed.'],
+		['a proxy refusing a body too large', pageResponse(413), 'server', 413, 'Pad creation failed.'],
+		['a duplicate name whose body broke off', { ok: false, status: 409, json: () => Promise.reject(new TypeError('network error')) }, 'conflict', 409, 'Pad creation failed.'],
+	])('tells the host what came of %s', async (_, response, reason, status, message) => {
 		fetch.mockResolvedValueOnce(response)
 
 		await importEmbedCreate()
 		await flushAsyncWork()
 
-		expect(parentPostSpy.mock.calls[0][0]).toMatchObject({ type: 'epnc:create-failed', reason, status })
+		expect(parentPostSpy.mock.calls[0][0]).toEqual({ type: 'epnc:create-failed', reason, status, message })
+		expect(errorMessageText()).toBe(message)
 	})
 
 	// A write: cut short, it would go on creating with nobody told.

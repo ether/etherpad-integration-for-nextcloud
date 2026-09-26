@@ -2,6 +2,7 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  * Copyright (c) 2026 Jacob Bühler
  */
+import { isUnanswered } from './fetch-helpers.js'
 
 /**
  * A floor, and the largest delay `setInterval` can hold - a signed 32-bit
@@ -45,7 +46,7 @@ export const isMissingBindingError = (error) => Boolean(error) && error.code ===
  * @return {boolean}
  */
 export const isRetryableOpenError = (error) => Boolean(error)
-	&& (error.retryable === true || error.code === 'pad_file_changed' || error.unanswered === true)
+	&& (error.retryable === true || error.code === 'pad_file_changed' || isUnanswered(error))
 
 /**
  * A read-only view carries no pad URL by design; anything else without one

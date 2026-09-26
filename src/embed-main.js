@@ -4,7 +4,7 @@
  */
 import { ocRequestToken } from './lib/oc-compat.js'
 import { createPadSync } from './lib/pad-sync.js'
-import { fetchJsonWithTimeout as fetchJson, requestErrorMessage } from './lib/fetch-helpers.js'
+import { fetchJsonWithTimeout as fetchJson, isUnanswered, requestErrorMessage } from './lib/fetch-helpers.js'
 import { handFocusTo } from './lib/hand-focus.js'
 import { loadPadContent } from './lib/pad-content.js'
 import { assertOpenPayload, contentUrlFrom, contentViewFrom, isMissingBindingError, isRetryableOpenError, openWithFrontmatterRecovery, padUrlFrom, syncSettingsFrom } from './lib/pad-open-flow.js'
@@ -446,7 +446,7 @@ import { assertOpenPayload, contentUrlFrom, contentViewFrom, isMissingBindingErr
 		} catch (error) {
 			// No answer: the pad may be set up by now, and another recovery
 			// would meet it. Opening tells, and is safe to repeat.
-			if (error && error.unanswered === true) {
+			if (isUnanswered(error)) {
 				void run(true)
 				return
 			}
