@@ -4,7 +4,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushAsyncWork } from './flush.js'
-import { FILE_CHANGED, MISSING_BINDING, MISSING_FRONTMATTER, UNANSWERED_TEXT, UNREACHABLE, WAITING } from './answers.js'
+import { FILE_CHANGED, LOST_RACE, MISSING_BINDING, MISSING_FRONTMATTER, UNANSWERED_TEXT, UNREACHABLE, WAITING } from './answers.js'
 
 // A successful open starts an interval and registers document and window
 // listeners that nothing here can stop again. No test asserts on syncing.
@@ -396,6 +396,7 @@ describe('embed-main', () => {
 	it.each([
 		['a row still waiting', WAITING, 409],
 		['Etherpad not reachable', UNREACHABLE, 503],
+		['another request made the file\'s row first', LOST_RACE, 400],
 	])('offers to try the open again after %s', async (_, body, status) => {
 		fetch
 			.mockResolvedValueOnce(errorResponse(body, status))
@@ -621,6 +622,27 @@ describe('embed-main', () => {
 
 		expect(iframe().src).toContain(PAD.url)
 		expect(isHidden('[data-epnc-embed-error]')).toBe(true)
+	})
+
+	it('lets an open that succeeds late not undo a newer failure', async () => {
+		let answerFirst
+		fetch
+			.mockResolvedValueOnce(errorResponse(WAITING, 409))
+			.mockImplementationOnce(() => new Promise((resolve) => { answerFirst = resolve }))
+			.mockResolvedValueOnce(errorResponse(UNREACHABLE, 503))
+
+		await importEmbed()
+		await flushAsyncWork()
+		const retry = errorActions().querySelector('button')
+		retry.click()
+		retry.click()
+		await flushAsyncWork()
+		answerFirst(jsonResponse(PAD))
+		await flushAsyncWork()
+
+		expect(iframe().getAttribute('src')).toBeNull()
+		expect(errorMessage()).toBe(UNREACHABLE.message)
+		expect(isHidden('[data-epnc-embed-error]')).toBe(false)
 	})
 
 	it('refuses to run without a CSRF request token', async () => {

@@ -13,7 +13,7 @@
 
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushAsyncWork } from './flush.js'
-import { FILE_CHANGED, LOCKED, MISSING_BINDING, MISSING_FRONTMATTER, UNANSWERED_TEXT, UNREACHABLE, WAITING } from './answers.js'
+import { FILE_CHANGED, LOCKED, LOST_RACE, MISSING_BINDING, MISSING_FRONTMATTER, UNANSWERED_TEXT, UNREACHABLE, WAITING } from './answers.js'
 
 vi.mock('../../src/lib/oc-compat.js', () => ({
 	ocGenerateUrl: (path) => path,
@@ -391,6 +391,7 @@ describe('viewer component — resolveOpenUrl', () => {
 		['the file\'s row still waits', WAITING, 409],
 		['Etherpad is not reachable', UNREACHABLE, 503],
 		['the file is locked for a moment', LOCKED, 503],
+		['another request made the file\'s row first', LOST_RACE, 400],
 	])('offers a second try, not recovery, when %s', async (_, body, status) => {
 		stubFetch(jsonResponse(body, false, status))
 		const vm = makeInstance({ fileid: 42, fileInfo: { path: '/x.pad' } })

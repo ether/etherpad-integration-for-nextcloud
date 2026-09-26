@@ -85,7 +85,7 @@ import { assertOpenPayload, contentUrlFrom, contentViewFrom, isMissingBindingErr
 		if (errorActionsNode instanceof HTMLElement) {
 			errorActionsNode.replaceChildren()
 			if (canRetry) {
-				errorActionsNode.appendChild(buildButton(contentRetryText, () => restartOpen(), PRIMARY_BUTTON_CLASS))
+				errorActionsNode.appendChild(buildButton(contentRetryText, () => { void run(true) }, PRIMARY_BUTTON_CLASS))
 			}
 		}
 		if (errorNode instanceof HTMLElement) {
@@ -96,7 +96,7 @@ import { assertOpenPayload, contentUrlFrom, contentViewFrom, isMissingBindingErr
 		}
 	}
 
-	/** Every panel away and the loading state up, before a pad or a view shows. */
+	/** Every panel away and the loading state up: where every open starts. */
 	const showLoading = () => {
 		hideAllPanels()
 		if (loadingNode instanceof HTMLElement) {
@@ -111,7 +111,6 @@ import { assertOpenPayload, contentUrlFrom, contentViewFrom, isMissingBindingErr
 	 * frame and its button survive a refresh.
 	 */
 	const showPadContentView = (url) => {
-		showLoading()
 		if (!(loadingNode instanceof HTMLElement)) {
 			return null
 		}
@@ -245,8 +244,7 @@ import { assertOpenPayload, contentUrlFrom, contentViewFrom, isMissingBindingErr
 			showError('Embed iframe is not available.')
 			return
 		}
-		// The loading state stays up until the pad has loaded.
-		showLoading()
+		// The loading state the open started from stays up until the pad has loaded.
 		const revealIframe = () => {
 			iframe.removeEventListener('load', revealIframe)
 			window.setTimeout(() => {
@@ -443,13 +441,13 @@ import { assertOpenPayload, contentUrlFrom, contentViewFrom, isMissingBindingErr
 				method: 'POST',
 				headers: { requesttoken: requestToken() },
 			}, { timeoutMs: null })
-			// Restart the open flow now that the binding exists.
-			restartOpen()
+			// Open again now that the binding exists.
+			void run(true)
 		} catch (error) {
 			// No answer: the pad may be set up by now, and another recovery
 			// would meet it. Opening tells, and is safe to repeat.
 			if (error && error.unanswered === true) {
-				restartOpen()
+				void run(true)
 				return
 			}
 			setRecoveryActionsBusy(false)
@@ -495,22 +493,15 @@ import { assertOpenPayload, contentUrlFrom, contentViewFrom, isMissingBindingErr
 		}
 	}
 
-	/**
-	 * The open again, from the loading state: after a recovery made the
-	 * binding, or as a second try. Either follows a click.
-	 */
-	const restartOpen = () => {
-		showLoading()
-		void run(true)
-	}
-
 	// So an open that answers late cannot undo a newer one.
 	let openGeneration = 0
 
+	/** $afterClick: a second try or a recovery started it; see handFocusTo(). */
 	const run = async (afterClick = false) => {
 		openGeneration += 1
 		const generation = openGeneration
 		const isCurrent = () => generation === openGeneration
+		showLoading()
 		if (!Number.isFinite(fileId) || fileId <= 0 || openByIdUrl === '' || initializeByIdUrlTemplate === '') {
 			showError('Embed configuration is incomplete.')
 			return
