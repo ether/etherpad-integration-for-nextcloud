@@ -21,6 +21,7 @@ use OCA\EtherpadNextcloud\Service\CookieDomainPolicy;
 use OCA\EtherpadNextcloud\Service\PadTemplateAdminService;
 use OCA\EtherpadNextcloud\Service\PendingBindingService;
 use OCA\EtherpadNextcloud\Service\EtherpadHealthCheckService;
+use OCA\EtherpadNextcloud\Service\GoneFileSweep;
 use OCA\EtherpadNextcloud\Service\HealthCheckResult;
 use OCA\EtherpadNextcloud\Service\StoredAdminSettings;
 use OCA\EtherpadNextcloud\Service\ValidatedAdminSettings;
@@ -151,6 +152,7 @@ class AdminControllerTest extends TestCase {
 		$this->assertStringContainsString('need attention', $data['message']);
 	}
 
+	/** The batch size is the endpoint's; the sweep of files gone for good runs with it, as the jobs run it. */
 	public function testSettlePendingUsesConfiguredBatchSize(): void {
 		$pending = $this->createMock(PendingBindingService::class);
 		$pending->expects($this->once())
@@ -158,7 +160,10 @@ class AdminControllerTest extends TestCase {
 			->with(500)
 			->willReturn(['checked' => 2, 'settled' => 1, 'pending_delete_count' => 3, 'restore_pending_count' => 1]);
 
-		$response = $this->buildController(pendingBindings: $pending)->settlePending();
+		$sweep = $this->createMock(GoneFileSweep::class);
+		$sweep->expects($this->once())->method('run');
+
+		$response = $this->buildController(pendingBindings: $pending, goneFileSweep: $sweep)->settlePending();
 
 		$this->assertSame(Http::STATUS_OK, $response->getStatus());
 		$this->assertSame(2, $response->getData()['checked']);
@@ -280,6 +285,7 @@ class AdminControllerTest extends TestCase {
 		?AdminConsistencyCheckResponseBuilder $consistencyResponses = null,
 		?AdminTestFaultService $testFaults = null,
 		?PadTemplateAdminService $padTemplateAdmin = null,
+		?GoneFileSweep $goneFileSweep = null,
 	): AdminController {
 		$l10n = $this->buildL10n();
 		$logger = $this->createMock(LoggerInterface::class);
@@ -301,6 +307,7 @@ class AdminControllerTest extends TestCase {
 			new CookieDomainMessages($l10n),
 			$this->urlGenerator(),
 			$padTemplateAdmin ?? $this->createMock(PadTemplateAdminService::class),
+			$goneFileSweep ?? $this->createMock(GoneFileSweep::class),
 		);
 	}
 

@@ -406,7 +406,8 @@ solely by the separate external-pad policy, not by these two settings.
     (`restore_pending` and `pending_delete`), within the same time budget. The
     only file it writes is a trashed one, with the snapshot its trash could
     not take; the only pads it deletes are those of files in a trash or
-    gone for good.
+    gone for good. It then runs the sweep of files gone for good
+    (`docs/architecture.md`, "Files gone for good") as its job would.
   - Result:
     - `checked`, `settled`
     - `pending_delete_count`, `restore_pending_count`: what is left, named as in the health check

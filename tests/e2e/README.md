@@ -105,6 +105,12 @@ Each `specs/*.spec.ts` covers one flow:
   marker into a new pad and sync reads it back (the content copy that
   restore and recover share).
 - **pad-trash-restore** — trash + restore round-trip, pad reopens.
+- **pad-gone-for-good** — a pad goes with its file deleted for good:
+  past the trash in the same request, from the trash once it is deleted
+  there, with the account that owned it; a pad in a team folder stays
+  when its maker's account goes. Container stack only (asks Etherpad);
+  the team folder part needs groupfolders and skips without it. Creates
+  and deletes throwaway accounts, groups and team folders.
 - **pad-user-share** — user-to-user share grants access, revoke removes
   it (NC boundary; Etherpad's own session-cookie window is out of scope).
 - **pad-ownership-boundary** — cross-user `open-by-id` is rejected.

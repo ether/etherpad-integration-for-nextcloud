@@ -19,6 +19,7 @@ use OCA\EtherpadNextcloud\Service\CookieDomainDecision;
 use OCA\EtherpadNextcloud\Service\CookieDomainMessages;
 use OCA\EtherpadNextcloud\Service\CookieDomainPolicy;
 use OCA\EtherpadNextcloud\Service\EtherpadHealthCheckService;
+use OCA\EtherpadNextcloud\Service\GoneFileSweep;
 use OCA\EtherpadNextcloud\Service\HealthCheckItem;
 use OCA\EtherpadNextcloud\Service\HealthCheckResult;
 use OCA\EtherpadNextcloud\Service\PadTemplateAdminService;
@@ -57,6 +58,7 @@ class AdminController extends Controller {
 		private CookieDomainMessages $cookieDomainMessages,
 		private IURLGenerator $urlGenerator,
 		private PadTemplateAdminService $padTemplateAdmin,
+		private GoneFileSweep $goneFileSweep,
 	) {
 		parent::__construct($appName, $request);
 	}
@@ -131,7 +133,11 @@ class AdminController extends Controller {
 		return $this->errors->run(
 			function (): array {
 				$this->requireAdmin();
-				return $this->pendingBindings->settle(self::PENDING_BINDING_BATCH_SIZE);
+				$result = $this->pendingBindings->settle(self::PENDING_BINDING_BATCH_SIZE);
+				// What the background jobs do, all of it: the pads of files
+				// gone for good too.
+				$this->goneFileSweep->run();
+				return $result;
 			},
 			fn(array $result): DataResponse => new DataResponse([
 				'ok' => true,

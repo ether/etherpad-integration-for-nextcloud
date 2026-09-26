@@ -74,14 +74,21 @@ const withDavRetry = async (
 /**
  * Delete a file or folder through WebDAV. Used for teardown so browser
  * specs do not leave pads behind on a shared target instance.
+ *
+ * With `pastTrash`, the delete skips the trash (`X-NC-Skip-Trashbin`), as a
+ * client may ask it to: the file is gone for good at once.
  */
-export const deleteViaDav = async (relativePath: string): Promise<void> => {
+export const deleteViaDav = async (relativePath: string, options: { pastTrash?: boolean } = {}): Promise<void> => {
 	const path = relativePath.replace(/^\/+/, '')
+	const headers: Record<string, string> = { Authorization: basicAuthHeader() }
+	if (options.pastTrash === true) {
+		headers['X-NC-Skip-Trashbin'] = 'true'
+	}
 	// 404 is a successful no-op for cleanup (file already gone). 423
 	// (Locked) is briefly hit when a pad was just closed and Etherpad's
 	// sync write still holds the file lock — retry until it clears.
 	await withDavRetry(
-		() => fetch(davUrl(path), { method: 'DELETE', headers: { Authorization: basicAuthHeader() } }),
+		() => fetch(davUrl(path), { method: 'DELETE', headers }),
 		{
 			retryOn: [423],
 			accept: (status) => status < 300 || status === 404,
@@ -422,17 +429,21 @@ export const sharedWithMePaths = async (): Promise<string[]> => {
 
 /**
  * Create a pad at an exact path through the app's own API, and return the
- * Etherpad address it was given.
+ * Etherpad address it was given. As the E2E account, or as `as`.
  *
  * The address is what makes a test able to say *which* pad was opened.
  * Asserting that a viewer appeared is not enough: the bug this guards
  * against opened a viewer just as happily, for the wrong document.
  */
-export const createPadAtPath = async (absolutePath: string, accessMode = 'public'): Promise<{ path: string, padUrl: string }> => {
+export const createPadAtPath = async (
+	absolutePath: string,
+	accessMode = 'public',
+	as: { uid: string, password: string } | null = null,
+): Promise<{ path: string, padUrl: string }> => {
 	const res = await fetch(`${E2E.baseURL}/index.php/apps/etherpad_nextcloud/api/v1/pads`, {
 		method: 'POST',
 		headers: {
-			Authorization: basicAuthHeader(),
+			Authorization: as === null ? basicAuthHeader() : `Basic ${Buffer.from(`${as.uid}:${as.password}`).toString('base64')}`,
 			'OCS-APIRequest': 'true',
 			'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
 			Accept: 'application/json',
