@@ -132,12 +132,15 @@ describe('fetchJsonWithTimeout', () => {
 		await expect(fetchJsonWithTimeout('/x')).resolves.toEqual({})
 	})
 
-	// This app answers in JSON. A gateway page in its place is no answer from
-	// it; its own 503 is, and so is a server error of any other kind.
+	// This app answers an error with a `message`. A gateway's page or JSON in
+	// its place is no answer from it; its own 503 is, and so is a server
+	// error of any other kind.
 	it.each([
 		['a proxy whose backend is gone', pageResponse(502), true],
 		['Nextcloud in maintenance', pageResponse(503), true],
 		['a proxy that gave up waiting', pageResponse(504), true],
+		['a gateway answering in JSON of its own', jsonResponse({ error: 'Bad Gateway' }, false, 502), true],
+		['a gateway answering JSON null', jsonResponse(null, false, 503), true],
 		['this app, not reachable further on', jsonResponse({ message: 'Etherpad cannot be reached right now. Try again later.', retryable: true }, false, 503), undefined],
 		['a server error page', pageResponse(500), undefined],
 	])('tells whether %s answered', async (_, response, unanswered) => {
@@ -146,6 +149,8 @@ describe('fetchJsonWithTimeout', () => {
 		const error = await fetchJsonWithTimeout('/x').catch((e) => e)
 
 		expect(error.unanswered).toBe(unanswered)
+		// The answer's own error, not one from reading it.
+		expect(error.status).toBe(response.status)
 	})
 
 	// Writes wait. Cutting one short applies the change with nobody left to

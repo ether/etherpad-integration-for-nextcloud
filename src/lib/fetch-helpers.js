@@ -50,12 +50,10 @@ export const fetchJsonWithTimeout = async (url, init = {}, options = {}) => {
 		}))
 		// Only a body that is not JSON counts as none. A timeout or a failed
 		// network while it streams in is no answer, and is handled below.
-		let isJson = true
 		const data = await response.json().catch((error) => {
 			if (!(error instanceof SyntaxError)) {
 				throw error
 			}
-			isJson = false
 			return {}
 		})
 		if (!response.ok) {
@@ -68,9 +66,10 @@ export const fetchJsonWithTimeout = async (url, init = {}, options = {}) => {
 			if (data && data.retryable === true) {
 				error.retryable = true
 			}
-			// This app answers in JSON; a proxy with its backend gone, or
-			// Nextcloud in maintenance, does not.
-			if (!isJson && GATEWAY_STATUSES.includes(response.status)) {
+			// This app answers an error with a `message`. A proxy with its
+			// backend gone, or Nextcloud in maintenance, sends a page of its
+			// own, or JSON of another shape.
+			if (GATEWAY_STATUSES.includes(response.status) && !(data && typeof data.message === 'string')) {
 				error.unanswered = true
 			}
 			error.status = response.status
