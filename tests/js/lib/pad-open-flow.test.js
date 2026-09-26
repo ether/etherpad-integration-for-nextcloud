@@ -7,6 +7,7 @@ import {
 	assertOpenPayload,
 	contentUrlFrom,
 	contentViewFrom,
+	isMissingBindingError,
 	isMissingFrontmatterError,
 	isRetryableOpenError,
 	openWithFrontmatterRecovery,
@@ -26,13 +27,20 @@ describe('isMissingFrontmatterError', () => {
 	})
 })
 
+describe('isMissingBindingError', () => {
+	it('reads the code, not the sentence written for a person', () => {
+		expect(isMissingBindingError(withCode('missing_binding'))).toBe(true)
+		expect(isMissingBindingError(new Error('This .pad file has no matching pad in this Nextcloud.'))).toBe(false)
+		expect(isMissingBindingError(withCode('missing_frontmatter'))).toBe(false)
+		expect(isMissingBindingError(null)).toBe(false)
+	})
+})
+
 describe('isRetryableOpenError', () => {
 	it.each([
 		['the server says it may work later', Object.assign(new Error('locked'), { retryable: true }), true],
 		['the file changed while it was being initialised', withCode('pad_file_changed'), true],
-		['an open got no answer', unanswered(), true],
-		['an initialise got no answer', Object.assign(unanswered(), { whileInitializing: true }), false],
-		['the server says so of an initialise', Object.assign(new Error('locked'), { retryable: true, whileInitializing: true }), true],
+		['no answer came', unanswered(), true],
 		['the server refused', withCode('missing_binding'), false],
 		['nothing says more', new Error('Internal server error'), false],
 		['there is no error', null, false],
@@ -96,26 +104,22 @@ describe('openWithFrontmatterRecovery', () => {
 	})
 
 	/** Unanswered, its pad may be set up by now; another open would start a second one. */
-	it('offers no second try after an initialise that got no answer', async () => {
-		const open = vi.fn().mockRejectedValue(withCode('missing_frontmatter'))
-		const initialize = vi.fn().mockRejectedValue(unanswered())
+	/**
+	 * A second try opens first, so an initialise that went through is found,
+	 * and the server keeps one still running from being done twice.
+	 */
+	it.each([
+		['the first open', [unanswered()], undefined],
+		['the initialise', [withCode('missing_frontmatter')], unanswered()],
+		['the open after it', [withCode('missing_frontmatter'), unanswered()], undefined],
+	])('leaves a second try open when %s got no answer', async (_, openFailures, initializeFailure) => {
+		const open = vi.fn()
+		openFailures.forEach((failure) => open.mockRejectedValueOnce(failure))
+		const initialize = initializeFailure ? vi.fn().mockRejectedValue(initializeFailure) : vi.fn().mockResolvedValue(undefined)
 
 		const error = await openWithFrontmatterRecovery({ open, initialize }).catch((e) => e)
 
 		expect(error.unanswered).toBe(true)
-		expect(isRetryableOpenError(error)).toBe(false)
-	})
-
-	it.each([
-		['before initialising', [unanswered()]],
-		['after initialising', [withCode('missing_frontmatter'), unanswered()]],
-	])('still offers one after an open that got no answer %s', async (_, failures) => {
-		const open = vi.fn()
-		failures.forEach((failure) => open.mockRejectedValueOnce(failure))
-		const initialize = vi.fn().mockResolvedValue(undefined)
-
-		const error = await openWithFrontmatterRecovery({ open, initialize }).catch((e) => e)
-
 		expect(isRetryableOpenError(error)).toBe(true)
 	})
 

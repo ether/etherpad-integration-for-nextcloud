@@ -8,15 +8,16 @@
 import { APP_ID } from './lib/constants.js'
 import { apiFindOriginalPad, apiRecoverFromSnapshot, apiResolvePadByPath } from './lib/api-client.js'
 import { fetchJsonWithTimeout, requestErrorMessage } from './lib/fetch-helpers.js'
+import { handFocusTo } from './lib/hand-focus.js'
 import { ocGenerateUrl, ocRequestToken, translate } from './lib/oc-compat.js'
 import { createPadSync } from './lib/pad-sync.js'
 import { loadPadContent } from './lib/pad-content.js'
-import { assertOpenPayload, contentUrlFrom, contentViewFrom, isRetryableOpenError, openWithFrontmatterRecovery, padUrlFrom, syncSettingsFrom } from './lib/pad-open-flow.js'
+import { assertOpenPayload, contentUrlFrom, contentViewFrom, isMissingBindingError, isRetryableOpenError, openWithFrontmatterRecovery, padUrlFrom, syncSettingsFrom } from './lib/pad-open-flow.js'
 import { buildPadFrameSrcdoc } from './lib/pad-frame-srcdoc.js'
 import { isPadName, parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './lib/urls.js'
 
-// For a request nothing came back for; see requestErrorMessage().
-const unansweredText = () => translate('Nextcloud did not answer. Check your connection and try again.')
+// When nothing came back: our own sentence, not the browser's English.
+const messageOf = (error, fallback) => requestErrorMessage(error, translate('Nextcloud did not answer. Check your connection and try again.'), fallback)
 
 const component = {
 	name: 'EtherpadNextcloudViewer',
@@ -171,20 +172,15 @@ const component = {
 			this.$emit('update:loaded', true)
 		},
 		/**
-		 * After a click whose button went away with the focus on it - a
-		 * second try, a recovery - the card's first action, or its message,
-		 * takes the focus (docs/architecture.md, "Errors of the API").
+		 * See handFocusTo(). On the next tick, once the card is drawn: call
+		 * it after setting what the card shows.
 		 */
 		handFocusToErrorCard() {
 			this.$nextTick(() => {
 				const card = this.$refs.errorCard
-				if (!(card instanceof HTMLElement)) return
-				const target = card.querySelector('a, button') || card.querySelector('.epnc-native-error-message')
-				if (!(target instanceof HTMLElement)) return
-				if (!target.matches('a, button')) {
-					target.tabIndex = -1
+				if (card instanceof HTMLElement) {
+					handFocusTo(card, card.querySelector('.epnc-native-error-message'))
 				}
-				target.focus()
 			})
 		},
 		// Keep the sync controller non-reactive and available to the immediate watcher.
@@ -320,7 +316,7 @@ const component = {
 				this.markLoaded()
 			} catch (error) {
 				if (!isCurrent()) return
-				this.loadError = requestErrorMessage(error, unansweredText(), 'Could not load pad.')
+				this.loadError = messageOf(error, 'Could not load pad.')
 				// The server intentionally does not disclose why this id is unavailable.
 				this.maybeStaleFileId = this.resolvedFileId !== null
 					&& Boolean(error) && error.status === 404 && !error.code
@@ -328,13 +324,13 @@ const component = {
 				// Recovery may resolve only the same path that failed to open.
 				let recoveryFileId = this.resolvedFileId
 				this.recoveryPath = openPath
-				if (recoveryFileId === null && !byPublicUrl && error && error.code === 'missing_binding') {
+				if (recoveryFileId === null && !byPublicUrl && isMissingBindingError(error)) {
 					recoveryFileId = await this.resolveRecoveryFileId(openPath)
 					// A late lookup must not attach recovery to a newer Viewer item.
 					if (!isCurrent()) return
 				}
 				this.recoveryFileId = recoveryFileId
-				this.canRecover = Boolean(error && error.code === 'missing_binding')
+				this.canRecover = isMissingBindingError(error)
 					&& recoveryFileId !== null
 					&& !byPublicUrl
 				if (this.canRecover) {
@@ -385,7 +381,17 @@ const component = {
 				this.canRecover = false
 				await this.resolveOpenUrl(true)
 			} catch (error) {
-				this.loadError = requestErrorMessage(error, unansweredText(), 'Could not load pad.')
+				// No answer: the pad may be set up by now, and another
+				// recovery would meet it. Opening tells, and is safe to repeat.
+				if (error && error.unanswered === true) {
+					await this.resolveOpenUrl(true)
+					return
+				}
+				// Enabled again before the card is drawn, so the focus lands.
+				this.isRecovering = false
+				this.loadError = messageOf(error, 'Could not load pad.')
+				// The clicked button lost the focus while it was disabled.
+				this.handFocusToErrorCard()
 			} finally {
 				this.isRecovering = false
 			}
@@ -420,7 +426,7 @@ const component = {
 			} catch (error) {
 				if (!isCurrent() || (error && error.name === 'AbortError')) return
 				this.contentState = 'error'
-				this.contentError = requestErrorMessage(error, unansweredText(), translate('Could not load the pad content.'))
+				this.contentError = messageOf(error, translate('Could not load the pad content.'))
 			}
 		},
 		renderContentView(createElement, options) {
@@ -492,7 +498,8 @@ const component = {
 		if (this.loadError) {
 			const cardChildren = [
 				createElement('div', { class: 'epnc-native-error-title' }, translate('Could not open pad')),
-				createElement('div', { class: 'epnc-native-error-message' }, this.loadError),
+				// Read out when it appears, not only when someone looks.
+				createElement('div', { class: 'epnc-native-error-message', attrs: { role: 'alert' } }, this.loadError),
 			]
 			if (this.maybeStaleFileId) {
 				cardChildren.push(

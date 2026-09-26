@@ -5,8 +5,9 @@
 import { ocRequestToken } from './lib/oc-compat.js'
 import { createPadSync } from './lib/pad-sync.js'
 import { fetchJsonWithTimeout as fetchJson, requestErrorMessage } from './lib/fetch-helpers.js'
+import { handFocusTo } from './lib/hand-focus.js'
 import { loadPadContent } from './lib/pad-content.js'
-import { assertOpenPayload, contentUrlFrom, contentViewFrom, isRetryableOpenError, openWithFrontmatterRecovery, padUrlFrom, syncSettingsFrom } from './lib/pad-open-flow.js'
+import { assertOpenPayload, contentUrlFrom, contentViewFrom, isMissingBindingError, isRetryableOpenError, openWithFrontmatterRecovery, padUrlFrom, syncSettingsFrom } from './lib/pad-open-flow.js'
 
 (function () {
 	const IFRAME_REVEAL_DELAY_MS = 100
@@ -57,6 +58,10 @@ import { assertOpenPayload, contentUrlFrom, contentViewFrom, isRetryableOpenErro
 	const requestToken = () => ocRequestToken(templateRequestToken)
 	const padSync = createPadSync({ requestToken })
 
+	const messageOf = (error, fallback) => requestErrorMessage(error, unansweredText, fallback)
+	// The page sits in another one, which must not scroll to it.
+	const handFocusToCard = (actionsNode, messageNode) => handFocusTo(actionsNode, messageNode, { preventScroll: true })
+
 	/** Every button of this page: the content's retry, the error panel's, the recovery card's. */
 	const buildButton = (label, onClick, className = BUTTON_CLASS) => {
 		const button = document.createElement('button')
@@ -68,30 +73,12 @@ import { assertOpenPayload, contentUrlFrom, contentViewFrom, isRetryableOpenErro
 	}
 
 	/**
-	 * After a click whose button went away with the focus on it - a second
-	 * try, a recovery - the new panel's first action, or its message, takes
-	 * the focus (docs/architecture.md, "Errors of the API").
-	 */
-	const handFocusTo = (actionsNode, messageNode) => {
-		const target = (actionsNode instanceof HTMLElement && actionsNode.querySelector('a, button')) || messageNode
-		if (!(target instanceof HTMLElement)) {
-			return
-		}
-		if (target === messageNode) {
-			target.tabIndex = -1
-		}
-		target.focus({ preventScroll: true })
-	}
-
-	/**
 	 * $canRetry: the open may work later (`isRetryableOpenError`), so the
-	 * panel offers to run it again rather than a dead end.
+	 * panel offers to run it again rather than a dead end. $afterClick: see
+	 * handFocusTo().
 	 */
 	const showError = (message, canRetry = false, afterClick = false) => {
 		hideAllPanels()
-		if (loadingNode instanceof HTMLElement) {
-			loadingNode.classList.remove('epnc-embed__loading--pad-doc')
-		}
 		if (errorMessageNode instanceof HTMLElement) {
 			errorMessageNode.textContent = String(message || 'Unknown error.')
 		}
@@ -105,7 +92,16 @@ import { assertOpenPayload, contentUrlFrom, contentViewFrom, isRetryableOpenErro
 			errorNode.hidden = false
 		}
 		if (afterClick) {
-			handFocusTo(errorActionsNode, errorMessageNode)
+			handFocusToCard(errorActionsNode, errorMessageNode)
+		}
+	}
+
+	/** Every panel away and the loading state up, before a pad or a view shows. */
+	const showLoading = () => {
+		hideAllPanels()
+		if (loadingNode instanceof HTMLElement) {
+			loadingNode.classList.remove('epnc-embed__loading--pad-doc')
+			loadingNode.hidden = false
 		}
 	}
 
@@ -115,11 +111,10 @@ import { assertOpenPayload, contentUrlFrom, contentViewFrom, isRetryableOpenErro
 	 * frame and its button survive a refresh.
 	 */
 	const showPadContentView = (url) => {
-		hideAllPanels()
+		showLoading()
 		if (!(loadingNode instanceof HTMLElement)) {
 			return null
 		}
-		loadingNode.hidden = false
 		loadingNode.classList.add('epnc-embed__loading--pad-doc')
 		loadingNode.textContent = ''
 
@@ -216,7 +211,7 @@ import { assertOpenPayload, contentUrlFrom, contentViewFrom, isRetryableOpenErro
 			body.innerHTML = content.html
 		} catch (error) {
 			if (!isCurrent()) return
-			renderContentError(view, contentUrl, requestErrorMessage(error, unansweredText, contentErrorText))
+			renderContentError(view, contentUrl, messageOf(error, contentErrorText))
 		} finally {
 			if (isCurrent() && refresh instanceof HTMLButtonElement) {
 				refresh.disabled = false
@@ -250,13 +245,8 @@ import { assertOpenPayload, contentUrlFrom, contentViewFrom, isRetryableOpenErro
 			showError('Embed iframe is not available.')
 			return
 		}
-		if (errorNode instanceof HTMLElement) {
-			errorNode.hidden = true
-		}
-		if (loadingNode instanceof HTMLElement) {
-			loadingNode.classList.remove('epnc-embed__loading--pad-doc')
-		}
-		iframe.hidden = true
+		// The loading state stays up until the pad has loaded.
+		showLoading()
 		const revealIframe = () => {
 			iframe.removeEventListener('load', revealIframe)
 			window.setTimeout(() => {
@@ -456,10 +446,18 @@ import { assertOpenPayload, contentUrlFrom, contentViewFrom, isRetryableOpenErro
 			// Restart the open flow now that the binding exists.
 			restartOpen()
 		} catch (error) {
+			// No answer: the pad may be set up by now, and another recovery
+			// would meet it. Opening tells, and is safe to repeat.
+			if (error && error.unanswered === true) {
+				restartOpen()
+				return
+			}
 			setRecoveryActionsBusy(false)
 			if (recoveryMessageNode instanceof HTMLElement) {
-				recoveryMessageNode.textContent = requestErrorMessage(error, unansweredText, 'Recovery failed.')
+				recoveryMessageNode.textContent = messageOf(error, 'Recovery failed.')
 			}
+			// The clicked button lost the focus while it was disabled.
+			handFocusToCard(recoveryActionsNode, recoveryMessageNode)
 		}
 	}
 
@@ -481,9 +479,7 @@ import { assertOpenPayload, contentUrlFrom, contentViewFrom, isRetryableOpenErro
 	}
 
 	const enterRecoveryFlow = async (initialError, afterClick, isCurrent) => {
-		const errorMessage = initialError instanceof Error && initialError.message
-			? initialError.message
-			: 'Pad open failed.'
+		const errorMessage = messageOf(initialError, 'Pad open failed.')
 		showRecoveryChecking()
 		const originalEmbedUrl = await findOriginalEmbedUrl()
 		if (!isCurrent()) {
@@ -495,7 +491,7 @@ import { assertOpenPayload, contentUrlFrom, contentViewFrom, isRetryableOpenErro
 			showRecoveryWithoutOriginal(errorMessage)
 		}
 		if (afterClick) {
-			handFocusTo(recoveryActionsNode, recoveryMessageNode)
+			handFocusToCard(recoveryActionsNode, recoveryMessageNode)
 		}
 	}
 
@@ -504,10 +500,7 @@ import { assertOpenPayload, contentUrlFrom, contentViewFrom, isRetryableOpenErro
 	 * binding, or as a second try. Either follows a click.
 	 */
 	const restartOpen = () => {
-		hideAllPanels()
-		if (loadingNode instanceof HTMLElement) {
-			loadingNode.hidden = false
-		}
+		showLoading()
 		void run(true)
 	}
 
@@ -555,11 +548,11 @@ import { assertOpenPayload, contentUrlFrom, contentViewFrom, isRetryableOpenErro
 			if (!isCurrent()) {
 				return
 			}
-			if (error && error.code === 'missing_binding') {
+			if (isMissingBindingError(error)) {
 				void enterRecoveryFlow(error, afterClick, isCurrent)
 				return
 			}
-			showError(requestErrorMessage(error, unansweredText, 'Pad open failed.'), isRetryableOpenError(error), afterClick)
+			showError(messageOf(error, 'Pad open failed.'), isRetryableOpenError(error), afterClick)
 		}
 	}
 

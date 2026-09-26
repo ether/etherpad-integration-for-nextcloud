@@ -103,6 +103,23 @@ class PublicViewerControllerErrorMapperTest extends TestCase {
 	}
 
 	/**
+	 * As on the signed-in side, a 503 always says the same request may work
+	 * later: the clients take one without `retryable` for a gateway's.
+	 */
+	public function testEveryServiceUnavailableAnswerIsRetryable(): void {
+		$seen = 0;
+		foreach (self::publicAnswers() as $case => [$e, $status]) {
+			if ($status !== Http::STATUS_SERVICE_UNAVAILABLE) {
+				continue;
+			}
+			$data = $this->buildMapper()->runForData(static fn (): array => throw $e, static fn (array $result): DataResponse => new DataResponse($result))->getData();
+			$this->assertTrue($data['retryable'] ?? false, $case);
+			$seen++;
+		}
+		$this->assertSame(2, $seen, 'a locked file and Etherpad not reachable');
+	}
+
+	/**
 	 * A public answer carries the codes a visitor's client can act on, from
 	 * the same place as the signed-in one - and not the two whose action
 	 * needs a signed-in user: the viewer opens public pads through the flow

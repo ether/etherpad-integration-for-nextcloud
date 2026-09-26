@@ -23,26 +23,29 @@ const DEFAULT_INTERVAL_MS = 120000
 export const isMissingFrontmatterError = (error) => Boolean(error) && error.code === 'missing_frontmatter'
 
 /**
- * Whether the same open may work later, so a client offers to try it
- * again: the server said so (`retryable`), the file changed while it was
- * being initialised (the server undid its part), or no answer came. An
- * open reads, so one that went unanswered may simply run again.
- * Initialising writes: unanswered, its pad may be set up by now or still
- * being set up, and another open would start a second one, so there only
- * the server's word counts.
+ * The file has no pad here: the clients offer to recover one.
  *
  * @param {unknown} error
  * @return {boolean}
  */
-export const isRetryableOpenError = (error) => {
-	if (!error) {
-		return false
-	}
-	if (error.retryable === true || error.code === 'pad_file_changed') {
-		return true
-	}
-	return error.unanswered === true && error.whileInitializing !== true
-}
+export const isMissingBindingError = (error) => Boolean(error) && error.code === 'missing_binding'
+
+/**
+ * Whether the same open may work later, so a client offers to try it
+ * again: the server said so (`retryable`), the file changed while it was
+ * being initialised (the server undid its part), or no answer came.
+ *
+ * Also after an initialise that got no answer: the second try opens
+ * first, and finds the pad if the first initialise set it up. One still
+ * running is safe to meet, since the server compares the file before it
+ * writes, a file has one binding row, and a pad that lost either race is
+ * rolled back.
+ *
+ * @param {unknown} error
+ * @return {boolean}
+ */
+export const isRetryableOpenError = (error) => Boolean(error)
+	&& (error.retryable === true || error.code === 'pad_file_changed' || error.unanswered === true)
 
 /**
  * A read-only view carries no pad URL by design; anything else without one
@@ -83,14 +86,7 @@ export const openWithFrontmatterRecovery = async ({ open, initialize, stillWante
 		}
 		// Not abortable: it creates a pad, writes a binding row and
 		// rewrites the file.
-		try {
-			await initialize()
-		} catch (initializeError) {
-			if (initializeError && typeof initializeError === 'object') {
-				initializeError.whileInitializing = true
-			}
-			throw initializeError
-		}
+		await initialize()
 		// The open after it mints a session and a cookie, so a caller that
 		// has moved on should not pay for one.
 		if (!stillWanted()) {

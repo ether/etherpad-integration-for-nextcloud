@@ -13,6 +13,7 @@
 
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushAsyncWork } from './flush.js'
+import { FILE_CHANGED, LOCKED, MISSING_BINDING, MISSING_FRONTMATTER, UNANSWERED_TEXT, UNREACHABLE, WAITING } from './answers.js'
 
 vi.mock('../../src/lib/oc-compat.js', () => ({
 	ocGenerateUrl: (path) => path,
@@ -318,7 +319,7 @@ describe('viewer component — resolveOpenUrl', () => {
 	it('missing frontmatter: initializes once then re-opens', async () => {
 		const fetchMock = stubFetch()
 		fetchMock
-			.mockResolvedValueOnce(jsonResponse({ message: 'Missing YAML frontmatter in .pad file.', code: 'missing_frontmatter' }, false, 400))
+			.mockResolvedValueOnce(jsonResponse(MISSING_FRONTMATTER, false, 400))
 			.mockResolvedValueOnce(jsonResponse({ status: 'ok' }))
 			.mockResolvedValueOnce(jsonResponse({ url: 'https://pad.example/after-init', sync_url: '' }))
 		const vm = makeInstance({ fileInfo: { path: '/x.pad' } })
@@ -338,7 +339,7 @@ describe('viewer component — resolveOpenUrl', () => {
 		const initialized = new Promise((resolve) => { releaseInitialize = resolve })
 		const fetchMock = stubFetch()
 		fetchMock
-			.mockResolvedValueOnce(jsonResponse({ message: 'Missing YAML frontmatter in .pad file.', code: 'missing_frontmatter' }, false, 400))
+			.mockResolvedValueOnce(jsonResponse(MISSING_FRONTMATTER, false, 400))
 			.mockImplementationOnce(async () => { await initialized; return jsonResponse({ status: 'ok' }) })
 			.mockResolvedValueOnce(jsonResponse({ url: 'https://pad.example/after-init', sync_url: '' }))
 		const vm = makeInstance({ fileInfo: { path: '/x.pad' } })
@@ -357,7 +358,7 @@ describe('viewer component — resolveOpenUrl', () => {
 	it('initializes by file id (not by path) when an id is available', async () => {
 		const fetchMock = stubFetch()
 		fetchMock
-			.mockResolvedValueOnce(jsonResponse({ message: 'Missing YAML frontmatter in .pad file.', code: 'missing_frontmatter' }, false, 400))
+			.mockResolvedValueOnce(jsonResponse(MISSING_FRONTMATTER, false, 400))
 			.mockResolvedValueOnce(jsonResponse({ status: 'migrated_from_legacy' }))
 			.mockResolvedValueOnce(jsonResponse({ url: 'https://pad.example/by-id', sync_url: '' }))
 		const vm = makeInstance({ fileid: 42, fileInfo: { path: '/x.pad' } })
@@ -387,9 +388,9 @@ describe('viewer component — resolveOpenUrl', () => {
 
 	// By the server's `retryable`, not by a code; a second try, not recovery.
 	it.each([
-		['the file\'s row still waits', { message: 'This pad is still being restored. Try again later.', code: 'waiting_binding', retryable: true }, 409],
-		['Etherpad is not reachable', { message: 'Etherpad cannot be reached right now. Try again later.', retryable: true }, 503],
-		['the file is locked for a moment', { message: 'Pad file is temporarily locked. Please retry.', retryable: true }, 503],
+		['the file\'s row still waits', WAITING, 409],
+		['Etherpad is not reachable', UNREACHABLE, 503],
+		['the file is locked for a moment', LOCKED, 503],
 	])('offers a second try, not recovery, when %s', async (_, body, status) => {
 		stubFetch(jsonResponse(body, false, status))
 		const vm = makeInstance({ fileid: 42, fileInfo: { path: '/x.pad' } })
@@ -404,8 +405,8 @@ describe('viewer component — resolveOpenUrl', () => {
 	it('offers a second try when the file changed while it was being set up', async () => {
 		const fetchMock = stubFetch()
 		fetchMock
-			.mockResolvedValueOnce(jsonResponse({ message: 'Missing YAML frontmatter in .pad file.', code: 'missing_frontmatter' }, false, 400))
-			.mockResolvedValueOnce(jsonResponse({ message: 'The file changed while its pad was being set up. Try again.', code: 'pad_file_changed' }, false, 409))
+			.mockResolvedValueOnce(jsonResponse(MISSING_FRONTMATTER, false, 400))
+			.mockResolvedValueOnce(jsonResponse(FILE_CHANGED, false, 409))
 		const vm = makeInstance({ fileid: 42, fileInfo: { path: '/x.pad' } })
 
 		await vm.resolveOpenUrl()
@@ -415,22 +416,36 @@ describe('viewer component — resolveOpenUrl', () => {
 	})
 
 	// Its pad may be set up by now; another open would start a second one.
-	it('offers no second try after an initialise that got no answer', async () => {
+	// The second try opens first, and finds the pad the first set up.
+	it('offers a second try after an initialise that got no answer', async () => {
 		const fetchMock = stubFetch()
 		fetchMock
-			.mockResolvedValueOnce(jsonResponse({ message: 'Missing YAML frontmatter in .pad file.', code: 'missing_frontmatter' }, false, 400))
+			.mockResolvedValueOnce(jsonResponse(MISSING_FRONTMATTER, false, 400))
 			.mockRejectedValueOnce(new TypeError('Failed to fetch'))
 		const vm = makeInstance({ fileid: 42, fileInfo: { path: '/x.pad' } })
 
 		await vm.resolveOpenUrl()
 
-		expect(vm.loadError).toBe('Nextcloud did not answer. Check your connection and try again.')
-		expect(vm.canRetryOpen).toBe(false)
+		expect(vm.loadError).toBe(UNANSWERED_TEXT)
+		expect(vm.canRetryOpen).toBe(true)
+	})
+
+	// Another recovery would meet the first; the open tells whether it went through.
+	it('opens again after a recovery that got no answer', async () => {
+		apiRecoverFromSnapshot.mockRejectedValue(Object.assign(new TypeError('Failed to fetch'), { unanswered: true }))
+		const fetchMock = stubFetch(jsonResponse({ url: 'https://pad.example/recovered', sync_url: '' }))
+		const vm = makeInstance({ fileid: 42, fileInfo: { path: '/copy.pad' }, loadError: 'no binding', canRecover: true, recoveryFileId: 42 })
+
+		await vm.recoverFromSnapshot()
+
+		expect(fetchMock.mock.calls[0][0]).toBe(endpoint('pads/open-by-id'))
+		expect(vm.iframeSrc).toBe('https://pad.example/recovered')
+		expect(vm.loadError).toBe('')
 	})
 
 	it.each([
 		['without a code', { message: 'Could not open pad' }, 500],
-		['with another code', { message: 'no binding', code: 'missing_binding' }, 400],
+		['with another code', MISSING_BINDING, 400],
 		['Etherpad refusing', { message: 'Etherpad refused the request. Please contact your administrator.' }, 400],
 	])('does not offer a second try for an error %s', async (_, body, status) => {
 		stubFetch(jsonResponse(body, false, status))
@@ -499,7 +514,7 @@ describe('viewer component — resolveOpenUrl', () => {
 	it('carries the status through an initialize that no longer finds the file', async () => {
 		const fetchMock = stubFetch()
 		fetchMock
-			.mockResolvedValueOnce(jsonResponse({ message: 'Missing YAML frontmatter in .pad file.', code: 'missing_frontmatter' }, false, 400))
+			.mockResolvedValueOnce(jsonResponse(MISSING_FRONTMATTER, false, 400))
 			.mockResolvedValueOnce(jsonResponse({ message: 'Cannot open selected .pad file.' }, false, 404))
 		const vm = makeInstance({ fileid: 42, fileInfo: { path: '/x.pad' } })
 
@@ -577,7 +592,7 @@ describe('viewer component — resolveOpenUrl', () => {
 
 			// In its own words rather than the client's English, and worth
 			// another try: an open only reads.
-			expect(vm.loadError).toBe('Nextcloud did not answer. Check your connection and try again.')
+			expect(vm.loadError).toBe(UNANSWERED_TEXT)
 			expect(vm.canRetryOpen).toBe(true)
 			expect(vm.isLoading).toBe(false)
 		} finally {
@@ -648,7 +663,7 @@ describe('viewer component — resolveOpenUrl', () => {
 
 	it('offers recovery on a labelled error rather than opening the path', async () => {
 		const fetchMock = stubFetch()
-		fetchMock.mockResolvedValueOnce(jsonResponse({ message: 'no binding', code: 'missing_binding' }, false, 400))
+		fetchMock.mockResolvedValueOnce(jsonResponse(MISSING_BINDING, false, 400))
 		apiFindOriginalPad.mockResolvedValue({ found: false })
 		const vm = makeInstance({ fileid: 42, fileInfo: { path: '/x.pad' } })
 
@@ -671,7 +686,7 @@ describe('viewer component — resolveOpenUrl', () => {
 	})
 
 	it('missing_binding for an addressable, non-public file: offers recovery and looks up the original', async () => {
-		stubFetch(jsonResponse({ message: 'no binding', code: 'missing_binding' }, false, 400))
+		stubFetch(jsonResponse(MISSING_BINDING, false, 400))
 		apiFindOriginalPad.mockResolvedValue({ found: true, viewer_url: 'https://nc/viewer/123', path: '/orig.pad' })
 		const vm = makeInstance({ fileid: 42, fileInfo: { path: '/copy.pad' } })
 
@@ -686,7 +701,7 @@ describe('viewer component — resolveOpenUrl', () => {
 	})
 
 	it('resolves recovery\'s file id from the path when the Viewer supplies none', async () => {
-		stubFetch(jsonResponse({ message: 'no binding', code: 'missing_binding' }, false, 400))
+		stubFetch(jsonResponse(MISSING_BINDING, false, 400))
 		apiResolvePadByPath.mockResolvedValue({ file_id: 99 })
 		apiFindOriginalPad.mockResolvedValue({ found: false })
 		const vm = makeInstance({ fileInfo: { path: '/copy.pad' } })
@@ -701,7 +716,7 @@ describe('viewer component — resolveOpenUrl', () => {
 	})
 
 	it('offers no recovery when the path cannot be resolved either', async () => {
-		stubFetch(jsonResponse({ message: 'no binding', code: 'missing_binding' }, false, 400))
+		stubFetch(jsonResponse(MISSING_BINDING, false, 400))
 		apiResolvePadByPath.mockRejectedValue(new Error('resolve failed'))
 		const vm = makeInstance({ fileInfo: { path: '/copy.pad' } })
 
@@ -713,7 +728,7 @@ describe('viewer component — resolveOpenUrl', () => {
 	})
 
 	it('does not ask for an id it already has', async () => {
-		stubFetch(jsonResponse({ message: 'no binding', code: 'missing_binding' }, false, 400))
+		stubFetch(jsonResponse(MISSING_BINDING, false, 400))
 		apiFindOriginalPad.mockResolvedValue({ found: false })
 		const vm = makeInstance({ fileid: 42, fileInfo: { path: '/copy.pad' } })
 
@@ -726,7 +741,7 @@ describe('viewer component — resolveOpenUrl', () => {
 
 	it('does not offer recovery on a public share even with missing_binding', async () => {
 		parsePublicShareTokenFromLocation.mockReturnValue('share-token')
-		stubFetch(jsonResponse({ message: 'no binding', code: 'missing_binding' }, false, 400))
+		stubFetch(jsonResponse(MISSING_BINDING, false, 400))
 		const vm = makeInstance({ fileid: 42, fileInfo: { path: '/copy.pad' } })
 
 		await vm.resolveOpenUrl()
@@ -813,6 +828,8 @@ describe('viewer component — render', () => {
 		expect(findByClass(tree, 'epnc-native-status--error')).toBeTruthy()
 		expect(allText(tree)).toContain('Could not open pad')
 		expect(allText(tree)).toContain('Boom')
+		// Read out when it appears.
+		expect(findByClass(tree, 'epnc-native-error-message').data.attrs.role).toBe('alert')
 	})
 
 	it('offers to try the open again while the file\'s row waits', () => {
@@ -1016,14 +1033,26 @@ describe('viewer component — render', () => {
  * drawn after the failure takes the focus; not on the first load.
  */
 describe('viewer component — focus after a click', () => {
-	const WAITING = { message: 'This pad is still being restored. Try again later.', code: 'waiting_binding', retryable: true }
-
-	// Stands in for the card Vue draws before the next tick.
+	/**
+	 * Stands in for Vue: the card is drawn on the next tick from what was
+	 * set before that tick was asked for - there only once there is an
+	 * error, its recovery buttons (`data-recover`) disabled while a
+	 * recovery runs. A focus asked for earlier finds no card, or a button
+	 * it cannot land on.
+	 */
 	const drawCard = (vm, html) => {
 		const card = document.createElement('div')
 		card.innerHTML = html
 		document.body.appendChild(card)
-		vm.$refs.errorCard = card
+		vm.$nextTick = (fn) => {
+			const drawn = vm.loadError !== ''
+			const busy = vm.isRecovering
+			return Promise.resolve().then(() => {
+				card.querySelectorAll('button[data-recover]').forEach((button) => { button.disabled = busy })
+				vm.$refs.errorCard = drawn ? card : undefined
+				fn()
+			})
+		}
 		return card
 	}
 
@@ -1037,9 +1066,11 @@ describe('viewer component — focus after a click', () => {
 		const card = drawCard(vm, '<div class="epnc-native-error-message">m</div><button>Try again</button>')
 
 		await vm.resolveOpenUrl()
+		await flushAsyncWork()
 		expect(document.activeElement).toBe(document.body)
 
 		await vm.resolveOpenUrl(true)
+		await flushAsyncWork()
 		expect(document.activeElement).toBe(card.querySelector('button'))
 	})
 
@@ -1049,6 +1080,7 @@ describe('viewer component — focus after a click', () => {
 		const card = drawCard(vm, '<div class="epnc-native-error-message">Boom</div>')
 
 		await vm.resolveOpenUrl(true)
+		await flushAsyncWork()
 
 		const message = card.querySelector('.epnc-native-error-message')
 		expect(document.activeElement).toBe(message)
@@ -1057,13 +1089,14 @@ describe('viewer component — focus after a click', () => {
 	})
 
 	it('waits for the recovery card\'s actions when a second try finds no pad', async () => {
-		stubFetch(jsonResponse({ message: 'no binding', code: 'missing_binding' }, false, 400))
+		stubFetch(jsonResponse(MISSING_BINDING, false, 400))
 		let answer
 		apiFindOriginalPad.mockImplementation(() => new Promise((resolve) => { answer = resolve }))
 		const vm = makeInstance({ fileid: 42, fileInfo: { path: '/copy.pad' } })
-		const card = drawCard(vm, '<div class="epnc-native-error-message">no binding</div><a href="/o">Open the original .pad file</a><button>Create new pad from this file</button>')
+		const card = drawCard(vm, '<div class="epnc-native-error-message">no binding</div><a href="/o">Open the original .pad file</a><button data-recover>Create new pad from this file</button>')
 
 		await vm.resolveOpenUrl(true)
+		await flushAsyncWork()
 		expect(document.activeElement).toBe(document.body)
 
 		answer({ found: true, viewer_url: '/o' })
@@ -1078,7 +1111,22 @@ describe('viewer component — focus after a click', () => {
 		const card = drawCard(vm, '<div class="epnc-native-error-message">m</div><button>Try again</button>')
 
 		await vm.recoverFromSnapshot()
+		await flushAsyncWork()
 
+		expect(document.activeElement).toBe(card.querySelector('button'))
+	})
+
+	it('hands it back to the card when a recovery fails', async () => {
+		apiRecoverFromSnapshot.mockRejectedValue(new Error('This .pad file is already linked to a pad.'))
+		const vm = makeInstance({ fileid: 42, fileInfo: { path: '/copy.pad' }, loadError: 'no binding', canRecover: true, recoveryFileId: 42 })
+		const card = drawCard(vm, '<div class="epnc-native-error-message">m</div><button data-recover>Create new pad from this file</button>')
+
+		await vm.recoverFromSnapshot()
+		await flushAsyncWork()
+
+		expect(vm.loadError).toBe('This .pad file is already linked to a pad.')
+		expect(vm.isRecovering).toBe(false)
+		// The clicked button lost it while it was disabled.
 		expect(document.activeElement).toBe(card.querySelector('button'))
 	})
 })

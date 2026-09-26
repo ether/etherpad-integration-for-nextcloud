@@ -4,6 +4,7 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { fetchJsonWithTimeout, requestErrorMessage } from '../../../src/lib/fetch-helpers.js'
+import { MISSING_BINDING, UNREACHABLE } from '../answers.js'
 
 /**
  * The signal chaining is the subtlest part of this module and it now
@@ -49,7 +50,7 @@ describe('fetchJsonWithTimeout', () => {
 	})
 
 	it('carries status and code out of an error response', async () => {
-		stubFetch(jsonResponse({ message: 'no binding', code: 'missing_binding' }, false, 400))
+		stubFetch(jsonResponse(MISSING_BINDING, false, 400))
 
 		await expect(fetchJsonWithTimeout('/x')).rejects.toMatchObject({
 			message: 'no binding',
@@ -61,7 +62,7 @@ describe('fetchJsonWithTimeout', () => {
 	// The server's word that the same request may succeed later, carried
 	// as it is; anything but true is no such word.
 	it.each([
-		['says so', { message: 'Etherpad cannot be reached right now. Try again later.', retryable: true }, 503, true],
+		['says so', UNREACHABLE, 503, true],
 		['says nothing', { message: 'Request failed.' }, 500, undefined],
 		['says something else', { message: 'no binding', retryable: 'yes' }, 400, undefined],
 	])('carries retryable out of an error response that %s', async (_, body, status, retryable) => {
@@ -132,16 +133,19 @@ describe('fetchJsonWithTimeout', () => {
 		await expect(fetchJsonWithTimeout('/x')).resolves.toEqual({})
 	})
 
-	// This app answers an error with a `message`. A gateway's page or JSON in
-	// its place is no answer from it; its own 503 is, and so is a server
-	// error of any other kind.
+	// This app never answers 502 or 504, and its every 503 is retryable. A
+	// gateway in its place is no answer from it, whatever it sends - its
+	// JSON may carry a message too; a server error of any other kind is one.
 	it.each([
 		['a proxy whose backend is gone', pageResponse(502), true],
 		['Nextcloud in maintenance', pageResponse(503), true],
 		['a proxy that gave up waiting', pageResponse(504), true],
 		['a gateway answering in JSON of its own', jsonResponse({ error: 'Bad Gateway' }, false, 502), true],
+		['a gateway answering JSON with a message', jsonResponse({ message: 'An invalid response was received from the upstream server' }, false, 502), true],
+		['a gateway timing out with a message', jsonResponse({ message: 'Endpoint request timed out' }, false, 504), true],
+		['a load balancer out of peers', jsonResponse({ message: 'failure to get a peer from the ring-balancer' }, false, 503), true],
 		['a gateway answering JSON null', jsonResponse(null, false, 503), true],
-		['this app, not reachable further on', jsonResponse({ message: 'Etherpad cannot be reached right now. Try again later.', retryable: true }, false, 503), undefined],
+		['this app, not reachable further on', jsonResponse(UNREACHABLE, false, 503), undefined],
 		['a server error page', pageResponse(500), undefined],
 	])('tells whether %s answered', async (_, response, unanswered) => {
 		stubFetch(response)

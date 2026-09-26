@@ -39,14 +39,14 @@
 	<div class="epnc-embed__loading" data-epnc-embed-loading>
 		<?php p((string)$_['l10n']['loading']); ?>
 	</div>
-	<div class="epnc-embed__error" data-epnc-embed-error role="alert" hidden>
+	<div class="epnc-embed__error" data-epnc-embed-error hidden>
 		<h2 class="epnc-embed__error-title"><?php p((string)$_['l10n']['error_title']); ?></h2>
-		<p class="epnc-embed__error-message" data-epnc-embed-error-message></p>
+		<p class="epnc-embed__error-message" data-epnc-embed-error-message role="alert"></p>
 		<div class="epnc-embed__error-actions" data-epnc-embed-error-actions></div>
 	</div>
 	<div class="epnc-embed__recovery" data-epnc-embed-recovery hidden>
 		<h2 class="epnc-embed__recovery-title"><?php p((string)$_['l10n']['error_title']); ?></h2>
-		<p class="epnc-embed__recovery-message" data-epnc-embed-recovery-message></p>
+		<p class="epnc-embed__recovery-message" data-epnc-embed-recovery-message role="alert"></p>
 		<p class="epnc-embed__recovery-body" data-epnc-embed-recovery-body></p>
 		<div class="epnc-embed__recovery-actions" data-epnc-embed-recovery-actions></div>
 	</div>

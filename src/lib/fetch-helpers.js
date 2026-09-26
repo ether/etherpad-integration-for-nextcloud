@@ -66,10 +66,11 @@ export const fetchJsonWithTimeout = async (url, init = {}, options = {}) => {
 			if (data && data.retryable === true) {
 				error.retryable = true
 			}
-			// This app answers an error with a `message`. A proxy with its
-			// backend gone, or Nextcloud in maintenance, sends a page of its
-			// own, or JSON of another shape.
-			if (GATEWAY_STATUSES.includes(response.status) && !(data && typeof data.message === 'string')) {
+			// This app never answers 502 or 504, and every 503 of its own
+			// carries retryable (docs/api-reference.md). Without it, a proxy
+			// with its backend gone or Nextcloud in maintenance answered in
+			// its place, with a page or with JSON of its own.
+			if (GATEWAY_STATUSES.includes(response.status) && error.retryable !== true) {
 				error.unanswered = true
 			}
 			error.status = response.status

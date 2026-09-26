@@ -104,6 +104,24 @@ class PadControllerErrorMapperTest extends TestCase {
 	}
 
 	/**
+	 * A 503 of this app always says the same request may work later: the
+	 * clients take a 502, 503 or 504 without `retryable` for a gateway
+	 * answering in its place (docs/api-reference.md).
+	 */
+	public function testEveryServiceUnavailableAnswerIsRetryable(): void {
+		$seen = 0;
+		foreach (self::answers() as $case => [$e, $status]) {
+			if ($status !== Http::STATUS_SERVICE_UNAVAILABLE) {
+				continue;
+			}
+			$response = $this->buildMapper()->run(static fn (): array => throw $e, static fn (array $result): DataResponse => new DataResponse($result));
+			$this->assertTrue($response->getData()['retryable'] ?? false, $case);
+			$seen++;
+		}
+		$this->assertSame(2, $seen, 'a locked file and Etherpad not reachable');
+	}
+
+	/**
 	 * Three pass their message on: a controller's refusal of a parameter
 	 * and a refused name, each translated where it is thrown, and what was
 	 * wrong with a link to a pad on another server - the user's only hint.
