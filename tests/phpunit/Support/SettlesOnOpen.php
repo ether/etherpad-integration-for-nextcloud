@@ -10,9 +10,6 @@ namespace OCA\EtherpadNextcloud\Tests\Support;
 
 use OCA\EtherpadNextcloud\Service\Binding;
 use OCA\EtherpadNextcloud\Service\BindingService;
-use OCA\EtherpadNextcloud\Service\BoundPadResolver;
-use OCA\EtherpadNextcloud\Service\EtherpadClient;
-use OCA\EtherpadNextcloud\Service\PadFileService;
 use OCA\EtherpadNextcloud\Service\RestoreService;
 use OCA\EtherpadNextcloud\Service\SettleLock;
 use OCA\EtherpadNextcloud\Service\SettleOnOpen;
@@ -26,17 +23,17 @@ use Psr\Log\LoggerInterface;
  * as an enum cannot be doubled.
  */
 trait SettlesOnOpen {
+	use BuildsBoundPads;
+
 	private function settleOnOpen(BindingService $bindings, ?RestoreService $restores = null, ?LoggerInterface $logger = null): SettleOnOpen {
 		$logger ??= $this->createMock(LoggerInterface::class);
-		$etherpad = $this->createMock(EtherpadClient::class);
-		$etherpad->method('buildPadUrl')->willReturnCallback(static fn (string $padId): string => 'https://pad.example.test/p/' . $padId);
 		return new SettleOnOpen(
 			$bindings,
 			$restores ?? $this->silentRestores(),
 			new SettleLock(new InMemoryLockingProvider(), $logger),
 			new FixedClock(),
 			$logger,
-			new BoundPadResolver($bindings, new PadFileService(new FixedClock()), $etherpad, $logger),
+			$this->boundPads($bindings, $logger),
 		);
 	}
 

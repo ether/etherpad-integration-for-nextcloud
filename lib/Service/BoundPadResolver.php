@@ -78,8 +78,10 @@ class BoundPadResolver {
 	/**
 	 * For a caller that holds the row already, a trash, a sweep or a
 	 * restore: $pad as namingPad() makes it when it names the pad $binding's
-	 * replaced, so the revision it has is not held against the row's pad;
-	 * otherwise $pad as it is.
+	 * replaced, otherwise $pad as it is. Such a file holds a revision of the
+	 * pad before, not of the row's: held against the row's pad, a higher
+	 * one would make it look behind (docs/architecture.md, "Which pad a
+	 * file reaches").
 	 */
 	public function followingRow(ParsedPadFile $pad, Binding $binding): ParsedPadFile {
 		if ($pad->padId !== $binding->replacedPadId || $pad->padId === $binding->padId) {

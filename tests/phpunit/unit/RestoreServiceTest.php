@@ -650,11 +650,9 @@ class RestoreServiceTest extends TestCase {
 	}
 
 	/**
-	 * A file that still names the pad its row replaced holds no revision of
-	 * the row's pad, however high the one it has: while Etherpad has the
-	 * row's pad, the file gets it back as it is. Held against the old pad's
-	 * revision, the row's pad looked behind and was replaced by a new pad
-	 * made from the old pad's text.
+	 * A file that still names the pad its row replaced, at a higher
+	 * revision: while Etherpad has the row's pad, the file gets it back as
+	 * it is, not a new pad made from the old pad's text.
 	 */
 	public function testARestoreDoesNotHoldTheRowsPadToThePadItReplaced(): void {
 		$fileId = 98;
@@ -1488,9 +1486,6 @@ class RestoreServiceTest extends TestCase {
 				$this->restoredRevision = $revision;
 				return 'doc-after';
 			},
-		);
-		$padFileService->method('namingPad')->willReturnCallback(
-			static fn (ParsedPadFile $pad, string $padId, string $accessMode, string $padUrl): ParsedPadFile => (new PadFileService(new FixedClock()))->namingPad($pad, $padId, $accessMode, $padUrl),
 		);
 
 		$secureRandom = $this->createMock(ISecureRandom::class);

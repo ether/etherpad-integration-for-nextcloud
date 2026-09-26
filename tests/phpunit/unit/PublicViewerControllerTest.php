@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\Tests\Unit;
 
 use OCA\EtherpadNextcloud\Controller\PublicViewerController;
-use OCA\EtherpadNextcloud\Controller\PublicViewerControllerErrorMapper;
 use OCA\EtherpadNextcloud\Service\Binding;
 use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\EtherpadNextcloud\Service\EtherpadClient;

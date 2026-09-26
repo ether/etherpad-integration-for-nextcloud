@@ -100,11 +100,7 @@ class TrashSnapshotWriterTest extends TestCase {
 		$this->assertSame([], $this->logged);
 	}
 
-	/**
-	 * A file that names the pad its row replaced holds no revision of the
-	 * row's pad, however high the one it has: it reads as naming the row's
-	 * pad, with none. A file that names the row's pad reads as it is.
-	 */
+	/** A file that names the pad its row replaced, at a higher revision, reads as naming the row's pad, with none. */
 	public function testReadTakesAFileNamingThePadItsRowReplacedForTheRows(): void {
 		$this->file->method('getContent')->willReturn('doc-before');
 		$this->padFiles->method('readPad')->willReturn($this->pad(snapshotRev: 50, padId: 'pad-before'));
@@ -112,7 +108,7 @@ class TrashSnapshotWriterTest extends TestCase {
 		$pad = $this->writer(replaced: 'pad-before')->read();
 
 		$this->assertInstanceOf(ParsedPadFile::class, $pad);
-		$this->assertSame(['pad-a', -1, self::PAD_BASE . 'pad-a', 'body'], [$pad->padId, $pad->snapshotRev, $pad->padUrl, $pad->body]);
+		$this->assertSame(['pad-a', -1, self::padUrlOf('pad-a'), 'body'], [$pad->padId, $pad->snapshotRev, $pad->padUrl, $pad->body]);
 		$this->assertSame([], $this->logged);
 	}
 

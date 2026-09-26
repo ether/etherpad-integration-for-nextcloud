@@ -182,8 +182,7 @@ solely by the separate external-pad policy, not by these two settings.
   - Controller: `PadSessionController::openById`
   - Params: `fileId=<int>`
   - Result: secure open URL via stable Nextcloud `fileId`.
-  - Behavior: CSRF-protected. The file's row decides which pad opens. The `.pad` file is written only when it names the pad its row replaced and the user may write it: it then names the row's pad (see "Which pad a file reaches" in `docs/architecture.md`).
-  - Protected mode: response includes one Etherpad session `Set-Cookie` header.
+  - Behavior and protected mode: as `open`.
 
 - `GET /api/v1/pads/content/{fileId}`
   - Controller: `PadSessionController::contentById`

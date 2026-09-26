@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Tests\Unit;
 
-use OCA\EtherpadNextcloud\Controller\PadControllerErrorMapper;
 use OCA\EtherpadNextcloud\Controller\PadLifecycleController;
 use OCA\EtherpadNextcloud\Exception\PadAlreadyHasBindingException;
 use OCA\EtherpadNextcloud\Service\AppConfigService;

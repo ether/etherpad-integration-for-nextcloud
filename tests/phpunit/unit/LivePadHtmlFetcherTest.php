@@ -8,7 +8,6 @@ use OCA\EtherpadNextcloud\Exception\BindingMismatchException;
 use OCA\EtherpadNextcloud\Exception\ExternalPadException;
 use OCA\EtherpadNextcloud\Exception\MissingBindingException;
 use OCA\EtherpadNextcloud\Exception\WaitingBindingException;
-use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
 use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\EtherpadNextcloud\Service\EtherpadClient;
 use OCA\EtherpadNextcloud\Service\ExternalPadExportFetcher;

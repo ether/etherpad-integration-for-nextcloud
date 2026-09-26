@@ -242,7 +242,6 @@ class LifecycleServiceTest extends TestCase {
 		]]);
 		$padFiles = new PadFileService(new FixedClock());
 		$etherpadClient = $this->createMock(EtherpadClient::class);
-		$etherpadClient->method('buildPadUrl')->willReturnCallback(static fn (string $padId): string => 'https://pad.example.test/p/' . $padId);
 		$etherpadClient->method('getRevisionsCount')->with('pad-new')->willReturn(3);
 		$etherpadClient->method('getText')->with('pad-new')->willReturn('Text of the new pad');
 		$etherpadClient->method('getHTML')->with('pad-new')->willReturn('<p>Text of the new pad</p>');
@@ -251,7 +250,7 @@ class LifecycleServiceTest extends TestCase {
 		$file = $this->createMock(File::class);
 		$file->method('getId')->willReturn(110);
 		$file->method('getName')->willReturn('Old.pad');
-		$file->method('getContent')->willReturn($padFiles->buildInitialDocument(110, 'pad-old', BindingService::ACCESS_PUBLIC, new PadSnapshot('Text of the old pad', '<p>Text of the old pad</p>', 50), 'https://pad.example.test/p/pad-old'));
+		$file->method('getContent')->willReturn($padFiles->buildInitialDocument(110, 'pad-old', BindingService::ACCESS_PUBLIC, new PadSnapshot('Text of the old pad', '<p>Text of the old pad</p>', 50), self::padUrlOf('pad-old')));
 		$file->expects($this->once())->method('putContent')->willReturnCallback(static function (string $content) use (&$written): void {
 			$written = $content;
 		});
@@ -261,7 +260,7 @@ class LifecycleServiceTest extends TestCase {
 		$this->assertSame([LifecycleResult::TRASHED, true, false], [$result['status'], $result['snapshot_persisted'], $result['delete_pending']]);
 		$this->assertSame([], $table->rows);
 		$pad = $padFiles->readPad((string)$written);
-		$this->assertSame(['pad-new', 3, 'https://pad.example.test/p/pad-new'], [$pad->padId, $pad->snapshotRev, $pad->padUrl]);
+		$this->assertSame(['pad-new', 3, self::padUrlOf('pad-new')], [$pad->padId, $pad->snapshotRev, $pad->padUrl]);
 		$this->assertStringContainsString('Text of the new pad', $pad->body);
 		$this->assertStringNotContainsString('Text of the old pad', $pad->body);
 	}

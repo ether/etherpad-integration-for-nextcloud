@@ -16,15 +16,17 @@ use Psr\Log\LoggerInterface;
 
 /**
  * The real BoundPadResolver over whatever rows a test gives it, so a test
- * holds the service to the rule rather than to a stubbed answer. Pads live
- * at PAD_BASE.
+ * holds the service to the rule rather than to a stubbed answer.
  */
 trait BuildsBoundPads {
-	private const PAD_BASE = 'https://pad.example.test/p/';
+	/** Where the resolver's Etherpad serves $padId. A method: a trait has constants only from PHP 8.2. */
+	private static function padUrlOf(string $padId): string {
+		return 'https://pad.example.test/p/' . $padId;
+	}
 
 	private function boundPads(BindingService $bindings, ?LoggerInterface $logger = null, ?PadFileService $padFiles = null): BoundPadResolver {
 		$etherpad = $this->createMock(EtherpadClient::class);
-		$etherpad->method('buildPadUrl')->willReturnCallback(static fn (string $padId): string => self::PAD_BASE . $padId);
+		$etherpad->method('buildPadUrl')->willReturnCallback(static fn (string $padId): string => self::padUrlOf($padId));
 		return new BoundPadResolver(
 			$bindings,
 			$padFiles ?? new PadFileService(new FixedClock()),

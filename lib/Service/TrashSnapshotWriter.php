@@ -23,10 +23,10 @@ use Psr\Log\LoggerInterface;
  * sweep.
  *
  * Of the file's row it knows which pad that is, and which one the file may
- * still name (BoundPadResolver::followingRow()): a file that names the pad
- * the row replaced holds no revision of the row's pad. What a miss means
- * for the row and the pad is the caller's to decide; here a miss is only
- * logged, in one line an admin can filter by `reason`, and handed back.
+ * still name: read() hands the file over as the row has it
+ * (BoundPadResolver::followingRow()). What a miss means for the row and the
+ * pad is the caller's to decide; here a miss is only logged, in one line an
+ * admin can filter by `reason`, and handed back.
  *
  * $news: whether the file's trouble would be news (warning) or a repeat
  * (debug); a sweep reads it off the row.
@@ -53,9 +53,8 @@ final class TrashSnapshotWriter {
 	 * snapshot into yet. A delete through WebDAV holds the file's lock while
 	 * the trash is decided, so a locked file is the ordinary case here. A
 	 * file that cannot be read for another reason is a miss of its own,
-	 * reported as the file's trouble. A file that names the pad its row
-	 * replaced reads as naming the row's, with no revision, so it takes the
-	 * row's pad's content and name.
+	 * reported as the file's trouble. The file comes as its row has it
+	 * (BoundPadResolver::followingRow()).
 	 */
 	public function read(): ParsedPadFile|TrashSnapshotMiss {
 		try {

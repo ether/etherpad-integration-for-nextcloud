@@ -350,9 +350,9 @@ class PadSyncServiceTest extends TestCase {
 	}
 
 	/**
-	 * A file that still names the pad its row replaced has no revision of
-	 * the row's pad, however high its own: the sync writes the row's pad
-	 * into it, name and all, and says so once. Its status is out of sync.
+	 * A file that still names the pad its row replaced, at a higher
+	 * revision: the sync writes the row's pad into it, name and all, and
+	 * says so once. Its status is out of sync.
 	 */
 	public function testAFileNamingThePadItsRowReplacedIsSyncedFromTheRowsPad(): void {
 		$formatter = new PadFileService(new FixedClock());

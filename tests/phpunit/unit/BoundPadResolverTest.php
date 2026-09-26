@@ -96,7 +96,7 @@ class BoundPadResolverTest extends TestCase {
 		$bound = $this->boundPads($bindings, $logger, new PadFileService(new FixedClock(2000000000)))->resolve(10, $pad);
 
 		$this->assertSame(
-			['g.new', BindingService::ACCESS_PROTECTED, self::PAD_BASE . 'g.new', -1, false, 'Text of the old pad'],
+			['g.new', BindingService::ACCESS_PROTECTED, self::padUrlOf('g.new'), -1, false, 'Text of the old pad'],
 			[$bound->padId, $bound->accessMode, $bound->padUrl, $bound->snapshotRev, $bound->isExternal, $bound->body],
 		);
 		$this->assertSame([
@@ -105,7 +105,7 @@ class BoundPadResolverTest extends TestCase {
 			'access_mode' => BindingService::ACCESS_PROTECTED,
 			'snapshot_rev' => -1,
 			'updated_at' => '2033-05-18T03:33:20+00:00',
-			'pad_url' => self::PAD_BASE . 'g.new',
+			'pad_url' => self::padUrlOf('g.new'),
 		], array_intersect_key($bound->frontmatter, array_flip(['file_id', 'pad_id', 'access_mode', 'pad_url', 'snapshot_rev', 'updated_at'])));
 		$this->assertSame(PadFileService::FORMAT_V1, $bound->frontmatter['format']);
 

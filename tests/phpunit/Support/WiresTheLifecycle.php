@@ -36,6 +36,8 @@ use Psr\Log\LoggerInterface;
  * does not reproduce the graph proves less than it looks.
  */
 trait WiresTheLifecycle {
+	use BuildsBoundPads;
+
 	/**
 	 * A LifecycleService with a mock for every collaborator the test does
 	 * not name, over a real RestoreService built from the same ones. The pad
@@ -66,6 +68,7 @@ trait WiresTheLifecycle {
 		$padLifecycle = new ManagedPadLifecycle($etherpad, $padLifecycleLogger);
 		$appConfig = $this->appConfigDeletingOnTrash($deleteOnTrash);
 		$testFaults ??= new TestFaults($this->createMock(IConfig::class), $appConfig);
+		$boundPads = $this->boundPads($bindings, $logger);
 
 		return new LifecycleService(
 			$bindings,
@@ -76,8 +79,8 @@ trait WiresTheLifecycle {
 			$nodes ?? $this->createMock(UserNodeResolver::class),
 			$paths ?? $this->createMock(PathNormalizer::class),
 			new FixedClock(),
-			new TrashSnapshotWriters($etherpad, $padFiles, $logger, $testFaults, new BoundPadResolver($bindings, $padFiles, $etherpad, $logger)),
-			$restores ?? $this->wireRestoreService($bindings, $etherpad, $padFiles, $padLifecycle, $appConfig, $logger, $padLifecycleLogger, $secureRandom, $testFaults),
+			new TrashSnapshotWriters($etherpad, $padFiles, $logger, $testFaults, $boundPads),
+			$restores ?? $this->wireRestoreService($bindings, $etherpad, $padFiles, $padLifecycle, $appConfig, $logger, $padLifecycleLogger, $secureRandom, $testFaults, $boundPads),
 		);
 	}
 
@@ -101,16 +104,19 @@ trait WiresTheLifecycle {
 		$etherpad ??= $this->createMock(EtherpadClient::class);
 		$padLifecycleLogger ??= $this->createMock(LoggerInterface::class);
 		$appConfig = $this->appConfigDeletingOnTrash($deleteOnTrash);
+		$bindings ??= $this->createMock(BindingService::class);
+		$logger ??= $this->createMock(LoggerInterface::class);
 		return $this->wireRestoreService(
-			$bindings ?? $this->createMock(BindingService::class),
+			$bindings,
 			$etherpad,
 			$padFiles ?? $this->createMock(PadFileService::class),
 			new ManagedPadLifecycle($etherpad, $padLifecycleLogger),
 			$appConfig,
-			$logger ?? $this->createMock(LoggerInterface::class),
+			$logger,
 			$padLifecycleLogger,
 			$secureRandom,
 			$testFaults ?? new TestFaults($this->createMock(IConfig::class), $appConfig),
+			$this->boundPads($bindings, $logger),
 			$nodes,
 		);
 	}
@@ -125,6 +131,7 @@ trait WiresTheLifecycle {
 		LoggerInterface $padLifecycleLogger,
 		?ISecureRandom $secureRandom,
 		TestFaults $testFaults,
+		BoundPadResolver $boundPads,
 		?UserNodeResolver $nodes = null,
 	): RestoreService {
 		return new RestoreService(
@@ -139,7 +146,7 @@ trait WiresTheLifecycle {
 			$testFaults,
 			// Unless a test says otherwise, a file stays where it was read.
 			$nodes ?? $this->createMock(UserNodeResolver::class),
-			new BoundPadResolver($bindings, $padFiles, $etherpad, $logger),
+			$boundPads,
 		);
 	}
 

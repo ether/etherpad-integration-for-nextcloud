@@ -62,8 +62,8 @@ class PadSyncService {
 				return $this->syncExternalPad($node, $fileId, $pad, $force);
 			}
 
-			// A file that named the pad its row replaced has no revision of
-			// the row's pad, so this always writes the pad's content and name.
+			// A file that named the pad its row replaced comes without a
+			// revision (BoundPadResolver::followingRow()): always written.
 			$result = $this->syncInternalPad($node, $fileId, $synced, $force);
 			if ($synced !== $pad) {
 				$this->boundPads->repaired($fileId);
@@ -92,8 +92,6 @@ class PadSyncService {
 				reason: 'external_no_revision',
 			);
 		}
-		// A file that named the pad its row replaced is out of sync with the
-		// row's pad, whatever its revision says.
 		$pad = $this->boundPads->resolve($fileId, $pad);
 
 		$currentRev = $this->etherpadClient->getRevisionsCount($pad->padId);

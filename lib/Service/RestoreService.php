@@ -177,9 +177,7 @@ class RestoreService {
 				// No revision to hold the pad to, so no decision either.
 				return $this->deferRestore($fileId, $padId, $state, $readError);
 			}
-			// A file that names the pad its row replaced holds no revision of
-			// the row's pad: a higher one of the pad before would make the
-			// row's pad look behind.
+			// As its row has it; an open hands the file over as it read it.
 			$pad = $this->boundPads->followingRow($pad, $binding);
 			$timeout = $budget?->nextCallTimeout();
 			if ($budget !== null && $timeout === null) {

@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Tests\Unit;
 
-use OCA\EtherpadNextcloud\Controller\PadControllerErrorMapper;
 use OCA\EtherpadNextcloud\Controller\PadSessionController;
 use OCA\EtherpadNextcloud\Service\AppConfigService;
 use OCA\EtherpadNextcloud\Service\Binding;
