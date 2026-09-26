@@ -129,6 +129,7 @@ OC.L10N.register(
     "Open the original .pad file": "Abrir el archivo .pad original",
     "Optional internal URL for server-side API calls. Leave empty to use Etherpad Base URL.": "URL interna opcional para llamadas a la API del lado del servidor. Déjala vacía para usar la URL base de Etherpad.",
     "Pad binding is inconsistent. Please contact the share owner.": "El vínculo del pad es incoherente. Ponte en contacto con quien lo ha compartido.",
+    "Pad creation failed.": "Se produjo un error al crear el pad.",
     "Pad file is temporarily locked. Please retry.": "El archivo .pad está bloqueado temporalmente. Vuelve a intentarlo.",
     "Pad name is required.": "Se requiere el nombre del pad.",
     "Pad types and behaviour": "Tipos de pad y comportamiento",

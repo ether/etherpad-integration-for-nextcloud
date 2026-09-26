@@ -166,6 +166,7 @@ class EmbedControllerTest extends TestCase {
 		$this->assertSame('csrf-token-value', $params['requesttoken']);
 		// No answer to a create leaves its outcome open, and the page says so.
 		$this->assertSame('Nextcloud did not answer. The pad may have been created anyway; look in the folder before you try again.', $params['l10n']['unanswered']);
+		$this->assertSame('Pad creation failed.', $params['l10n']['failed']);
 	}
 
 	private function buildController(UserNodeResolver $userNodeResolver, bool $anonymous = false): EmbedController {

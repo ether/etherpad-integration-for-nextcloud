@@ -19,6 +19,7 @@ import { fetchJsonWithTimeout as fetchJson, isUnanswered } from './lib/fetch-hel
 	const invalidAccessModeMessage = String(root.getAttribute('data-l10n-invalid-access-mode') || 'Invalid access mode.')
 	const incompleteConfigMessage = String(root.getAttribute('data-l10n-incomplete-config') || 'Embed configuration is incomplete.')
 	const unansweredMessage = String(root.getAttribute('data-l10n-unanswered') || 'Nextcloud did not answer. The pad may have been created anyway; look in the folder before you try again.')
+	const failedMessage = String(root.getAttribute('data-l10n-failed') || 'Pad creation failed.')
 	const loadingNode = root.querySelector('[data-epnc-embed-create-loading]')
 	const errorNode = root.querySelector('[data-epnc-embed-create-error]')
 	const errorMessageNode = root.querySelector('[data-epnc-embed-create-error-message]')
@@ -160,7 +161,7 @@ import { fetchJsonWithTimeout as fetchJson, isUnanswered } from './lib/fetch-hel
 					requesttoken: requestToken(),
 				},
 				body: body.toString(),
-			}, { timeoutMs: null, fallbackMessage: 'Pad creation failed.' })
+			}, { timeoutMs: null, fallbackMessage: failedMessage })
 		} catch (error) {
 			const status = (error && typeof error.status === 'number') ? error.status : null
 			// A 4xx refuses the create, even if its body then broke off, so
@@ -171,7 +172,7 @@ import { fetchJsonWithTimeout as fetchJson, isUnanswered } from './lib/fetch-hel
 				failCreate('network', unansweredMessage, status)
 				return
 			}
-			const message = !isUnanswered(error) && error instanceof Error && error.message ? error.message : 'Pad creation failed.'
+			const message = !isUnanswered(error) && error instanceof Error && error.message ? error.message : failedMessage
 			failCreate(classifyHttpStatus(status), message, status, error)
 			return
 		}

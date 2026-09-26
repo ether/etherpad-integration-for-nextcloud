@@ -17,7 +17,8 @@ const setupEmbedCreateDom = () => {
 			data-l10n-missing-name="Pad name is required."
 			data-l10n-invalid-access-mode="Invalid access mode."
 			data-l10n-incomplete-config="Embed configuration is incomplete."
-			data-l10n-unanswered="No answer; look in the folder first.">
+			data-l10n-unanswered="No answer; look in the folder first."
+			data-l10n-failed="Anlegen fehlgeschlagen.">
 			<div data-epnc-embed-create-loading>loading</div>
 			<div data-epnc-embed-create-error hidden>
 				<p data-epnc-embed-create-error-message></p>
@@ -226,6 +227,8 @@ describe('embed-create-main', () => {
 	 * server's code and retryable go along as it sent them.
 	 */
 	const NO_ANSWER = 'No answer; look in the folder first.'
+	// The page's own sentence when the answer has none.
+	const CREATE_FAILED = 'Anlegen fehlgeschlagen.'
 	it.each([
 		['a proxy whose backend is gone', pageResponse(502), 'network', 502, NO_ANSWER],
 		['a proxy that gave up waiting', pageResponse(504), 'network', 504, NO_ANSWER],
@@ -233,11 +236,11 @@ describe('embed-create-main', () => {
 		['PHP dying midway', pageResponse(500), 'network', 500, NO_ANSWER],
 		['a success whose body broke off', { ok: true, status: 200, json: () => Promise.reject(new TypeError('network error')) }, 'network', 200, NO_ANSWER],
 		['this app, the folder locked', errorResponse({ message: 'Pad file is temporarily locked. Please retry.', retryable: true }, 503), 'server', 503, 'Pad file is temporarily locked. Please retry.', { retryable: true }],
-		['this app failing without a sentence', errorResponse({}, 500), 'server', 500, 'Pad creation failed.'],
+		['this app failing without a sentence', errorResponse({}, 500), 'server', 500, CREATE_FAILED],
 		['a pad type switched off', errorResponse({ message: 'This pad type is disabled on this instance.', code: 'pad_type_disabled', access_mode: 'protected' }, 403), 'server', 403, 'This pad type is disabled on this instance.', { code: 'pad_type_disabled' }],
-		['a proxy refusing a body too large', pageResponse(413), 'server', 413, 'Pad creation failed.'],
+		['a proxy refusing a body too large', pageResponse(413), 'server', 413, CREATE_FAILED],
 		['a file changed while its pad was set up', errorResponse({ message: 'The file changed while its pad was being set up. Try again.', code: 'pad_file_changed' }, 409), 'conflict', 409, 'The file changed while its pad was being set up. Try again.', { code: 'pad_file_changed' }],
-		['a duplicate name whose body broke off', { ok: false, status: 409, json: () => Promise.reject(new TypeError('network error')) }, 'conflict', 409, 'Pad creation failed.'],
+		['a duplicate name whose body broke off', { ok: false, status: 409, json: () => Promise.reject(new TypeError('network error')) }, 'conflict', 409, CREATE_FAILED],
 	])('tells the host what came of %s', async (_, response, reason, status, message, answer = {}) => {
 		fetch.mockResolvedValueOnce(response)
 
