@@ -73,21 +73,29 @@ import { fetchJsonWithTimeout as fetchJson, isUnanswered } from './lib/fetch-hel
 	 * HTTP status:
 	 *   - 'invalid' — client-side validation failed (missing name, etc.)
 	 *   - 'conflict' — backend returned 409 (e.g. duplicate filename)
-	 *   - 'server'  — this app refused or failed the create with any other
-	 *     4xx / 5xx (it rolls a failed create back as far as it can), or
-	 *     answered in a way this page cannot use
+	 *   - 'server'  — refused with any other 4xx, by this app or by a proxy
+	 *     before it, so nothing was created; or failed by this app with a
+	 *     5xx of its own, which it rolls back as far as it can; or answered
+	 *     in a way this page cannot use
 	 *   - 'network' — no answer from this app, so the pad may have been
 	 *     created anyway: fetch failed, the answer broke off, or a proxy or
 	 *     PHP itself answered in its place (see fetchJsonWithTimeout();
 	 *     `status` then carries what came)
+	 *
+	 * `code` and `retryable` are the server's, as the open's clients read
+	 * them (docs/api-reference.md): `retryable` says the same create may
+	 * work later, a locked folder say, and `code` tells `pad_file_changed`
+	 * from a name taken within 'conflict'.
 	 */
-	const failCreate = (reason, message, status) => {
+	const failCreate = (reason, message, status, answer = null) => {
 		const normalizedMessage = String(message || 'Unknown error.')
 		showError(normalizedMessage)
 		postHostMessage('epnc:create-failed', {
 			reason,
 			status: typeof status === 'number' ? status : null,
 			message: normalizedMessage,
+			code: answer && typeof answer.code === 'string' ? answer.code : null,
+			retryable: Boolean(answer) && answer.retryable === true,
 		})
 	}
 
@@ -164,7 +172,7 @@ import { fetchJsonWithTimeout as fetchJson, isUnanswered } from './lib/fetch-hel
 				return
 			}
 			const message = !isUnanswered(error) && error instanceof Error && error.message ? error.message : 'Pad creation failed.'
-			failCreate(classifyHttpStatus(status), message, status)
+			failCreate(classifyHttpStatus(status), message, status, error)
 			return
 		}
 

@@ -214,7 +214,7 @@ describe('embed-create-main', () => {
 		await flushAsyncWork()
 
 		const payload = parentPostSpy.mock.calls[0][0]
-		expect(payload).toEqual({ type: 'epnc:create-failed', reason: 'network', status: null, message: 'No answer; look in the folder first.' })
+		expect(payload).toEqual({ type: 'epnc:create-failed', reason: 'network', status: null, message: 'No answer; look in the folder first.', code: null, retryable: false })
 		expect(errorMessageText()).toBe('No answer; look in the folder first.')
 	})
 
@@ -222,7 +222,8 @@ describe('embed-create-main', () => {
 	 * A proxy or PHP answering in this app's place is no answer from it
 	 * either, whatever it sends, and neither is an answer that broke off;
 	 * what came goes along as the status. A 4xx refused the create, even
-	 * one whose body broke off, and so did this app's own 5xx.
+	 * one whose body broke off, and so did this app's own 5xx. The
+	 * server's code and retryable go along as it sent them.
 	 */
 	const NO_ANSWER = 'No answer; look in the folder first.'
 	it.each([
@@ -231,17 +232,26 @@ describe('embed-create-main', () => {
 		['a gateway answering JSON of its own', errorResponse({ message: 'An invalid response was received from the upstream server' }, 503), 'network', 503, NO_ANSWER],
 		['PHP dying midway', pageResponse(500), 'network', 500, NO_ANSWER],
 		['a success whose body broke off', { ok: true, status: 200, json: () => Promise.reject(new TypeError('network error')) }, 'network', 200, NO_ANSWER],
-		['this app, the folder locked', errorResponse({ message: 'Pad file is temporarily locked. Please retry.', retryable: true }, 503), 'server', 503, 'Pad file is temporarily locked. Please retry.'],
+		['this app, the folder locked', errorResponse({ message: 'Pad file is temporarily locked. Please retry.', retryable: true }, 503), 'server', 503, 'Pad file is temporarily locked. Please retry.', { retryable: true }],
 		['this app failing without a sentence', errorResponse({}, 500), 'server', 500, 'Pad creation failed.'],
+		['a pad type switched off', errorResponse({ message: 'This pad type is disabled on this instance.', code: 'pad_type_disabled', access_mode: 'protected' }, 403), 'server', 403, 'This pad type is disabled on this instance.', { code: 'pad_type_disabled' }],
 		['a proxy refusing a body too large', pageResponse(413), 'server', 413, 'Pad creation failed.'],
+		['a file changed while its pad was set up', errorResponse({ message: 'The file changed while its pad was being set up. Try again.', code: 'pad_file_changed' }, 409), 'conflict', 409, 'The file changed while its pad was being set up. Try again.', { code: 'pad_file_changed' }],
 		['a duplicate name whose body broke off', { ok: false, status: 409, json: () => Promise.reject(new TypeError('network error')) }, 'conflict', 409, 'Pad creation failed.'],
-	])('tells the host what came of %s', async (_, response, reason, status, message) => {
+	])('tells the host what came of %s', async (_, response, reason, status, message, answer = {}) => {
 		fetch.mockResolvedValueOnce(response)
 
 		await importEmbedCreate()
 		await flushAsyncWork()
 
-		expect(parentPostSpy.mock.calls[0][0]).toEqual({ type: 'epnc:create-failed', reason, status, message })
+		expect(parentPostSpy.mock.calls[0][0]).toEqual({
+			type: 'epnc:create-failed',
+			reason,
+			status,
+			message,
+			code: answer.code ?? null,
+			retryable: answer.retryable ?? false,
+		})
 		expect(errorMessageText()).toBe(message)
 	})
 
