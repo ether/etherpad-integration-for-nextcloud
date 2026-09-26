@@ -145,7 +145,7 @@ describe('api-client', () => {
 		const { apiRecoverFromSnapshot } = await importClient()
 		fetch.mockResolvedValueOnce({
 			ok: false,
-			json: () => Promise.reject(new Error('invalid json')),
+			json: () => Promise.reject(new SyntaxError('Unexpected token < in JSON')),
 		})
 
 		await expect(apiRecoverFromSnapshot(10)).rejects.toThrow('Recovery failed.')

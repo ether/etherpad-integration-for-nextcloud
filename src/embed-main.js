@@ -4,12 +4,15 @@
  */
 import { ocRequestToken } from './lib/oc-compat.js'
 import { createPadSync } from './lib/pad-sync.js'
-import { fetchJsonWithTimeout as fetchJson } from './lib/fetch-helpers.js'
+import { fetchJsonWithTimeout as fetchJson, requestErrorMessage } from './lib/fetch-helpers.js'
+import { handFocusTo } from './lib/hand-focus.js'
 import { loadPadContent } from './lib/pad-content.js'
-import { assertOpenPayload, contentUrlFrom, contentViewFrom, openWithFrontmatterRecovery, padUrlFrom, syncSettingsFrom } from './lib/pad-open-flow.js'
+import { assertOpenPayload, contentUrlFrom, contentViewFrom, isMissingBindingError, isRetryableOpenError, openWithFrontmatterRecovery, padUrlFrom, syncSettingsFrom } from './lib/pad-open-flow.js'
 
 (function () {
 	const IFRAME_REVEAL_DELAY_MS = 100
+	const BUTTON_CLASS = 'epnc-embed__recovery-button'
+	const PRIMARY_BUTTON_CLASS = BUTTON_CLASS + ' epnc-embed__recovery-button--primary'
 
 	const root = document.getElementById('etherpad-nextcloud-embed')
 	if (!(root instanceof HTMLElement)) {
@@ -29,6 +32,7 @@ import { assertOpenPayload, contentUrlFrom, contentViewFrom, openWithFrontmatter
 	const loadingNode = root.querySelector('[data-epnc-embed-loading]')
 	const errorNode = root.querySelector('[data-epnc-embed-error]')
 	const errorMessageNode = root.querySelector('[data-epnc-embed-error-message]')
+	const errorActionsNode = root.querySelector('[data-epnc-embed-error-actions]')
 	const recoveryNode = root.querySelector('[data-epnc-embed-recovery]')
 	const recoveryMessageNode = root.querySelector('[data-epnc-embed-recovery-message]')
 	const recoveryBodyNode = root.querySelector('[data-epnc-embed-recovery-body]')
@@ -48,25 +52,56 @@ import { assertOpenPayload, contentUrlFrom, contentViewFrom, openWithFrontmatter
 	const recoveryOpenOriginalText = String(root.getAttribute('data-l10n-recovery-open-original') || 'Open the original .pad file').trim()
 	const recoveryCreateNewText = String(root.getAttribute('data-l10n-recovery-create-new') || 'Create new pad from this file').trim()
 	const recoveryCreatingText = String(root.getAttribute('data-l10n-recovery-creating') || 'Creating new pad...').trim()
+	const unansweredText = String(root.getAttribute('data-l10n-unanswered') || 'Nextcloud did not answer. Check your connection and try again.').trim()
 	let messageHandler = null
 
 	const requestToken = () => ocRequestToken(templateRequestToken)
 	const padSync = createPadSync({ requestToken })
 
-	const showError = (message) => {
-		if (loadingNode instanceof HTMLElement) {
-			loadingNode.hidden = true
-			loadingNode.classList.remove('epnc-embed__loading--pad-doc')
-		}
-		if (iframe instanceof HTMLIFrameElement) {
-			iframe.hidden = true
-			iframe.removeAttribute('src')
-		}
+	const messageOf = (error, fallback) => requestErrorMessage(error, unansweredText, fallback)
+	// The page sits in another one, which must not scroll to it.
+	const handFocusToCard = (actionsNode, messageNode) => handFocusTo(actionsNode, messageNode, { preventScroll: true })
+
+	/** Every button of this page: the content's retry, the error panel's, the recovery card's. */
+	const buildButton = (label, onClick, className = BUTTON_CLASS) => {
+		const button = document.createElement('button')
+		button.type = 'button'
+		button.className = className
+		button.textContent = label
+		button.addEventListener('click', onClick)
+		return button
+	}
+
+	/**
+	 * $canRetry: the open may work later (`isRetryableOpenError`), so the
+	 * panel offers to run it again rather than a dead end. $afterClick: see
+	 * handFocusTo().
+	 */
+	const showError = (message, canRetry = false, afterClick = false) => {
+		hideAllPanels()
 		if (errorMessageNode instanceof HTMLElement) {
 			errorMessageNode.textContent = String(message || 'Unknown error.')
 		}
+		if (errorActionsNode instanceof HTMLElement) {
+			errorActionsNode.replaceChildren()
+			if (canRetry) {
+				errorActionsNode.appendChild(buildButton(contentRetryText, () => { void run(true) }, PRIMARY_BUTTON_CLASS))
+			}
+		}
 		if (errorNode instanceof HTMLElement) {
 			errorNode.hidden = false
+		}
+		if (afterClick) {
+			handFocusToCard(errorActionsNode, errorMessageNode)
+		}
+	}
+
+	/** Every panel away and the loading state up: where every open starts. */
+	const showLoading = () => {
+		hideAllPanels()
+		if (loadingNode instanceof HTMLElement) {
+			loadingNode.classList.remove('epnc-embed__loading--pad-doc')
+			loadingNode.hidden = false
 		}
 	}
 
@@ -76,17 +111,9 @@ import { assertOpenPayload, contentUrlFrom, contentViewFrom, openWithFrontmatter
 	 * frame and its button survive a refresh.
 	 */
 	const showPadContentView = (url) => {
-		if (errorNode instanceof HTMLElement) {
-			errorNode.hidden = true
-		}
-		if (iframe instanceof HTMLIFrameElement) {
-			iframe.hidden = true
-			iframe.removeAttribute('src')
-		}
 		if (!(loadingNode instanceof HTMLElement)) {
 			return null
 		}
-		loadingNode.hidden = false
 		loadingNode.classList.add('epnc-embed__loading--pad-doc')
 		loadingNode.textContent = ''
 
@@ -183,7 +210,7 @@ import { assertOpenPayload, contentUrlFrom, contentViewFrom, openWithFrontmatter
 			body.innerHTML = content.html
 		} catch (error) {
 			if (!isCurrent()) return
-			renderContentError(view, contentUrl, error instanceof Error ? error.message : contentErrorText)
+			renderContentError(view, contentUrl, messageOf(error, contentErrorText))
 		} finally {
 			if (isCurrent() && refresh instanceof HTMLButtonElement) {
 				refresh.disabled = false
@@ -208,12 +235,7 @@ import { assertOpenPayload, contentUrlFrom, contentViewFrom, openWithFrontmatter
 
 		body.appendChild(text)
 		if (canRetry) {
-			const retry = document.createElement('button')
-			retry.type = 'button'
-			retry.className = 'button primary'
-			retry.textContent = contentRetryText
-			retry.addEventListener('click', () => { void loadContent(view, contentUrl) })
-			body.appendChild(retry)
+			body.appendChild(buildButton(contentRetryText, () => { void loadContent(view, contentUrl) }, 'button primary'))
 		}
 	}
 
@@ -222,13 +244,7 @@ import { assertOpenPayload, contentUrlFrom, contentViewFrom, openWithFrontmatter
 			showError('Embed iframe is not available.')
 			return
 		}
-		if (errorNode instanceof HTMLElement) {
-			errorNode.hidden = true
-		}
-		if (loadingNode instanceof HTMLElement) {
-			loadingNode.classList.remove('epnc-embed__loading--pad-doc')
-		}
-		iframe.hidden = true
+		// The loading state the open started from stays up until the pad has loaded.
 		const revealIframe = () => {
 			iframe.removeEventListener('load', revealIframe)
 			window.setTimeout(() => {
@@ -331,12 +347,13 @@ import { assertOpenPayload, contentUrlFrom, contentViewFrom, openWithFrontmatter
 
 	const initializePad = async () => {
 		const url = initializeByIdUrlTemplate.replace('__FILE_ID__', encodeURIComponent(String(fileId)))
+		// A write: see fetchJsonWithTimeout() for why it gets no timeout.
 		const data = await fetchJson(url, {
 			method: 'POST',
 			headers: {
 				requesttoken: requestToken(),
 			},
-		})
+		}, { timeoutMs: null })
 		if (data && data.status === 'migrated_from_legacy') {
 			// Mirror the backend audit-log entry to the browser console; no
 			// toast surface is wired up in this app yet.
@@ -363,15 +380,6 @@ import { assertOpenPayload, contentUrlFrom, contentViewFrom, openWithFrontmatter
 		if (recoveryActionsNode instanceof HTMLElement) recoveryActionsNode.replaceChildren()
 	}
 
-	const buildRecoveryButton = (label, onClick) => {
-		const button = document.createElement('button')
-		button.type = 'button'
-		button.className = 'epnc-embed__recovery-button'
-		button.textContent = label
-		button.addEventListener('click', onClick)
-		return button
-	}
-
 	const showRecoveryWithOriginal = (originalEmbedUrl, errorMessage) => {
 		if (!(recoveryNode instanceof HTMLElement)) return
 		hideAllPanels()
@@ -380,14 +388,14 @@ import { assertOpenPayload, contentUrlFrom, contentViewFrom, openWithFrontmatter
 		if (recoveryBodyNode instanceof HTMLElement) recoveryBodyNode.textContent = recoveryCopyBodyText
 		if (recoveryActionsNode instanceof HTMLElement) {
 			const openLink = document.createElement('a')
-			openLink.className = 'epnc-embed__recovery-button epnc-embed__recovery-button--primary'
+			openLink.className = PRIMARY_BUTTON_CLASS
 			// Stay in embed mode: load the original's embed page in the same
 			// frame so a host iframe doesn't need to deal with a new tab.
 			openLink.href = originalEmbedUrl
 			openLink.textContent = recoveryOpenOriginalText
 			recoveryActionsNode.replaceChildren(
 				openLink,
-				buildRecoveryButton(recoveryCreateNewText, () => { void triggerRecovery() }),
+				buildButton(recoveryCreateNewText, () => { void triggerRecovery() }),
 			)
 		}
 	}
@@ -399,9 +407,9 @@ import { assertOpenPayload, contentUrlFrom, contentViewFrom, openWithFrontmatter
 		if (recoveryMessageNode instanceof HTMLElement) recoveryMessageNode.textContent = errorMessage
 		if (recoveryBodyNode instanceof HTMLElement) recoveryBodyNode.textContent = recoveryOrphanBodyText
 		if (recoveryActionsNode instanceof HTMLElement) {
-			const button = buildRecoveryButton(recoveryCreateNewText, () => { void triggerRecovery() })
-			button.classList.add('epnc-embed__recovery-button--primary')
-			recoveryActionsNode.replaceChildren(button)
+			recoveryActionsNode.replaceChildren(
+				buildButton(recoveryCreateNewText, () => { void triggerRecovery() }, PRIMARY_BUTTON_CLASS),
+			)
 		}
 	}
 
@@ -428,47 +436,72 @@ import { assertOpenPayload, contentUrlFrom, contentViewFrom, openWithFrontmatter
 		setRecoveryActionsBusy(true)
 		const url = recoverUrlTemplate.replace('__FILE_ID__', encodeURIComponent(String(fileId)))
 		try {
+			// A write, like initializePad().
 			await fetchJson(url, {
 				method: 'POST',
 				headers: { requesttoken: requestToken() },
-			})
-			// Restart the open flow now that the binding exists.
-			hideAllPanels()
-			if (loadingNode instanceof HTMLElement) loadingNode.hidden = false
-			void run()
+			}, { timeoutMs: null })
+			// Open again now that the binding exists.
+			void run(true)
 		} catch (error) {
+			// No answer: the pad may be set up by now, and another recovery
+			// would meet it. Opening tells, and is safe to repeat.
+			if (error && error.unanswered === true) {
+				void run(true)
+				return
+			}
 			setRecoveryActionsBusy(false)
 			if (recoveryMessageNode instanceof HTMLElement) {
-				recoveryMessageNode.textContent = error instanceof Error && error.message
-					? error.message
-					: 'Recovery failed.'
+				recoveryMessageNode.textContent = messageOf(error, 'Recovery failed.')
 			}
+			// The clicked button lost the focus while it was disabled.
+			handFocusToCard(recoveryActionsNode, recoveryMessageNode)
 		}
 	}
 
-	const enterRecoveryFlow = async (initialError) => {
-		const errorMessage = initialError instanceof Error && initialError.message
-			? initialError.message
-			: 'Pad open failed.'
-		showRecoveryChecking()
+	/** The original's embed page, or '' when there is none or no answer. */
+	const findOriginalEmbedUrl = async () => {
 		if (findOriginalUrlTemplate === '') {
-			showRecoveryWithoutOriginal(errorMessage)
-			return
+			return ''
 		}
 		const lookupUrl = findOriginalUrlTemplate.replace('__FILE_ID__', encodeURIComponent(String(fileId)))
 		try {
 			const hint = await fetchJson(lookupUrl, { method: 'GET' })
-			if (hint && hint.found === true && typeof hint.embed_url === 'string' && hint.embed_url !== '') {
-				showRecoveryWithOriginal(hint.embed_url, errorMessage)
-				return
+			if (hint && hint.found === true && typeof hint.embed_url === 'string') {
+				return hint.embed_url
 			}
 		} catch {
-			// Silent: fall through to the no-match branch.
+			// Silent: the card then offers a new pad only.
 		}
-		showRecoveryWithoutOriginal(errorMessage)
+		return ''
 	}
 
-	const run = async () => {
+	const enterRecoveryFlow = async (initialError, afterClick, isCurrent) => {
+		const errorMessage = messageOf(initialError, 'Pad open failed.')
+		showRecoveryChecking()
+		const originalEmbedUrl = await findOriginalEmbedUrl()
+		if (!isCurrent()) {
+			return
+		}
+		if (originalEmbedUrl !== '') {
+			showRecoveryWithOriginal(originalEmbedUrl, errorMessage)
+		} else {
+			showRecoveryWithoutOriginal(errorMessage)
+		}
+		if (afterClick) {
+			handFocusToCard(recoveryActionsNode, recoveryMessageNode)
+		}
+	}
+
+	// So an open that answers late cannot undo a newer one.
+	let openGeneration = 0
+
+	/** $afterClick: a second try or a recovery started it; see handFocusTo(). */
+	const run = async (afterClick = false) => {
+		openGeneration += 1
+		const generation = openGeneration
+		const isCurrent = () => generation === openGeneration
+		showLoading()
 		if (!Number.isFinite(fileId) || fileId <= 0 || openByIdUrl === '' || initializeByIdUrlTemplate === '') {
 			showError('Embed configuration is incomplete.')
 			return
@@ -478,7 +511,10 @@ import { assertOpenPayload, contentUrlFrom, contentViewFrom, openWithFrontmatter
 			return
 		}
 		try {
-			const data = await openWithFrontmatterRecovery({ open: openPad, initialize: initializePad })
+			const data = await openWithFrontmatterRecovery({ open: openPad, initialize: initializePad, stillWanted: isCurrent })
+			if (data === null || !isCurrent()) {
+				return
+			}
 			const { syncUrl, intervalMs } = syncSettingsFrom(data)
 			padSync.configure({ syncUrl, intervalMs })
 			padSync.installLifecycleHandlers()
@@ -500,11 +536,14 @@ import { assertOpenPayload, contentUrlFrom, contentViewFrom, openWithFrontmatter
 			}
 			showIframe(padUrlFrom(data))
 		} catch (error) {
-			if (error && error.code === 'missing_binding') {
-				void enterRecoveryFlow(error)
+			if (!isCurrent()) {
 				return
 			}
-			showError(error instanceof Error ? error.message : 'Pad open failed.')
+			if (isMissingBindingError(error)) {
+				void enterRecoveryFlow(error, afterClick, isCurrent)
+				return
+			}
+			showError(messageOf(error, 'Pad open failed.'), isRetryableOpenError(error), afterClick)
 		}
 	}
 

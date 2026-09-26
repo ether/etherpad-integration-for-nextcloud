@@ -4,6 +4,7 @@
  */
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 10000
+const GATEWAY_STATUSES = [502, 503, 504]
 
 /**
  * `init.signal` is chained rather than replaced: the timeout needs a
@@ -17,6 +18,12 @@ const DEFAULT_REQUEST_TIMEOUT_MS = 10000
  * created its pad but not yet its binding looks unrecovered, and the
  * retry then either collides with the binding it did write or provisions
  * a second pad and orphans the first. Slow is not the same as stuck.
+ *
+ * An error carries the server's `code` and `retryable` when it sent them,
+ * and `unanswered` when nothing came back from this app: our own timeout,
+ * a failed network, or a gateway answering in its place. Only that fact:
+ * whether the same request is worth another try depends on whether it
+ * writes, which the caller knows (`isRetryableOpenError` for an open).
  */
 export const fetchJsonWithTimeout = async (url, init = {}, options = {}) => {
 	const { timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS, fallbackMessage = 'Request failed.' } = options
@@ -41,11 +48,30 @@ export const fetchJsonWithTimeout = async (url, init = {}, options = {}) => {
 			headers,
 			signal: controller.signal,
 		}))
-		const data = await response.json().catch(() => ({}))
+		// Only a body that is not JSON counts as none. A timeout or a failed
+		// network while it streams in is no answer, and is handled below.
+		const data = await response.json().catch((error) => {
+			if (!(error instanceof SyntaxError)) {
+				throw error
+			}
+			return {}
+		})
 		if (!response.ok) {
 			const error = new Error((data && data.message) || fallbackMessage)
 			if (data && typeof data.code === 'string') {
 				error.code = data.code
+			}
+			// The server's word that the same request may succeed later (the
+			// cases are in docs/api-reference.md).
+			if (data && data.retryable === true) {
+				error.retryable = true
+			}
+			// This app never answers 502 or 504, and every 503 of its own
+			// carries retryable (docs/api-reference.md). Without it, a proxy
+			// with its backend gone or Nextcloud in maintenance answered in
+			// its place, with a page or with JSON of its own.
+			if (GATEWAY_STATUSES.includes(response.status) && error.retryable !== true) {
+				error.unanswered = true
 			}
 			error.status = response.status
 			throw error
@@ -60,7 +86,14 @@ export const fetchJsonWithTimeout = async (url, init = {}, options = {}) => {
 			if (timeoutId === null || (callerSignal && callerSignal.aborted)) {
 				throw error
 			}
-			throw new Error('Request timed out.')
+			const timedOut = new Error('Request timed out.')
+			timedOut.unanswered = true
+			throw timedOut
+		}
+		// fetch() and reading the body reject with a TypeError when the
+		// network fails.
+		if (error instanceof TypeError) {
+			error.unanswered = true
 		}
 		throw error
 	} finally {
@@ -71,4 +104,21 @@ export const fetchJsonWithTimeout = async (url, init = {}, options = {}) => {
 			callerSignal.removeEventListener('abort', abortOnCaller)
 		}
 	}
+}
+
+/**
+ * What to show for a failed request: the server's sentence, or, when
+ * nothing came back, the caller's translated `unansweredText` rather than
+ * the browser's own English ("Failed to fetch", "Load failed", ...).
+ *
+ * @param {unknown} error
+ * @param {string} unansweredText
+ * @param {string} fallbackText
+ * @return {string}
+ */
+export const requestErrorMessage = (error, unansweredText, fallbackText) => {
+	if (error && error.unanswered === true) {
+		return unansweredText
+	}
+	return error instanceof Error && error.message ? error.message : fallbackText
 }

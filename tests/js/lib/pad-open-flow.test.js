@@ -7,13 +7,16 @@ import {
 	assertOpenPayload,
 	contentUrlFrom,
 	contentViewFrom,
+	isMissingBindingError,
 	isMissingFrontmatterError,
+	isRetryableOpenError,
 	openWithFrontmatterRecovery,
 	padUrlFrom,
 	syncSettingsFrom,
 } from '../../../src/lib/pad-open-flow.js'
 
 const withCode = (code) => Object.assign(new Error('nope'), { code })
+const unanswered = () => Object.assign(new Error('Request timed out.'), { unanswered: true })
 
 describe('isMissingFrontmatterError', () => {
 	it('reads the code, not the sentence written for a person', () => {
@@ -21,6 +24,28 @@ describe('isMissingFrontmatterError', () => {
 		expect(isMissingFrontmatterError(new Error('This .pad file has no pad metadata yet.'))).toBe(false)
 		expect(isMissingFrontmatterError(withCode('missing_binding'))).toBe(false)
 		expect(isMissingFrontmatterError(null)).toBe(false)
+	})
+})
+
+describe('isMissingBindingError', () => {
+	it('reads the code, not the sentence written for a person', () => {
+		expect(isMissingBindingError(withCode('missing_binding'))).toBe(true)
+		expect(isMissingBindingError(new Error('This .pad file has no matching pad in this Nextcloud.'))).toBe(false)
+		expect(isMissingBindingError(withCode('missing_frontmatter'))).toBe(false)
+		expect(isMissingBindingError(null)).toBe(false)
+	})
+})
+
+describe('isRetryableOpenError', () => {
+	it.each([
+		['the server says it may work later', Object.assign(new Error('locked'), { retryable: true }), true],
+		['the file changed while it was being initialised', withCode('pad_file_changed'), true],
+		['no answer came', unanswered(), true],
+		['the server refused', withCode('missing_binding'), false],
+		['nothing says more', new Error('Internal server error'), false],
+		['there is no error', null, false],
+	])('offers another try, or not, when %s', (_, error, expected) => {
+		expect(isRetryableOpenError(error)).toBe(expected)
 	})
 })
 
@@ -76,6 +101,26 @@ describe('openWithFrontmatterRecovery', () => {
 
 		await expect(openWithFrontmatterRecovery({ open, initialize })).rejects.toThrow('could not write the file')
 		expect(open).toHaveBeenCalledTimes(1)
+	})
+
+	/** Unanswered, its pad may be set up by now; another open would start a second one. */
+	/**
+	 * A second try opens first, so an initialise that went through is found,
+	 * and the server keeps one still running from being done twice.
+	 */
+	it.each([
+		['the first open', [unanswered()], undefined],
+		['the initialise', [withCode('missing_frontmatter')], unanswered()],
+		['the open after it', [withCode('missing_frontmatter'), unanswered()], undefined],
+	])('leaves a second try open when %s got no answer', async (_, openFailures, initializeFailure) => {
+		const open = vi.fn()
+		openFailures.forEach((failure) => open.mockRejectedValueOnce(failure))
+		const initialize = initializeFailure ? vi.fn().mockRejectedValue(initializeFailure) : vi.fn().mockResolvedValue(undefined)
+
+		const error = await openWithFrontmatterRecovery({ open, initialize }).catch((e) => e)
+
+		expect(error.unanswered).toBe(true)
+		expect(isRetryableOpenError(error)).toBe(true)
 	})
 
 	/** The card the viewer shows is built from whatever comes back out. */

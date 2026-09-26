@@ -7,6 +7,7 @@ namespace OCA\EtherpadNextcloud\Tests\Unit;
 use OCA\EtherpadNextcloud\Exception\BindingMismatchException;
 use OCA\EtherpadNextcloud\Controller\PublicViewerControllerErrorMapper;
 use OCA\EtherpadNextcloud\Exception\BindingException;
+use OCA\EtherpadNextcloud\Exception\BindingNotCreatedException;
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
 use OCA\EtherpadNextcloud\Exception\EtherpadRefusedException;
 use OCA\EtherpadNextcloud\Exception\EtherpadTooLargeException;
@@ -103,6 +104,23 @@ class PublicViewerControllerErrorMapperTest extends TestCase {
 	}
 
 	/**
+	 * As on the signed-in side, a 503 always says the same request may work
+	 * later: the clients take one without `retryable` for a gateway's.
+	 */
+	public function testEveryServiceUnavailableAnswerIsRetryable(): void {
+		$seen = 0;
+		foreach (self::publicAnswers() as $case => [$e, $status]) {
+			if ($status !== Http::STATUS_SERVICE_UNAVAILABLE) {
+				continue;
+			}
+			$data = $this->buildMapper()->runForData(static fn (): array => throw $e, static fn (array $result): DataResponse => new DataResponse($result))->getData();
+			$this->assertTrue($data['retryable'] ?? false, $case);
+			$seen++;
+		}
+		$this->assertSame(2, $seen, 'a locked file and Etherpad not reachable');
+	}
+
+	/**
 	 * A public answer carries the codes a visitor's client can act on, from
 	 * the same place as the signed-in one - and not the two whose action
 	 * needs a signed-in user: the viewer opens public pads through the flow
@@ -117,6 +135,8 @@ class PublicViewerControllerErrorMapperTest extends TestCase {
 			// No code, but as on the signed-in side a retry is worth it.
 			'a file locked' => [new LockedException('locked'), ['retryable' => true]],
 			'Etherpad not reachable' => [new EtherpadClientException('Etherpad API request failed: getHTML'), ['retryable' => true]],
+			// Another request made the file's row first; the next open finds it.
+			'a row another request made first' => [new BindingNotCreatedException('Could not create unique pad binding.'), ['retryable' => true]],
 			'Etherpad refusing' => [new EtherpadRefusedException('Etherpad API error (getHTML): padID does not exist'), []],
 		];
 		foreach ($cases as $case => [$e, $expected]) {

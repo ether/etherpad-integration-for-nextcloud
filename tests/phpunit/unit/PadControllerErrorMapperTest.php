@@ -70,6 +70,8 @@ class PadControllerErrorMapperTest extends TestCase {
 		yield 'a pad still being restored' => [new WaitingBindingException('internal wording'), Http::STATUS_CONFLICT, 'This pad is still being restored. Try again later.', ['code' => 'waiting_binding', 'retryable' => true]];
 		// Or a row another request made at the same moment: trying again may do.
 		yield 'a row naming another pad' => [new BindingException('Binding pad ID mismatch.'), Http::STATUS_BAD_REQUEST, 'This .pad file and its pad could not be matched. Try again, or contact your administrator if it keeps happening.', []];
+		// Two initialisations at once: the next open finds the winner's pad.
+		yield 'a row another request made first' => [new BindingNotCreatedException('Could not create unique pad binding.'), Http::STATUS_BAD_REQUEST, 'This .pad file and its pad could not be matched. Try again, or contact your administrator if it keeps happening.', ['retryable' => true]];
 		yield 'a legacy import switched off' => [new LegacyProtectedImportDisabledException('internal wording'), Http::STATUS_FORBIDDEN, 'This file is a legacy Ownpad link to a protected pad, and importing those is disabled on this server. Please contact your administrator.', ['code' => 'legacy_protected_import_disabled']];
 		yield 'a legacy pad missing from its group' => [new LegacyPadNotFoundException('internal wording'), Http::STATUS_BAD_REQUEST, 'This legacy Ownpad file names a pad that does not exist in Etherpad.', []];
 		yield 'a legacy pad bound elsewhere' => [new LegacyPadCollisionException('internal wording'), Http::STATUS_CONFLICT, 'This pad is already linked to another file you do not have access to.', ['code' => 'legacy_collision_no_access']];
@@ -101,6 +103,24 @@ class PadControllerErrorMapperTest extends TestCase {
 
 		$this->assertSame(['message' => '[de] ' . $sentence, ...$rest], $response->getData());
 		$this->assertSame($status, $response->getStatus());
+	}
+
+	/**
+	 * A 503 of this app always says the same request may work later: the
+	 * clients take a 502, 503 or 504 without `retryable` for a gateway
+	 * answering in its place (docs/api-reference.md).
+	 */
+	public function testEveryServiceUnavailableAnswerIsRetryable(): void {
+		$seen = 0;
+		foreach (self::answers() as $case => [$e, $status]) {
+			if ($status !== Http::STATUS_SERVICE_UNAVAILABLE) {
+				continue;
+			}
+			$response = $this->buildMapper()->run(static fn (): array => throw $e, static fn (array $result): DataResponse => new DataResponse($result));
+			$this->assertTrue($response->getData()['retryable'] ?? false, $case);
+			$seen++;
+		}
+		$this->assertSame(2, $seen, 'a locked file and Etherpad not reachable');
 	}
 
 	/**
@@ -249,11 +269,13 @@ class PadControllerErrorMapperTest extends TestCase {
 
 		$logger = $this->createMock(LoggerInterface::class);
 		$logger->expects($this->once())->method('error')->with('Could not create pad binding.', $this->anything());
-		$this->buildMapper($logger)->run(
+		$response = $this->buildMapper($logger)->run(
 			static fn (): array => throw new BindingNotCreatedException('Could not create unique pad binding.'),
 			static fn (array $result): DataResponse => new DataResponse($result),
 			['binding_message' => 'A file with this name already exists.', 'binding_status' => Http::STATUS_CONFLICT],
 		);
+		// A create's own wording: no code and no retryable of ours with it.
+		$this->assertSame(['message' => 'A file with this name already exists.'], $response->getData());
 	}
 
 	private function buildMapper(?LoggerInterface $logger = null, ?IL10N $l10n = null): PadControllerErrorMapper {

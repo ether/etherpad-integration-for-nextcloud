@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Controller;
 
+use OCA\EtherpadNextcloud\Exception\BindingNotCreatedException;
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
 use OCA\EtherpadNextcloud\Exception\EtherpadTooLargeException;
 use OCA\EtherpadNextcloud\Exception\LegacyPadCollisionException;
@@ -59,12 +60,14 @@ enum ApiErrorCode: string {
 
 	/**
 	 * The same request may succeed later: a row that waits, a file locked
-	 * for a moment, this instance's Etherpad not reachable. The one place
-	 * that says so, for both mappers.
+	 * for a moment, this instance's Etherpad not reachable, a file's row
+	 * another request made first - the next open finds the winner's pad.
+	 * The one place that says so, for both mappers.
 	 */
 	public static function retryable(\Throwable $e): bool {
 		return self::of($e) === self::WaitingBinding
 			|| $e instanceof LockedException
+			|| $e instanceof BindingNotCreatedException
 			|| EtherpadClientException::isEtherpadUnreachable($e);
 	}
 

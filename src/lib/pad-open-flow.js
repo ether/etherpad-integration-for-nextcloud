@@ -23,6 +23,31 @@ const DEFAULT_INTERVAL_MS = 120000
 export const isMissingFrontmatterError = (error) => Boolean(error) && error.code === 'missing_frontmatter'
 
 /**
+ * The file has no pad here: the clients offer to recover one.
+ *
+ * @param {unknown} error
+ * @return {boolean}
+ */
+export const isMissingBindingError = (error) => Boolean(error) && error.code === 'missing_binding'
+
+/**
+ * Whether the same open may work later, so a client offers to try it
+ * again: the server said so (`retryable`), the file changed while it was
+ * being initialised (the server undid its part), or no answer came.
+ *
+ * Also after an initialise that got no answer: the second try opens
+ * first, and finds the pad if the first initialise set it up. One still
+ * running is safe to meet, since the server compares the file before it
+ * writes, a file has one binding row, and a pad that lost either race is
+ * rolled back.
+ *
+ * @param {unknown} error
+ * @return {boolean}
+ */
+export const isRetryableOpenError = (error) => Boolean(error)
+	&& (error.retryable === true || error.code === 'pad_file_changed' || error.unanswered === true)
+
+/**
  * A read-only view carries no pad URL by design; anything else without one
  * would reach an iframe as `undefined`.
  *
