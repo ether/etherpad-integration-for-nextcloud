@@ -293,6 +293,7 @@ existing name asks for confirmation because the previous file is gone for good.
 ## Documentation
 
 - Architecture: [docs/architecture.md](docs/architecture.md)
+- When a pad is deleted: [docs/deleting-pads.md](docs/deleting-pads.md)
 - API routes: [docs/api-reference.md](docs/api-reference.md)
 - Etherpad integration details: [docs/etherpad-integration.md](docs/etherpad-integration.md)
 - `.pad` format: [docs/pad-format.md](docs/pad-format.md)

@@ -74,6 +74,7 @@ $stubFiles = [
 	__DIR__ . '/stubs/OCP/User/Events/UserLoggedOutEvent.php',
 	__DIR__ . '/stubs/OCP/User/Events/BeforeUserDeletedEvent.php',
 	__DIR__ . '/stubs/OCP/Files/Events/Node/BeforeNodeDeletedEvent.php',
+	__DIR__ . '/stubs/OCP/Files/Events/Node/NodeDeletedEvent.php',
 	__DIR__ . '/stubs/OCP/IUserSession.php',
 	__DIR__ . '/stubs/OCP/Files/InvalidPathException.php',
 	__DIR__ . '/stubs/OCP/Files/IFilenameValidator.php',

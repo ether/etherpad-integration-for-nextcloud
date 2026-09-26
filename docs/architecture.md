@@ -278,8 +278,13 @@ Primary flow (native viewer):
 
 ### 5b) Files gone for good
 
-- A pad goes once its `.pad` file is gone for good: seen leaving Files, and then gone from the file cache. For now this covers active rows, beside the trash flow above: files whose trash that flow never saw, such as a file deleted past the trash or the files of a deleted user.
-- The row of a `.pad` file seen leaving Files gets `trashed_at` (`MarkLeavingPadsListener`): a file or folder moved to a trash (`MoveToTrashEvent`), one deleted past it (`BeforeNodeDeletedEvent`, for example a WebDAV `DELETE` with `X-NC-Skip-Trashbin`), and every file of a user about to be deleted (`BeforeUserDeletedEvent`). A folder's files are found in the file cache by the folder's storage and path. The listener never stops a trash or a delete: a mark that fails is a warning, and the sweep finds a file in a trash later.
+- A pad goes once its `.pad` file is gone for good: seen leaving Files, and then gone from the file cache. For now this covers active rows, beside the trash flow above: files whose trash that flow never saw, such as a file deleted past the trash, a folder's files, or the files of a deleted user. What each way of deleting a file does to its pad: [deleting-pads.md](deleting-pads.md).
+- The row of a `.pad` file seen leaving Files gets `trashed_at` (`LeavingPadsListener`): a file or folder moved to a trash (`MoveToTrashEvent`), one deleted past it (`BeforeNodeDeletedEvent`, for example a WebDAV `DELETE` with `X-NC-Skip-Trashbin`), and every file of a user about to be deleted (`BeforeUserDeletedEvent`). A folder's files are found in the file cache by the folder's storage and path. The listener never stops a trash or a delete: a mark that fails is a warning, and the sweep finds a file in a trash later.
+- A delete past the trash does not wait for a run. `LeavingPadsListener` holds the files it marked before a delete (`BeforeNodeDeletedEvent`) until Nextcloud reports the delete done (`NodeDeletedEvent`), and `GoneFileSweep::discardDeleted()` deletes the pads of those gone from the file cache, in the same request and within 5 s.
+  - Nextcloud reports a move to the trash as a delete too, before and after. A file the trash took is still in the file cache, and is passed by.
+  - After the delete Nextcloud reports a folder as a file, so what counts is what was marked before, not the node.
+  - What does not fit in the 5 s, or finds Etherpad not answering, keeps its mark for the next run; nothing is thrown at the delete, which has succeeded (measured with Etherpad stopped).
+  - Both events reach one instance of the listener, as Nextcloud's container keeps the one it made.
 - `GoneFileSweep` runs every five minutes (`GoneFileSweepJob`), within 20 s (`RunBudget`):
   - Active rows with `trashed_at` whose file the file cache has nothing of are gone for good, however their trash was emptied: by a user, by expiry, by `occ trashbin:cleanup`, or by groupfolders, which sends no event. Pad, then row, the earliest mark first.
   - Right before a pad goes, the file cache is asked once more. A pad Etherpad no longer has counts as deleted, and its row goes. A pad Etherpad refuses to delete keeps its row and is tried again next run, with a warning. Etherpad not answering ends the deletions of the run with one `info` line.
@@ -346,6 +351,8 @@ Primary flow (native viewer):
   - Trash lifecycle.
 - `OCA\Files_Trashbin\Events\MoveToTrashEvent`, `OCP\Files\Events\Node\BeforeNodeDeletedEvent`, `OCP\User\Events\BeforeUserDeletedEvent`
   - Mark the rows of `.pad` files leaving Files (see "Files gone for good").
+- `OCP\Files\Events\Node\NodeDeletedEvent`
+  - Delete the pads of files deleted past the trash (see "Files gone for good").
 - `OCA\Files_Trashbin\Events\NodeRestoredEvent`
   - Restore lifecycle.
 - `\OCA\Files_Trashbin\Trashbin::post_restore` (legacy hook)

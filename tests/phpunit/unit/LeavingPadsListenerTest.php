@@ -4,10 +4,12 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Tests\Unit;
 
-use OCA\EtherpadNextcloud\Listeners\MarkLeavingPadsListener;
+use OCA\EtherpadNextcloud\Listeners\LeavingPadsListener;
 use OCA\EtherpadNextcloud\Service\BindingService;
+use OCA\EtherpadNextcloud\Service\GoneFileSweep;
 use OCP\EventDispatcher\Event;
 use OCP\Files\Events\Node\BeforeNodeDeletedEvent;
+use OCP\Files\Events\Node\NodeDeletedEvent;
 use OCP\Files\File;
 use OCP\Files\Folder;
 use OCP\Files\IRootFolder;
@@ -18,19 +20,18 @@ use Psr\Log\LoggerInterface;
 
 /**
  * What leaving Files marks: a `.pad` file's row, every row under a folder,
- * every row of a user deleted. Nothing it does may stop the trash or the
+ * every row of a user deleted. What a delete marked is handed on for its
+ * pads once the delete is done. Nothing it does may stop the trash or the
  * delete it hears of.
  */
-class MarkLeavingPadsListenerTest extends TestCase {
+class LeavingPadsListenerTest extends TestCase {
 	public function testMarksWhatLeavesFiles(): void {
 		$pad = $this->file(7, 'Notes.pad');
 		$text = $this->file(8, 'Notes.txt');
-		$folder = $this->createMock(Folder::class);
-		$folder->method('getId')->willReturn(9);
+		$folder = $this->folder(9);
 		$user = $this->createMock(IUser::class);
 		$user->method('getUID')->willReturn('alice');
-		$home = $this->createMock(Folder::class);
-		$home->method('getId')->willReturn(3);
+		$home = $this->folder(3);
 
 		$cases = [
 			'a .pad file to the trash' => [$this->trashEvent($pad), [['file', 7]]],
@@ -47,16 +48,50 @@ class MarkLeavingPadsListenerTest extends TestCase {
 			$bindings->method('markTrashed')->willReturnCallback(static function (int $fileId) use (&$marks): void {
 				$marks[] = ['file', $fileId];
 			});
-			$bindings->method('markTrashedUnder')->willReturnCallback(static function (int $folderId, bool $wholeStorage = false) use (&$marks): void {
+			$bindings->method('markTrashedUnder')->willReturnCallback(static function (int $folderId, bool $wholeStorage = false) use (&$marks): array {
 				$marks[] = ['under', $folderId, $wholeStorage];
+				return [];
 			});
 			$rootFolder = $this->createMock(IRootFolder::class);
 			$rootFolder->method('getUserFolder')->with('alice')->willReturn($home);
 
-			(new MarkLeavingPadsListener($bindings, $rootFolder, $this->createMock(LoggerInterface::class)))->handle($event);
+			(new LeavingPadsListener($bindings, $this->createMock(GoneFileSweep::class), $rootFolder, $this->createMock(LoggerInterface::class)))->handle($event);
 
 			$this->assertSame($expected, $marks, $case);
 		}
+	}
+
+	/**
+	 * Once a delete is done, the files it marked go to the sweep's deletion
+	 * of files deleted past the trash, each once - a delete that failed
+	 * before it leaves its files there, too - and are forgotten. A move
+	 * to the trash and a user deleted hand nothing on: the first keeps its
+	 * files, the second may take thousands.
+	 */
+	public function testHandsOnWhatADeleteMarkedOnceItIsDone(): void {
+		$bindings = $this->createMock(BindingService::class);
+		$bindings->method('markTrashedUnder')->willReturnCallback(static fn (int $folderId): array => $folderId === 9 ? [21, 22] : [31]);
+		$handedOn = [];
+		$sweep = $this->createMock(GoneFileSweep::class);
+		$sweep->method('discardDeleted')->willReturnCallback(static function (array $fileIds) use (&$handedOn): void {
+			$handedOn[] = $fileIds;
+		});
+		$user = $this->createMock(IUser::class);
+		$user->method('getUID')->willReturn('alice');
+		$rootFolder = $this->createMock(IRootFolder::class);
+		$rootFolder->method('getUserFolder')->willReturn($this->folder(3));
+		$listener = new LeavingPadsListener($bindings, $sweep, $rootFolder, $this->createMock(LoggerInterface::class));
+		$pad = $this->file(7, 'Notes.pad');
+
+		$listener->handle($this->trashEvent($this->folder(5)));
+		$listener->handle(new BeforeUserDeletedEvent($user));
+		$listener->handle(new BeforeNodeDeletedEvent($pad));
+		$listener->handle(new BeforeNodeDeletedEvent($pad));
+		$listener->handle(new BeforeNodeDeletedEvent($this->folder(9)));
+		$listener->handle(new NodeDeletedEvent($pad));
+		$listener->handle(new NodeDeletedEvent($pad));
+
+		$this->assertSame([[7, 21, 22], []], $handedOn);
 	}
 
 	/** A mark that fails is a warning; the trash goes ahead, and the sweep finds the file later. */
@@ -66,7 +101,7 @@ class MarkLeavingPadsListenerTest extends TestCase {
 		$logger = $this->createMock(LoggerInterface::class);
 		$logger->expects($this->once())->method('warning')->with('Could not mark the pads of files leaving Files; the sweep finds them later.', $this->anything());
 
-		(new MarkLeavingPadsListener($bindings, $this->createMock(IRootFolder::class), $logger))->handle($this->trashEvent($this->file(7, 'Notes.pad')));
+		(new LeavingPadsListener($bindings, $this->createMock(GoneFileSweep::class), $this->createMock(IRootFolder::class), $logger))->handle($this->trashEvent($this->file(7, 'Notes.pad')));
 	}
 
 	private function file(int $id, string $name): File {
@@ -74,6 +109,12 @@ class MarkLeavingPadsListenerTest extends TestCase {
 		$file->method('getId')->willReturn($id);
 		$file->method('getName')->willReturn($name);
 		return $file;
+	}
+
+	private function folder(int $id): Folder {
+		$folder = $this->createMock(Folder::class);
+		$folder->method('getId')->willReturn($id);
+		return $folder;
 	}
 
 	/** The trash app's MoveToTrashEvent, which carries its node under getNode(). */

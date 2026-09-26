@@ -32,6 +32,10 @@ use Psr\Log\LoggerInterface;
  *
  * A file gone without a mark is left alone, pad and row with it.
  *
+ * Files deleted past the trash do not wait for a run: the request that
+ * deleted them deletes their pads (discardDeleted()), and a run takes what
+ * it left.
+ *
  * Before a pad goes the file cache is asked once more. A pad Etherpad no
  * longer has counts as gone; Etherpad not answering ends the run. With
  * `delete_on_trash` off nothing is deleted, but the marks are kept, so
@@ -39,6 +43,9 @@ use Psr\Log\LoggerInterface;
  */
 class GoneFileSweep {
 	private const LIMIT = 200;
+
+	/** What deleting the pads of files deleted past the trash may add to the request that deleted them. */
+	private const REQUEST_SECONDS = 5.0;
 
 	public function __construct(
 		private BindingService $bindingService,
@@ -66,6 +73,35 @@ class GoneFileSweep {
 			]);
 		}
 		$this->passSlice();
+	}
+
+	/**
+	 * The pads of the files among $fileIds that a delete has just taken past
+	 * the trash, in the request that deleted them (LeavingPadsListener). A
+	 * file the trash took is still in the file cache and is passed by. What
+	 * does not fit in a few seconds, or finds Etherpad not answering, a run
+	 * takes: the rows keep their mark. Never throws: the files are gone
+	 * already, and the delete has succeeded.
+	 *
+	 * @param list<int> $fileIds
+	 */
+	public function discardDeleted(array $fileIds): void {
+		try {
+			if ($fileIds === [] || !$this->appConfig->isDeleteOnTrashEnabled()) {
+				return;
+			}
+			$budget = new RunBudget($this->timeFactory, self::REQUEST_SECONDS);
+			foreach ($this->bindingService->findActiveGone($fileIds) as $binding) {
+				$this->discard($binding, $budget);
+			}
+		} catch (RunBudgetSpentException) {
+			// The rest is the next run's.
+		} catch (\Throwable $e) {
+			$this->logger->info('Could not delete the pads of files deleted past the trash; the sweep tries again.', [
+				'app' => 'etherpad_nextcloud',
+				...SafeError::context($e),
+			]);
+		}
 	}
 
 	/**

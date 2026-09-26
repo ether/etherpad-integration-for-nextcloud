@@ -122,18 +122,24 @@ class Application extends App implements IBootstrap {
 			\OCA\EtherpadNextcloud\Listeners\MoveToTrashListener::class,
 		);
 		// Marks the rows of .pad files leaving Files, for the sweep of files
-		// gone for good; runs beside the listener above.
+		// gone for good, and deletes the pads of those deleted past the
+		// trash; runs beside the listener above. One instance hears all four,
+		// so what is marked before a delete is there once it is done.
 		$context->registerEventListener(
 			'OCA\\Files_Trashbin\\Events\\MoveToTrashEvent',
-			\OCA\EtherpadNextcloud\Listeners\MarkLeavingPadsListener::class,
+			\OCA\EtherpadNextcloud\Listeners\LeavingPadsListener::class,
 		);
 		$context->registerEventListener(
 			\OCP\Files\Events\Node\BeforeNodeDeletedEvent::class,
-			\OCA\EtherpadNextcloud\Listeners\MarkLeavingPadsListener::class,
+			\OCA\EtherpadNextcloud\Listeners\LeavingPadsListener::class,
+		);
+		$context->registerEventListener(
+			\OCP\Files\Events\Node\NodeDeletedEvent::class,
+			\OCA\EtherpadNextcloud\Listeners\LeavingPadsListener::class,
 		);
 		$context->registerEventListener(
 			\OCP\User\Events\BeforeUserDeletedEvent::class,
-			\OCA\EtherpadNextcloud\Listeners\MarkLeavingPadsListener::class,
+			\OCA\EtherpadNextcloud\Listeners\LeavingPadsListener::class,
 		);
 		$context->registerEventListener(
 			'OCA\\Files_Trashbin\\Events\\NodeRestoredEvent',

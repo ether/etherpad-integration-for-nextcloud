@@ -213,6 +213,61 @@ class GoneFileSweepTest extends TestCase {
 	}
 
 	/**
+	 * The request that deleted files past the trash deletes their pads: of
+	 * the files it names, those gone from the file cache, active rows only.
+	 * A file the trash took is passed by, and so is a file it does not name.
+	 * With `delete_on_trash` off it deletes nothing.
+	 */
+	public function testTheRequestThatDeletedFilesPastTheTrashDeletesTheirPads(): void {
+		$this->table([
+			self::row(1, 11, 'pad-deleted', trashedAt: 100),
+			self::row(2, 12, 'pad-trashed', trashedAt: 100),
+			self::row(3, 13, 'pad-waiting', trashedAt: 100, state: BindingService::STATE_PENDING_DELETE),
+			self::row(4, 14, 'pad-not-named', trashedAt: 100),
+			self::row(5, 15, 'pad-unmarked'),
+		], [self::cached(12, 'files_trashbin/files/B.pad.d100')]);
+
+		$this->build()->discardDeleted([11, 12, 13, 15]);
+
+		$this->assertSame(['pad-deleted', 'pad-unmarked'], $this->deletedPads);
+		$this->assertSame([12, 13, 14], $this->fileIds());
+		$this->assertSame([
+			['info', 'The file of a pad is gone for good; the pad is deleted.', 11],
+			['info', 'The file of a pad is gone for good; the pad is deleted.', 15],
+		], $this->lines);
+
+		$this->config['delete_on_trash'] = false;
+		$this->build()->discardDeleted([14]);
+		$this->assertSame([12, 13, 14], $this->fileIds());
+	}
+
+	/**
+	 * The request spends a few seconds at most. What does not fit, and what
+	 * finds Etherpad not answering, keeps its row and mark for the sweep,
+	 * and nothing is thrown at the delete, which has succeeded.
+	 */
+	public function testTheRequestSpendsAFewSecondsAtMost(): void {
+		$this->table([self::row(1, 11, 'pad-1', trashedAt: 100), self::row(2, 12, 'pad-2', trashedAt: 100)], []);
+		$this->onDelete = function (): void {
+			$this->clock->advance(4);
+		};
+
+		$this->build()->discardDeleted([11, 12]);
+
+		$this->assertSame(['pad-1'], $this->deletedPads);
+		$this->assertSame([12 => 100], $this->marks());
+
+		$this->setUp();
+		$this->table([self::row(1, 11, 'pad-1', trashedAt: 100)], []);
+		$this->padErrors = ['pad-1' => new EtherpadClientException('Etherpad API request failed: deletePad')];
+
+		$this->build()->discardDeleted([11]);
+
+		$this->assertSame([11 => 100], $this->marks());
+		$this->assertSame([['info', 'Could not delete the pads of files deleted past the trash; the sweep tries again.', null]], $this->lines);
+	}
+
+	/**
 	 * @param list<array<string,mixed>> $rows
 	 * @param list<array<string,mixed>> $fileCache
 	 */
@@ -221,6 +276,10 @@ class GoneFileSweepTest extends TestCase {
 	}
 
 	private function sweep(?BindingService $bindings = null): void {
+		$this->build($bindings)->run();
+	}
+
+	private function build(?BindingService $bindings = null): GoneFileSweep {
 		$etherpad = $this->createMock(EtherpadClient::class);
 		$etherpad->method('deletePad')->willReturnCallback(function (string $padId): void {
 			if (isset($this->padErrors[$padId])) {
@@ -243,13 +302,13 @@ class GoneFileSweepTest extends TestCase {
 				$this->lines[] = [$level, $message, $context['fileId'] ?? null];
 			});
 		}
-		(new GoneFileSweep(
+		return new GoneFileSweep(
 			$bindings ?? new BindingService($this->db, $this->clock),
 			new ManagedPadLifecycle($etherpad, $this->createMock(LoggerInterface::class)),
 			$config,
 			$this->clock,
 			$logger,
-		))->run();
+		);
 	}
 
 	/** @return list<int> the files that still have a row */

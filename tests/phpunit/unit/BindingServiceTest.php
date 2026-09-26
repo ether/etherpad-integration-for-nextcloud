@@ -201,7 +201,8 @@ class BindingServiceTest extends TestCase {
 	 * file cache has it: on the folder's storage, below its path and not
 	 * beside it. A `_` in the folder's name is a character, not any one. A
 	 * user deleted marks every row on their storage, and an id the file
-	 * cache does not know marks nothing.
+	 * cache does not know marks nothing. It names the files of the rows under
+	 * the folder, one marked before too, which keeps its first mark.
 	 */
 	public function testAFolderLeavingFilesMarksTheRowsUnderIt(): void {
 		$fileCache = [
@@ -214,22 +215,24 @@ class BindingServiceTest extends TestCase {
 			['fileid' => 6, 'storage' => 1, 'path' => 'files/f.pad'],
 		];
 		$rows = array_map(static fn (int $id): array => self::bindingRow($id, 'pad-' . $id, BindingService::STATE_ACTIVE), [1, 2, 3, 4, 5, 6]);
+		$rows[1]['trashed_at'] = 300;
 		$marked = static fn (InMemoryBindingTable $table): array => array_values(array_map(
 			static fn (array $row): int => $row['file_id'],
 			array_filter($table->rows, static fn (array $row): bool => $row['trashed_at'] !== null),
 		));
 
 		$table = new InMemoryBindingTable($rows, $fileCache);
-		(new BindingService($table, new FixedClock(500)))->markTrashedUnder(100);
+		$this->assertSame([1, 2], (new BindingService($table, new FixedClock(500)))->markTrashedUnder(100), 'the folder');
 		$this->assertSame([1, 2], $marked($table), 'the folder');
+		$this->assertSame([500, 300], array_slice(array_column($table->rows, 'trashed_at'), 0, 2), 'the first mark stays');
 
 		$table = new InMemoryBindingTable($rows, $fileCache);
-		(new BindingService($table, new FixedClock(500)))->markTrashedUnder(100, wholeStorage: true);
+		$this->assertSame([1, 2, 3, 4, 6], (new BindingService($table, new FixedClock(500)))->markTrashedUnder(100, wholeStorage: true), 'the whole storage');
 		$this->assertSame([1, 2, 3, 4, 6], $marked($table), 'the whole storage');
 
 		$table = new InMemoryBindingTable($rows, $fileCache);
-		(new BindingService($table, new FixedClock(500)))->markTrashedUnder(999);
-		$this->assertSame([], $marked($table), 'an unknown folder');
+		$this->assertSame([], (new BindingService($table, new FixedClock(500)))->markTrashedUnder(999), 'an unknown folder');
+		$this->assertSame([2], $marked($table), 'an unknown folder');
 	}
 
 	/**
@@ -265,6 +268,7 @@ class BindingServiceTest extends TestCase {
 		$this->assertSame([], $service->findActiveWithFileAfter(6, 10));
 		$this->assertTrue($service->isFileGone(11));
 		$this->assertFalse($service->isFileGone(13));
+		$this->assertSame([11, 14], array_map(static fn (Binding $b): int => $b->fileId, $service->findActiveGone([11, 13, 14, 15, 16])));
 	}
 
 	/** A file back in Files: its row loses the mark, and the other rows keep theirs. */

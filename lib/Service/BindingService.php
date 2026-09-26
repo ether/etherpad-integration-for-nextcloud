@@ -270,8 +270,10 @@ class BindingService {
 	 * the file cache has it now - before a trash moves it, or a delete takes
 	 * it. With $wholeStorage, every file on the folder's storage: a user
 	 * deleted takes their home storage with them.
+	 *
+	 * @return list<int> the files of the rows under it, marked now or before
 	 */
-	public function markTrashedUnder(int $folderId, bool $wholeStorage = false): void {
+	public function markTrashedUnder(int $folderId, bool $wholeStorage = false): array {
 		$folder = $this->db->getQueryBuilder();
 		$folder->select('storage', 'path')
 			->from('filecache')
@@ -280,15 +282,14 @@ class BindingService {
 		$row = DbRows::one($result->fetch());
 		$result->closeCursor();
 		if ($row === null) {
-			return;
+			return [];
 		}
 
 		$qb = $this->db->getQueryBuilder();
 		$qb->select('b.file_id')
 			->from(self::TABLE, 'b')
 			->innerJoin('b', 'filecache', 'fc', $qb->expr()->eq('b.file_id', 'fc.fileid'))
-			->where($qb->expr()->eq('fc.storage', $qb->createNamedParameter(DbRows::int($row, 'storage'), IQueryBuilder::PARAM_INT)))
-			->andWhere($qb->expr()->isNull('b.trashed_at'));
+			->where($qb->expr()->eq('fc.storage', $qb->createNamedParameter(DbRows::int($row, 'storage'), IQueryBuilder::PARAM_INT)));
 		$path = DbRows::string($row, 'path');
 		if (!$wholeStorage && $path !== '') {
 			$qb->andWhere($qb->expr()->like('fc.path', $qb->createNamedParameter($this->db->escapeLikeParameter($path . '/') . '%')));
@@ -306,6 +307,7 @@ class BindingService {
 				->andWhere($update->expr()->isNull('trashed_at'));
 			$update->executeStatement();
 		}
+		return $fileIds;
 	}
 
 	/** The columns a Binding is read from, as `b.` a join selects them. */
@@ -331,6 +333,31 @@ class BindingService {
 		$result = $qb->executeQuery();
 		$rows = array_map(Binding::fromRow(...), DbRows::all($result->fetchAll()));
 		$result->closeCursor();
+		return $rows;
+	}
+
+	/**
+	 * The active rows among those of $fileIds whose file the file cache has
+	 * nothing left of: what a delete past the trash took (GoneFileSweep::
+	 * discardDeleted()).
+	 *
+	 * @param list<int> $fileIds
+	 * @return list<Binding>
+	 */
+	public function findActiveGone(array $fileIds): array {
+		$rows = [];
+		foreach (array_chunk($fileIds, 500) as $chunk) {
+			$qb = $this->db->getQueryBuilder();
+			$qb->select(...self::BINDING_COLUMNS)
+				->from(self::TABLE, 'b')
+				->leftJoin('b', 'filecache', 'fc', $qb->expr()->eq('b.file_id', 'fc.fileid'))
+				->where($qb->expr()->in('b.file_id', $qb->createNamedParameter($chunk, IQueryBuilder::PARAM_INT_ARRAY)))
+				->andWhere($qb->expr()->eq('b.state', $qb->createNamedParameter(self::STATE_ACTIVE)))
+				->andWhere($qb->expr()->isNull('fc.fileid'));
+			$result = $qb->executeQuery();
+			$rows = [...$rows, ...array_map(Binding::fromRow(...), DbRows::all($result->fetchAll()))];
+			$result->closeCursor();
+		}
 		return $rows;
 	}
 
