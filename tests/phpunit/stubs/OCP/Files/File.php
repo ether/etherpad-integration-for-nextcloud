@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace OCP\Files;
 
 if (!interface_exists(File::class)) {
-	interface File {
+	interface File extends Node {
 		public function getId(): int;
 
 		public function getName(): string;

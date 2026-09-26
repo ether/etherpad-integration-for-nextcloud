@@ -251,6 +251,63 @@ class BindingService {
 		return $rows;
 	}
 
+	/**
+	 * Marks the file's row as seen going to a trash or being deleted
+	 * (GoneFileSweep): once the file is gone from the file cache after this,
+	 * it is gone for good. A row marked already keeps its first mark.
+	 */
+	public function markTrashed(int $fileId): void {
+		$qb = $this->db->getQueryBuilder();
+		$qb->update(self::TABLE)
+			->set('trashed_at', $qb->createNamedParameter($this->timeFactory->getTime(), IQueryBuilder::PARAM_INT))
+			->where($qb->expr()->eq('file_id', $qb->createNamedParameter($fileId, IQueryBuilder::PARAM_INT)))
+			->andWhere($qb->expr()->isNull('trashed_at'));
+		$qb->executeStatement();
+	}
+
+	/**
+	 * markTrashed() for the row of every file under the folder $folderId, as
+	 * the file cache has it now - before a trash moves it, or a delete takes
+	 * it. With $wholeStorage, every file on the folder's storage: a user
+	 * deleted takes their home storage with them.
+	 */
+	public function markTrashedUnder(int $folderId, bool $wholeStorage = false): void {
+		$folder = $this->db->getQueryBuilder();
+		$folder->select('storage', 'path')
+			->from('filecache')
+			->where($folder->expr()->eq('fileid', $folder->createNamedParameter($folderId, IQueryBuilder::PARAM_INT)));
+		$result = $folder->executeQuery();
+		$row = DbRows::one($result->fetch());
+		$result->closeCursor();
+		if ($row === null) {
+			return;
+		}
+
+		$qb = $this->db->getQueryBuilder();
+		$qb->select('b.file_id')
+			->from(self::TABLE, 'b')
+			->innerJoin('b', 'filecache', 'fc', $qb->expr()->eq('b.file_id', 'fc.fileid'))
+			->where($qb->expr()->eq('fc.storage', $qb->createNamedParameter(DbRows::int($row, 'storage'), IQueryBuilder::PARAM_INT)))
+			->andWhere($qb->expr()->isNull('b.trashed_at'));
+		$path = DbRows::string($row, 'path');
+		if (!$wholeStorage && $path !== '') {
+			$qb->andWhere($qb->expr()->like('fc.path', $qb->createNamedParameter($this->db->escapeLikeParameter($path . '/') . '%')));
+		}
+		$result = $qb->executeQuery();
+		$fileIds = array_map(static fn (array $found): int => DbRows::int($found, 'file_id'), DbRows::all($result->fetchAll()));
+		$result->closeCursor();
+
+		$now = $this->timeFactory->getTime();
+		foreach (array_chunk($fileIds, 500) as $chunk) {
+			$update = $this->db->getQueryBuilder();
+			$update->update(self::TABLE)
+				->set('trashed_at', $update->createNamedParameter($now, IQueryBuilder::PARAM_INT))
+				->where($update->expr()->in('file_id', $update->createNamedParameter($chunk, IQueryBuilder::PARAM_INT_ARRAY)))
+				->andWhere($update->expr()->isNull('trashed_at'));
+			$update->executeStatement();
+		}
+	}
+
 	public function createBinding(int $fileId, string $padId, string $accessMode): void {
 		$this->assertAccessMode($accessMode);
 		$now = $this->timeFactory->getTime();

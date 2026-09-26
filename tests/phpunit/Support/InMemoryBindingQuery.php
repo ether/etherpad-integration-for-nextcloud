@@ -12,38 +12,75 @@ namespace OCA\EtherpadNextcloud\Tests\Support;
 use OCP\DB\QueryBuilder\IQueryBuilder;
 
 /**
- * One statement against an InMemoryBindingTable. Only what the binding
- * reads and conditional writes use: equality, select, update and delete.
+ * One statement against an InMemoryBindingTable: select, update and delete
+ * on the binding table, selects on the file cache, and the joins between
+ * the two the sweeps use. Conditions are evaluated, not recorded, so a
+ * condition left out changes which rows are hit.
+ *
+ * A column is named as the statement names it: plain on a table without
+ * an alias, `alias.column` once aliased. A condition's second operand is a
+ * named parameter or, in a join, a column.
  */
 final class InMemoryBindingQuery implements IQueryBuilder {
 	private string $statement = 'select';
+	private string $table = '';
+	private ?string $alias = null;
+	/** @var list<array{string,string,string,\Closure(array<string,mixed>): bool}> kind, table, alias and condition of each join */
+	private array $joins = [];
 	/** @var array<string,mixed> */
 	private array $parameters = [];
 	/** @var list<\Closure(array<string,mixed>): bool> what a row must meet */
 	private array $conditions = [];
 	/** @var array<string,string> column and the parameter it is set to */
 	private array $assignments = [];
+	/** @var list<string> */
+	private array $selected = [];
+	/** @var list<array{string,string}> */
+	private array $aliases = [];
+	private ?string $orderBy = null;
 	private ?int $limit = null;
 
-	public function __construct(private InMemoryBindingTable $table) {
+	public function __construct(private InMemoryBindingTable $db) {
 	}
 
 	public function select(string ...$columns): self {
 		$this->statement = 'select';
+		$this->selected = array_values($columns);
+		return $this;
+	}
+
+	public function selectAlias(string $column, string $alias): self {
+		$this->aliases[] = [$column, $alias];
 		return $this;
 	}
 
 	public function update(string $table): self {
 		$this->statement = 'update';
+		$this->table = $table;
 		return $this;
 	}
 
 	public function delete(string $table): self {
 		$this->statement = 'delete';
+		$this->table = $table;
 		return $this;
 	}
 
-	public function from(string $table): self {
+	public function from(string $table, ?string $alias = null): self {
+		$this->table = $table;
+		$this->alias = $alias;
+		return $this;
+	}
+
+	/** @param \Closure(array<string,mixed>): bool $condition */
+	public function innerJoin(string $fromAlias, string $table, string $alias, \Closure $condition): self {
+		$this->joins[] = ['inner', $table, $alias, $condition];
+		return $this;
+	}
+
+	/** @param \Closure(array<string,mixed>): bool $condition */
+	public function leftJoin(string $fromAlias, string $table, string $alias, \Closure $condition): self {
+		$this->joins[] = ['left', $table, $alias, $condition];
 		return $this;
 	}
 
@@ -64,12 +101,18 @@ final class InMemoryBindingQuery implements IQueryBuilder {
 		return $this;
 	}
 
+	/** Ascending only: no statement here sorts the other way. */
+	public function orderBy(string $column, string $direction = 'ASC'): self {
+		$this->orderBy = $column;
+		return $this;
+	}
+
 	public function setMaxResults(int $limit): self {
 		$this->limit = $limit;
 		return $this;
 	}
 
-	public function createNamedParameter(mixed $value, ?int $type = null): string {
+	public function createNamedParameter(mixed $value, mixed $type = null): string {
 		$name = ':p' . count($this->parameters);
 		$this->parameters[$name] = $value;
 		return $name;
@@ -81,38 +124,110 @@ final class InMemoryBindingQuery implements IQueryBuilder {
 	}
 
 	/** @return \Closure(array<string,mixed>): bool */
-	public function eq(string $column, string $parameter): \Closure {
-		return fn (array $row): bool => (string)($row[$column] ?? '') === (string)$this->parameters[$parameter];
+	public function eq(string $column, string $operand): \Closure {
+		return fn (array $row): bool => $this->value($row, $column) !== null && (string)$this->value($row, $column) === (string)$this->operand($row, $operand);
+	}
+
+	/** @return \Closure(array<string,mixed>): bool */
+	public function gt(string $column, string $operand): \Closure {
+		return fn (array $row): bool => $this->value($row, $column) !== null && (int)$this->value($row, $column) > (int)$this->operand($row, $operand);
+	}
+
+	/** @return \Closure(array<string,mixed>): bool */
+	public function lte(string $column, string $operand): \Closure {
+		return fn (array $row): bool => $this->value($row, $column) !== null && (int)$this->value($row, $column) <= (int)$this->operand($row, $operand);
+	}
+
+	/** @return \Closure(array<string,mixed>): bool */
+	public function in(string $column, string $parameter): \Closure {
+		return fn (array $row): bool => in_array($this->value($row, $column), (array)$this->parameters[$parameter], false);
 	}
 
 	/** @return \Closure(array<string,mixed>): bool */
 	public function isNull(string $column): \Closure {
-		return static fn (array $row): bool => ($row[$column] ?? null) === null;
+		return fn (array $row): bool => $this->value($row, $column) === null;
 	}
 
 	/** @return \Closure(array<string,mixed>): bool */
 	public function isNotNull(string $column): \Closure {
-		return static fn (array $row): bool => ($row[$column] ?? null) !== null;
+		return fn (array $row): bool => $this->value($row, $column) !== null;
+	}
+
+	/**
+	 * SQL's LIKE: `%` any run, `_` any one character, a backslash taking
+	 * the next one as it is (IDBConnection::escapeLikeParameter()).
+	 *
+	 * @return \Closure(array<string,mixed>): bool
+	 */
+	public function like(string $column, string $parameter): \Closure {
+		return function (array $row) use ($column, $parameter): bool {
+			$pattern = (string)$this->parameters[$parameter];
+			$regex = '';
+			for ($i = 0, $n = strlen($pattern); $i < $n; $i++) {
+				$char = $pattern[$i];
+				if ($char === '\\' && $i + 1 < $n) {
+					$regex .= preg_quote($pattern[++$i], '/');
+				} elseif ($char === '%') {
+					$regex .= '.*';
+				} elseif ($char === '_') {
+					$regex .= '.';
+				} else {
+					$regex .= preg_quote($char, '/');
+				}
+			}
+			$value = $this->value($row, $column);
+			return $value !== null && preg_match('/^' . $regex . '$/s', (string)$value) === 1;
+		};
+	}
+
+	/**
+	 * @param \Closure(array<string,mixed>): bool ...$conditions
+	 * @return \Closure(array<string,mixed>): bool
+	 */
+	public function orX(\Closure ...$conditions): \Closure {
+		return static function (array $row) use ($conditions): bool {
+			foreach ($conditions as $condition) {
+				if ($condition($row)) {
+					return true;
+				}
+			}
+			return false;
+		};
 	}
 
 	public function executeStatement(): int {
-		$hit = $this->matchingKeys();
+		$hit = [];
+		foreach ($this->db->rows as $key => $row) {
+			if ($this->meets($row)) {
+				$hit[] = $key;
+			}
+		}
 		foreach ($hit as $key) {
 			if ($this->statement === 'delete') {
-				unset($this->table->rows[$key]);
+				unset($this->db->rows[$key]);
 				continue;
 			}
 			foreach ($this->assignments as $column => $parameter) {
-				$this->table->rows[$key][$column] = $this->parameters[$parameter];
+				$this->db->rows[$key][$column] = $this->parameters[$parameter];
 			}
 		}
-		$this->table->rows = array_values($this->table->rows);
+		$this->db->rows = array_values($this->db->rows);
 		return count($hit);
 	}
 
 	public function executeQuery(): object {
-		$rows = array_map(fn (int $key): array => $this->table->rows[$key], $this->matchingKeys());
-		return new class(array_slice($rows, 0, $this->limit)) {
+		$rows = [];
+		foreach ($this->joined() as $row) {
+			if ($this->meets($row)) {
+				$rows[] = $row;
+			}
+		}
+		if ($this->orderBy !== null) {
+			$column = $this->orderBy;
+			usort($rows, fn (array $a, array $b): int => (int)$this->value($a, $column) <=> (int)$this->value($b, $column));
+		}
+		$rows = array_map(fn (array $row): array => $this->projected($row), array_slice($rows, 0, $this->limit));
+		return new class($rows) {
 			/** @param list<array<string,mixed>> $rows */
 			public function __construct(private array $rows) {
 			}
@@ -132,17 +247,98 @@ final class InMemoryBindingQuery implements IQueryBuilder {
 		};
 	}
 
-	/** @return list<int> */
-	private function matchingKeys(): array {
-		$keys = [];
-		foreach ($this->table->rows as $key => $row) {
-			foreach ($this->conditions as $condition) {
-				if (!$condition($row)) {
-					continue 2;
+	/** @param array<string,mixed> $row */
+	private function meets(array $row): bool {
+		foreach ($this->conditions as $condition) {
+			if (!$condition($row)) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	/**
+	 * The rows of the statement's table, each with its joins, every column
+	 * under the name the statement uses for it.
+	 *
+	 * @return list<array<string,mixed>>
+	 */
+	private function joined(): array {
+		$rows = array_map(fn (array $row): array => $this->named($row, $this->alias), $this->rowsOf($this->table));
+		foreach ($this->joins as [$kind, $table, $alias, $condition]) {
+			$next = [];
+			foreach ($rows as $row) {
+				$matched = false;
+				foreach ($this->rowsOf($table) as $other) {
+					$combined = $row + $this->named($other, $alias);
+					if ($condition($combined)) {
+						$next[] = $combined;
+						$matched = true;
+					}
+				}
+				if (!$matched && $kind === 'left') {
+					$next[] = $row;
 				}
 			}
-			$keys[] = $key;
+			$rows = $next;
 		}
-		return $keys;
+		return $rows;
+	}
+
+	/** @return list<array<string,mixed>> */
+	private function rowsOf(string $table): array {
+		return $table === 'filecache' ? $this->db->fileCache : $this->db->rows;
+	}
+
+	/**
+	 * @param array<string,mixed> $row
+	 * @return array<string,mixed>
+	 */
+	private function named(array $row, ?string $alias): array {
+		if ($alias === null) {
+			return $row;
+		}
+		$named = [];
+		foreach ($row as $column => $value) {
+			$named[$alias . '.' . $column] = $value;
+		}
+		return $named;
+	}
+
+	/**
+	 * The selected columns, named as a database answers: `b.file_id` as
+	 * `file_id`, an alias as itself, `*` as every column of the table.
+	 *
+	 * @param array<string,mixed> $row
+	 * @return array<string,mixed>
+	 */
+	private function projected(array $row): array {
+		$out = [];
+		foreach ($this->selected as $column) {
+			if ($column === '*') {
+				foreach ($row as $name => $value) {
+					if ($this->alias === null ? !str_contains($name, '.') : str_starts_with($name, $this->alias . '.')) {
+						$out[$this->alias === null ? $name : substr($name, strlen($this->alias) + 1)] = $value;
+					}
+				}
+				continue;
+			}
+			$parts = explode('.', $column);
+			$out[end($parts)] = $this->value($row, $column);
+		}
+		foreach ($this->aliases as [$column, $alias]) {
+			$out[$alias] = $this->value($row, $column);
+		}
+		return $out;
+	}
+
+	/** @param array<string,mixed> $row */
+	private function value(array $row, string $column): mixed {
+		return $row[$column] ?? null;
+	}
+
+	/** @param array<string,mixed> $row */
+	private function operand(array $row, string $operand): mixed {
+		return array_key_exists($operand, $this->parameters) ? $this->parameters[$operand] : $this->value($row, $operand);
 	}
 }

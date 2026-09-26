@@ -177,6 +177,60 @@ class BindingServiceTest extends TestCase {
 		}
 	}
 
+	/**
+	 * A file seen leaving Files marks its row once: a row marked already
+	 * keeps its first mark, and the other rows are left alone.
+	 */
+	public function testAFileLeavingFilesMarksItsRowOnce(): void {
+		$table = new InMemoryBindingTable([
+			self::bindingRow(1, 'pad-a', BindingService::STATE_ACTIVE),
+			['trashed_at' => 300] + self::bindingRow(2, 'pad-b', BindingService::STATE_ACTIVE),
+			self::bindingRow(3, 'pad-c', BindingService::STATE_ACTIVE),
+		]);
+		$service = new BindingService($table, new FixedClock(500));
+
+		$service->markTrashed(1);
+		$service->markTrashed(2);
+
+		$this->assertSame([500, 300, null], array_column($table->rows, 'trashed_at'));
+	}
+
+	/**
+	 * A folder leaving Files marks the row of every file under it, as the
+	 * file cache has it: on the folder's storage, below its path and not
+	 * beside it. A `_` in the folder's name is a character, not any one. A
+	 * user deleted marks every row on their storage, and an id the file
+	 * cache does not know marks nothing.
+	 */
+	public function testAFolderLeavingFilesMarksTheRowsUnderIt(): void {
+		$fileCache = [
+			['fileid' => 100, 'storage' => 1, 'path' => 'files/Te_m'],
+			['fileid' => 1, 'storage' => 1, 'path' => 'files/Te_m/a.pad'],
+			['fileid' => 2, 'storage' => 1, 'path' => 'files/Te_m/sub/b.pad'],
+			['fileid' => 3, 'storage' => 1, 'path' => 'files/Te_mwork/c.pad'],
+			['fileid' => 4, 'storage' => 1, 'path' => 'files/Team/d.pad'],
+			['fileid' => 5, 'storage' => 2, 'path' => 'files/Te_m/e.pad'],
+			['fileid' => 6, 'storage' => 1, 'path' => 'files/f.pad'],
+		];
+		$rows = array_map(static fn (int $id): array => self::bindingRow($id, 'pad-' . $id, BindingService::STATE_ACTIVE), [1, 2, 3, 4, 5, 6]);
+		$marked = static fn (InMemoryBindingTable $table): array => array_values(array_map(
+			static fn (array $row): int => $row['file_id'],
+			array_filter($table->rows, static fn (array $row): bool => $row['trashed_at'] !== null),
+		));
+
+		$table = new InMemoryBindingTable($rows, $fileCache);
+		(new BindingService($table, new FixedClock(500)))->markTrashedUnder(100);
+		$this->assertSame([1, 2], $marked($table), 'the folder');
+
+		$table = new InMemoryBindingTable($rows, $fileCache);
+		(new BindingService($table, new FixedClock(500)))->markTrashedUnder(100, wholeStorage: true);
+		$this->assertSame([1, 2, 3, 4, 6], $marked($table), 'the whole storage');
+
+		$table = new InMemoryBindingTable($rows, $fileCache);
+		(new BindingService($table, new FixedClock(500)))->markTrashedUnder(999);
+		$this->assertSame([], $marked($table), 'an unknown folder');
+	}
+
 	/** @param list<array<string,mixed>> $rows */
 	private function serviceOver(array $rows): BindingService {
 		return new BindingService(new InMemoryBindingTable($rows), new FixedClock(500));
