@@ -5,6 +5,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushAsyncWork } from './flush.js'
 import { FILE_CHANGED, LOST_RACE, MISSING_BINDING, MISSING_FRONTMATTER, UNANSWERED_TEXT, UNREACHABLE, WAITING } from './answers.js'
+import { errorResponse, jsonResponse } from './responses.js'
 
 // A successful open starts an interval and registers document and window
 // listeners that nothing here can stop again. No test asserts on syncing.
@@ -53,13 +54,7 @@ const setupEmbedDom = () => {
 	`
 }
 
-const jsonResponse = (body, ok = true, status = 200) => ({
-	ok,
-	status,
-	json: () => Promise.resolve(body),
-})
 
-const errorResponse = (body, status = 400) => jsonResponse(body, false, status)
 
 const root = () => document.getElementById('etherpad-nextcloud-embed')
 const errorMessage = () => document.querySelector('[data-epnc-embed-error-message]').textContent

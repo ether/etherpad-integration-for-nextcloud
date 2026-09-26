@@ -4,6 +4,12 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushAsyncWork } from './flush.js'
+import { FILE_CHANGED, LOCKED } from './answers.js'
+import { brokenBody, errorResponse, jsonResponse, pageResponse } from './responses.js'
+
+// The page's sentences for no answer and for a failure without one.
+const NO_ANSWER = 'No answer; look in the folder first.'
+const CREATE_FAILED = 'Anlegen fehlgeschlagen.'
 
 
 
@@ -17,8 +23,8 @@ const setupEmbedCreateDom = () => {
 			data-l10n-missing-name="Pad name is required."
 			data-l10n-invalid-access-mode="Invalid access mode."
 			data-l10n-incomplete-config="Embed configuration is incomplete."
-			data-l10n-unanswered="No answer; look in the folder first."
-			data-l10n-failed="Anlegen fehlgeschlagen.">
+			data-l10n-unanswered="${NO_ANSWER}"
+			data-l10n-failed="${CREATE_FAILED}">
 			<div data-epnc-embed-create-loading>loading</div>
 			<div data-epnc-embed-create-error hidden>
 				<p data-epnc-embed-create-error-message></p>
@@ -27,20 +33,6 @@ const setupEmbedCreateDom = () => {
 	`
 }
 
-const jsonResponse = (body, ok = true, status = 200) => ({
-	ok,
-	status,
-	json: () => Promise.resolve(body),
-})
-
-const errorResponse = (body, status = 400) => jsonResponse(body, false, status)
-
-/** A proxy's or a maintenance page in place of this app's answer. */
-const pageResponse = (status) => ({
-	ok: false,
-	status,
-	json: () => Promise.reject(new SyntaxError('Unexpected token < in JSON at position 0')),
-})
 
 const errorMessageText = () => document.querySelector('[data-epnc-embed-create-error-message]').textContent
 const errorPanelHidden = () => document.querySelector('[data-epnc-embed-create-error]').hidden
@@ -154,99 +146,35 @@ describe('embed-create-main', () => {
 		expect(locationReplaceSpy).toHaveBeenCalledWith('/embed/by-id/778')
 	})
 
-	it('posts epnc:create-failed with reason=conflict on a 409 from the API', async () => {
-		fetch.mockResolvedValueOnce(errorResponse(
-			{ message: 'A file with this name already exists.' },
-			409,
-		))
+	/**
+	 * What the host is told, and the page shows, for each way a create can
+	 * fail. Which failures count as no answer is the helper's to test; here
+	 * one of each kind.
+	 */
+	it.each([
+		['the network failing', new TypeError('Failed to fetch'), 'network', null, NO_ANSWER],
+		['the browser stopping the request', new DOMException('The operation was aborted.', 'AbortError'), 'network', null, NO_ANSWER],
+		['a proxy whose backend is gone', pageResponse(502), 'network', 502, NO_ANSWER],
+		['a success whose body broke off', brokenBody(200), 'network', 200, NO_ANSWER],
+		['a name taken', errorResponse({ message: 'A file with this name already exists.' }, 409), 'conflict', 409, 'A file with this name already exists.'],
+		['a file changed while its pad was set up', errorResponse(FILE_CHANGED, 409), 'conflict', 409, FILE_CHANGED.message, { code: 'pad_file_changed' }],
+		['a name taken whose body broke off', brokenBody(409), 'conflict', 409, CREATE_FAILED],
+		['a pad type switched off', errorResponse({ message: 'This pad type is disabled on this instance.', code: 'pad_type_disabled', access_mode: 'protected' }, 403), 'server', 403, 'This pad type is disabled on this instance.', { code: 'pad_type_disabled' }],
+		['a proxy refusing a body too large', pageResponse(413), 'server', 413, CREATE_FAILED],
+		['this app failing', errorResponse({ message: 'Could not create pad' }, 500), 'server', 500, 'Could not create pad'],
+		['this app failing without a sentence', errorResponse({}, 500), 'server', 500, CREATE_FAILED],
+		['this app, the folder locked', errorResponse(LOCKED, 503), 'server', 503, LOCKED.message, { retryable: true }],
+	])('tells the host what came of %s', async (_, outcome, reason, status, message, answer = {}) => {
+		if (outcome instanceof Error) {
+			fetch.mockRejectedValueOnce(outcome)
+		} else {
+			fetch.mockResolvedValueOnce(outcome)
+		}
 
 		await importEmbedCreate()
 		await flushAsyncWork()
 
 		expect(parentPostSpy).toHaveBeenCalledOnce()
-		const payload = parentPostSpy.mock.calls[0][0]
-		expect(payload.type).toBe('epnc:create-failed')
-		expect(payload.reason).toBe('conflict')
-		expect(payload.status).toBe(409)
-		expect(payload.message).toBe('A file with this name already exists.')
-
-		// Inline error stays visible for users who can actually see the iframe.
-		expect(errorPanelHidden()).toBe(false)
-		expect(errorMessageText()).toBe('A file with this name already exists.')
-
-		// No redirect on failure.
-		expect(locationReplaceSpy).not.toHaveBeenCalled()
-	})
-
-	it('posts epnc:create-failed with reason=server on a 5xx response', async () => {
-		fetch.mockResolvedValueOnce(errorResponse(
-			{ message: 'Could not create pad' },
-			500,
-		))
-
-		await importEmbedCreate()
-		await flushAsyncWork()
-
-		const payload = parentPostSpy.mock.calls[0][0]
-		expect(payload.type).toBe('epnc:create-failed')
-		expect(payload.reason).toBe('server')
-		expect(payload.status).toBe(500)
-	})
-
-	// Whatever fetch rejects with, no answer came: the page says the pad may exist.
-	it('posts epnc:create-failed with reason=network when fetch itself throws', async () => {
-		fetch.mockRejectedValueOnce(new Error('Network unreachable'))
-
-		await importEmbedCreate()
-		await flushAsyncWork()
-
-		const payload = parentPostSpy.mock.calls[0][0]
-		expect(payload.type).toBe('epnc:create-failed')
-		expect(payload.reason).toBe('network')
-		expect(payload.status).toBe(null)
-		expect(payload.message).toBe('No answer; look in the folder first.')
-	})
-
-	// No answer, so no knowing whether the pad was made: the page says so.
-	it('says the pad may exist when no answer came', async () => {
-		fetch.mockRejectedValueOnce(new TypeError('Failed to fetch'))
-
-		await importEmbedCreate()
-		await flushAsyncWork()
-
-		const payload = parentPostSpy.mock.calls[0][0]
-		expect(payload).toEqual({ type: 'epnc:create-failed', reason: 'network', status: null, message: 'No answer; look in the folder first.', code: null, retryable: false })
-		expect(errorMessageText()).toBe('No answer; look in the folder first.')
-	})
-
-	/**
-	 * A proxy or PHP answering in this app's place is no answer from it
-	 * either, whatever it sends, and neither is an answer that broke off;
-	 * what came goes along as the status. A 4xx refused the create, even
-	 * one whose body broke off, and so did this app's own 5xx. The
-	 * server's code and retryable go along as it sent them.
-	 */
-	const NO_ANSWER = 'No answer; look in the folder first.'
-	// The page's own sentence when the answer has none.
-	const CREATE_FAILED = 'Anlegen fehlgeschlagen.'
-	it.each([
-		['a proxy whose backend is gone', pageResponse(502), 'network', 502, NO_ANSWER],
-		['a proxy that gave up waiting', pageResponse(504), 'network', 504, NO_ANSWER],
-		['a gateway answering JSON of its own', errorResponse({ message: 'An invalid response was received from the upstream server' }, 503), 'network', 503, NO_ANSWER],
-		['PHP dying midway', pageResponse(500), 'network', 500, NO_ANSWER],
-		['a success whose body broke off', { ok: true, status: 200, json: () => Promise.reject(new TypeError('network error')) }, 'network', 200, NO_ANSWER],
-		['this app, the folder locked', errorResponse({ message: 'Pad file is temporarily locked. Please retry.', retryable: true }, 503), 'server', 503, 'Pad file is temporarily locked. Please retry.', { retryable: true }],
-		['this app failing without a sentence', errorResponse({}, 500), 'server', 500, CREATE_FAILED],
-		['a pad type switched off', errorResponse({ message: 'This pad type is disabled on this instance.', code: 'pad_type_disabled', access_mode: 'protected' }, 403), 'server', 403, 'This pad type is disabled on this instance.', { code: 'pad_type_disabled' }],
-		['a proxy refusing a body too large', pageResponse(413), 'server', 413, CREATE_FAILED],
-		['a file changed while its pad was set up', errorResponse({ message: 'The file changed while its pad was being set up. Try again.', code: 'pad_file_changed' }, 409), 'conflict', 409, 'The file changed while its pad was being set up. Try again.', { code: 'pad_file_changed' }],
-		['a duplicate name whose body broke off', { ok: false, status: 409, json: () => Promise.reject(new TypeError('network error')) }, 'conflict', 409, CREATE_FAILED],
-	])('tells the host what came of %s', async (_, response, reason, status, message, answer = {}) => {
-		fetch.mockResolvedValueOnce(response)
-
-		await importEmbedCreate()
-		await flushAsyncWork()
-
 		expect(parentPostSpy.mock.calls[0][0]).toEqual({
 			type: 'epnc:create-failed',
 			reason,
@@ -255,6 +183,8 @@ describe('embed-create-main', () => {
 			code: answer.code ?? null,
 			retryable: answer.retryable ?? false,
 		})
+		// Inline too, for those who can see the iframe.
+		expect(errorPanelHidden()).toBe(false)
 		expect(errorMessageText()).toBe(message)
 	})
 

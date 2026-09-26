@@ -5,17 +5,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { fetchJsonWithTimeout, isUnanswered, requestErrorMessage } from '../../../src/lib/fetch-helpers.js'
 import { MISSING_BINDING, UNREACHABLE } from '../answers.js'
+import { brokenBody, jsonResponse, pageResponse } from '../responses.js'
 
 /**
  * The signal chaining is the subtlest part of this module and it now
  * carries both frontends: the viewer aborts a superseded open, the embed
  * relies on the timeout, and both go through here.
  */
-const jsonResponse = (body, ok = true, status = 200) => ({
-	ok,
-	status,
-	json: () => Promise.resolve(body),
-})
 
 const stubFetch = (impl) => {
 	const mock = typeof impl === 'function' ? vi.fn(impl) : vi.fn().mockResolvedValue(impl)
@@ -25,12 +21,6 @@ const stubFetch = (impl) => {
 
 const abortError = () => new DOMException('The operation was aborted.', 'AbortError')
 
-/** An answer whose body is not JSON: a proxy's or Nextcloud's own page. */
-const pageResponse = (status) => ({
-	ok: status < 400,
-	status,
-	json: () => Promise.reject(new SyntaxError('Unexpected token < in JSON at position 0')),
-})
 
 afterEach(() => {
 	vi.unstubAllGlobals()
@@ -102,6 +92,8 @@ describe('fetchJsonWithTimeout', () => {
 
 		expect(error).toMatchObject({ name: 'TypeError', unanswered: true })
 		expect(error.retryable).toBeUndefined()
+		// Nothing came, so there is no status to give.
+		expect(error.status).toBeUndefined()
 	})
 
 	// The headers came, the body did not: still no answer, not an empty one.
@@ -123,17 +115,9 @@ describe('fetchJsonWithTimeout', () => {
 	})
 
 	it('takes a network failure while the body streams in for no answer, with the status that came', async () => {
-		stubFetch({ ok: false, status: 409, json: () => Promise.reject(new TypeError('network error')) })
+		stubFetch(brokenBody(409))
 
 		await expect(fetchJsonWithTimeout('/x')).rejects.toMatchObject({ name: 'TypeError', unanswered: true, status: 409 })
-	})
-
-	it('has no status to give when fetch itself failed', async () => {
-		stubFetch(() => Promise.reject(new TypeError('Failed to fetch')))
-
-		const error = await fetchJsonWithTimeout('/x').catch((e) => e)
-
-		expect(error.status).toBeUndefined()
 	})
 
 	it('reads a body that is not JSON as an empty one', async () => {
@@ -142,10 +126,7 @@ describe('fetchJsonWithTimeout', () => {
 		await expect(fetchJsonWithTimeout('/x')).resolves.toEqual({})
 	})
 
-	// This app answers every error in JSON, never 502 or 504, and its every
-	// 503 is retryable. A 5xx that is no such answer came from a proxy, a
-	// maintenance page or PHP dying midway, whatever it sends - a gateway's
-	// JSON may carry a message too. A 4xx page never reached the create.
+	// The rule in docs/architecture.md ("Errors of the API"), row by row.
 	it.each([
 		['a proxy whose backend is gone', pageResponse(502), true],
 		['Nextcloud in maintenance', pageResponse(503), true],

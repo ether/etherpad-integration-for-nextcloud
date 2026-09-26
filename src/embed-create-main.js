@@ -70,23 +70,13 @@ import { fetchJsonWithTimeout as fetchJson, isUnanswered } from './lib/fetch-hel
 	 * land in the iframe as "Unknown error." but in the postMessage payload as
 	 * the empty string).
 	 *
-	 * `reason` is a coarse bucket so hosts can branch without parsing the
-	 * HTTP status:
-	 *   - 'invalid' — client-side validation failed (missing name, etc.)
-	 *   - 'conflict' — backend returned 409 (e.g. duplicate filename)
-	 *   - 'server'  — refused with any other 4xx, by this app or by a proxy
-	 *     before it, so nothing was created; or failed by this app with a
-	 *     5xx of its own, which it rolls back as far as it can; or answered
-	 *     in a way this page cannot use
-	 *   - 'network' — no answer from this app, so the pad may have been
-	 *     created anyway: fetch failed, the answer broke off, or a proxy or
-	 *     PHP itself answered in its place (see fetchJsonWithTimeout();
-	 *     `status` then carries what came)
-	 *
-	 * `code` and `retryable` are the server's, as the open's clients read
-	 * them (docs/api-reference.md): `retryable` says the same create may
-	 * work later, a locked folder say, and `code` tells `pad_file_changed`
-	 * from a name taken within 'conflict'.
+	 * The host contract is in docs/architecture.md (the create flow);
+	 * `reason` in short:
+	 *   - 'invalid' — client-side validation failed
+	 *   - 'conflict' — a 409
+	 *   - 'server' — refused with another 4xx, or this app's own 5xx
+	 *   - 'network' — no answer from this app; the pad may exist
+	 * `code` and `retryable` are the server's, `null` and `false` without.
 	 */
 	const failCreate = (reason, message, status, answer = null) => {
 		const normalizedMessage = String(message || 'Unknown error.')
@@ -114,13 +104,6 @@ import { fetchJsonWithTimeout as fetchJson, isUnanswered } from './lib/fetch-hel
 			throw new Error('Invalid embed URL origin.')
 		}
 		return url.pathname + url.search + url.hash
-	}
-
-	const classifyHttpStatus = (status) => {
-		if (status === 409) {
-			return 'conflict'
-		}
-		return 'server'
 	}
 
 	const run = async () => {
@@ -164,16 +147,20 @@ import { fetchJsonWithTimeout as fetchJson, isUnanswered } from './lib/fetch-hel
 			}, { timeoutMs: null, fallbackMessage: failedMessage })
 		} catch (error) {
 			const status = (error && typeof error.status === 'number') ? error.status : null
-			// A 4xx refuses the create, even if its body then broke off, so
-			// nothing was made. Anything else without this app's answer leaves
-			// the outcome open.
-			const refused = status !== null && status >= 400 && status < 500
-			if (!refused && (status === null || isUnanswered(error))) {
+			const unanswered = isUnanswered(error)
+			const message = !unanswered && error instanceof Error && error.message ? error.message : failedMessage
+			// Refused, even if the body then broke off: nothing was made.
+			if (status !== null && status >= 400 && status < 500) {
+				failCreate(status === 409 ? 'conflict' : 'server', message, status, error)
+				return
+			}
+			// No answer from this app: whether the pad was made is not known.
+			if (status === null || unanswered) {
 				failCreate('network', unansweredMessage, status)
 				return
 			}
-			const message = !isUnanswered(error) && error instanceof Error && error.message ? error.message : failedMessage
-			failCreate(classifyHttpStatus(status), message, status, error)
+			// This app's own 5xx, rolled back as far as it could.
+			failCreate('server', message, status, error)
 			return
 		}
 

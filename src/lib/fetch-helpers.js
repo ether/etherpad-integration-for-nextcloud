@@ -20,12 +20,11 @@ const GATEWAY_STATUSES = [502, 503, 504]
  * a second pad and orphans the first. Slow is not the same as stuck.
  *
  * An error carries the server's `code` and `retryable` when it sent them,
- * and `unanswered` when nothing came back from this app: our own timeout,
- * a failed network, or a proxy or PHP itself answering in its place. Only
- * that fact: whether the same request is worth another try depends on
- * whether it writes, which the caller knows (`isRetryableOpenError` for an
- * open). `status` goes along whenever one came, also when the body then
- * broke off.
+ * `status` whenever one came, and `unanswered` when nothing came back from
+ * this app (docs/architecture.md, "Errors of the API", says which failures
+ * count). Only that fact: whether the same request is worth another try
+ * depends on whether it writes, which the caller knows
+ * (`isRetryableOpenError` for an open).
  */
 export const fetchJsonWithTimeout = async (url, init = {}, options = {}) => {
 	const { timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS, fallbackMessage = 'Request failed.' } = options
@@ -72,10 +71,7 @@ export const fetchJsonWithTimeout = async (url, init = {}, options = {}) => {
 			if (data && data.retryable === true) {
 				error.retryable = true
 			}
-			// This app answers every error in JSON, never with 502 or 504,
-			// and every 503 of its own carries retryable (docs/api-reference.md).
-			// A 5xx that is no such answer came from a proxy with its backend
-			// gone, from Nextcloud in maintenance, or from PHP dying midway.
+			// A 5xx that cannot be this app's (docs/architecture.md, "Errors of the API").
 			const isGateway = GATEWAY_STATUSES.includes(response.status) && error.retryable !== true
 			if (response.status >= 500 && (!isJson || isGateway)) {
 				error.unanswered = true
