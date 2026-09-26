@@ -84,8 +84,8 @@ class PadOpenService {
 		$mayWrite = $node->isUpdateable();
 		if (!$pad->isExternal) {
 			$bound = $this->settleOnOpen->settleThenResolve($node, $fileId, $pad);
-			if ($bound !== $pad && $mayWrite) {
-				$this->followRow($node, $fileId, $content, $bound);
+			if ($bound->padId !== $pad->padId && $mayWrite) {
+				$this->followRow($uid, $fileId, $content, $bound);
 			}
 			$pad = $bound;
 		}
@@ -98,10 +98,22 @@ class PadOpenService {
 	 * write it: it is written to name the row's pad, once, over what this
 	 * open read and nothing newer. Should that not work, the row's pad
 	 * opens all the same, and the next open or sync tries again.
+	 *
+	 * The file is found again by its id, as the initialise finds it: one
+	 * moved or deleted since the read is written where it is now, or not at
+	 * all, never as a new file where it was. Compared and written without a
+	 * lock, as there: a sync that writes between the two is written over
+	 * with the older text and no revision, and the next sync writes it
+	 * again; the pad holds the text either way.
 	 */
-	private function followRow(File $node, int $fileId, string $read, ParsedPadFile $bound): void {
+	private function followRow(string $uid, int $fileId, string $read, ParsedPadFile $bound): void {
 		try {
+			$node = $this->userNodeResolver->resolveUserFileNodeById($uid, $fileId);
 			if ($node->getContent() !== $read) {
+				$this->logger->debug('A .pad file changed since it was opened; it is not rewritten to its row\'s pad.', [
+					'app' => 'etherpad_nextcloud',
+					'fileId' => $fileId,
+				]);
 				return;
 			}
 			$node->putContent($this->padFileService->serialize($bound->frontmatter, $bound->body));

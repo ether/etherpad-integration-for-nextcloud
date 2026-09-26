@@ -77,7 +77,7 @@ class PublicViewerControllerTest extends TestCase {
 		$padFileService->expects($this->never())->method('getSnapshotPartsFromBody');
 
 		$bindingService = $this->createMock(BindingService::class);
-		$bindingService->expects($this->atLeastOnce())
+		$bindingService->expects($this->once())
 			->method('findByFileId')
 			->with(42)
 			->willReturn(new Binding(42, 'g.abcdefghijklmnop$Shared', BindingService::ACCESS_PROTECTED, BindingService::STATE_ACTIVE));

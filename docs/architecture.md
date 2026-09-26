@@ -85,7 +85,7 @@ checked-in runtime assets in `js/`.
   - `deleted_at`
   - `created_at`
   - `updated_at`
-  - `replaced_pad_id` (migration `Version000004Date20260926120000`): the pad the row's pad replaced, when a restore or a recovery put a new one in its place (see "Which pad a file reaches"). Nextcloud runs the migration when the app's version rises; `tests/e2e/docker/sync-app.sh` runs it for a working tree synced into the test stack.
+  - `replaced_pad_id` (migration `Version000004Date20260926120000`): the pad the row's pad replaced, when a restore or a recovery put a new one in its place (see "Which pad a file reaches"). Rows from before it remember no pad. Nextcloud runs the migration when the app's version rises; `tests/e2e/docker/sync-app.sh` runs it for a working tree synced into the test stack.
   - stores internal managed pads only; external `ext.*` rows from earlier development versions are removed by `Version000003Date20260512230000`
 - `.pad` file
   - Frontmatter: format, binding metadata, state, export metadata.
@@ -102,12 +102,12 @@ A `.pad` file names a pad, and whoever may write the file can make it name any p
 
 - The file names the row's pad, in the row's access mode: that pad.
 - The file names the pad the row replaced (`replaced_pad_id`): the row's pad. A restore that put a new pad in place of one that was gone or behind remembers the old one, and so does the recovery of a file without a row, which makes a new pad. A file that still names the old pad reaches the new one: an older version of it restored through Nextcloud's versions, or one whose rewrite failed.
-  - An open that may write the file rewrites it to name the row's pad, with the row's access mode and link and no snapshot revision, if the file still holds what the open read. It logs `A .pad file named the pad its row replaced; it now names the row's.` as a warning. A rewrite that fails is logged at debug, and the row's pad opens all the same.
+  - An open that may write the file rewrites it to name the row's pad, with the row's access mode and link, active, and no snapshot revision. It finds the file again by its id, as the initialise does, and writes only while the file holds what the open read; a file moved meanwhile is written where it is now, a deleted one not at all. It logs `A .pad file named the pad its row replaced; it now names the row's.` as a warning. A rewrite skipped for a changed file, or one that fails, is logged at debug, and the row's pad opens all the same. There is no lock between the comparison and the write: a sync that writes in between is written over with the older text and no revision, and the next sync writes it again.
   - A sync writes the row's pad's snapshot into the file, under the row's pad, with the same line.
   - Whatever only reads - an open without write permission, a public share, the read-only content view, sync status - leaves the file as it is, and says so at debug.
 - The file names any other pad, or the row's pad in another access mode: refused, `Binding pad ID mismatch.` or `Binding access mode mismatch.` (see "Errors of the API"). This comes before the row's state is looked at, so such a file neither decides nor waits for a row that is not its own.
 
-A row remembers one pad, the one its latest change of pad replaced. A file that names a pad from before that is refused like any other.
+A row remembers one pad, the one its latest change of pad replaced. A file that names a pad from before that is refused like any other, and so is one a restore or recovery left behind before the column existed: such rows remember no pad, and nothing can tell afterwards which one they replaced.
 
 A file that names the pad its row replaced holds that pad's `snapshot_rev`, not one of the row's pad. Wherever the file's revision is held against the row's pad - sync and sync status, the trash, the sweep's rest of a trash, a restore - it counts as none: a higher revision of the old pad would make the row's pad look behind, and a trash would leave the old pad's text in the file and the row's pad over. Only then. A file that names the row's pad keeps its revision, and so does one that names any other pad: such a file need not be the row's at all - one overwritten with another `.pad`'s content, or a file id the file cache gave out again - so its revision is not given up for the row's pad. Trash, sweep and restore hold the row's pad to it as before: a pad behind it is left in place and logged with its id, as any pad behind is.
 

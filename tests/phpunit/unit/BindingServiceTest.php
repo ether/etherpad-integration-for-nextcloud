@@ -225,9 +225,13 @@ class BindingServiceTest extends TestCase {
 		self::assertSame('before', $table->rows[0]['replaced_pad_id']);
 	}
 
-	/** A recovery's row says which pad the file named; any other new row replaced none. */
+	/**
+	 * A recovery's row says which pad the file named; any other new row
+	 * replaced none. A pad id longer than the column, which only an edited
+	 * file can name, is not remembered, and the row is written all the same.
+	 */
 	public function testANewRowSaysWhichPadItReplaced(): void {
-		foreach (['a recovery' => ['old', 'old'], 'a create' => [null, null]] as $case => [$replaced, $written]) {
+		foreach (['a recovery' => ['old', 'old'], 'a create' => [null, null], 'a pad id no column holds' => [str_repeat('p', 256), null], 'the longest one it holds' => [str_repeat('p', 255), str_repeat('p', 255)]] as $case => [$replaced, $written]) {
 			$qb = new class implements IQueryBuilder {
 				/** @var array<string,mixed> */
 				public array $values = [];

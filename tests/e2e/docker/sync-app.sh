@@ -34,8 +34,12 @@ compose restart nextcloud >/dev/null
 compose exec -T -u www-data nextcloud sh -c 'for _ in $(seq 1 60); do php occ status 2>/dev/null | grep -q "installed: true" && exit 0; sleep 1; done; exit 1'
 
 # Nextcloud runs an app's migrations when info.xml's version is above the
-# one it has installed, and a branch leaves the version as it is. Marked
-# older, the app is upgraded as a release upgrades it, and gets the
-# migrations it has not run yet. On a new stack up.sh enables the app
+# one it has installed, and a branch leaves the version as it is. An
+# enabled app with a migration it has not run yet is marked older and
+# upgraded, as a release upgrades it. On a new stack up.sh enables the app
 # after this, which runs them all.
-compose exec -T -u www-data nextcloud sh -c 'if [ "$(php occ config:app:get etherpad_nextcloud enabled 2>/dev/null)" = yes ]; then php occ config:app:set etherpad_nextcloud installed_version --value 0.0.0 && php occ upgrade; fi' >/dev/null
+as_www() { compose exec -T -u www-data nextcloud "$@"; }
+if [ "$(as_www php occ config:app:get etherpad_nextcloud enabled 2>/dev/null)" = yes ] &&
+	[ -n "$(as_www php -r 'require "lib/base.php"; echo (new \OC\DB\MigrationService("etherpad_nextcloud", \OCP\Server::get(\OC\DB\Connection::class)))->getMigration("next");')" ]; then
+	as_www sh -c 'php occ config:app:set etherpad_nextcloud installed_version --value 0.0.0 && php occ upgrade' >/dev/null
+fi

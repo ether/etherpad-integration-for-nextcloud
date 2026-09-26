@@ -65,7 +65,7 @@ class PadSyncService {
 			// A file that named the pad its row replaced comes without a
 			// revision (BoundPadResolver::followingRow()): always written.
 			$result = $this->syncInternalPad($node, $fileId, $synced, $force);
-			if ($synced !== $pad) {
+			if ($synced->padId !== $pad->padId) {
 				$this->boundPads->repaired($fileId);
 			}
 			return $result;

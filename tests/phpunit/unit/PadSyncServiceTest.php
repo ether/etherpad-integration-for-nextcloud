@@ -317,7 +317,7 @@ class PadSyncServiceTest extends TestCase {
 			$formatter->readPad($formatter->buildInitialDocument(138, 'old-pad', BindingService::ACCESS_PUBLIC)),
 			new PadSnapshot('old text', '', 500),
 		));
-		$restored = $formatter->withRestoredSnapshot($trashed, 'old text', '', 'r-new-pad', 'https://pad.example.test/p/r-new-pad');
+		$restored = $formatter->withRestoredSnapshot($trashed, 'old text', '', 'r-new-pad', BindingService::ACCESS_PUBLIC, 'https://pad.example.test/p/r-new-pad');
 
 		$file = $this->createMock(File::class);
 		$file->method('getName')->willReturn('Notes.pad');

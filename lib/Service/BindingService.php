@@ -30,6 +30,8 @@ class BindingService {
 	 * be gone.
 	 */
 	public const STATE_RESTORE_PENDING = 'restore_pending';
+	/** What pad_id and replaced_pad_id hold at most; bytes, so it holds on every database. */
+	private const PAD_ID_MAX_BYTES = 255;
 
 	/**
 	 * Where trashes keep files, as file cache paths relative to their
@@ -256,10 +258,14 @@ class BindingService {
 
 	/**
 	 * $replacedPadId: the pad the file named, when the new pad takes its
-	 * place (a recovery); see rebind().
+	 * place (a recovery); see rebind(). It comes from the file, so one longer
+	 * than the column is no pad of this app's, and is not remembered.
 	 */
 	public function createBinding(int $fileId, string $padId, string $accessMode, ?string $replacedPadId = null): void {
 		$this->assertAccessMode($accessMode);
+		if ($replacedPadId !== null && strlen($replacedPadId) > self::PAD_ID_MAX_BYTES) {
+			$replacedPadId = null;
+		}
 		$now = $this->timeFactory->getTime();
 
 		$qb = $this->db->getQueryBuilder();

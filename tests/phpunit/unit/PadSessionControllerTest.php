@@ -91,7 +91,7 @@ class PadSessionControllerTest extends TestCase {
 			));
 
 		$bindingService = $this->createMock(BindingService::class);
-		$bindingService->expects($this->atLeastOnce())
+		$bindingService->expects($this->once())
 			->method('findByFileId')
 			->with(138)
 			->willReturn(new Binding(138, 'g.ABCDEFGHIJKLMNOP$pad-1', BindingService::ACCESS_PUBLIC, BindingService::STATE_ACTIVE));

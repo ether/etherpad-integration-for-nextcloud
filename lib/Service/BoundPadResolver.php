@@ -36,7 +36,8 @@ class BoundPadResolver {
 	/**
 	 * $pad as its active row has it: $pad itself when it names the row's
 	 * pad, the file as namingPad() makes it when it names the pad the row's
-	 * replaced.
+	 * replaced. Only then does the pad returned differ from the file's by
+	 * its id, which is how a caller tells the file is out of date.
 	 *
 	 * @throws MissingBindingException the file has no row
 	 * @throws BindingMismatchException the file names neither pad
@@ -50,8 +51,8 @@ class BoundPadResolver {
 		}
 		// Before the state: a file that names neither pad is not this row's
 		// to settle or wait for.
-		$bound = $this->followingRow($pad, $binding);
-		if ($bound === $pad) {
+		$namesReplaced = $this->namesReplacedPad($pad, $binding);
+		if (!$namesReplaced) {
 			if ($binding->padId !== $pad->padId) {
 				throw new BindingMismatchException('Binding pad ID mismatch.');
 			}
@@ -66,13 +67,14 @@ class BoundPadResolver {
 			// A state the sweep never takes up, so nothing to wait for either.
 			throw new BindingException('Pad binding is not active.');
 		}
-		if ($bound !== $pad) {
-			$this->logger->debug('A .pad file names the pad its row replaced; the row\'s pad is used.', [
-				'app' => 'etherpad_nextcloud',
-				'fileId' => $fileId,
-			]);
+		if (!$namesReplaced) {
+			return $pad;
 		}
-		return $bound;
+		$this->logger->debug('A .pad file names the pad its row replaced; the row\'s pad is used.', [
+			'app' => 'etherpad_nextcloud',
+			'fileId' => $fileId,
+		]);
+		return $this->namingRowsPad($pad, $binding);
 	}
 
 	/**
@@ -84,9 +86,14 @@ class BoundPadResolver {
 	 * file reaches").
 	 */
 	public function followingRow(ParsedPadFile $pad, Binding $binding): ParsedPadFile {
-		if ($pad->padId !== $binding->replacedPadId || $pad->padId === $binding->padId) {
-			return $pad;
-		}
+		return $this->namesReplacedPad($pad, $binding) ? $this->namingRowsPad($pad, $binding) : $pad;
+	}
+
+	private function namesReplacedPad(ParsedPadFile $pad, Binding $binding): bool {
+		return $pad->padId === $binding->replacedPadId && $pad->padId !== $binding->padId;
+	}
+
+	private function namingRowsPad(ParsedPadFile $pad, Binding $binding): ParsedPadFile {
 		return $this->padFileService->namingPad($pad, $binding->padId, $binding->accessMode, $this->etherpadClient->buildPadUrl($binding->padId));
 	}
 

@@ -451,6 +451,7 @@ class RestoreService {
 				$snapshot['text'],
 				$snapshot['html'],
 				$newPadId,
+				$accessMode,
 				$this->etherpadClient->buildPadUrl($newPadId),
 				$this->revisionsOfSeededPad($newPadId),
 			);

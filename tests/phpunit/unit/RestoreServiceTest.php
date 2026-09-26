@@ -13,6 +13,7 @@ use OCA\EtherpadNextcloud\Service\EtherpadClient;
 use OCA\EtherpadNextcloud\Service\LifecycleResult;
 use OCA\EtherpadNextcloud\Service\RestoreService;
 use OCA\EtherpadNextcloud\Service\PadFileService;
+use OCA\EtherpadNextcloud\Service\PadSnapshot;
 use OCA\EtherpadNextcloud\Service\RunBudget;
 use OCA\EtherpadNextcloud\Service\SettleOutcome;
 use OCA\EtherpadNextcloud\Service\TestFaults;
@@ -675,6 +676,58 @@ class RestoreServiceTest extends TestCase {
 	}
 
 	/**
+	 * The row's pad is gone, and the file names the pad the row replaced, or
+	 * the row's pad in another access mode: the new pad is made in the row's
+	 * mode from the file's snapshot, and the file names it, in that mode,
+	 * active and at the new pad's count, whatever the file said before.
+	 */
+	public function testARestoreReplacesTheRowsPadInTheRowsMode(): void {
+		foreach (['names the pad it replaced' => 'pad-before', 'names the row\'s pad in another mode' => 'old-pad'] as $case => $filePadId) {
+			$fileId = 99;
+			$newPadId = 'r-old-pad-abc123def456';
+			$formatter = new PadFileService(new FixedClock());
+			$bindingService = $this->createMock(BindingService::class);
+			$bindingService->method('findByFileId')->with($fileId)->willReturn(new Binding($fileId, 'old-pad', BindingService::ACCESS_PUBLIC, BindingService::STATE_PENDING_DELETE, replacedPadId: 'pad-before'));
+			$bindingService->expects($this->once())
+				->method('rebind')
+				->with($fileId, 'old-pad', BindingService::STATE_PENDING_DELETE, $newPadId, BindingService::STATE_ACTIVE)
+				->willReturn(true);
+			$etherpadClient = $this->createMock(EtherpadClient::class);
+			$etherpadClient->method('getRevisionsCount')->willReturnCallback(static function (string $padId): int {
+				if ($padId === 'old-pad') {
+					throw new \RuntimeException('padID does not exist');
+				}
+				return 1;
+			});
+			$etherpadClient->method('buildPadUrl')->willReturnCallback(static fn (string $padId): string => self::padUrlOf($padId));
+			// A public pad: the row's mode, not the file's.
+			$etherpadClient->expects($this->once())->method('createPad')->with($newPadId);
+			$etherpadClient->expects($this->never())->method('createGroupPad');
+			$etherpadClient->expects($this->once())->method('setText')->with($newPadId, 'Text of the old pad');
+			$secureRandom = $this->createMock(ISecureRandom::class);
+			$secureRandom->method('generate')->willReturn('abc123def456');
+			$written = null;
+			$file = $this->createMock(File::class);
+			$file->method('getId')->willReturn($fileId);
+			$file->method('getName')->willReturn('Restored.pad');
+			$file->method('getContent')->willReturn($formatter->buildInitialDocument($fileId, $filePadId, BindingService::ACCESS_PROTECTED, new PadSnapshot('Text of the old pad', '', 500)));
+			$file->expects($this->once())->method('putContent')->willReturnCallback(static function (string $content) use (&$written): void {
+				$written = $content;
+			});
+
+			$result = $this->restoreService(bindings: $bindingService, etherpad: $etherpadClient, padFiles: $formatter, secureRandom: $secureRandom)->restore($file);
+
+			$this->assertSame([LifecycleResult::RESTORED, $newPadId], [$result['status'], $result['new_pad_id']], $case);
+			$after = $formatter->readPad((string)$written);
+			$this->assertSame(
+				[$newPadId, BindingService::ACCESS_PUBLIC, self::padUrlOf($newPadId), 1, BindingService::STATE_ACTIVE, 'Text of the old pad'],
+				[$after->padId, $after->accessMode, $after->padUrl, $after->snapshotRev, $after->frontmatter['state'], $formatter->getSnapshotPartsFromBody($after->body)['text']],
+				$case,
+			);
+		}
+	}
+
+	/**
 	 * Without the file there is no revision to hold the pad to, so the row
 	 * waits for a later check rather than being settled blind.
 	 */
@@ -1182,7 +1235,7 @@ class RestoreServiceTest extends TestCase {
 		]);
 		$padFileService->expects($this->once())
 			->method('withRestoredSnapshot')
-			->with($this->identicalTo($parsedPad), 'plain text', '', $newPadId, $newPadUrl)
+			->with($this->identicalTo($parsedPad), 'plain text', '', $newPadId, BindingService::ACCESS_PUBLIC, $newPadUrl)
 			->willReturn('doc-after');
 
 		$etherpadClient = $this->createMock(EtherpadClient::class);
@@ -1482,7 +1535,7 @@ class RestoreServiceTest extends TestCase {
 		$padFileService->method('readPad')->with('doc-before')->willReturn($parsedPad);
 		$padFileService->method('getSnapshotPartsFromBody')->with($parsedPad->body)->willReturn(['text' => 'plain text', 'html' => $html]);
 		$padFileService->method('withRestoredSnapshot')->willReturnCallback(
-			function (ParsedPadFile $pad, string $text, string $html, string $padId, string $padUrl, int $revision = -1): string {
+			function (ParsedPadFile $pad, string $text, string $html, string $padId, string $accessMode, string $padUrl, int $revision = -1): string {
 				$this->restoredRevision = $revision;
 				return 'doc-after';
 			},
