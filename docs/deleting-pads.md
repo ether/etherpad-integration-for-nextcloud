@@ -2,40 +2,68 @@
 
 SPDX-License-Identifier: AGPL-3.0-or-later
 
-A pad lives in Etherpad; its `.pad` file lives in Nextcloud. Whether the pad
-is deleted with the file depends on how the file leaves Nextcloud. This page
-lists every way, as the app handles it today. The technical side is in
-[architecture.md](architecture.md), under "Trash/Restore" and "Files gone for
-good".
+A pad lives in Etherpad; its `.pad` file lives in Nextcloud. The pad is
+deleted only once its file is deleted for good. Moving the file to the trash
+does not delete the pad, so a restored file has its pad back as it was. The
+technical side is in [architecture.md](architecture.md).
 
-It applies to pads this Nextcloud manages. A `.pad` file that links a pad on
-another Etherpad server never deletes that pad.
+This applies to pads this Nextcloud manages. A `.pad` file that links a pad
+on another Etherpad server never deletes that pad.
 
-## With `delete_on_trash` on (the default)
+## Moved to the trash
 
-| How the `.pad` file goes | What happens to the pad |
+A file goes to the trash when it is deleted through Files, a desktop or
+mobile client, or a WebDAV `DELETE`, in a user's own folders as in a team
+folder. So does a folder with its files, and a file replaced by moving
+another file onto it (WebDAV `MOVE` with `Overwrite: T`).
+
+- **The pad stays**, with its content and history.
+- **A protected pad** loses its Etherpad sessions: whoever has it open can no
+  longer edit it. For a single file this happens at once, for the files in a
+  folder within minutes. Someone who only reads keeps seeing the last state
+  until they reload.
+- **A public pad** stays reachable by its link, for reading and editing,
+  until its file is deleted for good. A team folder's trash with no
+  retention limit may keep it for a long time.
+- While the file is in the trash, nothing is synced into it: it keeps what it
+  held when it was last opened. Edits made through a public link meanwhile
+  are in the pad only.
+
+## Restored from the trash
+
+- **The file has its pad back**, the same pad with its full history,
+  including edits made through a public link while it was in the trash.
+- Opening the file gives a new Etherpad session, as always.
+- Should Etherpad have lost the pad in the meantime, opening the file offers
+  to make a new pad from the content saved in the file.
+
+## Deleted for good
+
+| How the file is deleted for good | When the pad is deleted |
 |---|---|
-| Moved to the trash: through Files, a desktop or mobile client, or a WebDAV `DELETE`. A file replaced by moving another file onto it (WebDAV `MOVE` with `Overwrite: T`) goes to the trash as well. | Deleted once the trashed file holds a last snapshot of it. A delete through WebDAV - Files and the clients included - holds the file's lock, so a background job writes the snapshot and then deletes the pad; until then a public pad stays reachable by its link. Where the file is not locked, the delete does both right away. |
-| Restored from the trash | A new pad is made from the snapshot in the file. While the deletion was still owed, the old pad comes back instead. |
-| A folder moved to the trash | The pads of the `.pad` files in it stay as they are. A public pad stays reachable by its link. Restoring the folder changes nothing. |
-| Deleted for good from a trash: the trash emptied, an item deleted there, expired, `occ trashbin:cleanup`. A user's trash or a team folder's. | The pads still there - those of files in a trashed folder - are deleted by a background job. |
-| Deleted past the trash: a WebDAV `DELETE` with `X-NC-Skip-Trashbin: true`, the trash app switched off for the user, or a move to the trash that fails. | Deleted in the same request. Of a folder, as many as a few seconds allow; the rest by a background job. When Etherpad does not answer, the background job deletes them once it does. |
-| The account deleted | The pads of the account's own files - the files in its home, shared ones included - are deleted by a background job. The pads of files in team folders, and of files the account put into folders others shared with it, stay: those files are not the account's, and they stay too. |
-| A team folder deleted as a whole by an admin | The pads stay. Nextcloud tells no app about it. |
-| Removed outside Nextcloud: on an external storage, or in the data directory followed by a scan. An external storage removed. | The pads stay. Nextcloud tells no app about it. |
+| From the trash: the trash emptied, the item deleted there, expired, or `occ trashbin:cleanup`. A user's trash or a team folder's. | By a background job, within minutes. |
+| Past the trash: a WebDAV `DELETE` with `X-NC-Skip-Trashbin: true`, the trash app switched off for the user, or a move to the trash that fails. | In the same request. Of a folder's files, as many as a few seconds allow; the rest by a background job. When Etherpad does not answer, the background job deletes them once it does. |
+| With the account: the account deleted. | The pads of the account's own files - those in its home and its trash, shared ones included - by a background job, within minutes. Files in team folders, and files the account put into folders others shared with it, are not the account's: they stay, and so do their pads. |
 
-"A background job" is `GoneFileSweepJob` or the jobs for owed deletions. They
-run every five minutes when Nextcloud's background jobs run by system cron;
-with AJAX or webcron, only as often as those run.
+"A background job" runs every five minutes when Nextcloud's background jobs
+run by system cron; with AJAX or webcron, only as often as those run.
 
-A pad that stays keeps its content in Etherpad, and nobody reaches it through
-Nextcloud any more. A public pad stays reachable for anyone who has its link.
-The consistency check on the admin page counts the pads whose file is gone
+## Gone without the app seeing it
+
+Some ways of removing a file tell no app about it. Their pads stay:
+
+- a team folder deleted as a whole by an admin;
+- files removed outside Nextcloud - on an external storage, or in the data
+  directory followed by a scan - and an external storage removed.
+
+A pad that stays keeps its content in Etherpad, and nobody reaches it
+through Nextcloud any more; a public pad stays reachable by its link. The
+consistency check on the admin page counts these pads
 (`binding_without_file_count`).
 
 ## With `delete_on_trash` off
 
-The app deletes no pad at all. A file moved to the trash keeps its pad, and
-its deletion waits. Pads of files deleted for good or past the trash stay.
-Switched back on, the owed deletions are finished, and the pads of files
-since deleted for good go too.
+The setting reads "delete the pad when its `.pad` file is deleted for good".
+Switched off, the app deletes no pad at all; moving a file to the trash
+still ends a protected pad's sessions. Switched back on, the pads of files
+deleted for good in the meantime are deleted too.
