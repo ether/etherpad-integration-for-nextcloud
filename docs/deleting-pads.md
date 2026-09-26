@@ -57,8 +57,9 @@ Some ways of removing a file tell no app about it. Their pads stay:
 
 A pad that stays keeps its content in Etherpad, and nobody reaches it
 through Nextcloud any more; a public pad stays reachable by its link. The
-consistency check on the admin page counts these pads
-(`binding_without_file_count`).
+consistency check on the admin page counts these pads and lists them by pad
+id (`vanished_file_count`), so an admin can delete the ones no longer
+needed in Etherpad.
 
 ## With `delete_on_trash` off
 

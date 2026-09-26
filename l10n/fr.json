@@ -133,6 +133,7 @@
         "Pad name is required.": "Le nom du pad est obligatoire.",
         "Pad types and behaviour": "Types de pads et comportement",
         "Pads": "Pads",
+        "Pads whose .pad file is gone without passing a trash. The app leaves them in place; delete them in Etherpad if they are no longer needed:": "Pads dont le fichier .pad a disparu sans passer par une corbeille. L'application les laisse en place ; supprime-les dans Etherpad s'ils ne sont plus utiles :",
         "Pending Etherpad deletes": "Suppressions Etherpad en attente",
         "Pending pad check failed.": "La vérification des pads en attente a échoué.",
         "Pending pad check finished.": "Vérification des pads en attente terminée.",

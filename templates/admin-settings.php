@@ -251,5 +251,9 @@
 			<span id="etherpad-nextcloud-pending-count" class="settings-hint"></span>
 		</div>
 		<p id="etherpad-nextcloud-diagnostics-status" class="ep-status" aria-live="polite"></p>
+		<div id="etherpad-nextcloud-vanished" style="display:none;">
+			<p class="settings-hint ep-field-hint"><?php p((string)$_['l10n']['vanished_pads_hint']); ?></p>
+			<ul id="etherpad-nextcloud-vanished-list"></ul>
+		</div>
 	</form>
 </div>

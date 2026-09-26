@@ -12,6 +12,8 @@
 	const pendingActions = document.getElementById('etherpad-nextcloud-pending-actions')
 	const pendingCountNode = document.getElementById('etherpad-nextcloud-pending-count')
 	const restorePendingCountNode = document.getElementById('etherpad-nextcloud-restore-pending-count')
+	const vanishedNode = document.getElementById('etherpad-nextcloud-vanished')
+	const vanishedList = document.getElementById('etherpad-nextcloud-vanished-list')
 	const allowExternalCheckbox = form ? form.querySelector('input[name="allow_external_pads"]') : null
 	const protectedPadsCheckbox = form ? form.querySelector('input[name="enable_protected_pads"]') : null
 	const publicPadsCheckbox = form ? form.querySelector('input[name="enable_public_pads"]') : null
@@ -500,12 +502,33 @@
 			try {
 				const data = await postJson(consistencyUrl, {})
 				const bindingWithoutFile = Number(data.binding_without_file_count || 0)
-				const message = `${String(data.message || l10n.consistencyOk)} binding_without_file=${String(bindingWithoutFile)}`
+				const vanishedFile = Number(data.vanished_file_count || 0)
+				const message = `${String(data.message || l10n.consistencyOk)} binding_without_file=${String(bindingWithoutFile)} | vanished_file=${String(vanishedFile)}`
 				setStatus(message, bindingWithoutFile > 0 ? 'error' : 'success', diagnosticsTarget)
+				showVanished(data.samples && data.samples.vanished_files)
 			} catch (error) {
 				setStatus(error instanceof Error ? error.message : l10n.consistencyFailed, 'error', diagnosticsTarget)
 			}
 		})
+	}
+
+	/**
+	 * The pads of files gone without passing a trash, which the app leaves
+	 * in place: listed, so an admin can delete them in Etherpad.
+	 */
+	function showVanished(rows) {
+		if (!(vanishedNode instanceof HTMLElement) || !(vanishedList instanceof HTMLElement)) {
+			return
+		}
+		const items = (Array.isArray(rows) ? rows : [])
+			.filter((row) => row && typeof row.pad_id === 'string')
+			.map((row) => {
+				const item = document.createElement('li')
+				item.textContent = `${row.pad_id} (fileid ${String(row.file_id)})`
+				return item
+			})
+		vanishedList.replaceChildren(...items)
+		vanishedNode.style.display = items.length > 0 ? '' : 'none'
 	}
 
 	if (settlePendingButton instanceof HTMLElement) {

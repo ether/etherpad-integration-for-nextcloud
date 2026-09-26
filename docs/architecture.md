@@ -43,10 +43,7 @@ Etherpad is the editing source of truth; the `.pad` file acts as binding storage
   - Guards creation only; existing pads of a disabled type keep working.
   - Resolves a template's access mode to an enabled one instead of failing.
 - `lib/Service/ConsistencyCheckService.php`
-  - Optional admin integrity scan:
-    - bindings without file
-    - `.pad` files without binding
-    - invalid/mismatching frontmatter on bound files
+  - Optional admin integrity scan: rows whose file is gone, and among them the vanished ones (see "Admin Integrity Check").
 - `lib/Controller/ViewerController.php`
   - Compatibility redirect adapter:
     - resolves `.pad` path/id to stable Nextcloud files viewer URL.
@@ -292,14 +289,14 @@ Primary flow (native viewer):
   - Then the pass: slices of 1,000 active rows whose file the file cache has, in id order from where the last one stopped, starting over after the last; up to ten slices a run, at least one however little time is left, since it only asks the database. A full pass over 100,000 rows takes ten runs. It sets `trashed_at` for a file under `files_trashbin/` or `__groupfolders/trash/` that a listener missed, and clears it for one back in Files (`files/`, or a team folder's `__groupfolders/<id>/`) that a restore did not clear, so a file restored and later gone some other way is not taken for one gone through a trash. A mark younger than five minutes stays: a move to the trash marks its files just before it moves them. A path it cannot place keeps what it has: the bare `trash/` of a team folder with its own storage (groupfolders 22 gives each its own), which only the listener marks, and a file on an external storage.
   - The admin page's settle (`POST /api/v1/admin/settle-pending`) runs the sweep too, in what the older sweep left of one 20 s budget.
   - With `delete_on_trash` off no pad goes here, but the marks are kept.
-- A file gone without being seen leaving is left alone, pad and row with it: a team folder deleted as a whole (groupfolders sends no event), a file cache rebuilt, a storage removed. The consistency check counts such rows among `binding_without_file_count`. A `.pad` file replaced by moving another file onto it through WebDAV goes to the trash first (measured against NC 34.0.3), so it is seen leaving.
+- A file gone without being seen leaving is left alone, pad and row with it: a team folder deleted as a whole (groupfolders sends no event), a file cache rebuilt, a storage removed. The consistency check counts and lists such rows (`vanished_file_count`). A `.pad` file replaced by moving another file onto it through WebDAV goes to the trash first (measured against NC 34.0.3), so it is seen leaving.
 
 ### 6) Admin Integrity Check (optional)
 
-1. Admin runs `POST /api/v1/admin/consistency-check`.
-2. Service scans DB/file metadata consistency.
-3. Returns aggregate counters and bounded sample lists for diagnostics.
-4. External `.pad` files without bindings are expected and are excluded from missing-binding diagnostics.
+1. Admin runs `POST /api/v1/admin/consistency-check`, from the admin page or the API; nothing runs it on its own.
+2. It counts the rows whose file the file cache has nothing of (`binding_without_file_count`), and among them the vanished ones (`vanished_file_count`): active rows never seen leaving Files. Those are the files gone without a trash, a delete or an account deletion the app heard of; their pads stay (see "Files gone for good"). The rest is on its way: a marked row the sweep takes within minutes, or a row waiting in the trash flow above.
+3. It returns up to 25 of each (`samples`). The admin page lists the vanished ones by pad id, so an admin can delete what is no longer needed in Etherpad.
+4. Its cost grows with the rows, or with the file cache, whichever the database reads: measured at 0.14 to 0.35 s for 500,000 rows and 2 million files (Postgres 16, warm).
 
 ## Main Frontend Modules
 

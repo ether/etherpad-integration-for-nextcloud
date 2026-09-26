@@ -390,14 +390,11 @@ solely by the separate external-pad policy, not by these two settings.
 - `POST /api/v1/admin/consistency-check`
   - Controller: `AdminController::consistencyCheck`
   - Auth: admin only
-  - Purpose: optional structural integrity check across binding table and `.pad` files.
-  - Result includes:
-    - `binding_without_file_count`
-    - `file_without_binding_count`
-    - `invalid_frontmatter_count`
-    - `frontmatter_scanned`
-    - `frontmatter_skipped`
-    - `samples` (bounded debug sample lists per issue class)
+  - Purpose: optional check of the binding table against the file cache (`docs/architecture.md`, "Admin Integrity Check").
+  - Result:
+    - `binding_without_file_count`: rows whose file the file cache has nothing of
+    - `vanished_file_count`: of those, the active rows never seen leaving Files, whose pads the app leaves in place
+    - `samples.bindings_without_file` (`file_id`, `pad_id`, `access_mode`, `state`) and `samples.vanished_files` (`file_id`, `pad_id`, `access_mode`), up to 25 each
 
 - `POST /api/v1/admin/settle-pending`
   - Controller: `AdminController::settlePending`

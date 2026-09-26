@@ -134,6 +134,7 @@ OC.L10N.register(
     "Pad name is required.": "Se requiere el nombre del pad.",
     "Pad types and behaviour": "Tipos de pad y comportamiento",
     "Pads": "Pads",
+    "Pads whose .pad file is gone without passing a trash. The app leaves them in place; delete them in Etherpad if they are no longer needed:": "Pads cuyo archivo .pad ha desaparecido sin pasar por una papelera. La aplicación los deja como están; elimínalos en Etherpad si ya no se necesitan:",
     "Pending Etherpad deletes": "Eliminaciones pendientes en Etherpad",
     "Pending pad check failed.": "Error al comprobar los pads pendientes.",
     "Pending pad check finished.": "Comprobación de pads pendientes finalizada.",

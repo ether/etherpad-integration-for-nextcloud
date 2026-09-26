@@ -47,6 +47,7 @@ const setupAdminDom = () => {
 				<button type="button" id="etherpad-nextcloud-consistency-check">Check</button>
 				<p id="etherpad-nextcloud-connection-status" class="ep-status"></p>
 				<p id="etherpad-nextcloud-diagnostics-status" class="ep-status"></p>
+				<div id="etherpad-nextcloud-vanished" style="display:none;"><ul id="etherpad-nextcloud-vanished-list"></ul></div>
 				<div id="etherpad-nextcloud-pending-actions" style="display:none;">
 					<button type="button" id="etherpad-nextcloud-settle-pending">Check</button>
 					<span id="etherpad-nextcloud-restore-pending-count"></span>
@@ -206,6 +207,32 @@ describe('admin settings status areas', () => {
 		// A deletion still waits for its file, so there is still something to check.
 		expect(document.getElementById('etherpad-nextcloud-pending-actions').style.display).toBe('')
 		expect(settleButton.disabled).toBe(false)
+	})
+
+	it('lists the pads of vanished files, and only while there are any', async () => {
+		let vanished = [{ file_id: 7, pad_id: 'g.abc$Notes', access_mode: 'protected' }, { file_id: 9, pad_id: '<b>pad</b>' }]
+		vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(okResponse({
+			message: 'Consistency check finished with issues.',
+			binding_without_file_count: 3,
+			vanished_file_count: 2,
+			samples: { bindings_without_file: [], vanished_files: vanished },
+		}))))
+		await import(MODULE)
+		const node = document.getElementById('etherpad-nextcloud-vanished')
+		const items = () => [...document.querySelectorAll('#etherpad-nextcloud-vanished-list li')].map((li) => li.textContent)
+
+		document.getElementById('etherpad-nextcloud-consistency-check').click()
+		await flushAsyncWork()
+		expect(diagnosticsStatus().textContent).toContain('binding_without_file=3 | vanished_file=2')
+		expect(node.style.display).toBe('')
+		// As text: a pad id is data, never markup.
+		expect(items()).toEqual(['g.abc$Notes (fileid 7)', '<b>pad</b> (fileid 9)'])
+
+		vanished = []
+		document.getElementById('etherpad-nextcloud-consistency-check').click()
+		await flushAsyncWork()
+		expect(node.style.display).toBe('none')
+		expect(items()).toEqual([])
 	})
 
 	it('leaves the counts alone when a response carries none', async () => {

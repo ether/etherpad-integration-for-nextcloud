@@ -31,6 +31,7 @@ class AdminConsistencyCheckResponseBuilder {
 			'ok' => true,
 			'message' => $message,
 			'binding_without_file_count' => $issues,
+			'vanished_file_count' => (int)$result['vanished_file_count'],
 			'samples' => $result['samples'],
 		];
 	}
