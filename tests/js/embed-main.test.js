@@ -27,8 +27,6 @@ vi.mock('../../src/lib/pad-content.js', () => ({
 
 const { loadPadContent } = await import('../../src/lib/pad-content.js')
 
-
-
 const setupEmbedDom = () => {
 	document.body.innerHTML = `
 		<div id="etherpad-nextcloud-embed"
@@ -53,8 +51,6 @@ const setupEmbedDom = () => {
 		</div>
 	`
 }
-
-
 
 const root = () => document.getElementById('etherpad-nextcloud-embed')
 const errorMessage = () => document.querySelector('[data-epnc-embed-error-message]').textContent

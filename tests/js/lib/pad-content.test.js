@@ -9,7 +9,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { loadPadContent } from '../../../src/lib/pad-content.js'
 import { jsonResponse } from '../responses.js'
 
-
 describe('loadPadContent', () => {
 	beforeEach(() => {
 		globalThis.fetch = vi.fn()

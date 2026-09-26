@@ -21,7 +21,6 @@ const stubFetch = (impl) => {
 
 const abortError = () => new DOMException('The operation was aborted.', 'AbortError')
 
-
 afterEach(() => {
 	vi.unstubAllGlobals()
 	vi.useRealTimers()

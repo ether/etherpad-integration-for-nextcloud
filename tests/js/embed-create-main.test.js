@@ -11,8 +11,6 @@ import { brokenBody, errorResponse, jsonResponse, pageResponse } from './respons
 const NO_ANSWER = 'No answer; look in the folder first.'
 const CREATE_FAILED = 'Anlegen fehlgeschlagen.'
 
-
-
 const setupEmbedCreateDom = () => {
 	document.body.innerHTML = `
 		<div id="etherpad-nextcloud-embed-create"
@@ -32,7 +30,6 @@ const setupEmbedCreateDom = () => {
 		</div>
 	`
 }
-
 
 const errorMessageText = () => document.querySelector('[data-epnc-embed-create-error-message]').textContent
 const errorPanelHidden = () => document.querySelector('[data-epnc-embed-create-error]').hidden
@@ -183,9 +180,10 @@ describe('embed-create-main', () => {
 			code: answer.code ?? null,
 			retryable: answer.retryable ?? false,
 		})
-		// Inline too, for those who can see the iframe.
+		// Inline too, for those who can see the iframe, and no redirect.
 		expect(errorPanelHidden()).toBe(false)
 		expect(errorMessageText()).toBe(message)
+		expect(locationReplaceSpy).not.toHaveBeenCalled()
 	})
 
 	// A write: cut short, it would go on creating with nobody told.

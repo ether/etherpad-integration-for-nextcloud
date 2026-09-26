@@ -95,7 +95,6 @@ function makeInstance(overrides = {}) {
 	return ctx
 }
 
-
 // Endpoint prefixes overlap, so compare their full paths.
 const endpoint = (name) => `/apps/etherpad_nextcloud/api/v1/${name}`
 const bodyOf = (call) => String(call?.[1]?.body || '')
