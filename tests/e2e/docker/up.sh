@@ -28,16 +28,15 @@ readonly FULLTEXTSEARCH_ELASTICSEARCH_SHA256=8429a370c7263dc51e6b1cf9432c5c908e3
 
 # Team folders are how many installations share pads, and a team folder's
 # trash keeps its files apart from a user's; the suite runs against them
-# on every major, with the groupfolders release that belongs to it.
+# on every major, with the groupfolders release that belongs to it. A
+# major with none pinned - a new one, a nightly - comes up without, and
+# the team folder specs skip themselves.
 case "${NC_VERSION%%.*}" in
 	31) GROUPFOLDERS_VERSION=19.1.20 GROUPFOLDERS_SHA256=eb208cfd82c276c6f64334cc2b896eea61d8130fd5cc7027b17f1936f7fc7d51 ;;
 	32) GROUPFOLDERS_VERSION=20.1.18 GROUPFOLDERS_SHA256=3461a18dc0a073388aa48b6412873d02f040b3e7f3789f422ea8fab9cb812733 ;;
 	33) GROUPFOLDERS_VERSION=21.0.15 GROUPFOLDERS_SHA256=1ecdd644a2e913de8b333560717660f0ba75836309c4463af858e886cdc3a68c ;;
 	34) GROUPFOLDERS_VERSION=22.0.6 GROUPFOLDERS_SHA256=bfff357b12bbd24257d8d127cf30e83a72256e7659f1cc3e32bd09fe647d2f9b ;;
-	*)
-		echo "No groupfolders release is pinned for Nextcloud $NC_VERSION." >&2
-		exit 1
-		;;
+	*) GROUPFOLDERS_VERSION= GROUPFOLDERS_SHA256= ;;
 esac
 readonly GROUPFOLDERS_VERSION GROUPFOLDERS_SHA256
 
@@ -181,10 +180,14 @@ install_release_app() {
 	occ app:enable "$app"
 }
 
-echo "==> installing groupfolders $GROUPFOLDERS_VERSION"
-install_release_app groupfolders \
-	"https://github.com/nextcloud-releases/groupfolders/releases/download/v$GROUPFOLDERS_VERSION/groupfolders-v$GROUPFOLDERS_VERSION.tar.gz" \
-	"$GROUPFOLDERS_SHA256"
+if [[ -n "$GROUPFOLDERS_VERSION" ]]; then
+	echo "==> installing groupfolders $GROUPFOLDERS_VERSION"
+	install_release_app groupfolders \
+		"https://github.com/nextcloud-releases/groupfolders/releases/download/v$GROUPFOLDERS_VERSION/groupfolders-v$GROUPFOLDERS_VERSION.tar.gz" \
+		"$GROUPFOLDERS_SHA256"
+else
+	echo "==> no groupfolders release is pinned for Nextcloud $NC_VERSION; the team folder specs will skip" >&2
+fi
 
 if [[ "$FULLTEXTSEARCH" == 1 ]]; then
 	echo "==> installing and configuring full-text search"
