@@ -92,7 +92,6 @@ class AdminSettings implements ISettings {
 			'health_check_url' => $this->urlGenerator->linkToRoute('etherpad_nextcloud.admin.healthCheck'),
 			'consistency_check_url' => $this->urlGenerator->linkToRoute('etherpad_nextcloud.admin.consistencyCheck'),
 			'settle_pending_url' => $this->urlGenerator->linkToRoute('etherpad_nextcloud.admin.settlePending'),
-			'release_brake_url' => $this->urlGenerator->linkToRoute('etherpad_nextcloud.admin.releaseGoneFileBrake'),
 			'templates_url' => $this->urlGenerator->linkToRoute('etherpad_nextcloud.admin.listPadTemplates'),
 			'templates_delete_url' => $this->urlGenerator->linkToRoute('etherpad_nextcloud.admin.deletePadTemplate'),
 			'l10n' => [
@@ -147,10 +146,6 @@ class AdminSettings implements ISettings {
 				'health_button' => $this->l10n->t('Test Etherpad connection'),
 				'consistency_button' => $this->l10n->t('Consistency check'),
 				'settle_pending_button' => $this->l10n->t('Check pending pads'),
-				'release_brake_button' => $this->l10n->t('Release the brake'),
-				'release_brake_confirm' => $this->l10n->t('Pads whose .pad file has been missing past the grace period will be deleted. Release the brake?'),
-				'releasing_brake' => $this->l10n->t('Releasing the brake...'),
-				'release_brake_failed' => $this->l10n->t('Releasing the brake failed.'),
 				'pending_delete_label' => $this->l10n->t('Pending Etherpad deletes'),
 				'restore_pending_label' => $this->l10n->t('Unresolved restores'),
 				'saving' => $this->l10n->t('Saving settings...'),

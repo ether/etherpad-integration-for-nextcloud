@@ -235,8 +235,8 @@ class BindingServiceTest extends TestCase {
 	/**
 	 * The sweep of files gone for good asks the file cache through the
 	 * binding table. Marked and gone: the earliest marked first, active rows
-	 * only. The pass: active rows after the cursor in id order, each with its
-	 * file's path, null once gone.
+	 * only. The pass: active rows after the cursor whose file the file cache
+	 * has, in id order, each with its file's path.
 	 */
 	public function testTheSweepFindsWhatTheFileCacheNoLongerHas(): void {
 		$row = static fn (int $id, int $fileId, string $state, ?int $trashedAt): array => ['id' => $id, 'trashed_at' => $trashedAt] + self::bindingRow($fileId, 'pad-' . $fileId, $state);
@@ -246,8 +246,12 @@ class BindingServiceTest extends TestCase {
 			$row(3, 13, BindingService::STATE_ACTIVE, 100),
 			$row(4, 14, BindingService::STATE_ACTIVE, null),
 			$row(5, 15, BindingService::STATE_PENDING_DELETE, 50),
+			$row(6, 16, BindingService::STATE_ACTIVE, null),
+			$row(7, 17, BindingService::STATE_PENDING_DELETE, null),
 		], [
 			['fileid' => 13, 'storage' => 1, 'path' => 'files_trashbin/files/13.pad.d100'],
+			['fileid' => 16, 'storage' => 1, 'path' => 'files/16.pad'],
+			['fileid' => 17, 'storage' => 1, 'path' => 'files/17.pad'],
 			['fileid' => 99, 'storage' => 1, 'path' => 'files/99.pad'],
 		]);
 		$service = new BindingService($table, new FixedClock(500));
@@ -255,53 +259,24 @@ class BindingServiceTest extends TestCase {
 
 		$this->assertSame([12, 11], array_map(static fn (Binding $b): int => $b->fileId, $service->findMarkedGone(10)));
 		$this->assertSame([12], array_map(static fn (Binding $b): int => $b->fileId, $service->findMarkedGone(1)));
-		$this->assertSame([[1, 11, null], [2, 12, null], [3, 13, 'files_trashbin/files/13.pad.d100'], [4, 14, null]], $pass($service->findActiveAfter(0, 10)));
-		$this->assertSame([[3, 13, 'files_trashbin/files/13.pad.d100']], $pass($service->findActiveAfter(2, 1)));
-		$this->assertSame([], $service->findActiveAfter(4, 10));
+		$this->assertSame([[3, 13, 'files_trashbin/files/13.pad.d100'], [6, 16, 'files/16.pad']], $pass($service->findActiveWithFileAfter(0, 10)));
+		$this->assertSame([[3, 13, 'files_trashbin/files/13.pad.d100']], $pass($service->findActiveWithFileAfter(0, 1)));
+		$this->assertSame([[6, 16, 'files/16.pad']], $pass($service->findActiveWithFileAfter(3, 10)));
+		$this->assertSame([], $service->findActiveWithFileAfter(6, 10));
 		$this->assertTrue($service->isFileGone(11));
 		$this->assertFalse($service->isFileGone(13));
 	}
 
-	/**
-	 * A date the sweep sets stays as first set; cleared, it is gone. Other
-	 * rows are left alone.
-	 */
-	public function testTheSweepsDatesAreSetOnceAndCleared(): void {
+	/** A file back in Files: its row loses the mark, and the other rows keep theirs. */
+	public function testAMarkIsClearedForItsFileAlone(): void {
 		$table = new InMemoryBindingTable([
 			['trashed_at' => 300] + self::bindingRow(1, 'pad-a', BindingService::STATE_ACTIVE),
-			['trashed_at' => 300, 'missing_since' => 300] + self::bindingRow(2, 'pad-b', BindingService::STATE_ACTIVE),
-		]);
-		$clock = new FixedClock(500);
-		$service = new BindingService($table, $clock);
-
-		$service->markMissing(1);
-		$clock->advance(100);
-		$service->markMissing(1);
-		$this->assertSame([[300, 500], [300, 300]], array_map(static fn (array $r): array => [$r['trashed_at'], $r['missing_since']], $table->rows));
-
-		$service->clearMissing(1);
-		$service->clearTrashed(1);
-		$this->assertSame([[null, null], [300, 300]], array_map(static fn (array $r): array => [$r['trashed_at'], $r['missing_since']], $table->rows));
-	}
-
-	/**
-	 * The brake counts active rows without a mark missed after its release,
-	 * no further than it asks.
-	 */
-	public function testTheBrakeCountsRowsMissingSinceItsRelease(): void {
-		$row = static fn (int $fileId, int $missingSince, string $state = BindingService::STATE_ACTIVE, ?int $trashedAt = null): array => ['missing_since' => $missingSince, 'trashed_at' => $trashedAt] + self::bindingRow($fileId, 'pad-' . $fileId, $state);
-		$service = $this->serviceOver([
-			$row(1, 200),
-			$row(2, 201),
-			$row(3, 400),
-			$row(4, 400, trashedAt: 400),
-			$row(5, 400, BindingService::STATE_PENDING_DELETE),
-			self::bindingRow(6, 'pad-6', BindingService::STATE_ACTIVE),
+			['trashed_at' => 300] + self::bindingRow(2, 'pad-b', BindingService::STATE_ACTIVE),
 		]);
 
-		$this->assertSame(2, $service->countMissingSince(200, 10));
-		$this->assertSame(1, $service->countMissingSince(200, 1));
-		$this->assertSame(0, $service->countMissingSince(400, 10));
+		(new BindingService($table, new FixedClock(500)))->clearTrashed(1);
+
+		$this->assertSame([null, 300], array_column($table->rows, 'trashed_at'));
 	}
 
 	/** @param list<array<string,mixed>> $rows */
@@ -367,7 +342,7 @@ class BindingServiceTest extends TestCase {
 
 		self::assertTrue($service->rebind(1, 'old', BindingService::STATE_PENDING_DELETE, 'new', BindingService::STATE_ACTIVE));
 		self::assertSame([
-			['file_id' => 1, 'pad_id' => 'new', 'access_mode' => BindingService::ACCESS_PUBLIC, 'state' => BindingService::STATE_ACTIVE, 'deleted_at' => null, 'updated_at' => 500, 'trashed_at' => null, 'missing_since' => null],
+			['file_id' => 1, 'pad_id' => 'new', 'access_mode' => BindingService::ACCESS_PUBLIC, 'state' => BindingService::STATE_ACTIVE, 'deleted_at' => null, 'updated_at' => 500, 'trashed_at' => null],
 			self::bindingRow(2, 'other', BindingService::STATE_PENDING_DELETE),
 		], $table->rows);
 	}
@@ -393,7 +368,7 @@ class BindingServiceTest extends TestCase {
 		self::assertTrue($service->transition(1, 'pad', BindingService::STATE_RESTORE_PENDING, BindingService::STATE_PENDING_DELETE));
 
 		self::assertSame(
-			['file_id' => 1, 'pad_id' => 'pad', 'access_mode' => BindingService::ACCESS_PUBLIC, 'state' => BindingService::STATE_PENDING_DELETE, 'deleted_at' => 500, 'updated_at' => 500, 'trashed_at' => null, 'missing_since' => null],
+			['file_id' => 1, 'pad_id' => 'pad', 'access_mode' => BindingService::ACCESS_PUBLIC, 'state' => BindingService::STATE_PENDING_DELETE, 'deleted_at' => 500, 'updated_at' => 500, 'trashed_at' => null],
 			$table->rows[0],
 		);
 	}
@@ -473,7 +448,7 @@ class BindingServiceTest extends TestCase {
 		self::assertTrue($service->transition(1, 'pad', BindingService::STATE_PENDING_DELETE, BindingService::STATE_PENDING_DELETE));
 
 		self::assertSame(
-			['file_id' => 1, 'pad_id' => 'pad', 'access_mode' => BindingService::ACCESS_PUBLIC, 'state' => BindingService::STATE_PENDING_DELETE, 'deleted_at' => 100, 'updated_at' => 500, 'trashed_at' => null, 'missing_since' => null],
+			['file_id' => 1, 'pad_id' => 'pad', 'access_mode' => BindingService::ACCESS_PUBLIC, 'state' => BindingService::STATE_PENDING_DELETE, 'deleted_at' => 100, 'updated_at' => 500, 'trashed_at' => null],
 			$table->rows[0],
 		);
 	}
@@ -482,7 +457,7 @@ class BindingServiceTest extends TestCase {
 	private static function bindingRow(int $fileId, string $padId, string $state, string $accessMode = BindingService::ACCESS_PUBLIC): array {
 		// Dated only as a deletion owed, as the table holds it: leaving that state clears the date.
 		$deletedAt = $state === BindingService::STATE_PENDING_DELETE ? 100 : null;
-		return ['file_id' => $fileId, 'pad_id' => $padId, 'access_mode' => $accessMode, 'state' => $state, 'deleted_at' => $deletedAt, 'updated_at' => 100, 'trashed_at' => null, 'missing_since' => null];
+		return ['file_id' => $fileId, 'pad_id' => $padId, 'access_mode' => $accessMode, 'state' => $state, 'deleted_at' => $deletedAt, 'updated_at' => 100, 'trashed_at' => null];
 	}
 
 }

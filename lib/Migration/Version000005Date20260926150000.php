@@ -17,9 +17,8 @@ use OCP\Migration\SimpleMigrationStep;
 
 /**
  * What the sweep of files gone for good needs on a row (GoneFileSweep):
- * `trashed_at`, when the file was seen going to a trash or being deleted,
- * and `missing_since`, when a sweep first missed the file without that.
- * Each is indexed, since the sweep asks for the rows that have one.
+ * `trashed_at`, when the file was seen going to a trash or being deleted.
+ * Indexed, since the sweep asks for the rows that have one.
  *
  * @psalm-api
  */
@@ -34,17 +33,15 @@ class Version000005Date20260926150000 extends SimpleMigrationStep {
 		}
 		$table = $schema->getTable(BindingService::TABLE);
 		$changed = false;
-		foreach (['trashed_at' => 'ep_bind_trashed_idx', 'missing_since' => 'ep_bind_missing_idx'] as $column => $index) {
-			if (!$table->hasColumn($column)) {
-				$table->addColumn($column, 'bigint', [
-					'notnull' => false,
-				]);
-				$changed = true;
-			}
-			if (!$table->hasIndex($index)) {
-				$table->addIndex([$column], $index);
-				$changed = true;
-			}
+		if (!$table->hasColumn('trashed_at')) {
+			$table->addColumn('trashed_at', 'bigint', [
+				'notnull' => false,
+			]);
+			$changed = true;
+		}
+		if (!$table->hasIndex('ep_bind_trashed_idx')) {
+			$table->addIndex(['trashed_at'], 'ep_bind_trashed_idx');
+			$changed = true;
 		}
 		return $changed ? $schema : null;
 	}

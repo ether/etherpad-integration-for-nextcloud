@@ -392,15 +392,12 @@ solely by the separate external-pad policy, not by these two settings.
   - Auth: admin only
   - Purpose: optional structural integrity check across binding table and `.pad` files.
   - Result includes:
-    - `binding_without_file_count`: rows whose file the file cache has nothing of
-    - `missing_file_count`: active rows whose file went missing without being seen leaving Files, in their grace period or held by the brake
-    - `gone_file_brake_engaged`: whether the brake holds; the message then names it
+    - `binding_without_file_count`
+    - `file_without_binding_count`
+    - `invalid_frontmatter_count`
+    - `frontmatter_scanned`
+    - `frontmatter_skipped`
     - `samples` (bounded debug sample lists per issue class)
-
-- `POST /api/v1/admin/gone-file-brake/release`
-  - Controller: `AdminController::releaseGoneFileBrake`
-  - Auth: admin only
-  - Purpose: releases the brake of the sweep of files gone for good (`docs/architecture.md`, "Files gone for good"). Rows missing until now no longer count, and their pads are deleted once past their grace period.
 
 - `POST /api/v1/admin/settle-pending`
   - Controller: `AdminController::settlePending`

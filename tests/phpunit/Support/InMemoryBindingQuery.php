@@ -13,8 +13,8 @@ use OCP\DB\QueryBuilder\IQueryBuilder;
 
 /**
  * One statement against an InMemoryBindingTable: select, update and delete
- * on the binding table, selects on the file cache, the joins between the
- * two the sweeps use, and counts. Conditions are evaluated, not recorded, so a
+ * on the binding table, selects on the file cache, and the joins between
+ * the two the sweeps use. Conditions are evaluated, not recorded, so a
  * condition left out changes which rows are hit.
  *
  * A column is named as the statement names it: plain on a table without
@@ -110,11 +110,6 @@ final class InMemoryBindingQuery implements IQueryBuilder {
 	public function setMaxResults(int $limit): self {
 		$this->limit = $limit;
 		return $this;
-	}
-
-	/** Only `COUNT(*)`, selected under an alias: the statement then answers one row with the count. */
-	public function createFunction(string $call): string {
-		return $call;
 	}
 
 	public function createNamedParameter(mixed $value, mixed $type = null): string {
@@ -227,21 +222,11 @@ final class InMemoryBindingQuery implements IQueryBuilder {
 				$rows[] = $row;
 			}
 		}
-		foreach ($this->aliases as [$column, $alias]) {
-			if ($column === 'COUNT(*)') {
-				$rows = [[$alias => count($rows)]];
-				return $this->result($rows);
-			}
-		}
 		if ($this->orderBy !== null) {
 			$column = $this->orderBy;
 			usort($rows, fn (array $a, array $b): int => (int)$this->value($a, $column) <=> (int)$this->value($b, $column));
 		}
-		return $this->result(array_map(fn (array $row): array => $this->projected($row), array_slice($rows, 0, $this->limit)));
-	}
-
-	/** @param list<array<string,mixed>> $rows */
-	private function result(array $rows): object {
+		$rows = array_map(fn (array $row): array => $this->projected($row), array_slice($rows, 0, $this->limit));
 		return new class($rows) {
 			/** @param list<array<string,mixed>> $rows */
 			public function __construct(private array $rows) {

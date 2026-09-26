@@ -19,7 +19,6 @@ use OCA\EtherpadNextcloud\Service\CookieDomainDecision;
 use OCA\EtherpadNextcloud\Service\CookieDomainMessages;
 use OCA\EtherpadNextcloud\Service\CookieDomainPolicy;
 use OCA\EtherpadNextcloud\Service\EtherpadHealthCheckService;
-use OCA\EtherpadNextcloud\Service\GoneFileSweep;
 use OCA\EtherpadNextcloud\Service\HealthCheckItem;
 use OCA\EtherpadNextcloud\Service\HealthCheckResult;
 use OCA\EtherpadNextcloud\Service\PadTemplateAdminService;
@@ -58,7 +57,6 @@ class AdminController extends Controller {
 		private CookieDomainMessages $cookieDomainMessages,
 		private IURLGenerator $urlGenerator,
 		private PadTemplateAdminService $padTemplateAdmin,
-		private GoneFileSweep $goneFileSweep,
 	) {
 		parent::__construct($appName, $request);
 	}
@@ -160,24 +158,6 @@ class AdminController extends Controller {
 			[
 				'generic' => $this->l10n->t('Consistency check failed.'),
 				'log_message' => 'Consistency check failed',
-			],
-		);
-	}
-
-	public function releaseGoneFileBrake(): DataResponse {
-		return $this->errors->run(
-			function (): bool {
-				$this->requireAdmin();
-				$this->goneFileSweep->releaseBrake();
-				return true;
-			},
-			fn(): DataResponse => new DataResponse([
-				'ok' => true,
-				'message' => $this->l10n->t('Brake released. Pads whose .pad file has been missing past the grace period are deleted over the next runs.'),
-			]),
-			[
-				'generic' => $this->l10n->t('Releasing the brake failed.'),
-				'log_message' => 'Releasing the brake failed',
 			],
 		);
 	}

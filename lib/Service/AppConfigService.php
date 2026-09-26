@@ -43,39 +43,6 @@ class AppConfigService {
 		return $this->config->getAppValue(Application::APP_ID, 'delete_on_trash', 'yes') === 'yes';
 	}
 
-	/**
-	 * How long a pad lives on after its file went missing without being
-	 * seen leaving Files (GoneFileSweep): seven days, unless set otherwise.
-	 */
-	public function getGoneFileGraceSeconds(): int {
-		return max(0, $this->appConfig->getValueInt(Application::APP_ID, 'gone_file_grace_seconds', 7 * 24 * 60 * 60));
-	}
-
-	/** More files missed without a mark since the brake's last release than this stops the grace deletions. */
-	public function getGoneFileBrakeThreshold(): int {
-		return max(0, $this->appConfig->getValueInt(Application::APP_ID, 'gone_file_brake_threshold', 20));
-	}
-
-	/** When an admin last released the brake; files missed before then count no more. */
-	public function getGoneFileBrakeReleasedAt(): int {
-		return $this->appConfig->getValueInt(Application::APP_ID, 'gone_file_brake_released_at');
-	}
-
-	/** An admin lets the sweep go on: files missed until $now no longer hold it. */
-	public function releaseGoneFileBrake(int $now): void {
-		$this->appConfig->setValueInt(Application::APP_ID, 'gone_file_brake_released_at', $now);
-		$this->setGoneFileBrakeEngaged(false);
-	}
-
-	/** Whether the last sweep found the brake on: so it warns once, and the consistency check can say so. */
-	public function isGoneFileBrakeEngaged(): bool {
-		return $this->appConfig->getValueBool(Application::APP_ID, 'gone_file_brake_engaged');
-	}
-
-	public function setGoneFileBrakeEngaged(bool $engaged): void {
-		$this->appConfig->setValueBool(Application::APP_ID, 'gone_file_brake_engaged', $engaged);
-	}
-
 	/** The last row the sweep's pass over every row reached; 0 to start over. */
 	public function getGoneFileSweepCursor(): int {
 		return max(0, $this->appConfig->getValueInt(Application::APP_ID, 'gone_file_sweep_cursor'));

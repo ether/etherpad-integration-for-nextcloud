@@ -309,7 +309,7 @@ class BindingService {
 	}
 
 	/** The columns a Binding is read from, as `b.` a join selects them. */
-	private const BINDING_COLUMNS = ['b.file_id', 'b.pad_id', 'b.access_mode', 'b.state', 'b.deleted_at', 'b.updated_at', 'b.trashed_at', 'b.missing_since'];
+	private const BINDING_COLUMNS = ['b.file_id', 'b.pad_id', 'b.access_mode', 'b.state', 'b.deleted_at', 'b.updated_at', 'b.trashed_at'];
 
 	/**
 	 * Active rows marked as leaving Files whose file the file cache has
@@ -335,18 +335,18 @@ class BindingService {
 	}
 
 	/**
-	 * Active rows after the row $afterId, in id order, each with the path its
-	 * file has in the file cache now: a slice of the sweep's pass over every
-	 * row (GoneFileSweep).
+	 * Active rows after the row $afterId whose file the file cache has, in
+	 * id order, each with its file's path: a slice of the sweep's pass over
+	 * every row (GoneFileSweep).
 	 *
 	 * @return list<SweptBinding>
 	 */
-	public function findActiveAfter(int $afterId, int $limit): array {
+	public function findActiveWithFileAfter(int $afterId, int $limit): array {
 		$qb = $this->db->getQueryBuilder();
 		$qb->select('b.id', ...self::BINDING_COLUMNS)
 			->selectAlias('fc.path', 'file_path')
 			->from(self::TABLE, 'b')
-			->leftJoin('b', 'filecache', 'fc', $qb->expr()->eq('b.file_id', 'fc.fileid'))
+			->innerJoin('b', 'filecache', 'fc', $qb->expr()->eq('b.file_id', 'fc.fileid'))
 			->where($qb->expr()->gt('b.id', $qb->createNamedParameter($afterId, IQueryBuilder::PARAM_INT)))
 			->andWhere($qb->expr()->eq('b.state', $qb->createNamedParameter(self::STATE_ACTIVE)))
 			->orderBy('b.id', 'ASC')
@@ -369,56 +369,13 @@ class BindingService {
 		return $found === null;
 	}
 
-	/** The file is back in Files, or never left: its row loses the mark. */
+	/** The file is back in Files: its row loses the mark. */
 	public function clearTrashed(int $fileId): void {
-		$this->setDate($fileId, 'trashed_at', null);
-	}
-
-	/** A sweep missed the file without a mark: the grace period starts now, unless it has already. */
-	public function markMissing(int $fileId): void {
-		$this->setDate($fileId, 'missing_since', $this->timeFactory->getTime());
-	}
-
-	/** The file is there after all: its grace period is over. */
-	public function clearMissing(int $fileId): void {
-		$this->setDate($fileId, 'missing_since', null);
-	}
-
-	/**
-	 * How many active rows without a mark a sweep has missed the file of
-	 * since $since, counted up to $atMost: the sweep's brake only asks
-	 * whether they are more than its threshold.
-	 */
-	public function countMissingSince(int $since, int $atMost): int {
-		$qb = $this->db->getQueryBuilder();
-		$qb->select('file_id')
-			->from(self::TABLE)
-			->where($qb->expr()->gt('missing_since', $qb->createNamedParameter($since, IQueryBuilder::PARAM_INT)))
-			->andWhere($qb->expr()->isNull('trashed_at'))
-			->andWhere($qb->expr()->eq('state', $qb->createNamedParameter(self::STATE_ACTIVE)))
-			->setMaxResults(max(1, $atMost));
-		$result = $qb->executeQuery();
-		$count = count($result->fetchAll());
-		$result->closeCursor();
-		return $count;
-	}
-
-	/**
-	 * $column to $value on the file's row: a date set only where none is,
-	 * so the first one stays; null clears it.
-	 */
-	private function setDate(int $fileId, string $column, ?int $value): void {
 		$qb = $this->db->getQueryBuilder();
 		$qb->update(self::TABLE)
-			->set($column, $value === null
-				? $qb->createNamedParameter(null, IQueryBuilder::PARAM_NULL)
-				: $qb->createNamedParameter($value, IQueryBuilder::PARAM_INT))
-			->where($qb->expr()->eq('file_id', $qb->createNamedParameter($fileId, IQueryBuilder::PARAM_INT)));
-		if ($value === null) {
-			$qb->andWhere($qb->expr()->isNotNull($column));
-		} else {
-			$qb->andWhere($qb->expr()->isNull($column));
-		}
+			->set('trashed_at', $qb->createNamedParameter(null, IQueryBuilder::PARAM_NULL))
+			->where($qb->expr()->eq('file_id', $qb->createNamedParameter($fileId, IQueryBuilder::PARAM_INT)))
+			->andWhere($qb->expr()->isNotNull('trashed_at'));
 		$qb->executeStatement();
 	}
 

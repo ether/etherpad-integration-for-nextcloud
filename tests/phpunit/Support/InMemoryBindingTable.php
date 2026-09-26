@@ -23,15 +23,15 @@ final class InMemoryBindingTable implements IDBConnection {
 	public array $rows;
 
 	/**
-	 * A row given without trashed_at or missing_since has them NULL, as the
-	 * columns default to in the table. $fileCache holds what the file cache
-	 * knows (`fileid`, `storage`, `path`), for the statements that join it.
+	 * A row given without trashed_at has it NULL, as the column defaults to
+	 * in the table. $fileCache holds what the file cache knows (`fileid`,
+	 * `storage`, `path`), for the statements that join it.
 	 *
 	 * @param list<array<string,mixed>> $rows
 	 * @param list<array<string,mixed>> $fileCache
 	 */
 	public function __construct(array $rows, public array $fileCache = []) {
-		$this->rows = array_map(static fn (array $row): array => $row + ['trashed_at' => null, 'missing_since' => null], $rows);
+		$this->rows = array_map(static fn (array $row): array => $row + ['trashed_at' => null], $rows);
 	}
 
 	public function getQueryBuilder(): IQueryBuilder {

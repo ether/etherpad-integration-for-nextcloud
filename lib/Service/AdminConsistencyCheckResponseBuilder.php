@@ -23,19 +23,14 @@ class AdminConsistencyCheckResponseBuilder {
 	 */
 	public function build(array $result): array {
 		$issues = (int)$result['binding_without_file_count'];
-		$brakeEngaged = (bool)$result['gone_file_brake_engaged'];
-		$message = match (true) {
-			$brakeEngaged => $this->l10n->t('Many .pad files went missing at once without passing a trash. Their pads are kept until the brake is released.'),
-			$issues > 0 => $this->l10n->t('Consistency check finished with issues.'),
-			default => $this->l10n->t('Consistency check successful. No issues found.'),
-		};
+		$message = $issues > 0
+			? $this->l10n->t('Consistency check finished with issues.')
+			: $this->l10n->t('Consistency check successful. No issues found.');
 
 		return [
 			'ok' => true,
 			'message' => $message,
 			'binding_without_file_count' => $issues,
-			'missing_file_count' => (int)$result['missing_file_count'],
-			'gone_file_brake_engaged' => $brakeEngaged,
 			'samples' => $result['samples'],
 		];
 	}

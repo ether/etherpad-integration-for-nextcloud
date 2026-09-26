@@ -14,7 +14,6 @@ const setupAdminDom = () => {
 			data-health-url="/health"
 			data-consistency-url="/consistency"
 			data-settle-pending-url="/settle"
-			data-release-brake-url="/release-brake"
 			data-l10n-saving="Saving..."
 			data-l10n-saved="Saved."
 			data-l10n-checking="Checking..."
@@ -48,9 +47,6 @@ const setupAdminDom = () => {
 				<button type="button" id="etherpad-nextcloud-consistency-check">Check</button>
 				<p id="etherpad-nextcloud-connection-status" class="ep-status"></p>
 				<p id="etherpad-nextcloud-diagnostics-status" class="ep-status"></p>
-				<div id="etherpad-nextcloud-brake-actions" style="display:none;">
-					<button type="button" id="etherpad-nextcloud-release-brake">Release</button>
-				</div>
 				<div id="etherpad-nextcloud-pending-actions" style="display:none;">
 					<button type="button" id="etherpad-nextcloud-settle-pending">Check</button>
 					<span id="etherpad-nextcloud-restore-pending-count"></span>
@@ -210,44 +206,6 @@ describe('admin settings status areas', () => {
 		// A deletion still waits for its file, so there is still something to check.
 		expect(document.getElementById('etherpad-nextcloud-pending-actions').style.display).toBe('')
 		expect(settleButton.disabled).toBe(false)
-	})
-
-	it('offers to release the brake only while it holds, and asks first', async () => {
-		let engaged = true
-		const fetchMock = vi.fn((url) => Promise.resolve(okResponse({
-			'/consistency': { message: 'Many .pad files went missing at once.', binding_without_file_count: 4, missing_file_count: 3, gone_file_brake_engaged: engaged },
-			'/release-brake': { message: 'Brake released.' },
-		}[url] || {})))
-		vi.stubGlobal('fetch', fetchMock)
-		const confirm = vi.fn(() => false)
-		vi.stubGlobal('confirm', confirm)
-		await import(MODULE)
-		const brakeActions = document.getElementById('etherpad-nextcloud-brake-actions')
-		const released = () => fetchMock.mock.calls.filter(([url]) => url === '/release-brake').length
-
-		document.getElementById('etherpad-nextcloud-consistency-check').click()
-		await flushAsyncWork()
-		expect(diagnosticsStatus().textContent).toContain('binding_without_file=4 | missing_file=3')
-		expect(diagnosticsStatus().classList.contains('ep-status-error')).toBe(true)
-		expect(brakeActions.style.display).toBe('')
-
-		document.getElementById('etherpad-nextcloud-release-brake').click()
-		await flushAsyncWork()
-		expect(confirm).toHaveBeenCalledOnce()
-		expect(released()).toBe(0)
-
-		confirm.mockReturnValue(true)
-		document.getElementById('etherpad-nextcloud-release-brake').click()
-		await flushAsyncWork()
-		expect(released()).toBe(1)
-		expect(diagnosticsStatus().textContent).toBe('Brake released.')
-		expect(diagnosticsStatus().classList.contains('ep-status-success')).toBe(true)
-		expect(brakeActions.style.display).toBe('none')
-
-		engaged = false
-		document.getElementById('etherpad-nextcloud-consistency-check').click()
-		await flushAsyncWork()
-		expect(brakeActions.style.display).toBe('none')
 	})
 
 	it('leaves the counts alone when a response carries none', async () => {

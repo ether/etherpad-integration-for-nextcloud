@@ -31,7 +31,6 @@ return ['routes' => [
 	['name' => 'admin#healthCheck', 'url' => '/api/v1/admin/health', 'verb' => 'POST'],
 	['name' => 'admin#consistencyCheck', 'url' => '/api/v1/admin/consistency-check', 'verb' => 'POST'],
 	['name' => 'admin#settlePending', 'url' => '/api/v1/admin/settle-pending', 'verb' => 'POST'],
-	['name' => 'admin#releaseGoneFileBrake', 'url' => '/api/v1/admin/gone-file-brake/release', 'verb' => 'POST'],
 	['name' => 'admin#setTestFault', 'url' => '/api/v1/admin/test-fault', 'verb' => 'POST'],
 	['name' => 'admin#listPadTemplates', 'url' => '/api/v1/admin/templates', 'verb' => 'GET'],
 	['name' => 'admin#uploadPadTemplate', 'url' => '/api/v1/admin/templates', 'verb' => 'POST'],

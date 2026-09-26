@@ -15,7 +15,5 @@ if (!interface_exists(IAppConfig::class)) {
 		public function setValueString(string $app, string $key, string $value, bool $lazy = false, bool $sensitive = false): bool;
 
 		public function setValueInt(string $app, string $key, int $value, bool $lazy = false, bool $sensitive = false): bool;
-
-		public function setValueBool(string $app, string $key, bool $value, bool $lazy = false): bool;
 	}
 }
