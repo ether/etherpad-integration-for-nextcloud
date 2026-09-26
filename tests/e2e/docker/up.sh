@@ -26,6 +26,21 @@ readonly FULLTEXTSEARCH_SHA256=8f681b691bdf739b6a54f76c3e6a04ae2978756e59cb5e294
 readonly FILES_FULLTEXTSEARCH_SHA256=1c670fbc2d789742d10e59eddba9814ac6bdce4032053621b7fe60f34491bff0
 readonly FULLTEXTSEARCH_ELASTICSEARCH_SHA256=8429a370c7263dc51e6b1cf9432c5c908e3d6d95979f5b20d8b6ff732792d179
 
+# Team folders are how many installations share pads, and a team folder's
+# trash keeps its files apart from a user's; the suite runs against them
+# on every major, with the groupfolders release that belongs to it.
+case "${NC_VERSION%%.*}" in
+	31) GROUPFOLDERS_VERSION=19.1.20 GROUPFOLDERS_SHA256=eb208cfd82c276c6f64334cc2b896eea61d8130fd5cc7027b17f1936f7fc7d51 ;;
+	32) GROUPFOLDERS_VERSION=20.1.18 GROUPFOLDERS_SHA256=3461a18dc0a073388aa48b6412873d02f040b3e7f3789f422ea8fab9cb812733 ;;
+	33) GROUPFOLDERS_VERSION=21.0.15 GROUPFOLDERS_SHA256=1ecdd644a2e913de8b333560717660f0ba75836309c4463af858e886cdc3a68c ;;
+	34) GROUPFOLDERS_VERSION=22.0.6 GROUPFOLDERS_SHA256=bfff357b12bbd24257d8d127cf30e83a72256e7659f1cc3e32bd09fe647d2f9b ;;
+	*)
+		echo "No groupfolders release is pinned for Nextcloud $NC_VERSION." >&2
+		exit 1
+		;;
+esac
+readonly GROUPFOLDERS_VERSION GROUPFOLDERS_SHA256
+
 if [[ "$FULLTEXTSEARCH" != 0 && "$FULLTEXTSEARCH" != 1 ]]; then
 	echo "FULLTEXTSEARCH must be 0 or 1." >&2
 	exit 1
@@ -148,35 +163,44 @@ occ config:app:set etherpad_nextcloud enable_protected_pads --value='yes'
 occ config:app:set etherpad_nextcloud enable_public_pads --value='yes'
 occ config:app:set etherpad_nextcloud delete_on_trash --value='yes'
 
+download_dir="$(mktemp -d)"
+trap 'rm -rf "$download_dir"' EXIT
+# An app's release tarball from GitHub, checked against its pinned
+# checksum, copied into custom_apps and enabled.
+install_release_app() {
+	local app="$1"
+	local url="$2"
+	local checksum="$3"
+	local archive="$download_dir/${url##*/}"
+
+	curl --fail --location --retry 3 --silent --show-error "$url" --output "$archive"
+	printf '%s  %s\n' "$checksum" "$archive" | shasum -a 256 --check --status
+	tar -xzf "$archive" -C "$download_dir"
+	compose cp "$download_dir/$app" "nextcloud:/var/www/html/custom_apps/"
+	compose exec -T nextcloud chown -R www-data:www-data "/var/www/html/custom_apps/$app"
+	occ app:enable "$app"
+}
+
+echo "==> installing groupfolders $GROUPFOLDERS_VERSION"
+install_release_app groupfolders \
+	"https://github.com/nextcloud-releases/groupfolders/releases/download/v$GROUPFOLDERS_VERSION/groupfolders-v$GROUPFOLDERS_VERSION.tar.gz" \
+	"$GROUPFOLDERS_SHA256"
+
 if [[ "$FULLTEXTSEARCH" == 1 ]]; then
 	echo "==> installing and configuring full-text search"
-	download_dir="$(mktemp -d)"
-	trap 'rm -rf "$download_dir"' EXIT
-	install_release_app() {
-		local app="$1"
-		local version="$2"
-		local checksum="$3"
-		local archive="$download_dir/$app-$version.tar.gz"
-
-		curl --fail --location --retry 3 --silent --show-error \
-			"https://github.com/nextcloud-releases/$app/releases/download/$version/$app-$version.tar.gz" \
-			--output "$archive"
-		printf '%s  %s\n' "$checksum" "$archive" | shasum -a 256 --check --status
-		tar -xzf "$archive" -C "$download_dir"
-		compose cp "$download_dir/$app" "nextcloud:/var/www/html/custom_apps/"
-		compose exec -T nextcloud chown -R www-data:www-data "/var/www/html/custom_apps/$app"
-		occ app:enable "$app"
+	fulltextsearch_release() {
+		echo "https://github.com/nextcloud-releases/$1/releases/download/$2/$1-$2.tar.gz"
 	}
-	install_release_app fulltextsearch "$FULLTEXTSEARCH_VERSION" "$FULLTEXTSEARCH_SHA256"
-	install_release_app files_fulltextsearch "$FILES_FULLTEXTSEARCH_VERSION" "$FILES_FULLTEXTSEARCH_SHA256"
-	install_release_app fulltextsearch_elasticsearch "$FULLTEXTSEARCH_ELASTICSEARCH_VERSION" "$FULLTEXTSEARCH_ELASTICSEARCH_SHA256"
-	rm -rf "$download_dir"
-	trap - EXIT
+	install_release_app fulltextsearch "$(fulltextsearch_release fulltextsearch "$FULLTEXTSEARCH_VERSION")" "$FULLTEXTSEARCH_SHA256"
+	install_release_app files_fulltextsearch "$(fulltextsearch_release files_fulltextsearch "$FILES_FULLTEXTSEARCH_VERSION")" "$FILES_FULLTEXTSEARCH_SHA256"
+	install_release_app fulltextsearch_elasticsearch "$(fulltextsearch_release fulltextsearch_elasticsearch "$FULLTEXTSEARCH_ELASTICSEARCH_VERSION")" "$FULLTEXTSEARCH_ELASTICSEARCH_SHA256"
 	occ fulltextsearch:configure '{"search_platform":"OCA\\FullTextSearch_Elasticsearch\\Platform\\ElasticSearchPlatform"}' >/dev/null
 	occ fulltextsearch_elasticsearch:configure '{"elastic_host":"http://elasticsearch:9200","elastic_index":"nextcloud"}' >/dev/null
 	occ files_fulltextsearch:configure '{"files_local":true,"files_size":20}' >/dev/null
 	occ fulltextsearch:check
 fi
+rm -rf "$download_dir"
+trap - EXIT
 
 # Nextcloud's default, set explicitly because a spec depends on it: a link
 # share with edit rights is refused outright when public upload is off,
