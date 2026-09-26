@@ -28,6 +28,13 @@ final class Binding {
 		 */
 		public readonly ?int $deletedAt = null,
 		public readonly int $updatedAt = 0,
+		/**
+		 * When the file was seen going to a trash or being deleted: once it is
+		 * gone from the file cache after that, it is gone for good.
+		 */
+		public readonly ?int $trashedAt = null,
+		/** When a sweep first missed the file without that: the grace period's start. */
+		public readonly ?int $missingSince = null,
 	) {
 	}
 
@@ -45,6 +52,8 @@ final class Binding {
 			state: DbRows::string($row, 'state'),
 			deletedAt: DbRows::nullableInt($row, 'deleted_at'),
 			updatedAt: DbRows::int($row, 'updated_at'),
+			trashedAt: DbRows::nullableInt($row, 'trashed_at'),
+			missingSince: DbRows::nullableInt($row, 'missing_since'),
 		);
 	}
 

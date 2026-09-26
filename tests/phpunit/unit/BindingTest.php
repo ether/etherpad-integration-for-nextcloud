@@ -30,16 +30,18 @@ class BindingTest extends TestCase {
 			'deleted_at' => 100,
 			'created_at' => 50,
 			'updated_at' => 200,
+			'trashed_at' => 150,
+			'missing_since' => 180,
 		]);
 
-		$this->assertEquals(new Binding(7, 'nc-abc', BindingService::ACCESS_PROTECTED, BindingService::STATE_PENDING_DELETE, 100, 200), $binding);
+		$this->assertEquals(new Binding(7, 'nc-abc', BindingService::ACCESS_PROTECTED, BindingService::STATE_PENDING_DELETE, 100, 200, 150, 180), $binding);
 	}
 
 	/** Only a deletion owed has a date for it; a row without one says so, not 0. */
 	public function testARowWithoutADeletionOwedHasNoDateForIt(): void {
-		$binding = Binding::fromRow(['file_id' => 7, 'pad_id' => 'nc-abc', 'access_mode' => BindingService::ACCESS_PUBLIC, 'state' => BindingService::STATE_ACTIVE, 'deleted_at' => null, 'updated_at' => 200]);
+		$binding = Binding::fromRow(['file_id' => 7, 'pad_id' => 'nc-abc', 'access_mode' => BindingService::ACCESS_PUBLIC, 'state' => BindingService::STATE_ACTIVE, 'deleted_at' => null, 'updated_at' => 200, 'trashed_at' => null, 'missing_since' => null]);
 
-		$this->assertNull($binding->deletedAt);
+		$this->assertSame([null, null, null], [$binding->deletedAt, $binding->trashedAt, $binding->missingSince]);
 	}
 
 	/**
@@ -49,7 +51,7 @@ class BindingTest extends TestCase {
 	 * error where the row is read instead.
 	 */
 	public function testAColumnTheQueryLeftOutIsAnError(): void {
-		$row = ['file_id' => 7, 'pad_id' => 'nc-abc', 'access_mode' => BindingService::ACCESS_PUBLIC, 'state' => BindingService::STATE_PENDING_DELETE, 'deleted_at' => 100, 'updated_at' => 200, 'file_path' => null, 'waiting_since' => 100];
+		$row = ['file_id' => 7, 'pad_id' => 'nc-abc', 'access_mode' => BindingService::ACCESS_PUBLIC, 'state' => BindingService::STATE_PENDING_DELETE, 'deleted_at' => 100, 'updated_at' => 200, 'trashed_at' => null, 'missing_since' => null, 'file_path' => null, 'waiting_since' => 100];
 		$reads = [
 			'Binding' => static fn (array $r): mixed => Binding::fromRow($r),
 			'WaitingBinding' => static fn (array $r): mixed => WaitingBinding::fromRow($r),

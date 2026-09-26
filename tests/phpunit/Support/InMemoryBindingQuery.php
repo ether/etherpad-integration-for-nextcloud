@@ -19,7 +19,7 @@ final class InMemoryBindingQuery implements IQueryBuilder {
 	private string $statement = 'select';
 	/** @var array<string,mixed> */
 	private array $parameters = [];
-	/** @var list<array{string,string}> column and the parameter it must equal */
+	/** @var list<\Closure(array<string,mixed>): bool> what a row must meet */
 	private array $conditions = [];
 	/** @var array<string,string> column and the parameter it is set to */
 	private array $assignments = [];
@@ -52,14 +52,14 @@ final class InMemoryBindingQuery implements IQueryBuilder {
 		return $this;
 	}
 
-	/** @param array{string,string} $condition */
-	public function where(array $condition): self {
+	/** @param \Closure(array<string,mixed>): bool $condition */
+	public function where(\Closure $condition): self {
 		$this->conditions[] = $condition;
 		return $this;
 	}
 
-	/** @param array{string,string} $condition */
-	public function andWhere(array $condition): self {
+	/** @param \Closure(array<string,mixed>): bool $condition */
+	public function andWhere(\Closure $condition): self {
 		$this->conditions[] = $condition;
 		return $this;
 	}
@@ -75,14 +75,24 @@ final class InMemoryBindingQuery implements IQueryBuilder {
 		return $name;
 	}
 
-	/** Its own expression builder: equality is all these statements use. */
+	/** Its own expression builder, for what these statements use. */
 	public function expr(): self {
 		return $this;
 	}
 
-	/** @return array{string,string} */
-	public function eq(string $column, string $parameter): array {
-		return [$column, $parameter];
+	/** @return \Closure(array<string,mixed>): bool */
+	public function eq(string $column, string $parameter): \Closure {
+		return fn (array $row): bool => (string)($row[$column] ?? '') === (string)$this->parameters[$parameter];
+	}
+
+	/** @return \Closure(array<string,mixed>): bool */
+	public function isNull(string $column): \Closure {
+		return static fn (array $row): bool => ($row[$column] ?? null) === null;
+	}
+
+	/** @return \Closure(array<string,mixed>): bool */
+	public function isNotNull(string $column): \Closure {
+		return static fn (array $row): bool => ($row[$column] ?? null) !== null;
 	}
 
 	public function executeStatement(): int {
@@ -126,8 +136,8 @@ final class InMemoryBindingQuery implements IQueryBuilder {
 	private function matchingKeys(): array {
 		$keys = [];
 		foreach ($this->table->rows as $key => $row) {
-			foreach ($this->conditions as [$column, $parameter]) {
-				if ((string)($row[$column] ?? '') !== (string)$this->parameters[$parameter]) {
+			foreach ($this->conditions as $condition) {
+				if (!$condition($row)) {
 					continue 2;
 				}
 			}

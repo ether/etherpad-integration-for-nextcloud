@@ -240,7 +240,7 @@ class BindingServiceTest extends TestCase {
 
 		self::assertTrue($service->rebind(1, 'old', BindingService::STATE_PENDING_DELETE, 'new', BindingService::STATE_ACTIVE));
 		self::assertSame([
-			['file_id' => 1, 'pad_id' => 'new', 'access_mode' => BindingService::ACCESS_PUBLIC, 'state' => BindingService::STATE_ACTIVE, 'deleted_at' => null, 'updated_at' => 500],
+			['file_id' => 1, 'pad_id' => 'new', 'access_mode' => BindingService::ACCESS_PUBLIC, 'state' => BindingService::STATE_ACTIVE, 'deleted_at' => null, 'updated_at' => 500, 'trashed_at' => null, 'missing_since' => null],
 			self::bindingRow(2, 'other', BindingService::STATE_PENDING_DELETE),
 		], $table->rows);
 	}
@@ -266,7 +266,7 @@ class BindingServiceTest extends TestCase {
 		self::assertTrue($service->transition(1, 'pad', BindingService::STATE_RESTORE_PENDING, BindingService::STATE_PENDING_DELETE));
 
 		self::assertSame(
-			['file_id' => 1, 'pad_id' => 'pad', 'access_mode' => BindingService::ACCESS_PUBLIC, 'state' => BindingService::STATE_PENDING_DELETE, 'deleted_at' => 500, 'updated_at' => 500],
+			['file_id' => 1, 'pad_id' => 'pad', 'access_mode' => BindingService::ACCESS_PUBLIC, 'state' => BindingService::STATE_PENDING_DELETE, 'deleted_at' => 500, 'updated_at' => 500, 'trashed_at' => null, 'missing_since' => null],
 			$table->rows[0],
 		);
 	}
@@ -346,7 +346,7 @@ class BindingServiceTest extends TestCase {
 		self::assertTrue($service->transition(1, 'pad', BindingService::STATE_PENDING_DELETE, BindingService::STATE_PENDING_DELETE));
 
 		self::assertSame(
-			['file_id' => 1, 'pad_id' => 'pad', 'access_mode' => BindingService::ACCESS_PUBLIC, 'state' => BindingService::STATE_PENDING_DELETE, 'deleted_at' => 100, 'updated_at' => 500],
+			['file_id' => 1, 'pad_id' => 'pad', 'access_mode' => BindingService::ACCESS_PUBLIC, 'state' => BindingService::STATE_PENDING_DELETE, 'deleted_at' => 100, 'updated_at' => 500, 'trashed_at' => null, 'missing_since' => null],
 			$table->rows[0],
 		);
 	}
@@ -355,7 +355,7 @@ class BindingServiceTest extends TestCase {
 	private static function bindingRow(int $fileId, string $padId, string $state, string $accessMode = BindingService::ACCESS_PUBLIC): array {
 		// Dated only as a deletion owed, as the table holds it: leaving that state clears the date.
 		$deletedAt = $state === BindingService::STATE_PENDING_DELETE ? 100 : null;
-		return ['file_id' => $fileId, 'pad_id' => $padId, 'access_mode' => $accessMode, 'state' => $state, 'deleted_at' => $deletedAt, 'updated_at' => 100];
+		return ['file_id' => $fileId, 'pad_id' => $padId, 'access_mode' => $accessMode, 'state' => $state, 'deleted_at' => $deletedAt, 'updated_at' => 100, 'trashed_at' => null, 'missing_since' => null];
 	}
 
 }
