@@ -112,8 +112,8 @@ Each `specs/*.spec.ts` covers one flow:
   pad is made from the file's content, in the API and in the viewer.
   Container stack only (asks Etherpad).
 - **pad-gone-for-good** — a pad goes with its file deleted for good:
-  past the trash in the same request, from the trash once it is deleted
-  there, with the account that owned it; a pad in a team folder stays
+  past the trash, from the trash once it is deleted there, with the
+  account that owned it, a renamed file too; a pad in a team folder stays
   when its maker's account goes. Container stack only (asks Etherpad);
   the team folder part needs groupfolders and skips without it. Creates
   and deletes throwaway accounts, groups and team folders.

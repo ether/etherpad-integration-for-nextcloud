@@ -394,7 +394,7 @@ solely by the separate external-pad policy, not by these two settings.
   - Purpose: optional check of the binding table against the file cache (`docs/architecture.md`, "Admin Integrity Check").
   - Result:
     - `binding_without_file_count`: rows whose file the file cache has nothing of
-    - `vanished_file_count`: of those, the active rows never seen leaving Files, whose pads the app leaves in place
+    - `vanished_file_count`: of those, the active rows never seen deleted for good, whose pads the app leaves in place
     - `samples.bindings_without_file` (`file_id`, `pad_id`, `access_mode`, `state`) and `samples.vanished_files` (`file_id`, `pad_id`, `access_mode`), up to 25 each
 
 - `POST /api/v1/admin/settle-pending`
@@ -542,9 +542,9 @@ Registered in `lib/AppInfo/Application.php`.
 - `OCP\User\Events\UserLoggedOutEvent` -> `UserLoggedOutListener`
 - `OCA\Files_Trashbin\Events\MoveToTrashEvent` -> `MoveToTrashListener`
 - legacy event `OCA\Files_Trashbin::moveToTrash` -> `MoveToTrashListener`
-- `OCA\Files_Trashbin\Events\NodeRestoredEvent` -> `RestoreFromTrashListener`, `LeavingPadsListener`
-- legacy hook `\OCA\Files_Trashbin\Trashbin::post_restore` -> `TrashbinHookHandler::postRestore` -> `LeavingPadsListener::restoredPath` (every restored item), `RestoreFromTrashListener::handleLegacyHook` (a `.pad`)
-- `OCA\Files_Trashbin\Events\MoveToTrashEvent`, `OCP\Files\Events\Node\BeforeNodeDeletedEvent`, `OCP\Files\Events\Node\NodeDeletedEvent`, `OCP\User\Events\BeforeUserDeletedEvent` -> `LeavingPadsListener` (the marks of files leaving Files, and the pads of files deleted past the trash; `docs/architecture.md`, "Files gone for good")
+- `OCA\Files_Trashbin\Events\NodeRestoredEvent` -> `RestoreFromTrashListener`
+- legacy hook `\OCA\Files_Trashbin\Trashbin::post_restore` -> `TrashbinHookHandler::postRestore` -> `RestoreFromTrashListener::handleLegacyHook`
+- `OCP\Files\Cache\CacheEntryRemovedEvent`, `OCP\Files\Cache\CacheEntryInsertedEvent`, `OCP\Files\Events\Node\BeforeNodeDeletedEvent`, `OCP\Files\Events\Node\NodeDeletedEvent`, `OCP\User\Events\BeforeUserDeletedEvent` -> `GoneFilesListener` (the marks of files deleted for good; `docs/architecture.md`, "Files gone for good")
 
 ## App Config Keys
 
@@ -568,4 +568,3 @@ Registered in `lib/AppInfo/Application.php`.
     - `/embed/create-by-parent/{parentFolderId}`
   - when empty, no external embedding origin is added beyond `'self'`
 - `test_fault` (debug-only E2E fault injection; empty by default)
-- `gone_file_sweep_cursor` (the last row the sweep of files gone for good passed; kept by the sweep, 0 to start over)

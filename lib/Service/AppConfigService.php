@@ -9,14 +9,12 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\Service;
 
 use OCA\EtherpadNextcloud\AppInfo\Application;
-use OCP\IAppConfig;
 use OCP\IConfig;
 
 class AppConfigService {
 	public function __construct(
 		private IConfig $config,
 		private TrustedEmbedOriginsNormalizer $trustedEmbedOriginsNormalizer,
-		private IAppConfig $appConfig,
 	) {
 	}
 
@@ -41,15 +39,6 @@ class AppConfigService {
 	 */
 	public function isDeleteOnTrashEnabled(): bool {
 		return $this->config->getAppValue(Application::APP_ID, 'delete_on_trash', 'yes') === 'yes';
-	}
-
-	/** The last row the sweep's pass over every row reached; 0 to start over. */
-	public function getGoneFileSweepCursor(): int {
-		return max(0, $this->appConfig->getValueInt(Application::APP_ID, 'gone_file_sweep_cursor'));
-	}
-
-	public function setGoneFileSweepCursor(int $rowId): void {
-		$this->appConfig->setValueInt(Application::APP_ID, 'gone_file_sweep_cursor', $rowId);
 	}
 
 	/** The test fault a debug instance injects (TestFaults), or '' for none. */

@@ -20,7 +20,7 @@ class ConsistencyCheckService {
 
 	/**
 	 * Rows whose file the file cache has nothing of, and among them the
-	 * vanished ones: active, never seen leaving Files (Binding::$trashedAt).
+	 * vanished ones: active, never seen deleted for good (Binding::$goneAfter).
 	 * The app leaves their pads alone (docs/deleting-pads.md), so an admin
 	 * sees them here and decides.
 	 *
@@ -55,7 +55,7 @@ class ConsistencyCheckService {
 
 	/** Of those, the active ones never seen leaving Files. */
 	private function vanished(IQueryBuilder $qb): IQueryBuilder {
-		$qb->andWhere($qb->expr()->isNull('b.trashed_at'))
+		$qb->andWhere($qb->expr()->isNull('b.gone_after'))
 			->andWhere($qb->expr()->eq('b.state', $qb->createNamedParameter(BindingService::STATE_ACTIVE)));
 		return $qb;
 	}

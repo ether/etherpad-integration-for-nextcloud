@@ -38,6 +38,7 @@ final class InMemoryBindingQuery implements IQueryBuilder {
 	/** @var list<array{string,string}> */
 	private array $aliases = [];
 	private ?string $orderBy = null;
+	private string $direction = 'ASC';
 	private ?int $limit = null;
 
 	public function __construct(private InMemoryBindingTable $db) {
@@ -101,9 +102,10 @@ final class InMemoryBindingQuery implements IQueryBuilder {
 		return $this;
 	}
 
-	/** Ascending only: no statement here sorts the other way. */
+	/** Either way, so a statement that sorts the wrong way shows. */
 	public function orderBy(string $column, string $direction = 'ASC'): self {
 		$this->orderBy = $column;
+		$this->direction = strtoupper($direction);
 		return $this;
 	}
 
@@ -133,10 +135,6 @@ final class InMemoryBindingQuery implements IQueryBuilder {
 		return fn (array $row): bool => $this->value($row, $column) !== null && (string)$this->value($row, $column) === (string)$this->operand($row, $operand);
 	}
 
-	/** @return \Closure(array<string,mixed>): bool */
-	public function gt(string $column, string $operand): \Closure {
-		return fn (array $row): bool => $this->value($row, $column) !== null && (int)$this->value($row, $column) > (int)$this->operand($row, $operand);
-	}
 
 	/** @return \Closure(array<string,mixed>): bool */
 	public function lte(string $column, string $operand): \Closure {
@@ -156,61 +154,6 @@ final class InMemoryBindingQuery implements IQueryBuilder {
 	/** @return \Closure(array<string,mixed>): bool */
 	public function isNotNull(string $column): \Closure {
 		return fn (array $row): bool => $this->value($row, $column) !== null;
-	}
-
-	/**
-	 * SQL's LIKE: `%` any run, `_` any one character, a backslash taking
-	 * the next one as it is (IDBConnection::escapeLikeParameter()).
-	 *
-	 * @return \Closure(array<string,mixed>): bool
-	 */
-	public function like(string $column, string $parameter): \Closure {
-		return fn (array $row): bool => $this->matches($row, $column, $parameter, '');
-	}
-
-	/**
-	 * like(), without regard to case, as Nextcloud's iLike() is on every
-	 * database.
-	 *
-	 * @return \Closure(array<string,mixed>): bool
-	 */
-	public function iLike(string $column, string $parameter): \Closure {
-		return fn (array $row): bool => $this->matches($row, $column, $parameter, 'i');
-	}
-
-	/** @param array<string,mixed> $row */
-	private function matches(array $row, string $column, string $parameter, string $flags): bool {
-		$pattern = (string)$this->parameters[$parameter];
-		$regex = '';
-		for ($i = 0, $n = strlen($pattern); $i < $n; $i++) {
-			$char = $pattern[$i];
-			if ($char === '\\' && $i + 1 < $n) {
-				$regex .= preg_quote($pattern[++$i], '/');
-			} elseif ($char === '%') {
-				$regex .= '.*';
-			} elseif ($char === '_') {
-				$regex .= '.';
-			} else {
-				$regex .= preg_quote($char, '/');
-			}
-		}
-		$value = $this->value($row, $column);
-		return $value !== null && preg_match('/^' . $regex . '$/s' . $flags, (string)$value) === 1;
-	}
-
-	/**
-	 * @param \Closure(array<string,mixed>): bool ...$conditions
-	 * @return \Closure(array<string,mixed>): bool
-	 */
-	public function orX(\Closure ...$conditions): \Closure {
-		return static function (array $row) use ($conditions): bool {
-			foreach ($conditions as $condition) {
-				if ($condition($row)) {
-					return true;
-				}
-			}
-			return false;
-		};
 	}
 
 	public function executeStatement(): int {
@@ -247,7 +190,8 @@ final class InMemoryBindingQuery implements IQueryBuilder {
 		}
 		if ($this->orderBy !== null) {
 			$column = $this->orderBy;
-			usort($rows, fn (array $a, array $b): int => (int)$this->value($a, $column) <=> (int)$this->value($b, $column));
+			$sign = $this->direction === 'DESC' ? -1 : 1;
+			usort($rows, fn (array $a, array $b): int => $sign * ((int)$this->value($a, $column) <=> (int)$this->value($b, $column)));
 		}
 		return $this->result(array_map(fn (array $row): array => $this->projected($row), array_slice($rows, 0, $this->limit)));
 	}

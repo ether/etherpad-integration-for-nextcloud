@@ -17,12 +17,12 @@ use OCP\Migration\SimpleMigrationStep;
 
 /**
  * What the sweep of files gone for good needs on a row (GoneFileSweep):
- * `trashed_at`, when the file was seen going to a trash or being deleted.
- * Indexed, since the sweep asks for the rows that have one.
+ * `gone_after`, the time from which the pad of a file seen deleted for good
+ * may go. Indexed, since the sweep asks for the rows that have one.
  *
  * @psalm-api
  */
-class Version000005Date20260926150000 extends SimpleMigrationStep {
+class Version000005Date20260927180000 extends SimpleMigrationStep {
 	/**
 	 * @param Closure(): ISchemaWrapper $schemaClosure
 	 */
@@ -33,14 +33,14 @@ class Version000005Date20260926150000 extends SimpleMigrationStep {
 		}
 		$table = $schema->getTable(BindingService::TABLE);
 		$changed = false;
-		if (!$table->hasColumn('trashed_at')) {
-			$table->addColumn('trashed_at', 'bigint', [
+		if (!$table->hasColumn('gone_after')) {
+			$table->addColumn('gone_after', 'bigint', [
 				'notnull' => false,
 			]);
 			$changed = true;
 		}
-		if (!$table->hasIndex('ep_bind_trashed_idx')) {
-			$table->addIndex(['trashed_at'], 'ep_bind_trashed_idx');
+		if (!$table->hasIndex('ep_bind_gone_idx')) {
+			$table->addIndex(['gone_after'], 'ep_bind_gone_idx');
 			$changed = true;
 		}
 		return $changed ? $schema : null;

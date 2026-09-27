@@ -4,9 +4,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 A pad lives in Etherpad; its `.pad` file lives in Nextcloud. Whether and when
 the pad is deleted with the file depends on how the file leaves: moved to
-the trash, deleted for good, or removed in a way no app is told about. The
-technical side is in [architecture.md](architecture.md), under
-"Trash/Restore" and "Files gone for good".
+the trash, deleted for good, or removed outside Nextcloud. The technical
+side is in [architecture.md](architecture.md), under "Trash/Restore" and
+"Files gone for good".
+
+What counts is the file, not its name: a `.pad` file renamed to something
+else keeps its pad, and the pad goes once the file is deleted for good.
 
 This applies to pads this Nextcloud manages, with `delete_on_trash` on (the
 default). A `.pad` file that links a pad on another Etherpad server never
@@ -48,19 +51,28 @@ folder. So does a file replaced by moving another file onto it (WebDAV
 | How the file is deleted for good | When the pad is deleted |
 |---|---|
 | From the trash: the trash emptied, the item deleted there, expired, or `occ trashbin:cleanup`. A user's trash or a team folder's. | A `.pad` file's pad is gone already, or goes with its snapshot as above. The pads of the files in a trashed folder are deleted by a background job, within minutes. |
-| Past the trash: a WebDAV `DELETE` with `X-NC-Skip-Trashbin: true`, the trash app switched off for the user, or a move to the trash that fails. | In the same request. Of a folder's files, as many as a few seconds allow; the rest by a background job. When Etherpad does not answer, the background job deletes them once it does. |
+| Past the trash: a WebDAV `DELETE` with `X-NC-Skip-Trashbin: true`, the trash app switched off for the user, or a move to the trash that fails. | By a background job, within minutes, for a folder's files too. When Etherpad does not answer, the job deletes them once it does. |
 | With the account: the account deleted. | The pads of the account's own files - those in its home and its trash, shared ones included - by a background job, within minutes. Files in team folders, and files the account put into folders others shared with it, are not the account's: they stay, and so do their pads. |
 
 "A background job" runs every five minutes when Nextcloud's background jobs
 run by system cron; with AJAX or webcron, only as often as those run.
 
-## Gone without the app seeing it
+On Nextcloud 34 up to 34.0.4, Nextcloud reports the files inside a folder
+deleted for good under the wrong ids (nextcloud/server#63969, fixed for
+34.0.5). The app cannot tell which files they were, so the pads of the
+`.pad` files inside such a folder stay, and the consistency check lists
+them. A `.pad` file deleted on its own, and an account deleted, are not
+affected.
 
-Some ways of removing a file tell no app about it. Their pads stay:
+## Gone without being deleted in Nextcloud
 
-- a team folder deleted as a whole by an admin;
+A file can also leave without anyone deleting it in Nextcloud. Its pad
+stays:
+
 - files removed outside Nextcloud - on an external storage, or in the data
-  directory followed by a scan - and an external storage removed.
+  directory - that a scan then drops;
+- a team folder deleted as a whole by an admin, and an external storage
+  removed.
 
 A pad that stays keeps its content in Etherpad, and nobody reaches it
 through Nextcloud any more; a public pad stays reachable by its link. The

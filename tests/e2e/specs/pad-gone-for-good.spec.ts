@@ -9,6 +9,7 @@ import {
 	deleteViaDav,
 	findTrashbinEntry,
 	mkcolViaDav,
+	moveViaDav,
 	padApiPost,
 	propfindFileId,
 	purgeTrashbinEntry,
@@ -30,7 +31,8 @@ import { uniqueName, uniquePadName } from '../fixtures/nextcloud'
 /**
  * A pad goes once its `.pad` file is deleted for good, however that
  * happens: past the trash, from the trash, or with the account that owned
- * it (docs/deleting-pads.md). A file still in a trash keeps its pad.
+ * it (docs/deleting-pads.md), and whatever the file is called by then. A
+ * file still in a trash keeps its pad.
  *
  * Whether a pad is gone only Etherpad can say, so these run where the
  * spec knows Etherpad's API: the container stack. What the background
@@ -46,24 +48,64 @@ const settle = async (): Promise<void> => {
 	expect(settled.status, JSON.stringify(settled.body)).toBe(200)
 }
 
+/**
+ * Nextcloud 34 up to 34.0.4 reports the files in a removed folder under the
+ * wrong ids (nextcloud/server#63969, fixed for 34.0.5), so the app cannot
+ * tell which they were and leaves their pads (docs/deleting-pads.md).
+ */
+const misnumbersFolderFiles = async (): Promise<boolean> => {
+	const res = await fetch(`${E2E.baseURL}/status.php`)
+	const { version } = await res.json() as { version?: string }
+	const [major, minor, patch] = String(version ?? '').split('.').map(Number)
+	return major === 34 && minor === 0 && patch < 5
+}
+const misnumbered = 'Nextcloud 34 up to 34.0.4 reports the files in a removed folder under the wrong ids (nextcloud/server#63969).'
+
 test.describe('pads of files deleted for good', () => {
 	test.skip(E2E.etherpadApi === null, needsEtherpadApi)
 
-	test('a protected pad goes in the same request as its file, deleted past the trash', async () => {
+	test('a protected pad goes with its file deleted past the trash', async () => {
 		const name = uniquePadName('gone-past-trash')
 		const pad = await createPadAtPath(`/${name}`, 'protected')
 		const padId = padIdOfPadUrl(pad.padUrl)
 		expect(await padExists(padId), 'the pad should exist before the delete').toBe(true)
 
 		await deleteViaDav(name, { pastTrash: true })
-
-		// No settle: the request that deleted the file deleted the pad.
 		expect(await findTrashbinEntry(name), 'the file should have skipped the trash').toBeNull()
-		expect(await padExists(padId), 'the pad should be gone once the delete answers').toBe(false)
+		expect(await padExists(padId), 'the delete itself leaves Etherpad to the job').toBe(true)
+		await settle()
+
+		expect(await padExists(padId), 'the job should have deleted the pad').toBe(false)
 		expect(await groupExists(groupIdOfPadUrl(pad.padUrl)), 'and its group with it').toBe(false)
 	})
 
+	/**
+	 * What counts is the file, not its name: a `.pad` renamed keeps its
+	 * pad, and the pad goes once the file is deleted for good - past the
+	 * trash, or from it.
+	 */
+	test('a renamed pad file takes its pad when it is deleted for good', async () => {
+		const pastTrash = uniquePadName('gone-renamed-past')
+		const fromTrash = uniquePadName('gone-renamed-trash')
+		const pads = [await createPadAtPath(`/${pastTrash}`), await createPadAtPath(`/${fromTrash}`)]
+		await moveViaDav(pastTrash, `${pastTrash}.txt`)
+		await moveViaDav(fromTrash, `${fromTrash}.txt`)
+
+		await deleteViaDav(`${pastTrash}.txt`, { pastTrash: true })
+		await deleteViaDav(`${fromTrash}.txt`)
+		const entry = await findTrashbinEntry(`${fromTrash}.txt`)
+		expect(entry, 'the renamed file should be in the trash').not.toBeNull()
+		await settle()
+		expect(await padExists(padIdOfPadUrl(pads[0].padUrl)), 'deleted past the trash, the renamed file should take its pad').toBe(false)
+		expect(await padExists(padIdOfPadUrl(pads[1].padUrl)), 'in the trash, the renamed file should keep its pad').toBe(true)
+
+		await purgeTrashbinEntry(entry!)
+		await settle()
+		expect(await padExists(padIdOfPadUrl(pads[1].padUrl)), 'deleted from the trash, the renamed file should take its pad').toBe(false)
+	})
+
 	test('the pads of a folder deleted past the trash go with it, however deep', async () => {
+		test.skip(await misnumbersFolderFiles(), misnumbered)
 		const folder = uniqueName('gone-past-trash-folder')
 		await mkcolViaDav(folder)
 		await mkcolViaDav(`${folder}/deep`)
@@ -73,6 +115,7 @@ test.describe('pads of files deleted for good', () => {
 		]
 
 		await deleteViaDav(folder, { pastTrash: true })
+		await settle()
 
 		for (const pad of pads) {
 			expect(await padExists(padIdOfPadUrl(pad.padUrl)), `${pad.path} should have taken its pad`).toBe(false)
@@ -80,6 +123,7 @@ test.describe('pads of files deleted for good', () => {
 	})
 
 	test('the pads of a folder in the trash stay until it is deleted for good', async () => {
+		test.skip(await misnumbersFolderFiles(), misnumbered)
 		const folder = uniqueName('gone-trashed-folder')
 		await mkcolViaDav(folder)
 		const pad = await createPadAtPath(`/${folder}/${uniquePadName('inside')}`)
@@ -162,23 +206,24 @@ test.describe('pads of team folder files deleted for good', () => {
 		throw lastError
 	}
 
-	test('a pad in a team folder goes in the same request as its file, deleted past the trash', async () => {
+	test('a pad in a team folder goes with its file deleted past the trash', async () => {
 		const path = `${team}/${uniquePadName('team-past-trash')}`
 		const pad = await padInTeam(path, 'protected')
 		const padId = padIdOfPadUrl(pad.padUrl)
 
 		await deleteViaDav(path, { pastTrash: true })
+		await settle()
 
-		expect(await padExists(padId), 'the pad should be gone once the delete answers').toBe(false)
+		expect(await padExists(padId), 'the job should have deleted the pad').toBe(false)
 	})
 
 	/**
 	 * A team folder with its own storage - each one, from groupfolders 22 -
-	 * keeps its trash under a bare `trash/`, which the sweep's own pass
-	 * cannot tell from a folder of that name. The mark from the move to the
-	 * trash has to last until the trash lets the folder go.
+	 * keeps its trash under a bare `trash/` there: what leaves it is deleted
+	 * for good.
 	 */
 	test('a folder deleted from a team folder\'s trash takes its pads', async () => {
+		test.skip(await misnumbersFolderFiles(), misnumbered)
 		const folder = `${team}/${uniqueName('gone-team-sub')}`
 		await mkcolViaDav(folder)
 		const pad = await padInTeam(`${folder}/${uniquePadName('inside')}`, 'protected')
@@ -196,10 +241,9 @@ test.describe('pads of team folder files deleted for good', () => {
 	})
 
 	/**
-	 * A restore takes back the mark of the move to the trash. A team folder
+	 * A folder back from the trash is in Files as before. A team folder
 	 * deleted as a whole tells no app about it, so its pads stay - a
-	 * restored one too, which a mark left behind would have let the sweep
-	 * delete.
+	 * restored one's too.
 	 */
 	test('a folder restored from the trash is not taken for one gone through it', async () => {
 		const other = uniqueName('gone-team-other')

@@ -252,23 +252,25 @@ class BindingService {
 	}
 
 	/**
-	 * Marks the rows of $fileIds as seen going to a trash or being deleted
-	 * (GoneFileSweep): once a file is gone from the file cache after this,
-	 * it is gone for good. A row marked already keeps its first mark.
+	 * The files were seen deleted for good (GoneFilesListener): their pads
+	 * may go from now on (GoneFileSweep). A row marked already keeps its
+	 * mark, so a refusal's later try stays where it is.
 	 *
 	 * @param list<int> $fileIds
 	 */
-	public function markTrashed(array $fileIds): void {
-		$this->setMark($fileIds, $this->timeFactory->getTime());
+	public function markGone(array $fileIds): void {
+		$this->setGoneAfter($fileIds, $this->timeFactory->getTime());
 	}
 
 	/**
-	 * The files are back in Files: their rows lose the mark.
+	 * The files are in the file cache again after all - moved to another
+	 * storage, which Nextcloud reports as a removal and an insert of the
+	 * same file: their rows lose the mark.
 	 *
 	 * @param list<int> $fileIds
 	 */
-	public function clearTrashed(array $fileIds): void {
-		$this->setMark($fileIds, null);
+	public function clearGone(array $fileIds): void {
+		$this->setGoneAfter($fileIds, null);
 	}
 
 	/**
@@ -283,29 +285,6 @@ class BindingService {
 			->from(self::TABLE, 'b')
 			->innerJoin('b', 'filecache', 'fc', $qb->expr()->eq('b.file_id', 'fc.fileid'))
 			->where($qb->expr()->eq('fc.storage', $qb->createNamedParameter($storageId, IQueryBuilder::PARAM_INT)));
-		return $this->fileIdsOf($qb);
-	}
-
-	/**
-	 * Those of $fileIds that have a row, in their order.
-	 *
-	 * @param list<int> $fileIds
-	 * @return list<int>
-	 */
-	public function boundAmong(array $fileIds): array {
-		$bound = [];
-		foreach (array_chunk($fileIds, 500) as $chunk) {
-			$qb = $this->db->getQueryBuilder();
-			$qb->select('file_id')
-				->from(self::TABLE)
-				->where($qb->expr()->in('file_id', $qb->createNamedParameter($chunk, IQueryBuilder::PARAM_INT_ARRAY)));
-			$bound = [...$bound, ...$this->fileIdsOf($qb)];
-		}
-		return array_values(array_intersect($fileIds, $bound));
-	}
-
-	/** @return list<int> */
-	private function fileIdsOf(IQueryBuilder $qb): array {
 		$result = $qb->executeQuery();
 		$fileIds = array_map(static fn (array $found): int => DbRows::int($found, 'file_id'), DbRows::all($result->fetchAll()));
 		$result->closeCursor();
@@ -318,15 +297,15 @@ class BindingService {
 	 *
 	 * @param list<int> $fileIds
 	 */
-	private function setMark(array $fileIds, ?int $at): void {
+	private function setGoneAfter(array $fileIds, ?int $at): void {
 		foreach (array_chunk($fileIds, 500) as $chunk) {
 			$qb = $this->db->getQueryBuilder();
 			$qb->update(self::TABLE)
-				->set('trashed_at', $at === null
+				->set('gone_after', $at === null
 					? $qb->createNamedParameter(null, IQueryBuilder::PARAM_NULL)
 					: $qb->createNamedParameter($at, IQueryBuilder::PARAM_INT))
 				->where($qb->expr()->in('file_id', $qb->createNamedParameter($chunk, IQueryBuilder::PARAM_INT_ARRAY)))
-				->andWhere($at === null ? $qb->expr()->isNotNull('trashed_at') : $qb->expr()->isNull('trashed_at'));
+				->andWhere($at === null ? $qb->expr()->isNotNull('gone_after') : $qb->expr()->isNull('gone_after'));
 			$qb->executeStatement();
 		}
 	}
@@ -338,82 +317,31 @@ class BindingService {
 	public function postponeGone(int $fileId, int $until): void {
 		$qb = $this->db->getQueryBuilder();
 		$qb->update(self::TABLE)
-			->set('trashed_at', $qb->createNamedParameter($until, IQueryBuilder::PARAM_INT))
+			->set('gone_after', $qb->createNamedParameter($until, IQueryBuilder::PARAM_INT))
 			->where($qb->expr()->eq('file_id', $qb->createNamedParameter($fileId, IQueryBuilder::PARAM_INT)))
-			->andWhere($qb->expr()->isNotNull('trashed_at'));
+			->andWhere($qb->expr()->isNotNull('gone_after'));
 		$qb->executeStatement();
 	}
 
-	/** The columns a Binding is read from, as `b.` a join selects them. */
-	private const BINDING_COLUMNS = ['b.file_id', 'b.pad_id', 'b.access_mode', 'b.state', 'b.deleted_at', 'b.updated_at', 'b.trashed_at'];
-
 	/**
-	 * Active rows marked as leaving Files whose file the file cache has
-	 * nothing left of: gone for good (GoneFileSweep). The earliest marked
-	 * first; a row postponed past now waits (postponeGone()).
+	 * Active rows whose file was seen deleted for good and whose mark is
+	 * due, if the file cache has nothing left of the file (GoneFileSweep).
+	 * The earliest due first.
 	 *
 	 * @return list<Binding>
 	 */
 	public function findMarkedGone(int $limit): array {
 		$qb = $this->db->getQueryBuilder();
-		$qb->select(...self::BINDING_COLUMNS)
+		$qb->select('b.file_id', 'b.pad_id', 'b.access_mode', 'b.state', 'b.deleted_at', 'b.updated_at')
 			->from(self::TABLE, 'b')
 			->leftJoin('b', 'filecache', 'fc', $qb->expr()->eq('b.file_id', 'fc.fileid'))
-			->where($qb->expr()->lte('b.trashed_at', $qb->createNamedParameter($this->timeFactory->getTime(), IQueryBuilder::PARAM_INT)))
+			->where($qb->expr()->lte('b.gone_after', $qb->createNamedParameter($this->timeFactory->getTime(), IQueryBuilder::PARAM_INT)))
 			->andWhere($qb->expr()->eq('b.state', $qb->createNamedParameter(self::STATE_ACTIVE)))
 			->andWhere($qb->expr()->isNull('fc.fileid'))
-			->orderBy('b.trashed_at', 'ASC')
+			->orderBy('b.gone_after', 'ASC')
 			->setMaxResults(max(1, $limit));
 		$result = $qb->executeQuery();
 		$rows = array_map(Binding::fromRow(...), DbRows::all($result->fetchAll()));
-		$result->closeCursor();
-		return $rows;
-	}
-
-	/**
-	 * The active rows among those of $fileIds whose file the file cache has
-	 * nothing left of: what a delete past the trash took (GoneFileSweep::
-	 * discardDeleted()).
-	 *
-	 * @param list<int> $fileIds
-	 * @return list<Binding>
-	 */
-	public function findActiveGone(array $fileIds): array {
-		$rows = [];
-		foreach (array_chunk($fileIds, 500) as $chunk) {
-			$qb = $this->db->getQueryBuilder();
-			$qb->select(...self::BINDING_COLUMNS)
-				->from(self::TABLE, 'b')
-				->leftJoin('b', 'filecache', 'fc', $qb->expr()->eq('b.file_id', 'fc.fileid'))
-				->where($qb->expr()->in('b.file_id', $qb->createNamedParameter($chunk, IQueryBuilder::PARAM_INT_ARRAY)))
-				->andWhere($qb->expr()->eq('b.state', $qb->createNamedParameter(self::STATE_ACTIVE)))
-				->andWhere($qb->expr()->isNull('fc.fileid'));
-			$result = $qb->executeQuery();
-			$rows = [...$rows, ...array_map(Binding::fromRow(...), DbRows::all($result->fetchAll()))];
-			$result->closeCursor();
-		}
-		return $rows;
-	}
-
-	/**
-	 * Active rows after the row $afterId whose file the file cache has, in
-	 * id order, each with its file's path: a slice of the sweep's pass over
-	 * every row (GoneFileSweep).
-	 *
-	 * @return list<SweptBinding>
-	 */
-	public function findActiveWithFileAfter(int $afterId, int $limit): array {
-		$qb = $this->db->getQueryBuilder();
-		$qb->select('b.id', ...self::BINDING_COLUMNS)
-			->selectAlias('fc.path', 'file_path')
-			->from(self::TABLE, 'b')
-			->innerJoin('b', 'filecache', 'fc', $qb->expr()->eq('b.file_id', 'fc.fileid'))
-			->where($qb->expr()->gt('b.id', $qb->createNamedParameter($afterId, IQueryBuilder::PARAM_INT)))
-			->andWhere($qb->expr()->eq('b.state', $qb->createNamedParameter(self::STATE_ACTIVE)))
-			->orderBy('b.id', 'ASC')
-			->setMaxResults(max(1, $limit));
-		$result = $qb->executeQuery();
-		$rows = array_map(SweptBinding::fromRow(...), DbRows::all($result->fetchAll()));
 		$result->closeCursor();
 		return $rows;
 	}

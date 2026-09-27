@@ -16,10 +16,10 @@ use PHPUnit\Framework\TestCase;
  */
 class ConsistencyCheckServiceTest extends TestCase {
 	public function testCountsRowsWithoutAFileAndTheVanishedAmongThem(): void {
-		$row = static fn (int $fileId, string $state = BindingService::STATE_ACTIVE, ?int $trashedAt = null): array => ['file_id' => $fileId, 'pad_id' => 'pad-' . $fileId, 'access_mode' => BindingService::ACCESS_PUBLIC, 'state' => $state, 'deleted_at' => null, 'updated_at' => 100, 'trashed_at' => $trashedAt];
+		$row = static fn (int $fileId, string $state = BindingService::STATE_ACTIVE, ?int $goneAfter = null): array => ['file_id' => $fileId, 'pad_id' => 'pad-' . $fileId, 'access_mode' => BindingService::ACCESS_PUBLIC, 'state' => $state, 'deleted_at' => null, 'updated_at' => 100, 'gone_after' => $goneAfter];
 		$db = new InMemoryBindingTable([
 			$row(1),
-			$row(2, trashedAt: 100),
+			$row(2, goneAfter: 100),
 			$row(3),
 			$row(4, BindingService::STATE_PENDING_DELETE),
 			$row(5),

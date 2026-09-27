@@ -10,7 +10,6 @@ namespace OCA\EtherpadNextcloud\Tests\Unit;
 
 use OCA\EtherpadNextcloud\Service\AppConfigService;
 use OCA\EtherpadNextcloud\Service\TrustedEmbedOriginsNormalizer;
-use OCP\IAppConfig;
 use OCP\IConfig;
 use PHPUnit\Framework\TestCase;
 
@@ -33,27 +32,7 @@ class AppConfigServiceTest extends TestCase {
 		$this->assertSame('trash_read_lock', $this->service($config)->getTestFault());
 	}
 
-	/** The sweep's cursor, as the sweep left it; never below 0. */
-	public function testTheGoneFileSweepCursor(): void {
-		$stored = [];
-		$appConfig = $this->createMock(IAppConfig::class);
-		$appConfig->method('getValueInt')->willReturnCallback(static function (string $app, string $key, int $default = 0) use (&$stored): int {
-			return (int)($stored[$app . '/' . $key] ?? $default);
-		});
-		$appConfig->method('setValueInt')->willReturnCallback(static function (string $app, string $key, int $value) use (&$stored): bool {
-			$stored[$app . '/' . $key] = $value;
-			return true;
-		});
-		$service = $this->service($this->createMock(IConfig::class), $appConfig);
-
-		$this->assertSame(0, $service->getGoneFileSweepCursor());
-		$service->setGoneFileSweepCursor(400);
-		$this->assertSame(400, $service->getGoneFileSweepCursor());
-		$stored['etherpad_nextcloud/gone_file_sweep_cursor'] = -3;
-		$this->assertSame(0, $service->getGoneFileSweepCursor());
-	}
-
-	private function service(IConfig $config, ?IAppConfig $appConfig = null): AppConfigService {
-		return new AppConfigService($config, $this->createMock(TrustedEmbedOriginsNormalizer::class), $appConfig ?? $this->createMock(IAppConfig::class));
+	private function service(IConfig $config): AppConfigService {
+		return new AppConfigService($config, $this->createMock(TrustedEmbedOriginsNormalizer::class));
 	}
 }
