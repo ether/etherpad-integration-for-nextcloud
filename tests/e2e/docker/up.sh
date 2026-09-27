@@ -160,7 +160,7 @@ occ config:app:set etherpad_nextcloud etherpad_api_key --value="$API_KEY"
 occ config:app:set etherpad_nextcloud etherpad_cookie_domain --value='pad.test'
 occ config:app:set etherpad_nextcloud enable_protected_pads --value='yes'
 occ config:app:set etherpad_nextcloud enable_public_pads --value='yes'
-occ config:app:set etherpad_nextcloud delete_on_permanent_delete --value='yes'
+occ config:app:set etherpad_nextcloud delete_pad_with_file --value='yes'
 
 download_dir="$(mktemp -d)"
 trap 'rm -rf "$download_dir"' EXIT

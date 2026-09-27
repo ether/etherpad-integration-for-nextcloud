@@ -32,7 +32,7 @@ use OCP\Migration\SimpleMigrationStep;
  *
  * The setting that said whether a trash deleted pads, `delete_on_trash`,
  * now says whether a file deleted for good takes its pad along:
- * `delete_on_permanent_delete`, with the value the admin gave the old one.
+ * `delete_pad_with_file`, with the value the admin gave the old one.
  *
  * @psalm-api
  */

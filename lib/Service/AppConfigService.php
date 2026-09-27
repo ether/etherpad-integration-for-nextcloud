@@ -14,7 +14,7 @@ use OCP\IConfig;
 
 class AppConfigService {
 	/** Whether a file deleted for good takes its pad along; `delete_on_trash` before. */
-	public const DELETE_ON_PERMANENT_DELETE = 'delete_on_permanent_delete';
+	public const DELETE_PAD_WITH_FILE = 'delete_pad_with_file';
 
 	public function __construct(
 		private IConfig $config,
@@ -44,8 +44,8 @@ class AppConfigService {
 	 * through IAppConfig alone, so the value keeps one type
 	 * (AdminSettingsRepository writes it the same way).
 	 */
-	public function isDeleteOnPermanentDeleteEnabled(): bool {
-		return $this->appConfig->getValueString(Application::APP_ID, self::DELETE_ON_PERMANENT_DELETE, 'yes') === 'yes';
+	public function isDeletePadWithFileEnabled(): bool {
+		return $this->appConfig->getValueString(Application::APP_ID, self::DELETE_PAD_WITH_FILE, 'yes') === 'yes';
 	}
 
 	/**
@@ -58,8 +58,8 @@ class AppConfigService {
 		if ($old === '') {
 			return;
 		}
-		if ($this->appConfig->getValueString(Application::APP_ID, self::DELETE_ON_PERMANENT_DELETE, '') === '') {
-			$this->appConfig->setValueString(Application::APP_ID, self::DELETE_ON_PERMANENT_DELETE, $old);
+		if ($this->appConfig->getValueString(Application::APP_ID, self::DELETE_PAD_WITH_FILE, '') === '') {
+			$this->appConfig->setValueString(Application::APP_ID, self::DELETE_PAD_WITH_FILE, $old);
 		}
 		$this->appConfig->deleteKey(Application::APP_ID, 'delete_on_trash');
 	}

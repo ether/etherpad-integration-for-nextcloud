@@ -28,7 +28,7 @@ class AdminSettingsValidatorTest extends TestCase {
 			'etherpad_api_key' => ' new-key ',
 			'etherpad_api_version' => '1.3.0',
 			'sync_interval_seconds' => '60',
-			'delete_on_permanent_delete' => '0',
+			'delete_pad_with_file' => '0',
 			'allow_external_pads' => 'yes',
 			'external_pad_allowlist' => 'https://external.example.test:8443',
 			'trusted_embed_origins' => 'https://portal.example.test',
@@ -41,7 +41,7 @@ class AdminSettingsValidatorTest extends TestCase {
 		$this->assertSame('new-key', $result->effectiveApiKey()->reveal());
 		$this->assertSame('1.3.0', $result->etherpadApiVersion);
 		$this->assertSame(60, $result->syncIntervalSeconds);
-		$this->assertFalse($result->deleteOnPermanentDelete);
+		$this->assertFalse($result->deletePadWithFile);
 		$this->assertTrue($result->allowExternalPads);
 		$this->assertSame('https://external.example.test:8443', $result->externalPadAllowlist);
 		$this->assertSame('https://portal.example.test', $result->trustedEmbedOrigins);
@@ -65,13 +65,13 @@ class AdminSettingsValidatorTest extends TestCase {
 			'etherpad_api_version' => '1.3.0',
 		], $this->stored(
 			cookieDomain: '.stored.example.test',
-			deleteOnPermanentDelete: false,
+			deletePadWithFile: false,
 			allowExternalPads: true,
 			trustedEmbedOrigins: 'https://portal.example.test',
 		));
 
 		$this->assertSame('.stored.example.test', $result->etherpadCookieDomain);
-		$this->assertFalse($result->deleteOnPermanentDelete);
+		$this->assertFalse($result->deletePadWithFile);
 		$this->assertTrue($result->allowExternalPads);
 		$this->assertSame('', $result->externalPadAllowlist);
 		$this->assertSame('https://portal.example.test', $result->trustedEmbedOrigins);
@@ -336,11 +336,11 @@ class AdminSettingsValidatorTest extends TestCase {
 	private function stored(
 		string $apiKey = 'stored-key',
 		string $cookieDomain = '',
-		bool $deleteOnPermanentDelete = true,
+		bool $deletePadWithFile = true,
 		bool $allowExternalPads = false,
 		string $trustedEmbedOrigins = '',
 	): StoredAdminSettings {
-		return new StoredAdminSettings($apiKey, $cookieDomain, $deleteOnPermanentDelete, $allowExternalPads, $trustedEmbedOrigins);
+		return new StoredAdminSettings($apiKey, $cookieDomain, $deletePadWithFile, $allowExternalPads, $trustedEmbedOrigins);
 	}
 
 	private function buildL10n(): IL10N {

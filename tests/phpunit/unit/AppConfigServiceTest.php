@@ -16,12 +16,12 @@ use PHPUnit\Framework\TestCase;
 
 class AppConfigServiceTest extends TestCase {
 	/** On unless the admin switched it off: only 'no' turns it off, and a value never set is on. */
-	public function testDeletingOnPermanentDeleteIsOnUnlessSwitchedOff(): void {
+	public function testDeletingThePadWithItsFileIsOnUnlessSwitchedOff(): void {
 		foreach (['yes' => true, 'no' => false] as $stored => $enabled) {
 			$appConfig = $this->createMock(IAppConfig::class);
-			$appConfig->method('getValueString')->with('etherpad_nextcloud', 'delete_on_permanent_delete', 'yes')->willReturn($stored);
+			$appConfig->method('getValueString')->with('etherpad_nextcloud', 'delete_pad_with_file', 'yes')->willReturn($stored);
 
-			$this->assertSame($enabled, $this->service($this->createMock(IConfig::class), $appConfig)->isDeleteOnPermanentDeleteEnabled(), $stored);
+			$this->assertSame($enabled, $this->service($this->createMock(IConfig::class), $appConfig)->isDeletePadWithFileEnabled(), $stored);
 		}
 	}
 
@@ -31,9 +31,9 @@ class AppConfigServiceTest extends TestCase {
 	 */
 	public function testTheOldSettingIsTakenOver(): void {
 		$cases = [
-			'switched off before' => [['delete_on_trash' => 'no'], ['delete_on_permanent_delete' => 'no']],
-			'left on before' => [['delete_on_trash' => 'yes'], ['delete_on_permanent_delete' => 'yes']],
-			'set anew already' => [['delete_on_trash' => 'no', 'delete_on_permanent_delete' => 'yes'], ['delete_on_permanent_delete' => 'yes']],
+			'switched off before' => [['delete_on_trash' => 'no'], ['delete_pad_with_file' => 'no']],
+			'left on before' => [['delete_on_trash' => 'yes'], ['delete_pad_with_file' => 'yes']],
+			'set anew already' => [['delete_on_trash' => 'no', 'delete_pad_with_file' => 'yes'], ['delete_pad_with_file' => 'yes']],
 			'never set' => [[], []],
 		];
 		foreach ($cases as $case => [$stored, $expected]) {

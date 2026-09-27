@@ -99,8 +99,8 @@ class AdminSettingsRepositoryTest extends TestCase {
 		$this->assertSame('1.3.0', $saved['etherpad_api_version']);
 		$this->assertSame('90', $saved['sync_interval_seconds']);
 		// One type for the value: written through IAppConfig, as it is read.
-		$this->assertArrayNotHasKey('delete_on_permanent_delete', $saved);
-		$this->assertSame(['value' => 'no', 'sensitive' => false], $appConfigWrites['delete_on_permanent_delete']);
+		$this->assertArrayNotHasKey('delete_pad_with_file', $saved);
+		$this->assertSame(['value' => 'no', 'sensitive' => false], $appConfigWrites['delete_pad_with_file']);
 		$this->assertSame('yes', $saved['allow_external_pads']);
 		$this->assertSame('https://external.example.test:8443', $saved['external_pad_allowlist']);
 		$this->assertSame('https://portal.example.test', $saved['trusted_embed_origins']);
@@ -115,7 +115,7 @@ class AdminSettingsRepositoryTest extends TestCase {
 		);
 
 		$appConfig = $this->createMock(IAppConfig::class);
-		$appConfig->expects($this->once())->method('setValueString')->with('etherpad_nextcloud', 'delete_on_permanent_delete', 'yes');
+		$appConfig->expects($this->once())->method('setValueString')->with('etherpad_nextcloud', 'delete_pad_with_file', 'yes');
 
 		(new AdminSettingsRepository($config, $appConfig))->persist(new ValidatedAdminSettings(
 			'https://pad.example.test',

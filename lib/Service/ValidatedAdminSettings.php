@@ -25,7 +25,7 @@ class ValidatedAdminSettings {
 		private readonly string $effectiveApiKey,
 		public readonly string $etherpadApiVersion,
 		public readonly int $syncIntervalSeconds,
-		public readonly bool $deleteOnPermanentDelete,
+		public readonly bool $deletePadWithFile,
 		public readonly bool $allowExternalPads,
 		public readonly string $externalPadAllowlist,
 		public readonly string $trustedEmbedOrigins,

@@ -264,7 +264,7 @@ solely by the separate external-pad policy, not by these two settings.
   - Stores Etherpad and security settings, including:
     - `etherpad_host` (public/browser base URL)
     - `etherpad_api_host` (optional internal API URL; fallback to `etherpad_host`)
-    - `delete_on_permanent_delete` (`yes|no`)
+    - `delete_pad_with_file` (`yes|no`)
   - Result includes `checks` with the single `protected_pads` line, recomputed
     from the saved values in the same shape the health check uses — so the
     settings page refreshes that verdict without a separate connection test,
@@ -516,7 +516,7 @@ Registered in `lib/AppInfo/Application.php`.
     - derived from `etherpad_host`
     - IP/invalid hosts -> empty domain attribute
     - recommendation: set explicitly for complex proxy/subdomain setups
-- `delete_on_permanent_delete` (`yes|no`, default `yes`) — whether the pad of a `.pad` file deleted for good is deleted (`docs/deleting-pads.md`); `delete_on_trash` before, taken over on upgrade
+- `delete_pad_with_file` (`yes|no`, default `yes`) — whether the pad of a `.pad` file deleted for good is deleted (`docs/deleting-pads.md`); `delete_on_trash` before, taken over on upgrade
 - `sync_interval_seconds` (default `120`, clamp `5..3600`)
 - `allow_external_pads` (`yes|no`, default `no`)
 - `allow_legacy_protected_import` (`yes|no`, default `no`) — whether a legacy Ownpad `.pad` naming a group pad may bring that pad in. Turn on only where this Nextcloud is the only thing creating group pads on the Etherpad server; see the legacy migration doc.

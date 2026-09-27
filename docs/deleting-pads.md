@@ -11,7 +11,7 @@ What counts is the file, not its name: a `.pad` file renamed to something
 else keeps its pad, and the pad goes once the file is deleted for good.
 
 This applies to pads this Nextcloud manages, with the admin setting
-`delete_on_permanent_delete` on - the default; `delete_on_trash` before,
+`delete_pad_with_file` on - the default; `delete_on_trash` before,
 whose value it takes over. A `.pad` file that links a pad on another
 Etherpad server never deletes that pad.
 
@@ -100,7 +100,7 @@ after it was lost, which Etherpad makes anew, empty. A copied `.pad` file,
 which has no pad of its own, offers the same. A file restored from the
 trash does not ask: it gets its new pad on its own.
 
-## With `delete_on_permanent_delete` off
+## With `delete_pad_with_file` off
 
 The app deletes no pad at all: the pads of files deleted for good stay, and
 the admin page counts them as pending deletes. Switched back on, the job

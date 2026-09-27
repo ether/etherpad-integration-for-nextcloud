@@ -74,7 +74,7 @@ class GoneFileSweep {
 			]);
 		}
 		$summary = ['checked' => 0, 'deleted' => 0];
-		if (!$this->appConfig->isDeleteOnPermanentDeleteEnabled()) {
+		if (!$this->appConfig->isDeletePadWithFileEnabled()) {
 			return $summary;
 		}
 		$budget ??= new RunBudget($this->timeFactory, RunBudget::DEFAULT_SECONDS);
