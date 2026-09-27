@@ -4,7 +4,7 @@
  */
 import { test, expect } from '@playwright/test'
 import { E2E } from '../fixtures/env'
-import { createPadAtPath, deleteViaDav, getFileViaDav, padApiPost, propfindFileId } from '../fixtures/dav'
+import { createPadAtPath, deleteViaDav, getFileViaDav, padApiPost, propfindFileId, restoreFromTrashViaDav } from '../fixtures/dav'
 import { etherpadApiPost, padIdOfPadUrl } from '../fixtures/etherpad'
 import { expectEtherpadViewerMounted, gotoFiles, openPadFromFileList, uniquePadName } from '../fixtures/nextcloud'
 
@@ -75,6 +75,32 @@ test.describe('a pad Etherpad has lost', () => {
 			await etherpadApiPost('createPad', { padID: padId })
 
 			await expectRecovered(name, fileId, padId, marker)
+		} finally {
+			await deleteViaDav(name)
+		}
+	})
+
+	/**
+	 * A file back from the trash is surely the one its pad was, so a pad
+	 * Etherpad lost while the file was away is made anew by the restore
+	 * itself, from the file's content: the next open finds it, no card.
+	 */
+	test('a restore makes a pad Etherpad lost while the file was in the trash anew', async () => {
+		const name = uniquePadName('lost-in-trash')
+		try {
+			const { fileId, padId, marker } = await padWithSavedText(name, 'public')
+			await deleteViaDav(name)
+			await etherpadApiPost('deletePad', { padID: padId })
+
+			await restoreFromTrashViaDav(name)
+
+			const opened = await padApiPost('pads/open-by-id', { fileId: String(fileId) })
+			expect(opened.status, JSON.stringify(opened.body)).toBe(200)
+			const newPadId = String((opened.body as { pad_id?: string }).pad_id ?? '')
+			expect(newPadId).not.toBe(padId)
+			const text = await etherpadApiPost<{ text: string }>('getText', { padID: newPadId })
+			expect(text.text).toContain(marker)
+			expect(await getFileViaDav(name), 'the file names the new pad').toContain(newPadId)
 		} finally {
 			await deleteViaDav(name)
 		}

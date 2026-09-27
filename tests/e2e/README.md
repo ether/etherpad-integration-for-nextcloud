@@ -109,7 +109,8 @@ Each `specs/*.spec.ts` covers one flow:
 - **pad-trash-restore** — trash + restore round-trip, pad reopens.
 - **pad-lost** — a pad Etherpad has lost (deleted there, or made anew empty
   by a visit to a public pad's address) answers `pad_missing`, and a new
-  pad is made from the file's content, in the API and in the viewer.
+  pad is made from the file's content, in the API and in the viewer; a
+  file restored from the trash gets its new pad without asking.
   Container stack only (asks Etherpad).
 - **pad-gone-for-good** — the trash keeps a pad and its group, a restore
   gives the same pad back; a pad goes with its file deleted for good:
