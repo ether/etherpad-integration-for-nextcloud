@@ -83,7 +83,7 @@ checked-in runtime assets in `js/`.
   - `deleted_at`
   - `created_at`
   - `updated_at`
-  - `gone_after`: the time from which the pad may go, set when the file was seen deleted for good; after Etherpad refused to delete the pad, the time of the next try (`Version000005Date20260927180000`, see "Files gone for good")
+  - `gone_after`: the time from which the pad may go, five minutes after the file was seen deleted for good; after Etherpad refused to delete the pad, the time of the next try (`Version000005Date20260927180000`, see "Files gone for good")
   - stores internal managed pads only; external `ext.*` rows from earlier development versions are removed by `Version000003Date20260512230000`
 - `.pad` file
   - Frontmatter: format, binding metadata, state, export metadata.
@@ -286,15 +286,17 @@ Primary flow (native viewer):
 - `GoneFilesListener` marks the rows of files seen deleted for good (`gone_after`). The file cache says what goes: Nextcloud reports every entry it removes (`CacheEntryRemovedEvent`), each descendant of a removed folder too, on 31 to 34. Not every removal is a deletion - a scan drops what vanished outside Nextcloud - so these count:
   - A removal from a trash: a user's (`files_trashbin/files/`), a team folder's on the root storage (`__groupfolders/trash/`), or one on the folder's own storage (`trash/`, told from a folder of that name elsewhere by the storage's id). That is the trash emptied, an item deleted there or expired, `occ trashbin:cleanup`, groupfolders' trash alike.
   - A removal while Nextcloud deletes a node, between `BeforeNodeDeletedEvent` and `NodeDeletedEvent`: a delete past the trash (a WebDAV `DELETE` with `X-NC-Skip-Trashbin`, the trash app off for the user) takes the node and all under it. A move to the trash within one storage removes nothing from the file cache. One to another storage, from an external storage say, keeps the file's id and is reported as a removal and an insert (`CacheEntryInsertedEvent`), which takes the mark back.
-  - A user about to be deleted (`BeforeUserDeletedEvent`): every file on their home storage, found through the mount cache (`IUserMountCache`). Nextcloud then clears that storage and its file cache without a single event.
+  - A user deleted: every file on their home storage, which Nextcloud clears, file cache and all, without a single event. The files are looked up before (`BeforeUserDeletedEvent`), through the mount cache (`IUserMountCache`) while it still knows the home, and marked once the user is gone (`UserDeletedEvent`). A deletion the user backend refuses raises no `UserDeletedEvent` and leaves the files unmarked.
   - What counts is the file's id, never its name: a `.pad` renamed keeps its row, and its pad goes with it.
   - Versions and app data (`files_versions/`, `appdata_*`, previews among them) never count. Every other removal of the instance comes by the listener too, so each costs a look at its path; one that counts takes a place in a set, written in blocks of 500 (`UPDATE ... WHERE file_id IN`) when full, when a delete is done, and at the end of the request. The request does not touch Etherpad.
   - Nextcloud 34 up to 34.0.4 reports a removed folder's descendants under the wrong ids - their places in a block of a thousand - and again with each block (nextcloud/server#63969, fixed for 34.0.5). It sends the block first (`CacheEntriesRemovedEvent`, from 34 on); a block holding id 0, which no file has, is such a block, and none of its removals counts, so no other file's row is ever marked. The files in a folder deleted for good there keep their pads and are listed as vanished. 31 to 33 report the right ids, one event each.
   - The listener never stops a delete and never throws: a mark that fails is a warning, and the row counts as vanished (below). One instance hears all of a request's events, as Nextcloud's container keeps the one it made.
-- `GoneFileSweep` runs every five minutes (`GoneFileSweepJob`), within 20 s (`RunBudget`): active rows whose mark is due and whose file the file cache has nothing of, the earliest due first, in batches of 200, ten at most a run. A file deleted past the trash takes its pad within one run of the job.
+- A mark is due five minutes after it was set (`BindingService::GONE_GRACE_SECONDS`): a margin before a step that cannot be undone, for an order of events no one has seen yet. A mark is only set once the file's row is gone from the file cache, a move keeps the row, and Nextcloud never gives a removed id to a file again, so nothing known needs it.
+- `GoneFileSweep` runs every five minutes (`GoneFileSweepJob`), within 20 s (`RunBudget`): active rows whose mark is due and whose file the file cache has nothing of, the earliest due first, in batches of 200, ten at most a run. A file deleted past the trash takes its pad within two runs of the job.
+  - First, it clears the marks of files the file cache still has an hour after they were due, 200 a run, with one `info` line: a deletion that did not happen after all - one rolled back, an account whose files were left. Kept, such a mark would take the pad of a file a scan drops later, which the app leaves. This runs with `delete_on_trash` off too.
   - Right before a pad goes, the file cache is asked once more. A pad Etherpad no longer has counts as deleted, and its row goes. A pad Etherpad refuses to delete keeps its row, with a warning, and its mark moves an hour ahead: it is tried again then, and neither holds the head of the queue nor warns every run. Etherpad not answering ends the run with one `info` line.
-  - A marked file the file cache still has keeps its pad: a deleted user's home, marked before Nextcloud clears it.
-  - The admin page's settle (`POST /api/v1/admin/settle-pending`) runs the sweep too, in what the older sweep left of one 20 s budget.
+  - A marked file the file cache still has keeps its pad.
+  - The admin page's settle (`POST /api/v1/admin/settle-pending`) runs the sweep too, in what the older sweep left of one 20 s budget, and takes the marks still in their five minutes: what the job would do within minutes, now.
   - With `delete_on_trash` off no pad goes here, but the marks are kept.
 - A file gone without being seen deleted is left alone, pad and row with it: one removed outside Nextcloud and dropped by a scan, a team folder deleted as a whole or a storage removed (Nextcloud clears their file cache without an event), a file cache rebuilt. The consistency check counts and lists such rows (`vanished_file_count`). A `.pad` file replaced by moving another file onto it through WebDAV goes to the trash first (measured against NC 34.0.3), so its pad goes once it leaves the trash.
 
@@ -355,7 +357,7 @@ Primary flow (native viewer):
   - Register the viewer handler on public-share pages and load the one-shot opener for public single-file `.pad` shares or existing compatibility links.
 - `OCA\Files_Trashbin\Events\MoveToTrashEvent`, and the legacy event `OCA\Files_Trashbin::moveToTrash`
   - Trash lifecycle.
-- `OCP\Files\Cache\CacheEntryRemovedEvent`, `OCP\Files\Cache\CacheEntryInsertedEvent`, `OCP\Files\Events\Node\BeforeNodeDeletedEvent`, `OCP\Files\Events\Node\NodeDeletedEvent`, `OCP\User\Events\BeforeUserDeletedEvent`
+- `OCP\Files\Cache\CacheEntryRemovedEvent`, `OCP\Files\Cache\CacheEntryInsertedEvent`, `OCP\Files\Cache\CacheEntriesRemovedEvent` (from 34), `OCP\Files\Events\Node\BeforeNodeDeletedEvent`, `OCP\Files\Events\Node\NodeDeletedEvent`, `OCP\User\Events\BeforeUserDeletedEvent`, `OCP\User\Events\UserDeletedEvent`
   - Mark the rows of files deleted for good (see "Files gone for good").
 - `OCA\Files_Trashbin\Events\NodeRestoredEvent`
   - Restore lifecycle.

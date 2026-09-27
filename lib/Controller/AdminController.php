@@ -140,7 +140,7 @@ class AdminController extends Controller {
 				// gone for good too - within the one budget a run has.
 				$budget = new RunBudget($this->timeFactory, RunBudget::DEFAULT_SECONDS);
 				$result = $this->pendingBindings->settle(self::PENDING_BINDING_BATCH_SIZE);
-				$this->goneFileSweep->run($budget);
+				$this->goneFileSweep->run($budget, atOnce: true);
 				return $result;
 			},
 			fn(array $result): DataResponse => new DataResponse([

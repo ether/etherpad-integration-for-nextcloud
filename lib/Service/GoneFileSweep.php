@@ -18,9 +18,9 @@ use Psr\Log\LoggerInterface;
 /**
  * Deletes the pads of files seen deleted for good, and only those
  * (docs/architecture.md, "Files gone for good"). GoneFilesListener marks
- * their rows (Binding::$goneAfter) as the request that deleted them runs;
- * a run takes the marked rows whose file the file cache has nothing left
- * of, and deletes pad and row. Active rows only: a row that waits is the
+ * their rows (`gone_after`) as the request that deleted them runs; a run
+ * takes the marked rows past their grace whose file the file cache has
+ * nothing left of, and deletes pad and row. Active rows only: a row that waits is the
  * older sweep's (PendingBindingService).
  *
  * A file gone without a mark is left alone, pad and row with it: the
@@ -42,6 +42,9 @@ class GoneFileSweep {
 	/** How long a pad Etherpad refused to delete waits for its next try. */
 	private const RETRY_REFUSED_SECONDS = 60 * 60;
 
+	/** How long past due a mark whose file is still there counts as one that did not happen. */
+	private const STALE_AFTER_SECONDS = 60 * 60;
+
 	public function __construct(
 		private BindingService $bindingService,
 		private ManagedPadLifecycle $padLifecycle,
@@ -53,16 +56,29 @@ class GoneFileSweep {
 
 	/**
 	 * A run, within $budget: the job's own, or what is left of the one an
-	 * admin's settle promises.
+	 * admin's settle promises. An admin's settle ($atOnce) takes the marks
+	 * still in their grace too: what the job would do within minutes, now.
+	 *
+	 * First it clears the marks of files the file cache still has an hour
+	 * after they were due: deletions that did not happen after all.
 	 */
-	public function run(?RunBudget $budget = null): void {
+	public function run(?RunBudget $budget = null, bool $atOnce = false): void {
+		$now = $this->timeFactory->getTime();
+		$stale = $this->bindingService->clearStaleGone($now - self::STALE_AFTER_SECONDS, self::LIMIT);
+		if ($stale > 0) {
+			$this->logger->info('Cleared the marks of files still there an hour after their deletion was due; it did not happen.', [
+				'app' => 'etherpad_nextcloud',
+				'count' => $stale,
+			]);
+		}
 		if (!$this->appConfig->isDeleteOnTrashEnabled()) {
 			return;
 		}
 		$budget ??= new RunBudget($this->timeFactory, RunBudget::DEFAULT_SECONDS);
+		$dueBy = $atOnce ? $now + BindingService::GONE_GRACE_SECONDS : $now;
 		try {
 			for ($batch = 0; $batch < self::BATCHES; $batch++) {
-				$rows = $this->bindingService->findMarkedGone(self::LIMIT);
+				$rows = $this->bindingService->findMarkedGone(self::LIMIT, $dueBy);
 				foreach ($rows as $binding) {
 					$this->discard($binding, $budget);
 				}

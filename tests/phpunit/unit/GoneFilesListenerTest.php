@@ -17,6 +17,7 @@ use OCP\Files\File;
 use OCP\Files\Storage\IStorage;
 use OCP\IUser;
 use OCP\User\Events\BeforeUserDeletedEvent;
+use OCP\User\Events\UserDeletedEvent;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 
@@ -185,21 +186,38 @@ class GoneFilesListenerTest extends TestCase {
 	}
 
 	/**
-	 * A user about to be deleted marks every file on their home storage,
-	 * found through the mount cache; one who never logged in has none.
+	 * A user deleted marks every file on their home storage, looked up
+	 * before through the mount cache and marked once the user is gone. A
+	 * deletion the user backend refuses stops before that, and marks
+	 * nothing; one who never logged in has no home, and no files.
 	 */
 	public function testAUserDeletedMarksTheirHome(): void {
-		$alice = $this->createMock(IUser::class);
-		$alice->method('getUID')->willReturn('alice');
-		$this->mounts->method('getMountsForUser')->willReturnOnConsecutiveCalls(
-			[$this->mount('/alice/files/Team/', 7), $this->mount('/alice/', 5)],
-			[$this->mount('/alice/files/Team/', 7)],
-		);
+		$alice = $this->user('alice');
+		$bob = $this->user('bob');
+		$this->mounts->method('getMountsForUser')->willReturnCallback(fn (IUser $user): array => $user === $alice
+			? [$this->mount('/alice/files/Team/', 7), $this->mount('/alice/', 5)]
+			: [$this->mount('/bob/files/Team/', 7)]);
+		$listener = $this->listener();
 
-		$this->listener()->handle(new BeforeUserDeletedEvent($alice));
-		$this->listener()->handle(new BeforeUserDeletedEvent($alice));
+		$listener->handle(new BeforeUserDeletedEvent($alice));
+		$this->assertSame([['storage', [5]]], $this->calls, 'looked up, not marked');
+		$listener->handle(new UserDeletedEvent($alice));
+		$listener->handle(new UserDeletedEvent($alice));
+		$listener->handle(new BeforeUserDeletedEvent($bob));
+		$listener->handle(new UserDeletedEvent($bob));
 
-		$this->assertSame([['storage', [5]], ['mark', [41, 42]], ['mark', []]], $this->calls);
+		$this->assertSame([['storage', [5]], ['mark', [41, 42]], ['mark', []], ['mark', []]], $this->calls);
+	}
+
+	/** A deletion the user backend refuses raises no UserDeletedEvent: nothing is marked. */
+	public function testARefusedUserDeletionMarksNothing(): void {
+		$this->mounts->method('getMountsForUser')->willReturn([$this->mount('/alice/', 5)]);
+		$listener = $this->listener();
+
+		$listener->handle(new BeforeUserDeletedEvent($this->user('alice')));
+		$this->endRequest();
+
+		$this->assertSame([['storage', [5]]], $this->calls);
 	}
 
 	/** Anything else passes by. */
@@ -294,6 +312,12 @@ class GoneFilesListenerTest extends TestCase {
 		$storage = $this->createMock(IStorage::class);
 		$storage->method('getId')->willReturn($id);
 		return $storage;
+	}
+
+	private function user(string $uid): IUser {
+		$user = $this->createMock(IUser::class);
+		$user->method('getUID')->willReturn($uid);
+		return $user;
 	}
 
 	private function mount(string $mountPoint, int $storageId): ICachedMountInfo {

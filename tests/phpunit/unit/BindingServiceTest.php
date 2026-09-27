@@ -178,8 +178,9 @@ class BindingServiceTest extends TestCase {
 	}
 
 	/**
-	 * Files seen deleted for good mark their rows once: a row marked already
-	 * keeps its first mark, and the other rows are left alone. Files the
+	 * Files seen deleted for good mark their rows once, due five minutes
+	 * later: a row marked already keeps its first mark, and the other rows
+	 * are left alone. Files the
 	 * file cache has again lose it. Any number of files, in chunks the
 	 * database takes.
 	 */
@@ -190,13 +191,13 @@ class BindingServiceTest extends TestCase {
 		$service = new BindingService($table, new FixedClock(500));
 
 		$service->markGone([1, 2, 1100]);
-		$this->assertSame([1 => 500, 2 => 300, 3 => null, 1100 => 500], array_intersect_key(array_column($table->rows, 'gone_after', 'file_id'), [1 => 0, 2 => 0, 3 => 0, 1100 => 0]));
+		$this->assertSame([1 => 800, 2 => 300, 3 => null, 1100 => 800], array_intersect_key(array_column($table->rows, 'gone_after', 'file_id'), [1 => 0, 2 => 0, 3 => 0, 1100 => 0]), 'due once the grace is over');
 
 		$service->markGone(range(1, 1200));
-		$this->assertSame(array_fill(0, 1200, 500), array_map(static fn (?int $at): int => $at === 300 ? 500 : (int)$at, array_column($table->rows, 'gone_after')), 'every chunk');
+		$this->assertSame(array_fill(0, 1200, 800), array_map(static fn (?int $at): int => $at === 300 ? 800 : (int)$at, array_column($table->rows, 'gone_after')), 'every chunk');
 
 		$service->clearGone([2, 1100]);
-		$this->assertSame([1 => 500, 2 => null, 3 => 500, 1100 => null], array_intersect_key(array_column($table->rows, 'gone_after', 'file_id'), [1 => 0, 2 => 0, 3 => 0, 1100 => 0]));
+		$this->assertSame([1 => 800, 2 => null, 3 => 800, 1100 => null], array_intersect_key(array_column($table->rows, 'gone_after', 'file_id'), [1 => 0, 2 => 0, 3 => 0, 1100 => 0]));
 
 		$service->markGone([]);
 		$service->clearGone([]);
@@ -240,8 +241,31 @@ class BindingServiceTest extends TestCase {
 
 		$this->assertSame([12, 11], array_map(static fn (Binding $b): int => $b->fileId, $service->findMarkedGone(10)));
 		$this->assertSame([12], array_map(static fn (Binding $b): int => $b->fileId, $service->findMarkedGone(1)));
+		$this->assertSame([12, 11, 16], array_map(static fn (Binding $b): int => $b->fileId, $service->findMarkedGone(10, 600)), 'due by a time asked for');
 		$this->assertTrue($service->isFileGone(11));
 		$this->assertFalse($service->isFileGone(13));
+	}
+
+	/**
+	 * A mark whose file the file cache still has, due before the time
+	 * asked for, did not happen: it is cleared, as many as asked for. A
+	 * mark due later stays, and so does one whose file is gone.
+	 */
+	public function testStaleMarksAreCleared(): void {
+		$table = new InMemoryBindingTable([
+			['gone_after' => 100] + self::bindingRow(1, 'pad-a', BindingService::STATE_ACTIVE),
+			['gone_after' => 200] + self::bindingRow(2, 'pad-b', BindingService::STATE_ACTIVE),
+			['gone_after' => 400] + self::bindingRow(3, 'pad-c', BindingService::STATE_ACTIVE),
+			['gone_after' => 100] + self::bindingRow(4, 'pad-d', BindingService::STATE_ACTIVE),
+			self::bindingRow(5, 'pad-e', BindingService::STATE_ACTIVE),
+		], array_map(static fn (int $id): array => ['fileid' => $id, 'storage' => 1, 'path' => 'files/' . $id . '.pad'], [1, 2, 3, 5]));
+		$service = new BindingService($table, new FixedClock(500));
+
+		$this->assertSame(1, $service->clearStaleGone(300, 1));
+		$this->assertSame(1, $service->clearStaleGone(300, 10));
+		$this->assertSame(0, $service->clearStaleGone(300, 10));
+
+		$this->assertSame([1 => null, 2 => null, 3 => 400, 4 => 100, 5 => null], array_column($table->rows, 'gone_after', 'file_id'));
 	}
 
 	/**

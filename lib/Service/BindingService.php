@@ -252,14 +252,21 @@ class BindingService {
 	}
 
 	/**
+	 * How long after a file was seen deleted for good its pad may go: a
+	 * margin against an order of events no one has seen yet, before a step
+	 * that cannot be undone. The job runs every five minutes anyway.
+	 */
+	public const GONE_GRACE_SECONDS = 5 * 60;
+
+	/**
 	 * The files were seen deleted for good (GoneFilesListener): their pads
-	 * may go from now on (GoneFileSweep). A row marked already keeps its
-	 * mark, so a refusal's later try stays where it is.
+	 * may go once the grace is over (GoneFileSweep). A row marked already
+	 * keeps its mark, so a refusal's later try stays where it is.
 	 *
 	 * @param list<int> $fileIds
 	 */
 	public function markGone(array $fileIds): void {
-		$this->setGoneAfter($fileIds, $this->timeFactory->getTime());
+		$this->setGoneAfter($fileIds, $this->timeFactory->getTime() + self::GONE_GRACE_SECONDS);
 	}
 
 	/**
@@ -285,6 +292,11 @@ class BindingService {
 			->from(self::TABLE, 'b')
 			->innerJoin('b', 'filecache', 'fc', $qb->expr()->eq('b.file_id', 'fc.fileid'))
 			->where($qb->expr()->eq('fc.storage', $qb->createNamedParameter($storageId, IQueryBuilder::PARAM_INT)));
+		return $this->fileIdsOf($qb);
+	}
+
+	/** @return list<int> */
+	private function fileIdsOf(IQueryBuilder $qb): array {
 		$result = $qb->executeQuery();
 		$fileIds = array_map(static fn (array $found): int => DbRows::int($found, 'file_id'), DbRows::all($result->fetchAll()));
 		$result->closeCursor();
@@ -325,17 +337,17 @@ class BindingService {
 
 	/**
 	 * Active rows whose file was seen deleted for good and whose mark is
-	 * due, if the file cache has nothing left of the file (GoneFileSweep).
-	 * The earliest due first.
+	 * due by $dueBy (now if null), if the file cache has nothing left of the
+	 * file (GoneFileSweep). The earliest due first.
 	 *
 	 * @return list<Binding>
 	 */
-	public function findMarkedGone(int $limit): array {
+	public function findMarkedGone(int $limit, ?int $dueBy = null): array {
 		$qb = $this->db->getQueryBuilder();
 		$qb->select('b.file_id', 'b.pad_id', 'b.access_mode', 'b.state', 'b.deleted_at', 'b.updated_at')
 			->from(self::TABLE, 'b')
 			->leftJoin('b', 'filecache', 'fc', $qb->expr()->eq('b.file_id', 'fc.fileid'))
-			->where($qb->expr()->lte('b.gone_after', $qb->createNamedParameter($this->timeFactory->getTime(), IQueryBuilder::PARAM_INT)))
+			->where($qb->expr()->lte('b.gone_after', $qb->createNamedParameter($dueBy ?? $this->timeFactory->getTime(), IQueryBuilder::PARAM_INT)))
 			->andWhere($qb->expr()->eq('b.state', $qb->createNamedParameter(self::STATE_ACTIVE)))
 			->andWhere($qb->expr()->isNull('fc.fileid'))
 			->orderBy('b.gone_after', 'ASC')
@@ -344,6 +356,26 @@ class BindingService {
 		$rows = array_map(Binding::fromRow(...), DbRows::all($result->fetchAll()));
 		$result->closeCursor();
 		return $rows;
+	}
+
+	/**
+	 * Clears the marks of files the file cache still has, though they were
+	 * due before $dueBefore: a deletion that did not happen after all - one
+	 * rolled back, an account whose files were left. Kept, such a mark would
+	 * take the pad of a file a scan drops later, which the app leaves.
+	 *
+	 * @return int how many it cleared, $limit at most
+	 */
+	public function clearStaleGone(int $dueBefore, int $limit): int {
+		$qb = $this->db->getQueryBuilder();
+		$qb->select('b.file_id')
+			->from(self::TABLE, 'b')
+			->innerJoin('b', 'filecache', 'fc', $qb->expr()->eq('b.file_id', 'fc.fileid'))
+			->where($qb->expr()->lte('b.gone_after', $qb->createNamedParameter($dueBefore, IQueryBuilder::PARAM_INT)))
+			->setMaxResults(max(1, $limit));
+		$fileIds = $this->fileIdsOf($qb);
+		$this->clearGone($fileIds);
+		return count($fileIds);
 	}
 
 	/** Whether the file cache has nothing left of the file: asked once more right before its pad goes. */

@@ -173,7 +173,7 @@ class AdminControllerTest extends TestCase {
 		$sweep->expects($this->once())->method('run')->with($this->callback(
 			// What the settle left of the one budget: 5 of 20 seconds.
 			static fn (RunBudget $budget): bool => $budget->callTimeout() === 5,
-		));
+		), true);
 
 		$response = $this->buildController(pendingBindings: $pending, goneFileSweep: $sweep, clock: $clock)->settlePending();
 

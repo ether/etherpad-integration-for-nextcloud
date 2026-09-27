@@ -406,7 +406,8 @@ solely by the separate external-pad policy, not by these two settings.
     not take; the only pads it deletes are those of files in a trash or
     gone for good. It then runs the sweep of files gone for good
     (`docs/architecture.md`, "Files gone for good") as its job would, in
-    what is left of that budget.
+    what is left of that budget, and without waiting out the five minutes
+    a file seen deleted for good waits before its pad goes.
   - Result:
     - `checked`, `settled`
     - `pending_delete_count`, `restore_pending_count`: what is left, named as in the health check
@@ -544,7 +545,7 @@ Registered in `lib/AppInfo/Application.php`.
 - legacy event `OCA\Files_Trashbin::moveToTrash` -> `MoveToTrashListener`
 - `OCA\Files_Trashbin\Events\NodeRestoredEvent` -> `RestoreFromTrashListener`
 - legacy hook `\OCA\Files_Trashbin\Trashbin::post_restore` -> `TrashbinHookHandler::postRestore` -> `RestoreFromTrashListener::handleLegacyHook`
-- `OCP\Files\Cache\CacheEntryRemovedEvent`, `OCP\Files\Cache\CacheEntryInsertedEvent`, `OCP\Files\Events\Node\BeforeNodeDeletedEvent`, `OCP\Files\Events\Node\NodeDeletedEvent`, `OCP\User\Events\BeforeUserDeletedEvent` -> `GoneFilesListener` (the marks of files deleted for good; `docs/architecture.md`, "Files gone for good")
+- `OCP\Files\Cache\CacheEntryRemovedEvent`, `OCP\Files\Cache\CacheEntryInsertedEvent`, `OCP\Files\Cache\CacheEntriesRemovedEvent` (from 34), `OCP\Files\Events\Node\BeforeNodeDeletedEvent`, `OCP\Files\Events\Node\NodeDeletedEvent`, `OCP\User\Events\BeforeUserDeletedEvent`, `OCP\User\Events\UserDeletedEvent` -> `GoneFilesListener` (the marks of files deleted for good; `docs/architecture.md`, "Files gone for good")
 
 ## App Config Keys
 

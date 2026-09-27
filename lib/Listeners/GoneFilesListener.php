@@ -21,6 +21,7 @@ use OCP\Files\Events\Node\NodeDeletedEvent;
 use OCP\Files\Storage\IStorage;
 use OCP\IUser;
 use OCP\User\Events\BeforeUserDeletedEvent;
+use OCP\User\Events\UserDeletedEvent;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -39,8 +40,11 @@ use Psr\Log\LoggerInterface;
  *   under it. A move to the trash within one storage removes nothing. One
  *   to another storage keeps the file's id and reports a removal and an
  *   insert (CacheEntryInsertedEvent), which takes the mark back.
- * - A user about to be deleted (BeforeUserDeletedEvent): every file on
- *   their home storage, which Nextcloud then clears without a word.
+ * - A user deleted: every file on their home storage, which Nextcloud
+ *   clears without a word. Looked up before (BeforeUserDeletedEvent),
+ *   while the mount cache still knows the home, and marked once the user
+ *   is gone (UserDeletedEvent): a deletion the user backend refuses stops
+ *   before that, and leaves the files as they are.
  *
  * What counts is the file, not its name: a `.pad` renamed keeps its row.
  *
@@ -82,6 +86,9 @@ class GoneFilesListener implements IEventListener {
 	/** @var array<int,true> files marked in this request that the file cache has again, not yet cleared */
 	private array $back = [];
 
+	/** @var array<string,list<int>> by user, the files on the home of a user about to be deleted */
+	private array $leavingHomes = [];
+
 	/** Deletes under way: BeforeNodeDeletedEvent without its NodeDeletedEvent yet. */
 	private int $deleting = 0;
 
@@ -112,7 +119,12 @@ class GoneFilesListener implements IEventListener {
 				$this->deleting = max(0, $this->deleting - 1);
 				$this->write();
 			} elseif ($event instanceof BeforeUserDeletedEvent) {
-				$this->bindingService->markGone($this->filesOfHome($event->getUser()));
+				$this->leavingHomes[$event->getUser()->getUID()] = $this->filesOfHome($event->getUser());
+			} elseif ($event instanceof UserDeletedEvent) {
+				$uid = $event->getUser()->getUID();
+				$fileIds = $this->leavingHomes[$uid] ?? [];
+				unset($this->leavingHomes[$uid]);
+				$this->bindingService->markGone($fileIds);
 			} elseif (method_exists($event, 'getCacheEntryRemovedEvents')) {
 				$this->block($event->getCacheEntryRemovedEvents());
 			}

@@ -46,12 +46,12 @@ class GoneFileSweepTest extends TestCase {
 	/**
 	 * A file seen deleted for good and gone from the file cache takes its
 	 * pad and row along, in one run, with a line naming the pad. A marked
-	 * file the file cache still has keeps its pad - a home's, marked before
-	 * its account is deleted - and so does one gone without a mark.
+	 * file the file cache still has keeps its pad - a home's, marked just
+	 * before Nextcloud clears it - and so does one gone without a mark.
 	 */
 	public function testAFileSeenDeletedForGoodTakesItsPad(): void {
 		$this->table(
-			[self::row(1, 11, 'pad-gone', goneAfter: 100), self::row(2, 12, 'pad-still-there', goneAfter: 100), self::row(3, 13, 'pad-unmarked')],
+			[self::row(1, 11, 'pad-gone', goneAfter: 100), self::row(2, 12, 'pad-still-there', goneAfter: FixedClock::NOW), self::row(3, 13, 'pad-unmarked')],
 			[self::cached(12, 'files/Notes.pad')],
 		);
 
@@ -161,6 +161,43 @@ class GoneFileSweepTest extends TestCase {
 
 		$this->assertSame([], $this->deletedPads);
 		$this->assertSame([11], $this->fileIds());
+	}
+
+	/**
+	 * A mark is due once its grace is over: a run of the job passes a fresh
+	 * one by, an admin's settle takes it at once. A mark postponed past the
+	 * grace waits for both.
+	 */
+	public function testAFreshMarkWaitsForTheJobButNotForAnAdmin(): void {
+		$this->table([
+			self::row(1, 11, 'pad-fresh', goneAfter: FixedClock::NOW + BindingService::GONE_GRACE_SECONDS),
+			self::row(2, 12, 'pad-postponed', goneAfter: FixedClock::NOW + BindingService::GONE_GRACE_SECONDS + 1),
+		], []);
+
+		$this->sweep();
+		$this->assertSame([], $this->deletedPads);
+
+		$this->build()->run(atOnce: true);
+		$this->assertSame(['pad-fresh'], $this->deletedPads);
+	}
+
+	/**
+	 * A mark whose file the file cache still has an hour after it was due
+	 * did not happen - a deletion rolled back, an account whose files were
+	 * left - and is cleared, with deleting off too. Sooner, it stays.
+	 */
+	public function testAMarkThatDidNotHappenIsCleared(): void {
+		$this->table([
+			self::row(1, 11, 'pad-left', goneAfter: FixedClock::NOW - 3600),
+			self::row(2, 12, 'pad-recent', goneAfter: FixedClock::NOW - 3599),
+		], [self::cached(11, 'files/Left.pad'), self::cached(12, 'files/Recent.pad')]);
+		$this->config['delete_on_trash'] = false;
+
+		$this->sweep();
+
+		$this->assertSame([], $this->deletedPads);
+		$this->assertSame([11 => null, 12 => FixedClock::NOW - 3599], $this->marks());
+		$this->assertSame([['info', 'Cleared the marks of files still there an hour after their deletion was due; it did not happen.', null]], $this->lines);
 	}
 
 	/**

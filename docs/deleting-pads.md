@@ -55,7 +55,10 @@ folder. So does a file replaced by moving another file onto it (WebDAV
 | With the account: the account deleted. | The pads of the account's own files - those in its home and its trash, shared ones included - by a background job, within minutes. Files in team folders, and files the account put into folders others shared with it, are not the account's: they stay, and so do their pads. |
 
 "A background job" runs every five minutes when Nextcloud's background jobs
-run by system cron; with AJAX or webcron, only as often as those run.
+run by system cron; with AJAX or webcron, only as often as those run. It
+deletes the pad of a file deleted for good once five minutes have passed,
+so the pad goes within ten minutes; the admin page's "Check pending pads"
+does it at once.
 
 On Nextcloud 34 up to 34.0.4, Nextcloud reports the files inside a folder
 deleted for good under the wrong ids (nextcloud/server#63969, fixed for
