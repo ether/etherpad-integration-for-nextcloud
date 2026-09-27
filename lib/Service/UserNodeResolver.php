@@ -233,20 +233,4 @@ class UserNodeResolver {
 		return true;
 	}
 
-	/**
-	 * Delete what a write through a node that had moved made at its old
-	 * $path (hasMoved()): only a file under another id than $fileId is such
-	 * a copy; the file itself, a folder, or nothing stays. In a trash the
-	 * delete is final, not a move to the trash.
-	 */
-	public function removeStrayCopy(int $fileId, string $path): void {
-		try {
-			$current = $this->rootFolder->get($path);
-		} catch (NotFoundException) {
-			return;
-		}
-		if ($current instanceof File && $current->getId() !== $fileId) {
-			$current->delete();
-		}
-	}
 }

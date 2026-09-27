@@ -67,6 +67,8 @@ $stubFiles = [
 	__DIR__ . '/stubs/OCP/Http/Client/IClient.php',
 	__DIR__ . '/stubs/OCP/Http/Client/IClientService.php',
 	__DIR__ . '/stubs/OCP/Migration/IOutput.php',
+	__DIR__ . '/stubs/OCP/Migration/SimpleMigrationStep.php',
+	__DIR__ . '/stubs/OCP/DB/ISchemaWrapper.php',
 	__DIR__ . '/stubs/OCP/Migration/IRepairStep.php',
 	__DIR__ . '/stubs/OCP/IDBConnection.php',
 	__DIR__ . '/stubs/OCP/IL10N.php',

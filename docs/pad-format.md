@@ -104,8 +104,9 @@ Protected + external is not supported.
 - `trashed` / `purged`
   - legacy parser compatibility only; new writes do not use these states
 
-The DB binding table uses `active`, `pending_delete` and `restore_pending`. Successful trash deletes
-the binding row; restore can recreate it from the `.pad` frontmatter and snapshot.
+The DB binding table uses `active`, and `pending_delete` for a file deleted for good whose pad
+has yet to go. A trash keeps the binding row and the pad; a file restored without a row, or
+whose pad Etherpad lost, gets a new pad from the `.pad` frontmatter and snapshot.
 External pads are not managed in the DB binding table, so trash/restore only moves
 the Nextcloud file and never creates, deletes, or restores anything on the remote
 Etherpad server.

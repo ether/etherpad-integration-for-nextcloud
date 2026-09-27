@@ -23,9 +23,9 @@ use OCP\IUser;
 use OCP\IUserSession;
 
 /**
- * Lifecycle + sync endpoints — trash, restore, recover-from-snapshot,
- * sync state, and the find-original lookup that the copy-of-a-pad
- * recovery affordance hangs off.
+ * Lifecycle + sync endpoints — recover-from-snapshot, sync state, and the
+ * find-original lookup that the copy-of-a-pad recovery affordance hangs
+ * off.
  * @psalm-api
  */
 class PadLifecycleController extends AbstractPadController {
@@ -41,30 +41,6 @@ class PadLifecycleController extends AbstractPadController {
 		private PadMetadataService $padMetadataService,
 	) {
 		parent::__construct($appName, $request, $userSession, $l10n, $padResponses, $errors);
-	}
-
-	#[\OCP\AppFramework\Http\Attribute\NoAdminRequired]
-	public function trash(string $file): DataResponse {
-		return $this->runForUser(
-			fn(IUser $user): array => $this->lifecycleService->trashByPath($user->getUID(), $file),
-			fn(array $result): DataResponse => $this->padResponses->lifecycleResponse($result),
-			[
-				'generic' => $this->l10n->t('Could not move pad to trash.'),
-				'failure' => 'Pad trash API failed',
-			],
-		);
-	}
-
-	#[\OCP\AppFramework\Http\Attribute\NoAdminRequired]
-	public function restore(string $file): DataResponse {
-		return $this->runForUser(
-			fn(IUser $user): array => $this->lifecycleService->restoreByPath($user->getUID(), $file),
-			fn(array $result): DataResponse => $this->padResponses->lifecycleResponse($result),
-			[
-				'generic' => $this->l10n->t('Could not restore pad from trash.'),
-				'failure' => 'Pad restore API failed',
-			],
-		);
 	}
 
 	#[\OCP\AppFramework\Http\Attribute\NoAdminRequired]

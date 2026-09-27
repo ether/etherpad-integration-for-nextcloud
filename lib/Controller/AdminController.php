@@ -14,6 +14,7 @@ use OCA\EtherpadNextcloud\Service\AdminConsistencyCheckResponseBuilder;
 use OCA\EtherpadNextcloud\Service\AdminSettingsRepository;
 use OCA\EtherpadNextcloud\Service\AdminSettingsValidator;
 use OCA\EtherpadNextcloud\Service\AdminTestFaultService;
+use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\EtherpadNextcloud\Service\ConsistencyCheckService;
 use OCA\EtherpadNextcloud\Service\CookieDomainDecision;
 use OCA\EtherpadNextcloud\Service\CookieDomainMessages;
@@ -23,7 +24,6 @@ use OCA\EtherpadNextcloud\Service\GoneFileSweep;
 use OCA\EtherpadNextcloud\Service\HealthCheckItem;
 use OCA\EtherpadNextcloud\Service\HealthCheckResult;
 use OCA\EtherpadNextcloud\Service\PadTemplateAdminService;
-use OCA\EtherpadNextcloud\Service\PendingBindingService;
 use OCA\EtherpadNextcloud\Service\RunBudget;
 use OCA\EtherpadNextcloud\Service\ValidatedAdminSettings;
 use OCP\AppFramework\Controller;
@@ -40,7 +40,6 @@ use OCP\IUserSession;
  */
 class AdminController extends Controller {
 	private const CONSISTENCY_SAMPLE_LIMIT = 25;
-	private const PENDING_BINDING_BATCH_SIZE = 500;
 
 	public function __construct(
 		string $appName,
@@ -51,7 +50,6 @@ class AdminController extends Controller {
 		private AdminSettingsValidator $settingsValidator,
 		private AdminSettingsRepository $settingsRepository,
 		private EtherpadHealthCheckService $healthCheckService,
-		private PendingBindingService $pendingBindings,
 		private ConsistencyCheckService $consistencyCheckService,
 		private AdminConsistencyCheckResponseBuilder $consistencyResponseBuilder,
 		private AdminTestFaultService $testFaultService,
@@ -62,6 +60,7 @@ class AdminController extends Controller {
 		private PadTemplateAdminService $padTemplateAdmin,
 		private GoneFileSweep $goneFileSweep,
 		private ITimeFactory $timeFactory,
+		private BindingService $bindingService,
 	) {
 		parent::__construct($appName, $request);
 	}
@@ -118,7 +117,6 @@ class AdminController extends Controller {
 					'latency_ms' => $result->latencyMs,
 					'target' => $result->target,
 					'pending_delete_count' => $result->pendingDeleteCount,
-					'restore_pending_count' => $result->restorePendingCount,
 					// Machine-readable form of the protected-pads line above.
 					'protected_pads' => $this->describeCookieDomain($result->cookieDomain),
 					'session_cookie_release' => $result->sessionCookieRelease,
@@ -136,20 +134,16 @@ class AdminController extends Controller {
 		return $this->errors->run(
 			function (): array {
 				$this->requireAdmin();
-				// What the background jobs do, all of it - the pads of files
-				// gone for good too - within the one budget a run has.
-				$budget = new RunBudget($this->timeFactory, RunBudget::DEFAULT_SECONDS);
-				$result = $this->pendingBindings->settle(self::PENDING_BINDING_BATCH_SIZE);
-				$this->goneFileSweep->run($budget, atOnce: true);
-				return $result;
+				// What the background job does, now, and without the grace.
+				$result = $this->goneFileSweep->run(new RunBudget($this->timeFactory, RunBudget::DEFAULT_SECONDS), atOnce: true);
+				return $result + ['pending_delete_count' => $this->bindingService->countPendingDeletes()];
 			},
 			fn(array $result): DataResponse => new DataResponse([
 				'ok' => true,
 				'message' => $this->l10n->t('Pending pad check finished.'),
 				'checked' => $result['checked'],
-				'settled' => $result['settled'],
+				'settled' => $result['deleted'],
 				'pending_delete_count' => $result['pending_delete_count'],
-				'restore_pending_count' => $result['restore_pending_count'],
 			]),
 			[
 				'generic' => $this->l10n->t('Pending pad check failed.'),

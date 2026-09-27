@@ -28,8 +28,8 @@ trait BuildsErrorMappers {
 		return new PadControllerErrorMapper($responses, $l10n, $this->apiErrorLog($logger));
 	}
 
-	private function publicErrorMapper(PublicShareUrlBuilder $urls, PadResponseService $responses, IL10N $l10n, ?LoggerInterface $logger = null): PublicViewerControllerErrorMapper {
-		return new PublicViewerControllerErrorMapper($urls, $responses, $l10n, $this->apiErrorLog($logger));
+	private function publicErrorMapper(PublicShareUrlBuilder $urls, IL10N $l10n, ?LoggerInterface $logger = null): PublicViewerControllerErrorMapper {
+		return new PublicViewerControllerErrorMapper($urls, $l10n, $this->apiErrorLog($logger));
 	}
 
 	private function apiErrorLog(?LoggerInterface $logger = null): ApiErrorLog {

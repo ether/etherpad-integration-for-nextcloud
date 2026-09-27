@@ -11,7 +11,6 @@
 	const settlePendingButton = document.getElementById('etherpad-nextcloud-settle-pending')
 	const pendingActions = document.getElementById('etherpad-nextcloud-pending-actions')
 	const pendingCountNode = document.getElementById('etherpad-nextcloud-pending-count')
-	const restorePendingCountNode = document.getElementById('etherpad-nextcloud-restore-pending-count')
 	const vanishedNode = document.getElementById('etherpad-nextcloud-vanished')
 	const vanishedList = document.getElementById('etherpad-nextcloud-vanished-list')
 	const allowExternalCheckbox = form ? form.querySelector('input[name="allow_external_pads"]') : null
@@ -55,7 +54,6 @@
 		healthFailed: root.getAttribute('data-l10n-health-failed') || 'Etherpad connection test failed.',
 		consistencyFailed: root.getAttribute('data-l10n-consistency-failed') || 'Consistency check failed.',
 		pendingDeleteLabel: root.getAttribute('data-l10n-pending-delete-label') || 'Pending Etherpad deletes',
-		restorePendingLabel: root.getAttribute('data-l10n-restore-pending-label') || 'Unresolved restores',
 		settleFailed: root.getAttribute('data-l10n-settle-failed') || 'Pending pad check failed.',
 		templateUploading: root.getAttribute('data-l10n-template-uploading') || 'Uploading template...',
 		templateDelete: root.getAttribute('data-l10n-template-delete') || 'Delete',
@@ -354,7 +352,7 @@
 		}
 	}
 
-	const bindingCounts = { pendingDeletes: 0, pendingRestores: 0 }
+	const bindingCounts = { pendingDeletes: 0 }
 
 	// Only the counts a response carries; one that carries none leaves the
 	// panel as it was rather than repainting it from what this page assumed.
@@ -364,9 +362,6 @@
 		if (typeof data.pending_delete_count !== 'undefined') {
 			counts.pendingDeletes = data.pending_delete_count
 		}
-		if (typeof data.restore_pending_count !== 'undefined') {
-			counts.pendingRestores = data.restore_pending_count
-		}
 		if (Object.keys(counts).length === 0) {
 			return
 		}
@@ -374,18 +369,15 @@
 			bindingCounts[key] = Number.isFinite(Number(value)) ? Number(value) : 0
 		}
 		if (pendingActions instanceof HTMLElement) {
-			pendingActions.style.display = bindingCounts.pendingDeletes > 0 || bindingCounts.pendingRestores > 0 ? '' : 'none'
+			pendingActions.style.display = bindingCounts.pendingDeletes > 0 ? '' : 'none'
 		}
 		if (pendingCountNode instanceof HTMLElement) {
 			pendingCountNode.textContent = `${l10n.pendingDeleteLabel}: ${String(bindingCounts.pendingDeletes)}`
 		}
-		if (restorePendingCountNode instanceof HTMLElement) {
-			restorePendingCountNode.textContent = `${l10n.restorePendingLabel}: ${String(bindingCounts.pendingRestores)}`
-		}
 		// The check deletes a pad only once its file is gone for good, and
 		// nothing here is more than a nudge to the job that does the same.
 		if (settlePendingButton instanceof HTMLButtonElement) {
-			settlePendingButton.disabled = bindingCounts.pendingDeletes <= 0 && bindingCounts.pendingRestores <= 0
+			settlePendingButton.disabled = bindingCounts.pendingDeletes <= 0
 		}
 	}
 
@@ -538,7 +530,7 @@
 			try {
 				const data = await postJson(settlePendingUrl, {})
 				const details = []
-				for (const key of ['checked', 'settled', 'restore_pending_count', 'pending_delete_count']) {
+				for (const key of ['checked', 'settled', 'pending_delete_count']) {
 					if (typeof data[key] !== 'undefined') {
 						details.push(`${key}=${String(data[key])}`)
 					}

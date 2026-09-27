@@ -442,14 +442,14 @@ class PadLifecycleControllerTest extends TestCase {
 	/**
 	 * A failure's log line names the request's file, as the request gave
 	 * it, under the endpoint's own line - and Etherpad failing under
-	 * Etherpad's, so a restore's outage reads as the open's does.
+	 * Etherpad's, so a recovery's outage reads as the open's does.
 	 */
 	public function testALogLineNamesTheFileOfTheRequest(): void {
 		$user = $this->createConfiguredMock(IUser::class, ['getUID' => 'alice']);
 		$userSession = $this->createMock(IUserSession::class);
 		$userSession->method('getUser')->willReturn($user);
 		$request = $this->createMock(IRequest::class);
-		$request->method('getParam')->willReturnMap([['fileId', null, null], ['file', null, '/Notes.pad']]);
+		$request->method('getParam')->willReturnMap([['fileId', null, '42'], ['file', null, null]]);
 		$seen = [];
 		$logger = $this->createMock(LoggerInterface::class);
 		foreach (['error', 'warning'] as $level) {
@@ -458,18 +458,18 @@ class PadLifecycleControllerTest extends TestCase {
 			});
 		}
 		$lifecycleOps = $this->createMock(LifecycleService::class);
-		$lifecycleOps->method('restoreByPath')->willReturnOnConsecutiveCalls(
+		$lifecycleOps->method('recoverByFileId')->willReturnOnConsecutiveCalls(
 			$this->throwException(new \OCA\EtherpadNextcloud\Exception\LifecycleException('Restore flow failed before completion.')),
 			$this->throwException(new \OCA\EtherpadNextcloud\Exception\EtherpadClientException('Etherpad API request failed: createPad')),
 		);
 		$controller = $this->buildController($request, $userSession, padLifecycleOperations: $lifecycleOps, logger: $logger);
 
-		$controller->restore('/Notes.pad');
-		$controller->restore('/Notes.pad');
+		$controller->recoverByFileId(42);
+		$controller->recoverByFileId(42);
 
 		$this->assertSame([
-			['error', 'Pad restore API failed', '/Notes.pad', null],
-			['warning', 'Etherpad could not be reached while answering a request.', '/Notes.pad', null],
+			['error', 'Pad recovery API failed', null, 42],
+			['warning', 'Etherpad could not be reached while answering a request.', null, 42],
 		], $seen);
 	}
 

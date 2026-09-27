@@ -65,17 +65,9 @@ echo "[3/5] Core E2E checks"
 run_e2e "e2e-pad-flow.sh" "${PATH_PREFIX}-pad-flow"
 run_e2e "e2e-protected-cookie-contract.sh" "${PATH_PREFIX}-protected-cookie"
 run_e2e "e2e-pad-copy-behavior.sh" "${PATH_PREFIX}-pad-copy"
-run_e2e "e2e-lifecycle-state-guards.sh" "${PATH_PREFIX}-lifecycle"
 run_e2e "e2e-public-share-folder.sh" "${PATH_PREFIX}-public-folder"
 run_e2e "e2e-public-share-single-file.sh" "${PATH_PREFIX}-public-single"
 run_e2e "e2e-external-url-security.sh" "${PATH_PREFIX}-external-security"
-if [[ "${RUN_DEBUG_FAULT_PATHS:-0}" == "1" ]]; then
-	echo "-> debug fault-path E2E checks enabled"
-	run_e2e "e2e-lifecycle-trash-lock-tolerant.sh" "${PATH_PREFIX}-trash-lock"
-	run_e2e "e2e-lifecycle-restore-write-failure.sh" "${PATH_PREFIX}-restore-write-failure"
-else
-	echo "-> debug fault-path E2E checks skipped (set RUN_DEBUG_FAULT_PATHS=1 to enable)."
-fi
 
 if [[ "${RUN_FAILURE_PATHS:-0}" != "1" ]]; then
 	echo "[4/5] Failure-path E2E checks skipped (set RUN_FAILURE_PATHS=1 to enable)."
@@ -94,7 +86,5 @@ fi
 echo "[4/5] Failure-path E2E checks"
 echo "NOTE: These checks expect Etherpad outage/misconfiguration where documented."
 run_e2e "e2e-sync-failure.sh" "${PATH_PREFIX}-sync-failure"
-run_e2e "e2e-lifecycle-trash-failure.sh" "${PATH_PREFIX}-trash-failure"
-run_e2e "e2e-lifecycle-restore-failure.sh" "${PATH_PREFIX}-restore-failure"
 
 echo "[5/5] Done."

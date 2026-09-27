@@ -20,7 +20,6 @@
 	data-l10n-health-failed="<?php p((string)$_['l10n']['health_failed']); ?>"
 	data-l10n-consistency-failed="<?php p((string)$_['l10n']['consistency_failed']); ?>"
 	data-l10n-pending-delete-label="<?php p((string)$_['l10n']['pending_delete_label']); ?>"
-	data-l10n-restore-pending-label="<?php p((string)$_['l10n']['restore_pending_label']); ?>"
 	data-l10n-settle-failed="<?php p((string)$_['l10n']['settle_failed']); ?>"
 	data-templates-url="<?php p((string)$_['templates_url']); ?>"
 	data-templates-delete-url="<?php p((string)$_['templates_delete_url']); ?>"
@@ -247,7 +246,6 @@
 		</div>
 		<div id="etherpad-nextcloud-pending-actions" class="etherpad-nextcloud-admin-actions" style="display:none;">
 			<button type="button" id="etherpad-nextcloud-settle-pending"><?php p((string)$_['l10n']['settle_pending_button']); ?></button>
-			<span id="etherpad-nextcloud-restore-pending-count" class="settings-hint"></span>
 			<span id="etherpad-nextcloud-pending-count" class="settings-hint"></span>
 		</div>
 		<p id="etherpad-nextcloud-diagnostics-status" class="ep-status" aria-live="polite"></p>

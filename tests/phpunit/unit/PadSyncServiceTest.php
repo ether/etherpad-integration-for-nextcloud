@@ -6,7 +6,7 @@ namespace OCA\EtherpadNextcloud\Tests\Unit;
 
 use OCA\EtherpadNextcloud\Exception\NotAPadFileException;
 use OCA\EtherpadNextcloud\Exception\ExternalPadException;
-use OCA\EtherpadNextcloud\Exception\WaitingBindingException;
+use OCA\EtherpadNextcloud\Exception\PadLostException;
 use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\EtherpadNextcloud\Service\EtherpadClient;
 use OCA\EtherpadNextcloud\Service\ExternalPadExportFetcher;
@@ -55,12 +55,12 @@ class PadSyncServiceTest extends TestCase {
 	}
 
 	/**
-	 * A row that still waits reaches the caller as it was thrown, for a sync
-	 * and for its status alike: its code is the error mapper's to give, and
-	 * a service that wrapped it would take the code away.
+	 * A row that does not match reaches the caller as it was thrown, for a
+	 * sync and for its status alike: its code is the error mapper's to give,
+	 * and a service that wrapped it would take the code away.
 	 */
-	public function testAWaitingBindingReachesTheCallerAsItIs(): void {
-		$waiting = new WaitingBindingException('Pad binding is not active.');
+	public function testABindingErrorReachesTheCallerAsItIs(): void {
+		$refused = new PadLostException('Etherpad has lost the pad of this file.');
 		$file = $this->createMock(File::class);
 		$file->method('getName')->willReturn('Notes.pad');
 		$file->method('getContent')->willReturn('frontmatter');
@@ -69,15 +69,15 @@ class PadSyncServiceTest extends TestCase {
 		$padFileService = $this->createMock(PadFileService::class);
 		$padFileService->method('readPad')->willReturn(new ParsedPadFile([], '', 'pad-a', BindingService::ACCESS_PUBLIC, '', false, 3));
 		$bindingService = $this->createMock(BindingService::class);
-		$bindingService->method('assertConsistentMapping')->willThrowException($waiting);
+		$bindingService->method('assertConsistentMapping')->willThrowException($refused);
 		$service = $this->buildService($padFileService, $userNodeResolver, $bindingService);
 
 		foreach (['sync' => static fn () => $service->syncById('alice', 138, false), 'status' => static fn () => $service->syncStatusById('alice', 138)] as $case => $call) {
 			try {
 				$call();
 				$this->fail($case . ': nothing thrown');
-			} catch (WaitingBindingException $e) {
-				$this->assertSame($waiting, $e, $case);
+			} catch (PadLostException $e) {
+				$this->assertSame($refused, $e, $case);
 			}
 		}
 	}

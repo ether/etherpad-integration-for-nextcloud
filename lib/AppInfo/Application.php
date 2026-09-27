@@ -112,15 +112,6 @@ class Application extends App implements IBootstrap {
 			\OCA\EtherpadNextcloud\Listeners\UserLoggedOutListener::class,
 		);
 
-		$context->registerEventListener(
-			'OCA\\Files_Trashbin\\Events\\MoveToTrashEvent',
-			\OCA\EtherpadNextcloud\Listeners\MoveToTrashListener::class,
-		);
-		// NC fallback: legacy string event is dispatched alongside typed move-to-trash.
-		$context->registerEventListener(
-			'OCA\\Files_Trashbin::moveToTrash',
-			\OCA\EtherpadNextcloud\Listeners\MoveToTrashListener::class,
-		);
 		// Marks the rows of files deleted for good, for the sweep that deletes
 		// their pads. One instance hears them all, so the removals a delete
 		// makes are known for that delete.
@@ -156,9 +147,6 @@ class Application extends App implements IBootstrap {
 
 	public function boot(IBootContext $context): void {
 		$context->injectFn(function (IJobList $jobList): void {
-			$jobList->add(\OCA\EtherpadNextcloud\BackgroundJob\HotPendingDeleteRetryJob::class);
-			$jobList->add(\OCA\EtherpadNextcloud\BackgroundJob\WarmPendingDeleteRetryJob::class);
-			$jobList->add(\OCA\EtherpadNextcloud\BackgroundJob\ColdPendingDeleteRetryJob::class);
 			$jobList->add(\OCA\EtherpadNextcloud\BackgroundJob\GoneFileSweepJob::class);
 		});
 	}

@@ -18,9 +18,7 @@ use OCA\EtherpadNextcloud\Service\PadFileService;
 use OCA\EtherpadNextcloud\Service\ProvisionedPadRollback;
 use OCA\EtherpadNextcloud\Service\RestoreService;
 use OCA\EtherpadNextcloud\Service\TestFaults;
-use OCA\EtherpadNextcloud\Service\TrashSnapshotWriters;
 use OCA\EtherpadNextcloud\Service\UserNodeResolver;
-use OCA\EtherpadNextcloud\Util\PathNormalizer;
 use OCP\IConfig;
 use OCP\Security\ISecureRandom;
 use Psr\Log\LoggerInterface;
@@ -36,53 +34,29 @@ use Psr\Log\LoggerInterface;
  */
 trait WiresTheLifecycle {
 	/**
-	 * A LifecycleService with a mock for every collaborator the test does
-	 * not name, over a real RestoreService built from the same ones. The pad
-	 * lifecycle and the rollback are built over the same Etherpad client and
-	 * bindings; they log into $padLifecycleLogger, a mock of its own unless
-	 * the test wants their lines in $logger too. Deleting on trash is
-	 * $deleteOnTrash; no test fault strikes unless the test gives its own.
-	 * A test of the API's ways in alone gives its own $restores.
+	 * A LifecycleService over a real RestoreService, with a mock for every
+	 * collaborator the test does not name. The pad lifecycle and the
+	 * rollback are built over the same Etherpad client and bindings; they
+	 * log into $padLifecycleLogger, a mock of its own unless the test wants
+	 * their lines in $logger too. No test fault strikes unless the test
+	 * gives its own. A test of the API's ways in alone gives its own
+	 * $restores.
 	 */
 	private function lifecycleService(
 		?BindingService $bindings = null,
 		?EtherpadClient $etherpad = null,
 		?PadFileService $padFiles = null,
-		bool $deleteOnTrash = true,
 		?LoggerInterface $logger = null,
 		?LoggerInterface $padLifecycleLogger = null,
 		?ISecureRandom $secureRandom = null,
 		?UserNodeResolver $nodes = null,
-		?PathNormalizer $paths = null,
 		?TestFaults $testFaults = null,
 		?RestoreService $restores = null,
 	): LifecycleService {
-		$bindings ??= $this->createMock(BindingService::class);
-		$etherpad ??= $this->createMock(EtherpadClient::class);
-		$padFiles ??= $this->createMock(PadFileService::class);
-		$logger ??= $this->createMock(LoggerInterface::class);
-		$padLifecycleLogger ??= $this->createMock(LoggerInterface::class);
-		$padLifecycle = new ManagedPadLifecycle($etherpad, $padLifecycleLogger);
-		$appConfig = $this->appConfigDeletingOnTrash($deleteOnTrash);
-		$testFaults ??= new TestFaults($this->createMock(IConfig::class), $appConfig);
-
 		return new LifecycleService(
-			$bindings,
-			$padFiles,
-			$padLifecycle,
-			$appConfig,
-			$logger,
 			$nodes ?? $this->createMock(UserNodeResolver::class),
-			$paths ?? $this->createMock(PathNormalizer::class),
-			new FixedClock(),
-			new TrashSnapshotWriters($etherpad, $padFiles, $logger, $testFaults),
-			$restores ?? $this->wireRestoreService($bindings, $etherpad, $padFiles, $padLifecycle, $appConfig, $logger, $padLifecycleLogger, $secureRandom, $testFaults),
+			$restores ?? $this->restoreService($bindings, $etherpad, $padFiles, $logger, $padLifecycleLogger, $secureRandom, $testFaults),
 		);
-	}
-
-	/** One whose pad lifecycle and rollback log where the service does. */
-	private function lifecycleServiceOver(BindingService $bindingService, LoggerInterface $logger, ?EtherpadClient $etherpadClient = null): LifecycleService {
-		return $this->lifecycleService(bindings: $bindingService, etherpad: $etherpadClient, logger: $logger, padLifecycleLogger: $logger);
 	}
 
 	/** A RestoreService on its own, wired as lifecycleService() wires the one inside. */
@@ -90,7 +64,6 @@ trait WiresTheLifecycle {
 		?BindingService $bindings = null,
 		?EtherpadClient $etherpad = null,
 		?PadFileService $padFiles = null,
-		bool $deleteOnTrash = true,
 		?LoggerInterface $logger = null,
 		?LoggerInterface $padLifecycleLogger = null,
 		?ISecureRandom $secureRandom = null,
@@ -99,17 +72,15 @@ trait WiresTheLifecycle {
 	): RestoreService {
 		$etherpad ??= $this->createMock(EtherpadClient::class);
 		$padLifecycleLogger ??= $this->createMock(LoggerInterface::class);
-		$appConfig = $this->appConfigDeletingOnTrash($deleteOnTrash);
 		return $this->wireRestoreService(
 			$bindings ?? $this->createMock(BindingService::class),
 			$etherpad,
 			$padFiles ?? $this->createMock(PadFileService::class),
 			new ManagedPadLifecycle($etherpad, $padLifecycleLogger),
-			$appConfig,
 			$logger ?? $this->createMock(LoggerInterface::class),
 			$padLifecycleLogger,
 			$secureRandom,
-			$testFaults ?? new TestFaults($this->createMock(IConfig::class), $appConfig),
+			$testFaults ?? new TestFaults($this->createMock(IConfig::class), $this->createMock(AppConfigService::class)),
 			$nodes,
 		);
 	}
@@ -119,7 +90,6 @@ trait WiresTheLifecycle {
 		EtherpadClient $etherpad,
 		PadFileService $padFiles,
 		ManagedPadLifecycle $padLifecycle,
-		AppConfigService $appConfig,
 		LoggerInterface $logger,
 		LoggerInterface $padLifecycleLogger,
 		?ISecureRandom $secureRandom,
@@ -138,11 +108,5 @@ trait WiresTheLifecycle {
 			// Unless a test says otherwise, a file stays where it was read.
 			$nodes ?? $this->createMock(UserNodeResolver::class),
 		);
-	}
-
-	private function appConfigDeletingOnTrash(bool $deleteOnTrash): AppConfigService {
-		$appConfig = $this->createMock(AppConfigService::class);
-		$appConfig->method('isDeleteOnTrashEnabled')->willReturn($deleteOnTrash);
-		return $appConfig;
 	}
 }

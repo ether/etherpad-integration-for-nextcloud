@@ -242,24 +242,6 @@ solely by the separate external-pad policy, not by these two settings.
     - `status=unavailable` for external pads without safe revision lookup
     - External pads return `unavailable` because the app intentionally does not keep revision state for remote servers.
 
-- `POST /api/v1/pads/trash`
-  - Controller: `PadLifecycleController::trash`
-  - Params: `file=/path/file.pad`
-  - Result:
-    - `200` with `status=trashed` for successful trash flow.
-      - includes `snapshot_persisted` (`true|false`): whether the file holds the pad's current content - written now, or there already when the file's `snapshot_rev` is the pad's revision count. `false` when no fresh snapshot was written: the file was locked or could not be read, Etherpad did not answer, the pad is behind the file's snapshot (not the pad the file knew), the pad changed right after its snapshot was written, or the file's restore was still undecided, which leaves the pad alone. Also `false` when the snapshot was written but Etherpad gave no count after it: whether an edit came while it was written is not known, so the file is not taken to hold the current content.
-      - includes `delete_pending` (`true|false`): `true` when the pad is kept and its deletion owed, always the case when no fresh snapshot was written. The background sweep then writes the snapshot into the trashed file and deletes the pad, usually within five minutes.
-    - `409` with `status=skipped` + `reason` on invalid lifecycle state (for example already pending delete).
-      - includes transition-race guard reason `binding_state_transition_conflict` on concurrent state updates.
-
-- `POST /api/v1/pads/restore`
-  - Controller: `PadLifecycleController::restore`
-  - Params: `file=/path/file.pad`
-  - Result:
-    - `200` with `status=restored` for successful restore flow.
-    - `409` with `status=skipped` + `reason` on invalid lifecycle state.
-      - includes transition-race guard reason `binding_state_transition_conflict` on concurrent state updates.
-
 - `POST /api/v1/pads/recover-from-snapshot/{fileId}`
   - Controller: `PadLifecycleController::recoverByFileId`
   - Purpose: manual recovery entry point for `.pad` files that ended up without a binding row (WebDAV backup restore, `occ files:scan`, direct DB intervention, file copy), and for a file whose active row names a pad Etherpad has lost (`pad_missing`). Reuses the paths a restore from the trash takes: "frontmatter → fresh pad" for a file without a row, the replacement of a pad that is gone for the other, which moves the row onto the new pad. Etherpad is asked again here whether the pad is lost.
@@ -274,7 +256,7 @@ solely by the separate external-pad policy, not by these two settings.
   - Purpose: look up whether the orphan's frontmatter `pad_id` is bound to another `.pad` the requester can read. Used by the recovery UI to offer "Open the original" when a copy is detected.
   - Result:
     - `200` with `{ found: true, file_id, path, viewer_url }` when the lookup hits **and** the bound file is readable by the requester.
-    - `200` with `{ found: false }` for every miss path (no row, ext.* pad id, trashed/pending-delete binding, binding for a file not addressable in the requester's userspace, unparseable frontmatter, orphan itself not readable, self-loop). Payload shape and status are intentionally identical so the endpoint cannot be used to probe for binding rows that belong to other users.
+    - `200` with `{ found: false }` for every miss path (no row, ext.* pad id, a binding whose file was deleted for good (`pending_delete`), binding for a file not addressable in the requester's userspace, unparseable frontmatter, orphan itself not readable, self-loop). Payload shape and status are intentionally identical so the endpoint cannot be used to probe for binding rows that belong to other users.
 
 - `POST /api/v1/admin/settings`
   - Controller: `AdminController::saveSettings`
@@ -300,10 +282,8 @@ solely by the separate external-pad policy, not by these two settings.
     - `api_version`
     - `latency_ms`
     - `target`
-    - `pending_delete_count` — pads a trash kept, their deletion owed until
-      the sweep finishes it or the file is restored
-    - `restore_pending_count` — restored files whose pad Etherpad could not
-      confirm or deny
+    - `pending_delete_count` — files deleted for good whose pads the sweep
+      has yet to delete
     - `session_cookie_release` — the Etherpad release the open path is going
       by, which can differ from the one this run probed
     - `checks` — one entry per verified part, so a failure points at the field
@@ -400,17 +380,14 @@ solely by the separate external-pad policy, not by these two settings.
 - `POST /api/v1/admin/settle-pending`
   - Controller: `AdminController::settlePending`
   - Auth: admin only
-  - Purpose: an immediate run of what the background jobs do for waiting rows
-    (`restore_pending` and `pending_delete`), within the same time budget. The
-    only file it writes is a trashed one, with the snapshot its trash could
-    not take; the only pads it deletes are those of files in a trash or
-    gone for good. It then runs the sweep of files gone for good
-    (`docs/architecture.md`, "Files gone for good") as its job would, in
-    what is left of that budget, and without waiting out the five minutes
-    a file seen deleted for good waits before its pad goes.
+  - Purpose: an immediate run of the sweep of files gone for good
+    (`docs/architecture.md`, "Files gone for good"), within the budget its
+    job has, and without waiting out the five minutes a file seen deleted
+    for good waits before its pad goes. It deletes only the pads of files
+    deleted for good, and writes no file.
   - Result:
-    - `checked`, `settled`
-    - `pending_delete_count`, `restore_pending_count`: what is left, named as in the health check
+    - `checked`: rows of files deleted for good it took; `settled`: pads it deleted, with their rows
+    - `pending_delete_count`: what is left, named as in the health check
 
 - `POST /api/v1/admin/test-fault`
   - Controller: `AdminController::setTestFault`
@@ -420,9 +397,6 @@ solely by the separate external-pad policy, not by these two settings.
     - `fault` (string, optional; empty clears active fault)
   - Purpose: deterministic E2E fault injection for lifecycle error-path testing.
   - Supported fault values:
-    - `trash_read_lock`
-    - `trash_write_lock`
-    - `trash_write_fail`
     - `restore_read_lock`
     - `restore_write_lock`
     - `restore_write_fail`
@@ -440,7 +414,6 @@ solely by the separate external-pad policy, not by these two settings.
 - `code` (errors): stable identifier on selected error responses. Branch on this, never on `message` — messages are written for people and are translated, save the reason a pad on another server could not be linked or read, which comes in English. The full set:
   - `missing_binding` (`MissingBindingException`) — the viewer and embed swap the dead-end error for the recovery UI (`POST /api/v1/pads/recover-from-snapshot/{fileId}` + optional `GET /api/v1/pads/find-original/{fileId}` lookup).
   - `pad_missing` (`PadLostException`) — the file's row names a pad Etherpad has lost: it has none under that id (a protected pad, or a public one whose file holds saved content), or one with no revision while the file's snapshot holds more (a public pad Etherpad made anew, empty, when someone visited its address). Only an open that may write asks, once per open. The viewer and embed show the recovery UI without the original-file lookup; `POST /api/v1/pads/recover-from-snapshot/{fileId}` makes a new pad from the file's content and moves the row onto it.
-  - `waiting_binding` (`WaitingBindingException`) — `409` with `retryable: true`; the file's row still waits. An open decides such a row itself first, so there it means the open did not: the row was touched within the last minute (by the sweep, a trash, or an earlier open), someone else was deciding it, Etherpad gave no answer within a few seconds, what was left of a pad that is gone could not be removed in time, or deciding failed, the database gone say, which is logged. Try again later: once the row is settled the same request opens the pad, or answers `missing_binding` when the pad had to be let go. On open, sync, sync status and the read-only content view, signed in and public.
   - `missing_frontmatter` (`MissingFrontmatterException`) — the file has no pad metadata yet; clients call `POST /api/v1/pads/initialize-by-id/{fileId}` once and retry the open. A file whose content is neither metadata nor a legacy shortcut cannot be initialised and is refused *without* this code.
   - `pad_too_large` (`EtherpadTooLargeException`) — the pad is past the 5 MiB preview ceiling; it stays editable in Etherpad.
   - `pad_file_changed` (`PadFileChangedException`) — the file changed while its pad was being created or initialised; try again. On create, a file may now exist under that name, and the retry says so.
@@ -448,7 +421,7 @@ solely by the separate external-pad policy, not by these two settings.
   - `legacy_collision_no_access` (`LegacyPadCollisionException`) — see the legacy migration section.
   - `legacy_protected_import_disabled` (`LegacyProtectedImportDisabledException`) — `403`; the legacy `.pad` names a group pad and this instance does not import those. The file is left untouched, so the same open succeeds once an admin switches the import back on. See the legacy migration section.
 
-  The answers of a public share (`/api/v1/public/...`) carry the codes that can come up there - `waiting_binding` and `pad_too_large` - but not `missing_binding`, `pad_missing` or `missing_frontmatter`: what a client does on those needs a signed-in user. Their messages are translated, one sentence for each kind of trouble.
+  The answers of a public share (`/api/v1/public/...`) carry the code that can come up there - `pad_too_large` - but not `missing_binding`, `pad_missing` or `missing_frontmatter`: what a client does on those needs a signed-in user. Their messages are translated, one sentence for each kind of trouble.
 
   A response without a `code` may still be machine-readable through its HTTP status and other documented fields — a locked `.pad` answers `503` with `retryable: true`, signed in and public alike, for instance, and so does a request this instance's Etherpad could not be reached for. Every error this app answers is JSON, it never answers `502` or `504`, and every `503` of its own carries `retryable: true`; what the clients make of a 5xx that is none of these is in `docs/architecture.md` ("Errors of the API"). A file's row that another request made first (`BindingNotCreatedException`, two initialisations at once, say) answers `400` with `retryable: true` too: the next open finds that request's pad. The create endpoints answer it with their own sentence and neither field. One Etherpad answered and refused answers `400` without it: trying again gives the same answer. What is never a stable identifier is the `message` text.
 
@@ -505,24 +478,10 @@ solely by the separate external-pad policy, not by these two settings.
 ## Test Scripts
 
 - `tests/integration/e2e-pad-flow.sh`
-  - happy path: create -> open -> trash -> restore -> open
+  - happy path: create -> open -> open again
 - `tests/integration/e2e-sync-failure.sh`
   - failure path: create -> sync(force=1) must fail with non-2xx when Etherpad is down
   - goal: no silent best-effort success on critical sync
-- `tests/integration/e2e-lifecycle-state-guards.sh`
-  - state guards: restore(active) and trash(pending_delete) must return `409 status=skipped`
-- `tests/integration/e2e-lifecycle-trash-failure.sh`
-  - deferred-delete path: create -> trash remains `200` with `delete_pending=true` when Etherpad is down
-  - post-condition: trash-again must return `409 status=skipped` (`binding_not_active`)
-- `tests/integration/e2e-lifecycle-restore-failure.sh`
-  - failure path: create -> trash -> restore must fail with non-2xx when Etherpad is down
-  - post-condition: trash-again must return `409 status=skipped` (`binding_not_active`)
-- `tests/integration/e2e-lifecycle-trash-lock-tolerant.sh`
-  - lock path: inject `trash_write_lock`, trash must stay `200` and return `snapshot_persisted=false`
-  - post-condition: restore still succeeds after fault is cleared
-- `tests/integration/e2e-lifecycle-restore-write-failure.sh`
-  - write-failure path: inject `restore_write_fail`, restore must fail non-2xx
-  - post-condition: restore succeeds after fault is cleared
 - `tests/integration/e2e-public-share-folder.sh`
   - folder share: viewer/open/download/reopen + DAV-style `file` parameter + route switch
 - `tests/integration/e2e-public-share-single-file.sh`
@@ -541,8 +500,6 @@ Registered in `lib/AppInfo/Application.php`.
 - `OCP\Files\Template\FileCreatedFromTemplateEvent` -> `FileCreatedFromTemplateListener`
 - `OCA\Viewer\Event\LoadViewer` -> `LoadViewerListener`
 - `OCP\User\Events\UserLoggedOutEvent` -> `UserLoggedOutListener`
-- `OCA\Files_Trashbin\Events\MoveToTrashEvent` -> `MoveToTrashListener`
-- legacy event `OCA\Files_Trashbin::moveToTrash` -> `MoveToTrashListener`
 - `OCA\Files_Trashbin\Events\NodeRestoredEvent` -> `RestoreFromTrashListener`
 - legacy hook `\OCA\Files_Trashbin\Trashbin::post_restore` -> `TrashbinHookHandler::postRestore` -> `RestoreFromTrashListener::handleLegacyHook`
 - `OCP\Files\Cache\CacheEntryRemovedEvent`, `OCP\Files\Cache\CacheEntryInsertedEvent`, `OCP\Files\Cache\CacheEntriesRemovedEvent` (from 34), `OCP\Files\Events\Node\BeforeNodeDeletedEvent`, `OCP\Files\Events\Node\NodeDeletedEvent`, `OCP\User\Events\BeforeUserDeletedEvent`, `OCP\User\Events\UserDeletedEvent` -> `GoneFilesListener` (the marks of files deleted for good; `docs/architecture.md`, "Files gone for good")

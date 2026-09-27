@@ -29,23 +29,15 @@ API_BASE="${NC_BASE_URL%/}/index.php/apps/etherpad_nextcloud/api/v1/pads"
 nc_init_auth
 trap 'nc_cleanup_auth' EXIT
 
-echo "[1/5] CREATE ${INPUT_PATH}"
+echo "[1/3] CREATE ${INPUT_PATH}"
 CREATE_JSON=$(nc_request POST "$API_BASE" --data-urlencode "file=${INPUT_PATH}" --data-urlencode "accessMode=protected")
 echo "$CREATE_JSON"
 
-echo "[2/5] OPEN ${INPUT_PATH}"
+echo "[2/3] OPEN ${INPUT_PATH}"
 OPEN1_JSON=$(nc_request POST "$API_BASE/open" --data-urlencode "file=${INPUT_PATH}")
 echo "$OPEN1_JSON"
 
-echo "[3/5] TRASH ${INPUT_PATH}"
-TRASH_JSON=$(nc_request POST "$API_BASE/trash" --data-urlencode "file=${INPUT_PATH}")
-echo "$TRASH_JSON"
-
-echo "[4/5] RESTORE ${INPUT_PATH}"
-RESTORE_JSON=$(nc_request POST "$API_BASE/restore" --data-urlencode "file=${INPUT_PATH}")
-echo "$RESTORE_JSON"
-
-echo "[5/5] OPEN after RESTORE ${INPUT_PATH}"
+echo "[3/3] OPEN again ${INPUT_PATH}"
 OPEN2_JSON=$(nc_request POST "$API_BASE/open" --data-urlencode "file=${INPUT_PATH}")
 echo "$OPEN2_JSON"
 

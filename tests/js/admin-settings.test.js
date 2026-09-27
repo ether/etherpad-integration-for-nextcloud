@@ -50,7 +50,6 @@ const setupAdminDom = () => {
 				<div id="etherpad-nextcloud-vanished" style="display:none;"><ul id="etherpad-nextcloud-vanished-list"></ul></div>
 				<div id="etherpad-nextcloud-pending-actions" style="display:none;">
 					<button type="button" id="etherpad-nextcloud-settle-pending">Check</button>
-					<span id="etherpad-nextcloud-restore-pending-count"></span>
 					<span id="etherpad-nextcloud-pending-count"></span>
 				</div>
 				<ul id="epnc-template-list"></ul>
@@ -182,10 +181,10 @@ describe('admin settings status areas', () => {
 		expect(connectionStatus().classList.contains('ep-status-success')).toBe(false)
 	})
 
-	it('counts deferred deletions apart from restores, and checks both', async () => {
+	it('counts the pads that wait to go, and checks them', async () => {
 		const fetchMock = vi.fn((url) => Promise.resolve(okResponse({
-			'/health': { message: 'All checks passed.', pending_delete_count: 2, restore_pending_count: 1 },
-			'/settle': { message: 'Pending pad check finished.', checked: 2, settled: 2, restore_pending_count: 0, pending_delete_count: 1 },
+			'/health': { message: 'All checks passed.', pending_delete_count: 2 },
+			'/settle': { message: 'Pending pad check finished.', checked: 2, settled: 1, pending_delete_count: 1 },
 		}[url] || {})))
 		vi.stubGlobal('fetch', fetchMock)
 		await import(MODULE)
@@ -195,16 +194,14 @@ describe('admin settings status areas', () => {
 		await flushAsyncWork()
 
 		expect(document.getElementById('etherpad-nextcloud-pending-count').textContent).toBe('Pending Etherpad deletes: 2')
-		expect(document.getElementById('etherpad-nextcloud-restore-pending-count').textContent).toBe('Unresolved restores: 1')
 		expect(settleButton.disabled).toBe(false)
 
 		settleButton.click()
 		await flushAsyncWork()
 
-		expect(diagnosticsStatus().textContent).toContain('settled=2')
-		expect(document.getElementById('etherpad-nextcloud-restore-pending-count').textContent).toBe('Unresolved restores: 0')
+		expect(diagnosticsStatus().textContent).toContain('settled=1')
 		expect(document.getElementById('etherpad-nextcloud-pending-count').textContent).toBe('Pending Etherpad deletes: 1')
-		// A deletion still waits for its file, so there is still something to check.
+		// One still waits - Etherpad refused it, say - so there is still something to check.
 		expect(document.getElementById('etherpad-nextcloud-pending-actions').style.display).toBe('')
 		expect(settleButton.disabled).toBe(false)
 	})
@@ -244,7 +241,6 @@ describe('admin settings status areas', () => {
 		await flushAsyncWork()
 
 		expect(document.getElementById('etherpad-nextcloud-pending-count').textContent).toBe('')
-		expect(document.getElementById('etherpad-nextcloud-restore-pending-count').textContent).toBe('')
 	})
 })
 

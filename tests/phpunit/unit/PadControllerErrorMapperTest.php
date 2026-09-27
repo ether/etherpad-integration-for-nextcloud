@@ -29,7 +29,6 @@ use OCA\EtherpadNextcloud\Exception\PadParentFolderNotWritableException;
 use OCA\EtherpadNextcloud\Exception\PadTypeDisabledException;
 use OCA\EtherpadNextcloud\Exception\UnauthorizedRequestException;
 use OCA\EtherpadNextcloud\Exception\UnrecognisedPadContentException;
-use OCA\EtherpadNextcloud\Exception\WaitingBindingException;
 use OCA\EtherpadNextcloud\Service\AppConfigService;
 use OCA\EtherpadNextcloud\Service\PadResponseService;
 use OCA\EtherpadNextcloud\Tests\Support\BuildsErrorMappers;
@@ -69,7 +68,6 @@ class PadControllerErrorMapperTest extends TestCase {
 		yield 'no pad' => [new MissingBindingException('internal wording'), Http::STATUS_BAD_REQUEST, 'This .pad file has no matching pad in this Nextcloud.', ['code' => 'missing_binding']];
 		yield 'pad lost' => [new PadLostException('internal wording'), Http::STATUS_BAD_REQUEST, 'This pad is no longer on the Etherpad server. A new pad can be made from the content saved in this file.', ['code' => 'pad_missing']];
 		// Not a dead end: a conflict worth trying again.
-		yield 'a pad still being restored' => [new WaitingBindingException('internal wording'), Http::STATUS_CONFLICT, 'This pad is still being restored. Try again later.', ['code' => 'waiting_binding', 'retryable' => true]];
 		// Or a row another request made at the same moment: trying again may do.
 		yield 'a row naming another pad' => [new BindingException('Binding pad ID mismatch.'), Http::STATUS_BAD_REQUEST, 'This .pad file and its pad could not be matched. Try again, or contact your administrator if it keeps happening.', []];
 		// Two initialisations at once: the next open finds the winner's pad.
@@ -167,7 +165,7 @@ class PadControllerErrorMapperTest extends TestCase {
 	 * not the one the code stands for.
 	 */
 	public function testACallersOwnWordingCarriesNoCodeOfOurs(): void {
-		foreach ([new BindingException('duplicate'), new MissingBindingException('no binding'), new WaitingBindingException('waiting')] as $e) {
+		foreach ([new BindingException('duplicate'), new MissingBindingException('no binding'), new PadLostException('lost')] as $e) {
 			$response = $this->buildMapper()->run(
 				static fn(): array => throw $e,
 				static fn(array $result): DataResponse => new DataResponse($result),

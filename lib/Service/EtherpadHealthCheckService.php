@@ -149,15 +149,13 @@ class EtherpadHealthCheckService {
 			$this->sessionCookieCheck($settings),
 		];
 
-		$waiting = $this->bindingService->countWaiting();
 		return new HealthCheckResult(
 			$settings->etherpadHost,
 			$settings->etherpadApiHost,
 			$settings->etherpadApiVersion,
 			$latencyMs,
 			$target,
-			$waiting['pending_delete_count'],
-			$waiting['restore_pending_count'],
+			$this->bindingService->countPendingDeletes(),
 			$this->releasePolicy->knownRelease(),
 			$cookieDomain,
 			$checks,

@@ -10,57 +10,19 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Service;
 
-use OCA\EtherpadNextcloud\Exception\BindingStateConflictException;
-use OCA\EtherpadNextcloud\Exception\LifecycleException;
-use OCA\EtherpadNextcloud\Util\PadFileType;
-use OCA\EtherpadNextcloud\Util\SafeError;
-use OCP\AppFramework\Utility\ITimeFactory;
 use OCP\Files\File;
-use Psr\Log\LoggerInterface;
 
 /**
- * A .pad file's trash and restore as they arrive: from the listeners
- * (MoveToTrashListener, RestoreFromTrashListener) and from the API, which
- * names the file by path or id. The trash is carried out here; the restore
- * is RestoreService's.
+ * A .pad file's restore as it arrives, from its listener
+ * (RestoreFromTrashListener), and the API's recovery of a file from its
+ * own content, which names the file by id. Both are RestoreService's to
+ * carry out. A trash leaves the pad as it is (docs/deleting-pads.md).
  */
 class LifecycleService {
 	public function __construct(
-		private BindingService $bindingService,
-		private PadFileService $padFileService,
-		private ManagedPadLifecycle $padLifecycle,
-		private AppConfigService $appConfig,
-		private LoggerInterface $logger,
 		private UserNodeResolver $userNodeResolver,
-		private \OCA\EtherpadNextcloud\Util\PathNormalizer $padPaths,
-		private ITimeFactory $timeFactory,
-		private TrashSnapshotWriters $snapshotWriters,
 		private RestoreService $restoreService,
 	) {
-	}
-
-	// ------------------------------------------------------------------
-	// The API's ways in, which name the file by the user's path or by its
-	// id. Each hands out the step's result as it is, after the file as the
-	// caller named it.
-	// ------------------------------------------------------------------
-
-	/**
-	 * @return array{file: string, status: string, reason?: string, deleted_at?: int, snapshot_persisted?: bool, delete_pending?: bool}
-	 * @throws \OCP\Files\NotFoundException
-	 */
-	public function trashByPath(string $uid, string $file): array {
-		$path = $this->normalizeLifecyclePath($file);
-		return ['file' => $path] + $this->handleTrash($this->userNodeResolver->resolveUserFileNodeByPath($uid, $path));
-	}
-
-	/**
-	 * @return array{file: string, status: string, reason?: string, old_pad_id?: string, new_pad_id?: string}
-	 * @throws \OCP\Files\NotFoundException
-	 */
-	public function restoreByPath(string $uid, string $file): array {
-		$path = $this->normalizeLifecyclePath($file);
-		return ['file' => $path] + $this->handleRestore($this->userNodeResolver->resolveUserFileNodeByPath($uid, $path));
 	}
 
 	/**
@@ -71,143 +33,12 @@ class LifecycleService {
 		return ['file_id' => $fileId] + $this->restoreService->recoverFromSnapshot($this->userNodeResolver->resolveUserFileNodeById($uid, $fileId));
 	}
 
-	private function normalizeLifecyclePath(string $file): string {
-		$path = $this->padPaths->normalizeViewerFilePath($file);
-		if ($path === '') {
-			throw new \InvalidArgumentException('Invalid file path.');
-		}
-		return $path;
-	}
-
-	/** @return array{status: string, reason?: string, deleted_at?: int, snapshot_persisted?: bool, delete_pending?: bool} */
-	public function handleTrash(File $file): array {
-		$fileId = $file->getId();
-		if (!PadFileType::isPad($file->getName())) {
-			return LifecycleResult::skipped('not_pad_file', $fileId, $this->logger);
-		}
-
-		try {
-			$binding = $this->bindingService->findByFileId($fileId);
-			if ($binding !== null && $binding->state === BindingService::STATE_RESTORE_PENDING) {
-				// Whatever the setting says: nothing is deleted here, and a row
-				// left waiting would keep the file from opening once it is back.
-				$retrashed = $this->retrashUndecided($fileId, $binding->padId);
-				if ($retrashed !== null) {
-					return $retrashed;
-				}
-				// A sweep settled the row in between; trash it as what it is now.
-				$binding = $this->bindingService->findByFileId($fileId);
-			}
-		} catch (\Throwable $e) {
-			throw LifecycleException::failed('Trash', $e);
-		}
-
-		if (!$this->appConfig->isDeleteOnTrashEnabled()) {
-			return LifecycleResult::skipped('delete_on_trash_disabled', $fileId, $this->logger);
-		}
-		if ($binding === null) {
-			if ($this->isExternalPadFile($file)) {
-				return LifecycleResult::skipped('external_pad', $fileId, $this->logger);
-			}
-			return LifecycleResult::skipped('binding_not_found', $fileId, $this->logger);
-		}
-		$padId = $binding->padId;
-		if ($binding->state !== BindingService::STATE_ACTIVE) {
-			return LifecycleResult::skipped('binding_not_active', $fileId, $this->logger);
-		}
-
-		$deletedAt = $this->timeFactory->getTime();
-
-		try {
-			$snapshots = $this->snapshotWriters->for($file, $padId);
-			$pad = $snapshots->read();
-			if ($pad instanceof TrashSnapshotMiss || !$snapshots->writeAtTrash($pad)) {
-				// Without a fresh snapshot the pad may hold what the file lacks,
-				// so it stays as it is and its deletion is owed. The sweep takes
-				// the snapshot once the file sits in the trash and deletes the
-				// pad then; a restore before that takes it back.
-				$this->oweDeletion($fileId, $padId);
-				return LifecycleResult::trashed($deletedAt, false, true);
-			}
-
-			try {
-				// Retried: a delete that fails leaves the deletion owed, for the sweep.
-				$wasThere = $this->padLifecycle->discardIfPresent($padId, retried: true);
-			} catch (\Throwable $deleteError) {
-				$this->oweDeletion($fileId, $padId);
-				$this->logger->warning('Could not delete the pad after trash, or read its group. It is kept, and its deletion recorded as pending.', [
-					'app' => 'etherpad_nextcloud',
-					'fileId' => $fileId,
-					...SafeError::context($deleteError),
-				]);
-				return LifecycleResult::trashed($deletedAt, true, true);
-			}
-			if (!$wasThere) {
-				$this->logger->info('Pad already deleted while processing trash; deleting binding row.', [
-					'app' => 'etherpad_nextcloud',
-					'fileId' => $fileId,
-				]);
-			}
-			$this->bindingService->deleteByFileId($fileId);
-			return LifecycleResult::trashed($deletedAt, true, false);
-		} catch (BindingStateConflictException $e) {
-			$this->logger->warning('Trash lifecycle state transition conflict. Returning skipped.', [
-				'app' => 'etherpad_nextcloud',
-				'fileId' => $fileId,
-				...SafeError::context($e),
-			]);
-			return LifecycleResult::skipped('binding_state_transition_conflict', $fileId, $this->logger);
-		} catch (\Throwable $e) {
-			// Not reported here. Every caller catches to log, and a caller
-			// also sees the ways out that end above this try - reporting
-			// from in here would be the same failure a second time, from
-			// the one of the two places that cannot see all of them.
-			throw LifecycleException::failed('Trash', $e);
-		}
-	}
-
-	/** The trash leaves the row a deletion owed, from an active one. */
-	private function oweDeletion(int $fileId, string $padId): void {
-		if (!$this->bindingService->transition($fileId, $padId, BindingService::STATE_ACTIVE, BindingService::STATE_PENDING_DELETE)) {
-			throw new BindingStateConflictException('State transition conflict while marking pending_delete (expected active).');
-		}
-	}
-
 	/**
-	 * Trashed again while its restore is undecided. The pad may hold the only
-	 * current copy, so it is left alone, and no snapshot is taken: one of a
-	 * pad that is not the file's would overwrite the only good copy. The row
-	 * goes back to a deletion owed.
-	 *
-	 * Null when the row moved on first, a sweep having settled it, so the
-	 * caller trashes the file as what its row says now.
-	 *
-	 * @return array{status: string, deleted_at: int, snapshot_persisted: bool, delete_pending: bool}|null
-	 */
-	private function retrashUndecided(int $fileId, string $padId): ?array {
-		$deletedAt = $this->timeFactory->getTime();
-		if (!$this->bindingService->transition($fileId, $padId, BindingService::STATE_RESTORE_PENDING, BindingService::STATE_PENDING_DELETE)) {
-			return null;
-		}
-		return LifecycleResult::trashed($deletedAt, false, true);
-	}
-
-	/**
-	 * A restore, from the listener or the API: RestoreService's to carry
-	 * out. It arrives here with the trash.
+	 * A restore from the trash.
 	 *
 	 * @return array{status: string, reason?: string, old_pad_id?: string, new_pad_id?: string}
 	 */
 	public function handleRestore(File $file): array {
 		return $this->restoreService->restore($file);
-	}
-
-	/** Whether the file names an external pad. One that cannot be read does not. */
-	private function isExternalPadFile(File $file): bool {
-		try {
-			return $this->padFileService->readPad($file->getContent())->namesAnExternalPad();
-		} catch (\Throwable) {
-			return false;
-		}
 	}
 }

@@ -20,7 +20,7 @@ class AdminTestFaultServiceTest extends TestCase {
 
 		$this->expectException(AdminDebugModeRequiredException::class);
 
-		$this->service($config)->setFault('trash_read_lock');
+		$this->service($config)->setFault('restore_read_lock');
 	}
 
 	public function testSetFaultRejectsUnsupportedFault(): void {
@@ -32,7 +32,7 @@ class AdminTestFaultServiceTest extends TestCase {
 			$this->service($config)->setFault('unknown_fault');
 			$this->fail('Expected unsupported test fault exception.');
 		} catch (UnsupportedTestFaultException $e) {
-			$this->assertContains('trash_read_lock', $e->getSupportedFaults());
+			$this->assertContains('restore_read_lock', $e->getSupportedFaults());
 		}
 	}
 
@@ -41,11 +41,11 @@ class AdminTestFaultServiceTest extends TestCase {
 		$config->method('getSystemValueBool')->with('debug', false)->willReturn(true);
 		$config->expects($this->once())
 			->method('setAppValue')
-			->with('etherpad_nextcloud', 'test_fault', 'trash_read_lock');
+			->with('etherpad_nextcloud', 'test_fault', 'restore_read_lock');
 
-		$result = $this->service($config)->setFault('trash_read_lock');
+		$result = $this->service($config)->setFault('restore_read_lock');
 
-		$this->assertSame('trash_read_lock', $result);
+		$this->assertSame('restore_read_lock', $result);
 	}
 
 	public function testSetFaultAllowsClearingFault(): void {

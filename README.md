@@ -11,7 +11,7 @@ This plugin lets you surface pads from an Etherpad instance inside Nextcloud and
 - Public folder/file share support for `.pad`
 - Periodic sync from Etherpad into `.pad` snapshots
 - Pad text is searchable through Nextcloud's full-text search, where that is set up
-- Trash deletes on Etherpad (with deferred retry when Etherpad is temporarily unavailable)
+- A pad lives as long as its file: the trash keeps it, and it goes once the file is deleted for good
 - Restore recreates pads from `.pad` snapshot data
 
 ## Screenshots
@@ -235,9 +235,10 @@ existing name asks for confirmation because the previous file is gone for good.
 
 ### Trash/Restore
 
-- When a `.pad` file is moved to the Nextcloud trash, the linked Etherpad pad is deleted.
-- If Etherpad is temporarily unavailable, delete is deferred and retried.
-- When the `.pad` file is restored from the Nextcloud trash, a new pad is recreated and the snapshot from the `.pad` file is replayed.
+- A `.pad` file moved to the Nextcloud trash keeps its pad; restored, it has the same pad back, with its history.
+- Once the file is deleted for good - from the trash, past it, or with the account that owned it - a background job deletes the pad within minutes, and tries again while Etherpad is unavailable.
+- A file restored without a pad - one Etherpad lost, or one trashed under 1.1.0-beta.1 - gets a new pad from the snapshot in the file.
+- What each way of deleting a file does to its pad: [docs/deleting-pads.md](docs/deleting-pads.md).
 
 ## Troubleshooting
 

@@ -7,7 +7,6 @@
  * Error bodies the server sends, as the client tests meet them
  * (docs/api-reference.md), so each sentence and code is written once.
  */
-export const WAITING = { message: 'This pad is still being restored. Try again later.', code: 'waiting_binding', retryable: true }
 export const UNREACHABLE = { message: 'Etherpad cannot be reached right now. Try again later.', retryable: true }
 export const LOCKED = { message: 'Pad file is temporarily locked. Please retry.', retryable: true }
 export const MISSING_FRONTMATTER = { message: 'Missing YAML frontmatter in .pad file.', code: 'missing_frontmatter' }

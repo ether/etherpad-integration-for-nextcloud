@@ -23,8 +23,8 @@ final class Binding {
 		public readonly string $accessMode,
 		public readonly string $state,
 		/**
-		 * When the row became a deletion owed. Null in every other state, and
-		 * on a deletion owed that never recorded one.
+		 * When the file was seen deleted for good (pending_delete). Null in
+		 * every other state, and on a row an early version left without one.
 		 */
 		public readonly ?int $deletedAt = null,
 		public readonly int $updatedAt = 0,
@@ -49,18 +49,11 @@ final class Binding {
 	}
 
 	/**
-	 * No run has put this deletion owed back since it became one: updated_at
-	 * is still at deleted_at. A row without that date cannot tell, and counts
-	 * as untouched, so its trouble is reported each time. A row a trash
-	 * before 1.1.0 wrote may have the two seconds apart, and counts as put
-	 * back.
+	 * No run has tried this row since the file was seen deleted for good:
+	 * updated_at is still at deleted_at. A row without that date cannot
+	 * tell, and counts as untried, so its trouble is reported each time.
 	 */
 	public function untouchedSinceOwed(): bool {
 		return $this->deletedAt === null || $this->updatedAt <= $this->deletedAt;
-	}
-
-	/** A deletion owed, or a restore left undecided: a row the sweep settles. */
-	public function isWaiting(): bool {
-		return $this->state === BindingService::STATE_PENDING_DELETE || $this->state === BindingService::STATE_RESTORE_PENDING;
 	}
 }

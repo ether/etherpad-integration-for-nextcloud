@@ -356,9 +356,10 @@ class RestoreFromTrashListenerTest extends TestCase {
 	/**
 	 * A core restore comes by the hook first and by the event after it. When
 	 * the hook pass fails on something that passes - a database connection
-	 * dropped - the event pass is a second try and restores the pad: the one
-	 * error line names the hook, and the row ends up active. One line, since
-	 * the restore reports nothing of its own; the listener is what reports.
+	 * dropped - the event pass is a second try: a row seen deleted for good
+	 * whose file is back becomes active, and keeps its pad. The one error
+	 * line names the hook; the restore reports nothing of its own, beyond
+	 * the debug line of a pad left as it is.
 	 *
 	 * Real services rather than mocks: whether there is anything left to
 	 * try again depends on what the failed pass leaves behind.
@@ -385,7 +386,9 @@ class RestoreFromTrashListenerTest extends TestCase {
 		$resolver->method('resolveUserFileNodeByPath')->with('alice', '/Notes.pad')->willReturn($file);
 
 		$logger = $this->createMock(LoggerInterface::class);
-		$this->closeEveryLevelExcept($logger, 'error');
+		foreach (['emergency', 'alert', 'critical', 'warning', 'notice', 'info', 'log'] as $level) {
+			$logger->expects($this->never())->method($level);
+		}
 		$logger->expects($this->once())
 			->method('error')
 			->with(

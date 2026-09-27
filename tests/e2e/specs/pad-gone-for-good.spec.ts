@@ -80,6 +80,37 @@ test.describe('pads of files deleted for good', () => {
 	})
 
 	/**
+	 * The trash keeps a pad, and its group: a restore gives the file the
+	 * same pad back. Deleted from the trash, the file takes pad and group.
+	 */
+	test('a pad file in the trash keeps its pad until it is deleted from there', async () => {
+		const name = uniquePadName('gone-trashed-file')
+		const pad = await createPadAtPath(`/${name}`, 'protected')
+		const padId = padIdOfPadUrl(pad.padUrl)
+		const fileId = await propfindFileId(name)
+
+		await deleteViaDav(name)
+		expect(await findTrashbinEntry(name), 'the file should be in the trash').not.toBeNull()
+		await settle()
+		expect(await padExists(padId), 'the trash should keep the pad').toBe(true)
+		expect(await groupExists(groupIdOfPadUrl(pad.padUrl)), 'and its group').toBe(true)
+
+		await restoreFromTrashViaDav(name)
+		await settle()
+		const opened = await padApiPost('pads/open-by-id', { fileId: String(fileId) })
+		expect(opened.status, JSON.stringify(opened.body)).toBe(200)
+		expect((opened.body as { pad_id?: string }).pad_id, 'restored, the file should have the same pad').toBe(padId)
+
+		await deleteViaDav(name)
+		const entry = await findTrashbinEntry(name)
+		expect(entry, 'the file should be in the trash again').not.toBeNull()
+		await purgeTrashbinEntry(entry!)
+		await settle()
+		expect(await padExists(padId), 'deleted from the trash, the file should take its pad').toBe(false)
+		expect(await groupExists(groupIdOfPadUrl(pad.padUrl)), 'and its group').toBe(false)
+	})
+
+	/**
 	 * What counts is the file, not its name: a `.pad` renamed keeps its
 	 * pad, and the pad goes once the file is deleted for good - past the
 	 * trash, or from it.

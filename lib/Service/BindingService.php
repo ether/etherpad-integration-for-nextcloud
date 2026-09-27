@@ -13,7 +13,6 @@ use OCA\EtherpadNextcloud\Exception\BindingNotCreatedException;
 use OCA\EtherpadNextcloud\Exception\BindingMismatchException;
 use OCA\EtherpadNextcloud\Exception\BindingException;
 use OCA\EtherpadNextcloud\Exception\MissingBindingException;
-use OCA\EtherpadNextcloud\Exception\WaitingBindingException;
 use OCA\EtherpadNextcloud\Util\DbRows;
 use OCA\EtherpadNextcloud\Util\PadAccessMode;
 use OCP\DB\QueryBuilder\IQueryBuilder;
@@ -25,22 +24,17 @@ class BindingService {
 	public const ACCESS_PUBLIC = 'public';
 	public const ACCESS_PROTECTED = 'protected';
 	public const STATE_ACTIVE = 'active';
-	public const STATE_PENDING_DELETE = 'pending_delete';
 	/**
-	 * The file is in Files, but whether its pad is still its own could not
-	 * be told: Etherpad gave no answer, or the file could not be read. Kept
-	 * rather than guessed, since the pad may hold the only current copy, or
-	 * be gone.
+	 * The file was seen deleted for good; its pad goes once the grace is
+	 * over (GoneFileSweep). deleted_at says since when.
 	 */
-	public const STATE_RESTORE_PENDING = 'restore_pending';
+	public const STATE_PENDING_DELETE = 'pending_delete';
 
 	/**
 	 * Where trashes keep files, as file cache paths relative to their
 	 * storage: a user's, and a team folder's on the root storage. A team
 	 * folder with its own storage (groupfolders 22 on Nextcloud 34,
-	 * measured) uses a bare `trash/`, which no path can tell from a folder
-	 * of that name on an external storage, so it is not matched; its
-	 * trashed files resolve to no node, and their rows move to the back.
+	 * measured) uses a bare `trash/` there (GoneFilesListener).
 	 */
 	public const USER_TRASH_PATH = 'files_trashbin/';
 	public const TEAM_TRASH_PATH = '__groupfolders/trash/';
@@ -152,103 +146,16 @@ class BindingService {
 		return $qb->executeStatement() > 0;
 	}
 
-	/**
-	 * How many rows wait, of either kind, in one query - the two figures the
-	 * health check and the admin page's check both report.
-	 *
-	 * @return array{pending_delete_count:int, restore_pending_count:int}
-	 */
-	public function countWaiting(): array {
+	/** How many files were seen deleted for good and wait for their pad to go: what the health check and the admin page's check report. */
+	public function countPendingDeletes(): int {
 		$qb = $this->db->getQueryBuilder();
-		$qb->select('state')
-			->selectAlias($qb->createFunction('COUNT(*)'), 'cnt')
+		$qb->selectAlias($qb->createFunction('COUNT(*)'), 'cnt')
 			->from(self::TABLE)
-			->groupBy('state');
-
+			->where($qb->expr()->eq('state', $qb->createNamedParameter(self::STATE_PENDING_DELETE)));
 		$result = $qb->executeQuery();
-		$byState = [];
-		foreach (DbRows::all($result->fetchAll()) as $row) {
-			$byState[DbRows::string($row, 'state')] = max(0, DbRows::int($row, 'cnt'));
-		}
+		$row = DbRows::one($result->fetch());
 		$result->closeCursor();
-		return [
-			'pending_delete_count' => $byState[self::STATE_PENDING_DELETE] ?? 0,
-			'restore_pending_count' => $byState[self::STATE_RESTORE_PENDING] ?? 0,
-		];
-	}
-
-	/**
-	 * Deletions owed, aged by when the trash recorded them, and narrowed to
-	 * where the file is (FileLocation). A team folder's trash on the root
-	 * storage is in none of them (TEAM_TRASH_PATH).
-	 *
-	 * A row that never had a deleted_at is reached only by a run with
-	 * neither bound - the admin page's. Every age bucket compares the date.
-	 *
-	 * @return list<WaitingBinding>
-	 */
-	public function findPendingDeleteByAge(int $minAgeSeconds, ?int $maxAgeSeconds, int $limit = 100, ?FileLocation $fileLocation = null): array {
-		return $this->findWaitingByAge(self::STATE_PENDING_DELETE, 'deleted_at', $minAgeSeconds, $maxAgeSeconds, $limit, $fileLocation);
-	}
-
-	/**
-	 * Restores left undecided, aged by when the row last changed: when the
-	 * restore left it waiting, or when a check last found no answer for it.
-	 *
-	 * @return list<WaitingBinding>
-	 */
-	public function findRestorePendingByAge(int $minAgeSeconds, ?int $maxAgeSeconds, int $limit = 100): array {
-		return $this->findWaitingByAge(self::STATE_RESTORE_PENDING, 'updated_at', $minAgeSeconds, $maxAgeSeconds, $limit);
-	}
-
-	/**
-	 * Rows in one waiting state, the longest untouched first, each with the
-	 * path its file has in the file cache now - null once nothing is left
-	 * of the file. Left, not inner: a row whose file is gone has no file
-	 * cache row to join, and that is the row a sweep most needs to see.
-	 *
-	 * Ordered by updated_at, whatever the rows are aged by: a row that
-	 * waits again moves to the back, so rows no run can settle yet do not
-	 * keep the others from their turn.
-	 *
-	 * @return list<WaitingBinding>
-	 */
-	private function findWaitingByAge(string $state, string $ageColumn, int $minAgeSeconds, ?int $maxAgeSeconds, int $limit, ?FileLocation $fileLocation = null): array {
-		$now = $this->timeFactory->getTime();
-		$qb = $this->db->getQueryBuilder();
-		$qb->select('b.file_id', 'b.pad_id', 'b.state')
-			->selectAlias('fc.path', 'file_path')
-			->selectAlias('b.' . $ageColumn, 'waiting_since')
-			->from(self::TABLE, 'b')
-			->leftJoin('b', 'filecache', 'fc', $qb->expr()->eq('b.file_id', 'fc.fileid'))
-			->where($qb->expr()->eq('b.state', $qb->createNamedParameter($state)))
-			->orderBy('b.updated_at', 'ASC')
-			->setMaxResults(max(1, $limit));
-		if ($minAgeSeconds > 0) {
-			$qb->andWhere($qb->expr()->lte('b.' . $ageColumn, $qb->createNamedParameter($now - $minAgeSeconds, IQueryBuilder::PARAM_INT)));
-		}
-		if ($maxAgeSeconds !== null) {
-			$qb->andWhere($qb->expr()->gt('b.' . $ageColumn, $qb->createNamedParameter($now - max(0, $maxAgeSeconds), IQueryBuilder::PARAM_INT)));
-		}
-		$userTrash = $this->db->escapeLikeParameter(self::USER_TRASH_PATH) . '%';
-		if ($fileLocation === FileLocation::Gone) {
-			$qb->andWhere($qb->expr()->isNull('fc.fileid'));
-		} elseif ($fileLocation === FileLocation::InUserTrash) {
-			$qb->andWhere($qb->expr()->like('fc.path', $qb->createNamedParameter($userTrash)));
-		} elseif ($fileLocation === FileLocation::Elsewhere) {
-			// NOT (LIKE), not notLike(): on SQLite and Oracle Nextcloud's
-			// notLike() leaves out the ESCAPE that like() adds, so the escaped
-			// prefix would match no path and a trashed file pass for one here.
-			$teamTrash = $this->db->escapeLikeParameter(self::TEAM_TRASH_PATH) . '%';
-			$qb->andWhere($qb->expr()->isNotNull('fc.fileid'))
-				->andWhere($qb->createFunction('NOT (' . $qb->expr()->like('fc.path', $qb->createNamedParameter($userTrash)) . ')'))
-				->andWhere($qb->createFunction('NOT (' . $qb->expr()->like('fc.path', $qb->createNamedParameter($teamTrash)) . ')'));
-		}
-
-		$result = $qb->executeQuery();
-		$rows = array_map(WaitingBinding::fromRow(...), DbRows::all($result->fetchAll()));
-		$result->closeCursor();
-		return $rows;
+		return $row === null ? 0 : max(0, DbRows::int($row, 'cnt'));
 	}
 
 	/**
@@ -259,25 +166,46 @@ class BindingService {
 	public const GONE_GRACE_SECONDS = 5 * 60;
 
 	/**
-	 * The files were seen deleted for good (GoneFilesListener): their pads
-	 * may go once the grace is over (GoneFileSweep). A row marked already
-	 * keeps its mark, so a refusal's later try stays where it is.
+	 * The files were seen deleted for good (GoneFilesListener): their
+	 * active rows become pending_delete, deleted_at and updated_at now, and
+	 * their pads go once the grace is over (GoneFileSweep). A row that waits
+	 * already keeps its dates.
 	 *
 	 * @param list<int> $fileIds
 	 */
 	public function markGone(array $fileIds): void {
-		$this->setGoneAfter($fileIds, $this->timeFactory->getTime() + self::GONE_GRACE_SECONDS);
+		$now = $this->timeFactory->getTime();
+		foreach (array_chunk($fileIds, 500) as $chunk) {
+			$qb = $this->db->getQueryBuilder();
+			$qb->update(self::TABLE)
+				->set('state', $qb->createNamedParameter(self::STATE_PENDING_DELETE))
+				->set('deleted_at', $qb->createNamedParameter($now, IQueryBuilder::PARAM_INT))
+				->set('updated_at', $qb->createNamedParameter($now, IQueryBuilder::PARAM_INT))
+				->where($qb->expr()->in('file_id', $qb->createNamedParameter($chunk, IQueryBuilder::PARAM_INT_ARRAY)))
+				->andWhere($qb->expr()->eq('state', $qb->createNamedParameter(self::STATE_ACTIVE)));
+			$qb->executeStatement();
+		}
 	}
 
 	/**
-	 * The files are in the file cache again after all - moved to another
-	 * storage, which Nextcloud reports as a removal and an insert of the
-	 * same file: their rows lose the mark.
+	 * The files are in the file cache after all - moved to another storage,
+	 * which Nextcloud reports as a removal and an insert of the same file,
+	 * or a deletion that did not happen: their rows are active again.
 	 *
 	 * @param list<int> $fileIds
 	 */
 	public function clearGone(array $fileIds): void {
-		$this->setGoneAfter($fileIds, null);
+		$now = $this->timeFactory->getTime();
+		foreach (array_chunk($fileIds, 500) as $chunk) {
+			$qb = $this->db->getQueryBuilder();
+			$qb->update(self::TABLE)
+				->set('state', $qb->createNamedParameter(self::STATE_ACTIVE))
+				->set('deleted_at', $qb->createNamedParameter(null, IQueryBuilder::PARAM_NULL))
+				->set('updated_at', $qb->createNamedParameter($now, IQueryBuilder::PARAM_INT))
+				->where($qb->expr()->in('file_id', $qb->createNamedParameter($chunk, IQueryBuilder::PARAM_INT_ARRAY)))
+				->andWhere($qb->expr()->eq('state', $qb->createNamedParameter(self::STATE_PENDING_DELETE)));
+			$qb->executeStatement();
+		}
 	}
 
 	/**
@@ -304,53 +232,40 @@ class BindingService {
 	}
 
 	/**
-	 * The mark of the rows of $fileIds: set only where none is, so the first
-	 * one stays; null clears it.
-	 *
-	 * @param list<int> $fileIds
+	 * A gone file's pad Etherpad refused to delete: the row is touched, and
+	 * findGone() passes it by until its next try is due.
 	 */
-	private function setGoneAfter(array $fileIds, ?int $at): void {
-		foreach (array_chunk($fileIds, 500) as $chunk) {
-			$qb = $this->db->getQueryBuilder();
-			$qb->update(self::TABLE)
-				->set('gone_after', $at === null
-					? $qb->createNamedParameter(null, IQueryBuilder::PARAM_NULL)
-					: $qb->createNamedParameter($at, IQueryBuilder::PARAM_INT))
-				->where($qb->expr()->in('file_id', $qb->createNamedParameter($chunk, IQueryBuilder::PARAM_INT_ARRAY)))
-				->andWhere($at === null ? $qb->expr()->isNotNull('gone_after') : $qb->expr()->isNull('gone_after'));
-			$qb->executeStatement();
-		}
-	}
-
-	/**
-	 * A gone file's pad Etherpad refused to delete: its mark moves to $until,
-	 * and findMarkedGone() passes it by till then.
-	 */
-	public function postponeGone(int $fileId, int $until): void {
+	public function postponeGone(int $fileId, string $padId): void {
 		$qb = $this->db->getQueryBuilder();
 		$qb->update(self::TABLE)
-			->set('gone_after', $qb->createNamedParameter($until, IQueryBuilder::PARAM_INT))
+			->set('updated_at', $qb->createNamedParameter($this->timeFactory->getTime(), IQueryBuilder::PARAM_INT))
 			->where($qb->expr()->eq('file_id', $qb->createNamedParameter($fileId, IQueryBuilder::PARAM_INT)))
-			->andWhere($qb->expr()->isNotNull('gone_after'));
+			->andWhere($qb->expr()->eq('pad_id', $qb->createNamedParameter($padId)))
+			->andWhere($qb->expr()->eq('state', $qb->createNamedParameter(self::STATE_PENDING_DELETE)));
 		$qb->executeStatement();
 	}
 
 	/**
-	 * Active rows whose file was seen deleted for good and whose mark is
-	 * due by $dueBy (now if null), if the file cache has nothing left of the
-	 * file (GoneFileSweep). The earliest due first.
+	 * Rows of files seen deleted for good that the file cache has nothing
+	 * left of, and that are due: seen deleted at or before $graceBy, and
+	 * never tried since - updated_at is still deleted_at - or last tried at
+	 * or before $retryBy (GoneFileSweep). The longest untouched first.
 	 *
 	 * @return list<Binding>
 	 */
-	public function findMarkedGone(int $limit, ?int $dueBy = null): array {
+	public function findGone(int $limit, int $graceBy, int $retryBy): array {
 		$qb = $this->db->getQueryBuilder();
 		$qb->select('b.file_id', 'b.pad_id', 'b.access_mode', 'b.state', 'b.deleted_at', 'b.updated_at')
 			->from(self::TABLE, 'b')
 			->leftJoin('b', 'filecache', 'fc', $qb->expr()->eq('b.file_id', 'fc.fileid'))
-			->where($qb->expr()->lte('b.gone_after', $qb->createNamedParameter($dueBy ?? $this->timeFactory->getTime(), IQueryBuilder::PARAM_INT)))
-			->andWhere($qb->expr()->eq('b.state', $qb->createNamedParameter(self::STATE_ACTIVE)))
+			->where($qb->expr()->eq('b.state', $qb->createNamedParameter(self::STATE_PENDING_DELETE)))
 			->andWhere($qb->expr()->isNull('fc.fileid'))
-			->orderBy('b.gone_after', 'ASC')
+			->andWhere($qb->expr()->lte('b.deleted_at', $qb->createNamedParameter($graceBy, IQueryBuilder::PARAM_INT)))
+			->andWhere($qb->expr()->orX(
+				$qb->expr()->eq('b.updated_at', 'b.deleted_at'),
+				$qb->expr()->lte('b.updated_at', $qb->createNamedParameter($retryBy, IQueryBuilder::PARAM_INT)),
+			))
+			->orderBy('b.updated_at', 'ASC')
 			->setMaxResults(max(1, $limit));
 		$result = $qb->executeQuery();
 		$rows = array_map(Binding::fromRow(...), DbRows::all($result->fetchAll()));
@@ -359,19 +274,21 @@ class BindingService {
 	}
 
 	/**
-	 * Clears the marks of files the file cache still has, though they were
-	 * due before $dueBefore: a deletion that did not happen after all - one
-	 * rolled back, an account whose files were left. Kept, such a mark would
-	 * take the pad of a file a scan drops later, which the app leaves.
+	 * Rows seen deleted for good whose file the file cache still has, seen
+	 * so at or before $seenBy: a deletion that did not happen after all -
+	 * one rolled back, an account whose files were left. Active again, as
+	 * many as $limit; kept, such a row would take the pad of a file a scan
+	 * drops later, which the app leaves.
 	 *
-	 * @return int how many it cleared, $limit at most
+	 * @return int how many
 	 */
-	public function clearStaleGone(int $dueBefore, int $limit): int {
+	public function clearStaleGone(int $seenBy, int $limit): int {
 		$qb = $this->db->getQueryBuilder();
 		$qb->select('b.file_id')
 			->from(self::TABLE, 'b')
 			->innerJoin('b', 'filecache', 'fc', $qb->expr()->eq('b.file_id', 'fc.fileid'))
-			->where($qb->expr()->lte('b.gone_after', $qb->createNamedParameter($dueBefore, IQueryBuilder::PARAM_INT)))
+			->where($qb->expr()->eq('b.state', $qb->createNamedParameter(self::STATE_PENDING_DELETE)))
+			->andWhere($qb->expr()->lte('b.deleted_at', $qb->createNamedParameter($seenBy, IQueryBuilder::PARAM_INT)))
 			->setMaxResults(max(1, $limit));
 		$fileIds = $this->fileIdsOf($qb);
 		$this->clearGone($fileIds);
@@ -429,11 +346,12 @@ class BindingService {
 		if ($binding->accessMode !== $accessMode) {
 			throw new BindingMismatchException('Binding access mode mismatch.');
 		}
-		if ($binding->isWaiting()) {
-			throw new WaitingBindingException('Pad binding is not active.');
+		if ($binding->state === self::STATE_PENDING_DELETE && $this->transition($fileId, $padId, self::STATE_PENDING_DELETE, self::STATE_ACTIVE)) {
+			// Seen deleted for good, yet here: the deletion did not happen
+			// after all, and the file keeps its pad.
+			return;
 		}
 		if ($binding->state !== self::STATE_ACTIVE) {
-			// A state the sweep never takes up, so nothing to wait for either.
 			throw new BindingException('Pad binding is not active.');
 		}
 	}
@@ -450,13 +368,6 @@ class BindingService {
 	 */
 	public function deleteActiveBinding(int $fileId, string $padId): bool {
 		return $this->deleteInState($fileId, $padId, self::STATE_ACTIVE);
-	}
-
-	public function deleteByFileId(int $fileId): void {
-		$qb = $this->db->getQueryBuilder();
-		$qb->delete(self::TABLE)
-			->where($qb->expr()->eq('file_id', $qb->createNamedParameter($fileId, IQueryBuilder::PARAM_INT)));
-		$qb->executeStatement();
 	}
 
 	private function assertAccessMode(string $accessMode): void {

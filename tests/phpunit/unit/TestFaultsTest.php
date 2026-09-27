@@ -20,8 +20,8 @@ use PHPUnit\Framework\TestCase;
 class TestFaultsTest extends TestCase {
 	public function testAFaultStrikesOnlyByNameAndOnlyInDebugMode(): void {
 		$cases = [
-			'set, debug' => [TestFaults::TRASH_WRITE_LOCK, true, [TestFaults::TRASH_WRITE_LOCK]],
-			'set, no debug' => [TestFaults::TRASH_WRITE_LOCK, false, []],
+			'set, debug' => [TestFaults::RESTORE_WRITE_LOCK, true, [TestFaults::RESTORE_WRITE_LOCK]],
+			'set, no debug' => [TestFaults::RESTORE_WRITE_LOCK, false, []],
 			'another one set' => [TestFaults::RESTORE_READ_LOCK, true, [TestFaults::RESTORE_READ_LOCK]],
 			'none set' => ['', true, []],
 		];
@@ -36,7 +36,7 @@ class TestFaultsTest extends TestCase {
 	/** The admin API accepts these names and no others. */
 	public function testNamesEveryFaultOnce(): void {
 		$this->assertSame(
-			['trash_read_lock', 'trash_write_lock', 'trash_write_fail', 'restore_read_lock', 'restore_write_lock', 'restore_write_fail'],
+			['restore_read_lock', 'restore_write_lock', 'restore_write_fail'],
 			TestFaults::supported(),
 		);
 	}

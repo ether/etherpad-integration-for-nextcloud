@@ -22,7 +22,7 @@ class PublicPadContextService {
 	public function __construct(
 		private PublicShareResolver $shareResolver,
 		private PadFileService $padFileService,
-		private SettleOnOpen $settleOnOpen,
+		private BindingService $bindingService,
 		private PublicPadOpenService $publicPadOpenService,
 		private LivePadHtmlFetcher $livePadHtmlFetcher,
 		private PadFileLockRetryService $lockRetryService,
@@ -62,7 +62,7 @@ class PublicPadContextService {
 		$isExternal = $pad->isExternal;
 
 		if (!$isExternal) {
-			$this->settleOnOpen->settleThenAssert($node, $fileId, $pad);
+			$this->bindingService->assertConsistentMapping($fileId, $pad->padId, $pad->accessMode);
 		}
 		$openTarget = $this->publicPadOpenService->open($pad, $resolved->readOnly, $token);
 

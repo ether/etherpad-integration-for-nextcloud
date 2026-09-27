@@ -28,7 +28,6 @@ use OCA\EtherpadNextcloud\Exception\PadFileFormatException;
 use OCA\EtherpadNextcloud\Exception\PadParentFolderNotWritableException;
 use OCA\EtherpadNextcloud\Exception\PadTypeDisabledException;
 use OCA\EtherpadNextcloud\Exception\UnauthorizedRequestException;
-use OCA\EtherpadNextcloud\Exception\WaitingBindingException;
 use OCA\EtherpadNextcloud\Service\ApiErrorLog;
 use OCA\EtherpadNextcloud\Service\PadResponseService;
 use OCP\AppFramework\Http;
@@ -134,11 +133,6 @@ class PadControllerErrorMapper {
 				// like any other.
 				$this->errorLog->report($e, $options['context'] ?? []);
 				return new DataResponse(['message' => $options['binding_message']], $status);
-			}
-			if ($e instanceof WaitingBindingException) {
-				// Not a dead end: once the row is settled, the same request
-				// opens the pad - or answers missing_binding.
-				$status = Http::STATUS_CONFLICT;
 			}
 			return $this->answer($options, $e, ['message' => $this->padResponses->bindingErrorMessage($e)], $status);
 		} catch (LegacyProtectedImportDisabledException $e) {

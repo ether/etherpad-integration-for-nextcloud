@@ -8,11 +8,8 @@ use OCA\EtherpadNextcloud\Exception\BindingNotCreatedException;
 use OCA\EtherpadNextcloud\Exception\BindingMismatchException;
 use OCA\EtherpadNextcloud\Exception\BindingException;
 use OCA\EtherpadNextcloud\Exception\MissingBindingException;
-use OCA\EtherpadNextcloud\Exception\WaitingBindingException;
 use OCA\EtherpadNextcloud\Service\Binding;
 use OCA\EtherpadNextcloud\Service\BindingService;
-use OCA\EtherpadNextcloud\Service\FileLocation;
-use OCA\EtherpadNextcloud\Service\WaitingBinding;
 use OCP\DB\QueryBuilder\IQueryBuilder;
 use OCP\IDBConnection;
 use OCA\EtherpadNextcloud\Tests\Support\FixedClock;
@@ -30,10 +27,8 @@ class BindingServiceTest extends TestCase {
 			'consistent' => [self::bindingRow(10, 'pad-a', BindingService::STATE_ACTIVE), 'pad-a', BindingService::ACCESS_PUBLIC, null, null],
 			'another pad' => [self::bindingRow(10, 'pad-a', BindingService::STATE_ACTIVE), 'pad-b', BindingService::ACCESS_PUBLIC, BindingMismatchException::class, 'Binding pad ID mismatch.'],
 			'another mode' => [self::bindingRow(10, 'pad-a', BindingService::STATE_ACTIVE, BindingService::ACCESS_PROTECTED), 'pad-a', BindingService::ACCESS_PUBLIC, BindingMismatchException::class, 'Binding access mode mismatch.'],
-			// Waiting is its own kind, so the one who opens the file is told it is on its way back.
-			'a deletion owed' => [self::bindingRow(10, 'pad-a', BindingService::STATE_PENDING_DELETE), 'pad-a', BindingService::ACCESS_PUBLIC, WaitingBindingException::class, 'Pad binding is not active.'],
-			'a restore undecided' => [self::bindingRow(10, 'pad-a', BindingService::STATE_RESTORE_PENDING), 'pad-a', BindingService::ACCESS_PUBLIC, WaitingBindingException::class, 'Pad binding is not active.'],
-			// No sweep takes up a state it does not know, so nothing waits for one either.
+			// Seen deleted for good, yet opened: the deletion did not happen.
+			'a file seen deleted' => [self::bindingRow(10, 'pad-a', BindingService::STATE_PENDING_DELETE), 'pad-a', BindingService::ACCESS_PUBLIC, null, null],
 			'a state the app does not know' => [self::bindingRow(10, 'pad-a', 'trashed'), 'pad-a', BindingService::ACCESS_PUBLIC, BindingException::class, 'Pad binding is not active.'],
 			'another file\'s row' => [self::bindingRow(11, 'pad-a', BindingService::STATE_ACTIVE), 'pad-a', BindingService::ACCESS_PUBLIC, MissingBindingException::class, 'No binding exists for this file.'],
 			'unknown mode' => [self::bindingRow(10, 'pad-a', BindingService::STATE_ACTIVE), 'pad-a', 'legacy', BindingException::class, 'Unsupported access mode: legacy'],
@@ -48,6 +43,19 @@ class BindingServiceTest extends TestCase {
 				$this->assertSame([$exception, $message], [$e::class, $e->getMessage()], $case);
 			}
 		}
+	}
+
+	/**
+	 * A file seen deleted for good that is opened was not deleted after all:
+	 * its row is active again, and keeps its pad. Only its own row.
+	 */
+	public function testARowSeenDeletedWhoseFileIsOpenedIsActiveAgain(): void {
+		$table = new InMemoryBindingTable([self::bindingRow(9, 'pad-9', BindingService::STATE_PENDING_DELETE), self::bindingRow(10, 'pad-a', BindingService::STATE_PENDING_DELETE)]);
+
+		(new BindingService($table, new FixedClock(500)))->assertConsistentMapping(10, 'pad-a', BindingService::ACCESS_PUBLIC);
+
+		$this->assertSame([9 => BindingService::STATE_PENDING_DELETE, 10 => BindingService::STATE_ACTIVE], array_column($table->rows, 'state', 'file_id'));
+		$this->assertNull($table->rows[1]['deleted_at']);
 	}
 
 	/**
@@ -126,78 +134,29 @@ class BindingServiceTest extends TestCase {
 	}
 
 	/**
-	 * Both kinds of waiting row come with the path their file has now, and a
-	 * row whose file is gone for good has no file cache row to join: left,
-	 * not inner. A deletion owed is aged by when the trash recorded it, an
-	 * undecided restore by when it last changed, and the row carries that
-	 * time along.
+	 * Files seen deleted for good: their active rows wait for their pads to
+	 * go, dated now, deleted_at and updated_at alike; a row that waits
+	 * already keeps its dates, and the other rows are left alone. Files the
+	 * file cache has again are active again, undated. Any number of files,
+	 * in chunks the database takes.
 	 */
-	public function testWaitingRowsComeAgedWithTheirFilesPath(): void {
-		$kinds = [
-			'restores' => [BindingService::STATE_RESTORE_PENDING, 'b.updated_at', static fn (BindingService $s): array => $s->findRestorePendingByAge(3600, 86400, 50)],
-			'deletions owed' => [BindingService::STATE_PENDING_DELETE, 'b.deleted_at', static fn (BindingService $s): array => $s->findPendingDeleteByAge(3600, 86400, 50)],
-		];
-		foreach ($kinds as $kind => [$state, $ageColumn, $find]) {
-			$qb = new BindingServiceTestQueryBuilder([['file_id' => 10, 'pad_id' => 'pad-a', 'state' => $state, 'file_path' => null, 'waiting_since' => 90000]]);
-
-			$rows = $find($this->buildServiceWithQueryBuilder($qb, 100000));
-
-			$this->assertEquals([new WaitingBinding(10, 'pad-a', $state, null, 90000)], $rows, $kind);
-			// Every column a WaitingBinding is read from; one left out would read as a row without it.
-			$this->assertSame(['b.file_id', 'b.pad_id', 'b.state'], $qb->selected, $kind);
-			$this->assertSame([['fc.path', 'file_path'], [$ageColumn, 'waiting_since']], $qb->aliases, $kind);
-			$this->assertSame([['b', 'filecache', 'fc', ['eq', 'b.file_id', 'fc.fileid']]], $qb->leftJoins, $kind);
-			$this->assertSame(50, $qb->maxResults, $kind);
-			$this->assertSame([['eq', 'b.state', 'param1'], ['lte', $ageColumn, 'param2'], ['gt', $ageColumn, 'param3']], $qb->conditions, $kind);
-			$this->assertSame([
-				['param1', $state, null],
-				['param2', 96400, IQueryBuilder::PARAM_INT],
-				['param3', 13600, IQueryBuilder::PARAM_INT],
-			], $qb->parameters, $kind);
-		}
-	}
-
-	/**
-	 * Unaged, there is no condition on the date at all, so a row that never
-	 * had one is reached too; and a limit that makes no sense still reaches
-	 * one row.
-	 */
-	public function testAnUnagedRunComparesNoDate(): void {
-		$kinds = [
-			'restores' => static fn (BindingService $s): array => $s->findRestorePendingByAge(-1, null, 0),
-			'deletions owed' => static fn (BindingService $s): array => $s->findPendingDeleteByAge(-1, null, 0),
-		];
-		foreach ($kinds as $kind => $find) {
-			$qb = new BindingServiceTestQueryBuilder([]);
-
-			$find($this->buildServiceWithQueryBuilder($qb, 100000));
-
-			$this->assertSame([['eq', 'b.state', 'param1']], $qb->conditions, $kind);
-			$this->assertSame(1, $qb->maxResults, $kind);
-		}
-	}
-
-	/**
-	 * Files seen deleted for good mark their rows once, due five minutes
-	 * later: a row marked already keeps its first mark, and the other rows
-	 * are left alone. Files the
-	 * file cache has again lose it. Any number of files, in chunks the
-	 * database takes.
-	 */
-	public function testFilesDeletedForGoodMarkTheirRowsOnce(): void {
+	public function testFilesDeletedForGoodWaitForTheirPadsToGo(): void {
 		$rows = array_map(static fn (int $id): array => self::bindingRow($id, 'pad-' . $id, BindingService::STATE_ACTIVE), range(1, 1200));
-		$rows[1]['gone_after'] = 300;
+		$rows[1] = self::bindingRow(2, 'pad-2', BindingService::STATE_PENDING_DELETE);
 		$table = new InMemoryBindingTable($rows);
 		$service = new BindingService($table, new FixedClock(500));
+		$dates = static fn (): array => array_map(static fn (array $row): array => [$row['state'], $row['deleted_at'], $row['updated_at']], array_intersect_key(array_column($table->rows, null, 'file_id'), [1 => 0, 2 => 0, 3 => 0, 1100 => 0]));
+		$pending = BindingService::STATE_PENDING_DELETE;
+		$active = BindingService::STATE_ACTIVE;
 
 		$service->markGone([1, 2, 1100]);
-		$this->assertSame([1 => 800, 2 => 300, 3 => null, 1100 => 800], array_intersect_key(array_column($table->rows, 'gone_after', 'file_id'), [1 => 0, 2 => 0, 3 => 0, 1100 => 0]), 'due once the grace is over');
+		$this->assertSame([1 => [$pending, 500, 500], 2 => [$pending, 100, 100], 3 => [$active, null, 100], 1100 => [$pending, 500, 500]], $dates());
 
 		$service->markGone(range(1, 1200));
-		$this->assertSame(array_fill(0, 1200, 800), array_map(static fn (?int $at): int => $at === 300 ? 800 : (int)$at, array_column($table->rows, 'gone_after')), 'every chunk');
+		$this->assertSame([$pending], array_values(array_unique(array_column($table->rows, 'state'))), 'every chunk');
 
 		$service->clearGone([2, 1100]);
-		$this->assertSame([1 => 800, 2 => null, 3 => 800, 1100 => null], array_intersect_key(array_column($table->rows, 'gone_after', 'file_id'), [1 => 0, 2 => 0, 3 => 0, 1100 => 0]));
+		$this->assertSame([1 => [$pending, 500, 500], 2 => [$active, null, 500], 3 => [$pending, 500, 500], 1100 => [$active, null, 500]], $dates());
 
 		$service->markGone([]);
 		$service->clearGone([]);
@@ -217,46 +176,54 @@ class BindingServiceTest extends TestCase {
 		$this->assertSame([1, 2], $service->fileIdsOnStorage(1));
 		$this->assertSame([5], $service->fileIdsOnStorage(2));
 		$this->assertSame([], $service->fileIdsOnStorage(3));
-		$this->assertSame(array_fill(0, 4, null), array_column($table->rows, 'gone_after'));
+		$this->assertSame([BindingService::STATE_ACTIVE], array_values(array_unique(array_column($table->rows, 'state'))));
 	}
 
 	/**
 	 * The sweep of files gone for good asks the file cache through the
-	 * binding table: marked, due and gone, the earliest due first, active
-	 * rows only.
+	 * binding table: rows of files seen deleted for good whose file is gone,
+	 * past their grace, and never tried or tried long enough ago; the
+	 * longest untouched first. Active rows are never taken.
 	 */
 	public function testTheSweepFindsWhatTheFileCacheNoLongerHas(): void {
-		$row = static fn (int $fileId, string $state, ?int $goneAfter): array => ['gone_after' => $goneAfter] + self::bindingRow($fileId, 'pad-' . $fileId, $state);
+		$row = static fn (int $fileId, string $state, ?int $seenAt, ?int $triedAt = null): array => ['deleted_at' => $seenAt, 'updated_at' => $triedAt ?? $seenAt ?? 100] + self::bindingRow($fileId, 'pad-' . $fileId, $state);
+		$pending = BindingService::STATE_PENDING_DELETE;
 		$table = new InMemoryBindingTable([
-			$row(11, BindingService::STATE_ACTIVE, 300),
-			$row(12, BindingService::STATE_ACTIVE, 200),
-			$row(13, BindingService::STATE_ACTIVE, 100),
+			$row(11, $pending, 300),
+			$row(12, $pending, 200),
+			$row(13, $pending, 100),
 			$row(14, BindingService::STATE_ACTIVE, null),
-			$row(15, BindingService::STATE_PENDING_DELETE, 50),
-			$row(16, BindingService::STATE_ACTIVE, 600),
+			$row(15, $pending, 450),
+			$row(16, $pending, 50, triedAt: 250),
+			$row(17, $pending, 50, triedAt: 150),
+			// An active row that kept a date is still no row seen deleted.
+			$row(18, BindingService::STATE_ACTIVE, 50),
 		], [
 			['fileid' => 13, 'storage' => 1, 'path' => 'files/13.pad'],
 		]);
 		$service = new BindingService($table, new FixedClock(500));
+		$found = static fn (array $rows): array => array_map(static fn (Binding $b): int => $b->fileId, $rows);
 
-		$this->assertSame([12, 11], array_map(static fn (Binding $b): int => $b->fileId, $service->findMarkedGone(10)));
-		$this->assertSame([12], array_map(static fn (Binding $b): int => $b->fileId, $service->findMarkedGone(1)));
-		$this->assertSame([12, 11, 16], array_map(static fn (Binding $b): int => $b->fileId, $service->findMarkedGone(10, 600)), 'due by a time asked for');
+		$this->assertSame([17, 12, 11], $found($service->findGone(10, 400, 200)));
+		$this->assertSame([17], $found($service->findGone(1, 400, 200)));
+		$this->assertSame([17, 12, 16, 11, 15], $found($service->findGone(10, 500, 300)));
 		$this->assertTrue($service->isFileGone(11));
 		$this->assertFalse($service->isFileGone(13));
 	}
 
 	/**
-	 * A mark whose file the file cache still has, due before the time
-	 * asked for, did not happen: it is cleared, as many as asked for. A
-	 * mark due later stays, and so does one whose file is gone.
+	 * A file seen deleted for good that the file cache still has, seen at or
+	 * before the time asked for, was not deleted: its row is active again,
+	 * as many as asked for. One seen later waits, and so does one whose file
+	 * is gone.
 	 */
-	public function testStaleMarksAreCleared(): void {
+	public function testDeletionsThatDidNotHappenLeaveTheirRowsActive(): void {
+		$row = static fn (int $fileId, int $seenAt): array => ['deleted_at' => $seenAt, 'updated_at' => $seenAt] + self::bindingRow($fileId, 'pad-' . $fileId, BindingService::STATE_PENDING_DELETE);
 		$table = new InMemoryBindingTable([
-			['gone_after' => 100] + self::bindingRow(1, 'pad-a', BindingService::STATE_ACTIVE),
-			['gone_after' => 200] + self::bindingRow(2, 'pad-b', BindingService::STATE_ACTIVE),
-			['gone_after' => 400] + self::bindingRow(3, 'pad-c', BindingService::STATE_ACTIVE),
-			['gone_after' => 100] + self::bindingRow(4, 'pad-d', BindingService::STATE_ACTIVE),
+			$row(1, 100),
+			$row(2, 200),
+			$row(3, 400),
+			$row(4, 100),
 			self::bindingRow(5, 'pad-e', BindingService::STATE_ACTIVE),
 		], array_map(static fn (int $id): array => ['fileid' => $id, 'storage' => 1, 'path' => 'files/' . $id . '.pad'], [1, 2, 3, 5]));
 		$service = new BindingService($table, new FixedClock(500));
@@ -265,51 +232,46 @@ class BindingServiceTest extends TestCase {
 		$this->assertSame(1, $service->clearStaleGone(300, 10));
 		$this->assertSame(0, $service->clearStaleGone(300, 10));
 
-		$this->assertSame([1 => null, 2 => null, 3 => 400, 4 => 100, 5 => null], array_column($table->rows, 'gone_after', 'file_id'));
+		$active = BindingService::STATE_ACTIVE;
+		$pending = BindingService::STATE_PENDING_DELETE;
+		$this->assertSame([1 => $active, 2 => $active, 3 => $pending, 4 => $pending, 5 => $active], array_column($table->rows, 'state', 'file_id'));
 	}
 
 	/**
-	 * A gone file's pad Etherpad refused: its mark moves on to the next try,
-	 * and the file is not found gone till then. An unmarked row stays so.
+	 * A gone file's pad Etherpad refused: its row is touched, and the sweep
+	 * passes it by until its next try; the date it was seen deleted stays.
+	 * Another pad's row, or an active one, is not touched.
 	 */
 	public function testAPostponedFileWaitsForItsTry(): void {
-		$table = new InMemoryBindingTable([
-			['gone_after' => 300] + self::bindingRow(1, 'pad-a', BindingService::STATE_ACTIVE),
-			['gone_after' => 300] + self::bindingRow(2, 'pad-b', BindingService::STATE_ACTIVE),
-			self::bindingRow(3, 'pad-c', BindingService::STATE_ACTIVE),
-		]);
+		$row = static fn (int $fileId, string $state): array => ['deleted_at' => $state === BindingService::STATE_PENDING_DELETE ? 100 : null] + self::bindingRow($fileId, 'pad-' . $fileId, $state);
+		$table = new InMemoryBindingTable([$row(1, BindingService::STATE_PENDING_DELETE), $row(2, BindingService::STATE_PENDING_DELETE), $row(3, BindingService::STATE_ACTIVE)]);
 		$clock = new FixedClock(500);
 		$service = new BindingService($table, $clock);
 
-		$service->postponeGone(1, 1000);
-		$service->postponeGone(3, 1000);
+		$service->postponeGone(1, 'pad-1');
+		$service->postponeGone(2, 'pad-other');
+		$service->postponeGone(3, 'pad-3');
 
-		$this->assertSame([1000, 300, null], array_column($table->rows, 'gone_after'));
-		$this->assertSame([2], array_map(static fn (Binding $b): int => $b->fileId, $service->findMarkedGone(10)));
-		$clock->advance(500);
-		$this->assertSame([2, 1], array_map(static fn (Binding $b): int => $b->fileId, $service->findMarkedGone(10)));
+		$this->assertSame([[100, 500], [100, 100], [null, 100]], array_map(static fn (array $row): array => [$row['deleted_at'], $row['updated_at']], $table->rows));
+		$this->assertSame([2], array_map(static fn (Binding $b): int => $b->fileId, $service->findGone(10, 500, 499)));
+		$this->assertSame([2, 1], array_map(static fn (Binding $b): int => $b->fileId, $service->findGone(10, 500, 500)));
+	}
+
+	/** How many files wait for their pads to go, in one count. */
+	public function testCountsTheRowsThatWait(): void {
+		$service = $this->serviceOver([
+			self::bindingRow(1, 'pad-a', BindingService::STATE_PENDING_DELETE),
+			self::bindingRow(2, 'pad-b', BindingService::STATE_ACTIVE),
+			self::bindingRow(3, 'pad-c', BindingService::STATE_PENDING_DELETE),
+		]);
+
+		$this->assertSame(2, $service->countPendingDeletes());
+		$this->assertSame(0, $this->serviceOver([])->countPendingDeletes());
 	}
 
 	/** @param list<array<string,mixed>> $rows */
 	private function serviceOver(array $rows): BindingService {
 		return new BindingService(new InMemoryBindingTable($rows), new FixedClock(500));
-	}
-
-	private function buildServiceWithQueryBuilder(BindingServiceTestQueryBuilder $qb, int $now): BindingService {
-		$db = new class ($qb) implements IDBConnection {
-			public function __construct(private BindingServiceTestQueryBuilder $qb) {
-			}
-
-			public function getQueryBuilder(): IQueryBuilder {
-				return $this->qb;
-			}
-
-			public function escapeLikeParameter(string $param): string {
-				return addcslashes($param, '\\_%');
-			}
-		};
-
-		return new BindingService($db, new FixedClock($now));
 	}
 
 	/**
@@ -353,104 +315,46 @@ class BindingServiceTest extends TestCase {
 
 		self::assertTrue($service->rebind(1, 'old', BindingService::STATE_PENDING_DELETE, 'new', BindingService::STATE_ACTIVE));
 		self::assertSame([
-			['file_id' => 1, 'pad_id' => 'new', 'access_mode' => BindingService::ACCESS_PUBLIC, 'state' => BindingService::STATE_ACTIVE, 'deleted_at' => null, 'updated_at' => 500, 'gone_after' => null],
+			['file_id' => 1, 'pad_id' => 'new', 'access_mode' => BindingService::ACCESS_PUBLIC, 'state' => BindingService::STATE_ACTIVE, 'deleted_at' => null, 'updated_at' => 500],
 			self::bindingRow(2, 'other', BindingService::STATE_PENDING_DELETE),
 		], $table->rows);
 	}
 
-	/**
-	 * deleted_at says the file is in the trash. A restore that has to wait
-	 * has its file back, so the date goes, whichever way the row got there.
-	 */
-	public function testARestoreLeftWaitingIsNotDatedAsDeleted(): void {
-		$table = new InMemoryBindingTable([self::bindingRow(1, 'pad', BindingService::STATE_PENDING_DELETE)]);
+	/** A row that comes to wait is dated from now; one that stops waiting is undated. */
+	public function testTransitionDatesARowThatComesToWait(): void {
+		$table = new InMemoryBindingTable([self::bindingRow(1, 'pad', BindingService::STATE_ACTIVE)]);
 		$service = new BindingService($table, new FixedClock(500));
 
-		self::assertTrue($service->transition(1, 'pad', BindingService::STATE_PENDING_DELETE, BindingService::STATE_RESTORE_PENDING));
+		self::assertTrue($service->transition(1, 'pad', BindingService::STATE_ACTIVE, BindingService::STATE_PENDING_DELETE));
+		self::assertSame(
+			['file_id' => 1, 'pad_id' => 'pad', 'access_mode' => BindingService::ACCESS_PUBLIC, 'state' => BindingService::STATE_PENDING_DELETE, 'deleted_at' => 500, 'updated_at' => 500],
+			$table->rows[0],
+		);
 
+		self::assertTrue($service->transition(1, 'pad', BindingService::STATE_PENDING_DELETE, BindingService::STATE_ACTIVE));
 		self::assertNull($table->rows[0]['deleted_at']);
 	}
 
-	/** Back in the trash is a deletion owed again, dated from now. */
-	public function testTransitionToPendingDeleteDatesTheDeletionAnew(): void {
-		$table = new InMemoryBindingTable([self::bindingRow(1, 'pad', BindingService::STATE_RESTORE_PENDING)]);
-		$service = new BindingService($table, new FixedClock(500));
-
-		self::assertTrue($service->transition(1, 'pad', BindingService::STATE_RESTORE_PENDING, BindingService::STATE_PENDING_DELETE));
-
-		self::assertSame(
-			['file_id' => 1, 'pad_id' => 'pad', 'access_mode' => BindingService::ACCESS_PUBLIC, 'state' => BindingService::STATE_PENDING_DELETE, 'deleted_at' => 500, 'updated_at' => 500, 'gone_after' => null],
-			$table->rows[0],
-		);
-	}
-
-	/** The same three conditions, for the recheck's delete of a row whose pad is gone. */
+	/** The same three conditions, for the sweep's delete of a row whose pad is gone. */
 	public function testDeleteInStateRemovesARowOnlyWhileItNamesThatPadInThatState(): void {
 		$table = new InMemoryBindingTable([
-			self::bindingRow(1, 'old', BindingService::STATE_RESTORE_PENDING),
-			self::bindingRow(2, 'other', BindingService::STATE_RESTORE_PENDING),
+			self::bindingRow(1, 'old', BindingService::STATE_PENDING_DELETE),
+			self::bindingRow(2, 'other', BindingService::STATE_PENDING_DELETE),
 		]);
 		$service = new BindingService($table, new FixedClock(500));
 		$before = $table->rows;
 
-		self::assertFalse($service->deleteInState(1, 'other', BindingService::STATE_RESTORE_PENDING), 'another pad');
+		self::assertFalse($service->deleteInState(1, 'other', BindingService::STATE_PENDING_DELETE), 'another pad');
 		self::assertFalse($service->deleteInState(1, 'old', BindingService::STATE_ACTIVE), 'another state');
 		self::assertSame($before, $table->rows);
 
-		self::assertTrue($service->deleteInState(1, 'old', BindingService::STATE_RESTORE_PENDING));
-		self::assertSame([self::bindingRow(2, 'other', BindingService::STATE_RESTORE_PENDING)], $table->rows);
+		self::assertTrue($service->deleteInState(1, 'old', BindingService::STATE_PENDING_DELETE));
+		self::assertSame([self::bindingRow(2, 'other', BindingService::STATE_PENDING_DELETE)], $table->rows);
 	}
 
 	/**
-	 * Both figures in one grouped query, and a state with no rows is a
-	 * zero rather than a missing key.
-	 */
-	public function testCountsTheWaitingRowsOfEitherKindInOneQuery(): void {
-		$qb = new BindingServiceTestQueryBuilder([
-			['state' => BindingService::STATE_ACTIVE, 'cnt' => '9'],
-			['state' => BindingService::STATE_PENDING_DELETE, 'cnt' => '3'],
-		]);
-
-		$counts = $this->buildServiceWithQueryBuilder($qb, 100000)->countWaiting();
-
-		$this->assertSame(['pending_delete_count' => 3, 'restore_pending_count' => 0], $counts);
-		$this->assertSame(['state'], $qb->groupBy);
-	}
-
-	/**
-	 * A sweep asks for owed deletions by where the file is, so rows that
-	 * wait on a trash cannot crowd out the ones that can go: gone for good
-	 * has no file cache row, a user's trash is under files_trashbin/, and
-	 * the rest is everything else that is still there.
-	 */
-	public function testOwedDeletionsCanBeAskedForByWhereTheFileIs(): void {
-		$expected = [
-			[FileLocation::Gone, [['eq', 'b.state', 'param1'], ['isNull', 'fc.fileid']], []],
-			[FileLocation::InUserTrash, [['eq', 'b.state', 'param1'], 'fc.path LIKE param2'], ['files\\_trashbin/%']],
-			[
-				FileLocation::Elsewhere,
-				// The negated like(), which carries the ESCAPE on every database; notLike() does not on SQLite and Oracle.
-				[['eq', 'b.state', 'param1'], ['isNotNull', 'fc.fileid'], 'NOT (fc.path LIKE param2)', 'NOT (fc.path LIKE param3)'],
-				// A team folder's trash on the root storage waits for that trash, not for a turn.
-				['files\\_trashbin/%', '\\_\\_groupfolders/trash/%'],
-			],
-		];
-		foreach ($expected as [$fileLocation, $conditions, $patterns]) {
-			$qb = new BindingServiceTestQueryBuilder([]);
-			$this->buildServiceWithQueryBuilder($qb, 100000)->findPendingDeleteByAge(0, null, 50, $fileLocation);
-
-			$this->assertSame($conditions, $qb->conditions, $fileLocation->name);
-			// Escaped: `_` is LIKE's wildcard for any one character.
-			$this->assertSame($patterns, array_map(static fn (array $p): mixed => $p[1], array_slice($qb->parameters, 1)), $fileLocation->name);
-			// Aged by deleted_at, taken by updated_at: a row that waits again goes to the back.
-			$this->assertSame([['b.updated_at', 'ASC']], $qb->orderedBy, $fileLocation->name);
-		}
-	}
-
-	/**
-	 * A row that stays owed keeps the date it became owed: its age decides
-	 * how often a sweep tries it. Only updated_at moves, which puts it at
-	 * the back of the queue.
+	 * A row that stays waiting keeps the date its file was seen deleted.
+	 * Only updated_at moves, which puts it at the back of the queue.
 	 */
 	public function testARowThatStaysOwedKeepsItsDate(): void {
 		$table = new InMemoryBindingTable([self::bindingRow(1, 'pad', BindingService::STATE_PENDING_DELETE)]);
@@ -459,147 +363,15 @@ class BindingServiceTest extends TestCase {
 		self::assertTrue($service->transition(1, 'pad', BindingService::STATE_PENDING_DELETE, BindingService::STATE_PENDING_DELETE));
 
 		self::assertSame(
-			['file_id' => 1, 'pad_id' => 'pad', 'access_mode' => BindingService::ACCESS_PUBLIC, 'state' => BindingService::STATE_PENDING_DELETE, 'deleted_at' => 100, 'updated_at' => 500, 'gone_after' => null],
+			['file_id' => 1, 'pad_id' => 'pad', 'access_mode' => BindingService::ACCESS_PUBLIC, 'state' => BindingService::STATE_PENDING_DELETE, 'deleted_at' => 100, 'updated_at' => 500],
 			$table->rows[0],
 		);
 	}
 
 	/** @return array<string,mixed> */
 	private static function bindingRow(int $fileId, string $padId, string $state, string $accessMode = BindingService::ACCESS_PUBLIC): array {
-		// Dated only as a deletion owed, as the table holds it: leaving that state clears the date.
+		// Dated only while it waits, as the table holds it: leaving that state clears the date.
 		$deletedAt = $state === BindingService::STATE_PENDING_DELETE ? 100 : null;
-		return ['file_id' => $fileId, 'pad_id' => $padId, 'access_mode' => $accessMode, 'state' => $state, 'deleted_at' => $deletedAt, 'updated_at' => 100, 'gone_after' => null];
-	}
-
-}
-
-class BindingServiceTestQueryBuilder implements IQueryBuilder {
-	/** @var array<int,array{string,mixed,int|null}> */
-	public array $parameters = [];
-	/** @var array<int,array<int,string>|string> */
-	public array $conditions = [];
-	public int $maxResults = 0;
-	private int $parameterCounter = 0;
-	/** @var list<string> */
-	public array $selected = [];
-	/** @var list<array{string,string}> */
-	public array $aliases = [];
-	/** @var list<array{string,string,string,mixed}> */
-	public array $leftJoins = [];
-	/** @var list<string> */
-	public array $groupBy = [];
-	/** @var list<array{string,string}> */
-	public array $orderedBy = [];
-
-	/** @param array<int,array<string,mixed>> $rows */
-	public function __construct(private array $rows) {
-	}
-
-	public function select(string ...$select): self {
-		$this->selected = array_values($select);
-		return $this;
-	}
-
-	public function selectAlias(string $select, string $alias): self {
-		$this->aliases[] = [$select, $alias];
-		return $this;
-	}
-
-	public function from(string $table, ?string $alias = null): self {
-		return $this;
-	}
-
-	public function createFunction(string $call): string {
-		return $call;
-	}
-
-	public function groupBy(string $column): self {
-		$this->groupBy[] = $column;
-		return $this;
-	}
-
-	public function leftJoin(string $fromAlias, string $join, string $alias, mixed $condition): self {
-		$this->leftJoins[] = [$fromAlias, $join, $alias, $condition];
-		return $this;
-	}
-
-	public function where(mixed $condition): self {
-		$this->conditions[] = $condition;
-		return $this;
-	}
-
-	public function andWhere(mixed $condition): self {
-		$this->conditions[] = $condition;
-		return $this;
-	}
-
-	public function orderBy(string $field, string $direction): self {
-		$this->orderedBy[] = [$field, $direction];
-		return $this;
-	}
-
-	public function setMaxResults(int $maxResults): self {
-		$this->maxResults = $maxResults;
-		return $this;
-	}
-
-	public function createNamedParameter(mixed $value, ?int $type = null): string {
-		$name = 'param' . ++$this->parameterCounter;
-		$this->parameters[] = [$name, $value, $type];
-		return $name;
-	}
-
-	public function expr(): BindingServiceTestExpressionBuilder {
-		return new BindingServiceTestExpressionBuilder();
-	}
-
-	public function executeQuery(): BindingServiceTestResult {
-		return new BindingServiceTestResult($this->rows);
-	}
-}
-
-class BindingServiceTestExpressionBuilder {
-	/** @return array{string,string,string} */
-	public function eq(string $field, string $parameter): array {
-		return ['eq', $field, $parameter];
-	}
-
-	/** @return array{string,string,string} */
-	public function lte(string $field, string $parameter): array {
-		return ['lte', $field, $parameter];
-	}
-
-	/** @return array{string,string,string} */
-	public function gt(string $field, string $parameter): array {
-		return ['gt', $field, $parameter];
-	}
-
-	/** @return array{string,string} */
-	public function isNull(string $field): array {
-		return ['isNull', $field];
-	}
-
-	/** @return array{string,string} */
-	public function isNotNull(string $field): array {
-		return ['isNotNull', $field];
-	}
-
-	/** SQL, as the real one returns it: the query negates it inside a function. */
-	public function like(string $field, string $parameter): string {
-		return $field . ' LIKE ' . $parameter;
-	}
-}
-
-class BindingServiceTestResult {
-	/** @param array<int,array<string,mixed>> $rows */
-	public function __construct(private array $rows) {
-	}
-
-	/** @return array<int,array<string,mixed>> */
-	public function fetchAll(): array {
-		return $this->rows;
-	}
-
-	public function closeCursor(): void {
+		return ['file_id' => $fileId, 'pad_id' => $padId, 'access_mode' => $accessMode, 'state' => $state, 'deleted_at' => $deletedAt, 'updated_at' => 100];
 	}
 }

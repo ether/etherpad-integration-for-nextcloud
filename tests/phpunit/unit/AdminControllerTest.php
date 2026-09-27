@@ -12,6 +12,7 @@ use OCA\EtherpadNextcloud\Service\AdminConsistencyCheckResponseBuilder;
 use OCA\EtherpadNextcloud\Service\AdminSettingsRepository;
 use OCA\EtherpadNextcloud\Service\AdminSettingsValidator;
 use OCA\EtherpadNextcloud\Service\AdminTestFaultService;
+use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\EtherpadNextcloud\Service\ConsistencyCheckService;
 use OCA\EtherpadNextcloud\Service\CookieDomainDecision;
 use OCA\EtherpadNextcloud\Service\HealthCheckItem;
@@ -19,7 +20,7 @@ use OCA\EtherpadNextcloud\Service\CookieDomainMessages;
 use OCA\EtherpadNextcloud\Exception\AdminValidationException;
 use OCA\EtherpadNextcloud\Service\CookieDomainPolicy;
 use OCA\EtherpadNextcloud\Service\PadTemplateAdminService;
-use OCA\EtherpadNextcloud\Service\PendingBindingService;
+use OCA\EtherpadNextcloud\Service\EtherpadClient;
 use OCA\EtherpadNextcloud\Service\EtherpadHealthCheckService;
 use OCA\EtherpadNextcloud\Service\GoneFileSweep;
 use OCA\EtherpadNextcloud\Service\RunBudget;
@@ -109,7 +110,6 @@ class AdminControllerTest extends TestCase {
 				123,
 				'https://pad-api.internal/api/1.3.0/checkToken',
 				3,
-				2,
 				'3.3.3',
 				new CookieDomainDecision(
 					'.example.tests',
@@ -131,7 +131,7 @@ class AdminControllerTest extends TestCase {
 		$this->assertSame(Http::STATUS_OK, $response->getStatus());
 		$this->assertTrue((bool)$data['ok']);
 		$this->assertSame(3, $data['pending_delete_count']);
-		$this->assertSame(2, $data['restore_pending_count']);
+		$this->assertArrayNotHasKey('restore_pending_count', $data);
 		// The release the open path is going by, machine-readable, because
 		// it can differ from whatever this check just probed.
 		$this->assertSame('3.3.3', $data['session_cookie_release']);
@@ -155,33 +155,25 @@ class AdminControllerTest extends TestCase {
 	}
 
 	/**
-	 * The batch size is the endpoint's; the sweep of files gone for good
-	 * runs with it, as the jobs run it, in what the settle left of one
-	 * budget.
+	 * The admin's check runs the sweep of files gone for good at once, the
+	 * grace not waited out, within one run's budget, and says how many are
+	 * left.
 	 */
-	public function testSettlePendingUsesConfiguredBatchSize(): void {
-		$clock = new FixedClock();
-		$pending = $this->createMock(PendingBindingService::class);
-		$pending->expects($this->once())
-			->method('settle')
-			->with(500)
-			->willReturnCallback(static function () use ($clock): array {
-				$clock->advance(15);
-				return ['checked' => 2, 'settled' => 1, 'pending_delete_count' => 3, 'restore_pending_count' => 1];
-			});
+	public function testSettlePendingRunsTheSweepAtOnce(): void {
 		$sweep = $this->createMock(GoneFileSweep::class);
 		$sweep->expects($this->once())->method('run')->with($this->callback(
-			// What the settle left of the one budget: 5 of 20 seconds.
-			static fn (RunBudget $budget): bool => $budget->callTimeout() === 5,
-		), true);
+			static fn (RunBudget $budget): bool => $budget->callTimeout() === EtherpadClient::REQUEST_TIMEOUT_SECONDS,
+		), true)->willReturn(['checked' => 2, 'deleted' => 1]);
+		$bindings = $this->createMock(BindingService::class);
+		$bindings->method('countPendingDeletes')->willReturn(3);
 
-		$response = $this->buildController(pendingBindings: $pending, goneFileSweep: $sweep, clock: $clock)->settlePending();
+		$response = $this->buildController(goneFileSweep: $sweep, bindings: $bindings)->settlePending();
 
 		$this->assertSame(Http::STATUS_OK, $response->getStatus());
 		$this->assertSame(2, $response->getData()['checked']);
 		$this->assertSame(1, $response->getData()['settled']);
 		$this->assertSame(3, $response->getData()['pending_delete_count']);
-		$this->assertSame(1, $response->getData()['restore_pending_count']);
+		$this->assertArrayNotHasKey('restore_pending_count', $response->getData());
 	}
 
 	public function testSetTestFaultRequiresDebugMode(): void {
@@ -199,7 +191,7 @@ class AdminControllerTest extends TestCase {
 		$testFaults->expects($this->once())
 			->method('setFault')
 			->with('unknown_fault')
-			->willThrowException(new UnsupportedTestFaultException(['trash_read_lock']));
+			->willThrowException(new UnsupportedTestFaultException(['restore_read_lock']));
 
 		$response = $this->buildController(
 			$this->request(['fault' => 'unknown_fault']),
@@ -215,17 +207,17 @@ class AdminControllerTest extends TestCase {
 		$testFaults = $this->createMock(AdminTestFaultService::class);
 		$testFaults->expects($this->once())
 			->method('setFault')
-			->with('trash_read_lock')
-			->willReturn('trash_read_lock');
+			->with('restore_read_lock')
+			->willReturn('restore_read_lock');
 
 		$response = $this->buildController(
-			$this->request(['fault' => 'trash_read_lock']),
+			$this->request(['fault' => 'restore_read_lock']),
 			testFaults: $testFaults,
 		)->setTestFault();
 
 		$this->assertSame(Http::STATUS_OK, $response->getStatus());
 		$this->assertTrue((bool)$response->getData()['ok']);
-		$this->assertSame('trash_read_lock', $response->getData()['fault']);
+		$this->assertSame('restore_read_lock', $response->getData()['fault']);
 	}
 
 	public function testListsPadTemplates(): void {
@@ -292,13 +284,13 @@ class AdminControllerTest extends TestCase {
 		?AdminSettingsValidator $validator = null,
 		?AdminSettingsRepository $repository = null,
 		?EtherpadHealthCheckService $healthCheck = null,
-		?PendingBindingService $pendingBindings = null,
 		?ConsistencyCheckService $consistencyCheck = null,
 		?AdminConsistencyCheckResponseBuilder $consistencyResponses = null,
 		?AdminTestFaultService $testFaults = null,
 		?PadTemplateAdminService $padTemplateAdmin = null,
 		?GoneFileSweep $goneFileSweep = null,
 		?FixedClock $clock = null,
+		?BindingService $bindings = null,
 	): AdminController {
 		$l10n = $this->buildL10n();
 		$logger = $this->createMock(LoggerInterface::class);
@@ -311,7 +303,6 @@ class AdminControllerTest extends TestCase {
 			$validator ?? $this->createMock(AdminSettingsValidator::class),
 			$repository ?? $this->createMock(AdminSettingsRepository::class),
 			$healthCheck ?? $this->createMock(EtherpadHealthCheckService::class),
-			$pendingBindings ?? $this->createMock(PendingBindingService::class),
 			$consistencyCheck ?? $this->createMock(ConsistencyCheckService::class),
 			$consistencyResponses ?? new AdminConsistencyCheckResponseBuilder($l10n),
 			$testFaults ?? $this->createMock(AdminTestFaultService::class),
@@ -322,6 +313,7 @@ class AdminControllerTest extends TestCase {
 			$padTemplateAdmin ?? $this->createMock(PadTemplateAdminService::class),
 			$goneFileSweep ?? $this->createMock(GoneFileSweep::class),
 			$clock ?? new FixedClock(),
+			$bindings ?? $this->createMock(BindingService::class),
 		);
 	}
 

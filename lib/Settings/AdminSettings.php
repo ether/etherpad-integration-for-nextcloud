@@ -148,7 +148,6 @@ class AdminSettings implements ISettings {
 				'consistency_button' => $this->l10n->t('Consistency check'),
 				'settle_pending_button' => $this->l10n->t('Check pending pads'),
 				'pending_delete_label' => $this->l10n->t('Pending Etherpad deletes'),
-				'restore_pending_label' => $this->l10n->t('Unresolved restores'),
 				'saving' => $this->l10n->t('Saving settings...'),
 				'saved' => $this->l10n->t('Settings saved.'),
 				'checking' => $this->l10n->t('Testing Etherpad connection...'),

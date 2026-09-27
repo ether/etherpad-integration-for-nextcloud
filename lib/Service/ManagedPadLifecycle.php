@@ -191,29 +191,6 @@ class ManagedPadLifecycle {
 	}
 
 	/**
-	 * Whether the pad a file's snapshot was taken from still exists, as far
-	 * as Etherpad will say. Only its own answer that there is no such pad
-	 * counts as absent; a request that got no answer is unknown, because
-	 * the pad may well be there.
-	 *
-	 * Revisions only grow, so a pad under that id with fewer of them than
-	 * the snapshot was taken at is behind: created again since, empty, or
-	 * brought back from an older backup. A snapshot revision of -1, from a
-	 * file never synced, says nothing, and any pad counts as present.
-	 *
-	 * An unknown answer is logged here, with its cause, since no caller
-	 * gets to see the exception it came from. So is a pad behind, with its
-	 * id: someone may have written into it since it came back, so every
-	 * caller leaves it in place, and this line is the last record of where
-	 * it is.
-	 *
-	 * @param array<string,mixed> $context what the log line should carry, fileId above all
-	 */
-	public function presenceOf(string $padId, int $snapshotRevision = -1, array $context = [], ?int $timeoutSeconds = null): PadPresence {
-		return $this->probe($padId, $snapshotRevision, $context, $timeoutSeconds)->presence;
-	}
-
-	/**
 	 * How Etherpad has lost the pad a file's row names, or null when it has
 	 * not:
 	 * - Absent when it has no pad under that id: a protected pad, whose
@@ -244,41 +221,12 @@ class ManagedPadLifecycle {
 	}
 
 	/**
-	 * presenceOf(), with the revision count the answer came from.
-	 *
-	 * @param array<string,mixed> $context what the log line should carry, fileId above all
-	 */
-	public function probe(string $padId, int $snapshotRevision = -1, array $context = [], ?int $timeoutSeconds = null): PadProbe {
-		try {
-			$revisions = $this->etherpadClient->getRevisionsCount($padId, $timeoutSeconds);
-		} catch (\Throwable $e) {
-			if (EtherpadErrorClassifier::isPadAlreadyDeleted($e)) {
-				return new PadProbe(PadPresence::Absent, null);
-			}
-			$this->logger->warning('Could not ask Etherpad whether a pad still exists.', [
-				'app' => 'etherpad_nextcloud',
-				...SafeError::context($e),
-			] + $context);
-			return new PadProbe(PadPresence::Unknown, null);
-		}
-		if ($revisions < $snapshotRevision) {
-			$this->logger->warning('A pad has fewer revisions than its file\'s snapshot and is no longer the file\'s. It is left in place.', [
-				'app' => 'etherpad_nextcloud',
-				'padId' => $padId,
-			] + $context);
-			return new PadProbe(PadPresence::Behind, $revisions);
-		}
-		return new PadProbe(PadPresence::Present, $revisions);
-	}
-
-	/**
-	 * Remove a pad the app is bound to, whatever kind it is: true when this
-	 * call removed something - the pad, or the empty group a protected pad
-	 * left behind - and false when nothing was left to remove, because
-	 * Etherpad says the pad does not exist, or its group does not (a group
-	 * that is not there cannot hold the pad either). Every caller reads
-	 * false as done; what differs between them is what they do when the
-	 * delete fails, and every other error is theirs.
+	 * Remove a pad the app is bound to, whatever kind it is - the pad, or
+	 * the empty group a protected pad left behind. Etherpad saying the pad
+	 * does not exist, or its group does not (a group that is not there
+	 * cannot hold the pad either), counts as done; what differs between the
+	 * callers is what they do when the delete fails, and every other error
+	 * is theirs.
 	 *
 	 * $knownAbsent: Etherpad has just said there is no such pad. A public
 	 * pad leaves nothing else behind, so that takes no call; a protected
@@ -293,18 +241,16 @@ class ManagedPadLifecycle {
 	 * removed, instead of being given up for the pad alone: the next try
 	 * may read it, and a group given up is never looked at again.
 	 */
-	public function discardIfPresent(string $padId, ?RunBudget $budget = null, bool $knownAbsent = false, bool $retried = false): bool {
+	public function discardIfPresent(string $padId, ?RunBudget $budget = null, bool $knownAbsent = false, bool $retried = false): void {
 		if ($knownAbsent && !PadId::isGroupPad($padId)) {
-			return false;
+			return;
 		}
 		try {
 			$this->discard($padId, $budget, $retried);
-			return true;
 		} catch (\Throwable $e) {
-			if (EtherpadErrorClassifier::isPadAlreadyDeleted($e)) {
-				return false;
+			if (!EtherpadErrorClassifier::isPadAlreadyDeleted($e)) {
+				throw $e;
 			}
-			throw $e;
 		}
 	}
 

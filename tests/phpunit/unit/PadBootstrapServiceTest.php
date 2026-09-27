@@ -126,7 +126,6 @@ class PadBootstrapServiceTest extends TestCase {
 			->method('createBinding')
 			->willThrowException(new \RuntimeException('binding write failed'));
 		// Nothing to remove: it was never written.
-		$bindingService->expects($this->never())->method('deleteByFileId');
 
 		$padFileService = $this->createMock(PadFileService::class);
 		$padFileService->method('parseLegacyOwnpadShortcut')->willReturn(null);
@@ -175,7 +174,6 @@ class PadBootstrapServiceTest extends TestCase {
 		$bindingService = $this->createMock(BindingService::class);
 		$bindingService->method('findByFileId')->with($fileId)->willReturn(new Binding(fileId: $fileId, padId: $padId, accessMode: BindingService::ACCESS_PROTECTED, state: BindingService::STATE_ACTIVE));
 		$bindingService->expects($this->never())->method('createBinding');
-		$bindingService->expects($this->never())->method('deleteByFileId');
 
 		$padFileService = $this->createMock(PadFileService::class);
 		$padFileService->method('parseLegacyOwnpadShortcut')->willReturn(null);
@@ -224,7 +222,6 @@ class PadBootstrapServiceTest extends TestCase {
 			->willThrowException(new \RuntimeException('binding write failed'));
 		// The insert landed even though the call reported failure.
 		$bindingService->expects($this->once())->method('isBoundTo')->with($fileId, $padId)->willReturn(true);
-		$bindingService->expects($this->never())->method('deleteByFileId');
 
 		$padFileService = $this->createMock(PadFileService::class);
 		$padFileService->method('parseLegacyOwnpadShortcut')->willReturn(null);
@@ -271,7 +268,6 @@ class PadBootstrapServiceTest extends TestCase {
 		$bindingService->method('createBinding')->willThrowException(new \RuntimeException('unique constraint violation'));
 		// A row is there, but it names the winner's pad, not ours.
 		$bindingService->method('isBoundTo')->with($fileId, $padId)->willReturn(false);
-		$bindingService->expects($this->never())->method('deleteByFileId');
 
 		$padFileService = $this->createMock(PadFileService::class);
 		$padFileService->method('parseLegacyOwnpadShortcut')->willReturn(null);
@@ -330,7 +326,6 @@ class PadBootstrapServiceTest extends TestCase {
 			->with($fileId, $padId, BindingService::ACCESS_PROTECTED);
 		// The cleanup asks whether the row that is now there names this pad.
 		$bindingService->expects($this->once())->method('isBoundTo')->with($fileId, $padId)->willReturn(true);
-		$bindingService->expects($this->never())->method('deleteByFileId');
 
 		$padFileService = $this->createMock(PadFileService::class);
 		$padFileService->expects($this->once())

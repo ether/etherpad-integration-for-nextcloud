@@ -17,7 +17,6 @@ use OCA\EtherpadNextcloud\Exception\InvalidShareFilePathException;
 use OCA\EtherpadNextcloud\Exception\InvalidShareTokenException;
 use OCA\EtherpadNextcloud\Exception\MissingBindingException;
 use OCA\EtherpadNextcloud\Exception\PadLostException;
-use OCA\EtherpadNextcloud\Exception\WaitingBindingException;
 use OCA\EtherpadNextcloud\Exception\NoShareFileSelectedException;
 use OCA\EtherpadNextcloud\Exception\NotAPadFileException;
 use OCA\EtherpadNextcloud\Exception\MissingFrontmatterException;
@@ -77,7 +76,6 @@ class PublicViewerControllerErrorMapperTest extends TestCase {
 		yield 'no pad' => [new MissingBindingException('internal wording'), Http::STATUS_BAD_REQUEST, 'This .pad file has no pad in this Nextcloud. Its owner can open it to restore the pad.'];
 		yield 'pad lost' => [new PadLostException('internal wording'), Http::STATUS_BAD_REQUEST, 'This pad is no longer on the Etherpad server. Its owner can open the file to make a new pad from its content.'];
 		// The signed-in sentence, a conflict worth trying again.
-		yield 'a pad still being restored' => [new WaitingBindingException('internal wording'), Http::STATUS_CONFLICT, 'This pad is still being restored. Try again later.'];
 		yield 'another binding problem' => [new BindingException('internal wording'), Http::STATUS_BAD_REQUEST, 'Pad binding is inconsistent. Please contact the share owner.'];
 		// Passes by itself, as on the signed-in side.
 		yield 'a file locked' => [new LockedException('internal wording'), Http::STATUS_SERVICE_UNAVAILABLE, 'Pad file is temporarily locked. Please retry.'];
@@ -130,7 +128,6 @@ class PublicViewerControllerErrorMapperTest extends TestCase {
 	 */
 	public function testAPublicAnswerCarriesOnlyTheCodesAVisitorCanActOn(): void {
 		$cases = [
-			'a pad still being restored' => [new WaitingBindingException('Pad binding is not active.'), ['code' => 'waiting_binding', 'retryable' => true]],
 			'a pad too large to show' => [new EtherpadTooLargeException('Pad export is larger than 5242880 bytes.'), ['code' => 'pad_too_large']],
 			'no pad' => [new MissingBindingException('No binding exists for this file.'), []],
 			'pad lost' => [new PadLostException('Etherpad has lost the pad of this file.'), []],
@@ -259,7 +256,6 @@ class PublicViewerControllerErrorMapperTest extends TestCase {
 		$l10n->method('t')->willReturnCallback(static fn (string $text): string => '[de] ' . $text);
 		return $this->publicErrorMapper(
 			new PublicShareUrlBuilder($urlGenerator, new PathNormalizer()),
-			new PadResponseService($urlGenerator, $this->createMock(AppConfigService::class), $l10n),
 			$l10n,
 			$logger,
 		);

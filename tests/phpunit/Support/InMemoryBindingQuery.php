@@ -135,7 +135,6 @@ final class InMemoryBindingQuery implements IQueryBuilder {
 		return fn (array $row): bool => $this->value($row, $column) !== null && (string)$this->value($row, $column) === (string)$this->operand($row, $operand);
 	}
 
-
 	/** @return \Closure(array<string,mixed>): bool */
 	public function lte(string $column, string $operand): \Closure {
 		return fn (array $row): bool => $this->value($row, $column) !== null && (int)$this->value($row, $column) <= (int)$this->operand($row, $operand);
@@ -154,6 +153,21 @@ final class InMemoryBindingQuery implements IQueryBuilder {
 	/** @return \Closure(array<string,mixed>): bool */
 	public function isNotNull(string $column): \Closure {
 		return fn (array $row): bool => $this->value($row, $column) !== null;
+	}
+
+	/**
+	 * @param \Closure(array<string,mixed>): bool ...$conditions
+	 * @return \Closure(array<string,mixed>): bool
+	 */
+	public function orX(\Closure ...$conditions): \Closure {
+		return static function (array $row) use ($conditions): bool {
+			foreach ($conditions as $condition) {
+				if ($condition($row)) {
+					return true;
+				}
+			}
+			return false;
+		};
 	}
 
 	public function executeStatement(): int {

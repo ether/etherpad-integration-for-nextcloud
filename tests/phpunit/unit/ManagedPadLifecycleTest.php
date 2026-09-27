@@ -86,7 +86,7 @@ class ManagedPadLifecycleTest extends TestCase {
 		$client->expects($this->once())->method('deleteGroup')->with('g.ABCDEFGHIJKLMNOP');
 		$client->expects($this->never())->method('deletePad');
 
-		$this->assertTrue($this->lifecycle($client)->discardIfPresent($padId));
+		$this->lifecycle($client)->discardIfPresent($padId);
 	}
 
 	/**
@@ -108,7 +108,7 @@ class ManagedPadLifecycleTest extends TestCase {
 			$client->expects($this->never())->method('deleteGroup');
 			$client->expects($this->once())->method('deletePad')->with($padId);
 
-			$this->assertTrue($this->lifecycle($client)->discardIfPresent($padId), $case);
+			$this->lifecycle($client)->discardIfPresent($padId);
 		}
 	}
 
@@ -125,7 +125,7 @@ class ManagedPadLifecycleTest extends TestCase {
 		$client->expects($this->once())->method('deleteGroup')->with('g.ABCDEFGHIJKLMNOP');
 		$client->expects($this->never())->method('deletePad');
 
-		$this->assertTrue($this->lifecycle($client)->discardIfPresent($padId));
+		$this->lifecycle($client)->discardIfPresent($padId);
 	}
 
 	/**
@@ -140,7 +140,7 @@ class ManagedPadLifecycleTest extends TestCase {
 		$client->expects($this->never())->method('deleteGroup');
 		$client->expects($this->once())->method('deletePad')->with($padId);
 
-		$this->assertTrue($this->lifecycle($client)->discardIfPresent($padId));
+		$this->lifecycle($client)->discardIfPresent($padId);
 	}
 
 	/**
@@ -168,7 +168,7 @@ class ManagedPadLifecycleTest extends TestCase {
 		$client->expects($this->once())->method('deletePad')->with('nc-abcdef0123456789');
 		$client->expects($this->never())->method('deleteGroup');
 
-		$this->assertTrue($this->lifecycle($client)->discardIfPresent('nc-abcdef0123456789'));
+		$this->lifecycle($client)->discardIfPresent('nc-abcdef0123456789');
 	}
 
 	/**
@@ -204,7 +204,7 @@ class ManagedPadLifecycleTest extends TestCase {
 				$deleteGroup->willThrowException(new \RuntimeException($groupAnswer));
 			}
 
-			$this->assertFalse($this->lifecycle($client)->discardIfPresent($id, retried: $case === 'group, retried'), $case);
+			$this->lifecycle($client)->discardIfPresent($id, retried: $case === 'group, retried');
 		}
 	}
 
@@ -260,12 +260,12 @@ class ManagedPadLifecycleTest extends TestCase {
 	public function testAPadKnownAbsentIsOnlyLookedForByItsGroup(): void {
 		$client = $this->createMock(EtherpadClient::class);
 		$client->expects($this->never())->method($this->anything());
-		$this->assertFalse($this->lifecycle($client)->discardIfPresent('nc-abcdef0123456789', knownAbsent: true), 'public pad');
+		$this->lifecycle($client)->discardIfPresent('nc-abcdef0123456789', knownAbsent: true);
 
 		$client = $this->createMock(EtherpadClient::class);
 		$client->expects($this->once())->method('listPads')->with('g.ABCDEFGHIJKLMNOP')->willReturn([]);
 		$client->expects($this->once())->method('deleteGroup')->with('g.ABCDEFGHIJKLMNOP');
-		$this->assertTrue($this->lifecycle($client)->discardIfPresent('g.ABCDEFGHIJKLMNOP$p-abc123', knownAbsent: true), 'protected pad');
+		$this->lifecycle($client)->discardIfPresent('g.ABCDEFGHIJKLMNOP$p-abc123', knownAbsent: true);
 	}
 
 	/**
@@ -279,7 +279,7 @@ class ManagedPadLifecycleTest extends TestCase {
 		$client->expects($this->once())->method('listPads')->with('g.abc123')->willReturn([$padId]);
 		$client->expects($this->once())->method('deleteGroup')->with('g.abc123');
 
-		$this->assertTrue($this->lifecycle($client)->discardIfPresent($padId));
+		$this->lifecycle($client)->discardIfPresent($padId);
 	}
 
 	/**
@@ -435,63 +435,5 @@ class ManagedPadLifecycleTest extends TestCase {
 			));
 
 		(new ManagedPadLifecycle($client, $logger))->seed('nc-pad', 'text', '<p>text</p>', ['fileId' => 7]);
-	}
-
-	/**
-	 * Revisions only grow. A pad with fewer than the file's snapshot was
-	 * taken at is not the pad the file knew; as many or more is. A file
-	 * never synced says nothing, and any pad counts.
-	 */
-	public function testHoldsAPadToTheRevisionItsSnapshotWasTakenAt(): void {
-		$client = $this->createMock(EtherpadClient::class);
-		$client->method('getRevisionsCount')->willReturn(7);
-		$lifecycle = $this->lifecycle($client);
-
-		$this->assertSame(PadPresence::Behind, $lifecycle->presenceOf('nc-pad', 8));
-		$this->assertSame(PadPresence::Present, $lifecycle->presenceOf('nc-pad', 7));
-		$this->assertSame(PadPresence::Present, $lifecycle->presenceOf('nc-pad', -1));
-	}
-
-	/**
-	 * A pad behind is left in place by every caller - someone may have
-	 * written into it since it came back - so it is logged here, once, with
-	 * its id: the last record of where it is. A pad that is the file's is not.
-	 */
-	public function testLogsAPadBehindWithItsId(): void {
-		$client = $this->createMock(EtherpadClient::class);
-		$client->method('getRevisionsCount')->willReturn(7);
-		$logger = $this->createMock(LoggerInterface::class);
-		$logger->expects($this->once())
-			->method('warning')
-			->with(
-				'A pad has fewer revisions than its file\'s snapshot and is no longer the file\'s. It is left in place.',
-				['app' => 'etherpad_nextcloud', 'padId' => 'nc-pad', 'fileId' => 7],
-			);
-		$lifecycle = new ManagedPadLifecycle($client, $logger);
-
-		$this->assertSame(PadPresence::Behind, $lifecycle->probe('nc-pad', 8, ['fileId' => 7])->presence);
-		$this->assertSame(PadPresence::Present, $lifecycle->probe('nc-pad', 7, ['fileId' => 7])->presence);
-	}
-
-	/**
-	 * No caller sees why Etherpad gave no answer, so the cause is logged
-	 * here - and its own "does not exist" is an answer, not a failure.
-	 */
-	public function testLogsWhyEtherpadGaveNoAnswer(): void {
-		$client = $this->createMock(EtherpadClient::class);
-		$client->method('getRevisionsCount')->willReturnCallback(static function (string $padId, ?int $timeout): int {
-			throw new \RuntimeException($padId === 'nc-gone' ? 'padID does not exist' : 'certificate has expired');
-		});
-		$logger = $this->createMock(LoggerInterface::class);
-		$logger->expects($this->once())
-			->method('warning')
-			->with($this->anything(), $this->callback(
-				static fn (array $context): bool => ($context['fileId'] ?? 0) === 7
-					&& str_contains((string)($context['error_message'] ?? ''), 'certificate has expired')
-			));
-		$lifecycle = new ManagedPadLifecycle($client, $logger);
-
-		$this->assertSame(PadPresence::Absent, $lifecycle->presenceOf('nc-gone', -1, ['fileId' => 7]));
-		$this->assertSame(PadPresence::Unknown, $lifecycle->presenceOf('nc-pad', -1, ['fileId' => 7], 3));
 	}
 }

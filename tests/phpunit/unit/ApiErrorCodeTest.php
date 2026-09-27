@@ -51,17 +51,15 @@ class ApiErrorCodeTest extends TestCase {
 	}
 
 	/**
-	 * A payload gets the code and, for a row that waits, `retryable`; on a
-	 * public share not the three whose action needs a signed-in user.
+	 * A payload gets the code; on a public share not the three whose action
+	 * needs a signed-in user.
 	 */
 	public function testAPayloadGetsTheCodeAVisitorMayActOn(): void {
 		$payload = ['message' => 'm'];
 		foreach (ApiErrorCode::cases() as $code) {
 			$class = $code->exceptionClass();
 			$e = new $class('');
-			$marked = $code === ApiErrorCode::WaitingBinding
-				? ['message' => 'm', 'code' => $code->value, 'retryable' => true]
-				: ['message' => 'm', 'code' => $code->value];
+			$marked = ['message' => 'm', 'code' => $code->value];
 
 			$this->assertSame($marked, ApiErrorCode::addTo($payload, $e), $code->value);
 			$this->assertSame(

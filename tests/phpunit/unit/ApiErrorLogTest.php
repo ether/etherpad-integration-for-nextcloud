@@ -18,7 +18,6 @@ use OCA\EtherpadNextcloud\Exception\EtherpadTooLargeException;
 use OCA\EtherpadNextcloud\Exception\ExternalPadException;
 use OCA\EtherpadNextcloud\Exception\ExternalPadExportNotFoundException;
 use OCA\EtherpadNextcloud\Exception\MissingBindingException;
-use OCA\EtherpadNextcloud\Exception\WaitingBindingException;
 use OCA\EtherpadNextcloud\Service\ApiErrorLog;
 use OCP\ICache;
 use OCP\ICacheFactory;
@@ -139,21 +138,19 @@ class ApiErrorLogTest extends TestCase {
 	 */
 	public function testEachOtherErrorAtTheLevelItDeserves(): void {
 		$log = new ApiErrorLog($this->createMock(ICacheFactory::class), $this->logger());
-		$log->report(new \RuntimeException('Detailed failure.'), [], 'Pad restore API failed');
+		$log->report(new \RuntimeException('Detailed failure.'), [], 'Pad recovery API failed');
 		$log->report(new BindingNotCreatedException('Could not create unique pad binding.'));
 		$log->report(new BindingMismatchException('Binding pad ID mismatch.'));
 		$log->report(new BindingException('Pad binding is not active.'));
 		$log->report(new MissingBindingException('No binding exists for this file.'));
-		$log->report(new WaitingBindingException('Pad binding is not active.'));
 		$log->report(new ExternalPadException('Public export HTTP error (500)'));
 
 		$this->assertSame([
-			['error', 'Pad restore API failed', 'Detailed failure.'],
+			['error', 'Pad recovery API failed', 'Detailed failure.'],
 			['error', 'Could not create pad binding.', 'Could not create unique pad binding.'],
 			['warning', 'A .pad file and its pad binding could not be matched.', 'Binding pad ID mismatch.'],
 			['debug', 'A request was refused.', 'Pad binding is not active.'],
 			['debug', 'A request was refused.', 'No binding exists for this file.'],
-			['debug', 'A request was refused.', 'Pad binding is not active.'],
 			['debug', 'A request was refused.', 'Public export HTTP error (500)'],
 		], array_map(static fn (array $line): array => [$line[0], $line[1], $line[2]['error_message']], $this->logged));
 	}

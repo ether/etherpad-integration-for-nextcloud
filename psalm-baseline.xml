@@ -1,31 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <files psalm-version="6.16.1@f1f5de594dc76faf8784e02d3dc4716c91c6f6ac">
-  <file src="lib/BackgroundJob/AbstractPendingDeleteRetryJob.php">
-    <MixedArgument>
-      <code><![CDATA[static::INTERVAL_SECONDS]]></code>
-      <code><![CDATA[static::LIMIT]]></code>
-      <code><![CDATA[static::MAX_AGE_SECONDS]]></code>
-      <code><![CDATA[static::MIN_AGE_SECONDS]]></code>
-    </MixedArgument>
-  </file>
-  <file src="lib/BackgroundJob/ColdPendingDeleteRetryJob.php">
-    <InvalidClassConstantType>
-      <code><![CDATA[MIN_AGE_SECONDS]]></code>
-    </InvalidClassConstantType>
-  </file>
-  <file src="lib/BackgroundJob/HotPendingDeleteRetryJob.php">
-    <InvalidClassConstantType>
-      <code><![CDATA[INTERVAL_SECONDS]]></code>
-      <code><![CDATA[MAX_AGE_SECONDS]]></code>
-    </InvalidClassConstantType>
-  </file>
-  <file src="lib/BackgroundJob/WarmPendingDeleteRetryJob.php">
-    <InvalidClassConstantType>
-      <code><![CDATA[INTERVAL_SECONDS]]></code>
-      <code><![CDATA[MAX_AGE_SECONDS]]></code>
-      <code><![CDATA[MIN_AGE_SECONDS]]></code>
-    </InvalidClassConstantType>
-  </file>
   <file src="lib/Controller/AdminController.php">
     <MixedArgumentTypeCoercion>
       <code><![CDATA[$result]]></code>
@@ -52,8 +26,6 @@
   </file>
   <file src="lib/Controller/PadLifecycleController.php">
     <MixedArgumentTypeCoercion>
-      <code><![CDATA[$result]]></code>
-      <code><![CDATA[$result]]></code>
       <code><![CDATA[$result]]></code>
     </MixedArgumentTypeCoercion>
   </file>
@@ -127,12 +99,6 @@
     <RedundantConditionGivenDocblockType>
       <code><![CDATA[$event instanceof LoadViewer]]></code>
     </RedundantConditionGivenDocblockType>
-  </file>
-  <file src="lib/Listeners/MoveToTrashListener.php">
-    <RedundantCastGivenDocblockType>
-      <code><![CDATA[(int)$node->getId()]]></code>
-      <code><![CDATA[(string)($result['reason'] ?? 'unknown')]]></code>
-    </RedundantCastGivenDocblockType>
   </file>
   <file src="lib/Listeners/RegisterTemplateCreatorListener.php">
     <DeprecatedMethod>

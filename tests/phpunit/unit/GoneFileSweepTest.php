@@ -45,35 +45,35 @@ class GoneFileSweepTest extends TestCase {
 
 	/**
 	 * A file seen deleted for good and gone from the file cache takes its
-	 * pad and row along, in one run, with a line naming the pad. A marked
-	 * file the file cache still has keeps its pad - a home's, marked just
-	 * before Nextcloud clears it - and so does one gone without a mark.
+	 * pad and row along, in one run, with a line naming the pad. One seen
+	 * deleted that the file cache still has keeps its pad - a home's, just
+	 * before Nextcloud clears it - and so does one gone without being seen.
 	 */
 	public function testAFileSeenDeletedForGoodTakesItsPad(): void {
 		$this->table(
-			[self::row(1, 11, 'pad-gone', goneAfter: 100), self::row(2, 12, 'pad-still-there', goneAfter: FixedClock::NOW), self::row(3, 13, 'pad-unmarked')],
+			[self::row(1, 11, 'pad-gone', seenAt: 100), self::row(2, 12, 'pad-still-there', seenAt: FixedClock::NOW - 3000), self::row(3, 13, 'pad-unseen')],
 			[self::cached(12, 'files/Notes.pad')],
 		);
 
-		$this->sweep();
+		$this->assertSame(['checked' => 1, 'deleted' => 1], $this->sweep());
 
 		$this->assertSame(['pad-gone'], $this->deletedPads);
-		$this->assertSame([12, 13], $this->fileIds());
+		$this->assertSame([12 => BindingService::STATE_PENDING_DELETE, 13 => BindingService::STATE_ACTIVE], $this->states());
 		$this->assertSame([['info', 'The file of a pad is gone for good; the pad is deleted.', 11]], $this->lines);
 	}
 
 	/**
-	 * With `delete_on_trash` off no pad goes; the marks are kept all the
-	 * same, so switching it on finds them in place.
+	 * With deleting off no pad goes; the rows keep waiting all the same, so
+	 * switching it on finds them in place.
 	 */
-	public function testWithDeletingOffNothingGoesButTheMarksAreKept(): void {
-		$this->table([self::row(1, 11, 'pad-gone', goneAfter: 100)], []);
+	public function testWithDeletingOffNothingGoesButTheRowsWait(): void {
+		$this->table([self::row(1, 11, 'pad-gone', seenAt: 100)], []);
 		$this->config['delete_on_trash'] = false;
 
 		$this->sweep();
 
 		$this->assertSame([], $this->deletedPads);
-		$this->assertSame([11 => 100], $this->marks());
+		$this->assertSame([11 => BindingService::STATE_PENDING_DELETE], $this->states());
 
 		$this->config['delete_on_trash'] = true;
 		$this->sweep();
@@ -83,13 +83,13 @@ class GoneFileSweepTest extends TestCase {
 	/**
 	 * A pad Etherpad no longer has is gone as surely: its row goes. A pad
 	 * Etherpad refuses to delete keeps its row for another try an hour
-	 * later, with a warning, and the run goes on.
+	 * later, with a warning the first time, and the run goes on.
 	 */
 	public function testAPadAlreadyGoneCountsAndARefusalIsTriedAgain(): void {
 		$this->table([
-			self::row(1, 11, 'pad-already-gone', goneAfter: 100),
-			self::row(2, 12, 'pad-refused', goneAfter: 101),
-			self::row(3, 13, 'pad-fine', goneAfter: 102),
+			self::row(1, 11, 'pad-already-gone', seenAt: 100),
+			self::row(2, 12, 'pad-refused', seenAt: 101),
+			self::row(3, 13, 'pad-fine', seenAt: 102),
 		], []);
 		$this->padErrors = [
 			'pad-already-gone' => new EtherpadRefusedException('padID does not exist'),
@@ -114,18 +114,18 @@ class GoneFileSweepTest extends TestCase {
 		$this->assertSame([], $this->lines);
 		$this->clock->advance(1);
 		$this->sweep();
-		$this->assertSame([['warning', 'Could not delete the pad of a file gone for good; it is tried again in an hour.', 12]], $this->lines);
+		$this->assertSame([['info', 'Could not delete the pad of a file gone for good; it is tried again in an hour.', 12]], $this->lines);
 	}
 
-	/** Etherpad not answering ends the run, with a line; the marks wait for the next. */
+	/** Etherpad not answering ends the run, with a line; the rows wait for the next. */
 	public function testEtherpadNotAnsweringEndsTheRun(): void {
-		$this->table([self::row(1, 11, 'pad-a', goneAfter: 100), self::row(2, 12, 'pad-b', goneAfter: 101)], []);
+		$this->table([self::row(1, 11, 'pad-a', seenAt: 100), self::row(2, 12, 'pad-b', seenAt: 101)], []);
 		$this->padErrors = ['pad-a' => new EtherpadClientException('Etherpad API request failed: deletePad')];
 
 		$this->sweep();
 
 		$this->assertSame([], $this->deletedPads);
-		$this->assertSame([11 => 100, 12 => 101], $this->marks());
+		$this->assertSame([11, 12], $this->fileIds());
 		$this->assertSame([['info', 'Etherpad did not answer the sweep of files gone for good; it tries again next run.', null]], $this->lines);
 	}
 
@@ -134,7 +134,7 @@ class GoneFileSweepTest extends TestCase {
 	 * the next run, quietly.
 	 */
 	public function testARunStopsAtItsTimeBudget(): void {
-		$this->table([self::row(1, 11, 'pad-1', goneAfter: 100), self::row(2, 12, 'pad-2', goneAfter: 101)], []);
+		$this->table([self::row(1, 11, 'pad-1', seenAt: 100), self::row(2, 12, 'pad-2', seenAt: 101)], []);
 		$this->onDelete = function (): void {
 			$this->clock->advance(19);
 		};
@@ -150,7 +150,7 @@ class GoneFileSweepTest extends TestCase {
 	 * A file the file cache has again by the time its pad would go keeps it.
 	 */
 	public function testTheFileCacheIsAskedOnceMoreBeforeAPadGoes(): void {
-		$this->table([self::row(1, 11, 'pad-1', goneAfter: 100)], []);
+		$this->table([self::row(1, 11, 'pad-1', seenAt: 100)], []);
 		$bindings = new class($this->db, $this->clock) extends BindingService {
 			public function isFileGone(int $fileId): bool {
 				return false;
@@ -164,14 +164,13 @@ class GoneFileSweepTest extends TestCase {
 	}
 
 	/**
-	 * A mark is due once its grace is over: a run of the job passes a fresh
-	 * one by, an admin's settle takes it at once. A mark postponed past the
-	 * grace waits for both.
+	 * A file seen deleted waits out its grace for the job, but not for an
+	 * admin's settle. One whose pad was refused waits for its hour for both.
 	 */
-	public function testAFreshMarkWaitsForTheJobButNotForAnAdmin(): void {
+	public function testAFreshRowWaitsForTheJobButNotForAnAdmin(): void {
 		$this->table([
-			self::row(1, 11, 'pad-fresh', goneAfter: FixedClock::NOW + BindingService::GONE_GRACE_SECONDS),
-			self::row(2, 12, 'pad-postponed', goneAfter: FixedClock::NOW + BindingService::GONE_GRACE_SECONDS + 1),
+			self::row(1, 11, 'pad-fresh', seenAt: FixedClock::NOW - BindingService::GONE_GRACE_SECONDS + 1),
+			self::row(2, 12, 'pad-refused', seenAt: 100, triedAt: FixedClock::NOW - 10),
 		], []);
 
 		$this->sweep();
@@ -182,22 +181,23 @@ class GoneFileSweepTest extends TestCase {
 	}
 
 	/**
-	 * A mark whose file the file cache still has an hour after it was due
-	 * did not happen - a deletion rolled back, an account whose files were
-	 * left - and is cleared, with deleting off too. Sooner, it stays.
+	 * A file seen deleted that the file cache still has an hour later was
+	 * not deleted after all - a deletion rolled back, an account whose
+	 * files were left - and its row is active again, with deleting off too.
+	 * Sooner, it waits.
 	 */
-	public function testAMarkThatDidNotHappenIsCleared(): void {
+	public function testADeletionThatDidNotHappenLeavesTheRowActive(): void {
 		$this->table([
-			self::row(1, 11, 'pad-left', goneAfter: FixedClock::NOW - 3600),
-			self::row(2, 12, 'pad-recent', goneAfter: FixedClock::NOW - 3599),
+			self::row(1, 11, 'pad-left', seenAt: FixedClock::NOW - 3600),
+			self::row(2, 12, 'pad-recent', seenAt: FixedClock::NOW - 3599),
 		], [self::cached(11, 'files/Left.pad'), self::cached(12, 'files/Recent.pad')]);
 		$this->config['delete_on_trash'] = false;
 
 		$this->sweep();
 
 		$this->assertSame([], $this->deletedPads);
-		$this->assertSame([11 => null, 12 => FixedClock::NOW - 3599], $this->marks());
-		$this->assertSame([['info', 'Cleared the marks of files still there an hour after their deletion was due; it did not happen.', null]], $this->lines);
+		$this->assertSame([11 => BindingService::STATE_ACTIVE, 12 => BindingService::STATE_PENDING_DELETE], $this->states());
+		$this->assertSame([['info', 'Files seen deleted for good are still there an hour later; their deletion did not happen, and they keep their pads.', null]], $this->lines);
 	}
 
 	/**
@@ -205,9 +205,9 @@ class GoneFileSweepTest extends TestCase {
 	 * folder of thousands of pads deleted for good goes within a few runs.
 	 */
 	public function testARunTakesTenBatchesAtMost(): void {
-		$this->table(array_map(static fn (int $i): array => self::row($i, 1000 + $i, 'pad-' . $i, goneAfter: 100), range(1, 2001)), []);
+		$this->table(array_map(static fn (int $i): array => self::row($i, 1000 + $i, 'pad-' . $i, seenAt: 100), range(1, 2001)), []);
 
-		$this->sweep();
+		$this->assertSame(['checked' => 2000, 'deleted' => 2000], $this->sweep());
 
 		$this->assertCount(2000, $this->deletedPads);
 		$this->assertSame([3001], $this->fileIds());
@@ -221,8 +221,9 @@ class GoneFileSweepTest extends TestCase {
 		$this->db = new InMemoryBindingTable($rows, $fileCache);
 	}
 
-	private function sweep(?BindingService $bindings = null): void {
-		$this->build($bindings)->run();
+	/** @return array{checked: int, deleted: int} */
+	private function sweep(?BindingService $bindings = null): array {
+		return $this->build($bindings)->run();
 	}
 
 	private function build(?BindingService $bindings = null): GoneFileSweep {
@@ -258,14 +259,20 @@ class GoneFileSweepTest extends TestCase {
 		return array_map(static fn (array $row): int => $row['file_id'], $this->db->rows);
 	}
 
-	/** @return array<int,int|null> gone_after by file */
-	private function marks(): array {
-		return array_column($this->db->rows, 'gone_after', 'file_id');
+	/** @return array<int,string> state by file */
+	private function states(): array {
+		return array_column($this->db->rows, 'state', 'file_id');
 	}
 
-	/** @return array<string,mixed> */
-	private static function row(int $id, int $fileId, string $padId, ?int $goneAfter = null, string $state = BindingService::STATE_ACTIVE): array {
-		return ['id' => $id, 'file_id' => $fileId, 'pad_id' => $padId, 'access_mode' => BindingService::ACCESS_PUBLIC, 'state' => $state, 'deleted_at' => null, 'updated_at' => 100, 'gone_after' => $goneAfter];
+	/**
+	 * A row: active, or - $seenAt given - one whose file was seen deleted
+	 * for good then, last tried at $triedAt.
+	 *
+	 * @return array<string,mixed>
+	 */
+	private static function row(int $id, int $fileId, string $padId, ?int $seenAt = null, ?int $triedAt = null): array {
+		$state = $seenAt === null ? BindingService::STATE_ACTIVE : BindingService::STATE_PENDING_DELETE;
+		return ['id' => $id, 'file_id' => $fileId, 'pad_id' => $padId, 'access_mode' => BindingService::ACCESS_PUBLIC, 'state' => $state, 'deleted_at' => $seenAt, 'updated_at' => $triedAt ?? $seenAt ?? 100];
 	}
 
 	/** @return array<string,mixed> */

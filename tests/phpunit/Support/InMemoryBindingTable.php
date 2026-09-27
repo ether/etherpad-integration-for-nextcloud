@@ -19,19 +19,14 @@ use OCP\IDBConnection;
  * a condition left out changes which rows are hit, and a test sees it.
  */
 final class InMemoryBindingTable implements IDBConnection {
-	/** @var list<array<string,mixed>> */
-	public array $rows;
-
 	/**
-	 * A row given without gone_after has it NULL, as the column defaults to
-	 * in the table. $fileCache holds what the file cache knows (`fileid`,
-	 * `storage`, `path`), for the statements that join it.
+	 * $fileCache holds what the file cache knows (`fileid`, `storage`,
+	 * `path`), for the statements that join it.
 	 *
 	 * @param list<array<string,mixed>> $rows
 	 * @param list<array<string,mixed>> $fileCache
 	 */
-	public function __construct(array $rows, public array $fileCache = []) {
-		$this->rows = array_map(static fn (array $row): array => $row + ['gone_after' => null], $rows);
+	public function __construct(public array $rows, public array $fileCache = []) {
 	}
 
 	public function getQueryBuilder(): IQueryBuilder {

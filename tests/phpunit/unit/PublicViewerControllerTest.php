@@ -21,7 +21,6 @@ use OCA\EtherpadNextcloud\Service\PublicPadOpenService;
 use OCA\EtherpadNextcloud\Service\PublicShareResolver;
 use OCA\EtherpadNextcloud\Service\PublicShareUrlBuilder;
 use OCA\EtherpadNextcloud\Util\PathNormalizer;
-use OCA\EtherpadNextcloud\Tests\Support\SettlesOnOpen;
 use OCP\AppFramework\Http;
 use OCP\Constants;
 use OCP\Files\File;
@@ -36,7 +35,6 @@ use Psr\Log\LoggerInterface;
 class PublicViewerControllerTest extends TestCase {
 	use \OCA\EtherpadNextcloud\Tests\Support\BuildsErrorMappers;
 
-	use SettlesOnOpen;
 
 	public function testProtectedReadOnlyPublicShareReturnsSnapshotWithoutEtherpadSessionCookie(): void {
 		$file = $this->createMock(File::class);
@@ -234,7 +232,7 @@ class PublicViewerControllerTest extends TestCase {
 			new PublicPadContextService(
 				$shareResolver,
 				$padFileService,
-				$this->settleOnOpen($bindingService),
+				$bindingService,
 				$publicPadOpenService,
 				$this->createMock(LivePadHtmlFetcher::class),
 				new PadFileLockRetryService(static function (int $delay): void {
@@ -243,7 +241,7 @@ class PublicViewerControllerTest extends TestCase {
 			),
 			$shareUrlBuilder,
 			$this->buildPadResponseService($urlGenerator),
-			$this->publicErrorMapper($shareUrlBuilder, $this->buildPadResponseService($urlGenerator), $this->untranslated()),
+			$this->publicErrorMapper($shareUrlBuilder, $this->untranslated()),
 			$this->createMock(ISession::class),
 		);
 
@@ -368,7 +366,7 @@ class PublicViewerControllerTest extends TestCase {
 			new PublicPadContextService(
 				$shareResolver,
 				$padFileService,
-				$this->settleOnOpen($bindingService),
+				$bindingService,
 				$publicPadOpenService,
 				$this->createMock(LivePadHtmlFetcher::class),
 				new PadFileLockRetryService(static function (int $delay): void {
@@ -377,7 +375,7 @@ class PublicViewerControllerTest extends TestCase {
 			),
 			$shareUrlBuilder,
 			$this->buildPadResponseService($urlGenerator),
-			$this->publicErrorMapper($shareUrlBuilder, $this->buildPadResponseService($urlGenerator), $this->untranslated(), $logger),
+			$this->publicErrorMapper($shareUrlBuilder, $this->untranslated(), $logger),
 			$session ?? $this->createMock(ISession::class),
 		);
 	}

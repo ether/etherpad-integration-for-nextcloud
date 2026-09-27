@@ -17,20 +17,19 @@ use Psr\Log\LoggerInterface;
 
 /**
  * Deletes the pads of files seen deleted for good, and only those
- * (docs/architecture.md, "Files gone for good"). GoneFilesListener marks
- * their rows (`gone_after`) as the request that deleted them runs; a run
- * takes the marked rows past their grace whose file the file cache has
- * nothing left of, and deletes pad and row. Active rows only: a row that waits is the
- * older sweep's (PendingBindingService).
+ * (docs/architecture.md, "Files gone for good"). GoneFilesListener makes
+ * their rows pending_delete as the request that deleted them runs; a run
+ * takes those past their grace whose file the file cache has nothing left
+ * of, and deletes pad and row.
  *
- * A file gone without a mark is left alone, pad and row with it: the
- * consistency check lists it.
+ * A file gone without being seen deleted is left alone, pad and row with
+ * it: the consistency check lists it.
  *
  * Before a pad goes the file cache is asked once more. A pad Etherpad no
  * longer has counts as gone; one Etherpad refuses to delete is tried again
- * an hour later; Etherpad not answering ends the run. With
- * `delete_on_trash` off nothing is deleted, but the marks are kept, so
- * switching it on finds them in place.
+ * an hour later; Etherpad not answering ends the run. With deleting off
+ * nothing is deleted, but the rows keep waiting, so switching it on finds
+ * them in place.
  */
 class GoneFileSweep {
 	/** Rows a batch takes. */
@@ -42,7 +41,7 @@ class GoneFileSweep {
 	/** How long a pad Etherpad refused to delete waits for its next try. */
 	private const RETRY_REFUSED_SECONDS = 60 * 60;
 
-	/** How long past due a mark whose file is still there counts as one that did not happen. */
+	/** How long a file seen deleted for good may still be there before it counts as one whose deletion did not happen. */
 	private const STALE_AFTER_SECONDS = 60 * 60;
 
 	public function __construct(
@@ -55,35 +54,42 @@ class GoneFileSweep {
 	}
 
 	/**
-	 * A run, within $budget: the job's own, or what is left of the one an
-	 * admin's settle promises. An admin's settle ($atOnce) takes the marks
-	 * still in their grace too: what the job would do within minutes, now.
+	 * A run, within $budget: the job's own, or the one an admin's settle
+	 * promises. An admin's settle ($atOnce) takes the rows still in their
+	 * grace too: what the job would do within minutes, now.
 	 *
-	 * First it clears the marks of files the file cache still has an hour
-	 * after they were due: deletions that did not happen after all.
+	 * First it makes the rows of files the file cache still has an hour
+	 * after they were seen deleted active again: deletions that did not
+	 * happen after all.
+	 *
+	 * @return array{checked: int, deleted: int} rows taken, and pads deleted with their rows
 	 */
-	public function run(?RunBudget $budget = null, bool $atOnce = false): void {
+	public function run(?RunBudget $budget = null, bool $atOnce = false): array {
 		$now = $this->timeFactory->getTime();
 		$stale = $this->bindingService->clearStaleGone($now - self::STALE_AFTER_SECONDS, self::LIMIT);
 		if ($stale > 0) {
-			$this->logger->info('Cleared the marks of files still there an hour after their deletion was due; it did not happen.', [
+			$this->logger->info('Files seen deleted for good are still there an hour later; their deletion did not happen, and they keep their pads.', [
 				'app' => 'etherpad_nextcloud',
 				'count' => $stale,
 			]);
 		}
+		$summary = ['checked' => 0, 'deleted' => 0];
 		if (!$this->appConfig->isDeleteOnTrashEnabled()) {
-			return;
+			return $summary;
 		}
 		$budget ??= new RunBudget($this->timeFactory, RunBudget::DEFAULT_SECONDS);
-		$dueBy = $atOnce ? $now + BindingService::GONE_GRACE_SECONDS : $now;
+		$graceBy = $atOnce ? $now : $now - BindingService::GONE_GRACE_SECONDS;
 		try {
 			for ($batch = 0; $batch < self::BATCHES; $batch++) {
-				$rows = $this->bindingService->findMarkedGone(self::LIMIT, $dueBy);
+				$rows = $this->bindingService->findGone(self::LIMIT, $graceBy, $now - self::RETRY_REFUSED_SECONDS);
 				foreach ($rows as $binding) {
-					$this->discard($binding, $budget);
+					$summary['checked']++;
+					if ($this->discard($binding, $budget)) {
+						$summary['deleted']++;
+					}
 				}
 				if (count($rows) < self::LIMIT) {
-					return;
+					break;
 				}
 			}
 		} catch (RunBudgetSpentException) {
@@ -94,19 +100,22 @@ class GoneFileSweep {
 				...SafeError::context($e),
 			]);
 		}
+		return $summary;
 	}
 
 	/**
 	 * The pad and row of a file gone for good, once the file cache confirms
 	 * it. Left when the file is there after all, the row changed, or
-	 * Etherpad refused - then tried again an hour later.
+	 * Etherpad refused - then tried again an hour later, with a warning the
+	 * first time.
 	 *
+	 * @return bool whether pad and row went
 	 * @throws RunBudgetSpentException
 	 * @throws EtherpadClientException Etherpad did not answer
 	 */
-	private function discard(Binding $binding, RunBudget $budget): void {
+	private function discard(Binding $binding, RunBudget $budget): bool {
 		if (!$this->bindingService->isFileGone($binding->fileId)) {
-			return;
+			return false;
 		}
 		$context = ['app' => 'etherpad_nextcloud', 'fileId' => $binding->fileId, 'padId' => $binding->padId];
 		try {
@@ -117,12 +126,19 @@ class GoneFileSweep {
 			if (EtherpadClientException::isEtherpadUnreachable($e)) {
 				throw $e;
 			}
-			$this->bindingService->postponeGone($binding->fileId, $this->timeFactory->getTime() + self::RETRY_REFUSED_SECONDS);
-			$this->logger->warning('Could not delete the pad of a file gone for good; it is tried again in an hour.', $context + SafeError::context($e));
-			return;
+			$this->bindingService->postponeGone($binding->fileId, $binding->padId);
+			$message = 'Could not delete the pad of a file gone for good; it is tried again in an hour.';
+			if ($binding->untouchedSinceOwed()) {
+				$this->logger->warning($message, $context + SafeError::context($e));
+			} else {
+				$this->logger->info($message, $context + SafeError::context($e));
+			}
+			return false;
 		}
-		if ($this->bindingService->deleteActiveBinding($binding->fileId, $binding->padId)) {
-			$this->logger->info('The file of a pad is gone for good; the pad is deleted.', $context);
+		if (!$this->bindingService->deleteInState($binding->fileId, $binding->padId, BindingService::STATE_PENDING_DELETE)) {
+			return false;
 		}
+		$this->logger->info('The file of a pad is gone for good; the pad is deleted.', $context);
+		return true;
 	}
 }

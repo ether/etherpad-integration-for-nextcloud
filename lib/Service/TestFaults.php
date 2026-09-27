@@ -18,9 +18,6 @@ use OCP\IConfig;
  * injected unless Nextcloud runs in debug mode.
  */
 class TestFaults {
-	public const TRASH_READ_LOCK = 'trash_read_lock';
-	public const TRASH_WRITE_LOCK = 'trash_write_lock';
-	public const TRASH_WRITE_FAIL = 'trash_write_fail';
 	public const RESTORE_READ_LOCK = 'restore_read_lock';
 	public const RESTORE_WRITE_LOCK = 'restore_write_lock';
 	public const RESTORE_WRITE_FAIL = 'restore_write_fail';
@@ -34,9 +31,6 @@ class TestFaults {
 	/** @return list<string> */
 	public static function supported(): array {
 		return [
-			self::TRASH_READ_LOCK,
-			self::TRASH_WRITE_LOCK,
-			self::TRASH_WRITE_FAIL,
 			self::RESTORE_READ_LOCK,
 			self::RESTORE_WRITE_LOCK,
 			self::RESTORE_WRITE_FAIL,

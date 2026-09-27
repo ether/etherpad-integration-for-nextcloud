@@ -23,8 +23,6 @@ return ['routes' => [
 	['name' => 'padSession#initializeById', 'url' => '/api/v1/pads/initialize-by-id/{fileId}', 'verb' => 'POST'],
 	['name' => 'padLifecycle#syncStatusById', 'url' => '/api/v1/pads/sync-status/{fileId}', 'verb' => 'GET'],
 	['name' => 'padLifecycle#syncById', 'url' => '/api/v1/pads/sync/{fileId}', 'verb' => 'POST'],
-	['name' => 'padLifecycle#trash', 'url' => '/api/v1/pads/trash', 'verb' => 'POST'],
-	['name' => 'padLifecycle#restore', 'url' => '/api/v1/pads/restore', 'verb' => 'POST'],
 	['name' => 'padLifecycle#recoverByFileId', 'url' => '/api/v1/pads/recover-from-snapshot/{fileId}', 'verb' => 'POST'],
 	['name' => 'padLifecycle#findOriginalByFileId', 'url' => '/api/v1/pads/find-original/{fileId}', 'verb' => 'GET'],
 	['name' => 'admin#saveSettings', 'url' => '/api/v1/admin/settings', 'verb' => 'POST'],

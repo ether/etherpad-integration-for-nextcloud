@@ -14,11 +14,10 @@ use Psr\Log\LoggerInterface;
 
 class LifecycleResultTest extends TestCase {
 	/**
-	 * What a trash and a restore answer, key for key and in order: the API
-	 * hands it out as it is, after the file.
+	 * What a restore answers, key for key and in order: the API hands it out
+	 * as it is, after the file.
 	 */
-	public function testATrashAndARestoreAnswerInTheShapeTheApiShows(): void {
-		$this->assertSame(['status' => 'trashed', 'deleted_at' => 100, 'snapshot_persisted' => true, 'delete_pending' => false], LifecycleResult::trashed(100, true, false));
+	public function testARestoreAnswersInTheShapeTheApiShows(): void {
 		$this->assertSame(['status' => 'restored', 'old_pad_id' => 'pad-a', 'new_pad_id' => 'pad-b'], LifecycleResult::restored('pad-a', 'pad-b'));
 	}
 
