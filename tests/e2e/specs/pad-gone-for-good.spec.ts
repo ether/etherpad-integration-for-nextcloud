@@ -59,9 +59,11 @@ const vanishedFiles = async (): Promise<number> => {
 }
 
 /**
- * Nextcloud 34 up to 34.0.4 reports the files in a removed folder under the
- * wrong ids (nextcloud/server#63969, fixed for 34.0.5), so the app cannot
- * tell which they were and leaves their pads (docs/deleting-pads.md).
+ * Nextcloud 34 reports the files in a removed folder under the wrong ids,
+ * so the app cannot tell which they were and leaves their pads
+ * (docs/deleting-pads.md). The fix, nextcloud/server#63998, is planned for
+ * 34.0.5 as nextcloud/server#64497, not merged yet: should 34.0.5 come
+ * without it, these cases fail there, and this check moves on.
  */
 const misnumbersFolderFiles = async (): Promise<boolean> => {
 	const res = await fetch(`${E2E.baseURL}/status.php`)
@@ -69,7 +71,7 @@ const misnumbersFolderFiles = async (): Promise<boolean> => {
 	const [major, minor, patch] = String(version ?? '').split('.').map(Number)
 	return major === 34 && minor === 0 && patch < 5
 }
-const misnumbered = 'Nextcloud 34 up to 34.0.4 reports the files in a removed folder under the wrong ids (nextcloud/server#63969).'
+const misnumbered = 'Nextcloud 34 up to 34.0.4 reports the files in a removed folder under the wrong ids (nextcloud/server#63998, #64497).'
 
 test.describe('pads of files deleted for good', () => {
 	test.skip(E2E.etherpadApi === null, needsEtherpadApi)

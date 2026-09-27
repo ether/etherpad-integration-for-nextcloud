@@ -162,6 +162,34 @@ class BindingServiceTest extends TestCase {
 		$service->clearGone([]);
 	}
 
+	/**
+	 * Of the files a removal reported, only those the file cache has
+	 * nothing of are marked: a removal under an id that is not the file's
+	 * leaves a file that is still there alone. Any number, in chunks.
+	 */
+	public function testOnlyFilesTheFileCacheNoLongerHasAreMarked(): void {
+		$rows = array_map(static fn (int $id): array => self::bindingRow($id, 'pad-' . $id, BindingService::STATE_ACTIVE), range(1, 1200));
+		$table = new InMemoryBindingTable($rows, [
+			['fileid' => 2, 'storage' => 1, 'path' => 'files/still-here.pad'],
+			['fileid' => 1100, 'storage' => 1, 'path' => 'files/also-here.pad'],
+		]);
+		$service = new BindingService($table, new FixedClock(500));
+
+		$service->markIfGone(range(1, 1200));
+
+		$pending = array_keys(array_filter(array_column($table->rows, 'state', 'file_id'), static fn (string $state): bool => $state === BindingService::STATE_PENDING_DELETE));
+		$this->assertSame(array_values(array_diff(range(1, 1200), [2, 1100])), $pending);
+		$service->markIfGone([]);
+	}
+
+	/** Where the file cache has a file, as a removal reports it; nothing for one it does not have. */
+	public function testWhereTheFileCacheHasAFile(): void {
+		$service = new BindingService(new InMemoryBindingTable([], [['fileid' => 7, 'storage' => 3, 'path' => 'files/Sub']]), new FixedClock(500));
+
+		$this->assertSame([3, 'files/Sub'], $service->placeOf(7));
+		$this->assertNull($service->placeOf(8));
+	}
+
 	/** The files of the rows on a storage, as the file cache has them. Nothing is marked by asking. */
 	public function testTheFilesOfTheRowsOnAStorage(): void {
 		$fileCache = [

@@ -67,9 +67,10 @@ so the pad goes within ten minutes; the admin page's "Check pending pads"
 does it at once. When Etherpad does not answer, the job deletes the pad once
 it does; until then the admin page counts it as a pending delete.
 
-On Nextcloud 34 up to 34.0.4, Nextcloud reports the files inside a folder
-deleted for good under the wrong ids (nextcloud/server#63969, fixed for
-34.0.5). The app cannot tell which files they were, so the pads of the
+On Nextcloud 34, Nextcloud reports the files inside a folder deleted for
+good under the wrong ids. The fix (nextcloud/server#63998) is in 35.0.1;
+its backport to 34 (nextcloud/server#64497) is planned for 34.0.5 and not
+merged yet. The app cannot tell which files they were, so the pads of the
 `.pad` files inside such a folder stay, and the consistency check lists
 them. A `.pad` file deleted on its own, and an account deleted, are not
 affected.

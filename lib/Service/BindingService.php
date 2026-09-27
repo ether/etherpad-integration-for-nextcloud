@@ -188,6 +188,44 @@ class BindingService {
 	}
 
 	/**
+	 * Of the files a removal from the file cache reported, marks those the
+	 * file cache has nothing of by now (markGone). A removal reported under
+	 * an id that is not the file's - Nextcloud 34 up to 34.0.4 misnumbers a
+	 * folder's descendants - so never marks a file that is still there.
+	 *
+	 * @param list<int> $fileIds
+	 */
+	public function markIfGone(array $fileIds): void {
+		foreach (array_chunk($fileIds, 500) as $chunk) {
+			$qb = $this->db->getQueryBuilder();
+			$qb->select('fileid')
+				->from('filecache')
+				->where($qb->expr()->in('fileid', $qb->createNamedParameter($chunk, IQueryBuilder::PARAM_INT_ARRAY)));
+			$result = $qb->executeQuery();
+			$present = array_map(static fn (array $row): int => DbRows::int($row, 'fileid'), DbRows::all($result->fetchAll()));
+			$result->closeCursor();
+			$this->markGone(array_values(array_diff($chunk, $present)));
+		}
+	}
+
+	/**
+	 * Where the file cache has a file: its storage and path, as a removal
+	 * from the file cache reports them. Null for a file it does not have.
+	 *
+	 * @return array{int,string}|null
+	 */
+	public function placeOf(int $fileId): ?array {
+		$qb = $this->db->getQueryBuilder();
+		$qb->select('storage', 'path')
+			->from('filecache')
+			->where($qb->expr()->eq('fileid', $qb->createNamedParameter($fileId, IQueryBuilder::PARAM_INT)));
+		$result = $qb->executeQuery();
+		$row = DbRows::one($result->fetch());
+		$result->closeCursor();
+		return $row === null ? null : [DbRows::int($row, 'storage'), DbRows::string($row, 'path')];
+	}
+
+	/**
 	 * The files are in the file cache after all - moved to another storage,
 	 * which Nextcloud reports as a removal and an insert of the same file,
 	 * or a deletion that did not happen: their rows are active again.
@@ -334,6 +372,16 @@ class BindingService {
 		}
 	}
 
+	/**
+	 * Whether the file's row names this pad in this mode, before the pad is
+	 * handed out: on open, public or not, sync, sync status and the
+	 * read-only view.
+	 *
+	 * Writes in one case: a row seen deleted for good (`pending_delete`) is
+	 * made active again, as each caller holds the file, so its deletion did
+	 * not happen. Here rather than at each caller, where one left out would
+	 * answer "not active" for a file that is there.
+	 */
 	public function assertConsistentMapping(int $fileId, string $padId, string $accessMode): void {
 		$this->assertAccessMode($accessMode);
 		$binding = $this->findByFileId($fileId);

@@ -14,6 +14,7 @@ use OCA\EtherpadNextcloud\Service\AppConfigService;
 use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\EtherpadNextcloud\Util\DbRows;
 use OCP\AppFramework\Utility\ITimeFactory;
+use OCP\BackgroundJob\IJobList;
 use OCP\DB\ISchemaWrapper;
 use OCP\DB\QueryBuilder\IQueryBuilder;
 use OCP\IDBConnection;
@@ -34,13 +35,25 @@ use OCP\Migration\SimpleMigrationStep;
  * now says whether a file deleted for good takes its pad along:
  * `delete_pad_with_file`, with the value the admin gave the old one.
  *
+ * Its three jobs that retried the trash's deletions are gone. Taken off
+ * the job list here, rather than left to the first cron run, which drops
+ * a job whose class is gone with a warning each.
+ *
  * @psalm-api
  */
 class Version000005Date20260928120000 extends SimpleMigrationStep {
+	/** The jobs 1.1.0-beta.1 added, whose classes are gone. */
+	private const GONE_JOBS = [
+		'OCA\\EtherpadNextcloud\\BackgroundJob\\HotPendingDeleteRetryJob',
+		'OCA\\EtherpadNextcloud\\BackgroundJob\\WarmPendingDeleteRetryJob',
+		'OCA\\EtherpadNextcloud\\BackgroundJob\\ColdPendingDeleteRetryJob',
+	];
+
 	public function __construct(
 		private IDBConnection $db,
 		private ITimeFactory $timeFactory,
 		private AppConfigService $appConfig,
+		private IJobList $jobList,
 	) {
 	}
 
@@ -49,6 +62,10 @@ class Version000005Date20260928120000 extends SimpleMigrationStep {
 	 */
 	public function postSchemaChange(IOutput $output, Closure $schemaClosure, array $options): void {
 		$this->appConfig->takeOverDeleteOnTrash();
+		foreach (self::GONE_JOBS as $job) {
+			/** @psalm-suppress ArgumentTypeCoercion The classes are gone, which is why they go; the job list removes their rows by the name alone. */
+			$this->jobList->remove($job);
+		}
 		$now = $this->timeFactory->getTime();
 
 		$qb = $this->db->getQueryBuilder();

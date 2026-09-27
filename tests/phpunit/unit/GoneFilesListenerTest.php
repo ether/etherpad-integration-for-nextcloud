@@ -23,8 +23,9 @@ use Psr\Log\LoggerInterface;
 
 /**
  * Which removals from the file cache mark a file as deleted for good, and
- * when the marks are written: a removal from a trash, one made by a
- * delete, a user's home - never one a scan makes, and never by the name.
+ * when the marks are written: a removal from a trash, one of a node being
+ * deleted or under it, a user's home - never one a scan makes, and never
+ * by the name.
  */
 class GoneFilesListenerTest extends TestCase {
 	private const HOME = 'home::alice';
@@ -34,6 +35,8 @@ class GoneFilesListenerTest extends TestCase {
 	private array $calls = [];
 	/** @var list<\Closure(): void> what the request runs when it ends */
 	private array $atEnd = [];
+	/** @var array<int,array{int,string}> by file id, where the file cache has a node */
+	private array $places = [];
 	private BindingService $bindings;
 	private IUserMountCache $mounts;
 	private LoggerInterface $logger;
@@ -41,10 +44,15 @@ class GoneFilesListenerTest extends TestCase {
 	protected function setUp(): void {
 		$this->calls = [];
 		$this->atEnd = [];
+		$this->places = [];
 		$this->bindings = $this->createMock(BindingService::class);
-		$this->bindings->method('markGone')->willReturnCallback(function (array $fileIds): void {
+		$this->bindings->method('markIfGone')->willReturnCallback(function (array $fileIds): void {
 			$this->calls[] = ['mark', $fileIds];
 		});
+		$this->bindings->method('markGone')->willReturnCallback(function (array $fileIds): void {
+			$this->calls[] = ['mark home', $fileIds];
+		});
+		$this->bindings->method('placeOf')->willReturnCallback(fn (int $fileId): ?array => $this->places[$fileId] ?? null);
 		$this->bindings->method('clearGone')->willReturnCallback(function (array $fileIds): void {
 			$this->calls[] = ['clear', $fileIds];
 		});
@@ -57,10 +65,10 @@ class GoneFilesListenerTest extends TestCase {
 	}
 
 	/**
-	 * A removal from a trash counts, whoever makes it; so does any removal
-	 * a delete makes, whatever the file's name. Versions and app data never
-	 * count, and a `trash/` folder counts only on a team folder's own
-	 * storage. A removal outside a delete - a scan's - does not.
+	 * A removal from a trash counts, whoever makes it; so does the removal
+	 * of a node being deleted, whatever the file's name. Versions and app
+	 * data never count, and a `trash/` folder counts only on a team folder's
+	 * own storage. A removal outside a delete - a scan's - does not.
 	 *
 	 * @return iterable<string,array{string,string,bool,bool}>
 	 */
@@ -84,7 +92,7 @@ class GoneFilesListenerTest extends TestCase {
 	#[\PHPUnit\Framework\Attributes\DataProvider('removals')]
 	public function testWhatCounts(string $storage, string $path, bool $withinADelete, bool $counts): void {
 		$listener = $this->listener();
-		$node = $this->createMock(File::class);
+		$node = $this->node(7, $path);
 
 		if ($withinADelete) {
 			$listener->handle(new BeforeNodeDeletedEvent($node));
@@ -99,26 +107,49 @@ class GoneFilesListenerTest extends TestCase {
 	}
 
 	/**
-	 * A delete's removals are written once it is done; a delete after it
-	 * whose removals do not count writes nothing, and a removal after the
-	 * last delete of the request is a scan's again.
+	 * A delete counts the removals of its node and of what is under it, on
+	 * the node's storage, and writes them once it is done. A removal beside
+	 * the node, or on another storage, is not the delete's; one after it is
+	 * a scan's again.
 	 */
-	public function testADeleteWritesWhatItRemovedWhenDone(): void {
+	public function testADeleteCountsWhatIsUnderItsNode(): void {
 		$listener = $this->listener();
-		$node = $this->createMock(File::class);
+		$folder = $this->node(100, 'files/Sub');
 
-		$listener->handle(new BeforeNodeDeletedEvent($node));
-		$listener->handle($this->removed(7, 'files/Notes.pad'));
-		$listener->handle(new BeforeNodeDeletedEvent($node));
-		$listener->handle($this->removed(8, 'files/Sub/Other.pad'));
-		$listener->handle(new NodeDeletedEvent($node));
-		$this->assertSame([['mark', [7, 8]]], $this->calls, 'written when a delete is done');
-		$listener->handle(new NodeDeletedEvent($node));
-		$listener->handle($this->removed(9, 'files/Scanned.pad'));
-		$listener->handle(new NodeDeletedEvent($node));
+		$listener->handle(new BeforeNodeDeletedEvent($folder));
+		$listener->handle($this->removed(7, 'files/Sub/Notes.pad'));
+		$listener->handle($this->removed(8, 'files/Sub/Deeper/Other.pad'));
+		$listener->handle($this->removed(9, 'files/Subway.pad'));
+		$listener->handle($this->removed(10, 'files/Sub/Elsewhere.pad', storageId: 2));
+		$listener->handle($this->removed(100, 'files/Sub'));
+		$listener->handle(new NodeDeletedEvent($folder));
+		$this->assertSame([['mark', [7, 8, 100]]], $this->calls, 'written when the delete is done');
+		$listener->handle($this->removed(11, 'files/Sub/Late.pad'));
 		$this->endRequest();
 
-		$this->assertSame([['mark', [7, 8]]], $this->calls);
+		$this->assertSame([['mark', [7, 8, 100]]], $this->calls);
+	}
+
+	/**
+	 * A delete that fails - a locked file - raises no NodeDeletedEvent, and
+	 * its window stays open for the rest of the process: on its node's own
+	 * entries only, so what a scan drops elsewhere afterwards is still no
+	 * delete. A node the file cache does not have opens no window, failed
+	 * or not.
+	 */
+	public function testAFailedDeleteLeavesNoWindowOnOtherFiles(): void {
+		$listener = $this->listener();
+		$locked = $this->node(100, 'files/Locked.pad');
+		$uncached = $this->createMock(File::class);
+		$uncached->method('getId')->willReturn(200);
+
+		$listener->handle(new BeforeNodeDeletedEvent($locked));
+		$listener->handle(new BeforeNodeDeletedEvent($uncached));
+		$listener->handle($this->removed(7, 'files/Dropped.pad'));
+		$listener->handle($this->removed(100, 'files/Locked.pad'));
+		$this->endRequest();
+
+		$this->assertSame([['mark', [100]]], $this->calls);
 	}
 
 	/**
@@ -128,7 +159,7 @@ class GoneFilesListenerTest extends TestCase {
 	 */
 	public function testAMoveToAnotherStorageTakesTheMarkBack(): void {
 		$listener = $this->listener(block: 2);
-		$node = $this->createMock(File::class);
+		$node = $this->node(100, '');
 
 		$listener->handle(new BeforeNodeDeletedEvent($node));
 		$listener->handle($this->removed(7, 'Notes.pad', 'local::/mnt/share/'));
@@ -168,7 +199,7 @@ class GoneFilesListenerTest extends TestCase {
 	 */
 	public function testAMisnumberedBlockDoesNotCount(): void {
 		$listener = $this->listener();
-		$node = $this->createMock(File::class);
+		$node = $this->node(100, 'files');
 		$misnumbered = [$this->removed(0, 'files/F/a.pad'), $this->removed(1, 'files/F/b.pad')];
 		$numbered = [$this->removed(5, 'files/G/a.pad'), $this->removed(6, 'files/G/b.pad')];
 
@@ -206,7 +237,7 @@ class GoneFilesListenerTest extends TestCase {
 		$listener->handle(new BeforeUserDeletedEvent($bob));
 		$listener->handle(new UserDeletedEvent($bob));
 
-		$this->assertSame([['storage', [5]], ['mark', [41, 42]], ['mark', []], ['mark', []]], $this->calls);
+		$this->assertSame([['storage', [5]], ['mark home', [41, 42]], ['mark home', []], ['mark home', []]], $this->calls);
 	}
 
 	/** A deletion the user backend refuses raises no UserDeletedEvent: nothing is marked. */
@@ -235,7 +266,8 @@ class GoneFilesListenerTest extends TestCase {
 	 */
 	public function testNothingThrows(): void {
 		$this->bindings = $this->createMock(BindingService::class);
-		$this->bindings->method('markGone')->willThrowException(new \RuntimeException('the database went away'));
+		$this->bindings->method('placeOf')->willReturn([1, 'files/Notes.pad']);
+		$this->bindings->method('markIfGone')->willThrowException(new \RuntimeException('the database went away'));
 		$this->logger->expects($this->exactly(2))->method('warning')->with('Could not mark the pads of files deleted for good; the consistency check lists them.', $this->anything());
 		$listener = $this->listener();
 		$node = $this->createMock(File::class);
@@ -281,8 +313,16 @@ class GoneFilesListenerTest extends TestCase {
 		}
 	}
 
-	private function removed(int $fileId, string $path, string $storage = self::HOME): CacheEntryRemovedEvent {
-		return new CacheEntryRemovedEvent($this->storage($storage), $path, $fileId, 1);
+	private function removed(int $fileId, string $path, string $storage = self::HOME, int $storageId = 1): CacheEntryRemovedEvent {
+		return new CacheEntryRemovedEvent($this->storage($storage), $path, $fileId, $storageId);
+	}
+
+	/** A node the file cache has at $path on storage 1. */
+	private function node(int $fileId, string $path): File {
+		$this->places[$fileId] = [1, $path];
+		$node = $this->createMock(File::class);
+		$node->method('getId')->willReturn($fileId);
+		return $node;
 	}
 
 	/**
