@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\Migration;
 
 use Closure;
+use OCA\EtherpadNextcloud\Service\AppConfigService;
 use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\EtherpadNextcloud\Util\DbRows;
 use OCP\AppFramework\Utility\ITimeFactory;
@@ -32,15 +33,20 @@ use OCP\Migration\SimpleMigrationStep;
  *   checked then. It is the file's pad; should Etherpad have lost it, the
  *   next open offers a new one from the file.
  *
+ * And the setting that said whether a trash deleted pads, `delete_on_trash`,
+ * now says whether a file deleted for good takes its pad along:
+ * `delete_on_permanent_delete`, with the value the admin gave the old one.
+ *
  * @psalm-api
  */
-class Version000005Date20260928090000 extends SimpleMigrationStep {
+class Version000005Date20260928120000 extends SimpleMigrationStep {
 	/** A state that no longer exists, but rows from before may still be in. */
 	private const RESTORE_PENDING = 'restore_pending';
 
 	public function __construct(
 		private IDBConnection $db,
 		private ITimeFactory $timeFactory,
+		private AppConfigService $appConfig,
 	) {
 	}
 
@@ -48,6 +54,7 @@ class Version000005Date20260928090000 extends SimpleMigrationStep {
 	 * @param Closure(): ISchemaWrapper $schemaClosure
 	 */
 	public function postSchemaChange(IOutput $output, Closure $schemaClosure, array $options): void {
+		$this->appConfig->takeOverDeleteOnTrash();
 		if (!$schemaClosure()->hasTable(BindingService::TABLE)) {
 			return;
 		}

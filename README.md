@@ -100,7 +100,7 @@ and configure:
 - Etherpad API key (OAuth is not required; Etherpad API key auth is used)
 - Copy content to `.pad` file interval
 - Which pad types users may create (see below)
-- Delete-on-trash policy
+- Whether a pad is deleted with its file deleted for good
 - External public pad policy
 
 Two settings control which pad types the app offers, both enabled by default:

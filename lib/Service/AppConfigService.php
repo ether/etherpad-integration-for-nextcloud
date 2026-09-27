@@ -9,12 +9,17 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\Service;
 
 use OCA\EtherpadNextcloud\AppInfo\Application;
+use OCP\IAppConfig;
 use OCP\IConfig;
 
 class AppConfigService {
+	/** Whether a file deleted for good takes its pad along; `delete_on_trash` before. */
+	public const DELETE_ON_PERMANENT_DELETE = 'delete_on_permanent_delete';
+
 	public function __construct(
 		private IConfig $config,
 		private TrustedEmbedOriginsNormalizer $trustedEmbedOriginsNormalizer,
+		private IAppConfig $appConfig,
 	) {
 	}
 
@@ -34,11 +39,29 @@ class AppConfigService {
 	}
 
 	/**
-	 * Whether a trash deletes the file's pad, once its content is in the
-	 * file - now, or through the sweep. On unless the admin switched it off.
+	 * Whether the pad of a file deleted for good is deleted (GoneFileSweep).
+	 * On unless the admin switched it off. Read and written as a string
+	 * through IAppConfig alone, so the value keeps one type
+	 * (AdminSettingsRepository writes it the same way).
 	 */
-	public function isDeleteOnTrashEnabled(): bool {
-		return $this->config->getAppValue(Application::APP_ID, 'delete_on_trash', 'yes') === 'yes';
+	public function isDeleteOnPermanentDeleteEnabled(): bool {
+		return $this->appConfig->getValueString(Application::APP_ID, self::DELETE_ON_PERMANENT_DELETE, 'yes') === 'yes';
+	}
+
+	/**
+	 * The setting as a version whose trash deleted pads kept it, under
+	 * `delete_on_trash`, taken over once and removed: switched off there,
+	 * it is off here, unless the new one is set already.
+	 */
+	public function takeOverDeleteOnTrash(): void {
+		$old = $this->appConfig->getValueString(Application::APP_ID, 'delete_on_trash', '');
+		if ($old === '') {
+			return;
+		}
+		if ($this->appConfig->getValueString(Application::APP_ID, self::DELETE_ON_PERMANENT_DELETE, '') === '') {
+			$this->appConfig->setValueString(Application::APP_ID, self::DELETE_ON_PERMANENT_DELETE, $old);
+		}
+		$this->appConfig->deleteKey(Application::APP_ID, 'delete_on_trash');
 	}
 
 	/** The test fault a debug instance injects (TestFaults), or '' for none. */

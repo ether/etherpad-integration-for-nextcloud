@@ -169,18 +169,18 @@
 		</p>
 		<p class="settings-hint ep-field-hint" id="epnc-hint-sync-interval"><?php p((string)$_['l10n']['copy_interval_hint']); ?></p>
 
-		<p id="delete-on-trash-row" class="ep-checkbox-row">
+		<p id="delete-on-permanent-delete-row" class="ep-checkbox-row">
 			<label class="checkbox">
 				<input
 					type="checkbox"
-					name="delete_on_trash"
-					aria-describedby="epnc-hint-delete-on-trash"
+					name="delete_on_permanent_delete"
+					aria-describedby="epnc-hint-delete-on-permanent-delete"
 					value="1"
-					<?php if ((bool)$_['delete_on_trash']): ?>checked<?php endif; ?>>
-				<?php p((string)$_['l10n']['delete_on_trash']); ?>
+					<?php if ((bool)$_['delete_on_permanent_delete']): ?>checked<?php endif; ?>>
+				<?php p((string)$_['l10n']['delete_on_permanent_delete']); ?>
 			</label>
 		</p>
-		<p class="settings-hint ep-field-hint ep-checkbox-hint" id="epnc-hint-delete-on-trash"><?php p((string)$_['l10n']['delete_on_trash_hint']); ?></p>
+		<p class="settings-hint ep-field-hint ep-checkbox-hint" id="epnc-hint-delete-on-permanent-delete"><?php p((string)$_['l10n']['delete_on_permanent_delete_hint']); ?></p>
 
 		<h3 class="ep-section-heading"><?php p((string)$_['l10n']['section_external']); ?></h3>
 

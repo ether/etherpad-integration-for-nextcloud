@@ -37,7 +37,7 @@ const setupAdminDom = () => {
 				<input type="checkbox" name="enable_public_pads" checked>
 				<input type="checkbox" name="allow_legacy_protected_import" checked>
 				<p id="pad-types-none-hint" class="ep-field-hint" role="status" data-message="No pad type is enabled."></p>
-				<input type="checkbox" name="delete_on_trash" checked>
+				<input type="checkbox" name="delete_on_permanent_delete" checked>
 				<input type="checkbox" name="allow_external_pads">
 				<textarea name="external_pad_allowlist"></textarea>
 				<textarea name="trusted_embed_origins"></textarea>

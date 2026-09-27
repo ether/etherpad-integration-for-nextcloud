@@ -15,7 +15,7 @@ class StoredAdminSettings {
 	public function __construct(
 		private readonly string $apiKey,
 		public readonly string $cookieDomain,
-		public readonly bool $deleteOnTrash,
+		public readonly bool $deleteOnPermanentDelete,
 		public readonly bool $allowExternalPads,
 		public readonly string $trustedEmbedOrigins,
 		public readonly bool $enableProtectedPads = true,

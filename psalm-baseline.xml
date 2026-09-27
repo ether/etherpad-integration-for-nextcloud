@@ -138,8 +138,6 @@
       <code><![CDATA[getAppValue]]></code>
       <code><![CDATA[getAppValue]]></code>
       <code><![CDATA[getAppValue]]></code>
-      <code><![CDATA[getAppValue]]></code>
-      <code><![CDATA[setAppValue]]></code>
       <code><![CDATA[setAppValue]]></code>
       <code><![CDATA[setAppValue]]></code>
       <code><![CDATA[setAppValue]]></code>
@@ -155,7 +153,6 @@
     </DeprecatedMethod>
     <RedundantCastGivenDocblockType>
       <code><![CDATA[(string)$this->config->getAppValue(Application::APP_ID, 'allow_external_pads', 'no')]]></code>
-      <code><![CDATA[(string)$this->config->getAppValue(Application::APP_ID, 'delete_on_trash', 'yes')]]></code>
       <code><![CDATA[(string)$this->config->getAppValue(Application::APP_ID, 'etherpad_cookie_domain', '')]]></code>
       <code><![CDATA[(string)$this->config->getAppValue(Application::APP_ID, 'etherpad_cookie_domain_configured', 'no')]]></code>
       <code><![CDATA[(string)$this->config->getAppValue(Application::APP_ID, 'trusted_embed_origins', '')]]></code>
@@ -171,7 +168,6 @@
   </file>
   <file src="lib/Service/AppConfigService.php">
     <DeprecatedMethod>
-      <code><![CDATA[getAppValue]]></code>
       <code><![CDATA[getAppValue]]></code>
       <code><![CDATA[getAppValue]]></code>
       <code><![CDATA[getAppValue]]></code>
@@ -445,11 +441,9 @@
       <code><![CDATA[getAppValue]]></code>
       <code><![CDATA[getAppValue]]></code>
       <code><![CDATA[getAppValue]]></code>
-      <code><![CDATA[getAppValue]]></code>
     </DeprecatedMethod>
     <RedundantCastGivenDocblockType>
       <code><![CDATA[(string)$this->config->getAppValue(Application::APP_ID, 'allow_external_pads', 'no')]]></code>
-      <code><![CDATA[(string)$this->config->getAppValue(Application::APP_ID, 'delete_on_trash', 'yes')]]></code>
       <code><![CDATA[(string)$this->config->getAppValue(Application::APP_ID, 'etherpad_api_host', '')]]></code>
       <code><![CDATA[(string)$this->config->getAppValue(Application::APP_ID, 'etherpad_api_version', EtherpadClient::DEFAULT_API_VERSION)]]></code>
       <code><![CDATA[(string)$this->config->getAppValue(Application::APP_ID, 'etherpad_cookie_domain', '')]]></code>

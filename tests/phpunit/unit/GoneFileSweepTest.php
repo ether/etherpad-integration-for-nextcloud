@@ -37,7 +37,7 @@ class GoneFileSweepTest extends TestCase {
 
 	protected function setUp(): void {
 		$this->clock = new FixedClock();
-		$this->config = ['delete_on_trash' => true];
+		$this->config = ['delete_on_permanent_delete' => true];
 		$this->deletedPads = [];
 		$this->padErrors = [];
 		$this->lines = [];
@@ -68,14 +68,14 @@ class GoneFileSweepTest extends TestCase {
 	 */
 	public function testWithDeletingOffNothingGoesButTheRowsWait(): void {
 		$this->table([self::row(1, 11, 'pad-gone', seenAt: 100)], []);
-		$this->config['delete_on_trash'] = false;
+		$this->config['delete_on_permanent_delete'] = false;
 
 		$this->sweep();
 
 		$this->assertSame([], $this->deletedPads);
 		$this->assertSame([11 => BindingService::STATE_PENDING_DELETE], $this->states());
 
-		$this->config['delete_on_trash'] = true;
+		$this->config['delete_on_permanent_delete'] = true;
 		$this->sweep();
 		$this->assertSame(['pad-gone'], $this->deletedPads);
 	}
@@ -191,7 +191,7 @@ class GoneFileSweepTest extends TestCase {
 			self::row(1, 11, 'pad-left', seenAt: FixedClock::NOW - 3600),
 			self::row(2, 12, 'pad-recent', seenAt: FixedClock::NOW - 3599),
 		], [self::cached(11, 'files/Left.pad'), self::cached(12, 'files/Recent.pad')]);
-		$this->config['delete_on_trash'] = false;
+		$this->config['delete_on_permanent_delete'] = false;
 
 		$this->sweep();
 
@@ -238,7 +238,7 @@ class GoneFileSweepTest extends TestCase {
 			}
 		});
 		$config = $this->createMock(AppConfigService::class);
-		$config->method('isDeleteOnTrashEnabled')->willReturnCallback(fn (): bool => (bool)$this->config['delete_on_trash']);
+		$config->method('isDeleteOnPermanentDeleteEnabled')->willReturnCallback(fn (): bool => (bool)$this->config['delete_on_permanent_delete']);
 		$logger = $this->createMock(LoggerInterface::class);
 		foreach (['debug', 'info', 'warning'] as $level) {
 			$logger->method($level)->willReturnCallback(function (string $message, array $context) use ($level): void {

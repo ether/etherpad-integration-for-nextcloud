@@ -4,7 +4,8 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Tests\Unit;
 
-use OCA\EtherpadNextcloud\Migration\Version000005Date20260928090000;
+use OCA\EtherpadNextcloud\Migration\Version000005Date20260928120000;
+use OCA\EtherpadNextcloud\Service\AppConfigService;
 use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\EtherpadNextcloud\Tests\Support\FixedClock;
 use OCA\EtherpadNextcloud\Tests\Support\InMemoryBindingTable;
@@ -37,7 +38,7 @@ class KeepPadsThroughTheTrashMigrationTest extends TestCase {
 		$schema = $this->createMock(ISchemaWrapper::class);
 		$schema->method('hasTable')->with(BindingService::TABLE)->willReturn(true);
 
-		(new Version000005Date20260928090000($table, new FixedClock(500)))
+		(new Version000005Date20260928120000($table, new FixedClock(500), $this->createMock(AppConfigService::class)))
 			->postSchemaChange($this->createMock(IOutput::class), static fn (): ISchemaWrapper => $schema, []);
 
 		$active = [BindingService::STATE_ACTIVE, null, 500];
@@ -50,13 +51,18 @@ class KeepPadsThroughTheTrashMigrationTest extends TestCase {
 		], array_map(static fn (array $r): array => [$r['state'], $r['deleted_at'], $r['updated_at']], array_column($table->rows, null, 'file_id')));
 	}
 
-	/** Without the table - an app installed fresh - there is nothing to take over. */
-	public function testNothingWithoutTheTable(): void {
+	/**
+	 * The setting is taken over whatever the table holds; without the
+	 * table - an app installed fresh - there are no rows to take over.
+	 */
+	public function testTheSettingIsTakenOverAndNothingElseWithoutTheTable(): void {
 		$table = new InMemoryBindingTable([]);
 		$schema = $this->createMock(ISchemaWrapper::class);
 		$schema->method('hasTable')->willReturn(false);
+		$appConfig = $this->createMock(AppConfigService::class);
+		$appConfig->expects($this->once())->method('takeOverDeleteOnTrash');
 
-		(new Version000005Date20260928090000($table, new FixedClock(500)))
+		(new Version000005Date20260928120000($table, new FixedClock(500), $appConfig))
 			->postSchemaChange($this->createMock(IOutput::class), static fn (): ISchemaWrapper => $schema, []);
 
 		$this->assertSame([], $table->rows);

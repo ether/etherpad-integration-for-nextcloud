@@ -53,7 +53,7 @@ class AdminSettingsValidator {
 		$apiHost = $this->normalizeEtherpadApiHost((string)($payload['etherpad_api_host'] ?? ''), $host);
 		$cookieDomain = $this->normalizeCookieDomain((string)($payload['etherpad_cookie_domain'] ?? $stored->cookieDomain));
 		$syncIntervalSeconds = $this->normalizeSyncInterval($payload['sync_interval_seconds'] ?? 120);
-		$deleteOnTrash = $this->toBool($payload['delete_on_trash'] ?? $stored->deleteOnTrash);
+		$deleteOnPermanentDelete = $this->toBool($payload['delete_on_permanent_delete'] ?? $stored->deleteOnPermanentDelete);
 		$allowExternalPads = $this->toBool($payload['allow_external_pads'] ?? $stored->allowExternalPads);
 		$enableProtectedPads = $this->toBool($payload[PadTypePolicy::SETTING_PROTECTED] ?? $stored->enableProtectedPads);
 		$enablePublicPads = $this->toBool($payload[PadTypePolicy::SETTING_PUBLIC] ?? $stored->enablePublicPads);
@@ -73,7 +73,7 @@ class AdminSettingsValidator {
 			$effectiveApiKey,
 			$this->resolveApiVersion((string)($payload['etherpad_api_version'] ?? ''), $apiHost),
 			$syncIntervalSeconds,
-			$deleteOnTrash,
+			$deleteOnPermanentDelete,
 			$allowExternalPads,
 			$externalAllowlist,
 			$trustedEmbedOrigins,

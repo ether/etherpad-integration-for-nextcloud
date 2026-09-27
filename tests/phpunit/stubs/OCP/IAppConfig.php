@@ -13,5 +13,7 @@ if (!interface_exists(IAppConfig::class)) {
 		public function getValueBool(string $app, string $key, bool $default = false, bool $lazy = false): bool;
 
 		public function setValueString(string $app, string $key, string $value, bool $lazy = false, bool $sensitive = false): bool;
+
+		public function deleteKey(string $app, string $key): void;
 	}
 }

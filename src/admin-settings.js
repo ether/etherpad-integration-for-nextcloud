@@ -116,7 +116,7 @@
 			etherpad_cookie_domain: String(data.get('etherpad_cookie_domain') || '').trim(),
 			etherpad_api_key: String(data.get('etherpad_api_key') || '').trim(),
 			sync_interval_seconds: Number(data.get('sync_interval_seconds') || 120),
-			delete_on_trash: data.has('delete_on_trash'),
+			delete_on_permanent_delete: data.has('delete_on_permanent_delete'),
 			enable_protected_pads: data.has('enable_protected_pads'),
 			allow_legacy_protected_import: data.has('allow_legacy_protected_import'),
 			enable_public_pads: data.has('enable_public_pads'),
