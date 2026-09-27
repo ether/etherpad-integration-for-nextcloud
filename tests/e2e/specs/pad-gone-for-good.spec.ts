@@ -15,7 +15,7 @@ import {
 	purgeTrashbinEntry,
 	restoreFromTrashViaDav,
 } from '../fixtures/dav'
-import { etherpadApiPost, groupExists, groupIdOfPadUrl, padExists, padIdOfPadUrl } from '../fixtures/etherpad'
+import { etherpadApiPost, groupExists, groupIdOfPadUrl, liveSessionsOfGroup, padExists, padIdOfPadUrl } from '../fixtures/etherpad'
 import {
 	addToGroup,
 	createAccount,
@@ -108,6 +108,31 @@ test.describe('pads of files deleted for good', () => {
 		await settle()
 		expect(await padExists(padId), 'deleted from the trash, the file should take its pad').toBe(false)
 		expect(await groupExists(groupIdOfPadUrl(pad.padUrl)), 'and its group').toBe(false)
+	})
+
+	/**
+	 * A delete, to the trash or past it, takes the sessions of the protected
+	 * pads it takes along - a file's own, or those under a folder - while
+	 * the trash keeps the pads.
+	 */
+	test('a protected pad moved to the trash loses its sessions', async () => {
+		const name = uniquePadName('gone-sessions-file')
+		const folder = uniqueName('gone-sessions-folder')
+		await mkcolViaDav(folder)
+		const pads = [await createPadAtPath(`/${name}`, 'protected'), await createPadAtPath(`/${folder}/${uniquePadName('inside')}`, 'protected')]
+		for (const pad of pads) {
+			const opened = await padApiPost('pads/open-by-id', { fileId: String(await propfindFileId(pad.path.replace(/^\/+/, ''))) })
+			expect(opened.status, JSON.stringify(opened.body)).toBe(200)
+			expect(await liveSessionsOfGroup(groupIdOfPadUrl(pad.padUrl)), `${pad.path} should have a session once opened`).toBeGreaterThan(0)
+		}
+
+		await deleteViaDav(name)
+		await deleteViaDav(folder)
+
+		for (const pad of pads) {
+			expect(await liveSessionsOfGroup(groupIdOfPadUrl(pad.padUrl)), `${pad.path} should have lost its sessions`).toBe(0)
+			expect(await padExists(padIdOfPadUrl(pad.padUrl)), `${pad.path} should keep its pad in the trash`).toBe(true)
+		}
 	})
 
 	/**

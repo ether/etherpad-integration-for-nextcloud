@@ -405,6 +405,81 @@ class PadSessionRevokerTest extends TestCase {
 		self::assertSame(3, $reported, 'the entries it could not read are left behind too');
 	}
 
+	/**
+	 * The pads of files leaving Files take their groups' live sessions
+	 * along, each group asked once, within one budget. A group that holds
+	 * other pads too keeps them - a legacy file may name someone else's -
+	 * and a group gone already has none left. A public pad has no group.
+	 */
+	public function testThePadsOfDeletedFilesTakeTheirGroupsSessions(): void {
+		$client = $this->createMock(EtherpadClient::class);
+		$client->method('listPads')->willReturnCallback(static fn (string $group): array => match ($group) {
+			'g.AAAAAAAAAAAAAAAA' => ['g.AAAAAAAAAAAAAAAA$one'],
+			'g.BBBBBBBBBBBBBBBB' => [],
+			'g.CCCCCCCCCCCCCCCC' => ['g.CCCCCCCCCCCCCCCC$three', 'g.CCCCCCCCCCCCCCCC$someone-elses'],
+			default => throw new EtherpadClientException('groupID does not exist'),
+		});
+		$listed = [];
+		$client->method('listSessionsOfGroup')->willReturnCallback(static function (string $group) use (&$listed): array {
+			$listed[] = $group;
+			return [
+				's.' . $group => ['groupID' => $group, 'validUntil' => FixedClock::NOW + 3600],
+				's.old.' . $group => ['groupID' => $group, 'validUntil' => FixedClock::NOW - 3600],
+			];
+		});
+		$removed = [];
+		$client->method('deleteSession')->willReturnCallback(static function (string $id) use (&$removed): void {
+			$removed[] = $id;
+		});
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects(self::never())->method('warning');
+
+		$count = $this->revoker($client, logger: $logger)->revokeForPads([
+			'g.AAAAAAAAAAAAAAAA$one',
+			'g.AAAAAAAAAAAAAAAA$one',
+			'g.BBBBBBBBBBBBBBBB$two',
+			'g.CCCCCCCCCCCCCCCC$three',
+			'g.DDDDDDDDDDDDDDDD$gone',
+			'nc-public',
+		]);
+
+		self::assertSame(2, $count);
+		self::assertSame(['g.AAAAAAAAAAAAAAAA', 'g.BBBBBBBBBBBBBBBB'], $listed);
+		self::assertSame(['s.g.AAAAAAAAAAAAAAAA', 's.g.BBBBBBBBBBBBBBBB'], $removed);
+	}
+
+	/**
+	 * A group that cannot be asked is a warning, and the others go on; a
+	 * budget spent leaves the groups not yet asked to expire, with a line
+	 * that says how many.
+	 */
+	public function testAGroupThatCannotBeAskedLeavesItsSessionsToExpire(): void {
+		$client = $this->createMock(EtherpadClient::class);
+		$clock = new FixedClock();
+		$client->method('listPads')->willReturnCallback(static function (string $group) use ($clock): array {
+			if ($group === 'g.AAAAAAAAAAAAAAAA') {
+				throw new EtherpadClientException('Connection timed out');
+			}
+			$clock->advance(2);
+			return [];
+		});
+		$client->method('listSessionsOfGroup')->willReturn([]);
+		$lines = [];
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->method('warning')->willReturnCallback(static function (string $message, array $context) use (&$lines): void {
+			$lines[] = [$message, $context['groupId'] ?? $context['groupsLeft'] ?? null];
+		});
+		$revoker = new PadSessionRevoker($client, $this->createMock(PadSessionService::class), $logger, $clock);
+
+		$revoker->revokeForPads(['g.AAAAAAAAAAAAAAAA$a', 'g.BBBBBBBBBBBBBBBB$b', 'g.CCCCCCCCCCCCCCCC$c', 'g.DDDDDDDDDDDDDDDD$d']);
+
+		self::assertSame([
+			['Could not list the Etherpad sessions to revoke; they will expire on their own.', 'g.AAAAAAAAAAAAAAAA'],
+			// B's pads took the rest: its sessions, C's and D's go unasked.
+			['No time left to revoke Etherpad sessions; they will expire on their own.', 3],
+		], $lines);
+	}
+
 	private function revoker(
 		EtherpadClient $client,
 		string $author = self::AUTHOR,

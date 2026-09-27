@@ -225,8 +225,9 @@ away itself:
   every socket message and keeps the session id it was handed when the pad
   connected – read in 2.7.3, 3.0.0 and 3.3.3 – so a session that expires
   mid-edit rejects the next keystroke, and no later cookie reaches that
-  socket. Revocation fires on an explicit logout and nowhere else, and is
-  capped, so for most sessions the lifetime is what bounds the window.
+  socket. Revocation fires on an explicit logout and on a delete of the
+  pad's file (below), and is capped, so for most sessions the lifetime is
+  what bounds the window.
 - Expired sessions are left to the background sweep described below. Only
   what is expired by both clocks counts as expired: Etherpad judges
   `validUntil` with its own, so a session ours calls dead may still be
@@ -244,9 +245,19 @@ cached id is therefore not dropped when an open fails – an emptied cache
 cannot be told from a user who never opened a protected pad, and a logout
 after a brief outage would revoke nothing.
 
-**Only logout.** Losing a share does not revoke anything, and neither does
-a permission downgrade, a deleted or disabled account, or a deleted public
-link. A session issued before any of those stays valid until `validUntil`.
+**A delete of the file revokes the pad's sessions** – every session of
+the group, whoever it was issued to, once the file goes to the trash or
+past it, for a folder's protected pads too (`PadSessionRevoker::revokeForPads()`).
+The trash keeps the pad, and a session would keep giving it to whoever
+holds one. Listed by group (`listSessionsOfGroup`), and only for a group
+that holds that pad alone, or nothing: a legacy `.pad` may name a group
+this app did not make, and its sessions are not the file's to end. The
+same budget as a logout's.
+
+**Otherwise, only logout.** Losing a share does not revoke anything, and
+neither does a permission downgrade, a deleted or disabled account, or a
+deleted public link. A session issued before any of those stays valid
+until `validUntil`.
 Covering them one event at a time means enumerating every way access can
 end, and that list has no natural end – a public link in particular opens
 under its own Etherpad author whose id is deliberately never cached, so

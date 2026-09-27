@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\Service;
 
 use OCA\EtherpadNextcloud\Util\EtherpadErrorClassifier;
+use OCA\EtherpadNextcloud\Util\PadId;
 use OCA\EtherpadNextcloud\Util\SafeError;
 use OCP\AppFramework\Utility\ITimeFactory;
 use Psr\Log\LoggerInterface;
@@ -76,6 +77,73 @@ class PadSessionRevoker {
 	}
 
 	/**
+	 * Every session of the groups of the protected pads $padIds, which are
+	 * leaving Files - to a trash, or past it (RevokeSessionsOnDeleteListener).
+	 * A session an open made gives its pad until it expires, and the file no
+	 * longer does. Bounded as a logout is: what does not fit expires on its
+	 * own.
+	 *
+	 * Only a group that holds its pad alone, or nothing, loses its sessions:
+	 * a legacy `.pad` names its own pad id, and its group may be someone
+	 * else's, with other pads in it whose sessions are not this file's to
+	 * end (docs/etherpad-integration.md, "Removing a pad").
+	 *
+	 * @param list<string> $padIds
+	 * @return int how many were removed
+	 */
+	public function revokeForPads(array $padIds): int {
+		$deadline = $this->nowSeconds() + self::BUDGET_SECONDS;
+		$sessions = [];
+		$unclassified = 0;
+		$groups = [];
+		$unasked = 0;
+		foreach ($padIds as $padId) {
+			$groupId = PadId::groupIdOf($padId);
+			if ($groupId === null || isset($groups[$groupId])) {
+				continue;
+			}
+			$groups[$groupId] = true;
+			if ($deadline - $this->nowSeconds() < self::MIN_CALL_TIMEOUT_SECONDS) {
+				$unasked++;
+				continue;
+			}
+			try {
+				$pads = $this->etherpadClient->listPads($groupId, $this->callTimeout($deadline - $this->nowSeconds()));
+				if ($pads !== [] && $pads !== [$padId]) {
+					$this->logger->debug('Left the Etherpad sessions of a group that holds other pads too.', [
+						'app' => 'etherpad_nextcloud',
+						'groupId' => $groupId,
+					]);
+					continue;
+				}
+				if ($deadline - $this->nowSeconds() < self::MIN_CALL_TIMEOUT_SECONDS) {
+					$unasked++;
+					continue;
+				}
+				$sessions += $this->etherpadClient->listSessionsOfGroup($groupId, $this->callTimeout($deadline - $this->nowSeconds()), $unreadable);
+				$unclassified += $unreadable ?? 0;
+			} catch (\Throwable $e) {
+				if (EtherpadErrorClassifier::isPadAlreadyDeleted($e)) {
+					// No group, and no session left in it.
+					continue;
+				}
+				$this->logger->warning('Could not list the Etherpad sessions to revoke; they will expire on their own.', [
+					'app' => 'etherpad_nextcloud',
+					'groupId' => $groupId,
+					...SafeError::context($e),
+				]);
+			}
+		}
+		if ($unasked > 0) {
+			$this->logger->warning('No time left to revoke Etherpad sessions; they will expire on their own.', [
+				'app' => 'etherpad_nextcloud',
+				'groupsLeft' => $unasked,
+			]);
+		}
+		return $this->revokeListed($sessions, $unclassified, $deadline, ['groupIds' => array_keys($groups)]);
+	}
+
+	/**
 	 * Best effort throughout, and bounded. This runs from a logout listener,
 	 * beside something the user asked for, so it may neither fail nor hang
 	 * because a pad server is unreachable.
@@ -135,10 +203,23 @@ class PadSessionRevoker {
 		// dropped on the way in.
 		$unclassified = $unreadable ?? 0;
 
+		return $this->revokeListed($this->carriedFirst($sessions), $unclassified, $deadline, ['uid' => $uid]);
+	}
+
+	/**
+	 * The live ones among $sessions deleted, within what is left of the
+	 * budget until $deadline, and a line that says how it went; $context
+	 * names whose sessions they are. $unclassified: ids the listing gave
+	 * that Etherpad could not describe, left behind all the same.
+	 *
+	 * @param array<string,array{groupID:string,validUntil:int}> $sessions
+	 * @param array<string,mixed> $context
+	 * @return int how many were removed
+	 */
+	private function revokeListed(array $sessions, int $unclassified, float $deadline, array $context): int {
 		// Only what is expired on both clocks. Anything newer is treated as
 		// live and revoked, which at worst deletes something already gone.
 		$expiredBefore = $this->timeFactory->getTime() - EtherpadClient::CLOCK_SKEW_ALLOWANCE_SECONDS;
-		$sessions = $this->carriedFirst($sessions);
 		$attempted = 0;
 		$revoked = 0;
 		$skipped = 0;
@@ -186,7 +267,7 @@ class PadSessionRevoker {
 				$failed++;
 				$this->logger->warning('Could not revoke an Etherpad session; it will expire on its own.', [
 					'app' => 'etherpad_nextcloud',
-					'uid' => $uid,
+					...$context,
 					'groupId' => $info['groupID'],
 					...SafeError::context($e, [$sessionId]),
 				]);
@@ -197,7 +278,7 @@ class PadSessionRevoker {
 		if ($revoked > 0) {
 			$this->logger->info('Revoked Etherpad sessions.', [
 				'app' => 'etherpad_nextcloud',
-				'uid' => $uid,
+				...$context,
 				'count' => $revoked,
 				'leftToExpire' => $leftToExpire,
 			]);
@@ -208,7 +289,7 @@ class PadSessionRevoker {
 			// not read like the opposite.
 			$this->logger->warning('Revoked no Etherpad sessions; they will expire on their own.', [
 				'app' => 'etherpad_nextcloud',
-				'uid' => $uid,
+				...$context,
 				'leftToExpire' => $leftToExpire,
 			]);
 		}

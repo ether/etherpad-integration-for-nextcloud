@@ -202,9 +202,6 @@
       <code><![CDATA[getAppValue]]></code>
       <code><![CDATA[getAppValue]]></code>
     </DeprecatedMethod>
-    <DocblockTypeContradiction>
-      <code><![CDATA[!is_string($sessionId)]]></code>
-    </DocblockTypeContradiction>
     <MixedArgument>
       <code><![CDATA[$decoded['releaseId']]]></code>
     </MixedArgument>

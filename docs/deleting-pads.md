@@ -21,16 +21,24 @@ mobile client, or a WebDAV `DELETE`, in a user's own folders as in a team
 folder. So does a file replaced by moving another file onto it (WebDAV
 `MOVE` with `Overwrite: T`), and every file in a folder moved to the trash.
 
-The pad stays as it is, and nothing is written into the file. A public pad
-stays reachable by its link. Whoever still has the pad open can go on
-writing into it; the file in the trash is not synced, so what is written
-there is in the pad, not in the file's snapshot.
+The pad stays as it is, and nothing is written into the file.
+
+- **A protected pad** loses its sessions: whoever still has it open can
+  write no more from their next change on, and nobody opens it until the
+  file is back. On a folder with many protected pads, what does not fit in
+  a few seconds is left to expire, within six hours.
+- **A public pad** stays reachable by its link, and can be written into.
+  The file in the trash is not synced, so what is written there is in the
+  pad, not in the file's snapshot; a restore brings it back with the pad.
+- **A `.pad` file that names another user's group** - a legacy Ownpad file
+  can - takes no sessions along: only a group that holds its pad alone
+  loses them.
 
 ## Restored from the trash
 
 - **A `.pad` file, or a folder with `.pad` files in it:** the file has its
   pad back as it was, with its history and anything written into it
-  meanwhile.
+  meanwhile. Opening it makes a new session for a protected pad.
 - **A `.pad` file whose pad Etherpad has lost meanwhile:** a new pad is made
   from the snapshot in the file, at once. It holds the content, not the
   pad's history. If Etherpad does not answer during the restore, the file

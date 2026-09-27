@@ -267,7 +267,32 @@ class EtherpadClient {
 		// POST like every other authenticated call: a GET would put the
 		// apikey in the URL, and from there into proxy and access logs.
 		$data = $this->apiCall('listSessionsOfAuthor', ['authorID' => $authorId], timeoutSeconds: $timeoutSeconds);
+		return $this->sessionsIn($data, $unreadableEntries);
+	}
 
+	/**
+	 * The group's sessions, keyed by session id, as listSessionsOfAuthor()
+	 * gives an author's: whoever holds one may open the group's pads until
+	 * it expires.
+	 *
+	 * @param ?int $unreadableEntries set to how many ids the index listed
+	 *   that Etherpad could not describe
+	 * @return array<string,array{groupID:string,validUntil:int}>
+	 */
+	public function listSessionsOfGroup(
+		string $groupId,
+		?int $timeoutSeconds = null,
+		?int &$unreadableEntries = null,
+	): array {
+		$data = $this->apiCall('listSessionsOfGroup', ['groupID' => $groupId], timeoutSeconds: $timeoutSeconds);
+		return $this->sessionsIn($data, $unreadableEntries);
+	}
+
+	/**
+	 * @param array<array-key,mixed> $data
+	 * @return array<string,array{groupID:string,validUntil:int}>
+	 */
+	private function sessionsIn(array $data, ?int &$unreadableEntries): array {
 		$sessions = [];
 		// Every entry the index listed that cannot be turned into a session,
 		// whatever made it unusable — a null, a malformed record, an

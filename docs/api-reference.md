@@ -503,6 +503,7 @@ Registered in `lib/AppInfo/Application.php`.
 - `OCA\Files_Trashbin\Events\NodeRestoredEvent` -> `RestoreFromTrashListener`
 - legacy hook `\OCA\Files_Trashbin\Trashbin::post_restore` -> `TrashbinHookHandler::postRestore` -> `RestoreFromTrashListener::handleLegacyHook`
 - `OCP\Files\Cache\CacheEntryRemovedEvent`, `OCP\Files\Cache\CacheEntryInsertedEvent`, `OCP\Files\Cache\CacheEntriesRemovedEvent` (from 34), `OCP\Files\Events\Node\BeforeNodeDeletedEvent`, `OCP\Files\Events\Node\NodeDeletedEvent`, `OCP\User\Events\BeforeUserDeletedEvent`, `OCP\User\Events\UserDeletedEvent` -> `GoneFilesListener` (the marks of files deleted for good; `docs/architecture.md`, "Files gone for good")
+- `OCP\Files\Events\Node\BeforeNodeDeletedEvent` -> `RevokeSessionsOnDeleteListener` (the sessions of the protected pads a delete takes along; `docs/architecture.md`, "Trash/Restore")
 
 ## App Config Keys
 
