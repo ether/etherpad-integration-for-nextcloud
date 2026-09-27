@@ -61,6 +61,7 @@ final class SensitiveMethods {
 		// go again does not bring the document back into the log.
 		\OCA\EtherpadNextcloud\Service\RestoreService::class => [
 			'writeRestoredContent', 'restoreWithReplacement', 'restoreOntoNewPad', 'seedFromSnapshot',
+			'replaceLostPad', 'restoreWithoutBinding',
 		],
 		\OCA\EtherpadNextcloud\Service\PadFileLockRetryService::class => ['putContentWithSyncLockRetry'],
 		\OCA\EtherpadNextcloud\Service\PadCreationService::class => ['writeCreatedFile'],

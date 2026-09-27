@@ -72,7 +72,7 @@ echo "[2/5] RESTORE on active pad (must be skipped)"
 RESTORE_ACTIVE_RES="$(request_with_code POST "$API_BASE/restore" --data-urlencode "file=${INPUT_PATH}")"
 assert_status_code "restore-active" 409 "$RESTORE_ACTIVE_RES"
 assert_body_contains "restore-active" "\"status\":\"skipped\"" "$RESTORE_ACTIVE_RES"
-assert_body_contains "restore-active" "binding_not_pending_delete" "$RESTORE_ACTIVE_RES"
+assert_body_contains "restore-active" "pad_present" "$RESTORE_ACTIVE_RES"
 
 echo "[3/5] TRASH active pad"
 TRASH_RES="$(request_with_code POST "$API_BASE/trash" --data-urlencode "file=${INPUT_PATH}")"

@@ -40,7 +40,13 @@ class RestoreService {
 	/** Etherpad gave no answer for a waiting row's pad: the one reason a sweep counts as an outage, and a restore's event pass leaves (RestoreFromTrashListener). */
 	public const REASON_PRESENCE_UNKNOWN = 'pad_presence_unknown';
 	/** The file could not be read, so there was no revision to hold its pad to. */
-	private const REASON_FILE_UNREADABLE = 'file_unreadable';
+	public const REASON_FILE_UNREADABLE = 'file_unreadable';
+	/** A file back with an active row whose pad Etherpad has: taken back as it is. */
+	private const REASON_PAD_PRESENT = 'pad_present';
+	/** A file whose row names another pad than the file: the open's to settle. */
+	private const REASON_ROW_NAMES_OTHER_PAD = 'row_names_other_pad';
+	/** A file back without a row whose pad another file's row names: a copy, whose open offers the original. */
+	private const REASON_COPY = 'copy_of_another_file';
 	/** A sweep let go of a row whose pad is not the file's; the file makes its own. */
 	private const REASON_RELEASED = 'binding_released';
 	/** The run had no time left for Etherpad once the file was read. */
@@ -72,10 +78,7 @@ class RestoreService {
 
 		$binding = $this->findBindingForRestore($fileId);
 		if ($binding === null) {
-			// Back from the trash with no pad of its own - its pad went with
-			// the trash, as in 1.1.0-beta.1 - so it gets one from its content,
-			// whatever the setting says now: nothing is left to keep.
-			return $this->restoreWithoutBinding($file, $fileId);
+			return $this->restoreFileWithoutRow($file, $fileId);
 		}
 		if (!$binding->isWaiting()) {
 			return $this->restoreActiveRow($file, $fileId, $binding);
@@ -504,29 +507,29 @@ class RestoreService {
 	 * the row moved onto it. Asked here again, not taken from the open that
 	 * sent the user: the answer must hold for the row as it is now. A row
 	 * that waits, one naming another pad than the file, or one whose pad
-	 * Etherpad has, is refused.
+	 * Etherpad has, is refused; Etherpad's own trouble reaches the caller as
+	 * it is.
 	 *
 	 * @return array{status: string, reason?: string, old_pad_id?: string, new_pad_id?: string}
 	 * @throws PadAlreadyHasBindingException
 	 * @throws LifecycleException
+	 * @throws EtherpadClientException
 	 */
 	private function recoverLostPad(File $file, int $fileId, Binding $binding): array {
 		if ($binding->state !== BindingService::STATE_ACTIVE) {
 			throw new PadAlreadyHasBindingException('A binding already exists for this file.');
 		}
 		try {
-			$pad = $this->readRestoredPad($file);
+			$found = $this->lostPadOf($file, $binding);
+		} catch (EtherpadClientException $e) {
+			throw $e;
 		} catch (\Throwable $e) {
 			throw LifecycleException::failed('Restore', $e);
 		}
-		if ($pad->isExternal || $pad->padId !== $binding->padId) {
+		if (is_string($found)) {
 			throw new PadAlreadyHasBindingException('A binding already exists for this file.');
 		}
-		$lost = $this->padLifecycle->howLost($binding->padId, $binding->accessMode, $pad->snapshotRev);
-		if ($lost === null) {
-			throw new PadAlreadyHasBindingException('A binding already exists for this file.');
-		}
-		return $this->replaceLostPad($file, $fileId, $binding, $pad, $lost);
+		return $this->replaceLostPad($file, $fileId, $binding, $found[0], $found[1]);
 	}
 
 	/**
@@ -534,34 +537,72 @@ class RestoreService {
 	 * back as it is - unless Etherpad has lost it while the file was away.
 	 * Then the file gets a new pad from its content at once, as an open
 	 * would only offer: coming back from the trash, the file is surely the
-	 * one the pad was. Etherpad not answering leaves the row as it is, and
-	 * the next open asks again.
+	 * one the pad was. Etherpad not answering, or a file that cannot be
+	 * read, leave the row as it is, and the next open asks again - and,
+	 * with the pad lost, offers the new one.
 	 *
 	 * @return array{status: string, reason?: string, old_pad_id?: string, new_pad_id?: string}
-	 * @throws LifecycleException
+	 * @throws LifecycleException when Etherpad refuses to say
 	 */
 	private function restoreActiveRow(File $file, int $fileId, Binding $binding): array {
 		try {
-			$pad = $this->readRestoredPad($file);
-		} catch (\Throwable) {
-			// The open reads it again, and says what is wrong with it.
-			return LifecycleResult::skipped(self::REASON_FILE_UNREADABLE, $fileId, $this->logger);
-		}
-		if ($pad->isExternal || $pad->padId !== $binding->padId) {
-			return LifecycleResult::skipped('binding_not_pending_delete', $fileId, $this->logger);
-		}
-		try {
-			$lost = $this->padLifecycle->howLost($binding->padId, $binding->accessMode, $pad->snapshotRev);
+			$found = $this->lostPadOf($file, $binding);
 		} catch (\Throwable $e) {
 			if (EtherpadClientException::isEtherpadUnreachable($e)) {
 				return LifecycleResult::skipped(self::REASON_PRESENCE_UNKNOWN, $fileId, $this->logger);
 			}
+			if ($e instanceof EtherpadClientException) {
+				throw LifecycleException::failed('Restore', $e);
+			}
+			// The open reads the file again, and says what is wrong with it.
+			return LifecycleResult::skipped(self::REASON_FILE_UNREADABLE, $fileId, $this->logger);
+		}
+		if (is_string($found)) {
+			return LifecycleResult::skipped($found, $fileId, $this->logger);
+		}
+		return $this->replaceLostPad($file, $fileId, $binding, $found[0], $found[1]);
+	}
+
+	/**
+	 * Whether Etherpad has lost the pad of the file's active row: the file
+	 * as read and how the pad is lost, or why the file is no case for a new
+	 * pad - it names another pad than its row (or one on another server),
+	 * or Etherpad has the pad.
+	 *
+	 * @return array{ParsedPadFile, PadPresence}|string
+	 * @throws \Throwable reading the file, or asking Etherpad
+	 */
+	private function lostPadOf(File $file, Binding $binding): array|string {
+		$pad = $this->readRestoredPad($file);
+		if ($pad->isExternal || $pad->padId !== $binding->padId) {
+			return self::REASON_ROW_NAMES_OTHER_PAD;
+		}
+		$lost = $this->padLifecycle->howLost($binding->padId, $binding->accessMode, $pad->snapshotRev);
+		return $lost === null ? self::REASON_PAD_PRESENT : [$pad, $lost];
+	}
+
+	/**
+	 * A file back from the trash without a row: its pad went with the trash,
+	 * as in 1.1.0-beta.1, so it gets one from its content whatever the
+	 * setting says now - nothing is left to keep. Unless another file's row
+	 * names the pad: then this is a copy, never opened, whose pad lives on
+	 * with the original, and its open offers the choice, the original or a
+	 * pad of its own.
+	 *
+	 * @return array{status: string, reason?: string, old_pad_id?: string, new_pad_id?: string}
+	 * @throws LifecycleException
+	 */
+	private function restoreFileWithoutRow(File $file, int $fileId): array {
+		try {
+			$pad = $this->readRestoredPad($file);
+			$original = $this->bindingService->findByPadId($pad->padId);
+		} catch (\Throwable $e) {
 			throw LifecycleException::failed('Restore', $e);
 		}
-		if ($lost === null) {
-			return LifecycleResult::skipped('binding_not_pending_delete', $fileId, $this->logger);
+		if ($original !== null && $original->fileId !== $fileId) {
+			return LifecycleResult::skipped(self::REASON_COPY, $fileId, $this->logger);
 		}
-		return $this->replaceLostPad($file, $fileId, $binding, $pad, $lost);
+		return $this->restoreWithoutBinding($file, $fileId, $pad);
 	}
 
 	/**
@@ -584,9 +625,9 @@ class RestoreService {
 	}
 
 	/** @return array{status: string, reason?: string, old_pad_id?: string, new_pad_id?: string} */
-	private function restoreWithoutBinding(File $file, int $fileId): array {
+	private function restoreWithoutBinding(File $file, int $fileId, ?ParsedPadFile $read = null): array {
 		try {
-			$pad = $this->readRestoredPad($file);
+			$pad = $read ?? $this->readRestoredPad($file);
 		} catch (\Throwable $e) {
 			throw LifecycleException::failed('Restore', $e);
 		}

@@ -31,11 +31,14 @@ folder. So does a file replaced by moving another file onto it (WebDAV
 
 - **A `.pad` file whose pad was deleted:** a new pad is made from the
   snapshot in the file, at once. It holds the content, not the pad's
-  history. This is also how files deleted under 1.1.0-beta.1 come back.
+  history. This is also how files deleted under 1.1.0-beta.1 come back. A
+  copy of another `.pad` file that was never opened is left as it is: its
+  pad was not deleted, and opening it offers that pad or a new one.
 - **A `.pad` file restored before the background job deleted its pad:** the
   file has its pad back, with any edits the snapshot missed. Should
   Etherpad have lost the pad meanwhile, a new one is made from the file at
-  once.
+  once. If Etherpad does not answer during the restore, the file is
+  restored all the same, and its next open offers the new pad.
 - **A folder:** its pads were never touched, and the files have them as
   before. A file among them whose pad Etherpad has lost offers a new one
   when it is opened.

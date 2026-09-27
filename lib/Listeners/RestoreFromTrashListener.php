@@ -32,12 +32,12 @@ class RestoreFromTrashListener implements IEventListener {
 	private const VIA_EVENT = 'event';
 
 	/**
-	 * The files whose hook pass Etherpad did not answer (restoreNode()).
-	 * One instance serves both ways in: the container shares it.
+	 * The files whose hook pass decided their pad (restoreNode()). One
+	 * instance serves both ways in: the container shares it.
 	 *
 	 * @var array<int,true>
 	 */
-	private array $etherpadFailedHook = [];
+	private array $decidedByHook = [];
 
 	public function __construct(
 		private LifecycleService $lifecycleService,
@@ -99,28 +99,31 @@ class RestoreFromTrashListener implements IEventListener {
 	 *
 	 * $via names the way in, `hook` or `event`: a core restore takes both,
 	 * the hook first (Application::register()). The event pass is a second
-	 * try at whatever the hook pass left undone, save one thing: after a
-	 * hook pass that asked Etherpad and got no answer, or an error, it
-	 * would only ask again - with an Etherpad that hangs, a second timeout -
-	 * so it leaves that file. Every hook pass starts afresh.
+	 * try at what the hook pass could not do: a file it could not read, or
+	 * an error that may pass, as a database connection dropped. Whatever
+	 * the hook pass decided - the pad restored, made anew, or left as it
+	 * is - the event pass leaves, rather than ask Etherpad the same again.
+	 * So it does after a hook pass that asked Etherpad and got no answer,
+	 * or an error: with an Etherpad that hangs, asking again is a second
+	 * timeout. Every hook pass starts afresh.
 	 */
 	private function restoreNode(File $node, string $via): void {
 		$fileId = $this->loggableFileId($node);
-		if ($fileId !== null && $via === self::VIA_EVENT && isset($this->etherpadFailedHook[$fileId])) {
-			unset($this->etherpadFailedHook[$fileId]);
-			$this->logger->debug('RestoreFromTrash listener left a restore whose hook pass Etherpad did not answer.', [
+		if ($fileId !== null && $via === self::VIA_EVENT && isset($this->decidedByHook[$fileId])) {
+			unset($this->decidedByHook[$fileId]);
+			$this->logger->debug('RestoreFromTrash listener left a restore its hook pass decided.', [
 				'app' => 'etherpad_nextcloud',
 				'fileId' => $fileId,
 			]);
 			return;
 		}
 		if ($fileId !== null && $via === self::VIA_HOOK) {
-			unset($this->etherpadFailedHook[$fileId]);
+			unset($this->decidedByHook[$fileId]);
 		}
 		try {
 			$result = $this->lifecycleService->handleRestore($node);
-			if ($fileId !== null && $via === self::VIA_HOOK && ($result['reason'] ?? '') === RestoreService::REASON_PRESENCE_UNKNOWN) {
-				$this->etherpadFailedHook[$fileId] = true;
+			if ($fileId !== null && $via === self::VIA_HOOK && ($result['reason'] ?? '') !== RestoreService::REASON_FILE_UNREADABLE) {
+				$this->decidedByHook[$fileId] = true;
 			}
 			if (($result['status'] ?? '') === LifecycleResult::SKIPPED) {
 				$this->logger->debug('RestoreFromTrash listener skipped lifecycle action.', [
@@ -131,7 +134,7 @@ class RestoreFromTrashListener implements IEventListener {
 			}
 		} catch (\Throwable $e) {
 			if ($fileId !== null && $via === self::VIA_HOOK && self::etherpadFailed($e)) {
-				$this->etherpadFailedHook[$fileId] = true;
+				$this->decidedByHook[$fileId] = true;
 			}
 			$this->logger->error('Could not restore the pad of a file back from the trash. The file itself is restored.', [
 				'app' => 'etherpad_nextcloud',

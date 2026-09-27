@@ -100,7 +100,9 @@ Each `specs/*.spec.ts` covers one flow:
 - **pad-move-rename** — the binding (keyed on file id) survives an
   in-place rename and a move into a subfolder.
 - **pad-orphan-recovery** — a binding-less `.pad` (WebDAV copy) shows the
-  recovery card and "Open the original" navigates to the source pad.
+  recovery card and "Open the original" navigates to the source pad; so
+  does such a copy after a trash + restore round-trip, which gives it no
+  pad of its own.
 - **pad-snapshot-roundtrip** — recover-from-snapshot pushes a known
   marker into a new pad and sync reads it back (the content copy that
   restore and recover share).

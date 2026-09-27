@@ -413,24 +413,27 @@ class RestoreFromTrashListenerTest extends TestCase {
 		// What the hook pass came to, and whether the event pass after it goes ahead.
 		yield 'Etherpad did not answer, the row left waiting' => [['status' => LifecycleResult::SKIPPED, 'reason' => RestoreService::REASON_PRESENCE_UNKNOWN], false];
 		yield 'Etherpad failed' => [LifecycleException::failed('Restore', new EtherpadClientException('Etherpad API request failed: createPad', 0, new \RuntimeException('Operation timed out'))), false];
-		yield 'the pad restored' => [['status' => LifecycleResult::RESTORED], true];
+		yield 'the pad restored' => [['status' => LifecycleResult::RESTORED], false];
+		yield 'the pad left as it is' => [['status' => LifecycleResult::SKIPPED, 'reason' => 'pad_present'], false];
 		yield 'the file could not be read' => [['status' => LifecycleResult::SKIPPED, 'reason' => 'file_unreadable'], true];
 		yield 'the database failed' => [LifecycleException::failed('Restore', new \RuntimeException('connection lost')), true];
 	}
 
 	/**
 	 * The event pass of a core restore is a second try at what the hook
-	 * pass left undone, save a hook pass that asked Etherpad and got no
-	 * answer or an error: asking again would only cost a second timeout
-	 * with an Etherpad that hangs. It then leaves that file, once; a hook
-	 * pass is never left out - for groupfolders, which fires no event, it
-	 * is the only one - and each starts afresh, so what an earlier hook
-	 * pass left behind speaks for no later one.
+	 * pass could not do: a file it could not read, an error that may pass.
+	 * What the hook pass decided it leaves, rather than ask Etherpad the
+	 * same again; so it does after a hook pass that asked Etherpad and got
+	 * no answer or an error, which would only cost a second timeout with an
+	 * Etherpad that hangs. It leaves that file once; a hook pass is never
+	 * left out - for groupfolders, which fires no event, it is the only
+	 * one - and each starts afresh, so what an earlier hook pass left
+	 * behind speaks for no later one.
 	 *
 	 * @param array{status: string, reason?: string}|\Throwable $outcome
 	 */
 	#[\PHPUnit\Framework\Attributes\DataProvider('hookOutcomes')]
-	public function testTheEventLeavesOnlyAFileEtherpadFailedTheHookOn(array|\Throwable $outcome, bool $eventGoesAhead): void {
+	public function testTheEventLeavesWhatTheHookDecided(array|\Throwable $outcome, bool $eventGoesAhead): void {
 		$file = $this->createMock(File::class);
 		$file->method('getId')->willReturn(4712);
 		$file->method('getName')->willReturn('Notes.pad');
@@ -492,7 +495,8 @@ class RestoreFromTrashListenerTest extends TestCase {
 	/**
 	 * What a hook pass left is its own file's: after a groupfolder's
 	 * restore that Etherpad failed - a hook and no event - a core restore
-	 * of another file goes ahead in both its passes.
+	 * of another file whose hook pass the database failed goes ahead in
+	 * its event pass.
 	 */
 	public function testAHookPassSpeaksOnlyForItsOwnFile(): void {
 		$first = $this->createMock(File::class);
@@ -504,7 +508,11 @@ class RestoreFromTrashListenerTest extends TestCase {
 		$lifecycleService = $this->createMock(LifecycleService::class);
 		$lifecycleService->method('handleRestore')->willReturnCallback(static function (File $node) use (&$passes, $first): array {
 			$passes[] = $node->getId();
-			return $node === $first ? throw LifecycleException::failed('Restore', new EtherpadClientException('Etherpad API request failed: createPad')) : ['status' => LifecycleResult::RESTORED];
+			return match (true) {
+				$node === $first => throw LifecycleException::failed('Restore', new EtherpadClientException('Etherpad API request failed: createPad')),
+				count($passes) === 2 => throw LifecycleException::failed('Restore', new \RuntimeException('connection lost')),
+				default => ['status' => LifecycleResult::RESTORED],
+			};
 		});
 		$resolver = $this->createMock(UserNodeResolver::class);
 		$resolver->method('resolveUserFileNodeByPath')->willReturnMap([['alice', '/Notes.pad', $first], ['alice', '/Other.pad', $other]]);
