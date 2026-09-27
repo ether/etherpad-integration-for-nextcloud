@@ -49,6 +49,16 @@ const settle = async (): Promise<void> => {
 }
 
 /**
+ * How many rows the admin's consistency check counts as vanished: files
+ * gone without a deletion the app heard of, whose pads it leaves.
+ */
+const vanishedFiles = async (): Promise<number> => {
+	const checked = await padApiPost('admin/consistency-check')
+	expect(checked.status, JSON.stringify(checked.body)).toBe(200)
+	return Number((checked.body as { vanished_file_count?: unknown }).vanished_file_count)
+}
+
+/**
  * Nextcloud 34 up to 34.0.4 reports the files in a removed folder under the
  * wrong ids (nextcloud/server#63969, fixed for 34.0.5), so the app cannot
  * tell which they were and leaves their pads (docs/deleting-pads.md).
@@ -299,7 +309,7 @@ test.describe('pads of team folder files deleted for good', () => {
 	/**
 	 * A folder back from the trash is in Files as before. A team folder
 	 * deleted as a whole tells no app about it, so its pads stay - a
-	 * restored one's too.
+	 * restored one's too - and the consistency check lists them.
 	 */
 	test('a folder restored from the trash is not taken for one gone through it', async () => {
 		const other = uniqueName('gone-team-other')
@@ -314,10 +324,12 @@ test.describe('pads of team folder files deleted for good', () => {
 
 			await deleteViaDav(`${other}/${folder}`)
 			await restoreFromTrashViaDav(folder)
+			const vanishedBefore = await vanishedFiles()
 			await deleteTeamFolder(otherId)
 			await settle()
 
 			expect(await padExists(padId), 'a pad whose file went unseen should stay').toBe(true)
+			expect(await vanishedFiles(), 'the consistency check should count its file as vanished').toBe(vanishedBefore + 1)
 		} finally {
 			await deleteTeamFolder(otherId)
 			// What the app leaves on purpose, taken away by hand - if it did.

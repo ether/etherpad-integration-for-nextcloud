@@ -25,7 +25,7 @@ use OCP\User\Events\UserDeletedEvent;
 use Psr\Log\LoggerInterface;
 
 /**
- * Marks the rows of files seen deleted for good (Binding::$goneAfter), for
+ * Marks the rows of files seen deleted for good (`pending_delete`), for
  * GoneFileSweep. The file cache says what goes: Nextcloud reports each
  * entry it removes (CacheEntryRemovedEvent), each of a folder's
  * descendants too. Not every removal is a deletion - a scan drops what

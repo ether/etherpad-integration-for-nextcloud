@@ -86,7 +86,7 @@ final class InMemoryBindingQuery implements IQueryBuilder {
 	}
 
 	public function set(string $column, string $parameter): self {
-		$this->assignments[$column] = $parameter;
+		$this->assignments[$this->column($column)] = $parameter;
 		return $this;
 	}
 
@@ -319,7 +319,30 @@ final class InMemoryBindingQuery implements IQueryBuilder {
 
 	/** @param array<string,mixed> $row */
 	private function value(array $row, string $column): mixed {
-		return $row[$column] ?? null;
+		return $row[$this->column($column)] ?? null;
+	}
+
+	/**
+	 * A column as the statement names it, once the table it belongs to -
+	 * by its alias, or the statement's own without one - is known to have
+	 * it (InMemoryBindingTable::COLUMNS). A function, such as `COUNT(*)`,
+	 * is no column.
+	 */
+	private function column(string $name): string {
+		if (str_contains($name, '(')) {
+			return $name;
+		}
+		$parts = explode('.', $name, 2);
+		$table = $this->table;
+		if (count($parts) === 2 && $parts[0] !== $this->alias) {
+			foreach ($this->joins as [, $joined, $alias]) {
+				if ($alias === $parts[0]) {
+					$table = $joined;
+				}
+			}
+		}
+		InMemoryBindingTable::assertColumn($table === 'filecache' ? 'filecache' : 'ep_pad_bindings', end($parts));
+		return $name;
 	}
 
 	/** @param array<string,mixed> $row */
