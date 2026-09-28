@@ -4,7 +4,7 @@
  */
 import { test, expect } from '@playwright/test'
 import { E2E } from '../fixtures/env'
-import { createPadAtPath, createUserReadShare, deleteShareById, deleteViaDav, getFileViaDav, padApiPost, propfindFileId, restoreFromTrashViaDav } from '../fixtures/dav'
+import { createPadAtPath, createUserReadShare, deleteShareById, deleteViaDav, getFileViaDav, padApiPost, propfindFileId, putFileViaDav, restoreFromTrashViaDav } from '../fixtures/dav'
 import { etherpadApiPost, padIdOfPadUrl } from '../fixtures/etherpad'
 import { expectEtherpadViewerMounted, gotoFiles, openPadFromFileList, uniquePadName } from '../fixtures/nextcloud'
 
@@ -119,6 +119,40 @@ test.describe('a pad Etherpad has lost', () => {
 			await deleteViaDav(name)
 			await deleteViaDav(templateName)
 			// The pad made anew stays after a recovery, which leaves it alone.
+			if (padId !== '') {
+				await etherpadApiPost('deletePad', { padID: padId }).catch(() => {})
+			}
+		}
+	})
+
+	/**
+	 * 1.1.0-beta.1 wrote a template's content into the file with
+	 * `snapshot_rev: 0`. That is saved content all the same: the pad made
+	 * anew by a visit counts as lost, and the new pad holds the template's
+	 * content.
+	 */
+	test('a public pad made from a template by 1.1.0-beta.1 counts as lost', async () => {
+		const templateName = uniquePadName('lost-beta1-template-src')
+		const name = uniquePadName('lost-beta1-from-template')
+		let padId = ''
+		try {
+			const template = await padWithSavedText(templateName, 'public')
+			const created = await padApiPost('pads/from-template', { file: `/${name}`, templateFileId: String(template.fileId) })
+			expect(created.status, JSON.stringify(created.body)).toBe(200)
+			const fileId = await propfindFileId(name)
+			padId = String((created.body as { pad_id?: string }).pad_id ?? '')
+			expect(padId).not.toBe('')
+			const content = await getFileViaDav(name)
+			expect(content).toMatch(/^snapshot_rev: [1-9]\d*$/m)
+			await putFileViaDav(name, content.replace(/^snapshot_rev: \d+$/m, 'snapshot_rev: 0'))
+			expect(await getFileViaDav(name)).toMatch(/^snapshot_rev: 0$/m)
+			await etherpadApiPost('deletePad', { padID: padId })
+			await etherpadApiPost('createPad', { padID: padId })
+
+			await expectRecovered(name, fileId, padId, template.marker)
+		} finally {
+			await deleteViaDav(name)
+			await deleteViaDav(templateName)
 			if (padId !== '') {
 				await etherpadApiPost('deletePad', { padID: padId }).catch(() => {})
 			}
