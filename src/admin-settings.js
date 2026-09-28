@@ -493,10 +493,9 @@
 			beginStatus(l10n.consistencyRunning, diagnosticsTarget)
 			try {
 				const data = await postJson(consistencyUrl, {})
-				const bindingWithoutFile = Number(data.binding_without_file_count || 0)
 				const vanishedFile = Number(data.vanished_file_count || 0)
-				const message = `${String(data.message || l10n.consistencyOk)} binding_without_file=${String(bindingWithoutFile)} | vanished_file=${String(vanishedFile)}`
-				setStatus(message, bindingWithoutFile > 0 ? 'error' : 'success', diagnosticsTarget)
+				const message = `${String(data.message || l10n.consistencyOk)} vanished_file=${String(vanishedFile)}`
+				setStatus(message, vanishedFile > 0 ? 'error' : 'success', diagnosticsTarget)
 				showVanished(data.samples && data.samples.vanished_files)
 			} catch (error) {
 				setStatus(error instanceof Error ? error.message : l10n.consistencyFailed, 'error', diagnosticsTarget)

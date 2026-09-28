@@ -374,9 +374,9 @@ solely by the separate external-pad policy, not by these two settings.
   - Auth: admin only
   - Purpose: optional check of the binding table against the file cache (`docs/architecture.md`, "Admin Integrity Check").
   - Result:
-    - `binding_without_file_count`: rows whose file the file cache has nothing of
-    - `vanished_file_count`: of those, the active rows never seen deleted for good, whose pads the app leaves in place
-    - `samples.bindings_without_file` (`file_id`, `pad_id`, `access_mode`, `state`) and `samples.vanished_files` (`file_id`, `pad_id`, `access_mode`), up to 25 each
+    - `vanished_file_count`: rows whose file the file cache has nothing of, still active and never seen deleted for good, whose pads the app leaves in place; `message` says the check found issues when there are any
+    - `samples.vanished_files` (`file_id`, `pad_id`, `access_mode`), up to 25
+    - Rows seen deleted for good are not counted: they are on their way (`pending_delete_count` in the health check).
 
 - `POST /api/v1/admin/settle-pending`
   - Controller: `AdminController::settlePending`

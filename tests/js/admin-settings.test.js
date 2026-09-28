@@ -210,9 +210,8 @@ describe('admin settings status areas', () => {
 		let vanished = [{ file_id: 7, pad_id: 'g.abc$Notes', access_mode: 'protected' }, { file_id: 9, pad_id: '<b>pad</b>' }]
 		vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(okResponse({
 			message: 'Consistency check finished with issues.',
-			binding_without_file_count: 3,
-			vanished_file_count: 2,
-			samples: { bindings_without_file: [], vanished_files: vanished },
+			vanished_file_count: vanished.length,
+			samples: { vanished_files: vanished },
 		}))))
 		await import(MODULE)
 		const node = document.getElementById('etherpad-nextcloud-vanished')
@@ -220,7 +219,8 @@ describe('admin settings status areas', () => {
 
 		document.getElementById('etherpad-nextcloud-consistency-check').click()
 		await flushAsyncWork()
-		expect(diagnosticsStatus().textContent).toContain('binding_without_file=3 | vanished_file=2')
+		expect(diagnosticsStatus().textContent).toContain('vanished_file=2')
+		expect(diagnosticsStatus().classList.contains('ep-status-error')).toBe(true)
 		expect(node.style.display).toBe('')
 		// As text: a pad id is data, never markup.
 		expect(items()).toEqual(['g.abc$Notes (fileid 7)', '<b>pad</b> (fileid 9)'])
@@ -230,6 +230,7 @@ describe('admin settings status areas', () => {
 		await flushAsyncWork()
 		expect(node.style.display).toBe('none')
 		expect(items()).toEqual([])
+		expect(diagnosticsStatus().classList.contains('ep-status-success')).toBe(true)
 	})
 
 	it('leaves the counts alone when a response carries none', async () => {

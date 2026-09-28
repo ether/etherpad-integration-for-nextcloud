@@ -10,12 +10,12 @@ use OCA\EtherpadNextcloud\Tests\Support\InMemoryBindingTable;
 use PHPUnit\Framework\TestCase;
 
 /**
- * What the consistency check counts: every row whose file the file cache
- * has nothing of, and among them the vanished ones - still active, never
- * seen deleted for good - which the app leaves to an admin.
+ * What the consistency check counts: the vanished rows - their file gone
+ * from the file cache, still active, never seen deleted for good - which
+ * the app leaves to an admin. A row seen deleted for good is on its way.
  */
 class ConsistencyCheckServiceTest extends TestCase {
-	public function testCountsRowsWithoutAFileAndTheVanishedAmongThem(): void {
+	public function testCountsTheVanishedRows(): void {
 		$row = static fn (int $fileId, string $state = BindingService::STATE_ACTIVE): array => ['file_id' => $fileId, 'pad_id' => 'pad-' . $fileId, 'access_mode' => BindingService::ACCESS_PUBLIC, 'state' => $state, 'deleted_at' => $state === BindingService::STATE_ACTIVE ? null : 90, 'updated_at' => 100];
 		$db = new InMemoryBindingTable([
 			$row(1),
@@ -28,9 +28,9 @@ class ConsistencyCheckServiceTest extends TestCase {
 
 		$result = (new ConsistencyCheckService($db))->run(2);
 
-		$this->assertSame(5, $result['binding_without_file_count']);
-		$this->assertSame(3, $result['vanished_file_count'], 'not the ones seen deleted for good');
-		$this->assertSame([2, 3], array_column($result['samples']['bindings_without_file'], 'file_id'));
+		$this->assertSame(3, $result['vanished_file_count'], 'not the ones seen deleted for good, nor the one still there');
+		$this->assertSame(['vanished_file_count', 'samples'], array_keys($result));
+		$this->assertSame(['vanished_files'], array_keys($result['samples']));
 		$this->assertSame([['file_id' => 3, 'pad_id' => 'pad-3', 'access_mode' => BindingService::ACCESS_PUBLIC], ['file_id' => 5, 'pad_id' => 'pad-5', 'access_mode' => BindingService::ACCESS_PUBLIC]], $result['samples']['vanished_files']);
 	}
 }

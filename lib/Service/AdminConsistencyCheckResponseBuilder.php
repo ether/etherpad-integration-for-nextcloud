@@ -22,7 +22,7 @@ class AdminConsistencyCheckResponseBuilder {
 	 * @return array<string,mixed>
 	 */
 	public function build(array $result): array {
-		$issues = (int)$result['binding_without_file_count'];
+		$issues = (int)$result['vanished_file_count'];
 		$message = $issues > 0
 			? $this->l10n->t('Consistency check finished with issues.')
 			: $this->l10n->t('Consistency check successful. No issues found.');
@@ -30,8 +30,7 @@ class AdminConsistencyCheckResponseBuilder {
 		return [
 			'ok' => true,
 			'message' => $message,
-			'binding_without_file_count' => $issues,
-			'vanished_file_count' => (int)$result['vanished_file_count'],
+			'vanished_file_count' => $issues,
 			'samples' => $result['samples'],
 		];
 	}

@@ -19,27 +19,20 @@ class ConsistencyCheckService {
 	}
 
 	/**
-	 * Rows whose file the file cache has nothing of, and among them the
-	 * vanished ones: still active, never seen deleted for good, which would
-	 * have made them `pending_delete` (GoneFilesListener).
-	 * The app leaves their pads alone (docs/deleting-pads.md), so an admin
-	 * sees them here and decides.
+	 * The vanished rows: files the file cache has nothing of, still active,
+	 * never seen deleted for good. A row seen deleted for good is
+	 * `pending_delete` (GoneFilesListener) and on its way, whether the
+	 * sweep takes it within minutes or deleting is off, so it is no issue.
+	 * The app leaves the vanished ones' pads alone (docs/deleting-pads.md),
+	 * so an admin sees them here and decides.
 	 *
-	 * @return array{
-	 *   binding_without_file_count:int,
-	 *   vanished_file_count:int,
-	 *   samples:array{bindings_without_file:array<int,array<string,mixed>>, vanished_files:array<int,array<string,mixed>>}
-	 * }
+	 * @return array{vanished_file_count:int, samples:array{vanished_files:array<int,array<string,mixed>>}}
 	 */
 	public function run(int $sampleLimit = 25): array {
-		$limit = max(1, $sampleLimit);
-
 		return [
-			'binding_without_file_count' => $this->count($this->withoutFile()),
 			'vanished_file_count' => $this->count($this->vanished($this->withoutFile())),
 			'samples' => [
-				'bindings_without_file' => $this->sampleBindingsWithoutFile($limit),
-				'vanished_files' => $this->sampleVanished($limit),
+				'vanished_files' => $this->sampleVanished(max(1, $sampleLimit)),
 			],
 		];
 	}
@@ -81,22 +74,6 @@ class ConsistencyCheckService {
 		$this->vanished($qb)
 			->orderBy('b.file_id', 'ASC')
 			->setMaxResults($limit);
-
-		$result = $qb->executeQuery();
-		$rows = DbRows::all($result->fetchAll());
-		$result->closeCursor();
-		return $rows;
-	}
-
-	/** @return array<int,array<string,mixed>> */
-	private function sampleBindingsWithoutFile(int $limit): array {
-		$qb = $this->db->getQueryBuilder();
-		$qb->select('b.file_id', 'b.pad_id', 'b.access_mode', 'b.state')
-			->from(BindingService::TABLE, 'b')
-			->leftJoin('b', 'filecache', 'fc', $qb->expr()->eq('b.file_id', 'fc.fileid'))
-			->where($qb->expr()->isNull('fc.fileid'))
-			->orderBy('b.file_id', 'ASC')
-			->setMaxResults(max(1, $limit));
 
 		$result = $qb->executeQuery();
 		$rows = DbRows::all($result->fetchAll());

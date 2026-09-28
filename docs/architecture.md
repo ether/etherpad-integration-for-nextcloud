@@ -273,8 +273,8 @@ Primary flow (native viewer):
 ### 6) Admin Integrity Check (optional)
 
 1. Admin runs `POST /api/v1/admin/consistency-check`, from the admin page or the API; nothing runs it on its own.
-2. It counts the rows whose file the file cache has nothing of (`binding_without_file_count`), and among them the vanished ones (`vanished_file_count`): active rows never seen deleted for good. Those are the files gone without a deletion the app heard of - from a trash, past it, or with an account; their pads stay (see "Files gone for good"). The rest is on its way: rows in `pending_delete`, which the sweep takes within minutes.
-3. It returns up to 25 of each (`samples`). The admin page lists the vanished ones by pad id, so an admin can delete what is no longer needed in Etherpad.
+2. It counts the vanished rows (`vanished_file_count`): their file gone from the file cache, still active, never seen deleted for good. Those are the files gone without a deletion the app heard of - from a trash, past it, or with an account; their pads stay (see "Files gone for good"), and they are what the check reports as issues. A row seen deleted for good is on its way and not counted: `pending_delete`, which the sweep takes within minutes, or keeps while `delete_pad_with_file` is off (`pending_delete_count` in the health check).
+3. It returns up to 25 of them (`samples`). The admin page lists them by pad id, so an admin can delete what is no longer needed in Etherpad.
 4. Its cost grows with the rows, or with the file cache, whichever the database reads: measured at 0.14 to 0.35 s for 500,000 rows and 2 million files (Postgres 16, warm).
 
 ## Main Frontend Modules
