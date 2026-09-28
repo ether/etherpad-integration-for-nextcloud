@@ -45,15 +45,27 @@ use Psr\Log\LoggerInterface;
  *   starts. A delete that fails, a locked file say, raises no
  *   NodeDeletedEvent, and its window stays open for the rest of the
  *   process, a cron run's too; it covers the node's own entries only,
- *   never what a scan drops elsewhere. A move to the trash within one
- *   storage removes nothing. One
- *   to another storage keeps the file's id and reports a removal and an
- *   insert (CacheEntryInsertedEvent), which takes the mark back.
+ *   never what a scan drops elsewhere.
  * - A user deleted: every file on their home storage, which Nextcloud
  *   clears without a word. Looked up before (BeforeUserDeletedEvent),
  *   while the mount cache still knows the home, and marked once the user
  *   is gone (UserDeletedEvent): a deletion the user backend refuses stops
  *   before that, and leaves the files as they are.
+ *
+ * These never count, even so:
+ *
+ * - A delete that goes to a trash (MoveToTrashEvent) is a move, and closes
+ *   its node's window. A move to the trash within one storage removes
+ *   nothing; one to another storage keeps the file's id and reports a
+ *   removal and an insert (CacheEntryInsertedEvent), which takes the mark
+ *   back. But one to a storage whose cache is wrapped - an external
+ *   storage with an encoding option, say - copies the file under new ids
+ *   and removes the old ones, and counted, that would take the pad of a
+ *   file that sits in the trash.
+ * - A restore from a user's trash, between BeforeNodeRestoredEvent and
+ *   NodeRestoredEvent: what it removes from the trash leaves it, under
+ *   new ids on the other side when it crosses to such a storage.
+ * - Versions and app data, previews among them.
  *
  * What counts is the file, not its name: a `.pad` renamed keeps its row.
  *
@@ -136,9 +148,9 @@ class GoneFilesListener implements IEventListener {
 			} elseif ($event instanceof CacheEntryInsertedEvent) {
 				$this->inserted($event->getFileId());
 			} elseif ($event instanceof BeforeNodeDeletedEvent) {
-				$this->startDelete($event->getNode());
+				$this->remember($this->deleting, $event->getNode());
 			} elseif ($event instanceof NodeDeletedEvent) {
-				$this->endDelete($event->getNode());
+				self::forget($this->deleting, $event->getNode());
 				$this->write();
 			} elseif ($event instanceof BeforeUserDeletedEvent) {
 				$this->leavingHomes[$event->getUser()->getUID()] = $this->filesOfHome($event->getUser());
@@ -148,11 +160,12 @@ class GoneFilesListener implements IEventListener {
 				unset($this->leavingHomes[$uid]);
 				$this->bindingService->markGone($fileIds);
 			} elseif (self::is($event, self::MOVE_TO_TRASH) && method_exists($event, 'getNode')) {
-				$this->toTrash($event->getNode());
+				// A move, not a delete: its window closes.
+				self::forget($this->deleting, $event->getNode());
 			} elseif (self::is($event, self::BEFORE_RESTORE) && method_exists($event, 'getSource')) {
-				$this->startRestore($event->getSource());
+				$this->remember($this->restoring, $event->getSource());
 			} elseif (self::is($event, self::RESTORED) && method_exists($event, 'getSource')) {
-				$this->endRestore($event->getSource());
+				self::forget($this->restoring, $event->getSource());
 			} elseif (method_exists($event, 'getCacheEntryRemovedEvents')) {
 				$this->block($event->getCacheEntryRemovedEvents());
 			}
@@ -161,9 +174,12 @@ class GoneFilesListener implements IEventListener {
 		}
 	}
 
-	/** Whether the event is of the class named, which may not be there. */
+	/**
+	 * Whether the event is of the class named, or a subclass. The class may
+	 * not be there: instanceof loads nothing, and answers false.
+	 */
 	private static function is(Event $event, string $class): bool {
-		return $event::class === $class;
+		return $event instanceof $class;
 	}
 
 	/**
@@ -219,60 +235,36 @@ class GoneFilesListener implements IEventListener {
 		}
 	}
 
-	private function startDelete(Node $node): void {
-		$fileId = $node->getId();
-		$place = $this->bindingService->placeOf($fileId);
-		if ($place !== null) {
-			$this->deleting[$fileId] = $place;
-		}
-	}
-
-	private function endDelete(Node $node): void {
-		try {
-			unset($this->deleting[$node->getId()]);
-		} catch (NotFoundException|InvalidPathException) {
-			// Its window stays open, on the node's own entries.
-		}
-	}
-
 	/**
-	 * The node being deleted goes to a trash: its delete is a move, and
-	 * what it removes from the file cache is not deleted for good. A move
-	 * to another storage whose cache is wrapped copies the file under new
-	 * ids and removes the old ones; counted, that would take the pad of a
-	 * file that sits in the trash.
+	 * A window opens: where the node is - its storage and path in the file
+	 * cache - by its id.
+	 *
+	 * @param array<int,array{int,string}> $places
 	 */
-	private function toTrash(mixed $node): void {
-		if ($node instanceof Node) {
-			try {
-				unset($this->deleting[$node->getId()]);
-			} catch (NotFoundException|InvalidPathException) {
-			}
-		}
-	}
-
-	/**
-	 * A node restored from a trash leaves it: what the restore removes
-	 * there - under new ids on the other side, when it crosses to a
-	 * storage whose cache is wrapped - is not deleted for good.
-	 */
-	private function startRestore(mixed $node): void {
+	private function remember(array &$places, mixed $node): void {
 		if (!$node instanceof Node) {
 			return;
 		}
 		$fileId = $node->getId();
 		$place = $this->bindingService->placeOf($fileId);
 		if ($place !== null) {
-			$this->restoring[$fileId] = $place;
+			$places[$fileId] = $place;
 		}
 	}
 
-	private function endRestore(mixed $node): void {
-		if ($node instanceof Node) {
-			try {
-				unset($this->restoring[$node->getId()]);
-			} catch (NotFoundException|InvalidPathException) {
-			}
+	/**
+	 * A window closes. A node whose id cannot be read leaves it open, on
+	 * the node's own entries.
+	 *
+	 * @param array<int,array{int,string}> $places
+	 */
+	private static function forget(array &$places, mixed $node): void {
+		if (!$node instanceof Node) {
+			return;
+		}
+		try {
+			unset($places[$node->getId()]);
+		} catch (NotFoundException|InvalidPathException) {
 		}
 	}
 
