@@ -61,14 +61,12 @@ class BindingTest extends TestCase {
 
 	/**
 	 * Whether a refusal to delete a gone file's pad is news: no run has tried
-	 * the row since the file was seen deleted. Without a date there is no
-	 * telling, and it is reported each time.
+	 * the row since the file was seen deleted.
 	 */
 	public function testARowIsUntouchedUntilARunPutsItBack(): void {
 		$cases = [
 			'just owed' => [100, 100, true],
 			'put back since' => [100, 160, false],
-			'no date' => [null, 160, true],
 		];
 		foreach ($cases as $case => [$deletedAt, $updatedAt, $untouched]) {
 			$binding = new Binding(7, 'nc-abc', BindingService::ACCESS_PUBLIC, BindingService::STATE_PENDING_DELETE, $deletedAt, $updatedAt);

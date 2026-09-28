@@ -165,7 +165,8 @@ class GoneFileSweepTest extends TestCase {
 
 	/**
 	 * A file seen deleted waits out its grace for the job, but not for an
-	 * admin's settle. One whose pad was refused waits for its hour for both.
+	 * admin's settle; nor does one whose pad Etherpad refused within the
+	 * hour - the admin has fixed Etherpad, say.
 	 */
 	public function testAFreshRowWaitsForTheJobButNotForAnAdmin(): void {
 		$this->table([
@@ -177,7 +178,7 @@ class GoneFileSweepTest extends TestCase {
 		$this->assertSame([], $this->deletedPads);
 
 		$this->build()->run(atOnce: true);
-		$this->assertSame(['pad-fresh'], $this->deletedPads);
+		$this->assertSame(['pad-fresh', 'pad-refused'], $this->deletedPads);
 	}
 
 	/**

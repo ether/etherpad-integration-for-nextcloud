@@ -12,12 +12,9 @@ namespace OCA\EtherpadNextcloud\Migration;
 use Closure;
 use OCA\EtherpadNextcloud\Service\AppConfigService;
 use OCA\EtherpadNextcloud\Service\BindingService;
-use OCA\EtherpadNextcloud\Util\DbRows;
 use OCP\AppFramework\Utility\ITimeFactory;
 use OCP\BackgroundJob\IJobList;
 use OCP\DB\ISchemaWrapper;
-use OCP\DB\QueryBuilder\IQueryBuilder;
-use OCP\IDBConnection;
 use OCP\Migration\IOutput;
 use OCP\Migration\SimpleMigrationStep;
 
@@ -50,7 +47,7 @@ class Version000005Date20260928120000 extends SimpleMigrationStep {
 	];
 
 	public function __construct(
-		private IDBConnection $db,
+		private BindingService $bindingService,
 		private ITimeFactory $timeFactory,
 		private AppConfigService $appConfig,
 		private IJobList $jobList,
@@ -66,26 +63,11 @@ class Version000005Date20260928120000 extends SimpleMigrationStep {
 			/** @psalm-suppress ArgumentTypeCoercion The classes are gone, which is why they go; the job list removes their rows by the name alone. */
 			$this->jobList->remove($job);
 		}
+		// A pending_delete row whose file the file cache still has is the
+		// file's, kept: the same step the sweep takes for a deletion that
+		// did not happen, for every such row at once.
 		$now = $this->timeFactory->getTime();
-
-		$qb = $this->db->getQueryBuilder();
-		$qb->select('b.file_id')
-			->from(BindingService::TABLE, 'b')
-			->innerJoin('b', 'filecache', 'fc', $qb->expr()->eq('b.file_id', 'fc.fileid'))
-			->where($qb->expr()->eq('b.state', $qb->createNamedParameter(BindingService::STATE_PENDING_DELETE)));
-		$result = $qb->executeQuery();
-		$kept = array_map(static fn (array $row): int => DbRows::int($row, 'file_id'), DbRows::all($result->fetchAll()));
-		$result->closeCursor();
-
-		foreach (array_chunk($kept, 500) as $chunk) {
-			$qb = $this->db->getQueryBuilder();
-			$qb->update(BindingService::TABLE)
-				->set('state', $qb->createNamedParameter(BindingService::STATE_ACTIVE))
-				->set('deleted_at', $qb->createNamedParameter(null, IQueryBuilder::PARAM_NULL))
-				->set('updated_at', $qb->createNamedParameter($now, IQueryBuilder::PARAM_INT))
-				->where($qb->expr()->in('file_id', $qb->createNamedParameter($chunk, IQueryBuilder::PARAM_INT_ARRAY)))
-				->andWhere($qb->expr()->eq('state', $qb->createNamedParameter(BindingService::STATE_PENDING_DELETE)));
-			$qb->executeStatement();
+		while ($this->bindingService->clearStaleGone($now, 500) === 500) {
 		}
 	}
 }

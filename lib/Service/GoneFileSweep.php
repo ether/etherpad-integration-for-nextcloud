@@ -56,7 +56,9 @@ class GoneFileSweep {
 	/**
 	 * A run, within $budget: the job's own, or the one an admin's settle
 	 * promises. An admin's settle ($atOnce) takes the rows still in their
-	 * grace too: what the job would do within minutes, now.
+	 * grace too, and those Etherpad refused within the hour: what the job
+	 * would do within minutes, or an hour, now - after the admin fixed
+	 * Etherpad, say.
 	 *
 	 * First it makes the rows of files the file cache still has an hour
 	 * after they were seen deleted active again: deletions that did not
@@ -81,7 +83,7 @@ class GoneFileSweep {
 		$graceBy = $atOnce ? $now : $now - BindingService::GONE_GRACE_SECONDS;
 		try {
 			for ($batch = 0; $batch < self::BATCHES; $batch++) {
-				$rows = $this->bindingService->findGone(self::LIMIT, $graceBy, $now - self::RETRY_REFUSED_SECONDS);
+				$rows = $this->bindingService->findGone(self::LIMIT, $graceBy, $atOnce ? $now : $now - self::RETRY_REFUSED_SECONDS);
 				foreach ($rows as $binding) {
 					$summary['checked']++;
 					if ($this->discard($binding, $budget)) {

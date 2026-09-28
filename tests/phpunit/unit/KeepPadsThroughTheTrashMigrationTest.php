@@ -42,7 +42,8 @@ class KeepPadsThroughTheTrashMigrationTest extends TestCase {
 			$removed[] = $job;
 		});
 
-		(new Version000005Date20260928120000($table, new FixedClock(500), $appConfig, $jobList))
+		$clock = new FixedClock(500);
+		(new Version000005Date20260928120000(new BindingService($table, $clock), $clock, $appConfig, $jobList))
 			->postSchemaChange($this->createMock(IOutput::class), fn (): ISchemaWrapper => $this->createMock(ISchemaWrapper::class), []);
 
 		$active = [BindingService::STATE_ACTIVE, null, 500];

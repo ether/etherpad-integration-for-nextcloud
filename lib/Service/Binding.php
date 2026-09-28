@@ -50,10 +50,11 @@ final class Binding {
 
 	/**
 	 * No run has tried this row since the file was seen deleted for good:
-	 * updated_at is still at deleted_at. A row without that date cannot
-	 * tell, and counts as untried, so its trouble is reported each time.
+	 * updated_at is still at deleted_at. Asked of rows the sweep takes,
+	 * which it finds by their deleted_at; every version that writes
+	 * pending_delete sets it, 1.1.0-beta.1 included.
 	 */
 	public function untouchedSinceOwed(): bool {
-		return $this->deletedAt === null || $this->updatedAt <= $this->deletedAt;
+		return $this->updatedAt <= (int)$this->deletedAt;
 	}
 }
