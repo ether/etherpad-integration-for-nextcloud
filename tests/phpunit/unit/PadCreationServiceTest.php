@@ -361,6 +361,63 @@ class PadCreationServiceTest extends TestCase {
 		self::assertSame(BindingService::ACCESS_PROTECTED, $result['access_mode']);
 	}
 
+	public function testATemplatesPadWhoseRevisionsEtherpadDoesNotSayStartsAtZero(): void {
+		// The template says "public", but the admin only offers protected —
+		// the pad and its binding must both end up protected.
+		$template = $this->createMock(\OCP\Files\File::class);
+		$template->method('getName')->willReturn('Template.pad');
+		$template->method('getContent')->willReturn('tpl');
+
+		$target = $this->createMock(\OCP\Files\File::class);
+		$target->method('getId')->willReturn(4321);
+
+		$padFileService = $this->createMock(PadFileService::class);
+		$padFileService->method('readPad')->willReturn(new ParsedPadFile(
+			frontmatter: ['pad_id' => 'nc-source'],
+			body: 'body',
+			padId: 'nc-source',
+			accessMode: BindingService::ACCESS_PUBLIC,
+			padUrl: '',
+			isExternal: false,
+			snapshotRev: -1,
+		));
+		$padFileService->method('getSnapshotPartsFromBody')->willReturn(['text' => 'hello', 'html' => '<p>hello</p>']);
+		$padFileService->method('buildInitialDocument')
+			->with(4321, 'g.grp$pad', BindingService::ACCESS_PROTECTED, new PadSnapshot('hello', '<p>hello</p>', 0), 'https://pad.example.test/p/x')
+			->willReturn('doc-with-snapshot');
+		$padFileService->expects($this->never())->method('withExportSnapshot');
+
+		$bootstrap = $this->createMock(PadBootstrapService::class);
+		$bootstrap->expects(self::once())
+			->method('provisionPadId')
+			->with(BindingService::ACCESS_PROTECTED)
+			->willReturn('g.grp$pad');
+
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->method('buildPadUrl')->willReturn('https://pad.example.test/p/x');
+		// The template's formatting is what reaches the pad, not its text.
+		$etherpadClient->expects($this->once())->method('setHTML')->with('g.grp$pad', '<p>hello</p>');
+		$etherpadClient->expects($this->never())->method('setText');
+		// Seeded, but Etherpad does not say how many revisions: the file
+		// starts at 0, as before, rather than the pad failing.
+		$etherpadClient->method('getRevisionsCount')->willThrowException(new EtherpadClientException('Etherpad API request failed'));
+
+		$bindingService = $this->createMock(BindingService::class);
+		$bindingService->expects(self::once())
+			->method('createBinding')
+			->with(4321, 'g.grp$pad', BindingService::ACCESS_PROTECTED);
+
+		$result = $this->buildService(
+			padFileService: $padFileService,
+			bindingService: $bindingService,
+			etherpadClient: $etherpadClient,
+			bootstrap: $bootstrap,
+			padTypePolicy: $this->buildPadTypePolicy(true, false),
+		)->materializeTemplateInto($target, $template, $this->materializeUser());
+
+		self::assertSame(BindingService::ACCESS_PROTECTED, $result['access_mode']);
+	}
+
 	public function testCreateFromUrlBuildsExternalPadFileWithoutBinding(): void {
 		$fileNode = $this->createMock(File::class);
 		$fileNode->method('getId')->willReturn(321);

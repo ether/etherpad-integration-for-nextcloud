@@ -103,12 +103,13 @@ test.describe('a pad Etherpad has lost', () => {
 	test('a public pad made from a template counts as lost before its first sync', async () => {
 		const templateName = uniquePadName('lost-template-src')
 		const name = uniquePadName('lost-from-template')
+		let padId = ''
 		try {
 			const template = await padWithSavedText(templateName, 'public')
 			const created = await padApiPost('pads/from-template', { file: `/${name}`, templateFileId: String(template.fileId) })
 			expect(created.status, JSON.stringify(created.body)).toBe(200)
 			const fileId = await propfindFileId(name)
-			const padId = String((created.body as { pad_id?: string }).pad_id ?? '')
+			padId = String((created.body as { pad_id?: string }).pad_id ?? '')
 			expect(padId).not.toBe('')
 			await etherpadApiPost('deletePad', { padID: padId })
 			await etherpadApiPost('createPad', { padID: padId })
@@ -117,20 +118,30 @@ test.describe('a pad Etherpad has lost', () => {
 		} finally {
 			await deleteViaDav(name)
 			await deleteViaDav(templateName)
+			// The pad made anew stays after a recovery, which leaves it alone.
+			if (padId !== '') {
+				await etherpadApiPost('deletePad', { padID: padId }).catch(() => {})
+			}
 		}
 	})
 
 	test('a public pad Etherpad made anew, empty, counts as lost', async () => {
 		const name = uniquePadName('lost-remade')
+		let padId = ''
 		try {
-			const { fileId, padId, marker } = await padWithSavedText(name, 'public')
+			const saved = await padWithSavedText(name, 'public')
+			padId = saved.padId
 			await etherpadApiPost('deletePad', { padID: padId })
 			// What a visit to the pad's address does once it is gone.
 			await etherpadApiPost('createPad', { padID: padId })
 
-			await expectRecovered(name, fileId, padId, marker)
+			await expectRecovered(name, saved.fileId, padId, saved.marker)
 		} finally {
 			await deleteViaDav(name)
+			// The pad made anew stays after a recovery, which leaves it alone.
+			if (padId !== '') {
+				await etherpadApiPost('deletePad', { padID: padId }).catch(() => {})
+			}
 		}
 	})
 

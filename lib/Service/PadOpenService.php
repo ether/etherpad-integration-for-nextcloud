@@ -118,8 +118,9 @@ class PadOpenService {
 		// address would bring back an empty one, and a protected pad's
 		// session a page that says nothing. The file's own content is what
 		// is left, and someone who may write the file can make a new pad
-		// from it. A reader is shown what the pad server has, as ever.
-		if (!$isExternal && $mayWrite && $this->padLifecycle->howLost($padId, $accessMode, $pad->snapshotRev) !== null) {
+		// from it. A reader is shown what the pad server has, as ever. Only
+		// a definite answer stops the open.
+		if (!$isExternal && $mayWrite && $this->padLifecycle->isKnownLost($padId, $accessMode, $pad->snapshotRev)) {
 			throw new PadLostException('Etherpad has lost the pad of this file.');
 		}
 

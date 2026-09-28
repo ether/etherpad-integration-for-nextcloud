@@ -32,8 +32,10 @@ class ManagedPadLifecycleTest extends TestCase {
 	 * holds saved content - or made anew without a revision while the
 	 * file's snapshot holds more. A public pad with nothing saved, Etherpad
 	 * makes on a visit; behind but written into is not lost, nor is an
-	 * untouched pad whose file never had a snapshot. Anything else Etherpad
-	 * answers, or its silence, is the caller's. Asked within a few seconds.
+	 * untouched pad whose file never had a snapshot, nor a pad at revision
+	 * 0 that has authors - its history cut short in Etherpad. Anything else
+	 * Etherpad answers, or its silence, is the caller's. Asked within a few
+	 * seconds.
 	 */
 	public function testHowAPadIsLost(): void {
 		$gone = new EtherpadRefusedException('padID does not exist');
@@ -44,13 +46,16 @@ class ManagedPadLifecycleTest extends TestCase {
 			'public, gone, snapshot unknown' => [$gone, BindingService::ACCESS_PUBLIC, -1, null],
 			'made anew, empty' => [0, BindingService::ACCESS_PUBLIC, 5, PadPresence::Behind],
 			'behind, written into' => [3, BindingService::ACCESS_PUBLIC, 5, null],
+			'history cut short, with authors' => [0, BindingService::ACCESS_PUBLIC, 5, null, ['a.one']],
 			'there' => [7, BindingService::ACCESS_PROTECTED, 5, null],
 			'untouched, no snapshot' => [0, BindingService::ACCESS_PUBLIC, 0, null],
 		];
-		foreach ($cases as $case => [$answer, $accessMode, $snapshot, $lost]) {
+		foreach ($cases as $case => $row) {
+			[$answer, $accessMode, $snapshot, $lost] = $row;
 			$client = $this->createMock(EtherpadClient::class);
 			$call = $client->method('getRevisionsCount')->with('pad-1', ManagedPadLifecycle::PROBE_TIMEOUT_SECONDS);
 			$answer instanceof \Throwable ? $call->willThrowException($answer) : $call->willReturn($answer);
+			$client->method('listAuthorsOfPad')->with('pad-1', ManagedPadLifecycle::PROBE_TIMEOUT_SECONDS)->willReturn($row[4] ?? []);
 
 			$this->assertSame($lost, $this->lifecycle($client)->howLost('pad-1', $accessMode, $snapshot), $case);
 		}
@@ -397,6 +402,34 @@ class ManagedPadLifecycleTest extends TestCase {
 			static fn (): string => 'nc-abcdef0123456789',
 			static fn (): string => 'p-abc123',
 		);
+	}
+
+	/** A public pad with nothing saved in its file is never lost: Etherpad is not asked about it. */
+	public function testAPublicPadWithNothingSavedIsNotAskedAbout(): void {
+		$client = $this->createMock(EtherpadClient::class);
+		$client->expects($this->never())->method('getRevisionsCount');
+
+		foreach ([-1, 0] as $snapshot) {
+			$this->assertNull($this->lifecycle($client)->howLost('pad-1', BindingService::ACCESS_PUBLIC, $snapshot));
+		}
+	}
+
+	/**
+	 * An open stops only on a definite answer. Etherpad slow, silent or
+	 * refusing the question opens the pad as before, with a line at debug.
+	 */
+	public function testAnOpenStopsOnlyForAPadKnownLost(): void {
+		$gone = $this->createMock(EtherpadClient::class);
+		$gone->method('getRevisionsCount')->willThrowException(new EtherpadRefusedException('padID does not exist'));
+		$this->assertTrue($this->lifecycle($gone)->isKnownLost('pad-1', BindingService::ACCESS_PROTECTED, 5));
+
+		foreach ([new EtherpadClientException('Etherpad API request failed'), new EtherpadRefusedException('apikey is invalid')] as $error) {
+			$client = $this->createMock(EtherpadClient::class);
+			$client->method('getRevisionsCount')->willThrowException($error);
+			$logger = $this->createMock(LoggerInterface::class);
+			$logger->expects($this->once())->method('debug')->with('Could not ask Etherpad whether a pad is lost; opened as before.', $this->anything());
+			$this->assertFalse((new ManagedPadLifecycle($client, $logger))->isKnownLost('pad-1', BindingService::ACCESS_PROTECTED, 5), $error->getMessage());
+		}
 	}
 
 	/** Seeding says how many revisions the pad has then: what its file records as synced. */

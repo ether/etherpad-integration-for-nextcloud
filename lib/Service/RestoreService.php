@@ -44,6 +44,8 @@ class RestoreService {
 	public const REASON_FILE_UNREADABLE = 'file_unreadable';
 	/** A file back with an active row whose pad Etherpad has: taken back as it is. */
 	private const REASON_PAD_PRESENT = 'pad_present';
+	/** A public pad whose file holds no saved content: nothing to make a new pad from, whatever Etherpad has. */
+	private const REASON_NOTHING_SAVED = 'nothing_saved';
 	/** A file whose row names another pad than the file: the open's to settle. */
 	private const REASON_ROW_NAMES_OTHER_PAD = 'row_names_other_pad';
 	/** A file back without a row whose pad another file's row names: a copy, whose open offers the original. */
@@ -100,9 +102,8 @@ class RestoreService {
 	 */
 	private function restoreWithReplacement(File $file, string $path, ParsedPadFile $pad, int $fileId, string $oldPadId, string $accessMode, PadPresence $presence): array {
 		if (PadAccessMode::tryFrom($accessMode) === null) {
-			// No pad can be made on this row. It goes, and the file offers
-			// its own recovery, which goes by the file's access mode.
-			$this->releaseReplacedRow($fileId, $oldPadId);
+			// No pad can be made on this row, a record the app did not write.
+			// It stays as it is, as a row does on any failure here.
 			return LifecycleResult::skipped('unknown_access_mode', $fileId, $this->logger);
 		}
 
@@ -154,32 +155,6 @@ class RestoreService {
 				// No answer either way; the claim's own error says why.
 			}
 			throw $claimError;
-		}
-	}
-
-	/**
-	 * A row no new pad can be made on: its access mode is none the app
-	 * knows. Removed rather than kept, so the file offers its own recovery,
-	 * which goes by the file's access mode. Conditional, so a row another
-	 * restore has taken since stays as it left it.
-	 */
-	private function releaseReplacedRow(int $fileId, string $oldPadId): void {
-		try {
-			if ($this->bindingService->deleteActiveBinding($fileId, $oldPadId)) {
-				return;
-			}
-			// Gone with the replacement's rollback already, or taken by
-			// another restore since - not this restore's either way.
-			$this->logger->debug('Left a binding a failed restore no longer holds.', [
-				'app' => 'etherpad_nextcloud',
-				'fileId' => $fileId,
-			]);
-		} catch (\Throwable $e) {
-			$this->logger->warning('Could not release the binding of a restore that failed.', [
-				'app' => 'etherpad_nextcloud',
-				'fileId' => $fileId,
-				...SafeError::context($e),
-			]);
 		}
 	}
 
@@ -252,8 +227,9 @@ class RestoreService {
 	 *
 	 * Refused, before Etherpad is asked, to whoever may not change the
 	 * file - a read-only share, say: a recovery writes the file, and on a
-	 * row it moves the row first. The open's card never offers it to a
-	 * reader, but the endpoint answers anyone who can see the file.
+	 * row it moves the row first. The open offers it to a reader of a file
+	 * without a row too, which the card cannot tell apart, and the
+	 * endpoint answers anyone who can see the file.
 	 *
 	 * @return array{status: string, reason?: string, old_pad_id?: string, new_pad_id?: string}
 	 * @throws PadFileNotWritableException
@@ -346,7 +322,8 @@ class RestoreService {
 	 * Whether Etherpad has lost the pad of the file's active row: the file
 	 * as read and how the pad is lost, or why the file is no case for a new
 	 * pad - it names another pad than its row (or one on another server),
-	 * or Etherpad has the pad.
+	 * it is a public pad whose file holds nothing saved, or Etherpad has
+	 * the pad.
 	 *
 	 * @return array{ParsedPadFile, PadPresence}|string
 	 * @throws \Throwable reading the file, or asking Etherpad
@@ -355,6 +332,9 @@ class RestoreService {
 		$pad = $this->readRestoredPad($file);
 		if ($pad->isExternal || $pad->padId !== $binding->padId) {
 			return self::REASON_ROW_NAMES_OTHER_PAD;
+		}
+		if (!ManagedPadLifecycle::holdsSavedContent($binding->accessMode, $pad->snapshotRev)) {
+			return self::REASON_NOTHING_SAVED;
 		}
 		$lost = $this->padLifecycle->howLost($binding->padId, $binding->accessMode, $pad->snapshotRev);
 		return $lost === null ? self::REASON_PAD_PRESENT : [$pad, $lost];
@@ -374,6 +354,13 @@ class RestoreService {
 	private function restoreFileWithoutRow(File $file, int $fileId): array {
 		try {
 			$pad = $this->readRestoredPad($file);
+		} catch (\Throwable) {
+			// A legacy Ownpad link without metadata, or a file that cannot be
+			// read now: the open reads it again, and migrates it, offers its
+			// recovery or says what is wrong - as for an active row.
+			return LifecycleResult::skipped(self::REASON_FILE_UNREADABLE, $fileId, $this->logger);
+		}
+		try {
 			$original = $this->bindingService->findByPadId($pad->padId);
 		} catch (\Throwable $e) {
 			throw LifecycleException::failed('Restore', $e);
@@ -481,6 +468,17 @@ class RestoreService {
 			}
 			$this->writeRestoredContent($file, $updatedContent);
 		} catch (\Throwable $e) {
+			if ($this->fileNames($file, $newPadId)) {
+				// The write landed, and something after it failed - a hook,
+				// say. Row and file both name the new pad: taking either back
+				// would leave them naming different pads.
+				$this->logger->warning('A restored .pad file reported a failed write, yet names its new pad; the new pad is kept.', [
+					'app' => 'etherpad_nextcloud',
+					'fileId' => $fileId,
+					...SafeError::context($e),
+				]);
+				return LifecycleResult::restored($oldPadId, $newPadId);
+			}
 			if ($rowStays && $this->moveRowBack($fileId, $newPadId, $oldPadId)) {
 				$this->provisionedPadRollback->discardUnlessBoundToFile($fileId, $newPadId, $flow);
 			} else {
@@ -489,6 +487,15 @@ class RestoreService {
 			throw LifecycleException::failed('Restore', $e);
 		}
 		return LifecycleResult::restored($oldPadId, $newPadId);
+	}
+
+	/** Whether the file names this pad now; false when that cannot be read either. */
+	private function fileNames(File $file, string $padId): bool {
+		try {
+			return $this->padFileService->readPad($file->getContent())->padId === $padId;
+		} catch (\Throwable) {
+			return false;
+		}
 	}
 
 	/**

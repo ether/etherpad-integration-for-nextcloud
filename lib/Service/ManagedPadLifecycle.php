@@ -218,12 +218,15 @@ class ManagedPadLifecycle {
 	 *   link to a pad nobody opened yet, say - Etherpad makes on the first
 	 *   visit, as ever, and nothing is lost.
 	 * - Behind when it has one without a single revision while the file's
-	 *   snapshot was taken at a later one: a public pad Etherpad made anew,
-	 *   empty, when someone visited its address.
+	 *   snapshot was taken at a later one, and nobody ever wrote in it: a
+	 *   public pad Etherpad made anew, empty, when someone visited its
+	 *   address. A pad with authors at revision 0 - its history cut short
+	 *   in Etherpad - holds what they wrote, and is not lost.
 	 *
-	 * A pad merely behind the snapshot is not lost: files a restore in
-	 * 1.1.0-beta.1 left kept the old pad's revision count. Quiet, unlike
-	 * probe(): an open asks this every time.
+	 * A public pad with nothing saved in its file is never lost, so
+	 * Etherpad is not asked about it. A pad merely behind the snapshot is
+	 * not lost: files a restore in 1.1.0-beta.1 left kept the old pad's
+	 * revision count. Quiet, unlike probe(): an open asks this every time.
 	 *
 	 * Asked within PROBE_TIMEOUT_SECONDS: an open that may write, and a
 	 * restore, wait on the answer, and a public pad needed no call to
@@ -233,15 +236,48 @@ class ManagedPadLifecycle {
 	 * @throws \Throwable when Etherpad gives any other answer, or none
 	 */
 	public function howLost(string $padId, string $accessMode, int $snapshotRevision, int $timeoutSeconds = self::PROBE_TIMEOUT_SECONDS): ?PadPresence {
+		if (!self::holdsSavedContent($accessMode, $snapshotRevision)) {
+			return null;
+		}
 		try {
 			$revisions = $this->etherpadClient->getRevisionsCount($padId, $timeoutSeconds);
 		} catch (\Throwable $e) {
 			if (!EtherpadErrorClassifier::isPadAlreadyDeleted($e)) {
 				throw $e;
 			}
-			return $accessMode === BindingService::ACCESS_PROTECTED || $snapshotRevision > 0 ? PadPresence::Absent : null;
+			return PadPresence::Absent;
 		}
-		return $revisions === 0 && $snapshotRevision > 0 ? PadPresence::Behind : null;
+		if ($revisions !== 0 || $snapshotRevision <= 0) {
+			return null;
+		}
+		return $this->etherpadClient->listAuthorsOfPad($padId, $timeoutSeconds) === [] ? PadPresence::Behind : null;
+	}
+
+	/**
+	 * Whether an open should stop because the pad is lost: only on a
+	 * definite answer. Etherpad slow, silent or refusing the question opens
+	 * the pad as before - the check is for a rare case, and must not make
+	 * an open depend on it; whatever is wrong with Etherpad shows there.
+	 */
+	public function isKnownLost(string $padId, string $accessMode, int $snapshotRevision): bool {
+		try {
+			return $this->howLost($padId, $accessMode, $snapshotRevision) !== null;
+		} catch (\Throwable $e) {
+			$this->logger->debug('Could not ask Etherpad whether a pad is lost; opened as before.', [
+				'app' => 'etherpad_nextcloud',
+				...SafeError::context($e),
+			]);
+			return false;
+		}
+	}
+
+	/**
+	 * Whether losing the pad would lose anything the file holds: always for
+	 * a protected pad, whose session opens nothing without it, and for a
+	 * public pad once its file has saved content (`snapshot_rev` above 0).
+	 */
+	public static function holdsSavedContent(string $accessMode, int $snapshotRevision): bool {
+		return $accessMode === BindingService::ACCESS_PROTECTED || $snapshotRevision > 0;
 	}
 
 	/**

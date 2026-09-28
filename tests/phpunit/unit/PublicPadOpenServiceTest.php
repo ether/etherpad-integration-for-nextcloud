@@ -6,7 +6,6 @@ namespace OCA\EtherpadNextcloud\Tests\Unit;
 
 use OCA\EtherpadNextcloud\Exception\ExternalPadException;
 use OCA\EtherpadNextcloud\Exception\PadLostException;
-use OCA\EtherpadNextcloud\Service\PadPresence;
 use OCA\EtherpadNextcloud\Service\ManagedPadLifecycle;
 use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\EtherpadNextcloud\Service\EtherpadClient;
@@ -104,7 +103,7 @@ class PublicPadOpenServiceTest extends TestCase {
 	public function testAPadEtherpadHasLostIsNotOpenedForWriting(): void {
 		foreach ([BindingService::ACCESS_PROTECTED, BindingService::ACCESS_PUBLIC] as $accessMode) {
 			$lifecycle = $this->createMock(ManagedPadLifecycle::class);
-			$lifecycle->expects($this->once())->method('howLost')->with('pad-1', $accessMode, 5)->willReturn(PadPresence::Behind);
+			$lifecycle->expects($this->once())->method('isKnownLost')->with('pad-1', $accessMode, 5)->willReturn(true);
 			$sessions = $this->createMock(PadSessionService::class);
 			$sessions->expects($this->never())->method('createProtectedOpenContext');
 			try {
@@ -116,7 +115,7 @@ class PublicPadOpenServiceTest extends TestCase {
 		}
 
 		$lifecycle = $this->createMock(ManagedPadLifecycle::class);
-		$lifecycle->expects($this->never())->method('howLost');
+		$lifecycle->expects($this->never())->method('isKnownLost');
 		$this->buildService(padLifecycle: $lifecycle)->open($this->pad('pad-1', BindingService::ACCESS_PROTECTED, false, '', 5), true, 'token');
 		$this->buildService(padLifecycle: $lifecycle)->open($this->pad('pad-1', BindingService::ACCESS_PUBLIC, false, '', 5), true, 'token');
 	}

@@ -227,7 +227,9 @@ class PadCreationService {
 				$fileId,
 				$padId,
 				$accessMode,
-				snapshot: new PadSnapshot($resolvedText, $resolvedHtml, $revisions),
+				// Without an answer from Etherpad the file starts at 0, as it
+				// always did: a snapshot's revision is never negative.
+				snapshot: new PadSnapshot($resolvedText, $resolvedHtml, max(0, $revisions)),
 				padUrl: $padUrl,
 			);
 			$this->writeCreatedFile($claim, $content);

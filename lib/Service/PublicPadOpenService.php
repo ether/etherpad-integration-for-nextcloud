@@ -49,8 +49,9 @@ class PublicPadOpenService {
 		$padId = $pad->padId;
 		// A pad Etherpad has lost would come back empty, or not at all: only
 		// the file's owner can make a new pad from its content. A reader is
-		// shown what the pad server has, as ever.
-		if (!$readOnly && $this->padLifecycle->howLost($padId, $pad->accessMode, $pad->snapshotRev) !== null) {
+		// shown what the pad server has, as ever. Only a definite answer
+		// stops the open.
+		if (!$readOnly && $this->padLifecycle->isKnownLost($padId, $pad->accessMode, $pad->snapshotRev)) {
 			throw new PadLostException('Etherpad has lost the pad of this file.');
 		}
 

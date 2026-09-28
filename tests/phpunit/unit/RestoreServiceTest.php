@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\Tests\Unit;
 
 use OCA\EtherpadNextcloud\Exception\LifecycleException;
+use OCA\EtherpadNextcloud\Exception\MissingFrontmatterException;
 use OCA\EtherpadNextcloud\Exception\NotAPadFileException;
 use OCA\EtherpadNextcloud\Exception\EtherpadRefusedException;
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
@@ -43,6 +44,8 @@ class RestoreServiceTest extends TestCase {
 
 	/** The revision the restored document was given, as the builder's formatter last saw it. */
 	private ?int $restoredRevision = null;
+	/** The pad the last file written in a test names. */
+	private string $restoredPadId = '';
 
 	/**
 	 * A file seen deleted for good that comes back from the trash was not
@@ -994,6 +997,87 @@ class RestoreServiceTest extends TestCase {
 		}
 	}
 
+	/**
+	 * A write can land and still throw - a hook after it failing, say.
+	 * Row and file then both name the new pad: it is kept, with a warning,
+	 * rather than one of them taken back to leave them naming two pads.
+	 */
+	public function testAWriteThatLandedKeepsTheNewPad(): void {
+		$fileId = 708;
+		$newPadId = 'r-old-pad-abc123def456';
+		$bindingService = $this->createMock(BindingService::class);
+		$bindingService->expects($this->once())->method('rebind')->with($fileId, 'old-pad', BindingService::STATE_ACTIVE, $newPadId, BindingService::STATE_ACTIVE)->willReturn(true);
+		$bindingService->expects($this->never())->method('deleteActiveBinding');
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->method('getRevisionsCount')->willReturnCallback(static fn (string $padId): int => $padId === 'old-pad' ? throw new EtherpadRefusedException('padID does not exist') : 1);
+		$etherpadClient->expects($this->never())->method('deletePad');
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects($this->once())->method('warning')->with('A restored .pad file reported a failed write, yet names its new pad; the new pad is kept.', $this->anything());
+		$file = $this->createMock(File::class);
+		$file->method('getId')->willReturn($fileId);
+		$file->method('getName')->willReturn('Lost.pad');
+		$file->method('isUpdateable')->willReturn(true);
+		$file->method('getContent')->willReturnOnConsecutiveCalls('doc-before', 'doc-after');
+		$file->method('putContent')->willThrowException(new \RuntimeException('a hook after the write failed'));
+
+		$result = $this->buildRowRestoreService($fileId, 'old-pad', $bindingService, $etherpadClient, logger: $logger)->recoverFromSnapshot($file);
+
+		$this->assertSame(LifecycleResult::RESTORED, $result['status']);
+		$this->assertSame($newPadId, $result['new_pad_id']);
+	}
+
+	/**
+	 * A public pad whose file holds nothing saved has nothing to make a new
+	 * pad from: a restore says so, and Etherpad is not asked.
+	 */
+	public function testARestoreDoesNotAskAboutAPublicPadWithNothingSaved(): void {
+		$bindingService = $this->createMock(BindingService::class);
+		$bindingService->expects($this->never())->method('rebind');
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->expects($this->never())->method('getRevisionsCount');
+
+		$result = $this->buildRowRestoreService(709, 'old-pad', $bindingService, $etherpadClient, snapshotRev: -1)
+			->restore($this->padFile(709, 'Untouched.pad'));
+
+		$this->assertSame(['status' => LifecycleResult::SKIPPED, 'reason' => 'nothing_saved'], $result);
+	}
+
+	/** An active row whose access mode the app does not know stays as it is: no new pad, no row taken away. */
+	public function testAnActiveRowOfAnUnknownModeStays(): void {
+		$bindingService = $this->createMock(BindingService::class);
+		$bindingService->expects($this->never())->method('rebind');
+		$bindingService->expects($this->never())->method('deleteActiveBinding');
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->method('getRevisionsCount')->willThrowException(new EtherpadRefusedException('padID does not exist'));
+		$etherpadClient->expects($this->never())->method('createPad');
+
+		$result = $this->buildRowRestoreService(710, 'old-pad', $bindingService, $etherpadClient, accessMode: 'mystery')
+			->restore($this->padFile(710, 'Odd.pad'));
+
+		$this->assertSame(['status' => LifecycleResult::SKIPPED, 'reason' => 'unknown_access_mode'], $result);
+	}
+
+	/**
+	 * A file back without a row that cannot be read - a legacy Ownpad link
+	 * without metadata, say - is left to its open, quietly: it is no
+	 * failure of the restore, and nothing tries it again.
+	 */
+	public function testAFileWithoutRowThatCannotBeReadIsLeftToItsOpen(): void {
+		$bindingService = $this->createMock(BindingService::class);
+		$bindingService->method('findByFileId')->willReturn(null);
+		$bindingService->expects($this->never())->method('findByPadId');
+		$bindingService->expects($this->never())->method('createBinding');
+		$padFileService = $this->createMock(PadFileService::class);
+		$padFileService->method('readPad')->willThrowException(new MissingFrontmatterException('Missing YAML frontmatter in .pad file.'));
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->expects($this->never())->method('createPad');
+
+		$result = $this->restoreService(bindings: $bindingService, etherpad: $etherpadClient, padFiles: $padFileService)
+			->restore($this->padFile(711, 'Legacy.pad', "[InternetShortcut]\nURL=https://pad.example.test/p/legacy\n"));
+
+		$this->assertSame(['status' => LifecycleResult::SKIPPED, 'reason' => RestoreService::REASON_FILE_UNREADABLE], $result);
+	}
+
 	/** Etherpad not answering is no answer at all: nothing is made, and the caller hears of it. */
 	public function testRecoveryStopsWhenEtherpadDoesNotAnswer(): void {
 		$bindingService = $this->createMock(BindingService::class);
@@ -1095,11 +1179,16 @@ class RestoreServiceTest extends TestCase {
 			isExternal: false,
 			snapshotRev: $snapshotRev,
 		);
-		$padFileService->method('readPad')->with('doc-before')->willReturn($parsedPad);
+		// 'doc-after' is the file once written, naming the pad it was written for.
+		$padFileService->method('readPad')->willReturnCallback(fn (string $content): ParsedPadFile => match ($content) {
+			'doc-before' => $parsedPad,
+			'doc-after' => new ParsedPadFile(frontmatter: [], body: 'body', padId: $this->restoredPadId, accessMode: BindingService::ACCESS_PUBLIC, padUrl: '', isExternal: false, snapshotRev: 1),
+		});
 		$padFileService->method('getSnapshotPartsFromBody')->with($parsedPad->body)->willReturn(['text' => 'plain text', 'html' => $html]);
 		$padFileService->method('withRestoredSnapshot')->willReturnCallback(
 			function (ParsedPadFile $pad, string $text, string $html, string $padId, string $padUrl, int $revision = -1): string {
 				$this->restoredRevision = $revision;
+				$this->restoredPadId = $padId;
 				return 'doc-after';
 			},
 		);
