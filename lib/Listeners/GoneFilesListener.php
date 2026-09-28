@@ -91,10 +91,15 @@ class GoneFilesListener implements IEventListener {
 	/** Removals that never count, however they come: versions and app data, previews among them. */
 	private const NEVER = ['files_versions/', 'appdata_'];
 
+	/** The trash app's events, by name: the classes are not there without it. */
+	private const MOVE_TO_TRASH = 'OCA\\Files_Trashbin\\Events\\MoveToTrashEvent';
+	private const BEFORE_RESTORE = 'OCA\\Files_Trashbin\\Events\\BeforeNodeRestoredEvent';
+	private const RESTORED = 'OCA\\Files_Trashbin\\Events\\NodeRestoredEvent';
+
 	/** @var array<int,true> files seen deleted for good, not yet marked */
 	private array $gone = [];
 
-	/** @var array<int,true> files marked in this request */
+	/** @var array<int,true> files whose rows were marked in this request */
 	private array $marked = [];
 
 	/** @var array<int,true> files marked in this request that the file cache has again, not yet cleared */
@@ -105,6 +110,9 @@ class GoneFilesListener implements IEventListener {
 
 	/** @var array<int,array{int,string}> by file id, the storage and path of each node being deleted: its BeforeNodeDeletedEvent without its NodeDeletedEvent yet */
 	private array $deleting = [];
+
+	/** @var array<int,array{int,string}> by file id, the storage and path in a trash of each node being restored */
+	private array $restoring = [];
 
 	/** @var \WeakMap<object,true> removals reported under ids that are not the files' */
 	private \WeakMap $misnumbered;
@@ -139,12 +147,23 @@ class GoneFilesListener implements IEventListener {
 				$fileIds = $this->leavingHomes[$uid] ?? [];
 				unset($this->leavingHomes[$uid]);
 				$this->bindingService->markGone($fileIds);
+			} elseif (self::is($event, self::MOVE_TO_TRASH) && method_exists($event, 'getNode')) {
+				$this->toTrash($event->getNode());
+			} elseif (self::is($event, self::BEFORE_RESTORE) && method_exists($event, 'getSource')) {
+				$this->startRestore($event->getSource());
+			} elseif (self::is($event, self::RESTORED) && method_exists($event, 'getSource')) {
+				$this->endRestore($event->getSource());
 			} elseif (method_exists($event, 'getCacheEntryRemovedEvents')) {
 				$this->block($event->getCacheEntryRemovedEvents());
 			}
 		} catch (\Throwable $e) {
 			$this->warn($e);
 		}
+	}
+
+	/** Whether the event is of the class named, which may not be there. */
+	private static function is(Event $event, string $class): bool {
+		return $event::class === $class;
 	}
 
 	/**
@@ -173,6 +192,8 @@ class GoneFilesListener implements IEventListener {
 			return;
 		}
 		$this->gone[$fileId] = true;
+		// Gone again after it came back: the latest word stands.
+		unset($this->back[$fileId]);
 		if (!$this->writesAtEnd) {
 			$this->writesAtEnd = true;
 			$this->atEnd(function (): void {
@@ -214,6 +235,47 @@ class GoneFilesListener implements IEventListener {
 		}
 	}
 
+	/**
+	 * The node being deleted goes to a trash: its delete is a move, and
+	 * what it removes from the file cache is not deleted for good. A move
+	 * to another storage whose cache is wrapped copies the file under new
+	 * ids and removes the old ones; counted, that would take the pad of a
+	 * file that sits in the trash.
+	 */
+	private function toTrash(mixed $node): void {
+		if ($node instanceof Node) {
+			try {
+				unset($this->deleting[$node->getId()]);
+			} catch (NotFoundException|InvalidPathException) {
+			}
+		}
+	}
+
+	/**
+	 * A node restored from a trash leaves it: what the restore removes
+	 * there - under new ids on the other side, when it crosses to a
+	 * storage whose cache is wrapped - is not deleted for good.
+	 */
+	private function startRestore(mixed $node): void {
+		if (!$node instanceof Node) {
+			return;
+		}
+		$fileId = $node->getId();
+		$place = $this->bindingService->placeOf($fileId);
+		if ($place !== null) {
+			$this->restoring[$fileId] = $place;
+		}
+	}
+
+	private function endRestore(mixed $node): void {
+		if ($node instanceof Node) {
+			try {
+				unset($this->restoring[$node->getId()]);
+			} catch (NotFoundException|InvalidPathException) {
+			}
+		}
+	}
+
 	private function counts(CacheEntryRemovedEvent $event): bool {
 		$path = $event->getPath();
 		foreach (self::NEVER as $prefix) {
@@ -221,15 +283,22 @@ class GoneFilesListener implements IEventListener {
 				return false;
 			}
 		}
-		return $this->isBeingDeleted($event->getStorageId(), $path)
+		if (self::isUnder($this->restoring, $event->getStorageId(), $path)) {
+			return false;
+		}
+		return self::isUnder($this->deleting, $event->getStorageId(), $path)
 			|| str_starts_with($path, BindingService::USER_TRASH_PATH . 'files/')
 			|| str_starts_with($path, BindingService::TEAM_TRASH_PATH)
 			|| (str_starts_with($path, 'trash/') && self::isTeamFolderStorage($event->getStorage()));
 	}
 
-	/** An entry of a node being deleted: the node's own, or one under it. */
-	private function isBeingDeleted(int $storageId, string $path): bool {
-		foreach ($this->deleting as [$storage, $root]) {
+	/**
+	 * An entry of one of these nodes: the node's own, or one under it.
+	 *
+	 * @param array<int,array{int,string}> $places
+	 */
+	private static function isUnder(array $places, int $storageId, string $path): bool {
+		foreach ($places as [$storage, $root]) {
 			if ($storage === $storageId && ($root === '' || $path === $root || str_starts_with($path, $root . '/'))) {
 				return true;
 			}
@@ -251,8 +320,9 @@ class GoneFilesListener implements IEventListener {
 		if ($this->gone !== []) {
 			$fileIds = array_keys($this->gone);
 			$this->gone = [];
-			$this->marked += array_fill_keys($fileIds, true);
-			$this->bindingService->markIfGone($fileIds);
+			// Only files with a row are kept: a cleanup over millions of
+			// entries holds a handful, not all it removed.
+			$this->marked += array_fill_keys($this->bindingService->markIfGone($fileIds), true);
 		}
 		if ($this->back !== []) {
 			$fileIds = array_keys($this->back);

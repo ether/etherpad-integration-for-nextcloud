@@ -124,6 +124,10 @@ class Application extends App implements IBootstrap {
 			\OCP\Files\Events\Node\NodeDeletedEvent::class,
 			\OCP\User\Events\BeforeUserDeletedEvent::class,
 			\OCP\User\Events\UserDeletedEvent::class,
+			// The trash app's, as strings: its classes are not there without it.
+			'OCA\\Files_Trashbin\\Events\\MoveToTrashEvent',
+			'OCA\\Files_Trashbin\\Events\\BeforeNodeRestoredEvent',
+			'OCA\\Files_Trashbin\\Events\\NodeRestoredEvent',
 		] as $event) {
 			$context->registerEventListener($event, \OCA\EtherpadNextcloud\Listeners\GoneFilesListener::class);
 		}

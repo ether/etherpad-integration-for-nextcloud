@@ -175,10 +175,11 @@ class BindingServiceTest extends TestCase {
 		]);
 		$service = new BindingService($table, new FixedClock(500));
 
-		$service->markIfGone(range(1, 1200));
+		$marked = $service->markIfGone([...range(1, 1200), 5000]);
 
 		$pending = array_keys(array_filter(array_column($table->rows, 'state', 'file_id'), static fn (string $state): bool => $state === BindingService::STATE_PENDING_DELETE));
 		$this->assertSame(array_values(array_diff(range(1, 1200), [2, 1100])), $pending);
+		$this->assertSame($pending, $marked, 'what it marked: no file without a row, none still there');
 		$service->markIfGone([]);
 	}
 

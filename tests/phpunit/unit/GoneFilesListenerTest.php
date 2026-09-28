@@ -6,6 +6,9 @@ namespace OCA\EtherpadNextcloud\Tests\Unit;
 
 use OCA\EtherpadNextcloud\Listeners\GoneFilesListener;
 use OCA\EtherpadNextcloud\Service\BindingService;
+use OCA\Files_Trashbin\Events\BeforeNodeRestoredEvent;
+use OCA\Files_Trashbin\Events\MoveToTrashEvent;
+use OCA\Files_Trashbin\Events\NodeRestoredEvent;
 use OCP\EventDispatcher\Event;
 use OCP\Files\Cache\CacheEntryInsertedEvent;
 use OCP\Files\Cache\CacheEntryRemovedEvent;
@@ -37,6 +40,8 @@ class GoneFilesListenerTest extends TestCase {
 	private array $atEnd = [];
 	/** @var array<int,array{int,string}> by file id, where the file cache has a node */
 	private array $places = [];
+	/** @var list<int> files that have no row, which markIfGone() does not report as marked */
+	private array $withoutRow = [];
 	private BindingService $bindings;
 	private IUserMountCache $mounts;
 	private LoggerInterface $logger;
@@ -45,9 +50,11 @@ class GoneFilesListenerTest extends TestCase {
 		$this->calls = [];
 		$this->atEnd = [];
 		$this->places = [];
+		$this->withoutRow = [];
 		$this->bindings = $this->createMock(BindingService::class);
-		$this->bindings->method('markIfGone')->willReturnCallback(function (array $fileIds): void {
+		$this->bindings->method('markIfGone')->willReturnCallback(function (array $fileIds): array {
 			$this->calls[] = ['mark', $fileIds];
+			return array_values(array_diff($fileIds, $this->withoutRow));
 		});
 		$this->bindings->method('markGone')->willReturnCallback(function (array $fileIds): void {
 			$this->calls[] = ['mark home', $fileIds];
@@ -150,6 +157,87 @@ class GoneFilesListenerTest extends TestCase {
 		$this->endRequest();
 
 		$this->assertSame([['mark', [100]]], $this->calls);
+	}
+
+	/**
+	 * A delete that goes to a trash is a move: what it removes from the file
+	 * cache - the old ids, when a move to a storage whose cache is wrapped
+	 * copies the file under new ones - is not deleted for good. Removals
+	 * of another delete in the same request still count.
+	 */
+	public function testADeleteThatGoesToATrashCountsNothing(): void {
+		$listener = $this->listener();
+		$trashed = $this->node(100, 'Notes.pad');
+		$deleted = $this->node(101, 'Other.pad');
+
+		$listener->handle(new BeforeNodeDeletedEvent($trashed));
+		$listener->handle(new MoveToTrashEvent($trashed));
+		$listener->handle($this->removed(100, 'Notes.pad', 'local::/mnt/share/'));
+		$listener->handle(new NodeDeletedEvent($trashed));
+		$listener->handle(new BeforeNodeDeletedEvent($deleted));
+		$listener->handle($this->removed(101, 'Other.pad', 'local::/mnt/share/'));
+		$listener->handle(new NodeDeletedEvent($deleted));
+		$this->endRequest();
+
+		$this->assertSame([['mark', [101]]], $this->calls);
+	}
+
+	/**
+	 * A restore takes the file out of a trash: what it removes there is not
+	 * deleted for good. Once the restore is done, a removal from the trash
+	 * counts again.
+	 */
+	public function testARestoreCountsNothingItRemovesFromATrash(): void {
+		$listener = $this->listener();
+		$inTrash = $this->node(100, 'files_trashbin/files/Notes.pad.d1');
+		$restored = $this->node(200, 'Notes.pad');
+
+		$listener->handle(new BeforeNodeRestoredEvent($inTrash, $restored));
+		$listener->handle($this->removed(100, 'files_trashbin/files/Notes.pad.d1'));
+		$listener->handle(new NodeRestoredEvent($inTrash, $restored));
+		$listener->handle($this->removed(7, 'files_trashbin/files/Other.pad.d1'));
+		$this->endRequest();
+
+		$this->assertSame([['mark', [7]]], $this->calls);
+	}
+
+	/**
+	 * A file marked, back in the file cache, then gone again, is deleted for
+	 * good: the latest word stands, and nothing takes its mark back.
+	 */
+	public function testGoneAgainAfterComingBackStaysMarked(): void {
+		$listener = $this->listener();
+		$node = $this->node(7, 'files/Notes.pad');
+
+		$listener->handle(new BeforeNodeDeletedEvent($node));
+		$listener->handle($this->removed(7, 'files/Notes.pad'));
+		$listener->handle(new NodeDeletedEvent($node));
+		$listener->handle($this->inserted(7));
+		$listener->handle($this->removed(7, 'files_trashbin/files/Notes.pad.d1'));
+		$this->endRequest();
+
+		$this->assertSame([['mark', [7]], ['mark', [7]]], $this->calls);
+	}
+
+	/**
+	 * Only files with a row are kept as marked: a cleanup over millions of
+	 * entries holds the handful that were pads. One without a row that comes
+	 * back is none of the listener's business.
+	 */
+	public function testOnlyFilesWithARowAreKeptAsMarked(): void {
+		$this->withoutRow = [8];
+		$listener = $this->listener();
+		$node = $this->node(100, 'files');
+
+		$listener->handle(new BeforeNodeDeletedEvent($node));
+		$listener->handle($this->removed(7, 'files/Notes.pad'));
+		$listener->handle($this->removed(8, 'files/Photo.jpg'));
+		$listener->handle(new NodeDeletedEvent($node));
+		$listener->handle($this->inserted(7));
+		$listener->handle($this->inserted(8));
+		$this->endRequest();
+
+		$this->assertSame([['mark', [7, 8]], ['clear', [7]]], $this->calls);
 	}
 
 	/**

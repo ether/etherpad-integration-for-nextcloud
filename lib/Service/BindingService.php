@@ -188,24 +188,40 @@ class BindingService {
 	}
 
 	/**
-	 * Of the files a removal from the file cache reported, marks those the
-	 * file cache has nothing of by now (markGone). A removal reported under
-	 * an id that is not the file's - Nextcloud 34 up to 34.0.4 misnumbers a
-	 * folder's descendants - so never marks a file that is still there.
+	 * Of the files a removal from the file cache reported, marks the active
+	 * rows of those the file cache has nothing of by now (markGone). A
+	 * removal reported under an id that is not the file's - Nextcloud 34 up
+	 * to 34.0.4 misnumbers a folder's descendants - so never marks a file
+	 * that is still there. The rows are looked up first: most files removed
+	 * have none, and cost no look into the file cache.
 	 *
 	 * @param list<int> $fileIds
+	 * @return list<int> the files whose rows it marked
 	 */
-	public function markIfGone(array $fileIds): void {
+	public function markIfGone(array $fileIds): array {
+		$marked = [];
 		foreach (array_chunk($fileIds, 500) as $chunk) {
+			$qb = $this->db->getQueryBuilder();
+			$qb->select('file_id')
+				->from(self::TABLE)
+				->where($qb->expr()->in('file_id', $qb->createNamedParameter($chunk, IQueryBuilder::PARAM_INT_ARRAY)))
+				->andWhere($qb->expr()->eq('state', $qb->createNamedParameter(self::STATE_ACTIVE)));
+			$rows = $this->fileIdsOf($qb);
+			if ($rows === []) {
+				continue;
+			}
 			$qb = $this->db->getQueryBuilder();
 			$qb->select('fileid')
 				->from('filecache')
-				->where($qb->expr()->in('fileid', $qb->createNamedParameter($chunk, IQueryBuilder::PARAM_INT_ARRAY)));
+				->where($qb->expr()->in('fileid', $qb->createNamedParameter($rows, IQueryBuilder::PARAM_INT_ARRAY)));
 			$result = $qb->executeQuery();
 			$present = array_map(static fn (array $row): int => DbRows::int($row, 'fileid'), DbRows::all($result->fetchAll()));
 			$result->closeCursor();
-			$this->markGone(array_values(array_diff($chunk, $present)));
+			$gone = array_values(array_diff($rows, $present));
+			$this->markGone($gone);
+			array_push($marked, ...$gone);
 		}
+		return $marked;
 	}
 
 	/**
@@ -335,14 +351,7 @@ class BindingService {
 
 	/** Whether the file cache has nothing left of the file: asked once more right before its pad goes. */
 	public function isFileGone(int $fileId): bool {
-		$qb = $this->db->getQueryBuilder();
-		$qb->select('fileid')
-			->from('filecache')
-			->where($qb->expr()->eq('fileid', $qb->createNamedParameter($fileId, IQueryBuilder::PARAM_INT)));
-		$result = $qb->executeQuery();
-		$found = DbRows::one($result->fetch());
-		$result->closeCursor();
-		return $found === null;
+		return $this->placeOf($fileId) === null;
 	}
 
 	public function createBinding(int $fileId, string $padId, string $accessMode): void {
