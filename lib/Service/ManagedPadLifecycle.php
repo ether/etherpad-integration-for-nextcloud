@@ -216,9 +216,9 @@ class ManagedPadLifecycle {
 	 * - Absent when it has no pad under that id: a protected pad, whose
 	 *   session would open nothing, or a public pad whose file holds saved
 	 *   content.
-	 * - Behind when it has one without a single revision while the file's
-	 *   snapshot was taken at a later one, and the pad's text is not the
-	 *   text the file saved: a public pad Etherpad made anew when someone
+	 * - Behind when it has one without a single revision while the file
+	 *   holds saved content, and the pad's text is not the text the file
+	 *   saved: a public pad Etherpad made anew when someone
 	 *   visited its address - with its default text, and the visitor as
 	 *   its author. A pad at revision 0 holding the saved text had its
 	 *   history cut short in Etherpad, and nothing is lost.
@@ -240,7 +240,7 @@ class ManagedPadLifecycle {
 	 * @throws \Throwable when Etherpad gives any other answer, or none
 	 */
 	public function howLost(string $padId, string $accessMode, int $snapshotRevision, string $savedText, int $timeoutSeconds = self::PROBE_TIMEOUT_SECONDS): ?PadPresence {
-		if (!self::holdsSavedContent($accessMode, $snapshotRevision)) {
+		if (!self::holdsSavedContent($accessMode, $snapshotRevision, $savedText)) {
 			return null;
 		}
 		try {
@@ -251,7 +251,7 @@ class ManagedPadLifecycle {
 			}
 			return PadPresence::Absent;
 		}
-		if ($revisions !== 0 || $snapshotRevision <= 0) {
+		if ($revisions !== 0 || !self::savedAnything($snapshotRevision, $savedText)) {
 			return null;
 		}
 		return self::sameText($this->etherpadClient->getText($padId, $timeoutSeconds), $savedText) ? null : PadPresence::Behind;
@@ -293,10 +293,20 @@ class ManagedPadLifecycle {
 	/**
 	 * Whether losing the pad would lose anything the file holds: always for
 	 * a protected pad, whose session opens nothing without it, and for a
-	 * public pad once its file has saved content (`snapshot_rev` above 0).
+	 * public pad once its file has saved content.
 	 */
-	public static function holdsSavedContent(string $accessMode, int $snapshotRevision): bool {
-		return $accessMode === BindingService::ACCESS_PROTECTED || $snapshotRevision > 0;
+	public static function holdsSavedContent(string $accessMode, int $snapshotRevision, string $savedText): bool {
+		return $accessMode === BindingService::ACCESS_PROTECTED || self::savedAnything($snapshotRevision, $savedText);
+	}
+
+	/**
+	 * Whether the file has saved content: a snapshot taken past a pad's
+	 * first revision (`snapshot_rev` above 0), or any text at all - a file
+	 * made from a template by 1.1.0-beta.1 holds its content at
+	 * `snapshot_rev: 0`, and a new file holds none.
+	 */
+	private static function savedAnything(int $snapshotRevision, string $savedText): bool {
+		return $snapshotRevision > 0 || trim($savedText) !== '';
 	}
 
 	/**

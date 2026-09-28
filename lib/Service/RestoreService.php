@@ -333,7 +333,7 @@ class RestoreService {
 		if ($pad->isExternal || $pad->padId !== $binding->padId) {
 			return self::REASON_ROW_NAMES_OTHER_PAD;
 		}
-		if (!ManagedPadLifecycle::holdsSavedContent($binding->accessMode, $pad->snapshotRev)) {
+		if (!ManagedPadLifecycle::holdsSavedContent($binding->accessMode, $pad->snapshotRev, $pad->savedText)) {
 			return self::REASON_NOTHING_SAVED;
 		}
 		$lost = $this->padLifecycle->howLost($binding->padId, $binding->accessMode, $pad->snapshotRev, $pad->savedText);

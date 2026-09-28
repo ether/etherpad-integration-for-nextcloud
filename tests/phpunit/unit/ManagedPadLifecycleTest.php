@@ -29,37 +29,45 @@ use Psr\Log\LoggerInterface;
 class ManagedPadLifecycleTest extends TestCase {
 	/**
 	 * Lost is gone altogether - a protected pad, or a public one whose file
-	 * holds saved content - or made anew without a revision while the
-	 * file's snapshot holds more. A public pad with nothing saved, Etherpad
-	 * makes on a visit; behind but written into is not lost, nor is an
-	 * untouched pad whose file never had a snapshot, nor a pad at revision
-	 * 0 holding the text the file saved - its history cut short in
-	 * Etherpad. A pad at revision 0 with other text - Etherpad's default,
-	 * from a visit - is made anew. Anything else Etherpad answers, or its
-	 * silence, is the caller's. Each question within a few seconds.
+	 * holds saved content - or made anew without a revision while the file
+	 * holds saved content. Saved content is a snapshot past the first
+	 * revision, or any text: a file made from a template by 1.1.0-beta.1
+	 * holds its content at revision 0. A public pad with nothing saved,
+	 * Etherpad makes on a visit; behind but written into is not lost, nor is
+	 * an untouched pad whose file holds nothing, nor a pad at revision 0
+	 * holding the text the file saved - its history cut short in Etherpad.
+	 * A pad at revision 0 with other text - Etherpad's default, from a
+	 * visit - is made anew. Anything else Etherpad answers, or its silence,
+	 * is the caller's. Each question within a few seconds.
 	 */
 	public function testHowAPadIsLost(): void {
 		$gone = new EtherpadRefusedException('padID does not exist');
+		// Etherpad's answer, access mode, snapshot_rev, verdict, the pad's
+		// text, the file's saved text.
 		$cases = [
-			'protected, gone' => [$gone, BindingService::ACCESS_PROTECTED, -1, PadPresence::Absent],
-			'public, gone, with saved content' => [$gone, BindingService::ACCESS_PUBLIC, 5, PadPresence::Absent],
-			'public, gone, nothing saved' => [$gone, BindingService::ACCESS_PUBLIC, 0, null],
-			'public, gone, snapshot unknown' => [$gone, BindingService::ACCESS_PUBLIC, -1, null],
-			'made anew on a visit, with the default text' => [0, BindingService::ACCESS_PUBLIC, 5, PadPresence::Behind, "Welcome to Etherpad!\n"],
-			'made anew through the API, empty' => [0, BindingService::ACCESS_PUBLIC, 5, PadPresence::Behind, "\n"],
-			'behind, written into' => [3, BindingService::ACCESS_PUBLIC, 5, null],
-			'history cut short, text as saved' => [0, BindingService::ACCESS_PUBLIC, 5, null, "Saved text\r\n\n"],
-			'there' => [7, BindingService::ACCESS_PROTECTED, 5, null],
-			'untouched, no snapshot' => [0, BindingService::ACCESS_PUBLIC, 0, null],
+			'protected, gone' => [$gone, BindingService::ACCESS_PROTECTED, -1, PadPresence::Absent, '', ''],
+			'public, gone, with saved content' => [$gone, BindingService::ACCESS_PUBLIC, 5, PadPresence::Absent, '', 'Saved text'],
+			'public, gone, nothing saved' => [$gone, BindingService::ACCESS_PUBLIC, 0, null, '', ''],
+			'public, gone, only a newline saved' => [$gone, BindingService::ACCESS_PUBLIC, 0, null, '', "\n"],
+			'public, gone, snapshot unknown' => [$gone, BindingService::ACCESS_PUBLIC, -1, null, '', ''],
+			'public, gone, a template\'s text at revision 0' => [$gone, BindingService::ACCESS_PUBLIC, 0, PadPresence::Absent, '', 'Saved text'],
+			'made anew on a visit, with the default text' => [0, BindingService::ACCESS_PUBLIC, 5, PadPresence::Behind, "Welcome to Etherpad!\n", 'Saved text'],
+			'made anew on a visit, a template\'s text at revision 0' => [0, BindingService::ACCESS_PUBLIC, 0, PadPresence::Behind, "Welcome to Etherpad!\n", 'Saved text'],
+			'made anew through the API, empty' => [0, BindingService::ACCESS_PUBLIC, 5, PadPresence::Behind, "\n", 'Saved text'],
+			'behind, written into' => [3, BindingService::ACCESS_PUBLIC, 5, null, '', 'Saved text'],
+			'history cut short, text as saved' => [0, BindingService::ACCESS_PUBLIC, 5, null, "Saved text\r\n\n", 'Saved text'],
+			'a template\'s pad untouched at revision 0' => [0, BindingService::ACCESS_PUBLIC, 0, null, "Saved text\n", 'Saved text'],
+			'there' => [7, BindingService::ACCESS_PROTECTED, 5, null, '', 'Saved text'],
+			'untouched, no snapshot' => [0, BindingService::ACCESS_PUBLIC, 0, null, "Welcome to Etherpad!\n", ''],
+			'protected, new file, its pad untouched' => [0, BindingService::ACCESS_PROTECTED, -1, null, "Welcome to Etherpad!\n", ''],
 		];
-		foreach ($cases as $case => $row) {
-			[$answer, $accessMode, $snapshot, $lost] = $row;
+		foreach ($cases as $case => [$answer, $accessMode, $snapshot, $lost, $padText, $savedText]) {
 			$client = $this->createMock(EtherpadClient::class);
 			$call = $client->method('getRevisionsCount')->with('pad-1', ManagedPadLifecycle::PROBE_TIMEOUT_SECONDS);
 			$answer instanceof \Throwable ? $call->willThrowException($answer) : $call->willReturn($answer);
-			$client->method('getText')->with('pad-1', ManagedPadLifecycle::PROBE_TIMEOUT_SECONDS)->willReturn($row[4] ?? '');
+			$client->method('getText')->with('pad-1', ManagedPadLifecycle::PROBE_TIMEOUT_SECONDS)->willReturn($padText);
 
-			$this->assertSame($lost, $this->lifecycle($client)->howLost('pad-1', $accessMode, $snapshot, 'Saved text'), $case);
+			$this->assertSame($lost, $this->lifecycle($client)->howLost('pad-1', $accessMode, $snapshot, $savedText), $case);
 		}
 
 		foreach ([new EtherpadClientException('Etherpad API request failed'), new EtherpadRefusedException('apikey is invalid')] as $error) {
@@ -412,7 +420,9 @@ class ManagedPadLifecycleTest extends TestCase {
 		$client->expects($this->never())->method('getRevisionsCount');
 
 		foreach ([-1, 0] as $snapshot) {
-			$this->assertNull($this->lifecycle($client)->howLost('pad-1', BindingService::ACCESS_PUBLIC, $snapshot, 'Saved text'));
+			foreach (['', "\n", " \r\n"] as $savedText) {
+				$this->assertNull($this->lifecycle($client)->howLost('pad-1', BindingService::ACCESS_PUBLIC, $snapshot, $savedText));
+			}
 		}
 	}
 

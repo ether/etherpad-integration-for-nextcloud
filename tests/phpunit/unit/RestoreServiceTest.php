@@ -1038,10 +1038,31 @@ class RestoreServiceTest extends TestCase {
 		$etherpadClient = $this->createMock(EtherpadClient::class);
 		$etherpadClient->expects($this->never())->method('getRevisionsCount');
 
-		$result = $this->buildRowRestoreService(709, 'old-pad', $bindingService, $etherpadClient, snapshotRev: -1)
+		$result = $this->buildRowRestoreService(709, 'old-pad', $bindingService, $etherpadClient, snapshotRev: -1, savedText: '')
 			->restore($this->padFile(709, 'Untouched.pad'));
 
 		$this->assertSame(['status' => LifecycleResult::SKIPPED, 'reason' => 'nothing_saved'], $result);
+	}
+
+	/**
+	 * A file made from a template by 1.1.0-beta.1 holds its content at
+	 * `snapshot_rev: 0`. That is saved content all the same: a restore
+	 * whose public pad Etherpad lost makes the new pad from it.
+	 */
+	public function testARestoreCountsATemplatesTextAtRevisionZeroAsSaved(): void {
+		$fileId = 711;
+		$newPadId = 'r-old-pad-abc123def456';
+		$bindingService = $this->createMock(BindingService::class);
+		$bindingService->expects($this->once())->method('rebind')->with($fileId, 'old-pad', BindingService::STATE_ACTIVE, $newPadId, BindingService::STATE_ACTIVE)->willReturn(true);
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->method('getRevisionsCount')->willReturnCallback(static fn (string $padId): int => $padId === 'old-pad' ? throw new EtherpadRefusedException('padID does not exist') : 1);
+		$etherpadClient->expects($this->once())->method('createPad')->with($newPadId);
+
+		$result = $this->buildRowRestoreService($fileId, 'old-pad', $bindingService, $etherpadClient, snapshotRev: 0, savedText: 'Agenda')
+			->restore($this->padFile($fileId, 'Template.pad'));
+
+		$this->assertSame(LifecycleResult::RESTORED, $result['status']);
+		$this->assertSame($newPadId, $result['new_pad_id']);
 	}
 
 	/** An active row whose access mode the app does not know stays as it is: no new pad, no row taken away. */
@@ -1168,6 +1189,7 @@ class RestoreServiceTest extends TestCase {
 		?LoggerInterface $padLifecycleLogger = null,
 		?TestFaults $testFaults = null,
 		?UserNodeResolver $nodes = null,
+		string $savedText = 'body',
 	): RestoreService {
 		$bindingService->method('findByFileId')->with($fileId)->willReturn(new Binding(fileId: $fileId, padId: $oldPadId, accessMode: $accessMode, state: $state));
 
@@ -1180,7 +1202,7 @@ class RestoreServiceTest extends TestCase {
 			padUrl: '',
 			isExternal: false,
 			snapshotRev: $snapshotRev,
-			savedText: 'body',
+			savedText: $savedText,
 		);
 		// 'doc-after' is the file once written, naming the pad it was written for.
 		$padFileService->method('readPad')->willReturnCallback(fn (string $content): ParsedPadFile => match ($content) {
