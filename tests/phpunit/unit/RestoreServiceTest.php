@@ -106,24 +106,6 @@ class RestoreServiceTest extends TestCase {
 	}
 
 	/**
-	 * An access mode nobody knows must not become an unprotected pad - and
-	 * must not take the file's own restore down either, so it is skipped
-	 * the way every other unusable binding is.
-	 */
-	public function testRestoreSkipsABindingWithAnUnknownAccessMode(): void {
-		$fileId = 91;
-		$etherpadClient = $this->buildEtherpadWithoutThePad();
-		$etherpadClient->expects($this->never())->method('createPad');
-		$etherpadClient->expects($this->never())->method('createGroup');
-
-		$result = $this->buildRowRestoreService($fileId, 'old-pad', $this->createMock(BindingService::class), $etherpadClient, accessMode: 'something-else')
-			->restore($this->padFile($fileId, 'Restored.pad'));
-
-		$this->assertSame(LifecycleResult::SKIPPED, $result['status']);
-		$this->assertSame('unknown_access_mode', $result['reason']);
-	}
-
-	/**
 	 * No replacement can be made - Etherpad gone while it is seeded - and
 	 * the row stays on the lost pad: the pad is the file's, only lost, and
 	 * the next open offers the new one again.
@@ -194,38 +176,6 @@ class RestoreServiceTest extends TestCase {
 
 		$this->assertSame(LifecycleResult::SKIPPED, $result['status']);
 		$this->assertSame('binding_state_transition_conflict', $result['reason']);
-	}
-
-	/**
-	 * A write that fails after the claim leaves the row naming a pad the
-	 * file never learned of. The row goes back onto the old pad, where the
-	 * file still points, and the replacement goes.
-	 */
-	public function testRestoreMovesTheClaimBackWhenTheWriteFails(): void {
-		$fileId = 88;
-		$newPadId = 'r-old-pad-abc123def456';
-		$bindingService = $this->createMock(BindingService::class);
-		$rebinds = [];
-		$bindingService->method('rebind')->willReturnCallback(static function (int $id, string $from, string $fromState, string $to, string $toState) use (&$rebinds): bool {
-			$rebinds[] = [$from, $fromState, $to, $toState];
-			return true;
-		});
-		$bindingService->method('isBoundTo')->with($fileId, $newPadId)->willReturn(false);
-		$bindingService->expects($this->never())->method('deleteActiveBinding');
-
-		$etherpadClient = $this->buildEtherpadWithoutThePad();
-		$etherpadClient->expects($this->once())->method('deletePad')->with($newPadId);
-
-		$file = $this->padFile($fileId, 'Restored.pad');
-		$file->expects($this->once())->method('putContent')->willThrowException(new \RuntimeException('disk full'));
-
-		try {
-			$this->buildRowRestoreService($fileId, 'old-pad', $bindingService, $etherpadClient)->restore($file);
-			$this->fail('the failed write should reach the caller');
-		} catch (LifecycleException) {
-		}
-		$active = BindingService::STATE_ACTIVE;
-		$this->assertSame([['old-pad', $active, $newPadId, $active], [$newPadId, $active, 'old-pad', $active]], $rebinds);
 	}
 
 	/**
@@ -968,16 +918,27 @@ class RestoreServiceTest extends TestCase {
 	 * its pad is the file's, only lost, and the next open offers the new
 	 * pad again. A write that fails after the claim moves the row back onto
 	 * the old pad, where the file still points, and the new pad goes; only
-	 * a row that cannot be moved back goes with it.
+	 * a row that cannot be moved back goes with it. The same for a restore
+	 * and for a recovery an open offered.
 	 */
 	public function testAFailedReplacementOfALostPadKeepsTheRow(): void {
-		foreach (['moved back' => true, 'not moved back' => false] as $case => $movesBack) {
+		$entries = [
+			'restore' => static fn (RestoreService $service, File $file): array => $service->restore($file),
+			'recovery' => static fn (RestoreService $service, File $file): array => $service->recoverFromSnapshot($file),
+		];
+		$cases = [];
+		foreach ($entries as $entry => $run) {
+			foreach (['moved back' => true, 'not moved back' => false] as $branch => $movesBack) {
+				$cases[$entry . ', ' . $branch] = [$run, $movesBack];
+			}
+		}
+		foreach ($cases as $case => [$run, $movesBack]) {
 			$fileId = 706;
 			$newPadId = 'r-old-pad-abc123def456';
 			$bindingService = $this->createMock(BindingService::class);
 			$rebinds = [];
-			$bindingService->method('rebind')->willReturnCallback(static function (int $id, string $from, string $fromState, string $to) use (&$rebinds, $movesBack, $newPadId): bool {
-				$rebinds[] = [$from, $to];
+			$bindingService->method('rebind')->willReturnCallback(static function (int $id, string $from, string $fromState, string $to, string $toState) use (&$rebinds, $movesBack, $newPadId): bool {
+				$rebinds[] = [$from, $fromState, $to, $toState];
 				return $from !== $newPadId || $movesBack;
 			});
 			$bindingService->method('isBoundTo')->willReturn(!$movesBack);
@@ -990,12 +951,13 @@ class RestoreServiceTest extends TestCase {
 			$file->method('putContent')->willThrowException(new LockedException('locked'));
 
 			try {
-				$this->buildRowRestoreService($fileId, 'old-pad', $bindingService, $etherpadClient)->recoverFromSnapshot($file);
+				$run($this->buildRowRestoreService($fileId, 'old-pad', $bindingService, $etherpadClient), $file);
 				$this->fail($case . ': the failure should reach the caller');
 			} catch (LifecycleException) {
 			}
 
-			$this->assertSame([['old-pad', $newPadId], [$newPadId, 'old-pad']], $rebinds, $case);
+			$active = BindingService::STATE_ACTIVE;
+			$this->assertSame([['old-pad', $active, $newPadId, $active], [$newPadId, $active, 'old-pad', $active]], $rebinds, $case);
 		}
 	}
 
@@ -1095,7 +1057,12 @@ class RestoreServiceTest extends TestCase {
 		$this->assertSame($newPadId, $result['new_pad_id']);
 	}
 
-	/** An active row whose access mode the app does not know stays as it is: no new pad, no row taken away. */
+	/**
+	 * An active row whose access mode the app does not know stays as it is:
+	 * no new pad - which must not become an unprotected one - and no row
+	 * taken away. Skipped, the way every other unusable row is, so the
+	 * file's own restore goes on.
+	 */
 	public function testAnActiveRowOfAnUnknownModeStays(): void {
 		$bindingService = $this->createMock(BindingService::class);
 		$bindingService->expects($this->never())->method('rebind');
@@ -1103,6 +1070,7 @@ class RestoreServiceTest extends TestCase {
 		$etherpadClient = $this->createMock(EtherpadClient::class);
 		$etherpadClient->method('getRevisionsCount')->willThrowException(new EtherpadRefusedException('padID does not exist'));
 		$etherpadClient->expects($this->never())->method('createPad');
+		$etherpadClient->expects($this->never())->method('createGroup');
 
 		$result = $this->buildRowRestoreService(710, 'old-pad', $bindingService, $etherpadClient, accessMode: 'mystery')
 			->restore($this->padFile(710, 'Odd.pad'));

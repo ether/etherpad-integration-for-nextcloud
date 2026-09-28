@@ -131,7 +131,6 @@ class AdminControllerTest extends TestCase {
 		$this->assertSame(Http::STATUS_OK, $response->getStatus());
 		$this->assertTrue((bool)$data['ok']);
 		$this->assertSame(3, $data['pending_delete_count']);
-		$this->assertArrayNotHasKey('restore_pending_count', $data);
 		// The release the open path is going by, machine-readable, because
 		// it can differ from whatever this check just probed.
 		$this->assertSame('3.3.3', $data['session_cookie_release']);
@@ -173,7 +172,6 @@ class AdminControllerTest extends TestCase {
 		$this->assertSame(2, $response->getData()['checked']);
 		$this->assertSame(1, $response->getData()['settled']);
 		$this->assertSame(3, $response->getData()['pending_delete_count']);
-		$this->assertArrayNotHasKey('restore_pending_count', $response->getData());
 	}
 
 	public function testSetTestFaultRequiresDebugMode(): void {

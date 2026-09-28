@@ -192,6 +192,11 @@ test.describe('a pad Etherpad has lost', () => {
 		}
 	})
 
+	/**
+	 * An admin making the pad anew through the API, with Etherpad's default
+	 * text: the same rule as the visit above, and the case the docs name for
+	 * admins, without a browser.
+	 */
 	test('a public pad made anew through the API counts as lost', async () => {
 		const name = uniquePadName('lost-remade')
 		let padId = ''
@@ -199,7 +204,6 @@ test.describe('a pad Etherpad has lost', () => {
 			const saved = await padWithSavedText(name, 'public')
 			padId = saved.padId
 			await etherpadApiPost('deletePad', { padID: padId })
-			// What a visit to the pad's address does once it is gone.
 			await etherpadApiPost('createPad', { padID: padId })
 
 			await expectRecovered(name, saved.fileId, padId, saved.marker)
