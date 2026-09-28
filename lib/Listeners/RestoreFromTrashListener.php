@@ -12,7 +12,6 @@ namespace OCA\EtherpadNextcloud\Listeners;
 
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
 use OCA\EtherpadNextcloud\Service\LifecycleResult;
-use OCA\EtherpadNextcloud\Service\LifecycleService;
 use OCA\EtherpadNextcloud\Service\RestoreService;
 use OCA\EtherpadNextcloud\Service\UserNodeResolver;
 use OCA\EtherpadNextcloud\Util\PadFileType;
@@ -40,7 +39,7 @@ class RestoreFromTrashListener implements IEventListener {
 	private array $decidedByHook = [];
 
 	public function __construct(
-		private LifecycleService $lifecycleService,
+		private RestoreService $restoreService,
 		private IUserSession $userSession,
 		private UserNodeResolver $userNodeResolver,
 		private LoggerInterface $logger,
@@ -121,7 +120,7 @@ class RestoreFromTrashListener implements IEventListener {
 			unset($this->decidedByHook[$fileId]);
 		}
 		try {
-			$result = $this->lifecycleService->handleRestore($node);
+			$result = $this->restoreService->restore($node);
 			if ($fileId !== null && $via === self::VIA_HOOK && ($result['reason'] ?? '') !== RestoreService::REASON_FILE_UNREADABLE) {
 				$this->decidedByHook[$fileId] = true;
 			}
@@ -244,8 +243,8 @@ class RestoreFromTrashListener implements IEventListener {
 	}
 
 	/**
-	 * A node handleRestore can take, or a skip that says why - the one
-	 * standard both ways in are held to. handleRestore reads the id on its
+	 * A node RestoreService::restore() can take, or a skip that says why -
+	 * the one standard both ways in are held to. restore() reads the id on its
 	 * first line, so a node that cannot answer for one would throw there
 	 * instead, and be reported as a failed restore of its pad rather than
 	 * passed over with its reason.

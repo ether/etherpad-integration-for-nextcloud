@@ -56,13 +56,6 @@ class AppConfigServiceTest extends TestCase {
 	}
 
 	/** Read as the admin API stored it, surrounding blanks aside. */
-	public function testTheTestFaultIsReadTrimmed(): void {
-		$config = $this->createMock(IConfig::class);
-		$config->method('getAppValue')->with('etherpad_nextcloud', 'test_fault', '')->willReturn(" restore_read_lock\n");
-
-		$this->assertSame('restore_read_lock', $this->service($config)->getTestFault());
-	}
-
 	private function service(IConfig $config, ?IAppConfig $appConfig = null): AppConfigService {
 		return new AppConfigService($config, $this->createMock(TrustedEmbedOriginsNormalizer::class), $appConfig ?? $this->createMock(IAppConfig::class));
 	}

@@ -13,7 +13,6 @@ use OCA\EtherpadNextcloud\Exception\UnauthorizedRequestException;
 use OCA\EtherpadNextcloud\Service\AdminConsistencyCheckResponseBuilder;
 use OCA\EtherpadNextcloud\Service\AdminSettingsRepository;
 use OCA\EtherpadNextcloud\Service\AdminSettingsValidator;
-use OCA\EtherpadNextcloud\Service\AdminTestFaultService;
 use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\EtherpadNextcloud\Service\ConsistencyCheckService;
 use OCA\EtherpadNextcloud\Service\CookieDomainDecision;
@@ -52,7 +51,6 @@ class AdminController extends Controller {
 		private EtherpadHealthCheckService $healthCheckService,
 		private ConsistencyCheckService $consistencyCheckService,
 		private AdminConsistencyCheckResponseBuilder $consistencyResponseBuilder,
-		private AdminTestFaultService $testFaultService,
 		private AdminControllerErrorMapper $errors,
 		private CookieDomainPolicy $cookieDomainPolicy,
 		private CookieDomainMessages $cookieDomainMessages,
@@ -162,28 +160,6 @@ class AdminController extends Controller {
 			[
 				'generic' => $this->l10n->t('Consistency check failed.'),
 				'log_message' => 'Consistency check failed',
-			],
-		);
-	}
-
-	public function setTestFault(): DataResponse {
-		return $this->errors->run(
-			function (): string {
-				$this->requireAdmin();
-				$payload = $this->readJsonPayload();
-				$fault = trim((string)($payload['fault'] ?? ''));
-				return $this->testFaultService->setFault($fault);
-			},
-			fn(string $fault): DataResponse => new DataResponse([
-				'ok' => true,
-				'fault' => $fault,
-				'message' => $fault === ''
-					? $this->l10n->t('Test fault cleared.')
-					: $this->l10n->t('Test fault set: {fault}', ['fault' => $fault]),
-			]),
-			[
-				'generic' => $this->l10n->t('Failed to update test fault.'),
-				'log_message' => 'Updating test fault failed',
 			],
 		);
 	}

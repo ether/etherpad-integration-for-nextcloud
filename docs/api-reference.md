@@ -391,13 +391,6 @@ solely by the separate external-pad policy, not by these two settings.
     - `checked`: rows of files deleted for good it took; `settled`: pads it deleted, with their rows
     - `pending_delete_count`: what is left, named as in the health check
 
-- `POST /api/v1/admin/test-fault`
-  - Controller: `AdminController::setTestFault`
-  - Auth: admin only
-  - Availability: only when Nextcloud `debug` mode is enabled
-  - Params:
-    - `fault` (string, optional; empty clears active fault)
-  - Purpose: deterministic E2E fault injection for lifecycle error-path testing.
   - Supported fault values:
     - `restore_read_lock`
     - `restore_write_lock`
@@ -528,4 +521,3 @@ Registered in `lib/AppInfo/Application.php`.
     - `/embed/by-id/{fileId}`
     - `/embed/create-by-parent/{parentFolderId}`
   - when empty, no external embedding origin is added beyond `'self'`
-- `test_fault` (debug-only E2E fault injection; empty by default)

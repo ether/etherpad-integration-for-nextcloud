@@ -10,11 +10,9 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\Controller;
 
 use OCA\EtherpadNextcloud\AppInfo\Application;
-use OCA\EtherpadNextcloud\Exception\AdminDebugModeRequiredException;
 use OCA\EtherpadNextcloud\Exception\AdminHealthCheckException;
 use OCA\EtherpadNextcloud\Exception\AdminPermissionRequiredException;
 use OCA\EtherpadNextcloud\Exception\AdminValidationException;
-use OCA\EtherpadNextcloud\Exception\UnsupportedTestFaultException;
 use OCA\EtherpadNextcloud\Exception\UnauthorizedRequestException;
 use OCA\EtherpadNextcloud\Util\SafeError;
 use OCP\AppFramework\Http;
@@ -47,11 +45,6 @@ class AdminControllerErrorMapper {
 				'ok' => false,
 				'message' => $this->l10n->t('Admin permissions required.'),
 			], Http::STATUS_FORBIDDEN);
-		} catch (AdminDebugModeRequiredException) {
-			return new DataResponse([
-				'ok' => false,
-				'message' => $this->l10n->t('Test faults are available only when Nextcloud debug mode is enabled.'),
-			], Http::STATUS_FORBIDDEN);
 		} catch (AdminValidationException $e) {
 			return new DataResponse([
 				'ok' => false,
@@ -59,13 +52,6 @@ class AdminControllerErrorMapper {
 				'field' => $e->getField(),
 			], Http::STATUS_BAD_REQUEST);
 		} catch (\InvalidArgumentException $e) {
-			if ($e instanceof UnsupportedTestFaultException) {
-				return new DataResponse([
-					'ok' => false,
-					'message' => $this->l10n->t('Unsupported test fault.'),
-					'supported_faults' => $e->getSupportedFaults(),
-				], Http::STATUS_BAD_REQUEST);
-			}
 			return new DataResponse([
 				'ok' => false,
 				'message' => $e->getMessage(),

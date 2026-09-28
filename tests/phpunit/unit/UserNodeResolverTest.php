@@ -82,8 +82,9 @@ class UserNodeResolverTest extends TestCase {
 
 	/**
 	 * Both restore paths rely on this to keep a folder away from
-	 * handleRestore, which takes a File: a folder that got through would
-	 * be a TypeError, and on the event path that aborts the restore.
+	 * RestoreService::restore(), which takes a File: a folder that got
+	 * through would be a TypeError, and on the event path that aborts the
+	 * restore.
 	 */
 	public function testAFolderAtTheRequestedPathIsNotAFile(): void {
 		$userFolder = $this->createMock(Folder::class);

@@ -52,16 +52,15 @@ final class SensitiveMethods {
 			'parsePadFile', 'readPad', 'serialize',
 			'withExportSnapshot', 'withRestoredSnapshot', 'buildSnapshotBody',
 		],
-		// The same document one frame on: handed to the file rather than
-		// parsed out of it, which is what a locked or failing write leaves
-		// behind, and carried from frame to frame as the parsed file, whose
-		// public fields the serializer writes out. No restore route lets an
-		// exception go since its listener reports what it catches; these stay
-		// until the document leaves public fields, so that a route that lets
-		// go again does not bring the document back into the log.
+		// The same document one frame on, carried from frame to frame as the
+		// parsed file, whose public fields the serializer writes out. No
+		// restore route lets an exception go since its listener reports what
+		// it catches; these stay until the document leaves public fields, so
+		// that a route that lets go again does not bring the document back
+		// into the log.
 		\OCA\EtherpadNextcloud\Service\RestoreService::class => [
-			'writeRestoredContent', 'restoreWithReplacement', 'restoreOntoNewPad', 'seedFromSnapshot',
-			'replaceLostPad', 'restoreWithoutBinding',
+			'restoreWithReplacement', 'restoreOntoNewPad', 'seedFromSnapshot', 'replaceLostPad',
+			'restoreWithoutBinding',
 		],
 		\OCA\EtherpadNextcloud\Service\PadFileLockRetryService::class => ['putContentWithSyncLockRetry'],
 		\OCA\EtherpadNextcloud\Service\PadCreationService::class => ['writeCreatedFile'],

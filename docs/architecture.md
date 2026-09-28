@@ -14,10 +14,8 @@ Etherpad is the editing source of truth; the `.pad` file acts as binding storage
   - Owns mapping `file_id <-> pad_id` and states (`active`, and `pending_delete` for a file deleted for good whose pad has yet to go).
   - Hands a row out as a `Binding`.
   - Only managed internal pads are bound. External pads are represented solely by `.pad` frontmatter and snapshots.
-- `lib/Service/LifecycleService.php`
-  - Where a `.pad` file's restore arrives from its listener, and the API's recovery of a file (see Trash/Restore).
 - `lib/Service/RestoreService.php`
-  - A pad from the file's own snapshot where the file has none: back from the trash without a row, or with a pad Etherpad lost, and the recovery an open offers (see Trash/Restore).
+  - A pad from the file's own snapshot where the file has none: back from the trash without a row, or with a pad Etherpad lost (`RestoreFromTrashListener`), and the recovery an open offers (`PadLifecycleController`; see Trash/Restore).
 - `lib/Listeners/GoneFilesListener.php`
   - Marks the rows of files deleted for good (see "Files gone for good").
 - `lib/Service/GoneFileSweep.php`, `lib/BackgroundJob/GoneFileSweepJob.php`

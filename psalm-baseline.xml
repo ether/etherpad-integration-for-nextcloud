@@ -161,14 +161,8 @@
       <code><![CDATA[(string)$this->config->getAppValue(Application::APP_ID, PadTypePolicy::SETTING_PUBLIC, 'yes')]]></code>
     </RedundantCastGivenDocblockType>
   </file>
-  <file src="lib/Service/AdminTestFaultService.php">
-    <DeprecatedMethod>
-      <code><![CDATA[setAppValue]]></code>
-    </DeprecatedMethod>
-  </file>
   <file src="lib/Service/AppConfigService.php">
     <DeprecatedMethod>
-      <code><![CDATA[getAppValue]]></code>
       <code><![CDATA[getAppValue]]></code>
       <code><![CDATA[getAppValue]]></code>
     </DeprecatedMethod>

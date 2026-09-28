@@ -19,7 +19,6 @@ use OCA\EtherpadNextcloud\Util\PadAccessMode;
 use OCA\EtherpadNextcloud\Util\PadFileType;
 use OCA\EtherpadNextcloud\Util\SafeError;
 use OCP\Files\File;
-use OCP\Lock\LockedException;
 use OCP\Security\ISecureRandom;
 use Psr\Log\LoggerInterface;
 
@@ -31,9 +30,9 @@ use Psr\Log\LoggerInterface;
  * version - and for one whose pad Etherpad lost while the file was away.
  * The pad id comes from the row, never from the file.
  *
- * Two ways in: a restore from the trash, which arrives at LifecycleService
- * (restore()), and the recovery the API offers when an open finds no pad
- * (recoverFromSnapshot()).
+ * Two ways in: a restore from the trash (restore(), from
+ * RestoreFromTrashListener), and the recovery the API offers when an open
+ * finds no pad (recoverFromSnapshot(), from PadLifecycleController).
  */
 class RestoreService {
 	/** Etherpad refuses a longer pad name, measured against 2.x. */
@@ -61,7 +60,6 @@ class RestoreService {
 		private LoggerInterface $logger,
 		private ISecureRandom $secureRandom,
 		private ProvisionedPadRollback $provisionedPadRollback,
-		private TestFaults $testFaults,
 		private UserNodeResolver $userNodeResolver,
 	) {
 	}
@@ -183,9 +181,6 @@ class RestoreService {
 
 	/** The `.pad` back from the trash, as a restore from its snapshot reads it. */
 	private function readRestoredPad(File $file): ParsedPadFile {
-		if ($this->testFaults->isActive(TestFaults::RESTORE_READ_LOCK)) {
-			throw new LockedException('Injected test fault: restore_read_lock');
-		}
 		return $this->padFileService->readPad($file->getContent());
 	}
 
@@ -470,7 +465,7 @@ class RestoreService {
 				$this->provisionedPadRollback->discardUnlessBoundToFile($fileId, $newPadId, $flow);
 				return LifecycleResult::skipped('binding_state_transition_conflict', $fileId, $this->logger);
 			}
-			$this->writeRestoredContent($file, $updatedContent);
+			$file->putContent($updatedContent);
 		} catch (\Throwable $e) {
 			$names = $this->fileNames($file, $newPadId);
 			if ($names === true) {
@@ -532,16 +527,6 @@ class RestoreService {
 			padId: fn (): string => $this->buildPublicRestorePadId($oldPadId),
 			groupPadName: fn (): string => $this->buildProtectedRestorePadName(),
 		);
-	}
-
-	private function writeRestoredContent(File $file, string $updatedContent): void {
-		if ($this->testFaults->isActive(TestFaults::RESTORE_WRITE_LOCK)) {
-			throw new LockedException('Injected test fault: restore_write_lock');
-		}
-		if ($this->testFaults->isActive(TestFaults::RESTORE_WRITE_FAIL)) {
-			throw new \RuntimeException('Injected test fault: restore_write_fail');
-		}
-		$file->putContent($updatedContent);
 	}
 
 	/**

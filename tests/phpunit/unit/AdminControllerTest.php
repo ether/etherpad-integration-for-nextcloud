@@ -6,12 +6,9 @@ namespace OCA\EtherpadNextcloud\Tests\Unit;
 
 use OCA\EtherpadNextcloud\Controller\AdminController;
 use OCA\EtherpadNextcloud\Controller\AdminControllerErrorMapper;
-use OCA\EtherpadNextcloud\Exception\AdminDebugModeRequiredException;
-use OCA\EtherpadNextcloud\Exception\UnsupportedTestFaultException;
 use OCA\EtherpadNextcloud\Service\AdminConsistencyCheckResponseBuilder;
 use OCA\EtherpadNextcloud\Service\AdminSettingsRepository;
 use OCA\EtherpadNextcloud\Service\AdminSettingsValidator;
-use OCA\EtherpadNextcloud\Service\AdminTestFaultService;
 use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\EtherpadNextcloud\Service\ConsistencyCheckService;
 use OCA\EtherpadNextcloud\Service\CookieDomainDecision;
@@ -174,50 +171,6 @@ class AdminControllerTest extends TestCase {
 		$this->assertSame(3, $response->getData()['pending_delete_count']);
 	}
 
-	public function testSetTestFaultRequiresDebugMode(): void {
-		$testFaults = $this->createMock(AdminTestFaultService::class);
-		$testFaults->method('setFault')->willThrowException(new AdminDebugModeRequiredException());
-
-		$response = $this->buildController(testFaults: $testFaults)->setTestFault();
-
-		$this->assertSame(Http::STATUS_FORBIDDEN, $response->getStatus());
-		$this->assertFalse((bool)$response->getData()['ok']);
-	}
-
-	public function testSetTestFaultRejectsUnsupportedFault(): void {
-		$testFaults = $this->createMock(AdminTestFaultService::class);
-		$testFaults->expects($this->once())
-			->method('setFault')
-			->with('unknown_fault')
-			->willThrowException(new UnsupportedTestFaultException(['restore_read_lock']));
-
-		$response = $this->buildController(
-			$this->request(['fault' => 'unknown_fault']),
-			testFaults: $testFaults,
-		)->setTestFault();
-
-		$this->assertSame(Http::STATUS_BAD_REQUEST, $response->getStatus());
-		$this->assertFalse((bool)$response->getData()['ok']);
-		$this->assertNotEmpty($response->getData()['supported_faults']);
-	}
-
-	public function testSetTestFaultPersistsSupportedFault(): void {
-		$testFaults = $this->createMock(AdminTestFaultService::class);
-		$testFaults->expects($this->once())
-			->method('setFault')
-			->with('restore_read_lock')
-			->willReturn('restore_read_lock');
-
-		$response = $this->buildController(
-			$this->request(['fault' => 'restore_read_lock']),
-			testFaults: $testFaults,
-		)->setTestFault();
-
-		$this->assertSame(Http::STATUS_OK, $response->getStatus());
-		$this->assertTrue((bool)$response->getData()['ok']);
-		$this->assertSame('restore_read_lock', $response->getData()['fault']);
-	}
-
 	public function testListsPadTemplates(): void {
 		$templates = $this->createMock(PadTemplateAdminService::class);
 		$templates->method('list')->willReturn([['name' => 'Meeting notes.pad', 'size' => 10, 'modified' => 1]]);
@@ -284,7 +237,6 @@ class AdminControllerTest extends TestCase {
 		?EtherpadHealthCheckService $healthCheck = null,
 		?ConsistencyCheckService $consistencyCheck = null,
 		?AdminConsistencyCheckResponseBuilder $consistencyResponses = null,
-		?AdminTestFaultService $testFaults = null,
 		?PadTemplateAdminService $padTemplateAdmin = null,
 		?GoneFileSweep $goneFileSweep = null,
 		?FixedClock $clock = null,
@@ -303,7 +255,6 @@ class AdminControllerTest extends TestCase {
 			$healthCheck ?? $this->createMock(EtherpadHealthCheckService::class),
 			$consistencyCheck ?? $this->createMock(ConsistencyCheckService::class),
 			$consistencyResponses ?? new AdminConsistencyCheckResponseBuilder($l10n),
-			$testFaults ?? $this->createMock(AdminTestFaultService::class),
 			new AdminControllerErrorMapper($l10n, $logger),
 			new CookieDomainPolicy(),
 			new CookieDomainMessages($l10n),

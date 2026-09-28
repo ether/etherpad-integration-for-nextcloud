@@ -19,7 +19,6 @@ use OCA\EtherpadNextcloud\Service\RestoreService;
 use OCA\EtherpadNextcloud\Service\PadFileService;
 use OCA\EtherpadNextcloud\Service\RunBudget;
 use OCA\EtherpadNextcloud\Service\SettleOutcome;
-use OCA\EtherpadNextcloud\Service\TestFaults;
 use OCA\EtherpadNextcloud\Service\ParsedPadFile;
 use OCP\Lock\LockedException;
 use OCP\Files\File;
@@ -75,30 +74,31 @@ class RestoreServiceTest extends TestCase {
 	}
 
 	/**
-	 * The faults a debug instance injects for the end-to-end tests strike
-	 * where a restore reads and writes its file: a read lock leaves the
-	 * file to its next open, a write that fails leaves the file as it was
-	 * and the restore failed.
+	 * A file locked when a restore reads it is left to its next open; a
+	 * write that fails - the file locked, or refused - leaves the file as
+	 * it was and the restore failed.
 	 */
-	public function testARestoreMeetsTheFaultsInjectedIntoIt(): void {
+	public function testARestoreThatCannotReadOrWriteItsFile(): void {
 		$bindingService = $this->createMock(BindingService::class);
 		$bindingService->expects($this->never())->method('transition');
 		$bindingService->expects($this->never())->method('rebind');
-		$file = $this->padFile(83, 'Restored.pad');
-		$file->expects($this->never())->method('getContent');
+		$file = $this->createMock(File::class);
+		$file->method('getId')->willReturn(83);
+		$file->method('getName')->willReturn('Restored.pad');
+		$file->method('getContent')->willThrowException(new LockedException('Restored.pad'));
 
-		$result = $this->buildRowRestoreService(83, 'old-pad', $bindingService, $this->createMock(EtherpadClient::class), testFaults: $this->faultStriking(TestFaults::RESTORE_READ_LOCK))->restore($file);
+		$result = $this->buildRowRestoreService(83, 'old-pad', $bindingService, $this->createMock(EtherpadClient::class))->restore($file);
 
 		$this->assertSame(['skipped', 'file_unreadable'], [$result['status'], $result['reason']]);
 
-		foreach ([TestFaults::RESTORE_WRITE_LOCK, TestFaults::RESTORE_WRITE_FAIL] as $fault) {
+		foreach ([new LockedException('Restored.pad'), new \RuntimeException('refused')] as $failure) {
 			$bindingService = $this->createMock(BindingService::class);
 			$bindingService->method('rebind')->willReturn(true);
 			$file = $this->padFile(84, 'Restored.pad');
-			$file->expects($this->never())->method('putContent');
+			$file->expects($this->once())->method('putContent')->willThrowException($failure);
 			try {
-				$this->buildRowRestoreService(84, 'old-pad', $bindingService, $this->buildEtherpadWithoutThePad(), testFaults: $this->faultStriking($fault))->restore($file);
-				$this->fail($fault . ': the restore went through.');
+				$this->buildRowRestoreService(84, 'old-pad', $bindingService, $this->buildEtherpadWithoutThePad())->restore($file);
+				$this->fail($failure::class . ': the restore went through.');
 			} catch (LifecycleException) {
 				$this->addToAssertionCount(1);
 			}
@@ -1153,13 +1153,6 @@ class RestoreServiceTest extends TestCase {
 		$service->recoverFromSnapshot($file);
 	}
 
-	/** Test faults with this one striking, as on a debug instance the admin API set it on. */
-	private function faultStriking(string $fault): TestFaults {
-		$testFaults = $this->createMock(TestFaults::class);
-		$testFaults->method('isActive')->willReturnCallback(static fn (string $candidate): bool => $candidate === $fault);
-		return $testFaults;
-	}
-
 	/** Etherpad answers for the old pad that it does not exist. */
 	private function buildEtherpadWithoutThePad(): EtherpadClient&MockObject {
 		$etherpadClient = $this->createMock(EtherpadClient::class);
@@ -1185,7 +1178,6 @@ class RestoreServiceTest extends TestCase {
 		int $snapshotRev = 5,
 		string $state = BindingService::STATE_ACTIVE,
 		?LoggerInterface $padLifecycleLogger = null,
-		?TestFaults $testFaults = null,
 		?UserNodeResolver $nodes = null,
 		string $savedText = 'body',
 	): RestoreService {
@@ -1226,7 +1218,6 @@ class RestoreServiceTest extends TestCase {
 			logger: $logger,
 			padLifecycleLogger: $padLifecycleLogger,
 			secureRandom: $secureRandom,
-			testFaults: $testFaults,
 			nodes: $nodes,
 		);
 	}
