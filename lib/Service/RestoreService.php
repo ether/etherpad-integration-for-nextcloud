@@ -432,7 +432,11 @@ class RestoreService {
 	 * still names the old pad - while a row seen deleted for good meanwhile
 	 * keeps it. With $rowStays, the row a replacement claimed is moved back
 	 * onto the old pad instead, where the file still points; only when that
-	 * fails too does it go.
+	 * fails too does it go. A write that failed and a file that cannot be
+	 * read afterwards leave open which pad the file names, so no row may be
+	 * left to contradict it: the row goes with the new pad, which holds
+	 * nothing the file does not, and the file's next open offers a pad from
+	 * its content, whichever pad it names.
 	 *
 	 * Seeding the new pad takes a while, so the file is asked once more
 	 * before the claim: moved - deleted again, say - and the new pad goes,
@@ -468,7 +472,8 @@ class RestoreService {
 			}
 			$this->writeRestoredContent($file, $updatedContent);
 		} catch (\Throwable $e) {
-			if ($this->fileNames($file, $newPadId)) {
+			$names = $this->fileNames($file, $newPadId);
+			if ($names === true) {
 				// The write landed, and something after it failed - a hook,
 				// say. Row and file both name the new pad: taking either back
 				// would leave them naming different pads.
@@ -478,6 +483,15 @@ class RestoreService {
 					...SafeError::context($e),
 				]);
 				return LifecycleResult::restored($oldPadId, $newPadId);
+			}
+			if ($names === null) {
+				$this->logger->warning('A restored .pad file reported a failed write and cannot be read; its row is removed, and its next open offers a new pad.', [
+					'app' => 'etherpad_nextcloud',
+					'fileId' => $fileId,
+					...SafeError::context($e),
+				]);
+				$this->provisionedPadRollback->removeMatchingBindingAndDiscard($fileId, $newPadId, $flow);
+				throw LifecycleException::failed('Restore', $e);
 			}
 			if ($rowStays && $this->moveRowBack($fileId, $newPadId, $oldPadId)) {
 				$this->provisionedPadRollback->discardUnlessBoundToFile($fileId, $newPadId, $flow);
@@ -489,12 +503,12 @@ class RestoreService {
 		return LifecycleResult::restored($oldPadId, $newPadId);
 	}
 
-	/** Whether the file names this pad now; false when that cannot be read either. */
-	private function fileNames(File $file, string $padId): bool {
+	/** Whether the file names this pad now; null when that cannot be read either. */
+	private function fileNames(File $file, string $padId): ?bool {
 		try {
 			return $this->padFileService->readPad($file->getContent())->padId === $padId;
 		} catch (\Throwable) {
-			return false;
+			return null;
 		}
 	}
 
