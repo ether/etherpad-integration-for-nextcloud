@@ -68,12 +68,15 @@ does it at once. When Etherpad does not answer, the job deletes the pad once
 it does; until then the admin page counts it as a pending delete.
 
 On Nextcloud 34, Nextcloud reports the files inside a folder deleted for
-good under the wrong ids. The fix (nextcloud/server#63998) is in 35.0.1;
-its backport to 34 (nextcloud/server#64497) is planned for 34.0.5 and not
-merged yet. The app cannot tell which files they were, so the pads of the
-`.pad` files inside such a folder stay, and the consistency check lists
-them. A `.pad` file deleted on its own, and an account deleted, are not
-affected.
+good under the wrong ids - and a trash emptied as a whole, from the Files
+app or with `occ trashbin:cleanup`, is deleted as one folder. The fix
+(nextcloud/server#63998) is in 35.0.1; its backport to 34
+(nextcloud/server#64497) is planned for 34.0.5 and not merged yet. The app
+cannot tell which files they were, so the pads of the `.pad` files inside
+such a folder, or in a trash emptied as a whole, stay, and the consistency
+check lists them. A `.pad` file deleted on its own - past the trash, or
+from the trash by itself or when it expires - and an account deleted, are
+not affected.
 
 ## Gone without being deleted in Nextcloud
 

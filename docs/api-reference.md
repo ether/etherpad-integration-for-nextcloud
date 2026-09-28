@@ -384,8 +384,9 @@ solely by the separate external-pad policy, not by these two settings.
   - Purpose: an immediate run of the sweep of files gone for good
     (`docs/architecture.md`, "Files gone for good"), within the budget its
     job has, and without waiting out the five minutes a file seen deleted
-    for good waits before its pad goes. It deletes only the pads of files
-    deleted for good, and writes no file.
+    for good waits before its pad goes, nor the hour after Etherpad refused
+    to delete one. It deletes only the pads of files deleted for good, and
+    writes no file.
   - Result:
     - `checked`: rows of files deleted for good it took; `settled`: pads it deleted, with their rows
     - `pending_delete_count`: what is left, named as in the health check
