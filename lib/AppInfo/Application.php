@@ -132,11 +132,10 @@ class Application extends App implements IBootstrap {
 			$context->registerEventListener($event, \OCA\EtherpadNextcloud\Listeners\GoneFilesListener::class);
 		}
 		// A delete, to the trash or past it, takes the sessions of the
-		// protected pads it takes along.
-		$context->registerEventListener(
-			\OCP\Files\Events\Node\BeforeNodeDeletedEvent::class,
-			\OCA\EtherpadNextcloud\Listeners\RevokeSessionsOnDeleteListener::class,
-		);
+		// protected pads it takes along: found before, taken once it is done.
+		foreach ([\OCP\Files\Events\Node\BeforeNodeDeletedEvent::class, \OCP\Files\Events\Node\NodeDeletedEvent::class] as $event) {
+			$context->registerEventListener($event, \OCA\EtherpadNextcloud\Listeners\RevokeSessionsOnDeleteListener::class);
+		}
 		$context->registerEventListener(
 			'OCA\\Files_Trashbin\\Events\\NodeRestoredEvent',
 			\OCA\EtherpadNextcloud\Listeners\RestoreFromTrashListener::class,

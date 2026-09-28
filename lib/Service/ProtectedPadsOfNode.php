@@ -27,7 +27,8 @@ use OCP\IDBConnection;
  * whole storage, which the file cache indexes for no such match on every
  * database, and a team folder from before groupfolders gave each its own
  * storage shares the root storage with all others. The walk costs what the
- * folder holds.
+ * folder holds, and is not taken at all on an instance with no active
+ * protected pad: one look at the binding table, without a join, says so.
  */
 class ProtectedPadsOfNode {
 	private const DIRECTORY = 'httpd/unix-directory';
@@ -46,14 +47,17 @@ class ProtectedPadsOfNode {
 		if (!$node instanceof Folder) {
 			return $this->padsOf('file_id', [$node->getId()]);
 		}
+		if (!$this->anyProtectedPad()) {
+			return [];
+		}
 		$directory = $this->mimeTypes->getId(self::DIRECTORY);
 		$pads = [];
 		$level = [$node->getId()];
 		while ($level !== []) {
 			$next = [];
 			foreach (array_chunk($level, self::CHUNK) as $folders) {
-				$pads = [...$pads, ...$this->padsOf('fc.parent', $folders)];
-				$next = [...$next, ...$this->foldersIn($folders, $directory)];
+				array_push($pads, ...$this->padsOf('fc.parent', $folders));
+				array_push($next, ...$this->foldersIn($folders, $directory));
 			}
 			$level = $next;
 		}
@@ -84,6 +88,20 @@ class ProtectedPadsOfNode {
 		$pads = array_map(static fn (array $row): string => DbRows::string($row, 'pad_id'), DbRows::all($result->fetchAll()));
 		$result->closeCursor();
 		return $pads;
+	}
+
+	/** Whether any active row is of a protected pad. */
+	private function anyProtectedPad(): bool {
+		$qb = $this->db->getQueryBuilder();
+		$qb->select('file_id')
+			->from(BindingService::TABLE)
+			->where($qb->expr()->eq('access_mode', $qb->createNamedParameter(BindingService::ACCESS_PROTECTED)))
+			->andWhere($qb->expr()->eq('state', $qb->createNamedParameter(BindingService::STATE_ACTIVE)))
+			->setMaxResults(1);
+		$result = $qb->executeQuery();
+		$found = DbRows::one($result->fetch());
+		$result->closeCursor();
+		return $found !== null;
 	}
 
 	/**

@@ -56,6 +56,21 @@ class ProtectedPadsOfNodeTest extends TestCase {
 		$this->assertSame([], $pads->of($this->file(99)), 'a file without a row');
 	}
 
+	/**
+	 * An instance without an active protected pad takes no walk down a
+	 * folder: one look at the binding table says there is nothing to find.
+	 */
+	public function testAFolderIsNotWalkedWithoutAProtectedPad(): void {
+		$table = new InMemoryBindingTable([
+			['file_id' => 11, 'pad_id' => 'pad-11', 'access_mode' => BindingService::ACCESS_PUBLIC, 'state' => BindingService::STATE_ACTIVE, 'deleted_at' => null, 'updated_at' => 100],
+			['file_id' => 12, 'pad_id' => 'pad-12', 'access_mode' => BindingService::ACCESS_PROTECTED, 'state' => BindingService::STATE_PENDING_DELETE, 'deleted_at' => 90, 'updated_at' => 90],
+		], [['fileid' => 11, 'parent' => 10, 'mimetype' => self::TEXT, 'storage' => 1, 'path' => 'files/11']]);
+		$mimeTypes = $this->createMock(IMimeTypeLoader::class);
+		$mimeTypes->expects($this->never())->method('getId');
+
+		$this->assertSame([], (new ProtectedPadsOfNode($table, $mimeTypes))->of($this->folder(10)));
+	}
+
 	private function folder(int $id): Folder {
 		$folder = $this->createMock(Folder::class);
 		$folder->method('getId')->willReturn($id);
