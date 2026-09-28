@@ -336,7 +336,7 @@ class RestoreService {
 		if (!ManagedPadLifecycle::holdsSavedContent($binding->accessMode, $pad->snapshotRev)) {
 			return self::REASON_NOTHING_SAVED;
 		}
-		$lost = $this->padLifecycle->howLost($binding->padId, $binding->accessMode, $pad->snapshotRev);
+		$lost = $this->padLifecycle->howLost($binding->padId, $binding->accessMode, $pad->snapshotRev, $pad->savedText());
 		return $lost === null ? self::REASON_PAD_PRESENT : [$pad, $lost];
 	}
 

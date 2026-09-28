@@ -151,24 +151,6 @@ class EtherpadClientTest extends TestCase {
 		$this->assertSame(['g.aaa$one', 'g.aaa$two'], $client->listPads('g.aaa'));
 	}
 
-	/**
-	 * A pad's authors, or none for a pad nobody wrote in. An answer that is
-	 * not a list of strings is no answer: none would read as "nobody wrote
-	 * here", and let a pad with content pass for one made anew.
-	 */
-	public function testListsTheAuthorsOfAPad(): void {
-		$this->assertSame(['a.one', 'a.two'], $this->clientWithResponse($this->response(200, '{"code":0,"data":{"authorIDs":["a.one","a.two"]}}'))->listAuthorsOfPad('nc-pad'));
-		$this->assertSame([], $this->clientWithResponse($this->response(200, '{"code":0,"data":{"authorIDs":[]}}'))->listAuthorsOfPad('nc-pad'));
-		foreach (['{"code":0,"data":{}}', '{"code":0,"data":{"authorIDs":"a.one"}}', '{"code":0,"data":{"authorIDs":["a.one",7]}}'] as $payload) {
-			try {
-				$this->clientWithResponse($this->response(200, $payload))->listAuthorsOfPad('nc-pad');
-				$this->fail('taken for an answer: ' . $payload);
-			} catch (EtherpadClientException) {
-				$this->addToAssertionCount(1);
-			}
-		}
-	}
-
 	/** Measured against Etherpad: an empty group answers with an empty list. */
 	public function testListPadsReadsAnEmptyGroup(): void {
 		$client = $this->clientWithResponse($this->response(200, '{"code":0,"data":{"padIDs":[]}}'));

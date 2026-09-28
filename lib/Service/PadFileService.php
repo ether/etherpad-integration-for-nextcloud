@@ -255,7 +255,7 @@ class PadFileService {
 
 	/** @return array{text:string,html:string} */
 	public function getSnapshotPartsFromBody(string $body): array {
-		return $this->splitSnapshotBody($body);
+		return self::splitSnapshotBody($body);
 	}
 
 	/** @return array<string,mixed> */
@@ -473,7 +473,7 @@ class PadFileService {
 	 *
 	 * @return array{text: string, html: string}
 	 */
-	private function splitSnapshotBody(string $body): array {
+	public static function splitSnapshotBody(string $body): array {
 		$textHeader = self::TEXT_SECTION . "\n";
 		if (!str_starts_with($body, $textHeader)) {
 			return ['text' => $body, 'html' => ''];

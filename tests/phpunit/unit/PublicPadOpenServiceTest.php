@@ -103,11 +103,11 @@ class PublicPadOpenServiceTest extends TestCase {
 	public function testAPadEtherpadHasLostIsNotOpenedForWriting(): void {
 		foreach ([BindingService::ACCESS_PROTECTED, BindingService::ACCESS_PUBLIC] as $accessMode) {
 			$lifecycle = $this->createMock(ManagedPadLifecycle::class);
-			$lifecycle->expects($this->once())->method('isKnownLost')->with('pad-1', $accessMode, 5)->willReturn(true);
+			$lifecycle->expects($this->once())->method('isKnownLost')->with('pad-1', $accessMode, 5, 'Saved in the file')->willReturn(true);
 			$sessions = $this->createMock(PadSessionService::class);
 			$sessions->expects($this->never())->method('createProtectedOpenContext');
 			try {
-				$this->buildService(padSessionService: $sessions, padLifecycle: $lifecycle)->open($this->pad('pad-1', $accessMode, false, '', 5), false, 'token');
+				$this->buildService(padSessionService: $sessions, padLifecycle: $lifecycle)->open($this->pad('pad-1', $accessMode, false, '', 5, 'Saved in the file'), false, 'token');
 				$this->fail($accessMode . ': opened');
 			} catch (PadLostException) {
 				$this->addToAssertionCount(1);
@@ -152,7 +152,7 @@ class PublicPadOpenServiceTest extends TestCase {
 		return $ttl;
 	}
 
-	private function pad(string $padId, string $accessMode, bool $isExternal = false, string $padUrl = '', int $snapshotRev = -1): ParsedPadFile {
-		return new ParsedPadFile([], '', $padId, $accessMode, $padUrl, $isExternal, $snapshotRev);
+	private function pad(string $padId, string $accessMode, bool $isExternal = false, string $padUrl = '', int $snapshotRev = -1, string $body = ''): ParsedPadFile {
+		return new ParsedPadFile([], $body, $padId, $accessMode, $padUrl, $isExternal, $snapshotRev);
 	}
 }

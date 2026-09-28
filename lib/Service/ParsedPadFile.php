@@ -40,6 +40,11 @@ class ParsedPadFile {
 		return $this->isExternal || str_starts_with($this->padId, 'ext.');
 	}
 
+	/** The text of the snapshot the file holds, as the last sync wrote it. */
+	public function savedText(): string {
+		return PadFileService::splitSnapshotBody($this->body)['text'];
+	}
+
 	/**
 	 * The link of a pad on another server ($isExternal), as the file has it:
 	 * the one rule every way of opening, reading and syncing such a pad

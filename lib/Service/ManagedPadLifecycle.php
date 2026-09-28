@@ -214,28 +214,31 @@ class ManagedPadLifecycle {
 	 * not:
 	 * - Absent when it has no pad under that id: a protected pad, whose
 	 *   session would open nothing, or a public pad whose file holds saved
-	 *   content. A public pad with nothing saved in its file - an Ownpad
-	 *   link to a pad nobody opened yet, say - Etherpad makes on the first
-	 *   visit, as ever, and nothing is lost.
+	 *   content.
 	 * - Behind when it has one without a single revision while the file's
-	 *   snapshot was taken at a later one, and nobody ever wrote in it: a
-	 *   public pad Etherpad made anew, empty, when someone visited its
-	 *   address. A pad with authors at revision 0 - its history cut short
-	 *   in Etherpad - holds what they wrote, and is not lost.
+	 *   snapshot was taken at a later one, and the pad's text is not the
+	 *   text the file saved: a public pad Etherpad made anew when someone
+	 *   visited its address - with its default text, and the visitor as
+	 *   its author. A pad at revision 0 holding the saved text had its
+	 *   history cut short in Etherpad, and nothing is lost.
 	 *
-	 * A public pad with nothing saved in its file is never lost, so
-	 * Etherpad is not asked about it. A pad merely behind the snapshot is
-	 * not lost: files a restore in 1.1.0-beta.1 left kept the old pad's
-	 * revision count. Quiet, unlike probe(): an open asks this every time.
+	 * A public pad with nothing saved in its file - an Ownpad link to a pad
+	 * nobody opened yet, say - Etherpad makes on the first visit, as ever,
+	 * and is never lost, so Etherpad is not asked about it. A pad merely
+	 * behind the snapshot is not lost: files a restore in 1.1.0-beta.1 left
+	 * kept the old pad's revision count. A pad an admin made anew through
+	 * the API with other text than the file saved counts as made anew; the
+	 * recovery leaves it in place. Quiet, unlike probe(): an open asks this
+	 * every time.
 	 *
-	 * Asked within PROBE_TIMEOUT_SECONDS: an open that may write, and a
-	 * restore, wait on the answer, and a public pad needed no call to
-	 * Etherpad to open before. A silent Etherpad fails them in seconds,
-	 * not after the client's full timeout.
+	 * Each question to Etherpad waits PROBE_TIMEOUT_SECONDS at most - the
+	 * revision count, and at revision 0 the text: an open that may write,
+	 * and a restore, wait on the answers.
 	 *
+	 * @param string $savedText the text of the file's snapshot (ParsedPadFile::savedText())
 	 * @throws \Throwable when Etherpad gives any other answer, or none
 	 */
-	public function howLost(string $padId, string $accessMode, int $snapshotRevision, int $timeoutSeconds = self::PROBE_TIMEOUT_SECONDS): ?PadPresence {
+	public function howLost(string $padId, string $accessMode, int $snapshotRevision, string $savedText, int $timeoutSeconds = self::PROBE_TIMEOUT_SECONDS): ?PadPresence {
 		if (!self::holdsSavedContent($accessMode, $snapshotRevision)) {
 			return null;
 		}
@@ -250,7 +253,13 @@ class ManagedPadLifecycle {
 		if ($revisions !== 0 || $snapshotRevision <= 0) {
 			return null;
 		}
-		return $this->etherpadClient->listAuthorsOfPad($padId, $timeoutSeconds) === [] ? PadPresence::Behind : null;
+		return self::sameText($this->etherpadClient->getText($padId, $timeoutSeconds), $savedText) ? null : PadPresence::Behind;
+	}
+
+	/** Text as Etherpad and a file hold it, but for line endings and the final newline. */
+	private static function sameText(string $a, string $b): bool {
+		$normalize = static fn (string $text): string => rtrim(str_replace("\r\n", "\n", $text));
+		return $normalize($a) === $normalize($b);
 	}
 
 	/**
@@ -259,9 +268,9 @@ class ManagedPadLifecycle {
 	 * the pad as before - the check is for a rare case, and must not make
 	 * an open depend on it; whatever is wrong with Etherpad shows there.
 	 */
-	public function isKnownLost(string $padId, string $accessMode, int $snapshotRevision): bool {
+	public function isKnownLost(string $padId, string $accessMode, int $snapshotRevision, string $savedText): bool {
 		try {
-			return $this->howLost($padId, $accessMode, $snapshotRevision) !== null;
+			return $this->howLost($padId, $accessMode, $snapshotRevision, $savedText) !== null;
 		} catch (\Throwable $e) {
 			$this->logger->debug('Could not ask Etherpad whether a pad is lost; opened as before.', [
 				'app' => 'etherpad_nextcloud',

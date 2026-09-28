@@ -33,9 +33,10 @@ class ManagedPadLifecycleTest extends TestCase {
 	 * file's snapshot holds more. A public pad with nothing saved, Etherpad
 	 * makes on a visit; behind but written into is not lost, nor is an
 	 * untouched pad whose file never had a snapshot, nor a pad at revision
-	 * 0 that has authors - its history cut short in Etherpad. Anything else
-	 * Etherpad answers, or its silence, is the caller's. Asked within a few
-	 * seconds.
+	 * 0 holding the text the file saved - its history cut short in
+	 * Etherpad. A pad at revision 0 with other text - Etherpad's default,
+	 * from a visit - is made anew. Anything else Etherpad answers, or its
+	 * silence, is the caller's. Each question within a few seconds.
 	 */
 	public function testHowAPadIsLost(): void {
 		$gone = new EtherpadRefusedException('padID does not exist');
@@ -44,9 +45,10 @@ class ManagedPadLifecycleTest extends TestCase {
 			'public, gone, with saved content' => [$gone, BindingService::ACCESS_PUBLIC, 5, PadPresence::Absent],
 			'public, gone, nothing saved' => [$gone, BindingService::ACCESS_PUBLIC, 0, null],
 			'public, gone, snapshot unknown' => [$gone, BindingService::ACCESS_PUBLIC, -1, null],
-			'made anew, empty' => [0, BindingService::ACCESS_PUBLIC, 5, PadPresence::Behind],
+			'made anew on a visit, with the default text' => [0, BindingService::ACCESS_PUBLIC, 5, PadPresence::Behind, "Welcome to Etherpad!\n"],
+			'made anew through the API, empty' => [0, BindingService::ACCESS_PUBLIC, 5, PadPresence::Behind, "\n"],
 			'behind, written into' => [3, BindingService::ACCESS_PUBLIC, 5, null],
-			'history cut short, with authors' => [0, BindingService::ACCESS_PUBLIC, 5, null, ['a.one']],
+			'history cut short, text as saved' => [0, BindingService::ACCESS_PUBLIC, 5, null, "Saved text\r\n\n"],
 			'there' => [7, BindingService::ACCESS_PROTECTED, 5, null],
 			'untouched, no snapshot' => [0, BindingService::ACCESS_PUBLIC, 0, null],
 		];
@@ -55,16 +57,16 @@ class ManagedPadLifecycleTest extends TestCase {
 			$client = $this->createMock(EtherpadClient::class);
 			$call = $client->method('getRevisionsCount')->with('pad-1', ManagedPadLifecycle::PROBE_TIMEOUT_SECONDS);
 			$answer instanceof \Throwable ? $call->willThrowException($answer) : $call->willReturn($answer);
-			$client->method('listAuthorsOfPad')->with('pad-1', ManagedPadLifecycle::PROBE_TIMEOUT_SECONDS)->willReturn($row[4] ?? []);
+			$client->method('getText')->with('pad-1', ManagedPadLifecycle::PROBE_TIMEOUT_SECONDS)->willReturn($row[4] ?? '');
 
-			$this->assertSame($lost, $this->lifecycle($client)->howLost('pad-1', $accessMode, $snapshot), $case);
+			$this->assertSame($lost, $this->lifecycle($client)->howLost('pad-1', $accessMode, $snapshot, 'Saved text'), $case);
 		}
 
 		foreach ([new EtherpadClientException('Etherpad API request failed'), new EtherpadRefusedException('apikey is invalid')] as $error) {
 			$client = $this->createMock(EtherpadClient::class);
 			$client->method('getRevisionsCount')->willThrowException($error);
 			try {
-				$this->lifecycle($client)->howLost('pad-1', BindingService::ACCESS_PROTECTED, 5);
+				$this->lifecycle($client)->howLost('pad-1', BindingService::ACCESS_PROTECTED, 5, 'Saved text');
 				$this->fail('no answer taken for an answer: ' . $error->getMessage());
 			} catch (EtherpadClientException $e) {
 				$this->assertSame($error, $e);
@@ -410,7 +412,7 @@ class ManagedPadLifecycleTest extends TestCase {
 		$client->expects($this->never())->method('getRevisionsCount');
 
 		foreach ([-1, 0] as $snapshot) {
-			$this->assertNull($this->lifecycle($client)->howLost('pad-1', BindingService::ACCESS_PUBLIC, $snapshot));
+			$this->assertNull($this->lifecycle($client)->howLost('pad-1', BindingService::ACCESS_PUBLIC, $snapshot, 'Saved text'));
 		}
 	}
 
@@ -421,14 +423,14 @@ class ManagedPadLifecycleTest extends TestCase {
 	public function testAnOpenStopsOnlyForAPadKnownLost(): void {
 		$gone = $this->createMock(EtherpadClient::class);
 		$gone->method('getRevisionsCount')->willThrowException(new EtherpadRefusedException('padID does not exist'));
-		$this->assertTrue($this->lifecycle($gone)->isKnownLost('pad-1', BindingService::ACCESS_PROTECTED, 5));
+		$this->assertTrue($this->lifecycle($gone)->isKnownLost('pad-1', BindingService::ACCESS_PROTECTED, 5, 'Saved text'));
 
 		foreach ([new EtherpadClientException('Etherpad API request failed'), new EtherpadRefusedException('apikey is invalid')] as $error) {
 			$client = $this->createMock(EtherpadClient::class);
 			$client->method('getRevisionsCount')->willThrowException($error);
 			$logger = $this->createMock(LoggerInterface::class);
 			$logger->expects($this->once())->method('debug')->with('Could not ask Etherpad whether a pad is lost; opened as before.', $this->anything());
-			$this->assertFalse((new ManagedPadLifecycle($client, $logger))->isKnownLost('pad-1', BindingService::ACCESS_PROTECTED, 5), $error->getMessage());
+			$this->assertFalse((new ManagedPadLifecycle($client, $logger))->isKnownLost('pad-1', BindingService::ACCESS_PROTECTED, 5, 'Saved text'), $error->getMessage());
 		}
 	}
 

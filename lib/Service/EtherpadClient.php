@@ -183,29 +183,6 @@ class EtherpadClient {
 	}
 
 	/**
-	 * The authors who wrote in a pad. Etherpad keeps them with the pad's
-	 * text, so a pad whose history was cut short still has them, and one
-	 * Etherpad made itself - on a visit to a missing public pad - has none.
-	 * An answer that is not a list of strings is no answer.
-	 *
-	 * @return list<string>
-	 */
-	public function listAuthorsOfPad(string $padId, ?int $timeoutSeconds = null): array {
-		$data = $this->apiCall('listAuthorsOfPad', ['padID' => $padId], timeoutSeconds: $timeoutSeconds);
-		if (!array_key_exists('authorIDs', $data) || !is_array($data['authorIDs']) || !array_is_list($data['authorIDs'])) {
-			throw new EtherpadClientException('Etherpad did not return the authors of the pad.');
-		}
-		$authorIds = [];
-		foreach ($data['authorIDs'] as $authorId) {
-			if (!is_string($authorId)) {
-				throw new EtherpadClientException('Etherpad returned an author list with a non-string entry.');
-			}
-			$authorIds[] = $authorId;
-		}
-		return $authorIds;
-	}
-
-	/**
 	 * Removes the group, every pad inside it, and every session that granted
 	 * access to it — which is what makes it the right call for a protected
 	 * pad. deletePad() on a group pad leaves the group and its sessions

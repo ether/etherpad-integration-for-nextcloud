@@ -21,7 +21,7 @@ test.describe('a pad Etherpad has lost', () => {
 	test.skip(E2E.etherpadApi === null, 'Needs E2E_ETHERPAD_URL and E2E_ETHERPAD_API_KEY; only the container stack has them.')
 
 	/** A pad whose text is saved in its file: a snapshot with revisions, as any pad someone wrote in has. */
-	const padWithSavedText = async (name: string, accessMode: string): Promise<{ fileId: number, padId: string, marker: string }> => {
+	const padWithSavedText = async (name: string, accessMode: string): Promise<{ fileId: number, padId: string, padUrl: string, marker: string }> => {
 		const pad = await createPadAtPath(`/${name}`, accessMode)
 		const fileId = await propfindFileId(name)
 		const padId = padIdOfPadUrl(pad.padUrl)
@@ -29,7 +29,7 @@ test.describe('a pad Etherpad has lost', () => {
 		await etherpadApiPost('setText', { padID: padId, text: marker })
 		const synced = await padApiPost(`pads/sync/${fileId}`)
 		expect(synced.status, JSON.stringify(synced.body)).toBe(200)
-		return { fileId, padId, marker }
+		return { fileId, padId, padUrl: pad.padUrl, marker }
 	}
 
 	/** The open refuses the lost pad, the recovery makes a new one with the saved text, and the file opens it. */
@@ -125,7 +125,40 @@ test.describe('a pad Etherpad has lost', () => {
 		}
 	})
 
-	test('a public pad Etherpad made anew, empty, counts as lost', async () => {
+	/**
+	 * What a visit to a missing public pad's address does: Etherpad makes
+	 * it anew at revision 0, with its default text and the visitor as its
+	 * author. That counts as lost, and the new pad holds the saved text.
+	 */
+	test('a public pad a visit made anew counts as lost', async ({ page }) => {
+		const name = uniquePadName('lost-visited')
+		let padId = ''
+		try {
+			const saved = await padWithSavedText(name, 'public')
+			padId = saved.padId
+			await etherpadApiPost('deletePad', { padID: padId })
+
+			await page.goto(saved.padUrl)
+			await page.waitForSelector('iframe[name="ace_outer"]', { timeout: 20_000 })
+			await expect.poll(async () => {
+				try {
+					return (await etherpadApiPost<{ revisions: number }>('getRevisionsCount', { padID: padId })).revisions
+				} catch {
+					return null
+				}
+			}, { message: 'the visit should have made the pad anew' }).toBe(0)
+
+			await expectRecovered(name, saved.fileId, padId, saved.marker)
+		} finally {
+			await deleteViaDav(name)
+			// The pad made anew stays after a recovery, which leaves it alone.
+			if (padId !== '') {
+				await etherpadApiPost('deletePad', { padID: padId }).catch(() => {})
+			}
+		}
+	})
+
+	test('a public pad made anew through the API counts as lost', async () => {
 		const name = uniquePadName('lost-remade')
 		let padId = ''
 		try {
