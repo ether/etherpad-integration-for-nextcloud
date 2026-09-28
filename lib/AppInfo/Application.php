@@ -16,7 +16,6 @@ use OCP\AppFramework\App;
 use OCP\AppFramework\Bootstrap\IBootContext;
 use OCP\AppFramework\Bootstrap\IBootstrap;
 use OCP\AppFramework\Bootstrap\IRegistrationContext;
-use OCP\BackgroundJob\IJobList;
 use OCP\EventDispatcher\GenericEvent;
 use OCP\Files\Template\FileCreatedFromTemplateEvent;
 use OCP\Files\Template\RegisterTemplateCreatorEvent;
@@ -154,9 +153,12 @@ class Application extends App implements IBootstrap {
 		);
 	}
 
+	/**
+	 * Nothing to do per request. The sweep's job is declared in info.xml,
+	 * which Nextcloud registers on install and upgrade: adding it here,
+	 * as before, ran on every request, and an add for a job that exists
+	 * resets its last run, so it ran on every cron tick.
+	 */
 	public function boot(IBootContext $context): void {
-		$context->injectFn(function (IJobList $jobList): void {
-			$jobList->add(\OCA\EtherpadNextcloud\BackgroundJob\GoneFileSweepJob::class);
-		});
 	}
 }

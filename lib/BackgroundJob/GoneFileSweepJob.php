@@ -13,7 +13,12 @@ use OCA\EtherpadNextcloud\Service\GoneFileSweep;
 use OCP\AppFramework\Utility\ITimeFactory;
 use OCP\BackgroundJob\TimedJob;
 
-/** Every five minutes, a run of GoneFileSweep. */
+/**
+ * Every five minutes, a run of GoneFileSweep. Declared in appinfo/info.xml,
+ * which Nextcloud registers on install and upgrade.
+ *
+ * @psalm-api
+ */
 class GoneFileSweepJob extends TimedJob {
 	public function __construct(
 		ITimeFactory $time,
