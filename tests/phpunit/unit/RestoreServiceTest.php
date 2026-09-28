@@ -472,12 +472,13 @@ class RestoreServiceTest extends TestCase {
 	}
 
 	/**
-	 * A pad under the row's id without a single revision, while the file's
-	 * snapshot holds more, is not the pad the file knew: a public pad
-	 * Etherpad made anew, empty, when someone visited its address. Taken
-	 * back, it would show the file empty and let a sync write that over the
-	 * snapshot. The file gets a pad made from its snapshot, and the other is
-	 * left where it is.
+	 * A pad under the row's id without a single revision and with other
+	 * text than the file saved is not the pad the file knew: a public pad
+	 * Etherpad made anew, with its default text, when someone visited its
+	 * address. Taken back, it would show that text and let a sync write it
+	 * over the snapshot. The file gets a pad made from its snapshot, and the
+	 * other is left where it is.
+	 */
 	public function testRestoreReplacesAPadThatIsBehindTheSnapshot(): void {
 		$fileId = 96;
 		$newPadId = 'r-old-pad-abc123def456';
@@ -492,6 +493,7 @@ class RestoreServiceTest extends TestCase {
 		$etherpadClient->method('getRevisionsCount')->willReturnCallback(
 			static fn (string $padId): int => $padId === 'old-pad' ? 0 : 1,
 		);
+		$etherpadClient->method('getText')->with('old-pad')->willReturn("Welcome to Etherpad!\n");
 		$etherpadClient->expects($this->once())->method('createPad')->with($newPadId);
 		$etherpadClient->expects($this->never())->method('deletePad');
 
