@@ -91,45 +91,6 @@ class RestoreService {
 	}
 
 	/**
-	 * The row's pad is not the file's any more: Etherpad has no such pad, or
-	 * one with fewer revisions than the file's snapshot. The snapshot is all
-	 * that is left of the file's pad, and a new pad is made from it, on the
-	 * row as it was read.
-	 *
-	 * @return array{status: string, reason?: string, old_pad_id?: string, new_pad_id?: string}
-	 */
-	private function restoreWithReplacement(File $file, string $path, ParsedPadFile $pad, int $fileId, string $oldPadId, string $accessMode, PadPresence $presence): array {
-		if (PadAccessMode::tryFrom($accessMode) === null) {
-			// No pad can be made on this row, a record the app did not write.
-			// It stays as it is, as a row does on any failure here.
-			return LifecycleResult::skipped('unknown_access_mode', $fileId, $this->logger);
-		}
-
-		// A failure leaves the row on the lost pad, moved back onto it if it
-		// was claimed already: the pad is the file's, only lost, and the
-		// next open offers the new pad again - a failure that passes,
-		// Etherpad gone while seeding or the file locked, costs nothing.
-		$result = $this->restoreOntoNewPad(
-			$file,
-			$path,
-			$fileId,
-			$pad,
-			$accessMode,
-			$oldPadId,
-			'restore with replacement',
-			fn (string $newPadId): bool => $this->claimForReplacement($fileId, $oldPadId, $newPadId),
-			rowStays: true,
-		);
-
-		// Outside the try on purpose: the restore is done and recorded, and
-		// nothing about clearing up after it may turn that into a failure.
-		if ($result['status'] === LifecycleResult::RESTORED && $presence === PadPresence::Absent) {
-			$this->discardWhatIsLeftOf($fileId, $oldPadId);
-		}
-		return $result;
-	}
-
-	/**
 	 * Point the row at the replacement, if it still names the old pad in
 	 * the state it was read in. Three outcomes, kept apart: true when this
 	 * restore holds the row, false when another flow moved it first, and an
@@ -179,11 +140,6 @@ class RestoreService {
 		}
 	}
 
-	/** The `.pad` back from the trash, as a restore from its snapshot reads it. */
-	private function readRestoredPad(File $file): ParsedPadFile {
-		return $this->padFileService->readPad($file->getContent());
-	}
-
 	/**
 	 * A new pad holding the file's snapshot, and the `.pad` content naming
 	 * it. A failure here removes the pad here; no row names it yet.
@@ -215,9 +171,9 @@ class RestoreService {
 	/**
 	 * The API's recovery of a file from its own content (docs/api-reference.md
 	 * says when one needs it). A file without a row takes the path a
-	 * restore takes for such a file (restoreWithoutBinding); a file whose
+	 * restore takes for such a file (restoreWithoutBinding()); a file whose
 	 * row names a pad Etherpad has lost, the path a restore takes for a row
-	 * whose pad is gone (recoverLostPad). Refused for any other row. The
+	 * whose pad is gone (recoverLostPad()). Refused for any other row. The
 	 * pad id the file names is never reused.
 	 *
 	 * Refused, before Etherpad is asked, to whoever may not change the
@@ -241,7 +197,12 @@ class RestoreService {
 		if ($binding !== null) {
 			return $this->recoverLostPad($file, $fileId, $binding);
 		}
-		$result = $this->restoreWithoutBinding($file, $fileId);
+		try {
+			$pad = $this->padFileService->readPad($file->getContent());
+		} catch (\Throwable $e) {
+			throw LifecycleException::failed('Restore', $e);
+		}
+		$result = $this->restoreWithoutBinding($file, $fileId, $pad);
 		if (($result['status'] ?? '') === LifecycleResult::RESTORED) {
 			$this->logger->info('Pad recovered from snapshot.', [
 				'app' => 'etherpad_nextcloud',
@@ -324,7 +285,7 @@ class RestoreService {
 	 * @throws \Throwable reading the file, or asking Etherpad
 	 */
 	private function lostPadOf(File $file, Binding $binding): array|string {
-		$pad = $this->readRestoredPad($file);
+		$pad = $this->padFileService->readPad($file->getContent());
 		if ($pad->isExternal || $pad->padId !== $binding->padId) {
 			return self::REASON_ROW_NAMES_OTHER_PAD;
 		}
@@ -348,7 +309,7 @@ class RestoreService {
 	 */
 	private function restoreFileWithoutRow(File $file, int $fileId): array {
 		try {
-			$pad = $this->readRestoredPad($file);
+			$pad = $this->padFileService->readPad($file->getContent());
 		} catch (\Throwable) {
 			// A legacy Ownpad link without metadata, or a file that cannot be
 			// read now: the open reads it again, and migrates it, offers its
@@ -367,31 +328,60 @@ class RestoreService {
 	}
 
 	/**
-	 * The file's new pad in place of the one Etherpad lost: what a restore
-	 * does for a row whose pad is gone (restoreWithReplacement()).
+	 * The file's new pad in place of the one Etherpad lost - no such pad, or
+	 * one made anew - for a restore and a recovery alike: the snapshot is
+	 * all that is left of the file's pad, and a new pad is made from it, on
+	 * the row as it was read.
 	 *
 	 * @return array{status: string, reason?: string, old_pad_id?: string, new_pad_id?: string}
 	 * @throws LifecycleException
 	 */
 	private function replaceLostPad(File $file, int $fileId, Binding $binding, ParsedPadFile $pad, PadPresence $lost): array {
-		$result = $this->restoreWithReplacement($file, $file->getPath(), $pad, $fileId, $binding->padId, $binding->accessMode, $lost);
-		if (($result['status'] ?? '') === LifecycleResult::RESTORED) {
-			$this->logger->info('A pad Etherpad had lost was made anew from its file.', [
-				'app' => 'etherpad_nextcloud',
-				'fileId' => $fileId,
-				'padId' => $binding->padId,
-			]);
+		if (PadAccessMode::tryFrom($binding->accessMode) === null) {
+			// No pad can be made on this row, a record the app did not write.
+			// It stays as it is, as a row does on any failure here.
+			return LifecycleResult::skipped('unknown_access_mode', $fileId, $this->logger);
+		}
+
+		// A failure leaves the row on the lost pad, moved back onto it if it
+		// was claimed already: the pad is the file's, only lost, and the
+		// next open offers the new pad again - a failure that passes,
+		// Etherpad gone while seeding or the file locked, costs nothing.
+		$result = $this->restoreOntoNewPad(
+			$file,
+			$file->getPath(),
+			$fileId,
+			$pad,
+			$binding->accessMode,
+			$binding->padId,
+			'restore with replacement',
+			fn (string $newPadId): bool => $this->claimForReplacement($fileId, $binding->padId, $newPadId),
+			rowStays: true,
+		);
+		if ($result['status'] !== LifecycleResult::RESTORED) {
+			return $result;
+		}
+
+		$this->logger->info('A pad Etherpad had lost was made anew from its file.', [
+			'app' => 'etherpad_nextcloud',
+			'fileId' => $fileId,
+			'padId' => $binding->padId,
+		]);
+		// After the row on purpose: the restore is done and recorded, and
+		// nothing about clearing up after it may turn that into a failure.
+		if ($lost === PadPresence::Absent) {
+			$this->discardWhatIsLeftOf($fileId, $binding->padId);
 		}
 		return $result;
 	}
 
-	/** @return array{status: string, reason?: string, old_pad_id?: string, new_pad_id?: string} */
-	private function restoreWithoutBinding(File $file, int $fileId, ?ParsedPadFile $read = null): array {
-		try {
-			$pad = $read ?? $this->readRestoredPad($file);
-		} catch (\Throwable $e) {
-			throw LifecycleException::failed('Restore', $e);
-		}
+	/**
+	 * A new pad from the snapshot of a file without a row, the row made for
+	 * it: for a restore and a recovery alike.
+	 *
+	 * @return array{status: string, reason?: string, old_pad_id?: string, new_pad_id?: string}
+	 */
+	private function restoreWithoutBinding(File $file, int $fileId, ParsedPadFile $pad): array {
 		if ($pad->namesAnExternalPad()) {
 			return LifecycleResult::skipped('external_pad', $fileId, $this->logger);
 		}

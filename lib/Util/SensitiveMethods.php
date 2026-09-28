@@ -59,8 +59,7 @@ final class SensitiveMethods {
 		// that a route that lets go again does not bring the document back
 		// into the log.
 		\OCA\EtherpadNextcloud\Service\RestoreService::class => [
-			'restoreWithReplacement', 'restoreOntoNewPad', 'seedFromSnapshot', 'replaceLostPad',
-			'restoreWithoutBinding',
+			'restoreOntoNewPad', 'seedFromSnapshot', 'replaceLostPad', 'restoreWithoutBinding',
 		],
 		\OCA\EtherpadNextcloud\Service\PadFileLockRetryService::class => ['putContentWithSyncLockRetry'],
 		\OCA\EtherpadNextcloud\Service\PadCreationService::class => ['writeCreatedFile'],
