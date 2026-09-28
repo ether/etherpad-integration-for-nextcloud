@@ -432,6 +432,14 @@ class ManagedPadLifecycleTest extends TestCase {
 			$logger->expects($this->once())->method('debug')->with('Could not ask Etherpad whether a pad is lost; opened as before.', $this->anything());
 			$this->assertFalse((new ManagedPadLifecycle($client, $logger))->isKnownLost('pad-1', BindingService::ACCESS_PROTECTED, 5, 'Saved text'), $error->getMessage());
 		}
+
+		// A fault of the check itself opens the pad too, but says so aloud.
+		$broken = $this->createMock(EtherpadClient::class);
+		$broken->method('getRevisionsCount')->willThrowException(new \TypeError('a call gone wrong'));
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects($this->never())->method('debug');
+		$logger->expects($this->once())->method('warning')->with('Could not tell whether a pad is lost; opened as before.', $this->anything());
+		$this->assertFalse((new ManagedPadLifecycle($broken, $logger))->isKnownLost('pad-1', BindingService::ACCESS_PROTECTED, 5, 'Saved text'));
 	}
 
 	/** Seeding says how many revisions the pad has then: what its file records as synced. */

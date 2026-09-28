@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Service;
 
+use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
 use OCA\EtherpadNextcloud\Util\EtherpadErrorClassifier;
 use OCA\EtherpadNextcloud\Util\PadAccessMode;
 use OCA\EtherpadNextcloud\Util\PadId;
@@ -235,7 +236,7 @@ class ManagedPadLifecycle {
 	 * revision count, and at revision 0 the text: an open that may write,
 	 * and a restore, wait on the answers.
 	 *
-	 * @param string $savedText the text of the file's snapshot (ParsedPadFile::savedText())
+	 * @param string $savedText the text of the file's snapshot (ParsedPadFile::$savedText)
 	 * @throws \Throwable when Etherpad gives any other answer, or none
 	 */
 	public function howLost(string $padId, string $accessMode, int $snapshotRevision, string $savedText, int $timeoutSeconds = self::PROBE_TIMEOUT_SECONDS): ?PadPresence {
@@ -271,8 +272,17 @@ class ManagedPadLifecycle {
 	public function isKnownLost(string $padId, string $accessMode, int $snapshotRevision, string $savedText): bool {
 		try {
 			return $this->howLost($padId, $accessMode, $snapshotRevision, $savedText) !== null;
-		} catch (\Throwable $e) {
+		} catch (EtherpadClientException $e) {
+			// Etherpad's own answer or silence: expected now and then.
 			$this->logger->debug('Could not ask Etherpad whether a pad is lost; opened as before.', [
+				'app' => 'etherpad_nextcloud',
+				...SafeError::context($e),
+			]);
+			return false;
+		} catch (\Throwable $e) {
+			// Anything else is a fault here, not Etherpad's: the open goes on,
+			// but the check is not doing its job, so it is said out loud.
+			$this->logger->warning('Could not tell whether a pad is lost; opened as before.', [
 				'app' => 'etherpad_nextcloud',
 				...SafeError::context($e),
 			]);

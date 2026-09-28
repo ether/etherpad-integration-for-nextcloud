@@ -244,6 +244,7 @@ class PadFileServiceTest extends TestCase {
 			['text' => "line-a\nline-b", 'html' => '<p>line-a</p>'],
 			$service->getSnapshotPartsFromBody($parsed->body),
 		);
+		$this->assertSame("line-a\nline-b", $parsed->savedText, 'read once, with the file');
 	}
 
 	public function testWithExportSnapshotEmptyValuesOverwritePreviousSnapshot(): void {

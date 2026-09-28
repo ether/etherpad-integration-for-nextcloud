@@ -152,7 +152,7 @@ class PublicPadOpenServiceTest extends TestCase {
 		return $ttl;
 	}
 
-	private function pad(string $padId, string $accessMode, bool $isExternal = false, string $padUrl = '', int $snapshotRev = -1, string $body = ''): ParsedPadFile {
-		return new ParsedPadFile([], $body, $padId, $accessMode, $padUrl, $isExternal, $snapshotRev);
+	private function pad(string $padId, string $accessMode, bool $isExternal = false, string $padUrl = '', int $snapshotRev = -1, string $savedText = ''): ParsedPadFile {
+		return new ParsedPadFile([], $savedText, $padId, $accessMode, $padUrl, $isExternal, $snapshotRev, $savedText);
 	}
 }

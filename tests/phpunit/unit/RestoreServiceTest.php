@@ -1178,6 +1178,7 @@ class RestoreServiceTest extends TestCase {
 			padUrl: '',
 			isExternal: false,
 			snapshotRev: $snapshotRev,
+			savedText: 'body',
 		);
 		// 'doc-after' is the file once written, naming the pad it was written for.
 		$padFileService->method('readPad')->willReturnCallback(fn (string $content): ParsedPadFile => match ($content) {
