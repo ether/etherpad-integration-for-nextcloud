@@ -51,6 +51,7 @@ trait PadFiles {
 		$file->method('getId')->willReturn($fileId);
 		$file->method('getName')->willReturn($name);
 		$file->method('getContent')->willReturn($content);
+		$file->method('isUpdateable')->willReturn(true);
 		return $file;
 	}
 }

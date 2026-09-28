@@ -26,6 +26,9 @@ use Psr\Log\LoggerInterface;
  * and nothing collected them afterwards.
  */
 class ManagedPadLifecycle {
+	/** How long whether a pad is lost may take to answer (howLost()). */
+	public const PROBE_TIMEOUT_SECONDS = 3;
+
 	public function __construct(
 		private EtherpadClient $etherpadClient,
 		private LoggerInterface $logger,
@@ -206,9 +209,14 @@ class ManagedPadLifecycle {
 	 * 1.1.0-beta.1 left kept the old pad's revision count. Quiet, unlike
 	 * probe(): an open asks this every time.
 	 *
+	 * Asked within PROBE_TIMEOUT_SECONDS: an open that may write, and a
+	 * restore, wait on the answer, and a public pad needed no call to
+	 * Etherpad to open before. A silent Etherpad fails them in seconds,
+	 * not after the client's full timeout.
+	 *
 	 * @throws \Throwable when Etherpad gives any other answer, or none
 	 */
-	public function howLost(string $padId, string $accessMode, int $snapshotRevision, ?int $timeoutSeconds = null): ?PadPresence {
+	public function howLost(string $padId, string $accessMode, int $snapshotRevision, int $timeoutSeconds = self::PROBE_TIMEOUT_SECONDS): ?PadPresence {
 		try {
 			$revisions = $this->etherpadClient->getRevisionsCount($padId, $timeoutSeconds);
 		} catch (\Throwable $e) {

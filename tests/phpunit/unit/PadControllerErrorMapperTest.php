@@ -25,6 +25,7 @@ use OCA\EtherpadNextcloud\Exception\PadAlreadyHasBindingException;
 use OCA\EtherpadNextcloud\Exception\PadFileAlreadyExistsException;
 use OCA\EtherpadNextcloud\Exception\PadFileChangedException;
 use OCA\EtherpadNextcloud\Exception\PadFileFormatException;
+use OCA\EtherpadNextcloud\Exception\PadFileNotWritableException;
 use OCA\EtherpadNextcloud\Exception\PadParentFolderNotWritableException;
 use OCA\EtherpadNextcloud\Exception\PadTypeDisabledException;
 use OCA\EtherpadNextcloud\Exception\UnauthorizedRequestException;
@@ -62,6 +63,7 @@ class PadControllerErrorMapperTest extends TestCase {
 		yield 'a file by that name' => [new PadFileAlreadyExistsException('internal wording'), Http::STATUS_CONFLICT, 'A file with this name already exists.', []];
 		yield 'linked already' => [new PadAlreadyHasBindingException('internal wording'), Http::STATUS_CONFLICT, 'This .pad file is already linked to a pad.', []];
 		yield 'a folder not writable' => [new PadParentFolderNotWritableException('internal wording'), Http::STATUS_FORBIDDEN, 'Selected parent folder is not writable.', []];
+		yield 'a file the user may not change' => [new PadFileNotWritableException('internal wording'), Http::STATUS_FORBIDDEN, 'Only someone who may edit this .pad file can make a new pad from it.', []];
 		yield 'a pad type switched off' => [new PadTypeDisabledException('protected'), Http::STATUS_FORBIDDEN, 'This pad type is disabled on this instance.', ['access_mode' => 'protected', 'code' => 'pad_type_disabled']];
 		yield 'both pad types switched off' => [new PadTypeDisabledException(), Http::STATUS_FORBIDDEN, 'This pad type is disabled on this instance.', ['code' => 'pad_type_disabled']];
 		// The recovery card hangs off the code.

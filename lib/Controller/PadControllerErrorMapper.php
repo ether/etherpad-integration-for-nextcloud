@@ -25,6 +25,7 @@ use OCA\EtherpadNextcloud\Exception\PadAlreadyHasBindingException;
 use OCA\EtherpadNextcloud\Exception\PadFileAlreadyExistsException;
 use OCA\EtherpadNextcloud\Exception\PadFileChangedException;
 use OCA\EtherpadNextcloud\Exception\PadFileFormatException;
+use OCA\EtherpadNextcloud\Exception\PadFileNotWritableException;
 use OCA\EtherpadNextcloud\Exception\PadParentFolderNotWritableException;
 use OCA\EtherpadNextcloud\Exception\PadTypeDisabledException;
 use OCA\EtherpadNextcloud\Exception\UnauthorizedRequestException;
@@ -119,6 +120,8 @@ class PadControllerErrorMapper {
 			return $this->answer($options, $e, ['message' => $this->l10n->t('This .pad file is already linked to a pad.')], Http::STATUS_CONFLICT);
 		} catch (PadParentFolderNotWritableException $e) {
 			return $this->answer($options, $e, ['message' => $this->l10n->t('Selected parent folder is not writable.')], Http::STATUS_FORBIDDEN);
+		} catch (PadFileNotWritableException $e) {
+			return $this->answer($options, $e, ['message' => $this->l10n->t('Only someone who may edit this .pad file can make a new pad from it.')], Http::STATUS_FORBIDDEN);
 		} catch (PadTypeDisabledException $e) {
 			$payload = ['message' => $this->l10n->t('This pad type is disabled on this instance.')];
 			if ($e->getAccessMode() !== '') {

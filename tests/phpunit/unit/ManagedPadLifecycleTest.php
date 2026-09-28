@@ -33,7 +33,7 @@ class ManagedPadLifecycleTest extends TestCase {
 	 * file's snapshot holds more. A public pad with nothing saved, Etherpad
 	 * makes on a visit; behind but written into is not lost, nor is an
 	 * untouched pad whose file never had a snapshot. Anything else Etherpad
-	 * answers, or its silence, is the caller's.
+	 * answers, or its silence, is the caller's. Asked within a few seconds.
 	 */
 	public function testHowAPadIsLost(): void {
 		$gone = new EtherpadRefusedException('padID does not exist');
@@ -49,7 +49,7 @@ class ManagedPadLifecycleTest extends TestCase {
 		];
 		foreach ($cases as $case => [$answer, $accessMode, $snapshot, $lost]) {
 			$client = $this->createMock(EtherpadClient::class);
-			$call = $client->method('getRevisionsCount')->with('pad-1');
+			$call = $client->method('getRevisionsCount')->with('pad-1', ManagedPadLifecycle::PROBE_TIMEOUT_SECONDS);
 			$answer instanceof \Throwable ? $call->willThrowException($answer) : $call->willReturn($answer);
 
 			$this->assertSame($lost, $this->lifecycle($client)->howLost('pad-1', $accessMode, $snapshot), $case);

@@ -13,6 +13,7 @@ use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
 use OCA\EtherpadNextcloud\Exception\LifecycleException;
 use OCA\EtherpadNextcloud\Exception\NotAPadFileException;
 use OCA\EtherpadNextcloud\Exception\PadAlreadyHasBindingException;
+use OCA\EtherpadNextcloud\Exception\PadFileNotWritableException;
 use OCA\EtherpadNextcloud\Exception\RunBudgetSpentException;
 use OCA\EtherpadNextcloud\Util\PadAccessMode;
 use OCA\EtherpadNextcloud\Util\PadFileType;
@@ -105,24 +106,21 @@ class RestoreService {
 			return LifecycleResult::skipped('unknown_access_mode', $fileId, $this->logger);
 		}
 
-		try {
-			$result = $this->restoreOntoNewPad(
-				$file,
-				$path,
-				$fileId,
-				$pad,
-				$accessMode,
-				$oldPadId,
-				'restore with replacement',
-				fn (string $newPadId): bool => $this->claimForReplacement($fileId, $oldPadId, $newPadId),
-			);
-		} catch (LifecycleException $e) {
-			// Besides the new pad, a failure takes the row still naming the
-			// old one: that pad is not the file's, and without a row the file
-			// offers its own recovery.
-			$this->releaseReplacedRow($fileId, $oldPadId);
-			throw $e;
-		}
+		// A failure leaves the row on the lost pad, moved back onto it if it
+		// was claimed already: the pad is the file's, only lost, and the
+		// next open offers the new pad again - a failure that passes,
+		// Etherpad gone while seeding or the file locked, costs nothing.
+		$result = $this->restoreOntoNewPad(
+			$file,
+			$path,
+			$fileId,
+			$pad,
+			$accessMode,
+			$oldPadId,
+			'restore with replacement',
+			fn (string $newPadId): bool => $this->claimForReplacement($fileId, $oldPadId, $newPadId),
+			rowStays: true,
+		);
 
 		// Outside the try on purpose: the restore is done and recorded, and
 		// nothing about clearing up after it may turn that into a failure.
@@ -160,11 +158,10 @@ class RestoreService {
 	}
 
 	/**
-	 * A row whose pad is no longer the file's, gone or behind its snapshot,
-	 * left by a replacement that did not happen. Removed rather than kept:
-	 * a later check would reach the same answer, and without the row the
-	 * file offers its own recovery. Conditional, so a row another restore
-	 * has taken since stays as it left it.
+	 * A row no new pad can be made on: its access mode is none the app
+	 * knows. Removed rather than kept, so the file offers its own recovery,
+	 * which goes by the file's access mode. Conditional, so a row another
+	 * restore has taken since stays as it left it.
 	 */
 	private function releaseReplacedRow(int $fileId, string $oldPadId): void {
 		try {
@@ -264,12 +261,21 @@ class RestoreService {
 	 * whose pad is gone (recoverLostPad). Refused for any other row. The
 	 * pad id the file names is never reused.
 	 *
+	 * Refused, before Etherpad is asked, to whoever may not change the
+	 * file - a read-only share, say: a recovery writes the file, and on a
+	 * row it moves the row first. The open's card never offers it to a
+	 * reader, but the endpoint answers anyone who can see the file.
+	 *
 	 * @return array{status: string, reason?: string, old_pad_id?: string, new_pad_id?: string}
+	 * @throws PadFileNotWritableException
 	 */
 	public function recoverFromSnapshot(File $file): array {
 		$fileId = $file->getId();
 		if (!PadFileType::isPad($file->getName())) {
 			throw new NotAPadFileException('File is not a .pad file.');
+		}
+		if (!$file->isUpdateable()) {
+			throw new PadFileNotWritableException('The user may not change this .pad file.');
 		}
 		$binding = $this->bindingService->findByFileId($fileId);
 		if ($binding !== null) {
@@ -447,7 +453,10 @@ class RestoreService {
 	 * A claim lost to another flow leaves the row and the file to it. One
 	 * that fails, or a write that fails, takes the new pad down, and an
 	 * active row naming it with it - that row would contradict a `.pad` that
-	 * still names the old pad - while a row a trash took over keeps it.
+	 * still names the old pad - while a row seen deleted for good meanwhile
+	 * keeps it. With $rowStays, the row a replacement claimed is moved back
+	 * onto the old pad instead, where the file still points; only when that
+	 * fails too does it go.
 	 *
 	 * Seeding the new pad takes a while, so the file is asked once more
 	 * before the claim: moved - deleted again, say - and the new pad goes,
@@ -458,7 +467,7 @@ class RestoreService {
 	 * @return array{status: string, reason?: string, old_pad_id?: string, new_pad_id?: string}
 	 * @throws LifecycleException
 	 */
-	private function restoreOntoNewPad(File $file, string $path, int $fileId, ParsedPadFile $pad, string $accessMode, string $oldPadId, string $flow, \Closure $claim): array {
+	private function restoreOntoNewPad(File $file, string $path, int $fileId, ParsedPadFile $pad, string $accessMode, string $oldPadId, string $flow, \Closure $claim, bool $rowStays = false): array {
 		try {
 			[$newPadId, $updatedContent] = $this->seedFromSnapshot($fileId, $pad, $accessMode, $oldPadId);
 		} catch (\Throwable $e) {
@@ -483,10 +492,27 @@ class RestoreService {
 			}
 			$this->writeRestoredContent($file, $updatedContent);
 		} catch (\Throwable $e) {
-			$this->provisionedPadRollback->removeMatchingBindingAndDiscard($fileId, $newPadId, $flow);
+			if ($rowStays && $this->moveRowBack($fileId, $newPadId, $oldPadId)) {
+				$this->provisionedPadRollback->discardUnlessBoundToFile($fileId, $newPadId, $flow);
+			} else {
+				$this->provisionedPadRollback->removeMatchingBindingAndDiscard($fileId, $newPadId, $flow);
+			}
 			throw LifecycleException::failed('Restore', $e);
 		}
 		return LifecycleResult::restored($oldPadId, $newPadId);
+	}
+
+	/**
+	 * The active row a failed replacement claimed, back on the old pad.
+	 * False when it does not name the new pad - the claim never landed -
+	 * or cannot be moved.
+	 */
+	private function moveRowBack(int $fileId, string $newPadId, string $oldPadId): bool {
+		try {
+			return $this->bindingService->rebind($fileId, $newPadId, BindingService::STATE_ACTIVE, $oldPadId, BindingService::STATE_ACTIVE);
+		} catch (\Throwable) {
+			return false;
+		}
 	}
 
 	/** Make the pad a restored snapshot goes into; the names say so. */

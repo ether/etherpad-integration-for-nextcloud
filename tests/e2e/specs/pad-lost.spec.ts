@@ -4,7 +4,7 @@
  */
 import { test, expect } from '@playwright/test'
 import { E2E } from '../fixtures/env'
-import { createPadAtPath, deleteViaDav, getFileViaDav, padApiPost, propfindFileId, restoreFromTrashViaDav } from '../fixtures/dav'
+import { createPadAtPath, createUserReadShare, deleteShareById, deleteViaDav, getFileViaDav, padApiPost, propfindFileId, restoreFromTrashViaDav } from '../fixtures/dav'
 import { etherpadApiPost, padIdOfPadUrl } from '../fixtures/etherpad'
 import { expectEtherpadViewerMounted, gotoFiles, openPadFromFileList, uniquePadName } from '../fixtures/nextcloud'
 
@@ -65,6 +65,33 @@ test.describe('a pad Etherpad has lost', () => {
 			}
 		})
 	}
+
+	/**
+	 * A recovery writes the file and moves its row: someone the file is
+	 * shared with to read may not, whatever the endpoint is asked. The file
+	 * stays as it is, and its owner makes the new pad as before.
+	 */
+	test('a reader of a shared file may not make its new pad', async () => {
+		test.skip(!E2E.hasSecondaryAccount(), 'Needs a second account to share with.')
+		const name = uniquePadName('lost-shared')
+		let shareId: string | null = null
+		try {
+			const { fileId, padId, marker } = await padWithSavedText(name, 'protected')
+			shareId = (await createUserReadShare(name, E2E.secondaryUser!)).id
+			await etherpadApiPost('deletePad', { padID: padId })
+
+			const refused = await padApiPost(`pads/recover-from-snapshot/${fileId}`, null, { uid: E2E.secondaryUser!, password: E2E.secondaryAppPassword! })
+			expect(refused.status, JSON.stringify(refused.body)).toBe(403)
+			expect(await getFileViaDav(name), 'the file still names its pad').toContain(padId)
+
+			await expectRecovered(name, fileId, padId, marker)
+		} finally {
+			if (shareId !== null) {
+				await deleteShareById(shareId)
+			}
+			await deleteViaDav(name)
+		}
+	})
 
 	test('a public pad Etherpad made anew, empty, counts as lost', async () => {
 		const name = uniquePadName('lost-remade')
