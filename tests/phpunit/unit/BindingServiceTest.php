@@ -306,21 +306,21 @@ class BindingServiceTest extends TestCase {
 	/**
 	 * Both predicates and the state belong in the statement. Without the pad
 	 * id a delete by file id alone takes the row a concurrent rebind just
-	 * won; without `state` it takes the row a trash left as pending_delete,
-	 * the only record of a deletion still owed.
+	 * won; without `state` it takes a row whose file was seen deleted for
+	 * good, the only record of the pad the sweep has yet to delete.
 	 */
-	public function testDeletingAnActiveBindingLeavesAnOwedDeletionAlone(): void {
+	public function testDeletingAnActiveBindingLeavesARowSeenDeletedAlone(): void {
 		$table = new InMemoryBindingTable([
-			self::bindingRow(4711, 'nc-owed', BindingService::STATE_PENDING_DELETE),
+			self::bindingRow(4711, 'nc-gone', BindingService::STATE_PENDING_DELETE),
 			self::bindingRow(4712, 'nc-abc', BindingService::STATE_ACTIVE),
 		]);
 		$service = new BindingService($table, new FixedClock(500));
 
-		self::assertFalse($service->deleteActiveBinding(4711, 'nc-owed'), 'owed');
+		self::assertFalse($service->deleteActiveBinding(4711, 'nc-gone'), 'seen deleted');
 		self::assertFalse($service->deleteActiveBinding(4712, 'nc-other'), 'another pad');
 		self::assertFalse($service->deleteActiveBinding(4713, 'nc-abc'), 'another file');
 		self::assertTrue($service->deleteActiveBinding(4712, 'nc-abc'));
-		self::assertSame([self::bindingRow(4711, 'nc-owed', BindingService::STATE_PENDING_DELETE)], $table->rows);
+		self::assertSame([self::bindingRow(4711, 'nc-gone', BindingService::STATE_PENDING_DELETE)], $table->rows);
 	}
 
 	/**
@@ -382,10 +382,10 @@ class BindingServiceTest extends TestCase {
 	}
 
 	/**
-	 * A row that stays waiting keeps the date its file was seen deleted.
-	 * Only updated_at moves, which puts it at the back of the queue.
+	 * A row that stays pending_delete keeps the date its file was seen
+	 * deleted for good, which its grace runs from. Only updated_at moves.
 	 */
-	public function testARowThatStaysOwedKeepsItsDate(): void {
+	public function testARowThatStaysSeenDeletedKeepsItsDate(): void {
 		$table = new InMemoryBindingTable([self::bindingRow(1, 'pad', BindingService::STATE_PENDING_DELETE)]);
 		$service = new BindingService($table, new FixedClock(500));
 

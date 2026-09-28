@@ -26,10 +26,10 @@ import { deleteViaDav, findTrashbinEntry, restoreFromTrashViaDav } from '../fixt
  * button fires under the hood, so we cover the same lifecycle path
  * without coupling the spec to that DOM.
  *
- * Server-side lifecycle (binding teardown, deferred delete, Etherpad-
- * side cleanup) is already covered end-to-end by the bash specs in
- * `tests/integration/e2e-lifecycle-*.sh`. This spec is the UI-side
- * smoke check: create → trash → restore → reopen.
+ * What the trash and a delete for good do to the pad, Etherpad side
+ * included, is covered by `pad-gone-for-good.spec.ts`, and a pad Etherpad
+ * lost by `pad-lost.spec.ts`. This spec is the UI-side smoke check:
+ * create → trash → restore → reopen.
  */
 test.describe('pad trash + restore', () => {
 	const padName = uniquePadName('trash-restore')

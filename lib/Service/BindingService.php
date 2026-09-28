@@ -113,10 +113,10 @@ class BindingService {
 	 * against the pad it names now as well as its state, so a row that
 	 * moved on to a different pad in the meantime is left alone.
 	 *
-	 * deleted_at says the file is in the trash, and of the states only
-	 * pending_delete means that: going there sets it anew, going anywhere
-	 * else clears it. A row that stays there keeps it: its age decides how
-	 * often a sweep tries it, and only updated_at moves.
+	 * deleted_at dates when the file was seen deleted for good, and of the
+	 * states only pending_delete has it: going there sets it anew, going
+	 * anywhere else clears it, and a row that stays there keeps it - the
+	 * sweep's grace runs from it - while only updated_at moves.
 	 */
 	public function rebind(int $fileId, string $fromPadId, string $from, string $toPadId, string $to): bool {
 		$now = $this->timeFactory->getTime();
@@ -419,9 +419,9 @@ class BindingService {
 	 * Both predicates are in the statement rather than read first and
 	 * deleted after: between those two the unique index on `file_id` can be
 	 * handed to another pad, and a delete by file id alone would take the
-	 * winner's row. Answering false also covers the row a trash that could
-	 * not reach Etherpad left as `pending_delete`: that row is the only
-	 * record of a deletion still owed, and of the pad it is owed for.
+	 * winner's row. Answering false also covers a row whose file was seen
+	 * deleted for good meanwhile (`pending_delete`): the sweep has yet to
+	 * delete its pad, and the row is the only record of which pad that is.
 	 */
 	public function deleteActiveBinding(int $fileId, string $padId): bool {
 		return $this->deleteInState($fileId, $padId, self::STATE_ACTIVE);
