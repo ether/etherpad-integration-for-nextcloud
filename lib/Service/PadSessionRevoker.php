@@ -88,13 +88,16 @@ class PadSessionRevoker {
 	 * else's, with other pads in it whose sessions are not this file's to
 	 * end (docs/etherpad-integration.md, "Removing a pad").
 	 *
+	 * Each group's sessions go before the next group is asked. Listing every
+	 * group first spent a slow Etherpad's budget on the listing - two calls
+	 * a group - and left none for a single delete.
+	 *
 	 * @param list<string> $padIds
 	 * @return int how many were removed
 	 */
 	public function revokeForPads(array $padIds): int {
 		$deadline = $this->nowSeconds() + self::BUDGET_SECONDS;
-		$sessions = [];
-		$unclassified = 0;
+		$tally = self::emptyTally();
 		$groups = [];
 		$unasked = 0;
 		foreach ($padIds as $padId) {
@@ -120,8 +123,8 @@ class PadSessionRevoker {
 					$unasked++;
 					continue;
 				}
-				$sessions += $this->etherpadClient->listSessionsOfGroup($groupId, $this->callTimeout($deadline - $this->nowSeconds()), $unreadable);
-				$unclassified += $unreadable ?? 0;
+				$sessions = $this->etherpadClient->listSessionsOfGroup($groupId, $this->callTimeout($deadline - $this->nowSeconds()), $unreadable);
+				$tally['left'] += $unreadable ?? 0;
 			} catch (\Throwable $e) {
 				if (EtherpadErrorClassifier::isPadAlreadyDeleted($e)) {
 					// No group, and no session left in it.
@@ -132,7 +135,9 @@ class PadSessionRevoker {
 					'groupId' => $groupId,
 					...SafeError::context($e),
 				]);
+				continue;
 			}
+			$this->deleteLive($sessions, $deadline, [], $tally);
 		}
 		if ($unasked > 0) {
 			$this->logger->warning('No time left to revoke Etherpad sessions; they will expire on their own.', [
@@ -140,7 +145,7 @@ class PadSessionRevoker {
 				'groupsLeft' => $unasked,
 			]);
 		}
-		return $this->revokeListed($sessions, $unclassified, $deadline, ['groupIds' => array_keys($groups)]);
+		return $this->report($tally, ['groupIds' => array_keys($groups)]);
 	}
 
 	/**
@@ -201,29 +206,33 @@ class PadSessionRevoker {
 		// revoked — deleteSession answers that they do not exist — so they
 		// belong in the number that says this logout did not finish, not
 		// dropped on the way in.
-		$unclassified = $unreadable ?? 0;
+		$tally = self::emptyTally();
+		$tally['left'] = $unreadable ?? 0;
 
-		return $this->revokeListed($this->carriedFirst($sessions), $unclassified, $deadline, ['uid' => $uid]);
+		$context = ['uid' => $uid];
+		$this->deleteLive($this->carriedFirst($sessions), $deadline, $context, $tally);
+		return $this->report($tally, $context);
+	}
+
+	/** @return array{attempted: int, revoked: int, left: int} */
+	private static function emptyTally(): array {
+		return ['attempted' => 0, 'revoked' => 0, 'left' => 0];
 	}
 
 	/**
 	 * The live ones among $sessions deleted, within what is left of the
-	 * budget until $deadline, and a line that says how it went; $context
-	 * names whose sessions they are. $unclassified: ids the listing gave
-	 * that Etherpad could not describe, left behind all the same.
+	 * budget until $deadline, counted into $tally: deletes attempted - one
+	 * ceiling across every call for one revoke - sessions removed, and live
+	 * ones left to expire. $context names whose sessions they are.
 	 *
 	 * @param array<string,array{groupID:string,validUntil:int}> $sessions
 	 * @param array<string,mixed> $context
-	 * @return int how many were removed
+	 * @param array{attempted: int, revoked: int, left: int} $tally
 	 */
-	private function revokeListed(array $sessions, int $unclassified, float $deadline, array $context): int {
+	private function deleteLive(array $sessions, float $deadline, array $context, array &$tally): void {
 		// Only what is expired on both clocks. Anything newer is treated as
 		// live and revoked, which at worst deletes something already gone.
 		$expiredBefore = $this->timeFactory->getTime() - EtherpadClient::CLOCK_SKEW_ALLOWANCE_SECONDS;
-		$attempted = 0;
-		$revoked = 0;
-		$skipped = 0;
-		$failed = 0;
 		foreach ($sessions as $sessionId => $info) {
 			// An all-digit id would arrive as an int: php casts numeric
 			// array keys, and everything downstream is typed string.
@@ -246,15 +255,15 @@ class PadSessionRevoker {
 			// counted in completed deletes, and spend one call and one
 			// warning per live session.
 			$left = $deadline - $this->nowSeconds();
-			if ($attempted >= self::MAX_PER_REQUEST || $left < self::MIN_CALL_TIMEOUT_SECONDS) {
-				$skipped++;
+			if ($tally['attempted'] >= self::MAX_PER_REQUEST || $left < self::MIN_CALL_TIMEOUT_SECONDS) {
+				$tally['left']++;
 				continue;
 			}
-			$attempted++;
+			$tally['attempted']++;
 
 			try {
 				$this->etherpadClient->deleteSession($sessionId, $this->callTimeout($left));
-				$revoked++;
+				$tally['revoked']++;
 			} catch (\Throwable $e) {
 				if (EtherpadErrorClassifier::isSessionAlreadyGone($e)) {
 					// Already gone, which is the outcome asked for.
@@ -264,7 +273,7 @@ class PadSessionRevoker {
 				// summary below is what says whether a logout finished its
 				// job, and a live session the pad server refused to delete
 				// is exactly as left behind as one the budget never reached.
-				$failed++;
+				$tally['left']++;
 				$this->logger->warning('Could not revoke an Etherpad session; it will expire on its own.', [
 					'app' => 'etherpad_nextcloud',
 					...$context,
@@ -273,8 +282,19 @@ class PadSessionRevoker {
 				]);
 			}
 		}
+	}
 
-		$leftToExpire = $skipped + $failed + $unclassified;
+	/**
+	 * The line that says how a revoke went; $context names whose sessions
+	 * they were.
+	 *
+	 * @param array{attempted: int, revoked: int, left: int} $tally
+	 * @param array<string,mixed> $context
+	 * @return int how many were removed
+	 */
+	private function report(array $tally, array $context): int {
+		$revoked = $tally['revoked'];
+		$leftToExpire = $tally['left'];
 		if ($revoked > 0) {
 			$this->logger->info('Revoked Etherpad sessions.', [
 				'app' => 'etherpad_nextcloud',

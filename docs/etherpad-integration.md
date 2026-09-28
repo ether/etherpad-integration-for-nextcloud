@@ -252,7 +252,8 @@ The trash keeps the pad, and a session would keep giving it to whoever
 holds one. Listed by group (`listSessionsOfGroup`), and only for a group
 that holds that pad alone, or nothing: a legacy `.pad` may name a group
 this app did not make, and its sessions are not the file's to end. The
-same budget as a logout's.
+same budget as a logout's, spent group by group: a group's sessions go
+before the next group is asked.
 
 **Otherwise, only logout.** Losing a share does not revoke anything, and
 neither does a permission downgrade, a deleted or disabled account, or a

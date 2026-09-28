@@ -480,6 +480,50 @@ class PadSessionRevokerTest extends TestCase {
 		], $lines);
 	}
 
+	/**
+	 * Each group's sessions go before the next group is asked. With every
+	 * call taking 0.3 s, listing three groups first took the budget, and
+	 * no session went; now the first group's does, and the groups left
+	 * are said.
+	 */
+	public function testASlowPadServerStillRevokesTheFirstGroupsSessions(): void {
+		$clock = new FixedClock();
+		$slow = static function () use ($clock): void {
+			$clock->advanceMicros(300_000);
+		};
+		$client = $this->createMock(EtherpadClient::class);
+		$client->method('listPads')->willReturnCallback(static function (string $group) use ($slow): array {
+			$slow();
+			return [$group . '$pad'];
+		});
+		$client->method('listSessionsOfGroup')->willReturnCallback(static function (string $group) use ($slow): array {
+			$slow();
+			return ['s.' . $group => ['groupID' => $group, 'validUntil' => FixedClock::NOW + 3600]];
+		});
+		$removed = [];
+		$client->method('deleteSession')->willReturnCallback(static function (string $id) use ($slow, &$removed): void {
+			$slow();
+			$removed[] = $id;
+		});
+		$lines = [];
+		$logger = $this->createMock(LoggerInterface::class);
+		foreach (['info', 'warning'] as $level) {
+			$logger->method($level)->willReturnCallback(static function (string $message, array $context) use (&$lines): void {
+				$lines[] = [$message, $context['count'] ?? $context['groupsLeft'] ?? null];
+			});
+		}
+		$revoker = new PadSessionRevoker($client, $this->createMock(PadSessionService::class), $logger, $clock);
+
+		$count = $revoker->revokeForPads(['g.AAAAAAAAAAAAAAAA$pad', 'g.BBBBBBBBBBBBBBBB$pad', 'g.CCCCCCCCCCCCCCCC$pad']);
+
+		self::assertSame(1, $count);
+		self::assertSame(['s.g.AAAAAAAAAAAAAAAA'], $removed);
+		self::assertSame([
+			['No time left to revoke Etherpad sessions; they will expire on their own.', 2],
+			['Revoked Etherpad sessions.', 1],
+		], $lines);
+	}
+
 	private function revoker(
 		EtherpadClient $client,
 		string $author = self::AUTHOR,
