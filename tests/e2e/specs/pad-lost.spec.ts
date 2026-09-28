@@ -93,6 +93,33 @@ test.describe('a pad Etherpad has lost', () => {
 		}
 	})
 
+	/**
+	 * A pad made from a template holds the template's content in its file
+	 * from the start, before any sync. Lost then - made anew, empty, by a
+	 * visit to its address - it counts as lost like any other, and the new
+	 * pad holds the template's content, rather than a sync writing the
+	 * empty pad over it.
+	 */
+	test('a public pad made from a template counts as lost before its first sync', async () => {
+		const templateName = uniquePadName('lost-template-src')
+		const name = uniquePadName('lost-from-template')
+		try {
+			const template = await padWithSavedText(templateName, 'public')
+			const created = await padApiPost('pads/from-template', { file: `/${name}`, templateFileId: String(template.fileId) })
+			expect(created.status, JSON.stringify(created.body)).toBe(200)
+			const fileId = await propfindFileId(name)
+			const padId = String((created.body as { pad_id?: string }).pad_id ?? '')
+			expect(padId).not.toBe('')
+			await etherpadApiPost('deletePad', { padID: padId })
+			await etherpadApiPost('createPad', { padID: padId })
+
+			await expectRecovered(name, fileId, padId, template.marker)
+		} finally {
+			await deleteViaDav(name)
+			await deleteViaDav(templateName)
+		}
+	})
+
 	test('a public pad Etherpad made anew, empty, counts as lost', async () => {
 		const name = uniquePadName('lost-remade')
 		try {

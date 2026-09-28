@@ -326,7 +326,7 @@ class PadCreationServiceTest extends TestCase {
 		));
 		$padFileService->method('getSnapshotPartsFromBody')->willReturn(['text' => 'hello', 'html' => '<p>hello</p>']);
 		$padFileService->method('buildInitialDocument')
-			->with(4321, 'g.grp$pad', BindingService::ACCESS_PROTECTED, new PadSnapshot('hello', '<p>hello</p>', 0), 'https://pad.example.test/p/x')
+			->with(4321, 'g.grp$pad', BindingService::ACCESS_PROTECTED, new PadSnapshot('hello', '<p>hello</p>', 2), 'https://pad.example.test/p/x')
 			->willReturn('doc-with-snapshot');
 		$padFileService->expects($this->never())->method('withExportSnapshot');
 
@@ -341,6 +341,9 @@ class PadCreationServiceTest extends TestCase {
 		// The template's formatting is what reaches the pad, not its text.
 		$etherpadClient->expects($this->once())->method('setHTML')->with('g.grp$pad', '<p>hello</p>');
 		$etherpadClient->expects($this->never())->method('setText');
+		// The file records the revisions seeding left, as a restore does: it
+		// holds the template's content from the start.
+		$etherpadClient->method('getRevisionsCount')->with('g.grp$pad')->willReturn(2);
 
 		$bindingService = $this->createMock(BindingService::class);
 		$bindingService->expects(self::once())

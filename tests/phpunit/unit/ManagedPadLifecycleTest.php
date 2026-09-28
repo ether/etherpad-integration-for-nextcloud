@@ -399,20 +399,24 @@ class ManagedPadLifecycleTest extends TestCase {
 		);
 	}
 
+	/** Seeding says how many revisions the pad has then: what its file records as synced. */
 	public function testSeedsWithHtmlSoFormattingSurvives(): void {
 		$client = $this->createMock(EtherpadClient::class);
 		$client->expects($this->once())->method('setHTML')->with('nc-pad', '<p>text</p>');
 		$client->expects($this->never())->method('setText');
+		$client->method('getRevisionsCount')->with('nc-pad')->willReturn(2);
 
-		$this->lifecycle($client)->seed('nc-pad', 'text', '<p>text</p>');
+		$this->assertSame(2, $this->lifecycle($client)->seed('nc-pad', 'text', '<p>text</p>'));
 	}
 
+	/** Etherpad not saying how many revisions leaves the file to its first sync. */
 	public function testSeedsWithPlainTextWhenThereIsNoHtml(): void {
 		$client = $this->createMock(EtherpadClient::class);
 		$client->expects($this->never())->method('setHTML');
 		$client->expects($this->once())->method('setText')->with('nc-pad', 'text');
+		$client->method('getRevisionsCount')->willThrowException(new EtherpadClientException('Etherpad API request failed'));
 
-		$this->lifecycle($client)->seed('nc-pad', 'text', '   ');
+		$this->assertSame(-1, $this->lifecycle($client)->seed('nc-pad', 'text', '   '));
 	}
 
 	/** Never both: setText replaces, so it would wipe the HTML just imported. */

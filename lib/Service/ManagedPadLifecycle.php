@@ -132,7 +132,13 @@ class ManagedPadLifecycle {
 	}
 
 	/**
-	 * Put a snapshot into a pad that has just been provisioned.
+	 * Put a snapshot into a pad that has just been provisioned, and say how
+	 * many revisions the pad has then: what a file holding that snapshot
+	 * records as synced (`snapshot_rev`). A file that says so counts as
+	 * holding saved content should Etherpad lose the pad (howLost()); one
+	 * with 0 would not, and a public pad made anew, empty, on a visit
+	 * would be synced over it. -1 when Etherpad does not say: the file is
+	 * left to its first sync, as a new one is.
 	 *
 	 * setHTML first so formatting survives, and setText only where there is
 	 * no HTML or Etherpad refuses it. Never both: `setText` replaces the
@@ -144,12 +150,13 @@ class ManagedPadLifecycle {
 	 *   line; `app` and SafeError's `error`, `error_message` and
 	 *   `error_origin` are set here and win a collision. Do not pass a pad
 	 *   id - the fileId every caller already supplies is the handle
+	 * @return int the pad's revisions once seeded, -1 when not known
 	 */
-	public function seed(string $padId, string $text, string $html, array $context = []): void {
+	public function seed(string $padId, string $text, string $html, array $context = []): int {
 		if (trim($html) !== '') {
 			try {
 				$this->etherpadClient->setHTML($padId, $html);
-				return;
+				return $this->revisionsOfSeeded($padId);
 			} catch (\Throwable $htmlError) {
 				// Every caller supplies a fileId in $context, which is the
 				// handle to keep: a pad id plus the configured host is a
@@ -162,6 +169,15 @@ class ManagedPadLifecycle {
 		}
 
 		$this->etherpadClient->setText($padId, $text);
+		return $this->revisionsOfSeeded($padId);
+	}
+
+	private function revisionsOfSeeded(string $padId): int {
+		try {
+			return $this->etherpadClient->getRevisionsCount($padId);
+		} catch (\Throwable) {
+			return -1;
+		}
 	}
 
 	/**

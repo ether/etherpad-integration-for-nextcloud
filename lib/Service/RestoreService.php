@@ -224,33 +224,22 @@ class RestoreService {
 		$snapshot = $this->padFileService->getSnapshotPartsFromBody($pad->body);
 		$newPadId = $this->provisionRestorePadId($accessMode, $oldPadId);
 		try {
-			$this->padLifecycle->seed($newPadId, $snapshot['text'], $snapshot['html'], ['fileId' => $fileId]);
+			// Nobody else knows the new pad's id yet to have changed it, so
+			// the file records what seeding left as synced.
+			$revisions = $this->padLifecycle->seed($newPadId, $snapshot['text'], $snapshot['html'], ['fileId' => $fileId]);
 			$content = $this->padFileService->withRestoredSnapshot(
 				$pad,
 				$snapshot['text'],
 				$snapshot['html'],
 				$newPadId,
 				$this->etherpadClient->buildPadUrl($newPadId),
-				$this->revisionsOfSeededPad($newPadId),
+				$revisions,
 			);
 		} catch (\Throwable $e) {
 			$this->provisionedPadRollback->discardUnlessBoundToFile($fileId, $newPadId, 'restore from snapshot');
 			throw $e;
 		}
 		return [$newPadId, $content];
-	}
-
-	/**
-	 * What the file records as synced: the new pad holds exactly its
-	 * snapshot, and nobody else knows the pad's id yet to have changed it.
-	 * Without an answer the file is left to its first sync, as a new one is.
-	 */
-	private function revisionsOfSeededPad(string $newPadId): int {
-		try {
-			return $this->etherpadClient->getRevisionsCount($newPadId);
-		} catch (\Throwable) {
-			return -1;
-		}
 	}
 
 	/**
