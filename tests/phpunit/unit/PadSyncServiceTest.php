@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Tests\Unit;
 
+use OCA\EtherpadNextcloud\Exception\BindingMismatchException;
 use OCA\EtherpadNextcloud\Exception\NotAPadFileException;
 use OCA\EtherpadNextcloud\Exception\ExternalPadException;
 use OCA\EtherpadNextcloud\Exception\PadLostException;
@@ -18,6 +19,7 @@ use OCA\EtherpadNextcloud\Service\ParsedPadFile;
 use OCA\EtherpadNextcloud\Service\UserNodeResolver;
 use OCA\EtherpadNextcloud\Tests\Support\FixedClock;
 use OCP\Files\File;
+use OCP\Lock\LockedException;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 
@@ -367,6 +369,48 @@ class PadSyncServiceTest extends TestCase {
 				$this->assertSame($expected, $e::class, $case);
 			}
 		}
+	}
+
+	/**
+	 * A recovery that moves the row onto a new pad while the sync waits for
+	 * the file's lock stops the sync's next write: the old pad's text would
+	 * go over the file the recovery wrote, and file and row name two pads.
+	 */
+	public function testARowMovedWhileTheSyncWaitsStopsItsWrite(): void {
+		$file = $this->createMock(File::class);
+		$file->method('getName')->willReturn('Test.pad');
+		$file->method('getContent')->willReturn('frontmatter');
+		$file->expects($this->once())->method('putContent')->willThrowException(new LockedException('locked'));
+		$userNodeResolver = $this->createMock(UserNodeResolver::class);
+		$userNodeResolver->method('resolveUserFileNodeById')->with('alice', 138)->willReturn($file);
+		$padFileService = $this->createMock(PadFileService::class);
+		$padFileService->method('readPad')->willReturn(new ParsedPadFile(
+			frontmatter: [],
+			body: '',
+			padId: 'g.ABC$pad',
+			accessMode: BindingService::ACCESS_PROTECTED,
+			padUrl: '',
+			isExternal: false,
+			snapshotRev: 4,
+		));
+		$padFileService->method('withExportSnapshot')->willReturn('updated');
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->method('getRevisionsCount')->willReturn(5);
+		$etherpadClient->method('getText')->willReturn('text');
+		$etherpadClient->method('getHTML')->willReturn('<p>text</p>');
+		$checks = 0;
+		$bindingService = $this->createMock(BindingService::class);
+		$bindingService->method('assertConsistentMapping')->willReturnCallback(static function () use (&$checks): void {
+			// As the sync starts, before its first write, and after its wait.
+			if (++$checks === 3) {
+				throw new BindingMismatchException('Binding pad ID mismatch.');
+			}
+		});
+		$lockRetryService = new PadFileLockRetryService(static function (int $delay): void {
+		});
+
+		$this->expectException(BindingMismatchException::class);
+		$this->buildService($padFileService, $userNodeResolver, $bindingService, $etherpadClient, $lockRetryService)->syncById('alice', 138, false);
 	}
 
 	private function buildService(

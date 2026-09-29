@@ -57,6 +57,31 @@ class PadFileLockRetryServiceTest extends TestCase {
 		$this->assertSame([150000, 300000, 600000], $sleeps);
 	}
 
+	/**
+	 * The check a caller gives runs right before every write, the ones
+	 * after a wait too, and one that throws stops the write: what held
+	 * before a wait for a lock need not hold after it.
+	 */
+	public function testTheCheckRunsBeforeEveryWriteAndCanStopIt(): void {
+		$service = new PadFileLockRetryService(static function (int $delay): void {
+		});
+		$checks = 0;
+		$file = $this->createMock(File::class);
+		$file->expects($this->once())->method('putContent')->willThrowException(new LockedException('locked'));
+
+		try {
+			$service->putContentWithSyncLockRetry($file, 'content', static function () use (&$checks): void {
+				if (++$checks === 2) {
+					throw new \RuntimeException('moved on meanwhile');
+				}
+			});
+			$this->fail('written after the check failed');
+		} catch (\RuntimeException $e) {
+			$this->assertSame('moved on meanwhile', $e->getMessage());
+		}
+		$this->assertSame(2, $checks);
+	}
+
 	public function testPutContentThrowsRetryExhaustedWithRetryCount(): void {
 		$sleeps = [];
 		$service = new PadFileLockRetryService(static function (int $delay) use (&$sleeps): void {
