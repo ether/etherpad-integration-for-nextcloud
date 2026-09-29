@@ -11,5 +11,8 @@ if (!interface_exists(IStorage::class)) {
 
 		/** @return string */
 		public function getId();
+
+		/** @return bool */
+		public function instanceOfStorage(string $class);
 	}
 }

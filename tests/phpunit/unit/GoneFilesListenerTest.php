@@ -17,6 +17,9 @@ use OCP\Files\Config\IUserMountCache;
 use OCP\Files\Events\Node\BeforeNodeDeletedEvent;
 use OCP\Files\Events\Node\NodeDeletedEvent;
 use OCP\Files\File;
+use OCP\Files\IHomeStorage;
+use OCP\Files\IRootFolder;
+use OCP\Files\Mount\IMountPoint;
 use OCP\Files\NotFoundException;
 use OCP\Files\Storage\IStorage;
 use OCP\IUser;
@@ -34,6 +37,8 @@ use Psr\Log\LoggerInterface;
 class GoneFilesListenerTest extends TestCase {
 	private const HOME = 'home::alice';
 	private const ROOT = 'local::/var/www/html/data/';
+	/** The root storage's numeric id; the home's is 1. */
+	private const ROOT_ID = 2;
 
 	/** @var list<array{string,list<int>}> what the listener wrote, in order */
 	private array $calls = [];
@@ -46,6 +51,7 @@ class GoneFilesListenerTest extends TestCase {
 	private BindingService $bindings;
 	private IUserMountCache $mounts;
 	private LoggerInterface $logger;
+	private IRootFolder $rootFolder;
 
 	protected function setUp(): void {
 		$this->calls = [];
@@ -70,13 +76,21 @@ class GoneFilesListenerTest extends TestCase {
 		});
 		$this->mounts = $this->createMock(IUserMountCache::class);
 		$this->logger = $this->createMock(LoggerInterface::class);
+		$rootMount = $this->createMock(IMountPoint::class);
+		$rootMount->method('getNumericStorageId')->willReturn(self::ROOT_ID);
+		$this->rootFolder = $this->createMock(IRootFolder::class);
+		$this->rootFolder->method('getMount')->with('/')->willReturn($rootMount);
 	}
 
 	/**
 	 * A removal from a trash counts, whoever makes it; so does the removal
 	 * of a node being deleted, whatever the file's name. Versions and app
-	 * data never count, and a `trash/` folder counts only on a team folder's
-	 * own storage. A removal outside a delete - a scan's - does not.
+	 * data never count. Each path is a trash, versions or app data only on
+	 * the storage it belongs to - a user's trash and versions on a home, a
+	 * team folder's trash and app data on the root storage, `trash/` on a
+	 * team folder's own - and a folder of that name anywhere else is a
+	 * folder like another. A removal outside a delete - a scan's - does not
+	 * count.
 	 *
 	 * @return iterable<string,array{string,string,bool,bool}>
 	 */
@@ -95,17 +109,26 @@ class GoneFilesListenerTest extends TestCase {
 		yield 'by a delete, on an external storage' => ['local::/mnt/share/', 'Notes.pad', true, true];
 		yield 'by a delete, its versions' => [self::HOME, 'files_versions/Notes.pad.v1', true, false];
 		yield 'by a delete, a preview' => [self::ROOT, 'appdata_oc123/preview/1/2/7/64-64.png', true, false];
+		yield 'by a scan, a folder named like a user\'s trash elsewhere' => ['local::/mnt/share/', 'files_trashbin/files/Notes.pad', false, false];
+		yield 'by a scan, a folder named like a team folder\'s trash elsewhere' => ['local::/mnt/share/', '__groupfolders/trash/3/Notes.pad', false, false];
+		yield 'by a delete, a file named like app data elsewhere' => ['local::/mnt/share/', 'appdata_notes.pad', true, true];
+		yield 'by a delete, a folder named like versions elsewhere' => ['local::/mnt/share/', 'files_versions/Notes.pad', true, true];
 	}
 
 	#[\PHPUnit\Framework\Attributes\DataProvider('removals')]
 	public function testWhatCounts(string $storage, string $path, bool $withinADelete, bool $counts): void {
 		$listener = $this->listener();
-		$node = $this->node(7, $path);
+		$storageId = match ($storage) {
+			self::HOME => 1,
+			self::ROOT => self::ROOT_ID,
+			default => 3,
+		};
+		$node = $this->node(7, $path, $storageId);
 
 		if ($withinADelete) {
 			$listener->handle(new BeforeNodeDeletedEvent($node));
 		}
-		$listener->handle($this->removed(7, $path, $storage));
+		$listener->handle($this->removed(7, $path, $storage, $storageId));
 		if ($withinADelete) {
 			$listener->handle(new NodeDeletedEvent($node));
 		}
@@ -397,11 +420,11 @@ class GoneFilesListenerTest extends TestCase {
 		$atEnd = function (\Closure $write): void {
 			$this->atEnd[] = $write;
 		};
-		$args = [$this->bindings, $this->mounts, $this->logger];
+		$args = [$this->bindings, $this->mounts, $this->logger, $this->rootFolder];
 		return $block === 500
 			? new class($atEnd, ...$args) extends GoneFilesListener {
-				public function __construct(private \Closure $registers, BindingService $b, IUserMountCache $m, LoggerInterface $l) {
-					parent::__construct($b, $m, $l);
+				public function __construct(private \Closure $registers, BindingService $b, IUserMountCache $m, LoggerInterface $l, IRootFolder $r) {
+					parent::__construct($b, $m, $l, $r);
 				}
 
 				protected function atEnd(\Closure $write): void {
@@ -411,8 +434,8 @@ class GoneFilesListenerTest extends TestCase {
 			: new class($atEnd, ...$args) extends GoneFilesListener {
 				protected const BLOCK = 2;
 
-				public function __construct(private \Closure $registers, BindingService $b, IUserMountCache $m, LoggerInterface $l) {
-					parent::__construct($b, $m, $l);
+				public function __construct(private \Closure $registers, BindingService $b, IUserMountCache $m, LoggerInterface $l, IRootFolder $r) {
+					parent::__construct($b, $m, $l, $r);
 				}
 
 				protected function atEnd(\Closure $write): void {
@@ -431,9 +454,9 @@ class GoneFilesListenerTest extends TestCase {
 		return new CacheEntryRemovedEvent($this->storage($storage), $path, $fileId, $storageId);
 	}
 
-	/** A node the file cache has at $path on storage 1, alice's. */
-	private function node(int $fileId, string $path): File {
-		$this->places[$fileId] = [1, $path];
+	/** A node the file cache has at $path on $storageId, alice's home unless said. */
+	private function node(int $fileId, string $path, int $storageId = 1): File {
+		$this->places[$fileId] = [$storageId, $path];
 		$node = $this->createMock(File::class);
 		$node->method('getId')->willReturn($fileId);
 		$node->method('getPath')->willReturn('/alice/' . $path);
@@ -474,6 +497,7 @@ class GoneFilesListenerTest extends TestCase {
 	private function storage(string $id): IStorage {
 		$storage = $this->createMock(IStorage::class);
 		$storage->method('getId')->willReturn($id);
+		$storage->method('instanceOfStorage')->willReturnCallback(static fn (string $class): bool => $class === IHomeStorage::class && str_starts_with($id, 'home::'));
 		return $storage;
 	}
 

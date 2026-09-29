@@ -18,7 +18,9 @@ use OCP\Files\Cache\CacheEntryRemovedEvent;
 use OCP\Files\Config\IUserMountCache;
 use OCP\Files\Events\Node\BeforeNodeDeletedEvent;
 use OCP\Files\Events\Node\NodeDeletedEvent;
+use OCP\Files\IHomeStorage;
 use OCP\Files\InvalidPathException;
+use OCP\Files\IRootFolder;
 use OCP\Files\Node;
 use OCP\Files\NotFoundException;
 use OCP\Files\Storage\IStorage;
@@ -34,10 +36,11 @@ use Psr\Log\LoggerInterface;
  * descendants too. Not every removal is a deletion - a scan drops what
  * vanished outside Nextcloud, and such a file's pad stays - so these count:
  *
- * - A removal from a trash: a user's (`files_trashbin/files/`), a team
- *   folder's on the root storage (`__groupfolders/trash/`) or on its own
- *   storage (`trash/`). The trash emptied, an item deleted there or
- *   expired, `occ trashbin:cleanup`.
+ * - A removal from a trash: a user's (`files_trashbin/files/` on a home
+ *   storage), a team folder's on the root storage (`__groupfolders/trash/`)
+ *   or on its own storage (`trash/`). The trash emptied, an item deleted
+ *   there or expired, `occ trashbin:cleanup`. A folder of one of those
+ *   names on any other storage is a folder like another.
  * - A removal of a node Nextcloud deletes, or of anything under it, between
  *   the node's BeforeNodeDeletedEvent and its NodeDeletedEvent: a delete
  *   past the trash takes the node and all under it, and so does one the
@@ -69,7 +72,8 @@ use Psr\Log\LoggerInterface;
  * - A restore from a user's trash, between BeforeNodeRestoredEvent and
  *   NodeRestoredEvent: what it removes from the trash leaves it, under
  *   new ids on the other side when it crosses to such a storage.
- * - Versions and app data, previews among them.
+ * - Versions on a home storage and app data on the root storage, previews
+ *   among them; a file of such a name elsewhere counts as any other.
  *
  * What counts is the file, not its name: a `.pad` renamed keeps its row.
  *
@@ -109,8 +113,6 @@ class GoneFilesListener implements IEventListener {
 	 */
 	protected const BLOCK = 500;
 
-	/** Removals that never count, however they come: versions and app data, previews among them. */
-	private const NEVER = ['files_versions/', 'appdata_'];
 
 	/** The trash app's events, by name: the classes are not there without it. */
 	private const BEFORE_RESTORE = 'OCA\\Files_Trashbin\\Events\\BeforeNodeRestoredEvent';
@@ -142,10 +144,14 @@ class GoneFilesListener implements IEventListener {
 
 	private bool $writesAtEnd = false;
 
+	/** The root storage's numeric id, once asked for. */
+	private ?int $rootStorageId = null;
+
 	public function __construct(
 		private BindingService $bindingService,
 		private IUserMountCache $userMountCache,
 		private LoggerInterface $logger,
+		private IRootFolder $rootFolder,
 	) {
 		/** @var \WeakMap<object,true> $misnumbered */
 		$misnumbered = new \WeakMap();
@@ -246,7 +252,7 @@ class GoneFilesListener implements IEventListener {
 	 * its removals count.
 	 */
 	private function inserted(CacheEntryInsertedEvent $event): void {
-		if ($this->deleting !== [] && self::inTrash($event->getPath(), $event->getStorage())) {
+		if ($this->deleting !== [] && $this->inTrash($event->getPath(), $event->getStorage(), $event->getStorageId())) {
 			$this->deleting = [];
 		}
 		$fileId = $event->getFileId();
@@ -306,27 +312,41 @@ class GoneFilesListener implements IEventListener {
 
 	private function counts(CacheEntryRemovedEvent $event): bool {
 		$path = $event->getPath();
-		foreach (self::NEVER as $prefix) {
-			if (str_starts_with($path, $prefix)) {
-				return false;
-			}
-		}
-		if (self::isUnder($this->restoring, $event->getStorageId(), $path)) {
+		$storage = $event->getStorage();
+		$storageId = $event->getStorageId();
+		// Versions and app data - previews among them - never count, where
+		// they are: a folder of that name elsewhere is a folder like another.
+		if ((str_starts_with($path, 'files_versions/') && self::isHome($storage))
+			|| (str_starts_with($path, 'appdata_') && $this->isRoot($storageId))) {
 			return false;
 		}
-		return self::isUnder($this->deleting, $event->getStorageId(), $path)
-			|| self::inTrash($path, $event->getStorage());
+		if (self::isUnder($this->restoring, $storageId, $path)) {
+			return false;
+		}
+		return self::isUnder($this->deleting, $storageId, $path)
+			|| $this->inTrash($path, $storage, $storageId);
 	}
 
 	/**
-	 * An entry in a trash: a user's (`files_trashbin/files/`), a team
-	 * folder's on the root storage (`__groupfolders/trash/`) or on its own
-	 * storage (`trash/`).
+	 * An entry in a trash: a user's (`files_trashbin/files/` on a home
+	 * storage), a team folder's on the root storage (`__groupfolders/trash/`)
+	 * or on its own storage (`trash/`). A folder of that name on any other
+	 * storage - an external one, say - is a folder like another.
 	 */
-	private static function inTrash(string $path, IStorage $storage): bool {
-		return str_starts_with($path, BindingService::USER_TRASH_PATH . 'files/')
-			|| str_starts_with($path, BindingService::TEAM_TRASH_PATH)
+	private function inTrash(string $path, IStorage $storage, int $storageId): bool {
+		return (str_starts_with($path, BindingService::USER_TRASH_PATH . 'files/') && self::isHome($storage))
+			|| (str_starts_with($path, BindingService::TEAM_TRASH_PATH) && $this->isRoot($storageId))
 			|| (str_starts_with($path, 'trash/') && self::isTeamFolderStorage($storage));
+	}
+
+	private static function isHome(IStorage $storage): bool {
+		return $storage->instanceOfStorage(IHomeStorage::class);
+	}
+
+	/** The storage Nextcloud's own data lives on: app data, and team folders without a storage of their own. */
+	private function isRoot(int $storageId): bool {
+		$this->rootStorageId ??= (int)$this->rootFolder->getMount('/')->getNumericStorageId();
+		return $storageId === $this->rootStorageId;
 	}
 
 	/**

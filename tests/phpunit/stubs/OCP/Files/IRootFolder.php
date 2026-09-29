@@ -10,5 +10,7 @@ if (!interface_exists(IRootFolder::class)) {
 	interface IRootFolder extends Folder {
 		public function getAppDataDirectoryName(): string;
 		public function getUserFolder(string $uid): Folder;
+
+		public function getMount(string $mountPoint): Mount\IMountPoint;
 	}
 }
