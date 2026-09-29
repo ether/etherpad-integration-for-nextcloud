@@ -15,6 +15,10 @@ const setupAdminDom = () => {
 			data-consistency-url="/consistency"
 			data-settle-pending-url="/settle"
 			data-delete-vanished-url="/delete-vanished"
+			data-forget-vanished-url="/forget-vanished"
+			data-l10n-vanished-delete-label="Pad {pad} löschen"
+			data-l10n-delete-vanished-one-confirm="Pad {pad} löschen?"
+			data-l10n-forget-vanished-confirm="{pad} vergessen?"
 			data-l10n-vanished-shown="{shown} von {total}:"
 			data-l10n-delete-vanished-confirm="Pads aller {count} verschwundenen Dateien löschen?"
 			data-l10n-saving="Saving..."
@@ -222,7 +226,7 @@ describe('admin settings status areas', () => {
 		}))))
 		await import(MODULE)
 		const node = document.getElementById('etherpad-nextcloud-vanished')
-		const items = () => [...document.querySelectorAll('#etherpad-nextcloud-vanished-list li')].map((li) => li.textContent)
+		const items = () => [...document.querySelectorAll('#etherpad-nextcloud-vanished-list .epnc-vanished-pad')].map((label) => label.textContent)
 
 		document.getElementById('etherpad-nextcloud-consistency-check').click()
 		await flushAsyncWork()
@@ -273,6 +277,53 @@ describe('admin settings status areas', () => {
 		expect(document.getElementById('etherpad-nextcloud-pending-count').textContent).toContain('30')
 		expect(document.getElementById('etherpad-nextcloud-pending-actions').style.display).toBe('')
 		expect(document.getElementById('etherpad-nextcloud-vanished').style.display).toBe('none')
+	})
+
+	/**
+	 * Each listed pad has its own two ways out, each asked first with the
+	 * pad's id: deleted - its row marked for the job - or forgotten, its
+	 * row removed and the pad left in Etherpad. Answered, it leaves the
+	 * list, and the count goes down.
+	 */
+	it('deletes or forgets one vanished pad at a time', async () => {
+		const fetchMock = vi.fn((url) => Promise.resolve(okResponse({
+			'/delete-vanished': { message: 'Marked.', marked: 1, vanished_file_count: 2, pending_delete_count: 1 },
+			'/forget-vanished': { message: 'Forgotten.', forgotten: true, vanished_file_count: 1 },
+		}[url] ?? { message: 'Consistency check finished with issues.', vanished_file_count: 3, samples: { vanished_files: [{ file_id: 7, pad_id: 'g.abc$Notes', access_mode: 'protected' }, { file_id: 9, pad_id: 'public-pad', access_mode: 'public' }] } })))
+		vi.stubGlobal('fetch', fetchMock)
+		const confirm = vi.fn(() => false)
+		vi.stubGlobal('confirm', confirm)
+		await import(MODULE)
+		const sent = (url) => fetchMock.mock.calls.filter(([called]) => called === url).map(([, init]) => new URLSearchParams(init.body).get('fileId'))
+		const rowButtons = (text) => [...document.querySelectorAll('#etherpad-nextcloud-vanished-list li')].map((li) => [...li.querySelectorAll('button')].find((button) => button.textContent === text))
+		const shown = () => document.getElementById('etherpad-nextcloud-vanished-shown').textContent
+
+		document.getElementById('etherpad-nextcloud-consistency-check').click()
+		await flushAsyncWork()
+		expect(shown()).toBe('2 von 3:')
+		expect(rowButtons('Delete')[0].getAttribute('aria-label')).toBe('Pad g.abc$Notes löschen')
+		expect(rowButtons('Delete')[0].type).toBe('button')
+
+		rowButtons('Delete')[0].click()
+		await flushAsyncWork()
+		expect(confirm).toHaveBeenLastCalledWith('Pad g.abc$Notes löschen?')
+		expect(sent('/delete-vanished')).toEqual([])
+
+		confirm.mockReturnValue(true)
+		rowButtons('Delete')[0].click()
+		await flushAsyncWork()
+		expect(sent('/delete-vanished')).toEqual(['7'])
+		expect(diagnosticsStatus().textContent).toContain('marked=1')
+		expect(document.getElementById('etherpad-nextcloud-pending-count').textContent).toContain('1')
+		expect(shown()).toBe('1 von 2:')
+
+		rowButtons('Forget')[0].click()
+		await flushAsyncWork()
+		expect(confirm).toHaveBeenLastCalledWith('public-pad vergessen?')
+		expect(sent('/forget-vanished')).toEqual(['9'])
+		expect(diagnosticsStatus().textContent).toContain('forgotten=true')
+		expect(shown()).toBe('0 von 1:')
+		expect(document.getElementById('etherpad-nextcloud-vanished').style.display).toBe('')
 	})
 
 	it('leaves the counts alone when a response carries none', async () => {

@@ -219,7 +219,18 @@
         "Could not delete the pads of the vanished files.": "Die Pads der verschwundenen Dateien konnten nicht gelöscht werden.",
         "Deleting pads is switched off, so no pad was marked for deletion.": "Das Löschen von Pads ist ausgeschaltet, daher wurde kein Pad zum Löschen vorgemerkt.",
         "Not every vanished file could be marked in one go. Run it again for the rest.": "Nicht alle verschwundenen Dateien konnten in einem Durchgang vorgemerkt werden. Führe es für den Rest noch einmal aus.",
-        "The pads of the vanished files are marked for deletion. They are deleted within minutes, or at once with \"Check pending pads\".": "Die Pads der verschwundenen Dateien sind zum Löschen vorgemerkt. Sie werden innerhalb weniger Minuten gelöscht, oder sofort mit „Ausstehende Pads prüfen“."
+        "The pads of the vanished files are marked for deletion. They are deleted within minutes, or at once with \"Check pending pads\".": "Die Pads der verschwundenen Dateien sind zum Löschen vorgemerkt. Sie werden innerhalb weniger Minuten gelöscht, oder sofort mit „Ausstehende Pads prüfen“.",
+        "Forget": "Vergessen",
+        "Delete pad {pad}": "Pad {pad} löschen",
+        "Forget pad {pad}": "Pad {pad} vergessen",
+        "Delete the pad {pad}? Etherpad deletes it for good.": "Das Pad {pad} löschen? Etherpad löscht es endgültig.",
+        "Take {pad} off this list and leave it in Etherpad? The app never cleans it up after that, and a protected pad can no longer be opened.": "{pad} von dieser Liste nehmen und in Etherpad lassen? Die App räumt es danach nie mehr auf, und ein geschütztes Pad lässt sich nicht mehr öffnen.",
+        "Could not forget the pad of the vanished file.": "Das Pad der verschwundenen Datei konnte nicht vergessen werden.",
+        "Marking the pad for deletion...": "Das Pad wird zum Löschen vorgemerkt...",
+        "Forgetting the pad...": "Das Pad wird vergessen...",
+        "The pad of this vanished file is marked for deletion. It is deleted within minutes, or at once with \"Check pending pads\".": "Das Pad dieser verschwundenen Datei ist zum Löschen vorgemerkt. Es wird innerhalb weniger Minuten gelöscht, oder sofort mit „Ausstehende Pads prüfen“.",
+        "This file is no longer vanished; nothing was changed.": "Diese Datei ist nicht mehr verschwunden; nichts wurde geändert.",
+        "The pad stays in Etherpad, and the app no longer looks after it.": "Das Pad bleibt in Etherpad, und die App kümmert sich nicht mehr darum."
     },
     "pluralForm": "nplurals=2; plural=(n != 1);"
 }

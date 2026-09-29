@@ -99,9 +99,13 @@ stays:
 A pad that stays keeps its content in Etherpad, and nobody reaches it
 through Nextcloud any more; a public pad stays reachable by its link. The
 consistency check on the admin page counts these pads and lists up to 25 of
-them by pad id (`vanished_file_count`). The admin can delete them all from
-there, after a confirmation: they then go like the pads of files deleted
-for good, within minutes, or at once with "Check pending pads". Only do so
+them by pad id (`vanished_file_count`). The admin can delete them from
+there, one listed pad or all of them, after a confirmation: they then go
+like the pads of files deleted for good, within minutes, or at once with
+"Check pending pads". A listed pad can also be forgotten: it leaves the
+list and stays in Etherpad, and the app never cleans it up after that; a
+protected pad can then no longer be opened, a public one stays reachable
+by its link. Only do so
 when no `.pad` file names them any more: after the file cache was rebuilt,
 or files were restored from a backup, a file may still be there under a
 new id, and its pad would go with the others. With `delete_pad_with_file`

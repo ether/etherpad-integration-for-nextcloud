@@ -220,6 +220,17 @@ OC.L10N.register(
     "Could not delete the pads of the vanished files.": "No se pudieron eliminar los pads de los archivos desaparecidos.",
     "Deleting pads is switched off, so no pad was marked for deletion.": "La eliminación de pads está desactivada, así que no se ha marcado ningún pad para eliminarlo.",
     "Not every vanished file could be marked in one go. Run it again for the rest.": "No se pudieron marcar todos los archivos desaparecidos de una vez. Vuelve a ejecutarlo para el resto.",
-    "The pads of the vanished files are marked for deletion. They are deleted within minutes, or at once with \"Check pending pads\".": "Los pads de los archivos desaparecidos están marcados para eliminarse. Se eliminan en unos minutos, o de inmediato con «Comprobar pads pendientes»."
+    "The pads of the vanished files are marked for deletion. They are deleted within minutes, or at once with \"Check pending pads\".": "Los pads de los archivos desaparecidos están marcados para eliminarse. Se eliminan en unos minutos, o de inmediato con «Comprobar pads pendientes».",
+    "Forget": "Olvidar",
+    "Delete pad {pad}": "Eliminar el pad {pad}",
+    "Forget pad {pad}": "Olvidar el pad {pad}",
+    "Delete the pad {pad}? Etherpad deletes it for good.": "¿Eliminar el pad {pad}? Etherpad lo elimina definitivamente.",
+    "Take {pad} off this list and leave it in Etherpad? The app never cleans it up after that, and a protected pad can no longer be opened.": "¿Quitar {pad} de esta lista y dejarlo en Etherpad? La aplicación ya no lo limpia nunca, y un pad protegido ya no se puede abrir.",
+    "Could not forget the pad of the vanished file.": "No se pudo olvidar el pad del archivo desaparecido.",
+    "Marking the pad for deletion...": "Marcando el pad para eliminarlo...",
+    "Forgetting the pad...": "Olvidando el pad...",
+    "The pad of this vanished file is marked for deletion. It is deleted within minutes, or at once with \"Check pending pads\".": "El pad de este archivo desaparecido está marcado para eliminarse. Se elimina en unos minutos, o de inmediato con «Comprobar pads pendientes».",
+    "This file is no longer vanished; nothing was changed.": "Este archivo ya no está desaparecido; no se ha cambiado nada.",
+    "The pad stays in Etherpad, and the app no longer looks after it.": "El pad se queda en Etherpad, y la aplicación ya no se ocupa de él."
 },
 "nplurals=2; plural=(n != 1);");

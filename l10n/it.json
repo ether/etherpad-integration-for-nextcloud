@@ -219,7 +219,18 @@
         "Could not delete the pads of the vanished files.": "Non è stato possibile eliminare i pad dei file scomparsi.",
         "Deleting pads is switched off, so no pad was marked for deletion.": "L'eliminazione dei pad è disattivata, quindi nessun pad è stato contrassegnato per l'eliminazione.",
         "Not every vanished file could be marked in one go. Run it again for the rest.": "Non è stato possibile contrassegnare tutti i file scomparsi in una volta. Eseguilo di nuovo per il resto.",
-        "The pads of the vanished files are marked for deletion. They are deleted within minutes, or at once with \"Check pending pads\".": "I pad dei file scomparsi sono contrassegnati per l'eliminazione. Vengono eliminati entro pochi minuti, o subito con «Controlla i pad in sospeso»."
+        "The pads of the vanished files are marked for deletion. They are deleted within minutes, or at once with \"Check pending pads\".": "I pad dei file scomparsi sono contrassegnati per l'eliminazione. Vengono eliminati entro pochi minuti, o subito con «Controlla i pad in sospeso».",
+        "Forget": "Dimentica",
+        "Delete pad {pad}": "Elimina il pad {pad}",
+        "Forget pad {pad}": "Dimentica il pad {pad}",
+        "Delete the pad {pad}? Etherpad deletes it for good.": "Eliminare il pad {pad}? Etherpad lo elimina definitivamente.",
+        "Take {pad} off this list and leave it in Etherpad? The app never cleans it up after that, and a protected pad can no longer be opened.": "Togliere {pad} da questa lista e lasciarlo in Etherpad? L'app non lo ripulirà mai più, e un pad protetto non potrà più essere aperto.",
+        "Could not forget the pad of the vanished file.": "Non è stato possibile dimenticare il pad del file scomparso.",
+        "Marking the pad for deletion...": "Contrassegno del pad per l'eliminazione...",
+        "Forgetting the pad...": "Il pad viene dimenticato...",
+        "The pad of this vanished file is marked for deletion. It is deleted within minutes, or at once with \"Check pending pads\".": "Il pad di questo file scomparso è contrassegnato per l'eliminazione. Viene eliminato entro pochi minuti, o subito con «Controlla i pad in sospeso».",
+        "This file is no longer vanished; nothing was changed.": "Questo file non è più scomparso; non è stato modificato nulla.",
+        "The pad stays in Etherpad, and the app no longer looks after it.": "Il pad resta in Etherpad, e l'app non se ne occupa più."
     },
     "pluralForm": "nplurals=2; plural=(n != 1);"
 }

@@ -383,9 +383,11 @@ solely by the separate external-pad policy, not by these two settings.
 - `POST /api/v1/admin/delete-vanished`
   - Controller: `AdminController::deleteVanished`
   - Auth: admin only
+  - Optional param: `fileId`, for one vanished file's pad alone.
   - Purpose: the pads of the vanished files deleted, on the admin's word:
-    every vanished row (see `consistency-check`) is marked as a file
-    deleted for good, and the sweep deletes its pad as for any such file -
+    every vanished row (see `consistency-check`), or the one `fileId`
+    names while it is still vanished, is marked as a file deleted for
+    good, and the sweep deletes its pad as for any such file -
     within minutes, or at once through `settle-pending`, asking the file
     cache once more first. In chunks, within the budget a sweep has; what
     is left needs another call. The app never does this on its own: a file
@@ -396,6 +398,22 @@ solely by the separate external-pad policy, not by these two settings.
     - `marked`: rows marked
     - `vanished_file_count`: vanished rows left, `0` once all are marked
     - `pending_delete_count`: rows now waiting for the sweep, named as in the health check
+  - `400` with `Invalid file ID.` for a `fileId` that is not a positive number.
+
+- `POST /api/v1/admin/forget-vanished`
+  - Controller: `AdminController::forgetVanished`
+  - Auth: admin only
+  - Params: `fileId`
+  - Purpose: one vanished file's row removed on the admin's word, its pad
+    left in Etherpad. The pad leaves the list, and the app no longer looks
+    after it: no sweep deletes it, and a protected pad can no longer be
+    opened, since only the app makes its sessions; a public pad stays
+    reachable by its link. Only while the row is still vanished. The pad's
+    id goes to the log at `info`.
+  - Result:
+    - `forgotten`: whether the row was removed; `false` when the file is no longer vanished, and nothing changed
+    - `vanished_file_count`: vanished rows left
+  - `400` with `Invalid file ID.` without a positive `fileId`.
 
 - `POST /api/v1/admin/settle-pending`
   - Controller: `AdminController::settlePending`

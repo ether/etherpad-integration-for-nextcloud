@@ -220,6 +220,17 @@ OC.L10N.register(
     "Could not delete the pads of the vanished files.": "Les pads des fichiers disparus n'ont pas pu être supprimés.",
     "Deleting pads is switched off, so no pad was marked for deletion.": "La suppression des pads est désactivée, aucun pad n'a donc été marqué pour suppression.",
     "Not every vanished file could be marked in one go. Run it again for the rest.": "Tous les fichiers disparus n'ont pas pu être marqués en une fois. Relancez l'opération pour le reste.",
-    "The pads of the vanished files are marked for deletion. They are deleted within minutes, or at once with \"Check pending pads\".": "Les pads des fichiers disparus sont marqués pour suppression. Ils sont supprimés dans les minutes qui suivent, ou immédiatement avec « Vérifier les pads en attente »."
+    "The pads of the vanished files are marked for deletion. They are deleted within minutes, or at once with \"Check pending pads\".": "Les pads des fichiers disparus sont marqués pour suppression. Ils sont supprimés dans les minutes qui suivent, ou immédiatement avec « Vérifier les pads en attente ».",
+    "Forget": "Oublier",
+    "Delete pad {pad}": "Supprimer le pad {pad}",
+    "Forget pad {pad}": "Oublier le pad {pad}",
+    "Delete the pad {pad}? Etherpad deletes it for good.": "Supprimer le pad {pad} ? Etherpad le supprime définitivement.",
+    "Take {pad} off this list and leave it in Etherpad? The app never cleans it up after that, and a protected pad can no longer be opened.": "Retirer {pad} de cette liste et le laisser dans Etherpad ? L'application ne le nettoiera plus jamais, et un pad protégé ne pourra plus être ouvert.",
+    "Could not forget the pad of the vanished file.": "Le pad du fichier disparu n'a pas pu être oublié.",
+    "Marking the pad for deletion...": "Marquage du pad pour suppression...",
+    "Forgetting the pad...": "Oubli du pad...",
+    "The pad of this vanished file is marked for deletion. It is deleted within minutes, or at once with \"Check pending pads\".": "Le pad de ce fichier disparu est marqué pour suppression. Il est supprimé dans les minutes qui suivent, ou immédiatement avec « Vérifier les pads en attente ».",
+    "This file is no longer vanished; nothing was changed.": "Ce fichier n'est plus considéré comme disparu ; rien n'a été modifié.",
+    "The pad stays in Etherpad, and the app no longer looks after it.": "Le pad reste dans Etherpad, et l'application ne s'en occupe plus."
 },
 "nplurals=2; plural=(n > 1);");

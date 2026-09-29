@@ -30,6 +30,7 @@ return ['routes' => [
 	['name' => 'admin#consistencyCheck', 'url' => '/api/v1/admin/consistency-check', 'verb' => 'POST'],
 	['name' => 'admin#settlePending', 'url' => '/api/v1/admin/settle-pending', 'verb' => 'POST'],
 	['name' => 'admin#deleteVanished', 'url' => '/api/v1/admin/delete-vanished', 'verb' => 'POST'],
+	['name' => 'admin#forgetVanished', 'url' => '/api/v1/admin/forget-vanished', 'verb' => 'POST'],
 	['name' => 'admin#listPadTemplates', 'url' => '/api/v1/admin/templates', 'verb' => 'GET'],
 	['name' => 'admin#uploadPadTemplate', 'url' => '/api/v1/admin/templates', 'verb' => 'POST'],
 	['name' => 'admin#deletePadTemplate', 'url' => '/api/v1/admin/templates/delete', 'verb' => 'POST'],

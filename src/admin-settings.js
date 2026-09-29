@@ -46,6 +46,7 @@
 	const consistencyUrl = root.getAttribute('data-consistency-url') || ''
 	const settlePendingUrl = root.getAttribute('data-settle-pending-url') || ''
 	const deleteVanishedUrl = root.getAttribute('data-delete-vanished-url') || ''
+	const forgetVanishedUrl = root.getAttribute('data-forget-vanished-url') || ''
 	const l10n = {
 		saving: root.getAttribute('data-l10n-saving') || 'Saving settings...',
 		saved: root.getAttribute('data-l10n-saved') || 'Settings saved.',
@@ -62,6 +63,15 @@
 		deleteVanishedConfirm: root.getAttribute('data-l10n-delete-vanished-confirm') || 'Delete the pads of all {count} vanished files? Etherpad deletes them for good.',
 		deleteVanishedRunning: root.getAttribute('data-l10n-delete-vanished-running') || 'Marking the pads of the vanished files for deletion...',
 		deleteVanishedFailed: root.getAttribute('data-l10n-delete-vanished-failed') || 'Could not delete the pads of the vanished files.',
+		vanishedDeleteOne: root.getAttribute('data-l10n-vanished-delete-one') || 'Delete',
+		vanishedForgetOne: root.getAttribute('data-l10n-vanished-forget-one') || 'Forget',
+		vanishedDeleteLabel: root.getAttribute('data-l10n-vanished-delete-label') || 'Delete pad {pad}',
+		vanishedForgetLabel: root.getAttribute('data-l10n-vanished-forget-label') || 'Forget pad {pad}',
+		deleteVanishedOneConfirm: root.getAttribute('data-l10n-delete-vanished-one-confirm') || 'Delete the pad {pad}? Etherpad deletes it for good.',
+		forgetVanishedConfirm: root.getAttribute('data-l10n-forget-vanished-confirm') || 'Take {pad} off this list and leave it in Etherpad? The app never cleans it up after that, and a protected pad can no longer be opened.',
+		forgetVanishedFailed: root.getAttribute('data-l10n-forget-vanished-failed') || 'Could not forget the pad of the vanished file.',
+		deleteVanishedOneRunning: root.getAttribute('data-l10n-delete-vanished-one-running') || 'Marking the pad for deletion...',
+		forgetVanishedRunning: root.getAttribute('data-l10n-forget-vanished-running') || 'Forgetting the pad...',
 		templateUploading: root.getAttribute('data-l10n-template-uploading') || 'Uploading template...',
 		templateDelete: root.getAttribute('data-l10n-template-delete') || 'Delete',
 		templateTooLarge: root.getAttribute('data-l10n-template-too-large') || 'Template file is too large.',
@@ -516,7 +526,8 @@
 	/**
 	 * The pads of files gone without a deletion the app saw, which it
 	 * leaves in place: the first of them listed, with how many there are,
-	 * so an admin can tell whether to delete them all.
+	 * so an admin can tell whether to delete them all - and each one with
+	 * its own way to be deleted, or forgotten and left in Etherpad.
 	 */
 	function showVanished(rows, total) {
 		if (!(vanishedNode instanceof HTMLElement) || !(vanishedList instanceof HTMLElement)) {
@@ -524,20 +535,85 @@
 		}
 		const items = (Array.isArray(rows) ? rows : [])
 			.filter((row) => row && typeof row.pad_id === 'string')
-			.map((row) => {
-				const item = document.createElement('li')
-				const mode = typeof row.access_mode === 'string' ? `${row.access_mode}, ` : ''
-				item.textContent = `${row.pad_id} (${mode}fileid ${String(row.file_id)})`
-				return item
-			})
+			.map(vanishedItem)
 		vanishedTotal = Math.max(Number.isFinite(Number(total)) ? Number(total) : 0, items.length)
 		vanishedList.replaceChildren(...items)
+		updateVanishedShown()
+	}
+
+	function updateVanishedShown() {
+		if (!(vanishedNode instanceof HTMLElement) || !(vanishedList instanceof HTMLElement)) {
+			return
+		}
 		if (vanishedShownNode instanceof HTMLElement) {
 			vanishedShownNode.textContent = l10n.vanishedShown
-				.replace('{shown}', String(items.length))
+				.replace('{shown}', String(vanishedList.children.length))
 				.replace('{total}', String(vanishedTotal))
 		}
-		vanishedNode.style.display = items.length > 0 ? '' : 'none'
+		vanishedNode.style.display = vanishedTotal > 0 ? '' : 'none'
+	}
+
+	function vanishedItem(row) {
+		const item = document.createElement('li')
+		const label = document.createElement('span')
+		label.className = 'epnc-vanished-pad'
+		const mode = typeof row.access_mode === 'string' ? `${row.access_mode}, ` : ''
+		// As text: a pad id is data, never markup.
+		label.textContent = `${row.pad_id} (${mode}fileid ${String(row.file_id)})`
+		item.append(label)
+		const fileId = Number(row.file_id)
+		if (!Number.isInteger(fileId) || fileId <= 0) {
+			return item
+		}
+		const actions = [
+			{ url: deleteVanishedUrl, text: l10n.vanishedDeleteOne, label: l10n.vanishedDeleteLabel, confirm: l10n.deleteVanishedOneConfirm, running: l10n.deleteVanishedOneRunning, failed: l10n.deleteVanishedFailed, doneKey: 'marked' },
+			{ url: forgetVanishedUrl, text: l10n.vanishedForgetOne, label: l10n.vanishedForgetLabel, confirm: l10n.forgetVanishedConfirm, running: l10n.forgetVanishedRunning, failed: l10n.forgetVanishedFailed, doneKey: 'forgotten' },
+		]
+		for (const action of actions) {
+			if (action.url === '') {
+				continue
+			}
+			const button = document.createElement('button')
+			button.type = 'button'
+			button.textContent = action.text
+			button.setAttribute('aria-label', action.label.replace('{pad}', row.pad_id))
+			button.addEventListener('click', () => {
+				void takeOneVanished(item, fileId, { ...action, confirm: action.confirm.replace('{pad}', row.pad_id) })
+			})
+			item.append(' ', button)
+		}
+		return item
+	}
+
+	/**
+	 * One vanished file's pad deleted, or forgotten and left in Etherpad,
+	 * once the admin confirms. Either way the file is off the list after an
+	 * answer: taken, or no longer vanished.
+	 */
+	async function takeOneVanished(item, fileId, action) {
+		if (!window.confirm(action.confirm)) {
+			return
+		}
+		clearFieldErrors()
+		beginStatus(action.running, diagnosticsTarget)
+		try {
+			const data = await postJson(action.url, { fileId })
+			updateBindingCounts(data)
+			item.remove()
+			const left = Number(data.vanished_file_count)
+			vanishedTotal = Number.isFinite(left) ? left : Math.max(0, vanishedTotal - 1)
+			updateVanishedShown()
+			const details = []
+			for (const key of [action.doneKey, 'vanished_file_count', 'pending_delete_count']) {
+				if (typeof data[key] !== 'undefined') {
+					details.push(`${key}=${String(data[key])}`)
+				}
+			}
+			const suffix = details.length > 0 ? ` ${details.join(' | ')}` : ''
+			setStatus(`${String(data.message || 'OK')}${suffix}`, 'success', diagnosticsTarget)
+		} catch (error) {
+			setStatus(error instanceof Error ? error.message : action.failed, 'error', diagnosticsTarget)
+		}
 	}
 
 	if (deleteVanishedButton instanceof HTMLElement && deleteVanishedUrl !== '') {
@@ -556,10 +632,10 @@
 					}
 				}
 				updateBindingCounts(data)
-				// Marked, they are on their way: the list goes once none is left.
-				if (Number(data.vanished_file_count) === 0) {
-					showVanished([], 0)
-				}
+				// Marked, the listed ones are on their way: what is left, if
+				// anything, the next check lists.
+				const left = Number(data.vanished_file_count)
+				showVanished([], Number.isFinite(left) ? left : 0)
 				const suffix = details.length > 0 ? ` ${details.join(' | ')}` : ''
 				setStatus(`${String(data.message || 'OK')}${suffix}`, 'success', diagnosticsTarget)
 			} catch (error) {
