@@ -95,7 +95,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-echo "[1/4] CREATE protected pad ${INPUT_PATH}"
+echo "[1/3] CREATE protected pad ${INPUT_PATH}"
 CREATE_JSON="$(nc_request POST "$API_BASE" --data-urlencode "file=${INPUT_PATH}" --data-urlencode "accessMode=protected")"
 FILE_ID="$(json_field "$CREATE_JSON" "file_id")"
 if ! [[ "$FILE_ID" =~ ^[0-9]+$ ]] || [[ "$FILE_ID" -le 0 ]]; then
@@ -104,7 +104,7 @@ if ! [[ "$FILE_ID" =~ ^[0-9]+$ ]] || [[ "$FILE_ID" -le 0 ]]; then
 	exit 1
 fi
 
-echo "[2/4] OPEN by id and inspect session cookie"
+echo "[2/3] OPEN by id and inspect session cookie"
 nc_refresh_csrf
 curl -sS -u "$NC_AUTH" -b "$NC_CSRF_COOKIE_JAR" -c "$NC_CSRF_COOKIE_JAR" \
 	-X POST \
@@ -182,14 +182,5 @@ else
 	assert_cookie_not_contains "$SESSION_COOKIE_LINE" "httponly" "HttpOnly (Etherpad ${EP_RELEASE} reads the session in the browser)"
 fi
 
-echo "[3/4] CLEANUP trash ${INPUT_PATH}"
-TRASH_RES="$(nc_request_with_code POST "$API_BASE/trash" --data-urlencode "file=${INPUT_PATH}")"
-TRASH_CODE="$(printf '%s' "$TRASH_RES" | tail -n1)"
-if [[ "$TRASH_CODE" != "200" ]]; then
-	echo "Cleanup trash failed with HTTP ${TRASH_CODE}" >&2
-	printf '%s\n' "$TRASH_RES" | sed '$d' >&2
-	exit 1
-fi
-
-echo "[4/4] PASS protected cookie contract"
+echo "[3/3] PASS protected cookie contract"
 echo "Cookie: ${SESSION_COOKIE_LINE}"
