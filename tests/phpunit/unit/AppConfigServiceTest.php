@@ -15,16 +15,6 @@ use OCP\IConfig;
 use PHPUnit\Framework\TestCase;
 
 class AppConfigServiceTest extends TestCase {
-	/** On unless the admin switched it off: only 'no' turns it off, and a value never set is on. */
-	public function testDeletingThePadWithItsFileIsOnUnlessSwitchedOff(): void {
-		foreach (['yes' => true, 'no' => false] as $stored => $enabled) {
-			$appConfig = $this->createMock(IAppConfig::class);
-			$appConfig->method('getValueString')->with('etherpad_nextcloud', 'delete_pad_with_file', 'yes')->willReturn($stored);
-
-			$this->assertSame($enabled, $this->service($this->createMock(IConfig::class), $appConfig)->isDeletePadWithFileEnabled(), $stored);
-		}
-	}
-
 	/**
 	 * The old setting is taken over once and removed: its value, unless the
 	 * new one is set already; nothing to take over, nothing written.
@@ -52,6 +42,27 @@ class AppConfigServiceTest extends TestCase {
 			$this->service($this->createMock(IConfig::class), $appConfig)->takeOverDeleteOnTrash();
 
 			$this->assertSame($expected, $stored, $case);
+		}
+	}
+
+	/**
+	 * On unless switched off; before the setting is taken over, the old
+	 * key's word stands, so an admin's opt-out holds even where this code
+	 * runs before its migration.
+	 */
+	public function testDeletingFollowsTheOldSettingUntilTakenOver(): void {
+		$cases = [
+			'nothing set' => [[], true],
+			'new key off' => [['delete_pad_with_file' => 'no'], false],
+			'new key on, old one off' => [['delete_pad_with_file' => 'yes', 'delete_on_trash' => 'no'], true],
+			'only the old key, off' => [['delete_on_trash' => 'no'], false],
+			'only the old key, on' => [['delete_on_trash' => 'yes'], true],
+		];
+		foreach ($cases as $case => [$stored, $enabled]) {
+			$appConfig = $this->createMock(IAppConfig::class);
+			$appConfig->method('getValueString')->willReturnCallback(static fn (string $app, string $key, string $default = ''): string => $stored[$key] ?? $default);
+
+			$this->assertSame($enabled, $this->service($this->createMock(IConfig::class), $appConfig)->isDeletePadWithFileEnabled(), $case);
 		}
 	}
 

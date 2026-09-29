@@ -43,9 +43,18 @@ class AppConfigService {
 	 * On unless the admin switched it off. Read and written as a string
 	 * through IAppConfig alone, so the value keeps one type
 	 * (AdminSettingsRepository writes it the same way).
+	 *
+	 * Until the setting is taken over (takeOverDeleteOnTrash()), the one a
+	 * version whose trash deleted pads kept stands: code of this version
+	 * running before its migration - deployed without a version bump, say -
+	 * keeps an admin's opt-out.
 	 */
 	public function isDeletePadWithFileEnabled(): bool {
-		return $this->appConfig->getValueString(Application::APP_ID, self::DELETE_PAD_WITH_FILE, 'yes') === 'yes';
+		$value = $this->appConfig->getValueString(Application::APP_ID, self::DELETE_PAD_WITH_FILE, '');
+		if ($value === '') {
+			$value = $this->appConfig->getValueString(Application::APP_ID, 'delete_on_trash', 'yes');
+		}
+		return $value === 'yes';
 	}
 
 	/**
