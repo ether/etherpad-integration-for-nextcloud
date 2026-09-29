@@ -374,6 +374,51 @@ test.describe('pads of team folder files deleted for good', () => {
 		}
 	})
 
+	/**
+	 * One listed pad at a time: one deleted on the admin's word, the job
+	 * taking it; one forgotten, its row gone and the pad left in Etherpad,
+	 * which the app no longer looks after.
+	 */
+	test('the admin deletes one vanished pad and forgets another', async () => {
+		const other = uniqueName('gone-team-one-by-one')
+		const otherId = await createTeamFolder(other, group)
+		const padIds: string[] = []
+		try {
+			const deletedPath = `${other}/${uniquePadName('deleted')}`
+			const forgottenPath = `${other}/${uniquePadName('forgotten')}`
+			const deletedPad = padIdOfPadUrl((await padInTeam(deletedPath, 'protected')).padUrl)
+			const forgottenPad = padIdOfPadUrl((await padInTeam(forgottenPath)).padUrl)
+			made.pop()
+			made.pop()
+			padIds.push(deletedPad, forgottenPad)
+			const deletedFile = await propfindFileId(deletedPath)
+			const forgottenFile = await propfindFileId(forgottenPath)
+			await deleteTeamFolder(otherId)
+			const vanishedBefore = await vanishedFiles()
+
+			const forgotten = await padApiPost('admin/forget-vanished', { fileId: String(forgottenFile) })
+			expect(forgotten.status, JSON.stringify(forgotten.body)).toBe(200)
+			expect((forgotten.body as { forgotten?: boolean }).forgotten).toBe(true)
+			const deleted = await padApiPost('admin/delete-vanished', { fileId: String(deletedFile) })
+			expect(deleted.status, JSON.stringify(deleted.body)).toBe(200)
+			expect((deleted.body as { marked?: number }).marked).toBe(1)
+			await settle()
+
+			expect(await padExists(deletedPad), 'marked on the admin\'s word, the pad should go').toBe(false)
+			expect(await padExists(forgottenPad), 'forgotten, the pad stays in Etherpad').toBe(true)
+			expect(await vanishedFiles(), 'both should be off the list').toBe(vanishedBefore - 2)
+			const again = await padApiPost('admin/forget-vanished', { fileId: String(forgottenFile) })
+			expect((again.body as { forgotten?: boolean }).forgotten, 'no longer vanished, nothing to forget').toBe(false)
+		} finally {
+			await deleteTeamFolder(otherId)
+			for (const padId of padIds) {
+				if (await padExists(padId)) {
+					await etherpadApiPost('deletePad', { padID: padId })
+				}
+			}
+		}
+	})
+
 	test('a pad an account made in a team folder stays when the account is deleted', async () => {
 		const account = await createAccount(uniqueName('gone-team-account'))
 		try {
