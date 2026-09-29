@@ -108,7 +108,9 @@ If Etherpad no longer has a pad - deleted there by hand, or lost with its
 database - opening its file says so. Whoever may edit the file can make a
 new pad from the content saved in it; from then on the file opens the new
 pad. The same happens for a public pad that someone visited by its link
-after it was lost, which Etherpad makes anew, empty. A copied `.pad` file,
+after it was lost, which Etherpad makes anew, empty; an editor still open on
+the file does not write that empty pad into it as it closes, so the content
+stays for the new pad. A copied `.pad` file,
 which has no pad of its own, offers the same. A file restored from the
 trash does not ask: it gets its new pad on its own.
 

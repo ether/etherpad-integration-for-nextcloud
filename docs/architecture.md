@@ -80,7 +80,7 @@ checked-in runtime assets in `js/`.
 - Snapshot helpers
   - `PadFileService::withExportSnapshot(...)` constructs updated `.pad` content for snapshot writes.
   - `PadFileLockRetryService::putContentWithSyncLockRetry(...)` persists that content to the Nextcloud file.
-  - Stored snapshots are read only by restore and by the forced-sync comparison; the read-only viewer no longer uses them at all (see `LivePadHtmlFetcher`).
+  - Stored snapshots are read by restore, by the forced-sync comparison, and by an open that may write and the sync to tell whether Etherpad has lost the pad (`ManagedPadLifecycle::howLost()`, `isMadeAnew()`); the read-only viewer no longer uses them at all (see `LivePadHtmlFetcher`).
 
 ## Main Flows
 
@@ -112,7 +112,7 @@ Primary flow (native viewer):
    - A lost pad answers `pad_missing` (`PadLostException`); the viewer and the embed page offer to make a new pad from the file's content (`POST /api/v1/pads/recover-from-snapshot/{fileId}`). That asks Etherpad again and takes the path a restore takes for a row whose pad is gone (`RestoreService::recoverFromSnapshot()` → `replaceLostPad()` → `restoreOntoNewPad()`): a new pad from the snapshot, the row moved onto it, the file naming it. The lost pad, or the empty one Etherpad made anew, is left alone. No other way of making a pad is added.
    - A reader, who could not make a new pad, is not asked, and is shown what the pad server has. A public share that may write answers the same, without the code: only the file's owner can make the new pad. The endpoint refuses whoever may not change the file with `403`, before Etherpad is asked.
    - What a replacement that fails leaves behind: "The replacement" under Trash/Restore.
-   - Only an open is stopped. A viewer already open when Etherpad loses the pad syncs on leaving as ever, and writes what Etherpad then has into the file.
+   - Nor does a sync write a pad Etherpad made anew over the file: one without a single revision, with other text than the file saved, is refused with `pad_missing` (see "Sync"), and the file keeps its content for the new pad. Once someone writes into the pad made anew, a viewer already open when Etherpad lost the pad syncs on leaving as ever, and writes what Etherpad then has into the file: a pad holding a revision cannot be told from one merely behind the snapshot.
    - An older version of the file still names the lost pad, and opening it after the recovery is refused as a mismatch.
    - Logged once a minute for each file (`ApiErrorLog`), as a refusal is.
 
@@ -216,6 +216,7 @@ Primary flow (native viewer):
 3. `PadLifecycleController::syncById` fetches revision state from Etherpad.
 4. `.pad` snapshot is updated only when the upstream snapshot actually differs.
    - `force=1` requests an immediate upstream re-check, but unchanged snapshots are still not rewritten.
+   - A forced sync writes a pad behind the snapshot too when its content differs: files a restore in 1.1.0-beta.1 left kept the old pad's revision count, and only this brings them up to date. Not a pad Etherpad made anew in place of the file's - without a single revision, with other text than the file saved (`ManagedPadLifecycle::isMadeAnew()`, the rule the open goes by): its default text written over the file would leave the saved content to the file's versions, and the open would no longer find the pad lost and offer a new pad from the file. The sync answers `pad_missing` instead, as the open does, and writes nothing.
    - Snapshot writes are built via `PadFileService::withExportSnapshot(...)` and persisted via `PadFileLockRetryService::putContentWithSyncLockRetry(...)`.
    - Right before each write of a pad's snapshot - the ones after a wait for the file's lock too - its row is asked again (`BindingService::assertConsistentMapping()`, through `PadFileLockRetryService::putContentWithSyncLockRetry()`): a recovery may have moved it onto a new pad and written the file for it while Etherpad was asked, or while the sync waited, and the old pad's text written over that would leave file and row naming two pads.
 5. External pads are synced as text only (no HTML import).
@@ -240,7 +241,7 @@ Primary flow (native viewer):
   - Of two restores that race for one file only one writes it, and a restore that fails takes back what it made (`RestoreService::restoreOntoNewPad`).
   - A replacement that fails - Etherpad gone while the new pad is seeded, the file locked for the write - leaves the active row on the lost pad: moved back onto it when the row was already claimed. The next open offers the new pad again.
   - Seeding a new pad takes a while. Through WebDAV the file stays locked meanwhile, and a delete is refused (423, measured against NC 34.0.3); without that lock the file can be deleted again. So the row is claimed only while the file is still where it was: moved, and the new pad is let go (`file_moved`), nothing claimed or written.
-  - Only two things can leave a row naming a pad the file does not, and opening the file then answers `Binding pad ID mismatch.`: a database that fails again in the middle of the rollback, and a forced sync of a pad Etherpad made anew that writes in the moment between its last look at the row and its write, just as a recovery moves the row (see "Sync"; a sync of a pad that is gone fails before it writes). Neither the open nor the recovery settles that; nothing does yet.
+  - Only two things can leave a row naming a pad the file does not, and opening the file then answers `Binding pad ID mismatch.`: a database that fails again in the middle of the rollback, and a sync of a pad Etherpad made anew, written into after the recovery asked about it, that writes in the moment between its last look at the row and its write, just as the recovery moves the row (see "Sync"; a sync of a pad that is gone fails before it writes, and one of a pad made anew that nobody wrote into writes nothing). Neither the open nor the recovery settles that; nothing does yet.
   - A write that throws after the content landed - a hook after it failing - keeps the new pad: the file is asked which pad it names, and if it is the new one, row and file agree, and taking either back would leave them naming two pads. Logged at `warning`.
   - A write that throws on a file that then cannot be read either leaves open which pad the file names. No row may be left to contradict it: the row goes, and the file's next open finds no row and offers a pad from its content, whichever pad it names. The new pad stays, named in the `warning`: a write is not atomic on every storage, and one that broke off may have cut the file short, leaving the new pad the last whole copy of what the file held.
   - A row whose access mode is none the app knows gets no new pad, and stays as it is.

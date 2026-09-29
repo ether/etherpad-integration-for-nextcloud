@@ -345,6 +345,58 @@ class PadSyncServiceTest extends TestCase {
 	}
 
 	/**
+	 * A forced sync writes a pad behind the snapshot - a file a restore in
+	 * 1.1.0-beta.1 left kept the old pad's revision count - but not one
+	 * Etherpad made anew at revision 0 with other text than the file saved:
+	 * written over the file, the saved content would be gone from it, and
+	 * the open would no longer offer a new pad from it.
+	 */
+	public function testAForcedSyncLeavesThePadEtherpadMadeAnewToTheFile(): void {
+		$formatter = new PadFileService(new FixedClock());
+		$cases = [
+			'made anew on a visit, with the default text' => [12, 'Meeting notes', 0, "Welcome to Etherpad!\n", PadLostException::class],
+			'made anew through the API, empty' => [12, 'Meeting notes', 0, "\n", PadLostException::class],
+			'a template\'s text at revision 0, made anew' => [0, 'Template text', 0, "Welcome to Etherpad!\n", PadLostException::class],
+			'behind the snapshot, written into' => [500, 'old text', 3, 'new edit', PadSyncService::STATUS_UPDATED],
+			// Etherpad's final newline aside, the text the file saved: the
+			// pad's history cut short, and nothing lost.
+			'history cut short, the saved text' => [12, 'Meeting notes', 0, "Meeting notes\n", PadSyncService::STATUS_UPDATED],
+			'a new file, nothing saved' => [-1, '', 0, "Welcome to Etherpad!\n", PadSyncService::STATUS_UPDATED],
+		];
+		foreach ($cases as $case => [$snapshotRev, $saved, $revisions, $padText, $expected]) {
+			$content = $formatter->buildInitialDocument(138, 'pad-a', BindingService::ACCESS_PUBLIC);
+			if ($snapshotRev >= 0) {
+				$content = $formatter->withExportSnapshot($formatter->readPad($content), new PadSnapshot($saved, $saved === '' ? '' : '<p>' . $saved . '</p>', $snapshotRev));
+			}
+			$file = $this->createMock(File::class);
+			$file->method('getName')->willReturn('Notes.pad');
+			$file->method('getContent')->willReturn($content);
+			$userNodeResolver = $this->createMock(UserNodeResolver::class);
+			$userNodeResolver->method('resolveUserFileNodeById')->willReturn($file);
+			$userNodeResolver->method('toUserAbsolutePath')->willReturn('/Notes.pad');
+			$etherpadClient = $this->createMock(EtherpadClient::class);
+			$etherpadClient->method('getRevisionsCount')->willReturn($revisions);
+			$etherpadClient->method('getText')->willReturn($padText);
+			$etherpadClient->method('getHTML')->willReturn('<p>' . trim($padText) . '</p>');
+			$written = null;
+			$lockRetryService = $this->createMock(PadFileLockRetryService::class);
+			$lockRetryService->method('putContentWithSyncLockRetry')->willReturnCallback(static function (File $node, string $content) use (&$written): int {
+				$written = $content;
+				return 0;
+			});
+
+			try {
+				$status = $this->buildService($formatter, $userNodeResolver, null, $etherpadClient, $lockRetryService)->syncById('alice', 138, true)->status;
+			} catch (PadLostException $e) {
+				$status = $e::class;
+			}
+
+			$this->assertSame($expected, $status, $case);
+			$this->assertSame($expected === PadSyncService::STATUS_UPDATED, $written !== null, $case);
+		}
+	}
+
+	/**
 	 * An external .pad without a link is the link's problem, not Etherpad
 	 * failing; a file that is no .pad is refused as such.
 	 */

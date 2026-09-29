@@ -228,7 +228,8 @@ solely by the separate external-pad policy, not by these two settings.
   - Controller: `PadLifecycleController::syncById`
   - Optional query: `force=1`
   - Result: snapshot sync Etherpad -> `.pad` (`updated` or `unchanged`).
-  - `force=1` requests an immediate upstream re-check, but unchanged snapshots are still not rewritten.
+  - `force=1` requests an immediate upstream re-check, but unchanged snapshots are still not rewritten. A pad behind the snapshot whose content differs is written.
+  - A pad Etherpad made anew in place of the file's - without a single revision, with other text than the file saved - is never written over it: `400` with `code=pad_missing`, as an open answers, and the file keeps its content for `recover-from-snapshot`.
   - External pads:
     - Sync uses public text export only (`/export/txt`) based on `pad_url`.
     - HTML is not imported for external pads.
@@ -404,7 +405,7 @@ solely by the separate external-pad policy, not by these two settings.
 - `sync_status_url` (open/open-by-id): endpoint for revision-based sync status in viewer.
 - `code` (errors): stable identifier on selected error responses. Branch on this, never on `message` — messages are written for people and are translated, save the reason a pad on another server could not be linked or read, which comes in English. The full set:
   - `missing_binding` (`MissingBindingException`) — the viewer and embed swap the dead-end error for the recovery UI (`POST /api/v1/pads/recover-from-snapshot/{fileId}` + optional `GET /api/v1/pads/find-original/{fileId}` lookup).
-  - `pad_missing` (`PadLostException`) — the file's row names a pad Etherpad has lost: it has none under that id (a protected pad, or a public one whose file holds saved content), or one with no revision and other text than the file saved (a public pad Etherpad made anew, with its default text, when someone visited its address). Only an open that may write asks, once per open. The viewer and embed show the recovery UI without the original-file lookup; `POST /api/v1/pads/recover-from-snapshot/{fileId}` makes a new pad from the file's content and moves the row onto it.
+  - `pad_missing` (`PadLostException`) — the file's row names a pad Etherpad has lost: it has none under that id (a protected pad, or a public one whose file holds saved content), or one with no revision and other text than the file saved (a public pad Etherpad made anew, with its default text, when someone visited its address). Only an open that may write asks, once per open; a sync answers it too, for a pad made anew, rather than write that pad over the file. The viewer and embed show the recovery UI without the original-file lookup; `POST /api/v1/pads/recover-from-snapshot/{fileId}` makes a new pad from the file's content and moves the row onto it.
   - `missing_frontmatter` (`MissingFrontmatterException`) — the file has no pad metadata yet; clients call `POST /api/v1/pads/initialize-by-id/{fileId}` once and retry the open. A file whose content is neither metadata nor a legacy shortcut cannot be initialised and is refused *without* this code.
   - `pad_too_large` (`EtherpadTooLargeException`) — the pad is past the 5 MiB preview ceiling; it stays editable in Etherpad.
   - `pad_file_changed` (`PadFileChangedException`) — the file changed while its pad was being created or initialised; try again. On create, a file may now exist under that name, and the retry says so.

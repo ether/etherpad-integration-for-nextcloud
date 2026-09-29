@@ -51,6 +51,18 @@ test.describe('a pad Etherpad has lost', () => {
 		expect(await getFileViaDav(name), 'the file names the new pad').toContain(newPadId)
 	}
 
+	/**
+	 * An editor still open on the file syncs it, forced, as it closes: the
+	 * pad made anew is not written over the file, which keeps its content
+	 * for the new pad.
+	 */
+	const expectForcedSyncRefused = async (name: string, fileId: number, marker: string): Promise<void> => {
+		const synced = await padApiPost(`pads/sync/${fileId}?force=1`)
+		expect(synced.status, JSON.stringify(synced.body)).toBe(400)
+		expect((synced.body as { code?: string }).code).toBe('pad_missing')
+		expect(await getFileViaDav(name), 'the file keeps its content').toContain(marker)
+	}
+
 	for (const accessMode of ['public', 'protected']) {
 		test(`a ${accessMode} pad deleted in Etherpad is made anew from its file`, async () => {
 			const name = uniquePadName(`lost-${accessMode}`)
@@ -114,6 +126,7 @@ test.describe('a pad Etherpad has lost', () => {
 			await etherpadApiPost('deletePad', { padID: padId })
 			await etherpadApiPost('createPad', { padID: padId })
 
+			await expectForcedSyncRefused(name, fileId, template.marker)
 			await expectRecovered(name, fileId, padId, template.marker)
 		} finally {
 			await deleteViaDav(name)
@@ -149,6 +162,7 @@ test.describe('a pad Etherpad has lost', () => {
 			await etherpadApiPost('deletePad', { padID: padId })
 			await etherpadApiPost('createPad', { padID: padId })
 
+			await expectForcedSyncRefused(name, fileId, template.marker)
 			await expectRecovered(name, fileId, padId, template.marker)
 		} finally {
 			await deleteViaDav(name)
@@ -182,6 +196,7 @@ test.describe('a pad Etherpad has lost', () => {
 				}
 			}, { message: 'the visit should have made the pad anew' }).toBe(0)
 
+			await expectForcedSyncRefused(name, saved.fileId, saved.marker)
 			await expectRecovered(name, saved.fileId, padId, saved.marker)
 		} finally {
 			await deleteViaDav(name)
@@ -206,6 +221,7 @@ test.describe('a pad Etherpad has lost', () => {
 			await etherpadApiPost('deletePad', { padID: padId })
 			await etherpadApiPost('createPad', { padID: padId })
 
+			await expectForcedSyncRefused(name, saved.fileId, saved.marker)
 			await expectRecovered(name, saved.fileId, padId, saved.marker)
 		} finally {
 			await deleteViaDav(name)

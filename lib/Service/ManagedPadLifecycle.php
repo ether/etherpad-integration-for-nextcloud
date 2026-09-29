@@ -252,10 +252,21 @@ class ManagedPadLifecycle {
 			}
 			return PadPresence::Absent;
 		}
+		// The text is asked only where it decides.
 		if ($revisions !== 0 || !self::savedAnything($snapshotRevision, $savedText)) {
 			return null;
 		}
-		return self::sameText($this->etherpadClient->getText($padId, self::PROBE_TIMEOUT_SECONDS), $savedText) ? null : PadPresence::Behind;
+		return self::isMadeAnew($revisions, $this->etherpadClient->getText($padId, self::PROBE_TIMEOUT_SECONDS), $snapshotRevision, $savedText) ? PadPresence::Behind : null;
+	}
+
+	/**
+	 * Whether a pad at $revisions holding $padText is one Etherpad made anew
+	 * in place of the file's (howLost()'s Behind): without a single revision
+	 * while the file holds saved content, and with other text than the file
+	 * saved. For a caller that has the pad's text at hand already.
+	 */
+	public static function isMadeAnew(int $revisions, string $padText, int $snapshotRevision, string $savedText): bool {
+		return $revisions === 0 && self::savedAnything($snapshotRevision, $savedText) && !self::sameText($padText, $savedText);
 	}
 
 	/** Text as Etherpad and a file hold it, but for line endings and the final newline. */
