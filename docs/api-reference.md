@@ -391,11 +391,6 @@ solely by the separate external-pad policy, not by these two settings.
     - `checked`: rows of files deleted for good it took; `settled`: pads it deleted, with their rows
     - `pending_delete_count`: what is left, named as in the health check
 
-  - Supported fault values:
-    - `restore_read_lock`
-    - `restore_write_lock`
-    - `restore_write_fail`
-
 ## Important Response Fields
 
 - `viewer_url`: URL for viewer redirect.
@@ -497,8 +492,8 @@ Registered in `lib/AppInfo/Application.php`.
 - `OCP\User\Events\UserLoggedOutEvent` -> `UserLoggedOutListener`
 - `OCA\Files_Trashbin\Events\NodeRestoredEvent` -> `RestoreFromTrashListener`
 - legacy hook `\OCA\Files_Trashbin\Trashbin::post_restore` -> `TrashbinHookHandler::postRestore` -> `RestoreFromTrashListener::handleLegacyHook`
-- `OCP\Files\Cache\CacheEntryRemovedEvent`, `OCP\Files\Cache\CacheEntryInsertedEvent`, `OCP\Files\Cache\CacheEntriesRemovedEvent` (from 34), `OCP\Files\Events\Node\BeforeNodeDeletedEvent`, `OCP\Files\Events\Node\NodeDeletedEvent`, `OCP\User\Events\BeforeUserDeletedEvent`, `OCP\User\Events\UserDeletedEvent` -> `GoneFilesListener` (the marks of files deleted for good; `docs/architecture.md`, "Files gone for good")
-- `OCP\Files\Events\Node\BeforeNodeDeletedEvent` -> `RevokeSessionsOnDeleteListener` (the sessions of the protected pads a delete takes along; `docs/architecture.md`, "Trash/Restore")
+- `OCP\Files\Cache\CacheEntryRemovedEvent`, `OCP\Files\Cache\CacheEntryInsertedEvent`, `OCP\Files\Cache\CacheEntriesRemovedEvent` (from 34, priority 100), `OCP\Files\Events\Node\BeforeNodeDeletedEvent`, `OCP\Files\Events\Node\NodeDeletedEvent`, the event named `\OCP\Files::postDelete` (an `OCP\EventDispatcher\GenericEvent`), `OCA\Files_Trashbin\Events\BeforeNodeRestoredEvent`, `OCA\Files_Trashbin\Events\NodeRestoredEvent`, `OCP\User\Events\BeforeUserDeletedEvent`, `OCP\User\Events\UserDeletedEvent` -> `GoneFilesListener` (the marks of files deleted for good; `docs/architecture.md`, "Files gone for good")
+- `OCP\Files\Events\Node\BeforeNodeDeletedEvent`, `OCP\Files\Events\Node\NodeDeletedEvent` -> `RevokeSessionsOnDeleteListener` (the sessions of the protected pads a delete takes along; `docs/architecture.md`, "Trash/Restore")
 
 ## App Config Keys
 

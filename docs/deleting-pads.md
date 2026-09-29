@@ -46,6 +46,11 @@ The pad stays as it is, and nothing is written into the file.
   is restored all the same, and its next open offers the new pad. A folder
   restored does not ask for each of its files: those whose pad is lost offer
   a new one when they are opened.
+- **A `.pad` file a share recipient deleted:** Nextcloud puts the file
+  itself into its owner's trash and a copy into the recipient's. The
+  owner's restore brings the pad back. The recipient's copy, restored, is a
+  copy: it keeps the content it had, and its open offers a new pad from it,
+  while the pad stays with the file in the owner's trash until that goes.
 - **A `.pad` file trashed under an earlier version,** whose trash deleted
   the pad (1.1.0-beta.1 and before): a new pad is made from the snapshot in
   the file, at once. A
@@ -57,14 +62,13 @@ The pad stays as it is, and nothing is written into the file.
 | How the file is deleted for good | When the pad is deleted |
 |---|---|
 | From the trash: the trash emptied, the item deleted there, expired, or `occ trashbin:cleanup`. A user's trash or a team folder's. | By a background job, within minutes; for a folder's files too. |
-| Past the trash: a WebDAV `DELETE` with `X-NC-Skip-Trashbin: true`, the trash app switched off for the user, or a move to the trash that fails. | By a background job, within minutes; for a folder's files too. |
+| Past the trash: a WebDAV `DELETE` with `X-NC-Skip-Trashbin: true`, the trash app switched off for the user, or a move to the trash that fails or that another app keeps from the trash. | By a background job, within minutes; for a folder's files too. |
 | With the account: the account deleted. | The pads of the account's own files - those in its home and its trash, shared ones included - by a background job, within minutes. Files in team folders, and files the account put into folders others shared with it, are not the account's: they stay, and so do their pads. |
 
-"A background job" runs every five minutes when Nextcloud's background jobs
-run by system cron; with AJAX or webcron, only as often as those run. It
-deletes the pad of a file deleted for good once five minutes have passed,
-so the pad goes within ten minutes; the admin page's "Check pending pads"
-does it at once. When Etherpad does not answer, the job deletes the pad once
+"A background job" runs on every tick of a five-minute system cron; with
+AJAX or webcron, only as often as those run. It deletes the pad of a file
+deleted for good once five minutes have passed, so the pad goes within
+about ten minutes; the admin page's "Check pending pads" does it at once. When Etherpad does not answer, the job deletes the pad once
 it does; until then the admin page counts it as a pending delete.
 
 On Nextcloud 34, Nextcloud reports the files inside a folder deleted for
@@ -86,7 +90,9 @@ stays:
 - files removed outside Nextcloud - on an external storage, or in the data
   directory - that a scan then drops;
 - a team folder deleted as a whole by an admin, and an external storage
-  removed.
+  removed. Files that were in the team folder's trash then may go as from
+  a trash, and take their pads along: on a team folder kept on Nextcloud's
+  own storage, not on one with a storage of its own.
 
 A pad that stays keeps its content in Etherpad, and nobody reaches it
 through Nextcloud any more; a public pad stays reachable by its link. The

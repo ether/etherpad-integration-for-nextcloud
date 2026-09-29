@@ -54,11 +54,11 @@ that file destroy their group, their pad and their sessions. A group that
 holds only the pad being deleted, or nothing at all, has nothing else to
 lose.
 
-It answers true when it removed something, the pad or the empty group a
-protected pad left behind, and false when Etherpad says there was nothing
-left: no such pad, or no such group. A caller that has just heard the pad
-is gone says so (`knownAbsent`); a public pad then costs no call, a
-protected one is still asked about its group.
+It is done when it removed something, the pad or the empty group a
+protected pad left behind, and when Etherpad says there was nothing left:
+no such pad, or no such group. A caller that has just heard the pad is
+gone says so (`knownAbsent`); a public pad then costs no call, a protected
+one is still asked about its group.
 
 A group Etherpad cannot list is given up by default: the pad goes alone,
 the half that was always safe, and the empty group stays. A caller that

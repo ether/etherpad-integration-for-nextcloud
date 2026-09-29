@@ -12,7 +12,7 @@ This plugin lets you surface pads from an Etherpad instance inside Nextcloud and
 - Periodic sync from Etherpad into `.pad` snapshots
 - Pad text is searchable through Nextcloud's full-text search, where that is set up
 - A pad lives as long as its file: the trash keeps it, and it goes once the file is deleted for good
-- Restore recreates pads from `.pad` snapshot data
+- A `.pad` file whose pad is gone gets a new one from its snapshot: at once when it comes back from the trash, and offered when it is opened
 
 ## Screenshots
 
