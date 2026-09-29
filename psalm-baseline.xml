@@ -346,11 +346,6 @@
       <code><![CDATA[(int)$node->getId()]]></code>
     </RedundantCastGivenDocblockType>
   </file>
-  <file src="lib/Service/PadSessionRevoker.php">
-    <RedundantCastGivenDocblockType>
-      <code><![CDATA[(string)$sessionId]]></code>
-    </RedundantCastGivenDocblockType>
-  </file>
   <file src="lib/Service/PadSessionService.php">
     <DeprecatedMethod>
       <code><![CDATA[getAppValue]]></code>

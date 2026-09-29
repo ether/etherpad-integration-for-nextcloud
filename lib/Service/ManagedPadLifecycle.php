@@ -311,6 +311,19 @@ class ManagedPadLifecycle {
 	}
 
 	/**
+	 * Whether a group holding $pads is the pad's own: it holds that pad
+	 * alone, or nothing. A legacy `.pad` names its own pad id, and its
+	 * group may be someone else's, with other pads in it that the group's
+	 * deletion or sessions would take along (docs/etherpad-integration.md,
+	 * "Removing a pad").
+	 *
+	 * @param list<string> $pads
+	 */
+	public static function groupIsThePads(array $pads, string $padId): bool {
+		return $pads === [] || $pads === [$padId];
+	}
+
+	/**
 	 * Whether Etherpad answers at all, asked within $budget: a failure that
 	 * reads as Etherpad unreachable - an HTTP error, an answer it could not
 	 * have meant - may be one pad's alone.
@@ -380,7 +393,7 @@ class ManagedPadLifecycle {
 		// with nothing in it, and a retry that only deleted the pad again
 		// would leave it standing for good. A group holding no pads has no
 		// content to lose, and its sessions grant access to nothing.
-		if ($pads !== null && ($pads === [] || $pads === [$padId])) {
+		if ($pads !== null && self::groupIsThePads($pads, $padId)) {
 			$this->etherpadClient->deleteGroup($groupId, RunBudget::timeoutOf($budget));
 			// Worth a line: this removed a group, its pad and every session
 			// issued for it, and an admin tracing a vanished pad has nothing
