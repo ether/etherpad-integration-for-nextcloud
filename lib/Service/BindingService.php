@@ -394,6 +394,29 @@ class BindingService {
 	public function assertConsistentMapping(int $fileId, string $padId, string $accessMode): void {
 		$this->assertAccessMode($accessMode);
 		$binding = $this->findByFileId($fileId);
+		self::assertNames($binding, $padId, $accessMode);
+		if ($binding->state === self::STATE_PENDING_DELETE) {
+			// Seen deleted for good, yet here: the deletion did not happen
+			// after all, and the file keeps its pad.
+			if ($this->transition($fileId, $padId, self::STATE_PENDING_DELETE, self::STATE_ACTIVE)) {
+				return;
+			}
+			// Another request took the row back first - an open beside a
+			// sync, or the sweep: the row as it is now says.
+			$binding = $this->findByFileId($fileId);
+			self::assertNames($binding, $padId, $accessMode);
+		}
+		if ($binding->state !== self::STATE_ACTIVE) {
+			throw new BindingException('Pad binding is not active.');
+		}
+	}
+
+	/**
+	 * The row there, naming this pad in this access mode.
+	 *
+	 * @psalm-assert !null $binding
+	 */
+	private static function assertNames(?Binding $binding, string $padId, string $accessMode): void {
 		if ($binding === null) {
 			throw new MissingBindingException('No binding exists for this file.');
 		}
@@ -402,14 +425,6 @@ class BindingService {
 		}
 		if ($binding->accessMode !== $accessMode) {
 			throw new BindingMismatchException('Binding access mode mismatch.');
-		}
-		if ($binding->state === self::STATE_PENDING_DELETE && $this->transition($fileId, $padId, self::STATE_PENDING_DELETE, self::STATE_ACTIVE)) {
-			// Seen deleted for good, yet here: the deletion did not happen
-			// after all, and the file keeps its pad.
-			return;
-		}
-		if ($binding->state !== self::STATE_ACTIVE) {
-			throw new BindingException('Pad binding is not active.');
 		}
 	}
 

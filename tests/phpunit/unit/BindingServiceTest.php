@@ -46,6 +46,26 @@ class BindingServiceTest extends TestCase {
 	}
 
 	/**
+	 * Two requests that find a row seen deleted - an open beside a sync, or
+	 * the sweep taking stale marks back - race to make it active. The one
+	 * that loses reads the row again, and it is active: no refusal.
+	 */
+	public function testARequestThatLosesTheRaceToTakeARowBackAcceptsIt(): void {
+		$table = new InMemoryBindingTable([self::bindingRow(10, 'pad-a', BindingService::STATE_PENDING_DELETE)]);
+		$service = new class($table, new FixedClock(500)) extends BindingService {
+			public function transition(int $fileId, string $padId, string $from, string $to): bool {
+				// The other request is first.
+				parent::transition($fileId, $padId, $from, $to);
+				return false;
+			}
+		};
+
+		$service->assertConsistentMapping(10, 'pad-a', BindingService::ACCESS_PUBLIC);
+
+		$this->assertSame(BindingService::STATE_ACTIVE, $table->rows[0]['state']);
+	}
+
+	/**
 	 * A file seen deleted for good that is opened was not deleted after all:
 	 * its row is active again, and keeps its pad. Only its own row.
 	 */
