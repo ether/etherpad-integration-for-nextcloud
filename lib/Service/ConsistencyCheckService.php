@@ -51,13 +51,10 @@ class ConsistencyCheckService {
 
 	/**
 	 * The vanished rows marked seen deleted for good, on an admin's word
-	 * (AdminController::deleteVanished()): the sweep then deletes their
-	 * pads as it does those of any file deleted for good - within minutes,
-	 * or at once through the pending pad check - asking the file cache once
-	 * more first. The app never does this on its own: a file the file cache
-	 * lost may still be there under another id, after the cache was rebuilt
-	 * or files were restored from a backup, say, and only an admin can tell.
-	 * In chunks, until none is left or $budget is spent.
+	 * only (docs/deleting-pads.md says why): the sweep then deletes their
+	 * pads as it does those of any file deleted for good, asking the file
+	 * cache once more first. In chunks, until none is left or $budget is
+	 * spent.
 	 *
 	 * @return int how many rows were marked
 	 */
@@ -73,22 +70,35 @@ class ConsistencyCheckService {
 				break;
 			}
 		}
+		if ($marked > 0) {
+			// The sweep's lines that follow read as deletions seen; this says
+			// whose word they were.
+			$this->logger->info('An admin marked the rows of vanished files as deleted for good; the sweep deletes their pads.', [
+				'app' => Application::APP_ID,
+				'count' => $marked,
+			]);
+		}
 		return $marked;
 	}
 
 	/** One vanished file's row marked, as markVanished() marks them all: whether it was still vanished. */
 	public function markVanishedFile(int $fileId): bool {
-		return $this->bindingService->markIfGone([$fileId]) !== [];
+		if ($this->bindingService->markIfGone([$fileId]) === []) {
+			return false;
+		}
+		$this->logger->info('An admin marked the row of a vanished file as deleted for good; the sweep deletes its pad.', [
+			'app' => Application::APP_ID,
+			'fileId' => $fileId,
+		]);
+		return true;
 	}
 
 	/**
 	 * One vanished file's row removed on an admin's word, its pad left in
-	 * Etherpad: the pad leaves the list, and the app no longer looks after
-	 * it. No sweep deletes it, and a protected pad can no longer be opened,
-	 * since only the app makes its sessions; a public one stays reachable
-	 * by its link. Only while the row is still vanished - active, its file
-	 * gone from the file cache. The pad's id goes to the log, the one place
-	 * left that knows it.
+	 * Etherpad, which the app no longer looks after (docs/deleting-pads.md
+	 * says what that costs). Only while the row is still vanished - active,
+	 * its file gone from the file cache. The pad's id goes to the log, the
+	 * one place left that knows it.
 	 *
 	 * @return ?string the pad left in Etherpad, or null when the file is no longer vanished
 	 */

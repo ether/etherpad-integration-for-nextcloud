@@ -51,7 +51,10 @@ class ConsistencyCheckServiceTest extends TestCase {
 		}
 		$db = new InMemoryBindingTable($rows, [['fileid' => 1, 'storage' => 1, 'path' => 'files/1.pad']]);
 		$clock = new FixedClock(500);
-		$service = $this->service($db, $clock);
+		$logger = $this->createMock(LoggerInterface::class);
+		// The sweep's lines that follow read as deletions seen: this one says whose word they were.
+		$logger->expects($this->once())->method('info')->with($this->anything(), $this->callback(static fn (array $context): bool => $context['count'] === 501));
+		$service = $this->service($db, $clock, $logger);
 
 		$this->assertSame(501, $service->markVanished(new RunBudget($clock, RunBudget::DEFAULT_SECONDS)));
 
@@ -91,20 +94,21 @@ class ConsistencyCheckServiceTest extends TestCase {
 
 	/**
 	 * One vanished file, on an admin's word: its row marked, or removed
-	 * with its pad left in Etherpad and named in the log. A row whose file
-	 * is there, or one on its way already, is no vanished file: left as it
-	 * is.
+	 * with its pad left in Etherpad, each named in the log. Forgetting
+	 * leaves a row whose file is there, or one on its way already. Which
+	 * rows a mark takes is BindingService::markIfGone()'s, tested there.
 	 */
 	public function testTakesOneVanishedFileAtATime(): void {
 		$row = static fn (int $fileId, string $state = BindingService::STATE_ACTIVE): array => ['file_id' => $fileId, 'pad_id' => 'pad-' . $fileId, 'access_mode' => BindingService::ACCESS_PROTECTED, 'state' => $state, 'deleted_at' => $state === BindingService::STATE_ACTIVE ? null : 90, 'updated_at' => 100];
 		$db = new InMemoryBindingTable([$row(1), $row(2, BindingService::STATE_PENDING_DELETE), $row(3), $row(4)], [['fileid' => 1, 'storage' => 1, 'path' => 'files/1.pad']]);
+		$logged = [];
 		$logger = $this->createMock(LoggerInterface::class);
-		$logger->expects($this->once())->method('info')->with($this->anything(), $this->callback(static fn (array $context): bool => $context['fileId'] === 4 && $context['padId'] === 'pad-4'));
+		$logger->method('info')->willReturnCallback(static function (string $message, array $context) use (&$logged): void {
+			$logged[] = [$context['fileId'], $context['padId'] ?? null];
+		});
 		$service = $this->service($db, new FixedClock(500), $logger);
 
 		$this->assertTrue($service->markVanishedFile(3));
-		$this->assertFalse($service->markVanishedFile(1), 'its file is there');
-		$this->assertFalse($service->markVanishedFile(2), 'on its way already');
 		$this->assertSame('pad-4', $service->forgetVanished(4));
 		$this->assertNull($service->forgetVanished(1), 'its file is there');
 		$this->assertNull($service->forgetVanished(2), 'on its way already');
@@ -112,6 +116,7 @@ class ConsistencyCheckServiceTest extends TestCase {
 
 		$states = array_column(array_map(static fn (array $r): array => [$r['file_id'], $r['state'], $r['deleted_at']], $db->rows), null, 0);
 		$this->assertSame([[1, BindingService::STATE_ACTIVE, null], [2, BindingService::STATE_PENDING_DELETE, 90], [3, BindingService::STATE_PENDING_DELETE, 500]], array_values($states));
+		$this->assertSame([[3, null], [4, 'pad-4']], $logged);
 	}
 
 	private function service(InMemoryBindingTable $db, ?FixedClock $clock = null, ?LoggerInterface $logger = null): ConsistencyCheckService {

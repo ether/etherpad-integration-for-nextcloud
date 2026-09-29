@@ -160,16 +160,14 @@ class AdminController extends Controller {
 	}
 
 	/**
-	 * The pads of the vanished files deleted, on the admin's word - all of
-	 * them, or the one `fileId` names: their rows marked as files deleted
-	 * for good, for the sweep to take within minutes, or the pending pad
-	 * check at once.
+	 * The pads of the vanished files deleted on the admin's word: all, or
+	 * the one `fileId` names (ConsistencyCheckService::markVanished()).
 	 */
 	public function deleteVanished(): DataResponse {
 		return $this->errors->run(
 			function (): array {
 				$this->requireAdmin();
-				$fileId = $this->fileIdParam(required: false);
+				$fileId = $this->fileIdParam($this->request->getParam('fileId'), required: false);
 				// With deleting off a mark would only wait for it to be
 				// switched on: nothing is marked, and the page says why.
 				$deleting = $this->appConfigService->isDeletePadWithFileEnabled();
@@ -180,7 +178,13 @@ class AdminController extends Controller {
 				}
 				$left = $this->consistencyCheckService->countVanished();
 				return [
-					'message' => $fileId === null ? $this->vanishedMessage($deleting, $left) : $this->vanishedFileMessage($deleting, $marked > 0),
+					'message' => match (true) {
+						!$deleting => $this->l10n->t('Deleting pads is switched off, so no pad was marked for deletion.'),
+						$fileId !== null && $marked > 0 => $this->l10n->t('The pad of this vanished file is marked for deletion. It is deleted within minutes, or at once with "Check pending pads".'),
+						$fileId !== null => $this->noLongerVanished(),
+						$left > 0 => $this->l10n->t('Not every vanished file could be marked in one go. Run it again for the rest.'),
+						default => $this->l10n->t('The pads of the vanished files are marked for deletion. They are deleted within minutes, or at once with "Check pending pads".'),
+					},
 					'marked' => $marked,
 					'vanished_file_count' => $left,
 					'pending_delete_count' => $this->bindingService->countPendingDeletes(),
@@ -202,11 +206,11 @@ class AdminController extends Controller {
 		return $this->errors->run(
 			function (): array {
 				$this->requireAdmin();
-				$forgotten = $this->consistencyCheckService->forgetVanished((int)$this->fileIdParam(required: true));
+				$forgotten = $this->consistencyCheckService->forgetVanished((int)$this->fileIdParam($this->request->getParam('fileId'), required: true));
 				return [
 					'message' => $forgotten !== null
 						? $this->l10n->t('The pad stays in Etherpad, and the app no longer looks after it.')
-						: $this->l10n->t('This file is no longer vanished; nothing was changed.'),
+						: $this->noLongerVanished(),
 					'forgotten' => $forgotten !== null,
 					'vanished_file_count' => $this->consistencyCheckService->countVanished(),
 				];
@@ -220,18 +224,16 @@ class AdminController extends Controller {
 	}
 
 	/**
-	 * The request's `fileId`: a positive number, or null when it names
-	 * none and none is $required.
+	 * The request's `fileId` ($raw): a positive number, or null when the
+	 * request has none and none is $required - absent, not empty: a client
+	 * that meant one file and sent no number must not get all of them. Not
+	 * the typed argument the other controllers take, which Nextcloud casts:
+	 * `7x` would name file 7, and an empty value file 0.
 	 *
 	 * @throws \InvalidArgumentException when it is not one
 	 */
-	private function fileIdParam(bool $required): ?int {
-		return $this->fileIdOf($this->request->getParam('fileId'), $required);
-	}
-
-	/** @throws \InvalidArgumentException */
-	private function fileIdOf(mixed $raw, bool $required): ?int {
-		if (($raw === null || $raw === '') && !$required) {
+	private function fileIdParam(mixed $raw, bool $required): ?int {
+		if ($raw === null && !$required) {
 			return null;
 		}
 		$fileId = is_int($raw) || (is_string($raw) && ctype_digit($raw)) ? (int)$raw : 0;
@@ -241,25 +243,9 @@ class AdminController extends Controller {
 		return $fileId;
 	}
 
-	/** What marking one vanished file came to. */
-	private function vanishedFileMessage(bool $deleting, bool $marked): string {
-		if (!$deleting) {
-			return $this->l10n->t('Deleting pads is switched off, so no pad was marked for deletion.');
-		}
-		return $marked
-			? $this->l10n->t('The pad of this vanished file is marked for deletion. It is deleted within minutes, or at once with "Check pending pads".')
-			: $this->l10n->t('This file is no longer vanished; nothing was changed.');
-	}
-
-	/** What marking the vanished files came to, $left of them still to mark. */
-	private function vanishedMessage(bool $deleting, int $left): string {
-		if (!$deleting) {
-			return $this->l10n->t('Deleting pads is switched off, so no pad was marked for deletion.');
-		}
-		if ($left > 0) {
-			return $this->l10n->t('Not every vanished file could be marked in one go. Run it again for the rest.');
-		}
-		return $this->l10n->t('The pads of the vanished files are marked for deletion. They are deleted within minutes, or at once with "Check pending pads".');
+	/** The answer for a file named that is no longer vanished. */
+	private function noLongerVanished(): string {
+		return $this->l10n->t('This file is no longer vanished; nothing was changed.');
 	}
 
 	public function consistencyCheck(): DataResponse {

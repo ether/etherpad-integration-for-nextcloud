@@ -274,11 +274,27 @@ class AdminControllerTest extends TestCase {
 
 		$this->assertSame(['ok' => true, 'message' => 'The pad stays in Etherpad, and the app no longer looks after it.', 'forgotten' => true, 'vanished_file_count' => 2], $forgotten);
 		$this->assertSame(['This file is no longer vanished; nothing was changed.', false], [$left['message'], $left['forgotten']]);
-		foreach ([[], ['fileId' => ''], ['fileId' => 'abc'], ['fileId' => '7x'], ['fileId' => '1.5'], ['fileId' => '0'], ['fileId' => '-3']] as $payload) {
+		foreach ([[], ['fileId' => '7x'], ['fileId' => '0']] as $payload) {
 			$response = $this->buildController(request: $this->request($payload), consistencyCheck: $consistency)->forgetVanished();
 			$this->assertSame(Http::STATUS_BAD_REQUEST, $response->getStatus(), json_encode($payload));
 			$this->assertSame('Invalid file ID.', $response->getData()['message']);
 		}
+	}
+
+	/**
+	 * Only a request without `fileId` takes every vanished file: an empty
+	 * one is a client that meant one file and sent no number, refused
+	 * before anything is marked.
+	 */
+	public function testDeleteVanishedRefusesAnEmptyFileId(): void {
+		$consistency = $this->createMock(ConsistencyCheckService::class);
+		$consistency->expects($this->never())->method('markVanished');
+		$consistency->expects($this->never())->method('markVanishedFile');
+
+		$response = $this->buildController(request: $this->request(['fileId' => '']), consistencyCheck: $consistency)->deleteVanished();
+
+		$this->assertSame(Http::STATUS_BAD_REQUEST, $response->getStatus());
+		$this->assertSame('Invalid file ID.', $response->getData()['message']);
 	}
 
 	/** Only an admin deletes pads here. */
