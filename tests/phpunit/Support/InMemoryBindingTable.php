@@ -30,6 +30,9 @@ final class InMemoryBindingTable implements IDBConnection {
 		'filecache' => ['fileid', 'storage', 'path', 'path_hash', 'parent', 'name', 'mimetype', 'mimepart', 'size', 'mtime', 'storage_mtime', 'encrypted', 'unencrypted_size', 'etag', 'permissions', 'checksum'],
 	];
 
+	/** @var list<int> the rows each query read, in order */
+	public array $read = [];
+
 	/**
 	 * $fileCache holds what the file cache knows (`fileid`, `storage`,
 	 * `path`), for the statements that join it.

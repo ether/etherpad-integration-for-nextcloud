@@ -207,7 +207,9 @@ final class InMemoryBindingQuery implements IQueryBuilder {
 			$sign = $this->direction === 'DESC' ? -1 : 1;
 			usort($rows, fn (array $a, array $b): int => $sign * ((int)$this->value($a, $column) <=> (int)$this->value($b, $column)));
 		}
-		return $this->result(array_map(fn (array $row): array => $this->projected($row), array_slice($rows, 0, $this->limit)));
+		$rows = array_slice($rows, 0, $this->limit);
+		$this->db->read[] = count($rows);
+		return $this->result(array_map(fn (array $row): array => $this->projected($row), $rows));
 	}
 
 	/** @param list<array<string,mixed>> $rows */

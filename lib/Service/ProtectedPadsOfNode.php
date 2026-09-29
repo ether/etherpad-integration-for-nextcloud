@@ -33,7 +33,9 @@ use Psr\Log\LoggerInterface;
  *
  * It runs in the delete's request, so it is bounded: it stops at MAX_PADS
  * pads, more than a delete can take the sessions of in its budget
- * (PadSessionRevoker), or at MAX_FOLDERS folders, some forty queries.
+ * (PadSessionRevoker), or at MAX_FOLDERS folders, some forty queries. The
+ * queries are bounded too, so a single folder with a hundred thousand
+ * others in it reads no more than the walk has room for.
  * What it does not reach keeps its sessions until they expire, within six
  * hours, with a line that says so.
  */
@@ -43,11 +45,19 @@ class ProtectedPadsOfNode {
 	/** Folders a level query takes at a time. */
 	private const CHUNK = 500;
 
-	/** Pads a walk finds at most. */
-	private const MAX_PADS = 100;
+	/**
+	 * Pads a walk finds at most.
+	 *
+	 * @var int
+	 */
+	protected const MAX_PADS = 100;
 
-	/** Folders a walk reads at most. */
-	private const MAX_FOLDERS = 10000;
+	/**
+	 * Folders a walk reads at most.
+	 *
+	 * @var int
+	 */
+	protected const MAX_FOLDERS = 10000;
 
 	public function __construct(
 		private IDBConnection $db,
@@ -59,30 +69,35 @@ class ProtectedPadsOfNode {
 	/** @return list<string> */
 	public function of(Node $node): array {
 		if (!$node instanceof Folder) {
-			return $this->padsOf('file_id', [$node->getId()]);
+			return $this->padsOf('file_id', [$node->getId()], 1);
 		}
 		if (!$this->anyProtectedPad()) {
 			return [];
 		}
 		$directory = $this->mimeTypes->getId(self::DIRECTORY);
 		$pads = [];
+		$known = 1;
 		$read = 0;
-		$cut = false;
 		$level = [$node->getId()];
-		while ($level !== [] && !$cut) {
+		while ($level !== [] && count($pads) <= static::MAX_PADS) {
 			$next = [];
 			foreach (array_chunk($level, self::CHUNK) as $folders) {
-				if (count($pads) > self::MAX_PADS || $read >= self::MAX_FOLDERS) {
-					$cut = true;
+				$read += count($folders);
+				// One more than there is room for, to tell that there is more.
+				array_push($pads, ...$this->padsOf('fc.parent', $folders, max(1, static::MAX_PADS + 1 - count($pads))));
+				if (count($pads) > static::MAX_PADS) {
 					break;
 				}
-				$read += count($folders);
-				array_push($pads, ...$this->padsOf('fc.parent', $folders));
-				array_push($next, ...$this->foldersIn($folders, $directory));
+				$room = static::MAX_FOLDERS + 1 - $known;
+				if ($room > 0) {
+					$found = $this->foldersIn($folders, $directory, $room);
+					$known += count($found);
+					array_push($next, ...$found);
+				}
 			}
 			$level = $next;
 		}
-		if ($cut || count($pads) > self::MAX_PADS) {
+		if (count($pads) > static::MAX_PADS || $known > static::MAX_FOLDERS) {
 			$this->logger->info('A folder deleted holds more than a delete takes the sessions of; the rest expire on their own.', [
 				'app' => 'etherpad_nextcloud',
 				'fileId' => $node->getId(),
@@ -90,7 +105,7 @@ class ProtectedPadsOfNode {
 				'folders' => $read,
 			]);
 		}
-		return array_slice($pads, 0, self::MAX_PADS);
+		return array_slice($pads, 0, static::MAX_PADS);
 	}
 
 	/**
@@ -99,9 +114,10 @@ class ProtectedPadsOfNode {
 	 *
 	 * @param 'file_id'|'fc.parent' $column
 	 * @param list<int> $values
+	 * @param positive-int $limit
 	 * @return list<string>
 	 */
-	private function padsOf(string $column, array $values): array {
+	private function padsOf(string $column, array $values, int $limit): array {
 		$qb = $this->db->getQueryBuilder();
 		$qb->select('b.pad_id')
 			->from(BindingService::TABLE, 'b');
@@ -112,7 +128,8 @@ class ProtectedPadsOfNode {
 		}
 		$qb->where($qb->expr()->in($column, $qb->createNamedParameter($values, IQueryBuilder::PARAM_INT_ARRAY)))
 			->andWhere($qb->expr()->eq('b.access_mode', $qb->createNamedParameter(BindingService::ACCESS_PROTECTED)))
-			->andWhere($qb->expr()->eq('b.state', $qb->createNamedParameter(BindingService::STATE_ACTIVE)));
+			->andWhere($qb->expr()->eq('b.state', $qb->createNamedParameter(BindingService::STATE_ACTIVE)))
+			->setMaxResults($limit);
 		$result = $qb->executeQuery();
 		$pads = array_map(static fn (array $row): string => DbRows::string($row, 'pad_id'), DbRows::all($result->fetchAll()));
 		$result->closeCursor();
@@ -134,17 +151,19 @@ class ProtectedPadsOfNode {
 	}
 
 	/**
-	 * The folders right under $folders.
+	 * The folders right under $folders, $limit at most.
 	 *
 	 * @param list<int> $folders
+	 * @param positive-int $limit
 	 * @return list<int>
 	 */
-	private function foldersIn(array $folders, int $directory): array {
+	private function foldersIn(array $folders, int $directory, int $limit): array {
 		$qb = $this->db->getQueryBuilder();
 		$qb->select('fileid')
 			->from('filecache')
 			->where($qb->expr()->in('parent', $qb->createNamedParameter($folders, IQueryBuilder::PARAM_INT_ARRAY)))
-			->andWhere($qb->expr()->eq('mimetype', $qb->createNamedParameter($directory, IQueryBuilder::PARAM_INT)));
+			->andWhere($qb->expr()->eq('mimetype', $qb->createNamedParameter($directory, IQueryBuilder::PARAM_INT)))
+			->setMaxResults($limit);
 		$result = $qb->executeQuery();
 		$ids = array_map(static fn (array $row): int => DbRows::int($row, 'fileid'), DbRows::all($result->fetchAll()));
 		$result->closeCursor();
