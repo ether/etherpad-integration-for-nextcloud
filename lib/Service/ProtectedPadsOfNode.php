@@ -15,6 +15,7 @@ use OCP\Files\Folder;
 use OCP\Files\IMimeTypeLoader;
 use OCP\Files\Node;
 use OCP\IDBConnection;
+use Psr\Log\LoggerInterface;
 
 /**
  * The protected pads a node takes along when it leaves Files: a file's
@@ -26,9 +27,15 @@ use OCP\IDBConnection;
  * folders for the next level. A prefix match on the path would read the
  * whole storage, which the file cache indexes for no such match on every
  * database, and a team folder from before groupfolders gave each its own
- * storage shares the root storage with all others. The walk costs what the
- * folder holds, and is not taken at all on an instance with no active
- * protected pad: one look at the binding table, without a join, says so.
+ * storage shares the root storage with all others. The walk is not taken
+ * at all on an instance with no active protected pad: one look at the
+ * binding table, without a join, says so.
+ *
+ * It runs in the delete's request, so it is bounded: it stops at MAX_PADS
+ * pads, more than a delete can take the sessions of in its budget
+ * (PadSessionRevoker), or at MAX_FOLDERS folders, some forty queries.
+ * What it does not reach keeps its sessions until they expire, within six
+ * hours, with a line that says so.
  */
 class ProtectedPadsOfNode {
 	private const DIRECTORY = 'httpd/unix-directory';
@@ -36,9 +43,16 @@ class ProtectedPadsOfNode {
 	/** Folders a level query takes at a time. */
 	private const CHUNK = 500;
 
+	/** Pads a walk finds at most. */
+	private const MAX_PADS = 100;
+
+	/** Folders a walk reads at most. */
+	private const MAX_FOLDERS = 10000;
+
 	public function __construct(
 		private IDBConnection $db,
 		private IMimeTypeLoader $mimeTypes,
+		private LoggerInterface $logger,
 	) {
 	}
 
@@ -52,16 +66,31 @@ class ProtectedPadsOfNode {
 		}
 		$directory = $this->mimeTypes->getId(self::DIRECTORY);
 		$pads = [];
+		$read = 0;
+		$cut = false;
 		$level = [$node->getId()];
-		while ($level !== []) {
+		while ($level !== [] && !$cut) {
 			$next = [];
 			foreach (array_chunk($level, self::CHUNK) as $folders) {
+				if (count($pads) > self::MAX_PADS || $read >= self::MAX_FOLDERS) {
+					$cut = true;
+					break;
+				}
+				$read += count($folders);
 				array_push($pads, ...$this->padsOf('fc.parent', $folders));
 				array_push($next, ...$this->foldersIn($folders, $directory));
 			}
 			$level = $next;
 		}
-		return $pads;
+		if ($cut || count($pads) > self::MAX_PADS) {
+			$this->logger->info('A folder deleted holds more than a delete takes the sessions of; the rest expire on their own.', [
+				'app' => 'etherpad_nextcloud',
+				'fileId' => $node->getId(),
+				'pads' => count($pads),
+				'folders' => $read,
+			]);
+		}
+		return array_slice($pads, 0, self::MAX_PADS);
 	}
 
 	/**

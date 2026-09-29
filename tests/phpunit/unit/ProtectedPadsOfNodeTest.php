@@ -11,6 +11,7 @@ use OCP\Files\File;
 use OCP\Files\Folder;
 use OCP\Files\IMimeTypeLoader;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\LoggerInterface;
 
 /**
  * The protected pads a node takes along: a file's own, or those of every
@@ -47,7 +48,7 @@ class ProtectedPadsOfNodeTest extends TestCase {
 		]);
 		$mimeTypes = $this->createMock(IMimeTypeLoader::class);
 		$mimeTypes->method('getId')->with('httpd/unix-directory')->willReturn(self::DIRECTORY);
-		$pads = new ProtectedPadsOfNode($table, $mimeTypes);
+		$pads = new ProtectedPadsOfNode($table, $mimeTypes, $this->createMock(LoggerInterface::class));
 
 		$this->assertSame(['pad-11', 'pad-21', 'pad-31'], $pads->of($this->folder(10)));
 		$this->assertSame(['pad-31'], $pads->of($this->folder(30)));
@@ -68,7 +69,28 @@ class ProtectedPadsOfNodeTest extends TestCase {
 		$mimeTypes = $this->createMock(IMimeTypeLoader::class);
 		$mimeTypes->expects($this->never())->method('getId');
 
-		$this->assertSame([], (new ProtectedPadsOfNode($table, $mimeTypes))->of($this->folder(10)));
+		$this->assertSame([], (new ProtectedPadsOfNode($table, $mimeTypes, $this->createMock(LoggerInterface::class)))->of($this->folder(10)));
+	}
+
+	/**
+	 * A walk in a delete's request is bounded: past a hundred pads - more
+	 * than a delete can take the sessions of - it stops, with a line.
+	 */
+	public function testAWalkStopsPastAHundredPads(): void {
+		$rows = [];
+		$cached = [['fileid' => 10, 'parent' => 1, 'mimetype' => self::DIRECTORY, 'storage' => 1, 'path' => 'files/10']];
+		for ($fileId = 1000; $fileId < 1150; $fileId++) {
+			$rows[] = ['file_id' => $fileId, 'pad_id' => 'pad-' . $fileId, 'access_mode' => BindingService::ACCESS_PROTECTED, 'state' => BindingService::STATE_ACTIVE, 'deleted_at' => null, 'updated_at' => 100];
+			$cached[] = ['fileid' => $fileId, 'parent' => 10, 'mimetype' => self::TEXT, 'storage' => 1, 'path' => 'files/' . $fileId];
+		}
+		$mimeTypes = $this->createMock(IMimeTypeLoader::class);
+		$mimeTypes->method('getId')->willReturn(self::DIRECTORY);
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects($this->once())->method('info')->with('A folder deleted holds more than a delete takes the sessions of; the rest expire on their own.', $this->anything());
+
+		$pads = (new ProtectedPadsOfNode(new InMemoryBindingTable($rows, $cached), $mimeTypes, $logger))->of($this->folder(10));
+
+		$this->assertCount(100, $pads);
 	}
 
 	private function folder(int $id): Folder {
