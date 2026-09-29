@@ -287,12 +287,17 @@ class BindingService {
 
 	/**
 	 * A gone file's pad Etherpad refused to delete: the row is touched, and
-	 * findGone() passes it by until its next try is due.
+	 * findGone() passes it by until its next try is due. Touched at least a
+	 * second past $seenAt, when the file was seen deleted: a row whose two
+	 * dates are equal counts as never tried (Binding::untouchedSinceOwed()),
+	 * and one refused in the second it was marked would be tried again at
+	 * the next run, and warned about again.
 	 */
-	public function postponeGone(int $fileId, string $padId): void {
+	public function postponeGone(int $fileId, string $padId, ?int $seenAt = null): void {
+		$at = max($this->timeFactory->getTime(), (int)$seenAt + 1);
 		$qb = $this->db->getQueryBuilder();
 		$qb->update(self::TABLE)
-			->set('updated_at', $qb->createNamedParameter($this->timeFactory->getTime(), IQueryBuilder::PARAM_INT))
+			->set('updated_at', $qb->createNamedParameter($at, IQueryBuilder::PARAM_INT))
 			->where($qb->expr()->eq('file_id', $qb->createNamedParameter($fileId, IQueryBuilder::PARAM_INT)))
 			->andWhere($qb->expr()->eq('pad_id', $qb->createNamedParameter($padId)))
 			->andWhere($qb->expr()->eq('state', $qb->createNamedParameter(self::STATE_PENDING_DELETE)));

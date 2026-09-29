@@ -143,7 +143,7 @@ class GoneFileSweep {
 			if (EtherpadClientException::isEtherpadUnreachable($e) && !$this->padLifecycle->answers($budget)) {
 				throw $e;
 			}
-			$this->bindingService->postponeGone($binding->fileId, $binding->padId);
+			$this->bindingService->postponeGone($binding->fileId, $binding->padId, $binding->deletedAt);
 			$message = 'Could not delete the pad of a file gone for good; it is tried again in an hour.';
 			if ($binding->untouchedSinceOwed()) {
 				$this->logger->warning($message, $context + SafeError::context($e));

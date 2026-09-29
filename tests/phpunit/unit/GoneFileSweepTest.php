@@ -212,6 +212,23 @@ class GoneFileSweepTest extends TestCase {
 	}
 
 	/**
+	 * A pad Etherpad refuses in the second its file was seen deleted - an
+	 * admin's settle right after the delete - counts as tried: it waits its
+	 * hour, and its warning is not given twice.
+	 */
+	public function testARefusalInTheSecondOfTheMarkCountsAsTried(): void {
+		$this->table([self::row(1, 11, 'pad-refused', seenAt: FixedClock::NOW)], []);
+		$this->padErrors = ['pad-refused' => new EtherpadRefusedException('apikey is invalid')];
+
+		$this->build()->run(atOnce: true);
+		$this->clock->advance(300);
+		$this->sweep();
+
+		$this->assertSame(1, $this->attempts['pad-refused']);
+		$this->assertSame([['warning', 'Could not delete the pad of a file gone for good; it is tried again in an hour.', 11]], $this->lines);
+	}
+
+	/**
 	 * An admin's settle takes the rows Etherpad refused within the hour, but
 	 * each once a run: one refused again waits, rather than be asked again
 	 * with every batch.
