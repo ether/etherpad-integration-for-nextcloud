@@ -40,9 +40,11 @@ use Psr\Log\LoggerInterface;
  *   expired, `occ trashbin:cleanup`.
  * - A removal of a node Nextcloud deletes, or of anything under it, between
  *   the node's BeforeNodeDeletedEvent and its NodeDeletedEvent: a delete
- *   past the trash takes the node and all under it. Where the node is -
- *   its storage and path in the file cache - is looked up as the delete
- *   starts. A delete that fails, a locked file say, raises no
+ *   past the trash takes the node and all under it, and so does one the
+ *   trash was meant for but did not take - an app vetoing it, the move
+ *   failing. Where the node is - its storage and path in the file cache -
+ *   is looked up as the delete starts. A delete that fails, a locked file
+ *   say, raises no
  *   NodeDeletedEvent, and its window stays open for the rest of the
  *   process, a cron run's too; it covers the node's own entries only,
  *   never what a scan drops elsewhere.
@@ -54,14 +56,16 @@ use Psr\Log\LoggerInterface;
  *
  * These never count, even so:
  *
- * - A delete that goes to a trash (MoveToTrashEvent) is a move, and closes
- *   its node's window. A move to the trash within one storage removes
+ * - A delete that goes to a trash is a move. One within a storage removes
  *   nothing; one to another storage keeps the file's id and reports a
  *   removal and an insert (CacheEntryInsertedEvent), which takes the mark
  *   back. But one to a storage whose cache is wrapped - an external
- *   storage with an encoding option, say - copies the file under new ids
- *   and removes the old ones, and counted, that would take the pad of a
- *   file that sits in the trash.
+ *   storage with an encoding option, say - copies the file there under new
+ *   ids first and then removes the old ones: counted, that would take the
+ *   pad of a file that sits in the trash. So an insert into a trash while
+ *   a node is being deleted closes the delete's window. Not
+ *   MoveToTrashEvent: the trash sends it before it tries, and a delete it
+ *   then does not take goes past it.
  * - A restore from a user's trash, between BeforeNodeRestoredEvent and
  *   NodeRestoredEvent: what it removes from the trash leaves it, under
  *   new ids on the other side when it crosses to such a storage.
@@ -72,9 +76,13 @@ use Psr\Log\LoggerInterface;
  * Every removal of the instance comes by here, previews and versions too,
  * so one costs a look at its path and, if it counts, a place in a set;
  * a delete costs a look at where its node is. The set is written in
- * blocks: when full, when a delete is done, and at the end of the
- * request. Only files the file cache has nothing of by then are marked
- * (BindingService::markIfGone()).
+ * blocks: when full, when a delete through a node is done - a trash's
+ * too, which sends only `\OCP\Files::postDelete` - and at the end of the
+ * process. Only files the file cache has nothing of by then are marked
+ * (BindingService::markIfGone()). A team folder's trash deletes at the
+ * storage, so what it removes waits for a full block or the end of the
+ * process, and a process killed before loses it: those pads stay, and the
+ * consistency check lists them.
  *
  * Nextcloud 34 reports a removed folder's descendants under the wrong
  * ids - their places in a block of a thousand - and again with each block
@@ -82,9 +90,10 @@ use Psr\Log\LoggerInterface;
  * nextcloud/server#64497, is planned for 34.0.5 and not merged yet). The
  * block comes first (CacheEntriesRemovedEvent, from 34 on); one that holds
  * id 0, which no file has, is such a block, and none of its removals
- * counts. Should the block not reach this listener - another listener
- * throwing first - a removal under a wrong id still marks no file the
- * file cache has. The files in a folder deleted for good there keep their
+ * counts. The block reaches this listener ahead of others
+ * (Application::register()), so one throwing first cannot keep it away;
+ * should it not come, a removal under a wrong id still marks no file the
+ * file cache has - but it can mark a row whose file vanished before. The files in a folder deleted for good there keep their
  * pads, and the consistency check lists them.
  *
  * Nothing here may stop a delete, and nothing throws. What a failure
@@ -104,9 +113,11 @@ class GoneFilesListener implements IEventListener {
 	private const NEVER = ['files_versions/', 'appdata_'];
 
 	/** The trash app's events, by name: the classes are not there without it. */
-	private const MOVE_TO_TRASH = 'OCA\\Files_Trashbin\\Events\\MoveToTrashEvent';
 	private const BEFORE_RESTORE = 'OCA\\Files_Trashbin\\Events\\BeforeNodeRestoredEvent';
 	private const RESTORED = 'OCA\\Files_Trashbin\\Events\\NodeRestoredEvent';
+
+	/** What a delete through a node sends when it is done (`\OCP\Files::postDelete`), by name: the class is deprecated. */
+	private const NODE_DELETED = 'OCP\\EventDispatcher\\GenericEvent';
 
 	/** @var array<int,true> files seen deleted for good, not yet marked */
 	private array $gone = [];
@@ -120,10 +131,10 @@ class GoneFilesListener implements IEventListener {
 	/** @var array<string,list<int>> by user, the files on the home of a user about to be deleted */
 	private array $leavingHomes = [];
 
-	/** @var array<int,array{int,string}> by file id, the storage and path of each node being deleted: its BeforeNodeDeletedEvent without its NodeDeletedEvent yet */
+	/** @var array<int,array{int,string,string}> by file id, the storage and path in the file cache of each node being deleted, and the node's own path: its BeforeNodeDeletedEvent without its NodeDeletedEvent yet */
 	private array $deleting = [];
 
-	/** @var array<int,array{int,string}> by file id, the storage and path in a trash of each node being restored */
+	/** @var array<int,array{int,string,string}> by file id, the storage and path in a trash of each node being restored, and the node's own path */
 	private array $restoring = [];
 
 	/** @var \WeakMap<object,true> removals reported under ids that are not the files' */
@@ -146,7 +157,7 @@ class GoneFilesListener implements IEventListener {
 			if ($event instanceof CacheEntryRemovedEvent) {
 				$this->removed($event);
 			} elseif ($event instanceof CacheEntryInsertedEvent) {
-				$this->inserted($event->getFileId());
+				$this->inserted($event);
 			} elseif ($event instanceof BeforeNodeDeletedEvent) {
 				$this->remember($this->deleting, $event->getNode());
 			} elseif ($event instanceof NodeDeletedEvent) {
@@ -159,9 +170,8 @@ class GoneFilesListener implements IEventListener {
 				$fileIds = $this->leavingHomes[$uid] ?? [];
 				unset($this->leavingHomes[$uid]);
 				$this->bindingService->markGone($fileIds);
-			} elseif (self::is($event, self::MOVE_TO_TRASH) && method_exists($event, 'getNode')) {
-				// A move, not a delete: its window closes.
-				self::forget($this->deleting, $event->getNode());
+			} elseif (self::is($event, self::NODE_DELETED)) {
+				$this->write();
 			} elseif (self::is($event, self::BEFORE_RESTORE) && method_exists($event, 'getSource')) {
 				$this->remember($this->restoring, $event->getSource());
 			} elseif (self::is($event, self::RESTORED) && method_exists($event, 'getSource')) {
@@ -225,8 +235,21 @@ class GoneFilesListener implements IEventListener {
 		}
 	}
 
-	/** A file the file cache has again: moved to another storage, not deleted. */
-	private function inserted(int $fileId): void {
+	/**
+	 * A file the file cache has again: moved to another storage, not
+	 * deleted. One put into a trash while a node is being deleted says the
+	 * delete is a move to that trash, and every open window closes: a move
+	 * to a storage whose cache is wrapped copies the file there under new
+	 * ids before it removes the old ones, and counted, those would take
+	 * the pad of a file that sits in the trash. A delete the trash does not
+	 * take - an app vetoing it, the move failing - puts nothing there, and
+	 * its removals count.
+	 */
+	private function inserted(CacheEntryInsertedEvent $event): void {
+		if ($this->deleting !== [] && self::inTrash($event->getPath(), $event->getStorage())) {
+			$this->deleting = [];
+		}
+		$fileId = $event->getFileId();
 		if (isset($this->gone[$fileId])) {
 			unset($this->gone[$fileId]);
 		} elseif (isset($this->marked[$fileId])) {
@@ -237,9 +260,9 @@ class GoneFilesListener implements IEventListener {
 
 	/**
 	 * A window opens: where the node is - its storage and path in the file
-	 * cache - by its id.
+	 * cache - by its id, with the node's own path.
 	 *
-	 * @param array<int,array{int,string}> $places
+	 * @param array<int,array{int,string,string}> $places
 	 */
 	private function remember(array &$places, mixed $node): void {
 		if (!$node instanceof Node) {
@@ -248,15 +271,17 @@ class GoneFilesListener implements IEventListener {
 		$fileId = $node->getId();
 		$place = $this->bindingService->placeOf($fileId);
 		if ($place !== null) {
-			$places[$fileId] = $place;
+			$places[$fileId] = [$place[0], $place[1], $node->getPath()];
 		}
 	}
 
 	/**
-	 * A window closes. A node whose id cannot be read leaves it open, on
-	 * the node's own entries.
+	 * A window closes, by the node's id, or by its path where the id cannot
+	 * be read: the source a restore reports once it is done is no longer
+	 * there. A node that answers for neither leaves it open, on the node's
+	 * own entries.
 	 *
-	 * @param array<int,array{int,string}> $places
+	 * @param array<int,array{int,string,string}> $places
 	 */
 	private static function forget(array &$places, mixed $node): void {
 		if (!$node instanceof Node) {
@@ -264,7 +289,18 @@ class GoneFilesListener implements IEventListener {
 		}
 		try {
 			unset($places[$node->getId()]);
+			return;
 		} catch (NotFoundException|InvalidPathException) {
+		}
+		try {
+			$path = $node->getPath();
+		} catch (\Throwable) {
+			return;
+		}
+		foreach ($places as $fileId => $place) {
+			if ($place[2] === $path) {
+				unset($places[$fileId]);
+			}
 		}
 	}
 
@@ -279,15 +315,24 @@ class GoneFilesListener implements IEventListener {
 			return false;
 		}
 		return self::isUnder($this->deleting, $event->getStorageId(), $path)
-			|| str_starts_with($path, BindingService::USER_TRASH_PATH . 'files/')
+			|| self::inTrash($path, $event->getStorage());
+	}
+
+	/**
+	 * An entry in a trash: a user's (`files_trashbin/files/`), a team
+	 * folder's on the root storage (`__groupfolders/trash/`) or on its own
+	 * storage (`trash/`).
+	 */
+	private static function inTrash(string $path, IStorage $storage): bool {
+		return str_starts_with($path, BindingService::USER_TRASH_PATH . 'files/')
 			|| str_starts_with($path, BindingService::TEAM_TRASH_PATH)
-			|| (str_starts_with($path, 'trash/') && self::isTeamFolderStorage($event->getStorage()));
+			|| (str_starts_with($path, 'trash/') && self::isTeamFolderStorage($storage));
 	}
 
 	/**
 	 * An entry of one of these nodes: the node's own, or one under it.
 	 *
-	 * @param array<int,array{int,string}> $places
+	 * @param array<int,array{int,string,string}> $places
 	 */
 	private static function isUnder(array $places, int $storageId, string $path): bool {
 		foreach ($places as [$storage, $root]) {

@@ -48,7 +48,6 @@ $stubFiles = [
 	__DIR__ . '/stubs/OCP/Files/Config/ICachedMountInfo.php',
 	__DIR__ . '/stubs/OCP/Files/Config/IUserMountCache.php',
 	__DIR__ . '/stubs/OCP/Files/File.php',
-	__DIR__ . '/stubs/OCA/Files_Trashbin/Events/MoveToTrashEvent.php',
 	__DIR__ . '/stubs/OCA/Files_Trashbin/Events/BeforeNodeRestoredEvent.php',
 	__DIR__ . '/stubs/OCA/Files_Trashbin/Events/NodeRestoredEvent.php',
 	__DIR__ . '/stubs/OCP/Files/Folder.php',

@@ -117,19 +117,23 @@ class Application extends App implements IBootstrap {
 		foreach ([
 			\OCP\Files\Cache\CacheEntryRemovedEvent::class,
 			\OCP\Files\Cache\CacheEntryInsertedEvent::class,
-			// Nextcloud 34 on; a string, as the class is not there before.
-			'OCP\\Files\\Cache\\CacheEntriesRemovedEvent',
 			\OCP\Files\Events\Node\BeforeNodeDeletedEvent::class,
 			\OCP\Files\Events\Node\NodeDeletedEvent::class,
+			// Every delete through a node, a trash's too, which raises no
+			// NodeDeletedEvent: a point to write the marks at.
+			'\\OCP\\Files::postDelete',
 			\OCP\User\Events\BeforeUserDeletedEvent::class,
 			\OCP\User\Events\UserDeletedEvent::class,
 			// The trash app's, as strings: its classes are not there without it.
-			'OCA\\Files_Trashbin\\Events\\MoveToTrashEvent',
 			'OCA\\Files_Trashbin\\Events\\BeforeNodeRestoredEvent',
 			'OCA\\Files_Trashbin\\Events\\NodeRestoredEvent',
 		] as $event) {
 			$context->registerEventListener($event, \OCA\EtherpadNextcloud\Listeners\GoneFilesListener::class);
 		}
+		// Nextcloud 34 on; a string, as the class is not there before. Ahead
+		// of other listeners: one that throws first keeps the block from
+		// this one, and with it the word that its ids are wrong.
+		$context->registerEventListener('OCP\\Files\\Cache\\CacheEntriesRemovedEvent', \OCA\EtherpadNextcloud\Listeners\GoneFilesListener::class, 100);
 		// A delete, to the trash or past it, takes the sessions of the
 		// protected pads it takes along: found before, taken once it is done.
 		foreach ([\OCP\Files\Events\Node\BeforeNodeDeletedEvent::class, \OCP\Files\Events\Node\NodeDeletedEvent::class] as $event) {

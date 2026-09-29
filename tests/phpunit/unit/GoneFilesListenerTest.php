@@ -7,9 +7,9 @@ namespace OCA\EtherpadNextcloud\Tests\Unit;
 use OCA\EtherpadNextcloud\Listeners\GoneFilesListener;
 use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\Files_Trashbin\Events\BeforeNodeRestoredEvent;
-use OCA\Files_Trashbin\Events\MoveToTrashEvent;
 use OCA\Files_Trashbin\Events\NodeRestoredEvent;
 use OCP\EventDispatcher\Event;
+use OCP\EventDispatcher\GenericEvent;
 use OCP\Files\Cache\CacheEntryInsertedEvent;
 use OCP\Files\Cache\CacheEntryRemovedEvent;
 use OCP\Files\Config\ICachedMountInfo;
@@ -17,6 +17,7 @@ use OCP\Files\Config\IUserMountCache;
 use OCP\Files\Events\Node\BeforeNodeDeletedEvent;
 use OCP\Files\Events\Node\NodeDeletedEvent;
 use OCP\Files\File;
+use OCP\Files\NotFoundException;
 use OCP\Files\Storage\IStorage;
 use OCP\IUser;
 use OCP\User\Events\BeforeUserDeletedEvent;
@@ -160,26 +161,48 @@ class GoneFilesListenerTest extends TestCase {
 	}
 
 	/**
-	 * A delete that goes to a trash is a move: what it removes from the file
-	 * cache - the old ids, when a move to a storage whose cache is wrapped
-	 * copies the file under new ones - is not deleted for good. Removals
-	 * of another delete in the same request still count.
+	 * A delete that goes to a trash is a move: a move to a storage whose
+	 * cache is wrapped copies the file into the trash under new ids, and
+	 * then removes the old ones, which are not deleted for good. Removals
+	 * of another delete in the same request still count, and so do those
+	 * of a delete the trash did not take - vetoed, or the move failed -
+	 * which puts nothing into it.
 	 */
 	public function testADeleteThatGoesToATrashCountsNothing(): void {
 		$listener = $this->listener();
 		$trashed = $this->node(100, 'Notes.pad');
 		$deleted = $this->node(101, 'Other.pad');
+		$refused = $this->node(102, 'Third.pad');
 
 		$listener->handle(new BeforeNodeDeletedEvent($trashed));
-		$listener->handle(new MoveToTrashEvent($trashed));
+		$listener->handle($this->inserted(900, 'files_trashbin/files/Notes.pad.d1'));
 		$listener->handle($this->removed(100, 'Notes.pad', 'local::/mnt/share/'));
 		$listener->handle(new NodeDeletedEvent($trashed));
 		$listener->handle(new BeforeNodeDeletedEvent($deleted));
 		$listener->handle($this->removed(101, 'Other.pad', 'local::/mnt/share/'));
 		$listener->handle(new NodeDeletedEvent($deleted));
+		$listener->handle(new BeforeNodeDeletedEvent($refused));
+		$listener->handle($this->inserted(901, 'files/Elsewhere.pad'));
+		$listener->handle($this->removed(102, 'Third.pad', 'local::/mnt/share/'));
+		$listener->handle(new NodeDeletedEvent($refused));
 		$this->endRequest();
 
-		$this->assertSame([['mark', [101]]], $this->calls);
+		$this->assertSame([['mark', [101]], ['mark', [102]]], $this->calls);
+	}
+
+	/**
+	 * A delete through a node that raises no NodeDeletedEvent - an item
+	 * deleted from a trash, a trash emptied - is done at
+	 * `\OCP\Files::postDelete`, and its marks are written there, not only
+	 * when the process ends.
+	 */
+	public function testMarksAreWrittenWhenATrashDeleteIsDone(): void {
+		$listener = $this->listener();
+
+		$listener->handle($this->removed(7, 'files_trashbin/files/Notes.pad.d1'));
+		$listener->handle(new GenericEvent($this->createMock(File::class)));
+
+		$this->assertSame([['mark', [7]]], $this->calls);
 	}
 
 	/**
@@ -194,11 +217,14 @@ class GoneFilesListenerTest extends TestCase {
 
 		$listener->handle(new BeforeNodeRestoredEvent($inTrash, $restored));
 		$listener->handle($this->removed(100, 'files_trashbin/files/Notes.pad.d1'));
-		$listener->handle(new NodeRestoredEvent($inTrash, $restored));
+		// Once done, the source is no longer there, and has no id to ask.
+		$listener->handle(new NodeRestoredEvent($this->goneNode('files_trashbin/files/Notes.pad.d1'), $restored));
 		$listener->handle($this->removed(7, 'files_trashbin/files/Other.pad.d1'));
+		// Closed by its path: a later entry there counts again.
+		$listener->handle($this->removed(8, 'files_trashbin/files/Notes.pad.d1'));
 		$this->endRequest();
 
-		$this->assertSame([['mark', [7]]], $this->calls);
+		$this->assertSame([['mark', [7, 8]]], $this->calls);
 	}
 
 	/**
@@ -405,11 +431,20 @@ class GoneFilesListenerTest extends TestCase {
 		return new CacheEntryRemovedEvent($this->storage($storage), $path, $fileId, $storageId);
 	}
 
-	/** A node the file cache has at $path on storage 1. */
+	/** A node the file cache has at $path on storage 1, alice's. */
 	private function node(int $fileId, string $path): File {
 		$this->places[$fileId] = [1, $path];
 		$node = $this->createMock(File::class);
 		$node->method('getId')->willReturn($fileId);
+		$node->method('getPath')->willReturn('/alice/' . $path);
+		return $node;
+	}
+
+	/** A node no longer there, as a delete or restore reports it once done: no id, only its path. */
+	private function goneNode(string $path): File {
+		$node = $this->createMock(File::class);
+		$node->method('getId')->willThrowException(new NotFoundException());
+		$node->method('getPath')->willReturn('/alice/' . $path);
 		return $node;
 	}
 
@@ -432,8 +467,8 @@ class GoneFilesListenerTest extends TestCase {
 		};
 	}
 
-	private function inserted(int $fileId): CacheEntryInsertedEvent {
-		return new CacheEntryInsertedEvent($this->storage(self::HOME), 'files_trashbin/files/X.d1', $fileId, 2);
+	private function inserted(int $fileId, string $path = 'files/Moved.pad'): CacheEntryInsertedEvent {
+		return new CacheEntryInsertedEvent($this->storage(self::HOME), $path, $fileId, 2);
 	}
 
 	private function storage(string $id): IStorage {
