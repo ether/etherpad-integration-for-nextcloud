@@ -92,8 +92,9 @@ class PadSessionRevoker {
 	 * and the newest - those of whoever is at it now, and the last to
 	 * expire - go first. What does not fit expires on its own.
 	 *
-	 * Only a group that is the pad's own loses its sessions
-	 * (ManagedPadLifecycle::groupIsThePads()). Its sessions are asked first:
+	 * Only a group that holds nothing but pads leaving here loses its
+	 * sessions (ManagedPadLifecycle::groupHoldsOnly()). Its sessions are
+	 * asked first:
 	 * most groups hold none that live, and then what else the group holds is
 	 * no question. Each group's sessions go before the next group is asked,
 	 * so a slow Etherpad spends the budget on deletes, not on listing.
@@ -104,15 +105,18 @@ class PadSessionRevoker {
 	public function revokeForPads(array $padIds): int {
 		$deadline = $this->nowSeconds() + self::BUDGET_SECONDS;
 		$tally = self::emptyTally();
-		$seen = [];
-		$asked = [];
-		$unasked = 0;
+		// By group, with all of its pads that leave: a legacy group whose
+		// pads all leave together is left with none.
+		$leaving = [];
 		foreach ($padIds as $padId) {
 			$groupId = PadId::groupIdOf($padId);
-			if ($groupId === null || isset($seen[$groupId])) {
-				continue;
+			if ($groupId !== null) {
+				$leaving[$groupId][] = $padId;
 			}
-			$seen[$groupId] = true;
+		}
+		$asked = [];
+		$unasked = 0;
+		foreach ($leaving as $groupId => $groupPads) {
 			if ($deadline - $this->nowSeconds() < self::MIN_CALL_TIMEOUT_SECONDS) {
 				$unasked++;
 				continue;
@@ -128,7 +132,7 @@ class PadSessionRevoker {
 					$tally['left'] += count($sessions);
 					continue;
 				}
-				if (!ManagedPadLifecycle::groupIsThePads($this->etherpadClient->listPads($groupId, $this->callTimeout($deadline - $this->nowSeconds())), $padId)) {
+				if (!ManagedPadLifecycle::groupHoldsOnly($this->etherpadClient->listPads($groupId, $this->callTimeout($deadline - $this->nowSeconds())), $groupPads)) {
 					$this->logger->debug('Left the Etherpad sessions of a group that holds other pads too.', [
 						'app' => 'etherpad_nextcloud',
 						'groupId' => $groupId,

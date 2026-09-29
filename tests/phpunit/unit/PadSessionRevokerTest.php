@@ -529,6 +529,25 @@ class PadSessionRevokerTest extends TestCase {
 	}
 
 	/**
+	 * A legacy group whose pads all leave together - two Ownpad files in a
+	 * folder deleted - holds nothing that stays: its sessions go. One that
+	 * keeps a pad of someone else's keeps them.
+	 */
+	public function testAGroupWhosePadsAllLeaveLosesItsSessions(): void {
+		$client = $this->createMock(EtherpadClient::class);
+		$client->method('listSessionsOfGroup')->willReturnCallback(static fn (string $group): array => ['s.' . $group => ['groupID' => $group, 'validUntil' => FixedClock::NOW + 3600]]);
+		$client->method('listPads')->willReturnCallback(static fn (string $group): array => [$group . '$a', $group . '$b']);
+		$removed = [];
+		$client->method('deleteSession')->willReturnCallback(static function (string $id) use (&$removed): void {
+			$removed[] = $id;
+		});
+
+		$this->revoker($client)->revokeForPads(['g.AAAAAAAAAAAAAAAA$a', 'g.AAAAAAAAAAAAAAAA$b', 'g.BBBBBBBBBBBBBBBB$a']);
+
+		$this->assertSame(['s.g.AAAAAAAAAAAAAAAA'], $removed);
+	}
+
+	/**
 	 * Every open makes a session, so a pad opened often holds more than a
 	 * cookie can: a delete takes up to a hundred, the newest first - whoever
 	 * is at it now, and the last to expire - and leaves the oldest.
