@@ -331,8 +331,10 @@ Primary flow (native viewer):
   - Register the viewer handler on public-share pages and load the one-shot opener for public single-file `.pad` shares or existing compatibility links.
 - `OCP\Files\Cache\CacheEntryRemovedEvent`, `OCP\Files\Cache\CacheEntryInsertedEvent`, `OCP\Files\Cache\CacheEntriesRemovedEvent` (from 34), `OCP\Files\Events\Node\BeforeNodeDeletedEvent`, `OCP\Files\Events\Node\NodeDeletedEvent`, `OCP\User\Events\BeforeUserDeletedEvent`, `OCP\User\Events\UserDeletedEvent`
   - Mark the rows of files deleted for good (see "Files gone for good").
-- `OCP\Files\Events\Node\BeforeNodeDeletedEvent`
+- `OCP\Files\Events\Node\BeforeNodeDeletedEvent`, `OCP\Files\Events\Node\NodeDeletedEvent`
   - Take the sessions of the protected pads a delete takes along (see Trash/Restore).
+- `OCP\User\Events\UserLoggedOutEvent`, `OCP\User\Events\BeforeUserDeletedEvent`
+  - Take the account's own sessions: on a logout, and as the account's delete starts, while Nextcloud still has its Etherpad author (see `docs/etherpad-integration.md`, "Session lifetime and revocation").
 - `OCA\Files_Trashbin\Events\NodeRestoredEvent`
   - Restore lifecycle.
 - `\OCA\Files_Trashbin\Trashbin::post_restore` (legacy hook)

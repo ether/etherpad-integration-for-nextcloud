@@ -45,8 +45,9 @@ class PadSessionService {
 
 	/**
 	 * How long a session an authenticated open mints stays valid. Chosen,
-	 * not derived: revocation fires on an explicit logout and nowhere else,
-	 * so for most sessions this is the bound.
+	 * not derived: revocation fires only on a logout, an account's deletion
+	 * and a delete of the pad's file, so for most sessions this is the
+	 * bound.
 	 */
 	public const SESSION_TTL_SECONDS = 21600;
 

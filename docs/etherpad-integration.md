@@ -157,9 +157,10 @@ which is how the open request can read it in the first place.
   open of any other protected pad happened to overwrite the cookie and cut
   it off; that only ever helped if the user opened another pad, and did
   nothing otherwise. Revoking a share does not end the Etherpad sessions
-  already issued for it: only expiry, a logout, or removing the group
-  behind the pad clears them, so the window is the session TTL either way
-  — it is just no longer shortened by accident.
+  already issued for it: only expiry, a logout, the recipient's account
+  being deleted, or removing the group behind the pad clears them, so the
+  window is the session TTL either way — it is just no longer shortened
+  by accident.
 
 ### Author Resolution Strategy
 
