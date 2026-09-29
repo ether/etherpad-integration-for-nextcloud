@@ -117,7 +117,8 @@ Each `specs/*.spec.ts` covers one flow:
   gives the same pad back; a pad goes with its file deleted for good:
   past the trash, from the trash once it is deleted there, with the
   account that owned it, a renamed file too; a pad in a team folder stays
-  when its maker's account goes. Container stack only (asks Etherpad);
+  when its maker's account goes; the admin deletes the pads of vanished
+  files, every vanished row of the instance. Container stack only (asks Etherpad);
   the team folder part needs groupfolders and skips without it. Creates
   and deletes throwaway accounts, groups and team folders.
 - **pad-user-share** — user-to-user share grants access, revoke removes

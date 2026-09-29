@@ -341,6 +341,39 @@ test.describe('pads of team folder files deleted for good', () => {
 		}
 	})
 
+	/**
+	 * The admin deletes the pads the app leaves: the vanished files' rows
+	 * are marked, and the job takes their pads as for any file deleted for
+	 * good. Every vanished row of the instance, not only this one, so the
+	 * count is 0 afterwards.
+	 */
+	test('the admin deletes the pads of vanished files', async () => {
+		const other = uniqueName('gone-team-vanished')
+		const otherId = await createTeamFolder(other, group)
+		let padId: string | null = null
+		try {
+			const pad = await padInTeam(`${other}/${uniquePadName('vanished')}`, 'protected')
+			made.pop()
+			padId = padIdOfPadUrl(pad.padUrl)
+			await deleteTeamFolder(otherId)
+			expect(await vanishedFiles(), 'the team folder deleted as a whole leaves its file vanished').toBeGreaterThan(0)
+
+			const deleted = await padApiPost('admin/delete-vanished')
+			expect(deleted.status, JSON.stringify(deleted.body)).toBe(200)
+			expect((deleted.body as { marked?: number }).marked).toBeGreaterThan(0)
+			expect((deleted.body as { vanished_file_count?: number }).vanished_file_count).toBe(0)
+			await settle()
+
+			expect(await padExists(padId), 'marked on the admin\'s word, the pad should go').toBe(false)
+			expect(await vanishedFiles()).toBe(0)
+		} finally {
+			await deleteTeamFolder(otherId)
+			if (padId !== null && await padExists(padId)) {
+				await etherpadApiPost('deletePad', { padID: padId })
+			}
+		}
+	})
+
 	test('a pad an account made in a team folder stays when the account is deleted', async () => {
 		const account = await createAccount(uniqueName('gone-team-account'))
 		try {
