@@ -250,6 +250,7 @@ solely by the separate external-pad policy, not by these two settings.
     - `200` with `status=restored`, `old_pad_id`, `new_pad_id` on success. Always provisions a fresh pad — `pad_id` from frontmatter is never reused.
     - `403` with `message` when the user may not change the file, a read-only share say: a recovery writes the file. Refused before Etherpad is asked.
     - `409` with `status=skipped` + `reason=external_pad` for external (`ext.*`) frontmatter; recovery doesn't apply there.
+    - `409` with `status=skipped` + `reason=file_moved` or `reason=file_changed` when the file moved, or was written, while the new pad was seeded: the new pad is let go, nothing is written, and a retry starts from what the file holds then.
     - `409` with `message` and the `PadAlreadyHasBindingException` mapping if the file has a row and its pad is not lost: Etherpad has it, the row waits, or it names another pad than the file.
     - `503` with `retryable` when Etherpad does not answer.
 

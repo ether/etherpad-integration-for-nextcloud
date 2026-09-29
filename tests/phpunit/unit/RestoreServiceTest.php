@@ -202,6 +202,31 @@ class RestoreServiceTest extends TestCase {
 	}
 
 	/**
+	 * A file written while its new pad was seeded no longer holds what the
+	 * new pad was seeded from: written over, what was written meanwhile
+	 * would be gone. The new pad goes, nothing is claimed or written, and
+	 * the next open asks again, from what the file holds then.
+	 */
+	public function testANewPadIsLetGoWhenTheFileWasWrittenWhileItWasSeeded(): void {
+		$bindingService = $this->createMock(BindingService::class);
+		$bindingService->expects($this->never())->method('rebind');
+		$bindingService->method('isBoundTo')->willReturn(false);
+		$etherpadClient = $this->buildEtherpadWithoutThePad();
+		$etherpadClient->expects($this->once())->method('deletePad')->with('r-old-pad-abc123def456');
+		$nodes = $this->createMock(UserNodeResolver::class);
+		$nodes->method('hasMoved')->willReturn(false);
+		$file = $this->createMock(File::class);
+		$file->method('getId')->willReturn(93);
+		$file->method('getName')->willReturn('Restored.pad');
+		$file->method('getContent')->willReturnOnConsecutiveCalls('doc-before', 'doc-written-meanwhile');
+		$file->expects($this->never())->method('putContent');
+
+		$result = $this->buildRowRestoreService(93, 'old-pad', $bindingService, $etherpadClient, nodes: $nodes)->restore($file);
+
+		$this->assertSame(['status' => LifecycleResult::SKIPPED, 'reason' => 'file_changed'], $result);
+	}
+
+	/**
 	 * Where the file is cannot be told after the seeding - the database
 	 * gone, say: the new pad goes, nothing is claimed or written, and the
 	 * restore fails and says so.
@@ -553,7 +578,8 @@ class RestoreServiceTest extends TestCase {
 		$file = $this->createMock(File::class);
 		$file->method('getId')->willReturn($fileId);
 		$file->method('getName')->willReturn('Restored.pad');
-		$file->expects($this->once())->method('getContent')->willReturn('doc-before');
+		// Read, and read again before the write: still what the new pad holds.
+		$file->expects($this->exactly(2))->method('getContent')->willReturn('doc-before');
 		$file->expects($this->once())->method('putContent')->with('doc-after');
 
 		$result = $this->restoreService(
@@ -1005,7 +1031,7 @@ class RestoreServiceTest extends TestCase {
 		$file->method('getId')->willReturn($fileId);
 		$file->method('getName')->willReturn('Lost.pad');
 		$file->method('isUpdateable')->willReturn(true);
-		$file->method('getContent')->willReturnOnConsecutiveCalls('doc-before', 'doc-after');
+		$file->method('getContent')->willReturnOnConsecutiveCalls('doc-before', 'doc-before', 'doc-after');
 		$file->method('putContent')->willThrowException(new \RuntimeException('a hook after the write failed'));
 
 		$result = $this->buildRowRestoreService($fileId, 'old-pad', $bindingService, $etherpadClient, logger: $logger)->recoverFromSnapshot($file);
@@ -1043,7 +1069,7 @@ class RestoreServiceTest extends TestCase {
 		$file->method('getId')->willReturn($fileId);
 		$file->method('getName')->willReturn('Lost.pad');
 		$file->method('isUpdateable')->willReturn(true);
-		$file->method('getContent')->willReturnOnConsecutiveCalls('doc-before', $this->throwException(new LockedException('locked')));
+		$file->method('getContent')->willReturnOnConsecutiveCalls('doc-before', 'doc-before', $this->throwException(new LockedException('locked')));
 		$file->method('putContent')->willThrowException(new \RuntimeException('a hook after the write failed'));
 
 		$this->expectException(LifecycleException::class);
@@ -1228,6 +1254,8 @@ class RestoreServiceTest extends TestCase {
 		$padFileService->method('readPad')->willReturnCallback(fn (string $content): ParsedPadFile => match ($content) {
 			'doc-before' => $parsedPad,
 			'doc-after' => new ParsedPadFile(frontmatter: [], body: 'body', padId: $this->restoredPadId, accessMode: BindingService::ACCESS_PUBLIC, padUrl: '', isExternal: false, snapshotRev: 1),
+			// Written by someone else while the new pad was seeded.
+			'doc-written-meanwhile' => new ParsedPadFile(frontmatter: [], body: 'newer body', padId: $oldPadId, accessMode: BindingService::ACCESS_PUBLIC, padUrl: '', isExternal: false, snapshotRev: $snapshotRev + 1, savedText: 'newer text'),
 		});
 		$padFileService->method('getSnapshotPartsFromBody')->with($parsedPad->body)->willReturn(['text' => 'plain text', 'html' => $html]);
 		$padFileService->method('withRestoredSnapshot')->willReturnCallback(

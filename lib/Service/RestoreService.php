@@ -52,6 +52,9 @@ class RestoreService {
 	/** The file moved while its new pad was made - deleted again, say - so its row is no longer the restore's to change. */
 	private const REASON_FILE_MOVED = 'file_moved';
 
+	/** The file was written while its new pad was seeded: what the new pad holds is no longer what the file holds. */
+	private const REASON_FILE_CHANGED = 'file_changed';
+
 	public function __construct(
 		private BindingService $bindingService,
 		private PadFileService $padFileService,
@@ -412,6 +415,22 @@ class RestoreService {
 	}
 
 	/**
+	 * Whether the file, read again, holds what was read of it before: the
+	 * snapshot a new pad was seeded from. What reads as no `.pad` at all
+	 * does not.
+	 *
+	 * @throws \Throwable reading the file
+	 */
+	private function stillHolds(File $file, ParsedPadFile $pad): bool {
+		$content = $file->getContent();
+		try {
+			return $this->padFileService->readPad($content) == $pad;
+		} catch (\Throwable) {
+			return false;
+		}
+	}
+
+	/**
 	 * The file restored onto a new pad made from its snapshot: what both
 	 * restores from a snapshot share. The row is claimed for the new pad
 	 * before the file is touched ($claim, true when this restore holds the
@@ -436,7 +455,10 @@ class RestoreService {
 	 * Seeding the new pad takes a while, so the file is asked once more
 	 * before the claim: moved - deleted again, say - and the new pad goes,
 	 * with nothing claimed or written. A write through the old node would
-	 * make a new file where it was.
+	 * make a new file where it was. So does a file written meanwhile, that
+	 * no longer holds what the new pad was seeded from: written over, what
+	 * was written would be gone. Its next open asks again, from what it
+	 * holds then.
 	 *
 	 * @param \Closure(string): bool $claim
 	 * @return array{status: string, reason?: string, old_pad_id?: string, new_pad_id?: string}
@@ -451,13 +473,14 @@ class RestoreService {
 
 		try {
 			$moved = $this->userNodeResolver->hasMoved($fileId, $path);
+			$changed = !$moved && !$this->stillHolds($file, $pad);
 		} catch (\Throwable $e) {
 			$this->provisionedPadRollback->discardUnlessBoundToFile($fileId, $newPadId, $flow);
 			throw LifecycleException::failed('Restore', $e);
 		}
-		if ($moved) {
+		if ($moved || $changed) {
 			$this->provisionedPadRollback->discardUnlessBoundToFile($fileId, $newPadId, $flow);
-			return LifecycleResult::skipped(self::REASON_FILE_MOVED, $fileId, $this->logger);
+			return LifecycleResult::skipped($moved ? self::REASON_FILE_MOVED : self::REASON_FILE_CHANGED, $fileId, $this->logger);
 		}
 
 		try {
