@@ -13,6 +13,8 @@
 	const pendingCountNode = document.getElementById('etherpad-nextcloud-pending-count')
 	const vanishedNode = document.getElementById('etherpad-nextcloud-vanished')
 	const vanishedList = document.getElementById('etherpad-nextcloud-vanished-list')
+	const vanishedShownNode = document.getElementById('etherpad-nextcloud-vanished-shown')
+	const deleteVanishedButton = document.getElementById('etherpad-nextcloud-delete-vanished')
 	const allowExternalCheckbox = form ? form.querySelector('input[name="allow_external_pads"]') : null
 	const protectedPadsCheckbox = form ? form.querySelector('input[name="enable_protected_pads"]') : null
 	const publicPadsCheckbox = form ? form.querySelector('input[name="enable_public_pads"]') : null
@@ -43,6 +45,7 @@
 	const healthUrl = root.getAttribute('data-health-url') || ''
 	const consistencyUrl = root.getAttribute('data-consistency-url') || ''
 	const settlePendingUrl = root.getAttribute('data-settle-pending-url') || ''
+	const deleteVanishedUrl = root.getAttribute('data-delete-vanished-url') || ''
 	const l10n = {
 		saving: root.getAttribute('data-l10n-saving') || 'Saving settings...',
 		saved: root.getAttribute('data-l10n-saved') || 'Settings saved.',
@@ -55,6 +58,10 @@
 		consistencyFailed: root.getAttribute('data-l10n-consistency-failed') || 'Consistency check failed.',
 		pendingDeleteLabel: root.getAttribute('data-l10n-pending-delete-label') || 'Pending Etherpad deletes',
 		settleFailed: root.getAttribute('data-l10n-settle-failed') || 'Pending pad check failed.',
+		vanishedShown: root.getAttribute('data-l10n-vanished-shown') || 'Showing {shown} of {total}:',
+		deleteVanishedConfirm: root.getAttribute('data-l10n-delete-vanished-confirm') || 'Delete the pads of all {count} vanished files? Etherpad deletes them for good.',
+		deleteVanishedRunning: root.getAttribute('data-l10n-delete-vanished-running') || 'Marking the pads of the vanished files for deletion...',
+		deleteVanishedFailed: root.getAttribute('data-l10n-delete-vanished-failed') || 'Could not delete the pads of the vanished files.',
 		templateUploading: root.getAttribute('data-l10n-template-uploading') || 'Uploading template...',
 		templateDelete: root.getAttribute('data-l10n-template-delete') || 'Delete',
 		templateTooLarge: root.getAttribute('data-l10n-template-too-large') || 'Template file is too large.',
@@ -496,18 +503,22 @@
 				const vanishedFile = Number(data.vanished_file_count || 0)
 				const message = `${String(data.message || l10n.consistencyOk)} vanished_file=${String(vanishedFile)}`
 				setStatus(message, vanishedFile > 0 ? 'error' : 'success', diagnosticsTarget)
-				showVanished(data.samples && data.samples.vanished_files)
+				showVanished(data.samples && data.samples.vanished_files, vanishedFile)
 			} catch (error) {
 				setStatus(error instanceof Error ? error.message : l10n.consistencyFailed, 'error', diagnosticsTarget)
 			}
 		})
 	}
 
+	// All of them, not only those listed: what the confirmation names.
+	let vanishedTotal = 0
+
 	/**
-	 * The pads of files gone without passing a trash, which the app leaves
-	 * in place: listed, so an admin can delete them in Etherpad.
+	 * The pads of files gone without a deletion the app saw, which it
+	 * leaves in place: the first of them listed, with how many there are,
+	 * so an admin can tell whether to delete them all.
 	 */
-	function showVanished(rows) {
+	function showVanished(rows, total) {
 		if (!(vanishedNode instanceof HTMLElement) || !(vanishedList instanceof HTMLElement)) {
 			return
 		}
@@ -515,11 +526,46 @@
 			.filter((row) => row && typeof row.pad_id === 'string')
 			.map((row) => {
 				const item = document.createElement('li')
-				item.textContent = `${row.pad_id} (fileid ${String(row.file_id)})`
+				const mode = typeof row.access_mode === 'string' ? `${row.access_mode}, ` : ''
+				item.textContent = `${row.pad_id} (${mode}fileid ${String(row.file_id)})`
 				return item
 			})
+		vanishedTotal = Math.max(Number.isFinite(Number(total)) ? Number(total) : 0, items.length)
 		vanishedList.replaceChildren(...items)
+		if (vanishedShownNode instanceof HTMLElement) {
+			vanishedShownNode.textContent = l10n.vanishedShown
+				.replace('{shown}', String(items.length))
+				.replace('{total}', String(vanishedTotal))
+		}
 		vanishedNode.style.display = items.length > 0 ? '' : 'none'
+	}
+
+	if (deleteVanishedButton instanceof HTMLElement && deleteVanishedUrl !== '') {
+		deleteVanishedButton.addEventListener('click', async () => {
+			if (!window.confirm(l10n.deleteVanishedConfirm.replace('{count}', String(vanishedTotal)))) {
+				return
+			}
+			clearFieldErrors()
+			beginStatus(l10n.deleteVanishedRunning, diagnosticsTarget)
+			try {
+				const data = await postJson(deleteVanishedUrl, {})
+				const details = []
+				for (const key of ['marked', 'vanished_file_count', 'pending_delete_count']) {
+					if (typeof data[key] !== 'undefined') {
+						details.push(`${key}=${String(data[key])}`)
+					}
+				}
+				updateBindingCounts(data)
+				// Marked, they are on their way: the list goes once none is left.
+				if (Number(data.vanished_file_count) === 0) {
+					showVanished([], 0)
+				}
+				const suffix = details.length > 0 ? ` ${details.join(' | ')}` : ''
+				setStatus(`${String(data.message || 'OK')}${suffix}`, 'success', diagnosticsTarget)
+			} catch (error) {
+				setStatus(error instanceof Error ? error.message : l10n.deleteVanishedFailed, 'error', diagnosticsTarget)
+			}
+		})
 	}
 
 	if (settlePendingButton instanceof HTMLElement) {

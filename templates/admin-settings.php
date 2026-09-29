@@ -10,6 +10,7 @@
 	data-health-url="<?php p((string)$_['health_check_url']); ?>"
 	data-consistency-url="<?php p((string)$_['consistency_check_url']); ?>"
 	data-settle-pending-url="<?php p((string)$_['settle_pending_url']); ?>"
+	data-delete-vanished-url="<?php p((string)$_['delete_vanished_url']); ?>"
 	data-l10n-saving="<?php p((string)$_['l10n']['saving']); ?>"
 	data-l10n-saved="<?php p((string)$_['l10n']['saved']); ?>"
 	data-l10n-checking="<?php p((string)$_['l10n']['checking']); ?>"
@@ -21,6 +22,10 @@
 	data-l10n-consistency-failed="<?php p((string)$_['l10n']['consistency_failed']); ?>"
 	data-l10n-pending-delete-label="<?php p((string)$_['l10n']['pending_delete_label']); ?>"
 	data-l10n-settle-failed="<?php p((string)$_['l10n']['settle_failed']); ?>"
+	data-l10n-vanished-shown="<?php p((string)$_['l10n']['vanished_shown']); ?>"
+	data-l10n-delete-vanished-confirm="<?php p((string)$_['l10n']['delete_vanished_confirm']); ?>"
+	data-l10n-delete-vanished-running="<?php p((string)$_['l10n']['delete_vanished_running']); ?>"
+	data-l10n-delete-vanished-failed="<?php p((string)$_['l10n']['delete_vanished_failed']); ?>"
 	data-templates-url="<?php p((string)$_['templates_url']); ?>"
 	data-templates-delete-url="<?php p((string)$_['templates_delete_url']); ?>"
 	data-l10n-template-uploading="<?php p((string)$_['l10n']['templates_uploading']); ?>"
@@ -251,7 +256,11 @@
 		<p id="etherpad-nextcloud-diagnostics-status" class="ep-status" aria-live="polite"></p>
 		<div id="etherpad-nextcloud-vanished" style="display:none;">
 			<p class="settings-hint ep-field-hint"><?php p((string)$_['l10n']['vanished_pads_hint']); ?></p>
+			<p id="etherpad-nextcloud-vanished-shown" class="settings-hint"></p>
 			<ul id="etherpad-nextcloud-vanished-list"></ul>
+			<div class="etherpad-nextcloud-admin-actions">
+				<button type="button" id="etherpad-nextcloud-delete-vanished"><?php p((string)$_['l10n']['delete_vanished_button']); ?></button>
+			</div>
 		</div>
 	</form>
 </div>

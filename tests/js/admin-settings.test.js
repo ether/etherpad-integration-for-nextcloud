@@ -14,6 +14,9 @@ const setupAdminDom = () => {
 			data-health-url="/health"
 			data-consistency-url="/consistency"
 			data-settle-pending-url="/settle"
+			data-delete-vanished-url="/delete-vanished"
+			data-l10n-vanished-shown="{shown} von {total}:"
+			data-l10n-delete-vanished-confirm="Pads aller {count} verschwundenen Dateien löschen?"
 			data-l10n-saving="Saving..."
 			data-l10n-saved="Saved."
 			data-l10n-checking="Checking..."
@@ -47,7 +50,11 @@ const setupAdminDom = () => {
 				<button type="button" id="etherpad-nextcloud-consistency-check">Check</button>
 				<p id="etherpad-nextcloud-connection-status" class="ep-status"></p>
 				<p id="etherpad-nextcloud-diagnostics-status" class="ep-status"></p>
-				<div id="etherpad-nextcloud-vanished" style="display:none;"><ul id="etherpad-nextcloud-vanished-list"></ul></div>
+				<div id="etherpad-nextcloud-vanished" style="display:none;">
+					<p id="etherpad-nextcloud-vanished-shown"></p>
+					<ul id="etherpad-nextcloud-vanished-list"></ul>
+					<button type="button" id="etherpad-nextcloud-delete-vanished">Delete</button>
+				</div>
 				<div id="etherpad-nextcloud-pending-actions" style="display:none;">
 					<button type="button" id="etherpad-nextcloud-settle-pending">Check</button>
 					<span id="etherpad-nextcloud-pending-count"></span>
@@ -223,7 +230,8 @@ describe('admin settings status areas', () => {
 		expect(diagnosticsStatus().classList.contains('ep-status-error')).toBe(true)
 		expect(node.style.display).toBe('')
 		// As text: a pad id is data, never markup.
-		expect(items()).toEqual(['g.abc$Notes (fileid 7)', '<b>pad</b> (fileid 9)'])
+		expect(items()).toEqual(['g.abc$Notes (protected, fileid 7)', '<b>pad</b> (fileid 9)'])
+		expect(document.getElementById('etherpad-nextcloud-vanished-shown').textContent).toBe('2 von 2:')
 
 		vanished = []
 		document.getElementById('etherpad-nextcloud-consistency-check').click()
@@ -231,6 +239,40 @@ describe('admin settings status areas', () => {
 		expect(node.style.display).toBe('none')
 		expect(items()).toEqual([])
 		expect(diagnosticsStatus().classList.contains('ep-status-success')).toBe(true)
+	})
+
+	/**
+	 * The admin deletes them all, not only those listed, and is asked
+	 * first with how many there are; a refusal sends nothing. Marked, they
+	 * wait for the sweep, so the pending pads show, and the list goes.
+	 */
+	it('deletes the pads of all vanished files once the admin confirms', async () => {
+		const fetchMock = vi.fn((url) => Promise.resolve(okResponse(url === '/delete-vanished'
+			? { message: 'Marked.', marked: 30, vanished_file_count: 0, pending_delete_count: 30 }
+			: { message: 'Consistency check finished with issues.', vanished_file_count: 30, samples: { vanished_files: [{ file_id: 7, pad_id: 'g.abc$Notes', access_mode: 'protected' }] } })))
+		vi.stubGlobal('fetch', fetchMock)
+		const confirm = vi.fn(() => false)
+		vi.stubGlobal('confirm', confirm)
+		await import(MODULE)
+		const posted = () => fetchMock.mock.calls.filter(([url]) => url === '/delete-vanished').length
+
+		document.getElementById('etherpad-nextcloud-consistency-check').click()
+		await flushAsyncWork()
+		expect(document.getElementById('etherpad-nextcloud-vanished-shown').textContent).toBe('1 von 30:')
+
+		document.getElementById('etherpad-nextcloud-delete-vanished').click()
+		await flushAsyncWork()
+		expect(confirm).toHaveBeenCalledWith('Pads aller 30 verschwundenen Dateien löschen?')
+		expect(posted()).toBe(0)
+
+		confirm.mockReturnValue(true)
+		document.getElementById('etherpad-nextcloud-delete-vanished').click()
+		await flushAsyncWork()
+		expect(posted()).toBe(1)
+		expect(diagnosticsStatus().textContent).toContain('marked=30')
+		expect(document.getElementById('etherpad-nextcloud-pending-count').textContent).toContain('30')
+		expect(document.getElementById('etherpad-nextcloud-pending-actions').style.display).toBe('')
+		expect(document.getElementById('etherpad-nextcloud-vanished').style.display).toBe('none')
 	})
 
 	it('leaves the counts alone when a response carries none', async () => {

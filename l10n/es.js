@@ -132,7 +132,7 @@ OC.L10N.register(
     "Pad name is required.": "Se requiere el nombre del pad.",
     "Pad types and behaviour": "Tipos de pad y comportamiento",
     "Pads": "Pads",
-    "Pads whose .pad file is gone without a deletion the app saw, removed outside Nextcloud and dropped by a scan, say. The app leaves them in place, and deleting one in Etherpad does not take it off this list. Up to 25 are shown:": "Pads cuyo archivo .pad ha desaparecido sin que la aplicación viera una eliminación, por ejemplo borrado fuera de Nextcloud y retirado por un escaneo. La aplicación los deja como están, y eliminar uno en Etherpad no lo quita de esta lista. Se muestran hasta 25:",
+    "Pads whose .pad file is gone without a deletion the app saw, removed outside Nextcloud and dropped by a scan, say. The app leaves them in place until you delete them here. Delete them only when no .pad file names them any more: after the file cache was rebuilt, or files were restored from a backup, a file may still be there under a new id, and its pad would go with the others.": "Pads cuyo archivo .pad ha desaparecido sin que la aplicación viera una eliminación, por ejemplo borrado fuera de Nextcloud y retirado por un escaneo. La aplicación los deja como están hasta que los elimines aquí. Elimínalos solo cuando ningún archivo .pad los nombre ya: después de reconstruir la caché de archivos, o de restaurar archivos desde una copia de seguridad, un archivo puede seguir ahí con un nuevo id, y su pad se iría con los demás.",
     "Pending Etherpad deletes": "Eliminaciones pendientes en Etherpad",
     "Pending pad check failed.": "Error al comprobar los pads pendientes.",
     "Pending pad check finished.": "Comprobación de pads pendientes finalizada.",
@@ -212,6 +212,14 @@ OC.L10N.register(
     "{target} — {latency} ms": "{target}: {latency} ms",
     "{url} answered with HTTP {status}.": "{url} respondió con HTTP {status}.",
     "{url} did not answer: {error}. If Nextcloud cannot reach the public URL by design, ignore this — but check the URL for typos, because pad links in the browser use it.": "{url} no respondió: {error}. Si Nextcloud no puede alcanzar la URL pública por diseño, ignóralo; pero revisa la URL por si hay erratas, porque los enlaces de pad del navegador la utilizan.",
-    "{url} was not contacted: Nextcloud blocks requests into its own network. Check that your users' browsers can reach this address.": "{url} no se contactó: Nextcloud bloquea las peticiones hacia su propia red. Comprueba que los navegadores de tus usuarios puedan alcanzar esta dirección."
+    "{url} was not contacted: Nextcloud blocks requests into its own network. Check that your users' browsers can reach this address.": "{url} no se contactó: Nextcloud bloquea las peticiones hacia su propia red. Comprueba que los navegadores de tus usuarios puedan alcanzar esta dirección.",
+    "Showing {shown} of {total}:": "Se muestran {shown} de {total}:",
+    "Delete the pads of all vanished files": "Eliminar los pads de todos los archivos desaparecidos",
+    "Delete the pads of all {count} vanished files? Etherpad deletes them for good.": "¿Eliminar los pads de los {count} archivos desaparecidos? Etherpad los elimina definitivamente.",
+    "Marking the pads of the vanished files for deletion...": "Marcando los pads de los archivos desaparecidos para eliminarlos...",
+    "Could not delete the pads of the vanished files.": "No se pudieron eliminar los pads de los archivos desaparecidos.",
+    "Deleting pads is switched off, so no pad was marked for deletion.": "La eliminación de pads está desactivada, así que no se ha marcado ningún pad para eliminarlo.",
+    "Not every vanished file could be marked in one go. Run it again for the rest.": "No se pudieron marcar todos los archivos desaparecidos de una vez. Vuelve a ejecutarlo para el resto.",
+    "The pads of the vanished files are marked for deletion. They are deleted within minutes, or at once with \"Check pending pads\".": "Los pads de los archivos desaparecidos están marcados para eliminarse. Se eliminan en unos minutos, o de inmediato con «Comprobar pads pendientes»."
 },
 "nplurals=2; plural=(n != 1);");

@@ -132,7 +132,7 @@ OC.L10N.register(
     "Pad name is required.": "Il nome del pad è obbligatorio.",
     "Pad types and behaviour": "Tipi di pad e comportamento",
     "Pads": "Pad",
-    "Pads whose .pad file is gone without a deletion the app saw, removed outside Nextcloud and dropped by a scan, say. The app leaves them in place, and deleting one in Etherpad does not take it off this list. Up to 25 are shown:": "Pad il cui file .pad è scomparso senza che l'app vedesse un'eliminazione, per esempio eliminato fuori da Nextcloud e rimosso da una scansione. L'app li lascia dove sono, ed eliminarne uno in Etherpad non lo toglie da questa lista. Ne vengono mostrati fino a 25:",
+    "Pads whose .pad file is gone without a deletion the app saw, removed outside Nextcloud and dropped by a scan, say. The app leaves them in place until you delete them here. Delete them only when no .pad file names them any more: after the file cache was rebuilt, or files were restored from a backup, a file may still be there under a new id, and its pad would go with the others.": "Pad il cui file .pad è scomparso senza che l'app vedesse un'eliminazione, per esempio eliminato fuori da Nextcloud e rimosso da una scansione. L'app li lascia dove sono finché non li elimini qui. Eliminali solo quando nessun file .pad li nomina più: dopo che la cache dei file è stata ricostruita, o i file sono stati ripristinati da un backup, un file può essere ancora lì con un nuovo id, e il suo pad se ne andrebbe con gli altri.",
     "Pending Etherpad deletes": "Eliminazioni Etherpad in sospeso",
     "Pending pad check failed.": "Controllo dei pad in sospeso non riuscito.",
     "Pending pad check finished.": "Controllo dei pad in sospeso completato.",
@@ -212,6 +212,14 @@ OC.L10N.register(
     "{target} — {latency} ms": "{target} – {latency} ms",
     "{url} answered with HTTP {status}.": "{url} ha risposto con HTTP {status}.",
     "{url} did not answer: {error}. If Nextcloud cannot reach the public URL by design, ignore this — but check the URL for typos, because pad links in the browser use it.": "{url} non ha risposto: {error}. Se Nextcloud non può raggiungere l'URL pubblico per scelta progettuale, ignora l'avviso – ma controlla che l'URL non contenga errori di battitura, perché i collegamenti ai pad nel browser lo usano.",
-    "{url} was not contacted: Nextcloud blocks requests into its own network. Check that your users' browsers can reach this address.": "{url} non è stato contattato: Nextcloud blocca le richieste verso la propria rete. Controlla che i browser dei tuoi utenti possano raggiungere questo indirizzo."
+    "{url} was not contacted: Nextcloud blocks requests into its own network. Check that your users' browsers can reach this address.": "{url} non è stato contattato: Nextcloud blocca le richieste verso la propria rete. Controlla che i browser dei tuoi utenti possano raggiungere questo indirizzo.",
+    "Showing {shown} of {total}:": "Mostrati {shown} di {total}:",
+    "Delete the pads of all vanished files": "Elimina i pad di tutti i file scomparsi",
+    "Delete the pads of all {count} vanished files? Etherpad deletes them for good.": "Eliminare i pad di tutti i {count} file scomparsi? Etherpad li elimina definitivamente.",
+    "Marking the pads of the vanished files for deletion...": "Contrassegno dei pad dei file scomparsi per l'eliminazione...",
+    "Could not delete the pads of the vanished files.": "Non è stato possibile eliminare i pad dei file scomparsi.",
+    "Deleting pads is switched off, so no pad was marked for deletion.": "L'eliminazione dei pad è disattivata, quindi nessun pad è stato contrassegnato per l'eliminazione.",
+    "Not every vanished file could be marked in one go. Run it again for the rest.": "Non è stato possibile contrassegnare tutti i file scomparsi in una volta. Eseguilo di nuovo per il resto.",
+    "The pads of the vanished files are marked for deletion. They are deleted within minutes, or at once with \"Check pending pads\".": "I pad dei file scomparsi sono contrassegnati per l'eliminazione. Vengono eliminati entro pochi minuti, o subito con «Controlla i pad in sospeso»."
 },
 "nplurals=2; plural=(n != 1);");
