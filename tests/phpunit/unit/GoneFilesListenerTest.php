@@ -12,10 +12,10 @@ use OCP\EventDispatcher\Event;
 use OCP\EventDispatcher\GenericEvent;
 use OCP\Files\Cache\CacheEntryInsertedEvent;
 use OCP\Files\Cache\CacheEntryRemovedEvent;
-use OCP\Files\Config\ICachedMountInfo;
-use OCP\Files\Config\IUserMountCache;
+use OCP\Files\Config\IMountProviderCollection;
 use OCP\Files\Events\Node\BeforeNodeDeletedEvent;
 use OCP\Files\Events\Node\NodeDeletedEvent;
+use OCP\Files\Events\NodeRemovedFromCache;
 use OCP\Files\File;
 use OCP\Files\IHomeStorage;
 use OCP\Files\IRootFolder;
@@ -49,7 +49,7 @@ class GoneFilesListenerTest extends TestCase {
 	/** @var list<int> files that have no row, which markIfGone() does not report as marked */
 	private array $withoutRow = [];
 	private BindingService $bindings;
-	private IUserMountCache $mounts;
+	private IMountProviderCollection $mounts;
 	private LoggerInterface $logger;
 	private IRootFolder $rootFolder;
 
@@ -72,9 +72,9 @@ class GoneFilesListenerTest extends TestCase {
 		});
 		$this->bindings->method('fileIdsOnStorage')->willReturnCallback(function (int $storageId): array {
 			$this->calls[] = ['storage', [$storageId]];
-			return [41, 42];
+			return $storageId === 5 ? [41, 42] : [];
 		});
-		$this->mounts = $this->createMock(IUserMountCache::class);
+		$this->mounts = $this->createMock(IMountProviderCollection::class);
 		$this->logger = $this->createMock(LoggerInterface::class);
 		$rootMount = $this->createMock(IMountPoint::class);
 		$rootMount->method('getNumericStorageId')->willReturn(self::ROOT_ID);
@@ -211,6 +211,27 @@ class GoneFilesListenerTest extends TestCase {
 		$this->endRequest();
 
 		$this->assertSame([['mark', [101]], ['mark', [102]]], $this->calls);
+	}
+
+	/**
+	 * What `occ files:scan` drops is no deletion, in a trash or under a
+	 * delete whose window a failure left open: the scan says so before
+	 * the entries go. A removal elsewhere counts as ever.
+	 */
+	public function testWhatAScanDropsDoesNotCount(): void {
+		$listener = $this->listener();
+		$node = $this->node(100, 'files/Locked.pad');
+
+		$listener->handle(new NodeRemovedFromCache($this->storage(self::HOME), 'files_trashbin/files/Old'));
+		$listener->handle($this->removed(7, 'files_trashbin/files/Old/Notes.pad.d1'));
+		// A delete that failed leaves its window open.
+		$listener->handle(new BeforeNodeDeletedEvent($node));
+		$listener->handle(new NodeRemovedFromCache($this->storage(self::HOME), 'files/Locked.pad'));
+		$listener->handle($this->removed(100, 'files/Locked.pad'));
+		$listener->handle($this->removed(8, 'files_trashbin/files/Other.pad.d1'));
+		$this->endRequest();
+
+		$this->assertSame([['mark', [8]]], $this->calls);
 	}
 
 	/**
@@ -362,9 +383,7 @@ class GoneFilesListenerTest extends TestCase {
 	public function testAUserDeletedMarksTheirHome(): void {
 		$alice = $this->user('alice');
 		$bob = $this->user('bob');
-		$this->mounts->method('getMountsForUser')->willReturnCallback(fn (IUser $user): array => $user === $alice
-			? [$this->mount('/alice/files/Team/', 7), $this->mount('/alice/', 5)]
-			: [$this->mount('/bob/files/Team/', 7)]);
+		$this->mounts->method('getHomeMountForUser')->willReturnCallback(fn (IUser $user): IMountPoint => $this->home($user === $alice ? 5 : 6));
 		$listener = $this->listener();
 
 		$listener->handle(new BeforeUserDeletedEvent($alice));
@@ -374,12 +393,13 @@ class GoneFilesListenerTest extends TestCase {
 		$listener->handle(new BeforeUserDeletedEvent($bob));
 		$listener->handle(new UserDeletedEvent($bob));
 
-		$this->assertSame([['storage', [5]], ['mark home', [41, 42]], ['mark home', []], ['mark home', []]], $this->calls);
+		// Bob never logged in: a home with nothing on it.
+		$this->assertSame([['storage', [5]], ['mark home', [41, 42]], ['mark home', []], ['storage', [6]], ['mark home', []]], $this->calls);
 	}
 
 	/** A deletion the user backend refuses raises no UserDeletedEvent: nothing is marked. */
 	public function testARefusedUserDeletionMarksNothing(): void {
-		$this->mounts->method('getMountsForUser')->willReturn([$this->mount('/alice/', 5)]);
+		$this->mounts->method('getHomeMountForUser')->willReturn($this->home(5));
 		$listener = $this->listener();
 
 		$listener->handle(new BeforeUserDeletedEvent($this->user('alice')));
@@ -423,7 +443,7 @@ class GoneFilesListenerTest extends TestCase {
 		$args = [$this->bindings, $this->mounts, $this->logger, $this->rootFolder];
 		return $block === 500
 			? new class($atEnd, ...$args) extends GoneFilesListener {
-				public function __construct(private \Closure $registers, BindingService $b, IUserMountCache $m, LoggerInterface $l, IRootFolder $r) {
+				public function __construct(private \Closure $registers, BindingService $b, IMountProviderCollection $m, LoggerInterface $l, IRootFolder $r) {
 					parent::__construct($b, $m, $l, $r);
 				}
 
@@ -434,7 +454,7 @@ class GoneFilesListenerTest extends TestCase {
 			: new class($atEnd, ...$args) extends GoneFilesListener {
 				protected const BLOCK = 2;
 
-				public function __construct(private \Closure $registers, BindingService $b, IUserMountCache $m, LoggerInterface $l, IRootFolder $r) {
+				public function __construct(private \Closure $registers, BindingService $b, IMountProviderCollection $m, LoggerInterface $l, IRootFolder $r) {
 					parent::__construct($b, $m, $l, $r);
 				}
 
@@ -494,6 +514,12 @@ class GoneFilesListenerTest extends TestCase {
 		return new CacheEntryInsertedEvent($this->storage(self::HOME), $path, $fileId, 2);
 	}
 
+	private function home(int $storageId): IMountPoint {
+		$mount = $this->createMock(IMountPoint::class);
+		$mount->method('getNumericStorageId')->willReturn($storageId);
+		return $mount;
+	}
+
 	private function storage(string $id): IStorage {
 		$storage = $this->createMock(IStorage::class);
 		$storage->method('getId')->willReturn($id);
@@ -505,12 +531,5 @@ class GoneFilesListenerTest extends TestCase {
 		$user = $this->createMock(IUser::class);
 		$user->method('getUID')->willReturn($uid);
 		return $user;
-	}
-
-	private function mount(string $mountPoint, int $storageId): ICachedMountInfo {
-		$mount = $this->createMock(ICachedMountInfo::class);
-		$mount->method('getMountPoint')->willReturn($mountPoint);
-		$mount->method('getStorageId')->willReturn($storageId);
-		return $mount;
 	}
 }

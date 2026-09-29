@@ -15,9 +15,10 @@ use OCP\EventDispatcher\Event;
 use OCP\EventDispatcher\IEventListener;
 use OCP\Files\Cache\CacheEntryInsertedEvent;
 use OCP\Files\Cache\CacheEntryRemovedEvent;
-use OCP\Files\Config\IUserMountCache;
+use OCP\Files\Config\IMountProviderCollection;
 use OCP\Files\Events\Node\BeforeNodeDeletedEvent;
 use OCP\Files\Events\Node\NodeDeletedEvent;
+use OCP\Files\Events\NodeRemovedFromCache;
 use OCP\Files\IHomeStorage;
 use OCP\Files\InvalidPathException;
 use OCP\Files\IRootFolder;
@@ -53,7 +54,7 @@ use Psr\Log\LoggerInterface;
  *   never what a scan drops elsewhere.
  * - A user deleted: every file on their home storage, which Nextcloud
  *   clears without a word. Looked up before (BeforeUserDeletedEvent),
- *   while the mount cache still knows the home, and marked once the user
+ *   from the home mount while the user still has one, and marked once the user
  *   is gone (UserDeletedEvent): a deletion the user backend refuses stops
  *   before that, and leaves the files as they are.
  *
@@ -147,9 +148,12 @@ class GoneFilesListener implements IEventListener {
 	/** The root storage's numeric id, once asked for. */
 	private ?int $rootStorageId = null;
 
+	/** @var array{string,string}|null the storage id and path of what a scan drops now, with all under it */
+	private ?array $scanDrop = null;
+
 	public function __construct(
 		private BindingService $bindingService,
-		private IUserMountCache $userMountCache,
+		private IMountProviderCollection $mountProviders,
 		private LoggerInterface $logger,
 		private IRootFolder $rootFolder,
 	) {
@@ -176,6 +180,10 @@ class GoneFilesListener implements IEventListener {
 				$fileIds = $this->leavingHomes[$uid] ?? [];
 				unset($this->leavingHomes[$uid]);
 				$this->bindingService->markGone($fileIds);
+			} elseif ($event instanceof NodeRemovedFromCache) {
+				// A scan drops a file that vanished outside Nextcloud: sent
+				// right before its entries go, whatever path they are on.
+				$this->scanDrop = [$event->getStorage()->getId(), $event->getPath()];
 			} elseif (self::is($event, self::NODE_DELETED)) {
 				$this->write();
 			} elseif (self::is($event, self::BEFORE_RESTORE) && method_exists($event, 'getSource')) {
@@ -320,7 +328,7 @@ class GoneFilesListener implements IEventListener {
 			|| (str_starts_with($path, 'appdata_') && $this->isRoot($storageId))) {
 			return false;
 		}
-		if (self::isUnder($this->restoring, $storageId, $path)) {
+		if (self::isUnder($this->restoring, $storageId, $path) || $this->isScanDrop($storage, $path)) {
 			return false;
 		}
 		return self::isUnder($this->deleting, $storageId, $path)
@@ -337,6 +345,15 @@ class GoneFilesListener implements IEventListener {
 		return (str_starts_with($path, BindingService::USER_TRASH_PATH . 'files/') && self::isHome($storage))
 			|| (str_starts_with($path, BindingService::TEAM_TRASH_PATH) && $this->isRoot($storageId))
 			|| (str_starts_with($path, 'trash/') && self::isTeamFolderStorage($storage));
+	}
+
+	/** An entry a scan is dropping: the one `occ files:scan` reported last, or one under it. */
+	private function isScanDrop(IStorage $storage, string $path): bool {
+		if ($this->scanDrop === null) {
+			return false;
+		}
+		[$storageId, $root] = $this->scanDrop;
+		return $storage->getId() === $storageId && ($root === '' || $path === $root || str_starts_with($path, $root . '/'));
 	}
 
 	private static function isHome(IStorage $storage): bool {
@@ -393,16 +410,15 @@ class GoneFilesListener implements IEventListener {
 		register_shutdown_function($write);
 	}
 
-	/** @return list<int> the files of the rows on a user's home storage */
+	/**
+	 * The files of the rows on a user's home storage. Found as Nextcloud's
+	 * own cleanup of a deleted user finds it, from the home mount its
+	 * providers give, which needs no row in the mount cache.
+	 *
+	 * @return list<int>
+	 */
 	private function filesOfHome(IUser $user): array {
-		$home = '/' . $user->getUID() . '/';
-		foreach ($this->userMountCache->getMountsForUser($user) as $mount) {
-			if ($mount->getMountPoint() === $home) {
-				return $this->bindingService->fileIdsOnStorage($mount->getStorageId());
-			}
-		}
-		// Never logged in: no home, and no files.
-		return [];
+		return $this->bindingService->fileIdsOnStorage((int)$this->mountProviders->getHomeMountForUser($user)->getNumericStorageId());
 	}
 
 	private function warn(\Throwable $e): void {

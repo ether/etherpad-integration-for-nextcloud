@@ -119,6 +119,8 @@ class Application extends App implements IBootstrap {
 			\OCP\Files\Cache\CacheEntryInsertedEvent::class,
 			\OCP\Files\Events\Node\BeforeNodeDeletedEvent::class,
 			\OCP\Files\Events\Node\NodeDeletedEvent::class,
+			// What `occ files:scan` drops, which is no deletion.
+			\OCP\Files\Events\NodeRemovedFromCache::class,
 			// Every delete through a node, a trash's too, which raises no
 			// NodeDeletedEvent: a point to write the marks at.
 			'\\OCP\\Files::postDelete',
