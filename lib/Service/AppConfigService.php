@@ -65,6 +65,14 @@ class AppConfigService {
 	}
 
 	/**
+	 * The test fault 1.1.0-beta.1 let a debug instance set, gone with the
+	 * faults themselves.
+	 */
+	public function dropTestFault(): void {
+		$this->appConfig->deleteKey(Application::APP_ID, 'test_fault');
+	}
+
+	/**
 	 * @return list<string>
 	 */
 	public function getTrustedEmbedOrigins(): array {

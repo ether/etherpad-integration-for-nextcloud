@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\Migration;
 
 use Closure;
+use OCA\EtherpadNextcloud\Service\AppConfigService;
 use OCA\EtherpadNextcloud\Service\BindingService;
 use OCP\DB\ISchemaWrapper;
 use OCP\Migration\IOutput;
@@ -21,10 +22,18 @@ use OCP\Migration\SimpleMigrationStep;
  * and on an instance of public pads alone the index on state alone reads
  * every active row to say no.
  *
+ * And the `test_fault` key a debug instance of 1.1.0-beta.1 may have set,
+ * whose faults are gone.
+ *
  * @psalm-api
  */
 class Version000006Date20260929120000 extends SimpleMigrationStep {
 	private const INDEX = 'ep_bind_state_mode_idx';
+
+	public function __construct(
+		private AppConfigService $appConfig,
+	) {
+	}
 
 	/**
 	 * @param Closure(): ISchemaWrapper $schemaClosure
@@ -37,5 +46,12 @@ class Version000006Date20260929120000 extends SimpleMigrationStep {
 		}
 		$table->addIndex(['state', 'access_mode'], self::INDEX);
 		return $schema;
+	}
+
+	/**
+	 * @param Closure(): ISchemaWrapper $schemaClosure
+	 */
+	public function postSchemaChange(IOutput $output, Closure $schemaClosure, array $options): void {
+		$this->appConfig->dropTestFault();
 	}
 }

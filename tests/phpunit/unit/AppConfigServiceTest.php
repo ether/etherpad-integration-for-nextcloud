@@ -55,6 +55,14 @@ class AppConfigServiceTest extends TestCase {
 		}
 	}
 
+	/** The test fault of 1.1.0-beta.1 goes with its faults. */
+	public function testTheTestFaultOfBeta1IsDropped(): void {
+		$appConfig = $this->createMock(IAppConfig::class);
+		$appConfig->expects($this->once())->method('deleteKey')->with('etherpad_nextcloud', 'test_fault');
+
+		$this->service($this->createMock(IConfig::class), $appConfig)->dropTestFault();
+	}
+
 	/** Read as the admin API stored it, surrounding blanks aside. */
 	private function service(IConfig $config, ?IAppConfig $appConfig = null): AppConfigService {
 		return new AppConfigService($config, $this->createMock(TrustedEmbedOriginsNormalizer::class), $appConfig ?? $this->createMock(IAppConfig::class));
