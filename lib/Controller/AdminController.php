@@ -159,6 +159,46 @@ class AdminController extends Controller {
 		);
 	}
 
+	/**
+	 * The pads of the vanished files deleted, on the admin's word: their
+	 * rows marked as files deleted for good, for the sweep to take within
+	 * minutes, or the pending pad check at once.
+	 */
+	public function deleteVanished(): DataResponse {
+		return $this->errors->run(
+			function (): array {
+				$this->requireAdmin();
+				// With deleting off a mark would only wait for it to be
+				// switched on: nothing is marked, and the page says why.
+				$deleting = $this->appConfigService->isDeletePadWithFileEnabled();
+				$marked = $deleting ? $this->consistencyCheckService->markVanished(new RunBudget($this->timeFactory, RunBudget::DEFAULT_SECONDS)) : 0;
+				$left = $this->consistencyCheckService->countVanished();
+				return [
+					'message' => $this->vanishedMessage($deleting, $left),
+					'marked' => $marked,
+					'vanished_file_count' => $left,
+					'pending_delete_count' => $this->bindingService->countPendingDeletes(),
+				];
+			},
+			fn(array $result): DataResponse => new DataResponse(['ok' => true] + $result),
+			[
+				'generic' => $this->l10n->t('Could not delete the pads of the vanished files.'),
+				'log_message' => 'Deleting the pads of vanished files failed',
+			],
+		);
+	}
+
+	/** What marking the vanished files came to, $left of them still to mark. */
+	private function vanishedMessage(bool $deleting, int $left): string {
+		if (!$deleting) {
+			return $this->l10n->t('Deleting pads is switched off, so no pad was marked for deletion.');
+		}
+		if ($left > 0) {
+			return $this->l10n->t('Not every vanished file could be marked in one go. Run it again for the rest.');
+		}
+		return $this->l10n->t('The pads of the vanished files are marked for deletion. They are deleted within minutes, or at once with "Check pending pads".');
+	}
+
 	public function consistencyCheck(): DataResponse {
 		return $this->errors->run(
 			function (): array {

@@ -380,6 +380,23 @@ solely by the separate external-pad policy, not by these two settings.
     - `samples.vanished_files` (`file_id`, `pad_id`, `access_mode`), up to 25
     - Rows seen deleted for good are not counted: they are on their way (`pending_delete_count` in the health check).
 
+- `POST /api/v1/admin/delete-vanished`
+  - Controller: `AdminController::deleteVanished`
+  - Auth: admin only
+  - Purpose: the pads of the vanished files deleted, on the admin's word:
+    every vanished row (see `consistency-check`) is marked as a file
+    deleted for good, and the sweep deletes its pad as for any such file -
+    within minutes, or at once through `settle-pending`, asking the file
+    cache once more first. In chunks, within the budget a sweep has; what
+    is left needs another call. The app never does this on its own: a file
+    the file cache lost may still be there under another id, after the
+    cache was rebuilt or files were restored from a backup, say. With
+    `delete_pad_with_file` off it marks nothing, and `message` says so.
+  - Result:
+    - `marked`: rows marked
+    - `vanished_file_count`: vanished rows left, `0` once all are marked
+    - `pending_delete_count`: rows now waiting for the sweep, named as in the health check
+
 - `POST /api/v1/admin/settle-pending`
   - Controller: `AdminController::settlePending`
   - Auth: admin only

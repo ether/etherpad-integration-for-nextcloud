@@ -190,6 +190,60 @@ class AdminControllerTest extends TestCase {
 		$this->assertSame(3412, $response->getData()['pending_delete_count']);
 	}
 
+	/**
+	 * On the admin's word the vanished files' rows are marked, within one
+	 * run's budget, for the sweep; the answer says how many, how many are
+	 * left, and how many pads now wait to go.
+	 */
+	public function testDeleteVanishedMarksTheirRows(): void {
+		$consistency = $this->createMock(ConsistencyCheckService::class);
+		$consistency->expects($this->once())->method('markVanished')->with($this->callback(
+			static fn (RunBudget $budget): bool => !$budget->exhausted(),
+		))->willReturn(4);
+		$consistency->method('countVanished')->willReturn(0);
+		$bindings = $this->createMock(BindingService::class);
+		$bindings->method('countPendingDeletes')->willReturn(6);
+
+		$response = $this->buildController(consistencyCheck: $consistency, bindings: $bindings)->deleteVanished();
+
+		$this->assertSame(Http::STATUS_OK, $response->getStatus());
+		$this->assertSame(['ok' => true, 'message' => 'The pads of the vanished files are marked for deletion. They are deleted within minutes, or at once with "Check pending pads".', 'marked' => 4, 'vanished_file_count' => 0, 'pending_delete_count' => 6], $response->getData());
+	}
+
+	/**
+	 * With deleting off a mark would only wait for it to be switched on:
+	 * nothing is marked, and the answer says so. Rows left after the budget
+	 * ask for another run.
+	 */
+	public function testDeleteVanishedSaysWhatItDidNot(): void {
+		$consistency = $this->createMock(ConsistencyCheckService::class);
+		$consistency->expects($this->never())->method('markVanished');
+		$consistency->method('countVanished')->willReturn(12);
+		$appConfig = $this->createMock(AppConfigService::class);
+		$appConfig->method('isDeletePadWithFileEnabled')->willReturn(false);
+
+		$off = $this->buildController(consistencyCheck: $consistency, appConfig: $appConfig)->deleteVanished()->getData();
+
+		$this->assertSame('Deleting pads is switched off, so no pad was marked for deletion.', $off['message']);
+		$this->assertSame([0, 12], [$off['marked'], $off['vanished_file_count']]);
+
+		$partly = $this->createMock(ConsistencyCheckService::class);
+		$partly->method('markVanished')->willReturn(500);
+		$partly->method('countVanished')->willReturn(1);
+
+		$this->assertSame('Not every vanished file could be marked in one go. Run it again for the rest.', $this->buildController(consistencyCheck: $partly)->deleteVanished()->getData()['message']);
+	}
+
+	/** Only an admin deletes pads here. */
+	public function testDeleteVanishedRefusesNonAdmins(): void {
+		$consistency = $this->createMock(ConsistencyCheckService::class);
+		$consistency->expects($this->never())->method('markVanished');
+
+		$response = $this->buildController(groupManager: $this->adminGroup(false), consistencyCheck: $consistency)->deleteVanished();
+
+		$this->assertSame(Http::STATUS_FORBIDDEN, $response->getStatus());
+	}
+
 	public function testListsPadTemplates(): void {
 		$templates = $this->createMock(PadTemplateAdminService::class);
 		$templates->method('list')->willReturn([['name' => 'Meeting notes.pad', 'size' => 10, 'modified' => 1]]);
