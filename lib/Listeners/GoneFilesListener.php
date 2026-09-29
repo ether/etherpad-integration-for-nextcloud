@@ -75,6 +75,11 @@ use Psr\Log\LoggerInterface;
  *   new ids on the other side when it crosses to such a storage.
  * - Versions on a home storage and app data on the root storage, previews
  *   among them; a file of such a name elsewhere counts as any other.
+ * - What a scan drops, a file that vanished outside Nextcloud: `occ
+ *   files:scan` says so (NodeRemovedFromCache) right before the entries
+ *   go, and that entry and all under it are left, until its own entry
+ *   goes, which Nextcloud reports after all under it. The background scan
+ *   and the watcher say nothing, and what they drop in a trash counts.
  *
  * What counts is the file, not its name: a `.pad` renamed keeps its row.
  *
@@ -148,7 +153,7 @@ class GoneFilesListener implements IEventListener {
 	/** The root storage's numeric id, once asked for. */
 	private ?int $rootStorageId = null;
 
-	/** @var array{string,string}|null the storage id and path of what a scan drops now, with all under it */
+	/** @var array{string,string}|null the storage id and path of what a scan drops now, with all under it, until its own entry goes */
 	private ?array $scanDrop = null;
 
 	public function __construct(
@@ -228,7 +233,9 @@ class GoneFilesListener implements IEventListener {
 
 	private function removed(CacheEntryRemovedEvent $event): void {
 		$fileId = $event->getFileId();
-		if (isset($this->gone[$fileId]) || isset($this->marked[$fileId]) || isset($this->misnumbered[$event]) || !$this->counts($event)) {
+		$skip = isset($this->gone[$fileId]) || isset($this->marked[$fileId]) || isset($this->misnumbered[$event]) || !$this->counts($event);
+		$this->endScanDropAt($event);
+		if ($skip) {
 			return;
 		}
 		$this->gone[$fileId] = true;
@@ -350,6 +357,17 @@ class GoneFilesListener implements IEventListener {
 			|| (str_starts_with($path, 'trash/') && self::isTeamFolderStorage($storage));
 	}
 
+	/**
+	 * The entry a scan drops, reported after all under it (Cache::remove()),
+	 * ends its window: a removal there later in the process - a trash
+	 * expiring, a delete - counts again.
+	 */
+	private function endScanDropAt(CacheEntryRemovedEvent $event): void {
+		if ($this->scanDrop !== null && $event->getStorage()->getId() === $this->scanDrop[0] && $event->getPath() === $this->scanDrop[1]) {
+			$this->scanDrop = null;
+		}
+	}
+
 	/** An entry a scan is dropping: the one `occ files:scan` reported last, or one under it. */
 	private function isScanDrop(IStorage $storage, string $path): bool {
 		if ($this->scanDrop === null) {
@@ -416,7 +434,10 @@ class GoneFilesListener implements IEventListener {
 	/**
 	 * The files of the rows on a user's home storage. Found as Nextcloud's
 	 * own cleanup of a deleted user finds it, from the home mount its
-	 * providers give, which needs no row in the mount cache.
+	 * providers give, which needs no row in the mount cache. For an
+	 * account that never logged in, that sets up its home storage - as
+	 * that cleanup (UserDeletedFilesCleanupListener) does at the same
+	 * event, so nothing is made that Nextcloud would not make anyway.
 	 *
 	 * @return list<int>
 	 */

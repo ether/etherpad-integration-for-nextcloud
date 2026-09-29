@@ -235,6 +235,23 @@ class GoneFilesListenerTest extends TestCase {
 	}
 
 	/**
+	 * A scan's drop ends with its own entry, which Nextcloud reports after
+	 * all under it: a removal there later in the process - the trash
+	 * expiring, say - counts again.
+	 */
+	public function testAScanDropEndsWithItsOwnEntry(): void {
+		$listener = $this->listener();
+
+		$listener->handle(new NodeRemovedFromCache($this->storage(self::HOME), 'files_trashbin/files/Old'));
+		$listener->handle($this->removed(7, 'files_trashbin/files/Old/Notes.pad'));
+		$listener->handle($this->removed(6, 'files_trashbin/files/Old'));
+		$listener->handle($this->removed(9, 'files_trashbin/files/Old/Later.pad'));
+		$this->endRequest();
+
+		$this->assertSame([['mark', [9]]], $this->calls);
+	}
+
+	/**
 	 * A delete through a node that raises no NodeDeletedEvent - an item
 	 * deleted from a trash, a trash emptied - is done at
 	 * `\OCP\Files::postDelete`, and its marks are written there, not only
