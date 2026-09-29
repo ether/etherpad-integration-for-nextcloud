@@ -15,6 +15,8 @@ use OCA\EtherpadNextcloud\Service\BindingService;
 use OCP\AppFramework\Utility\ITimeFactory;
 use OCP\BackgroundJob\IJobList;
 use OCP\DB\ISchemaWrapper;
+use OCP\DB\QueryBuilder\IQueryBuilder;
+use OCP\IDBConnection;
 use OCP\Migration\IOutput;
 use OCP\Migration\SimpleMigrationStep;
 
@@ -26,7 +28,10 @@ use OCP\Migration\SimpleMigrationStep;
  * pad's deletion owed. Whose file the file cache still has - in a trash, or
  * back in Files - is an active row again: its pad was kept, and the trash
  * keeps it now. Whose file is gone for good stays, and the sweep of files
- * gone for good takes its pad.
+ * gone for good takes its pad. Rows left waiting in a way this version
+ * does not know take the same way: `restore_pending`, a restore that
+ * could not finish on a `main` between 1.1.0-beta.1 and this version, and
+ * a deletion owed without a date, which nothing here would reach.
  *
  * The setting that said whether a trash deleted pads, `delete_on_trash`,
  * now says whether a file deleted for good takes its pad along:
@@ -53,6 +58,9 @@ class Version000005Date20260928120000 extends SimpleMigrationStep {
 		'OCA\\EtherpadNextcloud\\BackgroundJob\\ColdPendingDeleteRetryJob',
 	];
 
+	/** A restore that could not finish, on a `main` after 1.1.0-beta.1; no release wrote it. */
+	private const RESTORE_PENDING = 'restore_pending';
+
 	private const OLD_INDEX = 'ep_bind_state_idx';
 	private const INDEX = 'ep_bind_state_mode_idx';
 
@@ -61,6 +69,7 @@ class Version000005Date20260928120000 extends SimpleMigrationStep {
 		private ITimeFactory $timeFactory,
 		private AppConfigService $appConfig,
 		private IJobList $jobList,
+		private IDBConnection $db,
 	) {
 	}
 
@@ -92,11 +101,36 @@ class Version000005Date20260928120000 extends SimpleMigrationStep {
 			/** @psalm-suppress ArgumentTypeCoercion The classes are gone, which is why they go; the job list removes their rows by the name alone. */
 			$this->jobList->remove($job);
 		}
+		$now = $this->timeFactory->getTime();
+		$this->dateOldWaits($now);
 		// A pending_delete row whose file the file cache still has is the
 		// file's, kept: the same step the sweep takes for a deletion that
 		// did not happen, for every such row at once.
-		$now = $this->timeFactory->getTime();
 		while ($this->bindingService->clearStaleGone($now, 500) === 500) {
 		}
+	}
+
+	/**
+	 * Rows left waiting in a way this version does not know, seen deleted
+	 * for good at $now: the step after makes those whose file is there
+	 * active, and the sweep takes the pads of the rest. Left as they were,
+	 * an open would refuse them and nothing would list them.
+	 */
+	private function dateOldWaits(int $now): void {
+		$qb = $this->db->getQueryBuilder();
+		$qb->update(BindingService::TABLE)
+			->set('state', $qb->createNamedParameter(BindingService::STATE_PENDING_DELETE))
+			->set('deleted_at', $qb->createNamedParameter($now, IQueryBuilder::PARAM_INT))
+			->set('updated_at', $qb->createNamedParameter($now, IQueryBuilder::PARAM_INT))
+			->where($qb->expr()->eq('state', $qb->createNamedParameter(self::RESTORE_PENDING)));
+		$qb->executeStatement();
+
+		$qb = $this->db->getQueryBuilder();
+		$qb->update(BindingService::TABLE)
+			->set('deleted_at', $qb->createNamedParameter($now, IQueryBuilder::PARAM_INT))
+			->set('updated_at', $qb->createNamedParameter($now, IQueryBuilder::PARAM_INT))
+			->where($qb->expr()->eq('state', $qb->createNamedParameter(BindingService::STATE_PENDING_DELETE)))
+			->andWhere($qb->expr()->isNull('deleted_at'));
+		$qb->executeStatement();
 	}
 }
