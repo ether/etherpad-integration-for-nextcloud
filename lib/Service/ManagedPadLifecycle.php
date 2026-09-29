@@ -350,7 +350,10 @@ class ManagedPadLifecycle {
 	 *
 	 * $knownAbsent: Etherpad has just said there is no such pad. A public
 	 * pad leaves nothing else behind, so that takes no call; a protected
-	 * one can leave its group, which is still looked for.
+	 * one can leave its group, which goes only while it holds nothing. The
+	 * pad may be back by then - made anew through the API - and is not this
+	 * call's to remove; a group that cannot be read stays, and the reason
+	 * reaches the caller.
 	 *
 	 * $budget: a sweep's run, or an open's few seconds; each call gets what
 	 * is left, and one that would not finish is not made. Nothing is
@@ -362,11 +365,13 @@ class ManagedPadLifecycle {
 	 * may read it, and a group given up is never looked at again.
 	 */
 	public function discardIfPresent(string $padId, ?RunBudget $budget = null, bool $knownAbsent = false, bool $retried = false): void {
-		if ($knownAbsent && !PadId::isGroupPad($padId)) {
-			return;
-		}
+		$groupId = PadId::groupIdOf($padId);
 		try {
-			$this->discard($padId, $budget, $retried);
+			if (!$knownAbsent) {
+				$this->discard($padId, $budget, $retried);
+			} elseif ($groupId !== null && $this->etherpadClient->listPads($groupId, RunBudget::timeoutOf($budget)) === []) {
+				$this->etherpadClient->deleteGroup($groupId, RunBudget::timeoutOf($budget));
+			}
 		} catch (\Throwable $e) {
 			if (!EtherpadErrorClassifier::isPadAlreadyDeleted($e)) {
 				throw $e;

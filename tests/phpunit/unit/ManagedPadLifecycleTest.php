@@ -284,6 +284,26 @@ class ManagedPadLifecycleTest extends TestCase {
 	}
 
 	/**
+	 * Only an empty group goes after a pad known absent. The pad may be back
+	 * by then - made anew through the API - and is not the call's to take;
+	 * a group that cannot be read stays, and the caller hears why.
+	 */
+	public function testAPadKnownAbsentTakesNoGroupThatIsNotEmpty(): void {
+		$client = $this->createMock(EtherpadClient::class);
+		$client->method('listPads')->willReturn(['g.ABCDEFGHIJKLMNOP$p-abc123']);
+		$client->expects($this->never())->method('deleteGroup');
+		$client->expects($this->never())->method('deletePad');
+		$this->lifecycle($client)->discardIfPresent('g.ABCDEFGHIJKLMNOP$p-abc123', knownAbsent: true);
+
+		$client = $this->createMock(EtherpadClient::class);
+		$client->method('listPads')->willThrowException(new EtherpadClientException('Connection timed out'));
+		$client->expects($this->never())->method('deleteGroup');
+		$client->expects($this->never())->method('deletePad');
+		$this->expectException(EtherpadClientException::class);
+		$this->lifecycle($client)->discardIfPresent('g.ABCDEFGHIJKLMNOP$p-abc123', knownAbsent: true);
+	}
+
+	/**
 	 * The loose shape, matching how a binding is classified. A stricter rule
 	 * here than in inferAccessModeFromPadId left group pads unrecognised at
 	 * delete time, and their groups behind.
