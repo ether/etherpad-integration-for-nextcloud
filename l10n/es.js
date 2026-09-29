@@ -136,6 +136,7 @@ OC.L10N.register(
     "Pending Etherpad deletes": "Eliminaciones pendientes en Etherpad",
     "Pending pad check failed.": "Error al comprobar los pads pendientes.",
     "Pending pad check finished.": "Comprobación de pads pendientes finalizada.",
+    "Deleting pads is switched off, so no pad was deleted. The files deleted for good wait for it to be switched on.": "La eliminación de pads está desactivada, así que no se ha eliminado ningún pad. Los archivos eliminados definitivamente esperan a que se active.",
     "Protected pads": "Pads protegidos",
     "Protected pads are switched off.": "Los pads protegidos están desactivados.",
     "Protected pads: session cookie": "Pads protegidos: cookie de sesión",

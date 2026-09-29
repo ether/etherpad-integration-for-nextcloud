@@ -13,6 +13,7 @@ use OCA\EtherpadNextcloud\Exception\UnauthorizedRequestException;
 use OCA\EtherpadNextcloud\Service\AdminConsistencyCheckResponseBuilder;
 use OCA\EtherpadNextcloud\Service\AdminSettingsRepository;
 use OCA\EtherpadNextcloud\Service\AdminSettingsValidator;
+use OCA\EtherpadNextcloud\Service\AppConfigService;
 use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\EtherpadNextcloud\Service\ConsistencyCheckService;
 use OCA\EtherpadNextcloud\Service\CookieDomainDecision;
@@ -59,6 +60,7 @@ class AdminController extends Controller {
 		private GoneFileSweep $goneFileSweep,
 		private ITimeFactory $timeFactory,
 		private BindingService $bindingService,
+		private AppConfigService $appConfigService,
 	) {
 		parent::__construct($appName, $request);
 	}
@@ -134,11 +136,18 @@ class AdminController extends Controller {
 				$this->requireAdmin();
 				// What the background job does, now, and without the grace.
 				$result = $this->goneFileSweep->run(new RunBudget($this->timeFactory, RunBudget::DEFAULT_SECONDS), atOnce: true);
-				return $result + ['pending_delete_count' => $this->bindingService->countPendingDeletes()];
+				return $result + [
+					'pending_delete_count' => $this->bindingService->countPendingDeletes(),
+					'deleting' => $this->appConfigService->isDeletePadWithFileEnabled(),
+				];
 			},
 			fn(array $result): DataResponse => new DataResponse([
 				'ok' => true,
-				'message' => $this->l10n->t('Pending pad check finished.'),
+				// With deleting off the check deletes nothing, and says why
+				// rather than leave the count to stand unexplained.
+				'message' => $result['deleting']
+					? $this->l10n->t('Pending pad check finished.')
+					: $this->l10n->t('Deleting pads is switched off, so no pad was deleted. The files deleted for good wait for it to be switched on.'),
 				'checked' => $result['checked'],
 				'settled' => $result['deleted'],
 				'pending_delete_count' => $result['pending_delete_count'],

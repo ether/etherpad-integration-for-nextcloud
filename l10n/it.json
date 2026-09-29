@@ -135,6 +135,7 @@
         "Pending Etherpad deletes": "Eliminazioni Etherpad in sospeso",
         "Pending pad check failed.": "Controllo dei pad in sospeso non riuscito.",
         "Pending pad check finished.": "Controllo dei pad in sospeso completato.",
+        "Deleting pads is switched off, so no pad was deleted. The files deleted for good wait for it to be switched on.": "L'eliminazione dei pad è disattivata, quindi nessun pad è stato eliminato. I file eliminati definitivamente attendono che venga attivata.",
         "Protected pads": "Pad protetti",
         "Protected pads are switched off.": "I pad protetti sono disattivati.",
         "Protected pads: session cookie": "Pad protetti: cookie di sessione",

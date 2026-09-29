@@ -9,6 +9,7 @@ use OCA\EtherpadNextcloud\Controller\AdminControllerErrorMapper;
 use OCA\EtherpadNextcloud\Service\AdminConsistencyCheckResponseBuilder;
 use OCA\EtherpadNextcloud\Service\AdminSettingsRepository;
 use OCA\EtherpadNextcloud\Service\AdminSettingsValidator;
+use OCA\EtherpadNextcloud\Service\AppConfigService;
 use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\EtherpadNextcloud\Service\ConsistencyCheckService;
 use OCA\EtherpadNextcloud\Service\CookieDomainDecision;
@@ -171,6 +172,24 @@ class AdminControllerTest extends TestCase {
 		$this->assertSame(3, $response->getData()['pending_delete_count']);
 	}
 
+	/**
+	 * With deleting off the check deletes nothing; the answer says why, so
+	 * the count of pending deletes does not stand unexplained.
+	 */
+	public function testSettlePendingSaysWhenDeletingIsOff(): void {
+		$sweep = $this->createMock(GoneFileSweep::class);
+		$sweep->method('run')->willReturn(['checked' => 0, 'deleted' => 0]);
+		$bindings = $this->createMock(BindingService::class);
+		$bindings->method('countPendingDeletes')->willReturn(3412);
+		$appConfig = $this->createMock(AppConfigService::class);
+		$appConfig->method('isDeletePadWithFileEnabled')->willReturn(false);
+
+		$response = $this->buildController(goneFileSweep: $sweep, bindings: $bindings, appConfig: $appConfig)->settlePending();
+
+		$this->assertSame('Deleting pads is switched off, so no pad was deleted. The files deleted for good wait for it to be switched on.', $response->getData()['message']);
+		$this->assertSame(3412, $response->getData()['pending_delete_count']);
+	}
+
 	public function testListsPadTemplates(): void {
 		$templates = $this->createMock(PadTemplateAdminService::class);
 		$templates->method('list')->willReturn([['name' => 'Meeting notes.pad', 'size' => 10, 'modified' => 1]]);
@@ -241,6 +260,7 @@ class AdminControllerTest extends TestCase {
 		?GoneFileSweep $goneFileSweep = null,
 		?FixedClock $clock = null,
 		?BindingService $bindings = null,
+		?AppConfigService $appConfig = null,
 	): AdminController {
 		$l10n = $this->buildL10n();
 		$logger = $this->createMock(LoggerInterface::class);
@@ -263,6 +283,7 @@ class AdminControllerTest extends TestCase {
 			$goneFileSweep ?? $this->createMock(GoneFileSweep::class),
 			$clock ?? new FixedClock(),
 			$bindings ?? $this->createMock(BindingService::class),
+			$appConfig ?? $this->deletingOn(),
 		);
 	}
 
@@ -325,5 +346,11 @@ class AdminControllerTest extends TestCase {
 			}
 		);
 		return $l10n;
+	}
+
+	private function deletingOn(): AppConfigService {
+		$appConfig = $this->createMock(AppConfigService::class);
+		$appConfig->method('isDeletePadWithFileEnabled')->willReturn(true);
+		return $appConfig;
 	}
 }
