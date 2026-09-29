@@ -993,11 +993,13 @@ class RestoreServiceTest extends TestCase {
 	/**
 	 * A write that throws, and a file that cannot be read afterwards, leave
 	 * open which pad the file names: the landed write names the new one,
-	 * the failed one the old. The row goes with the new pad - a row moved
-	 * back would contradict a landed write - and the file's next open finds
-	 * no row and offers a pad from its content, whichever pad it names.
+	 * the failed one the old. The row goes - a row moved back would
+	 * contradict a landed write - and the file's next open finds no row and
+	 * offers a pad from its content. The new pad stays, named in the log: a
+	 * write that broke off may have cut the file short, and the new pad
+	 * may be the last whole copy.
 	 */
-	public function testAFailedWriteOnAFileThatCannotBeReadLeavesNoRow(): void {
+	public function testAFailedWriteOnAFileThatCannotBeReadLeavesNoRowAndKeepsThePad(): void {
 		$fileId = 710;
 		$newPadId = 'r-old-pad-abc123def456';
 		$bindingService = $this->createMock(BindingService::class);
@@ -1006,9 +1008,13 @@ class RestoreServiceTest extends TestCase {
 		$bindingService->expects($this->once())->method('deleteActiveBinding')->with($fileId, $newPadId)->willReturn(true);
 		$etherpadClient = $this->createMock(EtherpadClient::class);
 		$etherpadClient->method('getRevisionsCount')->willThrowException(new EtherpadRefusedException('padID does not exist'));
-		$etherpadClient->expects($this->once())->method('deletePad')->with($newPadId);
+		$etherpadClient->expects($this->never())->method('deletePad');
+		$etherpadClient->expects($this->never())->method('deleteGroup');
 		$logger = $this->createMock(LoggerInterface::class);
-		$logger->expects($this->once())->method('warning')->with('A restored .pad file reported a failed write and cannot be read; its row is removed, and its next open offers a new pad.', $this->anything());
+		$logger->expects($this->once())->method('warning')->with(
+			'A restored .pad file reported a failed write and cannot be read; its row is removed, and its new pad is kept, as the write may have cut the file short.',
+			$this->callback(static fn (array $context): bool => $context['padId'] === $newPadId),
+		);
 		$file = $this->createMock(File::class);
 		$file->method('getId')->willReturn($fileId);
 		$file->method('getName')->willReturn('Lost.pad');

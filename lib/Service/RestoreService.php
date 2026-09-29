@@ -419,9 +419,11 @@ class RestoreService {
 	 * onto the old pad instead, where the file still points; only when that
 	 * fails too does it go. A write that failed and a file that cannot be
 	 * read afterwards leave open which pad the file names, so no row may be
-	 * left to contradict it: the row goes with the new pad, which holds
-	 * nothing the file does not, and the file's next open offers a pad from
-	 * its content, whichever pad it names.
+	 * left to contradict it: the row goes, and the file's next open offers a
+	 * pad from its content, whichever pad it names. The new pad stays, named
+	 * in the log: a write is not atomic on every storage, and one that
+	 * broke off may have cut the file short, leaving the new pad the last
+	 * whole copy of what the file held.
 	 *
 	 * Seeding the new pad takes a while, so the file is asked once more
 	 * before the claim: moved - deleted again, say - and the new pad goes,
@@ -470,12 +472,13 @@ class RestoreService {
 				return LifecycleResult::restored($oldPadId, $newPadId);
 			}
 			if ($names === null) {
-				$this->logger->warning('A restored .pad file reported a failed write and cannot be read; its row is removed, and its next open offers a new pad.', [
+				$this->logger->warning('A restored .pad file reported a failed write and cannot be read; its row is removed, and its new pad is kept, as the write may have cut the file short.', [
 					'app' => 'etherpad_nextcloud',
 					'fileId' => $fileId,
+					'padId' => $newPadId,
 					...SafeError::context($e),
 				]);
-				$this->provisionedPadRollback->removeMatchingBindingAndDiscard($fileId, $newPadId, $flow);
+				$this->removeRowOf($fileId, $newPadId);
 				throw LifecycleException::failed('Restore', $e);
 			}
 			if ($rowStays && $this->moveRowBack($fileId, $newPadId, $oldPadId)) {
@@ -486,6 +489,23 @@ class RestoreService {
 			throw LifecycleException::failed('Restore', $e);
 		}
 		return LifecycleResult::restored($oldPadId, $newPadId);
+	}
+
+	/**
+	 * The active row naming the new pad gone, the pad left: a row that
+	 * cannot be removed now stays too, for the file's open to say what is
+	 * wrong.
+	 */
+	private function removeRowOf(int $fileId, string $newPadId): void {
+		try {
+			$this->bindingService->deleteActiveBinding($fileId, $newPadId);
+		} catch (\Throwable $e) {
+			$this->logger->warning('Could not remove the row of a restored .pad file whose write failed.', [
+				'app' => 'etherpad_nextcloud',
+				'fileId' => $fileId,
+				...SafeError::context($e),
+			]);
+		}
 	}
 
 	/** Whether the file names this pad now; null when that cannot be read either. */
