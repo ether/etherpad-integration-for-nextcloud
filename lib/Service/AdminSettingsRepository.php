@@ -19,6 +19,7 @@ class AdminSettingsRepository {
 	public function __construct(
 		private IConfig $config,
 		private IAppConfig $appConfig,
+		private AppConfigService $appConfigService,
 	) {
 	}
 
@@ -26,7 +27,9 @@ class AdminSettingsRepository {
 		return new StoredAdminSettings(
 			trim($this->getApiKey()),
 			(string)$this->config->getAppValue(Application::APP_ID, 'etherpad_cookie_domain', ''),
-			$this->appConfig->getValueString(Application::APP_ID, AppConfigService::DELETE_PAD_WITH_FILE, 'yes') === 'yes',
+			// As the sweep reads it: until the setting is taken over, the old
+			// key's opt-out stands here too, and saving the form keeps it.
+			$this->appConfigService->isDeletePadWithFileEnabled(),
 			(string)$this->config->getAppValue(Application::APP_ID, 'allow_external_pads', 'no') === 'yes',
 			(string)$this->config->getAppValue(Application::APP_ID, 'trusted_embed_origins', ''),
 			(string)$this->config->getAppValue(Application::APP_ID, PadTypePolicy::SETTING_PROTECTED, 'yes') === 'yes',

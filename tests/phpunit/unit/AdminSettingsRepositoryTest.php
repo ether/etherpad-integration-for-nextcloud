@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\Tests\Unit;
 
 use OCA\EtherpadNextcloud\Service\AdminSettingsRepository;
+use OCA\EtherpadNextcloud\Service\AppConfigService;
 use OCA\EtherpadNextcloud\Service\LegacyImportPolicy;
+use OCA\EtherpadNextcloud\Service\TrustedEmbedOriginsNormalizer;
 use OCA\EtherpadNextcloud\Service\ValidatedAdminSettings;
 use OCP\IAppConfig;
 use OCP\IConfig;
@@ -31,7 +33,7 @@ class AdminSettingsRepositoryTest extends TestCase {
 		$appConfig = $this->createMock(IAppConfig::class);
 		$appConfig->method('setValueString')->willReturn(true);
 
-		(new AdminSettingsRepository($config, $appConfig))->persist(new ValidatedAdminSettings(
+		($this->repository($config, $appConfig))->persist(new ValidatedAdminSettings(
 			'https://pad.example.test',
 			'https://pad-api.example.test',
 			'',
@@ -72,7 +74,7 @@ class AdminSettingsRepositoryTest extends TestCase {
 			}
 		);
 
-		(new AdminSettingsRepository($config, $appConfig))->persist(new ValidatedAdminSettings(
+		($this->repository($config, $appConfig))->persist(new ValidatedAdminSettings(
 			'https://pad.example.test',
 			'https://pad-api.example.test',
 			'.example.test',
@@ -117,7 +119,7 @@ class AdminSettingsRepositoryTest extends TestCase {
 		$appConfig = $this->createMock(IAppConfig::class);
 		$appConfig->expects($this->once())->method('setValueString')->with('etherpad_nextcloud', 'delete_pad_with_file', 'yes');
 
-		(new AdminSettingsRepository($config, $appConfig))->persist(new ValidatedAdminSettings(
+		($this->repository($config, $appConfig))->persist(new ValidatedAdminSettings(
 			'https://pad.example.test',
 			'https://pad.example.test',
 			'',
@@ -145,7 +147,7 @@ class AdminSettingsRepositoryTest extends TestCase {
 			}
 		);
 
-		$repository = new AdminSettingsRepository($config, $appConfig);
+		$repository = $this->repository($config, $appConfig);
 		$this->assertTrue($repository->hasApiKey());
 		// getApiKey() is the single read path EtherpadClient uses; it returns
 		// the raw decrypted value, getStoredSettings() trims for display.
@@ -170,7 +172,7 @@ class AdminSettingsRepositoryTest extends TestCase {
 			}
 		);
 
-		$repository = new AdminSettingsRepository($config, $this->createMock(IAppConfig::class));
+		$repository = $this->repository($config, $this->createMock(IAppConfig::class));
 		$repository->persist(new ValidatedAdminSettings(
 			'https://pad.example.test',
 			'https://pad-api.example.test',
@@ -209,7 +211,7 @@ class AdminSettingsRepositoryTest extends TestCase {
 			}
 		);
 
-		$repository = new AdminSettingsRepository($config, $this->createMock(IAppConfig::class));
+		$repository = $this->repository($config, $this->createMock(IAppConfig::class));
 		$repository->persist(new ValidatedAdminSettings(
 			'https://pad.example.test',
 			'https://pad-api.example.test',
@@ -239,7 +241,7 @@ class AdminSettingsRepositoryTest extends TestCase {
 			static fn (string $appName, string $key, string $default = ''): string => $default
 		);
 
-		$repository = new AdminSettingsRepository($config, $this->createMock(IAppConfig::class));
+		$repository = $this->repository($config, $this->createMock(IAppConfig::class));
 		$this->assertFalse($repository->getStoredSettings()->allowLegacyProtectedImport);
 	}
 
@@ -249,9 +251,29 @@ class AdminSettingsRepositoryTest extends TestCase {
 			static fn (string $appName, string $key, string $default = ''): string => $default
 		);
 
-		$stored = (new AdminSettingsRepository($config, $this->createMock(IAppConfig::class)))->getStoredSettings();
+		$stored = ($this->repository($config, $this->createMock(IAppConfig::class)))->getStoredSettings();
 
 		$this->assertTrue($stored->enableProtectedPads);
 		$this->assertTrue($stored->enablePublicPads);
+	}
+
+	/**
+	 * Until the setting is taken over, the form shows the old key's
+	 * opt-out, as the sweep goes by it: saved, the form keeps it rather
+	 * than write the new key's default over it.
+	 */
+	public function testTheFormShowsTheOldOptOutUntilTheSettingIsTakenOver(): void {
+		$stored = ['delete_on_trash' => 'no'];
+		$appConfig = $this->createMock(IAppConfig::class);
+		$appConfig->method('getValueString')->willReturnCallback(static fn (string $app, string $key, string $default = ''): string => $stored[$key] ?? $default);
+		$config = $this->createMock(IConfig::class);
+		$config->method('getAppValue')->willReturnCallback(static fn (string $appName, string $key, string $default = ''): string => $default);
+
+		$this->assertFalse($this->repository($config, $appConfig)->getStoredSettings()->deletePadWithFile);
+	}
+
+	/** Reads the delete setting through AppConfigService, over the same stores. */
+	private function repository(IConfig $config, IAppConfig $appConfig): AdminSettingsRepository {
+		return new AdminSettingsRepository($config, $appConfig, new AppConfigService($config, $this->createMock(TrustedEmbedOriginsNormalizer::class), $appConfig));
 	}
 }
