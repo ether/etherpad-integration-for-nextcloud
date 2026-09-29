@@ -11,6 +11,7 @@ namespace OCA\EtherpadNextcloud\Service;
 
 use OCA\EtherpadNextcloud\AppInfo\Application;
 use OCA\EtherpadNextcloud\Exception\BindingMismatchException;
+use OCA\EtherpadNextcloud\Exception\PadLostException;
 use OCA\EtherpadNextcloud\Exception\BindingNotCreatedException;
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
 use OCA\EtherpadNextcloud\Exception\EtherpadRefusedException;
@@ -48,6 +49,7 @@ final class ApiErrorLog {
 	private const QUIET_SECONDS = 60;
 	private const ETHERPAD_UNREACHABLE = 'Etherpad could not be reached while answering a request.';
 	private const ETHERPAD_REFUSED = 'Etherpad refused a request.';
+	private const PAD_LOST = 'Etherpad has lost the pad of a file; opening the file offers a new one from its content.';
 
 	public function __construct(
 		private ICacheFactory $cacheFactory,
@@ -70,6 +72,11 @@ final class ApiErrorLog {
 			// admin: once a minute for each file. A request naming none -
 			// a single-file share, say - shares one minute with the rest.
 			$this->onceAMinute(self::ETHERPAD_REFUSED, $file === null ? 'refused' : 'refused-' . md5($file), $context);
+		} elseif ($e instanceof PadLostException) {
+			// Worth an admin's eye, as a refusal is: once a minute for
+			// each file, however often it is opened before someone makes
+			// the new pad.
+			$this->onceAMinute(self::PAD_LOST, $file === null ? 'lost' : 'lost-' . md5($file), $context);
 		} elseif ($failure !== null) {
 			$this->logger->error($failure, $context);
 		} elseif ($e instanceof BindingNotCreatedException) {

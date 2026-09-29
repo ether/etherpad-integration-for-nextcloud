@@ -11,6 +11,7 @@ namespace OCA\EtherpadNextcloud\Service;
 
 use OCA\EtherpadNextcloud\Exception\NotAPadFileException;
 use OCA\EtherpadNextcloud\Exception\PadFileLockRetryExhaustedException;
+use OCA\EtherpadNextcloud\Exception\PadLostException;
 use OCA\EtherpadNextcloud\Util\PadFileType;
 use OCA\EtherpadNextcloud\Util\SafeError;
 use OCP\Files\File;
@@ -39,6 +40,7 @@ class PadSyncService {
 
 	/**
 	 * @throws NotFoundException
+	 * @throws PadLostException when Etherpad made the pad anew in place of the file's
 	 */
 	public function syncById(string $uid, int $fileId, bool $force): PadSyncResult {
 		$node = $this->userNodeResolver->resolveUserFileNodeById($uid, $fileId);
@@ -187,8 +189,30 @@ class PadSyncService {
 			}
 		}
 
+		// A pad Etherpad made anew in place of the file's - at revision 0,
+		// with its default text - is not the file's document, and its text
+		// written over the file would leave the saved content to the file's
+		// versions: the open would no longer find the pad lost and offer a
+		// new pad from the file. Refused, as the open refuses it. Only a
+		// forced sync gets this far with such a pad. A pad behind the
+		// snapshot that holds a revision still syncs: files a restore in
+		// 1.1.0-beta.1 left kept the old pad's revision count, and only a
+		// forced sync brings them up to date.
+		if (ManagedPadLifecycle::isMadeAnew($currentRev, $text, $snapshotRev, $pad->savedText)) {
+			throw new PadLostException('Etherpad has lost the pad of this file.');
+		}
+
 		$updatedContent = $this->padFileService->withExportSnapshot($pad, new PadSnapshot($text, $html, $currentRev));
-		$lockRetries = $this->lockRetryService->putContentWithSyncLockRetry($node, $updatedContent);
+		// Asked again right before each write attempt, the ones after a wait
+		// for a lock too: a recovery may have moved the row onto a new pad
+		// while Etherpad was asked, or while the sync waited, and written the
+		// file for it. This pad's text written over that would leave file and
+		// row naming two pads, which no open gets past.
+		$lockRetries = $this->lockRetryService->putContentWithSyncLockRetry(
+			$node,
+			$updatedContent,
+			fn () => $this->bindingService->assertConsistentMapping($fileId, $padId, $pad->accessMode),
+		);
 
 		return new PadSyncResult(
 			status: self::STATUS_UPDATED,

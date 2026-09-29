@@ -11,8 +11,8 @@ This plugin lets you surface pads from an Etherpad instance inside Nextcloud and
 - Public folder/file share support for `.pad`
 - Periodic sync from Etherpad into `.pad` snapshots
 - Pad text is searchable through Nextcloud's full-text search, where that is set up
-- Trash deletes on Etherpad (with deferred retry when Etherpad is temporarily unavailable)
-- Restore recreates pads from `.pad` snapshot data
+- A pad lives as long as its file: the trash keeps it, and it goes once the file is deleted for good
+- A `.pad` file whose pad is gone gets a new one from its snapshot: at once when it comes back from the trash, and offered when it is opened
 
 ## Screenshots
 
@@ -100,7 +100,7 @@ and configure:
 - Etherpad API key (OAuth is not required; Etherpad API key auth is used)
 - Copy content to `.pad` file interval
 - Which pad types users may create (see below)
-- Delete-on-trash policy
+- Whether a pad is deleted with its file deleted for good
 - External public pad policy
 
 Two settings control which pad types the app offers, both enabled by default:
@@ -235,9 +235,10 @@ existing name asks for confirmation because the previous file is gone for good.
 
 ### Trash/Restore
 
-- When a `.pad` file is moved to the Nextcloud trash, the linked Etherpad pad is deleted.
-- If Etherpad is temporarily unavailable, delete is deferred and retried.
-- When the `.pad` file is restored from the Nextcloud trash, a new pad is recreated and the snapshot from the `.pad` file is replayed.
+- A `.pad` file moved to the Nextcloud trash keeps its pad; restored, it has the same pad back, with its history.
+- Once the file is deleted for good - from the trash, past it, or with the account that owned it - a background job deletes the pad within minutes, and tries again while Etherpad is unavailable.
+- A file restored without a pad - one Etherpad lost, or one trashed under 1.1.0-beta.1 - gets a new pad from the snapshot in the file.
+- What each way of deleting a file does to its pad: [docs/deleting-pads.md](docs/deleting-pads.md).
 
 ## Troubleshooting
 
@@ -293,6 +294,7 @@ existing name asks for confirmation because the previous file is gone for good.
 ## Documentation
 
 - Architecture: [docs/architecture.md](docs/architecture.md)
+- When a pad is deleted: [docs/deleting-pads.md](docs/deleting-pads.md)
 - API routes: [docs/api-reference.md](docs/api-reference.md)
 - Etherpad integration details: [docs/etherpad-integration.md](docs/etherpad-integration.md)
 - `.pad` format: [docs/pad-format.md](docs/pad-format.md)

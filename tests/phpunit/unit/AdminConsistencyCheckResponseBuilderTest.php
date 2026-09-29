@@ -14,23 +14,25 @@ class AdminConsistencyCheckResponseBuilderTest extends TestCase {
 
 		$this->assertTrue((bool)$response['ok']);
 		$this->assertSame('Consistency check successful. No issues found.', $response['message']);
-		$this->assertSame(0, $response['binding_without_file_count']);
+		$this->assertSame(0, $response['vanished_file_count']);
+		$this->assertArrayNotHasKey('binding_without_file_count', $response);
 	}
 
+	/** Only a vanished file is an issue: one seen deleted for good is on its way. */
 	public function testBuildsIssueMessage(): void {
 		$response = $this->buildBuilder()->build($this->consistencyResult([
-			'binding_without_file_count' => 2,
+			'vanished_file_count' => 2,
 		]));
 
 		$this->assertSame('Consistency check finished with issues.', $response['message']);
-		$this->assertSame(2, $response['binding_without_file_count']);
+		$this->assertSame(2, $response['vanished_file_count']);
 	}
 
 	/** @param array<string,mixed> $overrides */
 	private function consistencyResult(array $overrides = []): array {
 		return $overrides + [
-			'binding_without_file_count' => 0,
-			'samples' => ['bindings_without_file' => []],
+			'vanished_file_count' => 0,
+			'samples' => ['vanished_files' => []],
 		];
 	}
 

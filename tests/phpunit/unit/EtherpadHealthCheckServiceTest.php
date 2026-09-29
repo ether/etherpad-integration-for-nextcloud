@@ -497,10 +497,9 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 		$etherpad->expects($this->once())
 			->method('assertApiKeyAccepted')
 			->with('https://pad-api.example.test', new ApiKey('ep-api-0123456789abcdef'), '1.3.0');
-		$result = ($this->buildService($etherpad, $this->bindingCounts(3, 2)))->check($this->settings());
+		$result = ($this->buildService($etherpad, $this->bindingCounts(3)))->check($this->settings());
 
 		$this->assertSame(3, $result->pendingDeleteCount);
-		$this->assertSame(2, $result->restorePendingCount);
 		$this->assertSame('https://pad-api.example.test/api/1.3.0/checkToken', $result->target);
 	}
 
@@ -780,12 +779,9 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 		);
 	}
 
-	private function bindingCounts(int $pendingDeletes = 0, int $pendingRestores = 0): BindingService {
+	private function bindingCounts(int $pendingDeletes = 0): BindingService {
 		$bindings = $this->createMock(BindingService::class);
-		$bindings->method('countWaiting')->willReturn([
-			'pending_delete_count' => $pendingDeletes,
-			'restore_pending_count' => $pendingRestores,
-		]);
+		$bindings->method('countPendingDeletes')->willReturn($pendingDeletes);
 		return $bindings;
 	}
 

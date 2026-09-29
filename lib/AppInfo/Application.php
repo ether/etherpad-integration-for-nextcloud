@@ -16,7 +16,6 @@ use OCP\AppFramework\App;
 use OCP\AppFramework\Bootstrap\IBootContext;
 use OCP\AppFramework\Bootstrap\IBootstrap;
 use OCP\AppFramework\Bootstrap\IRegistrationContext;
-use OCP\BackgroundJob\IJobList;
 use OCP\EventDispatcher\GenericEvent;
 use OCP\Files\Template\FileCreatedFromTemplateEvent;
 use OCP\Files\Template\RegisterTemplateCreatorEvent;
@@ -111,16 +110,43 @@ class Application extends App implements IBootstrap {
 			\OCP\User\Events\UserLoggedOutEvent::class,
 			\OCA\EtherpadNextcloud\Listeners\UserLoggedOutListener::class,
 		);
+		// So does deleting an account, before its Etherpad author goes with
+		// its settings.
+		$context->registerEventListener(
+			\OCP\User\Events\BeforeUserDeletedEvent::class,
+			\OCA\EtherpadNextcloud\Listeners\RevokeSessionsOnAccountDeleteListener::class,
+		);
 
-		$context->registerEventListener(
-			'OCA\\Files_Trashbin\\Events\\MoveToTrashEvent',
-			\OCA\EtherpadNextcloud\Listeners\MoveToTrashListener::class,
-		);
-		// NC fallback: legacy string event is dispatched alongside typed move-to-trash.
-		$context->registerEventListener(
-			'OCA\\Files_Trashbin::moveToTrash',
-			\OCA\EtherpadNextcloud\Listeners\MoveToTrashListener::class,
-		);
+		// Marks the rows of files deleted for good, for the sweep that deletes
+		// their pads. One instance hears them all, so the removals a delete
+		// makes are known for that delete.
+		foreach ([
+			\OCP\Files\Cache\CacheEntryRemovedEvent::class,
+			\OCP\Files\Cache\CacheEntryInsertedEvent::class,
+			\OCP\Files\Events\Node\BeforeNodeDeletedEvent::class,
+			\OCP\Files\Events\Node\NodeDeletedEvent::class,
+			// What `occ files:scan` drops, which is no deletion.
+			\OCP\Files\Events\NodeRemovedFromCache::class,
+			// Every delete through a node, a trash's too, which raises no
+			// NodeDeletedEvent: a point to write the marks at.
+			'\\OCP\\Files::postDelete',
+			\OCP\User\Events\BeforeUserDeletedEvent::class,
+			\OCP\User\Events\UserDeletedEvent::class,
+			// The trash app's, as strings: its classes are not there without it.
+			'OCA\\Files_Trashbin\\Events\\BeforeNodeRestoredEvent',
+			'OCA\\Files_Trashbin\\Events\\NodeRestoredEvent',
+		] as $event) {
+			$context->registerEventListener($event, \OCA\EtherpadNextcloud\Listeners\GoneFilesListener::class);
+		}
+		// Nextcloud 34 on; a string, as the class is not there before. Ahead
+		// of other listeners: one that throws first keeps the block from
+		// this one, and with it the word that its ids are wrong.
+		$context->registerEventListener('OCP\\Files\\Cache\\CacheEntriesRemovedEvent', \OCA\EtherpadNextcloud\Listeners\GoneFilesListener::class, 100);
+		// A delete, to the trash or past it, takes the sessions of the
+		// protected pads it takes along: found before, taken once it is done.
+		foreach ([\OCP\Files\Events\Node\BeforeNodeDeletedEvent::class, \OCP\Files\Events\Node\NodeDeletedEvent::class] as $event) {
+			$context->registerEventListener($event, \OCA\EtherpadNextcloud\Listeners\RevokeSessionsOnDeleteListener::class);
+		}
 		$context->registerEventListener(
 			'OCA\\Files_Trashbin\\Events\\NodeRestoredEvent',
 			\OCA\EtherpadNextcloud\Listeners\RestoreFromTrashListener::class,
@@ -139,11 +165,12 @@ class Application extends App implements IBootstrap {
 		);
 	}
 
+	/**
+	 * Nothing to do per request. The sweep's job is declared in info.xml,
+	 * which Nextcloud registers on install and upgrade: adding it here,
+	 * as before, ran on every request, and an add for a job that exists
+	 * resets its last run, so it ran on every cron tick.
+	 */
 	public function boot(IBootContext $context): void {
-		$context->injectFn(function (IJobList $jobList): void {
-			$jobList->add(\OCA\EtherpadNextcloud\BackgroundJob\HotPendingDeleteRetryJob::class);
-			$jobList->add(\OCA\EtherpadNextcloud\BackgroundJob\WarmPendingDeleteRetryJob::class);
-			$jobList->add(\OCA\EtherpadNextcloud\BackgroundJob\ColdPendingDeleteRetryJob::class);
-		});
 	}
 }

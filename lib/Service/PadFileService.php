@@ -172,14 +172,16 @@ class PadFileService {
 		$frontmatter = $parsed['frontmatter'];
 		$meta = $this->extractPadMetadata($frontmatter);
 		$padId = $meta['pad_id'];
+		$body = (string)($parsed['body'] ?? '');
 		return new ParsedPadFile(
 			frontmatter: $frontmatter,
-			body: (string)($parsed['body'] ?? ''),
+			body: $body,
 			padId: $padId,
 			accessMode: $meta['access_mode'],
 			padUrl: $meta['pad_url'],
 			isExternal: $this->isExternalFrontmatter($frontmatter, $padId),
 			snapshotRev: $this->getSnapshotRevisionFromFrontmatter($frontmatter),
+			savedText: $this->splitSnapshotBody($body)['text'],
 		);
 	}
 

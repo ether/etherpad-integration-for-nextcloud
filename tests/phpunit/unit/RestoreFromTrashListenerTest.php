@@ -12,7 +12,6 @@ use OCA\EtherpadNextcloud\Service\Binding;
 use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\EtherpadNextcloud\Service\EtherpadClient;
 use OCA\EtherpadNextcloud\Service\LifecycleResult;
-use OCA\EtherpadNextcloud\Service\LifecycleService;
 use OCA\EtherpadNextcloud\Service\PadFileService;
 use OCA\EtherpadNextcloud\Service\ParsedPadFile;
 use OCA\EtherpadNextcloud\Service\UserNodeResolver;
@@ -48,14 +47,14 @@ class RestoreFromTrashListenerTest extends TestCase {
 		$file->method('getName')->willReturn('Notes.pad');
 		$file->method('getId')->willReturn(42);
 
-		$lifecycleService = $this->createMock(LifecycleService::class);
-		$lifecycleService->expects($this->once())
-			->method('handleRestore')
+		$restores = $this->createMock(RestoreService::class);
+		$restores->expects($this->once())
+			->method('restore')
 			->with($file)
 			->willReturn(['status' => LifecycleResult::RESTORED]);
 
 		$listener = new RestoreFromTrashListener(
-			$lifecycleService,
+			$restores,
 			$this->createMock(IUserSession::class),
 			$this->createMock(UserNodeResolver::class),
 			$this->createMock(LoggerInterface::class),
@@ -89,14 +88,14 @@ class RestoreFromTrashListenerTest extends TestCase {
 			->with('alice', '/G - Jacobs Test Gruppe/Neues Pad 9.pad')
 			->willReturn($file);
 
-		$lifecycleService = $this->createMock(LifecycleService::class);
-		$lifecycleService->expects($this->once())
-			->method('handleRestore')
+		$restores = $this->createMock(RestoreService::class);
+		$restores->expects($this->once())
+			->method('restore')
 			->with($file)
 			->willReturn(['status' => LifecycleResult::RESTORED]);
 
 		$listener = new RestoreFromTrashListener(
-			$lifecycleService,
+			$restores,
 			$userSession,
 			$resolver,
 			$this->createMock(LoggerInterface::class),
@@ -130,14 +129,14 @@ class RestoreFromTrashListenerTest extends TestCase {
 			->with('alice', '/files/Notes.pad')
 			->willReturn($file);
 
-		$lifecycleService = $this->createMock(LifecycleService::class);
-		$lifecycleService->expects($this->once())
-			->method('handleRestore')
+		$restores = $this->createMock(RestoreService::class);
+		$restores->expects($this->once())
+			->method('restore')
 			->with($file)
 			->willReturn(['status' => LifecycleResult::RESTORED]);
 
 		$listener = new RestoreFromTrashListener(
-			$lifecycleService,
+			$restores,
 			$userSession,
 			$resolver,
 			$this->createMock(LoggerInterface::class),
@@ -170,14 +169,14 @@ class RestoreFromTrashListenerTest extends TestCase {
 		$rootFolder = $this->createMock(IRootFolder::class);
 		$rootFolder->method('getUserFolder')->with('alice')->willReturn($userFolder);
 
-		$lifecycleService = $this->createMock(LifecycleService::class);
-		$lifecycleService->expects($this->once())
-			->method('handleRestore')
+		$restores = $this->createMock(RestoreService::class);
+		$restores->expects($this->once())
+			->method('restore')
 			->with($this->identicalTo($inFolder))
 			->willReturn(['status' => LifecycleResult::RESTORED]);
 
 		$listener = new RestoreFromTrashListener(
-			$lifecycleService,
+			$restores,
 			$this->sessionFor('alice'),
 			new UserNodeResolver($rootFolder),
 			$this->createMock(LoggerInterface::class),
@@ -196,14 +195,14 @@ class RestoreFromTrashListenerTest extends TestCase {
 		$resolver = $this->createMock(UserNodeResolver::class);
 		$resolver->expects($this->never())->method('resolveUserFileNodeByPath');
 
-		$lifecycleService = $this->createMock(LifecycleService::class);
-		$lifecycleService->expects($this->never())->method('handleRestore');
+		$restores = $this->createMock(RestoreService::class);
+		$restores->expects($this->never())->method('restore');
 
 		$logger = $this->createMock(LoggerInterface::class);
 		$logger->expects($this->never())->method($this->anything());
 
 		$listener = new RestoreFromTrashListener(
-			$lifecycleService,
+			$restores,
 			$this->sessionFor('alice'),
 			$resolver,
 			$logger,
@@ -249,8 +248,8 @@ class RestoreFromTrashListenerTest extends TestCase {
 	/** @param \Closure(self): UserNodeResolver $resolver */
 	#[\PHPUnit\Framework\Attributes\DataProvider('passedOverPadProvider')]
 	public function testAPadThatCannotBeTakenIsPassedOverWithItsReason(\Closure $resolver, ?string $uid, string $reason): void {
-		$lifecycleService = $this->createMock(LifecycleService::class);
-		$lifecycleService->expects($this->never())->method('handleRestore');
+		$restores = $this->createMock(RestoreService::class);
+		$restores->expects($this->never())->method('restore');
 
 		$logger = $this->createMock(LoggerInterface::class);
 		$this->closeEveryLevelExcept($logger, 'warning');
@@ -266,7 +265,7 @@ class RestoreFromTrashListenerTest extends TestCase {
 			);
 
 		$listener = new RestoreFromTrashListener(
-			$lifecycleService,
+			$restores,
 			$uid === null ? $this->noSession() : $this->sessionFor($uid),
 			$resolver($this),
 			$logger,
@@ -296,8 +295,8 @@ class RestoreFromTrashListenerTest extends TestCase {
 		$file->method('getName')->willReturn('Notes.pad');
 		$resolver = $this->createMock(UserNodeResolver::class);
 		$resolver->method('resolveUserFileNodeByPath')->willReturn($file);
-		$lifecycleService = $this->createMock(LifecycleService::class);
-		$lifecycleService->expects($this->once())->method('handleRestore')->willThrowException(new \TypeError('a pad step gone wrong'));
+		$restores = $this->createMock(RestoreService::class);
+		$restores->expects($this->once())->method('restore')->willThrowException(new \TypeError('a pad step gone wrong'));
 
 		$logger = $this->createMock(LoggerInterface::class);
 		$this->closeEveryLevelExcept($logger, 'error');
@@ -313,7 +312,7 @@ class RestoreFromTrashListenerTest extends TestCase {
 				}),
 			);
 
-		$listener = new RestoreFromTrashListener($lifecycleService, $this->sessionFor('alice'), $resolver, $logger);
+		$listener = new RestoreFromTrashListener($restores, $this->sessionFor('alice'), $resolver, $logger);
 
 		// No expectException: nothing may leave the listener.
 		if ($entry === 'hook') {
@@ -343,12 +342,12 @@ class RestoreFromTrashListenerTest extends TestCase {
 		$resolved->method('getId')->willReturn(7);
 		$resolver = $this->createMock(UserNodeResolver::class);
 		$resolver->expects($this->once())->method('resolveUserFileNodeByPath')->with('alice', 'Notes.pad')->willReturn($resolved);
-		$lifecycleService = $this->createMock(LifecycleService::class);
-		$lifecycleService->expects($this->once())->method('handleRestore')->with($resolved)->willReturn(LifecycleResult::restored('pad-a', 'pad-a'));
+		$restores = $this->createMock(RestoreService::class);
+		$restores->expects($this->once())->method('restore')->with($resolved)->willReturn(LifecycleResult::restored('pad-a', 'pad-a'));
 		$logger = $this->createMock(LoggerInterface::class);
 		$logger->expects($this->never())->method($this->anything());
 
-		$listener = new RestoreFromTrashListener($lifecycleService, $this->createMock(IUserSession::class), $resolver, $logger);
+		$listener = new RestoreFromTrashListener($restores, $this->createMock(IUserSession::class), $resolver, $logger);
 		$listener->handle($this->restoreEventFor($photo));
 		$listener->handle($this->restoreEventFor($nameless));
 	}
@@ -356,9 +355,10 @@ class RestoreFromTrashListenerTest extends TestCase {
 	/**
 	 * A core restore comes by the hook first and by the event after it. When
 	 * the hook pass fails on something that passes - a database connection
-	 * dropped - the event pass is a second try and restores the pad: the one
-	 * error line names the hook, and the row ends up active. One line, since
-	 * the restore reports nothing of its own; the listener is what reports.
+	 * dropped - the event pass is a second try: a row seen deleted for good
+	 * whose file is back becomes active, and keeps its pad. The one error
+	 * line names the hook; the restore reports nothing of its own, beyond
+	 * the debug line of a pad left as it is.
 	 *
 	 * Real services rather than mocks: whether there is anything left to
 	 * try again depends on what the failed pass leaves behind.
@@ -385,7 +385,9 @@ class RestoreFromTrashListenerTest extends TestCase {
 		$resolver->method('resolveUserFileNodeByPath')->with('alice', '/Notes.pad')->willReturn($file);
 
 		$logger = $this->createMock(LoggerInterface::class);
-		$this->closeEveryLevelExcept($logger, 'error');
+		foreach (['emergency', 'alert', 'critical', 'warning', 'notice', 'info', 'log'] as $level) {
+			$logger->expects($this->never())->method($level);
+		}
 		$logger->expects($this->once())
 			->method('error')
 			->with(
@@ -398,7 +400,7 @@ class RestoreFromTrashListenerTest extends TestCase {
 			);
 
 		$listener = new RestoreFromTrashListener(
-			$this->lifecycleService(bindings: $bindingService, etherpad: $etherpadClient, padFiles: $padFiles, logger: $logger),
+			$this->restoreService(bindings: $bindingService, etherpad: $etherpadClient, padFiles: $padFiles, logger: $logger),
 			$this->sessionFor('alice'),
 			$resolver,
 			$logger,
@@ -413,24 +415,27 @@ class RestoreFromTrashListenerTest extends TestCase {
 		// What the hook pass came to, and whether the event pass after it goes ahead.
 		yield 'Etherpad did not answer, the row left waiting' => [['status' => LifecycleResult::SKIPPED, 'reason' => RestoreService::REASON_PRESENCE_UNKNOWN], false];
 		yield 'Etherpad failed' => [LifecycleException::failed('Restore', new EtherpadClientException('Etherpad API request failed: createPad', 0, new \RuntimeException('Operation timed out'))), false];
-		yield 'the pad restored' => [['status' => LifecycleResult::RESTORED], true];
+		yield 'the pad restored' => [['status' => LifecycleResult::RESTORED], false];
+		yield 'the pad left as it is' => [['status' => LifecycleResult::SKIPPED, 'reason' => 'pad_present'], false];
 		yield 'the file could not be read' => [['status' => LifecycleResult::SKIPPED, 'reason' => 'file_unreadable'], true];
 		yield 'the database failed' => [LifecycleException::failed('Restore', new \RuntimeException('connection lost')), true];
 	}
 
 	/**
 	 * The event pass of a core restore is a second try at what the hook
-	 * pass left undone, save a hook pass that asked Etherpad and got no
-	 * answer or an error: asking again would only cost a second timeout
-	 * with an Etherpad that hangs. It then leaves that file, once; a hook
-	 * pass is never left out - for groupfolders, which fires no event, it
-	 * is the only one - and each starts afresh, so what an earlier hook
-	 * pass left behind speaks for no later one.
+	 * pass could not do: a file it could not read, an error that may pass.
+	 * What the hook pass decided it leaves, rather than ask Etherpad the
+	 * same again; so it does after a hook pass that asked Etherpad and got
+	 * no answer or an error, which would only cost a second timeout with an
+	 * Etherpad that hangs. It leaves that file once; a hook pass is never
+	 * left out - for groupfolders, which fires no event, it is the only
+	 * one - and each starts afresh, so what an earlier hook pass left
+	 * behind speaks for no later one.
 	 *
 	 * @param array{status: string, reason?: string}|\Throwable $outcome
 	 */
 	#[\PHPUnit\Framework\Attributes\DataProvider('hookOutcomes')]
-	public function testTheEventLeavesOnlyAFileEtherpadFailedTheHookOn(array|\Throwable $outcome, bool $eventGoesAhead): void {
+	public function testTheEventLeavesWhatTheHookDecided(array|\Throwable $outcome, bool $eventGoesAhead): void {
 		$file = $this->createMock(File::class);
 		$file->method('getId')->willReturn(4712);
 		$file->method('getName')->willReturn('Notes.pad');
@@ -438,8 +443,8 @@ class RestoreFromTrashListenerTest extends TestCase {
 		$hookFile = $this->createMock(File::class);
 		$hookFile->method('getId')->willReturn(4712);
 		$passes = [];
-		$lifecycleService = $this->createMock(LifecycleService::class);
-		$lifecycleService->method('handleRestore')->willReturnCallback(static function (File $node) use (&$passes, $outcome, $hookFile): array {
+		$restores = $this->createMock(RestoreService::class);
+		$restores->method('restore')->willReturnCallback(static function (File $node) use (&$passes, $outcome, $hookFile): array {
 			$passes[] = $node === $hookFile ? 'hook' : 'event';
 			if ($node === $hookFile && $outcome instanceof \Throwable) {
 				throw $outcome;
@@ -448,7 +453,7 @@ class RestoreFromTrashListenerTest extends TestCase {
 		});
 		$resolver = $this->createMock(UserNodeResolver::class);
 		$resolver->method('resolveUserFileNodeByPath')->with('alice', '/Notes.pad')->willReturn($hookFile);
-		$listener = new RestoreFromTrashListener($lifecycleService, $this->sessionFor('alice'), $resolver, $this->createMock(LoggerInterface::class));
+		$listener = new RestoreFromTrashListener($restores, $this->sessionFor('alice'), $resolver, $this->createMock(LoggerInterface::class));
 
 		$listener->handleLegacyHook(['filePath' => '/Notes.pad']);
 		$listener->handle($this->restoreEventFor($file));
@@ -472,15 +477,15 @@ class RestoreFromTrashListenerTest extends TestCase {
 			LifecycleException::failed('Restore', new \RuntimeException('connection lost')),
 		];
 		$passes = 0;
-		$lifecycleService = $this->createMock(LifecycleService::class);
-		$lifecycleService->method('handleRestore')->willReturnCallback(static function () use (&$passes, &$outcomes): array {
+		$restores = $this->createMock(RestoreService::class);
+		$restores->method('restore')->willReturnCallback(static function () use (&$passes, &$outcomes): array {
 			$passes++;
 			$outcome = array_shift($outcomes);
 			return $outcome === null ? ['status' => LifecycleResult::RESTORED] : throw $outcome;
 		});
 		$resolver = $this->createMock(UserNodeResolver::class);
 		$resolver->method('resolveUserFileNodeByPath')->willReturn($file);
-		$listener = new RestoreFromTrashListener($lifecycleService, $this->sessionFor('alice'), $resolver, $this->createMock(LoggerInterface::class));
+		$listener = new RestoreFromTrashListener($restores, $this->sessionFor('alice'), $resolver, $this->createMock(LoggerInterface::class));
 
 		$listener->handleLegacyHook(['filePath' => '/Notes.pad']);
 		$listener->handleLegacyHook(['filePath' => '/Notes.pad']);
@@ -492,7 +497,8 @@ class RestoreFromTrashListenerTest extends TestCase {
 	/**
 	 * What a hook pass left is its own file's: after a groupfolder's
 	 * restore that Etherpad failed - a hook and no event - a core restore
-	 * of another file goes ahead in both its passes.
+	 * of another file whose hook pass the database failed goes ahead in
+	 * its event pass.
 	 */
 	public function testAHookPassSpeaksOnlyForItsOwnFile(): void {
 		$first = $this->createMock(File::class);
@@ -501,14 +507,18 @@ class RestoreFromTrashListenerTest extends TestCase {
 		$other->method('getId')->willReturn(4713);
 		$other->method('getName')->willReturn('Other.pad');
 		$passes = [];
-		$lifecycleService = $this->createMock(LifecycleService::class);
-		$lifecycleService->method('handleRestore')->willReturnCallback(static function (File $node) use (&$passes, $first): array {
+		$restores = $this->createMock(RestoreService::class);
+		$restores->method('restore')->willReturnCallback(static function (File $node) use (&$passes, $first): array {
 			$passes[] = $node->getId();
-			return $node === $first ? throw LifecycleException::failed('Restore', new EtherpadClientException('Etherpad API request failed: createPad')) : ['status' => LifecycleResult::RESTORED];
+			return match (true) {
+				$node === $first => throw LifecycleException::failed('Restore', new EtherpadClientException('Etherpad API request failed: createPad')),
+				count($passes) === 2 => throw LifecycleException::failed('Restore', new \RuntimeException('connection lost')),
+				default => ['status' => LifecycleResult::RESTORED],
+			};
 		});
 		$resolver = $this->createMock(UserNodeResolver::class);
 		$resolver->method('resolveUserFileNodeByPath')->willReturnMap([['alice', '/Notes.pad', $first], ['alice', '/Other.pad', $other]]);
-		$listener = new RestoreFromTrashListener($lifecycleService, $this->sessionFor('alice'), $resolver, $this->createMock(LoggerInterface::class));
+		$listener = new RestoreFromTrashListener($restores, $this->sessionFor('alice'), $resolver, $this->createMock(LoggerInterface::class));
 
 		$listener->handleLegacyHook(['filePath' => '/Notes.pad']);
 		$listener->handleLegacyHook(['filePath' => '/Other.pad']);
@@ -526,11 +536,11 @@ class RestoreFromTrashListenerTest extends TestCase {
 		$file = $this->createMock(File::class);
 		$file->method('getId')->willReturn(4712);
 		$file->method('getName')->willReturn('Notes.pad');
-		$lifecycleService = $this->createMock(LifecycleService::class);
-		$lifecycleService->expects($this->exactly(2))
-			->method('handleRestore')
+		$restores = $this->createMock(RestoreService::class);
+		$restores->expects($this->exactly(2))
+			->method('restore')
 			->willReturn(['status' => LifecycleResult::SKIPPED, 'reason' => RestoreService::REASON_PRESENCE_UNKNOWN]);
-		$listener = new RestoreFromTrashListener($lifecycleService, $this->createMock(IUserSession::class), $this->createMock(UserNodeResolver::class), $this->createMock(LoggerInterface::class));
+		$listener = new RestoreFromTrashListener($restores, $this->createMock(IUserSession::class), $this->createMock(UserNodeResolver::class), $this->createMock(LoggerInterface::class));
 
 		$listener->handle($this->restoreEventFor($file));
 		$listener->handle($this->restoreEventFor($file));
@@ -544,13 +554,13 @@ class RestoreFromTrashListenerTest extends TestCase {
 		$eventNode->method('getId')->willReturn(-1);
 		$eventNode->method('getName')->willReturn('Other.pad');
 		$passes = 0;
-		$lifecycleService = $this->createMock(LifecycleService::class);
-		$lifecycleService->method('handleRestore')->willReturnCallback(static function () use (&$passes): array {
+		$restores = $this->createMock(RestoreService::class);
+		$restores->method('restore')->willReturnCallback(static function () use (&$passes): array {
 			return ++$passes === 1 ? throw LifecycleException::failed('Restore', new EtherpadClientException('Etherpad API request failed: createPad')) : ['status' => LifecycleResult::RESTORED];
 		});
 		$resolver = $this->createMock(UserNodeResolver::class);
 		$resolver->method('resolveUserFileNodeByPath')->willReturn($hookNode);
-		$listener = new RestoreFromTrashListener($lifecycleService, $this->sessionFor('alice'), $resolver, $this->createMock(LoggerInterface::class));
+		$listener = new RestoreFromTrashListener($restores, $this->sessionFor('alice'), $resolver, $this->createMock(LoggerInterface::class));
 
 		$listener->handleLegacyHook(['filePath' => '/Notes.pad']);
 		$listener->handle($this->restoreEventFor($eventNode));
@@ -559,7 +569,7 @@ class RestoreFromTrashListenerTest extends TestCase {
 	}
 
 	/**
-	 * A node whose id cannot be read would throw on handleRestore's first
+	 * A node whose id cannot be read would throw on restore()'s first
 	 * line, and be reported as a failed restore of its pad - on the event,
 	 * where Nextcloud 31 hands over such a node, for every .pad restored.
 	 * Both ways in hold the node they hand on to the same standard, so both
@@ -577,8 +587,8 @@ class RestoreFromTrashListenerTest extends TestCase {
 		$resolver = $this->createMock(UserNodeResolver::class);
 		$resolver->method('resolveUserFileNodeByPath')->willReturn($stillUnreadable);
 
-		$lifecycleService = $this->createMock(LifecycleService::class);
-		$lifecycleService->expects($this->never())->method('handleRestore');
+		$restores = $this->createMock(RestoreService::class);
+		$restores->expects($this->never())->method('restore');
 
 		$logger = $this->createMock(LoggerInterface::class);
 		$this->closeEveryLevelExcept($logger, 'warning');
@@ -594,7 +604,7 @@ class RestoreFromTrashListenerTest extends TestCase {
 				}),
 			);
 
-		$listener = new RestoreFromTrashListener($lifecycleService, $this->sessionFor('alice'), $resolver, $logger);
+		$listener = new RestoreFromTrashListener($restores, $this->sessionFor('alice'), $resolver, $logger);
 
 		if ($entry === 'hook') {
 			$listener->handleLegacyHook(['filePath' => '/Notes.pad']);
@@ -633,14 +643,14 @@ class RestoreFromTrashListenerTest extends TestCase {
 		$userSession = $this->createMock(IUserSession::class);
 		$userSession->expects($this->never())->method('getUser');
 
-		$lifecycleService = $this->createMock(LifecycleService::class);
-		$lifecycleService->expects($this->once())
-			->method('handleRestore')
+		$restores = $this->createMock(RestoreService::class);
+		$restores->expects($this->once())
+			->method('restore')
 			->with($resolved)
 			->willReturn(['status' => LifecycleResult::RESTORED]);
 
 		$listener = new RestoreFromTrashListener(
-			$lifecycleService,
+			$restores,
 			$userSession,
 			$resolver,
 			$this->createMock(LoggerInterface::class),
@@ -681,8 +691,8 @@ class RestoreFromTrashListenerTest extends TestCase {
 		});
 
 		$boom = new \RuntimeException('lifecycle exploded');
-		$lifecycleService = $this->createMock(LifecycleService::class);
-		$lifecycleService->method('handleRestore')->willThrowException($boom);
+		$restores = $this->createMock(RestoreService::class);
+		$restores->method('restore')->willThrowException($boom);
 
 		$logger = $this->createMock(LoggerInterface::class);
 		$this->closeEveryLevelExcept($logger, 'error');
@@ -699,7 +709,7 @@ class RestoreFromTrashListenerTest extends TestCase {
 			);
 
 		$listener = new RestoreFromTrashListener(
-			$lifecycleService,
+			$restores,
 			$this->createMock(IUserSession::class),
 			$this->createMock(UserNodeResolver::class),
 			$logger,
@@ -725,8 +735,8 @@ class RestoreFromTrashListenerTest extends TestCase {
 		$resolver = $this->createMock(UserNodeResolver::class);
 		$resolver->expects($this->never())->method('resolveUserFileNodeByPath');
 
-		$lifecycleService = $this->createMock(LifecycleService::class);
-		$lifecycleService->expects($this->never())->method('handleRestore');
+		$restores = $this->createMock(RestoreService::class);
+		$restores->expects($this->never())->method('restore');
 
 		$logger = $this->createMock(LoggerInterface::class);
 		$this->closeEveryLevelExcept($logger, 'warning');
@@ -743,7 +753,7 @@ class RestoreFromTrashListenerTest extends TestCase {
 			);
 
 		$listener = new RestoreFromTrashListener(
-			$lifecycleService,
+			$restores,
 			$this->createMock(IUserSession::class),
 			$resolver,
 			$logger,

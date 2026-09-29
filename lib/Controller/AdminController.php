@@ -13,19 +13,22 @@ use OCA\EtherpadNextcloud\Exception\UnauthorizedRequestException;
 use OCA\EtherpadNextcloud\Service\AdminConsistencyCheckResponseBuilder;
 use OCA\EtherpadNextcloud\Service\AdminSettingsRepository;
 use OCA\EtherpadNextcloud\Service\AdminSettingsValidator;
-use OCA\EtherpadNextcloud\Service\AdminTestFaultService;
+use OCA\EtherpadNextcloud\Service\AppConfigService;
+use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\EtherpadNextcloud\Service\ConsistencyCheckService;
 use OCA\EtherpadNextcloud\Service\CookieDomainDecision;
 use OCA\EtherpadNextcloud\Service\CookieDomainMessages;
 use OCA\EtherpadNextcloud\Service\CookieDomainPolicy;
 use OCA\EtherpadNextcloud\Service\EtherpadHealthCheckService;
+use OCA\EtherpadNextcloud\Service\GoneFileSweep;
 use OCA\EtherpadNextcloud\Service\HealthCheckItem;
 use OCA\EtherpadNextcloud\Service\HealthCheckResult;
 use OCA\EtherpadNextcloud\Service\PadTemplateAdminService;
-use OCA\EtherpadNextcloud\Service\PendingBindingService;
+use OCA\EtherpadNextcloud\Service\RunBudget;
 use OCA\EtherpadNextcloud\Service\ValidatedAdminSettings;
 use OCP\AppFramework\Controller;
 use OCP\AppFramework\Http\DataResponse;
+use OCP\AppFramework\Utility\ITimeFactory;
 use OCP\IGroupManager;
 use OCP\IL10N;
 use OCP\IRequest;
@@ -37,7 +40,6 @@ use OCP\IUserSession;
  */
 class AdminController extends Controller {
 	private const CONSISTENCY_SAMPLE_LIMIT = 25;
-	private const PENDING_BINDING_BATCH_SIZE = 500;
 
 	public function __construct(
 		string $appName,
@@ -48,15 +50,17 @@ class AdminController extends Controller {
 		private AdminSettingsValidator $settingsValidator,
 		private AdminSettingsRepository $settingsRepository,
 		private EtherpadHealthCheckService $healthCheckService,
-		private PendingBindingService $pendingBindings,
 		private ConsistencyCheckService $consistencyCheckService,
 		private AdminConsistencyCheckResponseBuilder $consistencyResponseBuilder,
-		private AdminTestFaultService $testFaultService,
 		private AdminControllerErrorMapper $errors,
 		private CookieDomainPolicy $cookieDomainPolicy,
 		private CookieDomainMessages $cookieDomainMessages,
 		private IURLGenerator $urlGenerator,
 		private PadTemplateAdminService $padTemplateAdmin,
+		private GoneFileSweep $goneFileSweep,
+		private ITimeFactory $timeFactory,
+		private BindingService $bindingService,
+		private AppConfigService $appConfigService,
 	) {
 		parent::__construct($appName, $request);
 	}
@@ -113,7 +117,6 @@ class AdminController extends Controller {
 					'latency_ms' => $result->latencyMs,
 					'target' => $result->target,
 					'pending_delete_count' => $result->pendingDeleteCount,
-					'restore_pending_count' => $result->restorePendingCount,
 					// Machine-readable form of the protected-pads line above.
 					'protected_pads' => $this->describeCookieDomain($result->cookieDomain),
 					'session_cookie_release' => $result->sessionCookieRelease,
@@ -131,15 +134,23 @@ class AdminController extends Controller {
 		return $this->errors->run(
 			function (): array {
 				$this->requireAdmin();
-				return $this->pendingBindings->settle(self::PENDING_BINDING_BATCH_SIZE);
+				// What the background job does, now, and without the grace.
+				$result = $this->goneFileSweep->run(new RunBudget($this->timeFactory, RunBudget::DEFAULT_SECONDS), atOnce: true);
+				return $result + [
+					'pending_delete_count' => $this->bindingService->countPendingDeletes(),
+					'deleting' => $this->appConfigService->isDeletePadWithFileEnabled(),
+				];
 			},
 			fn(array $result): DataResponse => new DataResponse([
 				'ok' => true,
-				'message' => $this->l10n->t('Pending pad check finished.'),
+				// With deleting off the check deletes nothing, and says why
+				// rather than leave the count to stand unexplained.
+				'message' => $result['deleting']
+					? $this->l10n->t('Pending pad check finished.')
+					: $this->l10n->t('Deleting pads is switched off, so no pad was deleted. The files deleted for good wait for it to be switched on.'),
 				'checked' => $result['checked'],
-				'settled' => $result['settled'],
+				'settled' => $result['deleted'],
 				'pending_delete_count' => $result['pending_delete_count'],
-				'restore_pending_count' => $result['restore_pending_count'],
 			]),
 			[
 				'generic' => $this->l10n->t('Pending pad check failed.'),
@@ -158,28 +169,6 @@ class AdminController extends Controller {
 			[
 				'generic' => $this->l10n->t('Consistency check failed.'),
 				'log_message' => 'Consistency check failed',
-			],
-		);
-	}
-
-	public function setTestFault(): DataResponse {
-		return $this->errors->run(
-			function (): string {
-				$this->requireAdmin();
-				$payload = $this->readJsonPayload();
-				$fault = trim((string)($payload['fault'] ?? ''));
-				return $this->testFaultService->setFault($fault);
-			},
-			fn(string $fault): DataResponse => new DataResponse([
-				'ok' => true,
-				'fault' => $fault,
-				'message' => $fault === ''
-					? $this->l10n->t('Test fault cleared.')
-					: $this->l10n->t('Test fault set: {fault}', ['fault' => $fault]),
-			]),
-			[
-				'generic' => $this->l10n->t('Failed to update test fault.'),
-				'log_message' => 'Updating test fault failed',
 			],
 		);
 	}

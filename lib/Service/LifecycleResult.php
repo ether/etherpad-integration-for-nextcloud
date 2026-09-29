@@ -18,19 +18,8 @@ use Psr\Log\LoggerInterface;
  * about, each caller knows already.
  */
 final class LifecycleResult {
-	public const TRASHED = 'trashed';
 	public const RESTORED = 'restored';
 	public const SKIPPED = 'skipped';
-
-	/** @return array{status: string, deleted_at: int, snapshot_persisted: bool, delete_pending: bool} */
-	public static function trashed(int $deletedAt, bool $snapshotPersisted, bool $deletePending): array {
-		return [
-			'status' => self::TRASHED,
-			'deleted_at' => $deletedAt,
-			'snapshot_persisted' => $snapshotPersisted,
-			'delete_pending' => $deletePending,
-		];
-	}
 
 	/** @return array{status: string, old_pad_id: string, new_pad_id: string} */
 	public static function restored(string $oldPadId, string $newPadId): array {
@@ -42,8 +31,8 @@ final class LifecycleResult {
 	}
 
 	/**
-	 * A step that did nothing, and why. Logged at debug level: for a row the
-	 * sweep cannot settle yet, the only trace of the reason.
+	 * A step that did nothing, and why. Logged at debug level: for a restore
+	 * that leaves a file to its next open, the only trace of the reason.
 	 *
 	 * @return array{status: string, reason: string}
 	 */

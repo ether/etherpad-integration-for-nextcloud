@@ -13,7 +13,7 @@
 
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushAsyncWork } from './flush.js'
-import { FILE_CHANGED, LOCKED, LOST_RACE, MISSING_BINDING, MISSING_FRONTMATTER, UNANSWERED_TEXT, UNREACHABLE, WAITING } from './answers.js'
+import { FILE_CHANGED, LOCKED, LOST_RACE, MISSING_BINDING, MISSING_FRONTMATTER, UNANSWERED_TEXT, UNREACHABLE } from './answers.js'
 import { jsonResponse } from './responses.js'
 
 vi.mock('../../src/lib/oc-compat.js', () => ({
@@ -383,7 +383,6 @@ describe('viewer component — resolveOpenUrl', () => {
 
 	// By the server's `retryable`, not by a code; a second try, not recovery.
 	it.each([
-		['the file\'s row still waits', WAITING, 409],
 		['Etherpad is not reachable', UNREACHABLE, 503],
 		['the file is locked for a moment', LOCKED, 503],
 		['another request made the file\'s row first', LOST_RACE, 400],
@@ -694,6 +693,21 @@ describe('viewer component — resolveOpenUrl', () => {
 		expect(apiFindOriginalPad).toHaveBeenCalledWith(42)
 		expect(vm.originalPad).toEqual({ viewerUrl: 'https://nc/viewer/123', path: '/orig.pad' })
 		expect(vm.isCheckingOriginal).toBe(false)
+	})
+
+	// The file is the original: nothing to look for, only a new pad to make.
+	it('pad_missing: offers recovery without looking up an original', async () => {
+		stubFetch(jsonResponse({ message: 'pad lost', code: 'pad_missing' }, false, 400))
+		const vm = makeInstance({ fileid: 42, fileInfo: { path: '/notes.pad' } })
+
+		await vm.resolveOpenUrl()
+		await flushAsyncWork()
+
+		expect(vm.loadError).toBe('pad lost')
+		expect(vm.canRecover).toBe(true)
+		expect(vm.padLost).toBe(true)
+		expect(vm.recoveryFileId).toBe(42)
+		expect(apiFindOriginalPad).not.toHaveBeenCalled()
 	})
 
 	it('resolves recovery\'s file id from the path when the Viewer supplies none', async () => {
@@ -1057,7 +1071,7 @@ describe('viewer component — focus after a click', () => {
 	})
 
 	it('hands it to the new button after a second try that fails, and only then', async () => {
-		stubFetch(jsonResponse(WAITING, false, 409))
+		stubFetch(jsonResponse(LOCKED, false, 503))
 		const vm = makeInstance({ fileid: 42, fileInfo: { path: '/x.pad' } })
 		const card = drawCard(vm, '<div class="epnc-native-error-message">m</div><button>Try again</button>')
 
@@ -1102,7 +1116,7 @@ describe('viewer component — focus after a click', () => {
 
 	it('hands it on when the open after a recovery fails', async () => {
 		apiRecoverFromSnapshot.mockResolvedValue({ status: 'restored' })
-		stubFetch(jsonResponse(WAITING, false, 409))
+		stubFetch(jsonResponse(LOCKED, false, 503))
 		const vm = makeInstance({ fileid: 42, fileInfo: { path: '/copy.pad' }, canRecover: true, recoveryFileId: 42 })
 		const card = drawCard(vm, '<div class="epnc-native-error-message">m</div><button>Try again</button>')
 

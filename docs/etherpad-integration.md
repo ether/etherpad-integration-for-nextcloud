@@ -54,20 +54,18 @@ that file destroy their group, their pad and their sessions. A group that
 holds only the pad being deleted, or nothing at all, has nothing else to
 lose.
 
-It answers true when it removed something, the pad or the empty group a
-protected pad left behind, and false when Etherpad says there was nothing
-left: no such pad, or no such group. A caller that has just heard the pad
-is gone says so (`knownAbsent`); a public pad then costs no call, a
-protected one is still asked about its group.
+It is done when it removed something, the pad or the empty group a
+protected pad left behind, and when Etherpad says there was nothing left:
+no such pad, or no such group. A caller that has just heard the pad is
+gone says so (`knownAbsent`); a public pad then costs no call, a protected
+one is still asked about its group.
 
 A group Etherpad cannot list is given up by default: the pad goes alone,
 the half that was always safe, and the empty group stays. A caller that
 keeps its row and tries again says so (`retried`) and gets the failed read
-instead, with nothing removed: the trash, which then owes the deletion,
-and the sweep for a file gone for good while the deletion has been owed
-for less than a day, counted from the trash. One that cannot try again -
-the sweep once it has taken a trashed file's row, the clean-up after a
-replacement or a released row - takes the default.
+instead, with nothing removed: the sweep of files gone for good, which
+tries again an hour later. One that cannot try again - the clean-up after
+a replacement - takes the default.
 
 The shape rule itself lives in `Util\PadId` and is the same one that
 classifies a binding as protected. It used to be stricter here, so a pad
@@ -159,9 +157,10 @@ which is how the open request can read it in the first place.
   open of any other protected pad happened to overwrite the cookie and cut
   it off; that only ever helped if the user opened another pad, and did
   nothing otherwise. Revoking a share does not end the Etherpad sessions
-  already issued for it: only expiry, a logout, or removing the group
-  behind the pad clears them, so the window is the session TTL either way
-  — it is just no longer shortened by accident.
+  already issued for it: only expiry, a logout, the recipient's account
+  being deleted, or removing the group behind the pad clears them, so the
+  window is the session TTL either way — it is just no longer shortened
+  by accident.
 
 ### Author Resolution Strategy
 
@@ -227,8 +226,9 @@ away itself:
   every socket message and keeps the session id it was handed when the pad
   connected – read in 2.7.3, 3.0.0 and 3.3.3 – so a session that expires
   mid-edit rejects the next keystroke, and no later cookie reaches that
-  socket. Revocation fires on an explicit logout and nowhere else, and is
-  capped, so for most sessions the lifetime is what bounds the window.
+  socket. Revocation fires on an explicit logout, on the account's
+  deletion and on a delete of the pad's file (below), and is capped, so
+  for most sessions the lifetime is what bounds the window.
 - Expired sessions are left to the background sweep described below. Only
   what is expired by both clocks counts as expired: Etherpad judges
   `validUntil` with its own, so a session ours calls dead may still be
@@ -246,9 +246,22 @@ cached id is therefore not dropped when an open fails – an emptied cache
 cannot be told from a user who never opened a protected pad, and a logout
 after a brief outage would revoke nothing.
 
-**Only logout.** Losing a share does not revoke anything, and neither does
-a permission downgrade, a deleted or disabled account, or a deleted public
-link. A session issued before any of those stays valid until `validUntil`.
+**A delete of the file revokes the pad's sessions** – every session of
+the pad's group, whoever it was issued to, once the file goes to the
+trash or past it, for a folder's protected pads too: the trash keeps the
+pad, and a session would keep giving it to whoever holds one. Which
+groups, and within what budget: `docs/architecture.md`, "Trash/Restore".
+
+**Deleting an account revokes its sessions**, as a logout does, as the
+delete starts (`RevokeSessionsOnAccountDeleteListener`): Nextcloud removes
+the account's settings, the cached author among them, before it reports
+the account gone. A delete the user backend then refuses has lost them as
+a logout would, and the next open makes new ones.
+
+**Otherwise, only expiry.** Losing a share does not revoke anything, and
+neither does a permission downgrade, a disabled account, or a deleted
+public link. A session issued before any of those stays valid until
+`validUntil`.
 Covering them one event at a time means enumerating every way access can
 end, and that list has no natural end – a public link in particular opens
 under its own Etherpad author whose id is deliberately never cached, so

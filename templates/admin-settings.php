@@ -20,7 +20,6 @@
 	data-l10n-health-failed="<?php p((string)$_['l10n']['health_failed']); ?>"
 	data-l10n-consistency-failed="<?php p((string)$_['l10n']['consistency_failed']); ?>"
 	data-l10n-pending-delete-label="<?php p((string)$_['l10n']['pending_delete_label']); ?>"
-	data-l10n-restore-pending-label="<?php p((string)$_['l10n']['restore_pending_label']); ?>"
 	data-l10n-settle-failed="<?php p((string)$_['l10n']['settle_failed']); ?>"
 	data-templates-url="<?php p((string)$_['templates_url']); ?>"
 	data-templates-delete-url="<?php p((string)$_['templates_delete_url']); ?>"
@@ -170,18 +169,18 @@
 		</p>
 		<p class="settings-hint ep-field-hint" id="epnc-hint-sync-interval"><?php p((string)$_['l10n']['copy_interval_hint']); ?></p>
 
-		<p id="delete-on-trash-row" class="ep-checkbox-row">
+		<p id="delete-pad-with-file-row" class="ep-checkbox-row">
 			<label class="checkbox">
 				<input
 					type="checkbox"
-					name="delete_on_trash"
-					aria-describedby="epnc-hint-delete-on-trash"
+					name="delete_pad_with_file"
+					aria-describedby="epnc-hint-delete-pad-with-file"
 					value="1"
-					<?php if ((bool)$_['delete_on_trash']): ?>checked<?php endif; ?>>
-				<?php p((string)$_['l10n']['delete_on_trash']); ?>
+					<?php if ((bool)$_['delete_pad_with_file']): ?>checked<?php endif; ?>>
+				<?php p((string)$_['l10n']['delete_pad_with_file']); ?>
 			</label>
 		</p>
-		<p class="settings-hint ep-field-hint ep-checkbox-hint" id="epnc-hint-delete-on-trash"><?php p((string)$_['l10n']['delete_on_trash_hint']); ?></p>
+		<p class="settings-hint ep-field-hint ep-checkbox-hint" id="epnc-hint-delete-pad-with-file"><?php p((string)$_['l10n']['delete_pad_with_file_hint']); ?></p>
 
 		<h3 class="ep-section-heading"><?php p((string)$_['l10n']['section_external']); ?></h3>
 
@@ -247,9 +246,12 @@
 		</div>
 		<div id="etherpad-nextcloud-pending-actions" class="etherpad-nextcloud-admin-actions" style="display:none;">
 			<button type="button" id="etherpad-nextcloud-settle-pending"><?php p((string)$_['l10n']['settle_pending_button']); ?></button>
-			<span id="etherpad-nextcloud-restore-pending-count" class="settings-hint"></span>
 			<span id="etherpad-nextcloud-pending-count" class="settings-hint"></span>
 		</div>
 		<p id="etherpad-nextcloud-diagnostics-status" class="ep-status" aria-live="polite"></p>
+		<div id="etherpad-nextcloud-vanished" style="display:none;">
+			<p class="settings-hint ep-field-hint"><?php p((string)$_['l10n']['vanished_pads_hint']); ?></p>
+			<ul id="etherpad-nextcloud-vanished-list"></ul>
+		</div>
 	</form>
 </div>

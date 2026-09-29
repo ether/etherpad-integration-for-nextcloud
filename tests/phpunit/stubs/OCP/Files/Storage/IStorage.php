@@ -8,5 +8,11 @@ if (!interface_exists(IStorage::class)) {
 	interface IStorage {
 		/** @throws \OCP\Files\InvalidPathException */
 		public function verifyPath(string $path, string $fileName);
+
+		/** @return string */
+		public function getId();
+
+		/** @return bool */
+		public function instanceOfStorage(string $class);
 	}
 }

@@ -155,12 +155,6 @@ assert_copy_is_unbound() {
 	sync_res="$(request_auth_with_code POST "${PADS_API}/sync/${file_id}?force=1")"
 	assert_status_code "${label}-sync" 400 "$sync_res"
 	assert_body_contains "${label}-sync" "$COPY_ERR_PATTERN" "$sync_res"
-
-	local trash_res
-	trash_res="$(request_auth_with_code POST "${PADS_API}/trash" --data-urlencode "file=${copy_path}")"
-	assert_status_code "${label}-trash" 409 "$trash_res"
-	assert_body_contains "${label}-trash" "\"status\":\"skipped\"" "$trash_res"
-	assert_body_contains "${label}-trash" "binding_not_found" "$trash_res"
 }
 
 echo "[1/9] MKCOL ${FOLDER_PATH}"

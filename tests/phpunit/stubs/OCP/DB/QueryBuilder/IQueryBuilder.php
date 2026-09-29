@@ -8,5 +8,6 @@ if (!interface_exists(IQueryBuilder::class)) {
 	interface IQueryBuilder {
 		public const PARAM_INT = 1;
 		public const PARAM_NULL = 0;
+		public const PARAM_INT_ARRAY = 101;
 	}
 }

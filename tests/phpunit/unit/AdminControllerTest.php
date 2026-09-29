@@ -6,12 +6,11 @@ namespace OCA\EtherpadNextcloud\Tests\Unit;
 
 use OCA\EtherpadNextcloud\Controller\AdminController;
 use OCA\EtherpadNextcloud\Controller\AdminControllerErrorMapper;
-use OCA\EtherpadNextcloud\Exception\AdminDebugModeRequiredException;
-use OCA\EtherpadNextcloud\Exception\UnsupportedTestFaultException;
 use OCA\EtherpadNextcloud\Service\AdminConsistencyCheckResponseBuilder;
 use OCA\EtherpadNextcloud\Service\AdminSettingsRepository;
 use OCA\EtherpadNextcloud\Service\AdminSettingsValidator;
-use OCA\EtherpadNextcloud\Service\AdminTestFaultService;
+use OCA\EtherpadNextcloud\Service\AppConfigService;
+use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\EtherpadNextcloud\Service\ConsistencyCheckService;
 use OCA\EtherpadNextcloud\Service\CookieDomainDecision;
 use OCA\EtherpadNextcloud\Service\HealthCheckItem;
@@ -19,8 +18,10 @@ use OCA\EtherpadNextcloud\Service\CookieDomainMessages;
 use OCA\EtherpadNextcloud\Exception\AdminValidationException;
 use OCA\EtherpadNextcloud\Service\CookieDomainPolicy;
 use OCA\EtherpadNextcloud\Service\PadTemplateAdminService;
-use OCA\EtherpadNextcloud\Service\PendingBindingService;
+use OCA\EtherpadNextcloud\Service\EtherpadClient;
 use OCA\EtherpadNextcloud\Service\EtherpadHealthCheckService;
+use OCA\EtherpadNextcloud\Service\GoneFileSweep;
+use OCA\EtherpadNextcloud\Service\RunBudget;
 use OCA\EtherpadNextcloud\Service\HealthCheckResult;
 use OCA\EtherpadNextcloud\Service\StoredAdminSettings;
 use OCA\EtherpadNextcloud\Service\ValidatedAdminSettings;
@@ -31,6 +32,7 @@ use OCP\IRequest;
 use OCP\IURLGenerator;
 use OCP\IUser;
 use OCP\IUserSession;
+use OCA\EtherpadNextcloud\Tests\Support\FixedClock;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 
@@ -106,7 +108,6 @@ class AdminControllerTest extends TestCase {
 				123,
 				'https://pad-api.internal/api/1.3.0/checkToken',
 				3,
-				2,
 				'3.3.3',
 				new CookieDomainDecision(
 					'.example.tests',
@@ -128,7 +129,6 @@ class AdminControllerTest extends TestCase {
 		$this->assertSame(Http::STATUS_OK, $response->getStatus());
 		$this->assertTrue((bool)$data['ok']);
 		$this->assertSame(3, $data['pending_delete_count']);
-		$this->assertSame(2, $data['restore_pending_count']);
 		// The release the open path is going by, machine-readable, because
 		// it can differ from whatever this check just probed.
 		$this->assertSame('3.3.3', $data['session_cookie_release']);
@@ -151,64 +151,43 @@ class AdminControllerTest extends TestCase {
 		$this->assertStringContainsString('need attention', $data['message']);
 	}
 
-	public function testSettlePendingUsesConfiguredBatchSize(): void {
-		$pending = $this->createMock(PendingBindingService::class);
-		$pending->expects($this->once())
-			->method('settle')
-			->with(500)
-			->willReturn(['checked' => 2, 'settled' => 1, 'pending_delete_count' => 3, 'restore_pending_count' => 1]);
+	/**
+	 * The admin's check runs the sweep of files gone for good at once, the
+	 * grace not waited out, within one run's budget, and says how many are
+	 * left.
+	 */
+	public function testSettlePendingRunsTheSweepAtOnce(): void {
+		$sweep = $this->createMock(GoneFileSweep::class);
+		$sweep->expects($this->once())->method('run')->with($this->callback(
+			static fn (RunBudget $budget): bool => $budget->callTimeout() === EtherpadClient::REQUEST_TIMEOUT_SECONDS,
+		), true)->willReturn(['checked' => 2, 'deleted' => 1]);
+		$bindings = $this->createMock(BindingService::class);
+		$bindings->method('countPendingDeletes')->willReturn(3);
 
-		$response = $this->buildController(pendingBindings: $pending)->settlePending();
+		$response = $this->buildController(goneFileSweep: $sweep, bindings: $bindings)->settlePending();
 
 		$this->assertSame(Http::STATUS_OK, $response->getStatus());
 		$this->assertSame(2, $response->getData()['checked']);
 		$this->assertSame(1, $response->getData()['settled']);
 		$this->assertSame(3, $response->getData()['pending_delete_count']);
-		$this->assertSame(1, $response->getData()['restore_pending_count']);
 	}
 
-	public function testSetTestFaultRequiresDebugMode(): void {
-		$testFaults = $this->createMock(AdminTestFaultService::class);
-		$testFaults->method('setFault')->willThrowException(new AdminDebugModeRequiredException());
+	/**
+	 * With deleting off the check deletes nothing; the answer says why, so
+	 * the count of pending deletes does not stand unexplained.
+	 */
+	public function testSettlePendingSaysWhenDeletingIsOff(): void {
+		$sweep = $this->createMock(GoneFileSweep::class);
+		$sweep->method('run')->willReturn(['checked' => 0, 'deleted' => 0]);
+		$bindings = $this->createMock(BindingService::class);
+		$bindings->method('countPendingDeletes')->willReturn(3412);
+		$appConfig = $this->createMock(AppConfigService::class);
+		$appConfig->method('isDeletePadWithFileEnabled')->willReturn(false);
 
-		$response = $this->buildController(testFaults: $testFaults)->setTestFault();
+		$response = $this->buildController(goneFileSweep: $sweep, bindings: $bindings, appConfig: $appConfig)->settlePending();
 
-		$this->assertSame(Http::STATUS_FORBIDDEN, $response->getStatus());
-		$this->assertFalse((bool)$response->getData()['ok']);
-	}
-
-	public function testSetTestFaultRejectsUnsupportedFault(): void {
-		$testFaults = $this->createMock(AdminTestFaultService::class);
-		$testFaults->expects($this->once())
-			->method('setFault')
-			->with('unknown_fault')
-			->willThrowException(new UnsupportedTestFaultException(['trash_read_lock']));
-
-		$response = $this->buildController(
-			$this->request(['fault' => 'unknown_fault']),
-			testFaults: $testFaults,
-		)->setTestFault();
-
-		$this->assertSame(Http::STATUS_BAD_REQUEST, $response->getStatus());
-		$this->assertFalse((bool)$response->getData()['ok']);
-		$this->assertNotEmpty($response->getData()['supported_faults']);
-	}
-
-	public function testSetTestFaultPersistsSupportedFault(): void {
-		$testFaults = $this->createMock(AdminTestFaultService::class);
-		$testFaults->expects($this->once())
-			->method('setFault')
-			->with('trash_read_lock')
-			->willReturn('trash_read_lock');
-
-		$response = $this->buildController(
-			$this->request(['fault' => 'trash_read_lock']),
-			testFaults: $testFaults,
-		)->setTestFault();
-
-		$this->assertSame(Http::STATUS_OK, $response->getStatus());
-		$this->assertTrue((bool)$response->getData()['ok']);
-		$this->assertSame('trash_read_lock', $response->getData()['fault']);
+		$this->assertSame('Deleting pads is switched off, so no pad was deleted. The files deleted for good wait for it to be switched on.', $response->getData()['message']);
+		$this->assertSame(3412, $response->getData()['pending_delete_count']);
 	}
 
 	public function testListsPadTemplates(): void {
@@ -275,11 +254,13 @@ class AdminControllerTest extends TestCase {
 		?AdminSettingsValidator $validator = null,
 		?AdminSettingsRepository $repository = null,
 		?EtherpadHealthCheckService $healthCheck = null,
-		?PendingBindingService $pendingBindings = null,
 		?ConsistencyCheckService $consistencyCheck = null,
 		?AdminConsistencyCheckResponseBuilder $consistencyResponses = null,
-		?AdminTestFaultService $testFaults = null,
 		?PadTemplateAdminService $padTemplateAdmin = null,
+		?GoneFileSweep $goneFileSweep = null,
+		?FixedClock $clock = null,
+		?BindingService $bindings = null,
+		?AppConfigService $appConfig = null,
 	): AdminController {
 		$l10n = $this->buildL10n();
 		$logger = $this->createMock(LoggerInterface::class);
@@ -292,15 +273,17 @@ class AdminControllerTest extends TestCase {
 			$validator ?? $this->createMock(AdminSettingsValidator::class),
 			$repository ?? $this->createMock(AdminSettingsRepository::class),
 			$healthCheck ?? $this->createMock(EtherpadHealthCheckService::class),
-			$pendingBindings ?? $this->createMock(PendingBindingService::class),
 			$consistencyCheck ?? $this->createMock(ConsistencyCheckService::class),
 			$consistencyResponses ?? new AdminConsistencyCheckResponseBuilder($l10n),
-			$testFaults ?? $this->createMock(AdminTestFaultService::class),
 			new AdminControllerErrorMapper($l10n, $logger),
 			new CookieDomainPolicy(),
 			new CookieDomainMessages($l10n),
 			$this->urlGenerator(),
 			$padTemplateAdmin ?? $this->createMock(PadTemplateAdminService::class),
+			$goneFileSweep ?? $this->createMock(GoneFileSweep::class),
+			$clock ?? new FixedClock(),
+			$bindings ?? $this->createMock(BindingService::class),
+			$appConfig ?? $this->deletingOn(),
 		);
 	}
 
@@ -363,5 +346,11 @@ class AdminControllerTest extends TestCase {
 			}
 		);
 		return $l10n;
+	}
+
+	private function deletingOn(): AppConfigService {
+		$appConfig = $this->createMock(AppConfigService::class);
+		$appConfig->method('isDeletePadWithFileEnabled')->willReturn(true);
+		return $appConfig;
 	}
 }

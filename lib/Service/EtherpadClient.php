@@ -111,8 +111,8 @@ class EtherpadClient {
 
 	/**
 	 * An answer without a count is not revision 0: that would read as a pad
-	 * behind any snapshot, and a sweep would let go of a pad Etherpad said
-	 * nothing about. It is no answer, and throws like one.
+	 * made anew, and an open would offer a new pad in place of one Etherpad
+	 * said nothing about. It is no answer, and throws like one.
 	 */
 	public function getRevisionsCount(string $padId, ?int $timeoutSeconds = null): int {
 		$data = $this->apiCall('getRevisionsCount', ['padID' => $padId], timeoutSeconds: $timeoutSeconds);
@@ -267,7 +267,32 @@ class EtherpadClient {
 		// POST like every other authenticated call: a GET would put the
 		// apikey in the URL, and from there into proxy and access logs.
 		$data = $this->apiCall('listSessionsOfAuthor', ['authorID' => $authorId], timeoutSeconds: $timeoutSeconds);
+		return $this->sessionsIn($data, $unreadableEntries);
+	}
 
+	/**
+	 * The group's sessions, keyed by session id, as listSessionsOfAuthor()
+	 * gives an author's: whoever holds one may open the group's pads until
+	 * it expires.
+	 *
+	 * @param ?int $unreadableEntries set to how many ids the index listed
+	 *   that Etherpad could not describe
+	 * @return array<string,array{groupID:string,validUntil:int}>
+	 */
+	public function listSessionsOfGroup(
+		string $groupId,
+		?int $timeoutSeconds = null,
+		?int &$unreadableEntries = null,
+	): array {
+		$data = $this->apiCall('listSessionsOfGroup', ['groupID' => $groupId], timeoutSeconds: $timeoutSeconds);
+		return $this->sessionsIn($data, $unreadableEntries);
+	}
+
+	/**
+	 * @param array<array-key,mixed> $data
+	 * @return array<string,array{groupID:string,validUntil:int}>
+	 */
+	private function sessionsIn(array $data, ?int &$unreadableEntries): array {
 		$sessions = [];
 		// Every entry the index listed that cannot be turned into a session,
 		// whatever made it unusable — a null, a malformed record, an
@@ -314,6 +339,15 @@ class EtherpadClient {
 	 */
 	public function assertApiKeyAccepted(string $host, ApiKey $apiKey, string $apiVersion = self::DEFAULT_API_VERSION): void {
 		$this->apiCall(self::API_KEY_PROBE_METHOD, [], $host, $apiKey, $apiVersion);
+	}
+
+	/**
+	 * Throws unless the configured Etherpad answers the configured key, the
+	 * call assertApiKeyAccepted() makes, within $timeoutSeconds: whether it
+	 * answers at all, where another call failed.
+	 */
+	public function assertAnswering(?int $timeoutSeconds = null): void {
+		$this->apiCall(self::API_KEY_PROBE_METHOD, [], timeoutSeconds: $timeoutSeconds);
 	}
 
 	/**

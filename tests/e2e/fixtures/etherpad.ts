@@ -96,6 +96,45 @@ export const liveSessionCount = async (groupId: string, authorId: string): Promi
 		.length
 }
 
+/**
+ * How many sessions Etherpad has for the group that are still valid:
+ * whoever holds one may open the group's pads.
+ */
+export const liveSessionsOfGroup = async (groupId: string): Promise<number> => {
+	const sessions = await etherpadApiPost<Record<string, { validUntil?: number }> | null>('listSessionsOfGroup', { groupID: groupId })
+	const now = Math.floor(Date.now() / 1000)
+	return Object.values(sessions ?? {}).filter((session) => (session.validUntil ?? 0) > now).length
+}
+
 /** The pad id out of a pad URL, decoded. */
 export const padIdOfPadUrl = (padUrl: string): string =>
 	decodeURIComponent(padUrl.split('/p/').pop() ?? '')
+
+/**
+ * Whether Etherpad still has the pad. Etherpad answers a pad it does not
+ * have with an error, not an empty result; any other error is thrown.
+ */
+export const padExists = async (padId: string): Promise<boolean> => {
+	try {
+		await etherpadApiPost('getRevisionsCount', { padID: padId })
+		return true
+	} catch (error) {
+		if (error instanceof Error && error.message.includes('does not exist')) {
+			return false
+		}
+		throw error
+	}
+}
+
+/** Whether Etherpad still has the group, as padExists() asks for a pad. */
+export const groupExists = async (groupId: string): Promise<boolean> => {
+	try {
+		await etherpadApiPost('listPads', { groupID: groupId })
+		return true
+	} catch (error) {
+		if (error instanceof Error && error.message.includes('does not exist')) {
+			return false
+		}
+		throw error
+	}
+}

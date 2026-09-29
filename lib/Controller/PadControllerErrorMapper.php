@@ -25,10 +25,10 @@ use OCA\EtherpadNextcloud\Exception\PadAlreadyHasBindingException;
 use OCA\EtherpadNextcloud\Exception\PadFileAlreadyExistsException;
 use OCA\EtherpadNextcloud\Exception\PadFileChangedException;
 use OCA\EtherpadNextcloud\Exception\PadFileFormatException;
+use OCA\EtherpadNextcloud\Exception\PadFileNotWritableException;
 use OCA\EtherpadNextcloud\Exception\PadParentFolderNotWritableException;
 use OCA\EtherpadNextcloud\Exception\PadTypeDisabledException;
 use OCA\EtherpadNextcloud\Exception\UnauthorizedRequestException;
-use OCA\EtherpadNextcloud\Exception\WaitingBindingException;
 use OCA\EtherpadNextcloud\Service\ApiErrorLog;
 use OCA\EtherpadNextcloud\Service\PadResponseService;
 use OCP\AppFramework\Http;
@@ -120,6 +120,8 @@ class PadControllerErrorMapper {
 			return $this->answer($options, $e, ['message' => $this->l10n->t('This .pad file is already linked to a pad.')], Http::STATUS_CONFLICT);
 		} catch (PadParentFolderNotWritableException $e) {
 			return $this->answer($options, $e, ['message' => $this->l10n->t('Selected parent folder is not writable.')], Http::STATUS_FORBIDDEN);
+		} catch (PadFileNotWritableException $e) {
+			return $this->answer($options, $e, ['message' => $this->l10n->t('Only someone who may edit this .pad file can make a new pad from it.')], Http::STATUS_FORBIDDEN);
 		} catch (PadTypeDisabledException $e) {
 			$payload = ['message' => $this->l10n->t('This pad type is disabled on this instance.')];
 			if ($e->getAccessMode() !== '') {
@@ -134,11 +136,6 @@ class PadControllerErrorMapper {
 				// like any other.
 				$this->errorLog->report($e, $options['context'] ?? []);
 				return new DataResponse(['message' => $options['binding_message']], $status);
-			}
-			if ($e instanceof WaitingBindingException) {
-				// Not a dead end: once the row is settled, the same request
-				// opens the pad - or answers missing_binding.
-				$status = Http::STATUS_CONFLICT;
 			}
 			return $this->answer($options, $e, ['message' => $this->padResponses->bindingErrorMessage($e)], $status);
 		} catch (LegacyProtectedImportDisabledException $e) {

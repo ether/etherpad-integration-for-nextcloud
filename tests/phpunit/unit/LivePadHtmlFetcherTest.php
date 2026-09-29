@@ -6,7 +6,7 @@ namespace OCA\EtherpadNextcloud\Tests\Unit;
 
 use OCA\EtherpadNextcloud\Exception\ExternalPadException;
 use OCA\EtherpadNextcloud\Exception\BindingException;
-use OCA\EtherpadNextcloud\Exception\WaitingBindingException;
+use OCA\EtherpadNextcloud\Exception\MissingBindingException;
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
 use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\EtherpadNextcloud\Service\EtherpadClient;
@@ -30,15 +30,15 @@ class LivePadHtmlFetcherTest extends TestCase {
 		$this->assertFalse($result->isEmpty);
 	}
 
-	/** A row that still waits reaches the caller as it was thrown, and nothing is fetched. */
-	public function testAWaitingBindingReachesTheCallerAsItIs(): void {
-		$waiting = new WaitingBindingException('Pad binding is not active.');
+	/** A row that does not match reaches the caller as it was thrown, and nothing is fetched. */
+	public function testABindingErrorReachesTheCallerAsItIs(): void {
+		$refused = new MissingBindingException('No binding exists for this file.');
 		$bindings = $this->createMock(BindingService::class);
-		$bindings->method('assertConsistentMapping')->willThrowException($waiting);
+		$bindings->method('assertConsistentMapping')->willThrowException($refused);
 		$client = $this->createMock(EtherpadClient::class);
 		$client->expects($this->never())->method('getHTMLForPreview');
 
-		$this->expectExceptionObject($waiting);
+		$this->expectExceptionObject($refused);
 		$this->buildFetcher($client, bindingService: $bindings)->fetchForPadFile($this->pad(padId: 'pad-a'), 138);
 	}
 

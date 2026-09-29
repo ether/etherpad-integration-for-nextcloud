@@ -13,11 +13,11 @@ use OCA\EtherpadNextcloud\Exception\BindingMismatchException;
 use OCA\EtherpadNextcloud\Exception\BindingException;
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
 use OCA\EtherpadNextcloud\Exception\EtherpadRefusedException;
+use OCA\EtherpadNextcloud\Exception\PadLostException;
 use OCA\EtherpadNextcloud\Exception\EtherpadTooLargeException;
 use OCA\EtherpadNextcloud\Exception\ExternalPadException;
 use OCA\EtherpadNextcloud\Exception\ExternalPadExportNotFoundException;
 use OCA\EtherpadNextcloud\Exception\MissingBindingException;
-use OCA\EtherpadNextcloud\Exception\WaitingBindingException;
 use OCA\EtherpadNextcloud\Service\ApiErrorLog;
 use OCP\ICache;
 use OCP\ICacheFactory;
@@ -73,6 +73,37 @@ class ApiErrorLogTest extends TestCase {
 	}
 
 	/**
+	 * A pad Etherpad has lost gets its own minute for each file, apart from
+	 * a refusal of the same file: an admin hears of it however often the
+	 * file is opened before someone makes the new pad.
+	 */
+	public function testOneWarningAMinuteForEachFileWhosePadIsLost(): void {
+		$claimed = [];
+		$cache = $this->createMock(IMemcache::class);
+		$cache->method('add')->willReturnCallback(static function (string $key) use (&$claimed): bool {
+			if (isset($claimed[$key])) {
+				return false;
+			}
+			return $claimed[$key] = true;
+		});
+		$factory = $this->createMock(ICacheFactory::class);
+		$factory->method('isAvailable')->willReturn(true);
+		$factory->method('createDistributed')->willReturn($cache);
+
+		$log = new ApiErrorLog($factory, $this->logger());
+		$log->report(new EtherpadRefusedException('Etherpad API error (getText): padID does not exist'), ['fileId' => 44]);
+		$log->report(new PadLostException('Etherpad has lost the pad of this file.'), ['fileId' => 44]);
+		$log->report(new PadLostException('Etherpad has lost the pad of this file.'), ['fileId' => 44]);
+		$log->report(new PadLostException('Etherpad has lost the pad of this file.'), ['fileId' => 45]);
+
+		$lost = 'Etherpad has lost the pad of a file; opening the file offers a new one from its content.';
+		$this->assertSame(
+			[['warning', self::REFUSED, 44], ['warning', $lost, 44], ['debug', $lost, 44], ['warning', $lost, 45]],
+			array_map(static fn (array $line): array => [$line[0], $line[1], $line[2]['fileId'] ?? null], $this->logged),
+		);
+	}
+
+	/**
 	 * Nothing to share the minute with - no cache, one without add(), or
 	 * one that fails - and each failure is a warning. A cache that throws
 	 * must not fail the answer the line reports for.
@@ -107,21 +138,19 @@ class ApiErrorLogTest extends TestCase {
 	 */
 	public function testEachOtherErrorAtTheLevelItDeserves(): void {
 		$log = new ApiErrorLog($this->createMock(ICacheFactory::class), $this->logger());
-		$log->report(new \RuntimeException('Detailed failure.'), [], 'Pad restore API failed');
+		$log->report(new \RuntimeException('Detailed failure.'), [], 'Pad recovery API failed');
 		$log->report(new BindingNotCreatedException('Could not create unique pad binding.'));
 		$log->report(new BindingMismatchException('Binding pad ID mismatch.'));
 		$log->report(new BindingException('Pad binding is not active.'));
 		$log->report(new MissingBindingException('No binding exists for this file.'));
-		$log->report(new WaitingBindingException('Pad binding is not active.'));
 		$log->report(new ExternalPadException('Public export HTTP error (500)'));
 
 		$this->assertSame([
-			['error', 'Pad restore API failed', 'Detailed failure.'],
+			['error', 'Pad recovery API failed', 'Detailed failure.'],
 			['error', 'Could not create pad binding.', 'Could not create unique pad binding.'],
 			['warning', 'A .pad file and its pad binding could not be matched.', 'Binding pad ID mismatch.'],
 			['debug', 'A request was refused.', 'Pad binding is not active.'],
 			['debug', 'A request was refused.', 'No binding exists for this file.'],
-			['debug', 'A request was refused.', 'Pad binding is not active.'],
 			['debug', 'A request was refused.', 'Public export HTTP error (500)'],
 		], array_map(static fn (array $line): array => [$line[0], $line[1], $line[2]['error_message']], $this->logged));
 	}

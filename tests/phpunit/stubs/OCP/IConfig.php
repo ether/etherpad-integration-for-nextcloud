@@ -16,6 +16,8 @@ if (!interface_exists(IConfig::class)) {
 
 		public function setAppValue(string $appName, string $key, string $value): void;
 
+		public function deleteAppValue(string $appName, string $key): void;
+
 		public function setUserValue(string $uid, string $appName, string $key, string $value): void;
 
 		public function deleteUserValue(string $uid, string $appName, string $key): void;

@@ -100,11 +100,26 @@ Each `specs/*.spec.ts` covers one flow:
 - **pad-move-rename** — the binding (keyed on file id) survives an
   in-place rename and a move into a subfolder.
 - **pad-orphan-recovery** — a binding-less `.pad` (WebDAV copy) shows the
-  recovery card and "Open the original" navigates to the source pad.
+  recovery card and "Open the original" navigates to the source pad; so
+  does such a copy after a trash + restore round-trip, which gives it no
+  pad of its own.
 - **pad-snapshot-roundtrip** — recover-from-snapshot pushes a known
   marker into a new pad and sync reads it back (the content copy that
   restore and recover share).
 - **pad-trash-restore** — trash + restore round-trip, pad reopens.
+- **pad-lost** — a pad Etherpad has lost (deleted there, or made anew empty
+  by a visit to a public pad's address) answers `pad_missing`, a forced
+  sync does not write a pad made anew over the file, and a new pad is made
+  from the file's content, in the API and in the viewer; a file restored
+  from the trash gets its new pad without asking.
+  Container stack only (asks Etherpad).
+- **pad-gone-for-good** — the trash keeps a pad and its group, a restore
+  gives the same pad back; a pad goes with its file deleted for good:
+  past the trash, from the trash once it is deleted there, with the
+  account that owned it, a renamed file too; a pad in a team folder stays
+  when its maker's account goes. Container stack only (asks Etherpad);
+  the team folder part needs groupfolders and skips without it. Creates
+  and deletes throwaway accounts, groups and team folders.
 - **pad-user-share** — user-to-user share grants access, revoke removes
   it (NC boundary; Etherpad's own session-cookie window is out of scope).
 - **pad-ownership-boundary** — cross-user `open-by-id` is rejected.

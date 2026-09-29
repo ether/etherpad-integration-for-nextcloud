@@ -9,13 +9,14 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Controller;
 
-use OCA\EtherpadNextcloud\Service\LifecycleService;
 use OCA\EtherpadNextcloud\Service\PadMetadataService;
 use OCA\EtherpadNextcloud\Service\PadOriginalLookup;
 use OCA\EtherpadNextcloud\Service\PadResponseService;
 use OCA\EtherpadNextcloud\Service\PadSyncResult;
 use OCA\EtherpadNextcloud\Service\PadSyncService;
 use OCA\EtherpadNextcloud\Service\PadSyncStatus;
+use OCA\EtherpadNextcloud\Service\RestoreService;
+use OCA\EtherpadNextcloud\Service\UserNodeResolver;
 use OCP\AppFramework\Http\DataResponse;
 use OCP\IL10N;
 use OCP\IRequest;
@@ -23,9 +24,9 @@ use OCP\IUser;
 use OCP\IUserSession;
 
 /**
- * Lifecycle + sync endpoints — trash, restore, recover-from-snapshot,
- * sync state, and the find-original lookup that the copy-of-a-pad
- * recovery affordance hangs off.
+ * Lifecycle + sync endpoints — recover-from-snapshot, sync state, and the
+ * find-original lookup that the copy-of-a-pad recovery affordance hangs
+ * off.
  * @psalm-api
  */
 class PadLifecycleController extends AbstractPadController {
@@ -36,7 +37,8 @@ class PadLifecycleController extends AbstractPadController {
 		IL10N $l10n,
 		PadResponseService $padResponses,
 		PadControllerErrorMapper $errors,
-		private LifecycleService $lifecycleService,
+		private UserNodeResolver $userNodeResolver,
+		private RestoreService $restoreService,
 		private PadSyncService $padSyncService,
 		private PadMetadataService $padMetadataService,
 	) {
@@ -44,39 +46,26 @@ class PadLifecycleController extends AbstractPadController {
 	}
 
 	#[\OCP\AppFramework\Http\Attribute\NoAdminRequired]
-	public function trash(string $file): DataResponse {
-		return $this->runForUser(
-			fn(IUser $user): array => $this->lifecycleService->trashByPath($user->getUID(), $file),
-			fn(array $result): DataResponse => $this->padResponses->lifecycleResponse($result),
-			[
-				'generic' => $this->l10n->t('Could not move pad to trash.'),
-				'failure' => 'Pad trash API failed',
-			],
-		);
-	}
-
-	#[\OCP\AppFramework\Http\Attribute\NoAdminRequired]
-	public function restore(string $file): DataResponse {
-		return $this->runForUser(
-			fn(IUser $user): array => $this->lifecycleService->restoreByPath($user->getUID(), $file),
-			fn(array $result): DataResponse => $this->padResponses->lifecycleResponse($result),
-			[
-				'generic' => $this->l10n->t('Could not restore pad from trash.'),
-				'failure' => 'Pad restore API failed',
-			],
-		);
-	}
-
-	#[\OCP\AppFramework\Http\Attribute\NoAdminRequired]
 	public function recoverByFileId(int $fileId): DataResponse {
 		return $this->runForUser(
-			fn(IUser $user): array => $this->lifecycleService->recoverByFileId($user->getUID(), $this->requireFileId($fileId)),
+			fn(IUser $user): array => $this->recover($user->getUID(), $this->requireFileId($fileId)),
 			fn(array $result): DataResponse => $this->padResponses->lifecycleResponse($result),
 			[
 				'generic' => $this->l10n->t('Could not recover pad from this file.'),
 				'failure' => 'Pad recovery API failed',
 			],
 		);
+	}
+
+	/**
+	 * A new pad from the file's own content (RestoreService::recoverFromSnapshot()),
+	 * the file named by id.
+	 *
+	 * @return array{file_id: int, status: string, reason?: string, old_pad_id?: string, new_pad_id?: string}
+	 * @throws \OCP\Files\NotFoundException
+	 */
+	private function recover(string $uid, int $fileId): array {
+		return ['file_id' => $fileId] + $this->restoreService->recoverFromSnapshot($this->userNodeResolver->resolveUserFileNodeById($uid, $fileId));
 	}
 
 	#[\OCP\AppFramework\Http\Attribute\NoAdminRequired]

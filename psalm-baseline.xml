@@ -1,31 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <files psalm-version="6.16.1@f1f5de594dc76faf8784e02d3dc4716c91c6f6ac">
-  <file src="lib/BackgroundJob/AbstractPendingDeleteRetryJob.php">
-    <MixedArgument>
-      <code><![CDATA[static::INTERVAL_SECONDS]]></code>
-      <code><![CDATA[static::LIMIT]]></code>
-      <code><![CDATA[static::MAX_AGE_SECONDS]]></code>
-      <code><![CDATA[static::MIN_AGE_SECONDS]]></code>
-    </MixedArgument>
-  </file>
-  <file src="lib/BackgroundJob/ColdPendingDeleteRetryJob.php">
-    <InvalidClassConstantType>
-      <code><![CDATA[MIN_AGE_SECONDS]]></code>
-    </InvalidClassConstantType>
-  </file>
-  <file src="lib/BackgroundJob/HotPendingDeleteRetryJob.php">
-    <InvalidClassConstantType>
-      <code><![CDATA[INTERVAL_SECONDS]]></code>
-      <code><![CDATA[MAX_AGE_SECONDS]]></code>
-    </InvalidClassConstantType>
-  </file>
-  <file src="lib/BackgroundJob/WarmPendingDeleteRetryJob.php">
-    <InvalidClassConstantType>
-      <code><![CDATA[INTERVAL_SECONDS]]></code>
-      <code><![CDATA[MAX_AGE_SECONDS]]></code>
-      <code><![CDATA[MIN_AGE_SECONDS]]></code>
-    </InvalidClassConstantType>
-  </file>
   <file src="lib/Controller/AdminController.php">
     <MixedArgumentTypeCoercion>
       <code><![CDATA[$result]]></code>
@@ -52,8 +26,6 @@
   </file>
   <file src="lib/Controller/PadLifecycleController.php">
     <MixedArgumentTypeCoercion>
-      <code><![CDATA[$result]]></code>
-      <code><![CDATA[$result]]></code>
       <code><![CDATA[$result]]></code>
     </MixedArgumentTypeCoercion>
   </file>
@@ -128,12 +100,6 @@
       <code><![CDATA[$event instanceof LoadViewer]]></code>
     </RedundantConditionGivenDocblockType>
   </file>
-  <file src="lib/Listeners/MoveToTrashListener.php">
-    <RedundantCastGivenDocblockType>
-      <code><![CDATA[(int)$node->getId()]]></code>
-      <code><![CDATA[(string)($result['reason'] ?? 'unknown')]]></code>
-    </RedundantCastGivenDocblockType>
-  </file>
   <file src="lib/Listeners/RegisterTemplateCreatorListener.php">
     <DeprecatedMethod>
       <code><![CDATA[getAppValue]]></code>
@@ -172,8 +138,6 @@
       <code><![CDATA[getAppValue]]></code>
       <code><![CDATA[getAppValue]]></code>
       <code><![CDATA[getAppValue]]></code>
-      <code><![CDATA[getAppValue]]></code>
-      <code><![CDATA[setAppValue]]></code>
       <code><![CDATA[setAppValue]]></code>
       <code><![CDATA[setAppValue]]></code>
       <code><![CDATA[setAppValue]]></code>
@@ -189,7 +153,6 @@
     </DeprecatedMethod>
     <RedundantCastGivenDocblockType>
       <code><![CDATA[(string)$this->config->getAppValue(Application::APP_ID, 'allow_external_pads', 'no')]]></code>
-      <code><![CDATA[(string)$this->config->getAppValue(Application::APP_ID, 'delete_on_trash', 'yes')]]></code>
       <code><![CDATA[(string)$this->config->getAppValue(Application::APP_ID, 'etherpad_cookie_domain', '')]]></code>
       <code><![CDATA[(string)$this->config->getAppValue(Application::APP_ID, 'etherpad_cookie_domain_configured', 'no')]]></code>
       <code><![CDATA[(string)$this->config->getAppValue(Application::APP_ID, 'trusted_embed_origins', '')]]></code>
@@ -198,15 +161,8 @@
       <code><![CDATA[(string)$this->config->getAppValue(Application::APP_ID, PadTypePolicy::SETTING_PUBLIC, 'yes')]]></code>
     </RedundantCastGivenDocblockType>
   </file>
-  <file src="lib/Service/AdminTestFaultService.php">
-    <DeprecatedMethod>
-      <code><![CDATA[setAppValue]]></code>
-    </DeprecatedMethod>
-  </file>
   <file src="lib/Service/AppConfigService.php">
     <DeprecatedMethod>
-      <code><![CDATA[getAppValue]]></code>
-      <code><![CDATA[getAppValue]]></code>
       <code><![CDATA[getAppValue]]></code>
       <code><![CDATA[getAppValue]]></code>
     </DeprecatedMethod>
@@ -236,9 +192,6 @@
       <code><![CDATA[getAppValue]]></code>
       <code><![CDATA[getAppValue]]></code>
     </DeprecatedMethod>
-    <DocblockTypeContradiction>
-      <code><![CDATA[!is_string($sessionId)]]></code>
-    </DocblockTypeContradiction>
     <MixedArgument>
       <code><![CDATA[$decoded['releaseId']]]></code>
     </MixedArgument>
@@ -393,11 +346,6 @@
       <code><![CDATA[(int)$node->getId()]]></code>
     </RedundantCastGivenDocblockType>
   </file>
-  <file src="lib/Service/PadSessionRevoker.php">
-    <RedundantCastGivenDocblockType>
-      <code><![CDATA[(string)$sessionId]]></code>
-    </RedundantCastGivenDocblockType>
-  </file>
   <file src="lib/Service/PadSessionService.php">
     <DeprecatedMethod>
       <code><![CDATA[getAppValue]]></code>
@@ -482,11 +430,9 @@
       <code><![CDATA[getAppValue]]></code>
       <code><![CDATA[getAppValue]]></code>
       <code><![CDATA[getAppValue]]></code>
-      <code><![CDATA[getAppValue]]></code>
     </DeprecatedMethod>
     <RedundantCastGivenDocblockType>
       <code><![CDATA[(string)$this->config->getAppValue(Application::APP_ID, 'allow_external_pads', 'no')]]></code>
-      <code><![CDATA[(string)$this->config->getAppValue(Application::APP_ID, 'delete_on_trash', 'yes')]]></code>
       <code><![CDATA[(string)$this->config->getAppValue(Application::APP_ID, 'etherpad_api_host', '')]]></code>
       <code><![CDATA[(string)$this->config->getAppValue(Application::APP_ID, 'etherpad_api_version', EtherpadClient::DEFAULT_API_VERSION)]]></code>
       <code><![CDATA[(string)$this->config->getAppValue(Application::APP_ID, 'etherpad_cookie_domain', '')]]></code>

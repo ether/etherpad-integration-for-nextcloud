@@ -18,6 +18,9 @@
 		<php min-version="8.1" max-version="8.5"/>
 		<nextcloud min-version="31.0.9" max-version="34"/>
 	</dependencies>
+	<background-jobs>
+		<job>OCA\EtherpadNextcloud\BackgroundJob\GoneFileSweepJob</job>
+	</background-jobs>
 	<repair-steps>
 		<post-migration>
 			<step>OCA\EtherpadNextcloud\Migration\RegisterMimeType</step>

@@ -5,11 +5,9 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\Tests\Unit;
 
 use OCA\EtherpadNextcloud\Controller\AdminControllerErrorMapper;
-use OCA\EtherpadNextcloud\Exception\AdminDebugModeRequiredException;
 use OCA\EtherpadNextcloud\Exception\AdminHealthCheckException;
 use OCA\EtherpadNextcloud\Exception\AdminPermissionRequiredException;
 use OCA\EtherpadNextcloud\Exception\AdminValidationException;
-use OCA\EtherpadNextcloud\Exception\UnsupportedTestFaultException;
 use OCA\EtherpadNextcloud\Exception\UnauthorizedRequestException;
 use OCP\AppFramework\Http;
 use OCP\AppFramework\Http\DataResponse;
@@ -38,16 +36,6 @@ class AdminControllerErrorMapperTest extends TestCase {
 		$this->assertSame('Admin permissions required.', $response->getData()['message']);
 	}
 
-	public function testMapsDebugModeRequired(): void {
-		$response = $this->buildMapper()->run(
-			static fn(): array => throw new AdminDebugModeRequiredException(),
-			static fn(array $data): DataResponse => new DataResponse($data),
-		);
-
-		$this->assertSame(Http::STATUS_FORBIDDEN, $response->getStatus());
-		$this->assertSame('Test faults are available only when Nextcloud debug mode is enabled.', $response->getData()['message']);
-	}
-
 	public function testMapsValidationWithField(): void {
 		$response = $this->buildMapper()->run(
 			static fn(): array => throw new AdminValidationException('etherpad_host', 'Invalid host.'),
@@ -56,17 +44,6 @@ class AdminControllerErrorMapperTest extends TestCase {
 
 		$this->assertSame(Http::STATUS_BAD_REQUEST, $response->getStatus());
 		$this->assertSame('etherpad_host', $response->getData()['field']);
-	}
-
-	public function testMapsUnsupportedTestFaultWithSupportedValues(): void {
-		$response = $this->buildMapper()->run(
-			static fn(): array => throw new UnsupportedTestFaultException(['after_file_delete', 'after_pad_delete']),
-			static fn(array $data): DataResponse => new DataResponse($data),
-		);
-
-		$this->assertSame(Http::STATUS_BAD_REQUEST, $response->getStatus());
-		$this->assertSame('Unsupported test fault.', $response->getData()['message']);
-		$this->assertSame(['after_file_delete', 'after_pad_delete'], $response->getData()['supported_faults']);
 	}
 
 	public function testMapsHealthCheckExceptionToOkWithAFailureFlag(): void {

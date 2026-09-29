@@ -13,7 +13,7 @@ import {
 	openPadFromFileList,
 	uniquePadName,
 } from '../fixtures/nextcloud'
-import { copyViaDav, deleteViaDav, propfindFileId } from '../fixtures/dav'
+import { copyViaDav, deleteViaDav, propfindFileId, restoreFromTrashViaDav } from '../fixtures/dav'
 
 /**
  * Recovery flow for a `.pad` file that has no binding row of its own —
@@ -62,5 +62,34 @@ test.describe('orphan .pad recovery', () => {
 		// Following the affordance navigates to the original pad (mounts
 		// the viewer, URL points at the original file id, not the copy).
 		await followOpenTheOriginal(page, originalFileId)
+	})
+
+	/**
+	 * A copy back from the trash is still a copy: a file without a row
+	 * gets a pad of its own on restore only when no other file's row
+	 * names its pad, so its open still offers the original.
+	 */
+	test('a copy restored from the trash still offers the original', async ({ page }) => {
+		const source = uniquePadName('orphan-restored-source')
+		const restored = uniquePadName('orphan-restored-copy')
+		try {
+			await gotoFiles(page)
+			await createPublicPad(page, source)
+			await expectEtherpadViewerMounted(page)
+			await closeViewer(page)
+			const sourceFileId = await propfindFileId(source)
+			await copyViaDav(source, restored)
+
+			await deleteViaDav(restored)
+			await restoreFromTrashViaDav(restored)
+
+			await gotoFiles(page)
+			await openPadFromFileList(page, restored)
+			await expectRecoveryCardForCopy(page, { originalFound: true })
+			await followOpenTheOriginal(page, sourceFileId)
+		} finally {
+			await deleteViaDav(restored)
+			await deleteViaDav(source)
+		}
 	})
 })

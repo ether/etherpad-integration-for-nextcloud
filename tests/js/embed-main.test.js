@@ -4,7 +4,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushAsyncWork } from './flush.js'
-import { FILE_CHANGED, LOST_RACE, MISSING_BINDING, MISSING_FRONTMATTER, UNANSWERED_TEXT, UNREACHABLE, WAITING } from './answers.js'
+import { FILE_CHANGED, LOCKED, LOST_RACE, MISSING_BINDING, MISSING_FRONTMATTER, UNANSWERED_TEXT, UNREACHABLE } from './answers.js'
 import { errorResponse, jsonResponse } from './responses.js'
 
 // A successful open starts an interval and registers document and window
@@ -314,6 +314,21 @@ describe('embed-main', () => {
 		expect(document.activeElement).toBe(document.body)
 	})
 
+	// The file is the original: no lookup, no body under the server's message.
+	it('offers a new pad when Etherpad has lost the pad, without looking for an original', async () => {
+		fetch.mockResolvedValueOnce(errorResponse({ message: 'pad lost', code: 'pad_missing' }))
+
+		await importEmbed()
+		await flushAsyncWork()
+
+		expect(isHidden('[data-epnc-embed-recovery]')).toBe(false)
+		expect(recoveryMessage()).toBe('pad lost')
+		expect(recoveryBody()).toBe('')
+		expect(recoveryActions().querySelector('a')).toBeNull()
+		expect(recoveryActions().querySelectorAll('button')).toHaveLength(1)
+		expect(fetch).toHaveBeenCalledTimes(1)
+	})
+
 	it('renders the orphan body when find-original misses', async () => {
 		fetch
 			.mockResolvedValueOnce(errorResponse(MISSING_BINDING))
@@ -385,7 +400,7 @@ describe('embed-main', () => {
 	 * viewer. It runs the whole open again, and a success clears the panel.
 	 */
 	it.each([
-		['a row still waiting', WAITING, 409],
+		['the file locked for a moment', LOCKED, 503],
 		['Etherpad not reachable', UNREACHABLE, 503],
 		['another request made the file\'s row first', LOST_RACE, 400],
 	])('offers to try the open again after %s', async (_, body, status) => {
@@ -520,7 +535,7 @@ describe('embed-main', () => {
 	it('shows the loading state, and nothing else, while a second try runs', async () => {
 		let answer
 		fetch
-			.mockResolvedValueOnce(errorResponse(WAITING, 409))
+			.mockResolvedValueOnce(errorResponse(LOCKED, 503))
 			.mockImplementationOnce(() => new Promise((resolve) => { answer = resolve }))
 
 		await importEmbed()
@@ -537,8 +552,8 @@ describe('embed-main', () => {
 	/** One button at a time over two failures; the focus moves only after a click. */
 	it('keeps one second try at a time and hands the focus on after one', async () => {
 		fetch
-			.mockResolvedValueOnce(errorResponse(WAITING, 409))
-			.mockResolvedValueOnce(errorResponse(WAITING, 409))
+			.mockResolvedValueOnce(errorResponse(LOCKED, 503))
+			.mockResolvedValueOnce(errorResponse(LOCKED, 503))
 			.mockResolvedValueOnce(errorResponse({ message: 'Internal server error' }, 500))
 		const focus = vi.spyOn(HTMLElement.prototype, 'focus')
 		try {
@@ -571,7 +586,7 @@ describe('embed-main', () => {
 			.mockResolvedValueOnce(errorResponse(MISSING_BINDING))
 			.mockResolvedValueOnce(jsonResponse({ found: false }))
 			.mockResolvedValueOnce(jsonResponse({ status: 'restored' }))
-			.mockResolvedValueOnce(errorResponse(WAITING, 409))
+			.mockResolvedValueOnce(errorResponse(LOCKED, 503))
 
 		await importEmbed()
 		await flushAsyncWork()
@@ -583,7 +598,7 @@ describe('embed-main', () => {
 
 	it('hands the focus to the recovery card when a second try finds no pad', async () => {
 		fetch
-			.mockResolvedValueOnce(errorResponse(WAITING, 409))
+			.mockResolvedValueOnce(errorResponse(LOCKED, 503))
 			.mockResolvedValueOnce(errorResponse(MISSING_BINDING))
 			.mockResolvedValueOnce(jsonResponse({ found: true, embed_url: '/embed/by-id/99' }))
 
@@ -598,7 +613,7 @@ describe('embed-main', () => {
 	it('lets an open that answers late not undo a newer one', async () => {
 		let answerFirst
 		fetch
-			.mockResolvedValueOnce(errorResponse(WAITING, 409))
+			.mockResolvedValueOnce(errorResponse(LOCKED, 503))
 			.mockImplementationOnce(() => new Promise((resolve) => { answerFirst = resolve }))
 			.mockResolvedValueOnce(jsonResponse(PAD))
 
@@ -608,7 +623,7 @@ describe('embed-main', () => {
 		retry.click()
 		retry.click()
 		await flushAsyncWork()
-		answerFirst(errorResponse(WAITING, 409))
+		answerFirst(errorResponse(LOCKED, 503))
 		await flushAsyncWork()
 
 		expect(iframe().src).toContain(PAD.url)
@@ -618,7 +633,7 @@ describe('embed-main', () => {
 	it('lets an open that succeeds late not undo a newer failure', async () => {
 		let answerFirst
 		fetch
-			.mockResolvedValueOnce(errorResponse(WAITING, 409))
+			.mockResolvedValueOnce(errorResponse(LOCKED, 503))
 			.mockImplementationOnce(() => new Promise((resolve) => { answerFirst = resolve }))
 			.mockResolvedValueOnce(errorResponse(UNREACHABLE, 503))
 

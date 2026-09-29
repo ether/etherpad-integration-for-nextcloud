@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\Tests\Unit;
 
 use OCA\EtherpadNextcloud\Exception\ExternalPadException;
+use OCA\EtherpadNextcloud\Exception\PadLostException;
+use OCA\EtherpadNextcloud\Service\ManagedPadLifecycle;
 use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\EtherpadNextcloud\Service\EtherpadClient;
 use OCA\EtherpadNextcloud\Service\ExternalPadExportFetcher;
@@ -94,13 +96,39 @@ class PublicPadOpenServiceTest extends TestCase {
 		$this->assertSame('', $result->cookieHeader);
 	}
 
+	/**
+	 * Through a share that may write, a pad Etherpad has lost is refused:
+	 * only the file's owner can make a new one. A reader is not asked.
+	 */
+	public function testAPadEtherpadHasLostIsNotOpenedForWriting(): void {
+		foreach ([BindingService::ACCESS_PROTECTED, BindingService::ACCESS_PUBLIC] as $accessMode) {
+			$lifecycle = $this->createMock(ManagedPadLifecycle::class);
+			$lifecycle->expects($this->once())->method('isKnownLost')->with('pad-1', $accessMode, 5, 'Saved in the file')->willReturn(true);
+			$sessions = $this->createMock(PadSessionService::class);
+			$sessions->expects($this->never())->method('createProtectedOpenContext');
+			try {
+				$this->buildService(padSessionService: $sessions, padLifecycle: $lifecycle)->open($this->pad('pad-1', $accessMode, false, '', 5, 'Saved in the file'), false, 'token');
+				$this->fail($accessMode . ': opened');
+			} catch (PadLostException) {
+				$this->addToAssertionCount(1);
+			}
+		}
+
+		$lifecycle = $this->createMock(ManagedPadLifecycle::class);
+		$lifecycle->expects($this->never())->method('isKnownLost');
+		$this->buildService(padLifecycle: $lifecycle)->open($this->pad('pad-1', BindingService::ACCESS_PROTECTED, false, '', 5), true, 'token');
+		$this->buildService(padLifecycle: $lifecycle)->open($this->pad('pad-1', BindingService::ACCESS_PUBLIC, false, '', 5), true, 'token');
+	}
+
 	private function buildService(
 		?EtherpadClient $etherpadClient = null,
 		?PadSessionService $padSessionService = null,
 		?ExternalPadExportFetcher $externalPadExportFetcher = null,
+		?ManagedPadLifecycle $padLifecycle = null,
 	): PublicPadOpenService {
 		return new PublicPadOpenService(
 			$etherpadClient ?? $this->createMock(EtherpadClient::class),
+			$padLifecycle ?? $this->createMock(ManagedPadLifecycle::class),
 			$externalPadExportFetcher ?? $this->createMock(ExternalPadExportFetcher::class),
 			$padSessionService ?? $this->createMock(PadSessionService::class),
 		);
@@ -124,7 +152,7 @@ class PublicPadOpenServiceTest extends TestCase {
 		return $ttl;
 	}
 
-	private function pad(string $padId, string $accessMode, bool $isExternal = false, string $padUrl = ''): ParsedPadFile {
-		return new ParsedPadFile([], '', $padId, $accessMode, $padUrl, $isExternal, -1);
+	private function pad(string $padId, string $accessMode, bool $isExternal = false, string $padUrl = '', int $snapshotRev = -1, string $savedText = ''): ParsedPadFile {
+		return new ParsedPadFile([], $savedText, $padId, $accessMode, $padUrl, $isExternal, $snapshotRev, $savedText);
 	}
 }

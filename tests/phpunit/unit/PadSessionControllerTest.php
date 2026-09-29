@@ -6,6 +6,7 @@ namespace OCA\EtherpadNextcloud\Tests\Unit;
 
 use OCA\EtherpadNextcloud\Controller\PadControllerErrorMapper;
 use OCA\EtherpadNextcloud\Controller\PadSessionController;
+use OCA\EtherpadNextcloud\Service\ManagedPadLifecycle;
 use OCA\EtherpadNextcloud\Service\AppConfigService;
 use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\EtherpadNextcloud\Service\EtherpadClient;
@@ -21,7 +22,6 @@ use OCA\EtherpadNextcloud\Service\PadSessionService;
 use OCA\EtherpadNextcloud\Service\ParsedPadFile;
 use OCA\EtherpadNextcloud\Service\UserNodeResolver;
 use OCA\EtherpadNextcloud\Util\PathNormalizer;
-use OCA\EtherpadNextcloud\Tests\Support\SettlesOnOpen;
 use OCP\AppFramework\Http;
 use OCP\Files\File;
 use OCP\Files\IRootFolder;
@@ -36,7 +36,6 @@ use Psr\Log\LoggerInterface;
 class PadSessionControllerTest extends TestCase {
 	use \OCA\EtherpadNextcloud\Tests\Support\BuildsErrorMappers;
 
-	use SettlesOnOpen;
 
 	public function testOpenByIdRejectsInvalidFileId(): void {
 		$user = $this->createMock(IUser::class);
@@ -124,8 +123,9 @@ class PadSessionControllerTest extends TestCase {
 			$padPaths,
 			$userNodeResolver,
 			$lockRetryService,
-			$this->settleOnOpen($bindingService),
+			$bindingService,
 			$etherpadClient,
+			$this->createMock(ManagedPadLifecycle::class),
 			$this->createMock(ExternalPadExportFetcher::class),
 			$this->createMock(PadSessionService::class),
 			$logger,
@@ -248,8 +248,9 @@ class PadSessionControllerTest extends TestCase {
 			$padPaths,
 			$userNodeResolver,
 			$lockRetryService,
-			$this->settleOnOpen($bindingService),
+			$bindingService,
 			$etherpadClient,
+			$this->createMock(ManagedPadLifecycle::class),
 			$externalPadExportFetcher,
 			$this->createMock(PadSessionService::class),
 			$logger,
@@ -358,8 +359,9 @@ class PadSessionControllerTest extends TestCase {
 			$padPaths,
 			$userNodeResolver,
 			$lockRetryService,
-			$this->settleOnOpen($resolvedBindingService),
+			$resolvedBindingService,
 			$resolvedEtherpadClient,
+			$this->createMock(ManagedPadLifecycle::class),
 			$resolvedExternalPadExportFetcher,
 			$this->createMock(PadSessionService::class),
 			$logger,

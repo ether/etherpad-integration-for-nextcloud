@@ -17,8 +17,8 @@ use OCA\EtherpadNextcloud\Exception\LegacyProtectedImportDisabledException;
 use OCA\EtherpadNextcloud\Exception\MissingBindingException;
 use OCA\EtherpadNextcloud\Exception\MissingFrontmatterException;
 use OCA\EtherpadNextcloud\Exception\PadFileChangedException;
+use OCA\EtherpadNextcloud\Exception\PadLostException;
 use OCA\EtherpadNextcloud\Exception\PadTypeDisabledException;
-use OCA\EtherpadNextcloud\Exception\WaitingBindingException;
 use OCP\Lock\LockedException;
 
 /**
@@ -31,7 +31,7 @@ use OCP\Lock\LockedException;
  */
 enum ApiErrorCode: string {
 	case MissingBinding = 'missing_binding';
-	case WaitingBinding = 'waiting_binding';
+	case PadMissing = 'pad_missing';
 	case MissingFrontmatter = 'missing_frontmatter';
 	case PadTooLarge = 'pad_too_large';
 	case PadFileChanged = 'pad_file_changed';
@@ -59,14 +59,13 @@ enum ApiErrorCode: string {
 	}
 
 	/**
-	 * The same request may succeed later: a row that waits, a file locked
-	 * for a moment, this instance's Etherpad not reachable, a file's row
-	 * another request made first - the next open finds the winner's pad.
+	 * The same request may succeed later: a file locked for a moment, this
+	 * instance's Etherpad not reachable, a file's row another request made
+	 * first - the next open finds the winner's pad.
 	 * The one place that says so, for both mappers.
 	 */
 	public static function retryable(\Throwable $e): bool {
-		return self::of($e) === self::WaitingBinding
-			|| $e instanceof LockedException
+		return $e instanceof LockedException
 			|| $e instanceof BindingNotCreatedException
 			|| EtherpadClientException::isEtherpadUnreachable($e);
 	}
@@ -89,7 +88,7 @@ enum ApiErrorCode: string {
 	public function exceptionClass(): string {
 		return match ($this) {
 			self::MissingBinding => MissingBindingException::class,
-			self::WaitingBinding => WaitingBindingException::class,
+			self::PadMissing => PadLostException::class,
 			self::MissingFrontmatter => MissingFrontmatterException::class,
 			self::PadTooLarge => EtherpadTooLargeException::class,
 			self::PadFileChanged => PadFileChangedException::class,
@@ -106,6 +105,6 @@ enum ApiErrorCode: string {
 	 * start that action.
 	 */
 	public function needsASignedInUser(): bool {
-		return $this === self::MissingBinding || $this === self::MissingFrontmatter;
+		return $this === self::MissingBinding || $this === self::PadMissing || $this === self::MissingFrontmatter;
 	}
 }

@@ -127,6 +127,23 @@ class EtherpadClientTest extends TestCase {
 		$this->assertSame(['s.ok' => ['groupID' => 'g.aaa', 'validUntil' => 42]], $client->listSessionsOfAuthor('a.x'));
 	}
 
+	/** A group's sessions, asked for by its id and read as an author's are. */
+	public function testListSessionsOfGroupReadsTheGroupsSessions(): void {
+		$captured = null;
+		$client = $this->clientWithResponse(
+			$this->response(200, '{"code":0,"data":{"s.one":{"groupID":"g.aaa","authorID":"a.x","validUntil":99},"s.bad":{"groupID":"","validUntil":1}}}'),
+			$captured,
+		);
+
+		$sessions = $client->listSessionsOfGroup('g.aaa', null, $unreadable);
+
+		$this->assertSame('POST', $captured['method']);
+		$this->assertStringContainsString('groupID=g.aaa', self::bodyOf($captured));
+		$this->assertStringEndsWith('/listSessionsOfGroup', parse_url((string)$captured['url'], PHP_URL_PATH));
+		$this->assertSame(['s.one' => ['groupID' => 'g.aaa', 'validUntil' => 99]], $sessions);
+		$this->assertSame(1, $unreadable);
+	}
+
 	public function testListPadsReadsAValidPadList(): void {
 		$client = $this->clientWithResponse(
 			$this->response(200, '{"code":0,"data":{"padIDs":["g.aaa$one","g.aaa$two"]}}')

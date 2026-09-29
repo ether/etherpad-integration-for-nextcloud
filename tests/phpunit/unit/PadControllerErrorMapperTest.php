@@ -18,17 +18,18 @@ use OCA\EtherpadNextcloud\Exception\LegacyPadCollisionException;
 use OCA\EtherpadNextcloud\Exception\LegacyPadNotFoundException;
 use OCA\EtherpadNextcloud\Exception\LegacyProtectedImportDisabledException;
 use OCA\EtherpadNextcloud\Exception\MissingBindingException;
+use OCA\EtherpadNextcloud\Exception\PadLostException;
 use OCA\EtherpadNextcloud\Exception\MissingFrontmatterException;
 use OCA\EtherpadNextcloud\Exception\NotAPadFileException;
 use OCA\EtherpadNextcloud\Exception\PadAlreadyHasBindingException;
 use OCA\EtherpadNextcloud\Exception\PadFileAlreadyExistsException;
 use OCA\EtherpadNextcloud\Exception\PadFileChangedException;
 use OCA\EtherpadNextcloud\Exception\PadFileFormatException;
+use OCA\EtherpadNextcloud\Exception\PadFileNotWritableException;
 use OCA\EtherpadNextcloud\Exception\PadParentFolderNotWritableException;
 use OCA\EtherpadNextcloud\Exception\PadTypeDisabledException;
 use OCA\EtherpadNextcloud\Exception\UnauthorizedRequestException;
 use OCA\EtherpadNextcloud\Exception\UnrecognisedPadContentException;
-use OCA\EtherpadNextcloud\Exception\WaitingBindingException;
 use OCA\EtherpadNextcloud\Service\AppConfigService;
 use OCA\EtherpadNextcloud\Service\PadResponseService;
 use OCA\EtherpadNextcloud\Tests\Support\BuildsErrorMappers;
@@ -62,12 +63,13 @@ class PadControllerErrorMapperTest extends TestCase {
 		yield 'a file by that name' => [new PadFileAlreadyExistsException('internal wording'), Http::STATUS_CONFLICT, 'A file with this name already exists.', []];
 		yield 'linked already' => [new PadAlreadyHasBindingException('internal wording'), Http::STATUS_CONFLICT, 'This .pad file is already linked to a pad.', []];
 		yield 'a folder not writable' => [new PadParentFolderNotWritableException('internal wording'), Http::STATUS_FORBIDDEN, 'Selected parent folder is not writable.', []];
+		yield 'a file the user may not change' => [new PadFileNotWritableException('internal wording'), Http::STATUS_FORBIDDEN, 'Only someone who may edit this .pad file can make a new pad from it.', []];
 		yield 'a pad type switched off' => [new PadTypeDisabledException('protected'), Http::STATUS_FORBIDDEN, 'This pad type is disabled on this instance.', ['access_mode' => 'protected', 'code' => 'pad_type_disabled']];
 		yield 'both pad types switched off' => [new PadTypeDisabledException(), Http::STATUS_FORBIDDEN, 'This pad type is disabled on this instance.', ['code' => 'pad_type_disabled']];
 		// The recovery card hangs off the code.
 		yield 'no pad' => [new MissingBindingException('internal wording'), Http::STATUS_BAD_REQUEST, 'This .pad file has no matching pad in this Nextcloud.', ['code' => 'missing_binding']];
+		yield 'pad lost' => [new PadLostException('internal wording'), Http::STATUS_BAD_REQUEST, 'This pad is no longer on the Etherpad server. A new pad can be made from the content saved in this file.', ['code' => 'pad_missing']];
 		// Not a dead end: a conflict worth trying again.
-		yield 'a pad still being restored' => [new WaitingBindingException('internal wording'), Http::STATUS_CONFLICT, 'This pad is still being restored. Try again later.', ['code' => 'waiting_binding', 'retryable' => true]];
 		// Or a row another request made at the same moment: trying again may do.
 		yield 'a row naming another pad' => [new BindingException('Binding pad ID mismatch.'), Http::STATUS_BAD_REQUEST, 'This .pad file and its pad could not be matched. Try again, or contact your administrator if it keeps happening.', []];
 		// Two initialisations at once: the next open finds the winner's pad.
@@ -165,7 +167,7 @@ class PadControllerErrorMapperTest extends TestCase {
 	 * not the one the code stands for.
 	 */
 	public function testACallersOwnWordingCarriesNoCodeOfOurs(): void {
-		foreach ([new BindingException('duplicate'), new MissingBindingException('no binding'), new WaitingBindingException('waiting')] as $e) {
+		foreach ([new BindingException('duplicate'), new MissingBindingException('no binding'), new PadLostException('lost')] as $e) {
 			$response = $this->buildMapper()->run(
 				static fn(): array => throw $e,
 				static fn(array $result): DataResponse => new DataResponse($result),

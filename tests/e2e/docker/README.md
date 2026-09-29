@@ -46,9 +46,11 @@ fresh installation, and pointing it at a volume from another
 Remove the old one with `down -v` first, or use `sync-app.sh` if you only
 want your code changes in the stack you already have.
 
-`up.sh` boots the stack, installs and configures the app, creates the
-second test account with app passwords for both, and writes
-`tests/e2e/.env.e2e.docker`. Your own `tests/e2e/.env.e2e` is never
+`up.sh` boots the stack, installs and configures the app, installs
+groupfolders (the release pinned for the Nextcloud major, checked against
+its checksum; a major with none pinned comes up without it, and the team
+folder specs skip), creates the second test account with app passwords
+for both, and writes `tests/e2e/.env.e2e.docker`. Your own `tests/e2e/.env.e2e` is never
 touched; `E2E_ENV_FILE` is what selects the target.
 
 The app is **copied** into the container by `up.sh`, not mounted: a mount

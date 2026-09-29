@@ -7,7 +7,7 @@ import { createPadSync } from './lib/pad-sync.js'
 import { fetchJsonWithTimeout as fetchJson, isUnanswered, requestErrorMessage } from './lib/fetch-helpers.js'
 import { handFocusTo } from './lib/hand-focus.js'
 import { loadPadContent } from './lib/pad-content.js'
-import { assertOpenPayload, contentUrlFrom, contentViewFrom, isMissingBindingError, isRetryableOpenError, openWithFrontmatterRecovery, padUrlFrom, syncSettingsFrom } from './lib/pad-open-flow.js'
+import { assertOpenPayload, contentUrlFrom, contentViewFrom, isMissingBindingError, isPadMissingError, isRetryableOpenError, openWithFrontmatterRecovery, padUrlFrom, syncSettingsFrom } from './lib/pad-open-flow.js'
 
 (function () {
 	const IFRAME_REVEAL_DELAY_MS = 100
@@ -400,12 +400,13 @@ import { assertOpenPayload, contentUrlFrom, contentViewFrom, isMissingBindingErr
 		}
 	}
 
-	const showRecoveryWithoutOriginal = (errorMessage) => {
+	/** $body: what the card says under the message; the orphan's by default. */
+	const showRecoveryWithoutOriginal = (errorMessage, body = recoveryOrphanBodyText) => {
 		if (!(recoveryNode instanceof HTMLElement)) return
 		hideAllPanels()
 		recoveryNode.hidden = false
 		if (recoveryMessageNode instanceof HTMLElement) recoveryMessageNode.textContent = errorMessage
-		if (recoveryBodyNode instanceof HTMLElement) recoveryBodyNode.textContent = recoveryOrphanBodyText
+		if (recoveryBodyNode instanceof HTMLElement) recoveryBodyNode.textContent = body
 		if (recoveryActionsNode instanceof HTMLElement) {
 			recoveryActionsNode.replaceChildren(
 				buildButton(recoveryCreateNewText, () => { void triggerRecovery() }, PRIMARY_BUTTON_CLASS),
@@ -541,6 +542,14 @@ import { assertOpenPayload, contentUrlFrom, contentViewFrom, isMissingBindingErr
 			}
 			if (isMissingBindingError(error)) {
 				void enterRecoveryFlow(error, afterClick, isCurrent)
+				return
+			}
+			if (isPadMissingError(error)) {
+				// The message says what happened; the file is the original.
+				showRecoveryWithoutOriginal(messageOf(error, 'Pad open failed.'), '')
+				if (afterClick) {
+					handFocusToCard(recoveryActionsNode, recoveryMessageNode)
+				}
 				return
 			}
 			showError(messageOf(error, 'Pad open failed.'), isRetryableOpenError(error), afterClick)

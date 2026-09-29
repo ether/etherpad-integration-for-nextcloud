@@ -37,7 +37,7 @@ const setupAdminDom = () => {
 				<input type="checkbox" name="enable_public_pads" checked>
 				<input type="checkbox" name="allow_legacy_protected_import" checked>
 				<p id="pad-types-none-hint" class="ep-field-hint" role="status" data-message="No pad type is enabled."></p>
-				<input type="checkbox" name="delete_on_trash" checked>
+				<input type="checkbox" name="delete_pad_with_file" checked>
 				<input type="checkbox" name="allow_external_pads">
 				<textarea name="external_pad_allowlist"></textarea>
 				<textarea name="trusted_embed_origins"></textarea>
@@ -47,9 +47,9 @@ const setupAdminDom = () => {
 				<button type="button" id="etherpad-nextcloud-consistency-check">Check</button>
 				<p id="etherpad-nextcloud-connection-status" class="ep-status"></p>
 				<p id="etherpad-nextcloud-diagnostics-status" class="ep-status"></p>
+				<div id="etherpad-nextcloud-vanished" style="display:none;"><ul id="etherpad-nextcloud-vanished-list"></ul></div>
 				<div id="etherpad-nextcloud-pending-actions" style="display:none;">
 					<button type="button" id="etherpad-nextcloud-settle-pending">Check</button>
-					<span id="etherpad-nextcloud-restore-pending-count"></span>
 					<span id="etherpad-nextcloud-pending-count"></span>
 				</div>
 				<ul id="epnc-template-list"></ul>
@@ -181,10 +181,10 @@ describe('admin settings status areas', () => {
 		expect(connectionStatus().classList.contains('ep-status-success')).toBe(false)
 	})
 
-	it('counts deferred deletions apart from restores, and checks both', async () => {
+	it('counts the pads that wait to go, and checks them', async () => {
 		const fetchMock = vi.fn((url) => Promise.resolve(okResponse({
-			'/health': { message: 'All checks passed.', pending_delete_count: 2, restore_pending_count: 1 },
-			'/settle': { message: 'Pending pad check finished.', checked: 2, settled: 2, restore_pending_count: 0, pending_delete_count: 1 },
+			'/health': { message: 'All checks passed.', pending_delete_count: 2 },
+			'/settle': { message: 'Pending pad check finished.', checked: 2, settled: 1, pending_delete_count: 1 },
 		}[url] || {})))
 		vi.stubGlobal('fetch', fetchMock)
 		await import(MODULE)
@@ -194,18 +194,43 @@ describe('admin settings status areas', () => {
 		await flushAsyncWork()
 
 		expect(document.getElementById('etherpad-nextcloud-pending-count').textContent).toBe('Pending Etherpad deletes: 2')
-		expect(document.getElementById('etherpad-nextcloud-restore-pending-count').textContent).toBe('Unresolved restores: 1')
 		expect(settleButton.disabled).toBe(false)
 
 		settleButton.click()
 		await flushAsyncWork()
 
-		expect(diagnosticsStatus().textContent).toContain('settled=2')
-		expect(document.getElementById('etherpad-nextcloud-restore-pending-count').textContent).toBe('Unresolved restores: 0')
+		expect(diagnosticsStatus().textContent).toContain('settled=1')
 		expect(document.getElementById('etherpad-nextcloud-pending-count').textContent).toBe('Pending Etherpad deletes: 1')
-		// A deletion still waits for its file, so there is still something to check.
+		// One still waits - Etherpad refused it, say - so there is still something to check.
 		expect(document.getElementById('etherpad-nextcloud-pending-actions').style.display).toBe('')
 		expect(settleButton.disabled).toBe(false)
+	})
+
+	it('lists the pads of vanished files, and only while there are any', async () => {
+		let vanished = [{ file_id: 7, pad_id: 'g.abc$Notes', access_mode: 'protected' }, { file_id: 9, pad_id: '<b>pad</b>' }]
+		vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(okResponse({
+			message: 'Consistency check finished with issues.',
+			vanished_file_count: vanished.length,
+			samples: { vanished_files: vanished },
+		}))))
+		await import(MODULE)
+		const node = document.getElementById('etherpad-nextcloud-vanished')
+		const items = () => [...document.querySelectorAll('#etherpad-nextcloud-vanished-list li')].map((li) => li.textContent)
+
+		document.getElementById('etherpad-nextcloud-consistency-check').click()
+		await flushAsyncWork()
+		expect(diagnosticsStatus().textContent).toContain('vanished_file=2')
+		expect(diagnosticsStatus().classList.contains('ep-status-error')).toBe(true)
+		expect(node.style.display).toBe('')
+		// As text: a pad id is data, never markup.
+		expect(items()).toEqual(['g.abc$Notes (fileid 7)', '<b>pad</b> (fileid 9)'])
+
+		vanished = []
+		document.getElementById('etherpad-nextcloud-consistency-check').click()
+		await flushAsyncWork()
+		expect(node.style.display).toBe('none')
+		expect(items()).toEqual([])
+		expect(diagnosticsStatus().classList.contains('ep-status-success')).toBe(true)
 	})
 
 	it('leaves the counts alone when a response carries none', async () => {
@@ -217,7 +242,6 @@ describe('admin settings status areas', () => {
 		await flushAsyncWork()
 
 		expect(document.getElementById('etherpad-nextcloud-pending-count').textContent).toBe('')
-		expect(document.getElementById('etherpad-nextcloud-restore-pending-count').textContent).toBe('')
 	})
 })
 

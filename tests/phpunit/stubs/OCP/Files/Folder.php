@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace OCP\Files;
 
 if (!interface_exists(Folder::class)) {
-	interface Folder {
+	interface Folder extends Node {
 		public function nodeExists(string $path): bool;
 
 		/**

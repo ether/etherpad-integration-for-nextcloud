@@ -18,6 +18,7 @@ use OCA\EtherpadNextcloud\Exception\ExternalPadException;
 use OCA\EtherpadNextcloud\Exception\InvalidShareFilePathException;
 use OCA\EtherpadNextcloud\Exception\InvalidShareTokenException;
 use OCA\EtherpadNextcloud\Exception\MissingBindingException;
+use OCA\EtherpadNextcloud\Exception\PadLostException;
 use OCA\EtherpadNextcloud\Exception\MissingFrontmatterException;
 use OCA\EtherpadNextcloud\Exception\NoShareFileSelectedException;
 use OCA\EtherpadNextcloud\Exception\NotAPadFileException;
@@ -25,9 +26,7 @@ use OCA\EtherpadNextcloud\Exception\PadFileFormatException;
 use OCA\EtherpadNextcloud\Exception\ShareFileNotInShareException;
 use OCA\EtherpadNextcloud\Exception\ShareItemUnavailableException;
 use OCA\EtherpadNextcloud\Exception\ShareReadForbiddenException;
-use OCA\EtherpadNextcloud\Exception\WaitingBindingException;
 use OCA\EtherpadNextcloud\Service\ApiErrorLog;
-use OCA\EtherpadNextcloud\Service\PadResponseService;
 use OCA\EtherpadNextcloud\Service\PublicShareUrlBuilder;
 use OCP\AppFramework\Http;
 use OCP\AppFramework\Http\DataResponse;
@@ -50,7 +49,6 @@ use OCP\Lock\LockedException;
 class PublicViewerControllerErrorMapper {
 	public function __construct(
 		private PublicShareUrlBuilder $shareUrlBuilder,
-		private PadResponseService $padResponses,
 		private IL10N $l10n,
 		private ApiErrorLog $errorLog,
 	) {
@@ -116,11 +114,10 @@ class PublicViewerControllerErrorMapper {
 			$e instanceof NotAPadFileException => [Http::STATUS_BAD_REQUEST, $this->l10n->t('The selected item is not a .pad document.')],
 			$e instanceof MissingFrontmatterException => [Http::STATUS_BAD_REQUEST, $this->l10n->t('The selected .pad file is missing required metadata.')],
 			$e instanceof PadFileFormatException => [Http::STATUS_BAD_REQUEST, $this->l10n->t('The selected .pad file has an invalid format.')],
-			// A copy, or an original whose pad the sweep let go: either way
-			// its owner, opening it, is offered the pad back.
+			// A copy, or a file whose pad an earlier version's trash deleted:
+			// either way its owner, opening it, is offered a pad.
 			$e instanceof MissingBindingException => [Http::STATUS_BAD_REQUEST, $this->l10n->t('This .pad file has no pad in this Nextcloud. Its owner can open it to restore the pad.')],
-			// The signed-in sentence, translated like it.
-			$e instanceof WaitingBindingException => [Http::STATUS_CONFLICT, $this->padResponses->bindingErrorMessage($e)],
+			$e instanceof PadLostException => [Http::STATUS_BAD_REQUEST, $this->l10n->t('This pad is no longer on the Etherpad server. Its owner can open the file to make a new pad from its content.')],
 			$e instanceof BindingException => [Http::STATUS_BAD_REQUEST, $this->l10n->t('Pad binding is inconsistent. Please contact the share owner.')],
 			// Passes by itself, as on the signed-in side.
 			$e instanceof LockedException => [Http::STATUS_SERVICE_UNAVAILABLE, $this->l10n->t('Pad file is temporarily locked. Please retry.')],

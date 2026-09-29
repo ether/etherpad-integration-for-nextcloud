@@ -37,7 +37,6 @@ What it does:
 - If Nextcloud test credentials are present, runs core E2E checks:
   - pad flow
   - protected cookie contract (session cookie attrs + no `HttpOnly` for current Etherpad runtime compatibility)
-  - lifecycle state guards
   - public folder share flow
   - public single-file share flow
   - external URL security checks
@@ -92,14 +91,6 @@ RUN_FAILURE_PATHS=1 FAILURE_PATHS_PREPARED=1 NC_BASE_URL=... NC_USER=... NC_APP_
 Included:
 
 - sync failure path
-- trash deferred-delete failure path
-- restore failure path
-
-Optional debug-only lifecycle fault-injection checks:
-
-```bash
-RUN_DEBUG_FAULT_PATHS=1 NC_BASE_URL=... NC_USER=... NC_APP_PASSWORD=... ./tests/integration/release-check.sh "/release-debug-faults"
-```
 
 Notes:
 
@@ -107,8 +98,6 @@ Notes:
   - `RUN_FAILURE_PATHS=1`
   - `FAILURE_PATHS_PREPARED=1`
 - This prevents false failures on healthy environments where outage conditions were not prepared.
-- Requires admin credentials.
-- Requires Nextcloud `debug` mode enabled.
 
 ## 3) Tagging
 

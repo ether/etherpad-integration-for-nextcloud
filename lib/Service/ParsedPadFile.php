@@ -28,6 +28,12 @@ class ParsedPadFile {
 		public readonly string $padUrl,
 		public readonly bool $isExternal,
 		public readonly int $snapshotRev,
+		/**
+		 * The text of the snapshot the file holds, as the last sync wrote
+		 * it: readPad() splits the body once. Empty for a file read
+		 * otherwise, as in tests that do not ask for it.
+		 */
+		public readonly string $savedText = '',
 	) {
 	}
 

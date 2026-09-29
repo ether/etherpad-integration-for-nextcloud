@@ -47,10 +47,20 @@ class PadFileLockRetryService {
 		return (string)$node->getContent();
 	}
 
-	public function putContentWithSyncLockRetry(File $node, string $content): int {
+	/**
+	 * $beforeEachAttempt runs right before every write, the first and each
+	 * one after a wait, and throws to stop it: what held before a wait need
+	 * not hold after it.
+	 *
+	 * @param (\Closure(): void)|null $beforeEachAttempt
+	 */
+	public function putContentWithSyncLockRetry(File $node, string $content, ?\Closure $beforeEachAttempt = null): int {
 		$lockRetries = 0;
 		foreach (self::SYNC_LOCK_RETRY_DELAYS_US as $delay) {
 			try {
+				if ($beforeEachAttempt !== null) {
+					$beforeEachAttempt();
+				}
 				$node->putContent($content);
 				return $lockRetries;
 			} catch (LockedException) {
@@ -60,6 +70,9 @@ class PadFileLockRetryService {
 		}
 
 		try {
+			if ($beforeEachAttempt !== null) {
+				$beforeEachAttempt();
+			}
 			$node->putContent($content);
 			return $lockRetries;
 		} catch (LockedException $e) {

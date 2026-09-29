@@ -9,6 +9,8 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Service;
 
+use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
+use OCA\EtherpadNextcloud\Exception\RunBudgetSpentException;
 use OCA\EtherpadNextcloud\Util\EtherpadErrorClassifier;
 use OCA\EtherpadNextcloud\Util\PadAccessMode;
 use OCA\EtherpadNextcloud\Util\PadId;
@@ -26,6 +28,9 @@ use Psr\Log\LoggerInterface;
  * and nothing collected them afterwards.
  */
 class ManagedPadLifecycle {
+	/** How long whether a pad is lost may take to answer (howLost()). */
+	public const PROBE_TIMEOUT_SECONDS = 3;
+
 	public function __construct(
 		private EtherpadClient $etherpadClient,
 		private LoggerInterface $logger,
@@ -129,7 +134,13 @@ class ManagedPadLifecycle {
 	}
 
 	/**
-	 * Put a snapshot into a pad that has just been provisioned.
+	 * Put a snapshot into a pad that has just been provisioned, and say how
+	 * many revisions the pad has then: what a file holding that snapshot
+	 * records as synced (`snapshot_rev`). A file that says so counts as
+	 * holding saved content should Etherpad lose the pad (howLost()); one
+	 * with 0 would not, and a public pad made anew, empty, on a visit
+	 * would be synced over it. -1 when Etherpad does not say: the file is
+	 * left to its first sync, as a new one is.
 	 *
 	 * setHTML first so formatting survives, and setText only where there is
 	 * no HTML or Etherpad refuses it. Never both: `setText` replaces the
@@ -141,12 +152,13 @@ class ManagedPadLifecycle {
 	 *   line; `app` and SafeError's `error`, `error_message` and
 	 *   `error_origin` are set here and win a collision. Do not pass a pad
 	 *   id - the fileId every caller already supplies is the handle
+	 * @return int the pad's revisions once seeded, -1 when not known
 	 */
-	public function seed(string $padId, string $text, string $html, array $context = []): void {
+	public function seed(string $padId, string $text, string $html, array $context = []): int {
 		if (trim($html) !== '') {
 			try {
 				$this->etherpadClient->setHTML($padId, $html);
-				return;
+				return $this->revisionsOfSeeded($padId);
 			} catch (\Throwable $htmlError) {
 				// Every caller supplies a fileId in $context, which is the
 				// handle to keep: a pad id plus the configured host is a
@@ -159,6 +171,15 @@ class ManagedPadLifecycle {
 		}
 
 		$this->etherpadClient->setText($padId, $text);
+		return $this->revisionsOfSeeded($padId);
+	}
+
+	private function revisionsOfSeeded(string $padId): int {
+		try {
+			return $this->etherpadClient->getRevisionsCount($padId);
+		} catch (\Throwable) {
+			return -1;
+		}
 	}
 
 	/**
@@ -191,68 +212,160 @@ class ManagedPadLifecycle {
 	}
 
 	/**
-	 * Whether the pad a file's snapshot was taken from still exists, as far
-	 * as Etherpad will say. Only its own answer that there is no such pad
-	 * counts as absent; a request that got no answer is unknown, because
-	 * the pad may well be there.
+	 * How Etherpad has lost the pad a file's row names, or null when it has
+	 * not:
+	 * - Absent when it has no pad under that id: a protected pad, whose
+	 *   session would open nothing, or a public pad whose file holds saved
+	 *   content.
+	 * - Behind when it has one without a single revision while the file
+	 *   holds saved content, and the pad's text is not the text the file
+	 *   saved: a public pad Etherpad made anew when someone
+	 *   visited its address - with its default text, and the visitor as
+	 *   its author. A pad at revision 0 holding the saved text had its
+	 *   history cut short in Etherpad, and nothing is lost.
 	 *
-	 * Revisions only grow, so a pad under that id with fewer of them than
-	 * the snapshot was taken at is behind: created again since, empty, or
-	 * brought back from an older backup. A snapshot revision of -1, from a
-	 * file never synced, says nothing, and any pad counts as present.
+	 * A public pad with nothing saved in its file - an Ownpad link to a pad
+	 * nobody opened yet, say - Etherpad makes on the first visit, as ever,
+	 * and is never lost, so Etherpad is not asked about it. A pad merely
+	 * behind the snapshot is not lost: files a restore in 1.1.0-beta.1 left
+	 * kept the old pad's revision count. A pad an admin made anew through
+	 * the API with other text than the file saved counts as made anew; the
+	 * recovery leaves it in place. Quiet, unlike probe(): an open asks this
+	 * every time.
 	 *
-	 * An unknown answer is logged here, with its cause, since no caller
-	 * gets to see the exception it came from. So is a pad behind, with its
-	 * id: someone may have written into it since it came back, so every
-	 * caller leaves it in place, and this line is the last record of where
-	 * it is.
+	 * Each question to Etherpad waits PROBE_TIMEOUT_SECONDS at most - the
+	 * revision count, and at revision 0 the text: an open that may write,
+	 * and a restore, wait on the answers.
 	 *
-	 * @param array<string,mixed> $context what the log line should carry, fileId above all
+	 * @param string $savedText the text of the file's snapshot (ParsedPadFile::$savedText)
+	 * @throws \Throwable when Etherpad gives any other answer, or none
 	 */
-	public function presenceOf(string $padId, int $snapshotRevision = -1, array $context = [], ?int $timeoutSeconds = null): PadPresence {
-		return $this->probe($padId, $snapshotRevision, $context, $timeoutSeconds)->presence;
+	public function howLost(string $padId, string $accessMode, int $snapshotRevision, string $savedText): ?PadPresence {
+		if (!self::holdsSavedContent($accessMode, $snapshotRevision, $savedText)) {
+			return null;
+		}
+		try {
+			$revisions = $this->etherpadClient->getRevisionsCount($padId, self::PROBE_TIMEOUT_SECONDS);
+		} catch (\Throwable $e) {
+			if (!EtherpadErrorClassifier::isPadAlreadyDeleted($e)) {
+				throw $e;
+			}
+			return PadPresence::Absent;
+		}
+		// The text is asked only where it decides.
+		if ($revisions !== 0 || !self::savedAnything($snapshotRevision, $savedText)) {
+			return null;
+		}
+		return self::isMadeAnew($revisions, $this->etherpadClient->getText($padId, self::PROBE_TIMEOUT_SECONDS), $snapshotRevision, $savedText) ? PadPresence::Behind : null;
 	}
 
 	/**
-	 * presenceOf(), with the revision count the answer came from.
-	 *
-	 * @param array<string,mixed> $context what the log line should carry, fileId above all
+	 * Whether a pad at $revisions holding $padText is one Etherpad made anew
+	 * in place of the file's (howLost()'s Behind): without a single revision
+	 * while the file holds saved content, and with other text than the file
+	 * saved. For a caller that has the pad's text at hand already.
 	 */
-	public function probe(string $padId, int $snapshotRevision = -1, array $context = [], ?int $timeoutSeconds = null): PadProbe {
+	public static function isMadeAnew(int $revisions, string $padText, int $snapshotRevision, string $savedText): bool {
+		return $revisions === 0 && self::savedAnything($snapshotRevision, $savedText) && !self::sameText($padText, $savedText);
+	}
+
+	/** Text as Etherpad and a file hold it, but for line endings and the final newline. */
+	private static function sameText(string $a, string $b): bool {
+		$normalize = static fn (string $text): string => rtrim(str_replace("\r\n", "\n", $text));
+		return $normalize($a) === $normalize($b);
+	}
+
+	/**
+	 * Whether an open should stop because the pad is lost: only on a
+	 * definite answer. Etherpad slow, silent or refusing the question opens
+	 * the pad as before - the check is for a rare case, and must not make
+	 * an open depend on it; whatever is wrong with Etherpad shows there.
+	 */
+	public function isKnownLost(string $padId, string $accessMode, int $snapshotRevision, string $savedText): bool {
 		try {
-			$revisions = $this->etherpadClient->getRevisionsCount($padId, $timeoutSeconds);
-		} catch (\Throwable $e) {
-			if (EtherpadErrorClassifier::isPadAlreadyDeleted($e)) {
-				return new PadProbe(PadPresence::Absent, null);
-			}
-			$this->logger->warning('Could not ask Etherpad whether a pad still exists.', [
+			return $this->howLost($padId, $accessMode, $snapshotRevision, $savedText) !== null;
+		} catch (EtherpadClientException $e) {
+			// Etherpad's own answer or silence: expected now and then.
+			$this->logger->debug('Could not ask Etherpad whether a pad is lost; opened as before.', [
 				'app' => 'etherpad_nextcloud',
 				...SafeError::context($e),
-			] + $context);
-			return new PadProbe(PadPresence::Unknown, null);
-		}
-		if ($revisions < $snapshotRevision) {
-			$this->logger->warning('A pad has fewer revisions than its file\'s snapshot and is no longer the file\'s. It is left in place.', [
+			]);
+			return false;
+		} catch (\Throwable $e) {
+			// Anything else is a fault here, not Etherpad's: the open goes on,
+			// but the check is not doing its job, so it is said out loud.
+			$this->logger->warning('Could not tell whether a pad is lost; opened as before.', [
 				'app' => 'etherpad_nextcloud',
-				'padId' => $padId,
-			] + $context);
-			return new PadProbe(PadPresence::Behind, $revisions);
+				...SafeError::context($e),
+			]);
+			return false;
 		}
-		return new PadProbe(PadPresence::Present, $revisions);
 	}
 
 	/**
-	 * Remove a pad the app is bound to, whatever kind it is: true when this
-	 * call removed something - the pad, or the empty group a protected pad
-	 * left behind - and false when nothing was left to remove, because
-	 * Etherpad says the pad does not exist, or its group does not (a group
-	 * that is not there cannot hold the pad either). Every caller reads
-	 * false as done; what differs between them is what they do when the
-	 * delete fails, and every other error is theirs.
+	 * Whether losing the pad would lose anything the file holds: always for
+	 * a protected pad, whose session opens nothing without it, and for a
+	 * public pad once its file has saved content.
+	 */
+	public static function holdsSavedContent(string $accessMode, int $snapshotRevision, string $savedText): bool {
+		return $accessMode === BindingService::ACCESS_PROTECTED || self::savedAnything($snapshotRevision, $savedText);
+	}
+
+	/**
+	 * Whether the file has saved content: a snapshot taken past a pad's
+	 * first revision (`snapshot_rev` above 0), or any text at all - a file
+	 * made from a template by 1.1.0-beta.1 holds its content at
+	 * `snapshot_rev: 0`, and a new file holds none.
+	 */
+	private static function savedAnything(int $snapshotRevision, string $savedText): bool {
+		return $snapshotRevision > 0 || trim($savedText) !== '';
+	}
+
+	/**
+	 * Whether a group holding $pads holds nothing but $padIds: it holds
+	 * them alone, or nothing. A legacy `.pad` names its own pad id, and its
+	 * group may be someone else's, with other pads in it that the group's
+	 * deletion or sessions would take along (docs/etherpad-integration.md,
+	 * "Removing a pad").
+	 *
+	 * @param list<string> $pads
+	 * @param list<string> $padIds
+	 */
+	public static function groupHoldsOnly(array $pads, array $padIds): bool {
+		return array_diff($pads, $padIds) === [];
+	}
+
+	/**
+	 * Whether Etherpad answers at all, asked within $budget: a failure that
+	 * reads as Etherpad unreachable - an HTTP error, an answer it could not
+	 * have meant - may be one pad's alone.
+	 *
+	 * @throws RunBudgetSpentException
+	 */
+	public function answers(?RunBudget $budget = null): bool {
+		$timeout = RunBudget::timeoutOf($budget);
+		try {
+			$this->etherpadClient->assertAnswering($timeout);
+			return true;
+		} catch (\Throwable) {
+			return false;
+		}
+	}
+
+	/**
+	 * Remove a pad the app is bound to, whatever kind it is - the pad, or
+	 * the empty group a protected pad left behind. Etherpad saying the pad
+	 * does not exist, or its group does not (a group that is not there
+	 * cannot hold the pad either), counts as done; what differs between the
+	 * callers is what they do when the delete fails, and every other error
+	 * is theirs.
 	 *
 	 * $knownAbsent: Etherpad has just said there is no such pad. A public
 	 * pad leaves nothing else behind, so that takes no call; a protected
-	 * one can leave its group, which is still looked for.
+	 * one can leave its group, which goes only while it holds nothing. The
+	 * pad may be back by then - made anew through the API - and is not this
+	 * call's to remove; a group that cannot be read stays, and the reason
+	 * reaches the caller.
 	 *
 	 * $budget: a sweep's run, or an open's few seconds; each call gets what
 	 * is left, and one that would not finish is not made. Nothing is
@@ -263,18 +376,18 @@ class ManagedPadLifecycle {
 	 * removed, instead of being given up for the pad alone: the next try
 	 * may read it, and a group given up is never looked at again.
 	 */
-	public function discardIfPresent(string $padId, ?RunBudget $budget = null, bool $knownAbsent = false, bool $retried = false): bool {
-		if ($knownAbsent && !PadId::isGroupPad($padId)) {
-			return false;
-		}
+	public function discardIfPresent(string $padId, ?RunBudget $budget = null, bool $knownAbsent = false, bool $retried = false): void {
+		$groupId = PadId::groupIdOf($padId);
 		try {
-			$this->discard($padId, $budget, $retried);
-			return true;
-		} catch (\Throwable $e) {
-			if (EtherpadErrorClassifier::isPadAlreadyDeleted($e)) {
-				return false;
+			if (!$knownAbsent) {
+				$this->discard($padId, $budget, $retried);
+			} elseif ($groupId !== null && $this->etherpadClient->listPads($groupId, RunBudget::timeoutOf($budget)) === []) {
+				$this->etherpadClient->deleteGroup($groupId, RunBudget::timeoutOf($budget));
 			}
-			throw $e;
+		} catch (\Throwable $e) {
+			if (!EtherpadErrorClassifier::isPadAlreadyDeleted($e)) {
+				throw $e;
+			}
 		}
 	}
 
@@ -297,7 +410,7 @@ class ManagedPadLifecycle {
 		// with nothing in it, and a retry that only deleted the pad again
 		// would leave it standing for good. A group holding no pads has no
 		// content to lose, and its sessions grant access to nothing.
-		if ($pads !== null && ($pads === [] || $pads === [$padId])) {
+		if ($pads !== null && self::groupHoldsOnly($pads, [$padId])) {
 			$this->etherpadClient->deleteGroup($groupId, RunBudget::timeoutOf($budget));
 			// Worth a line: this removed a group, its pad and every session
 			// issued for it, and an admin tracing a vanished pad has nothing
