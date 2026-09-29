@@ -188,6 +188,11 @@ class PadSyncService {
 		}
 
 		$updatedContent = $this->padFileService->withExportSnapshot($pad, new PadSnapshot($text, $html, $currentRev));
+		// Asked again right before the write: a recovery may have moved the
+		// row onto a new pad while Etherpad was asked, and written the file
+		// for it. This pad's text written over that would leave file and row
+		// naming two pads, which no open gets past.
+		$this->bindingService->assertConsistentMapping($fileId, $padId, $pad->accessMode);
 		$lockRetries = $this->lockRetryService->putContentWithSyncLockRetry($node, $updatedContent);
 
 		return new PadSyncResult(

@@ -85,8 +85,9 @@ class PadLifecycleControllerTest extends TestCase {
 		$padFileService->method('readPad')->with('frontmatter')->willReturn($parsedPad);
 		$padFileService->method('withExportSnapshot')->with($this->identicalTo($parsedPad), new PadSnapshot('hello', '<p>hello</p>', 5))->willReturn('updated-content');
 
+		// Once as the sync starts, once more right before it writes.
 		$bindingService = $this->createMock(BindingService::class);
-		$bindingService->expects($this->once())
+		$bindingService->expects($this->exactly(2))
 			->method('assertConsistentMapping')
 			->with(138, 'g.ABCDEFGHIJKLMNOP$pad-1', BindingService::ACCESS_PROTECTED);
 
