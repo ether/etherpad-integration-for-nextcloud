@@ -114,8 +114,8 @@ class PublicViewerControllerErrorMapper {
 			$e instanceof NotAPadFileException => [Http::STATUS_BAD_REQUEST, $this->l10n->t('The selected item is not a .pad document.')],
 			$e instanceof MissingFrontmatterException => [Http::STATUS_BAD_REQUEST, $this->l10n->t('The selected .pad file is missing required metadata.')],
 			$e instanceof PadFileFormatException => [Http::STATUS_BAD_REQUEST, $this->l10n->t('The selected .pad file has an invalid format.')],
-			// A copy, or an original whose pad the sweep let go: either way
-			// its owner, opening it, is offered the pad back.
+			// A copy, or a file whose pad an earlier version's trash deleted:
+			// either way its owner, opening it, is offered a pad.
 			$e instanceof MissingBindingException => [Http::STATUS_BAD_REQUEST, $this->l10n->t('This .pad file has no pad in this Nextcloud. Its owner can open it to restore the pad.')],
 			$e instanceof PadLostException => [Http::STATUS_BAD_REQUEST, $this->l10n->t('This pad is no longer on the Etherpad server. Its owner can open the file to make a new pad from its content.')],
 			$e instanceof BindingException => [Http::STATUS_BAD_REQUEST, $this->l10n->t('Pad binding is inconsistent. Please contact the share owner.')],

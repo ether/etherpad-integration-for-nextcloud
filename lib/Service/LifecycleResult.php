@@ -31,8 +31,8 @@ final class LifecycleResult {
 	}
 
 	/**
-	 * A step that did nothing, and why. Logged at debug level: for a row the
-	 * sweep cannot settle yet, the only trace of the reason.
+	 * A step that did nothing, and why. Logged at debug level: for a restore
+	 * that leaves a file to its next open, the only trace of the reason.
 	 *
 	 * @return array{status: string, reason: string}
 	 */

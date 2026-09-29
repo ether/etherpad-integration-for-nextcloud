@@ -240,12 +240,12 @@ class ManagedPadLifecycle {
 	 * @param string $savedText the text of the file's snapshot (ParsedPadFile::$savedText)
 	 * @throws \Throwable when Etherpad gives any other answer, or none
 	 */
-	public function howLost(string $padId, string $accessMode, int $snapshotRevision, string $savedText, int $timeoutSeconds = self::PROBE_TIMEOUT_SECONDS): ?PadPresence {
+	public function howLost(string $padId, string $accessMode, int $snapshotRevision, string $savedText): ?PadPresence {
 		if (!self::holdsSavedContent($accessMode, $snapshotRevision, $savedText)) {
 			return null;
 		}
 		try {
-			$revisions = $this->etherpadClient->getRevisionsCount($padId, $timeoutSeconds);
+			$revisions = $this->etherpadClient->getRevisionsCount($padId, self::PROBE_TIMEOUT_SECONDS);
 		} catch (\Throwable $e) {
 			if (!EtherpadErrorClassifier::isPadAlreadyDeleted($e)) {
 				throw $e;
@@ -255,7 +255,7 @@ class ManagedPadLifecycle {
 		if ($revisions !== 0 || !self::savedAnything($snapshotRevision, $savedText)) {
 			return null;
 		}
-		return self::sameText($this->etherpadClient->getText($padId, $timeoutSeconds), $savedText) ? null : PadPresence::Behind;
+		return self::sameText($this->etherpadClient->getText($padId, self::PROBE_TIMEOUT_SECONDS), $savedText) ? null : PadPresence::Behind;
 	}
 
 	/** Text as Etherpad and a file hold it, but for line endings and the final newline. */

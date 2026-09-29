@@ -91,10 +91,9 @@ class RestoreFromTrashListener implements IEventListener {
 	 * on, it would only stop what Nextcloud does after the hook and the
 	 * event - the file's versions would stay in the trash, and the user be
 	 * told of a failed restore that succeeded. It is reported here and goes
-	 * no further. What the pad's restore left unfinished waits for the
-	 * sweep, or the file offers its own recovery - save after a database
-	 * that fails again in the middle of the rollback, which can leave a row
-	 * naming a pad the file does not.
+	 * no further. What the pad's restore left unfinished, the file's next
+	 * open offers - save after a database that fails again in the middle of
+	 * the rollback, which can leave a row naming a pad the file does not.
 	 *
 	 * $via names the way in, `hook` or `event`: a core restore takes both,
 	 * the hook first (Application::register()). The event pass is a second

@@ -111,8 +111,8 @@ class EtherpadClient {
 
 	/**
 	 * An answer without a count is not revision 0: that would read as a pad
-	 * behind any snapshot, and a sweep would let go of a pad Etherpad said
-	 * nothing about. It is no answer, and throws like one.
+	 * made anew, and an open would offer a new pad in place of one Etherpad
+	 * said nothing about. It is no answer, and throws like one.
 	 */
 	public function getRevisionsCount(string $padId, ?int $timeoutSeconds = null): int {
 		$data = $this->apiCall('getRevisionsCount', ['padID' => $padId], timeoutSeconds: $timeoutSeconds);
