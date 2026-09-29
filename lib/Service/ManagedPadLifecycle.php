@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\Service;
 
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
+use OCA\EtherpadNextcloud\Exception\RunBudgetSpentException;
 use OCA\EtherpadNextcloud\Util\EtherpadErrorClassifier;
 use OCA\EtherpadNextcloud\Util\PadAccessMode;
 use OCA\EtherpadNextcloud\Util\PadId;
@@ -307,6 +308,23 @@ class ManagedPadLifecycle {
 	 */
 	private static function savedAnything(int $snapshotRevision, string $savedText): bool {
 		return $snapshotRevision > 0 || trim($savedText) !== '';
+	}
+
+	/**
+	 * Whether Etherpad answers at all, asked within $budget: a failure that
+	 * reads as Etherpad unreachable - an HTTP error, an answer it could not
+	 * have meant - may be one pad's alone.
+	 *
+	 * @throws RunBudgetSpentException
+	 */
+	public function answers(?RunBudget $budget = null): bool {
+		$timeout = RunBudget::timeoutOf($budget);
+		try {
+			$this->etherpadClient->assertAnswering($timeout);
+			return true;
+		} catch (\Throwable) {
+			return false;
+		}
 	}
 
 	/**

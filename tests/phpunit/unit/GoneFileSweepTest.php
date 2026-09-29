@@ -34,6 +34,10 @@ class GoneFileSweepTest extends TestCase {
 	private array $lines = [];
 	/** @var (\Closure(): void)|null what deleting a pad takes, besides */
 	private ?\Closure $onDelete = null;
+	/** Whether Etherpad answers the question it always can. */
+	private bool $answering = true;
+	/** @var array<string,int> deletes asked for, by pad */
+	private array $attempts = [];
 
 	protected function setUp(): void {
 		$this->clock = new FixedClock();
@@ -41,6 +45,8 @@ class GoneFileSweepTest extends TestCase {
 		$this->deletedPads = [];
 		$this->padErrors = [];
 		$this->lines = [];
+		$this->answering = true;
+		$this->attempts = [];
 	}
 
 	/**
@@ -121,12 +127,36 @@ class GoneFileSweepTest extends TestCase {
 	public function testEtherpadNotAnsweringEndsTheRun(): void {
 		$this->table([self::row(1, 11, 'pad-a', seenAt: 100), self::row(2, 12, 'pad-b', seenAt: 101)], []);
 		$this->padErrors = ['pad-a' => new EtherpadClientException('Etherpad API request failed: deletePad')];
+		$this->answering = false;
 
 		$this->sweep();
 
 		$this->assertSame([], $this->deletedPads);
 		$this->assertSame([11, 12], $this->fileIds());
 		$this->assertSame([['info', 'Etherpad did not answer the sweep of files gone for good; it tries again next run.', null]], $this->lines);
+	}
+
+	/**
+	 * An error that reads as Etherpad down - an HTTP 500, say - while
+	 * Etherpad answers otherwise is the pad's: it waits its hour, with a
+	 * warning, and the run goes on rather than stop at it every time.
+	 */
+	public function testAPadEtherpadFailsOnWaitsAndTheRunGoesOn(): void {
+		$this->table([self::row(1, 11, 'pad-broken', seenAt: 100), self::row(2, 12, 'pad-fine', seenAt: 101)], []);
+		$this->padErrors = ['pad-broken' => new EtherpadClientException('Etherpad API HTTP error (500)')];
+
+		$this->sweep();
+
+		$this->assertSame(['pad-fine'], $this->deletedPads);
+		$this->assertSame([11], $this->fileIds());
+		$this->assertSame([
+			['warning', 'Could not delete the pad of a file gone for good; it is tried again in an hour.', 11],
+			['info', 'The file of a pad is gone for good; the pad is deleted.', 12],
+		], $this->lines);
+		$this->clock->advance(3599);
+		$this->lines = [];
+		$this->sweep();
+		$this->assertSame([], $this->lines, 'not before its hour');
 	}
 
 	/**
@@ -182,6 +212,26 @@ class GoneFileSweepTest extends TestCase {
 	}
 
 	/**
+	 * An admin's settle takes the rows Etherpad refused within the hour, but
+	 * each once a run: one refused again waits, rather than be asked again
+	 * with every batch.
+	 */
+	public function testASettleAsksForARefusedPadOnceARun(): void {
+		$rows = [self::row(1, 11, 'pad-refused', seenAt: 100, triedAt: 50)];
+		foreach (range(2, 201) as $i) {
+			$rows[] = self::row($i, 1000 + $i, 'pad-' . $i, seenAt: 100);
+		}
+		$this->table($rows, []);
+		$this->padErrors = ['pad-refused' => new EtherpadRefusedException('apikey is invalid')];
+
+		$this->build()->run(atOnce: true);
+
+		$this->assertSame(1, $this->attempts['pad-refused']);
+		$this->assertCount(200, $this->deletedPads);
+		$this->assertSame([11], $this->fileIds());
+	}
+
+	/**
 	 * A file seen deleted that the file cache still has an hour later was
 	 * not deleted after all - a deletion rolled back, an account whose
 	 * files were left - and its row is active again, with deleting off too.
@@ -229,7 +279,13 @@ class GoneFileSweepTest extends TestCase {
 
 	private function build(?BindingService $bindings = null): GoneFileSweep {
 		$etherpad = $this->createMock(EtherpadClient::class);
+		$etherpad->method('assertAnswering')->willReturnCallback(function (): void {
+			if (!$this->answering) {
+				throw new EtherpadClientException('Etherpad API request failed: checkToken');
+			}
+		});
 		$etherpad->method('deletePad')->willReturnCallback(function (string $padId): void {
+			$this->attempts[$padId] = ($this->attempts[$padId] ?? 0) + 1;
 			if (isset($this->padErrors[$padId])) {
 				throw $this->padErrors[$padId];
 			}

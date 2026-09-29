@@ -81,16 +81,27 @@ class GoneFileSweep {
 		}
 		$budget ??= new RunBudget($this->timeFactory, RunBudget::DEFAULT_SECONDS);
 		$graceBy = $atOnce ? $now : $now - BindingService::GONE_GRACE_SECONDS;
+		// A row this run tried and left - refused, or still in the file cache
+		// - is not tried again in it: an admin's settle, which takes rows
+		// Etherpad refused within the hour, finds them again in its next
+		// batch.
+		$tried = [];
 		try {
 			for ($batch = 0; $batch < self::BATCHES; $batch++) {
 				$rows = $this->bindingService->findGone(self::LIMIT, $graceBy, $atOnce ? $now : $now - self::RETRY_REFUSED_SECONDS);
+				$new = 0;
 				foreach ($rows as $binding) {
+					if (isset($tried[$binding->fileId])) {
+						continue;
+					}
+					$tried[$binding->fileId] = true;
+					$new++;
 					$summary['checked']++;
 					if ($this->discard($binding, $budget)) {
 						$summary['deleted']++;
 					}
 				}
-				if (count($rows) < self::LIMIT) {
+				if (count($rows) < self::LIMIT || $new === 0) {
 					break;
 				}
 			}
@@ -125,7 +136,11 @@ class GoneFileSweep {
 		} catch (RunBudgetSpentException $e) {
 			throw $e;
 		} catch (\Throwable $e) {
-			if (EtherpadClientException::isEtherpadUnreachable($e)) {
+			// An HTTP error or an answer Etherpad could not have meant reads as
+			// Etherpad down, and ends the run - unless Etherpad answers the
+			// question it always can: then it is this pad's, and the pad
+			// waits its hour rather than hold the head of the queue.
+			if (EtherpadClientException::isEtherpadUnreachable($e) && !$this->padLifecycle->answers($budget)) {
 				throw $e;
 			}
 			$this->bindingService->postponeGone($binding->fileId, $binding->padId);

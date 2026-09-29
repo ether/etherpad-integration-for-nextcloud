@@ -342,6 +342,15 @@ class EtherpadClient {
 	}
 
 	/**
+	 * Throws unless the configured Etherpad answers the configured key, the
+	 * call assertApiKeyAccepted() makes, within $timeoutSeconds: whether it
+	 * answers at all, where another call failed.
+	 */
+	public function assertAnswering(?int $timeoutSeconds = null): void {
+		$this->apiCall(self::API_KEY_PROBE_METHOD, [], timeoutSeconds: $timeoutSeconds);
+	}
+
+	/**
 	 * The Etherpad release this instance is running, as `/health` reports it.
 	 *
 	 * Not the API version: `/api` answers `1.3.1` on both Etherpad 2.7.3 and
