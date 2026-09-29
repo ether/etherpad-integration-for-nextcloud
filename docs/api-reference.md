@@ -383,17 +383,14 @@ solely by the separate external-pad policy, not by these two settings.
 - `POST /api/v1/admin/delete-vanished`
   - Controller: `AdminController::deleteVanished`
   - Auth: admin only
-  - Optional param: `fileId`, for one vanished file's pad alone.
-  - Purpose: the pads of the vanished files deleted, on the admin's word:
-    every vanished row (see `consistency-check`), or the one `fileId`
-    names while it is still vanished, is marked as a file deleted for
-    good, and the sweep deletes its pad as for any such file -
-    within minutes, or at once through `settle-pending`, asking the file
-    cache once more first. In chunks, within the budget a sweep has; what
-    is left needs another call. The app never does this on its own: a file
-    the file cache lost may still be there under another id, after the
-    cache was rebuilt or files were restored from a backup, say. With
+  - Optional param: `fileId`, for one vanished file's pad alone. Only a request without it takes them all; an empty one is refused.
+  - Purpose: every vanished row (see `consistency-check`), or the one
+    `fileId` names while it is still vanished, is marked as a file deleted
+    for good, and the sweep deletes its pad as for any such file - within
+    minutes, or at once through `settle-pending`. All of them in chunks,
+    within the budget a sweep has; what is left needs another call. With
     `delete_pad_with_file` off it marks nothing, and `message` says so.
+    When to use it, and when not: `docs/deleting-pads.md`.
   - Result:
     - `marked`: rows marked
     - `vanished_file_count`: vanished rows left, `0` once all are marked
@@ -404,12 +401,9 @@ solely by the separate external-pad policy, not by these two settings.
   - Controller: `AdminController::forgetVanished`
   - Auth: admin only
   - Params: `fileId`
-  - Purpose: one vanished file's row removed on the admin's word, its pad
-    left in Etherpad. The pad leaves the list, and the app no longer looks
-    after it: no sweep deletes it, and a protected pad can no longer be
-    opened, since only the app makes its sessions; a public pad stays
-    reachable by its link. Only while the row is still vanished. The pad's
-    id goes to the log at `info`.
+  - Purpose: one vanished file's row removed, its pad left in Etherpad,
+    while the row is still vanished. The pad's id goes to the log at
+    `info`. What that leaves the pad as: `docs/deleting-pads.md`.
   - Result:
     - `forgotten`: whether the row was removed; `false` when the file is no longer vanished, and nothing changed
     - `vanished_file_count`: vanished rows left

@@ -342,73 +342,49 @@ test.describe('pads of team folder files deleted for good', () => {
 	})
 
 	/**
-	 * The admin deletes the pads the app leaves: the vanished files' rows
-	 * are marked, and the job takes their pads as for any file deleted for
-	 * good. Every vanished row of the instance, not only this one, so the
-	 * count is 0 afterwards.
+	 * The admin takes the pads the app leaves, one listed pad at a time or
+	 * all of them: one forgotten, its row gone and the pad left in
+	 * Etherpad; one deleted on its own; the rest with all. All comes last:
+	 * it takes every vanished row of the instance, so the count is 0 after.
 	 */
-	test('the admin deletes the pads of vanished files', async () => {
+	test('the admin forgets a vanished pad, deletes one, then the rest', async () => {
 		const other = uniqueName('gone-team-vanished')
-		const otherId = await createTeamFolder(other, group)
-		let padId: string | null = null
-		try {
-			const pad = await padInTeam(`${other}/${uniquePadName('vanished')}`, 'protected')
-			made.pop()
-			padId = padIdOfPadUrl(pad.padUrl)
-			await deleteTeamFolder(otherId)
-			expect(await vanishedFiles(), 'the team folder deleted as a whole leaves its file vanished').toBeGreaterThan(0)
-
-			const deleted = await padApiPost('admin/delete-vanished')
-			expect(deleted.status, JSON.stringify(deleted.body)).toBe(200)
-			expect((deleted.body as { marked?: number }).marked).toBeGreaterThan(0)
-			expect((deleted.body as { vanished_file_count?: number }).vanished_file_count).toBe(0)
-			await settle()
-
-			expect(await padExists(padId), 'marked on the admin\'s word, the pad should go').toBe(false)
-			expect(await vanishedFiles()).toBe(0)
-		} finally {
-			await deleteTeamFolder(otherId)
-			if (padId !== null && await padExists(padId)) {
-				await etherpadApiPost('deletePad', { padID: padId })
-			}
-		}
-	})
-
-	/**
-	 * One listed pad at a time: one deleted on the admin's word, the job
-	 * taking it; one forgotten, its row gone and the pad left in Etherpad,
-	 * which the app no longer looks after.
-	 */
-	test('the admin deletes one vanished pad and forgets another', async () => {
-		const other = uniqueName('gone-team-one-by-one')
 		const otherId = await createTeamFolder(other, group)
 		const padIds: string[] = []
 		try {
-			const deletedPath = `${other}/${uniquePadName('deleted')}`
-			const forgottenPath = `${other}/${uniquePadName('forgotten')}`
-			const deletedPad = padIdOfPadUrl((await padInTeam(deletedPath, 'protected')).padUrl)
-			const forgottenPad = padIdOfPadUrl((await padInTeam(forgottenPath)).padUrl)
-			made.pop()
-			made.pop()
-			padIds.push(deletedPad, forgottenPad)
-			const deletedFile = await propfindFileId(deletedPath)
-			const forgottenFile = await propfindFileId(forgottenPath)
+			const paths = ['forgotten', 'deleted', 'rest'].map((label) => `${other}/${uniquePadName(label)}`)
+			const pads = []
+			for (const [index, path] of paths.entries()) {
+				pads.push(padIdOfPadUrl((await padInTeam(path, index === 1 ? 'protected' : 'public')).padUrl))
+				made.pop()
+			}
+			padIds.push(...pads)
+			const [forgottenFile, deletedFile] = [await propfindFileId(paths[0]), await propfindFileId(paths[1])]
 			await deleteTeamFolder(otherId)
 			const vanishedBefore = await vanishedFiles()
+			expect(vanishedBefore, 'the team folder deleted as a whole leaves its files vanished').toBeGreaterThanOrEqual(3)
 
 			const forgotten = await padApiPost('admin/forget-vanished', { fileId: String(forgottenFile) })
 			expect(forgotten.status, JSON.stringify(forgotten.body)).toBe(200)
 			expect((forgotten.body as { forgotten?: boolean }).forgotten).toBe(true)
+			const again = await padApiPost('admin/forget-vanished', { fileId: String(forgottenFile) })
+			expect((again.body as { forgotten?: boolean }).forgotten, 'no longer vanished, nothing to forget').toBe(false)
 			const deleted = await padApiPost('admin/delete-vanished', { fileId: String(deletedFile) })
 			expect(deleted.status, JSON.stringify(deleted.body)).toBe(200)
 			expect((deleted.body as { marked?: number }).marked).toBe(1)
 			await settle()
-
-			expect(await padExists(deletedPad), 'marked on the admin\'s word, the pad should go').toBe(false)
-			expect(await padExists(forgottenPad), 'forgotten, the pad stays in Etherpad').toBe(true)
+			expect(await padExists(pads[1]), 'marked on the admin\'s word, the pad should go').toBe(false)
+			expect(await padExists(pads[0]), 'forgotten, the pad stays in Etherpad').toBe(true)
 			expect(await vanishedFiles(), 'both should be off the list').toBe(vanishedBefore - 2)
-			const again = await padApiPost('admin/forget-vanished', { fileId: String(forgottenFile) })
-			expect((again.body as { forgotten?: boolean }).forgotten, 'no longer vanished, nothing to forget').toBe(false)
+
+			const all = await padApiPost('admin/delete-vanished')
+			expect(all.status, JSON.stringify(all.body)).toBe(200)
+			expect((all.body as { marked?: number }).marked).toBeGreaterThan(0)
+			expect((all.body as { vanished_file_count?: number }).vanished_file_count).toBe(0)
+			await settle()
+			expect(await padExists(pads[2]), 'marked with all, the pad should go').toBe(false)
+			expect(await padExists(pads[0]), 'forgotten, the pad is no vanished file\'s any more').toBe(true)
+			expect(await vanishedFiles()).toBe(0)
 		} finally {
 			await deleteTeamFolder(otherId)
 			for (const padId of padIds) {
