@@ -36,6 +36,7 @@ class KeepPadsThroughTheTrashMigrationTest extends TestCase {
 		]);
 		$appConfig = $this->createMock(AppConfigService::class);
 		$appConfig->expects($this->once())->method('takeOverDeleteOnTrash');
+		$appConfig->expects($this->once())->method('dropTestFault');
 		$removed = [];
 		$jobList = $this->createMock(IJobList::class);
 		$jobList->method('remove')->willReturnCallback(static function (string $job) use (&$removed): void {
@@ -58,5 +59,37 @@ class KeepPadsThroughTheTrashMigrationTest extends TestCase {
 			'OCA\\EtherpadNextcloud\\BackgroundJob\\WarmPendingDeleteRetryJob',
 			'OCA\\EtherpadNextcloud\\BackgroundJob\\ColdPendingDeleteRetryJob',
 		], $removed);
+	}
+
+	/**
+	 * The index on state gives way to one on state and access mode, once:
+	 * a schema that has the new one already is left as it is.
+	 */
+	public function testTheIndexOnStateGivesWayToOneOnStateAndAccessMode(): void {
+		$table = new class {
+			/** @var array<string,list<string>> */
+			public array $indexes = ['ep_bind_file_uniq' => ['file_id'], 'ep_bind_state_idx' => ['state']];
+
+			public function hasIndex(string $name): bool {
+				return isset($this->indexes[$name]);
+			}
+
+			public function dropIndex(string $name): void {
+				unset($this->indexes[$name]);
+			}
+
+			/** @param list<string> $columns */
+			public function addIndex(array $columns, string $name): void {
+				$this->indexes[$name] = $columns;
+			}
+		};
+		$schema = $this->createMock(ISchemaWrapper::class);
+		$schema->method('getTable')->with(BindingService::TABLE)->willReturn($table);
+		$clock = new FixedClock(500);
+		$migration = new Version000005Date20260928120000(new BindingService(new InMemoryBindingTable([], []), $clock), $clock, $this->createMock(AppConfigService::class), $this->createMock(IJobList::class));
+
+		$this->assertSame($schema, $migration->changeSchema($this->createMock(IOutput::class), static fn (): ISchemaWrapper => $schema, []));
+		$this->assertSame(['ep_bind_file_uniq' => ['file_id'], 'ep_bind_state_mode_idx' => ['state', 'access_mode']], $table->indexes);
+		$this->assertNull($migration->changeSchema($this->createMock(IOutput::class), static fn (): ISchemaWrapper => $schema, []));
 	}
 }

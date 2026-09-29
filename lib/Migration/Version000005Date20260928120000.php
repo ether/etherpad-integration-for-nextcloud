@@ -34,7 +34,14 @@ use OCP\Migration\SimpleMigrationStep;
  *
  * Its three jobs that retried the trash's deletions are gone. Taken off
  * the job list here, rather than left to the first cron run, which drops
- * a job whose class is gone with a warning each.
+ * a job whose class is gone with a warning each. So is the `test_fault`
+ * key a debug instance could set, with the faults themselves.
+ *
+ * The index on a row's state gives way to one on its state and access
+ * mode. A folder deleted asks whether any active protected row exists
+ * before it walks down (ProtectedPadsOfNode), and on an instance of public
+ * pads alone the index on state read every active row to say no. The new
+ * one serves every question by state alone as well, from its first column.
  *
  * @psalm-api
  */
@@ -45,6 +52,9 @@ class Version000005Date20260928120000 extends SimpleMigrationStep {
 		'OCA\\EtherpadNextcloud\\BackgroundJob\\WarmPendingDeleteRetryJob',
 		'OCA\\EtherpadNextcloud\\BackgroundJob\\ColdPendingDeleteRetryJob',
 	];
+
+	private const OLD_INDEX = 'ep_bind_state_idx';
+	private const INDEX = 'ep_bind_state_mode_idx';
 
 	public function __construct(
 		private BindingService $bindingService,
@@ -57,8 +67,27 @@ class Version000005Date20260928120000 extends SimpleMigrationStep {
 	/**
 	 * @param Closure(): ISchemaWrapper $schemaClosure
 	 */
+	public function changeSchema(IOutput $output, Closure $schemaClosure, array $options): ?ISchemaWrapper {
+		$schema = $schemaClosure();
+		$table = $schema->getTable(BindingService::TABLE);
+		$changed = false;
+		if ($table->hasIndex(self::OLD_INDEX)) {
+			$table->dropIndex(self::OLD_INDEX);
+			$changed = true;
+		}
+		if (!$table->hasIndex(self::INDEX)) {
+			$table->addIndex(['state', 'access_mode'], self::INDEX);
+			$changed = true;
+		}
+		return $changed ? $schema : null;
+	}
+
+	/**
+	 * @param Closure(): ISchemaWrapper $schemaClosure
+	 */
 	public function postSchemaChange(IOutput $output, Closure $schemaClosure, array $options): void {
 		$this->appConfig->takeOverDeleteOnTrash();
+		$this->appConfig->dropTestFault();
 		foreach (self::GONE_JOBS as $job) {
 			/** @psalm-suppress ArgumentTypeCoercion The classes are gone, which is why they go; the job list removes their rows by the name alone. */
 			$this->jobList->remove($job);
