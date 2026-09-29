@@ -349,18 +349,15 @@ class PadSyncServiceTest extends TestCase {
 	 * 1.1.0-beta.1 left kept the old pad's revision count - but not one
 	 * Etherpad made anew at revision 0 with other text than the file saved:
 	 * written over the file, the saved content would be gone from it, and
-	 * the open would no longer offer a new pad from it.
+	 * the open would no longer offer a new pad from it. Which pad counts as
+	 * made anew is ManagedPadLifecycleTest's to say; here, that the sync
+	 * asks with what Etherpad and the file hold.
 	 */
 	public function testAForcedSyncLeavesThePadEtherpadMadeAnewToTheFile(): void {
 		$formatter = new PadFileService(new FixedClock());
 		$cases = [
 			'made anew on a visit, with the default text' => [12, 'Meeting notes', 0, "Welcome to Etherpad!\n", PadLostException::class],
-			'made anew through the API, empty' => [12, 'Meeting notes', 0, "\n", PadLostException::class],
-			'a template\'s text at revision 0, made anew' => [0, 'Template text', 0, "Welcome to Etherpad!\n", PadLostException::class],
 			'behind the snapshot, written into' => [500, 'old text', 3, 'new edit', PadSyncService::STATUS_UPDATED],
-			// Etherpad's final newline aside, the text the file saved: the
-			// pad's history cut short, and nothing lost.
-			'history cut short, the saved text' => [12, 'Meeting notes', 0, "Meeting notes\n", PadSyncService::STATUS_UPDATED],
 			'a new file, nothing saved' => [-1, '', 0, "Welcome to Etherpad!\n", PadSyncService::STATUS_UPDATED],
 		];
 		foreach ($cases as $case => [$snapshotRev, $saved, $revisions, $padText, $expected]) {

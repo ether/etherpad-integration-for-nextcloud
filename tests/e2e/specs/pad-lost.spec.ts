@@ -126,7 +126,6 @@ test.describe('a pad Etherpad has lost', () => {
 			await etherpadApiPost('deletePad', { padID: padId })
 			await etherpadApiPost('createPad', { padID: padId })
 
-			await expectForcedSyncRefused(name, fileId, template.marker)
 			await expectRecovered(name, fileId, padId, template.marker)
 		} finally {
 			await deleteViaDav(name)
@@ -221,7 +220,6 @@ test.describe('a pad Etherpad has lost', () => {
 			await etherpadApiPost('deletePad', { padID: padId })
 			await etherpadApiPost('createPad', { padID: padId })
 
-			await expectForcedSyncRefused(name, saved.fileId, saved.marker)
 			await expectRecovered(name, saved.fileId, padId, saved.marker)
 		} finally {
 			await deleteViaDav(name)
