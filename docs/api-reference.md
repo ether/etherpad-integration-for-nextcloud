@@ -492,6 +492,7 @@ Registered in `lib/AppInfo/Application.php`.
 - `OCP\Files\Template\FileCreatedFromTemplateEvent` -> `FileCreatedFromTemplateListener`
 - `OCA\Viewer\Event\LoadViewer` -> `LoadViewerListener`
 - `OCP\User\Events\UserLoggedOutEvent` -> `UserLoggedOutListener`
+- `OCP\User\Events\BeforeUserDeletedEvent` -> `RevokeSessionsOnAccountDeleteListener` (the account's sessions, as on a logout)
 - `OCA\Files_Trashbin\Events\NodeRestoredEvent` -> `RestoreFromTrashListener`
 - legacy hook `\OCA\Files_Trashbin\Trashbin::post_restore` -> `TrashbinHookHandler::postRestore` -> `RestoreFromTrashListener::handleLegacyHook`
 - `OCP\Files\Cache\CacheEntryRemovedEvent`, `OCP\Files\Cache\CacheEntryInsertedEvent`, `OCP\Files\Cache\CacheEntriesRemovedEvent` (from 34, priority 100), `OCP\Files\Events\Node\BeforeNodeDeletedEvent`, `OCP\Files\Events\Node\NodeDeletedEvent`, the event named `\OCP\Files::postDelete` (an `OCP\EventDispatcher\GenericEvent`), `OCA\Files_Trashbin\Events\BeforeNodeRestoredEvent`, `OCA\Files_Trashbin\Events\NodeRestoredEvent`, `OCP\User\Events\BeforeUserDeletedEvent`, `OCP\User\Events\UserDeletedEvent` -> `GoneFilesListener` (the marks of files deleted for good; `docs/architecture.md`, "Files gone for good")

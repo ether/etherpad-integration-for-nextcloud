@@ -225,9 +225,9 @@ away itself:
   every socket message and keeps the session id it was handed when the pad
   connected – read in 2.7.3, 3.0.0 and 3.3.3 – so a session that expires
   mid-edit rejects the next keystroke, and no later cookie reaches that
-  socket. Revocation fires on an explicit logout and on a delete of the
-  pad's file (below), and is capped, so for most sessions the lifetime is
-  what bounds the window.
+  socket. Revocation fires on an explicit logout, on the account's
+  deletion and on a delete of the pad's file (below), and is capped, so
+  for most sessions the lifetime is what bounds the window.
 - Expired sessions are left to the background sweep described below. Only
   what is expired by both clocks counts as expired: Etherpad judges
   `validUntil` with its own, so a session ours calls dead may still be
@@ -251,10 +251,16 @@ trash or past it, for a folder's protected pads too: the trash keeps the
 pad, and a session would keep giving it to whoever holds one. Which
 groups, and within what budget: `docs/architecture.md`, "Trash/Restore".
 
-**Otherwise, only logout.** Losing a share does not revoke anything, and
-neither does a permission downgrade, a deleted or disabled account, or a
-deleted public link. A session issued before any of those stays valid
-until `validUntil`.
+**Deleting an account revokes its sessions**, as a logout does, as the
+delete starts (`RevokeSessionsOnAccountDeleteListener`): Nextcloud removes
+the account's settings, the cached author among them, before it reports
+the account gone. A delete the user backend then refuses has lost them as
+a logout would, and the next open makes new ones.
+
+**Otherwise, only expiry.** Losing a share does not revoke anything, and
+neither does a permission downgrade, a disabled account, or a deleted
+public link. A session issued before any of those stays valid until
+`validUntil`.
 Covering them one event at a time means enumerating every way access can
 end, and that list has no natural end – a public link in particular opens
 under its own Etherpad author whose id is deliberately never cached, so

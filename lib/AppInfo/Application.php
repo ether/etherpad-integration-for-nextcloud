@@ -110,6 +110,12 @@ class Application extends App implements IBootstrap {
 			\OCP\User\Events\UserLoggedOutEvent::class,
 			\OCA\EtherpadNextcloud\Listeners\UserLoggedOutListener::class,
 		);
+		// So does deleting an account, before its Etherpad author goes with
+		// its settings.
+		$context->registerEventListener(
+			\OCP\User\Events\BeforeUserDeletedEvent::class,
+			\OCA\EtherpadNextcloud\Listeners\RevokeSessionsOnAccountDeleteListener::class,
+		);
 
 		// Marks the rows of files deleted for good, for the sweep that deletes
 		// their pads. One instance hears them all, so the removals a delete

@@ -65,7 +65,7 @@ The pad stays as it is, and nothing is written into the file.
 |---|---|
 | From the trash: the trash emptied, the item deleted there, expired, or `occ trashbin:cleanup`. A user's trash or a team folder's. | By a background job, within minutes; for a folder's files too. |
 | Past the trash: a WebDAV `DELETE` with `X-NC-Skip-Trashbin: true`, the trash app switched off for the user, or a move to the trash that fails or that another app keeps from the trash. | By a background job, within minutes; for a folder's files too. |
-| With the account: the account deleted. | The pads of the account's own files - those in its home and its trash, shared ones included - by a background job, within minutes. Files in team folders, and files the account put into folders others shared with it, are not the account's: they stay, and so do their pads. |
+| With the account: the account deleted. | The pads of the account's own files - those in its home and its trash, shared ones included - by a background job, within minutes. Files in team folders, and files the account put into folders others shared with it, are not the account's: they stay, and so do their pads. The account's own Etherpad sessions go as the delete starts, as on a logout. |
 
 "A background job" runs on every tick of a five-minute system cron; with
 AJAX or webcron, only as often as those run. It deletes the pad of a file
