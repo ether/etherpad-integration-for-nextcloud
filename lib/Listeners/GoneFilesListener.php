@@ -252,12 +252,15 @@ class GoneFilesListener implements IEventListener {
 	/**
 	 * A file the file cache has again: moved to another storage, not
 	 * deleted. One put into a trash while a node is being deleted says the
-	 * delete is a move to that trash, and every open window closes: a move
-	 * to a storage whose cache is wrapped copies the file there under new
-	 * ids before it removes the old ones, and counted, those would take
-	 * the pad of a file that sits in the trash. A delete the trash does not
-	 * take - an app vetoing it, the move failing - puts nothing there, and
-	 * its removals count.
+	 * delete is a move to that trash, and every open window closes - not
+	 * only that delete's: an insert does not say which delete it belongs
+	 * to, and a window closed early costs a mark, the pad staying and
+	 * listed as vanished, where one left open would take the pad of a file
+	 * in the trash. A move to a storage whose cache is wrapped copies the
+	 * file there under new ids before it removes the old ones, and
+	 * counted, those would take the pad of a file that sits in the trash.
+	 * A delete the trash does not take - an app vetoing it, the move
+	 * failing - puts nothing there, and its removals count.
 	 */
 	private function inserted(CacheEntryInsertedEvent $event): void {
 		if ($this->deleting !== [] && $this->inTrash($event->getPath(), $event->getStorage(), $event->getStorageId())) {
