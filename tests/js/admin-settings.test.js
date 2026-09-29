@@ -248,12 +248,18 @@ describe('admin settings status areas', () => {
 	/**
 	 * The admin deletes them all, not only those listed, and is asked
 	 * first with how many there are; a refusal sends nothing. Marked, they
-	 * wait for the sweep, so the pending pads show, and the list goes.
+	 * wait for the job, so the pending pads show, and the list, asked
+	 * again, goes.
 	 */
 	it('deletes the pads of all vanished files once the admin confirms', async () => {
-		const fetchMock = vi.fn((url) => Promise.resolve(okResponse(url === '/delete-vanished'
-			? { message: 'Marked.', marked: 30, vanished_file_count: 0, pending_delete_count: 30 }
-			: { message: 'Consistency check finished with issues.', vanished_file_count: 30, samples: { vanished_files: [{ file_id: 7, pad_id: 'g.abc$Notes', access_mode: 'protected' }] } })))
+		let vanished = { count: 30, rows: [{ file_id: 7, pad_id: 'g.abc$Notes', access_mode: 'protected' }] }
+		const fetchMock = vi.fn((url) => {
+			if (url === '/delete-vanished') {
+				vanished = { count: 0, rows: [] }
+				return Promise.resolve(okResponse({ message: 'Marked.', marked: 30, vanished_file_count: 0, pending_delete_count: 30 }))
+			}
+			return Promise.resolve(okResponse({ message: 'Consistency check finished with issues.', vanished_file_count: vanished.count, samples: { vanished_files: vanished.rows } }))
+		})
 		vi.stubGlobal('fetch', fetchMock)
 		const confirm = vi.fn(() => false)
 		vi.stubGlobal('confirm', confirm)
@@ -274,6 +280,7 @@ describe('admin settings status areas', () => {
 		await flushAsyncWork()
 		expect(posted()).toBe(1)
 		expect(diagnosticsStatus().textContent).toContain('marked=30')
+		expect(diagnosticsStatus().classList.contains('ep-status-success')).toBe(true)
 		expect(document.getElementById('etherpad-nextcloud-pending-count').textContent).toContain('30')
 		expect(document.getElementById('etherpad-nextcloud-pending-actions').style.display).toBe('')
 		expect(document.getElementById('etherpad-nextcloud-vanished').style.display).toBe('none')
@@ -281,15 +288,31 @@ describe('admin settings status areas', () => {
 
 	/**
 	 * Each listed pad has its own two ways out, each asked first with the
-	 * pad's id: deleted - its row marked for the job - or forgotten, its
-	 * row removed and the pad left in Etherpad. Answered, it leaves the
-	 * list, and the count goes down.
+	 * pad's id as it is - a group pad's `$` and all: deleted, its row
+	 * marked for the job, or forgotten, its row removed and the pad left
+	 * in Etherpad. The list is asked again after each, so a pad the server
+	 * left - deleting switched off - stays, with a warning.
 	 */
-	it('deletes or forgets one vanished pad at a time', async () => {
-		const fetchMock = vi.fn((url) => Promise.resolve(okResponse({
-			'/delete-vanished': { message: 'Marked.', marked: 1, vanished_file_count: 2, pending_delete_count: 1 },
-			'/forget-vanished': { message: 'Forgotten.', forgotten: true, vanished_file_count: 1 },
-		}[url] ?? { message: 'Consistency check finished with issues.', vanished_file_count: 3, samples: { vanished_files: [{ file_id: 7, pad_id: 'g.abc$Notes', access_mode: 'protected' }, { file_id: 9, pad_id: 'public-pad', access_mode: 'public' }] } })))
+	it('deletes or forgets one vanished pad at a time, and lists what is left', async () => {
+		const protectedPad = { file_id: 7, pad_id: "g.abc$&Notes$'", access_mode: 'protected' }
+		const publicPad = { file_id: 9, pad_id: 'public-pad', access_mode: 'public' }
+		let rows = [protectedPad, publicPad]
+		let deleting = false
+		const fetchMock = vi.fn((url, init) => {
+			const fileId = Number(new URLSearchParams(init.body).get('fileId'))
+			if (url === '/delete-vanished') {
+				if (!deleting) {
+					return Promise.resolve(okResponse({ message: 'Switched off.', marked: 0, vanished_file_count: rows.length + 1, pending_delete_count: 0 }))
+				}
+				rows = rows.filter((row) => row.file_id !== fileId)
+				return Promise.resolve(okResponse({ message: 'Marked.', marked: 1, vanished_file_count: rows.length + 1, pending_delete_count: 1 }))
+			}
+			if (url === '/forget-vanished') {
+				rows = rows.filter((row) => row.file_id !== fileId)
+				return Promise.resolve(okResponse({ message: 'Forgotten.', forgotten: true, vanished_file_count: rows.length + 1 }))
+			}
+			return Promise.resolve(okResponse({ message: 'Consistency check finished with issues.', vanished_file_count: rows.length + 1, samples: { vanished_files: rows } }))
+		})
 		vi.stubGlobal('fetch', fetchMock)
 		const confirm = vi.fn(() => false)
 		vi.stubGlobal('confirm', confirm)
@@ -301,19 +324,27 @@ describe('admin settings status areas', () => {
 		document.getElementById('etherpad-nextcloud-consistency-check').click()
 		await flushAsyncWork()
 		expect(shown()).toBe('2 von 3:')
-		expect(rowButtons('Delete')[0].getAttribute('aria-label')).toBe('Pad g.abc$Notes löschen')
+		expect(rowButtons('Delete')[0].getAttribute('aria-label')).toBe("Pad g.abc$&Notes$' löschen")
 		expect(rowButtons('Delete')[0].type).toBe('button')
 
 		rowButtons('Delete')[0].click()
 		await flushAsyncWork()
-		expect(confirm).toHaveBeenLastCalledWith('Pad g.abc$Notes löschen?')
+		expect(confirm).toHaveBeenLastCalledWith("Pad g.abc$&Notes$' löschen?")
 		expect(sent('/delete-vanished')).toEqual([])
 
 		confirm.mockReturnValue(true)
 		rowButtons('Delete')[0].click()
 		await flushAsyncWork()
 		expect(sent('/delete-vanished')).toEqual(['7'])
+		expect(diagnosticsStatus().classList.contains('ep-status-warning')).toBe(true)
+		expect(shown()).toBe('2 von 3:')
+
+		deleting = true
+		rowButtons('Delete')[0].click()
+		await flushAsyncWork()
+		expect(sent('/delete-vanished')).toEqual(['7', '7'])
 		expect(diagnosticsStatus().textContent).toContain('marked=1')
+		expect(diagnosticsStatus().classList.contains('ep-status-success')).toBe(true)
 		expect(document.getElementById('etherpad-nextcloud-pending-count').textContent).toContain('1')
 		expect(shown()).toBe('1 von 2:')
 
@@ -711,14 +742,15 @@ describe('shared templates', () => {
 
 	/** Each row's only visible label is "Delete", so the name has to be read out. */
 	it('names the template each delete button removes', async () => {
-		vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(templateResponse(['Meeting notes.pad']))))
+		vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(templateResponse(['Meeting $& notes.pad']))))
 		await import(MODULE)
 		await flushAsyncWork()
 
 		const remove = list().querySelector('button')
 		// Read from the page, not glued together here: the sentence differs per
-		// language, and only the placeholder is ours to fill.
-		expect(remove.getAttribute('aria-label')).toBe('Vorlage Meeting notes.pad löschen')
+		// language, and only the placeholder is ours to fill - with the name as
+		// it is, `$&` and all.
+		expect(remove.getAttribute('aria-label')).toBe('Vorlage Meeting $& notes.pad löschen')
 	})
 
 	/**

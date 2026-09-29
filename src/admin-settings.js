@@ -243,7 +243,7 @@
 		remove.textContent = l10n.templateDelete
 		// The visible label repeats on every row, so the accessible name has to
 		// carry the name of the template this one removes.
-		remove.setAttribute('aria-label', l10n.templateDeleteLabel.replace('{name}', name))
+		remove.setAttribute('aria-label', l10n.templateDeleteLabel.replace('{name}', () => name))
 		remove.addEventListener('click', () => {
 			if (!window.confirm(l10n.templateConfirmDelete)) {
 				return
@@ -538,19 +538,40 @@
 			.map(vanishedItem)
 		vanishedTotal = Math.max(Number.isFinite(Number(total)) ? Number(total) : 0, items.length)
 		vanishedList.replaceChildren(...items)
-		updateVanishedShown()
-	}
-
-	function updateVanishedShown() {
-		if (!(vanishedNode instanceof HTMLElement) || !(vanishedList instanceof HTMLElement)) {
-			return
-		}
 		if (vanishedShownNode instanceof HTMLElement) {
 			vanishedShownNode.textContent = l10n.vanishedShown
-				.replace('{shown}', String(vanishedList.children.length))
+				.replace('{shown}', String(items.length))
 				.replace('{total}', String(vanishedTotal))
 		}
 		vanishedNode.style.display = vanishedTotal > 0 ? '' : 'none'
+	}
+
+	/**
+	 * The list as the server has it now, asked again after an action: it
+	 * then shows what the action did, and what it did not - a pad left
+	 * with deleting off stays listed. Should the question fail, the list
+	 * stays as it was; the next check shows it.
+	 */
+	async function refreshVanished() {
+		try {
+			const data = await postJson(consistencyUrl, {})
+			showVanished(data.samples && data.samples.vanished_files, data.vanished_file_count)
+		} catch {
+			// The action's own answer stands in the status line.
+		}
+	}
+
+	/**
+	 * An action's answer in the diagnostics line, with the counts it
+	 * carries: a success when it did something, a warning when it did
+	 * nothing - deleting switched off, say.
+	 */
+	function reportAction(data, keys, done) {
+		const details = keys
+			.filter((key) => typeof data[key] !== 'undefined')
+			.map((key) => `${key}=${String(data[key])}`)
+		const suffix = details.length > 0 ? ` ${details.join(' | ')}` : ''
+		setStatus(`${String(data.message || 'OK')}${suffix}`, done ? 'success' : 'warning', diagnosticsTarget)
 	}
 
 	function vanishedItem(row) {
@@ -565,6 +586,9 @@
 		if (!Number.isInteger(fileId) || fileId <= 0) {
 			return item
 		}
+		// A function, not the id itself: a replacement string reads `$&`,
+		// `$'` and the like, and a group pad's id carries a `$`.
+		const withPad = (text) => text.replace('{pad}', () => row.pad_id)
 		const actions = [
 			{ url: deleteVanishedUrl, text: l10n.vanishedDeleteOne, label: l10n.vanishedDeleteLabel, confirm: l10n.deleteVanishedOneConfirm, running: l10n.deleteVanishedOneRunning, failed: l10n.deleteVanishedFailed, doneKey: 'marked' },
 			{ url: forgetVanishedUrl, text: l10n.vanishedForgetOne, label: l10n.vanishedForgetLabel, confirm: l10n.forgetVanishedConfirm, running: l10n.forgetVanishedRunning, failed: l10n.forgetVanishedFailed, doneKey: 'forgotten' },
@@ -576,21 +600,17 @@
 			const button = document.createElement('button')
 			button.type = 'button'
 			button.textContent = action.text
-			button.setAttribute('aria-label', action.label.replace('{pad}', row.pad_id))
+			button.setAttribute('aria-label', withPad(action.label))
 			button.addEventListener('click', () => {
-				void takeOneVanished(item, fileId, { ...action, confirm: action.confirm.replace('{pad}', row.pad_id) })
+				void takeOneVanished(fileId, { ...action, confirm: withPad(action.confirm) })
 			})
 			item.append(' ', button)
 		}
 		return item
 	}
 
-	/**
-	 * One vanished file's pad deleted, or forgotten and left in Etherpad,
-	 * once the admin confirms. Either way the file is off the list after an
-	 * answer: taken, or no longer vanished.
-	 */
-	async function takeOneVanished(item, fileId, action) {
+	/** One vanished file's pad deleted, or forgotten and left in Etherpad, once the admin confirms. */
+	async function takeOneVanished(fileId, action) {
 		if (!window.confirm(action.confirm)) {
 			return
 		}
@@ -599,21 +619,12 @@
 		try {
 			const data = await postJson(action.url, { fileId })
 			updateBindingCounts(data)
-			item.remove()
-			const left = Number(data.vanished_file_count)
-			vanishedTotal = Number.isFinite(left) ? left : Math.max(0, vanishedTotal - 1)
-			updateVanishedShown()
-			const details = []
-			for (const key of [action.doneKey, 'vanished_file_count', 'pending_delete_count']) {
-				if (typeof data[key] !== 'undefined') {
-					details.push(`${key}=${String(data[key])}`)
-				}
-			}
-			const suffix = details.length > 0 ? ` ${details.join(' | ')}` : ''
-			setStatus(`${String(data.message || 'OK')}${suffix}`, 'success', diagnosticsTarget)
+			reportAction(data, [action.doneKey, 'vanished_file_count', 'pending_delete_count'], Boolean(data[action.doneKey]))
 		} catch (error) {
 			setStatus(error instanceof Error ? error.message : action.failed, 'error', diagnosticsTarget)
+			return
 		}
+		await refreshVanished()
 	}
 
 	if (deleteVanishedButton instanceof HTMLElement && deleteVanishedUrl !== '') {
@@ -625,22 +636,13 @@
 			beginStatus(l10n.deleteVanishedRunning, diagnosticsTarget)
 			try {
 				const data = await postJson(deleteVanishedUrl, {})
-				const details = []
-				for (const key of ['marked', 'vanished_file_count', 'pending_delete_count']) {
-					if (typeof data[key] !== 'undefined') {
-						details.push(`${key}=${String(data[key])}`)
-					}
-				}
 				updateBindingCounts(data)
-				// Marked, the listed ones are on their way: what is left, if
-				// anything, the next check lists.
-				const left = Number(data.vanished_file_count)
-				showVanished([], Number.isFinite(left) ? left : 0)
-				const suffix = details.length > 0 ? ` ${details.join(' | ')}` : ''
-				setStatus(`${String(data.message || 'OK')}${suffix}`, 'success', diagnosticsTarget)
+				reportAction(data, ['marked', 'vanished_file_count', 'pending_delete_count'], Number(data.marked) > 0)
 			} catch (error) {
 				setStatus(error instanceof Error ? error.message : l10n.deleteVanishedFailed, 'error', diagnosticsTarget)
+				return
 			}
+			await refreshVanished()
 		})
 	}
 
@@ -650,15 +652,8 @@
 			beginStatus(l10n.checking, diagnosticsTarget)
 			try {
 				const data = await postJson(settlePendingUrl, {})
-				const details = []
-				for (const key of ['checked', 'settled', 'pending_delete_count']) {
-					if (typeof data[key] !== 'undefined') {
-						details.push(`${key}=${String(data[key])}`)
-					}
-				}
 				updateBindingCounts(data)
-				const suffix = details.length > 0 ? ` ${details.join(' | ')}` : ''
-				setStatus(`${String(data.message || 'OK')}${suffix}`, 'success', diagnosticsTarget)
+				reportAction(data, ['checked', 'settled', 'pending_delete_count'], true)
 			} catch (error) {
 				setStatus(error instanceof Error ? error.message : l10n.settleFailed, 'error', diagnosticsTarget)
 			}
