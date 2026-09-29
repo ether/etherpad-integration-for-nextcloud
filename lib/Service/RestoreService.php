@@ -321,7 +321,15 @@ class RestoreService {
 		} catch (\Throwable $e) {
 			throw LifecycleException::failed('Restore', $e);
 		}
-		if ($original !== null && $original->fileId !== $fileId) {
+		// A copy only while the original is there: one whose file is gone -
+		// deleted for good, its pad about to go, or vanished - leaves the
+		// copy the file's content, and it gets a pad of its own.
+		try {
+			$isCopy = $original !== null && $original->fileId !== $fileId && !$this->bindingService->isFileGone($original->fileId);
+		} catch (\Throwable $e) {
+			throw LifecycleException::failed('Restore', $e);
+		}
+		if ($isCopy) {
 			return LifecycleResult::skipped(self::REASON_COPY, $fileId, $this->logger);
 		}
 		return $this->restoreWithoutBinding($file, $fileId, $pad);

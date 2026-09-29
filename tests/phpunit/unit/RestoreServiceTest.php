@@ -677,6 +677,31 @@ class RestoreServiceTest extends TestCase {
 	}
 
 	/**
+	 * A copy whose original is gone - deleted for good, its pad about to go,
+	 * or vanished - is left no pad to open: it gets one of its own from its
+	 * content. A share recipient's copy, restored after the owner emptied
+	 * the trash, say.
+	 */
+	public function testACopyWhoseOriginalIsGoneGetsItsOwnPad(): void {
+		foreach ([BindingService::STATE_PENDING_DELETE, BindingService::STATE_ACTIVE] as $state) {
+			$bindingService = $this->createMock(BindingService::class);
+			$bindingService->method('findByFileId')->willReturn(null);
+			$bindingService->method('findByPadId')->with('old-pad')->willReturn(new Binding(fileId: 12, padId: 'old-pad', accessMode: BindingService::ACCESS_PUBLIC, state: $state));
+			$bindingService->method('isFileGone')->with(12)->willReturn(true);
+			$bindingService->expects($this->once())->method('createBinding')->with(95, 'r-old-pad-abc123def456', BindingService::ACCESS_PUBLIC);
+			$etherpadClient = $this->createMock(EtherpadClient::class);
+			$etherpadClient->expects($this->once())->method('createPad')->with('r-old-pad-abc123def456');
+			$etherpadClient->expects($this->never())->method('deletePad');
+			$file = $this->padFile(95, 'Copy.pad');
+			$file->expects($this->once())->method('putContent')->with('doc-after');
+
+			$result = $this->buildNoBindingRestoreService($bindingService, $etherpadClient, 'old-pad')->restore($file);
+
+			$this->assertSame(LifecycleResult::RESTORED, $result['status'], $state);
+		}
+	}
+
+	/**
 	 * A file back from the trash whose row stayed active takes its pad back
 	 * as it is - unless Etherpad lost it while the file was away: then a new
 	 * pad is made from the file at once, where an open would only offer it.
