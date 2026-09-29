@@ -132,7 +132,7 @@ OC.L10N.register(
     "Pad name is required.": "Pad-Name ist erforderlich.",
     "Pad types and behaviour": "Pad-Typen und Verhalten",
     "Pads": "Pads",
-    "Pads whose .pad file is gone without passing a trash. The app leaves them in place; delete them in Etherpad if they are no longer needed:": "Pads, deren .pad-Datei verschwunden ist, ohne durch einen Papierkorb zu gehen. Die App lässt sie stehen; lösche sie in Etherpad, wenn sie nicht mehr gebraucht werden:",
+    "Pads whose .pad file is gone without a deletion the app saw, removed outside Nextcloud and dropped by a scan, say. The app leaves them in place, and deleting one in Etherpad does not take it off this list. Up to 25 are shown:": "Pads, deren .pad-Datei verschwunden ist, ohne dass die App eine Löschung gesehen hat, etwa außerhalb von Nextcloud gelöscht und von einem Scan entfernt. Die App lässt sie stehen, und ein Pad in Etherpad zu löschen, nimmt es nicht von dieser Liste. Angezeigt werden bis zu 25:",
     "Pending Etherpad deletes": "Ausstehende Etherpad-Löschungen",
     "Pending pad check failed.": "Prüfung ausstehender Pads fehlgeschlagen.",
     "Pending pad check finished.": "Prüfung ausstehender Pads abgeschlossen.",

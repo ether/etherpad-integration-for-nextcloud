@@ -131,7 +131,7 @@
         "Pad name is required.": "Le nom du pad est obligatoire.",
         "Pad types and behaviour": "Types de pads et comportement",
         "Pads": "Pads",
-        "Pads whose .pad file is gone without passing a trash. The app leaves them in place; delete them in Etherpad if they are no longer needed:": "Pads dont le fichier .pad a disparu sans passer par une corbeille. L'application les laisse en place ; supprime-les dans Etherpad s'ils ne sont plus utiles :",
+        "Pads whose .pad file is gone without a deletion the app saw, removed outside Nextcloud and dropped by a scan, say. The app leaves them in place, and deleting one in Etherpad does not take it off this list. Up to 25 are shown:": "Pads dont le fichier .pad a disparu sans que l'application ait vu de suppression, par exemple supprimé hors de Nextcloud puis retiré par un scan. L'application les laisse en place, et supprimer l'un d'eux dans Etherpad ne le retire pas de cette liste. Jusqu'à 25 sont affichés :",
         "Pending Etherpad deletes": "Suppressions Etherpad en attente",
         "Pending pad check failed.": "La vérification des pads en attente a échoué.",
         "Pending pad check finished.": "Vérification des pads en attente terminée.",

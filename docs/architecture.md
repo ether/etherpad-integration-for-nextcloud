@@ -240,7 +240,7 @@ Primary flow (native viewer):
   - Of two restores that race for one file only one writes it, and a restore that fails takes back what it made (`RestoreService::restoreOntoNewPad`).
   - A replacement that fails - Etherpad gone while the new pad is seeded, the file locked for the write - leaves the active row on the lost pad: moved back onto it when the row was already claimed. The next open offers the new pad again.
   - Seeding a new pad takes a while. Through WebDAV the file stays locked meanwhile, and a delete is refused (423, measured against NC 34.0.3); without that lock the file can be deleted again. So the row is claimed only while the file is still where it was: moved, and the new pad is let go (`file_moved`), nothing claimed or written.
-  - Only a database that fails again in the middle of the rollback can leave a row naming a pad the file does not; opening the file then answers `Binding pad ID mismatch.`
+  - Only two things can leave a row naming a pad the file does not, and opening the file then answers `Binding pad ID mismatch.`: a database that fails again in the middle of the rollback, and a forced sync of a pad Etherpad made anew that writes in the moment between its last look at the row and its write, just as a recovery moves the row (see "Sync"; a sync of a pad that is gone fails before it writes). Neither the open nor the recovery settles that; nothing does yet.
   - A write that throws after the content landed - a hook after it failing - keeps the new pad: the file is asked which pad it names, and if it is the new one, row and file agree, and taking either back would leave them naming two pads. Logged at `warning`.
   - A write that throws on a file that then cannot be read either leaves open which pad the file names. No row may be left to contradict it: the row goes, and the file's next open finds no row and offers a pad from its content, whichever pad it names. The new pad stays, named in the `warning`: a write is not atomic on every storage, and one that broke off may have cut the file short, leaving the new pad the last whole copy of what the file held.
   - A row whose access mode is none the app knows gets no new pad, and stays as it is.
@@ -276,7 +276,7 @@ Primary flow (native viewer):
 
 1. Admin runs `POST /api/v1/admin/consistency-check`, from the admin page or the API; nothing runs it on its own.
 2. It counts the vanished rows (`vanished_file_count`): their file gone from the file cache, still active, never seen deleted for good. Those are the files gone without a deletion the app heard of - from a trash, past it, or with an account; their pads stay (see "Files gone for good"), and they are what the check reports as issues. A row seen deleted for good is on its way and not counted: `pending_delete`, which the sweep takes within minutes, or keeps while `delete_pad_with_file` is off (`pending_delete_count` in the health check).
-3. It returns up to 25 of them (`samples`). The admin page lists them by pad id, so an admin can delete what is no longer needed in Etherpad.
+3. It returns up to 25 of them (`samples`). The admin page lists them by pad id. Nothing removes such a row: deleting its pad in Etherpad leaves it on the list.
 4. Its cost grows with the rows, or with the file cache, whichever the database reads: measured at 0.14 to 0.35 s for 500,000 rows and 2 million files (Postgres 16, warm).
 
 ## Main Frontend Modules

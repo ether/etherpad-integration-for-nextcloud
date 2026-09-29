@@ -49,8 +49,10 @@ The pad stays as it is, and nothing is written into the file.
 - **A `.pad` file a share recipient deleted:** Nextcloud puts the file
   itself into its owner's trash and a copy into the recipient's. The
   owner's restore brings the pad back. The recipient's copy, restored, is a
-  copy: it keeps the content it had, and its open offers a new pad from it,
-  while the pad stays with the file in the owner's trash until that goes.
+  copy: it holds the file's content as of its last sync - what was written
+  into the pad after that lives only in the pad, with the original - and
+  its open offers a new pad from it, while the pad stays with the file in
+  the owner's trash until that goes.
 - **A `.pad` file trashed under an earlier version,** whose trash deleted
   the pad (1.1.0-beta.1 and before): a new pad is made from the snapshot in
   the file, at once. A
@@ -96,9 +98,9 @@ stays:
 
 A pad that stays keeps its content in Etherpad, and nobody reaches it
 through Nextcloud any more; a public pad stays reachable by its link. The
-consistency check on the admin page counts these pads and lists them by pad
-id (`vanished_file_count`), so an admin can delete the ones no longer
-needed in Etherpad.
+consistency check on the admin page counts these pads and lists up to 25 of
+them by pad id (`vanished_file_count`). The app keeps their rows: deleting
+such a pad in Etherpad does not take it off the list.
 
 ## When Etherpad has lost a pad
 
