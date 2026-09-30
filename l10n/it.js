@@ -238,6 +238,20 @@ OC.L10N.register(
     "Only a public pad can be forgotten. Delete a protected one instead.": "Solo un pad pubblico può essere dimenticato. Elimina invece un pad protetto.",
     "Invalid count.": "Numero non valido.",
     "Could not delete the pads of all vanished files. Some may be marked for deletion already: check the list again.": "Non è stato possibile eliminare i pad di tutti i file scomparsi. Alcuni potrebbero essere già contrassegnati per l'eliminazione: controlla di nuovo l'elenco.",
-    "The pads of the vanished files shown are marked for deletion. More files have vanished since: check the list before deleting their pads.": "I pad dei file scomparsi mostrati sono contrassegnati per l'eliminazione. Nel frattempo sono scomparsi altri file: controlla l'elenco prima di eliminare i loro pad."
+    "The pads of the vanished files shown are marked for deletion. More files have vanished since: check the list before deleting their pads.": "I pad dei file scomparsi mostrati sono contrassegnati per l'eliminazione. Nel frattempo sono scomparsi altri file: controlla l'elenco prima di eliminare i loro pad.",
+    "The link to the pad on another server is not a valid https address.": "Il link al pad su un altro server non è un indirizzo https valido.",
+    "The link to the pad on another server must not contain a user name or password.": "Il link al pad su un altro server non deve contenere né un nome utente né una password.",
+    "The link to the pad on another server must end in /p/ and the name of the pad.": "Il link al pad su un altro server deve terminare con /p/ e il nome del pad.",
+    "Only public pads on another server can be linked.": "Si possono collegare solo pad pubblici di un altro server.",
+    "This .pad file names a pad on another server but has no valid link to it.": "Questo file .pad indica un pad su un altro server, ma non contiene un link valido.",
+    "Pads on other servers are switched off on this Nextcloud.": "I pad di altri server sono disattivati in questo Nextcloud.",
+    "This Nextcloud may not link to pads on that server. Your administrator can add it to the allowed servers.": "Questo Nextcloud non può collegare pad di quel server. L'amministrazione può aggiungerlo ai server consentiti.",
+    "That server is on a local or private network, which this Nextcloud does not link to.": "Quel server si trova in una rete locale o privata, che questo Nextcloud non collega.",
+    "The server of the pad could not be found.": "Il server del pad non è stato trovato.",
+    "This Nextcloud cannot read pads on other servers: the PHP cURL extension is missing. Please contact your administrator.": "Questo Nextcloud non può leggere pad di altri server: manca l'estensione PHP cURL. Contatta l'amministrazione.",
+    "The server of the pad could not be reached. Try again later.": "Il server del pad non è raggiungibile. Riprova più tardi.",
+    "The server of the pad answered with an error ({status}).": "Il server del pad ha risposto con un errore ({status}).",
+    "The pad was not found on the other server, or it cannot be exported there.": "Il pad non è stato trovato sull'altro server, oppure lì non può essere esportato.",
+    "The server of the pad did not answer with the content of the pad.": "Il server del pad non ha risposto con il contenuto del pad."
 },
 "nplurals=2; plural=(n != 1);");

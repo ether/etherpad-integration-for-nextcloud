@@ -159,7 +159,7 @@ class PublicViewerControllerErrorMapperTest extends TestCase {
 			'a row naming another pad' => [new BindingMismatchException('Binding pad ID mismatch.'), 'warning', 'A .pad file and its pad binding could not be matched.'],
 			'another binding problem' => [new BindingException('Pad binding is not active.'), 'debug', 'A request was refused.'],
 			'a pad too large to show' => [new EtherpadTooLargeException('Pad export is larger than 5242880 bytes.'), 'debug', 'A request was refused.'],
-			'a pad on another server' => [new ExternalPadException('Public export HTTP error (500)'), 'debug', 'A request was refused.'],
+			'a pad on another server' => [new ExternalPadException('Public export HTTP error (500)', ExternalPadException::HTTP_ERROR, 500), 'debug', 'A request was refused.'],
 			'a file locked' => [new LockedException('locked'), 'debug', 'A request was refused.'],
 			'a link that is invalid' => [new InvalidShareTokenException('This share link is invalid or has expired.'), 'debug', 'A request was refused.'],
 		] as $case => [$e, $level, $line]) {

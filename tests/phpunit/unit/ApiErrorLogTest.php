@@ -143,7 +143,7 @@ class ApiErrorLogTest extends TestCase {
 		$log->report(new BindingMismatchException('Binding pad ID mismatch.'));
 		$log->report(new BindingException('Pad binding is not active.'));
 		$log->report(new MissingBindingException('No binding exists for this file.'));
-		$log->report(new ExternalPadException('Public export HTTP error (500)'));
+		$log->report(new ExternalPadException('Public export HTTP error (500)', ExternalPadException::HTTP_ERROR, 500));
 
 		$this->assertSame([
 			['error', 'Pad recovery API failed', 'Detailed failure.'],
@@ -165,7 +165,7 @@ class ApiErrorLogTest extends TestCase {
 		foreach ([
 			new EtherpadRefusedException('Etherpad API error (createPad): padID does already exist'),
 			new EtherpadTooLargeException('Pad export is larger than 5242880 bytes.'),
-			new ExternalPadException('Public export HTTP error (500)'),
+			new ExternalPadException('Public export HTTP error (500)', ExternalPadException::HTTP_ERROR, 500),
 			new ExternalPadExportNotFoundException('Public export returned 404.'),
 			new \RuntimeException('down'),
 		] as $e) {

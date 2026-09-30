@@ -98,6 +98,50 @@ class ExternalPadExportFetcherTest extends TestCase {
 	}
 
 	/**
+	 * Each refusal carries the reason the user is told, whatever its
+	 * message says for the log.
+	 */
+	public function testEachRefusalCarriesItsReason(): void {
+		$cases = [
+			'no https' => ['http://1.1.1.1/p/pad', '', ExternalPadException::INVALID_URL],
+			'credentials' => ['https://user:secret@1.1.1.1/p/pad', '', ExternalPadException::CREDENTIALS_IN_URL],
+			'no /p/' => ['https://1.1.1.1/pad/pad', '', ExternalPadException::NOT_A_PAD_URL],
+			'a group pad' => ['https://1.1.1.1/p/g.group$pad', '', ExternalPadException::NOT_PUBLIC],
+			'not on the allowlist' => ['https://1.1.1.1:9443/p/pad', 'https://1.1.1.1:8443', ExternalPadException::NOT_ALLOWED],
+			'a local host' => ['https://pad.localhost/p/pad', '', ExternalPadException::LOCAL_ADDRESS],
+			'a private address' => ['https://10.0.0.7/p/pad', '', ExternalPadException::LOCAL_ADDRESS],
+		];
+		foreach ($cases as $case => [$url, $allowlist, $reason]) {
+			try {
+				(new ExternalPadExportFetcher($this->buildExternalEnabledConfig($allowlist), new FixedClock()))->normalizeAndValidateExternalPublicPadUrl($url);
+				$this->fail($case . ': not refused');
+			} catch (ExternalPadException $e) {
+				$this->assertSame($reason, $e->reason(), $case);
+			}
+		}
+
+		$fetcher = new ExternalPadExportFetcher($this->buildExternalEnabledConfig(), new FixedClock());
+		foreach ([
+			[500, ExternalPadException::HTTP_ERROR, 500],
+			[302, ExternalPadException::HTTP_ERROR, 302],
+			[404, ExternalPadException::NOT_FOUND, null],
+		] as [$status, $reason, $httpStatus]) {
+			try {
+				(new \ReflectionMethod(ExternalPadExportFetcher::class, 'assertSuccessfulExportStatus'))->invoke($fetcher, $status);
+				$this->fail($status . ': not refused');
+			} catch (ExternalPadException $e) {
+				$this->assertSame([$reason, $httpStatus], [$e->reason(), $e->httpStatus()], (string)$status);
+			}
+		}
+		try {
+			(new \ReflectionMethod(ExternalPadExportFetcher::class, 'assertAllowedExternalExportContentType'))->invoke($fetcher, 'application/json', 'html');
+			$this->fail('another kind of document: not refused');
+		} catch (ExternalPadException $e) {
+			$this->assertSame(ExternalPadException::UNEXPECTED_ANSWER, $e->reason());
+		}
+	}
+
+	/**
 	 * The budget is shared with everything before the request, name
 	 * resolution included, so an attempt that no longer fits is not made at
 	 * all rather than started with the full timeout.

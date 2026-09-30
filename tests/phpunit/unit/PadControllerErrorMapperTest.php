@@ -126,15 +126,13 @@ class PadControllerErrorMapperTest extends TestCase {
 	}
 
 	/**
-	 * Three pass their message on: a controller's refusal of a parameter
-	 * and a refused name, each translated where it is thrown, and what was
-	 * wrong with a link to a pad on another server - the user's only hint.
+	 * Two pass their message on: a controller's refusal of a parameter and
+	 * a refused name, each translated where it is thrown.
 	 */
-	public function testWhatItPassesOnIsTranslatedWhereItIsThrownOrTheLinksOwn(): void {
+	public function testWhatItPassesOnIsTranslatedWhereItIsThrown(): void {
 		foreach ([
 			'a parameter refused' => new ControllerBadRequestException('Ungültige Datei-ID.'),
 			'a name refused' => new InvalidPadNameException('„COM1“ ist ein reservierter Name'),
-			'a link to another server' => new ExternalPadException('Only public pad URLs can be linked from external servers.'),
 		] as $case => $e) {
 			$response = $this->buildMapper()->run(
 				static fn (): array => throw $e,
@@ -145,6 +143,37 @@ class PadControllerErrorMapperTest extends TestCase {
 
 			$this->assertSame([Http::STATUS_BAD_REQUEST, ['message' => $e->getMessage()]], [$response->getStatus(), $response->getData()], $case);
 		}
+	}
+
+	/**
+	 * What was wrong with a link to a pad on another server is the user's
+	 * only hint, and reaches them translated: a sentence for each reason
+	 * the exception carries, the log keeping its English message with what
+	 * the other server said. Every reason has one - a new one without a
+	 * sentence would make the match throw.
+	 */
+	public function testAPadOnAnotherServerIsExplainedByItsReason(): void {
+		$sentences = [];
+		foreach ((new \ReflectionClass(ExternalPadException::class))->getConstants() as $reason) {
+			$e = new ExternalPadException('internal wording', $reason, $reason === ExternalPadException::HTTP_ERROR ? 502 : null);
+			$response = $this->buildMapper()->run(
+				static fn (): array => throw $e,
+				static fn (array $result): DataResponse => new DataResponse($result),
+			);
+
+			$this->assertSame(Http::STATUS_BAD_REQUEST, $response->getStatus(), $reason);
+			$message = (string)$response->getData()['message'];
+			// Nothing of the log's English reaches the user.
+			$this->assertStringNotContainsString('internal wording', $message, $reason);
+			$sentences[$reason] = $message;
+		}
+
+		// One sentence each, none shared.
+		$this->assertCount(14, array_unique($sentences));
+		$this->assertSame('The server of the pad answered with an error (502).', $sentences[ExternalPadException::HTTP_ERROR]);
+		$this->assertSame('The pad was not found on the other server, or it cannot be exported there.', $sentences[ExternalPadException::NOT_FOUND]);
+		// The 404 carries its reason by itself.
+		$this->assertSame(ExternalPadException::NOT_FOUND, (new \OCA\EtherpadNextcloud\Exception\ExternalPadExportNotFoundException('internal wording'))->reason());
 	}
 
 	/** An endpoint's own word for what the same exception means there. */
@@ -254,7 +283,7 @@ class PadControllerErrorMapperTest extends TestCase {
 	 */
 	public function testARefusalIsADebugLineWithItsReason(): void {
 		foreach ([
-			new ExternalPadException('Public export HTTP error (500)'),
+			new ExternalPadException('Public export HTTP error (500)', ExternalPadException::HTTP_ERROR, 500),
 			new EtherpadTooLargeException('Pad export is larger than 5242880 bytes.'),
 			new NotFoundException('missing'),
 			new MissingBindingException('No binding exists for this file.'),
