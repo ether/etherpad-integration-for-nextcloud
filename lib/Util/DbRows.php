@@ -11,7 +11,7 @@ namespace OCA\EtherpadNextcloud\Util;
 /**
  * Fetched rows, typed the same on every Nextcloud the app supports.
  *
- * OCP 31 declares IResult::fetch() as mixed and fetchAll() as mixed[]; OCP
+ * OCP 32 declares IResult::fetch() as mixed and fetchAll() as mixed[]; OCP
  * 34 declares both as arrays keyed by column. Code that trusts either sees a
  * different type on the other, and static analysis with it: one Psalm
  * baseline could not serve both ends of the range. Taking what was fetched
@@ -46,7 +46,7 @@ final class DbRows {
 	 * @return list<array<string,mixed>>
 	 */
 	public static function all(array $rows): array {
-		// Through one() rather than a loop over $rows: on OCP 31 each element
+		// Through one() rather than a loop over $rows: on OCP 32 each element
 		// is mixed, and a foreach would assign it as mixed, an issue of its own.
 		$typed = [];
 		foreach (array_map(self::one(...), $rows) as $row) {
