@@ -57,7 +57,6 @@ class SensitiveMethodsTest extends TestCase {
 		'OCA\\EtherpadNextcloud\\Service\\CookieDomainMessages::fill' => 'a translated sentence with placeholders',
 		'OCA\\EtherpadNextcloud\\Service\\EtherpadHealthCheckService::fill' => 'a translated sentence with placeholders',
 		'OCA\\EtherpadNextcloud\\Service\\PadPlaceholderResolver::applyForPath' => 'a file name with placeholders',
-		'OCA\\EtherpadNextcloud\\Util\\DiagnosticText::withoutSecret' => 'a diagnostic sentence',
 	];
 
 	/**
@@ -107,7 +106,8 @@ class SensitiveMethodsTest extends TestCase {
 	 * Methods with a parameter named by $names that are neither registered
 	 * nor excused, and the excuses no method needs: one for a method that
 	 * is gone, or no longer takes such a parameter, would excuse the next
-	 * of that name.
+	 * of that name, and one for a method that is registered anyway says of
+	 * it what is not so.
 	 *
 	 * An object under such a name is a carrier, and keeps what it carries
 	 * to itself (DocumentStaysOutOfTracesTest, CredentialStaysOutOfTracesTest).
@@ -130,8 +130,11 @@ class SensitiveMethodsTest extends TestCase {
 				continue;
 			}
 			$key = $class . '::' . $method;
+			if (in_array($method, SensitiveMethods::ALL[$class] ?? [], true)) {
+				continue;
+			}
 			$seen[$key] = true;
-			if (!isset($excused[$key]) && !in_array($method, SensitiveMethods::ALL[$class] ?? [], true)) {
+			if (!isset($excused[$key])) {
 				$missing[] = $key . '(' . implode(', ', $named) . ')';
 			}
 		}
