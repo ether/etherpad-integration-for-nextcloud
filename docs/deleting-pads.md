@@ -99,8 +99,33 @@ stays:
 A pad that stays keeps its content in Etherpad, and nobody reaches it
 through Nextcloud any more; a public pad stays reachable by its link. The
 consistency check on the admin page counts these pads and lists up to 25 of
-them by pad id (`vanished_file_count`). The app keeps their rows: deleting
-such a pad in Etherpad does not take it off the list.
+them by pad id (`vanished_file_count`). The admin can delete them from
+there, one listed pad or all of them, after a confirmation that names how
+many: they then go like the pads of files deleted for good, within
+minutes, or at once with "Check pending pads". Only do so when no `.pad`
+file names them any more: after the file cache was rebuilt, or files were
+restored from a backup, a file may still be there under a new id, and its
+pad would go with the others. With `delete_pad_with_file` off, nothing is
+deleted. The app never does this on its own, since only an admin can
+tell.
+
+Deleting them all takes only as many as the confirmation named: if more
+vanished since the list was shown, nothing is deleted, and the page shows
+the new count to confirm again. A pad marked for deletion cannot be taken
+back from the page. Switching `delete_pad_with_file` off before the job
+runs keeps it, but switching it back on deletes it.
+
+A listed public pad can also be forgotten: it leaves the list and stays in
+Etherpad, reachable by its link, and the app never cleans it up after
+that. That suits a public pad still used by its link. A protected pad
+cannot be forgotten: without its row, the sessions made for it would stay
+valid until they expire, and where legacy protected imports are allowed a
+user holding its address could claim its group with a legacy `.pad` file.
+Forgetting does not help a file that came back under a new id either:
+without the pad's row, nothing tells that the file names it, and the
+file's open still offers a new pad from its content.
+
+Deleting such a pad in Etherpad alone leaves it on the list.
 
 ## When Etherpad has lost a pad
 

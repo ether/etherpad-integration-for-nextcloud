@@ -14,6 +14,15 @@ const setupAdminDom = () => {
 			data-health-url="/health"
 			data-consistency-url="/consistency"
 			data-settle-pending-url="/settle"
+			data-delete-vanished-url="/delete-vanished"
+			data-delete-all-vanished-url="/delete-all-vanished"
+			data-l10n-delete-vanished-confirm-one="Das Pad der einen verschwundenen Datei löschen?"
+			data-forget-vanished-url="/forget-vanished"
+			data-l10n-vanished-delete-label="Pad {pad} löschen"
+			data-l10n-delete-vanished-one-confirm="Pad {pad} löschen?"
+			data-l10n-forget-vanished-confirm="{pad} vergessen?"
+			data-l10n-vanished-shown="{shown} von {total}:"
+			data-l10n-delete-vanished-confirm="Pads aller {count} verschwundenen Dateien löschen?"
 			data-l10n-saving="Saving..."
 			data-l10n-saved="Saved."
 			data-l10n-checking="Checking..."
@@ -47,7 +56,11 @@ const setupAdminDom = () => {
 				<button type="button" id="etherpad-nextcloud-consistency-check">Check</button>
 				<p id="etherpad-nextcloud-connection-status" class="ep-status"></p>
 				<p id="etherpad-nextcloud-diagnostics-status" class="ep-status"></p>
-				<div id="etherpad-nextcloud-vanished" style="display:none;"><ul id="etherpad-nextcloud-vanished-list"></ul></div>
+				<div id="etherpad-nextcloud-vanished" style="display:none;">
+					<p id="etherpad-nextcloud-vanished-shown"></p>
+					<ul id="etherpad-nextcloud-vanished-list"></ul>
+					<button type="button" id="etherpad-nextcloud-delete-vanished">Delete</button>
+				</div>
 				<div id="etherpad-nextcloud-pending-actions" style="display:none;">
 					<button type="button" id="etherpad-nextcloud-settle-pending">Check</button>
 					<span id="etherpad-nextcloud-pending-count"></span>
@@ -204,6 +217,29 @@ describe('admin settings status areas', () => {
 		// One still waits - Etherpad refused it, say - so there is still something to check.
 		expect(document.getElementById('etherpad-nextcloud-pending-actions').style.display).toBe('')
 		expect(settleButton.disabled).toBe(false)
+		expect(diagnosticsStatus().classList.contains('ep-status-success')).toBe(true)
+	})
+
+	/** A check that deleted nothing while pads still wait - deleting switched off, say - is no success. */
+	it('warns when the pending check deleted nothing', async () => {
+		let settled = { message: 'Deleting pads is switched off.', checked: 0, settled: 0, pending_delete_count: 3 }
+		vi.stubGlobal('fetch', vi.fn((url) => Promise.resolve(okResponse({
+			'/health': { message: 'All checks passed.', pending_delete_count: 3 },
+			'/settle': settled,
+		}[url] || {}))))
+		await import(MODULE)
+
+		document.getElementById('etherpad-nextcloud-health-check').click()
+		await flushAsyncWork()
+		document.getElementById('etherpad-nextcloud-settle-pending').click()
+		await flushAsyncWork()
+		expect(diagnosticsStatus().classList.contains('ep-status-warning')).toBe(true)
+
+		// Nothing left to wait - the job was quicker, say - is all it was for.
+		settled = { message: 'Pending pad check finished.', checked: 0, settled: 0, pending_delete_count: 0 }
+		document.getElementById('etherpad-nextcloud-settle-pending').click()
+		await flushAsyncWork()
+		expect(diagnosticsStatus().classList.contains('ep-status-success')).toBe(true)
 	})
 
 	it('lists the pads of vanished files, and only while there are any', async () => {
@@ -211,11 +247,12 @@ describe('admin settings status areas', () => {
 		vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(okResponse({
 			message: 'Consistency check finished with issues.',
 			vanished_file_count: vanished.length,
+			pending_delete_count: 3,
 			samples: { vanished_files: vanished },
 		}))))
 		await import(MODULE)
 		const node = document.getElementById('etherpad-nextcloud-vanished')
-		const items = () => [...document.querySelectorAll('#etherpad-nextcloud-vanished-list li')].map((li) => li.textContent)
+		const items = () => [...document.querySelectorAll('#etherpad-nextcloud-vanished-list .epnc-vanished-pad')].map((label) => label.textContent)
 
 		document.getElementById('etherpad-nextcloud-consistency-check').click()
 		await flushAsyncWork()
@@ -223,7 +260,11 @@ describe('admin settings status areas', () => {
 		expect(diagnosticsStatus().classList.contains('ep-status-error')).toBe(true)
 		expect(node.style.display).toBe('')
 		// As text: a pad id is data, never markup.
-		expect(items()).toEqual(['g.abc$Notes (fileid 7)', '<b>pad</b> (fileid 9)'])
+		expect(items()).toEqual(['g.abc$Notes (protected, fileid 7)', '<b>pad</b> (fileid 9)'])
+		expect(document.getElementById('etherpad-nextcloud-vanished-shown').textContent).toBe('2 von 2:')
+		// The check says how many pads wait, too, and offers their check.
+		expect(document.getElementById('etherpad-nextcloud-pending-count').textContent).toBe('Pending Etherpad deletes: 3')
+		expect(document.getElementById('etherpad-nextcloud-pending-actions').style.display).toBe('')
 
 		vanished = []
 		document.getElementById('etherpad-nextcloud-consistency-check').click()
@@ -231,6 +272,297 @@ describe('admin settings status areas', () => {
 		expect(node.style.display).toBe('none')
 		expect(items()).toEqual([])
 		expect(diagnosticsStatus().classList.contains('ep-status-success')).toBe(true)
+	})
+
+	/**
+	 * The admin deletes them all, not only those listed, asked first with
+	 * how many there are - and the server is held to that count. A refusal
+	 * sends nothing, and a double click sends once. The answer carries the
+	 * list as it is after: marked, they wait for the job, so the pending
+	 * pads show and the list goes; one grown since is shown to confirm
+	 * again, as a warning.
+	 */
+	it('deletes the pads of all vanished files, as many as confirmed', async () => {
+		let answer = { message: 'Marked.', marked: 30, vanished_file_count: 0, pending_delete_count: 30, samples: { vanished_files: [] } }
+		const fetchMock = vi.fn((url) => Promise.resolve(okResponse(url === '/delete-all-vanished'
+			? answer
+			: { message: 'Consistency check finished with issues.', vanished_file_count: 30, samples: { vanished_files: [{ file_id: 7, pad_id: 'g.abc$Notes', access_mode: 'protected' }] } })))
+		vi.stubGlobal('fetch', fetchMock)
+		const confirm = vi.fn(() => false)
+		vi.stubGlobal('confirm', confirm)
+		await import(MODULE)
+		const posted = () => fetchMock.mock.calls.filter(([url]) => url === '/delete-all-vanished').map(([, init]) => new URLSearchParams(init.body).get('expected'))
+		const deleteAll = document.getElementById('etherpad-nextcloud-delete-vanished')
+
+		document.getElementById('etherpad-nextcloud-consistency-check').click()
+		await flushAsyncWork()
+		expect(document.getElementById('etherpad-nextcloud-vanished-shown').textContent).toBe('1 von 30:')
+
+		deleteAll.click()
+		await flushAsyncWork()
+		expect(confirm).toHaveBeenCalledWith('Pads aller 30 verschwundenen Dateien löschen?')
+		expect(posted()).toEqual([])
+
+		answer = { message: 'Changed.', marked: 0, vanished_file_count: 1, pending_delete_count: 0, samples: { vanished_files: [{ file_id: 8, pad_id: 'late', access_mode: 'public' }] } }
+		confirm.mockReturnValue(true)
+		deleteAll.click()
+		deleteAll.click()
+		await flushAsyncWork()
+		expect(posted()).toEqual(['30'])
+		expect(diagnosticsStatus().classList.contains('ep-status-warning')).toBe(true)
+		expect(document.getElementById('etherpad-nextcloud-vanished-shown').textContent).toBe('1 von 1:')
+
+		answer = { message: 'More than a run.', marked: 500, vanished_file_count: 1, pending_delete_count: 500, samples: { vanished_files: [{ file_id: 8, pad_id: 'late', access_mode: 'public' }] } }
+		deleteAll.click()
+		await flushAsyncWork()
+		expect(posted()).toEqual(['30', '1'])
+		expect(diagnosticsStatus().classList.contains('ep-status-warning')).toBe(true)
+
+		answer = { message: 'Marked.', marked: 1, vanished_file_count: 0, pending_delete_count: 1, samples: { vanished_files: [] } }
+		document.getElementById('etherpad-nextcloud-delete-vanished').click()
+		await flushAsyncWork()
+		expect(confirm).toHaveBeenLastCalledWith('Das Pad der einen verschwundenen Datei löschen?')
+		expect(posted()).toEqual(['30', '1', '1'])
+		expect(diagnosticsStatus().textContent).toContain('marked=1')
+		expect(diagnosticsStatus().classList.contains('ep-status-success')).toBe(true)
+		expect(document.getElementById('etherpad-nextcloud-pending-actions').style.display).toBe('')
+		expect(document.getElementById('etherpad-nextcloud-vanished').style.display).toBe('none')
+		// The button clicked went with the list: the answer takes the focus.
+		expect(document.activeElement).toBe(diagnosticsStatus())
+	})
+
+	/**
+	 * Each listed pad has its own way out, asked first with the pad's id as
+	 * it is - a group pad's `$` and all: deleted, its row marked for the
+	 * job, or - a public pad only - forgotten, its row removed and the pad
+	 * left in Etherpad. The answer carries the list as it is after, so a
+	 * pad the server left - deleting switched off - stays, with a warning.
+	 */
+	it('deletes or forgets one vanished pad at a time, and lists what is left', async () => {
+		const protectedPad = { file_id: 7, pad_id: "g.abc$&Notes$'", access_mode: 'protected' }
+		const publicPad = { file_id: 9, pad_id: 'public-pad', access_mode: 'public' }
+		let rows = [protectedPad, publicPad]
+		let deleting = false
+		const list = () => ({ vanished_file_count: rows.length + 1, samples: { vanished_files: rows } })
+		const fetchMock = vi.fn((url, init) => {
+			const fileId = Number(new URLSearchParams(init.body).get('fileId'))
+			if (url === '/delete-vanished') {
+				if (!deleting) {
+					return Promise.resolve(okResponse({ message: 'Switched off.', marked: 0, pending_delete_count: 0, ...list() }))
+				}
+				rows = rows.filter((row) => row.file_id !== fileId)
+				return Promise.resolve(okResponse({ message: 'Marked.', marked: 1, pending_delete_count: 1, ...list() }))
+			}
+			if (url === '/forget-vanished') {
+				rows = rows.filter((row) => row.file_id !== fileId)
+				return Promise.resolve(okResponse({ message: 'Forgotten.', forgotten: true, pending_delete_count: 1, ...list() }))
+			}
+			return Promise.resolve(okResponse({ message: 'Consistency check finished with issues.', ...list() }))
+		})
+		vi.stubGlobal('fetch', fetchMock)
+		const confirm = vi.fn(() => false)
+		vi.stubGlobal('confirm', confirm)
+		await import(MODULE)
+		const sent = (url) => fetchMock.mock.calls.filter(([called]) => called === url).map(([, init]) => new URLSearchParams(init.body).get('fileId'))
+		const rowButtons = (text) => [...document.querySelectorAll('#etherpad-nextcloud-vanished-list li')].map((li) => [...li.querySelectorAll('button')].find((button) => button.textContent === text))
+		const shown = () => document.getElementById('etherpad-nextcloud-vanished-shown').textContent
+
+		document.getElementById('etherpad-nextcloud-consistency-check').click()
+		await flushAsyncWork()
+		expect(shown()).toBe('2 von 3:')
+		expect(rowButtons('Delete')[0].getAttribute('aria-label')).toBe("Pad g.abc$&Notes$' löschen")
+		expect(rowButtons('Delete')[0].type).toBe('button')
+		expect(rowButtons('Forget')).toEqual([undefined, expect.anything()])
+
+		rowButtons('Delete')[0].click()
+		await flushAsyncWork()
+		expect(confirm).toHaveBeenLastCalledWith("Pad g.abc$&Notes$' löschen?")
+		expect(sent('/delete-vanished')).toEqual([])
+
+		confirm.mockReturnValue(true)
+		rowButtons('Delete')[0].click()
+		await flushAsyncWork()
+		expect(sent('/delete-vanished')).toEqual(['7'])
+		expect(diagnosticsStatus().classList.contains('ep-status-warning')).toBe(true)
+		expect(shown()).toBe('2 von 3:')
+		// The row's button went with the old list; the new list's first takes the focus.
+		expect(document.activeElement).toBe(rowButtons('Delete')[0])
+
+		deleting = true
+		rowButtons('Delete')[0].click()
+		await flushAsyncWork()
+		expect(sent('/delete-vanished')).toEqual(['7', '7'])
+		expect(diagnosticsStatus().textContent).toContain('marked=1')
+		expect(diagnosticsStatus().classList.contains('ep-status-success')).toBe(true)
+		expect(document.getElementById('etherpad-nextcloud-pending-count').textContent).toContain('1')
+		expect(shown()).toBe('1 von 2:')
+
+		rowButtons('Forget')[0].click()
+		await flushAsyncWork()
+		expect(confirm).toHaveBeenLastCalledWith('public-pad vergessen?')
+		expect(sent('/forget-vanished')).toEqual(['9'])
+		expect(diagnosticsStatus().textContent).toContain('forgotten=true')
+		expect(shown()).toBe('0 von 1:')
+		expect(document.getElementById('etherpad-nextcloud-vanished').style.display).toBe('')
+	})
+
+	/**
+	 * One request for the list at a time. While an action is under way the
+	 * check's button and the list's are disabled: a check started after it
+	 * could still read the list before the action changed it, and draw the
+	 * forgotten pad back. While a check is under way the list's buttons are
+	 * disabled too, so its older answer cannot follow an action's.
+	 */
+	it('takes one request for the list at a time', async () => {
+		const row = { file_id: 9, pad_id: 'public-pad', access_mode: 'public' }
+		let release
+		let hold = false
+		const fetchMock = vi.fn((url) => {
+			const body = url === '/forget-vanished'
+				? { message: 'Forgotten.', forgotten: true, vanished_file_count: 0, samples: { vanished_files: [] } }
+				: { message: 'Checked.', vanished_file_count: 1, samples: { vanished_files: [row] } }
+			if (!hold || (url !== '/forget-vanished' && url !== '/consistency')) {
+				return Promise.resolve(okResponse(body))
+			}
+			return new Promise((resolve) => {
+				release = () => resolve(okResponse(body))
+			})
+		})
+		vi.stubGlobal('fetch', fetchMock)
+		vi.stubGlobal('confirm', vi.fn(() => true))
+		await import(MODULE)
+		const check = document.getElementById('etherpad-nextcloud-consistency-check')
+		const listButtons = () => [...document.querySelectorAll('#etherpad-nextcloud-vanished button')]
+		const sent = (url) => fetchMock.mock.calls.filter(([called]) => called === url).length
+
+		check.click()
+		await flushAsyncWork()
+		expect(listButtons().some((button) => button.disabled)).toBe(false)
+
+		// A check under way: the list takes no action.
+		hold = true
+		check.click()
+		await flushAsyncWork()
+		expect([check, ...listButtons()].every((button) => button.disabled)).toBe(true)
+		document.querySelector('#etherpad-nextcloud-vanished-list button:last-child').click()
+		await flushAsyncWork()
+		expect(sent('/forget-vanished')).toBe(0)
+		release()
+		await flushAsyncWork()
+		expect([check, ...listButtons()].some((button) => button.disabled)).toBe(false)
+
+		// An action under way: no check is started.
+		document.querySelector('#etherpad-nextcloud-vanished-list button:last-child').click()
+		await flushAsyncWork()
+		expect([check, ...listButtons()].every((button) => button.disabled)).toBe(true)
+		check.click()
+		await flushAsyncWork()
+		expect(sent('/consistency')).toBe(2)
+		release()
+		await flushAsyncWork()
+		expect(document.getElementById('etherpad-nextcloud-vanished').style.display).toBe('none')
+		expect(check.disabled).toBe(false)
+	})
+
+	/**
+	 * The check of pending pads takes its turn with them: started during
+	 * an action, its answer could count the pads that wait before the
+	 * action marked, arrive after the action's, and hide the pads just
+	 * marked. With nothing waiting its button stays disabled, busy or not.
+	 */
+	it('takes the pending check in turn with the list', async () => {
+		const row = { file_id: 9, pad_id: 'public-pad', access_mode: 'public' }
+		let release
+		let hold = false
+		let pending = 2
+		const fetchMock = vi.fn((url) => {
+			const body = url === '/settle'
+				? { message: 'Pending pad check finished.', checked: pending, settled: pending, pending_delete_count: 0 }
+				: { message: 'Done.', marked: 1, vanished_file_count: 1, pending_delete_count: pending, samples: { vanished_files: [row] } }
+			if (!hold || (url !== '/delete-vanished' && url !== '/settle')) {
+				return Promise.resolve(okResponse(body))
+			}
+			return new Promise((resolve) => {
+				release = () => resolve(okResponse(body))
+			})
+		})
+		vi.stubGlobal('fetch', fetchMock)
+		vi.stubGlobal('confirm', vi.fn(() => true))
+		await import(MODULE)
+		const check = document.getElementById('etherpad-nextcloud-consistency-check')
+		const settle = document.getElementById('etherpad-nextcloud-settle-pending')
+		const listButtons = () => [...document.querySelectorAll('#etherpad-nextcloud-vanished button')]
+		const sent = (url) => fetchMock.mock.calls.filter(([called]) => called === url).length
+
+		check.click()
+		await flushAsyncWork()
+		expect(settle.disabled).toBe(false)
+
+		// An action under way: no pending check is started.
+		hold = true
+		pending = 3
+		document.querySelector('#etherpad-nextcloud-vanished-list button').click()
+		await flushAsyncWork()
+		expect(settle.disabled).toBe(true)
+		settle.click()
+		await flushAsyncWork()
+		expect(sent('/settle')).toBe(0)
+		// Nor does a health check's count of them open it meanwhile.
+		document.getElementById('etherpad-nextcloud-health-check').click()
+		await flushAsyncWork()
+		expect(settle.disabled).toBe(true)
+		release()
+		await flushAsyncWork()
+		expect(settle.disabled).toBe(false)
+		expect(document.getElementById('etherpad-nextcloud-pending-count').textContent).toBe('Pending Etherpad deletes: 3')
+
+		// A pending check under way: no action, no check, no second one.
+		settle.click()
+		await flushAsyncWork()
+		expect([check, settle, ...listButtons()].every((button) => button.disabled)).toBe(true)
+		document.querySelector('#etherpad-nextcloud-vanished-list button').click()
+		settle.click()
+		await flushAsyncWork()
+		expect([sent('/delete-vanished'), sent('/settle')]).toEqual([1, 1])
+		release()
+		await flushAsyncWork()
+		expect([check, ...listButtons()].some((button) => button.disabled)).toBe(false)
+		// Nothing waits any more: nothing to check.
+		expect(settle.disabled).toBe(true)
+	})
+
+	/**
+	 * An action that fails may have done part of what it was asked - a
+	 * chunk of marks before the one that failed: the list is asked again,
+	 * and shows what is left, beside the failure. What it marked waits,
+	 * so the check for pending pads is offered with its count.
+	 */
+	it('asks the list again when an action fails', async () => {
+		let left = 900
+		const fetchMock = vi.fn((url) => {
+			if (url === '/delete-all-vanished') {
+				left = 400
+				return Promise.resolve({ ok: false, status: 500, text: () => Promise.resolve(JSON.stringify({ ok: false, message: 'Some may be marked already.' })) })
+			}
+			return Promise.resolve(okResponse({ message: 'Checked.', vanished_file_count: left, pending_delete_count: 900 - left, samples: { vanished_files: [{ file_id: 9, pad_id: 'pad', access_mode: 'public' }] } }))
+		})
+		vi.stubGlobal('fetch', fetchMock)
+		vi.stubGlobal('confirm', vi.fn(() => true))
+		await import(MODULE)
+
+		document.getElementById('etherpad-nextcloud-consistency-check').click()
+		await flushAsyncWork()
+		expect(document.getElementById('etherpad-nextcloud-pending-actions').style.display).toBe('none')
+		document.getElementById('etherpad-nextcloud-delete-vanished').click()
+		await flushAsyncWork()
+
+		expect(document.getElementById('etherpad-nextcloud-pending-actions').style.display).toBe('')
+		expect(document.getElementById('etherpad-nextcloud-pending-count').textContent).toBe('Pending Etherpad deletes: 500')
+		expect(document.getElementById('etherpad-nextcloud-settle-pending').disabled).toBe(false)
+		expect(diagnosticsStatus().textContent).toContain('Some may be marked already.')
+		expect(diagnosticsStatus().classList.contains('ep-status-error')).toBe(true)
+		expect(document.getElementById('etherpad-nextcloud-vanished-shown').textContent).toBe('1 von 400:')
+		expect(document.getElementById('etherpad-nextcloud-delete-vanished').disabled).toBe(false)
 	})
 
 	it('leaves the counts alone when a response carries none', async () => {
@@ -618,14 +950,15 @@ describe('shared templates', () => {
 
 	/** Each row's only visible label is "Delete", so the name has to be read out. */
 	it('names the template each delete button removes', async () => {
-		vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(templateResponse(['Meeting notes.pad']))))
+		vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(templateResponse(['Meeting $& notes.pad']))))
 		await import(MODULE)
 		await flushAsyncWork()
 
 		const remove = list().querySelector('button')
 		// Read from the page, not glued together here: the sentence differs per
-		// language, and only the placeholder is ours to fill.
-		expect(remove.getAttribute('aria-label')).toBe('Vorlage Meeting notes.pad löschen')
+		// language, and only the placeholder is ours to fill - with the name as
+		// it is, `$&` and all.
+		expect(remove.getAttribute('aria-label')).toBe('Vorlage Meeting $& notes.pad löschen')
 	})
 
 	/**

@@ -341,6 +341,74 @@ test.describe('pads of team folder files deleted for good', () => {
 		}
 	})
 
+	/**
+	 * The admin takes the pads the app leaves, one listed pad at a time or
+	 * all of them: a public one forgotten, its row gone and the pad left in
+	 * Etherpad; one deleted on its own; the rest with all, as many as the
+	 * check counted. All comes last, and only where the stack says its data
+	 * is throwaway (`E2E.throwawayStack`): it takes every vanished row of
+	 * the instance, other tests' too.
+	 */
+	test('the admin forgets a vanished pad, deletes one, then the rest', async () => {
+		const other = uniqueName('gone-team-vanished')
+		const otherId = await createTeamFolder(other, group)
+		const padIds: string[] = []
+		try {
+			const paths = ['forgotten', 'deleted', 'rest'].map((label) => `${other}/${uniquePadName(label)}`)
+			const pads: string[] = []
+			for (const [index, path] of paths.entries()) {
+				pads.push(padIdOfPadUrl((await padInTeam(path, index === 1 ? 'protected' : 'public')).padUrl))
+				made.pop()
+			}
+			padIds.push(...pads)
+			const [forgottenFile, deletedFile, restFile] = [await propfindFileId(paths[0]), await propfindFileId(paths[1]), await propfindFileId(paths[2])]
+			await deleteTeamFolder(otherId)
+			const vanishedBefore = await vanishedFiles()
+			expect(vanishedBefore, 'the team folder deleted as a whole leaves its files vanished').toBeGreaterThanOrEqual(3)
+
+			const refused = await padApiPost('admin/forget-vanished', { fileId: String(deletedFile) })
+			expect((refused.body as { forgotten?: boolean }).forgotten, 'a protected pad is not forgotten').toBe(false)
+			const forgotten = await padApiPost('admin/forget-vanished', { fileId: String(forgottenFile) })
+			expect(forgotten.status, JSON.stringify(forgotten.body)).toBe(200)
+			expect((forgotten.body as { forgotten?: boolean }).forgotten).toBe(true)
+			const again = await padApiPost('admin/forget-vanished', { fileId: String(forgottenFile) })
+			expect((again.body as { forgotten?: boolean }).forgotten, 'no longer vanished, nothing to forget').toBe(false)
+			const deleted = await padApiPost('admin/delete-vanished', { fileId: String(deletedFile) })
+			expect(deleted.status, JSON.stringify(deleted.body)).toBe(200)
+			expect((deleted.body as { marked?: number }).marked).toBe(1)
+			await settle()
+			expect(await padExists(pads[1]), 'marked on the admin\'s word, the pad should go').toBe(false)
+			expect(await padExists(pads[0]), 'forgotten, the pad stays in Etherpad').toBe(true)
+			expect(await vanishedFiles(), 'both should be off the list').toBe(vanishedBefore - 2)
+
+			if (!E2E.throwawayStack) {
+				// Not this instance's every vanished row: its own last one, alone.
+				await padApiPost('admin/delete-vanished', { fileId: String(restFile) })
+				await settle()
+				expect(await padExists(pads[2]), 'marked on its own, the pad should go').toBe(false)
+				return
+			}
+			const counted = await vanishedFiles()
+			const stale = await padApiPost('admin/delete-all-vanished', { expected: String(counted + 1) })
+			expect((stale.body as { marked?: number }).marked, 'a count the list no longer has takes nothing').toBe(0)
+			const all = await padApiPost('admin/delete-all-vanished', { expected: String(counted) })
+			expect(all.status, JSON.stringify(all.body)).toBe(200)
+			expect((all.body as { marked?: number }).marked).toBe(counted)
+			expect((all.body as { vanished_file_count?: number }).vanished_file_count).toBe(0)
+			await settle()
+			expect(await padExists(pads[2]), 'marked with all, the pad should go').toBe(false)
+			expect(await padExists(pads[0]), 'forgotten, the pad is no vanished file\'s any more').toBe(true)
+			expect(await vanishedFiles()).toBe(0)
+		} finally {
+			await deleteTeamFolder(otherId)
+			for (const padId of padIds) {
+				if (await padExists(padId)) {
+					await etherpadApiPost('deletePad', { padID: padId })
+				}
+			}
+		}
+	})
+
 	test('a pad an account made in a team folder stays when the account is deleted', async () => {
 		const account = await createAccount(uniqueName('gone-team-account'))
 		try {

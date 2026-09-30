@@ -1,3 +1,5 @@
+import { handFocusTo } from './lib/hand-focus.js'
+
 (function () {
 	'use strict'
 
@@ -13,6 +15,8 @@
 	const pendingCountNode = document.getElementById('etherpad-nextcloud-pending-count')
 	const vanishedNode = document.getElementById('etherpad-nextcloud-vanished')
 	const vanishedList = document.getElementById('etherpad-nextcloud-vanished-list')
+	const vanishedShownNode = document.getElementById('etherpad-nextcloud-vanished-shown')
+	const deleteVanishedButton = document.getElementById('etherpad-nextcloud-delete-vanished')
 	const allowExternalCheckbox = form ? form.querySelector('input[name="allow_external_pads"]') : null
 	const protectedPadsCheckbox = form ? form.querySelector('input[name="enable_protected_pads"]') : null
 	const publicPadsCheckbox = form ? form.querySelector('input[name="enable_public_pads"]') : null
@@ -43,6 +47,9 @@
 	const healthUrl = root.getAttribute('data-health-url') || ''
 	const consistencyUrl = root.getAttribute('data-consistency-url') || ''
 	const settlePendingUrl = root.getAttribute('data-settle-pending-url') || ''
+	const deleteVanishedUrl = root.getAttribute('data-delete-vanished-url') || ''
+	const deleteAllVanishedUrl = root.getAttribute('data-delete-all-vanished-url') || ''
+	const forgetVanishedUrl = root.getAttribute('data-forget-vanished-url') || ''
 	const l10n = {
 		saving: root.getAttribute('data-l10n-saving') || 'Saving settings...',
 		saved: root.getAttribute('data-l10n-saved') || 'Settings saved.',
@@ -55,6 +62,20 @@
 		consistencyFailed: root.getAttribute('data-l10n-consistency-failed') || 'Consistency check failed.',
 		pendingDeleteLabel: root.getAttribute('data-l10n-pending-delete-label') || 'Pending Etherpad deletes',
 		settleFailed: root.getAttribute('data-l10n-settle-failed') || 'Pending pad check failed.',
+		vanishedShown: root.getAttribute('data-l10n-vanished-shown') || 'Showing {shown} of {total}:',
+		deleteVanishedConfirm: root.getAttribute('data-l10n-delete-vanished-confirm') || 'Delete the pads of all {count} vanished files? Etherpad deletes them for good.',
+		deleteVanishedConfirmOne: root.getAttribute('data-l10n-delete-vanished-confirm-one') || 'Delete the pad of the one vanished file? Etherpad deletes it for good.',
+		deleteVanishedRunning: root.getAttribute('data-l10n-delete-vanished-running') || 'Marking the pads of the vanished files for deletion...',
+		deleteVanishedFailed: root.getAttribute('data-l10n-delete-vanished-failed') || 'Could not delete the pads of the vanished files.',
+		vanishedDeleteOne: root.getAttribute('data-l10n-vanished-delete-one') || 'Delete',
+		vanishedForgetOne: root.getAttribute('data-l10n-vanished-forget-one') || 'Forget',
+		vanishedDeleteLabel: root.getAttribute('data-l10n-vanished-delete-label') || 'Delete pad {pad}',
+		vanishedForgetLabel: root.getAttribute('data-l10n-vanished-forget-label') || 'Forget pad {pad}',
+		deleteVanishedOneConfirm: root.getAttribute('data-l10n-delete-vanished-one-confirm') || 'Delete the pad {pad}? Etherpad deletes it for good.',
+		forgetVanishedConfirm: root.getAttribute('data-l10n-forget-vanished-confirm') || 'Take {pad} off this list and leave it in Etherpad? The app never cleans it up after that, and anyone with its link can still open it.',
+		forgetVanishedFailed: root.getAttribute('data-l10n-forget-vanished-failed') || 'Could not forget the pad of the vanished file.',
+		deleteVanishedOneRunning: root.getAttribute('data-l10n-delete-vanished-one-running') || 'Marking the pad for deletion...',
+		forgetVanishedRunning: root.getAttribute('data-l10n-forget-vanished-running') || 'Forgetting the pad...',
 		templateUploading: root.getAttribute('data-l10n-template-uploading') || 'Uploading template...',
 		templateDelete: root.getAttribute('data-l10n-template-delete') || 'Delete',
 		templateTooLarge: root.getAttribute('data-l10n-template-too-large') || 'Template file is too large.',
@@ -226,7 +247,7 @@
 		remove.textContent = l10n.templateDelete
 		// The visible label repeats on every row, so the accessible name has to
 		// carry the name of the template this one removes.
-		remove.setAttribute('aria-label', l10n.templateDeleteLabel.replace('{name}', name))
+		remove.setAttribute('aria-label', l10n.templateDeleteLabel.replace('{name}', () => name))
 		remove.addEventListener('click', () => {
 			if (!window.confirm(l10n.templateConfirmDelete)) {
 				return
@@ -377,7 +398,7 @@
 		// The check deletes a pad only once its file is gone for good, and
 		// nothing here is more than a nudge to the job that does the same.
 		if (settlePendingButton instanceof HTMLButtonElement) {
-			settlePendingButton.disabled = bindingCounts.pendingDeletes <= 0
+			settlePendingButton.disabled = vanishedBusy || bindingCounts.pendingDeletes <= 0
 		}
 	}
 
@@ -491,54 +512,205 @@
 		consistencyButton.addEventListener('click', async () => {
 			clearFieldErrors()
 			beginStatus(l10n.consistencyRunning, diagnosticsTarget)
+			setVanishedBusy(true)
 			try {
 				const data = await postJson(consistencyUrl, {})
 				const vanishedFile = Number(data.vanished_file_count || 0)
 				const message = `${String(data.message || l10n.consistencyOk)} vanished_file=${String(vanishedFile)}`
 				setStatus(message, vanishedFile > 0 ? 'error' : 'success', diagnosticsTarget)
-				showVanished(data.samples && data.samples.vanished_files)
+				updateBindingCounts(data)
+				showVanished(data.samples && data.samples.vanished_files, vanishedFile)
 			} catch (error) {
 				setStatus(error instanceof Error ? error.message : l10n.consistencyFailed, 'error', diagnosticsTarget)
+			} finally {
+				setVanishedBusy(false)
 			}
 		})
 	}
 
+	// All of them, not only those listed: what the confirmation names, and
+	// what deleting them all is held to.
+	let vanishedTotal = 0
+	// One request for the list or the pads that wait at a time - a check,
+	// an action, the check of pending pads: while one is under way their
+	// buttons are disabled. Two under way could answer in either order, and
+	// the later answer need not be the later state - a check started after
+	// an action can still read the list before the action changed it, and
+	// a pending check can count before an action marked.
+	let vanishedBusy = false
+
 	/**
-	 * The pads of files gone without passing a trash, which the app leaves
-	 * in place: listed, so an admin can delete them in Etherpad.
+	 * The pads of files gone without a deletion the app saw, which it
+	 * leaves in place: the first of them listed, with how many there are,
+	 * so an admin can tell whether to delete them all - and each one with
+	 * its own way to be deleted, or, a public one, forgotten and left in
+	 * Etherpad. From the consistency check, or an action's answer, which
+	 * carries the list as it is after the action.
 	 */
-	function showVanished(rows) {
+	function showVanished(rows, total) {
 		if (!(vanishedNode instanceof HTMLElement) || !(vanishedList instanceof HTMLElement)) {
 			return
 		}
 		const items = (Array.isArray(rows) ? rows : [])
 			.filter((row) => row && typeof row.pad_id === 'string')
-			.map((row) => {
-				const item = document.createElement('li')
-				item.textContent = `${row.pad_id} (fileid ${String(row.file_id)})`
-				return item
-			})
+			.map(vanishedItem)
+		vanishedTotal = Math.max(Number.isFinite(Number(total)) ? Number(total) : 0, items.length)
 		vanishedList.replaceChildren(...items)
-		vanishedNode.style.display = items.length > 0 ? '' : 'none'
+		if (vanishedShownNode instanceof HTMLElement) {
+			vanishedShownNode.textContent = l10n.vanishedShown
+				.replace('{shown}', String(items.length))
+				.replace('{total}', String(vanishedTotal))
+		}
+		vanishedNode.style.display = vanishedTotal > 0 ? '' : 'none'
+	}
+
+	function setVanishedBusy(busy) {
+		vanishedBusy = busy
+		const buttons = vanishedNode instanceof HTMLElement ? [...vanishedNode.querySelectorAll('button')] : []
+		if (consistencyButton instanceof HTMLButtonElement) {
+			buttons.push(consistencyButton)
+		}
+		for (const button of buttons) {
+			button.disabled = busy
+		}
+		// With nothing waiting it stays disabled, busy or not.
+		if (settlePendingButton instanceof HTMLButtonElement) {
+			settlePendingButton.disabled = busy || bindingCounts.pendingDeletes <= 0
+		}
+	}
+
+	/**
+	 * The list as the server has it now, and the pads that wait, after an
+	 * action that failed: it may have done part of what it was asked, and
+	 * what it marked then waits to be checked. Should this fail too, both
+	 * stay as they were, and the next check shows them.
+	 */
+	async function refreshVanished() {
+		try {
+			const data = await postJson(consistencyUrl, {})
+			updateBindingCounts(data)
+			showVanished(data.samples && data.samples.vanished_files, data.vanished_file_count)
+		} catch {
+			// The action's failure stands in the status line.
+		}
+	}
+
+	/**
+	 * An action's answer in the diagnostics line, with the counts it
+	 * carries: a success when it did what was asked, a warning when it did
+	 * not, or not all of it - deleting switched off, say.
+	 */
+	function reportAction(data, keys, done) {
+		const details = keys
+			.filter((key) => typeof data[key] !== 'undefined')
+			.map((key) => `${key}=${String(data[key])}`)
+		const suffix = details.length > 0 ? ` ${details.join(' | ')}` : ''
+		setStatus(`${String(data.message || 'OK')}${suffix}`, done ? 'success' : 'warning', diagnosticsTarget)
+	}
+
+	/**
+	 * A vanished-files action, once the admin confirms: its answer
+	 * reported, the list drawn as the answer carries it, and the focus
+	 * handed on, since the button clicked went with the old list.
+	 */
+	async function runVanishedAction(url, payload, { confirm, running, failed, keys, done }) {
+		if (!window.confirm(confirm)) {
+			return
+		}
+		setVanishedBusy(true)
+		clearFieldErrors()
+		beginStatus(running, diagnosticsTarget)
+		try {
+			const data = await postJson(url, payload)
+			updateBindingCounts(data)
+			reportAction(data, keys, done(data))
+			showVanished(data.samples && data.samples.vanished_files, data.vanished_file_count)
+		} catch (error) {
+			setStatus(error instanceof Error ? error.message : failed, 'error', diagnosticsTarget)
+			await refreshVanished()
+		} finally {
+			setVanishedBusy(false)
+		}
+		handFocusTo(vanishedList, diagnosticsTarget)
+	}
+
+	function vanishedItem(row) {
+		const item = document.createElement('li')
+		const label = document.createElement('span')
+		label.className = 'epnc-vanished-pad'
+		const mode = typeof row.access_mode === 'string' ? `${row.access_mode}, ` : ''
+		// As text: a pad id is data, never markup.
+		label.textContent = `${row.pad_id} (${mode}fileid ${String(row.file_id)})`
+		item.append(label)
+		const fileId = Number(row.file_id)
+		if (!Number.isInteger(fileId) || fileId <= 0) {
+			return item
+		}
+		// A function, not the id itself: a replacement string reads `$&`,
+		// `$'` and the like, and a group pad's id carries a `$`.
+		const withPad = (text) => text.replace('{pad}', () => row.pad_id)
+		const actions = [
+			{ url: deleteVanishedUrl, text: l10n.vanishedDeleteOne, label: l10n.vanishedDeleteLabel, confirm: l10n.deleteVanishedOneConfirm, running: l10n.deleteVanishedOneRunning, failed: l10n.deleteVanishedFailed, doneKey: 'marked' },
+		]
+		// Only a public pad is forgotten (docs/deleting-pads.md says why).
+		if (row.access_mode === 'public') {
+			actions.push({ url: forgetVanishedUrl, text: l10n.vanishedForgetOne, label: l10n.vanishedForgetLabel, confirm: l10n.forgetVanishedConfirm, running: l10n.forgetVanishedRunning, failed: l10n.forgetVanishedFailed, doneKey: 'forgotten' })
+		}
+		for (const action of actions) {
+			if (action.url === '') {
+				continue
+			}
+			const button = document.createElement('button')
+			button.type = 'button'
+			button.disabled = vanishedBusy
+			button.textContent = action.text
+			button.setAttribute('aria-label', withPad(action.label))
+			button.addEventListener('click', () => {
+				void runVanishedAction(action.url, { fileId }, {
+					confirm: withPad(action.confirm),
+					running: action.running,
+					failed: action.failed,
+					keys: [action.doneKey, 'vanished_file_count', 'pending_delete_count'],
+					done: (data) => Boolean(data[action.doneKey]),
+				})
+			})
+			item.append(' ', button)
+		}
+		return item
+	}
+
+	if (deleteVanishedButton instanceof HTMLElement && deleteAllVanishedUrl !== '') {
+		deleteVanishedButton.addEventListener('click', () => {
+			const confirm = vanishedTotal === 1
+				? l10n.deleteVanishedConfirmOne
+				: l10n.deleteVanishedConfirm.replace('{count}', String(vanishedTotal))
+			// The count the admin confirms is the count the server holds the
+			// action to: a list grown since is not taken.
+			void runVanishedAction(deleteAllVanishedUrl, { expected: vanishedTotal }, {
+				confirm,
+				running: l10n.deleteVanishedRunning,
+				failed: l10n.deleteVanishedFailed,
+				keys: ['marked', 'vanished_file_count', 'pending_delete_count'],
+				done: (data) => Number(data.marked) > 0 && Number(data.vanished_file_count) === 0,
+			})
+		})
 	}
 
 	if (settlePendingButton instanceof HTMLElement) {
 		settlePendingButton.addEventListener('click', async () => {
 			clearFieldErrors()
 			beginStatus(l10n.checking, diagnosticsTarget)
+			setVanishedBusy(true)
 			try {
 				const data = await postJson(settlePendingUrl, {})
-				const details = []
-				for (const key of ['checked', 'settled', 'pending_delete_count']) {
-					if (typeof data[key] !== 'undefined') {
-						details.push(`${key}=${String(data[key])}`)
-					}
-				}
 				updateBindingCounts(data)
-				const suffix = details.length > 0 ? ` ${details.join(' | ')}` : ''
-				setStatus(`${String(data.message || 'OK')}${suffix}`, 'success', diagnosticsTarget)
+				// Nothing deleted while pads still wait - deleting switched off,
+				// Etherpad refusing - is no success.
+				reportAction(data, ['checked', 'settled', 'pending_delete_count'], Number(data.settled) > 0 || Number(data.pending_delete_count) === 0)
 			} catch (error) {
 				setStatus(error instanceof Error ? error.message : l10n.settleFailed, 'error', diagnosticsTarget)
+			} finally {
+				setVanishedBusy(false)
 			}
 		})
 	}

@@ -16,6 +16,7 @@ use OCA\EtherpadNextcloud\Exception\NotAPadFileException;
 use OCA\EtherpadNextcloud\Exception\ShareFileNotInShareException;
 use OCA\EtherpadNextcloud\Exception\ShareItemUnavailableException;
 use OCA\EtherpadNextcloud\Exception\ShareReadForbiddenException;
+use OCA\EtherpadNextcloud\Util\PositiveIntParam;
 use OCA\EtherpadNextcloud\Util\PadFileType;
 use OCA\EtherpadNextcloud\Util\PathNormalizer;
 use OCP\Constants;
@@ -55,19 +56,11 @@ class PublicShareResolver {
 	private function requestedFileId(mixed $fileIdParam): ?int {
 		// Absent only. `fileId=` was sent, and a sent id that cannot be
 		// used is refused rather than replaced by the path.
-		if ($fileIdParam === null) {
-			return null;
-		}
-		if (!is_int($fileIdParam) && !(is_string($fileIdParam) && ctype_digit($fileIdParam))) {
+		try {
+			return PositiveIntParam::read($fileIdParam);
+		} catch (\InvalidArgumentException) {
 			throw new InvalidShareFilePathException('Invalid file id.');
 		}
-
-		$fileId = (int)$fileIdParam;
-		if ($fileId <= 0) {
-			throw new InvalidShareFilePathException('Invalid file id.');
-		}
-
-		return $fileId;
 	}
 
 	private function requestedPath(mixed $fileParam, string $token): string {

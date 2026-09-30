@@ -172,9 +172,11 @@ class BindingService {
 	 * already keeps its dates.
 	 *
 	 * @param list<int> $fileIds
+	 * @return int how many rows the update changed: active ones, not those waiting already or gone
 	 */
-	public function markGone(array $fileIds): void {
+	public function markGone(array $fileIds): int {
 		$now = $this->timeFactory->getTime();
+		$marked = 0;
 		foreach (array_chunk($fileIds, 500) as $chunk) {
 			$qb = $this->db->getQueryBuilder();
 			$qb->update(self::TABLE)
@@ -183,8 +185,9 @@ class BindingService {
 				->set('updated_at', $qb->createNamedParameter($now, IQueryBuilder::PARAM_INT))
 				->where($qb->expr()->in('file_id', $qb->createNamedParameter($chunk, IQueryBuilder::PARAM_INT_ARRAY)))
 				->andWhere($qb->expr()->eq('state', $qb->createNamedParameter(self::STATE_ACTIVE)));
-			$qb->executeStatement();
+			$marked += $qb->executeStatement();
 		}
+		return $marked;
 	}
 
 	/**

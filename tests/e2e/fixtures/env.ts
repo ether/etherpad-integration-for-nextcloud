@@ -58,6 +58,16 @@ export const E2E = {
 		return (url && key) ? { url: url.replace(/\/+$/, ''), key } : null
 	},
 	/**
+	 * Whether the target says its data is throwaway: `E2E_THROWAWAY_STACK=1`,
+	 * which only the container stack's `up.sh` writes, for the instance it
+	 * has just made. An action that reaches past the spec's own fixtures -
+	 * deleting the pads of every vanished file - runs only there. Not told
+	 * by the address: a test host kept for long, or shared, has data too.
+	 */
+	get throwawayStack(): boolean {
+		return process.env.E2E_THROWAWAY_STACK?.trim() === '1'
+	},
+	/**
 	 * The pad server's address on its own. `/health` needs no api key, so a
 	 * spec that only asks that must not be gated on one — a target that
 	 * configured the URL and nothing else would skip in silence.
