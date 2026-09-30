@@ -60,10 +60,22 @@ class AppSourceTest extends TestCase {
 				return [fn (string $inAClosure) => "public {$claim}"];
 			}
 		}
+
+		interface Another {
+			public function take(string $token): void;
+		}
+
+		enum Kind: string {
+			case Public = 'public';
+
+			public function label(string $text): string {
+				return $text;
+			}
+		}
 		PHP;
 
 	public function testReadsEveryFieldAnythingOutsideTheClassCanRead(): void {
-		$fields = array_map(static fn (array $field): string => $field[1], AppSource::of(self::SOURCE, 'Carrier')['fields']);
+		$fields = array_map(static fn (array $field): string => $field[1], AppSource::of(self::SOURCE)['fields']);
 
 		$this->assertSame(
 			['declared', 'withoutTheWord', 'static', 'old', 'first', 'second', 'interpolated', 'afterIt', 'promoted', 'promotedWithoutTheWord'],
@@ -72,7 +84,7 @@ class AppSourceTest extends TestCase {
 	}
 
 	public function testReadsEveryMethodWithItsParametersAsWritten(): void {
-		$methods = AppSource::of(self::SOURCE, 'Carrier')['methods'];
+		$methods = AppSource::of(self::SOURCE)['methods'];
 
 		$this->assertSame([
 			['App\\Example\\Carrier', '__construct', [
@@ -93,6 +105,9 @@ class AppSourceTest extends TestCase {
 				['array', 'sessions'],
 			]],
 			['App\\Example\\Carrier', 'byReference', [['\\Closure', 'claim']]],
+			// By the name each declares, not the file's.
+			['App\\Example\\Another', 'take', [['string', 'token']]],
+			['App\\Example\\Kind', 'label', [['string', 'text']]],
 		], $methods);
 	}
 

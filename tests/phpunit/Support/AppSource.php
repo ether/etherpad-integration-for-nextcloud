@@ -61,7 +61,7 @@ final class AppSource {
 				continue;
 			}
 			$files++;
-			$declared = self::of((string)file_get_contents($file->getPathname()), $file->getBasename('.php'));
+			$declared = self::of((string)file_get_contents($file->getPathname()));
 			$methods = [...$methods, ...$declared['methods']];
 			$fields = [...$fields, ...$declared['fields']];
 		}
@@ -73,12 +73,14 @@ final class AppSource {
 	}
 
 	/**
-	 * What one file's source declares. The class goes by the file's name,
-	 * in the namespace the source states.
+	 * What one file's source declares. Each class, interface, trait or
+	 * enum goes by the name it declares, in the namespace the source
+	 * states - not by the file's name, which only one of several in a file
+	 * could share.
 	 *
 	 * @return array{methods: list<array{string, string, list<array{string, string}>}>, fields: list<array{string, string}>}
 	 */
-	public static function of(string $source, string $baseName): array {
+	public static function of(string $source): array {
 		$methods = [];
 		$fields = [];
 		$tokens = array_values(array_filter(
@@ -86,14 +88,15 @@ final class AppSource {
 			static fn (\PhpToken $token): bool => !$token->is([T_WHITESPACE, T_COMMENT, T_DOC_COMMENT]),
 		));
 		$count = count($tokens);
-		$class = $baseName;
+		$namespace = '';
+		$class = '';
 		$depth = 0;
 		// The depth a class body's own statements are at, or -1 outside one.
 		$body = -1;
 		for ($i = 0; $i < $count; $i++) {
 			$token = $tokens[$i];
 			if ($token->is(T_NAMESPACE) && $i + 1 < $count && $tokens[$i + 1]->is([T_NAME_QUALIFIED, T_STRING])) {
-				$class = $tokens[$i + 1]->text . '\\' . $baseName;
+				$namespace = $tokens[$i + 1]->text . '\\';
 				continue;
 			}
 			if (self::opens($token)) {
@@ -109,7 +112,8 @@ final class AppSource {
 			}
 			if ($body === -1) {
 				// `Name::class` and `new class` open no body of their own here.
-				if ($token->is([T_CLASS, T_TRAIT, T_INTERFACE, T_ENUM]) && $i > 0 && !$tokens[$i - 1]->is([T_DOUBLE_COLON, T_NEW])) {
+				if ($token->is([T_CLASS, T_TRAIT, T_INTERFACE, T_ENUM]) && $i > 0 && !$tokens[$i - 1]->is([T_DOUBLE_COLON, T_NEW]) && $i + 1 < $count) {
+					$class = $namespace . $tokens[$i + 1]->text;
 					$body = $depth + 1;
 				}
 				continue;
