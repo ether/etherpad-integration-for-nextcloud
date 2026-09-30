@@ -329,12 +329,15 @@ Almost everything the app passes around is a credential or a document: an API ke
 
 - **The app's own log lines carry no exception.** A throwable handed to the logger takes every stack frame's arguments along. `SafeError::context()` is the shape that replaces it: the class, the message, and the frames that led there without their arguments. `LogContextTest` reads the source for a log context that carries a throwable.
 - **An exception that leaves the app meets a list.** Nextcloud's own handler serializes it with every frame's arguments, however the app logs. `SensitiveMethods::ALL`, registered in `Application`, names the methods whose arguments Nextcloud replaces.
-  - What earns an entry is a method that takes a credential or a document as a string. The route it is on does not matter, nor whether it can throw: both are properties of today's code.
-  - `SensitiveMethodsTest` checks that every entry exists, and reads the source for methods that take a document as a string, by the parameter's name, and are not on the list. Credentials it does not look for.
+  - What earns an entry is a method that takes a credential or a document as a string, or a credential as a list: session ids, the secrets to take out of a message. The route it is on does not matter, nor whether it can throw: both are properties of today's code.
+  - `SensitiveMethodsTest` checks that every entry exists, and reads the source for methods that take a document or a credential so and are not on the list. It goes by the parameter's name, so a parameter says what it holds: `$carriedSessionIds`, not `$carriedIds`. Where a credential has no name of its own - the settings form as it was sent, with the API key in it - the method is listed by hand.
   - From PHP 8.2 on, `#[\SensitiveParameter]` does the same in the trace itself. It takes over once the app's floor is a Nextcloud that needs PHP 8.2; Nextcloud 32 still runs on 8.1, where the attribute does nothing.
-- **The objects a document travels in keep it private.** Of an object argument Nextcloud writes the class and the public fields. `ParsedPadFile`, `PadSnapshot`, `LivePadHtml` and `CreatedFileClaim` hold the document in private fields behind methods, so a method that takes one of them needs no entry, the next one included. `DocumentStaysOutOfTracesTest` shows each as a trace would, and reads the source for a public field under one of a document's names.
+- **The objects a document or a credential travels in keep it private.** Of an object argument Nextcloud writes the class and the public fields. So these hold what they carry in private fields behind methods, and a method that takes one of them needs no entry, the next one included:
+  - a document: `ParsedPadFile`, `PadSnapshot`, `LivePadHtml` and `CreatedFileClaim`;
+  - a credential: `ApiKey` and the two settings objects that hold one, and `PadOpenTarget`, `PublicPadOpenTarget` and `PublicPadContext` with the session cookie and the address that carries a share token.
+  - `DocumentStaysOutOfTracesTest` and `CredentialStaysOutOfTracesTest` show each as a trace would, and read the source for a public field under one of a document's or a credential's names.
 
-For new code: pass the document as one of those objects where there is one, not as its text. A method that has to take it as a string goes on the list, and a new object that carries it keeps it private and gets a case in the test.
+For new code: pass a document or a credential as one of those objects where there is one, not as its text. A method that has to take it as a string goes on the list, and a new object that carries it keeps it private and gets a case in the test.
 
 ## Event Integration
 
