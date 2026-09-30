@@ -403,83 +403,90 @@ describe('admin settings status areas', () => {
 	})
 
 	/**
-	 * Only the latest answer draws the list: a consistency check clicked
-	 * while an action is under way wins, and the action's older answer
-	 * does not put back what the check took away.
+	 * One request for the list at a time. While an action is under way the
+	 * check's button and the list's are disabled: a check started after it
+	 * could still read the list before the action changed it, and draw the
+	 * forgotten pad back. While a check is under way the list's buttons are
+	 * disabled too, so its older answer cannot follow an action's.
 	 */
-	it('lets only the latest answer draw the list', async () => {
-		let releaseAction
+	it('takes one request for the list at a time', async () => {
+		const row = { file_id: 9, pad_id: 'public-pad', access_mode: 'public' }
+		let release
+		let hold = false
 		const fetchMock = vi.fn((url) => {
-			if (url === '/forget-vanished') {
-				return new Promise((resolve) => {
-					releaseAction = () => resolve(okResponse({ message: 'Forgotten.', forgotten: true, vanished_file_count: 1, samples: { vanished_files: [{ file_id: 9, pad_id: 'stale', access_mode: 'public' }] } }))
-				})
-			}
-			return Promise.resolve(okResponse({ message: 'Checked.', vanished_file_count: 1, samples: { vanished_files: [releaseAction ? { file_id: 10, pad_id: 'fresh', access_mode: 'public' } : { file_id: 9, pad_id: 'stale', access_mode: 'public' }] } }))
-		})
-		vi.stubGlobal('fetch', fetchMock)
-		vi.stubGlobal('confirm', vi.fn(() => true))
-		await import(MODULE)
-
-		document.getElementById('etherpad-nextcloud-consistency-check').click()
-		await flushAsyncWork()
-		document.querySelector('#etherpad-nextcloud-vanished-list button:last-child').click()
-		await flushAsyncWork()
-		// Under way: nothing in the list takes a second action.
-		expect(document.getElementById('etherpad-nextcloud-delete-vanished').disabled).toBe(true)
-		expect([...document.querySelectorAll('#etherpad-nextcloud-vanished-list button')].every((button) => button.disabled)).toBe(true)
-		document.getElementById('etherpad-nextcloud-consistency-check').click()
-		await flushAsyncWork()
-		// Drawn while the action is under way, and disabled like the rest.
-		expect([...document.querySelectorAll('#etherpad-nextcloud-vanished-list button')].every((button) => button.disabled)).toBe(true)
-		releaseAction()
-		await flushAsyncWork()
-
-		expect([...document.querySelectorAll('#etherpad-nextcloud-vanished-list .epnc-vanished-pad')].map((label) => label.textContent)).toEqual(['fresh (public, fileid 10)'])
-		expect(document.getElementById('etherpad-nextcloud-delete-vanished').disabled).toBe(false)
-	})
-
-	/**
-	 * The other way round: a check under way does not disable the list, so
-	 * an action can start and be answered first. The check's older answer
-	 * then does not put back the pad the action took away.
-	 */
-	it('does not let an older check draw over a newer action', async () => {
-		const stale = { message: 'Checked.', vanished_file_count: 1, samples: { vanished_files: [{ file_id: 9, pad_id: 'stale', access_mode: 'public' }] } }
-		let checks = 0
-		let releaseCheck
-		const fetchMock = vi.fn((url) => {
-			if (url === '/forget-vanished') {
-				return Promise.resolve(okResponse({ message: 'Forgotten.', forgotten: true, vanished_file_count: 0, samples: { vanished_files: [] } }))
-			}
-			// Loading the page asks for the templates too.
-			if (url !== '/consistency') {
-				return Promise.resolve(okResponse({}))
-			}
-			checks += 1
-			if (checks === 1) {
-				return Promise.resolve(okResponse(stale))
+			const body = url === '/forget-vanished'
+				? { message: 'Forgotten.', forgotten: true, vanished_file_count: 0, samples: { vanished_files: [] } }
+				: { message: 'Checked.', vanished_file_count: 1, samples: { vanished_files: [row] } }
+			if (!hold || (url !== '/forget-vanished' && url !== '/consistency')) {
+				return Promise.resolve(okResponse(body))
 			}
 			return new Promise((resolve) => {
-				releaseCheck = () => resolve(okResponse(stale))
+				release = () => resolve(okResponse(body))
 			})
 		})
 		vi.stubGlobal('fetch', fetchMock)
 		vi.stubGlobal('confirm', vi.fn(() => true))
 		await import(MODULE)
+		const check = document.getElementById('etherpad-nextcloud-consistency-check')
+		const listButtons = () => [...document.querySelectorAll('#etherpad-nextcloud-vanished button')]
+		const sent = (url) => fetchMock.mock.calls.filter(([called]) => called === url).length
 
-		document.getElementById('etherpad-nextcloud-consistency-check').click()
+		check.click()
 		await flushAsyncWork()
-		document.getElementById('etherpad-nextcloud-consistency-check').click()
+		expect(listButtons().some((button) => button.disabled)).toBe(false)
+
+		// A check under way: the list takes no action.
+		hold = true
+		check.click()
 		await flushAsyncWork()
+		expect([check, ...listButtons()].every((button) => button.disabled)).toBe(true)
 		document.querySelector('#etherpad-nextcloud-vanished-list button:last-child').click()
 		await flushAsyncWork()
-		expect(document.getElementById('etherpad-nextcloud-vanished').style.display).toBe('none')
+		expect(sent('/forget-vanished')).toBe(0)
+		release()
+		await flushAsyncWork()
+		expect([check, ...listButtons()].some((button) => button.disabled)).toBe(false)
 
-		releaseCheck()
+		// An action under way: no check is started.
+		document.querySelector('#etherpad-nextcloud-vanished-list button:last-child').click()
+		await flushAsyncWork()
+		expect([check, ...listButtons()].every((button) => button.disabled)).toBe(true)
+		check.click()
+		await flushAsyncWork()
+		expect(sent('/consistency')).toBe(2)
+		release()
 		await flushAsyncWork()
 		expect(document.getElementById('etherpad-nextcloud-vanished').style.display).toBe('none')
-		expect(document.querySelectorAll('#etherpad-nextcloud-vanished-list li').length).toBe(0)
+		expect(check.disabled).toBe(false)
+	})
+
+	/**
+	 * An action that fails may have done part of what it was asked - a
+	 * chunk of marks before the one that failed: the list is asked again,
+	 * and shows what is left, beside the failure.
+	 */
+	it('asks the list again when an action fails', async () => {
+		let left = 900
+		const fetchMock = vi.fn((url) => {
+			if (url === '/delete-all-vanished') {
+				left = 400
+				return Promise.resolve({ ok: false, status: 500, text: () => Promise.resolve(JSON.stringify({ ok: false, message: 'Some may be marked already.' })) })
+			}
+			return Promise.resolve(okResponse({ message: 'Checked.', vanished_file_count: left, samples: { vanished_files: [{ file_id: 9, pad_id: 'pad', access_mode: 'public' }] } }))
+		})
+		vi.stubGlobal('fetch', fetchMock)
+		vi.stubGlobal('confirm', vi.fn(() => true))
+		await import(MODULE)
+
+		document.getElementById('etherpad-nextcloud-consistency-check').click()
+		await flushAsyncWork()
+		document.getElementById('etherpad-nextcloud-delete-vanished').click()
+		await flushAsyncWork()
+
+		expect(diagnosticsStatus().textContent).toContain('Some may be marked already.')
+		expect(diagnosticsStatus().classList.contains('ep-status-error')).toBe(true)
+		expect(document.getElementById('etherpad-nextcloud-vanished-shown').textContent).toBe('1 von 400:')
+		expect(document.getElementById('etherpad-nextcloud-delete-vanished').disabled).toBe(false)
 	})
 
 	it('leaves the counts alone when a response carries none', async () => {

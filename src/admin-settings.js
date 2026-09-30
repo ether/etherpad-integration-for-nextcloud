@@ -512,17 +512,17 @@ import { handFocusTo } from './lib/hand-focus.js'
 		consistencyButton.addEventListener('click', async () => {
 			clearFieldErrors()
 			beginStatus(l10n.consistencyRunning, diagnosticsTarget)
-			const generation = ++vanishedGeneration
+			setVanishedBusy(true)
 			try {
 				const data = await postJson(consistencyUrl, {})
 				const vanishedFile = Number(data.vanished_file_count || 0)
 				const message = `${String(data.message || l10n.consistencyOk)} vanished_file=${String(vanishedFile)}`
 				setStatus(message, vanishedFile > 0 ? 'error' : 'success', diagnosticsTarget)
-				if (latestVanished(generation)) {
-					showVanished(data.samples && data.samples.vanished_files, vanishedFile)
-				}
+				showVanished(data.samples && data.samples.vanished_files, vanishedFile)
 			} catch (error) {
 				setStatus(error instanceof Error ? error.message : l10n.consistencyFailed, 'error', diagnosticsTarget)
+			} finally {
+				setVanishedBusy(false)
 			}
 		})
 	}
@@ -530,12 +530,11 @@ import { handFocusTo } from './lib/hand-focus.js'
 	// All of them, not only those listed: what the confirmation names, and
 	// what deleting them all is held to.
 	let vanishedTotal = 0
-	// Only the latest answer draws the list: one that comes back after a
-	// newer one would put back what that one took away.
-	let vanishedGeneration = 0
-	// One action at a time: while one is under way the list's buttons are
-	// disabled - those a check draws meanwhile too - so a second click, or
-	// a double click on deleting them all, sends nothing.
+	// One request for the list at a time, a check or an action: while one
+	// is under way the check's button and the list's are disabled. Two
+	// under way could answer in either order, and the later answer need not
+	// be the later state - a check started after an action can still read
+	// the list before the action changed it.
 	let vanishedBusy = false
 
 	/**
@@ -563,17 +562,28 @@ import { handFocusTo } from './lib/hand-focus.js'
 		vanishedNode.style.display = vanishedTotal > 0 ? '' : 'none'
 	}
 
-	/** Whether $generation is still the latest request for the list. */
-	function latestVanished(generation) {
-		return generation === vanishedGeneration
-	}
-
 	function setVanishedBusy(busy) {
 		vanishedBusy = busy
-		if (vanishedNode instanceof HTMLElement) {
-			for (const button of vanishedNode.querySelectorAll('button')) {
-				button.disabled = busy
-			}
+		const buttons = vanishedNode instanceof HTMLElement ? [...vanishedNode.querySelectorAll('button')] : []
+		if (consistencyButton instanceof HTMLButtonElement) {
+			buttons.push(consistencyButton)
+		}
+		for (const button of buttons) {
+			button.disabled = busy
+		}
+	}
+
+	/**
+	 * The list as the server has it now, after an action that failed: it
+	 * may have done part of what it was asked. Should this fail too, the
+	 * list stays as it was, and the next check shows it.
+	 */
+	async function refreshVanished() {
+		try {
+			const data = await postJson(consistencyUrl, {})
+			showVanished(data.samples && data.samples.vanished_files, data.vanished_file_count)
+		} catch {
+			// The action's failure stands in the status line.
 		}
 	}
 
@@ -599,7 +609,6 @@ import { handFocusTo } from './lib/hand-focus.js'
 		if (!window.confirm(confirm)) {
 			return
 		}
-		const generation = ++vanishedGeneration
 		setVanishedBusy(true)
 		clearFieldErrors()
 		beginStatus(running, diagnosticsTarget)
@@ -607,11 +616,10 @@ import { handFocusTo } from './lib/hand-focus.js'
 			const data = await postJson(url, payload)
 			updateBindingCounts(data)
 			reportAction(data, keys, done(data))
-			if (latestVanished(generation)) {
-				showVanished(data.samples && data.samples.vanished_files, data.vanished_file_count)
-			}
+			showVanished(data.samples && data.samples.vanished_files, data.vanished_file_count)
 		} catch (error) {
 			setStatus(error instanceof Error ? error.message : failed, 'error', diagnosticsTarget)
+			await refreshVanished()
 		} finally {
 			setVanishedBusy(false)
 		}
