@@ -24,8 +24,8 @@ final class ApiKey {
 	private readonly string $value;
 
 	/** Trimmed on the way in: a pasted key carries whitespace, the wire does not. */
-	public function __construct(string $value) {
-		$this->value = trim($value);
+	public function __construct(string $apiKey) {
+		$this->value = trim($apiKey);
 	}
 
 	public function reveal(): string {

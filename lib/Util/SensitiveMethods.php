@@ -20,17 +20,21 @@ namespace OCA\EtherpadNextcloud\Util;
  * discipline cannot cover. Hence a list.
  *
  * What earns an entry is a method that takes a credential or a document
- * as a string. Not the route it is on: whether an exception can leave
- * the app from there is a property of today's callers - a listener that
- * rethrows, a mapper that catches - and the next caller need not share
- * it. Nor whether the method can throw, which its next edit decides. An
- * entry costs nothing, so the rule asks for no judgement.
+ * as a string, or a credential as a list. Not the route it is on:
+ * whether an exception can leave the app from there is a property of
+ * today's callers - a listener that rethrows, a mapper that catches - and
+ * the next caller need not share it. Nor whether the method can throw,
+ * which its next edit decides. An entry costs nothing, so the rule asks
+ * for no judgement.
  *
- * A document needs an entry only where it is a string. The objects it
- * travels in - ParsedPadFile, PadSnapshot, LivePadHtml, CreatedFileClaim -
- * keep it in private fields, which the serializer does not read: a
- * method that takes one of those needs none, and
- * DocumentStaysOutOfTracesTest holds them to it.
+ * Either needs an entry only where it is that plain. The objects a
+ * document travels in - ParsedPadFile, PadSnapshot, LivePadHtml,
+ * CreatedFileClaim - and those that carry a credential - ApiKey and the
+ * two settings objects, PadOpenTarget, PublicPadOpenTarget,
+ * PublicPadContext - keep it in private fields, which the serializer
+ * does not read: a method that takes one of those needs none, and
+ * DocumentStaysOutOfTracesTest and CredentialStaysOutOfTracesTest hold
+ * them to it.
  *
  * Two limits. It reaches the serializer only, so a throwable logged
  * under any key but 'exception' is normalized elsewhere and no entry
@@ -40,8 +44,8 @@ namespace OCA\EtherpadNextcloud\Util;
  *
  * A list of names goes stale in silence, so SensitiveMethodsTest checks
  * that every entry still resolves, and reads the source for methods that
- * take a document as a string and are not here. Credentials it does not
- * look for.
+ * take a document or a credential so and are not here. It goes by the
+ * parameter's name, which is all a signature says of a string.
  *
  * The list has an end. From PHP 8.2 on, #[\SensitiveParameter] on the
  * parameter does this in the trace itself, for every reader of it, and
@@ -84,13 +88,36 @@ final class SensitiveMethods {
 		\OCA\EtherpadNextcloud\Service\PadSnapshot::class => ['__construct'],
 		\OCA\EtherpadNextcloud\Service\LivePadHtml::class => ['__construct'],
 		\OCA\EtherpadNextcloud\Service\CreatedFileClaim::class => ['__construct'],
-		// The Etherpad session cookie, which is a live credential.
-		\OCA\EtherpadNextcloud\Service\PadSessionService::class => [
-			'buildEtherpadSessionCookie', 'buildSetCookieHeader',
+		// The API key as a string: in the settings form as it was sent,
+		// which the validator takes whole and no parameter's name gives
+		// away; on its way into the objects that keep it; and as the secret
+		// to take out of a message.
+		\OCA\EtherpadNextcloud\Service\AdminSettingsValidator::class => [
+			'validateForSave', 'validateForHealthCheck', 'validate', 'resolveApiKey',
 		],
-		// Public share tokens, which are the credential for a public pad.
-		\OCA\EtherpadNextcloud\Service\PublicShareResolver::class => ['resolveShare', 'requestedPath'],
+		\OCA\EtherpadNextcloud\Service\ValidatedAdminSettings::class => ['__construct'],
+		\OCA\EtherpadNextcloud\Service\StoredAdminSettings::class => ['__construct'],
+		\OCA\EtherpadNextcloud\Util\ApiKey::class => ['__construct'],
+		\OCA\EtherpadNextcloud\Util\DiagnosticText::class => ['withoutSecret'],
+		\OCA\EtherpadNextcloud\Util\SafeError::class => ['context', 'readable', 'originOf'],
+		// Etherpad sessions, each a live credential: the ids a browser
+		// carries and the ones Etherpad lists, the cookie made of them, and
+		// the objects that take the finished Set-Cookie line.
+		\OCA\EtherpadNextcloud\Service\PadSessionService::class => [
+			'sessionsToAttributeWith', 'cookieValueFor', 'buildEtherpadSessionCookie', 'buildSetCookieHeader',
+		],
+		\OCA\EtherpadNextcloud\Service\PadSessionRevoker::class => ['live', 'deleteLive', 'carriedFirst'],
+		\OCA\EtherpadNextcloud\Service\PadOpenTarget::class => ['__construct'],
+		\OCA\EtherpadNextcloud\Service\PublicPadOpenTarget::class => ['__construct'],
+		\OCA\EtherpadNextcloud\Service\PublicPadContext::class => ['__construct'],
+		// Public share tokens, which are the credential for a public pad,
+		// from the controller that takes one off the address on.
+		\OCA\EtherpadNextcloud\Controller\PublicViewerController::class => ['showPad', 'padContent', 'openPadData'],
+		\OCA\EtherpadNextcloud\Controller\PublicViewerControllerErrorMapper::class => ['runForTemplate'],
+		\OCA\EtherpadNextcloud\Service\PublicPadOpenService::class => ['open'],
+		\OCA\EtherpadNextcloud\Service\PublicShareResolver::class => ['resolveShare', 'requestedPath', 'resolvePadFile'],
 		\OCA\EtherpadNextcloud\Service\PublicShareUrlBuilder::class => ['buildShareBaseUrl', 'buildShareRedirectUrl'],
 		\OCA\EtherpadNextcloud\Service\PublicPadContextService::class => ['resolve', 'resolveContent', 'buildContentUrl'],
+		\OCA\EtherpadNextcloud\Util\PathNormalizer::class => ['normalizePublicShareFilePath'],
 	];
 }

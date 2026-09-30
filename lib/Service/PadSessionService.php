@@ -143,8 +143,8 @@ class PadSessionService {
 		// does.
 		$this->collector->noteAuthor($authorId);
 
-		$carriedIds = $this->sessionIdsFromCookie();
-		$sessions = $this->sessionsToAttributeWith($uid, $authorId, $carriedIds);
+		$carriedSessionIds = $this->sessionIdsFromCookie();
+		$sessions = $this->sessionsToAttributeWith($uid, $authorId, $carriedSessionIds);
 
 		// Deliberately a fresh session, not the one the browser is carrying.
 		// Etherpad re-checks validUntil on every socket message and holds the
@@ -169,7 +169,7 @@ class PadSessionService {
 		return [
 			'url' => $this->etherpadClient->buildPadUrl($padId),
 			'cookie' => $this->buildEtherpadSessionCookie(
-				$this->cookieValueFor($chosenSessionId, $validUntil, $groupId, $carriedIds, $sessions),
+				$this->cookieValueFor($chosenSessionId, $validUntil, $groupId, $carriedSessionIds, $sessions),
 			),
 		];
 	}
@@ -190,11 +190,11 @@ class PadSessionService {
 	 * pads inside one shared folder cannot be open at once, which is what
 	 * happened before this branch anyway.
 	 *
-	 * @param list<string> $carriedIds
+	 * @param list<string> $carriedSessionIds
 	 * @return array<string,array{groupID:string,validUntil:int}>
 	 */
-	private function sessionsToAttributeWith(string $uid, string $authorId, array $carriedIds): array {
-		if ($carriedIds === [] || !$this->shouldPersistAuthorState($uid)) {
+	private function sessionsToAttributeWith(string $uid, string $authorId, array $carriedSessionIds): array {
+		if ($carriedSessionIds === [] || !$this->shouldPersistAuthorState($uid)) {
 			return [];
 		}
 
@@ -216,7 +216,7 @@ class PadSessionService {
 	}
 
 	/**
-	 * @param list<string> $carriedIds
+	 * @param list<string> $carriedSessionIds
 	 * @param array<string,array{groupID:string,validUntil:int}> $sessions
 	 * @return array{value:string,expires:int}
 	 */
@@ -224,13 +224,13 @@ class PadSessionService {
 		string $chosenSessionId,
 		int $validUntil,
 		string $groupId,
-		array $carriedIds,
+		array $carriedSessionIds,
 		array $sessions,
 	): array {
 		$now = $this->timeFactory->getTime();
 		$carried = [];
 
-		foreach ($carriedIds as $candidate) {
+		foreach ($carriedSessionIds as $candidate) {
 			$info = $sessions[$candidate] ?? null;
 			if ($info === null) {
 				// Not this author's, so not this user's: dropped. It used to
@@ -253,7 +253,7 @@ class PadSessionService {
 			}
 		}
 
-		if ($carried === [] && $carriedIds !== [] && $sessions !== []) {
+		if ($carried === [] && $carriedSessionIds !== [] && $sessions !== []) {
 			// The browser brought ids and this author owns none of them.
 			// Expected after a user switch — that is the case the rule exists
 			// for — but it also happens when the author id itself was

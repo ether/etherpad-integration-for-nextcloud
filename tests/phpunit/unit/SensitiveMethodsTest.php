@@ -61,42 +61,81 @@ class SensitiveMethodsTest extends TestCase {
 	];
 
 	/**
+	 * The names a credential goes by as a parameter: the API key, a secret
+	 * to take out of a message, a share token, a session id, a cookie.
+	 */
+	private const NAMES_A_CREDENTIAL = '/apikey|secret|password|token|session|cookie/i';
+
+	/** Parameters under one of those names that open nothing, each with what it holds. */
+	private const NOT_A_CREDENTIAL = [
+		'OCA\\EtherpadNextcloud\\Service\\AllowlistNormalizer::normalizeHost' => 'one entry of an allowlist, as the admin typed it',
+		'OCA\\EtherpadNextcloud\\Service\\AllowlistNormalizer::invalidHost' => 'one entry of an allowlist, as the admin typed it',
+		'OCA\\EtherpadNextcloud\\Service\\CookieDomainPolicy::isCoveredBy' => 'the domain a cookie is set for',
+		'OCA\\EtherpadNextcloud\\Service\\HealthCheckResult::__construct' => 'the Etherpad release that made the session cookie HttpOnly',
+	];
+
+	/**
 	 * A list of names is checked for what it holds by the test above, and
 	 * for what it lacks by nothing: take an entry out and every other test
 	 * stays green. So the source is read for the other half - every method
 	 * under lib that takes a document as a string is on the list.
 	 *
 	 * By the parameter's name, which is all a signature says of a string.
-	 * A document under another name passes, and a credential is not looked
-	 * for at all.
+	 * A document under another name passes.
 	 */
 	public function testEveryMethodThatTakesADocumentAsAStringIsRegistered(): void {
+		[$missing, $idle] = self::unregistered(self::NAMES_A_DOCUMENT, false, self::NOT_A_DOCUMENT);
+
+		$this->assertSame([], $missing, 'takes a document as a string and is not registered as sensitive');
+		$this->assertSame([], $idle, 'an exception nothing needs any more');
+	}
+
+	/**
+	 * The same for a credential, which also travels as a list: session
+	 * ids, the secrets to take out of a message. Where it has no name of
+	 * its own - the settings form as it was sent, with the API key in it -
+	 * the list names the method by hand and this cannot tell.
+	 */
+	public function testEveryMethodThatTakesACredentialIsRegistered(): void {
+		[$missing, $idle] = self::unregistered(self::NAMES_A_CREDENTIAL, true, self::NOT_A_CREDENTIAL);
+
+		$this->assertSame([], $missing, 'takes a credential as a string or a list and is not registered as sensitive');
+		$this->assertSame([], $idle, 'an exception nothing needs any more');
+	}
+
+	/**
+	 * Methods with a parameter named by $names that are neither registered
+	 * nor excused, and the excuses no method needs: one for a method that
+	 * is gone, or no longer takes such a parameter, would excuse the next
+	 * of that name.
+	 *
+	 * An object under such a name is a carrier, and keeps what it carries
+	 * to itself (DocumentStaysOutOfTracesTest, CredentialStaysOutOfTracesTest).
+	 *
+	 * @param array<string,string> $excused
+	 * @return array{list<string>, list<string>}
+	 */
+	private static function unregistered(string $names, bool $alsoAsAList, array $excused): array {
 		$missing = [];
 		$seen = [];
 		foreach (self::methodsOfTheApp() as [$class, $method, $parameters]) {
-			$documents = [];
+			$named = [];
 			foreach ($parameters as [$type, $name]) {
-				// An object under such a name is a carrier, and keeps the
-				// document to itself (DocumentStaysOutOfTracesTest).
-				$isAString = $type === '' || $type === 'mixed' || str_contains($type, 'string');
-				if ($isAString && preg_match(self::NAMES_A_DOCUMENT, $name) === 1) {
-					$documents[] = '$' . $name;
+				$isPlain = $type === '' || $type === 'mixed' || str_contains($type, 'string') || ($alsoAsAList && str_contains($type, 'array'));
+				if ($isPlain && preg_match($names, $name) === 1) {
+					$named[] = '$' . $name;
 				}
 			}
-			if ($documents === []) {
+			if ($named === []) {
 				continue;
 			}
 			$key = $class . '::' . $method;
 			$seen[$key] = true;
-			if (!isset(self::NOT_A_DOCUMENT[$key]) && !in_array($method, SensitiveMethods::ALL[$class] ?? [], true)) {
-				$missing[] = $key . '(' . implode(', ', $documents) . ')';
+			if (!isset($excused[$key]) && !in_array($method, SensitiveMethods::ALL[$class] ?? [], true)) {
+				$missing[] = $key . '(' . implode(', ', $named) . ')';
 			}
 		}
-
-		$this->assertSame([], $missing, 'takes a document as a string and is not registered as sensitive');
-		// An exception for a method that is gone, or no longer takes such a
-		// parameter, would excuse the next one of that name.
-		$this->assertSame([], array_values(array_diff(array_keys(self::NOT_A_DOCUMENT), array_keys($seen))), 'an exception nothing needs any more');
+		return [$missing, array_values(array_diff(array_keys($excused), array_keys($seen)))];
 	}
 
 	/**
