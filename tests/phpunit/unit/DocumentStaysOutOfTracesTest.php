@@ -63,12 +63,27 @@ class DocumentStaysOutOfTracesTest extends TestCase {
 	}
 
 	/**
+	 * A public field under one of the names a document goes by, whatever
+	 * its type and with none: `public` and, before anything that ends the
+	 * declaration, the name. A parameter of a public method is not one -
+	 * the bracket before it ends the match - while a promoted one is.
+	 */
+	private const A_PUBLIC_DOCUMENT = '/\bpublic\b[^;$(){}=,]*\$(body|frontmatter|savedText|text|html|content|expectedBefore)\b/';
+
+	/**
 	 * The names a document goes by in this app, as public fields anywhere
 	 * under lib. A list of names, so it knows the ones it was given: a
 	 * document under a new name passes it, and the test above is where a
 	 * new carrier belongs.
 	 */
 	public function testNoClassDeclaresADocumentAsAPublicField(): void {
+		// The rule finds what it is for, however the field is typed.
+		foreach (['public string $body;', 'public readonly ?string $html,', 'public string|null $text = null;', 'public $content;', 'public static array $frontmatter = [];', 'readonly public string $savedText,'] as $declaration) {
+			$this->assertSame(1, preg_match(self::A_PUBLIC_DOCUMENT, $declaration), $declaration);
+		}
+		foreach (['private readonly string $body,', 'public function show(string $html): void {', 'public readonly string $padId, private string $body', 'protected $text;'] as $declaration) {
+			$this->assertSame(0, preg_match(self::A_PUBLIC_DOCUMENT, $declaration), $declaration);
+		}
 		$offenders = [];
 		$scanned = 0;
 		$root = dirname(__DIR__, 3) . '/lib';
@@ -81,7 +96,7 @@ class DocumentStaysOutOfTracesTest extends TestCase {
 			}
 			$scanned++;
 			$source = (string)file_get_contents($file->getPathname());
-			if (preg_match_all('/public\s+(?:readonly\s+)?\??(?:string|array)\s+\$(body|frontmatter|savedText|text|html|content|expectedBefore)\b/', $source, $matches) > 0) {
+			if (preg_match_all(self::A_PUBLIC_DOCUMENT, $source, $matches) > 0) {
 				$offenders[] = $file->getFilename() . ': $' . implode(', $', $matches[1]);
 			}
 		}
