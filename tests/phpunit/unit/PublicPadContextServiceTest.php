@@ -94,7 +94,7 @@ class PublicPadContextServiceTest extends TestCase {
 		$this->assertSame('', $context->url);
 		$this->assertFalse($context->isExternal);
 		$this->assertTrue($context->isReadOnlyView);
-		$this->assertSame('/public/content/token', $context->contentUrl, 'the viewer loads the pad itself');
+		$this->assertSame('/public/content/token', $context->contentUrl(), 'the viewer loads the pad itself');
 	}
 
 	/**

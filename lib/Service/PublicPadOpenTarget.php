@@ -13,8 +13,13 @@ class PublicPadOpenTarget {
 	public function __construct(
 		public readonly string $url,
 		public readonly string $originalPadUrl,
-		public readonly string $cookieHeader,
+		/** A live session, private as in PadOpenTarget. */
+		private readonly string $cookieHeader,
 		public readonly bool $isReadOnlyView,
 	) {
+	}
+
+	public function cookieHeader(): string {
+		return $this->cookieHeader;
 	}
 }

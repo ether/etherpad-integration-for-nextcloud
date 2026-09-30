@@ -25,7 +25,7 @@ class PublicPadOpenServiceTest extends TestCase {
 
 		$this->assertSame('', $result->url);
 		$this->assertTrue($result->isReadOnlyView);
-		$this->assertSame('', $result->cookieHeader);
+		$this->assertSame('', $result->cookieHeader());
 	}
 
 	public function testProtectedWritableCreatesPublicShareSession(): void {
@@ -42,7 +42,7 @@ class PublicPadOpenServiceTest extends TestCase {
 		$result = $this->buildService(padSessionService: $sessions)->open($this->pad('g.group$pad', BindingService::ACCESS_PROTECTED, false, ''), false, 'token');
 
 		$this->assertSame('https://pad.example/p/g.group$pad', $result->url);
-		$this->assertSame('sessionID=abc; Path=/', $result->cookieHeader);
+		$this->assertSame('sessionID=abc; Path=/', $result->cookieHeader());
 		$this->assertFalse($result->isReadOnlyView);
 	}
 
@@ -77,7 +77,7 @@ class PublicPadOpenServiceTest extends TestCase {
 		$result = $this->buildService(etherpadClient: $etherpad)->open($this->pad('public-pad', BindingService::ACCESS_PUBLIC, false, ''), true, 'token');
 
 		$this->assertSame('https://pad.example/p/r.public-pad', $result->url);
-		$this->assertSame('', $result->cookieHeader);
+		$this->assertSame('', $result->cookieHeader());
 	}
 
 	public function testInternalWritableUsesPublicPadUrlWithoutSession(): void {
@@ -93,7 +93,7 @@ class PublicPadOpenServiceTest extends TestCase {
 		$result = $this->buildService(etherpadClient: $etherpad, padSessionService: $sessions)->open($this->pad('public-pad', BindingService::ACCESS_PUBLIC, false, ''), false, 'token');
 
 		$this->assertSame('https://pad.example/p/public-pad', $result->url);
-		$this->assertSame('', $result->cookieHeader);
+		$this->assertSame('', $result->cookieHeader());
 	}
 
 	/**

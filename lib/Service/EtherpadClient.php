@@ -289,10 +289,10 @@ class EtherpadClient {
 	}
 
 	/**
-	 * @param array<array-key,mixed> $data
+	 * @param array<array-key,mixed> $sessionListing as Etherpad answered it, keyed by live session ids
 	 * @return array<string,array{groupID:string,validUntil:int}>
 	 */
-	private function sessionsIn(array $data, ?int &$unreadableEntries): array {
+	private function sessionsIn(array $sessionListing, ?int &$unreadableEntries): array {
 		$sessions = [];
 		// Every entry the index listed that cannot be turned into a session,
 		// whatever made it unusable — a null, a malformed record, an
@@ -300,7 +300,7 @@ class EtherpadClient {
 		// `deleteSession` will not take it, so dropping any of them quietly
 		// would let a sweep look successful while the index stayed as long.
 		$unreadableEntries = 0;
-		foreach ($data as $sessionId => $info) {
+		foreach ($sessionListing as $sessionId => $info) {
 			$groupId = is_array($info) ? (string)($info['groupID'] ?? '') : '';
 			$validUntil = is_array($info) ? (int)($info['validUntil'] ?? 0) : 0;
 			if (!is_string($sessionId) || $groupId === '' || $validUntil <= 0) {

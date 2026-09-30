@@ -16,8 +16,22 @@ class PublicPadContext {
 		public bool $isExternal,
 		public bool $isReadOnlyView,
 		public string $originalPadUrl,
-		public string $contentUrl,
-		public string $cookieHeader,
+		/**
+		 * The address the viewer loads the pad from, which carries the
+		 * share token, and the session cookie: both open the pad. Private
+		 * behind their methods, for the reason given at ParsedPadFile - a
+		 * public field of an argument ends up in a serialized trace.
+		 */
+		private string $contentUrl,
+		private string $cookieHeader,
 	) {
+	}
+
+	public function contentUrl(): string {
+		return $this->contentUrl;
+	}
+
+	public function cookieHeader(): string {
+		return $this->cookieHeader;
 	}
 }

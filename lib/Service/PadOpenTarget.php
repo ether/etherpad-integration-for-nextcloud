@@ -25,7 +25,12 @@ class PadOpenTarget {
 		public readonly bool $isExternal,
 		public readonly string $originalPadUrl,
 		public readonly string $url,
-		public readonly string $cookieHeader,
+		/**
+		 * The Set-Cookie line that opens a protected pad: a live session.
+		 * Private behind its method, for the reason given at ParsedPadFile -
+		 * a public field of an argument ends up in a serialized trace.
+		 */
+		private readonly string $cookieHeader,
 		// Required, unlike every optional convenience above it: these decide
 		// whether somebody may edit, and a default would let a future
 		// construction site grant that by forgetting.
@@ -38,5 +43,9 @@ class PadOpenTarget {
 		public readonly bool $isReadOnlyView,
 		public readonly bool $mayWrite,
 	) {
+	}
+
+	public function cookieHeader(): string {
+		return $this->cookieHeader;
 	}
 }
