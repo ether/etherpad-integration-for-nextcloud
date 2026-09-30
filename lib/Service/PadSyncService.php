@@ -123,7 +123,7 @@ class PadSyncService {
 		$external = $this->externalPadExportFetcher->normalizeAndFetchExternalPublicPadText($padUrl);
 		$text = $external['text'];
 
-		$existingText = $this->padFileService->getSnapshotPartsFromBody($pad->body)['text'];
+		$existingText = $this->padFileService->getSnapshotPartsFromBody($pad->body())['text'];
 		if ($existingText === $text) {
 			return new PadSyncResult(
 				status: self::STATUS_UNCHANGED,
@@ -175,7 +175,7 @@ class PadSyncService {
 		$html = $this->etherpadClient->getHTML($padId);
 		if ($force && $snapshotRev >= $currentRev) {
 			// force=1 bypasses the cheap revision short-circuit and performs a live content re-check.
-			$existing = $this->padFileService->getSnapshotPartsFromBody($pad->body);
+			$existing = $this->padFileService->getSnapshotPartsFromBody($pad->body());
 			if ($existing['text'] === $text && $existing['html'] === $html) {
 				return new PadSyncResult(
 					status: self::STATUS_UNCHANGED,
@@ -198,7 +198,7 @@ class PadSyncService {
 		// snapshot that holds a revision still syncs: files a restore in
 		// 1.1.0-beta.1 left kept the old pad's revision count, and only a
 		// forced sync brings them up to date.
-		if (ManagedPadLifecycle::isMadeAnew($currentRev, $text, $snapshotRev, $pad->savedText)) {
+		if (ManagedPadLifecycle::isMadeAnew($currentRev, $text, $snapshotRev, $pad->savedText())) {
 			throw new PadLostException('Etherpad has lost the pad of this file.');
 		}
 

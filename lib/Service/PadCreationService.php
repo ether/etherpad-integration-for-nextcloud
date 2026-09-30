@@ -208,7 +208,7 @@ class PadCreationService {
 		// mode rather than refusing — the template's content is the point.
 		$accessMode = $this->padTypePolicy->resolveCreatableMode($pad->accessMode);
 
-		$snapshot = $this->padFileService->getSnapshotPartsFromBody($pad->body);
+		$snapshot = $this->padFileService->getSnapshotPartsFromBody($pad->body());
 		$resolvedText = $this->placeholderResolver->applyForContent($snapshot['text'], $user);
 		$resolvedHtml = $this->placeholderResolver->applyForContent($snapshot['html'], $user);
 
@@ -271,7 +271,7 @@ class PadCreationService {
 	 */
 	private function writeCreatedFile(CreatedFileClaim $claim, string $content): void {
 		$node = $this->userNodeResolver->resolveUserFileNodeById($claim->uid, $claim->fileId);
-		if ((string)$node->getContent() !== $claim->expectedBefore) {
+		if ((string)$node->getContent() !== $claim->expectedBefore()) {
 			throw new PadFileChangedException('The target .pad file changed while the pad was being provisioned.');
 		}
 		$node->putContent($content);
@@ -287,7 +287,7 @@ class PadCreationService {
 		try {
 			$node = $this->userNodeResolver->resolveUserFileNodeById($claim->uid, $claim->fileId);
 			$current = (string)$node->getContent();
-			$isOurs = $current === $claim->expectedBefore
+			$isOurs = $current === $claim->expectedBefore()
 				|| ($claim->writtenHash !== null && hash_equals($claim->writtenHash, hash('sha256', $current)));
 			if (!$isOurs) {
 				return null;

@@ -30,7 +30,7 @@ class PadContentServiceTest extends TestCase {
 			->with($pad, 138)
 			->willReturn(new LivePadHtml('<p>Now</p>', false));
 
-		$this->assertSame('<p>Now</p>', $this->buildService($pad, $fetcher)->contentById('alice', 138)->html);
+		$this->assertSame('<p>Now</p>', $this->buildService($pad, $fetcher)->contentById('alice', 138)->html());
 	}
 
 	/**
@@ -45,7 +45,7 @@ class PadContentServiceTest extends TestCase {
 
 		$service = $this->buildService($this->parsedPad(), $fetcher, lockOnFirstRead: true);
 
-		$this->assertSame('<p>Now</p>', $service->contentById('alice', 138)->html);
+		$this->assertSame('<p>Now</p>', $service->contentById('alice', 138)->html());
 	}
 
 	private function parsedPad(): ParsedPadFile {

@@ -15,11 +15,19 @@ namespace OCA\EtherpadNextcloud\Service;
  * `isEmpty` is decided server-side because Etherpad answers an untouched
  * pad with markup (`<br>`), which a client checking the string would show
  * as broken rather than as empty.
+ *
+ * The content is a private field behind a method, for the reason given at
+ * ParsedPadFile: a public field of an argument ends up in a serialized
+ * trace.
  */
 class LivePadHtml {
 	public function __construct(
-		public readonly string $html,
+		private readonly string $html,
 		public readonly bool $isEmpty,
 	) {
+	}
+
+	public function html(): string {
+		return $this->html;
 	}
 }

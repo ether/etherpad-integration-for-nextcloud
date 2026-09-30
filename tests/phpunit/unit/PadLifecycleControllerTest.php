@@ -189,7 +189,7 @@ class PadLifecycleControllerTest extends TestCase {
 			snapshotRev: 5,
 		);
 		$padFileService->method('readPad')->with('frontmatter')->willReturn($parsedPad);
-		$padFileService->method('getSnapshotPartsFromBody')->with($parsedPad->body)->willReturn(['text' => 'hello', 'html' => '<p>hello</p>']);
+		$padFileService->method('getSnapshotPartsFromBody')->with($parsedPad->body())->willReturn(['text' => 'hello', 'html' => '<p>hello</p>']);
 
 		$bindingService = $this->createMock(BindingService::class);
 		$bindingService->method('assertConsistentMapping');
@@ -246,7 +246,7 @@ class PadLifecycleControllerTest extends TestCase {
 			snapshotRev: -1,
 		);
 		$padFileService->method('readPad')->with('frontmatter')->willReturn($parsedPad);
-		$padFileService->method('getSnapshotPartsFromBody')->with($parsedPad->body)->willReturn(['text' => 'same text', 'html' => '']);
+		$padFileService->method('getSnapshotPartsFromBody')->with($parsedPad->body())->willReturn(['text' => 'same text', 'html' => '']);
 
 		$bindingService = $this->createMock(BindingService::class);
 		$bindingService->method('assertConsistentMapping');

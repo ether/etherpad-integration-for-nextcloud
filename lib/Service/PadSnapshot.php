@@ -14,6 +14,10 @@ namespace OCA\EtherpadNextcloud\Service;
  * A document either carries a snapshot or does not. Passing the text, its
  * HTML half and the revision separately let a caller ask for half of one and
  * half of the other.
+ *
+ * Text and HTML are private fields behind methods, for the reason given at
+ * ParsedPadFile: a public field of an argument ends up in a serialized
+ * trace.
  */
 class PadSnapshot {
 	/**
@@ -23,8 +27,8 @@ class PadSnapshot {
 	 * @throws \InvalidArgumentException
 	 */
 	public function __construct(
-		public readonly string $text,
-		public readonly string $html,
+		private readonly string $text,
+		private readonly string $html,
 		public readonly int $revision,
 	) {
 		// -1 is how the format says "no snapshot yet"; a snapshot that exists
@@ -34,5 +38,13 @@ class PadSnapshot {
 		if ($revision < 0) {
 			throw new \InvalidArgumentException('A snapshot revision cannot be negative.');
 		}
+	}
+
+	public function text(): string {
+		return $this->text;
+	}
+
+	public function html(): string {
+		return $this->html;
 	}
 }
