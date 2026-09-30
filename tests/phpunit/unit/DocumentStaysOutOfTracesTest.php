@@ -14,6 +14,7 @@ use OCA\EtherpadNextcloud\Service\CreatedFileClaim;
 use OCA\EtherpadNextcloud\Service\LivePadHtml;
 use OCA\EtherpadNextcloud\Service\PadSnapshot;
 use OCA\EtherpadNextcloud\Service\ParsedPadFile;
+use OCA\EtherpadNextcloud\Tests\Support\ReadsAsATrace;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -26,6 +27,8 @@ use PHPUnit\Framework\TestCase;
  * the document in private fields, so none of those frames carries it.
  */
 class DocumentStaysOutOfTracesTest extends TestCase {
+	use ReadsAsATrace;
+
 	private const DOCUMENT = 'what the pad says';
 
 	/** @return iterable<string, array{object, \Closure(): list<mixed>}> */
@@ -62,13 +65,8 @@ class DocumentStaysOutOfTracesTest extends TestCase {
 		}
 	}
 
-	/**
-	 * A public field under one of the names a document goes by, whatever
-	 * its type and with none: `public` and, before anything that ends the
-	 * declaration, the name. A parameter of a public method is not one -
-	 * the bracket before it ends the match - while a promoted one is.
-	 */
-	private const A_PUBLIC_DOCUMENT = '/\bpublic\b[^;$(){}=,]*\$(body|frontmatter|savedText|text|html|content|expectedBefore)\b/';
+	/** The names a document goes by as a field. */
+	private const NAMES = 'body|frontmatter|savedText|text|html|content|expectedBefore';
 
 	/**
 	 * The names a document goes by in this app, as public fields anywhere
@@ -79,37 +77,12 @@ class DocumentStaysOutOfTracesTest extends TestCase {
 	public function testNoClassDeclaresADocumentAsAPublicField(): void {
 		// The rule finds what it is for, however the field is typed.
 		foreach (['public string $body;', 'public readonly ?string $html,', 'public string|null $text = null;', 'public $content;', 'public static array $frontmatter = [];', 'readonly public string $savedText,'] as $declaration) {
-			$this->assertSame(1, preg_match(self::A_PUBLIC_DOCUMENT, $declaration), $declaration);
+			$this->assertSame(1, preg_match(self::aPublicField(self::NAMES), $declaration), $declaration);
 		}
 		foreach (['private readonly string $body,', 'public function show(string $html): void {', 'public readonly string $padId, private string $body', 'protected $text;'] as $declaration) {
-			$this->assertSame(0, preg_match(self::A_PUBLIC_DOCUMENT, $declaration), $declaration);
-		}
-		$offenders = [];
-		$scanned = 0;
-		$root = dirname(__DIR__, 3) . '/lib';
-		$this->assertDirectoryExists($root);
-		/** @var iterable<\SplFileInfo> $files */
-		$files = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($root));
-		foreach ($files as $file) {
-			if ($file->getExtension() !== 'php') {
-				continue;
-			}
-			$scanned++;
-			$source = (string)file_get_contents($file->getPathname());
-			if (preg_match_all(self::A_PUBLIC_DOCUMENT, $source, $matches) > 0) {
-				$offenders[] = $file->getFilename() . ': $' . implode(', $', $matches[1]);
-			}
+			$this->assertSame(0, preg_match(self::aPublicField(self::NAMES), $declaration), $declaration);
 		}
 
-		$this->assertGreaterThan(100, $scanned, 'the scan has to see the app');
-		$this->assertSame([], $offenders);
-	}
-
-	/** As encodeArg() does, without its limits on depth and length. */
-	private static function asATraceShows(mixed $argument): mixed {
-		if (is_object($argument)) {
-			return array_map(self::asATraceShows(...), ['__class__' => $argument::class] + get_object_vars($argument));
-		}
-		return is_array($argument) ? array_map(self::asATraceShows(...), $argument) : $argument;
+		$this->assertSame([], self::publicFieldsUnder(self::NAMES));
 	}
 }
