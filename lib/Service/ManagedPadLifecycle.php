@@ -237,11 +237,15 @@ class ManagedPadLifecycle {
 	 * revision count, and at revision 0 the text: an open that may write,
 	 * and a restore, wait on the answers.
 	 *
-	 * @param string $savedText the text of the file's snapshot (ParsedPadFile::$savedText)
+	 * @param string $padId the pad the row names, and its access mode: a row's, not always the file's
+	 * @param ParsedPadFile $pad the file, for its snapshot's revision and
+	 *                           text. The file and not the text as a string:
+	 *                           this method is in the trace of whatever
+	 *                           Etherpad throws here.
 	 * @throws \Throwable when Etherpad gives any other answer, or none
 	 */
-	public function howLost(string $padId, string $accessMode, int $snapshotRevision, string $savedText): ?PadPresence {
-		if (!self::holdsSavedContent($accessMode, $snapshotRevision, $savedText)) {
+	public function howLost(string $padId, string $accessMode, ParsedPadFile $pad): ?PadPresence {
+		if (!self::holdsSavedContent($accessMode, $pad)) {
 			return null;
 		}
 		try {
@@ -253,10 +257,10 @@ class ManagedPadLifecycle {
 			return PadPresence::Absent;
 		}
 		// The text is asked only where it decides.
-		if ($revisions !== 0 || !self::savedAnything($snapshotRevision, $savedText)) {
+		if ($revisions !== 0 || !self::savedAnything($pad)) {
 			return null;
 		}
-		return self::isMadeAnew($revisions, $this->etherpadClient->getText($padId, self::PROBE_TIMEOUT_SECONDS), $snapshotRevision, $savedText) ? PadPresence::Behind : null;
+		return self::isMadeAnew($revisions, $this->etherpadClient->getText($padId, self::PROBE_TIMEOUT_SECONDS), $pad) ? PadPresence::Behind : null;
 	}
 
 	/**
@@ -265,8 +269,8 @@ class ManagedPadLifecycle {
 	 * while the file holds saved content, and with other text than the file
 	 * saved. For a caller that has the pad's text at hand already.
 	 */
-	public static function isMadeAnew(int $revisions, string $padText, int $snapshotRevision, string $savedText): bool {
-		return $revisions === 0 && self::savedAnything($snapshotRevision, $savedText) && !self::sameText($padText, $savedText);
+	public static function isMadeAnew(int $revisions, string $padText, ParsedPadFile $pad): bool {
+		return $revisions === 0 && self::savedAnything($pad) && !self::sameText($padText, $pad->savedText());
 	}
 
 	/** Text as Etherpad and a file hold it, but for line endings and the final newline. */
@@ -281,9 +285,9 @@ class ManagedPadLifecycle {
 	 * the pad as before - the check is for a rare case, and must not make
 	 * an open depend on it; whatever is wrong with Etherpad shows there.
 	 */
-	public function isKnownLost(string $padId, string $accessMode, int $snapshotRevision, string $savedText): bool {
+	public function isKnownLost(string $padId, string $accessMode, ParsedPadFile $pad): bool {
 		try {
-			return $this->howLost($padId, $accessMode, $snapshotRevision, $savedText) !== null;
+			return $this->howLost($padId, $accessMode, $pad) !== null;
 		} catch (EtherpadClientException $e) {
 			// Etherpad's own answer or silence: expected now and then.
 			$this->logger->debug('Could not ask Etherpad whether a pad is lost; opened as before.', [
@@ -307,8 +311,8 @@ class ManagedPadLifecycle {
 	 * a protected pad, whose session opens nothing without it, and for a
 	 * public pad once its file has saved content.
 	 */
-	public static function holdsSavedContent(string $accessMode, int $snapshotRevision, string $savedText): bool {
-		return $accessMode === BindingService::ACCESS_PROTECTED || self::savedAnything($snapshotRevision, $savedText);
+	public static function holdsSavedContent(string $accessMode, ParsedPadFile $pad): bool {
+		return $accessMode === BindingService::ACCESS_PROTECTED || self::savedAnything($pad);
 	}
 
 	/**
@@ -317,8 +321,8 @@ class ManagedPadLifecycle {
 	 * made from a template by 1.1.0-beta.1 holds its content at
 	 * `snapshot_rev: 0`, and a new file holds none.
 	 */
-	private static function savedAnything(int $snapshotRevision, string $savedText): bool {
-		return $snapshotRevision > 0 || trim($savedText) !== '';
+	private static function savedAnything(ParsedPadFile $pad): bool {
+		return $pad->snapshotRev > 0 || trim($pad->savedText()) !== '';
 	}
 
 	/**

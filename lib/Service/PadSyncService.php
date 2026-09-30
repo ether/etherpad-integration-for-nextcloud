@@ -198,7 +198,7 @@ class PadSyncService {
 		// snapshot that holds a revision still syncs: files a restore in
 		// 1.1.0-beta.1 left kept the old pad's revision count, and only a
 		// forced sync brings them up to date.
-		if (ManagedPadLifecycle::isMadeAnew($currentRev, $text, $snapshotRev, $pad->savedText())) {
+		if (ManagedPadLifecycle::isMadeAnew($currentRev, $text, $pad)) {
 			throw new PadLostException('Etherpad has lost the pad of this file.');
 		}
 
