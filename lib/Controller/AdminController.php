@@ -26,6 +26,7 @@ use OCA\EtherpadNextcloud\Service\HealthCheckResult;
 use OCA\EtherpadNextcloud\Service\PadTemplateAdminService;
 use OCA\EtherpadNextcloud\Service\RunBudget;
 use OCA\EtherpadNextcloud\Service\ValidatedAdminSettings;
+use OCA\EtherpadNextcloud\Util\PositiveIntParam;
 use OCP\AppFramework\Controller;
 use OCP\AppFramework\Http\DataResponse;
 use OCP\AppFramework\Utility\ITimeFactory;
@@ -160,35 +161,61 @@ class AdminController extends Controller {
 	}
 
 	/**
-	 * The pads of the vanished files deleted on the admin's word: all, or
-	 * the one `fileId` names (ConsistencyCheckService::markVanished()).
+	 * One vanished file's pad deleted on the admin's word
+	 * (ConsistencyCheckService::markVanishedFile()). `fileId` is required:
+	 * all of them is a route of its own, never what a request that sent
+	 * no readable id falls to.
 	 */
 	public function deleteVanished(): DataResponse {
 		return $this->errors->run(
 			function (): array {
 				$this->requireAdmin();
-				$fileId = $this->fileIdParam($this->request->getParam('fileId'), required: false);
+				$fileId = $this->requiredFileId();
+				$deleting = $this->appConfigService->isDeletePadWithFileEnabled();
 				// With deleting off a mark would only wait for it to be
 				// switched on: nothing is marked, and the page says why.
-				$deleting = $this->appConfigService->isDeletePadWithFileEnabled();
-				if ($fileId === null) {
-					$marked = $deleting ? $this->consistencyCheckService->markVanished(new RunBudget($this->timeFactory, RunBudget::DEFAULT_SECONDS)) : 0;
-				} else {
-					$marked = $deleting && $this->consistencyCheckService->markVanishedFile($fileId) ? 1 : 0;
-				}
-				$left = $this->consistencyCheckService->countVanished();
-				return [
+				$marked = $deleting && $this->consistencyCheckService->markVanishedFile($fileId);
+				return $this->withTheList([
 					'message' => match (true) {
-						!$deleting => $this->l10n->t('Deleting pads is switched off, so no pad was marked for deletion.'),
-						$fileId !== null && $marked > 0 => $this->l10n->t('The pad of this vanished file is marked for deletion. It is deleted within minutes, or at once with "Check pending pads".'),
-						$fileId !== null => $this->noLongerVanished(),
-						$left > 0 => $this->l10n->t('Not every vanished file could be marked in one go. Run it again for the rest.'),
-						default => $this->l10n->t('The pads of the vanished files are marked for deletion. They are deleted within minutes, or at once with "Check pending pads".'),
+						!$deleting => $this->deletingOff(),
+						$marked => $this->l10n->t('The pad of this vanished file is marked for deletion. It is deleted within minutes, or at once with "Check pending pads".'),
+						default => $this->noLongerVanished(),
 					},
-					'marked' => $marked,
-					'vanished_file_count' => $left,
-					'pending_delete_count' => $this->bindingService->countPendingDeletes(),
-				];
+					'marked' => $marked ? 1 : 0,
+				]);
+			},
+			fn(array $result): DataResponse => new DataResponse(['ok' => true] + $result),
+			[
+				'generic' => $this->l10n->t('Could not delete the pads of the vanished files.'),
+				'log_message' => 'Deleting the pad of a vanished file failed',
+			],
+		);
+	}
+
+	/**
+	 * The pads of all vanished files deleted on the admin's word
+	 * (ConsistencyCheckService::markVanished()), as many as `expected`
+	 * says: the count the admin was shown and confirmed. A list that has
+	 * changed since is not taken - the answer carries it as it is now, to
+	 * be confirmed again - and none beyond that count is marked.
+	 */
+	public function deleteAllVanished(): DataResponse {
+		return $this->errors->run(
+			function (): array {
+				$this->requireAdmin();
+				$expected = $this->requiredCount();
+				$deleting = $this->appConfigService->isDeletePadWithFileEnabled();
+				$changed = $this->consistencyCheckService->countVanished() !== $expected;
+				$marked = $deleting && !$changed ? $this->consistencyCheckService->markVanished(new RunBudget($this->timeFactory, RunBudget::DEFAULT_SECONDS), $expected) : 0;
+				$result = $this->withTheList(['marked' => $marked]);
+				$left = $result['vanished_file_count'];
+				return ['message' => match (true) {
+					!$deleting => $this->deletingOff(),
+					$changed => $this->l10n->t('The list of vanished files has changed since it was shown, so no pad was marked for deletion. Check it again.'),
+					$marked === 0 => $this->l10n->t('No vanished file was left to mark for deletion.'),
+					$left > 0 => $this->l10n->t('Not every vanished file could be marked in one go. Run it again for the rest.'),
+					default => $this->l10n->t('The pads of the vanished files are marked for deletion. They are deleted within minutes, or at once with "Check pending pads".'),
+				}] + $result;
 			},
 			fn(array $result): DataResponse => new DataResponse(['ok' => true] + $result),
 			[
@@ -199,21 +226,22 @@ class AdminController extends Controller {
 	}
 
 	/**
-	 * One vanished file's row removed, its pad left in Etherpad, on the
-	 * admin's word (ConsistencyCheckService::forgetVanished()).
+	 * One vanished file's row removed, its public pad left in Etherpad, on
+	 * the admin's word (ConsistencyCheckService::forgetVanished()).
 	 */
 	public function forgetVanished(): DataResponse {
 		return $this->errors->run(
 			function (): array {
 				$this->requireAdmin();
-				$forgotten = $this->consistencyCheckService->forgetVanished((int)$this->fileIdParam($this->request->getParam('fileId'), required: true));
-				return [
-					'message' => $forgotten !== null
-						? $this->l10n->t('The pad stays in Etherpad, and the app no longer looks after it.')
-						: $this->noLongerVanished(),
-					'forgotten' => $forgotten !== null,
-					'vanished_file_count' => $this->consistencyCheckService->countVanished(),
-				];
+				$outcome = $this->consistencyCheckService->forgetVanished($this->requiredFileId());
+				return $this->withTheList([
+					'message' => match ($outcome) {
+						ConsistencyCheckService::FORGOTTEN => $this->l10n->t('The pad stays in Etherpad, and the app no longer looks after it.'),
+						ConsistencyCheckService::PROTECTED_PAD => $this->l10n->t('Only a public pad can be forgotten. Delete a protected one instead.'),
+						default => $this->noLongerVanished(),
+					},
+					'forgotten' => $outcome === ConsistencyCheckService::FORGOTTEN,
+				]);
 			},
 			fn(array $result): DataResponse => new DataResponse(['ok' => true] + $result),
 			[
@@ -224,23 +252,52 @@ class AdminController extends Controller {
 	}
 
 	/**
-	 * The request's `fileId` ($raw): a positive number, or null when the
-	 * request has none and none is $required - absent, not empty: a client
-	 * that meant one file and sent no number must not get all of them. Not
-	 * the typed argument the other controllers take, which Nextcloud casts:
-	 * `7x` would name file 7, and an empty value file 0.
+	 * $result with the list as it is after the action - count and samples,
+	 * as the consistency check gives them - and the pads now waiting: what
+	 * the page shows next, without asking again.
 	 *
-	 * @throws \InvalidArgumentException when it is not one
+	 * @param array<string,mixed> $result
+	 * @return array<string,mixed>&array{vanished_file_count: int}
 	 */
-	private function fileIdParam(mixed $raw, bool $required): ?int {
-		if ($raw === null && !$required) {
-			return null;
+	private function withTheList(array $result): array {
+		$list = $this->consistencyCheckService->run(self::CONSISTENCY_SAMPLE_LIMIT);
+		return $result + [
+			'vanished_file_count' => $list['vanished_file_count'],
+			'samples' => $list['samples'],
+			'pending_delete_count' => $this->bindingService->countPendingDeletes(),
+		];
+	}
+
+	/** @throws \InvalidArgumentException without a positive `fileId` */
+	private function requiredFileId(): int {
+		return $this->requiredNumber('fileId', $this->l10n->t('Invalid file ID.'));
+	}
+
+	/** @throws \InvalidArgumentException without a positive `expected` */
+	private function requiredCount(): int {
+		return $this->requiredNumber('expected', $this->l10n->t('Invalid count.'));
+	}
+
+	/**
+	 * The request's $name, a positive whole number (PositiveIntParam),
+	 * never a cast of something else.
+	 *
+	 * @throws \InvalidArgumentException with $refusal when there is none
+	 */
+	private function requiredNumber(string $name, string $refusal): int {
+		try {
+			$number = PositiveIntParam::read($this->request->getParam($name));
+		} catch (\InvalidArgumentException) {
+			$number = null;
 		}
-		$fileId = is_int($raw) || (is_string($raw) && ctype_digit($raw)) ? (int)$raw : 0;
-		if ($fileId <= 0) {
-			throw new \InvalidArgumentException($this->l10n->t('Invalid file ID.'));
+		if ($number === null) {
+			throw new \InvalidArgumentException($refusal);
 		}
-		return $fileId;
+		return $number;
+	}
+
+	private function deletingOff(): string {
+		return $this->l10n->t('Deleting pads is switched off, so no pad was marked for deletion.');
 	}
 
 	/** The answer for a file named that is no longer vanished. */

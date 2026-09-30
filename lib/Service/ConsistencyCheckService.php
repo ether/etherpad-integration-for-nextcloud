@@ -18,6 +18,11 @@ class ConsistencyCheckService {
 	/** The rows marked in one go: one query finds them, one marks them. */
 	private const MARK_CHUNK = 500;
 
+	/** What forgetVanished() came to. */
+	public const FORGOTTEN = 'forgotten';
+	public const NOT_VANISHED = 'not_vanished';
+	public const PROTECTED_PAD = 'protected_pad';
+
 	public function __construct(
 		private IDBConnection $db,
 		private BindingService $bindingService,
@@ -50,23 +55,27 @@ class ConsistencyCheckService {
 	}
 
 	/**
-	 * The vanished rows marked seen deleted for good, on an admin's word
-	 * only (docs/deleting-pads.md says why): the sweep then deletes their
-	 * pads as it does those of any file deleted for good, asking the file
-	 * cache once more first. In chunks, until none is left or $budget is
-	 * spent.
+	 * Up to $limit vanished rows marked seen deleted for good, on an
+	 * admin's word only (docs/deleting-pads.md says why): the sweep then
+	 * deletes their pads as it does those of any file deleted for good,
+	 * asking the file cache once more first. $limit is what the admin was
+	 * shown and confirmed, so a list that grew meanwhile - a team folder
+	 * deleted as a whole since - takes no more than that. In chunks, found
+	 * by the same query that lists them, until $limit or none is left, or
+	 * $budget is spent.
 	 *
-	 * @return int how many rows were marked
+	 * @return int how many rows the marks changed
 	 */
-	public function markVanished(RunBudget $budget): int {
+	public function markVanished(RunBudget $budget, int $limit): int {
 		$marked = 0;
-		while (!$budget->exhausted()) {
-			$fileIds = array_values(array_map(static fn (array $row): int => DbRows::int($row, 'file_id'), $this->vanishedRows(['b.file_id'], self::MARK_CHUNK)));
-			$chunk = count($this->bindingService->markIfGone($fileIds));
+		while ($marked < $limit && !$budget->exhausted()) {
+			$size = min(self::MARK_CHUNK, $limit - $marked);
+			$fileIds = array_values(array_map(static fn (array $row): int => DbRows::int($row, 'file_id'), $this->vanishedRows(['b.file_id'], $size)));
+			$chunk = $this->bindingService->markGone($fileIds);
 			$marked += $chunk;
-			// A short chunk was the last; one that marked nothing - its rows
+			// A short chunk was the last; one that changed nothing - its rows
 			// changed meanwhile - would only be asked again.
-			if (count($fileIds) < self::MARK_CHUNK || $chunk === 0) {
+			if (count($fileIds) < $size || $chunk === 0) {
 				break;
 			}
 		}
@@ -81,9 +90,9 @@ class ConsistencyCheckService {
 		return $marked;
 	}
 
-	/** One vanished file's row marked, as markVanished() marks them all: whether it was still vanished. */
+	/** One vanished file's row marked, as markVanished() marks them: whether it was still vanished, and is marked now. */
 	public function markVanishedFile(int $fileId): bool {
-		if ($this->bindingService->markIfGone([$fileId]) === []) {
+		if (!$this->bindingService->isFileGone($fileId) || $this->bindingService->markGone([$fileId]) === 0) {
 			return false;
 		}
 		$this->logger->info('An admin marked the row of a vanished file as deleted for good; the sweep deletes its pad.', [
@@ -94,27 +103,34 @@ class ConsistencyCheckService {
 	}
 
 	/**
-	 * One vanished file's row removed on an admin's word, its pad left in
-	 * Etherpad, which the app no longer looks after (docs/deleting-pads.md
-	 * says what that costs). Only while the row is still vanished - active,
-	 * its file gone from the file cache. The pad's id goes to the log, the
+	 * One vanished file's row removed on an admin's word, its public pad
+	 * left in Etherpad, which the app no longer looks after
+	 * (docs/deleting-pads.md says what for). Only while the row is still
+	 * vanished - active, its file gone from the file cache - and only a
+	 * public pad's: a protected pad without a row keeps the sessions made
+	 * for it, and becomes a group pad a legacy import could claim
+	 * (docs/legacy-ownpad-migration.md). The pad's id goes to the log, the
 	 * one place left that knows it.
 	 *
-	 * @return ?string the pad left in Etherpad, or null when the file is no longer vanished
+	 * @return string FORGOTTEN, NOT_VANISHED, or PROTECTED_PAD for a protected pad, left as it is
 	 */
-	public function forgetVanished(int $fileId): ?string {
+	public function forgetVanished(int $fileId): string {
 		$binding = $this->bindingService->findByFileId($fileId);
-		// Active, which the delete holds it to, and without its file.
-		if ($binding === null || !$this->bindingService->isFileGone($fileId) || !$this->bindingService->deleteInState($fileId, $binding->padId, BindingService::STATE_ACTIVE)) {
-			return null;
+		if ($binding === null || $binding->state !== BindingService::STATE_ACTIVE || !$this->bindingService->isFileGone($fileId)) {
+			return self::NOT_VANISHED;
+		}
+		if ($binding->accessMode !== BindingService::ACCESS_PUBLIC) {
+			return self::PROTECTED_PAD;
+		}
+		if (!$this->bindingService->deleteInState($fileId, $binding->padId, BindingService::STATE_ACTIVE)) {
+			return self::NOT_VANISHED;
 		}
 		$this->logger->info('An admin removed the row of a vanished file; its pad stays in Etherpad, and the app no longer looks after it.', [
 			'app' => Application::APP_ID,
 			'fileId' => $fileId,
 			'padId' => $binding->padId,
-			'accessMode' => $binding->accessMode,
 		]);
-		return $binding->padId;
+		return self::FORGOTTEN;
 	}
 
 	/** Rows whose file the file cache has nothing of, counted. */

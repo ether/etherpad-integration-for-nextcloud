@@ -33,6 +33,7 @@ use OCP\IURLGenerator;
 use OCP\IUser;
 use OCP\IUserSession;
 use OCA\EtherpadNextcloud\Tests\Support\FixedClock;
+use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 
@@ -191,124 +192,137 @@ class AdminControllerTest extends TestCase {
 	}
 
 	/**
-	 * On the admin's word the vanished files' rows are marked, within one
-	 * run's budget, for the sweep; the answer says how many, how many are
-	 * left, and how many pads now wait to go.
+	 * One vanished file's pad, on the admin's word: its row marked, the
+	 * answer carrying the list as it is now. A file no longer vanished
+	 * changes nothing and says so; with deleting off nothing is marked.
 	 */
-	public function testDeleteVanishedMarksTheirRows(): void {
-		$consistency = $this->createMock(ConsistencyCheckService::class);
-		$consistency->expects($this->once())->method('markVanished')->with($this->callback(
-			static fn (RunBudget $budget): bool => !$budget->exhausted(),
-		))->willReturn(4);
-		$consistency->method('countVanished')->willReturn(0);
-		$bindings = $this->createMock(BindingService::class);
-		$bindings->method('countPendingDeletes')->willReturn(6);
-
-		$response = $this->buildController(consistencyCheck: $consistency, bindings: $bindings)->deleteVanished();
-
-		$this->assertSame(Http::STATUS_OK, $response->getStatus());
-		$this->assertSame(['ok' => true, 'message' => 'The pads of the vanished files are marked for deletion. They are deleted within minutes, or at once with "Check pending pads".', 'marked' => 4, 'vanished_file_count' => 0, 'pending_delete_count' => 6], $response->getData());
-	}
-
-	/**
-	 * With deleting off a mark would only wait for it to be switched on:
-	 * nothing is marked, and the answer says so. Rows left after the budget
-	 * ask for another run.
-	 */
-	public function testDeleteVanishedSaysWhatItDidNot(): void {
-		$consistency = $this->createMock(ConsistencyCheckService::class);
-		$consistency->expects($this->never())->method('markVanished');
-		$consistency->method('countVanished')->willReturn(12);
-		$appConfig = $this->createMock(AppConfigService::class);
-		$appConfig->method('isDeletePadWithFileEnabled')->willReturn(false);
-
-		$off = $this->buildController(consistencyCheck: $consistency, appConfig: $appConfig)->deleteVanished()->getData();
-
-		$this->assertSame('Deleting pads is switched off, so no pad was marked for deletion.', $off['message']);
-		$this->assertSame([0, 12], [$off['marked'], $off['vanished_file_count']]);
-		$consistency->expects($this->never())->method('markVanishedFile');
-		$offOne = $this->buildController(request: $this->request(['fileId' => '42']), consistencyCheck: $consistency, appConfig: $appConfig)->deleteVanished()->getData();
-		$this->assertSame(['Deleting pads is switched off, so no pad was marked for deletion.', 0], [$offOne['message'], $offOne['marked']]);
-
-		$partly = $this->createMock(ConsistencyCheckService::class);
-		$partly->method('markVanished')->willReturn(500);
-		$partly->method('countVanished')->willReturn(1);
-
-		$this->assertSame('Not every vanished file could be marked in one go. Run it again for the rest.', $this->buildController(consistencyCheck: $partly)->deleteVanished()->getData()['message']);
-	}
-
-	/**
-	 * One vanished file's pad deleted: its row marked, the rest left. A file
-	 * no longer vanished - marked meanwhile, back - changes nothing, and the
-	 * answer says so.
-	 */
-	public function testDeleteVanishedTakesOneFileWhenNamed(): void {
+	public function testDeleteVanishedTakesTheOneFileNamed(): void {
 		$cases = [
-			[true, 1, 'The pad of this vanished file is marked for deletion. It is deleted within minutes, or at once with "Check pending pads".'],
-			[false, 0, 'This file is no longer vanished; nothing was changed.'],
+			'marked' => [true, true, 1, 'The pad of this vanished file is marked for deletion. It is deleted within minutes, or at once with "Check pending pads".'],
+			'no longer vanished' => [true, false, 0, 'This file is no longer vanished; nothing was changed.'],
+			'deleting off' => [false, null, 0, 'Deleting pads is switched off, so no pad was marked for deletion.'],
 		];
-		foreach ($cases as [$stillVanished, $marked, $message]) {
-			$consistency = $this->createMock(ConsistencyCheckService::class);
-			$consistency->expects($this->never())->method('markVanished');
-			$consistency->expects($this->once())->method('markVanishedFile')->with(42)->willReturn($stillVanished);
-			$consistency->method('countVanished')->willReturn(3);
+		foreach ($cases as $case => [$deleting, $stillVanished, $marked, $message]) {
+			$consistency = $this->vanishedList(2);
+			$consistency->expects($stillVanished === null ? $this->never() : $this->once())->method('markVanishedFile')->with(42)->willReturn((bool)$stillVanished);
+			$appConfig = $this->createMock(AppConfigService::class);
+			$appConfig->method('isDeletePadWithFileEnabled')->willReturn($deleting);
 
-			$data = $this->buildController(request: $this->request(['fileId' => '42']), consistencyCheck: $consistency)->deleteVanished()->getData();
+			$data = $this->buildController(request: $this->request(['fileId' => '42']), consistencyCheck: $consistency, appConfig: $appConfig)->deleteVanished()->getData();
 
-			$this->assertSame([$message, $marked, 3], [$data['message'], $data['marked'], $data['vanished_file_count']]);
+			$this->assertSame([$message, $marked, 2, [['file_id' => 7]]], [$data['message'], $data['marked'], $data['vanished_file_count'], $data['samples']['vanished_files']], $case);
 		}
 	}
 
 	/**
-	 * One vanished file's row removed, its pad left in Etherpad; a file no
-	 * longer vanished is left as it is. A request naming no file, or no
-	 * number, is refused.
+	 * All of them only on a route of their own, and only as many as the
+	 * admin confirmed: a list that has changed since is not taken, and the
+	 * answer carries it to be confirmed again.
 	 */
-	public function testForgetVanishedRemovesOneRowAndLeavesThePad(): void {
-		$consistency = $this->createMock(ConsistencyCheckService::class);
-		$consistency->method('forgetVanished')->willReturnMap([[42, 'g.abc$pad'], [43, null]]);
-		$consistency->method('countVanished')->willReturn(2);
+	public function testDeleteAllVanishedTakesOnlyTheCountConfirmed(): void {
+		$consistency = $this->vanishedList(0);
+		$consistency->method('countVanished')->willReturn(30);
+		$consistency->expects($this->once())->method('markVanished')->with($this->callback(static fn (RunBudget $budget): bool => !$budget->exhausted()), 30)->willReturn(30);
 
-		$forgotten = $this->buildController(request: $this->request(['fileId' => '42']), consistencyCheck: $consistency)->forgetVanished()->getData();
-		$left = $this->buildController(request: $this->request(['fileId' => '43']), consistencyCheck: $consistency)->forgetVanished()->getData();
+		$data = $this->buildController(request: $this->request(['expected' => '30']), consistencyCheck: $consistency)->deleteAllVanished()->getData();
 
-		$this->assertSame(['ok' => true, 'message' => 'The pad stays in Etherpad, and the app no longer looks after it.', 'forgotten' => true, 'vanished_file_count' => 2], $forgotten);
-		$this->assertSame(['This file is no longer vanished; nothing was changed.', false], [$left['message'], $left['forgotten']]);
-		foreach ([[], ['fileId' => '7x'], ['fileId' => '0']] as $payload) {
-			$response = $this->buildController(request: $this->request($payload), consistencyCheck: $consistency)->forgetVanished();
-			$this->assertSame(Http::STATUS_BAD_REQUEST, $response->getStatus(), json_encode($payload));
-			$this->assertSame('Invalid file ID.', $response->getData()['message']);
+		$this->assertSame(['The pads of the vanished files are marked for deletion. They are deleted within minutes, or at once with "Check pending pads".', 30, 0], [$data['message'], $data['marked'], $data['vanished_file_count']]);
+
+		$changed = $this->vanishedList(30000);
+		$changed->method('countVanished')->willReturn(30000);
+		$changed->expects($this->never())->method('markVanished');
+
+		$data = $this->buildController(request: $this->request(['expected' => '30']), consistencyCheck: $changed)->deleteAllVanished()->getData();
+
+		$this->assertSame(['The list of vanished files has changed since it was shown, so no pad was marked for deletion. Check it again.', 0, 30000], [$data['message'], $data['marked'], $data['vanished_file_count']]);
+	}
+
+	/**
+	 * What deleting them all came to, said as it is: nothing left to mark,
+	 * the rest for another run, or deleting switched off.
+	 */
+	public function testDeleteAllVanishedSaysWhatItDidNot(): void {
+		$cases = [
+			'none left' => [true, 0, 0, 'No vanished file was left to mark for deletion.'],
+			'more than a run' => [true, 500, 7, 'Not every vanished file could be marked in one go. Run it again for the rest.'],
+			'deleting off' => [false, 0, 12, 'Deleting pads is switched off, so no pad was marked for deletion.'],
+		];
+		foreach ($cases as $case => [$deleting, $marked, $left, $message]) {
+			$consistency = $this->vanishedList($left);
+			$consistency->method('countVanished')->willReturn(12);
+			$consistency->expects($deleting ? $this->once() : $this->never())->method('markVanished')->willReturn($marked);
+			$appConfig = $this->createMock(AppConfigService::class);
+			$appConfig->method('isDeletePadWithFileEnabled')->willReturn($deleting);
+
+			$data = $this->buildController(request: $this->request(['expected' => '12']), consistencyCheck: $consistency, appConfig: $appConfig)->deleteAllVanished()->getData();
+
+			$this->assertSame([$message, $marked], [$data['message'], $data['marked']], $case);
 		}
 	}
 
 	/**
-	 * Only a request without `fileId` takes every vanished file: an empty
-	 * one is a client that meant one file and sent no number, refused
-	 * before anything is marked.
+	 * A public pad forgotten, its row gone and the pad left in Etherpad; a
+	 * protected one is refused, and a file no longer vanished is left.
 	 */
-	public function testDeleteVanishedRefusesAnEmptyFileId(): void {
+	public function testForgetVanishedSaysWhatCameOfIt(): void {
+		$cases = [
+			ConsistencyCheckService::FORGOTTEN => [true, 'The pad stays in Etherpad, and the app no longer looks after it.'],
+			ConsistencyCheckService::PROTECTED_PAD => [false, 'Only a public pad can be forgotten. Delete a protected one instead.'],
+			ConsistencyCheckService::NOT_VANISHED => [false, 'This file is no longer vanished; nothing was changed.'],
+		];
+		foreach ($cases as $outcome => [$forgotten, $message]) {
+			$consistency = $this->vanishedList(1);
+			$consistency->method('forgetVanished')->with(42)->willReturn($outcome);
+
+			$data = $this->buildController(request: $this->request(['fileId' => '42']), consistencyCheck: $consistency)->forgetVanished()->getData();
+
+			$this->assertSame([$message, $forgotten, 1], [$data['message'], $data['forgotten'], $data['vanished_file_count']], $outcome);
+		}
+	}
+
+	/**
+	 * Each action names what it takes, or is refused before anything is
+	 * marked: no `fileId`, an empty one, or one that is no number; no
+	 * `expected` count. A request the server cannot read never falls to
+	 * all of them.
+	 */
+	public function testTheActionsRefuseWhatNamesNothing(): void {
 		$consistency = $this->createMock(ConsistencyCheckService::class);
 		$consistency->expects($this->never())->method('markVanished');
 		$consistency->expects($this->never())->method('markVanishedFile');
-
-		$response = $this->buildController(request: $this->request(['fileId' => '']), consistencyCheck: $consistency)->deleteVanished();
-
-		$this->assertSame(Http::STATUS_BAD_REQUEST, $response->getStatus());
-		$this->assertSame('Invalid file ID.', $response->getData()['message']);
-	}
-
-	/** Only an admin deletes pads here. */
-	public function testDeleteVanishedRefusesNonAdmins(): void {
-		$consistency = $this->createMock(ConsistencyCheckService::class);
-		$consistency->expects($this->never())->method('markVanished');
-
 		$consistency->expects($this->never())->method('forgetVanished');
 
-		$response = $this->buildController(groupManager: $this->adminGroup(false), consistencyCheck: $consistency)->deleteVanished();
-		$forget = $this->buildController(request: $this->request(['fileId' => '42']), groupManager: $this->adminGroup(false), consistencyCheck: $consistency)->forgetVanished();
+		foreach ([[], ['fileId' => ''], ['fileId' => '7x'], ['fileId' => '0']] as $payload) {
+			foreach (['deleteVanished', 'forgetVanished'] as $action) {
+				$response = $this->buildController(request: $this->request($payload), consistencyCheck: $consistency)->$action();
+				$this->assertSame([Http::STATUS_BAD_REQUEST, 'Invalid file ID.'], [$response->getStatus(), $response->getData()['message']], $action . ' ' . json_encode($payload));
+			}
+		}
+		foreach ([[], ['expected' => ''], ['fileId' => '42']] as $payload) {
+			$response = $this->buildController(request: $this->request($payload), consistencyCheck: $consistency)->deleteAllVanished();
+			$this->assertSame([Http::STATUS_BAD_REQUEST, 'Invalid count.'], [$response->getStatus(), $response->getData()['message']], json_encode($payload));
+		}
+	}
 
-		$this->assertSame(Http::STATUS_FORBIDDEN, $response->getStatus());
-		$this->assertSame(Http::STATUS_FORBIDDEN, $forget->getStatus());
+	/** Only an admin deletes or forgets pads here. */
+	public function testTheActionsRefuseNonAdmins(): void {
+		$consistency = $this->createMock(ConsistencyCheckService::class);
+		$consistency->expects($this->never())->method('markVanished');
+		$consistency->expects($this->never())->method('markVanishedFile');
+		$consistency->expects($this->never())->method('forgetVanished');
+		$request = $this->request(['fileId' => '42', 'expected' => '3']);
+
+		foreach (['deleteVanished', 'deleteAllVanished', 'forgetVanished'] as $action) {
+			$response = $this->buildController(request: $request, groupManager: $this->adminGroup(false), consistencyCheck: $consistency)->$action();
+			$this->assertSame(Http::STATUS_FORBIDDEN, $response->getStatus(), $action);
+		}
+	}
+
+	/** A consistency check answering with $left vanished files, one of them listed. */
+	private function vanishedList(int $left): ConsistencyCheckService&MockObject {
+		$consistency = $this->createMock(ConsistencyCheckService::class);
+		$consistency->method('run')->willReturn(['vanished_file_count' => $left, 'samples' => ['vanished_files' => [['file_id' => 7]]]]);
+		return $consistency;
 	}
 
 	public function testListsPadTemplates(): void {
