@@ -23,6 +23,12 @@ namespace OCA\EtherpadNextcloud\Util;
  * can still be read once the app has lost the exception: credentials,
  * and the documents on the routes that rethrow rather than handle.
  *
+ * A document needs an entry only where it is an argument as a string.
+ * The objects it travels in - ParsedPadFile, PadSnapshot, LivePadHtml,
+ * CreatedFileClaim - keep it in private fields, which the serializer
+ * does not read: a method that takes one of those needs none, and
+ * DocumentStaysOutOfTracesTest holds them to it.
+ *
  * Two limits. It reaches the serializer only, so a throwable logged
  * under any key but 'exception' is normalized elsewhere and no entry
  * here applies. And it covers the frames of the class it names, never
@@ -44,22 +50,11 @@ final class SensitiveMethods {
 		],
 		// The document itself, as an argument.
 		\OCA\EtherpadNextcloud\Service\ManagedPadLifecycle::class => ['seed'],
-		// And on its way out of the file, which is the half a pad travels
-		// when the trash listener rethrows what it caught. A restore reads
-		// and writes it through these too, kept for the reason given at
-		// RestoreService below.
+		// And on its way into and out of the file, as the string it is
+		// there: read, split, put together and written.
 		\OCA\EtherpadNextcloud\Service\PadFileService::class => [
 			'parsePadFile', 'readPad', 'serialize',
-			'withExportSnapshot', 'withRestoredSnapshot', 'buildSnapshotBody',
-		],
-		// The same document one frame on, carried from frame to frame as the
-		// parsed file, whose public fields the serializer writes out. No
-		// restore route lets an exception go since its listener reports what
-		// it catches; these stay until the document leaves public fields, so
-		// that a route that lets go again does not bring the document back
-		// into the log.
-		\OCA\EtherpadNextcloud\Service\RestoreService::class => [
-			'restoreOntoNewPad', 'seedFromSnapshot', 'replaceLostPad', 'restoreWithoutBinding',
+			'withRestoredSnapshot', 'buildSnapshotBody',
 		],
 		\OCA\EtherpadNextcloud\Service\PadFileLockRetryService::class => ['putContentWithSyncLockRetry'],
 		\OCA\EtherpadNextcloud\Service\PadCreationService::class => ['writeCreatedFile'],
