@@ -105,10 +105,10 @@ class PublicViewerController extends PublicShareController {
 					'is_external' => $context->isExternal,
 					'is_readonly_view' => $context->isReadOnlyView,
 					'original_pad_url' => $context->originalPadUrl,
-					'content_url' => $context->contentUrl,
+					'content_url' => $context->contentUrl(),
 				]);
-				if ($context->cookieHeader !== '') {
-					$response->addHeader('Set-Cookie', $context->cookieHeader);
+				if ($context->cookieHeader() !== '') {
+					$response->addHeader('Set-Cookie', $context->cookieHeader());
 				}
 				return $response;
 			},

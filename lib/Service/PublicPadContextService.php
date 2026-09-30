@@ -78,7 +78,7 @@ class PublicPadContextService {
 			($openTarget->isReadOnlyView || $isExternal)
 				? $this->buildContentUrl($token, $fileId)
 				: '',
-			$openTarget->cookieHeader,
+			$openTarget->cookieHeader(),
 		);
 	}
 

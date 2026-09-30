@@ -203,8 +203,8 @@ class PadResponseService {
 		];
 
 		$response = new DataResponse($payload);
-		if ($target->cookieHeader !== '') {
-			$response->addHeader('Set-Cookie', $target->cookieHeader);
+		if ($target->cookieHeader() !== '') {
+			$response->addHeader('Set-Cookie', $target->cookieHeader());
 		}
 		return $response;
 	}

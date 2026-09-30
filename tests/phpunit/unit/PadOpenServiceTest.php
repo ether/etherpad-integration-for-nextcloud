@@ -68,7 +68,7 @@ class PadOpenServiceTest extends TestCase {
 
 		$this->assertTrue($target->isReadOnlyView);
 		$this->assertSame('', $target->url, 'a viewer must not be given a pad to open');
-		$this->assertSame('', $target->cookieHeader, 'and no session to open it with');
+		$this->assertSame('', $target->cookieHeader(), 'and no session to open it with');
 		// The response ships this as `pad_url`. Withholding one address and
 		// handing back the same one under another key would undo the whole
 		// thing, and no client reads it today — which is why it would go
@@ -144,7 +144,7 @@ class PadOpenServiceTest extends TestCase {
 		$this->assertTrue($target->isReadOnlyView);
 		$this->assertSame('', $target->url, 'no pad to open');
 		$this->assertSame('', $target->padUrl, 'and not under the other name either');
-		$this->assertSame('', $target->cookieHeader, 'and no session');
+		$this->assertSame('', $target->cookieHeader(), 'and no session');
 	}
 
 	/**
