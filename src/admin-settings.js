@@ -1,3 +1,5 @@
+import { handFocusTo } from './lib/hand-focus.js'
+
 (function () {
 	'use strict'
 
@@ -46,6 +48,7 @@
 	const consistencyUrl = root.getAttribute('data-consistency-url') || ''
 	const settlePendingUrl = root.getAttribute('data-settle-pending-url') || ''
 	const deleteVanishedUrl = root.getAttribute('data-delete-vanished-url') || ''
+	const deleteAllVanishedUrl = root.getAttribute('data-delete-all-vanished-url') || ''
 	const forgetVanishedUrl = root.getAttribute('data-forget-vanished-url') || ''
 	const l10n = {
 		saving: root.getAttribute('data-l10n-saving') || 'Saving settings...',
@@ -61,6 +64,7 @@
 		settleFailed: root.getAttribute('data-l10n-settle-failed') || 'Pending pad check failed.',
 		vanishedShown: root.getAttribute('data-l10n-vanished-shown') || 'Showing {shown} of {total}:',
 		deleteVanishedConfirm: root.getAttribute('data-l10n-delete-vanished-confirm') || 'Delete the pads of all {count} vanished files? Etherpad deletes them for good.',
+		deleteVanishedConfirmOne: root.getAttribute('data-l10n-delete-vanished-confirm-one') || 'Delete the pad of the one vanished file? Etherpad deletes it for good.',
 		deleteVanishedRunning: root.getAttribute('data-l10n-delete-vanished-running') || 'Marking the pads of the vanished files for deletion...',
 		deleteVanishedFailed: root.getAttribute('data-l10n-delete-vanished-failed') || 'Could not delete the pads of the vanished files.',
 		vanishedDeleteOne: root.getAttribute('data-l10n-vanished-delete-one') || 'Delete',
@@ -68,7 +72,7 @@
 		vanishedDeleteLabel: root.getAttribute('data-l10n-vanished-delete-label') || 'Delete pad {pad}',
 		vanishedForgetLabel: root.getAttribute('data-l10n-vanished-forget-label') || 'Forget pad {pad}',
 		deleteVanishedOneConfirm: root.getAttribute('data-l10n-delete-vanished-one-confirm') || 'Delete the pad {pad}? Etherpad deletes it for good.',
-		forgetVanishedConfirm: root.getAttribute('data-l10n-forget-vanished-confirm') || 'Take {pad} off this list and leave it in Etherpad? The app never cleans it up after that, and a protected pad can no longer be opened.',
+		forgetVanishedConfirm: root.getAttribute('data-l10n-forget-vanished-confirm') || 'Take {pad} off this list and leave it in Etherpad? The app never cleans it up after that, and anyone with its link can still open it.',
 		forgetVanishedFailed: root.getAttribute('data-l10n-forget-vanished-failed') || 'Could not forget the pad of the vanished file.',
 		deleteVanishedOneRunning: root.getAttribute('data-l10n-delete-vanished-one-running') || 'Marking the pad for deletion...',
 		forgetVanishedRunning: root.getAttribute('data-l10n-forget-vanished-running') || 'Forgetting the pad...',
@@ -508,26 +512,39 @@
 		consistencyButton.addEventListener('click', async () => {
 			clearFieldErrors()
 			beginStatus(l10n.consistencyRunning, diagnosticsTarget)
+			const generation = ++vanishedGeneration
 			try {
 				const data = await postJson(consistencyUrl, {})
 				const vanishedFile = Number(data.vanished_file_count || 0)
 				const message = `${String(data.message || l10n.consistencyOk)} vanished_file=${String(vanishedFile)}`
 				setStatus(message, vanishedFile > 0 ? 'error' : 'success', diagnosticsTarget)
-				showVanished(data.samples && data.samples.vanished_files, vanishedFile)
+				if (latestVanished(generation)) {
+					showVanished(data.samples && data.samples.vanished_files, vanishedFile)
+				}
 			} catch (error) {
 				setStatus(error instanceof Error ? error.message : l10n.consistencyFailed, 'error', diagnosticsTarget)
 			}
 		})
 	}
 
-	// All of them, not only those listed: what the confirmation names.
+	// All of them, not only those listed: what the confirmation names, and
+	// what deleting them all is held to.
 	let vanishedTotal = 0
+	// Only the latest answer draws the list: one that comes back after a
+	// newer one would put back what that one took away.
+	let vanishedGeneration = 0
+	// One action at a time: while one is under way the list's buttons are
+	// disabled - those a check draws meanwhile too - so a second click, or
+	// a double click on deleting them all, sends nothing.
+	let vanishedBusy = false
 
 	/**
 	 * The pads of files gone without a deletion the app saw, which it
 	 * leaves in place: the first of them listed, with how many there are,
 	 * so an admin can tell whether to delete them all - and each one with
-	 * its own way to be deleted, or forgotten and left in Etherpad.
+	 * its own way to be deleted, or, a public one, forgotten and left in
+	 * Etherpad. From the consistency check, or an action's answer, which
+	 * carries the list as it is after the action.
 	 */
 	function showVanished(rows, total) {
 		if (!(vanishedNode instanceof HTMLElement) || !(vanishedList instanceof HTMLElement)) {
@@ -546,25 +563,24 @@
 		vanishedNode.style.display = vanishedTotal > 0 ? '' : 'none'
 	}
 
-	/**
-	 * The list as the server has it now, asked again after an action: it
-	 * then shows what the action did, and what it did not - a pad left
-	 * with deleting off stays listed. Should the question fail, the list
-	 * stays as it was; the next check shows it.
-	 */
-	async function refreshVanished() {
-		try {
-			const data = await postJson(consistencyUrl, {})
-			showVanished(data.samples && data.samples.vanished_files, data.vanished_file_count)
-		} catch {
-			// The action's own answer stands in the status line.
+	/** Whether $generation is still the latest request for the list. */
+	function latestVanished(generation) {
+		return generation === vanishedGeneration
+	}
+
+	function setVanishedBusy(busy) {
+		vanishedBusy = busy
+		if (vanishedNode instanceof HTMLElement) {
+			for (const button of vanishedNode.querySelectorAll('button')) {
+				button.disabled = busy
+			}
 		}
 	}
 
 	/**
 	 * An action's answer in the diagnostics line, with the counts it
-	 * carries: a success when it did something, a warning when it did
-	 * nothing - deleting switched off, say.
+	 * carries: a success when it did what was asked, a warning when it did
+	 * not, or not all of it - deleting switched off, say.
 	 */
 	function reportAction(data, keys, done) {
 		const details = keys
@@ -572,6 +588,34 @@
 			.map((key) => `${key}=${String(data[key])}`)
 		const suffix = details.length > 0 ? ` ${details.join(' | ')}` : ''
 		setStatus(`${String(data.message || 'OK')}${suffix}`, done ? 'success' : 'warning', diagnosticsTarget)
+	}
+
+	/**
+	 * A vanished-files action, once the admin confirms: its answer
+	 * reported, the list drawn as the answer carries it, and the focus
+	 * handed on, since the button clicked went with the old list.
+	 */
+	async function runVanishedAction(url, payload, { confirm, running, failed, keys, done }) {
+		if (!window.confirm(confirm)) {
+			return
+		}
+		const generation = ++vanishedGeneration
+		setVanishedBusy(true)
+		clearFieldErrors()
+		beginStatus(running, diagnosticsTarget)
+		try {
+			const data = await postJson(url, payload)
+			updateBindingCounts(data)
+			reportAction(data, keys, done(data))
+			if (latestVanished(generation)) {
+				showVanished(data.samples && data.samples.vanished_files, data.vanished_file_count)
+			}
+		} catch (error) {
+			setStatus(error instanceof Error ? error.message : failed, 'error', diagnosticsTarget)
+		} finally {
+			setVanishedBusy(false)
+		}
+		handFocusTo(vanishedList, diagnosticsTarget)
 	}
 
 	function vanishedItem(row) {
@@ -591,58 +635,49 @@
 		const withPad = (text) => text.replace('{pad}', () => row.pad_id)
 		const actions = [
 			{ url: deleteVanishedUrl, text: l10n.vanishedDeleteOne, label: l10n.vanishedDeleteLabel, confirm: l10n.deleteVanishedOneConfirm, running: l10n.deleteVanishedOneRunning, failed: l10n.deleteVanishedFailed, doneKey: 'marked' },
-			{ url: forgetVanishedUrl, text: l10n.vanishedForgetOne, label: l10n.vanishedForgetLabel, confirm: l10n.forgetVanishedConfirm, running: l10n.forgetVanishedRunning, failed: l10n.forgetVanishedFailed, doneKey: 'forgotten' },
 		]
+		// Only a public pad is forgotten: a protected one would keep its
+		// sessions, and its group could be claimed by a legacy import.
+		if (row.access_mode === 'public') {
+			actions.push({ url: forgetVanishedUrl, text: l10n.vanishedForgetOne, label: l10n.vanishedForgetLabel, confirm: l10n.forgetVanishedConfirm, running: l10n.forgetVanishedRunning, failed: l10n.forgetVanishedFailed, doneKey: 'forgotten' })
+		}
 		for (const action of actions) {
 			if (action.url === '') {
 				continue
 			}
 			const button = document.createElement('button')
 			button.type = 'button'
+			button.disabled = vanishedBusy
 			button.textContent = action.text
 			button.setAttribute('aria-label', withPad(action.label))
 			button.addEventListener('click', () => {
-				void takeOneVanished(fileId, { ...action, confirm: withPad(action.confirm) })
+				void runVanishedAction(action.url, { fileId }, {
+					confirm: withPad(action.confirm),
+					running: action.running,
+					failed: action.failed,
+					keys: [action.doneKey, 'vanished_file_count', 'pending_delete_count'],
+					done: (data) => Boolean(data[action.doneKey]),
+				})
 			})
 			item.append(' ', button)
 		}
 		return item
 	}
 
-	/** One vanished file's pad deleted, or forgotten and left in Etherpad, once the admin confirms. */
-	async function takeOneVanished(fileId, action) {
-		if (!window.confirm(action.confirm)) {
-			return
-		}
-		clearFieldErrors()
-		beginStatus(action.running, diagnosticsTarget)
-		try {
-			const data = await postJson(action.url, { fileId })
-			updateBindingCounts(data)
-			reportAction(data, [action.doneKey, 'vanished_file_count', 'pending_delete_count'], Boolean(data[action.doneKey]))
-		} catch (error) {
-			setStatus(error instanceof Error ? error.message : action.failed, 'error', diagnosticsTarget)
-			return
-		}
-		await refreshVanished()
-	}
-
-	if (deleteVanishedButton instanceof HTMLElement && deleteVanishedUrl !== '') {
-		deleteVanishedButton.addEventListener('click', async () => {
-			if (!window.confirm(l10n.deleteVanishedConfirm.replace('{count}', String(vanishedTotal)))) {
-				return
-			}
-			clearFieldErrors()
-			beginStatus(l10n.deleteVanishedRunning, diagnosticsTarget)
-			try {
-				const data = await postJson(deleteVanishedUrl, {})
-				updateBindingCounts(data)
-				reportAction(data, ['marked', 'vanished_file_count', 'pending_delete_count'], Number(data.marked) > 0)
-			} catch (error) {
-				setStatus(error instanceof Error ? error.message : l10n.deleteVanishedFailed, 'error', diagnosticsTarget)
-				return
-			}
-			await refreshVanished()
+	if (deleteVanishedButton instanceof HTMLElement && deleteAllVanishedUrl !== '') {
+		deleteVanishedButton.addEventListener('click', () => {
+			const confirm = vanishedTotal === 1
+				? l10n.deleteVanishedConfirmOne
+				: l10n.deleteVanishedConfirm.replace('{count}', String(vanishedTotal))
+			// The count the admin confirms is the count the server holds the
+			// action to: a list grown since is not taken.
+			void runVanishedAction(deleteAllVanishedUrl, { expected: vanishedTotal }, {
+				confirm,
+				running: l10n.deleteVanishedRunning,
+				failed: l10n.deleteVanishedFailed,
+				keys: ['marked', 'vanished_file_count', 'pending_delete_count'],
+				done: (data) => Number(data.marked) > 0 && Number(data.vanished_file_count) === 0,
+			})
 		})
 	}
 
@@ -653,7 +688,9 @@
 			try {
 				const data = await postJson(settlePendingUrl, {})
 				updateBindingCounts(data)
-				reportAction(data, ['checked', 'settled', 'pending_delete_count'], true)
+				// Nothing deleted while pads still wait - deleting switched off,
+				// Etherpad refusing - is no success.
+				reportAction(data, ['checked', 'settled', 'pending_delete_count'], Number(data.settled) > 0 || Number(data.pending_delete_count) === 0)
 			} catch (error) {
 				setStatus(error instanceof Error ? error.message : l10n.settleFailed, 'error', diagnosticsTarget)
 			}

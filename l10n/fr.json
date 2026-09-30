@@ -224,13 +224,18 @@
         "Delete pad {pad}": "Supprimer le pad {pad}",
         "Forget pad {pad}": "Oublier le pad {pad}",
         "Delete the pad {pad}? Etherpad deletes it for good.": "Supprimer le pad {pad} ? Etherpad le supprime définitivement.",
-        "Take {pad} off this list and leave it in Etherpad? The app never cleans it up after that, and a protected pad can no longer be opened.": "Retirer {pad} de cette liste et le laisser dans Etherpad ? L'application ne le nettoiera plus jamais, et un pad protégé ne pourra plus être ouvert.",
+        "Take {pad} off this list and leave it in Etherpad? The app never cleans it up after that, and anyone with its link can still open it.": "Retirer {pad} de cette liste et le laisser dans Etherpad ? L'application ne le nettoiera plus jamais, et quiconque a son lien peut encore l'ouvrir.",
         "Could not forget the pad of the vanished file.": "Le pad du fichier disparu n'a pas pu être oublié.",
         "Marking the pad for deletion...": "Marquage du pad pour suppression...",
         "Forgetting the pad...": "Oubli du pad...",
         "The pad of this vanished file is marked for deletion. It is deleted within minutes, or at once with \"Check pending pads\".": "Le pad de ce fichier disparu est marqué pour suppression. Il est supprimé dans les minutes qui suivent, ou immédiatement avec « Vérifier les pads en attente ».",
         "This file is no longer vanished; nothing was changed.": "Ce fichier n'est plus considéré comme disparu ; rien n'a été modifié.",
-        "The pad stays in Etherpad, and the app no longer looks after it.": "Le pad reste dans Etherpad, et l'application ne s'en occupe plus."
+        "The pad stays in Etherpad, and the app no longer looks after it.": "Le pad reste dans Etherpad, et l'application ne s'en occupe plus.",
+        "Delete the pad of the one vanished file? Etherpad deletes it for good.": "Supprimer le pad de l'unique fichier disparu ? Etherpad le supprime définitivement.",
+        "The list of vanished files has changed since it was shown, so no pad was marked for deletion. Check it again.": "La liste des fichiers disparus a changé depuis son affichage, aucun pad n'a donc été marqué pour suppression. Vérifiez-la à nouveau.",
+        "No vanished file was left to mark for deletion.": "Il ne restait aucun fichier disparu à marquer pour suppression.",
+        "Only a public pad can be forgotten. Delete a protected one instead.": "Seul un pad public peut être oublié. Supprimez plutôt un pad protégé.",
+        "Invalid count.": "Nombre invalide."
     },
     "pluralForm": "nplurals=2; plural=(n > 1);"
 }
