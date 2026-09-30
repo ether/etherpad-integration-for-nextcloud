@@ -11,3 +11,6 @@ FROM nextcloud:${NC_VERSION}-apache
 
 COPY certs/ca.crt /usr/local/share/ca-certificates/e2e-local-ca.crt
 RUN update-ca-certificates
+
+# Replaces the image's own pool sizes; the file says why.
+COPY apache-mpm-prefork.conf /etc/apache2/mods-available/mpm_prefork.conf
