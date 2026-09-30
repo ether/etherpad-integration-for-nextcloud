@@ -10,8 +10,8 @@ namespace OCA\EtherpadNextcloud\Tests\Support;
 
 /**
  * What Nextcloud writes of an argument when it serializes an exception's
- * trace, and what the source says of a class's public fields: the two
- * views a test of "nothing of it in a trace" needs.
+ * trace, and what the app's classes let it see: the two views a test of
+ * "nothing of it in a trace" needs.
  */
 trait ReadsAsATrace {
 	/**
@@ -28,43 +28,30 @@ trait ReadsAsATrace {
 	}
 
 	/**
-	 * A public field under one of $names, whatever its type and with
-	 * none: `public`, what may stand between it and a field's name - the
-	 * other modifiers, a type - and the name. A promoted parameter is one;
-	 * a parameter of a public method is not, nor the word in a comment or
-	 * a string that a name happens to follow.
+	 * The fields under lib that anything outside their class can read and
+	 * whose name matches $names, each as `Class::$field`, but for the
+	 * ones $excused: a field under such a name that holds nothing of the
+	 * kind, each with what it holds instead.
 	 *
-	 * @param string $names the names as a regular expression's alternatives
-	 */
-	private static function aPublicField(string $names): string {
-		return '/\bpublic\s+(?:(?:readonly|static)\s+)*(?:[?\w\\\\|&()]+\s+)?\$(' . $names . ')\b/';
-	}
-
-	/**
-	 * The public fields under one of $names that the classes under lib
-	 * declare, each as `File.php: $field`.
+	 * And the excuses no field needs: one for a field that is gone, or no
+	 * longer public, would excuse the next of that name.
 	 *
-	 * @return list<string>
+	 * @param array<string,string> $excused
+	 * @return array{list<string>, list<string>}
 	 */
-	private static function publicFieldsUnder(string $names): array {
+	private static function publicFieldsNamed(string $names, array $excused): array {
 		$found = [];
-		$scanned = 0;
-		$root = dirname(__DIR__, 3) . '/lib';
-		self::assertDirectoryExists($root);
-		/** @var iterable<\SplFileInfo> $files */
-		$files = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($root));
-		foreach ($files as $file) {
-			if ($file->getExtension() !== 'php') {
+		$seen = [];
+		foreach (AppSource::publicFields() as [$class, $field]) {
+			if (preg_match($names, $field) !== 1) {
 				continue;
 			}
-			$scanned++;
-			$source = (string)file_get_contents($file->getPathname());
-			if (preg_match_all(self::aPublicField($names), $source, $matches) > 0) {
-				$found[] = $file->getFilename() . ': $' . implode(', $', $matches[1]);
+			$key = $class . '::$' . $field;
+			$seen[$key] = true;
+			if (!isset($excused[$key])) {
+				$found[] = $key;
 			}
 		}
-		// Not skipped in silence: a scan that sees nothing finds nothing.
-		self::assertGreaterThan(100, $scanned, 'the scan has to see the app');
-		return $found;
+		return [$found, array_values(array_diff(array_keys($excused), array_keys($seen)))];
 	}
 }

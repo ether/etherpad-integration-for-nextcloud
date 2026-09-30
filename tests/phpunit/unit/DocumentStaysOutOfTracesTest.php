@@ -14,6 +14,7 @@ use OCA\EtherpadNextcloud\Service\CreatedFileClaim;
 use OCA\EtherpadNextcloud\Service\LivePadHtml;
 use OCA\EtherpadNextcloud\Service\PadSnapshot;
 use OCA\EtherpadNextcloud\Service\ParsedPadFile;
+use OCA\EtherpadNextcloud\Tests\Support\NamesOfSecrets;
 use OCA\EtherpadNextcloud\Tests\Support\ReadsAsATrace;
 use PHPUnit\Framework\TestCase;
 
@@ -65,24 +66,17 @@ class DocumentStaysOutOfTracesTest extends TestCase {
 		}
 	}
 
-	/** The names a document goes by as a field. */
-	private const NAMES = 'body|frontmatter|savedText|text|html|content|expectedBefore';
-
 	/**
-	 * The names a document goes by in this app, as public fields anywhere
-	 * under lib. A list of names, so it knows the ones it was given: a
-	 * document under a new name passes it, and the test above is where a
-	 * new carrier belongs.
+	 * No field under one of a document's names that anything outside its
+	 * class can read, anywhere under lib - declared public or public
+	 * without the word, promoted or not. A list of names, so it knows the
+	 * ones it was given: a document under a new name passes it, and the
+	 * test above is where a new carrier belongs.
 	 */
 	public function testNoClassDeclaresADocumentAsAPublicField(): void {
-		// The rule finds what it is for, however the field is typed.
-		foreach (['public string $body;', 'public readonly ?string $html,', 'public string|null $text = null;', 'public $content;', 'public static array $frontmatter = [];', 'readonly public string $savedText,'] as $declaration) {
-			$this->assertSame(1, preg_match(self::aPublicField(self::NAMES), $declaration), $declaration);
-		}
-		foreach (['private readonly string $body,', 'public function show(string $html): void {', 'public readonly string $padId, private string $body', 'protected $text;'] as $declaration) {
-			$this->assertSame(0, preg_match(self::aPublicField(self::NAMES), $declaration), $declaration);
-		}
+		[$found, $idle] = self::publicFieldsNamed(NamesOfSecrets::DOCUMENT, []);
 
-		$this->assertSame([], self::publicFieldsUnder(self::NAMES));
+		$this->assertSame([], $found);
+		$this->assertSame([], $idle);
 	}
 }

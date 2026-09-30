@@ -13,30 +13,54 @@ use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\EtherpadNextcloud\Service\PadOpenTarget;
 use OCA\EtherpadNextcloud\Service\PublicPadContext;
 use OCA\EtherpadNextcloud\Service\PublicPadOpenTarget;
+use OCA\EtherpadNextcloud\Service\StoredAdminSettings;
+use OCA\EtherpadNextcloud\Service\ValidatedAdminSettings;
+use OCA\EtherpadNextcloud\Tests\Support\NamesOfSecrets;
 use OCA\EtherpadNextcloud\Tests\Support\ReadsAsATrace;
 use OCA\EtherpadNextcloud\Util\ApiKey;
 use PHPUnit\Framework\TestCase;
 
 /**
- * The objects a credential travels in - the API key, the cookie that
- * carries a pad's sessions, the address that carries a share token - show
- * a serialized trace their class and nothing that opens anything.
- *
- * The two settings objects that hold the API key have their case in
- * SensitiveMethodsTest, from before this rule had a test of its own.
+ * The objects a credential travels in - the API key and the settings
+ * that hold it, the cookie that carries a pad's sessions, the address that
+ * carries a share token - show a serialized trace their class and nothing
+ * that opens anything.
  */
 class CredentialStaysOutOfTracesTest extends TestCase {
 	use ReadsAsATrace;
 
 	private const CREDENTIAL = 'opens-the-pad';
 
-	/** The names a credential goes by as a field. */
-	private const NAMES = '\w*(?:[aA]piKey|[sS]ecret|[pP]assword|[tT]oken|[sS]essionIds?|[cC]ookieHeader)\w*|contentUrl';
+	/** Public fields under a credential's name that open nothing, each with what it holds. */
+	private const NOT_A_CREDENTIAL = [
+		'OCA\\EtherpadNextcloud\\Service\\HealthCheckResult::$sessionCookieRelease' => 'the Etherpad release that made the session cookie HttpOnly',
+		'OCA\\EtherpadNextcloud\\Service\\HealthCheckResult::$cookieDomain' => 'what the health check found of the cookie\'s domain',
+		'OCA\\EtherpadNextcloud\\Service\\ValidatedAdminSettings::$etherpadCookieDomain' => 'the domain a cookie is set for',
+		'OCA\\EtherpadNextcloud\\Service\\ValidatedAdminSettings::$cookieDomainConfigured' => 'whether that domain was set by hand',
+		'OCA\\EtherpadNextcloud\\Service\\StoredAdminSettings::$cookieDomain' => 'the domain a cookie is set for',
+		'OCA\\EtherpadNextcloud\\Service\\StoredAdminSettings::$cookieDomainConfigured' => 'whether that domain was set by hand',
+	];
 
 	/** @return iterable<string, array{object, \Closure(): list<mixed>}> */
 	public static function carriers(): iterable {
 		$key = new ApiKey(self::CREDENTIAL);
 		yield 'the API key' => [$key, static fn (): array => [$key->reveal()]];
+		$validated = new ValidatedAdminSettings(
+			'https://pad.example.test',
+			'https://pad-api.example.test',
+			'.example.test',
+			self::CREDENTIAL,
+			self::CREDENTIAL,
+			'1.3.0',
+			120,
+			true,
+			false,
+			'',
+			'',
+		);
+		yield 'the settings as validated' => [$validated, static fn (): array => [$validated->apiKeyToStore()?->reveal(), $validated->effectiveApiKey()->reveal()]];
+		$stored = new StoredAdminSettings(self::CREDENTIAL, '.example.test', true, false, '');
+		yield 'the settings as stored' => [$stored, static fn (): array => [$stored->apiKey()->reveal()]];
 		$target = new PadOpenTarget(
 			file: '/Notes.pad',
 			fileId: 7,
@@ -71,18 +95,16 @@ class CredentialStaysOutOfTracesTest extends TestCase {
 	}
 
 	/**
-	 * The names a credential goes by in this app, as public fields
-	 * anywhere under lib. A list of names, as for a document: a credential
-	 * under a new name passes it.
+	 * No field under one of a credential's names that anything outside its
+	 * class can read, anywhere under lib, but for the ones that hold
+	 * something else. The names are the ones the parameters are read by
+	 * (SensitiveMethodsTest): a field one of them lets pass, the other
+	 * would too.
 	 */
 	public function testNoClassDeclaresACredentialAsAPublicField(): void {
-		foreach (['public readonly string $cookieHeader,', 'public string $contentUrl,', 'public ?string $etherpadApiKey = null;', 'public array $sessionIds = [];', 'public $shareToken;'] as $declaration) {
-			$this->assertSame(1, preg_match(self::aPublicField(self::NAMES), $declaration), $declaration);
-		}
-		foreach (['private readonly string $cookieHeader,', 'public function open(string $token): void {', 'public readonly string $cookieDomain,', 'public readonly string $url, private string $contentUrl', '* a public field of an argument ends up in a trace. */ private string $cookieHeader', "'public-share:' . \$token,"] as $declaration) {
-			$this->assertSame(0, preg_match(self::aPublicField(self::NAMES), $declaration), $declaration);
-		}
+		[$found, $idle] = self::publicFieldsNamed(NamesOfSecrets::CREDENTIAL, self::NOT_A_CREDENTIAL);
 
-		$this->assertSame([], self::publicFieldsUnder(self::NAMES));
+		$this->assertSame([], $found);
+		$this->assertSame([], $idle, 'an exception nothing needs any more');
 	}
 }
