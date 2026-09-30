@@ -383,30 +383,44 @@ solely by the separate external-pad policy, not by these two settings.
 - `POST /api/v1/admin/delete-vanished`
   - Controller: `AdminController::deleteVanished`
   - Auth: admin only
-  - Optional param: `fileId`, for one vanished file's pad alone. Only a request without it takes them all; an empty one is refused.
-  - Purpose: every vanished row (see `consistency-check`), or the one
-    `fileId` names while it is still vanished, is marked as a file deleted
-    for good, and the sweep deletes its pad as for any such file - within
-    minutes, or at once through `settle-pending`. All of them in chunks,
-    within the budget a sweep has; what is left needs another call. With
-    `delete_pad_with_file` off it marks nothing, and `message` says so.
-    When to use it, and when not: `docs/deleting-pads.md`.
-  - Result:
-    - `marked`: rows marked
-    - `vanished_file_count`: vanished rows left, `0` once all are marked
-    - `pending_delete_count`: rows now waiting for the sweep, named as in the health check
-  - `400` with `Invalid file ID.` for a `fileId` that is not a positive number.
+  - Params: `fileId`
+  - Purpose: the vanished row (see `consistency-check`) of `fileId`,
+    while it is still vanished, is marked as a file deleted for good, and
+    the sweep deletes its pad as for any such file - within minutes, or at
+    once through `settle-pending`. With `delete_pad_with_file` off it
+    marks nothing, and `message` says so. When to use it, and when not:
+    `docs/deleting-pads.md`.
+  - Result: `marked` (`1` or `0`), and the list as it is after the
+    action, as `consistency-check` gives it (`vanished_file_count`,
+    `samples`), with `pending_delete_count`.
+  - `400` with `Invalid file ID.` without a positive `fileId`: a request
+    the server cannot read never falls to all of them.
+
+- `POST /api/v1/admin/delete-all-vanished`
+  - Controller: `AdminController::deleteAllVanished`
+  - Auth: admin only
+  - Params: `expected`, the count of vanished files the admin was shown
+    and confirmed
+  - Purpose: every vanished row marked as for `delete-vanished`, in
+    chunks within the budget a sweep has, and never more than `expected`.
+    A list whose count is no longer `expected` - grown since it was shown,
+    say - is not taken: nothing is marked, and the answer carries the list
+    as it is now, to be confirmed again. What is left after one call
+    needs another.
+  - Result: `marked`, and the list as for `delete-vanished`.
+  - `400` with `Invalid count.` without a positive `expected`.
 
 - `POST /api/v1/admin/forget-vanished`
   - Controller: `AdminController::forgetVanished`
   - Auth: admin only
   - Params: `fileId`
-  - Purpose: one vanished file's row removed, its pad left in Etherpad,
-    while the row is still vanished. The pad's id goes to the log at
-    `info`. What that leaves the pad as: `docs/deleting-pads.md`.
-  - Result:
-    - `forgotten`: whether the row was removed; `false` when the file is no longer vanished, and nothing changed
-    - `vanished_file_count`: vanished rows left
+  - Purpose: one vanished file's row removed, its public pad left in
+    Etherpad, while the row is still vanished. The pad's id goes to the
+    log at `info`. A protected pad is not forgotten. Why, and what a
+    forgotten pad is left as: `docs/deleting-pads.md`.
+  - Result: `forgotten` - `false` for a protected pad, with `message`
+    saying so, or a file no longer vanished - and the list as for
+    `delete-vanished`.
   - `400` with `Invalid file ID.` without a positive `fileId`.
 
 - `POST /api/v1/admin/settle-pending`

@@ -343,9 +343,10 @@ test.describe('pads of team folder files deleted for good', () => {
 
 	/**
 	 * The admin takes the pads the app leaves, one listed pad at a time or
-	 * all of them: one forgotten, its row gone and the pad left in
-	 * Etherpad; one deleted on its own; the rest with all. All comes last:
-	 * it takes every vanished row of the instance, so the count is 0 after.
+	 * all of them: a public one forgotten, its row gone and the pad left in
+	 * Etherpad; one deleted on its own; the rest with all, as many as the
+	 * check counted. All comes last, and only on a throwaway stack: it takes
+	 * every vanished row of the instance.
 	 */
 	test('the admin forgets a vanished pad, deletes one, then the rest', async () => {
 		const other = uniqueName('gone-team-vanished')
@@ -353,7 +354,7 @@ test.describe('pads of team folder files deleted for good', () => {
 		const padIds: string[] = []
 		try {
 			const paths = ['forgotten', 'deleted', 'rest'].map((label) => `${other}/${uniquePadName(label)}`)
-			const pads = []
+			const pads: string[] = []
 			for (const [index, path] of paths.entries()) {
 				pads.push(padIdOfPadUrl((await padInTeam(path, index === 1 ? 'protected' : 'public')).padUrl))
 				made.pop()
@@ -364,6 +365,8 @@ test.describe('pads of team folder files deleted for good', () => {
 			const vanishedBefore = await vanishedFiles()
 			expect(vanishedBefore, 'the team folder deleted as a whole leaves its files vanished').toBeGreaterThanOrEqual(3)
 
+			const refused = await padApiPost('admin/forget-vanished', { fileId: String(deletedFile) })
+			expect((refused.body as { forgotten?: boolean }).forgotten, 'a protected pad is not forgotten').toBe(false)
 			const forgotten = await padApiPost('admin/forget-vanished', { fileId: String(forgottenFile) })
 			expect(forgotten.status, JSON.stringify(forgotten.body)).toBe(200)
 			expect((forgotten.body as { forgotten?: boolean }).forgotten).toBe(true)
@@ -377,9 +380,15 @@ test.describe('pads of team folder files deleted for good', () => {
 			expect(await padExists(pads[0]), 'forgotten, the pad stays in Etherpad').toBe(true)
 			expect(await vanishedFiles(), 'both should be off the list').toBe(vanishedBefore - 2)
 
-			const all = await padApiPost('admin/delete-vanished')
+			if (!E2E.throwawayStack) {
+				return
+			}
+			const counted = await vanishedFiles()
+			const stale = await padApiPost('admin/delete-all-vanished', { expected: String(counted + 1) })
+			expect((stale.body as { marked?: number }).marked, 'a count the list no longer has takes nothing').toBe(0)
+			const all = await padApiPost('admin/delete-all-vanished', { expected: String(counted) })
 			expect(all.status, JSON.stringify(all.body)).toBe(200)
-			expect((all.body as { marked?: number }).marked).toBeGreaterThan(0)
+			expect((all.body as { marked?: number }).marked).toBe(counted)
 			expect((all.body as { vanished_file_count?: number }).vanished_file_count).toBe(0)
 			await settle()
 			expect(await padExists(pads[2]), 'marked with all, the pad should go').toBe(false)

@@ -58,6 +58,19 @@ export const E2E = {
 		return (url && key) ? { url: url.replace(/\/+$/, ''), key } : null
 	},
 	/**
+	 * Whether the target is a throwaway stack: a host under `.test`, which
+	 * is reserved for testing (RFC 2606) and never a live instance's. An
+	 * action that reaches past the spec's own fixtures - deleting the pads
+	 * of every vanished file - runs only there, whatever else is set.
+	 */
+	get throwawayStack(): boolean {
+		try {
+			return new URL(this.baseURL).hostname.endsWith('.test')
+		} catch {
+			return false
+		}
+	},
+	/**
 	 * The pad server's address on its own. `/health` needs no api key, so a
 	 * spec that only asks that must not be gated on one — a target that
 	 * configured the URL and nothing else would skip in silence.
