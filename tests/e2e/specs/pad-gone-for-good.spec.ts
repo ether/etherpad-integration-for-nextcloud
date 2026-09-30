@@ -345,8 +345,9 @@ test.describe('pads of team folder files deleted for good', () => {
 	 * The admin takes the pads the app leaves, one listed pad at a time or
 	 * all of them: a public one forgotten, its row gone and the pad left in
 	 * Etherpad; one deleted on its own; the rest with all, as many as the
-	 * check counted. All comes last, and only on a throwaway stack: it takes
-	 * every vanished row of the instance.
+	 * check counted. All comes last, and only where the stack says its data
+	 * is throwaway (`E2E.throwawayStack`): it takes every vanished row of
+	 * the instance, other tests' too.
 	 */
 	test('the admin forgets a vanished pad, deletes one, then the rest', async () => {
 		const other = uniqueName('gone-team-vanished')
@@ -360,7 +361,7 @@ test.describe('pads of team folder files deleted for good', () => {
 				made.pop()
 			}
 			padIds.push(...pads)
-			const [forgottenFile, deletedFile] = [await propfindFileId(paths[0]), await propfindFileId(paths[1])]
+			const [forgottenFile, deletedFile, restFile] = [await propfindFileId(paths[0]), await propfindFileId(paths[1]), await propfindFileId(paths[2])]
 			await deleteTeamFolder(otherId)
 			const vanishedBefore = await vanishedFiles()
 			expect(vanishedBefore, 'the team folder deleted as a whole leaves its files vanished').toBeGreaterThanOrEqual(3)
@@ -381,6 +382,10 @@ test.describe('pads of team folder files deleted for good', () => {
 			expect(await vanishedFiles(), 'both should be off the list').toBe(vanishedBefore - 2)
 
 			if (!E2E.throwawayStack) {
+				// Not this instance's every vanished row: its own last one, alone.
+				await padApiPost('admin/delete-vanished', { fileId: String(restFile) })
+				await settle()
+				expect(await padExists(pads[2]), 'marked on its own, the pad should go').toBe(false)
 				return
 			}
 			const counted = await vanishedFiles()
