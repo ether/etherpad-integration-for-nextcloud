@@ -150,20 +150,40 @@ class ConsistencyCheckServiceTest extends TestCase {
 	}
 
 	/**
-	 * Nothing checks a forgotten row again, as the sweep checks a marked
-	 * one: so forgetting asks once more after the row went. A file the
-	 * file cache has after all gets its row back, and is not forgotten.
+	 * Once the row is gone, nothing is left that can fail before the log
+	 * has the pad's id: the file cache is asked before, and not again. A
+	 * question after the delete that failed would leave the row removed
+	 * and the pad named nowhere.
 	 */
-	public function testAFileBackWhileItIsForgottenKeepsItsRow(): void {
+	public function testNothingIsAskedBetweenARowRemovedAndItsLogLine(): void {
+		$removed = false;
 		$bindings = $this->createMock(BindingService::class);
 		$bindings->method('findByFileId')->with(7)->willReturn(new Binding(fileId: 7, padId: 'pad-7', accessMode: BindingService::ACCESS_PUBLIC, state: BindingService::STATE_ACTIVE));
-		$bindings->method('isFileGone')->with(7)->willReturnOnConsecutiveCalls(true, false);
-		$bindings->method('deleteInState')->willReturn(true);
-		$bindings->expects($this->once())->method('createBinding')->with(7, 'pad-7', BindingService::ACCESS_PUBLIC);
+		$bindings->method('isFileGone')->willReturnCallback(static function () use (&$removed): bool {
+			if ($removed) {
+				throw new \RuntimeException('database went away');
+			}
+			return true;
+		});
+		$bindings->method('deleteInState')->willReturnCallback(static function () use (&$removed): bool {
+			$removed = true;
+			return true;
+		});
+		$bindings->expects($this->never())->method('createBinding');
 		$logger = $this->createMock(LoggerInterface::class);
-		$logger->expects($this->never())->method('info');
+		$logger->expects($this->once())->method('info')->with($this->anything(), $this->callback(static fn (array $context): bool => $context['padId'] === 'pad-7' && $context['fileId'] === 7));
 
-		$this->assertSame(ConsistencyCheckService::NOT_VANISHED, (new ConsistencyCheckService(new InMemoryBindingTable([], []), $bindings, $logger))->forgetVanished(7));
+		$this->assertSame(ConsistencyCheckService::FORGOTTEN, (new ConsistencyCheckService(new InMemoryBindingTable([], []), $bindings, $logger))->forgetVanished(7));
+	}
+
+	/** A file that is there when asked keeps its row: nothing is removed. */
+	public function testAFileThatIsThereIsNotForgotten(): void {
+		$bindings = $this->createMock(BindingService::class);
+		$bindings->method('findByFileId')->with(7)->willReturn(new Binding(fileId: 7, padId: 'pad-7', accessMode: BindingService::ACCESS_PUBLIC, state: BindingService::STATE_ACTIVE));
+		$bindings->method('isFileGone')->with(7)->willReturn(false);
+		$bindings->expects($this->never())->method('deleteInState');
+
+		$this->assertSame(ConsistencyCheckService::NOT_VANISHED, (new ConsistencyCheckService(new InMemoryBindingTable([], []), $bindings, $this->createMock(LoggerInterface::class)))->forgetVanished(7));
 	}
 
 	/**

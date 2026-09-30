@@ -132,6 +132,12 @@ class ConsistencyCheckService {
 	 * not a protected one). The pad's id goes to the log, the one place
 	 * left that knows it.
 	 *
+	 * The file cache is asked before the row goes, and not again: an id it
+	 * no longer has does not come back - a move, a restore among them,
+	 * updates the file's entry in place (Cache::moveFromCache()). A check
+	 * after the delete would only add a way to fail with the row gone and
+	 * nothing logged.
+	 *
 	 * @return string FORGOTTEN, NOT_VANISHED, or PROTECTED_PAD for a protected pad, left as it is
 	 */
 	public function forgetVanished(int $fileId): string {
@@ -143,13 +149,6 @@ class ConsistencyCheckService {
 			return self::PROTECTED_PAD;
 		}
 		if (!$this->bindingService->deleteInState($fileId, $binding->padId, BindingService::STATE_ACTIVE)) {
-			return self::NOT_VANISHED;
-		}
-		// Asked once more now that the row is gone: nothing checks a row
-		// forgotten again, as the sweep checks one marked. A file the file
-		// cache has after all gets its row back.
-		if (!$this->bindingService->isFileGone($fileId)) {
-			$this->bindingService->createBinding($fileId, $binding->padId, $binding->accessMode);
 			return self::NOT_VANISHED;
 		}
 		$this->logger->info('An admin removed the row of a vanished file; its pad stays in Etherpad, and the app no longer looks after it.', [
