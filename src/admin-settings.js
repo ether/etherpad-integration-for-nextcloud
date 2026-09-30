@@ -398,7 +398,7 @@ import { handFocusTo } from './lib/hand-focus.js'
 		// The check deletes a pad only once its file is gone for good, and
 		// nothing here is more than a nudge to the job that does the same.
 		if (settlePendingButton instanceof HTMLButtonElement) {
-			settlePendingButton.disabled = bindingCounts.pendingDeletes <= 0
+			settlePendingButton.disabled = vanishedBusy || bindingCounts.pendingDeletes <= 0
 		}
 	}
 
@@ -531,11 +531,12 @@ import { handFocusTo } from './lib/hand-focus.js'
 	// All of them, not only those listed: what the confirmation names, and
 	// what deleting them all is held to.
 	let vanishedTotal = 0
-	// One request for the list at a time, a check or an action: while one
-	// is under way the check's button and the list's are disabled. Two
-	// under way could answer in either order, and the later answer need not
-	// be the later state - a check started after an action can still read
-	// the list before the action changed it.
+	// One request for the list or the pads that wait at a time - a check,
+	// an action, the check of pending pads: while one is under way their
+	// buttons are disabled. Two under way could answer in either order, and
+	// the later answer need not be the later state - a check started after
+	// an action can still read the list before the action changed it, and
+	// a pending check can count before an action marked.
 	let vanishedBusy = false
 
 	/**
@@ -571,6 +572,10 @@ import { handFocusTo } from './lib/hand-focus.js'
 		}
 		for (const button of buttons) {
 			button.disabled = busy
+		}
+		// With nothing waiting it stays disabled, busy or not.
+		if (settlePendingButton instanceof HTMLButtonElement) {
+			settlePendingButton.disabled = busy || bindingCounts.pendingDeletes <= 0
 		}
 	}
 
@@ -695,6 +700,7 @@ import { handFocusTo } from './lib/hand-focus.js'
 		settlePendingButton.addEventListener('click', async () => {
 			clearFieldErrors()
 			beginStatus(l10n.checking, diagnosticsTarget)
+			setVanishedBusy(true)
 			try {
 				const data = await postJson(settlePendingUrl, {})
 				updateBindingCounts(data)
@@ -703,6 +709,8 @@ import { handFocusTo } from './lib/hand-focus.js'
 				reportAction(data, ['checked', 'settled', 'pending_delete_count'], Number(data.settled) > 0 || Number(data.pending_delete_count) === 0)
 			} catch (error) {
 				setStatus(error instanceof Error ? error.message : l10n.settleFailed, 'error', diagnosticsTarget)
+			} finally {
+				setVanishedBusy(false)
 			}
 		})
 	}

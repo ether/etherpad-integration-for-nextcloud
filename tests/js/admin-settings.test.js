@@ -465,6 +465,73 @@ describe('admin settings status areas', () => {
 	})
 
 	/**
+	 * The check of pending pads takes its turn with them: started during
+	 * an action, its answer could count the pads that wait before the
+	 * action marked, arrive after the action's, and hide the pads just
+	 * marked. With nothing waiting its button stays disabled, busy or not.
+	 */
+	it('takes the pending check in turn with the list', async () => {
+		const row = { file_id: 9, pad_id: 'public-pad', access_mode: 'public' }
+		let release
+		let hold = false
+		let pending = 2
+		const fetchMock = vi.fn((url) => {
+			const body = url === '/settle'
+				? { message: 'Pending pad check finished.', checked: pending, settled: pending, pending_delete_count: 0 }
+				: { message: 'Done.', marked: 1, vanished_file_count: 1, pending_delete_count: pending, samples: { vanished_files: [row] } }
+			if (!hold || (url !== '/delete-vanished' && url !== '/settle')) {
+				return Promise.resolve(okResponse(body))
+			}
+			return new Promise((resolve) => {
+				release = () => resolve(okResponse(body))
+			})
+		})
+		vi.stubGlobal('fetch', fetchMock)
+		vi.stubGlobal('confirm', vi.fn(() => true))
+		await import(MODULE)
+		const check = document.getElementById('etherpad-nextcloud-consistency-check')
+		const settle = document.getElementById('etherpad-nextcloud-settle-pending')
+		const listButtons = () => [...document.querySelectorAll('#etherpad-nextcloud-vanished button')]
+		const sent = (url) => fetchMock.mock.calls.filter(([called]) => called === url).length
+
+		check.click()
+		await flushAsyncWork()
+		expect(settle.disabled).toBe(false)
+
+		// An action under way: no pending check is started.
+		hold = true
+		pending = 3
+		document.querySelector('#etherpad-nextcloud-vanished-list button').click()
+		await flushAsyncWork()
+		expect(settle.disabled).toBe(true)
+		settle.click()
+		await flushAsyncWork()
+		expect(sent('/settle')).toBe(0)
+		// Nor does a health check's count of them open it meanwhile.
+		document.getElementById('etherpad-nextcloud-health-check').click()
+		await flushAsyncWork()
+		expect(settle.disabled).toBe(true)
+		release()
+		await flushAsyncWork()
+		expect(settle.disabled).toBe(false)
+		expect(document.getElementById('etherpad-nextcloud-pending-count').textContent).toBe('Pending Etherpad deletes: 3')
+
+		// A pending check under way: no action, no check, no second one.
+		settle.click()
+		await flushAsyncWork()
+		expect([check, settle, ...listButtons()].every((button) => button.disabled)).toBe(true)
+		document.querySelector('#etherpad-nextcloud-vanished-list button').click()
+		settle.click()
+		await flushAsyncWork()
+		expect([sent('/delete-vanished'), sent('/settle')]).toEqual([1, 1])
+		release()
+		await flushAsyncWork()
+		expect([check, ...listButtons()].some((button) => button.disabled)).toBe(false)
+		// Nothing waits any more: nothing to check.
+		expect(settle.disabled).toBe(true)
+	})
+
+	/**
 	 * An action that fails may have done part of what it was asked - a
 	 * chunk of marks before the one that failed: the list is asked again,
 	 * and shows what is left, beside the failure. What it marked waits,
