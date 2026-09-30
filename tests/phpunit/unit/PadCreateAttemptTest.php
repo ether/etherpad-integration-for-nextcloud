@@ -58,7 +58,7 @@ class PadCreateAttemptTest extends TestCase {
 
 		$this->assertSame('alice', $attempt->claim()?->uid);
 		$this->assertSame(4242, $attempt->claim()?->fileId);
-		$this->assertSame('template bytes', $attempt->claim()?->expectedBefore);
+		$this->assertSame('template bytes', $attempt->claim()?->expectedBefore());
 		$this->assertSame('g.ABC$pad', $attempt->padId());
 		$this->assertSame('/Notes/Meeting.pad', $attempt->path());
 	}

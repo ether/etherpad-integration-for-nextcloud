@@ -216,7 +216,7 @@ class PadResponseService {
 	 */
 	public function padContentResponse(LivePadHtml $content): DataResponse {
 		$response = new DataResponse([
-			'html' => $content->html,
+			'html' => $content->html(),
 			'is_empty' => $content->isEmpty,
 		]);
 		$response->addHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');

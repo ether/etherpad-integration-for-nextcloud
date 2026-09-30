@@ -554,7 +554,7 @@ class RestoreServiceTest extends TestCase {
 			snapshotRev: -1,
 		);
 		$padFileService->method('readPad')->with('doc-before')->willReturn($parsedPad);
-		$padFileService->method('getSnapshotPartsFromBody')->with($parsedPad->body)->willReturn([
+		$padFileService->method('getSnapshotPartsFromBody')->with($parsedPad->body())->willReturn([
 			'text' => 'plain text',
 			'html' => '',
 		]);
@@ -1257,7 +1257,7 @@ class RestoreServiceTest extends TestCase {
 			// Written by someone else while the new pad was seeded.
 			'doc-written-meanwhile' => new ParsedPadFile(frontmatter: [], body: 'newer body', padId: $oldPadId, accessMode: BindingService::ACCESS_PUBLIC, padUrl: '', isExternal: false, snapshotRev: $snapshotRev + 1, savedText: 'newer text'),
 		});
-		$padFileService->method('getSnapshotPartsFromBody')->with($parsedPad->body)->willReturn(['text' => 'plain text', 'html' => $html]);
+		$padFileService->method('getSnapshotPartsFromBody')->with($parsedPad->body())->willReturn(['text' => 'plain text', 'html' => $html]);
 		$padFileService->method('withRestoredSnapshot')->willReturnCallback(
 			function (ParsedPadFile $pad, string $text, string $html, string $padId, string $padUrl, int $revision = -1): string {
 				$this->restoredRevision = $revision;

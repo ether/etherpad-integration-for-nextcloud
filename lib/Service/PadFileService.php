@@ -112,7 +112,7 @@ class PadFileService {
 		// sectioned body here rather than building a document and parsing it
 		// straight back to put the snapshot in.
 		$frontmatter['snapshot_rev'] = $snapshot->revision;
-		return $this->serialize($frontmatter, $this->buildSnapshotBody($snapshot->text, $snapshot->html));
+		return $this->serialize($frontmatter, $this->buildSnapshotBody($snapshot->text(), $snapshot->html()));
 	}
 
 	/** @return array{url: string, pad_id: string}|null */
@@ -225,7 +225,7 @@ class PadFileService {
 		string $padUrl,
 		int $revision = -1,
 	): string {
-		$frontmatter = $pad->frontmatter;
+		$frontmatter = $pad->frontmatter();
 		$frontmatter['state'] = BindingService::STATE_ACTIVE;
 		$frontmatter['updated_at'] = $this->nowIso();
 		$frontmatter['deleted_at'] = null;
@@ -239,11 +239,11 @@ class PadFileService {
 	}
 
 	public function withExportSnapshot(ParsedPadFile $pad, PadSnapshot $snapshot): string {
-		$frontmatter = $pad->frontmatter;
+		$frontmatter = $pad->frontmatter();
 		$frontmatter['updated_at'] = $this->nowIso();
 		$frontmatter['snapshot_rev'] = $snapshot->revision;
 
-		return $this->serialize($frontmatter, $this->buildSnapshotBody($snapshot->text, $snapshot->html));
+		return $this->serialize($frontmatter, $this->buildSnapshotBody($snapshot->text(), $snapshot->html()));
 	}
 
 	/** @param array<string,mixed> $frontmatter */

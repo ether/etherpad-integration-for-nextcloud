@@ -15,14 +15,21 @@ use OCA\EtherpadNextcloud\Exception\ExternalPadException;
  * `parsePadFile + extractPadMetadata + isExternalFrontmatter` read that
  * used to be open-coded at every caller. Most call sites only need the
  * derived flat fields (`padId`, `accessMode`, `padUrl`, `isExternal`);
- * `$frontmatter` + `$body` are exposed for the few sites that touch other
- * frontmatter keys or need to inspect the body block.
+ * frontmatter(), body() and savedText() are there for the few sites that
+ * touch other frontmatter keys or the document.
+ *
+ * Those three are private fields behind methods, not public ones: this
+ * object is an argument of most frames a pad travels through, and
+ * Nextcloud writes the public fields of every object argument into the
+ * trace of an exception it serializes (get_object_vars()). A private
+ * field leaves the class name there and nothing of the document, in
+ * whatever method takes the object next.
  */
 class ParsedPadFile {
 	public function __construct(
 		/** @var array<string,mixed> */
-		public readonly array $frontmatter,
-		public readonly string $body,
+		private readonly array $frontmatter,
+		private readonly string $body,
 		public readonly string $padId,
 		public readonly string $accessMode,
 		public readonly string $padUrl,
@@ -33,8 +40,22 @@ class ParsedPadFile {
 		 * it: readPad() splits the body once. Empty for a file read
 		 * otherwise, as in tests that do not ask for it.
 		 */
-		public readonly string $savedText = '',
+		private readonly string $savedText = '',
 	) {
+	}
+
+	/** @return array<string,mixed> */
+	public function frontmatter(): array {
+		return $this->frontmatter;
+	}
+
+	/** The file below its frontmatter: the snapshot's sections. */
+	public function body(): string {
+		return $this->body;
+	}
+
+	public function savedText(): string {
+		return $this->savedText;
 	}
 
 	/**

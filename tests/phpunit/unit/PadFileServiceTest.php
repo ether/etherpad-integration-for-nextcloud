@@ -239,12 +239,12 @@ class PadFileServiceTest extends TestCase {
 		$updated = $service->withExportSnapshot($service->readPad($base), new PadSnapshot("line-a\nline-b", '<p>line-a</p>', 7));
 
 		$parsed = $service->readPad($updated);
-		$this->assertSame(7, $parsed->frontmatter['snapshot_rev']);
+		$this->assertSame(7, $parsed->frontmatter()['snapshot_rev']);
 		$this->assertSame(
 			['text' => "line-a\nline-b", 'html' => '<p>line-a</p>'],
-			$service->getSnapshotPartsFromBody($parsed->body),
+			$service->getSnapshotPartsFromBody($parsed->body()),
 		);
-		$this->assertSame("line-a\nline-b", $parsed->savedText, 'read once, with the file');
+		$this->assertSame("line-a\nline-b", $parsed->savedText(), 'read once, with the file');
 	}
 
 	public function testWithExportSnapshotEmptyValuesOverwritePreviousSnapshot(): void {
@@ -258,8 +258,8 @@ class PadFileServiceTest extends TestCase {
 		$cleared = $service->withExportSnapshot($service->readPad($withContent), new PadSnapshot('', '', 6));
 
 		$parsed = $service->readPad($cleared);
-		$this->assertSame(['text' => '', 'html' => ''], $service->getSnapshotPartsFromBody($parsed->body));
-		$this->assertSame(6, $parsed->frontmatter['snapshot_rev']);
+		$this->assertSame(['text' => '', 'html' => ''], $service->getSnapshotPartsFromBody($parsed->body()));
+		$this->assertSame(6, $parsed->frontmatter()['snapshot_rev']);
 	}
 
 	/**
@@ -276,7 +276,7 @@ class PadFileServiceTest extends TestCase {
 		$this->assertStringEndsWith("[TEXT]\njust text\n[HTML-BEGIN]\n\n[HTML-END]", $textOnly);
 		$this->assertSame(
 			['text' => 'just text', 'html' => ''],
-			$service->getSnapshotPartsFromBody($service->readPad($textOnly)->body),
+			$service->getSnapshotPartsFromBody($service->readPad($textOnly)->body()),
 		);
 	}
 
@@ -290,7 +290,7 @@ class PadFileServiceTest extends TestCase {
 
 		$this->assertSame(
 			['text' => "just text\n", 'html' => ''],
-			$service->getSnapshotPartsFromBody($service->readPad($textOnly)->body),
+			$service->getSnapshotPartsFromBody($service->readPad($textOnly)->body()),
 		);
 	}
 
@@ -319,10 +319,10 @@ class PadFileServiceTest extends TestCase {
 		$this->assertSame($twoStep, $oneStep);
 
 		$parsed = $service->readPad($oneStep);
-		$this->assertSame(0, $parsed->frontmatter['snapshot_rev']);
+		$this->assertSame(0, $parsed->frontmatter()['snapshot_rev']);
 		$this->assertSame(
 			['text' => 'hello', 'html' => '<p>hello</p>'],
-			$service->getSnapshotPartsFromBody($parsed->body),
+			$service->getSnapshotPartsFromBody($parsed->body()),
 		);
 	}
 
@@ -345,9 +345,9 @@ class PadFileServiceTest extends TestCase {
 
 		$parsed = $service->readPad($document);
 
-		$this->assertSame($text, $service->getSnapshotPartsFromBody($parsed->body)['text']);
+		$this->assertSame($text, $service->getSnapshotPartsFromBody($parsed->body())['text']);
 		// And the real ones are still the ones the frontmatter carries.
-		$this->assertNotSame('in the body', $parsed->frontmatter['created_at']);
+		$this->assertNotSame('in the body', $parsed->frontmatter()['created_at']);
 	}
 
 	public function testBuildInitialDocumentWithoutHtmlWritesAnEmptySection(): void {
@@ -375,10 +375,10 @@ class PadFileServiceTest extends TestCase {
 		$this->assertSame($twoStep, $oneStep);
 
 		$parsed = $service->readPad($oneStep);
-		$this->assertSame(0, $parsed->frontmatter['snapshot_rev']);
+		$this->assertSame(0, $parsed->frontmatter()['snapshot_rev']);
 		$this->assertSame(
 			['text' => 'remote text', 'html' => ''],
-			$service->getSnapshotPartsFromBody($parsed->body),
+			$service->getSnapshotPartsFromBody($parsed->body()),
 		);
 	}
 
@@ -450,7 +450,7 @@ class PadFileServiceTest extends TestCase {
 			extraFrontmatter: ['remote_pad_id' => 'a' . $byte . 'b'],
 		);
 
-		$this->assertSame('a' . $byte . 'b', $service->readPad($document)->frontmatter['remote_pad_id']);
+		$this->assertSame('a' . $byte . 'b', $service->readPad($document)->frontmatter()['remote_pad_id']);
 	}
 
 	#[DataProvider('survivingFrontmatterBytes')]
@@ -501,7 +501,7 @@ class PadFileServiceTest extends TestCase {
 
 		$this->assertSame(
 			['text' => 'plain text', 'html' => '<p>HTML</p>'],
-			$service->getSnapshotPartsFromBody($service->readPad($document)->body),
+			$service->getSnapshotPartsFromBody($service->readPad($document)->body()),
 		);
 	}
 
@@ -528,7 +528,7 @@ class PadFileServiceTest extends TestCase {
 			new PadSnapshot('plain text', '<p>HTML</p>', 1),
 		) . $ending;
 
-		$parts = $service->getSnapshotPartsFromBody($service->readPad($document)->body);
+		$parts = $service->getSnapshotPartsFromBody($service->readPad($document)->body());
 
 		$this->assertSame('plain text', $parts['text']);
 		$this->assertSame('<p>HTML</p>', $parts['html']);
@@ -573,7 +573,7 @@ class PadFileServiceTest extends TestCase {
 		$this->assertNotSame($textOnly, $withHtml);
 		$this->assertSame(
 			['text' => $text, 'html' => ''],
-			$service->getSnapshotPartsFromBody($service->readPad($textOnly)->body),
+			$service->getSnapshotPartsFromBody($service->readPad($textOnly)->body()),
 		);
 	}
 
@@ -593,7 +593,7 @@ class PadFileServiceTest extends TestCase {
 			BindingService::ACCESS_PUBLIC,
 			new PadSnapshot('hallo', "<p>x</p>\n[HTML-BEGIN]\n<p>y</p>", 1),
 		);
-		$parts = $service->getSnapshotPartsFromBody($service->readPad($document)->body);
+		$parts = $service->getSnapshotPartsFromBody($service->readPad($document)->body());
 
 		$this->assertSame("hallo\n[HTML-BEGIN]\n<p>x</p>", $parts['text']);
 		$this->assertSame('<p>y</p>', $parts['html']);
@@ -610,7 +610,7 @@ class PadFileServiceTest extends TestCase {
 			BindingService::ACCESS_PUBLIC,
 			new PadSnapshot($text, '<p>HTML</p>', 1),
 		);
-		$parts = $service->getSnapshotPartsFromBody($service->readPad($document)->body);
+		$parts = $service->getSnapshotPartsFromBody($service->readPad($document)->body());
 
 		$this->assertSame($text, $parts['text']);
 		$this->assertSame('<p>HTML</p>', $parts['html']);
@@ -632,8 +632,8 @@ class PadFileServiceTest extends TestCase {
 		));
 
 		// Active and undeleted are not the caller's to get wrong any more.
-		$this->assertSame(BindingService::STATE_ACTIVE, $restored->frontmatter['state']);
-		$this->assertNull($restored->frontmatter['deleted_at']);
+		$this->assertSame(BindingService::STATE_ACTIVE, $restored->frontmatter()['state']);
+		$this->assertNull($restored->frontmatter()['deleted_at']);
 		$this->assertSame('new-pad', $restored->padId);
 		$this->assertSame('https://pad.example.test/p/new-pad', $restored->padUrl);
 		// The old pad's revision 4 means nothing to the new one: without the
@@ -649,7 +649,7 @@ class PadFileServiceTest extends TestCase {
 		))->snapshotRev);
 		$this->assertSame(
 			['text' => 'replaced text', 'html' => '<p>replaced html</p>'],
-			$service->getSnapshotPartsFromBody($restored->body),
+			$service->getSnapshotPartsFromBody($restored->body()),
 		);
 	}
 

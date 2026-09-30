@@ -85,7 +85,7 @@ class PadCreationServiceTest extends TestCase {
 				// Check identity, baseline and write evidence, not just the claim's type.
 				static fn (CreatedFileClaim $claim): bool => $claim->uid === 'alice'
 					&& $claim->fileId === 123
-					&& $claim->expectedBefore === ''
+					&& $claim->expectedBefore() === ''
 					&& $claim->writtenHash !== null
 			), 123);
 

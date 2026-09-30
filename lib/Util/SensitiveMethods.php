@@ -19,9 +19,18 @@ namespace OCA\EtherpadNextcloud\Util;
  * arguments no matter how this app logs, and that is the one case
  * discipline cannot cover. Hence a list.
  *
- * What earns an entry is not how secret an argument reads but whether it
- * can still be read once the app has lost the exception: credentials,
- * and the documents on the routes that rethrow rather than handle.
+ * What earns an entry is a method that takes a credential or a document
+ * as a string. Not the route it is on: whether an exception can leave
+ * the app from there is a property of today's callers - a listener that
+ * rethrows, a mapper that catches - and the next caller need not share
+ * it. Nor whether the method can throw, which its next edit decides. An
+ * entry costs nothing, so the rule asks for no judgement.
+ *
+ * A document needs an entry only where it is a string. The objects it
+ * travels in - ParsedPadFile, PadSnapshot, LivePadHtml, CreatedFileClaim -
+ * keep it in private fields, which the serializer does not read: a
+ * method that takes one of those needs none, and
+ * DocumentStaysOutOfTracesTest holds them to it.
  *
  * Two limits. It reaches the serializer only, so a throwable logged
  * under any key but 'exception' is normalized elsewhere and no entry
@@ -30,7 +39,16 @@ namespace OCA\EtherpadNextcloud\Util;
  * list helps and the chain has to be cut instead.
  *
  * A list of names goes stale in silence, so SensitiveMethodsTest checks
- * that every entry still resolves.
+ * that every entry still resolves, and reads the source for methods that
+ * take a document as a string and are not here. Credentials it does not
+ * look for.
+ *
+ * The list has an end. From PHP 8.2 on, #[\SensitiveParameter] on the
+ * parameter does this in the trace itself, for every reader of it, and
+ * stands for an entry here one for one. On PHP 8.1 the attribute does
+ * nothing, and Nextcloud 32 still runs there. Once the app's floor is a
+ * Nextcloud that needs PHP 8.2, as 33 does, the attribute takes over and
+ * the list goes; keeping both until then would be the same thing twice.
  */
 final class SensitiveMethods {
 	/** @var array<class-string, list<string>> */
@@ -42,27 +60,30 @@ final class SensitiveMethods {
 		\OCA\EtherpadNextcloud\Service\EtherpadClient::class => [
 			'deleteSession', 'setText', 'setHTML', 'apiCall', 'sendRequest', 'formBody',
 		],
-		// The document itself, as an argument.
-		\OCA\EtherpadNextcloud\Service\ManagedPadLifecycle::class => ['seed'],
-		// And on its way out of the file, which is the half a pad travels
-		// when the trash listener rethrows what it caught. A restore reads
-		// and writes it through these too, kept for the reason given at
-		// RestoreService below.
+		// The document as a string, wherever a method takes it so: handed
+		// to Etherpad or compared with what it holds, read from the file
+		// and split, put together and written, a template filled in or
+		// stored, a pad's HTML made safe to show.
+		\OCA\EtherpadNextcloud\Service\ManagedPadLifecycle::class => ['seed', 'isMadeAnew'],
 		\OCA\EtherpadNextcloud\Service\PadFileService::class => [
-			'parsePadFile', 'readPad', 'serialize',
-			'withExportSnapshot', 'withRestoredSnapshot', 'buildSnapshotBody',
-		],
-		// The same document one frame on, carried from frame to frame as the
-		// parsed file, whose public fields the serializer writes out. No
-		// restore route lets an exception go since its listener reports what
-		// it catches; these stay until the document leaves public fields, so
-		// that a route that lets go again does not bring the document back
-		// into the log.
-		\OCA\EtherpadNextcloud\Service\RestoreService::class => [
-			'restoreOntoNewPad', 'seedFromSnapshot', 'replaceLostPad', 'restoreWithoutBinding',
+			'parsePadFile', 'readPad', 'serialize', 'parseLegacyOwnpadShortcut',
+			'withRestoredSnapshot', 'buildSnapshotBody', 'getSnapshotPartsFromBody', 'splitSnapshotBody',
 		],
 		\OCA\EtherpadNextcloud\Service\PadFileLockRetryService::class => ['putContentWithSyncLockRetry'],
 		\OCA\EtherpadNextcloud\Service\PadCreationService::class => ['writeCreatedFile'],
+		\OCA\EtherpadNextcloud\Service\PadCreateAttempt::class => ['claimFile'],
+		\OCA\EtherpadNextcloud\Service\PadBootstrapService::class => ['initializeMissingFrontmatter', 'writeInitialDocument'],
+		\OCA\EtherpadNextcloud\Service\PadPlaceholderResolver::class => ['applyForContent', 'applyInternal'],
+		\OCA\EtherpadNextcloud\Service\PadTemplateAdminService::class => ['add'],
+		\OCA\EtherpadNextcloud\Service\PadTemplateStorage::class => ['addGlobalTemplate'],
+		\OCA\EtherpadNextcloud\Service\SnapshotHtmlSanitizer::class => ['sanitize'],
+		\OCA\EtherpadNextcloud\Service\LivePadHtmlFetcher::class => ['toPayload'],
+		// And where it is a string for the last time: the constructors of
+		// the objects that carry it from there.
+		\OCA\EtherpadNextcloud\Service\ParsedPadFile::class => ['__construct'],
+		\OCA\EtherpadNextcloud\Service\PadSnapshot::class => ['__construct'],
+		\OCA\EtherpadNextcloud\Service\LivePadHtml::class => ['__construct'],
+		\OCA\EtherpadNextcloud\Service\CreatedFileClaim::class => ['__construct'],
 		// The Etherpad session cookie, which is a live credential.
 		\OCA\EtherpadNextcloud\Service\PadSessionService::class => [
 			'buildEtherpadSessionCookie', 'buildSetCookieHeader',

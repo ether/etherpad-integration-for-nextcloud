@@ -145,7 +145,7 @@ class PublicPadContextServiceTest extends TestCase {
 		);
 
 		// No cached share: this call resolves the token itself.
-		$this->assertSame('<p>Now</p>', $service->resolveContent('token', '')->html);
+		$this->assertSame('<p>Now</p>', $service->resolveContent('token', '')->html());
 	}
 	/** A row that does not match reaches the caller as it is, and nothing is opened. */
 	public function testABindingErrorReachesTheCallerAsItIs(): void {

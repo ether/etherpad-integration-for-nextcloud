@@ -150,7 +150,7 @@ class RestoreService {
 	 * @return array{string,string} the new pad's id, and the content that names it
 	 */
 	private function seedFromSnapshot(int $fileId, ParsedPadFile $pad, string $accessMode, string $oldPadId): array {
-		$snapshot = $this->padFileService->getSnapshotPartsFromBody($pad->body);
+		$snapshot = $this->padFileService->getSnapshotPartsFromBody($pad->body());
 		$newPadId = $this->provisionRestorePadId($accessMode, $oldPadId);
 		try {
 			// Nobody else knows the new pad's id yet to have changed it, so
@@ -292,10 +292,10 @@ class RestoreService {
 		if ($pad->isExternal || $pad->padId !== $binding->padId) {
 			return self::REASON_ROW_NAMES_OTHER_PAD;
 		}
-		if (!ManagedPadLifecycle::holdsSavedContent($binding->accessMode, $pad->snapshotRev, $pad->savedText)) {
+		if (!ManagedPadLifecycle::holdsSavedContent($binding->accessMode, $pad)) {
 			return self::REASON_NOTHING_SAVED;
 		}
-		$lost = $this->padLifecycle->howLost($binding->padId, $binding->accessMode, $pad->snapshotRev, $pad->savedText);
+		$lost = $this->padLifecycle->howLost($binding->padId, $binding->accessMode, $pad);
 		return $lost === null ? self::REASON_PAD_PRESENT : [$pad, $lost];
 	}
 

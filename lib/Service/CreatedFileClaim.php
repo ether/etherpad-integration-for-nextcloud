@@ -21,8 +21,16 @@ class CreatedFileClaim {
 	public function __construct(
 		public readonly string $uid,
 		public readonly int $fileId,
-		/** Initially empty for API creates; copied template content for the hook. */
-		public readonly string $expectedBefore = '',
+		/**
+		 * Initially empty for API creates; copied template content for the
+		 * hook. Private behind its method, for the reason given at
+		 * ParsedPadFile: it is a document.
+		 */
+		private readonly string $expectedBefore = '',
 	) {
+	}
+
+	public function expectedBefore(): string {
+		return $this->expectedBefore;
 	}
 }

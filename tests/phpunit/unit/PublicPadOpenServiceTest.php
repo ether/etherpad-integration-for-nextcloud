@@ -103,7 +103,7 @@ class PublicPadOpenServiceTest extends TestCase {
 	public function testAPadEtherpadHasLostIsNotOpenedForWriting(): void {
 		foreach ([BindingService::ACCESS_PROTECTED, BindingService::ACCESS_PUBLIC] as $accessMode) {
 			$lifecycle = $this->createMock(ManagedPadLifecycle::class);
-			$lifecycle->expects($this->once())->method('isKnownLost')->with('pad-1', $accessMode, 5, 'Saved in the file')->willReturn(true);
+			$lifecycle->expects($this->once())->method('isKnownLost')->with('pad-1', $accessMode, $this->callback(static fn (ParsedPadFile $pad): bool => $pad->snapshotRev === 5 && $pad->savedText() === 'Saved in the file'))->willReturn(true);
 			$sessions = $this->createMock(PadSessionService::class);
 			$sessions->expects($this->never())->method('createProtectedOpenContext');
 			try {

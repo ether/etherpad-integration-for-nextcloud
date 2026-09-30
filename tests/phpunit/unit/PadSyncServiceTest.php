@@ -260,7 +260,7 @@ class PadSyncServiceTest extends TestCase {
 		$padFileService->method('readPad')->with('frontmatter')->willReturn($parsedPad);
 		$padFileService->expects($this->once())
 			->method('getSnapshotPartsFromBody')
-			->with($parsedPad->body)
+			->with($parsedPad->body())
 			->willReturn(['text' => 'previous text', 'html' => '']);
 		$padFileService->expects($this->once())
 			->method('withExportSnapshot')
@@ -341,7 +341,7 @@ class PadSyncServiceTest extends TestCase {
 
 		$this->assertSame(PadSyncService::STATUS_UPDATED, $result->status);
 		$this->assertSame(3, $formatter->readPad((string)$written)->snapshotRev);
-		$this->assertSame('new edit', $formatter->getSnapshotPartsFromBody($formatter->readPad((string)$written)->body)['text']);
+		$this->assertSame('new edit', $formatter->getSnapshotPartsFromBody($formatter->readPad((string)$written)->body())['text']);
 	}
 
 	/**

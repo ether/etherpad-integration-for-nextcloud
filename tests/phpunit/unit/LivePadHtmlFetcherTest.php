@@ -26,7 +26,7 @@ class LivePadHtmlFetcherTest extends TestCase {
 
 		$result = $this->buildFetcher($client)->fetchForPadFile($this->pad(), 138);
 
-		$this->assertSame('<h1>Title</h1><p>Body</p>', $result->html);
+		$this->assertSame('<h1>Title</h1><p>Body</p>', $result->html());
 		$this->assertFalse($result->isEmpty);
 	}
 
@@ -76,7 +76,7 @@ class LivePadHtmlFetcherTest extends TestCase {
 		$result = $this->buildFetcher(externalPadExportFetcher: $external, bindingService: $bindings)
 			->fetchForPadFile($this->externalPad(), 138);
 
-		$this->assertSame('<p>Remote</p>', $result->html);
+		$this->assertSame('<p>Remote</p>', $result->html());
 	}
 
 	/** The rule for an external pad's metadata is ParsedPadFile::externalPadUrl()'s; the fetcher holds it. */

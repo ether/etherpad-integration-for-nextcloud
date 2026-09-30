@@ -15,6 +15,7 @@ use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\EtherpadNextcloud\Service\EtherpadClient;
 use OCA\EtherpadNextcloud\Service\ManagedPadLifecycle;
 use OCA\EtherpadNextcloud\Service\PadPresence;
+use OCA\EtherpadNextcloud\Service\ParsedPadFile;
 use OCA\EtherpadNextcloud\Service\RunBudget;
 use OCA\EtherpadNextcloud\Tests\Support\FixedClock;
 use PHPUnit\Framework\TestCase;
@@ -67,14 +68,14 @@ class ManagedPadLifecycleTest extends TestCase {
 			$answer instanceof \Throwable ? $call->willThrowException($answer) : $call->willReturn($answer);
 			$client->method('getText')->with('pad-1', ManagedPadLifecycle::PROBE_TIMEOUT_SECONDS)->willReturn($padText);
 
-			$this->assertSame($lost, $this->lifecycle($client)->howLost('pad-1', $accessMode, $snapshot, $savedText), $case);
+			$this->assertSame($lost, $this->lifecycle($client)->howLost('pad-1', $accessMode, self::fileSaved($snapshot, $savedText)), $case);
 		}
 
 		foreach ([new EtherpadClientException('Etherpad API request failed'), new EtherpadRefusedException('apikey is invalid')] as $error) {
 			$client = $this->createMock(EtherpadClient::class);
 			$client->method('getRevisionsCount')->willThrowException($error);
 			try {
-				$this->lifecycle($client)->howLost('pad-1', BindingService::ACCESS_PROTECTED, 5, 'Saved text');
+				$this->lifecycle($client)->howLost('pad-1', BindingService::ACCESS_PROTECTED, self::fileSaved(5, 'Saved text'));
 				$this->fail('no answer taken for an answer: ' . $error->getMessage());
 			} catch (EtherpadClientException $e) {
 				$this->assertSame($error, $e);
@@ -434,6 +435,20 @@ class ManagedPadLifecycleTest extends TestCase {
 		);
 	}
 
+	/** A file as readPad() gives it, of which only what it saved matters here. */
+	private static function fileSaved(int $snapshotRev, string $savedText): ParsedPadFile {
+		return new ParsedPadFile(
+			frontmatter: [],
+			body: '',
+			padId: 'pad-1',
+			accessMode: BindingService::ACCESS_PUBLIC,
+			padUrl: '',
+			isExternal: false,
+			snapshotRev: $snapshotRev,
+			savedText: $savedText,
+		);
+	}
+
 	/** A public pad with nothing saved in its file is never lost: Etherpad is not asked about it. */
 	public function testAPublicPadWithNothingSavedIsNotAskedAbout(): void {
 		$client = $this->createMock(EtherpadClient::class);
@@ -441,7 +456,7 @@ class ManagedPadLifecycleTest extends TestCase {
 
 		foreach ([-1, 0] as $snapshot) {
 			foreach (['', "\n", " \r\n"] as $savedText) {
-				$this->assertNull($this->lifecycle($client)->howLost('pad-1', BindingService::ACCESS_PUBLIC, $snapshot, $savedText));
+				$this->assertNull($this->lifecycle($client)->howLost('pad-1', BindingService::ACCESS_PUBLIC, self::fileSaved($snapshot, $savedText)));
 			}
 		}
 	}
@@ -453,14 +468,14 @@ class ManagedPadLifecycleTest extends TestCase {
 	public function testAnOpenStopsOnlyForAPadKnownLost(): void {
 		$gone = $this->createMock(EtherpadClient::class);
 		$gone->method('getRevisionsCount')->willThrowException(new EtherpadRefusedException('padID does not exist'));
-		$this->assertTrue($this->lifecycle($gone)->isKnownLost('pad-1', BindingService::ACCESS_PROTECTED, 5, 'Saved text'));
+		$this->assertTrue($this->lifecycle($gone)->isKnownLost('pad-1', BindingService::ACCESS_PROTECTED, self::fileSaved(5, 'Saved text')));
 
 		foreach ([new EtherpadClientException('Etherpad API request failed'), new EtherpadRefusedException('apikey is invalid')] as $error) {
 			$client = $this->createMock(EtherpadClient::class);
 			$client->method('getRevisionsCount')->willThrowException($error);
 			$logger = $this->createMock(LoggerInterface::class);
 			$logger->expects($this->once())->method('debug')->with('Could not ask Etherpad whether a pad is lost; opened as before.', $this->anything());
-			$this->assertFalse((new ManagedPadLifecycle($client, $logger))->isKnownLost('pad-1', BindingService::ACCESS_PROTECTED, 5, 'Saved text'), $error->getMessage());
+			$this->assertFalse((new ManagedPadLifecycle($client, $logger))->isKnownLost('pad-1', BindingService::ACCESS_PROTECTED, self::fileSaved(5, 'Saved text')), $error->getMessage());
 		}
 
 		// A fault of the check itself opens the pad too, but says so aloud.
@@ -469,7 +484,7 @@ class ManagedPadLifecycleTest extends TestCase {
 		$logger = $this->createMock(LoggerInterface::class);
 		$logger->expects($this->never())->method('debug');
 		$logger->expects($this->once())->method('warning')->with('Could not tell whether a pad is lost; opened as before.', $this->anything());
-		$this->assertFalse((new ManagedPadLifecycle($broken, $logger))->isKnownLost('pad-1', BindingService::ACCESS_PROTECTED, 5, 'Saved text'));
+		$this->assertFalse((new ManagedPadLifecycle($broken, $logger))->isKnownLost('pad-1', BindingService::ACCESS_PROTECTED, self::fileSaved(5, 'Saved text')));
 	}
 
 	/** Seeding says how many revisions the pad has then: what its file records as synced. */
