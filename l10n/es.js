@@ -237,6 +237,7 @@ OC.L10N.register(
     "No vanished file was left to mark for deletion.": "No quedaba ningún archivo desaparecido que marcar para eliminarlo.",
     "Only a public pad can be forgotten. Delete a protected one instead.": "Solo se puede olvidar un pad público. Elimina uno protegido en su lugar.",
     "Invalid count.": "Cantidad no válida.",
-    "Could not delete the pads of all vanished files. Some may be marked for deletion already: check the list again.": "No se pudieron eliminar los pads de todos los archivos desaparecidos. Puede que algunos ya estén marcados para eliminarse: vuelve a comprobar la lista."
+    "Could not delete the pads of all vanished files. Some may be marked for deletion already: check the list again.": "No se pudieron eliminar los pads de todos los archivos desaparecidos. Puede que algunos ya estén marcados para eliminarse: vuelve a comprobar la lista.",
+    "The pads of the vanished files shown are marked for deletion. More files have vanished since: check the list before deleting their pads.": "Los pads de los archivos desaparecidos mostrados están marcados para eliminarse. Desde entonces han desaparecido más archivos: revisa la lista antes de eliminar sus pads."
 },
 "nplurals=2; plural=(n != 1);");

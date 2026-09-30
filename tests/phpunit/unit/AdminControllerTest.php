@@ -254,14 +254,18 @@ class AdminControllerTest extends TestCase {
 	/**
 	 * What deleting them all came to, said as it is: nothing left to mark
 	 * only when none is left; the rest for another run, also when the
-	 * budget ran out before the first mark; deleting switched off. A
+	 * budget ran out before the first mark; files vanished since, when
+	 * all confirmed are marked and the list is not empty - those the admin
+	 * was not shown, and is not told to run it again for; deleting
+	 * switched off. A
 	 * failure says that some may be marked already: a chunk that fails
 	 * leaves the marks before it standing.
 	 */
 	public function testDeleteAllVanishedSaysWhatItDidNot(): void {
 		$cases = [
 			'none left' => [true, 0, 0, 'No vanished file was left to mark for deletion.'],
-			'more than a run' => [true, 500, 7, 'Not every vanished file could be marked in one go. Run it again for the rest.'],
+			'more than a run' => [true, 5, 7, 'Not every vanished file could be marked in one go. Run it again for the rest.'],
+			'all confirmed marked, more vanished since' => [true, 12, 3, 'The pads of the vanished files shown are marked for deletion. More files have vanished since: check the list before deleting their pads.'],
 			'budget spent before the first mark' => [true, 0, 1, 'Not every vanished file could be marked in one go. Run it again for the rest.'],
 			'deleting off' => [false, 0, 12, 'Deleting pads is switched off, so no pad was marked for deletion.'],
 		];

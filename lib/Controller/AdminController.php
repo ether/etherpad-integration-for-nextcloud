@@ -210,9 +210,13 @@ class AdminController extends Controller {
 				return ['message' => match (true) {
 					!$deleting => $this->deletingOff(),
 					$marked === null => $this->l10n->t('The list of vanished files has changed since it was shown, so no pad was marked for deletion. Check it again.'),
-					// Some are left - the budget ran out, before the first
-					// mark even - and none left to mark is said only of none.
-					$result['vanished_file_count'] > 0 => $this->l10n->t('Not every vanished file could be marked in one go. Run it again for the rest.'),
+					// Some of those confirmed are left - the budget ran out,
+					// before the first mark even - and none left to mark is
+					// said only of none.
+					$result['vanished_file_count'] > 0 && $marked < $expected => $this->l10n->t('Not every vanished file could be marked in one go. Run it again for the rest.'),
+					// All confirmed are marked, and the list is not empty:
+					// files vanished since, which the admin was not shown.
+					$result['vanished_file_count'] > 0 => $this->l10n->t('The pads of the vanished files shown are marked for deletion. More files have vanished since: check the list before deleting their pads.'),
 					$marked === 0 => $this->l10n->t('No vanished file was left to mark for deletion.'),
 					default => $this->l10n->t('The pads of the vanished files are marked for deletion. They are deleted within minutes, or at once with "Check pending pads".'),
 				}] + $result;

@@ -236,7 +236,8 @@
         "No vanished file was left to mark for deletion.": "Non restava alcun file scomparso da contrassegnare per l'eliminazione.",
         "Only a public pad can be forgotten. Delete a protected one instead.": "Solo un pad pubblico può essere dimenticato. Elimina invece un pad protetto.",
         "Invalid count.": "Numero non valido.",
-        "Could not delete the pads of all vanished files. Some may be marked for deletion already: check the list again.": "Non è stato possibile eliminare i pad di tutti i file scomparsi. Alcuni potrebbero essere già contrassegnati per l'eliminazione: controlla di nuovo l'elenco."
+        "Could not delete the pads of all vanished files. Some may be marked for deletion already: check the list again.": "Non è stato possibile eliminare i pad di tutti i file scomparsi. Alcuni potrebbero essere già contrassegnati per l'eliminazione: controlla di nuovo l'elenco.",
+        "The pads of the vanished files shown are marked for deletion. More files have vanished since: check the list before deleting their pads.": "I pad dei file scomparsi mostrati sono contrassegnati per l'eliminazione. Nel frattempo sono scomparsi altri file: controlla l'elenco prima di eliminare i loro pad."
     },
     "pluralForm": "nplurals=2; plural=(n != 1);"
 }

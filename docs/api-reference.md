@@ -407,7 +407,10 @@ solely by the separate external-pad policy, not by these two settings.
     as it is now, to be confirmed again. What is left after one call
     needs another. Up to 500,000 rows the count is that of the rows
     collected; a longer list is counted by a query of its own.
-  - Result: `marked`, and the list as for `delete-vanished`.
+  - Result: `marked`, and the list as for `delete-vanished`. A list not
+    empty after the call is one of two things, and `message` says which:
+    fewer marked than confirmed, and the rest for another call; or all
+    confirmed marked, and files vanished since, to be looked at first.
   - `400` with `Invalid count.` without a positive `expected`.
   - `500` when a chunk of marks fails: the marks before it stand, `message`
     says some may be marked already, and the log has their count.
