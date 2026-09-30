@@ -393,16 +393,15 @@ solely by the separate external-pad policy, not by these two settings.
   - Result: `marked` (`1` or `0`), and the list as it is after the
     action, as `consistency-check` gives it (`vanished_file_count`,
     `samples`), with `pending_delete_count`.
-  - `400` with `Invalid file ID.` without a positive `fileId`: a request
-    the server cannot read never falls to all of them.
+  - `400` with `Invalid file ID.` without a positive `fileId`.
 
 - `POST /api/v1/admin/delete-all-vanished`
   - Controller: `AdminController::deleteAllVanished`
   - Auth: admin only
   - Params: `expected`, the count of vanished files the admin was shown
     and confirmed
-  - Purpose: every vanished row marked as for `delete-vanished`, in
-    chunks within the budget a sweep has, and never more than `expected`.
+  - Purpose: every vanished row marked as for `delete-vanished`, within
+    the budget a sweep has, and never more than `expected`.
     A list whose count is no longer `expected` - grown since it was shown,
     say - is not taken: nothing is marked, and the answer carries the list
     as it is now, to be confirmed again. What is left after one call

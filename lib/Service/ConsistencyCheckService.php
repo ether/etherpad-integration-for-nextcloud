@@ -15,8 +15,11 @@ use OCP\IDBConnection;
 use Psr\Log\LoggerInterface;
 
 class ConsistencyCheckService {
-	/** The rows marked in one go: one query finds them, one marks them. */
+	/** The rows one update marks. */
 	private const MARK_CHUNK = 500;
+
+	/** The ids one call collects: what a budget can mark, in a few megabytes. */
+	private const MARK_MAX = 500_000;
 
 	/** What forgetVanished() came to. */
 	public const FORGOTTEN = 'forgotten';
@@ -60,24 +63,22 @@ class ConsistencyCheckService {
 	 * deletes their pads as it does those of any file deleted for good,
 	 * asking the file cache once more first. $limit is what the admin was
 	 * shown and confirmed, so a list that grew meanwhile - a team folder
-	 * deleted as a whole since - takes no more than that. In chunks, found
-	 * by the same query that lists them, until $limit or none is left, or
-	 * $budget is spent.
+	 * deleted as a whole since - takes no more than that.
+	 *
+	 * Their ids are collected once, MARK_MAX of them at most, and marked in
+	 * chunks until $budget is spent: the query reads the whole file cache
+	 * whatever its limit, so asked again for every chunk it made a long
+	 * list take several calls.
 	 *
 	 * @return int how many rows the marks changed
 	 */
 	public function markVanished(RunBudget $budget, int $limit): int {
 		$marked = 0;
-		while ($marked < $limit && !$budget->exhausted()) {
-			$size = min(self::MARK_CHUNK, $limit - $marked);
-			$fileIds = array_values(array_map(static fn (array $row): int => DbRows::int($row, 'file_id'), $this->vanishedRows(['b.file_id'], $size)));
-			$chunk = $this->bindingService->markGone($fileIds);
-			$marked += $chunk;
-			// A short chunk was the last; one that changed nothing - its rows
-			// changed meanwhile - would only be asked again.
-			if (count($fileIds) < $size || $chunk === 0) {
+		foreach (array_chunk($this->vanishedFileIds(min($limit, self::MARK_MAX)), self::MARK_CHUNK) as $chunk) {
+			if ($budget->exhausted()) {
 				break;
 			}
+			$marked += $this->bindingService->markGone($chunk);
 		}
 		if ($marked > 0) {
 			// The sweep's lines that follow read as deletions seen; this says
@@ -104,13 +105,11 @@ class ConsistencyCheckService {
 
 	/**
 	 * One vanished file's row removed on an admin's word, its public pad
-	 * left in Etherpad, which the app no longer looks after
-	 * (docs/deleting-pads.md says what for). Only while the row is still
-	 * vanished - active, its file gone from the file cache - and only a
-	 * public pad's: a protected pad without a row keeps the sessions made
-	 * for it, and becomes a group pad a legacy import could claim
-	 * (docs/legacy-ownpad-migration.md). The pad's id goes to the log, the
-	 * one place left that knows it.
+	 * left in Etherpad, which the app no longer looks after. Only while the
+	 * row is still vanished - active, its file gone from the file cache -
+	 * and only a public pad's (docs/deleting-pads.md says what for, and why
+	 * not a protected one). The pad's id goes to the log, the one place
+	 * left that knows it.
 	 *
 	 * @return string FORGOTTEN, NOT_VANISHED, or PROTECTED_PAD for a protected pad, left as it is
 	 */
@@ -172,6 +171,32 @@ class ConsistencyCheckService {
 	 * @return array<int,array<string,mixed>>
 	 */
 	private function vanishedRows(array $columns, int $limit): array {
+		$result = $this->firstVanished($columns, $limit)->executeQuery();
+		$rows = DbRows::all($result->fetchAll());
+		$result->closeCursor();
+		return $rows;
+	}
+
+	/**
+	 * The file ids of the first $limit vanished rows, read row by row: a
+	 * list of numbers, not a row each, for as many as MARK_MAX.
+	 *
+	 * @return list<int>
+	 */
+	private function vanishedFileIds(int $limit): array {
+		$result = $this->firstVanished(['b.file_id'], $limit)->executeQuery();
+		$fileIds = [];
+		while (($row = DbRows::one($result->fetch())) !== null) {
+			$fileIds[] = DbRows::int($row, 'file_id');
+		}
+		$result->closeCursor();
+		return $fileIds;
+	}
+
+	/**
+	 * @param list<string> $columns
+	 */
+	private function firstVanished(array $columns, int $limit): IQueryBuilder {
 		$qb = $this->db->getQueryBuilder();
 		$qb->select(...$columns)
 			->from(BindingService::TABLE, 'b')
@@ -180,10 +205,6 @@ class ConsistencyCheckService {
 		$this->vanished($qb)
 			->orderBy('b.file_id', 'ASC')
 			->setMaxResults($limit);
-
-		$result = $qb->executeQuery();
-		$rows = DbRows::all($result->fetchAll());
-		$result->closeCursor();
-		return $rows;
+		return $qb;
 	}
 }

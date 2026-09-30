@@ -282,9 +282,8 @@ class AdminControllerTest extends TestCase {
 
 	/**
 	 * Each action names what it takes, or is refused before anything is
-	 * marked: no `fileId`, an empty one, or one that is no number; no
-	 * `expected` count. A request the server cannot read never falls to
-	 * all of them.
+	 * marked: none sent, or one that is no positive whole number - which
+	 * those are is PositiveIntParam's, tested there.
 	 */
 	public function testTheActionsRefuseWhatNamesNothing(): void {
 		$consistency = $this->createMock(ConsistencyCheckService::class);
@@ -292,15 +291,15 @@ class AdminControllerTest extends TestCase {
 		$consistency->expects($this->never())->method('markVanishedFile');
 		$consistency->expects($this->never())->method('forgetVanished');
 
-		foreach ([[], ['fileId' => ''], ['fileId' => '7x'], ['fileId' => '0']] as $payload) {
-			foreach (['deleteVanished', 'forgetVanished'] as $action) {
-				$response = $this->buildController(request: $this->request($payload), consistencyCheck: $consistency)->$action();
-				$this->assertSame([Http::STATUS_BAD_REQUEST, 'Invalid file ID.'], [$response->getStatus(), $response->getData()['message']], $action . ' ' . json_encode($payload));
-			}
-		}
-		foreach ([[], ['expected' => ''], ['fileId' => '42']] as $payload) {
-			$response = $this->buildController(request: $this->request($payload), consistencyCheck: $consistency)->deleteAllVanished();
-			$this->assertSame([Http::STATUS_BAD_REQUEST, 'Invalid count.'], [$response->getStatus(), $response->getData()['message']], json_encode($payload));
+		$refusals = [
+			'delete one, none sent' => ['deleteVanished', [], 'Invalid file ID.'],
+			'delete one, no number' => ['deleteVanished', ['fileId' => '7x'], 'Invalid file ID.'],
+			'forget, none sent' => ['forgetVanished', [], 'Invalid file ID.'],
+			'delete all, no count' => ['deleteAllVanished', [], 'Invalid count.'],
+		];
+		foreach ($refusals as $case => [$action, $payload, $message]) {
+			$response = $this->buildController(request: $this->request($payload), consistencyCheck: $consistency)->$action();
+			$this->assertSame([Http::STATUS_BAD_REQUEST, $message], [$response->getStatus(), $response->getData()['message']], $case);
 		}
 	}
 

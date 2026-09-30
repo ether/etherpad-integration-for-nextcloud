@@ -636,8 +636,7 @@ import { handFocusTo } from './lib/hand-focus.js'
 		const actions = [
 			{ url: deleteVanishedUrl, text: l10n.vanishedDeleteOne, label: l10n.vanishedDeleteLabel, confirm: l10n.deleteVanishedOneConfirm, running: l10n.deleteVanishedOneRunning, failed: l10n.deleteVanishedFailed, doneKey: 'marked' },
 		]
-		// Only a public pad is forgotten: a protected one would keep its
-		// sessions, and its group could be claimed by a legacy import.
+		// Only a public pad is forgotten (docs/deleting-pads.md says why).
 		if (row.access_mode === 'public') {
 			actions.push({ url: forgetVanishedUrl, text: l10n.vanishedForgetOne, label: l10n.vanishedForgetLabel, confirm: l10n.forgetVanishedConfirm, running: l10n.forgetVanishedRunning, failed: l10n.forgetVanishedFailed, doneKey: 'forgotten' })
 		}

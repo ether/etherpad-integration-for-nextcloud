@@ -42,7 +42,8 @@ class ConsistencyCheckServiceTest extends TestCase {
 	 * good, dated now, for the sweep to take: past one chunk, up to the
 	 * count the admin confirmed and no further, and nothing else - not a
 	 * row whose file is there, nor one seen deleted for good already,
-	 * which keeps its date.
+	 * which keeps its date. The list is asked once, however many chunks it
+	 * makes: the query reads the whole file cache each time.
 	 */
 	public function testMarksTheVanishedRowsOnAnAdminsWord(): void {
 		$row = static fn (int $fileId, string $state = BindingService::STATE_ACTIVE): array => ['file_id' => $fileId, 'pad_id' => 'pad-' . $fileId, 'access_mode' => BindingService::ACCESS_PUBLIC, 'state' => $state, 'deleted_at' => $state === BindingService::STATE_ACTIVE ? null : 90, 'updated_at' => 100];
@@ -58,6 +59,7 @@ class ConsistencyCheckServiceTest extends TestCase {
 		$service = $this->service($db, $clock, $logger);
 
 		$this->assertSame(501, $service->markVanished(new RunBudget($clock, RunBudget::DEFAULT_SECONDS), 501));
+		$this->assertSame([501], $db->read, 'one query for the ids of both chunks');
 
 		$byFile = array_column($db->rows, null, 'file_id');
 		$this->assertSame([BindingService::STATE_ACTIVE, null], [$byFile[1]['state'], $byFile[1]['deleted_at']], 'its file is there');
@@ -78,30 +80,27 @@ class ConsistencyCheckServiceTest extends TestCase {
 	}
 
 	/**
-	 * What counts is what the update changed, not what was found: a full
-	 * chunk of which nothing could be marked - its rows changed meanwhile
-	 * - counts nothing and ends the run, since asked again it would come
-	 * back the same.
+	 * What counts is what the updates changed, not what was found: a row
+	 * that changed meanwhile - forgotten, say - is not reported as marked.
 	 */
-	public function testCountsWhatTheUpdateChanged(): void {
+	public function testCountsWhatTheUpdatesChanged(): void {
 		$rows = [];
-		foreach (range(1, 500) as $fileId) {
+		foreach (range(1, 600) as $fileId) {
 			$rows[] = ['file_id' => $fileId, 'pad_id' => 'pad-' . $fileId, 'access_mode' => BindingService::ACCESS_PUBLIC, 'state' => BindingService::STATE_ACTIVE, 'deleted_at' => null, 'updated_at' => 100];
 		}
 		$db = new InMemoryBindingTable($rows, []);
 		$bindings = $this->createMock(BindingService::class);
-		$bindings->expects($this->once())->method('markGone')->willReturn(0);
+		$bindings->expects($this->exactly(2))->method('markGone')->willReturnOnConsecutiveCalls(499, 0);
 		$clock = new FixedClock(500);
 
-		$this->assertSame(0, (new ConsistencyCheckService($db, $bindings, $this->createMock(LoggerInterface::class)))->markVanished(new RunBudget($clock, RunBudget::DEFAULT_SECONDS), 900));
+		$this->assertSame(499, (new ConsistencyCheckService($db, $bindings, $this->createMock(LoggerInterface::class)))->markVanished(new RunBudget($clock, RunBudget::DEFAULT_SECONDS), 900));
 	}
 
 	/**
 	 * One vanished file, on an admin's word: its row marked, or - a public
 	 * pad's - removed with the pad left in Etherpad, each named in the log.
-	 * A protected pad is not forgotten: without a row, its sessions would
-	 * stay and a legacy import could claim its group. Neither takes a row
-	 * whose file is there, or one on its way already.
+	 * A protected pad is not forgotten. Neither takes a row whose file is
+	 * there, or one on its way already.
 	 */
 	public function testTakesOneVanishedFileAtATime(): void {
 		$row = static fn (int $fileId, string $mode, string $state = BindingService::STATE_ACTIVE): array => ['file_id' => $fileId, 'pad_id' => 'pad-' . $fileId, 'access_mode' => $mode, 'state' => $state, 'deleted_at' => $state === BindingService::STATE_ACTIVE ? null : 90, 'updated_at' => 100];
