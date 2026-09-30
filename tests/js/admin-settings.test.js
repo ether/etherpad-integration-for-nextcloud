@@ -247,6 +247,7 @@ describe('admin settings status areas', () => {
 		vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(okResponse({
 			message: 'Consistency check finished with issues.',
 			vanished_file_count: vanished.length,
+			pending_delete_count: 3,
 			samples: { vanished_files: vanished },
 		}))))
 		await import(MODULE)
@@ -261,6 +262,9 @@ describe('admin settings status areas', () => {
 		// As text: a pad id is data, never markup.
 		expect(items()).toEqual(['g.abc$Notes (protected, fileid 7)', '<b>pad</b> (fileid 9)'])
 		expect(document.getElementById('etherpad-nextcloud-vanished-shown').textContent).toBe('2 von 2:')
+		// The check says how many pads wait, too, and offers their check.
+		expect(document.getElementById('etherpad-nextcloud-pending-count').textContent).toBe('Pending Etherpad deletes: 3')
+		expect(document.getElementById('etherpad-nextcloud-pending-actions').style.display).toBe('')
 
 		vanished = []
 		document.getElementById('etherpad-nextcloud-consistency-check').click()
@@ -463,7 +467,8 @@ describe('admin settings status areas', () => {
 	/**
 	 * An action that fails may have done part of what it was asked - a
 	 * chunk of marks before the one that failed: the list is asked again,
-	 * and shows what is left, beside the failure.
+	 * and shows what is left, beside the failure. What it marked waits,
+	 * so the check for pending pads is offered with its count.
 	 */
 	it('asks the list again when an action fails', async () => {
 		let left = 900
@@ -472,7 +477,7 @@ describe('admin settings status areas', () => {
 				left = 400
 				return Promise.resolve({ ok: false, status: 500, text: () => Promise.resolve(JSON.stringify({ ok: false, message: 'Some may be marked already.' })) })
 			}
-			return Promise.resolve(okResponse({ message: 'Checked.', vanished_file_count: left, samples: { vanished_files: [{ file_id: 9, pad_id: 'pad', access_mode: 'public' }] } }))
+			return Promise.resolve(okResponse({ message: 'Checked.', vanished_file_count: left, pending_delete_count: 900 - left, samples: { vanished_files: [{ file_id: 9, pad_id: 'pad', access_mode: 'public' }] } }))
 		})
 		vi.stubGlobal('fetch', fetchMock)
 		vi.stubGlobal('confirm', vi.fn(() => true))
@@ -480,9 +485,13 @@ describe('admin settings status areas', () => {
 
 		document.getElementById('etherpad-nextcloud-consistency-check').click()
 		await flushAsyncWork()
+		expect(document.getElementById('etherpad-nextcloud-pending-actions').style.display).toBe('none')
 		document.getElementById('etherpad-nextcloud-delete-vanished').click()
 		await flushAsyncWork()
 
+		expect(document.getElementById('etherpad-nextcloud-pending-actions').style.display).toBe('')
+		expect(document.getElementById('etherpad-nextcloud-pending-count').textContent).toBe('Pending Etherpad deletes: 500')
+		expect(document.getElementById('etherpad-nextcloud-settle-pending').disabled).toBe(false)
 		expect(diagnosticsStatus().textContent).toContain('Some may be marked already.')
 		expect(diagnosticsStatus().classList.contains('ep-status-error')).toBe(true)
 		expect(document.getElementById('etherpad-nextcloud-vanished-shown').textContent).toBe('1 von 400:')

@@ -378,7 +378,7 @@ solely by the separate external-pad policy, not by these two settings.
   - Result:
     - `vanished_file_count`: rows whose file the file cache has nothing of, still active and never seen deleted for good, whose pads the app leaves in place; `message` says the check found issues when there are any
     - `samples.vanished_files` (`file_id`, `pad_id`, `access_mode`), up to 25
-    - Rows seen deleted for good are not counted: they are on their way (`pending_delete_count` in the health check).
+    - Rows seen deleted for good are not counted: they are on their way, and `pending_delete_count` says how many, as in the health check.
 
 - `POST /api/v1/admin/delete-vanished`
   - Controller: `AdminController::deleteVanished`
@@ -405,7 +405,8 @@ solely by the separate external-pad policy, not by these two settings.
     A list whose count is no longer `expected` - grown since it was shown,
     say - is not taken: nothing is marked, and the answer carries the list
     as it is now, to be confirmed again. What is left after one call
-    needs another.
+    needs another. Up to 500,000 rows the count is that of the rows
+    collected; a longer list is counted by a query of its own.
   - Result: `marked`, and the list as for `delete-vanished`.
   - `400` with `Invalid count.` without a positive `expected`.
   - `500` when a chunk of marks fails: the marks before it stand, `message`

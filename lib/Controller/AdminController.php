@@ -310,9 +310,12 @@ class AdminController extends Controller {
 		return $this->errors->run(
 			function (): array {
 				$this->requireAdmin();
-				return $this->consistencyCheckService->run(self::CONSISTENCY_SAMPLE_LIMIT);
+				// With the pads that wait, as every action on the list answers:
+				// the page asks this after an action that failed part-way, and
+				// what it marked before shows only there.
+				return $this->withTheList([]);
 			},
-			fn(array $result): DataResponse => new DataResponse($this->consistencyResponseBuilder->build($result)),
+			fn(array $result): DataResponse => new DataResponse($this->consistencyResponseBuilder->build($result) + ['pending_delete_count' => $result['pending_delete_count']]),
 			[
 				'generic' => $this->l10n->t('Consistency check failed.'),
 				'log_message' => 'Consistency check failed',

@@ -192,6 +192,22 @@ class AdminControllerTest extends TestCase {
 	}
 
 	/**
+	 * The consistency check answers with the pads that wait beside the
+	 * list: the page asks it after an action that failed part-way, and the
+	 * rows that action marked before it failed show only in that count.
+	 */
+	public function testTheConsistencyCheckSaysHowManyPadsWait(): void {
+		$bindings = $this->createMock(BindingService::class);
+		$bindings->method('countPendingDeletes')->willReturn(500);
+
+		$data = $this->buildController(consistencyCheck: $this->vanishedList(400), bindings: $bindings)->consistencyCheck()->getData();
+
+		$this->assertSame(400, $data['vanished_file_count']);
+		$this->assertSame(500, $data['pending_delete_count']);
+		$this->assertSame('Consistency check finished with issues.', $data['message']);
+	}
+
+	/**
 	 * One vanished file's pad, on the admin's word: its row marked, the
 	 * answer carrying the list as it is now. A file no longer vanished
 	 * changes nothing and says so; with deleting off nothing is marked.

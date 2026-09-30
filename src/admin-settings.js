@@ -518,6 +518,7 @@ import { handFocusTo } from './lib/hand-focus.js'
 				const vanishedFile = Number(data.vanished_file_count || 0)
 				const message = `${String(data.message || l10n.consistencyOk)} vanished_file=${String(vanishedFile)}`
 				setStatus(message, vanishedFile > 0 ? 'error' : 'success', diagnosticsTarget)
+				updateBindingCounts(data)
 				showVanished(data.samples && data.samples.vanished_files, vanishedFile)
 			} catch (error) {
 				setStatus(error instanceof Error ? error.message : l10n.consistencyFailed, 'error', diagnosticsTarget)
@@ -574,13 +575,15 @@ import { handFocusTo } from './lib/hand-focus.js'
 	}
 
 	/**
-	 * The list as the server has it now, after an action that failed: it
-	 * may have done part of what it was asked. Should this fail too, the
-	 * list stays as it was, and the next check shows it.
+	 * The list as the server has it now, and the pads that wait, after an
+	 * action that failed: it may have done part of what it was asked, and
+	 * what it marked then waits to be checked. Should this fail too, both
+	 * stay as they were, and the next check shows them.
 	 */
 	async function refreshVanished() {
 		try {
 			const data = await postJson(consistencyUrl, {})
+			updateBindingCounts(data)
 			showVanished(data.samples && data.samples.vanished_files, data.vanished_file_count)
 		} catch {
 			// The action's failure stands in the status line.
