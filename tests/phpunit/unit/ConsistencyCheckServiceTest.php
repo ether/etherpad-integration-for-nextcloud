@@ -99,7 +99,8 @@ class ConsistencyCheckServiceTest extends TestCase {
 			$rows[] = ['file_id' => $fileId, 'pad_id' => 'pad-' . $fileId, 'access_mode' => BindingService::ACCESS_PUBLIC, 'state' => BindingService::STATE_ACTIVE, 'deleted_at' => null, 'updated_at' => 100];
 		}
 		$clock = new FixedClock(500);
-		$service = static fn (InMemoryBindingTable $db): ConsistencyCheckService => new class($db, new BindingService($db, $clock), new \Psr\Log\NullLogger()) extends ConsistencyCheckService {
+		$logger = $this->createMock(LoggerInterface::class);
+		$service = static fn (InMemoryBindingTable $db): ConsistencyCheckService => new class($db, new BindingService($db, $clock), $logger) extends ConsistencyCheckService {
 			protected function markMax(): int {
 				return 3;
 			}
