@@ -24,8 +24,16 @@ namespace OCA\EtherpadNextcloud\Util;
  * whether an exception can leave the app from there is a property of
  * today's callers - a listener that rethrows, a mapper that catches - and
  * the next caller need not share it. Nor whether the method can throw,
- * which its next edit decides. An entry costs nothing, so the rule asks
- * for no judgement.
+ * which its next edit decides. So the rule asks for no judgement.
+ *
+ * An entry has a price, paid only in a trace Nextcloud serializes: that
+ * frame loses all its arguments, and every other frame loses whatever
+ * equals one of them - the same file id, an empty string, `false`. That
+ * is also what it is good for: a credential a listed frame holds is gone
+ * from the frames that only passed it on. Nextcloud's own list does the
+ * same to every method whose name contains `create`, `update` or `sync`,
+ * and the app's own log lines carry no arguments at all, so little is
+ * lost that was there to read.
  *
  * Either needs an entry only where it is that plain. The objects a
  * document travels in - ParsedPadFile, PadSnapshot, LivePadHtml,
@@ -36,11 +44,15 @@ namespace OCA\EtherpadNextcloud\Util;
  * DocumentStaysOutOfTracesTest and CredentialStaysOutOfTracesTest hold
  * them to it.
  *
- * Two limits. It reaches the serializer only, so a throwable logged
+ * Three limits. It reaches the serializer only, so a throwable logged
  * under any key but 'exception' is normalized elsewhere and no entry
- * here applies. And it covers the frames of the class it names, never
- * the callee's - where a method of Nextcloud's own holds the value, no
- * list helps and the chain has to be cut instead.
+ * here applies. It covers the frames of the class it names, and a
+ * callee's only for a value it was handed unchanged - where a method of
+ * Nextcloud's own holds a value made of it, no list helps and the chain
+ * has to be cut instead. And a share token is in the address of the
+ * public routes, which Nextcloud writes into every log line of such a
+ * request: the entries keep a trace from being a second place for it,
+ * not the log from having it.
  *
  * A list of names goes stale in silence, so SensitiveMethodsTest checks
  * that every entry still resolves, and reads the source for methods that
@@ -58,11 +70,15 @@ final class SensitiveMethods {
 	/** @var array<class-string, list<string>> */
 	public const ALL = [
 		// A live session id, which deleteSession takes as a plain string,
-		// and whole pads on their way to Etherpad. The api key needs no
-		// entry: it travels as ApiKey and leaves as a stream, so no frame
-		// here holds it - measured, not assumed.
+		// and the listing of them as Etherpad answers it; whole pads on
+		// their way to Etherpad, and on their way back inside the answer
+		// requireStringField() reads. The author mapper of a public share
+		// is made of its token (PadSessionService below). The api key needs
+		// no entry: it travels as ApiKey and leaves as a stream, so no
+		// frame here holds it - measured, not assumed.
 		\OCA\EtherpadNextcloud\Service\EtherpadClient::class => [
-			'deleteSession', 'setText', 'setHTML', 'apiCall', 'sendRequest', 'formBody',
+			'deleteSession', 'sessionsIn', 'setText', 'setHTML', 'requireStringField',
+			'createAuthorIfNotExistsFor', 'apiCall', 'sendRequest', 'formBody',
 		],
 		// The document as a string, wherever a method takes it so: handed
 		// to Etherpad or compared with what it holds, read from the file
@@ -103,7 +119,14 @@ final class SensitiveMethods {
 		// Etherpad sessions, each a live credential: the ids a browser
 		// carries and the ones Etherpad lists, the cookie made of them, and
 		// the objects that take the finished Set-Cookie line.
+		//
+		// The first two by hand, for what no name gives away: a public
+		// share opens a protected pad as an author of its own, under a uid
+		// made of the share's token. The helpers they call take the same
+		// string, and Nextcloud takes a listed frame's values out of every
+		// other frame too.
 		\OCA\EtherpadNextcloud\Service\PadSessionService::class => [
+			'createProtectedOpenContext', 'openContextFor',
 			'sessionsToAttributeWith', 'cookieValueFor', 'buildEtherpadSessionCookie', 'buildSetCookieHeader',
 		],
 		\OCA\EtherpadNextcloud\Service\PadSessionRevoker::class => ['live', 'deleteLive', 'carriedFirst'],
@@ -118,6 +141,12 @@ final class SensitiveMethods {
 		\OCA\EtherpadNextcloud\Service\PublicShareResolver::class => ['resolveShare', 'requestedPath', 'resolvePadFile'],
 		\OCA\EtherpadNextcloud\Service\PublicShareUrlBuilder::class => ['buildShareBaseUrl', 'buildShareRedirectUrl'],
 		\OCA\EtherpadNextcloud\Service\PublicPadContextService::class => ['resolve', 'resolveContent', 'buildContentUrl'],
-		\OCA\EtherpadNextcloud\Util\PathNormalizer::class => ['normalizePublicShareFilePath'],
+		// And inside the `file` a request names, which may be a public DAV
+		// address with the token in its path: again by hand, under names
+		// like $path and $param.
+		\OCA\EtherpadNextcloud\Util\PathNormalizer::class => [
+			'normalizePublicShareFilePath', 'normalizeViewerFilePath', 'normalizeDavUrlToPath', 'normalizeSegments',
+		],
+		\OCA\EtherpadNextcloud\Service\ApiErrorLog::class => ['scalar'],
 	];
 }
