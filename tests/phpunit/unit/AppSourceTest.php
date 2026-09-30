@@ -33,6 +33,7 @@ class AppSourceTest extends TestCase {
 			static $static = ['a' => [1, 2], 'b' => "{$nested}"];
 			var $old;
 			public ?string $first = null, $second;
+			public $interpolated = "${inAString} and {$another}", $afterIt;
 			private string $private;
 			protected $protected;
 
@@ -43,6 +44,7 @@ class AppSourceTest extends TestCase {
 				private readonly string $promotedPrivate,
 				protected string $promotedProtected,
 				string $plain = 'public string $inADefault',
+				string $interpolatedDefault = "${inAString}",
 				?int $nullable = null,
 				string|int ...$rest,
 			) {
@@ -64,7 +66,7 @@ class AppSourceTest extends TestCase {
 		$fields = array_map(static fn (array $field): string => $field[1], AppSource::of(self::SOURCE, 'Carrier')['fields']);
 
 		$this->assertSame(
-			['declared', 'withoutTheWord', 'static', 'old', 'first', 'second', 'promoted', 'promotedWithoutTheWord'],
+			['declared', 'withoutTheWord', 'static', 'old', 'first', 'second', 'interpolated', 'afterIt', 'promoted', 'promotedWithoutTheWord'],
 			$fields,
 		);
 	}
@@ -79,6 +81,7 @@ class AppSourceTest extends TestCase {
 				['string', 'promotedPrivate'],
 				['string', 'promotedProtected'],
 				['string', 'plain'],
+				['string', 'interpolatedDefault'],
 				['?int', 'nullable'],
 				['string|int', 'rest'],
 			]],

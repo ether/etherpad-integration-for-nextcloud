@@ -177,7 +177,7 @@ final class AppSource {
 				if ($nested === 0 && $text === ';') {
 					break;
 				}
-				if (in_array($text, ['(', '[', '{'], true)) {
+				if (self::opensABracket($tokens[$i])) {
 					$nested++;
 				} elseif (in_array($text, [')', ']', '}'], true)) {
 					$nested--;
@@ -196,6 +196,16 @@ final class AppSource {
 	/** Whether the token opens what a `}` closes: a brace, or one inside a string. */
 	private static function opens(\PhpToken $token): bool {
 		return $token->text === '{' || $token->is([T_CURLY_OPEN, T_DOLLAR_OPEN_CURLY_BRACES]);
+	}
+
+	/**
+	 * Whether the token opens anything a bracket closes. One question for
+	 * every place that counts them: an opener one of them did not know -
+	 * the `${` of a string - would leave its count off by one for the rest
+	 * of the file, and the rest of the file unread.
+	 */
+	private static function opensABracket(\PhpToken $token): bool {
+		return self::opens($token) || $token->is(T_ATTRIBUTE) || in_array($token->text, ['(', '['], true);
 	}
 
 	/**
@@ -236,7 +246,7 @@ final class AppSource {
 		$named = false;
 		foreach ($tokens as $token) {
 			$text = $token->text;
-			if ($token->is(T_ATTRIBUTE) || in_array($text, ['(', '[', '{'], true)) {
+			if (self::opensABracket($token)) {
 				$nested++;
 				continue;
 			}
