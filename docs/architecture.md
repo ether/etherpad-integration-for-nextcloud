@@ -323,6 +323,19 @@ Primary flow (native viewer):
   - Anything else - what the request got wrong, a pad on another server: `A request was refused.` at debug, with the reason the answer leaves out.
   - The line names the request's file (`ApiErrorLog::fileNamedBy()`): signed in by `fileId` and `file`, on a public share by `fileId` only, since a public path may be a DAV URL carrying the share token.
 
+## What a log may carry
+
+Almost everything the app passes around is a credential or a document: an API key, a session cookie, a share token, a whole pad. Three rules keep them out of the log, each for a case the others do not reach.
+
+- **The app's own log lines carry no exception.** A throwable handed to the logger takes every stack frame's arguments along. `SafeError::context()` is the shape that replaces it: the class, the message, and the frames that led there without their arguments. `LogContextTest` reads the source for a log context that carries a throwable.
+- **An exception that leaves the app meets a list.** Nextcloud's own handler serializes it with every frame's arguments, however the app logs. `SensitiveMethods::ALL`, registered in `Application`, names the methods whose arguments Nextcloud replaces.
+  - What earns an entry is a method that takes a credential or a document as a string. The route it is on does not matter, nor whether it can throw: both are properties of today's code.
+  - `SensitiveMethodsTest` checks that every entry exists, and reads the source for methods that take a document as a string, by the parameter's name, and are not on the list. Credentials it does not look for.
+  - From PHP 8.2 on, `#[\SensitiveParameter]` does the same in the trace itself. It takes over once the app's floor is a Nextcloud that needs PHP 8.2; Nextcloud 32 still runs on 8.1, where the attribute does nothing.
+- **The objects a document travels in keep it private.** Of an object argument Nextcloud writes the class and the public fields. `ParsedPadFile`, `PadSnapshot`, `LivePadHtml` and `CreatedFileClaim` hold the document in private fields behind methods, so a method that takes one of them needs no entry, the next one included. `DocumentStaysOutOfTracesTest` shows each as a trace would, and reads the source for a public field under one of a document's names.
+
+For new code: pass the document as one of those objects where there is one, not as its text. A method that has to take it as a string goes on the list, and a new object that carries it keeps it private and gets a case in the test.
+
 ## Event Integration
 
 - `OCA\Files\Event\LoadAdditionalScriptsEvent`
