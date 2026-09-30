@@ -103,6 +103,60 @@ class PublicViewerControllerTest extends TestCase {
 		$this->assertArrayNotHasKey('Set-Cookie', $response->getHeaders());
 	}
 
+	/**
+	 * A share that may write opens a protected pad with a session of its
+	 * own: the pad's address in the answer, and the cookie that carries
+	 * the session on it. Without the header the recipient gets an address
+	 * Etherpad refuses.
+	 */
+	public function testAShareThatMayWriteGetsTheSessionCookieWithThePadsAddress(): void {
+		$file = $this->createMock(File::class);
+		$file->method('getName')->willReturn('Shared.pad');
+		$file->method('getId')->willReturn(42);
+		$file->method('getContent')->willReturn('frontmatter');
+		$file->method('isUpdateable')->willReturn(true);
+
+		$share = $this->createMock(IShare::class);
+		$share->method('getNode')->willReturn($file);
+		$share->method('getPermissions')->willReturn(Constants::PERMISSION_READ | Constants::PERMISSION_UPDATE);
+
+		$shareManager = $this->createMock(IManager::class);
+		$shareManager->method('getShareByToken')->with('share-token')->willReturn($share);
+
+		$padFileService = $this->createMock(PadFileService::class);
+		$padFileService->method('readPad')->willReturn(new ParsedPadFile(
+			frontmatter: [],
+			body: '',
+			padId: 'g.abcdefghijklmnop$Shared',
+			accessMode: BindingService::ACCESS_PROTECTED,
+			padUrl: '',
+			isExternal: false,
+			snapshotRev: -1,
+		));
+
+		$cookie = ['name' => 'sessionID', 'value' => 's.abc'];
+		$padSessionService = $this->createMock(PadSessionService::class);
+		$padSessionService->expects($this->once())
+			->method('createProtectedOpenContext')
+			->with('public-share:share-token', $this->anything(), 'g.abcdefghijklmnop$Shared', $this->anything())
+			->willReturn(['url' => 'https://pad.example.test/p/g.abcdefghijklmnop$Shared', 'cookie' => $cookie]);
+		$padSessionService->expects($this->once())
+			->method('buildSetCookieHeader')
+			->with($cookie)
+			->willReturn('sessionID=s.abc; Path=/; Secure');
+
+		$response = $this->buildController(
+			$shareManager,
+			padFileService: $padFileService,
+			padSessionService: $padSessionService,
+		)->openPadData('share-token');
+
+		$this->assertSame(Http::STATUS_OK, $response->getStatus());
+		$this->assertSame('https://pad.example.test/p/g.abcdefghijklmnop$Shared', $response->getData()['url']);
+		$this->assertFalse($response->getData()['is_readonly_view']);
+		$this->assertSame('sessionID=s.abc; Path=/; Secure', $response->getHeaders()['Set-Cookie'] ?? null);
+	}
+
 	public function testPublicExternalPadShareReturnsNormalizedUrlAndAContentUrl(): void {
 		$file = $this->createMock(File::class);
 		$file->method('getName')->willReturn('External.pad');
