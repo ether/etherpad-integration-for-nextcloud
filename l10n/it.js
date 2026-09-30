@@ -236,6 +236,7 @@ OC.L10N.register(
     "The list of vanished files has changed since it was shown, so no pad was marked for deletion. Check it again.": "L'elenco dei file scomparsi è cambiato da quando è stato mostrato, quindi nessun pad è stato contrassegnato per l'eliminazione. Controllalo di nuovo.",
     "No vanished file was left to mark for deletion.": "Non restava alcun file scomparso da contrassegnare per l'eliminazione.",
     "Only a public pad can be forgotten. Delete a protected one instead.": "Solo un pad pubblico può essere dimenticato. Elimina invece un pad protetto.",
-    "Invalid count.": "Numero non valido."
+    "Invalid count.": "Numero non valido.",
+    "Could not delete the pads of all vanished files. Some may be marked for deletion already: check the list again.": "Non è stato possibile eliminare i pad di tutti i file scomparsi. Alcuni potrebbero essere già contrassegnati per l'eliminazione: controlla di nuovo l'elenco."
 },
 "nplurals=2; plural=(n != 1);");

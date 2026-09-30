@@ -215,13 +215,12 @@ class AdminControllerTest extends TestCase {
 	}
 
 	/**
-	 * All of them only on a route of their own, and only as many as the
-	 * admin confirmed: a list that has changed since is not taken, and the
-	 * answer carries it to be confirmed again.
+	 * All of them only on a route of their own, and only a list of as many
+	 * as the admin confirmed: one that has changed since is not taken, and
+	 * the answer carries it to be confirmed again.
 	 */
 	public function testDeleteAllVanishedTakesOnlyTheCountConfirmed(): void {
 		$consistency = $this->vanishedList(0);
-		$consistency->method('countVanished')->willReturn(30);
 		$consistency->expects($this->once())->method('markVanished')->with($this->callback(static fn (RunBudget $budget): bool => !$budget->exhausted()), 30)->willReturn(30);
 
 		$data = $this->buildController(request: $this->request(['expected' => '30']), consistencyCheck: $consistency)->deleteAllVanished()->getData();
@@ -229,8 +228,7 @@ class AdminControllerTest extends TestCase {
 		$this->assertSame(['The pads of the vanished files are marked for deletion. They are deleted within minutes, or at once with "Check pending pads".', 30, 0], [$data['message'], $data['marked'], $data['vanished_file_count']]);
 
 		$changed = $this->vanishedList(30000);
-		$changed->method('countVanished')->willReturn(30000);
-		$changed->expects($this->never())->method('markVanished');
+		$changed->method('markVanished')->willReturn(null);
 
 		$data = $this->buildController(request: $this->request(['expected' => '30']), consistencyCheck: $changed)->deleteAllVanished()->getData();
 
@@ -238,18 +236,21 @@ class AdminControllerTest extends TestCase {
 	}
 
 	/**
-	 * What deleting them all came to, said as it is: nothing left to mark,
-	 * the rest for another run, or deleting switched off.
+	 * What deleting them all came to, said as it is: nothing left to mark
+	 * only when none is left; the rest for another run, also when the
+	 * budget ran out before the first mark; deleting switched off. A
+	 * failure says that some may be marked already: a chunk that fails
+	 * leaves the marks before it standing.
 	 */
 	public function testDeleteAllVanishedSaysWhatItDidNot(): void {
 		$cases = [
 			'none left' => [true, 0, 0, 'No vanished file was left to mark for deletion.'],
 			'more than a run' => [true, 500, 7, 'Not every vanished file could be marked in one go. Run it again for the rest.'],
+			'budget spent before the first mark' => [true, 0, 1, 'Not every vanished file could be marked in one go. Run it again for the rest.'],
 			'deleting off' => [false, 0, 12, 'Deleting pads is switched off, so no pad was marked for deletion.'],
 		];
 		foreach ($cases as $case => [$deleting, $marked, $left, $message]) {
 			$consistency = $this->vanishedList($left);
-			$consistency->method('countVanished')->willReturn(12);
 			$consistency->expects($deleting ? $this->once() : $this->never())->method('markVanished')->willReturn($marked);
 			$appConfig = $this->createMock(AppConfigService::class);
 			$appConfig->method('isDeletePadWithFileEnabled')->willReturn($deleting);
@@ -258,6 +259,11 @@ class AdminControllerTest extends TestCase {
 
 			$this->assertSame([$message, $marked], [$data['message'], $data['marked']], $case);
 		}
+
+		$failing = $this->createMock(ConsistencyCheckService::class);
+		$failing->method('markVanished')->willThrowException(new \RuntimeException('database went away'));
+		$response = $this->buildController(request: $this->request(['expected' => '12']), consistencyCheck: $failing)->deleteAllVanished();
+		$this->assertSame([Http::STATUS_INTERNAL_SERVER_ERROR, 'Could not delete the pads of all vanished files. Some may be marked for deletion already: check the list again.'], [$response->getStatus(), $response->getData()['message']]);
 	}
 
 	/**

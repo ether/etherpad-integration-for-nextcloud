@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Tests\Unit;
 
+use OCA\EtherpadNextcloud\Service\Binding;
 use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\EtherpadNextcloud\Service\ConsistencyCheckService;
 use OCA\EtherpadNextcloud\Service\RunBudget;
@@ -39,16 +40,15 @@ class ConsistencyCheckServiceTest extends TestCase {
 
 	/**
 	 * On an admin's word the vanished rows are marked as files deleted for
-	 * good, dated now, for the sweep to take: past one chunk, up to the
-	 * count the admin confirmed and no further, and nothing else - not a
-	 * row whose file is there, nor one seen deleted for good already,
-	 * which keeps its date. The list is asked once, however many chunks it
-	 * makes: the query reads the whole file cache each time.
+	 * good, dated now, for the sweep to take: past one chunk, and nothing
+	 * else - not a row whose file is there, nor one seen deleted for good
+	 * already, which keeps its date. The list is asked once, however many
+	 * chunks it makes: the query reads the whole file cache each time.
 	 */
 	public function testMarksTheVanishedRowsOnAnAdminsWord(): void {
 		$row = static fn (int $fileId, string $state = BindingService::STATE_ACTIVE): array => ['file_id' => $fileId, 'pad_id' => 'pad-' . $fileId, 'access_mode' => BindingService::ACCESS_PUBLIC, 'state' => $state, 'deleted_at' => $state === BindingService::STATE_ACTIVE ? null : 90, 'updated_at' => 100];
 		$rows = [$row(1), $row(2, BindingService::STATE_PENDING_DELETE)];
-		foreach (range(10, 520) as $fileId) {
+		foreach (range(10, 510) as $fileId) {
 			$rows[] = $row($fileId);
 		}
 		$db = new InMemoryBindingTable($rows, [['fileid' => 1, 'storage' => 1, 'path' => 'files/1.pad']]);
@@ -66,8 +66,49 @@ class ConsistencyCheckServiceTest extends TestCase {
 		$this->assertSame([BindingService::STATE_PENDING_DELETE, 90], [$byFile[2]['state'], $byFile[2]['deleted_at']], 'on its way already');
 		$this->assertSame([BindingService::STATE_PENDING_DELETE, 500], [$byFile[10]['state'], $byFile[10]['deleted_at']]);
 		$this->assertSame([BindingService::STATE_PENDING_DELETE, 500], [$byFile[510]['state'], $byFile[510]['deleted_at']]);
-		$this->assertSame(BindingService::STATE_ACTIVE, $byFile[511]['state'], 'past the count confirmed');
-		$this->assertSame(10, $service->countVanished());
+		$this->assertSame(0, $service->countVanished());
+	}
+
+	/**
+	 * Only a list of exactly as many as the admin confirmed is taken, and
+	 * the rows to mark and their number come from one query. Shown file 10
+	 * and confirmed one: file 1 vanished since, and a limit alone would mark
+	 * file 1, which the admin never saw. Nothing is marked, fewer than
+	 * confirmed neither.
+	 */
+	public function testALongerOrShorterListThanConfirmedIsNotTaken(): void {
+		$row = static fn (int $fileId): array => ['file_id' => $fileId, 'pad_id' => 'pad-' . $fileId, 'access_mode' => BindingService::ACCESS_PUBLIC, 'state' => BindingService::STATE_ACTIVE, 'deleted_at' => null, 'updated_at' => 100];
+		$db = new InMemoryBindingTable([$row(1), $row(10)], []);
+		$clock = new FixedClock(500);
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects($this->never())->method('info');
+		$service = $this->service($db, $clock, $logger);
+
+		$this->assertNull($service->markVanished(new RunBudget($clock, RunBudget::DEFAULT_SECONDS), 1), 'grown since');
+		$this->assertNull($service->markVanished(new RunBudget($clock, RunBudget::DEFAULT_SECONDS), 3), 'shrunk since');
+		$this->assertSame([BindingService::STATE_ACTIVE, BindingService::STATE_ACTIVE], array_column($db->rows, 'state'));
+	}
+
+	/**
+	 * A list longer than one call collects is counted on its own, and the
+	 * call marks what it collects: the rest needs another.
+	 */
+	public function testAListPastOneCallsReachIsMarkedInPart(): void {
+		$rows = [];
+		foreach (range(1, 5) as $fileId) {
+			$rows[] = ['file_id' => $fileId, 'pad_id' => 'pad-' . $fileId, 'access_mode' => BindingService::ACCESS_PUBLIC, 'state' => BindingService::STATE_ACTIVE, 'deleted_at' => null, 'updated_at' => 100];
+		}
+		$clock = new FixedClock(500);
+		$service = static fn (InMemoryBindingTable $db): ConsistencyCheckService => new class($db, new BindingService($db, $clock), new \Psr\Log\NullLogger()) extends ConsistencyCheckService {
+			protected function markMax(): int {
+				return 3;
+			}
+		};
+
+		$this->assertNull($service(new InMemoryBindingTable($rows, []))->markVanished(new RunBudget($clock, RunBudget::DEFAULT_SECONDS), 6), 'not the count confirmed');
+		$db = new InMemoryBindingTable($rows, []);
+		$this->assertSame(3, $service($db)->markVanished(new RunBudget($clock, RunBudget::DEFAULT_SECONDS), 5));
+		$this->assertSame([1, 2, 3], array_column(array_filter($db->rows, static fn (array $r): bool => $r['state'] === BindingService::STATE_PENDING_DELETE), 'file_id'));
 	}
 
 	/** A budget spent marks nothing more: the admin runs it again for the rest. */
@@ -82,18 +123,47 @@ class ConsistencyCheckServiceTest extends TestCase {
 	/**
 	 * What counts is what the updates changed, not what was found: a row
 	 * that changed meanwhile - forgotten, say - is not reported as marked.
+	 * And what was marked is logged whatever ends the run: a chunk that
+	 * fails leaves the marks before it standing, to be deleted.
 	 */
-	public function testCountsWhatTheUpdatesChanged(): void {
+	public function testCountsAndLogsWhatTheUpdatesChanged(): void {
 		$rows = [];
-		foreach (range(1, 600) as $fileId) {
+		foreach (range(1, 1100) as $fileId) {
 			$rows[] = ['file_id' => $fileId, 'pad_id' => 'pad-' . $fileId, 'access_mode' => BindingService::ACCESS_PUBLIC, 'state' => BindingService::STATE_ACTIVE, 'deleted_at' => null, 'updated_at' => 100];
 		}
-		$db = new InMemoryBindingTable($rows, []);
-		$bindings = $this->createMock(BindingService::class);
-		$bindings->expects($this->exactly(2))->method('markGone')->willReturnOnConsecutiveCalls(499, 0);
 		$clock = new FixedClock(500);
 
-		$this->assertSame(499, (new ConsistencyCheckService($db, $bindings, $this->createMock(LoggerInterface::class)))->markVanished(new RunBudget($clock, RunBudget::DEFAULT_SECONDS), 900));
+		$bindings = $this->createMock(BindingService::class);
+		$bindings->expects($this->exactly(3))->method('markGone')->willReturnOnConsecutiveCalls(499, 0, 100);
+		$this->assertSame(599, (new ConsistencyCheckService(new InMemoryBindingTable($rows, []), $bindings, $this->createMock(LoggerInterface::class)))->markVanished(new RunBudget($clock, RunBudget::DEFAULT_SECONDS), 1100));
+
+		$failing = $this->createMock(BindingService::class);
+		$failing->method('markGone')->willReturnOnConsecutiveCalls(500, $this->throwException(new \RuntimeException('database went away')));
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects($this->once())->method('info')->with($this->anything(), $this->callback(static fn (array $context): bool => $context['count'] === 500));
+		try {
+			(new ConsistencyCheckService(new InMemoryBindingTable($rows, []), $failing, $logger))->markVanished(new RunBudget($clock, RunBudget::DEFAULT_SECONDS), 1100);
+			$this->fail('The failure should reach the caller.');
+		} catch (\RuntimeException $e) {
+			$this->assertSame('database went away', $e->getMessage());
+		}
+	}
+
+	/**
+	 * Nothing checks a forgotten row again, as the sweep checks a marked
+	 * one: so forgetting asks once more after the row went. A file the
+	 * file cache has after all gets its row back, and is not forgotten.
+	 */
+	public function testAFileBackWhileItIsForgottenKeepsItsRow(): void {
+		$bindings = $this->createMock(BindingService::class);
+		$bindings->method('findByFileId')->with(7)->willReturn(new Binding(fileId: 7, padId: 'pad-7', accessMode: BindingService::ACCESS_PUBLIC, state: BindingService::STATE_ACTIVE));
+		$bindings->method('isFileGone')->with(7)->willReturnOnConsecutiveCalls(true, false);
+		$bindings->method('deleteInState')->willReturn(true);
+		$bindings->expects($this->once())->method('createBinding')->with(7, 'pad-7', BindingService::ACCESS_PUBLIC);
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects($this->never())->method('info');
+
+		$this->assertSame(ConsistencyCheckService::NOT_VANISHED, (new ConsistencyCheckService(new InMemoryBindingTable([], []), $bindings, $logger))->forgetVanished(7));
 	}
 
 	/**

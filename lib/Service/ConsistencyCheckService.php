@@ -58,37 +58,58 @@ class ConsistencyCheckService {
 	}
 
 	/**
-	 * Up to $limit vanished rows marked seen deleted for good, on an
-	 * admin's word only (docs/deleting-pads.md says why): the sweep then
-	 * deletes their pads as it does those of any file deleted for good,
-	 * asking the file cache once more first. $limit is what the admin was
-	 * shown and confirmed, so a list that grew meanwhile - a team folder
-	 * deleted as a whole since - takes no more than that.
+	 * The vanished rows marked seen deleted for good, on an admin's word
+	 * only (docs/deleting-pads.md says why): the sweep then deletes their
+	 * pads as it does those of any file deleted for good, asking the file
+	 * cache once more first.
 	 *
-	 * Their ids are collected once, MARK_MAX of them at most, and marked in
+	 * $expected is how many the admin was shown and confirmed, and only a
+	 * list of exactly that many is taken. The rows to mark and their number
+	 * come from one query: counted by another, the list could grow in
+	 * between, and a limit alone would then take a file the admin was not
+	 * shown in place of one that was. Past MARK_MAX, more than a call
+	 * collects, the number is counted on its own, as near as it gets.
+	 *
+	 * The ids are collected once, MARK_MAX of them at most, and marked in
 	 * chunks until $budget is spent: the query reads the whole file cache
-	 * whatever its limit, so asked again for every chunk it made a long
-	 * list take several calls.
+	 * whatever its limit. What was marked is logged whatever ends the run,
+	 * a failing chunk too: those marks stand.
 	 *
-	 * @return int how many rows the marks changed
+	 * @return ?int how many rows the marks changed, or null when the list no longer has $expected rows, and nothing was marked
 	 */
-	public function markVanished(RunBudget $budget, int $limit): int {
-		$marked = 0;
-		foreach (array_chunk($this->vanishedFileIds(min($limit, self::MARK_MAX)), self::MARK_CHUNK) as $chunk) {
-			if ($budget->exhausted()) {
-				break;
-			}
-			$marked += $this->bindingService->markGone($chunk);
+	public function markVanished(RunBudget $budget, int $expected): ?int {
+		$max = $this->markMax();
+		$fileIds = $this->vanishedFileIds(min($expected, $max) + 1);
+		$asExpected = $expected <= $max
+			? count($fileIds) === $expected
+			: count($fileIds) > $max && $this->countVanished() === $expected;
+		if (!$asExpected) {
+			return null;
 		}
-		if ($marked > 0) {
-			// The sweep's lines that follow read as deletions seen; this says
-			// whose word they were.
-			$this->logger->info('An admin marked the rows of vanished files as deleted for good; the sweep deletes their pads.', [
-				'app' => Application::APP_ID,
-				'count' => $marked,
-			]);
+		$marked = 0;
+		try {
+			foreach (array_chunk(array_slice($fileIds, 0, $max), self::MARK_CHUNK) as $chunk) {
+				if ($budget->exhausted()) {
+					break;
+				}
+				$marked += $this->bindingService->markGone($chunk);
+			}
+		} finally {
+			if ($marked > 0) {
+				// The sweep's lines that follow read as deletions seen; this
+				// says whose word they were.
+				$this->logger->info('An admin marked the rows of vanished files as deleted for good; the sweep deletes their pads.', [
+					'app' => Application::APP_ID,
+					'count' => $marked,
+				]);
+			}
 		}
 		return $marked;
+	}
+
+	/** MARK_MAX, which a test makes smaller. */
+	protected function markMax(): int {
+		return self::MARK_MAX;
 	}
 
 	/** One vanished file's row marked, as markVanished() marks them: whether it was still vanished, and is marked now. */
@@ -122,6 +143,13 @@ class ConsistencyCheckService {
 			return self::PROTECTED_PAD;
 		}
 		if (!$this->bindingService->deleteInState($fileId, $binding->padId, BindingService::STATE_ACTIVE)) {
+			return self::NOT_VANISHED;
+		}
+		// Asked once more now that the row is gone: nothing checks a row
+		// forgotten again, as the sweep checks one marked. A file the file
+		// cache has after all gets its row back.
+		if (!$this->bindingService->isFileGone($fileId)) {
+			$this->bindingService->createBinding($fileId, $binding->padId, $binding->accessMode);
 			return self::NOT_VANISHED;
 		}
 		$this->logger->info('An admin removed the row of a vanished file; its pad stays in Etherpad, and the app no longer looks after it.', [

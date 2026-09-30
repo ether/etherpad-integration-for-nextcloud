@@ -195,9 +195,9 @@ class AdminController extends Controller {
 	/**
 	 * The pads of all vanished files deleted on the admin's word
 	 * (ConsistencyCheckService::markVanished()), as many as `expected`
-	 * says: the count the admin was shown and confirmed. A list that has
-	 * changed since is not taken - the answer carries it as it is now, to
-	 * be confirmed again - and none beyond that count is marked.
+	 * says: the count the admin was shown and confirmed. A list that no
+	 * longer has that many is not taken - the answer carries it as it is
+	 * now, to be confirmed again.
 	 */
 	public function deleteAllVanished(): DataResponse {
 		return $this->errors->run(
@@ -205,21 +205,22 @@ class AdminController extends Controller {
 				$this->requireAdmin();
 				$expected = $this->requiredCount();
 				$deleting = $this->appConfigService->isDeletePadWithFileEnabled();
-				$changed = $this->consistencyCheckService->countVanished() !== $expected;
-				$marked = $deleting && !$changed ? $this->consistencyCheckService->markVanished(new RunBudget($this->timeFactory, RunBudget::DEFAULT_SECONDS), $expected) : 0;
-				$result = $this->withTheList(['marked' => $marked]);
-				$left = $result['vanished_file_count'];
+				$marked = $deleting ? $this->consistencyCheckService->markVanished(new RunBudget($this->timeFactory, RunBudget::DEFAULT_SECONDS), $expected) : 0;
+				$result = $this->withTheList(['marked' => $marked ?? 0]);
 				return ['message' => match (true) {
 					!$deleting => $this->deletingOff(),
-					$changed => $this->l10n->t('The list of vanished files has changed since it was shown, so no pad was marked for deletion. Check it again.'),
+					$marked === null => $this->l10n->t('The list of vanished files has changed since it was shown, so no pad was marked for deletion. Check it again.'),
+					// Some are left - the budget ran out, before the first
+					// mark even - and none left to mark is said only of none.
+					$result['vanished_file_count'] > 0 => $this->l10n->t('Not every vanished file could be marked in one go. Run it again for the rest.'),
 					$marked === 0 => $this->l10n->t('No vanished file was left to mark for deletion.'),
-					$left > 0 => $this->l10n->t('Not every vanished file could be marked in one go. Run it again for the rest.'),
 					default => $this->l10n->t('The pads of the vanished files are marked for deletion. They are deleted within minutes, or at once with "Check pending pads".'),
 				}] + $result;
 			},
 			fn(array $result): DataResponse => new DataResponse(['ok' => true] + $result),
 			[
-				'generic' => $this->l10n->t('Could not delete the pads of the vanished files.'),
+				// A chunk that fails leaves the marks before it standing.
+				'generic' => $this->l10n->t('Could not delete the pads of all vanished files. Some may be marked for deletion already: check the list again.'),
 				'log_message' => 'Deleting the pads of vanished files failed',
 			],
 		);

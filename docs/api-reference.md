@@ -408,6 +408,8 @@ solely by the separate external-pad policy, not by these two settings.
     needs another.
   - Result: `marked`, and the list as for `delete-vanished`.
   - `400` with `Invalid count.` without a positive `expected`.
+  - `500` when a chunk of marks fails: the marks before it stand, `message`
+    says some may be marked already, and the log has their count.
 
 - `POST /api/v1/admin/forget-vanished`
   - Controller: `AdminController::forgetVanished`
