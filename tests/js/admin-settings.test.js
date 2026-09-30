@@ -439,6 +439,49 @@ describe('admin settings status areas', () => {
 		expect(document.getElementById('etherpad-nextcloud-delete-vanished').disabled).toBe(false)
 	})
 
+	/**
+	 * The other way round: a check under way does not disable the list, so
+	 * an action can start and be answered first. The check's older answer
+	 * then does not put back the pad the action took away.
+	 */
+	it('does not let an older check draw over a newer action', async () => {
+		const stale = { message: 'Checked.', vanished_file_count: 1, samples: { vanished_files: [{ file_id: 9, pad_id: 'stale', access_mode: 'public' }] } }
+		let checks = 0
+		let releaseCheck
+		const fetchMock = vi.fn((url) => {
+			if (url === '/forget-vanished') {
+				return Promise.resolve(okResponse({ message: 'Forgotten.', forgotten: true, vanished_file_count: 0, samples: { vanished_files: [] } }))
+			}
+			// Loading the page asks for the templates too.
+			if (url !== '/consistency') {
+				return Promise.resolve(okResponse({}))
+			}
+			checks += 1
+			if (checks === 1) {
+				return Promise.resolve(okResponse(stale))
+			}
+			return new Promise((resolve) => {
+				releaseCheck = () => resolve(okResponse(stale))
+			})
+		})
+		vi.stubGlobal('fetch', fetchMock)
+		vi.stubGlobal('confirm', vi.fn(() => true))
+		await import(MODULE)
+
+		document.getElementById('etherpad-nextcloud-consistency-check').click()
+		await flushAsyncWork()
+		document.getElementById('etherpad-nextcloud-consistency-check').click()
+		await flushAsyncWork()
+		document.querySelector('#etherpad-nextcloud-vanished-list button:last-child').click()
+		await flushAsyncWork()
+		expect(document.getElementById('etherpad-nextcloud-vanished').style.display).toBe('none')
+
+		releaseCheck()
+		await flushAsyncWork()
+		expect(document.getElementById('etherpad-nextcloud-vanished').style.display).toBe('none')
+		expect(document.querySelectorAll('#etherpad-nextcloud-vanished-list li').length).toBe(0)
+	})
+
 	it('leaves the counts alone when a response carries none', async () => {
 		// An older server, or a partial payload: no counts is not zero counts.
 		vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(okResponse({ message: 'All checks passed.' }))))

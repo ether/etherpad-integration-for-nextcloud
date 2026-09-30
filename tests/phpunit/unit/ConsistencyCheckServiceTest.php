@@ -111,6 +111,7 @@ class ConsistencyCheckServiceTest extends TestCase {
 			$row(3, BindingService::ACCESS_PROTECTED),
 			$row(4, BindingService::ACCESS_PUBLIC),
 			$row(5, BindingService::ACCESS_PROTECTED),
+			$row(6, BindingService::ACCESS_PROTECTED, BindingService::STATE_PENDING_DELETE),
 		], [['fileid' => 1, 'storage' => 1, 'path' => 'files/1.pad']]);
 		$logged = [];
 		$logger = $this->createMock(LoggerInterface::class);
@@ -127,9 +128,10 @@ class ConsistencyCheckServiceTest extends TestCase {
 		$this->assertSame(ConsistencyCheckService::NOT_VANISHED, $service->forgetVanished(1), 'its file is there');
 		$this->assertSame(ConsistencyCheckService::NOT_VANISHED, $service->forgetVanished(2), 'on its way already');
 		$this->assertSame(ConsistencyCheckService::NOT_VANISHED, $service->forgetVanished(4), 'gone already');
+		$this->assertSame(ConsistencyCheckService::NOT_VANISHED, $service->forgetVanished(6), 'a protected pad on its way is no vanished one: said as that, not as protected');
 
 		$states = array_map(static fn (array $r): array => [$r['file_id'], $r['state'], $r['deleted_at']], $db->rows);
-		$this->assertSame([[1, BindingService::STATE_ACTIVE, null], [2, BindingService::STATE_PENDING_DELETE, 90], [3, BindingService::STATE_PENDING_DELETE, 500], [5, BindingService::STATE_ACTIVE, null]], $states);
+		$this->assertSame([[1, BindingService::STATE_ACTIVE, null], [2, BindingService::STATE_PENDING_DELETE, 90], [3, BindingService::STATE_PENDING_DELETE, 500], [5, BindingService::STATE_ACTIVE, null], [6, BindingService::STATE_PENDING_DELETE, 90]], $states);
 		$this->assertSame([[3, null], [4, 'pad-4']], $logged);
 	}
 
