@@ -109,6 +109,7 @@ class ExternalPadExportFetcherTest extends TestCase {
 			'no host' => ['https:///p/pad', '', ExternalPadException::INVALID_URL],
 			'credentials' => ['https://user:secret@1.1.1.1/p/pad', '', ExternalPadException::CREDENTIALS_IN_URL],
 			'no /p/' => ['https://1.1.1.1/pad/pad', '', ExternalPadException::NOT_A_PAD_URL],
+			'only the server' => ['https://1.1.1.1', '', ExternalPadException::NOT_A_PAD_URL],
 			'a group pad' => ['https://1.1.1.1/p/g.group$pad', '', ExternalPadException::NOT_PUBLIC],
 			'not on the allowlist' => ['https://1.1.1.1:9443/p/pad', 'https://1.1.1.1:8443', ExternalPadException::NOT_ALLOWED],
 			'a local host' => ['https://pad.localhost/p/pad', '', ExternalPadException::LOCAL_ADDRESS],
