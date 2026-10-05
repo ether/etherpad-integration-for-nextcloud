@@ -138,6 +138,9 @@ class PublicViewerControllerErrorMapperTest extends TestCase {
 			// Another request made the file's row first; the next open finds it.
 			'a row another request made first' => [new BindingNotCreatedException('Could not create unique pad binding.'), ['retryable' => true]],
 			'Etherpad refusing' => [new EtherpadRefusedException('Etherpad API error (getHTML): padID does not exist'), []],
+			// A pad on another server: worth another try only if it did not answer.
+			'another server not answering' => [new ExternalPadException('Public export transport error: timeout', ExternalPadException::UNREACHABLE), ['retryable' => true]],
+			'another server refusing' => [new ExternalPadExportNotFoundException('External public pad export was not found.'), []],
 		];
 		foreach ($cases as $case => [$e, $expected]) {
 			$data = $this->buildMapper()->runForData(static fn (): array => throw $e, static fn (array $result): DataResponse => new DataResponse($result))->getData();

@@ -198,6 +198,8 @@ class PadControllerErrorMapperTest extends TestCase {
 			);
 
 			$this->assertSame([Http::STATUS_BAD_REQUEST, str_replace('{status}', '502', $german[$sentence])], [$response->getStatus(), $response->getData()['message']], $reason);
+			// Only a server that did not answer may answer the next try.
+			$this->assertSame($reason === ExternalPadException::UNREACHABLE, $response->getData()['retryable'] ?? false, $reason);
 		}
 	}
 
