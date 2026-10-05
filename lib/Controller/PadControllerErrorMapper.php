@@ -170,8 +170,9 @@ class PadControllerErrorMapper {
 			// Etherpad answered, and trying again gives the same answer.
 			return $this->answer($options, $e, ['message' => $this->l10n->t('Etherpad refused the request. Please contact your administrator.')], Http::STATUS_BAD_REQUEST);
 		} catch (ExternalPadException $e) {
-			// What was wrong with the link to another server: the user's to
-			// mend, not this admin's, in the user's language.
+			// What was wrong with the link to another server, or with that
+			// server, in the user's language. Mostly the user's to mend; the
+			// few this admin mends say so.
 			return $this->answer($options, $e, ['message' => $this->whyAnExternalPadFailed($e)], Http::STATUS_BAD_REQUEST);
 		} catch (EtherpadClientException $e) {
 			// Not reachable, or no proper answer: the same request may work

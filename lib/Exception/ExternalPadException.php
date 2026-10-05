@@ -12,8 +12,10 @@ namespace OCA\EtherpadNextcloud\Exception;
 /**
  * A pad on another server that could not be linked or read: the link is
  * not one this instance allows, that server did not answer, or it has no
- * such pad. Not this instance's Etherpad failing, and nothing its admin
- * can mend; the reason says what was wrong with the link.
+ * such pad. Not this instance's Etherpad failing. The reason says what was
+ * wrong: mostly the link or the other server, which the user mends, and a
+ * few this instance's admin mends - pads on other servers switched off, a
+ * server not on the allowlist, PHP without cURL - whose sentences say so.
  *
  * The message is for the log, in English and with what the far side said.
  * The reason is what the user reads: a code the error mapper puts into a

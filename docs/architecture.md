@@ -320,7 +320,7 @@ Primary flow (native viewer):
   - Etherpad not reachable: `Etherpad could not be reached while answering a request.`, a warning once a minute for the instance and at debug for the rest of that minute, since an outage reaches every open viewer's sync. Refusing: `Etherpad refused a request.`, once a minute for each file, since each is a case of its own (a pad deleted in Etherpad, a group gone), and once a minute for all refusals that name none. Without a distributed cache, or with one that fails, each is a warning.
   - A `.pad` and its row that do not match (`BindingMismatchException`): `A .pad file and its pad binding could not be matched.`, a warning. A row that could not be written (`BindingNotCreatedException`): `Could not create pad binding.`, an error with the database's cause.
   - The unforeseen: an error under the endpoint's line (`Pad recovery API failed`, `Pad sync failed`, ...), or `Unhandled pad controller error` / `Unhandled public viewer error`.
-  - Anything else - what the request got wrong, a pad on another server: `A request was refused.` at debug, with the reason the answer leaves out.
+  - Anything else - what the request got wrong, a pad on another server: `A request was refused.` at debug, with the exception's message, which says more than the answer: for a pad on another server, what that server sent.
   - The line names the request's file (`ApiErrorLog::fileNamedBy()`): signed in by `fileId` and `file`, on a public share by `fileId` only, since a public path may be a DAV URL carrying the share token.
 
 ## What a log may carry
