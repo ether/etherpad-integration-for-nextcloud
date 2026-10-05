@@ -10,12 +10,37 @@ use OCP\IL10N;
 use PHPUnit\Framework\TestCase;
 
 class TrustedEmbedOriginsNormalizerTest extends TestCase {
-	public function testNormalizeRejectsInvalidTcpPortZero(): void {
-		$this->expectException(AdminValidationException::class);
-		// With the entry in it: the admin has to see which one.
-		$this->expectExceptionMessage('Trusted embed origins must use a valid TCP port: https://portal.example.test:0');
+	private const SENTENCES = [
+		'Trusted embed origins must be absolute origins: {origin}',
+		'Trusted embed origins must not include a path: {origin}',
+		'Trusted embed origins must not include credentials, query, or fragment: {origin}',
+		'Trusted embed origins must use https: {origin}',
+		'Trusted embed origins must use a valid TCP port: {origin}',
+	];
 
-		$this->buildNormalizer()->normalize('https://portal.example.test:0');
+	/**
+	 * Each refusal in its own sentence, translated and then filled with the
+	 * entry: the admin has to see which one.
+	 */
+	#[\PHPUnit\Framework\Attributes\DataProvider('refusals')]
+	public function testNormalizeRefusesWithTheEntry(string $entry, string $sentence): void {
+		try {
+			$this->buildNormalizer()->normalize($entry);
+			$this->fail('not refused');
+		} catch (AdminValidationException $e) {
+			$this->assertSame('[de] ' . str_replace('{origin}', $entry, $sentence), $e->getMessage());
+		}
+	}
+
+	/** @return array<string, array{string, string}> */
+	public static function refusals(): array {
+		return [
+			'no scheme' => ['portal.example.test', self::SENTENCES[0]],
+			'a path' => ['https://portal.example.test/app', self::SENTENCES[1]],
+			'credentials' => ['https://user@portal.example.test', self::SENTENCES[2]],
+			'http' => ['http://portal.example.test', self::SENTENCES[3]],
+			'port zero' => ['https://portal.example.test:0', self::SENTENCES[4]],
+		];
 	}
 
 	public function testNormalizeAcceptsUpperTcpPortBoundary(): void {
@@ -46,11 +71,13 @@ class TrustedEmbedOriginsNormalizerTest extends TestCase {
 	/**
 	 * As Nextcloud's does it: parameters go through vsprintf(), so a
 	 * `{name}` in the sentence stays as it is unless the caller fills it.
+	 * It knows only the sentences as written, so one filled before it is
+	 * translated comes back untranslated.
 	 */
 	private function buildL10n(): IL10N {
 		$l10n = $this->createMock(IL10N::class);
 		$l10n->method('t')->willReturnCallback(
-			static fn (string $text, array $parameters = []): string => vsprintf($text, array_values($parameters)),
+			static fn (string $text, array $parameters = []): string => (in_array($text, self::SENTENCES, true) ? '[de] ' : '') . vsprintf($text, array_values($parameters)),
 		);
 
 		return $l10n;

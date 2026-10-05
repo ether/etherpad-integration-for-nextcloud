@@ -154,6 +154,10 @@ class PadControllerErrorMapperTest extends TestCase {
 	 * the other server said. Every reason the exception declares is here -
 	 * a new one without a sentence makes the match throw, and one here that
 	 * is gone fails as well.
+	 *
+	 * Translated from the German catalogue: a sentence that does not go
+	 * through t(), has no translation or is filled before it is translated
+	 * comes back in English.
 	 */
 	public function testAPadOnAnotherServerIsExplainedByItsReason(): void {
 		$expected = [
@@ -170,24 +174,30 @@ class PadControllerErrorMapperTest extends TestCase {
 			ExternalPadException::UNREACHABLE => 'The server of the pad could not be reached. Try again later.',
 			ExternalPadException::UNTRUSTED_CERTIFICATE => 'The server of the pad has no certificate this Nextcloud trusts.',
 			ExternalPadException::REDIRECTED => 'The server of the pad sent the request on elsewhere, usually to a sign-in page. Only pads that can be read without signing in can be linked.',
-			ExternalPadException::HTTP_ERROR => 'The server of the pad answered with an error (502).',
+			ExternalPadException::HTTP_ERROR => 'The server of the pad answered with an error ({status}).',
 			ExternalPadException::NOT_FOUND => 'The pad was not found on the other server, or it cannot be exported there.',
 			ExternalPadException::UNEXPECTED_ANSWER => 'The server of the pad did not answer with the content of the pad.',
 		];
 		$this->assertEqualsCanonicalizing(array_values((new \ReflectionClass(ExternalPadException::class))->getConstants()), array_keys($expected));
 
+		/** @var array<string,string> $german */
+		$german = json_decode((string)file_get_contents(dirname(__DIR__, 3) . '/l10n/de.json'), true, 512, JSON_THROW_ON_ERROR)['translations'];
+		$l10n = $this->createMock(IL10N::class);
+		$l10n->method('t')->willReturnCallback(static fn (string $text): string => $german[$text] ?? $text);
+
 		foreach ($expected as $reason => $sentence) {
+			$this->assertArrayHasKey($sentence, $german, $reason);
 			$e = match ($reason) {
 				ExternalPadException::HTTP_ERROR => new ExternalPadHttpErrorException('internal wording', 502),
 				ExternalPadException::NOT_FOUND => new ExternalPadExportNotFoundException('internal wording'),
 				default => new ExternalPadException('internal wording', $reason),
 			};
-			$response = $this->buildMapper()->run(
+			$response = $this->buildMapper(l10n: $l10n)->run(
 				static fn (): array => throw $e,
 				static fn (array $result): DataResponse => new DataResponse($result),
 			);
 
-			$this->assertSame([Http::STATUS_BAD_REQUEST, $sentence], [$response->getStatus(), $response->getData()['message']], $reason);
+			$this->assertSame([Http::STATUS_BAD_REQUEST, str_replace('{status}', '502', $german[$sentence])], [$response->getStatus(), $response->getData()['message']], $reason);
 		}
 	}
 
