@@ -247,7 +247,17 @@ class ExternalPadExportFetcher {
 	 * Why no attempt got an answer: a certificate this instance does not
 	 * trust, which a later try does not mend, or the server not reached.
 	 * 51 and 60 are cURL's codes for a peer certificate that failed
-	 * verification - 51 in older libcurl, 60 since the two were merged.
+	 * verification: before libcurl 7.62.0, 51 for a name it does not match
+	 * and 60 for a chain not trusted; since then 60 for both.
+	 *
+	 * One such failure decides it, whatever the other addresses did. A
+	 * host whose certificate is not trusted, asked from an instance
+	 * without an IPv6 route, fails its IPv6 attempt on every try, and cURL
+	 * calls that 7, as it does a connection refused for a moment. So a
+	 * name whose addresses show different certificates, the trusted one
+	 * briefly down, is given up on purpose: it gets the certificate's
+	 * sentence, and opening the file again tries again. The normal host
+	 * shows one certificate on all its addresses.
 	 *
 	 * @param list<int> $curlErrors
 	 * @return ExternalPadException::UNTRUSTED_CERTIFICATE|ExternalPadException::UNREACHABLE

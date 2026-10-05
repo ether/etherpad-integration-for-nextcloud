@@ -171,6 +171,9 @@ class ExternalPadExportFetcherTest extends TestCase {
 		// itself returns, which needs a server, a cURL that cannot start a
 		// request, and PHP without cURL.
 		$transport = new \ReflectionMethod(ExternalPadExportFetcher::class, 'transportReason');
+		// One address with a certificate not trusted, another not answering:
+		// the certificate is why, whichever was tried first.
+		$this->assertSame(ExternalPadException::UNTRUSTED_CERTIFICATE, $transport->invoke(null, [60, 7]));
 		$this->assertSame(ExternalPadException::UNTRUSTED_CERTIFICATE, $transport->invoke(null, [7, 60]));
 		$this->assertSame(ExternalPadException::UNTRUSTED_CERTIFICATE, $transport->invoke(null, [51]));
 		$this->assertSame(ExternalPadException::UNREACHABLE, $transport->invoke(null, [7, 28]));
