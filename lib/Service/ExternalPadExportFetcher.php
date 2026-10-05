@@ -339,8 +339,8 @@ class ExternalPadExportFetcher {
 			return [$host];
 		}
 
-		$records = @dns_get_record($host, DNS_A + DNS_AAAA);
-		if (!is_array($records) || $records === []) {
+		$records = $this->lookUp($host);
+		if ($records === []) {
 			throw new ExternalPadException('Could not resolve external pad host.', ExternalPadException::UNRESOLVED);
 		}
 
@@ -364,6 +364,18 @@ class ExternalPadExportFetcher {
 		}
 
 		return array_values(array_unique($resolvedIps));
+	}
+
+	/**
+	 * The A and AAAA records of a name, none if it has none or the lookup
+	 * failed. The one place the fetcher asks the resolver, so a test can
+	 * answer in its place instead of the network.
+	 *
+	 * @return list<array<array-key, mixed>>
+	 */
+	protected function lookUp(string $host): array {
+		$records = @dns_get_record($host, DNS_A + DNS_AAAA);
+		return is_array($records) ? $records : [];
 	}
 
 	private function isPublicIp(string $ip): bool {

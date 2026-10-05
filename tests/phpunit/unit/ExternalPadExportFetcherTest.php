@@ -14,7 +14,7 @@ use PHPUnit\Framework\TestCase;
 
 class ExternalPadExportFetcherTest extends TestCase {
 	public function testNormalizeAndValidateExternalPublicPadUrlCanonicalizesHttpsUrl(): void {
-		$fetcher = new ExternalPadExportFetcher($this->buildExternalEnabledConfig(), new FixedClock());
+		$fetcher = $this->fetcher($this->buildExternalEnabledConfig());
 
 		$result = $fetcher->normalizeAndValidateExternalPublicPadUrl('https://1.1.1.1/p/My Pad');
 
@@ -27,20 +27,20 @@ class ExternalPadExportFetcherTest extends TestCase {
 		// `+` is literal in URL path segments. Using urldecode() previously
 		// turned `team+pad` into pad-id `team pad`, then re-emitted
 		// `/p/team%20pad` which hits a different / non-existent pad.
-		$fetcher = new ExternalPadExportFetcher($this->buildExternalEnabledConfig(), new FixedClock());
+		$fetcher = $this->fetcher($this->buildExternalEnabledConfig());
 		$result = $fetcher->normalizeAndValidateExternalPublicPadUrl('https://1.1.1.1/p/team+meeting');
 		$this->assertSame('team+meeting', $result['pad_id']);
 		$this->assertSame('https://1.1.1.1/p/team%2Bmeeting', $result['pad_url']);
 	}
 
 	public function testNormalizeAndValidateExternalPublicPadUrlDecodesPercentEncodedPlus(): void {
-		$fetcher = new ExternalPadExportFetcher($this->buildExternalEnabledConfig(), new FixedClock());
+		$fetcher = $this->fetcher($this->buildExternalEnabledConfig());
 		$result = $fetcher->normalizeAndValidateExternalPublicPadUrl('https://1.1.1.1/p/team%2Bmeeting');
 		$this->assertSame('team+meeting', $result['pad_id']);
 	}
 
 	public function testNormalizeAndValidateExternalPublicPadUrlAcceptsMatchingAllowlistedOriginWithPort(): void {
-		$fetcher = new ExternalPadExportFetcher($this->buildExternalEnabledConfig('https://1.1.1.1:8443'), new FixedClock());
+		$fetcher = $this->fetcher($this->buildExternalEnabledConfig('https://1.1.1.1:8443'));
 
 		$result = $fetcher->normalizeAndValidateExternalPublicPadUrl('https://1.1.1.1:8443/p/public-pad');
 
@@ -49,7 +49,7 @@ class ExternalPadExportFetcherTest extends TestCase {
 	}
 
 	public function testNormalizeAndValidateExternalPublicPadUrlRejectsNonMatchingAllowlistedOriginPort(): void {
-		$fetcher = new ExternalPadExportFetcher($this->buildExternalEnabledConfig('https://1.1.1.1:8443'), new FixedClock());
+		$fetcher = $this->fetcher($this->buildExternalEnabledConfig('https://1.1.1.1:8443'));
 
 		$this->expectException(ExternalPadException::class);
 		$this->expectExceptionMessage('External pad host is not in the allowlist.');
@@ -57,7 +57,7 @@ class ExternalPadExportFetcherTest extends TestCase {
 	}
 
 	public function testNormalizeAndValidateExternalPublicPadUrlRejectsAPadIdWithANewline(): void {
-		$fetcher = new ExternalPadExportFetcher($this->buildExternalEnabledConfig(), new FixedClock());
+		$fetcher = $this->fetcher($this->buildExternalEnabledConfig());
 
 		$this->expectException(ExternalPadException::class);
 		$fetcher->normalizeAndValidateExternalPublicPadUrl(
@@ -66,14 +66,14 @@ class ExternalPadExportFetcherTest extends TestCase {
 	}
 
 	public function testNormalizeAndValidateExternalPublicPadUrlRejectsAControlCharacterBeforeThePadId(): void {
-		$fetcher = new ExternalPadExportFetcher($this->buildExternalEnabledConfig(), new FixedClock());
+		$fetcher = $this->fetcher($this->buildExternalEnabledConfig());
 
 		$this->expectException(ExternalPadException::class);
 		$fetcher->normalizeAndValidateExternalPublicPadUrl('https://1.1.1.1/base%01/p/demo');
 	}
 
 	public function testNormalizeAndValidateExternalPublicPadUrlRejectsProtectedPadIds(): void {
-		$fetcher = new ExternalPadExportFetcher($this->buildExternalEnabledConfig(), new FixedClock());
+		$fetcher = $this->fetcher($this->buildExternalEnabledConfig());
 
 		$this->expectException(ExternalPadException::class);
 		$this->expectExceptionMessage('Only public pad URLs can be linked from external servers.');
@@ -91,7 +91,7 @@ class ExternalPadExportFetcherTest extends TestCase {
 			}
 		);
 
-		$fetcher = new ExternalPadExportFetcher($config, new FixedClock());
+		$fetcher = $this->fetcher($config);
 
 		$this->expectException(ExternalPadException::class);
 		$this->expectExceptionMessage('External pad linking is disabled by admin settings.');
@@ -105,6 +105,8 @@ class ExternalPadExportFetcherTest extends TestCase {
 	public function testEachRefusalCarriesItsReason(): void {
 		$cases = [
 			'no https' => ['http://1.1.1.1/p/pad', '', ExternalPadException::INVALID_URL],
+			'another scheme' => ['ftp://1.1.1.1/p/pad', '', ExternalPadException::INVALID_URL],
+			'no host' => ['https:///p/pad', '', ExternalPadException::INVALID_URL],
 			'credentials' => ['https://user:secret@1.1.1.1/p/pad', '', ExternalPadException::CREDENTIALS_IN_URL],
 			'no /p/' => ['https://1.1.1.1/pad/pad', '', ExternalPadException::NOT_A_PAD_URL],
 			'a group pad' => ['https://1.1.1.1/p/g.group$pad', '', ExternalPadException::NOT_PUBLIC],
@@ -112,12 +114,15 @@ class ExternalPadExportFetcherTest extends TestCase {
 			'a local host' => ['https://pad.localhost/p/pad', '', ExternalPadException::LOCAL_ADDRESS],
 			'a private address' => ['https://10.0.0.7/p/pad', '', ExternalPadException::LOCAL_ADDRESS],
 			'no pad after /p/' => ['https://1.1.1.1/p/%20', '', ExternalPadException::NOT_A_PAD_URL],
-			// A name that never resolves: `.invalid` is reserved for that.
-			'a host nothing resolves' => ['https://pad.invalid/p/pad', 'pad.invalid', ExternalPadException::UNRESOLVED],
+			'a name without records' => ['https://pad.example/p/pad', '', ExternalPadException::UNRESOLVED, []],
+			'a name without an address' => ['https://pad.example/p/pad', '', ExternalPadException::UNRESOLVED, [['host' => 'pad.example', 'type' => 'A']]],
+			'a name for a private address' => ['https://pad.example/p/pad', '', ExternalPadException::LOCAL_ADDRESS, [['ip' => '1.1.1.1'], ['ipv6' => 'fd00::7']]],
 		];
-		foreach ($cases as $case => [$url, $allowlist, $reason]) {
+		foreach ($cases as $case => $row) {
+			// What a name lookup finds, where the case gets that far.
+			[$url, $allowlist, $reason, $records] = $row + [3 => null];
 			try {
-				(new ExternalPadExportFetcher($this->buildExternalEnabledConfig($allowlist), new FixedClock()))->normalizeAndValidateExternalPublicPadUrl($url);
+				$this->fetcher($this->buildExternalEnabledConfig($allowlist), $records)->normalizeAndValidateExternalPublicPadUrl($url);
 				$this->fail($case . ': not refused');
 			} catch (ExternalPadException $e) {
 				$this->assertSame($reason, $e->reason(), $case);
@@ -127,18 +132,21 @@ class ExternalPadExportFetcherTest extends TestCase {
 		$disabled = $this->createMock(IConfig::class);
 		$disabled->method('getAppValue')->willReturnCallback(static fn (string $app, string $key, string $default = ''): string => $key === 'allow_external_pads' ? 'no' : $default);
 		try {
-			(new ExternalPadExportFetcher($disabled, new FixedClock()))->normalizeAndValidateExternalPublicPadUrl('https://1.1.1.1/p/pad');
+			$this->fetcher($disabled)->normalizeAndValidateExternalPublicPadUrl('https://1.1.1.1/p/pad');
 			$this->fail('switched off: not refused');
 		} catch (ExternalPadException $e) {
 			$this->assertSame(ExternalPadException::DISABLED, $e->reason());
 		}
 
-		$fetcher = new ExternalPadExportFetcher($this->buildExternalEnabledConfig(), new FixedClock());
+		$fetcher = $this->fetcher($this->buildExternalEnabledConfig());
 		foreach ([
 			[500, ExternalPadException::HTTP_ERROR, 500],
 			[401, ExternalPadException::HTTP_ERROR, 401],
+			[400, ExternalPadException::HTTP_ERROR, 400],
+			[300, ExternalPadException::REDIRECTED, null],
 			[302, ExternalPadException::REDIRECTED, null],
 			[307, ExternalPadException::REDIRECTED, null],
+			[399, ExternalPadException::REDIRECTED, null],
 			[404, ExternalPadException::NOT_FOUND, null],
 		] as [$status, $reason, $httpStatus]) {
 			try {
@@ -158,8 +166,9 @@ class ExternalPadExportFetcherTest extends TestCase {
 		}
 
 		// No answer at all: a certificate not trusted, which a later try does
-		// not mend, or the server not reached. The cURL calls themselves need
-		// a server, and missing cURL a PHP without it; both stay untested here.
+		// not mend, or the server not reached. Untested here: what cURL
+		// itself returns, which needs a server, a cURL that cannot start a
+		// request, and PHP without cURL.
 		$transport = new \ReflectionMethod(ExternalPadExportFetcher::class, 'transportReason');
 		$this->assertSame(ExternalPadException::UNTRUSTED_CERTIFICATE, $transport->invoke(null, [7, 60]));
 		$this->assertSame(ExternalPadException::UNTRUSTED_CERTIFICATE, $transport->invoke(null, [51]));
@@ -174,22 +183,27 @@ class ExternalPadExportFetcherTest extends TestCase {
 	 */
 	public function testAnExhaustedBudgetStopsBeforeAnyAttempt(): void {
 		$send = new \ReflectionMethod(ExternalPadExportFetcher::class, 'sendPinnedPublicGetRequest');
-		$fetcher = new ExternalPadExportFetcher($this->buildExternalEnabledConfig(), new FixedClock());
+		$fetcher = $this->fetcher($this->buildExternalEnabledConfig());
 
-		$this->expectException(ExternalPadException::class);
-		$this->expectExceptionMessage('no time left');
-		$send->invoke(
-			$fetcher,
-			'https://1.1.1.1/p/Test/export/html',
-			'1.1.1.1',
-			443,
-			['1.1.1.1'],
-			'html',
-			// Already spent: a slow lookup leaves nothing for the transfer.
-			// Against the clock the fetcher reads, not the wall clock — the
-			// two are the same only by accident.
-			FixedClock::NOW - 1.0,
-		);
+		try {
+			$send->invoke(
+				$fetcher,
+				'https://1.1.1.1/p/Test/export/html',
+				'1.1.1.1',
+				443,
+				['1.1.1.1'],
+				'html',
+				// Already spent: a slow lookup leaves nothing for the transfer.
+				// Against the clock the fetcher reads, not the wall clock — the
+				// two are the same only by accident.
+				FixedClock::NOW - 1.0,
+			);
+			$this->fail('an attempt was made');
+		} catch (ExternalPadException $e) {
+			$this->assertStringContainsString('no time left', $e->getMessage());
+			// No answer from the server, which a later try may get.
+			$this->assertSame(ExternalPadException::UNREACHABLE, $e->reason());
+		}
 	}
 
 	/**
@@ -202,7 +216,7 @@ class ExternalPadExportFetcherTest extends TestCase {
 	#[\PHPUnit\Framework\Attributes\DataProvider('contentTypeCases')]
 	public function testContentTypeIsAcceptedPerExportFormat(string $format, string $contentType, bool $accepted): void {
 		$assert = new \ReflectionMethod(ExternalPadExportFetcher::class, 'assertAllowedExternalExportContentType');
-		$fetcher = new ExternalPadExportFetcher($this->buildExternalEnabledConfig(), new FixedClock());
+		$fetcher = $this->fetcher($this->buildExternalEnabledConfig());
 
 		if (!$accepted) {
 			$this->expectException(ExternalPadException::class);
@@ -222,7 +236,7 @@ class ExternalPadExportFetcherTest extends TestCase {
 	#[\PHPUnit\Framework\Attributes\DataProvider('statusCases')]
 	public function testOnlyASuccessfulExportStatusIsAccepted(int $status, ?string $expectedException): void {
 		$assert = new \ReflectionMethod(ExternalPadExportFetcher::class, 'assertSuccessfulExportStatus');
-		$fetcher = new ExternalPadExportFetcher($this->buildExternalEnabledConfig(), new FixedClock());
+		$fetcher = $this->fetcher($this->buildExternalEnabledConfig());
 
 		if ($expectedException !== null) {
 			$this->expectException($expectedException);
@@ -261,6 +275,30 @@ class ExternalPadExportFetcherTest extends TestCase {
 			'html export refuses a byte stream' => ['html', 'application/octet-stream', false],
 			'a missing header is refused either way' => ['html', '', false],
 		];
+	}
+
+	/**
+	 * The fetcher, with what a name lookup finds given instead of asked of
+	 * the network: a test that resolves a real name is green offline, slow
+	 * behind a dead nameserver and red behind one that answers every name.
+	 * A lookup a test did not give an answer for fails it.
+	 *
+	 * @param ?list<array<string, string>> $records
+	 */
+	private function fetcher(IConfig $config, ?array $records = null): ExternalPadExportFetcher {
+		return new class($config, new FixedClock(), $records) extends ExternalPadExportFetcher {
+			/** @param ?list<array<string, string>> $records */
+			public function __construct(IConfig $config, FixedClock $clock, private ?array $records) {
+				parent::__construct($config, $clock);
+			}
+
+			protected function lookUp(string $host): array {
+				if ($this->records === null) {
+					throw new \LogicException('A lookup of ' . $host . ' the test gave no answer for.');
+				}
+				return $this->records;
+			}
+		};
 	}
 
 	private function buildExternalEnabledConfig(string $externalPadAllowlist = ''): IConfig {
