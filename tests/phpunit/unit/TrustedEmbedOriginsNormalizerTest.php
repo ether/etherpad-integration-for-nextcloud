@@ -12,7 +12,8 @@ use PHPUnit\Framework\TestCase;
 class TrustedEmbedOriginsNormalizerTest extends TestCase {
 	public function testNormalizeRejectsInvalidTcpPortZero(): void {
 		$this->expectException(AdminValidationException::class);
-		$this->expectExceptionMessage('Trusted embed origins must use a valid TCP port');
+		// With the entry in it: the admin has to see which one.
+		$this->expectExceptionMessage('Trusted embed origins must use a valid TCP port: https://portal.example.test:0');
 
 		$this->buildNormalizer()->normalize('https://portal.example.test:0');
 	}
@@ -42,15 +43,14 @@ class TrustedEmbedOriginsNormalizerTest extends TestCase {
 		return new TrustedEmbedOriginsNormalizer($this->buildL10n());
 	}
 
+	/**
+	 * As Nextcloud's does it: parameters go through vsprintf(), so a
+	 * `{name}` in the sentence stays as it is unless the caller fills it.
+	 */
 	private function buildL10n(): IL10N {
 		$l10n = $this->createMock(IL10N::class);
 		$l10n->method('t')->willReturnCallback(
-			static function (string $text, array $parameters = []): string {
-				foreach ($parameters as $key => $value) {
-					$text = str_replace('{' . $key . '}', (string)$value, $text);
-				}
-				return $text;
-			}
+			static fn (string $text, array $parameters = []): string => vsprintf($text, array_values($parameters)),
 		);
 
 		return $l10n;
