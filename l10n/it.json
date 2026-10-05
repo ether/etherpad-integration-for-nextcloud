@@ -251,7 +251,9 @@
         "The server of the pad could not be reached. Try again later.": "Il server del pad non è raggiungibile. Riprova più tardi.",
         "The server of the pad answered with an error ({status}).": "Il server del pad ha risposto con un errore ({status}).",
         "The pad was not found on the other server, or it cannot be exported there.": "Il pad non è stato trovato sull'altro server, oppure lì non può essere esportato.",
-        "The server of the pad did not answer with the content of the pad.": "Il server del pad non ha risposto con il contenuto del pad."
+        "The server of the pad did not answer with the content of the pad.": "Il server del pad non ha risposto con il contenuto del pad.",
+        "The server of the pad has no certificate this Nextcloud trusts.": "Il server del pad non ha un certificato di cui questo Nextcloud si fidi.",
+        "The server of the pad sent the request on elsewhere, usually to a sign-in page. Only pads that can be read without signing in can be linked.": "Il server del pad ha reindirizzato la richiesta, di solito a una pagina di accesso. Si possono collegare solo pad leggibili senza accesso."
     },
     "pluralForm": "nplurals=2; plural=(n != 1);"
 }

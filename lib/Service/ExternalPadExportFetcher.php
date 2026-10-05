@@ -11,6 +11,7 @@ namespace OCA\EtherpadNextcloud\Service;
 use OCA\EtherpadNextcloud\Exception\ExternalPadException;
 use OCA\EtherpadNextcloud\Exception\EtherpadTooLargeException;
 use OCA\EtherpadNextcloud\Exception\ExternalPadExportNotFoundException;
+use OCA\EtherpadNextcloud\Exception\ExternalPadHttpErrorException;
 use OCP\AppFramework\Utility\ITimeFactory;
 use OCP\IConfig;
 
@@ -157,6 +158,7 @@ class ExternalPadExportFetcher {
 		}
 
 		$errors = [];
+		$curlErrors = [];
 		foreach ($resolvedIps as $ip) {
 			$left = (int)floor($deadline - $this->nowSeconds());
 			if ($left < self::EXTERNAL_MIN_ATTEMPT_SECONDS) {
@@ -212,6 +214,7 @@ class ExternalPadExportFetcher {
 			$success = curl_exec($curl);
 			$httpCode = (int)curl_getinfo($curl, CURLINFO_RESPONSE_CODE);
 			$curlError = curl_error($curl);
+			$curlErrors[] = curl_errno($curl);
 			curl_close($curl);
 
 			if ($success === false) {
@@ -237,14 +240,30 @@ class ExternalPadExportFetcher {
 		}
 
 		$detail = $errors !== [] ? implode('; ', $errors) : 'all resolved targets failed';
-		throw new ExternalPadException('Public export transport error: ' . $detail, ExternalPadException::UNREACHABLE);
+		throw new ExternalPadException('Public export transport error: ' . $detail, self::transportReason($curlErrors));
+	}
+
+	/**
+	 * Why no attempt got an answer: a certificate this instance does not
+	 * trust, which a later try does not mend, or the server not reached.
+	 * 51 and 60 are cURL's codes for a peer certificate that failed
+	 * verification - 51 in older libcurl, 60 since the two were merged.
+	 *
+	 * @param list<int> $curlErrors
+	 * @return ExternalPadException::UNTRUSTED_CERTIFICATE|ExternalPadException::UNREACHABLE
+	 */
+	private static function transportReason(array $curlErrors): string {
+		return array_intersect($curlErrors, [51, 60]) !== []
+			? ExternalPadException::UNTRUSTED_CERTIFICATE
+			: ExternalPadException::UNREACHABLE;
 	}
 
 	/**
 	 * Only an answer that says it *is* the export. Redirects are not
 	 * followed, but their bodies used to be taken anyway — a "Please sign
 	 * in" page behind a 302 arrived as pad content, which the text export
-	 * caught on content type and the HTML export cannot.
+	 * caught on content type and the HTML export cannot. A redirect is
+	 * told apart from other errors: it usually means a pad behind a login.
 	 */
 	private function assertSuccessfulExportStatus(int $httpCode): void {
 		if ($httpCode === 404) {
@@ -252,8 +271,11 @@ class ExternalPadExportFetcher {
 				'External public pad export was not found. Make sure the pad exists and can be exported.'
 			);
 		}
+		if ($httpCode >= 300 && $httpCode <= 399) {
+			throw new ExternalPadException('Public export redirected (' . $httpCode . ')', ExternalPadException::REDIRECTED);
+		}
 		if ($httpCode < 200 || $httpCode > 299) {
-			throw new ExternalPadException('Public export HTTP error (' . $httpCode . ')', ExternalPadException::HTTP_ERROR, $httpCode);
+			throw new ExternalPadHttpErrorException('Public export HTTP error (' . $httpCode . ')', $httpCode);
 		}
 	}
 
@@ -426,7 +448,7 @@ class ExternalPadExportFetcher {
 		$basePath = rtrim($matches[1], '/');
 		$padId = trim($matches[2]);
 		if ($padId === '') {
-			throw new ExternalPadException('Invalid public pad URL.', ExternalPadException::INVALID_URL);
+			throw new ExternalPadException('Public pad URL names no pad after /p/.', ExternalPadException::NOT_A_PAD_URL);
 		}
 
 		$origin = $scheme . '://' . $host;

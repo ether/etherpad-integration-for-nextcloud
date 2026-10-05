@@ -252,6 +252,8 @@ OC.L10N.register(
     "The server of the pad could not be reached. Try again later.": "Le serveur du pad est injoignable. Réessayez plus tard.",
     "The server of the pad answered with an error ({status}).": "Le serveur du pad a répondu par une erreur ({status}).",
     "The pad was not found on the other server, or it cannot be exported there.": "Le pad est introuvable sur l'autre serveur, ou il ne peut pas y être exporté.",
-    "The server of the pad did not answer with the content of the pad.": "Le serveur du pad n'a pas répondu avec le contenu du pad."
+    "The server of the pad did not answer with the content of the pad.": "Le serveur du pad n'a pas répondu avec le contenu du pad.",
+    "The server of the pad has no certificate this Nextcloud trusts.": "Le serveur du pad n'a pas de certificat auquel ce Nextcloud fait confiance.",
+    "The server of the pad sent the request on elsewhere, usually to a sign-in page. Only pads that can be read without signing in can be linked.": "Le serveur du pad a redirigé la demande, généralement vers une page de connexion. Seuls les pads lisibles sans connexion peuvent être liés."
 },
 "nplurals=2; plural=(n > 1);");

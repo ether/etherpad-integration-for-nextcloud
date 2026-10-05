@@ -12,6 +12,6 @@ namespace OCA\EtherpadNextcloud\Exception;
 /** The other server has no such pad, or none it lets be exported: a 404. */
 class ExternalPadExportNotFoundException extends ExternalPadException {
 	public function __construct(string $message, ?\Throwable $previous = null) {
-		parent::__construct($message, self::NOT_FOUND, null, $previous);
+		parent::__construct($message, self::NOT_FOUND, $previous);
 	}
 }

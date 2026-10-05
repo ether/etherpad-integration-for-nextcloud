@@ -15,6 +15,7 @@ use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
 use OCA\EtherpadNextcloud\Exception\EtherpadRefusedException;
 use OCA\EtherpadNextcloud\Exception\EtherpadTooLargeException;
 use OCA\EtherpadNextcloud\Exception\ExternalPadException;
+use OCA\EtherpadNextcloud\Exception\ExternalPadHttpErrorException;
 use OCA\EtherpadNextcloud\Exception\InvalidPadNameException;
 use OCA\EtherpadNextcloud\Exception\LegacyPadCollisionException;
 use OCA\EtherpadNextcloud\Exception\LegacyPadNotFoundException;
@@ -41,11 +42,11 @@ use OCP\Lock\LockedException;
  * Maps what the signed-in pad API throws to the response a client gets.
  *
  * The sentence is this mapper's own, translated; an exception's message is
- * for the log. Three pass their message on: a controller's own refusal of
- * a parameter and a refused name, both translated where they are thrown,
- * and a pad on another server that cannot be linked or read, whose reason
- * is the user's only hint (in English). The `code` and `retryable` come
- * from ApiErrorCode.
+ * for the log. Two pass their message on: a controller's own refusal of a
+ * parameter and a refused name, both translated where they are thrown. A
+ * pad on another server that cannot be linked or read is told by the
+ * reason it carries, in a sentence of this mapper's. The `code` and
+ * `retryable` come from ApiErrorCode.
  *
  * An endpoint passes wording only where it means something else by the
  * same exception. Every error answered is reported once through
@@ -202,7 +203,9 @@ class PadControllerErrorMapper {
 			ExternalPadException::UNRESOLVED => $this->l10n->t('The server of the pad could not be found.'),
 			ExternalPadException::NO_CURL => $this->l10n->t('This Nextcloud cannot read pads on other servers: the PHP cURL extension is missing. Please contact your administrator.'),
 			ExternalPadException::UNREACHABLE => $this->l10n->t('The server of the pad could not be reached. Try again later.'),
-			ExternalPadException::HTTP_ERROR => str_replace('{status}', (string)$e->httpStatus(), $this->l10n->t('The server of the pad answered with an error ({status}).')),
+			ExternalPadException::UNTRUSTED_CERTIFICATE => $this->l10n->t('The server of the pad has no certificate this Nextcloud trusts.'),
+			ExternalPadException::REDIRECTED => $this->l10n->t('The server of the pad sent the request on elsewhere, usually to a sign-in page. Only pads that can be read without signing in can be linked.'),
+			ExternalPadException::HTTP_ERROR => str_replace('{status}', $e instanceof ExternalPadHttpErrorException ? (string)$e->httpStatus() : '', $this->l10n->t('The server of the pad answered with an error ({status}).')),
 			ExternalPadException::NOT_FOUND => $this->l10n->t('The pad was not found on the other server, or it cannot be exported there.'),
 			ExternalPadException::UNEXPECTED_ANSWER => $this->l10n->t('The server of the pad did not answer with the content of the pad.'),
 		};

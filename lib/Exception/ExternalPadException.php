@@ -43,23 +43,28 @@ class ExternalPadException extends EtherpadClientException {
 	public const NO_CURL = 'no_curl';
 	/** No answer from the other server. */
 	public const UNREACHABLE = 'unreachable';
-	/** An answer with an HTTP error, whose status goes along. */
+	/** A server whose certificate this instance does not trust: not something a later try mends. */
+	public const UNTRUSTED_CERTIFICATE = 'untrusted_certificate';
+	/** An answer that sends the request elsewhere, usually to a sign-in page. */
+	public const REDIRECTED = 'redirected';
+	/** An answer with another HTTP error: ExternalPadHttpErrorException, which carries the status. */
 	public const HTTP_ERROR = 'http_error';
 	/** No such pad there, or none it lets be exported. */
 	public const NOT_FOUND = 'not_found';
 	/** An answer that is not the pad's content: another kind of document, or none said. */
 	public const UNEXPECTED_ANSWER = 'unexpected_answer';
 
-	/**
-	 * @param self::* $reason
-	 * @param ?int $httpStatus the status of an HTTP_ERROR
-	 */
+	/** @param self::* $reason */
 	public function __construct(
 		string $message,
 		private readonly string $reason,
-		private readonly ?int $httpStatus = null,
 		?\Throwable $previous = null,
 	) {
+		// The status belongs to the sentence: one without it would read
+		// "an error ()".
+		if ($reason === self::HTTP_ERROR && !$this instanceof ExternalPadHttpErrorException) {
+			throw new \LogicException('An HTTP error is an ExternalPadHttpErrorException, with its status.');
+		}
 		parent::__construct($message, 0, $previous);
 	}
 
@@ -67,10 +72,6 @@ class ExternalPadException extends EtherpadClientException {
 	public function reason(): string {
 		/** @var self::* */
 		return $this->reason;
-	}
-
-	public function httpStatus(): ?int {
-		return $this->httpStatus;
 	}
 
 	/** Not this instance's Etherpad. */

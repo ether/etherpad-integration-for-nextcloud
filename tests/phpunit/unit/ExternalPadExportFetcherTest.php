@@ -6,6 +6,7 @@ namespace OCA\EtherpadNextcloud\Tests\Unit;
 
 use OCA\EtherpadNextcloud\Exception\ExternalPadException;
 use OCA\EtherpadNextcloud\Exception\ExternalPadExportNotFoundException;
+use OCA\EtherpadNextcloud\Exception\ExternalPadHttpErrorException;
 use OCA\EtherpadNextcloud\Service\ExternalPadExportFetcher;
 use OCP\IConfig;
 use OCA\EtherpadNextcloud\Tests\Support\FixedClock;
@@ -110,6 +111,9 @@ class ExternalPadExportFetcherTest extends TestCase {
 			'not on the allowlist' => ['https://1.1.1.1:9443/p/pad', 'https://1.1.1.1:8443', ExternalPadException::NOT_ALLOWED],
 			'a local host' => ['https://pad.localhost/p/pad', '', ExternalPadException::LOCAL_ADDRESS],
 			'a private address' => ['https://10.0.0.7/p/pad', '', ExternalPadException::LOCAL_ADDRESS],
+			'no pad after /p/' => ['https://1.1.1.1/p/%20', '', ExternalPadException::NOT_A_PAD_URL],
+			// A name that never resolves: `.invalid` is reserved for that.
+			'a host nothing resolves' => ['https://pad.invalid/p/pad', 'pad.invalid', ExternalPadException::UNRESOLVED],
 		];
 		foreach ($cases as $case => [$url, $allowlist, $reason]) {
 			try {
@@ -120,25 +124,47 @@ class ExternalPadExportFetcherTest extends TestCase {
 			}
 		}
 
+		$disabled = $this->createMock(IConfig::class);
+		$disabled->method('getAppValue')->willReturnCallback(static fn (string $app, string $key, string $default = ''): string => $key === 'allow_external_pads' ? 'no' : $default);
+		try {
+			(new ExternalPadExportFetcher($disabled, new FixedClock()))->normalizeAndValidateExternalPublicPadUrl('https://1.1.1.1/p/pad');
+			$this->fail('switched off: not refused');
+		} catch (ExternalPadException $e) {
+			$this->assertSame(ExternalPadException::DISABLED, $e->reason());
+		}
+
 		$fetcher = new ExternalPadExportFetcher($this->buildExternalEnabledConfig(), new FixedClock());
 		foreach ([
 			[500, ExternalPadException::HTTP_ERROR, 500],
-			[302, ExternalPadException::HTTP_ERROR, 302],
+			[401, ExternalPadException::HTTP_ERROR, 401],
+			[302, ExternalPadException::REDIRECTED, null],
+			[307, ExternalPadException::REDIRECTED, null],
 			[404, ExternalPadException::NOT_FOUND, null],
 		] as [$status, $reason, $httpStatus]) {
 			try {
 				(new \ReflectionMethod(ExternalPadExportFetcher::class, 'assertSuccessfulExportStatus'))->invoke($fetcher, $status);
 				$this->fail($status . ': not refused');
 			} catch (ExternalPadException $e) {
-				$this->assertSame([$reason, $httpStatus], [$e->reason(), $e->httpStatus()], (string)$status);
+				$this->assertSame([$reason, $httpStatus], [$e->reason(), $e instanceof ExternalPadHttpErrorException ? $e->httpStatus() : null], (string)$status);
 			}
 		}
-		try {
-			(new \ReflectionMethod(ExternalPadExportFetcher::class, 'assertAllowedExternalExportContentType'))->invoke($fetcher, 'application/json', 'html');
-			$this->fail('another kind of document: not refused');
-		} catch (ExternalPadException $e) {
-			$this->assertSame(ExternalPadException::UNEXPECTED_ANSWER, $e->reason());
+		foreach ([['', 'txt'], ['text/html', 'txt'], ['image/png', 'txt'], ['application/json', 'html']] as [$contentType, $format]) {
+			try {
+				(new \ReflectionMethod(ExternalPadExportFetcher::class, 'assertAllowedExternalExportContentType'))->invoke($fetcher, $contentType, $format);
+				$this->fail($contentType . ' for ' . $format . ': not refused');
+			} catch (ExternalPadException $e) {
+				$this->assertSame(ExternalPadException::UNEXPECTED_ANSWER, $e->reason(), $contentType . ' for ' . $format);
+			}
 		}
+
+		// No answer at all: a certificate not trusted, which a later try does
+		// not mend, or the server not reached. The cURL calls themselves need
+		// a server, and missing cURL a PHP without it; both stay untested here.
+		$transport = new \ReflectionMethod(ExternalPadExportFetcher::class, 'transportReason');
+		$this->assertSame(ExternalPadException::UNTRUSTED_CERTIFICATE, $transport->invoke(null, [7, 60]));
+		$this->assertSame(ExternalPadException::UNTRUSTED_CERTIFICATE, $transport->invoke(null, [51]));
+		$this->assertSame(ExternalPadException::UNREACHABLE, $transport->invoke(null, [7, 28]));
+		$this->assertSame(ExternalPadException::UNREACHABLE, $transport->invoke(null, []));
 	}
 
 	/**
