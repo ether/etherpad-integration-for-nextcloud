@@ -143,7 +143,9 @@ jobs:
         if: always() && (steps.suite.outcome == 'success' || steps.suite.outcome == 'failure')
         # It informs; it does not judge a run the suite already judged.
         continue-on-error: true
-        run: node tests/e2e/browser-noise-summary.mjs >> "$GITHUB_STEP_SUMMARY"
+        # Into the log too: the summary page shows only to someone signed
+        # in, the log also to the API.
+        run: node tests/e2e/browser-noise-summary.mjs | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: Collect stack logs on failure
         if: failure()
