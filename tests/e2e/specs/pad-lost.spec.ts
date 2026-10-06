@@ -272,6 +272,38 @@ test.describe('a pad Etherpad has lost', () => {
 		}
 	})
 
+	/**
+	 * Under 1.1.0-beta.1 the trash deleted the pad, and the file came back
+	 * from it naming a pad nobody has and no row: a restore now makes its
+	 * pad from the file's content, at once.
+	 */
+	test('a file trashed under 1.1.0-beta.1, without its pad and row, gets a new pad when restored', async () => {
+		const source = uniquePadName('lost-beta1-source')
+		const name = uniquePadName('lost-beta1')
+		try {
+			const { padId, marker } = await padWithSavedText(source, 'public')
+			// The same file as beta.1 left it: its pad gone, and no row naming it.
+			const gonePadId = `${padId}-gone`
+			await putFileViaDav(name, (await getFileViaDav(source)).split(padId).join(gonePadId))
+			const fileId = await propfindFileId(name)
+
+			await deleteViaDav(name)
+			await restoreFromTrashViaDav(name)
+
+			const opened = await padApiPost('pads/open-by-id', { fileId: String(fileId) })
+			expect(opened.status, JSON.stringify(opened.body)).toBe(200)
+			const newPadId = String((opened.body as { pad_id?: string }).pad_id ?? '')
+			expect(newPadId).not.toBe('')
+			expect(newPadId).not.toBe(gonePadId)
+			const text = await etherpadApiPost<{ text: string }>('getText', { padID: newPadId })
+			expect(text.text).toContain(marker)
+			expect(await getFileViaDav(name), 'the file names the new pad').toContain(newPadId)
+		} finally {
+			await deleteViaDav(name)
+			await deleteViaDav(source)
+		}
+	})
+
 	test('the viewer offers a new pad and then opens it', async ({ page }) => {
 		const name = uniquePadName('lost-viewer')
 		try {
