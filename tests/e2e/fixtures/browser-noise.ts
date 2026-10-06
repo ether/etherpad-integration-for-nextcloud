@@ -125,9 +125,14 @@ export const test = base.extend<{ browserNoise: BrowserNoise }>({
 				contentType: 'text/plain',
 			})
 		}
-		// The run's record holds the attempt that counts: one that passed,
-		// or the last one. A retry would otherwise count the same noise twice.
-		const last = testInfo.status === testInfo.expectedStatus || testInfo.retry >= testInfo.project.retries
+		// This app's own, which fails the attempt below - the body may have
+		// passed and the attempt still be retried for it.
+		const bodyPassed = testInfo.status === testInfo.expectedStatus
+		const unexpected = seen.filter((noise) => noise.ours && matching(allowed, noise) === undefined)
+		// The run's record holds the attempt that counts: one that passes,
+		// guard and all, or the last one. A retry would otherwise count the
+		// same noise twice.
+		const last = (bodyPassed && unexpected.length === 0) || testInfo.retry >= testInfo.project.retries
 		if (others.length > 0 && last) {
 			const title = testInfo.titlePath.join(' › ')
 			mkdirSync(testInfo.project.outputDir, { recursive: true })
@@ -143,10 +148,9 @@ export const test = base.extend<{ browserNoise: BrowserNoise }>({
 		}
 		// A test that failed already says what went wrong; this would only
 		// bury it.
-		if (testInfo.status !== testInfo.expectedStatus) {
+		if (!bodyPassed) {
 			return
 		}
-		const unexpected = seen.filter((noise) => noise.ours && matching(allowed, noise) === undefined)
 		expect(unexpected.map(({ kind, text }) => ({ kind, text })), 'This app left an error in the browser that no assertion looked at. Fix it, or allow it with a reason.').toEqual([])
 	},
 	// The test's own context, watched from the moment it opens. Only a test
