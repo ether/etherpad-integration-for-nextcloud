@@ -49,6 +49,21 @@ test.describe('a pad Etherpad has lost', () => {
 		const text = await etherpadApiPost<{ text: string }>('getText', { padID: newPadId })
 		expect(text.text).toContain(marker)
 		expect(await getFileViaDav(name), 'the file names the new pad').toContain(newPadId)
+		await expectSyncWritesTheNewPad(name, fileId, newPadId)
+	}
+
+	/**
+	 * The new pad starts its revisions anew, under a file whose snapshot
+	 * counted the old pad's. What is written into it after that reaches the
+	 * file with an ordinary sync all the same.
+	 */
+	const expectSyncWritesTheNewPad = async (name: string, fileId: number, newPadId: string): Promise<void> => {
+		const written = `written into the new pad ${Date.now()}`
+		await etherpadApiPost('setText', { padID: newPadId, text: written })
+		const synced = await padApiPost(`pads/sync/${fileId}`)
+		expect(synced.status, JSON.stringify(synced.body)).toBe(200)
+		expect((synced.body as { status?: string }).status).toBe('updated')
+		expect(await getFileViaDav(name), 'the file holds what was written into the new pad').toContain(written)
 	}
 
 	/**
@@ -251,6 +266,7 @@ test.describe('a pad Etherpad has lost', () => {
 			const text = await etherpadApiPost<{ text: string }>('getText', { padID: newPadId })
 			expect(text.text).toContain(marker)
 			expect(await getFileViaDav(name), 'the file names the new pad').toContain(newPadId)
+			await expectSyncWritesTheNewPad(name, fileId, newPadId)
 		} finally {
 			await deleteViaDav(name)
 		}
