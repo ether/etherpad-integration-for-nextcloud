@@ -2,7 +2,8 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  * Copyright (c) 2026 Jacob Bühler
  */
-import { test, expect, request as playwrightRequest } from '@playwright/test'
+import { request as playwrightRequest } from '@playwright/test'
+import { test, expect } from '../fixtures/browser-noise'
 import { E2E } from '../fixtures/env'
 import { basicAuthHeader, createPadAtPath, deleteViaDav } from '../fixtures/dav'
 import { uniquePadName } from '../fixtures/nextcloud'

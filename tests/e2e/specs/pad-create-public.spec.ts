@@ -5,7 +5,7 @@
 
 /** Covers public and external pad creation, reopening, and filename preservation. */
 
-import { test, expect } from '@playwright/test'
+import { test, expect } from '../fixtures/browser-noise'
 import {
 	gotoFiles,
 	closeViewer,

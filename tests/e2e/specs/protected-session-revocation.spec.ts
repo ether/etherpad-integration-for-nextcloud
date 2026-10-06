@@ -2,7 +2,8 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  * Copyright (c) 2026 Jacob Bühler
  */
-import { test, expect, type BrowserContext } from '@playwright/test'
+import { type BrowserContext } from '@playwright/test'
+import { test, expect } from '../fixtures/browser-noise'
 import {
 	closeViewer,
 	expectEtherpadViewerMounted,
@@ -84,7 +85,7 @@ test.describe('protected pad session revocation', () => {
 	 * this one unauthenticated. Costs one form login; buys a suite that
 	 * does not depend on file order.
 	 */
-	test('logging out of Nextcloud closes the pad the browser still has a cookie for', async ({ browser }) => {
+	test('logging out of Nextcloud closes the pad the browser still has a cookie for', async ({ browser, browserNoise }) => {
 		test.skip(E2E.etherpadApi === null, 'E2E_ETHERPAD_URL / E2E_ETHERPAD_API_KEY not configured; Etherpad-side spec skipped.')
 
 		const padName = uniquePadName('revoke-logout')
@@ -93,6 +94,7 @@ test.describe('protected pad session revocation', () => {
 		// then never be reached — the request would land on the dashboard
 		// already signed in.
 		const context = await browser.newContext({ storageState: { cookies: [], origins: [] } })
+		browserNoise.watch(context)
 		const page = await context.newPage()
 		try {
 			await loginAs(page, E2E.user, E2E.password)

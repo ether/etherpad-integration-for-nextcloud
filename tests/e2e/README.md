@@ -71,12 +71,15 @@ tests/e2e/
   auth.setup.ts            logs in each account -> .auth/state*.json
   global-setup.ts          stamps this run's id
   global-teardown.ts       sweeps this run's fixtures out of the trash
+  browser-noise-summary.mjs  groups the run's browser noise of other software
   docker/                  throwaway Nextcloud + Etherpad stack (see its README)
   fixtures/
     env.ts                 required-env reader (+ optional secondary account)
     auth.ts                login flow, stored-state paths, wizard dismissal
     dav.ts                 WebDAV + OCS + plugin-API helpers (app password)
     nextcloud.ts           Files-app browser helpers
+    browser-noise.ts       `test` and `expect` for the specs, with the noise guard
+    browser-noise-rules.mjs  what is this app's, and the noise known elsewhere
   specs/                   one file per flow (see Coverage)
 ```
 
@@ -85,6 +88,52 @@ over localized text so specs survive UI-language changes. Content checks
 usually go through the plugin's own HTTP endpoints + WebDAV rather than
 the Etherpad API or editor typing; the author-display-name spec is the
 one deliberate exception because it verifies the real Etherpad session UI.
+
+### Browser noise
+
+Specs import `test` and `expect` from `fixtures/browser-noise.ts`, not
+from `@playwright/test`. It watches what the browser reports that no
+assertion looked at: an error on the console, an exception nothing
+caught, a request that failed outright, a `5xx`, or a script, stylesheet
+or font that did not load. A flow can pass every assertion and still
+leave one of these behind.
+
+- A test fails on what comes from this app: its scripts, its routes and
+  their answers, the srcdoc wrapper around the Etherpad frame, and the
+  browser refusing to frame Etherpad. A console line goes by the script
+  that logged it or the stack it logs, an exception by its stack, not by
+  the words in them. Not the app's error: a request that met a dropped
+  connection, a `502`/`503`/`504` that says `retryable` or is not the
+  app's JSON (the client is built for both), a request aborted before the
+  client's ten seconds were up.
+- Everything else fails nothing. Nextcloud and its other apps log errors
+  of their own on most pages; they are not this app's to fix, and would
+  turn runs red with every release.
+- What of that is known and explained (on Nextcloud 34: the Files service
+  worker, the Viewer registering each handler twice, Text's rich
+  workspace, a modal's focus trap) is on `KNOWN_ELSEWHERE` in
+  `fixtures/browser-noise-rules.mjs`, each entry with why, and only
+  counted, per entry, folded away in the summary. One that stays at 0
+  can be struck.
+- The rest goes into the test's report as `browser-noise`, and into
+  `test-results/browser-noise.jsonl` for the whole run, which
+  `global-setup.ts` starts empty. This app's own errors go into the
+  report as `browser-errors-of-this-app`, also when the test failed for
+  another reason first.
+  `node tests/e2e/browser-noise-summary.mjs` groups it as Markdown; CI puts
+  that on each job's summary page, so the noise a new Nextcloud release
+  brings shows without downloading a report and without failing a test.
+- Only a test with a browser context is watched; an API spec opens none.
+  The record holds the attempt that counts, not each retry.
+- `tests/js/e2e-browser-noise.test.js` holds the rules, the summary and
+  every spec's import of `test` from the fixture.
+- What a test causes on purpose it allows itself, with a reason:
+  `browserNoise.allow('response', /\/pads\/open-by-id/, 'Etherpad is stopped on purpose')`.
+- A context the test opens itself (`browser.newContext()`) is watched
+  once the test hands it over: `browserNoise.watch(context)`, on the next
+  line. The unit test holds every spec to it.
+- A test that failed already reports nothing more; the guard would only
+  bury the first error.
 
 ## Coverage
 

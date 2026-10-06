@@ -343,7 +343,14 @@ export const expectEtherpadCurrentUserName = async (page: Page, expectedName: st
 	await expect(showUsers).toBeVisible({ timeout: 30_000 })
 	await showUsers.click()
 
-	const currentUserNameInput = etherpad.locator([
+	// Inside the user list, and only there: a list of selectors matches in
+	// the order of the page, not of the list, so a loose one anywhere picks
+	// whatever comes first. `[id*="users" i]` found the settings checkbox
+	// `#options-chatandusers`, which stands before the list.
+	const userList = etherpad.locator('#users, #userlist, .userlist').first()
+	await expect(userList).toBeVisible({ timeout: 15_000 })
+
+	const currentUserNameInput = userList.locator([
 		'#myusernameedit',
 		'input[name="username"]',
 		'input[id*="username" i]',
@@ -362,13 +369,7 @@ export const expectEtherpadCurrentUserName = async (page: Page, expectedName: st
 		return
 	}
 
-	await expect(etherpad.locator([
-		'#users',
-		'#userlist',
-		'.userlist',
-		'[id*="users" i]',
-		'[class*="userlist" i]',
-	].join(', ')).first()).toContainText(expected, { timeout: 15_000 })
+	await expect(userList).toContainText(expected, { timeout: 15_000 })
 }
 
 /**

@@ -2,7 +2,7 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  * Copyright (c) 2026 Jacob Bühler
  */
-import { test } from '@playwright/test'
+import { test } from '../fixtures/browser-noise'
 import {
 	createBlankPadFromTemplatePicker,
 	expectEtherpadCurrentUserName,
