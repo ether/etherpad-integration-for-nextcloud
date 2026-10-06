@@ -274,6 +274,43 @@ test.describe('pads of files deleted for good', () => {
 		}
 	})
 
+	/**
+	 * Many pads at once, as clearing out a project folder makes them: more
+	 * than one of the job's batches of 200. Deleted from the trash, the
+	 * folder takes them all, within the runs one settle allows, and leaves
+	 * none behind for a later run.
+	 */
+	test('a folder of many pads deleted from the trash takes them all', async () => {
+		test.skip(await misnumbersFolderFiles(), misnumbered)
+		test.setTimeout(300_000)
+		const many = 250
+		const folder = uniqueName('gone-many')
+		await mkcolViaDav(folder)
+		const padIds: string[] = []
+		// A few at a time: one after another takes minutes on its own.
+		for (let start = 0; start < many; start += 10) {
+			const made = await Promise.all(Array.from({ length: Math.min(10, many - start) }, (_, offset) =>
+				createPadAtPath(`/${folder}/${uniquePadName(`many-${start + offset}`)}`)))
+			padIds.push(...made.map((pad) => padIdOfPadUrl(pad.padUrl)))
+		}
+
+		await deleteViaDav(folder)
+		const entry = await findTrashbinEntry(folder)
+		expect(entry, 'the folder should be in the trash').not.toBeNull()
+		await purgeTrashbinEntry(entry!)
+		const run = await settle()
+		expect(run.settled, 'one settle should take every pad of the folder').toBeGreaterThanOrEqual(many)
+
+		const left = []
+		for (const padId of padIds) {
+			if (await padExists(padId)) {
+				left.push(padId)
+			}
+		}
+		expect(left, 'no pad of the folder should be left').toEqual([])
+		expect((await settle()).settled, 'and a later run should find nothing more').toBe(0)
+	})
+
 	test('a deleted account takes the pads of its own files', async () => {
 		const account = await createAccount(uniqueName('gone-account'))
 		try {
