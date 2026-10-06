@@ -16,26 +16,39 @@
  * Usage: node tests/e2e/browser-noise-summary.mjs [record]
  */
 import { existsSync, readFileSync } from 'node:fs'
-import { dirname, resolve } from 'node:path'
-import { fileURLToPath, pathToFileURL } from 'node:url'
-import { KNOWN_ELSEWHERE, NOISE_FILE } from './fixtures/browser-noise-rules.mjs'
-
-const here = dirname(fileURLToPath(import.meta.url))
+import { resolve } from 'node:path'
+import { pathToFileURL } from 'node:url'
+import { KNOWN_ELSEWHERE, OUTPUT_DIR, recordIn } from './fixtures/browser-noise-rules.mjs'
 
 /**
- * One line per kind of message, whatever run, user or file it met: the
- * first line only (a stack below it varies with the bundle), without the
- * parts that change from one load to the next.
+ * One line per kind of message, whatever run, user, share or file it met:
+ * without the parts that change from one load to the next.
  *
  * @param {string} text
  */
-const normalise = (text) => text.split('\n', 1)[0]
+const fold = (text) => text
 	.replace(/\?v=[^\s)'"]+/g, '')
 	.replace(/nonce-[A-Za-z0-9+/=]+/g, 'nonce-…')
 	.replace(/uid: [^,}]+/g, 'uid: …')
 	.replace(/e2e-[^\s/'")]*-r[0-9a-f]+-\d+[^\s/'")]*/g, 'e2e-…')
+	.replace(/([?&](?:fileId|fileid|id)=)\d+/g, '$1…')
+	.replace(/\/(remote|public)\.php\/dav\/files\/[^/\s)'"]+/g, '/$1.php/dav/files/…')
 	.replace(/\/(s|public)\/[A-Za-z0-9]{10,}/g, '/$1/…')
 	.trim()
+
+/**
+ * The message, by its first line - a stack below it varies with the
+ * bundle - and where it came from, which the first line of a stack does
+ * not say: two errors with the same words from different apps are two.
+ *
+ * @param {string} text
+ * @param {string} where
+ */
+const normalise = (text, where) => {
+	const first = text.split('\n', 1)[0]
+	// A one-line console text ends in its location already.
+	return fold(where !== '' && !first.endsWith(`(${where})`) ? `${first} (${where})` : first)
+}
 
 /** A count with its noun, one or more. */
 const count = (n, noun) => `${n} ${noun}${n === 1 ? '' : 's'}`
@@ -46,12 +59,18 @@ const cell = (text) => '`' + (text.length > 240 ? text.slice(0, 239) + '…' : t
 /**
  * The summary of a run's record, or of none.
  *
- * @param {string | null} record the record's content; null when the run left none
+ * @param {string | null} record the record's content; null when there is
+ *   none - global-setup.ts starts it, so the suite ran no test, or wrote
+ *   its results somewhere else
  * @returns {string} Markdown
  */
 export const summarise = (record) => {
 	const out = ['### Browser noise of other software', '']
 	if (record === null) {
+		out.push('No record: the suite ran no test, or wrote its results somewhere else than `test-results/`.')
+		return out.join('\n') + '\n'
+	}
+	if (record.trim() === '') {
 		out.push('Nothing recorded: no test met any.')
 		return out.join('\n') + '\n'
 	}
@@ -81,7 +100,7 @@ export const summarise = (record) => {
 			known.set(entry.known, tally)
 			continue
 		}
-		const message = normalise(String(entry.text ?? ''))
+		const message = normalise(String(entry.text ?? ''), String(entry.where ?? ''))
 		const key = `${entry.kind}\u0000${message}`
 		const group = groups.get(key) ?? { kind: entry.kind, message, times: 0, tests: new Set() }
 		group.times++
@@ -126,6 +145,6 @@ export const summarise = (record) => {
 }
 
 if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
-	const path = resolve(process.argv[2] ?? resolve(here, '../../test-results', NOISE_FILE))
+	const path = resolve(process.argv[2] ?? recordIn(OUTPUT_DIR))
 	process.stdout.write(summarise(existsSync(path) ? readFileSync(path, 'utf8') : null))
 }

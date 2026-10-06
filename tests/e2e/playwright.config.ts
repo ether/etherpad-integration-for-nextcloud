@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
 import { config as loadEnv } from 'dotenv'
 import { existsSync } from 'node:fs'
+import { OUTPUT_DIR } from './fixtures/browser-noise-rules.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
 
@@ -83,7 +84,8 @@ export default defineConfig({
 	timeout: 60_000,
 	expect: { timeout: 15_000 },
 	reporter: process.env.CI ? [['github'], ['html', { open: 'never' }]] : [['list'], ['html', { open: 'never' }]],
-	outputDir: resolve(here, '../../test-results'),
+	// Where the noise guard keeps its record too, and the summary looks.
+	outputDir: OUTPUT_DIR,
 
 	use: {
 		baseURL,

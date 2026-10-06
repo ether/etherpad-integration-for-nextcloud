@@ -99,9 +99,13 @@ or font that did not load. A flow can pass every assertion and still
 leave one of these behind.
 
 - A test fails on what comes from this app: its scripts, its routes and
-  their answers. A console line goes by the script that logged it, an
-  exception by its stack, not by the words in them; a request that met a
-  dropped connection is noise, not the app's error.
+  their answers, the srcdoc wrapper around the Etherpad frame, and the
+  browser refusing to frame Etherpad. A console line goes by the script
+  that logged it or the stack it logs, an exception by its stack, not by
+  the words in them. Not the app's error: a request that met a dropped
+  connection, a `502`/`503`/`504` that says `retryable` or is not the
+  app's JSON (the client is built for both), a request aborted before the
+  client's ten seconds were up.
 - Everything else fails nothing. Nextcloud and its other apps log errors
   of their own on most pages; they are not this app's to fix, and would
   turn runs red with every release.
@@ -112,7 +116,10 @@ leave one of these behind.
   counted, per entry, folded away in the summary. One that stays at 0
   can be struck.
 - The rest goes into the test's report as `browser-noise`, and into
-  `test-results/browser-noise.jsonl` for the whole run.
+  `test-results/browser-noise.jsonl` for the whole run, which
+  `global-setup.ts` starts empty. This app's own errors go into the
+  report as `browser-errors-of-this-app`, also when the test failed for
+  another reason first.
   `node tests/e2e/browser-noise-summary.mjs` groups it as Markdown; CI puts
   that on each job's summary page, so the noise a new Nextcloud release
   brings shows without downloading a report and without failing a test.
@@ -123,7 +130,8 @@ leave one of these behind.
 - What a test causes on purpose it allows itself, with a reason:
   `browserNoise.allow('response', /\/pads\/open-by-id/, 'Etherpad is stopped on purpose')`.
 - A context the test opens itself (`browser.newContext()`) is watched
-  once the test hands it over: `browserNoise.watch(context)`.
+  once the test hands it over: `browserNoise.watch(context)`, on the next
+  line. The unit test holds every spec to it.
 - A test that failed already reports nothing more; the guard would only
   bury the first error.
 

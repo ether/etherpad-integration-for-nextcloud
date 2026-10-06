@@ -3,6 +3,9 @@
  * Copyright (c) 2026 Jacob Bühler
  */
 import { randomBytes } from 'node:crypto'
+import { mkdirSync, writeFileSync } from 'node:fs'
+import type { FullConfig } from '@playwright/test'
+import { recordIn } from './fixtures/browser-noise-rules.mjs'
 import { normaliseRunId } from './fixtures/fixture-name'
 
 /**
@@ -14,9 +17,16 @@ import { normaliseRunId } from './fixtures/fixture-name'
  * and runner and workers would then each mint their own id — the sweep
  * would recognise nothing as its own and quietly purge nothing.
  */
-export default async function globalSetup(): Promise<void> {
+export default async function globalSetup(config: FullConfig): Promise<void> {
 	const supplied = process.env.E2E_RUN_ID?.trim()
 	process.env.E2E_RUN_ID = supplied !== undefined && supplied !== ''
 		? normaliseRunId(supplied)
 		: randomBytes(4).toString('hex')
+
+	// The record of other software's browser noise starts empty, so the
+	// summary can tell a run that met none from one that ran no test.
+	for (const outputDir of new Set(config.projects.map((project) => project.outputDir))) {
+		mkdirSync(outputDir, { recursive: true })
+		writeFileSync(recordIn(outputDir), '')
+	}
 }

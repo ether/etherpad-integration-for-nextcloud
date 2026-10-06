@@ -40,6 +40,9 @@ jobs:
               - 'src/**'
               - 'js/**'
               - 'tests/js/**'
+              # tests/js also holds the noise guard of the e2e suite, its
+              # rules and its summary, and that every spec uses it.
+              - 'tests/e2e/**'
 
   build-and-test:
     runs-on: ubuntu-latest
