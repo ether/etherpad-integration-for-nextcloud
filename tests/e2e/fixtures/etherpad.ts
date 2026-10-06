@@ -35,9 +35,12 @@ export const etherpadApiPost = async <T>(endpoint: string, form: Record<string, 
 		throw new Error(`Etherpad ${endpoint} answered HTTP ${res.status}: ${text.slice(0, 200)}`)
 	}
 
-	let payload: { code?: number, message?: string, data?: T } | null = null
+	// A name of its own: `typeof payload` here would be the `null` it was
+	// declared with, and every field after it `never`.
+	type Answer = { code?: number, message?: string, data?: T }
+	let payload: Answer | null = null
 	try {
-		payload = JSON.parse(text) as typeof payload
+		payload = JSON.parse(text) as Answer | null
 	} catch {
 		throw new Error(`Etherpad ${endpoint} answered with a non-JSON body: ${text.slice(0, 200)}`)
 	}
