@@ -243,6 +243,11 @@ export const getAppConfig = async (key: string): Promise<string> => {
 	return value
 }
 
+/** Remove one of the app's config values, so it reads its default again. */
+export const deleteAppConfig = async (key: string): Promise<void> => {
+	await ocsAppConfig(key, { method: 'DELETE' }, 'Deleting')
+}
+
 /** Set one of the app's config values; the E2E account is the admin. */
 export const setAppConfig = async (key: string, value: string): Promise<void> => {
 	await ocsAppConfig(key, {

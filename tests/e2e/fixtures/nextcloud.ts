@@ -2,7 +2,7 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  * Copyright (c) 2026 Jacob Bühler
  */
-import { expect, type Page } from '@playwright/test'
+import { expect, type FrameLocator, type Locator, type Page } from '@playwright/test'
 import { E2E } from './env'
 import { buildFixtureName, type FixtureExtension } from './fixture-name'
 import { runId } from './run-id'
@@ -323,11 +323,7 @@ export const expectEtherpadCurrentUserName = async (page: Page, expectedName: st
 	}
 	const expected = new RegExp(escapeRegExp(name))
 
-	// The NC viewer hosts a same-origin srcdoc wrapper which then embeds the
-	// actual cross-origin Etherpad iframe one level deeper.
-	const etherpad = page
-		.frameLocator('iframe[title="Etherpad"]').first()
-		.frameLocator('iframe[title="Etherpad"]').first()
+	const etherpad = etherpadInViewer(page)
 	await expect(etherpad.locator('body')).toBeVisible({ timeout: 30_000 })
 
 	const showUsers = etherpad.locator([
@@ -373,21 +369,32 @@ export const expectEtherpadCurrentUserName = async (page: Page, expectedName: st
 }
 
 /**
- * Type into the pad the viewer shows, as someone at the keyboard would.
- * The editor sits four frames down: the viewer's srcdoc wrapper, Etherpad,
- * and Etherpad's own two editor frames.
+ * Etherpad as the viewer shows it: the viewer hosts a same-origin srcdoc
+ * wrapper, which embeds the cross-origin Etherpad frame one level deeper.
  */
-export const typeInEtherpad = async (page: Page, text: string): Promise<void> => {
-	const editor = page
-		.frameLocator('iframe[title="Etherpad"]').first()
-		.frameLocator('iframe[title="Etherpad"]').first()
-		.frameLocator('iframe[name="ace_outer"]')
-		.frameLocator('iframe[name="ace_inner"]')
-		.locator('#innerdocbody')
+const etherpadInViewer = (page: Page): FrameLocator => page
+	.frameLocator('iframe[title="Etherpad"]').first()
+	.frameLocator('iframe[title="Etherpad"]').first()
+
+/** The body of Etherpad's editor, in its own two frames of an Etherpad page. */
+const etherpadEditor = (etherpad: Page | FrameLocator): Locator => etherpad
+	.frameLocator('iframe[name="ace_outer"]')
+	.frameLocator('iframe[name="ace_inner"]')
+	.locator('#innerdocbody')
+
+/** Type into an Etherpad page's editor, as someone at the keyboard would. */
+const typeInEditor = async (page: Page, etherpad: Page | FrameLocator, text: string): Promise<void> => {
+	const editor = etherpadEditor(etherpad)
 	await expect(editor).toBeVisible({ timeout: 30_000 })
 	await editor.click()
 	await page.keyboard.type(text)
 }
+
+/** Type into the pad the viewer shows: four frames down. */
+export const typeInEtherpad = (page: Page, text: string): Promise<void> => typeInEditor(page, etherpadInViewer(page), text)
+
+/** Type into a pad opened by its own address, outside Nextcloud. */
+export const typeInEtherpadPage = (page: Page, text: string): Promise<void> => typeInEditor(page, page, text)
 
 /**
  * The viewer a read-only share is supposed to get: the pad's content,
