@@ -71,6 +71,7 @@ tests/e2e/
   auth.setup.ts            logs in each account -> .auth/state*.json
   global-setup.ts          stamps this run's id
   global-teardown.ts       sweeps this run's fixtures out of the trash
+  browser-noise-summary.mjs  groups the run's browser noise of other software
   docker/                  throwaway Nextcloud + Etherpad stack (see its README)
   fixtures/
     env.ts                 required-env reader (+ optional secondary account)
@@ -98,12 +99,18 @@ leave one of these behind.
 
 - A test fails on what comes from this app: its scripts, its routes and
   their answers.
-- Everything else goes into the test's report as `browser-noise`, and
-  fails nothing. Nextcloud and its other apps log errors of their own on
-  most pages (on Nextcloud 34: the Files service worker, the Viewer
-  registering each handler twice, Text's rich workspace, a modal's focus
-  trap); they are not this app's to fix, and would turn runs red with
-  every release.
+- Everything else fails nothing. Nextcloud and its other apps log errors
+  of their own on most pages; they are not this app's to fix, and would
+  turn runs red with every release.
+- What of that is known and explained (on Nextcloud 34: the Files service
+  worker, the Viewer registering each handler twice, Text's rich
+  workspace, a modal's focus trap) is on `KNOWN_ELSEWHERE` in the fixture,
+  each entry with why, and only counted.
+- The rest goes into the test's report as `browser-noise`, and into
+  `test-results/browser-noise.jsonl` for the whole run.
+  `node tests/e2e/browser-noise-summary.mjs` groups it as Markdown; CI puts
+  that on each job's summary page, so the noise a new Nextcloud release
+  brings shows without downloading a report and without failing a test.
 - What a test causes on purpose it allows itself, with a reason:
   `browserNoise.allow('response', /\/pads\/open-by-id/, 'Etherpad is stopped on purpose')`.
 - A context the test opens itself (`browser.newContext()`) is watched

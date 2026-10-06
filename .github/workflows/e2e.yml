@@ -130,9 +130,18 @@ jobs:
         run: bash tests/e2e/docker/test-log-secrets.sh
 
       - name: Run the Playwright suite
+        id: suite
         # run-suite.sh wires up the generated env file, the CA for node's
         # fetch, and the browser-side exemption for the per-run CA.
         run: bash tests/e2e/docker/run-suite.sh
+
+      # What Nextcloud and its other apps logged in the browser fails no
+      # test; grouped on the run's page, the noise a new release brings
+      # shows without downloading a report. Whenever the suite ran, green
+      # or red.
+      - name: Summarise the browser noise of other software
+        if: always() && (steps.suite.outcome == 'success' || steps.suite.outcome == 'failure')
+        run: node tests/e2e/browser-noise-summary.mjs >> "$GITHUB_STEP_SUMMARY"
 
       - name: Collect stack logs on failure
         if: failure()

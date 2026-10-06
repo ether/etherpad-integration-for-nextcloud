@@ -2,6 +2,8 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  * Copyright (c) 2026 Jacob Bühler
  */
+import { appendFileSync, mkdirSync } from 'node:fs'
+import { join } from 'node:path'
 import { test as base, expect, type BrowserContext, type Response } from '@playwright/test'
 
 /**
@@ -17,9 +19,13 @@ import { test as base, expect, type BrowserContext, type Response } from '@playw
  * noise is not this app's to fix, and which would turn runs red with every
  * Nextcloud release. On Nextcloud 34 alone the Files app's service worker,
  * the Viewer registering each handler twice, Text's rich workspace and a
- * modal's focus trap log errors on pages this app hardly touches. That
- * goes into the test's report instead, as `browser-noise`, where it can be
- * read without failing anyone.
+ * modal's focus trap log errors on pages this app hardly touches. Those,
+ * known and explained, are listed below and left out. Anything else goes
+ * into the test's report instead, as `browser-noise`, where it can be read
+ * without failing anyone, and into one file for the whole run
+ * (`browser-noise.jsonl` in the output directory), which
+ * `browser-noise-summary.mjs` groups for the CI run's summary: so the noise
+ * a new release brings stands out, and the known does not repeat itself.
  *
  * What a test causes on purpose it allows itself, through
  * `browserNoise.allow()`.
@@ -28,7 +34,52 @@ export type NoiseKind = 'console' | 'pageerror' | 'requestfailed' | 'response'
 
 type Noise = { kind: NoiseKind, text: string, ours: boolean }
 
+const isKnownElsewhere = (noise: Noise): boolean =>
+	KNOWN_ELSEWHERE.some((known) => known.kind === noise.kind && known.pattern.test(noise.text))
+
 type Allowance = { kind: NoiseKind, pattern: RegExp, reason: string }
+
+/**
+ * Noise of other software, seen in this suite's runs, and why it is not
+ * this app's. Left out of the summary but counted there, so one that
+ * stops showing up can be struck. Not this app's errors: those fail
+ * whatever this list says.
+ */
+const KNOWN_ELSEWHERE: readonly Allowance[] = [
+	{
+		kind: 'console',
+		pattern: /^\[ERROR\] viewer: Could not register handler \{[^}]*error: The handler is already registered/,
+		reason: 'The Viewer registers every handler in `_oca_viewer_handlers` twice: viewer-init when it starts, viewer-main again on DOMContentLoaded. The line names the handler, this app\'s among them; it is registered once all the same.',
+	},
+	{
+		kind: 'console',
+		pattern: /^An SSL certificate error occurred when fetching the script\.$/,
+		reason: 'The Files app\'s preview service worker, in the Docker stack: Chrome does not register a service worker from an origin whose certificate it does not trust, and the stack signs itself.',
+	},
+	{
+		kind: 'console',
+		pattern: /^\[ERROR\] files: SW registration failed: /,
+		reason: 'The Files app\'s preview service worker not registering: refused for the stack\'s own certificate, and on a public share page by Nextcloud\'s CSP, which sets no `worker-src` there.',
+	},
+	{
+		kind: 'console',
+		pattern: /^Creating a worker from '[^']*\/apps\/files\/preview-service-worker\.js' violates the following Content Security Policy directive/,
+		reason: 'The same worker on a public share page: Nextcloud\'s CSP there sets no `worker-src`, so `script-src` decides.',
+	},
+	{
+		kind: 'console',
+		pattern: /^Error: \[tiptap error\]: The editor view is not available\.[\s\S]*\/apps\/text\//,
+		reason: 'Text\'s rich workspace, the Readme.md above the file list, taken down before its editor was up.',
+	},
+	{
+		kind: 'console',
+		pattern: /^Error: Your focus-trap must have at least one container[\s\S]*\/dist\/core-common\.js/,
+		reason: 'A Nextcloud modal\'s focus trap, now and then, in Nextcloud\'s own bundle.',
+	},
+]
+
+/** The run's noise of other software, one JSON object a line, in the output directory. */
+export const NOISE_FILE = 'browser-noise.jsonl'
 
 /** This app's scripts and routes, installed under apps/ or custom_apps/. */
 const OURS = /\/etherpad_nextcloud\//
@@ -105,9 +156,24 @@ export const test = base.extend<{ browserNoise: BrowserNoise }>({
 			},
 		})
 
-		const others = [...new Set(seen.filter((noise) => !noise.ours).map((noise) => `${noise.kind}: ${noise.text}`))]
+		const others = seen.filter((noise) => !noise.ours)
+		const unknown = others.filter((noise) => !isKnownElsewhere(noise))
+		if (unknown.length > 0) {
+			await testInfo.attach('browser-noise', {
+				body: [...new Set(unknown.map((noise) => `${noise.kind}: ${noise.text}`))].join('\n\n'),
+				contentType: 'text/plain',
+			})
+		}
 		if (others.length > 0) {
-			await testInfo.attach('browser-noise', { body: others.join('\n\n'), contentType: 'text/plain' })
+			// The known ones as a count, so the summary can say how often.
+			const title = testInfo.titlePath.join(' › ')
+			mkdirSync(testInfo.project.outputDir, { recursive: true })
+			appendFileSync(
+				join(testInfo.project.outputDir, NOISE_FILE),
+				others.map((noise) => JSON.stringify(isKnownElsewhere(noise)
+					? { test: title, known: true }
+					: { test: title, kind: noise.kind, text: noise.text }) + '\n').join(''),
+			)
 		}
 		// A test that failed already says what went wrong; this would only
 		// bury it.
