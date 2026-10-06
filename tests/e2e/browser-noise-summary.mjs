@@ -50,10 +50,19 @@ const normalise = (text, where) => {
 	return fold(where !== '' && !first.endsWith(`(${where})`) ? `${first} (${where})` : first)
 }
 
-/** A count with its noun, one or more. */
+/**
+ * A count with its noun, one or more.
+ *
+ * @param {number} n
+ * @param {string} noun
+ */
 const count = (n, noun) => `${n} ${noun}${n === 1 ? '' : 's'}`
 
-/** Fit for a Markdown table cell. */
+/**
+ * Fit for a Markdown table cell.
+ *
+ * @param {string} text
+ */
 const cell = (text) => '`' + (text.length > 240 ? text.slice(0, 239) + '…' : text).replace(/`/g, '\'').replace(/\|/g, '\\|') + '`'
 
 /**

@@ -17,7 +17,11 @@ import { fileURLToPath } from 'node:url'
  */
 export const OUTPUT_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '../../../test-results')
 
-/** The run's record of other software's noise, one JSON object a line. */
+/**
+ * The run's record of other software's noise, one JSON object a line.
+ *
+ * @param {string} outputDir
+ */
 export const recordIn = (outputDir) => join(outputDir, 'browser-noise.jsonl')
 
 /**
@@ -34,7 +38,11 @@ const OURS = /\/[\w-]*apps[\w-]*\/etherpad_nextcloud\//
  */
 const OUR_DOCUMENTS = new Set(['about:srcdoc'])
 
-/** The `at` lines of a stack, the places an error went through. */
+/**
+ * The `at` lines of a stack, the places an error went through.
+ *
+ * @param {string} text
+ */
 const framesOf = (text) => text.split('\n').filter((line) => /^\s+at /.test(line)).join('\n')
 
 /**
