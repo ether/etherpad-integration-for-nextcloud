@@ -51,7 +51,13 @@ what each one is for.
 tests/e2e/docker/run-suite.sh   # against the container stack
 npm run test:e2e                # against the instance in .env.e2e
 npm run test:e2e:ui             # Playwright UI mode (watch + time-travel)
+npm run typecheck:e2e           # strict TypeScript over the suite, as CI runs it
 ```
+
+Playwright runs the suite's TypeScript without checking its types, so a
+type error would otherwise go unseen until it fails a run. The check reads
+`tests/e2e/tsconfig.json`, the plain JavaScript modules too, through their
+JSDoc.
 
 `run-suite.sh` is the entry point for the container target: besides the
 env file it sets `NODE_EXTRA_CA_CERTS`, which node reads at startup and

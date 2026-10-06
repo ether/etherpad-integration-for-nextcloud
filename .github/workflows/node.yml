@@ -89,6 +89,11 @@ jobs:
       - name: Run vitest
         run: npm test
 
+      # Playwright runs the e2e suite's TypeScript without checking it, so
+      # a wrong type there would otherwise sit unseen until it fails a run.
+      - name: Type-check the e2e suite
+        run: npm run typecheck:e2e
+
       - name: Production build
         run: npm run build
 
