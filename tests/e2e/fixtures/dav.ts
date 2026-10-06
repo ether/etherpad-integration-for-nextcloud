@@ -226,9 +226,22 @@ const ocsAppConfig = async (key: string, init: RequestInit, what: string): Promi
 	return payload?.ocs?.data
 }
 
-/** Read one of the app's config values; an unset key answers ''. */
-export const getAppConfig = async (key: string): Promise<string> =>
-	String(await ocsAppConfig(key, { method: 'GET' }, 'Reading') ?? '')
+/**
+ * Read one of the app's config values; an unset key answers ''.
+ *
+ * The provisioning API wraps the value once more, `{ data: value }`. Made
+ * a string as it came, that object read `[object Object]`, which a spec
+ * then wrote back as the admin's value. Anything but a string is refused
+ * for the same reason: a restore must not write what was never there.
+ */
+export const getAppConfig = async (key: string): Promise<string> => {
+	const answer = await ocsAppConfig(key, { method: 'GET' }, 'Reading') as { data?: unknown } | null
+	const value = answer?.data
+	if (typeof value !== 'string') {
+		throw new Error(`Reading ${key} answered no value: ${JSON.stringify(answer)}`)
+	}
+	return value
+}
 
 /** Set one of the app's config values; the E2E account is the admin. */
 export const setAppConfig = async (key: string, value: string): Promise<void> => {
