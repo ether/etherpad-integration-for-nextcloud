@@ -8,7 +8,8 @@
  * that is not known yet, grouped, as Markdown: the CI job appends it to its
  * summary, so the noise a new release brings shows on the run's page
  * without failing a test or downloading a report. The known noise
- * (`KNOWN_ELSEWHERE` in fixtures/browser-noise.ts) is only counted.
+ * (`KNOWN_ELSEWHERE` in fixtures/browser-noise-rules.mjs) is counted per
+ * entry, folded away, so one that stops showing up can be struck.
  * fixtures/browser-noise.ts writes the record; this app's own errors fail
  * their tests and are not in it.
  *
@@ -16,15 +17,17 @@
  */
 import { existsSync, readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
+import { KNOWN_ELSEWHERE, NOISE_FILE } from './fixtures/browser-noise-rules.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
-const record = resolve(process.argv[2] ?? resolve(here, '../../test-results/browser-noise.jsonl'))
 
 /**
  * One line per kind of message, whatever run, user or file it met: the
  * first line only (a stack below it varies with the bundle), without the
  * parts that change from one load to the next.
+ *
+ * @param {string} text
  */
 const normalise = (text) => text.split('\n', 1)[0]
 	.replace(/\?v=[^\s)'"]+/g, '')
@@ -40,35 +43,56 @@ const count = (n, noun) => `${n} ${noun}${n === 1 ? '' : 's'}`
 /** Fit for a Markdown table cell. */
 const cell = (text) => '`' + (text.length > 240 ? text.slice(0, 239) + '…' : text).replace(/`/g, '\'').replace(/\|/g, '\\|') + '`'
 
-const out = ['### Browser noise of other software', '']
-if (!existsSync(record)) {
-	out.push('Nothing recorded: no test met any.')
-} else {
+/**
+ * The summary of a run's record, or of none.
+ *
+ * @param {string | null} record the record's content; null when the run left none
+ * @returns {string} Markdown
+ */
+export const summarise = (record) => {
+	const out = ['### Browser noise of other software', '']
+	if (record === null) {
+		out.push('Nothing recorded: no test met any.')
+		return out.join('\n') + '\n'
+	}
+
 	const groups = new Map()
 	const tests = new Set()
+	const known = new Map(KNOWN_ELSEWHERE.map((entry) => [entry.id, { times: 0, tests: new Set() }]))
 	let times = 0
-	let known = 0
-	for (const line of readFileSync(record, 'utf8').split('\n')) {
+	let unreadable = 0
+	for (const line of record.split('\n')) {
 		if (line.trim() === '') {
 			continue
 		}
-		const entry = JSON.parse(line)
-		if (entry.known === true) {
-			known++
+		let entry
+		try {
+			entry = JSON.parse(line)
+		} catch {
+			// A worker stopped hard can leave half a line. The summary says so
+			// rather than failing a run the record was meant to inform.
+			unreadable++
 			continue
 		}
-		const { test, kind, text } = entry
-		const key = `${kind}\u0000${normalise(text)}`
-		const group = groups.get(key) ?? { kind, message: normalise(text), times: 0, tests: new Set() }
+		if (typeof entry.known === 'string') {
+			const tally = known.get(entry.known) ?? { times: 0, tests: new Set() }
+			tally.times++
+			tally.tests.add(entry.test)
+			known.set(entry.known, tally)
+			continue
+		}
+		const message = normalise(String(entry.text ?? ''))
+		const key = `${entry.kind}\u0000${message}`
+		const group = groups.get(key) ?? { kind: entry.kind, message, times: 0, tests: new Set() }
 		group.times++
-		group.tests.add(test)
+		group.tests.add(entry.test)
 		groups.set(key, group)
-		tests.add(test)
+		tests.add(entry.test)
 		times++
 	}
-	const knownLine = `Known and left out: ${count(known, 'time')} (\`KNOWN_ELSEWHERE\` in tests/e2e/fixtures/browser-noise.ts).`
+
 	if (groups.size === 0) {
-		out.push('Nothing new.', '', knownLine)
+		out.push('Nothing new.')
 	} else {
 		out.push(
 			`Not known yet: ${count(groups.size, 'kind')}, ${count(times, 'time')}, in ${count(tests.size, 'test')}. None of it fails a test: this app's own errors do, and are in the run log. Each test's report carries its own as \`browser-noise\`. Explain an entry and add it to the known list, or report it where it comes from.`,
@@ -78,9 +102,30 @@ if (!existsSync(record)) {
 			...[...groups.values()]
 				.sort((a, b) => b.tests.size - a.tests.size || b.times - a.times)
 				.map((group) => `| ${group.times} | ${group.tests.size} | ${group.kind} | ${cell(group.message)} |`),
-			'',
-			knownLine,
 		)
 	}
+	if (unreadable > 0) {
+		out.push('', `${count(unreadable, 'line')} of the record could not be read.`)
+	}
+
+	const knownTimes = [...known.values()].reduce((sum, tally) => sum + tally.times, 0)
+	out.push(
+		'',
+		'<details>',
+		`<summary>Known and left out: ${count(knownTimes, 'time')}</summary>`,
+		'',
+		'An entry at 0 did not show up in this run; one that stays at 0 everywhere can be struck from `KNOWN_ELSEWHERE` in tests/e2e/fixtures/browser-noise-rules.mjs.',
+		'',
+		'| Times | Tests | Known |',
+		'|---:|---:|---|',
+		...[...known.entries()].map(([id, tally]) => `| ${tally.times} | ${tally.tests.size} | \`${id}\` |`),
+		'',
+		'</details>',
+	)
+	return out.join('\n') + '\n'
 }
-process.stdout.write(out.join('\n') + '\n')
+
+if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+	const path = resolve(process.argv[2] ?? resolve(here, '../../test-results', NOISE_FILE))
+	process.stdout.write(summarise(existsSync(path) ? readFileSync(path, 'utf8') : null))
+}

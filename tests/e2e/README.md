@@ -79,6 +79,7 @@ tests/e2e/
     dav.ts                 WebDAV + OCS + plugin-API helpers (app password)
     nextcloud.ts           Files-app browser helpers
     browser-noise.ts       `test` and `expect` for the specs, with the noise guard
+    browser-noise-rules.mjs  what is this app's, and the noise known elsewhere
   specs/                   one file per flow (see Coverage)
 ```
 
@@ -98,19 +99,27 @@ or font that did not load. A flow can pass every assertion and still
 leave one of these behind.
 
 - A test fails on what comes from this app: its scripts, its routes and
-  their answers.
+  their answers. A console line goes by the script that logged it, an
+  exception by its stack, not by the words in them; a request that met a
+  dropped connection is noise, not the app's error.
 - Everything else fails nothing. Nextcloud and its other apps log errors
   of their own on most pages; they are not this app's to fix, and would
   turn runs red with every release.
 - What of that is known and explained (on Nextcloud 34: the Files service
   worker, the Viewer registering each handler twice, Text's rich
-  workspace, a modal's focus trap) is on `KNOWN_ELSEWHERE` in the fixture,
-  each entry with why, and only counted.
+  workspace, a modal's focus trap) is on `KNOWN_ELSEWHERE` in
+  `fixtures/browser-noise-rules.mjs`, each entry with why, and only
+  counted, per entry, folded away in the summary. One that stays at 0
+  can be struck.
 - The rest goes into the test's report as `browser-noise`, and into
   `test-results/browser-noise.jsonl` for the whole run.
   `node tests/e2e/browser-noise-summary.mjs` groups it as Markdown; CI puts
   that on each job's summary page, so the noise a new Nextcloud release
   brings shows without downloading a report and without failing a test.
+- Only a test with a browser context is watched; an API spec opens none.
+  The record holds the attempt that counts, not each retry.
+- `tests/js/e2e-browser-noise.test.js` holds the rules, the summary and
+  every spec's import of `test` from the fixture.
 - What a test causes on purpose it allows itself, with a reason:
   `browserNoise.allow('response', /\/pads\/open-by-id/, 'Etherpad is stopped on purpose')`.
 - A context the test opens itself (`browser.newContext()`) is watched
