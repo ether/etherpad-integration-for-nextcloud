@@ -3,15 +3,18 @@
  * Copyright (c) 2026 Jacob Bühler
  */
 import { test, expect } from '../fixtures/browser-noise'
+import { E2E } from '../fixtures/env'
 import {
 	closeViewer,
 	gotoFiles,
 	createPublicPad,
 	expectEtherpadViewerMounted,
 	openPadFromFileList,
+	typeInEtherpad,
 	uniquePadName,
 } from '../fixtures/nextcloud'
-import { deleteViaDav, findTrashbinEntry, restoreFromTrashViaDav } from '../fixtures/dav'
+import { createPadAtPath, deleteViaDav, findTrashbinEntry, purgeTrashbinEntry, restoreFromTrashViaDav } from '../fixtures/dav'
+import { etherpadApiPost, padIdOfPadUrl } from '../fixtures/etherpad'
 
 /**
  * Trash → restore round-trip. The meaningful behaviour to assert here
@@ -60,5 +63,40 @@ test.describe('pad trash + restore', () => {
 		await gotoFiles(page)
 		await openPadFromFileList(page, padName)
 		await expectEtherpadViewerMounted(page)
+	})
+})
+
+/**
+ * A protected pad loses its sessions when its file goes to the trash
+ * (docs/deleting-pads.md): whoever still has it open writes no more from
+ * their next change on. Etherpad refuses the change; whether it tells the
+ * writer is Etherpad's, and Etherpad 2 does not.
+ */
+test.describe('an editor open while its file goes to the trash', () => {
+	test.skip(E2E.etherpadApi === null, 'Needs E2E_ETHERPAD_URL and E2E_ETHERPAD_API_KEY; only the container stack has them.')
+
+	test('a protected pad takes no more changes from it once its file is in the trash', async ({ page }) => {
+		const name = uniquePadName('trash-open-editor')
+		const pad = await createPadAtPath(`/${name}`, 'protected')
+		const padId = padIdOfPadUrl(pad.padUrl)
+		const padText = async (): Promise<string> => (await etherpadApiPost<{ text: string }>('getText', { padID: padId })).text
+		try {
+			await page.goto(`${E2E.baseURL}/apps/etherpad_nextcloud/?file=${encodeURIComponent('/' + name)}`)
+			await expectEtherpadViewerMounted(page)
+			await typeInEtherpad(page, 'typed before the trash ')
+			await expect.poll(padText, { message: 'typing should reach the pad', timeout: 10_000 }).toContain('typed before the trash')
+
+			await deleteViaDav(name)
+			await typeInEtherpad(page, 'typed after the trash ')
+			// Nothing comes that could be waited for: the change gets the time
+			// the first one needed, and more.
+			await page.waitForTimeout(3_000)
+			expect(await padText(), 'without its session, the change should be refused').not.toContain('typed after the trash')
+		} finally {
+			const entry = await findTrashbinEntry(name)
+			if (entry !== null) {
+				await purgeTrashbinEntry(entry)
+			}
+		}
 	})
 })

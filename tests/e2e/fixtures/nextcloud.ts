@@ -373,6 +373,23 @@ export const expectEtherpadCurrentUserName = async (page: Page, expectedName: st
 }
 
 /**
+ * Type into the pad the viewer shows, as someone at the keyboard would.
+ * The editor sits four frames down: the viewer's srcdoc wrapper, Etherpad,
+ * and Etherpad's own two editor frames.
+ */
+export const typeInEtherpad = async (page: Page, text: string): Promise<void> => {
+	const editor = page
+		.frameLocator('iframe[title="Etherpad"]').first()
+		.frameLocator('iframe[title="Etherpad"]').first()
+		.frameLocator('iframe[name="ace_outer"]')
+		.frameLocator('iframe[name="ace_inner"]')
+		.locator('#innerdocbody')
+	await expect(editor).toBeVisible({ timeout: 30_000 })
+	await editor.click()
+	await page.keyboard.type(text)
+}
+
+/**
  * The viewer a read-only share is supposed to get: the pad's content,
  * loaded from the pad server, and no Etherpad frame at all.
  *
