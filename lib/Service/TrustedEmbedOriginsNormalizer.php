@@ -81,7 +81,9 @@ class TrustedEmbedOriginsNormalizer {
 		if ($throwOnInvalid) {
 			throw new AdminValidationException(
 				'trusted_embed_origins',
-				$this->l10n->t($message, ['origin' => $origin])
+				// Filled after translating: Nextcloud fills parameters with
+				// vsprintf(), which knows no {name}.
+				str_replace('{origin}', $origin, $this->l10n->t($message))
 			);
 		}
 		return '';

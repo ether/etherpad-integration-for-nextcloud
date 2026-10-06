@@ -12,6 +12,7 @@ namespace OCA\EtherpadNextcloud\Controller;
 use OCA\EtherpadNextcloud\Exception\BindingNotCreatedException;
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
 use OCA\EtherpadNextcloud\Exception\EtherpadTooLargeException;
+use OCA\EtherpadNextcloud\Exception\ExternalPadException;
 use OCA\EtherpadNextcloud\Exception\LegacyPadCollisionException;
 use OCA\EtherpadNextcloud\Exception\LegacyProtectedImportDisabledException;
 use OCA\EtherpadNextcloud\Exception\MissingBindingException;
@@ -61,13 +62,16 @@ enum ApiErrorCode: string {
 	/**
 	 * The same request may succeed later: a file locked for a moment, this
 	 * instance's Etherpad not reachable, a file's row another request made
-	 * first - the next open finds the winner's pad.
+	 * first - the next open finds the winner's pad -, a pad on another
+	 * server that did not answer. Not one whose certificate this instance
+	 * does not trust, nor any other answer from it: those stay as they are.
 	 * The one place that says so, for both mappers.
 	 */
 	public static function retryable(\Throwable $e): bool {
 		return $e instanceof LockedException
 			|| $e instanceof BindingNotCreatedException
-			|| EtherpadClientException::isEtherpadUnreachable($e);
+			|| EtherpadClientException::isEtherpadUnreachable($e)
+			|| ($e instanceof ExternalPadException && $e->reason() === ExternalPadException::UNREACHABLE);
 	}
 
 	/**

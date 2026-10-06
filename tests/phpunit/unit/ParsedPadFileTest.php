@@ -52,14 +52,14 @@ class ParsedPadFileTest extends TestCase {
 		$this->assertSame('https://pad.example.org/p/remote', $this->external(BindingService::ACCESS_PUBLIC, 'https://pad.example.org/p/remote')->externalPadUrl());
 
 		foreach ([
-			'External pad metadata requires public access_mode.' => $this->external(BindingService::ACCESS_PROTECTED, 'https://pad.example.org/p/remote'),
-			'External pad URL metadata is missing or invalid.' => $this->external(BindingService::ACCESS_PUBLIC, ''),
-		] as $reason => $pad) {
+			'External pad metadata requires public access_mode.' => [$this->external(BindingService::ACCESS_PROTECTED, 'https://pad.example.org/p/remote'), ExternalPadException::NOT_PUBLIC],
+			'External pad URL metadata is missing or invalid.' => [$this->external(BindingService::ACCESS_PUBLIC, ''), ExternalPadException::NO_URL],
+		] as $message => [$pad, $reason]) {
 			try {
 				$pad->externalPadUrl();
-				$this->fail($reason . ': no refusal.');
+				$this->fail($message . ': no refusal.');
 			} catch (ExternalPadException $e) {
-				$this->assertSame($reason, $e->getMessage());
+				$this->assertSame([$message, $reason], [$e->getMessage(), $e->reason()]);
 			}
 		}
 	}

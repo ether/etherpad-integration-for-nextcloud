@@ -13,6 +13,8 @@ use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
 use OCA\EtherpadNextcloud\Exception\EtherpadRefusedException;
 use OCA\EtherpadNextcloud\Exception\EtherpadTooLargeException;
 use OCA\EtherpadNextcloud\Exception\ExternalPadException;
+use OCA\EtherpadNextcloud\Exception\ExternalPadExportNotFoundException;
+use OCA\EtherpadNextcloud\Exception\ExternalPadHttpErrorException;
 use OCA\EtherpadNextcloud\Exception\InvalidPadNameException;
 use OCA\EtherpadNextcloud\Exception\LegacyPadCollisionException;
 use OCA\EtherpadNextcloud\Exception\LegacyPadNotFoundException;
@@ -126,15 +128,13 @@ class PadControllerErrorMapperTest extends TestCase {
 	}
 
 	/**
-	 * Three pass their message on: a controller's refusal of a parameter
-	 * and a refused name, each translated where it is thrown, and what was
-	 * wrong with a link to a pad on another server - the user's only hint.
+	 * Two pass their message on: a controller's refusal of a parameter and
+	 * a refused name, each translated where it is thrown.
 	 */
-	public function testWhatItPassesOnIsTranslatedWhereItIsThrownOrTheLinksOwn(): void {
+	public function testWhatItPassesOnIsTranslatedWhereItIsThrown(): void {
 		foreach ([
 			'a parameter refused' => new ControllerBadRequestException('Ungültige Datei-ID.'),
 			'a name refused' => new InvalidPadNameException('„COM1“ ist ein reservierter Name'),
-			'a link to another server' => new ExternalPadException('Only public pad URLs can be linked from external servers.'),
 		] as $case => $e) {
 			$response = $this->buildMapper()->run(
 				static fn (): array => throw $e,
@@ -145,6 +145,73 @@ class PadControllerErrorMapperTest extends TestCase {
 
 			$this->assertSame([Http::STATUS_BAD_REQUEST, ['message' => $e->getMessage()]], [$response->getStatus(), $response->getData()], $case);
 		}
+	}
+
+	/**
+	 * What was wrong with a link to a pad on another server is the user's
+	 * only hint, and reaches them translated: the sentence of the reason
+	 * the exception carries, the log keeping its English message with what
+	 * the other server said. Every reason the exception declares is here -
+	 * a new one without a sentence makes the match throw, and one here that
+	 * is gone fails as well.
+	 *
+	 * Translated from the German catalogue: a sentence that does not go
+	 * through t(), has no translation or is filled before it is translated
+	 * comes back in English.
+	 */
+	public function testAPadOnAnotherServerIsExplainedByItsReason(): void {
+		$expected = [
+			ExternalPadException::INVALID_URL => 'The link to the pad on another server is not a valid https address.',
+			ExternalPadException::CREDENTIALS_IN_URL => 'The link to the pad on another server must not contain a user name or password.',
+			ExternalPadException::NOT_A_PAD_URL => 'The link to the pad on another server must end in /p/ and the name of the pad.',
+			ExternalPadException::NOT_PUBLIC => 'Only public pads on another server can be linked.',
+			ExternalPadException::NO_URL => 'This .pad file names a pad on another server but has no valid link to it.',
+			ExternalPadException::DISABLED => 'Pads on other servers are switched off on this Nextcloud.',
+			ExternalPadException::NOT_ALLOWED => 'This Nextcloud may not link to pads on that server. Your administrator can add it to the allowed servers.',
+			ExternalPadException::LOCAL_ADDRESS => 'That server is on a local or private network, which this Nextcloud does not link to.',
+			ExternalPadException::UNRESOLVED => 'The server of the pad could not be found.',
+			ExternalPadException::NO_CURL => 'This Nextcloud cannot read pads on other servers: the PHP cURL extension is missing. Please contact your administrator.',
+			ExternalPadException::UNREACHABLE => 'The server of the pad could not be reached. Try again later.',
+			ExternalPadException::UNTRUSTED_CERTIFICATE => 'The server of the pad has no certificate this Nextcloud trusts.',
+			ExternalPadException::REDIRECTED => 'The server of the pad sent the request on elsewhere, usually to a sign-in page. Only pads that can be read without signing in can be linked.',
+			ExternalPadException::HTTP_ERROR => 'The server of the pad answered with an error ({status}).',
+			ExternalPadException::NOT_FOUND => 'The pad was not found on the other server, or it cannot be exported there.',
+			ExternalPadException::UNEXPECTED_ANSWER => 'The server of the pad did not answer with the content of the pad.',
+		];
+		$this->assertEqualsCanonicalizing(array_values((new \ReflectionClass(ExternalPadException::class))->getConstants()), array_keys($expected));
+
+		/** @var array<string,string> $german */
+		$german = json_decode((string)file_get_contents(dirname(__DIR__, 3) . '/l10n/de.json'), true, 512, JSON_THROW_ON_ERROR)['translations'];
+		$l10n = $this->createMock(IL10N::class);
+		$l10n->method('t')->willReturnCallback(static fn (string $text): string => $german[$text] ?? $text);
+
+		foreach ($expected as $reason => $sentence) {
+			$this->assertArrayHasKey($sentence, $german, $reason);
+			$e = match ($reason) {
+				ExternalPadException::HTTP_ERROR => new ExternalPadHttpErrorException('internal wording', 502),
+				ExternalPadException::NOT_FOUND => new ExternalPadExportNotFoundException('internal wording'),
+				default => new ExternalPadException('internal wording', $reason),
+			};
+			$response = $this->buildMapper(l10n: $l10n)->run(
+				static fn (): array => throw $e,
+				static fn (array $result): DataResponse => new DataResponse($result),
+			);
+
+			$this->assertSame([Http::STATUS_BAD_REQUEST, str_replace('{status}', '502', $german[$sentence])], [$response->getStatus(), $response->getData()['message']], $reason);
+			// Only a server that did not answer may answer the next try.
+			$this->assertSame($reason === ExternalPadException::UNREACHABLE, $response->getData()['retryable'] ?? false, $reason);
+		}
+	}
+
+	/**
+	 * An HTTP error is made with its status: the base exception refuses
+	 * the reason without one, so no answer reads "an error ()".
+	 */
+	public function testAnHttpErrorComesWithItsStatus(): void {
+		$this->assertSame([ExternalPadException::HTTP_ERROR, 503], [(new ExternalPadHttpErrorException('down', 503))->reason(), (new ExternalPadHttpErrorException('down', 503))->httpStatus()]);
+
+		$this->expectException(\LogicException::class);
+		new ExternalPadException('Public export HTTP error', ExternalPadException::HTTP_ERROR);
 	}
 
 	/** An endpoint's own word for what the same exception means there. */
@@ -254,7 +321,7 @@ class PadControllerErrorMapperTest extends TestCase {
 	 */
 	public function testARefusalIsADebugLineWithItsReason(): void {
 		foreach ([
-			new ExternalPadException('Public export HTTP error (500)'),
+			new \OCA\EtherpadNextcloud\Exception\ExternalPadHttpErrorException('Public export HTTP error (500)', 500),
 			new EtherpadTooLargeException('Pad export is larger than 5242880 bytes.'),
 			new NotFoundException('missing'),
 			new MissingBindingException('No binding exists for this file.'),

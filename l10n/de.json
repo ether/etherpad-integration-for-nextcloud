@@ -237,7 +237,23 @@
         "Only a public pad can be forgotten. Delete a protected one instead.": "Nur ein öffentliches Pad lässt sich vergessen. Ein geschütztes löschst du stattdessen.",
         "Invalid count.": "Ungültige Anzahl.",
         "Could not delete the pads of all vanished files. Some may be marked for deletion already: check the list again.": "Die Pads aller verschwundenen Dateien konnten nicht gelöscht werden. Einige sind vielleicht schon zum Löschen vorgemerkt: Prüfe die Liste noch einmal.",
-        "The pads of the vanished files shown are marked for deletion. More files have vanished since: check the list before deleting their pads.": "Die Pads der gezeigten verschwundenen Dateien sind zum Löschen vorgemerkt. Seitdem sind weitere Dateien verschwunden: Prüfe die Liste, bevor du deren Pads löschst."
+        "The pads of the vanished files shown are marked for deletion. More files have vanished since: check the list before deleting their pads.": "Die Pads der gezeigten verschwundenen Dateien sind zum Löschen vorgemerkt. Seitdem sind weitere Dateien verschwunden: Prüfe die Liste, bevor du deren Pads löschst.",
+        "The link to the pad on another server is not a valid https address.": "Der Link zum Pad auf einem anderen Server ist keine gültige https-Adresse.",
+        "The link to the pad on another server must not contain a user name or password.": "Der Link zum Pad auf einem anderen Server darf weder Benutzernamen noch Passwort enthalten.",
+        "The link to the pad on another server must end in /p/ and the name of the pad.": "Der Link zum Pad auf einem anderen Server muss auf /p/ und den Namen des Pads enden.",
+        "Only public pads on another server can be linked.": "Nur öffentliche Pads auf einem anderen Server lassen sich verknüpfen.",
+        "This .pad file names a pad on another server but has no valid link to it.": "Diese .pad-Datei nennt ein Pad auf einem anderen Server, hat aber keinen gültigen Link dorthin.",
+        "Pads on other servers are switched off on this Nextcloud.": "Pads auf anderen Servern sind in dieser Nextcloud ausgeschaltet.",
+        "This Nextcloud may not link to pads on that server. Your administrator can add it to the allowed servers.": "Diese Nextcloud darf nicht auf Pads dieses Servers verweisen. Deine Administration kann ihn zu den erlaubten Servern hinzufügen.",
+        "That server is on a local or private network, which this Nextcloud does not link to.": "Dieser Server liegt in einem lokalen oder privaten Netz, auf das diese Nextcloud nicht verweist.",
+        "The server of the pad could not be found.": "Der Server des Pads wurde nicht gefunden.",
+        "This Nextcloud cannot read pads on other servers: the PHP cURL extension is missing. Please contact your administrator.": "Diese Nextcloud kann keine Pads auf anderen Servern lesen: Die PHP-Erweiterung cURL fehlt. Bitte wende dich an deine Administration.",
+        "The server of the pad could not be reached. Try again later.": "Der Server des Pads war nicht erreichbar. Versuche es später erneut.",
+        "The server of the pad answered with an error ({status}).": "Der Server des Pads hat mit einem Fehler geantwortet ({status}).",
+        "The pad was not found on the other server, or it cannot be exported there.": "Das Pad wurde auf dem anderen Server nicht gefunden, oder es lässt sich dort nicht exportieren.",
+        "The server of the pad did not answer with the content of the pad.": "Der Server des Pads hat nicht mit dem Inhalt des Pads geantwortet.",
+        "The server of the pad has no certificate this Nextcloud trusts.": "Der Server des Pads hat kein Zertifikat, dem diese Nextcloud vertraut.",
+        "The server of the pad sent the request on elsewhere, usually to a sign-in page. Only pads that can be read without signing in can be linked.": "Der Server des Pads hat die Anfrage weitergeleitet, meist auf eine Anmeldeseite. Verknüpfen lassen sich nur Pads, die ohne Anmeldung lesbar sind."
     },
     "pluralForm": "nplurals=2; plural=(n != 1);"
 }

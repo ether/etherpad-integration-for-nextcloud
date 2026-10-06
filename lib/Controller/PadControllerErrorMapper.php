@@ -15,6 +15,7 @@ use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
 use OCA\EtherpadNextcloud\Exception\EtherpadRefusedException;
 use OCA\EtherpadNextcloud\Exception\EtherpadTooLargeException;
 use OCA\EtherpadNextcloud\Exception\ExternalPadException;
+use OCA\EtherpadNextcloud\Exception\ExternalPadHttpErrorException;
 use OCA\EtherpadNextcloud\Exception\InvalidPadNameException;
 use OCA\EtherpadNextcloud\Exception\LegacyPadCollisionException;
 use OCA\EtherpadNextcloud\Exception\LegacyPadNotFoundException;
@@ -41,11 +42,11 @@ use OCP\Lock\LockedException;
  * Maps what the signed-in pad API throws to the response a client gets.
  *
  * The sentence is this mapper's own, translated; an exception's message is
- * for the log. Three pass their message on: a controller's own refusal of
- * a parameter and a refused name, both translated where they are thrown,
- * and a pad on another server that cannot be linked or read, whose reason
- * is the user's only hint (in English). The `code` and `retryable` come
- * from ApiErrorCode.
+ * for the log. Two pass their message on: a controller's own refusal of a
+ * parameter and a refused name, both translated where they are thrown. A
+ * pad on another server that cannot be linked or read is told by the
+ * reason it carries, in a sentence of this mapper's. The `code` and
+ * `retryable` come from ApiErrorCode.
  *
  * An endpoint passes wording only where it means something else by the
  * same exception. Every error answered is reported once through
@@ -169,9 +170,10 @@ class PadControllerErrorMapper {
 			// Etherpad answered, and trying again gives the same answer.
 			return $this->answer($options, $e, ['message' => $this->l10n->t('Etherpad refused the request. Please contact your administrator.')], Http::STATUS_BAD_REQUEST);
 		} catch (ExternalPadException $e) {
-			// What was wrong with the link to another server: the user's to
-			// mend, not this admin's.
-			return $this->answer($options, $e, ['message' => $e->getMessage()], Http::STATUS_BAD_REQUEST);
+			// What was wrong with the link to another server, or with that
+			// server, in the user's language. Mostly the user's to mend; the
+			// few this admin mends say so.
+			return $this->answer($options, $e, ['message' => $this->whyAnExternalPadFailed($e)], Http::STATUS_BAD_REQUEST);
 		} catch (EtherpadClientException $e) {
 			// Not reachable, or no proper answer: the same request may work
 			// once Etherpad is back.
@@ -182,6 +184,32 @@ class PadControllerErrorMapper {
 				'message' => $options['generic'] ?? $this->l10n->t('Request failed.'),
 			], Http::STATUS_INTERNAL_SERVER_ERROR);
 		}
+	}
+
+	/**
+	 * What was wrong with a pad on another server, as the user reads it:
+	 * one sentence for each reason the exception carries. Its message is
+	 * the log's, with what the other server said.
+	 */
+	private function whyAnExternalPadFailed(ExternalPadException $e): string {
+		return match ($e->reason()) {
+			ExternalPadException::INVALID_URL => $this->l10n->t('The link to the pad on another server is not a valid https address.'),
+			ExternalPadException::CREDENTIALS_IN_URL => $this->l10n->t('The link to the pad on another server must not contain a user name or password.'),
+			ExternalPadException::NOT_A_PAD_URL => $this->l10n->t('The link to the pad on another server must end in /p/ and the name of the pad.'),
+			ExternalPadException::NOT_PUBLIC => $this->l10n->t('Only public pads on another server can be linked.'),
+			ExternalPadException::NO_URL => $this->l10n->t('This .pad file names a pad on another server but has no valid link to it.'),
+			ExternalPadException::DISABLED => $this->l10n->t('Pads on other servers are switched off on this Nextcloud.'),
+			ExternalPadException::NOT_ALLOWED => $this->l10n->t('This Nextcloud may not link to pads on that server. Your administrator can add it to the allowed servers.'),
+			ExternalPadException::LOCAL_ADDRESS => $this->l10n->t('That server is on a local or private network, which this Nextcloud does not link to.'),
+			ExternalPadException::UNRESOLVED => $this->l10n->t('The server of the pad could not be found.'),
+			ExternalPadException::NO_CURL => $this->l10n->t('This Nextcloud cannot read pads on other servers: the PHP cURL extension is missing. Please contact your administrator.'),
+			ExternalPadException::UNREACHABLE => $this->l10n->t('The server of the pad could not be reached. Try again later.'),
+			ExternalPadException::UNTRUSTED_CERTIFICATE => $this->l10n->t('The server of the pad has no certificate this Nextcloud trusts.'),
+			ExternalPadException::REDIRECTED => $this->l10n->t('The server of the pad sent the request on elsewhere, usually to a sign-in page. Only pads that can be read without signing in can be linked.'),
+			ExternalPadException::HTTP_ERROR => str_replace('{status}', $e instanceof ExternalPadHttpErrorException ? (string)$e->httpStatus() : '', $this->l10n->t('The server of the pad answered with an error ({status}).')),
+			ExternalPadException::NOT_FOUND => $this->l10n->t('The pad was not found on the other server, or it cannot be exported there.'),
+			ExternalPadException::UNEXPECTED_ANSWER => $this->l10n->t('The server of the pad did not answer with the content of the pad.'),
+		};
 	}
 
 	/**

@@ -43,7 +43,7 @@ class AllowlistNormalizer {
 		if (!is_array($parts)) {
 			throw new AdminValidationException(
 				'external_pad_allowlist',
-				$this->l10n->t('External allowlist URL must use https: {host}', ['host' => $entry])
+				str_replace('{host}', $entry, $this->l10n->t('External allowlist URL must use https: {host}'))
 			);
 		}
 
@@ -57,7 +57,7 @@ class AllowlistNormalizer {
 		) {
 			throw new AdminValidationException(
 				'external_pad_allowlist',
-				$this->l10n->t('External allowlist URL must use https: {host}', ['host' => $entry])
+				str_replace('{host}', $entry, $this->l10n->t('External allowlist URL must use https: {host}'))
 			);
 		}
 
@@ -79,7 +79,7 @@ class AllowlistNormalizer {
 	private function invalidHost(string $sourceToken): AdminValidationException {
 		return new AdminValidationException(
 			'external_pad_allowlist',
-			$this->l10n->t('External allowlist contains invalid host: {host}', ['host' => $sourceToken])
+			str_replace('{host}', $sourceToken, $this->l10n->t('External allowlist contains invalid host: {host}'))
 		);
 	}
 }

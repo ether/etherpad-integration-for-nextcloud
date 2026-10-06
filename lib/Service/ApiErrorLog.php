@@ -43,7 +43,8 @@ use Psr\Log\LoggerInterface;
  * - The unforeseen, which the mapper names with the endpoint's line: an
  *   error.
  * - Anything else - what the request itself got wrong, a pad on another
- *   server: debug, with the reason the answer leaves out.
+ *   server: debug, with the exception's message, which says more than the
+ *   answer: what the other server sent, say.
  */
 final class ApiErrorLog {
 	private const QUIET_SECONDS = 60;

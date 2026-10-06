@@ -138,6 +138,9 @@ class PublicViewerControllerErrorMapperTest extends TestCase {
 			// Another request made the file's row first; the next open finds it.
 			'a row another request made first' => [new BindingNotCreatedException('Could not create unique pad binding.'), ['retryable' => true]],
 			'Etherpad refusing' => [new EtherpadRefusedException('Etherpad API error (getHTML): padID does not exist'), []],
+			// A pad on another server: worth another try only if it did not answer.
+			'another server not answering' => [new ExternalPadException('Public export transport error: timeout', ExternalPadException::UNREACHABLE), ['retryable' => true]],
+			'another server refusing' => [new ExternalPadExportNotFoundException('External public pad export was not found.'), []],
 		];
 		foreach ($cases as $case => [$e, $expected]) {
 			$data = $this->buildMapper()->runForData(static fn (): array => throw $e, static fn (array $result): DataResponse => new DataResponse($result))->getData();
@@ -159,7 +162,7 @@ class PublicViewerControllerErrorMapperTest extends TestCase {
 			'a row naming another pad' => [new BindingMismatchException('Binding pad ID mismatch.'), 'warning', 'A .pad file and its pad binding could not be matched.'],
 			'another binding problem' => [new BindingException('Pad binding is not active.'), 'debug', 'A request was refused.'],
 			'a pad too large to show' => [new EtherpadTooLargeException('Pad export is larger than 5242880 bytes.'), 'debug', 'A request was refused.'],
-			'a pad on another server' => [new ExternalPadException('Public export HTTP error (500)'), 'debug', 'A request was refused.'],
+			'a pad on another server' => [new \OCA\EtherpadNextcloud\Exception\ExternalPadHttpErrorException('Public export HTTP error (500)', 500), 'debug', 'A request was refused.'],
 			'a file locked' => [new LockedException('locked'), 'debug', 'A request was refused.'],
 			'a link that is invalid' => [new InvalidShareTokenException('This share link is invalid or has expired.'), 'debug', 'A request was refused.'],
 		] as $case => [$e, $level, $line]) {

@@ -78,10 +78,10 @@ class ParsedPadFile {
 	 */
 	public function externalPadUrl(): string {
 		if ($this->accessMode !== BindingService::ACCESS_PUBLIC) {
-			throw new ExternalPadException('External pad metadata requires public access_mode.');
+			throw new ExternalPadException('External pad metadata requires public access_mode.', ExternalPadException::NOT_PUBLIC);
 		}
 		if ($this->padUrl === '') {
-			throw new ExternalPadException('External pad URL metadata is missing or invalid.');
+			throw new ExternalPadException('External pad URL metadata is missing or invalid.', ExternalPadException::NO_URL);
 		}
 		return $this->padUrl;
 	}
