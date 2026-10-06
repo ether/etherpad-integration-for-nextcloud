@@ -2,7 +2,7 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  * Copyright (c) 2026 Jacob Bühler
  */
-import { test, expect } from '@playwright/test'
+import { test, expect } from '../fixtures/browser-noise'
 import {
 	closeViewer,
 	createPublicPad,
@@ -61,7 +61,7 @@ test.describe('user-to-user pad share', () => {
 		await deleteViaDav(padName).catch(() => {})
 	})
 
-	test('grants user B access on share, removes access on revoke', async ({ page, browser }) => {
+	test('grants user B access on share, removes access on revoke', async ({ page, browser, browserNoise }) => {
 		test.skip(
 			!E2E.hasSecondaryBrowserAccount(),
 			'E2E_USER2 / E2E_USER2_PASS / E2E_USER2_APP_PASSWORD not configured; user-share spec skipped.',
@@ -84,6 +84,7 @@ test.describe('user-to-user pad share', () => {
 		// 3. As B: separate browser context using the pre-built secondary
 		// session (created by the setup project), open the shared pad.
 		const userBCtx = await browser.newContext({ storageState: SECONDARY_STATE_FILE })
+		browserNoise.watch(userBCtx)
 		const userB = await userBCtx.newPage()
 		try {
 			await gotoSharedWithMe(userB)

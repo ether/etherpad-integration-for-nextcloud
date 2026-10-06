@@ -2,7 +2,7 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  * Copyright (c) 2026 Jacob Bühler
  */
-import { test, expect } from '@playwright/test'
+import { test, expect } from '../fixtures/browser-noise'
 import {
 	closeViewer,
 	expectEtherpadViewerMounted,
@@ -47,7 +47,7 @@ test.describe('read-only share of a protected pad', () => {
 	const syncedMarker = 'readonly-synced-8f3a1c'
 	const liveMarker = 'readonly-live-2b7e40'
 
-	test('shows what the pad says now, not an editable pad', async ({ page, browser }) => {
+	test('shows what the pad says now, not an editable pad', async ({ page, browser, browserNoise }) => {
 		test.skip(
 			!E2E.hasSecondaryBrowserAccount(),
 			'E2E_USER2 / E2E_USER2_PASS / E2E_USER2_APP_PASSWORD not configured; two-user spec skipped.',
@@ -56,6 +56,7 @@ test.describe('read-only share of a protected pad', () => {
 		const padName = uniquePadName('readonly-share')
 		let shareId = ''
 		const userBCtx = await browser.newContext({ storageState: SECONDARY_STATE_FILE })
+		browserNoise.watch(userBCtx)
 		try {
 			const pad = await createPadAtPath(`/${padName}`, 'protected')
 			const fileId = await propfindFileId(padName)
@@ -94,7 +95,7 @@ test.describe('read-only share of a protected pad', () => {
 	 * The control. Without it the test above would pass just as well for a
 	 * viewer that never opens a pad for anybody.
 	 */
-	test('still opens the pad when the same share may write', async ({ page, browser }) => {
+	test('still opens the pad when the same share may write', async ({ page, browser, browserNoise }) => {
 		test.skip(
 			!E2E.hasSecondaryBrowserAccount(),
 			'E2E_USER2 / E2E_USER2_PASS / E2E_USER2_APP_PASSWORD not configured; two-user spec skipped.',
@@ -103,6 +104,7 @@ test.describe('read-only share of a protected pad', () => {
 		const padName = uniquePadName('writable-share')
 		let shareId = ''
 		const userBCtx = await browser.newContext({ storageState: SECONDARY_STATE_FILE })
+		browserNoise.watch(userBCtx)
 		try {
 			await createPadAtPath(`/${padName}`, 'protected')
 			shareId = (await createUserWriteShare(padName, E2E.secondaryUser!)).id
@@ -135,7 +137,7 @@ test.describe('read-only share of a protected pad', () => {
 	 * green, which was checked rather than assumed. The preference itself is
 	 * pinned in UserNodeResolverTest, where the order can be chosen.
 	 */
-	test('opens the editor when another path to the same pad may write', async ({ browser }) => {
+	test('opens the editor when another path to the same pad may write', async ({ browser, browserNoise }) => {
 		test.skip(
 			!E2E.hasSecondaryBrowserAccount(),
 			'E2E_USER2 / E2E_USER2_PASS / E2E_USER2_APP_PASSWORD not configured; two-user spec skipped.',
@@ -145,6 +147,7 @@ test.describe('read-only share of a protected pad', () => {
 		const padName = uniquePadName('overlap')
 		const shareIds: string[] = []
 		const userBCtx = await browser.newContext({ storageState: SECONDARY_STATE_FILE })
+		browserNoise.watch(userBCtx)
 		try {
 			await mkcolViaDav(folderName)
 			await createPadAtPath(`/${folderName}/${padName}`, 'protected')

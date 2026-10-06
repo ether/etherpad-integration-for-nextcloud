@@ -12,7 +12,7 @@
  * stops answering would fall back to the generic mime icon unnoticed.
  */
 
-import { test, expect } from '@playwright/test'
+import { test, expect } from '../fixtures/browser-noise'
 import { gotoFiles, closeViewer, createPublicPad, expectFileInList, uniquePadName } from '../fixtures/nextcloud'
 import { deleteViaDav } from '../fixtures/dav'
 

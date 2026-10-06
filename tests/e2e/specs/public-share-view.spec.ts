@@ -5,7 +5,7 @@
 
 /** Covers native Viewer routing and access isolation for public file and folder shares. */
 
-import { test, expect } from '@playwright/test'
+import { test, expect } from '../fixtures/browser-noise'
 import { E2E } from '../fixtures/env'
 import {
 	gotoFiles,
@@ -47,7 +47,7 @@ test.describe('public share access without login', () => {
 		await deleteViaDav(textRouteFileName)
 	})
 
-	test('opens a shared public pad without authenticated storage state', async ({ page, browser }) => {
+	test('opens a shared public pad without authenticated storage state', async ({ page, browser, browserNoise }) => {
 		await gotoFiles(page)
 		await createPublicPad(page, padName)
 		await expectEtherpadViewerMounted(page)
@@ -57,6 +57,7 @@ test.describe('public share access without login', () => {
 		shareUrl = share.url
 
 		const publicContext = await browser.newContext()
+		browserNoise.watch(publicContext)
 		const publicPage = await publicContext.newPage()
 		try {
 			await publicPage.goto(shareUrl)
@@ -67,8 +68,9 @@ test.describe('public share access without login', () => {
 		}
 	})
 
-	test('does not expose internal viewer data without login', async ({ browser }) => {
+	test('does not expose internal viewer data without login', async ({ browser, browserNoise }) => {
 		const publicContext = await browser.newContext()
+		browserNoise.watch(publicContext)
 		const publicPage = await publicContext.newPage()
 		try {
 			await publicPage.goto(`${E2E.baseURL}/apps/etherpad_nextcloud/by-id/1`)
@@ -80,8 +82,9 @@ test.describe('public share access without login', () => {
 		}
 	})
 
-	test('rejects invalid public share tokens without pad data', async ({ browser }) => {
+	test('rejects invalid public share tokens without pad data', async ({ browser, browserNoise }) => {
 		const publicContext = await browser.newContext()
+		browserNoise.watch(publicContext)
 		try {
 			const response = await publicContext.request.get(
 				`${E2E.baseURL}/apps/etherpad_nextcloud/api/v1/public/open/not-a-real-e2e-token?file=/Missing.pad`,
@@ -96,8 +99,9 @@ test.describe('public share access without login', () => {
 		}
 	})
 
-	test('renders an error page for invalid public viewer tokens', async ({ browser }) => {
+	test('renders an error page for invalid public viewer tokens', async ({ browser, browserNoise }) => {
 		const publicContext = await browser.newContext()
+		browserNoise.watch(publicContext)
 		const publicPage = await publicContext.newPage()
 		try {
 			await publicPage.goto(`${E2E.baseURL}/apps/etherpad_nextcloud/public/not-a-real-e2e-token?file=/Missing.pad`)
@@ -109,12 +113,13 @@ test.describe('public share access without login', () => {
 		}
 	})
 
-	test('rejects non-pad public shares without pad data', async ({ browser }) => {
+	test('rejects non-pad public shares without pad data', async ({ browser, browserNoise }) => {
 		await putFileViaDav(textFileName, 'This is not a managed pad.')
 		const share = await createPublicReadShare(textFileName)
 		nonPadShareToken = share.token
 
 		const publicContext = await browser.newContext()
+		browserNoise.watch(publicContext)
 		try {
 			const response = await publicContext.request.get(
 				`${E2E.baseURL}/apps/etherpad_nextcloud/api/v1/public/open/${encodeURIComponent(nonPadShareToken)}`,
@@ -129,12 +134,13 @@ test.describe('public share access without login', () => {
 		}
 	})
 
-	test('does not mount Etherpad for non-pad public viewer shares', async ({ browser }) => {
+	test('does not mount Etherpad for non-pad public viewer shares', async ({ browser, browserNoise }) => {
 		await putFileViaDav(textRouteFileName, 'This is not a managed pad.')
 		const share = await createPublicReadShare(textRouteFileName)
 		nonPadRouteShareToken = share.token
 
 		const publicContext = await browser.newContext()
+		browserNoise.watch(publicContext)
 		const publicPage = await publicContext.newPage()
 		try {
 			await publicPage.goto(`${E2E.baseURL}/apps/etherpad_nextcloud/public/${encodeURIComponent(nonPadRouteShareToken)}`)
@@ -195,10 +201,11 @@ test.describe('public folder share with confusable file names', () => {
 		}
 	})
 
-	test('refuses a file id from outside the share, with no path fallback', async ({ browser }) => {
+	test('refuses a file id from outside the share, with no path fallback', async ({ browser, browserNoise }) => {
 		expect(outsideFileId).toBeGreaterThan(0)
 
 		const publicContext = await browser.newContext()
+		browserNoise.watch(publicContext)
 		try {
 			// A path fallback would open the real pad named alongside the foreign id.
 			const response = await publicContext.request.get(
@@ -213,12 +220,13 @@ test.describe('public folder share with confusable file names', () => {
 		}
 	})
 
-	test('opens plus and space filenames from a public folder share without confusing their pads', async ({ browser }) => {
+	test('opens plus and space filenames from a public folder share without confusing their pads', async ({ browser, browserNoise }) => {
 		expect(plusPad.path).toBe(`/${folderName}/${plusName}`)
 		expect(spacePad.path).toBe(`/${folderName}/${spaceName}`)
 		expect(plusPad.padUrl).not.toBe(spacePad.padUrl)
 
 		const publicContext = await browser.newContext()
+		browserNoise.watch(publicContext)
 		const publicPage = await publicContext.newPage()
 		try {
 			await publicPage.goto(shareUrl)
@@ -249,8 +257,9 @@ test.describe('public folder share with confusable file names', () => {
 		}
 	})
 
-	test('keeps compatibility links to pads inside a public folder share working', async ({ browser }) => {
+	test('keeps compatibility links to pads inside a public folder share working', async ({ browser, browserNoise }) => {
 		const publicContext = await browser.newContext()
+		browserNoise.watch(publicContext)
 		const publicPage = await publicContext.newPage()
 		try {
 			await publicPage.goto(

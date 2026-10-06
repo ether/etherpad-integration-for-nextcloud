@@ -77,6 +77,7 @@ tests/e2e/
     auth.ts                login flow, stored-state paths, wizard dismissal
     dav.ts                 WebDAV + OCS + plugin-API helpers (app password)
     nextcloud.ts           Files-app browser helpers
+    browser-noise.ts       `test` and `expect` for the specs, with the noise guard
   specs/                   one file per flow (see Coverage)
 ```
 
@@ -85,6 +86,30 @@ over localized text so specs survive UI-language changes. Content checks
 usually go through the plugin's own HTTP endpoints + WebDAV rather than
 the Etherpad API or editor typing; the author-display-name spec is the
 one deliberate exception because it verifies the real Etherpad session UI.
+
+### Browser noise
+
+Specs import `test` and `expect` from `fixtures/browser-noise.ts`, not
+from `@playwright/test`. It watches what the browser reports that no
+assertion looked at: an error on the console, an exception nothing
+caught, a request that failed outright, a `5xx`, or a script, stylesheet
+or font that did not load. A flow can pass every assertion and still
+leave one of these behind.
+
+- A test fails on what comes from this app: its scripts, its routes and
+  their answers.
+- Everything else goes into the test's report as `browser-noise`, and
+  fails nothing. Nextcloud and its other apps log errors of their own on
+  most pages (on Nextcloud 34: the Files service worker, the Viewer
+  registering each handler twice, Text's rich workspace, a modal's focus
+  trap); they are not this app's to fix, and would turn runs red with
+  every release.
+- What a test causes on purpose it allows itself, with a reason:
+  `browserNoise.allow('response', /\/pads\/open-by-id/, 'Etherpad is stopped on purpose')`.
+- A context the test opens itself (`browser.newContext()`) is watched
+  once the test hands it over: `browserNoise.watch(context)`.
+- A test that failed already reports nothing more; the guard would only
+  bury the first error.
 
 ## Coverage
 
