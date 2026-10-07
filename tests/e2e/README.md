@@ -167,28 +167,20 @@ Each `specs/*.spec.ts` covers one flow:
 - **pad-trash-restore** — trash + restore round-trip, pad reopens; an
   editor still open when its protected pad's file goes to the trash writes
   no more.
-- **pad-lost** — a pad Etherpad has lost (deleted there, or made anew empty
-  by a visit to a public pad's address) answers `pad_missing`, a forced
-  sync does not write a pad made anew over the file, and a new pad is made
-  from the file's content, in the API and in the viewer; a file restored
-  from the trash gets its new pad without asking, one trashed under
-  1.1.0-beta.1 too. The file then counts the new pad's revisions, and an
-  ordinary sync writes what is written into it.
-  Container stack only (asks Etherpad).
-- **pad-gone-for-good** — the trash keeps a pad and its group, a restore
-  gives the same pad back; a pad goes with its file deleted for good:
-  past the trash, from the trash once it is deleted there, with the
-  account that owned it, a renamed file too, a folder of 250 pads at
-  once; a public pad in the trash can still be written into by its link;
-  a file moved into a team folder and back, or in a team folder's trash,
-  keeps its pad; with `delete_pad_with_file` off pads wait (only where
-  deleting is on already); a pad in a team folder stays
-  when its maker's account goes; the admin forgets a vanished public pad,
-  its pad left in Etherpad, deletes one on its own, and - only where
-  `E2E_THROWAWAY_STACK=1`, which the container stack's `up.sh` sets -
-  deletes every vanished row of the instance, as many as counted. Container stack only (asks Etherpad);
-  the team folder part needs groupfolders and skips without it. Creates
-  and deletes throwaway accounts, groups and team folders.
+- **pad-lost** — a pad Etherpad has lost answers `pad_missing`, and a new
+  pad is made from the file's content, in the API and in the viewer; a
+  restore makes it at once. The file then counts the new pad's revisions,
+  and a forced sync never writes a pad made anew over it. Container stack
+  only (asks Etherpad).
+- **pad-gone-for-good** — a pad goes once its file is deleted for good,
+  however that happens, however the file is called by then, and however
+  many at once; a file in a trash, a user's or a team folder's, keeps it;
+  with `delete_pad_with_file` off the pads wait. The admin's handling of
+  vanished files too. What touches the whole instance runs only where
+  `E2E_THROWAWAY_STACK=1`, which the container stack's `up.sh` sets.
+  Container stack only; the team folder part needs
+  groupfolders; makes and removes throwaway accounts, groups and team
+  folders.
 - **pad-user-share** — user-to-user share grants access, revoke removes
   it (NC boundary; Etherpad's own session-cookie window is out of scope).
 - **pad-ownership-boundary** — cross-user `open-by-id` is rejected.

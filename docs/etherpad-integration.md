@@ -417,13 +417,9 @@ this app's own bookkeeping:
 occ config:app:set etherpad_nextcloud etherpad_http_only_session_cookie --value=no
 ```
 
-Regression safety check:
-
-- `tests/e2e/specs/protected-session-cookie-httponly.spec.ts` checks the cookie a protected open sets:
-  - one `sessionID` `Set-Cookie` header
-  - with `Secure` and `SameSite=Lax`
-  - `HttpOnly` exactly when the pad server's `/health` reports a release of
-    3 or newer; CI runs it against Etherpad 2 and 3
+`tests/e2e/specs/protected-session-cookie-httponly.spec.ts` holds this: one
+`sessionID` cookie per protected open, `Secure`, `SameSite=Lax`, and
+`HttpOnly` from Etherpad 3 on; CI runs it against Etherpad 2 and 3.
 
 ## Read-only Behavior
 

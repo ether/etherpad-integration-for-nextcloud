@@ -2,10 +2,10 @@
 
 This project uses a lightweight release flow:
 
-1. Run a reproducible local check script.
-2. Run optional failure-path checks.
+1. Run the local check.
+2. Run the end-to-end suite.
 3. Tag the release.
-4. Deploy and run post-deploy smoke checks.
+4. Deploy, and run the end-to-end suite against the deployed instance.
 
 Pushing the tag is the last manual step: `.github/workflows/release.yml` builds
 the tarball and publishes the release. What has to be true before the tag is
@@ -23,18 +23,8 @@ Run from repo root:
 ./tests/integration/release-check.sh
 ```
 
-What it does:
-
-- Verifies required local tools (`git`, `php`).
-- Fails on dirty working tree by default.
-- Runs the PHPUnit unit suite, which is required rather than optional – it is
-  the only local test path, so a missing `vendor/bin/phpunit` fails the check
-  instead of skipping it:
-  - `vendor/bin/phpunit --testsuite unit`
-  - Install once with `composer install --no-interaction`
-  - The path-normalizer coverage this step used to run as a standalone script
-    lives in that suite as `PathNormalizerTest`
-- Points to the end-to-end suite below, which it does not run itself.
+It refuses a dirty working tree, then runs `vendor/bin/phpunit --testsuite unit`
+(install once with `composer install --no-interaction`).
 
 Frontend checks are separate and should be run before release/deploy whenever
 `src/`, `package.json`, or Vite/Vitest config changed:
@@ -73,7 +63,10 @@ npm run test:e2e
 Setup, the variables, and what each spec covers are in
 [tests/e2e/README.md](../tests/e2e/README.md). How the app answers when
 Etherpad cannot be reached (`503` with `retryable`) is held by the PHPUnit
-suite rather than by an outage the release has to stage.
+suite rather than by an outage the release has to stage. The session cookie a
+protected open sets - one, and what it carries - is described in
+[etherpad-integration.md](etherpad-integration.md) and held by
+`protected-session-cookie-httponly.spec.ts`.
 
 ## 3) Tagging
 
@@ -112,6 +105,9 @@ account in `tests/e2e/.env.e2e` (the specs create and delete files there):
 npm run test:e2e
 ```
 
+Then look in the server log for a query-budget warning on
+`PadCreateController::create` (`executed N queries`); there should be none.
+
 Optional deploy helper (rsync with production-safe excludes):
 
 ```bash
@@ -140,22 +136,3 @@ Notes:
   ```
 
   Read the `*deleting` lines first; drop `--dry-run` once they look right.
-
-## 5) Server Log Verification (Recommended)
-
-After deploy, verify that the historical query-budget warning is not present anymore:
-
-```bash
-ssh <server> 'grep -n "PadCreateController::create executed" /path/to/nextcloud.log | tail -n 20'
-ssh <server> 'grep -nE "executed [0-9]+ queries" /path/to/nextcloud.log | tail -n 20'
-```
-
-Expected result: no new warnings for `PadCreateController::create` above the Nextcloud warning threshold.
-
-## 6) Cookie Header Contract (Protected Pads)
-
-- Protected pad open responses intentionally attach one explicit `Set-Cookie` header for Etherpad session bootstrapping.
-- We use explicit cookie attributes (`Domain`, `Secure`, `SameSite=Lax`) for cross-subdomain iframe sessions. `Lax` is enough because Nextcloud and Etherpad must share a registrable domain for the cookie to be settable at all. An instance with `etherpad_session_cookie_samesite=none` sends `None` instead – check the setting before reading a deviation as a bug.
-- Current contract: this app writes one Etherpad session cookie on these responses; no additional custom cookies are added by this app on the same response.
-- If future features require multiple custom cookies on the same response, cookie handling must be extended deliberately and covered by dedicated tests.
-- `tests/e2e/specs/protected-session-cookie-httponly.spec.ts` holds this contract: one `sessionID` cookie, its attributes, and `HttpOnly` by the Etherpad major.
