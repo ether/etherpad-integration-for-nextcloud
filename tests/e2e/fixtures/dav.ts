@@ -257,6 +257,27 @@ export const setAppConfig = async (key: string, value: string): Promise<void> =>
 	}, 'Setting')
 }
 
+/**
+ * Put back a config value as getAppConfig() read it before a spec changed
+ * it: unset again if it was, rather than set to ''.
+ */
+export const restoreAppConfig = async (key: string, before: string): Promise<void> => {
+	await (before === '' ? deleteAppConfig(key) : setAppConfig(key, before))
+}
+
+/**
+ * The pad a file opens on, as the open answers it; anything but an opened
+ * pad is thrown.
+ */
+export const padOfFile = async (fileId: number): Promise<string> => {
+	const opened = await padApiPost('pads/open-by-id', { fileId: String(fileId) })
+	const padId = (opened.body as { pad_id?: unknown } | null)?.pad_id
+	if (opened.status !== 200 || typeof padId !== 'string' || padId === '') {
+		throw new Error(`Opening file ${fileId} answered HTTP ${opened.status}: ${JSON.stringify(opened.body)}`)
+	}
+	return padId
+}
+
 /** Return the display name NC exposes for the primary E2E account. */
 export const getCurrentUserDisplayName = async (): Promise<string> => {
 	const res = await fetch(`${E2E.baseURL}/ocs/v2.php/cloud/user?format=json`, {

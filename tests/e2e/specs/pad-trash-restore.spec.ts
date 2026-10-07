@@ -83,16 +83,19 @@ test.describe('an editor open while its file goes to the trash', () => {
 		try {
 			await page.goto(`${E2E.baseURL}/apps/etherpad_nextcloud/?file=${encodeURIComponent('/' + name)}`)
 			await expectEtherpadViewerMounted(page)
-			const typed = Date.now()
 			await typeInEtherpad(page, 'typed before the trash ')
+			// From the keys typed, not from the editor's load: how long a change
+			// takes to reach the pad.
+			const typed = Date.now()
 			await expect.poll(padText, { message: 'typing should reach the pad', timeout: 10_000 }).toContain('typed before the trash')
 			const roundTrip = Date.now() - typed
 
 			await deleteViaDav(name)
 			await typeInEtherpad(page, 'typed after the trash ')
 			// Nothing comes that could be waited for: the change gets several
-			// times what the first one needed to arrive, three seconds at least.
-			await page.waitForTimeout(Math.max(3_000, 3 * roundTrip))
+			// times what the first one needed to arrive, three seconds at
+			// least, fifteen at most.
+			await page.waitForTimeout(Math.min(15_000, Math.max(3_000, 3 * roundTrip)))
 			expect(await padText(), 'without its session, the change should be refused').not.toContain('typed after the trash')
 		} finally {
 			// Still in Files if the test stopped before the trash.
