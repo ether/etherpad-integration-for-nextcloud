@@ -165,9 +165,9 @@ export const getFileViaDav = async (relativePath: string): Promise<string> => {
 
 /**
  * POST to one of the plugin's authenticated `/api/v1/pads/...` endpoints
- * using the app password (same BasicAuth surface the integration bash
- * specs use), with $form as its body - as another account when $as
- * names one. Returns the parsed JSON body plus the HTTP status.
+ * using the app password over BasicAuth, with $form as its body - as
+ * another account when $as names one. Returns the parsed JSON body plus
+ * the HTTP status.
  */
 export const padApiPost = async (
 	endpoint: string,
@@ -193,6 +193,39 @@ export const padApiPost = async (
 		body = text
 	}
 	return { status: res.status, body }
+}
+
+/** GET one of the plugin's authenticated endpoints, as padApiPost() posts. */
+export const padApiGet = async (endpoint: string): Promise<{ status: number, body: unknown }> => {
+	const res = await fetch(`${E2E.baseURL}/index.php/apps/etherpad_nextcloud/api/v1/${endpoint.replace(/^\/+/, '')}`, {
+		headers: { Authorization: basicAuthHeader(), Accept: 'application/json', 'OCS-APIRequest': 'true' },
+	})
+	const text = await res.text()
+	let body: unknown = null
+	try {
+		body = text !== '' ? JSON.parse(text) : null
+	} catch {
+		body = text
+	}
+	return { status: res.status, body }
+}
+
+/**
+ * Whether a file or folder is there, asked once: the readers above wait
+ * out a 404 as a create not yet visible, which here is the answer.
+ */
+export const existsViaDav = async (relativePath: string): Promise<boolean> => {
+	const res = await fetch(davUrl(relativePath.replace(/^\/+/, '')), {
+		method: 'PROPFIND',
+		headers: { Authorization: basicAuthHeader(), Depth: '0' },
+	})
+	if (res.status === 404) {
+		return false
+	}
+	if (res.status === 207) {
+		return true
+	}
+	throw new Error(`PROPFIND ${relativePath} answered HTTP ${res.status}`)
 }
 
 const appConfigUrl = (key: string): string =>

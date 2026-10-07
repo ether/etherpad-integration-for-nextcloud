@@ -20,7 +20,7 @@ import {
 	uniqueName,
 	uniquePadName,
 } from '../fixtures/nextcloud'
-import { deleteViaDav, getFileViaDav } from '../fixtures/dav'
+import { deleteViaDav, existsViaDav, getFileViaDav, padApiPost } from '../fixtures/dav'
 import { E2E } from '../fixtures/env'
 
 test.describe('public pad create + open', () => {
@@ -126,4 +126,28 @@ test.describe('pad name containing a plus sign', () => {
 		await expectEtherpadViewerMounted(page)
 		expect(await readEtherpadUrlFromViewer(page)).toBe(padUrl)
 	})
+})
+
+/**
+ * A pad from a link this app does not take: refused with the reason, and
+ * the file made for it is gone again - the create made it before it read
+ * the link, and rolls it back.
+ */
+test.describe('a pad from a link it may not take', () => {
+	for (const [what, padUrl, sentence] of [
+		['an http address', 'http://pad.example.test/p/plain', 'The link to the pad on another server is not a valid https address.'],
+		['a group pad', 'https://pad.example.test/p/g.abcdefghijklmnop$secret', 'Only public pads on another server can be linked.'],
+	] as const) {
+		test(`refuses ${what}, and leaves no file`, async () => {
+			const name = uniquePadName('from-url-refused')
+			try {
+				const refused = await padApiPost('pads/from-url', { file: `/${name}`, padUrl })
+				expect(refused.status, JSON.stringify(refused.body)).toBe(400)
+				expect((refused.body as { message?: string }).message).toBe(sentence)
+				expect(await existsViaDav(name), 'the file made for it should be gone').toBe(false)
+			} finally {
+				await deleteViaDav(name).catch(() => {})
+			}
+		})
+	}
 })

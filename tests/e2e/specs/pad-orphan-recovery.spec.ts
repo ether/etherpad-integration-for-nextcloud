@@ -13,7 +13,7 @@ import {
 	openPadFromFileList,
 	uniquePadName,
 } from '../fixtures/nextcloud'
-import { copyViaDav, deleteViaDav, propfindFileId, restoreFromTrashViaDav } from '../fixtures/dav'
+import { copyViaDav, createPadAtPath, deleteViaDav, getFileViaDav, padApiGet, padApiPost, propfindFileId, restoreFromTrashViaDav } from '../fixtures/dav'
 
 /**
  * Recovery flow for a `.pad` file that has no binding row of its own —
@@ -92,4 +92,38 @@ test.describe('orphan .pad recovery', () => {
 			await deleteViaDav(source)
 		}
 	})
+})
+
+/**
+ * A copy names a pad another file's row holds. Asked to sync - by its
+ * status, plainly or forced as an editor closing does - it says it has no
+ * pad of its own, and nothing is written into it: the other file's pad
+ * would otherwise land in the copy.
+ */
+test.describe('a copy of a .pad file and sync', () => {
+	for (const accessMode of ['public', 'protected']) {
+		test(`a copy of a ${accessMode} pad refuses to sync, and is left as it is`, async () => {
+			const source = uniquePadName(`orphan-sync-source-${accessMode}`)
+			const copy = uniquePadName(`orphan-sync-copy-${accessMode}`)
+			try {
+				await createPadAtPath(`/${source}`, accessMode)
+				await copyViaDav(source, copy)
+				const copyId = await propfindFileId(copy)
+				const before = await getFileViaDav(copy)
+
+				for (const [what, answer] of [
+					['sync status', await padApiGet(`pads/sync-status/${copyId}`)],
+					['sync', await padApiPost(`pads/sync/${copyId}`)],
+					['forced sync', await padApiPost(`pads/sync/${copyId}?force=1`)],
+				] as const) {
+					expect(answer.status, `${what}: ${JSON.stringify(answer.body)}`).toBe(400)
+					expect((answer.body as { code?: string }).code, what).toBe('missing_binding')
+				}
+				expect(await getFileViaDav(copy), 'the copy should be left as it is').toBe(before)
+			} finally {
+				await deleteViaDav(copy).catch(() => {})
+				await deleteViaDav(source).catch(() => {})
+			}
+		})
+	}
 })
