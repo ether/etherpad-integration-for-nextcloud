@@ -198,8 +198,7 @@ builds and matches names, and it throws on a label or extension it could
 not recognise later.
 
 Specs delete their files in `afterAll` via WebDAV. `E2E_APP_PASSWORD` is
-required for these non-browser requests, matching the existing
-`NC_APP_PASSWORD` pattern in `tests/integration/*.sh`.
+required for these non-browser requests.
 
 That `DELETE` only moves a file to the trash, so `global-teardown.ts`
 sweeps the trash at the end of the run. Without it a shared account

@@ -34,12 +34,7 @@ What it does:
   - Install once with `composer install --no-interaction`
   - The path-normalizer coverage this step used to run as a standalone script
     lives in that suite as `PathNormalizerTest`
-- If Nextcloud test credentials are present, runs core E2E checks:
-  - pad flow
-  - protected cookie contract (session cookie attrs + no `HttpOnly` for current Etherpad runtime compatibility)
-  - public folder share flow
-  - public single-file share flow
-  - external URL security checks
+- Points to the end-to-end suite below, which it does not run itself.
 
 Frontend checks are separate and should be run before release/deploy whenever
 `src/`, `package.json`, or Vite/Vitest config changed:
@@ -52,52 +47,33 @@ npm run build
 The Vite build writes runtime assets to `js/`; those built files must be present
 in the deployed app.
 
-Browser-level end-to-end checks live in a separate Playwright suite that drives
-a real Nextcloud instance (template-picker create, viewer mount, share + revoke,
-trash/restore, recovery, legacy migration, …). It is target-agnostic and
-credential-driven via `tests/e2e/.env.e2e`:
+## 2) End-to-End Checks
+
+The end-to-end checks are a Playwright suite that drives a real Nextcloud and
+Etherpad: creating and opening pads, sharing, the trash and its restore, pads
+Etherpad lost, public links, legacy migration, the session cookie. CI runs it
+on every pull request that touches the app, against the oldest and newest
+supported Nextcloud with Etherpad 2 and against the newest with Etherpad 3,
+and nightly against every supported major.
+
+Before a release, run it once more against the container stack:
+
+```bash
+tests/e2e/docker/up.sh
+tests/e2e/docker/run-suite.sh
+```
+
+Or against an instance of your own, with a dedicated test account in
+`tests/e2e/.env.e2e`:
 
 ```bash
 npm run test:e2e
 ```
 
-Setup, the required env vars, and the per-spec coverage are documented in
-[tests/e2e/README.md](../tests/e2e/README.md). This suite is not yet wired into
-CI (a reproducible Docker target is tracked in #112), so run it manually against
-a test instance before a release when frontend flows changed.
-
-Environment variables for E2E:
-
-- `NC_BASE_URL`
-- `NC_USER`
-- `NC_APP_PASSWORD`
-
-Optional first argument:
-
-- path prefix used by E2E scripts, for example:
-
-```bash
-./tests/integration/release-check.sh "/release-candidate"
-```
-
-## 2) Optional Failure-Path Checks
-
-These checks intentionally expect errors and usually require an Etherpad outage/misconfiguration phase:
-
-```bash
-RUN_FAILURE_PATHS=1 FAILURE_PATHS_PREPARED=1 NC_BASE_URL=... NC_USER=... NC_APP_PASSWORD=... ./tests/integration/release-check.sh "/release-failure"
-```
-
-Included:
-
-- sync failure path
-
-Notes:
-
-- `release-check.sh` will only run failure-path tests when both flags are set:
-  - `RUN_FAILURE_PATHS=1`
-  - `FAILURE_PATHS_PREPARED=1`
-- This prevents false failures on healthy environments where outage conditions were not prepared.
+Setup, the variables, and what each spec covers are in
+[tests/e2e/README.md](../tests/e2e/README.md). How the app answers when
+Etherpad cannot be reached (`503` with `retryable`) is held by the PHPUnit
+suite rather than by an outage the release has to stage.
 
 ## 3) Tagging
 
@@ -129,10 +105,11 @@ failed upload is safe; it does not try to create a release that already exists.
 
 ## 4) Post-Deploy Smoke
 
-Re-run required checks against target environment:
+Run the end-to-end suite against the deployed instance, with a dedicated test
+account in `tests/e2e/.env.e2e` (the specs create and delete files there):
 
 ```bash
-NC_BASE_URL=... NC_USER=... NC_APP_PASSWORD=... ./tests/integration/release-check.sh "/release-post-deploy"
+npm run test:e2e
 ```
 
 Optional deploy helper (rsync with production-safe excludes):
