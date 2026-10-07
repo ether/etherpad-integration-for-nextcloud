@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+# The release gate's local part: refuses a dirty working tree, then runs
+# the PHPUnit suite, which `composer test:phpunit` runs too without that
+# check. The end-to-end checks are the Playwright suite, run apart from
+# this. A prepare-release script is to take this over (#268).
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"

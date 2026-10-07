@@ -164,19 +164,20 @@ export const getFileViaDav = async (relativePath: string): Promise<string> => {
 }
 
 /**
- * POST to one of the plugin's authenticated `/api/v1/pads/...` endpoints
- * using the app password over BasicAuth, with $form as its body - as
+ * Ask one of the plugin's authenticated `/api/v1/...` endpoints using the
+ * app password over BasicAuth, with $form as the body of a POST - as
  * another account when $as names one. Returns the parsed JSON body plus
  * the HTTP status.
  */
-export const padApiPost = async (
+const padApi = async (
+	method: 'GET' | 'POST',
 	endpoint: string,
 	form: Record<string, string> | null = null,
 	as: { uid: string, password: string } | null = null,
 ): Promise<{ status: number, body: unknown }> => {
 	const url = `${E2E.baseURL}/index.php/apps/etherpad_nextcloud/api/v1/${endpoint.replace(/^\/+/, '')}`
 	const res = await fetch(url, {
-		method: 'POST',
+		method,
 		headers: {
 			Authorization: as === null ? basicAuthHeader() : `Basic ${Buffer.from(`${as.uid}:${as.password}`).toString('base64')}`,
 			Accept: 'application/json',
@@ -195,20 +196,15 @@ export const padApiPost = async (
 	return { status: res.status, body }
 }
 
-/** GET one of the plugin's authenticated endpoints, as padApiPost() posts. */
-export const padApiGet = async (endpoint: string): Promise<{ status: number, body: unknown }> => {
-	const res = await fetch(`${E2E.baseURL}/index.php/apps/etherpad_nextcloud/api/v1/${endpoint.replace(/^\/+/, '')}`, {
-		headers: { Authorization: basicAuthHeader(), Accept: 'application/json', 'OCS-APIRequest': 'true' },
-	})
-	const text = await res.text()
-	let body: unknown = null
-	try {
-		body = text !== '' ? JSON.parse(text) : null
-	} catch {
-		body = text
-	}
-	return { status: res.status, body }
-}
+/** POST to one of the plugin's endpoints; see padApi(). */
+export const padApiPost = (
+	endpoint: string,
+	form: Record<string, string> | null = null,
+	as: { uid: string, password: string } | null = null,
+): Promise<{ status: number, body: unknown }> => padApi('POST', endpoint, form, as)
+
+/** GET one of the plugin's endpoints; see padApi(). */
+export const padApiGet = (endpoint: string): Promise<{ status: number, body: unknown }> => padApi('GET', endpoint)
 
 /**
  * Whether a file or folder is there, asked once: the readers above wait

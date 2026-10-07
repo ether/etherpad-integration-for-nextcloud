@@ -58,6 +58,7 @@ test.describe('the session cookie and the Etherpad that reads it', () => {
 				},
 			)
 			expect(opened.status(), await opened.text()).toBe(200)
+			expect((await opened.json() as { access_mode?: string }).access_mode, 'the open should say what it opened').toBe('protected')
 
 			const sessionCookies = opened.headersArray()
 				.filter((h) => h.name.toLowerCase() === 'set-cookie')

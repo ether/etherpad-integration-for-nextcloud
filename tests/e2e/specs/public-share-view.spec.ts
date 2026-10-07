@@ -312,6 +312,14 @@ test.describe('a read-only public link to a protected pad', () => {
 			const content = await visitor.get(new URL(body.content_url!, E2E.baseURL).toString())
 			expect(content.status()).toBe(200)
 			expect(await content.text(), 'what the pad says, from the pad server').toContain(marker)
+
+			// The app's own page for the link, as a single-file share opens it:
+			// shown, or handed on to Nextcloud's share page for the same token.
+			const page = await visitor.get(`${E2E.baseURL}/apps/etherpad_nextcloud/public/${encodeURIComponent(share.token)}`, { maxRedirects: 0 })
+			expect([200, 303], `the app's public page answered ${page.status()}`).toContain(page.status())
+			if (page.status() === 303) {
+				expect(page.headers().location ?? '', 'and hands on to the share it belongs to').toContain(`/s/${share.token}`)
+			}
 		} finally {
 			await visitor.dispose()
 		}
