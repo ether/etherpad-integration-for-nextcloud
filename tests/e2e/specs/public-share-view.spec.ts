@@ -294,16 +294,22 @@ test.describe('a read-only public link to a protected pad', () => {
 
 	test('shows what the pad says, and hands out neither the pad nor a session', async () => {
 		const pad = await createPadAtPath(`/${name}`, 'protected')
+		const padId = padIdOfPadUrl(pad.padUrl)
 		const marker = `read through a link ${Date.now()}`
-		await etherpadApiPost('setText', { padID: padIdOfPadUrl(pad.padUrl), text: marker })
+		await etherpadApiPost('setText', { padID: padId, text: marker })
 		const share = await createPublicReadShare(name)
 
 		const visitor = await playwrightRequest.newContext({ storageState: { cookies: [], origins: [] } })
 		try {
 			const opened = await visitor.get(`${E2E.baseURL}/apps/etherpad_nextcloud/api/v1/public/open/${encodeURIComponent(share.token)}`)
-			expect(opened.status(), await opened.text()).toBe(200)
-			const body = await opened.json() as { url?: string, is_readonly_view?: boolean, content_url?: string }
+			const answer = await opened.text()
+			expect(opened.status(), answer).toBe(200)
+			const body = JSON.parse(answer) as { url?: string, original_pad_url?: string, is_readonly_view?: boolean, content_url?: string }
 			expect(body.url, 'a read-only link should hand out no pad address').toBe('')
+			expect(body.original_pad_url, 'in no field').toBe('')
+			// Nor under a name a later field might give it: the pad's id is
+			// nowhere in the answer.
+			expect(answer, 'nor the pad\'s id').not.toContain(padId)
 			expect(body.is_readonly_view).toBe(true)
 			const sessions = opened.headersArray().filter((header) => header.name.toLowerCase() === 'set-cookie' && header.value.startsWith('sessionID='))
 			expect(sessions, 'nor an Etherpad session').toEqual([])
