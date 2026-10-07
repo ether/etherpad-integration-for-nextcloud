@@ -77,8 +77,7 @@ export const E2E = {
 		return url ? url.replace(/\/+$/, '') : null
 	},
 	/**
-	 * App password used for non-browser WebDAV/API setup and teardown
-	 * (mirrors the NC_APP_PASSWORD pattern in tests/integration/*.sh).
+	 * App password used for non-browser WebDAV/API setup and teardown.
 	 *
 	 * Browser specs still use E2E_PASS for the real login form because
 	 * Nextcloud app passwords are primarily BasicAuth credentials for

@@ -58,12 +58,15 @@ test.describe('the session cookie and the Etherpad that reads it', () => {
 				},
 			)
 			expect(opened.status(), await opened.text()).toBe(200)
+			expect((await opened.json() as { access_mode?: string }).access_mode, 'the open should say what it opened').toBe('protected')
 
-			const setCookie = opened.headersArray()
+			const sessionCookies = opened.headersArray()
 				.filter((h) => h.name.toLowerCase() === 'set-cookie')
 				.map((h) => h.value)
-				.find((value) => value.startsWith('sessionID='))
-			expect(setCookie, 'a protected open should set the Etherpad session cookie').toBeDefined()
+				.filter((value) => value.startsWith('sessionID='))
+			// One: a second would leave the browser to pick which it keeps.
+			expect(sessionCookies, 'a protected open should set the Etherpad session cookie, once').toHaveLength(1)
+			const setCookie = sessionCookies[0]
 
 			expect(setCookie).toContain('Secure')
 			// Lax, the default: the value comes from

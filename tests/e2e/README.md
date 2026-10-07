@@ -146,7 +146,9 @@ leave one of these behind.
 Each `specs/*.spec.ts` covers one flow:
 
 - **pad-create-public** — internal public pad create + open, reopening an
-  existing pad, and external pad from URL → external-snapshot viewer.
+  existing pad, and external pad from URL → external-snapshot viewer; a
+  link the app does not take (http, a group pad) is refused with its
+  reason and leaves no file.
 - **pad-create-template** — create from the blank template-picker entry.
 - **pad-author-display-name** — protected pad opens with the NC account's
   display name visible in Etherpad's user list.
@@ -157,32 +159,38 @@ Each `specs/*.spec.ts` covers one flow:
 - **pad-orphan-recovery** — a binding-less `.pad` (WebDAV copy) shows the
   recovery card and "Open the original" navigates to the source pad; so
   does such a copy after a trash + restore round-trip, which gives it no
-  pad of its own.
+  pad of its own. A copy refuses sync status, sync and a forced sync with
+  `missing_binding`, and is left as it is.
 - **pad-snapshot-roundtrip** — recover-from-snapshot pushes a known
   marker into a new pad and sync reads it back (the content copy that
   restore and recover share).
-- **pad-trash-restore** — trash + restore round-trip, pad reopens.
-- **pad-lost** — a pad Etherpad has lost (deleted there, or made anew empty
-  by a visit to a public pad's address) answers `pad_missing`, a forced
-  sync does not write a pad made anew over the file, and a new pad is made
-  from the file's content, in the API and in the viewer; a file restored
-  from the trash gets its new pad without asking.
-  Container stack only (asks Etherpad).
-- **pad-gone-for-good** — the trash keeps a pad and its group, a restore
-  gives the same pad back; a pad goes with its file deleted for good:
-  past the trash, from the trash once it is deleted there, with the
-  account that owned it, a renamed file too; a pad in a team folder stays
-  when its maker's account goes; the admin forgets a vanished public pad,
-  its pad left in Etherpad, deletes one on its own, and - only where
-  `E2E_THROWAWAY_STACK=1`, which the container stack's `up.sh` sets -
-  deletes every vanished row of the instance, as many as counted. Container stack only (asks Etherpad);
-  the team folder part needs groupfolders and skips without it. Creates
-  and deletes throwaway accounts, groups and team folders.
+- **pad-trash-restore** — trash + restore round-trip, pad reopens; an
+  editor still open when its protected pad's file goes to the trash writes
+  no more.
+- **pad-lost** — a pad Etherpad has lost answers `pad_missing`, and a new
+  pad is made from the file's content, in the API and in the viewer; a
+  restore makes it at once. The file then counts the new pad's revisions,
+  and a forced sync never writes a pad made anew over it. Container stack
+  only (asks Etherpad).
+- **pad-gone-for-good** — a pad goes once its file is deleted for good,
+  however that happens, however the file is called by then, and however
+  many at once; a file in a trash, a user's or a team folder's, keeps it;
+  with `delete_pad_with_file` off the pads wait. The admin's handling of
+  vanished files too. What touches the whole instance runs only where
+  `E2E_THROWAWAY_STACK=1`, which the container stack's `up.sh` sets.
+  Container stack only; the team folder part needs
+  groupfolders; makes and removes throwaway accounts, groups and team
+  folders.
 - **pad-user-share** — user-to-user share grants access, revoke removes
   it (NC boundary; Etherpad's own session-cookie window is out of scope).
 - **pad-ownership-boundary** — cross-user `open-by-id` is rejected.
 - **public-share-view** — public share opens without login, plus auth
-  boundaries (tokenless access, invalid / non-pad tokens).
+  boundaries (tokenless access, invalid / non-pad tokens). A read-only
+  link to a protected pad shows its content and hands out neither the pad
+  nor a session; a copy in a public folder share answers without a `code`.
+- **protected-session-cookie-httponly** — a protected open sets the
+  Etherpad session cookie exactly once, `Secure`, `SameSite=Lax`, and
+  `HttpOnly` from Etherpad 3 on.
 - **pad-legacy-migration** — an `[InternetShortcut]` Ownpad file migrates
   to YAML frontmatter on first open.
 - **admin-health-check** — the admin "Test Etherpad connection" button.
@@ -198,8 +206,7 @@ builds and matches names, and it throws on a label or extension it could
 not recognise later.
 
 Specs delete their files in `afterAll` via WebDAV. `E2E_APP_PASSWORD` is
-required for these non-browser requests, matching the existing
-`NC_APP_PASSWORD` pattern in `tests/integration/*.sh`.
+required for these non-browser requests.
 
 That `DELETE` only moves a file to the trash, so `global-teardown.ts`
 sweeps the trash at the end of the run. Without it a shared account

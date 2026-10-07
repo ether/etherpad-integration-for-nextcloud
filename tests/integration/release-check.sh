@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
+# The release gate's local part: refuses a dirty working tree, then runs
+# the PHPUnit suite, which `composer test:phpunit` runs too without that
+# check. The end-to-end checks are the Playwright suite, run apart from
+# this. A prepare-release script is to take this over (#268).
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-INTEGRATION_DIR="${ROOT_DIR}/tests/integration"
-
-PATH_PREFIX="${1:-/release-check-$(date +%Y%m%d-%H%M%S)}"
 
 require_command() {
 	local cmd="$1"
@@ -14,18 +15,7 @@ require_command() {
 	fi
 }
 
-run_e2e() {
-	local script_name="$1"
-	local path_suffix="$2"
-	echo "-> ${script_name} ${path_suffix}"
-	"${INTEGRATION_DIR}/${script_name}" "${path_suffix}"
-}
-
-has_nextcloud_e2e_env() {
-	[[ -n "${NC_BASE_URL:-}" && -n "${NC_USER:-}" && -n "${NC_APP_PASSWORD:-}" ]]
-}
-
-echo "[1/5] Preconditions"
+echo "[1/3] Preconditions"
 require_command git
 require_command php
 
@@ -36,7 +26,7 @@ if [[ "${ALLOW_DIRTY_WORKTREE:-0}" != "1" ]]; then
 	fi
 fi
 
-echo "[2/5] Unit checks"
+echo "[2/3] Unit checks"
 cd "$ROOT_DIR"
 # The standalone path-normalizer script this used to run was folded into the
 # PHPUnit suite in #41 (PathNormalizerTest). The call outlived it and, under
@@ -54,37 +44,9 @@ if [[ ! -x "${ROOT_DIR}/vendor/bin/phpunit" ]]; then
 fi
 "${ROOT_DIR}/vendor/bin/phpunit" --testsuite unit
 
-if ! has_nextcloud_e2e_env; then
-	echo "[3/5] Core E2E checks skipped (missing NC_BASE_URL / NC_USER / NC_APP_PASSWORD)."
-	echo "[4/5] Failure-path E2E checks skipped."
-	echo "[5/5] Done (local-only checks passed)."
-	exit 0
-fi
-
-echo "[3/5] Core E2E checks"
-run_e2e "e2e-pad-flow.sh" "${PATH_PREFIX}-pad-flow"
-run_e2e "e2e-protected-cookie-contract.sh" "${PATH_PREFIX}-protected-cookie"
-run_e2e "e2e-pad-copy-behavior.sh" "${PATH_PREFIX}-pad-copy"
-run_e2e "e2e-public-share-folder.sh" "${PATH_PREFIX}-public-folder"
-run_e2e "e2e-public-share-single-file.sh" "${PATH_PREFIX}-public-single"
-run_e2e "e2e-external-url-security.sh" "${PATH_PREFIX}-external-security"
-
-if [[ "${RUN_FAILURE_PATHS:-0}" != "1" ]]; then
-	echo "[4/5] Failure-path E2E checks skipped (set RUN_FAILURE_PATHS=1 to enable)."
-	echo "[5/5] Done."
-	exit 0
-fi
-
-if [[ "${FAILURE_PATHS_PREPARED:-0}" != "1" ]]; then
-	echo "[4/5] Failure-path E2E checks skipped."
-	echo "-> RUN_FAILURE_PATHS=1 was set, but FAILURE_PATHS_PREPARED=1 is required."
-	echo "-> Reason: these checks expect a preconfigured Etherpad outage/misconfiguration state."
-	echo "[5/5] Done."
-	exit 0
-fi
-
-echo "[4/5] Failure-path E2E checks"
-echo "NOTE: These checks expect Etherpad outage/misconfiguration where documented."
-run_e2e "e2e-sync-failure.sh" "${PATH_PREFIX}-sync-failure"
-
-echo "[5/5] Done."
+# The end-to-end checks are the Playwright suite. The shell scripts this
+# used to run against an instance in NC_BASE_URL were folded into it, and
+# CI runs it on every pull request that touches the app.
+echo "[3/3] Done (unit checks passed)."
+echo "-> End-to-end: tests/e2e/docker/run-suite.sh against the container stack,"
+echo "   or npm run test:e2e against the instance in tests/e2e/.env.e2e."

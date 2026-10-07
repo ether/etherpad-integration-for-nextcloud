@@ -516,17 +516,9 @@ solely by the separate external-pad policy, not by these two settings.
 - `.pad` open target: `/index.php/apps/files/files/{fileId}?dir=...&editing=false&openfile=true`
 - Legacy/compat fallback deep-link: `/index.php/apps/etherpad_nextcloud/by-id/{fileId}`
 
-## Test Scripts
+## Tests
 
-- `tests/integration/e2e-pad-flow.sh`
-  - happy path: create -> open -> open again
-- `tests/integration/e2e-sync-failure.sh`
-  - failure path: create -> sync(force=1) must fail with non-2xx when Etherpad is down
-  - goal: no silent best-effort success on critical sync
-- `tests/integration/e2e-public-share-folder.sh`
-  - folder share: viewer/open/download/reopen + DAV-style `file` parameter + route switch
-- `tests/integration/e2e-public-share-single-file.sh`
-  - single-file share: viewer/open/download/reopen + DAV-style `file` parameter + route switch
+What these endpoints answer, end to end, is checked by the Playwright suite in `tests/e2e/specs`, against a real Nextcloud and Etherpad; CI runs it on every pull request that touches the app. [tests/e2e/README.md](../tests/e2e/README.md) says how to run it and what each spec covers. The answers to errors, `code` and `retryable` included, are also held by the PHPUnit suite (`PadControllerErrorMapperTest`, `PublicViewerControllerErrorMapperTest`).
 
 ## Nextcloud Events/Listeners
 

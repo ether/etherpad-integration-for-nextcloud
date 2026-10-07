@@ -34,8 +34,8 @@ import { uniqueName } from '../fixtures/nextcloud'
  *   4. GET the .pad -> the marker is still there, proving the content
  *      really landed in the new pad.
  *
- * API calls use the app password (same BasicAuth surface as
- * tests/integration/*.sh); no browser page is needed.
+ * API calls use the app password over BasicAuth; no browser page is
+ * needed.
  */
 test.describe('snapshot -> pad content round-trip (recover + sync)', () => {
 	const padName = uniqueName('roundtrip', 'pad')

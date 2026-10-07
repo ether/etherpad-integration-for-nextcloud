@@ -164,19 +164,20 @@ export const getFileViaDav = async (relativePath: string): Promise<string> => {
 }
 
 /**
- * POST to one of the plugin's authenticated `/api/v1/pads/...` endpoints
- * using the app password (same BasicAuth surface the integration bash
- * specs use), with $form as its body - as another account when $as
- * names one. Returns the parsed JSON body plus the HTTP status.
+ * Ask one of the plugin's authenticated `/api/v1/...` endpoints using the
+ * app password over BasicAuth, with $form as the body of a POST - as
+ * another account when $as names one. Returns the parsed JSON body plus
+ * the HTTP status.
  */
-export const padApiPost = async (
+const padApi = async (
+	method: 'GET' | 'POST',
 	endpoint: string,
 	form: Record<string, string> | null = null,
 	as: { uid: string, password: string } | null = null,
 ): Promise<{ status: number, body: unknown }> => {
 	const url = `${E2E.baseURL}/index.php/apps/etherpad_nextcloud/api/v1/${endpoint.replace(/^\/+/, '')}`
 	const res = await fetch(url, {
-		method: 'POST',
+		method,
 		headers: {
 			Authorization: as === null ? basicAuthHeader() : `Basic ${Buffer.from(`${as.uid}:${as.password}`).toString('base64')}`,
 			Accept: 'application/json',
@@ -193,6 +194,34 @@ export const padApiPost = async (
 		body = text
 	}
 	return { status: res.status, body }
+}
+
+/** POST to one of the plugin's endpoints; see padApi(). */
+export const padApiPost = (
+	endpoint: string,
+	form: Record<string, string> | null = null,
+	as: { uid: string, password: string } | null = null,
+): Promise<{ status: number, body: unknown }> => padApi('POST', endpoint, form, as)
+
+/** GET one of the plugin's endpoints; see padApi(). */
+export const padApiGet = (endpoint: string): Promise<{ status: number, body: unknown }> => padApi('GET', endpoint)
+
+/**
+ * Whether a file or folder is there, asked once: the readers above wait
+ * out a 404 as a create not yet visible, which here is the answer.
+ */
+export const existsViaDav = async (relativePath: string): Promise<boolean> => {
+	const res = await fetch(davUrl(relativePath.replace(/^\/+/, '')), {
+		method: 'PROPFIND',
+		headers: { Authorization: basicAuthHeader(), Depth: '0' },
+	})
+	if (res.status === 404) {
+		return false
+	}
+	if (res.status === 207) {
+		return true
+	}
+	throw new Error(`PROPFIND ${relativePath} answered HTTP ${res.status}`)
 }
 
 const appConfigUrl = (key: string): string =>

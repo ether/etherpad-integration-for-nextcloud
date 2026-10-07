@@ -387,10 +387,9 @@ socket.io handshake instead, and the cookie can be withheld from any script
 on the page. Measured on 2.7.3, 3.0.0 and 3.3.3.
 
 The boundary is the major version — Etherpad 3 and up — and it lives in
-`EtherpadReleasePolicy::HTTP_ONLY_SINCE_MAJOR`. The two test layers restate
-it rather than asking the app: `tests/e2e/specs/protected-session-cookie-httponly.spec.ts`
-and `tests/integration/e2e-protected-cookie-contract.sh`. Moving it means
-moving all three and this table.
+`EtherpadReleasePolicy::HTTP_ONLY_SINCE_MAJOR`. The e2e test restates it
+rather than asking the app: `tests/e2e/specs/protected-session-cookie-httponly.spec.ts`.
+Moving it means moving both and this table.
 
 The app finds this out from `GET /health` (`releaseId`), which needs no api
 key. `/api` cannot answer it: it reports `1.3.1` on both 2.7.3 and 3.3.3.
@@ -418,14 +417,9 @@ this app's own bookkeeping:
 occ config:app:set etherpad_nextcloud etherpad_http_only_session_cookie --value=no
 ```
 
-Regression safety check:
-
-- `tests/integration/e2e-protected-cookie-contract.sh` validates the protected open response cookie contract:
-  - one `sessionID` `Set-Cookie` header from app flow
-  - includes `Secure` and `SameSite=Lax`
-  - `HttpOnly` present exactly when the pad server's `/health` reports a
-    release of 3 or newer; skipped with a note when `/health` cannot be
-    reached from where the script runs
+`tests/e2e/specs/protected-session-cookie-httponly.spec.ts` holds this: one
+`sessionID` cookie per protected open, `Secure`, `SameSite=Lax`, and
+`HttpOnly` from Etherpad 3 on; CI runs it against Etherpad 2 and 3.
 
 ## Read-only Behavior
 
