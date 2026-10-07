@@ -13,6 +13,7 @@ import {
 	propfindFileId,
 	putFileViaDav,
 	getAppConfig,
+	restoreAppConfig,
 	setAppConfig,
 } from '../fixtures/dav'
 import { uniquePadName } from '../fixtures/nextcloud'
@@ -43,7 +44,7 @@ test.describe('legacy migration and the group a pad id claims', () => {
 		// Deliberately not swallowed: a failed restore leaves someone else's
 		// instance with a policy this spec chose.
 		if (importPolicyBefore !== null) {
-			await setAppConfig(IMPORT_KEY, importPolicyBefore)
+			await restoreAppConfig(IMPORT_KEY, importPolicyBefore)
 		}
 		await deleteViaDav(probeName).catch(() => {})
 		await deleteViaDav(realName).catch(() => {})

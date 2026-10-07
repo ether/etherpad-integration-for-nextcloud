@@ -8,12 +8,17 @@ import {
 	createPadAtPath,
 	deleteViaDav,
 	findTrashbinEntry,
+	getAppConfig,
+	getFileViaDav,
 	mkcolViaDav,
 	moveViaDav,
 	padApiPost,
+	padOfFile,
 	propfindFileId,
 	purgeTrashbinEntry,
+	restoreAppConfig,
 	restoreFromTrashViaDav,
+	setAppConfig,
 } from '../fixtures/dav'
 import { etherpadApiPost, groupExists, groupIdOfPadUrl, liveSessionsOfGroup, padExists, padIdOfPadUrl } from '../fixtures/etherpad'
 import {
@@ -26,7 +31,7 @@ import {
 	deleteTeamFolder,
 	isAppEnabled,
 } from '../fixtures/admin-api'
-import { uniqueName, uniquePadName } from '../fixtures/nextcloud'
+import { typeInEtherpadPage, uniqueName, uniquePadName } from '../fixtures/nextcloud'
 
 /**
  * A pad goes once its `.pad` file is deleted for good, however that
@@ -41,11 +46,29 @@ import { uniqueName, uniquePadName } from '../fixtures/nextcloud'
 
 const needsEtherpadApi = 'Needs E2E_ETHERPAD_URL and E2E_ETHERPAD_API_KEY; only the container stack has them.'
 
-/** What the background jobs do within minutes, run now. */
-const settle = async (): Promise<void> => {
+/** What the background jobs do within minutes, run now; its answer. */
+const settle = async (): Promise<{ checked: number, settled: number, pending_delete_count: number }> => {
 	const settled = await padApiPost('admin/settle-pending')
 	test.skip(settled.status === 403, 'E2E_USER is not a Nextcloud admin; the background jobs cannot be run from here.')
 	expect(settled.status, JSON.stringify(settled.body)).toBe(200)
+	return settled.body as { checked: number, settled: number, pending_delete_count: number }
+}
+
+/**
+ * Something a few times over, giving up after the last: what the stack
+ * does not answer the first time a new folder or mount is used.
+ */
+const again = async <T>(attempt: (round: number) => Promise<T>): Promise<T> => {
+	let lastError: unknown = null
+	for (let round = 0; round < 6; round++) {
+		try {
+			return await attempt(round)
+		} catch (error) {
+			lastError = error
+			await new Promise((resolve) => setTimeout(resolve, 1_000 + round * 1_000))
+		}
+	}
+	throw lastError
 }
 
 /**
@@ -109,9 +132,7 @@ test.describe('pads of files deleted for good', () => {
 
 		await restoreFromTrashViaDav(name)
 		await settle()
-		const opened = await padApiPost('pads/open-by-id', { fileId: String(fileId) })
-		expect(opened.status, JSON.stringify(opened.body)).toBe(200)
-		expect((opened.body as { pad_id?: string }).pad_id, 'restored, the file should have the same pad').toBe(padId)
+		expect(await padOfFile(fileId), 'restored, the file should have the same pad').toBe(padId)
 
 		await deleteViaDav(name)
 		const entry = await findTrashbinEntry(name)
@@ -208,6 +229,142 @@ test.describe('pads of files deleted for good', () => {
 		expect(await padExists(padId), 'deleted from the trash, the folder should take its pads').toBe(false)
 	})
 
+	/**
+	 * A public pad in the trash stays reachable by its link, and can be
+	 * written into: someone with the link and no Nextcloud session types
+	 * into it. The file there is not synced; the restore brings what was
+	 * written back with the pad, and the next sync writes it into the file.
+	 *
+	 * The pad has to be the one from before: Etherpad makes a public pad
+	 * anew, empty, for whoever visits its address. So the trash is checked
+	 * to have kept it before the visit, and what was in it before has to
+	 * come back as well.
+	 */
+	test('a public pad in the trash can still be written into by its link, and comes back with what was written', async ({ browser, browserNoise }) => {
+		const name = uniquePadName('gone-trashed-public')
+		const pad = await createPadAtPath(`/${name}`, 'public')
+		const padId = padIdOfPadUrl(pad.padUrl)
+		const fileId = await propfindFileId(name)
+		const before = `written before the trash ${Date.now()}`
+		const written = `written while in the trash ${Date.now()}`
+		try {
+			await etherpadApiPost('setText', { padID: padId, text: before })
+			const saved = await padApiPost(`pads/sync/${fileId}`)
+			expect(saved.status, JSON.stringify(saved.body)).toBe(200)
+			await deleteViaDav(name)
+			await settle()
+			expect(await padExists(padId), 'the trash should have kept the pad').toBe(true)
+			const visitor = await browser.newContext({ storageState: { cookies: [], origins: [] } })
+			browserNoise.watch(visitor)
+			try {
+				const byLink = await visitor.newPage()
+				await byLink.goto(pad.padUrl)
+				await typeInEtherpadPage(byLink, written)
+				await expect.poll(
+					async () => (await etherpadApiPost<{ text: string }>('getText', { padID: padId })).text,
+					{ message: 'what was typed by the link should reach the pad', timeout: 10_000 },
+				).toContain(written)
+			} finally {
+				await visitor.close()
+			}
+
+			await restoreFromTrashViaDav(name)
+			expect(await padOfFile(fileId), 'restored, the file should have the same pad').toBe(padId)
+			const synced = await padApiPost(`pads/sync/${fileId}`)
+			expect(synced.status, JSON.stringify(synced.body)).toBe(200)
+			const content = await getFileViaDav(name)
+			expect(content, 'with what was in it before the trash').toContain(before)
+			expect(content, 'and what was written while it was away').toContain(written)
+		} finally {
+			await deleteViaDav(name, { pastTrash: true })
+		}
+	})
+
+	/**
+	 * With `delete_pad_with_file` off the app deletes no pad: a file deleted
+	 * for good leaves its pad, counted as a pending delete. Switched back
+	 * on, the job deletes it.
+	 *
+	 * Only where deleting is on already: switched on and settled at once,
+	 * it would delete every pad an admin who has it off is keeping.
+	 */
+	test('with deleting switched off, a pad waits for it to be switched on again', async () => {
+		const key = 'delete_pad_with_file'
+		// First, so an account that is no admin skips here like the rest.
+		await settle()
+		const before = await getAppConfig(key)
+		test.skip(before !== '' && before !== 'yes', 'Deleting is off on this instance; switching it on would delete the pads its admin keeps.')
+		const name = uniquePadName('gone-switched-off')
+		const pad = await createPadAtPath(`/${name}`)
+		const padId = padIdOfPadUrl(pad.padUrl)
+		try {
+			await setAppConfig(key, 'no')
+			await deleteViaDav(name, { pastTrash: true })
+			const waiting = await settle()
+			expect(await padExists(padId), 'switched off, the job should leave the pad').toBe(true)
+			expect(waiting.pending_delete_count, 'and count it as pending').toBeGreaterThanOrEqual(1)
+
+			await setAppConfig(key, 'yes')
+			const done = await settle()
+			expect(await padExists(padId), 'switched on, the job should delete the pad').toBe(false)
+			expect(done.pending_delete_count, 'and count one pending delete fewer').toBeLessThan(waiting.pending_delete_count)
+		} finally {
+			await restoreAppConfig(key, before)
+		}
+	})
+
+	/**
+	 * Many pads at once, as clearing out a project folder makes them: more
+	 * than one of the job's batches of 200. Deleted from the trash, the
+	 * folder takes them all, within the runs one settle allows, and leaves
+	 * none behind for a later run.
+	 */
+	test('a folder of many pads deleted from the trash takes them all', async () => {
+		test.skip(await misnumbersFolderFiles(), misnumbered)
+		test.setTimeout(300_000)
+		const many = 250
+		const folder = uniqueName('gone-many')
+		await mkcolViaDav(folder)
+		let purged = false
+		try {
+			const padIds: string[] = []
+			// A few at a time: one after another takes minutes on its own.
+			// Each under a new name if it is tried again, so a half-made one
+			// is no file in the way.
+			for (let start = 0; start < many; start += 10) {
+				const made = await Promise.all(Array.from({ length: Math.min(10, many - start) }, (_, offset) =>
+					again((round) => createPadAtPath(`/${folder}/${uniquePadName(`many-${start + offset}-${round}`)}`))))
+				padIds.push(...made.map((pad) => padIdOfPadUrl(pad.padUrl)))
+			}
+
+			await deleteViaDav(folder)
+			const entry = await findTrashbinEntry(folder)
+			expect(entry, 'the folder should be in the trash').not.toBeNull()
+			await purgeTrashbinEntry(entry!)
+			purged = true
+			const run = await settle()
+			expect(run.settled, 'one settle should take every pad of the folder').toBeGreaterThanOrEqual(many)
+
+			const left: string[] = []
+			for (let start = 0; start < padIds.length; start += 10) {
+				const chunk = padIds.slice(start, start + 10)
+				const exists = await Promise.all(chunk.map((padId) => padExists(padId)))
+				left.push(...chunk.filter((_, index) => exists[index]))
+			}
+			expect(left, 'no pad of the folder should be left').toEqual([])
+			// Instance-wide, so only where nothing else can become deletable.
+			if (E2E.throwawayStack) {
+				expect((await settle()).settled, 'and a later run should find nothing more').toBe(0)
+			}
+		} finally {
+			// A run stopped before the purge leaves the folder, and its pads,
+			// to go past the trash.
+			if (!purged) {
+				await deleteViaDav(folder, { pastTrash: true }).catch(() => {})
+			}
+		}
+	})
+
 	test('a deleted account takes the pads of its own files', async () => {
 		const account = await createAccount(uniqueName('gone-account'))
 		try {
@@ -260,19 +417,89 @@ test.describe('pads of team folder files deleted for good', () => {
 	 * is made can find no mount yet, so it is tried again for a while.
 	 */
 	const padInTeam = async (path: string, accessMode = 'public', as: { uid: string, password: string } | null = null) => {
-		let lastError: unknown = null
-		for (let attempt = 0; attempt < 6; attempt++) {
-			try {
-				const pad = await createPadAtPath(`/${path}`, accessMode, as)
-				made.push(path)
-				return pad
-			} catch (error) {
-				lastError = error
-				await new Promise((resolve) => setTimeout(resolve, 1_000 + attempt * 1_000))
+		const pad = await again(() => createPadAtPath(`/${path}`, accessMode, as))
+		made.push(path)
+		return pad
+	}
+
+	/**
+	 * Moving a file between a home and a team folder crosses storages, and
+	 * Nextcloud may carry it over by copying and deleting. The file keeps
+	 * its id and its pad either way, and the job takes nothing - nor marks
+	 * its row as gone: such a row the job finds the file for and leaves
+	 * waiting, so only the count of pending deletes shows it. That count is
+	 * the instance's, so it is held to where nothing else changes it.
+	 */
+	test('a pad file moved into a team folder and back keeps its pad', async () => {
+		const name = uniquePadName('team-moved')
+		const pad = await createPadAtPath(`/${name}`, 'protected')
+		const padId = padIdOfPadUrl(pad.padUrl)
+		const fileId = await propfindFileId(name)
+		const expectNothingMarked = async (pendingBefore: number, message: string): Promise<void> => {
+			const pending = (await settle()).pending_delete_count
+			if (E2E.throwawayStack) {
+				expect(pending, message).toBe(pendingBefore)
 			}
 		}
-		throw lastError
-	}
+		let at = name
+		try {
+			const pendingBefore = (await settle()).pending_delete_count
+			// The team folder's mount can be missing right after it is made.
+			await again(() => moveViaDav(name, `${team}/${name}`))
+			at = `${team}/${name}`
+			await expectNothingMarked(pendingBefore, 'the move should mark nothing as gone')
+			expect(await propfindFileId(at), 'the file should keep its id in the team folder').toBe(fileId)
+			expect(await padExists(padId), 'the move should not take the pad').toBe(true)
+			expect(await padOfFile(fileId), 'and the file should open it').toBe(padId)
+
+			await moveViaDav(at, name)
+			at = name
+			await expectNothingMarked(pendingBefore, 'nor the move back')
+			expect(await padExists(padId)).toBe(true)
+			expect(await padOfFile(fileId)).toBe(padId)
+		} finally {
+			await deleteViaDav(at, { pastTrash: true })
+		}
+	})
+
+	/**
+	 * A file in a team folder goes into that folder's trash, which keeps the
+	 * pad as a user's trash does: a restore gives the same pad back, deleted
+	 * from there the file takes it.
+	 */
+	test('a pad file in a team folder\'s trash keeps its pad until it is deleted from there', async () => {
+		const path = `${team}/${uniquePadName('team-trashed-file')}`
+		const name = path.split('/').pop()!
+		const pad = await padInTeam(path, 'protected')
+		made.pop()
+		const padId = padIdOfPadUrl(pad.padUrl)
+		const fileId = await propfindFileId(path)
+		try {
+			await deleteViaDav(path)
+			expect(await findTrashbinEntry(name), 'the file should be in the team folder\'s trash').not.toBeNull()
+			await settle()
+			expect(await padExists(padId), 'the trash should keep the pad').toBe(true)
+
+			await restoreFromTrashViaDav(name)
+			await settle()
+			expect(await padOfFile(fileId), 'restored, the file should have the same pad').toBe(padId)
+
+			await deleteViaDav(path)
+			const entry = await findTrashbinEntry(name)
+			expect(entry, 'the file should be in the trash again').not.toBeNull()
+			await purgeTrashbinEntry(entry!)
+			await settle()
+			expect(await padExists(padId), 'deleted from the trash, the file should take its pad').toBe(false)
+		} finally {
+			// Wherever a stopped run left the file, it goes for good, so its
+			// pad goes too and leaves no vanished row behind.
+			await deleteViaDav(path, { pastTrash: true }).catch(() => {})
+			const left = await findTrashbinEntry(name)
+			if (left !== null) {
+				await purgeTrashbinEntry(left)
+			}
+		}
+	})
 
 	test('a pad in a team folder goes with its file deleted past the trash', async () => {
 		const path = `${team}/${uniquePadName('team-past-trash')}`

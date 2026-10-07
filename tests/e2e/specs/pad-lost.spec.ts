@@ -4,7 +4,7 @@
  */
 import { test, expect } from '../fixtures/browser-noise'
 import { E2E } from '../fixtures/env'
-import { createPadAtPath, createUserReadShare, deleteShareById, deleteViaDav, getFileViaDav, padApiPost, propfindFileId, putFileViaDav, restoreFromTrashViaDav } from '../fixtures/dav'
+import { createPadAtPath, createUserReadShare, deleteShareById, deleteViaDav, getFileViaDav, padApiPost, padOfFile, propfindFileId, putFileViaDav, restoreFromTrashViaDav } from '../fixtures/dav'
 import { etherpadApiPost, padIdOfPadUrl } from '../fixtures/etherpad'
 import { expectEtherpadViewerMounted, gotoFiles, openPadFromFileList, uniquePadName } from '../fixtures/nextcloud'
 
@@ -26,6 +26,12 @@ test.describe('a pad Etherpad has lost', () => {
 		const fileId = await propfindFileId(name)
 		const padId = padIdOfPadUrl(pad.padUrl)
 		const marker = `saved before the loss ${Date.now()}`
+		// Written a few times over: more revisions than a pad made anew from
+		// it reaches with a write or two, so a file that kept this count
+		// would take what is written into the new pad for nothing new.
+		for (let round = 1; round <= 5; round++) {
+			await etherpadApiPost('setText', { padID: padId, text: `${marker} (${round})` })
+		}
 		await etherpadApiPost('setText', { padID: padId, text: marker })
 		const synced = await padApiPost(`pads/sync/${fileId}`)
 		expect(synced.status, JSON.stringify(synced.body)).toBe(200)
@@ -49,6 +55,24 @@ test.describe('a pad Etherpad has lost', () => {
 		const text = await etherpadApiPost<{ text: string }>('getText', { padID: newPadId })
 		expect(text.text).toContain(marker)
 		expect(await getFileViaDav(name), 'the file names the new pad').toContain(newPadId)
+		await expectSyncWritesTheNewPad(name, fileId, newPadId)
+	}
+
+	/**
+	 * The new pad starts its revisions anew, below the old pad's count. The
+	 * file takes the new pad's count with it - kept at the old one, an
+	 * ordinary sync would take what is written into the new pad for nothing
+	 * new - and what is written then reaches the file.
+	 */
+	const expectSyncWritesTheNewPad = async (name: string, fileId: number, newPadId: string): Promise<void> => {
+		const { revisions } = await etherpadApiPost<{ revisions: number }>('getRevisionsCount', { padID: newPadId })
+		expect(await getFileViaDav(name), 'the file should count the new pad\'s revisions').toMatch(new RegExp(`^snapshot_rev: ${revisions}$`, 'm'))
+		const written = `written into the new pad ${Date.now()}`
+		await etherpadApiPost('setText', { padID: newPadId, text: written })
+		const synced = await padApiPost(`pads/sync/${fileId}`)
+		expect(synced.status, JSON.stringify(synced.body)).toBe(200)
+		expect((synced.body as { status?: string }).status).toBe('updated')
+		expect(await getFileViaDav(name), 'the file holds what was written into the new pad').toContain(written)
 	}
 
 	/**
@@ -244,15 +268,44 @@ test.describe('a pad Etherpad has lost', () => {
 
 			await restoreFromTrashViaDav(name)
 
-			const opened = await padApiPost('pads/open-by-id', { fileId: String(fileId) })
-			expect(opened.status, JSON.stringify(opened.body)).toBe(200)
-			const newPadId = String((opened.body as { pad_id?: string }).pad_id ?? '')
+			const newPadId = await padOfFile(fileId)
 			expect(newPadId).not.toBe(padId)
 			const text = await etherpadApiPost<{ text: string }>('getText', { padID: newPadId })
 			expect(text.text).toContain(marker)
 			expect(await getFileViaDav(name), 'the file names the new pad').toContain(newPadId)
+			await expectSyncWritesTheNewPad(name, fileId, newPadId)
 		} finally {
 			await deleteViaDav(name)
+		}
+	})
+
+	/**
+	 * Under 1.1.0-beta.1 the trash deleted the pad, and the file came back
+	 * from it naming a pad nobody has and no row: a restore now makes its
+	 * pad from the file's content, at once.
+	 */
+	test('a file trashed under 1.1.0-beta.1, without its pad and row, gets a new pad when restored', async () => {
+		const source = uniquePadName('lost-beta1-source')
+		const name = uniquePadName('lost-beta1')
+		try {
+			const { padId, marker } = await padWithSavedText(source, 'public')
+			// The same file as beta.1 left it: its pad gone, and no row naming it.
+			const gonePadId = `${padId}-gone`
+			await putFileViaDav(name, (await getFileViaDav(source)).split(padId).join(gonePadId))
+			const fileId = await propfindFileId(name)
+
+			await deleteViaDav(name)
+			await restoreFromTrashViaDav(name)
+
+			const newPadId = await padOfFile(fileId)
+			expect(newPadId).not.toBe(gonePadId)
+			const text = await etherpadApiPost<{ text: string }>('getText', { padID: newPadId })
+			expect(text.text).toContain(marker)
+			expect(await getFileViaDav(name), 'the file names the new pad').toContain(newPadId)
+			await expectSyncWritesTheNewPad(name, fileId, newPadId)
+		} finally {
+			await deleteViaDav(name)
+			await deleteViaDav(source)
 		}
 	})
 

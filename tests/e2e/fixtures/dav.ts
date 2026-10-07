@@ -243,6 +243,11 @@ export const getAppConfig = async (key: string): Promise<string> => {
 	return value
 }
 
+/** Remove one of the app's config values, so it reads its default again. */
+export const deleteAppConfig = async (key: string): Promise<void> => {
+	await ocsAppConfig(key, { method: 'DELETE' }, 'Deleting')
+}
+
 /** Set one of the app's config values; the E2E account is the admin. */
 export const setAppConfig = async (key: string, value: string): Promise<void> => {
 	await ocsAppConfig(key, {
@@ -250,6 +255,27 @@ export const setAppConfig = async (key: string, value: string): Promise<void> =>
 		headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
 		body: new URLSearchParams({ value }).toString(),
 	}, 'Setting')
+}
+
+/**
+ * Put back a config value as getAppConfig() read it before a spec changed
+ * it: unset again if it was, rather than set to ''.
+ */
+export const restoreAppConfig = async (key: string, before: string): Promise<void> => {
+	await (before === '' ? deleteAppConfig(key) : setAppConfig(key, before))
+}
+
+/**
+ * The pad a file opens on, as the open answers it; anything but an opened
+ * pad is thrown.
+ */
+export const padOfFile = async (fileId: number): Promise<string> => {
+	const opened = await padApiPost('pads/open-by-id', { fileId: String(fileId) })
+	const padId = (opened.body as { pad_id?: unknown } | null)?.pad_id
+	if (opened.status !== 200 || typeof padId !== 'string' || padId === '') {
+		throw new Error(`Opening file ${fileId} answered HTTP ${opened.status}: ${JSON.stringify(opened.body)}`)
+	}
+	return padId
 }
 
 /** Return the display name NC exposes for the primary E2E account. */
