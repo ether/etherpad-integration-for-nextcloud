@@ -315,14 +315,34 @@ class AdminSettingsValidatorTest extends TestCase {
 	}
 
 	/**
-	 * Read once per API host. Asking on every save made each one wait for
-	 * Etherpad, and one that did not answer wrote the default over the
-	 * version read before. The connection test goes by the same rule.
+	 * Read on every save and connection test, so an Etherpad updated or
+	 * replaced behind the same address is followed: a version kept from
+	 * an older server would break the calls of an older one.
 	 */
-	public function testTheStoredVersionStandsWhileTheApiHostStays(): void {
+	public function testTheVersionIsReadAgainForTheSameApiHost(): void {
 		$etherpadClient = $this->createMock(EtherpadClient::class);
 		$etherpadClient->method('configuredApiHost')->willReturn('https://pad.example.test');
-		$etherpadClient->expects($this->never())->method('detectApiVersion');
+		$etherpadClient->expects($this->exactly(2))->method('detectApiVersion')->willReturn('1.3.1');
+		$validator = $this->buildValidator($etherpadClient);
+		$payload = [
+			'etherpad_host' => 'https://pad.example.test',
+			'etherpad_api_key' => 'key',
+		];
+
+		$this->assertSame('1.3.1', $validator->validateForSave($payload, $this->stored(apiVersion: '1.3.0'))->etherpadApiVersion);
+		$this->assertSame('1.3.1', $validator->validateForHealthCheck($payload, $this->stored(apiVersion: '1.3.0'))->etherpadApiVersion);
+	}
+
+	/**
+	 * A read that fails keeps what was read from the same host before,
+	 * rather than writing the default over it. A version read from another
+	 * server says nothing about this one, and a stored value that is no
+	 * version is not taken.
+	 */
+	public function testAFailedReadKeepsTheVersionStoredForTheSameApiHost(): void {
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->method('configuredApiHost')->willReturn('https://pad.example.test');
+		$etherpadClient->method('detectApiVersion')->willThrowException(new EtherpadClientException('timeout'));
 		$validator = $this->buildValidator($etherpadClient);
 		$payload = [
 			'etherpad_host' => 'https://pad.example.test/',
@@ -332,28 +352,9 @@ class AdminSettingsValidatorTest extends TestCase {
 		$this->assertSame('1.3.0', $validator->validateForSave($payload, $this->stored(apiVersion: '1.3.0'))->etherpadApiVersion);
 		// Set by hand with a line break, as from a file.
 		$this->assertSame('1.3.0', $validator->validateForHealthCheck($payload, $this->stored(apiVersion: "1.3.0\n"))->etherpadApiVersion);
-	}
-
-	/**
-	 * A version read from another server says nothing about this one. A
-	 * stored value that is no version is asked again, and so is the
-	 * default, which a read that failed may have left behind.
-	 */
-	public function testTheVersionIsAskedForANewApiHostOrWhenNoneIsStored(): void {
-		$etherpadClient = $this->createMock(EtherpadClient::class);
-		$etherpadClient->method('configuredApiHost')->willReturn('https://old-pad.example.test');
-		$etherpadClient->expects($this->exactly(4))->method('detectApiVersion')->willReturn('1.3.1');
-		$validator = $this->buildValidator($etherpadClient);
-		$payload = [
-			'etherpad_host' => 'https://pad.example.test',
-			'etherpad_api_key' => 'key',
-		];
-
-		$this->assertSame('1.3.1', $validator->validateForSave($payload, $this->stored(apiVersion: '1.3.0'))->etherpadApiVersion);
-		$payload['etherpad_api_host'] = 'https://old-pad.example.test';
-		$this->assertSame('1.3.1', $validator->validateForSave($payload, $this->stored())->etherpadApiVersion);
-		$this->assertSame('1.3.1', $validator->validateForSave($payload, $this->stored(apiVersion: '1.3'))->etherpadApiVersion);
-		$this->assertSame('1.3.1', $validator->validateForSave($payload, $this->stored(apiVersion: EtherpadClient::DEFAULT_API_VERSION))->etherpadApiVersion);
+		$this->assertSame(EtherpadClient::DEFAULT_API_VERSION, $validator->validateForSave($payload, $this->stored(apiVersion: '1.3'))->etherpadApiVersion);
+		$payload['etherpad_api_host'] = 'https://other-pad.example.test';
+		$this->assertSame(EtherpadClient::DEFAULT_API_VERSION, $validator->validateForSave($payload, $this->stored(apiVersion: '1.3.0'))->etherpadApiVersion);
 	}
 
 	public function testTheLegacyProtectedImportSwitchFollowsThePayload(): void {

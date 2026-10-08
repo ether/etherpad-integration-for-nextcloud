@@ -231,10 +231,11 @@ class AdminSettingsValidator {
 	}
 
 	/**
-	 * Asked once per API host: the version changes only with an Etherpad
-	 * update, after which the versions this app uses are still accepted.
-	 * Asking on every save made each one wait for Etherpad, and one that
-	 * did not answer wrote the default over what had been read before.
+	 * Read on every save and connection test, so the version follows the
+	 * server behind the address: an update, or an older Etherpad put in
+	 * its place, whose calls a version kept from before would break. When
+	 * the read fails, the version stored for the same API host stays; the
+	 * default is for a host nothing is known about.
 	 */
 	private function resolveApiVersion(string $rawVersion, string $host, StoredAdminSettings $stored): string {
 		$manual = trim($rawVersion);
@@ -242,24 +243,23 @@ class AdminSettingsValidator {
 			return $this->normalizeApiVersion($manual);
 		}
 
-		// The default may be what a read that failed left behind, so it is
-		// asked again.
-		$storedVersion = trim($stored->apiVersion);
-		if (self::isApiVersion($storedVersion)
-			&& $storedVersion !== EtherpadClient::DEFAULT_API_VERSION
-			&& rtrim($this->etherpadClient->configuredApiHost(), '/') === rtrim($host, '/')) {
-			return $storedVersion;
-		}
-
 		try {
 			return $this->normalizeApiVersion($this->etherpadClient->detectApiVersion($host));
 		} catch (EtherpadClientException $e) {
-			$this->logger->info('Etherpad API version auto-detection failed; using default API version.', [
-				'app' => 'etherpad_nextcloud',
-				'host' => $host,
-				...SafeError::context($e),
-			]);
-			return EtherpadClient::DEFAULT_API_VERSION;
+			$storedVersion = trim($stored->apiVersion);
+			$known = self::isApiVersion($storedVersion)
+				&& rtrim($this->etherpadClient->configuredApiHost(), '/') === rtrim($host, '/');
+			$this->logger->info(
+				$known
+					? 'Etherpad API version auto-detection failed; keeping the stored API version.'
+					: 'Etherpad API version auto-detection failed; using default API version.',
+				[
+					'app' => 'etherpad_nextcloud',
+					'host' => $host,
+					...SafeError::context($e),
+				],
+			);
+			return $known ? $storedVersion : EtherpadClient::DEFAULT_API_VERSION;
 		}
 	}
 }

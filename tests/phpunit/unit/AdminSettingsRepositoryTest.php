@@ -236,7 +236,7 @@ class AdminSettingsRepositoryTest extends TestCase {
 
 	/**
 	 * What the validator keeps: the allowlist while external pads are off,
-	 * and the API version while the API host stays.
+	 * and the API version when it cannot be read from the same API host.
 	 */
 	public function testTheAllowlistAndTheApiVersionSurviveARoundTrip(): void {
 		$saved = [];
