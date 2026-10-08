@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Controller;
 
+use OCA\EtherpadNextcloud\Http\CookieHeaders;
 use OCA\EtherpadNextcloud\Service\LivePadHtml;
 use OCA\EtherpadNextcloud\Service\PadContentService;
 use OCA\EtherpadNextcloud\Service\PadInitializationResult;
@@ -44,6 +45,7 @@ class PadSessionController extends AbstractPadController {
 		private PadInitializationService $padInitializationService,
 		private PadMetadataService $padMetadataService,
 		private PadContentService $padContentService,
+		private CookieHeaders $cookies,
 	) {
 		parent::__construct($appName, $request, $userSession, $l10n, $padResponses, $errors);
 	}
@@ -52,7 +54,7 @@ class PadSessionController extends AbstractPadController {
 	public function open(string $file): DataResponse {
 		return $this->runForUser(
 			fn(IUser $user): PadOpenTarget => $this->padOpenService->openByPath($user->getUID(), $user->getDisplayName(), $file),
-			fn(PadOpenTarget $result): DataResponse => $this->padResponses->openResponse($result),
+			fn(PadOpenTarget $result): DataResponse => $this->padResponses->openResponse($result, $this->cookies),
 			[
 				'generic' => $this->l10n->t('Could not open pad'),
 			],
@@ -63,7 +65,7 @@ class PadSessionController extends AbstractPadController {
 	public function openById(mixed $fileId): DataResponse {
 		return $this->runForUser(
 			fn(IUser $user): PadOpenTarget => $this->padOpenService->openById($user->getUID(), $user->getDisplayName(), $this->requireFileId($fileId)),
-			fn(PadOpenTarget $result): DataResponse => $this->padResponses->openResponse($result),
+			fn(PadOpenTarget $result): DataResponse => $this->padResponses->openResponse($result, $this->cookies),
 			[
 				'generic' => $this->l10n->t('Could not open pad'),
 			],

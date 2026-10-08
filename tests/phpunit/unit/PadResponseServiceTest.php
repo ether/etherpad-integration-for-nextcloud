@@ -8,6 +8,7 @@ use OCA\EtherpadNextcloud\Exception\MissingBindingException;
 use OCA\EtherpadNextcloud\Service\AppConfigService;
 use OCA\EtherpadNextcloud\Service\LifecycleResult;
 use OCA\EtherpadNextcloud\Service\PadResponseService;
+use OCA\EtherpadNextcloud\Tests\Support\RecordingCookieHeaders;
 use OCP\AppFramework\Http;
 use OCP\IL10N;
 use OCP\IURLGenerator;
@@ -51,8 +52,8 @@ class PadResponseServiceTest extends TestCase {
 		$appConfigService->method('getSyncIntervalSeconds')->willReturn(45);
 		$service = new PadResponseService($urlGenerator, $appConfigService, $this->l10nEcho());
 
-		$readOnly = $service->openResponse($this->buildTarget(isReadOnlyView: true))->getData();
-		$editable = $service->openResponse($this->buildTarget(isReadOnlyView: false, mayWrite: true))->getData();
+		$readOnly = $service->openResponse($this->buildTarget(isReadOnlyView: true), new RecordingCookieHeaders())->getData();
+		$editable = $service->openResponse($this->buildTarget(isReadOnlyView: false, mayWrite: true), new RecordingCookieHeaders())->getData();
 
 		$this->assertTrue($readOnly['is_readonly_view']);
 		$this->assertFalse($editable['is_readonly_view']);
@@ -72,11 +73,11 @@ class PadResponseServiceTest extends TestCase {
 		$appConfigService->method('getSyncIntervalSeconds')->willReturn(45);
 		$service = new PadResponseService($urlGenerator, $appConfigService, $this->l10nEcho());
 
-		$ownView = $service->openResponse($this->buildTarget(isReadOnlyView: true))->getData();
+		$ownView = $service->openResponse($this->buildTarget(isReadOnlyView: true), new RecordingCookieHeaders())->getData();
 		// A public pad opened read-only: Etherpad's own read-only page in an
 		// iframe rather than our viewer — and it must not sync either.
-		$liveReadOnly = $service->openResponse($this->buildTarget(isReadOnlyView: false))->getData();
-		$editable = $service->openResponse($this->buildTarget(isReadOnlyView: false, mayWrite: true))->getData();
+		$liveReadOnly = $service->openResponse($this->buildTarget(isReadOnlyView: false), new RecordingCookieHeaders())->getData();
+		$editable = $service->openResponse($this->buildTarget(isReadOnlyView: false, mayWrite: true), new RecordingCookieHeaders())->getData();
 
 		$this->assertSame('', $ownView['sync_url']);
 		$this->assertSame('', $ownView['sync_status_url']);
@@ -105,7 +106,7 @@ class PadResponseServiceTest extends TestCase {
 		$this->assertStringContainsString('private', $response->getHeaders()['Cache-Control']);
 	}
 
-	private function buildTarget(bool $isReadOnlyView, bool $mayWrite = false): \OCA\EtherpadNextcloud\Service\PadOpenTarget {
+	private function buildTarget(bool $isReadOnlyView, bool $mayWrite = false, string $cookieHeader = ''): \OCA\EtherpadNextcloud\Service\PadOpenTarget {
 		return new \OCA\EtherpadNextcloud\Service\PadOpenTarget(
 			file: '/Test.pad',
 			fileId: 42,
@@ -115,7 +116,7 @@ class PadResponseServiceTest extends TestCase {
 			isExternal: false,
 			originalPadUrl: '',
 			url: $isReadOnlyView ? '' : 'https://pad.example.test/p/test',
-			cookieHeader: '',
+			cookieHeader: $cookieHeader,
 			isReadOnlyView: $isReadOnlyView,
 			mayWrite: $mayWrite,
 		);
@@ -145,14 +146,40 @@ class PadResponseServiceTest extends TestCase {
 			isReadOnlyView: false,
 			mayWrite: true,
 		);
-		$response = (new PadResponseService($urlGenerator, $appConfigService, $this->l10nEcho()))->openResponse($target);
+		$cookies = new RecordingCookieHeaders();
+		$response = (new PadResponseService($urlGenerator, $appConfigService, $this->l10nEcho()))->openResponse($target, $cookies);
 
 		$data = $response->getData();
 		$this->assertArrayNotHasKey('cookie_header', $data);
 		$this->assertSame('/sync/42', $data['sync_url']);
 		$this->assertSame('/sync-status/42', $data['sync_status_url']);
 		$this->assertSame(45, $data['sync_interval_seconds']);
-		$this->assertSame('sessionID=s.test; Path=/', $response->getHeaders()['Set-Cookie']);
+		// Beside Nextcloud's cookies, not among the response's headers,
+		// where it would replace them.
+		$this->assertSame([['Set-Cookie: sessionID=s.test; Path=/', false]], $cookies->sent);
+		$this->assertArrayNotHasKey('Set-Cookie', $response->getHeaders());
+	}
+
+	/**
+	 * An answer that could not be built leaves no session cookie behind:
+	 * the error answered in its place would carry it, and the browser
+	 * would keep a session for an open that failed.
+	 */
+	public function testNoSessionCookieGoesOutWithAnAnswerThatCouldNotBeBuilt(): void {
+		$appConfigService = $this->createMock(AppConfigService::class);
+		// The last part of the answer to be built.
+		$appConfigService->method('getSyncIntervalSeconds')->willThrowException(new \RuntimeException('database gone'));
+		$cookies = new RecordingCookieHeaders();
+
+		try {
+			(new PadResponseService($this->createMock(IURLGenerator::class), $appConfigService, $this->l10nEcho()))
+				->openResponse($this->buildTarget(isReadOnlyView: false, mayWrite: true, cookieHeader: 'sessionID=s.test; Path=/'), $cookies);
+			$this->fail('the answer was built');
+		} catch (\RuntimeException $e) {
+			$this->assertSame('database gone', $e->getMessage());
+		}
+
+		$this->assertSame([], $cookies->sent);
 	}
 
 	public function testLifecycleSkippedResponseUsesConflictStatus(): void {

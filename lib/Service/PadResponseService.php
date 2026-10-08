@@ -12,6 +12,7 @@ namespace OCA\EtherpadNextcloud\Service;
 use OCA\EtherpadNextcloud\Exception\BindingException;
 use OCA\EtherpadNextcloud\Exception\MissingBindingException;
 use OCA\EtherpadNextcloud\Exception\PadLostException;
+use OCA\EtherpadNextcloud\Http\CookieHeaders;
 use OCA\EtherpadNextcloud\Util\FilesViewerUrl;
 use OCP\AppFramework\Http;
 use OCP\AppFramework\Http\DataResponse;
@@ -168,7 +169,13 @@ class PadResponseService {
 		];
 	}
 
-	public function openResponse(PadOpenTarget $target): DataResponse {
+	/**
+	 * The answer to an open. A protected pad's session cookie goes out
+	 * through $cookies, beside Nextcloud's own, and only once the answer
+	 * stands: one that could not be built leaves no session behind in the
+	 * browser.
+	 */
+	public function openResponse(PadOpenTarget $target, CookieHeaders $cookies): DataResponse {
 		$payload = [
 			'file' => $target->file,
 			'file_id' => $target->fileId,
@@ -203,9 +210,7 @@ class PadResponseService {
 		];
 
 		$response = new DataResponse($payload);
-		if ($target->cookieHeader() !== '') {
-			$response->addHeader('Set-Cookie', $target->cookieHeader());
-		}
+		$cookies->add($target->cookieHeader());
 		return $response;
 	}
 

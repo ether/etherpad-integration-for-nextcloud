@@ -478,13 +478,13 @@ solely by the separate external-pad policy, not by these two settings.
 
 ## Cookie Behavior (Protected Pads)
 
-- Controllers use explicit `Set-Cookie` response headers for Etherpad session bootstrap.
+- Controllers send an explicit `Set-Cookie` header for Etherpad session bootstrap, beside the cookies Nextcloud sets in the same answer - its session cookie for a visitor who had none, a remembered login it renews - and not over them.
 - Rationale: this flow needs explicit cookie attributes for iframe cross-subdomain sessions.
 - Current contract:
   - one custom Etherpad `Set-Cookie` header line is written by this app on protected-open responses that open writable Etherpad iframes
-  - public read-only protected shares render the stored `.pad` snapshot and do not set an Etherpad session cookie
+  - public read-only protected shares set no Etherpad session cookie: the viewer loads the pad as it reads now from `content_url`, which the app reads from Etherpad's API
   - no additional custom app cookies are added in the same response
-- If future changes introduce multiple app-level cookies on these responses, this must be implemented and tested explicitly.
+- The line goes out only once the answer stands, so an open that fails leaves no session in the browser. A further cookie of the app's own would go out the same way, through `CookieHeaders` (see "Cookie Header Model" in `docs/architecture.md`).
 
 ## Frontend API Usage
 

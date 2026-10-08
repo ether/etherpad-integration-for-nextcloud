@@ -383,7 +383,8 @@ test.describe('a read-only public link to a protected pad', () => {
  * author. Its visitors share the session made for the link within the
  * hour, so opening it again and again does not fill Etherpad with
  * sessions - and one Etherpad no longer has is not handed out again. The
- * container stack has a memory cache (APCu), which the keeping needs.
+ * container stack has a memory cache (APCu), which the keeping needs. The
+ * session's cookie goes out beside the ones Nextcloud sends, not over them.
  */
 test.describe('a writable public link to a protected pad', () => {
 	test.skip(E2E.etherpadApi === null, 'Needs E2E_ETHERPAD_URL and E2E_ETHERPAD_API_KEY; only the container stack has them.')
@@ -396,12 +397,17 @@ test.describe('a writable public link to a protected pad', () => {
 			Object.keys(await etherpadApiPost<Record<string, unknown> | null>('listSessionsOfGroup', { groupID }) ?? {})
 		let token = ''
 		const visitor = await playwrightRequest.newContext({ storageState: { cookies: [], origins: [] } })
+		let firstCookies: string[] = []
 		try {
 			token = (await createPublicShare(name, SHARE_PERMISSION_READ_WRITE)).token
 			const open = async (): Promise<string> => {
 				const answer = await visitor.get(`${E2E.baseURL}/apps/etherpad_nextcloud/api/v1/public/open/${encodeURIComponent(token)}`)
 				expect(answer.status()).toBe(200)
-				return decodeURIComponent(/sessionID=([^;]+)/.exec(answer.headers()['set-cookie'] ?? '')?.[1] ?? '')
+				const cookies = answer.headersArray().filter((header) => header.name.toLowerCase() === 'set-cookie').map((header) => header.value)
+				if (firstCookies.length === 0) {
+					firstCookies = cookies
+				}
+				return decodeURIComponent(/^sessionID=([^;]+)/.exec(cookies.find((cookie) => cookie.startsWith('sessionID=')) ?? '')?.[1] ?? '')
 			}
 			const before = await sessionsOfGroup()
 
@@ -410,6 +416,13 @@ test.describe('a writable public link to a protected pad', () => {
 			expect(new Set(handedOut).size, 'every open the same session').toBe(1)
 			expect(handedOut[0], 'a session at all').not.toBe('')
 			expect((await sessionsOfGroup()).filter((id) => !before.includes(id)), 'one new session in the pad\'s group').toEqual([handedOut[0]])
+			// A visitor who comes without a Nextcloud session is given one, in
+			// the same answer as the Etherpad session: the cookie that names
+			// it and the one that unlocks it, beside `sessionID`.
+			const names = firstCookies.map((cookie) => cookie.split('=')[0])
+			expect(names, 'Nextcloud\'s session').toContainEqual(expect.stringMatching(/^oc[a-z0-9]+$/))
+			expect(names, 'and its passphrase').toContain('oc_sessionPassphrase')
+			expect(names, 'beside the pad\'s').toContain('sessionID')
 
 			await etherpadApiPost('deleteSession', { sessionID: handedOut[0] })
 			const next = await open()
