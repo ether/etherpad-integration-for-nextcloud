@@ -77,7 +77,7 @@ final class SensitiveMethods {
 		// no entry: it travels as ApiKey and leaves as a stream, so no
 		// frame here holds it - measured, not assumed.
 		\OCA\EtherpadNextcloud\Service\EtherpadClient::class => [
-			'deleteSession', 'sessionsIn', 'setText', 'setHTML', 'requireStringField',
+			'deleteSession', 'getSessionInfo', 'sessionsIn', 'setText', 'setHTML', 'requireStringField',
 			'createAuthorIfNotExistsFor', 'apiCall', 'sendRequest', 'formBody',
 		],
 		// The document as a string, wherever a method takes it so: handed
@@ -129,6 +129,9 @@ final class SensitiveMethods {
 			'createProtectedOpenContext', 'openContextFor',
 			'sessionsToAttributeWith', 'cookieValueFor', 'buildEtherpadSessionCookie', 'buildSetCookieHeader',
 		],
+		// A public link's uid carries its token, and what it keeps is a
+		// session id.
+		\OCA\EtherpadNextcloud\Service\PublicLinkSessions::class => ['sessionFor', 'read', 'write', 'key'],
 		\OCA\EtherpadNextcloud\Service\PadSessionRevoker::class => ['live', 'deleteLive', 'carriedFirst'],
 		\OCA\EtherpadNextcloud\Service\PadOpenTarget::class => ['__construct'],
 		\OCA\EtherpadNextcloud\Service\PublicPadOpenTarget::class => ['__construct'],

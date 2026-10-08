@@ -29,6 +29,7 @@ class PadSessionServiceTest extends TestCase {
 		?string $incomingSessionCookie = null,
 		bool $httpOnlySupported = false,
 		?\OCA\EtherpadNextcloud\Service\ExpiredSessionCollector $collector = null,
+		?\OCP\ICacheFactory $cacheFactory = null,
 	): PadSessionService {
 		$urlGenerator = $this->createMock(IURLGenerator::class);
 		$urlGenerator->method('getBaseUrl')->willReturn($nextcloudUrl);
@@ -46,6 +47,7 @@ class PadSessionServiceTest extends TestCase {
 			$collector ?? $this->createMock(\OCA\EtherpadNextcloud\Service\ExpiredSessionCollector::class),
 			$this->createMock(LoggerInterface::class),
 			new FixedClock(),
+			$this->linkSessions($cacheFactory ?? $this->noCache(), $etherpadClient),
 		);
 	}
 
@@ -413,6 +415,7 @@ class PadSessionServiceTest extends TestCase {
 			$this->createMock(\OCA\EtherpadNextcloud\Service\ExpiredSessionCollector::class),
 			$logger,
 			new FixedClock(),
+			$this->linkSessions($this->noCache(), $etherpadClient),
 		);
 
 		$service->createProtectedOpenContext('admin', 'Admin', 'g.ABCDEFGHIJKLMNOP$pad-1');
@@ -876,5 +879,124 @@ class PadSessionServiceTest extends TestCase {
 
 		$service = $this->buildService($etherpadClient, $config);
 		$service->createProtectedOpenContext($uid, $displayName, $padId);
+	}
+
+	/**
+	 * A public link's visitors share one author and the rights the link
+	 * grants, so the session made for the link in the last hour is handed
+	 * out again: opened twice, the link makes one session, and the second
+	 * cookie carries it with the expiry Etherpad gave for it.
+	 */
+	public function testAPublicLinkHandsOutTheSessionItMadeInTheLastHour(): void {
+		[$etherpadClient, $config, $made, $calls] = $this->publicLinkFixtures();
+		$etherpadClient->method('getSessionInfo')->willReturnCallback(
+			static fn (string $sessionId): ?array => $sessionId === 's.public0000000000001'
+				? ['groupID' => 'g.ABCDEFGHIJKLMNOP', 'authorID' => 'a.public', 'validUntil' => FixedClock::NOW + 9000]
+				: null
+		);
+		$service = $this->buildService($etherpadClient, $config, cacheFactory: $this->cacheFor());
+
+		$first = $service->createProtectedOpenContext('public-share:token', 'Public share', 'g.ABCDEFGHIJKLMNOP$pad-1', 10800);
+		$second = $service->createProtectedOpenContext('public-share:token', 'Public share', 'g.ABCDEFGHIJKLMNOP$pad-1', 10800);
+
+		$this->assertSame(1, $made->count());
+		$this->assertSame(['g.ABCDEFGHIJKLMNOP', 'a.public', FixedClock::NOW + 10800], $calls[0]);
+		$this->assertSame('s.public0000000000001', $first['cookie']['value']);
+		$this->assertSame('s.public0000000000001', $second['cookie']['value']);
+		$this->assertSame(FixedClock::NOW + 9000, $second['cookie']['expires']);
+	}
+
+	/**
+	 * Etherpad decides, not the cache: a kept session it no longer has -
+	 * taken away when the file went to the trash, say - is not handed out,
+	 * and the open makes and keeps a new one, which the next open gets.
+	 */
+	public function testAPublicLinkMakesANewSessionWhenEtherpadNoLongerHasTheKeptOne(): void {
+		[$etherpadClient, $config, $made] = $this->publicLinkFixtures();
+		$etherpadClient->method('getSessionInfo')->willReturnCallback(
+			static fn (string $sessionId): ?array => $sessionId === 's.public0000000000002'
+				? ['groupID' => 'g.ABCDEFGHIJKLMNOP', 'authorID' => 'a.public', 'validUntil' => FixedClock::NOW + 10800]
+				: null
+		);
+		$service = $this->buildService($etherpadClient, $config, cacheFactory: $this->cacheFor());
+
+		$service->createProtectedOpenContext('public-share:token', 'Public share', 'g.ABCDEFGHIJKLMNOP$pad-1', 10800);
+		$second = $service->createProtectedOpenContext('public-share:token', 'Public share', 'g.ABCDEFGHIJKLMNOP$pad-1', 10800);
+		$third = $service->createProtectedOpenContext('public-share:token', 'Public share', 'g.ABCDEFGHIJKLMNOP$pad-1', 10800);
+
+		$this->assertSame(2, $made->count());
+		$this->assertSame('s.public0000000000002', $second['cookie']['value']);
+		$this->assertSame('s.public0000000000002', $third['cookie']['value']);
+	}
+
+	/** A signed-in open still makes a session of its own every time. */
+	public function testASignedInOpenDoesNotTakeAKeptSession(): void {
+		[$etherpadClient, $config, $made] = $this->publicLinkFixtures();
+		$etherpadClient->expects($this->never())->method('getSessionInfo');
+		$service = $this->buildService($etherpadClient, $config, cacheFactory: $this->cacheFor());
+
+		$service->createProtectedOpenContext('alice', 'Alice', 'g.ABCDEFGHIJKLMNOP$pad-1');
+		$service->createProtectedOpenContext('alice', 'Alice', 'g.ABCDEFGHIJKLMNOP$pad-1');
+
+		$this->assertSame(2, $made->count());
+	}
+
+	/**
+	 * @return array{0: EtherpadClient&\PHPUnit\Framework\MockObject\MockObject, 1: IConfig, 2: \ArrayObject<int, string>, 3: \ArrayObject<int, array{string, string, int}>}
+	 */
+	private function publicLinkFixtures(): array {
+		$made = new \ArrayObject();
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->method('createAuthorIfNotExistsFor')->willReturn('a.public');
+		$etherpadClient->method('configuredApiHost')->willReturn('https://pad.example.test');
+		$calls = new \ArrayObject();
+		$etherpadClient->method('createSession')->willReturnCallback(
+			static function (string $groupId, string $authorId, int $validUntil) use ($made, $calls): string {
+				$calls->append([$groupId, $authorId, $validUntil]);
+				$made->append(sprintf('s.public%013d', $made->count() + 1));
+				return $made[$made->count() - 1];
+			}
+		);
+		$etherpadClient->method('buildPadUrl')->willReturn('https://pad.example.test/p/pad');
+		$config = $this->createMock(IConfig::class);
+		$config->method('getAppValue')->willReturnMap([
+			['etherpad_nextcloud', 'etherpad_cookie_domain', '', ''],
+			['etherpad_nextcloud', 'etherpad_cookie_domain_configured', 'no', 'no'],
+			['etherpad_nextcloud', 'etherpad_host', '', 'https://pad.example.test'],
+			['etherpad_nextcloud', PadSessionService::SAME_SITE_KEY, 'lax', 'lax'],
+		]);
+		$config->method('getUserValue')->willReturn('');
+		return [$etherpadClient, $config, $made, $calls];
+	}
+
+	/** A memory cache, as a distributed one would answer. */
+	private function cacheFor(): \OCP\ICacheFactory {
+		$held = new \ArrayObject();
+		$cache = $this->createMock(\OCP\ICache::class);
+		$cache->method('get')->willReturnCallback(static fn (string $key): mixed => $held[$key] ?? null);
+		$cache->method('set')->willReturnCallback(
+			static function (string $key, mixed $value) use ($held): bool {
+				$held[$key] = $value;
+				return true;
+			}
+		);
+		$factory = $this->createMock(\OCP\ICacheFactory::class);
+		$factory->method('isAvailable')->willReturn(true);
+		$factory->method('createDistributed')->willReturn($cache);
+		return $factory;
+	}
+
+	private function linkSessions(\OCP\ICacheFactory $cacheFactory, EtherpadClient $etherpadClient): \OCA\EtherpadNextcloud\Service\PublicLinkSessions {
+		$crypto = $this->createMock(\OCP\Security\ICrypto::class);
+		$crypto->method('calculateHMAC')->willReturnCallback(static fn (string $message): string => hash('sha256', $message, true));
+		return new \OCA\EtherpadNextcloud\Service\PublicLinkSessions($cacheFactory, $etherpadClient, $crypto, new FixedClock(), $this->createMock(LoggerInterface::class));
+	}
+
+	/** No memory cache: Nextcloud hands out one that keeps nothing. */
+	private function noCache(): \OCP\ICacheFactory {
+		$factory = $this->createMock(\OCP\ICacheFactory::class);
+		$factory->method('isAvailable')->willReturn(false);
+		$factory->method('createDistributed')->willReturn($this->createMock(\OCP\ICache::class));
+		return $factory;
 	}
 }

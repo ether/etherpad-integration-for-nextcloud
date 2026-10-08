@@ -64,6 +64,7 @@ $stubFiles = [
 	__DIR__ . '/stubs/OCP/Files/Template/ITemplateManager.php',
 	__DIR__ . '/stubs/OCP/Files/Template/RegisterTemplateCreatorEvent.php',
 	__DIR__ . '/stubs/OCP/IRequest.php',
+	__DIR__ . '/stubs/OCP/Security/ICrypto.php',
 	__DIR__ . '/stubs/OCP/Security/ISecureRandom.php',
 	__DIR__ . '/stubs/OCP/IConfig.php',
 	__DIR__ . '/stubs/OCP/IAppConfig.php',

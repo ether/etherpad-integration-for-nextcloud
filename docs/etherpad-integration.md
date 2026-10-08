@@ -222,7 +222,8 @@ away itself:
   another browser, which is deliberate: a cookie copied off the machine
   cannot be narrowed down by the cookie you can see, and a shared computer
   is exactly the case where the copy you can see is not the only one.
-- **Every open mints a fresh session.** Etherpad re-checks `validUntil` on
+- **Every open mints a fresh session**, but for a public link's (below).
+  Etherpad re-checks `validUntil` on
   every socket message and keeps the session id it was handed when the pad
   connected – read in 2.7.3, 3.0.0 and 3.3.3 – so a session that expires
   mid-edit rejects the next keystroke, and no later cookie reaches that
@@ -312,7 +313,7 @@ collect – that answer is the listing, and the listing is the slow call, so
 it belongs in the job together with the deleting. This also reaches the two
 cases a request could not: the first open of a browsing session carries no
 cookie ids and so makes no listing, and a public link never carries any,
-although every visitor of one adds a session under the same shared author.
+although its visitors add sessions under the same shared author.
 
 The id is also all that is stored. A public link's uid is
 `public-share:<token>`, the credential from the share URL, and job
@@ -338,6 +339,39 @@ working – and authors nobody opens a pad for, whose leftovers cost storage
 only. Recording each session's id at issue time would remove the listing;
 renewing sessions instead of minting them would remove the pile.
 
+### A public link's session
+
+A writable link to a protected pad opens as the link's own author,
+`nc:public-share:<token>`, so all its visitors share that author and the
+rights the link grants. Each open minted a session of its own, and a link
+opened in a loop filled Etherpad with them faster than the sweep above
+removes them – and the revocation when the file goes to the trash lists
+the group's sessions within its two seconds, so a flooded pad kept them
+all. The session made for the link and the pad's group within the last
+hour is handed out again instead (`PublicLinkSessions`):
+
+- With a distributed memory cache, a link makes at most one new session
+  an hour for each pad, however often it is opened; opens that miss the
+  cache at the same moment make one each. With only a local cache (APCu),
+  which Nextcloud then uses in its place, that holds for each web server
+  on its own. Without any, every open makes a session, as before, and
+  only the throttle on the public open bounds them. A cache that fails -
+  Redis gone, say, even while it is set up - keeps nothing and fails no
+  open, and the log says so, since each open then makes a session again.
+- The cache only points; Etherpad decides. A kept session is handed out
+  only once Etherpad confirms that it exists – one taken away with the
+  file's trash does not – that it is the link's author's for the pad's
+  group, and that it runs at least as long as a new one would, less the
+  time it is kept. A session is kept for an hour, or for a third of its
+  lifetime where that is shorter: a public link's session lasts three
+  hours, so a visitor can write for at least two, since the next
+  keystroke after it runs out is turned away. An answer about a kept
+  session Etherpad gives but this cannot read is logged, since the link
+  then makes one an open.
+- The key is an HMAC of the Etherpad address, the link and the group
+  under the instance's secret, so a key does not give away the token,
+  not even one chosen by hand. The value is the session id, the
+  credential the cookie carries, in the server's own cache.
 
 ### `SameSite=Lax`
 

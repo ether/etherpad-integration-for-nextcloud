@@ -13,6 +13,7 @@ use OCA\EtherpadNextcloud\Exception\EtherpadRefusedException;
 use OCA\EtherpadNextcloud\Exception\EtherpadTooLargeException;
 use OCA\EtherpadNextcloud\Http\BoundedSinkStream;
 use OCA\EtherpadNextcloud\Util\ApiKey;
+use OCA\EtherpadNextcloud\Util\EtherpadErrorClassifier;
 use OCP\Http\Client\IClientService;
 use OCP\Http\Client\IResponse;
 use OCP\IConfig;
@@ -232,6 +233,33 @@ class EtherpadClient {
 		}
 
 		return $sessionId;
+	}
+
+	/**
+	 * One session as Etherpad holds it, or null when it holds none by that
+	 * id: deleted, or collected after it expired.
+	 *
+	 * @return ?array{groupID:string,authorID:string,validUntil:int}
+	 */
+	public function getSessionInfo(string $sessionId): ?array {
+		try {
+			$data = $this->apiCall('getSessionInfo', ['sessionID' => $sessionId]);
+		} catch (EtherpadClientException $e) {
+			if (EtherpadErrorClassifier::isSessionAlreadyGone($e)) {
+				return null;
+			}
+			throw $e;
+		}
+
+		$groupId = isset($data['groupID']) && is_string($data['groupID']) ? $data['groupID'] : '';
+		$authorId = isset($data['authorID']) && is_string($data['authorID']) ? $data['authorID'] : '';
+		// A number, read as the listings read it (sessionsIn()).
+		$validUntil = isset($data['validUntil']) && is_numeric($data['validUntil']) ? (int)$data['validUntil'] : 0;
+		if ($groupId === '' || $authorId === '' || $validUntil <= 0) {
+			throw new EtherpadClientException('Etherpad did not describe the session.');
+		}
+
+		return ['groupID' => $groupId, 'authorID' => $authorId, 'validUntil' => $validUntil];
 	}
 
 	/**
