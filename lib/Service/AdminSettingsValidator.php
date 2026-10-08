@@ -60,7 +60,13 @@ class AdminSettingsValidator {
 		$allowLegacyProtectedImport = $this->toBool(
 			$payload[LegacyImportPolicy::SETTING_PROTECTED_IMPORT] ?? $stored->allowLegacyProtectedImport
 		);
-		$externalAllowlist = $this->allowlistNormalizer->normalize((string)($payload['external_pad_allowlist'] ?? ''));
+		// Taken only while external pads are on. The page disables the field
+		// otherwise and sends it empty, and an empty list trusts every public
+		// host the day they are switched back on; a list stored by hand is
+		// not checked for a feature that is off.
+		$externalAllowlist = $allowExternalPads && array_key_exists('external_pad_allowlist', $payload)
+			? $this->allowlistNormalizer->normalize((string)$payload['external_pad_allowlist'])
+			: $stored->externalPadAllowlist;
 		$trustedEmbedOrigins = $this->trustedEmbedOriginsNormalizer->normalize(
 			(string)($payload['trusted_embed_origins'] ?? $stored->trustedEmbedOrigins)
 		);
@@ -71,7 +77,7 @@ class AdminSettingsValidator {
 			$cookieDomain,
 			$apiKeyToStore,
 			$effectiveApiKey,
-			$this->resolveApiVersion((string)($payload['etherpad_api_version'] ?? ''), $apiHost),
+			$this->resolveApiVersion((string)($payload['etherpad_api_version'] ?? ''), $apiHost, $stored),
 			$syncIntervalSeconds,
 			$deletePadWithFile,
 			$allowExternalPads,
@@ -195,10 +201,14 @@ class AdminSettingsValidator {
 		if ($version === '') {
 			return EtherpadClient::DEFAULT_API_VERSION;
 		}
-		if (preg_match('/^\d+\.\d+\.\d+$/', $version) !== 1) {
+		if (!self::isApiVersion($version)) {
 			throw new AdminValidationException('etherpad_api_version', $this->l10n->t('Invalid Etherpad API version format.'));
 		}
 		return $version;
+	}
+
+	private static function isApiVersion(string $version): bool {
+		return preg_match('/^\d+\.\d+\.\d+$/D', $version) === 1;
 	}
 
 	private function normalizeSyncInterval(mixed $value): int {
@@ -220,10 +230,25 @@ class AdminSettingsValidator {
 		return in_array($normalized, ['1', 'true', 'yes', 'on'], true);
 	}
 
-	private function resolveApiVersion(string $rawVersion, string $host): string {
+	/**
+	 * Asked once per API host: the version changes only with an Etherpad
+	 * update, after which the versions this app uses are still accepted.
+	 * Asking on every save made each one wait for Etherpad, and one that
+	 * did not answer wrote the default over what had been read before.
+	 */
+	private function resolveApiVersion(string $rawVersion, string $host, StoredAdminSettings $stored): string {
 		$manual = trim($rawVersion);
 		if ($manual !== '') {
 			return $this->normalizeApiVersion($manual);
+		}
+
+		// The default may be what a read that failed left behind, so it is
+		// asked again.
+		$storedVersion = trim($stored->apiVersion);
+		if (self::isApiVersion($storedVersion)
+			&& $storedVersion !== EtherpadClient::DEFAULT_API_VERSION
+			&& rtrim($this->etherpadClient->configuredApiHost(), '/') === rtrim($host, '/')) {
+			return $storedVersion;
 		}
 
 		try {

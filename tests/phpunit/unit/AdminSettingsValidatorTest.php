@@ -68,13 +68,52 @@ class AdminSettingsValidatorTest extends TestCase {
 			deletePadWithFile: false,
 			allowExternalPads: true,
 			trustedEmbedOrigins: 'https://portal.example.test',
+			externalPadAllowlist: 'pad.example.org',
 		));
 
 		$this->assertSame('.stored.example.test', $result->etherpadCookieDomain);
 		$this->assertFalse($result->deletePadWithFile);
 		$this->assertTrue($result->allowExternalPads);
-		$this->assertSame('', $result->externalPadAllowlist);
+		$this->assertSame('pad.example.org', $result->externalPadAllowlist);
 		$this->assertSame('https://portal.example.test', $result->trustedEmbedOrigins);
+	}
+
+	/**
+	 * The admin page disables the allowlist while external pads are off and
+	 * sends it empty. Stored so, it would trust every public host the day
+	 * they are switched back on.
+	 */
+	public function testTheAllowlistIsTakenOnlyWhileExternalPadsAreOn(): void {
+		$validator = $this->buildValidator();
+		$payload = [
+			'etherpad_host' => 'https://pad.example.test',
+			'etherpad_api_key' => 'key',
+			'etherpad_api_version' => '1.3.0',
+			'external_pad_allowlist' => '',
+		];
+		$stored = $this->stored(externalPadAllowlist: 'pad.example.org');
+
+		$this->assertSame('pad.example.org', $validator->validateForSave($payload + ['allow_external_pads' => 'false'], $stored)->externalPadAllowlist);
+		$this->assertSame('', $validator->validateForSave($payload + ['allow_external_pads' => 'true'], $stored)->externalPadAllowlist);
+		$this->assertSame(
+			'https://other.example.net',
+			$validator->validateForSave(['external_pad_allowlist' => 'https://Other.example.net'] + $payload + ['allow_external_pads' => 'true'], $stored)->externalPadAllowlist,
+		);
+	}
+
+	/**
+	 * A list set by hand that the form would refuse is not checked while the
+	 * feature is off: its error would land on a field that is hidden then.
+	 */
+	public function testAStoredAllowlistIsNotCheckedWhileExternalPadsAreOff(): void {
+		$result = $this->buildValidator()->validateForSave([
+			'etherpad_host' => 'https://pad.example.test',
+			'etherpad_api_key' => 'key',
+			'etherpad_api_version' => '1.3.0',
+			'allow_external_pads' => 'false',
+		], $this->stored(externalPadAllowlist: 'https://pad.example.org/p'));
+
+		$this->assertSame('https://pad.example.org/p', $result->externalPadAllowlist);
 	}
 
 	public function testValidateRejectsMissingApiKey(): void {
@@ -275,6 +314,48 @@ class AdminSettingsValidatorTest extends TestCase {
 		$this->assertSame(EtherpadClient::DEFAULT_API_VERSION, $result->etherpadApiVersion);
 	}
 
+	/**
+	 * Read once per API host. Asking on every save made each one wait for
+	 * Etherpad, and one that did not answer wrote the default over the
+	 * version read before. The connection test goes by the same rule.
+	 */
+	public function testTheStoredVersionStandsWhileTheApiHostStays(): void {
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->method('configuredApiHost')->willReturn('https://pad.example.test');
+		$etherpadClient->expects($this->never())->method('detectApiVersion');
+		$validator = $this->buildValidator($etherpadClient);
+		$payload = [
+			'etherpad_host' => 'https://pad.example.test/',
+			'etherpad_api_key' => 'key',
+		];
+
+		$this->assertSame('1.3.0', $validator->validateForSave($payload, $this->stored(apiVersion: '1.3.0'))->etherpadApiVersion);
+		// Set by hand with a line break, as from a file.
+		$this->assertSame('1.3.0', $validator->validateForHealthCheck($payload, $this->stored(apiVersion: "1.3.0\n"))->etherpadApiVersion);
+	}
+
+	/**
+	 * A version read from another server says nothing about this one. A
+	 * stored value that is no version is asked again, and so is the
+	 * default, which a read that failed may have left behind.
+	 */
+	public function testTheVersionIsAskedForANewApiHostOrWhenNoneIsStored(): void {
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->method('configuredApiHost')->willReturn('https://old-pad.example.test');
+		$etherpadClient->expects($this->exactly(4))->method('detectApiVersion')->willReturn('1.3.1');
+		$validator = $this->buildValidator($etherpadClient);
+		$payload = [
+			'etherpad_host' => 'https://pad.example.test',
+			'etherpad_api_key' => 'key',
+		];
+
+		$this->assertSame('1.3.1', $validator->validateForSave($payload, $this->stored(apiVersion: '1.3.0'))->etherpadApiVersion);
+		$payload['etherpad_api_host'] = 'https://old-pad.example.test';
+		$this->assertSame('1.3.1', $validator->validateForSave($payload, $this->stored())->etherpadApiVersion);
+		$this->assertSame('1.3.1', $validator->validateForSave($payload, $this->stored(apiVersion: '1.3'))->etherpadApiVersion);
+		$this->assertSame('1.3.1', $validator->validateForSave($payload, $this->stored(apiVersion: EtherpadClient::DEFAULT_API_VERSION))->etherpadApiVersion);
+	}
+
 	public function testTheLegacyProtectedImportSwitchFollowsThePayload(): void {
 		$result = $this->buildValidator()->validateForSave([
 			'etherpad_host' => 'https://pad.example.test',
@@ -339,8 +420,18 @@ class AdminSettingsValidatorTest extends TestCase {
 		bool $deletePadWithFile = true,
 		bool $allowExternalPads = false,
 		string $trustedEmbedOrigins = '',
+		string $externalPadAllowlist = '',
+		string $apiVersion = '',
 	): StoredAdminSettings {
-		return new StoredAdminSettings($apiKey, $cookieDomain, $deletePadWithFile, $allowExternalPads, $trustedEmbedOrigins);
+		return new StoredAdminSettings(
+			$apiKey,
+			$cookieDomain,
+			$deletePadWithFile,
+			$allowExternalPads,
+			$trustedEmbedOrigins,
+			externalPadAllowlist: $externalPadAllowlist,
+			apiVersion: $apiVersion,
+		);
 	}
 
 	private function buildL10n(): IL10N {

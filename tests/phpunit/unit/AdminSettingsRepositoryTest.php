@@ -234,6 +234,52 @@ class AdminSettingsRepositoryTest extends TestCase {
 		$this->assertFalse($repository->getStoredSettings()->allowLegacyProtectedImport);
 	}
 
+	/**
+	 * What the validator keeps: the allowlist while external pads are off,
+	 * and the API version while the API host stays.
+	 */
+	public function testTheAllowlistAndTheApiVersionSurviveARoundTrip(): void {
+		$saved = [];
+		$config = $this->createMock(IConfig::class);
+		$config->method('setAppValue')->willReturnCallback(
+			static function (string $appName, string $key, string $value) use (&$saved): void {
+				$saved[$key] = $value;
+			}
+		);
+		$config->method('getAppValue')->willReturnCallback(
+			static function (string $appName, string $key, string $default = '') use (&$saved): string {
+				return $saved[$key] ?? $default;
+			}
+		);
+
+		// One store behind both, as in Nextcloud.
+		$appConfig = $this->createMock(IAppConfig::class);
+		$appConfig->method('getValueString')->willReturnCallback(
+			static function (string $appName, string $key, string $default = '') use (&$saved): string {
+				return $saved[$key] ?? $default;
+			}
+		);
+
+		$repository = $this->repository($config, $appConfig);
+		$repository->persist(new ValidatedAdminSettings(
+			'https://pad.example.test',
+			'https://pad-api.example.test',
+			'',
+			'key',
+			'key',
+			'1.3.0',
+			90,
+			true,
+			false,
+			'https://external.example.test',
+			'',
+		));
+
+		$stored = $repository->getStoredSettings();
+		$this->assertSame('https://external.example.test', $stored->externalPadAllowlist);
+		$this->assertSame('1.3.0', $stored->apiVersion);
+	}
+
 	/** Opt-in, like allow_external_pads beside it. */
 	public function testTheLegacyProtectedImportDefaultsToRefused(): void {
 		$config = $this->createMock(IConfig::class);
