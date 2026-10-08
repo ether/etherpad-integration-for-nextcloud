@@ -387,6 +387,25 @@ class PublicViewerControllerTest extends TestCase {
 		$this->assertStringNotContainsString('share-token', json_encode($seen[0], JSON_THROW_ON_ERROR));
 	}
 
+	/**
+	 * The two routes anyone holding a link can call: the content makes this
+	 * server fetch a pad, the open of a writable link to a protected pad
+	 * starts an Etherpad session that lives for hours. The open is how
+	 * every visitor gets in, a class behind one address at once, so it
+	 * allows more.
+	 */
+	public function testTheAnonymousRoutesAreThrottled(): void {
+		// Signed in, Nextcloud counts by address too unless a method says
+		// otherwise: both count each user on their own.
+		foreach (['openPadData' => 300, 'padContent' => 60] as $method => $limit) {
+			foreach ([\OCP\AppFramework\Http\Attribute\AnonRateLimit::class, \OCP\AppFramework\Http\Attribute\UserRateLimit::class] as $kind) {
+				$limits = (new \ReflectionMethod(PublicViewerController::class, $method))->getAttributes($kind);
+				$this->assertCount(1, $limits, $method . ' ' . $kind);
+				$this->assertSame(['limit' => $limit, 'period' => 60], $limits[0]->getArguments(), $method . ' ' . $kind);
+			}
+		}
+	}
+
 	private function buildController(
 		IManager $shareManager,
 		?PadFileService $padFileService = null,
