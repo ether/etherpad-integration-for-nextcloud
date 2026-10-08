@@ -36,6 +36,29 @@ class EtherpadClientTest extends TestCase {
 		);
 	}
 
+	/**
+	 * The API host where one is set, the public one otherwise, as calls go;
+	 * '' while neither is, where getApiHost() throws, so the admin page can
+	 * compare a typed address with it before the first save.
+	 */
+	public function testTheConfiguredApiHostFallsBackToThePublicOneAndThenToNothing(): void {
+		$apiAndPublic = $this->createMock(IConfig::class);
+		$apiAndPublic->method('getAppValue')->willReturnCallback(
+			static fn (string $appName, string $key, string $default = ''): string => match ($key) {
+				'etherpad_api_host' => 'http://etherpad:9001/',
+				'etherpad_host' => 'https://pad.example.test',
+				default => $default,
+			}
+		);
+
+		$this->assertSame('http://etherpad:9001', $this->client($apiAndPublic)->configuredApiHost());
+		$this->assertSame('https://pad.example.test', $this->client($this->configWithHost('https://pad.example.test/'))->configuredApiHost());
+		$nothing = $this->client($this->configWithHost(''));
+		$this->assertSame('', $nothing->configuredApiHost());
+		$this->expectException(EtherpadClientException::class);
+		$nothing->getApiHost();
+	}
+
 	public function testGetConfiguredOriginNormalizesScheme(): void {
 		$client = $this->client($this->configWithHost('HTTPS://Pad.Example.Test/'));
 		$this->assertSame('https://pad.example.test', $client->getConfiguredOrigin());

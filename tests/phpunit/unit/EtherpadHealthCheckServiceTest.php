@@ -116,8 +116,8 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 		$urlGenerator->method('getBaseUrl')->willReturn($nextcloudUrl);
 		// The stored API host. The session-cookie line compares it with the
 		// submitted one, because a form being typed says nothing about what
-		// pads are doing right now.
-		$etherpad->method('getApiHost')->willReturn($configuredApiHost);
+		// pads are doing right now. '' before the first save.
+		$etherpad->method('configuredApiHost')->willReturn($configuredApiHost);
 		// What the open path is doing, which is the thing this line reports.
 		// It answers from a cache, so it can disagree with the server.
 		$releasePolicy = $this->createMock(\OCA\EtherpadNextcloud\Service\EtherpadReleasePolicy::class);
@@ -313,6 +313,21 @@ class EtherpadHealthCheckServiceTest extends TestCase {
 			knownRelease: '3.3.3',
 			configuredApiHost: 'https://old-api.example.test',
 		);
+
+		self::assertSame(HealthCheckItem::STATUS_OK, $line->status);
+		self::assertStringContainsString('2.7.3', $line->label);
+		self::assertStringContainsString('save', $line->detail);
+	}
+
+	/**
+	 * Before the first save no address is in use. Testing the one typed is
+	 * the first thing an admin does, and must not end the whole check.
+	 */
+	public function testSessionCookieLineBeforeTheFirstSave(): void {
+		$etherpad = $this->createMock(EtherpadClient::class);
+		$etherpad->method('detectReleaseVersion')->willReturn('2.7.3');
+
+		$line = $this->sessionCookieLine($etherpad, configuredApiHost: '');
 
 		self::assertSame(HealthCheckItem::STATUS_OK, $line->status);
 		self::assertStringContainsString('2.7.3', $line->label);
