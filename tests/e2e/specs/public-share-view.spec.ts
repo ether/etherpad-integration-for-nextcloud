@@ -379,6 +379,54 @@ test.describe('a read-only public link to a protected pad', () => {
 })
 
 /**
+ * A writable link to a protected pad opens as the link's own Etherpad
+ * author. Its visitors share the session made for the link within the
+ * hour, so opening it again and again does not fill Etherpad with
+ * sessions - and one Etherpad no longer has is not handed out again. The
+ * container stack has a memory cache (APCu), which the keeping needs.
+ */
+test.describe('a writable public link to a protected pad', () => {
+	test.skip(E2E.etherpadApi === null, 'Needs E2E_ETHERPAD_URL and E2E_ETHERPAD_API_KEY; only the container stack has them.')
+
+	test('hands its visitors one Etherpad session, and a new one when Etherpad drops it', async () => {
+		const name = uniquePadName('public-writable-protected')
+		const pad = await createPadAtPath(`/${name}`, 'protected')
+		const groupID = padIdOfPadUrl(pad.padUrl).split('$')[0]
+		const sessionsOfGroup = async (): Promise<string[]> =>
+			Object.keys(await etherpadApiPost<Record<string, unknown> | null>('listSessionsOfGroup', { groupID }) ?? {})
+		let token = ''
+		const visitor = await playwrightRequest.newContext({ storageState: { cookies: [], origins: [] } })
+		try {
+			token = (await createPublicShare(name, SHARE_PERMISSION_READ_WRITE)).token
+			const open = async (): Promise<string> => {
+				const answer = await visitor.get(`${E2E.baseURL}/apps/etherpad_nextcloud/api/v1/public/open/${encodeURIComponent(token)}`)
+				expect(answer.status()).toBe(200)
+				return decodeURIComponent(/sessionID=([^;]+)/.exec(answer.headers()['set-cookie'] ?? '')?.[1] ?? '')
+			}
+			const before = await sessionsOfGroup()
+
+			const handedOut = [await open(), await open(), await open(), await open(), await open()]
+
+			expect(new Set(handedOut).size, 'every open the same session').toBe(1)
+			expect(handedOut[0], 'a session at all').not.toBe('')
+			expect((await sessionsOfGroup()).filter((id) => !before.includes(id)), 'one new session in the pad\'s group').toEqual([handedOut[0]])
+
+			await etherpadApiPost('deleteSession', { sessionID: handedOut[0] })
+			const next = await open()
+			expect(next, 'not the session Etherpad no longer has').not.toBe(handedOut[0])
+			expect(next).not.toBe('')
+		} finally {
+			await visitor.dispose()
+			try {
+				await deletePublicShare(token)
+			} finally {
+				await deleteViaDav(name, { pastTrash: true })
+			}
+		}
+	})
+})
+
+/**
  * A copy of a pad in a folder shared by link has no pad of its own. The
  * visitor is told so, with nothing their client could act on: no code that
  * would start a recovery, which needs a signed-in user, and no pad address.

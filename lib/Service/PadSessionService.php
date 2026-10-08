@@ -44,6 +44,13 @@ class PadSessionService {
 	public const MAX_SESSION_IDS = 25;
 
 	/**
+	 * What a public link's uid starts with: the link opens as
+	 * `public-share:<token>`, its own Etherpad author, and no Nextcloud
+	 * user can be called that, since a uid takes no colon.
+	 */
+	public const PUBLIC_LINK_UID_PREFIX = 'public-share:';
+
+	/**
 	 * How long a session an authenticated open mints stays valid. Chosen,
 	 * not derived: revocation fires only on a logout, an account's deletion
 	 * and a delete of the pad's file, so for most sessions this is the
@@ -75,6 +82,7 @@ class PadSessionService {
 		private ExpiredSessionCollector $collector,
 		private LoggerInterface $logger,
 		private ITimeFactory $timeFactory,
+		private PublicLinkSessions $linkSessions,
 	) {
 	}
 
@@ -107,7 +115,8 @@ class PadSessionService {
 	}
 
 	/**
-	 * A fresh session for the pad being opened, plus the ids the browser
+	 * A session for the pad being opened - a fresh one, or for a public
+	 * link the one it made within the hour - plus the ids the browser
 	 * already had that are still worth carrying.
 	 *
 	 * The cookie is the only place this state lives, and writing just the
@@ -154,7 +163,27 @@ class PadSessionService {
 		// cookie can reach that socket. Reusing a shorter one traded editing
 		// time for a renewal property that a client arriving without a cookie
 		// does not have anyway. What bounds the window is revocation.
-		$chosenSessionId = $this->etherpadClient->createSession($groupId, $authorId, $validUntil);
+		//
+		// A public link is the exception. Its visitors share one author and
+		// the rights the link grants, and each open made a session that
+		// Etherpad kept, so a link opened in a loop filled Etherpad with
+		// them. The session made for the link in the last hour is handed
+		// out again, as long as Etherpad confirms it: a visitor gets at
+		// least two of the three hours, and with a memory cache a link
+		// makes one session an hour (PublicLinkSessions).
+		if (str_starts_with($uid, self::PUBLIC_LINK_UID_PREFIX)) {
+			$session = $this->linkSessions->sessionFor(
+				$uid,
+				$authorId,
+				$groupId,
+				$validUntil,
+				fn (): string => $this->etherpadClient->createSession($groupId, $authorId, $validUntil),
+			);
+			$chosenSessionId = $session['sessionId'];
+			$validUntil = $session['validUntil'];
+		} else {
+			$chosenSessionId = $this->etherpadClient->createSession($groupId, $authorId, $validUntil);
+		}
 		if (preg_match(self::SESSION_ID_PATTERN, $chosenSessionId) !== 1) {
 			// The id is about to be written into a cookie that the next open
 			// has to be able to read back. If Etherpad's shape ever moves
@@ -184,9 +213,10 @@ class PadSessionService {
 	 *
 	 * Not asked for on a public share either. There the author is derived
 	 * from the share token alone, so every anonymous visitor of one link
-	 * shares it, and Etherpad deletes no sessions: a link opened by five
-	 * hundred people carries five hundred sessions under one author, and
-	 * every open would download the lot. The cost is that two protected
+	 * shares it, and Etherpad deletes no sessions: a link carries one for
+	 * every hour it was opened in for each pad, or one for every open
+	 * where Nextcloud has no memory cache, all under one author, and every
+	 * open would download the lot. The cost is that two protected
 	 * pads inside one shared folder cannot be open at once, which is what
 	 * happened before this branch anyway.
 	 *
@@ -557,6 +587,6 @@ class PadSessionService {
 	}
 
 	private function shouldPersistAuthorState(string $uid): bool {
-		return $uid !== '' && !str_starts_with($uid, 'public-share:');
+		return $uid !== '' && !str_starts_with($uid, self::PUBLIC_LINK_UID_PREFIX);
 	}
 }

@@ -1,0 +1,132 @@
+<?php
+
+declare(strict_types=1);
+/**
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ *
+ * Copyright (c) 2026 Jacob Bühler
+ */
+
+namespace OCA\EtherpadNextcloud\Service;
+
+use OCA\EtherpadNextcloud\AppInfo\Application;
+use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
+use OCA\EtherpadNextcloud\Util\SafeError;
+use OCP\AppFramework\Utility\ITimeFactory;
+use OCP\ICache;
+use OCP\ICacheFactory;
+use OCP\Security\ICrypto;
+use Psr\Log\LoggerInterface;
+
+/**
+ * The Etherpad session a public link hands out, kept for a while so that
+ * the link's visitors share it rather than each making one.
+ *
+ * Every open of a writable link to a protected pad made a session of its
+ * own, all under the link's one author, and Etherpad keeps each until it
+ * is deleted. With a distributed memory cache, a link now makes at most
+ * one new session an hour for each pad, however often it is opened; opens
+ * that miss the cache at the same moment make one each. With only a local
+ * cache, as on one server, that holds for each web server on its own.
+ * Without any, nothing is kept and every open makes a session, as before.
+ *
+ * The cache only points; Etherpad decides. A kept session is handed out
+ * again only once Etherpad confirms that it still exists - a session
+ * taken away when the file went to the trash does not - that it is the
+ * link's author's for this pad's group, and that it runs at least as long
+ * as a new one would, less the time it is kept. Etherpad turns away the
+ * next keystroke of an editor whose session has run out, so a session is
+ * kept for an hour at most, and for a third of its lifetime where that is
+ * shorter: a visitor always gets two thirds of it.
+ *
+ * The key is an HMAC of the Etherpad address, the link and the group
+ * under the instance's secret, so a key does not give away the token,
+ * even a token someone chose and could be guessed.
+ */
+class PublicLinkSessions {
+	/** How long a session is handed out again at most, after it was made. */
+	public const REUSE_SECONDS = 3600;
+
+	public function __construct(
+		private ICacheFactory $cacheFactory,
+		private EtherpadClient $etherpadClient,
+		private ICrypto $crypto,
+		private ITimeFactory $timeFactory,
+		private LoggerInterface $logger,
+	) {
+	}
+
+	/**
+	 * The link's session for this group: the one kept, as Etherpad
+	 * confirms it, or one $create makes, then kept for the next opens.
+	 *
+	 * @param string $link the uid the link opens as, `public-share:<token>`
+	 * @param int $validUntil when a session made now runs out
+	 * @param callable(): string $create makes a session running until $validUntil
+	 * @return array{sessionId:string,validUntil:int}
+	 */
+	public function sessionFor(string $link, string $authorId, string $groupId, int $validUntil, callable $create): array {
+		$window = min(self::REUSE_SECONDS, intdiv($validUntil - $this->timeFactory->getTime(), 3));
+		$cache = $window > 0 && $this->cacheFactory->isAvailable()
+			? $this->cacheFactory->createDistributed(Application::APP_ID . '/public-link-sessions/')
+			: null;
+		if ($cache === null) {
+			return ['sessionId' => $create(), 'validUntil' => $validUntil];
+		}
+
+		$key = $this->key($link, $groupId);
+		$kept = $this->read($cache, $key);
+		$unconfirmed = null;
+		if ($kept !== '') {
+			try {
+				$session = $this->etherpadClient->getSessionInfo($kept);
+				if ($session !== null
+					&& $session['groupID'] === $groupId
+					&& $session['authorID'] === $authorId
+					&& $session['validUntil'] >= $validUntil - $window) {
+					return ['sessionId' => $kept, 'validUntil' => $session['validUntil']];
+				}
+			} catch (EtherpadClientException $e) {
+				$unconfirmed = $e;
+			}
+		}
+
+		$sessionId = $create();
+		if ($unconfirmed !== null) {
+			// Etherpad made a session but said nothing usable about the kept
+			// one, so the link makes one an open. An Etherpad that is away
+			// fails the call above too, and is reported there.
+			$this->logger->warning('Could not confirm the kept Etherpad session of a public link; the open made a new one.', [
+				'app' => Application::APP_ID,
+				...SafeError::context($unconfirmed),
+			]);
+		}
+		$this->write($cache, $key, $sessionId, $window);
+		return ['sessionId' => $sessionId, 'validUntil' => $validUntil];
+	}
+
+	/** A cache that fails - Redis gone, say - is one that keeps nothing. */
+	private function read(ICache $cache, string $key): string {
+		try {
+			return self::asString($cache->get($key));
+		} catch (\Throwable) {
+			return '';
+		}
+	}
+
+	private static function asString(mixed $value): string {
+		return is_string($value) ? $value : '';
+	}
+
+	private function write(ICache $cache, string $key, string $sessionId, int $window): void {
+		try {
+			$cache->set($key, $sessionId, $window);
+		} catch (\Throwable) {
+			// The session is made and handed out; the next open makes another.
+		}
+	}
+
+	private function key(string $link, string $groupId): string {
+		return bin2hex($this->crypto->calculateHMAC($this->etherpadClient->configuredApiHost() . "\n" . $link . "\n" . $groupId));
+	}
+}

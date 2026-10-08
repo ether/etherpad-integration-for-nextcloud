@@ -167,6 +167,43 @@ class EtherpadClientTest extends TestCase {
 		$this->assertSame(1, $unreadable);
 	}
 
+	/** One session, asked for by its id: the group, the author and when it runs out. */
+	public function testGetSessionInfoReadsTheSession(): void {
+		$captured = null;
+		$client = $this->clientWithResponse(
+			$this->response(200, '{"code":0,"data":{"groupID":"g.aaa","authorID":"a.x","validUntil":1767236400}}'),
+			$captured,
+		);
+
+		$this->assertSame(['groupID' => 'g.aaa', 'authorID' => 'a.x', 'validUntil' => 1767236400], $client->getSessionInfo('s.one'));
+		// A number Etherpad writes another way is read as the listings read it.
+		$this->assertSame(1767236400, $this->clientWithResponse($this->response(200, '{"code":0,"data":{"groupID":"g.aaa","authorID":"a.x","validUntil":1767236400.0}}'))->getSessionInfo('s.one')['validUntil'] ?? null);
+		$this->assertStringContainsString('sessionID=s.one', self::bodyOf($captured));
+		$this->assertStringEndsWith('/getSessionInfo', parse_url((string)$captured['url'], PHP_URL_PATH));
+	}
+
+	/**
+	 * A session Etherpad does not have is none, not a failure: deleted, or
+	 * collected after it ran out. Anything else it says is a failure, and so
+	 * is an answer that does not describe a session.
+	 */
+	public function testGetSessionInfoTellsAMissingSessionFromAFailure(): void {
+		$this->assertNull($this->clientWithResponse($this->response(200, '{"code":1,"message":"sessionID does not exist","data":null}'))->getSessionInfo('s.gone'));
+
+		foreach ([
+			'{"code":2,"message":"internal error","data":null}',
+			'{"code":0,"data":{"groupID":"g.aaa","authorID":"","validUntil":1}}',
+			'{"code":0,"data":{"groupID":"g.aaa","authorID":"a.x"}}',
+		] as $body) {
+			try {
+				$this->clientWithResponse($this->response(200, $body))->getSessionInfo('s.one');
+				$this->fail('taken: ' . $body);
+			} catch (EtherpadClientException) {
+				$this->addToAssertionCount(1);
+			}
+		}
+	}
+
 	public function testListPadsReadsAValidPadList(): void {
 		$client = $this->clientWithResponse(
 			$this->response(200, '{"code":0,"data":{"padIDs":["g.aaa$one","g.aaa$two"]}}')

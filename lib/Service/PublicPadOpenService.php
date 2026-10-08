@@ -61,7 +61,7 @@ class PublicPadOpenService {
 			}
 
 			$openContext = $this->padSessionService->createProtectedOpenContext(
-				'public-share:' . $token,
+				PadSessionService::PUBLIC_LINK_UID_PREFIX . $token,
 				self::PUBLIC_SHARE_AUTHOR_NAME,
 				$padId,
 				self::PUBLIC_SHARE_SESSION_TTL_SECONDS
