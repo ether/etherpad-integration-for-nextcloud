@@ -1,0 +1,135 @@
+<?php
+
+declare(strict_types=1);
+/**
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ *
+ * Copyright (c) 2026 Jacob Bühler
+ */
+
+namespace OCA\EtherpadNextcloud\Service;
+
+use OCA\EtherpadNextcloud\AppInfo\Application;
+use OCA\EtherpadNextcloud\Util\SafeError;
+use OCP\AppFramework\Utility\ITimeFactory;
+use OCP\ICacheFactory;
+use OCP\IMemcache;
+use OCP\ISession;
+use OCP\Security\ICrypto;
+use OCP\Security\ISecureRandom;
+use Psr\Log\LoggerInterface;
+
+/**
+ * Who opens a writable link to a protected pad: a visitor of their own,
+ * so Etherpad shows each in a colour and under a name of their own.
+ *
+ * Etherpad takes the author of a session over the browser's own, so a
+ * link that opened as one author showed all its visitors as one. Each
+ * visitor gets an id now, kept in Nextcloud's session of the public page
+ * for this link, and opens as `public-share:<token>:<visitor>` - the same
+ * author on every open while that session lives, a new one in a new one.
+ *
+ * A visitor is cheap, though: a request without the session cookie is
+ * a new one. Each would make an author, which Etherpad never deletes, and
+ * sessions the reuse of a link's session cannot spare. So with a memory
+ * cache, a link has at most 250 visitors of their own an hour, each
+ * counted once in every hour they open it: one who comes back keeps their
+ * id, and is counted again in a new hour, so ids gathered over hours buy
+ * no more. Any past the count open as the link itself,
+ * `public-share:<token>`, one author for all of them, as every visitor did
+ * before - writing works the same, only the colours are shared. Without a
+ * memory cache nothing is counted.
+ */
+class PublicLinkVisitors {
+	/** How many visitors of their own a link has an hour, with a memory cache. */
+	public const PER_HOUR = 250;
+
+	private const ID_LENGTH = 32;
+	private const ID_CHARACTERS = '0123456789abcdef';
+
+	public function __construct(
+		private ISession $session,
+		private ICacheFactory $cacheFactory,
+		private ISecureRandom $random,
+		private ICrypto $crypto,
+		private ITimeFactory $timeFactory,
+		private LoggerInterface $logger,
+	) {
+	}
+
+	/**
+	 * The uid the visitor of this link opens as: their own, or the link's
+	 * when it has its visitors for the hour.
+	 */
+	public function uidFor(string $token): string {
+		$link = PadSessionService::PUBLIC_LINK_UID_PREFIX . $token;
+		$sessionKey = Application::APP_ID . '_visitor_' . $this->digest('visitor', $token);
+		$hour = intdiv($this->timeFactory->getTime(), 3600);
+		[$visitor, $countedIn] = self::stored($this->session->get($sessionKey));
+		if ($visitor !== '' && $countedIn === $hour) {
+			return $link . ':' . $visitor;
+		}
+		if (!$this->admits($token, $hour)) {
+			return $link;
+		}
+		if ($visitor === '') {
+			$visitor = $this->random->generate(self::ID_LENGTH, self::ID_CHARACTERS);
+		}
+		$this->session->set($sessionKey, $visitor . ':' . $hour);
+		return $link . ':' . $visitor;
+	}
+
+	/**
+	 * Whether the link has room for another visitor of their own this
+	 * hour. Counted only where a memory cache can count; a cache that fails
+	 * counts nobody and says so.
+	 */
+	private function admits(string $token, int $hour): bool {
+		try {
+			$cache = $this->cacheFactory->isAvailable()
+				? $this->cacheFactory->createDistributed(Application::APP_ID . '/public-link-visitors/')
+				: null;
+			if (!$cache instanceof IMemcache) {
+				return true;
+			}
+			$key = $this->digest('visitors', $token) . ':' . $hour;
+			$cache->add($key, 0, 3600);
+			$count = $cache->inc($key);
+			if (!is_int($count) || $count <= self::PER_HOUR) {
+				return true;
+			}
+			// Once an hour for the link: a crowd, or a loop, is worth one line.
+			if ($cache->add($key . ':said', 1, 3600)) {
+				$this->logger->warning('A public link has its visitors of their own for this hour; further visitors open as the link\'s one Etherpad author until the hour is over.', [
+					'app' => Application::APP_ID,
+					'visitorsPerHour' => self::PER_HOUR,
+				]);
+			}
+			return false;
+		} catch (\Throwable $e) {
+			$this->logger->warning('The memory cache failed, so the visitors of a public link are not counted.', [
+				'app' => Application::APP_ID,
+				...SafeError::context($e),
+			]);
+			return true;
+		}
+	}
+
+	/**
+	 * What the session holds: the visitor id this made, and the hour it
+	 * was last counted in - or '' and -1.
+	 *
+	 * @return array{string, int}
+	 */
+	private static function stored(mixed $value): array {
+		if (!is_string($value) || preg_match('/^([0-9a-f]{' . self::ID_LENGTH . '}):(\d+)$/D', $value, $parts) !== 1) {
+			return ['', -1];
+		}
+		return [$parts[1], (int)$parts[2]];
+	}
+
+	/** A token's mark under the instance's secret, for keys that must not carry it. */
+	private function digest(string $purpose, string $token): string {
+		return bin2hex($this->crypto->calculateHMAC($purpose . "\n" . $token));
+	}
+}

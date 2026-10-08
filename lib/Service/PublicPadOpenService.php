@@ -32,6 +32,7 @@ class PublicPadOpenService {
 		private ManagedPadLifecycle $padLifecycle,
 		private ExternalPadExportFetcher $externalPadExportFetcher,
 		private PadSessionService $padSessionService,
+		private PublicLinkVisitors $visitors,
 	) {
 	}
 
@@ -60,9 +61,14 @@ class PublicPadOpenService {
 				return new PublicPadOpenTarget('', '', '', true);
 			}
 
+			// A visitor of their own is given no name: Etherpad lets them set
+			// one, and a name given on every open would overwrite it. The
+			// link's own author, for visitors past the hour's count, keeps
+			// the name it has always had.
+			$uid = $this->visitors->uidFor($token);
 			$openContext = $this->padSessionService->createProtectedOpenContext(
-				PadSessionService::PUBLIC_LINK_UID_PREFIX . $token,
-				self::PUBLIC_SHARE_AUTHOR_NAME,
+				$uid,
+				$uid === PadSessionService::PUBLIC_LINK_UID_PREFIX . $token ? self::PUBLIC_SHARE_AUTHOR_NAME : '',
 				$padId,
 				self::PUBLIC_SHARE_SESSION_TTL_SECONDS
 			);

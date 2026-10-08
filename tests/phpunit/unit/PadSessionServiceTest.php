@@ -975,6 +975,28 @@ class PadSessionServiceTest extends TestCase {
 		$this->assertSame('s.public0000000000002', $third['cookie']['value']);
 	}
 
+	/**
+	 * A visitor of a link opens with no name, which Etherpad lets them set:
+	 * not the uid in its place, which carries the share's token.
+	 */
+	public function testAPublicLinksVisitorIsGivenNoName(): void {
+		[$etherpadClient, $config] = $this->publicLinkFixtures();
+		$names = new \ArrayObject();
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->method('createAuthorIfNotExistsFor')->willReturnCallback(
+			static function (string $mapper, string $name) use ($names): string {
+				$names->append([$mapper, $name]);
+				return 'a.visitor';
+			}
+		);
+		$etherpadClient->method('createSession')->willReturn('s.visitor00000000000001');
+		$etherpadClient->method('buildPadUrl')->willReturn('https://pad.example.test/p/pad');
+
+		$this->buildService($etherpadClient, $config)->createProtectedOpenContext('public-share:token:0123456789abcdef0123456789abcdef', '', 'g.ABCDEFGHIJKLMNOP$pad-1', 10800);
+
+		$this->assertSame([['nc:public-share:token:0123456789abcdef0123456789abcdef', '']], $names->getArrayCopy());
+	}
+
 	/** A signed-in open still makes a session of its own every time. */
 	public function testASignedInOpenDoesNotTakeAKeptSession(): void {
 		[$etherpadClient, $config, $made] = $this->publicLinkFixtures();

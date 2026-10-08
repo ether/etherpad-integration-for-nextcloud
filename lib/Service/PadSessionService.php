@@ -44,9 +44,11 @@ class PadSessionService {
 	public const MAX_SESSION_IDS = 25;
 
 	/**
-	 * What a public link's uid starts with: the link opens as
-	 * `public-share:<token>`, its own Etherpad author, and no Nextcloud
-	 * user can be called that, since a uid takes no colon.
+	 * What a public link's uid starts with: a visitor of the link opens as
+	 * `public-share:<token>:<visitor>`, or as the link itself,
+	 * `public-share:<token>` (PublicLinkVisitors), each its own Etherpad
+	 * author, and no Nextcloud user can be called that, since a uid takes
+	 * no colon.
 	 */
 	public const PUBLIC_LINK_UID_PREFIX = 'public-share:';
 
@@ -89,7 +91,9 @@ class PadSessionService {
 	/** @return array{url:string,cookie:array{name:string,value:string,expires:int,path:string,domain:string,secure:bool,http_only:bool,same_site:string}} */
 	public function createProtectedOpenContext(string $uid, string $displayName, string $padId, int $ttlSeconds = self::SESSION_TTL_SECONDS): array {
 		$groupId = $this->extractGroupId($padId);
-		$effectiveDisplayName = trim($displayName) !== '' ? $displayName : $uid;
+		// Not the uid in place of a public link's name: it carries the token,
+		// and a link's visitor is meant to have none, to set their own.
+		$effectiveDisplayName = trim($displayName) !== '' || str_starts_with($uid, self::PUBLIC_LINK_UID_PREFIX) ? $displayName : $uid;
 		$safeTtlSeconds = max(60, $ttlSeconds);
 		$validUntil = $this->timeFactory->getTime() + $safeTtlSeconds;
 		$authorId = $this->resolveCachedAuthorId($uid);
@@ -166,13 +170,13 @@ class PadSessionService {
 		// time for a renewal property that a client arriving without a cookie
 		// does not have anyway. What bounds the window is revocation.
 		//
-		// A public link is the exception. Its visitors share one author and
-		// the rights the link grants, and each open made a session that
+		// A public link is the exception. Each open made a session that
 		// Etherpad kept, so a link opened in a loop filled Etherpad with
-		// them. The session made for the link in the last hour is handed
-		// out again, as long as Etherpad confirms it: a visitor gets at
-		// least two of the three hours, and with a memory cache a link
-		// makes one session an hour (PublicLinkSessions).
+		// them. The session made for the visitor - or the link, for those
+		// past its hour's count - in the last hour is handed out again, as
+		// long as Etherpad confirms it: a visitor gets at least two of the
+		// three hours, and with a memory cache a visitor makes one session
+		// an hour (PublicLinkSessions).
 		if ($isLink) {
 			$made = false;
 			$session = $this->linkSessions->sessionFor(

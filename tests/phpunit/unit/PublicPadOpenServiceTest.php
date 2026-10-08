@@ -12,6 +12,7 @@ use OCA\EtherpadNextcloud\Service\EtherpadClient;
 use OCA\EtherpadNextcloud\Service\ExternalPadExportFetcher;
 use OCA\EtherpadNextcloud\Service\PadSessionService;
 use OCA\EtherpadNextcloud\Service\ParsedPadFile;
+use OCA\EtherpadNextcloud\Service\PublicLinkVisitors;
 use OCA\EtherpadNextcloud\Service\PublicPadOpenService;
 use PHPUnit\Framework\TestCase;
 
@@ -28,22 +29,37 @@ class PublicPadOpenServiceTest extends TestCase {
 		$this->assertSame('', $result->cookieHeader());
 	}
 
-	public function testProtectedWritableCreatesPublicShareSession(): void {
+	/**
+	 * A visitor of their own opens with no name, which Etherpad lets them
+	 * set; a name given on every open would overwrite it.
+	 */
+	public function testProtectedWritableCreatesASessionForTheVisitor(): void {
 		$sessions = $this->createMock(PadSessionService::class);
 		$sessions->expects($this->once())
 			->method('createProtectedOpenContext')
-			->with('public-share:token', 'Public share', 'g.group$pad', self::shareTtl())
+			->with('public-share:token:0123456789abcdef0123456789abcdef', '', 'g.group$pad', self::shareTtl())
 			->willReturn(['url' => 'https://pad.example/p/g.group$pad', 'cookie' => ['name' => 'sessionID']]);
 		$sessions->expects($this->once())
 			->method('buildSetCookieHeader')
 			->with(['name' => 'sessionID'])
 			->willReturn('sessionID=abc; Path=/');
 
-		$result = $this->buildService(padSessionService: $sessions)->open($this->pad('g.group$pad', BindingService::ACCESS_PROTECTED, false, ''), false, 'token');
+		$result = $this->buildService(padSessionService: $sessions, visitorUid: 'public-share:token:0123456789abcdef0123456789abcdef')->open($this->pad('g.group$pad', BindingService::ACCESS_PROTECTED, false, ''), false, 'token');
 
 		$this->assertSame('https://pad.example/p/g.group$pad', $result->url);
 		$this->assertSame('sessionID=abc; Path=/', $result->cookieHeader());
 		$this->assertFalse($result->isReadOnlyView);
+	}
+
+	/** Past the link's count for the hour, a visitor opens as the link, under its old name. */
+	public function testProtectedWritableOpensAsTheLinkPastItsCount(): void {
+		$sessions = $this->createMock(PadSessionService::class);
+		$sessions->expects($this->once())
+			->method('createProtectedOpenContext')
+			->with('public-share:token', 'Public share', 'g.group$pad', self::shareTtl())
+			->willReturn(['url' => 'https://pad.example/p/g.group$pad', 'cookie' => ['name' => 'sessionID']]);
+
+		$this->buildService(padSessionService: $sessions, visitorUid: 'public-share:token')->open($this->pad('g.group$pad', BindingService::ACCESS_PROTECTED, false, ''), false, 'token');
 	}
 
 	public function testExternalPublicPadReturnsNormalizedUrl(): void {
@@ -125,12 +141,16 @@ class PublicPadOpenServiceTest extends TestCase {
 		?PadSessionService $padSessionService = null,
 		?ExternalPadExportFetcher $externalPadExportFetcher = null,
 		?ManagedPadLifecycle $padLifecycle = null,
+		string $visitorUid = 'public-share:token',
 	): PublicPadOpenService {
+		$visitors = $this->createMock(PublicLinkVisitors::class);
+		$visitors->method('uidFor')->willReturn($visitorUid);
 		return new PublicPadOpenService(
 			$etherpadClient ?? $this->createMock(EtherpadClient::class),
 			$padLifecycle ?? $this->createMock(ManagedPadLifecycle::class),
 			$externalPadExportFetcher ?? $this->createMock(ExternalPadExportFetcher::class),
 			$padSessionService ?? $this->createMock(PadSessionService::class),
+			$visitors,
 		);
 	}
 

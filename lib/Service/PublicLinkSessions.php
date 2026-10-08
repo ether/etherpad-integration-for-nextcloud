@@ -20,28 +20,31 @@ use Psr\Log\LoggerInterface;
 
 /**
  * The Etherpad session a public link hands out, kept for a while so that
- * the link's visitors share it rather than each making one.
+ * an open does not make one each time.
  *
  * Every open of a writable link to a protected pad made a session of its
- * own, all under the link's one author, and Etherpad keeps each until it
- * is deleted. With a distributed memory cache, a link now makes at most
- * one new session an hour for each pad, however often it is opened; opens
- * that miss the cache at the same moment make one each. With only a local
- * cache, as on one server, that holds for each web server on its own.
- * Without any, nothing is kept and every open makes a session, as before.
+ * own, and Etherpad keeps each until it is deleted. A link opens as a
+ * visitor of its own, or as the link itself for visitors past its hour's
+ * count (PublicLinkVisitors). With a distributed memory cache, each of
+ * them now makes at most one new session an hour for each pad, however
+ * often it opens; opens that miss the cache at the same moment make one
+ * each. With only a local cache, as on one server, that holds for each
+ * web server on its own. Without any, nothing is kept and every open
+ * makes a session, as before.
  *
  * The cache only points; Etherpad decides. A kept session is handed out
  * again only once Etherpad confirms that it still exists - a session
  * taken away when the file went to the trash does not - that it is the
- * link's author's for this pad's group, and that it runs at least as long
+ * opener's author's for this pad's group, and that it runs at least as long
  * as a new one would, less the time it is kept. Etherpad turns away the
  * next keystroke of an editor whose session has run out, so a session is
  * kept for an hour at most, and for a third of its lifetime where that is
  * shorter: a visitor always gets two thirds of it.
  *
- * The key is an HMAC of the Etherpad address, the link and the group
- * under the instance's secret, so a key does not give away the token,
- * even a token someone chose and could be guessed.
+ * The key is an HMAC of the Etherpad address, the uid opened as - which
+ * carries the token - and the group under the instance's secret, so a
+ * key does not give away the token, even a token someone chose and could
+ * be guessed.
  */
 class PublicLinkSessions {
 	/** How long a session is handed out again at most, after it was made. */
@@ -60,7 +63,7 @@ class PublicLinkSessions {
 	 * The link's session for this group: the one kept, as Etherpad
 	 * confirms it, or one $create makes, then kept for the next opens.
 	 *
-	 * @param string $link the uid the link opens as, `public-share:<token>`
+	 * @param string $link the uid the open is made as, `public-share:<token>:<visitor>` or `public-share:<token>`
 	 * @param int $validUntil when a session made now runs out
 	 * @param callable(): string $create makes a session running until $validUntil
 	 * @return array{sessionId:string,validUntil:int}
