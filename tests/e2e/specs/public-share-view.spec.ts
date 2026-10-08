@@ -20,6 +20,7 @@ import {
 	uniqueName,
 } from '../fixtures/nextcloud'
 import {
+	SHARE_PERMISSION_READ,
 	SHARE_PERMISSION_READ_WRITE,
 	copyViaDav,
 	createPadAtPath,
@@ -31,6 +32,13 @@ import {
 	propfindFileId,
 	putFileViaDav,
 } from '../fixtures/dav'
+
+/**
+ * A visitor of a public link, signed in nowhere. A context left without a
+ * storageState is signed in as the test user: the project's state fills
+ * it in, and a public page then behaves as it does for its owner.
+ */
+const SIGNED_OUT = { storageState: { cookies: [], origins: [] } }
 
 test.describe('public share access without login', () => {
 	const padName = uniquePadName('public-share')
@@ -59,7 +67,7 @@ test.describe('public share access without login', () => {
 		shareToken = share.token
 		shareUrl = share.url
 
-		const publicContext = await browser.newContext()
+		const publicContext = await browser.newContext(SIGNED_OUT)
 		browserNoise.watch(publicContext)
 		const publicPage = await publicContext.newPage()
 		try {
@@ -71,22 +79,58 @@ test.describe('public share access without login', () => {
 		}
 	})
 
-	test('does not expose internal viewer data without login', async ({ browser, browserNoise }) => {
-		const publicContext = await browser.newContext()
+	test('sends a signed-out visitor of a viewer link to the login and back', async ({ browser, browserNoise }) => {
+		const publicContext = await browser.newContext(SIGNED_OUT)
 		browserNoise.watch(publicContext)
 		const publicPage = await publicContext.newPage()
 		try {
 			await publicPage.goto(`${E2E.baseURL}/apps/etherpad_nextcloud/by-id/1`)
 
+			await expect(publicPage).toHaveURL(/\/login\?redirect_url=[^&]*by-id%2F1|\/login\?redirect_url=[^&]*by-id\/1/)
 			await expect(publicPage.locator('iframe[title="Etherpad"], .epnc-viewer__iframe')).toHaveCount(0)
-			await expect(publicPage.getByRole('heading', { name: /could not open pad|pad konnte nicht geöffnet werden/i })).toBeVisible()
 		} finally {
 			await publicContext.close()
 		}
 	})
 
+	/**
+	 * The app's old address for a share with a password hands on to the
+	 * share page, which asks for it. Nextcloud answered 404 while that
+	 * address was served behind its own check of the share.
+	 */
+	test('hands the old address of a share with a password on to its password page', async ({ browser, browserNoise }) => {
+		const name = uniquePadName('public-share-password')
+		await putFileViaDav(name, 'A pad behind a password.')
+		// Nextcloud keeps a link share whose file is deleted, and its token
+		// would lead on to the password page until a job sweeps it.
+		let token = ''
+		try {
+			token = (await createPublicShare(name, SHARE_PERMISSION_READ, `E2e-${Math.random().toString(36).slice(2)}-Share!`)).token
+			const publicContext = await browser.newContext(SIGNED_OUT)
+			browserNoise.watch(publicContext)
+			try {
+				const publicPage = await publicContext.newPage()
+				const answer = await publicPage.goto(`${E2E.baseURL}/apps/etherpad_nextcloud/public/${encodeURIComponent(token)}`)
+
+				expect(answer?.status()).toBe(200)
+				await expect(publicPage).toHaveURL(new RegExp(`/s/${token}/authenticate`))
+				await expect(publicPage.locator('input[type="password"]')).toBeVisible()
+			} finally {
+				await publicContext.close()
+			}
+		} finally {
+			try {
+				if (token !== '') {
+					await deletePublicShare(token)
+				}
+			} finally {
+				await deleteViaDav(name, { pastTrash: true })
+			}
+		}
+	})
+
 	test('rejects invalid public share tokens without pad data', async ({ browser, browserNoise }) => {
-		const publicContext = await browser.newContext()
+		const publicContext = await browser.newContext(SIGNED_OUT)
 		browserNoise.watch(publicContext)
 		try {
 			const response = await publicContext.request.get(
@@ -103,7 +147,7 @@ test.describe('public share access without login', () => {
 	})
 
 	test('renders an error page for invalid public viewer tokens', async ({ browser, browserNoise }) => {
-		const publicContext = await browser.newContext()
+		const publicContext = await browser.newContext(SIGNED_OUT)
 		browserNoise.watch(publicContext)
 		const publicPage = await publicContext.newPage()
 		try {
@@ -121,7 +165,7 @@ test.describe('public share access without login', () => {
 		const share = await createPublicReadShare(textFileName)
 		nonPadShareToken = share.token
 
-		const publicContext = await browser.newContext()
+		const publicContext = await browser.newContext(SIGNED_OUT)
 		browserNoise.watch(publicContext)
 		try {
 			const response = await publicContext.request.get(
@@ -142,7 +186,7 @@ test.describe('public share access without login', () => {
 		const share = await createPublicReadShare(textRouteFileName)
 		nonPadRouteShareToken = share.token
 
-		const publicContext = await browser.newContext()
+		const publicContext = await browser.newContext(SIGNED_OUT)
 		browserNoise.watch(publicContext)
 		const publicPage = await publicContext.newPage()
 		try {
@@ -207,7 +251,7 @@ test.describe('public folder share with confusable file names', () => {
 	test('refuses a file id from outside the share, with no path fallback', async ({ browser, browserNoise }) => {
 		expect(outsideFileId).toBeGreaterThan(0)
 
-		const publicContext = await browser.newContext()
+		const publicContext = await browser.newContext(SIGNED_OUT)
 		browserNoise.watch(publicContext)
 		try {
 			// A path fallback would open the real pad named alongside the foreign id.
@@ -228,7 +272,7 @@ test.describe('public folder share with confusable file names', () => {
 		expect(spacePad.path).toBe(`/${folderName}/${spaceName}`)
 		expect(plusPad.padUrl).not.toBe(spacePad.padUrl)
 
-		const publicContext = await browser.newContext()
+		const publicContext = await browser.newContext(SIGNED_OUT)
 		browserNoise.watch(publicContext)
 		const publicPage = await publicContext.newPage()
 		try {
@@ -261,7 +305,7 @@ test.describe('public folder share with confusable file names', () => {
 	})
 
 	test('keeps compatibility links to pads inside a public folder share working', async ({ browser, browserNoise }) => {
-		const publicContext = await browser.newContext()
+		const publicContext = await browser.newContext(SIGNED_OUT)
 		browserNoise.watch(publicContext)
 		const publicPage = await publicContext.newPage()
 		try {
@@ -287,8 +331,11 @@ test.describe('public folder share with confusable file names', () => {
 test.describe('a read-only public link to a protected pad', () => {
 	test.skip(E2E.etherpadApi === null, 'Needs E2E_ETHERPAD_URL and E2E_ETHERPAD_API_KEY; only the container stack has them.')
 	const name = uniquePadName('public-readonly-protected')
+	let token = ''
 
+	// The share first: Nextcloud keeps a link share whose file is deleted.
 	test.afterAll(async () => {
+		await deletePublicShare(token).catch(() => {})
 		await deleteViaDav(name).catch(() => {})
 	})
 
@@ -298,6 +345,7 @@ test.describe('a read-only public link to a protected pad', () => {
 		const marker = `read through a link ${Date.now()}`
 		await etherpadApiPost('setText', { padID: padId, text: marker })
 		const share = await createPublicReadShare(name)
+		token = share.token
 
 		const visitor = await playwrightRequest.newContext({ storageState: { cookies: [], origins: [] } })
 		try {
@@ -319,13 +367,11 @@ test.describe('a read-only public link to a protected pad', () => {
 			expect(content.status()).toBe(200)
 			expect(await content.text(), 'what the pad says, from the pad server').toContain(marker)
 
-			// The app's own page for the link, as a single-file share opens it:
-			// shown, or handed on to Nextcloud's share page for the same token.
+			// The app's old address for the link hands on to Nextcloud's share
+			// page for the same token; it shows nothing of its own.
 			const page = await visitor.get(`${E2E.baseURL}/apps/etherpad_nextcloud/public/${encodeURIComponent(share.token)}`, { maxRedirects: 0 })
-			expect([200, 303], `the app's public page answered ${page.status()}`).toContain(page.status())
-			if (page.status() === 303) {
-				expect(page.headers().location ?? '', 'and hands on to the share it belongs to').toContain(`/s/${share.token}`)
-			}
+			expect(page.status(), 'the app\'s old address for the link').toBe(303)
+			expect(page.headers().location ?? '', 'and hands on to the share it belongs to').toContain(`/s/${share.token}`)
 		} finally {
 			await visitor.dispose()
 		}
@@ -339,8 +385,10 @@ test.describe('a read-only public link to a protected pad', () => {
  */
 test.describe('a copy of a pad in a public folder share', () => {
 	const folder = uniqueName('public-folder-copy')
+	let token = ''
 
 	test.afterAll(async () => {
+		await deletePublicShare(token).catch(() => {})
 		await deleteViaDav(folder).catch(() => {})
 	})
 
@@ -351,6 +399,7 @@ test.describe('a copy of a pad in a public folder share', () => {
 		await createPadAtPath(`/${folder}/${original}`, 'public')
 		await copyViaDav(`${folder}/${original}`, `${folder}/${copy}`)
 		const share = await createPublicReadShare(folder)
+		token = share.token
 
 		const visitor = await playwrightRequest.newContext({ storageState: { cookies: [], origins: [] } })
 		try {

@@ -135,9 +135,22 @@ leave one of these behind.
   every spec's import of `test` from the fixture.
 - What a test causes on purpose it allows itself, with a reason:
   `browserNoise.allow('response', /\/pads\/open-by-id/, 'Etherpad is stopped on purpose')`.
-- A context the test opens itself (`browser.newContext()`) is watched
-  once the test hands it over: `browserNoise.watch(context)`, on the next
-  line. The unit test holds every spec to it.
+- A context the test opens itself is watched once the test hands it
+  over: `browserNoise.watch(context)`, on the next line. The unit test
+  holds every `browser.newContext()` to it. A page from
+  `browser.newPage()` comes with a context of its own, which
+  `browserNoise.watch(page.context())` would take, but the unit test
+  does not see that; a spec opens the context itself.
+- A context names how it is signed in. Left without a `storageState`, it
+  is signed in as the test user, whom the project's state fills in, and a
+  public page answers it as it does the share's owner. A visitor signed
+  in nowhere opens
+  `browser.newContext({ storageState: { cookies: [], origins: [] } })`,
+  the second account `browser.newContext({ storageState: SECONDARY_STATE_FILE })`;
+  the same holds for `request.newContext()` and `browser.newPage()`. The
+  unit test catches a call that names no `storageState`, in its options
+  or in a constant they are or spread; it reads the text, so it is a
+  safety net, not a proof.
 - A test that failed already reports nothing more; the guard would only
   bury the first error.
 
@@ -185,7 +198,9 @@ Each `specs/*.spec.ts` covers one flow:
   it (NC boundary; Etherpad's own session-cookie window is out of scope).
 - **pad-ownership-boundary** — cross-user `open-by-id` is rejected.
 - **public-share-view** — public share opens without login, plus auth
-  boundaries (tokenless access, invalid / non-pad tokens). A read-only
+  boundaries (tokenless access, invalid / non-pad tokens), all signed out.
+  A viewer link sends a signed-out visitor to the login; the old address
+  of a share with a password leads to its password page. A read-only
   link to a protected pad shows its content and hands out neither the pad
   nor a session; a copy in a public folder share answers without a `code`.
 - **protected-session-cookie-httponly** — a protected open sets the
