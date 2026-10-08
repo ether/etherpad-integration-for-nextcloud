@@ -50,6 +50,18 @@ class TrustedEmbedOriginsNormalizerTest extends TestCase {
 		);
 	}
 
+	/**
+	 * The browser sends an origin without its default port, and the embed
+	 * page compares the host's messages with the stored entries as they
+	 * are: one kept with `:443` would never match. Read back too, so an
+	 * entry saved that way works without saving again.
+	 */
+	public function testTheDefaultPortIsLeftOut(): void {
+		$normalizer = $this->buildNormalizer();
+		$this->assertSame('https://portal.example.test', $normalizer->normalize('https://portal.example.test:443'));
+		$this->assertSame(['https://[::1]'], $normalizer->parse('https://[::1]:443'));
+	}
+
 	public function testNormalizePreservesIpv6Brackets(): void {
 		$this->assertSame(
 			'https://[::1]:8443',

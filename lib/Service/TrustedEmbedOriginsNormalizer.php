@@ -72,7 +72,11 @@ class TrustedEmbedOriginsNormalizer {
 			if ($port < 1 || $port > 65535) {
 				return $this->invalid($throwOnInvalid, 'Trusted embed origins must use a valid TCP port: {origin}', $entry);
 			}
-			$origin .= ':' . $port;
+			// A browser leaves the default port out of an origin, and the
+			// embed page compares the host's messages with these as they are.
+			if ($port !== 443) {
+				$origin .= ':' . $port;
+			}
 		}
 		return $origin;
 	}
