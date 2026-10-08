@@ -19,7 +19,6 @@ use OCA\EtherpadNextcloud\Service\PadResponseService;
 use OCA\EtherpadNextcloud\Service\PublicPadContextService;
 use OCA\EtherpadNextcloud\Service\PublicPadOpenService;
 use OCA\EtherpadNextcloud\Service\PublicShareResolver;
-use OCA\EtherpadNextcloud\Service\PublicShareUrlBuilder;
 use OCA\EtherpadNextcloud\Util\PathNormalizer;
 use OCP\AppFramework\Http;
 use OCP\Constants;
@@ -275,7 +274,6 @@ class PublicViewerControllerTest extends TestCase {
 		$urlGenerator = $this->createMock(IURLGenerator::class);
 		$urlGenerator->method('getWebroot')->willReturn('');
 		$urlGenerator->method('linkToRoute')->willReturn('/public/content/share-token');
-		$shareUrlBuilder = new PublicShareUrlBuilder($urlGenerator, new PathNormalizer());
 		$shareResolver = new PublicShareResolver($shareManager, new PathNormalizer());
 		$publicPadOpenService = new PublicPadOpenService($etherpadClient, $this->createMock(ManagedPadLifecycle::class), $fetcher, $padSessionService);
 
@@ -293,9 +291,8 @@ class PublicViewerControllerTest extends TestCase {
 				}),
 				$urlGenerator,
 			),
-			$shareUrlBuilder,
 			$this->buildPadResponseService($urlGenerator),
-			$this->publicErrorMapper($shareUrlBuilder, $this->untranslated()),
+			$this->publicErrorMapper($this->untranslated()),
 			$this->createMock(ISession::class),
 		);
 
@@ -404,7 +401,6 @@ class PublicViewerControllerTest extends TestCase {
 		$urlGenerator = $this->createMock(IURLGenerator::class);
 		$urlGenerator->method('getWebroot')->willReturn('');
 		$urlGenerator->method('linkToRoute')->willReturn('/public/content/share-token');
-		$shareUrlBuilder = new PublicShareUrlBuilder($urlGenerator, new PathNormalizer());
 		$padFileService ??= $this->createMock(PadFileService::class);
 		$etherpadClient ??= $this->createMock(EtherpadClient::class);
 		$externalPadExportFetcher ??= $this->createMock(ExternalPadExportFetcher::class);
@@ -427,9 +423,8 @@ class PublicViewerControllerTest extends TestCase {
 				}),
 				$urlGenerator,
 			),
-			$shareUrlBuilder,
 			$this->buildPadResponseService($urlGenerator),
-			$this->publicErrorMapper($shareUrlBuilder, $this->untranslated(), $logger),
+			$this->publicErrorMapper($this->untranslated(), $logger),
 			$session ?? $this->createMock(ISession::class),
 		);
 	}

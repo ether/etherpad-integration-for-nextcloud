@@ -16,12 +16,9 @@ use OCA\EtherpadNextcloud\Service\LivePadHtml;
 use OCA\EtherpadNextcloud\Service\PublicPadContext;
 use OCA\EtherpadNextcloud\Service\PublicPadContextService;
 use OCA\EtherpadNextcloud\Service\PublicShareResolver;
-use OCA\EtherpadNextcloud\Service\PublicShareUrlBuilder;
 use OCA\EtherpadNextcloud\Service\PadResponseService;
 use OCP\AppFramework\Http\DataResponse;
 use OCP\AppFramework\PublicShareController;
-use OCP\AppFramework\Http\RedirectResponse;
-use OCP\AppFramework\Http\TemplateResponse;
 use OCP\IRequest;
 use OCP\ISession;
 use OCP\Share\IShare;
@@ -37,7 +34,6 @@ class PublicViewerController extends PublicShareController {
 		IRequest $request,
 		private PublicShareResolver $shareResolver,
 		private PublicPadContextService $padContextService,
-		private PublicShareUrlBuilder $shareUrlBuilder,
 		private PadResponseService $padResponses,
 		private PublicViewerControllerErrorMapper $errors,
 		ISession $session,
@@ -61,17 +57,6 @@ class PublicViewerController extends PublicShareController {
 
 	protected function getPasswordHash(): ?string {
 		return $this->share?->getPassword();
-	}
-
-	#[\OCP\AppFramework\Http\Attribute\PublicPage]
-	#[\OCP\AppFramework\Http\Attribute\NoCSRFRequired]
-	public function showPad(string $token): RedirectResponse|TemplateResponse {
-		return $this->errors->runForTemplate(
-			fn(): string => $this->shareUrlBuilder->buildShareRedirectUrl($token, $this->request->getParam('file', '')),
-			static fn(string $target): RedirectResponse => new RedirectResponse($target),
-			$token,
-			ApiErrorLog::fileNamedBy($this->request, byPath: false),
-		);
 	}
 
 	/**

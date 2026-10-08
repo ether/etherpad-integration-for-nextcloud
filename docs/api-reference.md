@@ -76,12 +76,10 @@ In none of those cases does the request fall through to the other locator. A ref
 When both are sent for a folder share, the path is compared in full: `A.pad` at the top of the share and `Sub/A.pad` are different files. A single-file share has no path inside it, so there the file's name is what a path can name - and without an id it is ignored entirely, as it always has been.
 
 - `GET /public/{token}`
-  - Controller: `PublicViewerController::showPad`
+  - Controller: `PublicShareRedirectController::showPad`
   - Query (folder share): `file=/subfolder/file.pad` - name only, and deliberately: this route builds no viewer address of its own, it hands over to Nextcloud's own share page.
-  - Purpose: compatibility route for public shares; redirects to `/s/{token}` with selected file.
-  - UX behavior:
-    - Errors are rendered as `noviewer` template (not raw JSON).
-    - Error page includes back-link to share entry page (`/s/{token}`).
+  - Purpose: compatibility route for public shares; redirects to `/s/{token}` with selected file. It does not look at the share: Nextcloud's share page checks the token, and asks for the password of a share that has one.
+  - A file it cannot name - no `.pad`, or a path out of the share - leads to the share's root, so a dead token ends on the share page's "Share not found" rather than on an error about the file.
 
 - `GET /api/v1/public/open/{token}`
   - Controller: `PublicViewerController::openPadData`

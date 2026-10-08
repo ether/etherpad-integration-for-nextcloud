@@ -7,7 +7,7 @@ return ['routes' => [
 	['name' => 'viewer#showPadById', 'url' => '/by-id/{fileId}', 'verb' => 'GET'],
 	['name' => 'embed#showById', 'url' => '/embed/by-id/{fileId}', 'verb' => 'GET'],
 	['name' => 'embed#createByParent', 'url' => '/embed/create-by-parent/{parentFolderId}', 'verb' => 'GET'],
-	['name' => 'publicViewer#showPad', 'url' => '/public/{token}', 'verb' => 'GET'],
+	['name' => 'publicShareRedirect#showPad', 'url' => '/public/{token}', 'verb' => 'GET'],
 	['name' => 'publicViewer#openPadData', 'url' => '/api/v1/public/open/{token}', 'verb' => 'GET'],
 	['name' => 'publicViewer#padContent', 'url' => '/api/v1/public/content/{token}', 'verb' => 'GET'],
 	['name' => 'padCreate#create', 'url' => '/api/v1/pads', 'verb' => 'POST'],

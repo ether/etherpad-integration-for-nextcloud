@@ -12,7 +12,6 @@ use OCA\EtherpadNextcloud\Controller\PadControllerErrorMapper;
 use OCA\EtherpadNextcloud\Controller\PublicViewerControllerErrorMapper;
 use OCA\EtherpadNextcloud\Service\ApiErrorLog;
 use OCA\EtherpadNextcloud\Service\PadResponseService;
-use OCA\EtherpadNextcloud\Service\PublicShareUrlBuilder;
 use OCP\ICacheFactory;
 use OCP\IL10N;
 use Psr\Log\LoggerInterface;
@@ -28,8 +27,8 @@ trait BuildsErrorMappers {
 		return new PadControllerErrorMapper($responses, $l10n, $this->apiErrorLog($logger));
 	}
 
-	private function publicErrorMapper(PublicShareUrlBuilder $urls, IL10N $l10n, ?LoggerInterface $logger = null): PublicViewerControllerErrorMapper {
-		return new PublicViewerControllerErrorMapper($urls, $l10n, $this->apiErrorLog($logger));
+	private function publicErrorMapper(IL10N $l10n, ?LoggerInterface $logger = null): PublicViewerControllerErrorMapper {
+		return new PublicViewerControllerErrorMapper($l10n, $this->apiErrorLog($logger));
 	}
 
 	private function apiErrorLog(?LoggerInterface $logger = null): ApiErrorLog {

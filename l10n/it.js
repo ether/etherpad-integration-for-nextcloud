@@ -18,8 +18,6 @@ OC.L10N.register(
     "Allow linking external public pads": "Consenti il collegamento di pad pubblici esterni",
     "Anyone with the pad link can open it, without a Nextcloud account. Created as ordinary Etherpad pads.": "Chiunque abbia il collegamento al pad può aprirlo, senza un account Nextcloud. Vengono creati come normali pad Etherpad.",
     "Authentication required.": "Autenticazione richiesta.",
-    "Back": "Indietro",
-    "Back to shared files": "Torna ai file condivisi",
     "Cannot open selected .pad file.": "Impossibile aprire il file .pad selezionato.",
     "Cannot resolve file path for file ID.": "Impossibile risolvere il percorso del file per l'ID file.",
     "Cannot resolve selected parent folder.": "Impossibile risolvere la cartella di destinazione selezionata.",

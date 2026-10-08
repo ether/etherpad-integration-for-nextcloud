@@ -37,7 +37,9 @@ Etherpad is the editing source of truth; the `.pad` file acts as binding storage
   - Compatibility redirect adapter:
     - resolves `.pad` path/id to stable Nextcloud files viewer URL.
 - `lib/Controller/PublicViewerController.php`
-  - Public-share API + compatibility redirect adapter (`/public/{token}` -> `/s/{token}` with file selection).
+  - Public-share API (`open`, `content`), behind Nextcloud's check of the share and its password.
+- `lib/Controller/PublicShareRedirectController.php`
+  - Compatibility redirect adapter (`/public/{token}` -> `/s/{token}` with file selection). Looks at no share: the share page checks the token and asks for a password.
 - `lib/Controller/EmbedController.php`
   - Minimal embed entrypoints for trusted same-site / trusted-origin integrations.
   - Renders blank embed/open and embed/create pages with route-specific CSP `frame-ancestors`.
@@ -187,7 +189,7 @@ Primary flow (native viewer):
    - read-only share: Etherpad read-only URL
    - editable share: regular URL/session
 5. For protected share-open flows, session bootstrap uses one explicit `Set-Cookie` header.
-6. Compatibility route `/apps/etherpad_nextcloud/public/{token}` redirects to native share route `/s/{token}`.
+6. Compatibility route `/apps/etherpad_nextcloud/public/{token}` redirects to native share route `/s/{token}`, which checks the token and asks for a share's password.
 
 ## Cookie Header Model
 

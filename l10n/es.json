@@ -17,8 +17,6 @@
         "Allow linking external public pads": "Permitir enlazar pads públicos externos",
         "Anyone with the pad link can open it, without a Nextcloud account. Created as ordinary Etherpad pads.": "Cualquier persona con el enlace del pad puede abrirlo, sin una cuenta de Nextcloud. Se crean como pads normales de Etherpad.",
         "Authentication required.": "Autenticación requerida.",
-        "Back": "Atrás",
-        "Back to shared files": "Volver a los archivos compartidos",
         "Cannot open selected .pad file.": "No se puede abrir el archivo .pad seleccionado.",
         "Cannot resolve file path for file ID.": "No se puede resolver la ruta del archivo para el ID del archivo.",
         "Cannot resolve selected parent folder.": "No se puede resolver la carpeta principal seleccionada.",
