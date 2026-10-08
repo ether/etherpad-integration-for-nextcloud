@@ -45,7 +45,7 @@ Etherpad is the editing source of truth; the `.pad` file acts as binding storage
   - Renders blank embed/open and embed/create pages with route-specific CSP `frame-ancestors`.
 - `lib/Controller/PadCreateController.php`, `lib/Controller/PadSessionController.php`, `lib/Controller/PadLifecycleController.php` (all extend `AbstractPadController` for the shared deps + helpers)
   - The `.pad` API surface split along three concerns: create-side endpoints, open/init/meta endpoints, and lifecycle/sync endpoints. Public URL paths (`/api/v1/pads/…`) are stable; only the internal controller class differs per route.
-  - For protected pad opens, `PadSessionController` attaches the explicit Etherpad `Set-Cookie` session header via the response.
+  - For protected pad opens, `PadSessionController` answers through `PadResponseService::openResponse()`, which sends the Etherpad session's `Set-Cookie` beside Nextcloud's own cookies (see "Cookie Header Model").
 
 ## Frontend Build
 
@@ -188,7 +188,7 @@ Primary flow (native viewer):
 4. Same open-target rules apply:
    - read-only share: Etherpad read-only URL
    - editable share: regular URL/session
-5. For protected share-open flows, session bootstrap uses one explicit `Set-Cookie` header.
+5. For protected share-open flows, session bootstrap uses one explicit `Set-Cookie` header, sent as for a signed-in open (see "Cookie Header Model").
 6. Compatibility route `/apps/etherpad_nextcloud/public/{token}` redirects to native share route `/s/{token}`, which checks the token and asks for a share's password.
 
 ## Cookie Header Model
@@ -205,7 +205,7 @@ Primary flow (native viewer):
 - Current app-level contract:
   - one custom Etherpad `Set-Cookie` line per protected-open response
   - no additional app-level custom cookies on these same responses
-- If we later need multiple custom cookies on the same response, header handling must be extended as a dedicated change (with targeted controller tests), because multi-`Set-Cookie` behavior is a framework-sensitive edge case.
+- The line goes out through `CookieHeaders` (`lib/Http/CookieHeaders.php`), beside the cookies Nextcloud sends in the same answer, never as one of the response's headers. Nextcloud sends those with PHP's `header()`, which replaces every `Set-Cookie` sent before it: the session cookie and its passphrase that Nextcloud gives a visitor who comes without a session, and the renewal of a remembered login. `PadResponseService::openResponse()` and the public open send it once the answer stands, so an open that fails leaves no session in the browser. A further cookie of the app's own would go the same way; a unit test holds every other class under lib to sending no `Set-Cookie`.
 
 ### 4) Sync
 

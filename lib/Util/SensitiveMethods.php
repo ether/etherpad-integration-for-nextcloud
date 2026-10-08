@@ -117,8 +117,8 @@ final class SensitiveMethods {
 		\OCA\EtherpadNextcloud\Util\DiagnosticText::class => ['withoutSecret'],
 		\OCA\EtherpadNextcloud\Util\SafeError::class => ['context', 'readable', 'originOf'],
 		// Etherpad sessions, each a live credential: the ids a browser
-		// carries and the ones Etherpad lists, the cookie made of them, and
-		// the objects that take the finished Set-Cookie line.
+		// carries and the ones Etherpad lists, the cookie made of them, the
+		// objects that take the finished Set-Cookie line, and what sends it.
 		//
 		// The first two by hand, for what no name gives away: a public
 		// share opens a protected pad as an author of its own, under a uid
@@ -136,6 +136,7 @@ final class SensitiveMethods {
 		\OCA\EtherpadNextcloud\Service\PadOpenTarget::class => ['__construct'],
 		\OCA\EtherpadNextcloud\Service\PublicPadOpenTarget::class => ['__construct'],
 		\OCA\EtherpadNextcloud\Service\PublicPadContext::class => ['__construct'],
+		\OCA\EtherpadNextcloud\Http\CookieHeaders::class => ['add', 'send'],
 		// Public share tokens, which are the credential for a public pad,
 		// from the controller that takes one off the address on.
 		\OCA\EtherpadNextcloud\Controller\PublicViewerController::class => ['padContent', 'openPadData'],

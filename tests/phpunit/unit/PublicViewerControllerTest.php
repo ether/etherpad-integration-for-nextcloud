@@ -6,6 +6,7 @@ namespace OCA\EtherpadNextcloud\Tests\Unit;
 
 use OCA\EtherpadNextcloud\Controller\PublicViewerController;
 use OCA\EtherpadNextcloud\Controller\PublicViewerControllerErrorMapper;
+use OCA\EtherpadNextcloud\Http\CookieHeaders;
 use OCA\EtherpadNextcloud\Service\ManagedPadLifecycle;
 use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\EtherpadNextcloud\Service\EtherpadClient;
@@ -19,6 +20,7 @@ use OCA\EtherpadNextcloud\Service\PadResponseService;
 use OCA\EtherpadNextcloud\Service\PublicPadContextService;
 use OCA\EtherpadNextcloud\Service\PublicPadOpenService;
 use OCA\EtherpadNextcloud\Service\PublicShareResolver;
+use OCA\EtherpadNextcloud\Tests\Support\RecordingCookieHeaders;
 use OCA\EtherpadNextcloud\Util\PathNormalizer;
 use OCP\AppFramework\Http;
 use OCP\Constants;
@@ -87,18 +89,22 @@ class PublicViewerControllerTest extends TestCase {
 		$padSessionService->expects($this->never())->method('createProtectedOpenContext');
 		$padSessionService->expects($this->never())->method('buildSetCookieHeader');
 
+		$cookies = new RecordingCookieHeaders();
+
 		$response = $this->buildController(
 			$shareManager,
 			padFileService: $padFileService,
 			bindingService: $bindingService,
 			etherpadClient: $etherpadClient,
 			padSessionService: $padSessionService,
+			cookies: $cookies,
 		)->openPadData('share-token');
 
 		$this->assertSame(Http::STATUS_OK, $response->getStatus());
 		$this->assertSame('', $response->getData()['url']);
 		$this->assertTrue($response->getData()['is_readonly_view']);
 		$this->assertSame('/public/content/share-token', $response->getData()['content_url']);
+		$this->assertSame([], $cookies->sent);
 		$this->assertArrayNotHasKey('Set-Cookie', $response->getHeaders());
 	}
 
@@ -144,16 +150,22 @@ class PublicViewerControllerTest extends TestCase {
 			->with($cookie)
 			->willReturn('sessionID=s.abc; Path=/; Secure');
 
+		$cookies = new RecordingCookieHeaders();
+
 		$response = $this->buildController(
 			$shareManager,
 			padFileService: $padFileService,
 			padSessionService: $padSessionService,
+			cookies: $cookies,
 		)->openPadData('share-token');
 
 		$this->assertSame(Http::STATUS_OK, $response->getStatus());
 		$this->assertSame('https://pad.example.test/p/g.abcdefghijklmnop$Shared', $response->getData()['url']);
 		$this->assertFalse($response->getData()['is_readonly_view']);
-		$this->assertSame('sessionID=s.abc; Path=/; Secure', $response->getHeaders()['Set-Cookie'] ?? null);
+		// Beside the session cookie Nextcloud sends the visitor in the same
+		// answer, not as one of the response's headers, which would replace it.
+		$this->assertSame([['Set-Cookie: sessionID=s.abc; Path=/; Secure', false]], $cookies->sent);
+		$this->assertArrayNotHasKey('Set-Cookie', $response->getHeaders());
 	}
 
 	public function testPublicExternalPadShareReturnsNormalizedUrlAndAContentUrl(): void {
@@ -208,12 +220,15 @@ class PublicViewerControllerTest extends TestCase {
 		$padSessionService->expects($this->never())->method('createProtectedOpenContext');
 		$padSessionService->expects($this->never())->method('buildSetCookieHeader');
 
+		$cookies = new RecordingCookieHeaders();
+
 		$response = $this->buildController(
 			$shareManager,
 			padFileService: $padFileService,
 			bindingService: $bindingService,
 			externalPadExportFetcher: $fetcher,
 			padSessionService: $padSessionService,
+			cookies: $cookies,
 		)->openPadData('share-token');
 
 		$this->assertSame(Http::STATUS_OK, $response->getStatus());
@@ -222,6 +237,7 @@ class PublicViewerControllerTest extends TestCase {
 		$this->assertTrue($response->getData()['is_external']);
 		$this->assertFalse($response->getData()['is_readonly_view']);
 		$this->assertSame('/public/content/share-token', $response->getData()['content_url'], 'the preview loads the pad itself');
+		$this->assertSame([], $cookies->sent);
 		$this->assertArrayNotHasKey('Set-Cookie', $response->getHeaders());
 	}
 
@@ -294,11 +310,13 @@ class PublicViewerControllerTest extends TestCase {
 			$this->buildPadResponseService($urlGenerator),
 			$this->publicErrorMapper($this->untranslated()),
 			$this->createMock(ISession::class),
+			$cookies = new RecordingCookieHeaders(),
 		);
 
 		$response = $controller->openPadData('share-token');
 
 		$this->assertSame(Http::STATUS_BAD_REQUEST, $response->getStatus());
+		$this->assertSame([], $cookies->sent);
 		// The link's problem, not Etherpad down: trying again would not help.
 		$this->assertSame('The pad this file links to on another server could not be read.', $response->getData()['message']);
 	}
@@ -416,6 +434,7 @@ class PublicViewerControllerTest extends TestCase {
 		?ExternalPadExportFetcher $externalPadExportFetcher = null,
 		?IRequest $request = null,
 		?LoggerInterface $logger = null,
+		?CookieHeaders $cookies = null,
 	): PublicViewerController {
 		$urlGenerator = $this->createMock(IURLGenerator::class);
 		$urlGenerator->method('getWebroot')->willReturn('');
@@ -445,6 +464,7 @@ class PublicViewerControllerTest extends TestCase {
 			$this->buildPadResponseService($urlGenerator),
 			$this->publicErrorMapper($this->untranslated(), $logger),
 			$session ?? $this->createMock(ISession::class),
+			$cookies ?? new RecordingCookieHeaders(),
 		);
 	}
 

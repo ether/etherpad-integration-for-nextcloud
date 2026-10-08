@@ -11,6 +11,7 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\Controller;
 
 use OCA\EtherpadNextcloud\Exception\InvalidShareTokenException;
+use OCA\EtherpadNextcloud\Http\CookieHeaders;
 use OCA\EtherpadNextcloud\Service\ApiErrorLog;
 use OCA\EtherpadNextcloud\Service\LivePadHtml;
 use OCA\EtherpadNextcloud\Service\PublicPadContext;
@@ -37,6 +38,7 @@ class PublicViewerController extends PublicShareController {
 		private PadResponseService $padResponses,
 		private PublicViewerControllerErrorMapper $errors,
 		ISession $session,
+		private CookieHeaders $cookies,
 	) {
 		parent::__construct($appName, $request, $session);
 	}
@@ -107,9 +109,9 @@ class PublicViewerController extends PublicShareController {
 					'original_pad_url' => $context->originalPadUrl,
 					'content_url' => $context->contentUrl(),
 				]);
-				if ($context->cookieHeader() !== '') {
-					$response->addHeader('Set-Cookie', $context->cookieHeader());
-				}
+				// Once the answer stands, and beside Nextcloud's own cookies,
+				// not over them: the visitor's session cookie is one of them.
+				$this->cookies->add($context->cookieHeader());
 				return $response;
 			},
 			ApiErrorLog::fileNamedBy($this->request, byPath: false),

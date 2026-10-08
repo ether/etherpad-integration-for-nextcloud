@@ -6,6 +6,7 @@ namespace OCA\EtherpadNextcloud\Tests\Unit;
 
 use OCA\EtherpadNextcloud\Controller\PadControllerErrorMapper;
 use OCA\EtherpadNextcloud\Controller\PadSessionController;
+use OCA\EtherpadNextcloud\Http\CookieHeaders;
 use OCA\EtherpadNextcloud\Service\ManagedPadLifecycle;
 use OCA\EtherpadNextcloud\Service\AppConfigService;
 use OCA\EtherpadNextcloud\Service\BindingService;
@@ -17,10 +18,12 @@ use OCA\EtherpadNextcloud\Service\PadContentService;
 use OCA\EtherpadNextcloud\Service\PadInitializationService;
 use OCA\EtherpadNextcloud\Service\PadMetadataService;
 use OCA\EtherpadNextcloud\Service\PadOpenService;
+use OCA\EtherpadNextcloud\Service\PadOpenTarget;
 use OCA\EtherpadNextcloud\Service\PadResponseService;
 use OCA\EtherpadNextcloud\Service\PadSessionService;
 use OCA\EtherpadNextcloud\Service\ParsedPadFile;
 use OCA\EtherpadNextcloud\Service\UserNodeResolver;
+use OCA\EtherpadNextcloud\Tests\Support\RecordingCookieHeaders;
 use OCA\EtherpadNextcloud\Util\PathNormalizer;
 use OCP\AppFramework\Http;
 use OCP\Files\File;
@@ -173,12 +176,87 @@ class PadSessionControllerTest extends TestCase {
 			$this->createMock(PadInitializationService::class),
 			$this->createMock(PadMetadataService::class),
 			$this->createMock(PadContentService::class),
+			$cookies = new RecordingCookieHeaders(),
 		);
 
 		$response = $controller->openById(138);
 
 		$this->assertSame(Http::STATUS_OK, $response->getStatus());
+		$this->assertSame([], $cookies->sent, 'no session, no cookie');
 		$this->assertSame('https://pad.example.test/p/g.ABCDEFGHIJKLMNOP$pad-1', $response->getData()['url']);
+	}
+
+	/** @return iterable<string, array{\Closure(PadSessionController): mixed}> */
+	public static function opens(): iterable {
+		yield 'by path' => [static fn (PadSessionController $controller): mixed => $controller->open('/Test.pad')];
+		yield 'by id' => [static fn (PadSessionController $controller): mixed => $controller->openById(138)];
+	}
+
+	/**
+	 * A protected pad's session cookie goes out beside Nextcloud's own
+	 * cookies: as one of the response's headers it would replace the
+	 * session cookie and the remembered login Nextcloud renews in the
+	 * same answer.
+	 *
+	 * @param \Closure(PadSessionController): mixed $open
+	 */
+	#[\PHPUnit\Framework\Attributes\DataProvider('opens')]
+	public function testAProtectedPadsSessionCookieIsSentBesideNextcloudsOwn(\Closure $open): void {
+		$user = $this->createConfiguredMock(IUser::class, [
+			'getUID' => 'alice',
+			'getDisplayName' => 'Alice',
+		]);
+		$target = $this->protectedTarget();
+		$padOpenService = $this->createMock(PadOpenService::class);
+		$padOpenService->method('openByPath')->with('alice', 'Alice', '/Test.pad')->willReturn($target);
+		$padOpenService->method('openById')->with('alice', 'Alice', 138)->willReturn($target);
+		$cookies = new RecordingCookieHeaders();
+
+		$response = $open($this->buildController(
+			$this->createMock(IRequest::class),
+			$this->createConfiguredMock(IUserSession::class, ['getUser' => $user]),
+			padOpenService: $padOpenService,
+			cookies: $cookies,
+		));
+
+		$this->assertInstanceOf(\OCP\AppFramework\Http\DataResponse::class, $response);
+		$this->assertSame(Http::STATUS_OK, $response->getStatus());
+		$this->assertSame('https://pad.example.test/p/g.ABCDEFGHIJKLMNOP$pad-1', $response->getData()['url']);
+		$this->assertSame([['Set-Cookie: sessionID=s.abc; Path=/; Secure', false]], $cookies->sent);
+		$this->assertArrayNotHasKey('Set-Cookie', $response->getHeaders());
+	}
+
+	/**
+	 * An open whose answer could not be built answers with an error, and
+	 * the session it made goes out with none: the browser would keep a
+	 * cookie for an open that failed.
+	 *
+	 * @param \Closure(PadSessionController): mixed $open
+	 */
+	#[\PHPUnit\Framework\Attributes\DataProvider('opens')]
+	public function testAnOpenThatFailsSendsNoSessionCookie(\Closure $open): void {
+		$user = $this->createConfiguredMock(IUser::class, [
+			'getUID' => 'alice',
+			'getDisplayName' => 'Alice',
+		]);
+		$padOpenService = $this->createMock(PadOpenService::class);
+		$padOpenService->method('openByPath')->willReturn($this->protectedTarget());
+		$padOpenService->method('openById')->willReturn($this->protectedTarget());
+		$appConfigService = $this->createMock(AppConfigService::class);
+		$appConfigService->method('getSyncIntervalSeconds')->willThrowException(new \RuntimeException('database gone'));
+		$cookies = new RecordingCookieHeaders();
+
+		$response = $open($this->buildController(
+			$this->createMock(IRequest::class),
+			$this->createConfiguredMock(IUserSession::class, ['getUser' => $user]),
+			padOpenService: $padOpenService,
+			cookies: $cookies,
+			appConfigService: $appConfigService,
+		));
+
+		$this->assertInstanceOf(\OCP\AppFramework\Http\DataResponse::class, $response);
+		$this->assertSame(Http::STATUS_INTERNAL_SERVER_ERROR, $response->getStatus());
+		$this->assertSame([], $cookies->sent);
 	}
 
 	public function testOpenByIdReturnsRetryableErrorWhenReadRemainsLocked(): void {
@@ -298,11 +376,13 @@ class PadSessionControllerTest extends TestCase {
 			$this->createMock(PadInitializationService::class),
 			$this->createMock(PadMetadataService::class),
 			$this->createMock(PadContentService::class),
+			$cookies = new RecordingCookieHeaders(),
 		);
 
 		$response = $controller->openById(138);
 
 		$this->assertSame(Http::STATUS_OK, $response->getStatus());
+		$this->assertSame([], $cookies->sent, 'no session, no cookie');
 		$this->assertSame('https://pad.portal.fzs.de/p/Test', $response->getData()['url']);
 		$this->assertTrue($response->getData()['is_external']);
 		$this->assertSame('https://pad.portal.fzs.de/p/Test', $response->getData()['pad_url']);
@@ -370,6 +450,9 @@ class PadSessionControllerTest extends TestCase {
 		?BindingService $bindingService = null,
 		?EtherpadClient $etherpadClient = null,
 		?ExternalPadExportFetcher $externalPadExportFetcher = null,
+		?PadOpenService $padOpenService = null,
+		?CookieHeaders $cookies = null,
+		?AppConfigService $appConfigService = null,
 	): PadSessionController {
 		$resolvedRootFolder = $rootFolder ?? $this->createMock(IRootFolder::class);
 		$resolvedRootFolder->method('getUserFolder')->willReturn($resolvedRootFolder);
@@ -382,7 +465,7 @@ class PadSessionControllerTest extends TestCase {
 		$userNodeResolver = new UserNodeResolver($resolvedRootFolder, $this->createMock(LoggerInterface::class));
 		$lockRetryService = $this->buildNoSleepLockRetryService();
 		$padMetadataService = new PadMetadataService($resolvedPadFileService, $padPaths, $userNodeResolver, $lockRetryService, $resolvedEtherpadClient, $resolvedExternalPadExportFetcher, $resolvedBindingService, $logger);
-		$padOpenService = new PadOpenService(
+		$padOpenService ??= new PadOpenService(
 			$resolvedPadFileService,
 			$padPaths,
 			$userNodeResolver,
@@ -406,7 +489,7 @@ class PadSessionControllerTest extends TestCase {
 				return '/' . $route;
 			}
 		);
-		$appConfigService = $this->createMock(AppConfigService::class);
+		$appConfigService ??= $this->createMock(AppConfigService::class);
 		$l10n = $this->createMock(\OCP\IL10N::class);
 		$l10n->method('t')->willReturnCallback(static fn (string $text, array $params = []): string => $text);
 		$padResponseService = new PadResponseService($urlGenerator, $appConfigService, $l10n);
@@ -421,6 +504,24 @@ class PadSessionControllerTest extends TestCase {
 			$this->createMock(PadInitializationService::class),
 			$padMetadataService,
 			$this->createMock(PadContentService::class),
+			$cookies ?? new RecordingCookieHeaders(),
+		);
+	}
+
+	/** A protected pad opened with a session of its own. */
+	private function protectedTarget(): PadOpenTarget {
+		return new PadOpenTarget(
+			file: '/Test.pad',
+			fileId: 138,
+			padId: 'g.ABCDEFGHIJKLMNOP$pad-1',
+			accessMode: BindingService::ACCESS_PROTECTED,
+			padUrl: 'https://pad.example.test/p/g.ABCDEFGHIJKLMNOP$pad-1',
+			isExternal: false,
+			originalPadUrl: '',
+			url: 'https://pad.example.test/p/g.ABCDEFGHIJKLMNOP$pad-1',
+			cookieHeader: 'sessionID=s.abc; Path=/; Secure',
+			isReadOnlyView: false,
+			mayWrite: true,
 		);
 	}
 
