@@ -124,6 +124,18 @@ export const fetchJsonWithTimeout = async (url, init = {}, options = {}) => {
 export const isUnanswered = (error) => Boolean(error) && error.unanswered === true
 
 /**
+ * Whether Nextcloud refused the request as one too many (429): a route's
+ * throttle, which lets it through again once its minute is over, or the
+ * protection against guessing, which can hold an address back for up to
+ * half an hour. Either answers with no sentence and no `retryable`, and
+ * the same request works later.
+ *
+ * @param {unknown} error
+ * @return {boolean}
+ */
+export const isThrottled = (error) => Boolean(error) && error.status === 429
+
+/**
  * What to show for a failed request: the server's sentence, or, when
  * nothing came back, the caller's translated `unansweredText` rather than
  * the browser's own English ("Failed to fetch", "Load failed", ...).

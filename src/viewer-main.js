@@ -7,7 +7,7 @@
 
 import { APP_ID } from './lib/constants.js'
 import { apiFindOriginalPad, apiRecoverFromSnapshot, apiResolvePadByPath } from './lib/api-client.js'
-import { fetchJsonWithTimeout, isUnanswered, requestErrorMessage } from './lib/fetch-helpers.js'
+import { fetchJsonWithTimeout, isThrottled, isUnanswered, requestErrorMessage } from './lib/fetch-helpers.js'
 import { handFocusTo } from './lib/hand-focus.js'
 import { ocGenerateUrl, ocRequestToken, translate } from './lib/oc-compat.js'
 import { createPadSync } from './lib/pad-sync.js'
@@ -17,7 +17,10 @@ import { buildPadFrameSrcdoc } from './lib/pad-frame-srcdoc.js'
 import { isPadName, parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './lib/urls.js'
 
 // When nothing came back: our own sentence, not the browser's English.
-const messageOf = (error, fallback) => requestErrorMessage(error, translate('Nextcloud did not answer. Check your connection and try again.'), fallback)
+// A throttle answers with no sentence of its own.
+const messageOf = (error, fallback) => isThrottled(error)
+	? translate('Too many requests. Try again later.')
+	: requestErrorMessage(error, translate('Nextcloud did not answer. Check your connection and try again.'), fallback)
 
 const component = {
 	name: 'EtherpadNextcloudViewer',

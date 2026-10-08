@@ -252,6 +252,7 @@ OC.L10N.register(
     "The pad was not found on the other server, or it cannot be exported there.": "No se encontró el pad en el otro servidor, o allí no se puede exportar.",
     "The server of the pad did not answer with the content of the pad.": "El servidor del pad no respondió con el contenido del pad.",
     "The server of the pad has no certificate this Nextcloud trusts.": "El servidor del pad no tiene un certificado en el que confíe este Nextcloud.",
-    "The server of the pad sent the request on elsewhere, usually to a sign-in page. Only pads that can be read without signing in can be linked.": "El servidor del pad redirigió la solicitud, normalmente a una página de inicio de sesión. Solo se pueden enlazar pads que se puedan leer sin iniciar sesión."
+    "The server of the pad sent the request on elsewhere, usually to a sign-in page. Only pads that can be read without signing in can be linked.": "El servidor del pad redirigió la solicitud, normalmente a una página de inicio de sesión. Solo se pueden enlazar pads que se puedan leer sin iniciar sesión.",
+    "Too many requests. Try again later.": "Demasiadas solicitudes. Vuelve a intentarlo más tarde."
 },
 "nplurals=2; plural=(n != 1);");

@@ -2,7 +2,7 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  * Copyright (c) 2026 Jacob Bühler
  */
-import { isUnanswered } from './fetch-helpers.js'
+import { isThrottled, isUnanswered } from './fetch-helpers.js'
 
 /**
  * A floor, and the largest delay `setInterval` can hold - a signed 32-bit
@@ -44,7 +44,9 @@ export const isPadMissingError = (error) => Boolean(error) && error.code === 'pa
 /**
  * Whether the same open may work later, so a client offers to try it
  * again: the server said so (`retryable`), the file changed while it was
- * being initialised (the server undid its part), or no answer came.
+ * being initialised (the server undid its part), no answer came, or
+ * Nextcloud refused it as one too many (429). Never by itself: a person
+ * presses the button, so a throttled client does not keep asking.
  *
  * Also after an initialise that got no answer: the second try opens
  * first, and finds the pad if the first initialise set it up. One still
@@ -56,7 +58,7 @@ export const isPadMissingError = (error) => Boolean(error) && error.code === 'pa
  * @return {boolean}
  */
 export const isRetryableOpenError = (error) => Boolean(error)
-	&& (error.retryable === true || error.code === 'pad_file_changed' || isUnanswered(error))
+	&& (error.retryable === true || error.code === 'pad_file_changed' || isUnanswered(error) || isThrottled(error))
 
 /**
  * A read-only view carries no pad URL by design; anything else without one

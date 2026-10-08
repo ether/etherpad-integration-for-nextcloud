@@ -251,7 +251,8 @@
         "The pad was not found on the other server, or it cannot be exported there.": "Le pad est introuvable sur l'autre serveur, ou il ne peut pas y être exporté.",
         "The server of the pad did not answer with the content of the pad.": "Le serveur du pad n'a pas répondu avec le contenu du pad.",
         "The server of the pad has no certificate this Nextcloud trusts.": "Le serveur du pad n'a pas de certificat auquel ce Nextcloud fait confiance.",
-        "The server of the pad sent the request on elsewhere, usually to a sign-in page. Only pads that can be read without signing in can be linked.": "Le serveur du pad a redirigé la demande, généralement vers une page de connexion. Seuls les pads lisibles sans se connecter peuvent être liés."
+        "The server of the pad sent the request on elsewhere, usually to a sign-in page. Only pads that can be read without signing in can be linked.": "Le serveur du pad a redirigé la demande, généralement vers une page de connexion. Seuls les pads lisibles sans se connecter peuvent être liés.",
+        "Too many requests. Try again later.": "Trop de demandes. Réessayez plus tard."
     },
     "pluralForm": "nplurals=2; plural=(n > 1);"
 }
