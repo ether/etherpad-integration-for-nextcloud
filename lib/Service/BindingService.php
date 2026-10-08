@@ -39,6 +39,9 @@ class BindingService {
 	public const USER_TRASH_PATH = 'files_trashbin/';
 	public const TEAM_TRASH_PATH = '__groupfolders/trash/';
 
+	/** The mount provider of a share's mounts, which isInFiles() does not count. */
+	private const SHARE_MOUNT_PROVIDER = 'OCA\\Files_Sharing\\MountProvider';
+
 	public function __construct(
 		private IDBConnection $db,
 		private ITimeFactory $timeFactory,
@@ -245,6 +248,83 @@ class BindingService {
 	}
 
 	/**
+	 * Where the file cache has each of $fileIds, as placeOf() reads one:
+	 * one query for many, for a sweep that asks again and again. A file it
+	 * does not have is left out.
+	 *
+	 * @param list<int> $fileIds
+	 * @return array<int,array{int,string}> by file id
+	 */
+	public function placesOf(array $fileIds): array {
+		$places = [];
+		foreach (array_chunk($fileIds, 500) as $chunk) {
+			$qb = $this->db->getQueryBuilder();
+			$qb->select('fileid', 'storage', 'path')
+				->from('filecache')
+				->where($qb->expr()->in('fileid', $qb->createNamedParameter($chunk, IQueryBuilder::PARAM_INT_ARRAY)));
+			$result = $qb->executeQuery();
+			while (($row = DbRows::one($result->fetch())) !== null) {
+				$places[DbRows::int($row, 'fileid')] = [DbRows::int($row, 'storage'), DbRows::string($row, 'path')];
+			}
+			$result->closeCursor();
+		}
+		ksort($places);
+		return $places;
+	}
+
+	/**
+	 * Whether a user sees what the file cache has at $path on $storage in
+	 * Files, through a mount Nextcloud keeps for them: under their `files/`.
+	 * A trash is outside it, a folder called `trash` on an external storage
+	 * inside. Three things it does not go by:
+	 *
+	 * - a share's mount: the owner's own shows the file where it is, and a
+	 *   share's row stays until its user's next login, rooted at the shared
+	 *   file wherever it went, the trash too;
+	 * - IUserMountCache, which remembers where a file was for the rest of
+	 *   the process: this is asked again while a file may be restored;
+	 * - the storage's id, which Nextcloud keeps as a hash once it is longer
+	 *   than 64 characters.
+	 *
+	 * Only the mounts rooted at the file or above it are read, a few: a
+	 * storage can hold one for every user of every team folder on it.
+	 */
+	public function isInFiles(int $storage, string $path): bool {
+		$above = [''];
+		$prefix = '';
+		foreach (explode('/', $path) as $segment) {
+			$prefix = $prefix === '' ? $segment : $prefix . '/' . $segment;
+			$above[] = $prefix;
+		}
+		$qb = $this->db->getQueryBuilder();
+		$qb->select('m.mount_point')
+			->from('mounts', 'm')
+			->innerJoin('m', 'filecache', 'f', $qb->expr()->eq('m.root_id', 'f.fileid'))
+			->where($qb->expr()->eq('m.storage_id', $qb->createNamedParameter($storage, IQueryBuilder::PARAM_INT)))
+			// Implied by the join, and what lets the file cache's index on
+			// storage and path hash find the roots.
+			->andWhere($qb->expr()->eq('f.storage', $qb->createNamedParameter($storage, IQueryBuilder::PARAM_INT)))
+			->andWhere($qb->expr()->in('f.path_hash', $qb->createNamedParameter(array_map('md5', $above), IQueryBuilder::PARAM_STR_ARRAY)))
+			->andWhere($qb->expr()->orX(
+				$qb->expr()->isNull('m.mount_provider_class'),
+				$qb->expr()->neq('m.mount_provider_class', $qb->createNamedParameter(self::SHARE_MOUNT_PROVIDER)),
+			))
+			// One home, or many alike: a team folder's mounts, one a user.
+			->setMaxResults(20);
+		$result = $qb->executeQuery();
+		$seen = false;
+		while (!$seen && ($row = DbRows::one($result->fetch())) !== null) {
+			// A mount inside a user's `files/` - a team folder, an external
+			// storage - shows there all it holds; a home, mounted at its
+			// user's root, only what is under `files/`.
+			$seen = preg_match('#^/[^/]+/files/#', DbRows::string($row, 'mount_point')) === 1
+				|| str_starts_with($path, 'files/');
+		}
+		$result->closeCursor();
+		return $seen;
+	}
+
+	/**
 	 * The files are in the file cache after all - moved to another storage,
 	 * which Nextcloud reports as a removal and an insert of the same file,
 	 * or a deletion that did not happen: their rows are active again.
@@ -381,10 +461,11 @@ class BindingService {
 		try {
 			$qb->executeStatement();
 		} catch (\Throwable $e) {
-			// The insert is what failed, so no row exists to look the pad up
-			// through - and by here it has already been created upstream. Not
-			// logged here: every caller reports it, the API's through
-			// ApiErrorLog, with this as its cause.
+			// A failed insert does not say no row was written: it may have
+			// been, or a concurrent request's may stand (isBoundTo()), and the
+			// pad has been created upstream. The callers decide what to roll
+			// back, and report it - the API's through ApiErrorLog, with this as
+			// its cause.
 			throw new BindingNotCreatedException('Could not create unique pad binding.', 0, $e);
 		}
 	}

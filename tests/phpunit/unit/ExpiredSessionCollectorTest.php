@@ -12,6 +12,8 @@ use OCA\EtherpadNextcloud\BackgroundJob\CollectExpiredSessionsJob;
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
 use OCA\EtherpadNextcloud\Service\EtherpadClient;
 use OCA\EtherpadNextcloud\Service\ExpiredSessionCollector;
+use OCA\EtherpadNextcloud\Service\ManagedPadLifecycle;
+use OCA\EtherpadNextcloud\Service\SessionDeletes;
 use OCP\BackgroundJob\IJobList;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
@@ -80,8 +82,8 @@ class ExpiredSessionCollectorTest extends TestCase {
 
 	/**
 	 * A public link has no cached author state, but it does have an author
-	 * id at the moment it opens — and every visitor of one link writes to
-	 * that same index, which makes it the fastest-growing one there is.
+	 * id at the moment it opens, and its expired sessions need collecting
+	 * as anyone's.
 	 */
 	public function testQueuesForAnAnonymousPublicShareAuthorToo(): void {
 		$jobList = $this->createMock(IJobList::class);
@@ -111,7 +113,10 @@ class ExpiredSessionCollectorTest extends TestCase {
 	 */
 	public function testDoesNotTouchANoteThatIsAlreadyThere(): void {
 		$jobList = $this->createMock(IJobList::class);
-		$jobList->method('has')->willReturn(true);
+		// The plain row only, no retry beside it.
+		$jobList->method('has')->willReturnCallback(
+			static fn (string $job, mixed $argument): bool => is_array($argument) && !isset($argument['attempt'])
+		);
 		$jobList->expects(self::never())->method('add');
 
 		$this->collector($this->createMock(EtherpadClient::class), $jobList)
@@ -406,12 +411,14 @@ class ExpiredSessionCollectorTest extends TestCase {
 	}
 
 	/**
-	 * The other reading of a refusal is that the server is down, and then
-	 * there is nothing to be gained by asking two hundred more times.
+	 * The other reading of a failure is that the server is down - it does
+	 * not answer when asked whether it answers at all - and then there is
+	 * nothing to be gained by asking two hundred more times.
 	 */
 	public function testGivesUpOnARunThatKeepsBeingRefused(): void {
 		$client = $this->createMock(EtherpadClient::class);
 		$client->method('listSessionsOfAuthor')->willReturn(self::expiredSessions(100));
+		$client->method('assertAnswering')->willThrowException(new EtherpadClientException('Connection timed out'));
 		$calls = 0;
 		$client->method('deleteSession')->willReturnCallback(
 			static function () use (&$calls): void {
@@ -422,7 +429,7 @@ class ExpiredSessionCollectorTest extends TestCase {
 
 		$result = $this->collector($client)->collect(self::AUTHOR);
 
-		self::assertSame(5, $calls, 'a run puts up with a handful of refusals, not a hundred');
+		self::assertSame(5, $calls, 'a run puts up with a handful of failures without an answer, not a hundred');
 		self::assertSame(['deleted' => 0, 'remaining' => 100, 'retry' => true, 'nextDueAt' => null], $result);
 	}
 
@@ -513,11 +520,13 @@ class ExpiredSessionCollectorTest extends TestCase {
 		?LoggerInterface $logger = null,
 		?float $budgetSeconds = null,
 	): ExpiredSessionCollector {
+		$logger ??= $this->createMock(LoggerInterface::class);
 		return new ExpiredSessionCollector(
 			$client,
 			$jobList ?? $this->createMock(IJobList::class),
-			$logger ?? $this->createMock(LoggerInterface::class),
+			$logger,
 			new FixedClock(),
+			new SessionDeletes($client, new ManagedPadLifecycle($client, $logger), $logger),
 			...($budgetSeconds === null ? [] : [$budgetSeconds]),
 		);
 	}

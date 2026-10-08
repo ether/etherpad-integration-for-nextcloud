@@ -24,7 +24,7 @@ final class RunBudget {
 	/** The whole run, as both sweeps promise it. */
 	public const DEFAULT_SECONDS = 20.0;
 
-	/** Below this, a call cannot finish inside the budget. */
+	/** The least a call is given: with less left, none is started. */
 	private const MIN_CALL_TIMEOUT_SECONDS = 2;
 
 	/** Items without an answer a run puts up with before reading them as an outage. */
@@ -48,10 +48,6 @@ final class RunBudget {
 	/** An item Etherpad gave no answer for. */
 	public function noteFailure(): void {
 		$this->failures++;
-	}
-
-	public function failures(): int {
-		return $this->failures;
 	}
 
 	/** Out of time, or out of patience: no further item is started. */

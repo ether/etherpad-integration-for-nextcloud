@@ -66,6 +66,7 @@ class PadSessionRevoker {
 		private PadSessionService $padSessionService,
 		private LoggerInterface $logger,
 		private ITimeFactory $timeFactory,
+		private GroupSessionRevoker $groupSessions,
 	) {
 	}
 
@@ -87,17 +88,16 @@ class PadSessionRevoker {
 	 * Every session of the groups of the protected pads $padIds, which are
 	 * leaving Files - to a trash, or past it (RevokeSessionsOnDeleteListener).
 	 * A session an open made gives its pad until it expires, and the file no
-	 * longer does. Bounded as a logout is, but for the ceiling: every open
-	 * makes a session, so a pad opened often holds more than a cookie can,
-	 * and the newest - those of whoever is at it now, and the last to
-	 * expire - go first. What does not fit expires on its own.
+	 * longer does.
 	 *
-	 * Only a group that holds nothing but pads leaving here loses its
-	 * sessions (ManagedPadLifecycle::groupHoldsOnly()). Its sessions are
-	 * asked first:
-	 * most groups hold none that live, and then what else the group holds is
-	 * no question. Each group's sessions go before the next group is asked,
-	 * so a slow Etherpad spends the budget on deletes, not on listing.
+	 * What fits is taken here, bounded as a logout is but for the ceiling:
+	 * every open makes a session, so a pad opened often holds more than a
+	 * cookie can, and those that expire last go first - most often whoever
+	 * is at it now. Each group's sessions go before the next group is
+	 * asked, so a slow Etherpad spends the budget on deletes, not on
+	 * listing. Then every group goes to a background job
+	 * (GroupSessionRevoker), which takes what did not fit and what an open
+	 * under way makes after the listing here.
 	 *
 	 * @param list<string> $padIds
 	 * @return int how many were removed
@@ -114,53 +114,84 @@ class PadSessionRevoker {
 				$leaving[$groupId][] = $padId;
 			}
 		}
-		$asked = [];
-		$unasked = 0;
+		$groups = ['asked' => [], 'unasked' => 0, 'unreadable' => 0, 'handedOver' => 0];
 		foreach ($leaving as $groupId => $groupPads) {
-			if ($deadline - $this->nowSeconds() < self::MIN_CALL_TIMEOUT_SECONDS) {
-				$unasked++;
-				continue;
+			if ($this->takeNow($groupId, $groupPads, $deadline, $tally, $groups)) {
+				$this->groupSessions->queue($groupId);
+				$groups['handedOver']++;
 			}
-			$asked[] = $groupId;
-			try {
-				$sessions = $this->live($this->etherpadClient->listSessionsOfGroup($groupId, $this->callTimeout($deadline - $this->nowSeconds()), $unreadable));
-				$tally['left'] += $unreadable ?? 0;
-				if ($sessions === []) {
-					continue;
-				}
-				if ($deadline - $this->nowSeconds() < self::MIN_CALL_TIMEOUT_SECONDS) {
-					$tally['left'] += count($sessions);
-					continue;
-				}
-				if (!ManagedPadLifecycle::groupHoldsOnly($this->etherpadClient->listPads($groupId, $this->callTimeout($deadline - $this->nowSeconds())), $groupPads)) {
-					$this->logger->debug('Left the Etherpad sessions of a group that holds other pads too.', [
-						'app' => 'etherpad_nextcloud',
-						'groupId' => $groupId,
-					]);
-					continue;
-				}
-			} catch (\Throwable $e) {
-				if (EtherpadErrorClassifier::isPadAlreadyDeleted($e)) {
-					// No group, and no session left in it.
-					continue;
-				}
-				$this->logger->warning('Could not list the Etherpad sessions to revoke; they will expire on their own.', [
-					'app' => 'etherpad_nextcloud',
-					'groupId' => $groupId,
-					...SafeError::context($e),
-				]);
-				continue;
-			}
-			uasort($sessions, static fn (array $a, array $b): int => $b['validUntil'] <=> $a['validUntil']);
-			$this->deleteLive($sessions, $deadline, [], $tally, self::MAX_PER_DELETE);
 		}
-		if ($unasked > 0) {
-			$this->logger->warning('No time left to revoke Etherpad sessions; they will expire on their own.', [
+		if ($groups['unasked'] > 0) {
+			$this->logger->warning('No time or deletes left to revoke the Etherpad sessions of every group; a background job takes them.', [
 				'app' => 'etherpad_nextcloud',
-				'groupsLeft' => $unasked,
+				'groupsLeft' => $groups['unasked'],
 			]);
 		}
-		return $this->report($tally, ['groupIds' => $asked]);
+		// Every live session counted as left is in a group handed over; what
+		// Etherpad lists and cannot describe is left to expire. The groups
+		// handed over are context, not something left: every group is.
+		return $this->report($tally, ['groupIds' => $groups['asked'], 'groupsToTheJob' => $groups['handedOver']], [
+			'leftToTheJob' => $tally['left'],
+			'leftToExpire' => $groups['unreadable'],
+		], $tally['left'] > 0);
+	}
+
+	/**
+	 * What fits of one group's live sessions, taken now and counted into
+	 * $tally and $groups. False for a group gone already: it holds none, and
+	 * goes to no job.
+	 *
+	 * Past the ceiling or out of time, the group is not asked. Asked, its
+	 * sessions go only when it holds nothing but the pads leaving
+	 * (ManagedPadLifecycle::groupHoldsOnly(), which takes no lookup); a
+	 * group holding other pads too, a legacy one, is the job's to judge.
+	 *
+	 * @param list<string> $groupPads
+	 * @param array{attempted: int, revoked: int, left: int} $tally
+	 * @param array{asked: list<string>, unasked: int, unreadable: int, handedOver: int} $groups
+	 */
+	private function takeNow(string $groupId, array $groupPads, float $deadline, array &$tally, array &$groups): bool {
+		if ($tally['attempted'] >= self::MAX_PER_DELETE || $deadline - $this->nowSeconds() < self::MIN_CALL_TIMEOUT_SECONDS) {
+			$groups['unasked']++;
+			return true;
+		}
+		$groups['asked'][] = $groupId;
+		$sessions = [];
+		try {
+			$sessions = $this->live($this->etherpadClient->listSessionsOfGroup($groupId, $this->callTimeout($deadline - $this->nowSeconds()), $unreadable));
+			// Entries no delete can take: they expire, or stay, whatever is done.
+			$groups['unreadable'] += $unreadable ?? 0;
+			if ($sessions === []) {
+				return true;
+			}
+			if ($deadline - $this->nowSeconds() < self::MIN_CALL_TIMEOUT_SECONDS) {
+				$tally['left'] += count($sessions);
+				return true;
+			}
+			if (!ManagedPadLifecycle::groupHoldsOnly($this->etherpadClient->listPads($groupId, $this->callTimeout($deadline - $this->nowSeconds())), $groupPads)) {
+				$this->logger->debug('Left the Etherpad sessions of a group that holds other pads too to the background job.', [
+					'app' => 'etherpad_nextcloud',
+					'groupId' => $groupId,
+				]);
+				return true;
+			}
+		} catch (\Throwable $e) {
+			if (EtherpadErrorClassifier::isPadAlreadyDeleted($e)) {
+				// No group, and no session left in it.
+				return false;
+			}
+			// Those listed already are left as surely as those never listed.
+			$tally['left'] += count($sessions);
+			$this->logger->warning('Could not tell which Etherpad sessions to revoke; a background job tries again.', [
+				'app' => 'etherpad_nextcloud',
+				'groupId' => $groupId,
+				...SafeError::context($e),
+			]);
+			return true;
+		}
+		uasort($sessions, static fn (array $a, array $b): int => $b['validUntil'] <=> $a['validUntil']);
+		$this->deleteLive($sessions, $deadline, [], $tally, self::MAX_PER_DELETE);
+		return true;
 	}
 
 	/**
@@ -168,12 +199,12 @@ class PadSessionRevoker {
 	 * account is deleted, beside something someone asked for, so it may
 	 * neither fail nor hang because a pad server is unreachable.
 	 *
-	 * Bounded matters as much as best effort. Each delete is its own call
-	 * with the client's full timeout behind it, and a user who has opened
-	 * pads all morning holds one live session per open: a half-broken
-	 * Etherpad could otherwise hold a logout for minutes. What does not fit
-	 * in the budget is left to expire, which is what would have happened
-	 * before any of this existed.
+	 * Bounded matters as much as best effort. A user who has opened pads all
+	 * morning holds one live session per open, each a call of its own: with
+	 * the client's full timeout behind every one, a half-broken Etherpad
+	 * would hold a logout for minutes. What does not fit in the budget is
+	 * left to expire, which is what would have happened before any of this
+	 * existed.
 	 *
 	 * The budget starts before the listing, because the listing is a call
 	 * with the same timeout behind it and counting only the deletes would
@@ -252,8 +283,7 @@ class PadSessionRevoker {
 	 * @return array<array-key,array{groupID:string,validUntil:int}>
 	 */
 	private function live(array $sessions): array {
-		$expiredBefore = $this->timeFactory->getTime() - EtherpadClient::CLOCK_SKEW_ALLOWANCE_SECONDS;
-		return array_filter($sessions, static fn (array $info): bool => $info['validUntil'] > $expiredBefore);
+		return SessionDeletes::live($sessions, $this->timeFactory->getTime());
 	}
 
 	/**
@@ -296,7 +326,9 @@ class PadSessionRevoker {
 				// job, and a live session the pad server refused to delete
 				// is exactly as left behind as one the budget never reached.
 				$tally['left']++;
-				$this->logger->warning('Could not revoke an Etherpad session; it will expire on its own.', [
+				// What becomes of it, report() says: a logout leaves it to
+				// expire, a delete to the background job.
+				$this->logger->warning('Could not revoke an Etherpad session.', [
 					'app' => 'etherpad_nextcloud',
 					...$context,
 					'groupId' => $info['groupID'],
@@ -308,36 +340,42 @@ class PadSessionRevoker {
 
 	/**
 	 * The line that says how a revoke went; $context names whose sessions
-	 * they were.
+	 * they were, $left how many sessions were left and to whom - a logout
+	 * leaves them to expire - and $queued says a background job takes some.
+	 * Nothing left, nothing revoked: no line.
 	 *
 	 * @param array{attempted: int, revoked: int, left: int} $tally
 	 * @param array<string,mixed> $context
+	 * @param ?array<string,int> $left
 	 * @return int how many were removed
 	 */
-	private function report(array $tally, array $context): int {
+	private function report(array $tally, array $context, ?array $left = null, bool $queued = false): int {
 		$revoked = $tally['revoked'];
-		$leftToExpire = $tally['left'];
+		$left ??= ['leftToExpire' => $tally['left']];
 		if ($revoked > 0) {
 			$this->logger->info('Revoked Etherpad sessions.', [
 				'app' => 'etherpad_nextcloud',
 				...$context,
 				'count' => $revoked,
-				'leftToExpire' => $leftToExpire,
+				...$left,
 			]);
-		} elseif ($leftToExpire > 0) {
+		} elseif (array_sum($left) > 0) {
 			// Not "revoked" with a count of zero. That line is the shape of
 			// the failure an admin would be grepping for — a logout that
 			// removed nothing because the pad server was slow — and it must
 			// not read like the opposite.
-			$this->logger->warning('Revoked no Etherpad sessions; they will expire on their own.', [
-				'app' => 'etherpad_nextcloud',
-				...$context,
-				'leftToExpire' => $leftToExpire,
-			]);
+			$this->logger->warning($queued
+				? 'Revoked no Etherpad sessions yet; a background job takes them.'
+				: 'Revoked no Etherpad sessions; they will expire on their own.', [
+					'app' => 'etherpad_nextcloud',
+					...$context,
+					...$left,
+				]);
 		}
 
 		return $revoked;
 	}
+
 	/** The rest of the budget, never more than any other call in this app. */
 	private function callTimeout(float $left): int {
 		return (int)max(
@@ -347,12 +385,8 @@ class PadSessionRevoker {
 	}
 
 	/**
-	 * The budget's clock, sub-second, through the same factory as the rest.
-	 *
-	 * `microtime(true)` here would leave the one piece of logic that
-	 * actually decides an outcome on the wall clock while the seconds
-	 * beside it are injected — and it is what made the budget test depend
-	 * on the runner finishing a mocked call inside a second.
+	 * The budget's clock, sub-second, through the same factory as the rest:
+	 * the injected clock, so the deadline is a test's too.
 	 */
 	private function nowSeconds(): float {
 		return (float)$this->timeFactory->now()->format('U.u');

@@ -136,6 +136,11 @@ final class InMemoryBindingQuery implements IQueryBuilder {
 	}
 
 	/** @return \Closure(array<string,mixed>): bool */
+	public function neq(string $column, string $operand): \Closure {
+		return fn (array $row): bool => $this->value($row, $column) !== null && (string)$this->value($row, $column) !== (string)$this->operand($row, $operand);
+	}
+
+	/** @return \Closure(array<string,mixed>): bool */
 	public function lte(string $column, string $operand): \Closure {
 		return fn (array $row): bool => $this->value($row, $column) !== null && (int)$this->value($row, $column) <= (int)$this->operand($row, $operand);
 	}
@@ -274,7 +279,11 @@ final class InMemoryBindingQuery implements IQueryBuilder {
 
 	/** @return list<array<string,mixed>> */
 	private function rowsOf(string $table): array {
-		return $table === 'filecache' ? $this->db->fileCache : $this->db->rows;
+		return match ($table) {
+			'filecache' => $this->db->fileCache,
+			'mounts' => $this->db->mounts,
+			default => $this->db->rows,
+		};
 	}
 
 	/**
@@ -343,7 +352,7 @@ final class InMemoryBindingQuery implements IQueryBuilder {
 				}
 			}
 		}
-		InMemoryBindingTable::assertColumn($table === 'filecache' ? 'filecache' : 'ep_pad_bindings', end($parts));
+		InMemoryBindingTable::assertColumn(in_array($table, ['filecache', 'mounts'], true) ? $table : 'ep_pad_bindings', end($parts));
 		return $name;
 	}
 

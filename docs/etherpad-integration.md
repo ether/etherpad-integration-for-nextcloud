@@ -250,8 +250,11 @@ after a brief outage would revoke nothing.
 **A delete of the file revokes the pad's sessions** – every session of
 the pad's group, whoever it was issued to, once the file goes to the
 trash or past it, for a folder's protected pads too: the trash keeps the
-pad, and a session would keep giving it to whoever holds one. Which
-groups, and within what budget: `docs/architecture.md`, "Trash/Restore".
+pad, and a session would keep giving it to whoever holds one. The delete's
+request takes what fits in two seconds, those that expire last first; a background job
+takes the rest while the file stays away, and leaves them once it is
+restored. Which groups, and within what budget: `docs/architecture.md`,
+"Trash/Restore".
 
 **Deleting an account revokes its sessions**, as a logout does, as the
 delete starts (`RevokeSessionsOnAccountDeleteListener`): Nextcloud removes
@@ -280,10 +283,12 @@ and only the cookie forgets the previous, so a pad reopened often carries
 several live sessions for one group. A logout is one more reader of an
 index whose length is the subject of the next section.
 
-**Revocation cannot outrun an open that is already in flight.** A request
+**A logout cannot outrun an open that is already in flight.** A request
 that has passed its permission check can issue a session after a revoke has
 listed what to remove. The window is short and the outcome is one more
-session of the configured lifetime.
+session of the configured lifetime. A delete's revocation catches it: the
+background job that follows lists the group's sessions again, a minute
+later, and once more ten minutes after that for an open that took longer.
 
 **Two Nextclouds pointed at one Etherpad share an author.** The mapper is
 `nc:<uid>`, which Etherpad stores globally, so one instance's logout can
@@ -292,7 +297,8 @@ mapper is asked for on every open, so changing its shape re-issues an
 author for every existing user and orphans their live sessions – and is not
 done here.
 
-**A failed revoke is not retried.** If the pad server cannot be reached the
+**A logout's failed revoke is not retried** – a delete's is, by the
+background job above. If the pad server cannot be reached the
 listing fails, nothing is removed, and the logout carries on regardless –
 deliberately, since a logout may not fail because Etherpad is down. On a
 shared machine that leaves live sessions behind and a cookie still naming
@@ -320,9 +326,11 @@ The id is also all that is stored. A public link's uid is
 arguments are persisted and printed by `occ`.
 
 A run deletes up to 250 sessions within 20 seconds, requeueing itself for
-the rest. A refusal is requeued with a growing delay and a limit; a single
-session the server will never delete is skipped rather than allowed to
-block the ones behind it. A run with nothing to do comes back when the
+the rest. A refusal is requeued with a growing delay and a limit; sessions
+the server will never delete are skipped rather than allowed to block the
+ones behind them, up to twenty refusals in a row - a failure that reads
+as Etherpad unreachable, when Etherpad then does not answer at all, is an
+outage, and a few end the run. A run with nothing to do comes back when the
 earliest session still standing falls due, which also keeps the next open
 from queueing a second sweep. Nothing is deleted until five minutes after
 expiry, because Etherpad judges `validUntil` against its own clock and a
