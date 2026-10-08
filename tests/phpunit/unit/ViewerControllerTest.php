@@ -77,7 +77,12 @@ class ViewerControllerTest extends TestCase {
 		$this->assertSame('Invalid file path.', $response->getParams()['error']);
 	}
 
-	public function testShowPadReturnsErrorWhenNotLoggedIn(): void {
+	/**
+	 * Nextcloud sends a signed-out visitor to the login before the method
+	 * runs (testTheViewerRoutesSendSignedOutVisitorsToTheLogin). Should it
+	 * run without a user all the same, it resolves no path for nobody.
+	 */
+	public function testShowPadRefusesWithoutAUserShouldItRunWithoutOne(): void {
 		$userNodeResolver = $this->createMock(UserNodeResolver::class);
 		$controller = $this->buildController($userNodeResolver, anonymous: true);
 
@@ -114,6 +119,50 @@ class ViewerControllerTest extends TestCase {
 
 		$this->assertSame('noviewer', $response->getTemplateName());
 		$this->assertSame('Cannot resolve file path for file ID.', $response->getParams()['error']);
+	}
+
+	/**
+	 * Read strictly: `1e3` opened file 1000 and `7.5` file 7, ids the
+	 * address does not name.
+	 */
+	#[\PHPUnit\Framework\Attributes\DataProvider('notAFileId')]
+	public function testShowPadByIdRefusesWhatIsNoWholeNumber(string $fileId): void {
+		$resolver = $this->createMock(UserNodeResolver::class);
+		$resolver->expects($this->never())->method('resolveUserFileNodeById');
+
+		$response = $this->buildController($resolver)->showPadById($fileId);
+
+		$this->assertSame('noviewer', $response->getTemplateName());
+		$this->assertSame('Invalid file ID.', $response->getParams()['error']);
+	}
+
+	/** @return array<string, array{string}> */
+	public static function notAFileId(): array {
+		return [
+			'an exponent' => ['1e3'],
+			'a fraction' => ['7.5'],
+			'a sign' => ['+7'],
+			'a space' => [' 7'],
+			'zero' => ['0'],
+		];
+	}
+
+	/**
+	 * Signed-in users only, said to Nextcloud, which sends anyone else to
+	 * the login and back. As a public page, a signed-out visitor got an
+	 * error page without a way to sign in.
+	 */
+	public function testTheViewerRoutesSendSignedOutVisitorsToTheLogin(): void {
+		foreach (['showPad', 'showPadById'] as $method) {
+			$attributes = array_map(
+				static fn (\ReflectionAttribute $attribute): string => $attribute->getName(),
+				(new \ReflectionMethod(ViewerController::class, $method))->getAttributes(),
+			);
+			$this->assertContains(\OCP\AppFramework\Http\Attribute\NoAdminRequired::class, $attributes, $method);
+			$this->assertNotContains(\OCP\AppFramework\Http\Attribute\PublicPage::class, $attributes, $method);
+			// A followed link carries no request token.
+			$this->assertContains(\OCP\AppFramework\Http\Attribute\NoCSRFRequired::class, $attributes, $method);
+		}
 	}
 
 	public function testShowPadByIdRejectsInvalidFileId(): void {

@@ -27,16 +27,11 @@ use OCA\EtherpadNextcloud\Exception\ShareItemUnavailableException;
 use OCA\EtherpadNextcloud\Exception\ShareReadForbiddenException;
 use OCA\EtherpadNextcloud\Service\AppConfigService;
 use OCA\EtherpadNextcloud\Service\PadResponseService;
-use OCA\EtherpadNextcloud\Service\PublicShareUrlBuilder;
 use OCA\EtherpadNextcloud\Tests\Support\BuildsErrorMappers;
-use OCA\EtherpadNextcloud\Util\PathNormalizer;
 use OCP\AppFramework\Http;
 use OCP\AppFramework\Http\DataResponse;
-use OCP\AppFramework\Http\RedirectResponse;
-use OCP\AppFramework\Http\TemplateResponse;
 use OCP\Files\NotFoundException;
 use OCP\IL10N;
-use OCP\IURLGenerator;
 use OCP\Lock\LockedException;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
@@ -89,18 +84,14 @@ class PublicViewerControllerErrorMapperTest extends TestCase {
 	}
 
 	/**
-	 * Every answer a visitor reads is this mapper's own sentence, translated,
-	 * as data and on the error page alike; what the exception says is for
-	 * the log.
+	 * Every answer a visitor reads is this mapper's own sentence, translated;
+	 * what the exception says is for the log.
 	 */
 	#[\PHPUnit\Framework\Attributes\DataProvider('publicAnswers')]
 	public function testAVisitorReadsATranslatedSentenceOfTheMappersOwn(\Throwable $e, int $status, string $sentence): void {
 		$data = $this->buildMapper()->runForData(static fn (): array => throw $e, static fn (array $result): DataResponse => new DataResponse($result));
-		$page = $this->buildMapper('/nc')->runForTemplate(static fn (): string => throw $e, static fn (string $target): RedirectResponse => new RedirectResponse($target), 'token');
 
 		$this->assertSame([$status, '[de] ' . $sentence], [$data->getStatus(), $data->getData()['message']]);
-		$this->assertInstanceOf(TemplateResponse::class, $page);
-		$this->assertSame([$status, '[de] ' . $sentence], [$page->getStatus(), $page->getParams()['error']]);
 	}
 
 	/**
@@ -180,32 +171,6 @@ class PublicViewerControllerErrorMapperTest extends TestCase {
 		}
 	}
 
-	public function testRunForTemplateReturnsRedirectOnSuccess(): void {
-		$response = $this->buildMapper('/nc')->runForTemplate(
-			static fn(): string => '/nc/s/token?dir=%2F',
-			static fn(string $target): RedirectResponse => new RedirectResponse($target),
-			'token',
-		);
-
-		$this->assertInstanceOf(RedirectResponse::class, $response);
-		$this->assertSame('/nc/s/token?dir=%2F', $response->getRedirectURL());
-	}
-
-	public function testRunForTemplateReturnsNoViewerTemplateOnError(): void {
-		$response = $this->buildMapper('/nc')->runForTemplate(
-			static fn(): string => throw new NotAPadFileException('The selected file is not a .pad document.'),
-			static fn(string $target): RedirectResponse => new RedirectResponse($target),
-			'token',
-		);
-
-		$this->assertInstanceOf(TemplateResponse::class, $response);
-		$this->assertSame(Http::STATUS_BAD_REQUEST, $response->getStatus());
-		$this->assertSame('noviewer', $response->getTemplateName());
-		$this->assertSame('[de] The selected item is not a .pad document.', $response->getParams()['error']);
-		$this->assertSame('/nc/s/token', $response->getParams()['back_url']);
-		$this->assertSame('[de] Back to shared files', $response->getParams()['back_label']);
-	}
-
 	public function testRunForDataLogsAndMasksUnexpectedFailures(): void {
 		$logger = $this->createMock(LoggerInterface::class);
 		$logger->expects($this->once())->method('error')->with(
@@ -227,40 +192,10 @@ class PublicViewerControllerErrorMapperTest extends TestCase {
 		$this->assertSame('[de] Could not open pad', $response->getData()['message']);
 	}
 
-	public function testRunForTemplateLogsAndMasksUnexpectedFailures(): void {
-		$logger = $this->createMock(LoggerInterface::class);
-		$logger->expects($this->once())->method('error')->with(
-			'Unhandled public viewer error',
-			$this->callback(static function ($context): bool {
-				return is_array($context)
-					&& ($context['app'] ?? '') === 'etherpad_nextcloud'
-					&& ($context['error'] ?? '') === \RuntimeException::class
-					&& !isset($context['exception']);
-			}),
-		);
-
-		$response = $this->buildMapper('/nc', $logger)->runForTemplate(
-			static fn(): string => throw new \RuntimeException('internal path /var/secret/file.pad'),
-			static fn(string $target): RedirectResponse => new RedirectResponse($target),
-			'token',
-		);
-
-		$this->assertInstanceOf(TemplateResponse::class, $response);
-		$this->assertSame(Http::STATUS_INTERNAL_SERVER_ERROR, $response->getStatus());
-		$this->assertSame('[de] Could not open pad', $response->getParams()['error']);
-		$this->assertSame('/nc/s/token', $response->getParams()['back_url']);
-	}
-
-	private function buildMapper(string $webroot = '', ?LoggerInterface $logger = null): PublicViewerControllerErrorMapper {
-		$urlGenerator = $this->createMock(IURLGenerator::class);
-		$urlGenerator->method('getWebroot')->willReturn($webroot);
+	private function buildMapper(?LoggerInterface $logger = null): PublicViewerControllerErrorMapper {
 		// A translation that shows: what went through t() comes back marked.
 		$l10n = $this->createMock(IL10N::class);
 		$l10n->method('t')->willReturnCallback(static fn (string $text): string => '[de] ' . $text);
-		return $this->publicErrorMapper(
-			new PublicShareUrlBuilder($urlGenerator, new PathNormalizer()),
-			$l10n,
-			$logger,
-		);
+		return $this->publicErrorMapper($l10n, $logger);
 	}
 }

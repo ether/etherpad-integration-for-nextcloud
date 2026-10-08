@@ -25,9 +25,20 @@ final class PositiveIntParam {
 			return null;
 		}
 		$fileId = is_int($raw) || (is_string($raw) && ctype_digit($raw)) ? (int)$raw : 0;
-		if ($fileId <= 0) {
+		// Past PHP_INT_MAX, a string of digits casts to PHP_INT_MAX: a
+		// number the request did not send.
+		if ($fileId <= 0 || (is_string($raw) && (string)$fileId !== ltrim($raw, '0'))) {
 			throw new \InvalidArgumentException('Not a positive whole number.');
 		}
 		return $fileId;
+	}
+
+	/**
+	 * The same for a parameter the request has to send.
+	 *
+	 * @throws \InvalidArgumentException when it sent none, or one that is no positive whole number
+	 */
+	public static function readRequired(mixed $raw): int {
+		return self::read($raw) ?? throw new \InvalidArgumentException('No positive whole number.');
 	}
 }

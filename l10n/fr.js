@@ -18,8 +18,6 @@ OC.L10N.register(
     "Allow linking external public pads": "Autoriser les liens vers des pads publics externes",
     "Anyone with the pad link can open it, without a Nextcloud account. Created as ordinary Etherpad pads.": "Toute personne disposant du lien du pad peut l'ouvrir, sans compte Nextcloud. Créés comme des pads Etherpad ordinaires.",
     "Authentication required.": "Authentification requise.",
-    "Back": "Retour",
-    "Back to shared files": "Retour aux fichiers partagés",
     "Cannot open selected .pad file.": "Impossible d'ouvrir le fichier .pad sélectionné.",
     "Cannot resolve file path for file ID.": "Impossible de résoudre le chemin du fichier pour l'identifiant.",
     "Cannot resolve selected parent folder.": "Impossible de résoudre le dossier parent sélectionné.",
@@ -254,6 +252,7 @@ OC.L10N.register(
     "The pad was not found on the other server, or it cannot be exported there.": "Le pad est introuvable sur l'autre serveur, ou il ne peut pas y être exporté.",
     "The server of the pad did not answer with the content of the pad.": "Le serveur du pad n'a pas répondu avec le contenu du pad.",
     "The server of the pad has no certificate this Nextcloud trusts.": "Le serveur du pad n'a pas de certificat auquel ce Nextcloud fait confiance.",
-    "The server of the pad sent the request on elsewhere, usually to a sign-in page. Only pads that can be read without signing in can be linked.": "Le serveur du pad a redirigé la demande, généralement vers une page de connexion. Seuls les pads lisibles sans se connecter peuvent être liés."
+    "The server of the pad sent the request on elsewhere, usually to a sign-in page. Only pads that can be read without signing in can be linked.": "Le serveur du pad a redirigé la demande, généralement vers une page de connexion. Seuls les pads lisibles sans se connecter peuvent être liés.",
+    "Too many requests. Try again later.": "Trop de demandes. Réessayez plus tard."
 },
 "nplurals=2; plural=(n > 1);");

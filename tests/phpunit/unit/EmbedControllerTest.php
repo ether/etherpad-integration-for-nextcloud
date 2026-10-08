@@ -104,6 +104,31 @@ class EmbedControllerTest extends TestCase {
 		$this->assertSame('Authentication required.', $params['error']);
 	}
 
+	/**
+	 * Read strictly, the file and the folder alike: `1e3` named 1000 and
+	 * `7.5` named 7.
+	 */
+	#[\PHPUnit\Framework\Attributes\DataProvider('notAnId')]
+	public function testIdsThatAreNoWholeNumberAreRefused(string $id): void {
+		$resolver = $this->createMock(UserNodeResolver::class);
+		$resolver->expects($this->never())->method('resolveUserFileNodeById');
+		$resolver->expects($this->never())->method('resolveUserFolderNodeById');
+		$controller = $this->buildController($resolver);
+
+		$this->assertSame('Invalid file ID.', $controller->showById($id)->getParams()['error']);
+		$this->assertSame('Invalid parent folder ID.', $controller->createByParent($id)->getParams()['error']);
+	}
+
+	/** @return array<string, array{string}> */
+	public static function notAnId(): array {
+		return [
+			'an exponent' => ['1e3'],
+			'a fraction' => ['7.5'],
+			'a sign' => ['+7'],
+			'a space' => [' 7'],
+		];
+	}
+
 	public function testCreateByParentRejectsInvalidParentFolderId(): void {
 		$controller = $this->buildController($this->createMock(UserNodeResolver::class));
 

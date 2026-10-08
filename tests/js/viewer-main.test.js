@@ -397,6 +397,29 @@ describe('viewer component — resolveOpenUrl', () => {
 		expect(vm.canRecover).toBe(false)
 	})
 
+	// Nextcloud's throttle answers with an empty body, and the same open
+	// works later: its own sentence, and the button.
+	it('offers a second try with a sentence of its own when the throttle refused the open', async () => {
+		stubFetch(jsonResponse([], false, 429))
+		const vm = makeInstance({ fileid: 42, fileInfo: { path: '/x.pad' } })
+
+		await vm.resolveOpenUrl()
+
+		expect(vm.loadError).toBe('Too many requests. Try again later.')
+		expect(vm.canRetryOpen).toBe(true)
+		expect(vm.canRecover).toBe(false)
+	})
+
+	it('says why the content did not load when the throttle refused it', async () => {
+		loadPadContent.mockRejectedValueOnce(Object.assign(new Error('Could not load the pad content.'), { status: 429 }))
+		const vm = makeInstance({ contentMode: 'content', contentUrl: '/content/42', contentState: 'ready' })
+
+		await vm.loadContent()
+
+		expect(vm.contentState).toBe('error')
+		expect(vm.contentError).toBe('Too many requests. Try again later.')
+	})
+
 	it('offers a second try when the file changed while it was being set up', async () => {
 		const fetchMock = stubFetch()
 		fetchMock

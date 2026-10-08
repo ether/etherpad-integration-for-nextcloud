@@ -16,12 +16,9 @@ use OCA\EtherpadNextcloud\Service\LivePadHtml;
 use OCA\EtherpadNextcloud\Service\PublicPadContext;
 use OCA\EtherpadNextcloud\Service\PublicPadContextService;
 use OCA\EtherpadNextcloud\Service\PublicShareResolver;
-use OCA\EtherpadNextcloud\Service\PublicShareUrlBuilder;
 use OCA\EtherpadNextcloud\Service\PadResponseService;
 use OCP\AppFramework\Http\DataResponse;
 use OCP\AppFramework\PublicShareController;
-use OCP\AppFramework\Http\RedirectResponse;
-use OCP\AppFramework\Http\TemplateResponse;
 use OCP\IRequest;
 use OCP\ISession;
 use OCP\Share\IShare;
@@ -37,7 +34,6 @@ class PublicViewerController extends PublicShareController {
 		IRequest $request,
 		private PublicShareResolver $shareResolver,
 		private PublicPadContextService $padContextService,
-		private PublicShareUrlBuilder $shareUrlBuilder,
 		private PadResponseService $padResponses,
 		private PublicViewerControllerErrorMapper $errors,
 		ISession $session,
@@ -63,28 +59,19 @@ class PublicViewerController extends PublicShareController {
 		return $this->share?->getPassword();
 	}
 
-	#[\OCP\AppFramework\Http\Attribute\PublicPage]
-	#[\OCP\AppFramework\Http\Attribute\NoCSRFRequired]
-	public function showPad(string $token): RedirectResponse|TemplateResponse {
-		return $this->errors->runForTemplate(
-			fn(): string => $this->shareUrlBuilder->buildShareRedirectUrl($token, $this->request->getParam('file', '')),
-			static fn(string $target): RedirectResponse => new RedirectResponse($target),
-			$token,
-			ApiErrorLog::fileNamedBy($this->request, byPath: false),
-		);
-	}
-
 	/**
 	 * @see PadSessionController::contentById() for why this is its own endpoint.
 	 *
-	 * Throttled because it is the one anonymous route that makes this
-	 * server fetch something on demand — the pad over the API, or a foreign
-	 * export. 60 a minute is far more than reading and refreshing needs,
-	 * and far less than a loop wants.
+	 * Throttled because each call makes this server fetch something on
+	 * demand — the pad over the API, or a foreign export. 60 a minute is
+	 * far more than reading and refreshing needs, and far less than a loop
+	 * wants. Counted like the open: by address, or per user for one signed
+	 * in.
 	 */
 	#[\OCP\AppFramework\Http\Attribute\PublicPage]
 	#[\OCP\AppFramework\Http\Attribute\NoCSRFRequired]
 	#[\OCP\AppFramework\Http\Attribute\AnonRateLimit(limit: 60, period: 60)]
+	#[\OCP\AppFramework\Http\Attribute\UserRateLimit(limit: 60, period: 60)]
 	public function padContent(string $token, mixed $file = '', mixed $fileId = null): DataResponse {
 		return $this->errors->runForData(
 			fn(): LivePadHtml => $this->padContextService->resolveContent($token, $file, $this->share, $fileId),
@@ -93,8 +80,21 @@ class PublicViewerController extends PublicShareController {
 		);
 	}
 
+	/**
+	 * Throttled because, for a writable link to a protected pad, each call
+	 * starts an Etherpad session that lives for hours, and anyone holding
+	 * the link could call it in a loop. Every visitor opens through here,
+	 * and Nextcloud counts a visitor who is not signed in by address: a
+	 * class behind one school's address opens a link all at once, so the
+	 * limit is set well above that, and still cuts a loop to five calls a
+	 * second. A signed-in visitor is counted on their own, not with the
+	 * address they share; without a limit of their own, Nextcloud would
+	 * count them by address too.
+	 */
 	#[\OCP\AppFramework\Http\Attribute\PublicPage]
 	#[\OCP\AppFramework\Http\Attribute\NoCSRFRequired]
+	#[\OCP\AppFramework\Http\Attribute\AnonRateLimit(limit: 300, period: 60)]
+	#[\OCP\AppFramework\Http\Attribute\UserRateLimit(limit: 300, period: 60)]
 	public function openPadData(string $token, mixed $file = '', mixed $fileId = null): DataResponse {
 		return $this->errors->runForData(
 			fn(): PublicPadContext => $this->padContextService->resolve($token, $file, $this->share, $fileId),

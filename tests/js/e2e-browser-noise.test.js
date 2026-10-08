@@ -27,6 +27,56 @@ const specFiles = () => readdirSync(specs, { recursive: true })
 	.filter((name) => name.endsWith('.spec.ts'))
 	.map((name) => [name, readFileSync(join(specs, name), 'utf8')])
 
+/**
+ * What a bracket holds: from just after it opens to where it closes, past
+ * the brackets of the same kind inside it.
+ *
+ * @param {string} source
+ * @param {number} start just after the opening bracket
+ * @param {string} open
+ * @param {string} close
+ */
+const enclosedAt = (source, start, open = '(', close = ')') => {
+	let depth = 1
+	for (let i = start; i < source.length; i++) {
+		if (source[i] === open) {
+			depth++
+		} else if (source[i] === close && --depth === 0) {
+			return source.slice(start, i).trim()
+		}
+	}
+	return source.slice(start).trim()
+}
+
+/**
+ * Without comments: a comment that names a storageState sets none. A `//`
+ * after a colon is an address, not a comment.
+ *
+ * @param {string} text
+ */
+const withoutComments = (text) => text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|\s)\/\/.*$/gm, '$1')
+
+const STATE_KEY = /\bstorageState\s*:/
+
+/**
+ * Whether options name a storageState: in themselves, or in a constant
+ * they are, or spread.
+ *
+ * @param {string} given what the call is given
+ * @param {string} source the spec, for its constants
+ */
+const namesAState = (given, source) => {
+	const options = withoutComments(given)
+	if (STATE_KEY.test(options)) {
+		return true
+	}
+	return [...options.matchAll(/(?:^|\.\.\.)\s*([A-Z_][A-Z0-9_]*)\b/g)].some(([, constant]) => {
+		const declared = new RegExp(`const ${constant}\\s*=\\s*\\{`).exec(source)
+		return declared !== null
+			&& STATE_KEY.test(withoutComments(enclosedAt(source, declared.index + declared[0].length, '{', '}')))
+	})
+}
+
 describe('the e2e specs', () => {
 	/**
 	 * A spec that takes `test` from Playwright itself runs without the
@@ -58,6 +108,26 @@ describe('the e2e specs', () => {
 			expect(named.length, `${name}: a context opened without a name to hand over`).toBe(opened)
 			for (const context of named) {
 				expect(source, `${name}: ${context}`).toMatch(new RegExp(`const ${context} = await browser\\.newContext\\([^\\n]*\\)\\n\\s*browserNoise\\.watch\\(${context}\\)`))
+			}
+		}
+	})
+
+	/**
+	 * A context opened without a storageState is signed in as the test
+	 * user, whom the project's state fills in: a visitor meant to be
+	 * signed out would not be, and a public page would answer as it does
+	 * for its owner. Each context says which it is, a state file or none;
+	 * so does a page the browser opens in a context of its own.
+	 */
+	it('say how every context they open is signed in', () => {
+		for (const [name, source] of specFiles()) {
+			for (const match of source.matchAll(/\.newContext\s*\(|\bbrowser\.newPage\s*\(/g)) {
+				// Not one a comment names.
+				if (/^\s*(\/\/|\*)/.test(source.slice(source.lastIndexOf('\n', match.index) + 1, match.index))) {
+					continue
+				}
+				const given = enclosedAt(source, match.index + match[0].length)
+				expect(namesAState(given, source), `${name}: ${match[0]}${given})`).toBe(true)
 			}
 		}
 	})

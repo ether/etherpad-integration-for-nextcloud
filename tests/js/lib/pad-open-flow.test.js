@@ -41,6 +41,7 @@ describe('isRetryableOpenError', () => {
 		['the server says it may work later', Object.assign(new Error('locked'), { retryable: true }), true],
 		['the file changed while it was being initialised', withCode('pad_file_changed'), true],
 		['no answer came', unanswered(), true],
+		['Nextcloud refused it as one too many', Object.assign(new Error('Request failed.'), { status: 429 }), true],
 		['the server refused', withCode('missing_binding'), false],
 		['nothing says more', new Error('Internal server error'), false],
 		['there is no error', null, false],

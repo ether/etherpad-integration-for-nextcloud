@@ -6,14 +6,18 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 Base: `/apps/etherpad_nextcloud`
 
+A file or folder id a route takes - `{fileId}`, `fileId`, `parentFolderId`, `templateFileId` - is a positive whole number in digits. Anything else is refused, not cast: `1e3`, `7.5` and `7x` name no file. The API answers `400` with `Invalid file ID.` (or the folder's sentence), the public routes `400` with "This link does not point to a valid file.", and the viewer and embed pages show their error page. One exception: `/api/v1/pads/resolve` takes the path when `fileId` is absent, empty or `0`.
+
 - `GET /`
   - Controller: `ViewerController::showPad`
   - Query: `file=/path/to/file.pad`
   - Purpose: compatibility entry route that redirects to native Files viewer URL.
+  - Signed-in users only: Nextcloud sends anyone else to the login and back.
 
 - `GET /by-id/{fileId}`
   - Controller: `ViewerController::showPadById`
   - Purpose: compatibility entry route via file ID; redirects to native Files viewer URL.
+  - Signed-in users only, as above.
 
 - `GET /embed/by-id/{fileId}`
   - Controller: `EmbedController::showById`
@@ -76,15 +80,14 @@ In none of those cases does the request fall through to the other locator. A ref
 When both are sent for a folder share, the path is compared in full: `A.pad` at the top of the share and `Sub/A.pad` are different files. A single-file share has no path inside it, so there the file's name is what a path can name - and without an id it is ignored entirely, as it always has been.
 
 - `GET /public/{token}`
-  - Controller: `PublicViewerController::showPad`
+  - Controller: `PublicShareRedirectController::showPad`
   - Query (folder share): `file=/subfolder/file.pad` - name only, and deliberately: this route builds no viewer address of its own, it hands over to Nextcloud's own share page.
-  - Purpose: compatibility route for public shares; redirects to `/s/{token}` with selected file.
-  - UX behavior:
-    - Errors are rendered as `noviewer` template (not raw JSON).
-    - Error page includes back-link to share entry page (`/s/{token}`).
+  - Purpose: compatibility route for public shares; redirects to `/s/{token}` with selected file. It does not look at the share: Nextcloud's share page checks the token, and asks for the password of a share that has one.
+  - A file it cannot name - no `.pad`, or a path out of the share - leads to the share's root, so a dead token ends on the share page's "Share not found" rather than on an error about the file.
 
 - `GET /api/v1/public/open/{token}`
   - Controller: `PublicViewerController::openPadData`
+  - Throttled to 300 calls a minute: by address for a visitor who is not signed in, per user for one who is. For a writable link to a protected pad, every call starts an Etherpad session. The limit is well above a class opening a link at once behind one address; `content` allows 60. A refusal is Nextcloud's `429` with no body.
   - Query: `fileId=<int>` or `file=/subfolder/file.pad` - see "Naming the file in a public share" above.
   - Purpose: resolves a `.pad` file inside a public share for the native viewer.
   - Result:
@@ -96,6 +99,7 @@ When both are sent for a folder share, the path is compared in full: `A.pad` at 
   - Controller: `PublicViewerController::padContent`
   - Query: `fileId=<int>` or `file=/subfolder/file.pad` - see "Naming the file in a public share" above.
   - Purpose: the pad's current content for the read-only view of a public share.
+  - Throttled to 60 calls a minute: by address for a visitor who is not signed in, per user for one who is. A refusal is Nextcloud's `429` with no body.
   - Result: sanitized `html` plus `is_empty`; answered `no-store`.
   - Behavior: resolves the share and re-checks the `.pad` binding on every call, so a retry cannot outlive the access it was granted under.
   - The `content_url` handed out by the open endpoint carries the id that open resolved to, so a file renamed or moved inside the share between the two requests is still the one answered for.
@@ -221,7 +225,7 @@ solely by the separate external-pad policy, not by these two settings.
   - Controller: `PadSessionController::resolveById`
   - Query:
     - `fileId=<int>` (preferred)
-    - `file=/path/file.pad` (path fallback)
+    - `file=/path/file.pad` (path fallback: taken when `fileId` is absent, empty or `0`)
   - Result: MIME/path/viewer target for files frontend.
 
 - `POST /api/v1/pads/sync/{fileId}`

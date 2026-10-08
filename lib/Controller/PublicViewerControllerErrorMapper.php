@@ -9,7 +9,6 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Controller;
 
-use OCA\EtherpadNextcloud\AppInfo\Application;
 use OCA\EtherpadNextcloud\Exception\BindingException;
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
 use OCA\EtherpadNextcloud\Exception\EtherpadRefusedException;
@@ -27,11 +26,8 @@ use OCA\EtherpadNextcloud\Exception\ShareFileNotInShareException;
 use OCA\EtherpadNextcloud\Exception\ShareItemUnavailableException;
 use OCA\EtherpadNextcloud\Exception\ShareReadForbiddenException;
 use OCA\EtherpadNextcloud\Service\ApiErrorLog;
-use OCA\EtherpadNextcloud\Service\PublicShareUrlBuilder;
 use OCP\AppFramework\Http;
 use OCP\AppFramework\Http\DataResponse;
-use OCP\AppFramework\Http\RedirectResponse;
-use OCP\AppFramework\Http\TemplateResponse;
 use OCP\Files\NotFoundException;
 use OCP\IL10N;
 use OCP\Lock\LockedException;
@@ -48,7 +44,6 @@ use OCP\Lock\LockedException;
  */
 class PublicViewerControllerErrorMapper {
 	public function __construct(
-		private PublicShareUrlBuilder $shareUrlBuilder,
 		private IL10N $l10n,
 		private ApiErrorLog $errorLog,
 	) {
@@ -69,27 +64,6 @@ class PublicViewerControllerErrorMapper {
 			// treat "too large" differently from any other 400 has to be
 			// able to see it, and a message is not something to branch on.
 			return new DataResponse(ApiErrorCode::addTo(['message' => $message], $e, onAPublicShare: true), $status);
-		}
-	}
-
-	/**
-	 * @param callable(): mixed $action
-	 * @param callable(mixed): (RedirectResponse|TemplateResponse) $success
-	 * @param array<string, int|string> $context what the log line names: the file, never the token
-	 */
-	public function runForTemplate(callable $action, callable $success, string $token, array $context = []): RedirectResponse|TemplateResponse {
-		try {
-			return $success($action());
-		} catch (\Throwable $e) {
-			[$status, $message] = $this->answerFor($e);
-			$this->report($e, $status, $context);
-			$response = new TemplateResponse(Application::APP_ID, 'noviewer', [
-				'error' => $message,
-				'back_url' => $this->shareUrlBuilder->buildShareBaseUrl($token),
-				'back_label' => $this->l10n->t('Back to shared files'),
-			], TemplateResponse::RENDER_AS_BLANK);
-			$response->setStatus($status);
-			return $response;
 		}
 	}
 

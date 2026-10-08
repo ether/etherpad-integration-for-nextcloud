@@ -9,11 +9,4 @@
 <div class="section">
 	<h2><?php p((string)($_['title'] ?? $l->t('Could not open pad'))); ?></h2>
 	<p><?php p((string)($_['error'] ?? $l->t('Unknown error.'))); ?></p>
-	<?php if (!empty($_['back_url'])): ?>
-		<p>
-			<a href="<?php p((string)$_['back_url']); ?>">
-				<?php p((string)($_['back_label'] ?? $l->t('Back'))); ?>
-			</a>
-		</p>
-	<?php endif; ?>
 </div>

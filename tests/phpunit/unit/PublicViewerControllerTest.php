@@ -19,7 +19,6 @@ use OCA\EtherpadNextcloud\Service\PadResponseService;
 use OCA\EtherpadNextcloud\Service\PublicPadContextService;
 use OCA\EtherpadNextcloud\Service\PublicPadOpenService;
 use OCA\EtherpadNextcloud\Service\PublicShareResolver;
-use OCA\EtherpadNextcloud\Service\PublicShareUrlBuilder;
 use OCA\EtherpadNextcloud\Util\PathNormalizer;
 use OCP\AppFramework\Http;
 use OCP\Constants;
@@ -275,7 +274,6 @@ class PublicViewerControllerTest extends TestCase {
 		$urlGenerator = $this->createMock(IURLGenerator::class);
 		$urlGenerator->method('getWebroot')->willReturn('');
 		$urlGenerator->method('linkToRoute')->willReturn('/public/content/share-token');
-		$shareUrlBuilder = new PublicShareUrlBuilder($urlGenerator, new PathNormalizer());
 		$shareResolver = new PublicShareResolver($shareManager, new PathNormalizer());
 		$publicPadOpenService = new PublicPadOpenService($etherpadClient, $this->createMock(ManagedPadLifecycle::class), $fetcher, $padSessionService);
 
@@ -293,9 +291,8 @@ class PublicViewerControllerTest extends TestCase {
 				}),
 				$urlGenerator,
 			),
-			$shareUrlBuilder,
 			$this->buildPadResponseService($urlGenerator),
-			$this->publicErrorMapper($shareUrlBuilder, $this->untranslated()),
+			$this->publicErrorMapper($this->untranslated()),
 			$this->createMock(ISession::class),
 		);
 
@@ -390,6 +387,25 @@ class PublicViewerControllerTest extends TestCase {
 		$this->assertStringNotContainsString('share-token', json_encode($seen[0], JSON_THROW_ON_ERROR));
 	}
 
+	/**
+	 * The two routes anyone holding a link can call: the content makes this
+	 * server fetch a pad, the open of a writable link to a protected pad
+	 * starts an Etherpad session that lives for hours. The open is how
+	 * every visitor gets in, a class behind one address at once, so it
+	 * allows more.
+	 */
+	public function testTheAnonymousRoutesAreThrottled(): void {
+		// Signed in, Nextcloud counts by address too unless a method says
+		// otherwise: both count each user on their own.
+		foreach (['openPadData' => 300, 'padContent' => 60] as $method => $limit) {
+			foreach ([\OCP\AppFramework\Http\Attribute\AnonRateLimit::class, \OCP\AppFramework\Http\Attribute\UserRateLimit::class] as $kind) {
+				$limits = (new \ReflectionMethod(PublicViewerController::class, $method))->getAttributes($kind);
+				$this->assertCount(1, $limits, $method . ' ' . $kind);
+				$this->assertSame(['limit' => $limit, 'period' => 60], $limits[0]->getArguments(), $method . ' ' . $kind);
+			}
+		}
+	}
+
 	private function buildController(
 		IManager $shareManager,
 		?PadFileService $padFileService = null,
@@ -404,7 +420,6 @@ class PublicViewerControllerTest extends TestCase {
 		$urlGenerator = $this->createMock(IURLGenerator::class);
 		$urlGenerator->method('getWebroot')->willReturn('');
 		$urlGenerator->method('linkToRoute')->willReturn('/public/content/share-token');
-		$shareUrlBuilder = new PublicShareUrlBuilder($urlGenerator, new PathNormalizer());
 		$padFileService ??= $this->createMock(PadFileService::class);
 		$etherpadClient ??= $this->createMock(EtherpadClient::class);
 		$externalPadExportFetcher ??= $this->createMock(ExternalPadExportFetcher::class);
@@ -427,9 +442,8 @@ class PublicViewerControllerTest extends TestCase {
 				}),
 				$urlGenerator,
 			),
-			$shareUrlBuilder,
 			$this->buildPadResponseService($urlGenerator),
-			$this->publicErrorMapper($shareUrlBuilder, $this->untranslated(), $logger),
+			$this->publicErrorMapper($this->untranslated(), $logger),
 			$session ?? $this->createMock(ISession::class),
 		);
 	}

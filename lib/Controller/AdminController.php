@@ -291,14 +291,10 @@ class AdminController extends Controller {
 	 */
 	private function requiredNumber(string $name, string $refusal): int {
 		try {
-			$number = PositiveIntParam::read($this->request->getParam($name));
+			return PositiveIntParam::readRequired($this->request->getParam($name));
 		} catch (\InvalidArgumentException) {
-			$number = null;
-		}
-		if ($number === null) {
 			throw new \InvalidArgumentException($refusal);
 		}
-		return $number;
 	}
 
 	private function deletingOff(): string {

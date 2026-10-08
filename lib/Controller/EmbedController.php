@@ -8,7 +8,6 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Controller;
 
-use OCA\EtherpadNextcloud\Exception\ControllerBadRequestException;
 use OCA\EtherpadNextcloud\Exception\NotAPadFileException;
 use OCA\EtherpadNextcloud\Exception\PadParentFolderNotWritableException;
 use OCA\EtherpadNextcloud\Exception\UnauthorizedRequestException;
@@ -27,6 +26,8 @@ use OCP\IUserSession;
  * @psalm-api
  */
 class EmbedController extends Controller {
+	use ReadsPositiveIds;
+
 	public function __construct(
 		string $appName,
 		IRequest $request,
@@ -46,7 +47,7 @@ class EmbedController extends Controller {
 		return $this->errors->runForTemplate(
 			function () use ($fileId): array {
 				$user = $this->requireUser();
-				$id = $this->requireNumericFileId($fileId);
+				$id = $this->requirePositiveInt($fileId, $this->l10n->t('Invalid file ID.'));
 				$fileNode = $this->userNodeResolver->resolveUserFileNodeById($user->getUID(), $id);
 				if (!PadFileType::isPad($fileNode->getName())) {
 					throw new NotAPadFileException($this->l10n->t('Selected file is not a .pad file.'));
@@ -129,20 +130,5 @@ class EmbedController extends Controller {
 			throw new UnauthorizedRequestException();
 		}
 		return $user;
-	}
-
-	private function requireNumericFileId(mixed $candidate): int {
-		return $this->requirePositiveInt($candidate, $this->l10n->t('Invalid file ID.'));
-	}
-
-	private function requirePositiveInt(mixed $candidate, string $message): int {
-		if (!is_numeric($candidate)) {
-			throw new ControllerBadRequestException($message);
-		}
-		$id = (int)$candidate;
-		if ($id <= 0) {
-			throw new ControllerBadRequestException($message);
-		}
-		return $id;
 	}
 }

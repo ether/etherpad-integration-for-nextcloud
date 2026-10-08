@@ -604,11 +604,15 @@ export const SHARE_PERMISSION_READ_WRITE = 3
 export const createPublicShare = async (
 	relativePath: string,
 	permissions: number,
+	password?: string,
 ): Promise<{ token: string, url: string }> => {
 	const body = new URLSearchParams()
 	body.set('path', '/' + relativePath.replace(/^\/+/, ''))
 	body.set('shareType', '3')
 	body.set('permissions', String(permissions))
+	if (password !== undefined) {
+		body.set('password', password)
+	}
 
 	const res = await fetch(`${E2E.baseURL}/ocs/v2.php/apps/files_sharing/api/v1/shares?format=json`, {
 		method: 'POST',

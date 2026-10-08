@@ -37,6 +37,8 @@ use OCP\IUserSession;
  * @psalm-import-type ErrorWording from PadControllerErrorMapper
  */
 abstract class AbstractPadController extends Controller {
+	use ReadsPositiveIds;
+
 	public function __construct(
 		string $appName,
 		IRequest $request,
@@ -78,20 +80,12 @@ abstract class AbstractPadController extends Controller {
 		return $user;
 	}
 
-	protected function requireFileId(int $fileId): int {
+	protected function requireFileId(mixed $fileId): int {
 		return $this->requirePositiveInt($fileId, $this->l10n->t('Invalid file ID.'));
 	}
 
-	protected function requireParentFolderId(int $parentFolderId): int {
+	protected function requireParentFolderId(mixed $parentFolderId): int {
 		return $this->requirePositiveInt($parentFolderId, $this->l10n->t('Invalid parentFolderId.'));
-	}
-
-	/** $message is translated: it reaches the client as it is. */
-	protected function requirePositiveInt(int $value, string $message): int {
-		if ($value <= 0) {
-			throw new ControllerBadRequestException($message);
-		}
-		return $value;
 	}
 
 	protected function requireAccessMode(string $accessMode): string {

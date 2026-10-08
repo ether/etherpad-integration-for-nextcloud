@@ -135,8 +135,8 @@ final class SensitiveMethods {
 		\OCA\EtherpadNextcloud\Service\PublicPadContext::class => ['__construct'],
 		// Public share tokens, which are the credential for a public pad,
 		// from the controller that takes one off the address on.
-		\OCA\EtherpadNextcloud\Controller\PublicViewerController::class => ['showPad', 'padContent', 'openPadData'],
-		\OCA\EtherpadNextcloud\Controller\PublicViewerControllerErrorMapper::class => ['runForTemplate'],
+		\OCA\EtherpadNextcloud\Controller\PublicViewerController::class => ['padContent', 'openPadData'],
+		\OCA\EtherpadNextcloud\Controller\PublicShareRedirectController::class => ['showPad', 'targetFor'],
 		\OCA\EtherpadNextcloud\Service\PublicPadOpenService::class => ['open'],
 		\OCA\EtherpadNextcloud\Service\PublicShareResolver::class => ['resolveShare', 'requestedPath', 'resolvePadFile'],
 		\OCA\EtherpadNextcloud\Service\PublicShareUrlBuilder::class => ['buildShareBaseUrl', 'buildShareRedirectUrl'],
