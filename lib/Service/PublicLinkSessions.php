@@ -67,9 +67,7 @@ class PublicLinkSessions {
 	 */
 	public function sessionFor(string $link, string $authorId, string $groupId, int $validUntil, callable $create): array {
 		$window = min(self::REUSE_SECONDS, intdiv($validUntil - $this->timeFactory->getTime(), 3));
-		$cache = $window > 0 && $this->cacheFactory->isAvailable()
-			? $this->cacheFactory->createDistributed(Application::APP_ID . '/public-link-sessions/')
-			: null;
+		$cache = $window > 0 ? $this->cache() : null;
 		if ($cache === null) {
 			return ['sessionId' => $create(), 'validUntil' => $validUntil];
 		}
@@ -105,11 +103,26 @@ class PublicLinkSessions {
 		return ['sessionId' => $sessionId, 'validUntil' => $validUntil];
 	}
 
-	/** A cache that fails - Redis gone, say - is one that keeps nothing. */
+	/**
+	 * A cache that fails - Redis gone, say, which can already throw while
+	 * it is set up - is one that keeps nothing, and fails no open.
+	 */
+	private function cache(): ?ICache {
+		try {
+			return $this->cacheFactory->isAvailable()
+				? $this->cacheFactory->createDistributed(Application::APP_ID . '/public-link-sessions/')
+				: null;
+		} catch (\Throwable $e) {
+			$this->cacheFailed($e);
+			return null;
+		}
+	}
+
 	private function read(ICache $cache, string $key): string {
 		try {
 			return self::asString($cache->get($key));
-		} catch (\Throwable) {
+		} catch (\Throwable $e) {
+			$this->cacheFailed($e);
 			return '';
 		}
 	}
@@ -121,9 +134,22 @@ class PublicLinkSessions {
 	private function write(ICache $cache, string $key, string $sessionId, int $window): void {
 		try {
 			$cache->set($key, $sessionId, $window);
-		} catch (\Throwable) {
+		} catch (\Throwable $e) {
 			// The session is made and handed out; the next open makes another.
+			$this->cacheFailed($e);
 		}
+	}
+
+	/**
+	 * Said, since a link then makes a session an open again, which nothing
+	 * else would show. Once per failing call, which is once or twice an
+	 * open; neither the token nor a session id is in it.
+	 */
+	private function cacheFailed(\Throwable $e): void {
+		$this->logger->warning('The memory cache failed, so a public link\'s Etherpad session is not kept; each open makes one while it fails.', [
+			'app' => Application::APP_ID,
+			...SafeError::context($e),
+		]);
 	}
 
 	private function key(string $link, string $groupId): string {

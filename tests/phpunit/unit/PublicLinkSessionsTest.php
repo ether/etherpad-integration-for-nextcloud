@@ -118,15 +118,45 @@ class PublicLinkSessionsTest extends TestCase {
 		$sessions->sessionFor(self::LINK, self::AUTHOR, self::GROUP, self::NEW_UNTIL, static fn (): string => throw new EtherpadClientException('cURL error 7'));
 	}
 
-	/** A cache that fails - Redis gone, say - keeps nothing, and the open goes ahead. */
-	public function testACacheThatFailsKeepsNothing(): void {
+	/**
+	 * A cache that fails - Redis gone, say - keeps nothing, and the open
+	 * goes ahead. Said, since the link then makes a session an open again.
+	 */
+	public function testACacheThatFailsKeepsNothingAndSaysSo(): void {
 		$cache = $this->createMock(ICache::class);
 		$cache->method('get')->willThrowException(new \RuntimeException('Redis server went away'));
 		$cache->method('set')->willThrowException(new \RuntimeException('Redis server went away'));
-		$sessions = $this->sessions($this->client(null), $this->factoryFor($cache));
+		$logger = $this->createMock(LoggerInterface::class);
+		// The read and the write, on each of the two opens.
+		$logger->expects($this->exactly(4))->method('warning');
+		$sessions = $this->sessions($this->client(null), $this->factoryFor($cache), $logger);
 
 		$this->assertSame(['sessionId' => 's.made1', 'validUntil' => self::NEW_UNTIL], $this->open($sessions));
 		$this->assertSame('s.made2', $this->open($sessions)['sessionId']);
+	}
+
+	/**
+	 * Redis can already fail while the cache is set up: Nextcloud's
+	 * connects when it is made. The open goes ahead all the same.
+	 */
+	#[DataProvider('factoryFailures')]
+	public function testACacheThatFailsToBeSetUpKeepsNothing(string $failing): void {
+		$factory = $this->createMock(ICacheFactory::class);
+		$factory->method('isAvailable')->willReturnCallback(static fn (): bool => $failing === 'isAvailable' ? throw new \RuntimeException('Redis server went away') : true);
+		$factory->method('createDistributed')->willThrowException(new \RuntimeException('Redis server went away'));
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects($this->once())->method('warning');
+		$sessions = $this->sessions($this->client(null), $factory, $logger);
+
+		$this->assertSame(['sessionId' => 's.made1', 'validUntil' => self::NEW_UNTIL], $this->open($sessions));
+	}
+
+	/** @return array<string, array{string}> */
+	public static function factoryFailures(): array {
+		return [
+			'asking whether there is one' => ['isAvailable'],
+			'making it' => ['createDistributed'],
+		];
 	}
 
 	/** Without a memory cache every open makes a session, as before, and no cache is built. */

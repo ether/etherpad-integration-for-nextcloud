@@ -356,7 +356,8 @@ hour is handed out again instead (`PublicLinkSessions`):
   which Nextcloud then uses in its place, that holds for each web server
   on its own. Without any, every open makes a session, as before, and
   only the throttle on the public open bounds them. A cache that fails -
-  Redis gone, say - keeps nothing and fails no open.
+  Redis gone, say, even while it is set up - keeps nothing and fails no
+  open, and the log says so, since each open then makes a session again.
 - The cache only points; Etherpad decides. A kept session is handed out
   only once Etherpad confirms that it exists – one taken away with the
   file's trash does not – that it is the link's author's for the pad's
