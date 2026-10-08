@@ -60,7 +60,7 @@ class PadSessionController extends AbstractPadController {
 	}
 
 	#[\OCP\AppFramework\Http\Attribute\NoAdminRequired]
-	public function openById(int $fileId): DataResponse {
+	public function openById(mixed $fileId): DataResponse {
 		return $this->runForUser(
 			fn(IUser $user): PadOpenTarget => $this->padOpenService->openById($user->getUID(), $user->getDisplayName(), $this->requireFileId($fileId)),
 			fn(PadOpenTarget $result): DataResponse => $this->padResponses->openResponse($result),
@@ -78,7 +78,7 @@ class PadSessionController extends AbstractPadController {
 	 */
 	#[\OCP\AppFramework\Http\Attribute\NoAdminRequired]
 	#[\OCP\AppFramework\Http\Attribute\NoCSRFRequired]
-	public function contentById(int $fileId): DataResponse {
+	public function contentById(mixed $fileId): DataResponse {
 		return $this->runForUser(
 			fn(IUser $user): LivePadHtml => $this->padContentService->contentById($user->getUID(), $this->requireFileId($fileId)),
 			fn(LivePadHtml $content): DataResponse => $this->padResponses->padContentResponse($content),
@@ -101,7 +101,7 @@ class PadSessionController extends AbstractPadController {
 	}
 
 	#[\OCP\AppFramework\Http\Attribute\NoAdminRequired]
-	public function initializeById(int $fileId): DataResponse {
+	public function initializeById(mixed $fileId): DataResponse {
 		return $this->runForUser(
 			fn(IUser $user): PadInitializationResult => $this->padInitializationService->initializeById($user->getUID(), $this->requireFileId($fileId)),
 			fn(PadInitializationResult $result): DataResponse => new DataResponse($this->padResponses->initializationResponse($result)),
@@ -114,7 +114,7 @@ class PadSessionController extends AbstractPadController {
 
 	#[\OCP\AppFramework\Http\Attribute\NoAdminRequired]
 	#[\OCP\AppFramework\Http\Attribute\NoCSRFRequired]
-	public function metaById(int $fileId): DataResponse {
+	public function metaById(mixed $fileId): DataResponse {
 		return $this->runForUser(
 			fn(IUser $user): PadMeta => $this->padMetadataService->metaById($user->getUID(), $this->requireFileId($fileId)),
 			fn(PadMeta $meta): DataResponse => new DataResponse($this->padResponses->metaResponse($meta)),
@@ -126,9 +126,15 @@ class PadSessionController extends AbstractPadController {
 
 	#[\OCP\AppFramework\Http\Attribute\NoAdminRequired]
 	#[\OCP\AppFramework\Http\Attribute\NoCSRFRequired]
-	public function resolveById(int $fileId = 0, string $file = ''): DataResponse {
+	public function resolveById(mixed $fileId = null, string $file = ''): DataResponse {
 		return $this->runForUser(
-			fn(IUser $user): PadResolution => $this->padMetadataService->resolve($user->getUID(), $fileId, $file),
+			// Without an id, the path names the file: none sent, or sent
+			// empty or 0, as clients have sent "no id" so far.
+			fn(IUser $user): PadResolution => $this->padMetadataService->resolve(
+				$user->getUID(),
+				in_array($fileId, [null, '', '0', 0], true) ? 0 : $this->requireFileId($fileId),
+				$file,
+			),
 			fn(PadResolution $resolution): DataResponse => new DataResponse($this->padResponses->resolveResponse($resolution)),
 			[
 				'generic' => $this->l10n->t('Could not resolve .pad file.'),

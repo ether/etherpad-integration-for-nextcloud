@@ -49,6 +49,34 @@ class PadSessionControllerTest extends TestCase {
 		$this->assertSame('Invalid file ID.', $response->getData()['message']);
 	}
 
+	/**
+	 * An action takes its id as mixed and reads it strictly: the int
+	 * Nextcloud casts it to otherwise reads `1e3` as file 1000 and `7.5` or
+	 * `7x` as file 7. Every action by id goes through the same reading.
+	 */
+	public function testIdsThatAreNoWholeNumberAreRefusedNotCast(): void {
+		$user = $this->createConfiguredMock(IUser::class, ['getUID' => 'alice']);
+		$userSession = $this->createConfiguredMock(IUserSession::class, ['getUser' => $user]);
+		$rootFolder = $this->createMock(IRootFolder::class);
+		$rootFolder->expects($this->never())->method('getById');
+		$controller = $this->buildController($this->createMock(IRequest::class), $userSession, rootFolder: $rootFolder);
+
+		foreach (['1e3', '7.5', '7x', '+7'] as $sent) {
+			foreach ([$controller->openById($sent), $controller->metaById($sent), $controller->resolveById($sent)] as $response) {
+				$this->assertSame(Http::STATUS_BAD_REQUEST, $response->getStatus(), $sent);
+				$this->assertSame('Invalid file ID.', $response->getData()['message'], $sent);
+			}
+		}
+		// Resolving goes by the path where no id is sent - the viewer sends
+		// only `?file=` - or one sent empty or as 0, as clients have sent "no
+		// id" so far.
+		foreach ([null, '', '0', 0] as $none) {
+			$response = $controller->resolveById($none, '/Notes.pad');
+			$this->assertSame(Http::STATUS_OK, $response->getStatus(), var_export($none, true));
+			$this->assertSame('/Notes.pad', $response->getData()['path'] ?? null, var_export($none, true));
+		}
+	}
+
 	public function testOpenByIdRetriesLockedReadAndEventuallySucceeds(): void {
 		$user = $this->createConfiguredMock(IUser::class, [
 			'getUID' => 'alice',

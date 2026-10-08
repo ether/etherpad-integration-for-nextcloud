@@ -28,6 +28,8 @@ use OCP\IUserSession;
  * @psalm-api
  */
 class ViewerController extends Controller {
+	use ReadsPositiveIds;
+
 	public function __construct(
 		string $appName,
 		IRequest $request,
@@ -41,7 +43,11 @@ class ViewerController extends Controller {
 		parent::__construct($appName, $request);
 	}
 
-	#[\OCP\AppFramework\Http\Attribute\PublicPage]
+	/**
+	 * Signed-in users only, and said so to Nextcloud, which sends anyone
+	 * else to the login and back here after it.
+	 */
+	#[\OCP\AppFramework\Http\Attribute\NoAdminRequired]
 	#[\OCP\AppFramework\Http\Attribute\NoCSRFRequired]
 	public function showPad(mixed $file = ''): TemplateResponse|RedirectResponse {
 		return $this->errors->runForTemplate(
@@ -63,7 +69,7 @@ class ViewerController extends Controller {
 		);
 	}
 
-	#[\OCP\AppFramework\Http\Attribute\PublicPage]
+	#[\OCP\AppFramework\Http\Attribute\NoAdminRequired]
 	#[\OCP\AppFramework\Http\Attribute\NoCSRFRequired]
 	public function showPadById(mixed $fileId): TemplateResponse|RedirectResponse {
 		return $this->errors->runForTemplate(
@@ -90,14 +96,7 @@ class ViewerController extends Controller {
 	}
 
 	private function requireFileId(mixed $candidate): int {
-		if (!is_numeric($candidate)) {
-			throw new ControllerBadRequestException($this->l10n->t('Invalid file ID.'));
-		}
-		$id = (int)$candidate;
-		if ($id <= 0) {
-			throw new ControllerBadRequestException($this->l10n->t('Invalid file ID.'));
-		}
-		return $id;
+		return $this->requirePositiveInt($candidate, $this->l10n->t('Invalid file ID.'));
 	}
 
 	private function normalizeOrThrow(mixed $file): string {

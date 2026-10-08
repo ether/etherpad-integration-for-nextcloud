@@ -20,7 +20,8 @@ class PositiveIntParamTest extends TestCase {
 		$this->assertNull(PositiveIntParam::read(null));
 		$this->assertSame(42, PositiveIntParam::read('42'));
 		$this->assertSame(42, PositiveIntParam::read(42));
-		foreach (['', '7x', '1.5', '1e3', '0', '-3', 0, -3, 7.0, [], true] as $sent) {
+		$this->assertSame(7, PositiveIntParam::read('007'));
+		foreach (['', '7x', '1.5', '1e3', '0', '-3', 0, -3, 7.0, [], true, '99999999999999999999'] as $sent) {
 			try {
 				PositiveIntParam::read($sent);
 				$this->fail('taken: ' . var_export($sent, true));
@@ -28,5 +29,12 @@ class PositiveIntParamTest extends TestCase {
 				$this->addToAssertionCount(1);
 			}
 		}
+	}
+
+	/** For a parameter the request has to send, nothing sent is refused too. */
+	public function testARequiredOneRefusesNothingSentAsWell(): void {
+		$this->assertSame(42, PositiveIntParam::readRequired('42'));
+		$this->expectException(\InvalidArgumentException::class);
+		PositiveIntParam::readRequired(null);
 	}
 }

@@ -52,7 +52,7 @@ class PadCreateController extends AbstractPadController {
 	}
 
 	#[\OCP\AppFramework\Http\Attribute\NoAdminRequired]
-	public function createByParent(int $parentFolderId, string $name, string $accessMode = BindingService::ACCESS_PROTECTED): DataResponse {
+	public function createByParent(mixed $parentFolderId, string $name, string $accessMode = BindingService::ACCESS_PROTECTED): DataResponse {
 		return $this->runForUser(
 			fn(IUser $user): array => $this->padCreationService->createInParent(
 				$user->getUID(),
@@ -73,7 +73,7 @@ class PadCreateController extends AbstractPadController {
 	}
 
 	#[\OCP\AppFramework\Http\Attribute\NoAdminRequired]
-	public function createFromTemplate(string $file, int $templateFileId): DataResponse {
+	public function createFromTemplate(string $file, mixed $templateFileId): DataResponse {
 		return $this->runForUser(
 			fn(IUser $user): array => $this->padCreationService->createFromTemplate(
 				$user->getUID(),

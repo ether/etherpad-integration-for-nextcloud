@@ -6,14 +6,18 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 Base: `/apps/etherpad_nextcloud`
 
+A file or folder id a route takes - `{fileId}`, `fileId`, `parentFolderId`, `templateFileId` - is a positive whole number in digits. Anything else is refused, not cast: `1e3`, `7.5` and `7x` name no file. The API answers `400` with `Invalid file ID.` (or the folder's sentence), the public routes `400` with "This link does not point to a valid file.", and the viewer and embed pages show their error page. One exception: `/api/v1/pads/resolve` takes the path when `fileId` is absent, empty or `0`.
+
 - `GET /`
   - Controller: `ViewerController::showPad`
   - Query: `file=/path/to/file.pad`
   - Purpose: compatibility entry route that redirects to native Files viewer URL.
+  - Signed-in users only: Nextcloud sends anyone else to the login and back.
 
 - `GET /by-id/{fileId}`
   - Controller: `ViewerController::showPadById`
   - Purpose: compatibility entry route via file ID; redirects to native Files viewer URL.
+  - Signed-in users only, as above.
 
 - `GET /embed/by-id/{fileId}`
   - Controller: `EmbedController::showById`
@@ -221,7 +225,7 @@ solely by the separate external-pad policy, not by these two settings.
   - Controller: `PadSessionController::resolveById`
   - Query:
     - `fileId=<int>` (preferred)
-    - `file=/path/file.pad` (path fallback)
+    - `file=/path/file.pad` (path fallback: taken when `fileId` is absent, empty or `0`)
   - Result: MIME/path/viewer target for files frontend.
 
 - `POST /api/v1/pads/sync/{fileId}`

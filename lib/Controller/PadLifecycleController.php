@@ -46,7 +46,7 @@ class PadLifecycleController extends AbstractPadController {
 	}
 
 	#[\OCP\AppFramework\Http\Attribute\NoAdminRequired]
-	public function recoverByFileId(int $fileId): DataResponse {
+	public function recoverByFileId(mixed $fileId): DataResponse {
 		return $this->runForUser(
 			fn(IUser $user): array => $this->recover($user->getUID(), $this->requireFileId($fileId)),
 			fn(array $result): DataResponse => $this->padResponses->lifecycleResponse($result),
@@ -69,7 +69,7 @@ class PadLifecycleController extends AbstractPadController {
 	}
 
 	#[\OCP\AppFramework\Http\Attribute\NoAdminRequired]
-	public function syncById(int $fileId): DataResponse {
+	public function syncById(mixed $fileId): DataResponse {
 		$forceParam = (string)$this->request->getParam('force', '0');
 		$force = in_array(strtolower($forceParam), ['1', 'true', 'yes'], true);
 
@@ -85,7 +85,7 @@ class PadLifecycleController extends AbstractPadController {
 
 	#[\OCP\AppFramework\Http\Attribute\NoAdminRequired]
 	#[\OCP\AppFramework\Http\Attribute\NoCSRFRequired]
-	public function syncStatusById(int $fileId): DataResponse {
+	public function syncStatusById(mixed $fileId): DataResponse {
 		return $this->runForUser(
 			fn(IUser $user): PadSyncStatus => $this->padSyncService->syncStatusById($user->getUID(), $this->requireFileId($fileId)),
 			fn(PadSyncStatus $result): DataResponse => new DataResponse($this->padResponses->syncStatusResponse($result)),
@@ -98,7 +98,7 @@ class PadLifecycleController extends AbstractPadController {
 
 	#[\OCP\AppFramework\Http\Attribute\NoAdminRequired]
 	#[\OCP\AppFramework\Http\Attribute\NoCSRFRequired]
-	public function findOriginalByFileId(int $fileId): DataResponse {
+	public function findOriginalByFileId(mixed $fileId): DataResponse {
 		return $this->runForUser(
 			fn(IUser $user): PadOriginalLookup => $this->padMetadataService->findOriginalForCopy(
 				$user->getUID(),
