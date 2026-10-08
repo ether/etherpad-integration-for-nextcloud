@@ -563,11 +563,15 @@ class EtherpadClient {
 	}
 
 	private function getPublicHost(): string {
-		$host = rtrim((string)$this->config->getAppValue('etherpad_nextcloud', 'etherpad_host', ''), '/');
+		$host = $this->configuredPublicHost();
 		if ($host === '') {
 			throw new EtherpadClientException('Etherpad host is not configured.');
 		}
 		return $host;
+	}
+
+	private function configuredPublicHost(): string {
+		return rtrim((string)$this->config->getAppValue('etherpad_nextcloud', 'etherpad_host', ''), '/');
 	}
 
 	/**
@@ -615,11 +619,21 @@ class EtherpadClient {
 	 * release has to be kept against the endpoint it was read from.
 	 */
 	public function getApiHost(): string {
-		$apiHost = rtrim((string)$this->config->getAppValue('etherpad_nextcloud', 'etherpad_api_host', ''), '/');
-		if ($apiHost !== '') {
-			return $apiHost;
+		$apiHost = $this->configuredApiHost();
+		if ($apiHost === '') {
+			throw new EtherpadClientException('Etherpad host is not configured.');
 		}
-		return $this->getPublicHost();
+		return $apiHost;
+	}
+
+	/**
+	 * The same host, or '' while none is configured: for callers that
+	 * compare an address with it rather than call it, such as the admin
+	 * page before its first save.
+	 */
+	public function configuredApiHost(): string {
+		$apiHost = rtrim((string)$this->config->getAppValue('etherpad_nextcloud', 'etherpad_api_host', ''), '/');
+		return $apiHost !== '' ? $apiHost : $this->configuredPublicHost();
 	}
 
 	private function getApiKey(): string {

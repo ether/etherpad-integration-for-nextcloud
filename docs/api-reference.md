@@ -268,6 +268,12 @@ solely by the separate external-pad policy, not by these two settings.
     - `etherpad_host` (public/browser base URL)
     - `etherpad_api_host` (optional internal API URL; fallback to `etherpad_host`)
     - `delete_pad_with_file` (`yes|no`)
+    - `allow_external_pads` and `external_pad_allowlist`: the list is taken
+      only while `allow_external_pads` is on, and otherwise left as stored.
+      An empty list trusts every public HTTPS host.
+  - The Etherpad API version is read from `/api` on every save. When that
+    read fails, the version stored for the same API host stays; for another
+    host, the default `1.2.15` is stored.
   - Result includes `checks` with the single `protected_pads` line, recomputed
     from the saved values in the same shape the health check uses — so the
     settings page refreshes that verdict without a separate connection test,

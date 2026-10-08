@@ -38,6 +38,15 @@ class AppConfigService {
 		return (string)$this->config->getAppValue(Application::APP_ID, 'trusted_embed_origins', '');
 	}
 
+	public function getExternalPadAllowlistRaw(): string {
+		return $this->appConfig->getValueString(Application::APP_ID, 'external_pad_allowlist', '');
+	}
+
+	/** As detected for the configured API host, '' before a save. */
+	public function getStoredEtherpadApiVersion(): string {
+		return $this->appConfig->getValueString(Application::APP_ID, 'etherpad_api_version', '');
+	}
+
 	/**
 	 * Whether the pad of a file deleted for good is deleted (GoneFileSweep).
 	 * On unless the admin switched it off. Read and written as a string

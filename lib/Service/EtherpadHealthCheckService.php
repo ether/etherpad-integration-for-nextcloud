@@ -237,7 +237,9 @@ class EtherpadHealthCheckService {
 		// The stored host is the one the open path resolves. Comparing a
 		// probe of an address being typed against what pads are doing would
 		// read every planned migration as a live lockout.
-		$configuredHost = $this->etherpadClient->getApiHost();
+		// Before the first save there is none, and no address is in use: the
+		// one tested is not it either.
+		$configuredHost = $this->etherpadClient->configuredApiHost();
 		if (rtrim($configuredHost, '/') !== rtrim($settings->etherpadApiHost, '/')) {
 			return $this->sessionCookieItem(
 				HealthCheckItem::STATUS_OK,
