@@ -64,10 +64,19 @@ class RestoreService {
 		private ISecureRandom $secureRandom,
 		private ProvisionedPadRollback $provisionedPadRollback,
 		private UserNodeResolver $userNodeResolver,
+		private PadFileLockRetryService $lockRetry,
 	) {
 	}
 
-	/** @return array{status: string, reason?: string, old_pad_id?: string, new_pad_id?: string} */
+	/**
+	 * A file back from the trash, its pad taken back or made anew. What
+	 * fails reaches the caller - the trash listener, which reports it - as
+	 * the restore's own failure (LifecycleException), its cause inside; the
+	 * paths a recovery shares throw the cause as it is (recoverFromSnapshot()).
+	 *
+	 * @return array{status: string, reason?: string, old_pad_id?: string, new_pad_id?: string}
+	 * @throws LifecycleException
+	 */
 	public function restore(File $file): array {
 		$fileId = $file->getId();
 		if (!PadFileType::isPad($file->getName())) {
@@ -76,21 +85,19 @@ class RestoreService {
 
 		try {
 			$binding = $this->bindingService->findByFileId($fileId);
+			if ($binding === null) {
+				return $this->restoreFileWithoutRow($file, $fileId);
+			}
+			if ($binding->state === BindingService::STATE_PENDING_DELETE) {
+				// Seen deleted for good, yet back: the deletion did not happen.
+				$this->bindingService->transition($fileId, $binding->padId, BindingService::STATE_PENDING_DELETE, BindingService::STATE_ACTIVE);
+			}
+			return $this->restoreActiveRow($file, $fileId, $binding);
+		} catch (LifecycleException $e) {
+			throw $e;
 		} catch (\Throwable $e) {
 			throw LifecycleException::failed('Restore', $e);
 		}
-		if ($binding === null) {
-			return $this->restoreFileWithoutRow($file, $fileId);
-		}
-		if ($binding->state === BindingService::STATE_PENDING_DELETE) {
-			// Seen deleted for good, yet back: the deletion did not happen.
-			try {
-				$this->bindingService->transition($fileId, $binding->padId, BindingService::STATE_PENDING_DELETE, BindingService::STATE_ACTIVE);
-			} catch (\Throwable $e) {
-				throw LifecycleException::failed('Restore', $e);
-			}
-		}
-		return $this->restoreActiveRow($file, $fileId, $binding);
 	}
 
 	/**
@@ -185,26 +192,28 @@ class RestoreService {
 	 * without a row too, which the card cannot tell apart, and the
 	 * endpoint answers anyone who can see the file.
 	 *
+	 * The endpoint's caller hears what went wrong as it is - Etherpad not
+	 * answering or refusing, a file locked by a sync, one that is no `.pad`
+	 * the app can read or is gone, a row another recovery made first - for
+	 * the API to answer each as it answers it elsewhere. What was made is
+	 * let go first. The one failure that keeps what it made, a write that
+	 * may have cut the file short, is the restore's own (LifecycleException).
+	 *
 	 * @return array{status: string, reason?: string, old_pad_id?: string, new_pad_id?: string}
 	 * @throws PadFileNotWritableException
+	 * @throws LifecycleException
 	 */
 	public function recoverFromSnapshot(File $file): array {
 		$fileId = $file->getId();
 		if (!PadFileType::isPad($file->getName())) {
 			throw new NotAPadFileException('File is not a .pad file.');
 		}
-		if (!$file->isUpdateable()) {
-			throw new PadFileNotWritableException('The user may not change this .pad file.');
-		}
+		PadFileNotWritableException::unlessUpdateable($file);
 		$binding = $this->bindingService->findByFileId($fileId);
 		if ($binding !== null) {
 			return $this->recoverLostPad($file, $fileId, $binding);
 		}
-		try {
-			$pad = $this->padFileService->readPad($file->getContent());
-		} catch (\Throwable $e) {
-			throw LifecycleException::failed('Restore', $e);
-		}
+		$pad = $this->padFileService->readPad($file->getContent());
 		$result = $this->restoreWithoutBinding($file, $fileId, $pad);
 		if (($result['status'] ?? '') === LifecycleResult::RESTORED) {
 			$this->logger->info('Pad recovered from snapshot.', [
@@ -221,25 +230,18 @@ class RestoreService {
 	 * the row moved onto it. Asked here again, not taken from the open that
 	 * sent the user: the answer must hold for the row as it is now. A row
 	 * that waits, one naming another pad than the file, or one whose pad
-	 * Etherpad has, is refused; Etherpad's own trouble reaches the caller as
-	 * it is.
+	 * Etherpad has, is refused; what fails reading the file or asking
+	 * Etherpad reaches the caller as it is.
 	 *
 	 * @return array{status: string, reason?: string, old_pad_id?: string, new_pad_id?: string}
 	 * @throws PadAlreadyHasBindingException
 	 * @throws LifecycleException
-	 * @throws EtherpadClientException
 	 */
 	private function recoverLostPad(File $file, int $fileId, Binding $binding): array {
 		if ($binding->state !== BindingService::STATE_ACTIVE) {
 			throw new PadAlreadyHasBindingException('A binding already exists for this file.');
 		}
-		try {
-			$found = $this->lostPadOf($file, $binding);
-		} catch (EtherpadClientException $e) {
-			throw $e;
-		} catch (\Throwable $e) {
-			throw LifecycleException::failed('Restore', $e);
-		}
+		$found = $this->lostPadOf($file, $binding);
 		if (is_string($found)) {
 			throw new PadAlreadyHasBindingException('A binding already exists for this file.');
 		}
@@ -442,15 +444,19 @@ class RestoreService {
 	 * that fails, or a write that fails, takes the new pad down, and an
 	 * active row naming it with it - that row would contradict a `.pad` that
 	 * still names the old pad - while a row seen deleted for good meanwhile
-	 * keeps it. With $rowStays, the row a replacement claimed is moved back
-	 * onto the old pad instead, where the file still points; only when that
-	 * fails too does it go. A write that failed and a file that cannot be
+	 * keeps it (letGoOfNewPad()). With $rowStays, the row a replacement
+	 * claimed is moved back onto the old pad instead, where the file still
+	 * points; only when that fails too does it go. A claim that fails has
+	 * written nothing, so the file is not read for it: another recovery's
+	 * write may hold its lock. A write that failed and a file that cannot be
 	 * read afterwards leave open which pad the file names, so no row may be
 	 * left to contradict it: the row goes, and the file's next open offers a
 	 * pad from its content, whichever pad it names. The new pad stays, named
 	 * in the log: a write is not atomic on every storage, and one that
 	 * broke off may have cut the file short, leaving the new pad the last
-	 * whole copy of what the file held.
+	 * whole copy of what the file held. So does a file still locked when it
+	 * is read for that (fileNames()): what it holds behind the lock of the
+	 * write ours was refused for is no answer yet.
 	 *
 	 * Seeding the new pad takes a while, so the file is asked once more
 	 * before the claim: moved - deleted again, say - and the new pad goes,
@@ -460,23 +466,25 @@ class RestoreService {
 	 * was written would be gone. Its next open asks again, from what it
 	 * holds then.
 	 *
+	 * What fails reaches the caller as it is, the new pad and a claimed row
+	 * taken back first - but for a write that left the file unreadable:
+	 * that one keeps the new pad, and is the restore's own failure
+	 * (LifecycleException), since a retry would make another pad over a file
+	 * the write may have cut short.
+	 *
 	 * @param \Closure(string): bool $claim
 	 * @return array{status: string, reason?: string, old_pad_id?: string, new_pad_id?: string}
 	 * @throws LifecycleException
 	 */
 	private function restoreOntoNewPad(File $file, string $path, int $fileId, ParsedPadFile $pad, string $accessMode, string $oldPadId, string $flow, \Closure $claim, bool $rowStays = false): array {
-		try {
-			[$newPadId, $updatedContent] = $this->seedFromSnapshot($fileId, $pad, $accessMode, $oldPadId);
-		} catch (\Throwable $e) {
-			throw LifecycleException::failed('Restore', $e);
-		}
+		[$newPadId, $updatedContent] = $this->seedFromSnapshot($fileId, $pad, $accessMode, $oldPadId);
 
 		try {
 			$moved = $this->userNodeResolver->hasMoved($fileId, $path);
 			$changed = !$moved && !$this->stillHolds($file, $pad);
 		} catch (\Throwable $e) {
 			$this->provisionedPadRollback->discardUnlessBoundToFile($fileId, $newPadId, $flow);
-			throw LifecycleException::failed('Restore', $e);
+			throw $e;
 		}
 		if ($moved || $changed) {
 			$this->provisionedPadRollback->discardUnlessBoundToFile($fileId, $newPadId, $flow);
@@ -488,6 +496,12 @@ class RestoreService {
 				$this->provisionedPadRollback->discardUnlessBoundToFile($fileId, $newPadId, $flow);
 				return LifecycleResult::skipped('binding_state_transition_conflict', $fileId, $this->logger);
 			}
+		} catch (\Throwable $e) {
+			$this->letGoOfNewPad($fileId, $newPadId, $oldPadId, $flow, $rowStays);
+			throw $e;
+		}
+
+		try {
 			$file->putContent($updatedContent);
 		} catch (\Throwable $e) {
 			$names = $this->fileNames($file, $newPadId);
@@ -512,14 +526,34 @@ class RestoreService {
 				$this->removeRowOf($fileId, $newPadId);
 				throw LifecycleException::failed('Restore', $e);
 			}
-			if ($rowStays && $this->moveRowBack($fileId, $newPadId, $oldPadId)) {
-				$this->provisionedPadRollback->discardUnlessBoundToFile($fileId, $newPadId, $flow);
-			} else {
-				$this->provisionedPadRollback->removeMatchingBindingAndDiscard($fileId, $newPadId, $flow);
-			}
-			throw LifecycleException::failed('Restore', $e);
+			$this->letGoOfNewPad($fileId, $newPadId, $oldPadId, $flow, $rowStays);
+			// Said here, as the caller may answer it as nothing worse than a
+			// lock: a pad was made, and its row moved back or removed. The
+			// rollback says so itself when it keeps the pad.
+			$this->logger->warning('Could not write a restored .pad file; its claim was taken back, and its new pad let go unless a row still names it.', [
+				'app' => 'etherpad_nextcloud',
+				'fileId' => $fileId,
+				'padId' => $newPadId,
+				'flow' => $flow,
+				...SafeError::context($e),
+			]);
+			throw $e;
 		}
 		return LifecycleResult::restored($oldPadId, $newPadId);
+	}
+
+	/**
+	 * The new pad let go after a claim or a write that failed, the file
+	 * still naming the old pad: a row a replacement claimed moved back onto
+	 * it ($rowStays), an active row naming the new pad gone with it
+	 * otherwise.
+	 */
+	private function letGoOfNewPad(int $fileId, string $newPadId, string $oldPadId, string $flow, bool $rowStays): void {
+		if ($rowStays && $this->moveRowBack($fileId, $newPadId, $oldPadId)) {
+			$this->provisionedPadRollback->discardUnlessBoundToFile($fileId, $newPadId, $flow);
+		} else {
+			$this->provisionedPadRollback->removeMatchingBindingAndDiscard($fileId, $newPadId, $flow);
+		}
 	}
 
 	/**
@@ -539,10 +573,19 @@ class RestoreService {
 		}
 	}
 
-	/** Whether the file names this pad now; null when that cannot be read either. */
+	/**
+	 * Whether the file names this pad after a write that threw; null when
+	 * that cannot be told. Read under its lock, after a short wait for a
+	 * lock to pass: a write refused for a lock was refused for someone
+	 * else's write, and what the file holds while that runs is no answer -
+	 * read past the lock, it may name the old pad with half its content
+	 * written, and taking the new pad down on that would lose the last
+	 * whole copy should that write break off. A file still locked is not
+	 * read.
+	 */
 	private function fileNames(File $file, string $padId): ?bool {
 		try {
-			return $this->padFileService->readPad($file->getContent())->padId === $padId;
+			return $this->padFileService->readPad($this->lockRetry->readContentWithOpenLockRetry($file))->padId === $padId;
 		} catch (\Throwable) {
 			return null;
 		}

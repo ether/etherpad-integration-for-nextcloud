@@ -120,7 +120,7 @@ OC.L10N.register(
     "No such template.": "Modello inesistente.",
     "Not a pad file: the frontmatter could not be read.": "Non è un file pad: impossibile leggere il frontmatter.",
     "Only people who can open the .pad file in Nextcloud can open the pad. Created as Etherpad group pads, which require a session issued by Nextcloud.": "Solo chi può aprire il file .pad in Nextcloud può aprire il pad. Vengono creati come pad di gruppo Etherpad, che richiedono una sessione emessa da Nextcloud.",
-    "Only someone who may edit this .pad file can make a new pad from it.": "Solo chi può modificare questo file .pad può crearne un nuovo pad.",
+    "Only someone who may edit this .pad file can do that.": "Solo chi può modificare questo file .pad può farlo.",
     "Open original pad": "Apri il pad originale",
     "Open the original .pad file": "Apri il file .pad originale",
     "Optional internal URL for server-side API calls. Leave empty to use Etherpad Base URL.": "URL interno opzionale per le chiamate API lato server. Lascia vuoto per usare l'URL base Etherpad.",

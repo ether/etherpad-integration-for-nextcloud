@@ -12,7 +12,6 @@ namespace OCA\EtherpadNextcloud\Service;
 use OCA\EtherpadNextcloud\Exception\NotAPadFileException;
 use OCA\EtherpadNextcloud\Exception\PadFileAlreadyExistsException;
 use OCA\EtherpadNextcloud\Exception\PadFileChangedException;
-use OCA\EtherpadNextcloud\Exception\PadParentFolderNotWritableException;
 use OCA\EtherpadNextcloud\Util\PadFileType;
 use OCA\EtherpadNextcloud\Util\PathNormalizer;
 use OCA\EtherpadNextcloud\Util\SafeError;
@@ -65,10 +64,8 @@ class PadCreationService {
 	public function createInParent(string $uid, int $parentFolderId, string $name, string $accessMode): array {
 		$this->padTypePolicy->requireEnabled($accessMode);
 		$fileName = $this->padPaths->normalizeCreateFileName($name);
+		// Whether it takes a new file, the creator asks (createUserFileInFolder()).
 		$parentFolder = $this->userNodeResolver->resolveUserFolderNodeById($uid, $parentFolderId);
-		if (!$parentFolder->isCreatable()) {
-			throw new PadParentFolderNotWritableException('Selected parent folder is not writable.');
-		}
 
 		return $this->withCreateRollback(
 			function (PadCreateAttempt $attempt) use ($uid, $parentFolder, $parentFolderId, $fileName, $accessMode): array {

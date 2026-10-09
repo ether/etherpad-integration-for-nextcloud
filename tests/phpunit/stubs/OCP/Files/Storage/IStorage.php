@@ -14,5 +14,8 @@ if (!interface_exists(IStorage::class)) {
 
 		/** @return bool */
 		public function instanceOfStorage(string $class);
+
+		/** @return string|false */
+		public function file_get_contents(string $path);
 	}
 }

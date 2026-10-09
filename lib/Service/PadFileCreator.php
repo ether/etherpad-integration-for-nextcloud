@@ -12,6 +12,8 @@ namespace OCA\EtherpadNextcloud\Service;
 use OCA\EtherpadNextcloud\AppInfo\Application;
 use OCA\EtherpadNextcloud\Exception\InvalidPadNameException;
 use OCA\EtherpadNextcloud\Exception\PadFileAlreadyExistsException;
+use OCA\EtherpadNextcloud\Exception\PadParentFolderNotFoundException;
+use OCA\EtherpadNextcloud\Exception\PadParentFolderNotWritableException;
 use OCA\EtherpadNextcloud\Util\SafeError;
 use OCP\Files\File;
 use OCP\Files\Folder;
@@ -19,6 +21,7 @@ use OCP\Files\IFilenameValidator;
 use OCP\Files\InvalidPathException;
 use OCP\Files\IRootFolder;
 use OCP\Files\NotFoundException;
+use OCP\Files\NotPermittedException;
 use OCP\Files\Storage\IStorage;
 use OCP\Files\StorageNotAvailableException;
 use OCP\Lock\ILockingProvider;
@@ -45,9 +48,16 @@ class PadFileCreator {
 	}
 
 	/**
+	 * The `.pad` at a path in the user's files. Its folder has to be there -
+	 * one the user may not look into is not, to them - and take a new file
+	 * (createUserFileInFolder()): the path endpoints answer 404 and 403 for
+	 * those, as the endpoint that names the folder by id does.
+	 *
 	 * @throws \RuntimeException
 	 * @throws PadFileAlreadyExistsException
 	 * @throws InvalidPadNameException
+	 * @throws PadParentFolderNotFoundException
+	 * @throws PadParentFolderNotWritableException
 	 */
 	public function createUserFile(string $uid, string $absolutePath): File {
 		$relativePath = ltrim($absolutePath, '/');
@@ -68,11 +78,11 @@ class PadFileCreator {
 		$userFolder = $this->rootFolder->getUserFolder($uid);
 		try {
 			$parent = $parentPath === '.' ? $userFolder : $userFolder->get($parentPath);
-		} catch (NotFoundException $e) {
-			throw new \RuntimeException('Target parent folder does not exist.', 0, $e);
+		} catch (NotFoundException|NotPermittedException $e) {
+			throw new PadParentFolderNotFoundException('Target parent folder does not exist.', 0, $e);
 		}
 		if (!$parent instanceof Folder) {
-			throw new \RuntimeException('Target parent folder does not exist.');
+			throw new PadParentFolderNotFoundException('Target parent folder does not exist.');
 		}
 
 		return $this->createUserFileInFolder($parent, $fileName);
@@ -92,11 +102,15 @@ class PadFileCreator {
 	 * turned away with "that name is taken", which is what actually
 	 * happened, instead of a server error.
 	 *
+	 * A folder the user may not create in is refused first.
+	 *
 	 * @throws \RuntimeException
 	 * @throws PadFileAlreadyExistsException
 	 * @throws InvalidPadNameException
+	 * @throws PadParentFolderNotWritableException
 	 */
 	public function createUserFileInFolder(Folder $parent, string $fileName): File {
+		PadParentFolderNotWritableException::unlessCreatable($parent);
 		$this->requireNameThisFolderAccepts($parent, $fileName);
 
 		$lock = $this->lockKey($parent, $fileName);

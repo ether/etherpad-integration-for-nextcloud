@@ -23,6 +23,11 @@ if (!interface_exists(File::class)) {
 
 		public function getContent();
 
+		/** Mirrors OCP\Files\FileInfo::getStorage() / ::getInternalPath(). */
+		public function getStorage(): mixed;
+
+		public function getInternalPath(): string;
+
 		public function putContent($data): void;
 
 		/**
