@@ -127,7 +127,7 @@ solely by the separate external-pad policy, not by these two settings.
     - `file` (required)
     - `accessMode` (`public|protected`, optional, default `protected`)
   - Result: creates pad, file, and binding.
-  - The folder the path names has to be there and take a new file: `404` with "Cannot resolve selected parent folder." when it is not there, is no folder or is one the user may not look into, `403` with "Selected parent folder is not writable." when the user may not create in it (a read-only share, say), both before anything is made. The same for `from-url` and `from-template`, and as `create-by-parent` answers for a folder named by id.
+  - The folder the path names has to be there and take a new file: `404` with "Cannot resolve selected parent folder." when it is not there, is no folder or is one the user may not look into, or when the user's files cannot be reached, `403` with "Selected parent folder is not writable." when the user may not create in it (a read-only share, say), both before anything is made. The same for `from-url` and `from-template`, and as `create-by-parent` answers for a folder named by id.
   - The app's own UI no longer calls this: a pad type is picked in Nextcloud's
     template picker, which creates the file itself. The endpoint stays for API
     consumers and behaves as before.
