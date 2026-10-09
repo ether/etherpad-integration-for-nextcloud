@@ -45,4 +45,8 @@ class CollectExpiredSessionsJob extends SessionSweepJob {
 	protected function lostPassMessage(): string {
 		return 'Could not queue the next Etherpad session sweep; the rest waits for another open.';
 	}
+
+	protected function gaveUpMessage(): string {
+		return 'Gave up an Etherpad session sweep after three retries without progress; the rest waits for another open.';
+	}
 }

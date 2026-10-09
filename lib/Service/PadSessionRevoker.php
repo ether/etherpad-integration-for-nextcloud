@@ -169,6 +169,7 @@ class PadSessionRevoker {
 				return true;
 			}
 			if (!ManagedPadLifecycle::groupHoldsOnly($this->etherpadClient->listPads($groupId, $this->callTimeout($deadline - $this->nowSeconds())), $groupPads)) {
+				$tally['left'] += count($sessions);
 				$this->logger->debug('Left the Etherpad sessions of a group that holds other pads too to the background job.', [
 					'app' => 'etherpad_nextcloud',
 					'groupId' => $groupId,

@@ -131,6 +131,7 @@ class GroupSessionRevoker {
 		} catch (RunBudgetSpentException) {
 			// No time left to list them: as slow as an outage, and backed off
 			// as one, so a pass that keeps running out ends.
+			$this->logger->warning('No time left to list the Etherpad sessions of a group to revoke.', $context);
 			return self::RETRY;
 		} catch (\Throwable $e) {
 			if (EtherpadErrorClassifier::isPadAlreadyDeleted($e)) {

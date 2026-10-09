@@ -46,11 +46,15 @@ class RevokeGroupSessionsJob extends SessionSweepJob {
 		return $this->revoker->revokeRest($item);
 	}
 
-	protected function lookAgainAfter(): ?int {
+	protected static function lookAgainAfter(): ?int {
 		return self::LOOK_AGAIN_AFTER_SECONDS;
 	}
 
 	protected function lostPassMessage(): string {
 		return 'Could not queue the next revocation of a group\'s Etherpad sessions; the rest expires on its own.';
+	}
+
+	protected function gaveUpMessage(): string {
+		return 'Gave up revoking a group\'s Etherpad sessions after three retries without progress; the rest expires on its own.';
 	}
 }

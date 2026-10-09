@@ -330,10 +330,39 @@ class GroupSessionRevokerTest extends TestCase {
 			return [self::PAD];
 		});
 		$client->expects(self::never())->method('listSessionsOfGroup');
+		// Said, as the failures beside it are: three such passes end the job.
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects(self::once())->method('warning')->with(
+			'No time left to list the Etherpad sessions of a group to revoke.',
+			self::callback(static fn (array $context): bool => $context['groupId'] === self::GROUP),
+		);
 
-		$result = $this->revoker($client, $this->bindings(self::TRASHED), clock: $clock)->revokeRest(self::GROUP);
+		$result = $this->revoker($client, $this->bindings(self::TRASHED), logger: $logger, clock: $clock)->revokeRest(self::GROUP);
 
 		self::assertSame(['deleted' => 0, 'remaining' => 0, 'retry' => true, 'nextDueAt' => null, 'ended' => false], $result);
+	}
+
+	/**
+	 * A group that holds no pad - its last deleted, the group left over -
+	 * opens nothing: its sessions go, with no file to ask about.
+	 */
+	public function testTakesTheSessionsOfAGroupHoldingNoPad(): void {
+		$client = $this->createMock(EtherpadClient::class);
+		$client->method('listPads')->willReturn([]);
+		$client->method('listSessionsOfGroup')->willReturn(['s.left' => ['groupID' => self::GROUP, 'validUntil' => FixedClock::NOW + 3600]]);
+		$removed = [];
+		$client->method('deleteSession')->willReturnCallback(static function (string $id) use (&$removed): void {
+			$removed[] = $id;
+		});
+		$bindings = $this->createMock(BindingService::class);
+		$bindings->expects(self::never())->method('findByPadId');
+		$bindings->method('placesOf')->with([])->willReturn([]);
+		$bindings->expects(self::never())->method('isInFiles');
+
+		$result = $this->revoker($client, $bindings)->revokeRest(self::GROUP);
+
+		self::assertSame(['s.left'], $removed);
+		self::assertSame(['deleted' => 1, 'remaining' => 0, 'retry' => false, 'nextDueAt' => null, 'ended' => false], $result);
 	}
 
 	/** A refused delete is tried again; the line for it is SessionDeletes's, under the group. */

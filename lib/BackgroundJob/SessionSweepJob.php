@@ -58,11 +58,15 @@ abstract class SessionSweepJob extends QueuedJob {
 	/** What the log says when the next pass cannot be queued: what becomes of the rest. */
 	abstract protected function lostPassMessage(): string;
 
+	/** What the log says when the sweep gives up after its retries: what becomes of the rest. */
+	abstract protected function gaveUpMessage(): string;
+
 	/**
 	 * Seconds after a pass that left nothing to look once more, or null for
-	 * no second look. Once: a second look that leaves nothing ends it.
+	 * no second look. Once: the passes a second look needs carry `again`,
+	 * and the last of them that leaves nothing ends it.
 	 */
-	protected function lookAgainAfter(): ?int {
+	protected static function lookAgainAfter(): ?int {
 		return null;
 	}
 
@@ -70,7 +74,7 @@ abstract class SessionSweepJob extends QueuedJob {
 	 * The arguments a waiting retry can have, so whoever queues a sweep can
 	 * recognise one before queueing a second row beside it.
 	 *
-	 * @param array<string,string> $argument
+	 * @param array<string,string|int> $argument
 	 * @return list<array<string,string|int>>
 	 */
 	public static function attemptArguments(array $argument): array {
@@ -85,12 +89,34 @@ abstract class SessionSweepJob extends QueuedJob {
 	/**
 	 * Whether a sweep of $argument is waiting, in every shape: the job list
 	 * matches arguments exactly, so asking only about the plain one would
-	 * miss a retry and queue a runnable row beside it.
+	 * miss a retry, or a second look, and queue a runnable row beside it.
 	 *
 	 * @param array<string,string> $argument
 	 */
 	public static function isQueued(IJobList $jobList, array $argument): bool {
-		return static::anyQueued($jobList, [$argument, ...static::attemptArguments($argument)]);
+		return static::anyQueued($jobList, self::waitingArguments($argument));
+	}
+
+	/**
+	 * Every argument a row of $argument's item can wait under: the plain
+	 * one, a retry's, and both with `again` where the sweep looks twice
+	 * (lookAgainAfter()). Built as reschedule() builds them, the order of
+	 * the keys too, which the job list matches as well.
+	 *
+	 * @param array<string,string> $argument the plain one
+	 * @return list<array<string,string|int>>
+	 */
+	private static function waitingArguments(array $argument): array {
+		$looks = static::lookAgainAfter() === null ? [$argument] : [$argument, $argument + ['again' => 1]];
+		$arguments = [];
+		foreach ($looks as $look) {
+			$arguments[] = $look;
+			foreach (self::attemptArguments($look) as $retry) {
+				$arguments[] = $retry;
+			}
+		}
+
+		return $arguments;
 	}
 
 	/** @param list<array<string,string|int>> $shapes */
@@ -117,6 +143,8 @@ abstract class SessionSweepJob extends QueuedJob {
 		}
 		// A row is just data; a negative attempt would index past the table.
 		$attempt = max(0, (int)($argument['attempt'] ?? 0));
+		// Carried by every pass a second look needs, so it stays the one.
+		$again = isset($argument['again']);
 
 		// QueuedJob removes its row before running, so during a run nothing
 		// says a sweep exists, and whoever queues one - an open, a delete -
@@ -133,22 +161,28 @@ abstract class SessionSweepJob extends QueuedJob {
 			// and carries on as a fresh attempt rather than being given up
 			// on because a few entries were refused.
 			if ($result['deleted'] > 0) {
-				$this->reschedule($item, 0, self::RETRY_DELAYS[$attempt] ?? self::CONTINUE_DELAY_SECONDS);
+				$this->reschedule($item, 0, self::RETRY_DELAYS[$attempt] ?? self::CONTINUE_DELAY_SECONDS, $again);
 				return;
 			}
 
 			// Nothing moved: three delayed retries without progress, then the
-			// sweep stops.
-			if (isset(self::RETRY_DELAYS[$attempt])) {
-				$this->reschedule($item, $attempt + 1, self::RETRY_DELAYS[$attempt]);
+			// sweep stops, and says so.
+			if (!isset(self::RETRY_DELAYS[$attempt])) {
+				$this->logger->warning($this->gaveUpMessage(), [
+					'app' => 'etherpad_nextcloud',
+					static::key() => $item,
+					'attempts' => $attempt,
+				]);
+				return;
 			}
+			$this->reschedule($item, $attempt + 1, self::RETRY_DELAYS[$attempt], $again);
 			return;
 		}
 
 		if ($result['remaining'] > 0) {
 			// Queued rather than looped: holding a cron worker on a long
 			// backlog would starve everything behind it.
-			$this->reschedule($item, 0, self::CONTINUE_DELAY_SECONDS);
+			$this->reschedule($item, 0, self::CONTINUE_DELAY_SECONDS, $again);
 			return;
 		}
 
@@ -156,19 +190,56 @@ abstract class SessionSweepJob extends QueuedJob {
 		// standing falls due. That row is also what tells whoever queues a
 		// sweep that one is already accounted for.
 		if ($result['nextDueAt'] !== null) {
-			$this->reschedule($item, 0, max(1, $result['nextDueAt'] - $this->time->getTime()));
+			$this->reschedule($item, 0, max(1, $result['nextDueAt'] - $this->time->getTime()), $again);
 			return;
 		}
 
-		$again = $this->lookAgainAfter();
-		if ($again !== null && !isset($argument['again']) && !($result['ended'] ?? false)) {
-			$this->reschedule($item, 0, $again, true);
+		if ($result['ended'] ?? false) {
+			$this->dropWaitingPasses($item);
+			return;
+		}
+		$lookAgain = static::lookAgainAfter();
+		if ($lookAgain !== null && !$again) {
+			$this->reschedule($item, 0, $lookAgain, true);
 		}
 	}
 
-	/** Whether a backed-off retry for this item is waiting its turn. */
+	/**
+	 * Whether a backed-off retry for this item is waiting its turn. Asked
+	 * after this row is gone, so a failure to ask lets the pass run rather
+	 * than lose it: a pass beside a retry costs only the pass.
+	 */
 	private function retryIsWaiting(string $item): bool {
-		return static::anyQueued($this->jobList, static::attemptArguments([static::key() => $item]));
+		$retries = array_values(array_filter(
+			self::waitingArguments([static::key() => $item]),
+			static fn (array $argument): bool => isset($argument['attempt']),
+		));
+		try {
+			return static::anyQueued($this->jobList, $retries);
+		} catch (\Throwable $e) {
+			$this->logger->warning('Could not tell whether a retry of an Etherpad session sweep is waiting; this pass runs.', [
+				'app' => 'etherpad_nextcloud',
+				static::key() => $item,
+				...SafeError::context($e),
+			]);
+			return false;
+		}
+	}
+
+	/**
+	 * The passes the sweep queued itself for an item it is over for - a
+	 * retry, a second look - go: each would run once more to end as well.
+	 * Not the plain row, which a delete may have queued since. One that
+	 * cannot be removed runs that once.
+	 */
+	private function dropWaitingPasses(string $item): void {
+		foreach (array_slice(self::waitingArguments([static::key() => $item]), 1) as $argument) {
+			try {
+				$this->jobList->remove(static::class, $argument);
+			} catch (\Throwable) {
+				return;
+			}
+		}
 	}
 
 	/**
@@ -179,11 +250,11 @@ abstract class SessionSweepJob extends QueuedJob {
 	 */
 	private function reschedule(string $item, int $attempt, int $delaySeconds, bool $again = false): void {
 		$argument = [static::key() => $item];
-		if ($attempt > 0) {
-			$argument['attempt'] = $attempt;
-		}
 		if ($again) {
 			$argument['again'] = 1;
+		}
+		if ($attempt > 0) {
+			$argument['attempt'] = $attempt;
 		}
 
 		try {

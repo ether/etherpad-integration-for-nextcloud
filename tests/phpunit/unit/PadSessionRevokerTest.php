@@ -713,10 +713,19 @@ class PadSessionRevokerTest extends TestCase {
 		$client->method('listPads')->willReturn(['g.AAAAAAAAAAAAAAAA$a', 'g.AAAAAAAAAAAAAAAA$trashed-earlier']);
 		$client->expects(self::never())->method('deleteSession');
 		$queued = [];
+		// Listed, and the job's to take: counted as left to it.
+		$left = [];
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->method('warning')->willReturnCallback(static function (string $message, array $context) use (&$left): void {
+			if (array_key_exists('leftToTheJob', $context)) {
+				$left[] = [$message, $context['leftToTheJob'], $context['leftToExpire']];
+			}
+		});
 
-		$this->revoker($client, groupSessions: $this->queueRecorder($queued))->revokeForPads(['g.AAAAAAAAAAAAAAAA$a']);
+		$this->revoker($client, logger: $logger, groupSessions: $this->queueRecorder($queued))->revokeForPads(['g.AAAAAAAAAAAAAAAA$a']);
 
 		self::assertSame(['g.AAAAAAAAAAAAAAAA'], $queued);
+		self::assertSame([['Revoked no Etherpad sessions yet; a background job takes them.', 1, 0]], $left);
 	}
 
 	/**

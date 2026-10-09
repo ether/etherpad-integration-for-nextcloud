@@ -134,6 +134,127 @@ class RevokeGroupSessionsJobTest extends TestCase {
 		$this->start($revoker, $jobList, ['groupId' => self::GROUP], $logger);
 	}
 
+	/**
+	 * The passes a second look needs carry `again`: one with more to do, or
+	 * refused, comes back as part of it, and the last of them that leaves
+	 * nothing looks no third time.
+	 */
+	public function testTheSecondLookCarriesItsMarkThroughThePassesItNeeds(): void {
+		$again = ['groupId' => self::GROUP, 'again' => 1];
+		$cases = [
+			'more to do' => [$again, ['deleted' => 250, 'remaining' => 1, 'retry' => false, 'nextDueAt' => null], [[1_000_060, $again]]],
+			'refused' => [$again, ['deleted' => 0, 'remaining' => 0, 'retry' => true, 'nextDueAt' => null], [[1_000_060, $again + ['attempt' => 1]]]],
+			'its retry leaves nothing' => [$again + ['attempt' => 1], ['deleted' => 2, 'remaining' => 0, 'retry' => false, 'nextDueAt' => null], []],
+		];
+		foreach ($cases as $case => [$argument, $result, $expected]) {
+			$revoker = $this->createMock(GroupSessionRevoker::class);
+			$revoker->method('revokeRest')->willReturn($result);
+			$queued = [];
+			$jobList = $this->createMock(IJobList::class);
+			$jobList->method('scheduleAfter')->willReturnCallback(static function (string $job, int $at, array $argument) use (&$queued): void {
+				$queued[] = [$at, $argument];
+			});
+
+			$this->start($revoker, $jobList, $argument);
+
+			self::assertSame($expected, $queued, $case);
+		}
+	}
+
+	/** A second look queued beside a waiting retry stands down, as a plain row does. */
+	public function testASecondLookStandsDownWhileARetryIsWaiting(): void {
+		foreach ([['groupId' => self::GROUP, 'attempt' => 2], ['groupId' => self::GROUP, 'again' => 1, 'attempt' => 1]] as $waiting) {
+			$revoker = $this->createMock(GroupSessionRevoker::class);
+			$revoker->expects(self::never())->method('revokeRest');
+			$jobList = $this->createMock(IJobList::class);
+			$jobList->method('has')->willReturnCallback(static fn (string $job, mixed $argument): bool => $argument === $waiting);
+
+			$this->start($revoker, $jobList, ['groupId' => self::GROUP, 'again' => 1]);
+		}
+	}
+
+	/** A second look waiting is no retry: a delete's plain row runs beside it. */
+	public function testAPlainRowRunsBesideAWaitingSecondLook(): void {
+		$revoker = $this->createMock(GroupSessionRevoker::class);
+		$revoker->expects(self::once())->method('revokeRest')->willReturn(['deleted' => 1, 'remaining' => 0, 'retry' => false, 'nextDueAt' => null]);
+		$jobList = $this->createMock(IJobList::class);
+		$jobList->method('has')->willReturnCallback(static fn (string $job, mixed $argument): bool => $argument === ['groupId' => self::GROUP, 'again' => 1]);
+
+		$this->start($revoker, $jobList, ['groupId' => self::GROUP]);
+	}
+
+	/** Whoever asks whether a group's sweep waits hears of a second look too. */
+	public function testKnowsASecondLookIsQueued(): void {
+		$jobList = $this->createMock(IJobList::class);
+		$jobList->method('has')->willReturnCallback(static fn (string $job, mixed $argument): bool => $argument === ['groupId' => self::GROUP, 'again' => 1, 'attempt' => 2]);
+
+		self::assertTrue(RevokeGroupSessionsJob::isQueued($jobList, ['groupId' => self::GROUP]));
+	}
+
+	/**
+	 * A pass that ends the job takes the passes it queued itself with it - a
+	 * retry, a second look - each of which would only end it again; not the
+	 * plain row, which a delete may have queued since.
+	 */
+	public function testAnEndedJobTakesItsOwnWaitingPassesWithIt(): void {
+		$revoker = $this->createMock(GroupSessionRevoker::class);
+		$revoker->method('revokeRest')->willReturn(['deleted' => 0, 'remaining' => 0, 'retry' => false, 'nextDueAt' => null, 'ended' => true]);
+		$removed = [];
+		$jobList = $this->createMock(IJobList::class);
+		$jobList->method('remove')->willReturnCallback(static function (mixed $job, mixed $argument = null) use (&$removed): void {
+			// The row it runs from goes as it starts; that one is the job itself.
+			if (is_string($job)) {
+				$removed[] = [$job, $argument];
+			}
+		});
+
+		$this->start($revoker, $jobList, ['groupId' => self::GROUP]);
+
+		$again = ['groupId' => self::GROUP, 'again' => 1];
+		self::assertSame(array_map(static fn (array $argument): array => [RevokeGroupSessionsJob::class, $argument], [
+			['groupId' => self::GROUP, 'attempt' => 1],
+			['groupId' => self::GROUP, 'attempt' => 2],
+			['groupId' => self::GROUP, 'attempt' => 3],
+			$again,
+			$again + ['attempt' => 1],
+			$again + ['attempt' => 2],
+			$again + ['attempt' => 3],
+		]), $removed);
+	}
+
+	/** Giving up after its retries is said, with what becomes of the rest. */
+	public function testSaysSoWhenItGivesUp(): void {
+		$revoker = $this->createMock(GroupSessionRevoker::class);
+		$revoker->method('revokeRest')->willReturn(['deleted' => 0, 'remaining' => 0, 'retry' => true, 'nextDueAt' => null]);
+		$jobList = $this->createMock(IJobList::class);
+		$jobList->expects(self::never())->method('scheduleAfter');
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects(self::once())->method('warning')->with(
+			'Gave up revoking a group\'s Etherpad sessions after three retries without progress; the rest expires on its own.',
+			self::callback(static fn (array $context): bool => $context['groupId'] === self::GROUP && $context['attempts'] === 3),
+		);
+
+		$this->start($revoker, $jobList, ['groupId' => self::GROUP, 'attempt' => 3], $logger);
+	}
+
+	/**
+	 * Its row is gone when it asks whether a retry waits: a failure to ask
+	 * lets the pass run, and is said, rather than lose the pass.
+	 */
+	public function testRunsThePassWhenItCannotTellWhetherARetryWaits(): void {
+		$revoker = $this->createMock(GroupSessionRevoker::class);
+		$revoker->expects(self::once())->method('revokeRest')->willReturn(['deleted' => 1, 'remaining' => 0, 'retry' => false, 'nextDueAt' => null]);
+		$jobList = $this->createMock(IJobList::class);
+		$jobList->method('has')->willThrowException(new \RuntimeException('database gone'));
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects(self::once())->method('warning')->with(
+			'Could not tell whether a retry of an Etherpad session sweep is waiting; this pass runs.',
+			self::callback(static fn (array $context): bool => $context['groupId'] === self::GROUP),
+		);
+
+		$this->start($revoker, $jobList, ['groupId' => self::GROUP], $logger);
+	}
+
 	/** An author's row is the collector's, not a group to revoke. */
 	public function testIgnoresAnArgumentWithoutAGroup(): void {
 		$revoker = $this->createMock(GroupSessionRevoker::class);

@@ -288,6 +288,11 @@ class BindingService {
 	 *
 	 * Only the mounts rooted at the file or above it are read, a few: a
 	 * storage can hold one for every user of every team folder on it.
+	 *
+	 * A row from before Nextcloud 24 names no provider and counts as any
+	 * other: a team folder's of then must. A share's of then counts too,
+	 * until its user's next login renews it, and keeps a trashed file's
+	 * sessions until they expire - the safer of the two mistakes.
 	 */
 	public function isInFiles(int $storage, string $path): bool {
 		$above = [''];
