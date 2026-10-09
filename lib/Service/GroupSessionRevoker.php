@@ -40,11 +40,11 @@ class GroupSessionRevoker {
 	/** How long after the delete the first pass runs. */
 	private const FIRST_PASS_DELAY_SECONDS = 60;
 
-	/** A pass with nothing to take, and nothing to come back for. */
-	private const DONE = ['deleted' => 0, 'remaining' => 0, 'retry' => false, 'nextDueAt' => null];
+	/** The job is over: the group is gone, or keeps its sessions. */
+	private const ENDED = ['deleted' => 0, 'remaining' => 0, 'retry' => false, 'nextDueAt' => null, 'ended' => true];
 
 	/** A pass that could not finish its asking: the backoff comes back, and gives up. */
-	private const RETRY = ['deleted' => 0, 'remaining' => 0, 'retry' => true, 'nextDueAt' => null];
+	private const RETRY = ['deleted' => 0, 'remaining' => 0, 'retry' => true, 'nextDueAt' => null, 'ended' => false];
 
 	public function __construct(
 		private EtherpadClient $etherpadClient,
@@ -84,14 +84,15 @@ class GroupSessionRevoker {
 	 * Before every delete it looks again where the files are - one query
 	 * for all of them, the mounts only for a file that moved - since a file
 	 * can be restored and opened during the pass, while the sessions are
-	 * listed too, and its opener's session would be the first to go. At a
-	 * file back in Files the pass ends, and so does the job.
+	 * listed too, and its opener's session would be the first to go.
 	 *
 	 * The answer is the collector's shape: `remaining` is what it found and
 	 * did not reach, `retry` that something failed. `nextDueAt` is always
-	 * null: expired sessions are the collector's.
+	 * null: expired sessions are the collector's. `ended` says the job is
+	 * over whatever is left - a file back in Files, a pad of no file, the
+	 * group gone - with no second look (SessionSweepJob).
 	 *
-	 * @return array{deleted:int,remaining:int,retry:bool,nextDueAt:null}
+	 * @return array{deleted:int,remaining:int,retry:bool,nextDueAt:null,ended:bool}
 	 */
 	public function revokeRest(string $groupId): array {
 		$budget = new RunBudget($this->timeFactory, RunBudget::DEFAULT_SECONDS);
@@ -102,7 +103,7 @@ class GroupSessionRevoker {
 		} catch (\Throwable $e) {
 			if (EtherpadErrorClassifier::isPadAlreadyDeleted($e)) {
 				// The group went with its last pad, and its sessions with it.
-				return self::DONE;
+				return self::ENDED;
 			}
 			$this->logger->warning('Could not list the pads of a group whose Etherpad sessions to revoke.', [...$context, ...SafeError::context($e)]);
 			return self::RETRY;
@@ -112,7 +113,7 @@ class GroupSessionRevoker {
 			$files = $this->filesOf($pads);
 			if ($files === null) {
 				$this->logger->info(self::KEPT_FOR_A_PAD_OF_NO_FILE, $context);
-				return self::DONE;
+				return self::ENDED;
 			}
 			$places = $this->bindingService->placesOf($files);
 			$kept = $this->keptFor($places);
@@ -122,7 +123,7 @@ class GroupSessionRevoker {
 		}
 		if ($kept !== null) {
 			$this->logger->info($kept, $context);
-			return self::DONE;
+			return self::ENDED;
 		}
 
 		try {
@@ -133,7 +134,7 @@ class GroupSessionRevoker {
 			return self::RETRY;
 		} catch (\Throwable $e) {
 			if (EtherpadErrorClassifier::isPadAlreadyDeleted($e)) {
-				return self::DONE;
+				return self::ENDED;
 			}
 			$this->logger->warning('Could not list the Etherpad sessions of a group to revoke.', [...$context, ...SafeError::context($e)]);
 			return self::RETRY;
@@ -174,10 +175,10 @@ class GroupSessionRevoker {
 				$this->logger->info($back, $context);
 			}
 			// A file back ends the job; a lookup that failed asks again.
-			return ['deleted' => $run['deleted'], 'remaining' => 0, 'retry' => $lookupFailed, 'nextDueAt' => null];
+			return ['deleted' => $run['deleted'], 'remaining' => 0, 'retry' => $lookupFailed, 'nextDueAt' => null, 'ended' => !$lookupFailed];
 		}
 
-		return ['deleted' => $run['deleted'], 'remaining' => count($live) - $run['handled'], 'retry' => $run['refused'], 'nextDueAt' => null];
+		return ['deleted' => $run['deleted'], 'remaining' => count($live) - $run['handled'], 'retry' => $run['refused'], 'nextDueAt' => null, 'ended' => false];
 	}
 
 	/**

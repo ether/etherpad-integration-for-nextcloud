@@ -51,6 +51,16 @@ class RevokeGroupSessionsJobTest extends TestCase {
 		$this->start($revoker, $jobList, ['groupId' => self::GROUP]);
 	}
 
+	/** A pass that ends the job - a file back, a pad of no file, the group gone - takes no second look. */
+	public function testTakesNoSecondLookWhenThePassEndedTheJob(): void {
+		$revoker = $this->createMock(GroupSessionRevoker::class);
+		$revoker->method('revokeRest')->willReturn(['deleted' => 0, 'remaining' => 0, 'retry' => false, 'nextDueAt' => null, 'ended' => true]);
+		$jobList = $this->createMock(IJobList::class);
+		$jobList->expects(self::never())->method('scheduleAfter');
+
+		$this->start($revoker, $jobList, ['groupId' => self::GROUP]);
+	}
+
 	public function testEndsAfterTheSecondLookLeftNothing(): void {
 		$revoker = $this->createMock(GroupSessionRevoker::class);
 		$revoker->method('revokeRest')->willReturn(['deleted' => 0, 'remaining' => 0, 'retry' => false, 'nextDueAt' => null]);

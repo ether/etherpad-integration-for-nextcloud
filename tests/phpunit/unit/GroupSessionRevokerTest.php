@@ -78,7 +78,7 @@ class GroupSessionRevokerTest extends TestCase {
 		$result = $this->revoker($client, $this->bindings(self::TRASHED))->revokeRest(self::GROUP);
 
 		self::assertSame(['s.new', 's.old', 's.skewed'], $removed);
-		self::assertSame(['deleted' => 3, 'remaining' => 0, 'retry' => false, 'nextDueAt' => null], $result);
+		self::assertSame(['deleted' => 3, 'remaining' => 0, 'retry' => false, 'nextDueAt' => null, 'ended' => false], $result);
 	}
 
 	/**
@@ -144,7 +144,7 @@ class GroupSessionRevokerTest extends TestCase {
 
 		$result = $this->revoker($client, $bindings, logger: $logger)->revokeRest(self::GROUP);
 
-		self::assertSame(['deleted' => 0, 'remaining' => 0, 'retry' => false, 'nextDueAt' => null], $result);
+		self::assertSame(['deleted' => 0, 'remaining' => 0, 'retry' => false, 'nextDueAt' => null, 'ended' => true], $result);
 	}
 
 	/**
@@ -173,7 +173,7 @@ class GroupSessionRevokerTest extends TestCase {
 		$result = $this->revoker($client, $bindings, logger: $logger)->revokeRest(self::GROUP);
 
 		self::assertSame(['s.3'], $removed);
-		self::assertSame(['deleted' => 1, 'remaining' => 0, 'retry' => false, 'nextDueAt' => null], $result);
+		self::assertSame(['deleted' => 1, 'remaining' => 0, 'retry' => false, 'nextDueAt' => null, 'ended' => true], $result);
 		self::assertSame(['Revoked remaining Etherpad sessions of a group.', GroupSessionRevoker::KEPT_FOR_A_FILE_IN_FILES], $lines);
 	}
 
@@ -201,7 +201,7 @@ class GroupSessionRevokerTest extends TestCase {
 
 		$result = $this->revoker($client, $bindings)->revokeRest(self::GROUP);
 
-		self::assertSame(['deleted' => 0, 'remaining' => 0, 'retry' => false, 'nextDueAt' => null], $result);
+		self::assertSame(['deleted' => 0, 'remaining' => 0, 'retry' => false, 'nextDueAt' => null, 'ended' => true], $result);
 	}
 
 	/**
@@ -247,7 +247,7 @@ class GroupSessionRevokerTest extends TestCase {
 
 		$result = $this->revoker($client, $bindings, logger: $logger)->revokeRest(self::GROUP);
 
-		self::assertSame(['deleted' => 1, 'remaining' => 0, 'retry' => true, 'nextDueAt' => null], $result);
+		self::assertSame(['deleted' => 1, 'remaining' => 0, 'retry' => true, 'nextDueAt' => null, 'ended' => false], $result);
 	}
 
 	/** The group went with its last pad, and its sessions with it. */
@@ -259,7 +259,7 @@ class GroupSessionRevokerTest extends TestCase {
 
 		$result = $this->revoker($client, logger: $logger)->revokeRest(self::GROUP);
 
-		self::assertSame(['deleted' => 0, 'remaining' => 0, 'retry' => false, 'nextDueAt' => null], $result);
+		self::assertSame(['deleted' => 0, 'remaining' => 0, 'retry' => false, 'nextDueAt' => null, 'ended' => true], $result);
 	}
 
 	/**
@@ -289,7 +289,7 @@ class GroupSessionRevokerTest extends TestCase {
 
 		$result = $this->revoker($client, $bindings, logger: $logger)->revokeRest(self::GROUP);
 
-		self::assertSame(['deleted' => 0, 'remaining' => 0, 'retry' => true, 'nextDueAt' => null], $result);
+		self::assertSame(['deleted' => 0, 'remaining' => 0, 'retry' => true, 'nextDueAt' => null, 'ended' => false], $result);
 	}
 
 	public function testLeavesWhatPassesTheCeilingToTheNextPass(): void {
@@ -302,7 +302,7 @@ class GroupSessionRevokerTest extends TestCase {
 
 		$result = $this->revoker($client, $this->bindings(self::TRASHED))->revokeRest(self::GROUP);
 
-		self::assertSame(['deleted' => 250, 'remaining' => 50, 'retry' => false, 'nextDueAt' => null], $result);
+		self::assertSame(['deleted' => 250, 'remaining' => 50, 'retry' => false, 'nextDueAt' => null, 'ended' => false], $result);
 	}
 
 	public function testEndsThePassWithItsBudget(): void {
@@ -314,7 +314,7 @@ class GroupSessionRevokerTest extends TestCase {
 
 		$result = $this->revoker($client, $this->bindings(self::TRASHED), clock: $clock)->revokeRest(self::GROUP);
 
-		self::assertSame(['deleted' => 2, 'remaining' => 1, 'retry' => false, 'nextDueAt' => null], $result);
+		self::assertSame(['deleted' => 2, 'remaining' => 1, 'retry' => false, 'nextDueAt' => null, 'ended' => false], $result);
 	}
 
 	/**
@@ -333,7 +333,7 @@ class GroupSessionRevokerTest extends TestCase {
 
 		$result = $this->revoker($client, $this->bindings(self::TRASHED), clock: $clock)->revokeRest(self::GROUP);
 
-		self::assertSame(['deleted' => 0, 'remaining' => 0, 'retry' => true, 'nextDueAt' => null], $result);
+		self::assertSame(['deleted' => 0, 'remaining' => 0, 'retry' => true, 'nextDueAt' => null, 'ended' => false], $result);
 	}
 
 	/** A refused delete is tried again; the line for it is SessionDeletes's, under the group. */
@@ -352,7 +352,7 @@ class GroupSessionRevokerTest extends TestCase {
 
 		$result = $this->revoker($client, $this->bindings(self::TRASHED), logger: $logger)->revokeRest(self::GROUP);
 
-		self::assertSame(['deleted' => 1, 'remaining' => 1, 'retry' => true, 'nextDueAt' => null], $result);
+		self::assertSame(['deleted' => 1, 'remaining' => 1, 'retry' => true, 'nextDueAt' => null, 'ended' => false], $result);
 	}
 
 	/** @param array<string,int> $validUntil by session id */

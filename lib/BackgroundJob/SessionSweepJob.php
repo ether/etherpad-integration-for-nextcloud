@@ -47,10 +47,11 @@ abstract class SessionSweepJob extends QueuedJob {
 
 	/**
 	 * One pass over $item: what it deleted, what it found and left for the
-	 * next pass, whether Etherpad refused, and when to look again though
-	 * nothing is left, if ever.
+	 * next pass, whether Etherpad refused, when to look again though
+	 * nothing is left, if ever, and whether the sweep is over whatever is
+	 * left (`ended`): then no second look either.
 	 *
-	 * @return array{deleted:int,remaining:int,retry:bool,nextDueAt:?int}
+	 * @return array{deleted:int,remaining:int,retry:bool,nextDueAt:?int,ended?:bool}
 	 */
 	abstract protected function sweep(string $item): array;
 
@@ -160,7 +161,7 @@ abstract class SessionSweepJob extends QueuedJob {
 		}
 
 		$again = $this->lookAgainAfter();
-		if ($again !== null && !isset($argument['again'])) {
+		if ($again !== null && !isset($argument['again']) && !($result['ended'] ?? false)) {
 			$this->reschedule($item, 0, $again, true);
 		}
 	}
