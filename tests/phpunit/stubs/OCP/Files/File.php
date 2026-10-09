@@ -23,6 +23,9 @@ if (!interface_exists(File::class)) {
 
 		public function getContent();
 
+		/** Mirrors OCP\Files\FileInfo::getStorage(). */
+		public function getStorage(): mixed;
+
 		public function putContent($data): void;
 
 		/**

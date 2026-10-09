@@ -178,19 +178,30 @@ class PadCreationServiceTest extends TestCase {
 		}
 	}
 
-	public function testCreateInParentRejectsNonCreatableFolder(): void {
+	/**
+	 * Whether the folder takes a new file, the creator asks, for every
+	 * caller; its refusal is the answer, before a pad is provisioned.
+	 */
+	public function testCreateInParentHandsOnTheCreatorsRefusal(): void {
 		$parent = $this->createMock(Folder::class);
-		$parent->method('isCreatable')->willReturn(false);
 
 		$padPaths = $this->createMock(PathNormalizer::class);
 		$padPaths->method('normalizeCreateFileName')->with('Test')->willReturn('Test.pad');
 		$userNodeResolver = $this->createMock(UserNodeResolver::class);
 		$userNodeResolver->method('resolveUserFolderNodeById')->with('alice', 99)->willReturn($parent);
+		$refusal = new PadParentFolderNotWritableException('The folder takes no new file.');
+		$fileCreator = $this->createMock(PadFileCreator::class);
+		$fileCreator->expects($this->once())->method('createUserFileInFolder')->with($parent, 'Test.pad')->willThrowException($refusal);
+		$bootstrap = $this->createMock(PadBootstrapService::class);
+		$bootstrap->expects($this->never())->method('provisionPadId');
 
-		$this->expectException(PadParentFolderNotWritableException::class);
-
-		$this->buildService(padPaths: $padPaths, userNodeResolver: $userNodeResolver)
-			->createInParent('alice', 99, 'Test', BindingService::ACCESS_PUBLIC);
+		try {
+			$this->buildService(padPaths: $padPaths, fileCreator: $fileCreator, userNodeResolver: $userNodeResolver, bootstrap: $bootstrap)
+				->createInParent('alice', 99, 'Test', BindingService::ACCESS_PUBLIC);
+			$this->fail('The create went through.');
+		} catch (PadParentFolderNotWritableException $e) {
+			$this->assertSame($refusal, $e);
+		}
 	}
 
 	/**
@@ -201,7 +212,6 @@ class PadCreationServiceTest extends TestCase {
 	 */
 	public function testClaimsTheFileBeforeResolvingItsPath(): void {
 		$parent = $this->createMock(Folder::class);
-		$parent->method('isCreatable')->willReturn(true);
 
 		$fileNode = $this->createMock(\OCP\Files\File::class);
 		$fileNode->method('getId')->willReturn(4242);

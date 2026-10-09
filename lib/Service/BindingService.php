@@ -461,11 +461,11 @@ class BindingService {
 		try {
 			$qb->executeStatement();
 		} catch (\Throwable $e) {
-			// A failed insert does not say no row was written: it may have
-			// been, or a concurrent request's may stand (isBoundTo()), and the
-			// pad has been created upstream. The callers decide what to roll
-			// back, and report it - the API's through ApiErrorLog, with this as
-			// its cause.
+			// What the insert left is open: it may have committed and still
+			// thrown, and on a unique collision another row stands. Whoever
+			// lets the pad go - made before this - reads the row again first
+			// (ProvisionedPadRollback). Not logged here: every caller reports
+			// it, the API's through ApiErrorLog, with this as its cause.
 			throw new BindingNotCreatedException('Could not create unique pad binding.', 0, $e);
 		}
 	}

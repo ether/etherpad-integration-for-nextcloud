@@ -87,7 +87,7 @@ jobs:
       # then refuses to run on.
       - name: Read package.json node and npm engines
         id: versions
-        uses: skjnldsv/read-package-engines-version-actions@06d6baf7d8f41934ab630e97d9e6c0bc9c9ac5e4 # v3
+        uses: skjnldsv/read-package-engines-version-actions@06d6db44aa62f4609ba070f556ec24bc99fb85cb # v4
 
       # The engines fields are mandatory here, so anything but a version range
       # means the action could not read them. Checked through env rather than

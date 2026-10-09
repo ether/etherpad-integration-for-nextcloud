@@ -101,9 +101,7 @@ class EmbedController extends Controller {
 				$user = $this->requireUser();
 				$id = $this->requirePositiveInt($parentFolderId, $this->l10n->t('Invalid parent folder ID.'));
 				$parentFolder = $this->userNodeResolver->resolveUserFolderNodeById($user->getUID(), $id);
-				if (!$parentFolder->isCreatable()) {
-					throw new PadParentFolderNotWritableException();
-				}
+				PadParentFolderNotWritableException::unlessCreatable($parentFolder);
 				return ['parent_folder_id' => $id];
 			},
 			fn(array $resolved): TemplateResponse => $this->responseBuilder->build('embed-create', [

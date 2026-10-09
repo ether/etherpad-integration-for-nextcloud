@@ -12,12 +12,13 @@ namespace OCA\EtherpadNextcloud\Service;
 use OCA\EtherpadNextcloud\AppInfo\Application;
 use OCA\EtherpadNextcloud\Exception\InvalidPadNameException;
 use OCA\EtherpadNextcloud\Exception\PadFileAlreadyExistsException;
+use OCA\EtherpadNextcloud\Exception\PadParentFolderNotFoundException;
+use OCA\EtherpadNextcloud\Exception\PadParentFolderNotWritableException;
 use OCA\EtherpadNextcloud\Util\SafeError;
 use OCP\Files\File;
 use OCP\Files\Folder;
 use OCP\Files\IFilenameValidator;
 use OCP\Files\InvalidPathException;
-use OCP\Files\IRootFolder;
 use OCP\Files\NotFoundException;
 use OCP\Files\Storage\IStorage;
 use OCP\Files\StorageNotAvailableException;
@@ -36,7 +37,7 @@ use Psr\Log\LoggerInterface;
  */
 class PadFileCreator {
 	public function __construct(
-		private IRootFolder $rootFolder,
+		private UserNodeResolver $userNodeResolver,
 		private ILockingProvider $lockingProvider,
 		private IFilenameValidator $filenameValidator,
 		private IL10N $l10n,
@@ -45,9 +46,16 @@ class PadFileCreator {
 	}
 
 	/**
+	 * The `.pad` at a path in the user's files. Its folder has to be there -
+	 * one the user may not look into is not, to them - and take a new file
+	 * (createUserFileInFolder()): the path endpoints answer 404 and 403 for
+	 * those, as the endpoint that names the folder by id does.
+	 *
 	 * @throws \RuntimeException
 	 * @throws PadFileAlreadyExistsException
 	 * @throws InvalidPadNameException
+	 * @throws PadParentFolderNotFoundException
+	 * @throws PadParentFolderNotWritableException
 	 */
 	public function createUserFile(string $uid, string $absolutePath): File {
 		$relativePath = ltrim($absolutePath, '/');
@@ -57,46 +65,37 @@ class PadFileCreator {
 
 		$parentPath = dirname($relativePath);
 		$fileName = basename($relativePath);
-		// Psalm infers basename() as non-empty-string, but it returns '' for
-		// slash-only inputs (e.g. basename('/')), so the empty-string guard is
-		// a real defensive check, not dead code.
-		/** @psalm-suppress TypeDoesNotContainType */
-		if ($fileName === '' || $fileName === '.' || $fileName === '..') {
+		if ($fileName === '.' || $fileName === '..') {
 			throw new \RuntimeException('Invalid target filename.');
 		}
 
-		$userFolder = $this->rootFolder->getUserFolder($uid);
 		try {
-			$parent = $parentPath === '.' ? $userFolder : $userFolder->get($parentPath);
+			$parent = $this->userNodeResolver->resolveUserFolderNodeByPath($uid, $parentPath);
 		} catch (NotFoundException $e) {
-			throw new \RuntimeException('Target parent folder does not exist.', 0, $e);
-		}
-		if (!$parent instanceof Folder) {
-			throw new \RuntimeException('Target parent folder does not exist.');
+			throw new PadParentFolderNotFoundException('Target parent folder does not exist.', 0, $e);
 		}
 
 		return $this->createUserFileInFolder($parent, $fileName);
 	}
 
 	/**
-	 * Create the target `.pad`, or refuse because the name is taken.
+	 * Create the target `.pad`, or refuse because the name is taken. A
+	 * folder the user may not create in is refused first.
 	 *
-	 * Checking and creating are two steps, and between them another request
-	 * can take the name. Measured against a real instance, six simultaneous
-	 * creates of one name produced six 500s and, twice out of three rounds,
-	 * no file at all: the storage refused every one of them, and the retry
-	 * inside the catch could not see the winner yet because its cache entry
-	 * had not appeared. Nobody got a pad, and nobody got told why.
-	 *
-	 * So the two steps are serialised on the target name. The loser is
-	 * turned away with "that name is taken", which is what actually
-	 * happened, instead of a server error.
+	 * Checking and creating are two steps, and another request can take the
+	 * name between them: creates of one name at once failed with server
+	 * errors, at times every one of them. So the two are serialised on the
+	 * target name, and a loser hears that the name is taken. Only within
+	 * Nextcloud's locking (see the class): a name taken outside it, by a
+	 * sync client say, is found after the failed create.
 	 *
 	 * @throws \RuntimeException
 	 * @throws PadFileAlreadyExistsException
 	 * @throws InvalidPadNameException
+	 * @throws PadParentFolderNotWritableException
 	 */
 	public function createUserFileInFolder(Folder $parent, string $fileName): File {
+		PadParentFolderNotWritableException::unlessCreatable($parent);
 		$this->requireNameThisFolderAccepts($parent, $fileName);
 
 		$lock = $this->lockKey($parent, $fileName);
@@ -158,23 +157,15 @@ class PadFileCreator {
 	}
 
 	/**
-	 * Ask whether this name may be used *here*.
-	 *
-	 * Two questions, because they have different answers. The filename
-	 * validator knows the instance's rules — configured forbidden characters
-	 * and names, control characters. The storage behind this particular
-	 * folder can add its own, and an external or mounted folder often does;
-	 * its own interface says as much. Asking only the first would still let
-	 * a name fail deep in the storage, which is the 500 this exists to
-	 * prevent.
+	 * Ask whether this name may be used *here*: by the instance's rules,
+	 * and by the storage behind this folder.
 	 *
 	 * @throws InvalidPadNameException
 	 */
 	private function requireNameThisFolderAccepts(Folder $parent, string $fileName): void {
-		// Two questions with different answers, asked for different reasons.
-		//
-		// The filename validator knows Nextcloud's own rules, and its
-		// refusal carries a translated sentence naming the rule — that one
+		// The filename validator knows Nextcloud's own rules - configured
+		// forbidden characters and names, control characters - and its
+		// refusal carries a translated sentence naming the rule: that one
 		// is worth showing the user.
 		try {
 			$this->filenameValidator->validateFilename($fileName);
@@ -183,7 +174,8 @@ class PadFileCreator {
 		}
 
 		// The storage behind this folder may add rules of its own, and an
-		// external or mounted folder often does. Its message is not shown:
+		// external or mounted folder often does; unasked, a name would fail
+		// deep in it, with a 500. Its message is not shown:
 		// these exception classes are public, so a storage app is free to
 		// put a mount point, a bucket name or a driver error in one, and
 		// this reaches a browser.

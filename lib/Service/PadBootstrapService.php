@@ -10,6 +10,7 @@ namespace OCA\EtherpadNextcloud\Service;
 
 use OCA\EtherpadNextcloud\Exception\UnrecognisedPadContentException;
 use OCA\EtherpadNextcloud\Exception\PadFileChangedException;
+use OCA\EtherpadNextcloud\Exception\PadFileNotWritableException;
 use OCA\EtherpadNextcloud\Exception\PadFileFormatException;
 use OCP\Files\File;
 use OCP\Security\ISecureRandom;
@@ -42,6 +43,16 @@ class PadBootstrapService {
 	 * yet. Returns true if the file was a legacy Ownpad shortcut and we ran
 	 * the migration path (callers may want to surface that as a distinct
 	 * status to the frontend); false for the regular empty-file init.
+	 *
+	 * Either writes the file, so whoever may not change it - a reader of a
+	 * read-only share - is refused before a pad, group or row is made: the
+	 * write would fail after them, and leave them to the owner's next open.
+	 * Asked of the node the write goes through: the file by id, a writable
+	 * path to it first, as a reader by one path may be a writer by another.
+	 * The legacy migration is handed that node, writeInitialDocument() asks
+	 * for it again.
+	 *
+	 * @throws PadFileNotWritableException
 	 */
 	public function initializeMissingFrontmatter(string $uid, File $file, string $existingContent, ?string $preferredAccessMode = null): bool {
 		$fileId = (int)$file->getId();
@@ -55,8 +66,10 @@ class PadBootstrapService {
 			// exactly this endpoint.
 			throw new UnrecognisedPadContentException('This .pad file holds content that is neither pad metadata nor a legacy shortcut.');
 		}
+		$writable = $this->userNodeResolver->resolveUserFileNodeById($uid, $fileId);
+		PadFileNotWritableException::unlessUpdateable($writable);
 		if ($legacyShortcut !== null) {
-			$this->legacyMigrationService->migrate($uid, $file, $legacyShortcut);
+			$this->legacyMigrationService->migrate($uid, $writable, $legacyShortcut);
 			return true;
 		}
 

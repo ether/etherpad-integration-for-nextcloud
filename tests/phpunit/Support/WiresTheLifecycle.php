@@ -12,6 +12,7 @@ namespace OCA\EtherpadNextcloud\Tests\Support;
 use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\EtherpadNextcloud\Service\EtherpadClient;
 use OCA\EtherpadNextcloud\Service\ManagedPadLifecycle;
+use OCA\EtherpadNextcloud\Service\PadFileLockRetryService;
 use OCA\EtherpadNextcloud\Service\PadFileService;
 use OCA\EtherpadNextcloud\Service\ProvisionedPadRollback;
 use OCA\EtherpadNextcloud\Service\RestoreService;
@@ -77,6 +78,9 @@ trait WiresTheLifecycle {
 			new ProvisionedPadRollback($bindings, $padLifecycle, $padLifecycleLogger),
 			// Unless a test says otherwise, a file stays where it was read.
 			$nodes ?? $this->createMock(UserNodeResolver::class),
+			// Waits for a lock without sleeping.
+			new PadFileLockRetryService(static function (int $delay): void {
+			}),
 		);
 	}
 }

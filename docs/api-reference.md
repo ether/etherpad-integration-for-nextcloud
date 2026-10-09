@@ -127,6 +127,7 @@ solely by the separate external-pad policy, not by these two settings.
     - `file` (required)
     - `accessMode` (`public|protected`, optional, default `protected`)
   - Result: creates pad, file, and binding.
+  - The folder the path names has to be there and take a new file: `404` with "Cannot resolve selected parent folder." when it is not there, is no folder or is one the user may not look into, or when the user's files cannot be reached, `403` with "Selected parent folder is not writable." when the user may not create in it (a read-only share, say), both before anything is made. The same for `from-url` and `from-template`, and as `create-by-parent` answers for a folder named by id.
   - The app's own UI no longer calls this: a pad type is picked in Nextcloud's
     template picker, which creates the file itself. The endpoint stays for API
     consumers and behaves as before.
@@ -173,7 +174,7 @@ solely by the separate external-pad policy, not by these two settings.
     - `templateFileId` (required) — id of any `.pad` in the user's userspace; doesn't have to live in the *Templates* folder.
   - Purpose: create-from-template path for custom frontends that need filename templating or want to pick the source file outside `/Templates`. Bypasses NC's `TemplateManager`.
   - Behaviour: resolves `{{...}}` in `file` and template body, provisions a fresh Etherpad pad, writes the new `.pad` content + snapshot, creates the binding. Returns `viewer_url` alongside the regular create response shape.
-  - Errors: 400 (non-pad template / external template / empty), 404 (template id not found in userspace), 409 (filename collision).
+  - Errors: 400 (non-pad template / external template / empty), 404 (template id not found in userspace, or the target's folder not there), 403 (the target's folder takes no new file), 409 (filename collision).
 
 - `POST /api/v1/pads/open`
   - Controller: `PadSessionController::open`
@@ -199,10 +200,12 @@ solely by the separate external-pad policy, not by these two settings.
   - Controller: `PadSessionController::initialize`
   - Params: `file=/path/file.pad`
   - Purpose: explicit frontmatter initialization for empty/legacy `.pad` files.
+  - Initialising writes the file, whether it is empty or a legacy shortcut: a user who may not change it - a reader of a read-only share - gets `403` with "Only someone who may edit this .pad file can do that.", before a pad, group or binding is made. A file initialised already answers as before, to anyone who can read it.
 
 - `POST /api/v1/pads/initialize-by-id/{fileId}`
   - Controller: `PadSessionController::initializeById`
   - Purpose: explicit frontmatter initialization by stable Nextcloud `fileId`.
+  - Answers a user who may not change the file as `initialize` does: `403`.
 
 - `GET /api/v1/pads/meta-by-id/{fileId}`
   - Controller: `PadSessionController::metaById`
@@ -256,7 +259,12 @@ solely by the separate external-pad policy, not by these two settings.
     - `409` with `status=skipped` + `reason=external_pad` for external (`ext.*`) frontmatter; recovery doesn't apply there.
     - `409` with `status=skipped` + `reason=file_moved` or `reason=file_changed` when the file moved, or was written, while the new pad was seeded: the new pad is let go, nothing is written, and a retry starts from what the file holds then.
     - `409` with `message` and the `PadAlreadyHasBindingException` mapping if the file has a row and its pad is not lost: Etherpad has it, the row waits, or it names another pad than the file.
-    - `503` with `retryable` when Etherpad does not answer.
+    - `409` with `status=skipped` + `reason=binding_state_transition_conflict`, without `retryable`, when another recovery of a file with a binding moved the binding first: the new pad is let go, the file is the other one's to write, and the next open finds its pad.
+    - `503` with `retryable` when Etherpad does not answer - asked whether the pad is lost, or while the new pad is seeded - and when the file is locked by a sync; whatever was made is let go again. A write refused for a lock is let go only once the file can be read under its lock again, after a short wait; a lock that stays answers `500` as below.
+    - `400` when Etherpad refuses, and for a file that is no `.pad` the app can read, with a binding or without: no pad metadata (with `code: missing_frontmatter`), or metadata it cannot parse.
+    - `400` with `retryable: true` when another recovery of the same file made its binding first: the new pad is let go, and the next open finds the other one's.
+    - `500` without `retryable` when the write failed and the file cannot be read afterwards - still locked, or no `.pad` any more - so which pad it names is open: the binding goes and the new pad is kept, as a write, ours or another's, may have cut the file short. The next open finds no binding and offers a new pad from the file's content; the kept pad is named in the log for an admin.
+    - Otherwise as elsewhere: `404` for a `fileId` the user cannot see, `500` for what has no answer of its own - a read of the file that fails, say, as when it went away meanwhile.
 
 - `GET /api/v1/pads/find-original/{fileId}`
   - Controller: `PadLifecycleController::findOriginalByFileId`
