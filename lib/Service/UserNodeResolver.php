@@ -180,6 +180,30 @@ class UserNodeResolver {
 	}
 
 	/**
+	 * The folder at a path below the user's files root, the root itself for
+	 * '' and '.'. The same rule as for a file: not being allowed to look is
+	 * not finding it.
+	 *
+	 * @throws NotFoundException
+	 */
+	public function resolveUserFolderNodeByPath(string $uid, string $relativePath): Folder {
+		$userFolder = $this->userFolder($uid);
+		if ($relativePath === '' || $relativePath === '.') {
+			return $userFolder;
+		}
+		try {
+			$node = $userFolder->get($relativePath);
+		} catch (NotPermittedException $e) {
+			throw new NotFoundException('Cannot access the requested path.', 0, $e);
+		}
+		if (!$node instanceof Folder) {
+			throw new NotFoundException('Path does not reference a folder.');
+		}
+
+		return $node;
+	}
+
+	/**
 	 * The owner and the path below their files root, read off a node's
 	 * absolute path - the inverse of toUserAbsolutePath - or null when the
 	 * path is not /<user>/files/<something>. One place for that shape, so

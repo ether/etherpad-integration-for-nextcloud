@@ -19,9 +19,7 @@ use OCP\Files\File;
 use OCP\Files\Folder;
 use OCP\Files\IFilenameValidator;
 use OCP\Files\InvalidPathException;
-use OCP\Files\IRootFolder;
 use OCP\Files\NotFoundException;
-use OCP\Files\NotPermittedException;
 use OCP\Files\Storage\IStorage;
 use OCP\Files\StorageNotAvailableException;
 use OCP\Lock\ILockingProvider;
@@ -39,7 +37,7 @@ use Psr\Log\LoggerInterface;
  */
 class PadFileCreator {
 	public function __construct(
-		private IRootFolder $rootFolder,
+		private UserNodeResolver $userNodeResolver,
 		private ILockingProvider $lockingProvider,
 		private IFilenameValidator $filenameValidator,
 		private IL10N $l10n,
@@ -71,14 +69,10 @@ class PadFileCreator {
 			throw new \RuntimeException('Invalid target filename.');
 		}
 
-		$userFolder = $this->rootFolder->getUserFolder($uid);
 		try {
-			$parent = $parentPath === '.' ? $userFolder : $userFolder->get($parentPath);
-		} catch (NotFoundException|NotPermittedException $e) {
+			$parent = $this->userNodeResolver->resolveUserFolderNodeByPath($uid, $parentPath);
+		} catch (NotFoundException $e) {
 			throw new PadParentFolderNotFoundException('Target parent folder does not exist.', 0, $e);
-		}
-		if (!$parent instanceof Folder) {
-			throw new PadParentFolderNotFoundException('Target parent folder does not exist.');
 		}
 
 		return $this->createUserFileInFolder($parent, $fileName);

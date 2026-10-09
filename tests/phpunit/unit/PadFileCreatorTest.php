@@ -9,6 +9,7 @@ use OCA\EtherpadNextcloud\Exception\PadFileAlreadyExistsException;
 use OCA\EtherpadNextcloud\Exception\PadParentFolderNotFoundException;
 use OCA\EtherpadNextcloud\Exception\PadParentFolderNotWritableException;
 use OCA\EtherpadNextcloud\Service\PadFileCreator;
+use OCA\EtherpadNextcloud\Service\UserNodeResolver;
 use OCP\Files\File;
 use OCP\Files\Folder;
 use OCP\Files\IFilenameValidator;
@@ -83,6 +84,29 @@ class PadFileCreatorTest extends TestCase {
 
 		$this->expectException(PadParentFolderNotWritableException::class);
 		$this->buildCreator(locking: $locking, validator: $validator)->createUserFileInFolder($folder, 'Notes.pad');
+	}
+
+	/**
+	 * A user whose files cannot be reached is answered as a folder not
+	 * there, as a lookup of their files by path is (UserNodeResolver).
+	 */
+	public function testRefusesAPathWhenTheUsersFilesCannotBeReached(): void {
+		$root = $this->createMock(IRootFolder::class);
+		$root->method('getUserFolder')->with('alice')->willThrowException(new NotPermittedException('home storage unavailable'));
+
+		$this->expectException(PadParentFolderNotFoundException::class);
+		$this->buildCreator(root: $root)->createUserFile('alice', '/Team/Notes.pad');
+	}
+
+	public function testCreatesAtTheRootOfTheUsersFiles(): void {
+		$file = $this->emptyFile();
+		$home = $this->creatableFolder();
+		$home->method('getPath')->willReturn('/alice/files');
+		$home->method('nodeExists')->with('Notes.pad')->willReturn(false);
+		$home->expects($this->never())->method('get');
+		$home->expects($this->once())->method('newFile')->with('Notes.pad')->willReturn($file);
+
+		$this->assertSame($file, $this->buildCreator(root: $this->rootWithHome($home))->createUserFile('alice', '/Notes.pad'));
 	}
 
 	public function testCreatesAtAPathWhoseFolderTakesIt(): void {
@@ -366,7 +390,7 @@ class PadFileCreatorTest extends TestCase {
 		$l10n->method('t')->willReturnArgument(0);
 
 		return new PadFileCreator(
-			$root ?? $this->createMock(IRootFolder::class),
+			new UserNodeResolver($root ?? $this->createMock(IRootFolder::class)),
 			$locking ?? $this->createMock(ILockingProvider::class),
 			$validator ?? $this->createMock(IFilenameValidator::class),
 			$l10n,

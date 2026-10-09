@@ -9,16 +9,19 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Service;
 
+use OCA\EtherpadNextcloud\Exception\BindingNotCreatedException;
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
 use OCA\EtherpadNextcloud\Exception\LifecycleException;
 use OCA\EtherpadNextcloud\Exception\NotAPadFileException;
 use OCA\EtherpadNextcloud\Exception\PadAlreadyHasBindingException;
+use OCA\EtherpadNextcloud\Exception\PadFileFormatException;
 use OCA\EtherpadNextcloud\Exception\PadFileNotWritableException;
 use OCA\EtherpadNextcloud\Exception\RunBudgetSpentException;
 use OCA\EtherpadNextcloud\Util\PadAccessMode;
 use OCA\EtherpadNextcloud\Util\PadFileType;
 use OCA\EtherpadNextcloud\Util\SafeError;
 use OCP\Files\File;
+use OCP\Lock\LockedException;
 use OCP\Security\ISecureRandom;
 use Psr\Log\LoggerInterface;
 
@@ -200,8 +203,14 @@ class RestoreService {
 	 * may have cut the file short, is the restore's own (LifecycleException).
 	 *
 	 * @return array{status: string, reason?: string, old_pad_id?: string, new_pad_id?: string}
+	 * @throws NotAPadFileException
 	 * @throws PadFileNotWritableException
-	 * @throws LifecycleException
+	 * @throws PadAlreadyHasBindingException
+	 * @throws PadFileFormatException the file is no `.pad` the app can read
+	 * @throws EtherpadClientException Etherpad not answering, or refusing
+	 * @throws LockedException
+	 * @throws BindingNotCreatedException another recovery made the row first
+	 * @throws LifecycleException a write that may have cut the file short
 	 */
 	public function recoverFromSnapshot(File $file): array {
 		$fileId = $file->getId();
@@ -258,7 +267,7 @@ class RestoreService {
 	 * with the pad lost, offers the new one.
 	 *
 	 * @return array{status: string, reason?: string, old_pad_id?: string, new_pad_id?: string}
-	 * @throws LifecycleException when Etherpad refuses to say
+	 * @throws EtherpadClientException when Etherpad refuses to say, which restore() reports as its own
 	 */
 	private function restoreActiveRow(File $file, int $fileId, Binding $binding): array {
 		try {
@@ -268,7 +277,7 @@ class RestoreService {
 				return LifecycleResult::skipped(self::REASON_PRESENCE_UNKNOWN, $fileId, $this->logger);
 			}
 			if ($e instanceof EtherpadClientException) {
-				throw LifecycleException::failed('Restore', $e);
+				throw $e;
 			}
 			// The open reads the file again, and says what is wrong with it.
 			return LifecycleResult::skipped(self::REASON_FILE_UNREADABLE, $fileId, $this->logger);
@@ -310,7 +319,7 @@ class RestoreService {
 	 * pad of its own.
 	 *
 	 * @return array{status: string, reason?: string, old_pad_id?: string, new_pad_id?: string}
-	 * @throws LifecycleException
+	 * @throws \Throwable reading the rows, which restore() reports as its own
 	 */
 	private function restoreFileWithoutRow(File $file, int $fileId): array {
 		try {
@@ -321,19 +330,11 @@ class RestoreService {
 			// recovery or says what is wrong - as for an active row.
 			return LifecycleResult::skipped(self::REASON_FILE_UNREADABLE, $fileId, $this->logger);
 		}
-		try {
-			$original = $this->bindingService->findByPadId($pad->padId);
-		} catch (\Throwable $e) {
-			throw LifecycleException::failed('Restore', $e);
-		}
+		$original = $this->bindingService->findByPadId($pad->padId);
 		// A copy only while the original is there: one whose file is gone -
 		// deleted for good, its pad about to go, or vanished - leaves the
 		// copy the file's content, and it gets a pad of its own.
-		try {
-			$isCopy = $original !== null && $original->fileId !== $fileId && !$this->bindingService->isFileGone($original->fileId);
-		} catch (\Throwable $e) {
-			throw LifecycleException::failed('Restore', $e);
-		}
+		$isCopy = $original !== null && $original->fileId !== $fileId && !$this->bindingService->isFileGone($original->fileId);
 		if ($isCopy) {
 			return LifecycleResult::skipped(self::REASON_COPY, $fileId, $this->logger);
 		}
@@ -508,9 +509,9 @@ class RestoreService {
 				throw LifecycleException::failed('Restore', $e);
 			}
 			$this->letGoOfNewPad($fileId, $newPadId, $oldPadId, $flow, $rowStays);
-			// Said here, as the caller may answer it as nothing worse than a
-			// lock: a pad was made, and its row moved back or removed. The
-			// rollback says so itself when it keeps the pad.
+			// Said here, with the pad: a recovery's caller may answer it as
+			// nothing worse than a lock, and a restore's report names only
+			// the file. The rollback says so itself when it keeps the pad.
 			$this->logger->warning('Could not write a restored .pad file; its claim was taken back, and its new pad let go unless a row still names it.', [
 				'app' => 'etherpad_nextcloud',
 				'fileId' => $fileId,
