@@ -12,7 +12,6 @@ namespace OCA\EtherpadNextcloud\Service;
 use OCA\EtherpadNextcloud\Exception\NotAPadFileException;
 use OCA\EtherpadNextcloud\Exception\PadFileAlreadyExistsException;
 use OCA\EtherpadNextcloud\Exception\PadFileChangedException;
-use OCA\EtherpadNextcloud\Exception\PadParentFolderNotWritableException;
 use OCA\EtherpadNextcloud\Util\PadFileType;
 use OCA\EtherpadNextcloud\Util\PathNormalizer;
 use OCA\EtherpadNextcloud\Util\SafeError;
@@ -65,10 +64,8 @@ class PadCreationService {
 	public function createInParent(string $uid, int $parentFolderId, string $name, string $accessMode): array {
 		$this->padTypePolicy->requireEnabled($accessMode);
 		$fileName = $this->padPaths->normalizeCreateFileName($name);
+		// Whether it takes a new file, the creator asks (createUserFileInFolder()).
 		$parentFolder = $this->userNodeResolver->resolveUserFolderNodeById($uid, $parentFolderId);
-		if (!$parentFolder->isCreatable()) {
-			throw new PadParentFolderNotWritableException('Selected parent folder is not writable.');
-		}
 
 		return $this->withCreateRollback(
 			function (PadCreateAttempt $attempt) use ($uid, $parentFolder, $parentFolderId, $fileName, $accessMode): array {
@@ -108,9 +105,7 @@ class PadCreationService {
 				$prepared = $this->externalPadSeeder->prepare($fileId, $padUrl);
 				$this->writeCreatedFile($claim, $prepared['content']);
 				$seeded = $prepared['result'];
-				// Preserve the historical key ordering for the external-create
-				// response: `file` is the first key so tests asserting via
-				// `assertSame` keep matching after the refactor.
+				// `file` first, where the response has always had it.
 				$result = ['file' => $path] + $seeded;
 				return $result;
 			},
@@ -217,9 +212,9 @@ class PadCreationService {
 		$padId = $this->padBootstrapService->provisionPadId($accessMode);
 		try {
 			// The template's content is in the file from the start, so the
-			// file records the pad's revisions, as a restore does: with 0 it
-			// would not count as holding saved content should Etherpad lose
-			// the pad before its first sync (ManagedPadLifecycle::howLost()).
+			// file records the pad's revisions, as a restore does: they make
+			// it hold saved content should Etherpad lose the pad before its
+			// first sync, not only its text (ManagedPadLifecycle::howLost()).
 			$revisions = $this->padLifecycle->seed($padId, $resolvedText, $resolvedHtml, ['fileId' => $fileId]);
 			$padUrl = $this->etherpadClient->buildPadUrl($padId);
 
@@ -304,7 +299,7 @@ class PadCreationService {
 	 *
 	 * `create()` and `createInParent()` differ only in how they reach that
 	 * file — a path in the user's tree, or a name in a folder they had to
-	 * resolve first. From here on they were the same twenty lines twice.
+	 * resolve first.
 	 *
 	 * @return array{file:string,file_id:int,pad_id:string,access_mode:string,pad_url:string}
 	 */

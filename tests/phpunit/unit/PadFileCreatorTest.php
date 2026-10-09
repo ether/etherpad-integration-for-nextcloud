@@ -6,24 +6,124 @@ namespace OCA\EtherpadNextcloud\Tests\Unit;
 
 use OCA\EtherpadNextcloud\Exception\InvalidPadNameException;
 use OCA\EtherpadNextcloud\Exception\PadFileAlreadyExistsException;
+use OCA\EtherpadNextcloud\Exception\PadParentFolderNotFoundException;
+use OCA\EtherpadNextcloud\Exception\PadParentFolderNotWritableException;
 use OCA\EtherpadNextcloud\Service\PadFileCreator;
+use OCA\EtherpadNextcloud\Service\UserNodeResolver;
 use OCP\Files\File;
 use OCP\Files\Folder;
 use OCP\Files\IFilenameValidator;
 use OCP\Files\InvalidPathException;
+use OCP\Files\NotFoundException;
+use OCP\Files\NotPermittedException;
 use OCP\Files\StorageNotAvailableException;
 use OCP\Files\IRootFolder;
 use OCP\Files\Storage\IStorage;
 use OCP\Lock\ILockingProvider;
 use OCP\IL10N;
 use OCP\Lock\LockedException;
+use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 
 class PadFileCreatorTest extends TestCase {
+	/**
+	 * A path names the folder to create in: one that is not there, one the
+	 * user may not look into, or one that is no folder, is a 404 for the path endpoints, as for the one that names
+	 * the folder by id - not a server error.
+	 */
+	public function testRefusesAPathWhoseFolderIsNotThere(): void {
+		$cases = [
+			'no such folder' => new NotFoundException('Missing'),
+			'one the user may not look into' => new NotPermittedException('Missing'),
+			'a file by that name' => $this->createMock(File::class),
+		];
+		foreach ($cases as $case => $found) {
+			$home = $this->creatableFolder();
+			$found instanceof \Throwable
+				? $home->method('get')->with('Missing')->willThrowException($found)
+				: $home->method('get')->with('Missing')->willReturn($found);
+			try {
+				$this->buildCreator(root: $this->rootWithHome($home))->createUserFile('alice', '/Missing/Notes.pad');
+				$this->fail($case . ': created');
+			} catch (PadParentFolderNotFoundException) {
+				$this->addToAssertionCount(1);
+			}
+		}
+	}
+
+	/**
+	 * A folder the user may not create in - a read-only share - is a 403,
+	 * as for the endpoint that names the folder by id, before the storage
+	 * is asked.
+	 */
+	public function testRefusesAPathWhoseFolderTakesNoNewFile(): void {
+		$folder = $this->createMock(Folder::class);
+		$folder->method('isCreatable')->willReturn(false);
+		$folder->expects($this->never())->method('newFile');
+		$home = $this->creatableFolder();
+		$home->method('get')->with('Shared')->willReturn($folder);
+
+		$this->expectException(PadParentFolderNotWritableException::class);
+		$this->buildCreator(root: $this->rootWithHome($home))->createUserFile('alice', '/Shared/Notes.pad');
+	}
+
+	/**
+	 * The folder named by id gets the same refusal, from the same place:
+	 * before its name rules are asked or anything is locked or written.
+	 */
+	public function testRefusesAFolderThatTakesNoNewFileBeforeAskingAnything(): void {
+		$folder = $this->createMock(Folder::class);
+		$folder->method('isCreatable')->willReturn(false);
+		$folder->expects($this->never())->method('newFile');
+		$folder->expects($this->never())->method('getStorage');
+		$validator = $this->createMock(IFilenameValidator::class);
+		$validator->expects($this->never())->method('validateFilename');
+		$locking = $this->createMock(ILockingProvider::class);
+		$locking->expects($this->never())->method('acquireLock');
+
+		$this->expectException(PadParentFolderNotWritableException::class);
+		$this->buildCreator(locking: $locking, validator: $validator)->createUserFileInFolder($folder, 'Notes.pad');
+	}
+
+	/**
+	 * A user whose files cannot be reached is answered as a folder not
+	 * there, as a lookup of their files by path is (UserNodeResolver).
+	 */
+	public function testRefusesAPathWhenTheUsersFilesCannotBeReached(): void {
+		$root = $this->createMock(IRootFolder::class);
+		$root->method('getUserFolder')->with('alice')->willThrowException(new NotPermittedException('home storage unavailable'));
+
+		$this->expectException(PadParentFolderNotFoundException::class);
+		$this->buildCreator(root: $root)->createUserFile('alice', '/Team/Notes.pad');
+	}
+
+	public function testCreatesAtTheRootOfTheUsersFiles(): void {
+		$file = $this->emptyFile();
+		$home = $this->creatableFolder();
+		$home->method('getPath')->willReturn('/alice/files');
+		$home->method('nodeExists')->with('Notes.pad')->willReturn(false);
+		$home->expects($this->never())->method('get');
+		$home->expects($this->once())->method('newFile')->with('Notes.pad')->willReturn($file);
+
+		$this->assertSame($file, $this->buildCreator(root: $this->rootWithHome($home))->createUserFile('alice', '/Notes.pad'));
+	}
+
+	public function testCreatesAtAPathWhoseFolderTakesIt(): void {
+		$file = $this->emptyFile();
+		$folder = $this->creatableFolder();
+		$folder->method('getPath')->willReturn('/alice/files/Team');
+		$folder->method('nodeExists')->with('Notes.pad')->willReturn(false);
+		$folder->expects($this->once())->method('newFile')->with('Notes.pad')->willReturn($file);
+		$home = $this->creatableFolder();
+		$home->method('get')->with('Team')->willReturn($folder);
+
+		$this->assertSame($file, $this->buildCreator(root: $this->rootWithHome($home))->createUserFile('alice', '/Team/Notes.pad'));
+	}
+
 	public function testReturnsTheNewFileWhenTheNameIsFree(): void {
 		$file = $this->emptyFile();
-		$folder = $this->createMock(Folder::class);
+		$folder = $this->creatableFolder();
 		$folder->method('getPath')->willReturn('/alice/files');
 		$folder->method('nodeExists')->with('Pad.pad')->willReturn(false);
 		$folder->expects($this->once())
@@ -49,7 +149,7 @@ class PadFileCreatorTest extends TestCase {
 	 * name between the check and the create.
 	 */
 	public function testTreatsALostRaceAsAConflict(): void {
-		$folder = $this->createMock(Folder::class);
+		$folder = $this->creatableFolder();
 		$folder->method('getPath')->willReturn('/alice/files');
 		$folder->method('nodeExists')
 			->with('Pad.pad')
@@ -61,7 +161,7 @@ class PadFileCreatorTest extends TestCase {
 	}
 
 	public function testPropagatesAGenuineStorageFailure(): void {
-		$folder = $this->createMock(Folder::class);
+		$folder = $this->creatableFolder();
 		$folder->method('getPath')->willReturn('/alice/files');
 		$folder->method('nodeExists')->willReturn(false);
 		$folder->method('newFile')->willThrowException(new \RuntimeException('disk full'));
@@ -77,7 +177,7 @@ class PadFileCreatorTest extends TestCase {
 	 * loser is now told the name is taken, which is what happened.
 	 */
 	public function testTurnsAwayASecondCreateOfTheSameName(): void {
-		$folder = $this->createMock(Folder::class);
+		$folder = $this->creatableFolder();
 		$folder->method('getPath')->willReturn('/alice/files');
 		$folder->expects($this->never())->method('newFile');
 
@@ -91,7 +191,7 @@ class PadFileCreatorTest extends TestCase {
 	}
 
 	public function testReleasesTheLockEvenWhenTheCreateFails(): void {
-		$folder = $this->createMock(Folder::class);
+		$folder = $this->creatableFolder();
 		$folder->method('getPath')->willReturn('/alice/files');
 		$folder->method('nodeExists')->willReturn(true);
 
@@ -118,7 +218,7 @@ class PadFileCreatorTest extends TestCase {
 			},
 		);
 
-		$folder = $this->createMock(Folder::class);
+		$folder = $this->creatableFolder();
 		$folder->method('getPath')->willReturn('/alice/files');
 		$folder->method('getId')->willReturn(7);
 		$folder->method('nodeExists')->willReturn(false);
@@ -161,7 +261,7 @@ class PadFileCreatorTest extends TestCase {
 	}
 
 	private function folderSeenAs(string $path, int $fileId): Folder {
-		$folder = $this->createMock(Folder::class);
+		$folder = $this->creatableFolder();
 		$folder->method('getPath')->willReturn($path);
 		$folder->method('getId')->willReturn($fileId);
 		$folder->method('nodeExists')->willReturn(false);
@@ -188,7 +288,7 @@ class PadFileCreatorTest extends TestCase {
 		$this->expectExceptionMessage('"COM1" is a reserved name');
 
 		$this->buildCreator(validator: $validator)
-			->createUserFileInFolder($this->createMock(Folder::class), 'COM1.pad');
+			->createUserFileInFolder($this->creatableFolder(), 'COM1.pad');
 	}
 
 	/**
@@ -212,7 +312,7 @@ class PadFileCreatorTest extends TestCase {
 	 * beforehand cannot be complete — and that answer must still be a 400.
 	 */
 	public function testTreatsALateRefusalFromTheWriteAsANameProblem(): void {
-		$folder = $this->createMock(Folder::class);
+		$folder = $this->creatableFolder();
 		$folder->method('getId')->willReturn(7);
 		$folder->method('nodeExists')->willReturn(false);
 		$folder->method('newFile')->willThrowException(new InvalidPathException('rejected by the backend'));
@@ -247,13 +347,20 @@ class PadFileCreatorTest extends TestCase {
 	}
 
 	private function folderOn(IStorage $storage): Folder {
-		$folder = $this->createMock(Folder::class);
+		$folder = $this->creatableFolder();
 		$folder->method('getId')->willReturn(7);
 		$folder->method('getStorage')->willReturn($storage);
 		$folder->method('getInternalPath')->willReturn('Team');
 		return $folder;
 	}
 
+
+	/** A folder the user may create in, as the tests not about that need. */
+	private function creatableFolder(): Folder&MockObject {
+		$folder = $this->createMock(Folder::class);
+		$folder->method('isCreatable')->willReturn(true);
+		return $folder;
+	}
 
 	private function emptyFile(): File {
 		$file = $this->createMock(File::class);
@@ -262,21 +369,28 @@ class PadFileCreatorTest extends TestCase {
 	}
 
 	private function folderWithoutTheFile(): Folder {
-		$folder = $this->createMock(Folder::class);
+		$folder = $this->creatableFolder();
 		$folder->method('getPath')->willReturn('/alice/files');
 		return $folder;
+	}
+
+	private function rootWithHome(Folder $home): IRootFolder {
+		$root = $this->createMock(IRootFolder::class);
+		$root->method('getUserFolder')->with('alice')->willReturn($home);
+		return $root;
 	}
 
 	private function buildCreator(
 		?ILockingProvider $locking = null,
 		?IFilenameValidator $validator = null,
 		?LoggerInterface $logger = null,
+		?IRootFolder $root = null,
 	): PadFileCreator {
 		$l10n = $this->createMock(IL10N::class);
 		$l10n->method('t')->willReturnArgument(0);
 
 		return new PadFileCreator(
-			$this->createMock(IRootFolder::class),
+			new UserNodeResolver($root ?? $this->createMock(IRootFolder::class)),
 			$locking ?? $this->createMock(ILockingProvider::class),
 			$validator ?? $this->createMock(IFilenameValidator::class),
 			$l10n,

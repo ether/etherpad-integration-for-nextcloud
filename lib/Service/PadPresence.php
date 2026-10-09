@@ -18,9 +18,12 @@ enum PadPresence {
 	case Absent;
 
 	/**
-	 * Etherpad has a pad under that id, with fewer revisions than the file's
-	 * snapshot was taken at: not the pad the file knew. Neither to be taken
-	 * back nor thrown away - whoever wrote into it has only that copy.
+	 * Etherpad has a pad under that id without a single revision, while the
+	 * file holds saved content and other text than it: a pad made anew in
+	 * place of the file's, on a visit or through the API
+	 * (ManagedPadLifecycle::isMadeAnew()). A pad merely behind the
+	 * snapshot - 3 revisions against 5 - is not this. Left where it is:
+	 * whoever made it may want what it holds.
 	 */
 	case Behind;
 }

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Tests\Unit;
 
+use OCA\EtherpadNextcloud\Exception\BindingNotCreatedException;
 use OCA\EtherpadNextcloud\Exception\LifecycleException;
 use OCA\EtherpadNextcloud\Exception\MissingFrontmatterException;
 use OCA\EtherpadNextcloud\Exception\NotAPadFileException;
@@ -229,21 +230,31 @@ class RestoreServiceTest extends TestCase {
 	/**
 	 * Where the file is cannot be told after the seeding - the database
 	 * gone, say: the new pad goes, nothing is claimed or written, and the
-	 * restore fails and says so.
+	 * restore fails and says so; a recovery's caller hears the cause.
 	 */
 	public function testANewPadIsLetGoWhenTheFileCannotBeFoundAfterTheSeeding(): void {
-		$bindingService = $this->createMock(BindingService::class);
-		$bindingService->expects($this->never())->method('rebind');
-		$bindingService->method('isBoundTo')->willReturn(false);
-		$etherpadClient = $this->buildEtherpadWithoutThePad();
-		$etherpadClient->expects($this->once())->method('deletePad')->with('r-old-pad-abc123def456');
-		$nodes = $this->createMock(UserNodeResolver::class);
-		$nodes->method('hasMoved')->willThrowException(new \RuntimeException('database went away'));
-		$file = $this->padFile(92, 'Restored.pad');
-		$file->expects($this->never())->method('putContent');
+		foreach (['restore' => false, 'recovery' => true] as $case => $isRecovery) {
+			$bindingService = $this->createMock(BindingService::class);
+			$bindingService->expects($this->never())->method('rebind');
+			$bindingService->method('isBoundTo')->willReturn(false);
+			$etherpadClient = $this->buildEtherpadWithoutThePad();
+			$etherpadClient->expects($this->once())->method('deletePad')->with('r-old-pad-abc123def456');
+			$nodes = $this->createMock(UserNodeResolver::class);
+			$cause = new \RuntimeException('database went away');
+			$nodes->method('hasMoved')->willThrowException($cause);
+			$file = $this->padFile(92, 'Restored.pad');
+			$file->expects($this->never())->method('putContent');
+			$service = $this->buildRowRestoreService(92, 'old-pad', $bindingService, $etherpadClient, nodes: $nodes);
 
-		$this->expectException(LifecycleException::class);
-		$this->buildRowRestoreService(92, 'old-pad', $bindingService, $etherpadClient, nodes: $nodes)->restore($file);
+			try {
+				$isRecovery ? $service->recoverFromSnapshot($file) : $service->restore($file);
+				$this->fail($case . ': the failure should reach the caller');
+			} catch (\RuntimeException $e) {
+				$isRecovery
+					? $this->assertSame($cause, $e, $case)
+					: $this->assertSame([LifecycleException::class, $cause], [$e::class, $e->getPrevious()], $case);
+			}
+		}
 	}
 
 	/**
@@ -628,29 +639,37 @@ class RestoreServiceTest extends TestCase {
 	/**
 	 * The other way that insert fails: a concurrent recovery for the same
 	 * file got there first — the unique constraint is the serialization
-	 * point. That row is theirs; only our pad goes.
+	 * point. That row is theirs; only our pad goes. A recovery's caller
+	 * hears it as it is, for the API to answer it as worth a retry.
 	 */
 	public function testRestoreWithoutBindingLeavesARivalRecoverysRow(): void {
-		$fileId = 93;
-		$oldPadId = 'old-public-pad';
-		$newPadId = 'r-old-public-pad-abc123def456';
+		foreach (['restore' => false, 'recovery' => true] as $case => $isRecovery) {
+			$fileId = 93;
+			$oldPadId = 'old-public-pad';
+			$newPadId = 'r-old-public-pad-abc123def456';
 
-		$bindingService = $this->createMock(BindingService::class);
-		$bindingService->method('findByFileId')->with($fileId)->willReturn(null);
-		$bindingService->method('createBinding')->willThrowException(new \RuntimeException('unique constraint violation'));
-		$bindingService->method('isBoundTo')->with($fileId, $newPadId)->willReturn(false);
-		$bindingService->expects($this->never())->method('deleteActiveBinding');
+			$bindingService = $this->createMock(BindingService::class);
+			$bindingService->method('findByFileId')->with($fileId)->willReturn(null);
+			$bindingService->method('createBinding')->willThrowException(new BindingNotCreatedException('Could not create unique pad binding.'));
+			$bindingService->method('isBoundTo')->with($fileId, $newPadId)->willReturn(false);
+			$bindingService->expects($this->never())->method('deleteActiveBinding');
 
-		$etherpadClient = $this->createMock(EtherpadClient::class);
-		$etherpadClient->method('buildPadUrl')->willReturn('https://pad.example.test/p/' . $newPadId);
-		$etherpadClient->expects($this->once())->method('deletePad')->with($newPadId);
+			$etherpadClient = $this->createMock(EtherpadClient::class);
+			$etherpadClient->method('buildPadUrl')->willReturn('https://pad.example.test/p/' . $newPadId);
+			$etherpadClient->expects($this->once())->method('deletePad')->with($newPadId);
 
-		$file = $this->padFile($fileId, 'Restored.pad');
-		// The file is the rival's to write.
-		$file->expects($this->never())->method('putContent');
+			$file = $this->padFile($fileId, 'Restored.pad');
+			// The file is the rival's to write.
+			$file->expects($this->never())->method('putContent');
+			$service = $this->buildNoBindingRestoreService($bindingService, $etherpadClient, $oldPadId);
 
-		$this->expectException(LifecycleException::class);
-		$this->buildNoBindingRestoreService($bindingService, $etherpadClient, $oldPadId)->restore($file);
+			try {
+				$isRecovery ? $service->recoverFromSnapshot($file) : $service->restore($file);
+				$this->fail($case . ': the failure should reach the caller');
+			} catch (BindingNotCreatedException|LifecycleException $e) {
+				$this->assertSame($isRecovery ? BindingNotCreatedException::class : LifecycleException::class, $e::class, $case);
+			}
+		}
 	}
 
 	/**
@@ -969,7 +988,8 @@ class RestoreServiceTest extends TestCase {
 	 * pad again. A write that fails after the claim moves the row back onto
 	 * the old pad, where the file still points, and the new pad goes; only
 	 * a row that cannot be moved back goes with it. The same for a restore
-	 * and for a recovery an open offered.
+	 * and for a recovery an open offered - whose caller hears of the file
+	 * locked by a sync as it is, for the API to answer it as one.
 	 */
 	public function testAFailedReplacementOfALostPadKeepsTheRow(): void {
 		$entries = [
@@ -999,12 +1019,21 @@ class RestoreServiceTest extends TestCase {
 			$etherpadClient->expects($this->once())->method('deletePad')->with($newPadId);
 			$file = $this->padFile($fileId, 'Lost.pad');
 			$file->method('putContent')->willThrowException(new LockedException('locked'));
+			// Said where it happens, as a recovery's caller answers it as a lock.
+			$warnings = [];
+			$logger = $this->createMock(LoggerInterface::class);
+			$logger->method('warning')->willReturnCallback(static function (string $message, array $context) use (&$warnings): void {
+				$warnings[$message] = $context['padId'] ?? null;
+			});
 
 			try {
-				$run($this->buildRowRestoreService($fileId, 'old-pad', $bindingService, $etherpadClient), $file);
+				$run($this->buildRowRestoreService($fileId, 'old-pad', $bindingService, $etherpadClient, logger: $logger), $file);
 				$this->fail($case . ': the failure should reach the caller');
-			} catch (LifecycleException) {
+			} catch (LifecycleException|LockedException $e) {
+				$this->assertSame(str_starts_with($case, 'recovery') ? LockedException::class : LifecycleException::class, $e::class, $case);
 			}
+			// Named, for a pad the rollback keeps.
+			$this->assertSame($newPadId, $warnings['Could not write a restored .pad file; its claim was taken back, and its new pad let go unless a row still names it.'] ?? 'no such warning', $case);
 
 			$active = BindingService::STATE_ACTIVE;
 			$this->assertSame([['old-pad', $active, $newPadId, $active], [$newPadId, $active, 'old-pad', $active]], $rebinds, $case);
@@ -1012,11 +1041,154 @@ class RestoreServiceTest extends TestCase {
 	}
 
 	/**
-	 * A write can land and still throw - a hook after it failing, say.
-	 * Row and file then both name the new pad: it is kept, with a warning,
-	 * rather than one of them taken back to leave them naming two pads.
+	 * A claim lost to another recovery wrote nothing, so the file is not
+	 * read for it - the winner's write may hold its lock just then: the new
+	 * pad goes, and the caller hears of the rival's row as it is, worth a
+	 * retry, with no word of a write that never was.
+	 */
+	public function testAClaimLostToARivalWhoseWriteHoldsTheLockIsLetGo(): void {
+		$fileId = 96;
+		$newPadId = 'r-old-public-pad-abc123def456';
+		$bindingService = $this->createMock(BindingService::class);
+		$bindingService->method('findByFileId')->with($fileId)->willReturn(null);
+		$bindingService->method('createBinding')->willThrowException(new BindingNotCreatedException('Could not create unique pad binding.'));
+		$bindingService->method('isBoundTo')->willReturn(false);
+		$bindingService->expects($this->never())->method('deleteActiveBinding');
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->expects($this->once())->method('deletePad')->with($newPadId);
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects($this->never())->method('warning');
+		$file = $this->createMock(File::class);
+		$file->method('getId')->willReturn($fileId);
+		$file->method('getName')->willReturn('Restored.pad');
+		$file->method('getPath')->willReturn('/alice/files/Restored.pad');
+		$file->method('isUpdateable')->willReturn(true);
+		// Read for the recovery and before the claim, not after it: the
+		// winner's write may hold the lock, or be half way through.
+		$file->expects($this->exactly(2))->method('getContent')->willReturn('doc-before');
+		$file->expects($this->never())->method('putContent');
+
+		$this->expectException(BindingNotCreatedException::class);
+		$this->buildNoBindingRestoreService($bindingService, $etherpadClient, 'old-public-pad', logger: $logger)->recoverFromSnapshot($file);
+	}
+
+	/**
+	 * A write refused for a lock was refused for someone else's write. The
+	 * file is read under its lock once that passes: as it was, it names the
+	 * old pad - the row is moved back onto it, the new pad goes, and the
+	 * caller hears of the lock, worth a retry. A lock that stays leaves
+	 * that open, whatever is behind it: read past the lock, a write half
+	 * done there names the old pad with the content still missing, and
+	 * should it break off the new pad is the last whole copy. Its row goes,
+	 * the new pad stays, and the restore fails on its own.
+	 */
+	public function testAWriteRefusedForALockIsTakenBackOnlyOnceTheLockPasses(): void {
+		foreach (['the lock passes' => true, 'the lock stays, a write half done behind it' => false] as $case => $passes) {
+			$fileId = 711;
+			$newPadId = 'r-old-pad-abc123def456';
+			$bindingService = $this->createMock(BindingService::class);
+			$rebinds = [];
+			$bindingService->method('rebind')->willReturnCallback(static function (int $id, string $from, string $fromState, string $to) use (&$rebinds): bool {
+				$rebinds[] = [$from, $to];
+				return true;
+			});
+			$bindingService->method('isBoundTo')->willReturn(false);
+			$bindingService->expects($passes ? $this->never() : $this->once())->method('deleteActiveBinding')->with($fileId, $newPadId);
+			$etherpadClient = $this->createMock(EtherpadClient::class);
+			$etherpadClient->method('getRevisionsCount')->willThrowException(new EtherpadRefusedException('padID does not exist'));
+			$etherpadClient->expects($passes ? $this->once() : $this->never())->method('deletePad')->with($newPadId);
+			$file = $this->createMock(File::class);
+			$file->method('getId')->willReturn($fileId);
+			$file->method('getName')->willReturn('Lost.pad');
+			$file->method('isUpdateable')->willReturn(true);
+			// Read for the recovery and before the claim; after the write,
+			// locked once, then as it was - or locked for good.
+			$reads = 0;
+			$file->method('getContent')->willReturnCallback(static function () use (&$reads, $passes): string {
+				$reads++;
+				if ($reads <= 2 || ($passes && $reads > 3)) {
+					return 'doc-before';
+				}
+				throw new LockedException('Lost.pad');
+			});
+			// Never read past its lock: behind it another write may be half
+			// done - the old pad named, its content still missing - and
+			// taken for an answer, that would let the new pad go.
+			$file->expects($this->never())->method('getStorage');
+			$file->method('putContent')->willThrowException(new LockedException('Lost.pad'));
+
+			try {
+				$this->buildRowRestoreService($fileId, 'old-pad', $bindingService, $etherpadClient)->recoverFromSnapshot($file);
+				$this->fail($case . ': the recovery went through.');
+			} catch (LockedException|LifecycleException $e) {
+				$this->assertSame($passes ? LockedException::class : LifecycleException::class, $e::class, $case);
+			}
+			$this->assertSame($passes ? [['old-pad', $newPadId], [$newPadId, 'old-pad']] : [['old-pad', $newPadId]], $rebinds, $case);
+		}
+	}
+
+	/**
+	 * A claim can move the row and still throw, with no answer from the
+	 * row after it. Nothing was written, so the row is moved back onto the
+	 * old pad, where the file points - not removed - and the new pad goes.
+	 */
+	public function testAClaimThatMovedTheRowAndThrewIsMovedBack(): void {
+		$fileId = 712;
+		$newPadId = 'r-old-pad-abc123def456';
+		$row = 'old-pad';
+		$asked = 0;
+		$bindingService = $this->createMock(BindingService::class);
+		$bindingService->method('rebind')->willReturnCallback(static function (int $id, string $from, string $fromState, string $to) use (&$row, $newPadId): bool {
+			if ($row !== $from) {
+				return false;
+			}
+			$row = $to;
+			if ($to === $newPadId) {
+				throw new \RuntimeException('connection lost after the update');
+			}
+			return true;
+		});
+		$bindingService->method('isBoundTo')->willReturnCallback(static function (int $id, string $padId) use (&$row, &$asked): bool {
+			if ($asked++ === 0) {
+				throw new \RuntimeException('connection lost');
+			}
+			return $row === $padId;
+		});
+		$bindingService->method('deleteActiveBinding')->willReturnCallback(static function (int $id, string $padId) use (&$row): bool {
+			if ($row !== $padId) {
+				return false;
+			}
+			$row = null;
+			return true;
+		});
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->method('getRevisionsCount')->willThrowException(new EtherpadRefusedException('padID does not exist'));
+		$etherpadClient->expects($this->once())->method('deletePad')->with($newPadId);
+		$file = $this->padFile($fileId, 'Lost.pad');
+		$file->expects($this->never())->method('putContent');
+
+		try {
+			$this->buildRowRestoreService($fileId, 'old-pad', $bindingService, $etherpadClient)->recoverFromSnapshot($file);
+			$this->fail('The recovery went through.');
+		} catch (\RuntimeException $e) {
+			$this->assertSame('connection lost after the update', $e->getMessage());
+		}
+		$this->assertSame('old-pad', $row);
+	}
+
+	/**
+	 * A write can land and still throw - a hook after it failing, say, for a
+	 * lock of its own too. Row and file then both name the new pad: it is
+	 * kept, with a warning, rather than one of them taken back to leave them
+	 * naming two pads.
 	 */
 	public function testAWriteThatLandedKeepsTheNewPad(): void {
+		foreach ([new \RuntimeException('a hook after the write failed'), new LockedException('Lost.pad')] as $failure) {
+			$this->assertAWriteThatLandedKeepsTheNewPad($failure);
+		}
+	}
+
+	private function assertAWriteThatLandedKeepsTheNewPad(\Throwable $failure): void {
 		$fileId = 708;
 		$newPadId = 'r-old-pad-abc123def456';
 		$bindingService = $this->createMock(BindingService::class);
@@ -1032,11 +1204,11 @@ class RestoreServiceTest extends TestCase {
 		$file->method('getName')->willReturn('Lost.pad');
 		$file->method('isUpdateable')->willReturn(true);
 		$file->method('getContent')->willReturnOnConsecutiveCalls('doc-before', 'doc-before', 'doc-after');
-		$file->method('putContent')->willThrowException(new \RuntimeException('a hook after the write failed'));
+		$file->method('putContent')->willThrowException($failure);
 
 		$result = $this->buildRowRestoreService($fileId, 'old-pad', $bindingService, $etherpadClient, logger: $logger)->recoverFromSnapshot($file);
 
-		$this->assertSame(LifecycleResult::RESTORED, $result['status']);
+		$this->assertSame(LifecycleResult::RESTORED, $result['status'], $failure::class);
 		$this->assertSame($newPadId, $result['new_pad_id']);
 	}
 
@@ -1047,33 +1219,48 @@ class RestoreServiceTest extends TestCase {
 	 * contradict a landed write - and the file's next open finds no row and
 	 * offers a pad from its content. The new pad stays, named in the log: a
 	 * write that broke off may have cut the file short, and the new pad
-	 * may be the last whole copy.
+	 * may be the last whole copy. The same for the row a file without one
+	 * was just given.
 	 */
 	public function testAFailedWriteOnAFileThatCannotBeReadLeavesNoRowAndKeepsThePad(): void {
-		$fileId = 710;
-		$newPadId = 'r-old-pad-abc123def456';
-		$bindingService = $this->createMock(BindingService::class);
-		$bindingService->expects($this->once())->method('rebind')->with($fileId, 'old-pad', BindingService::STATE_ACTIVE, $newPadId, BindingService::STATE_ACTIVE)->willReturn(true);
-		$bindingService->method('isBoundTo')->with($fileId, $newPadId)->willReturn(true);
-		$bindingService->expects($this->once())->method('deleteActiveBinding')->with($fileId, $newPadId)->willReturn(true);
-		$etherpadClient = $this->createMock(EtherpadClient::class);
-		$etherpadClient->method('getRevisionsCount')->willThrowException(new EtherpadRefusedException('padID does not exist'));
-		$etherpadClient->expects($this->never())->method('deletePad');
-		$etherpadClient->expects($this->never())->method('deleteGroup');
-		$logger = $this->createMock(LoggerInterface::class);
-		$logger->expects($this->once())->method('warning')->with(
-			'A restored .pad file reported a failed write and cannot be read; its row is removed, and its new pad is kept, as the write may have cut the file short.',
-			$this->callback(static fn (array $context): bool => $context['padId'] === $newPadId),
-		);
-		$file = $this->createMock(File::class);
-		$file->method('getId')->willReturn($fileId);
-		$file->method('getName')->willReturn('Lost.pad');
-		$file->method('isUpdateable')->willReturn(true);
-		$file->method('getContent')->willReturnOnConsecutiveCalls('doc-before', 'doc-before', $this->throwException(new LockedException('locked')));
-		$file->method('putContent')->willThrowException(new \RuntimeException('a hook after the write failed'));
+		foreach (['a lost pad' => true, 'no row' => false] as $case => $hasRow) {
+			$fileId = 710;
+			$newPadId = $hasRow ? 'r-old-pad-abc123def456' : 'r-old-public-pad-abc123def456';
+			$bindingService = $this->createMock(BindingService::class);
+			if ($hasRow) {
+				$bindingService->expects($this->once())->method('rebind')->with($fileId, 'old-pad', BindingService::STATE_ACTIVE, $newPadId, BindingService::STATE_ACTIVE)->willReturn(true);
+			} else {
+				$bindingService->method('findByFileId')->with($fileId)->willReturn(null);
+				$bindingService->expects($this->once())->method('createBinding')->with($fileId, $newPadId, BindingService::ACCESS_PUBLIC);
+			}
+			$bindingService->method('isBoundTo')->with($fileId, $newPadId)->willReturn(true);
+			$bindingService->expects($this->once())->method('deleteActiveBinding')->with($fileId, $newPadId)->willReturn(true);
+			$etherpadClient = $this->createMock(EtherpadClient::class);
+			$etherpadClient->method('getRevisionsCount')->willThrowException(new EtherpadRefusedException('padID does not exist'));
+			$etherpadClient->expects($this->never())->method('deletePad');
+			$etherpadClient->expects($this->never())->method('deleteGroup');
+			$logger = $this->createMock(LoggerInterface::class);
+			$logger->expects($this->once())->method('warning')->with(
+				'A restored .pad file reported a failed write and cannot be read; its row is removed, and its new pad is kept, as the write may have cut the file short.',
+				$this->callback(static fn (array $context): bool => $context['padId'] === $newPadId),
+			);
+			$file = $this->createMock(File::class);
+			$file->method('getId')->willReturn($fileId);
+			$file->method('getName')->willReturn('Lost.pad');
+			$file->method('isUpdateable')->willReturn(true);
+			$file->method('getContent')->willReturnOnConsecutiveCalls('doc-before', 'doc-before', $this->throwException(new \OCP\Files\GenericFileException('file_get_contents failed')));
+			$file->method('putContent')->willThrowException(new \RuntimeException('a hook after the write failed'));
+			$service = $hasRow
+				? $this->buildRowRestoreService($fileId, 'old-pad', $bindingService, $etherpadClient, logger: $logger)
+				: $this->buildNoBindingRestoreService($bindingService, $etherpadClient, 'old-public-pad', logger: $logger);
 
-		$this->expectException(LifecycleException::class);
-		$this->buildRowRestoreService($fileId, 'old-pad', $bindingService, $etherpadClient, logger: $logger)->recoverFromSnapshot($file);
+			try {
+				$service->recoverFromSnapshot($file);
+				$this->fail($case . ': the recovery went through.');
+			} catch (LifecycleException) {
+				$this->addToAssertionCount(1);
+			}
+		}
 	}
 
 	/**
@@ -1153,6 +1340,96 @@ class RestoreServiceTest extends TestCase {
 			->restore($this->padFile(711, 'Legacy.pad', "[InternetShortcut]\nURL=https://pad.example.test/p/legacy\n"));
 
 		$this->assertSame(['status' => LifecycleResult::SKIPPED, 'reason' => RestoreService::REASON_FILE_UNREADABLE], $result);
+	}
+
+	/**
+	 * Etherpad failing while the new pad is seeded reaches a recovery's
+	 * caller as it is, for the API to answer it as Etherpad's - a file
+	 * without a row as one whose pad is lost - and the new pad goes. A
+	 * restore from the trash reports it as its own failure, as ever.
+	 */
+	public function testEtherpadFailingWhileTheNewPadIsSeededReachesARecoveryAsItIs(): void {
+		$cases = [
+			'recovery, no row' => [false, true],
+			'recovery, a lost pad' => [true, true],
+			'restore, a lost pad' => [true, false],
+		];
+		foreach ($cases as $case => [$hasRow, $isRecovery]) {
+			$fileId = 707;
+			$newPadId = $hasRow ? 'r-old-pad-abc123def456' : 'r-orphaned-pad-abc123def456';
+			$etherpadClient = $hasRow ? $this->buildEtherpadWithoutThePad() : $this->createMock(EtherpadClient::class);
+			$etherpadClient->expects($this->once())->method('createPad')->with($newPadId);
+			$etherpadClient->method('setText')->willThrowException(new EtherpadClientException('Etherpad API request failed: setText'));
+			$etherpadClient->expects($this->once())->method('deletePad')->with($newPadId);
+			$bindingService = $this->createMock(BindingService::class);
+			$bindingService->expects($this->never())->method('createBinding');
+			$bindingService->expects($this->never())->method('rebind');
+			$file = $this->padFile($fileId, 'Notes.pad');
+			$file->expects($this->never())->method('putContent');
+			$service = $hasRow
+				? $this->buildRowRestoreService($fileId, 'old-pad', $bindingService, $etherpadClient)
+				: $this->buildNoBindingRestoreService($bindingService, $etherpadClient, 'orphaned-pad');
+
+			try {
+				$isRecovery ? $service->recoverFromSnapshot($file) : $service->restore($file);
+				$this->fail($case . ': the failure should reach the caller');
+			} catch (EtherpadClientException|LifecycleException $e) {
+				$this->assertSame($isRecovery ? EtherpadClientException::class : LifecycleException::class, $e::class, $case);
+			}
+		}
+	}
+
+	/**
+	 * A file without a row that is no `.pad` the app can read reaches a
+	 * recovery's caller as it is - a format the API answers with 400, not a
+	 * failure of its own - and nothing is made.
+	 */
+	public function testARecoveryOfAFileThatIsNoPadSaysSoAsItIs(): void {
+		$bindingService = $this->createMock(BindingService::class);
+		$bindingService->method('findByFileId')->willReturn(null);
+		$padFileService = $this->createMock(PadFileService::class);
+		$padFileService->method('readPad')->willThrowException(new \OCA\EtherpadNextcloud\Exception\PadFileFormatException('Invalid YAML frontmatter.'));
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->expects($this->never())->method($this->anything());
+
+		$this->expectException(\OCA\EtherpadNextcloud\Exception\PadFileFormatException::class);
+		$this->restoreService(bindings: $bindingService, etherpad: $etherpadClient, padFiles: $padFileService)->recoverFromSnapshot($this->padFile(708, 'Broken.pad'));
+	}
+
+	/**
+	 * A file with a row, read for a recovery: one that is no `.pad` the
+	 * app can read, or one whose read fails - gone meanwhile, say - reaches
+	 * the caller as it is, for the API to answer it as it does elsewhere,
+	 * and Etherpad is not asked.
+	 */
+	public function testARecoveryOfARowWhoseFileCannotBeReadSaysSoAsItIs(): void {
+		$cases = [
+			'no .pad the app can read' => new \OCA\EtherpadNextcloud\Exception\PadFileFormatException('Invalid YAML frontmatter.'),
+			'a read that fails' => new \OCP\Files\GenericFileException('file_get_contents failed'),
+		];
+		foreach ($cases as $case => $failure) {
+			$bindingService = $this->createMock(BindingService::class);
+			$bindingService->method('findByFileId')->willReturn(new Binding(fileId: 712, padId: 'old-pad', accessMode: BindingService::ACCESS_PUBLIC, state: BindingService::STATE_ACTIVE));
+			$bindingService->expects($this->never())->method('rebind');
+			$padFileService = $this->createMock(PadFileService::class);
+			$padFileService->method('readPad')->willThrowException($failure);
+			$etherpadClient = $this->createMock(EtherpadClient::class);
+			$etherpadClient->expects($this->never())->method($this->anything());
+			$file = $this->createMock(File::class);
+			$file->method('getId')->willReturn(712);
+			$file->method('getName')->willReturn('Lost.pad');
+			$file->method('isUpdateable')->willReturn(true);
+			$failure instanceof \OCP\Files\GenericFileException
+				? $file->method('getContent')->willThrowException($failure)
+				: $file->method('getContent')->willReturn('not a pad');
+
+			try {
+				$this->restoreService(bindings: $bindingService, etherpad: $etherpadClient, padFiles: $padFileService)->recoverFromSnapshot($file);
+				$this->fail($case . ': the recovery went through.');
+			} catch (\Throwable $e) {
+				$this->assertSame($failure, $e, $case);
+			}
+		}
 	}
 
 	/** Etherpad not answering is no answer at all: nothing is made, and the caller hears of it. */

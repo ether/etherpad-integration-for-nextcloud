@@ -38,8 +38,9 @@ class ManagedPadLifecycle {
 	}
 
 	/**
-	 * Create a group holding exactly one pad, and leave nothing behind if
-	 * the pad cannot be created.
+	 * Create a group holding exactly one pad. If the pad cannot be created,
+	 * the group is taken down again, as far as Etherpad lets it, before the
+	 * failure is thrown on.
 	 *
 	 * The two steps are separate calls, so a failure between them strands a
 	 * group that nothing will ever look at again — invisible from Nextcloud
@@ -64,8 +65,8 @@ class ManagedPadLifecycle {
 	}
 
 	/**
-	 * Create a pad that stands on its own, and leave nothing behind if the
-	 * call fails after Etherpad has already made it.
+	 * Create a pad that stands on its own. If the call fails after Etherpad
+	 * has made it, the pad is taken down again, as far as Etherpad lets it.
 	 *
 	 * The id is chosen here rather than by Etherpad, so unlike the group
 	 * case there is always something to clean up with — which is what makes
@@ -136,11 +137,10 @@ class ManagedPadLifecycle {
 	/**
 	 * Put a snapshot into a pad that has just been provisioned, and say how
 	 * many revisions the pad has then: what a file holding that snapshot
-	 * records as synced (`snapshot_rev`). A file that says so counts as
-	 * holding saved content should Etherpad lose the pad (howLost()); one
-	 * with 0 would not, and a public pad made anew, empty, on a visit
-	 * would be synced over it. -1 when Etherpad does not say: the file is
-	 * left to its first sync, as a new one is.
+	 * records as synced (`snapshot_rev`). A count above 0 makes the file
+	 * hold saved content should Etherpad lose the pad (howLost()), whatever
+	 * text it saved; at 0 only its text would. -1 when Etherpad does not
+	 * say: the file is left to its first sync, as a new one is.
 	 *
 	 * setHTML first so formatting survives, and setText only where there is
 	 * no HTML or Etherpad refuses it. Never both: `setText` replaces the
@@ -273,7 +273,7 @@ class ManagedPadLifecycle {
 		return $revisions === 0 && self::savedAnything($pad) && !self::sameText($padText, $pad->savedText());
 	}
 
-	/** Text as Etherpad and a file hold it, but for line endings and the final newline. */
+	/** Text as Etherpad and a file hold it, but for line endings and trailing whitespace. */
 	private static function sameText(string $a, string $b): bool {
 		$normalize = static fn (string $text): string => rtrim(str_replace("\r\n", "\n", $text));
 		return $normalize($a) === $normalize($b);

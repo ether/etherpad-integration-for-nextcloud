@@ -158,9 +158,8 @@ class RestoreFromTrashListener implements IEventListener {
 
 	/**
 	 * The id for a log line, or null when the node cannot supply one.
-	 * Reading it must never throw: this runs inside the catch above, where
-	 * a second exception would replace the one being reported and leave no
-	 * trace of what actually went wrong.
+	 * Reading it must never throw: an id that cannot be read must keep
+	 * neither the restore from running nor its failure from being logged.
 	 */
 	private function loggableFileId(File $node): ?int {
 		try {
