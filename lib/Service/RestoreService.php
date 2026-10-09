@@ -133,8 +133,8 @@ class RestoreService {
 	 * still be standing with nothing in it, and discardIfPresent() is what
 	 * takes an empty group down. Best effort, after the row: the row is
 	 * settled, and a group left over is garbage, not a way in - there is no
-	 * pad in it for a session to open. On the client's own timeouts: no one
-	 * waits for it.
+	 * pad in it for a session to open. On the client's own timeouts, and
+	 * waited for; a failure is logged and does not undo the restore.
 	 */
 	private function discardWhatIsLeftOf(int $fileId, string $padId): void {
 		try {
@@ -434,43 +434,18 @@ class RestoreService {
 
 	/**
 	 * The file restored onto a new pad made from its snapshot: what both
-	 * restores from a snapshot share. The row is claimed for the new pad
-	 * before the file is touched ($claim, true when this restore holds the
-	 * row): whoever loses the claim has written nothing, and so has nothing
-	 * to put back over someone else's content. After the claim the only
-	 * step left is the write, so there is no file to roll back either.
+	 * restores from a snapshot share. In this order: seed the new pad, ask
+	 * the file again, claim the row ($claim, true when this restore holds
+	 * it), write. Whoever loses the claim has written nothing; a claim or a
+	 * write that fails takes the new pad and the row back (letGoOfNewPad()),
+	 * and the failure reaches the caller as it is.
 	 *
-	 * A claim lost to another flow leaves the row and the file to it. One
-	 * that fails, or a write that fails, takes the new pad down, and an
-	 * active row naming it with it - that row would contradict a `.pad` that
-	 * still names the old pad - while a row seen deleted for good meanwhile
-	 * keeps it (letGoOfNewPad()). With $rowStays, the row a replacement
-	 * claimed is moved back onto the old pad instead, where the file still
-	 * points; only when that fails too does it go. A claim that fails has
-	 * written nothing, so the file is not read for it: another recovery's
-	 * write may hold its lock. A write that failed and a file that cannot be
-	 * read afterwards leave open which pad the file names, so no row may be
-	 * left to contradict it: the row goes, and the file's next open offers a
-	 * pad from its content, whichever pad it names. The new pad stays, named
-	 * in the log: a write is not atomic on every storage, and one that
-	 * broke off may have cut the file short, leaving the new pad the last
-	 * whole copy of what the file held. So does a file still locked when it
-	 * is read for that (fileNames()): what it holds behind the lock of the
-	 * write ours was refused for is no answer yet.
-	 *
-	 * Seeding the new pad takes a while, so the file is asked once more
-	 * before the claim: moved - deleted again, say - and the new pad goes,
-	 * with nothing claimed or written. A write through the old node would
-	 * make a new file where it was. So does a file written meanwhile, that
-	 * no longer holds what the new pad was seeded from: written over, what
-	 * was written would be gone. Its next open asks again, from what it
-	 * holds then.
-	 *
-	 * What fails reaches the caller as it is, the new pad and a claimed row
-	 * taken back first - but for a write that left the file unreadable:
-	 * that one keeps the new pad, and is the restore's own failure
-	 * (LifecycleException), since a retry would make another pad over a file
-	 * the write may have cut short.
+	 * But for one: a write that failed on a file that cannot be read after
+	 * it (fileNames()) leaves open which pad the file names. Its row goes,
+	 * so none contradicts the file, and the new pad stays, named in the log:
+	 * a write that broke off may have cut the file short, leaving the new
+	 * pad its last whole copy. That failure is the restore's own
+	 * (LifecycleException): a retry would make another pad over it.
 	 *
 	 * @param \Closure(string): bool $claim
 	 * @return array{status: string, reason?: string, old_pad_id?: string, new_pad_id?: string}
@@ -487,6 +462,10 @@ class RestoreService {
 			throw $e;
 		}
 		if ($moved || $changed) {
+			// Seeding takes a while. Moved - deleted again, say - a write
+			// through the old node would make a new file where it was;
+			// written meanwhile, it would write over what was written. Its
+			// next open asks again, from what it holds then.
 			$this->provisionedPadRollback->discardUnlessBoundToFile($fileId, $newPadId, $flow);
 			return LifecycleResult::skipped($moved ? self::REASON_FILE_MOVED : self::REASON_FILE_CHANGED, $fileId, $this->logger);
 		}
@@ -497,6 +476,8 @@ class RestoreService {
 				return LifecycleResult::skipped('binding_state_transition_conflict', $fileId, $this->logger);
 			}
 		} catch (\Throwable $e) {
+			// Nothing written, so the file is not read for it: another
+			// recovery's write may hold its lock.
 			$this->letGoOfNewPad($fileId, $newPadId, $oldPadId, $flow, $rowStays);
 			throw $e;
 		}

@@ -381,10 +381,11 @@ class BindingService {
 		try {
 			$qb->executeStatement();
 		} catch (\Throwable $e) {
-			// The insert is what failed, so no row exists to look the pad up
-			// through - and by here it has already been created upstream. Not
-			// logged here: every caller reports it, the API's through
-			// ApiErrorLog, with this as its cause.
+			// What the insert left is open: it may have committed and still
+			// thrown, and on a unique collision another row stands. Whoever
+			// lets the pad go - made before this - reads the row again first
+			// (ProvisionedPadRollback). Not logged here: every caller reports
+			// it, the API's through ApiErrorLog, with this as its cause.
 			throw new BindingNotCreatedException('Could not create unique pad binding.', 0, $e);
 		}
 	}

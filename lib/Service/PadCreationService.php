@@ -105,9 +105,7 @@ class PadCreationService {
 				$prepared = $this->externalPadSeeder->prepare($fileId, $padUrl);
 				$this->writeCreatedFile($claim, $prepared['content']);
 				$seeded = $prepared['result'];
-				// Preserve the historical key ordering for the external-create
-				// response: `file` is the first key so tests asserting via
-				// `assertSame` keep matching after the refactor.
+				// `file` first, where the response has always had it.
 				$result = ['file' => $path] + $seeded;
 				return $result;
 			},
@@ -214,9 +212,9 @@ class PadCreationService {
 		$padId = $this->padBootstrapService->provisionPadId($accessMode);
 		try {
 			// The template's content is in the file from the start, so the
-			// file records the pad's revisions, as a restore does: with 0 it
-			// would not count as holding saved content should Etherpad lose
-			// the pad before its first sync (ManagedPadLifecycle::howLost()).
+			// file records the pad's revisions, as a restore does: they make
+			// it hold saved content should Etherpad lose the pad before its
+			// first sync, not only its text (ManagedPadLifecycle::howLost()).
 			$revisions = $this->padLifecycle->seed($padId, $resolvedText, $resolvedHtml, ['fileId' => $fileId]);
 			$padUrl = $this->etherpadClient->buildPadUrl($padId);
 
@@ -301,7 +299,7 @@ class PadCreationService {
 	 *
 	 * `create()` and `createInParent()` differ only in how they reach that
 	 * file — a path in the user's tree, or a name in a folder they had to
-	 * resolve first. From here on they were the same twenty lines twice.
+	 * resolve first.
 	 *
 	 * @return array{file:string,file_id:int,pad_id:string,access_mode:string,pad_url:string}
 	 */
