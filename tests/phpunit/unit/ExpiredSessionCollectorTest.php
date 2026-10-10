@@ -553,10 +553,10 @@ class ExpiredSessionCollectorTest extends TestCase {
 	}
 
 	/**
-	 * The ceiling counts what was dealt with, not what this run deleted.
-	 * An author whose backlog was already cleared by somebody else would
-	 * otherwise never reach it and walk the whole index in one run — the
-	 * ceiling would exist only for the happy path.
+	 * The ceiling counts attempts, not what this run deleted. An author
+	 * whose backlog was already cleared by somebody else would otherwise
+	 * never reach it and walk the whole index in one run — the ceiling
+	 * would exist only for the happy path.
 	 */
 	public function testAnAlreadyClearedBacklogStillHitsTheCeiling(): void {
 		$client = $this->createMock(EtherpadClient::class);

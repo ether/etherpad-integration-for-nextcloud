@@ -105,7 +105,12 @@ final class RunBudget {
 		$this->refusedInAll++;
 	}
 
-	/** An item that went through, so Etherpad answers: refusals in a row and failures start again. */
+	/** A call Etherpad answered, if not an item that went through: failures start again. */
+	public function noteAnswered(): void {
+		$this->failures = 0;
+	}
+
+	/** An item that went through: refusals in a row and failures start again. */
 	public function noteDone(): void {
 		$this->refusedInARow = 0;
 		$this->failures = 0;
@@ -119,11 +124,7 @@ final class RunBudget {
 			|| !$this->fitsAnotherCall();
 	}
 
-	/**
-	 * The timeout for a call about to start, or null when none would finish
-	 * in time any more. For every call after a sweep's first, which the loop
-	 * has already checked with exhausted().
-	 */
+	/** The timeout for a call about to start, or null when none would finish in time any more. */
 	public function nextCallTimeout(): ?int {
 		return $this->fitsAnotherCall() ? $this->callTimeout() : null;
 	}

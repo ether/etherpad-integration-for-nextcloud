@@ -67,6 +67,26 @@ class RunBudgetTest extends TestCase {
 		$this->assertTrue($inAll->exhausted());
 	}
 
+	/** A call Etherpad answered starts the failures again, not the refusals in a row. */
+	public function testAnAnsweredCallStartsOnlyTheFailuresAgain(): void {
+		$budget = new RunBudget(new FixedClock(), 20.0);
+		for ($i = 0; $i < 4; $i++) {
+			$budget->noteUnanswered();
+		}
+		$budget->noteAnswered();
+		for ($i = 0; $i < 4; $i++) {
+			$budget->noteUnanswered();
+		}
+		$this->assertFalse($budget->exhausted());
+
+		for ($i = 0; $i < 19; $i++) {
+			$budget->noteRefusal();
+		}
+		$budget->noteAnswered();
+		$budget->noteRefusal();
+		$this->assertTrue($budget->exhausted());
+	}
+
 	/** A call after the first gets a timeout only while it could still finish. */
 	public function testGivesTheNextCallATimeoutOnlyWhileItFits(): void {
 		$clock = new FixedClock();

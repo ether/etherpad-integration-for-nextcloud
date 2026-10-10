@@ -187,6 +187,20 @@ class SessionDeletesTest extends TestCase {
 		self::assertSame(['deleted' => 19, 'handled' => 19, 'attempted' => 25, 'refused' => true, 'stopped' => false], $run);
 	}
 
+	/** A budget spent before the first delete starts none. */
+	public function testStartsNothingWithASpentBudget(): void {
+		$client = $this->createMock(EtherpadClient::class);
+		$client->expects(self::never())->method('deleteSession');
+		$budget = RunBudget::forRequest(new FixedClock(), 2.0);
+		for ($i = 0; $i < 5; $i++) {
+			$budget->noteUnanswered();
+		}
+
+		$run = $this->deletes($client)->within($budget, $this->sessions('s.1'), 25, [], 'refused');
+
+		self::assertSame(0, $run['attempted']);
+	}
+
 	/** A refusal's line names the session's own group, wherever the sessions come from. */
 	public function testSaysTheGroupOfTheSessionRefused(): void {
 		$client = $this->createMock(EtherpadClient::class);

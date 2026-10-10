@@ -61,14 +61,11 @@ class SessionDeletes {
 	 * deletes made, and `refused` says Etherpad refused at least one, which
 	 * asks for a retry.
 	 *
-	 * The ceiling counts attempts: an Etherpad that fails fast - a rotated
-	 * api key, a 500 - reaches it as surely as one that deletes. A refusal
-	 * does not end the run, or a session Etherpad never deletes would block
-	 * the ones after it; twenty in a row do, and fifty in all, counted in
-	 * $budget across every call a run makes (RunBudget). A failure
-	 * that reads as Etherpad unreachable wears the budget's patience down
-	 * (RunBudget): in a background run once Etherpad then does not answer
-	 * at all, as GoneFileSweep reads an outage, in a request at once.
+	 * The ceiling counts attempts, whatever the answer. A refusal does not
+	 * end the run, or a session Etherpad never deletes would block the ones
+	 * after it; refusals and failures without an answer wear $budget's
+	 * patience down, across every call a run makes, and end it as RunBudget
+	 * says.
 	 *
 	 * $stillWanted is asked before each delete; once it says no, the run
 	 * ends there and `stopped` says so. $context names whose sessions they
@@ -131,5 +128,4 @@ class SessionDeletes {
 
 		return ['deleted' => $deleted, 'handled' => $handled, 'attempted' => $attempted, 'refused' => $refused, 'stopped' => false];
 	}
-
 }

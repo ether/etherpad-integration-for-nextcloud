@@ -169,9 +169,9 @@ class PadSessionRevokerTest extends TestCase {
 	}
 
 	/**
-	 * And what is reported as left behind is only ever a live session. The
-	 * expired tail is hundreds of entries; counting it there made the one
-	 * number that says "this revoke was incomplete" useless.
+	 * What is reported as left behind is only ever a live session: the
+	 * expired tail, hundreds of entries, would hide the one number that
+	 * says a revoke did not finish.
 	 */
 	public function testTheExpiredTailIsNotReportedAsLeftBehind(): void {
 		$sessions = [];
@@ -283,10 +283,9 @@ class PadSessionRevokerTest extends TestCase {
 	 * A full cookie is revoked in full.
 	 *
 	 * Taking the carried ids first only reaches all of them if the ceiling
-	 * covers a whole cookie. A lower one would revoke a prefix and leave
-	 * the tail — the same shared-computer failure as before, one step
-	 * further along. This asks for the property rather than the number, so
-	 * it stays green while the two move together and falls when they part.
+	 * covers a whole cookie; a lower one would revoke a prefix and leave
+	 * the tail. This asks for the property rather than the number, so it
+	 * stays green while the two move together and falls when they part.
 	 */
 	public function testRevokesEveryIdAFullCookieCanHold(): void {
 		$carried = [];
@@ -331,9 +330,7 @@ class PadSessionRevokerTest extends TestCase {
 
 	/**
 	 * Reading the cached author is a database round trip. If it took the
-	 * budget, starting a listing on top of it overruns by a whole call,
-	 * because the floor under callTimeout() hands it a second it has not
-	 * got.
+	 * budget, no listing starts on top of it: it would overrun by a call.
 	 */
 	public function testDoesNotStartTheListingWithoutTimeForIt(): void {
 		$client = $this->createMock(EtherpadClient::class);
@@ -778,6 +775,36 @@ class PadSessionRevokerTest extends TestCase {
 
 		self::assertSame(0, $this->revoker($client, groupSessions: $this->queueRecorder($queued))->revokeForPads(array_map(static fn (string $group): string => $group . '$pad', $groups)));
 		self::assertSame($groups, $queued);
+	}
+
+	/**
+	 * A listing that answered starts the count of failures again: a 502
+	 * now and then among them leaves no group unasked.
+	 */
+	public function testAFailedListingNowAndThenLeavesNoGroupUnasked(): void {
+		$groups = array_map(static fn (int $i): string => sprintf('g.GROUP%011d', $i), range(1, 20));
+		$listed = 0;
+		$client = $this->createMock(EtherpadClient::class);
+		$client->method('listSessionsOfGroup')->willReturnCallback(static function () use (&$listed): array {
+			$listed++;
+			if ($listed % 2 === 0) {
+				throw new EtherpadClientException('Etherpad API HTTP error (502)');
+			}
+			return [];
+		});
+
+		$this->revoker($client)->revokeForPads(array_map(static fn (string $group): string => $group . '$pad', $groups));
+
+		self::assertSame(20, $listed);
+	}
+
+	/** A listing Etherpad refuses is an answer: it ends no asking. */
+	public function testARefusedListingIsNoOutage(): void {
+		$groups = array_map(static fn (int $i): string => sprintf('g.GROUP%011d', $i), range(1, 10));
+		$client = $this->createMock(EtherpadClient::class);
+		$client->expects(self::exactly(10))->method('listSessionsOfGroup')->willThrowException(new EtherpadRefusedException('Etherpad API error (listSessionsOfGroup): internal error'));
+
+		$this->revoker($client)->revokeForPads(array_map(static fn (string $group): string => $group . '$pad', $groups));
 	}
 
 	/**

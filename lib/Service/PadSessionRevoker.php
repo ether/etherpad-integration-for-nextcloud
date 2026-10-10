@@ -31,7 +31,7 @@ use Psr\Log\LoggerInterface;
  * @psalm-api
  */
 class PadSessionRevoker {
-	/** How much of a user-facing request this may take; the ceilings below bound its calls. */
+	/** How much of a user-facing request this may take; the ceilings below bound its deletes. */
 	private const BUDGET_SECONDS = 2.0;
 
 	/**
@@ -143,7 +143,8 @@ class PadSessionRevoker {
 	 * $tally and $groups. False for a group gone already: it holds none, and
 	 * goes to no job.
 	 *
-	 * Past the ceiling or out of time, the group is not asked. Asked, its
+	 * Past the ceiling, or with the budget spent - its time, or its patience
+	 * with refusals and failures -, the group is not asked. Asked, its
 	 * sessions go only when it holds nothing but the pads leaving
 	 * (ManagedPadLifecycle::groupHoldsOnly(), which takes no lookup); a
 	 * group holding other pads too, a legacy one, is the job's to judge.
@@ -162,6 +163,7 @@ class PadSessionRevoker {
 		$sessions = [];
 		try {
 			$sessions = $this->live($this->etherpadClient->listSessionsOfGroup($groupId, $timeout, $unreadable));
+			$budget->noteAnswered();
 			// Entries this does not delete: whether one is live cannot be told.
 			$groups['unreadable'] += $unreadable ?? 0;
 			if ($sessions === []) {
@@ -187,8 +189,9 @@ class PadSessionRevoker {
 			}
 			// Those listed already are left as surely as those never listed.
 			$tally['left'] += count($sessions);
-			// Counted as a delete's would be: a few end the asking, and the
-			// groups after them go to the job unasked.
+			// A listing without an answer counts towards an outage, one that
+			// answered starts the count again (RunBudget): a few in a row end
+			// the asking, and the groups after them go to the job unasked.
 			if (EtherpadClientException::isEtherpadUnreachable($e)) {
 				$budget->noteUnanswered();
 			}
@@ -263,14 +266,11 @@ class PadSessionRevoker {
 	 * left out. Anything newer is treated as live and revoked, which at
 	 * worst deletes something already gone.
 	 *
-	 * An expired session grants nothing already. Etherpad keeps expired
-	 * sessions until something deletes them, so an author who has used
-	 * protected pads for a while carries hundreds — and this runs inside a
-	 * logout the user is waiting for. Collecting them is a background job's
-	 * problem, not this one's. Left out before the budget, so that what is
-	 * reported as left behind is only ever a live session: counting the
-	 * expired tail there made the one number that says "this revoke was
-	 * incomplete" useless.
+	 * An expired session grants nothing already, and an author who has used
+	 * protected pads for a while carries hundreds: collecting them is the
+	 * background sweep's. Left out before the budget, so that what is
+	 * reported as left behind is only ever a live session - the one number
+	 * that says a revoke did not finish.
 	 *
 	 * @param array<array-key,array{groupID:string,validUntil:int}> $sessions
 	 * @return array<array-key,array{groupID:string,validUntil:int}>
@@ -338,12 +338,10 @@ class PadSessionRevoker {
 	/**
 	 * The same sessions, with the ones this browser is carrying first.
 	 *
-	 * The listing arrives in the author index's order, which is roughly the
-	 * order the sessions were made — so the ceiling would spend itself on
-	 * the oldest and leave the newest, and the newest is the one in the
-	 * cookie of the person who just logged out. Twenty-six opens of one pad
-	 * were enough to revoke twenty-five sessions and leave the only one that
-	 * mattered. The set is unchanged; only the order is.
+	 * The listing arrives roughly in the order the sessions were made, so
+	 * the ceiling would spend itself on the oldest and leave the newest -
+	 * the one in the cookie of the person who just logged out. The set is
+	 * unchanged; only the order is.
 	 *
 	 * @param array<string,array{groupID:string,validUntil:int}> $sessions
 	 * @return array<string,array{groupID:string,validUntil:int}>
