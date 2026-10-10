@@ -86,11 +86,7 @@ class PadSessionServiceTest extends TestCase {
 		$service->createProtectedOpenContext('admin', 'Admin', 'g.ABCDEFGHIJKLMNOP$pad-1');
 	}
 
-	/**
-	 * A public link's open notes the group it opened: the link's visitors
-	 * share it, whatever author each opens as. And its author, whose small
-	 * index is collected should the group's be too long to list in a run.
-	 */
+	/** A public link's open notes its group and its author (ExpiredSessionCollector says why both). */
 	public function testAPublicLinkTellsTheCollectorItsGroupAndItsAuthor(): void {
 		[$etherpadClient, $config] = $this->publicLinkFixtures();
 		$collector = $this->createMock(\OCA\EtherpadNextcloud\Service\ExpiredSessionCollector::class);

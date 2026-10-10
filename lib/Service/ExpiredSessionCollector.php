@@ -28,13 +28,13 @@ use Psr\Log\LoggerInterface;
  * request: an open leaves the author's id, and the job lists the expired
  * ones and deletes them.
  *
- * A public link's sessions are collected by their group as well: the
- * link's visitors share the group the pad is in, whatever author each
- * opens as, so one job a group holds them all where a job an author
- * would be one a visitor. The link's own author is still noted too: a
- * group can hold more sessions than a run can list - other pads' of a
- * legacy group, everyone's - and the author's small index is collected
- * then all the same.
+ * A public link's open notes its group as well, and both sweeps run side
+ * by side: the link's visitors share the group the pad is in, whatever
+ * author each opens as, so one job a group holds them all where a job an
+ * author would be one a visitor. The author's sweep stays because a group
+ * can hold more sessions than a run can list in time - every user's, and
+ * a legacy group's other pads' - and the author's index, often a smaller
+ * one, is collected all the same.
  */
 class ExpiredSessionCollector {
 
@@ -101,8 +101,9 @@ class ExpiredSessionCollector {
 	/**
 	 * Delete what has expired, up to the run's budget.
 	 *
-	 * `remaining` means the run worked and did not finish; `retry` means
-	 * the server refused. They must stay separate: the job removes its own
+	 * `remaining` means the run worked and did not finish; `retry` means it
+	 * did not get through - a listing that failed or timed out, a delete
+	 * refused. They must stay separate: the job removes its own
 	 * row before running, so a swallowed failure loses the backlog, and a
 	 * failure read as progress has the job returning every minute for good.
 	 * `nextDueAt` is when the earliest session still standing becomes
@@ -191,9 +192,6 @@ class ExpiredSessionCollector {
 		$expired = [];
 		$nextDueAt = null;
 		foreach ($sessions as $sessionId => $info) {
-			// An all-digit id would arrive as an int: php casts numeric
-			// array keys, and everything downstream is typed string.
-			$sessionId = (string)$sessionId;
 			// Live sessions are left alone: ending someone's access is not a
 			// housekeeping decision.
 			if ($info['validUntil'] <= $cutoff) {
@@ -214,6 +212,7 @@ class ExpiredSessionCollector {
 		if ($deleted > 0 || $remaining > 0) {
 			$this->logger->debug('Collected expired Etherpad sessions.', [
 				'app' => 'etherpad_nextcloud',
+				...$context,
 				'deleted' => $deleted,
 				'remaining' => $remaining,
 			]);

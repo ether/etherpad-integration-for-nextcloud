@@ -147,12 +147,9 @@ class PadSessionService {
 	 * @return array{url:string,cookie:array{name:string,value:string,expires:int,path:string,domain:string,secure:bool,http_only:bool,same_site:string}}
 	 */
 	private function openContextFor(string $uid, string $authorId, string $groupId, string $padId, int $validUntil): array {
-		// Before the listing below, which only happens when the browser
-		// carries ids — a first open makes none, and a public link never
-		// does. A public link's group too: its visitors share it, whatever
-		// author each opens as. Its author's own index is still noted, a
-		// small one, which is collected should the group's be too long to
-		// list in a run.
+		// Before the listing below, which an empty cookie and a public link
+		// skip. Always the author; a public link's group too
+		// (ExpiredSessionCollector says why both).
 		$this->collector->noteAuthor($authorId);
 		$isLink = str_starts_with($uid, self::PUBLIC_LINK_UID_PREFIX);
 		if ($isLink) {
@@ -214,9 +211,9 @@ class PadSessionService {
 	 * What the carried ids can be checked against, or an empty list when
 	 * they cannot be checked at all.
 	 *
-	 * Not asked for when there is nothing to check — the first protected
-	 * open of a browsing session, and every open for anyone who only ever
-	 * has one pad open, costs no extra round trip.
+	 * Not asked for when there is nothing to check: an open with an empty
+	 * cookie - the first protected open of a browsing session - costs no
+	 * extra round trip.
 	 *
 	 * Not asked for on a public share either. There the author is derived
 	 * from the share token alone, so every anonymous visitor of one link

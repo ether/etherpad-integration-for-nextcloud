@@ -325,10 +325,11 @@ group (`CollectExpiredGroupSessionsJob`) collects the expired sessions of
 every author in it through `listSessionsOfGroup`. A link's visitors share
 the group the pad is in, whatever author each opens as, so one job a
 group holds them all where a job an author could be one a visitor. The
-link's own author is noted too: a group can hold more sessions than a
-run can list in time - every user's, and in a legacy group other pads'
-- and the author's small index is collected then all the same. A public
-link never carries cookie ids either.
+link's own author is noted too, and both sweeps run side by side: a group
+can hold more sessions than a run can list in time - every user's, and in
+a legacy group other pads' - and the author's index, often a smaller one,
+is collected all the same. A public link's open makes no listing either,
+whatever ids the browser carries.
 
 The id is also all that is stored. A public link's uid is
 `public-share:<token>`, the credential from the share URL, and job

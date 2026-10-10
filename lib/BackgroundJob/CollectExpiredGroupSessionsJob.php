@@ -15,11 +15,11 @@ use OCP\BackgroundJob\IJobList;
 use Psr\Log\LoggerInterface;
 
 /**
- * Works through one group's expired Etherpad sessions: those a public
- * link made, whose visitors share the group whatever author each opens
- * as (ExpiredSessionCollector::noteGroup()). Paced as the collector of an
- * author's is (CollectExpiredSessionsJob), and the argument holds the
- * group's id alone.
+ * Works through one group's expired Etherpad sessions, every author's in
+ * it - a public link's visitors, signed-in users, a legacy group's other
+ * pads. A public link's open queues it (ExpiredSessionCollector says
+ * why). Paced as the collector of an author's is
+ * (CollectExpiredSessionsJob), and the argument holds the group's id alone.
  */
 class CollectExpiredGroupSessionsJob extends SessionSweepJob {
 	public function __construct(
