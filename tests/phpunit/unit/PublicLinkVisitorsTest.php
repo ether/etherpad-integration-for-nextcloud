@@ -198,11 +198,12 @@ class PublicLinkVisitorsTest extends TestCase {
 		$this->visitors($cache)->rememberAuthor(self::TOKEN, $opener, 'a.visitor');
 		$this->visitors($cache)->rememberAuthor(self::TOKEN, new PublicLinkOpener(self::LINK, PublicLinkVisitors::LINK_AUTHOR_NAME, ''), 'a.link');
 		$this->visitors($cache)->rememberAuthor(self::TOKEN, new PublicLinkOpener(self::LINK . ':' . str_repeat('ab', 16), '', ''), 'a.other');
+		$sameHour = $this->visitors($cache)->openerFor(self::TOKEN);
 		$this->clock->advance(3600);
-		$next = $this->visitors($cache)->openerFor(self::TOKEN);
+		$nextHour = $this->visitors($cache)->openerFor(self::TOKEN);
 
-		$this->assertSame($opener->uid, $next->uid);
-		$this->assertSame('a.visitor', $next->authorId);
+		$this->assertSame([$opener->uid, 'a.visitor'], [$sameHour->uid, $sameHour->authorId]);
+		$this->assertSame([$opener->uid, 'a.visitor'], [$nextHour->uid, $nextHour->authorId]);
 	}
 
 	/** A visitor's uid is told from the link's and a user's by its form. */
