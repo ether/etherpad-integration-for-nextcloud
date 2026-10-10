@@ -45,6 +45,28 @@ class RunBudgetTest extends TestCase {
 		$this->assertTrue($budget->exhausted());
 	}
 
+	/** Twenty refusals in a row end a run, an item that went through starts them again, and fifty in all end it. */
+	public function testEndsTheRunAfterSoManyRefusals(): void {
+		$inARow = new RunBudget(new FixedClock(), 20.0);
+		for ($i = 0; $i < 19; $i++) {
+			$inARow->noteRefusal();
+		}
+		$this->assertFalse($inARow->exhausted());
+		$inARow->noteRefusal();
+		$this->assertTrue($inARow->exhausted());
+
+		$inAll = new RunBudget(new FixedClock(), 20.0);
+		for ($i = 1; $i < 50; $i++) {
+			$inAll->noteRefusal();
+			if ($i % 10 === 0) {
+				$inAll->noteDone();
+			}
+		}
+		$this->assertFalse($inAll->exhausted());
+		$inAll->noteRefusal();
+		$this->assertTrue($inAll->exhausted());
+	}
+
 	/** A call after the first gets a timeout only while it could still finish. */
 	public function testGivesTheNextCallATimeoutOnlyWhileItFits(): void {
 		$clock = new FixedClock();

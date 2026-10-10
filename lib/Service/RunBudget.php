@@ -14,13 +14,17 @@ use OCP\AppFramework\Utility\ITimeFactory;
 
 /**
  * What a run of Etherpad calls may spend, item by item, with a promised
- * total length: time, and patience with an Etherpad that does not answer.
+ * total length: time, and patience with an Etherpad that does not answer
+ * or refuses.
  * A deadline alone bounds when the last call starts, not when it ends, so
  * each call is given what is left, and one that could not finish in it is
  * not started. A few items without an answer read as an outage, and the
  * run ends there rather than paying a timeout for each. A background run
  * asks Etherpad whether it answers at all before it counts one; a request,
- * which someone waits on, counts it at once (forRequest()).
+ * which someone waits on, counts it at once (forRequest()). Refusals end
+ * a run too: more in a row than a few items Etherpad will never take, or
+ * more in all. One budget for a run, however many calls make it up, so
+ * every limit holds for the whole run.
  */
 final class RunBudget {
 	/** The whole run, as both sweeps promise it. */
@@ -35,8 +39,23 @@ final class RunBudget {
 	/** Items without an answer a run puts up with before reading them as an outage. */
 	private const MAX_FAILURES = 5;
 
+	/**
+	 * Refusals in a row a run puts up with while Etherpad answers: more than
+	 * a few items it will never take, fewer than a run's worth of calls and
+	 * lines from an Etherpad that refuses every one.
+	 */
+	private const MAX_REFUSED_IN_A_ROW = 20;
+
+	/**
+	 * Refusals a run puts up with in all: scattered among items that went
+	 * through, those in a row start again after each.
+	 */
+	private const MAX_REFUSED_A_RUN = 50;
+
 	private float $deadline;
 	private int $failures = 0;
+	private int $refusedInARow = 0;
+	private int $refusedInAll = 0;
 
 	public function __construct(
 		private ITimeFactory $clock,
@@ -67,9 +86,23 @@ final class RunBudget {
 		$this->failures++;
 	}
 
+	/** An item Etherpad refused. */
+	public function noteRefusal(): void {
+		$this->refusedInARow++;
+		$this->refusedInAll++;
+	}
+
+	/** An item that went through: refusals in a row start again. */
+	public function noteDone(): void {
+		$this->refusedInARow = 0;
+	}
+
 	/** Out of time, or out of patience: no further item is started. */
 	public function exhausted(): bool {
-		return $this->failures >= self::MAX_FAILURES || !$this->fitsAnotherCall();
+		return $this->failures >= self::MAX_FAILURES
+			|| $this->refusedInARow >= self::MAX_REFUSED_IN_A_ROW
+			|| $this->refusedInAll >= self::MAX_REFUSED_A_RUN
+			|| !$this->fitsAnotherCall();
 	}
 
 	/**

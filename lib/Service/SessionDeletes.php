@@ -21,20 +21,6 @@ use Psr\Log\LoggerInterface;
  * logout's and a delete's few seconds in a request (PadSessionRevoker).
  */
 class SessionDeletes {
-	/**
-	 * Refusals in a row a run puts up with while Etherpad answers: more than
-	 * a few sessions it will never delete, fewer than a run's worth of calls
-	 * and lines from an Etherpad that refuses every delete.
-	 */
-	private const MAX_REFUSED_IN_A_ROW = 20;
-
-	/**
-	 * Refusals a run puts up with in all: scattered among deletes, those in
-	 * a row start again after each, and would otherwise multiply a run's
-	 * calls and lines by twenty.
-	 */
-	private const MAX_REFUSED_A_RUN = 50;
-
 	public function __construct(
 		private EtherpadClient $etherpadClient,
 		private ManagedPadLifecycle $padLifecycle,
@@ -66,7 +52,8 @@ class SessionDeletes {
 	 * The ceiling counts attempts: an Etherpad that fails fast - a rotated
 	 * api key, a 500 - reaches it as surely as one that deletes. A refusal
 	 * does not end the run, or a session Etherpad never deletes would block
-	 * the ones after it; twenty in a row do, and fifty in all. A failure
+	 * the ones after it; twenty in a row do, and fifty in all, counted in
+	 * $budget across every call a run makes (RunBudget). A failure
 	 * that reads as Etherpad unreachable wears the budget's patience down
 	 * (RunBudget): in a background run once Etherpad then does not answer
 	 * at all, as GoneFileSweep reads an outage, in a request at once.
@@ -85,10 +72,8 @@ class SessionDeletes {
 		$handled = 0;
 		$attempted = 0;
 		$refused = false;
-		$refusedInARow = 0;
-		$refusedInAll = 0;
 		foreach ($sessions as $sessionId => $info) {
-			if ($attempted >= $maxAttempts || $refusedInARow >= self::MAX_REFUSED_IN_A_ROW || $refusedInAll >= self::MAX_REFUSED_A_RUN || $budget->exhausted()) {
+			if ($attempted >= $maxAttempts || $budget->exhausted()) {
 				break;
 			}
 			if ($stillWanted !== null && !$stillWanted()) {
@@ -107,16 +92,15 @@ class SessionDeletes {
 				$this->etherpadClient->deleteSession($sessionId, $timeout);
 				$deleted++;
 				$handled++;
-				$refusedInARow = 0;
+				$budget->noteDone();
 			} catch (\Throwable $e) {
 				if (EtherpadErrorClassifier::isSessionAlreadyGone($e)) {
 					$handled++;
-					$refusedInARow = 0;
+					$budget->noteDone();
 					continue;
 				}
 				$refused = true;
-				$refusedInARow++;
-				$refusedInAll++;
+				$budget->noteRefusal();
 				if (EtherpadClientException::isEtherpadUnreachable($e)) {
 					$this->noteOutage($budget);
 				}

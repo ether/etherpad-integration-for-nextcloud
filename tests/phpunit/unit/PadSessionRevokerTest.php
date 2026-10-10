@@ -666,6 +666,86 @@ class PadSessionRevokerTest extends TestCase {
 	}
 
 	/**
+	 * The ceiling counts attempts across the groups: the first group's
+	 * refusals and sessions already gone count as surely as its deletes.
+	 */
+	public function testOneCeilingCountsEveryAttemptAcrossTheGroups(): void {
+		$client = $this->createMock(EtherpadClient::class);
+		$client->method('listSessionsOfGroup')->willReturnCallback(static function (string $group): array {
+			$sessions = [];
+			for ($i = 1; $i <= 60; $i++) {
+				$sessions['s.' . $group . '.' . $i] = ['groupID' => $group, 'validUntil' => FixedClock::NOW + 1000 - $i];
+			}
+			return $sessions;
+		});
+		$client->method('listPads')->willReturnCallback(static fn (string $group): array => [$group . '$pad']);
+		$calls = 0;
+		$client->method('deleteSession')->willReturnCallback(static function (string $id) use (&$calls): void {
+			$calls++;
+			// The first group: 40 deleted, then 10 refused, then 10 gone.
+			if (str_starts_with($id, 's.g.AAAAAAAAAAAAAAAA.')) {
+				$n = (int)substr($id, strrpos($id, '.') + 1);
+				if ($n > 50) {
+					throw new EtherpadRefusedException('Etherpad API error (deleteSession): sessionID does not exist');
+				}
+				if ($n > 40) {
+					throw new EtherpadRefusedException('Etherpad API error (deleteSession): internal error');
+				}
+			}
+		});
+
+		self::assertSame(80, $this->revoker($client)->revokeForPads(['g.AAAAAAAAAAAAAAAA$pad', 'g.BBBBBBBBBBBBBBBB$pad']));
+		self::assertSame(100, $calls);
+	}
+
+	/**
+	 * The limits on refusals hold across the groups of a delete, not for
+	 * each: twenty in a row end it, and the groups not yet asked go to the
+	 * background job.
+	 */
+	public function testTwentyRefusalsInARowEndADeleteAcrossItsGroups(): void {
+		$groups = ['g.AAAAAAAAAAAAAAAA', 'g.BBBBBBBBBBBBBBBB', 'g.CCCCCCCCCCCCCCCC', 'g.DDDDDDDDDDDDDDDD', 'g.EEEEEEEEEEEEEEEE'];
+		$client = $this->createMock(EtherpadClient::class);
+		$client->method('listSessionsOfGroup')->willReturnCallback(static function (string $group): array {
+			$sessions = [];
+			for ($i = 1; $i <= 10; $i++) {
+				$sessions['s.' . $group . '.' . $i] = ['groupID' => $group, 'validUntil' => FixedClock::NOW + 3600];
+			}
+			return $sessions;
+		});
+		$client->method('listPads')->willReturnCallback(static fn (string $group): array => [$group . '$pad']);
+		$client->expects(self::exactly(20))->method('deleteSession')->willThrowException(new EtherpadRefusedException('Etherpad API error (deleteSession): internal error'));
+		$queued = [];
+
+		self::assertSame(0, $this->revoker($client, groupSessions: $this->queueRecorder($queued))->revokeForPads(array_map(static fn (string $group): string => $group . '$pad', $groups)));
+		self::assertSame($groups, $queued);
+	}
+
+	/** And fifty in all, scattered among deletes across the groups. */
+	public function testFiftyRefusalsInAllEndADeleteAcrossItsGroups(): void {
+		$client = $this->createMock(EtherpadClient::class);
+		$client->method('listSessionsOfGroup')->willReturnCallback(static function (string $group): array {
+			$sessions = [];
+			for ($i = 1; $i <= 60; $i++) {
+				$sessions['s.' . $group . '.' . $i] = ['groupID' => $group, 'validUntil' => FixedClock::NOW + 3600];
+			}
+			return $sessions;
+		});
+		$client->method('listPads')->willReturnCallback(static fn (string $group): array => [$group . '$pad']);
+		$calls = 0;
+		// Two refused, one deleted, and again.
+		$client->method('deleteSession')->willReturnCallback(static function () use (&$calls): void {
+			$calls++;
+			if ($calls % 3 !== 0) {
+				throw new EtherpadRefusedException('Etherpad API error (deleteSession): internal error');
+			}
+		});
+
+		self::assertSame(24, $this->revoker($client)->revokeForPads(['g.AAAAAAAAAAAAAAAA$pad', 'g.BBBBBBBBBBBBBBBB$pad']));
+		self::assertSame(74, $calls);
+	}
+
+	/**
 	 * A listing that takes the budget leaves the group's sessions to the
 	 * background job, without asking which pads it holds.
 	 */

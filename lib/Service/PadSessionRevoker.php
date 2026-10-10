@@ -19,9 +19,8 @@ use Psr\Log\LoggerInterface;
  * Takes a user's Etherpad sessions away again.
  *
  * An Etherpad session is a bearer token with a lifetime: once issued, it
- * grants access to its group until `validUntil`, and nothing about losing
- * the share, the file or the account reaches it. Until this existed the
- * only thing that ever removed one was deleting its whole group.
+ * grants access to its group until `validUntil` or until it is deleted,
+ * and losing the share, the file or the account does not reach it.
  *
  * No table of our own is needed for it. Sessions are issued to an Etherpad
  * author, the author for a user is cached against the uid, and Etherpad
@@ -31,12 +30,7 @@ use Psr\Log\LoggerInterface;
  * @psalm-api
  */
 class PadSessionRevoker {
-	/**
-	 * How much of a user-facing request this may take, and how many calls
-	 * it may make in it. Two numbers because either alone leaves the other
-	 * unbounded: a fast pad server would run through hundreds, a slow one
-	 * would spend the client timeout on the first few.
-	 */
+	/** How much of a user-facing request this may take; the ceilings below bound its calls. */
 	private const BUDGET_SECONDS = 2.0;
 
 	/**
@@ -206,20 +200,12 @@ class PadSessionRevoker {
 	}
 
 	/**
-	 * Best effort throughout, and bounded. This runs on a logout, or as an
-	 * account is deleted, beside something someone asked for, so it may
-	 * neither fail nor hang because a pad server is unreachable.
-	 *
-	 * Bounded matters as much as best effort. A user who has opened pads all
-	 * morning holds one live session per open, each a call of its own: with
-	 * the client's full timeout behind every one, a half-broken Etherpad
-	 * would hold a logout for minutes. What does not fit in the budget is
-	 * left to expire.
-	 *
-	 * The budget starts before the listing, which is a call with the same
-	 * timeout behind it: counting only the deletes would bound the wrong
-	 * half. Each call gets what is left of it, and one that no longer fits
-	 * is not made (RunBudget).
+	 * Best effort, and bounded: this runs on a logout, or as an account is
+	 * deleted, beside something someone asked for, so it may neither fail
+	 * nor hang on an unreachable pad server. A user who opened pads all
+	 * morning holds a live session per open, each a call of its own; what
+	 * does not fit in the budget is left to expire. The budget starts
+	 * before the listing, which is a call too.
 	 */
 	private function revoke(string $uid): int {
 		$budget = RunBudget::forRequest($this->timeFactory, self::BUDGET_SECONDS);

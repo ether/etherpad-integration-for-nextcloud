@@ -147,6 +147,27 @@ class SessionDeletesTest extends TestCase {
 		self::assertSame(['deleted' => 8, 'handled' => 17, 'attempted' => 25, 'refused' => true, 'stopped' => false], $run);
 	}
 
+	/** A session already gone is an answer too: refusals in a row start again after it. */
+	public function testASessionAlreadyGoneEndsARowOfRefusals(): void {
+		$calls = 0;
+		$client = $this->createMock(EtherpadClient::class);
+		$client->method('assertAnswering');
+		$client->method('deleteSession')->willReturnCallback(static function () use (&$calls): void {
+			$calls++;
+			if ($calls === 20) {
+				throw new EtherpadRefusedException('Etherpad API error (deleteSession): sessionID does not exist');
+			}
+			if ($calls !== 40) {
+				throw new EtherpadRefusedException('Etherpad API error (deleteSession): internal error');
+			}
+		});
+
+		$run = $this->deletes($client)->within($this->budget(), $this->sessions(...array_map(static fn (int $i): string => 's.' . $i, range(1, 40))), 250, [], 'refused');
+
+		self::assertSame(40, $calls);
+		self::assertSame(['deleted' => 1, 'handled' => 2, 'attempted' => 40, 'refused' => true, 'stopped' => false], $run);
+	}
+
 	/** A refusal's line names the session's own group, wherever the sessions come from. */
 	public function testSaysTheGroupOfTheSessionRefused(): void {
 		$client = $this->createMock(EtherpadClient::class);
