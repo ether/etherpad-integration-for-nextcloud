@@ -8,6 +8,7 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Tests\Unit;
 
+use OCA\EtherpadNextcloud\Service\PublicLinkCache;
 use OCA\EtherpadNextcloud\Service\PublicLinkVisitors;
 use OCA\EtherpadNextcloud\Tests\Support\FixedClock;
 use OCP\ICache;
@@ -204,7 +205,7 @@ class PublicLinkVisitorsTest extends TestCase {
 		$random->method('generate')->willReturnCallback(fn (int $length): string => str_pad(dechex(++$this->ids), $length, '0', STR_PAD_LEFT));
 		$crypto = $this->createMock(ICrypto::class);
 		$crypto->method('calculateHMAC')->willReturnCallback(static fn (string $message): string => hash('sha256', $message, true));
-		return new PublicLinkVisitors($session, $factory, $random, $crypto, $this->clock, $logger ?? $this->createMock(LoggerInterface::class));
+		return new PublicLinkVisitors($session, new PublicLinkCache($factory, $crypto), $random, $this->clock, $logger ?? $this->createMock(LoggerInterface::class));
 	}
 
 	/** A memory cache that counts, as `add` and `inc` do. */

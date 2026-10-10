@@ -14,8 +14,6 @@ use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
 use OCA\EtherpadNextcloud\Util\SafeError;
 use OCP\AppFramework\Utility\ITimeFactory;
 use OCP\ICache;
-use OCP\ICacheFactory;
-use OCP\Security\ICrypto;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -41,19 +39,16 @@ use Psr\Log\LoggerInterface;
  * kept for an hour at most, and for a third of its lifetime where that is
  * shorter: a visitor always gets two thirds of it.
  *
- * The key is an HMAC of the Etherpad address, the uid opened as - which
- * carries the token - and the group under the instance's secret, so a
- * key does not give away the token, even a token someone chose and could
- * be guessed.
+ * The key is the Etherpad address, the uid opened as - which carries the
+ * token - and the group, under PublicLinkCache's HMAC.
  */
 class PublicLinkSessions {
 	/** How long a session is handed out again at most, after it was made. */
 	public const REUSE_SECONDS = 3600;
 
 	public function __construct(
-		private ICacheFactory $cacheFactory,
+		private PublicLinkCache $linkCache,
 		private EtherpadClient $etherpadClient,
-		private ICrypto $crypto,
 		private ITimeFactory $timeFactory,
 		private LoggerInterface $logger,
 	) {
@@ -112,9 +107,7 @@ class PublicLinkSessions {
 	 */
 	private function cache(): ?ICache {
 		try {
-			return $this->cacheFactory->isAvailable()
-				? $this->cacheFactory->createDistributed(Application::APP_ID . '/public-link-sessions/')
-				: null;
+			return $this->linkCache->open('public-link-sessions');
 		} catch (\Throwable $e) {
 			$this->cacheFailed($e);
 			return null;
@@ -156,6 +149,6 @@ class PublicLinkSessions {
 	}
 
 	private function key(string $link, string $groupId): string {
-		return bin2hex($this->crypto->calculateHMAC($this->etherpadClient->configuredApiHost() . "\n" . $link . "\n" . $groupId));
+		return $this->linkCache->key($this->etherpadClient->configuredApiHost(), $link, $groupId);
 	}
 }

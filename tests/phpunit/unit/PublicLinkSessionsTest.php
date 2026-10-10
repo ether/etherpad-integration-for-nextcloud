@@ -10,6 +10,7 @@ namespace OCA\EtherpadNextcloud\Tests\Unit;
 
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
 use OCA\EtherpadNextcloud\Service\EtherpadClient;
+use OCA\EtherpadNextcloud\Service\PublicLinkCache;
 use OCA\EtherpadNextcloud\Service\PublicLinkSessions;
 use OCA\EtherpadNextcloud\Tests\Support\FixedClock;
 use OCP\ICache;
@@ -192,7 +193,7 @@ class PublicLinkSessionsTest extends TestCase {
 			$hmacs->append([$message, $password]);
 			return hash('sha256', 'instance-secret' . $message, true);
 		});
-		$sessions = new PublicLinkSessions($this->factoryFor($this->memoryCache()), $client, $crypto, new FixedClock(), $this->createMock(LoggerInterface::class));
+		$sessions = new PublicLinkSessions(new PublicLinkCache($this->factoryFor($this->memoryCache()), $crypto), $client, new FixedClock(), $this->createMock(LoggerInterface::class));
 
 		$this->open($sessions);
 		$sessions->sessionFor(self::LINK, self::AUTHOR, 'g.QRSTUVWXYZABCDEF', self::NEW_UNTIL, fn (): string => $this->make());
@@ -235,9 +236,8 @@ class PublicLinkSessionsTest extends TestCase {
 		$crypto = $this->createMock(ICrypto::class);
 		$crypto->method('calculateHMAC')->willReturnCallback(static fn (string $message): string => hash('sha256', $message, true));
 		return new PublicLinkSessions(
-			$factory ?? $this->factoryFor($this->memoryCache()),
+			new PublicLinkCache($factory ?? $this->factoryFor($this->memoryCache()), $crypto),
 			$client,
-			$crypto,
 			new FixedClock(),
 			$logger ?? $this->createMock(LoggerInterface::class),
 		);

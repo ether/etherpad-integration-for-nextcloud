@@ -1071,7 +1071,7 @@ class PadSessionServiceTest extends TestCase {
 	private function linkSessions(\OCP\ICacheFactory $cacheFactory, EtherpadClient $etherpadClient): \OCA\EtherpadNextcloud\Service\PublicLinkSessions {
 		$crypto = $this->createMock(\OCP\Security\ICrypto::class);
 		$crypto->method('calculateHMAC')->willReturnCallback(static fn (string $message): string => hash('sha256', $message, true));
-		return new \OCA\EtherpadNextcloud\Service\PublicLinkSessions($cacheFactory, $etherpadClient, $crypto, new FixedClock(), $this->createMock(LoggerInterface::class));
+		return new \OCA\EtherpadNextcloud\Service\PublicLinkSessions(new \OCA\EtherpadNextcloud\Service\PublicLinkCache($cacheFactory, $crypto), $etherpadClient, new FixedClock(), $this->createMock(LoggerInterface::class));
 	}
 
 	/** No memory cache: Nextcloud hands out one that keeps nothing. */

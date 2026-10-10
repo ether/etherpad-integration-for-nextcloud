@@ -12,10 +12,8 @@ namespace OCA\EtherpadNextcloud\Service;
 use OCA\EtherpadNextcloud\AppInfo\Application;
 use OCA\EtherpadNextcloud\Util\SafeError;
 use OCP\AppFramework\Utility\ITimeFactory;
-use OCP\ICacheFactory;
 use OCP\IMemcache;
 use OCP\ISession;
-use OCP\Security\ICrypto;
 use OCP\Security\ISecureRandom;
 use Psr\Log\LoggerInterface;
 
@@ -50,9 +48,8 @@ class PublicLinkVisitors {
 
 	public function __construct(
 		private ISession $session,
-		private ICacheFactory $cacheFactory,
+		private PublicLinkCache $linkCache,
 		private ISecureRandom $random,
-		private ICrypto $crypto,
 		private ITimeFactory $timeFactory,
 		private LoggerInterface $logger,
 	) {
@@ -69,7 +66,7 @@ class PublicLinkVisitors {
 	 */
 	public function uidFor(string $token): string {
 		$link = PadSessionService::PUBLIC_LINK_UID_PREFIX . $token;
-		$sessionKey = Application::APP_ID . '_visitor_' . $this->digest('visitor', $token);
+		$sessionKey = Application::APP_ID . '_visitor_' . $this->linkCache->key('visitor', $token);
 		$hour = intdiv($this->timeFactory->getTime(), 3600);
 		[$visitor, $countedIn] = self::stored($this->session->get($sessionKey));
 		// A later hour too: one written by a server whose clock is ahead.
@@ -93,13 +90,11 @@ class PublicLinkVisitors {
 	 */
 	private function admits(string $token, int $hour): bool {
 		try {
-			$cache = $this->cacheFactory->isAvailable()
-				? $this->cacheFactory->createDistributed(Application::APP_ID . '/public-link-visitors/')
-				: null;
+			$cache = $this->linkCache->open('public-link-visitors');
 			if (!$cache instanceof IMemcache) {
 				return false;
 			}
-			$key = $this->digest('visitors', $token) . ':' . $hour;
+			$key = $this->linkCache->key('visitors', $token) . ':' . $hour;
 			$cache->add($key, 0, 3600);
 			$count = $cache->inc($key);
 			if (!is_int($count)) {
@@ -136,10 +131,5 @@ class PublicLinkVisitors {
 			return ['', -1];
 		}
 		return [$parts[1], (int)$parts[2]];
-	}
-
-	/** A token's mark under the instance's secret, for keys that must not carry it. */
-	private function digest(string $purpose, string $token): string {
-		return bin2hex($this->crypto->calculateHMAC($purpose . "\n" . $token));
 	}
 }
