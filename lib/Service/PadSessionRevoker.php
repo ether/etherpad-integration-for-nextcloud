@@ -58,15 +58,13 @@ class PadSessionRevoker {
 	 */
 	private const MAX_PER_DELETE = 100;
 
-	/** Below this, a call cannot finish inside the budget and is not made. */
-	private const MIN_CALL_TIMEOUT_SECONDS = 1;
-
 	public function __construct(
 		private EtherpadClient $etherpadClient,
 		private PadSessionService $padSessionService,
 		private LoggerInterface $logger,
 		private ITimeFactory $timeFactory,
 		private GroupSessionRevoker $groupSessions,
+		private SessionDeletes $deletes,
 	) {
 	}
 
@@ -103,7 +101,7 @@ class PadSessionRevoker {
 	 * @return int how many were removed
 	 */
 	public function revokeForPads(array $padIds): int {
-		$deadline = $this->nowSeconds() + self::BUDGET_SECONDS;
+		$budget = RunBudget::forRequest($this->timeFactory, self::BUDGET_SECONDS);
 		$tally = self::emptyTally();
 		// By group, with all of its pads that leave: a legacy group whose
 		// pads all leave together is left with none.
@@ -118,7 +116,7 @@ class PadSessionRevoker {
 		$expiring = 0;
 		foreach ($leaving as $groupId => $groupPads) {
 			$before = [$tally['left'], $groups['unasked']];
-			if (!$this->takeNow($groupId, $groupPads, $deadline, $tally, $groups)) {
+			if (!$this->takeNow($groupId, $groupPads, $budget, $tally, $groups)) {
 				continue;
 			}
 			if ($this->groupSessions->queue($groupId)) {
@@ -160,25 +158,27 @@ class PadSessionRevoker {
 	 * @param array{attempted: int, revoked: int, left: int} $tally
 	 * @param array{asked: list<string>, unasked: int, unreadable: int, handedOver: int} $groups
 	 */
-	private function takeNow(string $groupId, array $groupPads, float $deadline, array &$tally, array &$groups): bool {
-		if ($tally['attempted'] >= self::MAX_PER_DELETE || $deadline - $this->nowSeconds() < self::MIN_CALL_TIMEOUT_SECONDS) {
+	private function takeNow(string $groupId, array $groupPads, RunBudget $budget, array &$tally, array &$groups): bool {
+		$timeout = $tally['attempted'] < self::MAX_PER_DELETE && !$budget->exhausted() ? $budget->nextCallTimeout() : null;
+		if ($timeout === null) {
 			$groups['unasked']++;
 			return true;
 		}
 		$groups['asked'][] = $groupId;
 		$sessions = [];
 		try {
-			$sessions = $this->live($this->etherpadClient->listSessionsOfGroup($groupId, $this->callTimeout($deadline - $this->nowSeconds()), $unreadable));
+			$sessions = $this->live($this->etherpadClient->listSessionsOfGroup($groupId, $timeout, $unreadable));
 			// Entries this does not delete: whether one is live cannot be told.
 			$groups['unreadable'] += $unreadable ?? 0;
 			if ($sessions === []) {
 				return true;
 			}
-			if ($deadline - $this->nowSeconds() < self::MIN_CALL_TIMEOUT_SECONDS) {
+			$timeout = $budget->nextCallTimeout();
+			if ($timeout === null) {
 				$tally['left'] += count($sessions);
 				return true;
 			}
-			if (!ManagedPadLifecycle::groupHoldsOnly($this->etherpadClient->listPads($groupId, $this->callTimeout($deadline - $this->nowSeconds())), $groupPads)) {
+			if (!ManagedPadLifecycle::groupHoldsOnly($this->etherpadClient->listPads($groupId, $timeout), $groupPads)) {
 				$tally['left'] += count($sessions);
 				$this->logger->debug('Left the Etherpad sessions of a group that holds other pads too to the background job.', [
 					'app' => 'etherpad_nextcloud',
@@ -201,7 +201,7 @@ class PadSessionRevoker {
 			return true;
 		}
 		uasort($sessions, static fn (array $a, array $b): int => $b['validUntil'] <=> $a['validUntil']);
-		$this->deleteLive($sessions, $deadline, [], $tally, self::MAX_PER_DELETE);
+		$this->deleteLive($sessions, $budget, ['groupId' => $groupId], $tally, self::MAX_PER_DELETE);
 		return true;
 	}
 
@@ -214,29 +214,25 @@ class PadSessionRevoker {
 	 * morning holds one live session per open, each a call of its own: with
 	 * the client's full timeout behind every one, a half-broken Etherpad
 	 * would hold a logout for minutes. What does not fit in the budget is
-	 * left to expire, which is what would have happened before any of this
-	 * existed.
+	 * left to expire.
 	 *
-	 * The budget starts before the listing, because the listing is a call
-	 * with the same timeout behind it and counting only the deletes would
-	 * bound the wrong half. Each call is given what is left of it, and one
-	 * that no longer fits is not made: a deadline checked between calls
-	 * would otherwise say when the last call may start, not when it must
-	 * end.
+	 * The budget starts before the listing, which is a call with the same
+	 * timeout behind it: counting only the deletes would bound the wrong
+	 * half. Each call gets what is left of it, and one that no longer fits
+	 * is not made (RunBudget).
 	 */
 	private function revoke(string $uid): int {
-		$deadline = $this->nowSeconds() + self::BUDGET_SECONDS;
+		$budget = RunBudget::forRequest($this->timeFactory, self::BUDGET_SECONDS);
 		$authorId = $this->padSessionService->cachedAuthorId($uid);
 		if ($authorId === '') {
 			// Never opened a protected pad, so nothing was ever issued.
 			return 0;
 		}
 
-		// The same check every delete gets. Reading the cached author is a
-		// database round trip, and if it took the budget then starting a
-		// listing on top of it would overrun by a whole call — the floor
-		// under callTimeout() would hand it a second it does not have.
-		if ($deadline - $this->nowSeconds() < self::MIN_CALL_TIMEOUT_SECONDS) {
+		// The same check every delete gets: reading the cached author is a
+		// database round trip, and may have taken the budget.
+		$timeout = $budget->nextCallTimeout();
+		if ($timeout === null) {
 			$this->logger->warning('No time left to revoke Etherpad sessions; they will expire on their own.', [
 				'app' => 'etherpad_nextcloud',
 				'uid' => $uid,
@@ -245,11 +241,7 @@ class PadSessionRevoker {
 		}
 
 		try {
-			$sessions = $this->etherpadClient->listSessionsOfAuthor(
-				$authorId,
-				$this->callTimeout($deadline - $this->nowSeconds()),
-				$unreadable,
-			);
+			$sessions = $this->etherpadClient->listSessionsOfAuthor($authorId, $timeout, $unreadable);
 		} catch (\Throwable $e) {
 			$this->logger->warning('Could not list the Etherpad sessions to revoke; they will expire on their own.', [
 				'app' => 'etherpad_nextcloud',
@@ -267,7 +259,7 @@ class PadSessionRevoker {
 		$tally['left'] = $unreadable ?? 0;
 
 		$context = ['uid' => $uid];
-		$this->deleteLive($this->carriedFirst($sessions), $deadline, $context, $tally);
+		$this->deleteLive($this->live($this->carriedFirst($sessions)), $budget, $context, $tally);
 		return $this->report($tally, $context);
 	}
 
@@ -298,56 +290,21 @@ class PadSessionRevoker {
 	}
 
 	/**
-	 * The live ones among $sessions deleted, in their order, within what is
-	 * left of the budget until $deadline and $ceiling deletes, counted into
-	 * $tally: deletes attempted - one ceiling across every call for one
-	 * revoke - sessions removed, and live ones left: to expire on a logout,
-	 * to the background job on a delete. $context names whose sessions
-	 * they are.
+	 * $sessions deleted in their order (SessionDeletes), within $budget and
+	 * what is left of $ceiling attempts - one ceiling across every call for
+	 * one revoke -, counted into $tally: attempts, sessions removed, and
+	 * live ones left: to expire on a logout, to the background job on a
+	 * delete. $context names whose sessions they are.
 	 *
 	 * @param array<array-key,array{groupID:string,validUntil:int}> $sessions
 	 * @param array<string,mixed> $context
 	 * @param array{attempted: int, revoked: int, left: int} $tally
 	 */
-	private function deleteLive(array $sessions, float $deadline, array $context, array &$tally, int $ceiling = self::MAX_PER_REQUEST): void {
-		foreach ($this->live($sessions) as $sessionId => $info) {
-			// An all-digit id would arrive as an int: php casts numeric
-			// array keys, and everything downstream is typed string.
-			$sessionId = (string)$sessionId;
-			// Attempts, not successes. An Etherpad that fails fast — a
-			// rotated api key, a 500 — would otherwise never reach a ceiling
-			// counted in completed deletes, and spend one call and one
-			// warning per live session.
-			$left = $deadline - $this->nowSeconds();
-			if ($tally['attempted'] >= $ceiling || $left < self::MIN_CALL_TIMEOUT_SECONDS) {
-				$tally['left']++;
-				continue;
-			}
-			$tally['attempted']++;
-
-			try {
-				$this->etherpadClient->deleteSession($sessionId, $this->callTimeout($left));
-				$tally['revoked']++;
-			} catch (\Throwable $e) {
-				if (EtherpadErrorClassifier::isSessionAlreadyGone($e)) {
-					// Already gone, which is the outcome asked for.
-					continue;
-				}
-				// Counted as left behind, not merely warned about: the
-				// summary below is what says whether a logout finished its
-				// job, and a live session the pad server refused to delete
-				// is exactly as left behind as one the budget never reached.
-				$tally['left']++;
-				// What becomes of it, report() says: a logout leaves it to
-				// expire, a delete to the background job.
-				$this->logger->warning('Could not revoke an Etherpad session.', [
-					'app' => 'etherpad_nextcloud',
-					...$context,
-					'groupId' => $info['groupID'],
-					...SafeError::context($e, [$sessionId]),
-				]);
-			}
-		}
+	private function deleteLive(array $sessions, RunBudget $budget, array $context, array &$tally, int $ceiling = self::MAX_PER_REQUEST): void {
+		$run = $this->deletes->within($budget, $sessions, $ceiling - $tally['attempted'], $context, 'Could not revoke an Etherpad session.');
+		$tally['attempted'] += $run['attempted'];
+		$tally['revoked'] += $run['deleted'];
+		$tally['left'] += count($sessions) - $run['handled'];
 	}
 
 	/**
@@ -386,22 +343,6 @@ class PadSessionRevoker {
 		}
 
 		return $revoked;
-	}
-
-	/** The rest of the budget, never more than any other call in this app. */
-	private function callTimeout(float $left): int {
-		return (int)max(
-			self::MIN_CALL_TIMEOUT_SECONDS,
-			min(floor($left), EtherpadClient::REQUEST_TIMEOUT_SECONDS),
-		);
-	}
-
-	/**
-	 * The budget's clock, sub-second, through the same factory as the rest:
-	 * the injected clock, so the deadline is a test's too.
-	 */
-	private function nowSeconds(): float {
-		return (float)$this->timeFactory->now()->format('U.u');
 	}
 
 	/**

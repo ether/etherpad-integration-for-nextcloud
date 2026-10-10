@@ -174,7 +174,7 @@ class GroupSessionRevoker {
 				return false;
 			}
 		};
-		$run = $this->deletes->within($budget, array_keys($live), self::MAX_PER_RUN, ['groupId' => $groupId], 'Could not revoke an Etherpad session of a group.', $stillAway);
+		$run = $this->deletes->within($budget, $live, self::MAX_PER_RUN, ['groupId' => $groupId], 'Could not revoke an Etherpad session of a group.', $stillAway);
 
 		if ($run['deleted'] > 0) {
 			$this->logger->info('Revoked remaining Etherpad sessions of a group.', [

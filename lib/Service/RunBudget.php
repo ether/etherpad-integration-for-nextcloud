@@ -13,19 +13,24 @@ use OCA\EtherpadNextcloud\Exception\RunBudgetSpentException;
 use OCP\AppFramework\Utility\ITimeFactory;
 
 /**
- * What a background run may spend, for sweeps that call Etherpad item by
- * item and promise a total run length: time, and patience with an Etherpad
- * that does not answer. A deadline alone bounds when the last call starts,
- * not when it ends, so each call is given what is left, and one that could
- * not finish in it is not started. A few items without an answer read as an
- * outage, and the run ends there rather than paying a timeout for each.
+ * What a run of Etherpad calls may spend, item by item, with a promised
+ * total length: time, and patience with an Etherpad that does not answer.
+ * A deadline alone bounds when the last call starts, not when it ends, so
+ * each call is given what is left, and one that could not finish in it is
+ * not started. A few items without an answer read as an outage, and the
+ * run ends there rather than paying a timeout for each. A background run
+ * asks Etherpad whether it answers at all before it counts one; a request,
+ * which someone waits on, counts it at once (forRequest()).
  */
 final class RunBudget {
 	/** The whole run, as both sweeps promise it. */
 	public const DEFAULT_SECONDS = 20.0;
 
-	/** The least a call is given: with less left, none is started. */
+	/** The least a call is given in a background run: with less left, none is started. */
 	private const MIN_CALL_TIMEOUT_SECONDS = 2;
+
+	/** The least a call is given in a request, whose budget is a couple of seconds. */
+	private const MIN_REQUEST_CALL_TIMEOUT_SECONDS = 1;
 
 	/** Items without an answer a run puts up with before reading them as an outage. */
 	private const MAX_FAILURES = 5;
@@ -36,13 +41,25 @@ final class RunBudget {
 	public function __construct(
 		private ITimeFactory $clock,
 		float $seconds,
+		private int $minCallSeconds = self::MIN_CALL_TIMEOUT_SECONDS,
+		private bool $probesOutages = true,
 	) {
 		$this->deadline = $this->now() + $seconds;
 	}
 
+	/** A budget for a request: shorter calls, and no call spent on asking whether Etherpad answers. */
+	public static function forRequest(ITimeFactory $clock, float $seconds): self {
+		return new self($clock, $seconds, self::MIN_REQUEST_CALL_TIMEOUT_SECONDS, false);
+	}
+
+	/** Whether an item without an answer is worth a call asking whether Etherpad answers at all. */
+	public function probesOutages(): bool {
+		return $this->probesOutages;
+	}
+
 	/** Whether a call started now could still finish in time. */
 	private function fitsAnotherCall(): bool {
-		return $this->deadline - $this->now() >= self::MIN_CALL_TIMEOUT_SECONDS;
+		return $this->deadline - $this->now() >= $this->minCallSeconds;
 	}
 
 	/** An item Etherpad gave no answer for. */

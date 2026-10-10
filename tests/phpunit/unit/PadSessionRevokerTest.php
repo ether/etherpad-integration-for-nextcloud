@@ -9,10 +9,13 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\Tests\Unit;
 
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
+use OCA\EtherpadNextcloud\Exception\EtherpadRefusedException;
 use OCA\EtherpadNextcloud\Service\EtherpadClient;
 use OCA\EtherpadNextcloud\Service\GroupSessionRevoker;
 use OCA\EtherpadNextcloud\Service\PadSessionRevoker;
 use OCA\EtherpadNextcloud\Service\PadSessionService;
+use OCA\EtherpadNextcloud\Service\ManagedPadLifecycle;
+use OCA\EtherpadNextcloud\Service\SessionDeletes;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 use OCA\EtherpadNextcloud\Tests\Support\FixedClock;
@@ -120,23 +123,28 @@ class PadSessionRevokerTest extends TestCase {
 	}
 
 	/**
-	 * The ceiling counts attempts, not successes. An Etherpad that fails
-	 * fast — a rotated api key, a 500 — would otherwise never reach a limit
-	 * counted in completed deletes, and spend one call and one warning per
-	 * live session.
+	 * An Etherpad that fails fast - a rotated api key, a 500 - spends a few
+	 * calls and lines, not one per live session: twenty refusals in a row
+	 * end the revoke, and in a request five failures without an answer do,
+	 * with no call spent on asking whether it answers.
 	 */
 	public function testAFastFailingPadServerStillHitsTheCeiling(): void {
 		$live = [];
 		for ($i = 0; $i < 400; $i++) {
 			$live['s.' . $i] = ['groupID' => 'g.AAAAAAAAAAAAAAAA', 'validUntil' => FixedClock::NOW + 3600];
 		}
-		$client = $this->createMock(EtherpadClient::class);
-		$client->method('listSessionsOfAuthor')->willReturn($live);
-		$client->expects(self::exactly(25))
-			->method('deleteSession')
-			->willThrowException(new EtherpadClientException('Etherpad API error: internal error'));
+		$failures = [
+			'refused' => [new EtherpadRefusedException('Etherpad API error (deleteSession): internal error'), 20],
+			'no answer' => [new EtherpadClientException('Etherpad API HTTP error (500)'), 5],
+		];
+		foreach ($failures as $case => [$failure, $calls]) {
+			$client = $this->createMock(EtherpadClient::class);
+			$client->method('listSessionsOfAuthor')->willReturn($live);
+			$client->expects(self::never())->method('assertAnswering');
+			$client->expects(self::exactly($calls))->method('deleteSession')->willThrowException($failure);
 
-		self::assertSame(0, $this->revoker($client)->revokeAll('alice'));
+			self::assertSame(0, $this->revoker($client)->revokeAll('alice'), $case);
+		}
 	}
 
 	/**
@@ -325,7 +333,7 @@ class PadSessionRevokerTest extends TestCase {
 		$logger = $this->createMock(LoggerInterface::class);
 		$logger->expects(self::once())->method('warning');
 
-		$revoker = new PadSessionRevoker($client, $sessions, $logger, $clock, $this->createMock(GroupSessionRevoker::class));
+		$revoker = new PadSessionRevoker($client, $sessions, $logger, $clock, $this->createMock(GroupSessionRevoker::class), $this->deletes($client, $logger));
 
 		self::assertSame(0, $revoker->revokeAll('alice'));
 	}
@@ -480,7 +488,7 @@ class PadSessionRevokerTest extends TestCase {
 			$lines[] = [$message, $context['groupId'] ?? $context['groupsLeft'] ?? null];
 		});
 		$queued = [];
-		$revoker = new PadSessionRevoker($client, $this->createMock(PadSessionService::class), $logger, $clock, $this->queueRecorder($queued));
+		$revoker = new PadSessionRevoker($client, $this->createMock(PadSessionService::class), $logger, $clock, $this->queueRecorder($queued), $this->deletes($client, $logger));
 
 		$revoker->revokeForPads(['g.AAAAAAAAAAAAAAAA$a', 'g.BBBBBBBBBBBBBBBB$b', 'g.CCCCCCCCCCCCCCCC$c', 'g.DDDDDDDDDDDDDDDD$d']);
 
@@ -526,7 +534,7 @@ class PadSessionRevokerTest extends TestCase {
 			});
 		}
 		$queued = [];
-		$revoker = new PadSessionRevoker($client, $this->createMock(PadSessionService::class), $logger, $clock, $this->queueRecorder($queued));
+		$revoker = new PadSessionRevoker($client, $this->createMock(PadSessionService::class), $logger, $clock, $this->queueRecorder($queued), $this->deletes($client, $logger));
 
 		$count = $revoker->revokeForPads(['g.AAAAAAAAAAAAAAAA$pad', 'g.BBBBBBBBBBBBBBBB$pad', 'g.CCCCCCCCCCCCCCCC$pad']);
 
@@ -635,6 +643,73 @@ class PadSessionRevokerTest extends TestCase {
 		self::assertSame(100, $count);
 		self::assertSame(['g.AAAAAAAAAAAAAAAA'], $listed, 'B is not asked');
 		self::assertSame(['g.AAAAAAAAAAAAAAAA', 'g.BBBBBBBBBBBBBBBB'], $queued);
+	}
+
+	/**
+	 * One ceiling of attempts across every group a delete takes: the
+	 * second group gets what the first left of it, the rest goes to the
+	 * background job.
+	 */
+	public function testOneCeilingSpansEveryGroupOfADelete(): void {
+		$client = $this->createMock(EtherpadClient::class);
+		$client->method('listSessionsOfGroup')->willReturnCallback(static function (string $group): array {
+			$sessions = [];
+			for ($i = 1; $i <= 60; $i++) {
+				$sessions['s.' . $group . $i] = ['groupID' => $group, 'validUntil' => FixedClock::NOW + $i];
+			}
+			return $sessions;
+		});
+		$client->method('listPads')->willReturnCallback(static fn (string $group): array => [$group . '$pad']);
+		$client->expects(self::exactly(100))->method('deleteSession');
+
+		self::assertSame(100, $this->revoker($client)->revokeForPads(['g.AAAAAAAAAAAAAAAA$pad', 'g.BBBBBBBBBBBBBBBB$pad']));
+	}
+
+	/**
+	 * A listing that takes the budget leaves the group's sessions to the
+	 * background job, without asking which pads it holds.
+	 */
+	public function testAListingThatTakesTheBudgetLeavesTheGroupToTheJob(): void {
+		$clock = new FixedClock();
+		$client = $this->createMock(EtherpadClient::class);
+		$client->method('listSessionsOfGroup')->willReturnCallback(static function () use ($clock): array {
+			$clock->advance(2);
+			return [
+				's.1' => ['groupID' => 'g.AAAAAAAAAAAAAAAA', 'validUntil' => FixedClock::NOW + 3600],
+				's.2' => ['groupID' => 'g.AAAAAAAAAAAAAAAA', 'validUntil' => FixedClock::NOW + 3600],
+			];
+		});
+		$client->expects(self::never())->method('listPads');
+		$client->expects(self::never())->method('deleteSession');
+		$left = null;
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->method('warning')->willReturnCallback(static function (string $message, array $context) use (&$left): void {
+			$left = $context['leftToTheJob'] ?? $left;
+		});
+		$queued = [];
+		$revoker = new PadSessionRevoker($client, $this->createMock(PadSessionService::class), $logger, $clock, $this->queueRecorder($queued), $this->deletes($client, $logger));
+
+		self::assertSame(0, $revoker->revokeForPads(['g.AAAAAAAAAAAAAAAA$pad']));
+		self::assertSame(2, $left);
+		self::assertSame(['g.AAAAAAAAAAAAAAAA'], $queued);
+	}
+
+	/** A session already gone is not left behind: it is what a revoke asks for. */
+	public function testASessionAlreadyGoneIsNotLeftBehind(): void {
+		$client = $this->createMock(EtherpadClient::class);
+		$client->method('listSessionsOfAuthor')->willReturn([
+			's.gone' => ['groupID' => 'g.AAAAAAAAAAAAAAAA', 'validUntil' => FixedClock::NOW + 3600],
+			's.live' => ['groupID' => 'g.AAAAAAAAAAAAAAAA', 'validUntil' => FixedClock::NOW + 3600],
+		]);
+		$client->method('deleteSession')->willReturnCallback(static function (string $id): void {
+			if ($id === 's.gone') {
+				throw new EtherpadRefusedException('Etherpad API error (deleteSession): sessionID does not exist');
+			}
+		});
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects(self::once())->method('info')->with('Revoked Etherpad sessions.', self::callback(static fn (array $context): bool => $context['count'] === 1 && $context['leftToExpire'] === 0));
+
+		self::assertSame(1, $this->revoker($client, logger: $logger)->revokeAll('alice'));
 	}
 
 	/**
@@ -804,12 +879,19 @@ class PadSessionRevokerTest extends TestCase {
 		$sessions->method('cachedAuthorId')->willReturn($author);
 		$sessions->method('carriedSessionIds')->willReturn($carriedIds);
 
+		$logger ??= $this->createMock(LoggerInterface::class);
 		return new PadSessionRevoker(
 			$client,
 			$sessions,
-			$logger ?? $this->createMock(LoggerInterface::class),
+			$logger,
 			new FixedClock(),
 			$groupSessions ?? $this->queueRecorder($queued),
+			$this->deletes($client, $logger),
 		);
+	}
+
+	/** The real delete loop: what it counts and stops at is what a revoke reports. */
+	private function deletes(EtherpadClient $client, LoggerInterface $logger): SessionDeletes {
+		return new SessionDeletes($client, new ManagedPadLifecycle($client, $logger), $logger);
 	}
 }

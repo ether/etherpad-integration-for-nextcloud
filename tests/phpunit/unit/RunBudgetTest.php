@@ -57,6 +57,23 @@ class RunBudgetTest extends TestCase {
 		$this->assertNull($budget->nextCallTimeout());
 	}
 
+	/**
+	 * A request's budget is a couple of seconds: a call fits with one
+	 * second left, and no call is spent on asking whether Etherpad answers.
+	 */
+	public function testARequestsBudgetTakesShorterCallsAndAsksNothing(): void {
+		$clock = new FixedClock();
+		$budget = RunBudget::forRequest($clock, 2.0);
+
+		$this->assertFalse($budget->probesOutages());
+		$this->assertSame(2, $budget->nextCallTimeout());
+		$clock->advance(1);
+		$this->assertSame(1, $budget->nextCallTimeout());
+		$clock->advanceMicros(1);
+		$this->assertNull($budget->nextCallTimeout());
+		$this->assertTrue((new RunBudget($clock, 20.0))->probesOutages());
+	}
+
 	/** One way to ask for a call's timeout, with a budget or without one. */
 	public function testTimeoutOfFollowsTheBudgetOrLeavesTheClientsOwn(): void {
 		$clock = new FixedClock();

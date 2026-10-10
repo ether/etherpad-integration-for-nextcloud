@@ -18,7 +18,7 @@ use OCA\EtherpadNextcloud\Tests\Support\FixedClock;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 
-/** The delete loop both background sweeps share. */
+/** The delete loop the background sweeps and the request's revokes share. */
 class SessionDeletesTest extends TestCase {
 	/** Live on both clocks: one only ours calls expired is live to Etherpad. */
 	public function testLiveIsWhatIsNotExpiredOnBothClocks(): void {
@@ -38,10 +38,10 @@ class SessionDeletesTest extends TestCase {
 			$removed[] = $id;
 		});
 
-		$run = $this->deletes($client)->within($this->budget(), ['s.3', 's.1', 's.2'], 2, [], 'refused');
+		$run = $this->deletes($client)->within($this->budget(), $this->sessions(...['s.3', 's.1', 's.2']), 2, [], 'refused');
 
 		self::assertSame(['s.3', 's.1'], $removed);
-		self::assertSame(['deleted' => 2, 'handled' => 2, 'refused' => false, 'stopped' => false], $run);
+		self::assertSame(['deleted' => 2, 'handled' => 2, 'attempted' => 2, 'refused' => false, 'stopped' => false], $run);
 	}
 
 	/** An all-digit id comes out of PHP's keys as an int, and goes to Etherpad as the id it is. */
@@ -49,7 +49,7 @@ class SessionDeletesTest extends TestCase {
 		$client = $this->createMock(EtherpadClient::class);
 		$client->expects(self::once())->method('deleteSession')->with('12345');
 
-		$run = $this->deletes($client)->within($this->budget(), array_keys(['12345' => true]), 10, [], 'refused');
+		$run = $this->deletes($client)->within($this->budget(), $this->sessions(...array_keys(['12345' => true])), 10, [], 'refused');
 
 		self::assertSame(1, $run['deleted']);
 	}
@@ -59,9 +59,9 @@ class SessionDeletesTest extends TestCase {
 		$client = $this->createMock(EtherpadClient::class);
 		$client->method('deleteSession')->willThrowException(new EtherpadRefusedException('Etherpad API error (deleteSession): sessionID does not exist'));
 
-		$run = $this->deletes($client)->within($this->budget(), ['s.gone'], 10, [], 'refused');
+		$run = $this->deletes($client)->within($this->budget(), $this->sessions(...['s.gone']), 10, [], 'refused');
 
-		self::assertSame(['deleted' => 0, 'handled' => 1, 'refused' => false, 'stopped' => false], $run);
+		self::assertSame(['deleted' => 0, 'handled' => 1, 'attempted' => 1, 'refused' => false, 'stopped' => false], $run);
 	}
 
 	/**
@@ -81,10 +81,10 @@ class SessionDeletesTest extends TestCase {
 		});
 		$ids = [...array_map(static fn (int $i): string => 's.poison' . $i, range(1, 6)), 's.one', 's.two'];
 
-		$run = $this->deletes($client)->within($this->budget(), $ids, 250, [], 'refused');
+		$run = $this->deletes($client)->within($this->budget(), $this->sessions(...$ids), 250, [], 'refused');
 
 		self::assertSame(['s.one', 's.two'], $removed);
-		self::assertSame(['deleted' => 2, 'handled' => 2, 'refused' => true, 'stopped' => false], $run);
+		self::assertSame(['deleted' => 2, 'handled' => 2, 'attempted' => 8, 'refused' => true, 'stopped' => false], $run);
 	}
 
 	/** A refusal in so many words is an answer: Etherpad is not asked whether it answers. */
@@ -93,9 +93,9 @@ class SessionDeletesTest extends TestCase {
 		$client->expects(self::never())->method('assertAnswering');
 		$client->method('deleteSession')->willThrowException(new EtherpadRefusedException('Etherpad API error (deleteSession): no'));
 
-		$run = $this->deletes($client)->within($this->budget(), ['s.1', 's.2', 's.3', 's.4', 's.5', 's.6'], 250, [], 'refused');
+		$run = $this->deletes($client)->within($this->budget(), $this->sessions(...['s.1', 's.2', 's.3', 's.4', 's.5', 's.6']), 250, [], 'refused');
 
-		self::assertSame(['deleted' => 0, 'handled' => 0, 'refused' => true, 'stopped' => false], $run);
+		self::assertSame(['deleted' => 0, 'handled' => 0, 'attempted' => 6, 'refused' => true, 'stopped' => false], $run);
 	}
 
 	/** Failures Etherpad gives no answer to are an outage: a few end the run. */
@@ -104,10 +104,66 @@ class SessionDeletesTest extends TestCase {
 		$client->method('assertAnswering')->willThrowException(new EtherpadClientException('Connection refused'));
 		$client->expects(self::exactly(5))->method('deleteSession')->willThrowException(new EtherpadClientException('Connection refused'));
 
-		$run = $this->deletes($client)->within($this->budget(), array_map(static fn (int $i): string => 's.' . $i, range(1, 20)), 250, [], 'refused');
+		$run = $this->deletes($client)->within($this->budget(), $this->sessions(...array_map(static fn (int $i): string => 's.' . $i, range(1, 20))), 250, [], 'refused');
 
 		self::assertTrue($run['refused']);
 		self::assertSame(0, $run['handled']);
+	}
+
+	/**
+	 * In a request someone waits on, a failure without an answer counts at
+	 * once: no call asks whether Etherpad answers, and a few end the run.
+	 */
+	public function testARequestCountsAnOutageWithoutAskingEtherpad(): void {
+		$client = $this->createMock(EtherpadClient::class);
+		$client->expects(self::never())->method('assertAnswering');
+		$client->expects(self::exactly(5))->method('deleteSession')->willThrowException(new EtherpadClientException('Connection refused'));
+
+		$run = $this->deletes($client)->within(RunBudget::forRequest(new FixedClock(), 2.0), $this->sessions(...array_map(static fn (int $i): string => 's.' . $i, range(1, 20))), 25, [], 'refused');
+
+		self::assertSame(5, $run['attempted']);
+	}
+
+	/**
+	 * The ceiling counts attempts: deletes, refusals and sessions already
+	 * gone alike, so mixed answers make no more calls than it allows.
+	 */
+	public function testTheCeilingCountsEveryAttempt(): void {
+		$calls = 0;
+		$client = $this->createMock(EtherpadClient::class);
+		$client->method('assertAnswering');
+		$client->method('deleteSession')->willReturnCallback(static function () use (&$calls): void {
+			$calls++;
+			match ($calls % 3) {
+				0 => throw new EtherpadRefusedException('Etherpad API error (deleteSession): internal error'),
+				1 => throw new EtherpadRefusedException('Etherpad API error (deleteSession): sessionID does not exist'),
+				default => null,
+			};
+		});
+
+		$run = $this->deletes($client)->within($this->budget(), $this->sessions(...array_map(static fn (int $i): string => 's.' . $i, range(1, 40))), 25, [], 'refused');
+
+		self::assertSame(25, $calls);
+		self::assertSame(['deleted' => 8, 'handled' => 17, 'attempted' => 25, 'refused' => true, 'stopped' => false], $run);
+	}
+
+	/** A refusal's line names the session's own group, wherever the sessions come from. */
+	public function testSaysTheGroupOfTheSessionRefused(): void {
+		$client = $this->createMock(EtherpadClient::class);
+		$client->method('assertAnswering');
+		$client->method('deleteSession')->willThrowException(new EtherpadRefusedException('Etherpad API error (deleteSession): internal error'));
+		$lines = [];
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->method('warning')->willReturnCallback(static function (string $message, array $context) use (&$lines): void {
+			$lines[] = $context;
+		});
+
+		(new SessionDeletes($client, new ManagedPadLifecycle($client, $logger), $logger))->within($this->budget(), [
+			's.one' => ['groupID' => 'g.ONE', 'validUntil' => FixedClock::NOW + 60],
+			's.two' => ['groupID' => 'g.TWO', 'validUntil' => FixedClock::NOW + 60],
+		], 10, ['uid' => 'alice'], 'Could not revoke.');
+
+		self::assertSame([['alice', 'g.ONE'], ['alice', 'g.TWO']], array_map(static fn (array $context): array => [$context['uid'], $context['groupId']], $lines));
 	}
 
 	/** With no time left to ask whether it answers, it is not asked: the budget ends the run. */
@@ -120,9 +176,9 @@ class SessionDeletesTest extends TestCase {
 			throw new EtherpadClientException('Etherpad API request failed: deleteSession');
 		});
 
-		$run = $this->deletes($client)->within(new RunBudget($clock, RunBudget::DEFAULT_SECONDS), ['s.1', 's.2'], 250, [], 'refused');
+		$run = $this->deletes($client)->within(new RunBudget($clock, RunBudget::DEFAULT_SECONDS), $this->sessions(...['s.1', 's.2']), 250, [], 'refused');
 
-		self::assertSame(['deleted' => 0, 'handled' => 0, 'refused' => true, 'stopped' => false], $run);
+		self::assertSame(['deleted' => 0, 'handled' => 0, 'attempted' => 1, 'refused' => true, 'stopped' => false], $run);
 	}
 
 	/** The question before a delete may take the time: then no delete starts. */
@@ -131,12 +187,12 @@ class SessionDeletesTest extends TestCase {
 		$client = $this->createMock(EtherpadClient::class);
 		$client->expects(self::never())->method('deleteSession');
 
-		$run = $this->deletes($client)->within(new RunBudget($clock, RunBudget::DEFAULT_SECONDS), ['s.1'], 250, [], 'refused', static function () use ($clock): bool {
+		$run = $this->deletes($client)->within(new RunBudget($clock, RunBudget::DEFAULT_SECONDS), $this->sessions(...['s.1']), 250, [], 'refused', static function () use ($clock): bool {
 			$clock->advance(19);
 			return true;
 		});
 
-		self::assertSame(['deleted' => 0, 'handled' => 0, 'refused' => false, 'stopped' => false], $run);
+		self::assertSame(['deleted' => 0, 'handled' => 0, 'attempted' => 0, 'refused' => false, 'stopped' => false], $run);
 	}
 
 	/**
@@ -148,9 +204,9 @@ class SessionDeletesTest extends TestCase {
 		$client = $this->createMock(EtherpadClient::class);
 		$client->expects(self::exactly(20))->method('deleteSession')->willThrowException(new EtherpadRefusedException('Etherpad API error (deleteSession): internal error'));
 
-		$run = $this->deletes($client)->within($this->budget(), array_map(static fn (int $i): string => 's.' . $i, range(1, 30)), 250, [], 'refused');
+		$run = $this->deletes($client)->within($this->budget(), $this->sessions(...array_map(static fn (int $i): string => 's.' . $i, range(1, 30))), 250, [], 'refused');
 
-		self::assertSame(['deleted' => 0, 'handled' => 0, 'refused' => true, 'stopped' => false], $run);
+		self::assertSame(['deleted' => 0, 'handled' => 0, 'attempted' => 20, 'refused' => true, 'stopped' => false], $run);
 	}
 
 	/**
@@ -175,9 +231,9 @@ class SessionDeletesTest extends TestCase {
 			$ids[] = 's.' . $round . '.' . $end;
 		}
 
-		$run = $this->deletes($client)->within($this->budget(), $ids, 250, [], 'refused');
+		$run = $this->deletes($client)->within($this->budget(), $this->sessions(...$ids), 250, [], 'refused');
 
-		self::assertSame(['deleted' => 1, 'handled' => 2, 'refused' => true, 'stopped' => false], $run);
+		self::assertSame(['deleted' => 1, 'handled' => 2, 'attempted' => 40, 'refused' => true, 'stopped' => false], $run);
 	}
 
 	/**
@@ -205,9 +261,9 @@ class SessionDeletesTest extends TestCase {
 			$warnings++;
 		});
 
-		$run = (new SessionDeletes($client, new ManagedPadLifecycle($client, $logger), $logger))->within($this->budget(), $ids, 250, [], 'refused');
+		$run = (new SessionDeletes($client, new ManagedPadLifecycle($client, $logger), $logger))->within($this->budget(), $this->sessions(...$ids), 250, [], 'refused');
 
-		self::assertSame(['deleted' => 2, 'handled' => 2, 'refused' => true, 'stopped' => false], $run);
+		self::assertSame(['deleted' => 2, 'handled' => 2, 'attempted' => 52, 'refused' => true, 'stopped' => false], $run);
 		self::assertSame(50, $warnings);
 	}
 
@@ -217,11 +273,11 @@ class SessionDeletesTest extends TestCase {
 		$client->expects(self::once())->method('deleteSession')->with('s.1');
 		$asked = 0;
 
-		$run = $this->deletes($client)->within($this->budget(), ['s.1', 's.2', 's.3'], 250, [], 'refused', static function () use (&$asked): bool {
+		$run = $this->deletes($client)->within($this->budget(), $this->sessions(...['s.1', 's.2', 's.3']), 250, [], 'refused', static function () use (&$asked): bool {
 			return ++$asked === 1;
 		});
 
-		self::assertSame(['deleted' => 1, 'handled' => 1, 'refused' => false, 'stopped' => true], $run);
+		self::assertSame(['deleted' => 1, 'handled' => 1, 'attempted' => 1, 'refused' => false, 'stopped' => true], $run);
 	}
 
 	public function testSaysWhoseSessionWasRefusedByItsDigest(): void {
@@ -233,12 +289,25 @@ class SessionDeletesTest extends TestCase {
 			$lines[] = [$message, $context];
 		});
 
-		(new SessionDeletes($client, new ManagedPadLifecycle($client, $logger), $logger))->within($this->budget(), ['s.secret123'], 10, ['groupId' => 'g.A'], 'Could not revoke.');
+		(new SessionDeletes($client, new ManagedPadLifecycle($client, $logger), $logger))->within($this->budget(), $this->sessions(...['s.secret123']), 10, ['groupId' => 'g.A'], 'Could not revoke.');
 
 		self::assertSame('Could not revoke.', $lines[0][0]);
 		self::assertSame('g.A', $lines[0][1]['groupId']);
 		self::assertSame(substr(hash('sha256', 's.secret123'), 0, 12), $lines[0][1]['sessionRef']);
 		self::assertStringNotContainsString('s.secret123', (string)json_encode($lines[0][1]));
+	}
+
+	/**
+	 * Live sessions of one group under $ids, in their order.
+	 *
+	 * @return array<array-key,array{groupID:string,validUntil:int}>
+	 */
+	private function sessions(string|int ...$ids): array {
+		$sessions = [];
+		foreach ($ids as $id) {
+			$sessions[$id] = ['groupID' => 'g.A', 'validUntil' => FixedClock::NOW + 3600];
+		}
+		return $sessions;
 	}
 
 	private function budget(): RunBudget {
