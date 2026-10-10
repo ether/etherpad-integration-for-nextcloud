@@ -147,10 +147,10 @@ class PadSessionService {
 	 * Ids the list does not know are dropped. That covers a public share's
 	 * session — a link opens as an Etherpad author of its own, the
 	 * visitor's or the link's — so a share and an authenticated pad cannot
-	 * be open at once, as was already the case before any of this. It also
-	 * covers the session of whoever used this browser before, which is why
-	 * the rule is worth the loss: nothing here can tell those two apart,
-	 * and carrying them would hand a pad to the next person to log in.
+	 * be open at once. It also covers the session of whoever used this
+	 * browser before, which is why the rule is worth the loss: nothing here
+	 * can tell those two apart, and carrying them would hand a pad to the
+	 * next person to log in.
 	 *
 	 * @return array{url:string,cookie:array{name:string,value:string,expires:int,path:string,domain:string,secure:bool,http_only:bool,same_site:string}}
 	 */
@@ -174,13 +174,11 @@ class PadSessionService {
 		// time for a renewal property that a client arriving without a cookie
 		// does not have anyway. What bounds the window is revocation.
 		//
-		// A public link is the exception. Each open made a session that
-		// Etherpad kept, so a link opened in a loop filled Etherpad with
-		// them. The session made for the visitor - or the link, for those
-		// past its hour's count - in the last hour is handed out again, as
-		// long as Etherpad confirms it: a visitor gets at least two of the
-		// three hours, and with a memory cache a visitor makes one session
-		// an hour (PublicLinkSessions).
+		// A public link is the exception: Etherpad keeps every session, and
+		// a link opened in a loop would fill it with them. The session made
+		// for the visitor - or the link, past its hour's count - within the
+		// hour is handed out again as long as Etherpad confirms it, so a
+		// visitor gets at least two of the three hours (PublicLinkSessions).
 		if ($isLink) {
 			$made = false;
 			$session = $this->linkSessions->sessionFor(

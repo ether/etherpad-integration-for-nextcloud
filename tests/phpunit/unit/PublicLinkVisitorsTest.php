@@ -127,7 +127,7 @@ class PublicLinkVisitorsTest extends TestCase {
 
 	/**
 	 * Without a memory cache nothing could bound the authors a loop makes,
-	 * so every visitor opens as the link, as before visitors had their own.
+	 * so every visitor opens as the link.
 	 */
 	public function testWithoutAMemoryCacheEveryVisitorOpensAsTheLink(): void {
 		$factory = $this->createMock(ICacheFactory::class);
@@ -175,7 +175,7 @@ class PublicLinkVisitorsTest extends TestCase {
 		$this->assertSame($own, $this->visitors($untouched)->openerFor(self::TOKEN)->uid);
 	}
 
-	/** A visitor opens under no name, to set their own; the link under the one it always had. */
+	/** A visitor opens under no name, to set their own; the link under its own. */
 	public function testAVisitorOpensUnderNoNameTheLinkUnderItsOwn(): void {
 		$visitor = $this->visitors($this->memcache())->openerFor(self::TOKEN);
 		$factory = $this->createMock(ICacheFactory::class);

@@ -21,23 +21,21 @@ use Psr\Log\LoggerInterface;
  * Who opens a writable link to a protected pad: a visitor of their own,
  * so Etherpad shows each in a colour and under a name of their own.
  *
- * Etherpad takes the author of a session over the browser's own, so a
- * link that opened as one author showed all its visitors as one. Each
- * visitor gets an id now, kept in Nextcloud's session of the public page
- * for this link, and opens as `public-share:<token>:<visitor>` - the same
- * author on every open while that session lives, a new one in a new one.
+ * Etherpad takes the author of a session over the browser's own, so
+ * visitors who opened as one author would show as one. Each gets an id,
+ * kept in Nextcloud's session of the public page for this link with the
+ * Etherpad author it opened as, and opens as
+ * `public-share:<token>:<visitor>`: the same author while that session
+ * lives, a new one in a new one.
  *
- * A visitor is cheap, though: a request without the session cookie is
- * a new one. Each would make an author, which Etherpad never deletes, and
- * sessions the reuse of a link's session cannot spare. So with a memory
- * cache, a link has at most 250 visitors of their own an hour, each
- * counted once in every hour they open it: one who comes back keeps their
- * id, and is counted again in a new hour, so ids gathered over hours buy
- * no more. Any past the count open as the link itself,
- * `public-share:<token>`, one author for all of them, as every visitor did
- * before - writing works the same, only the colours are shared. Without
- * a memory cache that can count, or while it fails, every visitor opens
- * as the link: nothing else would bound the authors a loop makes.
+ * A visitor is cheap, though - a request without the session cookie is a
+ * new one - and each makes an author, which Etherpad never deletes. So a
+ * link has at most 250 visitors of their own an hour, each counted in
+ * every hour they open it, so ids gathered over hours buy no more. Any
+ * past the count open as the link itself, `public-share:<token>`, one
+ * author for all of them: writing works the same, only the colours are
+ * shared. Counting takes a memory cache; without one, or while it fails,
+ * every visitor opens as the link.
  */
 class PublicLinkVisitors {
 	/** How many visitors of their own a link has an hour, with a memory cache. */

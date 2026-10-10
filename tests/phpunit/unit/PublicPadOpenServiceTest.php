@@ -56,7 +56,7 @@ class PublicPadOpenServiceTest extends TestCase {
 		$this->assertFalse($result->isReadOnlyView);
 	}
 
-	/** Past the link's count for the hour, a visitor opens as the link, under its old name. */
+	/** Past the link's count for the hour, a visitor opens as the link, under its own name. */
 	public function testProtectedWritableOpensAsTheLinkPastItsCount(): void {
 		$sessions = $this->createMock(PadSessionService::class);
 		$sessions->expects($this->once())
@@ -69,7 +69,7 @@ class PublicPadOpenServiceTest extends TestCase {
 
 	/**
 	 * Only a writable link to a protected pad opens as a visitor: a
-	 * read-only link, a public pad or an external one counts none.
+	 * read-only link or a public pad counts none.
 	 */
 	public function testOnlyAWritableProtectedOpenAsksWhoTheVisitorIs(): void {
 		$opens = [

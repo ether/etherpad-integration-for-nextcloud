@@ -18,17 +18,15 @@ use Psr\Log\LoggerInterface;
 
 /**
  * The Etherpad session a public link hands out, kept for a while so that
- * an open does not make one each time.
+ * an open does not make one each time: Etherpad keeps every session until
+ * it is deleted.
  *
- * Every open of a writable link to a protected pad made a session of its
- * own, and Etherpad keeps each until it is deleted. A link opens as a
- * visitor of its own, or as the link itself for visitors past its hour's
- * count (PublicLinkVisitors). With a distributed memory cache, each of
- * them now makes at most one new session an hour for each pad, however
- * often it opens; opens that miss the cache at the same moment make one
- * each. With only a local cache, as on one server, that holds for each
- * web server on its own. Without any, nothing is kept and every open
- * makes a session, as before.
+ * A link opens as a visitor of its own, or as the link itself
+ * (PublicLinkVisitors). With a distributed memory cache, each makes at
+ * most one new session an hour for each pad, however often it opens;
+ * opens that miss the cache at the same moment make one each. With only a
+ * local cache that holds for each web server on its own; without any,
+ * every open makes a session.
  *
  * The cache only points; Etherpad decides. A kept session is handed out
  * again only once Etherpad confirms that it still exists - a session
