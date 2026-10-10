@@ -402,7 +402,9 @@ author of their own now, `nc:public-share:<token>:<visitor>`
 
 - The visitor's id is random and kept in Nextcloud's session of the public
   page, for this link: the same author on every open while that session
-  lives, a new one in a new browser session. No cookie of its own.
+  lives, a new one in a new browser session. No cookie of its own. The
+  session keeps the Etherpad author too, so an open does not ask Etherpad
+  for it; one Etherpad no longer has is asked for anew.
 - The app gives a visitor no name. Etherpad lets them set one, which stays
   on their author; a name given on every open would overwrite it.
 - A visitor is cheap – a request without the session cookie is a new one

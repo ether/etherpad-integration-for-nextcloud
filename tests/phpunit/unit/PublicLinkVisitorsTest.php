@@ -9,6 +9,7 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\Tests\Unit;
 
 use OCA\EtherpadNextcloud\Service\PublicLinkCache;
+use OCA\EtherpadNextcloud\Service\PublicLinkOpener;
 use OCA\EtherpadNextcloud\Service\PublicLinkVisitors;
 use OCA\EtherpadNextcloud\Tests\Support\FixedClock;
 use OCP\ICache;
@@ -46,9 +47,9 @@ class PublicLinkVisitorsTest extends TestCase {
 	public function testAVisitorKeepsTheirAuthorWhileTheirSessionLives(): void {
 		$visitors = $this->visitors($this->memcache());
 
-		$first = $visitors->uidFor(self::TOKEN);
-		$again = $visitors->uidFor(self::TOKEN);
-		$elsewhere = $visitors->uidFor('another-token');
+		$first = $visitors->openerFor(self::TOKEN)->uid;
+		$again = $visitors->openerFor(self::TOKEN)->uid;
+		$elsewhere = $visitors->openerFor('another-token')->uid;
 
 		$this->assertMatchesRegularExpression('/^' . preg_quote(self::LINK, '/') . ':[0-9a-f]{32}$/', $first);
 		$this->assertSame($first, $again);
@@ -67,17 +68,17 @@ class PublicLinkVisitorsTest extends TestCase {
 		$admitted = [];
 		for ($i = 0; $i < PublicLinkVisitors::PER_HOUR; $i++) {
 			$this->session = new \ArrayObject();
-			$admitted[] = $this->visitors($cache)->uidFor(self::TOKEN);
+			$admitted[] = $this->visitors($cache)->openerFor(self::TOKEN)->uid;
 		}
 		$returning = $this->session;
 
 		$this->session = new \ArrayObject();
-		$past = $this->visitors($cache)->uidFor(self::TOKEN);
+		$past = $this->visitors($cache)->openerFor(self::TOKEN)->uid;
 		$this->session = $returning;
-		$back = $this->visitors($cache)->uidFor(self::TOKEN);
+		$back = $this->visitors($cache)->openerFor(self::TOKEN)->uid;
 		$this->clock->advance(3600);
 		$this->session = new \ArrayObject();
-		$nextHour = $this->visitors($cache)->uidFor(self::TOKEN);
+		$nextHour = $this->visitors($cache)->openerFor(self::TOKEN)->uid;
 
 		$this->assertCount(PublicLinkVisitors::PER_HOUR, array_unique($admitted));
 		foreach ($admitted as $uid) {
@@ -96,18 +97,18 @@ class PublicLinkVisitorsTest extends TestCase {
 	 */
 	public function testAVisitorWhoComesBackIsCountedAgainInANewHour(): void {
 		$cache = $this->memcache();
-		$own = $this->visitors($cache)->uidFor(self::TOKEN);
+		$own = $this->visitors($cache)->openerFor(self::TOKEN)->uid;
 		$returning = $this->session;
 
 		$this->clock->advance(3600);
 		for ($i = 0; $i < PublicLinkVisitors::PER_HOUR; $i++) {
 			$this->session = new \ArrayObject();
-			$this->visitors($cache)->uidFor(self::TOKEN);
+			$this->visitors($cache)->openerFor(self::TOKEN)->uid;
 		}
 		$this->session = $returning;
-		$fullHour = $this->visitors($cache)->uidFor(self::TOKEN);
+		$fullHour = $this->visitors($cache)->openerFor(self::TOKEN)->uid;
 		$this->clock->advance(3600);
-		$nextHour = $this->visitors($cache)->uidFor(self::TOKEN);
+		$nextHour = $this->visitors($cache)->openerFor(self::TOKEN)->uid;
 
 		$this->assertSame(self::LINK, $fullHour);
 		$this->assertSame($own, $nextHour);
@@ -120,7 +121,7 @@ class PublicLinkVisitorsTest extends TestCase {
 		$logger->expects($this->once())->method('warning');
 		for ($i = 0; $i < PublicLinkVisitors::PER_HOUR + 3; $i++) {
 			$this->session = new \ArrayObject();
-			$this->visitors($cache, $logger)->uidFor(self::TOKEN);
+			$this->visitors($cache, $logger)->openerFor(self::TOKEN)->uid;
 		}
 	}
 
@@ -133,7 +134,7 @@ class PublicLinkVisitorsTest extends TestCase {
 		$factory->method('isAvailable')->willReturn(false);
 		$factory->expects($this->never())->method('createDistributed');
 
-		$this->assertSame(self::LINK, $this->visitors($factory)->uidFor(self::TOKEN));
+		$this->assertSame(self::LINK, $this->visitors($factory)->openerFor(self::TOKEN)->uid);
 		$this->assertSame([], $this->session->getArrayCopy());
 	}
 
@@ -142,21 +143,21 @@ class PublicLinkVisitorsTest extends TestCase {
 		$plain = $this->createMock(ICacheFactory::class);
 		$plain->method('isAvailable')->willReturn(true);
 		$plain->method('createDistributed')->willReturn($this->createMock(ICache::class));
-		$this->assertSame(self::LINK, $this->visitors($plain)->uidFor(self::TOKEN));
+		$this->assertSame(self::LINK, $this->visitors($plain)->openerFor(self::TOKEN)->uid);
 
 		$notCounting = $this->createMock(IMemcache::class);
 		$notCounting->method('inc')->willReturn(false);
 		$silent = $this->createMock(ICacheFactory::class);
 		$silent->method('isAvailable')->willReturn(true);
 		$silent->method('createDistributed')->willReturn($notCounting);
-		$this->assertSame(self::LINK, $this->visitors($silent)->uidFor(self::TOKEN));
+		$this->assertSame(self::LINK, $this->visitors($silent)->openerFor(self::TOKEN)->uid);
 
 		$failing = $this->createMock(ICacheFactory::class);
 		$failing->method('isAvailable')->willReturn(true);
 		$failing->method('createDistributed')->willThrowException(new \RuntimeException('Redis server went away'));
 		$logger = $this->createMock(LoggerInterface::class);
 		$logger->expects($this->once())->method('warning');
-		$this->assertSame(self::LINK, $this->visitors($failing, $logger)->uidFor(self::TOKEN));
+		$this->assertSame(self::LINK, $this->visitors($failing, $logger)->openerFor(self::TOKEN)->uid);
 		$this->assertSame([], $this->session->getArrayCopy());
 	}
 
@@ -166,12 +167,42 @@ class PublicLinkVisitorsTest extends TestCase {
 	 */
 	public function testAVisitorCountedInALaterHourIsNotCountedAgain(): void {
 		$this->clock->advance(3600);
-		$own = $this->visitors($this->memcache())->uidFor(self::TOKEN);
+		$own = $this->visitors($this->memcache())->openerFor(self::TOKEN)->uid;
 		$this->clock->advance(-3600);
 		$untouched = $this->createMock(ICacheFactory::class);
 		$untouched->expects($this->never())->method('createDistributed');
 
-		$this->assertSame($own, $this->visitors($untouched)->uidFor(self::TOKEN));
+		$this->assertSame($own, $this->visitors($untouched)->openerFor(self::TOKEN)->uid);
+	}
+
+	/** A visitor opens under no name, to set their own; the link under the one it always had. */
+	public function testAVisitorOpensUnderNoNameTheLinkUnderItsOwn(): void {
+		$visitor = $this->visitors($this->memcache())->openerFor(self::TOKEN);
+		$factory = $this->createMock(ICacheFactory::class);
+		$factory->method('isAvailable')->willReturn(false);
+		$this->session = new \ArrayObject();
+		$link = $this->visitors($factory)->openerFor(self::TOKEN);
+
+		$this->assertSame(['', ''], [$visitor->displayName, $visitor->authorId]);
+		$this->assertSame([self::LINK, PublicLinkVisitors::LINK_AUTHOR_NAME, ''], [$link->uid, $link->displayName, $link->authorId]);
+	}
+
+	/**
+	 * The author a visitor opened as is kept beside their id, so the next
+	 * open need not ask Etherpad for it - in a new hour too. Not for the
+	 * link, and not for another visitor's opener.
+	 */
+	public function testAVisitorsAuthorIsKeptForTheirNextOpen(): void {
+		$cache = $this->memcache();
+		$opener = $this->visitors($cache)->openerFor(self::TOKEN);
+		$this->visitors($cache)->rememberAuthor(self::TOKEN, $opener, 'a.visitor');
+		$this->visitors($cache)->rememberAuthor(self::TOKEN, new PublicLinkOpener(self::LINK, PublicLinkVisitors::LINK_AUTHOR_NAME, ''), 'a.link');
+		$this->visitors($cache)->rememberAuthor(self::TOKEN, new PublicLinkOpener(self::LINK . ':' . str_repeat('ab', 16), '', ''), 'a.other');
+		$this->clock->advance(3600);
+		$next = $this->visitors($cache)->openerFor(self::TOKEN);
+
+		$this->assertSame($opener->uid, $next->uid);
+		$this->assertSame('a.visitor', $next->authorId);
 	}
 
 	/** A visitor's uid is told from the link's and a user's by its form. */
@@ -185,13 +216,14 @@ class PublicLinkVisitorsTest extends TestCase {
 
 	/** Neither the session nor the cache holds the token: their keys are HMACs. */
 	public function testNoKeyCarriesTheToken(): void {
-		$this->visitors($this->memcache())->uidFor(self::TOKEN);
+		$this->visitors($this->memcache())->openerFor(self::TOKEN)->uid;
 
 		$this->assertNotEmpty($this->session->getArrayCopy());
 		$this->assertNotEmpty($this->held->getArrayCopy());
 		foreach ([...array_keys($this->session->getArrayCopy()), ...array_keys($this->held->getArrayCopy())] as $key) {
 			$this->assertStringNotContainsString(self::TOKEN, (string)$key);
 		}
+		$this->assertStringNotContainsString(self::TOKEN, json_encode($this->session->getArrayCopy(), JSON_THROW_ON_ERROR));
 	}
 
 	private function visitors(ICacheFactory $factory, ?LoggerInterface $logger = null): PublicLinkVisitors {

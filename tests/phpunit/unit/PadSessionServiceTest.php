@@ -6,6 +6,7 @@ namespace OCA\EtherpadNextcloud\Tests\Unit;
 
 use OCA\EtherpadNextcloud\Exception\PadFileFormatException;
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
+use OCA\EtherpadNextcloud\Exception\EtherpadRefusedException;
 use OCA\EtherpadNextcloud\Service\CookieDomainPolicy;
 use OCA\EtherpadNextcloud\Service\EtherpadClient;
 use OCA\EtherpadNextcloud\Service\PadSessionService;
@@ -537,7 +538,8 @@ class PadSessionServiceTest extends TestCase {
 		$service->extractGroupId('not-a-group-pad-id');
 	}
 
-	public function testCreateProtectedOpenContextUsesUidAsFallbackDisplayNameAndMinTtl(): void {
+	/** The name goes to Etherpad as it comes - a caller without one gives none - and the TTL has a floor. */
+	public function testCreateProtectedOpenContextGivesTheNameAsItComesAndAMinimumTtl(): void {
 		$uid = 'admin';
 		$padId = 'g.ABCDEFGHIJKLMNOP$pad-1';
 		$groupId = 'g.ABCDEFGHIJKLMNOP';
@@ -549,7 +551,7 @@ class PadSessionServiceTest extends TestCase {
 		$etherpadClient = $this->createMock(EtherpadClient::class);
 		$etherpadClient->expects($this->once())
 			->method('createAuthorIfNotExistsFor')
-			->with('nc:' . $uid, $uid)
+			->with('nc:' . $uid, '')
 			->willReturn($authorId);
 		$etherpadClient->expects($this->once())
 			->method('createSession')
@@ -577,7 +579,7 @@ class PadSessionServiceTest extends TestCase {
 			]);
 
 		$service = $this->buildService($etherpadClient, $config);
-		$result = $service->createProtectedOpenContext($uid, '   ', $padId, 10);
+		$result = $service->createProtectedOpenContext($uid, '', $padId, 10);
 		$resultUrl = $result['url'];
 
 		$this->assertSame($padUrl, $resultUrl);
@@ -586,6 +588,40 @@ class PadSessionServiceTest extends TestCase {
 		$this->assertSame('.example.test', $result['cookie']['domain']);
 		$this->assertSame('Lax', $result['cookie']['same_site']);
 		$this->assertTrue($result['cookie']['secure']);
+		$this->assertSame($authorId, $result['authorId']);
+	}
+
+	/**
+	 * An author kept elsewhere - a public link's visitor's, in their
+	 * session - is opened as without asking Etherpad for it, and handed
+	 * back; one Etherpad no longer has is asked for anew.
+	 */
+	public function testOpensAsAKnownAuthorWithoutAskingForIt(): void {
+		[$etherpadClient, $config] = $this->publicLinkFixtures();
+		$etherpadClient->expects($this->never())->method('createAuthorIfNotExistsFor');
+		$service = $this->buildService($etherpadClient, $config);
+
+		$result = $service->createProtectedOpenContext('public-share:token:' . str_repeat('0f', 16), '', 'g.ABCDEFGHIJKLMNOP$pad-1', 10800, 'a.kept');
+
+		$this->assertSame('a.kept', $result['authorId']);
+	}
+
+	public function testAsksForTheAuthorAnewWhenTheKnownOneFails(): void {
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->method('createSession')->willReturnCallback(static function (string $groupId, string $authorId): string {
+			if ($authorId === 'a.gone') {
+				throw new EtherpadRefusedException('Etherpad API error (createSession): authorID does not exist');
+			}
+			return 's.made0000000001';
+		});
+		$etherpadClient->expects($this->once())->method('createAuthorIfNotExistsFor')->with('nc:public-share:token:' . str_repeat('0f', 16), '')->willReturn('a.anew');
+		$etherpadClient->method('buildPadUrl')->willReturn('https://pad.example.test/p/pad');
+		[, $config] = $this->publicLinkFixtures();
+		$service = $this->buildService($etherpadClient, $config);
+
+		$result = $service->createProtectedOpenContext('public-share:token:' . str_repeat('0f', 16), '', 'g.ABCDEFGHIJKLMNOP$pad-1', 10800, 'a.gone');
+
+		$this->assertSame('a.anew', $result['authorId']);
 	}
 
 	/**

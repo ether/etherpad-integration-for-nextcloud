@@ -14,12 +14,12 @@ use OCA\EtherpadNextcloud\Exception\PadLostException;
 /**
  * Applies public-share-specific open rules for internal, protected and external pads.
  *
- * Public protected write access uses an anonymous public-share Etherpad author;
+ * Public protected write access opens as the visitor's own Etherpad author,
+ * or the link's (PublicLinkVisitors);
  * read-only protected access gets no pad address at all and is answered by
  * this app's own viewer, which loads the content separately.
  */
 class PublicPadOpenService {
-	private const PUBLIC_SHARE_AUTHOR_NAME = 'Public share';
 	/**
 	 * Nothing revokes this one - a visitor never logs out - so it is the
 	 * whole lifetime of a withdrawn share's write access. Shorter than an
@@ -61,17 +61,15 @@ class PublicPadOpenService {
 				return new PublicPadOpenTarget('', '', '', true);
 			}
 
-			// A visitor of their own is given no name: Etherpad lets them set
-			// one, and a name given on every open would overwrite it. The
-			// link's own author, for visitors past the hour's count, keeps
-			// the name it has always had.
-			$uid = $this->visitors->uidFor($token);
+			$opener = $this->visitors->openerFor($token);
 			$openContext = $this->padSessionService->createProtectedOpenContext(
-				$uid,
-				$uid === PadSessionService::PUBLIC_LINK_UID_PREFIX . $token ? self::PUBLIC_SHARE_AUTHOR_NAME : '',
+				$opener->uid,
+				$opener->displayName,
 				$padId,
-				self::PUBLIC_SHARE_SESSION_TTL_SECONDS
+				self::PUBLIC_SHARE_SESSION_TTL_SECONDS,
+				$opener->authorId,
 			);
+			$this->visitors->rememberAuthor($token, $opener, $openContext['authorId']);
 
 			return new PublicPadOpenTarget(
 				$openContext['url'],

@@ -43,6 +43,9 @@ class PublicLinkVisitors {
 	/** How many visitors of their own a link has an hour, with a memory cache. */
 	public const PER_HOUR = 250;
 
+	/** The name of the link's own author, which visitors past the count share. */
+	public const LINK_AUTHOR_NAME = 'Public share';
+
 	private const ID_LENGTH = 32;
 	private const ID_CHARACTERS = '0123456789abcdef';
 
@@ -61,26 +64,38 @@ class PublicLinkVisitors {
 	}
 
 	/**
-	 * The uid the visitor of this link opens as: their own, or the link's
-	 * when it has its visitors for the hour.
+	 * Who the visitor of this link opens as: themselves, or the link when
+	 * it has its visitors for the hour. A visitor is given no name -
+	 * Etherpad lets them set one, which a name given on every open would
+	 * overwrite - and the link's author keeps the one it always had.
 	 */
-	public function uidFor(string $token): string {
+	public function openerFor(string $token): PublicLinkOpener {
 		$link = PadSessionService::PUBLIC_LINK_UID_PREFIX . $token;
-		$sessionKey = Application::APP_ID . '_visitor_' . $this->linkCache->key('visitor', $token);
 		$hour = intdiv($this->timeFactory->getTime(), 3600);
-		[$visitor, $countedIn] = self::stored($this->session->get($sessionKey));
+		$stored = $this->stored($token);
 		// A later hour too: one written by a server whose clock is ahead.
-		if ($visitor !== '' && $countedIn >= $hour) {
-			return $link . ':' . $visitor;
+		if ($stored !== null && $stored['hour'] >= $hour) {
+			return new PublicLinkOpener($link . ':' . $stored['id'], '', $stored['author']);
 		}
 		if (!$this->admits($token, $hour)) {
-			return $link;
+			return new PublicLinkOpener($link, self::LINK_AUTHOR_NAME, '');
 		}
-		if ($visitor === '') {
-			$visitor = $this->random->generate(self::ID_LENGTH, self::ID_CHARACTERS);
+		$visitor = $stored['id'] ?? $this->random->generate(self::ID_LENGTH, self::ID_CHARACTERS);
+		$author = $stored['author'] ?? '';
+		$this->store($token, $visitor, $hour, $author);
+		return new PublicLinkOpener($link . ':' . $visitor, '', $author);
+	}
+
+	/**
+	 * Remember the Etherpad author $opener opened as, so the next open of
+	 * this visitor need not ask Etherpad for it. Nothing for the link.
+	 */
+	public function rememberAuthor(string $token, PublicLinkOpener $opener, string $authorId): void {
+		$stored = $this->stored($token);
+		if ($stored === null || $authorId === $stored['author'] || $opener->uid !== PadSessionService::PUBLIC_LINK_UID_PREFIX . $token . ':' . $stored['id']) {
+			return;
 		}
-		$this->session->set($sessionKey, $visitor . ':' . $hour);
-		return $link . ':' . $visitor;
+		$this->store($token, $stored['id'], $stored['hour'], $authorId);
 	}
 
 	/**
@@ -121,15 +136,30 @@ class PublicLinkVisitors {
 	}
 
 	/**
-	 * What the session holds: the visitor id this made, and the hour it
-	 * was last counted in - or '' and -1.
+	 * What the session holds for this link's visitor: their id, the hour
+	 * they were last counted in, and their Etherpad author if known.
 	 *
-	 * @return array{string, int}
+	 * @return ?array{id:string,hour:int,author:string}
 	 */
-	private static function stored(mixed $value): array {
-		if (!is_string($value) || preg_match('/^([0-9a-f]{' . self::ID_LENGTH . '}):(\d+)$/D', $value, $parts) !== 1) {
-			return ['', -1];
+	private function stored(string $token): ?array {
+		$value = $this->session->get($this->sessionKey($token));
+		if (!is_array($value)) {
+			return null;
 		}
-		return [$parts[1], (int)$parts[2]];
+		$id = $value['id'] ?? null;
+		$hour = $value['hour'] ?? null;
+		$author = $value['author'] ?? null;
+		if (!is_string($id) || preg_match('/^[0-9a-f]{' . self::ID_LENGTH . '}$/D', $id) !== 1 || !is_int($hour) || !is_string($author)) {
+			return null;
+		}
+		return ['id' => $id, 'hour' => $hour, 'author' => $author];
+	}
+
+	private function store(string $token, string $visitor, int $hour, string $author): void {
+		$this->session->set($this->sessionKey($token), ['id' => $visitor, 'hour' => $hour, 'author' => $author]);
+	}
+
+	private function sessionKey(string $token): string {
+		return Application::APP_ID . '_visitor_' . $this->linkCache->key('visitor', $token);
 	}
 }

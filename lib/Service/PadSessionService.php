@@ -88,19 +88,23 @@ class PadSessionService {
 	) {
 	}
 
-	/** @return array{url:string,cookie:array{name:string,value:string,expires:int,path:string,domain:string,secure:bool,http_only:bool,same_site:string}} */
-	public function createProtectedOpenContext(string $uid, string $displayName, string $padId, int $ttlSeconds = self::SESSION_TTL_SECONDS): array {
+	/**
+	 * The pad's address and the Etherpad session cookie for $uid, and the
+	 * author it opened as. $displayName is given to Etherpad as it is: ''
+	 * gives none. $knownAuthorId spares asking Etherpad for the author of
+	 * a uid whose author is kept elsewhere - a public link's visitor's.
+	 *
+	 * @return array{url:string,cookie:array{name:string,value:string,expires:int,path:string,domain:string,secure:bool,http_only:bool,same_site:string},authorId:string}
+	 */
+	public function createProtectedOpenContext(string $uid, string $displayName, string $padId, int $ttlSeconds = self::SESSION_TTL_SECONDS, string $knownAuthorId = ''): array {
 		$groupId = $this->extractGroupId($padId);
-		// Not the uid in place of a public link's name: it carries the token,
-		// and a link's visitor is meant to have none, to set their own.
-		$effectiveDisplayName = trim($displayName) !== '' || str_starts_with($uid, self::PUBLIC_LINK_UID_PREFIX) ? $displayName : $uid;
 		$safeTtlSeconds = max(60, $ttlSeconds);
 		$validUntil = $this->timeFactory->getTime() + $safeTtlSeconds;
-		$authorId = $this->resolveCachedAuthorId($uid);
+		$authorId = $knownAuthorId !== '' ? $knownAuthorId : $this->resolveCachedAuthorId($uid);
 		if ($authorId !== '') {
-			$authorId = $this->syncAuthorMapping($uid, $authorId, $effectiveDisplayName);
+			$authorId = $this->syncAuthorMapping($uid, $authorId, $displayName);
 			try {
-				return $this->openContextFor($uid, $authorId, $groupId, $padId, $validUntil);
+				return [...$this->openContextFor($uid, $authorId, $groupId, $padId, $validUntil), 'authorId' => $authorId];
 			} catch (EtherpadClientException) {
 				// Nothing is cleared. The author id is the one route from a
 				// uid to that user's live sessions, and dropping it because
@@ -112,10 +116,10 @@ class PadSessionService {
 			}
 		}
 
-		$authorId = $this->etherpadClient->createAuthorIfNotExistsFor('nc:' . $uid, $effectiveDisplayName);
+		$authorId = $this->etherpadClient->createAuthorIfNotExistsFor('nc:' . $uid, $displayName);
 		$this->rememberAuthorId($uid, $authorId);
-		$this->rememberAuthorName($uid, $effectiveDisplayName);
-		return $this->openContextFor($uid, $authorId, $groupId, $padId, $validUntil);
+		$this->rememberAuthorName($uid, $displayName);
+		return [...$this->openContextFor($uid, $authorId, $groupId, $padId, $validUntil), 'authorId' => $authorId];
 	}
 
 	/**

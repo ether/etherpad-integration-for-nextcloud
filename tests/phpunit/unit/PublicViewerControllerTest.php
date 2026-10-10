@@ -144,7 +144,7 @@ class PublicViewerControllerTest extends TestCase {
 		$padSessionService->expects($this->once())
 			->method('createProtectedOpenContext')
 			->with('public-share:share-token:0123456789abcdef0123456789abcdef', '', 'g.abcdefghijklmnop$Shared', $this->anything())
-			->willReturn(['url' => 'https://pad.example.test/p/g.abcdefghijklmnop$Shared', 'cookie' => $cookie]);
+			->willReturn(['url' => 'https://pad.example.test/p/g.abcdefghijklmnop$Shared', 'cookie' => $cookie, 'authorId' => 'a.visitor']);
 		$padSessionService->expects($this->once())
 			->method('buildSetCookieHeader')
 			->with($cookie)
@@ -482,7 +482,7 @@ class PublicViewerControllerTest extends TestCase {
 	/** Every visitor here is the share's own visitor, as a first open makes one. */
 	private function visitors(): \OCA\EtherpadNextcloud\Service\PublicLinkVisitors {
 		$visitors = $this->createMock(\OCA\EtherpadNextcloud\Service\PublicLinkVisitors::class);
-		$visitors->method('uidFor')->willReturnCallback(static fn (string $token): string => 'public-share:' . $token . ':0123456789abcdef0123456789abcdef');
+		$visitors->method('openerFor')->willReturnCallback(static fn (string $token): \OCA\EtherpadNextcloud\Service\PublicLinkOpener => new \OCA\EtherpadNextcloud\Service\PublicLinkOpener('public-share:' . $token . ':0123456789abcdef0123456789abcdef', '', ''));
 		return $visitors;
 	}
 }
