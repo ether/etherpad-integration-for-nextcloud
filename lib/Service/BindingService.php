@@ -42,6 +42,9 @@ class BindingService {
 	/** The mount provider of a share's mounts, which anyInFiles() does not count. */
 	private const SHARE_MOUNT_PROVIDER = 'OCA\\Files_Sharing\\MountProvider';
 
+	/** The mounts anyInFiles() reads a query, a page at a time. */
+	private const MOUNTS_A_PAGE = 20;
+
 	public function __construct(
 		private IDBConnection $db,
 		private ITimeFactory $timeFactory,
@@ -375,33 +378,46 @@ class BindingService {
 	 * @param list<string> $roots
 	 */
 	private function mountedAbove(int $storage, array $roots, bool $underFiles): bool {
-		$qb = $this->db->getQueryBuilder();
-		$qb->select('m.mount_point')
-			->from('mounts', 'm')
-			->innerJoin('m', 'filecache', 'f', $qb->expr()->eq('m.root_id', 'f.fileid'))
-			->where($qb->expr()->eq('m.storage_id', $qb->createNamedParameter($storage, IQueryBuilder::PARAM_INT)))
-			// Implied by the join, and what lets the file cache's index on
-			// storage and path hash find the roots.
-			->andWhere($qb->expr()->eq('f.storage', $qb->createNamedParameter($storage, IQueryBuilder::PARAM_INT)))
-			->andWhere($qb->expr()->in('f.path_hash', $qb->createNamedParameter(array_map('md5', $roots), IQueryBuilder::PARAM_STR_ARRAY)))
-			->andWhere($qb->expr()->orX(
-				$qb->expr()->isNull('m.mount_provider_class'),
-				$qb->expr()->neq('m.mount_provider_class', $qb->createNamedParameter(self::SHARE_MOUNT_PROVIDER)),
-			));
-		if (!$underFiles) {
-			// Narrowed here to the mounts that can show it, so the limit
-			// below cannot hide one among a team folder trash's many.
-			$qb->andWhere($qb->expr()->like('m.mount_point', $qb->createNamedParameter('/%/files/%')));
+		for ($offset = 0; ; $offset += self::MOUNTS_A_PAGE) {
+			$qb = $this->db->getQueryBuilder();
+			$qb->select('m.mount_point')
+				->from('mounts', 'm')
+				->innerJoin('m', 'filecache', 'f', $qb->expr()->eq('m.root_id', 'f.fileid'))
+				->where($qb->expr()->eq('m.storage_id', $qb->createNamedParameter($storage, IQueryBuilder::PARAM_INT)))
+				// Implied by the join, and what lets the file cache's index on
+				// storage and path hash find the roots.
+				->andWhere($qb->expr()->eq('f.storage', $qb->createNamedParameter($storage, IQueryBuilder::PARAM_INT)))
+				->andWhere($qb->expr()->in('f.path_hash', $qb->createNamedParameter(array_map('md5', $roots), IQueryBuilder::PARAM_STR_ARRAY)))
+				->andWhere($qb->expr()->orX(
+					$qb->expr()->isNull('m.mount_provider_class'),
+					$qb->expr()->neq('m.mount_provider_class', $qb->createNamedParameter(self::SHARE_MOUNT_PROVIDER)),
+				));
+			if ($underFiles) {
+				// Any one answers.
+				$qb->setMaxResults(1);
+			} else {
+				// Narrowed to mount points with `/files/` in them, so a team
+				// folder trash mounted for each of its users does not fill
+				// the page; read a page at a time, in order, as the pattern
+				// lets past one with `/files/` further in, which the check
+				// below turns down: none of those may hide one that counts.
+				$qb->andWhere($qb->expr()->like('m.mount_point', $qb->createNamedParameter('/%/files/%')))
+					->orderBy('m.id')
+					->setFirstResult($offset)
+					->setMaxResults(self::MOUNTS_A_PAGE);
+			}
+			$result = $qb->executeQuery();
+			$read = 0;
+			$seen = false;
+			while (!$seen && ($row = DbRows::one($result->fetch())) !== null) {
+				$read++;
+				$seen = $underFiles || preg_match('#^/[^/]+/files/#', DbRows::string($row, 'mount_point')) === 1;
+			}
+			$result->closeCursor();
+			if ($seen || $underFiles || $read < self::MOUNTS_A_PAGE) {
+				return $seen;
+			}
 		}
-		// Every row answers yes but for the rare one the pattern lets past.
-		$qb->setMaxResults(20);
-		$result = $qb->executeQuery();
-		$seen = false;
-		while (!$seen && ($row = DbRows::one($result->fetch())) !== null) {
-			$seen = $underFiles || preg_match('#^/[^/]+/files/#', DbRows::string($row, 'mount_point')) === 1;
-		}
-		$result->closeCursor();
-		return $seen;
 	}
 
 	/**

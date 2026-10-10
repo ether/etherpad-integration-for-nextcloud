@@ -330,6 +330,25 @@ class BindingServiceTest extends TestCase {
 	}
 
 	/**
+	 * The query's pattern lets past a mount point with `/files/` further
+	 * in, which the check after it turns down: a page of those does not
+	 * end the search before the one that shows the file.
+	 */
+	public function testReadsOnPastAPageOfMountsThatDoNotCount(): void {
+		$fileCache = [['fileid' => 5, 'storage' => 5, 'path' => '', 'path_hash' => md5('')]];
+		$mounts = [];
+		for ($user = 1; $user <= 45; $user++) {
+			$mounts[] = ['id' => $user, 'storage_id' => 5, 'root_id' => 5, 'mount_point' => '/user' . $user . '/files_trashbin/files/', 'mount_provider_class' => 'OCA\\Files_External\\Config\\ConfigAdapter'];
+		}
+		$table = new InMemoryBindingTable([], $fileCache, [...$mounts, ['id' => 46, 'storage_id' => 5, 'root_id' => 5, 'mount_point' => '/alice/files/SMB/', 'mount_provider_class' => 'OCA\\Files_External\\Config\\ConfigAdapter']]);
+		$service = new BindingService($table, new FixedClock(500));
+
+		$this->assertTrue($service->anyInFiles([1 => [5, 'trash/Notes.pad']]));
+		$this->assertCount(3, $table->read);
+		$this->assertFalse((new BindingService(new InMemoryBindingTable([], $fileCache, $mounts), new FixedClock(500)))->anyInFiles([1 => [5, 'trash/Notes.pad']]));
+	}
+
+	/**
 	 * Only the mounts rooted at the file or above it are read, a few of
 	 * them: a storage holds one for every user of every team folder on it,
 	 * and the right one need not be among the first.

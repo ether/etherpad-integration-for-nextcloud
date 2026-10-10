@@ -40,6 +40,7 @@ final class InMemoryBindingQuery implements IQueryBuilder {
 	private ?string $orderBy = null;
 	private string $direction = 'ASC';
 	private ?int $limit = null;
+	private int $offset = 0;
 
 	public function __construct(private InMemoryBindingTable $db) {
 	}
@@ -106,6 +107,11 @@ final class InMemoryBindingQuery implements IQueryBuilder {
 	public function orderBy(string $column, string $direction = 'ASC'): self {
 		$this->orderBy = $column;
 		$this->direction = strtoupper($direction);
+		return $this;
+	}
+
+	public function setFirstResult(int $offset): self {
+		$this->offset = $offset;
 		return $this;
 	}
 
@@ -218,7 +224,7 @@ final class InMemoryBindingQuery implements IQueryBuilder {
 			$sign = $this->direction === 'DESC' ? -1 : 1;
 			usort($rows, fn (array $a, array $b): int => $sign * ((int)$this->value($a, $column) <=> (int)$this->value($b, $column)));
 		}
-		$rows = array_slice($rows, 0, $this->limit);
+		$rows = array_slice($rows, $this->offset, $this->limit);
 		$this->db->read[] = count($rows);
 		return $this->result(array_map(fn (array $row): array => $this->projected($row), $rows));
 	}
