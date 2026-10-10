@@ -55,6 +55,15 @@ class EtherpadClient {
 	public const PREVIEW_MAX_BYTES = 5242880;
 
 	/**
+	 * What a session listing may weigh: tens of thousands of sessions, far
+	 * past what a run deletes or a cookie carries, and decoded well within
+	 * a background job's memory. Etherpad answers a listing in one body,
+	 * which would otherwise be read whole however long, and a process out
+	 * of memory reaches no catch.
+	 */
+	public const SESSION_LISTING_MAX_BYTES = 4194304;
+
+	/**
 	 * `/health` gets far less patience than an API call.
 	 *
 	 * Nothing depends on the answer: the caller falls back to the last known
@@ -286,6 +295,7 @@ class EtherpadClient {
 	 * @param ?int $unreadableEntries set to how many ids the index listed
 	 *   that Etherpad could not describe — see below
 	 * @return array<string,array{groupID:string,validUntil:int}>
+	 * @throws EtherpadTooLargeException past SESSION_LISTING_MAX_BYTES
 	 */
 	public function listSessionsOfAuthor(
 		string $authorId,
@@ -294,7 +304,7 @@ class EtherpadClient {
 	): array {
 		// POST like every other authenticated call: a GET would put the
 		// apikey in the URL, and from there into proxy and access logs.
-		$data = $this->apiCall('listSessionsOfAuthor', ['authorID' => $authorId], timeoutSeconds: $timeoutSeconds);
+		$data = $this->apiCall('listSessionsOfAuthor', ['authorID' => $authorId], timeoutSeconds: $timeoutSeconds, maxBytes: self::SESSION_LISTING_MAX_BYTES);
 		return $this->sessionsIn($data, $unreadableEntries);
 	}
 
@@ -306,13 +316,14 @@ class EtherpadClient {
 	 * @param ?int $unreadableEntries set to how many ids the index listed
 	 *   that Etherpad could not describe
 	 * @return array<string,array{groupID:string,validUntil:int}>
+	 * @throws EtherpadTooLargeException past SESSION_LISTING_MAX_BYTES
 	 */
 	public function listSessionsOfGroup(
 		string $groupId,
 		?int $timeoutSeconds = null,
 		?int &$unreadableEntries = null,
 	): array {
-		$data = $this->apiCall('listSessionsOfGroup', ['groupID' => $groupId], timeoutSeconds: $timeoutSeconds);
+		$data = $this->apiCall('listSessionsOfGroup', ['groupID' => $groupId], timeoutSeconds: $timeoutSeconds, maxBytes: self::SESSION_LISTING_MAX_BYTES);
 		return $this->sessionsIn($data, $unreadableEntries);
 	}
 

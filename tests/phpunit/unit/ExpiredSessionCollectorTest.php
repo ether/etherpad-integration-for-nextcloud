@@ -138,6 +138,17 @@ class ExpiredSessionCollectorTest extends TestCase {
 		self::assertSame(['deleted' => 2, 'remaining' => 0, 'retry' => false, 'nextDueAt' => FixedClock::NOW + 3600 + EtherpadClient::CLOCK_SKEW_ALLOWANCE_SECONDS], $result);
 	}
 
+	/** A listing too long to read is a failed one: tried again, and said. */
+	public function testAListingTooLongToReadIsTriedAgain(): void {
+		$client = $this->createMock(EtherpadClient::class);
+		$client->method('listSessionsOfGroup')->willThrowException(new \OCA\EtherpadNextcloud\Exception\EtherpadTooLargeException('Etherpad API response exceeds 4194304 bytes.'));
+		$client->expects(self::never())->method('deleteSession');
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects(self::once())->method('warning')->with('Could not list the Etherpad sessions to collect.', self::anything());
+
+		self::assertSame(['deleted' => 0, 'remaining' => 0, 'retry' => true, 'nextDueAt' => null], $this->collector($client, logger: $logger)->collectGroup(self::GROUP));
+	}
+
 	/**
 	 * A group Etherpad no longer has holds nothing to collect, and the
 	 * sweep ends; one that cannot be listed is tried again, and said, under

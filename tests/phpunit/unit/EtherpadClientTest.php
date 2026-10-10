@@ -523,6 +523,33 @@ class EtherpadClientTest extends TestCase {
 		}
 	}
 
+	/**
+	 * A session listing is read into a capped sink too: tens of thousands
+	 * of sessions arrive in one body, and read whole they could take a
+	 * background job's memory with them, past any catch. Up to the cap a
+	 * body is read.
+	 */
+	public function testASessionListingPastTheCapIsRefused(): void {
+		$listings = [
+			'an author\'s' => static fn (EtherpadClient $client): array => $client->listSessionsOfAuthor('a.author'),
+			'a group\'s' => static fn (EtherpadClient $client): array => $client->listSessionsOfGroup('g.AAAAAAAAAAAAAAAA'),
+		];
+		foreach ($listings as $case => $list) {
+			try {
+				$list($this->clientWritingIntoTheSink(EtherpadClient::SESSION_LISTING_MAX_BYTES + 1));
+				$this->fail($case . ': the oversized listing was read');
+			} catch (EtherpadTooLargeException) {
+				$this->addToAssertionCount(1);
+			}
+			try {
+				$list($this->clientWritingIntoTheSink(EtherpadClient::SESSION_LISTING_MAX_BYTES));
+				$this->fail($case . ': a body of no JSON was taken for a listing');
+			} catch (EtherpadClientException $e) {
+				$this->assertNotInstanceOf(EtherpadTooLargeException::class, $e, $case . ': at the cap the body is read');
+			}
+		}
+	}
+
 	public function testPreviewExportAsksForTheCappedSink(): void {
 		$captured = null;
 		$body = (string)json_encode(['code' => 0, 'data' => ['html' => '<p>small</p>']]);

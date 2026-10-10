@@ -48,9 +48,10 @@ abstract class SessionSweepJob extends QueuedJob {
 
 	/**
 	 * One pass over $item: what it deleted, what it found and left for the
-	 * next pass, whether Etherpad refused, when to look again though
-	 * nothing is left, if ever, and whether the sweep is over whatever is
-	 * left (`ended`): then no second look either.
+	 * next pass, whether it did not get through - Etherpad refusing, not
+	 * answering in time, an answer too long to read - when to look again
+	 * though nothing is left, if ever, and whether the sweep is over
+	 * whatever is left (`ended`): then no second look either.
 	 *
 	 * @return array{deleted:int,remaining:int,retry:bool,nextDueAt:?int,ended?:bool}
 	 */

@@ -336,7 +336,9 @@ The id is also all that is stored. A public link's uid is
 arguments are persisted and printed by `occ`.
 
 A run deletes up to 250 sessions within 20 seconds, requeueing itself for
-the rest. A refusal is requeued with a growing delay and a limit; sessions
+the rest. A listing is read up to 4 MiB, tens of thousands of sessions; a
+longer one is refused as a failed listing is, rather than read whole into
+a job's memory. A refusal is requeued with a growing delay and a limit; sessions
 the server will never delete are skipped rather than allowed to block the
 ones behind them, up to twenty refusals in a row and fifty in a run - a failure that reads
 as Etherpad unreachable, when Etherpad then does not answer at all, is an
