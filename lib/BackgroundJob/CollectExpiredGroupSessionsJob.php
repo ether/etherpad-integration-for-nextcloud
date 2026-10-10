@@ -17,9 +17,10 @@ use Psr\Log\LoggerInterface;
 /**
  * Works through one group's expired Etherpad sessions, every author's in
  * it - a public link's visitors, signed-in users, a legacy group's other
- * pads. A public link's open queues it (ExpiredSessionCollector says
- * why). Paced as the collector of an author's is
- * (CollectExpiredSessionsJob), and the argument holds the group's id alone.
+ * pads. A public link's open that made a session queues it
+ * (ExpiredSessionCollector says why). Paced as the collector of an
+ * author's is (CollectExpiredSessionsJob), but back for a live session an
+ * hour on at the soonest; the argument holds the group's id alone.
  */
 class CollectExpiredGroupSessionsJob extends SessionSweepJob {
 	public function __construct(
@@ -40,10 +41,10 @@ class CollectExpiredGroupSessionsJob extends SessionSweepJob {
 	}
 
 	protected function lostPassMessage(): string {
-		return 'Could not queue the next sweep of a group\'s expired Etherpad sessions; the rest waits for another open.';
+		return 'Could not queue the next sweep of a group\'s expired Etherpad sessions; the rest waits until an open queues it again.';
 	}
 
 	protected function gaveUpMessage(): string {
-		return 'Gave up a sweep of a group\'s expired Etherpad sessions after three retries without progress; the rest waits for another open.';
+		return 'Gave up a sweep of a group\'s expired Etherpad sessions after three retries without progress; the rest waits until an open queues it again.';
 	}
 }

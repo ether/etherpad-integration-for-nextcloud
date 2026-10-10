@@ -35,6 +35,9 @@ abstract class SessionSweepJob extends QueuedJob {
 	/** Backoff after a refusal. The table is also the limit on attempts. */
 	private const RETRY_DELAYS = [60, 300, 900];
 
+	/** How long a sweep that could not read its listing waits before it asks once more (park()). */
+	private const PARKED_DELAY_SECONDS = 86400;
+
 	public function __construct(
 		ITimeFactory $time,
 		private IJobList $jobList,
@@ -48,12 +51,13 @@ abstract class SessionSweepJob extends QueuedJob {
 
 	/**
 	 * One pass over $item: what it deleted, what it found and left for the
-	 * next pass, whether it did not get through - Etherpad refusing, not
-	 * answering in time, an answer too long to read - when to look again
-	 * though nothing is left, if ever, and whether the sweep is over
-	 * whatever is left (`ended`): then no second look either.
+	 * next pass, whether it did not get through and is worth a retry -
+	 * Etherpad refusing, or not answering - when to look again though
+	 * nothing is left, if ever, whether the sweep is over whatever is left
+	 * (`ended`): then no second look either, and whether its listing could
+	 * not be read in a run at all (`park`).
 	 *
-	 * @return array{deleted:int,remaining:int,retry:bool,nextDueAt:?int,ended?:bool}
+	 * @return array{deleted:int,remaining:int,retry:bool,nextDueAt:?int,ended?:bool,park?:bool}
 	 */
 	abstract protected function sweep(string $item): array;
 
@@ -65,7 +69,7 @@ abstract class SessionSweepJob extends QueuedJob {
 
 	/**
 	 * Whether giving up is worth a warning. A sweep of expired sessions,
-	 * which the next open queues anew, says it as info, or an outage would
+	 * which an open queues anew, says it as info, or an outage would
 	 * warn once for every item it met; one that leaves live access
 	 * standing warns (RevokeGroupSessionsJob).
 	 */
@@ -127,6 +131,7 @@ abstract class SessionSweepJob extends QueuedJob {
 				$arguments[] = $retry;
 			}
 		}
+		$arguments[] = $argument + ['parked' => 1];
 
 		return $arguments;
 	}
@@ -167,6 +172,10 @@ abstract class SessionSweepJob extends QueuedJob {
 		}
 
 		$result = $this->sweep($item);
+		if ($result['park'] ?? false) {
+			$this->park($item, isset($argument['parked']));
+			return;
+		}
 		if ($result['retry']) {
 			// A run that deleted something is not an outage: the server
 			// answered and the pile got smaller, so it waits out the delay
@@ -213,6 +222,24 @@ abstract class SessionSweepJob extends QueuedJob {
 		if ($lookAgain !== null && !$again) {
 			$this->reschedule($item, 0, $lookAgain, true);
 		}
+	}
+
+	/**
+	 * A sweep whose listing no run can read now - too long, or timing out
+	 * while Etherpad answers otherwise - waits a day once: asking sooner
+	 * would make Etherpad walk the whole index for nothing, and the parked
+	 * row keeps an open from queueing another meanwhile. Unread a second
+	 * time, it ends until an open queues it again: an index no one uses
+	 * costs nothing.
+	 */
+	private function park(string $item, bool $parkedBefore): void {
+		$context = ['app' => 'etherpad_nextcloud', static::key() => $item];
+		if ($parkedBefore) {
+			$this->logger->info('An Etherpad session sweep still could not read its listing in a run; it ends until an open queues it again.', $context);
+			return;
+		}
+		$this->logger->warning('An Etherpad session sweep could not read its listing in a run - too long, or too slow while Etherpad answers otherwise; it asks once more in a day.', $context);
+		$this->reschedule($item, 0, self::PARKED_DELAY_SECONDS, parked: true);
 	}
 
 	/**
@@ -264,13 +291,16 @@ abstract class SessionSweepJob extends QueuedJob {
 	 * so a plain row queued anew is a different row and cannot reset a
 	 * backoff.
 	 */
-	private function reschedule(string $item, int $attempt, int $delaySeconds, bool $again = false): void {
+	private function reschedule(string $item, int $attempt, int $delaySeconds, bool $again = false, bool $parked = false): void {
 		$argument = [static::key() => $item];
 		if ($again) {
 			$argument['again'] = 1;
 		}
 		if ($attempt > 0) {
 			$argument['attempt'] = $attempt;
+		}
+		if ($parked) {
+			$argument['parked'] = 1;
 		}
 
 		try {

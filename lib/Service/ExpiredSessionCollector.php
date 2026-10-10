@@ -47,14 +47,6 @@ class ExpiredSessionCollector {
 	private const MAX_PER_RUN = 250;
 
 	/**
-	 * How long a sweep whose listing cannot be read in a run - too long,
-	 * or too slow while Etherpad answers otherwise - waits before it asks
-	 * again: trying sooner would make Etherpad walk the whole index for
-	 * nothing, and the row keeps an open from queueing another meanwhile.
-	 */
-	private const LISTING_PARKED_SECONDS = 86400;
-
-	/**
 	 * The least a group's sweep waits before it comes back for a session
 	 * still live. A group's live sessions are everyone's - signed-in users
 	 * at the pad, for six hours each - so the earliest to expire is never
@@ -128,17 +120,18 @@ class ExpiredSessionCollector {
 	 * Delete what has expired, up to the run's budget.
 	 *
 	 * `remaining` means the run worked and did not finish; `retry` means it
-	 * did not get through - a listing that failed or timed out, a delete
-	 * refused. They must stay separate: the job removes its own
+	 * did not get through and is worth another try - a listing in an
+	 * outage, or refused, a delete refused. They must stay separate: the job removes its own
 	 * row before running, so a swallowed failure loses the backlog, and a
 	 * failure read as progress has the job returning every minute for good.
 	 * `nextDueAt` is when to come back though nothing is left to delete:
-	 * when the earliest live session becomes collectable, a day out for a
-	 * listing that cannot be read in a run, or null when nothing live is
-	 * left. An author Etherpad does not know holds nothing, and the sweep
-	 * ends.
+	 * when the earliest live session becomes collectable, or null when
+	 * nothing live is left. `park` says the listing cannot be read in a
+	 * run - too long, or timing out while Etherpad answers otherwise
+	 * (SessionSweepJob parks the sweep). An author Etherpad does not know
+	 * holds nothing, and the sweep ends.
 	 *
-	 * @return array{deleted:int,remaining:int,retry:bool,nextDueAt:?int}
+	 * @return array{deleted:int,remaining:int,retry:bool,nextDueAt:?int,park?:bool}
 	 */
 	public function collect(string $authorId): array {
 		$budget = new RunBudget($this->timeFactory, $this->budgetSeconds);
@@ -164,7 +157,7 @@ class ExpiredSessionCollector {
 	 * sweep ends; one with sessions still live comes back for them an hour
 	 * on at the soonest (GROUP_SWEEP_INTERVAL_SECONDS).
 	 *
-	 * @return array{deleted:int,remaining:int,retry:bool,nextDueAt:?int}
+	 * @return array{deleted:int,remaining:int,retry:bool,nextDueAt:?int,park?:bool}
 	 */
 	public function collectGroup(string $groupId): array {
 		$budget = new RunBudget($this->timeFactory, $this->budgetSeconds);
@@ -191,13 +184,13 @@ class ExpiredSessionCollector {
 	/**
 	 * What a listing that failed means for the sweep. $gone, the author or
 	 * group Etherpad no longer has: nothing to collect, and the sweep ends.
-	 * A listing too long to read, or too slow while Etherpad answers
-	 * otherwise: no run reads it sooner, so the sweep is parked for a day
-	 * (LISTING_PARKED_SECONDS). Anything else - Etherpad refusing, or not
-	 * answering at all - is tried again with the sweep's backoff.
+	 * A listing too long to read, or timing out while Etherpad answers
+	 * otherwise: no run reads it sooner, and the sweep asks to be parked
+	 * (SessionSweepJob::park()). Anything else - Etherpad refusing, an
+	 * HTTP error, not answering at all - is tried again with the backoff.
 	 *
 	 * @param array<string,string> $context whose sessions they are
-	 * @return array{deleted:int,remaining:int,retry:bool,nextDueAt:?int}
+	 * @return array{deleted:int,remaining:int,retry:bool,nextDueAt:?int,park?:bool}
 	 */
 	private function listingFailed(\Throwable $e, RunBudget $budget, array $context, bool $gone): array {
 		if ($gone) {
@@ -208,12 +201,14 @@ class ExpiredSessionCollector {
 			return ['deleted' => 0, 'remaining' => 0, 'retry' => false, 'nextDueAt' => null];
 		}
 		if ($e instanceof EtherpadTooLargeException || $this->tooSlowToList($e, $budget)) {
-			$this->logger->warning('The Etherpad sessions to collect are too many to list in a run; asked again in a day.', [
+			// The line that says so is the job's, which knows whether the
+			// sweep was parked before; this one keeps the cause.
+			$this->logger->debug('Could not read the Etherpad sessions to collect in a run.', [
 				'app' => 'etherpad_nextcloud',
 				...$context,
 				...SafeError::context($e),
 			]);
-			return ['deleted' => 0, 'remaining' => 0, 'retry' => false, 'nextDueAt' => $this->timeFactory->getTime() + self::LISTING_PARKED_SECONDS];
+			return ['deleted' => 0, 'remaining' => 0, 'retry' => false, 'nextDueAt' => null, 'park' => true];
 		}
 		$this->logger->warning('Could not list the Etherpad sessions to collect.', [
 			'app' => 'etherpad_nextcloud',
@@ -224,12 +219,12 @@ class ExpiredSessionCollector {
 	}
 
 	/**
-	 * Whether a listing that read as Etherpad unreachable - a timeout - was
-	 * this listing's alone: Etherpad answers otherwise. Without time left
-	 * to ask, it is taken for an outage.
+	 * Whether a listing that timed out was this listing's alone: Etherpad
+	 * answers otherwise. An HTTP error or a broken answer is no slowness,
+	 * and without time left to ask, it is taken for an outage.
 	 */
 	private function tooSlowToList(\Throwable $e, RunBudget $budget): bool {
-		if (!EtherpadClientException::isEtherpadUnreachable($e)) {
+		if (!EtherpadClientException::isEtherpadUnreachable($e) || !EtherpadErrorClassifier::isTimeout($e)) {
 			return false;
 		}
 		try {

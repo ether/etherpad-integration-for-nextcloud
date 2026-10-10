@@ -44,6 +44,15 @@ final class EtherpadErrorClassifier {
 	}
 
 	/**
+	 * A request that ran out of time on the way - cURL's error 28, as the
+	 * HTTP client words it - rather than one Etherpad answered badly, or a
+	 * connection it refused.
+	 */
+	public static function isTimeout(\Throwable $error): bool {
+		return self::mentions($error, ['curl error 28', 'timed out']);
+	}
+
+	/**
 	 * An author Etherpad does not know - one whose id a cache kept after a
 	 * reset, say. Measured: listing its sessions answers `authorID does
 	 * not exist`.

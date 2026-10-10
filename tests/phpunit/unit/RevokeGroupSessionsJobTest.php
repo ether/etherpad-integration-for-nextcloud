@@ -245,6 +245,7 @@ class RevokeGroupSessionsJobTest extends TestCase {
 			$again + ['attempt' => 1],
 			$again + ['attempt' => 2],
 			$again + ['attempt' => 3],
+			['groupId' => self::GROUP, 'parked' => 1],
 		]), $removed);
 	}
 

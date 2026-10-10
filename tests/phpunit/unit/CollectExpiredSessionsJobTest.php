@@ -108,7 +108,7 @@ class CollectExpiredSessionsJobTest extends TestCase {
 		$logger = $this->createMock(LoggerInterface::class);
 		$logger->expects(self::never())->method('warning');
 		$logger->expects(self::once())->method('info')->with(
-			'Gave up an Etherpad session sweep after three retries without progress; the rest waits for another open.',
+			'Gave up an Etherpad session sweep after three retries without progress; the rest waits until an open queues it again.',
 			self::callback(static fn (array $context): bool => $context['authorId'] === 'a.author' && $context['attempts'] === 3),
 		);
 
@@ -332,7 +332,31 @@ class CollectExpiredSessionsJobTest extends TestCase {
 			['authorId' => 'a', 'attempt' => 1],
 			['authorId' => 'a', 'attempt' => 2],
 			['authorId' => 'a', 'attempt' => 3],
+			['authorId' => 'a', 'parked' => 1],
 		], $asked);
+	}
+
+	/**
+	 * A listing no run can read is parked a day once, with a warning; read
+	 * no better then, the sweep ends, said as info, and the next open
+	 * queues it again.
+	 */
+	public function testParksASweepItCannotListOnceThenEnds(): void {
+		foreach ([['authorId' => 'a.author'], ['authorId' => 'a.author', 'parked' => 1]] as $argument) {
+			$parkedBefore = isset($argument['parked']);
+			$collector = $this->createMock(ExpiredSessionCollector::class);
+			$collector->method('collect')->willReturn(['deleted' => 0, 'remaining' => 0, 'retry' => false, 'nextDueAt' => null, 'park' => true]);
+			$jobList = $this->createMock(IJobList::class);
+			$jobList->expects($parkedBefore ? self::never() : self::once())->method('scheduleAfter')
+				->with(CollectExpiredSessionsJob::class, 1_000_000 + 86400, ['authorId' => 'a.author', 'parked' => 1]);
+			$logger = $this->createMock(LoggerInterface::class);
+			$logger->expects($parkedBefore ? self::never() : self::once())->method('warning')->with(self::stringContains('asks once more in a day'));
+			$logger->expects($parkedBefore ? self::once() : self::never())->method('info')->with(self::stringContains('it ends until an open queues it again'));
+
+			$job = $this->job($collector, $jobList, $logger);
+			$job->setArgument($argument);
+			$job->start($jobList);
+		}
 	}
 
 	private function job(

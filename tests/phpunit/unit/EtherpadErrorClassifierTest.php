@@ -45,6 +45,19 @@ class EtherpadErrorClassifierTest extends TestCase {
 		self::assertFalse(EtherpadErrorClassifier::isSessionAlreadyGone(new \RuntimeException('Connection timed out')));
 	}
 
+	public function testReadsAnAuthorAsUnknownOnlyForAnAuthorAnswer(): void {
+		self::assertTrue(EtherpadErrorClassifier::isAuthorUnknown(new \RuntimeException('Etherpad API error (listSessionsOfAuthor): authorID does not exist')));
+		self::assertFalse(EtherpadErrorClassifier::isAuthorUnknown(new \RuntimeException('groupID does not exist')));
+		self::assertFalse(EtherpadErrorClassifier::isAuthorUnknown(new \RuntimeException('Connection timed out')));
+	}
+
+	/** A request out of time, as the HTTP client words it, through the client's wrapping; an HTTP error is none. */
+	public function testReadsATimeoutOnlyForOne(): void {
+		self::assertTrue(EtherpadErrorClassifier::isTimeout(new \RuntimeException('Etherpad API request failed: listSessionsOfGroup', 0, new \RuntimeException('cURL error 28: Operation timed out after 15001 milliseconds with 0 bytes received'))));
+		self::assertFalse(EtherpadErrorClassifier::isTimeout(new \RuntimeException('Etherpad API request failed: listSessionsOfGroup', 0, new \RuntimeException('Etherpad API HTTP error (502)'))));
+		self::assertFalse(EtherpadErrorClassifier::isTimeout(new \RuntimeException('Invalid JSON response from Etherpad API.')));
+	}
+
 	/** The client wraps Etherpad's text, so the answer arrives as a cause. */
 	public function testLooksThroughTheWrapping(): void {
 		$wrapped = new \RuntimeException('Etherpad API request failed: deletePad', 0, new \RuntimeException('padID does not exist'));

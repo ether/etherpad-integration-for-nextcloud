@@ -35,14 +35,14 @@ class CollectExpiredGroupSessionsJobTest extends TestCase {
 		$this->start($collector, $jobList, ['groupId' => self::GROUP]);
 	}
 
-	/** Giving up is info, as the next open of the link queues the sweep anew. */
+	/** Giving up is info, as the link's next open that makes a session queues the sweep anew. */
 	public function testSaysItGaveUpAsInfo(): void {
 		$collector = $this->createMock(ExpiredSessionCollector::class);
 		$collector->method('collectGroup')->willReturn(['deleted' => 0, 'remaining' => 0, 'retry' => true, 'nextDueAt' => null]);
 		$logger = $this->createMock(LoggerInterface::class);
 		$logger->expects(self::never())->method('warning');
 		$logger->expects(self::once())->method('info')->with(
-			'Gave up a sweep of a group\'s expired Etherpad sessions after three retries without progress; the rest waits for another open.',
+			'Gave up a sweep of a group\'s expired Etherpad sessions after three retries without progress; the rest waits until an open queues it again.',
 			self::callback(static fn (array $context): bool => $context['groupId'] === self::GROUP),
 		);
 

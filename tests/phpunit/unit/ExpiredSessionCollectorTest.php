@@ -17,10 +17,10 @@ use OCA\EtherpadNextcloud\Service\EtherpadClient;
 use OCA\EtherpadNextcloud\Service\ExpiredSessionCollector;
 use OCA\EtherpadNextcloud\Service\ManagedPadLifecycle;
 use OCA\EtherpadNextcloud\Service\SessionDeletes;
+use OCA\EtherpadNextcloud\Tests\Support\FixedClock;
 use OCP\BackgroundJob\IJobList;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
-use OCA\EtherpadNextcloud\Tests\Support\FixedClock;
 
 /**
  * Etherpad never removes an expired session, and listSessionsOfAuthor
@@ -140,14 +140,15 @@ class ExpiredSessionCollectorTest extends TestCase {
 	}
 
 	/**
-	 * A listing too long to read, or too slow while Etherpad answers
-	 * otherwise, is read no sooner by a run: the sweep is parked for a day,
-	 * with a line, and reads it only then. The cap is the sweep's to ask for.
+	 * A listing too long to read, or one that timed out while Etherpad
+	 * answers otherwise, is read no sooner by a run: the sweep asks to be
+	 * parked, keeping the cause at debug (SessionSweepJob says the rest).
+	 * The cap is the sweep's to ask for.
 	 */
-	public function testAListingThatCannotBeReadParksTheSweepForADay(): void {
+	public function testAListingThatCannotBeReadAsksToBeParked(): void {
 		$failures = [
-			'too long' => new EtherpadTooLargeException('Etherpad API response exceeds 4194304 bytes.'),
-			'too slow' => new EtherpadClientException('Etherpad API request failed: listSessionsOfGroup'),
+			'too long' => static fn (string $method): \Throwable => new EtherpadTooLargeException('Etherpad API response exceeds 4194304 bytes.'),
+			'too slow' => static fn (string $method): \Throwable => new EtherpadClientException('Etherpad API request failed: ' . $method, 0, new \RuntimeException('cURL error 28: Operation timed out after 15001 milliseconds with 0 bytes received')),
 		];
 		$listings = [
 			'a group\'s' => ['listSessionsOfGroup', self::GROUP, 'groupId', static fn (ExpiredSessionCollector $c): array => $c->collectGroup(self::GROUP)],
@@ -158,15 +159,18 @@ class ExpiredSessionCollectorTest extends TestCase {
 				$client = $this->createMock(EtherpadClient::class);
 				$client->expects(self::once())->method($method)
 					->with($id, self::anything(), self::anything(), EtherpadClient::SESSION_LISTING_MAX_BYTES)
-					->willThrowException($failure);
+					->willThrowException($failure($method));
 				$client->expects(self::never())->method('deleteSession');
+				// The probe gets what is left of the run.
+				$client->method('assertAnswering')->with(self::callback(static fn (mixed $timeout): bool => is_int($timeout)));
 				$logger = $this->createMock(LoggerInterface::class);
-				$logger->expects(self::once())->method('warning')->with(
-					'The Etherpad sessions to collect are too many to list in a run; asked again in a day.',
+				$logger->expects(self::never())->method('warning');
+				$logger->expects(self::once())->method('debug')->with(
+					'Could not read the Etherpad sessions to collect in a run.',
 					self::callback(static fn (array $context): bool => $context[$key] === $id),
 				);
 
-				self::assertSame(['deleted' => 0, 'remaining' => 0, 'retry' => false, 'nextDueAt' => FixedClock::NOW + 86400], $collect($this->collector($client, logger: $logger)), $listing . ', ' . $case);
+				self::assertSame(['deleted' => 0, 'remaining' => 0, 'retry' => false, 'nextDueAt' => null, 'park' => true], $collect($this->collector($client, logger: $logger)), $listing . ', ' . $case);
 			}
 		}
 	}
@@ -234,6 +238,33 @@ class ExpiredSessionCollectorTest extends TestCase {
 
 			self::assertSame(['deleted' => 0, 'remaining' => 0, 'retry' => false, 'nextDueAt' => null], $collect($this->collector($client, logger: $logger)), $case);
 		}
+	}
+
+	/**
+	 * An HTTP error or a refusal while Etherpad answers is no slowness:
+	 * tried again with the backoff, not parked.
+	 */
+	public function testAnHttpErrorOrARefusalIsTriedAgainNotParked(): void {
+		$failures = [
+			'an HTTP error' => new EtherpadClientException('Etherpad API request failed: listSessionsOfGroup', 0, new EtherpadClientException('Etherpad API HTTP error (502)')),
+			'a refusal' => new EtherpadRefusedException('Etherpad API error (listSessionsOfGroup): internal error'),
+		];
+		foreach ($failures as $case => $failure) {
+			$client = $this->createMock(EtherpadClient::class);
+			$client->method('listSessionsOfGroup')->willThrowException($failure);
+			$logger = $this->createMock(LoggerInterface::class);
+			$logger->expects(self::once())->method('warning')->with('Could not list the Etherpad sessions to collect.', self::anything());
+
+			self::assertSame(['deleted' => 0, 'remaining' => 0, 'retry' => true, 'nextDueAt' => null], $this->collector($client, logger: $logger)->collectGroup(self::GROUP), $case);
+		}
+	}
+
+	/** A group with nothing live left needs no sweep: it ends, the hour notwithstanding. */
+	public function testAGroupWithNothingLiveLeftEnds(): void {
+		$client = $this->createMock(EtherpadClient::class);
+		$client->method('listSessionsOfGroup')->willReturn(['s.old' => self::expired()]);
+
+		self::assertNull($this->collector($client)->collectGroup(self::GROUP)['nextDueAt']);
 	}
 
 	/** A listing Etherpad does not answer at all is tried again, and said under its group. */
