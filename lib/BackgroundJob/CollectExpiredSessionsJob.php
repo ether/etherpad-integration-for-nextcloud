@@ -49,4 +49,8 @@ class CollectExpiredSessionsJob extends SessionSweepJob {
 	protected function gaveUpMessage(): string {
 		return 'Gave up an Etherpad session sweep after three retries without progress; the rest waits for another open.';
 	}
+
+	protected function givingUpWarns(): bool {
+		return false;
+	}
 }

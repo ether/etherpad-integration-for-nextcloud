@@ -63,6 +63,15 @@ abstract class SessionSweepJob extends QueuedJob {
 	abstract protected function gaveUpMessage(): string;
 
 	/**
+	 * Whether giving up is worth a warning: it leaves the rest standing.
+	 * A sweep the next open queues anew says it as info, or an outage
+	 * would warn once for every author it met.
+	 */
+	protected function givingUpWarns(): bool {
+		return true;
+	}
+
+	/**
 	 * Seconds after a pass that left nothing to look once more, or null for
 	 * no second look. Once: the passes a second look needs carry `again`,
 	 * and the last of them that leaves nothing ends it.
@@ -169,11 +178,10 @@ abstract class SessionSweepJob extends QueuedJob {
 			// Nothing moved: three delayed retries without progress, then the
 			// sweep stops, and says so.
 			if (!isset(self::RETRY_DELAYS[$attempt])) {
-				$this->logger->warning($this->gaveUpMessage(), [
-					'app' => 'etherpad_nextcloud',
-					static::key() => $item,
-					'attempts' => $attempt,
-				]);
+				$context = ['app' => 'etherpad_nextcloud', static::key() => $item, 'attempts' => $attempt];
+				$this->givingUpWarns()
+					? $this->logger->warning($this->gaveUpMessage(), $context)
+					: $this->logger->info($this->gaveUpMessage(), $context);
 				return;
 			}
 			$this->reschedule($item, $attempt + 1, self::RETRY_DELAYS[$attempt], $again);
@@ -231,10 +239,12 @@ abstract class SessionSweepJob extends QueuedJob {
 	}
 
 	/**
-	 * The passes the sweep queued itself for an item it is over for - a
-	 * retry, a second look - go: each would run once more to end as well.
-	 * Not the plain row, which a delete may have queued since. One that
-	 * cannot be removed runs that once.
+	 * The retries and second looks of an item the sweep is over for go - a
+	 * later delete's retry among them, which would only end the same way:
+	 * what ended this pass holds for it too, and a delete after that
+	 * queues a row of its own. Not the plain row, which a delete may queue
+	 * between this pass's answer and now. One that cannot be removed runs
+	 * once more.
 	 */
 	private function dropWaitingPasses(string $item): void {
 		foreach (array_slice(self::waitingArguments([static::key() => $item]), 1) as $argument) {

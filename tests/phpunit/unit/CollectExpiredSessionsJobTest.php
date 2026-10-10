@@ -96,7 +96,8 @@ class CollectExpiredSessionsJobTest extends TestCase {
 	 * A pad server that has been unreachable for a quarter of an hour is
 	 * not going to be helped by a fourth try, and the next open queues a
 	 * fresh sweep anyway. Said, so a sweep given up is not taken for one
-	 * still waiting.
+	 * still waiting - as info: each failed listing has warned already, and
+	 * an outage meets every author.
 	 */
 	public function testGivesUpAfterEnoughFailures(): void {
 		$collector = $this->createMock(ExpiredSessionCollector::class);
@@ -105,7 +106,8 @@ class CollectExpiredSessionsJobTest extends TestCase {
 		$jobList = $this->createMock(IJobList::class);
 		$jobList->expects(self::never())->method('scheduleAfter');
 		$logger = $this->createMock(LoggerInterface::class);
-		$logger->expects(self::once())->method('warning')->with(
+		$logger->expects(self::never())->method('warning');
+		$logger->expects(self::once())->method('info')->with(
 			'Gave up an Etherpad session sweep after three retries without progress; the rest waits for another open.',
 			self::callback(static fn (array $context): bool => $context['authorId'] === 'a.author' && $context['attempts'] === 3),
 		);
