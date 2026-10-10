@@ -149,8 +149,14 @@ class PadSessionService {
 	private function openContextFor(string $uid, string $authorId, string $groupId, string $padId, int $validUntil): array {
 		// Before the listing below, which only happens when the browser
 		// carries ids — a first open makes none, and a public link never
-		// does.
-		$this->collector->noteAuthor($authorId);
+		// does. A public link's by the group: its visitors share it,
+		// whatever author each opens as.
+		$isLink = str_starts_with($uid, self::PUBLIC_LINK_UID_PREFIX);
+		if ($isLink) {
+			$this->collector->noteGroup($groupId);
+		} else {
+			$this->collector->noteAuthor($authorId);
+		}
 
 		$carriedSessionIds = $this->sessionIdsFromCookie();
 		$sessions = $this->sessionsToAttributeWith($uid, $authorId, $carriedSessionIds);
@@ -171,7 +177,7 @@ class PadSessionService {
 		// out again, as long as Etherpad confirms it: a visitor gets at
 		// least two of the three hours, and with a memory cache a link
 		// makes one session an hour (PublicLinkSessions).
-		if (str_starts_with($uid, self::PUBLIC_LINK_UID_PREFIX)) {
+		if ($isLink) {
 			$session = $this->linkSessions->sessionFor(
 				$uid,
 				$authorId,

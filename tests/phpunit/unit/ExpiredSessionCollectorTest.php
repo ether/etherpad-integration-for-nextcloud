@@ -8,7 +8,9 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Tests\Unit;
 
+use OCA\EtherpadNextcloud\BackgroundJob\CollectExpiredGroupSessionsJob;
 use OCA\EtherpadNextcloud\BackgroundJob\CollectExpiredSessionsJob;
+use OCA\EtherpadNextcloud\Exception\EtherpadRefusedException;
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
 use OCA\EtherpadNextcloud\Service\EtherpadClient;
 use OCA\EtherpadNextcloud\Service\ExpiredSessionCollector;
@@ -28,6 +30,7 @@ use OCA\EtherpadNextcloud\Tests\Support\FixedClock;
  */
 class ExpiredSessionCollectorTest extends TestCase {
 	private const AUTHOR = 'a.author';
+	private const GROUP = 'g.AAAAAAAAAAAAAAAA';
 
 	/**
 	 * Long enough past expiry that both clocks must agree. A session that
@@ -81,20 +84,78 @@ class ExpiredSessionCollectorTest extends TestCase {
 	}
 
 	/**
-	 * A public link has no cached author state, but it does have an author
-	 * id at the moment it opens, and its expired sessions need collecting
-	 * as anyone's.
+	 * A public link's sessions are noted by the group it opened: its
+	 * visitors share the group, whatever author each opens as, and its uid
+	 * holds the share token, which no job argument may.
 	 */
-	public function testQueuesForAnAnonymousPublicShareAuthorToo(): void {
+	public function testQueuesASweepForTheGroupAPublicLinkOpened(): void {
 		$jobList = $this->createMock(IJobList::class);
 		$jobList->method('has')->willReturn(false);
 		$jobList->expects(self::once())->method('add')->with(
-			CollectExpiredSessionsJob::class,
-			['authorId' => self::AUTHOR],
+			CollectExpiredGroupSessionsJob::class,
+			['groupId' => self::GROUP],
 		);
 
 		$this->collector($this->createMock(EtherpadClient::class), $jobList)
-			->noteAuthor(self::AUTHOR);
+			->noteGroup(self::GROUP);
+	}
+
+	/** A group's sweep waiting, its retry too, is not queued twice; no group, no sweep. */
+	public function testQueuesAGroupOnlyOnce(): void {
+		foreach ([['groupId' => self::GROUP], ['groupId' => self::GROUP, 'attempt' => 2]] as $waiting) {
+			$jobList = $this->createMock(IJobList::class);
+			$jobList->method('has')->willReturnCallback(static fn (string $job, mixed $argument): bool => $job === CollectExpiredGroupSessionsJob::class && $argument === $waiting);
+			$jobList->expects(self::never())->method('add');
+
+			$this->collector($this->createMock(EtherpadClient::class), $jobList)->noteGroup(self::GROUP);
+		}
+		$jobList = $this->createMock(IJobList::class);
+		$jobList->expects(self::never())->method('add');
+		$this->collector($this->createMock(EtherpadClient::class), $jobList)->noteGroup('');
+	}
+
+	/**
+	 * A group's sweep takes the expired sessions of every author in it -
+	 * a link's visitors, and a signed-in user's - and leaves the live
+	 * ones, coming back as the earliest falls due.
+	 */
+	public function testCollectsAGroupsExpiredSessions(): void {
+		$client = $this->createMock(EtherpadClient::class);
+		$client->expects(self::never())->method('listSessionsOfAuthor');
+		$client->method('listSessionsOfGroup')->with(self::GROUP)->willReturn([
+			's.visitor' => self::expired(),
+			's.live' => self::live(),
+			's.member' => self::expired(),
+		]);
+		$removed = [];
+		$client->method('deleteSession')->willReturnCallback(static function (string $id) use (&$removed): void {
+			$removed[] = $id;
+		});
+
+		$result = $this->collector($client)->collectGroup(self::GROUP);
+
+		self::assertSame(['s.visitor', 's.member'], $removed);
+		self::assertSame(['deleted' => 2, 'remaining' => 0, 'retry' => false, 'nextDueAt' => FixedClock::NOW + 3600 + EtherpadClient::CLOCK_SKEW_ALLOWANCE_SECONDS], $result);
+	}
+
+	/**
+	 * A group Etherpad no longer has holds nothing to collect, and the
+	 * sweep ends; one that cannot be listed is tried again, and said, under
+	 * its group.
+	 */
+	public function testAGroupGoneEndsTheSweepAndOneUnlistedIsTriedAgain(): void {
+		$gone = $this->createMock(EtherpadClient::class);
+		$gone->method('listSessionsOfGroup')->willThrowException(new EtherpadRefusedException('Etherpad API error (listSessionsOfGroup): groupID does not exist'));
+		self::assertSame(['deleted' => 0, 'remaining' => 0, 'retry' => false, 'nextDueAt' => null], $this->collector($gone)->collectGroup(self::GROUP));
+
+		$down = $this->createMock(EtherpadClient::class);
+		$down->method('listSessionsOfGroup')->willThrowException(new EtherpadClientException('Connection timed out'));
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects(self::once())->method('warning')->with(
+			'Could not list the Etherpad sessions to collect.',
+			self::callback(static fn (array $context): bool => $context['groupId'] === self::GROUP && !isset($context['authorId'])),
+		);
+		self::assertSame(['deleted' => 0, 'remaining' => 0, 'retry' => true, 'nextDueAt' => null], $this->collector($down, logger: $logger)->collectGroup(self::GROUP));
 	}
 
 	/** No author means nothing was ever issued under one. */

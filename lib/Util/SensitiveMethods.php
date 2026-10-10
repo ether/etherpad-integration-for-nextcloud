@@ -132,6 +132,7 @@ final class SensitiveMethods {
 		// A public link's uid carries its token, and what it keeps is a
 		// session id.
 		\OCA\EtherpadNextcloud\Service\PublicLinkSessions::class => ['sessionFor', 'read', 'write', 'key'],
+		\OCA\EtherpadNextcloud\Service\ExpiredSessionCollector::class => ['collectFrom'],
 		\OCA\EtherpadNextcloud\Service\PadSessionRevoker::class => ['live', 'deleteLive', 'carriedFirst'],
 		\OCA\EtherpadNextcloud\Service\SessionDeletes::class => ['live', 'within'],
 		\OCA\EtherpadNextcloud\Service\PadOpenTarget::class => ['__construct'],

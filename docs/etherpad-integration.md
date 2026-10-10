@@ -316,10 +316,16 @@ therefore grows with past opens rather than with live access.
 An open leaves the author's id in the job table; a queued job does the rest.
 The id says which author to look at, not whether there is anything to
 collect – that answer is the listing, and the listing is the slow call, so
-it belongs in the job together with the deleting. This also reaches the two
-cases a request could not: the first open of a browsing session carries no
-cookie ids and so makes no listing, and a public link never carries any,
-although its visitors add sessions under the same shared author.
+it belongs in the job together with the deleting. This also reaches the
+case a request could not: the first open of a browsing session carries no
+cookie ids and so makes no listing.
+
+A public link's open leaves the group's id instead, and a job for the
+group (`CollectExpiredGroupSessionsJob`) collects the expired sessions of
+every author in it through `listSessionsOfGroup`. A link's visitors share
+the group the pad is in, whatever author each opens as, so one job a
+group holds them all where a job an author could be one a visitor. A
+public link never carries cookie ids either.
 
 The id is also all that is stored. A public link's uid is
 `public-share:<token>`, the credential from the share URL, and job
@@ -336,7 +342,8 @@ from queueing a second sweep. Nothing is deleted until five minutes after
 expiry, because Etherpad judges `validUntil` against its own clock and a
 session dead by ours may still be live there.
 
-This assumes deleting a session removes its id from the author index.
+This assumes deleting a session removes its id from the author index, and
+from the group's: Etherpad's `deleteSession` takes it out of both.
 Verified on 2.5.3 with PostgreSQL and on 2.x with the built-in store; an
 integration test pins it by counting raw API keys, since the client filters
 out exactly the entries a surviving key produces. Where entries do survive,

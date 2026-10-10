@@ -9,7 +9,10 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Service;
 
+use OCA\EtherpadNextcloud\BackgroundJob\CollectExpiredGroupSessionsJob;
 use OCA\EtherpadNextcloud\BackgroundJob\CollectExpiredSessionsJob;
+use OCA\EtherpadNextcloud\BackgroundJob\SessionSweepJob;
+use OCA\EtherpadNextcloud\Util\EtherpadErrorClassifier;
 use OCA\EtherpadNextcloud\Util\SafeError;
 use OCP\AppFramework\Utility\ITimeFactory;
 use OCP\BackgroundJob\IJobList;
@@ -24,6 +27,11 @@ use Psr\Log\LoggerInterface;
  * many lookups as there were opens. Collecting them happens in no
  * request: an open leaves the author's id, and the job lists the expired
  * ones and deletes them.
+ *
+ * A public link's sessions are collected by their group instead: the
+ * link's visitors share the group the pad is in, whatever author each
+ * opens as, so one job a group holds them all where a job an author
+ * would be one a visitor.
  */
 class ExpiredSessionCollector {
 
@@ -49,19 +57,39 @@ class ExpiredSessionCollector {
 			return;
 		}
 
-		// No uid: for a public link it is `public-share:<token>`, and a job
-		// argument is persisted and printed by occ.
-		$argument = ['authorId' => $authorId];
+		// The author's id, not a uid: a job argument is persisted and
+		// printed by occ.
+		$this->note(CollectExpiredSessionsJob::class, ['authorId' => $authorId]);
+	}
+
+	/**
+	 * Remember that the group a public link opened might have something to
+	 * collect, as noteAuthor() does for an author: the link's uid holds its
+	 * share token, which no job argument may.
+	 */
+	public function noteGroup(string $groupId): void {
+		if ($groupId === '') {
+			return;
+		}
+
+		$this->note(CollectExpiredGroupSessionsJob::class, ['groupId' => $groupId]);
+	}
+
+	/**
+	 * @param class-string<SessionSweepJob> $job
+	 * @param array<string,string> $argument
+	 */
+	private function note(string $job, array $argument): void {
 		// Housekeeping may not be the reason a pad fails to open.
 		try {
-			if (CollectExpiredSessionsJob::isQueued($this->jobList, $argument)) {
+			if ($job::isQueued($this->jobList, $argument)) {
 				return;
 			}
-			$this->jobList->add(CollectExpiredSessionsJob::class, $argument);
+			$this->jobList->add($job, $argument);
 		} catch (\Throwable $e) {
 			$this->logger->warning('Could not queue the Etherpad session sweep.', [
 				'app' => 'etherpad_nextcloud',
-				'authorId' => $authorId,
+				...$argument,
 				...SafeError::context($e),
 			]);
 		}
@@ -81,6 +109,7 @@ class ExpiredSessionCollector {
 	 */
 	public function collect(string $authorId): array {
 		$budget = new RunBudget($this->timeFactory, $this->budgetSeconds);
+		$context = ['authorId' => $authorId];
 
 		try {
 			$sessions = $this->etherpadClient->listSessionsOfAuthor(
@@ -89,14 +118,60 @@ class ExpiredSessionCollector {
 				$unreadable,
 			);
 		} catch (\Throwable $e) {
-			$this->logger->warning('Could not list the Etherpad sessions to collect.', [
-				'app' => 'etherpad_nextcloud',
-				'authorId' => $authorId,
-				...SafeError::context($e),
-			]);
-			return ['deleted' => 0, 'remaining' => 0, 'retry' => true, 'nextDueAt' => null];
+			return $this->listingFailed($e, $context);
 		}
 
+		return $this->collectFrom($sessions, $unreadable, $budget, $context);
+	}
+
+	/**
+	 * collect() for a group's sessions, every author's: a public link's
+	 * (noteGroup()). A group Etherpad no longer has holds none, and the
+	 * sweep ends.
+	 *
+	 * @return array{deleted:int,remaining:int,retry:bool,nextDueAt:?int}
+	 */
+	public function collectGroup(string $groupId): array {
+		$budget = new RunBudget($this->timeFactory, $this->budgetSeconds);
+		$context = ['groupId' => $groupId];
+
+		try {
+			$sessions = $this->etherpadClient->listSessionsOfGroup(
+				$groupId,
+				$budget->callTimeout(),
+				$unreadable,
+			);
+		} catch (\Throwable $e) {
+			if (EtherpadErrorClassifier::isPadAlreadyDeleted($e)) {
+				return ['deleted' => 0, 'remaining' => 0, 'retry' => false, 'nextDueAt' => null];
+			}
+			return $this->listingFailed($e, $context);
+		}
+
+		return $this->collectFrom($sessions, $unreadable, $budget, $context);
+	}
+
+	/**
+	 * @param array<string,string> $context whose sessions they are
+	 * @return array{deleted:int,remaining:int,retry:bool,nextDueAt:?int}
+	 */
+	private function listingFailed(\Throwable $e, array $context): array {
+		$this->logger->warning('Could not list the Etherpad sessions to collect.', [
+			'app' => 'etherpad_nextcloud',
+			...$context,
+			...SafeError::context($e),
+		]);
+		return ['deleted' => 0, 'remaining' => 0, 'retry' => true, 'nextDueAt' => null];
+	}
+
+	/**
+	 * The expired ones among $sessions deleted, within $budget.
+	 *
+	 * @param array<array-key,array{groupID:string,validUntil:int}> $sessions
+	 * @param array<string,string> $context whose sessions they are
+	 * @return array{deleted:int,remaining:int,retry:bool,nextDueAt:?int}
+	 */
+	private function collectFrom(array $sessions, ?int $unreadable, RunBudget $budget, array $context): array {
 		if (($unreadable ?? 0) > 0) {
 			// Keys the index lists but Etherpad cannot describe, which no
 			// run deletes - whether one has expired cannot be told - so that
@@ -104,7 +179,7 @@ class ExpiredSessionCollector {
 			// reporting a clean sweep.
 			$this->logger->warning('Etherpad lists sessions it cannot describe; those entries cannot be collected.', [
 				'app' => 'etherpad_nextcloud',
-				'authorId' => $authorId,
+				...$context,
 				'unreadableEntries' => $unreadable,
 			]);
 		}
@@ -125,11 +200,11 @@ class ExpiredSessionCollector {
 
 			// When the earliest becomes collectable — without it, a sweep
 			// that found nothing is queued again by the very next open.
-			$dueAt = (int)$info['validUntil'] + EtherpadClient::CLOCK_SKEW_ALLOWANCE_SECONDS;
+			$dueAt = $info['validUntil'] + EtherpadClient::CLOCK_SKEW_ALLOWANCE_SECONDS;
 			$nextDueAt = $nextDueAt === null ? $dueAt : min($nextDueAt, $dueAt);
 		}
 
-		$run = $this->deletes->within($budget, $expired, self::MAX_PER_RUN, ['authorId' => $authorId], 'Could not collect an expired Etherpad session.');
+		$run = $this->deletes->within($budget, $expired, self::MAX_PER_RUN, $context, 'Could not collect an expired Etherpad session.');
 		$deleted = $run['deleted'];
 		$remaining = count($expired) - $run['handled'];
 

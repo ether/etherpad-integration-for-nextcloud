@@ -85,6 +85,20 @@ class PadSessionServiceTest extends TestCase {
 	}
 
 	/**
+	 * A public link's open notes the group it opened, not the author: the
+	 * link's visitors share the group, whatever author each opens as.
+	 */
+	public function testAPublicLinkTellsTheCollectorItsGroup(): void {
+		[$etherpadClient, $config] = $this->publicLinkFixtures();
+		$collector = $this->createMock(\OCA\EtherpadNextcloud\Service\ExpiredSessionCollector::class);
+		$collector->expects($this->once())->method('noteGroup')->with('g.ABCDEFGHIJKLMNOP');
+		$collector->expects($this->never())->method('noteAuthor');
+
+		$this->buildService($etherpadClient, $config, collector: $collector)
+			->createProtectedOpenContext('public-share:token', 'Public share', 'g.ABCDEFGHIJKLMNOP$pad-1', 10800);
+	}
+
+	/**
 	 * A failed open must not take the ability to revoke with it.
 	 *
 	 * The author id is the only route from a uid to that user's live

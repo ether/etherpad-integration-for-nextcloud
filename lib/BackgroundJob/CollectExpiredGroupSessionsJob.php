@@ -15,16 +15,13 @@ use OCP\BackgroundJob\IJobList;
 use Psr\Log\LoggerInterface;
 
 /**
- * Works through one author's expired Etherpad sessions.
- *
- * Queued rather than timed, and per author: an open says who might need
- * collecting, so no sweep over every account is needed. The argument
- * holds the author id, not the uid: job arguments are persisted. A public
- * link's sessions are collected by group (CollectExpiredGroupSessionsJob).
- * When there is nothing left, it comes back as the earliest session
- * still standing falls due.
+ * Works through one group's expired Etherpad sessions: those a public
+ * link made, whose visitors share the group whatever author each opens
+ * as (ExpiredSessionCollector::noteGroup()). Paced as the collector of an
+ * author's is (CollectExpiredSessionsJob), and the argument holds the
+ * group's id alone.
  */
-class CollectExpiredSessionsJob extends SessionSweepJob {
+class CollectExpiredGroupSessionsJob extends SessionSweepJob {
 	public function __construct(
 		ITimeFactory $time,
 		private ExpiredSessionCollector $collector,
@@ -35,19 +32,19 @@ class CollectExpiredSessionsJob extends SessionSweepJob {
 	}
 
 	protected static function key(): string {
-		return 'authorId';
+		return 'groupId';
 	}
 
 	protected function sweep(string $item): array {
-		return $this->collector->collect($item);
+		return $this->collector->collectGroup($item);
 	}
 
 	protected function lostPassMessage(): string {
-		return 'Could not queue the next Etherpad session sweep; the rest waits for another open.';
+		return 'Could not queue the next sweep of a group\'s expired Etherpad sessions; the rest waits for another open.';
 	}
 
 	protected function gaveUpMessage(): string {
-		return 'Gave up an Etherpad session sweep after three retries without progress; the rest waits for another open.';
+		return 'Gave up a sweep of a group\'s expired Etherpad sessions after three retries without progress; the rest waits for another open.';
 	}
 
 	protected function givingUpWarns(): bool {
