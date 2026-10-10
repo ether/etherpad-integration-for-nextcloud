@@ -51,6 +51,16 @@ class ExpiredSessionCollector {
 	 */
 	private const LISTING_PARKED_SECONDS = 86400;
 
+	/**
+	 * The least a group's sweep waits before it comes back for a session
+	 * still live. A group's live sessions are everyone's - signed-in users
+	 * at the pad, for six hours each - so the earliest to expire is never
+	 * far off while anyone uses it, and each pass lists the whole group:
+	 * expired sessions may wait an hour longer, the listing may not run
+	 * at every cron tick.
+	 */
+	private const GROUP_SWEEP_INTERVAL_SECONDS = 3600;
+
 	/** The budget is a parameter so a test can reach it, not a setting. */
 	public function __construct(
 		private EtherpadClient $etherpadClient,
@@ -148,7 +158,8 @@ class ExpiredSessionCollector {
 	/**
 	 * collect() for a group's sessions, every author's: a public link's
 	 * (noteGroup()). A group Etherpad no longer has holds none, and the
-	 * sweep ends.
+	 * sweep ends; one with sessions still live comes back for them an hour
+	 * on at the soonest (GROUP_SWEEP_INTERVAL_SECONDS).
 	 *
 	 * @return array{deleted:int,remaining:int,retry:bool,nextDueAt:?int}
 	 */
@@ -167,7 +178,11 @@ class ExpiredSessionCollector {
 			return $this->listingFailed($e, $budget, $context, EtherpadErrorClassifier::isPadAlreadyDeleted($e));
 		}
 
-		return $this->collectFrom($sessions, $unreadable, $budget, $context);
+		$result = $this->collectFrom($sessions, $unreadable, $budget, $context);
+		if ($result['nextDueAt'] !== null) {
+			$result['nextDueAt'] = max($result['nextDueAt'], $this->timeFactory->getTime() + self::GROUP_SWEEP_INTERVAL_SECONDS);
+		}
+		return $result;
 	}
 
 	/**

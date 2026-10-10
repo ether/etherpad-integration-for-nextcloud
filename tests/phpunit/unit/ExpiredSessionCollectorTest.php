@@ -172,6 +172,21 @@ class ExpiredSessionCollectorTest extends TestCase {
 	}
 
 	/**
+	 * A group's live sessions are everyone's, the earliest never far off
+	 * while anyone uses the pad: the group's sweep comes back for them an
+	 * hour on at the soonest. An author's comes back when its earliest is due.
+	 */
+	public function testAGroupsSweepComesBackAnHourOnAtTheSoonest(): void {
+		$soon = ['s.soon' => ['groupID' => self::GROUP, 'validUntil' => FixedClock::NOW + 600]];
+		$client = $this->createMock(EtherpadClient::class);
+		$client->method('listSessionsOfGroup')->willReturn($soon);
+		$client->method('listSessionsOfAuthor')->willReturn($soon);
+
+		self::assertSame(FixedClock::NOW + 3600, $this->collector($client)->collectGroup(self::GROUP)['nextDueAt']);
+		self::assertSame(FixedClock::NOW + 600 + EtherpadClient::CLOCK_SKEW_ALLOWANCE_SECONDS, $this->collector($client)->collect(self::AUTHOR)['nextDueAt']);
+	}
+
+	/**
 	 * An author or a group Etherpad no longer has holds nothing to
 	 * collect: the sweep ends, said at debug, with nothing deleted.
 	 */

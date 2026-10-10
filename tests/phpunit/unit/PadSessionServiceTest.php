@@ -86,15 +86,22 @@ class PadSessionServiceTest extends TestCase {
 		$service->createProtectedOpenContext('admin', 'Admin', 'g.ABCDEFGHIJKLMNOP$pad-1');
 	}
 
-	/** A public link's open notes its group and its author (ExpiredSessionCollector says why both). */
-	public function testAPublicLinkTellsTheCollectorItsGroupAndItsAuthor(): void {
+	/**
+	 * A public link's open notes its group and its author
+	 * (ExpiredSessionCollector says why both) - once it made a session: one
+	 * handed out again within the hour adds nothing to collect.
+	 */
+	public function testAPublicLinkTellsTheCollectorItsGroupAndItsAuthorWhenItMadeASession(): void {
 		[$etherpadClient, $config] = $this->publicLinkFixtures();
+		$etherpadClient->method('getSessionInfo')->willReturn(['groupID' => 'g.ABCDEFGHIJKLMNOP', 'authorID' => 'a.public', 'validUntil' => FixedClock::NOW + 9000]);
 		$collector = $this->createMock(\OCA\EtherpadNextcloud\Service\ExpiredSessionCollector::class);
 		$collector->expects($this->once())->method('noteGroup')->with('g.ABCDEFGHIJKLMNOP');
 		$collector->expects($this->once())->method('noteAuthor')->with('a.public');
+		$service = $this->buildService($etherpadClient, $config, collector: $collector, cacheFactory: $this->cacheFor());
 
-		$this->buildService($etherpadClient, $config, collector: $collector)
-			->createProtectedOpenContext('public-share:token', 'Public share', 'g.ABCDEFGHIJKLMNOP$pad-1', 10800);
+		$service->createProtectedOpenContext('public-share:token', 'Public share', 'g.ABCDEFGHIJKLMNOP$pad-1', 10800);
+		// Handed out again: nothing more noted.
+		$service->createProtectedOpenContext('public-share:token', 'Public share', 'g.ABCDEFGHIJKLMNOP$pad-1', 10800);
 	}
 
 	/**
