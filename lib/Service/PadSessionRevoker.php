@@ -115,11 +115,20 @@ class PadSessionRevoker {
 			}
 		}
 		$groups = ['asked' => [], 'unasked' => 0, 'unreadable' => 0, 'handedOver' => 0];
+		$expiring = 0;
 		foreach ($leaving as $groupId => $groupPads) {
-			if ($this->takeNow($groupId, $groupPads, $deadline, $tally, $groups)) {
-				$this->groupSessions->queue($groupId);
-				$groups['handedOver']++;
+			$before = [$tally['left'], $groups['unasked']];
+			if (!$this->takeNow($groupId, $groupPads, $deadline, $tally, $groups)) {
+				continue;
 			}
+			if ($this->groupSessions->queue($groupId)) {
+				$groups['handedOver']++;
+				continue;
+			}
+			// Not queued, which queue() says: what this group left goes to
+			// no job, and expires.
+			$expiring += $tally['left'] - $before[0];
+			[$tally['left'], $groups['unasked']] = $before;
 		}
 		if ($groups['unasked'] > 0) {
 			$this->logger->warning('No time or deletes left to revoke the Etherpad sessions of every group; a background job takes them.', [
@@ -128,11 +137,12 @@ class PadSessionRevoker {
 			]);
 		}
 		// Every live session counted as left is in a group handed over; what
-		// Etherpad lists and cannot describe is left to expire. The groups
-		// handed over are context, not something left: every group is.
+		// Etherpad lists and cannot describe is left to expire, and so is
+		// what a group that could not be queued left. The groups handed over
+		// are context, not something left.
 		return $this->report($tally, ['groupIds' => $groups['asked'], 'groupsToTheJob' => $groups['handedOver']], [
 			'leftToTheJob' => $tally['left'],
-			'leftToExpire' => $groups['unreadable'],
+			'leftToExpire' => $groups['unreadable'] + $expiring,
 		], $tally['left'] > 0);
 	}
 

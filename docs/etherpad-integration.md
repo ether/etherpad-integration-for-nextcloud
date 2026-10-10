@@ -328,7 +328,7 @@ arguments are persisted and printed by `occ`.
 A run deletes up to 250 sessions within 20 seconds, requeueing itself for
 the rest. A refusal is requeued with a growing delay and a limit; sessions
 the server will never delete are skipped rather than allowed to block the
-ones behind them, up to twenty refusals in a row - a failure that reads
+ones behind them, up to twenty refusals in a row and fifty in a run - a failure that reads
 as Etherpad unreachable, when Etherpad then does not answer at all, is an
 outage, and a few end the run. A run with nothing to do comes back when the
 earliest session still standing falls due, which also keeps the next open

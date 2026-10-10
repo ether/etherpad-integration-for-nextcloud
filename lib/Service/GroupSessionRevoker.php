@@ -60,21 +60,24 @@ class GroupSessionRevoker {
 	 * Queue a pass for the group, a minute out: an open under way when the
 	 * delete listed the sessions has most often made its own by then, and
 	 * the job looks once more for one that took longer
-	 * (RevokeGroupSessionsJob). Never fails what called it, and costs the
+	 * (RevokeGroupSessionsJob). False when it could not be queued, which it
+	 * says. Never fails what called it, and costs the
 	 * job list's own lookup and one write: a row of the same shape is the
 	 * same row, and one queued beside a first pass's waiting retry stands
 	 * down when it runs - not beside a second look's, which looks no more
 	 * (SessionSweepJob).
 	 */
-	public function queue(string $groupId): void {
+	public function queue(string $groupId): bool {
 		try {
 			$this->jobList->scheduleAfter(RevokeGroupSessionsJob::class, $this->timeFactory->getTime() + self::FIRST_PASS_DELAY_SECONDS, ['groupId' => $groupId]);
+			return true;
 		} catch (\Throwable $e) {
 			$this->logger->warning('Could not queue the revocation of a group\'s remaining Etherpad sessions; they will expire on their own.', [
 				'app' => 'etherpad_nextcloud',
 				'groupId' => $groupId,
 				...SafeError::context($e),
 			]);
+			return false;
 		}
 	}
 
@@ -83,7 +86,8 @@ class GroupSessionRevoker {
 	 * within a run's budget and MAX_PER_RUN.
 	 *
 	 * Before every delete it looks again where the files are - batched
-	 * lookups, the mounts only when a file moved - since a file
+	 * lookups; the mounts before the first delete, and then when a file
+	 * moved - since a file
 	 * can be restored and opened during the pass, while the sessions are
 	 * listed too, and its opener's session would be the first to go.
 	 *
@@ -148,12 +152,19 @@ class GroupSessionRevoker {
 
 		$lookupFailed = false;
 		$back = false;
-		$stillAway = function () use ($files, $context, &$places, &$lookupFailed, &$back): bool {
+		$mountsAsked = false;
+		$stillAway = function () use ($files, $context, &$places, &$lookupFailed, &$back, &$mountsAsked): bool {
 			try {
 				$now = $this->bindingService->placesOf($files);
-				if ($now === $places) {
+				// The mounts once more before the first delete, moved or not:
+				// a session listed was made after its maker's mount - a team
+				// folder joined, say - and this sees it. Later only for a file
+				// that moved: a mount made after the listing serves sessions
+				// the listing does not have.
+				if ($now === $places && $mountsAsked) {
 					return true;
 				}
+				$mountsAsked = true;
 				$places = $now;
 				$back = $this->bindingService->anyInFiles($now);
 				return !$back;

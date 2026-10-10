@@ -665,6 +665,29 @@ class PadSessionRevokerTest extends TestCase {
 	}
 
 	/**
+	 * A group that cannot be queued goes to no job: what it left expires,
+	 * and the line says so - not that a job takes it.
+	 */
+	public function testAGroupThatCannotBeQueuedIsNotSaidToGoToTheJob(): void {
+		$client = $this->createMock(EtherpadClient::class);
+		$client->method('listSessionsOfGroup')->willReturnCallback(static fn (string $group): array => ['s.' . $group => ['groupID' => $group, 'validUntil' => FixedClock::NOW + 3600]]);
+		$client->method('listPads')->willReturnCallback(static fn (string $group): array => [$group . '$pad', $group . '$other']);
+		$groupSessions = $this->createMock(GroupSessionRevoker::class);
+		$groupSessions->method('queue')->willReturnCallback(static fn (string $group): bool => $group === 'g.BBBBBBBBBBBBBBBB');
+		$lines = [];
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->method('warning')->willReturnCallback(static function (string $message, array $context) use (&$lines): void {
+			if (array_key_exists('leftToTheJob', $context)) {
+				$lines[] = [$message, $context['leftToTheJob'], $context['groupsToTheJob'], $context['leftToExpire']];
+			}
+		});
+
+		$this->revoker($client, logger: $logger, groupSessions: $groupSessions)->revokeForPads(['g.AAAAAAAAAAAAAAAA$pad', 'g.BBBBBBBBBBBBBBBB$pad']);
+
+		self::assertSame([['Revoked no Etherpad sessions yet; a background job takes them.', 1, 1, 1]], $lines);
+	}
+
+	/**
 	 * A group with no live session is no warning: nothing was left, though
 	 * it goes to the job like every other.
 	 */
@@ -760,8 +783,9 @@ class PadSessionRevokerTest extends TestCase {
 	 */
 	private function queueRecorder(array &$queued): GroupSessionRevoker {
 		$groupSessions = $this->createMock(GroupSessionRevoker::class);
-		$groupSessions->method('queue')->willReturnCallback(static function (string $groupId) use (&$queued): void {
+		$groupSessions->method('queue')->willReturnCallback(static function (string $groupId) use (&$queued): bool {
 			$queued[] = $groupId;
+			return true;
 		});
 		return $groupSessions;
 	}

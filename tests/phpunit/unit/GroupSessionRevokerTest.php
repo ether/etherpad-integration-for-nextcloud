@@ -55,7 +55,7 @@ class GroupSessionRevokerTest extends TestCase {
 			self::callback(static fn (array $context): bool => $context['groupId'] === self::GROUP),
 		);
 
-		$this->revoker(jobList: $jobList, logger: $logger)->queue(self::GROUP);
+		self::assertFalse($this->revoker(jobList: $jobList, logger: $logger)->queue(self::GROUP));
 	}
 
 	/**
@@ -82,13 +82,14 @@ class GroupSessionRevokerTest extends TestCase {
 
 	/**
 	 * Every file of the group is asked about - one in a row owed a delete
-	 * too (BindingService::filesOfPads()) - and one the file cache does not
-	 * have is away without asking.
+	 * too (BindingService::filesOfPads()) - before the listing and once
+	 * more before the first delete; one the file cache does not have is
+	 * away without asking.
 	 *
 	 * @return iterable<string,array{array<int,array{int,string}>,list<array{int,string}>}>
 	 */
 	public static function away(): iterable {
-		yield 'in a trash' => [self::TRASHED, [[3, 'files_trashbin/files/Notes.pad.d1791400000']]];
+		yield 'in a trash' => [self::TRASHED, [[3, 'files_trashbin/files/Notes.pad.d1791400000'], [3, 'files_trashbin/files/Notes.pad.d1791400000']]];
 		yield 'out of the file cache' => [[], []];
 	}
 
@@ -209,7 +210,8 @@ class GroupSessionRevokerTest extends TestCase {
 		$looks = 0;
 		$asks = 0;
 		$bindings = $this->bindings(static function () use (&$looks): array {
-			return ++$looks === 1 ? self::TRASHED : [42 => [3, 'files_trashbin/files/Notes.pad.d1791400099']];
+			// Moved before the second delete.
+			return ++$looks <= 2 ? self::TRASHED : [42 => [3, 'files_trashbin/files/Notes.pad.d1791400099']];
 		}, inFiles: static function () use (&$asks): bool {
 			$asks++;
 			return false;
@@ -218,7 +220,28 @@ class GroupSessionRevokerTest extends TestCase {
 		$this->revoker($client, $bindings)->revokeRest(self::GROUP);
 
 		self::assertSame(5, $looks, 'once before the listing, then before each delete');
-		self::assertSame(2, $asks, 'before the listing, and for the move');
+		self::assertSame(3, $asks, 'before the listing, before the first delete, and for the move');
+	}
+
+	/**
+	 * A mount made before a session is listed shows the file without
+	 * moving it - a team folder joined, and the pad opened: the mounts are
+	 * asked once more before the first delete, and its session stays.
+	 */
+	public function testAsksAboutTheMountsBeforeTheFirstDeleteThoughNothingMoved(): void {
+		$client = $this->client(['s.joined' => FixedClock::NOW + 3600]);
+		$client->expects(self::never())->method('deleteSession');
+		$asks = 0;
+		$bindings = $this->bindings(self::TRASHED, inFiles: static function () use (&$asks): bool {
+			// Away when the pass begins; through the new mount once listed.
+			return ++$asks > 1;
+		});
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects(self::once())->method('info')->with(GroupSessionRevoker::KEPT_FOR_A_FILE_IN_FILES, self::anything());
+
+		$result = $this->revoker($client, $bindings, logger: $logger)->revokeRest(self::GROUP);
+
+		self::assertSame(['deleted' => 0, 'remaining' => 0, 'retry' => false, 'nextDueAt' => null, 'ended' => true], $result);
 	}
 
 	/** A lookup that fails during the pass ends it, says so, and is asked again. */
@@ -374,10 +397,10 @@ class GroupSessionRevokerTest extends TestCase {
 		$client->expects(self::once())->method('deleteSession')->with('s.live');
 		$bindings = $this->createMock(BindingService::class);
 		$bindings->expects(self::once())->method('filesOfPads')->with($pads)->willReturn($files);
-		// Before the pass and before its delete; the mounts only once, the
-		// files not having moved between.
+		// Before the pass and before its delete, the mounts each time: a
+		// batch for all of them, not a query a file.
 		$bindings->expects(self::exactly(2))->method('placesOf')->with($files)->willReturn($places);
-		$bindings->expects(self::once())->method('anyInFiles')->with($places)->willReturn(false);
+		$bindings->expects(self::exactly(2))->method('anyInFiles')->with($places)->willReturn(false);
 
 		$result = $this->revoker($client, $bindings)->revokeRest(self::GROUP);
 

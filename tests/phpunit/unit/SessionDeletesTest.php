@@ -159,7 +159,7 @@ class SessionDeletesTest extends TestCase {
 	 */
 	public function testRefusalsCountOnlyInARow(): void {
 		$client = $this->createMock(EtherpadClient::class);
-		$client->expects(self::exactly(60))->method('deleteSession')->willReturnCallback(static function (string $id): void {
+		$client->expects(self::exactly(40))->method('deleteSession')->willReturnCallback(static function (string $id): void {
 			if (str_ends_with($id, '.gone')) {
 				throw new EtherpadRefusedException('Etherpad API error (deleteSession): sessionID does not exist');
 			}
@@ -168,7 +168,7 @@ class SessionDeletesTest extends TestCase {
 			}
 		});
 		$ids = [];
-		foreach (['ok', 'gone', 'ok'] as $round => $end) {
+		foreach (['ok', 'gone'] as $round => $end) {
 			foreach (range(1, 19) as $i) {
 				$ids[] = 's.' . $round . '.' . $i;
 			}
@@ -177,7 +177,38 @@ class SessionDeletesTest extends TestCase {
 
 		$run = $this->deletes($client)->within($this->budget(), $ids, 250, [], 'refused');
 
-		self::assertSame(['deleted' => 2, 'handled' => 3, 'refused' => true, 'stopped' => false], $run);
+		self::assertSame(['deleted' => 1, 'handled' => 2, 'refused' => true, 'stopped' => false], $run);
+	}
+
+	/**
+	 * Fifty refusals in all end the run too: scattered among deletes, those
+	 * in a row start again after each, and would otherwise multiply a run's
+	 * calls and lines.
+	 */
+	public function testFiftyRefusalsInAllEndTheRun(): void {
+		$client = $this->createMock(EtherpadClient::class);
+		$client->expects(self::exactly(52))->method('deleteSession')->willReturnCallback(static function (string $id): void {
+			if (!str_ends_with($id, '.ok')) {
+				throw new EtherpadRefusedException('Etherpad API error (deleteSession): internal error');
+			}
+		});
+		$ids = [];
+		foreach (range(1, 10) as $round) {
+			foreach (range(1, 19) as $i) {
+				$ids[] = 's.' . $round . '.' . $i;
+			}
+			$ids[] = 's.' . $round . '.ok';
+		}
+		$warnings = 0;
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->method('warning')->willReturnCallback(static function () use (&$warnings): void {
+			$warnings++;
+		});
+
+		$run = (new SessionDeletes($client, new ManagedPadLifecycle($client, $logger), $logger))->within($this->budget(), $ids, 250, [], 'refused');
+
+		self::assertSame(['deleted' => 2, 'handled' => 2, 'refused' => true, 'stopped' => false], $run);
+		self::assertSame(50, $warnings);
 	}
 
 	/** Asked before each delete; a no ends the run there. */

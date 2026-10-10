@@ -29,6 +29,13 @@ class SessionDeletes {
 	 */
 	private const MAX_REFUSED_IN_A_ROW = 20;
 
+	/**
+	 * Refusals a run puts up with in all: scattered among deletes, those in
+	 * a row start again after each, and would otherwise multiply a run's
+	 * calls and lines by twenty.
+	 */
+	private const MAX_REFUSED_A_RUN = 50;
+
 	public function __construct(
 		private EtherpadClient $etherpadClient,
 		private ManagedPadLifecycle $padLifecycle,
@@ -58,7 +65,7 @@ class SessionDeletes {
 	 *
 	 * A refusal does not end the run: a session Etherpad never deletes would
 	 * otherwise block the ones after it, every run. Twenty refusals in a row
-	 * do. A failure is an outage only as GoneFileSweep reads one - Etherpad
+	 * do, and fifty in all, so a run makes at most fifty calls past $max. A failure is an outage only as GoneFileSweep reads one - Etherpad
 	 * unreachable, and not answering ManagedPadLifecycle::answers() - and a
 	 * few outages end the run (RunBudget).
 	 *
@@ -76,8 +83,9 @@ class SessionDeletes {
 		$handled = 0;
 		$refused = false;
 		$refusedInARow = 0;
+		$refusedInAll = 0;
 		foreach ($sessionIds as $sessionId) {
-			if ($handled >= $max || $refusedInARow >= self::MAX_REFUSED_IN_A_ROW || $budget->exhausted()) {
+			if ($handled >= $max || $refusedInARow >= self::MAX_REFUSED_IN_A_ROW || $refusedInAll >= self::MAX_REFUSED_A_RUN || $budget->exhausted()) {
 				break;
 			}
 			if ($stillWanted !== null && !$stillWanted()) {
@@ -104,6 +112,7 @@ class SessionDeletes {
 				}
 				$refused = true;
 				$refusedInARow++;
+				$refusedInAll++;
 				try {
 					if (EtherpadClientException::isEtherpadUnreachable($e) && !$this->padLifecycle->answers($budget)) {
 						$budget->noteFailure();
