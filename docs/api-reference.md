@@ -87,7 +87,7 @@ When both are sent for a folder share, the path is compared in full: `A.pad` at 
 
 - `GET /api/v1/public/open/{token}`
   - Controller: `PublicViewerController::openPadData`
-  - Throttled to 300 calls a minute: by address for a visitor who is not signed in, per user for one who is. For a writable link to a protected pad, every call starts an Etherpad session. The limit is well above a class opening a link at once behind one address; `content` allows 60. A refusal is Nextcloud's `429` with no body.
+  - Throttled to 300 calls a minute: by address for a visitor who is not signed in, per user for one who is. For a writable link to a protected pad, a call can start an Etherpad session: each new visitor's, or each call's without a memory cache. The limit is well above a class opening a link at once behind one address; `content` allows 60. A refusal is Nextcloud's `429` with no body.
   - Query: `fileId=<int>` or `file=/subfolder/file.pad` - see "Naming the file in a public share" above.
   - Purpose: resolves a `.pad` file inside a public share for the native viewer.
   - Result:

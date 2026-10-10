@@ -11,6 +11,7 @@ namespace OCA\EtherpadNextcloud\Service;
 
 use OCA\EtherpadNextcloud\AppInfo\Application;
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
+use OCA\EtherpadNextcloud\Util\EtherpadErrorClassifier;
 use OCA\EtherpadNextcloud\Util\SafeError;
 use OCP\AppFramework\Utility\ITimeFactory;
 use OCP\ICache;
@@ -81,6 +82,11 @@ class PublicLinkSessions {
 					return ['sessionId' => $kept, 'validUntil' => $session['validUntil']];
 				}
 			} catch (EtherpadClientException $e) {
+				// A timeout says Etherpad is away: making one would only wait
+				// out another.
+				if (EtherpadClientException::isEtherpadUnreachable($e) && EtherpadErrorClassifier::isTimeout($e)) {
+					throw $e;
+				}
 				$unconfirmed = $e;
 			}
 		}

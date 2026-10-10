@@ -107,15 +107,9 @@ class PadSessionService {
 			try {
 				return [...$this->openContextFor($uid, $authorId, $groupId, $padId, $validUntil), 'authorId' => $authorId];
 			} catch (EtherpadClientException $e) {
-				// Only an author Etherpad does not know - an id kept from
-				// before a reset - is made anew below. Anything else, an
-				// outage say, fails the open as it is: asking again would
-				// only wait again. Nothing is cleared either: the author id
-				// is the one route from a uid to that user's live sessions,
-				// and dropping it because an open failed would leave a cache
-				// indistinguishable from a user who never opened a protected
-				// pad - a logout after a brief outage would then revoke
-				// nothing.
+				// Only an author Etherpad does not know is made anew; an
+				// outage fails the open as it is. The kept id stays either
+				// way: it is how a logout finds the user's sessions.
 				if (!EtherpadErrorClassifier::isAuthorUnknown($e)) {
 					throw $e;
 				}

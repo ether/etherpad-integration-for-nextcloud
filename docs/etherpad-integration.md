@@ -452,7 +452,8 @@ instead (`PublicLinkSessions`):
   hours, so a visitor can write for at least two, since the next
   keystroke after it runs out is turned away. An answer about a kept
   session Etherpad gives but this cannot read is logged, since the link
-  then makes one an open.
+  then makes one an open; a check that times out fails the open, as
+  making one would only wait out another.
 - The key is an HMAC of the Etherpad address, the uid opened as and the group
   under the instance's secret, so a key does not give away the token,
   not even one chosen by hand. The value is the session id, the
