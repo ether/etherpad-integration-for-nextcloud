@@ -11,6 +11,7 @@ namespace OCA\EtherpadNextcloud\Tests\Unit;
 
 use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\EtherpadNextcloud\Service\PadOpenTarget;
+use OCA\EtherpadNextcloud\Service\PublicLinkOpener;
 use OCA\EtherpadNextcloud\Service\PublicPadContext;
 use OCA\EtherpadNextcloud\Service\PublicPadOpenTarget;
 use OCA\EtherpadNextcloud\Service\StoredAdminSettings;
@@ -79,6 +80,8 @@ class CredentialStaysOutOfTracesTest extends TestCase {
 		yield 'an open through a share, with its session cookie' => [$public, static fn (): array => [$public->cookieHeader()]];
 		$context = new PublicPadContext('Notes', 'https://pad.example.test/p/pad-1', false, true, '', self::CREDENTIAL, self::CREDENTIAL);
 		yield 'a share\'s page, with the address that carries its token' => [$context, static fn (): array => [$context->contentUrl(), $context->cookieHeader()]];
+		$opener = new PublicLinkOpener(self::CREDENTIAL, '', 'a.visitor');
+		yield 'who a link opens as, with the uid that carries its token' => [$opener, static fn (): array => [$opener->uid()]];
 	}
 
 	/** @param \Closure(): list<mixed> $read */

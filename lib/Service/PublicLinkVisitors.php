@@ -35,7 +35,7 @@ use Psr\Log\LoggerInterface;
  * past the count open as the link itself, `public-share:<token>`, one
  * author for all of them: writing works the same, only the colours are
  * shared. Counting takes a memory cache; without one, or while it fails,
- * every visitor opens as the link.
+ * a visitor not yet counted this hour opens as the link.
  */
 class PublicLinkVisitors {
 	/** How many visitors of their own a link has an hour, with a memory cache. */
@@ -90,7 +90,7 @@ class PublicLinkVisitors {
 	 */
 	public function rememberAuthor(string $token, PublicLinkOpener $opener, string $authorId): void {
 		$stored = $this->stored($token);
-		if ($stored === null || $authorId === $stored['author'] || $opener->uid !== PadSessionService::PUBLIC_LINK_UID_PREFIX . $token . ':' . $stored['id']) {
+		if ($stored === null || $authorId === $stored['author'] || $opener->uid() !== PadSessionService::PUBLIC_LINK_UID_PREFIX . $token . ':' . $stored['id']) {
 			return;
 		}
 		$this->store($token, $stored['id'], $stored['hour'], $authorId);

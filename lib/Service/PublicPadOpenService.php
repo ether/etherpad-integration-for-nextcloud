@@ -63,7 +63,7 @@ class PublicPadOpenService {
 
 			$opener = $this->visitors->openerFor($token);
 			$openContext = $this->padSessionService->createProtectedOpenContext(
-				$opener->uid,
+				$opener->uid(),
 				$opener->displayName,
 				$padId,
 				self::PUBLIC_SHARE_SESSION_TTL_SECONDS,

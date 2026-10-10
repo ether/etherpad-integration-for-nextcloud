@@ -47,9 +47,9 @@ class PublicLinkVisitorsTest extends TestCase {
 	public function testAVisitorKeepsTheirAuthorWhileTheirSessionLives(): void {
 		$visitors = $this->visitors($this->memcache());
 
-		$first = $visitors->openerFor(self::TOKEN)->uid;
-		$again = $visitors->openerFor(self::TOKEN)->uid;
-		$elsewhere = $visitors->openerFor('another-token')->uid;
+		$first = $visitors->openerFor(self::TOKEN)->uid();
+		$again = $visitors->openerFor(self::TOKEN)->uid();
+		$elsewhere = $visitors->openerFor('another-token')->uid();
 
 		$this->assertMatchesRegularExpression('/^' . preg_quote(self::LINK, '/') . ':[0-9a-f]{32}$/', $first);
 		$this->assertSame($first, $again);
@@ -68,17 +68,17 @@ class PublicLinkVisitorsTest extends TestCase {
 		$admitted = [];
 		for ($i = 0; $i < PublicLinkVisitors::PER_HOUR; $i++) {
 			$this->session = new \ArrayObject();
-			$admitted[] = $this->visitors($cache)->openerFor(self::TOKEN)->uid;
+			$admitted[] = $this->visitors($cache)->openerFor(self::TOKEN)->uid();
 		}
 		$returning = $this->session;
 
 		$this->session = new \ArrayObject();
-		$past = $this->visitors($cache)->openerFor(self::TOKEN)->uid;
+		$past = $this->visitors($cache)->openerFor(self::TOKEN)->uid();
 		$this->session = $returning;
-		$back = $this->visitors($cache)->openerFor(self::TOKEN)->uid;
+		$back = $this->visitors($cache)->openerFor(self::TOKEN)->uid();
 		$this->clock->advance(3600);
 		$this->session = new \ArrayObject();
-		$nextHour = $this->visitors($cache)->openerFor(self::TOKEN)->uid;
+		$nextHour = $this->visitors($cache)->openerFor(self::TOKEN)->uid();
 
 		$this->assertCount(PublicLinkVisitors::PER_HOUR, array_unique($admitted));
 		foreach ($admitted as $uid) {
@@ -97,18 +97,18 @@ class PublicLinkVisitorsTest extends TestCase {
 	 */
 	public function testAVisitorWhoComesBackIsCountedAgainInANewHour(): void {
 		$cache = $this->memcache();
-		$own = $this->visitors($cache)->openerFor(self::TOKEN)->uid;
+		$own = $this->visitors($cache)->openerFor(self::TOKEN)->uid();
 		$returning = $this->session;
 
 		$this->clock->advance(3600);
 		for ($i = 0; $i < PublicLinkVisitors::PER_HOUR; $i++) {
 			$this->session = new \ArrayObject();
-			$this->visitors($cache)->openerFor(self::TOKEN)->uid;
+			$this->visitors($cache)->openerFor(self::TOKEN)->uid();
 		}
 		$this->session = $returning;
-		$fullHour = $this->visitors($cache)->openerFor(self::TOKEN)->uid;
+		$fullHour = $this->visitors($cache)->openerFor(self::TOKEN)->uid();
 		$this->clock->advance(3600);
-		$nextHour = $this->visitors($cache)->openerFor(self::TOKEN)->uid;
+		$nextHour = $this->visitors($cache)->openerFor(self::TOKEN)->uid();
 
 		$this->assertSame(self::LINK, $fullHour);
 		$this->assertSame($own, $nextHour);
@@ -121,20 +121,20 @@ class PublicLinkVisitorsTest extends TestCase {
 		$logger->expects($this->once())->method('warning');
 		for ($i = 0; $i < PublicLinkVisitors::PER_HOUR + 3; $i++) {
 			$this->session = new \ArrayObject();
-			$this->visitors($cache, $logger)->openerFor(self::TOKEN)->uid;
+			$this->visitors($cache, $logger)->openerFor(self::TOKEN)->uid();
 		}
 	}
 
 	/**
 	 * Without a memory cache nothing could bound the authors a loop makes,
-	 * so every visitor opens as the link.
+	 * so a new visitor opens as the link.
 	 */
 	public function testWithoutAMemoryCacheEveryVisitorOpensAsTheLink(): void {
 		$factory = $this->createMock(ICacheFactory::class);
 		$factory->method('isAvailable')->willReturn(false);
 		$factory->expects($this->never())->method('createDistributed');
 
-		$this->assertSame(self::LINK, $this->visitors($factory)->openerFor(self::TOKEN)->uid);
+		$this->assertSame(self::LINK, $this->visitors($factory)->openerFor(self::TOKEN)->uid());
 		$this->assertSame([], $this->session->getArrayCopy());
 	}
 
@@ -143,21 +143,21 @@ class PublicLinkVisitorsTest extends TestCase {
 		$plain = $this->createMock(ICacheFactory::class);
 		$plain->method('isAvailable')->willReturn(true);
 		$plain->method('createDistributed')->willReturn($this->createMock(ICache::class));
-		$this->assertSame(self::LINK, $this->visitors($plain)->openerFor(self::TOKEN)->uid);
+		$this->assertSame(self::LINK, $this->visitors($plain)->openerFor(self::TOKEN)->uid());
 
 		$notCounting = $this->createMock(IMemcache::class);
 		$notCounting->method('inc')->willReturn(false);
 		$silent = $this->createMock(ICacheFactory::class);
 		$silent->method('isAvailable')->willReturn(true);
 		$silent->method('createDistributed')->willReturn($notCounting);
-		$this->assertSame(self::LINK, $this->visitors($silent)->openerFor(self::TOKEN)->uid);
+		$this->assertSame(self::LINK, $this->visitors($silent)->openerFor(self::TOKEN)->uid());
 
 		$failing = $this->createMock(ICacheFactory::class);
 		$failing->method('isAvailable')->willReturn(true);
 		$failing->method('createDistributed')->willThrowException(new \RuntimeException('Redis server went away'));
 		$logger = $this->createMock(LoggerInterface::class);
 		$logger->expects($this->once())->method('warning');
-		$this->assertSame(self::LINK, $this->visitors($failing, $logger)->openerFor(self::TOKEN)->uid);
+		$this->assertSame(self::LINK, $this->visitors($failing, $logger)->openerFor(self::TOKEN)->uid());
 		$this->assertSame([], $this->session->getArrayCopy());
 	}
 
@@ -167,12 +167,12 @@ class PublicLinkVisitorsTest extends TestCase {
 	 */
 	public function testAVisitorCountedInALaterHourIsNotCountedAgain(): void {
 		$this->clock->advance(3600);
-		$own = $this->visitors($this->memcache())->openerFor(self::TOKEN)->uid;
+		$own = $this->visitors($this->memcache())->openerFor(self::TOKEN)->uid();
 		$this->clock->advance(-3600);
 		$untouched = $this->createMock(ICacheFactory::class);
 		$untouched->expects($this->never())->method('createDistributed');
 
-		$this->assertSame($own, $this->visitors($untouched)->openerFor(self::TOKEN)->uid);
+		$this->assertSame($own, $this->visitors($untouched)->openerFor(self::TOKEN)->uid());
 	}
 
 	/** A visitor opens under no name, to set their own; the link under its own. */
@@ -184,7 +184,7 @@ class PublicLinkVisitorsTest extends TestCase {
 		$link = $this->visitors($factory)->openerFor(self::TOKEN);
 
 		$this->assertSame(['', ''], [$visitor->displayName, $visitor->authorId]);
-		$this->assertSame([self::LINK, PublicLinkVisitors::LINK_AUTHOR_NAME, ''], [$link->uid, $link->displayName, $link->authorId]);
+		$this->assertSame([self::LINK, PublicLinkVisitors::LINK_AUTHOR_NAME, ''], [$link->uid(), $link->displayName, $link->authorId]);
 	}
 
 	/**
@@ -202,8 +202,8 @@ class PublicLinkVisitorsTest extends TestCase {
 		$this->clock->advance(3600);
 		$nextHour = $this->visitors($cache)->openerFor(self::TOKEN);
 
-		$this->assertSame([$opener->uid, 'a.visitor'], [$sameHour->uid, $sameHour->authorId]);
-		$this->assertSame([$opener->uid, 'a.visitor'], [$nextHour->uid, $nextHour->authorId]);
+		$this->assertSame([$opener->uid(), 'a.visitor'], [$sameHour->uid(), $sameHour->authorId]);
+		$this->assertSame([$opener->uid(), 'a.visitor'], [$nextHour->uid(), $nextHour->authorId]);
 	}
 
 	/** A visitor's uid is told from the link's and a user's by its form. */
@@ -217,7 +217,7 @@ class PublicLinkVisitorsTest extends TestCase {
 
 	/** Neither the session nor the cache holds the token: their keys are HMACs. */
 	public function testNoKeyCarriesTheToken(): void {
-		$this->visitors($this->memcache())->openerFor(self::TOKEN)->uid;
+		$this->visitors($this->memcache())->openerFor(self::TOKEN)->uid();
 
 		$this->assertNotEmpty($this->session->getArrayCopy());
 		$this->assertNotEmpty($this->held->getArrayCopy());
