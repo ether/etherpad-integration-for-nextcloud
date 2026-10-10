@@ -148,6 +148,40 @@ class PadSessionRevokerTest extends TestCase {
 	}
 
 	/**
+	 * A full cookie whose every delete Etherpad refuses: twenty calls, all
+	 * on carried sessions, and every live session is reported as left to
+	 * expire - the five carried ones never tried among them.
+	 */
+	public function testACookieOfRefusedDeletesIsReportedAsLeft(): void {
+		$carried = [];
+		$sessions = [];
+		for ($i = 0; $i < 25; $i++) {
+			$carried[] = 's.carried' . $i;
+			$sessions['s.carried' . $i] = ['groupID' => 'g.AAAAAAAAAAAAAAAA', 'validUntil' => FixedClock::NOW + 3600];
+		}
+		// Others the author holds, which the carried ones go before.
+		for ($i = 0; $i < 10; $i++) {
+			$sessions = ['s.other' . $i => ['groupID' => 'g.AAAAAAAAAAAAAAAA', 'validUntil' => FixedClock::NOW + 3600]] + $sessions;
+		}
+		$client = $this->createMock(EtherpadClient::class);
+		$client->method('listSessionsOfAuthor')->willReturn($sessions);
+		$tried = [];
+		$client->method('deleteSession')->willReturnCallback(static function (string $id) use (&$tried): void {
+			$tried[] = $id;
+			throw new EtherpadRefusedException('Etherpad API error (deleteSession): refused');
+		});
+		$left = null;
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->method('warning')->willReturnCallback(static function (string $message, array $context) use (&$left): void {
+			$left = $context['leftToExpire'] ?? $left;
+		});
+
+		self::assertSame(0, $this->revoker($client, logger: $logger, carriedIds: $carried)->revokeAll('alice'));
+		self::assertSame(array_slice($carried, 0, 20), $tried);
+		self::assertSame(35, $left);
+	}
+
+	/**
 	 * Answers that are neither deletes nor a row of refusals - sessions
 	 * already gone between refusals - still stop at the ceiling of 25.
 	 */
@@ -937,6 +971,35 @@ class PadSessionRevokerTest extends TestCase {
 		$this->revoker($client)->revokeForPads(array_map(static fn (string $group): string => $group . '$pad', $groups));
 
 		self::assertSame(10, $listed);
+	}
+
+	/**
+	 * A group that goes while it is asked takes the entries it listed with
+	 * it: they are not reported as left to expire.
+	 */
+	public function testAGroupGoneWhileAskedTakesItsEntriesWithIt(): void {
+		$client = $this->createMock(EtherpadClient::class);
+		$client->method('listSessionsOfGroup')->willReturnCallback(static function (string $group, ?int $timeout = null, ?int &$unreadable = null): array {
+			if ($group === 'g.AAAAAAAAAAAAAAAA') {
+				$unreadable = 2;
+				return [
+					's.a1' => ['groupID' => $group, 'validUntil' => FixedClock::NOW + 3600],
+					's.a2' => ['groupID' => $group, 'validUntil' => FixedClock::NOW + 3600],
+					's.a3' => ['groupID' => $group, 'validUntil' => FixedClock::NOW + 3600],
+				];
+			}
+			return ['s.b1' => ['groupID' => $group, 'validUntil' => FixedClock::NOW + 3600]];
+		});
+		$client->method('listPads')->willReturnCallback(static function (string $group): array {
+			if ($group === 'g.AAAAAAAAAAAAAAAA') {
+				throw new EtherpadRefusedException('Etherpad API error (listPads): groupID does not exist');
+			}
+			return [$group . '$pad'];
+		});
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects(self::once())->method('info')->with('Revoked Etherpad sessions.', self::callback(static fn (array $context): bool => $context['count'] === 1 && $context['leftToExpire'] === 0));
+
+		self::assertSame(1, $this->revoker($client, logger: $logger)->revokeForPads(['g.AAAAAAAAAAAAAAAA$pad', 'g.BBBBBBBBBBBBBBBB$pad']));
 	}
 
 	/**

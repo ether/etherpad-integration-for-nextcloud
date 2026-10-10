@@ -161,6 +161,7 @@ class PadSessionRevoker {
 		}
 		$groups['asked'][] = $groupId;
 		$sessions = [];
+		$unreadable = null;
 		try {
 			$sessions = $this->live($this->etherpadClient->listSessionsOfGroup($groupId, $timeout, $unreadable));
 			// Entries this does not delete: whether one is live cannot be told.
@@ -186,8 +187,9 @@ class PadSessionRevoker {
 			}
 		} catch (\Throwable $e) {
 			if (EtherpadErrorClassifier::isPadAlreadyDeleted($e)) {
-				// No group, and no session left in it: gone through, as a
-				// session already gone is in a delete.
+				// No group, and no session left in it, nor an entry it listed:
+				// gone through, as a session already gone is in a delete.
+				$groups['unreadable'] -= $unreadable ?? 0;
 				$budget->noteGoneThrough();
 				return false;
 			}

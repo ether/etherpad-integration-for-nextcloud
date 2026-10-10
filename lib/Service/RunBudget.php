@@ -111,7 +111,7 @@ final class RunBudget {
 		$this->failures = 0;
 	}
 
-	/** An item that went through: refusals in a row and failures start again. */
+	/** An item that went through - a session deleted, or found gone already: refusals in a row and failures start again. */
 	public function noteDone(): void {
 		$this->refusedInARow = 0;
 		$this->failures = 0;
@@ -127,7 +127,13 @@ final class RunBudget {
 
 	/** The timeout for a call about to start, or null when none would finish in time any more. */
 	public function nextCallTimeout(): ?int {
-		return $this->fitsAnotherCall() ? $this->callTimeout() : null;
+		// One reading of the clock for both: two could say a call fits and
+		// then give it less than the least a call is given.
+		$left = $this->deadline - $this->now();
+		if ($left < $this->minCallSeconds) {
+			return null;
+		}
+		return (int)max($this->minCallSeconds, min(floor($left), EtherpadClient::REQUEST_TIMEOUT_SECONDS));
 	}
 
 	/**

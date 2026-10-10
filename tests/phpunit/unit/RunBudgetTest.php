@@ -87,6 +87,23 @@ class RunBudgetTest extends TestCase {
 		$this->assertTrue($budget->exhausted());
 	}
 
+	/**
+	 * The clock is read once for a call's timeout: a clock that moves
+	 * between two readings must not let a call start that then gets less
+	 * than the least a call is given.
+	 */
+	public function testReadsTheClockOnceForACallsTimeout(): void {
+		$clock = new class(0) extends FixedClock {
+			public function now(): \DateTimeImmutable {
+				$this->advanceMicros(600_000);
+				return parent::now();
+			}
+		};
+		$budget = RunBudget::forRequest($clock, 2.0);
+
+		$this->assertSame(1, $budget->nextCallTimeout());
+	}
+
 	/** A call gets a timeout only while it could still finish. */
 	public function testGivesTheNextCallATimeoutOnlyWhileItFits(): void {
 		$clock = new FixedClock();

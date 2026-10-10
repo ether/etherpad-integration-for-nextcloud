@@ -244,9 +244,9 @@ away itself:
   removes. What is live is revoked within a small budget – 25 delete calls
   or two seconds, with each call given what is left of it, and ended early
   by twenty deletes in a row that do not go through or five failures
-  without an answer since the last delete that went through – starting
-  with the sessions this browser is carrying, since the listing arrives
-  oldest first and the ceiling would otherwise spend itself before
+  without an answer since the last session deleted or found gone –
+  starting with the sessions this browser is carrying, since the listing
+  arrives oldest first and the ceiling would otherwise spend itself before
   reaching the one in the cookie of the person who just logged out. What
   is left over, whether skipped or refused, is counted and logged.
 
