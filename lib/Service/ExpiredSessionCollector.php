@@ -259,7 +259,7 @@ class ExpiredSessionCollector {
 			// Live sessions are left alone: ending someone's access is not a
 			// housekeeping decision.
 			if ($info['validUntil'] <= $cutoff) {
-				$expired[] = $sessionId;
+				$expired[$sessionId] = $info;
 				continue;
 			}
 

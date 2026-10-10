@@ -146,9 +146,7 @@ class GroupSessionRevoker {
 			return self::RETRY;
 		}
 
-		$live = SessionDeletes::live($sessions, $this->timeFactory->getTime());
-		// The latest to expire first: most often whoever was at the pad last.
-		uasort($live, static fn (array $a, array $b): int => $b['validUntil'] <=> $a['validUntil']);
+		$live = SessionDeletes::latestFirst(SessionDeletes::live($sessions, $this->timeFactory->getTime()));
 
 		$lookupFailed = false;
 		$back = false;
@@ -174,7 +172,7 @@ class GroupSessionRevoker {
 				return false;
 			}
 		};
-		$run = $this->deletes->within($budget, array_keys($live), self::MAX_PER_RUN, ['groupId' => $groupId], 'Could not revoke an Etherpad session of a group.', $stillAway);
+		$run = $this->deletes->within($budget, $live, self::MAX_PER_RUN, ['groupId' => $groupId], 'Could not revoke an Etherpad session of a group.', $stillAway);
 
 		if ($run['deleted'] > 0) {
 			$this->logger->info('Revoked remaining Etherpad sessions of a group.', [

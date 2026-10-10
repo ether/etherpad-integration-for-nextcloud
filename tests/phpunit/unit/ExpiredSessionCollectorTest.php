@@ -467,6 +467,20 @@ class ExpiredSessionCollectorTest extends TestCase {
 		self::assertSame($soon + 300, $result['nextDueAt'], 'the earliest one, plus the grace');
 	}
 
+	/** A delete refused is said under the session's own group, among an author's many. */
+	public function testSaysTheGroupOfAnExpiredSessionItCouldNotCollect(): void {
+		$client = $this->createMock(EtherpadClient::class);
+		$client->method('listSessionsOfAuthor')->willReturn(['s.old' => ['groupID' => 'g.ONEONEONEONEONE', 'validUntil' => FixedClock::NOW - 3600]]);
+		$client->method('deleteSession')->willThrowException(new EtherpadRefusedException('Etherpad API error (deleteSession): internal error'));
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects(self::once())->method('warning')->with(
+			'Could not collect an expired Etherpad session.',
+			self::callback(static fn (array $context): bool => $context['authorId'] === self::AUTHOR && $context['groupId'] === 'g.ONEONEONEONEONE'),
+		);
+
+		$this->collector($client, logger: $logger)->collect(self::AUTHOR);
+	}
+
 	/** An author holding nothing has nothing to come back for. */
 	public function testHasNoDueTimeWhenTheAuthorHoldsNothing(): void {
 		$client = $this->createMock(EtherpadClient::class);
@@ -539,10 +553,10 @@ class ExpiredSessionCollectorTest extends TestCase {
 	}
 
 	/**
-	 * The ceiling counts what was dealt with, not what this run deleted.
-	 * An author whose backlog was already cleared by somebody else would
-	 * otherwise never reach it and walk the whole index in one run — the
-	 * ceiling would exist only for the happy path.
+	 * The ceiling counts attempts, not what this run deleted. An author
+	 * whose backlog was already cleared by somebody else would otherwise
+	 * never reach it and walk the whole index in one run — the ceiling
+	 * would exist only for the happy path.
 	 */
 	public function testAnAlreadyClearedBacklogStillHitsTheCeiling(): void {
 		$client = $this->createMock(EtherpadClient::class);

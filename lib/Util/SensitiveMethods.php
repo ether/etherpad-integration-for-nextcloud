@@ -137,7 +137,7 @@ final class SensitiveMethods {
 		\OCA\EtherpadNextcloud\Service\PublicLinkCache::class => ['key'],
 		\OCA\EtherpadNextcloud\Service\PublicLinkOpener::class => ['__construct'],
 		\OCA\EtherpadNextcloud\Service\PadSessionRevoker::class => ['live', 'deleteLive', 'carriedFirst'],
-		\OCA\EtherpadNextcloud\Service\SessionDeletes::class => ['live', 'within'],
+		\OCA\EtherpadNextcloud\Service\SessionDeletes::class => ['live', 'latestFirst', 'within'],
 		\OCA\EtherpadNextcloud\Service\PadOpenTarget::class => ['__construct'],
 		\OCA\EtherpadNextcloud\Service\PublicPadOpenTarget::class => ['__construct'],
 		\OCA\EtherpadNextcloud\Service\PublicPadContext::class => ['__construct'],
