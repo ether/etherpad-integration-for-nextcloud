@@ -243,11 +243,12 @@ away itself:
   honoured there, and skipping it would leave exactly the access a logout
   removes. What is live is revoked within a small budget – 25 delete calls
   or two seconds, with each call given what is left of it, and ended early
-  by twenty refusals in a row or five failures without an answer –
-  starting with the sessions this browser is carrying, since the listing
-  arrives oldest first and the ceiling would otherwise spend itself before
-  reaching the one in the cookie of the person who just logged out. What
-  is left over, whether skipped or refused, is counted and logged.
+  by twenty refusals in a row, fifty in all, or five failures without an
+  answer between deletes that went through – starting with the sessions
+  this browser is carrying, since the listing arrives oldest first and the
+  ceiling would otherwise spend itself before reaching the one in the
+  cookie of the person who just logged out. What is left over, whether
+  skipped or refused, is counted and logged.
 
 No table of our own is involved: sessions belong to an Etherpad author, the
 author is cached per uid, and `listSessionsOfAuthor` answers the rest. That

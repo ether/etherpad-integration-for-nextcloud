@@ -38,10 +38,10 @@ class RunBudgetTest extends TestCase {
 		$budget = new RunBudget(new FixedClock(), 20.0);
 
 		for ($i = 0; $i < 4; $i++) {
-			$budget->noteFailure();
+			$budget->noteUnanswered();
 		}
 		$this->assertFalse($budget->exhausted());
-		$budget->noteFailure();
+		$budget->noteUnanswered();
 		$this->assertTrue($budget->exhausted());
 	}
 
@@ -87,13 +87,39 @@ class RunBudgetTest extends TestCase {
 		$clock = new FixedClock();
 		$budget = RunBudget::forRequest($clock, 2.0);
 
-		$this->assertFalse($budget->probesOutages());
 		$this->assertSame(2, $budget->nextCallTimeout());
+		for ($i = 0; $i < 5; $i++) {
+			$budget->noteUnanswered(fn (): bool => $this->fail('a request asks nothing'));
+		}
+		$this->assertTrue($budget->exhausted());
 		$clock->advance(1);
 		$this->assertSame(1, $budget->nextCallTimeout());
 		$clock->advanceMicros(1);
 		$this->assertNull($budget->nextCallTimeout());
-		$this->assertTrue((new RunBudget($clock, 20.0))->probesOutages());
+	}
+
+	/**
+	 * A background run counts an item without an answer only when Etherpad
+	 * then does not answer at all, or cannot be asked in time; and an item
+	 * that went through starts the count again.
+	 */
+	public function testABackgroundRunAsksBeforeItCountsAnOutage(): void {
+		$budget = new RunBudget(new FixedClock(), 20.0);
+		for ($i = 0; $i < 10; $i++) {
+			$budget->noteUnanswered(static fn (): bool => true);
+		}
+		$this->assertFalse($budget->exhausted(), 'Etherpad answers: not an outage');
+
+		for ($i = 0; $i < 4; $i++) {
+			$budget->noteUnanswered(static fn (): bool => false);
+		}
+		$budget->noteDone();
+		for ($i = 0; $i < 4; $i++) {
+			$budget->noteUnanswered(static fn (): bool => throw new RunBudgetSpentException('no time'));
+		}
+		$this->assertFalse($budget->exhausted(), 'four since the last that went through');
+		$budget->noteUnanswered();
+		$this->assertTrue($budget->exhausted());
 	}
 
 	/** One way to ask for a call's timeout, with a budget or without one. */

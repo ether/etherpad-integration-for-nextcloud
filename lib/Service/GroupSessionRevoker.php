@@ -146,9 +146,7 @@ class GroupSessionRevoker {
 			return self::RETRY;
 		}
 
-		$live = SessionDeletes::live($sessions, $this->timeFactory->getTime());
-		// The latest to expire first: most often whoever was at the pad last.
-		uasort($live, static fn (array $a, array $b): int => $b['validUntil'] <=> $a['validUntil']);
+		$live = SessionDeletes::latestFirst(SessionDeletes::live($sessions, $this->timeFactory->getTime()));
 
 		$lookupFailed = false;
 		$back = false;

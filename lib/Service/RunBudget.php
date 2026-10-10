@@ -15,16 +15,16 @@ use OCP\AppFramework\Utility\ITimeFactory;
 /**
  * What a run of Etherpad calls may spend, item by item, with a promised
  * total length: time, and patience with an Etherpad that does not answer
- * or refuses.
- * A deadline alone bounds when the last call starts, not when it ends, so
- * each call is given what is left, and one that could not finish in it is
- * not started. A few items without an answer read as an outage, and the
- * run ends there rather than paying a timeout for each. A background run
- * asks Etherpad whether it answers at all before it counts one; a request,
- * which someone waits on, counts it at once (forRequest()). Refusals end
- * a run too: more in a row than a few items Etherpad will never take, or
- * more in all. One budget for a run, however many calls make it up, so
- * every limit holds for the whole run.
+ * or refuses. A deadline alone bounds when the last call starts, not
+ * when it ends, so each call is given what is left, and one that could
+ * not finish in it is not started. A few items without an answer since
+ * the last that went through read as an outage, and the run ends there
+ * rather than paying a timeout for each. A background run asks Etherpad
+ * whether it answers at all before it counts one; a request, which
+ * someone waits on, counts it at once (forRequest(), noteUnanswered()).
+ * Refusals end a run too: more in a row than a few items Etherpad will
+ * never take, or more in all. One budget for a run, however many calls
+ * make it up, so every limit holds for the whole run.
  */
 final class RunBudget {
 	/** The whole run, as both sweeps promise it. */
@@ -36,7 +36,7 @@ final class RunBudget {
 	/** The least a call is given in a request, whose budget is a couple of seconds. */
 	private const MIN_REQUEST_CALL_TIMEOUT_SECONDS = 1;
 
-	/** Items without an answer a run puts up with before reading them as an outage. */
+	/** Items without an answer, since the last that went through, a run puts up with before reading them as an outage. */
 	private const MAX_FAILURES = 5;
 
 	/**
@@ -53,27 +53,26 @@ final class RunBudget {
 	private const MAX_REFUSED_A_RUN = 50;
 
 	private float $deadline;
+	private int $minCallSeconds = self::MIN_CALL_TIMEOUT_SECONDS;
+	private bool $probesOutages = true;
 	private int $failures = 0;
 	private int $refusedInARow = 0;
 	private int $refusedInAll = 0;
 
+	/** A background run's budget. */
 	public function __construct(
 		private ITimeFactory $clock,
 		float $seconds,
-		private int $minCallSeconds = self::MIN_CALL_TIMEOUT_SECONDS,
-		private bool $probesOutages = true,
 	) {
 		$this->deadline = $this->now() + $seconds;
 	}
 
-	/** A budget for a request: shorter calls, and no call spent on asking whether Etherpad answers. */
+	/** A request's budget: shorter calls, and no call spent on asking whether Etherpad answers. */
 	public static function forRequest(ITimeFactory $clock, float $seconds): self {
-		return new self($clock, $seconds, self::MIN_REQUEST_CALL_TIMEOUT_SECONDS, false);
-	}
-
-	/** Whether an item without an answer is worth a call asking whether Etherpad answers at all. */
-	public function probesOutages(): bool {
-		return $this->probesOutages;
+		$budget = new self($clock, $seconds);
+		$budget->minCallSeconds = self::MIN_REQUEST_CALL_TIMEOUT_SECONDS;
+		$budget->probesOutages = false;
+		return $budget;
 	}
 
 	/** Whether a call started now could still finish in time. */
@@ -81,8 +80,22 @@ final class RunBudget {
 		return $this->deadline - $this->now() >= $this->minCallSeconds;
 	}
 
-	/** An item Etherpad gave no answer for. */
-	public function noteFailure(): void {
+	/**
+	 * An item that failed as if Etherpad were unreachable. A background run
+	 * counts it once $answers - asking whether Etherpad answers at all -
+	 * says no, or cannot be asked in time; a request counts it at once, and
+	 * so does a run given nothing to ask with.
+	 *
+	 * @param ?\Closure(): bool $answers
+	 */
+	public function noteUnanswered(?\Closure $answers = null): void {
+		try {
+			if ($this->probesOutages && $answers !== null && $answers()) {
+				return;
+			}
+		} catch (RunBudgetSpentException) {
+			// No time left to ask: counted, and the run ends before the next.
+		}
 		$this->failures++;
 	}
 
@@ -92,9 +105,10 @@ final class RunBudget {
 		$this->refusedInAll++;
 	}
 
-	/** An item that went through: refusals in a row start again. */
+	/** An item that went through, so Etherpad answers: refusals in a row and failures start again. */
 	public function noteDone(): void {
 		$this->refusedInARow = 0;
+		$this->failures = 0;
 	}
 
 	/** Out of time, or out of patience: no further item is started. */

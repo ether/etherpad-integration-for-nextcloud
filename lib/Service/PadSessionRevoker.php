@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Service;
 
+use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
 use OCA\EtherpadNextcloud\Util\EtherpadErrorClassifier;
 use OCA\EtherpadNextcloud\Util\PadId;
 use OCA\EtherpadNextcloud\Util\SafeError;
@@ -34,14 +35,13 @@ class PadSessionRevoker {
 	private const BUDGET_SECONDS = 2.0;
 
 	/**
-	 * At least every id a cookie can hold.
-	 *
-	 * Taking the carried sessions first only guarantees they are reached if
-	 * the ceiling covers a full cookie: a lower one would revoke a prefix
-	 * of what the browser is holding and leave the tail, which is the same
-	 * shared-computer failure the ordering was introduced to fix. Derived
-	 * rather than repeated, because two 25s in two classes are a
-	 * coincidence a reader has to verify and a maintainer can break.
+	 * At least every id a cookie can hold: the carried sessions go first,
+	 * and a lower ceiling would leave the tail of what the browser holds -
+	 * on a shared computer, the next user's way in. Only the budget ends a
+	 * revoke before them: its time, or an Etherpad refusing or not
+	 * answering. Derived rather than repeated, because two 25s in two
+	 * classes are a coincidence a reader has to verify and a maintainer
+	 * can break.
 	 */
 	private const MAX_PER_REQUEST = PadSessionService::MAX_SESSION_IDS;
 
@@ -123,7 +123,7 @@ class PadSessionRevoker {
 			[$tally['left'], $groups['unasked']] = $before;
 		}
 		if ($groups['unasked'] > 0) {
-			$this->logger->warning('No time or deletes left to revoke the Etherpad sessions of every group; a background job takes them.', [
+			$this->logger->warning('Not every group could be asked for its Etherpad sessions to revoke; a background job takes them.', [
 				'app' => 'etherpad_nextcloud',
 				'groupsLeft' => $groups['unasked'],
 			]);
@@ -187,6 +187,11 @@ class PadSessionRevoker {
 			}
 			// Those listed already are left as surely as those never listed.
 			$tally['left'] += count($sessions);
+			// Counted as a delete's would be: a few end the asking, and the
+			// groups after them go to the job unasked.
+			if (EtherpadClientException::isEtherpadUnreachable($e)) {
+				$budget->noteUnanswered();
+			}
 			$this->logger->warning('Could not tell which Etherpad sessions to revoke; a background job tries again.', [
 				'app' => 'etherpad_nextcloud',
 				'groupId' => $groupId,
@@ -194,8 +199,7 @@ class PadSessionRevoker {
 			]);
 			return true;
 		}
-		uasort($sessions, static fn (array $a, array $b): int => $b['validUntil'] <=> $a['validUntil']);
-		$this->deleteLive($sessions, $budget, ['groupId' => $groupId], $tally, self::MAX_PER_DELETE);
+		$this->deleteLive(SessionDeletes::latestFirst($sessions), $budget, ['groupId' => $groupId], $tally, self::MAX_PER_DELETE);
 		return true;
 	}
 

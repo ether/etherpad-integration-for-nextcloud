@@ -128,7 +128,7 @@ class PadSessionRevokerTest extends TestCase {
 	 * end the revoke, and in a request five failures without an answer do,
 	 * with no call spent on asking whether it answers.
 	 */
-	public function testAFastFailingPadServerStillHitsTheCeiling(): void {
+	public function testAFastFailingPadServerIsStoppedEarly(): void {
 		$live = [];
 		for ($i = 0; $i < 400; $i++) {
 			$live['s.' . $i] = ['groupID' => 'g.AAAAAAAAAAAAAAAA', 'validUntil' => FixedClock::NOW + 3600];
@@ -145,6 +145,27 @@ class PadSessionRevokerTest extends TestCase {
 
 			self::assertSame(0, $this->revoker($client)->revokeAll('alice'), $case);
 		}
+	}
+
+	/**
+	 * Answers that are neither deletes nor a row of refusals - sessions
+	 * already gone between refusals - still stop at the ceiling of 25.
+	 */
+	public function testMixedAnswersStopAtTheCeiling(): void {
+		$live = [];
+		for ($i = 0; $i < 400; $i++) {
+			$live['s.' . $i] = ['groupID' => 'g.AAAAAAAAAAAAAAAA', 'validUntil' => FixedClock::NOW + 3600];
+		}
+		$calls = 0;
+		$client = $this->createMock(EtherpadClient::class);
+		$client->method('listSessionsOfAuthor')->willReturn($live);
+		$client->method('deleteSession')->willReturnCallback(static function () use (&$calls): void {
+			$calls++;
+			throw new EtherpadRefusedException($calls % 2 === 0 ? 'Etherpad API error (deleteSession): sessionID does not exist' : 'Etherpad API error (deleteSession): internal error');
+		});
+
+		self::assertSame(0, $this->revoker($client)->revokeAll('alice'));
+		self::assertSame(25, $calls);
 	}
 
 	/**
@@ -495,7 +516,7 @@ class PadSessionRevokerTest extends TestCase {
 		self::assertSame([
 			['Could not tell which Etherpad sessions to revoke; a background job tries again.', 'g.AAAAAAAAAAAAAAAA'],
 			// B's sessions took the rest: C's and D's go unasked.
-			['No time or deletes left to revoke the Etherpad sessions of every group; a background job takes them.', 2],
+			['Not every group could be asked for its Etherpad sessions to revoke; a background job takes them.', 2],
 		], $lines);
 		self::assertSame(['g.AAAAAAAAAAAAAAAA', 'g.BBBBBBBBBBBBBBBB', 'g.CCCCCCCCCCCCCCCC', 'g.DDDDDDDDDDDDDDDD'], $queued);
 	}
@@ -541,7 +562,7 @@ class PadSessionRevokerTest extends TestCase {
 		self::assertSame(1, $count);
 		self::assertSame(['s.g.AAAAAAAAAAAAAAAA'], $removed);
 		self::assertSame([
-			['No time or deletes left to revoke the Etherpad sessions of every group; a background job takes them.', 1, null],
+			['Not every group could be asked for its Etherpad sessions to revoke; a background job takes them.', 1, null],
 			['Revoked Etherpad sessions.', 1, 1],
 		], $lines);
 		self::assertSame(['g.AAAAAAAAAAAAAAAA', 'g.BBBBBBBBBBBBBBBB', 'g.CCCCCCCCCCCCCCCC'], $queued);
@@ -743,6 +764,20 @@ class PadSessionRevokerTest extends TestCase {
 
 		self::assertSame(24, $this->revoker($client)->revokeForPads(['g.AAAAAAAAAAAAAAAA$pad', 'g.BBBBBBBBBBBBBBBB$pad']));
 		self::assertSame(74, $calls);
+	}
+
+	/**
+	 * Listings that fail without an answer count as a delete's would: five
+	 * end the asking, and the groups after them go to the job unasked.
+	 */
+	public function testListingsWithoutAnAnswerEndTheAsking(): void {
+		$groups = array_map(static fn (string $letter): string => 'g.' . str_repeat($letter, 16), range('A', 'J'));
+		$client = $this->createMock(EtherpadClient::class);
+		$client->expects(self::exactly(5))->method('listSessionsOfGroup')->willThrowException(new EtherpadClientException('Connection refused'));
+		$queued = [];
+
+		self::assertSame(0, $this->revoker($client, groupSessions: $this->queueRecorder($queued))->revokeForPads(array_map(static fn (string $group): string => $group . '$pad', $groups)));
+		self::assertSame($groups, $queued);
 	}
 
 	/**

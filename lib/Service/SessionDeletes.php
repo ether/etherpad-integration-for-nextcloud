@@ -10,7 +10,6 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\Service;
 
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
-use OCA\EtherpadNextcloud\Exception\RunBudgetSpentException;
 use OCA\EtherpadNextcloud\Util\EtherpadErrorClassifier;
 use OCA\EtherpadNextcloud\Util\SafeError;
 use Psr\Log\LoggerInterface;
@@ -40,6 +39,19 @@ class SessionDeletes {
 	public static function live(array $sessions, int $now): array {
 		$expiredBefore = $now - EtherpadClient::CLOCK_SKEW_ALLOWANCE_SECONDS;
 		return array_filter($sessions, static fn (array $info): bool => $info['validUntil'] > $expiredBefore);
+	}
+
+	/**
+	 * $sessions with the latest to expire first: most often whoever was at
+	 * the pad last, whom a revoke reaches first.
+	 *
+	 * @template K of array-key
+	 * @param array<K,array{groupID:string,validUntil:int}> $sessions
+	 * @return array<K,array{groupID:string,validUntil:int}>
+	 */
+	public static function latestFirst(array $sessions): array {
+		uasort($sessions, static fn (array $a, array $b): int => $b['validUntil'] <=> $a['validUntil']);
+		return $sessions;
 	}
 
 	/**
@@ -102,7 +114,7 @@ class SessionDeletes {
 				$refused = true;
 				$budget->noteRefusal();
 				if (EtherpadClientException::isEtherpadUnreachable($e)) {
-					$this->noteOutage($budget);
+					$budget->noteUnanswered(fn (): bool => $this->padLifecycle->answers($budget));
 				}
 				// A digest, not the id: a session id is the value of the
 				// `sessionID` cookie, the credential itself. The digest is
@@ -120,14 +132,4 @@ class SessionDeletes {
 		return ['deleted' => $deleted, 'handled' => $handled, 'attempted' => $attempted, 'refused' => $refused, 'stopped' => false];
 	}
 
-	/** A failure that reads as Etherpad unreachable, counted as the budget asks. */
-	private function noteOutage(RunBudget $budget): void {
-		try {
-			if (!$budget->probesOutages() || !$this->padLifecycle->answers($budget)) {
-				$budget->noteFailure();
-			}
-		} catch (RunBudgetSpentException) {
-			// No time left to ask: the budget ends the run before the next.
-		}
-	}
 }

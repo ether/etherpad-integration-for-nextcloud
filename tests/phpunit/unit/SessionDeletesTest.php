@@ -168,6 +168,25 @@ class SessionDeletesTest extends TestCase {
 		self::assertSame(['deleted' => 1, 'handled' => 2, 'attempted' => 40, 'refused' => true, 'stopped' => false], $run);
 	}
 
+	/**
+	 * A failure now and then between deletes is no outage, in a request
+	 * either: the deletes show that Etherpad answers.
+	 */
+	public function testAFailureNowAndThenDoesNotEndARequest(): void {
+		$calls = 0;
+		$client = $this->createMock(EtherpadClient::class);
+		$client->method('deleteSession')->willReturnCallback(static function () use (&$calls): void {
+			$calls++;
+			if ($calls % 4 === 0) {
+				throw new EtherpadClientException('Etherpad API HTTP error (502)');
+			}
+		});
+
+		$run = $this->deletes($client)->within(RunBudget::forRequest(new FixedClock(), 2.0), $this->sessions(...array_map(static fn (int $i): string => 's.' . $i, range(1, 25))), 25, [], 'refused');
+
+		self::assertSame(['deleted' => 19, 'handled' => 19, 'attempted' => 25, 'refused' => true, 'stopped' => false], $run);
+	}
+
 	/** A refusal's line names the session's own group, wherever the sessions come from. */
 	public function testSaysTheGroupOfTheSessionRefused(): void {
 		$client = $this->createMock(EtherpadClient::class);
