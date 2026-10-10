@@ -353,7 +353,7 @@ the rest. A listing is read up to 4 MiB, tens of thousands of sessions,
 rather than whole into a job's memory. One too long to read parks the
 sweep for a day, with a warning that says why; one timing out while
 Etherpad answers otherwise is tried again a minute later, as passing load
-may be all it is, and parks it when it times out again. A parked sweep
+may be all it is, and a timeout on any retry parks it. A parked sweep
 lists nothing and no open queues it, and after that day the next open
 does: an index in use is listed, and warned about, once a day until it
 shrinks. A public link's author adds a session an open without a memory

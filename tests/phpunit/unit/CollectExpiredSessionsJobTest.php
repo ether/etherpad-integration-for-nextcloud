@@ -372,7 +372,7 @@ class CollectExpiredSessionsJobTest extends TestCase {
 	/**
 	 * A first timeout may be passing load on Etherpad - an export, a
 	 * backup - so it is tried again a minute later as any failure is,
-	 * without a warning; only a second parks the sweep.
+	 * without a warning; a timeout on a retry parks the sweep.
 	 */
 	public function testTriesAFirstTimeoutAgainBeforeParking(): void {
 		$collector = $this->createMock(ExpiredSessionCollector::class);
