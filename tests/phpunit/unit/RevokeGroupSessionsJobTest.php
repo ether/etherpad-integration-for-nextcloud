@@ -275,7 +275,7 @@ class RevokeGroupSessionsJobTest extends TestCase {
 		$jobList->method('has')->willThrowException(new \RuntimeException('database gone'));
 		$logger = $this->createMock(LoggerInterface::class);
 		$logger->expects(self::once())->method('warning')->with(
-			'Could not tell whether a retry of an Etherpad session sweep is waiting; this pass runs.',
+			'Could not tell whether an Etherpad session sweep is waiting already; this pass runs.',
 			self::callback(static fn (array $context): bool => $context['groupId'] === self::GROUP),
 		);
 

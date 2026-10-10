@@ -33,14 +33,15 @@ use Psr\Log\LoggerInterface;
  *
  * A public link's open notes its group as well, and both sweeps run side
  * by side. The group's takes every author's expired sessions in it - a
- * signed-in user's whose own sweep no open queues any more too - which
- * keeps short the listing a delete's revoke reads; and it is one job a
- * group whatever authors open through the link: today a link's visitors
- * all open as its author, and should each open as an author of their
- * own, a job an author would be one a visitor. The author's sweep stays
- * because a group can hold more sessions than a run can list in time -
- * every user's, and a legacy group's other pads' - and the author's
- * index, often a smaller one, is collected all the same.
+ * signed-in user's too, while they open no protected pad that would
+ * queue their own - which keeps short the listing a delete's revoke
+ * reads; and it is one job a group whatever authors open through the
+ * link: today a link's visitors all open as its author, and should each
+ * open as an author of their own, a job an author would be one a
+ * visitor. The author's sweep stays because a group can hold more
+ * sessions than a run can list in time - every user's, and a legacy
+ * group's other pads' - and the author's index, often a smaller one, is
+ * collected all the same.
  */
 class ExpiredSessionCollector {
 
@@ -121,17 +122,18 @@ class ExpiredSessionCollector {
 	 *
 	 * `remaining` means the run worked and did not finish; `retry` means it
 	 * did not get through and is worth another try - a listing in an
-	 * outage, or refused, a delete refused. They must stay separate: the job removes its own
-	 * row before running, so a swallowed failure loses the backlog, and a
+	 * outage, refused, or failed with an HTTP error or a broken answer, a
+	 * delete refused. They must stay separate: the job removes its own row
+	 * before running, so a swallowed failure loses the backlog, and a
 	 * failure read as progress has the job returning every minute for good.
 	 * `nextDueAt` is when to come back though nothing is left to delete:
 	 * when the earliest live session becomes collectable, or null when
-	 * nothing live is left. `park` says the listing cannot be read in a
+	 * nothing live is left. `park` says why the listing cannot be read in a
 	 * run - too long, or timing out while Etherpad answers otherwise
 	 * (SessionSweepJob parks the sweep). An author Etherpad does not know
 	 * holds nothing, and the sweep ends.
 	 *
-	 * @return array{deleted:int,remaining:int,retry:bool,nextDueAt:?int,park?:bool}
+	 * @return array{deleted:int,remaining:int,retry:bool,nextDueAt:?int,park?:'tooLong'|'timeout'}
 	 */
 	public function collect(string $authorId): array {
 		$budget = new RunBudget($this->timeFactory, $this->budgetSeconds);
@@ -157,7 +159,7 @@ class ExpiredSessionCollector {
 	 * sweep ends; one with sessions still live comes back for them an hour
 	 * on at the soonest (GROUP_SWEEP_INTERVAL_SECONDS).
 	 *
-	 * @return array{deleted:int,remaining:int,retry:bool,nextDueAt:?int,park?:bool}
+	 * @return array{deleted:int,remaining:int,retry:bool,nextDueAt:?int,park?:'tooLong'|'timeout'}
 	 */
 	public function collectGroup(string $groupId): array {
 		$budget = new RunBudget($this->timeFactory, $this->budgetSeconds);
@@ -190,7 +192,7 @@ class ExpiredSessionCollector {
 	 * HTTP error, not answering at all - is tried again with the backoff.
 	 *
 	 * @param array<string,string> $context whose sessions they are
-	 * @return array{deleted:int,remaining:int,retry:bool,nextDueAt:?int,park?:bool}
+	 * @return array{deleted:int,remaining:int,retry:bool,nextDueAt:?int,park?:'tooLong'|'timeout'}
 	 */
 	private function listingFailed(\Throwable $e, RunBudget $budget, array $context, bool $gone): array {
 		if ($gone) {
@@ -200,15 +202,20 @@ class ExpiredSessionCollector {
 			]);
 			return ['deleted' => 0, 'remaining' => 0, 'retry' => false, 'nextDueAt' => null];
 		}
-		if ($e instanceof EtherpadTooLargeException || $this->tooSlowToList($e, $budget)) {
-			// The line that says so is the job's, which knows whether the
-			// sweep was parked before; this one keeps the cause.
+		$park = match (true) {
+			$e instanceof EtherpadTooLargeException => 'tooLong',
+			$this->tooSlowToList($e, $budget) => 'timeout',
+			default => null,
+		};
+		if ($park !== null) {
+			// The job says the sweep is parked, and why; this line keeps
+			// the error itself.
 			$this->logger->debug('Could not read the Etherpad sessions to collect in a run.', [
 				'app' => 'etherpad_nextcloud',
 				...$context,
 				...SafeError::context($e),
 			]);
-			return ['deleted' => 0, 'remaining' => 0, 'retry' => false, 'nextDueAt' => null, 'park' => true];
+			return ['deleted' => 0, 'remaining' => 0, 'retry' => false, 'nextDueAt' => null, 'park' => $park];
 		}
 		$this->logger->warning('Could not list the Etherpad sessions to collect.', [
 			'app' => 'etherpad_nextcloud',
@@ -220,8 +227,8 @@ class ExpiredSessionCollector {
 
 	/**
 	 * Whether a listing that timed out was this listing's alone: Etherpad
-	 * answers otherwise. An HTTP error or a broken answer is no slowness,
-	 * and without time left to ask, it is taken for an outage.
+	 * answers otherwise. An HTTP error or a broken answer is no slowness;
+	 * and a timeout with no time left to ask is taken for an outage.
 	 */
 	private function tooSlowToList(\Throwable $e, RunBudget $budget): bool {
 		if (!EtherpadClientException::isEtherpadUnreachable($e) || !EtherpadErrorClassifier::isTimeout($e)) {

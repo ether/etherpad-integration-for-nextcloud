@@ -337,26 +337,71 @@ class CollectExpiredSessionsJobTest extends TestCase {
 	}
 
 	/**
-	 * A listing no run can read is parked a day once, with a warning; read
-	 * no better then, the sweep ends, said as info, and the next open
-	 * queues it again.
+	 * A listing no run can read parks the sweep for a day, with a warning
+	 * that says why. The parked row's keys in the order isQueued() asks
+	 * for: the job list matches the encoded argument, so another order
+	 * would keep no open away.
 	 */
-	public function testParksASweepItCannotListOnceThenEnds(): void {
-		foreach ([['authorId' => 'a.author'], ['authorId' => 'a.author', 'parked' => 1]] as $argument) {
-			$parkedBefore = isset($argument['parked']);
+	public function testParksASweepItCannotListForADay(): void {
+		foreach (['tooLong', 'timeout'] as $reason) {
 			$collector = $this->createMock(ExpiredSessionCollector::class);
-			$collector->method('collect')->willReturn(['deleted' => 0, 'remaining' => 0, 'retry' => false, 'nextDueAt' => null, 'park' => true]);
+			$collector->method('collect')->willReturn(['deleted' => 0, 'remaining' => 0, 'retry' => false, 'nextDueAt' => null, 'park' => $reason]);
+			$scheduled = [];
 			$jobList = $this->createMock(IJobList::class);
-			$jobList->expects($parkedBefore ? self::never() : self::once())->method('scheduleAfter')
-				->with(CollectExpiredSessionsJob::class, 1_000_000 + 86400, ['authorId' => 'a.author', 'parked' => 1]);
+			$jobList->expects(self::once())->method('scheduleAfter')->willReturnCallback(
+				static function (string $job, int $runAfter, mixed $argument) use (&$scheduled): void {
+					$scheduled[] = [$job, $runAfter, $argument];
+				}
+			);
 			$logger = $this->createMock(LoggerInterface::class);
-			$logger->expects($parkedBefore ? self::never() : self::once())->method('warning')->with(self::stringContains('asks once more in a day'));
-			$logger->expects($parkedBefore ? self::once() : self::never())->method('info')->with(self::stringContains('it ends until an open queues it again'));
+			$logger->expects(self::once())->method('warning')->with(
+				'An Etherpad session sweep could not read its listing in a run; it waits a day before an open can queue it again.',
+				self::callback(static fn (array $context): bool => $context['authorId'] === 'a.author' && $context['reason'] === $reason),
+			);
+			$logger->expects(self::never())->method('info');
 
 			$job = $this->job($collector, $jobList, $logger);
-			$job->setArgument($argument);
+			$job->setArgument(['authorId' => 'a.author']);
 			$job->start($jobList);
+
+			self::assertSame([[CollectExpiredSessionsJob::class, 1_000_000 + 86400, ['authorId' => 'a.author', 'parked' => 1]]], $scheduled, $reason);
 		}
+	}
+
+	/**
+	 * The parked row lists nothing when its day is over: an index in use
+	 * is listed again by the sweep the next open queues, once a day, and
+	 * one no one uses is left alone.
+	 */
+	public function testAParkedRowListsNothing(): void {
+		$collector = $this->createMock(ExpiredSessionCollector::class);
+		$collector->expects(self::never())->method('collect');
+		$jobList = $this->createMock(IJobList::class);
+		$jobList->expects(self::never())->method('scheduleAfter');
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects(self::never())->method('warning');
+
+		$job = $this->job($collector, $jobList, $logger);
+		$job->setArgument(['authorId' => 'a.author', 'parked' => 1]);
+		$job->start($jobList);
+	}
+
+	/**
+	 * An open during the run that parks a sweep finds no row and queues a
+	 * plain one beside the parked row; it stands down rather than list
+	 * again at the next cron.
+	 */
+	public function testStandsDownWhileAParkedRowWaits(): void {
+		$collector = $this->createMock(ExpiredSessionCollector::class);
+		$collector->expects(self::never())->method('collect');
+		$jobList = $this->createMock(IJobList::class);
+		$jobList->method('has')->willReturnCallback(
+			static fn (string $job, mixed $argument): bool => $argument === ['authorId' => 'a.author', 'parked' => 1]
+		);
+
+		$job = $this->job($collector, $jobList);
+		$job->setArgument(['authorId' => 'a.author']);
+		$job->start($jobList);
 	}
 
 	private function job(

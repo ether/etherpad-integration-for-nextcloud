@@ -142,13 +142,13 @@ class ExpiredSessionCollectorTest extends TestCase {
 	/**
 	 * A listing too long to read, or one that timed out while Etherpad
 	 * answers otherwise, is read no sooner by a run: the sweep asks to be
-	 * parked, keeping the cause at debug (SessionSweepJob says the rest).
-	 * The cap is the sweep's to ask for.
+	 * parked, and says why, keeping the error itself at debug
+	 * (SessionSweepJob says the rest). The cap is the sweep's to ask for.
 	 */
 	public function testAListingThatCannotBeReadAsksToBeParked(): void {
 		$failures = [
-			'too long' => static fn (string $method): \Throwable => new EtherpadTooLargeException('Etherpad API response exceeds 4194304 bytes.'),
-			'too slow' => static fn (string $method): \Throwable => new EtherpadClientException('Etherpad API request failed: ' . $method, 0, new \RuntimeException('cURL error 28: Operation timed out after 15001 milliseconds with 0 bytes received')),
+			'tooLong' => static fn (string $method): \Throwable => new EtherpadTooLargeException('Etherpad API response exceeds 4194304 bytes.'),
+			'timeout' => static fn (string $method): \Throwable => new EtherpadClientException('Etherpad API request failed: ' . $method, 0, new \RuntimeException('cURL error 28: Operation timed out after 15001 milliseconds with 0 bytes received')),
 		];
 		$listings = [
 			'a group\'s' => ['listSessionsOfGroup', self::GROUP, 'groupId', static fn (ExpiredSessionCollector $c): array => $c->collectGroup(self::GROUP)],
@@ -170,7 +170,7 @@ class ExpiredSessionCollectorTest extends TestCase {
 					self::callback(static fn (array $context): bool => $context[$key] === $id),
 				);
 
-				self::assertSame(['deleted' => 0, 'remaining' => 0, 'retry' => false, 'nextDueAt' => null, 'park' => true], $collect($this->collector($client, logger: $logger)), $listing . ', ' . $case);
+				self::assertSame(['deleted' => 0, 'remaining' => 0, 'retry' => false, 'nextDueAt' => null, 'park' => $case], $collect($this->collector($client, logger: $logger)), $listing . ', ' . $case);
 			}
 		}
 	}
@@ -252,6 +252,8 @@ class ExpiredSessionCollectorTest extends TestCase {
 		foreach ($failures as $case => $failure) {
 			$client = $this->createMock(EtherpadClient::class);
 			$client->method('listSessionsOfGroup')->willThrowException($failure);
+			// No slowness to tell from an outage, so no probe either.
+			$client->expects(self::never())->method('assertAnswering');
 			$logger = $this->createMock(LoggerInterface::class);
 			$logger->expects(self::once())->method('warning')->with('Could not list the Etherpad sessions to collect.', self::anything());
 

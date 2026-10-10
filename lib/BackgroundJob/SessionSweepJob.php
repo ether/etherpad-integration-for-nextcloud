@@ -20,10 +20,12 @@ use Psr\Log\LoggerInterface;
  * the item it sweeps - an author's sessions, a group's - where a first
  * pass, a retry and a second look can wait side by side: back after a
  * minute while there is more, backed off after a failure, and stopped
- * after three delayed retries without progress. The argument holds the item's id
- * under key(), a retry's attempt, and `again` on a second look
- * (lookAgainAfter()): nothing that opens anything, since job arguments are
- * persisted and printed by occ.
+ * after three delayed retries without progress, or kept away for a day
+ * when its listing cannot be read in a run (park()). The argument holds
+ * the item's id under key(), a retry's attempt, `again` on a second look
+ * (lookAgainAfter()) and `parked` on the row that keeps a sweep away:
+ * nothing that opens anything, since job arguments are persisted and
+ * printed by occ.
  *
  * What one pass does is the subclass's (sweep()); this decides only
  * whether one pass was enough.
@@ -35,7 +37,7 @@ abstract class SessionSweepJob extends QueuedJob {
 	/** Backoff after a refusal. The table is also the limit on attempts. */
 	private const RETRY_DELAYS = [60, 300, 900];
 
-	/** How long a sweep that could not read its listing waits before it asks once more (park()). */
+	/** How long a sweep that could not read its listing keeps from listing again (park()). */
 	private const PARKED_DELAY_SECONDS = 86400;
 
 	public function __construct(
@@ -54,10 +56,10 @@ abstract class SessionSweepJob extends QueuedJob {
 	 * next pass, whether it did not get through and is worth a retry -
 	 * Etherpad refusing, or not answering - when to look again though
 	 * nothing is left, if ever, whether the sweep is over whatever is left
-	 * (`ended`): then no second look either, and whether its listing could
-	 * not be read in a run at all (`park`).
+	 * (`ended`): then no second look either, and why its listing could not
+	 * be read in a run at all, if so (`park`): too long, or timing out.
 	 *
-	 * @return array{deleted:int,remaining:int,retry:bool,nextDueAt:?int,ended?:bool,park?:bool}
+	 * @return array{deleted:int,remaining:int,retry:bool,nextDueAt:?int,ended?:bool,park?:'tooLong'|'timeout'}
 	 */
 	abstract protected function sweep(string $item): array;
 
@@ -115,9 +117,10 @@ abstract class SessionSweepJob extends QueuedJob {
 
 	/**
 	 * Every argument a row of $argument's item can wait under: the plain
-	 * one, a retry's, and both with `again` where the sweep looks twice
-	 * (lookAgainAfter()). Built as reschedule() builds them, the order of
-	 * the keys too, which the job list matches as well.
+	 * one, a retry's, both with `again` where the sweep looks twice
+	 * (lookAgainAfter()), and the parked one (park()). Built as
+	 * reschedule() builds them, the order of the keys too, which the job
+	 * list matches as well.
 	 *
 	 * @param array<string,string> $argument the plain one
 	 * @return list<array<string,string|int>>
@@ -163,17 +166,22 @@ abstract class SessionSweepJob extends QueuedJob {
 		// Carried by every pass a second look needs, so it stays the one.
 		$again = isset($argument['again']);
 
+		// The parked row only kept the sweep away for its day (park()).
+		if (isset($argument['parked'])) {
+			return;
+		}
+
 		// QueuedJob removes its row before running, so during a run nothing
 		// says a sweep exists, and whoever queues one - an open, a delete -
-		// can queue a runnable row beside the retry that follows. It stands
-		// down rather than undo the wait.
-		if ($attempt === 0 && $this->retryIsWaiting($item, $again)) {
+		// can queue a runnable row beside the retry or the parked row that
+		// follows. It stands down rather than undo the wait.
+		if ($attempt === 0 && $this->standsDown($item, $again)) {
 			return;
 		}
 
 		$result = $this->sweep($item);
-		if ($result['park'] ?? false) {
-			$this->park($item, isset($argument['parked']));
+		if (isset($result['park'])) {
+			$this->park($item, $result['park']);
 			return;
 		}
 		if ($result['retry']) {
@@ -226,39 +234,44 @@ abstract class SessionSweepJob extends QueuedJob {
 
 	/**
 	 * A sweep whose listing no run can read now - too long, or timing out
-	 * while Etherpad answers otherwise - waits a day once: asking sooner
-	 * would make Etherpad walk the whole index for nothing, and the parked
-	 * row keeps an open from queueing another meanwhile. Unread a second
-	 * time, it ends until an open queues it again: an index no one uses
-	 * costs nothing.
+	 * while Etherpad answers otherwise - lists nothing for a day: asking
+	 * sooner would make Etherpad walk the whole index for nothing. The
+	 * parked row lists nothing either when it runs; it keeps an open from
+	 * queueing the sweep meanwhile, and a row queued beside it during this
+	 * run stands down (standsDown()). After that day the next open queues
+	 * the sweep again: an index in use is listed, and warned about, once a
+	 * day, and one no one uses costs nothing.
+	 *
+	 * @param 'tooLong'|'timeout' $reason which calls for a different remedy
 	 */
-	private function park(string $item, bool $parkedBefore): void {
-		$context = ['app' => 'etherpad_nextcloud', static::key() => $item];
-		if ($parkedBefore) {
-			$this->logger->info('An Etherpad session sweep still could not read its listing in a run; it ends until an open queues it again.', $context);
-			return;
-		}
-		$this->logger->warning('An Etherpad session sweep could not read its listing in a run - too long, or too slow while Etherpad answers otherwise; it asks once more in a day.', $context);
+	private function park(string $item, string $reason): void {
+		$this->logger->warning('An Etherpad session sweep could not read its listing in a run; it waits a day before an open can queue it again.', [
+			'app' => 'etherpad_nextcloud',
+			static::key() => $item,
+			'reason' => $reason,
+		]);
 		$this->reschedule($item, 0, self::PARKED_DELAY_SECONDS, parked: true);
 	}
 
 	/**
-	 * Whether a backed-off retry this row may stand down behind is waiting
-	 * its turn. A row without `again` - a delete's first pass - only behind
-	 * one without it, which looks again itself once it leaves nothing: a
-	 * second look's retry looks no more, and the delete would lose its own.
-	 * Asked after this row is gone, so a failure to ask lets the pass run
-	 * rather than lose it: a pass beside a retry costs only the pass.
+	 * Whether a row this one stands down behind is waiting its turn: a
+	 * backed-off retry, or a parked sweep's row. A row without `again` - a
+	 * delete's first pass - stands down only behind a retry without it,
+	 * which looks again itself once it leaves nothing: a second look's
+	 * retry looks no more, and the delete would lose its own. Asked after
+	 * this row is gone, so a failure to ask lets the pass run rather than
+	 * lose it: a pass beside a retry costs only the pass.
 	 */
-	private function retryIsWaiting(string $item, bool $again): bool {
-		$retries = array_values(array_filter(
+	private function standsDown(string $item, bool $again): bool {
+		$ahead = array_values(array_filter(
 			self::waitingArguments([static::key() => $item]),
-			static fn (array $argument): bool => isset($argument['attempt']) && ($again || !isset($argument['again'])),
+			static fn (array $argument): bool => isset($argument['parked'])
+				|| (isset($argument['attempt']) && ($again || !isset($argument['again']))),
 		));
 		try {
-			return static::anyQueued($this->jobList, $retries);
+			return static::anyQueued($this->jobList, $ahead);
 		} catch (\Throwable $e) {
-			$this->logger->warning('Could not tell whether a retry of an Etherpad session sweep is waiting; this pass runs.', [
+			$this->logger->warning('Could not tell whether an Etherpad session sweep is waiting already; this pass runs.', [
 				'app' => 'etherpad_nextcloud',
 				static::key() => $item,
 				...SafeError::context($e),
@@ -268,12 +281,12 @@ abstract class SessionSweepJob extends QueuedJob {
 	}
 
 	/**
-	 * The retries and second looks of an item the sweep is over for go - a
-	 * later delete's retry among them, which would only end the same way:
-	 * what ended this pass holds for it too, and a delete after that
-	 * queues a row of its own. Not the plain row, which a delete may queue
-	 * between this pass's answer and now. One that cannot be removed runs
-	 * once more.
+	 * The retries, second looks and parked row of an item the sweep is
+	 * over for go - a later delete's retry among them, which would only
+	 * end the same way: what ended this pass holds for it too, and a
+	 * delete after that queues a row of its own. Not the plain row, which
+	 * a delete may queue between this pass's answer and now. One that
+	 * cannot be removed runs once more.
 	 */
 	private function dropWaitingPasses(string $item): void {
 		foreach (array_slice(self::waitingArguments([static::key() => $item]), 1) as $argument) {

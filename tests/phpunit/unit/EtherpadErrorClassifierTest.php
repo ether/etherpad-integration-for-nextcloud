@@ -54,6 +54,9 @@ class EtherpadErrorClassifierTest extends TestCase {
 	/** A request out of time, as the HTTP client words it, through the client's wrapping; an HTTP error is none. */
 	public function testReadsATimeoutOnlyForOne(): void {
 		self::assertTrue(EtherpadErrorClassifier::isTimeout(new \RuntimeException('Etherpad API request failed: listSessionsOfGroup', 0, new \RuntimeException('cURL error 28: Operation timed out after 15001 milliseconds with 0 bytes received'))));
+		// Either word is enough: an older libcurl says "time-out", another handler no error number.
+		self::assertTrue(EtherpadErrorClassifier::isTimeout(new \RuntimeException('cURL error 28: Connection time-out')));
+		self::assertTrue(EtherpadErrorClassifier::isTimeout(new \RuntimeException('Connection timed out')));
 		self::assertFalse(EtherpadErrorClassifier::isTimeout(new \RuntimeException('Etherpad API request failed: listSessionsOfGroup', 0, new \RuntimeException('Etherpad API HTTP error (502)'))));
 		self::assertFalse(EtherpadErrorClassifier::isTimeout(new \RuntimeException('Invalid JSON response from Etherpad API.')));
 	}
