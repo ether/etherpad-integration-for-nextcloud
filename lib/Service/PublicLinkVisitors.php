@@ -99,7 +99,8 @@ class PublicLinkVisitors {
 	/**
 	 * Whether the link has room for another visitor of their own this
 	 * hour. Only a memory cache can count; without one, or while it fails,
-	 * there is none, and a failing one says so.
+	 * there is none, and a failing one says so at debug: the same open's
+	 * PublicLinkSessions warns of it.
 	 */
 	private function admits(string $token, int $hour): bool {
 		try {
@@ -125,7 +126,7 @@ class PublicLinkVisitors {
 			}
 			return false;
 		} catch (\Throwable $e) {
-			$this->logger->warning('The memory cache failed, so a public link\'s visitors open as the link\'s one Etherpad author while it fails.', [
+			$this->logger->debug('The memory cache failed, so a public link\'s visitors open as the link\'s one Etherpad author while it fails.', [
 				'app' => Application::APP_ID,
 				...SafeError::context($e),
 			]);

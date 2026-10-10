@@ -423,6 +423,14 @@ author of their own now, `nc:public-share:<token>:<visitor>`
 - Two first opens of one browser session at the same moment can each
   draw an id; the session keeps the later, and the other author opens
   once.
+- What the count bounds: a loop of requests without the session cookie
+  makes up to 250 authors an hour for a link, 6,000 a day while it runs,
+  where the link had one, and Etherpad deletes none. The public open's
+  throttle, 300 calls a minute for an address, does not bound it lower.
+- In a frame on another site, the browser does not send Nextcloud's
+  session cookie, so every open there is a new visitor - until the
+  hour's count, then the link. Writing works the same; it costs authors
+  and colours.
 
 ### A public link's session
 

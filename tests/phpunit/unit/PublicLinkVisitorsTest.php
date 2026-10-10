@@ -138,7 +138,11 @@ class PublicLinkVisitorsTest extends TestCase {
 		$this->assertSame([], $this->session->getArrayCopy());
 	}
 
-	/** A cache that cannot count - not a memory cache, failing, or not counting - opens as the link, and a failing one says so. */
+	/**
+	 * A cache that cannot count - not a memory cache, failing, or not
+	 * counting - opens as the link. A failing one is said at debug: the
+	 * open's session cache warns of the same outage, once an open.
+	 */
 	public function testACacheThatCannotCountOpensAsTheLink(): void {
 		$plain = $this->createMock(ICacheFactory::class);
 		$plain->method('isAvailable')->willReturn(true);
@@ -156,7 +160,8 @@ class PublicLinkVisitorsTest extends TestCase {
 		$failing->method('isAvailable')->willReturn(true);
 		$failing->method('createDistributed')->willThrowException(new \RuntimeException('Redis server went away'));
 		$logger = $this->createMock(LoggerInterface::class);
-		$logger->expects($this->once())->method('warning');
+		$logger->expects($this->never())->method('warning');
+		$logger->expects($this->once())->method('debug');
 		$this->assertSame(self::LINK, $this->visitors($failing, $logger)->openerFor(self::TOKEN)->uid());
 		$this->assertSame([], $this->session->getArrayCopy());
 	}
