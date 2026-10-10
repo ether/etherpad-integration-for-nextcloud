@@ -153,7 +153,8 @@ class PadOpenService {
 
 		$cookieHeader = '';
 		if ($accessMode === BindingService::ACCESS_PROTECTED) {
-			$openContext = $this->padSessionService->createProtectedOpenContext($uid, $displayName, $padId);
+			// A user without a display name is shown by their uid.
+			$openContext = $this->padSessionService->createProtectedOpenContext($uid, trim($displayName) !== '' ? $displayName : $uid, $padId);
 			$url = $openContext['url'];
 			$cookieHeader = $this->padSessionService->buildSetCookieHeader($openContext['cookie']);
 		} else {

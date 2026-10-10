@@ -83,13 +83,14 @@ class PublicViewerController extends PublicShareController {
 	}
 
 	/**
-	 * Throttled because, for a writable link to a protected pad, each call
-	 * starts an Etherpad session that lives for hours, and anyone holding
+	 * Throttled because, for a writable link to a protected pad, a call
+	 * can start an Etherpad session that lives for hours - each new
+	 * visitor's, or each call's without a memory cache - and anyone holding
 	 * the link could call it in a loop. Every visitor opens through here,
 	 * and Nextcloud counts a visitor who is not signed in by address: a
 	 * class behind one school's address opens a link all at once, so the
-	 * limit is set well above that, and still cuts a loop to five calls a
-	 * second. A signed-in visitor is counted on their own, not with the
+	 * limit is set well above that: 300 calls a minute for an address. A
+	 * signed-in visitor is counted on their own, not with the
 	 * address they share; without a limit of their own, Nextcloud would
 	 * count them by address too.
 	 */

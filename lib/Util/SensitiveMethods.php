@@ -133,6 +133,9 @@ final class SensitiveMethods {
 		// session id.
 		\OCA\EtherpadNextcloud\Service\PublicLinkSessions::class => ['sessionFor', 'read', 'write', 'key'],
 		\OCA\EtherpadNextcloud\Service\ExpiredSessionCollector::class => ['collectFrom'],
+		\OCA\EtherpadNextcloud\Service\PublicLinkVisitors::class => ['openerFor', 'rememberAuthor', 'admits', 'stored', 'store', 'sessionKey'],
+		\OCA\EtherpadNextcloud\Service\PublicLinkCache::class => ['key'],
+		\OCA\EtherpadNextcloud\Service\PublicLinkOpener::class => ['__construct'],
 		\OCA\EtherpadNextcloud\Service\PadSessionRevoker::class => ['live', 'deleteLive', 'carriedFirst'],
 		\OCA\EtherpadNextcloud\Service\SessionDeletes::class => ['live', 'within'],
 		\OCA\EtherpadNextcloud\Service\PadOpenTarget::class => ['__construct'],

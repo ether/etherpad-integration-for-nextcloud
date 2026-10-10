@@ -5,7 +5,7 @@
 
 /** Covers native Viewer routing and access isolation for public file and folder shares. */
 
-import { request as playwrightRequest } from '@playwright/test'
+import { request as playwrightRequest, type APIRequestContext, type APIResponse, type BrowserContext } from '@playwright/test'
 import { test, expect } from '../fixtures/browser-noise'
 import { E2E } from '../fixtures/env'
 import { etherpadApiPost, padIdOfPadUrl } from '../fixtures/etherpad'
@@ -39,6 +39,21 @@ import {
  * it in, and a public page then behaves as it does for its owner.
  */
 const SIGNED_OUT = { storageState: { cookies: [], origins: [] } }
+
+/** Runs every cleanup step, then rethrows the first failure. */
+async function eachInTurn(...steps: Array<() => Promise<unknown>>): Promise<void> {
+	const errors: unknown[] = []
+	for (const step of steps) {
+		try {
+			await step()
+		} catch (error) {
+			errors.push(error)
+		}
+	}
+	if (errors.length > 0) {
+		throw errors[0]
+	}
+}
 
 test.describe('public share access without login', () => {
 	const padName = uniquePadName('public-share')
@@ -379,62 +394,100 @@ test.describe('a read-only public link to a protected pad', () => {
 })
 
 /**
- * A writable link to a protected pad opens as the link's own Etherpad
- * author. Its visitors share the session made for the link within the
- * hour, so opening it again and again does not fill Etherpad with
- * sessions - and one Etherpad no longer has is not handed out again. The
- * container stack has a memory cache (APCu), which the keeping needs. The
- * session's cookie goes out beside the ones Nextcloud sends, not over them.
+ * A writable link to a protected pad opens as an Etherpad author of the
+ * visitor's own, kept in the Nextcloud session their share page starts. A
+ * visitor gets the session made for them within the hour again, so opening
+ * it again and again does not fill Etherpad with sessions - and one
+ * Etherpad no longer has is not handed out again. The container stack has
+ * a memory cache (APCu), which the keeping needs. The session's cookie goes
+ * out beside the ones Nextcloud sends, not over them.
  */
 test.describe('a writable public link to a protected pad', () => {
 	test.skip(E2E.etherpadApi === null, 'Needs E2E_ETHERPAD_URL and E2E_ETHERPAD_API_KEY; only the container stack has them.')
 
-	test('hands its visitors one Etherpad session, and a new one when Etherpad drops it', async () => {
+	test('hands a visitor one Etherpad session of their own, and a new one when Etherpad drops it', async ({ browser, browserNoise }) => {
 		const name = uniquePadName('public-writable-protected')
 		const pad = await createPadAtPath(`/${name}`, 'protected')
 		const groupID = padIdOfPadUrl(pad.padUrl).split('$')[0]
 		const sessionsOfGroup = async (): Promise<string[]> =>
 			Object.keys(await etherpadApiPost<Record<string, unknown> | null>('listSessionsOfGroup', { groupID }) ?? {})
+		const authorOf = async (sessionID: string): Promise<string> =>
+			(await etherpadApiPost<{ authorID: string }>('getSessionInfo', { sessionID })).authorID
 		let token = ''
-		const visitor = await playwrightRequest.newContext({ storageState: { cookies: [], origins: [] } })
-		let firstCookies: string[] = []
+		// Made inside the try, so one that fails leaves the others to the cleanup.
+		const contexts: BrowserContext[] = []
+		let direct: APIRequestContext | undefined
 		try {
-			token = (await createPublicShare(name, SHARE_PERMISSION_READ_WRITE)).token
-			const open = async (): Promise<string> => {
-				const answer = await visitor.get(`${E2E.baseURL}/apps/etherpad_nextcloud/api/v1/public/open/${encodeURIComponent(token)}`)
+			const newVisitor = async (): Promise<BrowserContext> => {
+				const context = await browser.newContext(SIGNED_OUT)
+				browserNoise.watch(context)
+				contexts.push(context)
+				return context
+			}
+			const visitor = await newVisitor()
+			const other = await newVisitor()
+			direct = await playwrightRequest.newContext(SIGNED_OUT)
+			const share = await createPublicShare(name, SHARE_PERMISSION_READ_WRITE)
+			token = share.token
+			// The visitor's share page starts the Nextcloud session their id
+			// lives in, and its viewer opens the pad once.
+			const arrive = async (context: BrowserContext): Promise<void> => {
+				const page = await context.newPage()
+				const opened = page.waitForResponse((answer) => answer.url().includes('/api/v1/public/open/'))
+				await page.goto(share.url)
+				await opened
+			}
+			const openUrl = (): string => `${E2E.baseURL}/apps/etherpad_nextcloud/api/v1/public/open/${encodeURIComponent(token)}`
+			const setCookies = (answer: APIResponse): string[] =>
+				answer.headersArray().filter((header) => header.name.toLowerCase() === 'set-cookie').map((header) => header.value)
+			const open = async (context: BrowserContext): Promise<string> => {
+				const answer = await context.request.get(openUrl())
 				expect(answer.status()).toBe(200)
-				const cookies = answer.headersArray().filter((header) => header.name.toLowerCase() === 'set-cookie').map((header) => header.value)
-				if (firstCookies.length === 0) {
-					firstCookies = cookies
-				}
-				return decodeURIComponent(/^sessionID=([^;]+)/.exec(cookies.find((cookie) => cookie.startsWith('sessionID=')) ?? '')?.[1] ?? '')
+				return decodeURIComponent(/^sessionID=([^;]+)/.exec(setCookies(answer).find((cookie) => cookie.startsWith('sessionID=')) ?? '')?.[1] ?? '')
 			}
 			const before = await sessionsOfGroup()
 
-			const handedOut = [await open(), await open(), await open(), await open(), await open()]
+			await arrive(visitor)
+			const handedOut = [await open(visitor), await open(visitor), await open(visitor), await open(visitor), await open(visitor)]
 
 			expect(new Set(handedOut).size, 'every open the same session').toBe(1)
 			expect(handedOut[0], 'a session at all').not.toBe('')
 			expect((await sessionsOfGroup()).filter((id) => !before.includes(id)), 'one new session in the pad\'s group').toEqual([handedOut[0]])
+			const theVisitor = await authorOf(handedOut[0])
+			await etherpadApiPost('deleteSession', { sessionID: handedOut[0] })
+			const next = await open(visitor)
+			expect(next, 'not the session Etherpad no longer has').not.toBe(handedOut[0])
+			expect(next).not.toBe('')
+			expect(await authorOf(next), 'still the same visitor').toBe(theVisitor)
+
+			// Another visitor is another author: their own colour and name.
+			await arrive(other)
+			const theirs = await open(other)
+			expect(theirs).not.toBe('')
+			expect(await authorOf(theirs), 'another visitor, another author').not.toBe(await authorOf(next))
+
 			// A visitor who comes without a Nextcloud session is given one, in
 			// the same answer as the Etherpad session: the cookie that names
 			// it and the one that unlocks it, beside `sessionID`.
-			const names = firstCookies.map((cookie) => cookie.split('=')[0])
+			const first = await direct.get(openUrl())
+			expect(first.status()).toBe(200)
+			const names = setCookies(first).map((cookie) => cookie.split('=')[0])
 			expect(names, 'Nextcloud\'s session').toContainEqual(expect.stringMatching(/^oc[a-z0-9]+$/))
 			expect(names, 'and its passphrase').toContain('oc_sessionPassphrase')
 			expect(names, 'beside the pad\'s').toContain('sessionID')
-
-			await etherpadApiPost('deleteSession', { sessionID: handedOut[0] })
-			const next = await open()
-			expect(next, 'not the session Etherpad no longer has').not.toBe(handedOut[0])
-			expect(next).not.toBe('')
 		} finally {
-			await visitor.dispose()
-			try {
-				await deletePublicShare(token)
-			} finally {
-				await deleteViaDav(name, { pastTrash: true })
-			}
+			await eachInTurn(
+				...contexts.map((context) => () => context.close()),
+				async () => {
+					await direct?.dispose()
+				},
+				async () => {
+					if (token !== '') {
+						await deletePublicShare(token)
+					}
+				},
+				() => deleteViaDav(name, { pastTrash: true }),
+			)
 		}
 	})
 })

@@ -143,8 +143,8 @@ class PublicViewerControllerTest extends TestCase {
 		$padSessionService = $this->createMock(PadSessionService::class);
 		$padSessionService->expects($this->once())
 			->method('createProtectedOpenContext')
-			->with('public-share:share-token', $this->anything(), 'g.abcdefghijklmnop$Shared', $this->anything())
-			->willReturn(['url' => 'https://pad.example.test/p/g.abcdefghijklmnop$Shared', 'cookie' => $cookie]);
+			->with('public-share:share-token:0123456789abcdef0123456789abcdef', '', 'g.abcdefghijklmnop$Shared', $this->anything())
+			->willReturn(['url' => 'https://pad.example.test/p/g.abcdefghijklmnop$Shared', 'cookie' => $cookie, 'authorId' => 'a.visitor']);
 		$padSessionService->expects($this->once())
 			->method('buildSetCookieHeader')
 			->with($cookie)
@@ -291,7 +291,7 @@ class PublicViewerControllerTest extends TestCase {
 		$urlGenerator->method('getWebroot')->willReturn('');
 		$urlGenerator->method('linkToRoute')->willReturn('/public/content/share-token');
 		$shareResolver = new PublicShareResolver($shareManager, new PathNormalizer());
-		$publicPadOpenService = new PublicPadOpenService($etherpadClient, $this->createMock(ManagedPadLifecycle::class), $fetcher, $padSessionService);
+		$publicPadOpenService = new PublicPadOpenService($etherpadClient, $this->createMock(ManagedPadLifecycle::class), $fetcher, $padSessionService, $this->visitors());
 
 		$controller = new PublicViewerController(
 			'etherpad_nextcloud',
@@ -445,7 +445,7 @@ class PublicViewerControllerTest extends TestCase {
 		$padSessionService ??= $this->createMock(PadSessionService::class);
 		$bindingService ??= $this->createMock(BindingService::class);
 		$shareResolver = new PublicShareResolver($shareManager, new PathNormalizer());
-		$publicPadOpenService = new PublicPadOpenService($etherpadClient, $this->createMock(ManagedPadLifecycle::class), $externalPadExportFetcher, $padSessionService);
+		$publicPadOpenService = new PublicPadOpenService($etherpadClient, $this->createMock(ManagedPadLifecycle::class), $externalPadExportFetcher, $padSessionService, $this->visitors());
 
 		return new PublicViewerController(
 			'etherpad_nextcloud',
@@ -477,5 +477,12 @@ class PublicViewerControllerTest extends TestCase {
 		$l10n = $this->createMock(\OCP\IL10N::class);
 		$l10n->method('t')->willReturnCallback(static fn (string $text): string => $text);
 		return $l10n;
+	}
+
+	/** Every visitor here is the share's own visitor, as a first open makes one. */
+	private function visitors(): \OCA\EtherpadNextcloud\Service\PublicLinkVisitors {
+		$visitors = $this->createMock(\OCA\EtherpadNextcloud\Service\PublicLinkVisitors::class);
+		$visitors->method('openerFor')->willReturnCallback(static fn (string $token): \OCA\EtherpadNextcloud\Service\PublicLinkOpener => new \OCA\EtherpadNextcloud\Service\PublicLinkOpener('public-share:' . $token . ':0123456789abcdef0123456789abcdef', '', ''));
+		return $visitors;
 	}
 }

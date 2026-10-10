@@ -134,8 +134,9 @@ logs a warning.
 An id the current author does not own cannot be attributed. That covers
 two cases at once, and only one of them is harmless:
 
-- a protected **public share** is its own Etherpad author (`nc:public-share:<token>`),
-  so its session looks foreign to a logged-in user's author — a share and
+- a protected **public share** opens as an Etherpad author of its own (a
+  visitor's, `nc:public-share:<token>:<visitor>`, below), so its session
+  looks foreign to a logged-in user's author — a share and
   an authenticated protected pad therefore cannot be open at the same
   time, which was already true before;
 - the session of **whoever used the browser before** looks exactly the
@@ -143,10 +144,9 @@ two cases at once, and only one of them is harmless:
   pad until it expired.
 
 Since nothing here can tell those apart, both are dropped. On a public
-share the session listing is not asked for at all: the author there comes
-from the share token, so every anonymous visitor of one link shares it,
-and Etherpad deletes no sessions — a link opened by hundreds of people
-would make every open download hundreds of entries.
+share the session listing is not asked for at all: there the author is a
+visitor of a link, or the link itself, and Etherpad deletes no sessions,
+so a link opened in a loop would make every open download its pile.
 
 The cookie is scoped to the domain Nextcloud and Etherpad share, so it
 reaches every host under that parent — it is not a pad-host-only cookie,
@@ -275,8 +275,8 @@ public link. A session issued before any of those stays valid until
 `validUntil`.
 Covering them one event at a time means enumerating every way access can
 end, and that list has no natural end – a public link in particular opens
-under its own Etherpad author whose id is deliberately never cached, so
-there is nothing to look the sessions up by. The direction that does close
+under authors of its own, each visitor's kept only in their session and
+the link's never cached, so there is nothing to look the sessions up by. The direction that does close
 them is the other one: short sessions that have to be renewed against a
 live permission check.
 
@@ -327,26 +327,27 @@ it belongs in the job together with the deleting. This also reaches the
 case a request could not: the first open of a browsing session carries no
 cookie ids and so makes no listing.
 
-A public link's open that made a session leaves its author's id and the
-group's, and a job for the group (`CollectExpiredGroupSessionsJob`)
-collects the expired sessions of every author in it through
-`listSessionsOfGroup`, coming back for a session still live an hour on at
-the soonest. It picks up what the authors' sweeps leave - a signed-in
-user's sessions from before the collector existed, or left by a sweep that
-gave up or was lost, while that user opens no protected pad, and an author
-index too long for the author's own sweep - which keeps short the listing
-a delete's revoke reads. And it is one job a group whatever authors open
-through the link: today a link's visitors all open as its author, and
-should each open as an author of their own, a job an author would be one a
-visitor. The author's sweep runs beside it: a group can hold more sessions
+A public link's open that made a session leaves the group's id, and the
+author's when it opens as the link itself; a visitor with an author of
+their own is collected by group alone, so a link's visitors queue one
+sweep, not one each. A job for the group
+(`CollectExpiredGroupSessionsJob`) collects the expired sessions of every
+author in it through `listSessionsOfGroup`, coming back for a session
+still live an hour on at the soonest. It picks up what the authors' sweeps
+leave - a signed-in user's sessions from before the collector existed, or
+left by a sweep that gave up or was lost, while that user opens no
+protected pad, and an author index too long for the author's own sweep -
+which keeps short the listing a delete's revoke reads. The author's sweep
+runs beside it for the link's own author: a group can hold more sessions
 than a run can list in time - every user's, and in a legacy group other
 pads' - and the author's index, often a smaller one, is collected all the
 same. A public link's open makes no listing, whatever ids the browser
 carries.
 
-The id is also all that is stored. A public link's uid is
-`public-share:<token>`, the credential from the share URL, and job
-arguments are persisted and printed by `occ`.
+The id is also all that is stored. A public link's uid -
+`public-share:<token>`, or `public-share:<token>:<visitor>` for a visitor
+- carries the credential from the share URL, and job arguments are
+persisted and printed by `occ`.
 
 A run deletes up to 250 sessions within 20 seconds, requeueing itself for
 the rest. A listing is read up to 4 MiB, tens of thousands of sessions,
@@ -384,25 +385,66 @@ collecting cannot shrink the index and the sweep says so in the log.
 
 Not covered: sessions still being created – that is what keeps an open pad
 working –, authors nobody opens a pad for in a group no public link is
-opened for, and an author's index past the cap when no public link is
-opened for its groups. What they leave costs storage, and the length of
-the listing a revoke reads. Recording each session's id at issue time
-would remove the listing; renewing sessions instead of minting them would
-remove the pile.
+opened for, an author's index past the cap when no public link is opened
+for its groups, and a link's visitors in a group too long to list. What
+they leave costs storage, and the length of the listing a revoke reads.
+Recording each session's id at issue time would remove the listing;
+renewing sessions instead of minting them would remove the pile.
+
+### A public link's visitors
+
+Etherpad takes the author of a session over the browser's own, so a
+writable link to a protected pad that opened as one author,
+`nc:public-share:<token>`, showed all its visitors as one: one colour, and
+one name, which any of them could change for all. Each visitor opens as an
+author of their own now, `nc:public-share:<token>:<visitor>`
+(`PublicLinkVisitors`):
+
+- The visitor's id is random and kept in Nextcloud's session of the public
+  page, for this link: the same author on every open while that session
+  lives, a new one in a new browser session. No cookie of its own. The
+  session keeps the Etherpad author too, so an open does not ask Etherpad
+  for it; one Etherpad no longer has is asked for anew.
+- The app gives a visitor no name. Etherpad lets them set one, which stays
+  on their author; a name given on every open would overwrite it.
+- A visitor is cheap – a request without the session cookie is a new one –
+  and each makes an author, which Etherpad never deletes, and sessions. So
+  a link has at most 250 visitors of their own an hour, each counted in
+  every hour they open it, so ids gathered over hours buy no more. Any
+  past the count open as the link itself, under its old name "Public
+  share", one author for all of them – writing works the same, only the
+  colours are shared – and the log says so once an hour for the link.
+  Counting takes a memory cache: with only a local one (APCu), the count
+  holds for each web server on its own; without one, or while it fails, a
+  visitor not yet counted this hour opens as the link. A visitor counted
+  in a later hour, by a server whose clock is ahead, is not counted again.
+  The count's keys and the session's carry an HMAC of the token, not the
+  token.
+- Two first opens of one browser session at the same moment can each
+  draw an id; the session keeps the later, and the other author opens
+  once.
+- What the count bounds: a loop of requests without the session cookie
+  makes up to 250 authors an hour for a link, 6,000 a day while it runs,
+  where the link had one, and Etherpad deletes none. The public open's
+  throttle, 300 calls a minute for an address, does not bound it lower.
+- In a frame on another site, the browser does not send Nextcloud's
+  session cookie, so every open there is a new visitor - until the
+  hour's count, then the link. Writing works the same; it costs authors
+  and colours.
 
 ### A public link's session
 
-A writable link to a protected pad opens as the link's own author,
-`nc:public-share:<token>`, so all its visitors share that author and the
-rights the link grants. Each open minted a session of its own, and a link
-opened in a loop filled Etherpad with them faster than the sweep above
-removes them – and the revocation when the file goes to the trash lists
-the group's sessions within its two seconds, so a flooded pad kept them
-all. The session made for the link and the pad's group within the last
-hour is handed out again instead (`PublicLinkSessions`):
+Each open of a writable link to a protected pad minted a session of its
+own, and a link opened in a loop filled Etherpad with them faster than the
+sweep above removes them – and the revocation when the file goes to the
+trash lists the group's sessions within its two seconds, so a flooded pad
+kept them all. The session made for the visitor, or for the link past its
+count, and the pad's group within the last hour is handed out again
+instead (`PublicLinkSessions`):
 
-- With a distributed memory cache, a link makes at most one new session
-  an hour for each pad, however often it is opened; opens that miss the
+- With a distributed memory cache, a visitor makes about one new session
+  an hour for each pad, however often they open it, and a link has at
+  most 250 visitors of their own and itself in an hour. Opens that miss the
   cache at the same moment make one each. With only a local cache (APCu),
   which Nextcloud then uses in its place, that holds for each web server
   on its own. Without any, every open makes a session, as before, and
@@ -411,15 +453,16 @@ hour is handed out again instead (`PublicLinkSessions`):
   open, and the log says so, since each open then makes a session again.
 - The cache only points; Etherpad decides. A kept session is handed out
   only once Etherpad confirms that it exists – one taken away with the
-  file's trash does not – that it is the link's author's for the pad's
+  file's trash does not – that it is the opener's author's for the pad's
   group, and that it runs at least as long as a new one would, less the
   time it is kept. A session is kept for an hour, or for a third of its
   lifetime where that is shorter: a public link's session lasts three
   hours, so a visitor can write for at least two, since the next
   keystroke after it runs out is turned away. An answer about a kept
   session Etherpad gives but this cannot read is logged, since the link
-  then makes one an open.
-- The key is an HMAC of the Etherpad address, the link and the group
+  then makes one an open; a check that times out fails the open, as
+  making one would only wait out another.
+- The key is an HMAC of the Etherpad address, the uid opened as and the group
   under the instance's secret, so a key does not give away the token,
   not even one chosen by hand. The value is the session id, the
   credential the cookie carries, in the server's own cache.

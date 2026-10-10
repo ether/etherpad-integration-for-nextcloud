@@ -6,6 +6,7 @@ namespace OCA\EtherpadNextcloud\Tests\Unit;
 
 use OCA\EtherpadNextcloud\Exception\PadFileFormatException;
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
+use OCA\EtherpadNextcloud\Exception\EtherpadRefusedException;
 use OCA\EtherpadNextcloud\Service\CookieDomainPolicy;
 use OCA\EtherpadNextcloud\Service\EtherpadClient;
 use OCA\EtherpadNextcloud\Service\PadSessionService;
@@ -55,10 +56,8 @@ class PadSessionServiceTest extends TestCase {
 	 * A signed-in user's protected open leaves the author's id for the
 	 * sweep; a public link's notes its ids once it made a session (below).
 	 *
-	 * Not "when a backlog is noticed": noticing one needs the listing, and
-	 * the listing only happens when the browser carries session ids — so a
-	 * first open made none, and neither does a public link. Both were
-	 * invisible to a sweep that had to be told what to look at.
+	 * Not only when a listing shows a backlog: a first open lists nothing,
+	 * and neither does a public link.
 	 */
 	public function testTellsTheCollectorWhoOpenedThePad(): void {
 		$etherpadClient = $this->createMock(EtherpadClient::class);
@@ -127,6 +126,50 @@ class PadSessionServiceTest extends TestCase {
 		$service->createProtectedOpenContext('public-share:token', 'Public share', 'g.ABCDEFGHIJKLMNOP$pad-1', 10800);
 		// Handed out again: nothing more noted.
 		$service->createProtectedOpenContext('public-share:token', 'Public share', 'g.ABCDEFGHIJKLMNOP$pad-1', 10800);
+	}
+
+	/**
+	 * A link's visitor with an author of their own is noted by group alone:
+	 * a sweep for each visitor's author would be a job a visitor.
+	 */
+	public function testAVisitorOfALinkIsNotedByGroupAlone(): void {
+		[$etherpadClient, $config] = $this->publicLinkFixtures();
+		$collector = $this->createMock(\OCA\EtherpadNextcloud\Service\ExpiredSessionCollector::class);
+		$collector->expects($this->once())->method('noteGroup')->with('g.ABCDEFGHIJKLMNOP');
+		$collector->expects($this->never())->method('noteAuthor');
+		$service = $this->buildService($etherpadClient, $config, collector: $collector, cacheFactory: $this->cacheFor());
+
+		$service->createProtectedOpenContext('public-share:token:' . str_repeat('0f', 16), '', 'g.ABCDEFGHIJKLMNOP$pad-1', 10800);
+	}
+
+	/**
+	 * A kept author is made anew only when Etherpad says it does not know
+	 * it: a session that fails to be made for another reason - a timeout
+	 * here - fails the open without asking for the author again, for a
+	 * visitor of a link as for a signed-in user.
+	 */
+	public function testAnOutageFailsAnOpenWithAKeptAuthorAtOnce(): void {
+		$timeout = new EtherpadClientException('Etherpad API request failed: createSession', 0, new \RuntimeException('cURL error 28: Operation timed out after 15001 milliseconds with 0 bytes received'));
+		$opens = [
+			'a visitor' => ['public-share:token:' . str_repeat('0f', 16), '', 'a.kept', 0],
+			'a signed-in user' => ['admin', 'Admin', '', 1],
+		];
+		foreach ($opens as $case => [$uid, $name, $kept, $nameSyncs]) {
+			$etherpadClient = $this->createMock(EtherpadClient::class);
+			$etherpadClient->expects($this->once())->method('createSession')->willThrowException($timeout);
+			$etherpadClient->expects($this->exactly($nameSyncs))->method('createAuthorIfNotExistsFor')->willReturn('a.kept');
+			$config = $this->createMock(IConfig::class);
+			$config->method('getUserValue')->willReturnMap([
+				['admin', 'etherpad_nextcloud', 'etherpad_author_id', '', 'a.kept'],
+				['admin', 'etherpad_nextcloud', 'etherpad_author_display_name', '', 'Admin'],
+			]);
+			try {
+				$this->buildService($etherpadClient, $config)->createProtectedOpenContext($uid, $name, 'g.ABCDEFGHIJKLMNOP$pad-1', 10800, $kept);
+				$this->fail($case . ': opened');
+			} catch (EtherpadClientException $e) {
+				$this->assertSame($timeout, $e, $case);
+			}
+		}
 	}
 
 	/**
@@ -281,11 +324,11 @@ class PadSessionServiceTest extends TestCase {
 	}
 
 	/**
-	 * An open always mints. Etherpad re-checks validUntil on every socket
-	 * message and keeps the session id it was handed at CLIENT_READY, so a
-	 * session that expires mid-edit rejects the next keystroke and no later
-	 * cookie reaches that socket — reusing a shorter one would hand out
-	 * less editing time than the caller asked for.
+	 * A signed-in open always mints. Etherpad re-checks validUntil on every
+	 * socket message and keeps the session id it was handed at
+	 * CLIENT_READY, so a session that expires mid-edit rejects the next
+	 * keystroke and no later cookie reaches that socket — reusing a shorter
+	 * one would hand out less editing time than the caller asked for.
 	 */
 	public function testAlwaysIssuesAFreshSessionForThePadBeingOpened(): void {
 		$held = $this->sid('held');
@@ -369,9 +412,9 @@ class PadSessionServiceTest extends TestCase {
 	}
 
 	/**
-	 * Any host under the shared parent domain can write this cookie, so the
-	 * parse must not grow with what it finds there. Nothing beyond what
-	 * could ever be emitted again is even looked at.
+	 * Any host under the shared parent domain can write this cookie, so
+	 * the ids an open accepts from it are bounded - at twice the 25 it
+	 * could ever emit - and junk among them never reaches the output.
 	 */
 	public function testIgnoresMoreCookieIdsThanItCouldEverEmit(): void {
 		$ids = array_map(fn (int $i): string => $this->sid('junk' . $i), range(1, 100));
@@ -388,9 +431,8 @@ class PadSessionServiceTest extends TestCase {
 	}
 
 	/**
-	 * RFC 6265 lets a server quote a value that contains commas, and
-	 * Etherpad strips those quotes itself. The parsing has to as well, or a
-	 * quoted cookie would look like one unusable id.
+	 * Etherpad strips quotes around the cookie's value itself, so the
+	 * parsing does too, or a quoted cookie would look like one unusable id.
 	 */
 	public function testAcceptsTheQuotedCookieForm(): void {
 		$one = $this->sid('one');
@@ -468,8 +510,8 @@ class PadSessionServiceTest extends TestCase {
 	}
 
 	/**
-	 * A renamed user still reaches Etherpad: the cache answers "unchanged"
-	 * only when the stored name matches the one being opened with.
+	 * A renamed user's new name reaches Etherpad, and is stored for the
+	 * next open.
 	 */
 	public function testCreateProtectedOpenContextSyncsWhenTheDisplayNameChanged(): void {
 		$uid = 'alice';
@@ -523,7 +565,8 @@ class PadSessionServiceTest extends TestCase {
 		$service->extractGroupId('not-a-group-pad-id');
 	}
 
-	public function testCreateProtectedOpenContextUsesUidAsFallbackDisplayNameAndMinTtl(): void {
+	/** The name goes to Etherpad as it comes - a caller without one gives none - and the TTL has a floor. */
+	public function testCreateProtectedOpenContextGivesTheNameAsItComesAndAMinimumTtl(): void {
 		$uid = 'admin';
 		$padId = 'g.ABCDEFGHIJKLMNOP$pad-1';
 		$groupId = 'g.ABCDEFGHIJKLMNOP';
@@ -535,7 +578,7 @@ class PadSessionServiceTest extends TestCase {
 		$etherpadClient = $this->createMock(EtherpadClient::class);
 		$etherpadClient->expects($this->once())
 			->method('createAuthorIfNotExistsFor')
-			->with('nc:' . $uid, $uid)
+			->with('nc:' . $uid, '')
 			->willReturn($authorId);
 		$etherpadClient->expects($this->once())
 			->method('createSession')
@@ -563,7 +606,7 @@ class PadSessionServiceTest extends TestCase {
 			]);
 
 		$service = $this->buildService($etherpadClient, $config);
-		$result = $service->createProtectedOpenContext($uid, '   ', $padId, 10);
+		$result = $service->createProtectedOpenContext($uid, '', $padId, 10);
 		$resultUrl = $result['url'];
 
 		$this->assertSame($padUrl, $resultUrl);
@@ -572,6 +615,40 @@ class PadSessionServiceTest extends TestCase {
 		$this->assertSame('.example.test', $result['cookie']['domain']);
 		$this->assertSame('Lax', $result['cookie']['same_site']);
 		$this->assertTrue($result['cookie']['secure']);
+		$this->assertSame($authorId, $result['authorId']);
+	}
+
+	/**
+	 * An author kept elsewhere - a public link's visitor's, in their
+	 * session - is opened as without asking Etherpad for it, and handed
+	 * back; one Etherpad no longer has is asked for anew.
+	 */
+	public function testOpensAsAKnownAuthorWithoutAskingForIt(): void {
+		[$etherpadClient, $config] = $this->publicLinkFixtures();
+		$etherpadClient->expects($this->never())->method('createAuthorIfNotExistsFor');
+		$service = $this->buildService($etherpadClient, $config);
+
+		$result = $service->createProtectedOpenContext('public-share:token:' . str_repeat('0f', 16), '', 'g.ABCDEFGHIJKLMNOP$pad-1', 10800, 'a.kept');
+
+		$this->assertSame('a.kept', $result['authorId']);
+	}
+
+	public function testAsksForTheAuthorAnewWhenTheKnownOneFails(): void {
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->method('createSession')->willReturnCallback(static function (string $groupId, string $authorId): string {
+			if ($authorId === 'a.gone') {
+				throw new EtherpadRefusedException('Etherpad API error (createSession): authorID does not exist');
+			}
+			return 's.made0000000001';
+		});
+		$etherpadClient->expects($this->once())->method('createAuthorIfNotExistsFor')->with('nc:public-share:token:' . str_repeat('0f', 16), '')->willReturn('a.anew');
+		$etherpadClient->method('buildPadUrl')->willReturn('https://pad.example.test/p/pad');
+		[, $config] = $this->publicLinkFixtures();
+		$service = $this->buildService($etherpadClient, $config);
+
+		$result = $service->createProtectedOpenContext('public-share:token:' . str_repeat('0f', 16), '', 'g.ABCDEFGHIJKLMNOP$pad-1', 10800, 'a.gone');
+
+		$this->assertSame('a.anew', $result['authorId']);
 	}
 
 	/**
@@ -845,7 +922,7 @@ class PadSessionServiceTest extends TestCase {
 				TestCase::assertIsInt($validUntil);
 				if ($call === 1) {
 					TestCase::assertSame($cachedAuthorId, $actualAuthorId);
-					throw new EtherpadClientException('cached author invalid');
+					throw new EtherpadRefusedException('Etherpad API error (createSession): authorID does not exist');
 				}
 
 				TestCase::assertSame($freshAuthorId, $actualAuthorId);
@@ -928,10 +1005,10 @@ class PadSessionServiceTest extends TestCase {
 	}
 
 	/**
-	 * A public link's visitors share one author and the rights the link
-	 * grants, so the session made for the link in the last hour is handed
-	 * out again: opened twice, the link makes one session, and the second
-	 * cookie carries it with the expiry Etherpad gave for it.
+	 * The session made for a link's opener in the last hour is handed out
+	 * again - here the link's own author, which visitors past the hour's
+	 * count share: opened twice, the link makes one session, and the
+	 * second cookie carries it with the expiry Etherpad gave for it.
 	 */
 	public function testAPublicLinkHandsOutTheSessionItMadeInTheLastHour(): void {
 		[$etherpadClient, $config, $made, $calls] = $this->publicLinkFixtures();
@@ -973,6 +1050,28 @@ class PadSessionServiceTest extends TestCase {
 		$this->assertSame(2, $made->count());
 		$this->assertSame('s.public0000000000002', $second['cookie']['value']);
 		$this->assertSame('s.public0000000000002', $third['cookie']['value']);
+	}
+
+	/**
+	 * A visitor of a link opens with no name, which Etherpad lets them set:
+	 * not the uid in its place, which carries the share's token.
+	 */
+	public function testAPublicLinksVisitorIsGivenNoName(): void {
+		[$etherpadClient, $config] = $this->publicLinkFixtures();
+		$names = new \ArrayObject();
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->method('createAuthorIfNotExistsFor')->willReturnCallback(
+			static function (string $mapper, string $name) use ($names): string {
+				$names->append([$mapper, $name]);
+				return 'a.visitor';
+			}
+		);
+		$etherpadClient->method('createSession')->willReturn('s.visitor00000000000001');
+		$etherpadClient->method('buildPadUrl')->willReturn('https://pad.example.test/p/pad');
+
+		$this->buildService($etherpadClient, $config)->createProtectedOpenContext('public-share:token:0123456789abcdef0123456789abcdef', '', 'g.ABCDEFGHIJKLMNOP$pad-1', 10800);
+
+		$this->assertSame([['nc:public-share:token:0123456789abcdef0123456789abcdef', '']], $names->getArrayCopy());
 	}
 
 	/** A signed-in open still makes a session of its own every time. */
@@ -1035,7 +1134,7 @@ class PadSessionServiceTest extends TestCase {
 	private function linkSessions(\OCP\ICacheFactory $cacheFactory, EtherpadClient $etherpadClient): \OCA\EtherpadNextcloud\Service\PublicLinkSessions {
 		$crypto = $this->createMock(\OCP\Security\ICrypto::class);
 		$crypto->method('calculateHMAC')->willReturnCallback(static fn (string $message): string => hash('sha256', $message, true));
-		return new \OCA\EtherpadNextcloud\Service\PublicLinkSessions($cacheFactory, $etherpadClient, $crypto, new FixedClock(), $this->createMock(LoggerInterface::class));
+		return new \OCA\EtherpadNextcloud\Service\PublicLinkSessions(new \OCA\EtherpadNextcloud\Service\PublicLinkCache($cacheFactory, $crypto), $etherpadClient, new FixedClock(), $this->createMock(LoggerInterface::class));
 	}
 
 	/** No memory cache: Nextcloud hands out one that keeps nothing. */

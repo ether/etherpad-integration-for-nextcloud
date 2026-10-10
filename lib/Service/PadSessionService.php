@@ -10,6 +10,7 @@ namespace OCA\EtherpadNextcloud\Service;
 
 use OCA\EtherpadNextcloud\Exception\PadFileFormatException;
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
+use OCA\EtherpadNextcloud\Util\EtherpadErrorClassifier;
 use OCA\EtherpadNextcloud\Util\SafeError;
 use OCP\AppFramework\Utility\ITimeFactory;
 use OCP\IConfig;
@@ -29,24 +30,22 @@ class PadSessionService {
 	private const SESSION_ID_PATTERN = '/^s\.[A-Za-z0-9]{16,64}$/';
 
 	/**
-	 * One entry per group, so this is how many protected pads may be open at
-	 * once before the oldest loses access. An Etherpad session id is `s.`
-	 * plus 16 characters, and buildSetCookieHeader percent-encodes the comma
-	 * between them, so 25 of them cost 25×18 + 24×3 = 522 bytes against the
-	 * 4 KB a cookie may occupy. It
-	 * is not a pad-host-only cookie — it is scoped to the domain both hosts
-	 * share, so Nextcloud and every sibling under that parent see it too,
-	 * which is how this request can read it at all. The pad being opened is
-	 * always kept; beyond that the ones expiring last win, because the
-	 * soonest to expire is the one a user is least likely to still be
-	 * looking at.
+	 * One entry per group, so this is how many protected pads may be open
+	 * at once before the one expiring soonest loses access. A session id
+	 * is `s.` plus 16 characters, and buildSetCookieHeader percent-encodes
+	 * the commas, so 25 take 25×18 + 24×3 = 522 bytes of the 4 KB a cookie
+	 * may hold - a cookie on the domain Nextcloud and Etherpad share, which
+	 * is how this request reads it. The pad being opened is always kept;
+	 * beyond that the ones expiring last.
 	 */
 	public const MAX_SESSION_IDS = 25;
 
 	/**
-	 * What a public link's uid starts with: the link opens as
-	 * `public-share:<token>`, its own Etherpad author, and no Nextcloud
-	 * user can be called that, since a uid takes no colon.
+	 * What a public link's uid starts with: a visitor of the link opens as
+	 * `public-share:<token>:<visitor>`, or as the link itself,
+	 * `public-share:<token>` (PublicLinkVisitors), each its own Etherpad
+	 * author, and no Nextcloud user can be called that, since a uid takes
+	 * no colon.
 	 */
 	public const PUBLIC_LINK_UID_PREFIX = 'public-share:';
 
@@ -64,11 +63,10 @@ class PadSessionService {
 	public const SAME_SITE_NONE = 'None';
 
 	/**
-	 * How many ids are read out of the cookie at all. Only a bound on work:
-	 * the cap above decides what survives. Any host under the shared parent
-	 * domain can write this cookie, and without a limit a forged value would
-	 * decide how much parsing and comparing each open does. Twice the emit
-	 * cap, so a legitimate cookie is never truncated by it.
+	 * How many ids are accepted from the cookie; the cap above decides what
+	 * survives. Any host under the shared parent domain can write this
+	 * cookie, and a forged value may not decide how many ids each open
+	 * compares. Twice the emit cap, so a legitimate cookie is never cut.
 	 */
 	private const MAX_PARSED_SESSION_IDS = 50;
 
@@ -86,63 +84,52 @@ class PadSessionService {
 	) {
 	}
 
-	/** @return array{url:string,cookie:array{name:string,value:string,expires:int,path:string,domain:string,secure:bool,http_only:bool,same_site:string}} */
-	public function createProtectedOpenContext(string $uid, string $displayName, string $padId, int $ttlSeconds = self::SESSION_TTL_SECONDS): array {
+	/**
+	 * The pad's address and the Etherpad session cookie for $uid, and the
+	 * author it opened as. A $displayName of '' gives Etherpad no name: a
+	 * link's visitor sets their own. $knownAuthorId spares asking Etherpad
+	 * for an author kept elsewhere - a public link's visitor's.
+	 *
+	 * @return array{url:string,cookie:array{name:string,value:string,expires:int,path:string,domain:string,secure:bool,http_only:bool,same_site:string},authorId:string}
+	 */
+	public function createProtectedOpenContext(string $uid, string $displayName, string $padId, int $ttlSeconds = self::SESSION_TTL_SECONDS, string $knownAuthorId = ''): array {
 		$groupId = $this->extractGroupId($padId);
-		$effectiveDisplayName = trim($displayName) !== '' ? $displayName : $uid;
 		$safeTtlSeconds = max(60, $ttlSeconds);
 		$validUntil = $this->timeFactory->getTime() + $safeTtlSeconds;
-		$authorId = $this->resolveCachedAuthorId($uid);
+		$authorId = $knownAuthorId !== '' ? $knownAuthorId : $this->resolveCachedAuthorId($uid);
 		if ($authorId !== '') {
-			$authorId = $this->syncAuthorMapping($uid, $authorId, $effectiveDisplayName);
+			$authorId = $this->syncAuthorMapping($uid, $authorId, $displayName);
 			try {
-				return $this->openContextFor($uid, $authorId, $groupId, $padId, $validUntil);
-			} catch (EtherpadClientException) {
-				// Nothing is cleared. The author id is the one route from a
-				// uid to that user's live sessions, and dropping it because
-				// an open failed would leave a cache indistinguishable from a
-				// user who never opened a protected pad — a logout after a
-				// brief outage would then revoke nothing. A stale id is the
-				// lesser risk: the listing answers that it does not exist,
-				// and the bootstrap below overwrites it on the next open.
+				return [...$this->openContextFor($uid, $authorId, $groupId, $padId, $validUntil), 'authorId' => $authorId];
+			} catch (EtherpadClientException $e) {
+				// Only an author Etherpad does not know is made anew; an
+				// outage fails the open as it is. The kept id stays either
+				// way: it is how a logout finds the user's sessions.
+				if (!EtherpadErrorClassifier::isAuthorUnknown($e)) {
+					throw $e;
+				}
 			}
 		}
 
-		$authorId = $this->etherpadClient->createAuthorIfNotExistsFor('nc:' . $uid, $effectiveDisplayName);
+		$authorId = $this->etherpadClient->createAuthorIfNotExistsFor('nc:' . $uid, $displayName);
 		$this->rememberAuthorId($uid, $authorId);
-		$this->rememberAuthorName($uid, $effectiveDisplayName);
-		return $this->openContextFor($uid, $authorId, $groupId, $padId, $validUntil);
+		$this->rememberAuthorName($uid, $displayName);
+		return [...$this->openContextFor($uid, $authorId, $groupId, $padId, $validUntil), 'authorId' => $authorId];
 	}
 
 	/**
 	 * A session for the pad being opened - a fresh one, or for a public
-	 * link the one it made within the hour - plus the ids the browser
-	 * already had that are still worth carrying.
+	 * link the one it made within the hour - plus the ids this browser
+	 * already carries for other pads.
 	 *
-	 * The cookie is the only place this state lives, and writing just the
-	 * new id replaced it — so a second protected pad in a second tab took
-	 * the first tab's access away. Etherpad reads the value as a
-	 * comma-separated list and picks the entry matching the group, so the
-	 * others have to survive the write.
-	 *
-	 * What may survive is decided by two things together. The browser's
-	 * cookie says what this browser already held, so an open adds nothing
-	 * that was not already there — it does not re-issue access to a pad the
-	 * user has since lost, it only refrains from taking away what they were
-	 * carrying, which dies at its own validUntil. Etherpad's session list
-	 * then says which of those ids are this author's, which group each is
-	 * for, and how long it lasts — that is what lets one entry per group
-	 * survive rather than one per open: without it, opening the same pad ten
-	 * times filled the cookie with ten ids for one group and pushed the
-	 * other pad out.
-	 *
-	 * Ids the list does not know are dropped. That covers a public share's
-	 * session — each share token is its own Etherpad author — so a share and
-	 * an authenticated pad cannot be open at once, as was already the case
-	 * before any of this. It also covers the session of whoever used this
-	 * browser before, which is why the rule is worth the loss: nothing here
-	 * can tell those two apart, and carrying them would hand a pad to the
-	 * next person to log in.
+	 * Etherpad reads the cookie as a list and picks the entry for the pad's
+	 * group, so the others have to survive the write, or a second tab's pad
+	 * loses its access. Only ids the browser carried survive - an open gives
+	 * back no access the user has since lost - and only those Etherpad's
+	 * listing attributes to this author, at most one per group, the
+	 * longest-lived. Ids it does not attribute are dropped: a public link's
+	 * session, which is an author of its own, and the session of whoever
+	 * used this browser before, which nothing here can tell apart.
 	 *
 	 * @return array{url:string,cookie:array{name:string,value:string,expires:int,path:string,domain:string,secure:bool,http_only:bool,same_site:string}}
 	 */
@@ -157,22 +144,16 @@ class PadSessionService {
 		$carriedSessionIds = $this->sessionIdsFromCookie();
 		$sessions = $this->sessionsToAttributeWith($uid, $authorId, $carriedSessionIds);
 
-		// Deliberately a fresh session, not the one the browser is carrying.
-		// Etherpad re-checks validUntil on every socket message and holds the
-		// session id it was given at CLIENT_READY — read in 2.7.3, 3.0.0 and
-		// 3.3.3, so both majors and the boundary between them. A session that
-		// expires mid-edit therefore rejects the next keystroke, and no later
-		// cookie can reach that socket. Reusing a shorter one traded editing
-		// time for a renewal property that a client arriving without a cookie
-		// does not have anyway. What bounds the window is revocation.
+		// A fresh session, not the one the browser carries: Etherpad checks
+		// validUntil on every socket message and keeps the session id it got
+		// at CLIENT_READY, so a session that expires mid-edit rejects the
+		// next keystroke, and no later cookie reaches that socket.
 		//
-		// A public link is the exception. Its visitors share one author and
-		// the rights the link grants, and each open made a session that
-		// Etherpad kept, so a link opened in a loop filled Etherpad with
-		// them. The session made for the link in the last hour is handed
-		// out again, as long as Etherpad confirms it: a visitor gets at
-		// least two of the three hours, and with a memory cache a link
-		// makes one session an hour (PublicLinkSessions).
+		// A public link is the exception: Etherpad keeps every session, and
+		// a link opened in a loop would fill it with them. The session made
+		// for the visitor - or the link, past its hour's count - within the
+		// hour is handed out again as long as Etherpad confirms it, so a
+		// visitor gets at least two of the three hours (PublicLinkSessions).
 		if ($isLink) {
 			$made = false;
 			$session = $this->linkSessions->sessionFor(
@@ -189,20 +170,21 @@ class PadSessionService {
 			$chosenSessionId = $session['sessionId'];
 			$validUntil = $session['validUntil'];
 			// Only a session made adds something to collect, and this route
-			// is open to anyone. Both sweeps: ExpiredSessionCollector says why.
+			// is open to anyone. A visitor's own author is collected by group
+			// alone, or each would queue a sweep (ExpiredSessionCollector).
 			if ($made) {
-				$this->collector->noteAuthor($authorId);
+				if (!PublicLinkVisitors::isVisitor($uid)) {
+					$this->collector->noteAuthor($authorId);
+				}
 				$this->collector->noteGroup($groupId);
 			}
 		} else {
 			$chosenSessionId = $this->etherpadClient->createSession($groupId, $authorId, $validUntil);
 		}
 		if (preg_match(self::SESSION_ID_PATTERN, $chosenSessionId) !== 1) {
-			// The id is about to be written into a cookie that the next open
-			// has to be able to read back. If Etherpad's shape ever moves
-			// outside what sessionIdsFromCookie accepts, every later open
-			// would silently find an empty cookie and write a single id
-			// again — this branch's bug, restored, with nothing to say so.
+			// The id goes into a cookie the next open reads back: a shape
+			// sessionIdsFromCookie does not accept would leave every later
+			// open with one pad's session, silently.
 			$this->logger->warning('Etherpad returned a session id in an unexpected shape; carrying sessions between pads will not work', [
 				'app' => 'etherpad_nextcloud',
 			]);
@@ -224,14 +206,12 @@ class PadSessionService {
 	 * cookie - the first protected open of a browsing session - costs no
 	 * extra round trip.
 	 *
-	 * Not asked for on a public share either. There the author is derived
-	 * from the share token alone, so every anonymous visitor of one link
-	 * shares it, and Etherpad deletes no sessions: a link carries one for
+	 * Not asked for on a public share either. The link's own author, which
+	 * every visitor past the hour's count shares, carries a session for
 	 * every hour it was opened in for each pad, or one for every open
-	 * where Nextcloud has no memory cache, all under one author, and every
-	 * open would download the lot. The cost is that two protected
-	 * pads inside one shared folder cannot be open at once, which is what
-	 * happened before this branch anyway.
+	 * without a memory cache, and every open would download the lot. The
+	 * cost: two protected pads inside one shared folder cannot be open at
+	 * once.
 	 *
 	 * @param list<string> $carriedSessionIds
 	 * @return array<string,array{groupID:string,validUntil:int}>
@@ -276,14 +256,9 @@ class PadSessionService {
 		foreach ($carriedSessionIds as $candidate) {
 			$info = $sessions[$candidate] ?? null;
 			if ($info === null) {
-				// Not this author's, so not this user's: dropped. It used to
-				// be carried, on the grounds that a public share is its own
-				// Etherpad author and its session would look exactly like
-				// this — but so does the session of whoever was logged into
-				// this browser before. Keeping it let the next user inherit
-				// their pad until it expired, where overwriting the cookie
-				// had cut that off. Nothing here can tell the two apart, and
-				// only one of them is safe to guess at.
+				// Not this author's, so not this user's: dropped. A link's
+				// session and the previous user's look alike here, and only
+				// the link's would be safe to carry.
 				continue;
 			}
 			if ($info['validUntil'] <= $now || $info['groupID'] === $groupId) {
@@ -415,25 +390,19 @@ class PadSessionService {
 	/**
 	 * How far the session cookie may travel.
 	 *
-	 * `Lax` by default, and it costs nothing in the ordinary chain:
-	 * Nextcloud and Etherpad have to share a registrable domain for a
-	 * protected pad to work at all — a browser rejects a `Set-Cookie` whose
-	 * `Domain=` is not a suffix of the host that set it — so the pad iframe
-	 * is a same-site subresource, while a foreign page framing a pad URL
-	 * gets nothing. `Strict` would go further and is deliberately not used:
-	 * it would also withhold the cookie from a top-level navigation, so a
-	 * pad link in an email would open unauthenticated.
+	 * `Lax` by default: Nextcloud and Etherpad share a registrable domain
+	 * for a protected pad to work at all, so the pad iframe is a same-site
+	 * subresource, while a foreign page framing a pad URL gets nothing.
+	 * Not `Strict`, which would withhold the cookie from a top-level
+	 * navigation too: a pad link in an email would open unauthenticated.
 	 *
-	 * `None` is asked for, never inferred. It is needed by exactly one
-	 * deployment: a foreign site framing the embed routes, where Nextcloud
-	 * authenticates the request without a cookie — proxy-injected
-	 * `REMOTE_USER`, Kerberos, SAML in environment mode. A cookie policy
-	 * cannot see that, and the previous attempt to work it out from the
-	 * hosts involved needed a public suffix list to be right. So the admin
-	 * says so.
+	 * `None` only as the admin sets it: for a foreign site framing the embed
+	 * routes where Nextcloud authenticates without a cookie - proxy-injected
+	 * `REMOTE_USER`, Kerberos, SAML in environment mode - which no cookie
+	 * policy can see.
 	 *
-	 * Anything else is `Lax`, and named by the connection test rather than
-	 * swallowed — `strict` included, where somebody meant to harden.
+	 * Anything else is `Lax`, and named by the connection test - `strict`
+	 * included, where somebody meant to harden.
 	 */
 	public function sameSiteMode(): string {
 		return $this->readSameSite()['mode'];
@@ -452,11 +421,8 @@ class PadSessionService {
 	}
 
 	/**
-	 * The stored value, read once and in one place.
-	 *
-	 * Public through the two methods above so the admin health check reports
-	 * on the same reading rather than parsing the value again with its own
-	 * default.
+	 * The stored setting parsed for the cookie and for the connection
+	 * test alike, with one default (the two methods above).
 	 *
 	 * @return array{mode:string,unrecognised:string}
 	 */
@@ -537,13 +503,12 @@ class PadSessionService {
 	/**
 	 * The Etherpad author this user writes as, if one has been made.
 	 *
-	 * The mapper is `nc:<uid>`, which Etherpad stores globally — two
+	 * The mapper is `nc:<uid>`, which Etherpad stores globally - two
 	 * Nextclouds pointed at one pad server share the author, and with it
-	 * each other's sessions. Naming it per instance is the fix and is not
-	 * done here: `syncAuthorMapping` asks for the mapper on every open, so
-	 * changing its shape re-issues an author for every existing user at
-	 * once, and their live sessions become invisible to the revoking this
-	 * branch is for. It needs a migration, not a one-line change.
+	 * each other's sessions. Naming it per instance needs a migration:
+	 * `syncAuthorMapping` asks for the mapper on every open, so a new shape
+	 * gives every user a new author at once, and their live sessions drop
+	 * out of a revoke's reach.
 	 *
 	 * Public because it is what makes revoking possible without a table of
 	 * our own: Etherpad already knows which sessions belong to an author,

@@ -99,6 +99,17 @@ class PadOpenServiceTest extends TestCase {
 		$this->assertSame('https://pad.example.test/p/g.ABCDEFGHIJKLMNOP$pad-1', $target->url);
 	}
 
+	/** A user without a display name is shown in Etherpad by their uid. */
+	public function testAUserWithoutADisplayNameOpensUnderTheirUid(): void {
+		$session = $this->createMock(PadSessionService::class);
+		$session->expects($this->once())
+			->method('createProtectedOpenContext')
+			->with('alice', 'alice', 'g.ABCDEFGHIJKLMNOP$pad-1')
+			->willReturn(['url' => 'https://pad.example.test/p/x', 'cookie' => ['name' => 'sessionID', 'value' => 's.x', 'expires' => 0, 'path' => '/', 'domain' => '', 'secure' => true, 'http_only' => false, 'same_site' => 'lax'], 'authorId' => 'a.alice']);
+
+		$this->openWith(BindingService::ACCESS_PROTECTED, updateable: true, padSessionService: $session, displayName: ' ');
+	}
+
 	/**
 	 * A public pad has no session to withhold, so the editable URL is the
 	 * whole of the access. Etherpad's own read-only view is the one thing
@@ -219,6 +230,7 @@ class PadOpenServiceTest extends TestCase {
 		?ManagedPadLifecycle $padLifecycle = null,
 		string $padUrl = '',
 		?ExternalPadExportFetcher $externalPadExportFetcher = null,
+		string $displayName = 'Alice',
 	): \OCA\EtherpadNextcloud\Service\PadOpenTarget {
 		$file = $this->createMock(File::class);
 		$file->method('getId')->willReturn(138);
@@ -255,7 +267,7 @@ class PadOpenServiceTest extends TestCase {
 			$this->createMock(LoggerInterface::class),
 		);
 
-		return $service->openById('alice', 'Alice', 138);
+		return $service->openById('alice', $displayName, 138);
 	}
 
 	private function buildService(PathNormalizer $padPaths, UserNodeResolver $userNodeResolver): PadOpenService {

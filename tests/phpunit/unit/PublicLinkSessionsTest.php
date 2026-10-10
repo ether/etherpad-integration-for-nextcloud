@@ -10,6 +10,7 @@ namespace OCA\EtherpadNextcloud\Tests\Unit;
 
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
 use OCA\EtherpadNextcloud\Service\EtherpadClient;
+use OCA\EtherpadNextcloud\Service\PublicLinkCache;
 use OCA\EtherpadNextcloud\Service\PublicLinkSessions;
 use OCA\EtherpadNextcloud\Tests\Support\FixedClock;
 use OCP\ICache;
@@ -106,6 +107,37 @@ class PublicLinkSessionsTest extends TestCase {
 		$this->assertSame('s.made2', $this->open($sessions)['sessionId']);
 	}
 
+	/**
+	 * A check of the kept session that times out fails the open: Etherpad
+	 * is away, and making a session would only wait out another timeout.
+	 */
+	public function testACheckThatTimesOutMakesNoSession(): void {
+		$timeout = new EtherpadClientException('Etherpad API request failed: getSessionInfo', 0, new \RuntimeException('cURL error 28: Operation timed out after 15001 milliseconds with 0 bytes received'));
+		$client = $this->createMock(EtherpadClient::class);
+		$client->method('configuredApiHost')->willReturn('https://pad.example.test');
+		$client->method('getSessionInfo')->willThrowException($timeout);
+		$sessions = $this->sessions($client);
+		$this->open($sessions);
+
+		try {
+			$sessions->sessionFor(self::LINK, self::AUTHOR, self::GROUP, self::NEW_UNTIL, static fn (): string => throw new \LogicException('made a session'));
+			$this->fail('opened');
+		} catch (EtherpadClientException $e) {
+			$this->assertSame($timeout, $e);
+		}
+	}
+
+	/** An HTTP error is no timeout: the open makes a session, and says it could not confirm the kept one. */
+	public function testACheckThatFailsFastStillMakesASession(): void {
+		$client = $this->createMock(EtherpadClient::class);
+		$client->method('configuredApiHost')->willReturn('https://pad.example.test');
+		$client->method('getSessionInfo')->willThrowException(new EtherpadClientException('Etherpad API request failed: getSessionInfo', 0, new EtherpadClientException('Etherpad API HTTP error (502)')));
+		$sessions = $this->sessions($client);
+		$this->open($sessions);
+
+		$this->assertSame('s.made2', $this->open($sessions)['sessionId']);
+	}
+
 	public function testAnEtherpadThatIsAwayIsNotReportedTwice(): void {
 		$client = $this->createMock(EtherpadClient::class);
 		$client->method('getSessionInfo')->willThrowException(new EtherpadClientException('cURL error 7'));
@@ -192,7 +224,7 @@ class PublicLinkSessionsTest extends TestCase {
 			$hmacs->append([$message, $password]);
 			return hash('sha256', 'instance-secret' . $message, true);
 		});
-		$sessions = new PublicLinkSessions($this->factoryFor($this->memoryCache()), $client, $crypto, new FixedClock(), $this->createMock(LoggerInterface::class));
+		$sessions = new PublicLinkSessions(new PublicLinkCache($this->factoryFor($this->memoryCache()), $crypto), $client, new FixedClock(), $this->createMock(LoggerInterface::class));
 
 		$this->open($sessions);
 		$sessions->sessionFor(self::LINK, self::AUTHOR, 'g.QRSTUVWXYZABCDEF', self::NEW_UNTIL, fn (): string => $this->make());
@@ -235,9 +267,8 @@ class PublicLinkSessionsTest extends TestCase {
 		$crypto = $this->createMock(ICrypto::class);
 		$crypto->method('calculateHMAC')->willReturnCallback(static fn (string $message): string => hash('sha256', $message, true));
 		return new PublicLinkSessions(
-			$factory ?? $this->factoryFor($this->memoryCache()),
+			new PublicLinkCache($factory ?? $this->factoryFor($this->memoryCache()), $crypto),
 			$client,
-			$crypto,
 			new FixedClock(),
 			$logger ?? $this->createMock(LoggerInterface::class),
 		);
