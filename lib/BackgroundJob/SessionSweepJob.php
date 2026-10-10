@@ -52,12 +52,11 @@ abstract class SessionSweepJob extends QueuedJob {
 	abstract protected static function key(): string;
 
 	/**
-	 * One pass over $item: what it deleted, what it found and left for the
-	 * next pass, whether it did not get through and is worth a retry -
-	 * Etherpad refusing, or not answering - when to look again though
-	 * nothing is left, if ever, whether the sweep is over whatever is left
-	 * (`ended`): then no second look either, and why its listing could not
-	 * be read in a run at all, if so (`park`): too long, or timing out.
+	 * One pass over $item: what it deleted and left for the next pass,
+	 * whether it failed and is worth a retry, when to look again though
+	 * nothing is left (null: never), whether the sweep is over whatever is
+	 * left (`ended`, no second look either), and why its listing cannot be
+	 * read in a run, if so (`park`).
 	 *
 	 * @return array{deleted:int,remaining:int,retry:bool,nextDueAt:?int,ended?:bool,park?:'tooLong'|'timeout'}
 	 */
@@ -240,16 +239,13 @@ abstract class SessionSweepJob extends QueuedJob {
 	}
 
 	/**
-	 * A sweep whose listing no run can read now - too long, or timing out
-	 * again while Etherpad answers otherwise - lists nothing for a day:
+	 * Keeps a sweep whose listing no run can read from listing for a day:
 	 * asking sooner would make Etherpad walk the whole index for nothing.
-	 * The parked row lists nothing either when it runs; it keeps an open
-	 * from queueing the sweep meanwhile, and a row queued beside it during
-	 * this run stands down (standsDown()). After that day the next open
-	 * queues the sweep again: an index in use is listed, and warned about,
-	 * once a day, and one no one uses costs nothing.
+	 * The parked row lists nothing when it runs; it only keeps opens from
+	 * queueing the sweep, and a row queued during this run stands down
+	 * behind it (standsDown()). After that, the next open queues it again.
 	 *
-	 * @param 'tooLong'|'timeout' $reason which calls for a different remedy
+	 * @param 'tooLong'|'timeout' $reason for the log: each has its own remedy
 	 */
 	private function park(string $item, string $reason): void {
 		$this->logger->warning('An Etherpad session sweep could not read its listing in a run; it waits a day before an open can queue it again.', [

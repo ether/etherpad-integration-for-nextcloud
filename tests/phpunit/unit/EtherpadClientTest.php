@@ -524,10 +524,8 @@ class EtherpadClientTest extends TestCase {
 	}
 
 	/**
-	 * A sweep's session listing is read into a capped sink: tens of
-	 * thousands of sessions arrive in one body, and read whole they could
-	 * take a background job's memory with them, past any catch. Up to the
-	 * cap a body is read.
+	 * A sweep's session listing is read up to the cap and refused past it:
+	 * read whole, it could take a background job's memory with it.
 	 */
 	public function testASweepsSessionListingPastTheCapIsRefused(): void {
 		$cap = EtherpadClient::SESSION_LISTING_MAX_BYTES;

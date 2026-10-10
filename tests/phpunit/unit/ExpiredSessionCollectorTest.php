@@ -85,9 +85,9 @@ class ExpiredSessionCollectorTest extends TestCase {
 	}
 
 	/**
-	 * A public link's sessions are noted by the group it opened: its
-	 * visitors share the group, whatever author each opens as, and its uid
-	 * holds the share token, which no job argument may.
+	 * A public link's group is noted by its id: every visitor's session is
+	 * in it, and the link's uid holds the share token, which no job
+	 * argument may.
 	 */
 	public function testQueuesASweepForTheGroupAPublicLinkOpened(): void {
 		$jobList = $this->createMock(IJobList::class);
@@ -141,9 +141,8 @@ class ExpiredSessionCollectorTest extends TestCase {
 
 	/**
 	 * A listing too long to read, or one that timed out while Etherpad
-	 * answers otherwise, is read no sooner by a run: the sweep asks to be
-	 * parked, and says why, keeping the error itself at debug
-	 * (SessionSweepJob says the rest). The cap is the sweep's to ask for.
+	 * answers otherwise, asks to park the sweep and says why, the error
+	 * itself at debug. The cap is the sweep's to ask for.
 	 */
 	public function testAListingThatCannotBeReadAsksToBeParked(): void {
 		$failures = [

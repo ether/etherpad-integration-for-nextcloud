@@ -147,8 +147,8 @@ class PadSessionService {
 	 * @return array{url:string,cookie:array{name:string,value:string,expires:int,path:string,domain:string,secure:bool,http_only:bool,same_site:string}}
 	 */
 	private function openContextFor(string $uid, string $authorId, string $groupId, string $padId, int $validUntil): array {
-		// Before the listing below, which an empty cookie skips. A public
-		// link's below, once it made a session.
+		// First, so an open that fails after this still leaves its author
+		// for the sweep. A public link's below, once it made a session.
 		$isLink = str_starts_with($uid, self::PUBLIC_LINK_UID_PREFIX);
 		if (!$isLink) {
 			$this->collector->noteAuthor($authorId);
@@ -188,9 +188,8 @@ class PadSessionService {
 			);
 			$chosenSessionId = $session['sessionId'];
 			$validUntil = $session['validUntil'];
-			// Only a session made is one to collect: one handed out again
-			// adds nothing, and this route is open to anyone. The author and
-			// the group (ExpiredSessionCollector says why both).
+			// Only a session made adds something to collect, and this route
+			// is open to anyone. Both sweeps: ExpiredSessionCollector says why.
 			if ($made) {
 				$this->collector->noteAuthor($authorId);
 				$this->collector->noteGroup($groupId);

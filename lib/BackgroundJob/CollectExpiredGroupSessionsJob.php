@@ -15,12 +15,11 @@ use OCP\BackgroundJob\IJobList;
 use Psr\Log\LoggerInterface;
 
 /**
- * Works through one group's expired Etherpad sessions, every author's in
- * it - a public link's visitors, signed-in users, a legacy group's other
- * pads. A public link's open that made a session queues it
- * (ExpiredSessionCollector says why). Paced as the collector of an
- * author's is (CollectExpiredSessionsJob), but back for a live session an
- * hour on at the soonest; the argument holds the group's id alone.
+ * Collects one group's expired Etherpad sessions, every author's in it.
+ * Queued by a public link's open that made a session
+ * (ExpiredSessionCollector says why), paced as CollectExpiredSessionsJob,
+ * but back for a live session an hour on at the soonest. The argument
+ * holds the group's id alone.
  */
 class CollectExpiredGroupSessionsJob extends SessionSweepJob {
 	public function __construct(

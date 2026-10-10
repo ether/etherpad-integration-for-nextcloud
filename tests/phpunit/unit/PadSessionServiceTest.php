@@ -87,8 +87,8 @@ class PadSessionServiceTest extends TestCase {
 	}
 
 	/**
-	 * A signed-in open notes its author before the listing the carried ids
-	 * ask for, so a listing that fails cannot keep the sweep from it.
+	 * A signed-in open notes its author first, so an open that fails after
+	 * it still leaves the author for the sweep.
 	 */
 	public function testNotesASignedInAuthorBeforeTheListing(): void {
 		$events = [];

@@ -31,17 +31,13 @@ use Psr\Log\LoggerInterface;
  * request: an open leaves the author's id, and the job lists the expired
  * ones and deletes them.
  *
- * A public link's open notes its group as well, and both sweeps run side
- * by side. The group's takes every author's expired sessions in it - a
- * signed-in user's too, while they open no protected pad that would
- * queue their own - which keeps short the listing a delete's revoke
- * reads; and it is one job a group whatever authors open through the
- * link: today a link's visitors all open as its author, and should each
- * open as an author of their own, a job an author would be one a
- * visitor. The author's sweep stays because a group can hold more
- * sessions than a run can list in time - every user's, and a legacy
- * group's other pads' - and the author's index, often a smaller one, is
- * collected all the same.
+ * A public link's open notes its group as well. The group's sweep takes
+ * every author's expired sessions in it, a signed-in user's too, which
+ * keeps short the listing a delete's revoke reads, and it is one job a
+ * group however many authors open through the link. The author's sweep
+ * runs beside it: a group can hold more sessions than a run can list in
+ * time - every user's, a legacy group's other pads' - and the author's
+ * index, often a smaller one, is collected all the same.
  */
 class ExpiredSessionCollector {
 
@@ -49,12 +45,9 @@ class ExpiredSessionCollector {
 
 	/**
 	 * The least a group's sweep waits before it comes back for a session
-	 * still live. A group's live sessions are everyone's - signed-in users
-	 * at the pad, for six hours each - so the earliest to expire is never
-	 * far off while anyone uses it, and each pass lists the whole group:
-	 * expired sessions may wait an hour longer, the listing may not run
-	 * at every cron tick. A backlog is worked off as an author's is, a
-	 * pass a minute, each listing the group anew as it shrinks.
+	 * still live: while anyone uses the pad, the earliest of everyone's
+	 * sessions is never far off, and each pass lists the whole group. A
+	 * backlog is still worked off a pass a minute.
 	 */
 	private const GROUP_SWEEP_INTERVAL_SECONDS = 3600;
 
@@ -85,11 +78,7 @@ class ExpiredSessionCollector {
 		$this->note(CollectExpiredSessionsJob::class, ['authorId' => $authorId]);
 	}
 
-	/**
-	 * Remember that the group a public link opened might have something to
-	 * collect, as noteAuthor() does for an author: the link's uid holds its
-	 * share token, which no job argument may.
-	 */
+	/** noteAuthor() for the group a public link opened. */
 	public function noteGroup(string $groupId): void {
 		if ($groupId === '') {
 			return;
@@ -130,8 +119,7 @@ class ExpiredSessionCollector {
 	 * `nextDueAt` is when to come back though nothing is left to delete:
 	 * when the earliest live session becomes collectable, or null when
 	 * nothing live is left. `park` says why the listing cannot be read in a
-	 * run - too long, or timing out while Etherpad answers otherwise
-	 * (SessionSweepJob parks the sweep, after a timeout on a retry). An
+	 * run: too long, or timing out while Etherpad answers otherwise. An
 	 * author Etherpad does not know holds nothing, and the sweep ends.
 	 *
 	 * @return array{deleted:int,remaining:int,retry:bool,nextDueAt:?int,park?:'tooLong'|'timeout'}
@@ -188,10 +176,9 @@ class ExpiredSessionCollector {
 	 * What a listing that failed means for the sweep. $gone, the author or
 	 * group Etherpad no longer has: nothing to collect, and the sweep ends.
 	 * A listing too long to read, or timing out while Etherpad answers
-	 * otherwise: no run reads it sooner, and the sweep asks to be parked
-	 * (SessionSweepJob, which tries a first timeout again before it
-	 * parks). Anything else - Etherpad refusing, an HTTP error, not
-	 * answering at all - is tried again with the backoff.
+	 * otherwise, asks to park the sweep (SessionSweepJob). Anything else -
+	 * Etherpad refusing, an HTTP error, not answering at all - is tried
+	 * again with the backoff.
 	 *
 	 * @param array<string,string> $context whose sessions they are
 	 * @return array{deleted:int,remaining:int,retry:bool,nextDueAt:?int,park?:'tooLong'|'timeout'}
@@ -210,8 +197,8 @@ class ExpiredSessionCollector {
 			default => null,
 		};
 		if ($park !== null) {
-			// The job says the sweep is parked, and why; this line keeps
-			// the error itself.
+			// What becomes of the sweep is the job's to say; this line
+			// keeps the error.
 			$this->logger->debug('Could not read the Etherpad sessions to collect in a run.', [
 				'app' => 'etherpad_nextcloud',
 				...$context,
