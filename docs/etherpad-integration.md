@@ -16,6 +16,9 @@ Important:
 
 ## Used Etherpad API Methods
 
+- `checkToken` – whether Etherpad answers and accepts the API key: the
+  connection test, and background jobs telling an outage from one call
+  failing
 - `createPad`
 - `deletePad`
 - `getText`
@@ -327,9 +330,11 @@ cookie ids and so makes no listing.
 A public link's open that made a session leaves its author's id and the
 group's, and a job for the group (`CollectExpiredGroupSessionsJob`)
 collects the expired sessions of every author in it through
-`listSessionsOfGroup`, coming back an hour on at the soonest. It takes a
-signed-in user's expired sessions too, one whose own sweep no open queues
-any more, which keeps short the listing a delete's revoke reads. And it is
+`listSessionsOfGroup`, coming back for a session still live an hour on at
+the soonest. It picks up what the authors' sweeps leave: a signed-in
+user's sessions from before the collector existed, or left by a sweep
+that gave up, was lost or was parked, which keeps short the listing a
+delete's revoke reads. And it is
 one job a group whatever authors open through the link: today a link's
 visitors all open as its author, and should each open as an author of
 their own, a job an author would be one a visitor. The author's sweep
@@ -345,8 +350,10 @@ arguments are persisted and printed by `occ`.
 A run deletes up to 250 sessions within 20 seconds, requeueing itself for
 the rest. A listing is read up to 4 MiB, tens of thousands of sessions,
 rather than whole into a job's memory; one too long to read, or too slow
-while Etherpad answers otherwise, is asked again in a day, and an author
-or group Etherpad no longer has ends the sweep. A revoke's listing is
+while Etherpad answers otherwise, is asked once more a day later, then
+left until an open queues the sweep again; an author's index past the cap
+shrinks only through its groups' sweeps. An author or group Etherpad no
+longer has ends the sweep. A revoke's listing is
 read whole. A refusal is requeued with a growing delay and a limit; sessions
 the server will never delete are skipped rather than allowed to block the
 ones behind them, up to twenty refusals in a row and fifty in a run - a failure that reads
@@ -365,8 +372,8 @@ out exactly the entries a surviving key produces. Where entries do survive,
 collecting cannot shrink the index and the sweep says so in the log.
 
 Not covered: sessions still being created – that is what keeps an open pad
-working – and authors nobody opens a pad for, whose leftovers cost storage
-only. Recording each session's id at issue time would remove the listing;
+working – and authors nobody opens a pad for in a group without a public
+link, whose leftovers cost storage only. Recording each session's id at issue time would remove the listing;
 renewing sessions instead of minting them would remove the pile.
 
 ### A public link's session

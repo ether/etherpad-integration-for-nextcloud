@@ -59,9 +59,10 @@ class EtherpadClient {
 	 * sessions, decoded well within a background job's memory. Etherpad
 	 * answers a listing in one body, as long as the index is - and nothing
 	 * bounds the index - which would otherwise be read whole, and a
-	 * process out of memory reaches no catch. A sweep can leave an index
-	 * past it for later (ExpiredSessionCollector); a revoke reads its
-	 * listing whole, as ending access is worth the memory.
+	 * process out of memory reaches no catch. A sweep that meets an index
+	 * past it is parked once, then left to the next open that queues it
+	 * (ExpiredSessionCollector); a revoke reads its listing whole, as
+	 * ending access is worth the memory.
 	 */
 	public const SESSION_LISTING_MAX_BYTES = 4194304;
 
