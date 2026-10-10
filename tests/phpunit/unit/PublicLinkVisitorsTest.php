@@ -8,15 +8,14 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Tests\Unit;
 
-use OCA\EtherpadNextcloud\Service\PublicLinkCache;
 use OCA\EtherpadNextcloud\Service\PublicLinkOpener;
 use OCA\EtherpadNextcloud\Service\PublicLinkVisitors;
+use OCA\EtherpadNextcloud\Tests\Support\BuildsLinkCaches;
 use OCA\EtherpadNextcloud\Tests\Support\FixedClock;
 use OCP\ICache;
 use OCP\ICacheFactory;
 use OCP\IMemcache;
 use OCP\ISession;
-use OCP\Security\ICrypto;
 use OCP\Security\ISecureRandom;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
@@ -27,6 +26,8 @@ use Psr\Log\LoggerInterface;
  * visitor counted in every hour they open it - as the link itself.
  */
 class PublicLinkVisitorsTest extends TestCase {
+	use BuildsLinkCaches;
+
 	private const LINK = 'public-share:a-share-token';
 	private const TOKEN = 'a-share-token';
 
@@ -182,10 +183,8 @@ class PublicLinkVisitorsTest extends TestCase {
 	/** A visitor opens under no name, to set their own; the link under its own. */
 	public function testAVisitorOpensUnderNoNameTheLinkUnderItsOwn(): void {
 		$visitor = $this->visitors($this->memcache())->openerFor(self::TOKEN);
-		$factory = $this->createMock(ICacheFactory::class);
-		$factory->method('isAvailable')->willReturn(false);
 		$this->session = new \ArrayObject();
-		$link = $this->visitors($factory)->openerFor(self::TOKEN);
+		$link = $this->visitors($this->noMemoryCache())->openerFor(self::TOKEN);
 
 		$this->assertSame(['', ''], [$visitor->displayName, $visitor->authorId]);
 		$this->assertSame([self::LINK, PublicLinkVisitors::LINK_AUTHOR_NAME, ''], [$link->uid(), $link->displayName, $link->authorId]);
@@ -240,9 +239,7 @@ class PublicLinkVisitorsTest extends TestCase {
 		});
 		$random = $this->createMock(ISecureRandom::class);
 		$random->method('generate')->willReturnCallback(fn (int $length): string => str_pad(dechex(++$this->ids), $length, '0', STR_PAD_LEFT));
-		$crypto = $this->createMock(ICrypto::class);
-		$crypto->method('calculateHMAC')->willReturnCallback(static fn (string $message): string => hash('sha256', $message, true));
-		return new PublicLinkVisitors($session, new PublicLinkCache($factory, $crypto), $random, $this->clock, $logger ?? $this->createMock(LoggerInterface::class));
+		return new PublicLinkVisitors($session, $this->linkCache($factory), $random, $this->clock, $logger ?? $this->createMock(LoggerInterface::class));
 	}
 
 	/** A memory cache that counts, as `add` and `inc` do. */
@@ -260,9 +257,6 @@ class PublicLinkVisitorsTest extends TestCase {
 			$held[$key] = (int)($held[$key] ?? 0) + $step;
 			return $held[$key];
 		});
-		$factory = $this->createMock(ICacheFactory::class);
-		$factory->method('isAvailable')->willReturn(true);
-		$factory->method('createDistributed')->willReturn($cache);
-		return $factory;
+		return $this->cacheFactoryFor($cache);
 	}
 }

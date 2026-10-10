@@ -12,6 +12,7 @@ use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
 use OCA\EtherpadNextcloud\Service\EtherpadClient;
 use OCA\EtherpadNextcloud\Service\PublicLinkCache;
 use OCA\EtherpadNextcloud\Service\PublicLinkSessions;
+use OCA\EtherpadNextcloud\Tests\Support\BuildsLinkCaches;
 use OCA\EtherpadNextcloud\Tests\Support\FixedClock;
 use OCP\ICache;
 use OCP\ICacheFactory;
@@ -25,6 +26,8 @@ use Psr\Log\LoggerInterface;
  * points, Etherpad decides, and a cache that fails keeps nothing.
  */
 class PublicLinkSessionsTest extends TestCase {
+	use BuildsLinkCaches;
+
 	private const LINK = 'public-share:a-share-token';
 	private const GROUP = 'g.ABCDEFGHIJKLMNOP';
 	private const AUTHOR = 'a.public';
@@ -161,7 +164,7 @@ class PublicLinkSessionsTest extends TestCase {
 		$logger = $this->createMock(LoggerInterface::class);
 		// The read and the write, on each of the two opens.
 		$logger->expects($this->exactly(4))->method('warning');
-		$sessions = $this->sessions($this->client(null), $this->factoryFor($cache), $logger);
+		$sessions = $this->sessions($this->client(null), $this->cacheFactoryFor($cache), $logger);
 
 		$this->assertSame(['sessionId' => 's.made1', 'validUntil' => self::NEW_UNTIL], $this->open($sessions));
 		$this->assertSame('s.made2', $this->open($sessions)['sessionId']);
@@ -224,7 +227,7 @@ class PublicLinkSessionsTest extends TestCase {
 			$hmacs->append([$message, $password]);
 			return hash('sha256', 'instance-secret' . $message, true);
 		});
-		$sessions = new PublicLinkSessions(new PublicLinkCache($this->factoryFor($this->memoryCache()), $crypto), $client, new FixedClock(), $this->createMock(LoggerInterface::class));
+		$sessions = new PublicLinkSessions(new PublicLinkCache($this->cacheFactoryFor($this->memoryCache()), $crypto), $client, new FixedClock(), $this->createMock(LoggerInterface::class));
 
 		$this->open($sessions);
 		$sessions->sessionFor(self::LINK, self::AUTHOR, 'g.QRSTUVWXYZABCDEF', self::NEW_UNTIL, fn (): string => $this->make());
@@ -264,10 +267,8 @@ class PublicLinkSessionsTest extends TestCase {
 	}
 
 	private function sessions(EtherpadClient $client, ?ICacheFactory $factory = null, ?LoggerInterface $logger = null): PublicLinkSessions {
-		$crypto = $this->createMock(ICrypto::class);
-		$crypto->method('calculateHMAC')->willReturnCallback(static fn (string $message): string => hash('sha256', $message, true));
 		return new PublicLinkSessions(
-			new PublicLinkCache($factory ?? $this->factoryFor($this->memoryCache()), $crypto),
+			$this->linkCache($factory ?? $this->cacheFactoryFor($this->memoryCache())),
 			$client,
 			new FixedClock(),
 			$logger ?? $this->createMock(LoggerInterface::class),
@@ -286,12 +287,5 @@ class PublicLinkSessionsTest extends TestCase {
 			}
 		);
 		return $cache;
-	}
-
-	private function factoryFor(ICache $cache): ICacheFactory {
-		$factory = $this->createMock(ICacheFactory::class);
-		$factory->method('isAvailable')->willReturn(true);
-		$factory->method('createDistributed')->willReturn($cache);
-		return $factory;
 	}
 }
