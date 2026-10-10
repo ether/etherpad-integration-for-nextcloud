@@ -171,6 +171,35 @@ class ExpiredSessionCollectorTest extends TestCase {
 		}
 	}
 
+	/** Queueing a group's sweep may not break an open either; said under the group. */
+	public function testAnUnreachableJobTableIsSaidUnderTheGroup(): void {
+		$jobList = $this->createMock(IJobList::class);
+		$jobList->method('has')->willThrowException(new \RuntimeException('Deadlock found'));
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects(self::once())->method('warning')->with(
+			'Could not queue the Etherpad session sweep.',
+			self::callback(static fn (array $context): bool => $context['groupId'] === self::GROUP && !isset($context['authorId'])),
+		);
+
+		$this->collector($this->createMock(EtherpadClient::class), $jobList, $logger)->noteGroup(self::GROUP);
+	}
+
+	/** Entries a group's index lists and Etherpad cannot describe are said under the group. */
+	public function testSaysUnderTheGroupWhenItsIndexHoldsEntriesItCannotCollect(): void {
+		$client = $this->createMock(EtherpadClient::class);
+		$client->method('listSessionsOfGroup')->willReturnCallback(static function (string $group, ?int $timeout, ?int &$unreadable): array {
+			$unreadable = 2;
+			return [];
+		});
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects(self::once())->method('warning')->with(
+			'Etherpad lists sessions it cannot describe; those entries cannot be collected.',
+			self::callback(static fn (array $context): bool => $context['groupId'] === self::GROUP && $context['unreadableEntries'] === 2),
+		);
+
+		$this->collector($client, logger: $logger)->collectGroup(self::GROUP);
+	}
+
 	/**
 	 * A group's live sessions are everyone's, the earliest never far off
 	 * while anyone uses the pad: the group's sweep comes back for them an

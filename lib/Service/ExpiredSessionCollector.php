@@ -32,12 +32,15 @@ use Psr\Log\LoggerInterface;
  * ones and deletes them.
  *
  * A public link's open notes its group as well, and both sweeps run side
- * by side: the link's visitors share the group the pad is in, whatever
- * author each opens as, so one job a group holds them all where a job an
- * author would be one a visitor. The author's sweep stays because a group
- * can hold more sessions than a run can list in time - every user's, and
- * a legacy group's other pads' - and the author's index, often a smaller
- * one, is collected all the same.
+ * by side. The group's takes every author's expired sessions in it - a
+ * signed-in user's whose own sweep no open queues any more too - which
+ * keeps short the listing a delete's revoke reads; and it is one job a
+ * group whatever authors open through the link: today a link's visitors
+ * all open as its author, and should each open as an author of their
+ * own, a job an author would be one a visitor. The author's sweep stays
+ * because a group can hold more sessions than a run can list in time -
+ * every user's, and a legacy group's other pads' - and the author's
+ * index, often a smaller one, is collected all the same.
  */
 class ExpiredSessionCollector {
 

@@ -21,13 +21,17 @@ Important:
 - `getText`
 - `setText`
 - `getHTML`
+- `setHTML`
 - `getRevisionsCount`
 - `getReadOnlyID`
 - `createGroup`
 - `createGroupPad`
 - `createAuthorIfNotExistsFor`
 - `createSession`
+- `getSessionInfo`
+- `deleteSession`
 - `listSessionsOfAuthor`
+- `listSessionsOfGroup`
 - `listPads`
 - `deleteGroup`
 
@@ -320,25 +324,30 @@ it belongs in the job together with the deleting. This also reaches the
 case a request could not: the first open of a browsing session carries no
 cookie ids and so makes no listing.
 
-A public link's open leaves the group's id as well, and a job for the
-group (`CollectExpiredGroupSessionsJob`) collects the expired sessions of
-every author in it through `listSessionsOfGroup`. A link's visitors share
-the group the pad is in, whatever author each opens as, so one job a
-group holds them all where a job an author could be one a visitor. The
-link's own author is noted too, and both sweeps run side by side: a group
-can hold more sessions than a run can list in time - every user's, and in
-a legacy group other pads' - and the author's index, often a smaller one,
-is collected all the same. A public link's open makes no listing either,
-whatever ids the browser carries.
+A public link's open that made a session leaves its author's id and the
+group's, and a job for the group (`CollectExpiredGroupSessionsJob`)
+collects the expired sessions of every author in it through
+`listSessionsOfGroup`, coming back an hour on at the soonest. It takes a
+signed-in user's expired sessions too, one whose own sweep no open queues
+any more, which keeps short the listing a delete's revoke reads. And it is
+one job a group whatever authors open through the link: today a link's
+visitors all open as its author, and should each open as an author of
+their own, a job an author would be one a visitor. The author's sweep
+runs beside it: a group can hold more sessions than a run can list in
+time - every user's, and in a legacy group other pads' - and the
+author's index, often a smaller one, is collected all the same. A public
+link's open makes no listing, whatever ids the browser carries.
 
 The id is also all that is stored. A public link's uid is
 `public-share:<token>`, the credential from the share URL, and job
 arguments are persisted and printed by `occ`.
 
 A run deletes up to 250 sessions within 20 seconds, requeueing itself for
-the rest. A listing is read up to 4 MiB, tens of thousands of sessions; a
-longer one is refused as a failed listing is, rather than read whole into
-a job's memory. A refusal is requeued with a growing delay and a limit; sessions
+the rest. A listing is read up to 4 MiB, tens of thousands of sessions,
+rather than whole into a job's memory; one too long to read, or too slow
+while Etherpad answers otherwise, is asked again in a day, and an author
+or group Etherpad no longer has ends the sweep. A revoke's listing is
+read whole. A refusal is requeued with a growing delay and a limit; sessions
 the server will never delete are skipped rather than allowed to block the
 ones behind them, up to twenty refusals in a row and fifty in a run - a failure that reads
 as Etherpad unreachable, when Etherpad then does not answer at all, is an

@@ -7,9 +7,9 @@ import { test, expect } from '../fixtures/browser-noise'
 import { E2E } from '../fixtures/env'
 
 /**
- * The assumption the expired-session collector rests on: deleting a
- * session removes its id from the author's index, so the listing that
- * walks that index gets shorter.
+ * The assumption the expired-session collectors rest on: deleting a
+ * session removes its id from the author's index and from the group's,
+ * so the listings that walk them get shorter.
  *
  * It is not free to assume. Etherpad's `deleteSession` updates the index
  * with `setSub(..., undefined)`, and there are reports of the key
@@ -39,7 +39,7 @@ test.describe('Etherpad session index', () => {
 		return payload.data
 	}
 
-	test('deleting a session takes its id out of the author index', async () => {
+	test('deleting a session takes its id out of the author index and the group\'s', async () => {
 		test.skip(E2E.etherpadApi === null, 'E2E_ETHERPAD_URL / E2E_ETHERPAD_API_KEY not configured.')
 
 		const ctx = await playwrightRequest.newContext({ storageState: { cookies: [], origins: [] } })
@@ -59,8 +59,11 @@ test.describe('Etherpad session index', () => {
 			// Raw keys, including any the server can no longer describe.
 			const indexKeys = async (): Promise<string[]> =>
 				Object.keys(await api(ctx, 'listSessionsOfAuthor', { authorID: authorId }) ?? {})
+			const groupKeys = async (): Promise<string[]> =>
+				Object.keys(await api(ctx, 'listSessionsOfGroup', { groupID: groupId }) ?? {})
 
 			expect(await indexKeys()).toHaveLength(4)
+			expect(await groupKeys()).toHaveLength(4)
 
 			await api(ctx, 'deleteSession', { sessionID: created[0] })
 
@@ -70,6 +73,12 @@ test.describe('Etherpad session index', () => {
 				'the deleted id is still in the author index — collecting cannot shrink this server\'s listing',
 			).toHaveLength(3)
 			expect(after).not.toContain(created[0])
+			const groupAfter = await groupKeys()
+			expect(
+				groupAfter,
+				'the deleted id is still in the group index — the group\'s sweep cannot shrink this server\'s listing',
+			).toHaveLength(3)
+			expect(groupAfter).not.toContain(created[0])
 		} finally {
 			if (groupId !== '') {
 				await ctx.post(`${E2E.etherpadApi!.url}/api/1.2.15/deleteGroup`, {

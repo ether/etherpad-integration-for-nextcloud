@@ -64,12 +64,13 @@ abstract class SessionSweepJob extends QueuedJob {
 	abstract protected function gaveUpMessage(): string;
 
 	/**
-	 * Whether giving up is worth a warning: it leaves the rest standing.
-	 * A sweep the next open queues anew says it as info, or an outage
-	 * would warn once for every author it met.
+	 * Whether giving up is worth a warning. A sweep of expired sessions,
+	 * which the next open queues anew, says it as info, or an outage would
+	 * warn once for every item it met; one that leaves live access
+	 * standing warns (RevokeGroupSessionsJob).
 	 */
 	protected function givingUpWarns(): bool {
-		return true;
+		return false;
 	}
 
 	/**
