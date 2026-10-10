@@ -21,9 +21,9 @@ use Psr\Log\LoggerInterface;
  * Etherpad never removes one, and `listSessionsOfAuthor` walks the whole
  * author index one awaited lookup at a time, so a listing - an open makes
  * one when the browser carries session ids, a logout always - costs as
- * many lookups as there were opens. Neither the listing nor the deleting
- * happens in a request: an open leaves the author's id, and the job does
- * both.
+ * many lookups as there were opens. Collecting them happens in no
+ * request: an open leaves the author's id, and the job lists the expired
+ * ones and deletes them.
  */
 class ExpiredSessionCollector {
 
@@ -98,9 +98,9 @@ class ExpiredSessionCollector {
 		}
 
 		if (($unreadable ?? 0) > 0) {
-			// Keys the index lists but Etherpad cannot describe.
-			// `deleteSession` will not take them either, so no run can
-			// shrink that part of the index — worth saying rather than
+			// Keys the index lists but Etherpad cannot describe, which no
+			// run deletes - whether one has expired cannot be told - so that
+			// part of the index does not shrink: worth saying rather than
 			// reporting a clean sweep.
 			$this->logger->warning('Etherpad lists sessions it cannot describe; those entries cannot be collected.', [
 				'app' => 'etherpad_nextcloud',

@@ -88,7 +88,7 @@ class RevokeGroupSessionsJobTest extends TestCase {
 		$bindings = $this->createMock(BindingService::class);
 		$bindings->method('filesOfPads')->willReturn([42]);
 		$bindings->method('placesOf')->willReturn([42 => [3, 'files_trashbin/files/Notes.pad.d1']]);
-		$bindings->method('isInFiles')->willReturn(false);
+		$bindings->method('anyInFiles')->willReturn(false);
 		$clock = new FixedClock(1_000_000);
 		$logger = $this->createMock(LoggerInterface::class);
 		$revoker = new GroupSessionRevoker($client, $bindings, new SessionDeletes($client, new ManagedPadLifecycle($client, $logger), $logger), $this->createMock(IJobList::class), $logger, $clock);

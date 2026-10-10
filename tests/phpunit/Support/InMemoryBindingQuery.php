@@ -151,6 +151,12 @@ final class InMemoryBindingQuery implements IQueryBuilder {
 	}
 
 	/** @return \Closure(array<string,mixed>): bool */
+	public function like(string $column, string $parameter): \Closure {
+		$pattern = '#^' . strtr(preg_quote((string)$this->parameters[$parameter], '#'), ['%' => '.*', '_' => '.']) . '$#s';
+		return fn (array $row): bool => $this->value($row, $column) !== null && preg_match($pattern, (string)$this->value($row, $column)) === 1;
+	}
+
+	/** @return \Closure(array<string,mixed>): bool */
 	public function isNull(string $column): \Closure {
 		return fn (array $row): bool => $this->value($row, $column) === null;
 	}

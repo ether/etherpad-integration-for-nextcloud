@@ -281,7 +281,52 @@ class BindingServiceTest extends TestCase {
 			['storage_id' => 6, 'root_id' => 6, 'mount_point' => '/carol/', 'mount_provider_class' => null],
 		]), new FixedClock(500));
 
-		$this->assertSame($inFiles, $service->isInFiles($storage, $path));
+		$this->assertSame($inFiles, $service->anyInFiles([42 => [$storage, $path]]));
+	}
+
+	/**
+	 * A group's files, thousands of them, all in a trash: the mounts above
+	 * them are read in batches of five hundred places, not a query a file,
+	 * and one file in Files among them is found.
+	 */
+	public function testAsksAboutTheMountsOfManyFilesInBatches(): void {
+		$table = new InMemoryBindingTable([], [
+			['fileid' => 1, 'storage' => 3, 'path' => '', 'path_hash' => md5('')],
+		], [
+			['storage_id' => 3, 'root_id' => 1, 'mount_point' => '/alice/', 'mount_provider_class' => 'OC\\Files\\Mount\\LocalHomeMountProvider'],
+		]);
+		$service = new BindingService($table, new FixedClock(500));
+		$trashed = [];
+		for ($i = 0; $i < 1500; $i++) {
+			$trashed[1000 + $i] = [3, 'files_trashbin/files/Notes ' . $i . '.pad.d1'];
+		}
+
+		$this->assertFalse($service->anyInFiles($trashed));
+		// '', the trash, its files folder and 1500 files: four batches.
+		$this->assertCount(4, $table->read);
+		$this->assertTrue($service->anyInFiles($trashed + [7 => [3, 'files/Notes.pad']]));
+		$this->assertFalse($service->anyInFiles([]));
+	}
+
+	/**
+	 * Outside a home's `files/`, only a mount inside a user's `files/` shows
+	 * a file, and the query asks for those alone: a team folder's trash
+	 * mounted for every user of it must not crowd out the one that does.
+	 */
+	public function testAMountInFilesIsNotCrowdedOutByOthers(): void {
+		$fileCache = [
+			['fileid' => 3, 'storage' => 1, 'path' => '__groupfolders/7', 'path_hash' => md5('__groupfolders/7')],
+			['fileid' => 4, 'storage' => 1, 'path' => '__groupfolders/trash/7', 'path_hash' => md5('__groupfolders/trash/7')],
+		];
+		$mounts = [];
+		for ($user = 1; $user <= 25; $user++) {
+			$mounts[] = ['storage_id' => 1, 'root_id' => 4, 'mount_point' => '/user' . $user . '/files_trashbin/groupfolders/7/', 'mount_provider_class' => 'OCA\\GroupFolders\\Mount\\MountProvider'];
+		}
+		$mounts[] = ['storage_id' => 1, 'root_id' => 3, 'mount_point' => '/alice/files/Team/', 'mount_provider_class' => 'OCA\\GroupFolders\\Mount\\MountProvider'];
+		$service = new BindingService(new InMemoryBindingTable([], $fileCache, $mounts), new FixedClock(500));
+
+		$this->assertTrue($service->anyInFiles([1 => [1, '__groupfolders/trash/7/Old.pad.d1'], 2 => [1, '__groupfolders/7/Notes.pad']]));
+		$this->assertFalse($service->anyInFiles([1 => [1, '__groupfolders/trash/7/Old.pad.d1']]));
 	}
 
 	/**
@@ -298,7 +343,7 @@ class BindingServiceTest extends TestCase {
 		}
 		$service = new BindingService(new InMemoryBindingTable([], $fileCache, $mounts), new FixedClock(500));
 
-		$this->assertTrue($service->isInFiles(1, '__groupfolders/30/Notes.pad'));
+		$this->assertTrue($service->anyInFiles([42 => [1, '__groupfolders/30/Notes.pad']]));
 	}
 
 	/** The files of the rows on a storage, as the file cache has them. Nothing is marked by asking. */

@@ -159,7 +159,7 @@ class PadSessionRevoker {
 		$sessions = [];
 		try {
 			$sessions = $this->live($this->etherpadClient->listSessionsOfGroup($groupId, $this->callTimeout($deadline - $this->nowSeconds()), $unreadable));
-			// Entries no delete can take: they expire, or stay, whatever is done.
+			// Entries this does not delete: whether one is live cannot be told.
 			$groups['unreadable'] += $unreadable ?? 0;
 			if ($sessions === []) {
 				return true;
@@ -249,10 +249,10 @@ class PadSessionRevoker {
 			return 0;
 		}
 
-		// Ids the index lists that Etherpad cannot describe. They cannot be
-		// revoked — deleteSession answers that they do not exist — so they
-		// belong in the number that says this logout did not finish, not
-		// dropped on the way in.
+		// Ids the index lists that Etherpad cannot describe, not revoked
+		// here: whether one is live cannot be told, and one with no record
+		// at all deleteSession answers as not existing. They belong in the
+		// number that says this logout did not finish, not dropped.
 		$tally = self::emptyTally();
 		$tally['left'] = $unreadable ?? 0;
 
@@ -291,8 +291,9 @@ class PadSessionRevoker {
 	 * The live ones among $sessions deleted, in their order, within what is
 	 * left of the budget until $deadline and $ceiling deletes, counted into
 	 * $tally: deletes attempted - one ceiling across every call for one
-	 * revoke - sessions removed, and live ones left to expire. $context
-	 * names whose sessions they are.
+	 * revoke - sessions removed, and live ones left: to expire on a logout,
+	 * to the background job on a delete. $context names whose sessions
+	 * they are.
 	 *
 	 * @param array<array-key,array{groupID:string,validUntil:int}> $sessions
 	 * @param array<string,mixed> $context

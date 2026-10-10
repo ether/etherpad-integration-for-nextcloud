@@ -24,7 +24,7 @@ use Psr\Log\LoggerInterface;
  * way made after the delete listed them.
  *
  * A group loses its sessions while every pad of it is away from Files:
- * its file in a trash, or out of the file cache (BindingService::isInFiles()).
+ * its file in a trash, or out of the file cache (BindingService::anyInFiles()).
  * A file back in Files keeps them - whoever opens a restored file gets a
  * session that is theirs to keep - and so does a pad of no file, a legacy
  * `.pad`'s neighbour say, which was never a delete's to take.
@@ -62,8 +62,9 @@ class GroupSessionRevoker {
 	 * the job looks once more for one that took longer
 	 * (RevokeGroupSessionsJob). Never fails what called it, and costs the
 	 * job list's own lookup and one write: a row of the same shape is the
-	 * same row, and one queued beside a waiting retry stands down when it
-	 * runs (SessionSweepJob).
+	 * same row, and one queued beside a first pass's waiting retry stands
+	 * down when it runs - not beside a second look's, which looks no more
+	 * (SessionSweepJob).
 	 */
 	public function queue(string $groupId): void {
 		try {
@@ -81,8 +82,8 @@ class GroupSessionRevoker {
 	 * One pass over the group's live sessions, the latest to expire first,
 	 * within a run's budget and MAX_PER_RUN.
 	 *
-	 * Before every delete it looks again where the files are - one query
-	 * for all of them, the mounts only for a file that moved - since a file
+	 * Before every delete it looks again where the files are - batched
+	 * lookups, the mounts only when a file moved - since a file
 	 * can be restored and opened during the pass, while the sessions are
 	 * listed too, and its opener's session would be the first to go.
 	 *
@@ -116,13 +117,13 @@ class GroupSessionRevoker {
 				return self::ENDED;
 			}
 			$places = $this->bindingService->placesOf($files);
-			$kept = $this->keptFor($places);
+			$inFiles = $this->bindingService->anyInFiles($places);
 		} catch (\Throwable $e) {
 			$this->logger->warning('Could not look up the files of a group\'s pads to revoke its Etherpad sessions.', [...$context, ...SafeError::context($e)]);
 			return self::RETRY;
 		}
-		if ($kept !== null) {
-			$this->logger->info($kept, $context);
+		if ($inFiles) {
+			$this->logger->info(self::KEPT_FOR_A_FILE_IN_FILES, $context);
 			return self::ENDED;
 		}
 
@@ -146,7 +147,7 @@ class GroupSessionRevoker {
 		uasort($live, static fn (array $a, array $b): int => $b['validUntil'] <=> $a['validUntil']);
 
 		$lookupFailed = false;
-		$back = null;
+		$back = false;
 		$stillAway = function () use ($files, $context, &$places, &$lookupFailed, &$back): bool {
 			try {
 				$now = $this->bindingService->placesOf($files);
@@ -154,8 +155,8 @@ class GroupSessionRevoker {
 					return true;
 				}
 				$places = $now;
-				$back = $this->keptFor($now);
-				return $back === null;
+				$back = $this->bindingService->anyInFiles($now);
+				return !$back;
 			} catch (\Throwable $e) {
 				$this->logger->warning('Could not look up the files of a group\'s pads to revoke its Etherpad sessions.', [...$context, ...SafeError::context($e)]);
 				$lookupFailed = true;
@@ -172,8 +173,8 @@ class GroupSessionRevoker {
 			]);
 		}
 		if ($run['stopped']) {
-			if ($back !== null) {
-				$this->logger->info($back, $context);
+			if ($back) {
+				$this->logger->info(self::KEPT_FOR_A_FILE_IN_FILES, $context);
 			}
 			// A file back ends the job; a lookup that failed asks again.
 			return ['deleted' => $run['deleted'], 'remaining' => 0, 'retry' => $lookupFailed, 'nextDueAt' => null, 'ended' => !$lookupFailed];
@@ -182,23 +183,4 @@ class GroupSessionRevoker {
 		return ['deleted' => $run['deleted'], 'remaining' => count($live) - $run['handled'], 'retry' => $run['refused'], 'nextDueAt' => null, 'ended' => false];
 	}
 
-	/**
-	 * KEPT_FOR_A_FILE_IN_FILES when one of the files at $places is in Files,
-	 * else null. A file the file cache does not have is not among them.
-	 * One look at the mounts a file, up to the first in Files: a large
-	 * legacy group's files are mostly in Files, so it stops early; one with
-	 * every file away asks of each, and a pass the budget does not cover
-	 * ends as a retry at the listing.
-	 *
-	 * @param array<int,array{int,string}> $places
-	 */
-	private function keptFor(array $places): ?string {
-		foreach ($places as [$storage, $path]) {
-			if ($this->bindingService->isInFiles($storage, $path)) {
-				return self::KEPT_FOR_A_FILE_IN_FILES;
-			}
-		}
-
-		return null;
-	}
 }

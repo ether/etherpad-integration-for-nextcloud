@@ -16,10 +16,11 @@ use OCP\BackgroundJob\QueuedJob;
 use Psr\Log\LoggerInterface;
 
 /**
- * A sweep over Etherpad sessions that goes on in passes, one row per item
- * it sweeps - an author's sessions, a group's: back after a minute while
- * there is more, backed off after a failure, and stopped after three
- * delayed retries without progress. The argument holds the item's id
+ * A sweep over Etherpad sessions that goes on in passes, each a row naming
+ * the item it sweeps - an author's sessions, a group's - where a first
+ * pass, a retry and a second look can wait side by side: back after a
+ * minute while there is more, backed off after a failure, and stopped
+ * after three delayed retries without progress. The argument holds the item's id
  * under key(), a retry's attempt, and `again` on a second look
  * (lookAgainAfter()): nothing that opens anything, since job arguments are
  * persisted and printed by occ.

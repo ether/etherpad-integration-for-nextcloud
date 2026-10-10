@@ -132,7 +132,7 @@ class GroupSessionRevokerTest extends TestCase {
 		$bindings = $this->createMock(BindingService::class);
 		$bindings->method('filesOfPads')->with(['g.AAAAAAAAAAAAAAAA$away', self::PAD])->willReturn($case === 'none' ? null : [41, 42]);
 		$bindings->method('placesOf')->willReturn([41 => [3, 'files_trashbin/files/Away.pad.d1'], 42 => [3, 'files/Notes.pad']]);
-		$bindings->method('isInFiles')->willReturnCallback(static fn (int $storage, string $path): bool => $path === 'files/Notes.pad');
+		$bindings->method('anyInFiles')->willReturnCallback(static fn (array $places): bool => in_array([3, 'files/Notes.pad'], $places, true));
 		$logger = $this->createMock(LoggerInterface::class);
 		$logger->expects(self::once())->method('info')->with($line, self::callback(static fn (array $context): bool => $context['groupId'] === self::GROUP));
 
@@ -351,11 +351,36 @@ class GroupSessionRevokerTest extends TestCase {
 		$bindings = $this->createMock(BindingService::class);
 		$bindings->method('filesOfPads')->with([])->willReturn([]);
 		$bindings->method('placesOf')->with([])->willReturn([]);
-		$bindings->expects(self::never())->method('isInFiles');
+		$bindings->method('anyInFiles')->with([])->willReturn(false);
 
 		$result = $this->revoker($client, $bindings)->revokeRest(self::GROUP);
 
 		self::assertSame(['s.left'], $removed);
+		self::assertSame(['deleted' => 1, 'remaining' => 0, 'retry' => false, 'nextDueAt' => null, 'ended' => false], $result);
+	}
+
+	/**
+	 * A large legacy group with every file in a trash: its files and where
+	 * they are, and whether one is in Files, each asked once for all of
+	 * them, so the pass reaches its sessions.
+	 */
+	public function testAsksOnceForAllTheFilesOfALargeGroup(): void {
+		$pads = array_map(static fn (int $i): string => self::GROUP . '$legacy-' . $i, range(1, 1500));
+		$files = range(1001, 2500);
+		$places = array_combine($files, array_map(static fn (int $id): array => [3, 'files_trashbin/files/Pad ' . $id . '.pad.d1'], $files));
+		$client = $this->createMock(EtherpadClient::class);
+		$client->method('listPads')->willReturn($pads);
+		$client->method('listSessionsOfGroup')->willReturn(['s.live' => ['groupID' => self::GROUP, 'validUntil' => FixedClock::NOW + 3600]]);
+		$client->expects(self::once())->method('deleteSession')->with('s.live');
+		$bindings = $this->createMock(BindingService::class);
+		$bindings->expects(self::once())->method('filesOfPads')->with($pads)->willReturn($files);
+		// Before the pass and before its delete; the mounts only once, the
+		// files not having moved between.
+		$bindings->expects(self::exactly(2))->method('placesOf')->with($files)->willReturn($places);
+		$bindings->expects(self::once())->method('anyInFiles')->with($places)->willReturn(false);
+
+		$result = $this->revoker($client, $bindings)->revokeRest(self::GROUP);
+
 		self::assertSame(['deleted' => 1, 'remaining' => 0, 'retry' => false, 'nextDueAt' => null, 'ended' => false], $result);
 	}
 
@@ -402,7 +427,15 @@ class GroupSessionRevokerTest extends TestCase {
 		$places instanceof \Closure
 			? $bindings->method('placesOf')->with([42])->willReturnCallback($places)
 			: $bindings->method('placesOf')->with([42])->willReturn($places);
-		$bindings->method('isInFiles')->willReturnCallback($inFiles ?? static fn (): bool => false);
+		// Asked of every place, as each file's answer counts.
+		$inFiles ??= static fn (): bool => false;
+		$bindings->method('anyInFiles')->willReturnCallback(static function (array $places) use ($inFiles): bool {
+			$any = false;
+			foreach ($places as [$storage, $path]) {
+				$any = $inFiles($storage, $path) || $any;
+			}
+			return $any;
+		});
 		return $bindings;
 	}
 

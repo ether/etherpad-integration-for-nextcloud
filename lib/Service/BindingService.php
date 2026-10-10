@@ -39,7 +39,7 @@ class BindingService {
 	public const USER_TRASH_PATH = 'files_trashbin/';
 	public const TEAM_TRASH_PATH = '__groupfolders/trash/';
 
-	/** The mount provider of a share's mounts, which isInFiles() does not count. */
+	/** The mount provider of a share's mounts, which anyInFiles() does not count. */
 	private const SHARE_MOUNT_PROVIDER = 'OCA\\Files_Sharing\\MountProvider';
 
 	public function __construct(
@@ -237,14 +237,7 @@ class BindingService {
 	 * @return array{int,string}|null
 	 */
 	public function placeOf(int $fileId): ?array {
-		$qb = $this->db->getQueryBuilder();
-		$qb->select('storage', 'path')
-			->from('filecache')
-			->where($qb->expr()->eq('fileid', $qb->createNamedParameter($fileId, IQueryBuilder::PARAM_INT)));
-		$result = $qb->executeQuery();
-		$row = DbRows::one($result->fetch());
-		$result->closeCursor();
-		return $row === null ? null : [DbRows::int($row, 'storage'), DbRows::string($row, 'path')];
+		return $this->placesOf([$fileId])[$fileId] ?? null;
 	}
 
 	/**
@@ -283,7 +276,8 @@ class BindingService {
 	}
 
 	/**
-	 * Where the file cache has each of $fileIds, as placeOf() reads one:
+	 * Where the file cache has each of $fileIds - storage and path, as a
+	 * removal from the file cache reports them:
 	 * one query for many, for a sweep that asks again and again. A file it
 	 * does not have is left out.
 	 *
@@ -308,7 +302,7 @@ class BindingService {
 	}
 
 	/**
-	 * Whether a user sees what the file cache has at $path on $storage in
+	 * Whether a user sees any of what the file cache has at $places in
 	 * Files, through a mount Nextcloud keeps for them: under their `files/`.
 	 * A trash is outside it, a folder called `trash` on an external storage
 	 * inside. Three things it does not go by:
@@ -321,21 +315,66 @@ class BindingService {
 	 * - the storage's id, which Nextcloud keeps as a hash once it is longer
 	 *   than 64 characters.
 	 *
-	 * Only the mounts rooted at the file or above it are read, a few: a
-	 * storage can hold one for every user of every team folder on it.
+	 * Only the mounts rooted at a file or above it are read, by path hash,
+	 * five hundred such places a query: a group's files can be thousands,
+	 * all in a trash, and a storage can hold a mount for every user of
+	 * every team folder on it.
 	 *
 	 * A row from before Nextcloud 24 names no provider and counts as any
 	 * other: a team folder's of then must. A share's of then counts too,
 	 * until its user's next login renews it, and keeps a trashed file's
 	 * sessions until they expire - the safer of the two mistakes.
+	 *
+	 * @param array<int,array{int,string}> $places storage and path, by file id
 	 */
-	public function isInFiles(int $storage, string $path): bool {
-		$above = [''];
-		$prefix = '';
-		foreach (explode('/', $path) as $segment) {
-			$prefix = $prefix === '' ? $segment : $prefix . '/' . $segment;
-			$above[] = $prefix;
+	public function anyInFiles(array $places): bool {
+		// A home, mounted at its user's root, shows only what is under
+		// `files/`: there any mount above a file shows it. Elsewhere only a
+		// mount inside a user's `files/` does - a team folder, an external
+		// storage - which shows all it holds.
+		$paths = [];
+		foreach ($places as [$storage, $path]) {
+			$paths[$storage][str_starts_with($path, 'files/') ? 1 : 0][] = $path;
 		}
+		foreach ($paths as $storage => $byKind) {
+			foreach ($byKind as $underFiles => $kindPaths) {
+				foreach (array_chunk(self::rootsAbove($kindPaths), 500) as $roots) {
+					if ($this->mountedAbove($storage, $roots, (bool)$underFiles)) {
+						return true;
+					}
+				}
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * Every path at or above $paths, the storage's root among them.
+	 *
+	 * @param list<string> $paths
+	 * @return list<string>
+	 */
+	private static function rootsAbove(array $paths): array {
+		$roots = [''];
+		foreach ($paths as $path) {
+			$prefix = '';
+			foreach (explode('/', $path) as $segment) {
+				$prefix = $prefix === '' ? $segment : $prefix . '/' . $segment;
+				$roots[] = $prefix;
+			}
+		}
+		// Not as keys: a path of digits alone would come back an int.
+		return array_values(array_unique($roots));
+	}
+
+	/**
+	 * Whether a mount a user keeps - not a share's - is rooted at one of
+	 * $roots on $storage: any, for what is under a home's `files/`, else
+	 * one inside a user's `files/`.
+	 *
+	 * @param list<string> $roots
+	 */
+	private function mountedAbove(int $storage, array $roots, bool $underFiles): bool {
 		$qb = $this->db->getQueryBuilder();
 		$qb->select('m.mount_point')
 			->from('mounts', 'm')
@@ -344,21 +383,22 @@ class BindingService {
 			// Implied by the join, and what lets the file cache's index on
 			// storage and path hash find the roots.
 			->andWhere($qb->expr()->eq('f.storage', $qb->createNamedParameter($storage, IQueryBuilder::PARAM_INT)))
-			->andWhere($qb->expr()->in('f.path_hash', $qb->createNamedParameter(array_map('md5', $above), IQueryBuilder::PARAM_STR_ARRAY)))
+			->andWhere($qb->expr()->in('f.path_hash', $qb->createNamedParameter(array_map('md5', $roots), IQueryBuilder::PARAM_STR_ARRAY)))
 			->andWhere($qb->expr()->orX(
 				$qb->expr()->isNull('m.mount_provider_class'),
 				$qb->expr()->neq('m.mount_provider_class', $qb->createNamedParameter(self::SHARE_MOUNT_PROVIDER)),
-			))
-			// One home, or many alike: a team folder's mounts, one a user.
-			->setMaxResults(20);
+			));
+		if (!$underFiles) {
+			// Narrowed here to the mounts that can show it, so the limit
+			// below cannot hide one among a team folder trash's many.
+			$qb->andWhere($qb->expr()->like('m.mount_point', $qb->createNamedParameter('/%/files/%')));
+		}
+		// Every row answers yes but for the rare one the pattern lets past.
+		$qb->setMaxResults(20);
 		$result = $qb->executeQuery();
 		$seen = false;
 		while (!$seen && ($row = DbRows::one($result->fetch())) !== null) {
-			// A mount inside a user's `files/` - a team folder, an external
-			// storage - shows there all it holds; a home, mounted at its
-			// user's root, only what is under `files/`.
-			$seen = preg_match('#^/[^/]+/files/#', DbRows::string($row, 'mount_point')) === 1
-				|| str_starts_with($path, 'files/');
+			$seen = $underFiles || preg_match('#^/[^/]+/files/#', DbRows::string($row, 'mount_point')) === 1;
 		}
 		$result->closeCursor();
 		return $seen;
