@@ -40,6 +40,7 @@ final class InMemoryBindingQuery implements IQueryBuilder {
 	private ?string $orderBy = null;
 	private string $direction = 'ASC';
 	private ?int $limit = null;
+	private int $offset = 0;
 
 	public function __construct(private InMemoryBindingTable $db) {
 	}
@@ -109,6 +110,11 @@ final class InMemoryBindingQuery implements IQueryBuilder {
 		return $this;
 	}
 
+	public function setFirstResult(int $offset): self {
+		$this->offset = $offset;
+		return $this;
+	}
+
 	public function setMaxResults(int $limit): self {
 		$this->limit = $limit;
 		return $this;
@@ -136,6 +142,11 @@ final class InMemoryBindingQuery implements IQueryBuilder {
 	}
 
 	/** @return \Closure(array<string,mixed>): bool */
+	public function neq(string $column, string $operand): \Closure {
+		return fn (array $row): bool => $this->value($row, $column) !== null && (string)$this->value($row, $column) !== (string)$this->operand($row, $operand);
+	}
+
+	/** @return \Closure(array<string,mixed>): bool */
 	public function lte(string $column, string $operand): \Closure {
 		return fn (array $row): bool => $this->value($row, $column) !== null && (int)$this->value($row, $column) <= (int)$this->operand($row, $operand);
 	}
@@ -143,6 +154,12 @@ final class InMemoryBindingQuery implements IQueryBuilder {
 	/** @return \Closure(array<string,mixed>): bool */
 	public function in(string $column, string $parameter): \Closure {
 		return fn (array $row): bool => in_array($this->value($row, $column), (array)$this->parameters[$parameter], false);
+	}
+
+	/** @return \Closure(array<string,mixed>): bool */
+	public function like(string $column, string $parameter): \Closure {
+		$pattern = '#^' . strtr(preg_quote((string)$this->parameters[$parameter], '#'), ['%' => '.*', '_' => '.']) . '$#s';
+		return fn (array $row): bool => $this->value($row, $column) !== null && preg_match($pattern, (string)$this->value($row, $column)) === 1;
 	}
 
 	/** @return \Closure(array<string,mixed>): bool */
@@ -207,7 +224,7 @@ final class InMemoryBindingQuery implements IQueryBuilder {
 			$sign = $this->direction === 'DESC' ? -1 : 1;
 			usort($rows, fn (array $a, array $b): int => $sign * ((int)$this->value($a, $column) <=> (int)$this->value($b, $column)));
 		}
-		$rows = array_slice($rows, 0, $this->limit);
+		$rows = array_slice($rows, $this->offset, $this->limit);
 		$this->db->read[] = count($rows);
 		return $this->result(array_map(fn (array $row): array => $this->projected($row), $rows));
 	}
@@ -274,7 +291,11 @@ final class InMemoryBindingQuery implements IQueryBuilder {
 
 	/** @return list<array<string,mixed>> */
 	private function rowsOf(string $table): array {
-		return $table === 'filecache' ? $this->db->fileCache : $this->db->rows;
+		return match ($table) {
+			'filecache' => $this->db->fileCache,
+			'mounts' => $this->db->mounts,
+			default => $this->db->rows,
+		};
 	}
 
 	/**
@@ -343,7 +364,7 @@ final class InMemoryBindingQuery implements IQueryBuilder {
 				}
 			}
 		}
-		InMemoryBindingTable::assertColumn($table === 'filecache' ? 'filecache' : 'ep_pad_bindings', end($parts));
+		InMemoryBindingTable::assertColumn(in_array($table, ['filecache', 'mounts'], true) ? $table : 'ep_pad_bindings', end($parts));
 		return $name;
 	}
 

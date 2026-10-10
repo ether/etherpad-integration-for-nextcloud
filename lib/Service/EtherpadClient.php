@@ -324,8 +324,9 @@ class EtherpadClient {
 		$sessions = [];
 		// Every entry the index listed that cannot be turned into a session,
 		// whatever made it unusable — a null, a malformed record, an
-		// unexpected key. Each still costs a lookup per listing and
-		// `deleteSession` will not take it, so dropping any of them quietly
+		// unexpected key. Each still costs a lookup per listing, and none is
+		// deleted: whether one is live cannot be told, and one with no
+		// record at all `deleteSession` does not take. Dropping any quietly
 		// would let a sweep look successful while the index stayed as long.
 		$unreadableEntries = 0;
 		foreach ($sessionListing as $sessionId => $info) {

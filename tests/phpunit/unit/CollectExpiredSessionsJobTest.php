@@ -95,7 +95,9 @@ class CollectExpiredSessionsJobTest extends TestCase {
 	/**
 	 * A pad server that has been unreachable for a quarter of an hour is
 	 * not going to be helped by a fourth try, and the next open queues a
-	 * fresh sweep anyway.
+	 * fresh sweep anyway. Said, so a sweep given up is not taken for one
+	 * still waiting - as info: each failed listing has warned already, and
+	 * an outage meets every author.
 	 */
 	public function testGivesUpAfterEnoughFailures(): void {
 		$collector = $this->createMock(ExpiredSessionCollector::class);
@@ -103,8 +105,14 @@ class CollectExpiredSessionsJobTest extends TestCase {
 
 		$jobList = $this->createMock(IJobList::class);
 		$jobList->expects(self::never())->method('scheduleAfter');
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects(self::never())->method('warning');
+		$logger->expects(self::once())->method('info')->with(
+			'Gave up an Etherpad session sweep after three retries without progress; the rest waits for another open.',
+			self::callback(static fn (array $context): bool => $context['authorId'] === 'a.author' && $context['attempts'] === 3),
+		);
 
-		$job = $this->job($collector, $jobList);
+		$job = $this->job($collector, $jobList, $logger);
 		$job->setArgument(['authorId' => 'a.author', 'attempt' => 3]);
 		$job->start($jobList);
 	}
@@ -307,6 +315,24 @@ class CollectExpiredSessionsJobTest extends TestCase {
 		// still carried a uid — and for a public link that uid was the
 		// share token.
 		yield 'an older row without an author' => [['uid' => 'alice']];
+	}
+
+	/** A sweep without a second look asks for no row of one. */
+	public function testAsksOnlyForTheRowsItCanQueue(): void {
+		$asked = [];
+		$jobList = $this->createMock(IJobList::class);
+		$jobList->method('has')->willReturnCallback(static function (string $job, mixed $argument) use (&$asked): bool {
+			$asked[] = $argument;
+			return false;
+		});
+
+		self::assertFalse(CollectExpiredSessionsJob::isQueued($jobList, ['authorId' => 'a']));
+		self::assertSame([
+			['authorId' => 'a'],
+			['authorId' => 'a', 'attempt' => 1],
+			['authorId' => 'a', 'attempt' => 2],
+			['authorId' => 'a', 'attempt' => 3],
+		], $asked);
 	}
 
 	private function job(

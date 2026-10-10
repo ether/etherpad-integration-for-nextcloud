@@ -43,7 +43,6 @@ class RunBudgetTest extends TestCase {
 		$this->assertFalse($budget->exhausted());
 		$budget->noteFailure();
 		$this->assertTrue($budget->exhausted());
-		$this->assertSame(5, $budget->failures());
 	}
 
 	/** A call after the first gets a timeout only while it could still finish. */

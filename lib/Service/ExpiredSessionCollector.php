@@ -10,7 +10,6 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\Service;
 
 use OCA\EtherpadNextcloud\BackgroundJob\CollectExpiredSessionsJob;
-use OCA\EtherpadNextcloud\Util\EtherpadErrorClassifier;
 use OCA\EtherpadNextcloud\Util\SafeError;
 use OCP\AppFramework\Utility\ITimeFactory;
 use OCP\BackgroundJob\IJobList;
@@ -20,10 +19,11 @@ use Psr\Log\LoggerInterface;
  * Collects the Etherpad sessions that have already expired.
  *
  * Etherpad never removes one, and `listSessionsOfAuthor` walks the whole
- * author index one awaited lookup at a time — so the cost of the listing,
- * which every protected open makes, grows with past opens rather than with
- * live access. Neither the listing nor the deleting happens in a request:
- * an open leaves the author's id, and the job does both.
+ * author index one awaited lookup at a time, so a listing - an open makes
+ * one when the browser carries session ids, a logout always - costs as
+ * many lookups as there were opens. Collecting them happens in no
+ * request: an open leaves the author's id, and the job lists the expired
+ * ones and deletes them.
  */
 class ExpiredSessionCollector {
 
@@ -34,6 +34,7 @@ class ExpiredSessionCollector {
 		private IJobList $jobList,
 		private LoggerInterface $logger,
 		private ITimeFactory $timeFactory,
+		private SessionDeletes $deletes,
 		private float $budgetSeconds = RunBudget::DEFAULT_SECONDS,
 	) {
 	}
@@ -53,7 +54,7 @@ class ExpiredSessionCollector {
 		$argument = ['authorId' => $authorId];
 		// Housekeeping may not be the reason a pad fails to open.
 		try {
-			if ($this->sweepIsQueued($argument)) {
+			if (CollectExpiredSessionsJob::isQueued($this->jobList, $argument)) {
 				return;
 			}
 			$this->jobList->add(CollectExpiredSessionsJob::class, $argument);
@@ -97,9 +98,9 @@ class ExpiredSessionCollector {
 		}
 
 		if (($unreadable ?? 0) > 0) {
-			// Keys the index lists but Etherpad cannot describe.
-			// `deleteSession` will not take them either, so no run can
-			// shrink that part of the index — worth saying rather than
+			// Keys the index lists but Etherpad cannot describe, which no
+			// run deletes - whether one has expired cannot be told - so that
+			// part of the index does not shrink: worth saying rather than
 			// reporting a clean sweep.
 			$this->logger->warning('Etherpad lists sessions it cannot describe; those entries cannot be collected.', [
 				'app' => 'etherpad_nextcloud',
@@ -128,44 +129,9 @@ class ExpiredSessionCollector {
 			$nextDueAt = $nextDueAt === null ? $dueAt : min($nextDueAt, $dueAt);
 		}
 
-		// `handled` counts what is no longer there, however it went, and is
-		// the only honest basis for what is left over.
-		$handled = 0;
-		$deleted = 0;
-		foreach ($expired as $sessionId) {
-			if ($handled >= self::MAX_PER_RUN || $budget->exhausted()) {
-				break;
-			}
-
-			try {
-				$this->etherpadClient->deleteSession($sessionId, $budget->callTimeout());
-				$deleted++;
-				$handled++;
-			} catch (\Throwable $e) {
-				if (EtherpadErrorClassifier::isSessionAlreadyGone($e)) {
-					$handled++;
-					continue;
-				}
-
-				// Carrying on past a refusal: stopping at the first would let
-				// one undeletable record shadow everything behind it for
-				// good, since the next run meets it first again.
-				$budget->noteFailure();
-				// A digest, not the id: a session id is the value of the
-				// `sessionID` cookie, so it is the credential itself — and
-				// this branch is reached for sessions the pad server may
-				// still accept, which is why the grace above exists. The
-				// digest is enough to see the same entry failing run after
-				// run.
-				$this->logger->warning('Could not collect an expired Etherpad session.', [
-					'app' => 'etherpad_nextcloud',
-					'authorId' => $authorId,
-					'sessionRef' => substr(hash('sha256', $sessionId), 0, 12),
-					...SafeError::context($e, [$sessionId]),
-				]);
-			}
-		}
-		$remaining = count($expired) - $handled;
+		$run = $this->deletes->within($budget, $expired, self::MAX_PER_RUN, ['authorId' => $authorId], 'Could not collect an expired Etherpad session.');
+		$deleted = $run['deleted'];
+		$remaining = count($expired) - $run['handled'];
 
 		if ($deleted > 0 || $remaining > 0) {
 			$this->logger->debug('Collected expired Etherpad sessions.', [
@@ -175,26 +141,6 @@ class ExpiredSessionCollector {
 			]);
 		}
 
-		return ['deleted' => $deleted, 'remaining' => $remaining, 'retry' => $budget->failures() > 0, 'nextDueAt' => $nextDueAt];
-	}
-
-	/**
-	 * Whether any sweep for this author is waiting — every shape of it. The
-	 * job list matches arguments exactly, so asking only about the plain
-	 * one would miss a retry and queue a runnable row beside it.
-	 *
-	 * @param array{authorId:string} $argument
-	 */
-	private function sweepIsQueued(array $argument): bool {
-		if ($this->jobList->has(CollectExpiredSessionsJob::class, $argument)) {
-			return true;
-		}
-		foreach (CollectExpiredSessionsJob::attemptArguments($argument) as $retryArgument) {
-			if ($this->jobList->has(CollectExpiredSessionsJob::class, $retryArgument)) {
-				return true;
-			}
-		}
-
-		return false;
+		return ['deleted' => $deleted, 'remaining' => $remaining, 'retry' => $run['refused'], 'nextDueAt' => $nextDueAt];
 	}
 }

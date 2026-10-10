@@ -26,14 +26,20 @@ The pad stays as it is, and nothing is written into the file.
 
 - **A protected pad** loses its sessions: whoever still has it open can
   write no more from their next change on, and nobody opens it until the
-  file is back. On a folder with many protected pads, what does not fit in
-  a few seconds is left to expire, within six hours.
+  file is back. What does not fit in a few seconds - a pad opened many
+  times, a folder with a few dozen protected pads, an Etherpad that is
+  slow to answer - a background job takes within minutes, while the file
+  stays in the trash; a file restored keeps what is left, and its next
+  open makes a new session. A folder with more than 100 protected pads
+  takes the sessions of the first 100 found; the others expire on their
+  own, within six hours.
 - **A public pad** stays reachable by its link, and can be written into.
   The file in the trash is not synced, so what is written there is in the
   pad, not in the file's snapshot; a restore brings it back with the pad.
 - **A `.pad` file that names another user's group** - a legacy Ownpad file
-  can - takes no sessions along: only a group that holds its pad alone
-  loses them.
+  can - takes no sessions along at once. The background job takes them
+  once every pad of that group is in a trash or gone; a pad that is no
+  file of the app's, or a file still in Files, keeps them.
 
 ## Restored from the trash
 

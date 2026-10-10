@@ -39,6 +39,12 @@ class BindingService {
 	public const USER_TRASH_PATH = 'files_trashbin/';
 	public const TEAM_TRASH_PATH = '__groupfolders/trash/';
 
+	/** The mount provider of a share's mounts, which anyInFiles() does not count. */
+	private const SHARE_MOUNT_PROVIDER = 'OCA\\Files_Sharing\\MountProvider';
+
+	/** The mounts anyInFiles() reads a query, a page at a time. */
+	private const MOUNTS_A_PAGE = 20;
+
 	public function __construct(
 		private IDBConnection $db,
 		private ITimeFactory $timeFactory,
@@ -234,14 +240,184 @@ class BindingService {
 	 * @return array{int,string}|null
 	 */
 	public function placeOf(int $fileId): ?array {
-		$qb = $this->db->getQueryBuilder();
-		$qb->select('storage', 'path')
-			->from('filecache')
-			->where($qb->expr()->eq('fileid', $qb->createNamedParameter($fileId, IQueryBuilder::PARAM_INT)));
-		$result = $qb->executeQuery();
-		$row = DbRows::one($result->fetch());
-		$result->closeCursor();
-		return $row === null ? null : [DbRows::int($row, 'storage'), DbRows::string($row, 'path')];
+		return $this->placesOf([$fileId])[$fileId] ?? null;
+	}
+
+	/**
+	 * The files whose rows name the pads in $padIds, in any state - a row
+	 * owed a delete too - or null when a pad has none. One query for five
+	 * hundred pads: a legacy group can hold thousands, and a pass asks
+	 * before it lists a single session.
+	 *
+	 * @param list<string> $padIds
+	 * @return ?list<int> sorted
+	 */
+	public function filesOfPads(array $padIds): ?array {
+		$padIds = array_values(array_unique($padIds));
+		$named = [];
+		$files = [];
+		foreach (array_chunk($padIds, 500) as $chunk) {
+			$qb = $this->db->getQueryBuilder();
+			$qb->select('pad_id', 'file_id')
+				->from(self::TABLE)
+				->where($qb->expr()->in('pad_id', $qb->createNamedParameter($chunk, IQueryBuilder::PARAM_STR_ARRAY)));
+			$result = $qb->executeQuery();
+			while (($row = DbRows::one($result->fetch())) !== null) {
+				$named[DbRows::string($row, 'pad_id')] = true;
+				$files[DbRows::int($row, 'file_id')] = true;
+			}
+			$result->closeCursor();
+		}
+		foreach ($padIds as $padId) {
+			if (!isset($named[$padId])) {
+				return null;
+			}
+		}
+		$fileIds = array_keys($files);
+		sort($fileIds);
+		return $fileIds;
+	}
+
+	/**
+	 * Where the file cache has each of $fileIds - storage and path, as a
+	 * removal from the file cache reports them:
+	 * one query for many, for a sweep that asks again and again. A file it
+	 * does not have is left out.
+	 *
+	 * @param list<int> $fileIds
+	 * @return array<int,array{int,string}> by file id
+	 */
+	public function placesOf(array $fileIds): array {
+		$places = [];
+		foreach (array_chunk($fileIds, 500) as $chunk) {
+			$qb = $this->db->getQueryBuilder();
+			$qb->select('fileid', 'storage', 'path')
+				->from('filecache')
+				->where($qb->expr()->in('fileid', $qb->createNamedParameter($chunk, IQueryBuilder::PARAM_INT_ARRAY)));
+			$result = $qb->executeQuery();
+			while (($row = DbRows::one($result->fetch())) !== null) {
+				$places[DbRows::int($row, 'fileid')] = [DbRows::int($row, 'storage'), DbRows::string($row, 'path')];
+			}
+			$result->closeCursor();
+		}
+		ksort($places);
+		return $places;
+	}
+
+	/**
+	 * Whether a user sees any of what the file cache has at $places in
+	 * Files, through a mount Nextcloud keeps for them: under their `files/`.
+	 * A trash is outside it, a folder called `trash` on an external storage
+	 * inside. Three things it does not go by:
+	 *
+	 * - a share's mount: the owner's own shows the file where it is, and a
+	 *   share's row stays until its user's next login, rooted at the shared
+	 *   file wherever it went, the trash too;
+	 * - IUserMountCache, which remembers where a file was for the rest of
+	 *   the process: this is asked again while a file may be restored;
+	 * - the storage's id, which Nextcloud keeps as a hash once it is longer
+	 *   than 64 characters.
+	 *
+	 * Only the mounts rooted at a file or above it are read, by path hash,
+	 * five hundred such places a query: a group's files can be thousands,
+	 * all in a trash, and a storage can hold a mount for every user of
+	 * every team folder on it.
+	 *
+	 * A row from before Nextcloud 24 names no provider and counts as any
+	 * other: a team folder's of then must. A share's of then counts too,
+	 * until its user's next login renews it, and keeps a trashed file's
+	 * sessions until they expire - the safer of the two mistakes.
+	 *
+	 * @param array<int,array{int,string}> $places storage and path, by file id
+	 */
+	public function anyInFiles(array $places): bool {
+		// A home, mounted at its user's root, shows only what is under
+		// `files/`: there any mount above a file shows it. Elsewhere only a
+		// mount inside a user's `files/` does - a team folder, an external
+		// storage - which shows all it holds.
+		$paths = [];
+		foreach ($places as [$storage, $path]) {
+			$paths[$storage][str_starts_with($path, 'files/') ? 1 : 0][] = $path;
+		}
+		foreach ($paths as $storage => $byKind) {
+			foreach ($byKind as $underFiles => $kindPaths) {
+				foreach (array_chunk(self::rootsAbove($kindPaths), 500) as $roots) {
+					if ($this->mountedAbove($storage, $roots, (bool)$underFiles)) {
+						return true;
+					}
+				}
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * Every path at or above $paths, the storage's root among them.
+	 *
+	 * @param list<string> $paths
+	 * @return list<string>
+	 */
+	private static function rootsAbove(array $paths): array {
+		$roots = [''];
+		foreach ($paths as $path) {
+			$prefix = '';
+			foreach (explode('/', $path) as $segment) {
+				$prefix = $prefix === '' ? $segment : $prefix . '/' . $segment;
+				$roots[] = $prefix;
+			}
+		}
+		// Not as keys: a path of digits alone would come back an int.
+		return array_values(array_unique($roots));
+	}
+
+	/**
+	 * Whether a mount a user keeps - not a share's - is rooted at one of
+	 * $roots on $storage: any, for what is under a home's `files/`, else
+	 * one inside a user's `files/`.
+	 *
+	 * @param list<string> $roots
+	 */
+	private function mountedAbove(int $storage, array $roots, bool $underFiles): bool {
+		for ($offset = 0; ; $offset += self::MOUNTS_A_PAGE) {
+			$qb = $this->db->getQueryBuilder();
+			$qb->select('m.mount_point')
+				->from('mounts', 'm')
+				->innerJoin('m', 'filecache', 'f', $qb->expr()->eq('m.root_id', 'f.fileid'))
+				->where($qb->expr()->eq('m.storage_id', $qb->createNamedParameter($storage, IQueryBuilder::PARAM_INT)))
+				// Implied by the join, and what lets the file cache's index on
+				// storage and path hash find the roots.
+				->andWhere($qb->expr()->eq('f.storage', $qb->createNamedParameter($storage, IQueryBuilder::PARAM_INT)))
+				->andWhere($qb->expr()->in('f.path_hash', $qb->createNamedParameter(array_map('md5', $roots), IQueryBuilder::PARAM_STR_ARRAY)))
+				->andWhere($qb->expr()->orX(
+					$qb->expr()->isNull('m.mount_provider_class'),
+					$qb->expr()->neq('m.mount_provider_class', $qb->createNamedParameter(self::SHARE_MOUNT_PROVIDER)),
+				));
+			if ($underFiles) {
+				// Any one answers.
+				$qb->setMaxResults(1);
+			} else {
+				// Narrowed to mount points with `/files/` in them, so a team
+				// folder trash mounted for each of its users does not fill
+				// the page; read a page at a time, in order, as the pattern
+				// lets past one with `/files/` further in, which the check
+				// below turns down: none of those may hide one that counts.
+				$qb->andWhere($qb->expr()->like('m.mount_point', $qb->createNamedParameter('/%/files/%')))
+					->orderBy('m.id')
+					->setFirstResult($offset)
+					->setMaxResults(self::MOUNTS_A_PAGE);
+			}
+			$result = $qb->executeQuery();
+			$read = 0;
+			$seen = false;
+			while (!$seen && ($row = DbRows::one($result->fetch())) !== null) {
+				$read++;
+				$seen = $underFiles || preg_match('#^/[^/]+/files/#', DbRows::string($row, 'mount_point')) === 1;
+			}
+			$result->closeCursor();
+			if ($seen || $underFiles || $read < self::MOUNTS_A_PAGE) {
+				return $seen;
+			}
+		}
 	}
 
 	/**

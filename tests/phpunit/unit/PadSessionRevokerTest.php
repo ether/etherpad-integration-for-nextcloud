@@ -10,6 +10,7 @@ namespace OCA\EtherpadNextcloud\Tests\Unit;
 
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
 use OCA\EtherpadNextcloud\Service\EtherpadClient;
+use OCA\EtherpadNextcloud\Service\GroupSessionRevoker;
 use OCA\EtherpadNextcloud\Service\PadSessionRevoker;
 use OCA\EtherpadNextcloud\Service\PadSessionService;
 use PHPUnit\Framework\TestCase;
@@ -101,10 +102,9 @@ class PadSessionRevokerTest extends TestCase {
 	}
 
 	/**
-	 * Each delete is its own call with the client's full timeout behind it,
-	 * and a user who has opened pads all morning holds one live session per
-	 * open. Without a ceiling a half-broken Etherpad holds the logout for
-	 * minutes; what does not fit is left to expire.
+	 * A user who has opened pads all morning holds one live session per
+	 * open. Without a ceiling, a half-broken Etherpad would hold the logout
+	 * for minutes; what does not fit is left to expire.
 	 */
 	public function testLeavesTheTailToExpireRatherThanHoldingTheRequest(): void {
 		$live = [];
@@ -324,7 +324,7 @@ class PadSessionRevokerTest extends TestCase {
 		$logger = $this->createMock(LoggerInterface::class);
 		$logger->expects(self::once())->method('warning');
 
-		$revoker = new PadSessionRevoker($client, $sessions, $logger, $clock);
+		$revoker = new PadSessionRevoker($client, $sessions, $logger, $clock, $this->createMock(GroupSessionRevoker::class));
 
 		self::assertSame(0, $revoker->revokeAll('alice'));
 	}
@@ -436,8 +436,9 @@ class PadSessionRevokerTest extends TestCase {
 		});
 		$logger = $this->createMock(LoggerInterface::class);
 		$logger->expects(self::never())->method('warning');
+		$queued = [];
 
-		$count = $this->revoker($client, logger: $logger)->revokeForPads([
+		$count = $this->revoker($client, logger: $logger, groupSessions: $this->queueRecorder($queued))->revokeForPads([
 			'g.AAAAAAAAAAAAAAAA$one',
 			'g.AAAAAAAAAAAAAAAA$one',
 			'g.BBBBBBBBBBBBBBBB$two',
@@ -451,14 +452,18 @@ class PadSessionRevokerTest extends TestCase {
 		self::assertSame(['g.AAAAAAAAAAAAAAAA', 'g.BBBBBBBBBBBBBBBB', 'g.CCCCCCCCCCCCCCCC', 'g.DDDDDDDDDDDDDDDD', 'g.EEEEEEEEEEEEEEEE'], $listed);
 		self::assertSame(['g.AAAAAAAAAAAAAAAA', 'g.BBBBBBBBBBBBBBBB', 'g.CCCCCCCCCCCCCCCC', 'g.DDDDDDDDDDDDDDDD'], $padsAsked, 'not a group without a live session');
 		self::assertSame(['s.g.AAAAAAAAAAAAAAAA', 's.g.BBBBBBBBBBBBBBBB'], $removed);
+		// Every group but the one gone goes to the background job, which
+		// takes what an open under way makes after the listing here, and
+		// judges C by where its other pad's file is.
+		self::assertSame(['g.AAAAAAAAAAAAAAAA', 'g.BBBBBBBBBBBBBBBB', 'g.CCCCCCCCCCCCCCCC', 'g.EEEEEEEEEEEEEEEE'], $queued);
 	}
 
 	/**
 	 * A group that cannot be asked is a warning, and the others go on; a
-	 * budget spent leaves the groups not yet asked to expire, with a line
-	 * that says how many.
+	 * budget spent leaves the groups not yet asked, with a line that says
+	 * how many. Each of them goes to the background job.
 	 */
-	public function testAGroupThatCannotBeAskedLeavesItsSessionsToExpire(): void {
+	public function testAGroupThatCannotBeAskedGoesToTheBackground(): void {
 		$client = $this->createMock(EtherpadClient::class);
 		$clock = new FixedClock();
 		$client->method('listSessionsOfGroup')->willReturnCallback(static function (string $group) use ($clock): array {
@@ -473,22 +478,25 @@ class PadSessionRevokerTest extends TestCase {
 		$logger->method('warning')->willReturnCallback(static function (string $message, array $context) use (&$lines): void {
 			$lines[] = [$message, $context['groupId'] ?? $context['groupsLeft'] ?? null];
 		});
-		$revoker = new PadSessionRevoker($client, $this->createMock(PadSessionService::class), $logger, $clock);
+		$queued = [];
+		$revoker = new PadSessionRevoker($client, $this->createMock(PadSessionService::class), $logger, $clock, $this->queueRecorder($queued));
 
 		$revoker->revokeForPads(['g.AAAAAAAAAAAAAAAA$a', 'g.BBBBBBBBBBBBBBBB$b', 'g.CCCCCCCCCCCCCCCC$c', 'g.DDDDDDDDDDDDDDDD$d']);
 
 		self::assertSame([
-			['Could not list the Etherpad sessions to revoke; they will expire on their own.', 'g.AAAAAAAAAAAAAAAA'],
+			['Could not tell which Etherpad sessions to revoke; a background job tries again.', 'g.AAAAAAAAAAAAAAAA'],
 			// B's sessions took the rest: C's and D's go unasked.
-			['No time left to revoke Etherpad sessions; they will expire on their own.', 2],
+			['No time or deletes left to revoke the Etherpad sessions of every group; a background job takes them.', 2],
 		], $lines);
+		self::assertSame(['g.AAAAAAAAAAAAAAAA', 'g.BBBBBBBBBBBBBBBB', 'g.CCCCCCCCCCCCCCCC', 'g.DDDDDDDDDDDDDDDD'], $queued);
 	}
 
 	/**
 	 * Each group's sessions go before the next group is asked. With every
 	 * call taking 0.3 s, listing three groups first took the budget, and
 	 * no session went; now the first group's does. The second group's
-	 * sessions are listed, and left to expire; the third is not asked.
+	 * sessions are listed, and left to the background job with the third,
+	 * which is not asked.
 	 */
 	public function testASlowPadServerStillRevokesTheFirstGroupsSessions(): void {
 		$clock = new FixedClock();
@@ -513,19 +521,21 @@ class PadSessionRevokerTest extends TestCase {
 		$logger = $this->createMock(LoggerInterface::class);
 		foreach (['info', 'warning'] as $level) {
 			$logger->method($level)->willReturnCallback(static function (string $message, array $context) use (&$lines): void {
-				$lines[] = [$message, $context['count'] ?? $context['groupsLeft'] ?? null];
+				$lines[] = [$message, $context['count'] ?? $context['groupsLeft'] ?? null, $context['leftToTheJob'] ?? null];
 			});
 		}
-		$revoker = new PadSessionRevoker($client, $this->createMock(PadSessionService::class), $logger, $clock);
+		$queued = [];
+		$revoker = new PadSessionRevoker($client, $this->createMock(PadSessionService::class), $logger, $clock, $this->queueRecorder($queued));
 
 		$count = $revoker->revokeForPads(['g.AAAAAAAAAAAAAAAA$pad', 'g.BBBBBBBBBBBBBBBB$pad', 'g.CCCCCCCCCCCCCCCC$pad']);
 
 		self::assertSame(1, $count);
 		self::assertSame(['s.g.AAAAAAAAAAAAAAAA'], $removed);
 		self::assertSame([
-			['No time left to revoke Etherpad sessions; they will expire on their own.', 1],
-			['Revoked Etherpad sessions.', 1],
+			['No time or deletes left to revoke the Etherpad sessions of every group; a background job takes them.', 1, null],
+			['Revoked Etherpad sessions.', 1, 1],
 		], $lines);
+		self::assertSame(['g.AAAAAAAAAAAAAAAA', 'g.BBBBBBBBBBBBBBBB', 'g.CCCCCCCCCCCCCCCC'], $queued);
 	}
 
 	/**
@@ -542,17 +552,20 @@ class PadSessionRevokerTest extends TestCase {
 			$removed[] = $id;
 		});
 
-		$this->revoker($client)->revokeForPads(['g.AAAAAAAAAAAAAAAA$a', 'g.AAAAAAAAAAAAAAAA$b', 'g.BBBBBBBBBBBBBBBB$a']);
+		$queued = [];
+
+		$this->revoker($client, groupSessions: $this->queueRecorder($queued))->revokeForPads(['g.AAAAAAAAAAAAAAAA$a', 'g.AAAAAAAAAAAAAAAA$b', 'g.BBBBBBBBBBBBBBBB$a']);
 
 		$this->assertSame(['s.g.AAAAAAAAAAAAAAAA'], $removed);
+		$this->assertSame(['g.AAAAAAAAAAAAAAAA', 'g.BBBBBBBBBBBBBBBB'], $queued, 'B\'s other pad is the job\'s to judge');
 	}
 
 	/**
 	 * Every open makes a session, so a pad opened often holds more than a
-	 * cookie can: a delete takes up to a hundred, the newest first - whoever
-	 * is at it now, and the last to expire - and leaves the oldest.
+	 * cookie can: a delete takes up to a hundred, those that expire last
+	 * first - most often whoever is at it now.
 	 */
-	public function testADeleteTakesTheNewestSessionsFirst(): void {
+	public function testADeleteTakesTheSessionsThatExpireLastFirst(): void {
 		$sessions = [];
 		for ($i = 1; $i <= 120; $i++) {
 			$sessions['s.' . $i] = ['groupID' => 'g.AAAAAAAAAAAAAAAA', 'validUntil' => FixedClock::NOW + $i];
@@ -565,10 +578,216 @@ class PadSessionRevokerTest extends TestCase {
 			$removed[] = $id;
 		});
 
-		$count = $this->revoker($client)->revokeForPads(['g.AAAAAAAAAAAAAAAA$pad']);
+		$queued = [];
+
+		$count = $this->revoker($client, groupSessions: $this->queueRecorder($queued))->revokeForPads(['g.AAAAAAAAAAAAAAAA$pad']);
 
 		self::assertSame(100, $count);
 		self::assertSame(array_map(static fn (int $i): string => 's.' . $i, range(120, 21)), $removed);
+		self::assertSame(['g.AAAAAAAAAAAAAAAA'], $queued, 'the oldest twenty to the background job');
+	}
+
+	/**
+	 * A delete Etherpad refused leaves its session as live as one the
+	 * budget never reached: the job takes it. An entry Etherpad lists and
+	 * cannot describe no job can delete: it is left to expire.
+	 */
+	public function testARefusedDeleteIsLeftToTheJobAndAnUnreadableEntryToExpire(): void {
+		$client = $this->createMock(EtherpadClient::class);
+		$client->method('listSessionsOfGroup')->willReturnCallback(static function (string $group, ?int $timeout = null, ?int &$unreadable = null): array {
+			$unreadable = 1;
+			return ['s.' . $group => ['groupID' => $group, 'validUntil' => FixedClock::NOW + 3600]];
+		});
+		$client->method('listPads')->willReturnCallback(static fn (string $group): array => [$group . '$pad']);
+		$client->method('deleteSession')->willReturnCallback(static function (string $id): void {
+			if ($id === 's.g.AAAAAAAAAAAAAAAA') {
+				throw new EtherpadClientException('Etherpad answered 500');
+			}
+		});
+		$info = [];
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->method('info')->willReturnCallback(static function (string $message, array $context) use (&$info): void {
+			$info[] = [$context['count'], $context['leftToTheJob'], $context['groupsToTheJob'], $context['leftToExpire']];
+		});
+
+		$this->revoker($client, logger: $logger)->revokeForPads(['g.AAAAAAAAAAAAAAAA$pad', 'g.BBBBBBBBBBBBBBBB$pad']);
+
+		self::assertSame([[1, 1, 2, 2]], $info);
+	}
+
+	public function testGroupsPastTheCeilingGoToTheBackgroundUnasked(): void {
+		$sessions = [];
+		for ($i = 1; $i <= 120; $i++) {
+			$sessions['s.' . $i] = ['groupID' => 'g.AAAAAAAAAAAAAAAA', 'validUntil' => FixedClock::NOW + $i];
+		}
+		$client = $this->createMock(EtherpadClient::class);
+		$listed = [];
+		$client->method('listSessionsOfGroup')->willReturnCallback(static function (string $group) use ($sessions, &$listed): array {
+			$listed[] = $group;
+			return $sessions;
+		});
+		$client->method('listPads')->willReturnCallback(static fn (string $group): array => [$group . '$pad']);
+		$queued = [];
+
+		$count = $this->revoker($client, groupSessions: $this->queueRecorder($queued))->revokeForPads(['g.AAAAAAAAAAAAAAAA$pad', 'g.BBBBBBBBBBBBBBBB$pad']);
+
+		self::assertSame(100, $count);
+		self::assertSame(['g.AAAAAAAAAAAAAAAA'], $listed, 'B is not asked');
+		self::assertSame(['g.AAAAAAAAAAAAAAAA', 'g.BBBBBBBBBBBBBBBB'], $queued);
+	}
+
+	/**
+	 * The line says where the rest went: the sessions left in groups the
+	 * job takes, how many groups it takes - one it never listed among
+	 * them - and what Etherpad lists and cannot describe, which expires.
+	 */
+	public function testSaysWhatGoesToTheJobAndWhatExpires(): void {
+		$client = $this->createMock(EtherpadClient::class);
+		$client->method('listSessionsOfGroup')->willReturnCallback(static function (string $group, ?int $timeout = null, ?int &$unreadable = null): array {
+			if ($group === 'g.AAAAAAAAAAAAAAAA') {
+				throw new EtherpadClientException('Connection timed out');
+			}
+			$unreadable = 2;
+			return ['s.b' => ['groupID' => $group, 'validUntil' => FixedClock::NOW + 3600]];
+		});
+		$client->method('listPads')->willReturnCallback(static fn (string $group): array => [$group . '$pad']);
+		$info = [];
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->method('info')->willReturnCallback(static function (string $message, array $context) use (&$info): void {
+			$info[] = [$message, $context['count'], $context['leftToTheJob'], $context['groupsToTheJob'], $context['leftToExpire']];
+		});
+		$queued = [];
+
+		$this->revoker($client, logger: $logger, groupSessions: $this->queueRecorder($queued))->revokeForPads(['g.AAAAAAAAAAAAAAAA$pad', 'g.BBBBBBBBBBBBBBBB$pad']);
+
+		self::assertSame([['Revoked Etherpad sessions.', 1, 0, 2, 2]], $info);
+		self::assertSame(['g.AAAAAAAAAAAAAAAA', 'g.BBBBBBBBBBBBBBBB'], $queued);
+	}
+
+	/**
+	 * A group that cannot be queued goes to no job: what it left expires,
+	 * and the line says so - not that a job takes it.
+	 */
+	public function testAGroupThatCannotBeQueuedIsNotSaidToGoToTheJob(): void {
+		$client = $this->createMock(EtherpadClient::class);
+		$client->method('listSessionsOfGroup')->willReturnCallback(static fn (string $group): array => ['s.' . $group => ['groupID' => $group, 'validUntil' => FixedClock::NOW + 3600]]);
+		$client->method('listPads')->willReturnCallback(static fn (string $group): array => [$group . '$pad', $group . '$other']);
+		$groupSessions = $this->createMock(GroupSessionRevoker::class);
+		$groupSessions->method('queue')->willReturnCallback(static fn (string $group): bool => $group === 'g.BBBBBBBBBBBBBBBB');
+		$lines = [];
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->method('warning')->willReturnCallback(static function (string $message, array $context) use (&$lines): void {
+			if (array_key_exists('leftToTheJob', $context)) {
+				$lines[] = [$message, $context['leftToTheJob'], $context['groupsToTheJob'], $context['leftToExpire']];
+			}
+		});
+
+		$this->revoker($client, logger: $logger, groupSessions: $groupSessions)->revokeForPads(['g.AAAAAAAAAAAAAAAA$pad', 'g.BBBBBBBBBBBBBBBB$pad']);
+
+		self::assertSame([['Revoked no Etherpad sessions yet; a background job takes them.', 1, 1, 1]], $lines);
+	}
+
+	/**
+	 * A group with no live session is no warning: nothing was left, though
+	 * it goes to the job like every other.
+	 */
+	public function testAGroupWithoutALiveSessionIsNoWarning(): void {
+		$client = $this->createMock(EtherpadClient::class);
+		$client->method('listSessionsOfGroup')->willReturn([]);
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects(self::never())->method('warning');
+		$logger->expects(self::never())->method('info');
+		$queued = [];
+
+		$this->revoker($client, logger: $logger, groupSessions: $this->queueRecorder($queued))->revokeForPads(['g.AAAAAAAAAAAAAAAA$pad']);
+
+		self::assertSame(['g.AAAAAAAAAAAAAAAA'], $queued);
+	}
+
+	/**
+	 * Only entries Etherpad cannot describe left: nothing for the job, and
+	 * the line says they expire.
+	 */
+	public function testOnlyUnreadableEntriesLeftExpire(): void {
+		$client = $this->createMock(EtherpadClient::class);
+		$client->method('listSessionsOfGroup')->willReturnCallback(static function (string $group, ?int $timeout = null, ?int &$unreadable = null): array {
+			$unreadable = 3;
+			return [];
+		});
+		$lines = [];
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->method('warning')->willReturnCallback(static function (string $message, array $context) use (&$lines): void {
+			$lines[] = [$message, $context['leftToTheJob'], $context['leftToExpire'], $context['groupsToTheJob']];
+		});
+
+		$this->revoker($client, logger: $logger)->revokeForPads(['g.AAAAAAAAAAAAAAAA$pad']);
+
+		self::assertSame([['Revoked no Etherpad sessions; they will expire on their own.', 0, 3, 1]], $lines);
+	}
+
+	/**
+	 * A group that holds other pads too loses no session here: whether it
+	 * should - every other pad's file in a trash too - is the background
+	 * job's to judge, which costs the request no lookup.
+	 */
+	public function testAGroupHoldingOtherPadsIsTheJobsToJudge(): void {
+		$client = $this->createMock(EtherpadClient::class);
+		$client->method('listSessionsOfGroup')->willReturn(['s.a' => ['groupID' => 'g.AAAAAAAAAAAAAAAA', 'validUntil' => FixedClock::NOW + 3600]]);
+		$client->method('listPads')->willReturn(['g.AAAAAAAAAAAAAAAA$a', 'g.AAAAAAAAAAAAAAAA$trashed-earlier']);
+		$client->expects(self::never())->method('deleteSession');
+		$queued = [];
+		// Listed, and the job's to take: counted as left to it.
+		$left = [];
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->method('warning')->willReturnCallback(static function (string $message, array $context) use (&$left): void {
+			if (array_key_exists('leftToTheJob', $context)) {
+				$left[] = [$message, $context['leftToTheJob'], $context['leftToExpire']];
+			}
+		});
+
+		$this->revoker($client, logger: $logger, groupSessions: $this->queueRecorder($queued))->revokeForPads(['g.AAAAAAAAAAAAAAAA$a']);
+
+		self::assertSame(['g.AAAAAAAAAAAAAAAA'], $queued);
+		self::assertSame([['Revoked no Etherpad sessions yet; a background job takes them.', 1, 0]], $left);
+	}
+
+	/**
+	 * Sessions listed before the group could be asked what else it holds
+	 * are left as surely as those never listed, and the line counts them.
+	 */
+	public function testSessionsListedBeforeAFailureAreCountedAsLeftToTheJob(): void {
+		$sessions = [];
+		for ($i = 1; $i <= 40; $i++) {
+			$sessions['s.' . $i] = ['groupID' => 'g.AAAAAAAAAAAAAAAA', 'validUntil' => FixedClock::NOW + $i];
+		}
+		$client = $this->createMock(EtherpadClient::class);
+		$client->method('listSessionsOfGroup')->willReturn($sessions);
+		$client->method('listPads')->willThrowException(new EtherpadClientException('Connection timed out'));
+		$left = [];
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->method('warning')->willReturnCallback(static function (string $message, array $context) use (&$left): void {
+			if (array_key_exists('leftToTheJob', $context)) {
+				$left[] = [$message, $context['leftToTheJob'], $context['groupsToTheJob']];
+			}
+		});
+
+		$this->revoker($client, logger: $logger)->revokeForPads(['g.AAAAAAAAAAAAAAAA$pad']);
+
+		self::assertSame([['Revoked no Etherpad sessions yet; a background job takes them.', 40, 1]], $left);
+	}
+
+	/**
+	 * A GroupSessionRevoker that records the groups queued into $queued.
+	 *
+	 * @param list<string> $queued
+	 */
+	private function queueRecorder(array &$queued): GroupSessionRevoker {
+		$groupSessions = $this->createMock(GroupSessionRevoker::class);
+		$groupSessions->method('queue')->willReturnCallback(static function (string $groupId) use (&$queued): bool {
+			$queued[] = $groupId;
+			return true;
+		});
+		return $groupSessions;
 	}
 
 	private function revoker(
@@ -576,7 +795,9 @@ class PadSessionRevokerTest extends TestCase {
 		string $author = self::AUTHOR,
 		?LoggerInterface $logger = null,
 		array $carriedIds = [],
+		?GroupSessionRevoker $groupSessions = null,
 	): PadSessionRevoker {
+		$queued = [];
 		$sessions = $this->createMock(PadSessionService::class);
 		$sessions->method('cachedAuthorId')->willReturn($author);
 		$sessions->method('carriedSessionIds')->willReturn($carriedIds);
@@ -586,6 +807,7 @@ class PadSessionRevokerTest extends TestCase {
 			$sessions,
 			$logger ?? $this->createMock(LoggerInterface::class),
 			new FixedClock(),
+			$groupSessions ?? $this->queueRecorder($queued),
 		);
 	}
 }

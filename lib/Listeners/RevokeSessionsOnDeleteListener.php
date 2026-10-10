@@ -32,8 +32,9 @@ use Psr\Log\LoggerInterface;
  * still in Files, keeps editing.
  *
  * As on a logout (PadSessionRevoker), within a few seconds: what does not
- * fit expires on its own. Etherpad refuses the next change of whoever had
- * the pad open. Nothing here stops the delete.
+ * fit goes to a background job per group (GroupSessionRevoker). Etherpad
+ * refuses the next change of whoever had the pad open. Nothing here stops
+ * the delete.
  *
  * @template-implements IEventListener<Event>
  */
