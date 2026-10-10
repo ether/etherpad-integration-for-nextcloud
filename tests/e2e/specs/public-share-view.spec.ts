@@ -5,7 +5,7 @@
 
 /** Covers native Viewer routing and access isolation for public file and folder shares. */
 
-import { request as playwrightRequest, type APIResponse, type BrowserContext } from '@playwright/test'
+import { request as playwrightRequest, type APIRequestContext, type APIResponse, type BrowserContext } from '@playwright/test'
 import { test, expect } from '../fixtures/browser-noise'
 import { E2E } from '../fixtures/env'
 import { etherpadApiPost, padIdOfPadUrl } from '../fixtures/etherpad'
@@ -414,12 +414,19 @@ test.describe('a writable public link to a protected pad', () => {
 		const authorOf = async (sessionID: string): Promise<string> =>
 			(await etherpadApiPost<{ authorID: string }>('getSessionInfo', { sessionID })).authorID
 		let token = ''
-		const visitor = await browser.newContext(SIGNED_OUT)
-		browserNoise.watch(visitor)
-		const other = await browser.newContext(SIGNED_OUT)
-		browserNoise.watch(other)
-		const direct = await playwrightRequest.newContext(SIGNED_OUT)
+		// Made inside the try, so one that fails leaves the others to the cleanup.
+		const contexts: BrowserContext[] = []
+		let direct: APIRequestContext | undefined
 		try {
+			const newVisitor = async (): Promise<BrowserContext> => {
+				const context = await browser.newContext(SIGNED_OUT)
+				contexts.push(context)
+				browserNoise.watch(context)
+				return context
+			}
+			const visitor = await newVisitor()
+			const other = await newVisitor()
+			direct = await playwrightRequest.newContext(SIGNED_OUT)
 			const share = await createPublicShare(name, SHARE_PERMISSION_READ_WRITE)
 			token = share.token
 			// The visitor's share page starts the Nextcloud session their id
@@ -470,9 +477,10 @@ test.describe('a writable public link to a protected pad', () => {
 			expect(names, 'beside the pad\'s').toContain('sessionID')
 		} finally {
 			await eachInTurn(
-				() => visitor.close(),
-				() => other.close(),
-				() => direct.dispose(),
+				...contexts.map((context) => () => context.close()),
+				async () => {
+					await direct?.dispose()
+				},
 				async () => {
 					if (token !== '') {
 						await deletePublicShare(token)
