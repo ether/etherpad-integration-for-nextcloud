@@ -243,11 +243,11 @@ away itself:
   honoured there, and skipping it would leave exactly the access a logout
   removes. What is live is revoked within a small budget – 25 delete calls
   or two seconds, with each call given what is left of it, and ended early
-  by twenty refusals in a row or five failures without an answer between
-  deletes that went through – starting with the sessions this browser is
-  carrying, since the listing arrives oldest first and the ceiling would
-  otherwise spend itself before reaching the one in the cookie of the
-  person who just logged out. What is left over, whether skipped or
+  by twenty refusals in a row or five failures without an answer since the
+  last delete that went through – starting with the sessions this browser
+  is carrying, since the listing arrives oldest first and the ceiling
+  would otherwise spend itself before reaching the one in the cookie of
+  the person who just logged out. What is left over, whether skipped or
   refused, is counted and logged.
 
 No table of our own is involved: sessions belong to an Etherpad author, the
@@ -351,32 +351,33 @@ The id is also all that is stored. A public link's uid -
 - carries the credential from the share URL, and job arguments are
 persisted and printed by `occ`.
 
-A run makes up to 250 deletes within 20 seconds, requeueing itself for the
-rest. A listing is read up to 4 MiB, tens of thousands of sessions, rather
-than whole into a job's memory. One too long to read parks the sweep for a
-day, with a warning that says why; one timing out while Etherpad answers
-otherwise is tried again a minute later, as passing load may be all it is,
-and a timeout on any retry parks it. A parked sweep lists nothing and no
-open queues it, and after that day the next open does: an index in use is
-listed, and warned about, once a day until it shrinks. A public link's
-author adds a session an open without a memory cache, and about one an
-hour for each pad with one (see "A public link's session" below); a
-timeout below the cap points at how fast Etherpad's database answers. A
-proxy that gives up before Etherpad's 15 seconds answers with an HTTP
-error instead, which is tried again with the backoff as any other. An
-author's index past the cap shrinks only through the sweeps of groups a
-public link is opened for, or as a pad's group is deleted for good. An
-author or group Etherpad no longer has ends the sweep. A revoke's listing
-is read whole. A refusal is requeued with a growing delay and a limit;
-sessions the server will never delete are skipped rather than allowed to
-block the ones behind them, up to twenty refusals in a row and fifty in a
-run - a failure that reads as Etherpad unreachable, when Etherpad then
-does not answer at all, counts towards an outage, and five since the last
-delete that went through end the run. A run with nothing to do comes back
-when the earliest session still standing falls due, which also keeps the
-next open from queueing a second sweep. Nothing is deleted until five
-minutes after expiry, because Etherpad judges `validUntil` against its own
-clock and a session dead by ours may still be live there.
+A run makes up to 250 delete calls within 20 seconds, requeueing itself
+for the rest. A listing is read up to 4 MiB, tens of thousands of
+sessions, rather than whole into a job's memory. One too long to read
+parks the sweep for a day, with a warning that says why; one timing out
+while Etherpad answers otherwise is tried again a minute later, as passing
+load may be all it is, and a timeout on any retry parks it. A parked sweep
+lists nothing and no open queues it, and after that day the next open
+does: an index in use is listed, and warned about, once a day until it
+shrinks. A public link's author adds a session an open without a memory
+cache, and about one an hour for each pad with one (see "A public link's
+session" below); a timeout below the cap points at how fast Etherpad's
+database answers. A proxy that gives up before Etherpad's 15 seconds
+answers with an HTTP error instead, which is tried again with the backoff
+as any other. An author's index past the cap shrinks only through the
+sweeps of groups a public link is opened for, or as a pad's group is
+deleted for good. An author or group Etherpad no longer has ends the
+sweep. A revoke's listing is read whole. A refusal is requeued with a
+growing delay and a limit; sessions the server will never delete are
+skipped rather than allowed to block the ones behind them, up to twenty
+refusals in a row and fifty in a run - a failure that reads as Etherpad
+unreachable, when Etherpad then does not answer at all, counts towards an
+outage, and five since the last delete that went through end the run. A
+run with nothing to do comes back when the earliest session still standing
+falls due, which also keeps the next open from queueing a second sweep.
+Nothing is deleted until five minutes after expiry, because Etherpad
+judges `validUntil` against its own clock and a session dead by ours may
+still be live there.
 
 This assumes deleting a session removes its id from the author index, and
 from the group's: Etherpad's `deleteSession` takes it out of both.

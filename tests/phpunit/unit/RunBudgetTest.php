@@ -67,13 +67,13 @@ class RunBudgetTest extends TestCase {
 		$this->assertTrue($inAll->exhausted());
 	}
 
-	/** A call Etherpad answered starts the failures again, not the refusals in a row. */
+	/** A call that went through starts the failures again, not the refusals in a row. */
 	public function testAnAnsweredCallStartsOnlyTheFailuresAgain(): void {
 		$budget = new RunBudget(new FixedClock(), 20.0);
 		for ($i = 0; $i < 4; $i++) {
 			$budget->noteUnanswered();
 		}
-		$budget->noteAnswered();
+		$budget->noteGoneThrough();
 		for ($i = 0; $i < 4; $i++) {
 			$budget->noteUnanswered();
 		}
@@ -82,12 +82,12 @@ class RunBudgetTest extends TestCase {
 		for ($i = 0; $i < 19; $i++) {
 			$budget->noteRefusal();
 		}
-		$budget->noteAnswered();
+		$budget->noteGoneThrough();
 		$budget->noteRefusal();
 		$this->assertTrue($budget->exhausted());
 	}
 
-	/** A call after the first gets a timeout only while it could still finish. */
+	/** A call gets a timeout only while it could still finish. */
 	public function testGivesTheNextCallATimeoutOnlyWhileItFits(): void {
 		$clock = new FixedClock();
 		$budget = new RunBudget($clock, 20.0);
@@ -103,7 +103,7 @@ class RunBudgetTest extends TestCase {
 	 * A request's budget is a couple of seconds: a call fits with one
 	 * second left, and no call is spent on asking whether Etherpad answers.
 	 */
-	public function testARequestsBudgetTakesShorterCallsAndAsksNothing(): void {
+	public function testARequestsBudgetStartsACallWithASecondLeftAndAsksNothing(): void {
 		$clock = new FixedClock();
 		$budget = RunBudget::forRequest($clock, 2.0);
 

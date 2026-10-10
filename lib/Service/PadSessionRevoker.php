@@ -37,9 +37,9 @@ class PadSessionRevoker {
 	/**
 	 * At least every id a cookie can hold: the carried sessions go first,
 	 * and a lower ceiling would leave the tail of what the browser holds -
-	 * on a shared computer, the next user's way in. Only the budget ends a
-	 * revoke before them: its time, or an Etherpad refusing or not
-	 * answering. Derived rather than repeated, because two 25s in two
+	 * on a shared computer, the next user's way in. Only the budget - its
+	 * time, or an Etherpad refusing or not answering - ends a revoke before
+	 * every carried session is tried. Derived rather than repeated, because two 25s in two
 	 * classes are a coincidence a reader has to verify and a maintainer
 	 * can break.
 	 */
@@ -48,7 +48,7 @@ class PadSessionRevoker {
 	/**
 	 * A delete's ceiling, over all the groups it takes: every open of a
 	 * protected pad makes a session, so a pad opened often in six hours
-	 * holds more than a cookie can. The budget bounds it as ever.
+	 * holds more than a cookie can. The budget bounds it too.
 	 */
 	private const MAX_PER_DELETE = 100;
 
@@ -163,10 +163,10 @@ class PadSessionRevoker {
 		$sessions = [];
 		try {
 			$sessions = $this->live($this->etherpadClient->listSessionsOfGroup($groupId, $timeout, $unreadable));
-			$budget->noteAnswered();
 			// Entries this does not delete: whether one is live cannot be told.
 			$groups['unreadable'] += $unreadable ?? 0;
 			if ($sessions === []) {
+				$budget->noteGoneThrough();
 				return true;
 			}
 			$timeout = $budget->nextCallTimeout();
@@ -174,7 +174,9 @@ class PadSessionRevoker {
 				$tally['left'] += count($sessions);
 				return true;
 			}
-			if (!ManagedPadLifecycle::groupHoldsOnly($this->etherpadClient->listPads($groupId, $timeout), $groupPads)) {
+			$pads = $this->etherpadClient->listPads($groupId, $timeout);
+			$budget->noteGoneThrough();
+			if (!ManagedPadLifecycle::groupHoldsOnly($pads, $groupPads)) {
 				$tally['left'] += count($sessions);
 				$this->logger->debug('Left the Etherpad sessions of a group that holds other pads too to the background job.', [
 					'app' => 'etherpad_nextcloud',
@@ -189,9 +191,9 @@ class PadSessionRevoker {
 			}
 			// Those listed already are left as surely as those never listed.
 			$tally['left'] += count($sessions);
-			// A listing without an answer counts towards an outage, one that
-			// answered starts the count again (RunBudget): a few in a row end
-			// the asking, and the groups after them go to the job unasked.
+			// A call without an answer counts towards an outage until a call
+			// goes through (RunBudget): a few end the asking, and the groups
+			// after them go to the job unasked.
 			if (EtherpadClientException::isEtherpadUnreachable($e)) {
 				$budget->noteUnanswered();
 			}

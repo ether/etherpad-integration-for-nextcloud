@@ -147,7 +147,7 @@ class SessionDeletesTest extends TestCase {
 		self::assertSame(['deleted' => 8, 'handled' => 17, 'attempted' => 25, 'refused' => true, 'stopped' => false], $run);
 	}
 
-	/** A session already gone is an answer too: refusals in a row start again after it. */
+	/** A session already gone counts as handled: refusals in a row start again after it. */
 	public function testASessionAlreadyGoneEndsARowOfRefusals(): void {
 		$calls = 0;
 		$client = $this->createMock(EtherpadClient::class);
@@ -264,8 +264,8 @@ class SessionDeletesTest extends TestCase {
 	}
 
 	/**
-	 * In a row: a session handled between refusals - deleted, or one
-	 * Etherpad has lost already - starts the count again.
+	 * In a row: a session deleted between refusals starts the count
+	 * again.
 	 */
 	public function testRefusalsCountOnlyInARow(): void {
 		$client = $this->createMock(EtherpadClient::class);

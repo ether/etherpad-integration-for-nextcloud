@@ -42,8 +42,8 @@ class SessionDeletes {
 	}
 
 	/**
-	 * $sessions with the latest to expire first: most often whoever was at
-	 * the pad last, whom a revoke reaches first.
+	 * $sessions, the latest to expire first: most often whoever was at the
+	 * pad last, whom a revoke should reach before the rest.
 	 *
 	 * @template K of array-key
 	 * @param array<K,array{groupID:string,validUntil:int}> $sessions
@@ -64,8 +64,8 @@ class SessionDeletes {
 	 * The ceiling counts attempts, whatever the answer. A refusal does not
 	 * end the run, or a session Etherpad never deletes would block the ones
 	 * after it; refusals and failures without an answer wear $budget's
-	 * patience down, across every call a run makes, and end it as RunBudget
-	 * says.
+	 * patience down - one budget for every within() of a run - and end it
+	 * as RunBudget says.
 	 *
 	 * $stillWanted is asked before each delete; once it says no, the run
 	 * ends there and `stopped` says so. $context names whose sessions they

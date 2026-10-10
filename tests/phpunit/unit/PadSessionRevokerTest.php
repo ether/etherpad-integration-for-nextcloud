@@ -253,9 +253,8 @@ class PadSessionRevokerTest extends TestCase {
 	 * the one in front of the person who just logged out.
 	 *
 	 * The listing arrives in the author index's order, roughly oldest
-	 * first, so twenty-six opens of one pad meant revoking twenty-five and
-	 * leaving the only one that mattered — the shared-computer case failing
-	 * against a perfectly healthy pad server.
+	 * first: after twenty-six opens of one pad, the ceiling would revoke
+	 * twenty-five and leave the one that matters.
 	 */
 	public function testTakesTheSessionThisBrowserIsCarryingFirst(): void {
 		$sessions = [];
@@ -679,8 +678,10 @@ class PadSessionRevokerTest extends TestCase {
 		});
 		$client->method('listPads')->willReturnCallback(static fn (string $group): array => [$group . '$pad']);
 		$client->expects(self::exactly(100))->method('deleteSession');
+		$queued = [];
 
-		self::assertSame(100, $this->revoker($client)->revokeForPads(['g.AAAAAAAAAAAAAAAA$pad', 'g.BBBBBBBBBBBBBBBB$pad']));
+		self::assertSame(100, $this->revoker($client, groupSessions: $this->queueRecorder($queued))->revokeForPads(['g.AAAAAAAAAAAAAAAA$pad', 'g.BBBBBBBBBBBBBBBB$pad']));
+		self::assertSame(['g.AAAAAAAAAAAAAAAA', 'g.BBBBBBBBBBBBBBBB'], $queued, 'the rest to the background job');
 	}
 
 	/**
@@ -764,7 +765,7 @@ class PadSessionRevokerTest extends TestCase {
 	}
 
 	/**
-	 * Listings that fail without an answer count as a delete's would: five
+	 * Listings that fail without an answer count towards an outage: five
 	 * end the asking, and the groups after them go to the job unasked.
 	 */
 	public function testListingsWithoutAnAnswerEndTheAsking(): void {
@@ -778,8 +779,8 @@ class PadSessionRevokerTest extends TestCase {
 	}
 
 	/**
-	 * A listing that answered starts the count of failures again: a 502
-	 * now and then among them leaves no group unasked.
+	 * A group whose listing went through starts the count of failures
+	 * again: a 502 now and then among the listings leaves no group unasked.
 	 */
 	public function testAFailedListingNowAndThenLeavesNoGroupUnasked(): void {
 		$groups = array_map(static fn (int $i): string => sprintf('g.GROUP%011d', $i), range(1, 20));
@@ -798,13 +799,79 @@ class PadSessionRevokerTest extends TestCase {
 		self::assertSame(20, $listed);
 	}
 
-	/** A listing Etherpad refuses is an answer: it ends no asking. */
+	/**
+	 * A listing Etherpad refuses - a code other than 0 with HTTP 2xx - is
+	 * no outage: it ends no asking.
+	 */
 	public function testARefusedListingIsNoOutage(): void {
 		$groups = array_map(static fn (int $i): string => sprintf('g.GROUP%011d', $i), range(1, 10));
 		$client = $this->createMock(EtherpadClient::class);
-		$client->expects(self::exactly(10))->method('listSessionsOfGroup')->willThrowException(new EtherpadRefusedException('Etherpad API error (listSessionsOfGroup): internal error'));
+		$client->expects(self::exactly(10))->method('listSessionsOfGroup')->willThrowException(new EtherpadRefusedException('Etherpad API error (listSessionsOfGroup): refused'));
 
 		$this->revoker($client)->revokeForPads(array_map(static fn (string $group): string => $group . '$pad', $groups));
+	}
+
+	/**
+	 * Nor does a refused listing start the count of failures again: only a
+	 * group gone through does. Four failures, a refusal and one more end
+	 * the asking.
+	 */
+	public function testARefusedListingStartsNoCountAgain(): void {
+		$groups = array_map(static fn (int $i): string => sprintf('g.GROUP%011d', $i), range(1, 10));
+		$listed = 0;
+		$client = $this->createMock(EtherpadClient::class);
+		$client->method('listSessionsOfGroup')->willReturnCallback(static function () use (&$listed): array {
+			$listed++;
+			throw $listed === 5
+				? new EtherpadRefusedException('Etherpad API error (listSessionsOfGroup): refused')
+				: new EtherpadClientException('Etherpad API HTTP error (502)');
+		});
+
+		$this->revoker($client)->revokeForPads(array_map(static fn (string $group): string => $group . '$pad', $groups));
+
+		self::assertSame(6, $listed);
+	}
+
+	/**
+	 * A group is through only when its pads are listed too: a proxy that
+	 * passes the session listings and fails the pad listings ends the
+	 * asking after five groups.
+	 */
+	public function testAGroupWhosePadsCannotBeListedIsNotGoneThrough(): void {
+		$groups = array_map(static fn (int $i): string => sprintf('g.GROUP%011d', $i), range(1, 10));
+		$client = $this->createMock(EtherpadClient::class);
+		$client->expects(self::exactly(5))->method('listSessionsOfGroup')->willReturnCallback(static fn (string $group): array => ['s.' . $group => ['groupID' => $group, 'validUntil' => FixedClock::NOW + 3600]]);
+		$client->method('listPads')->willThrowException(new EtherpadClientException('Etherpad API HTTP error (502)'));
+		$client->expects(self::never())->method('deleteSession');
+		$queued = [];
+
+		$this->revoker($client, groupSessions: $this->queueRecorder($queued))->revokeForPads(array_map(static fn (string $group): string => $group . '$pad', $groups));
+
+		self::assertSame($groups, $queued);
+	}
+
+	/**
+	 * A group whose pads were listed is through, though it holds other pads
+	 * too and nothing is deleted in it: failures between such groups leave
+	 * none unasked.
+	 */
+	public function testAGroupHoldingOtherPadsIsGoneThroughToo(): void {
+		$groups = array_map(static fn (int $i): string => sprintf('g.GROUP%011d', $i), range(1, 10));
+		$listed = 0;
+		$client = $this->createMock(EtherpadClient::class);
+		$client->method('listSessionsOfGroup')->willReturnCallback(static function (string $group) use (&$listed): array {
+			$listed++;
+			if ($listed % 2 === 1) {
+				throw new EtherpadClientException('Etherpad API HTTP error (502)');
+			}
+			return ['s.' . $group => ['groupID' => $group, 'validUntil' => FixedClock::NOW + 3600]];
+		});
+		$client->method('listPads')->willReturnCallback(static fn (string $group): array => [$group . '$pad', $group . '$other']);
+		$client->expects(self::never())->method('deleteSession');
+
+		$this->revoker($client)->revokeForPads(array_map(static fn (string $group): string => $group . '$pad', $groups));
+
+		self::assertSame(10, $listed);
 	}
 
 	/**
