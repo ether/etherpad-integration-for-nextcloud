@@ -53,7 +53,8 @@ class ExpiredSessionCollector {
 	 * at the pad, for six hours each - so the earliest to expire is never
 	 * far off while anyone uses it, and each pass lists the whole group:
 	 * expired sessions may wait an hour longer, the listing may not run
-	 * at every cron tick.
+	 * at every cron tick. A backlog is worked off as an author's is, a
+	 * pass a minute, each listing the group anew as it shrinks.
 	 */
 	private const GROUP_SWEEP_INTERVAL_SECONDS = 3600;
 
@@ -130,8 +131,8 @@ class ExpiredSessionCollector {
 	 * when the earliest live session becomes collectable, or null when
 	 * nothing live is left. `park` says why the listing cannot be read in a
 	 * run - too long, or timing out while Etherpad answers otherwise
-	 * (SessionSweepJob parks the sweep). An author Etherpad does not know
-	 * holds nothing, and the sweep ends.
+	 * (SessionSweepJob parks the sweep, after a timeout on a retry). An
+	 * author Etherpad does not know holds nothing, and the sweep ends.
 	 *
 	 * @return array{deleted:int,remaining:int,retry:bool,nextDueAt:?int,park?:'tooLong'|'timeout'}
 	 */
@@ -188,8 +189,9 @@ class ExpiredSessionCollector {
 	 * group Etherpad no longer has: nothing to collect, and the sweep ends.
 	 * A listing too long to read, or timing out while Etherpad answers
 	 * otherwise: no run reads it sooner, and the sweep asks to be parked
-	 * (SessionSweepJob::park()). Anything else - Etherpad refusing, an
-	 * HTTP error, not answering at all - is tried again with the backoff.
+	 * (SessionSweepJob, which tries a first timeout again before it
+	 * parks). Anything else - Etherpad refusing, an HTTP error, not
+	 * answering at all - is tried again with the backoff.
 	 *
 	 * @param array<string,string> $context whose sessions they are
 	 * @return array{deleted:int,remaining:int,retry:bool,nextDueAt:?int,park?:'tooLong'|'timeout'}

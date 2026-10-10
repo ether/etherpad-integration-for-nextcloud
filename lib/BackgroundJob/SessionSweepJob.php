@@ -181,6 +181,13 @@ abstract class SessionSweepJob extends QueuedJob {
 
 		$result = $this->sweep($item);
 		if (isset($result['park'])) {
+			// A first timeout may be passing load - an export, a backup -
+			// and is tried again as any failure is; one on a retry parks.
+			// A listing too long is no shorter a minute later.
+			if ($result['park'] === 'timeout' && $attempt === 0) {
+				$this->reschedule($item, 1, self::RETRY_DELAYS[0], $again);
+				return;
+			}
 			$this->park($item, $result['park']);
 			return;
 		}
@@ -234,13 +241,13 @@ abstract class SessionSweepJob extends QueuedJob {
 
 	/**
 	 * A sweep whose listing no run can read now - too long, or timing out
-	 * while Etherpad answers otherwise - lists nothing for a day: asking
-	 * sooner would make Etherpad walk the whole index for nothing. The
-	 * parked row lists nothing either when it runs; it keeps an open from
-	 * queueing the sweep meanwhile, and a row queued beside it during this
-	 * run stands down (standsDown()). After that day the next open queues
-	 * the sweep again: an index in use is listed, and warned about, once a
-	 * day, and one no one uses costs nothing.
+	 * again while Etherpad answers otherwise - lists nothing for a day:
+	 * asking sooner would make Etherpad walk the whole index for nothing.
+	 * The parked row lists nothing either when it runs; it keeps an open
+	 * from queueing the sweep meanwhile, and a row queued beside it during
+	 * this run stands down (standsDown()). After that day the next open
+	 * queues the sweep again: an index in use is listed, and warned about,
+	 * once a day, and one no one uses costs nothing.
 	 *
 	 * @param 'tooLong'|'timeout' $reason which calls for a different remedy
 	 */

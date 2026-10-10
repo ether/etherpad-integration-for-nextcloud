@@ -338,12 +338,13 @@ class CollectExpiredSessionsJobTest extends TestCase {
 
 	/**
 	 * A listing no run can read parks the sweep for a day, with a warning
-	 * that says why. The parked row's keys in the order isQueued() asks
-	 * for: the job list matches the encoded argument, so another order
-	 * would keep no open away.
+	 * that says why: one too long at once, one timing out on a retry. The
+	 * parked row's keys in the order isQueued() asks for: the job list
+	 * matches the encoded argument, so another order would keep no open
+	 * away.
 	 */
 	public function testParksASweepItCannotListForADay(): void {
-		foreach (['tooLong', 'timeout'] as $reason) {
+		foreach (['tooLong' => ['authorId' => 'a.author'], 'timeout' => ['authorId' => 'a.author', 'attempt' => 1]] as $reason => $argument) {
 			$collector = $this->createMock(ExpiredSessionCollector::class);
 			$collector->method('collect')->willReturn(['deleted' => 0, 'remaining' => 0, 'retry' => false, 'nextDueAt' => null, 'park' => $reason]);
 			$scheduled = [];
@@ -361,11 +362,36 @@ class CollectExpiredSessionsJobTest extends TestCase {
 			$logger->expects(self::never())->method('info');
 
 			$job = $this->job($collector, $jobList, $logger);
-			$job->setArgument(['authorId' => 'a.author']);
+			$job->setArgument($argument);
 			$job->start($jobList);
 
 			self::assertSame([[CollectExpiredSessionsJob::class, 1_000_000 + 86400, ['authorId' => 'a.author', 'parked' => 1]]], $scheduled, $reason);
 		}
+	}
+
+	/**
+	 * A first timeout may be passing load on Etherpad - an export, a
+	 * backup - so it is tried again a minute later as any failure is,
+	 * without a warning; only a second parks the sweep.
+	 */
+	public function testTriesAFirstTimeoutAgainBeforeParking(): void {
+		$collector = $this->createMock(ExpiredSessionCollector::class);
+		$collector->method('collect')->willReturn(['deleted' => 0, 'remaining' => 0, 'retry' => false, 'nextDueAt' => null, 'park' => 'timeout']);
+		$scheduled = [];
+		$jobList = $this->createMock(IJobList::class);
+		$jobList->expects(self::once())->method('scheduleAfter')->willReturnCallback(
+			static function (string $job, int $runAfter, mixed $argument) use (&$scheduled): void {
+				$scheduled[] = [$job, $runAfter, $argument];
+			}
+		);
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects(self::never())->method('warning');
+
+		$job = $this->job($collector, $jobList, $logger);
+		$job->setArgument(['authorId' => 'a.author']);
+		$job->start($jobList);
+
+		self::assertSame([[CollectExpiredSessionsJob::class, 1_000_000 + 60, ['authorId' => 'a.author', 'attempt' => 1]]], $scheduled);
 	}
 
 	/**
