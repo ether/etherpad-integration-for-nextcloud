@@ -420,8 +420,8 @@ test.describe('a writable public link to a protected pad', () => {
 		try {
 			const newVisitor = async (): Promise<BrowserContext> => {
 				const context = await browser.newContext(SIGNED_OUT)
-				contexts.push(context)
 				browserNoise.watch(context)
+				contexts.push(context)
 				return context
 			}
 			const visitor = await newVisitor()
