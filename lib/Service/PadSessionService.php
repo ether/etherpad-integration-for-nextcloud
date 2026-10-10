@@ -256,14 +256,9 @@ class PadSessionService {
 		foreach ($carriedSessionIds as $candidate) {
 			$info = $sessions[$candidate] ?? null;
 			if ($info === null) {
-				// Not this author's, so not this user's: dropped. It used to
-				// be carried, on the grounds that a public share is its own
-				// Etherpad author and its session would look exactly like
-				// this — but so does the session of whoever was logged into
-				// this browser before. Keeping it let the next user inherit
-				// their pad until it expired, where overwriting the cookie
-				// had cut that off. Nothing here can tell the two apart, and
-				// only one of them is safe to guess at.
+				// Not this author's, so not this user's: dropped. A link's
+				// session and the previous user's look alike here, and only
+				// the link's would be safe to carry.
 				continue;
 			}
 			if ($info['validUntil'] <= $now || $info['groupID'] === $groupId) {
