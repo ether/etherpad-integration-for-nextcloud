@@ -52,8 +52,8 @@ class PadSessionServiceTest extends TestCase {
 	}
 
 	/**
-	 * Every protected open leaves the author's id for the sweep, before
-	 * anything is asked of the pad server.
+	 * A signed-in user's protected open leaves the author's id for the
+	 * sweep; a public link's notes its ids once it made a session (below).
 	 *
 	 * Not "when a backlog is noticed": noticing one needs the listing, and
 	 * the listing only happens when the browser carries session ids — so a
@@ -71,6 +71,8 @@ class PadSessionServiceTest extends TestCase {
 		// The author id alone. For a public link the uid is the share token,
 		// and this argument is persisted in the jobs table.
 		$collector->expects($this->once())->method('noteAuthor')->with('a.author');
+		// A signed-in user's sessions are collected by author alone.
+		$collector->expects($this->never())->method('noteGroup');
 
 		// No incoming cookie: the case the old trigger could never see.
 		$service = $this->buildService(
@@ -82,6 +84,49 @@ class PadSessionServiceTest extends TestCase {
 			$collector,
 		);
 		$service->createProtectedOpenContext('admin', 'Admin', 'g.ABCDEFGHIJKLMNOP$pad-1');
+	}
+
+	/**
+	 * A signed-in open notes its author first, so an open that fails after
+	 * it still leaves the author for the sweep.
+	 */
+	public function testNotesASignedInAuthorBeforeTheListing(): void {
+		$events = [];
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->method('createSession')->willReturn($this->sid('new'));
+		$etherpadClient->method('createAuthorIfNotExistsFor')->willReturn('a.author');
+		$etherpadClient->method('buildPadUrl')->willReturn('https://pad.example.test/p/x');
+		$etherpadClient->method('listSessionsOfAuthor')->willReturnCallback(static function () use (&$events): array {
+			$events[] = 'listed';
+			return [];
+		});
+		$collector = $this->createMock(\OCA\EtherpadNextcloud\Service\ExpiredSessionCollector::class);
+		$collector->method('noteAuthor')->willReturnCallback(static function () use (&$events): void {
+			$events[] = 'noted';
+		});
+
+		$this->buildService($etherpadClient, $this->createMock(IConfig::class), incomingSessionCookie: $this->sid('carried'), collector: $collector)
+			->createProtectedOpenContext('admin', 'Admin', 'g.ABCDEFGHIJKLMNOP$pad-1');
+
+		$this->assertSame(['noted', 'listed'], $events);
+	}
+
+	/**
+	 * A public link's open notes its group and its author
+	 * (ExpiredSessionCollector says why both) - once it made a session: one
+	 * handed out again within the hour adds nothing to collect.
+	 */
+	public function testAPublicLinkTellsTheCollectorItsGroupAndItsAuthorWhenItMadeASession(): void {
+		[$etherpadClient, $config] = $this->publicLinkFixtures();
+		$etherpadClient->method('getSessionInfo')->willReturn(['groupID' => 'g.ABCDEFGHIJKLMNOP', 'authorID' => 'a.public', 'validUntil' => FixedClock::NOW + 9000]);
+		$collector = $this->createMock(\OCA\EtherpadNextcloud\Service\ExpiredSessionCollector::class);
+		$collector->expects($this->once())->method('noteGroup')->with('g.ABCDEFGHIJKLMNOP');
+		$collector->expects($this->once())->method('noteAuthor')->with('a.public');
+		$service = $this->buildService($etherpadClient, $config, collector: $collector, cacheFactory: $this->cacheFor());
+
+		$service->createProtectedOpenContext('public-share:token', 'Public share', 'g.ABCDEFGHIJKLMNOP$pad-1', 10800);
+		// Handed out again: nothing more noted.
+		$service->createProtectedOpenContext('public-share:token', 'Public share', 'g.ABCDEFGHIJKLMNOP$pad-1', 10800);
 	}
 
 	/**
@@ -142,7 +187,8 @@ class PadSessionServiceTest extends TestCase {
 			$etherpadClient->method('listSessionsOfAuthor')
 				->willThrowException(new EtherpadClientException('unavailable'));
 		} else {
-			$etherpadClient->method('listSessionsOfAuthor')->willReturn($sessions);
+			// Read whole, as a revoke's is: no cap.
+			$etherpadClient->method('listSessionsOfAuthor')->with('a.author', self::anything(), self::anything(), self::isNull())->willReturn($sessions);
 		}
 		$etherpadClient->method('createAuthorIfNotExistsFor')->willReturn('a.author');
 		$etherpadClient->method('buildPadUrl')->willReturn('https://pad.example.test/p/x');

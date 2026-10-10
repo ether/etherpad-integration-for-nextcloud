@@ -147,10 +147,12 @@ class PadSessionService {
 	 * @return array{url:string,cookie:array{name:string,value:string,expires:int,path:string,domain:string,secure:bool,http_only:bool,same_site:string}}
 	 */
 	private function openContextFor(string $uid, string $authorId, string $groupId, string $padId, int $validUntil): array {
-		// Before the listing below, which only happens when the browser
-		// carries ids — a first open makes none, and a public link never
-		// does.
-		$this->collector->noteAuthor($authorId);
+		// First, so an open that fails after this still leaves its author
+		// for the sweep. A public link's below, once it made a session.
+		$isLink = str_starts_with($uid, self::PUBLIC_LINK_UID_PREFIX);
+		if (!$isLink) {
+			$this->collector->noteAuthor($authorId);
+		}
 
 		$carriedSessionIds = $this->sessionIdsFromCookie();
 		$sessions = $this->sessionsToAttributeWith($uid, $authorId, $carriedSessionIds);
@@ -171,16 +173,27 @@ class PadSessionService {
 		// out again, as long as Etherpad confirms it: a visitor gets at
 		// least two of the three hours, and with a memory cache a link
 		// makes one session an hour (PublicLinkSessions).
-		if (str_starts_with($uid, self::PUBLIC_LINK_UID_PREFIX)) {
+		if ($isLink) {
+			$made = false;
 			$session = $this->linkSessions->sessionFor(
 				$uid,
 				$authorId,
 				$groupId,
 				$validUntil,
-				fn (): string => $this->etherpadClient->createSession($groupId, $authorId, $validUntil),
+				function () use ($groupId, $authorId, $validUntil, &$made): string {
+					$sessionId = $this->etherpadClient->createSession($groupId, $authorId, $validUntil);
+					$made = true;
+					return $sessionId;
+				},
 			);
 			$chosenSessionId = $session['sessionId'];
 			$validUntil = $session['validUntil'];
+			// Only a session made adds something to collect, and this route
+			// is open to anyone. Both sweeps: ExpiredSessionCollector says why.
+			if ($made) {
+				$this->collector->noteAuthor($authorId);
+				$this->collector->noteGroup($groupId);
+			}
 		} else {
 			$chosenSessionId = $this->etherpadClient->createSession($groupId, $authorId, $validUntil);
 		}
@@ -207,9 +220,9 @@ class PadSessionService {
 	 * What the carried ids can be checked against, or an empty list when
 	 * they cannot be checked at all.
 	 *
-	 * Not asked for when there is nothing to check — the first protected
-	 * open of a browsing session, and every open for anyone who only ever
-	 * has one pad open, costs no extra round trip.
+	 * Not asked for when there is nothing to check: an open with an empty
+	 * cookie - the first protected open of a browsing session - costs no
+	 * extra round trip.
 	 *
 	 * Not asked for on a public share either. There the author is derived
 	 * from the share token alone, so every anonymous visitor of one link

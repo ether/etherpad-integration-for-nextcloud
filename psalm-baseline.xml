@@ -236,12 +236,6 @@
       <code><![CDATA[(string)$this->config->getAppValue(self::APP_ID, $key, '')]]></code>
     </RedundantCastGivenDocblockType>
   </file>
-  <file src="lib/Service/ExpiredSessionCollector.php">
-    <RedundantCastGivenDocblockType>
-      <code><![CDATA[(int)$info['validUntil']]]></code>
-      <code><![CDATA[(string)$sessionId]]></code>
-    </RedundantCastGivenDocblockType>
-  </file>
   <file src="lib/Service/ExternalPadExportFetcher.php">
     <DeprecatedMethod>
       <code><![CDATA[getAppValue]]></code>

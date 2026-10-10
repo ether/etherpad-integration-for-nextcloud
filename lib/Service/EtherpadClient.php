@@ -55,6 +55,15 @@ class EtherpadClient {
 	public const PREVIEW_MAX_BYTES = 5242880;
 
 	/**
+	 * What a sweep's session listing may weigh: tens of thousands of
+	 * sessions, well within a background job's memory. Etherpad answers a
+	 * listing in one body, as long as the index is, and a process out of
+	 * memory reaches no catch. A revoke reads its listing whole: ending
+	 * access is worth the memory.
+	 */
+	public const SESSION_LISTING_MAX_BYTES = 4194304;
+
+	/**
 	 * `/health` gets far less patience than an API call.
 	 *
 	 * Nothing depends on the answer: the caller falls back to the last known
@@ -285,16 +294,19 @@ class EtherpadClient {
 	 *
 	 * @param ?int $unreadableEntries set to how many ids the index listed
 	 *   that Etherpad could not describe — see below
+	 * @param ?int $maxBytes what the body may weigh (SESSION_LISTING_MAX_BYTES), or null to read it whole
 	 * @return array<string,array{groupID:string,validUntil:int}>
+	 * @throws EtherpadTooLargeException past $maxBytes
 	 */
 	public function listSessionsOfAuthor(
 		string $authorId,
 		?int $timeoutSeconds = null,
 		?int &$unreadableEntries = null,
+		?int $maxBytes = null,
 	): array {
 		// POST like every other authenticated call: a GET would put the
 		// apikey in the URL, and from there into proxy and access logs.
-		$data = $this->apiCall('listSessionsOfAuthor', ['authorID' => $authorId], timeoutSeconds: $timeoutSeconds);
+		$data = $this->apiCall('listSessionsOfAuthor', ['authorID' => $authorId], timeoutSeconds: $timeoutSeconds, maxBytes: $maxBytes);
 		return $this->sessionsIn($data, $unreadableEntries);
 	}
 
@@ -305,14 +317,17 @@ class EtherpadClient {
 	 *
 	 * @param ?int $unreadableEntries set to how many ids the index listed
 	 *   that Etherpad could not describe
+	 * @param ?int $maxBytes what the body may weigh (SESSION_LISTING_MAX_BYTES), or null to read it whole
 	 * @return array<string,array{groupID:string,validUntil:int}>
+	 * @throws EtherpadTooLargeException past $maxBytes
 	 */
 	public function listSessionsOfGroup(
 		string $groupId,
 		?int $timeoutSeconds = null,
 		?int &$unreadableEntries = null,
+		?int $maxBytes = null,
 	): array {
-		$data = $this->apiCall('listSessionsOfGroup', ['groupID' => $groupId], timeoutSeconds: $timeoutSeconds);
+		$data = $this->apiCall('listSessionsOfGroup', ['groupID' => $groupId], timeoutSeconds: $timeoutSeconds, maxBytes: $maxBytes);
 		return $this->sessionsIn($data, $unreadableEntries);
 	}
 

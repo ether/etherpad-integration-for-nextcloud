@@ -108,7 +108,7 @@ class CollectExpiredSessionsJobTest extends TestCase {
 		$logger = $this->createMock(LoggerInterface::class);
 		$logger->expects(self::never())->method('warning');
 		$logger->expects(self::once())->method('info')->with(
-			'Gave up an Etherpad session sweep after three retries without progress; the rest waits for another open.',
+			'Gave up an Etherpad session sweep after three retries without progress; the rest waits until an open queues it again.',
 			self::callback(static fn (array $context): bool => $context['authorId'] === 'a.author' && $context['attempts'] === 3),
 		);
 
@@ -332,7 +332,102 @@ class CollectExpiredSessionsJobTest extends TestCase {
 			['authorId' => 'a', 'attempt' => 1],
 			['authorId' => 'a', 'attempt' => 2],
 			['authorId' => 'a', 'attempt' => 3],
+			['authorId' => 'a', 'parked' => 1],
 		], $asked);
+	}
+
+	/**
+	 * A listing no run can read parks the sweep for a day, with a warning
+	 * that says why: one too long at once, one timing out on a retry. The
+	 * parked row's keys in the order isQueued() asks for: the job list
+	 * matches the encoded argument, so another order would keep no open
+	 * away.
+	 */
+	public function testParksASweepItCannotListForADay(): void {
+		foreach (['tooLong' => ['authorId' => 'a.author'], 'timeout' => ['authorId' => 'a.author', 'attempt' => 1]] as $reason => $argument) {
+			$collector = $this->createMock(ExpiredSessionCollector::class);
+			$collector->method('collect')->willReturn(['deleted' => 0, 'remaining' => 0, 'retry' => false, 'nextDueAt' => null, 'park' => $reason]);
+			$scheduled = [];
+			$jobList = $this->createMock(IJobList::class);
+			$jobList->expects(self::once())->method('scheduleAfter')->willReturnCallback(
+				static function (string $job, int $runAfter, mixed $argument) use (&$scheduled): void {
+					$scheduled[] = [$job, $runAfter, $argument];
+				}
+			);
+			$logger = $this->createMock(LoggerInterface::class);
+			$logger->expects(self::once())->method('warning')->with(
+				'An Etherpad session sweep could not read its listing in a run; it waits a day before an open can queue it again.',
+				self::callback(static fn (array $context): bool => $context['authorId'] === 'a.author' && $context['reason'] === $reason),
+			);
+			$logger->expects(self::never())->method('info');
+
+			$job = $this->job($collector, $jobList, $logger);
+			$job->setArgument($argument);
+			$job->start($jobList);
+
+			self::assertSame([[CollectExpiredSessionsJob::class, 1_000_000 + 86400, ['authorId' => 'a.author', 'parked' => 1]]], $scheduled, $reason);
+		}
+	}
+
+	/**
+	 * A first timeout may be passing load on Etherpad - an export, a
+	 * backup - so it is tried again a minute later as any failure is,
+	 * without a warning; a timeout on a retry parks the sweep.
+	 */
+	public function testTriesAFirstTimeoutAgainBeforeParking(): void {
+		$collector = $this->createMock(ExpiredSessionCollector::class);
+		$collector->method('collect')->willReturn(['deleted' => 0, 'remaining' => 0, 'retry' => false, 'nextDueAt' => null, 'park' => 'timeout']);
+		$scheduled = [];
+		$jobList = $this->createMock(IJobList::class);
+		$jobList->expects(self::once())->method('scheduleAfter')->willReturnCallback(
+			static function (string $job, int $runAfter, mixed $argument) use (&$scheduled): void {
+				$scheduled[] = [$job, $runAfter, $argument];
+			}
+		);
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects(self::never())->method('warning');
+
+		$job = $this->job($collector, $jobList, $logger);
+		$job->setArgument(['authorId' => 'a.author']);
+		$job->start($jobList);
+
+		self::assertSame([[CollectExpiredSessionsJob::class, 1_000_000 + 60, ['authorId' => 'a.author', 'attempt' => 1]]], $scheduled);
+	}
+
+	/**
+	 * The parked row lists nothing when its day is over: an index in use
+	 * is listed again by the sweep the next open queues, once a day, and
+	 * one no one uses is left alone.
+	 */
+	public function testAParkedRowListsNothing(): void {
+		$collector = $this->createMock(ExpiredSessionCollector::class);
+		$collector->expects(self::never())->method('collect');
+		$jobList = $this->createMock(IJobList::class);
+		$jobList->expects(self::never())->method('scheduleAfter');
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects(self::never())->method('warning');
+
+		$job = $this->job($collector, $jobList, $logger);
+		$job->setArgument(['authorId' => 'a.author', 'parked' => 1]);
+		$job->start($jobList);
+	}
+
+	/**
+	 * An open during the run that parks a sweep finds no row and queues a
+	 * plain one beside the parked row; it stands down rather than list
+	 * again at the next cron.
+	 */
+	public function testStandsDownWhileAParkedRowWaits(): void {
+		$collector = $this->createMock(ExpiredSessionCollector::class);
+		$collector->expects(self::never())->method('collect');
+		$jobList = $this->createMock(IJobList::class);
+		$jobList->method('has')->willReturnCallback(
+			static fn (string $job, mixed $argument): bool => $argument === ['authorId' => 'a.author', 'parked' => 1]
+		);
+
+		$job = $this->job($collector, $jobList);
+		$job->setArgument(['authorId' => 'a.author']);
+		$job->start($jobList);
 	}
 
 	private function job(

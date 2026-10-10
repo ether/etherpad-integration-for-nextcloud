@@ -523,6 +523,43 @@ class EtherpadClientTest extends TestCase {
 		}
 	}
 
+	/**
+	 * A sweep's session listing is read up to the cap and refused past it:
+	 * read whole, it could take a background job's memory with it.
+	 */
+	public function testASweepsSessionListingPastTheCapIsRefused(): void {
+		$cap = EtherpadClient::SESSION_LISTING_MAX_BYTES;
+		$listings = [
+			'an author\'s' => static fn (EtherpadClient $client): array => $client->listSessionsOfAuthor('a.author', null, $unreadable, $cap),
+			'a group\'s' => static fn (EtherpadClient $client): array => $client->listSessionsOfGroup('g.AAAAAAAAAAAAAAAA', null, $unreadable, $cap),
+		];
+		foreach ($listings as $case => $list) {
+			try {
+				$list($this->clientWritingIntoTheSink(EtherpadClient::SESSION_LISTING_MAX_BYTES + 1));
+				$this->fail($case . ': the oversized listing was read');
+			} catch (EtherpadTooLargeException) {
+				$this->addToAssertionCount(1);
+			}
+			try {
+				$list($this->clientWritingIntoTheSink(EtherpadClient::SESSION_LISTING_MAX_BYTES));
+				$this->fail($case . ': a body of no JSON was taken for a listing');
+			} catch (EtherpadClientException $e) {
+				$this->assertNotInstanceOf(EtherpadTooLargeException::class, $e, $case . ': at the cap the body is read');
+			}
+		}
+	}
+
+	/** A revoke's listing is read whole: ending access is worth the memory. */
+	public function testARevokesSessionListingIsReadWhole(): void {
+		$body = (string)json_encode(['code' => 0, 'data' => ['s.1' => ['groupID' => 'g.AAAAAAAAAAAAAAAA', 'validUntil' => 2_000_000_000]]]);
+		foreach (['listSessionsOfAuthor' => 'a.author', 'listSessionsOfGroup' => 'g.AAAAAAAAAAAAAAAA'] as $method => $id) {
+			$captured = null;
+			$sessions = $this->clientWithResponse($this->response(200, $body), $captured)->$method($id);
+			$this->assertSame(['s.1'], array_keys($sessions), $method);
+			$this->assertArrayNotHasKey('sink', $captured['options'] ?? [], $method);
+		}
+	}
+
 	public function testPreviewExportAsksForTheCappedSink(): void {
 		$captured = null;
 		$body = (string)json_encode(['code' => 0, 'data' => ['html' => '<p>small</p>']]);

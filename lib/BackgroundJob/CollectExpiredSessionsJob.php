@@ -19,10 +19,10 @@ use Psr\Log\LoggerInterface;
  *
  * Queued rather than timed, and per author: an open says who might need
  * collecting, so no sweep over every account is needed. The argument
- * holds the author id, not the uid - for a public link that is
- * `public-share:<token>`, and job arguments are persisted. When there is
- * nothing left, it comes back as the earliest session still standing
- * falls due.
+ * holds the author id, not the uid: job arguments are persisted. A public
+ * link's sessions are collected by group as well
+ * (CollectExpiredGroupSessionsJob). When there is nothing left, it comes
+ * back as the earliest session still standing falls due.
  */
 class CollectExpiredSessionsJob extends SessionSweepJob {
 	public function __construct(
@@ -43,14 +43,10 @@ class CollectExpiredSessionsJob extends SessionSweepJob {
 	}
 
 	protected function lostPassMessage(): string {
-		return 'Could not queue the next Etherpad session sweep; the rest waits for another open.';
+		return 'Could not queue the next Etherpad session sweep; the rest waits until an open queues it again.';
 	}
 
 	protected function gaveUpMessage(): string {
-		return 'Gave up an Etherpad session sweep after three retries without progress; the rest waits for another open.';
-	}
-
-	protected function givingUpWarns(): bool {
-		return false;
+		return 'Gave up an Etherpad session sweep after three retries without progress; the rest waits until an open queues it again.';
 	}
 }

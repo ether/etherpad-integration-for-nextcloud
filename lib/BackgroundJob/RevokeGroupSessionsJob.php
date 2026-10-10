@@ -54,6 +54,11 @@ class RevokeGroupSessionsJob extends SessionSweepJob {
 		return 'Could not queue the next revocation of a group\'s Etherpad sessions; the rest expires on its own.';
 	}
 
+	/** Giving up leaves a deleted pad's sessions granting access until they expire. */
+	protected function givingUpWarns(): bool {
+		return true;
+	}
+
 	protected function gaveUpMessage(): string {
 		return 'Gave up revoking a group\'s Etherpad sessions after three retries without progress; the rest expires on its own.';
 	}

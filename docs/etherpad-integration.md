@@ -16,18 +16,25 @@ Important:
 
 ## Used Etherpad API Methods
 
+- `checkToken` – whether Etherpad answers and accepts the API key: the
+  connection test, and background jobs telling an outage from one call
+  failing
 - `createPad`
 - `deletePad`
 - `getText`
 - `setText`
 - `getHTML`
+- `setHTML`
 - `getRevisionsCount`
 - `getReadOnlyID`
 - `createGroup`
 - `createGroupPad`
 - `createAuthorIfNotExistsFor`
 - `createSession`
+- `getSessionInfo`
+- `deleteSession`
 - `listSessionsOfAuthor`
+- `listSessionsOfGroup`
 - `listPads`
 - `deleteGroup`
 
@@ -316,36 +323,72 @@ therefore grows with past opens rather than with live access.
 An open leaves the author's id in the job table; a queued job does the rest.
 The id says which author to look at, not whether there is anything to
 collect – that answer is the listing, and the listing is the slow call, so
-it belongs in the job together with the deleting. This also reaches the two
-cases a request could not: the first open of a browsing session carries no
-cookie ids and so makes no listing, and a public link never carries any,
-although its visitors add sessions under the same shared author.
+it belongs in the job together with the deleting. This also reaches the
+case a request could not: the first open of a browsing session carries no
+cookie ids and so makes no listing.
+
+A public link's open that made a session leaves its author's id and the
+group's, and a job for the group (`CollectExpiredGroupSessionsJob`)
+collects the expired sessions of every author in it through
+`listSessionsOfGroup`, coming back for a session still live an hour on at
+the soonest. It picks up what the authors' sweeps leave - a signed-in
+user's sessions from before the collector existed, or left by a sweep that
+gave up or was lost, while that user opens no protected pad, and an author
+index too long for the author's own sweep - which keeps short the listing
+a delete's revoke reads. And it is one job a group whatever authors open
+through the link: today a link's visitors all open as its author, and
+should each open as an author of their own, a job an author would be one a
+visitor. The author's sweep runs beside it: a group can hold more sessions
+than a run can list in time - every user's, and in a legacy group other
+pads' - and the author's index, often a smaller one, is collected all the
+same. A public link's open makes no listing, whatever ids the browser
+carries.
 
 The id is also all that is stored. A public link's uid is
 `public-share:<token>`, the credential from the share URL, and job
 arguments are persisted and printed by `occ`.
 
 A run deletes up to 250 sessions within 20 seconds, requeueing itself for
-the rest. A refusal is requeued with a growing delay and a limit; sessions
-the server will never delete are skipped rather than allowed to block the
-ones behind them, up to twenty refusals in a row and fifty in a run - a failure that reads
-as Etherpad unreachable, when Etherpad then does not answer at all, is an
-outage, and a few end the run. A run with nothing to do comes back when the
-earliest session still standing falls due, which also keeps the next open
-from queueing a second sweep. Nothing is deleted until five minutes after
+the rest. A listing is read up to 4 MiB, tens of thousands of sessions,
+rather than whole into a job's memory. One too long to read parks the
+sweep for a day, with a warning that says why; one timing out while
+Etherpad answers otherwise is tried again a minute later, as passing load
+may be all it is, and a timeout on any retry parks it. A parked sweep
+lists nothing and no open queues it, and after that day the next open
+does: an index in use is listed, and warned about, once a day until it
+shrinks. A public link's author adds a session an open without a memory
+cache, and about one an hour for each pad with one (see "A public link's
+session" below); a timeout below the cap points at how fast Etherpad's
+database answers. A proxy that gives up before Etherpad's 15 seconds
+answers with an HTTP error instead, which is tried again with the backoff
+as any other. An author's index past the cap shrinks only through the
+sweeps of groups a public link is opened for, or as a pad's group is
+deleted for good. An author or group Etherpad no longer has ends the
+sweep. A revoke's listing is read whole. A refusal is requeued with a
+growing delay and a limit; sessions the server will never delete are
+skipped rather than allowed to block the ones behind them, up to twenty
+refusals in a row and fifty in a run - a failure that reads as Etherpad
+unreachable, when Etherpad then does not answer at all, is an outage, and
+a few end the run. A run with nothing to do comes back when the earliest
+session still standing falls due, which also keeps the next open from
+queueing a second sweep. Nothing is deleted until five minutes after
 expiry, because Etherpad judges `validUntil` against its own clock and a
 session dead by ours may still be live there.
 
-This assumes deleting a session removes its id from the author index.
+This assumes deleting a session removes its id from the author index, and
+from the group's: Etherpad's `deleteSession` takes it out of both.
 Verified on 2.5.3 with PostgreSQL and on 2.x with the built-in store; an
 integration test pins it by counting raw API keys, since the client filters
 out exactly the entries a surviving key produces. Where entries do survive,
 collecting cannot shrink the index and the sweep says so in the log.
 
 Not covered: sessions still being created – that is what keeps an open pad
-working – and authors nobody opens a pad for, whose leftovers cost storage
-only. Recording each session's id at issue time would remove the listing;
-renewing sessions instead of minting them would remove the pile.
+working –, authors nobody opens a pad for in a group no public link is
+opened for, and an author's index past the cap when no public link is
+opened for its groups. What they leave costs storage, and the length of
+the listing a revoke reads. Recording each session's id at issue time
+would remove the listing; renewing sessions instead of minting them would
+remove the pile.
 
 ### A public link's session
 

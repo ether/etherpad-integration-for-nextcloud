@@ -430,7 +430,8 @@ class GroupSessionRevokerTest extends TestCase {
 	private function client(array $validUntil): EtherpadClient&MockObject {
 		$client = $this->createMock(EtherpadClient::class);
 		$client->method('listPads')->willReturn([self::PAD]);
-		$client->method('listSessionsOfGroup')->willReturn(array_map(
+		// The job's revoke reads its listing whole, as the request's does.
+		$client->method('listSessionsOfGroup')->with(self::GROUP, self::anything(), self::anything(), self::isNull())->willReturn(array_map(
 			static fn (int $until): array => ['groupID' => self::GROUP, 'validUntil' => $until],
 			$validUntil,
 		));
