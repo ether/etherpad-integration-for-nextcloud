@@ -211,6 +211,26 @@ class BindingServiceTest extends TestCase {
 		$this->assertNull($service->placeOf(8));
 	}
 
+	/**
+	 * The files of a group's pads, a row owed a delete among them, in as
+	 * few queries as five hundred pads allow; none at all for a pad no row
+	 * names - a pad of no file.
+	 */
+	public function testTheFilesOfManyPads(): void {
+		$rows = [self::bindingRow(9, 'g.A$b', BindingService::STATE_ACTIVE), self::bindingRow(7, 'g.A$a', BindingService::STATE_PENDING_DELETE)];
+		for ($i = 0; $i < 600; $i++) {
+			$rows[] = self::bindingRow(1000 + $i, 'g.B$' . $i, BindingService::STATE_ACTIVE);
+		}
+		$service = new BindingService(new InMemoryBindingTable($rows), new FixedClock(500));
+		$many = array_map(static fn (int $i): string => 'g.B$' . $i, range(0, 599));
+
+		$this->assertSame([7, 9], $service->filesOfPads(['g.A$b', 'g.A$a', 'g.A$b']));
+		$this->assertSame(range(1000, 1599), $service->filesOfPads($many));
+		$this->assertNull($service->filesOfPads([...$many, 'g.B$unbound']));
+		$this->assertNull($service->filesOfPads(['g.A$a', 'g.A$elsewhere']));
+		$this->assertSame([], $service->filesOfPads([]));
+	}
+
 	public function testWhereTheFileCacheHasManyFiles(): void {
 		$service = new BindingService(new InMemoryBindingTable([], [
 			['fileid' => 7, 'storage' => 3, 'path' => 'files/Notes.pad'],

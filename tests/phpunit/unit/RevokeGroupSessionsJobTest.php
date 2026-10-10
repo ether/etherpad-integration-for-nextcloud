@@ -9,7 +9,6 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\Tests\Unit;
 
 use OCA\EtherpadNextcloud\BackgroundJob\RevokeGroupSessionsJob;
-use OCA\EtherpadNextcloud\Service\Binding;
 use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\EtherpadNextcloud\Service\EtherpadClient;
 use OCA\EtherpadNextcloud\Service\GroupSessionRevoker;
@@ -87,7 +86,7 @@ class RevokeGroupSessionsJobTest extends TestCase {
 			$removed[] = $id;
 		});
 		$bindings = $this->createMock(BindingService::class);
-		$bindings->method('findByPadId')->willReturn(new Binding(42, self::GROUP . '$notes', BindingService::ACCESS_PROTECTED, BindingService::STATE_ACTIVE));
+		$bindings->method('filesOfPads')->willReturn([42]);
 		$bindings->method('placesOf')->willReturn([42 => [3, 'files_trashbin/files/Notes.pad.d1']]);
 		$bindings->method('isInFiles')->willReturn(false);
 		$clock = new FixedClock(1_000_000);
@@ -170,6 +169,33 @@ class RevokeGroupSessionsJobTest extends TestCase {
 			$jobList->method('has')->willReturnCallback(static fn (string $job, mixed $argument): bool => $argument === $waiting);
 
 			$this->start($revoker, $jobList, ['groupId' => self::GROUP, 'again' => 1]);
+		}
+	}
+
+	/**
+	 * A delete's first pass does not stand down behind a second look's
+	 * retry, which looks no more: it runs, and leaving nothing, queues the
+	 * delete's own second look. Behind a first pass's retry it stands down,
+	 * which looks again itself.
+	 */
+	public function testADeletesFirstPassKeepsItsSecondLookBesideAnOldOnesRetry(): void {
+		$cases = [
+			'a second look\'s retry' => [['groupId' => self::GROUP, 'again' => 1, 'attempt' => 1], true],
+			'a first pass\'s retry' => [['groupId' => self::GROUP, 'attempt' => 1], false],
+		];
+		foreach ($cases as $case => [$waiting, $runs]) {
+			$revoker = $this->createMock(GroupSessionRevoker::class);
+			$revoker->expects($runs ? self::once() : self::never())->method('revokeRest')->willReturn(['deleted' => 0, 'remaining' => 0, 'retry' => false, 'nextDueAt' => null]);
+			$queued = [];
+			$jobList = $this->createMock(IJobList::class);
+			$jobList->method('has')->willReturnCallback(static fn (string $job, mixed $argument): bool => $argument === $waiting);
+			$jobList->method('scheduleAfter')->willReturnCallback(static function (string $job, int $at, array $argument) use (&$queued): void {
+				$queued[] = [$at, $argument];
+			});
+
+			$this->start($revoker, $jobList, ['groupId' => self::GROUP]);
+
+			self::assertSame($runs ? [[1_000_600, ['groupId' => self::GROUP, 'again' => 1]]] : [], $queued, $case);
 		}
 	}
 

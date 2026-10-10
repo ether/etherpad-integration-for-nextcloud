@@ -248,6 +248,41 @@ class BindingService {
 	}
 
 	/**
+	 * The files whose rows name the pads in $padIds, in any state - a row
+	 * owed a delete too - or null when a pad has none. One query for five
+	 * hundred pads: a legacy group can hold thousands, and a pass asks
+	 * before it lists a single session.
+	 *
+	 * @param list<string> $padIds
+	 * @return ?list<int> sorted
+	 */
+	public function filesOfPads(array $padIds): ?array {
+		$padIds = array_values(array_unique($padIds));
+		$named = [];
+		$files = [];
+		foreach (array_chunk($padIds, 500) as $chunk) {
+			$qb = $this->db->getQueryBuilder();
+			$qb->select('pad_id', 'file_id')
+				->from(self::TABLE)
+				->where($qb->expr()->in('pad_id', $qb->createNamedParameter($chunk, IQueryBuilder::PARAM_STR_ARRAY)));
+			$result = $qb->executeQuery();
+			while (($row = DbRows::one($result->fetch())) !== null) {
+				$named[DbRows::string($row, 'pad_id')] = true;
+				$files[DbRows::int($row, 'file_id')] = true;
+			}
+			$result->closeCursor();
+		}
+		foreach ($padIds as $padId) {
+			if (!isset($named[$padId])) {
+				return null;
+			}
+		}
+		$fileIds = array_keys($files);
+		sort($fileIds);
+		return $fileIds;
+	}
+
+	/**
 	 * Where the file cache has each of $fileIds, as placeOf() reads one:
 	 * one query for many, for a sweep that asks again and again. A file it
 	 * does not have is left out.

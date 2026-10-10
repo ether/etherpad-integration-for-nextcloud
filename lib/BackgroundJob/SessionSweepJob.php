@@ -150,7 +150,7 @@ abstract class SessionSweepJob extends QueuedJob {
 		// says a sweep exists, and whoever queues one - an open, a delete -
 		// can queue a runnable row beside the retry that follows. It stands
 		// down rather than undo the wait.
-		if ($attempt === 0 && $this->retryIsWaiting($item)) {
+		if ($attempt === 0 && $this->retryIsWaiting($item, $again)) {
 			return;
 		}
 
@@ -205,14 +205,17 @@ abstract class SessionSweepJob extends QueuedJob {
 	}
 
 	/**
-	 * Whether a backed-off retry for this item is waiting its turn. Asked
-	 * after this row is gone, so a failure to ask lets the pass run rather
-	 * than lose it: a pass beside a retry costs only the pass.
+	 * Whether a backed-off retry this row may stand down behind is waiting
+	 * its turn. A row without `again` - a delete's first pass - only behind
+	 * one without it, which looks again itself once it leaves nothing: a
+	 * second look's retry looks no more, and the delete would lose its own.
+	 * Asked after this row is gone, so a failure to ask lets the pass run
+	 * rather than lose it: a pass beside a retry costs only the pass.
 	 */
-	private function retryIsWaiting(string $item): bool {
+	private function retryIsWaiting(string $item, bool $again): bool {
 		$retries = array_values(array_filter(
 			self::waitingArguments([static::key() => $item]),
-			static fn (array $argument): bool => isset($argument['attempt']),
+			static fn (array $argument): bool => isset($argument['attempt']) && ($again || !isset($argument['again'])),
 		));
 		try {
 			return static::anyQueued($this->jobList, $retries);

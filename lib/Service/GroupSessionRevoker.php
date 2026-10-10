@@ -110,7 +110,7 @@ class GroupSessionRevoker {
 		}
 
 		try {
-			$files = $this->filesOf($pads);
+			$files = $this->bindingService->filesOfPads($pads);
 			if ($files === null) {
 				$this->logger->info(self::KEPT_FOR_A_PAD_OF_NO_FILE, $context);
 				return self::ENDED;
@@ -183,28 +183,12 @@ class GroupSessionRevoker {
 	}
 
 	/**
-	 * The files of the pads in $pads, or null for a pad of no file. Rows owed
-	 * a delete among them: a file seen again makes one active.
-	 *
-	 * @param list<string> $pads
-	 * @return ?list<int>
-	 */
-	private function filesOf(array $pads): ?array {
-		$files = [];
-		foreach ($pads as $padId) {
-			$binding = $this->bindingService->findByPadId($padId);
-			if ($binding === null) {
-				return null;
-			}
-			$files[] = $binding->fileId;
-		}
-
-		return $files;
-	}
-
-	/**
 	 * KEPT_FOR_A_FILE_IN_FILES when one of the files at $places is in Files,
 	 * else null. A file the file cache does not have is not among them.
+	 * One look at the mounts a file, up to the first in Files: a large
+	 * legacy group's files are mostly in Files, so it stops early; one with
+	 * every file away asks of each, and a pass the budget does not cover
+	 * ends as a retry at the listing.
 	 *
 	 * @param array<int,array{int,string}> $places
 	 */

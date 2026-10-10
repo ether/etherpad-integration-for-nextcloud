@@ -10,7 +10,6 @@ namespace OCA\EtherpadNextcloud\Tests\Unit;
 
 use OCA\EtherpadNextcloud\BackgroundJob\RevokeGroupSessionsJob;
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
-use OCA\EtherpadNextcloud\Service\Binding;
 use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\EtherpadNextcloud\Service\EtherpadClient;
 use OCA\EtherpadNextcloud\Service\GroupSessionRevoker;
@@ -82,16 +81,15 @@ class GroupSessionRevokerTest extends TestCase {
 	}
 
 	/**
-	 * Every file of the group is asked about, one in a row owed a delete
-	 * too - a file seen again makes it active - and one the file cache
-	 * does not have is away without asking.
+	 * Every file of the group is asked about - one in a row owed a delete
+	 * too (BindingService::filesOfPads()) - and one the file cache does not
+	 * have is away without asking.
 	 *
-	 * @return iterable<string,array{string,array<int,array{int,string}>,list<array{int,string}>}>
+	 * @return iterable<string,array{array<int,array{int,string}>,list<array{int,string}>}>
 	 */
 	public static function away(): iterable {
-		yield 'in a trash' => [BindingService::STATE_ACTIVE, self::TRASHED, [[3, 'files_trashbin/files/Notes.pad.d1791400000']]];
-		yield 'owed a delete, in a trash' => [BindingService::STATE_PENDING_DELETE, self::TRASHED, [[3, 'files_trashbin/files/Notes.pad.d1791400000']]];
-		yield 'out of the file cache' => [BindingService::STATE_ACTIVE, [], []];
+		yield 'in a trash' => [self::TRASHED, [[3, 'files_trashbin/files/Notes.pad.d1791400000']]];
+		yield 'out of the file cache' => [[], []];
 	}
 
 	/**
@@ -99,11 +97,11 @@ class GroupSessionRevokerTest extends TestCase {
 	 * @param list<array{int,string}> $asked
 	 */
 	#[DataProvider('away')]
-	public function testTakesThemWhileEveryFileIsAway(string $state, array $places, array $asked): void {
+	public function testTakesThemWhileEveryFileIsAway(array $places, array $asked): void {
 		$client = $this->client(['s.live' => FixedClock::NOW + 3600]);
 		$client->expects(self::once())->method('deleteSession')->with('s.live');
 		$seen = [];
-		$bindings = $this->bindings($places, state: $state, inFiles: static function (int $storage, string $path) use (&$seen): bool {
+		$bindings = $this->bindings($places, inFiles: static function (int $storage, string $path) use (&$seen): bool {
 			$seen[] = [$storage, $path];
 			return false;
 		});
@@ -132,11 +130,7 @@ class GroupSessionRevokerTest extends TestCase {
 		$client->expects(self::never())->method('listSessionsOfGroup');
 		$client->expects(self::never())->method('deleteSession');
 		$bindings = $this->createMock(BindingService::class);
-		$bindings->method('findByPadId')->willReturnCallback(static fn (string $padId): ?Binding => match (true) {
-			$padId !== self::PAD => new Binding(41, $padId, BindingService::ACCESS_PROTECTED, BindingService::STATE_ACTIVE),
-			$case === 'none' => null,
-			default => new Binding(42, $padId, BindingService::ACCESS_PROTECTED, BindingService::STATE_ACTIVE),
-		});
+		$bindings->method('filesOfPads')->with(['g.AAAAAAAAAAAAAAAA$away', self::PAD])->willReturn($case === 'none' ? null : [41, 42]);
 		$bindings->method('placesOf')->willReturn([41 => [3, 'files_trashbin/files/Away.pad.d1'], 42 => [3, 'files/Notes.pad']]);
 		$bindings->method('isInFiles')->willReturnCallback(static fn (int $storage, string $path): bool => $path === 'files/Notes.pad');
 		$logger = $this->createMock(LoggerInterface::class);
@@ -270,7 +264,7 @@ class GroupSessionRevokerTest extends TestCase {
 	 */
 	public static function failures(): iterable {
 		yield 'the pads' => ['listPads', 'Could not list the pads of a group whose Etherpad sessions to revoke.'];
-		yield 'the files' => ['findByPadId', 'Could not look up the files of a group\'s pads to revoke its Etherpad sessions.'];
+		yield 'the files' => ['filesOfPads', 'Could not look up the files of a group\'s pads to revoke its Etherpad sessions.'];
 		yield 'the sessions' => ['listSessionsOfGroup', 'Could not list the Etherpad sessions of a group to revoke.'];
 	}
 
@@ -280,9 +274,9 @@ class GroupSessionRevokerTest extends TestCase {
 		$client->method('listPads')->willReturnCallback(static fn (): array => $failing === 'listPads' ? throw new EtherpadClientException('Connection timed out') : [self::PAD]);
 		$client->method('listSessionsOfGroup')->willThrowException(new EtherpadClientException('Connection timed out'));
 		$bindings = $this->createMock(BindingService::class);
-		$bindings->method('findByPadId')->willReturnCallback(static fn (): Binding => $failing === 'findByPadId'
+		$bindings->method('filesOfPads')->willReturnCallback(static fn (): array => $failing === 'filesOfPads'
 			? throw new \RuntimeException('database gone')
-			: new Binding(42, self::PAD, BindingService::ACCESS_PROTECTED, BindingService::STATE_ACTIVE));
+			: [42]);
 		$bindings->method('placesOf')->willReturn(self::TRASHED);
 		$logger = $this->createMock(LoggerInterface::class);
 		$logger->expects(self::once())->method('warning')->with($line);
@@ -355,7 +349,7 @@ class GroupSessionRevokerTest extends TestCase {
 			$removed[] = $id;
 		});
 		$bindings = $this->createMock(BindingService::class);
-		$bindings->expects(self::never())->method('findByPadId');
+		$bindings->method('filesOfPads')->with([])->willReturn([]);
 		$bindings->method('placesOf')->with([])->willReturn([]);
 		$bindings->expects(self::never())->method('isInFiles');
 
@@ -402,9 +396,9 @@ class GroupSessionRevokerTest extends TestCase {
 	 * @param array<int,array{int,string}>|\Closure(): array<int,array{int,string}> $places
 	 * @param ?\Closure(int, string): bool $inFiles
 	 */
-	private function bindings(array|\Closure $places, string $state = BindingService::STATE_ACTIVE, ?\Closure $inFiles = null): BindingService {
+	private function bindings(array|\Closure $places, ?\Closure $inFiles = null): BindingService {
 		$bindings = $this->createMock(BindingService::class);
-		$bindings->method('findByPadId')->willReturn(new Binding(42, self::PAD, BindingService::ACCESS_PROTECTED, $state));
+		$bindings->method('filesOfPads')->with([self::PAD])->willReturn([42]);
 		$places instanceof \Closure
 			? $bindings->method('placesOf')->with([42])->willReturnCallback($places)
 			: $bindings->method('placesOf')->with([42])->willReturn($places);
