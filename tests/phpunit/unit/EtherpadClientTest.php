@@ -524,15 +524,16 @@ class EtherpadClientTest extends TestCase {
 	}
 
 	/**
-	 * A session listing is read into a capped sink too: tens of thousands
-	 * of sessions arrive in one body, and read whole they could take a
-	 * background job's memory with them, past any catch. Up to the cap a
-	 * body is read.
+	 * A sweep's session listing is read into a capped sink: tens of
+	 * thousands of sessions arrive in one body, and read whole they could
+	 * take a background job's memory with them, past any catch. Up to the
+	 * cap a body is read.
 	 */
-	public function testASessionListingPastTheCapIsRefused(): void {
+	public function testASweepsSessionListingPastTheCapIsRefused(): void {
+		$cap = EtherpadClient::SESSION_LISTING_MAX_BYTES;
 		$listings = [
-			'an author\'s' => static fn (EtherpadClient $client): array => $client->listSessionsOfAuthor('a.author'),
-			'a group\'s' => static fn (EtherpadClient $client): array => $client->listSessionsOfGroup('g.AAAAAAAAAAAAAAAA'),
+			'an author\'s' => static fn (EtherpadClient $client): array => $client->listSessionsOfAuthor('a.author', null, $unreadable, $cap),
+			'a group\'s' => static fn (EtherpadClient $client): array => $client->listSessionsOfGroup('g.AAAAAAAAAAAAAAAA', null, $unreadable, $cap),
 		];
 		foreach ($listings as $case => $list) {
 			try {
@@ -547,6 +548,17 @@ class EtherpadClientTest extends TestCase {
 			} catch (EtherpadClientException $e) {
 				$this->assertNotInstanceOf(EtherpadTooLargeException::class, $e, $case . ': at the cap the body is read');
 			}
+		}
+	}
+
+	/** A revoke's listing is read whole: ending access is worth the memory. */
+	public function testARevokesSessionListingIsReadWhole(): void {
+		$body = (string)json_encode(['code' => 0, 'data' => ['s.1' => ['groupID' => 'g.AAAAAAAAAAAAAAAA', 'validUntil' => 2_000_000_000]]]);
+		foreach (['listSessionsOfAuthor' => 'a.author', 'listSessionsOfGroup' => 'g.AAAAAAAAAAAAAAAA'] as $method => $id) {
+			$captured = null;
+			$sessions = $this->clientWithResponse($this->response(200, $body), $captured)->$method($id);
+			$this->assertSame(['s.1'], array_keys($sessions), $method);
+			$this->assertArrayNotHasKey('sink', $captured['options'] ?? [], $method);
 		}
 	}
 

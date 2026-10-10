@@ -44,6 +44,15 @@ final class EtherpadErrorClassifier {
 	}
 
 	/**
+	 * An author Etherpad does not know - one whose id a cache kept after a
+	 * reset, say. Measured: listing its sessions answers `authorID does
+	 * not exist`.
+	 */
+	public static function isAuthorUnknown(\Throwable $error): bool {
+		return self::mentions($error, ['authorid does not exist']);
+	}
+
+	/**
 	 * Walk the cause chain for any of these, case-insensitively.
 	 *
 	 * The chain matters: the client wraps transport errors, so the sentence

@@ -12,6 +12,9 @@ namespace OCA\EtherpadNextcloud\Service;
 use OCA\EtherpadNextcloud\BackgroundJob\CollectExpiredGroupSessionsJob;
 use OCA\EtherpadNextcloud\BackgroundJob\CollectExpiredSessionsJob;
 use OCA\EtherpadNextcloud\BackgroundJob\SessionSweepJob;
+use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
+use OCA\EtherpadNextcloud\Exception\EtherpadTooLargeException;
+use OCA\EtherpadNextcloud\Exception\RunBudgetSpentException;
 use OCA\EtherpadNextcloud\Util\EtherpadErrorClassifier;
 use OCA\EtherpadNextcloud\Util\SafeError;
 use OCP\AppFramework\Utility\ITimeFactory;
@@ -39,6 +42,15 @@ use Psr\Log\LoggerInterface;
 class ExpiredSessionCollector {
 
 	private const MAX_PER_RUN = 250;
+
+	/**
+	 * How long a sweep whose listing cannot be read in a run - too long,
+	 * or too slow while Etherpad answers otherwise - waits before it asks
+	 * again: trying sooner would make Etherpad walk the whole index for
+	 * nothing, and the row keeps an open from queueing another meanwhile.
+	 */
+	private const LISTING_PARKED_SECONDS = 86400;
+
 	/** The budget is a parameter so a test can reach it, not a setting. */
 	public function __construct(
 		private EtherpadClient $etherpadClient,
@@ -46,6 +58,7 @@ class ExpiredSessionCollector {
 		private LoggerInterface $logger,
 		private ITimeFactory $timeFactory,
 		private SessionDeletes $deletes,
+		private ManagedPadLifecycle $padLifecycle,
 		private float $budgetSeconds = RunBudget::DEFAULT_SECONDS,
 	) {
 	}
@@ -106,8 +119,11 @@ class ExpiredSessionCollector {
 	 * refused. They must stay separate: the job removes its own
 	 * row before running, so a swallowed failure loses the backlog, and a
 	 * failure read as progress has the job returning every minute for good.
-	 * `nextDueAt` is when the earliest session still standing becomes
-	 * collectable, or null when the author holds nothing.
+	 * `nextDueAt` is when to come back though nothing is left to delete:
+	 * when the earliest live session becomes collectable, a day out for a
+	 * listing that cannot be read in a run, or null when nothing live is
+	 * left. An author Etherpad does not know holds nothing, and the sweep
+	 * ends.
 	 *
 	 * @return array{deleted:int,remaining:int,retry:bool,nextDueAt:?int}
 	 */
@@ -120,9 +136,10 @@ class ExpiredSessionCollector {
 				$authorId,
 				$budget->callTimeout(),
 				$unreadable,
+				EtherpadClient::SESSION_LISTING_MAX_BYTES,
 			);
 		} catch (\Throwable $e) {
-			return $this->listingFailed($e, $context);
+			return $this->listingFailed($e, $budget, $context, EtherpadErrorClassifier::isAuthorUnknown($e));
 		}
 
 		return $this->collectFrom($sessions, $unreadable, $budget, $context);
@@ -144,28 +161,64 @@ class ExpiredSessionCollector {
 				$groupId,
 				$budget->callTimeout(),
 				$unreadable,
+				EtherpadClient::SESSION_LISTING_MAX_BYTES,
 			);
 		} catch (\Throwable $e) {
-			if (EtherpadErrorClassifier::isPadAlreadyDeleted($e)) {
-				return ['deleted' => 0, 'remaining' => 0, 'retry' => false, 'nextDueAt' => null];
-			}
-			return $this->listingFailed($e, $context);
+			return $this->listingFailed($e, $budget, $context, EtherpadErrorClassifier::isPadAlreadyDeleted($e));
 		}
 
 		return $this->collectFrom($sessions, $unreadable, $budget, $context);
 	}
 
 	/**
+	 * What a listing that failed means for the sweep. $gone, the author or
+	 * group Etherpad no longer has: nothing to collect, and the sweep ends.
+	 * A listing too long to read, or too slow while Etherpad answers
+	 * otherwise: no run reads it sooner, so the sweep is parked for a day
+	 * (LISTING_PARKED_SECONDS). Anything else - Etherpad refusing, or not
+	 * answering at all - is tried again with the sweep's backoff.
+	 *
 	 * @param array<string,string> $context whose sessions they are
 	 * @return array{deleted:int,remaining:int,retry:bool,nextDueAt:?int}
 	 */
-	private function listingFailed(\Throwable $e, array $context): array {
+	private function listingFailed(\Throwable $e, RunBudget $budget, array $context, bool $gone): array {
+		if ($gone) {
+			$this->logger->debug('Nothing to collect: Etherpad no longer has these sessions\' author or group.', [
+				'app' => 'etherpad_nextcloud',
+				...$context,
+			]);
+			return ['deleted' => 0, 'remaining' => 0, 'retry' => false, 'nextDueAt' => null];
+		}
+		if ($e instanceof EtherpadTooLargeException || $this->tooSlowToList($e, $budget)) {
+			$this->logger->warning('The Etherpad sessions to collect are too many to list in a run; asked again in a day.', [
+				'app' => 'etherpad_nextcloud',
+				...$context,
+				...SafeError::context($e),
+			]);
+			return ['deleted' => 0, 'remaining' => 0, 'retry' => false, 'nextDueAt' => $this->timeFactory->getTime() + self::LISTING_PARKED_SECONDS];
+		}
 		$this->logger->warning('Could not list the Etherpad sessions to collect.', [
 			'app' => 'etherpad_nextcloud',
 			...$context,
 			...SafeError::context($e),
 		]);
 		return ['deleted' => 0, 'remaining' => 0, 'retry' => true, 'nextDueAt' => null];
+	}
+
+	/**
+	 * Whether a listing that read as Etherpad unreachable - a timeout - was
+	 * this listing's alone: Etherpad answers otherwise. Without time left
+	 * to ask, it is taken for an outage.
+	 */
+	private function tooSlowToList(\Throwable $e, RunBudget $budget): bool {
+		if (!EtherpadClientException::isEtherpadUnreachable($e)) {
+			return false;
+		}
+		try {
+			return $this->padLifecycle->answers($budget);
+		} catch (RunBudgetSpentException) {
+			return false;
+		}
 	}
 
 	/**

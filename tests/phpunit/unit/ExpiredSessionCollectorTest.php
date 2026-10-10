@@ -10,8 +10,9 @@ namespace OCA\EtherpadNextcloud\Tests\Unit;
 
 use OCA\EtherpadNextcloud\BackgroundJob\CollectExpiredGroupSessionsJob;
 use OCA\EtherpadNextcloud\BackgroundJob\CollectExpiredSessionsJob;
-use OCA\EtherpadNextcloud\Exception\EtherpadRefusedException;
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
+use OCA\EtherpadNextcloud\Exception\EtherpadRefusedException;
+use OCA\EtherpadNextcloud\Exception\EtherpadTooLargeException;
 use OCA\EtherpadNextcloud\Service\EtherpadClient;
 use OCA\EtherpadNextcloud\Service\ExpiredSessionCollector;
 use OCA\EtherpadNextcloud\Service\ManagedPadLifecycle;
@@ -138,29 +139,64 @@ class ExpiredSessionCollectorTest extends TestCase {
 		self::assertSame(['deleted' => 2, 'remaining' => 0, 'retry' => false, 'nextDueAt' => FixedClock::NOW + 3600 + EtherpadClient::CLOCK_SKEW_ALLOWANCE_SECONDS], $result);
 	}
 
-	/** A listing too long to read is a failed one: tried again, and said. */
-	public function testAListingTooLongToReadIsTriedAgain(): void {
-		$client = $this->createMock(EtherpadClient::class);
-		$client->method('listSessionsOfGroup')->willThrowException(new \OCA\EtherpadNextcloud\Exception\EtherpadTooLargeException('Etherpad API response exceeds 4194304 bytes.'));
-		$client->expects(self::never())->method('deleteSession');
-		$logger = $this->createMock(LoggerInterface::class);
-		$logger->expects(self::once())->method('warning')->with('Could not list the Etherpad sessions to collect.', self::anything());
+	/**
+	 * A listing too long to read, or too slow while Etherpad answers
+	 * otherwise, is read no sooner by a run: the sweep is parked for a day,
+	 * with a line, and reads it only then. The cap is the sweep's to ask for.
+	 */
+	public function testAListingThatCannotBeReadParksTheSweepForADay(): void {
+		$failures = [
+			'too long' => new EtherpadTooLargeException('Etherpad API response exceeds 4194304 bytes.'),
+			'too slow' => new EtherpadClientException('Etherpad API request failed: listSessionsOfGroup'),
+		];
+		$listings = [
+			'a group\'s' => ['listSessionsOfGroup', self::GROUP, 'groupId', static fn (ExpiredSessionCollector $c): array => $c->collectGroup(self::GROUP)],
+			'an author\'s' => ['listSessionsOfAuthor', self::AUTHOR, 'authorId', static fn (ExpiredSessionCollector $c): array => $c->collect(self::AUTHOR)],
+		];
+		foreach ($listings as $listing => [$method, $id, $key, $collect]) {
+			foreach ($failures as $case => $failure) {
+				$client = $this->createMock(EtherpadClient::class);
+				$client->expects(self::once())->method($method)
+					->with($id, self::anything(), self::anything(), EtherpadClient::SESSION_LISTING_MAX_BYTES)
+					->willThrowException($failure);
+				$client->expects(self::never())->method('deleteSession');
+				$logger = $this->createMock(LoggerInterface::class);
+				$logger->expects(self::once())->method('warning')->with(
+					'The Etherpad sessions to collect are too many to list in a run; asked again in a day.',
+					self::callback(static fn (array $context): bool => $context[$key] === $id),
+				);
 
-		self::assertSame(['deleted' => 0, 'remaining' => 0, 'retry' => true, 'nextDueAt' => null], $this->collector($client, logger: $logger)->collectGroup(self::GROUP));
+				self::assertSame(['deleted' => 0, 'remaining' => 0, 'retry' => false, 'nextDueAt' => FixedClock::NOW + 86400], $collect($this->collector($client, logger: $logger)), $listing . ', ' . $case);
+			}
+		}
 	}
 
 	/**
-	 * A group Etherpad no longer has holds nothing to collect, and the
-	 * sweep ends; one that cannot be listed is tried again, and said, under
-	 * its group.
+	 * An author or a group Etherpad no longer has holds nothing to
+	 * collect: the sweep ends, said at debug, with nothing deleted.
 	 */
-	public function testAGroupGoneEndsTheSweepAndOneUnlistedIsTriedAgain(): void {
-		$gone = $this->createMock(EtherpadClient::class);
-		$gone->method('listSessionsOfGroup')->willThrowException(new EtherpadRefusedException('Etherpad API error (listSessionsOfGroup): groupID does not exist'));
-		self::assertSame(['deleted' => 0, 'remaining' => 0, 'retry' => false, 'nextDueAt' => null], $this->collector($gone)->collectGroup(self::GROUP));
+	public function testAnAuthorOrGroupEtherpadNoLongerHasEndsTheSweep(): void {
+		$cases = [
+			'an author' => ['listSessionsOfAuthor', 'authorID does not exist', static fn (ExpiredSessionCollector $c): array => $c->collect(self::AUTHOR), 'authorId', self::AUTHOR],
+			'a group' => ['listSessionsOfGroup', 'groupID does not exist', static fn (ExpiredSessionCollector $c): array => $c->collectGroup(self::GROUP), 'groupId', self::GROUP],
+		];
+		foreach ($cases as $case => [$method, $answer, $collect, $key, $id]) {
+			$client = $this->createMock(EtherpadClient::class);
+			$client->method($method)->willThrowException(new EtherpadRefusedException('Etherpad API error (' . $method . '): ' . $answer));
+			$client->expects(self::never())->method('deleteSession');
+			$logger = $this->createMock(LoggerInterface::class);
+			$logger->expects(self::never())->method('warning');
+			$logger->expects(self::once())->method('debug')->with(self::anything(), self::callback(static fn (array $context): bool => $context[$key] === $id));
 
+			self::assertSame(['deleted' => 0, 'remaining' => 0, 'retry' => false, 'nextDueAt' => null], $collect($this->collector($client, logger: $logger)), $case);
+		}
+	}
+
+	/** A listing Etherpad does not answer at all is tried again, and said under its group. */
+	public function testAGroupUnlistedInAnOutageIsTriedAgain(): void {
 		$down = $this->createMock(EtherpadClient::class);
 		$down->method('listSessionsOfGroup')->willThrowException(new EtherpadClientException('Connection timed out'));
+		$down->method('assertAnswering')->willThrowException(new EtherpadClientException('Connection timed out'));
 		$logger = $this->createMock(LoggerInterface::class);
 		$logger->expects(self::once())->method('warning')->with(
 			'Could not list the Etherpad sessions to collect.',
@@ -578,6 +614,7 @@ class ExpiredSessionCollectorTest extends TestCase {
 		$client = $this->createMock(EtherpadClient::class);
 		$client->method('listSessionsOfAuthor')
 			->willThrowException(new EtherpadClientException('Connection timed out'));
+		$client->method('assertAnswering')->willThrowException(new EtherpadClientException('Connection timed out'));
 
 		self::assertSame(
 			['deleted' => 0, 'remaining' => 0, 'retry' => true, 'nextDueAt' => null],
@@ -599,6 +636,7 @@ class ExpiredSessionCollectorTest extends TestCase {
 			$logger,
 			new FixedClock(),
 			new SessionDeletes($client, new ManagedPadLifecycle($client, $logger), $logger),
+			new ManagedPadLifecycle($client, $logger),
 			...($budgetSeconds === null ? [] : [$budgetSeconds]),
 		);
 	}

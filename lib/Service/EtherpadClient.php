@@ -55,11 +55,13 @@ class EtherpadClient {
 	public const PREVIEW_MAX_BYTES = 5242880;
 
 	/**
-	 * What a session listing may weigh: tens of thousands of sessions, far
-	 * past what a run deletes or a cookie carries, and decoded well within
-	 * a background job's memory. Etherpad answers a listing in one body,
-	 * which would otherwise be read whole however long, and a process out
-	 * of memory reaches no catch.
+	 * What a sweep's session listing may weigh: tens of thousands of
+	 * sessions, decoded well within a background job's memory. Etherpad
+	 * answers a listing in one body, as long as the index is - and nothing
+	 * bounds the index - which would otherwise be read whole, and a
+	 * process out of memory reaches no catch. A sweep can leave an index
+	 * past it for later (ExpiredSessionCollector); a revoke reads its
+	 * listing whole, as ending access is worth the memory.
 	 */
 	public const SESSION_LISTING_MAX_BYTES = 4194304;
 
@@ -294,17 +296,19 @@ class EtherpadClient {
 	 *
 	 * @param ?int $unreadableEntries set to how many ids the index listed
 	 *   that Etherpad could not describe — see below
+	 * @param ?int $maxBytes what the body may weigh (SESSION_LISTING_MAX_BYTES), or null to read it whole
 	 * @return array<string,array{groupID:string,validUntil:int}>
-	 * @throws EtherpadTooLargeException past SESSION_LISTING_MAX_BYTES
+	 * @throws EtherpadTooLargeException past $maxBytes
 	 */
 	public function listSessionsOfAuthor(
 		string $authorId,
 		?int $timeoutSeconds = null,
 		?int &$unreadableEntries = null,
+		?int $maxBytes = null,
 	): array {
 		// POST like every other authenticated call: a GET would put the
 		// apikey in the URL, and from there into proxy and access logs.
-		$data = $this->apiCall('listSessionsOfAuthor', ['authorID' => $authorId], timeoutSeconds: $timeoutSeconds, maxBytes: self::SESSION_LISTING_MAX_BYTES);
+		$data = $this->apiCall('listSessionsOfAuthor', ['authorID' => $authorId], timeoutSeconds: $timeoutSeconds, maxBytes: $maxBytes);
 		return $this->sessionsIn($data, $unreadableEntries);
 	}
 
@@ -315,15 +319,17 @@ class EtherpadClient {
 	 *
 	 * @param ?int $unreadableEntries set to how many ids the index listed
 	 *   that Etherpad could not describe
+	 * @param ?int $maxBytes what the body may weigh (SESSION_LISTING_MAX_BYTES), or null to read it whole
 	 * @return array<string,array{groupID:string,validUntil:int}>
-	 * @throws EtherpadTooLargeException past SESSION_LISTING_MAX_BYTES
+	 * @throws EtherpadTooLargeException past $maxBytes
 	 */
 	public function listSessionsOfGroup(
 		string $groupId,
 		?int $timeoutSeconds = null,
 		?int &$unreadableEntries = null,
+		?int $maxBytes = null,
 	): array {
-		$data = $this->apiCall('listSessionsOfGroup', ['groupID' => $groupId], timeoutSeconds: $timeoutSeconds, maxBytes: self::SESSION_LISTING_MAX_BYTES);
+		$data = $this->apiCall('listSessionsOfGroup', ['groupID' => $groupId], timeoutSeconds: $timeoutSeconds, maxBytes: $maxBytes);
 		return $this->sessionsIn($data, $unreadableEntries);
 	}
 
