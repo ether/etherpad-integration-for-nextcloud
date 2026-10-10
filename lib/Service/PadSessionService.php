@@ -10,6 +10,7 @@ namespace OCA\EtherpadNextcloud\Service;
 
 use OCA\EtherpadNextcloud\Exception\PadFileFormatException;
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
+use OCA\EtherpadNextcloud\Util\EtherpadErrorClassifier;
 use OCA\EtherpadNextcloud\Util\SafeError;
 use OCP\AppFramework\Utility\ITimeFactory;
 use OCP\IConfig;
@@ -105,14 +106,19 @@ class PadSessionService {
 			$authorId = $this->syncAuthorMapping($uid, $authorId, $displayName);
 			try {
 				return [...$this->openContextFor($uid, $authorId, $groupId, $padId, $validUntil), 'authorId' => $authorId];
-			} catch (EtherpadClientException) {
-				// Nothing is cleared. The author id is the one route from a
-				// uid to that user's live sessions, and dropping it because
-				// an open failed would leave a cache indistinguishable from a
-				// user who never opened a protected pad — a logout after a
-				// brief outage would then revoke nothing. A stale id is the
-				// lesser risk: the listing answers that it does not exist,
-				// and the bootstrap below overwrites it on the next open.
+			} catch (EtherpadClientException $e) {
+				// Only an author Etherpad does not know - an id kept from
+				// before a reset - is made anew below. Anything else, an
+				// outage say, fails the open as it is: asking again would
+				// only wait again. Nothing is cleared either: the author id
+				// is the one route from a uid to that user's live sessions,
+				// and dropping it because an open failed would leave a cache
+				// indistinguishable from a user who never opened a protected
+				// pad - a logout after a brief outage would then revoke
+				// nothing.
+				if (!EtherpadErrorClassifier::isAuthorUnknown($e)) {
+					throw $e;
+				}
 			}
 		}
 

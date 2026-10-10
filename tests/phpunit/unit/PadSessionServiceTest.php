@@ -145,6 +145,36 @@ class PadSessionServiceTest extends TestCase {
 	}
 
 	/**
+	 * A kept author is made anew only when Etherpad says it does not know
+	 * it. An outage fails the open at the first call that times out: asking
+	 * for the author again would only wait again - for a visitor of a link
+	 * as for a signed-in user.
+	 */
+	public function testAnOutageFailsAnOpenWithAKeptAuthorAtOnce(): void {
+		$timeout = new EtherpadClientException('Etherpad API request failed: createSession', 0, new \RuntimeException('cURL error 28: Operation timed out after 15001 milliseconds with 0 bytes received'));
+		$opens = [
+			'a visitor' => ['public-share:token:' . str_repeat('0f', 16), '', 'a.kept', 0],
+			'a signed-in user' => ['admin', 'Admin', '', 1],
+		];
+		foreach ($opens as $case => [$uid, $name, $kept, $nameSyncs]) {
+			$etherpadClient = $this->createMock(EtherpadClient::class);
+			$etherpadClient->expects($this->once())->method('createSession')->willThrowException($timeout);
+			$etherpadClient->expects($this->exactly($nameSyncs))->method('createAuthorIfNotExistsFor')->willReturn('a.kept');
+			$config = $this->createMock(IConfig::class);
+			$config->method('getUserValue')->willReturnMap([
+				['admin', 'etherpad_nextcloud', 'etherpad_author_id', '', 'a.kept'],
+				['admin', 'etherpad_nextcloud', 'etherpad_author_display_name', '', 'Admin'],
+			]);
+			try {
+				$this->buildService($etherpadClient, $config)->createProtectedOpenContext($uid, $name, 'g.ABCDEFGHIJKLMNOP$pad-1', 10800, $kept);
+				$this->fail($case . ': opened');
+			} catch (EtherpadClientException $e) {
+				$this->assertSame($timeout, $e, $case);
+			}
+		}
+	}
+
+	/**
 	 * A failed open must not take the ability to revoke with it.
 	 *
 	 * The author id is the only route from a uid to that user's live
@@ -895,7 +925,7 @@ class PadSessionServiceTest extends TestCase {
 				TestCase::assertIsInt($validUntil);
 				if ($call === 1) {
 					TestCase::assertSame($cachedAuthorId, $actualAuthorId);
-					throw new EtherpadClientException('cached author invalid');
+					throw new EtherpadRefusedException('Etherpad API error (createSession): authorID does not exist');
 				}
 
 				TestCase::assertSame($freshAuthorId, $actualAuthorId);
@@ -978,10 +1008,10 @@ class PadSessionServiceTest extends TestCase {
 	}
 
 	/**
-	 * A public link's visitors share one author and the rights the link
-	 * grants, so the session made for the link in the last hour is handed
-	 * out again: opened twice, the link makes one session, and the second
-	 * cookie carries it with the expiry Etherpad gave for it.
+	 * The session made for a link's opener in the last hour is handed out
+	 * again - here the link's own author, which visitors past the hour's
+	 * count share: opened twice, the link makes one session, and the
+	 * second cookie carries it with the expiry Etherpad gave for it.
 	 */
 	public function testAPublicLinkHandsOutTheSessionItMadeInTheLastHour(): void {
 		[$etherpadClient, $config, $made, $calls] = $this->publicLinkFixtures();
