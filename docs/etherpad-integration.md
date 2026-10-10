@@ -331,17 +331,18 @@ A public link's open that made a session leaves its author's id and the
 group's, and a job for the group (`CollectExpiredGroupSessionsJob`)
 collects the expired sessions of every author in it through
 `listSessionsOfGroup`, coming back for a session still live an hour on at
-the soonest. It picks up what the authors' sweeps leave: a signed-in
-user's sessions from before the collector existed, or left by a sweep
-that gave up, was lost or was parked, which keeps short the listing a
-delete's revoke reads. And it is
-one job a group whatever authors open through the link: today a link's
-visitors all open as its author, and should each open as an author of
-their own, a job an author would be one a visitor. The author's sweep
-runs beside it: a group can hold more sessions than a run can list in
-time - every user's, and in a legacy group other pads' - and the
-author's index, often a smaller one, is collected all the same. A public
-link's open makes no listing, whatever ids the browser carries.
+the soonest. It picks up what the authors' sweeps leave - a signed-in
+user's sessions from before the collector existed, or left by a sweep that
+gave up or was lost, while that user opens no protected pad, and an author
+index too long for the author's own sweep - which keeps short the listing
+a delete's revoke reads. And it is one job a group whatever authors open
+through the link: today a link's visitors all open as its author, and
+should each open as an author of their own, a job an author would be one a
+visitor. The author's sweep runs beside it: a group can hold more sessions
+than a run can list in time - every user's, and in a legacy group other
+pads' - and the author's index, often a smaller one, is collected all the
+same. A public link's open makes no listing, whatever ids the browser
+carries.
 
 The id is also all that is stored. A public link's uid is
 `public-share:<token>`, the credential from the share URL, and job
@@ -349,20 +350,24 @@ arguments are persisted and printed by `occ`.
 
 A run deletes up to 250 sessions within 20 seconds, requeueing itself for
 the rest. A listing is read up to 4 MiB, tens of thousands of sessions,
-rather than whole into a job's memory; one too long to read, or too slow
-while Etherpad answers otherwise, is asked once more a day later, then
-left until an open queues the sweep again; an author's index past the cap
-shrinks only through its groups' sweeps. An author or group Etherpad no
-longer has ends the sweep. A revoke's listing is
-read whole. A refusal is requeued with a growing delay and a limit; sessions
-the server will never delete are skipped rather than allowed to block the
-ones behind them, up to twenty refusals in a row and fifty in a run - a failure that reads
-as Etherpad unreachable, when Etherpad then does not answer at all, is an
-outage, and a few end the run. A run with nothing to do comes back when the
-earliest session still standing falls due, which also keeps the next open
-from queueing a second sweep. Nothing is deleted until five minutes after
-expiry, because Etherpad judges `validUntil` against its own clock and a
-session dead by ours may still be live there.
+rather than whole into a job's memory. One too long to read, or timing out
+while Etherpad answers otherwise, parks the sweep for a day, with a
+warning that says which: it lists nothing meanwhile and no open queues it,
+and after that day the next open does. A proxy that gives up before
+Etherpad's 15 seconds answers with an HTTP error instead, which is tried
+again with the backoff as any other. An author's index past the cap
+shrinks only through the sweeps of groups a public link is opened for, or
+as a pad's group is deleted for good. An author or group Etherpad no
+longer has ends the sweep. A revoke's listing is read whole. A refusal is
+requeued with a growing delay and a limit; sessions the server will never
+delete are skipped rather than allowed to block the ones behind them, up
+to twenty refusals in a row and fifty in a run - a failure that reads as
+Etherpad unreachable, when Etherpad then does not answer at all, is an
+outage, and a few end the run. A run with nothing to do comes back when
+the earliest session still standing falls due, which also keeps the next
+open from queueing a second sweep. Nothing is deleted until five minutes
+after expiry, because Etherpad judges `validUntil` against its own clock
+and a session dead by ours may still be live there.
 
 This assumes deleting a session removes its id from the author index, and
 from the group's: Etherpad's `deleteSession` takes it out of both.
@@ -372,9 +377,12 @@ out exactly the entries a surviving key produces. Where entries do survive,
 collecting cannot shrink the index and the sweep says so in the log.
 
 Not covered: sessions still being created – that is what keeps an open pad
-working – and authors nobody opens a pad for in a group without a public
-link, whose leftovers cost storage only. Recording each session's id at issue time would remove the listing;
-renewing sessions instead of minting them would remove the pile.
+working –, authors nobody opens a pad for in a group no public link is
+opened for, and an author's index past the cap when no public link is
+opened for its groups. What they leave costs storage, and the length of
+the listing a revoke reads. Recording each session's id at issue time
+would remove the listing; renewing sessions instead of minting them would
+remove the pile.
 
 ### A public link's session
 
