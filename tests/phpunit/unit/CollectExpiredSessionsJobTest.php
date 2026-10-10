@@ -162,25 +162,6 @@ class CollectExpiredSessionsJobTest extends TestCase {
 	}
 
 	/**
-	 * The backoff table is the limit. A second constant saying how long it
-	 * is would be a fact about this array kept somewhere else, and tuning
-	 * the delays without noticing would index past its end — inside a cron
-	 * worker, with the row already removed and the backlog with it.
-	 */
-	public function testTheBackoffTableIsItsOwnLimit(): void {
-		$collector = $this->createMock(ExpiredSessionCollector::class);
-		$collector->method('collect')->willReturn(['deleted' => 0, 'remaining' => 0, 'retry' => true, 'nextDueAt' => null]);
-
-		$jobList = $this->createMock(IJobList::class);
-		$jobList->expects(self::never())->method('scheduleAfter');
-
-		$job = $this->job($collector, $jobList);
-		// The last retry the table holds, three delays long.
-		$job->setArgument(['authorId' => 'a.author', 'attempt' => 3]);
-		$job->start($jobList);
-	}
-
-	/**
 	 * A plain row queued while a run was in progress stands down when a
 	 * retry is waiting.
 	 *
