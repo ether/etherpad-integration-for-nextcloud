@@ -151,6 +151,15 @@ class PublicLinkVisitorsTest extends TestCase {
 		$this->assertStringStartsWith(self::LINK . ':', $this->visitors($failing, $logger)->uidFor(self::TOKEN));
 	}
 
+	/** A visitor's uid is told from the link's and a user's by its form. */
+	public function testTellsAVisitorByTheirUid(): void {
+		self::assertTrue(PublicLinkVisitors::isVisitor('public-share:token:' . str_repeat('0f', 16)));
+		self::assertFalse(PublicLinkVisitors::isVisitor('public-share:token'));
+		self::assertFalse(PublicLinkVisitors::isVisitor('public-share:token:' . str_repeat('0f', 15)));
+		self::assertFalse(PublicLinkVisitors::isVisitor('public-share:token:' . str_repeat('0F', 16)));
+		self::assertFalse(PublicLinkVisitors::isVisitor('admin'));
+	}
+
 	/** Neither the session nor the cache holds the token: their keys are HMACs. */
 	public function testNoKeyCarriesTheToken(): void {
 		$this->visitors($this->memcache())->uidFor(self::TOKEN);

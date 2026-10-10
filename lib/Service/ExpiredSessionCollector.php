@@ -31,13 +31,15 @@ use Psr\Log\LoggerInterface;
  * request: an open leaves the author's id, and the job lists the expired
  * ones and deletes them.
  *
- * A public link's open notes its group as well. The group's sweep takes
- * every author's expired sessions in it, a signed-in user's too, which
- * keeps short the listing a delete's revoke reads, and it is one job a
- * group however many authors open through the link. The author's sweep
- * runs beside it: a group can hold more sessions than a run can list in
- * time - every user's, a legacy group's other pads' - and the author's
- * index, often a smaller one, is collected all the same.
+ * A public link's open notes its group as well, and a visitor's with an
+ * author of their own (PublicLinkVisitors) only that: one job a group,
+ * however many visitors open it. The group's sweep takes every author's
+ * expired sessions in it, a signed-in user's too, which keeps short the
+ * listing a delete's revoke reads. The author's sweep runs beside it for
+ * the link's own author: a group can hold more sessions than a run can
+ * list in time - every user's, a legacy group's other pads' - and the
+ * author's index, often a smaller one, is collected all the same. A
+ * visitor's author has no such fallback.
  */
 class ExpiredSessionCollector {
 

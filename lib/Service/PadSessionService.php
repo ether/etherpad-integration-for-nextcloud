@@ -193,9 +193,12 @@ class PadSessionService {
 			$chosenSessionId = $session['sessionId'];
 			$validUntil = $session['validUntil'];
 			// Only a session made adds something to collect, and this route
-			// is open to anyone. Both sweeps: ExpiredSessionCollector says why.
+			// is open to anyone. A visitor's own author is collected by group
+			// alone, or each would queue a sweep (ExpiredSessionCollector).
 			if ($made) {
-				$this->collector->noteAuthor($authorId);
+				if (!PublicLinkVisitors::isVisitor($uid)) {
+					$this->collector->noteAuthor($authorId);
+				}
 				$this->collector->noteGroup($groupId);
 			}
 		} else {

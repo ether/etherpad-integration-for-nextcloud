@@ -57,6 +57,11 @@ class PublicLinkVisitors {
 	) {
 	}
 
+	/** Whether $uid is a link's visitor of their own, not a link or a user. */
+	public static function isVisitor(string $uid): bool {
+		return preg_match('/^' . preg_quote(PadSessionService::PUBLIC_LINK_UID_PREFIX, '/') . '[^:]+:[0-9a-f]{' . self::ID_LENGTH . '}$/D', $uid) === 1;
+	}
+
 	/**
 	 * The uid the visitor of this link opens as: their own, or the link's
 	 * when it has its visitors for the hour.

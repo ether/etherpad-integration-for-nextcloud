@@ -130,6 +130,20 @@ class PadSessionServiceTest extends TestCase {
 	}
 
 	/**
+	 * A link's visitor with an author of their own is noted by group alone:
+	 * a sweep for each visitor's author would be a job a visitor.
+	 */
+	public function testAVisitorOfALinkIsNotedByGroupAlone(): void {
+		[$etherpadClient, $config] = $this->publicLinkFixtures();
+		$collector = $this->createMock(\OCA\EtherpadNextcloud\Service\ExpiredSessionCollector::class);
+		$collector->expects($this->once())->method('noteGroup')->with('g.ABCDEFGHIJKLMNOP');
+		$collector->expects($this->never())->method('noteAuthor');
+		$service = $this->buildService($etherpadClient, $config, collector: $collector, cacheFactory: $this->cacheFor());
+
+		$service->createProtectedOpenContext('public-share:token:' . str_repeat('0f', 16), '', 'g.ABCDEFGHIJKLMNOP$pad-1', 10800);
+	}
+
+	/**
 	 * A failed open must not take the ability to revoke with it.
 	 *
 	 * The author id is the only route from a uid to that user's live

@@ -327,26 +327,27 @@ it belongs in the job together with the deleting. This also reaches the
 case a request could not: the first open of a browsing session carries no
 cookie ids and so makes no listing.
 
-A public link's open that made a session leaves its author's id and the
-group's, and a job for the group (`CollectExpiredGroupSessionsJob`)
-collects the expired sessions of every author in it through
-`listSessionsOfGroup`, coming back for a session still live an hour on at
-the soonest. It picks up what the authors' sweeps leave - a signed-in
-user's sessions from before the collector existed, or left by a sweep that
-gave up or was lost, while that user opens no protected pad, and an author
-index too long for the author's own sweep - which keeps short the listing
-a delete's revoke reads. And it is one job a group whatever authors open
-through the link: today a link's visitors all open as its author, and
-should each open as an author of their own, a job an author would be one a
-visitor. The author's sweep runs beside it: a group can hold more sessions
+A public link's open that made a session leaves the group's id, and the
+author's when it opens as the link itself; a visitor with an author of
+their own is collected by group alone, so a link's visitors queue one
+sweep, not one each. A job for the group
+(`CollectExpiredGroupSessionsJob`) collects the expired sessions of every
+author in it through `listSessionsOfGroup`, coming back for a session
+still live an hour on at the soonest. It picks up what the authors' sweeps
+leave - a signed-in user's sessions from before the collector existed, or
+left by a sweep that gave up or was lost, while that user opens no
+protected pad, and an author index too long for the author's own sweep -
+which keeps short the listing a delete's revoke reads. The author's sweep
+runs beside it for the link's own author: a group can hold more sessions
 than a run can list in time - every user's, and in a legacy group other
 pads' - and the author's index, often a smaller one, is collected all the
 same. A public link's open makes no listing, whatever ids the browser
 carries.
 
-The id is also all that is stored. A public link's uid is
-`public-share:<token>`, the credential from the share URL, and job
-arguments are persisted and printed by `occ`.
+The id is also all that is stored. A public link's uid -
+`public-share:<token>`, or `public-share:<token>:<visitor>` for a visitor
+- carries the credential from the share URL, and job arguments are
+persisted and printed by `occ`.
 
 A run deletes up to 250 sessions within 20 seconds, requeueing itself for
 the rest. A listing is read up to 4 MiB, tens of thousands of sessions,
@@ -384,11 +385,11 @@ collecting cannot shrink the index and the sweep says so in the log.
 
 Not covered: sessions still being created – that is what keeps an open pad
 working –, authors nobody opens a pad for in a group no public link is
-opened for, and an author's index past the cap when no public link is
-opened for its groups. What they leave costs storage, and the length of
-the listing a revoke reads. Recording each session's id at issue time
-would remove the listing; renewing sessions instead of minting them would
-remove the pile.
+opened for, an author's index past the cap when no public link is opened
+for its groups, and a link's visitors in a group too long to list. What
+they leave costs storage, and the length of the listing a revoke reads.
+Recording each session's id at issue time would remove the listing;
+renewing sessions instead of minting them would remove the pile.
 
 ### A public link's visitors
 
