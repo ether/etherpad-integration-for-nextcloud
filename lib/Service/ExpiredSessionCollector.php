@@ -28,10 +28,13 @@ use Psr\Log\LoggerInterface;
  * request: an open leaves the author's id, and the job lists the expired
  * ones and deletes them.
  *
- * A public link's sessions are collected by their group instead: the
+ * A public link's sessions are collected by their group as well: the
  * link's visitors share the group the pad is in, whatever author each
  * opens as, so one job a group holds them all where a job an author
- * would be one a visitor.
+ * would be one a visitor. The link's own author is still noted too: a
+ * group can hold more sessions than a run can list - other pads' of a
+ * legacy group, everyone's - and the author's small index is collected
+ * then all the same.
  */
 class ExpiredSessionCollector {
 

@@ -71,6 +71,8 @@ class PadSessionServiceTest extends TestCase {
 		// The author id alone. For a public link the uid is the share token,
 		// and this argument is persisted in the jobs table.
 		$collector->expects($this->once())->method('noteAuthor')->with('a.author');
+		// A signed-in user's sessions are collected by author alone.
+		$collector->expects($this->never())->method('noteGroup');
 
 		// No incoming cookie: the case the old trigger could never see.
 		$service = $this->buildService(
@@ -85,14 +87,15 @@ class PadSessionServiceTest extends TestCase {
 	}
 
 	/**
-	 * A public link's open notes the group it opened, not the author: the
-	 * link's visitors share the group, whatever author each opens as.
+	 * A public link's open notes the group it opened: the link's visitors
+	 * share it, whatever author each opens as. And its author, whose small
+	 * index is collected should the group's be too long to list in a run.
 	 */
-	public function testAPublicLinkTellsTheCollectorItsGroup(): void {
+	public function testAPublicLinkTellsTheCollectorItsGroupAndItsAuthor(): void {
 		[$etherpadClient, $config] = $this->publicLinkFixtures();
 		$collector = $this->createMock(\OCA\EtherpadNextcloud\Service\ExpiredSessionCollector::class);
 		$collector->expects($this->once())->method('noteGroup')->with('g.ABCDEFGHIJKLMNOP');
-		$collector->expects($this->never())->method('noteAuthor');
+		$collector->expects($this->once())->method('noteAuthor')->with('a.public');
 
 		$this->buildService($etherpadClient, $config, collector: $collector)
 			->createProtectedOpenContext('public-share:token', 'Public share', 'g.ABCDEFGHIJKLMNOP$pad-1', 10800);

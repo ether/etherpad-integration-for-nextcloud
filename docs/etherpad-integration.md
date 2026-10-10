@@ -320,12 +320,15 @@ it belongs in the job together with the deleting. This also reaches the
 case a request could not: the first open of a browsing session carries no
 cookie ids and so makes no listing.
 
-A public link's open leaves the group's id instead, and a job for the
+A public link's open leaves the group's id as well, and a job for the
 group (`CollectExpiredGroupSessionsJob`) collects the expired sessions of
 every author in it through `listSessionsOfGroup`. A link's visitors share
 the group the pad is in, whatever author each opens as, so one job a
-group holds them all where a job an author could be one a visitor. A
-public link never carries cookie ids either.
+group holds them all where a job an author could be one a visitor. The
+link's own author is noted too: a group can hold more sessions than a
+run can list in time - every user's, and in a legacy group other pads'
+- and the author's small index is collected then all the same. A public
+link never carries cookie ids either.
 
 The id is also all that is stored. A public link's uid is
 `public-share:<token>`, the credential from the share URL, and job

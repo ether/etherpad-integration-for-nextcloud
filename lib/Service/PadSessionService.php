@@ -149,13 +149,14 @@ class PadSessionService {
 	private function openContextFor(string $uid, string $authorId, string $groupId, string $padId, int $validUntil): array {
 		// Before the listing below, which only happens when the browser
 		// carries ids — a first open makes none, and a public link never
-		// does. A public link's by the group: its visitors share it,
-		// whatever author each opens as.
+		// does. A public link's group too: its visitors share it, whatever
+		// author each opens as. Its author's own index is still noted, a
+		// small one, which is collected should the group's be too long to
+		// list in a run.
+		$this->collector->noteAuthor($authorId);
 		$isLink = str_starts_with($uid, self::PUBLIC_LINK_UID_PREFIX);
 		if ($isLink) {
 			$this->collector->noteGroup($groupId);
-		} else {
-			$this->collector->noteAuthor($authorId);
 		}
 
 		$carriedSessionIds = $this->sessionIdsFromCookie();
