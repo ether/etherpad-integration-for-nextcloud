@@ -175,10 +175,8 @@ class CollectExpiredSessionsJobTest extends TestCase {
 		$jobList->expects(self::never())->method('scheduleAfter');
 
 		$job = $this->job($collector, $jobList);
-		$job->setArgument([
-			'authorId' => 'a.author',
-			'attempt' => count(CollectExpiredSessionsJob::attemptArguments(['authorId' => 'b'])),
-		]);
+		// The last retry the table holds, three delays long.
+		$job->setArgument(['authorId' => 'a.author', 'attempt' => 3]);
 		$job->start($jobList);
 	}
 
@@ -243,15 +241,36 @@ class CollectExpiredSessionsJobTest extends TestCase {
 		$job->start($jobList);
 	}
 
-	/** Every retry shape the collector has to recognise before queueing one. */
-	public function testNamesEveryRetryArgumentItCanProduce(): void {
-		self::assertSame([
-			['authorId' => 'a.author', 'attempt' => 1],
-			['authorId' => 'a.author', 'attempt' => 2],
-			['authorId' => 'a.author', 'attempt' => 3],
-		], CollectExpiredSessionsJob::attemptArguments(['authorId' => 'a.author']));
-	}
+	/**
+	 * Every retry is queued under a shape isQueued() asks for, the order of
+	 * the keys too: the job list matches the encoded argument, so a retry
+	 * it does not ask for would let an open queue a runnable row beside it.
+	 */
+	public function testQueuesEveryRetryUnderAShapeItRecognises(): void {
+		$asked = [];
+		$jobList = $this->createMock(IJobList::class);
+		$jobList->method('has')->willReturnCallback(static function (string $job, mixed $argument) use (&$asked): bool {
+			$asked[] = $argument;
+			return false;
+		});
+		CollectExpiredSessionsJob::isQueued($jobList, ['authorId' => 'a.author']);
 
+		foreach ([0, 1, 2] as $attempt) {
+			$scheduled = [];
+			$collector = $this->createMock(ExpiredSessionCollector::class);
+			$collector->method('collect')->willReturn(['deleted' => 0, 'remaining' => 0, 'retry' => true, 'nextDueAt' => null]);
+			$rows = $this->createMock(IJobList::class);
+			$rows->method('scheduleAfter')->willReturnCallback(static function (string $job, int $runAfter, mixed $argument) use (&$scheduled): void {
+				$scheduled[] = $argument;
+			});
+			$job = $this->job($collector, $rows);
+			$job->setArgument($attempt === 0 ? ['authorId' => 'a.author'] : ['authorId' => 'a.author', 'attempt' => $attempt]);
+			$job->start($rows);
+
+			self::assertSame([['authorId' => 'a.author', 'attempt' => $attempt + 1]], $scheduled);
+			self::assertContains($scheduled[0], $asked, 'attempt ' . ($attempt + 1));
+		}
+	}
 
 	/** A run that did its work continues, it does not retry. */
 	public function testAContinuationIsNotARetry(): void {

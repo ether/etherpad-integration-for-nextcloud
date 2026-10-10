@@ -34,6 +34,9 @@ class GroupSessionRevoker {
 	public const KEPT_FOR_A_PAD_OF_NO_FILE = 'Left the Etherpad sessions of a group that holds a pad of no file.';
 	public const KEPT_FOR_A_FILE_IN_FILES = 'Left the Etherpad sessions of a group with a file in Files.';
 
+	/** Said when the files of a group's pads cannot be looked up, before the listing or before a delete. */
+	private const FILES_NOT_LOOKED_UP = 'Could not look up the files of a group\'s pads to revoke its Etherpad sessions.';
+
 	/** Deletes a pass makes at most: a backlog goes on in the next. */
 	private const MAX_PER_RUN = 250;
 
@@ -123,7 +126,7 @@ class GroupSessionRevoker {
 			$places = $this->bindingService->placesOf($files);
 			$inFiles = $this->bindingService->anyInFiles($places);
 		} catch (\Throwable $e) {
-			$this->logger->warning('Could not look up the files of a group\'s pads to revoke its Etherpad sessions.', [...$context, ...SafeError::context($e)]);
+			$this->logger->warning(self::FILES_NOT_LOOKED_UP, [...$context, ...SafeError::context($e)]);
 			return self::RETRY;
 		}
 		if ($inFiles) {
@@ -167,7 +170,7 @@ class GroupSessionRevoker {
 				$back = $this->bindingService->anyInFiles($now);
 				return !$back;
 			} catch (\Throwable $e) {
-				$this->logger->warning('Could not look up the files of a group\'s pads to revoke its Etherpad sessions.', [...$context, ...SafeError::context($e)]);
+				$this->logger->warning(self::FILES_NOT_LOOKED_UP, [...$context, ...SafeError::context($e)]);
 				$lookupFailed = true;
 				return false;
 			}

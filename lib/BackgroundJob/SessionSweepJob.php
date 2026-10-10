@@ -88,22 +88,6 @@ abstract class SessionSweepJob extends QueuedJob {
 	}
 
 	/**
-	 * The arguments a waiting retry can have, so whoever queues a sweep can
-	 * recognise one before queueing a second row beside it.
-	 *
-	 * @param array<string,string|int> $argument
-	 * @return list<array<string,string|int>>
-	 */
-	public static function attemptArguments(array $argument): array {
-		$arguments = [];
-		foreach (array_keys(self::RETRY_DELAYS) as $index) {
-			$arguments[] = $argument + ['attempt' => $index + 1];
-		}
-
-		return $arguments;
-	}
-
-	/**
 	 * Whether a sweep of $argument is waiting, in every shape: the job list
 	 * matches arguments exactly, so asking only about the plain one would
 	 * miss a retry, or a second look, and queue a runnable row beside it.
@@ -129,8 +113,8 @@ abstract class SessionSweepJob extends QueuedJob {
 		$arguments = [];
 		foreach ($looks as $look) {
 			$arguments[] = $look;
-			foreach (self::attemptArguments($look) as $retry) {
-				$arguments[] = $retry;
+			foreach (array_keys(self::RETRY_DELAYS) as $index) {
+				$arguments[] = $look + ['attempt' => $index + 1];
 			}
 		}
 		$arguments[] = $argument + ['parked' => 1];

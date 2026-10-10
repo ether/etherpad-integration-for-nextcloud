@@ -37,8 +37,13 @@ class SessionDeletes {
 	 * @return array<K,array{groupID:string,validUntil:int}>
 	 */
 	public static function live(array $sessions, int $now): array {
-		$expiredBefore = $now - EtherpadClient::CLOCK_SKEW_ALLOWANCE_SECONDS;
-		return array_filter($sessions, static fn (array $info): bool => $info['validUntil'] > $expiredBefore);
+		$expiredBy = self::expiredBy($now);
+		return array_filter($sessions, static fn (array $info): bool => $info['validUntil'] > $expiredBy);
+	}
+
+	/** The `validUntil` at or before which a session is expired on both clocks at $now. */
+	public static function expiredBy(int $now): int {
+		return $now - EtherpadClient::CLOCK_SKEW_ALLOWANCE_SECONDS;
 	}
 
 	/**

@@ -63,17 +63,62 @@ class PadSessionRevoker {
 	}
 
 	/**
-	 * Every session this user holds, for every group.
+	 * Every session this user holds, for every group: on a logout, or as an
+	 * account is deleted.
 	 *
 	 * Every one, not only the ones this browser is carrying. A cookie that
 	 * has left the machine cannot be narrowed down by the cookie you can
 	 * see, and the case this exists for — a shared computer — is exactly
 	 * the case where the copy you can see is not the only one.
 	 *
+	 * Best effort, and bounded: it runs beside something someone asked for,
+	 * so it may neither fail nor hang on an unreachable pad server. A user
+	 * who opened pads all morning holds a live session per open, each a
+	 * call of its own; what does not fit in the budget is left to expire.
+	 * The budget starts before the listing, which is a call too.
+	 *
 	 * @return int how many were removed
 	 */
 	public function revokeAll(string $uid): int {
-		return $this->revoke($uid);
+		$budget = RunBudget::forRequest($this->timeFactory, self::BUDGET_SECONDS);
+		$authorId = $this->padSessionService->cachedAuthorId($uid);
+		if ($authorId === '') {
+			// Never opened a protected pad, so nothing was ever issued.
+			return 0;
+		}
+
+		// The same check every delete gets: reading the cached author is a
+		// database round trip, and may have taken the budget.
+		$timeout = $budget->nextCallTimeout();
+		if ($timeout === null) {
+			$this->logger->warning('No time left to revoke Etherpad sessions; they will expire on their own.', [
+				'app' => 'etherpad_nextcloud',
+				'uid' => $uid,
+			]);
+			return 0;
+		}
+
+		try {
+			$sessions = $this->etherpadClient->listSessionsOfAuthor($authorId, $timeout, $unreadable);
+		} catch (\Throwable $e) {
+			$this->logger->warning('Could not list the Etherpad sessions to revoke; they will expire on their own.', [
+				'app' => 'etherpad_nextcloud',
+				'uid' => $uid,
+				...SafeError::context($e),
+			]);
+			return 0;
+		}
+
+		// Ids the index lists that Etherpad cannot describe, not revoked
+		// here: whether one is live cannot be told, and one with no record
+		// at all deleteSession answers as not existing. They belong in the
+		// number that says this logout did not finish, not dropped.
+		$tally = self::emptyTally();
+		$tally['left'] = $unreadable ?? 0;
+
+		$context = ['uid' => $uid];
+		$this->deleteLive($this->live($this->carriedFirst($sessions)), $budget, $context, $tally);
+		return $this->report($tally, $context);
 	}
 
 	/**
@@ -210,56 +255,6 @@ class PadSessionRevoker {
 		}
 		$this->deleteLive(SessionDeletes::latestFirst($sessions), $budget, ['groupId' => $groupId], $tally, self::MAX_PER_DELETE);
 		return true;
-	}
-
-	/**
-	 * Best effort, and bounded: this runs on a logout, or as an account is
-	 * deleted, beside something someone asked for, so it may neither fail
-	 * nor hang on an unreachable pad server. A user who opened pads all
-	 * morning holds a live session per open, each a call of its own; what
-	 * does not fit in the budget is left to expire. The budget starts
-	 * before the listing, which is a call too.
-	 */
-	private function revoke(string $uid): int {
-		$budget = RunBudget::forRequest($this->timeFactory, self::BUDGET_SECONDS);
-		$authorId = $this->padSessionService->cachedAuthorId($uid);
-		if ($authorId === '') {
-			// Never opened a protected pad, so nothing was ever issued.
-			return 0;
-		}
-
-		// The same check every delete gets: reading the cached author is a
-		// database round trip, and may have taken the budget.
-		$timeout = $budget->nextCallTimeout();
-		if ($timeout === null) {
-			$this->logger->warning('No time left to revoke Etherpad sessions; they will expire on their own.', [
-				'app' => 'etherpad_nextcloud',
-				'uid' => $uid,
-			]);
-			return 0;
-		}
-
-		try {
-			$sessions = $this->etherpadClient->listSessionsOfAuthor($authorId, $timeout, $unreadable);
-		} catch (\Throwable $e) {
-			$this->logger->warning('Could not list the Etherpad sessions to revoke; they will expire on their own.', [
-				'app' => 'etherpad_nextcloud',
-				'uid' => $uid,
-				...SafeError::context($e),
-			]);
-			return 0;
-		}
-
-		// Ids the index lists that Etherpad cannot describe, not revoked
-		// here: whether one is live cannot be told, and one with no record
-		// at all deleteSession answers as not existing. They belong in the
-		// number that says this logout did not finish, not dropped.
-		$tally = self::emptyTally();
-		$tally['left'] = $unreadable ?? 0;
-
-		$context = ['uid' => $uid];
-		$this->deleteLive($this->live($this->carriedFirst($sessions)), $budget, $context, $tally);
-		return $this->report($tally, $context);
 	}
 
 	/** @return array{attempted: int, revoked: int, left: int} */
