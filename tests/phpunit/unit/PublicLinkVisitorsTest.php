@@ -123,32 +123,54 @@ class PublicLinkVisitorsTest extends TestCase {
 		}
 	}
 
-	/** Without a memory cache nothing is counted: every visitor is their own. */
-	public function testWithoutAMemoryCacheEveryVisitorIsTheirOwn(): void {
+	/**
+	 * Without a memory cache nothing could bound the authors a loop makes,
+	 * so every visitor opens as the link, as before visitors had their own.
+	 */
+	public function testWithoutAMemoryCacheEveryVisitorOpensAsTheLink(): void {
 		$factory = $this->createMock(ICacheFactory::class);
 		$factory->method('isAvailable')->willReturn(false);
 		$factory->expects($this->never())->method('createDistributed');
 
-		for ($i = 0; $i <= PublicLinkVisitors::PER_HOUR; $i++) {
-			$this->session = new \ArrayObject();
-			$this->assertStringStartsWith(self::LINK . ':', $this->visitors($factory)->uidFor(self::TOKEN));
-		}
+		$this->assertSame(self::LINK, $this->visitors($factory)->uidFor(self::TOKEN));
+		$this->assertSame([], $this->session->getArrayCopy());
 	}
 
-	/** A cache that cannot count - not a memory cache, or failing - counts nobody, and a failing one says so. */
-	public function testACacheThatCannotCountAdmitsTheVisitor(): void {
+	/** A cache that cannot count - not a memory cache, failing, or not counting - opens as the link, and a failing one says so. */
+	public function testACacheThatCannotCountOpensAsTheLink(): void {
 		$plain = $this->createMock(ICacheFactory::class);
 		$plain->method('isAvailable')->willReturn(true);
 		$plain->method('createDistributed')->willReturn($this->createMock(ICache::class));
-		$this->assertStringStartsWith(self::LINK . ':', $this->visitors($plain)->uidFor(self::TOKEN));
+		$this->assertSame(self::LINK, $this->visitors($plain)->uidFor(self::TOKEN));
+
+		$notCounting = $this->createMock(IMemcache::class);
+		$notCounting->method('inc')->willReturn(false);
+		$silent = $this->createMock(ICacheFactory::class);
+		$silent->method('isAvailable')->willReturn(true);
+		$silent->method('createDistributed')->willReturn($notCounting);
+		$this->assertSame(self::LINK, $this->visitors($silent)->uidFor(self::TOKEN));
 
 		$failing = $this->createMock(ICacheFactory::class);
 		$failing->method('isAvailable')->willReturn(true);
 		$failing->method('createDistributed')->willThrowException(new \RuntimeException('Redis server went away'));
 		$logger = $this->createMock(LoggerInterface::class);
 		$logger->expects($this->once())->method('warning');
-		$this->session = new \ArrayObject();
-		$this->assertStringStartsWith(self::LINK . ':', $this->visitors($failing, $logger)->uidFor(self::TOKEN));
+		$this->assertSame(self::LINK, $this->visitors($failing, $logger)->uidFor(self::TOKEN));
+		$this->assertSame([], $this->session->getArrayCopy());
+	}
+
+	/**
+	 * Counted in a later hour - by a web server whose clock is ahead - is
+	 * counted for this one: no second count, no flapping between servers.
+	 */
+	public function testAVisitorCountedInALaterHourIsNotCountedAgain(): void {
+		$this->clock->advance(3600);
+		$own = $this->visitors($this->memcache())->uidFor(self::TOKEN);
+		$this->clock->advance(-3600);
+		$untouched = $this->createMock(ICacheFactory::class);
+		$untouched->expects($this->never())->method('createDistributed');
+
+		$this->assertSame($own, $this->visitors($untouched)->uidFor(self::TOKEN));
 	}
 
 	/** A visitor's uid is told from the link's and a user's by its form. */

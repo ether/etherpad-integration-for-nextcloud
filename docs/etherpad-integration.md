@@ -407,14 +407,20 @@ author of their own now, `nc:public-share:<token>:<visitor>`
   on their author; a name given on every open would overwrite it.
 - A visitor is cheap – a request without the session cookie is a new one
   – and each makes an author, which Etherpad never deletes, and sessions.
-  With a memory cache, a link has at most 250 visitors of their own an
-  hour, each counted in every hour they open it, so ids gathered over
-  hours buy no more. Any past the count open as the link itself, under
-  its old name "Public share", one author for all of them as before –
-  writing works the same, only the colours are shared – and the log says
-  so once an hour for the link. Without a memory cache nothing is
-  counted. The count's keys and the session's carry an HMAC of the token,
-  not the token.
+  So a link has at most 250 visitors of their own an hour, each counted
+  in every hour they open it, so ids gathered over hours buy no more. Any
+  past the count open as the link itself, under its old name "Public
+  share", one author for all of them as before – writing works the same,
+  only the colours are shared – and the log says so once an hour for the
+  link. Counting takes a memory cache: with only a local one (APCu), the
+  count holds for each web server on its own; without one, or while it
+  fails, every visitor opens as the link. A visitor counted in a later
+  hour, by a server whose clock is ahead, is not counted again. The
+  count's keys and the session's carry an HMAC of the token, not the
+  token.
+- Two first opens of one browser session at the same moment can each
+  draw an id; the session keeps the later, and the other author opens
+  once.
 
 ### A public link's session
 

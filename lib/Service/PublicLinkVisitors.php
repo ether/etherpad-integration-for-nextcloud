@@ -37,8 +37,9 @@ use Psr\Log\LoggerInterface;
  * id, and is counted again in a new hour, so ids gathered over hours buy
  * no more. Any past the count open as the link itself,
  * `public-share:<token>`, one author for all of them, as every visitor did
- * before - writing works the same, only the colours are shared. Without a
- * memory cache nothing is counted.
+ * before - writing works the same, only the colours are shared. Without
+ * a memory cache that can count, or while it fails, every visitor opens
+ * as the link: nothing else would bound the authors a loop makes.
  */
 class PublicLinkVisitors {
 	/** How many visitors of their own a link has an hour, with a memory cache. */
@@ -71,7 +72,8 @@ class PublicLinkVisitors {
 		$sessionKey = Application::APP_ID . '_visitor_' . $this->digest('visitor', $token);
 		$hour = intdiv($this->timeFactory->getTime(), 3600);
 		[$visitor, $countedIn] = self::stored($this->session->get($sessionKey));
-		if ($visitor !== '' && $countedIn === $hour) {
+		// A later hour too: one written by a server whose clock is ahead.
+		if ($visitor !== '' && $countedIn >= $hour) {
 			return $link . ':' . $visitor;
 		}
 		if (!$this->admits($token, $hour)) {
@@ -86,8 +88,8 @@ class PublicLinkVisitors {
 
 	/**
 	 * Whether the link has room for another visitor of their own this
-	 * hour. Counted only where a memory cache can count; a cache that fails
-	 * counts nobody and says so.
+	 * hour. Only a memory cache can count; without one, or while it fails,
+	 * there is none, and a failing one says so.
 	 */
 	private function admits(string $token, int $hour): bool {
 		try {
@@ -95,12 +97,15 @@ class PublicLinkVisitors {
 				? $this->cacheFactory->createDistributed(Application::APP_ID . '/public-link-visitors/')
 				: null;
 			if (!$cache instanceof IMemcache) {
-				return true;
+				return false;
 			}
 			$key = $this->digest('visitors', $token) . ':' . $hour;
 			$cache->add($key, 0, 3600);
 			$count = $cache->inc($key);
-			if (!is_int($count) || $count <= self::PER_HOUR) {
+			if (!is_int($count)) {
+				return false;
+			}
+			if ($count <= self::PER_HOUR) {
 				return true;
 			}
 			// Once an hour for the link: a crowd, or a loop, is worth one line.
@@ -112,11 +117,11 @@ class PublicLinkVisitors {
 			}
 			return false;
 		} catch (\Throwable $e) {
-			$this->logger->warning('The memory cache failed, so the visitors of a public link are not counted.', [
+			$this->logger->warning('The memory cache failed, so a public link\'s visitors open as the link\'s one Etherpad author while it fails.', [
 				'app' => Application::APP_ID,
 				...SafeError::context($e),
 			]);
-			return true;
+			return false;
 		}
 	}
 
