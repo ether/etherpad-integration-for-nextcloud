@@ -27,7 +27,8 @@ class PadSessionRevokerTest extends TestCase {
 
 	public function testRemovesEverySessionOfTheUser(): void {
 		$client = $this->createMock(EtherpadClient::class);
-		$client->method('listSessionsOfAuthor')->with(self::AUTHOR)->willReturn([
+		// A logout reads its listing whole: ending access is worth the memory.
+		$client->method('listSessionsOfAuthor')->with(self::AUTHOR, self::anything(), self::anything(), self::isNull())->willReturn([
 			's.one' => ['groupID' => 'g.AAAAAAAAAAAAAAAA', 'validUntil' => FixedClock::NOW + 3600],
 			's.two' => ['groupID' => 'g.BBBBBBBBBBBBBBBB', 'validUntil' => FixedClock::NOW + 3600],
 		]);
@@ -732,7 +733,8 @@ class PadSessionRevokerTest extends TestCase {
 	 */
 	public function testAGroupHoldingOtherPadsIsTheJobsToJudge(): void {
 		$client = $this->createMock(EtherpadClient::class);
-		$client->method('listSessionsOfGroup')->willReturn(['s.a' => ['groupID' => 'g.AAAAAAAAAAAAAAAA', 'validUntil' => FixedClock::NOW + 3600]]);
+		// A delete reads its listing whole, as a logout does.
+		$client->method('listSessionsOfGroup')->with('g.AAAAAAAAAAAAAAAA', self::anything(), self::anything(), self::isNull())->willReturn(['s.a' => ['groupID' => 'g.AAAAAAAAAAAAAAAA', 'validUntil' => FixedClock::NOW + 3600]]);
 		$client->method('listPads')->willReturn(['g.AAAAAAAAAAAAAAAA$a', 'g.AAAAAAAAAAAAAAAA$trashed-earlier']);
 		$client->expects(self::never())->method('deleteSession');
 		$queued = [];

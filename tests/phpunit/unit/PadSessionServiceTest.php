@@ -52,8 +52,8 @@ class PadSessionServiceTest extends TestCase {
 	}
 
 	/**
-	 * Every protected open leaves the author's id for the sweep, before
-	 * anything is asked of the pad server.
+	 * A signed-in user's protected open leaves the author's id for the
+	 * sweep; a public link's notes its ids once it made a session (below).
 	 *
 	 * Not "when a backlog is noticed": noticing one needs the listing, and
 	 * the listing only happens when the browser carries session ids — so a
@@ -84,6 +84,31 @@ class PadSessionServiceTest extends TestCase {
 			$collector,
 		);
 		$service->createProtectedOpenContext('admin', 'Admin', 'g.ABCDEFGHIJKLMNOP$pad-1');
+	}
+
+	/**
+	 * A signed-in open notes its author before the listing the carried ids
+	 * ask for, so a listing that fails cannot keep the sweep from it.
+	 */
+	public function testNotesASignedInAuthorBeforeTheListing(): void {
+		$events = [];
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->method('createSession')->willReturn($this->sid('new'));
+		$etherpadClient->method('createAuthorIfNotExistsFor')->willReturn('a.author');
+		$etherpadClient->method('buildPadUrl')->willReturn('https://pad.example.test/p/x');
+		$etherpadClient->method('listSessionsOfAuthor')->willReturnCallback(static function () use (&$events): array {
+			$events[] = 'listed';
+			return [];
+		});
+		$collector = $this->createMock(\OCA\EtherpadNextcloud\Service\ExpiredSessionCollector::class);
+		$collector->method('noteAuthor')->willReturnCallback(static function () use (&$events): void {
+			$events[] = 'noted';
+		});
+
+		$this->buildService($etherpadClient, $this->createMock(IConfig::class), incomingSessionCookie: $this->sid('carried'), collector: $collector)
+			->createProtectedOpenContext('admin', 'Admin', 'g.ABCDEFGHIJKLMNOP$pad-1');
+
+		$this->assertSame(['noted', 'listed'], $events);
 	}
 
 	/**
@@ -162,7 +187,8 @@ class PadSessionServiceTest extends TestCase {
 			$etherpadClient->method('listSessionsOfAuthor')
 				->willThrowException(new EtherpadClientException('unavailable'));
 		} else {
-			$etherpadClient->method('listSessionsOfAuthor')->willReturn($sessions);
+			// Read whole, as a revoke's is: no cap.
+			$etherpadClient->method('listSessionsOfAuthor')->with('a.author', self::anything(), self::anything(), self::isNull())->willReturn($sessions);
 		}
 		$etherpadClient->method('createAuthorIfNotExistsFor')->willReturn('a.author');
 		$etherpadClient->method('buildPadUrl')->willReturn('https://pad.example.test/p/x');
