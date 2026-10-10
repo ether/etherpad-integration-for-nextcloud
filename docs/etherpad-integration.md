@@ -275,8 +275,8 @@ public link. A session issued before any of those stays valid until
 `validUntil`.
 Covering them one event at a time means enumerating every way access can
 end, and that list has no natural end – a public link in particular opens
-under its own Etherpad author whose id is deliberately never cached, so
-there is nothing to look the sessions up by. The direction that does close
+under authors of its own, each visitor's kept only in their session and
+the link's never cached, so there is nothing to look the sessions up by. The direction that does close
 them is the other one: short sessions that have to be renewed against a
 live permission check.
 

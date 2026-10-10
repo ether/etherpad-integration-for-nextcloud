@@ -449,9 +449,8 @@ class ExpiredSessionCollectorTest extends TestCase {
 	 * A sweep that found nothing to do says when there will be.
 	 *
 	 * Otherwise the very next open queues another full walk of the index:
-	 * a busy public link would have one behind every visitor, for as long
-	 * as a session lives, over the one author they all share. The answer is
-	 * already in the listing this run paid for.
+	 * a busy pad would have one behind every open. The answer is already
+	 * in the listing this run paid for.
 	 */
 	public function testSaysWhenTheEarliestSessionBecomesCollectable(): void {
 		$soon = FixedClock::NOW + 600;

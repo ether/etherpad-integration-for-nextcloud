@@ -145,12 +145,12 @@ class PadSessionService {
 	 * other pad out.
 	 *
 	 * Ids the list does not know are dropped. That covers a public share's
-	 * session — each share token is its own Etherpad author — so a share and
-	 * an authenticated pad cannot be open at once, as was already the case
-	 * before any of this. It also covers the session of whoever used this
-	 * browser before, which is why the rule is worth the loss: nothing here
-	 * can tell those two apart, and carrying them would hand a pad to the
-	 * next person to log in.
+	 * session — a link opens as an Etherpad author of its own, the
+	 * visitor's or the link's — so a share and an authenticated pad cannot
+	 * be open at once, as was already the case before any of this. It also
+	 * covers the session of whoever used this browser before, which is why
+	 * the rule is worth the loss: nothing here can tell those two apart,
+	 * and carrying them would hand a pad to the next person to log in.
 	 *
 	 * @return array{url:string,cookie:array{name:string,value:string,expires:int,path:string,domain:string,secure:bool,http_only:bool,same_site:string}}
 	 */
@@ -235,14 +235,12 @@ class PadSessionService {
 	 * cookie - the first protected open of a browsing session - costs no
 	 * extra round trip.
 	 *
-	 * Not asked for on a public share either. There the author is derived
-	 * from the share token alone, so every anonymous visitor of one link
-	 * shares it, and Etherpad deletes no sessions: a link carries one for
+	 * Not asked for on a public share either. The link's own author, which
+	 * every visitor past the hour's count shares, carries a session for
 	 * every hour it was opened in for each pad, or one for every open
-	 * where Nextcloud has no memory cache, all under one author, and every
-	 * open would download the lot. The cost is that two protected
-	 * pads inside one shared folder cannot be open at once, which is what
-	 * happened before this branch anyway.
+	 * without a memory cache, and every open would download the lot. The
+	 * cost: two protected pads inside one shared folder cannot be open at
+	 * once.
 	 *
 	 * @param list<string> $carriedSessionIds
 	 * @return array<string,array{groupID:string,validUntil:int}>

@@ -40,6 +40,21 @@ import {
  */
 const SIGNED_OUT = { storageState: { cookies: [], origins: [] } }
 
+/** Every step, each after the one before even when that one throws; the first error after all of them. */
+async function eachInTurn(...steps: Array<() => Promise<unknown>>): Promise<void> {
+	const errors: unknown[] = []
+	for (const step of steps) {
+		try {
+			await step()
+		} catch (error) {
+			errors.push(error)
+		}
+	}
+	if (errors.length > 0) {
+		throw errors[0]
+	}
+}
+
 test.describe('public share access without login', () => {
 	const padName = uniquePadName('public-share')
 	const textFileName = uniqueName('public-share-non-pad', 'txt')
@@ -454,14 +469,17 @@ test.describe('a writable public link to a protected pad', () => {
 			expect(names, 'and its passphrase').toContain('oc_sessionPassphrase')
 			expect(names, 'beside the pad\'s').toContain('sessionID')
 		} finally {
-			await visitor.close()
-			await other.close()
-			await direct.dispose()
-			try {
-				await deletePublicShare(token)
-			} finally {
-				await deleteViaDav(name, { pastTrash: true })
-			}
+			await eachInTurn(
+				() => visitor.close(),
+				() => other.close(),
+				() => direct.dispose(),
+				async () => {
+					if (token !== '') {
+						await deletePublicShare(token)
+					}
+				},
+				() => deleteViaDav(name, { pastTrash: true }),
+			)
 		}
 	})
 })

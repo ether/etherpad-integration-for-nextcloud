@@ -20,9 +20,9 @@ use Psr\Log\LoggerInterface;
  * Queued rather than timed, and per author: an open says who might need
  * collecting, so no sweep over every account is needed. The argument
  * holds the author id, not the uid: job arguments are persisted. A public
- * link's sessions are collected by group as well
- * (CollectExpiredGroupSessionsJob). When there is nothing left, it comes
- * back as the earliest session still standing falls due.
+ * link's sessions are collected by group (CollectExpiredGroupSessionsJob),
+ * its visitors' by group alone. When there is nothing left, it comes back
+ * as the earliest session still standing falls due.
  */
 class CollectExpiredSessionsJob extends SessionSweepJob {
 	public function __construct(
