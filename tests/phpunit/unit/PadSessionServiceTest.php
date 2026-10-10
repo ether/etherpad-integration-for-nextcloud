@@ -56,10 +56,8 @@ class PadSessionServiceTest extends TestCase {
 	 * A signed-in user's protected open leaves the author's id for the
 	 * sweep; a public link's notes its ids once it made a session (below).
 	 *
-	 * Not "when a backlog is noticed": noticing one needs the listing, and
-	 * the listing only happens when the browser carries session ids — so a
-	 * first open made none, and neither does a public link. Both were
-	 * invisible to a sweep that had to be told what to look at.
+	 * Not only when a listing shows a backlog: a first open lists nothing,
+	 * and neither does a public link.
 	 */
 	public function testTellsTheCollectorWhoOpenedThePad(): void {
 		$etherpadClient = $this->createMock(EtherpadClient::class);
@@ -146,9 +144,9 @@ class PadSessionServiceTest extends TestCase {
 
 	/**
 	 * A kept author is made anew only when Etherpad says it does not know
-	 * it. An outage fails the open at the first call that times out: asking
-	 * for the author again would only wait again - for a visitor of a link
-	 * as for a signed-in user.
+	 * it: a session that fails to be made for another reason - a timeout
+	 * here - fails the open without asking for the author again, for a
+	 * visitor of a link as for a signed-in user.
 	 */
 	public function testAnOutageFailsAnOpenWithAKeptAuthorAtOnce(): void {
 		$timeout = new EtherpadClientException('Etherpad API request failed: createSession', 0, new \RuntimeException('cURL error 28: Operation timed out after 15001 milliseconds with 0 bytes received'));
@@ -326,11 +324,11 @@ class PadSessionServiceTest extends TestCase {
 	}
 
 	/**
-	 * An open always mints. Etherpad re-checks validUntil on every socket
-	 * message and keeps the session id it was handed at CLIENT_READY, so a
-	 * session that expires mid-edit rejects the next keystroke and no later
-	 * cookie reaches that socket — reusing a shorter one would hand out
-	 * less editing time than the caller asked for.
+	 * A signed-in open always mints. Etherpad re-checks validUntil on every
+	 * socket message and keeps the session id it was handed at
+	 * CLIENT_READY, so a session that expires mid-edit rejects the next
+	 * keystroke and no later cookie reaches that socket — reusing a shorter
+	 * one would hand out less editing time than the caller asked for.
 	 */
 	public function testAlwaysIssuesAFreshSessionForThePadBeingOpened(): void {
 		$held = $this->sid('held');
@@ -414,9 +412,9 @@ class PadSessionServiceTest extends TestCase {
 	}
 
 	/**
-	 * Any host under the shared parent domain can write this cookie, so the
-	 * parse must not grow with what it finds there. Nothing beyond what
-	 * could ever be emitted again is even looked at.
+	 * Any host under the shared parent domain can write this cookie, so
+	 * the ids an open accepts from it are bounded - at twice the 25 it
+	 * could ever emit - and junk among them never reaches the output.
 	 */
 	public function testIgnoresMoreCookieIdsThanItCouldEverEmit(): void {
 		$ids = array_map(fn (int $i): string => $this->sid('junk' . $i), range(1, 100));
@@ -433,9 +431,8 @@ class PadSessionServiceTest extends TestCase {
 	}
 
 	/**
-	 * RFC 6265 lets a server quote a value that contains commas, and
-	 * Etherpad strips those quotes itself. The parsing has to as well, or a
-	 * quoted cookie would look like one unusable id.
+	 * Etherpad strips quotes around the cookie's value itself, so the
+	 * parsing does too, or a quoted cookie would look like one unusable id.
 	 */
 	public function testAcceptsTheQuotedCookieForm(): void {
 		$one = $this->sid('one');
@@ -513,8 +510,8 @@ class PadSessionServiceTest extends TestCase {
 	}
 
 	/**
-	 * A renamed user still reaches Etherpad: the cache answers "unchanged"
-	 * only when the stored name matches the one being opened with.
+	 * A renamed user's new name reaches Etherpad, and is stored for the
+	 * next open.
 	 */
 	public function testCreateProtectedOpenContextSyncsWhenTheDisplayNameChanged(): void {
 		$uid = 'alice';

@@ -21,9 +21,9 @@ use OCA\EtherpadNextcloud\Exception\PadLostException;
  */
 class PublicPadOpenService {
 	/**
-	 * Nothing revokes this one - a visitor never logs out - so it is the
-	 * whole lifetime of a withdrawn share's write access. Shorter than an
-	 * authenticated session for that reason.
+	 * Withdrawing a public share revokes no session it issued, so this
+	 * bounds the write access left after it. Shorter than a signed-in
+	 * session's for that reason.
 	 */
 	private const PUBLIC_SHARE_SESSION_TTL_SECONDS = 10800;
 
@@ -48,9 +48,9 @@ class PublicPadOpenService {
 		}
 
 		$padId = $pad->padId;
-		// A pad Etherpad has lost would come back empty, or not at all: only
-		// the file's owner can make a new pad from its content. A reader is
-		// shown what the pad server has, as ever. Only a definite answer
+		// A pad Etherpad has lost would come back empty, or not at all, and
+		// a new one from the file takes a signed-in user with write access.
+		// A reader is shown what the pad server has. Only a definite answer
 		// stops the open.
 		if (!$readOnly && $this->padLifecycle->isKnownLost($padId, $pad->accessMode, $pad)) {
 			throw new PadLostException('Etherpad has lost the pad of this file.');

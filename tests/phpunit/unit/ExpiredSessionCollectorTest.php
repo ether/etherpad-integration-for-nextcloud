@@ -479,11 +479,10 @@ class ExpiredSessionCollectorTest extends TestCase {
 	 * An Etherpad that keeps index entries it cannot describe says so in
 	 * the log, rather than letting a sweep look clean.
 	 *
-	 * Those keys cost a lookup on every listing and `deleteSession` will
-	 * not take them, so collecting cannot shrink that part of the index —
-	 * on such a server this whole feature is not the remedy it is here, and
-	 * an admin should be able to find that out from the log rather than by
-	 * reading the pad server's source.
+	 * Those keys cost a lookup on every listing and stay, as whether one
+	 * has expired cannot be told, so collecting cannot shrink that part of
+	 * the index: on such a server an admin learns from the log that the
+	 * sweep is not the remedy it is elsewhere.
 	 */
 	public function testSaysWhenTheIndexHoldsEntriesItCannotCollect(): void {
 		$client = $this->createMock(EtherpadClient::class);

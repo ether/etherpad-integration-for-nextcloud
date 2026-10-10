@@ -137,7 +137,8 @@ class PublicPadOpenServiceTest extends TestCase {
 
 	/**
 	 * Through a share that may write, a pad Etherpad has lost is refused:
-	 * only the file's owner can make a new one. A reader is not asked.
+	 * a new one takes a signed-in user with write access. A reader is not
+	 * asked.
 	 */
 	public function testAPadEtherpadHasLostIsNotOpenedForWriting(): void {
 		foreach ([BindingService::ACCESS_PROTECTED, BindingService::ACCESS_PUBLIC] as $accessMode) {
@@ -183,8 +184,9 @@ class PublicPadOpenServiceTest extends TestCase {
 	}
 
 	/**
-	 * Nothing revokes a share session, so its length is the whole exposure
-	 * of a withdrawn share. Both numbers are pinned, not just their order:
+	 * Withdrawing a share revokes no session it issued, so its lifetime
+	 * bounds the write access left after it. Both numbers are pinned, not
+	 * just their order:
 	 * "shorter than the other" is satisfied by values far too long.
 	 */
 	public function testTheSessionLifetimesAreWhatWasChosen(): void {

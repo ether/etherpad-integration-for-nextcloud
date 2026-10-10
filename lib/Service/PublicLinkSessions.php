@@ -23,11 +23,11 @@ use Psr\Log\LoggerInterface;
  * it is deleted.
  *
  * A link opens as a visitor of its own, or as the link itself
- * (PublicLinkVisitors). With a distributed memory cache, each makes at
- * most one new session an hour for each pad, however often it opens;
- * opens that miss the cache at the same moment make one each. With only a
- * local cache that holds for each web server on its own; without any,
- * every open makes a session.
+ * (PublicLinkVisitors). A session Etherpad confirms is handed out again to
+ * the same opener for the same pad for up to an hour; one it does not
+ * confirm is replaced sooner, and opens that miss the cache at once make
+ * one each. With only a local cache this holds for each web server on its
+ * own; without any, every open makes a session.
  *
  * The cache only points; Etherpad decides. A kept session is handed out
  * again only once Etherpad confirms that it still exists - a session
@@ -82,8 +82,8 @@ class PublicLinkSessions {
 					return ['sessionId' => $kept, 'validUntil' => $session['validUntil']];
 				}
 			} catch (EtherpadClientException $e) {
-				// A timeout says Etherpad is away: making one would only wait
-				// out another.
+				// After a check that timed out, making one would only add a
+				// second timeout.
 				if (EtherpadClientException::isEtherpadUnreachable($e) && EtherpadErrorClassifier::isTimeout($e)) {
 					throw $e;
 				}
@@ -93,9 +93,8 @@ class PublicLinkSessions {
 
 		$sessionId = $create();
 		if ($unconfirmed !== null) {
-			// Etherpad made a session but said nothing usable about the kept
-			// one, so the link makes one an open. An Etherpad that is away
-			// fails the call above too, and is reported there.
+			// Said, since a kept session that cannot be confirmed is replaced
+			// on every open. A session that cannot be made fails above.
 			$this->logger->warning('Could not confirm the kept Etherpad session of a public link; the open made a new one.', [
 				'app' => Application::APP_ID,
 				...SafeError::context($unconfirmed),

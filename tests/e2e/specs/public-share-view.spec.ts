@@ -40,7 +40,7 @@ import {
  */
 const SIGNED_OUT = { storageState: { cookies: [], origins: [] } }
 
-/** Every step, each after the one before even when that one throws; the first error after all of them. */
+/** Runs every cleanup step, then rethrows the first failure. */
 async function eachInTurn(...steps: Array<() => Promise<unknown>>): Promise<void> {
 	const errors: unknown[] = []
 	for (const step of steps) {

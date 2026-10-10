@@ -23,8 +23,8 @@ use Psr\Log\LoggerInterface;
 
 /**
  * A visitor of a public link opens as an author of their own while their
- * Nextcloud session lives; past the link's count of new visitors for the
- * hour, as the link itself.
+ * Nextcloud session lives; past the link's count for the hour - each
+ * visitor counted in every hour they open it - as the link itself.
  */
 class PublicLinkVisitorsTest extends TestCase {
 	private const LINK = 'public-share:a-share-token';
@@ -140,8 +140,7 @@ class PublicLinkVisitorsTest extends TestCase {
 
 	/**
 	 * A cache that cannot count - not a memory cache, failing, or not
-	 * counting - opens as the link. A failing one is said at debug: the
-	 * open's session cache warns of the same outage, once an open.
+	 * counting - opens as the link. A failing one is said at debug.
 	 */
 	public function testACacheThatCannotCountOpensAsTheLink(): void {
 		$plain = $this->createMock(ICacheFactory::class);

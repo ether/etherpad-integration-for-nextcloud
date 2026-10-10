@@ -31,11 +31,11 @@ use Psr\Log\LoggerInterface;
  * A visitor is cheap, though - a request without the session cookie is a
  * new one - and each makes an author, which Etherpad never deletes. So a
  * link has at most 250 visitors of their own an hour, each counted in
- * every hour they open it, so ids gathered over hours buy no more. Any
- * past the count open as the link itself, `public-share:<token>`, one
- * author for all of them: writing works the same, only the colours are
- * shared. Counting takes a memory cache; without one, or while it fails,
- * a visitor not yet counted this hour opens as the link.
+ * every hour they open it, and any past the count open as the link
+ * itself, `public-share:<token>`: writing works the same, only the colours
+ * are shared. Counting takes a memory cache, and with only a local one the
+ * count holds for each web server; without one, or while it fails, a
+ * visitor not yet counted this hour opens as the link.
  */
 class PublicLinkVisitors {
 	/** How many visitors of their own a link has an hour, with a memory cache. */
@@ -63,9 +63,8 @@ class PublicLinkVisitors {
 
 	/**
 	 * Who the visitor of this link opens as: themselves, or the link when
-	 * it has its visitors for the hour. A visitor is given no name -
-	 * Etherpad lets them set one, which a name given on every open would
-	 * overwrite - and the link's author keeps the one it always had.
+	 * it has its visitors for the hour. A visitor is given no name, so the
+	 * one they set in Etherpad stays.
 	 */
 	public function openerFor(string $token): PublicLinkOpener {
 		$link = PadSessionService::PUBLIC_LINK_UID_PREFIX . $token;
@@ -98,9 +97,8 @@ class PublicLinkVisitors {
 
 	/**
 	 * Whether the link has room for another visitor of their own this
-	 * hour. Only a memory cache can count; without one, or while it fails,
-	 * there is none, and a failing one says so at debug: the same open's
-	 * PublicLinkSessions warns of it.
+	 * hour. Only a memory cache can count: without one, or while it fails,
+	 * there is no room, and a failure is said at debug.
 	 */
 	private function admits(string $token, int $hour): bool {
 		try {
