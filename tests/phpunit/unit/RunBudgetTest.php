@@ -68,7 +68,7 @@ class RunBudgetTest extends TestCase {
 	}
 
 	/** A call that went through starts the failures again, not the refusals in a row. */
-	public function testAnAnsweredCallStartsOnlyTheFailuresAgain(): void {
+	public function testACallGoneThroughStartsOnlyTheFailuresAgain(): void {
 		$budget = new RunBudget(new FixedClock(), 20.0);
 		for ($i = 0; $i < 4; $i++) {
 			$budget->noteUnanswered();

@@ -779,8 +779,9 @@ class PadSessionRevokerTest extends TestCase {
 	}
 
 	/**
-	 * A group whose listing went through starts the count of failures
-	 * again: a 502 now and then among the listings leaves no group unasked.
+	 * A group whose listing comes back empty has gone through, and starts
+	 * the count of failures again: a 502 now and then among the listings
+	 * leaves no group unasked.
 	 */
 	public function testAFailedListingNowAndThenLeavesNoGroupUnasked(): void {
 		$groups = array_map(static fn (int $i): string => sprintf('g.GROUP%011d', $i), range(1, 20));
@@ -833,9 +834,9 @@ class PadSessionRevokerTest extends TestCase {
 	}
 
 	/**
-	 * A group is through only when its pads are listed too: a proxy that
-	 * passes the session listings and fails the pad listings ends the
-	 * asking after five groups.
+	 * A group with live sessions has gone through only once its pads are
+	 * listed too: a proxy that passes the session listings and fails the
+	 * pad listings ends the asking after five groups.
 	 */
 	public function testAGroupWhosePadsCannotBeListedIsNotGoneThrough(): void {
 		$groups = array_map(static fn (int $i): string => sprintf('g.GROUP%011d', $i), range(1, 10));
@@ -868,6 +869,70 @@ class PadSessionRevokerTest extends TestCase {
 		});
 		$client->method('listPads')->willReturnCallback(static fn (string $group): array => [$group . '$pad', $group . '$other']);
 		$client->expects(self::never())->method('deleteSession');
+
+		$this->revoker($client)->revokeForPads(array_map(static fn (string $group): string => $group . '$pad', $groups));
+
+		self::assertSame(10, $listed);
+	}
+
+	/**
+	 * Five deletes without an answer in the first group end the asking:
+	 * its listings went through, its deletes did not, and the next group
+	 * goes to the job unasked.
+	 */
+	public function testFiveDeletesWithoutAnAnswerEndTheAsking(): void {
+		$client = $this->createMock(EtherpadClient::class);
+		$client->expects(self::once())->method('listSessionsOfGroup')->willReturnCallback(static function (string $group): array {
+			$sessions = [];
+			for ($i = 1; $i <= 5; $i++) {
+				$sessions['s.' . $i] = ['groupID' => $group, 'validUntil' => FixedClock::NOW + 3600];
+			}
+			return $sessions;
+		});
+		$client->method('listPads')->willReturnCallback(static fn (string $group): array => [$group . '$pad']);
+		$client->expects(self::exactly(5))->method('deleteSession')->willThrowException(new EtherpadClientException('Etherpad API HTTP error (502)'));
+		$queued = [];
+
+		$this->revoker($client, groupSessions: $this->queueRecorder($queued))->revokeForPads(['g.AAAAAAAAAAAAAAAA$pad', 'g.BBBBBBBBBBBBBBBB$pad']);
+
+		self::assertSame(['g.AAAAAAAAAAAAAAAA', 'g.BBBBBBBBBBBBBBBB'], $queued);
+	}
+
+	/**
+	 * A group holding only the pads leaving has gone through once its pads
+	 * are listed, though Etherpad then refuses its deletes: failures
+	 * between such groups leave none unasked.
+	 */
+	public function testAGroupOfTheLeavingPadsIsGoneThroughThoughItsDeletesAreRefused(): void {
+		$groups = array_map(static fn (int $i): string => sprintf('g.GROUP%011d', $i), range(1, 10));
+		$listed = 0;
+		$client = $this->createMock(EtherpadClient::class);
+		$client->method('listSessionsOfGroup')->willReturnCallback(static function (string $group) use (&$listed): array {
+			$listed++;
+			if ($listed % 2 === 1) {
+				throw new EtherpadClientException('Etherpad API HTTP error (502)');
+			}
+			return ['s.' . $group => ['groupID' => $group, 'validUntil' => FixedClock::NOW + 3600]];
+		});
+		$client->method('listPads')->willReturnCallback(static fn (string $group): array => [$group . '$pad']);
+		$client->method('deleteSession')->willThrowException(new EtherpadRefusedException('Etherpad API error (deleteSession): refused'));
+
+		$this->revoker($client)->revokeForPads(array_map(static fn (string $group): string => $group . '$pad', $groups));
+
+		self::assertSame(10, $listed);
+	}
+
+	/** A group Etherpad no longer has has gone through, as a session already gone has. */
+	public function testAGroupGoneAlreadyIsGoneThrough(): void {
+		$groups = array_map(static fn (int $i): string => sprintf('g.GROUP%011d', $i), range(1, 10));
+		$listed = 0;
+		$client = $this->createMock(EtherpadClient::class);
+		$client->method('listSessionsOfGroup')->willReturnCallback(static function () use (&$listed): array {
+			$listed++;
+			throw $listed % 2 === 1
+				? new EtherpadClientException('Etherpad API HTTP error (502)')
+				: new EtherpadRefusedException('Etherpad API error (listSessionsOfGroup): groupID does not exist');
+		});
 
 		$this->revoker($client)->revokeForPads(array_map(static fn (string $group): string => $group . '$pad', $groups));
 

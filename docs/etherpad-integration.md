@@ -243,12 +243,12 @@ away itself:
   honoured there, and skipping it would leave exactly the access a logout
   removes. What is live is revoked within a small budget – 25 delete calls
   or two seconds, with each call given what is left of it, and ended early
-  by twenty refusals in a row or five failures without an answer since the
-  last delete that went through – starting with the sessions this browser
-  is carrying, since the listing arrives oldest first and the ceiling
-  would otherwise spend itself before reaching the one in the cookie of
-  the person who just logged out. What is left over, whether skipped or
-  refused, is counted and logged.
+  by twenty deletes in a row that do not go through or five failures
+  without an answer since the last delete that went through – starting
+  with the sessions this browser is carrying, since the listing arrives
+  oldest first and the ceiling would otherwise spend itself before
+  reaching the one in the cookie of the person who just logged out. What
+  is left over, whether skipped or refused, is counted and logged.
 
 No table of our own is involved: sessions belong to an Etherpad author, the
 author is cached per uid, and `listSessionsOfAuthor` answers the rest. That
@@ -370,14 +370,14 @@ deleted for good. An author or group Etherpad no longer has ends the
 sweep. A revoke's listing is read whole. A refusal is requeued with a
 growing delay and a limit; sessions the server will never delete are
 skipped rather than allowed to block the ones behind them, up to twenty
-refusals in a row and fifty in a run - a failure that reads as Etherpad
-unreachable, when Etherpad then does not answer at all, counts towards an
-outage, and five since the last delete that went through end the run. A
-run with nothing to do comes back when the earliest session still standing
-falls due, which also keeps the next open from queueing a second sweep.
-Nothing is deleted until five minutes after expiry, because Etherpad
-judges `validUntil` against its own clock and a session dead by ours may
-still be live there.
+deletes in a row that do not go through, refused or failed, and fifty in a
+run - a failure that reads as Etherpad unreachable, when Etherpad then
+does not answer at all, counts towards an outage, and five since the last
+delete that went through end the run. A run with nothing to do comes back
+when the earliest session still standing falls due, which also keeps the
+next open from queueing a second sweep. Nothing is deleted until five
+minutes after expiry, because Etherpad judges `validUntil` against its own
+clock and a session dead by ours may still be live there.
 
 This assumes deleting a session removes its id from the author index, and
 from the group's: Etherpad's `deleteSession` takes it out of both.

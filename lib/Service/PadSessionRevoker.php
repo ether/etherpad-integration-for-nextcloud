@@ -38,17 +38,17 @@ class PadSessionRevoker {
 	 * At least every id a cookie can hold: the carried sessions go first,
 	 * and a lower ceiling would leave the tail of what the browser holds -
 	 * on a shared computer, the next user's way in. Only the budget - its
-	 * time, or an Etherpad refusing or not answering - ends a revoke before
-	 * every carried session is tried. Derived rather than repeated, because two 25s in two
-	 * classes are a coincidence a reader has to verify and a maintainer
-	 * can break.
+	 * time, or an Etherpad refusing or not answering - ends a revoke
+	 * before every carried session is tried. Derived rather than repeated,
+	 * because two 25s in two classes are a coincidence a reader has to
+	 * verify and a maintainer can break.
 	 */
 	private const MAX_PER_REQUEST = PadSessionService::MAX_SESSION_IDS;
 
 	/**
 	 * A delete's ceiling, over all the groups it takes: every open of a
 	 * protected pad makes a session, so a pad opened often in six hours
-	 * holds more than a cookie can. The budget bounds it too.
+	 * holds more than a cookie can. The budget bounds a delete too.
 	 */
 	private const MAX_PER_DELETE = 100;
 
@@ -186,14 +186,16 @@ class PadSessionRevoker {
 			}
 		} catch (\Throwable $e) {
 			if (EtherpadErrorClassifier::isPadAlreadyDeleted($e)) {
-				// No group, and no session left in it.
+				// No group, and no session left in it: gone through, as a
+				// session already gone is in a delete.
+				$budget->noteGoneThrough();
 				return false;
 			}
 			// Those listed already are left as surely as those never listed.
 			$tally['left'] += count($sessions);
-			// A call without an answer counts towards an outage until a call
-			// goes through (RunBudget): a few end the asking, and the groups
-			// after them go to the job unasked.
+			// A call without an answer counts towards an outage until a delete
+			// or a group goes through (RunBudget): a few end the asking, and
+			// the groups after them go to the job unasked.
 			if (EtherpadClientException::isEtherpadUnreachable($e)) {
 				$budget->noteUnanswered();
 			}

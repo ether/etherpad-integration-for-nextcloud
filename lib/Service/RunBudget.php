@@ -17,17 +17,18 @@ use OCP\AppFramework\Utility\ITimeFactory;
  * total length: time, and patience with an Etherpad that does not answer
  * or refuses. A deadline alone bounds when the last call starts, not
  * when it ends, so each call is given what is left, and one that could
- * not finish in it is not started. A few items without an answer since
- * the last call that went through read as an outage, and the run ends
- * there rather than paying a timeout for each. A background run asks
- * Etherpad whether it answers at all before it counts one; a request,
- * which someone waits on, counts it at once (forRequest(),
- * noteUnanswered()). Refusals end a run too: more in a row than a few
- * items Etherpad will never take, or more in all. One budget for a run,
- * however many calls make it up, so every limit holds for the whole run.
+ * not finish in it is not started. A few items without an answer, with
+ * nothing gone through between them (noteDone(), noteGoneThrough()),
+ * read as an outage, and the run ends there rather than paying a timeout
+ * for each. A background run asks Etherpad whether it answers at all
+ * before it counts one; a request, which someone waits on, counts it at
+ * once (forRequest(), noteUnanswered()). Refusals end a run too: more in
+ * a row than a few items Etherpad will never take, or more in all. One
+ * budget for a run, however many calls make it up, so every limit holds
+ * for the whole run.
  */
 final class RunBudget {
-	/** A background run's length, as the sweeps promise it. */
+	/** A sweep's run, in the background or at once from the admin's buttons. */
 	public const DEFAULT_SECONDS = 20.0;
 
 	/** The least a call is given in a background run: with less left, none is started. */
@@ -36,7 +37,7 @@ final class RunBudget {
 	/** The least a call is given in a request, whose budget is a couple of seconds. */
 	private const MIN_REQUEST_CALL_TIMEOUT_SECONDS = 1;
 
-	/** Items without an answer, since the last call that went through, a run puts up with before reading them as an outage. */
+	/** Items without an answer, with nothing gone through between them, a run puts up with before reading them as an outage. */
 	private const MAX_FAILURES = 5;
 
 	/**
@@ -67,7 +68,7 @@ final class RunBudget {
 		$this->deadline = $this->now() + $seconds;
 	}
 
-	/** A request's budget: a call starts with a second left, and none is spent on asking whether Etherpad answers. */
+	/** A request's budget: a call still fits with a second left, and none is spent on asking whether Etherpad answers. */
 	public static function forRequest(ITimeFactory $clock, float $seconds): self {
 		$budget = new self($clock, $seconds);
 		$budget->minCallSeconds = self::MIN_REQUEST_CALL_TIMEOUT_SECONDS;
@@ -105,7 +106,7 @@ final class RunBudget {
 		$this->refusedInAll++;
 	}
 
-	/** A call that went through, if no item - a listing, say: failures start again, refusals in a row do not. */
+	/** What went through other than an item - a group's listings, say: failures start again, refusals in a row do not. */
 	public function noteGoneThrough(): void {
 		$this->failures = 0;
 	}
@@ -143,8 +144,8 @@ final class RunBudget {
 	}
 
 	/**
-	 * The rest of the budget as a call's timeout, capped so a run is
-	 * never more patient than the calls a user waits on.
+	 * The rest of the budget as a call's timeout, capped so no call of a
+	 * run waits longer than one a user waits on.
 	 */
 	public function callTimeout(): int {
 		return (int)max(0, min(floor($this->deadline - $this->now()), EtherpadClient::REQUEST_TIMEOUT_SECONDS));
