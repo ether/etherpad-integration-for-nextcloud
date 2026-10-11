@@ -140,8 +140,8 @@ test.describe('syncs of one file sent at once', () => {
 			expect(['updated', 'unchanged', 'locked']).toContain(status)
 		}
 		expect(statuses.filter((status) => status !== 'locked').length).toBeGreaterThan(0)
-		// Sent once all four answered, each after letting go of the lock, and
-		// to a file that holds the pad as it is.
+		// Sent once all four answered, so none holds the lock, and after one
+		// of them wrote the pad or found it written: nothing is left to write.
 		const after = await padApiPost(`pads/sync/${fileId}?force=1`)
 		expect((after.body as { status?: string }).status).toBe('unchanged')
 		expect(await getFileViaDav(padName)).toContain(marker)

@@ -54,7 +54,7 @@ class PadSyncService {
 		try {
 			return $this->syncLock->hold($fileId, fn (): PadSyncResult => $this->syncHeld($node, $fileId, $absolutePath, $force));
 		} catch (PadFileLockRetryExhaustedException $e) {
-			return $this->lockedSyncResponse('Pad sync not run: another sync of the file held its lock through every wait', $e, $fileId, $absolutePath, '', '', false, $force);
+			return $this->lockedSyncResponse('Pad sync not run: the file\'s sync lock stayed taken through every wait', $e, $fileId, $absolutePath, '', '', false, $force);
 		}
 	}
 

@@ -187,6 +187,7 @@ describe('pad-sync', () => {
 
 		const hidden = ps.sync(true, true)
 		ps.start()
+		ps.stop()
 		const left = ps.sync(true, true)
 		const plainLeft = ps.sync(false, true)
 
@@ -194,7 +195,6 @@ describe('pad-sync', () => {
 		expect(fetchImpl.mock.calls[2][0]).toBe('/sync/42')
 		gates.forEach((open) => open())
 		await Promise.all([hidden, left, plainLeft])
-		ps.stop()
 	})
 
 	it('ends the sharing when the page is shown again, through its own handlers', async () => {
@@ -224,7 +224,7 @@ describe('pad-sync', () => {
 	})
 
 	// The flush from before the page was shown again settles while the next
-	// one is in flight: it takes only its own place, and the next leaving
+	// one is in flight: it removes only its own entry, and the next leaving
 	// still shares the one in flight.
 	it('lets a settled flush leave the one that replaced it shared', async () => {
 		const gates = []
@@ -236,6 +236,7 @@ describe('pad-sync', () => {
 
 		const hidden = ps.sync(true, true)
 		ps.start()
+		ps.stop()
 		const left = ps.sync(true, true)
 		gates[0]()
 		await hidden
@@ -244,7 +245,6 @@ describe('pad-sync', () => {
 		expect(fetchImpl).toHaveBeenCalledTimes(2)
 		gates[1]()
 		await Promise.all([left, leftAgain])
-		ps.stop()
 	})
 
 	it('replays each url forced flushes asked for while a sync ran, in order', async () => {

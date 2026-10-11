@@ -29,7 +29,8 @@ use Psr\Log\LoggerInterface;
  * fatal error too; a request killed hard leaves the file's syncs answering
  * `locked` until the provider drops the lock: Redis once
  * `filelocking.ttl` has passed, the database at a background cleanup
- * after that, APCu and Memcached not by themselves.
+ * after that, APCu after a day whatever `filelocking.ttl` says, Memcached
+ * not by itself.
  */
 class PadSyncLock {
 	/**
@@ -59,7 +60,7 @@ class PadSyncLock {
 	 * @template T
 	 * @param \Closure(): T $sync
 	 * @return T
-	 * @throws PadFileLockRetryExhaustedException when another sync of the file held it through every wait
+	 * @throws PadFileLockRetryExhaustedException when the file's sync lock stayed taken through every wait: by another sync of it, or left by a request killed hard
 	 */
 	public function hold(int $fileId, \Closure $sync): mixed {
 		$key = Application::APP_ID . ':sync:' . $fileId;
@@ -92,7 +93,7 @@ class PadSyncLock {
 
 	/**
 	 * A lock that cannot be let go hides neither what the sync threw nor
-	 * that it went through. It then stays as after a request killed hard
+	 * that it went through. It may then stay as after a request killed hard
 	 * (see the class).
 	 */
 	private function release(string $key): void {
