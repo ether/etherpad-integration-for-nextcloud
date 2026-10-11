@@ -235,7 +235,7 @@ solely by the separate external-pad policy, not by these two settings.
   - Controller: `PadLifecycleController::syncById`
   - Optional query: `force=1`
   - Result: snapshot sync Etherpad -> `.pad`, `200` with `status=updated` or `unchanged`; `updated` says how often the write waited for a lock (`lock_retries`).
-  - A `.pad` locked by a sync or another client: the write waits a few times, briefly, then answers `200` with `status=locked`, `retryable: true` and `lock_retries` (the waits, `0` when the file was locked for reading already). Nothing is written; the next sync writes it.
+  - A `.pad` locked by a sync or another client: the write waits a few times, briefly, then answers `200` with `status=locked`, `retryable: true` and `lock_retries` (the waits; `0` when the lock kept the sync from reading the file at all). Nothing is written; a later sync writes it, if one comes.
   - `force=1` requests an immediate upstream re-check, but unchanged snapshots are still not rewritten. A pad behind the snapshot whose content differs is written.
   - A pad Etherpad made anew in place of the file's - without a single revision, with other text than the file saved - is never written over it: `400` with `code=pad_missing`, as an open answers, and the file keeps its content for `recover-from-snapshot`.
   - External pads:
@@ -477,9 +477,9 @@ solely by the separate external-pad policy, not by these two settings.
   - `missing_frontmatter` (`MissingFrontmatterException`) — the file has no pad metadata yet; clients call `POST /api/v1/pads/initialize-by-id/{fileId}` once and retry the open. A file whose content is neither metadata nor a legacy shortcut cannot be initialised and is refused *without* this code.
   - `pad_too_large` (`EtherpadTooLargeException`) — the pad is past the 5 MiB preview ceiling; it stays editable in Etherpad.
   - `pad_file_changed` (`PadFileChangedException`) — the file changed while its pad was being created or initialised; try again. On create, a file may now exist under that name, and the retry says so.
-  - `pad_type_disabled` (`PadTypeDisabledException`) — `403`; carries `access_mode` naming the disabled type, absent when neither type is enabled. See the pad-type settings section.
-  - `legacy_collision_no_access` (`LegacyPadCollisionException`) — see the legacy migration section.
-  - `legacy_protected_import_disabled` (`LegacyProtectedImportDisabledException`) — `403`; the legacy `.pad` names a group pad and this instance does not import those. The file is left untouched, so the same open succeeds once an admin switches the import back on. See the legacy migration section.
+  - `pad_type_disabled` (`PadTypeDisabledException`) — `403`; carries `access_mode` naming the disabled type, absent when neither type is enabled. See `enable_protected_pads`, `enable_public_pads` under "App Config Keys".
+  - `legacy_collision_no_access` (`LegacyPadCollisionException`) — see `docs/legacy-ownpad-migration.md`.
+  - `legacy_protected_import_disabled` (`LegacyProtectedImportDisabledException`) — `403`; the legacy `.pad` names a group pad and this instance does not import those. The file is left untouched, so the same open succeeds once an admin switches the import back on. See `docs/legacy-ownpad-migration.md`.
 
   The answers of a public share (`/api/v1/public/...`) carry the code that can come up there - `pad_too_large` - but not `missing_binding`, `pad_missing` or `missing_frontmatter`: what a client does on those needs a signed-in user. Their messages are translated, one sentence for each kind of trouble.
 
@@ -561,17 +561,15 @@ Registered in `lib/AppInfo/Application.php`.
 ## App Config Keys
 
 - `etherpad_host`
-- `etherpad_api_host` (optional) — where the server calls Etherpad's API, an internal address say; empty, `etherpad_host`
+- `etherpad_api_host` (optional) — where the server calls Etherpad's API, an internal address say; empty, `etherpad_host` is used. The settings form stores `etherpad_host` here when its field is left empty, so the key does not follow a later change of `etherpad_host` made through `occ`.
 - `etherpad_api_key`
 - `etherpad_api_version` (default `1.2.15`)
-- `etherpad_cookie_domain`
-  - Optional explicit cookie domain for protected pad session bootstrap.
-  - Fallback when empty:
-    - derived from `etherpad_host`
-    - IP/invalid hosts -> empty domain attribute
-    - recommendation: set explicitly for complex proxy/subdomain setups
-- `etherpad_cookie_domain_configured` (`yes|no`, default `no`) — whether the admin set `etherpad_cookie_domain`, which the settings form writes with it. With `yes` the stored value stands, an empty one too: a host-only cookie, which reaches Etherpad only where it runs on Nextcloud's own host. With `no` an empty value counts as unset and the domain is derived; a value stored without the flag still stands.
-- `enable_protected_pads`, `enable_public_pads` (`yes|no`, default `yes`) — whether new pads of that type can be made; existing pads open either way; what a disabled type does to each route is under "Nextcloud App Routes" above
+- `etherpad_cookie_domain` and `etherpad_cookie_domain_configured` (`yes|no`, default `no`) — the `Domain` of the Etherpad session cookie.
+  - Nextcloud and Etherpad on one host: a host-only cookie, whatever these say.
+  - Otherwise, with the flag `yes` - the settings form sets it on every save - the stored value stands, an empty one too: a host-only cookie, which then does not reach Etherpad.
+  - With the flag `no`, a stored value still stands (an instance from before the flag), and an empty one is derived: the parent domain both hosts share; a host-only cookie where they share none, or one of them is an IP address or no name a domain cookie can carry.
+  - Recommended: set it explicitly for complex proxy or subdomain setups.
+- `enable_protected_pads`, `enable_public_pads` (`yes|no`, default `yes`) — whether the create routes make new pads of that type; what each does when the type is off is under "Nextcloud App Routes" above. A recovery and a restore from the trash make a new pad without asking, and existing pads open either way.
 - `etherpad_session_cookie_samesite` (`lax|none`, default `lax`) and `etherpad_http_only_session_cookie` (`auto|yes|no`, default `auto`) — the Etherpad session cookie's attributes: `docs/etherpad-integration.md`, which says when to set them
 - `delete_pad_with_file` (`yes|no`, default `yes`) — whether the pad of a `.pad` file deleted for good is deleted (`docs/deleting-pads.md`); `delete_on_trash` before, taken over on upgrade
 - `sync_interval_seconds` (default `120`, clamp `5..3600`)
