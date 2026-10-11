@@ -445,9 +445,11 @@ import { assertOpenPayload, contentUrlFrom, contentViewFrom, isMissingBindingErr
 			// Open again now that the binding exists.
 			void run(true)
 		} catch (error) {
-			// No answer: the pad may be set up by now, and another recovery
-			// would meet it. Opening tells, and is safe to repeat.
-			if (isUnanswered(error)) {
+			// No answer, or one that says to try again - another recovery
+			// bound the file first, say, or Etherpad did not answer. Opening
+			// tells where things stand and is safe to repeat; a second
+			// recovery could only meet a binding made meanwhile.
+			if (isUnanswered(error) || error?.retryable === true) {
 				void run(true)
 				return
 			}

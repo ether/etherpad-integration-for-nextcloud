@@ -461,6 +461,23 @@ describe('viewer component — resolveOpenUrl', () => {
 		expect(vm.loadError).toBe('')
 	})
 
+	// The server's word to try again: the open comes next, not the error,
+	// and tells where things stand.
+	it.each([
+		['another recovery bound the file first', 400],
+		['Etherpad did not answer', 503],
+	])('opens again after a recovery answered with retryable: %s', async (_, status) => {
+		apiRecoverFromSnapshot.mockRejectedValue(Object.assign(new Error('Try again.'), { retryable: true, status }))
+		const fetchMock = stubFetch(jsonResponse({ url: 'https://pad.example/recovered', sync_url: '' }))
+		const vm = makeInstance({ fileid: 42, fileInfo: { path: '/copy.pad' }, loadError: 'no binding', canRecover: true, recoveryFileId: 42 })
+
+		await vm.recoverFromSnapshot()
+
+		expect(fetchMock.mock.calls[0][0]).toBe(endpoint('pads/open-by-id'))
+		expect(vm.iframeSrc).toBe('https://pad.example/recovered')
+		expect(vm.loadError).toBe('')
+	})
+
 	it.each([
 		['without a code', { message: 'Could not open pad' }, 500],
 		['with another code', MISSING_BINDING, 400],

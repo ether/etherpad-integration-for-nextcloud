@@ -84,6 +84,30 @@ describe('pad-sync', () => {
 		expect(fetchImpl).toHaveBeenCalledTimes(2)
 	})
 
+	// The page is leaving: behind the running request it would never start.
+	it.each([
+		['a plain sync', false],
+		['a forced sync', true],
+	])('sends a keepalive flush at once beside %s in flight', async (_, runningForce) => {
+		const gates = []
+		const fetchImpl = vi.fn(() => new Promise((resolve) => {
+			gates.push(() => resolve(okResponse()))
+		}))
+		const ps = createPadSync({ fetchImpl })
+		ps.configure({ syncUrl: '/sync/42' })
+
+		const running = ps.sync(runningForce, false)
+		const leaving = ps.sync(true, true)
+
+		expect(fetchImpl).toHaveBeenCalledTimes(2)
+		expect(fetchImpl.mock.calls[1][0]).toBe('/sync/42?force=1')
+		expect(fetchImpl.mock.calls[1][1].keepalive).toBe(true)
+
+		gates.forEach((open) => open())
+		await Promise.all([running, leaving])
+		expect(fetchImpl).toHaveBeenCalledTimes(2)
+	})
+
 	it('does not replay a coalesced forced flush once the url is cleared mid-flight (pad-switch safety)', async () => {
 		// The viewer resets via configure({ syncUrl: '' }) before switching
 		// pads. A forced flush that was queued against the old pad must then

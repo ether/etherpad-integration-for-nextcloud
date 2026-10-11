@@ -8,10 +8,9 @@
  *
  * Owns the periodic background sync, forced/keepalive flushes, and the
  * visibility/pagehide lifecycle wiring. Forced syncs coalesce: while one
- * request is in flight a second forced flush is not started concurrently but
- * remembered and replayed once, so two forced flushes can never overlap (this
- * is the embed behavior, now shared — the viewer previously used a plain
- * in-flight boolean that allowed overlap).
+ * request is in flight, a second forced flush is not started beside it but
+ * remembered and replayed once. A keepalive flush is the exception (sync()):
+ * the page is leaving, so it goes at once.
  *
  * The caller supplies the request-token getter (the viewer and embed read it
  * from different places) and may inject a `fetchImpl` for tests.
@@ -64,13 +63,38 @@ export function createPadSync({ requestToken, fetchImpl } = {}) {
 		void sync(force, keepalive).catch(() => {})
 	}
 
+	const request = async (force, keepalive) => {
+		const url = force ? (syncUrl + (syncUrl.includes('?') ? '&' : '?') + 'force=1') : syncUrl
+		const response = await doFetch(url, {
+			method: 'POST',
+			credentials: 'same-origin',
+			headers: {
+				Accept: 'application/json',
+				requesttoken: getToken(),
+			},
+			keepalive: Boolean(keepalive),
+		})
+		const data = await response.json().catch(() => ({}))
+		if (!response.ok) {
+			throw new Error((data && data.message) || 'Sync request failed.')
+		}
+		return data
+	}
+
 	const sync = async (force, keepalive) => {
 		if (!syncUrl) {
 			return { status: 'disabled' }
 		}
 		if (syncPromise) {
-			// A request is already running. A forced flush that arrives while a
-			// non-forced sync is in flight is coalesced into a single replay.
+			// A keepalive flush is the page leaving: queued behind the running
+			// request it would never start, and the running one may go with
+			// the page. So it goes at once, beside it; the server takes two
+			// syncs of a file in turn, or answers `locked`.
+			if (keepalive) {
+				return request(force, true)
+			}
+			// A forced flush that arrives while a non-forced sync is in flight
+			// is coalesced into a single replay.
 			if (force && !activeSyncForce) {
 				pendingForcedSync = true
 				pendingForcedKeepalive = pendingForcedKeepalive || Boolean(keepalive)
@@ -79,23 +103,7 @@ export function createPadSync({ requestToken, fetchImpl } = {}) {
 			return syncPromise
 		}
 		activeSyncForce = Boolean(force)
-		const currentPromise = (async () => {
-			const url = force ? (syncUrl + (syncUrl.includes('?') ? '&' : '?') + 'force=1') : syncUrl
-			const response = await doFetch(url, {
-				method: 'POST',
-				credentials: 'same-origin',
-				headers: {
-					Accept: 'application/json',
-					requesttoken: getToken(),
-				},
-				keepalive: Boolean(keepalive),
-			})
-			const data = await response.json().catch(() => ({}))
-			if (!response.ok) {
-				throw new Error((data && data.message) || 'Sync request failed.')
-			}
-			return data
-		})()
+		const currentPromise = request(force, keepalive)
 		syncPromise = currentPromise
 		let result
 		let syncError = null

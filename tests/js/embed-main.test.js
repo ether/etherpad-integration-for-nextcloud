@@ -517,6 +517,27 @@ describe('embed-main', () => {
 		expect(iframe().src).toContain(PAD.url)
 	})
 
+	// The server's word to try again: the open comes next, not the error,
+	// and tells where things stand.
+	it.each([
+		['another recovery bound the file first', 400],
+		['Etherpad did not answer', 503],
+	])('opens again after a recovery answered with retryable: %s', async (_, status) => {
+		fetch
+			.mockResolvedValueOnce(errorResponse(MISSING_BINDING))
+			.mockResolvedValueOnce(jsonResponse({ found: false }))
+			.mockResolvedValueOnce(errorResponse({ message: 'Try again.', retryable: true }, status))
+			.mockResolvedValueOnce(jsonResponse(PAD))
+
+		await importEmbed()
+		await flushAsyncWork()
+		recoveryActions().querySelector('button').click()
+		await flushAsyncWork()
+
+		expect(fetch.mock.calls[3][0]).toBe('/api/open-by-id')
+		expect(iframe().src).toContain(PAD.url)
+	})
+
 	it('hands the focus back to the recovery card when a recovery fails', async () => {
 		fetch
 			.mockResolvedValueOnce(errorResponse(MISSING_BINDING))

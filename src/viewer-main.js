@@ -239,7 +239,7 @@ const component = {
 
 			if (!this.filePath) {
 				if (!isCurrent()) return
-				this.loadError = 'No .pad file selected.'
+				this.loadError = translate('No .pad file selected.')
 				this.isLoading = false
 				return
 			}
@@ -388,9 +388,11 @@ const component = {
 				this.canRecover = false
 				await this.resolveOpenUrl(true)
 			} catch (error) {
-				// No answer: the pad may be set up by now, and another
-				// recovery would meet it. Opening tells, and is safe to repeat.
-				if (isUnanswered(error)) {
+				// No answer, or one that says to try again - another recovery
+				// bound the file first, say, or Etherpad did not answer. Opening
+				// tells where things stand and is safe to repeat; a second
+				// recovery could only meet a binding made meanwhile.
+				if (isUnanswered(error) || error?.retryable === true) {
 					await this.resolveOpenUrl(true)
 					return
 				}
@@ -586,7 +588,7 @@ const component = {
 				})
 		}
 		if (this.isLoading || !this.iframeSrc) {
-			return createElement('div', { class: 'epnc-native-status' }, 'Loading pad...')
+			return createElement('div', { class: 'epnc-native-status' }, translate('Loading pad...'))
 		}
 
 		return createElement('div', { class: 'epnc-native-shell' }, [

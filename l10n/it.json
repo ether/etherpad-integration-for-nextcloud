@@ -108,6 +108,7 @@
         "Invalid parentFolderId.": "parentFolderId non valido.",
         "Loading pad content...": "Caricamento del contenuto del pad…",
         "Loading pad...": "Caricamento del pad...",
+        "No .pad file selected.": "Nessun file .pad selezionato.",
         "Looks for pad links whose .pad file no longer exists.": "Cerca collegamenti a pad il cui file .pad non esiste più.",
         "New pad": "Nuovo pad",
         "Nextcloud and Etherpad share no parent domain, so the browser cannot send the session cookie to Etherpad and protected pads will not open. If a proxy exposes Etherpad under the Nextcloud domain, use that address as the base URL. Otherwise, place both services under a shared parent domain or switch protected pads off.": "Nextcloud ed Etherpad non condividono alcun parent domain, quindi il browser non può inviare il cookie di sessione a Etherpad e i pad protetti non si apriranno. Se un proxy espone Etherpad sotto il dominio di Nextcloud, usa quell'indirizzo come URL base. Altrimenti colloca entrambi i servizi sotto un parent domain comune, oppure disattiva i pad protetti.",
