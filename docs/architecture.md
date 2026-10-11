@@ -198,10 +198,7 @@ Primary flow (native viewer):
   - `Domain`
   - `Secure`
   - `SameSite=Lax`, or `None` where `etherpad_session_cookie_samesite` says so
-- Domain source:
-  - explicit `etherpad_cookie_domain` app setting when configured
-  - otherwise derived from `etherpad_host` with label-aware fallback rules
-  - explicit config is recommended for proxy-heavy or non-standard subdomain setups
+- Domain source: `etherpad_cookie_domain` and `etherpad_cookie_domain_configured` in `docs/api-reference.md` ("App Config Keys"), decided by `CookieDomainPolicy`
 - Current app-level contract:
   - one custom Etherpad `Set-Cookie` line per protected-open response
   - no additional app-level custom cookies on these same responses

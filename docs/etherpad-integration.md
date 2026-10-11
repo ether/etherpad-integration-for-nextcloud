@@ -211,13 +211,7 @@ Cookie details:
 - `secure: true`
 - `samesite: Lax`
 - `http_only`: depends on the Etherpad release, see below
-- Domain handling:
-  - if `etherpad_cookie_domain` is set, this value is used as-is
-  - if empty, domain is derived from `etherpad_host`
-    - two-label host (for example `example.org`) -> `example.org`
-    - multi-label host (for example `pad.example.org`) -> `.example.org`
-  - derivation is skipped for IP hosts and invalid host values
-  - recommendation: use explicit `etherpad_cookie_domain` in multi-subdomain/proxy setups
+- Domain: `etherpad_cookie_domain` and `etherpad_cookie_domain_configured` in `docs/api-reference.md` ("App Config Keys") say which one, and when there is none
 
 ### Session lifetime and revocation
 

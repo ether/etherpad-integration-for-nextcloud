@@ -235,7 +235,7 @@ solely by the separate external-pad policy, not by these two settings.
   - Controller: `PadLifecycleController::syncById`
   - Optional query: `force=1`
   - Result: snapshot sync Etherpad -> `.pad`, `200` with `status=updated` or `unchanged`; `updated` says how often the write waited for a lock (`lock_retries`).
-  - A `.pad` locked by a sync or another client: the write waits a few times, briefly, then answers `200` with `status=locked`, `retryable: true` and `lock_retries` (the waits; `0` when the lock kept the sync from reading the file at all). Nothing is written; a later sync writes it, if one comes.
+  - A `.pad` locked by a sync or another client: `200` with `status=locked`, `retryable: true` and `lock_retries`, how often the write waited, briefly, before giving up - `0` when the lock kept the sync from reading the file at all. Nothing is written; a later sync writes it, if one comes.
   - `force=1` requests an immediate upstream re-check, but unchanged snapshots are still not rewritten. A pad behind the snapshot whose content differs is written.
   - A pad Etherpad made anew in place of the file's - without a single revision, with other text than the file saved - is never written over it: `400` with `code=pad_missing`, as an open answers, and the file keeps its content for `recover-from-snapshot`.
   - External pads:
@@ -259,7 +259,7 @@ solely by the separate external-pad policy, not by these two settings.
     - `403` with `message` when the user may not change the file, a read-only share say: a recovery writes the file. Refused before Etherpad is asked.
     - `409` with `status=skipped` + `reason=external_pad` for external (`ext.*`) frontmatter; recovery doesn't apply there.
     - `409` with `status=skipped` + `reason=file_moved` or `reason=file_changed` when the file moved, or was written, while the new pad was seeded: the new pad is let go, nothing is written, and a retry starts from what the file holds then.
-    - `409` with `message` and the `PadAlreadyHasBindingException` mapping if the file has a row and its pad is not lost: Etherpad has it, the row waits, or it names another pad than the file.
+    - `409` with `message` and the `PadAlreadyHasBindingException` mapping if the file has a row and its pad is not lost: Etherpad has it, the row waits, the file names another pad than its row, or the pad is public and the file holds nothing saved.
     - `409` with `status=skipped` + `reason=binding_state_transition_conflict`, without `retryable`, when another recovery of a file with a binding moved the binding first: the new pad is let go, the file is the other one's to write, and the next open finds its pad.
     - `503` with `retryable` when Etherpad does not answer - asked whether the pad is lost, or while the new pad is seeded - and when the file is locked by a sync; whatever was made is let go again. A write refused for a lock is let go only once the file can be read under its lock again, after a short wait; a lock that stays answers `500` as below.
     - `400` when Etherpad refuses, and for a file that is no `.pad` the app can read, with a binding or without: no pad metadata (with `code: missing_frontmatter`), or metadata it cannot parse.
@@ -561,15 +561,16 @@ Registered in `lib/AppInfo/Application.php`.
 ## App Config Keys
 
 - `etherpad_host`
-- `etherpad_api_host` (optional) — where the server calls Etherpad's API, an internal address say; empty, `etherpad_host` is used. The settings form stores `etherpad_host` here when its field is left empty, so the key does not follow a later change of `etherpad_host` made through `occ`.
+- `etherpad_api_host` (optional) — where the server calls Etherpad's API, an internal address say; empty, `etherpad_host` is used. A save of the settings form with the field empty stores `etherpad_host` here, and the form shows it from then on: a later change of `etherpad_host`, through `occ` or the form, leaves the API on the old address until the field is emptied again.
 - `etherpad_api_key`
 - `etherpad_api_version` (default `1.2.15`)
 - `etherpad_cookie_domain` and `etherpad_cookie_domain_configured` (`yes|no`, default `no`) — the `Domain` of the Etherpad session cookie.
   - Nextcloud and Etherpad on one host: a host-only cookie, whatever these say.
-  - Otherwise, with the flag `yes` - the settings form sets it on every save - the stored value stands, an empty one too: a host-only cookie, which then does not reach Etherpad.
-  - With the flag `no`, a stored value still stands (an instance from before the flag), and an empty one is derived: the parent domain both hosts share; a host-only cookie where they share none, or one of them is an IP address or no name a domain cookie can carry.
+  - Otherwise, with the flag `yes`, the stored value stands, an empty one too: a host-only cookie, which then does not reach Etherpad.
+  - With the flag `no`, a stored value stands too (one from before the flag, or set through `occ`), and an empty one is derived: the parent domain both hosts share, of two labels at least. A host-only cookie where they share less (`nc.example.org` and `pad.other.org`), or where one of them is an IP address, `localhost`, a name under `.localhost` or one without a dot. A parent that may be a public suffix (`co.uk`) is set all the same, with a warning.
+  - The settings form shows the derived domain while none is stored, and stores what its field holds, with the flag `yes`, on every save: from then on the domain does not follow a change of either host until it is set again.
   - Recommended: set it explicitly for complex proxy or subdomain setups.
-- `enable_protected_pads`, `enable_public_pads` (`yes|no`, default `yes`) — whether the create routes make new pads of that type; what each does when the type is off is under "Nextcloud App Routes" above. A recovery and a restore from the trash make a new pad without asking, and existing pads open either way.
+- `enable_protected_pads`, `enable_public_pads` (`yes|no`, default `yes`) — whether new pads of that type are made. With a type off, the create routes refuse it, while `from-template` and the `initialize` endpoints make a pad of the other type ("Nextcloud App Routes" above), and Files' "New" menu offers only what can be made. A recovery and a restore from the trash make a new pad of the file's type whatever these switches say, and existing pads open either way.
 - `etherpad_session_cookie_samesite` (`lax|none`, default `lax`) and `etherpad_http_only_session_cookie` (`auto|yes|no`, default `auto`) — the Etherpad session cookie's attributes: `docs/etherpad-integration.md`, which says when to set them
 - `delete_pad_with_file` (`yes|no`, default `yes`) — whether the pad of a `.pad` file deleted for good is deleted (`docs/deleting-pads.md`); `delete_on_trash` before, taken over on upgrade
 - `sync_interval_seconds` (default `120`, clamp `5..3600`)
