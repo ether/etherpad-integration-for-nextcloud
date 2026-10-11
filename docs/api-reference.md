@@ -236,6 +236,7 @@ solely by the separate external-pad policy, not by these two settings.
   - Optional query: `force=1`
   - Result: snapshot sync Etherpad -> `.pad`, `200` with `status=updated` or `unchanged`; `updated` says how often the write waited for a lock (`lock_retries`).
   - A `.pad` locked by a sync or another client: the write waits a few times, briefly, then answers `200` with `status=locked`, `retryable: true` and `lock_retries` (the waits, `0` when the file was locked for reading already). Nothing is written; the next sync writes it.
+  - Two syncs of a file at once - a page's closing sync beside a running one, two tabs: the file is read again right before the write, and a sync another one overtook - which wrote a snapshot at least as new meanwhile - writes nothing and answers `unchanged` with that snapshot's `snapshot_rev`. A sync that writes between that read and the write is not seen.
   - `force=1` requests an immediate upstream re-check, but unchanged snapshots are still not rewritten. A pad behind the snapshot whose content differs is written.
   - A pad Etherpad made anew in place of the file's - without a single revision, with other text than the file saved - is never written over it: `400` with `code=pad_missing`, as an open answers, and the file keeps its content for `recover-from-snapshot`.
   - External pads:

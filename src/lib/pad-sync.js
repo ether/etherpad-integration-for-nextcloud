@@ -88,8 +88,9 @@ export function createPadSync({ requestToken, fetchImpl } = {}) {
 		if (syncPromise) {
 			// A keepalive flush is the page leaving: queued behind the running
 			// request it would never start, and the running one may go with
-			// the page. So it goes at once, beside it; the server takes two
-			// syncs of a file in turn, or answers `locked`.
+			// the page. So it goes at once, beside it. Of two syncs of a file,
+			// the server lets the slower one write no older text over what the
+			// other wrote meanwhile, or answers `locked`.
 			if (keepalive) {
 				return request(force, true)
 			}
