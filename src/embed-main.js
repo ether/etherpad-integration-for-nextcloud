@@ -518,8 +518,8 @@ import { assertOpenPayload, contentUrlFrom, contentViewFrom, isMissingBindingErr
 			padSync.configure({ syncUrl, intervalMs })
 			padSync.installLifecycleHandlers()
 			installHostMessageHandler()
-			// No syncing for a viewer: it writes the pad back into the .pad
-			// file, which is exactly what a read-only share may not do.
+			// A read-only open comes without a sync URL: a sync writes the
+			// pad back into the .pad file.
 			if (syncUrl !== '') {
 				padSync.start()
 			}

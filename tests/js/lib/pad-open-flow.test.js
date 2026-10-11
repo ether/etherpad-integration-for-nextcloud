@@ -125,11 +125,7 @@ describe('openWithFrontmatterRecovery', () => {
 		expect(open).toHaveBeenCalledTimes(1)
 	})
 
-	/** Unanswered, its pad may be set up by now; another open would start a second one. */
-	/**
-	 * A second try opens first, so an initialise that went through is found,
-	 * and the server keeps one still running from being done twice.
-	 */
+	/** A second try opens first: an initialise that got no answer may have gone through. */
 	it.each([
 		['the first open', [unanswered()], undefined],
 		['the initialise', [withCode('missing_frontmatter')], unanswered()],

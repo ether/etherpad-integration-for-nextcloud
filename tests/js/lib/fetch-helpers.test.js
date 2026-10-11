@@ -8,9 +8,9 @@ import { MISSING_BINDING, UNREACHABLE } from '../answers.js'
 import { brokenBody, jsonResponse, pageResponse } from '../responses.js'
 
 /**
- * The signal chaining is the subtlest part of this module and it now
- * carries both frontends: the viewer aborts a superseded open, the embed
- * relies on the timeout, and both go through here.
+ * The signal chaining is the subtlest part of this module, and both
+ * frontends rely on it: the viewer aborts a superseded open, the embed
+ * the timeout.
  */
 
 const stubFetch = (impl) => {

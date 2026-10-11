@@ -270,9 +270,6 @@ const component = {
 					if (byPublicUrl) {
 						return await this.fetchOpenPayload(byPublicUrl, { signal })
 					}
-					// One way in, chosen once. An open by id that retries by
-					// path is how a refused id ended up opening whatever the
-					// path pointed at.
 					if (this.resolvedFileId !== null) {
 						const byIdBody = new URLSearchParams()
 						byIdBody.set('fileId', String(this.resolvedFileId))

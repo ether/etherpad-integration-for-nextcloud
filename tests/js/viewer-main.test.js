@@ -452,8 +452,8 @@ describe('viewer component — resolveOpenUrl', () => {
 		expect(vm.canRetryOpen).toBe(true)
 	})
 
-	// Its pad may be set up by now; another open would start a second one.
-	// The second try opens first, and finds the pad the first set up.
+	// The second try opens first: the initialise that got no answer may
+	// have gone through.
 	it('offers a second try after an initialise that got no answer', async () => {
 		const fetchMock = stubFetch()
 		fetchMock
@@ -658,7 +658,7 @@ describe('viewer component — resolveOpenUrl', () => {
 			await pending
 
 			// In its own words rather than the client's English, and worth
-			// another try: an open only reads.
+			// another try, which opens first and goes by what it finds.
 			expect(vm.loadError).toBe(UNANSWERED_TEXT)
 			expect(vm.canRetryOpen).toBe(true)
 			expect(vm.isLoading).toBe(false)

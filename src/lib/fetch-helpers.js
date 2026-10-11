@@ -12,12 +12,9 @@ const GATEWAY_STATUSES = [502, 503, 504]
  * abandoning an open, say — must still be able to cancel. Whichever fires
  * first wins.
  *
- * `timeoutMs: null` waits indefinitely, and is for requests that *write*.
- * Cutting a read short costs a retry; cutting a write short applies the
- * change with nobody left to read the outcome — a recovery that has
- * created its pad but not yet its binding looks unrecovered, and the
- * retry then either collides with the binding it did write or provisions
- * a second pad and orphans the first. Slow is not the same as stuck.
+ * `timeoutMs: null` waits indefinitely, and is for requests that *write*:
+ * cutting one short does not stop the server's work, it only leaves its
+ * outcome unknown. Cutting a read short costs a retry.
  *
  * An error carries the server's `code`, `reason` and `retryable` when it
  * sent them, `status` whenever one came, and `unanswered` when nothing came

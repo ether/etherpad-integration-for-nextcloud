@@ -60,21 +60,20 @@ export const isPadMissingError = (error) => Boolean(error) && error.code === 'pa
 export const isRetryableOpenError = (error) => Boolean(error)
 	&& (error.retryable === true || error.code === 'pad_file_changed' || isUnanswered(error) || isThrottled(error))
 
-/** The `409` reasons `opensAgainAfterRecovery()` opens again after; `undefined` is a `409` without one. */
+/**
+ * The `409` reasons of a file no longer the case a recovery was offered
+ * for: another recovery moved its row, or the file was written meanwhile.
+ * `undefined` is a `409` without a reason: a row a recovery does not
+ * replace.
+ */
 const REASONS_TO_OPEN_AGAIN = ['binding_state_transition_conflict', 'file_changed', undefined]
 
 /**
- * Whether a recovery that failed is answered by opening again rather than
- * with its error. With no answer the recovery may have gone through, and
- * the open tells. So too when the answer says the file is no longer the
- * case the recovery was offered for: another recovery made the row (`400`
- * with `retryable`) or moved it (`409` with
- * `binding_state_transition_conflict`), the file was written meanwhile
- * (`409` with `file_changed`), or the file has a row a recovery does not
- * replace (`409` without a `reason`: Etherpad has the pad again, say); the
- * open shows what is there now. Every other answer keeps its sentence and
- * the button, among them a `409` for an external pad, a file moved or a
- * mode the app does not know, and a `503` of a lock or a silent Etherpad.
+ * Whether a failed recovery is answered by opening again rather than with
+ * its error: when it may have gone through, or the answer says the file is
+ * no longer the case the recovery was offered for (a `400` with
+ * `retryable` is a row another recovery made). The open shows what is
+ * there now; every other failure stays on the recovery card.
  *
  * @param {unknown} error
  * @return {boolean}
