@@ -20,8 +20,9 @@ use OCP\Lock\LockedException;
  */
 class PadFileLockRetryService {
 	/*
-	 * Exponential backoff in microseconds. Sync waits slightly longer because
-	 * putContent usually holds the file lock longer than getContent.
+	 * Exponential backoff in microseconds. A sync waits slightly longer than
+	 * an open, its read too: an open keeps its reader waiting, a sync mostly
+	 * runs unseen.
 	 */
 	private const OPEN_LOCK_RETRY_DELAYS_US = [100000, 200000, 400000];
 	private const SYNC_LOCK_RETRY_DELAYS_US = [150000, 300000, 600000];
@@ -48,20 +49,44 @@ class PadFileLockRetryService {
 	}
 
 	/**
+	 * @throws PadFileLockRetryExhaustedException with the waits, when the file stayed locked
+	 */
+	public function readContentWithSyncLockRetry(File $node): string {
+		$content = '';
+		$this->withSyncLockRetry(static function () use ($node, &$content): void {
+			$content = $node->getContent();
+		});
+		return $content;
+	}
+
+	/**
 	 * $beforeEachAttempt runs right before every write, the first and each
 	 * one after a wait, and throws to stop it: what held before a wait need
 	 * not hold after it.
 	 *
 	 * @param (\Closure(): void)|null $beforeEachAttempt
+	 * @return int how often the write waited
+	 * @throws PadFileLockRetryExhaustedException with the waits, when the file stayed locked
 	 */
 	public function putContentWithSyncLockRetry(File $node, string $content, ?\Closure $beforeEachAttempt = null): int {
+		return $this->withSyncLockRetry(static function () use ($node, $content, $beforeEachAttempt): void {
+			if ($beforeEachAttempt !== null) {
+				$beforeEachAttempt();
+			}
+			$node->putContent($content);
+		});
+	}
+
+	/**
+	 * @param \Closure(): void $attempt
+	 * @return int how often it waited before $attempt went through
+	 * @throws PadFileLockRetryExhaustedException
+	 */
+	private function withSyncLockRetry(\Closure $attempt): int {
 		$lockRetries = 0;
 		foreach (self::SYNC_LOCK_RETRY_DELAYS_US as $delay) {
 			try {
-				if ($beforeEachAttempt !== null) {
-					$beforeEachAttempt();
-				}
-				$node->putContent($content);
+				$attempt();
 				return $lockRetries;
 			} catch (LockedException) {
 				$this->sleep($delay);
@@ -70,10 +95,7 @@ class PadFileLockRetryService {
 		}
 
 		try {
-			if ($beforeEachAttempt !== null) {
-				$beforeEachAttempt();
-			}
-			$node->putContent($content);
+			$attempt();
 			return $lockRetries;
 		} catch (LockedException $e) {
 			throw new PadFileLockRetryExhaustedException($lockRetries, $e);

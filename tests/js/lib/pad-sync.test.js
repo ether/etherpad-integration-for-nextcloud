@@ -73,8 +73,8 @@ describe('pad-sync', () => {
 
 		expect(fetchImpl).toHaveBeenCalledTimes(1)
 
-		gates[0]() // finish the plain sync; the in-flight sync replays the
-		await flushAsyncWork() // coalesced forced flush (so `first` only settles after it)
+		gates[0]() // finish the plain sync; the coalesced forced flush is
+		await flushAsyncWork() // replayed after it
 
 		expect(fetchImpl).toHaveBeenCalledTimes(2)
 		expect(fetchImpl.mock.calls[1][0]).toBe('/sync/42?force=1')
@@ -84,10 +84,8 @@ describe('pad-sync', () => {
 		expect(fetchImpl).toHaveBeenCalledTimes(2)
 	})
 
-	it('does not replay a coalesced forced flush once the url is cleared mid-flight (pad-switch safety)', async () => {
-		// The viewer resets via configure({ syncUrl: '' }) before switching
-		// pads. A forced flush that was queued against the old pad must then
-		// become a no-op instead of POSTing to a stale/replaced target.
+	// The url changed while the replay waits: it goes to the url it was asked for.
+	it('replays a forced flush to the url it was asked for', async () => {
 		const gates = []
 		const fetchImpl = vi.fn(() => new Promise((resolve) => {
 			gates.push(() => resolve(okResponse()))
@@ -95,18 +93,179 @@ describe('pad-sync', () => {
 		const ps = createPadSync({ fetchImpl })
 		ps.configure({ syncUrl: '/sync/A' })
 
-		const inflight = ps.sync(false, false) // to /sync/A, in flight
-		const forced = ps.sync(true, false) // coalesced, pending replay
-		expect(fetchImpl).toHaveBeenCalledTimes(1)
+		const inflight = ps.sync(false, false)
+		const forced = ps.sync(true, false)
+		ps.configure({ syncUrl: '/sync/B' })
 
-		ps.configure({ syncUrl: '' }) // viewer clears before re-resolving
-
-		gates[0]() // finish the in-flight sync; the replay now sees no url
-		await Promise.all([inflight, forced])
+		gates[0]()
 		await flushAsyncWork()
+		expect(fetchImpl).toHaveBeenCalledTimes(2)
+		expect(fetchImpl.mock.calls[1][0]).toBe('/sync/A?force=1')
 
-		expect(fetchImpl).toHaveBeenCalledTimes(1) // replay was a no-op
-		await expect(forced).resolves.toEqual({ status: 'disabled' })
+		gates[1]()
+		await Promise.all([inflight, forced])
+	})
+
+	// Queued behind the running sync, the flush would never start once the
+	// page is gone; the server runs the two one after the other.
+	it('sends a keepalive flush at once, beside a running sync', async () => {
+		const gates = []
+		const fetchImpl = vi.fn(() => new Promise((resolve) => {
+			gates.push(() => resolve(okResponse()))
+		}))
+		const ps = createPadSync({ fetchImpl })
+		ps.configure({ syncUrl: '/sync/42' })
+
+		const running = ps.sync(false, false)
+		const closing = ps.sync(true, true)
+
+		expect(fetchImpl).toHaveBeenCalledTimes(2)
+		expect(fetchImpl.mock.calls[1][0]).toBe('/sync/42?force=1')
+		expect(fetchImpl.mock.calls[1][1].keepalive).toBe(true)
+
+		gates.forEach((open) => open())
+		await Promise.all([running, closing])
+		expect(fetchImpl).toHaveBeenCalledTimes(2)
+	})
+
+	// The viewer keeps one controller and opens the next pad with it.
+	it('does not let another pad share the keepalive flush of the one left', async () => {
+		const gates = []
+		const fetchImpl = vi.fn(() => new Promise((resolve) => {
+			gates.push(() => resolve(okResponse()))
+		}))
+		const ps = createPadSync({ fetchImpl })
+		ps.configure({ syncUrl: '/sync/A' })
+
+		const leftA = ps.sync(true, true)
+		ps.configure({ syncUrl: '/sync/B' })
+		const leftB = ps.sync(true, true)
+
+		expect(fetchImpl).toHaveBeenCalledTimes(2)
+		expect(fetchImpl.mock.calls[1][0]).toBe('/sync/B?force=1')
+		gates.forEach((open) => open())
+		await Promise.all([leftA, leftB])
+	})
+
+	it('lets the events of one leaving share a keepalive flush', async () => {
+		const gates = []
+		const fetchImpl = vi.fn(() => new Promise((resolve) => {
+			gates.push(() => resolve(okResponse()))
+		}))
+		const ps = createPadSync({ fetchImpl })
+		ps.configure({ syncUrl: '/sync/42' })
+		ps.installLifecycleHandlers()
+
+		try {
+			Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true })
+			document.dispatchEvent(new Event('visibilitychange'))
+			window.dispatchEvent(new Event('pagehide'))
+			const host = ps.sync(true, true)
+			await flushAsyncWork()
+			expect(fetchImpl).toHaveBeenCalledTimes(1)
+
+			gates[0]()
+			await host
+			ps.fireAndForget(true, true)
+			await flushAsyncWork()
+			expect(fetchImpl).toHaveBeenCalledTimes(2)
+			gates[1]()
+		} finally {
+			ps.removeLifecycleHandlers()
+		}
+	})
+
+	// Hidden, shown, typed in, left: the flush on leaving carries the new
+	// edits, which the one still in flight from hiding may have missed.
+	it('shares no keepalive flush across the page being shown again', async () => {
+		const gates = []
+		const fetchImpl = vi.fn(() => new Promise((resolve) => {
+			gates.push(() => resolve(okResponse()))
+		}))
+		const ps = createPadSync({ fetchImpl })
+		ps.configure({ syncUrl: '/sync/42' })
+
+		const hidden = ps.sync(true, true)
+		ps.start()
+		ps.stop()
+		const left = ps.sync(true, true)
+		const plainLeft = ps.sync(false, true)
+
+		expect(fetchImpl).toHaveBeenCalledTimes(3)
+		expect(fetchImpl.mock.calls[2][0]).toBe('/sync/42')
+		gates.forEach((open) => open())
+		await Promise.all([hidden, left, plainLeft])
+	})
+
+	it('ends the sharing when the page is shown again, through its own handlers', async () => {
+		const gates = []
+		const fetchImpl = vi.fn(() => new Promise((resolve) => {
+			gates.push(() => resolve(okResponse()))
+		}))
+		const ps = createPadSync({ fetchImpl })
+		ps.configure({ syncUrl: '/sync/42' })
+		ps.installLifecycleHandlers()
+		const show = (state) => {
+			Object.defineProperty(document, 'visibilityState', { value: state, configurable: true })
+			document.dispatchEvent(new Event('visibilitychange'))
+		}
+
+		try {
+			show('hidden')
+			show('visible')
+			show('hidden')
+			await flushAsyncWork()
+			expect(fetchImpl).toHaveBeenCalledTimes(2)
+			gates.forEach((open) => open())
+		} finally {
+			ps.removeLifecycleHandlers()
+			ps.stop()
+		}
+	})
+
+	// The flush from before the page was shown again settles while the next
+	// one is in flight: it removes only its own entry, and the next leaving
+	// still shares the one in flight.
+	it('lets a settled flush leave the one that replaced it shared', async () => {
+		const gates = []
+		const fetchImpl = vi.fn(() => new Promise((resolve) => {
+			gates.push(() => resolve(okResponse()))
+		}))
+		const ps = createPadSync({ fetchImpl })
+		ps.configure({ syncUrl: '/sync/42' })
+
+		const hidden = ps.sync(true, true)
+		ps.start()
+		ps.stop()
+		const left = ps.sync(true, true)
+		gates[0]()
+		await hidden
+		const leftAgain = ps.sync(true, true)
+
+		expect(fetchImpl).toHaveBeenCalledTimes(2)
+		gates[1]()
+		await Promise.all([left, leftAgain])
+	})
+
+	it('replays each url forced flushes asked for while a sync ran, in order, each with its own answer', async () => {
+		const gates = []
+		const fetchImpl = vi.fn((url) => new Promise((resolve) => {
+			gates.push(() => resolve(okResponse({ url })))
+		}))
+		const ps = createPadSync({ fetchImpl })
+		ps.configure({ syncUrl: '/sync/A' })
+
+		const running = ps.sync(false, false)
+		const forA = ps.sync(true, false)
+		ps.configure({ syncUrl: '/sync/B' })
+		const forB = ps.sync(true, false)
+
+		for (let i = 0; i < 3; i++) {
+			await flushAsyncWork()
+			gates[i]()
+		}
+		expect(await Promise.all([running, forA, forB])).toEqual([{ url: '/sync/A' }, { url: '/sync/A?force=1' }, { url: '/sync/B?force=1' }])
+		expect(fetchImpl).toHaveBeenCalledTimes(3)
 	})
 
 	it('start() runs a sync per interval only while the document is visible; stop() halts it', async () => {

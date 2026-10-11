@@ -270,6 +270,21 @@ describe('viewer component — resolveOpenUrl', () => {
 		expect(vm._padSync.start).toHaveBeenCalled()
 	})
 
+	// The viewer stays when another file is opened in it: the pad left keeps
+	// its last edits only if it is flushed before its URL goes.
+	it('flushes the pad it leaves before it opens another', async () => {
+		stubFetch(jsonResponse({ url: 'https://pad.example/p', sync_url: 'https://sync.example/a' }))
+		const vm = makeInstance({ fileid: 42, fileInfo: { path: '/a.pad' } })
+		await vm.resolveOpenUrl()
+		const padSync = vm._padSync
+
+		await vm.resolveOpenUrl()
+
+		expect(padSync.fireAndForget).toHaveBeenCalledWith(true, true)
+		expect(padSync.fireAndForget.mock.invocationCallOrder[0]).toBeLessThan(padSync.configure.mock.invocationCallOrder[1])
+		expect(padSync.configure.mock.calls[1][0]).toEqual({ syncUrl: '' })
+	})
+
 	it('does not start the sync loop when the API returns no sync_url', async () => {
 		stubFetch(jsonResponse({ url: 'https://pad.example/p', sync_url: '' }))
 		const vm = makeInstance({ fileid: 42, fileInfo: { path: '/x.pad' } })

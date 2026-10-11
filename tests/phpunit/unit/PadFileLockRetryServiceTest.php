@@ -103,4 +103,34 @@ class PadFileLockRetryServiceTest extends TestCase {
 			$this->assertSame([150000, 300000, 600000], $sleeps);
 		}
 	}
+
+	/** A sync's read waits as its write does: the lock is usually another write's. */
+	public function testASyncReadWaitsForTheLockAndSaysHowOftenWhenItStays(): void {
+		$sleeps = [];
+		$service = new PadFileLockRetryService(static function (int $delay) use (&$sleeps): void {
+			$sleeps[] = $delay;
+		});
+		$calls = 0;
+		$freed = $this->createMock(File::class);
+		$freed->method('getContent')->willReturnCallback(static function () use (&$calls): string {
+			if (++$calls <= 2) {
+				throw new LockedException('locked');
+			}
+			return 'content';
+		});
+		$held = $this->createMock(File::class);
+		$held->expects($this->exactly(4))->method('getContent')->willThrowException(new LockedException('locked'));
+
+		$this->assertSame('content', $service->readContentWithSyncLockRetry($freed));
+		$this->assertSame([150000, 300000], $sleeps);
+
+		$sleeps = [];
+		try {
+			$service->readContentWithSyncLockRetry($held);
+			$this->fail('Expected lock retry exhaustion.');
+		} catch (PadFileLockRetryExhaustedException $e) {
+			$this->assertSame(3, $e->getRetryAttempts());
+			$this->assertSame([150000, 300000, 600000], $sleeps);
+		}
+	}
 }

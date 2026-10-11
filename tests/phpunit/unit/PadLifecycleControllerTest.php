@@ -17,11 +17,13 @@ use OCA\EtherpadNextcloud\Service\PadFileLockRetryService;
 use OCA\EtherpadNextcloud\Service\PadFileService;
 use OCA\EtherpadNextcloud\Service\PadMetadataService;
 use OCA\EtherpadNextcloud\Service\PadResponseService;
+use OCA\EtherpadNextcloud\Service\PadSyncLock;
 use OCA\EtherpadNextcloud\Service\PadSyncService;
 use OCA\EtherpadNextcloud\Service\PadSnapshot;
 use OCA\EtherpadNextcloud\Service\ParsedPadFile;
 use OCA\EtherpadNextcloud\Service\RestoreService;
 use OCA\EtherpadNextcloud\Service\UserNodeResolver;
+use OCA\EtherpadNextcloud\Tests\Support\InMemoryLockingProvider;
 use OCA\EtherpadNextcloud\Util\PathNormalizer;
 use OCP\AppFramework\Http;
 use OCP\Files\File;
@@ -163,6 +165,8 @@ class PadLifecycleControllerTest extends TestCase {
 		$this->assertSame(PadSyncService::STATUS_LOCKED, $response->getData()['status']);
 		$this->assertTrue($response->getData()['retryable']);
 		$this->assertSame(3, $response->getData()['lock_retries']);
+		// The file's lock, not the sync lock's: the pad was read.
+		$this->assertSame('g.ABCDEFGHIJKLMNOP$pad-1', $response->getData()['pad_id']);
 	}
 
 	public function testSyncByIdForcedProtectedSyncDoesNotRewriteWhenRevisionIsUnchanged(): void {
@@ -540,7 +544,8 @@ class PadLifecycleControllerTest extends TestCase {
 		$userNodeResolver = new UserNodeResolver($resolvedRootFolder, $this->createMock(LoggerInterface::class));
 		$lockRetryService = $this->buildNoSleepLockRetryService();
 		$padMetadataService = new PadMetadataService($resolvedPadFileService, $padPaths, $userNodeResolver, $lockRetryService, $resolvedEtherpadClient, $resolvedExternalPadExportFetcher, $resolvedBindingService, $logger);
-		$padSyncService = new PadSyncService($resolvedPadFileService, $userNodeResolver, $lockRetryService, $resolvedBindingService, $resolvedEtherpadClient, $resolvedExternalPadExportFetcher, $logger);
+		$padSyncService = new PadSyncService($resolvedPadFileService, $userNodeResolver, $lockRetryService, new PadSyncLock(new InMemoryLockingProvider(), $logger, static function (int $delay): void {
+		}), $resolvedBindingService, $resolvedEtherpadClient, $resolvedExternalPadExportFetcher, $logger);
 		$urlGenerator = $this->createMock(IURLGenerator::class);
 		$urlGenerator->method('linkToRoute')->willReturnCallback(
 			static function (string $route, array $params = []): string {

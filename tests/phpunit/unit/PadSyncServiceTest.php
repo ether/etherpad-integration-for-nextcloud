@@ -13,13 +13,16 @@ use OCA\EtherpadNextcloud\Service\EtherpadClient;
 use OCA\EtherpadNextcloud\Service\ExternalPadExportFetcher;
 use OCA\EtherpadNextcloud\Service\PadFileLockRetryService;
 use OCA\EtherpadNextcloud\Service\PadFileService;
+use OCA\EtherpadNextcloud\Service\PadSyncLock;
 use OCA\EtherpadNextcloud\Service\PadSyncService;
 use OCA\EtherpadNextcloud\Service\PadSnapshot;
 use OCA\EtherpadNextcloud\Service\ParsedPadFile;
 use OCA\EtherpadNextcloud\Service\UserNodeResolver;
 use OCA\EtherpadNextcloud\Tests\Support\FixedClock;
+use OCA\EtherpadNextcloud\Tests\Support\InMemoryLockingProvider;
 use OCP\Files\File;
 use OCP\Lock\LockedException;
+use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 
@@ -169,7 +172,7 @@ class PadSyncServiceTest extends TestCase {
 				'text' => "hallo\n[HTML-BEGIN]\nwelt\n[HTML-END]",
 			]);
 
-		$lockRetryService = $this->createMock(PadFileLockRetryService::class);
+		$lockRetryService = $this->writeMockedLockRetry();
 		$lockRetryService->expects($this->once())
 			->method('putContentWithSyncLockRetry')
 			->with($file, 'rewritten')
@@ -220,7 +223,7 @@ class PadSyncServiceTest extends TestCase {
 				'text' => 'remote text',
 			]);
 
-		$lockRetryService = $this->createMock(PadFileLockRetryService::class);
+		$lockRetryService = $this->writeMockedLockRetry();
 		$lockRetryService->expects($this->never())->method('putContentWithSyncLockRetry');
 
 		$result = $this->buildService(
@@ -282,7 +285,7 @@ class PadSyncServiceTest extends TestCase {
 				'text' => "remote text\nfrom export",
 			]);
 
-		$lockRetryService = $this->createMock(PadFileLockRetryService::class);
+		$lockRetryService = $this->writeMockedLockRetry();
 		$lockRetryService->expects($this->once())
 			->method('putContentWithSyncLockRetry')
 			->with($file, 'updated-frontmatter')
@@ -328,7 +331,7 @@ class PadSyncServiceTest extends TestCase {
 		$etherpadClient->method('getHTML')->willReturn('<p>new edit</p>');
 
 		$written = null;
-		$lockRetryService = $this->createMock(PadFileLockRetryService::class);
+		$lockRetryService = $this->writeMockedLockRetry();
 		$lockRetryService->expects($this->once())
 			->method('putContentWithSyncLockRetry')
 			->willReturnCallback(static function (File $node, string $content) use (&$written): int {
@@ -376,7 +379,7 @@ class PadSyncServiceTest extends TestCase {
 			$etherpadClient->method('getText')->willReturn($padText);
 			$etherpadClient->method('getHTML')->willReturn('<p>' . trim($padText) . '</p>');
 			$written = null;
-			$lockRetryService = $this->createMock(PadFileLockRetryService::class);
+			$lockRetryService = $this->writeMockedLockRetry();
 			$lockRetryService->method('putContentWithSyncLockRetry')->willReturnCallback(static function (File $node, string $content) use (&$written): int {
 				$written = $content;
 				return 0;
@@ -462,6 +465,91 @@ class PadSyncServiceTest extends TestCase {
 		$this->buildService($padFileService, $userNodeResolver, $bindingService, $etherpadClient, $lockRetryService)->syncById('alice', 138, false);
 	}
 
+	/**
+	 * The closing sync of a page arrives while a periodic one runs, between
+	 * its question to Etherpad and its write. Run beside it, the closing
+	 * sync wrote revision 2 and the periodic one then put its revision 1
+	 * over it. Held off, it answers locked here - in a request it waits for
+	 * the other to let go, a single PHP process cannot show that
+	 * (PadSyncLockTest does) - and the next sync writes revision 2.
+	 */
+	public function testASyncThatArrivesWhileAnotherRunsCannotWriteBetweenItsQuestionAndItsWrite(): void {
+		$formatter = new PadFileService(new FixedClock());
+		$content = $formatter->withExportSnapshot(
+			$formatter->readPad($formatter->buildInitialDocument(138, 'pad-a', BindingService::ACCESS_PUBLIC)),
+			new PadSnapshot('text 0', '<p>text 0</p>', 0),
+		);
+		$written = [];
+		$file = $this->createMock(File::class);
+		$file->method('getName')->willReturn('Notes.pad');
+		$file->method('getContent')->willReturnCallback(static function () use (&$content): string {
+			return $content;
+		});
+		$file->method('putContent')->willReturnCallback(static function (string $next) use (&$content, &$written, $formatter): void {
+			$content = $next;
+			$written[] = $formatter->readPad($next)->snapshotRev;
+		});
+		$userNodeResolver = $this->createMock(UserNodeResolver::class);
+		$userNodeResolver->method('resolveUserFileNodeById')->with('alice', 138)->willReturn($file);
+		$userNodeResolver->method('toUserAbsolutePath')->willReturn('/Notes.pad');
+		$revisions = 1;
+		$typedOn = false;
+		$closing = null;
+		$service = null;
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->method('getRevisionsCount')->willReturnCallback(static function () use (&$revisions): int {
+			return $revisions;
+		});
+		$etherpadClient->method('getText')->willReturnCallback(static function () use (&$revisions, &$typedOn, &$closing, &$service): string {
+			$text = 'text ' . $revisions;
+			if (!$typedOn) {
+				$typedOn = true;
+				$revisions = 2;
+				$closing = $service->syncById('alice', 138, true);
+			}
+			return $text;
+		});
+		$etherpadClient->method('getHTML')->willReturn('<p>text</p>');
+		$waits = 0;
+		$syncLock = new PadSyncLock(new InMemoryLockingProvider(), $this->createMock(LoggerInterface::class), static function (int $delay) use (&$waits): void {
+			$waits++;
+		});
+		$service = $this->buildService($formatter, $userNodeResolver, null, $etherpadClient, null, null, $syncLock);
+
+		$periodic = $service->syncById('alice', 138, false);
+
+		$this->assertSame(PadSyncService::STATUS_UPDATED, $periodic->status);
+		$this->assertSame(PadSyncService::STATUS_LOCKED, $closing->status);
+		$this->assertSame($waits, $closing->lockRetries);
+		$this->assertGreaterThan(0, $waits);
+		$this->assertSame([1], $written);
+
+		$next = $service->syncById('alice', 138, false);
+
+		$this->assertSame(PadSyncService::STATUS_UPDATED, $next->status);
+		$this->assertSame([1, 2], $written);
+		$this->assertSame('text 2', $formatter->getSnapshotPartsFromBody($formatter->readPad($content)->body())['text']);
+	}
+
+	/** Locked through every wait of the first read: nothing asked, nothing written. */
+	public function testAFileLockedThroughTheFirstReadAnswersLockedWithItsWaits(): void {
+		$file = $this->createMock(File::class);
+		$file->method('getName')->willReturn('Notes.pad');
+		$file->expects($this->exactly(4))->method('getContent')->willThrowException(new LockedException('locked'));
+		$file->expects($this->never())->method('putContent');
+		$userNodeResolver = $this->createMock(UserNodeResolver::class);
+		$userNodeResolver->method('resolveUserFileNodeById')->willReturn($file);
+		$userNodeResolver->method('toUserAbsolutePath')->willReturn('/Notes.pad');
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->expects($this->never())->method('getRevisionsCount');
+
+		$result = $this->buildService(null, $userNodeResolver, null, $etherpadClient)->syncById('alice', 138, true);
+
+		$this->assertSame(PadSyncService::STATUS_LOCKED, $result->status);
+		$this->assertSame(3, $result->lockRetries);
+		$this->assertTrue($result->retryable);
+	}
+
 	private function buildService(
 		?PadFileService $padFileService = null,
 		?UserNodeResolver $userNodeResolver = null,
@@ -469,15 +557,28 @@ class PadSyncServiceTest extends TestCase {
 		?EtherpadClient $etherpadClient = null,
 		?PadFileLockRetryService $lockRetryService = null,
 		?ExternalPadExportFetcher $externalPadExportFetcher = null,
+		?PadSyncLock $syncLock = null,
 	): PadSyncService {
 		return new PadSyncService(
 			$padFileService ?? $this->createMock(PadFileService::class),
 			$userNodeResolver ?? $this->createMock(UserNodeResolver::class),
-			$lockRetryService ?? $this->createMock(PadFileLockRetryService::class),
+			$lockRetryService ?? new PadFileLockRetryService(static function (int $delay): void {
+			}),
+			$syncLock ?? new PadSyncLock(new InMemoryLockingProvider(), $this->createMock(LoggerInterface::class), static function (int $delay): void {
+			}),
 			$bindingService ?? $this->createMock(BindingService::class),
 			$etherpadClient ?? $this->createMock(EtherpadClient::class),
 			$externalPadExportFetcher ?? $this->createMock(ExternalPadExportFetcher::class),
 			$this->createMock(LoggerInterface::class),
 		);
+	}
+
+	/** Reads the file for real; the write is the test's to say. */
+	private function writeMockedLockRetry(): PadFileLockRetryService&MockObject {
+		return $this->getMockBuilder(PadFileLockRetryService::class)
+			->setConstructorArgs([static function (int $delay): void {
+			}])
+			->onlyMethods(['putContentWithSyncLockRetry'])
+			->getMock();
 	}
 }

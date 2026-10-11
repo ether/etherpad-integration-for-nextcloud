@@ -232,7 +232,10 @@ const component = {
 			this.contentLoaded = false
 			this._contentAbort?.abort()
 			// Do not construct a sync controller while resetting viewer state.
+			// The pad left - another file opened in this viewer - is flushed
+			// before its URL goes; without one open this sends nothing.
 			if (this._padSync) {
+				this._padSync.fireAndForget(true, true)
 				this._padSync.stop()
 				this._padSync.configure({ syncUrl: '' })
 			}
