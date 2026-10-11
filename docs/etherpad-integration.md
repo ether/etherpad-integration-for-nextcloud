@@ -237,11 +237,11 @@ away itself:
   socket. Revocation fires on an explicit logout, on the account's
   deletion and on a delete of the pad's file (below), and is capped, so
   for most sessions the lifetime is what bounds the window.
-- Expired sessions are left to the background sweep described below. Only
-  what is expired by both clocks counts as expired: Etherpad judges
-  `validUntil` with its own, so a session ours calls dead may still be
-  honoured there, and skipping it would leave exactly the access a logout
-  removes. What is live is revoked within a small budget – 25 delete calls
+- Expired sessions are left to the background sweep described below. A
+  session counts as expired only five minutes after its `validUntil`, an
+  allowance for clock skew: Etherpad judges `validUntil` by its own clock,
+  so a session ours calls dead may still be honoured there, and skipping
+  it would leave exactly the access a logout removes. What is live is revoked within a small budget – 25 delete calls
   or two seconds, with each call given what is left of it, and ended early
   by twenty deletes in a row that do not go through or five failures
   without an answer since the last session deleted or found gone –

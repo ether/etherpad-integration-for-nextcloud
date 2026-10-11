@@ -126,6 +126,7 @@ class PublicLinkSessions {
 		}
 	}
 
+	/** Narrows a mixed cache value without a MixedAssignment suppression. */
 	private static function asString(mixed $value): string {
 		return is_string($value) ? $value : '';
 	}

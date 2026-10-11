@@ -38,16 +38,11 @@ class EtherpadClient {
 	public const API_KEY_PROBE_METHOD = 'checkToken';
 
 	/**
-	 * How far the two clocks are allowed to disagree.
-	 *
-	 * `validUntil` is a number Nextcloud computes and Etherpad judges
-	 * against its own clock, so around expiry the two sides can hold
-	 * different opinions about the same session. Both users of this margin
-	 * stay out of that window from opposite directions: revoking treats a
-	 * session as live until it is past, collecting waits until it is past
-	 * before deleting. One constant, because the invariant is that they
-	 * tile — a smaller margin on one side alone opens a band in which one
-	 * says gone and the other says not yet.
+	 * How far the two clocks are allowed to disagree: `validUntil` is a
+	 * number Nextcloud computes and Etherpad judges by its own clock.
+	 * Applied in one place, SessionDeletes::expiredAt(): revoking treats a
+	 * session as live until then and collecting waits until then, so no
+	 * band opens in which one says gone and the other not yet.
 	 */
 	public const CLOCK_SKEW_ALLOWANCE_SECONDS = 300;
 
@@ -332,7 +327,7 @@ class EtherpadClient {
 	}
 
 	/**
-	 * @param array<array-key,mixed> $sessionListing as Etherpad answered it, keyed by live session ids
+	 * @param array<array-key,mixed> $sessionListing as Etherpad answered it, keyed by session ids
 	 * @return array<string,array{groupID:string,validUntil:int}>
 	 */
 	private function sessionsIn(array $sessionListing, ?int &$unreadableEntries): array {

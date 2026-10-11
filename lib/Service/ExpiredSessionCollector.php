@@ -22,24 +22,17 @@ use OCP\BackgroundJob\IJobList;
 use Psr\Log\LoggerInterface;
 
 /**
- * Collects the Etherpad sessions that have already expired.
+ * Collects the Etherpad sessions that have already expired, which
+ * Etherpad never removes. A listing costs a lookup per session in the
+ * index, so no request collects: an open notes its author (noteAuthor()),
+ * a public link's its group too (noteGroup()) - a visitor's own author
+ * only that, one job a group however many visit - and a job lists the
+ * expired ones and deletes them.
  *
- * Etherpad never removes one, and `listSessionsOfAuthor` walks the whole
- * author index one awaited lookup at a time, so a listing - an open makes
- * one when the browser carries session ids, a logout always - costs as
- * many lookups as there were opens. Collecting them happens in no
- * request: an open leaves the author's id, and the job lists the expired
- * ones and deletes them.
- *
- * A public link's open notes its group as well, and a visitor's with an
- * author of their own (PublicLinkVisitors) only that: one job a group,
- * however many visitors open it. The group's sweep takes every author's
- * expired sessions in it, a signed-in user's too, which keeps short the
- * listing a delete's revoke reads. The author's sweep runs beside it for
- * the link's own author: a group can hold more sessions than a run can
- * list in time - every user's, a legacy group's other pads' - and the
- * author's index, often a smaller one, is collected all the same. A
- * visitor's author has no such fallback.
+ * A group's sweep takes every author's expired sessions in it, which keeps
+ * short the listing a delete's revoke reads. The link's own author is
+ * swept beside it, as a group can hold more than a run can list in time;
+ * a visitor's author has no such fallback.
  */
 class ExpiredSessionCollector {
 
@@ -127,21 +120,10 @@ class ExpiredSessionCollector {
 	 * @return array{deleted:int,remaining:int,retry:bool,nextDueAt:?int,park?:'tooLong'|'timeout'}
 	 */
 	public function collect(string $authorId): array {
-		$budget = new RunBudget($this->timeFactory, $this->budgetSeconds);
-		$context = ['authorId' => $authorId];
-
-		try {
-			$sessions = $this->etherpadClient->listSessionsOfAuthor(
-				$authorId,
-				$budget->callTimeout(),
-				$unreadable,
-				EtherpadClient::SESSION_LISTING_MAX_BYTES,
-			);
-		} catch (\Throwable $e) {
-			return $this->listingFailed($e, $budget, $context, EtherpadErrorClassifier::isAuthorUnknown($e));
-		}
-
-		return $this->collectFrom($sessions, $unreadable, $budget, $context);
+		return $this->collectFor(['authorId' => $authorId], function (RunBudget $budget) use ($authorId): array {
+			$sessions = $this->etherpadClient->listSessionsOfAuthor($authorId, $budget->callTimeout(), $unreadable, EtherpadClient::SESSION_LISTING_MAX_BYTES);
+			return [$sessions, $unreadable];
+		}, EtherpadErrorClassifier::isAuthorUnknown(...));
 	}
 
 	/**
@@ -153,25 +135,37 @@ class ExpiredSessionCollector {
 	 * @return array{deleted:int,remaining:int,retry:bool,nextDueAt:?int,park?:'tooLong'|'timeout'}
 	 */
 	public function collectGroup(string $groupId): array {
-		$budget = new RunBudget($this->timeFactory, $this->budgetSeconds);
-		$context = ['groupId' => $groupId];
-
-		try {
-			$sessions = $this->etherpadClient->listSessionsOfGroup(
-				$groupId,
-				$budget->callTimeout(),
-				$unreadable,
-				EtherpadClient::SESSION_LISTING_MAX_BYTES,
-			);
-		} catch (\Throwable $e) {
-			return $this->listingFailed($e, $budget, $context, EtherpadErrorClassifier::isPadAlreadyDeleted($e));
-		}
-
-		$result = $this->collectFrom($sessions, $unreadable, $budget, $context);
+		$result = $this->collectFor(['groupId' => $groupId], function (RunBudget $budget) use ($groupId): array {
+			$sessions = $this->etherpadClient->listSessionsOfGroup($groupId, $budget->callTimeout(), $unreadable, EtherpadClient::SESSION_LISTING_MAX_BYTES);
+			return [$sessions, $unreadable];
+		}, EtherpadErrorClassifier::isPadAlreadyDeleted(...));
 		if ($result['nextDueAt'] !== null) {
 			$result['nextDueAt'] = max($result['nextDueAt'], $this->timeFactory->getTime() + self::GROUP_SWEEP_INTERVAL_SECONDS);
 		}
 		return $result;
+	}
+
+	/**
+	 * One run: $list gives the sessions and how many entries it could not
+	 * describe, $context names whose they are, and $gone tells from a
+	 * listing that failed whether Etherpad no longer has them - each
+	 * listing's own answer, no other. The expired ones are deleted
+	 * (collectFrom()), or the failure is read (listingFailed()).
+	 *
+	 * @param array<string,string> $context
+	 * @param \Closure(RunBudget): array{0: array<array-key,array{groupID:string,validUntil:int}>, 1: ?int} $list
+	 * @param \Closure(\Throwable): bool $gone
+	 * @return array{deleted:int,remaining:int,retry:bool,nextDueAt:?int,park?:'tooLong'|'timeout'}
+	 */
+	private function collectFor(array $context, \Closure $list, \Closure $gone): array {
+		$budget = new RunBudget($this->timeFactory, $this->budgetSeconds);
+		try {
+			[$sessions, $unreadable] = $list($budget);
+		} catch (\Throwable $e) {
+			return $this->listingFailed($e, $budget, $context, $gone($e));
+		}
+
+		return $this->collectFrom($sessions, $unreadable, $budget, $context);
 	}
 
 	/**
@@ -252,20 +246,20 @@ class ExpiredSessionCollector {
 			]);
 		}
 
-		$cutoff = $this->timeFactory->getTime() - EtherpadClient::CLOCK_SKEW_ALLOWANCE_SECONDS;
+		$now = $this->timeFactory->getTime();
 		$expired = [];
 		$nextDueAt = null;
 		foreach ($sessions as $sessionId => $info) {
 			// Live sessions are left alone: ending someone's access is not a
 			// housekeeping decision.
-			if ($info['validUntil'] <= $cutoff) {
+			$dueAt = SessionDeletes::expiredAt($info['validUntil']);
+			if ($dueAt <= $now) {
 				$expired[$sessionId] = $info;
 				continue;
 			}
 
 			// When the earliest becomes collectable — without it, a sweep
 			// that found nothing is queued again by the very next open.
-			$dueAt = $info['validUntil'] + EtherpadClient::CLOCK_SKEW_ALLOWANCE_SECONDS;
 			$nextDueAt = $nextDueAt === null ? $dueAt : min($nextDueAt, $dueAt);
 		}
 

@@ -34,8 +34,8 @@ class ExpiredSessionCollectorTest extends TestCase {
 	private const GROUP = 'g.AAAAAAAAAAAAAAAA';
 
 	/**
-	 * Long enough past expiry that both clocks must agree. A session that
-	 * ran out a minute ago is deliberately not collected.
+	 * Long enough past expiry to be past the clock-skew allowance. A
+	 * session that ran out a minute ago is deliberately not collected.
 	 */
 	private static function expired(): array {
 		return ['groupID' => 'g.AAAAAAAAAAAAAAAA', 'validUntil' => FixedClock::NOW - 3600];
@@ -236,6 +236,26 @@ class ExpiredSessionCollectorTest extends TestCase {
 			$logger->expects(self::once())->method('debug')->with(self::anything(), self::callback(static fn (array $context): bool => $context[$key] === $id));
 
 			self::assertSame(['deleted' => 0, 'remaining' => 0, 'retry' => false, 'nextDueAt' => null], $collect($this->collector($client, logger: $logger)), $case);
+		}
+	}
+
+	/**
+	 * Only a listing's own kind ends its sweep: Etherpad's answer that the
+	 * other kind does not exist is no answer about this one, and is tried
+	 * again.
+	 */
+	public function testTheOtherKindsAnswerDoesNotEndASweep(): void {
+		$cases = [
+			'an author' => ['listSessionsOfAuthor', 'groupID does not exist', static fn (ExpiredSessionCollector $c): array => $c->collect(self::AUTHOR)],
+			'a group' => ['listSessionsOfGroup', 'authorID does not exist', static fn (ExpiredSessionCollector $c): array => $c->collectGroup(self::GROUP)],
+		];
+		foreach ($cases as $case => [$method, $answer, $collect]) {
+			$client = $this->createMock(EtherpadClient::class);
+			$client->method($method)->willThrowException(new EtherpadRefusedException('Etherpad API error (' . $method . '): ' . $answer));
+			$logger = $this->createMock(LoggerInterface::class);
+			$logger->expects(self::once())->method('warning')->with('Could not list the Etherpad sessions to collect.', self::anything());
+
+			self::assertSame(['deleted' => 0, 'remaining' => 0, 'retry' => true, 'nextDueAt' => null], $collect($this->collector($client, logger: $logger)), $case);
 		}
 	}
 
@@ -635,17 +655,32 @@ class ExpiredSessionCollectorTest extends TestCase {
 	 * clock. In the window where the two disagree, a session this side
 	 * calls dead is one the pad server still grants — and deleting it
 	 * closes a socket somebody is typing into. Nothing here is urgent
-	 * enough to be worth that.
+	 * enough to be worth that; once the allowance has passed, it is
+	 * collected.
 	 */
 	public function testWaitsOutTheClockDifferenceBeforeDeleting(): void {
 		$client = $this->createMock(EtherpadClient::class);
 		$client->method('listSessionsOfAuthor')->willReturn([
 			's.justnow' => self::justExpired(),
+			's.onTheDot' => ['groupID' => 'g.AAAAAAAAAAAAAAAA', 'validUntil' => FixedClock::NOW - EtherpadClient::CLOCK_SKEW_ALLOWANCE_SECONDS],
 			's.longago' => self::expired(),
 		]);
-		$client->expects(self::once())->method('deleteSession')->with('s.longago');
+		$deleted = [];
+		$client->method('deleteSession')->willReturnCallback(static function (string $sessionId) use (&$deleted): void {
+			$deleted[] = $sessionId;
+		});
 
-		self::assertSame(1, $this->collector($client)->collect(self::AUTHOR)['deleted']);
+		self::assertSame(2, $this->collector($client)->collect(self::AUTHOR)['deleted']);
+		self::assertSame(['s.onTheDot', 's.longago'], $deleted);
+	}
+
+	/** A session valid as far as an int goes is left live, and the sweep comes back at the latest time there is. */
+	public function testASessionValidAsFarAsAnIntGoesIsLeftLive(): void {
+		$client = $this->createMock(EtherpadClient::class);
+		$client->method('listSessionsOfAuthor')->willReturn(['s.max' => ['groupID' => 'g.AAAAAAAAAAAAAAAA', 'validUntil' => PHP_INT_MAX]]);
+		$client->expects(self::never())->method('deleteSession');
+
+		self::assertSame(['deleted' => 0, 'remaining' => 0, 'retry' => false, 'nextDueAt' => PHP_INT_MAX], $this->collector($client)->collect(self::AUTHOR));
 	}
 
 	/**

@@ -15,11 +15,14 @@ use OCP\IRequest;
 use OCP\IURLGenerator;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
+use OCA\EtherpadNextcloud\Tests\Support\BuildsLinkCaches;
 use OCA\EtherpadNextcloud\Tests\Support\FixedClock;
 
 class PadSessionServiceTest extends TestCase {
+	use BuildsLinkCaches;
+
 	/**
-	 * The cookie domain now depends on the Nextcloud host as well, so every
+	 * The cookie domain depends on the Nextcloud host as well, so every
 	 * case runs against a Nextcloud that shares a parent with the Etherpad
 	 * host used in the fixtures.
 	 */
@@ -48,7 +51,7 @@ class PadSessionServiceTest extends TestCase {
 			$collector ?? $this->createMock(\OCA\EtherpadNextcloud\Service\ExpiredSessionCollector::class),
 			$this->createMock(LoggerInterface::class),
 			new FixedClock(),
-			$this->linkSessions($cacheFactory ?? $this->noCache(), $etherpadClient),
+			$this->linkSessions($cacheFactory ?? $this->noMemoryCache(), $etherpadClient),
 		);
 	}
 
@@ -357,8 +360,7 @@ class PadSessionServiceTest extends TestCase {
 	 * Etherpad author, so it is not in this one's listing. Carrying it would
 	 * hand the next person to log in a pad that is not theirs — and a public
 	 * share's session, which is also its own author, is indistinguishable
-	 * from it. Both are dropped; the share case was already broken before
-	 * any of this, the other one would have been new.
+	 * from it. Both are dropped.
 	 */
 	public function testDropsIdsTheListingDoesNotKnow(): void {
 		$known = $this->sid('known');
@@ -446,9 +448,8 @@ class PadSessionServiceTest extends TestCase {
 	}
 
 	/**
-	 * Without the listing nothing can be attributed, so nothing is carried:
-	 * the open falls back to exactly what it did before this branch, one
-	 * fresh id, rather than to a rule it cannot enforce.
+	 * Without the listing nothing can be attributed to this author, so
+	 * nothing is carried: only the session made for this open.
 	 */
 	public function testCarriesNothingWhenTheListingFails(): void {
 		$carried = array_map(fn (int $i): string => $this->sid('old' . $i), range(1, 8));
@@ -503,7 +504,7 @@ class PadSessionServiceTest extends TestCase {
 			$this->createMock(\OCA\EtherpadNextcloud\Service\ExpiredSessionCollector::class),
 			$logger,
 			new FixedClock(),
-			$this->linkSessions($this->noCache(), $etherpadClient),
+			$this->linkSessions($this->noMemoryCache(), $etherpadClient),
 		);
 
 		$service->createProtectedOpenContext('admin', 'Admin', 'g.ABCDEFGHIJKLMNOP$pad-1');
@@ -1125,23 +1126,10 @@ class PadSessionServiceTest extends TestCase {
 				return true;
 			}
 		);
-		$factory = $this->createMock(\OCP\ICacheFactory::class);
-		$factory->method('isAvailable')->willReturn(true);
-		$factory->method('createDistributed')->willReturn($cache);
-		return $factory;
+		return $this->cacheFactoryFor($cache);
 	}
 
 	private function linkSessions(\OCP\ICacheFactory $cacheFactory, EtherpadClient $etherpadClient): \OCA\EtherpadNextcloud\Service\PublicLinkSessions {
-		$crypto = $this->createMock(\OCP\Security\ICrypto::class);
-		$crypto->method('calculateHMAC')->willReturnCallback(static fn (string $message): string => hash('sha256', $message, true));
-		return new \OCA\EtherpadNextcloud\Service\PublicLinkSessions(new \OCA\EtherpadNextcloud\Service\PublicLinkCache($cacheFactory, $crypto), $etherpadClient, new FixedClock(), $this->createMock(LoggerInterface::class));
-	}
-
-	/** No memory cache: Nextcloud hands out one that keeps nothing. */
-	private function noCache(): \OCP\ICacheFactory {
-		$factory = $this->createMock(\OCP\ICacheFactory::class);
-		$factory->method('isAvailable')->willReturn(false);
-		$factory->method('createDistributed')->willReturn($this->createMock(\OCP\ICache::class));
-		return $factory;
+		return new \OCA\EtherpadNextcloud\Service\PublicLinkSessions($this->linkCache($cacheFactory), $etherpadClient, new FixedClock(), $this->createMock(LoggerInterface::class));
 	}
 }

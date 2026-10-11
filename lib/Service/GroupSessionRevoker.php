@@ -34,6 +34,9 @@ class GroupSessionRevoker {
 	public const KEPT_FOR_A_PAD_OF_NO_FILE = 'Left the Etherpad sessions of a group that holds a pad of no file.';
 	public const KEPT_FOR_A_FILE_IN_FILES = 'Left the Etherpad sessions of a group with a file in Files.';
 
+	/** Said when the files of a group's pads cannot be looked up, before the listing or before a delete. */
+	public const FILES_NOT_LOOKED_UP = 'Could not look up the files of a group\'s pads to revoke its Etherpad sessions.';
+
 	/** Deletes a pass makes at most: a backlog goes on in the next. */
 	private const MAX_PER_RUN = 250;
 
@@ -91,11 +94,12 @@ class GroupSessionRevoker {
 	 * can be restored and opened during the pass, while the sessions are
 	 * listed too, and its opener's session would be the first to go.
 	 *
-	 * The answer is the collector's shape: `remaining` is what it found and
-	 * did not reach, `retry` that something failed. `nextDueAt` is always
-	 * null: expired sessions are the collector's. `ended` says the job is
-	 * over whatever is left - a file back in Files, a pad of no file, the
-	 * group gone - with no second look (SessionSweepJob).
+	 * The answer is the collector's shape: `remaining` counts the sessions
+	 * it found and did not take, failed deletes included, `retry` that
+	 * something failed. `nextDueAt` is always null: expired sessions are
+	 * the collector's. `ended` says the job is over whatever is left - a
+	 * file back in Files, a pad of no file, the group gone - with no second
+	 * look (SessionSweepJob).
 	 *
 	 * @return array{deleted:int,remaining:int,retry:bool,nextDueAt:null,ended:bool}
 	 */
@@ -123,7 +127,7 @@ class GroupSessionRevoker {
 			$places = $this->bindingService->placesOf($files);
 			$inFiles = $this->bindingService->anyInFiles($places);
 		} catch (\Throwable $e) {
-			$this->logger->warning('Could not look up the files of a group\'s pads to revoke its Etherpad sessions.', [...$context, ...SafeError::context($e)]);
+			$this->logger->warning(self::FILES_NOT_LOOKED_UP, [...$context, ...SafeError::context($e)]);
 			return self::RETRY;
 		}
 		if ($inFiles) {
@@ -167,7 +171,7 @@ class GroupSessionRevoker {
 				$back = $this->bindingService->anyInFiles($now);
 				return !$back;
 			} catch (\Throwable $e) {
-				$this->logger->warning('Could not look up the files of a group\'s pads to revoke its Etherpad sessions.', [...$context, ...SafeError::context($e)]);
+				$this->logger->warning(self::FILES_NOT_LOOKED_UP, [...$context, ...SafeError::context($e)]);
 				$lookupFailed = true;
 				return false;
 			}

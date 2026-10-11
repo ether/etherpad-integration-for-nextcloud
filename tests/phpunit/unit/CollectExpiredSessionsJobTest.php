@@ -162,27 +162,6 @@ class CollectExpiredSessionsJobTest extends TestCase {
 	}
 
 	/**
-	 * The backoff table is the limit. A second constant saying how long it
-	 * is would be a fact about this array kept somewhere else, and tuning
-	 * the delays without noticing would index past its end — inside a cron
-	 * worker, with the row already removed and the backlog with it.
-	 */
-	public function testTheBackoffTableIsItsOwnLimit(): void {
-		$collector = $this->createMock(ExpiredSessionCollector::class);
-		$collector->method('collect')->willReturn(['deleted' => 0, 'remaining' => 0, 'retry' => true, 'nextDueAt' => null]);
-
-		$jobList = $this->createMock(IJobList::class);
-		$jobList->expects(self::never())->method('scheduleAfter');
-
-		$job = $this->job($collector, $jobList);
-		$job->setArgument([
-			'authorId' => 'a.author',
-			'attempt' => count(CollectExpiredSessionsJob::attemptArguments(['authorId' => 'b'])),
-		]);
-		$job->start($jobList);
-	}
-
-	/**
 	 * A plain row queued while a run was in progress stands down when a
 	 * retry is waiting.
 	 *
@@ -243,15 +222,47 @@ class CollectExpiredSessionsJobTest extends TestCase {
 		$job->start($jobList);
 	}
 
-	/** Every retry shape the collector has to recognise before queueing one. */
-	public function testNamesEveryRetryArgumentItCanProduce(): void {
-		self::assertSame([
-			['authorId' => 'a.author', 'attempt' => 1],
-			['authorId' => 'a.author', 'attempt' => 2],
-			['authorId' => 'a.author', 'attempt' => 3],
-		], CollectExpiredSessionsJob::attemptArguments(['authorId' => 'a.author']));
-	}
+	/**
+	 * Every retry, up to giving up, is queued under a shape isQueued() asks
+	 * for, the order of the keys too: the job list matches the encoded
+	 * argument, so a retry it does not ask for would let an open queue a
+	 * runnable row beside it. Each retry runs as queued, so the table's
+	 * end is where it gives up.
+	 */
+	public function testQueuesEveryRetryUnderAShapeItRecognises(): void {
+		$asked = [];
+		$jobList = $this->createMock(IJobList::class);
+		$jobList->method('has')->willReturnCallback(static function (string $job, mixed $argument) use (&$asked): bool {
+			$asked[] = $argument;
+			return false;
+		});
+		CollectExpiredSessionsJob::isQueued($jobList, ['authorId' => 'a.author']);
 
+		$argument = ['authorId' => 'a.author'];
+		$retries = 0;
+		while (true) {
+			$scheduled = [];
+			$collector = $this->createMock(ExpiredSessionCollector::class);
+			$collector->method('collect')->willReturn(['deleted' => 0, 'remaining' => 0, 'retry' => true, 'nextDueAt' => null]);
+			$rows = $this->createMock(IJobList::class);
+			$rows->method('scheduleAfter')->willReturnCallback(static function (string $job, int $runAfter, mixed $argument) use (&$scheduled): void {
+				$scheduled[] = $argument;
+			});
+			$job = $this->job($collector, $rows);
+			$job->setArgument($argument);
+			$job->start($rows);
+			if ($scheduled === []) {
+				break;
+			}
+
+			$retries++;
+			self::assertSame([['authorId' => 'a.author', 'attempt' => $retries]], $scheduled);
+			self::assertContains($scheduled[0], $asked, 'attempt ' . $retries);
+			self::assertLessThan(10, $retries, 'gives up');
+			$argument = $scheduled[0];
+		}
+		self::assertGreaterThan(0, $retries);
+	}
 
 	/** A run that did its work continues, it does not retry. */
 	public function testAContinuationIsNotARetry(): void {

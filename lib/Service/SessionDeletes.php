@@ -28,17 +28,28 @@ class SessionDeletes {
 	}
 
 	/**
-	 * The live ones among $sessions at $now: only what is expired on both
-	 * clocks is left out, since Etherpad judges `validUntil` against its
-	 * own, and a session ours calls dead may still be honoured there.
+	 * The live ones among $sessions at $now: what has not reached
+	 * expiredAt().
 	 *
 	 * @template K of array-key
 	 * @param array<K,array{groupID:string,validUntil:int}> $sessions
 	 * @return array<K,array{groupID:string,validUntil:int}>
 	 */
 	public static function live(array $sessions, int $now): array {
-		$expiredBefore = $now - EtherpadClient::CLOCK_SKEW_ALLOWANCE_SECONDS;
-		return array_filter($sessions, static fn (array $info): bool => $info['validUntil'] > $expiredBefore);
+		return array_filter($sessions, static fn (array $info): bool => self::expiredAt($info['validUntil']) > $now);
+	}
+
+	/**
+	 * When a session valid until $validUntil counts as expired: the
+	 * clock-skew allowance after it, since Etherpad judges `validUntil` by
+	 * its own clock and may still honour a session ours calls dead.
+	 *
+	 * Capped at PHP_INT_MAX: a listing may carry any positive `validUntil`,
+	 * and a sum past the cap would be a float, which ends the revoke or the
+	 * sweep with a TypeError.
+	 */
+	public static function expiredAt(int $validUntil): int {
+		return min($validUntil, PHP_INT_MAX - EtherpadClient::CLOCK_SKEW_ALLOWANCE_SECONDS) + EtherpadClient::CLOCK_SKEW_ALLOWANCE_SECONDS;
 	}
 
 	/**
