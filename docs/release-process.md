@@ -2,9 +2,9 @@
 
 This project uses a lightweight release flow:
 
-1. Run the local check.
+1. Prepare the release pull request.
 2. Run the end-to-end suite.
-3. Tag the release.
+3. Merge it, and tag the release.
 4. Deploy, and run the end-to-end suite against the deployed instance.
 
 Pushing the tag is the last manual step: `.github/workflows/release.yml` builds
@@ -13,26 +13,26 @@ pushed is listed under [3) Tagging](#3-tagging).
 
 The workflow refuses a tag that does not match `appinfo/info.xml`, and a tag
 whose `js/` bundles are not a fresh build of `src/`, so the bump has to be
-committed before the tag is placed.
+merged before the tag is placed.
 
-## 1) Reproducible Check (Required)
+## 1) Prepare the Release Pull Request
 
-Run from repo root:
-
-```bash
-./tests/integration/release-check.sh
-```
-
-It refuses a dirty working tree, then runs `vendor/bin/phpunit --testsuite unit`
-(install once with `composer install --no-interaction`).
-
-Frontend checks are separate and should be run before release/deploy whenever
-`src/`, `package.json`, or Vite/Vitest config changed:
+On a release branch, write the version's section in `CHANGELOG.md` and, for the
+prose readers get, `docs/release-notes/<version>.md`. Then, from repo root:
 
 ```bash
-npm test
-npm run build
+scripts/prepare-release.sh X.Y.Z
 ```
+
+It refuses a version without release notes before it changes anything, sets the
+version in `appinfo/info.xml`, `package.json` and both fields of
+`package-lock.json` - only those lines, the rest of each file stays as it is -
+builds `js/` in a copy of the tree with a `node_modules` of its own, and checks
+the versions as the tag workflow does. It needs the Node that `package.json`
+names under `engines` and network for `npm ci`. It commits, pushes and tags
+nothing: commit what it changed, together with the two texts, and open the pull
+request. Its CI runs the PHPUnit, Vitest and Psalm checks and the end-to-end
+suite.
 
 The Vite build writes runtime assets to `js/`; those built files must be present
 in the deployed app.
@@ -75,8 +75,8 @@ tagged commit already:
 
 - `appinfo/info.xml` carries the new version, and `package.json` plus both
   version fields in `package-lock.json` agree with it. The bundles take their
-  version from `package.json`, so `npm run build` has to have run after that
-  bump and `js/` has to be committed.
+  version from `package.json`, so they have to be built after that bump and
+  `js/` committed. `scripts/prepare-release.sh` does both.
 - `CHANGELOG.md` has a section for the version, with entries under it.
 - `docs/release-notes/<version>.md` holds the prose readers get. Without it the
   CHANGELOG section is published instead, and afterwards is too late - the
