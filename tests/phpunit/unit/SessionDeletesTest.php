@@ -32,6 +32,17 @@ class SessionDeletesTest extends TestCase {
 		self::assertSame(['s.live', 's.skewed'], array_keys(SessionDeletes::live($sessions, FixedClock::NOW)));
 	}
 
+	/** A `validUntil` as far off as an int goes is live, not a sum that overflows. */
+	public function testASessionValidAsFarAsAnIntGoesIsLive(): void {
+		$sessions = [
+			's.max' => ['groupID' => 'g.A', 'validUntil' => PHP_INT_MAX],
+			's.nearMax' => ['groupID' => 'g.A', 'validUntil' => PHP_INT_MAX - 1],
+		];
+
+		self::assertSame(['s.max', 's.nearMax'], array_keys(SessionDeletes::live($sessions, FixedClock::NOW)));
+		self::assertSame(PHP_INT_MAX, SessionDeletes::expiredAt(PHP_INT_MAX - 1));
+	}
+
 	public function testDeletesInOrderUpToItsMaximum(): void {
 		$client = $this->createMock(EtherpadClient::class);
 		$removed = [];

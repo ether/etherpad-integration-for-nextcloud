@@ -674,6 +674,15 @@ class ExpiredSessionCollectorTest extends TestCase {
 		self::assertSame(['s.onTheDot', 's.longago'], $deleted);
 	}
 
+	/** A session valid as far as an int goes is left live, and the sweep comes back at the latest time there is. */
+	public function testASessionValidAsFarAsAnIntGoesIsLeftLive(): void {
+		$client = $this->createMock(EtherpadClient::class);
+		$client->method('listSessionsOfAuthor')->willReturn(['s.max' => ['groupID' => 'g.AAAAAAAAAAAAAAAA', 'validUntil' => PHP_INT_MAX]]);
+		$client->expects(self::never())->method('deleteSession');
+
+		self::assertSame(['deleted' => 0, 'remaining' => 0, 'retry' => false, 'nextDueAt' => PHP_INT_MAX], $this->collector($client)->collect(self::AUTHOR));
+	}
+
 	/**
 	 * A session id is the value of the `sessionID` cookie — the credential
 	 * itself — and this branch is reached for sessions the pad server may

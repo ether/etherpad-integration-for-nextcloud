@@ -43,9 +43,13 @@ class SessionDeletes {
 	 * When a session valid until $validUntil counts as expired: the
 	 * clock-skew allowance after it, since Etherpad judges `validUntil` by
 	 * its own clock and may still honour a session ours calls dead.
+	 *
+	 * Capped at PHP_INT_MAX: a listing may carry any positive `validUntil`,
+	 * and a sum past the cap would be a float, which ends the revoke or the
+	 * sweep with a TypeError.
 	 */
 	public static function expiredAt(int $validUntil): int {
-		return $validUntil + EtherpadClient::CLOCK_SKEW_ALLOWANCE_SECONDS;
+		return min($validUntil, PHP_INT_MAX - EtherpadClient::CLOCK_SKEW_ALLOWANCE_SECONDS) + EtherpadClient::CLOCK_SKEW_ALLOWANCE_SECONDS;
 	}
 
 	/**
