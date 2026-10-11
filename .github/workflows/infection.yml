@@ -3,9 +3,9 @@
 #
 # Mutation testing of the lines a pull request changes in lib/, with
 # Infection (infection.json5): each change to the code that no unit test
-# notices is reported. Not blocking yet - the result goes to the job
-# summary and, for each escaped mutant, an annotation on its line; the job
-# fails only when Infection cannot run.
+# notices is reported, not refused. The log goes to the job summary, and
+# each line with a mutant no test caught, or no test runs, gets an
+# annotation; the job fails only when Infection cannot run.
 #
 # Infection 0.35 needs PHP 8.3 or later, above composer.json's platform,
 # so it comes as a pinned PHAR rather than a dev dependency.
@@ -95,10 +95,16 @@ jobs:
             "https://github.com/infection/infection/releases/download/${INFECTION_PHAR_VERSION}/infection.phar"
           echo "${INFECTION_PHAR_SHA256}  $RUNNER_TEMP/infection.phar" | sha256sum --check --strict -
 
-      # No --min-msi: a mutant that escapes is reported, not refused, until
-      # a threshold comes out of the first weeks. --with-uncovered mutates
-      # lines no test runs too, which Infection otherwise leaves out: a new
-      # method without a test would show nothing.
+      # Infection takes added and modified files only. With rename detection
+      # a file a pull request moves and edits is a rename, and its changed
+      # lines would go untested.
+      - name: Diff without rename detection
+        run: git config diff.renames false
+
+      # No --min-msi: an escaped mutant is reported, not refused.
+      # --with-uncovered mutates lines no test runs too, which Infection
+      # otherwise leaves out: a new method without a test would show
+      # nothing. --logger-github annotates the escaped mutants.
       - name: Run Infection on the changed lines
         env:
           BASE_REF: ${{ github.base_ref }}
@@ -106,11 +112,25 @@ jobs:
           php "$RUNNER_TEMP/infection.phar" \
             --git-diff-lines --git-diff-base="origin/$BASE_REF" \
             --with-uncovered \
-            --ignore-msi-with-no-mutations \
-            --threads=max --no-progress --no-interaction \
+            --threads=max --no-interaction \
             --logger-github \
             --logger-text="$RUNNER_TEMP/infection.log"
 
+      # Infection annotates escaped mutants only; a line no test runs would
+      # show less than one a test runs weakly.
+      - name: Annotate the lines no test runs
+        if: always()
+        run: |
+          [ -s "$RUNNER_TEMP/infection.log" ] || exit 0
+          sed -n '/^Not Covered mutants:$/,/^[A-Z][A-Za-z ]* mutants:$/p' "$RUNNER_TEMP/infection.log" \
+            | sed -nE "s#^[0-9]+\) ${GITHUB_WORKSPACE}/([^:]+):([0-9]+) .*#\1 \2#p" \
+            | sort -u \
+            | while read -r file line; do
+                echo "::warning file=${file},line=${line}::No test runs this line, so no mutant Infection made here was caught."
+              done
+
+      # The log holds the pull request's own code in the mutants' diffs; the
+      # fence is longer than any run of backticks in it.
       - name: Write the result to the job summary
         if: always()
         run: |
@@ -118,9 +138,11 @@ jobs:
             echo '### Mutation testing of the changed lines'
             echo
             if [ -s "$RUNNER_TEMP/infection.log" ]; then
-              echo '```'
+              longest="$(grep -o '`*' "$RUNNER_TEMP/infection.log" | awk '{ if (length($0) > n) n = length($0) } END { print n + 0 }')"
+              fence="$(printf '%*s' "$(( longest < 3 ? 3 : longest + 1 ))" '' | tr ' ' '`')"
+              echo "$fence"
               cat "$RUNNER_TEMP/infection.log"
-              echo '```'
+              echo "$fence"
             else
               echo 'No mutants: no line of lib/ changed, or Infection did not run.'
             fi
