@@ -157,20 +157,66 @@ describe('pad-sync', () => {
 		ps.configure({ syncUrl: '/sync/42' })
 		ps.installLifecycleHandlers()
 
-		Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true })
-		document.dispatchEvent(new Event('visibilitychange'))
-		window.dispatchEvent(new Event('pagehide'))
-		const host = ps.sync(true, true)
-		await flushAsyncWork()
-		expect(fetchImpl).toHaveBeenCalledTimes(1)
+		try {
+			Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true })
+			document.dispatchEvent(new Event('visibilitychange'))
+			window.dispatchEvent(new Event('pagehide'))
+			const host = ps.sync(true, true)
+			await flushAsyncWork()
+			expect(fetchImpl).toHaveBeenCalledTimes(1)
 
-		gates[0]()
-		await host
-		ps.fireAndForget(true, true)
-		await flushAsyncWork()
-		expect(fetchImpl).toHaveBeenCalledTimes(2)
-		gates[1]()
-		ps.removeLifecycleHandlers()
+			gates[0]()
+			await host
+			ps.fireAndForget(true, true)
+			await flushAsyncWork()
+			expect(fetchImpl).toHaveBeenCalledTimes(2)
+			gates[1]()
+		} finally {
+			ps.removeLifecycleHandlers()
+		}
+	})
+
+	// Hidden, shown, typed in, left: the flush on leaving carries the new
+	// edits, which the one still in flight from hiding may have missed.
+	it('shares no keepalive flush across the page being shown again', async () => {
+		const gates = []
+		const fetchImpl = vi.fn(() => new Promise((resolve) => {
+			gates.push(() => resolve(okResponse()))
+		}))
+		const ps = createPadSync({ fetchImpl })
+		ps.configure({ syncUrl: '/sync/42' })
+
+		const hidden = ps.sync(true, true)
+		ps.start()
+		const left = ps.sync(true, true)
+		const plainLeft = ps.sync(false, true)
+
+		expect(fetchImpl).toHaveBeenCalledTimes(3)
+		expect(fetchImpl.mock.calls[2][0]).toBe('/sync/42')
+		gates.forEach((open) => open())
+		await Promise.all([hidden, left, plainLeft])
+		ps.stop()
+	})
+
+	it('replays each url forced flushes asked for while a sync ran, in order', async () => {
+		const gates = []
+		const fetchImpl = vi.fn(() => new Promise((resolve) => {
+			gates.push(() => resolve(okResponse()))
+		}))
+		const ps = createPadSync({ fetchImpl })
+		ps.configure({ syncUrl: '/sync/A' })
+
+		const running = ps.sync(false, false)
+		const forA = ps.sync(true, false)
+		ps.configure({ syncUrl: '/sync/B' })
+		const forB = ps.sync(true, false)
+
+		for (let i = 0; i < 3; i++) {
+			await flushAsyncWork()
+			gates[i]()
+		}
+		await Promise.all([running, forA, forB])
+		expect(fetchImpl.mock.calls.map(([url]) => url)).toEqual(['/sync/A', '/sync/A?force=1', '/sync/B?force=1'])
 	})
 
 	it('start() runs a sync per interval only while the document is visible; stop() halts it', async () => {

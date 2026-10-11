@@ -23,11 +23,13 @@ export function createPadSync({ requestToken, fetchImpl } = {}) {
 
 	let syncUrl = ''
 	let intervalMs = DEFAULT_SYNC_INTERVAL_MS
-	// The running sync, its replay included.
+	// The running sync, its replays included.
 	let syncPromise = null
-	let activeSyncForce = false
-	let replayUrl = null
-	// The keepalive flush in flight for each URL.
+	// The request in flight in it: its URL, and whether it is forced.
+	let active = null
+	// The URLs forced flushes asked for while a sync ran, in the order asked.
+	const replayUrls = new Set()
+	// The keepalive flush in flight for each target, until the page is shown again.
 	const keepaliveFlushes = new Map()
 	let timerId = null
 	let visibilityHandler = null
@@ -50,6 +52,9 @@ export function createPadSync({ requestToken, fetchImpl } = {}) {
 	}
 
 	const start = () => {
+		// Shown again: a flush on the next leaving carries what is typed from
+		// now on, so it shares no flush sent before.
+		keepaliveFlushes.clear()
 		if (!syncUrl || timerId !== null) {
 			return
 		}
@@ -82,17 +87,22 @@ export function createPadSync({ requestToken, fetchImpl } = {}) {
 		return data
 	}
 
-	/** The request, then its replay if one was asked for: the last answer is every waiting caller's. */
+	/** The request, then the replays asked for while it ran: the last answer is every waiting caller's. */
 	const run = async (url, force) => {
-		const first = request(url, force, false)
-		await first.catch(() => {})
-		if (replayUrl === null) {
-			return first
+		active = { url, force: Boolean(force) }
+		let answer = request(url, force, false)
+		await answer.catch(() => {})
+		for (const again of replayUrls) {
+			replayUrls.delete(again)
+			active = { url: again, force: true }
+			answer = request(again, true, false)
+			await answer.catch(() => {})
 		}
-		const again = replayUrl
-		replayUrl = null
-		activeSyncForce = true
-		return request(again, true, false)
+		// Cleared in the step that found nothing left to replay: a forced
+		// flush asked for after it starts a sync of its own.
+		syncPromise = null
+		active = null
+		return answer
 	}
 
 	const sync = async (force, keepalive) => {
@@ -101,33 +111,30 @@ export function createPadSync({ requestToken, fetchImpl } = {}) {
 		}
 		if (keepalive) {
 			// The page may be leaving, and a flush queued behind the running
-			// sync would then never start. The server runs two syncs of a file
-			// one after the other, so it goes at once. Leaving fires several
-			// events (pagehide, visibilitychange, the host's): they share one,
-			// for the pad they leave - the viewer keeps this controller when it
-			// opens another.
-			const url = syncUrl
-			if (!keepaliveFlushes.has(url)) {
-				keepaliveFlushes.set(url, request(url, force, true).finally(() => {
-					keepaliveFlushes.delete(url)
-				}))
+			// sync would then never start. The server takes the syncs of a file
+			// one at a time (PadSyncLock says when it cannot), so it goes at
+			// once. Leaving fires several events (pagehide, visibilitychange,
+			// the host's): they share one, for the pad they leave - the viewer
+			// keeps this controller when it opens another.
+			const key = (force ? 'forced ' : '') + syncUrl
+			if (!keepaliveFlushes.has(key)) {
+				const flush = request(syncUrl, force, true).finally(() => {
+					if (keepaliveFlushes.get(key) === flush) {
+						keepaliveFlushes.delete(key)
+					}
+				})
+				keepaliveFlushes.set(key, flush)
 			}
-			return keepaliveFlushes.get(url)
+			return keepaliveFlushes.get(key)
 		}
 		if (syncPromise) {
-			if (force && !activeSyncForce) {
-				replayUrl = syncUrl
+			if (force && !(active.force && active.url === syncUrl)) {
+				replayUrls.add(syncUrl)
 			}
 			return syncPromise
 		}
-		activeSyncForce = Boolean(force)
 		syncPromise = run(syncUrl, force)
-		try {
-			return await syncPromise
-		} finally {
-			syncPromise = null
-			activeSyncForce = false
-		}
+		return syncPromise
 	}
 
 	const installLifecycleHandlers = () => {
