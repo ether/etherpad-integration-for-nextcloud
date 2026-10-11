@@ -16,6 +16,8 @@ $stubFiles = [
 	__DIR__ . '/stubs/OCP/Files/Template/Template.php',
 	__DIR__ . '/stubs/OCP/Http/Client/LocalServerException.php',
 	__DIR__ . '/stubs/OCP/Settings/ISettings.php',
+	__DIR__ . '/stubs/OCP/Settings/IIconSection.php',
+	__DIR__ . '/stubs/OCP/Preview/IProviderV2.php',
 	__DIR__ . '/stubs/OCP/AppFramework/PublicShareController.php',
 	__DIR__ . '/stubs/OCP/AppFramework/Http.php',
 	__DIR__ . '/stubs/OCP/AppFramework/Http/ContentSecurityPolicy.php',
