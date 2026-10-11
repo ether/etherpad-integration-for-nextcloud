@@ -34,8 +34,8 @@ class ExpiredSessionCollectorTest extends TestCase {
 	private const GROUP = 'g.AAAAAAAAAAAAAAAA';
 
 	/**
-	 * Long enough past expiry that both clocks must agree. A session that
-	 * ran out a minute ago is deliberately not collected.
+	 * Long enough past expiry to be past the clock-skew allowance. A
+	 * session that ran out a minute ago is deliberately not collected.
 	 */
 	private static function expired(): array {
 		return ['groupID' => 'g.AAAAAAAAAAAAAAAA', 'validUntil' => FixedClock::NOW - 3600];
@@ -655,17 +655,23 @@ class ExpiredSessionCollectorTest extends TestCase {
 	 * clock. In the window where the two disagree, a session this side
 	 * calls dead is one the pad server still grants — and deleting it
 	 * closes a socket somebody is typing into. Nothing here is urgent
-	 * enough to be worth that.
+	 * enough to be worth that; once the allowance has passed, it is
+	 * collected.
 	 */
 	public function testWaitsOutTheClockDifferenceBeforeDeleting(): void {
 		$client = $this->createMock(EtherpadClient::class);
 		$client->method('listSessionsOfAuthor')->willReturn([
 			's.justnow' => self::justExpired(),
+			's.onTheDot' => ['groupID' => 'g.AAAAAAAAAAAAAAAA', 'validUntil' => FixedClock::NOW - EtherpadClient::CLOCK_SKEW_ALLOWANCE_SECONDS],
 			's.longago' => self::expired(),
 		]);
-		$client->expects(self::once())->method('deleteSession')->with('s.longago');
+		$deleted = [];
+		$client->method('deleteSession')->willReturnCallback(static function (string $sessionId) use (&$deleted): void {
+			$deleted[] = $sessionId;
+		});
 
-		self::assertSame(1, $this->collector($client)->collect(self::AUTHOR)['deleted']);
+		self::assertSame(2, $this->collector($client)->collect(self::AUTHOR)['deleted']);
+		self::assertSame(['s.onTheDot', 's.longago'], $deleted);
 	}
 
 	/**

@@ -20,11 +20,12 @@ use Psr\Log\LoggerInterface;
 
 /** The delete loop the background sweeps and the request's revokes share. */
 class SessionDeletesTest extends TestCase {
-	/** Live on both clocks: one only ours calls expired is live to Etherpad. */
-	public function testLiveIsWhatIsNotExpiredOnBothClocks(): void {
+	/** Live until the clock-skew allowance has passed too: Etherpad may still honour one ours calls expired. */
+	public function testLiveIsWhatIsNotPastTheClockSkewAllowance(): void {
 		$sessions = [
 			's.live' => ['groupID' => 'g.A', 'validUntil' => FixedClock::NOW + 60],
 			's.skewed' => ['groupID' => 'g.A', 'validUntil' => FixedClock::NOW - 60],
+			's.onTheDot' => ['groupID' => 'g.A', 'validUntil' => FixedClock::NOW - EtherpadClient::CLOCK_SKEW_ALLOWANCE_SECONDS],
 			's.expired' => ['groupID' => 'g.A', 'validUntil' => FixedClock::NOW - 301],
 		];
 

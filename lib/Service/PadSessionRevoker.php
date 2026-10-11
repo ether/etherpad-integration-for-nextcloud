@@ -263,9 +263,9 @@ class PadSessionRevoker {
 	}
 
 	/**
-	 * The live ones among $sessions: only what is expired on both clocks is
-	 * left out. Anything newer is treated as live and revoked, which at
-	 * worst deletes something already gone.
+	 * The live ones among $sessions: only what is past
+	 * SessionDeletes::expiredAt() is left out. Anything newer is treated as
+	 * live and revoked, which at worst deletes something already gone.
 	 *
 	 * An expired session grants nothing already, and an author who has used
 	 * protected pads for a while carries hundreds: collecting them is the

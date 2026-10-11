@@ -253,20 +253,20 @@ class ExpiredSessionCollector {
 			]);
 		}
 
-		$cutoff = SessionDeletes::expiredBy($this->timeFactory->getTime());
+		$now = $this->timeFactory->getTime();
 		$expired = [];
 		$nextDueAt = null;
 		foreach ($sessions as $sessionId => $info) {
 			// Live sessions are left alone: ending someone's access is not a
 			// housekeeping decision.
-			if ($info['validUntil'] <= $cutoff) {
+			$dueAt = SessionDeletes::expiredAt($info['validUntil']);
+			if ($dueAt <= $now) {
 				$expired[$sessionId] = $info;
 				continue;
 			}
 
 			// When the earliest becomes collectable — without it, a sweep
 			// that found nothing is queued again by the very next open.
-			$dueAt = $info['validUntil'] + EtherpadClient::CLOCK_SKEW_ALLOWANCE_SECONDS;
 			$nextDueAt = $nextDueAt === null ? $dueAt : min($nextDueAt, $dueAt);
 		}
 

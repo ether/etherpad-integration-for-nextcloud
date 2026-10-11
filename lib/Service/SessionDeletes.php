@@ -28,22 +28,24 @@ class SessionDeletes {
 	}
 
 	/**
-	 * The live ones among $sessions at $now: only what is expired on both
-	 * clocks is left out, since Etherpad judges `validUntil` against its
-	 * own, and a session ours calls dead may still be honoured there.
+	 * The live ones among $sessions at $now: what has not reached
+	 * expiredAt().
 	 *
 	 * @template K of array-key
 	 * @param array<K,array{groupID:string,validUntil:int}> $sessions
 	 * @return array<K,array{groupID:string,validUntil:int}>
 	 */
 	public static function live(array $sessions, int $now): array {
-		$expiredBy = self::expiredBy($now);
-		return array_filter($sessions, static fn (array $info): bool => $info['validUntil'] > $expiredBy);
+		return array_filter($sessions, static fn (array $info): bool => self::expiredAt($info['validUntil']) > $now);
 	}
 
-	/** The `validUntil` at or before which a session is expired on both clocks at $now. */
-	public static function expiredBy(int $now): int {
-		return $now - EtherpadClient::CLOCK_SKEW_ALLOWANCE_SECONDS;
+	/**
+	 * When a session valid until $validUntil counts as expired: the
+	 * clock-skew allowance after it, since Etherpad judges `validUntil` by
+	 * its own clock and may still honour a session ours calls dead.
+	 */
+	public static function expiredAt(int $validUntil): int {
+		return $validUntil + EtherpadClient::CLOCK_SKEW_ALLOWANCE_SECONDS;
 	}
 
 	/**
