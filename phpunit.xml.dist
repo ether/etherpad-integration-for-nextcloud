@@ -3,6 +3,7 @@
          executionOrder="random"
          failOnRisky="true"
          failOnWarning="true"
+         displayDetailsOnTestsThatTriggerWarnings="true"
          beStrictAboutOutputDuringTests="true">
   <testsuites>
     <testsuite name="unit">
