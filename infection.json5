@@ -1,0 +1,17 @@
+// Mutation testing of lib/ with Infection: .github/workflows/infection.yml
+// runs it on the lines a pull request changes.
+{
+	"source": {
+		"directories": ["lib"],
+	},
+	// Infection loads the classes it mutates itself, and the OCP classes
+	// they use exist here only as the unit suite's stubs.
+	"bootstrap": "tests/phpunit/bootstrap.php",
+	"phpUnit": {
+		"configDir": ".",
+	},
+	"mutators": {
+		"@default": true,
+	},
+	"timeout": 20,
+}

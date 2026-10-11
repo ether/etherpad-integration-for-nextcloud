@@ -1,0 +1,124 @@
+# SPDX-FileCopyrightText: 2026 Etherpad contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# Mutation testing of the lines a pull request changes in lib/, with
+# Infection (infection.json5): each change to the code that no unit test
+# notices is reported. Not blocking yet - the result goes to the job
+# summary and, for each escaped mutant, an annotation on its line; the job
+# fails only when Infection cannot run.
+#
+# Infection 0.35 needs PHP 8.3 or later, above composer.json's platform,
+# so it comes as a pinned PHAR rather than a dev dependency.
+
+name: Infection
+
+on: pull_request
+
+permissions:
+  contents: read
+
+concurrency:
+  group: infection-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+
+    outputs:
+      src: ${{ steps.changes.outputs.src }}
+
+    steps:
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        id: changes
+        continue-on-error: true
+        with:
+          filters: |
+            src:
+              - '.github/workflows/infection.yml'
+              - 'infection.json5'
+              - 'phpunit.xml.dist'
+              - 'composer.*'
+              - 'lib/**'
+              - 'tests/phpunit/**'
+
+  infection:
+    runs-on: ubuntu-latest
+
+    needs: changes
+    if: needs.changes.outputs.src != 'false'
+
+    name: Mutation testing of the changed lines
+
+    env:
+      INFECTION_PHAR_VERSION: 0.35.5
+      # The digest GitHub lists for the release asset; re-derive with
+      # sha256sum after a bump.
+      INFECTION_PHAR_SHA256: 61720c27c24315d307b398467d20b6a29097434a7f14e17914fcd500052b68f7
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # The base branch too: the changed lines are a diff against it.
+          fetch-depth: 0
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2.37.2
+        with:
+          php-version: '8.4'
+          coverage: pcov
+          tools: composer:v2
+
+      - name: Get composer cache directory
+        id: composer-cache
+        run: echo "dir=$(composer config cache-files-dir)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache composer dependencies
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.composer-cache.outputs.dir }}
+          key: ${{ runner.os }}-composer-8.4-${{ hashFiles('**/composer.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-composer-8.4-
+
+      - name: Install dependencies
+        run: composer install --no-progress --prefer-dist
+
+      - name: Fetch Infection
+        run: |
+          curl -sSLf -o "$RUNNER_TEMP/infection.phar" \
+            "https://github.com/infection/infection/releases/download/${INFECTION_PHAR_VERSION}/infection.phar"
+          echo "${INFECTION_PHAR_SHA256}  $RUNNER_TEMP/infection.phar" | sha256sum --check --strict -
+
+      # No --min-msi: a mutant that escapes is reported, not refused, until
+      # a threshold comes out of the first weeks.
+      - name: Run Infection on the changed lines
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          php "$RUNNER_TEMP/infection.phar" \
+            --git-diff-lines --git-diff-base="origin/$BASE_REF" \
+            --ignore-msi-with-no-mutations \
+            --threads=max --no-progress --no-interaction \
+            --logger-github \
+            --logger-text="$RUNNER_TEMP/infection.log"
+
+      - name: Write the result to the job summary
+        if: always()
+        run: |
+          {
+            echo '### Mutation testing of the changed lines'
+            echo
+            if [ -s "$RUNNER_TEMP/infection.log" ]; then
+              echo '```'
+              cat "$RUNNER_TEMP/infection.log"
+              echo '```'
+            else
+              echo 'No mutants: no line of lib/ changed, or Infection did not run.'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
