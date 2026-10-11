@@ -12,7 +12,6 @@ namespace OCA\EtherpadNextcloud\Service;
 use OCA\EtherpadNextcloud\Exception\NotAPadFileException;
 use OCA\EtherpadNextcloud\Exception\PadFileLockRetryExhaustedException;
 use OCA\EtherpadNextcloud\Exception\PadLostException;
-use OCA\EtherpadNextcloud\Exception\PadSnapshotOvertakenException;
 use OCA\EtherpadNextcloud\Util\PadFileType;
 use OCA\EtherpadNextcloud\Util\SafeError;
 use OCP\Files\File;
@@ -208,29 +207,12 @@ class PadSyncService {
 		// for a lock too: a recovery may have moved the row onto a new pad
 		// while Etherpad was asked, or while the sync waited, and written the
 		// file for it. This pad's text written over that would leave file and
-		// row naming two pads, which no open gets past. And another sync - a
-		// page's closing one, another tab's - may have written a newer
-		// snapshot meanwhile (assertNotOvertaken()).
-		try {
-			$lockRetries = $this->lockRetryService->putContentWithSyncLockRetry(
-				$node,
-				$updatedContent,
-				function () use ($node, $fileId, $padId, $pad, $currentRev): void {
-					$this->bindingService->assertConsistentMapping($fileId, $padId, $pad->accessMode);
-					$this->assertNotOvertaken($node, $pad->snapshotRev, $currentRev);
-				},
-			);
-		} catch (PadSnapshotOvertakenException $e) {
-			return new PadSyncResult(
-				status: self::STATUS_UNCHANGED,
-				fileId: $fileId,
-				padId: $padId,
-				external: false,
-				forced: $force,
-				snapshotRev: $e->snapshotRev,
-				currentRev: $currentRev,
-			);
-		}
+		// row naming two pads, which no open gets past.
+		$lockRetries = $this->lockRetryService->putContentWithSyncLockRetry(
+			$node,
+			$updatedContent,
+			fn () => $this->bindingService->assertConsistentMapping($fileId, $padId, $pad->accessMode),
+		);
 
 		return new PadSyncResult(
 			status: self::STATUS_UPDATED,
@@ -241,24 +223,6 @@ class PadSyncService {
 			snapshotRev: $currentRev,
 			lockRetries: $lockRetries,
 		);
-	}
-
-	/**
-	 * Whether another writer put a snapshot into the file since this sync
-	 * read it at $readRev, one at least as new as the $currentRev this sync
-	 * fetched: written over, the file would go back to older text. A
-	 * snapshot unchanged since the read is written over as before, as a
-	 * forced sync writes a pad behind it on purpose. The file is read right
-	 * before the write; a sync that writes between that read and the write
-	 * is not seen.
-	 *
-	 * @throws PadSnapshotOvertakenException
-	 */
-	private function assertNotOvertaken(File $node, int $readRev, int $currentRev): void {
-		$now = $this->padFileService->readPad($node->getContent())->snapshotRev;
-		if ($now !== $readRev && $now >= $currentRev) {
-			throw new PadSnapshotOvertakenException($now);
-		}
 	}
 
 	private function lockedSyncResponse(

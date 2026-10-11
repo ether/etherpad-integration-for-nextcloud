@@ -394,49 +394,6 @@ class PadSyncServiceTest extends TestCase {
 	}
 
 	/**
-	 * Two syncs of one file at once - a page's closing sync beside a running
-	 * one, two tabs: the slower one fetched an older revision, and the other
-	 * wrote a snapshot at least as new meanwhile. The slower one writes
-	 * nothing then. One only older than its own it writes over, and so a
-	 * snapshot nobody wrote since its read, which a forced sync does on
-	 * purpose for a pad behind it.
-	 */
-	public function testASyncOvertakenByASnapshotAtLeastAsNewWritesNothing(): void {
-		$formatter = new PadFileService(new FixedClock());
-		$at = static fn (int $rev, string $text): string => $formatter->withExportSnapshot(
-			$formatter->readPad($formatter->buildInitialDocument(138, 'pad-a', BindingService::ACCESS_PUBLIC)),
-			new PadSnapshot($text, '<p>' . $text . '</p>', $rev),
-		);
-		$cases = [
-			// the snapshot as read, Etherpad's revision, the snapshot at the write, forced, written
-			'a newer snapshot written meanwhile' => [0, 1, 2, false, false],
-			'the same revision written meanwhile' => [0, 2, 2, false, false],
-			'an older snapshot written meanwhile' => [0, 2, 1, false, true],
-			'nothing written meanwhile, a pad behind the snapshot, forced' => [500, 3, 500, true, true],
-		];
-		foreach ($cases as $case => [$readRev, $padRev, $laterRev, $force, $writes]) {
-			$file = $this->createMock(File::class);
-			$file->method('getName')->willReturn('Notes.pad');
-			$file->method('getContent')->willReturnOnConsecutiveCalls($at($readRev, 'as read'), $at($laterRev, 'meanwhile'));
-			$file->expects($writes ? $this->once() : $this->never())->method('putContent');
-			$userNodeResolver = $this->createMock(UserNodeResolver::class);
-			$userNodeResolver->method('resolveUserFileNodeById')->willReturn($file);
-			$userNodeResolver->method('toUserAbsolutePath')->willReturn('/Notes.pad');
-			$etherpadClient = $this->createMock(EtherpadClient::class);
-			$etherpadClient->method('getRevisionsCount')->willReturn($padRev);
-			$etherpadClient->method('getText')->willReturn('fetched');
-			$etherpadClient->method('getHTML')->willReturn('<p>fetched</p>');
-			$lockRetryService = new PadFileLockRetryService(static function (int $delay): void {
-			});
-
-			$result = $this->buildService($formatter, $userNodeResolver, null, $etherpadClient, $lockRetryService)->syncById('alice', 138, $force);
-
-			$this->assertSame($writes ? PadSyncService::STATUS_UPDATED : PadSyncService::STATUS_UNCHANGED, $result->status, $case);
-			$this->assertSame($writes ? $padRev : $laterRev, $result->snapshotRev, $case);
-		}
-	}
-
-	/**
 	 * An external .pad without a link is the link's problem, not Etherpad
 	 * failing; a file that is no .pad is refused as such.
 	 */
