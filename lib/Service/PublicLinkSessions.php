@@ -126,7 +126,7 @@ class PublicLinkSessions {
 		}
 	}
 
-	/** A parameter rather than a variable: the cache gives a mixed value, and Psalm wants it narrowed where it arrives. */
+	/** Narrows a mixed cache value without a MixedAssignment suppression. */
 	private static function asString(mixed $value): string {
 		return is_string($value) ? $value : '';
 	}

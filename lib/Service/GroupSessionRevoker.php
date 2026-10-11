@@ -94,11 +94,12 @@ class GroupSessionRevoker {
 	 * can be restored and opened during the pass, while the sessions are
 	 * listed too, and its opener's session would be the first to go.
 	 *
-	 * The answer is the collector's shape: `remaining` is what it found and
-	 * did not reach, `retry` that something failed. `nextDueAt` is always
-	 * null: expired sessions are the collector's. `ended` says the job is
-	 * over whatever is left - a file back in Files, a pad of no file, the
-	 * group gone - with no second look (SessionSweepJob).
+	 * The answer is the collector's shape: `remaining` counts the sessions
+	 * it found and did not take, failed deletes included, `retry` that
+	 * something failed. `nextDueAt` is always null: expired sessions are
+	 * the collector's. `ended` says the job is over whatever is left - a
+	 * file back in Files, a pad of no file, the group gone - with no second
+	 * look (SessionSweepJob).
 	 *
 	 * @return array{deleted:int,remaining:int,retry:bool,nextDueAt:null,ended:bool}
 	 */

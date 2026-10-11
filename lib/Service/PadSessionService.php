@@ -225,9 +225,8 @@ class PadSessionService {
 			$sessions = $this->etherpadClient->listSessionsOfAuthor($authorId);
 		} catch (EtherpadClientException $e) {
 			// Not fatal: the open goes ahead. But nothing can be attributed
-			// without the listing, so nothing is carried and a second pad
-			// loses access exactly as it did before this existed — which is
-			// a symptom nothing else would explain.
+			// without the listing, so nothing is carried and the other pads
+			// lose access; this line is what says why.
 			$this->logger->warning('Could not list Etherpad sessions; this open drops the other pads\' sessions from the cookie', [
 				'app' => 'etherpad_nextcloud',
 				...SafeError::context($e),
@@ -272,12 +271,13 @@ class PadSessionService {
 		}
 
 		if ($carried === [] && $carriedSessionIds !== [] && $sessions !== []) {
-			// The browser brought ids and this author owns none of them.
+			// None of the ids the browser brought can be kept for another
+			// pad: not this author's, expired, or the pad just opened.
 			// Expected after a user switch — that is the case the rule exists
 			// for — but it also happens when the author id itself was
 			// re-issued, and then the user loses their other open pads for a
 			// reason that looks exactly like the bug this prevents.
-			$this->logger->debug('None of the session ids the browser sent belong to this Etherpad author; the other pads drop out of the cookie', [
+			$this->logger->debug('None of the session ids the browser sent can be kept for another pad; the other pads drop out of the cookie', [
 				'app' => 'etherpad_nextcloud',
 			]);
 		}
@@ -463,13 +463,9 @@ class PadSessionService {
 			return $authorId;
 		}
 
-		// Asked on every open, and deliberately not skipped when the stored
-		// name still matches. It looks like a round trip the cache should
-		// spare, but it is the only thing that keeps Etherpad's idea of the
-		// author's name in step with Nextcloud's: the name can drift on the
-		// Etherpad side — a user renaming themselves in the pad, another
-		// integrator, an API call — and nothing else ever repairs it. The
-		// e2e suite catches exactly that, with the pad showing a stale name.
+		// Asked on every open, even when the stored name matches: the name
+		// can change on Etherpad's side — a user renaming themselves in the
+		// pad, an API call — and nothing else brings it back in step.
 		try {
 			$syncedAuthorId = $this->etherpadClient->createAuthorIfNotExistsFor('nc:' . $uid, $trimmedName);
 		} catch (\Throwable) {

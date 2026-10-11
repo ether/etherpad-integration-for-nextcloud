@@ -327,7 +327,7 @@ class EtherpadClient {
 	}
 
 	/**
-	 * @param array<array-key,mixed> $sessionListing as Etherpad answered it, keyed by live session ids
+	 * @param array<array-key,mixed> $sessionListing as Etherpad answered it, keyed by session ids
 	 * @return array<string,array{groupID:string,validUntil:int}>
 	 */
 	private function sessionsIn(array $sessionListing, ?int &$unreadableEntries): array {

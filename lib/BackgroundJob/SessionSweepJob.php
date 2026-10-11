@@ -16,16 +16,16 @@ use OCP\BackgroundJob\QueuedJob;
 use Psr\Log\LoggerInterface;
 
 /**
- * A sweep over Etherpad sessions that goes on in passes, each a row naming
- * the item it sweeps - an author's sessions, a group's - where a first
- * pass, a retry and a second look can wait side by side: back after a
- * minute while there is more, backed off after a failure, and stopped
+ * A sweep over Etherpad sessions in passes, a row each, naming the item it
+ * sweeps - an author's sessions, a group's - under key(): back after a
+ * minute while there is more, backed off after a failure and stopped
  * after three delayed retries without progress, or kept away for a day
- * when its listing cannot be read in a run (park()). The argument holds
- * the item's id under key(), a retry's attempt, `again` on a second look
- * (lookAgainAfter()) and `parked` on the row that keeps a sweep away:
- * nothing that opens anything, since job arguments are persisted and
- * printed by occ.
+ * when its listing cannot be read in a run (park()).
+ *
+ * A first pass, a retry and a second look can wait side by side, told
+ * apart by a retry's `attempt`, `again` (lookAgainAfter()) and `parked` on
+ * the row that keeps a sweep away: nothing that opens anything, since job
+ * arguments are persisted and printed by occ.
  *
  * What one pass does is the subclass's (sweep()); this decides only
  * whether one pass was enough.

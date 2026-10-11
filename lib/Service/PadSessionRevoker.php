@@ -46,9 +46,9 @@ class PadSessionRevoker {
 	private const MAX_PER_REQUEST = PadSessionService::MAX_SESSION_IDS;
 
 	/**
-	 * A delete's ceiling, over all the groups it takes: every open of a
-	 * protected pad makes a session, so a pad opened often in six hours
-	 * holds more than a cookie can. The budget bounds a delete too.
+	 * A delete's ceiling, over all the groups it takes: a pad opened often
+	 * in six hours holds more sessions than a cookie can. The budget bounds
+	 * a delete too.
 	 */
 	private const MAX_PER_DELETE = 100;
 
@@ -128,13 +128,13 @@ class PadSessionRevoker {
 	 * longer does.
 	 *
 	 * What fits is taken here, bounded as a logout is but for the ceiling:
-	 * every open makes a session, so a pad opened often holds more than a
-	 * cookie can, and those that expire last go first - most often whoever
-	 * is at it now. Each group's sessions go before the next group is
-	 * asked, so a slow Etherpad spends the budget on deletes, not on
-	 * listing. Then every group goes to a background job
-	 * (GroupSessionRevoker), which takes what did not fit and what an open
-	 * under way makes after the listing here.
+	 * a pad opened often holds more sessions than a cookie can, and those
+	 * that expire last go first - most often whoever is at it now. Each
+	 * group's sessions go before the next group is asked, so a slow
+	 * Etherpad spends the budget on deletes, not on listing. Then every
+	 * group goes to a background job (GroupSessionRevoker), which takes
+	 * what did not fit and what an open under way makes after the listing
+	 * here.
 	 *
 	 * @param list<string> $padIds
 	 * @return int how many were removed
@@ -269,9 +269,9 @@ class PadSessionRevoker {
 	 *
 	 * An expired session grants nothing already, and an author who has used
 	 * protected pads for a while carries hundreds: collecting them is the
-	 * background sweep's. Left out before the budget, so that what is
-	 * reported as left behind is only ever a live session - the one number
-	 * that says a revoke did not finish.
+	 * background sweep's. Left out before the budget, so that nothing known
+	 * to be expired is reported as left behind - the one number that says a
+	 * revoke did not finish.
 	 *
 	 * @param array<array-key,array{groupID:string,validUntil:int}> $sessions
 	 * @return array<array-key,array{groupID:string,validUntil:int}>

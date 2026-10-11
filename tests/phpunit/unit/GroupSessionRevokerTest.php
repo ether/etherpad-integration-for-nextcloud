@@ -201,10 +201,10 @@ class GroupSessionRevokerTest extends TestCase {
 
 	/**
 	 * Asking again is one look at where the files are; whether a user sees
-	 * one in Files is asked again only when a file moved, once for each
-	 * move - here within its trash, before the first delete.
+	 * one in Files is asked before the listing, before the first delete,
+	 * and after a file moved, once for each move - here within its trash.
 	 */
-	public function testAsksAboutTheMountsOnlyForAFileThatMoved(): void {
+	public function testAsksAboutTheMountsBeforeTheFirstDeleteAndForAMoveOnly(): void {
 		$client = $this->client(['s.1' => FixedClock::NOW + 1, 's.2' => FixedClock::NOW + 2, 's.3' => FixedClock::NOW + 3, 's.4' => FixedClock::NOW + 4]);
 		$client->expects(self::exactly(4))->method('deleteSession');
 		$looks = 0;

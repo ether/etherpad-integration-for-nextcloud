@@ -22,24 +22,17 @@ use OCP\BackgroundJob\IJobList;
 use Psr\Log\LoggerInterface;
 
 /**
- * Collects the Etherpad sessions that have already expired.
+ * Collects the Etherpad sessions that have already expired, which
+ * Etherpad never removes. A listing costs a lookup per session in the
+ * index, so no request collects: an open notes its author (noteAuthor()),
+ * a public link's its group too (noteGroup()) - a visitor's own author
+ * only that, one job a group however many visit - and a job lists the
+ * expired ones and deletes them.
  *
- * Etherpad never removes one, and `listSessionsOfAuthor` walks the whole
- * author index one awaited lookup at a time, so a listing - an open makes
- * one when the browser carries session ids, a logout always - costs as
- * many lookups as there were opens. Collecting them happens in no
- * request: an open leaves the author's id, and the job lists the expired
- * ones and deletes them.
- *
- * A public link's open notes its group as well, and a visitor's with an
- * author of their own (PublicLinkVisitors) only that: one job a group,
- * however many visitors open it. The group's sweep takes every author's
- * expired sessions in it, a signed-in user's too, which keeps short the
- * listing a delete's revoke reads. The author's sweep runs beside it for
- * the link's own author: a group can hold more sessions than a run can
- * list in time - every user's, a legacy group's other pads' - and the
- * author's index, often a smaller one, is collected all the same. A
- * visitor's author has no such fallback.
+ * A group's sweep takes every author's expired sessions in it, which keeps
+ * short the listing a delete's revoke reads. The link's own author is
+ * swept beside it, as a group can hold more than a run can list in time;
+ * a visitor's author has no such fallback.
  */
 class ExpiredSessionCollector {
 

@@ -13,19 +13,12 @@ use OCA\EtherpadNextcloud\Exception\RunBudgetSpentException;
 use OCP\AppFramework\Utility\ITimeFactory;
 
 /**
- * What a run of Etherpad calls may spend, item by item, with a promised
- * total length: time, and patience with an Etherpad that does not answer
- * or refuses. A deadline alone bounds when the last call starts, not
- * when it ends, so each call is given what is left, and one that could
- * not finish in it is not started. A few items without an answer, with
- * nothing gone through between them (noteDone(), noteGoneThrough()),
- * read as an outage, and the run ends there rather than paying a timeout
- * for each. A background run asks Etherpad whether it answers at all
- * before it counts one; a request, which someone waits on, counts it at
- * once (forRequest(), noteUnanswered()). Refusals end a run too: more in
- * a row than a few items Etherpad will never take, or more in all. One
- * budget for a run, however many calls make it up, so every limit holds
- * for the whole run.
+ * What one run of Etherpad calls may spend: time, and patience with an
+ * Etherpad that does not answer or refuses. Each call is given what is
+ * left (nextCallTimeout()), and the limits hold for the whole run,
+ * however many calls make it up (exhausted()). A background run asks
+ * whether Etherpad answers before it counts a failure as an outage; a
+ * request, which someone waits on, counts it at once (forRequest()).
  */
 final class RunBudget {
 	/** A sweep's run, in the background or at once from the admin's buttons. */

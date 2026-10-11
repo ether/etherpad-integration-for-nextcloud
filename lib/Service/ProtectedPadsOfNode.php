@@ -33,9 +33,11 @@ use Psr\Log\LoggerInterface;
  *
  * It runs in the delete's request, so it is bounded: it stops at MAX_PADS
  * pads, more than a delete can take the sessions of in its budget
- * (PadSessionRevoker), or at MAX_FOLDERS folders, some forty queries. The
- * queries are bounded too, so a single folder with a hundred thousand
- * others in it reads no more than the walk has room for.
+ * (PadSessionRevoker), or at MAX_FOLDERS folders. A level takes two
+ * queries for every CHUNK folders in it: some forty for a wide tree, two
+ * a level for a deep one. The queries are bounded too, so a single folder
+ * with a hundred thousand others in it reads no more than the walk has
+ * room for.
  * What it does not reach keeps its sessions until they expire, within six
  * hours, with a line that says so.
  */
