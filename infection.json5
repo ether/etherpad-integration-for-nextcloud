@@ -3,15 +3,13 @@
 {
 	"source": {
 		"directories": ["lib"],
+		// The bootstrap loads a stub of this class, so no test runs the real
+		// one and none of its mutants could be caught.
+		"excludes": ["AppInfo/Application.php"],
 	},
 	// Infection loads the classes it mutates itself, and the OCP classes
-	// they use exist here only as the unit suite's stubs.
+	// they use exist here only as the unit suite's stubs
+	// (LibClassesLoadTest keeps every class under lib/ loadable so).
 	"bootstrap": "tests/phpunit/bootstrap.php",
-	"phpUnit": {
-		"configDir": ".",
-	},
-	"mutators": {
-		"@default": true,
-	},
 	"timeout": 20,
 }
