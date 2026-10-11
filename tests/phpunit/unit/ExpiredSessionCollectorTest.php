@@ -240,6 +240,26 @@ class ExpiredSessionCollectorTest extends TestCase {
 	}
 
 	/**
+	 * Only a listing's own kind ends its sweep: Etherpad's answer that the
+	 * other kind does not exist is no answer about this one, and is tried
+	 * again.
+	 */
+	public function testTheOtherKindsAnswerDoesNotEndASweep(): void {
+		$cases = [
+			'an author' => ['listSessionsOfAuthor', 'groupID does not exist', static fn (ExpiredSessionCollector $c): array => $c->collect(self::AUTHOR)],
+			'a group' => ['listSessionsOfGroup', 'authorID does not exist', static fn (ExpiredSessionCollector $c): array => $c->collectGroup(self::GROUP)],
+		];
+		foreach ($cases as $case => [$method, $answer, $collect]) {
+			$client = $this->createMock(EtherpadClient::class);
+			$client->method($method)->willThrowException(new EtherpadRefusedException('Etherpad API error (' . $method . '): ' . $answer));
+			$logger = $this->createMock(LoggerInterface::class);
+			$logger->expects(self::once())->method('warning')->with('Could not list the Etherpad sessions to collect.', self::anything());
+
+			self::assertSame(['deleted' => 0, 'remaining' => 0, 'retry' => true, 'nextDueAt' => null], $collect($this->collector($client, logger: $logger)), $case);
+		}
+	}
+
+	/**
 	 * An HTTP error or a refusal while Etherpad answers is no slowness:
 	 * tried again with the backoff, not parked.
 	 */

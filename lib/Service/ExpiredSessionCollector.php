@@ -130,7 +130,7 @@ class ExpiredSessionCollector {
 		return $this->collectFor(['authorId' => $authorId], function (RunBudget $budget) use ($authorId): array {
 			$sessions = $this->etherpadClient->listSessionsOfAuthor($authorId, $budget->callTimeout(), $unreadable, EtherpadClient::SESSION_LISTING_MAX_BYTES);
 			return [$sessions, $unreadable];
-		});
+		}, EtherpadErrorClassifier::isAuthorUnknown(...));
 	}
 
 	/**
@@ -145,7 +145,7 @@ class ExpiredSessionCollector {
 		$result = $this->collectFor(['groupId' => $groupId], function (RunBudget $budget) use ($groupId): array {
 			$sessions = $this->etherpadClient->listSessionsOfGroup($groupId, $budget->callTimeout(), $unreadable, EtherpadClient::SESSION_LISTING_MAX_BYTES);
 			return [$sessions, $unreadable];
-		});
+		}, EtherpadErrorClassifier::isPadAlreadyDeleted(...));
 		if ($result['nextDueAt'] !== null) {
 			$result['nextDueAt'] = max($result['nextDueAt'], $this->timeFactory->getTime() + self::GROUP_SWEEP_INTERVAL_SECONDS);
 		}
@@ -154,21 +154,22 @@ class ExpiredSessionCollector {
 
 	/**
 	 * One run: $list gives the sessions and how many entries it could not
-	 * describe, $context names whose they are. The expired ones are deleted
-	 * (collectFrom()), or a listing that failed is read (listingFailed());
-	 * an author or a group Etherpad no longer has holds nothing, and each
-	 * listing says only its own kind.
+	 * describe, $context names whose they are, and $gone tells from a
+	 * listing that failed whether Etherpad no longer has them - each
+	 * listing's own answer, no other. The expired ones are deleted
+	 * (collectFrom()), or the failure is read (listingFailed()).
 	 *
 	 * @param array<string,string> $context
 	 * @param \Closure(RunBudget): array{0: array<array-key,array{groupID:string,validUntil:int}>, 1: ?int} $list
+	 * @param \Closure(\Throwable): bool $gone
 	 * @return array{deleted:int,remaining:int,retry:bool,nextDueAt:?int,park?:'tooLong'|'timeout'}
 	 */
-	private function collectFor(array $context, \Closure $list): array {
+	private function collectFor(array $context, \Closure $list, \Closure $gone): array {
 		$budget = new RunBudget($this->timeFactory, $this->budgetSeconds);
 		try {
 			[$sessions, $unreadable] = $list($budget);
 		} catch (\Throwable $e) {
-			return $this->listingFailed($e, $budget, $context, EtherpadErrorClassifier::isAuthorUnknown($e) || EtherpadErrorClassifier::isPadAlreadyDeleted($e));
+			return $this->listingFailed($e, $budget, $context, $gone($e));
 		}
 
 		return $this->collectFrom($sessions, $unreadable, $budget, $context);
