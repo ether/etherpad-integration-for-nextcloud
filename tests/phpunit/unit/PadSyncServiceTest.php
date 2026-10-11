@@ -510,13 +510,18 @@ class PadSyncServiceTest extends TestCase {
 			return $text;
 		});
 		$etherpadClient->method('getHTML')->willReturn('<p>text</p>');
-		$service = $this->buildService($formatter, $userNodeResolver, null, $etherpadClient);
+		$waits = 0;
+		$syncLock = new PadSyncLock(new InMemoryLockingProvider(), $this->createMock(LoggerInterface::class), static function (int $delay) use (&$waits): void {
+			$waits++;
+		});
+		$service = $this->buildService($formatter, $userNodeResolver, null, $etherpadClient, null, null, $syncLock);
 
 		$periodic = $service->syncById('alice', 138, false);
 
 		$this->assertSame(PadSyncService::STATUS_UPDATED, $periodic->status);
 		$this->assertSame(PadSyncService::STATUS_LOCKED, $closing->status);
-		$this->assertSame(5, $closing->lockRetries);
+		$this->assertSame($waits, $closing->lockRetries);
+		$this->assertGreaterThan(0, $waits);
 		$this->assertSame([1], $written);
 
 		$next = $service->syncById('alice', 138, false);
@@ -559,7 +564,7 @@ class PadSyncServiceTest extends TestCase {
 			$userNodeResolver ?? $this->createMock(UserNodeResolver::class),
 			$lockRetryService ?? new PadFileLockRetryService(static function (int $delay): void {
 			}),
-			$syncLock ?? new PadSyncLock(new InMemoryLockingProvider(), static function (int $delay): void {
+			$syncLock ?? new PadSyncLock(new InMemoryLockingProvider(), $this->createMock(LoggerInterface::class), static function (int $delay): void {
 			}),
 			$bindingService ?? $this->createMock(BindingService::class),
 			$etherpadClient ?? $this->createMock(EtherpadClient::class),

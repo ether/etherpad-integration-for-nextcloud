@@ -239,7 +239,7 @@ solely by the separate external-pad policy, not by these two settings.
   - Controller: `PadLifecycleController::syncById`
   - Optional query: `force=1`
   - Result: snapshot sync Etherpad -> `.pad`, `200` with `status=updated` or `unchanged`; `updated` says how often the write waited for the file's lock (`lock_retries`).
-  - One sync of a file runs at a time: a second one waits for the first, about three seconds at most, and then reads what the first wrote.
+  - One sync of a file runs at a time: a second one waits for the first, about three seconds at most, and then reads what the first wrote. With `filelocking.enabled` false syncs overlap.
   - A lock that stays - another sync of the file runs on, or a client holds the file while the sync reads or writes it -: `200` with `status=locked`, `retryable: true` and `lock_retries`, how often the sync waited for that lock. Nothing is written; a later sync writes it, if one comes.
   - `force=1` requests an immediate upstream re-check, but unchanged snapshots are still not rewritten. A pad behind the snapshot whose content differs is written.
   - A pad Etherpad made anew in place of the file's - without a single revision, with other text than the file saved - is never written over it: `400` with `code=pad_missing`, as an open answers, and the file keeps its content for `recover-from-snapshot`.

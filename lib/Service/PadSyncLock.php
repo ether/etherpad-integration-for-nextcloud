@@ -11,8 +11,10 @@ namespace OCA\EtherpadNextcloud\Service;
 
 use OCA\EtherpadNextcloud\AppInfo\Application;
 use OCA\EtherpadNextcloud\Exception\PadFileLockRetryExhaustedException;
+use OCA\EtherpadNextcloud\Util\SafeError;
 use OCP\Lock\ILockingProvider;
 use OCP\Lock\LockedException;
+use Psr\Log\LoggerInterface;
 
 /**
  * One sync of a file at a time, held from reading the file to writing it.
@@ -28,8 +30,14 @@ use OCP\Lock\LockedException;
  * (`filelocking.ttl`).
  */
 class PadSyncLock {
-	/** In microseconds, about three seconds in all: a sync usually takes less. */
-	private const WAIT_DELAYS_US = [100000, 200000, 400000, 800000, 1600000];
+	/**
+	 * In microseconds: asked again about every 100 ms, the jitter keeping
+	 * waiters out of step, for about three seconds in all - a sync usually
+	 * takes less.
+	 */
+	private const POLL_US = 75000;
+	private const JITTER_US = 50000;
+	private const WAIT_US = 3000000;
 
 	/** @var \Closure(int): void */
 	private \Closure $sleeper;
@@ -37,6 +45,7 @@ class PadSyncLock {
 	/** @param (\Closure(int): void)|null $sleeper */
 	public function __construct(
 		private ILockingProvider $lockingProvider,
+		private LoggerInterface $logger,
 		?\Closure $sleeper = null,
 	) {
 		$this->sleeper = $sleeper ?? static function (int $delay): void {
@@ -56,25 +65,43 @@ class PadSyncLock {
 		try {
 			return $sync();
 		} finally {
-			$this->lockingProvider->releaseLock($key, ILockingProvider::LOCK_EXCLUSIVE);
+			$this->release($key);
 		}
 	}
 
 	private function acquire(string $key): void {
 		$waits = 0;
-		foreach (self::WAIT_DELAYS_US as $delay) {
+		$waited = 0;
+		while (true) {
 			try {
 				$this->lockingProvider->acquireLock($key, ILockingProvider::LOCK_EXCLUSIVE);
 				return;
-			} catch (LockedException) {
+			} catch (LockedException $e) {
+				$delay = self::POLL_US + random_int(0, self::JITTER_US);
+				if ($waited + $delay > self::WAIT_US) {
+					throw new PadFileLockRetryExhaustedException($waits, $e);
+				}
 				($this->sleeper)($delay);
+				$waited += $delay;
 				$waits++;
 			}
 		}
+	}
+
+	/**
+	 * A lock that cannot be let go hides neither what the sync threw nor
+	 * that it went through. It then holds off the file's syncs until it
+	 * expires (`filelocking.ttl`) at the latest.
+	 */
+	private function release(string $key): void {
 		try {
-			$this->lockingProvider->acquireLock($key, ILockingProvider::LOCK_EXCLUSIVE);
-		} catch (LockedException $e) {
-			throw new PadFileLockRetryExhaustedException($waits, $e);
+			$this->lockingProvider->releaseLock($key, ILockingProvider::LOCK_EXCLUSIVE);
+		} catch (\Throwable $e) {
+			$this->logger->warning('The sync lock of a .pad file could not be let go', [
+				'app' => Application::APP_ID,
+				'lock' => $key,
+				...SafeError::context($e),
+			]);
 		}
 	}
 }
