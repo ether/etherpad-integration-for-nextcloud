@@ -816,17 +816,17 @@ describe('viewer component — resolveOpenUrl', () => {
 })
 
 describe('viewer component — recoverFromSnapshot', () => {
-	it('posts the recovery, clears the error, and re-resolves', async () => {
+	it('posts the recovery, then opens again, which clears the error', async () => {
 		apiRecoverFromSnapshot.mockResolvedValue({})
-		const vm = makeInstance({ fileid: 42, recoveryFileId: 42, recoveryPath: '/x.pad', canRecover: true, loadError: 'boom' })
-		vm.resolveOpenUrl = vi.fn().mockResolvedValue()
+		stubFetch(jsonResponse({ url: 'https://pad.example/recovered', sync_url: '' }))
+		const vm = makeInstance({ fileid: 42, fileInfo: { path: '/x.pad' }, recoveryFileId: 42, recoveryPath: '/x.pad', canRecover: true, loadError: 'boom' })
 
 		await vm.recoverFromSnapshot()
 
 		expect(apiRecoverFromSnapshot).toHaveBeenCalledWith(42, '/x.pad')
+		expect(vm.iframeSrc).toBe('https://pad.example/recovered')
 		expect(vm.loadError).toBe('')
 		expect(vm.canRecover).toBe(false)
-		expect(vm.resolveOpenUrl).toHaveBeenCalled()
 		expect(vm.isRecovering).toBe(false)
 	})
 

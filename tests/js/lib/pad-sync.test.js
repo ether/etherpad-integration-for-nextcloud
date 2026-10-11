@@ -108,6 +108,87 @@ describe('pad-sync', () => {
 		expect(fetchImpl).toHaveBeenCalledTimes(2)
 	})
 
+	// The replay's answer stands for both callers, the first request's error too.
+	it('answers both callers with the replay when the first request fails', async () => {
+		const gates = []
+		const fetchImpl = vi.fn(() => new Promise((resolve) => {
+			gates.push(resolve)
+		}))
+		const ps = createPadSync({ fetchImpl })
+		ps.configure({ syncUrl: '/sync/42' })
+
+		const first = ps.sync(false, false)
+		const forced = ps.sync(true, false)
+		gates[0]({ ok: false, json: async () => ({ message: 'boom' }) })
+		await flushAsyncWork()
+		gates[1](okResponse({ status: 'updated' }))
+
+		await expect(first).resolves.toEqual({ status: 'updated' })
+		await expect(forced).resolves.toEqual({ status: 'updated' })
+		expect(fetchImpl).toHaveBeenCalledTimes(2)
+	})
+
+	it('answers a plain sync asked for while one runs with that one, and makes no second request', async () => {
+		const gates = []
+		const fetchImpl = vi.fn(() => new Promise((resolve) => {
+			gates.push(resolve)
+		}))
+		const ps = createPadSync({ fetchImpl })
+		ps.configure({ syncUrl: '/sync/42' })
+
+		const first = ps.sync(false, false)
+		const second = ps.sync(false, false)
+		gates[0](okResponse({ status: 'unchanged' }))
+
+		await expect(first).resolves.toEqual({ status: 'unchanged' })
+		await expect(second).resolves.toEqual({ status: 'unchanged' })
+		expect(fetchImpl).toHaveBeenCalledTimes(1)
+	})
+
+	it('does not replay a forced flush asked for while a forced sync runs', async () => {
+		const gates = []
+		const fetchImpl = vi.fn(() => new Promise((resolve) => {
+			gates.push(resolve)
+		}))
+		const ps = createPadSync({ fetchImpl })
+		ps.configure({ syncUrl: '/sync/42' })
+
+		const running = ps.sync(true, false)
+		const asked = ps.sync(true, false)
+		gates[0](okResponse({ status: 'updated' }))
+
+		await expect(asked).resolves.toEqual({ status: 'updated' })
+		await running
+		expect(fetchImpl).toHaveBeenCalledTimes(1)
+	})
+
+	// A forced flush asked for during the replay joins it, and no replay is
+	// left over for the next sync.
+	it('leaves no replay behind for the next sync', async () => {
+		const gates = []
+		const fetchImpl = vi.fn(() => new Promise((resolve) => {
+			gates.push(resolve)
+		}))
+		const ps = createPadSync({ fetchImpl })
+		ps.configure({ syncUrl: '/sync/42' })
+
+		const first = ps.sync(false, false)
+		const forced = ps.sync(true, false)
+		gates[0](okResponse())
+		await flushAsyncWork()
+		const duringReplay = ps.sync(true, false)
+		gates[1](okResponse())
+		await Promise.all([first, forced, duringReplay])
+		expect(fetchImpl).toHaveBeenCalledTimes(2)
+
+		const next = ps.sync(false, false)
+		await flushAsyncWork()
+		gates[2](okResponse())
+		await next
+		await flushAsyncWork()
+		expect(fetchImpl).toHaveBeenCalledTimes(3)
+	})
+
 	it('does not replay a coalesced forced flush once the url is cleared mid-flight (pad-switch safety)', async () => {
 		// The viewer resets via configure({ syncUrl: '' }) before switching
 		// pads. A forced flush that was queued against the old pad must then

@@ -61,6 +61,19 @@ export const isRetryableOpenError = (error) => Boolean(error)
 	&& (error.retryable === true || error.code === 'pad_file_changed' || isUnanswered(error) || isThrottled(error))
 
 /**
+ * Whether a recovery that failed is answered by opening again rather than
+ * with its error: no answer came, or the server said to try again - another
+ * recovery bound the file first, say, or Etherpad did not answer. Opening
+ * tells where things stand and is safe to repeat; a second recovery could
+ * only meet a binding made meanwhile. Narrower than isRetryableOpenError(),
+ * whose other cases are an open's.
+ *
+ * @param {unknown} error
+ * @return {boolean}
+ */
+export const opensAgainAfterRecovery = (error) => isUnanswered(error) || (Boolean(error) && error.retryable === true)
+
+/**
  * A read-only view carries no pad URL by design; anything else without one
  * would reach an iframe as `undefined`.
  *

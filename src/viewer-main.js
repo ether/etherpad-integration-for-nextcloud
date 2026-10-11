@@ -7,12 +7,12 @@
 
 import { APP_ID } from './lib/constants.js'
 import { apiFindOriginalPad, apiRecoverFromSnapshot, apiResolvePadByPath } from './lib/api-client.js'
-import { fetchJsonWithTimeout, isThrottled, isUnanswered, requestErrorMessage } from './lib/fetch-helpers.js'
+import { fetchJsonWithTimeout, isThrottled, requestErrorMessage } from './lib/fetch-helpers.js'
 import { handFocusTo } from './lib/hand-focus.js'
 import { ocGenerateUrl, ocRequestToken, translate } from './lib/oc-compat.js'
 import { createPadSync } from './lib/pad-sync.js'
 import { loadPadContent } from './lib/pad-content.js'
-import { assertOpenPayload, contentUrlFrom, contentViewFrom, isMissingBindingError, isPadMissingError, isRetryableOpenError, openWithFrontmatterRecovery, padUrlFrom, syncSettingsFrom } from './lib/pad-open-flow.js'
+import { assertOpenPayload, contentUrlFrom, contentViewFrom, isMissingBindingError, isPadMissingError, isRetryableOpenError, openWithFrontmatterRecovery, opensAgainAfterRecovery, padUrlFrom, syncSettingsFrom } from './lib/pad-open-flow.js'
 import { buildPadFrameSrcdoc } from './lib/pad-frame-srcdoc.js'
 import { isPadName, parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './lib/urls.js'
 
@@ -384,15 +384,9 @@ const component = {
 			this.isRecovering = true
 			try {
 				await apiRecoverFromSnapshot(this.recoveryFileId, this.recoveryPath)
-				this.loadError = ''
-				this.canRecover = false
 				await this.resolveOpenUrl(true)
 			} catch (error) {
-				// No answer, or one that says to try again - another recovery
-				// bound the file first, say, or Etherpad did not answer. Opening
-				// tells where things stand and is safe to repeat; a second
-				// recovery could only meet a binding made meanwhile.
-				if (isUnanswered(error) || error?.retryable === true) {
+				if (opensAgainAfterRecovery(error)) {
 					await this.resolveOpenUrl(true)
 					return
 				}

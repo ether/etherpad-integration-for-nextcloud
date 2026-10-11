@@ -11,6 +11,7 @@ import {
 	isMissingFrontmatterError,
 	isRetryableOpenError,
 	openWithFrontmatterRecovery,
+	opensAgainAfterRecovery,
 	padUrlFrom,
 	syncSettingsFrom,
 } from '../../../src/lib/pad-open-flow.js'
@@ -47,6 +48,21 @@ describe('isRetryableOpenError', () => {
 		['there is no error', null, false],
 	])('offers another try, or not, when %s', (_, error, expected) => {
 		expect(isRetryableOpenError(error)).toBe(expected)
+	})
+})
+
+// Not every open's reason to try again: a file that changed, or a 429,
+// is a recovery's own error to show.
+describe('opensAgainAfterRecovery', () => {
+	it.each([
+		['the server says to try again', Object.assign(new Error('Another recovery was first.'), { retryable: true }), true],
+		['no answer came', unanswered(), true],
+		['the file changed while it was being initialised', withCode('pad_file_changed'), false],
+		['Nextcloud refused it as one too many', Object.assign(new Error('Request failed.'), { status: 429 }), false],
+		['the server refused', withCode('missing_frontmatter'), false],
+		['there is no error', null, false],
+	])('opens again, or not, when %s', (_, error, expected) => {
+		expect(opensAgainAfterRecovery(error)).toBe(expected)
 	})
 })
 

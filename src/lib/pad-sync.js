@@ -24,10 +24,10 @@ export function createPadSync({ requestToken, fetchImpl } = {}) {
 
 	let syncUrl = ''
 	let intervalMs = DEFAULT_SYNC_INTERVAL_MS
+	// The running sync, a forced flush asked for while it ran included.
 	let syncPromise = null
 	let activeSyncForce = false
-	let pendingForcedSync = false
-	let pendingForcedKeepalive = false
+	let replayForced = false
 	let timerId = null
 	let visibilityHandler = null
 	let pageHideHandler = null
@@ -81,54 +81,46 @@ export function createPadSync({ requestToken, fetchImpl } = {}) {
 		return data
 	}
 
+	/**
+	 * The request, then once more, forced, if a forced flush was asked for
+	 * while it ran: the replay's answer, or its error, is then every waiting
+	 * caller's.
+	 */
+	const run = async (force, keepalive) => {
+		const first = request(force, keepalive)
+		await first.catch(() => {})
+		if (!replayForced) {
+			return first
+		}
+		replayForced = false
+		activeSyncForce = true
+		// A pad switched meanwhile cleared the url: nothing to flush.
+		return syncUrl ? request(true, false) : { status: 'disabled' }
+	}
+
 	const sync = async (force, keepalive) => {
 		if (!syncUrl) {
 			return { status: 'disabled' }
 		}
 		if (syncPromise) {
-			// A keepalive flush is the page leaving: queued behind the running
-			// request it would never start, and the running one may go with
-			// the page. So it goes at once, beside it. Of two syncs of a file,
-			// the server lets the slower one write no older text over what the
-			// other wrote meanwhile, or answers `locked`.
+			// The page is leaving: queued behind the running request, the
+			// flush would never start. It goes at once, beside it.
 			if (keepalive) {
 				return request(force, true)
 			}
-			// A forced flush that arrives while a non-forced sync is in flight
-			// is coalesced into a single replay.
 			if (force && !activeSyncForce) {
-				pendingForcedSync = true
-				pendingForcedKeepalive = pendingForcedKeepalive || Boolean(keepalive)
-				return syncPromise.catch(() => undefined).then(() => sync(true, pendingForcedKeepalive))
+				replayForced = true
 			}
 			return syncPromise
 		}
 		activeSyncForce = Boolean(force)
-		const currentPromise = request(force, keepalive)
-		syncPromise = currentPromise
-		let result
-		let syncError = null
+		syncPromise = run(force, keepalive)
 		try {
-			result = await currentPromise
-		} catch (error) {
-			syncError = error
+			return await syncPromise
 		} finally {
-			if (syncPromise === currentPromise) {
-				syncPromise = null
-			}
+			syncPromise = null
 			activeSyncForce = false
 		}
-		const rerunForcedSync = pendingForcedSync
-		const rerunKeepalive = pendingForcedKeepalive
-		pendingForcedSync = false
-		pendingForcedKeepalive = false
-		if (rerunForcedSync) {
-			return sync(true, rerunKeepalive)
-		}
-		if (syncError instanceof Error) {
-			throw syncError
-		}
-		return result
 	}
 
 	const installLifecycleHandlers = () => {

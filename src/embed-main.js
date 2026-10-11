@@ -4,10 +4,10 @@
  */
 import { ocRequestToken } from './lib/oc-compat.js'
 import { createPadSync } from './lib/pad-sync.js'
-import { fetchJsonWithTimeout as fetchJson, isUnanswered, requestErrorMessage } from './lib/fetch-helpers.js'
+import { fetchJsonWithTimeout as fetchJson, requestErrorMessage } from './lib/fetch-helpers.js'
 import { handFocusTo } from './lib/hand-focus.js'
 import { loadPadContent } from './lib/pad-content.js'
-import { assertOpenPayload, contentUrlFrom, contentViewFrom, isMissingBindingError, isPadMissingError, isRetryableOpenError, openWithFrontmatterRecovery, padUrlFrom, syncSettingsFrom } from './lib/pad-open-flow.js'
+import { assertOpenPayload, contentUrlFrom, contentViewFrom, isMissingBindingError, isPadMissingError, isRetryableOpenError, openWithFrontmatterRecovery, opensAgainAfterRecovery, padUrlFrom, syncSettingsFrom } from './lib/pad-open-flow.js'
 
 (function () {
 	const IFRAME_REVEAL_DELAY_MS = 100
@@ -445,11 +445,7 @@ import { assertOpenPayload, contentUrlFrom, contentViewFrom, isMissingBindingErr
 			// Open again now that the binding exists.
 			void run(true)
 		} catch (error) {
-			// No answer, or one that says to try again - another recovery
-			// bound the file first, say, or Etherpad did not answer. Opening
-			// tells where things stand and is safe to repeat; a second
-			// recovery could only meet a binding made meanwhile.
-			if (isUnanswered(error) || error?.retryable === true) {
+			if (opensAgainAfterRecovery(error)) {
 				void run(true)
 				return
 			}
