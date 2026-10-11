@@ -84,10 +84,9 @@ describe('pad-sync', () => {
 		expect(fetchImpl).toHaveBeenCalledTimes(2)
 	})
 
-	it('does not replay a coalesced forced flush once the url is cleared mid-flight (pad-switch safety)', async () => {
-		// The viewer resets via configure({ syncUrl: '' }) before switching
-		// pads. A forced flush that was queued against the old pad must then
-		// become a no-op instead of POSTing to a stale/replaced target.
+	// The viewer clears the url before it opens another pad: the flush asked
+	// for the first pad still goes to the first pad.
+	it('replays a forced flush to the url it was asked for', async () => {
 		const gates = []
 		const fetchImpl = vi.fn(() => new Promise((resolve) => {
 			gates.push(() => resolve(okResponse()))
@@ -95,18 +94,64 @@ describe('pad-sync', () => {
 		const ps = createPadSync({ fetchImpl })
 		ps.configure({ syncUrl: '/sync/A' })
 
-		const inflight = ps.sync(false, false) // to /sync/A, in flight
-		const forced = ps.sync(true, false) // coalesced, pending replay
+		const inflight = ps.sync(false, false)
+		const forced = ps.sync(true, false)
+		ps.configure({ syncUrl: '/sync/B' })
+
+		gates[0]()
+		await flushAsyncWork()
+		expect(fetchImpl).toHaveBeenCalledTimes(2)
+		expect(fetchImpl.mock.calls[1][0]).toBe('/sync/A?force=1')
+
+		gates[1]()
+		await Promise.all([inflight, forced])
+	})
+
+	// Queued behind the running sync, the flush would never start once the
+	// page is gone; the server runs the two one after the other.
+	it('sends a keepalive flush at once, beside a running sync', async () => {
+		const gates = []
+		const fetchImpl = vi.fn(() => new Promise((resolve) => {
+			gates.push(() => resolve(okResponse()))
+		}))
+		const ps = createPadSync({ fetchImpl })
+		ps.configure({ syncUrl: '/sync/42' })
+
+		const running = ps.sync(false, false)
+		const closing = ps.sync(true, true)
+
+		expect(fetchImpl).toHaveBeenCalledTimes(2)
+		expect(fetchImpl.mock.calls[1][0]).toBe('/sync/42?force=1')
+		expect(fetchImpl.mock.calls[1][1].keepalive).toBe(true)
+
+		gates.forEach((open) => open())
+		await Promise.all([running, closing])
+		expect(fetchImpl).toHaveBeenCalledTimes(2)
+	})
+
+	it('lets the events of one leaving share a keepalive flush', async () => {
+		const gates = []
+		const fetchImpl = vi.fn(() => new Promise((resolve) => {
+			gates.push(() => resolve(okResponse()))
+		}))
+		const ps = createPadSync({ fetchImpl })
+		ps.configure({ syncUrl: '/sync/42' })
+		ps.installLifecycleHandlers()
+
+		Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true })
+		document.dispatchEvent(new Event('visibilitychange'))
+		window.dispatchEvent(new Event('pagehide'))
+		const host = ps.sync(true, true)
+		await flushAsyncWork()
 		expect(fetchImpl).toHaveBeenCalledTimes(1)
 
-		ps.configure({ syncUrl: '' }) // viewer clears before re-resolving
-
-		gates[0]() // finish the in-flight sync; the replay now sees no url
-		await Promise.all([inflight, forced])
+		gates[0]()
+		await host
+		ps.fireAndForget(true, true)
 		await flushAsyncWork()
-
-		expect(fetchImpl).toHaveBeenCalledTimes(1) // replay was a no-op
-		await expect(forced).resolves.toEqual({ status: 'disabled' })
+		expect(fetchImpl).toHaveBeenCalledTimes(2)
+		gates[1]()
+		ps.removeLifecycleHandlers()
 	})
 
 	it('start() runs a sync per interval only while the document is visible; stop() halts it', async () => {

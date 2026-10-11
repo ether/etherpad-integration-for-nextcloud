@@ -7,11 +7,9 @@
  * Shared pad-sync loop for the viewer and embed entrypoints.
  *
  * Owns the periodic background sync, forced/keepalive flushes, and the
- * visibility/pagehide lifecycle wiring. Forced syncs coalesce: while one
- * request is in flight a second forced flush is not started concurrently but
- * remembered and replayed once, so two forced flushes can never overlap (this
- * is the embed behavior, now shared — the viewer previously used a plain
- * in-flight boolean that allowed overlap).
+ * visibility/pagehide lifecycle wiring. A forced flush asked for while a
+ * sync runs is replayed once after it, to the URL it was asked for. A
+ * keepalive flush goes at once (sync()).
  *
  * The caller supplies the request-token getter (the viewer and embed read it
  * from different places) and may inject a `fetchImpl` for tests.
@@ -25,10 +23,11 @@ export function createPadSync({ requestToken, fetchImpl } = {}) {
 
 	let syncUrl = ''
 	let intervalMs = DEFAULT_SYNC_INTERVAL_MS
+	// The running sync, its replay included.
 	let syncPromise = null
 	let activeSyncForce = false
-	let pendingForcedSync = false
-	let pendingForcedKeepalive = false
+	let replayUrl = null
+	let keepalivePromise = null
 	let timerId = null
 	let visibilityHandler = null
 	let pageHideHandler = null
@@ -64,62 +63,67 @@ export function createPadSync({ requestToken, fetchImpl } = {}) {
 		void sync(force, keepalive).catch(() => {})
 	}
 
+	const request = async (url, force, keepalive) => {
+		const target = force ? (url + (url.includes('?') ? '&' : '?') + 'force=1') : url
+		const response = await doFetch(target, {
+			method: 'POST',
+			credentials: 'same-origin',
+			headers: {
+				Accept: 'application/json',
+				requesttoken: getToken(),
+			},
+			keepalive: Boolean(keepalive),
+		})
+		const data = await response.json().catch(() => ({}))
+		if (!response.ok) {
+			throw new Error((data && data.message) || 'Sync request failed.')
+		}
+		return data
+	}
+
+	/** The request, then its replay if one was asked for: the last answer is every waiting caller's. */
+	const run = async (url, force) => {
+		const first = request(url, force, false)
+		await first.catch(() => {})
+		if (replayUrl === null) {
+			return first
+		}
+		const again = replayUrl
+		replayUrl = null
+		activeSyncForce = true
+		return request(again, true, false)
+	}
+
 	const sync = async (force, keepalive) => {
 		if (!syncUrl) {
 			return { status: 'disabled' }
 		}
+		if (keepalive) {
+			// The page may be leaving, and a flush queued behind the running
+			// sync would then never start. The server runs two syncs of a file
+			// one after the other, so it goes at once. Leaving fires several
+			// events (pagehide, visibilitychange, the host's): they share one.
+			if (keepalivePromise === null) {
+				keepalivePromise = request(syncUrl, force, true).finally(() => {
+					keepalivePromise = null
+				})
+			}
+			return keepalivePromise
+		}
 		if (syncPromise) {
-			// A request is already running. A forced flush that arrives while a
-			// non-forced sync is in flight is coalesced into a single replay.
 			if (force && !activeSyncForce) {
-				pendingForcedSync = true
-				pendingForcedKeepalive = pendingForcedKeepalive || Boolean(keepalive)
-				return syncPromise.catch(() => undefined).then(() => sync(true, pendingForcedKeepalive))
+				replayUrl = syncUrl
 			}
 			return syncPromise
 		}
 		activeSyncForce = Boolean(force)
-		const currentPromise = (async () => {
-			const url = force ? (syncUrl + (syncUrl.includes('?') ? '&' : '?') + 'force=1') : syncUrl
-			const response = await doFetch(url, {
-				method: 'POST',
-				credentials: 'same-origin',
-				headers: {
-					Accept: 'application/json',
-					requesttoken: getToken(),
-				},
-				keepalive: Boolean(keepalive),
-			})
-			const data = await response.json().catch(() => ({}))
-			if (!response.ok) {
-				throw new Error((data && data.message) || 'Sync request failed.')
-			}
-			return data
-		})()
-		syncPromise = currentPromise
-		let result
-		let syncError = null
+		syncPromise = run(syncUrl, force)
 		try {
-			result = await currentPromise
-		} catch (error) {
-			syncError = error
+			return await syncPromise
 		} finally {
-			if (syncPromise === currentPromise) {
-				syncPromise = null
-			}
+			syncPromise = null
 			activeSyncForce = false
 		}
-		const rerunForcedSync = pendingForcedSync
-		const rerunKeepalive = pendingForcedKeepalive
-		pendingForcedSync = false
-		pendingForcedKeepalive = false
-		if (rerunForcedSync) {
-			return sync(true, rerunKeepalive)
-		}
-		if (syncError instanceof Error) {
-			throw syncError
-		}
-		return result
 	}
 
 	const installLifecycleHandlers = () => {

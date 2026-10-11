@@ -212,6 +212,7 @@ Primary flow (native viewer):
    - flush on `visibilitychange`
    - flush on `pagehide`
    - extra flush triggers via trusted host messages
+   - A flush on leaving (`keepalive`) goes at once, beside a running sync, and the events of one leaving share it; a forced flush asked for while a sync runs is replayed after it, to the URL it was asked for (`src/lib/pad-sync.js`).
 3. `PadLifecycleController::syncById` fetches revision state from Etherpad.
    - One sync of a file at a time, from reading the file to writing it (`PadSyncLock`, through Nextcloud's locking provider): two that overlap ask Etherpad and write in no set order, and the slower one can put its older revision over the newer. A second sync waits for the first, about three seconds at most, then reads what it wrote; one that waits in vain answers `status=locked`. With `filelocking.enabled` false syncs overlap; a request killed while it holds the lock leaves the file's syncs answering `locked` until the lock expires (`filelocking.ttl`).
 4. `.pad` snapshot is updated only when the upstream snapshot actually differs.
