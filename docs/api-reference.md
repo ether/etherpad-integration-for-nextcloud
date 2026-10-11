@@ -104,6 +104,8 @@ When both are sent for a folder share, the path is compared in full: `A.pad` at 
   - Behavior: resolves the share and re-checks the `.pad` binding on every call, so a retry cannot outlive the access it was granted under.
   - The `content_url` handed out by the open endpoint carries the id that open resolved to, so a file renamed or moved inside the share between the two requests is still the one answered for.
 
+### Pad types switched off
+
 Admins can switch either pad type off (`enable_protected_pads`, `enable_public_pads` under "App Config Keys"). `POST /pads`
 and `POST /pads/create-by-parent` refuse a disabled `accessMode` with `403`.
 Pads that already exist are unaffected.
@@ -120,6 +122,8 @@ Branch on the code rather than on the message text.
 
 `POST /pads/from-url` is deliberately exempt: external pads are governed
 solely by the separate external-pad policy, not by these two settings.
+
+### Routes for signed-in users
 
 - `POST /api/v1/pads`
   - Controller: `PadCreateController::create`
@@ -257,9 +261,10 @@ solely by the separate external-pad policy, not by these two settings.
   - Result:
     - `200` with `status=restored`, `old_pad_id`, `new_pad_id` on success. Always provisions a fresh pad — `pad_id` from frontmatter is never reused.
     - `403` with `message` when the user may not change the file, a read-only share say: a recovery writes the file. Refused before Etherpad is asked.
-    - `409` with `status=skipped` + `reason=external_pad` for external (`ext.*`) frontmatter; recovery doesn't apply there.
+    - `409` with `status=skipped` + `reason=external_pad` for a file without a row whose frontmatter names an external (`ext.*`) pad; recovery doesn't apply there. A file with a row answers as below.
     - `409` with `status=skipped` + `reason=file_moved` or `reason=file_changed` when the file moved, or was written, while the new pad was seeded: the new pad is let go, nothing is written, and a retry starts from what the file holds then.
-    - `409` with `message` and the `PadAlreadyHasBindingException` mapping if the file has a row and its pad is not lost: Etherpad has it, the row waits, the file names another pad than its row, or the pad is public and the file holds nothing saved.
+    - `409` with `message` and the `PadAlreadyHasBindingException` mapping if the file has a row and its pad is not lost: Etherpad has it, the row waits, the file names another pad than its row (one on another server, say), or the pad is public and the file holds nothing saved.
+    - `409` with `status=skipped` + `reason=unknown_access_mode` when the pad is lost but its row names an access mode the app does not know, a record it did not write: no pad is made, and the row stays.
     - `409` with `status=skipped` + `reason=binding_state_transition_conflict`, without `retryable`, when another recovery of a file with a binding moved the binding first: the new pad is let go, the file is the other one's to write, and the next open finds its pad.
     - `503` with `retryable` when Etherpad does not answer - asked whether the pad is lost, or while the new pad is seeded - and when the file is locked by a sync; whatever was made is let go again. A write refused for a lock is let go only once the file can be read under its lock again, after a short wait; a lock that stays answers `500` as below.
     - `400` when Etherpad refuses, and for a file that is no `.pad` the app can read, with a binding or without: no pad metadata (with `code: missing_frontmatter`), or metadata it cannot parse.
@@ -567,10 +572,10 @@ Registered in `lib/AppInfo/Application.php`.
 - `etherpad_cookie_domain` and `etherpad_cookie_domain_configured` (`yes|no`, default `no`) — the `Domain` of the Etherpad session cookie.
   - Nextcloud and Etherpad on one host: a host-only cookie, whatever these say.
   - Otherwise, with the flag `yes`, the stored value stands, an empty one too: a host-only cookie, which then does not reach Etherpad.
-  - With the flag `no`, a stored value stands too (one from before the flag, or set through `occ`), and an empty one is derived: the parent domain both hosts share, of two labels at least. A host-only cookie where they share less (`nc.example.org` and `pad.other.org`), or where one of them is an IP address, `localhost`, a name under `.localhost` or one without a dot. A parent that may be a public suffix (`co.uk`) is set all the same, with a warning.
-  - The settings form shows the derived domain while none is stored, and stores what its field holds, with the flag `yes`, on every save: from then on the domain does not follow a change of either host until it is set again.
+  - With the flag `no`, a stored value stands too (one from before the flag, or set through `occ`), and an empty one is derived: the parent domain both hosts share, of two labels at least. A host-only cookie where they share less (`nc.example.org` and `pad.other.org`), or where one of them is an IP address, `localhost`, a name under `.localhost` or one without a dot. A parent that may be a public suffix (`co.uk`) is set all the same; the settings page, the answer to a save and the connection test warn about it while protected pads are on.
+  - The settings form shows the derived domain while the flag is `no` and no value is stored, and stores what its field holds, with the flag `yes`, on every save: from then on the domain does not follow a change of either host until it is set again, and a field saved empty stays empty.
   - Recommended: set it explicitly for complex proxy or subdomain setups.
-- `enable_protected_pads`, `enable_public_pads` (`yes|no`, default `yes`) — whether new pads of that type are made. With a type off, the create routes refuse it, while `from-template` and the `initialize` endpoints make a pad of the other type ("Nextcloud App Routes" above), and Files' "New" menu offers only what can be made. A recovery and a restore from the trash make a new pad of the file's type whatever these switches say, and existing pads open either way.
+- `enable_protected_pads`, `enable_public_pads` (`yes|no`, default `yes`) — whether new pads of that type are made ("Pad types switched off" above). With one type off, `POST /pads` and `create-by-parent` refuse it, while `from-template` and the `initialize` endpoints make a pad of the other type; with both off, these refuse too. Files' "New" menu leaves out what cannot be made, except with both types off and external pads on: its blank entry and the user's own templates stay, and are refused. A new pad a recovery or a restore from the trash makes has the type of the pad it replaces, whatever these switches say, and existing pads open either way.
 - `etherpad_session_cookie_samesite` (`lax|none`, default `lax`) and `etherpad_http_only_session_cookie` (`auto|yes|no`, default `auto`) — the Etherpad session cookie's attributes: `docs/etherpad-integration.md`, which says when to set them
 - `delete_pad_with_file` (`yes|no`, default `yes`) — whether the pad of a `.pad` file deleted for good is deleted (`docs/deleting-pads.md`); `delete_on_trash` before, taken over on upgrade
 - `sync_interval_seconds` (default `120`, clamp `5..3600`)
