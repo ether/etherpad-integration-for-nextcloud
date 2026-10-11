@@ -374,7 +374,6 @@
   <file src="lib/Service/PadSyncService.php">
     <RedundantCastGivenDocblockType>
       <code><![CDATA[(string)$node->getContent()]]></code>
-      <code><![CDATA[(string)$node->getContent()]]></code>
     </RedundantCastGivenDocblockType>
   </file>
   <file src="lib/Service/PadTypePolicy.php">

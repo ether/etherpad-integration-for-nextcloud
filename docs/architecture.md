@@ -213,6 +213,7 @@ Primary flow (native viewer):
    - flush on `pagehide`
    - extra flush triggers via trusted host messages
 3. `PadLifecycleController::syncById` fetches revision state from Etherpad.
+   - One sync of a file at a time, from reading the file to writing it (`PadSyncLock`, through Nextcloud's locking provider): two that overlap ask Etherpad and write in no set order, and the slower one can put its older revision over the newer. A second sync waits for the first, about three seconds at most, then reads what it wrote; one that waits in vain answers `status=locked`. With `filelocking.enabled` false syncs overlap; a request killed while it holds the lock leaves the file's syncs answering `locked` until the lock expires (`filelocking.ttl`).
 4. `.pad` snapshot is updated only when the upstream snapshot actually differs.
    - `force=1` requests an immediate upstream re-check, but unchanged snapshots are still not rewritten.
    - A forced sync writes a pad behind the snapshot too when its content differs: files a restore in 1.1.0-beta.1 left kept the old pad's revision count, and only this brings them up to date. Not a pad Etherpad made anew in place of the file's - without a single revision, with other text than the file saved (`ManagedPadLifecycle::isMadeAnew()`, the rule the open goes by): its default text written over the file would leave the saved content to the file's versions, and the open would no longer find the pad lost and offer a new pad from the file. The sync answers `pad_missing` instead, as the open does, and writes nothing.
@@ -221,7 +222,7 @@ Primary flow (native viewer):
 5. External pads are synced as text only (no HTML import).
    - They are selected by `.pad` frontmatter, not by `ep_pad_bindings`.
 6. Write-lock handling:
-   - short bounded retry around `.pad` snapshot writes (`150ms`, `300ms`, `600ms`)
+   - short bounded retry around the sync's read of the `.pad` and its snapshot write (`150ms`, `300ms`, `600ms`)
    - if still locked, API returns `status=locked` and `retryable=true`
 7. Revision-based status check is still exposed for programmatic use:
    - `GET /api/v1/pads/sync-status/{fileId}` compares `snapshot_rev` with `current_rev`.

@@ -16,7 +16,6 @@ use OCA\EtherpadNextcloud\Util\PadFileType;
 use OCA\EtherpadNextcloud\Util\SafeError;
 use OCP\Files\File;
 use OCP\Files\NotFoundException;
-use OCP\Lock\LockedException;
 use Psr\Log\LoggerInterface;
 
 class PadSyncService {
@@ -31,6 +30,7 @@ class PadSyncService {
 		private PadFileService $padFileService,
 		private UserNodeResolver $userNodeResolver,
 		private PadFileLockRetryService $lockRetryService,
+		private PadSyncLock $syncLock,
 		private BindingService $bindingService,
 		private EtherpadClient $etherpadClient,
 		private ExternalPadExportFetcher $externalPadExportFetcher,
@@ -49,13 +49,23 @@ class PadSyncService {
 			throw new NotAPadFileException('Selected file is not a .pad file.');
 		}
 
+		// One sync of the file at a time (PadSyncLock); one that waits in
+		// vain answers as for a locked file.
+		try {
+			return $this->syncLock->hold($fileId, fn (): PadSyncResult => $this->syncHeld($node, $fileId, $absolutePath, $force));
+		} catch (PadFileLockRetryExhaustedException $e) {
+			return $this->lockedSyncResponse('Pad sync deferred because another sync of the file is running', $e, $fileId, $absolutePath, '', '', false, $force);
+		}
+	}
+
+	/** @throws PadLostException */
+	private function syncHeld(File $node, int $fileId, string $absolutePath, bool $force): PadSyncResult {
 		$padId = '';
 		$accessMode = '';
 		$isExternal = false;
-		$lockRetries = 0;
 
 		try {
-			$pad = $this->padFileService->readPad((string)$node->getContent());
+			$pad = $this->padFileService->readPad($this->lockRetryService->readContentWithSyncLockRetry($node));
 			$padId = $pad->padId;
 			$accessMode = $pad->accessMode;
 			$isExternal = $pad->isExternal;
@@ -69,10 +79,7 @@ class PadSyncService {
 
 			return $this->syncInternalPad($node, $fileId, $pad, $force);
 		} catch (PadFileLockRetryExhaustedException $e) {
-			$lockRetries = $e->getRetryAttempts();
-			return $this->lockedSyncResponse($e->getLockedException(), $fileId, $absolutePath, $padId, $accessMode, $isExternal, $force, $lockRetries);
-		} catch (LockedException $e) {
-			return $this->lockedSyncResponse($e, $fileId, $absolutePath, $padId, $accessMode, $isExternal, $force, $lockRetries);
+			return $this->lockedSyncResponse('Pad sync deferred because .pad file is locked', $e, $fileId, $absolutePath, $padId, $accessMode, $isExternal, $force);
 		}
 		// Anything else reaches the error mapper, which reports it once.
 	}
@@ -226,16 +233,17 @@ class PadSyncService {
 	}
 
 	private function lockedSyncResponse(
-		LockedException $e,
+		string $message,
+		PadFileLockRetryExhaustedException $e,
 		int $fileId,
 		string $absolutePath,
 		string $padId,
 		string $accessMode,
 		bool $isExternal,
 		bool $force,
-		int $lockRetries,
 	): PadSyncResult {
-		$this->logger->info('Pad sync deferred because .pad file is locked', [
+		$lockRetries = $e->getRetryAttempts();
+		$this->logger->info($message, [
 			'app' => 'etherpad_nextcloud',
 			'fileId' => $fileId,
 			'path' => $absolutePath,
@@ -243,7 +251,7 @@ class PadSyncService {
 			'external' => $isExternal,
 			'force' => $force,
 			'lockRetryAttempts' => $lockRetries,
-			...SafeError::context($e),
+			...SafeError::context($e->getLockedException()),
 		]);
 
 		return new PadSyncResult(

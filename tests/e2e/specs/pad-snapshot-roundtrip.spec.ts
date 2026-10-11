@@ -101,4 +101,21 @@ test.describe('snapshot -> pad content round-trip (recover + sync)', () => {
 		expect(after).toContain(recovered.new_pad_id as string)
 		expect(after).not.toContain(`pad_id: "${freshPadId}"`)
 	})
+
+	// Syncs of one file run one after the other, through Nextcloud's own
+	// locking provider here: each waits for the one before, none waits in
+	// vain, and the last lets go.
+	test('forced syncs sent at once each get their turn', async () => {
+		const fileId = await propfindFileId(padName)
+
+		const syncs = await Promise.all([1, 2, 3, 4].map(() => padApiPost(`pads/sync/${fileId}?force=1`)))
+
+		for (const sync of syncs) {
+			expect(sync.status).toBe(200)
+			expect(['updated', 'unchanged']).toContain((sync.body as { status?: string }).status)
+		}
+		const after = await padApiPost(`pads/sync/${fileId}?force=1`)
+		expect((after.body as { status?: string }).status).toBe('unchanged')
+		expect(await getFileViaDav(padName)).toContain(marker)
+	})
 })
