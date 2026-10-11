@@ -51,13 +51,18 @@ describe('isRetryableOpenError', () => {
 	})
 })
 
-// Another recovery's pad is opened; a recovery held back keeps its sentence.
+// Another recovery's pad is opened; any other failure keeps its sentence.
 describe('opensAgainAfterRecovery', () => {
+	const skipped = (reason) => Object.assign(new Error('Recovery failed.'), { status: 409, reason })
 	it.each([
 		['no answer came', unanswered(), true],
 		['another recovery made the binding first', Object.assign(new Error('Try again.'), { status: 400, retryable: true }), true],
-		['another recovery moved the binding first', Object.assign(new Error('Recovery failed.'), { status: 409 }), true],
+		['another recovery moved the binding first', skipped('binding_state_transition_conflict'), true],
+		['the file was written while the pad was seeded', skipped('file_changed'), true],
 		['the file is linked already', Object.assign(new Error('This .pad file is already linked to a pad.'), { status: 409 }), true],
+		['the file names an external pad', skipped('external_pad'), false],
+		['the file moved while the pad was seeded', skipped('file_moved'), false],
+		['the file names a mode the app does not know', skipped('unknown_access_mode'), false],
 		['a lock or Etherpad held it back', Object.assign(new Error('Pad file is temporarily locked. Please retry.'), { status: 503, retryable: true }), false],
 		['Nextcloud refused it as one too many', Object.assign(new Error('Request failed.'), { status: 429 }), false],
 		['the server refused', Object.assign(withCode('missing_frontmatter'), { status: 400 }), false],

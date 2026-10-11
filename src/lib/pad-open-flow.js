@@ -60,20 +60,26 @@ export const isPadMissingError = (error) => Boolean(error) && error.code === 'pa
 export const isRetryableOpenError = (error) => Boolean(error)
 	&& (error.retryable === true || error.code === 'pad_file_changed' || isUnanswered(error) || isThrottled(error))
 
+/** The `409`s of a recovery another one got ahead of: no `reason` is the file's binding already there. */
+const RECOVERY_OVERTAKEN = ['binding_state_transition_conflict', 'file_changed', undefined]
+
 /**
  * Whether a recovery that failed is answered by opening again rather than
- * with its error: no answer came, or another recovery got there first - it
- * made the binding (`400` with `retryable`), or the file holds one already
- * (`409`). Opening is safe to repeat and finds that pad; a second recovery
- * could only meet the binding. A recovery a lock or Etherpad held back
- * (`503`) keeps its sentence, and its button: opened again, the same card
- * would come back without saying why the click did nothing.
+ * with its error. With no answer the recovery may have gone through, and
+ * the open tells. So too when another recovery got there first: it made
+ * the binding (`400` with `retryable`), moved it or wrote the file
+ * meanwhile (`409` with `binding_state_transition_conflict`, `file_changed`),
+ * or the file holds one already (`409` without a `reason`); the open shows
+ * what that left. Every other answer keeps its sentence and the button: a
+ * `409` for an external pad, a file moved or a mode the app does not know,
+ * a `503` of a lock or a silent Etherpad.
  *
  * @param {unknown} error
  * @return {boolean}
  */
 export const opensAgainAfterRecovery = (error) => isUnanswered(error)
-	|| (Boolean(error) && (error.status === 409 || (error.status === 400 && error.retryable === true)))
+	|| (Boolean(error) && ((error.status === 409 && RECOVERY_OVERTAKEN.includes(error.reason))
+		|| (error.status === 400 && error.retryable === true)))
 
 /**
  * A read-only view carries no pad URL by design; anything else without one

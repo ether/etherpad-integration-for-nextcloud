@@ -19,7 +19,7 @@ const GATEWAY_STATUSES = [502, 503, 504]
  * retry then either collides with the binding it did write or provisions
  * a second pad and orphans the first. Slow is not the same as stuck.
  *
- * An error carries the server's `code` and `retryable` when it sent them,
+ * An error carries the server's `code`, `reason` and `retryable` when it sent them,
  * `status` whenever one came, and `unanswered` when nothing came back from
  * this app (docs/architecture.md, "Errors of the API", says which failures
  * count). Only that fact: whether the same request is worth another try
@@ -65,6 +65,10 @@ export const fetchJsonWithTimeout = async (url, init = {}, options = {}) => {
 			const error = new Error((data && data.message) || fallbackMessage)
 			if (data && typeof data.code === 'string') {
 				error.code = data.code
+			}
+			// Why a lifecycle step was skipped (`status: skipped`, a 409).
+			if (data && typeof data.reason === 'string') {
+				error.reason = data.reason
 			}
 			// The server's word that the same request may succeed later (the
 			// cases are in docs/api-reference.md).

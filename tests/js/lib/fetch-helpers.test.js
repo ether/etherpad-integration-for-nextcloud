@@ -48,6 +48,12 @@ describe('fetchJsonWithTimeout', () => {
 		})
 	})
 
+	it('carries the reason a skipped step gives', async () => {
+		stubFetch(jsonResponse({ status: 'skipped', reason: 'external_pad' }, false, 409))
+
+		await expect(fetchJsonWithTimeout('/x')).rejects.toMatchObject({ status: 409, reason: 'external_pad' })
+	})
+
 	// The server's word that the same request may succeed later, carried
 	// as it is; anything but true is no such word.
 	it.each([

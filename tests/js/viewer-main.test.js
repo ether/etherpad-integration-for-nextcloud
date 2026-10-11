@@ -19,7 +19,7 @@ import { jsonResponse } from './responses.js'
 vi.mock('../../src/lib/oc-compat.js', () => ({
 	ocGenerateUrl: (path) => path,
 	ocRequestToken: () => 'csrf-token',
-	translate: (text) => text,
+	translate: vi.fn((text) => text),
 }))
 vi.mock('../../src/lib/pad-sync.js', () => ({
 	createPadSync: vi.fn(() => ({
@@ -50,6 +50,17 @@ vi.mock('../../src/lib/urls.js', async (importOriginal) => ({
 }))
 
 const { apiFindOriginalPad, apiRecoverFromSnapshot, apiResolvePadByPath } = await import('../../src/lib/api-client.js')
+const { translate } = await import('../../src/lib/oc-compat.js')
+
+/** Runs $check with translate() marking what it translates. */
+const marked = async (check) => {
+	translate.mockImplementation((text) => '«' + text + '»')
+	try {
+		await check()
+	} finally {
+		translate.mockImplementation((text) => text)
+	}
+}
 const { loadPadContent } = await import('../../src/lib/pad-content.js')
 const { parsePadPathFromDavHref, parsePublicShareTokenFromLocation } = await import('../../src/lib/urls.js')
 
@@ -236,6 +247,14 @@ describe('viewer component — open key', () => {
 })
 
 describe('viewer component — resolveOpenUrl', () => {
+	it('says so, translated, when no .pad file is selected', () => marked(async () => {
+		const vm = makeInstance({})
+
+		await vm.resolveOpenUrl()
+
+		expect(vm.loadError).toBe('«No .pad file selected.»')
+	}))
+
 	it('happy path: sets iframeSrc, starts sync, and emits loaded', async () => {
 		stubFetch(jsonResponse({ url: 'https://pad.example/p', sync_url: 'https://sync.example', sync_interval_seconds: 60 }))
 		const vm = makeInstance({ fileid: 42, fileInfo: { path: '/x.pad' } })
@@ -464,7 +483,7 @@ describe('viewer component — resolveOpenUrl', () => {
 	// Another recovery got there first: the open finds its pad.
 	it.each([
 		['made the binding first', { retryable: true, status: 400 }],
-		['moved the binding first', { status: 409 }],
+		['moved the binding first', { status: 409, reason: 'binding_state_transition_conflict' }],
 	])('opens again after another recovery %s', async (_, answer) => {
 		apiRecoverFromSnapshot.mockRejectedValue(Object.assign(new Error('Recovery failed.'), answer))
 		const fetchMock = stubFetch(jsonResponse({ url: 'https://pad.example/recovered', sync_url: '' }))
@@ -475,6 +494,20 @@ describe('viewer component — resolveOpenUrl', () => {
 		expect(fetchMock.mock.calls[0][0]).toBe(endpoint('pads/open-by-id'))
 		expect(vm.iframeSrc).toBe('https://pad.example/recovered')
 		expect(vm.loadError).toBe('')
+	})
+
+	// A file that names an external pad: opened again, the same card would
+	// come back without a word, at every click.
+	it('keeps the sentence and the button when the recovery does not apply', async () => {
+		apiRecoverFromSnapshot.mockRejectedValue(Object.assign(new Error('Recovery failed.'), { status: 409, reason: 'external_pad' }))
+		const fetchMock = stubFetch(jsonResponse({ url: 'https://pad.example/never', sync_url: '' }))
+		const vm = makeInstance({ fileid: 42, fileInfo: { path: '/copy.pad' }, loadError: 'no binding', canRecover: true, recoveryFileId: 42 })
+
+		await vm.recoverFromSnapshot()
+
+		expect(fetchMock).not.toHaveBeenCalled()
+		expect(vm.loadError).toBe('Recovery failed.')
+		expect(vm.canRecover).toBe(true)
 	})
 
 	it.each([
@@ -1060,12 +1093,12 @@ describe('viewer component — render', () => {
 		expect(allText(tree)).toContain('Loading pad content...')
 	})
 
-	it('renders the loading placeholder while resolving', () => {
+	it('renders the loading placeholder while resolving, translated', () => marked(() => {
 		const vm = makeInstance({ isLoading: true })
 		const tree = component.render.call(vm, h)
 
-		expect(allText(tree)).toContain('Loading pad...')
-	})
+		expect(allText(tree)).toContain('«Loading pad...»')
+	}))
 
 	it('renders the iframe shell with a srcdoc wrapper once a pad URL is set', () => {
 		const vm = makeInstance({ isLoading: false, iframeSrc: 'https://pad/p' })

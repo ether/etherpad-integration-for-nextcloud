@@ -537,6 +537,24 @@ describe('embed-main', () => {
 		expect(iframe().src).toContain(PAD.url)
 	})
 
+	// A file that names an external pad: opened again, the same card would
+	// come back without a word, at every click.
+	it('keeps the sentence when the recovery does not apply', async () => {
+		fetch
+			.mockResolvedValueOnce(errorResponse(MISSING_BINDING))
+			.mockResolvedValueOnce(jsonResponse({ found: false }))
+			.mockResolvedValueOnce(errorResponse({ status: 'skipped', reason: 'external_pad' }, 409))
+
+		await importEmbed()
+		await flushAsyncWork()
+		recoveryActions().querySelector('button').click()
+		await flushAsyncWork()
+
+		expect(fetch).toHaveBeenCalledTimes(3)
+		expect(recoveryMessage()).toBe('Request failed.')
+		expect(recoveryActions().querySelector('button').disabled).toBe(false)
+	})
+
 	// Held back by a lock: the sentence stays, with the button to try again.
 	it('hands the focus back to the recovery card when a recovery fails', async () => {
 		fetch
