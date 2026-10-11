@@ -4,10 +4,10 @@
  */
 import { ocRequestToken } from './lib/oc-compat.js'
 import { createPadSync } from './lib/pad-sync.js'
-import { fetchJsonWithTimeout as fetchJson, isUnanswered, requestErrorMessage } from './lib/fetch-helpers.js'
+import { fetchJsonWithTimeout as fetchJson, requestErrorMessage } from './lib/fetch-helpers.js'
 import { handFocusTo } from './lib/hand-focus.js'
 import { loadPadContent } from './lib/pad-content.js'
-import { assertOpenPayload, contentUrlFrom, contentViewFrom, isMissingBindingError, isPadMissingError, isRetryableOpenError, openWithFrontmatterRecovery, padUrlFrom, syncSettingsFrom } from './lib/pad-open-flow.js'
+import { assertOpenPayload, contentUrlFrom, contentViewFrom, isMissingBindingError, isPadMissingError, isRetryableOpenError, openWithFrontmatterRecovery, opensAgainAfterRecovery, padUrlFrom, syncSettingsFrom } from './lib/pad-open-flow.js'
 
 (function () {
 	const IFRAME_REVEAL_DELAY_MS = 100
@@ -445,9 +445,7 @@ import { assertOpenPayload, contentUrlFrom, contentViewFrom, isMissingBindingErr
 			// Open again now that the binding exists.
 			void run(true)
 		} catch (error) {
-			// No answer: the pad may be set up by now, and another recovery
-			// would meet it. Opening tells, and is safe to repeat.
-			if (isUnanswered(error)) {
+			if (opensAgainAfterRecovery(error)) {
 				void run(true)
 				return
 			}
@@ -520,8 +518,8 @@ import { assertOpenPayload, contentUrlFrom, contentViewFrom, isMissingBindingErr
 			padSync.configure({ syncUrl, intervalMs })
 			padSync.installLifecycleHandlers()
 			installHostMessageHandler()
-			// No syncing for a viewer: it writes the pad back into the .pad
-			// file, which is exactly what a read-only share may not do.
+			// A read-only open comes without a sync URL: a sync writes the
+			// pad back into the .pad file.
 			if (syncUrl !== '') {
 				padSync.start()
 			}

@@ -114,6 +114,7 @@
         "Nextcloud did not answer. Check your connection and try again.": "Nextcloud no ha respondido. Comprueba tu conexión y vuelve a intentarlo.",
         "Nextcloud did not answer. The pad may have been created anyway; look in the folder before you try again.": "Nextcloud no ha respondido. Puede que el pad se haya creado de todos modos; mira en la carpeta antes de volver a intentarlo.",
         "Nextcloud runs on {nextcloud_host}, Etherpad on {etherpad_host}.": "Nextcloud se ejecuta en {nextcloud_host} y Etherpad en {etherpad_host}.",
+        "No .pad file selected.": "No se ha seleccionado ningún archivo .pad.",
         "No .pad file selected. Open a .pad file from this shared folder.": "No se ha seleccionado ningún archivo .pad. Abre un archivo .pad de esta carpeta compartida.",
         "No shared templates yet.": "Todavía no hay plantillas compartidas.",
         "No such template.": "Esa plantilla no existe.",

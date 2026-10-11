@@ -517,18 +517,57 @@ describe('embed-main', () => {
 		expect(iframe().src).toContain(PAD.url)
 	})
 
-	it('hands the focus back to the recovery card when a recovery fails', async () => {
+	// Another recovery got there first: the open finds its pad.
+	it.each([
+		['made the binding first', { message: 'Try again.', retryable: true }, 400],
+		['moved the binding first', { status: 'skipped', reason: 'binding_state_transition_conflict' }, 409],
+	])('opens again after another recovery %s', async (_, body, status) => {
 		fetch
 			.mockResolvedValueOnce(errorResponse(MISSING_BINDING))
 			.mockResolvedValueOnce(jsonResponse({ found: false }))
-			.mockResolvedValueOnce(errorResponse({ message: 'This .pad file is already linked to a pad.' }, 409))
+			.mockResolvedValueOnce(errorResponse(body, status))
+			.mockResolvedValueOnce(jsonResponse(PAD))
 
 		await importEmbed()
 		await flushAsyncWork()
 		recoveryActions().querySelector('button').click()
 		await flushAsyncWork()
 
-		expect(recoveryMessage()).toBe('This .pad file is already linked to a pad.')
+		expect(fetch.mock.calls[3][0]).toBe('/api/open-by-id')
+		expect(iframe().src).toContain(PAD.url)
+	})
+
+	// A file that names an external pad: opened again, the same card would
+	// come back without a word, at every click.
+	it('keeps the sentence when the recovery does not apply', async () => {
+		fetch
+			.mockResolvedValueOnce(errorResponse(MISSING_BINDING))
+			.mockResolvedValueOnce(jsonResponse({ found: false }))
+			.mockResolvedValueOnce(errorResponse({ status: 'skipped', reason: 'external_pad' }, 409))
+
+		await importEmbed()
+		await flushAsyncWork()
+		recoveryActions().querySelector('button').click()
+		await flushAsyncWork()
+
+		expect(fetch).toHaveBeenCalledTimes(3)
+		expect(recoveryMessage()).toBe('Request failed.')
+		expect(recoveryActions().querySelector('button').disabled).toBe(false)
+	})
+
+	// Held back by a lock: the sentence stays, with the button to try again.
+	it('hands the focus back to the recovery card when a recovery fails', async () => {
+		fetch
+			.mockResolvedValueOnce(errorResponse(MISSING_BINDING))
+			.mockResolvedValueOnce(jsonResponse({ found: false }))
+			.mockResolvedValueOnce(errorResponse({ message: 'Pad file is temporarily locked. Please retry.', retryable: true }, 503))
+
+		await importEmbed()
+		await flushAsyncWork()
+		recoveryActions().querySelector('button').click()
+		await flushAsyncWork()
+
+		expect(recoveryMessage()).toBe('Pad file is temporarily locked. Please retry.')
 		expect(document.activeElement).toBe(recoveryActions().querySelector('button'))
 	})
 

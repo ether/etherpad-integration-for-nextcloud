@@ -8,9 +8,9 @@ import { MISSING_BINDING, UNREACHABLE } from '../answers.js'
 import { brokenBody, jsonResponse, pageResponse } from '../responses.js'
 
 /**
- * The signal chaining is the subtlest part of this module and it now
- * carries both frontends: the viewer aborts a superseded open, the embed
- * relies on the timeout, and both go through here.
+ * The signal chaining is the subtlest part of this module, and both
+ * frontends rely on it: the viewer aborts a superseded open, the embed
+ * the timeout.
  */
 
 const stubFetch = (impl) => {
@@ -46,6 +46,18 @@ describe('fetchJsonWithTimeout', () => {
 			status: 400,
 			code: 'missing_binding',
 		})
+	})
+
+	it('carries the reason a skipped step gives', async () => {
+		stubFetch(jsonResponse({ status: 'skipped', reason: 'external_pad' }, false, 409))
+
+		await expect(fetchJsonWithTimeout('/x')).rejects.toMatchObject({ status: 409, reason: 'external_pad' })
+	})
+
+	it('leaves out a reason that is not text', async () => {
+		stubFetch(jsonResponse({ status: 'skipped', reason: { code: 'external_pad' } }, false, 409))
+
+		expect((await fetchJsonWithTimeout('/x').catch((error) => error)).reason).toBeUndefined()
 	})
 
 	// The server's word that the same request may succeed later, carried

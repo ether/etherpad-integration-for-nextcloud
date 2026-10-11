@@ -146,8 +146,9 @@ therefore never set a cookie that reaches `pad.otherdomain.example`, and
 cookie is sent cross-site, not which domain may be set.
 
 - Same host for both: nothing to configure, a host-only cookie covers it.
-- Shared parent domain: the cookie domain is derived automatically, and
-  Etherpad's default `SameSite: Lax` usually works.
+- Shared parent domain: the settings page derives the cookie domain and
+  stores it with the first save, after which it no longer follows a change
+  of either host. Etherpad's default `SameSite: Lax` usually works.
 - Unrelated registrable domains: protected pads cannot work with the current
   session model. If a reverse proxy already serves Etherpad under the Nextcloud
   domain, put that address in the base URL — pad links use it, so the cookie

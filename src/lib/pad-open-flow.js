@@ -61,6 +61,28 @@ export const isRetryableOpenError = (error) => Boolean(error)
 	&& (error.retryable === true || error.code === 'pad_file_changed' || isUnanswered(error) || isThrottled(error))
 
 /**
+ * The `409` reasons of a file no longer the case a recovery was offered
+ * for: another recovery moved its row, or the file was written meanwhile.
+ * `undefined` is a `409` without a reason: a row a recovery does not
+ * replace.
+ */
+const REASONS_TO_OPEN_AGAIN = ['binding_state_transition_conflict', 'file_changed', undefined]
+
+/**
+ * Whether a failed recovery is answered by opening again rather than with
+ * its error: when it may have gone through, or the answer says the file is
+ * no longer the case the recovery was offered for (a `400` with
+ * `retryable` is a row another recovery made). The open shows what is
+ * there now; every other failure stays on the recovery card.
+ *
+ * @param {unknown} error
+ * @return {boolean}
+ */
+export const opensAgainAfterRecovery = (error) => isUnanswered(error)
+	|| (Boolean(error) && ((error.status === 409 && REASONS_TO_OPEN_AGAIN.includes(error.reason))
+		|| (error.status === 400 && error.retryable === true)))
+
+/**
  * A read-only view carries no pad URL by design; anything else without one
  * would reach an iframe as `undefined`.
  *

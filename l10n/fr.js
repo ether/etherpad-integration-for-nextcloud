@@ -115,6 +115,7 @@ OC.L10N.register(
     "Nextcloud did not answer. Check your connection and try again.": "Nextcloud n'a pas répondu. Vérifiez votre connexion et réessayez.",
     "Nextcloud did not answer. The pad may have been created anyway; look in the folder before you try again.": "Nextcloud n'a pas répondu. Le pad a peut-être été créé malgré tout ; vérifiez le dossier avant de réessayer.",
     "Nextcloud runs on {nextcloud_host}, Etherpad on {etherpad_host}.": "Nextcloud tourne sur {nextcloud_host}, Etherpad sur {etherpad_host}.",
+    "No .pad file selected.": "Aucun fichier .pad sélectionné.",
     "No .pad file selected. Open a .pad file from this shared folder.": "Aucun fichier .pad sélectionné. Ouvrez un fichier .pad de ce dossier partagé.",
     "No shared templates yet.": "Aucun modèle partagé pour le moment.",
     "No such template.": "Ce modèle n'existe pas.",

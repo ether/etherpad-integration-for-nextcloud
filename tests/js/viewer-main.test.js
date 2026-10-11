@@ -19,7 +19,7 @@ import { jsonResponse } from './responses.js'
 vi.mock('../../src/lib/oc-compat.js', () => ({
 	ocGenerateUrl: (path) => path,
 	ocRequestToken: () => 'csrf-token',
-	translate: (text) => text,
+	translate: vi.fn((text) => text),
 }))
 vi.mock('../../src/lib/pad-sync.js', () => ({
 	createPadSync: vi.fn(() => ({
@@ -50,6 +50,17 @@ vi.mock('../../src/lib/urls.js', async (importOriginal) => ({
 }))
 
 const { apiFindOriginalPad, apiRecoverFromSnapshot, apiResolvePadByPath } = await import('../../src/lib/api-client.js')
+const { translate } = await import('../../src/lib/oc-compat.js')
+
+/** Runs $check with translate() marking what it translates. */
+const marked = async (check) => {
+	translate.mockImplementation((text) => '«' + text + '»')
+	try {
+		await check()
+	} finally {
+		translate.mockImplementation((text) => text)
+	}
+}
 const { loadPadContent } = await import('../../src/lib/pad-content.js')
 const { parsePadPathFromDavHref, parsePublicShareTokenFromLocation } = await import('../../src/lib/urls.js')
 
@@ -236,6 +247,14 @@ describe('viewer component — open key', () => {
 })
 
 describe('viewer component — resolveOpenUrl', () => {
+	it('says so, translated, when no .pad file is selected', () => marked(async () => {
+		const vm = makeInstance({})
+
+		await vm.resolveOpenUrl()
+
+		expect(vm.loadError).toBe('«No .pad file selected.»')
+	}))
+
 	it('happy path: sets iframeSrc, starts sync, and emits loaded', async () => {
 		stubFetch(jsonResponse({ url: 'https://pad.example/p', sync_url: 'https://sync.example', sync_interval_seconds: 60 }))
 		const vm = makeInstance({ fileid: 42, fileInfo: { path: '/x.pad' } })
@@ -433,8 +452,8 @@ describe('viewer component — resolveOpenUrl', () => {
 		expect(vm.canRetryOpen).toBe(true)
 	})
 
-	// Its pad may be set up by now; another open would start a second one.
-	// The second try opens first, and finds the pad the first set up.
+	// The second try opens first: the initialise that got no answer may
+	// have gone through.
 	it('offers a second try after an initialise that got no answer', async () => {
 		const fetchMock = stubFetch()
 		fetchMock
@@ -459,6 +478,36 @@ describe('viewer component — resolveOpenUrl', () => {
 		expect(fetchMock.mock.calls[0][0]).toBe(endpoint('pads/open-by-id'))
 		expect(vm.iframeSrc).toBe('https://pad.example/recovered')
 		expect(vm.loadError).toBe('')
+	})
+
+	// Another recovery got there first: the open finds its pad.
+	it.each([
+		['made the binding first', { retryable: true, status: 400 }],
+		['moved the binding first', { status: 409, reason: 'binding_state_transition_conflict' }],
+	])('opens again after another recovery %s', async (_, answer) => {
+		apiRecoverFromSnapshot.mockRejectedValue(Object.assign(new Error('Recovery failed.'), answer))
+		const fetchMock = stubFetch(jsonResponse({ url: 'https://pad.example/recovered', sync_url: '' }))
+		const vm = makeInstance({ fileid: 42, fileInfo: { path: '/copy.pad' }, loadError: 'no binding', canRecover: true, recoveryFileId: 42 })
+
+		await vm.recoverFromSnapshot()
+
+		expect(fetchMock.mock.calls[0][0]).toBe(endpoint('pads/open-by-id'))
+		expect(vm.iframeSrc).toBe('https://pad.example/recovered')
+		expect(vm.loadError).toBe('')
+	})
+
+	// A file that names an external pad: opened again, the same card would
+	// come back without a word, at every click.
+	it('keeps the sentence and the button when the recovery does not apply', async () => {
+		apiRecoverFromSnapshot.mockRejectedValue(Object.assign(new Error('Recovery failed.'), { status: 409, reason: 'external_pad' }))
+		const fetchMock = stubFetch(jsonResponse({ url: 'https://pad.example/never', sync_url: '' }))
+		const vm = makeInstance({ fileid: 42, fileInfo: { path: '/copy.pad' }, loadError: 'no binding', canRecover: true, recoveryFileId: 42 })
+
+		await vm.recoverFromSnapshot()
+
+		expect(fetchMock).not.toHaveBeenCalled()
+		expect(vm.loadError).toBe('Recovery failed.')
+		expect(vm.canRecover).toBe(true)
 	})
 
 	it.each([
@@ -609,7 +658,7 @@ describe('viewer component — resolveOpenUrl', () => {
 			await pending
 
 			// In its own words rather than the client's English, and worth
-			// another try: an open only reads.
+			// another try, which opens first and goes by what it finds.
 			expect(vm.loadError).toBe(UNANSWERED_TEXT)
 			expect(vm.canRetryOpen).toBe(true)
 			expect(vm.isLoading).toBe(false)
@@ -799,17 +848,17 @@ describe('viewer component — resolveOpenUrl', () => {
 })
 
 describe('viewer component — recoverFromSnapshot', () => {
-	it('posts the recovery, clears the error, and re-resolves', async () => {
+	it('posts the recovery, then opens again, which clears the error', async () => {
 		apiRecoverFromSnapshot.mockResolvedValue({})
-		const vm = makeInstance({ fileid: 42, recoveryFileId: 42, recoveryPath: '/x.pad', canRecover: true, loadError: 'boom' })
-		vm.resolveOpenUrl = vi.fn().mockResolvedValue()
+		stubFetch(jsonResponse({ url: 'https://pad.example/recovered', sync_url: '' }))
+		const vm = makeInstance({ fileid: 42, fileInfo: { path: '/x.pad' }, recoveryFileId: 42, recoveryPath: '/x.pad', canRecover: true, loadError: 'boom' })
 
 		await vm.recoverFromSnapshot()
 
 		expect(apiRecoverFromSnapshot).toHaveBeenCalledWith(42, '/x.pad')
+		expect(vm.iframeSrc).toBe('https://pad.example/recovered')
 		expect(vm.loadError).toBe('')
 		expect(vm.canRecover).toBe(false)
-		expect(vm.resolveOpenUrl).toHaveBeenCalled()
 		expect(vm.isRecovering).toBe(false)
 	})
 
@@ -1044,12 +1093,12 @@ describe('viewer component — render', () => {
 		expect(allText(tree)).toContain('Loading pad content...')
 	})
 
-	it('renders the loading placeholder while resolving', () => {
+	it('renders the loading placeholder while resolving, translated', () => marked(() => {
 		const vm = makeInstance({ isLoading: true })
 		const tree = component.render.call(vm, h)
 
-		expect(allText(tree)).toContain('Loading pad...')
-	})
+		expect(allText(tree)).toContain('«Loading pad...»')
+	}))
 
 	it('renders the iframe shell with a srcdoc wrapper once a pad URL is set', () => {
 		const vm = makeInstance({ isLoading: false, iframeSrc: 'https://pad/p' })
@@ -1149,15 +1198,17 @@ describe('viewer component — focus after a click', () => {
 		expect(document.activeElement).toBe(card.querySelector('button'))
 	})
 
+	// Held back by a lock: the sentence stays, with the button to try again.
 	it('hands it back to the card when a recovery fails', async () => {
-		apiRecoverFromSnapshot.mockRejectedValue(new Error('This .pad file is already linked to a pad.'))
+		apiRecoverFromSnapshot.mockRejectedValue(Object.assign(new Error('Pad file is temporarily locked. Please retry.'), { status: 503, retryable: true }))
 		const vm = makeInstance({ fileid: 42, fileInfo: { path: '/copy.pad' }, loadError: 'no binding', canRecover: true, recoveryFileId: 42 })
 		const card = drawCard(vm, '<div class="epnc-native-error-message">m</div><button data-recover>Create new pad from this file</button>')
 
 		await vm.recoverFromSnapshot()
 		await flushAsyncWork()
 
-		expect(vm.loadError).toBe('This .pad file is already linked to a pad.')
+		expect(vm.loadError).toBe('Pad file is temporarily locked. Please retry.')
+		expect(vm.canRecover).toBe(true)
 		expect(vm.isRecovering).toBe(false)
 		// The clicked button lost it while it was disabled.
 		expect(document.activeElement).toBe(card.querySelector('button'))

@@ -7,12 +7,12 @@
 
 import { APP_ID } from './lib/constants.js'
 import { apiFindOriginalPad, apiRecoverFromSnapshot, apiResolvePadByPath } from './lib/api-client.js'
-import { fetchJsonWithTimeout, isThrottled, isUnanswered, requestErrorMessage } from './lib/fetch-helpers.js'
+import { fetchJsonWithTimeout, isThrottled, requestErrorMessage } from './lib/fetch-helpers.js'
 import { handFocusTo } from './lib/hand-focus.js'
 import { ocGenerateUrl, ocRequestToken, translate } from './lib/oc-compat.js'
 import { createPadSync } from './lib/pad-sync.js'
 import { loadPadContent } from './lib/pad-content.js'
-import { assertOpenPayload, contentUrlFrom, contentViewFrom, isMissingBindingError, isPadMissingError, isRetryableOpenError, openWithFrontmatterRecovery, padUrlFrom, syncSettingsFrom } from './lib/pad-open-flow.js'
+import { assertOpenPayload, contentUrlFrom, contentViewFrom, isMissingBindingError, isPadMissingError, isRetryableOpenError, openWithFrontmatterRecovery, opensAgainAfterRecovery, padUrlFrom, syncSettingsFrom } from './lib/pad-open-flow.js'
 import { buildPadFrameSrcdoc } from './lib/pad-frame-srcdoc.js'
 import { isPadName, parsePadPathFromDavHref, parsePublicShareTokenFromLocation } from './lib/urls.js'
 
@@ -239,7 +239,7 @@ const component = {
 
 			if (!this.filePath) {
 				if (!isCurrent()) return
-				this.loadError = 'No .pad file selected.'
+				this.loadError = translate('No .pad file selected.')
 				this.isLoading = false
 				return
 			}
@@ -270,9 +270,6 @@ const component = {
 					if (byPublicUrl) {
 						return await this.fetchOpenPayload(byPublicUrl, { signal })
 					}
-					// One way in, chosen once. An open by id that retries by
-					// path is how a refused id ended up opening whatever the
-					// path pointed at.
 					if (this.resolvedFileId !== null) {
 						const byIdBody = new URLSearchParams()
 						byIdBody.set('fileId', String(this.resolvedFileId))
@@ -384,13 +381,9 @@ const component = {
 			this.isRecovering = true
 			try {
 				await apiRecoverFromSnapshot(this.recoveryFileId, this.recoveryPath)
-				this.loadError = ''
-				this.canRecover = false
 				await this.resolveOpenUrl(true)
 			} catch (error) {
-				// No answer: the pad may be set up by now, and another
-				// recovery would meet it. Opening tells, and is safe to repeat.
-				if (isUnanswered(error)) {
+				if (opensAgainAfterRecovery(error)) {
 					await this.resolveOpenUrl(true)
 					return
 				}
@@ -586,7 +579,7 @@ const component = {
 				})
 		}
 		if (this.isLoading || !this.iframeSrc) {
-			return createElement('div', { class: 'epnc-native-status' }, 'Loading pad...')
+			return createElement('div', { class: 'epnc-native-status' }, translate('Loading pad...'))
 		}
 
 		return createElement('div', { class: 'epnc-native-shell' }, [

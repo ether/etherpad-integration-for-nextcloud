@@ -11,6 +11,7 @@ import {
 	isMissingFrontmatterError,
 	isRetryableOpenError,
 	openWithFrontmatterRecovery,
+	opensAgainAfterRecovery,
 	padUrlFrom,
 	syncSettingsFrom,
 } from '../../../src/lib/pad-open-flow.js'
@@ -47,6 +48,26 @@ describe('isRetryableOpenError', () => {
 		['there is no error', null, false],
 	])('offers another try, or not, when %s', (_, error, expected) => {
 		expect(isRetryableOpenError(error)).toBe(expected)
+	})
+})
+
+describe('opensAgainAfterRecovery', () => {
+	const skipped = (reason) => Object.assign(new Error('Recovery failed.'), { status: 409, reason })
+	it.each([
+		['no answer came', unanswered(), true],
+		['another recovery made the binding first', Object.assign(new Error('Try again.'), { status: 400, retryable: true }), true],
+		['another recovery moved the binding first', skipped('binding_state_transition_conflict'), true],
+		['the file was written while the pad was seeded', skipped('file_changed'), true],
+		['the row is not one to replace', Object.assign(new Error('This .pad file is already linked to a pad.'), { status: 409 }), true],
+		['the file names an external pad', skipped('external_pad'), false],
+		['the file moved while the pad was seeded', skipped('file_moved'), false],
+		['the file names a mode the app does not know', skipped('unknown_access_mode'), false],
+		['a lock or Etherpad held it back', Object.assign(new Error('Pad file is temporarily locked. Please retry.'), { status: 503, retryable: true }), false],
+		['Nextcloud refused it as one too many', Object.assign(new Error('Request failed.'), { status: 429 }), false],
+		['the server refused', Object.assign(withCode('missing_frontmatter'), { status: 400 }), false],
+		['there is no error', null, false],
+	])('opens again, or not, when %s', (_, error, expected) => {
+		expect(opensAgainAfterRecovery(error)).toBe(expected)
 	})
 })
 
@@ -104,11 +125,7 @@ describe('openWithFrontmatterRecovery', () => {
 		expect(open).toHaveBeenCalledTimes(1)
 	})
 
-	/** Unanswered, its pad may be set up by now; another open would start a second one. */
-	/**
-	 * A second try opens first, so an initialise that went through is found,
-	 * and the server keeps one still running from being done twice.
-	 */
+	/** A second try opens first: an initialise that got no answer may have gone through. */
 	it.each([
 		['the first open', [unanswered()], undefined],
 		['the initialise', [withCode('missing_frontmatter')], unanswered()],
