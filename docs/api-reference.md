@@ -104,7 +104,7 @@ When both are sent for a folder share, the path is compared in full: `A.pad` at 
   - Behavior: resolves the share and re-checks the `.pad` binding on every call, so a retry cannot outlive the access it was granted under.
   - The `content_url` handed out by the open endpoint carries the id that open resolved to, so a file renamed or moved inside the share between the two requests is still the one answered for.
 
-Admins can switch either pad type off (see the admin settings). `POST /pads`
+Admins can switch either pad type off (`enable_protected_pads`, `enable_public_pads` under "App Config Keys"). `POST /pads`
 and `POST /pads/create-by-parent` refuse a disabled `accessMode` with `403`.
 Pads that already exist are unaffected.
 
@@ -234,7 +234,8 @@ solely by the separate external-pad policy, not by these two settings.
 - `POST /api/v1/pads/sync/{fileId}`
   - Controller: `PadLifecycleController::syncById`
   - Optional query: `force=1`
-  - Result: snapshot sync Etherpad -> `.pad` (`updated` or `unchanged`).
+  - Result: snapshot sync Etherpad -> `.pad`, `200` with `status=updated` or `unchanged`; `updated` says how often the write waited for a lock (`lock_retries`).
+  - A `.pad` locked by a sync or another client: the write waits a few times, briefly, then answers `200` with `status=locked`, `retryable: true` and `lock_retries` (the waits, `0` when the file was locked for reading already). Nothing is written; the next sync writes it.
   - `force=1` requests an immediate upstream re-check, but unchanged snapshots are still not rewritten. A pad behind the snapshot whose content differs is written.
   - A pad Etherpad made anew in place of the file's - without a single revision, with other text than the file saved - is never written over it: `400` with `code=pad_missing`, as an open answers, and the file keeps its content for `recover-from-snapshot`.
   - External pads:
@@ -482,7 +483,7 @@ solely by the separate external-pad policy, not by these two settings.
 
   The answers of a public share (`/api/v1/public/...`) carry the code that can come up there - `pad_too_large` - but not `missing_binding`, `pad_missing` or `missing_frontmatter`: what a client does on those needs a signed-in user. Their messages are translated, one sentence for each kind of trouble.
 
-  A response without a `code` may still be machine-readable through its HTTP status and other documented fields — a locked `.pad` answers `503` with `retryable: true`, signed in and public alike, for instance, and so does a request this instance's Etherpad could not be reached for. Every error this app answers is JSON, it never answers `502` or `504`, and every `503` of its own carries `retryable: true`; what the clients make of a 5xx that is none of these is in `docs/architecture.md` ("Errors of the API"). A file's row that another request made first (`BindingNotCreatedException`, two initialisations at once, say) answers `400` with `retryable: true` too: the next open finds that request's pad. So does a pad on another server that did not answer, whose sentence says to try again later; any other reason a pad on another server could not be read answers `400` without it. The create endpoints answer it with their own sentence and neither field. One Etherpad answered and refused answers `400` without it: trying again gives the same answer. What is never a stable identifier is the `message` text.
+  A response without a `code` may still be machine-readable through its HTTP status and other documented fields — a locked `.pad` answers `503` with `retryable: true`, signed in and public alike, for instance (a sync answers `200` with `status=locked` instead), and so does a request this instance's Etherpad could not be reached for. Every error this app answers is JSON, it never answers `502` or `504`, and every `503` of its own carries `retryable: true`; what the clients make of a 5xx that is none of these is in `docs/architecture.md` ("Errors of the API"). A file's row that another request made first (`BindingNotCreatedException`, two initialisations at once, say) answers `400` with `retryable: true` too: the next open finds that request's pad. So does a pad on another server that did not answer, whose sentence says to try again later; any other reason a pad on another server could not be read answers `400` without it. The create endpoints answer it with their own sentence and neither field. One Etherpad answered and refused answers `400` without it: trying again gives the same answer. What is never a stable identifier is the `message` text.
 
 ## Cookie Behavior (Protected Pads)
 
@@ -560,6 +561,7 @@ Registered in `lib/AppInfo/Application.php`.
 ## App Config Keys
 
 - `etherpad_host`
+- `etherpad_api_host` (optional) — where the server calls Etherpad's API, an internal address say; empty, `etherpad_host`
 - `etherpad_api_key`
 - `etherpad_api_version` (default `1.2.15`)
 - `etherpad_cookie_domain`
@@ -568,6 +570,9 @@ Registered in `lib/AppInfo/Application.php`.
     - derived from `etherpad_host`
     - IP/invalid hosts -> empty domain attribute
     - recommendation: set explicitly for complex proxy/subdomain setups
+- `etherpad_cookie_domain_configured` (`yes|no`, default `no`) — whether the admin set `etherpad_cookie_domain`, which the settings form writes with it. With `yes` the stored value stands, an empty one too: a host-only cookie, which reaches Etherpad only where it runs on Nextcloud's own host. With `no` an empty value counts as unset and the domain is derived; a value stored without the flag still stands.
+- `enable_protected_pads`, `enable_public_pads` (`yes|no`, default `yes`) — whether new pads of that type can be made; existing pads open either way; what a disabled type does to each route is under "Nextcloud App Routes" above
+- `etherpad_session_cookie_samesite` (`lax|none`, default `lax`) and `etherpad_http_only_session_cookie` (`auto|yes|no`, default `auto`) — the Etherpad session cookie's attributes: `docs/etherpad-integration.md`, which says when to set them
 - `delete_pad_with_file` (`yes|no`, default `yes`) — whether the pad of a `.pad` file deleted for good is deleted (`docs/deleting-pads.md`); `delete_on_trash` before, taken over on upgrade
 - `sync_interval_seconds` (default `120`, clamp `5..3600`)
 - `allow_external_pads` (`yes|no`, default `no`)
