@@ -196,12 +196,9 @@ class PublicLinkSessionsTest extends TestCase {
 
 	/** Without a memory cache every open makes a session, as before, and no cache is built. */
 	public function testWithoutAMemoryCacheEveryOpenMakesOne(): void {
-		$factory = $this->createMock(ICacheFactory::class);
-		$factory->method('isAvailable')->willReturn(false);
-		$factory->expects($this->never())->method('createDistributed');
 		$client = $this->createMock(EtherpadClient::class);
 		$client->expects($this->never())->method('getSessionInfo');
-		$sessions = $this->sessions($client, $factory);
+		$sessions = $this->sessions($client, $this->noMemoryCache());
 
 		$this->open($sessions);
 		$this->open($sessions);

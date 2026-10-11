@@ -223,9 +223,11 @@ class CollectExpiredSessionsJobTest extends TestCase {
 	}
 
 	/**
-	 * Every retry is queued under a shape isQueued() asks for, the order of
-	 * the keys too: the job list matches the encoded argument, so a retry
-	 * it does not ask for would let an open queue a runnable row beside it.
+	 * Every retry, up to giving up, is queued under a shape isQueued() asks
+	 * for, the order of the keys too: the job list matches the encoded
+	 * argument, so a retry it does not ask for would let an open queue a
+	 * runnable row beside it. Each retry runs as queued, so the table's
+	 * end is where it gives up.
 	 */
 	public function testQueuesEveryRetryUnderAShapeItRecognises(): void {
 		$asked = [];
@@ -236,7 +238,9 @@ class CollectExpiredSessionsJobTest extends TestCase {
 		});
 		CollectExpiredSessionsJob::isQueued($jobList, ['authorId' => 'a.author']);
 
-		foreach ([0, 1, 2] as $attempt) {
+		$argument = ['authorId' => 'a.author'];
+		$retries = 0;
+		while (true) {
 			$scheduled = [];
 			$collector = $this->createMock(ExpiredSessionCollector::class);
 			$collector->method('collect')->willReturn(['deleted' => 0, 'remaining' => 0, 'retry' => true, 'nextDueAt' => null]);
@@ -245,12 +249,19 @@ class CollectExpiredSessionsJobTest extends TestCase {
 				$scheduled[] = $argument;
 			});
 			$job = $this->job($collector, $rows);
-			$job->setArgument($attempt === 0 ? ['authorId' => 'a.author'] : ['authorId' => 'a.author', 'attempt' => $attempt]);
+			$job->setArgument($argument);
 			$job->start($rows);
+			if ($scheduled === []) {
+				break;
+			}
 
-			self::assertSame([['authorId' => 'a.author', 'attempt' => $attempt + 1]], $scheduled);
-			self::assertContains($scheduled[0], $asked, 'attempt ' . ($attempt + 1));
+			$retries++;
+			self::assertSame([['authorId' => 'a.author', 'attempt' => $retries]], $scheduled);
+			self::assertContains($scheduled[0], $asked, 'attempt ' . $retries);
+			self::assertLessThan(10, $retries, 'gives up');
+			$argument = $scheduled[0];
 		}
+		self::assertGreaterThan(0, $retries);
 	}
 
 	/** A run that did its work continues, it does not retry. */

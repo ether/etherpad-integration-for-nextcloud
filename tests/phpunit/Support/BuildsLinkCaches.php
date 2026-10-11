@@ -28,11 +28,11 @@ trait BuildsLinkCaches {
 		return $factory;
 	}
 
-	/** No memory cache: Nextcloud hands out one that keeps nothing. */
+	/** No memory cache: none may be built. */
 	private function noMemoryCache(): ICacheFactory {
 		$factory = $this->createMock(ICacheFactory::class);
 		$factory->method('isAvailable')->willReturn(false);
-		$factory->method('createDistributed')->willReturn($this->createMock(ICache::class));
+		$factory->expects($this->never())->method('createDistributed');
 		return $factory;
 	}
 

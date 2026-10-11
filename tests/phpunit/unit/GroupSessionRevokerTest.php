@@ -258,7 +258,7 @@ class GroupSessionRevokerTest extends TestCase {
 		});
 		$logger = $this->createMock(LoggerInterface::class);
 		$logger->expects(self::once())->method('warning')->with(
-			'Could not look up the files of a group\'s pads to revoke its Etherpad sessions.',
+			GroupSessionRevoker::FILES_NOT_LOOKED_UP,
 			self::callback(static fn (array $context): bool => $context['groupId'] === self::GROUP && str_contains((string)json_encode($context), 'RuntimeException')),
 		);
 
@@ -287,7 +287,7 @@ class GroupSessionRevokerTest extends TestCase {
 	 */
 	public static function failures(): iterable {
 		yield 'the pads' => ['listPads', 'Could not list the pads of a group whose Etherpad sessions to revoke.'];
-		yield 'the files' => ['filesOfPads', 'Could not look up the files of a group\'s pads to revoke its Etherpad sessions.'];
+		yield 'the files' => ['filesOfPads', GroupSessionRevoker::FILES_NOT_LOOKED_UP];
 		yield 'the sessions' => ['listSessionsOfGroup', 'Could not list the Etherpad sessions of a group to revoke.'];
 	}
 

@@ -35,7 +35,7 @@ class GroupSessionRevoker {
 	public const KEPT_FOR_A_FILE_IN_FILES = 'Left the Etherpad sessions of a group with a file in Files.';
 
 	/** Said when the files of a group's pads cannot be looked up, before the listing or before a delete. */
-	private const FILES_NOT_LOOKED_UP = 'Could not look up the files of a group\'s pads to revoke its Etherpad sessions.';
+	public const FILES_NOT_LOOKED_UP = 'Could not look up the files of a group\'s pads to revoke its Etherpad sessions.';
 
 	/** Deletes a pass makes at most: a backlog goes on in the next. */
 	private const MAX_PER_RUN = 250;

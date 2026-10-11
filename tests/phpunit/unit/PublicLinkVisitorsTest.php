@@ -131,11 +131,7 @@ class PublicLinkVisitorsTest extends TestCase {
 	 * so a new visitor opens as the link.
 	 */
 	public function testWithoutAMemoryCacheEveryVisitorOpensAsTheLink(): void {
-		$factory = $this->createMock(ICacheFactory::class);
-		$factory->method('isAvailable')->willReturn(false);
-		$factory->expects($this->never())->method('createDistributed');
-
-		$this->assertSame(self::LINK, $this->visitors($factory)->openerFor(self::TOKEN)->uid());
+		$this->assertSame(self::LINK, $this->visitors($this->noMemoryCache())->openerFor(self::TOKEN)->uid());
 		$this->assertSame([], $this->session->getArrayCopy());
 	}
 
@@ -144,17 +140,11 @@ class PublicLinkVisitorsTest extends TestCase {
 	 * counting - opens as the link. A failing one is said at debug.
 	 */
 	public function testACacheThatCannotCountOpensAsTheLink(): void {
-		$plain = $this->createMock(ICacheFactory::class);
-		$plain->method('isAvailable')->willReturn(true);
-		$plain->method('createDistributed')->willReturn($this->createMock(ICache::class));
-		$this->assertSame(self::LINK, $this->visitors($plain)->openerFor(self::TOKEN)->uid());
+		$this->assertSame(self::LINK, $this->visitors($this->cacheFactoryFor($this->createMock(ICache::class)))->openerFor(self::TOKEN)->uid());
 
 		$notCounting = $this->createMock(IMemcache::class);
 		$notCounting->method('inc')->willReturn(false);
-		$silent = $this->createMock(ICacheFactory::class);
-		$silent->method('isAvailable')->willReturn(true);
-		$silent->method('createDistributed')->willReturn($notCounting);
-		$this->assertSame(self::LINK, $this->visitors($silent)->openerFor(self::TOKEN)->uid());
+		$this->assertSame(self::LINK, $this->visitors($this->cacheFactoryFor($notCounting))->openerFor(self::TOKEN)->uid());
 
 		$failing = $this->createMock(ICacheFactory::class);
 		$failing->method('isAvailable')->willReturn(true);
