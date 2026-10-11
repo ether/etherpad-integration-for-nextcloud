@@ -7,9 +7,9 @@
 		// one and none of its mutants could be caught.
 		"excludes": ["AppInfo/Application.php"],
 	},
-	// Infection loads the classes it mutates itself, and the OCP classes
-	// they use exist here only as the unit suite's stubs
-	// (LibClassesLoadTest keeps every class under lib/ loadable so).
+	// Infection loads each class before it mutates it, and the OCP classes
+	// those use exist here only as the unit suite's stubs.
+	// LibClassesLoadTest keeps every class under lib/ loadable with them.
 	"bootstrap": "tests/phpunit/bootstrap.php",
 	"timeout": 20,
 }

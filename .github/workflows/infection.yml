@@ -2,10 +2,11 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
 # Mutation testing of the lines a pull request changes in lib/, with
-# Infection (infection.json5): each change to the code that no unit test
-# notices is reported, not refused. The log goes to the job summary, and
-# each line with a mutant no test caught, or no test runs, gets an
-# annotation; the job fails only when Infection cannot run.
+# Infection (infection.json5): a change to the code that no unit test
+# notices is reported, not refused, and the job fails only when Infection
+# cannot run. Lines with an escaped mutant, and lines no test runs, are
+# annotated; GitHub turns the first ten warnings of a step into
+# annotations, and the job summary and the log artifact list every one.
 #
 # Infection 0.35 needs PHP 8.3 or later, above composer.json's platform,
 # so it comes as a pinned PHAR rather than a dev dependency.
@@ -97,14 +98,14 @@ jobs:
 
       # Infection takes added and modified files only. With rename detection
       # a file a pull request moves and edits is a rename, and its changed
-      # lines would go untested.
+      # lines would go untested; without it a moved file is a new one, and
+      # all its lines are mutated.
       - name: Diff without rename detection
         run: git config diff.renames false
 
-      # No --min-msi: an escaped mutant is reported, not refused.
       # --with-uncovered mutates lines no test runs too, which Infection
       # otherwise leaves out: a new method without a test would show
-      # nothing. --logger-github annotates the escaped mutants.
+      # nothing.
       - name: Run Infection on the changed lines
         env:
           BASE_REF: ${{ github.base_ref }}
@@ -116,34 +117,55 @@ jobs:
             --logger-github \
             --logger-text="$RUNNER_TEMP/infection.log"
 
-      # Infection annotates escaped mutants only; a line no test runs would
-      # show less than one a test runs weakly.
+      # Infection annotates escaped mutants only, so a line no test runs
+      # would show less than one a test runs weakly. One annotation for each
+      # file, at its first such line, naming all of them.
       - name: Annotate the lines no test runs
-        if: always()
+        if: ${{ !cancelled() }}
         run: |
           [ -s "$RUNNER_TEMP/infection.log" ] || exit 0
           sed -n '/^Not Covered mutants:$/,/^[A-Z][A-Za-z ]* mutants:$/p' "$RUNNER_TEMP/infection.log" \
             | sed -nE "s#^[0-9]+\) ${GITHUB_WORKSPACE}/([^:]+):([0-9]+) .*#\1 \2#p" \
-            | sort -u \
-            | while read -r file line; do
-                echo "::warning file=${file},line=${line}::No test runs this line, so no mutant Infection made here was caught."
+            | sort -u -k1,1 -k2,2n \
+            | awk '$1 != file { if (file != "") print file, first, lines; file = $1; first = $2; lines = $2; next }
+                { lines = lines ", " $2 }
+                END { if (file != "") print file, first, lines }' \
+            | while read -r file first lines; do
+                echo "::warning file=${file},line=${first}::No test runs these lines: ${lines}. No mutant Infection made on them could be caught."
               done
 
-      # The log holds the pull request's own code in the mutants' diffs; the
-      # fence is longer than any run of backticks in it.
+      # The log holds the pull request's own code in the mutants' diffs, so
+      # the fence is longer than any run of backticks in it. A step's summary
+      # is dropped whole above 1 MiB, so it takes the log's first 900000
+      # bytes; the artifact below holds all of it.
       - name: Write the result to the job summary
-        if: always()
+        if: ${{ !cancelled() }}
         run: |
           {
             echo '### Mutation testing of the changed lines'
             echo
             if [ -s "$RUNNER_TEMP/infection.log" ]; then
-              longest="$(grep -o '`*' "$RUNNER_TEMP/infection.log" | awk '{ if (length($0) > n) n = length($0) } END { print n + 0 }')"
+              head -c 900000 "$RUNNER_TEMP/infection.log" > "$RUNNER_TEMP/infection-summary.log"
+              longest="$(grep -o '`*' "$RUNNER_TEMP/infection-summary.log" | awk '{ if (length($0) > n) n = length($0) } END { print n + 0 }')"
               fence="$(printf '%*s' "$(( longest < 3 ? 3 : longest + 1 ))" '' | tr ' ' '`')"
               echo "$fence"
-              cat "$RUNNER_TEMP/infection.log"
+              cat "$RUNNER_TEMP/infection-summary.log"
+              echo
               echo "$fence"
+              if [ "$(wc -c < "$RUNNER_TEMP/infection.log")" -gt 900000 ]; then
+                echo
+                echo 'The log goes on: the artifact infection-log holds all of it.'
+              fi
             else
-              echo 'No mutants: no line of lib/ changed, or Infection did not run.'
+              echo 'No mutants: the pull request changes no line Infection mutates, or Infection did not finish.'
             fi
           } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Keep the log
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: infection-log
+          path: ${{ runner.temp }}/infection.log
+          if-no-files-found: ignore
+          retention-days: 7
