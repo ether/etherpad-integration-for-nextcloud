@@ -108,11 +108,11 @@ test.describe('snapshot -> pad content round-trip (recover + sync)', () => {
 })
 
 /**
- * Syncs of one file run one after the other, through Nextcloud's own
- * locking provider here: the lock is taken, and let go after the last. A
- * sync may still wait in vain on a slow runner and answer locked; that is
- * timing, not a failure. A pad of its own, so the case runs - and is
- * retried - alone.
+ * The sync lock against Nextcloud's own locking provider: syncs sent at
+ * once leave it free and the file whole. That they run one after the other
+ * the unit tests show; a sync may wait in vain on a slow runner and answer
+ * locked, which is timing, not a failure. A pad of its own, so the case
+ * runs - and is retried - alone.
  */
 test.describe('syncs of one file sent at once', () => {
 	const padName = uniqueName('sync-turns', 'pad')
@@ -129,7 +129,7 @@ test.describe('syncs of one file sent at once', () => {
 		await deleteViaDav(padName).catch(() => {})
 	})
 
-	test('forced syncs sent at once each get their turn', async () => {
+	test('forced syncs sent at once leave the lock free and the file whole', async () => {
 		const syncs = await Promise.all([1, 2, 3, 4].map(() => padApiPost(`pads/sync/${fileId}?force=1`)))
 
 		const statuses = syncs.map((sync) => (sync.body as { status?: string }).status)
@@ -140,8 +140,10 @@ test.describe('syncs of one file sent at once', () => {
 			expect(['updated', 'unchanged', 'locked']).toContain(status)
 		}
 		expect(statuses.filter((status) => status !== 'locked').length).toBeGreaterThan(0)
+		// Sent once all four answered, each after letting go of the lock, and
+		// to a file that holds the pad as it is.
 		const after = await padApiPost(`pads/sync/${fileId}?force=1`)
-		expect(['updated', 'unchanged']).toContain((after.body as { status?: string }).status)
+		expect((after.body as { status?: string }).status).toBe('unchanged')
 		expect(await getFileViaDav(padName)).toContain(marker)
 	})
 })

@@ -84,8 +84,7 @@ describe('pad-sync', () => {
 		expect(fetchImpl).toHaveBeenCalledTimes(2)
 	})
 
-	// The viewer clears the url before it opens another pad: the flush asked
-	// for the first pad still goes to the first pad.
+	// The url changed while the replay waits: it goes to the url it was asked for.
 	it('replays a forced flush to the url it was asked for', async () => {
 		const gates = []
 		const fetchImpl = vi.fn(() => new Promise((resolve) => {
@@ -195,6 +194,56 @@ describe('pad-sync', () => {
 		expect(fetchImpl.mock.calls[2][0]).toBe('/sync/42')
 		gates.forEach((open) => open())
 		await Promise.all([hidden, left, plainLeft])
+		ps.stop()
+	})
+
+	it('ends the sharing when the page is shown again, through its own handlers', async () => {
+		const gates = []
+		const fetchImpl = vi.fn(() => new Promise((resolve) => {
+			gates.push(() => resolve(okResponse()))
+		}))
+		const ps = createPadSync({ fetchImpl })
+		ps.configure({ syncUrl: '/sync/42' })
+		ps.installLifecycleHandlers()
+		const show = (state) => {
+			Object.defineProperty(document, 'visibilityState', { value: state, configurable: true })
+			document.dispatchEvent(new Event('visibilitychange'))
+		}
+
+		try {
+			show('hidden')
+			show('visible')
+			show('hidden')
+			await flushAsyncWork()
+			expect(fetchImpl).toHaveBeenCalledTimes(2)
+			gates.forEach((open) => open())
+		} finally {
+			ps.removeLifecycleHandlers()
+			ps.stop()
+		}
+	})
+
+	// The flush from before the page was shown again settles while the next
+	// one is in flight: it takes only its own place, and the next leaving
+	// still shares the one in flight.
+	it('lets a settled flush leave the one that replaced it shared', async () => {
+		const gates = []
+		const fetchImpl = vi.fn(() => new Promise((resolve) => {
+			gates.push(() => resolve(okResponse()))
+		}))
+		const ps = createPadSync({ fetchImpl })
+		ps.configure({ syncUrl: '/sync/42' })
+
+		const hidden = ps.sync(true, true)
+		ps.start()
+		const left = ps.sync(true, true)
+		gates[0]()
+		await hidden
+		const leftAgain = ps.sync(true, true)
+
+		expect(fetchImpl).toHaveBeenCalledTimes(2)
+		gates[1]()
+		await Promise.all([left, leftAgain])
 		ps.stop()
 	})
 

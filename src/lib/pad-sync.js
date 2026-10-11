@@ -8,8 +8,9 @@
  *
  * Owns the periodic background sync, forced/keepalive flushes, and the
  * visibility/pagehide lifecycle wiring. A forced flush asked for while a
- * sync runs is replayed once after it, to the URL it was asked for. A
- * keepalive flush goes at once (sync()).
+ * sync runs is replayed once after it, to the URL it was asked for, unless
+ * the request in flight is itself forced to that URL: they then share it.
+ * A keepalive flush goes at once (sync()).
  *
  * The caller supplies the request-token getter (the viewer and embed read it
  * from different places) and may inject a `fetchImpl` for tests.

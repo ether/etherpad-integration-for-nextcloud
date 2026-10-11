@@ -54,7 +54,7 @@ class PadSyncService {
 		try {
 			return $this->syncLock->hold($fileId, fn (): PadSyncResult => $this->syncHeld($node, $fileId, $absolutePath, $force));
 		} catch (PadFileLockRetryExhaustedException $e) {
-			return $this->lockedSyncResponse('Pad sync deferred because another sync of the file is running', $e, $fileId, $absolutePath, '', '', false, $force);
+			return $this->lockedSyncResponse('Pad sync not run: another sync of the file held its lock through every wait', $e, $fileId, $absolutePath, '', '', false, $force);
 		}
 	}
 
@@ -79,7 +79,7 @@ class PadSyncService {
 
 			return $this->syncInternalPad($node, $fileId, $pad, $force);
 		} catch (PadFileLockRetryExhaustedException $e) {
-			return $this->lockedSyncResponse('Pad sync deferred because .pad file is locked', $e, $fileId, $absolutePath, $padId, $accessMode, $isExternal, $force);
+			return $this->lockedSyncResponse('Pad sync not run: the .pad file stayed locked through every wait', $e, $fileId, $absolutePath, $padId, $accessMode, $isExternal, $force);
 		}
 		// Anything else reaches the error mapper, which reports it once.
 	}

@@ -43,6 +43,7 @@ A file or folder id a route takes - `{fileId}`, `fileId`, `parentFolderId`, `tem
       - host sends `epnc:host-before-close`
       - waits briefly for `epnc:sync-flush-finished` or `epnc:sync-flush-failed`
       - only then unmounts the iframe
+      - while another sync of the file runs, the reply can take about three seconds, and `epnc:sync-flush-finished` can carry `status: locked` in its `result`: nothing was written, and a later sync writes it
 
 - `GET /embed/create-by-parent/{parentFolderId}`
   - Controller: `EmbedController::createByParent`
@@ -240,7 +241,7 @@ solely by the separate external-pad policy, not by these two settings.
   - Optional query: `force=1`
   - Result: snapshot sync Etherpad -> `.pad`, `200` with `status=updated` or `unchanged`; `updated` says how often the write waited for the file's lock (`lock_retries`).
   - One sync of a file runs at a time: a second one waits for the first, about three seconds at most, and then reads what the first wrote. With `filelocking.enabled` false syncs overlap.
-  - A lock that stays - another sync of the file runs on, or a client holds the file while the sync reads or writes it -: `200` with `status=locked`, `retryable: true` and `lock_retries`, how often the sync waited for that lock. Nothing is written; a later sync writes it, if one comes.
+  - The lock does not come free in time - another sync of the file holds it for about three seconds, or a client keeps the file locked while the sync reads or writes it: `200` with `status=locked`, `retryable: true` and `lock_retries`, how often the sync waited for that lock. Nothing is written; a later sync writes it, if one comes.
   - `force=1` requests an immediate upstream re-check, but unchanged snapshots are still not rewritten. A pad behind the snapshot whose content differs is written.
   - A pad Etherpad made anew in place of the file's - without a single revision, with other text than the file saved - is never written over it: `400` with `code=pad_missing`, as an open answers, and the file keeps its content for `recover-from-snapshot`.
   - External pads:

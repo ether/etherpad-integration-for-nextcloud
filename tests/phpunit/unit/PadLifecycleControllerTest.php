@@ -165,6 +165,8 @@ class PadLifecycleControllerTest extends TestCase {
 		$this->assertSame(PadSyncService::STATUS_LOCKED, $response->getData()['status']);
 		$this->assertTrue($response->getData()['retryable']);
 		$this->assertSame(3, $response->getData()['lock_retries']);
+		// The file's lock, not the sync lock's: the pad was read.
+		$this->assertSame('g.ABCDEFGHIJKLMNOP$pad-1', $response->getData()['pad_id']);
 	}
 
 	public function testSyncByIdForcedProtectedSyncDoesNotRewriteWhenRevisionIsUnchanged(): void {

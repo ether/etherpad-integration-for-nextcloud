@@ -25,15 +25,17 @@ use Psr\Log\LoggerInterface;
  *
  * Held through Nextcloud's locking provider, as creates are
  * (PadFileCreator). With `filelocking.enabled` false it holds nothing, and
- * syncs overlap. A request killed while it holds the lock leaves the
- * file's syncs answering `locked` until the provider lets the lock expire
- * (`filelocking.ttl`).
+ * syncs overlap. Nextcloud lets go of it at the end of a request, after a
+ * fatal error too; a request killed hard leaves the file's syncs answering
+ * `locked` until the provider drops the lock: Redis once
+ * `filelocking.ttl` has passed, the database at a background cleanup
+ * after that, APCu and Memcached not by themselves.
  */
 class PadSyncLock {
 	/**
-	 * In microseconds: asked again about every 100 ms, the jitter keeping
-	 * waiters out of step, for about three seconds in all - a sync usually
-	 * takes less.
+	 * In microseconds: asked again after 75 to 125 ms each time, the jitter
+	 * keeping waiters out of step, until the waits together would pass
+	 * three seconds - a sync usually takes less.
 	 */
 	private const POLL_US = 75000;
 	private const JITTER_US = 50000;
@@ -90,8 +92,8 @@ class PadSyncLock {
 
 	/**
 	 * A lock that cannot be let go hides neither what the sync threw nor
-	 * that it went through. It then holds off the file's syncs until it
-	 * expires (`filelocking.ttl`) at the latest.
+	 * that it went through. It then stays as after a request killed hard
+	 * (see the class).
 	 */
 	private function release(string $key): void {
 		try {

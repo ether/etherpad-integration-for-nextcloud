@@ -20,9 +20,9 @@ use OCP\Lock\LockedException;
  */
 class PadFileLockRetryService {
 	/*
-	 * Exponential backoff in microseconds. A sync waits slightly longer, its
-	 * read too: the lock it meets is usually another write's, and a write
-	 * holds the file longer than a read.
+	 * Exponential backoff in microseconds. A sync waits slightly longer than
+	 * an open, its read too: an open keeps its reader waiting, a sync mostly
+	 * runs unseen.
 	 */
 	private const OPEN_LOCK_RETRY_DELAYS_US = [100000, 200000, 400000];
 	private const SYNC_LOCK_RETRY_DELAYS_US = [150000, 300000, 600000];

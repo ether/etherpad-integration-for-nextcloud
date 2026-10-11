@@ -86,6 +86,8 @@ class PadSyncLockTest extends TestCase {
 		// About three seconds of waiting, never more.
 		$this->assertLessThanOrEqual(3000000, array_sum($waits));
 		$this->assertGreaterThan(3000000 - 125000, array_sum($waits));
+		// Not in step with the other waiters.
+		$this->assertGreaterThan(1, count(array_unique($waits)));
 		// The other's lock stays the other's.
 		$this->assertTrue($locks->isLocked(self::KEY, ILockingProvider::LOCK_EXCLUSIVE));
 	}
