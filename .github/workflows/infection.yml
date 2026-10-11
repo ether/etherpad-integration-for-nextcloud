@@ -65,7 +65,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          # The base branch too: the changed lines are a diff against it.
+          # The base commit too: the changed lines are a diff against it.
           fetch-depth: 0
 
       - name: Set up PHP
@@ -103,15 +103,17 @@ jobs:
       - name: Diff without rename detection
         run: git config diff.renames false
 
-      # --with-uncovered mutates lines no test runs too, which Infection
-      # otherwise leaves out: a new method without a test would show
-      # nothing.
+      # The base is the commit the pull request event names, not its branch,
+      # so the lines do not depend on where the branch stands when the job
+      # runs. --with-uncovered mutates lines no test runs too, which
+      # Infection otherwise leaves out: a new method without a test would
+      # show nothing.
       - name: Run Infection on the changed lines
         env:
-          BASE_REF: ${{ github.base_ref }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           php "$RUNNER_TEMP/infection.phar" \
-            --git-diff-lines --git-diff-base="origin/$BASE_REF" \
+            --git-diff-lines --git-diff-base="$BASE_SHA" \
             --with-uncovered \
             --threads=max --no-interaction \
             --logger-github \
