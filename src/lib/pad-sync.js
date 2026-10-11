@@ -24,12 +24,11 @@ export function createPadSync({ requestToken, fetchImpl } = {}) {
 
 	let syncUrl = ''
 	let intervalMs = DEFAULT_SYNC_INTERVAL_MS
-	// The running sync, its replays included.
-	let syncPromise = null
-	// The request in flight in it: its URL, and whether it is forced.
+	// The request in flight: its URL, whether it is forced, and its answer.
 	let active = null
-	// The URLs forced flushes asked for while a sync ran, in the order asked.
-	const replayUrls = new Set()
+	// The forced flushes asked for while a request runs, by URL in the order
+	// asked: each one's answer, to come with its replay.
+	const replays = new Map()
 	// The keepalive flush in flight for each target, until the page is shown again.
 	const keepaliveFlushes = new Map()
 	let timerId = null
@@ -88,22 +87,19 @@ export function createPadSync({ requestToken, fetchImpl } = {}) {
 		return data
 	}
 
-	/** The request, then the replays asked for while it ran: the last answer is every waiting caller's. */
+	/** The request, then the replays asked for while one runs, each answering its own callers. */
 	const run = async (url, force) => {
-		active = { url, force: Boolean(force) }
-		let answer = request(url, force, false)
-		await answer.catch(() => {})
-		for (const again of replayUrls) {
-			replayUrls.delete(again)
-			active = { url: again, force: true }
-			answer = request(again, true, false)
-			await answer.catch(() => {})
+		active = { url, force: Boolean(force), answer: request(url, force, false) }
+		await active.answer.catch(() => {})
+		for (const [again, replay] of replays) {
+			replays.delete(again)
+			active = { url: again, force: true, answer: request(again, true, false) }
+			replay.answerWith(active.answer)
+			await active.answer.catch(() => {})
 		}
 		// Cleared in the step that found nothing left to replay: a forced
-		// flush asked for after it starts a sync of its own.
-		syncPromise = null
+		// flush asked for after it starts a request of its own.
 		active = null
-		return answer
 	}
 
 	const sync = async (force, keepalive) => {
@@ -128,14 +124,21 @@ export function createPadSync({ requestToken, fetchImpl } = {}) {
 			}
 			return keepaliveFlushes.get(key)
 		}
-		if (syncPromise) {
-			if (force && !(active.force && active.url === syncUrl)) {
-				replayUrls.add(syncUrl)
+		if (active) {
+			if (!force || (active.force && active.url === syncUrl)) {
+				return active.answer
 			}
-			return syncPromise
+			if (!replays.has(syncUrl)) {
+				let answerWith
+				const answer = new Promise((resolve) => {
+					answerWith = resolve
+				})
+				replays.set(syncUrl, { answer, answerWith })
+			}
+			return replays.get(syncUrl).answer
 		}
-		syncPromise = run(syncUrl, force)
-		return syncPromise
+		void run(syncUrl, force)
+		return active.answer
 	}
 
 	const installLifecycleHandlers = () => {

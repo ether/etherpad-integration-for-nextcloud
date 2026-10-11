@@ -73,8 +73,8 @@ describe('pad-sync', () => {
 
 		expect(fetchImpl).toHaveBeenCalledTimes(1)
 
-		gates[0]() // finish the plain sync; the in-flight sync replays the
-		await flushAsyncWork() // coalesced forced flush (so `first` only settles after it)
+		gates[0]() // finish the plain sync; the coalesced forced flush is
+		await flushAsyncWork() // replayed after it
 
 		expect(fetchImpl).toHaveBeenCalledTimes(2)
 		expect(fetchImpl.mock.calls[1][0]).toBe('/sync/42?force=1')
@@ -247,10 +247,10 @@ describe('pad-sync', () => {
 		await Promise.all([left, leftAgain])
 	})
 
-	it('replays each url forced flushes asked for while a sync ran, in order', async () => {
+	it('replays each url forced flushes asked for while a sync ran, in order, each with its own answer', async () => {
 		const gates = []
-		const fetchImpl = vi.fn(() => new Promise((resolve) => {
-			gates.push(() => resolve(okResponse()))
+		const fetchImpl = vi.fn((url) => new Promise((resolve) => {
+			gates.push(() => resolve(okResponse({ url })))
 		}))
 		const ps = createPadSync({ fetchImpl })
 		ps.configure({ syncUrl: '/sync/A' })
@@ -264,8 +264,8 @@ describe('pad-sync', () => {
 			await flushAsyncWork()
 			gates[i]()
 		}
-		await Promise.all([running, forA, forB])
-		expect(fetchImpl.mock.calls.map(([url]) => url)).toEqual(['/sync/A', '/sync/A?force=1', '/sync/B?force=1'])
+		expect(await Promise.all([running, forA, forB])).toEqual([{ url: '/sync/A' }, { url: '/sync/A?force=1' }, { url: '/sync/B?force=1' }])
+		expect(fetchImpl).toHaveBeenCalledTimes(3)
 	})
 
 	it('start() runs a sync per interval only while the document is visible; stop() halts it', async () => {
