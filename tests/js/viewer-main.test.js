@@ -461,13 +461,12 @@ describe('viewer component — resolveOpenUrl', () => {
 		expect(vm.loadError).toBe('')
 	})
 
-	// The server's word to try again: the open comes next, not the error,
-	// and tells where things stand.
+	// Another recovery got there first: the open finds its pad.
 	it.each([
-		['another recovery bound the file first', 400],
-		['Etherpad did not answer', 503],
-	])('opens again after a recovery answered with retryable: %s', async (_, status) => {
-		apiRecoverFromSnapshot.mockRejectedValue(Object.assign(new Error('Try again.'), { retryable: true, status }))
+		['made the binding first', { retryable: true, status: 400 }],
+		['moved the binding first', { status: 409 }],
+	])('opens again after another recovery %s', async (_, answer) => {
+		apiRecoverFromSnapshot.mockRejectedValue(Object.assign(new Error('Recovery failed.'), answer))
 		const fetchMock = stubFetch(jsonResponse({ url: 'https://pad.example/recovered', sync_url: '' }))
 		const vm = makeInstance({ fileid: 42, fileInfo: { path: '/copy.pad' }, loadError: 'no binding', canRecover: true, recoveryFileId: 42 })
 
@@ -1166,15 +1165,17 @@ describe('viewer component — focus after a click', () => {
 		expect(document.activeElement).toBe(card.querySelector('button'))
 	})
 
+	// Held back by a lock: the sentence stays, with the button to try again.
 	it('hands it back to the card when a recovery fails', async () => {
-		apiRecoverFromSnapshot.mockRejectedValue(new Error('This .pad file is already linked to a pad.'))
+		apiRecoverFromSnapshot.mockRejectedValue(Object.assign(new Error('Pad file is temporarily locked. Please retry.'), { status: 503, retryable: true }))
 		const vm = makeInstance({ fileid: 42, fileInfo: { path: '/copy.pad' }, loadError: 'no binding', canRecover: true, recoveryFileId: 42 })
 		const card = drawCard(vm, '<div class="epnc-native-error-message">m</div><button data-recover>Create new pad from this file</button>')
 
 		await vm.recoverFromSnapshot()
 		await flushAsyncWork()
 
-		expect(vm.loadError).toBe('This .pad file is already linked to a pad.')
+		expect(vm.loadError).toBe('Pad file is temporarily locked. Please retry.')
+		expect(vm.canRecover).toBe(true)
 		expect(vm.isRecovering).toBe(false)
 		// The clicked button lost it while it was disabled.
 		expect(document.activeElement).toBe(card.querySelector('button'))

@@ -51,15 +51,16 @@ describe('isRetryableOpenError', () => {
 	})
 })
 
-// Not every open's reason to try again: a file that changed, or a 429,
-// is a recovery's own error to show.
+// Another recovery's pad is opened; a recovery held back keeps its sentence.
 describe('opensAgainAfterRecovery', () => {
 	it.each([
-		['the server says to try again', Object.assign(new Error('Another recovery was first.'), { retryable: true }), true],
 		['no answer came', unanswered(), true],
-		['the file changed while it was being initialised', withCode('pad_file_changed'), false],
+		['another recovery made the binding first', Object.assign(new Error('Try again.'), { status: 400, retryable: true }), true],
+		['another recovery moved the binding first', Object.assign(new Error('Recovery failed.'), { status: 409 }), true],
+		['the file is linked already', Object.assign(new Error('This .pad file is already linked to a pad.'), { status: 409 }), true],
+		['a lock or Etherpad held it back', Object.assign(new Error('Pad file is temporarily locked. Please retry.'), { status: 503, retryable: true }), false],
 		['Nextcloud refused it as one too many', Object.assign(new Error('Request failed.'), { status: 429 }), false],
-		['the server refused', withCode('missing_frontmatter'), false],
+		['the server refused', Object.assign(withCode('missing_frontmatter'), { status: 400 }), false],
 		['there is no error', null, false],
 	])('opens again, or not, when %s', (_, error, expected) => {
 		expect(opensAgainAfterRecovery(error)).toBe(expected)

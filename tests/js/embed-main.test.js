@@ -517,16 +517,15 @@ describe('embed-main', () => {
 		expect(iframe().src).toContain(PAD.url)
 	})
 
-	// The server's word to try again: the open comes next, not the error,
-	// and tells where things stand.
+	// Another recovery got there first: the open finds its pad.
 	it.each([
-		['another recovery bound the file first', 400],
-		['Etherpad did not answer', 503],
-	])('opens again after a recovery answered with retryable: %s', async (_, status) => {
+		['made the binding first', { message: 'Try again.', retryable: true }, 400],
+		['moved the binding first', { status: 'skipped', reason: 'binding_state_transition_conflict' }, 409],
+	])('opens again after another recovery %s', async (_, body, status) => {
 		fetch
 			.mockResolvedValueOnce(errorResponse(MISSING_BINDING))
 			.mockResolvedValueOnce(jsonResponse({ found: false }))
-			.mockResolvedValueOnce(errorResponse({ message: 'Try again.', retryable: true }, status))
+			.mockResolvedValueOnce(errorResponse(body, status))
 			.mockResolvedValueOnce(jsonResponse(PAD))
 
 		await importEmbed()
@@ -538,18 +537,19 @@ describe('embed-main', () => {
 		expect(iframe().src).toContain(PAD.url)
 	})
 
+	// Held back by a lock: the sentence stays, with the button to try again.
 	it('hands the focus back to the recovery card when a recovery fails', async () => {
 		fetch
 			.mockResolvedValueOnce(errorResponse(MISSING_BINDING))
 			.mockResolvedValueOnce(jsonResponse({ found: false }))
-			.mockResolvedValueOnce(errorResponse({ message: 'This .pad file is already linked to a pad.' }, 409))
+			.mockResolvedValueOnce(errorResponse({ message: 'Pad file is temporarily locked. Please retry.', retryable: true }, 503))
 
 		await importEmbed()
 		await flushAsyncWork()
 		recoveryActions().querySelector('button').click()
 		await flushAsyncWork()
 
-		expect(recoveryMessage()).toBe('This .pad file is already linked to a pad.')
+		expect(recoveryMessage()).toBe('Pad file is temporarily locked. Please retry.')
 		expect(document.activeElement).toBe(recoveryActions().querySelector('button'))
 	})
 

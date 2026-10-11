@@ -62,16 +62,18 @@ export const isRetryableOpenError = (error) => Boolean(error)
 
 /**
  * Whether a recovery that failed is answered by opening again rather than
- * with its error: no answer came, or the server said to try again - another
- * recovery bound the file first, say, or Etherpad did not answer. Opening
- * tells where things stand and is safe to repeat; a second recovery could
- * only meet a binding made meanwhile. Narrower than isRetryableOpenError(),
- * whose other cases are an open's.
+ * with its error: no answer came, or another recovery got there first - it
+ * made the binding (`400` with `retryable`), or the file holds one already
+ * (`409`). Opening is safe to repeat and finds that pad; a second recovery
+ * could only meet the binding. A recovery a lock or Etherpad held back
+ * (`503`) keeps its sentence, and its button: opened again, the same card
+ * would come back without saying why the click did nothing.
  *
  * @param {unknown} error
  * @return {boolean}
  */
-export const opensAgainAfterRecovery = (error) => isUnanswered(error) || (Boolean(error) && error.retryable === true)
+export const opensAgainAfterRecovery = (error) => isUnanswered(error)
+	|| (Boolean(error) && (error.status === 409 || (error.status === 400 && error.retryable === true)))
 
 /**
  * A read-only view carries no pad URL by design; anything else without one
