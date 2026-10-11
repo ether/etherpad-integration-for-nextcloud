@@ -84,7 +84,9 @@ class PadPlaceholderResolver {
 		try {
 			$utc = new \DateTimeZone('UTC');
 			$base = (new \DateTimeImmutable('@' . $reference))->setTimezone($utc);
-			$resolved = $base->modify($expression);
+			// An expression it cannot read: PHP before 8.3 warns and returns
+			// false, from 8.3 on it throws. Either way the placeholder stays.
+			$resolved = @$base->modify($expression);
 			if ($resolved === false) {
 				return $original;
 			}
