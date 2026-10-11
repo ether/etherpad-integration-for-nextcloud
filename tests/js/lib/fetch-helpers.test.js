@@ -54,6 +54,12 @@ describe('fetchJsonWithTimeout', () => {
 		await expect(fetchJsonWithTimeout('/x')).rejects.toMatchObject({ status: 409, reason: 'external_pad' })
 	})
 
+	it('leaves out a reason that is not text', async () => {
+		stubFetch(jsonResponse({ status: 'skipped', reason: { code: 'external_pad' } }, false, 409))
+
+		expect((await fetchJsonWithTimeout('/x').catch((error) => error)).reason).toBeUndefined()
+	})
+
 	// The server's word that the same request may succeed later, carried
 	// as it is; anything but true is no such word.
 	it.each([
