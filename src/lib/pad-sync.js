@@ -27,7 +27,8 @@ export function createPadSync({ requestToken, fetchImpl } = {}) {
 	let syncPromise = null
 	let activeSyncForce = false
 	let replayUrl = null
-	let keepalivePromise = null
+	// The keepalive flush in flight for each URL.
+	const keepaliveFlushes = new Map()
 	let timerId = null
 	let visibilityHandler = null
 	let pageHideHandler = null
@@ -102,13 +103,16 @@ export function createPadSync({ requestToken, fetchImpl } = {}) {
 			// The page may be leaving, and a flush queued behind the running
 			// sync would then never start. The server runs two syncs of a file
 			// one after the other, so it goes at once. Leaving fires several
-			// events (pagehide, visibilitychange, the host's): they share one.
-			if (keepalivePromise === null) {
-				keepalivePromise = request(syncUrl, force, true).finally(() => {
-					keepalivePromise = null
-				})
+			// events (pagehide, visibilitychange, the host's): they share one,
+			// for the pad they leave - the viewer keeps this controller when it
+			// opens another.
+			const url = syncUrl
+			if (!keepaliveFlushes.has(url)) {
+				keepaliveFlushes.set(url, request(url, force, true).finally(() => {
+					keepaliveFlushes.delete(url)
+				}))
 			}
-			return keepalivePromise
+			return keepaliveFlushes.get(url)
 		}
 		if (syncPromise) {
 			if (force && !activeSyncForce) {

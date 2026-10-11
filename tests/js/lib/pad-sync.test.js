@@ -129,6 +129,25 @@ describe('pad-sync', () => {
 		expect(fetchImpl).toHaveBeenCalledTimes(2)
 	})
 
+	// The viewer keeps one controller and opens the next pad with it.
+	it('does not let another pad share the keepalive flush of the one left', async () => {
+		const gates = []
+		const fetchImpl = vi.fn(() => new Promise((resolve) => {
+			gates.push(() => resolve(okResponse()))
+		}))
+		const ps = createPadSync({ fetchImpl })
+		ps.configure({ syncUrl: '/sync/A' })
+
+		const leftA = ps.sync(true, true)
+		ps.configure({ syncUrl: '/sync/B' })
+		const leftB = ps.sync(true, true)
+
+		expect(fetchImpl).toHaveBeenCalledTimes(2)
+		expect(fetchImpl.mock.calls[1][0]).toBe('/sync/B?force=1')
+		gates.forEach((open) => open())
+		await Promise.all([leftA, leftB])
+	})
+
 	it('lets the events of one leaving share a keepalive flush', async () => {
 		const gates = []
 		const fetchImpl = vi.fn(() => new Promise((resolve) => {
