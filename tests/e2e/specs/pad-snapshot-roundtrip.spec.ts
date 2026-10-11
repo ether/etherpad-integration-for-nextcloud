@@ -37,47 +37,51 @@ import { uniqueName } from '../fixtures/nextcloud'
  * API calls use the app password over BasicAuth; no browser page is
  * needed.
  */
+// The frontmatter file_id must be a valid positive int that matches the
+// node's real id. We only learn that id after the file exists, so we PUT
+// a placeholder, read the id, then rewrite the frontmatter with it.
+const buildOrphanPad = (fileId: number, padId: string, marker: string): string => [
+	'---',
+	'format: "etherpad-nextcloud/1"',
+	`file_id: ${fileId}`,
+	`pad_id: "${padId}"`,
+	'access_mode: "public"',
+	'state: "active"',
+	'deleted_at: null',
+	'created_at: "2026-01-01T00:00:00+00:00"',
+	'updated_at: "2026-01-01T00:00:00+00:00"',
+	'snapshot_rev: 1',
+	`pad_url: "https://pad.example.invalid/p/${padId}"`,
+	'---',
+	'[TEXT]',
+	marker,
+	'',
+	'[HTML-BEGIN]',
+	`<!DOCTYPE HTML><html><body>${marker}<br></body></html>`,
+	'[HTML-END]',
+	'',
+].join('\n')
+
+/** An orphan .pad with the marker, put in place and given its file id: what a recovery starts from. */
+const putOrphanPad = async (padName: string, padId: string, marker: string): Promise<number> => {
+	await putFileViaDav(padName, buildOrphanPad(1, padId, marker))
+	const fileId = await propfindFileId(padName)
+	expect(fileId).toBeGreaterThan(0)
+	await putFileViaDav(padName, buildOrphanPad(fileId, padId, marker))
+	return fileId
+}
+
 test.describe('snapshot -> pad content round-trip (recover + sync)', () => {
 	const padName = uniqueName('roundtrip', 'pad')
 	const marker = `roundtrip-marker-${Date.now()}-Zürich-✓`
 	const freshPadId = `e2e-roundtrip-${Date.now()}`
-
-	// The frontmatter file_id must be a valid positive int that matches the
-	// node's real id. We only learn that id after the file exists, so we PUT
-	// a placeholder, read the id, then rewrite the frontmatter with it.
-	const buildOrphanPad = (fileId: number): string => [
-		'---',
-		'format: "etherpad-nextcloud/1"',
-		`file_id: ${fileId}`,
-		`pad_id: "${freshPadId}"`,
-		'access_mode: "public"',
-		'state: "active"',
-		'deleted_at: null',
-		'created_at: "2026-01-01T00:00:00+00:00"',
-		'updated_at: "2026-01-01T00:00:00+00:00"',
-		'snapshot_rev: 1',
-		`pad_url: "https://pad.example.invalid/p/${freshPadId}"`,
-		'---',
-		'[TEXT]',
-		marker,
-		'',
-		'[HTML-BEGIN]',
-		`<!DOCTYPE HTML><html><body>${marker}<br></body></html>`,
-		'[HTML-END]',
-		'',
-	].join('\n')
 
 	test.afterAll(async () => {
 		await deleteViaDav(padName).catch(() => {})
 	})
 
 	test('recovery pushes the .pad snapshot into a new pad and sync reads it back', async () => {
-		// Placeholder put just to materialise the node and learn its file id.
-		await putFileViaDav(padName, buildOrphanPad(1))
-		const fileId = await propfindFileId(padName)
-		expect(fileId).toBeGreaterThan(0)
-		// Rewrite with the real file id so the frontmatter is self-consistent.
-		await putFileViaDav(padName, buildOrphanPad(fileId))
+		const fileId = await putOrphanPad(padName, freshPadId, marker)
 
 		// Recover: provision a new pad and push the stored snapshot into it.
 		const recover = await padApiPost(`pads/recover-from-snapshot/${fileId}`)
@@ -101,13 +105,30 @@ test.describe('snapshot -> pad content round-trip (recover + sync)', () => {
 		expect(after).toContain(recovered.new_pad_id as string)
 		expect(after).not.toContain(`pad_id: "${freshPadId}"`)
 	})
+})
 
-	// Syncs of one file run one after the other, through Nextcloud's own
-	// locking provider here: each waits for the one before, none waits in
-	// vain, and the last lets go.
+/**
+ * Syncs of one file run one after the other, through Nextcloud's own
+ * locking provider here: each waits for the one before, none waits in
+ * vain, and the last lets go. A pad of its own, so the case runs - and is
+ * retried - alone.
+ */
+test.describe('syncs of one file sent at once', () => {
+	const padName = uniqueName('sync-turns', 'pad')
+	const marker = `sync-turns-marker-${Date.now()}`
+	let fileId = 0
+
+	test.beforeAll(async () => {
+		fileId = await putOrphanPad(padName, `e2e-sync-turns-${Date.now()}`, marker)
+		const recover = await padApiPost(`pads/recover-from-snapshot/${fileId}`)
+		expect((recover.body as { status?: string }).status).toBe('restored')
+	})
+
+	test.afterAll(async () => {
+		await deleteViaDav(padName).catch(() => {})
+	})
+
 	test('forced syncs sent at once each get their turn', async () => {
-		const fileId = await propfindFileId(padName)
-
 		const syncs = await Promise.all([1, 2, 3, 4].map(() => padApiPost(`pads/sync/${fileId}?force=1`)))
 
 		for (const sync of syncs) {
