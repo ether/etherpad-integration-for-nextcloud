@@ -32,11 +32,14 @@ class ExportAttemptSinkTest extends TestCase {
 		$this->assertSame('text/plain; charset=utf-8', $sink->contentType());
 	}
 
-	/** An interim answer with a type of its own, then a final one without. */
+	/**
+	 * An interim answer with a type of its own, then a final one without,
+	 * in HTTP/2's status lines: most servers speak it.
+	 */
 	public function testTakesNoContentTypeFromAnInterimAnswer(): void {
 		$sink = new ExportAttemptSink(6);
 
-		foreach (["HTTP/1.1 103 Early Hints\r\n", "Content-Type: text/plain\r\n", "\r\n", "HTTP/1.1 200 OK\r\n", "Server: example\r\n", "\r\n"] as $line) {
+		foreach (["HTTP/2 103 \r\n", "content-type: text/plain\r\n", "\r\n", "HTTP/2 200 \r\n", "server: example\r\n", "\r\n"] as $line) {
 			$sink->header(null, $line);
 		}
 

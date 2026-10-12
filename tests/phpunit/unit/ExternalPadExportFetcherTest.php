@@ -233,6 +233,8 @@ class ExternalPadExportFetcherTest extends TestCase {
 		$this->assertFalse($options[CURLOPT_RETURNTRANSFER]);
 		$this->assertSame($options[CURLOPT_TIMEOUT], $options[CURLOPT_CONNECTTIMEOUT]);
 		$this->assertSame(['Accept: text/plain, application/octet-stream;q=0.9, */*;q=0.1'], $options[CURLOPT_HTTPHEADER]);
+		// One option cURL refuses would stop every fetch.
+		$this->assertTrue(curl_setopt_array(curl_init(), $options), 'cURL takes every option');
 	}
 
 	/**
@@ -383,9 +385,9 @@ class ExternalPadExportFetcherTest extends TestCase {
 	}
 
 	/**
-	 * The one method that runs cURL; every other test answers in its place.
-	 * Here it runs against what needs no network: this file, and a local
-	 * port nothing listens on.
+	 * The one method that runs cURL; the tests of the fetch answer in its
+	 * place. Here it runs against what needs no network: this file, and a
+	 * local port nothing listens on.
 	 */
 	public function testPerformsARequestThroughCurl(): void {
 		$sink = new ExportAttemptSink(1 << 20);
@@ -396,11 +398,13 @@ class ExternalPadExportFetcherTest extends TestCase {
 		$this->assertSame(file_get_contents(__FILE__), $sink->body());
 
 		// No proxy from the environment: the port asked is this machine's.
-		$refused = $this->performedForReal('https://127.0.0.1:1/', [CURLOPT_PROXY => '', CURLOPT_WRITEFUNCTION => $sink->chunk(...)]);
+		// A time limit too, for a host that drops the packets rather than refuse them.
+		$refused = $this->performedForReal('https://127.0.0.1:1/', [CURLOPT_PROXY => '', CURLOPT_CONNECTTIMEOUT => 5, CURLOPT_WRITEFUNCTION => $sink->chunk(...)]);
 		$this->assertSame([false, 0, 7], [$refused['completed'], $refused['status'], $refused['errno']]);
 		$this->assertStringContainsString('127.0.0.1', $refused['error']);
 	}
 
+	/** 99 is no HTTP version cURL knows: the request never starts. */
 	public function testRunsNoRequestWithAnOptionCurlRefuses(): void {
 		$this->expectException(ExternalPadException::class);
 		$this->expectExceptionMessage('Could not set up external export request.');

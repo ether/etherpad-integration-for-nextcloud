@@ -197,8 +197,11 @@ class ExternalPadExportFetcher {
 	 * before it: the name resolves to the address that was vetted and no
 	 * other, no redirect is followed, only HTTPS is spoken, the certificate
 	 * and its name are verified, and the body stops at the sink's limit.
-	 * The pin holds for a direct connection only: a proxy cURL takes from
-	 * the environment (`https_proxy`, `all_proxy`) resolves the name itself.
+	 * The pin holds only where cURL resolves the name: a proxy it takes
+	 * from the environment (`https_proxy` or `HTTPS_PROXY`, else
+	 * `all_proxy` or `ALL_PROXY`, unless `no_proxy` names the host)
+	 * resolves the name in its place when it is an HTTP, socks4a or
+	 * socks5h one.
 	 *
 	 * @return array<int, mixed>
 	 */
@@ -235,9 +238,10 @@ class ExternalPadExportFetcher {
 		if ($curl === false) {
 			throw new ExternalPadException('Could not initialize external export request.', ExternalPadException::UNREACHABLE);
 		}
-		// cURL stops at the first option it refuses and sets none after it,
-		// which can leave out the sink and its limit: the body would then go
-		// to the output, whole.
+		// curl_setopt_array() stops at the first option cURL refuses and
+		// sets none after it: the pin or the sink could be missing, so the
+		// request would go wherever the name resolves now, or its body to
+		// the output, whole.
 		if (!curl_setopt_array($curl, $options)) {
 			throw new ExternalPadException('Could not set up external export request.', ExternalPadException::UNREACHABLE);
 		}
