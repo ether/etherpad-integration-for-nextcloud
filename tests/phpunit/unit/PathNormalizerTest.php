@@ -6,6 +6,7 @@ namespace OCA\EtherpadNextcloud\Tests\Unit;
 
 use InvalidArgumentException;
 use OCA\EtherpadNextcloud\Util\PathNormalizer;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 class PathNormalizerTest extends TestCase {
@@ -282,5 +283,86 @@ class PathNormalizerTest extends TestCase {
 
 	public function testKeepsAPlusInABareFileName(): void {
 		$this->assertSame('C++.pad', (new PathNormalizer())->normalizeCreateFileName('C++'));
+	}
+
+	// ------------------------------------------------------------------
+	// What reaches no file, and the URL forms each entry point reads
+	// ------------------------------------------------------------------
+
+	/** Every segment of these collapses away, so no file is named; a malformed URL names none either. */
+	#[DataProvider('pathsNamingNoFile')]
+	public function testRefusesAViewerPathThatNamesNoFile(string $given): void {
+		$this->expectException(InvalidArgumentException::class);
+		$this->expectExceptionMessage('Invalid file path.');
+
+		(new PathNormalizer())->normalizeViewerFilePath($given);
+	}
+
+	/** @return array<string, array{string}> */
+	public static function pathsNamingNoFile(): array {
+		return [
+			'a slash' => ['/'],
+			'dots and slashes' => ['/././/'],
+			'a malformed URL' => ['https://host:bad/Notes.pad'],
+		];
+	}
+
+	public function testKeepsWhatFollowsAnEmptyOrDotSegment(): void {
+		$normalizer = new PathNormalizer();
+
+		$this->assertSame('/Folder/Notes.pad', $normalizer->normalizeViewerFilePath('/Folder//./Notes.pad'));
+		$this->assertSame('Folder/Notes.pad', $normalizer->normalizePublicShareFilePath('Folder//./Notes.pad', 'tok'));
+	}
+
+	public function testReadsAUrlWhoseSchemeIsInCapitals(): void {
+		$normalizer = new PathNormalizer();
+
+		$this->assertSame('/Notes.pad', $normalizer->normalizeViewerFilePath('HTTPS://host/remote.php/dav/files/alice/Notes.pad'));
+		$this->assertSame('Notes.pad', $normalizer->normalizePublicShareFilePath('HTTPS://host/public.php/dav/files/tok/Notes.pad', 'tok'));
+	}
+
+	/**
+	 * A value with a URL further in is a path like any other: its slashes
+	 * separate folders, and its percent signs stay as they are.
+	 */
+	public function testReadsAUrlOnlyAtTheStart(): void {
+		$normalizer = new PathNormalizer();
+
+		$this->assertSame('/Links/see https:/host/100%25.pad', $normalizer->normalizeViewerFilePath('/Links/see https://host/100%25.pad'));
+		$this->assertSame('Links/see https:/host/100%25.pad', $normalizer->normalizePublicShareFilePath('Links/see https://host/100%25.pad', 'tok'));
+	}
+
+	public function testNamesNoFileInAPublicShareForOnlySpaces(): void {
+		$this->assertSame('', (new PathNormalizer())->normalizePublicShareFilePath('   ', 'tok'));
+	}
+
+	public function testTurnsBackslashesIntoSlashesInAPublicSharePath(): void {
+		$this->assertSame('Folder/Notes.pad', (new PathNormalizer())->normalizePublicShareFilePath('Folder\\Notes.pad', 'tok'));
+	}
+
+	// ------------------------------------------------------------------
+	// normalizeCreateFileName: what is no name
+	// ------------------------------------------------------------------
+
+	/** Empty, "." or ".." once trimmed, or holding a separator. */
+	#[DataProvider('noFileNames')]
+	public function testRefusesWhatIsNoFileName(string $given): void {
+		$this->expectException(InvalidArgumentException::class);
+		$this->expectExceptionMessage('Invalid file name.');
+
+		(new PathNormalizer())->normalizeCreateFileName($given);
+	}
+
+	/** @return array<string, array{string}> */
+	public static function noFileNames(): array {
+		return [
+			'empty' => [''],
+			'spaces' => ['   '],
+			'a dot' => ['.'],
+			'two dots' => ['..'],
+			'two dots padded' => [' .. '],
+			'a slash' => ['Folder/Notes'],
+			'a backslash' => ['Folder\\Notes'],
+		];
 	}
 }

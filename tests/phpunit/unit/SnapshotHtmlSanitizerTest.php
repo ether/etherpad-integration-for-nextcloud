@@ -104,6 +104,48 @@ class SnapshotHtmlSanitizerTest extends TestCase {
 		);
 	}
 
+	/** Only the body counts: a head's title is no text of the pad. */
+	public function testLeavesTheHeadOut(): void {
+		$this->assertSame(
+			'<p>Body</p>',
+			$this->sanitize('<html><head><title>Export of a pad</title></head><body><p>Body</p></body></html>')
+		);
+	}
+
+	/** Read as UTF-8: libxml takes markup without a declared encoding for Latin-1. */
+	public function testKeepsTextOutsideAscii(): void {
+		$this->assertSame('<p>Grüße, 東京 – ✓</p>', $this->sanitize('<p>Grüße, 東京 – ✓</p>'));
+	}
+
+	/**
+	 * The sanitizer borrows libxml's error handling, gives the setting back
+	 * as it found it and leaves no errors behind. It clears those a
+	 * collecting caller had gathered before too, rather than hand its own
+	 * to that caller.
+	 */
+	public function testGivesLibxmlErrorHandlingBackAndLeavesNoErrors(): void {
+		$before = libxml_use_internal_errors(false);
+		try {
+			foreach ([false, true] as $collecting) {
+				libxml_use_internal_errors($collecting);
+				libxml_clear_errors();
+				if ($collecting) {
+					(new \DOMDocument())->loadHTML('<p>gathered before</i>');
+					$this->assertNotSame([], libxml_get_errors(), 'the caller has gathered an error');
+				}
+
+				$this->sanitize('<p>broken <b>markup</p></i>');
+
+				$this->assertSame($collecting, libxml_use_internal_errors(null));
+				$this->assertSame([], libxml_get_errors());
+				$this->assertFalse(libxml_get_last_error());
+			}
+		} finally {
+			libxml_clear_errors();
+			libxml_use_internal_errors($before);
+		}
+	}
+
 	public function testCommentsAndProcessingInstructionsAreDropped(): void {
 		$this->assertSame('<p>Text</p>', $this->sanitize('<p>Text<!-- hidden --></p><?pi test?>'));
 	}
@@ -123,6 +165,24 @@ class SnapshotHtmlSanitizerTest extends TestCase {
 		$this->assertSame(
 			'<p>See <a href="https://example.test/a?b=1" target="_blank" rel="noopener noreferrer">this</a></p>',
 			$out
+		);
+	}
+
+	/**
+	 * A quote in the address is escaped, so the address cannot leave the
+	 * href attribute and add one of its own.
+	 */
+	public function testEscapesAQuoteInTheAddress(): void {
+		$this->assertSame(
+			'<a href="https://example.org/a&quot;onmouseover=&quot;alert(1)" target="_blank" rel="noopener noreferrer">x</a>',
+			$this->sanitize('<a href="https://example.org/a&quot;onmouseover=&quot;alert(1)">x</a>'),
+		);
+	}
+
+	public function testReadsTheSchemeInCapitalsAndTheAddressWithoutSurroundingSpace(): void {
+		$this->assertSame(
+			'<a href="HTTPS://example.org/x" target="_blank" rel="noopener noreferrer">x</a>',
+			$this->sanitize('<a href="  HTTPS://example.org/x ">x</a>')
 		);
 	}
 
