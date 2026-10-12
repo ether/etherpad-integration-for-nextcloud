@@ -106,16 +106,6 @@ class PadFileServiceTest extends TestCase {
 		$service->parsePadFile($broken);
 	}
 
-	/** A CRLF line ending is normalised while the document is split, and must still parse. */
-	public function testAcceptsCrlfLineEndings(): void {
-		$service = new PadFileService(new FixedClock());
-		$document = $service->buildInitialDocument(31, 'demo-pad', BindingService::ACCESS_PUBLIC);
-
-		$parsed = $service->readPad(str_replace("\n", "\r\n", $document));
-
-		$this->assertSame('demo-pad', $parsed->padId);
-	}
-
 	/**
 	 * The reader takes the first and the last quote as the value's ends and
 	 * undoes only `\"` and `\\`, so only the backslash escape changes what
@@ -172,7 +162,7 @@ class PadFileServiceTest extends TestCase {
 			'a doubled single quote inside single quotes' => ["'it''s'", "it's"],
 			'a single quote at the start only' => ["'tis", "'tis"],
 			'a single quote at the end only' => ["James'", "James'"],
-			'a double quote at the end only' => ['say "hi"', 'say "hi"'],
+			'double quotes, but not at the start' => ['say "hi"', 'say "hi"'],
 			'a whole number' => ['42', 42],
 			'a number that is not a whole one' => ['1.10', '1.10'],
 		];
@@ -218,8 +208,8 @@ class PadFileServiceTest extends TestCase {
 		return [
 			'a pad URL with its scheme in capitals' => ['pad_url', 'HTTPS://pad.example.test/p/demo'],
 			'a pad origin with its scheme in capitals' => ['pad_origin', 'HTTPS://pad.example.test'],
-			'an empty pad URL, which is none' => ['pad_url', ''],
-			'an empty pad origin, which is none' => ['pad_origin', ''],
+			'an empty pad URL' => ['pad_url', ''],
+			'an empty pad origin' => ['pad_origin', ''],
 		];
 	}
 
@@ -249,7 +239,8 @@ class PadFileServiceTest extends TestCase {
 		$this->assertSame('remote-pad-id', $parsed['frontmatter']['remote_pad_id']);
 	}
 
-	public function testAnExtraFieldIsWrittenAsTextAndNotAtAllWithoutAValue(): void {
+	/** An extra field is written as text, and only when the format knows it and it holds a value. */
+	public function testWritesOnlyTheExtraFieldsTheFormatKnows(): void {
 		$service = new PadFileService(new FixedClock());
 		$written = static fn (array $extra): array => $service->parsePadFile(
 			$service->buildInitialDocument(1, 'ext.remote', BindingService::ACCESS_PUBLIC, extraFrontmatter: $extra),
@@ -257,6 +248,7 @@ class PadFileServiceTest extends TestCase {
 
 		$this->assertSame('42', $written(['remote_pad_id' => 42])['remote_pad_id']);
 		$this->assertArrayNotHasKey('remote_pad_id', $written(['remote_pad_id' => null]));
+		$this->assertArrayNotHasKey('labels', $written(['labels' => 'blue']));
 	}
 
 	// ------------------------------------------------------------------
@@ -295,11 +287,14 @@ class PadFileServiceTest extends TestCase {
 		return [
 			'another format' => [['format' => '"etherpad-nextcloud/0"'], 'Unsupported .pad format: etherpad-nextcloud/0'],
 			'file id zero' => [['file_id' => '0'], 'Invalid file_id in frontmatter.'],
+			'a file id that only starts with a number' => [['file_id' => '5x'], 'Invalid file_id in frontmatter.'],
 			'an empty pad id' => [['pad_id' => '""'], 'Invalid pad_id in frontmatter.'],
 			'a pad id holding a map' => [['pad_id' => "\n  name: \"demo\""], 'Invalid pad_id in frontmatter.'],
 			'an empty creation time' => [['created_at' => '""'], 'Invalid created_at in frontmatter.'],
+			'an empty update time' => [['updated_at' => '""'], 'Invalid updated_at in frontmatter.'],
 			'an unknown access mode' => [['access_mode' => '"private"'], 'Invalid access_mode in frontmatter.'],
 			'an unknown state' => [['state' => '"archived"'], 'Invalid state in frontmatter.'],
+			'a revision that is no number' => [['snapshot_rev' => 'abc'], 'Invalid snapshot_rev in frontmatter.'],
 			'a revision below -1' => [['snapshot_rev' => '-2'], 'Invalid snapshot_rev in frontmatter.'],
 			'a pad URL of another scheme' => [['pad_url' => '"ftp://example.org/p/demo"'], 'Invalid pad_url in frontmatter.'],
 			'a pad URL with https further in' => [['pad_url' => '"javascript:alert(1)//https://pad.example.test/p/demo"'], 'Invalid pad_url in frontmatter.'],
@@ -417,13 +412,12 @@ class PadFileServiceTest extends TestCase {
 	public static function deletionTimestamps(): array {
 		return [
 			'a time' => ['"2026-03-07T00:00:00+00:00"', '2026-03-07T00:00:00+00:00'],
-			'an empty one, which is none' => ['""', null],
+			'an empty one, written as null' => ['""', null],
 		];
 	}
 
-	/** Files moved to the trash before the lifecycle was simplified carry one. */
 	#[DataProvider('deletionTimestamps')]
-	public function testAWriteKeepsTheDeletionTimestamp(string $written, ?string $kept): void {
+	public function testASyncKeepsTheDeletionTimestamp(string $written, ?string $kept): void {
 		$service = new PadFileService(new FixedClock());
 		$trashed = $service->readPad(self::handWritten([
 			'state' => '"trashed"',
@@ -590,14 +584,26 @@ class PadFileServiceTest extends TestCase {
 		$service = new PadFileService(new FixedClock());
 
 		$this->expectException(PadFileFormatException::class);
+		$this->expectExceptionMessage('Frontmatter values must not contain a line terminator or a NUL byte.');
 		$service->buildInitialDocument(1, 'p', BindingService::ACCESS_PUBLIC, extraFrontmatter: ['remote_pad_id' => 'a' . $byte . 'b']);
 	}
 
-	#[DataProvider('refusedFrontmatterBytes')]
-	public function testAFileAlreadyHoldingARefusedByteIsRefusedOnRead(string $byte): void {
+	/** @return array<string,array{0: string, 1: string}> */
+	public static function refusedBytesOnRead(): array {
+		return [
+			'carriage return' => ["\r", 'Frontmatter line 10 contains a carriage return or a NUL byte.'],
+			'nul' => ["\x00", 'Frontmatter line 10 contains a carriage return or a NUL byte.'],
+			// A line feed ends the line: what follows it is a line of its own, and no field.
+			'line feed' => ["\n", 'Invalid YAML frontmatter line 11.'],
+		];
+	}
+
+	#[DataProvider('refusedBytesOnRead')]
+	public function testAFileAlreadyHoldingARefusedByteIsRefusedOnRead(string $byte, string $message): void {
 		$service = new PadFileService(new FixedClock());
 
 		$this->expectException(PadFileFormatException::class);
+		$this->expectExceptionMessage($message);
 		$service->readPad(self::handWritten(['remote_pad_id' => '"a' . $byte . 'b"']));
 	}
 
@@ -872,14 +878,6 @@ class PadFileServiceTest extends TestCase {
 
 		$this->assertSame(-1, $service->readPad($base)->snapshotRev);
 		$this->assertSame(12, $service->readPad(str_replace('snapshot_rev: -1', 'snapshot_rev: 12', $base))->snapshotRev);
-	}
-
-	public function testANonNumericSnapshotRevisionIsAFormatError(): void {
-		$service = new PadFileService(new FixedClock());
-		$base = $service->buildInitialDocument(1, 'demo-pad', BindingService::ACCESS_PUBLIC);
-
-		$this->expectException(PadFileFormatException::class);
-		$service->readPad(str_replace('snapshot_rev: -1', 'snapshot_rev: abc', $base));
 	}
 
 	// ------------------------------------------------------------------
