@@ -173,10 +173,10 @@ class SnapshotHtmlSanitizerTest extends TestCase {
 	 * href attribute and add one of its own.
 	 */
 	public function testEscapesAQuoteInTheAddress(): void {
-		$out = $this->sanitize('<a href="https://example.org/a&quot;onmouseover=&quot;alert(1)">x</a>');
-
-		$this->assertStringContainsString('href="https://example.org/a&quot;onmouseover=&quot;alert(1)"', $out);
-		$this->assertStringNotContainsString('"onmouseover', $out);
+		$this->assertSame(
+			'<a href="https://example.org/a&quot;onmouseover=&quot;alert(1)" target="_blank" rel="noopener noreferrer">x</a>',
+			$this->sanitize('<a href="https://example.org/a&quot;onmouseover=&quot;alert(1)">x</a>'),
+		);
 	}
 
 	public function testReadsTheSchemeInCapitalsAndTheAddressWithoutSurroundingSpace(): void {

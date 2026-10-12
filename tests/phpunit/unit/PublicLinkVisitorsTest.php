@@ -255,20 +255,21 @@ class PublicLinkVisitorsTest extends TestCase {
 		$calls = [];
 		$cache = $this->createMock(IMemcache::class);
 		$cache->expects($this->once())->method('add')->with($this->anything(), 0, 3600)->willReturnCallback(
-			static function () use (&$calls): bool {
-				$calls[] = 'add';
+			static function (string $key) use (&$calls): bool {
+				$calls[] = ['add', $key];
 				return true;
 			},
 		);
 		$cache->method('inc')->willReturnCallback(
-			static function () use (&$calls): int {
-				$calls[] = 'inc';
+			static function (string $key) use (&$calls): int {
+				$calls[] = ['inc', $key];
 				return 1;
 			},
 		);
 
 		$this->assertStringStartsWith(self::LINK . ':', $this->visitors($this->cacheFactoryFor($cache))->openerFor(self::TOKEN)->uid());
-		$this->assertSame(['add', 'inc'], $calls);
+		$this->assertSame(['add', 'inc'], array_column($calls, 0));
+		$this->assertSame($calls[0][1], $calls[1][1], 'the entry counted is the one given the expiry');
 	}
 
 	/**
