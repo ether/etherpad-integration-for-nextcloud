@@ -107,10 +107,10 @@ class PadFileServiceTest extends TestCase {
 	}
 
 	/**
-	 * The reader takes the first and the last quote as the value's ends and
-	 * undoes only `\"` and `\\`, so only the backslash escape changes what
-	 * reads back. The quote escape keeps the line YAML any other reader
-	 * takes, and shows only in the line written.
+	 * The writer escapes backslashes and double quotes; the reader undoes
+	 * only those two escapes and leaves every other backslash literal. As
+	 * the reader takes the first and last quote as the value's ends, the
+	 * quote escape shows only in the line written, which it keeps YAML.
 	 *
 	 * @return array<string,array{0: string, 1: string}>
 	 */
@@ -191,9 +191,9 @@ class PadFileServiceTest extends TestCase {
 	}
 
 	/**
-	 * The format's own fields are scalars, so the map sits under one it does
-	 * not know. The writer knows the format's fields only, so the next write
-	 * leaves such a field out.
+	 * The format's own fields are scalars, so the map sits under a field it
+	 * does not know. Such a field is read, but the writer writes only the
+	 * fields format v1 defines.
 	 */
 	public function testAFieldTheFormatDoesNotKnowIsReadButNotWrittenBack(): void {
 		$service = new PadFileService(new FixedClock());
@@ -239,7 +239,7 @@ class PadFileServiceTest extends TestCase {
 		$this->assertSame('remote-pad-id', $parsed['frontmatter']['remote_pad_id']);
 	}
 
-	/** An extra field is written as text, and only when the format knows it and it holds a value. */
+	/** An optional field the format knows is written as text when set; a null one and an unknown one are left out. */
 	public function testWritesOnlyTheExtraFieldsTheFormatKnows(): void {
 		$service = new PadFileService(new FixedClock());
 		$written = static fn (array $extra): array => $service->parsePadFile(
@@ -755,9 +755,9 @@ class PadFileServiceTest extends TestCase {
 	}
 
 	/**
-	 * Both markers are lines a pad's text may contain. Because every body
-	 * carries the section, the last opening marker is always the structural
-	 * one, and the two shapes cannot collide.
+	 * Both markers are lines a pad's text may contain. Every snapshot the
+	 * writer stores carries an HTML section, so the last opening marker is
+	 * the structural one, and the two shapes cannot collide.
 	 */
 	public function testATextHoldingBothMarkersIsNotReadAsAnHtmlSection(): void {
 		$service = new PadFileService(new FixedClock());
@@ -983,29 +983,24 @@ class PadFileServiceTest extends TestCase {
 			'remote_pad_id' => 'remote-id',
 		], 'ext.remote-id'));
 
-		// Missing remote_pad_id
 		$this->assertFalse($service->isExternalFrontmatter([
 			'pad_origin' => 'https://pad.remote.example',
 		], 'ext.remote-id'));
 
-		// Missing pad_origin
 		$this->assertFalse($service->isExternalFrontmatter([
 			'remote_pad_id' => 'remote-id',
 		], 'ext.remote-id'));
 
-		// Blank remote_pad_id
 		$this->assertFalse($service->isExternalFrontmatter([
 			'pad_origin' => 'https://pad.remote.example',
 			'remote_pad_id' => ' ',
 		], 'ext.remote-id'));
 
-		// Blank pad_origin
 		$this->assertFalse($service->isExternalFrontmatter([
 			'pad_origin' => ' ',
 			'remote_pad_id' => 'remote-id',
 		], 'ext.remote-id'));
 
-		// Not an ext.* pad_id
 		$this->assertFalse($service->isExternalFrontmatter([
 			'pad_origin' => 'https://pad.remote.example',
 			'remote_pad_id' => 'remote-id',
