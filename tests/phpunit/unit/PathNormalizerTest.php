@@ -307,7 +307,6 @@ class PathNormalizerTest extends TestCase {
 		];
 	}
 
-	/** An empty segment or a bare "." is skipped, and what follows it still counts. */
 	public function testKeepsWhatFollowsAnEmptyOrDotSegment(): void {
 		$normalizer = new PathNormalizer();
 
@@ -323,8 +322,9 @@ class PathNormalizerTest extends TestCase {
 	}
 
 	/**
-	 * Only a value that starts with a URL is read as one: a name with one
-	 * further in is a name, and its percent signs stay as they are.
+	 * Only a value that starts with a URL is read as one. A value with a
+	 * URL further in is a path like any other: its slashes separate
+	 * folders, and its percent signs stay as they are.
 	 */
 	public function testReadsAUrlOnlyAtTheStart(): void {
 		$normalizer = new PathNormalizer();
@@ -333,7 +333,6 @@ class PathNormalizerTest extends TestCase {
 		$this->assertSame('Links/see https:/host/100%25.pad', $normalizer->normalizePublicShareFilePath('Links/see https://host/100%25.pad', 'tok'));
 	}
 
-	/** Any other URL in a public share names the file by its decoded path. */
 	public function testReadsAnyOtherUrlInAPublicShareByItsPath(): void {
 		$this->assertSame(
 			'Folder/Notes A.pad',

@@ -354,11 +354,11 @@ class ExternalPadExportFetcherTest extends TestCase {
 	 * behind a dead nameserver and red behind one that answers every name.
 	 * A lookup a test did not give an answer for fails it.
 	 *
-	 * @param ?list<array<string, string>> $records
+	 * @param ?list<array<array-key, mixed>> $records
 	 */
 	private function fetcher(IConfig $config, ?array $records = null): ExternalPadExportFetcher {
 		return new class($config, new FixedClock(), $records) extends ExternalPadExportFetcher {
-			/** @param ?list<array<string, string>> $records */
+			/** @param ?list<array<array-key, mixed>> $records */
 			public function __construct(IConfig $config, FixedClock $clock, private ?array $records) {
 				parent::__construct($config, $clock);
 			}

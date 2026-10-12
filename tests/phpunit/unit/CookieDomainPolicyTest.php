@@ -297,7 +297,11 @@ class CookieDomainPolicyTest extends TestCase {
 		$this->assertSame('.example.org', $configured->effectiveDomain);
 	}
 
-	/** Hosts at the length limits are valid, one character over is not. */
+	/**
+	 * Built to the DNS limits, 253 characters for a name and 63 for a
+	 * label: the longest name holds both, and each refused one breaks only
+	 * one of them.
+	 */
 	public function testTakesHostsUpToTheLengthLimits(): void {
 		$label = str_repeat('a', 63);
 		$longest = $label . '.' . $label . '.' . $label . '.' . str_repeat('b', 57) . '.org';

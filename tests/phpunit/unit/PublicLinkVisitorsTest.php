@@ -271,7 +271,11 @@ class PublicLinkVisitorsTest extends TestCase {
 		$this->assertSame(['add', 'inc'], $calls);
 	}
 
-	/** Nothing is remembered for a visitor the session does not hold. */
+	/**
+	 * The visitor may be gone from the session by the time Etherpad names
+	 * their author: an author alone belongs to no visitor, so nothing is
+	 * written.
+	 */
 	public function testRemembersNoAuthorForAVisitorItDoesNotHold(): void {
 		$this->visitors($this->memcache())->rememberAuthor(self::TOKEN, new PublicLinkOpener(self::LINK . ':' . str_repeat('ab', 16), '', ''), 'a.visitor');
 

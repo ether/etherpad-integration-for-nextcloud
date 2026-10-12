@@ -29,7 +29,10 @@ class AllowlistNormalizerTest extends TestCase {
 		);
 	}
 
-	/** An entry after an empty one, or after a URL, is kept: neither ends the list. */
+	/**
+	 * A leading separator leaves an empty first entry, and a URL entry is
+	 * read apart: the entries after either still count.
+	 */
 	public function testKeepsEveryEntryAfterAnEmptyOneOrAUrl(): void {
 		$this->assertSame(
 			"pad.example.test\nhttps://one.example.test\ntwo.example.test",
@@ -98,7 +101,7 @@ class AllowlistNormalizerTest extends TestCase {
 		$this->buildNormalizer()->normalize('https://pad.example.test?x=1#frag');
 	}
 
-	/** Each part a URL entry may not have, refused alone too. */
+	/** One part at a time: tested together, one part's check could stand in for another's. */
 	#[DataProvider('urlsWithAPartTheyMayNotHave')]
 	public function testRejectsAUrlWithAnyPartBeyondSchemeHostAndPort(string $entry): void {
 		$this->expectException(AdminValidationException::class);

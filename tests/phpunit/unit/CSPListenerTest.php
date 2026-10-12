@@ -161,9 +161,11 @@ class CSPListenerTest extends TestCase {
 	}
 
 	/**
-	 * What an allowlist entry frames: an https origin, a host as https, and
-	 * nothing for what is not one - an http URL is not upgraded, an entry of
-	 * dots does not become a bare `https://`.
+	 * What an allowlist entry frames: an https origin, and a host as https.
+	 * An http URL is not upgraded, and a malformed URL or an entry of dots
+	 * frames nothing. A host is taken as written: the admin form checks a
+	 * list it stores while external pads are on, and nothing checks one
+	 * set another way.
 	 *
 	 * @param list<string> $expected
 	 */
