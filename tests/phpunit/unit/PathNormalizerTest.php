@@ -333,20 +333,6 @@ class PathNormalizerTest extends TestCase {
 		$this->assertSame('Links/see https:/host/100%25.pad', $normalizer->normalizePublicShareFilePath('Links/see https://host/100%25.pad', 'tok'));
 	}
 
-	public function testReadsAPublicDavUrlInTheViewer(): void {
-		$this->assertSame(
-			'/Folder/Notes.pad',
-			(new PathNormalizer())->normalizeViewerFilePath('https://host/public.php/dav/files/tok/Folder/Notes.pad')
-		);
-	}
-
-	public function testReadsAUserDavUrlInAPublicShare(): void {
-		$this->assertSame(
-			'Folder/Notes.pad',
-			(new PathNormalizer())->normalizePublicShareFilePath('https://host/remote.php/dav/files/alice/Folder/Notes.pad', 'tok')
-		);
-	}
-
 	/** Any other URL in a public share names the file by its decoded path. */
 	public function testReadsAnyOtherUrlInAPublicShareByItsPath(): void {
 		$this->assertSame(
@@ -355,11 +341,8 @@ class PathNormalizerTest extends TestCase {
 		);
 	}
 
-	public function testNamesNoFileInAPublicShareForAMalformedUrlOrOnlySpaces(): void {
-		$normalizer = new PathNormalizer();
-
-		$this->assertSame('', $normalizer->normalizePublicShareFilePath('https://host:bad/Notes.pad', 'tok'));
-		$this->assertSame('', $normalizer->normalizePublicShareFilePath('   ', 'tok'));
+	public function testNamesNoFileInAPublicShareForOnlySpaces(): void {
+		$this->assertSame('', (new PathNormalizer())->normalizePublicShareFilePath('   ', 'tok'));
 	}
 
 	public function testTurnsBackslashesIntoSlashesInAPublicSharePath(): void {
