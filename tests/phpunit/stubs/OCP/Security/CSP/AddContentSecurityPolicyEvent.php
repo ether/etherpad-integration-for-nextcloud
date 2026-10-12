@@ -16,7 +16,10 @@ if (!class_exists(AddContentSecurityPolicyEvent::class)) {
 			$this->policies[] = $policy;
 		}
 
-		/** @return list<ContentSecurityPolicy> */
+		/**
+		 * @stub-only Nextcloud has no getter; a test reads the policies a listener added.
+		 * @return list<ContentSecurityPolicy>
+		 */
 		public function getPolicies(): array {
 			return $this->policies;
 		}

@@ -22,6 +22,7 @@ if (!class_exists(Server::class, false)) {
 		/** @var array<string, object> */
 		public static array $registered = [];
 
+		/** @stub-only Clears what a test registered. */
 		public static function reset(): void {
 			self::$registered = [];
 		}

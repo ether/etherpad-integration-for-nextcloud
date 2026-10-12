@@ -44,6 +44,8 @@ jobs:
               - 'psalm.xml'
               - 'psalm-baseline.xml'
               - 'tests/psalm/**'
+              - 'tests/phpunit/stubs/OCP/**'
+              - 'tests/phpunit/Support/check-ocp-stubs.php'
 
   psalm:
     runs-on: ubuntu-latest
@@ -112,6 +114,13 @@ jobs:
       - name: Select the OCP version under test
         if: matrix.ocp != 'locked'
         run: composer require --dev --no-progress --no-interaction "nextcloud/ocp:${{ matrix.ocp }}"
+
+      # The unit suite runs against hand-written OCP stubs; every member one
+      # declares has to exist in the OCP analysed here, or a test passes
+      # against a method this Nextcloud does not have. The unit suite checks
+      # the locked OCP only.
+      - name: Check the OCP stubs against this OCP
+        run: php tests/phpunit/Support/check-ocp-stubs.php
 
       - name: Run Psalm
         run: composer psalm

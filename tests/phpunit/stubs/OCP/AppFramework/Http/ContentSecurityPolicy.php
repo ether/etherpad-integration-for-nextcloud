@@ -23,12 +23,18 @@ if (!class_exists(ContentSecurityPolicy::class)) {
 			$this->frameDomains[] = $domain;
 		}
 
-		/** @return list<string> */
+		/**
+		 * @stub-only Nextcloud has no getter; a test reads what the listener allowed.
+		 * @return list<string>
+		 */
 		public function getAllowedFrameAncestorDomains(): array {
 			return $this->frameAncestorDomains;
 		}
 
-		/** @return list<string> */
+		/**
+		 * @stub-only Nextcloud has no getter; a test reads what the listener allowed.
+		 * @return list<string>
+		 */
 		public function getAllowedFrameDomains(): array {
 			return $this->frameDomains;
 		}
