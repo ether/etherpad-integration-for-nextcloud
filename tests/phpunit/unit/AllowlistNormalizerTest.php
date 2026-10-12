@@ -7,6 +7,7 @@ namespace OCA\EtherpadNextcloud\Tests\Unit;
 use OCA\EtherpadNextcloud\Exception\AdminValidationException;
 use OCA\EtherpadNextcloud\Service\AllowlistNormalizer;
 use OCP\IL10N;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 class AllowlistNormalizerTest extends TestCase {
@@ -26,6 +27,27 @@ class AllowlistNormalizerTest extends TestCase {
 			"one.example.test\ntwo.example.test\nhttps://three.example.test:8443",
 			$this->buildNormalizer()->normalize("one.example.test,,two.example.test; https://three.example.test:8443\n")
 		);
+	}
+
+	/** An entry after an empty one, or after a URL, is kept: neither ends the list. */
+	public function testKeepsEveryEntryAfterAnEmptyOneOrAUrl(): void {
+		$this->assertSame(
+			"pad.example.test\nhttps://one.example.test\ntwo.example.test",
+			$this->buildNormalizer()->normalize(',pad.example.test https://one.example.test two.example.test')
+		);
+	}
+
+	public function testReadsAnHttpsUrlWrittenInCapitals(): void {
+		$this->assertSame('https://pad.example.test', $this->buildNormalizer()->normalize('HTTPS://Pad.Example.Test'));
+	}
+
+	public function testKeepsTheHighestPort(): void {
+		$this->assertSame('https://pad.example.test:65535', $this->buildNormalizer()->normalize('https://pad.example.test:65535'));
+	}
+
+	/** A trailing dot names the same host; the list keeps it once, without it. */
+	public function testDropsATrailingDotFromAHost(): void {
+		$this->assertSame('pad.example.test', $this->buildNormalizer()->normalize('pad.example.test.'));
 	}
 
 	public function testDeduplicatesEntries(): void {
@@ -50,7 +72,7 @@ class AllowlistNormalizerTest extends TestCase {
 
 	public function testRejectsMalformedUrlWithoutWarnings(): void {
 		$this->expectException(AdminValidationException::class);
-		$this->expectExceptionMessage('External allowlist URL must use https');
+		$this->expectExceptionMessage('[de] External allowlist URL must use https: https://host:bad');
 
 		$this->buildNormalizer()->normalize('https://host:bad');
 	}
@@ -76,11 +98,48 @@ class AllowlistNormalizerTest extends TestCase {
 		$this->buildNormalizer()->normalize('https://pad.example.test?x=1#frag');
 	}
 
-	public function testRejectsInvalidHosts(): void {
+	/** Each part a URL entry may not have, refused alone too. */
+	#[DataProvider('urlsWithAPartTheyMayNotHave')]
+	public function testRejectsAUrlWithAnyPartBeyondSchemeHostAndPort(string $entry): void {
 		$this->expectException(AdminValidationException::class);
-		$this->expectExceptionMessage('[de] External allowlist contains invalid host: bad..host');
+		$this->expectExceptionMessage('[de] External allowlist URL must use https: ' . $entry);
 
-		$this->buildNormalizer()->normalize('bad..host');
+		$this->buildNormalizer()->normalize($entry);
+	}
+
+	/** @return array<string, array{string}> */
+	public static function urlsWithAPartTheyMayNotHave(): array {
+		return [
+			'port 0' => ['https://pad.example.test:0'],
+			'a user' => ['https://user@pad.example.test'],
+			'a query' => ['https://pad.example.test?x=1'],
+			'a fragment' => ['https://pad.example.test#top'],
+		];
+	}
+
+	#[DataProvider('invalidHosts')]
+	public function testRejectsInvalidHosts(string $entry): void {
+		$this->expectException(AdminValidationException::class);
+		$this->expectExceptionMessage('[de] External allowlist contains invalid host: ' . $entry);
+
+		$this->buildNormalizer()->normalize($entry);
+	}
+
+	/**
+	 * A URL in the middle of an entry does not make it one: the entry is a
+	 * host, and an invalid one.
+	 *
+	 * @return array<string, array{string}>
+	 */
+	public static function invalidHosts(): array {
+		return [
+			'two dots in a row' => ['bad..host'],
+			'a hyphen first' => ['-pad.example.test'],
+			'a hyphen last' => ['pad.example.test-'],
+			'another character first' => ['_pad.example.test'],
+			'another character last' => ['pad.example.test_'],
+			'a URL inside' => ['pad.example.test/https://other.example.test'],
+		];
 	}
 
 	private function buildNormalizer(): AllowlistNormalizer {

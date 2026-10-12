@@ -11,6 +11,7 @@ namespace OCA\EtherpadNextcloud\Tests\Unit;
 
 use OCA\EtherpadNextcloud\Service\CookieDomainDecision;
 use OCA\EtherpadNextcloud\Service\CookieDomainPolicy;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 class CookieDomainPolicyTest extends TestCase {
@@ -255,5 +256,72 @@ class CookieDomainPolicyTest extends TestCase {
 			$this->policy->decide('https://cloud.example.org', 'https://pad.example.org', null)->effectiveDomain,
 			$this->policy->resolve('https://cloud.example.org', 'https://pad.example.org', null),
 		);
+	}
+
+	/**
+	 * What the derived domain is, or why there is none, for hosts the cases
+	 * above do not reach. A two-letter top-level domain alone is no public
+	 * suffix; hosts that differ in one label share only what follows it;
+	 * names under .localhost, an IP address beside a name, and bracketed
+	 * IPv6 are no ground for a domain cookie.
+	 */
+	#[DataProvider('derivedCases')]
+	public function testDerivesOrRefusesADomainFor(string $nextcloud, string $etherpad, string $reason, string $domain): void {
+		$decision = $this->policy->decide($nextcloud, $etherpad, null);
+
+		$this->assertSame($reason, $decision->reason);
+		$this->assertSame($domain, $decision->effectiveDomain);
+	}
+
+	/** @return array<string, array{string, string, string, string}> */
+	public static function derivedCases(): array {
+		return [
+			'a country-code domain' => ['https://cloud.example.de', 'https://pad.example.de', CookieDomainDecision::REASON_COMMON_PARENT, '.example.de'],
+			'the same first label' => ['https://a.x.example.org', 'https://a.y.example.org', CookieDomainDecision::REASON_COMMON_PARENT, '.example.org'],
+			'names under .localhost' => ['http://nc.localhost', 'http://pad.localhost', CookieDomainDecision::REASON_HOST_NOT_COOKIE_CAPABLE, ''],
+			'an IP address beside a name' => ['https://192.168.1.10', 'https://pad.example.org', CookieDomainDecision::REASON_HOST_NOT_COOKIE_CAPABLE, ''],
+			'bracketed IPv6, the same host' => ['http://[::1]:8080', 'http://[::1]:9001', CookieDomainDecision::REASON_SAME_HOST, ''],
+			'URLs with spaces around them' => [' https://cloud.example.org ', ' https://pad.example.org ', CookieDomainDecision::REASON_COMMON_PARENT, '.example.org'],
+		];
+	}
+
+	/** Spaces around a stored URL do not make it set; spaces around a stored domain do not change it. */
+	public function testReadsStoredValuesWithoutTheirSurroundingSpace(): void {
+		$this->assertSame(CookieDomainDecision::REASON_NOT_CONFIGURED, $this->policy->decide('  ', 'https://pad.example.org', null)->reason);
+		$this->assertSame(CookieDomainDecision::REASON_NOT_CONFIGURED, $this->policy->decide('https://cloud.example.org', '  ', null)->reason);
+
+		$configured = $this->policy->decide('https://cloud.example.org', 'https://pad.example.org', ' .example.org ');
+		$this->assertSame(CookieDomainDecision::REASON_CONFIGURED, $configured->reason);
+		$this->assertSame('.example.org', $configured->effectiveDomain);
+	}
+
+	/** Hosts at the length limits are valid, one character over is not. */
+	public function testTakesHostsUpToTheLengthLimits(): void {
+		$label = str_repeat('a', 63);
+		$longest = $label . '.' . $label . '.' . $label . '.' . str_repeat('b', 57) . '.org';
+		$this->assertSame(253, strlen($longest));
+
+		$this->assertSame(CookieDomainDecision::REASON_SAME_HOST, $this->policy->decide('https://' . $longest, 'https://' . $longest, null)->reason);
+		$tooLong = $label . '.' . $label . '.' . $label . '.' . str_repeat('b', 58) . '.org';
+		$this->assertSame(CookieDomainDecision::REASON_INVALID_HOST, $this->policy->decide('https://' . $tooLong, 'https://pad.example.org', null)->reason);
+		$this->assertSame(CookieDomainDecision::REASON_INVALID_HOST, $this->policy->decide('https://' . $label . 'a.example.org', 'https://pad.example.org', null)->reason);
+	}
+
+	/** The health check asks whether an embedding origin gets the cookie; label boundaries count here too. */
+	#[DataProvider('coverage')]
+	public function testTellsWhetherADomainCoversAnOrigin(string $origin, string $domain, bool $covered): void {
+		$this->assertSame($covered, $this->policy->isCoveredBy($origin, $domain));
+	}
+
+	/** @return array<string, array{string, string, bool}> */
+	public static function coverage(): array {
+		return [
+			'a subdomain' => ['https://intranet.example.org', '.example.org', true],
+			'the domain itself' => ['https://example.org:8443', 'example.org', true],
+			'a domain written with spaces and capitals' => ['https://intranet.example.org', ' .Example.ORG ', true],
+			'a lookalike' => ['https://evil-example.org', '.example.org', false],
+			'no domain' => ['https://intranet.example.org', '', false],
+			'no valid origin' => ['https://bad_host', '.example.org', false],
+		];
 	}
 }

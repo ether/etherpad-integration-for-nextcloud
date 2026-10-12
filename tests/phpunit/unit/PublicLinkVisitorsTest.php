@@ -17,6 +17,7 @@ use OCP\ICacheFactory;
 use OCP\IMemcache;
 use OCP\ISession;
 use OCP\Security\ISecureRandom;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 
@@ -140,7 +141,9 @@ class PublicLinkVisitorsTest extends TestCase {
 	 * counting - opens as the link. A failing one is said at debug.
 	 */
 	public function testACacheThatCannotCountOpensAsTheLink(): void {
-		$this->assertSame(self::LINK, $this->visitors($this->cacheFactoryFor($this->createMock(ICache::class)))->openerFor(self::TOKEN)->uid());
+		$quiet = $this->createMock(LoggerInterface::class);
+		$quiet->expects($this->never())->method('debug');
+		$this->assertSame(self::LINK, $this->visitors($this->cacheFactoryFor($this->createMock(ICache::class)), $quiet)->openerFor(self::TOKEN)->uid());
 
 		$notCounting = $this->createMock(IMemcache::class);
 		$notCounting->method('inc')->willReturn(false);
@@ -218,6 +221,71 @@ class PublicLinkVisitorsTest extends TestCase {
 			$this->assertStringNotContainsString(self::TOKEN, (string)$key);
 		}
 		$this->assertStringNotContainsString(self::TOKEN, json_encode($this->session->getArrayCopy(), JSON_THROW_ON_ERROR));
+	}
+
+	/**
+	 * Each link counts its own visitors and says its own overflow: one
+	 * link full for the hour leaves another its 250.
+	 */
+	public function testEachLinkCountsItsOwnVisitors(): void {
+		$cache = $this->memcache();
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects($this->exactly(2))->method('warning');
+		$last = [];
+		foreach ([self::TOKEN, 'another-token'] as $token) {
+			for ($i = 0; $i <= PublicLinkVisitors::PER_HOUR; $i++) {
+				$this->session = new \ArrayObject();
+				$last[$token] = $this->visitors($cache, $logger)->openerFor($token)->uid();
+			}
+		}
+
+		$this->assertSame([self::LINK, 'public-share:another-token'], array_values($last));
+	}
+
+	/** Each hour's count is added before it is counted, so that it expires with the hour. */
+	public function testCountsInAnEntryThatExpiresWithTheHour(): void {
+		$cache = $this->createMock(IMemcache::class);
+		$cache->expects($this->once())->method('add')->with($this->anything(), 0, 3600)->willReturn(true);
+		$cache->method('inc')->willReturn(1);
+
+		$this->assertStringStartsWith(self::LINK . ':', $this->visitors($this->cacheFactoryFor($cache))->openerFor(self::TOKEN)->uid());
+	}
+
+	/** Nothing is remembered for a visitor the session does not hold. */
+	public function testRemembersNoAuthorForAVisitorItDoesNotHold(): void {
+		$this->visitors($this->memcache())->rememberAuthor(self::TOKEN, new PublicLinkOpener(self::LINK . ':' . str_repeat('ab', 16), '', ''), 'a.visitor');
+
+		$this->assertSame([], $this->session->getArrayCopy());
+	}
+
+	/**
+	 * A session value not of the form this class writes - an id in another
+	 * form, an hour or author of another type - is no visitor's: the next
+	 * open makes a new one rather than carrying it into a uid.
+	 */
+	#[DataProvider('storedValuesOfAnotherForm')]
+	public function testTakesAStoredValueOfAnotherFormForNoVisitor(mixed $stored): void {
+		$visitors = $this->visitors($this->memcache());
+		$visitors->openerFor(self::TOKEN);
+		$key = array_key_first($this->session->getArrayCopy());
+		$this->session[$key] = $stored;
+
+		$uid = $visitors->openerFor(self::TOKEN)->uid();
+
+		$this->assertMatchesRegularExpression('/^' . preg_quote(self::LINK, '/') . ':[0-9a-f]{32}$/D', $uid);
+		$this->assertSame(['id' => substr($uid, -32), 'hour' => intdiv(FixedClock::NOW, 3600), 'author' => ''], $this->session[$key]);
+	}
+
+	/** @return array<string, array{mixed}> */
+	public static function storedValuesOfAnotherForm(): array {
+		$hour = intdiv(FixedClock::NOW, 3600);
+		return [
+			'not an array' => ['visitor'],
+			'an id in capitals' => [['id' => str_repeat('AB', 16), 'hour' => $hour, 'author' => '']],
+			'an id too short' => [['id' => str_repeat('ab', 15), 'hour' => $hour, 'author' => '']],
+			'an hour as text' => [['id' => str_repeat('ab', 16), 'hour' => (string)$hour, 'author' => '']],
+			'an author of another type' => [['id' => str_repeat('ab', 16), 'hour' => $hour, 'author' => 5]],
+		];
 	}
 
 	private function visitors(ICacheFactory $factory, ?LoggerInterface $logger = null): PublicLinkVisitors {

@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\Tests\Unit;
 
 use OCA\EtherpadNextcloud\Listeners\CSPListener;
+use OCP\EventDispatcher\Event;
 use OCP\IConfig;
 use OCP\Security\CSP\AddContentSecurityPolicyEvent;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 class CSPListenerTest extends TestCase {
@@ -140,5 +142,70 @@ class CSPListenerTest extends TestCase {
 		$listener->handle($event);
 
 		$this->assertSame([], $event->getPolicies());
+	}
+
+	public function testLeavesEveryOtherEventAlone(): void {
+		$config = $this->createMock(IConfig::class);
+		$config->expects($this->never())->method('getAppValue');
+
+		(new CSPListener($config))->handle(new Event());
+	}
+
+	/** A list stored while external pads were on frames nothing once they are off. */
+	public function testFramesOnlyTheOwnEtherpadWhileExternalPadsAreOff(): void {
+		$this->assertSame(['https://pad.example.test'], $this->frameDomains([
+			'etherpad_host' => 'https://pad.example.test/',
+			'allow_external_pads' => 'no',
+			'external_pad_allowlist' => 'other.example.test',
+		]));
+	}
+
+	/**
+	 * What an allowlist entry frames: an https origin, a host as https, and
+	 * nothing for what is not one - an http URL is not upgraded, an entry of
+	 * dots does not become a bare `https://`.
+	 *
+	 * @param list<string> $expected
+	 */
+	#[DataProvider('allowlistEntries')]
+	public function testFramesWhatEachAllowlistEntryNames(string $entry, array $expected): void {
+		$this->assertSame($expected, $this->frameDomains([
+			'allow_external_pads' => 'yes',
+			'external_pad_allowlist' => $entry,
+		]));
+	}
+
+	/** @return array<string, array{string, list<string>}> */
+	public static function allowlistEntries(): array {
+		return [
+			'an https URL without a port' => ['https://pad.example.test', ['https://pad.example.test']],
+			'the https port written out' => ['https://pad.example.test:443', ['https://pad.example.test']],
+			'another port' => ['https://pad.example.test:8443', ['https://pad.example.test:8443']],
+			'the highest port' => ['https://pad.example.test:65535', ['https://pad.example.test:65535']],
+			'capitals' => ['HTTPS://Pad.Example.Test', ['https://pad.example.test']],
+			'a host in capitals with a trailing dot' => ['Pad.Example.Test.', ['https://pad.example.test']],
+			'an empty entry first' => [',pad.example.test', ['https://pad.example.test']],
+			'an http URL' => ['http://pad.example.test', []],
+			'port 0' => ['https://pad.example.test:0', []],
+			'a malformed URL' => ['https://pad.example.test:bad', []],
+			'only dots' => ['...', []],
+		];
+	}
+
+	/**
+	 * @param array<string, string> $values
+	 * @return list<string>
+	 */
+	private function frameDomains(array $values): array {
+		$config = $this->createMock(IConfig::class);
+		$config->method('getAppValue')->willReturnCallback(
+			static fn (string $app, string $key, string $default = ''): string => $app === 'etherpad_nextcloud' ? ($values[$key] ?? $default) : $default,
+		);
+		$event = new AddContentSecurityPolicyEvent();
+
+		(new CSPListener($config))->handle($event);
+
+		$policies = $event->getPolicies();
+		return $policies === [] ? [] : $policies[0]->getAllowedFrameDomains();
 	}
 }

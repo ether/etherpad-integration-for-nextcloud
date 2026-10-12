@@ -10,6 +10,7 @@ use OCA\EtherpadNextcloud\Exception\ExternalPadHttpErrorException;
 use OCA\EtherpadNextcloud\Service\ExternalPadExportFetcher;
 use OCP\IConfig;
 use OCA\EtherpadNextcloud\Tests\Support\FixedClock;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 class ExternalPadExportFetcherTest extends TestCase {
@@ -279,6 +280,72 @@ class ExternalPadExportFetcherTest extends TestCase {
 			'html export refuses a byte stream' => ['html', 'application/octet-stream', false],
 			'a missing header is refused either way' => ['html', '', false],
 		];
+	}
+
+	/**
+	 * What a pad link may be, against the allowlist as an admin may have
+	 * stored it: the origin and the canonical link the fetcher goes on with.
+	 *
+	 * @param ?list<array<string, string>> $records
+	 */
+	#[DataProvider('acceptedLinks')]
+	public function testAcceptsAndCanonicalizesALink(string $url, string $allowlist, ?array $records, string $origin, string $padUrl): void {
+		$result = $this->fetcher($this->buildExternalEnabledConfig($allowlist), $records)->normalizeAndValidateExternalPublicPadUrl($url);
+
+		$this->assertSame([$origin, $padUrl], [$result['origin'], $result['pad_url']]);
+	}
+
+	/** @return array<string, array{string, string, ?list<array<string, string>>, string, string}> */
+	public static function acceptedLinks(): array {
+		$public = [['ip' => '1.1.1.1'], ['ipv6' => '2606:4700::1111']];
+		return [
+			'spaces around it' => [' https://1.1.1.1/p/pad ', '', null, 'https://1.1.1.1', 'https://1.1.1.1/p/pad'],
+			'scheme and host in capitals' => ['HTTPS://PAD.EXAMPLE/p/pad', '', $public, 'https://pad.example', 'https://pad.example/p/pad'],
+			'a name with public addresses only' => ['https://pad.example/p/pad', '', $public, 'https://pad.example', 'https://pad.example/p/pad'],
+			'a base path' => ['https://1.1.1.1/etherpad/p/pad', '', null, 'https://1.1.1.1', 'https://1.1.1.1/etherpad/p/pad'],
+			'a base path ending in a slash' => ['https://1.1.1.1/etherpad//p/pad', '', null, 'https://1.1.1.1', 'https://1.1.1.1/etherpad/p/pad'],
+			'the highest port, allowlisted' => ['https://1.1.1.1:65535/p/pad', 'https://1.1.1.1:65535', null, 'https://1.1.1.1:65535', 'https://1.1.1.1:65535/p/pad'],
+			'an origin allowlisted without its port' => ['https://1.1.1.1/p/pad', 'https://1.1.1.1', null, 'https://1.1.1.1', 'https://1.1.1.1/p/pad'],
+			'an origin allowlisted in capitals' => ['https://1.1.1.1:8443/p/pad', 'HTTPS://1.1.1.1:8443', null, 'https://1.1.1.1:8443', 'https://1.1.1.1:8443/p/pad'],
+			'an allowlisted host' => ['https://pad.example/p/pad', 'pad.example', $public, 'https://pad.example', 'https://pad.example/p/pad'],
+			'a host allowlisted in capitals with a dot' => ['https://pad.example/p/pad', 'PAD.EXAMPLE.', $public, 'https://pad.example', 'https://pad.example/p/pad'],
+			'a host after an empty entry, a malformed and another origin' => ['https://pad.example/p/pad', ',https://host:bad https://other.example pad.example', $public, 'https://pad.example', 'https://pad.example/p/pad'],
+			'an allowlist of spaces, which is none' => ['https://1.1.1.1/p/pad', '   ', null, 'https://1.1.1.1', 'https://1.1.1.1/p/pad'],
+		];
+	}
+
+	/** @param ?list<array<string, string>> $records */
+	#[DataProvider('refusedLinks')]
+	public function testRefusesALinkForItsReason(string $url, string $allowlist, ?array $records, string $reason): void {
+		try {
+			$this->fetcher($this->buildExternalEnabledConfig($allowlist), $records)->normalizeAndValidateExternalPublicPadUrl($url);
+			$this->fail('Not refused.');
+		} catch (ExternalPadException $e) {
+			$this->assertSame($reason, $e->reason());
+		}
+	}
+
+	/** @return array<string, array{string, string, ?list<array<string, string>>, string}> */
+	public static function refusedLinks(): array {
+		return [
+			'a user without a password' => ['https://user@1.1.1.1/p/pad', '', null, ExternalPadException::CREDENTIALS_IN_URL],
+			'port 0' => ['https://1.1.1.1:0/p/pad', '', null, ExternalPadException::INVALID_URL],
+			'more after the pad name' => ['https://1.1.1.1/p/pad/export', '', null, ExternalPadException::NOT_A_PAD_URL],
+			'an origin allowlisted as http' => ['https://1.1.1.1:8443/p/pad', 'http://1.1.1.1:8443', null, ExternalPadException::NOT_ALLOWED],
+			'a host not on the allowlist' => ['https://pad.example/p/pad', 'other.example', null, ExternalPadException::NOT_ALLOWED],
+		];
+	}
+
+	/**
+	 * The addresses a request may go to: each one once, from the records
+	 * that carry one as text; an address given as the host is its own.
+	 */
+	public function testResolvesTheAddressesARequestMayGoTo(): void {
+		$resolve = new \ReflectionMethod(ExternalPadExportFetcher::class, 'resolveAndValidateExternalHost');
+		$records = [['ip' => '1.1.1.1'], ['ip' => '1.1.1.1'], ['ip' => ''], ['ip' => 5], ['ipv6' => '2606:4700::1111']];
+
+		$this->assertSame(['1.1.1.1', '2606:4700::1111'], $resolve->invoke($this->fetcher($this->buildExternalEnabledConfig(), $records), 'pad.example', 'https://pad.example'));
+		$this->assertSame(['1.1.1.1'], $resolve->invoke($this->fetcher($this->buildExternalEnabledConfig()), '1.1.1.1', 'https://1.1.1.1'));
 	}
 
 	/**
