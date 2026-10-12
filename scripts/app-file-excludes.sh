@@ -42,6 +42,7 @@ RSYNC_EXCLUDES=(
 	--exclude='vitest.config.js'
 	--exclude='psalm.xml'
 	--exclude='psalm-baseline.xml'
+	--exclude='infection.json5'
 	--exclude='dist'
 	# Playwright e2e artefacts (gitignored, but rsync copies the working
 	# tree regardless) — must never end up in the app tarball.

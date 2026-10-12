@@ -1,8 +1,18 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<phpunit bootstrap="tests/phpunit/bootstrap.php" cacheDirectory=".phpunit.cache" colors="true">
+<phpunit bootstrap="tests/phpunit/bootstrap.php" cacheDirectory=".phpunit.cache" colors="true"
+         executionOrder="random"
+         failOnRisky="true"
+         failOnWarning="true"
+         displayDetailsOnTestsThatTriggerWarnings="true"
+         beStrictAboutOutputDuringTests="true">
   <testsuites>
     <testsuite name="unit">
       <directory>tests/phpunit/unit</directory>
     </testsuite>
   </testsuites>
+  <source>
+    <include>
+      <directory>lib</directory>
+    </include>
+  </source>
 </phpunit>
