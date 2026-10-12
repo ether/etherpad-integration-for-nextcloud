@@ -116,20 +116,33 @@ class PadFileServiceTest extends TestCase {
 		$this->assertSame('demo-pad', $parsed->padId);
 	}
 
-	/** @return array<string,array{0: string}> */
+	/**
+	 * The reader takes the first and the last quote as the value's ends and
+	 * undoes only `\"` and `\\`, so only the backslash escape changes what
+	 * reads back. The quote escape keeps the line YAML any other reader
+	 * takes, and shows only in the line written.
+	 *
+	 * @return array<string,array{0: string, 1: string}>
+	 */
 	public static function valuesThatNeedEscaping(): array {
 		return [
-			'quotes and lone backslashes' => ['https://pad.example.org/p/say-"hello"-path\\with\\slashes'],
-			// The reader leaves a backslash alone unless a quote or another
-			// backslash follows it, so these two are the ones the escaping
-			// is for.
-			'a backslash before a quote' => ['https://pad.example.org/p/say-\\"hello\\"'],
-			'two backslashes' => ['https://pad.example.org/p/share\\\\path'],
+			'quotes and lone backslashes' => [
+				'https://pad.example.org/p/say-"hello"-path\\with\\slashes',
+				'https://pad.example.org/p/say-\\"hello\\"-path\\\\with\\\\slashes',
+			],
+			'a backslash before a quote' => [
+				'https://pad.example.org/p/say-\\"hello\\"',
+				'https://pad.example.org/p/say-\\\\\\"hello\\\\\\"',
+			],
+			'two backslashes' => [
+				'https://pad.example.org/p/share\\\\path',
+				'https://pad.example.org/p/share\\\\\\\\path',
+			],
 		];
 	}
 
 	#[DataProvider('valuesThatNeedEscaping')]
-	public function testQuotedStringScalarsRoundtripWithEscapes(string $padUrl): void {
+	public function testQuotedStringScalarsRoundtripWithEscapes(string $padUrl, string $written): void {
 		$service = new PadFileService(new FixedClock());
 		$document = $service->buildInitialDocument(
 			51,
@@ -140,6 +153,7 @@ class PadFileServiceTest extends TestCase {
 
 		$parsed = $service->parsePadFile($document);
 
+		$this->assertStringContainsString("\npad_url: \"" . $written . "\"\n", $document);
 		$this->assertSame($padUrl, (string)$parsed['frontmatter']['pad_url']);
 	}
 
@@ -148,7 +162,7 @@ class PadFileServiceTest extends TestCase {
 	 * whole number is a number, and anything else is the text as written,
 	 * a quote at one end only included.
 	 *
-	 * @return array<string,array{0: string, 1: string}>
+	 * @return array<string,array{0: string, 1: int|string}>
 	 */
 	public static function handWrittenPadIds(): array {
 		return [
@@ -159,22 +173,26 @@ class PadFileServiceTest extends TestCase {
 			'a single quote at the start only' => ["'tis", "'tis"],
 			'a single quote at the end only' => ["James'", "James'"],
 			'a double quote at the end only' => ['say "hi"', 'say "hi"'],
-			'a whole number' => ['42', '42'],
+			'a whole number' => ['42', 42],
 			'a number that is not a whole one' => ['1.10', '1.10'],
 		];
 	}
 
 	#[DataProvider('handWrittenPadIds')]
-	public function testAHandWrittenValueReadsTheWayItIsQuoted(string $written, string $padId): void {
+	public function testAHandWrittenValueReadsTheWayItIsQuoted(string $written, int|string $read): void {
 		$service = new PadFileService(new FixedClock());
+		$document = self::handWritten(['pad_id' => $written]);
 
-		$this->assertSame($padId, $service->readPad(self::handWritten(['pad_id' => $written]))->padId);
+		$this->assertSame($read, $service->parsePadFile($document)['frontmatter']['pad_id']);
+		// The pad id is text, whatever the value reads as.
+		$this->assertSame((string)$read, $service->readPad($document)->padId);
 	}
 
 	public function testCommentsAndBlankLinesInTheFrontmatterAreSkipped(): void {
 		$service = new PadFileService(new FixedClock());
 		$document = self::handWritten();
 		$annotated = str_replace('format: ', "# written by hand\n\n   \n  # indented\nformat: ", $document);
+		$this->assertNotSame($document, $annotated, 'the fixture must actually add the lines');
 
 		$this->assertSame(
 			$service->parsePadFile($document)['frontmatter'],
@@ -182,23 +200,34 @@ class PadFileServiceTest extends TestCase {
 		);
 	}
 
-	/** The format's own fields are scalars, so the map sits under one it does not know. */
-	public function testAFieldTheFormatDoesNotKnowMayHoldAMap(): void {
-		$parsed = (new PadFileService(new FixedClock()))->parsePadFile(
-			self::handWritten(['labels' => "\n  colour: \"blue\"\n  size: 3"]),
-		);
+	/**
+	 * The format's own fields are scalars, so the map sits under one it does
+	 * not know. The writer knows the format's fields only, so the next write
+	 * leaves such a field out.
+	 */
+	public function testAFieldTheFormatDoesNotKnowIsReadButNotWrittenBack(): void {
+		$service = new PadFileService(new FixedClock());
+		$pad = $service->readPad(self::handWritten(['labels' => "\n  colour: \"blue\"\n  size: 3"]));
 
-		$this->assertSame(['colour' => 'blue', 'size' => 3], $parsed['frontmatter']['labels']);
+		$this->assertSame(['colour' => 'blue', 'size' => 3], $pad->frontmatter()['labels']);
+		$this->assertArrayNotHasKey('labels', $service->readPad($service->withExportSnapshot($pad, new PadSnapshot('text', '', 1)))->frontmatter());
 	}
 
-	public function testASchemeInUpperCaseIsAccepted(): void {
-		$parsed = (new PadFileService(new FixedClock()))->parsePadFile(self::handWritten([
-			'pad_url' => '"HTTPS://pad.example.test/p/demo"',
-			'pad_origin' => '"HTTPS://pad.example.test"',
-		]));
+	/** @return array<string,array{0: string, 1: string}> */
+	public static function acceptedLinkFields(): array {
+		return [
+			'a pad URL with its scheme in capitals' => ['pad_url', 'HTTPS://pad.example.test/p/demo'],
+			'a pad origin with its scheme in capitals' => ['pad_origin', 'HTTPS://pad.example.test'],
+			'an empty pad URL, which is none' => ['pad_url', ''],
+			'an empty pad origin, which is none' => ['pad_origin', ''],
+		];
+	}
 
-		$this->assertSame('HTTPS://pad.example.test/p/demo', $parsed['frontmatter']['pad_url']);
-		$this->assertSame('HTTPS://pad.example.test', $parsed['frontmatter']['pad_origin']);
+	#[DataProvider('acceptedLinkFields')]
+	public function testTakesALinkFieldInCapitalsOrEmpty(string $field, string $value): void {
+		$parsed = (new PadFileService(new FixedClock()))->parsePadFile(self::handWritten([$field => '"' . $value . '"']));
+
+		$this->assertSame($value, $parsed['frontmatter'][$field]);
 	}
 
 	public function testBuildInitialDocumentPersistsExtraFrontmatterForExternalPads(): void {
@@ -291,7 +320,7 @@ class PadFileServiceTest extends TestCase {
 	}
 
 	public function testParsePadFileRejectsMalformedYamlLine(): void {
-		$content = "---\nformat: \"etherpad-nextcloud/1\"\nfile_id: 1\npad_id: \"demo\"\naccess_mode: \"public\"\nstate: \"active\"\n- broken\ndeleted_at: null\ncreated_at: \"2026-03-06T00:00:00+00:00\"\nupdated_at: \"2026-03-06T00:00:00+00:00\"\nsnapshot_rev: 0\n---\n";
+		$content = str_replace("state: \"active\"\n", "state: \"active\"\n- broken\n", self::handWritten());
 
 		$this->expectException(PadFileFormatException::class);
 		// Counted from the first line after the opening `---`, as in every
@@ -301,13 +330,26 @@ class PadFileServiceTest extends TestCase {
 		(new PadFileService(new FixedClock()))->parsePadFile($content);
 	}
 
-	public function testAnIndentedLineOutsideAMapIsRefused(): void {
-		$this->expectException(PadFileFormatException::class);
-		$this->expectExceptionMessage('Invalid nested YAML structure at line 10.');
+	/** @return array<string,array{0: string, 1: string}> */
+	public static function indentedLinesOutsideAMap(): array {
+		return [
+			'no map opened' => [
+				str_replace("snapshot_rev: 0\n", "snapshot_rev: 0\n  colour: \"blue\"\n", self::handWritten()),
+				'Invalid nested YAML structure at line 10.',
+			],
+			'a map closed by the field after it' => [
+				str_replace("note: \"x\"\n", "note: \"x\"\n  size: 3\n", self::handWritten(['labels' => "\n  colour: \"blue\"", 'note' => '"x"'])),
+				'Invalid nested YAML structure at line 13.',
+			],
+		];
+	}
 
-		(new PadFileService(new FixedClock()))->parsePadFile(
-			str_replace("snapshot_rev: 0\n", "snapshot_rev: 0\n  colour: \"blue\"\n", self::handWritten()),
-		);
+	#[DataProvider('indentedLinesOutsideAMap')]
+	public function testAnIndentedLineOutsideAMapIsRefused(string $document, string $message): void {
+		$this->expectException(PadFileFormatException::class);
+		$this->expectExceptionMessage($message);
+
+		(new PadFileService(new FixedClock()))->parsePadFile($document);
 	}
 
 	public function testAMapEntryIndentedByMoreThanTwoSpacesIsRefused(): void {
@@ -371,17 +413,26 @@ class PadFileServiceTest extends TestCase {
 		$this->assertSame(6, $parsed->frontmatter()['snapshot_rev']);
 	}
 
+	/** @return array<string,array{0: string, 1: ?string}> */
+	public static function deletionTimestamps(): array {
+		return [
+			'a time' => ['"2026-03-07T00:00:00+00:00"', '2026-03-07T00:00:00+00:00'],
+			'an empty one, which is none' => ['""', null],
+		];
+	}
+
 	/** Files moved to the trash before the lifecycle was simplified carry one. */
-	public function testAWriteKeepsTheDeletionTimestamp(): void {
+	#[DataProvider('deletionTimestamps')]
+	public function testAWriteKeepsTheDeletionTimestamp(string $written, ?string $kept): void {
 		$service = new PadFileService(new FixedClock());
 		$trashed = $service->readPad(self::handWritten([
 			'state' => '"trashed"',
-			'deleted_at' => '"2026-03-07T00:00:00+00:00"',
+			'deleted_at' => $written,
 		]));
 
 		$synced = $service->readPad($service->withExportSnapshot($trashed, new PadSnapshot('text', '', 1)));
 
-		$this->assertSame('2026-03-07T00:00:00+00:00', $synced->frontmatter()['deleted_at']);
+		$this->assertSame($kept, $synced->frontmatter()['deleted_at']);
 	}
 
 	/**
@@ -802,7 +853,11 @@ class PadFileServiceTest extends TestCase {
 		);
 	}
 
-	/** -1 is the lowest revision a document can hold; anything below would not read back. */
+	/**
+	 * -1 is the lowest revision the format takes, and the writer refuses
+	 * anything below: without the clamp, a restore given a lower count
+	 * would fail.
+	 */
 	public function testARestoreNeverRecordsARevisionBelowNotSynced(): void {
 		$service = new PadFileService(new FixedClock());
 
@@ -844,7 +899,8 @@ class PadFileServiceTest extends TestCase {
 				'https://pad.example.test/p/demo',
 				'demo',
 			],
-			'a base URL in a section before it' => [
+			// BASEURL, as Windows writes it under [DEFAULT]: a line of its own, not URL=.
+			'a BASEURL line before it' => [
 				"[DEFAULT]\nBASEURL=https://other.example.test/p/other\n[InternetShortcut]\nURL=https://pad.example.test/p/demo\n",
 				'https://pad.example.test/p/demo',
 				'demo',
@@ -863,6 +919,17 @@ class PadFileServiceTest extends TestCase {
 				"[InternetShortcut]\nURL=https://example.test/p/etherpad/p/demo\n",
 				'https://example.test/p/etherpad/p/demo',
 				'demo',
+			],
+			// A plus stays a plus: only form encoding reads it as a space.
+			'a plus in the pad name' => [
+				"[InternetShortcut]\nURL=https://pad.example.test/p/team+meeting\n",
+				'https://pad.example.test/p/team+meeting',
+				'team+meeting',
+			],
+			'a percent-encoded plus' => [
+				"[InternetShortcut]\nURL=https://pad.example.test/p/team%2Bmeeting\n",
+				'https://pad.example.test/p/team%2Bmeeting',
+				'team+meeting',
 			],
 		];
 	}
@@ -895,28 +962,6 @@ class PadFileServiceTest extends TestCase {
 	#[DataProvider('notLegacyShortcuts')]
 	public function testParseLegacyOwnpadShortcutReturnsNullForAnythingElse(string $content): void {
 		$this->assertNull((new PadFileService(new FixedClock()))->parseLegacyOwnpadShortcut($content));
-	}
-
-	public function testParseLegacyOwnpadShortcutKeepsLiteralPlusInPadId(): void {
-		// `+` is a literal in URL path segments; only query/form encoding
-		// treats it as a space. The previous urldecode() turned
-		// `team+meeting` into `team meeting` and broke the binding lookup.
-		$service = new PadFileService(new FixedClock());
-		$parsed = $service->parseLegacyOwnpadShortcut(
-			"[InternetShortcut]\nURL=https://pad.example.test/p/team+meeting\n"
-		);
-		$this->assertNotNull($parsed);
-		$this->assertSame('team+meeting', $parsed['pad_id']);
-	}
-
-	public function testParseLegacyOwnpadShortcutDecodesPercentEncodedPlus(): void {
-		// `%2B` (percent-encoded plus) must still decode to `+`.
-		$service = new PadFileService(new FixedClock());
-		$parsed = $service->parseLegacyOwnpadShortcut(
-			"[InternetShortcut]\nURL=https://pad.example.test/p/team%2Bmeeting\n"
-		);
-		$this->assertNotNull($parsed);
-		$this->assertSame('team+meeting', $parsed['pad_id']);
 	}
 
 	public function testInferAccessModeFromPadIdMapsGroupPadsToProtected(): void {
