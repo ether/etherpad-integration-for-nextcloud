@@ -118,9 +118,10 @@ class SnapshotHtmlSanitizerTest extends TestCase {
 	}
 
 	/**
-	 * The sanitizer borrows libxml's error handling and gives it back as it
-	 * found it, leaving none of its own errors behind - also to a caller
-	 * that collects errors itself.
+	 * The sanitizer borrows libxml's error handling, gives the setting back
+	 * as it found it and leaves none of its own errors behind. libxml has no
+	 * way to drop only those, so errors a collecting caller had gathered
+	 * before go with them.
 	 */
 	public function testLeavesLibxmlErrorHandlingAsItFoundIt(): void {
 		$before = libxml_use_internal_errors(false);
@@ -128,6 +129,10 @@ class SnapshotHtmlSanitizerTest extends TestCase {
 			foreach ([false, true] as $collecting) {
 				libxml_use_internal_errors($collecting);
 				libxml_clear_errors();
+				if ($collecting) {
+					(new \DOMDocument())->loadHTML('<p>gathered before</i>');
+					$this->assertNotSame([], libxml_get_errors(), 'the caller has gathered an error');
+				}
 
 				$this->sanitize('<p>broken <b>markup</p></i>');
 
@@ -170,7 +175,7 @@ class SnapshotHtmlSanitizerTest extends TestCase {
 		$out = $this->sanitize('<a href="https://example.org/a&quot;onmouseover=&quot;alert(1)">x</a>');
 
 		$this->assertStringContainsString('href="https://example.org/a&quot;onmouseover=&quot;alert(1)"', $out);
-		$this->assertStringNotContainsString('" onmouseover', $out);
+		$this->assertStringNotContainsString('"onmouseover', $out);
 	}
 
 	public function testReadsTheSchemeInCapitalsAndTheAddressWithoutSurroundingSpace(): void {

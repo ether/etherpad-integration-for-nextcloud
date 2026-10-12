@@ -47,7 +47,7 @@ class AllowlistNormalizerTest extends TestCase {
 
 	/** A trailing dot names the same host; the list keeps it once, without it. */
 	public function testDropsATrailingDotFromAHost(): void {
-		$this->assertSame('pad.example.test', $this->buildNormalizer()->normalize('pad.example.test.'));
+		$this->assertSame('pad.example.test', $this->buildNormalizer()->normalize('pad.example.test pad.example.test.'));
 	}
 
 	public function testDeduplicatesEntries(): void {
@@ -125,12 +125,7 @@ class AllowlistNormalizerTest extends TestCase {
 		$this->buildNormalizer()->normalize($entry);
 	}
 
-	/**
-	 * A URL in the middle of an entry does not make it one: the entry is a
-	 * host, and an invalid one.
-	 *
-	 * @return array<string, array{string}>
-	 */
+	/** @return array<string, array{string}> */
 	public static function invalidHosts(): array {
 		return [
 			'two dots in a row' => ['bad..host'],
@@ -138,7 +133,12 @@ class AllowlistNormalizerTest extends TestCase {
 			'a hyphen last' => ['pad.example.test-'],
 			'another character first' => ['_pad.example.test'],
 			'another character last' => ['pad.example.test_'],
+			// A URL in the middle of an entry does not make it one: the
+			// entry is a host, and an invalid one.
 			'a URL inside' => ['pad.example.test/https://other.example.test'],
+			// Stored, `https://*` would let the CSP frame every https origin.
+			'a wildcard in a URL' => ['https://*'],
+			'two dots in a row in a URL' => ['https://bad..host'],
 		];
 	}
 

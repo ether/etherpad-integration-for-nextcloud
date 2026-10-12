@@ -225,30 +225,50 @@ class PublicLinkVisitorsTest extends TestCase {
 
 	/**
 	 * Each link counts its own visitors and says its own overflow: one
-	 * link full for the hour leaves another its 250.
+	 * link full for the hour leaves another all of its own.
 	 */
 	public function testEachLinkCountsItsOwnVisitors(): void {
 		$cache = $this->memcache();
 		$logger = $this->createMock(LoggerInterface::class);
 		$logger->expects($this->exactly(2))->method('warning');
-		$last = [];
-		foreach ([self::TOKEN, 'another-token'] as $token) {
+		$links = [self::TOKEN => self::LINK, 'another-token' => 'public-share:another-token'];
+		$uids = [];
+		foreach (array_keys($links) as $token) {
 			for ($i = 0; $i <= PublicLinkVisitors::PER_HOUR; $i++) {
 				$this->session = new \ArrayObject();
-				$last[$token] = $this->visitors($cache, $logger)->openerFor($token)->uid();
+				$uids[$token][] = $this->visitors($cache, $logger)->openerFor($token)->uid();
 			}
 		}
 
-		$this->assertSame([self::LINK, 'public-share:another-token'], array_values($last));
+		foreach ($links as $token => $link) {
+			$this->assertStringStartsWith($link . ':', $uids[$token][PublicLinkVisitors::PER_HOUR - 1], 'the last visitor the hour has room for is one of its own');
+			$this->assertSame($link, $uids[$token][PublicLinkVisitors::PER_HOUR], 'the one after opens as the link');
+		}
 	}
 
-	/** Each hour's count is added before it is counted, so that it expires with the hour. */
+	/**
+	 * The count is added with its expiry before it is counted: an inc() on
+	 * a missing entry makes one that never expires (Redis INCRBY), and the
+	 * add() after it would then find the entry there and set no expiry.
+	 */
 	public function testCountsInAnEntryThatExpiresWithTheHour(): void {
+		$calls = [];
 		$cache = $this->createMock(IMemcache::class);
-		$cache->expects($this->once())->method('add')->with($this->anything(), 0, 3600)->willReturn(true);
-		$cache->method('inc')->willReturn(1);
+		$cache->expects($this->once())->method('add')->with($this->anything(), 0, 3600)->willReturnCallback(
+			static function () use (&$calls): bool {
+				$calls[] = 'add';
+				return true;
+			},
+		);
+		$cache->method('inc')->willReturnCallback(
+			static function () use (&$calls): int {
+				$calls[] = 'inc';
+				return 1;
+			},
+		);
 
 		$this->assertStringStartsWith(self::LINK . ':', $this->visitors($this->cacheFactoryFor($cache))->openerFor(self::TOKEN)->uid());
+		$this->assertSame(['add', 'inc'], $calls);
 	}
 
 	/** Nothing is remembered for a visitor the session does not hold. */
