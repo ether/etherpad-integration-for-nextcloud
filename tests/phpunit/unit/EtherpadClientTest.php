@@ -467,26 +467,34 @@ class EtherpadClientTest extends TestCase {
 		$this->assertNotNull($captured);
 		$this->assertSame('GET', $captured['method']);
 		$this->assertSame('https://pad.example.test/api', $captured['url']);
+		$this->assertSame(EtherpadClient::REQUEST_TIMEOUT_SECONDS, $captured['options']['timeout']);
 		// Detection is a plain GET: no request body, redirects disabled.
 		$this->assertArrayNotHasKey('body', $captured['options']);
 		$this->assertSame(['max' => 0], $captured['options']['allow_redirects']);
 		$this->assertSame(['allow_local_address' => true], $captured['options']['nextcloud']);
 	}
 
+	/**
+	 * A throwable that carries no response is a transport failure: named
+	 * with its cause, and the body stream the request had opened closed.
+	 */
 	public function testApiCallWrapsTransportFailure(): void {
-		// request() throws and the throwable carries no response, so
-		// getResponseFromThrowable() rethrows -> wrapped as a request failure.
+		$body = null;
 		$http = $this->createMock(IClient::class);
-		$http->method('request')->willThrowException(new \RuntimeException('connection refused'));
-		$http->method('getResponseFromThrowable')->willThrowException(new \RuntimeException('connection refused'));
-		$service = $this->createMock(IClientService::class);
-		$service->method('newClient')->willReturn($http);
+		$http->method('request')->willReturnCallback(static function (string $method, string $url, array $options) use (&$body): IResponse {
+			$body = $options['body'];
+			throw new \RuntimeException('connection refused');
+		});
+		$http->method('getResponseFromThrowable')->willThrowException(new \RuntimeException('no response'));
 
-		$client = new EtherpadClient($this->configForApi(), $this->repositoryWithKey('stored-key'), $service);
-
-		$this->expectException(EtherpadClientException::class);
-		$this->expectExceptionMessage('Etherpad API request failed: createGroup');
-		$client->createGroup();
+		try {
+			$this->clientWith($http)->createGroup();
+			$this->fail('Not refused.');
+		} catch (EtherpadClientException $e) {
+			$this->assertSame('Etherpad API request failed: createGroup', $e->getMessage());
+			$this->assertSame('Etherpad transport error: connection refused', $e->getPrevious()?->getMessage());
+			$this->assertFalse(is_resource($body), 'the body stream should be closed');
+		}
 	}
 
 	/**
@@ -617,10 +625,8 @@ class EtherpadClientTest extends TestCase {
 				return $response;
 			}
 		);
-		$service = $this->createMock(IClientService::class);
-		$service->method('newClient')->willReturn($http);
 
-		return new EtherpadClient($this->configForApi(), $this->repositoryWithKey('stored-key'), $service);
+		return $this->clientWith($http);
 	}
 
 	/**
@@ -665,8 +671,8 @@ class EtherpadClientTest extends TestCase {
 	}
 
 	/**
-	 * Each call goes to its own API method with its own parameters, the key
-	 * beside them, and reads its own field of the answer.
+	 * Every wrapper, since each spells out its method, its parameters and
+	 * the field of the answer it reads by hand.
 	 *
 	 * @param \Closure(EtherpadClient): mixed $call
 	 * @param array<string, string> $params
@@ -679,10 +685,10 @@ class EtherpadClientTest extends TestCase {
 
 		$this->assertSame($expected, $call($client));
 
-		$this->assertSame(['POST', 'https://pad.example.test/api/1.2.15/' . $method], [$captured['method'], $captured['url']]);
+		$this->assertSame(['POST', 'http://etherpad.internal:9001/api/1.3.0/' . $method], [$captured['method'], $captured['url']]);
 		parse_str(self::bodyOf($captured), $sent);
 		$this->assertSame($params + ['apikey' => 'stored-key'], $sent);
-		$this->assertSame(0, $captured['position']);
+		$this->assertSame('application/x-www-form-urlencoded', $captured['options']['headers']['Content-Type']);
 		$this->assertSame('application/json', $captured['options']['headers']['Accept']);
 	}
 
@@ -735,7 +741,7 @@ class EtherpadClientTest extends TestCase {
 		$this->assertSame(0, $this->clientWithResponse($this->response(200, '{"code":0,"data":{"revisions":0}}'))->getRevisionsCount('pad'));
 	}
 
-	/** Code 0 is Etherpad's success, so an answer without a code is not read as code 0. */
+	/** Code 0 is Etherpad's success, so a missing code is not read as 0. */
 	public function testRefusesAnAnswerWithoutACode(): void {
 		$client = $this->clientWithResponse($this->response(200, '{"data":{"groupID":"g.abc123"}}'));
 
@@ -744,11 +750,12 @@ class EtherpadClientTest extends TestCase {
 		$client->createGroup();
 	}
 
-	/** Ids come back as text; a number in their place is refused rather than handed to a caller that compares them with its own. */
+	/** getSessionInfo() takes the ids as text only: a number in their place is refused rather than handed to a caller that compares them with its own. */
 	public function testRefusesASessionDescribedWithFieldsOfOtherTypes(): void {
 		foreach ([
 			'a group as a number' => ['groupID' => 5, 'authorID' => 'a.x', 'validUntil' => 99],
 			'an author as a number' => ['groupID' => 'g.x', 'authorID' => 5, 'validUntil' => 99],
+			'an expiry that is no number' => ['groupID' => 'g.x', 'authorID' => 'a.x', 'validUntil' => true],
 		] as $case => $data) {
 			try {
 				$this->clientWithResponse($this->response(200, (string)json_encode(['code' => 0, 'data' => $data])))->getSessionInfo('s.one');
@@ -776,17 +783,20 @@ class EtherpadClientTest extends TestCase {
 		$this->assertSame(['s.one' => ['groupID' => 'g.a', 'validUntil' => 99], 's.two' => ['groupID' => 'g.b', 'validUntil' => 100]], $client->listSessionsOfAuthor('a.x'));
 	}
 
-	/** The API version, from whichever field names one first; anything but `<major>.<minor>.<patch>` is no version. */
+	/** The API version from the first of its fields that holds text; anything there but `<major>.<minor>.<patch>` is no version. */
 	#[\PHPUnit\Framework\Attributes\DataProvider('apiVersionAnswers')]
 	public function testDetectsTheApiVersion(string $answer, ?string $version): void {
 		$captured = null;
 		$client = $this->clientWithResponse($this->response(200, $answer), $captured);
 
-		if ($version === null) {
-			$this->expectException(EtherpadClientException::class);
-			$this->expectExceptionMessage('Could not detect Etherpad API version.');
+		try {
+			$detected = $client->detectApiVersion(' https://pad.example.test/ ');
+		} catch (EtherpadClientException $e) {
+			$this->assertSame('Could not detect Etherpad API version.', $e->getMessage());
+			$detected = null;
 		}
-		$this->assertSame($version, $client->detectApiVersion(' https://pad.example.test/ '));
+
+		$this->assertSame($version, $detected);
 		$this->assertSame('https://pad.example.test/api', $captured['url']);
 	}
 
@@ -794,7 +804,7 @@ class EtherpadClientTest extends TestCase {
 	public static function apiVersionAnswers(): array {
 		return [
 			'the current version' => ['{"currentVersion":"1.3.0"}', '1.3.0'],
-			'the first field that names one' => ['{"currentVersion":"1.3.0","apiVersion":"9.9.9"}', '1.3.0'],
+			'the first field with text' => ['{"currentVersion":"1.3.0","apiVersion":"9.9.9"}', '1.3.0'],
 			'past an empty field' => ['{"currentVersion":"","apiVersion":"1.2.15"}', '1.2.15'],
 			'past a field of another type' => ['{"currentVersion":5,"version":"1.2.15"}', '1.2.15'],
 			'with spaces around it' => ['{"currentVersion":" 1.3.0 "}', '1.3.0'],
@@ -812,7 +822,7 @@ class EtherpadClientTest extends TestCase {
 		$this->assertSame('https://other.example.test/health', $captured['url']);
 
 		$this->clientWithResponse($this->response(200, '{"releaseId":"2.7.3"}'), $captured)->detectReleaseVersion('  ');
-		$this->assertSame('https://pad.example.test/health', $captured['url']);
+		$this->assertSame('http://etherpad.internal:9001/health', $captured['url']);
 
 		$this->expectException(EtherpadClientException::class);
 		$this->clientWithResponse($this->response(200, '{"releaseId":"v2.7.3"}'))->detectReleaseVersion('');
@@ -832,12 +842,11 @@ class EtherpadClientTest extends TestCase {
 		$this->clientWithResponse($this->response(400, '{"releaseId":"2.7.3"}'))->detectReleaseVersion('');
 	}
 
-	/** A blank host or version given to a probe is none: the configured ones are used. */
 	public function testTakesABlankHostOrVersionForNone(): void {
 		$captured = null;
 		$this->clientWithResponse($this->response(200, '{"code":0,"data":null}'), $captured)->assertApiKeyAccepted('  ', new ApiKey('probe-key'), '  ');
 
-		$this->assertSame('https://pad.example.test/api/1.2.15/checkToken', $captured['url']);
+		$this->assertSame('http://etherpad.internal:9001/api/1.3.0/checkToken', $captured['url']);
 	}
 
 	public function testRefusesACallWithoutAConfiguredKey(): void {
@@ -854,44 +863,18 @@ class EtherpadClientTest extends TestCase {
 		$this->client($this->configWithHost(''))->buildPadUrl('pad-1');
 	}
 
-	/**
-	 * Nextcloud's client throws on an error status; the client reads the
-	 * status from the response that throwable carries. One without a
-	 * response is a transport failure, named with its cause, and the body
-	 * stream it had opened is closed.
-	 */
-	public function testReadsAThrownErrorStatusAndNamesATransportFailure(): void {
-		$statusThrown = $this->createMock(IClient::class);
-		$statusThrown->method('request')->willThrowException(new \RuntimeException('404 Not Found'));
-		$statusThrown->method('getResponseFromThrowable')->willReturn($this->response(404, ''));
+	/** Nextcloud's client throws on an error status; the status is read from the response that throwable carries. */
+	public function testReadsTheStatusFromAThrownError(): void {
+		$http = $this->createMock(IClient::class);
+		$http->method('request')->willThrowException(new \RuntimeException('404 Not Found'));
+		$http->method('getResponseFromThrowable')->willReturn($this->response(404, ''));
+
 		try {
-			$this->clientWith($statusThrown)->createGroup();
-			$this->fail('404: taken');
+			$this->clientWith($http)->createGroup();
+			$this->fail('Not refused.');
 		} catch (EtherpadClientException $e) {
 			$this->assertSame('Etherpad API HTTP error (404)', $e->getPrevious()?->getMessage());
 		}
-
-		$body = null;
-		$transport = $this->createMock(IClient::class);
-		$transport->method('request')->willReturnCallback(static function (string $method, string $url, array $options) use (&$body): IResponse {
-			$body = $options['body'];
-			throw new \RuntimeException('connection refused');
-		});
-		$transport->method('getResponseFromThrowable')->willThrowException(new \RuntimeException('no response'));
-		try {
-			$this->clientWith($transport)->createGroup();
-			$this->fail('transport: taken');
-		} catch (EtherpadClientException $e) {
-			$this->assertSame('Etherpad transport error: connection refused', $e->getPrevious()?->getMessage());
-			$this->assertFalse(is_resource($body), 'the body stream should be closed');
-		}
-	}
-
-	/** A client whose requests go to $http. */
-	private function clientWith(IClient $http): EtherpadClient {
-		$service = $this->createMock(IClientService::class);
-		$service->method('newClient')->willReturn($http);
-		return new EtherpadClient($this->configForApi(), $this->repositoryWithKey('stored-key'), $service);
 	}
 
 	/** An origin needs a scheme and a host; a port is kept unless it is its scheme's own. */
@@ -935,9 +918,7 @@ class EtherpadClientTest extends TestCase {
 		$http = $this->createMock(IClient::class);
 		$http->method('request')->willReturnCallback(
 			static function (string $method, string $url, array $options) use ($response, &$captured): IResponse {
-				// Where the body stream stands as it is sent: the client reads it from there.
-				$position = is_resource($options['body'] ?? null) ? ftell($options['body']) : null;
-				$captured = ['method' => $method, 'url' => $url, 'options' => $options, 'position' => $position];
+				$captured = ['method' => $method, 'url' => $url, 'options' => $options];
 				// A sink is where the client puts the body, so a double that
 				// ignores it would let a capped call read nothing.
 				$sink = $options['sink'] ?? null;
@@ -947,9 +928,13 @@ class EtherpadClientTest extends TestCase {
 				return $response;
 			}
 		);
+
+		return $this->clientWith($http);
+	}
+
+	private function clientWith(IClient $http): EtherpadClient {
 		$service = $this->createMock(IClientService::class);
 		$service->method('newClient')->willReturn($http);
-
 		return new EtherpadClient($this->configForApi(), $this->repositoryWithKey('stored-key'), $service);
 	}
 
@@ -966,6 +951,10 @@ class EtherpadClientTest extends TestCase {
 		return $repository;
 	}
 
+	/**
+	 * The API host differs from the public one, and the API version from the
+	 * default, so a test sees which of them a call takes.
+	 */
 	private function configForApi(): IConfig {
 		$config = $this->createMock(IConfig::class);
 		$config->method('getAppValue')->willReturnCallback(
@@ -974,8 +963,9 @@ class EtherpadClientTest extends TestCase {
 					return $default;
 				}
 				return match ($key) {
-					'etherpad_host', 'etherpad_api_host' => 'https://pad.example.test',
-					'etherpad_api_version' => '1.2.15',
+					'etherpad_host' => 'https://pad.example.test',
+					'etherpad_api_host' => 'http://etherpad.internal:9001',
+					'etherpad_api_version' => '1.3.0',
 					default => $default,
 				};
 			}
