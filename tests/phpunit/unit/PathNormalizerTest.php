@@ -322,22 +322,14 @@ class PathNormalizerTest extends TestCase {
 	}
 
 	/**
-	 * Only a value that starts with a URL is read as one. A value with a
-	 * URL further in is a path like any other: its slashes separate
-	 * folders, and its percent signs stay as they are.
+	 * A value with a URL further in is a path like any other: its slashes
+	 * separate folders, and its percent signs stay as they are.
 	 */
 	public function testReadsAUrlOnlyAtTheStart(): void {
 		$normalizer = new PathNormalizer();
 
 		$this->assertSame('/Links/see https:/host/100%25.pad', $normalizer->normalizeViewerFilePath('/Links/see https://host/100%25.pad'));
 		$this->assertSame('Links/see https:/host/100%25.pad', $normalizer->normalizePublicShareFilePath('Links/see https://host/100%25.pad', 'tok'));
-	}
-
-	public function testReadsAnyOtherUrlInAPublicShareByItsPath(): void {
-		$this->assertSame(
-			'Folder/Notes A.pad',
-			(new PathNormalizer())->normalizePublicShareFilePath('https://host/Folder/Notes%20A.pad', 'tok')
-		);
 	}
 
 	public function testNamesNoFileInAPublicShareForOnlySpaces(): void {

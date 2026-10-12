@@ -264,7 +264,8 @@ class CookieDomainPolicyTest extends TestCase {
 	 * suffix; hosts that differ in one label share only what follows it;
 	 * names under .localhost, an IP address beside a name, and IPv6
 	 * addresses are no ground for a domain cookie. An IPv6 address is read
-	 * without its brackets, so the same one twice is the same host.
+	 * without its brackets, with which it would be no valid host, and
+	 * without its port: the same address on two ports is the same host.
 	 */
 	#[DataProvider('derivedCases')]
 	public function testDerivesOrRefusesADomainFor(string $nextcloud, string $etherpad, string $reason, string $domain): void {
@@ -282,7 +283,8 @@ class CookieDomainPolicyTest extends TestCase {
 			'names under .localhost' => ['http://nc.localhost', 'http://pad.localhost', CookieDomainDecision::REASON_HOST_NOT_COOKIE_CAPABLE, ''],
 			'an IP address beside a name' => ['https://192.168.1.10', 'https://pad.example.org', CookieDomainDecision::REASON_HOST_NOT_COOKIE_CAPABLE, ''],
 			'bracketed IPv6, the same host' => ['http://[::1]:8080', 'http://[::1]:9001', CookieDomainDecision::REASON_SAME_HOST, ''],
-			'bracketed IPv6, two hosts' => ['https://[2001:db8::1]', 'https://[2001:db8::2]', CookieDomainDecision::REASON_HOST_NOT_COOKIE_CAPABLE, ''],
+			// With dots in them, so only the test for an IP address refuses them.
+			'two IPv4-mapped IPv6 addresses' => ['https://[::ffff:10.0.0.1]', 'https://[::ffff:11.0.0.1]', CookieDomainDecision::REASON_HOST_NOT_COOKIE_CAPABLE, ''],
 			'URLs with spaces around them' => [' https://cloud.example.org ', ' https://pad.example.org ', CookieDomainDecision::REASON_COMMON_PARENT, '.example.org'],
 		];
 	}
@@ -328,7 +330,7 @@ class CookieDomainPolicyTest extends TestCase {
 			'a lookalike' => ['https://evil-example.org', '.example.org', false],
 			'no domain' => ['https://intranet.example.org', '', false],
 			'no valid origin' => ['https://bad_host', '.example.org', false],
-			// The one pair the suffix test alone would answer with true.
+			// Both read as empty: without the guard, the two empty strings would count as equal.
 			'neither a valid origin nor a domain' => ['https://bad_host', '', false],
 		];
 	}

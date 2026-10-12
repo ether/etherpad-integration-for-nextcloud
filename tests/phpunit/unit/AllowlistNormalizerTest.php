@@ -30,8 +30,9 @@ class AllowlistNormalizerTest extends TestCase {
 	}
 
 	/**
-	 * A leading separator leaves an empty first entry, and a URL entry is
-	 * read apart: the entries after either still count.
+	 * Both end their turn of the loop early - an empty entry, as a leading
+	 * separator leaves, is skipped, a URL entry is normalized apart - and
+	 * the entries after them still count.
 	 */
 	public function testKeepsEveryEntryAfterAnEmptyOneOrAUrl(): void {
 		$this->assertSame(

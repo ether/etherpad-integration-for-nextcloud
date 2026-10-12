@@ -119,11 +119,11 @@ class SnapshotHtmlSanitizerTest extends TestCase {
 
 	/**
 	 * The sanitizer borrows libxml's error handling, gives the setting back
-	 * as it found it and leaves none of its own errors behind. libxml has no
-	 * way to drop only those, so errors a collecting caller had gathered
-	 * before go with them.
+	 * as it found it and leaves no errors behind. It clears those a
+	 * collecting caller had gathered before too, rather than hand its own
+	 * to that caller.
 	 */
-	public function testLeavesLibxmlErrorHandlingAsItFoundIt(): void {
+	public function testGivesLibxmlErrorHandlingBackAndLeavesNoErrors(): void {
 		$before = libxml_use_internal_errors(false);
 		try {
 			foreach ([false, true] as $collecting) {
@@ -138,6 +138,7 @@ class SnapshotHtmlSanitizerTest extends TestCase {
 
 				$this->assertSame($collecting, libxml_use_internal_errors(null));
 				$this->assertSame([], libxml_get_errors());
+				$this->assertFalse(libxml_get_last_error());
 			}
 		} finally {
 			libxml_clear_errors();
