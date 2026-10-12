@@ -238,7 +238,12 @@ class ExternalPadExportFetcher {
 		if ($curl === false) {
 			throw new ExternalPadException('Could not initialize external export request.', ExternalPadException::UNREACHABLE);
 		}
-		curl_setopt_array($curl, $options);
+		// cURL stops at the first option it refuses and sets none after it,
+		// which can leave out the sink and its limit: the body would then go
+		// to the output, whole.
+		if (!curl_setopt_array($curl, $options)) {
+			throw new ExternalPadException('Could not set up external export request.', ExternalPadException::UNREACHABLE);
+		}
 		$completed = curl_exec($curl) !== false;
 		return [
 			'completed' => $completed,

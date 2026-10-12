@@ -371,6 +371,49 @@ class ExternalPadExportFetcherTest extends TestCase {
 	}
 
 	/**
+	 * The one method that runs cURL; every other test answers in its place.
+	 * Here it runs against what needs no network: this file, and a local
+	 * port nothing listens on.
+	 */
+	public function testPerformsARequestThroughCurl(): void {
+		$sink = new ExportAttemptSink(1 << 20);
+		$this->assertSame(
+			['completed' => true, 'status' => 0, 'error' => '', 'errno' => 0],
+			$this->performedForReal('file://' . __FILE__, [CURLOPT_WRITEFUNCTION => $sink->chunk(...)]),
+		);
+		$this->assertSame(file_get_contents(__FILE__), $sink->body());
+
+		// No proxy from the environment: the port asked is this machine's.
+		$refused = $this->performedForReal('https://127.0.0.1:1/', [CURLOPT_PROXY => '', CURLOPT_WRITEFUNCTION => $sink->chunk(...)]);
+		$this->assertSame([false, 0, 7], [$refused['completed'], $refused['status'], $refused['errno']]);
+		$this->assertStringContainsString('127.0.0.1', $refused['error']);
+	}
+
+	public function testRunsNoRequestWithAnOptionCurlRefuses(): void {
+		$this->expectException(ExternalPadException::class);
+		$this->expectExceptionMessage('Could not set up external export request.');
+
+		$this->performedForReal('https://127.0.0.1:1/', [CURLOPT_HTTP_VERSION => 99]);
+	}
+
+	/**
+	 * @param array<int, mixed> $options
+	 * @return array{completed: bool, status: int, error: string, errno: int}
+	 */
+	private function performedForReal(string $url, array $options): array {
+		$fetcher = new class($this->buildExternalEnabledConfig(), new FixedClock()) extends ExternalPadExportFetcher {
+			/**
+			 * @param array<int, mixed> $options
+			 * @return array{completed: bool, status: int, error: string, errno: int}
+			 */
+			public function performNow(string $url, array $options): array {
+				return $this->perform($url, $options);
+			}
+		};
+		return $fetcher->performNow($url, $options);
+	}
+
+	/**
 	 * An answer as cURL delivers it: the Content-Type header line, then the
 	 * body, through the attempt's callbacks.
 	 *
