@@ -729,13 +729,13 @@ class EtherpadClientTest extends TestCase {
 		];
 	}
 
-	/** A count given as digits is a count, and 0 is one: a pad nobody wrote in yet. */
+	/** 0 is a count, not a missing one: a pad nobody has written in yet. */
 	public function testReadsARevisionCountGivenAsDigitsOrZero(): void {
 		$this->assertSame(7, $this->clientWithResponse($this->response(200, '{"code":0,"data":{"revisions":"7"}}'))->getRevisionsCount('pad'));
 		$this->assertSame(0, $this->clientWithResponse($this->response(200, '{"code":0,"data":{"revisions":0}}'))->getRevisionsCount('pad'));
 	}
 
-	/** An answer that names no code is no success: it is refused, not read as code 0. */
+	/** Code 0 is Etherpad's success, so an answer without a code is not read as code 0. */
 	public function testRefusesAnAnswerWithoutACode(): void {
 		$client = $this->clientWithResponse($this->response(200, '{"data":{"groupID":"g.abc123"}}'));
 
@@ -744,7 +744,7 @@ class EtherpadClientTest extends TestCase {
 		$client->createGroup();
 	}
 
-	/** A session whose fields are not of their types is no session: described as incomplete, not passed on. */
+	/** Ids come back as text; a number in their place is refused rather than handed to a caller that compares them with its own. */
 	public function testRefusesASessionDescribedWithFieldsOfOtherTypes(): void {
 		foreach ([
 			'a group as a number' => ['groupID' => 5, 'authorID' => 'a.x', 'validUntil' => 99],
@@ -759,7 +759,7 @@ class EtherpadClientTest extends TestCase {
 		}
 	}
 
-	/** Etherpad refusing for another reason than a session gone is no "gone": it reaches the caller. */
+	/** Only a session Etherpad no longer holds reads as none; another refusal, a wrong API key say, reaches the caller. */
 	public function testPassesOnARefusalOtherThanASessionGone(): void {
 		$client = $this->clientWithResponse($this->response(200, '{"code":4,"message":"no or wrong API Key","data":null}'));
 
