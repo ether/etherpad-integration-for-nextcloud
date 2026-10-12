@@ -750,7 +750,11 @@ class EtherpadClientTest extends TestCase {
 		$client->createGroup();
 	}
 
-	/** getSessionInfo() takes the ids as text only: a number in their place is refused rather than handed to a caller that compares them with its own. */
+	/**
+	 * getSessionInfo() takes the ids as text only, and the expiry as a number:
+	 * anything else is refused rather than handed to a caller that compares
+	 * the ids with its own and reuses the session until it expires.
+	 */
 	public function testRefusesASessionDescribedWithFieldsOfOtherTypes(): void {
 		foreach ([
 			'a group as a number' => ['groupID' => 5, 'authorID' => 'a.x', 'validUntil' => 99],
