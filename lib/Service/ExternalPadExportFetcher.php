@@ -197,11 +197,13 @@ class ExternalPadExportFetcher {
 	 * before it: the name resolves to the address that was vetted and no
 	 * other, no redirect is followed, only HTTPS is spoken, the certificate
 	 * and its name are verified, and the body stops at the sink's limit.
+	 * The pin holds for a direct connection only: a proxy cURL takes from
+	 * the environment (`https_proxy`, `all_proxy`) resolves the name itself.
 	 *
 	 * @return array<int, mixed>
 	 */
 	private static function attemptOptions(string $host, int $port, string $ip, string $format, int $timeout, ExportAttemptSink $sink): array {
-		$options = [
+		return [
 			CURLOPT_RETURNTRANSFER => false,
 			CURLOPT_FOLLOWLOCATION => false,
 			CURLOPT_MAXREDIRS => 0,
@@ -214,16 +216,11 @@ class ExternalPadExportFetcher {
 				'Accept: ' . self::acceptHeaderFor($format),
 			],
 			CURLOPT_RESOLVE => [$host . ':' . $port . ':' . $ip],
+			CURLOPT_PROTOCOLS => CURLPROTO_HTTPS,
+			CURLOPT_REDIR_PROTOCOLS => CURLPROTO_HTTPS,
 			CURLOPT_HEADERFUNCTION => $sink->header(...),
 			CURLOPT_WRITEFUNCTION => $sink->chunk(...),
 		];
-		if (defined('CURLOPT_PROTOCOLS') && defined('CURLPROTO_HTTPS')) {
-			$options[CURLOPT_PROTOCOLS] = CURLPROTO_HTTPS;
-		}
-		if (defined('CURLOPT_REDIR_PROTOCOLS') && defined('CURLPROTO_HTTPS')) {
-			$options[CURLOPT_REDIR_PROTOCOLS] = CURLPROTO_HTTPS;
-		}
-		return $options;
 	}
 
 	/**

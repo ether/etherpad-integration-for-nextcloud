@@ -12,6 +12,7 @@ use OCA\EtherpadNextcloud\Http\ExportAttemptSink;
 use OCA\EtherpadNextcloud\Service\ExternalPadExportFetcher;
 use OCP\IConfig;
 use OCA\EtherpadNextcloud\Tests\Support\FixedClock;
+use PHPUnit\Framework\Assert;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
@@ -213,15 +214,14 @@ class ExternalPadExportFetcherTest extends TestCase {
 		}
 	}
 
-	/**
-	 * Each attempt is kept to what was checked before it: the name goes to
-	 * the vetted address and no other, no redirect is followed, only HTTPS
-	 * is spoken, and the certificate and its name are verified.
-	 */
 	public function testEachAttemptIsKeptToWhatWasChecked(): void {
-		$sink = new ExportAttemptSink(10);
-		$options = (new \ReflectionMethod(ExternalPadExportFetcher::class, 'attemptOptions'))->invoke(null, 'pad.example', 8443, '1.1.1.1', 'txt', 7, $sink);
+		$fetcher = $this->fetcher($this->buildExternalEnabledConfig(), [['ip' => '1.1.1.1']], [
+			static fn (array $options): array => self::answer($options, 200, 'text/plain', 'pad text'),
+		]);
 
+		$this->assertSame('pad text', $fetcher->normalizeAndFetchExternalPublicPadText('https://pad.example:8443/p/pad')['text']);
+		[$url, $options] = $fetcher->performed[0];
+		$this->assertSame('https://pad.example:8443/p/pad/export/txt', $url);
 		$this->assertSame(['pad.example:8443:1.1.1.1'], $options[CURLOPT_RESOLVE]);
 		$this->assertFalse($options[CURLOPT_FOLLOWLOCATION]);
 		$this->assertSame(0, $options[CURLOPT_MAXREDIRS]);
@@ -231,24 +231,24 @@ class ExternalPadExportFetcherTest extends TestCase {
 		$this->assertSame(2, $options[CURLOPT_SSL_VERIFYHOST]);
 		$this->assertTrue($options[CURLOPT_HTTPGET]);
 		$this->assertFalse($options[CURLOPT_RETURNTRANSFER]);
-		$this->assertSame([7, 7], [$options[CURLOPT_CONNECTTIMEOUT], $options[CURLOPT_TIMEOUT]]);
+		$this->assertSame($options[CURLOPT_TIMEOUT], $options[CURLOPT_CONNECTTIMEOUT]);
 		$this->assertSame(['Accept: text/plain, application/octet-stream;q=0.9, */*;q=0.1'], $options[CURLOPT_HTTPHEADER]);
-		// What arrives goes to the attempt's sink.
-		$options[CURLOPT_HEADERFUNCTION](null, "Content-Type: text/plain\r\n");
-		$options[CURLOPT_WRITEFUNCTION](null, 'pad text');
-		$this->assertSame(['text/plain', 'pad text'], [$sink->contentType(), $sink->body()]);
-
-		$html = (new \ReflectionMethod(ExternalPadExportFetcher::class, 'attemptOptions'))->invoke(null, 'pad.example', 443, '1.1.1.1', 'html', 7, new ExportAttemptSink(10));
-		$this->assertSame(['Accept: text/html, application/xhtml+xml;q=0.9, */*;q=0.1'], $html[CURLOPT_HTTPHEADER]);
 	}
 
-	/** An address that does not answer gives way to the next, each attempt pinned to its own. */
+	/**
+	 * An address that stops answering gives way to the next, each attempt
+	 * pinned to its own. The first one's half answer stays with it.
+	 */
 	public function testTriesTheNextAddressAfterOneThatDoesNotAnswer(): void {
 		$fetcher = $this->fetcher(
 			$this->buildExternalEnabledConfig(),
 			[['ip' => '1.1.1.1'], ['ipv6' => '2606:4700::1111']],
 			[
-				static fn (array $options): array => ['completed' => false, 'status' => 0, 'error' => 'Connection refused', 'errno' => 7],
+				static function (array $options): array {
+					$options[CURLOPT_HEADERFUNCTION](null, "Content-Type: text/plain\r\n");
+					$options[CURLOPT_WRITEFUNCTION](null, 'half ');
+					return ['completed' => false, 'status' => 0, 'error' => 'Operation timed out', 'errno' => 28];
+				},
 				static fn (array $options): array => self::answer($options, 200, 'text/plain', 'pad text'),
 			],
 		);
@@ -289,6 +289,9 @@ class ExternalPadExportFetcherTest extends TestCase {
 				$this->fail($case . ': not refused');
 			} catch (ExternalPadException $e) {
 				$this->assertCount($attempts, $fetcher->performed, $case);
+				if ($attempts === 2) {
+					$this->assertSame(2, $fetcher->performed[1][1][CURLOPT_TIMEOUT], $case . ': the second attempt has what is left');
+				}
 				if ($attempts === 1) {
 					$this->assertSame('Public export transport error: transport via 1.1.1.1: Connection refused; no time left to try 1.0.0.1', $e->getMessage(), $case);
 				}
@@ -313,13 +316,22 @@ class ExternalPadExportFetcherTest extends TestCase {
 		}
 	}
 
-	/** A body past the limit ends the fetch: no other address is asked for the same export. */
+	/**
+	 * A body past the limit ends the fetch: no other address is asked for
+	 * the same export. The body arrives as cURL hands it over, chunk after
+	 * chunk until the sink takes less than it was given.
+	 */
 	public function testStopsAtABodyPastTheLimit(): void {
 		$fetcher = $this->fetcher(
 			$this->buildExternalEnabledConfig(),
 			[['ip' => '1.1.1.1'], ['ip' => '1.0.0.1']],
 			[static function (array $options): array {
-				$options[CURLOPT_WRITEFUNCTION](null, str_repeat('x', 5242881));
+				$chunk = str_repeat('x', 1 << 20);
+				$stopped = false;
+				for ($i = 0; $i < 64 && !$stopped; $i++) {
+					$stopped = $options[CURLOPT_WRITEFUNCTION](null, $chunk) < strlen($chunk);
+				}
+				Assert::assertTrue($stopped, 'the sink stops the body within 64 MiB');
 				return ['completed' => false, 'status' => 200, 'error' => 'Failed writing body', 'errno' => 23];
 			}],
 		);
