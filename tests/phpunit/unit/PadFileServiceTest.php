@@ -102,6 +102,7 @@ class PadFileServiceTest extends TestCase {
 		$this->assertNotSame($document, $broken, 'the fixture must actually replace the state line');
 
 		$this->expectException(PadFileFormatException::class);
+		$this->expectExceptionMessage('Frontmatter line 5 contains a carriage return or a NUL byte.');
 		$service->parsePadFile($broken);
 	}
 
@@ -115,9 +116,21 @@ class PadFileServiceTest extends TestCase {
 		$this->assertSame('demo-pad', $parsed->padId);
 	}
 
-	public function testQuotedStringScalarsRoundtripWithEscapes(): void {
+	/** @return array<string,array{0: string}> */
+	public static function valuesThatNeedEscaping(): array {
+		return [
+			'quotes and lone backslashes' => ['https://pad.example.org/p/say-"hello"-path\\with\\slashes'],
+			// The reader leaves a backslash alone unless a quote or another
+			// backslash follows it, so these two are the ones the escaping
+			// is for.
+			'a backslash before a quote' => ['https://pad.example.org/p/say-\\"hello\\"'],
+			'two backslashes' => ['https://pad.example.org/p/share\\\\path'],
+		];
+	}
+
+	#[DataProvider('valuesThatNeedEscaping')]
+	public function testQuotedStringScalarsRoundtripWithEscapes(string $padUrl): void {
 		$service = new PadFileService(new FixedClock());
-		$padUrl = 'https://pad.example.org/p/say-"hello"-path\\with\\slashes';
 		$document = $service->buildInitialDocument(
 			51,
 			'demo-pad',
@@ -128,6 +141,64 @@ class PadFileServiceTest extends TestCase {
 		$parsed = $service->parsePadFile($document);
 
 		$this->assertSame($padUrl, (string)$parsed['frontmatter']['pad_url']);
+	}
+
+	/**
+	 * What the reader makes of a value: quotes around it are dropped, a
+	 * whole number is a number, and anything else is the text as written,
+	 * a quote at one end only included.
+	 *
+	 * @return array<string,array{0: string, 1: string}>
+	 */
+	public static function handWrittenPadIds(): array {
+		return [
+			'unquoted' => ['demo', 'demo'],
+			'double quotes, spaces after them' => ['"demo"  ', 'demo'],
+			'single quotes' => ["'demo'", 'demo'],
+			'a doubled single quote inside single quotes' => ["'it''s'", "it's"],
+			'a single quote at the start only' => ["'tis", "'tis"],
+			'a single quote at the end only' => ["James'", "James'"],
+			'a double quote at the end only' => ['say "hi"', 'say "hi"'],
+			'a whole number' => ['42', '42'],
+			'a number that is not a whole one' => ['1.10', '1.10'],
+		];
+	}
+
+	#[DataProvider('handWrittenPadIds')]
+	public function testAHandWrittenValueReadsTheWayItIsQuoted(string $written, string $padId): void {
+		$service = new PadFileService(new FixedClock());
+
+		$this->assertSame($padId, $service->readPad(self::handWritten(['pad_id' => $written]))->padId);
+	}
+
+	public function testCommentsAndBlankLinesInTheFrontmatterAreSkipped(): void {
+		$service = new PadFileService(new FixedClock());
+		$document = self::handWritten();
+		$annotated = str_replace('format: ', "# written by hand\n\n   \n  # indented\nformat: ", $document);
+
+		$this->assertSame(
+			$service->parsePadFile($document)['frontmatter'],
+			$service->parsePadFile($annotated)['frontmatter'],
+		);
+	}
+
+	/** The format's own fields are scalars, so the map sits under one it does not know. */
+	public function testAFieldTheFormatDoesNotKnowMayHoldAMap(): void {
+		$parsed = (new PadFileService(new FixedClock()))->parsePadFile(
+			self::handWritten(['labels' => "\n  colour: \"blue\"\n  size: 3"]),
+		);
+
+		$this->assertSame(['colour' => 'blue', 'size' => 3], $parsed['frontmatter']['labels']);
+	}
+
+	public function testASchemeInUpperCaseIsAccepted(): void {
+		$parsed = (new PadFileService(new FixedClock()))->parsePadFile(self::handWritten([
+			'pad_url' => '"HTTPS://pad.example.test/p/demo"',
+			'pad_origin' => '"HTTPS://pad.example.test"',
+		]));
+
+		$this->assertSame('HTTPS://pad.example.test/p/demo', $parsed['frontmatter']['pad_url']);
+		$this->assertSame('HTTPS://pad.example.test', $parsed['frontmatter']['pad_origin']);
 	}
 
 	public function testBuildInitialDocumentPersistsExtraFrontmatterForExternalPads(): void {
@@ -149,6 +220,16 @@ class PadFileServiceTest extends TestCase {
 		$this->assertSame('remote-pad-id', $parsed['frontmatter']['remote_pad_id']);
 	}
 
+	public function testAnExtraFieldIsWrittenAsTextAndNotAtAllWithoutAValue(): void {
+		$service = new PadFileService(new FixedClock());
+		$written = static fn (array $extra): array => $service->parsePadFile(
+			$service->buildInitialDocument(1, 'ext.remote', BindingService::ACCESS_PUBLIC, extraFrontmatter: $extra),
+		)['frontmatter'];
+
+		$this->assertSame('42', $written(['remote_pad_id' => 42])['remote_pad_id']);
+		$this->assertArrayNotHasKey('remote_pad_id', $written(['remote_pad_id' => null]));
+	}
+
 	// ------------------------------------------------------------------
 	// Parse rejection paths
 	// ------------------------------------------------------------------
@@ -160,59 +241,87 @@ class PadFileServiceTest extends TestCase {
 		(new PadFileService(new FixedClock()))->parsePadFile("not-a-frontmatter");
 	}
 
-	public function testParsePadFileRejectsUnsupportedFormat(): void {
-		$content = "---\nformat: \"etherpad-nextcloud/0\"\nfile_id: 1\npad_id: \"demo\"\naccess_mode: \"public\"\nstate: \"active\"\ndeleted_at: null\ncreated_at: \"2026-03-06T00:00:00+00:00\"\nupdated_at: \"2026-03-06T00:00:00+00:00\"\nsnapshot_rev: 0\n---\n";
+	public function testADocumentMustOpenWithItsFrontmatter(): void {
+		$this->expectException(MissingFrontmatterException::class);
 
-		$this->expectException(PadFileFormatException::class);
-		$this->expectExceptionMessage('Unsupported .pad format');
-
-		(new PadFileService(new FixedClock()))->parsePadFile($content);
+		(new PadFileService(new FixedClock()))->parsePadFile("notes\n" . self::handWritten());
 	}
 
-	public function testParsePadFileRejectsMissingRequiredKey(): void {
-		// Missing snapshot_rev
-		$content = "---\nformat: \"etherpad-nextcloud/1\"\nfile_id: 1\npad_id: \"demo\"\naccess_mode: \"public\"\nstate: \"active\"\ndeleted_at: null\ncreated_at: \"2026-03-06T00:00:00+00:00\"\nupdated_at: \"2026-03-06T00:00:00+00:00\"\n---\n";
-
-		$this->expectException(PadFileFormatException::class);
-		$this->expectExceptionMessage('Missing required frontmatter key: snapshot_rev');
-
-		(new PadFileService(new FixedClock()))->parsePadFile($content);
+	/** @return array<string,array{0: string}> */
+	public static function requiredFields(): array {
+		$fields = ['format', 'file_id', 'pad_id', 'access_mode', 'state', 'created_at', 'updated_at', 'snapshot_rev'];
+		return array_combine($fields, array_map(static fn (string $field): array => [$field], $fields));
 	}
 
-	public function testParsePadFileRejectsInvalidSnapshotRevBelowMinusOne(): void {
-		$content = "---\nformat: \"etherpad-nextcloud/1\"\nfile_id: 1\npad_id: \"demo\"\naccess_mode: \"public\"\nstate: \"active\"\ndeleted_at: null\ncreated_at: \"2026-03-06T00:00:00+00:00\"\nupdated_at: \"2026-03-06T00:00:00+00:00\"\nsnapshot_rev: -2\n---\n";
-
+	#[DataProvider('requiredFields')]
+	public function testParsePadFileRejectsMissingRequiredKey(string $field): void {
 		$this->expectException(PadFileFormatException::class);
-		$this->expectExceptionMessage('Invalid snapshot_rev');
+		$this->expectExceptionMessage('Missing required frontmatter key: ' . $field);
 
-		(new PadFileService(new FixedClock()))->parsePadFile($content);
+		(new PadFileService(new FixedClock()))->parsePadFile(self::handWritten([$field => null]));
 	}
 
-	public function testParsePadFileRejectsNonHttpPadUrl(): void {
-		$content = "---\nformat: \"etherpad-nextcloud/1\"\nfile_id: 1\npad_id: \"demo\"\naccess_mode: \"public\"\nstate: \"active\"\ndeleted_at: null\ncreated_at: \"2026-03-06T00:00:00+00:00\"\nupdated_at: \"2026-03-06T00:00:00+00:00\"\nsnapshot_rev: 0\npad_url: \"ftp://example.org/p/demo\"\n---\n";
-
-		$this->expectException(PadFileFormatException::class);
-		$this->expectExceptionMessage('Invalid pad_url');
-
-		(new PadFileService(new FixedClock()))->parsePadFile($content);
+	/** @return array<string,array{0: array<string,string>, 1: string}> */
+	public static function refusedFields(): array {
+		return [
+			'another format' => [['format' => '"etherpad-nextcloud/0"'], 'Unsupported .pad format: etherpad-nextcloud/0'],
+			'file id zero' => [['file_id' => '0'], 'Invalid file_id in frontmatter.'],
+			'an empty pad id' => [['pad_id' => '""'], 'Invalid pad_id in frontmatter.'],
+			'a pad id holding a map' => [['pad_id' => "\n  name: \"demo\""], 'Invalid pad_id in frontmatter.'],
+			'an empty creation time' => [['created_at' => '""'], 'Invalid created_at in frontmatter.'],
+			'an unknown access mode' => [['access_mode' => '"private"'], 'Invalid access_mode in frontmatter.'],
+			'an unknown state' => [['state' => '"archived"'], 'Invalid state in frontmatter.'],
+			'a revision below -1' => [['snapshot_rev' => '-2'], 'Invalid snapshot_rev in frontmatter.'],
+			'a pad URL of another scheme' => [['pad_url' => '"ftp://example.org/p/demo"'], 'Invalid pad_url in frontmatter.'],
+			'a pad URL with https further in' => [['pad_url' => '"javascript:alert(1)//https://pad.example.test/p/demo"'], 'Invalid pad_url in frontmatter.'],
+			'a pad URL holding a map' => [['pad_url' => "\n  href: \"https://pad.example.test/p/demo\""], 'Invalid pad_url in frontmatter.'],
+			'a pad origin of another scheme' => [['pad_origin' => '"ftp://pad.example.test"'], 'Invalid pad_origin in frontmatter.'],
+			'a pad origin with https further in' => [['pad_origin' => '"javascript:alert(1)//https://pad.example.test"'], 'Invalid pad_origin in frontmatter.'],
+			'an empty remote pad id' => [['remote_pad_id' => '""'], 'Invalid remote_pad_id in frontmatter.'],
+		];
 	}
 
-	public function testParsePadFileRejectsInvalidAccessMode(): void {
-		$content = "---\nformat: \"etherpad-nextcloud/1\"\nfile_id: 1\npad_id: \"demo\"\naccess_mode: \"private\"\nstate: \"active\"\ndeleted_at: null\ncreated_at: \"2026-03-06T00:00:00+00:00\"\nupdated_at: \"2026-03-06T00:00:00+00:00\"\nsnapshot_rev: 0\n---\n";
-
+	/** @param array<string,string> $fields */
+	#[DataProvider('refusedFields')]
+	public function testAValueTheFormatCannotTakeIsRefused(array $fields, string $message): void {
 		$this->expectException(PadFileFormatException::class);
-		$this->expectExceptionMessage('Invalid access_mode');
+		$this->expectExceptionMessage($message);
 
-		(new PadFileService(new FixedClock()))->parsePadFile($content);
+		(new PadFileService(new FixedClock()))->parsePadFile(self::handWritten($fields));
 	}
 
 	public function testParsePadFileRejectsMalformedYamlLine(): void {
 		$content = "---\nformat: \"etherpad-nextcloud/1\"\nfile_id: 1\npad_id: \"demo\"\naccess_mode: \"public\"\nstate: \"active\"\n- broken\ndeleted_at: null\ncreated_at: \"2026-03-06T00:00:00+00:00\"\nupdated_at: \"2026-03-06T00:00:00+00:00\"\nsnapshot_rev: 0\n---\n";
 
 		$this->expectException(PadFileFormatException::class);
-		$this->expectExceptionMessage('Invalid YAML frontmatter');
+		// Counted from the first line after the opening `---`, as in every
+		// message about a frontmatter line.
+		$this->expectExceptionMessage('Invalid YAML frontmatter line 6.');
 
 		(new PadFileService(new FixedClock()))->parsePadFile($content);
+	}
+
+	public function testAnIndentedLineOutsideAMapIsRefused(): void {
+		$this->expectException(PadFileFormatException::class);
+		$this->expectExceptionMessage('Invalid nested YAML structure at line 10.');
+
+		(new PadFileService(new FixedClock()))->parsePadFile(
+			str_replace("snapshot_rev: 0\n", "snapshot_rev: 0\n  colour: \"blue\"\n", self::handWritten()),
+		);
+	}
+
+	public function testAMapEntryIndentedByMoreThanTwoSpacesIsRefused(): void {
+		$this->expectException(PadFileFormatException::class);
+		$this->expectExceptionMessage('Invalid YAML frontmatter line 11.');
+
+		(new PadFileService(new FixedClock()))->parsePadFile(self::handWritten(['labels' => "\n   colour: \"blue\""]));
+	}
+
+	public function testADocumentItCouldNotReadBackIsNotWritten(): void {
+		$this->expectException(PadFileFormatException::class);
+		$this->expectExceptionMessage('Invalid access_mode in frontmatter.');
+
+		(new PadFileService(new FixedClock()))->buildInitialDocument(1, 'demo-pad', 'private');
 	}
 
 	public function testParsePadFileAcceptsLegacyStateValuesForBackwardCompat(): void {
@@ -260,6 +369,19 @@ class PadFileServiceTest extends TestCase {
 		$parsed = $service->readPad($cleared);
 		$this->assertSame(['text' => '', 'html' => ''], $service->getSnapshotPartsFromBody($parsed->body()));
 		$this->assertSame(6, $parsed->frontmatter()['snapshot_rev']);
+	}
+
+	/** Files moved to the trash before the lifecycle was simplified carry one. */
+	public function testAWriteKeepsTheDeletionTimestamp(): void {
+		$service = new PadFileService(new FixedClock());
+		$trashed = $service->readPad(self::handWritten([
+			'state' => '"trashed"',
+			'deleted_at' => '"2026-03-07T00:00:00+00:00"',
+		]));
+
+		$synced = $service->readPad($service->withExportSnapshot($trashed, new PadSnapshot('text', '', 1)));
+
+		$this->assertSame('2026-03-07T00:00:00+00:00', $synced->frontmatter()['deleted_at']);
 	}
 
 	/**
@@ -425,7 +547,7 @@ class PadFileServiceTest extends TestCase {
 		$service = new PadFileService(new FixedClock());
 
 		$this->expectException(PadFileFormatException::class);
-		$service->readPad(self::documentWithRemotePadId('a' . $byte . 'b'));
+		$service->readPad(self::handWritten(['remote_pad_id' => '"a' . $byte . 'b"']));
 	}
 
 	/** @return array<string,array{0: string}> */
@@ -467,19 +589,34 @@ class PadFileServiceTest extends TestCase {
 		$this->assertSame($padUrl, $service->readPad($synced)->padUrl);
 	}
 
-	private static function documentWithRemotePadId(string $value): string {
-		return "---\n"
-			. "format: \"etherpad-nextcloud/1\"\n"
-			. "file_id: 1\n"
-			. "pad_id: \"demo\"\n"
-			. "access_mode: \"public\"\n"
-			. "state: \"active\"\n"
-			. "deleted_at: null\n"
-			. "created_at: \"2026-03-06T00:00:00+00:00\"\n"
-			. "updated_at: \"2026-03-06T00:00:00+00:00\"\n"
-			. "snapshot_rev: 0\n"
-			. 'remote_pad_id: "' . $value . "\"\n"
-			. "---\n";
+	/**
+	 * A document as a hand-edited file may hold it, each value as it stands
+	 * after the colon: a field named here replaces the one of that name,
+	 * null drops it, and a new one goes after the rest. A value that starts
+	 * on the next line opens a map.
+	 *
+	 * @param array<string,?string> $fields
+	 */
+	private static function handWritten(array $fields = []): string {
+		$lines = array_merge([
+			'format' => '"etherpad-nextcloud/1"',
+			'file_id' => '1',
+			'pad_id' => '"demo"',
+			'access_mode' => '"public"',
+			'state' => '"active"',
+			'deleted_at' => 'null',
+			'created_at' => '"2026-03-06T00:00:00+00:00"',
+			'updated_at' => '"2026-03-06T00:00:00+00:00"',
+			'snapshot_rev' => '0',
+		], $fields);
+
+		$document = "---\n";
+		foreach ($lines as $key => $value) {
+			if ($value !== null) {
+				$document .= $key . ':' . (str_starts_with($value, "\n") ? '' : ' ') . $value . "\n";
+			}
+		}
+		return $document . "---\n";
 	}
 
 	public function testGetSnapshotPartsFromBodyHandlesBodyWithoutMarkers(): void {
@@ -488,6 +625,18 @@ class PadFileServiceTest extends TestCase {
 
 		$this->assertSame('raw text without sections', $parts['text']);
 		$this->assertSame('', $parts['html']);
+	}
+
+	/**
+	 * A body from before every snapshot carried both sections is all text:
+	 * without the terminator there is no section, whatever opening marker
+	 * it holds.
+	 */
+	public function testABodyThatDoesNotEndInTheTerminatorIsAllText(): void {
+		$this->assertSame(
+			['text' => "legacy text\n[HTML-BEGIN]\nmore text\n", 'html' => ''],
+			(new PadFileService(new FixedClock()))->getSnapshotPartsFromBody("[TEXT]\nlegacy text\n[HTML-BEGIN]\nmore text\n"),
+		);
 	}
 
 	public function testSnapshotSectionsAllowAFileEndingNewline(): void {
@@ -653,6 +802,15 @@ class PadFileServiceTest extends TestCase {
 		);
 	}
 
+	/** -1 is the lowest revision a document can hold; anything below would not read back. */
+	public function testARestoreNeverRecordsARevisionBelowNotSynced(): void {
+		$service = new PadFileService(new FixedClock());
+
+		$restored = $service->withRestoredSnapshot($service->readPad(self::handWritten()), 'text', '', 'new-pad', '', -5);
+
+		$this->assertSame(-1, $service->readPad($restored)->snapshotRev);
+	}
+
 	public function testTheParsedDocumentCarriesTheSnapshotRevision(): void {
 		$service = new PadFileService(new FixedClock());
 		$base = $service->buildInitialDocument(1, 'demo-pad', BindingService::ACCESS_PUBLIC);
@@ -673,28 +831,70 @@ class PadFileServiceTest extends TestCase {
 	// Legacy ownpad + metadata helpers
 	// ------------------------------------------------------------------
 
-	public function testParseLegacyOwnpadShortcutExtractsUrlAndPadId(): void {
-		$service = new PadFileService(new FixedClock());
-		$parsed = $service->parseLegacyOwnpadShortcut(
-			"[InternetShortcut]\nURL=https://pad.example.test/p/public-pad-id\n"
-		);
-
-		$this->assertNotNull($parsed);
-		$this->assertSame('https://pad.example.test/p/public-pad-id', $parsed['url']);
-		$this->assertSame('public-pad-id', $parsed['pad_id']);
+	/** @return array<string,array{0: string, 1: string, 2: string}> */
+	public static function legacyShortcuts(): array {
+		return [
+			'as Ownpad wrote it' => [
+				"[InternetShortcut]\nURL=https://pad.example.test/p/public-pad-id\n",
+				'https://pad.example.test/p/public-pad-id',
+				'public-pad-id',
+			],
+			'section and key in another case' => [
+				"[internetshortcut]\nurl=https://pad.example.test/p/demo\n",
+				'https://pad.example.test/p/demo',
+				'demo',
+			],
+			'a base URL in a section before it' => [
+				"[DEFAULT]\nBASEURL=https://other.example.test/p/other\n[InternetShortcut]\nURL=https://pad.example.test/p/demo\n",
+				'https://pad.example.test/p/demo',
+				'demo',
+			],
+			'whitespace around the URL' => [
+				"[InternetShortcut]\nURL = https://pad.example.test/p/demo \t\n",
+				'https://pad.example.test/p/demo',
+				'demo',
+			],
+			'the scheme in upper case' => [
+				"[InternetShortcut]\nURL=HTTPS://pad.example.test/p/demo\n",
+				'HTTPS://pad.example.test/p/demo',
+				'demo',
+			],
+			'an Etherpad under a path with a p segment of its own' => [
+				"[InternetShortcut]\nURL=https://example.test/p/etherpad/p/demo\n",
+				'https://example.test/p/etherpad/p/demo',
+				'demo',
+			],
+		];
 	}
 
-	public function testParseLegacyOwnpadShortcutReturnsNullForNonShortcutContent(): void {
-		$service = new PadFileService(new FixedClock());
-		$this->assertNull($service->parseLegacyOwnpadShortcut('not a shortcut'));
-		$this->assertNull($service->parseLegacyOwnpadShortcut(''));
+	#[DataProvider('legacyShortcuts')]
+	public function testParseLegacyOwnpadShortcutExtractsUrlAndPadId(string $content, string $url, string $padId): void {
+		$this->assertSame(
+			['url' => $url, 'pad_id' => $padId],
+			(new PadFileService(new FixedClock()))->parseLegacyOwnpadShortcut($content),
+		);
 	}
 
-	public function testParseLegacyOwnpadShortcutRejectsNonHttpUrls(): void {
-		$service = new PadFileService(new FixedClock());
-		$this->assertNull(
-			$service->parseLegacyOwnpadShortcut("[InternetShortcut]\nURL=ftp://example.test/p/pad\n")
-		);
+	/** @return array<string,array{0: string}> */
+	public static function notLegacyShortcuts(): array {
+		return [
+			'not a shortcut' => ['not a shortcut'],
+			'nothing' => [''],
+			'a URL without the section' => ["URL=https://pad.example.test/p/demo\n"],
+			'the section name inside other text' => ["see [InternetShortcut]\nURL=https://pad.example.test/p/demo\n"],
+			'the section name with more after it' => ["[InternetShortcut] more\nURL=https://pad.example.test/p/demo\n"],
+			'the section without a URL' => ["[InternetShortcut]\nIconIndex=0\n"],
+			'another scheme' => ["[InternetShortcut]\nURL=ftp://example.test/p/pad\n"],
+			'another scheme with https further in' => ["[InternetShortcut]\nURL=ftp://mirror.example.test/https://pad.example.test/p/demo\n"],
+			'a URL that does not parse' => ["[InternetShortcut]\nURL=https://pad.example.test:99999/p/demo\n"],
+			'no pad segment' => ["[InternetShortcut]\nURL=https://example.test/somewhere/else\n"],
+			'a pad segment of whitespace' => ["[InternetShortcut]\nURL=https://pad.example.test/p/%20\n"],
+		];
+	}
+
+	#[DataProvider('notLegacyShortcuts')]
+	public function testParseLegacyOwnpadShortcutReturnsNullForAnythingElse(string $content): void {
+		$this->assertNull((new PadFileService(new FixedClock()))->parseLegacyOwnpadShortcut($content));
 	}
 
 	public function testParseLegacyOwnpadShortcutKeepsLiteralPlusInPadId(): void {
@@ -717,13 +917,6 @@ class PadFileServiceTest extends TestCase {
 		);
 		$this->assertNotNull($parsed);
 		$this->assertSame('team+meeting', $parsed['pad_id']);
-	}
-
-	public function testParseLegacyOwnpadShortcutReturnsNullWithoutPadSegment(): void {
-		$service = new PadFileService(new FixedClock());
-		$this->assertNull(
-			$service->parseLegacyOwnpadShortcut("[InternetShortcut]\nURL=https://example.test/somewhere/else\n")
-		);
 	}
 
 	public function testInferAccessModeFromPadIdMapsGroupPadsToProtected(): void {
@@ -754,6 +947,18 @@ class PadFileServiceTest extends TestCase {
 
 		// Missing pad_origin
 		$this->assertFalse($service->isExternalFrontmatter([
+			'remote_pad_id' => 'remote-id',
+		], 'ext.remote-id'));
+
+		// Blank remote_pad_id
+		$this->assertFalse($service->isExternalFrontmatter([
+			'pad_origin' => 'https://pad.remote.example',
+			'remote_pad_id' => ' ',
+		], 'ext.remote-id'));
+
+		// Blank pad_origin
+		$this->assertFalse($service->isExternalFrontmatter([
+			'pad_origin' => ' ',
 			'remote_pad_id' => 'remote-id',
 		], 'ext.remote-id'));
 
