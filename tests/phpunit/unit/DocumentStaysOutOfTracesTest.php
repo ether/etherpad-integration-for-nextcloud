@@ -11,6 +11,7 @@ namespace OCA\EtherpadNextcloud\Tests\Unit;
 
 use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\EtherpadNextcloud\Service\CreatedFileClaim;
+use OCA\EtherpadNextcloud\Service\ExportAttemptSink;
 use OCA\EtherpadNextcloud\Service\LivePadHtml;
 use OCA\EtherpadNextcloud\Service\PadSnapshot;
 use OCA\EtherpadNextcloud\Service\ParsedPadFile;
@@ -51,6 +52,9 @@ class DocumentStaysOutOfTracesTest extends TestCase {
 		yield 'a pad as it is now' => [$live, static fn (): array => [$live->html()]];
 		$claim = new CreatedFileClaim('alice', 7, self::DOCUMENT);
 		yield 'a template copied into a new file' => [$claim, static fn (): array => [$claim->expectedBefore()]];
+		$sink = new ExportAttemptSink(100);
+		$sink->chunk(null, self::DOCUMENT);
+		yield 'an attempt at an external export' => [$sink, static fn (): array => [$sink->body()]];
 	}
 
 	/** @param \Closure(): list<mixed> $read */

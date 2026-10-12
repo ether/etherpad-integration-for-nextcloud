@@ -241,15 +241,10 @@
       <code><![CDATA[getAppValue]]></code>
       <code><![CDATA[getAppValue]]></code>
     </DeprecatedMethod>
-    <MissingClosureParamType>
-      <code><![CDATA[$ch]]></code>
-      <code><![CDATA[$ch]]></code>
-    </MissingClosureParamType>
     <RedundantCastGivenDocblockType>
       <code><![CDATA[(string)$this->config->getAppValue('etherpad_nextcloud', 'allow_external_pads', 'no')]]></code>
       <code><![CDATA[(string)$this->config->getAppValue('etherpad_nextcloud', 'external_pad_allowlist', '')]]></code>
       <code><![CDATA[(string)explode(';', $raw, 2)[0]]]></code>
-      <code><![CDATA[(string)substr($line, strlen('Content-Type:'))]]></code>
     </RedundantCastGivenDocblockType>
   </file>
   <file src="lib/Service/LegacyImportPolicy.php">

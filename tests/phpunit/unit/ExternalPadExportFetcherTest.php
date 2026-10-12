@@ -7,6 +7,8 @@ namespace OCA\EtherpadNextcloud\Tests\Unit;
 use OCA\EtherpadNextcloud\Exception\ExternalPadException;
 use OCA\EtherpadNextcloud\Exception\ExternalPadExportNotFoundException;
 use OCA\EtherpadNextcloud\Exception\ExternalPadHttpErrorException;
+use OCA\EtherpadNextcloud\Exception\EtherpadTooLargeException;
+use OCA\EtherpadNextcloud\Service\ExportAttemptSink;
 use OCA\EtherpadNextcloud\Service\ExternalPadExportFetcher;
 use OCP\IConfig;
 use OCA\EtherpadNextcloud\Tests\Support\FixedClock;
@@ -212,6 +214,177 @@ class ExternalPadExportFetcherTest extends TestCase {
 	}
 
 	/**
+	 * Each attempt is kept to what was checked before it: the name goes to
+	 * the vetted address and no other, no redirect is followed, only HTTPS
+	 * is spoken, and the certificate and its name are verified.
+	 */
+	public function testEachAttemptIsKeptToWhatWasChecked(): void {
+		$sink = new ExportAttemptSink(10);
+		$options = (new \ReflectionMethod(ExternalPadExportFetcher::class, 'attemptOptions'))->invoke(null, 'pad.example', 8443, '1.1.1.1', 'txt', 7, $sink);
+
+		$this->assertSame(['pad.example:8443:1.1.1.1'], $options[CURLOPT_RESOLVE]);
+		$this->assertFalse($options[CURLOPT_FOLLOWLOCATION]);
+		$this->assertSame(0, $options[CURLOPT_MAXREDIRS]);
+		$this->assertSame(CURLPROTO_HTTPS, $options[CURLOPT_PROTOCOLS]);
+		$this->assertSame(CURLPROTO_HTTPS, $options[CURLOPT_REDIR_PROTOCOLS]);
+		$this->assertTrue($options[CURLOPT_SSL_VERIFYPEER]);
+		$this->assertSame(2, $options[CURLOPT_SSL_VERIFYHOST]);
+		$this->assertTrue($options[CURLOPT_HTTPGET]);
+		$this->assertFalse($options[CURLOPT_RETURNTRANSFER]);
+		$this->assertSame([7, 7], [$options[CURLOPT_CONNECTTIMEOUT], $options[CURLOPT_TIMEOUT]]);
+		$this->assertSame(['Accept: text/plain, application/octet-stream;q=0.9, */*;q=0.1'], $options[CURLOPT_HTTPHEADER]);
+		// What arrives goes to the attempt's sink.
+		$options[CURLOPT_HEADERFUNCTION](null, "Content-Type: text/plain\r\n");
+		$options[CURLOPT_WRITEFUNCTION](null, 'pad text');
+		$this->assertSame(['text/plain', 'pad text'], [$sink->contentType(), $sink->body()]);
+
+		$html = (new \ReflectionMethod(ExternalPadExportFetcher::class, 'attemptOptions'))->invoke(null, 'pad.example', 443, '1.1.1.1', 'html', 7, new ExportAttemptSink(10));
+		$this->assertSame(['Accept: text/html, application/xhtml+xml;q=0.9, */*;q=0.1'], $html[CURLOPT_HTTPHEADER]);
+	}
+
+	/** An address that does not answer gives way to the next, each attempt pinned to its own. */
+	public function testTriesTheNextAddressAfterOneThatDoesNotAnswer(): void {
+		$fetcher = $this->fetcher(
+			$this->buildExternalEnabledConfig(),
+			[['ip' => '1.1.1.1'], ['ipv6' => '2606:4700::1111']],
+			[
+				static fn (array $options): array => ['completed' => false, 'status' => 0, 'error' => 'Connection refused', 'errno' => 7],
+				static fn (array $options): array => self::answer($options, 200, 'text/plain', 'pad text'),
+			],
+		);
+
+		$result = $fetcher->normalizeAndFetchExternalPublicPadText('https://pad.example/p/pad');
+
+		$this->assertSame(['https://pad.example', 'pad', 'https://pad.example/p/pad', 'pad text'], [$result['origin'], $result['pad_id'], $result['pad_url'], $result['text']]);
+		$this->assertSame(
+			[['https://pad.example/p/pad/export/txt', ['pad.example:443:1.1.1.1']], ['https://pad.example/p/pad/export/txt', ['pad.example:443:2606:4700::1111']]],
+			array_map(static fn (array $request): array => [$request[0], $request[1][CURLOPT_RESOLVE]], $fetcher->performed),
+		);
+	}
+
+	/**
+	 * The whole fetch has one budget: an address is tried only while at
+	 * least two whole seconds of it are left - 1.9 is not two - and the
+	 * ones after it are not tried either.
+	 */
+	public function testTriesAnAddressOnlyWhileTwoSecondsOfTheBudgetAreLeft(): void {
+		foreach ([
+			'exactly two left' => [18.0, 2],
+			'less than two left' => [18.1, 1],
+		] as $case => [$firstAttemptTakes, $attempts]) {
+			$clock = new FixedClock();
+			$refused = static function (array $options) use ($clock, $firstAttemptTakes): array {
+				$clock->advanceMicros((int)($firstAttemptTakes * 1000000));
+				return ['completed' => false, 'status' => 0, 'error' => 'Connection refused', 'errno' => 7];
+			};
+			$fetcher = $this->fetcher(
+				$this->buildExternalEnabledConfig(),
+				[['ip' => '1.1.1.1'], ['ip' => '1.0.0.1'], ['ip' => '1.0.0.2']],
+				[$refused, $refused, $refused],
+				$clock,
+			);
+
+			try {
+				$fetcher->normalizeAndFetchExternalPublicPadText('https://pad.example/p/pad');
+				$this->fail($case . ': not refused');
+			} catch (ExternalPadException $e) {
+				$this->assertCount($attempts, $fetcher->performed, $case);
+				if ($attempts === 1) {
+					$this->assertSame('Public export transport error: transport via 1.1.1.1: Connection refused; no time left to try 1.0.0.1', $e->getMessage(), $case);
+				}
+			}
+		}
+	}
+
+	/** The HTML export asks for HTML at its own address; a pad not exported is no failure for the text one that may be empty. */
+	public function testFetchesTheHtmlExportAndAnEmptyTextForAPadNotExported(): void {
+		$html = $this->fetcher($this->buildExternalEnabledConfig(), null, [
+			static fn (array $options): array => self::answer($options, 200, 'text/html', '<p>pad</p>'),
+		]);
+		$this->assertSame('<p>pad</p>', $html->fetchExternalPublicPadHtml('https://1.1.1.1/p/pad'));
+		$this->assertSame('https://1.1.1.1/p/pad/export/html', $html->performed[0][0]);
+		$this->assertSame(['Accept: text/html, application/xhtml+xml;q=0.9, */*;q=0.1'], $html->performed[0][1][CURLOPT_HTTPHEADER]);
+
+		foreach ([[404, '', true], [200, 'pad text', false]] as [$status, $text, $unavailable]) {
+			$result = $this->fetcher($this->buildExternalEnabledConfig(), null, [
+				static fn (array $options): array => self::answer($options, $status, 'text/plain', 'pad text'),
+			])->normalizeAndFetchExternalPublicPadTextOrEmpty('https://1.1.1.1/p/pad');
+			$this->assertSame(['https://1.1.1.1', 'https://1.1.1.1/p/pad', $text, $unavailable], [$result['origin'], $result['pad_url'], $result['text'], $result['snapshot_unavailable']]);
+		}
+	}
+
+	/** A body past the limit ends the fetch: no other address is asked for the same export. */
+	public function testStopsAtABodyPastTheLimit(): void {
+		$fetcher = $this->fetcher(
+			$this->buildExternalEnabledConfig(),
+			[['ip' => '1.1.1.1'], ['ip' => '1.0.0.1']],
+			[static function (array $options): array {
+				$options[CURLOPT_WRITEFUNCTION](null, str_repeat('x', 5242881));
+				return ['completed' => false, 'status' => 200, 'error' => 'Failed writing body', 'errno' => 23];
+			}],
+		);
+
+		try {
+			$fetcher->normalizeAndFetchExternalPublicPadText('https://pad.example/p/pad');
+			$this->fail('Not refused.');
+		} catch (EtherpadTooLargeException) {
+			$this->assertCount(1, $fetcher->performed);
+		}
+	}
+
+	/** No address answering: the transport error, with the reason the attempts' cURL errors give. */
+	public function testGivesUpWhenNoAddressAnswers(): void {
+		$fetcher = $this->fetcher(
+			$this->buildExternalEnabledConfig(),
+			[['ip' => '1.1.1.1'], ['ip' => '1.0.0.1']],
+			[
+				static fn (array $options): array => ['completed' => false, 'status' => 0, 'error' => 'SSL certificate problem', 'errno' => 60],
+				static fn (array $options): array => ['completed' => false, 'status' => 0, 'error' => '', 'errno' => 7],
+			],
+		);
+
+		try {
+			$fetcher->normalizeAndFetchExternalPublicPadText('https://pad.example/p/pad');
+			$this->fail('Not refused.');
+		} catch (ExternalPadException $e) {
+			$this->assertSame(ExternalPadException::UNTRUSTED_CERTIFICATE, $e->reason());
+			$this->assertSame('Public export transport error: transport via 1.1.1.1: SSL certificate problem; transport via 1.0.0.1: unknown error', $e->getMessage());
+		}
+	}
+
+	/** An answer is checked before it is taken: a redirect, or a type the format did not ask for, is refused. */
+	public function testChecksAnAnswerBeforeTakingIt(): void {
+		foreach ([
+			'a redirect' => [302, 'text/plain', ExternalPadException::REDIRECTED],
+			'an HTML page for the text export' => [200, 'text/html', ExternalPadException::UNEXPECTED_ANSWER],
+		] as $case => [$status, $contentType, $reason]) {
+			$fetcher = $this->fetcher($this->buildExternalEnabledConfig(), null, [
+				static fn (array $options): array => self::answer($options, $status, $contentType, 'Please sign in'),
+			]);
+			try {
+				$fetcher->normalizeAndFetchExternalPublicPadText('https://1.1.1.1/p/pad');
+				$this->fail($case . ': taken');
+			} catch (ExternalPadException $e) {
+				$this->assertSame($reason, $e->reason(), $case);
+			}
+		}
+	}
+
+	/**
+	 * An answer as cURL delivers it: the Content-Type header line, then the
+	 * body, through the attempt's callbacks.
+	 *
+	 * @param array<int, mixed> $options
+	 * @return array{completed: bool, status: int, error: string, errno: int}
+	 */
+	private static function answer(array $options, int $status, string $contentType, string $body): array {
+		$options[CURLOPT_HEADERFUNCTION](null, 'HTTP/1.1 ' . $status . "\r\n");
+		$options[CURLOPT_HEADERFUNCTION](null, 'Content-Type: ' . $contentType . "\r\n");
+		$options[CURLOPT_WRITEFUNCTION](null, $body);
+		return ['completed' => true, 'status' => $status, 'error' => '', 'errno' => 0];
+	}
+
+	/**
 	 * The rule that keeps an error page from being read as pad content.
 	 *
 	 * Widening it for the HTML export must not widen it for the text one:
@@ -258,6 +431,7 @@ class ExternalPadExportFetcherTest extends TestCase {
 		return [
 			'200 is the export' => [200, null],
 			'204 is still a success' => [204, null],
+			'299 is the last success' => [299, null],
 			'301 is a redirect, not content' => [301, ExternalPadException::class],
 			'302 is a redirect, not content' => [302, ExternalPadException::class],
 			'307 is a redirect, not content' => [307, ExternalPadException::class],
@@ -275,6 +449,9 @@ class ExternalPadExportFetcherTest extends TestCase {
 			'text export takes a byte stream' => ['txt', 'application/octet-stream', true],
 			'html export takes html' => ['html', 'text/html; charset=utf-8', true],
 			'html export takes xhtml' => ['html', 'application/xhtml+xml', true],
+			'a type in capitals' => ['txt', 'Text/Plain', true],
+			'html with a space before the parameters is still html' => ['txt', 'text/html ; charset=utf-8', false],
+			'html export takes html with a space before the parameters' => ['html', 'text/html ; charset=utf-8', true],
 			'html export refuses plain text' => ['html', 'text/plain', false],
 			'html export refuses json' => ['html', 'application/json', false],
 			'html export refuses a byte stream' => ['html', 'application/octet-stream', false],
@@ -352,14 +529,23 @@ class ExternalPadExportFetcherTest extends TestCase {
 	 * The fetcher, with what a name lookup finds given instead of asked of
 	 * the network: a test that resolves a real name is green offline, slow
 	 * behind a dead nameserver and red behind one that answers every name.
-	 * A lookup a test did not give an answer for fails it.
+	 * A lookup a test did not give an answer for fails it. So do requests:
+	 * each one takes the next of $answers, which may feed the attempt's
+	 * header and body callbacks as cURL would, and is kept in $performed.
 	 *
 	 * @param ?list<array<array-key, mixed>> $records
+	 * @param list<\Closure(array<int, mixed>): array{completed: bool, status: int, error: string, errno: int}> $answers
 	 */
-	private function fetcher(IConfig $config, ?array $records = null): ExternalPadExportFetcher {
-		return new class($config, new FixedClock(), $records) extends ExternalPadExportFetcher {
-			/** @param ?list<array<array-key, mixed>> $records */
-			public function __construct(IConfig $config, FixedClock $clock, private ?array $records) {
+	private function fetcher(IConfig $config, ?array $records = null, array $answers = [], ?FixedClock $clock = null): ExternalPadExportFetcher {
+		return new class($config, $clock ?? new FixedClock(), $records, $answers) extends ExternalPadExportFetcher {
+			/** @var list<array{string, array<int, mixed>}> */
+			public array $performed = [];
+
+			/**
+			 * @param ?list<array<array-key, mixed>> $records
+			 * @param list<\Closure(array<int, mixed>): array{completed: bool, status: int, error: string, errno: int}> $answers
+			 */
+			public function __construct(IConfig $config, FixedClock $clock, private ?array $records, private array $answers) {
 				parent::__construct($config, $clock);
 			}
 
@@ -368,6 +554,15 @@ class ExternalPadExportFetcherTest extends TestCase {
 					throw new \LogicException('A lookup of ' . $host . ' the test gave no answer for.');
 				}
 				return $this->records;
+			}
+
+			protected function perform(string $url, array $options): array {
+				$answer = array_shift($this->answers);
+				if ($answer === null) {
+					throw new \LogicException('A request to ' . $url . ' the test gave no answer for.');
+				}
+				$this->performed[] = [$url, $options];
+				return $answer($options);
 			}
 		};
 	}

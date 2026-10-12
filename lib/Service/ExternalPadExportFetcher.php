@@ -166,64 +166,12 @@ class ExternalPadExportFetcher {
 				break;
 			}
 			$attemptTimeout = min($left, self::EXTERNAL_REQUEST_TIMEOUT_SECONDS);
-			$buffer = '';
-			$contentType = '';
-			$sizeExceeded = false;
-			$maxBytes = self::EXTERNAL_EXPORT_MAX_BYTES;
-			$curl = curl_init($url);
-			if ($curl === false) {
-				throw new ExternalPadException('Could not initialize external export request.', ExternalPadException::UNREACHABLE);
-			}
-			$curlOptions = [
-				CURLOPT_RETURNTRANSFER => false,
-				CURLOPT_FOLLOWLOCATION => false,
-				CURLOPT_MAXREDIRS => 0,
-				CURLOPT_CONNECTTIMEOUT => $attemptTimeout,
-				CURLOPT_TIMEOUT => $attemptTimeout,
-				CURLOPT_HTTPGET => true,
-				CURLOPT_SSL_VERIFYPEER => true,
-				CURLOPT_SSL_VERIFYHOST => 2,
-				CURLOPT_HTTPHEADER => [
-					'Accept: ' . self::acceptHeaderFor($format),
-				],
-				CURLOPT_RESOLVE => [$host . ':' . $port . ':' . $ip],
-				CURLOPT_HEADERFUNCTION => static function ($ch, string $headerLine) use (&$contentType): int {
-					$line = trim($headerLine);
-					if ($line !== '' && stripos($line, 'Content-Type:') === 0) {
-						$contentType = trim((string)substr($line, strlen('Content-Type:')));
-					}
-					return strlen($headerLine);
-				},
-				CURLOPT_WRITEFUNCTION => static function ($ch, string $chunk) use (&$buffer, &$sizeExceeded, $maxBytes): int {
-					if (strlen($buffer) + strlen($chunk) > $maxBytes) {
-						$sizeExceeded = true;
-						return 0;
-					}
-					$buffer .= $chunk;
-					return strlen($chunk);
-				},
-			];
-			if (defined('CURLOPT_PROTOCOLS') && defined('CURLPROTO_HTTPS')) {
-				$curlOptions[CURLOPT_PROTOCOLS] = CURLPROTO_HTTPS;
-			}
-			if (defined('CURLOPT_REDIR_PROTOCOLS') && defined('CURLPROTO_HTTPS')) {
-				$curlOptions[CURLOPT_REDIR_PROTOCOLS] = CURLPROTO_HTTPS;
-			}
-			curl_setopt_array($curl, $curlOptions);
+			$sink = new ExportAttemptSink(self::EXTERNAL_EXPORT_MAX_BYTES);
+			$result = $this->perform($url, self::attemptOptions($host, $port, $ip, $format, $attemptTimeout, $sink));
+			$curlErrors[] = $result['errno'];
 
-			$success = curl_exec($curl);
-			$httpCode = (int)curl_getinfo($curl, CURLINFO_RESPONSE_CODE);
-			$curlError = curl_error($curl);
-			$curlErrors[] = curl_errno($curl);
-			curl_close($curl);
-
-			if ($success === false) {
-				// $sizeExceeded is flipped to true inside the CURLOPT_WRITEFUNCTION
-				// closure above when the response exceeds the cap; Psalm doesn't
-				// model curl invoking that callback, so it wrongly infers the flag
-				// stays false here.
-				/** @psalm-suppress TypeDoesNotContainType */
-				if ($sizeExceeded) {
+			if (!$result['completed']) {
+				if ($sink->tooLarge()) {
 					// Same type as the own-server cap, so both answer the
 					// reader with "too large to show" instead of one of them
 					// looking like an outage.
@@ -231,16 +179,72 @@ class ExternalPadExportFetcher {
 						'External public pad export exceeds maximum size (' . self::EXTERNAL_EXPORT_MAX_BYTES . ' bytes).'
 					);
 				}
-				$errors[] = 'transport via ' . $ip . ': ' . ($curlError !== '' ? $curlError : 'unknown error');
+				$errors[] = 'transport via ' . $ip . ': ' . ($result['error'] !== '' ? $result['error'] : 'unknown error');
 				continue;
 			}
-			$this->assertSuccessfulExportStatus($httpCode);
-			$this->assertAllowedExternalExportContentType($contentType, $format);
-			return $buffer;
+			$this->assertSuccessfulExportStatus($result['status']);
+			$this->assertAllowedExternalExportContentType($sink->contentType(), $format);
+			return $sink->body();
 		}
 
 		$detail = $errors !== [] ? implode('; ', $errors) : 'all resolved targets failed';
 		throw new ExternalPadException('Public export transport error: ' . $detail, self::transportReason($curlErrors));
+	}
+
+	/**
+	 * The options of one attempt, each keeping it to what was checked
+	 * before it: the name resolves to the address that was vetted and no
+	 * other, no redirect is followed, only HTTPS is spoken, the certificate
+	 * and its name are verified, and the body stops at the sink's limit.
+	 *
+	 * @return array<int, mixed>
+	 */
+	private static function attemptOptions(string $host, int $port, string $ip, string $format, int $timeout, ExportAttemptSink $sink): array {
+		$options = [
+			CURLOPT_RETURNTRANSFER => false,
+			CURLOPT_FOLLOWLOCATION => false,
+			CURLOPT_MAXREDIRS => 0,
+			CURLOPT_CONNECTTIMEOUT => $timeout,
+			CURLOPT_TIMEOUT => $timeout,
+			CURLOPT_HTTPGET => true,
+			CURLOPT_SSL_VERIFYPEER => true,
+			CURLOPT_SSL_VERIFYHOST => 2,
+			CURLOPT_HTTPHEADER => [
+				'Accept: ' . self::acceptHeaderFor($format),
+			],
+			CURLOPT_RESOLVE => [$host . ':' . $port . ':' . $ip],
+			CURLOPT_HEADERFUNCTION => $sink->header(...),
+			CURLOPT_WRITEFUNCTION => $sink->chunk(...),
+		];
+		if (defined('CURLOPT_PROTOCOLS') && defined('CURLPROTO_HTTPS')) {
+			$options[CURLOPT_PROTOCOLS] = CURLPROTO_HTTPS;
+		}
+		if (defined('CURLOPT_REDIR_PROTOCOLS') && defined('CURLPROTO_HTTPS')) {
+			$options[CURLOPT_REDIR_PROTOCOLS] = CURLPROTO_HTTPS;
+		}
+		return $options;
+	}
+
+	/**
+	 * One request through cURL: the one place the fetcher reaches another
+	 * server, so a test can answer in its place.
+	 *
+	 * @param array<int, mixed> $options
+	 * @return array{completed: bool, status: int, error: string, errno: int}
+	 */
+	protected function perform(string $url, array $options): array {
+		$curl = curl_init($url);
+		if ($curl === false) {
+			throw new ExternalPadException('Could not initialize external export request.', ExternalPadException::UNREACHABLE);
+		}
+		curl_setopt_array($curl, $options);
+		$completed = curl_exec($curl) !== false;
+		return [
+			'completed' => $completed,
+			'status' => (int)curl_getinfo($curl, CURLINFO_RESPONSE_CODE),
+			'error' => curl_error($curl),
+			'errno' => curl_errno($curl),
+		];
 	}
 
 	/**
