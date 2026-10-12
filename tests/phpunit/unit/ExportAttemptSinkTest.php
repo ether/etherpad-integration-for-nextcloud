@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Tests\Unit;
 
-use OCA\EtherpadNextcloud\Service\ExportAttemptSink;
+use OCA\EtherpadNextcloud\Http\ExportAttemptSink;
 use PHPUnit\Framework\TestCase;
 
 class ExportAttemptSinkTest extends TestCase {
@@ -30,5 +30,16 @@ class ExportAttemptSinkTest extends TestCase {
 		}
 
 		$this->assertSame('text/plain; charset=utf-8', $sink->contentType());
+	}
+
+	/** An interim answer with a type of its own, then a final one without. */
+	public function testTakesNoContentTypeFromAnInterimAnswer(): void {
+		$sink = new ExportAttemptSink(6);
+
+		foreach (["HTTP/1.1 103 Early Hints\r\n", "Content-Type: text/plain\r\n", "\r\n", "HTTP/1.1 200 OK\r\n", "Server: example\r\n", "\r\n"] as $line) {
+			$sink->header(null, $line);
+		}
+
+		$this->assertSame('', $sink->contentType());
 	}
 }

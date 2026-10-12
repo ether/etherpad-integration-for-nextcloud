@@ -7,7 +7,7 @@ declare(strict_types=1);
  * Copyright (c) 2026 Jacob Bühler
  */
 
-namespace OCA\EtherpadNextcloud\Service;
+namespace OCA\EtherpadNextcloud\Http;
 
 /**
  * What one attempt at an external pad's export receives: its body, up to a
@@ -38,10 +38,19 @@ class ExportAttemptSink {
 		return $this->tooLarge;
 	}
 
-	/** @param mixed $_handle cURL's handle, not needed here */
+	/**
+	 * cURL hands over the headers of every response the transfer gets: an
+	 * interim one (a 1xx, a proxy's answer to CONNECT) comes before the
+	 * final one, and only the final one's Content-Type describes the body.
+	 * A status line starts each.
+	 *
+	 * @param mixed $_handle cURL's handle, not needed here
+	 */
 	public function header(mixed $_handle, string $line): int {
 		$trimmed = trim($line);
-		if ($trimmed !== '' && stripos($trimmed, 'Content-Type:') === 0) {
+		if (str_starts_with($trimmed, 'HTTP/')) {
+			$this->contentType = '';
+		} elseif (stripos($trimmed, 'Content-Type:') === 0) {
 			$this->contentType = trim(substr($trimmed, strlen('Content-Type:')));
 		}
 		return strlen($line);

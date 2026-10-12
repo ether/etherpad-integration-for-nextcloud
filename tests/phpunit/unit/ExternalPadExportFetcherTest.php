@@ -8,7 +8,7 @@ use OCA\EtherpadNextcloud\Exception\ExternalPadException;
 use OCA\EtherpadNextcloud\Exception\ExternalPadExportNotFoundException;
 use OCA\EtherpadNextcloud\Exception\ExternalPadHttpErrorException;
 use OCA\EtherpadNextcloud\Exception\EtherpadTooLargeException;
-use OCA\EtherpadNextcloud\Service\ExportAttemptSink;
+use OCA\EtherpadNextcloud\Http\ExportAttemptSink;
 use OCA\EtherpadNextcloud\Service\ExternalPadExportFetcher;
 use OCP\IConfig;
 use OCA\EtherpadNextcloud\Tests\Support\FixedClock;

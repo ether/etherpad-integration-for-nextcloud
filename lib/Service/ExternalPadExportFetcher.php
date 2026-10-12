@@ -12,6 +12,7 @@ use OCA\EtherpadNextcloud\Exception\ExternalPadException;
 use OCA\EtherpadNextcloud\Exception\EtherpadTooLargeException;
 use OCA\EtherpadNextcloud\Exception\ExternalPadExportNotFoundException;
 use OCA\EtherpadNextcloud\Exception\ExternalPadHttpErrorException;
+use OCA\EtherpadNextcloud\Http\ExportAttemptSink;
 use OCP\AppFramework\Utility\ITimeFactory;
 use OCP\IConfig;
 
