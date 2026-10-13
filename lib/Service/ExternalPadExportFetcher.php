@@ -194,13 +194,16 @@ class ExternalPadExportFetcher {
 
 	/**
 	 * The options of one attempt, each keeping it to what was checked
-	 * before it: the name resolves to the address that was vetted and no
+	 * before it: the connection goes to the address that was vetted and no
 	 * other, no redirect is followed, only HTTPS is spoken, the certificate
 	 * and its name are verified, and the body stops at the sink's limit.
-	 * No proxy either: one cURL took from the environment (`https_proxy`,
-	 * `all_proxy`) would, as an HTTP, socks4a or socks5h proxy, resolve the
-	 * name in cURL's place, and the request would go wherever the name
-	 * resolves by then.
+	 *
+	 * The address is pinned with CONNECT_TO rather than RESOLVE so that the
+	 * pin holds through a proxy cURL takes from the environment as well:
+	 * the proxy is asked for the address. Asked for the name, an HTTP or
+	 * socks5h proxy would resolve it again, to wherever it points by then.
+	 * An IPv6 address goes in brackets, or cURL reads part of it as the
+	 * host.
 	 *
 	 * @return array<int, mixed>
 	 */
@@ -217,8 +220,7 @@ class ExternalPadExportFetcher {
 			CURLOPT_HTTPHEADER => [
 				'Accept: ' . self::acceptHeaderFor($format),
 			],
-			CURLOPT_RESOLVE => [$host . ':' . $port . ':' . $ip],
-			CURLOPT_PROXY => '',
+			CURLOPT_CONNECT_TO => [$host . ':' . $port . ':' . (str_contains($ip, ':') ? '[' . $ip . ']' : $ip) . ':' . $port],
 			CURLOPT_PROTOCOLS => CURLPROTO_HTTPS,
 			CURLOPT_REDIR_PROTOCOLS => CURLPROTO_HTTPS,
 			CURLOPT_HEADERFUNCTION => $sink->header(...),

@@ -169,7 +169,7 @@ solely by the separate external-pad policy, not by these two settings.
     - no GroupPad IDs (`g.<group>$<name>`)
     - no local/private/reserved target addresses (DNS/IP checks)
     - DNS result is pinned for the outbound fetch (rebinding mitigation)
-    - the fetch connects directly, never through a proxy from the server's environment: a proxy resolves the name again, past the pin. A Nextcloud that reaches the internet only through a proxy cannot link or sync external pads.
+    - the pin holds through a proxy from the server's environment too: the proxy is asked for the checked address, never the name, so a proxy that opens a tunnel only to a host name refuses the fetch
     - external `/export/txt` responses are size-limited (5 MiB hard limit)
     - external sync accepts only safe text-oriented response content-types
 
