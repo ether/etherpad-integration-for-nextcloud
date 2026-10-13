@@ -3,12 +3,12 @@
 # Copyright (c) 2026 Jacob Bühler
 #
 # appinfo/info.xml declares which Nextcloud versions this app supports, and
-# seven other files restate that range: the Psalm matrix analyses its upper
+# eight other files restate that range: the Psalm matrix analyses its upper
 # bound, the e2e matrix runs stacks across it, the stack default in
-# compose.yml picks the newest, composer.json pins the oldest, the README
-# tells a user what to install, and the e2e stack's README, up.sh and
-# compose header tell a developer what to run. This holds them to it, so moving the range stays a
-# one-file change.
+# compose.yml picks the newest, composer.json and composer.lock pin the
+# oldest, the README tells a user what to install, and the e2e stack's
+# README, up.sh and compose header tell a developer what to run. This holds
+# them to it, so moving the range stays a one-file change.
 #
 # The floor may name a patch. Nextcloud compares a requirement at whatever
 # precision it is written, so "31.0.9" is refused on 31.0.8 where a bare
@@ -97,8 +97,7 @@ def main():
     want("README.md", r"- Nextcloud `([\d.]+` to `\d+)`", f"{floor}` to `{maximum}",
          "the supported range")
 
-    # And what a developer is told to run. These drifted twice while this
-    # check watched the four files above and not these.
+    # And what a developer is told to run.
     want("tests/e2e/docker/README.md", r"declares — ([\d.]+ and \d+) — and the",
          f"{floor} and {maximum}", "the range named in the e2e README")
     if len(majors) > 1:

@@ -19,9 +19,9 @@ declare(strict_types=1);
 // against the stub only), a method the stub makes static or more visible. A
 // method only tests need carries the `@stub-only` tag and must not exist
 // upstream, where the stub's would hide the real one. Where an ancestor
-// upstream cannot be read, a finding says so, as that ancestor may hold
-// what is missing. `insteadof` is not evaluated: a method either trait
-// brings counts.
+// upstream cannot be read, a finding about a member it might hold names
+// it, and a `@stub-only` method is reported as one upstream may have.
+// `insteadof` is not evaluated: a method either trait brings counts.
 //
 // Prints one line per finding and exits 1 when there is one.
 // StubsExistUpstreamTest runs it against the locked packages, the Psalm job
@@ -335,7 +335,7 @@ function findings(string $stubsDir, array $upstreamDirs): array {
 				if ($real !== null) {
 					$findings[] = $named . ': marked @stub-only, but upstream has it';
 				} elseif ($unread !== '') {
-					$findings[] = $named . ': marked @stub-only, which cannot be told' . $unread;
+					$findings[] = $named . ': marked @stub-only, but upstream may have it' . $unread;
 				}
 			} elseif ($real === null) {
 				$findings[] = $named . ': no such method upstream' . $unread;

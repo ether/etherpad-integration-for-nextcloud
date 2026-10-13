@@ -11,7 +11,7 @@ use PHPUnit\Framework\TestCase;
  * The unit suite runs against hand-written stubs, so a test against a stub
  * method Nextcloud renamed or dropped stays green on code that cannot run.
  * The check runs as a script of its own: it needs Composer's autoloader,
- * which this suite does not load.
+ * which the PHP 8.1 job's PHPUnit PHAR does not load.
  */
 class StubsExistUpstreamTest extends TestCase {
 	private ?string $fixtures = null;
@@ -139,7 +139,22 @@ class StubsExistUpstreamTest extends TestCase {
 			],
 			'a type declared twice upstream, either declaration counted' => [
 				'if (PHP_VERSION_ID > 80000) { class Job { public function a(): void {} } } else { class Job { public function b(): void {} } }',
-				'class Job { public function b(): void {} }',
+				'class Job { public function a(): void {} public function b(): void {} }',
+				[],
+			],
+			'its own method over the trait one' => [
+				'trait Runs { protected function run(): void {} } class Job { use Runs; public function run(): void {} }',
+				'class Job { public function run(): void {} }',
+				[],
+			],
+			'a trait method over the inherited one' => [
+				'class Base { protected function run(): void {} } trait Runs { public function run(): void {} } class Job extends Base { use Runs; }',
+				'class Job { public function run(): void {} }',
+				[],
+			],
+			'a static method the docblock promises' => [
+				'/** @method static Job create() */ class Job { public static function __callStatic($name, $arguments) {} }',
+				'class Job { public static function create(): Job { return new Job(); } }',
 				[],
 			],
 			'a method the stub makes public' => [
@@ -196,7 +211,7 @@ class StubsExistUpstreamTest extends TestCase {
 			'a method only tests need, beside an ancestor that cannot be read' => [
 				'class Server extends \Vendor\Container {}',
 				'class Server { /** @stub-only Clears what a test registered. */ public static function reset(): void {} }',
-				['OCP\Server::reset(): marked @stub-only, which cannot be told (Vendor\Container could not be read)'],
+				['OCP\Server::reset(): marked @stub-only, but upstream may have it (Vendor\Container could not be read)'],
 			],
 			'a file that cannot be parsed' => [
 				'class Job { public function }',
