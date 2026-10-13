@@ -3,13 +3,13 @@
 #
 # Throwaway Nextcloud + Etherpad target for the Playwright suite. Bring
 # it up with tests/e2e/docker/up.sh, which also seeds accounts and writes
-# tests/e2e/.env.e2e. NC_VERSION selects the Nextcloud version the app is
-# tested against (32.0.9 to 34 — see appinfo/info.xml); the floor is a
-# pinned patch tag, the rest are moving major tags. EP_VERSION selects
-# the Etherpad major. up.sh holds the defaults of both and of
-# ELASTICSEARCH_VERSION and writes them to .env beside this file; this
-# file has none of its own, so a version bumped there is the one that
-# starts, and a call without that .env stops and says so.
+# tests/e2e/.env.e2e.docker. NC_VERSION selects the Nextcloud version the
+# app is tested against (32.0.9 to 34 — see appinfo/info.xml); the floor
+# is a pinned patch tag, the rest are moving major tags. EP_VERSION
+# selects the Etherpad major. The defaults of both, and of
+# ELASTICSEARCH_VERSION, are the ones below: up.sh reads them from here,
+# so a call without the .env it writes, from any worktree, starts what
+# up.sh would have.
 
 name: etherpad-nc-e2e
 
@@ -27,7 +27,7 @@ services:
       retries: 30
 
   etherpad:
-    image: etherpad/etherpad:${EP_VERSION:?run tests/e2e/docker/up.sh, which writes it to .env}
+    image: etherpad/etherpad:${EP_VERSION:-2}
     environment:
       # Etherpad 2 reads its config from env; the API key file is mounted
       # so occ and the app can be pointed at a known value.
@@ -51,7 +51,7 @@ services:
       retries: 40
 
   elasticsearch:
-    image: docker.elastic.co/elasticsearch/elasticsearch:${ELASTICSEARCH_VERSION:?run tests/e2e/docker/up.sh, which writes it to .env}
+    image: docker.elastic.co/elasticsearch/elasticsearch:${ELASTICSEARCH_VERSION:-8.19.21}
     profiles: ["fulltextsearch"]
     environment:
       discovery.type: single-node
@@ -69,7 +69,7 @@ services:
       context: .
       dockerfile: Dockerfile.nextcloud
       args:
-        NC_VERSION: ${NC_VERSION:?run tests/e2e/docker/up.sh, which writes it to .env}
+        NC_VERSION: ${NC_VERSION:-34}
     depends_on:
       db:
         condition: service_healthy

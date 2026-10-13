@@ -3,7 +3,7 @@
 # Copyright (c) 2026 Jacob Bühler
 #
 # Bring up a throwaway Nextcloud + Etherpad target for the Playwright
-# suite, seed it, and write tests/e2e/.env.e2e pointing at it.
+# suite, seed it, and write tests/e2e/.env.e2e.docker pointing at it.
 #
 #   NC_VERSION=32.0.9 tests/e2e/docker/up.sh
 #
@@ -12,13 +12,25 @@
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-export NC_VERSION="${NC_VERSION:-34}"
+# The default versions are compose.yml's, so that a compose call without
+# the .env below starts the same stack as this script.
+compose_default() {
+	local value
+	value="$(sed -n "s/.*\${$1:-\([^}]*\)}.*/\1/p" "$here/compose.yml" | head -n 1)"
+	if [[ -z "$value" ]]; then
+		echo "compose.yml names no default for $1." >&2
+		return 1
+	fi
+	printf '%s' "$value"
+}
+NC_VERSION="${NC_VERSION:-$(compose_default NC_VERSION)}"
 # The Etherpad major. 2 is what the app is written against today; 3 moved
 # the session cookie to the socket.io handshake and is what a run against
 # it is meant to find out about.
-export EP_VERSION="${EP_VERSION:-2}"
+EP_VERSION="${EP_VERSION:-$(compose_default EP_VERSION)}"
+ELASTICSEARCH_VERSION="${ELASTICSEARCH_VERSION:-$(compose_default ELASTICSEARCH_VERSION)}"
+export NC_VERSION EP_VERSION ELASTICSEARCH_VERSION
 export FULLTEXTSEARCH="${FULLTEXTSEARCH:-0}"
-export ELASTICSEARCH_VERSION="${ELASTICSEARCH_VERSION:-8.19.21}"
 readonly FULLTEXTSEARCH_VERSION=34.0.1
 readonly FILES_FULLTEXTSEARCH_VERSION=34.0.1
 readonly FULLTEXTSEARCH_ELASTICSEARCH_VERSION=34.0.1

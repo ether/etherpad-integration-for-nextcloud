@@ -6,7 +6,8 @@
 # health check probes the public https base URL — without the CA that
 # probe reports the instance as unreachable and the admin-health-check
 # spec fails for the wrong reason.
-ARG NC_VERSION=34
+# Passed by compose.yml, which holds its default.
+ARG NC_VERSION
 FROM nextcloud:${NC_VERSION}-apache
 
 COPY certs/ca.crt /usr/local/share/ca-certificates/e2e-local-ca.crt
