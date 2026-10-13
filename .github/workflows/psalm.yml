@@ -44,7 +44,8 @@ jobs:
               - 'psalm.xml'
               - 'psalm-baseline.xml'
               - 'tests/psalm/**'
-              - 'tests/phpunit/stubs/**'
+              - 'tests/phpunit/stubs/OCP/**'
+              - 'tests/phpunit/stubs/Psr/**'
               - 'tests/phpunit/Support/check-stubs.php'
 
   psalm:
@@ -112,6 +113,7 @@ jobs:
       # would step outside the lock and analyse whatever patch release happens
       # to be newest that day, which no other job has installed.
       - name: Select the OCP version under test
+        id: select
         if: matrix.ocp != 'locked'
         run: composer require --dev --no-progress --no-interaction "nextcloud/ocp:${{ matrix.ocp }}"
 
@@ -119,10 +121,10 @@ jobs:
         run: composer psalm
 
       # The unit suite runs against hand-written stubs and checks them
-      # against the locked OCP; this checks them against the newer one. A
-      # finding here leaves Psalm's own result standing.
+      # against the locked OCP; this checks them against the newer one, once
+      # it is installed. A finding here leaves Psalm's own result standing.
       - name: Check the stubs against this OCP
-        if: ${{ !cancelled() && matrix.ocp != 'locked' }}
+        if: ${{ !cancelled() && steps.select.outcome == 'success' }}
         run: php tests/phpunit/Support/check-stubs.php
 
   summary:

@@ -9,7 +9,7 @@ declare(strict_types=1);
 //
 // Without arguments it checks tests/phpunit/stubs/OCP against the installed
 // OCP package and the PSR packages it builds on, and tests/phpunit/stubs/Psr
-// against the PSR packages.
+// against the installed PSR packages.
 //
 // The stubs are looser than upstream on purpose: parameter and return types
 // are not compared, and a stub may leave out a method, a constant or a
@@ -18,14 +18,18 @@ declare(strict_types=1);
 // kind of type, an ancestor upstream does not have (a catch that holds
 // against the stub only), a method the stub makes static or more visible. A
 // method only tests need carries the `@stub-only` tag and must not exist
-// upstream, where the stub's would hide the real one.
+// upstream, where the stub's would hide the real one. Where an ancestor
+// upstream cannot be read, a finding says so, as that ancestor may hold
+// what is missing. `insteadof` is not evaluated: a method either trait
+// brings counts.
 //
 // Prints one line per finding and exits 1 when there is one.
 // StubsExistUpstreamTest runs it against the locked packages, the Psalm job
-// against each OCP it analyses. Upstream is read rather than loaded: its
-// classes carry the stubs' names, and the two cannot share a process.
+// against the newer OCP it analyses. Upstream is read rather than loaded:
+// its classes carry the stubs' names.
 
 use PhpParser\Error;
+use PhpParser\Modifiers;
 use PhpParser\Node\Stmt\ClassConst;
 use PhpParser\Node\Stmt\ClassLike;
 use PhpParser\Node\Stmt\ClassMethod;
@@ -41,7 +45,7 @@ use PhpParser\NodeTraverser;
 use PhpParser\NodeVisitor\NameResolver;
 use PhpParser\ParserFactory;
 
-// A deprecation passes, as in the rest of the suite, whatever php.ini says.
+// A deprecation passes, as in the unit suite, whatever php.ini says.
 error_reporting(E_ALL & ~E_DEPRECATED);
 ini_set('display_errors', 'stderr');
 ini_set('log_errors', '0');
@@ -52,9 +56,9 @@ require $root . '/vendor/autoload.php';
 const VISIBILITY = ['private' => 1, 'protected' => 2, 'public' => 3];
 
 // A type as read here: its name and kind (class, interface, trait or
-// enum), its direct parents and traits, the aliases its trait uses
-// declare, its methods by lowercase name (name, visibility, static,
-// stubOnly) and its constants.
+// enum), its direct parents and traits, the aliases its `use` statements
+// give trait methods, its methods by lowercase name (name, visibility,
+// static, stubOnly) and its constants.
 
 /**
  * Every class-like declared under $dirs, a type declared twice once each,
@@ -134,8 +138,8 @@ function describe(ClassLike $type): array {
 						'name' => $adaptation->newName?->toString(),
 						'visibility' => match (true) {
 							$adaptation->newModifier === null => null,
-							($adaptation->newModifier & Class_::MODIFIER_PRIVATE) !== 0 => 'private',
-							($adaptation->newModifier & Class_::MODIFIER_PROTECTED) !== 0 => 'protected',
+							($adaptation->newModifier & Modifiers::PRIVATE) !== 0 => 'private',
+							($adaptation->newModifier & Modifiers::PROTECTED) !== 0 => 'protected',
 							default => 'public',
 						},
 					];
@@ -169,8 +173,7 @@ function describe(ClassLike $type): array {
 }
 
 /**
- * The methods a class docblock promises through `@method`, served by
- * `__call` or `__callStatic`.
+ * The methods a class docblock declares with `@method`.
  *
  * @return array<string, array<string, mixed>>
  */
@@ -331,6 +334,8 @@ function findings(string $stubsDir, array $upstreamDirs): array {
 			if ($method['stubOnly']) {
 				if ($real !== null) {
 					$findings[] = $named . ': marked @stub-only, but upstream has it';
+				} elseif ($unread !== '') {
+					$findings[] = $named . ': marked @stub-only, which cannot be told' . $unread;
 				}
 			} elseif ($real === null) {
 				$findings[] = $named . ': no such method upstream' . $unread;
@@ -349,6 +354,10 @@ function findings(string $stubsDir, array $upstreamDirs): array {
 	return $findings;
 }
 
+if (count($argv) === 2) {
+	fwrite(STDERR, "Usage: php check-stubs.php [<stubs dir> <upstream dir>...]\n");
+	exit(2);
+}
 $pairs = count($argv) > 2
 	? [[$argv[1], array_slice($argv, 2)]]
 	: [

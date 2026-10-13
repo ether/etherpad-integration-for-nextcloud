@@ -10,8 +10,8 @@ use PHPUnit\Framework\TestCase;
 /**
  * The unit suite runs against hand-written stubs, so a test against a stub
  * method Nextcloud renamed or dropped stays green on code that cannot run.
- * The check reads upstream in a process of its own: its classes carry the
- * stubs' names.
+ * The check runs as a script of its own: it needs Composer's autoloader,
+ * which this suite does not load.
  */
 class StubsExistUpstreamTest extends TestCase {
 	private ?string $fixtures = null;
@@ -122,6 +122,26 @@ class StubsExistUpstreamTest extends TestCase {
 				'class Job { public static function run(): void {} }',
 				['OCP\Job::run(): static in the stub, not upstream'],
 			],
+			'a method the docblock promises, made static' => [
+				'/** @method string getTitle() */ class Entity { public function __call($name, $arguments) {} }',
+				'class Entity { public static function getTitle(): string { return ""; } }',
+				['OCP\Entity::getTitle(): static in the stub, not upstream'],
+			],
+			'a trait method made protected under another name' => [
+				'trait Named { public function name(): string { return ""; } } class Job { use Named { name as protected title; } }',
+				'class Job { public function title(): string { return ""; } }',
+				['OCP\Job::title(): public in the stub, protected upstream'],
+			],
+			'its own method over the one it inherits' => [
+				'class Base { protected function run(): void {} } class Job extends Base { public function run(): void {} }',
+				'class Job { public function run(): void {} }',
+				[],
+			],
+			'a type declared twice upstream, either declaration counted' => [
+				'if (PHP_VERSION_ID > 80000) { class Job { public function a(): void {} } } else { class Job { public function b(): void {} } }',
+				'class Job { public function b(): void {} }',
+				[],
+			],
 			'a method the stub makes public' => [
 				'class Job { protected function run(): void {} }',
 				'class Job { public function run(): void {} }',
@@ -132,12 +152,17 @@ class StubsExistUpstreamTest extends TestCase {
 				'interface ILog { public const LEVEL = 1; public const GONE = 2; }',
 				['OCP\ILog::GONE: no such constant upstream'],
 			],
+			'a backed enum, a pure one upstream' => [
+				'enum Mode { case Read; }',
+				'enum Mode: string { case Read = "r"; }',
+				['OCP\Mode: BackedEnum is no ancestor of it upstream'],
+			],
 			'an enum case upstream lacks' => [
 				'enum Mode: string { case Read = "r"; }',
 				'enum Mode: string { case Read = "r"; case Write = "w"; }',
 				['OCP\Mode::Write: no such constant upstream'],
 			],
-			// As every stub is: declared only if nothing has loaded the real one.
+			// As most stubs are: declared only if nothing has loaded the real one.
 			'a type declared inside a guard' => [
 				'interface IJobs { public function add($job): void; }',
 				'if (!interface_exists(IJobs::class)) { interface IJobs { public function add($job): void; public function drop(): void; } }',
@@ -167,6 +192,11 @@ class StubsExistUpstreamTest extends TestCase {
 				'interface ILog extends \Vendor\LoggerInterface {}',
 				'interface ILog { public function log(): void; }',
 				['OCP\ILog::log(): no such method upstream (Vendor\LoggerInterface could not be read)'],
+			],
+			'a method only tests need, beside an ancestor that cannot be read' => [
+				'class Server extends \Vendor\Container {}',
+				'class Server { /** @stub-only Clears what a test registered. */ public static function reset(): void {} }',
+				['OCP\Server::reset(): marked @stub-only, which cannot be told (Vendor\Container could not be read)'],
 			],
 			'a file that cannot be parsed' => [
 				'class Job { public function }',

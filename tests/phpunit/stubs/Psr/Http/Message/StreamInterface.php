@@ -11,8 +11,8 @@ namespace Psr\Http\Message;
 /**
  * Stands in for psr/http-message 2.0 where the suite runs without Composer's
  * autoloader, as the Psr\Clock stub beside it does. The real interface wins
- * wherever it is installed, so this body does not run in CI - and its
- * signatures are a hand-copy that nothing holds to the original.
+ * wherever it is installed, so this body does not run in CI; check-stubs.php
+ * holds its methods to the original, though not their signatures.
  */
 if (!interface_exists(StreamInterface::class)) {
 	interface StreamInterface {
