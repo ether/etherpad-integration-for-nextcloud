@@ -128,7 +128,9 @@ snapshot still re-provisions the mode recorded in that file, because rescuing
 existing content takes precedence.
 
 Linking external public pads is governed separately by the external pad
-policy and is unaffected by these two settings.
+policy and is unaffected by these two settings. The Nextcloud server fetches
+an external pad's text directly, never through a proxy: a server that reaches
+the internet only through one cannot link or sync external pads.
 
 ### 4) Check iframe and cookie setup for protected pads
 

@@ -223,6 +223,7 @@ class ExternalPadExportFetcherTest extends TestCase {
 		[$url, $options] = $fetcher->performed[0];
 		$this->assertSame('https://pad.example:8443/p/pad/export/txt', $url);
 		$this->assertSame(['pad.example:8443:1.1.1.1'], $options[CURLOPT_RESOLVE]);
+		$this->assertSame('', $options[CURLOPT_PROXY]);
 		$this->assertFalse($options[CURLOPT_FOLLOWLOCATION]);
 		$this->assertSame(0, $options[CURLOPT_MAXREDIRS]);
 		$this->assertSame(CURLPROTO_HTTPS, $options[CURLOPT_PROTOCOLS]);

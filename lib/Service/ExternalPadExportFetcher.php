@@ -197,11 +197,10 @@ class ExternalPadExportFetcher {
 	 * before it: the name resolves to the address that was vetted and no
 	 * other, no redirect is followed, only HTTPS is spoken, the certificate
 	 * and its name are verified, and the body stops at the sink's limit.
-	 * The pin holds only where cURL resolves the name: a proxy it takes
-	 * from the environment (`https_proxy` or `HTTPS_PROXY`, else
-	 * `all_proxy` or `ALL_PROXY`, unless `no_proxy` names the host)
-	 * resolves the name in its place when it is an HTTP, socks4a or
-	 * socks5h one.
+	 * No proxy either: one cURL took from the environment (`https_proxy`,
+	 * `all_proxy`) would, as an HTTP, socks4a or socks5h proxy, resolve the
+	 * name in cURL's place, and the request would go wherever the name
+	 * resolves by then.
 	 *
 	 * @return array<int, mixed>
 	 */
@@ -219,6 +218,7 @@ class ExternalPadExportFetcher {
 				'Accept: ' . self::acceptHeaderFor($format),
 			],
 			CURLOPT_RESOLVE => [$host . ':' . $port . ':' . $ip],
+			CURLOPT_PROXY => '',
 			CURLOPT_PROTOCOLS => CURLPROTO_HTTPS,
 			CURLOPT_REDIR_PROTOCOLS => CURLPROTO_HTTPS,
 			CURLOPT_HEADERFUNCTION => $sink->header(...),
