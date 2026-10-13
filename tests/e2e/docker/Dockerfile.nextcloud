@@ -1,3 +1,4 @@
+# check=skip=InvalidDefaultArgInFrom
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (c) 2026 Jacob Bühler
 #
@@ -6,7 +7,8 @@
 # health check probes the public https base URL — without the CA that
 # probe reports the instance as unreachable and the admin-health-check
 # spec fails for the wrong reason.
-# Passed by compose.yml, which holds its default.
+# Passed by compose.yml, which holds its default; without one here,
+# BuildKit's check for a default that names no image is skipped above.
 ARG NC_VERSION
 FROM nextcloud:${NC_VERSION}-apache
 

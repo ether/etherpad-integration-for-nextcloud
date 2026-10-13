@@ -12,8 +12,7 @@
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# The default versions are compose.yml's, so that a compose call without
-# the .env below starts the same stack as this script.
+# The default versions are compose.yml's; its header says why.
 compose_default() {
 	local value
 	value="$(sed -n "s/.*\${$1:-\([^}]*\)}.*/\1/p" "$here/compose.yml" | head -n 1)"
