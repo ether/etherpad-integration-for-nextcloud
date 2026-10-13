@@ -36,9 +36,11 @@ docker compose -f tests/e2e/docker/compose.yml down -v --remove-orphans
 
 Both versions are chosen at `up.sh` time and written to
 `tests/e2e/docker/.env`, which Compose reads by itself — so a later
-`docker compose` call resolves the same versions from whatever shell you
-run it in. Without that file, Compose would fall back to its defaults and
-a plain `docker compose up` could recreate the stack on the wrong major.
+`docker compose` call resolves the same versions unless the shell it runs
+in sets them. Without that file, as in another worktree, Compose takes
+the defaults in `compose.yml`, which are the ones `up.sh` starts with; a
+stack brought up on another version could then be recreated on the
+default.
 
 `up.sh` refuses to run while a stack already exists — it promises a
 fresh installation, and pointing it at a volume from another

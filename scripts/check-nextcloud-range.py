@@ -4,11 +4,11 @@
 #
 # appinfo/info.xml declares which Nextcloud versions this app supports, and
 # eight other files restate that range: the Psalm matrix analyses its upper
-# bound, the e2e matrix runs stacks across it, three stack defaults pick the
-# newest, composer.json pins the oldest, the README tells a user what to
-# install, and the e2e stack's README, up.sh and compose header tell a
-# developer what to run. This holds them to it, so moving the range stays a
-# one-file change.
+# bound, the e2e matrix runs stacks across it, the stack default in
+# compose.yml picks the newest, composer.json and composer.lock pin the
+# oldest, the README tells a user what to install, and the e2e stack's
+# README, up.sh and compose header tell a developer what to run. This holds
+# them to it, so moving the range stays a one-file change.
 #
 # The floor may name a patch. Nextcloud compares a requirement at whatever
 # precision it is written, so "31.0.9" is refused on 31.0.8 where a bare
@@ -88,20 +88,16 @@ def main():
          ", ".join(f'"{v}"' for v in majors),
          "the nightly Nextcloud list")
 
-    # The throwaway stack defaults to the newest supported major.
-    want("tests/e2e/docker/up.sh", r'NC_VERSION="\$\{NC_VERSION:-(\d+)\}"', str(maximum),
-         "the up.sh default")
+    # The throwaway stack defaults to the newest supported major; up.sh and
+    # the Dockerfile take the default from compose.yml.
     want("tests/e2e/docker/compose.yml", r"NC_VERSION:\s*\$\{NC_VERSION:-(\d+)\}", str(maximum),
          "the compose default")
-    want("tests/e2e/docker/Dockerfile.nextcloud", r"ARG NC_VERSION=(\d+)", str(maximum),
-         "the Dockerfile default")
 
     # What a reader is told to install.
     want("README.md", r"- Nextcloud `([\d.]+` to `\d+)`", f"{floor}` to `{maximum}",
          "the supported range")
 
-    # And what a developer is told to run. These drifted twice while this
-    # check watched the four files above and not these.
+    # And what a developer is told to run.
     want("tests/e2e/docker/README.md", r"declares — ([\d.]+ and \d+) — and the",
          f"{floor} and {maximum}", "the range named in the e2e README")
     if len(majors) > 1:
@@ -116,7 +112,7 @@ def main():
          "the e2e README's NC_VERSION list and default")
     want("tests/e2e/docker/up.sh", r"#\s+NC_VERSION=([\d.]+) tests/e2e/docker/up\.sh",
          floor, "the up.sh usage example")
-    want("tests/e2e/docker/compose.yml", r"# tested against \(([\d.]+ to \d+) —",
+    want("tests/e2e/docker/compose.yml", r"tested against \(([\d.]+ to \d+) —",
          f"{floor} to {maximum}", "the range named in the compose header")
 
     if problems:
@@ -126,7 +122,7 @@ def main():
         return 1
 
     print(f"Nextcloud {floor} to {maximum}: info.xml, composer.json, both CI matrices, "
-          "the three stack defaults, the README and the e2e stack's own docs agree.")
+          "the stack default, the README and the e2e stack's own docs agree.")
     return 0
 
 

@@ -22,6 +22,7 @@ if (!class_exists(Util::class)) {
 			self::$initScripts[] = [$application, $file];
 		}
 
+		/** @stub-only Clears what a test added. */
 		public static function reset(): void {
 			self::$scripts = [];
 			self::$initScripts = [];
