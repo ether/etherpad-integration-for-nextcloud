@@ -404,16 +404,14 @@ class ExternalPadExportFetcherTest extends TestCase {
 	}
 
 	/**
-	 * A proxy from the environment is asked for the checked address, not
-	 * the name it would resolve again - also for a name cURL rewrites
-	 * before it connects. The fetch runs for real, through a stand-in proxy
-	 * on this machine that notes what it is asked and refuses the tunnel.
+	 * The fetch runs for real, through a stand-in proxy on this machine that
+	 * notes what it is asked and refuses the tunnel.
 	 *
 	 * @param list<array<string, string>> $records
 	 */
 	#[DataProvider('namesAProxyMustNotBeAskedFor')]
 	public function testAProxyFromTheEnvironmentIsAskedForTheCheckedAddress(string $url, array $records, string $asked): void {
-		// A warning PHP prints on starting would otherwise come before the port.
+		// Keeps startup warnings off stdout, which carries the stand-in's port.
 		$proxy = proc_open([PHP_BINARY, '-d', 'display_errors=stderr', __DIR__ . '/../Support/connect-recorder.php'], [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes);
 		$this->assertIsResource($proxy);
 		try {

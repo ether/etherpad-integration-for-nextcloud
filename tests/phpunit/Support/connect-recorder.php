@@ -2,9 +2,8 @@
 
 declare(strict_types=1);
 
-// A stand-in proxy for one connection: prints the port it listens on, then
-// the first line it is asked, and refuses the tunnel. The external fetch's
-// test runs it to see what a proxy is told.
+// A stand-in proxy for one connection: prints its port, then the first
+// line it is asked, and refuses the tunnel.
 
 $server = stream_socket_server('tcp://127.0.0.1:0', $errno, $error);
 if ($server === false) {
