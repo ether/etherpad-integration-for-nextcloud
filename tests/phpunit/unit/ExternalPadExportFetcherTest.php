@@ -416,39 +416,49 @@ class ExternalPadExportFetcherTest extends TestCase {
 		// A warning PHP prints on starting would otherwise come before the port.
 		$proxy = proc_open([PHP_BINARY, '-d', 'display_errors=stderr', __DIR__ . '/../Support/connect-recorder.php'], [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes);
 		$this->assertIsResource($proxy);
-		$port = (int)fgets($pipes[1]);
-		if ($port === 0) {
-			$this->fail('The stand-in proxy did not start: ' . stream_get_contents($pipes[2]));
-		}
-		$environment = ['https_proxy' => 'http://127.0.0.1:' . $port, 'HTTPS_PROXY' => null, 'no_proxy' => null, 'NO_PROXY' => null];
-		$before = array_map(static fn (string $name): string|false => getenv($name), array_combine(array_keys($environment), array_keys($environment)));
-		foreach ($environment as $name => $value) {
-			putenv($value === null ? $name : $name . '=' . $value);
-		}
 		try {
-			$fetcher = new class($this->buildExternalEnabledConfig(), new FixedClock(), $records) extends ExternalPadExportFetcher {
-				/** @param list<array<string, string>> $records */
-				public function __construct(IConfig $config, FixedClock $clock, private array $records) {
-					parent::__construct($config, $clock);
-				}
-
-				protected function lookUp(string $host): array {
-					return $this->records;
-				}
-			};
+			$port = (int)fgets($pipes[1]);
+			if ($port === 0) {
+				$this->fail('The stand-in proxy did not start: ' . stream_get_contents($pipes[2]));
+			}
+			$environment = ['https_proxy' => 'http://127.0.0.1:' . $port, 'HTTPS_PROXY' => null, 'no_proxy' => null, 'NO_PROXY' => null];
+			$before = array_map(static fn (string $name): string|false => getenv($name), array_combine(array_keys($environment), array_keys($environment)));
+			foreach ($environment as $name => $value) {
+				putenv($value === null ? $name : $name . '=' . $value);
+			}
 			try {
-				$fetcher->normalizeAndFetchExternalPublicPadText($url);
-				$this->fail('The stand-in proxy refuses every tunnel.');
-			} catch (ExternalPadException) {
-			}
-		} finally {
-			foreach ($before as $name => $value) {
-				putenv($value === false ? $name : $name . '=' . $value);
-			}
-		}
+				$fetcher = new class($this->buildExternalEnabledConfig(), new FixedClock(), $records) extends ExternalPadExportFetcher {
+					/** @param list<array<string, string>> $records */
+					public function __construct(IConfig $config, FixedClock $clock, private array $records) {
+						parent::__construct($config, $clock);
+					}
 
-		$this->assertSame($asked, trim((string)fgets($pipes[1])));
-		proc_close($proxy);
+					protected function lookUp(string $host): array {
+						return $this->records;
+					}
+				};
+				try {
+					$fetcher->normalizeAndFetchExternalPublicPadText($url);
+					$this->fail('The stand-in proxy refuses every tunnel.');
+				} catch (ExternalPadException $e) {
+					// What the API reference tells the user of a proxy that refuses.
+					$this->assertSame(ExternalPadException::UNREACHABLE, $e->reason());
+				}
+			} finally {
+				foreach ($before as $name => $value) {
+					putenv($value === false ? $name : $name . '=' . $value);
+				}
+			}
+
+			$this->assertSame($asked, trim((string)fgets($pipes[1])));
+		} finally {
+			// After a failure the stand-in would wait out its accept timeout.
+			foreach ($pipes as $pipe) {
+				fclose($pipe);
+			}
+			proc_terminate($proxy);
+			proc_close($proxy);
+		}
 	}
 
 	/** @return array<string, array{string, list<array<string, string>>, string}> */
