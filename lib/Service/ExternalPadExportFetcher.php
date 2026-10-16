@@ -191,10 +191,10 @@ class ExternalPadExportFetcher {
 
 	/**
 	 * The options of one attempt, each keeping it to what was checked
-	 * before it: the connection, or a proxy's tunnel, goes to the address
-	 * that was vetted and no other, no redirect is followed, only HTTPS is
-	 * spoken, the certificate and its name are verified, and the body stops
-	 * at the sink's limit.
+	 * before it: the connection, or the tunnel a proxy is asked for, goes
+	 * to the address that was vetted and no other, no redirect is followed,
+	 * only HTTPS is spoken, the certificate and its name are verified, and
+	 * the body stops at the sink's limit.
 	 *
 	 * The address is pinned with CONNECT_TO rather than RESOLVE so that the
 	 * pin holds through a proxy cURL takes from the environment as well:

@@ -413,7 +413,8 @@ class ExternalPadExportFetcherTest extends TestCase {
 	 */
 	#[DataProvider('namesAProxyMustNotBeAskedFor')]
 	public function testAProxyFromTheEnvironmentIsAskedForTheCheckedAddress(string $url, array $records, string $asked): void {
-		$proxy = proc_open([PHP_BINARY, __DIR__ . '/../Support/connect-recorder.php'], [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes);
+		// A warning PHP prints on starting would otherwise come before the port.
+		$proxy = proc_open([PHP_BINARY, '-d', 'display_errors=stderr', __DIR__ . '/../Support/connect-recorder.php'], [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes);
 		$this->assertIsResource($proxy);
 		$port = (int)fgets($pipes[1]);
 		if ($port === 0) {
