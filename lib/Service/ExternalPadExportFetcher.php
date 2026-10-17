@@ -37,10 +37,12 @@ class ExternalPadExportFetcher {
 
 	/**
 	 * IPv4 blocks that are not public: those IANA's special-purpose
-	 * registry marks as not globally reachable, and multicast. A block
-	 * counts as a whole, here and for IPv6: the reachable addresses inside
-	 * one belong to protocol services such as anycast relays, not to web
-	 * servers.
+	 * registry marks as not globally reachable (checked 2026-10-17), and
+	 * multicast. A block counts as a whole, here and for IPv6: the
+	 * reachable addresses inside one belong to protocol services such as
+	 * anycast relays, not to web servers.
+	 *
+	 * @see https://www.iana.org/assignments/iana-ipv4-special-registry/
 	 */
 	private const NOT_PUBLIC_IPV4 = [
 		'0.0.0.0/8',
@@ -61,11 +63,14 @@ class ExternalPadExportFetcher {
 	];
 
 	/**
-	 * IPv6 is public only in global unicast, `2000::/3`, and outside these
-	 * blocks IANA's special-purpose registry marks as not globally
-	 * reachable. Everything else - loopback, IPv4 written as IPv6,
-	 * unique-local, link-local, site-local, multicast - lies outside
-	 * `2000::/3`.
+	 * Apart from NAT64 and 6to4, which count as the IPv4 address they
+	 * carry, IPv6 is public only in global unicast, `2000::/3`, and outside
+	 * these blocks IANA's special-purpose registry marks as not globally
+	 * reachable (checked 2026-10-17). The other addresses that are not
+	 * public - loopback, IPv4-mapped and IPv4-compatible, unique-local,
+	 * link-local, site-local, multicast - lie outside `2000::/3`.
+	 *
+	 * @see https://www.iana.org/assignments/iana-ipv6-special-registry/
 	 */
 	private const NOT_PUBLIC_IPV6 = [
 		'2001::/23', // IETF protocol assignments, Teredo among them
@@ -389,10 +394,10 @@ class ExternalPadExportFetcher {
 		}
 
 		// A URL writes an IPv6 address in brackets, which parse_url() keeps.
-		$literal = str_starts_with($host, '[') && str_ends_with($host, ']') ? substr($host, 1, -1) : $host;
+		$literal = str_starts_with($host, '[') ? substr($host, 1, -1) : $host;
 		if (filter_var($literal, FILTER_VALIDATE_IP) !== false) {
 			if (!$this->isPublicIp($literal)) {
-				throw new ExternalPadException('Private/reserved IPs are not allowed for external pad sync.', ExternalPadException::LOCAL_ADDRESS);
+				throw new ExternalPadException('External pad host is an address that is not public: ' . $literal, ExternalPadException::LOCAL_ADDRESS);
 			}
 			return [$literal];
 		}
@@ -417,7 +422,7 @@ class ExternalPadExportFetcher {
 
 		foreach ($resolvedIps as $ip) {
 			if (!$this->isPublicIp($ip)) {
-				throw new ExternalPadException('Private/reserved IPs are not allowed for external pad sync.', ExternalPadException::LOCAL_ADDRESS);
+				throw new ExternalPadException('External pad host resolves to an address that is not public: ' . $ip, ExternalPadException::LOCAL_ADDRESS);
 			}
 		}
 
@@ -437,10 +442,9 @@ class ExternalPadExportFetcher {
 	}
 
 	/**
-	 * Decided on the address itself, as the system parses it, not on how
-	 * it is written: PHP's own filter refuses `::127.0.0.1` from PHP 8.3
-	 * on, but not the same address written `::7f00:1`, and which blocks it
-	 * refuses changes between versions.
+	 * Whether an address is public is decided on the address as the system
+	 * parses it, by the lists above. PHP's filter judges an address by how
+	 * it is written, and its blocks change between PHP versions.
 	 */
 	private function isPublicIp(string $ip): bool {
 		$address = inet_pton($ip);
@@ -453,8 +457,8 @@ class ExternalPadExportFetcher {
 			return !self::inAnyBlock($address, self::NOT_PUBLIC_IPV4);
 		}
 		// A connection to a NAT64 or a 6to4 address ends at the IPv4
-		// address it carries. RFC 6052 forbids the NAT64 prefix for an
-		// address that is not public, but nothing stops a DNS record.
+		// address it carries. RFC 6052 tells translators to drop a NAT64
+		// packet for an address that is not public, but not every one does.
 		if (self::inBlock($address, '64:ff9b::/96')) {
 			return self::isPublicAddress(substr($address, 12, 4));
 		}
@@ -552,7 +556,10 @@ class ExternalPadExportFetcher {
 		$decodedPath = rawurldecode($path);
 		// No path at all is a link to the server, not to a pad: told as one
 		// that does not end in /p/ and a name.
+		// parse_url() takes anything in brackets as the host; only an IPv6
+		// address belongs there, and cURL refuses the rest.
 		if ($scheme !== 'https' || $host === '' || $port <= 0 || $port > 65535
+			|| (str_starts_with($host, '[') && filter_var(substr($host, 1, -1), FILTER_VALIDATE_IP, FILTER_FLAG_IPV6) === false)
 			|| preg_match('/[\x00-\x1F\x7F]/', $decodedPath) === 1) {
 			throw new ExternalPadException('Invalid public pad URL.', ExternalPadException::INVALID_URL);
 		}
