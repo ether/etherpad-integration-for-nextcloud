@@ -556,14 +556,14 @@ Registered in `lib/AppInfo/Application.php`.
 - `OCP\Security\CSP\AddContentSecurityPolicyEvent` -> `CSPListener`
 - `OCA\Files\Event\LoadAdditionalScriptsEvent` -> `LoadFilesScriptsListener`
 - `OCA\Files_Sharing\Event\BeforeTemplateRenderedEvent` -> `LoadPublicShareScriptsListener`
-- `OCP\Files\Template\RegisterTemplateCreatorEvent` -> `RegisterTemplateCreatorListener`
+- `OCP\Files\Template\RegisterTemplateCreatorEvent` -> `RegisterTemplateCreatorListener` (for a user the app is enabled for; `docs/templates.md`)
 - `OCP\Files\Template\BeforeGetTemplatesEvent` -> `BeforeGetTemplatesListener` (priority -100)
-- `OCP\Files\Template\FileCreatedFromTemplateEvent` -> `FileCreatedFromTemplateListener`
+- `OCP\Files\Template\FileCreatedFromTemplateEvent` -> `FileCreatedFromTemplateListener` (refuses a user the app is not enabled for; `docs/templates.md`)
 - `OCA\Viewer\Event\LoadViewer` -> `LoadViewerListener`
 - `OCP\User\Events\UserLoggedOutEvent` -> `UserLoggedOutListener`
 - `OCP\User\Events\BeforeUserDeletedEvent` -> `RevokeSessionsOnAccountDeleteListener` (the account's sessions, as on a logout)
 - `OCA\Files_Trashbin\Events\NodeRestoredEvent` -> `RestoreFromTrashListener`
-- legacy hook `\OCA\Files_Trashbin\Trashbin::post_restore` -> `TrashbinHookHandler::postRestore` -> `RestoreFromTrashListener::handleLegacyHook`
+- legacy hook `\OCA\Files_Trashbin\Trashbin::post_restore` -> `TrashbinHookHandler::postRestore` -> `RestoreFromTrashListener::handleLegacyHook` (either way in, leaves the pad's step out for a restore done as a user the app is not enabled for; `docs/architecture.md`, Trash/Restore)
 - `OCP\Files\Cache\CacheEntryRemovedEvent`, `OCP\Files\Cache\CacheEntryInsertedEvent`, `OCP\Files\Cache\CacheEntriesRemovedEvent` (from 34, priority 100), `OCP\Files\Events\Node\BeforeNodeDeletedEvent`, `OCP\Files\Events\Node\NodeDeletedEvent`, `OCP\Files\Events\NodeRemovedFromCache` (what `occ files:scan` drops), the event named `\OCP\Files::postDelete` (an `OCP\EventDispatcher\GenericEvent`), `OCA\Files_Trashbin\Events\BeforeNodeRestoredEvent`, `OCA\Files_Trashbin\Events\NodeRestoredEvent`, `OCP\User\Events\BeforeUserDeletedEvent`, `OCP\User\Events\UserDeletedEvent` -> `GoneFilesListener` (the marks of files deleted for good; `docs/architecture.md`, "Files gone for good")
 - `OCP\Files\Events\Node\BeforeNodeDeletedEvent`, `OCP\Files\Events\Node\NodeDeletedEvent` -> `RevokeSessionsOnDeleteListener` (the sessions of the protected pads a delete takes along, the rest by `RevokeGroupSessionsJob`; `docs/architecture.md`, "Trash/Restore")
 

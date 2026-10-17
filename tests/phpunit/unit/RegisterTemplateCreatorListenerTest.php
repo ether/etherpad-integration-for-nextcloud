@@ -11,6 +11,7 @@ namespace OCA\EtherpadNextcloud\Tests\Unit;
 
 use OCA\EtherpadNextcloud\Listeners\RegisterTemplateCreatorListener;
 use OCA\EtherpadNextcloud\Service\PadTypePolicy;
+use OCA\EtherpadNextcloud\Tests\Support\BuildsAppAccess;
 use OCP\EventDispatcher\Event;
 use OCP\Files\Template\RegisterTemplateCreatorEvent;
 use OCP\Files\Template\ITemplateManager;
@@ -18,13 +19,11 @@ use OCP\IL10N;
 use PHPUnit\Framework\TestCase;
 
 class RegisterTemplateCreatorListenerTest extends TestCase {
+	use BuildsAppAccess;
+
 	/**
-	 * This entry is the only way to create a pad from the Files app, so it has
-	 * to survive as long as anything at all can be created — the blank option
-	 * produces whichever pad type is available, and the external tile follows
-	 * its own setting. Dropping it whenever protected was off left a
-	 * public-only instance with no way to create anything; ignoring external
-	 * pads left an external-only instance with a tile nobody can open.
+	 * The entry stays while anything can be created: a pad of any type, or an
+	 * external one, which follows its own setting.
 	 *
 	 * @return iterable<string,array{0:bool,1:bool,2:bool,3:bool}>
 	 */
@@ -45,6 +44,26 @@ class RegisterTemplateCreatorListenerTest extends TestCase {
 		$this->buildListener($protected, $public, $external)->handle($this->buildEvent($templateManager));
 	}
 
+	/**
+	 * A user the app is not enabled for gets no entry, and nor does a
+	 * request without a user.
+	 *
+	 * @return iterable<string,array{0:?bool}>
+	 */
+	public static function usersWithoutTheApp(): iterable {
+		yield 'a user the app is not enabled for' => [false];
+		yield 'no user' => [null];
+	}
+
+	#[\PHPUnit\Framework\Attributes\DataProvider('usersWithoutTheApp')]
+	public function testRegistersNothingForAUserWithoutTheApp(?bool $enabledForUser): void {
+		$templateManager = $this->createMock(ITemplateManager::class);
+		$templateManager->expects($this->never())
+			->method('registerTemplateFileCreator');
+
+		$this->buildListener(true, true, false, $enabledForUser)->handle($this->buildEvent($templateManager));
+	}
+
 	public function testIgnoresUnrelatedEvents(): void {
 		$this->buildListener(true, true)->handle(new Event());
 
@@ -55,7 +74,8 @@ class RegisterTemplateCreatorListenerTest extends TestCase {
 		return new RegisterTemplateCreatorEvent($templateManager);
 	}
 
-	private function buildListener(bool $protectedEnabled, bool $publicEnabled = true, bool $externalAllowed = false): RegisterTemplateCreatorListener {
+	/** @param ?bool $enabledForUser null for a request without a user */
+	private function buildListener(bool $protectedEnabled, bool $publicEnabled = true, bool $externalAllowed = false, ?bool $enabledForUser = true): RegisterTemplateCreatorListener {
 		$l10n = $this->createMock(IL10N::class);
 		$l10n->method('t')->willReturnArgument(0);
 
@@ -75,6 +95,6 @@ class RegisterTemplateCreatorListenerTest extends TestCase {
 			}
 		);
 
-		return new RegisterTemplateCreatorListener($l10n, new PadTypePolicy($config), $config);
+		return new RegisterTemplateCreatorListener($l10n, new PadTypePolicy($config), $config, $this->appAccess($enabledForUser));
 	}
 }

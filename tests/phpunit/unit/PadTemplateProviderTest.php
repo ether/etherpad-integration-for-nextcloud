@@ -9,10 +9,13 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Tests\Unit;
 
+use OCA\EtherpadNextcloud\AppInfo\Application;
 use OCA\EtherpadNextcloud\Service\PadTemplateStorage;
 use OCA\EtherpadNextcloud\Service\PadTypePolicy;
 use OCA\EtherpadNextcloud\Template\PadTemplateProvider;
+use OCA\EtherpadNextcloud\Tests\Support\BuildsAppAccess;
 use OCP\Files\File;
+use OCP\Files\NotPermittedException;
 use OCP\IConfig;
 use OCP\IL10N;
 use OCP\IURLGenerator;
@@ -21,6 +24,8 @@ use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 
 class PadTemplateProviderTest extends TestCase {
+	use BuildsAppAccess;
+
 	private const MIME = 'application/x-etherpad-nextcloud';
 
 	/**
@@ -95,10 +100,7 @@ class PadTemplateProviderTest extends TestCase {
 		}
 	}
 
-	/**
-	 * Nextcloud's picker collects the field and hands it to the create event,
-	 * which is what keeps a file from ever existing without its pad.
-	 */
+	/** The external tile asks for the address the create listener links the file to. */
 	public function testTheExternalTileAsksForThePadAddress(): void {
 		$templates = $this->buildProvider(external: true)->getCustomTemplates(self::MIME);
 		$fields = $templates[1]->jsonSerialize()['fields'] ?? [];
@@ -123,7 +125,6 @@ class PadTemplateProviderTest extends TestCase {
 		$this->assertStringContainsString('etherpad-icon', (string)$templates[1]->jsonSerialize()['previewUrl']);
 	}
 
-	/** Only the type tile carries fields; the public one has nothing to ask. */
 	public function testThePublicTileAsksForNothing(): void {
 		$templates = $this->buildProvider()->getCustomTemplates(self::MIME);
 
@@ -147,6 +148,7 @@ class PadTemplateProviderTest extends TestCase {
 			$this->l10n(),
 			$this->urlGenerator(),
 			$logger,
+			$this->appAccess(true),
 		);
 
 		$this->assertSame([], $provider->getCustomTemplates(self::MIME));
@@ -179,7 +181,7 @@ class PadTemplateProviderTest extends TestCase {
 		$logger = $this->createMock(LoggerInterface::class);
 		$logger->expects($this->once())->method('warning');
 
-		$provider = new PadTemplateProvider($storage, $this->policy(true, true), $this->config(false), $this->l10n(), $this->urlGenerator(), $logger);
+		$provider = new PadTemplateProvider($storage, $this->policy(true, true), $this->config(false), $this->l10n(), $this->urlGenerator(), $logger, $this->appAccess(true));
 
 		$this->assertCount(1, $provider->getCustomTemplates(self::MIME));
 	}
@@ -221,6 +223,42 @@ class PadTemplateProviderTest extends TestCase {
 		$this->providerWith($storage, true, true, true)->getCustomTemplate($templateId);
 	}
 
+	/**
+	 * A user the app is not enabled for, or a request without a user, gets
+	 * no tile, and no template id resolves for either: the storage is never
+	 * asked.
+	 *
+	 * @return iterable<string,array{0:?bool}>
+	 */
+	public static function usersWithoutTheApp(): iterable {
+		yield 'a user the app is not enabled for' => [false];
+		yield 'no user' => [null];
+	}
+
+	#[DataProvider('usersWithoutTheApp')]
+	public function testOffersAndResolvesNothingForAUserWithoutTheApp(?bool $enabledForUser): void {
+		$storage = $this->createMock(PadTemplateStorage::class);
+		$storage->expects($this->never())->method($this->anything());
+		$provider = new PadTemplateProvider(
+			$storage,
+			$this->policy(true, true),
+			$this->config(true),
+			$this->l10n(),
+			$this->urlGenerator(),
+			$this->createMock(LoggerInterface::class),
+			$this->appAccess($enabledForUser),
+		);
+
+		$this->assertSame([], $provider->getCustomTemplates(self::MIME));
+		foreach ([PadTemplateProvider::PUBLIC_TEMPLATE_ID, PadTemplateProvider::EXTERNAL_TEMPLATE_ID, Application::APP_ID . ':global:Meeting notes.pad'] as $templateId) {
+			try {
+				$provider->getCustomTemplate($templateId);
+				$this->fail($templateId . ': resolved');
+			} catch (NotPermittedException) {
+			}
+		}
+	}
+
 	private function buildProvider(bool $protected = true, bool $public = true, bool $external = false): PadTemplateProvider {
 		return $this->providerWith($this->storage(), $protected, $public, $external);
 	}
@@ -233,6 +271,7 @@ class PadTemplateProviderTest extends TestCase {
 			$this->l10n(),
 			$this->urlGenerator(),
 			$this->createMock(LoggerInterface::class),
+			$this->appAccess(true),
 		);
 	}
 

@@ -56,6 +56,39 @@ export const isAppEnabled = async (app: string): Promise<boolean> => {
 	return (data?.apps ?? []).includes(app)
 }
 
+/**
+ * Limit an app to groups, as the app management does. Nextcloud 34 moved
+ * that into the appstore app's API; 32 and 33 keep it in the settings app.
+ * Both confirm the password, which the admin's login password carries.
+ */
+export const restrictAppToGroups = async (app: string, groups: string[]): Promise<void> => {
+	const headers = { Authorization: adminAuthHeader(), 'OCS-APIRequest': 'true', Accept: 'application/json' }
+	const appstore = await fetch(`${E2E.baseURL}/ocs/v2.php/apps/appstore/api/v1/apps/enable?format=json`, {
+		method: 'POST',
+		headers: { ...headers, 'Content-Type': 'application/x-www-form-urlencoded' },
+		body: new URLSearchParams([['appId', app], ...groups.map((group): [string, string] => ['groups[]', group])]).toString(),
+	})
+	if (appstore.status !== 404) {
+		if (!appstore.ok) {
+			throw new Error(`Limiting ${app} to ${groups.join(', ')} answered HTTP ${appstore.status}: ${(await appstore.text()).slice(0, 200)}`)
+		}
+		return
+	}
+	const settings = await fetch(`${E2E.baseURL}/index.php/settings/apps/enable`, {
+		method: 'POST',
+		headers: { ...headers, 'Content-Type': 'application/json' },
+		body: JSON.stringify({ appIds: [app], groups }),
+	})
+	if (!settings.ok) {
+		throw new Error(`Limiting ${app} to ${groups.join(', ')} answered HTTP ${settings.status}: ${(await settings.text()).slice(0, 200)}`)
+	}
+}
+
+/** Enable an app for everyone again, which lifts a limit to groups. */
+export const enableAppForEveryone = async (app: string): Promise<void> => {
+	await ocs('POST', `/ocs/v2.php/cloud/apps/${encodeURIComponent(app)}`)
+}
+
 /** A throwaway account, and a password for it nobody else knows. */
 export const createAccount = async (uid: string): Promise<{ uid: string, password: string }> => {
 	const password = `E2e-${crypto.randomUUID()}`

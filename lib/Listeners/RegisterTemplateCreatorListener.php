@@ -9,6 +9,7 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\Listeners;
 
 use OCA\EtherpadNextcloud\AppInfo\Application;
+use OCA\EtherpadNextcloud\Service\AppAccess;
 use OCA\EtherpadNextcloud\Service\PadTypePolicy;
 use OCA\EtherpadNextcloud\Util\PadFileType;
 use OCP\EventDispatcher\Event;
@@ -26,6 +27,7 @@ class RegisterTemplateCreatorListener implements IEventListener {
 		private IL10N $l10n,
 		private PadTypePolicy $padTypePolicy,
 		private IConfig $config,
+		private AppAccess $appAccess,
 	) {
 	}
 
@@ -34,12 +36,10 @@ class RegisterTemplateCreatorListener implements IEventListener {
 			return;
 		}
 
-		// This entry is the only way to create a pad from the Files app – and
-		// the only way to reach the shared templates and the tiles – so it
-		// stays as long as anything at all can be created. External pads count:
-		// they are not a pad type and follow their own setting, so an instance
-		// offering only those would otherwise have a tile nobody can open.
-		if (!$this->anythingCanBeCreated()) {
+		// The entry is also the way to the template picker, so it stays while
+		// anything can be created: external pads too, which follow their own
+		// setting rather than a pad type.
+		if (!$this->anythingCanBeCreated() || !$this->appAccess->isEnabledForCurrentUser()) {
 			return;
 		}
 

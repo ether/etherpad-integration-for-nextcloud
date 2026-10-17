@@ -11,11 +11,13 @@ namespace OCA\EtherpadNextcloud\Template;
 
 use OCA\EtherpadNextcloud\Util\SafeError;
 use OCA\EtherpadNextcloud\AppInfo\Application;
+use OCA\EtherpadNextcloud\Service\AppAccess;
 use OCA\EtherpadNextcloud\Service\PadTemplateStorage;
 use OCA\EtherpadNextcloud\Service\PadTypePolicy;
 use OCA\EtherpadNextcloud\Util\PadAccessMode;
 use OCA\EtherpadNextcloud\Util\PadFileType;
 use OCP\Files\File;
+use OCP\Files\NotPermittedException;
 use OCP\Files\Template\FieldType;
 use OCP\Files\Template\Fields\RichTextField;
 use OCP\Files\Template\ICustomTemplateProvider;
@@ -52,11 +54,12 @@ class PadTemplateProvider implements ICustomTemplateProvider {
 		private IL10N $l10n,
 		private IURLGenerator $urlGenerator,
 		private LoggerInterface $logger,
+		private AppAccess $appAccess,
 	) {
 	}
 
 	public function getCustomTemplates(string $mimetype): array {
-		if ($mimetype !== PadFileType::MIME) {
+		if ($mimetype !== PadFileType::MIME || !$this->appAccess->isEnabledForCurrentUser()) {
 			return [];
 		}
 
@@ -181,7 +184,15 @@ class PadTemplateProvider implements ICustomTemplateProvider {
 		);
 	}
 
+	/**
+	 * Nextcloud resolves the template before it creates the file, so a
+	 * refusal here leaves no file behind.
+	 */
 	public function getCustomTemplate(string $template): File {
+		if (!$this->appAccess->isEnabledForCurrentUser()) {
+			throw new NotPermittedException('Pads are not enabled for this user.');
+		}
+
 		if ($template === self::PUBLIC_TEMPLATE_ID) {
 			return $this->storage->publicMarker();
 		}

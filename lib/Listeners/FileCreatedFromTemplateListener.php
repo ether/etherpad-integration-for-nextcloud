@@ -10,6 +10,7 @@ namespace OCA\EtherpadNextcloud\Listeners;
 
 use OCA\EtherpadNextcloud\Exception\PadFileChangedException;
 use OCA\EtherpadNextcloud\Exception\PadTypeDisabledException;
+use OCA\EtherpadNextcloud\Service\AppAccess;
 use OCA\EtherpadNextcloud\Service\PadBootstrapService;
 use OCA\EtherpadNextcloud\Service\ExternalPadSeeder;
 use OCA\EtherpadNextcloud\Service\PadCreationService;
@@ -20,17 +21,15 @@ use OCA\EtherpadNextcloud\Util\SafeError;
 use OCP\EventDispatcher\Event;
 use OCP\EventDispatcher\IEventListener;
 use OCP\Files\File;
+use OCP\Files\NotPermittedException;
 use OCP\Files\Template\FileCreatedFromTemplateEvent;
 use OCP\IUserSession;
 use Psr\Log\LoggerInterface;
 
 /**
  * Finishes a `.pad` file Nextcloud has just created from a template or from
- * the blank entry — see docs/templates.md for the flow.
- *
- * The blank case is initialised here rather than left to the viewer's
- * init-retry path: without it the first `/open*` call 4xxes twice before the
- * pad loads, which is visible noise for anyone with dev tools open.
+ * the blank entry - see docs/templates.md for the flow. A blank file is
+ * initialised here, so its first open does not fail and retry.
  *
  * @template-implements IEventListener<Event>
  */
@@ -42,6 +41,7 @@ class FileCreatedFromTemplateListener implements IEventListener {
 		private ExternalPadSeeder $externalPadSeeder,
 		private IUserSession $userSession,
 		private LoggerInterface $logger,
+		private AppAccess $appAccess,
 	) {
 	}
 
@@ -66,11 +66,15 @@ class FileCreatedFromTemplateListener implements IEventListener {
 			$this->resetTargetToEmpty($target);
 			return;
 		}
+		// Nextcloud has created the file already. It stays as it was given:
+		// deleting it could take content written meanwhile, for good where
+		// the delete skips the trash.
+		if ($this->appAccess->excludesCurrentUser()) {
+			throw new NotPermittedException('Pads are not enabled for this user.');
+		}
 
 		$template = $event->getTemplate();
 		if (!$template instanceof File) {
-			// Blank-template case: initialise frontmatter now so /open
-			// doesn't 4xx on the first call.
 			$this->initializeBlankPad($user->getUID(), $target);
 			return;
 		}
@@ -90,11 +94,10 @@ class FileCreatedFromTemplateListener implements IEventListener {
 			return;
 		}
 
-		// Capture identity and content before materialization; recovery uses the same claim.
-		// Both ids read once, here, and used by every log line below. Reading
-		// them again inside a catch is the stale-node re-read this whole
-		// change is about: it answers for whatever holds the path by then,
-		// and it can throw while an error is already being handled.
+		// Identity and content are captured before materialization, and
+		// recovery uses the same claim. Both ids are read once, here: read
+		// again while an error is handled, an id can throw, or name whatever
+		// holds the path by then.
 		try {
 			$claim = $this->padCreationService->claimTemplateTarget($target, $user);
 			$templateFileId = (int)$template->getId();
@@ -170,9 +173,8 @@ class FileCreatedFromTemplateListener implements IEventListener {
 			$this->deleteTarget($target);
 			throw $e;
 		} catch (\Throwable $e) {
-			// Worst case the existing viewer retry path catches a missing-
-			// frontmatter state and runs initialize-by-id — same behaviour
-			// as before this listener was extended, plus a logged warning.
+			// The viewer's first open finds no frontmatter and initialises the
+			// file by its id instead.
 			$this->logger->warning('Could not initialise frontmatter for blank-template .pad — falling back to viewer init-retry path.', [
 				'app' => 'etherpad_nextcloud',
 				'fileId' => (int)$target->getId(),
@@ -201,14 +203,10 @@ class FileCreatedFromTemplateListener implements IEventListener {
 			}
 			$seeded = $this->externalPadSeeder->seed($target, $fileId, $padUrl);
 			if (($seeded['snapshot_warning_code'] ?? '') === 'remote_export_unavailable') {
-				// The pad is linked and opens; only its stored snapshot stays
-				// empty because the remote refused the export. The picker has
-				// no place to show that, and the viewer says so on open, so
-				// this is the record an admin can act on.
-				// Host only. A public pad's URL *is* its access link — logging
-				// it would hand out the pad to anyone who reads the log, and
-				// the same goes for the pad id in it. The file id identifies
-				// the file for anyone who may see it anyway.
+				// The pad is linked and opens; only its snapshot stays empty, as
+				// the remote refused the export. This line is the admin's
+				// record of it. Host and file id only: the URL, and the pad id
+				// in it, give access to the pad.
 				$this->logger->warning('Linked an external pad whose content could not be fetched; the snapshot stays empty.', [
 					'app' => 'etherpad_nextcloud',
 					'fileId' => $fileId,

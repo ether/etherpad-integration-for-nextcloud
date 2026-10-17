@@ -12,8 +12,10 @@ use OCA\EtherpadNextcloud\Service\ExternalPadSeeder;
 use OCA\EtherpadNextcloud\Service\CreatedFileClaim;
 use OCA\EtherpadNextcloud\Service\PadCreationService;
 use OCA\EtherpadNextcloud\Service\PadTemplateStorage;
+use OCA\EtherpadNextcloud\Tests\Support\BuildsAppAccess;
 use OCP\EventDispatcher\Event;
 use OCP\Files\File;
+use OCP\Files\NotPermittedException;
 use OCP\Files\Template\FileCreatedFromTemplateEvent;
 use OCP\IUser;
 use OCP\IUserSession;
@@ -29,6 +31,8 @@ use Psr\Log\LoggerInterface;
  *  - any other template → PadCreationService::materializeTemplateInto
  */
 class FileCreatedFromTemplateListenerTest extends TestCase {
+	use BuildsAppAccess;
+
 	public function testIgnoresUnrelatedEvent(): void {
 		$creation = $this->createMock(PadCreationService::class);
 		$bootstrap = $this->createMock(PadBootstrapService::class);
@@ -223,6 +227,7 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 			$seeder,
 			$this->userSession(true),
 			$logger,
+			$this->appAccess(true),
 		);
 		$listener->handle(new FileCreatedFromTemplateEvent($marker, $target, [
 			'pad_url' => ['content' => 'https://pad.remote.test/p/RemotePad?token=s3cret#top'],
@@ -316,6 +321,73 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 			->handle(new FileCreatedFromTemplateEvent($marker, $target, []));
 	}
 
+	/**
+	 * A blank file the listener cannot initialise is left to the viewer,
+	 * which initialises it on its first open: the create succeeds, and a
+	 * warning names the file.
+	 */
+	public function testLeavesABlankFileItCannotInitialiseToTheViewer(): void {
+		$bootstrap = $this->createMock(PadBootstrapService::class);
+		$bootstrap->expects($this->once())->method('initializeMissingFrontmatter')->willThrowException(new \RuntimeException('Etherpad down'));
+		$target = $this->file('New pad.pad');
+		$target->expects($this->never())->method('delete');
+		$target->expects($this->never())->method('putContent');
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects($this->once())->method('warning')->with(
+			'Could not initialise frontmatter for blank-template .pad — falling back to viewer init-retry path.',
+			$this->callback(static fn (array $context): bool => $context['app'] === 'etherpad_nextcloud' && $context['fileId'] === 42),
+		);
+		$session = $this->userSession(true);
+		$listener = new FileCreatedFromTemplateListener(
+			$this->createMock(PadCreationService::class),
+			$bootstrap,
+			$this->noTypeTemplates(),
+			$this->createMock(ExternalPadSeeder::class),
+			$session,
+			$logger,
+			$this->appAccess(true, $session),
+		);
+
+		$listener->handle(new FileCreatedFromTemplateEvent(null, $target, []));
+	}
+
+	/**
+	 * A create for a user the app is not enabled for provisions nothing -
+	 * no pad, no binding, no link to another server - whichever template it
+	 * came from, and leaves the file Nextcloud made as it was given.
+	 *
+	 * @return iterable<string,array{0:string}>
+	 */
+	public static function createsOfEveryKind(): iterable {
+		yield 'the blank entry' => ['blank'];
+		yield 'the external tile' => ['external'];
+		yield 'the tile of a pad type' => ['type tile'];
+		yield "the user's own template" => ['own template'];
+	}
+
+	#[\PHPUnit\Framework\Attributes\DataProvider('createsOfEveryKind')]
+	public function testProvisionsNothingForAUserTheAppIsNotEnabledFor(string $kind): void {
+		$creation = $this->createMock(PadCreationService::class);
+		$creation->expects($this->never())->method($this->anything());
+		$bootstrap = $this->createMock(PadBootstrapService::class);
+		$bootstrap->expects($this->never())->method($this->anything());
+		$seeder = $this->createMock(ExternalPadSeeder::class);
+		$seeder->expects($this->never())->method($this->anything());
+		$storage = $this->createMock(PadTemplateStorage::class);
+		$storage->method('isExternalMarkerFile')->willReturn($kind === 'external');
+		$storage->method('accessModeForTemplateFile')->willReturn($kind === 'type tile' ? 'public' : null);
+		$target = $this->file('New pad.pad');
+		$target->expects($this->never())->method('delete');
+		$target->expects($this->never())->method('putContent');
+		$template = $kind === 'blank' ? null : $this->file('Template.pad');
+
+		$this->expectException(NotPermittedException::class);
+		$this->buildListener($creation, $bootstrap, true, $storage, $seeder, false)
+			->handle(new FileCreatedFromTemplateEvent($template, $target, [
+				'pad_url' => ['content' => 'https://pad.remote.test/p/RemotePad'],
+			]));
+	}
+
 	/** A storage that recognises no template as one of ours. */
 	private function noTypeTemplates(): PadTemplateStorage {
 		$storage = $this->createMock(PadTemplateStorage::class);
@@ -395,14 +467,17 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 		bool $withUser = true,
 		?PadTemplateStorage $templateStorage = null,
 		?ExternalPadSeeder $externalPadSeeder = null,
+		bool $appEnabledForUser = true,
 	): FileCreatedFromTemplateListener {
+		$session = $this->userSession($withUser);
 		return new FileCreatedFromTemplateListener(
 			$creation,
 			$bootstrap,
 			$templateStorage ?? $this->noTypeTemplates(),
 			$externalPadSeeder ?? $this->createMock(ExternalPadSeeder::class),
-			$this->userSession($withUser),
+			$session,
 			$this->createMock(LoggerInterface::class),
+			$this->appAccess($appEnabledForUser, $session),
 		);
 	}
 
