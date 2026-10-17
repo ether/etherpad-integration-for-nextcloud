@@ -101,8 +101,8 @@ jobs:
         id: versions
         uses: skjnldsv/read-package-engines-version-actions@06d6db44aa62f4609ba070f556ec24bc99fb85cb # v4
 
-      # As in e2e.yml: anything but a version range means the action could
-      # not read the engines.
+      # As in e2e.yml: an engines value that is not a plain version range
+      # stops the job before setup-node gets it.
       - name: Fail if the engines ranges could not be read
         env:
           NODE_RANGE: ${{ steps.versions.outputs.nodeVersion }}

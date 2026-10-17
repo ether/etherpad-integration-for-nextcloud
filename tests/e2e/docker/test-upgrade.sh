@@ -315,7 +315,8 @@ fi
 # throws under "core", so the line's own mention of the app decides. Read
 # before the suite, which logs its own on purpose.
 compose exec -T -u www-data nextcloud sh -c "tail -n +$((log_from + 1)) data/nextcloud.log 2>/dev/null" > "$work/upgrade.log"
-# A line that is no JSON counts as well, shown as it is.
+# A line about the app that is no JSON fails the check as well, with its
+# first 500 characters shown.
 node -e '
 const lines = require("fs").readFileSync(process.argv[1], "utf8").split("\n").filter((line) => /etherpad_nextcloud|EtherpadNextcloud/.test(line))
 const found = []

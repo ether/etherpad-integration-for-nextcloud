@@ -3,8 +3,9 @@
  * Copyright (c) 2026 Jacob Bühler
  *
  * The pads of test-upgrade.sh: made through the API of the release it
- * upgrades from, and checked against the app it upgrades to. Each phase
- * reads and writes its files in the directory it is given:
+ * upgrades from, and checked against the app it upgrades to. The phases
+ * share their files - the state seed writes, the snapshots the script
+ * takes - through the directory they are given:
  *
  *   node upgrade-fixtures.mjs seed|offline|migrated|verify <dir>
  */
