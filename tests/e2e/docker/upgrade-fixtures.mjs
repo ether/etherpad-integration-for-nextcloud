@@ -269,12 +269,10 @@ if (phase === 'seed') {
 		assert.ok((await fileText(p)).includes(p.marker), `${label} lost its text`)
 	}
 	assert.equal(await open(pads.protected, true), pads.protected.padId, 'the share opened another pad')
-	// The link is a read share: its visitor gets the pad's read-only view.
+	// A read share: its visitor gets the pad's read-only address in Etherpad.
 	const { data: shared } = await request(`/index.php/apps/etherpad_nextcloud/api/v1/public/open/${publicShareToken}`, { anonymous: true })
-	const sharedPad = shared.is_readonly_view
-		? (await etherpad('getReadOnlyID', { padID: pads.public.padId })).readOnlyID
-		: pads.public.padId
-	assert.equal(padIdOf(shared.url), sharedPad, `the link opened another pad: ${JSON.stringify(shared)}`)
+	const { readOnlyID } = await etherpad('getReadOnlyID', { padID: pads.public.padId })
+	assert.equal(padIdOf(shared.url), readOnlyID, `the link opened another pad: ${JSON.stringify(shared)}`)
 
 	const call = pads['trash-call-offline']
 	assert.equal(await open(call), call.padId, 'trash-call-offline opened another pad')
