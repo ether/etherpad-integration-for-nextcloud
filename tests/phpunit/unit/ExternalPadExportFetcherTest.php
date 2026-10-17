@@ -197,7 +197,6 @@ class ExternalPadExportFetcherTest extends TestCase {
 			$send->invoke(
 				$fetcher,
 				'https://1.1.1.1/p/Test/export/html',
-				'1.1.1.1',
 				443,
 				['1.1.1.1'],
 				'html',
@@ -222,7 +221,7 @@ class ExternalPadExportFetcherTest extends TestCase {
 		$this->assertSame('pad text', $fetcher->normalizeAndFetchExternalPublicPadText('https://pad.example:8443/p/pad')['text']);
 		[$url, $options] = $fetcher->performed[0];
 		$this->assertSame('https://pad.example:8443/p/pad/export/txt', $url);
-		$this->assertSame(['pad.example:8443:1.1.1.1'], $options[CURLOPT_RESOLVE]);
+		$this->assertSame(['::1.1.1.1:8443'], $options[CURLOPT_CONNECT_TO]);
 		$this->assertFalse($options[CURLOPT_FOLLOWLOCATION]);
 		$this->assertSame(0, $options[CURLOPT_MAXREDIRS]);
 		$this->assertSame(CURLPROTO_HTTPS, $options[CURLOPT_PROTOCOLS]);
@@ -259,8 +258,8 @@ class ExternalPadExportFetcherTest extends TestCase {
 
 		$this->assertSame(['https://pad.example', 'pad', 'https://pad.example/p/pad', 'pad text'], [$result['origin'], $result['pad_id'], $result['pad_url'], $result['text']]);
 		$this->assertSame(
-			[['https://pad.example/p/pad/export/txt', ['pad.example:443:1.1.1.1']], ['https://pad.example/p/pad/export/txt', ['pad.example:443:2606:4700::1111']]],
-			array_map(static fn (array $request): array => [$request[0], $request[1][CURLOPT_RESOLVE]], $fetcher->performed),
+			[['https://pad.example/p/pad/export/txt', ['::1.1.1.1:443']], ['https://pad.example/p/pad/export/txt', ['::[2606:4700::1111]:443']]],
+			array_map(static fn (array $request): array => [$request[0], $request[1][CURLOPT_CONNECT_TO]], $fetcher->performed),
 		);
 	}
 
@@ -402,6 +401,72 @@ class ExternalPadExportFetcherTest extends TestCase {
 		$refused = $this->performedForReal('https://127.0.0.1:1/', [CURLOPT_PROXY => '', CURLOPT_CONNECTTIMEOUT => 5, CURLOPT_WRITEFUNCTION => $sink->chunk(...)]);
 		$this->assertSame([false, 0, 7], [$refused['completed'], $refused['status'], $refused['errno']]);
 		$this->assertStringContainsString('127.0.0.1', $refused['error']);
+	}
+
+	/**
+	 * The fetch runs for real, through a stand-in proxy on this machine that
+	 * notes what it is asked and refuses the tunnel.
+	 *
+	 * @param list<array<string, string>> $records
+	 */
+	#[DataProvider('namesAProxyMustNotBeAskedFor')]
+	public function testAProxyFromTheEnvironmentIsAskedForTheCheckedAddress(string $url, array $records, string $asked): void {
+		// Keeps startup warnings off stdout, which carries the stand-in's port.
+		$proxy = proc_open([PHP_BINARY, '-d', 'display_errors=stderr', __DIR__ . '/../Support/connect-recorder.php'], [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes);
+		$this->assertIsResource($proxy);
+		try {
+			$port = (int)fgets($pipes[1]);
+			if ($port === 0) {
+				$this->fail('The stand-in proxy did not start: ' . stream_get_contents($pipes[2]));
+			}
+			$environment = ['https_proxy' => 'http://127.0.0.1:' . $port, 'HTTPS_PROXY' => null, 'no_proxy' => null, 'NO_PROXY' => null];
+			$before = array_map(static fn (string $name): string|false => getenv($name), array_combine(array_keys($environment), array_keys($environment)));
+			foreach ($environment as $name => $value) {
+				putenv($value === null ? $name : $name . '=' . $value);
+			}
+			try {
+				$fetcher = new class($this->buildExternalEnabledConfig(), new FixedClock(), $records) extends ExternalPadExportFetcher {
+					/** @param list<array<string, string>> $records */
+					public function __construct(IConfig $config, FixedClock $clock, private array $records) {
+						parent::__construct($config, $clock);
+					}
+
+					protected function lookUp(string $host): array {
+						return $this->records;
+					}
+				};
+				try {
+					$fetcher->normalizeAndFetchExternalPublicPadText($url);
+					$this->fail('The stand-in proxy refuses every tunnel.');
+				} catch (ExternalPadException $e) {
+					// What the API reference tells the user of a proxy that refuses.
+					$this->assertSame(ExternalPadException::UNREACHABLE, $e->reason());
+				}
+			} finally {
+				foreach ($before as $name => $value) {
+					putenv($value === false ? $name : $name . '=' . $value);
+				}
+			}
+
+			$this->assertSame($asked, trim((string)fgets($pipes[1])));
+		} finally {
+			// After a failure the stand-in would wait out its accept timeout.
+			foreach ($pipes as $pipe) {
+				fclose($pipe);
+			}
+			proc_terminate($proxy);
+			proc_close($proxy);
+		}
+	}
+
+	/** @return array<string, array{string, list<array<string, string>>, string}> */
+	public static function namesAProxyMustNotBeAskedFor(): array {
+		return [
+			'a name as written' => ['https://pad.example/p/pad', [['ip' => '1.1.1.1']], 'CONNECT 1.1.1.1:443 HTTP/1.1'],
+			'an international name, which cURL turns into punycode' => ['https://bücher.example/p/pad', [['ip' => '1.1.1.1']], 'CONNECT 1.1.1.1:443 HTTP/1.1'],
+			'a percent-encoded name, which cURL decodes' => ['https://%70ad.example/p/pad', [['ip' => '1.1.1.1']], 'CONNECT 1.1.1.1:443 HTTP/1.1'],
+			'an IPv6 address, on a port of its own' => ['https://pad.example:8443/p/pad', [['ipv6' => '2606:4700::1111']], 'CONNECT [2606:4700::1111]:8443 HTTP/1.1'],
+		];
 	}
 
 	/** 99 is no HTTP version cURL knows: the request never starts. */

@@ -102,12 +102,11 @@ class ExternalPadExportFetcher {
 	}
 
 	/**
-	 * @param array{origin:string,pad_id:string,pad_url:string,host:string,port:int,resolved_ips:list<string>} $resolved
+	 * @param array{origin:string,pad_id:string,pad_url:string,port:int,resolved_ips:list<string>} $resolved
 	 */
 	private function fetchPublicExport(array $resolved, string $format, float $deadline): string {
 		return $this->sendPinnedPublicGetRequest(
 			$this->buildPublicExportUrl($resolved['pad_url'], $format),
-			$resolved['host'],
 			$resolved['port'],
 			$resolved['resolved_ips'],
 			$format,
@@ -125,7 +124,7 @@ class ExternalPadExportFetcher {
 		return (float)$this->timeFactory->now()->format('U.u');
 	}
 
-	/** @return array{origin:string,pad_id:string,pad_url:string,host:string,port:int,resolved_ips:list<string>} */
+	/** @return array{origin:string,pad_id:string,pad_url:string,port:int,resolved_ips:list<string>} */
 	private function resolveAndValidateExternalPublicPadUrl(string $padUrl): array {
 		$parsed = $this->parsePublicPadUrl($padUrl);
 		$padId = $parsed['pad_id'];
@@ -137,7 +136,6 @@ class ExternalPadExportFetcher {
 			'origin' => $parsed['origin'],
 			'pad_id' => $parsed['pad_id'],
 			'pad_url' => $parsed['pad_url'],
-			'host' => $parsed['host'],
 			'port' => $parsed['port'],
 			'resolved_ips' => $this->resolveAndValidateExternalHost($parsed['host'], $parsed['origin']),
 		];
@@ -148,7 +146,6 @@ class ExternalPadExportFetcher {
 	 */
 	private function sendPinnedPublicGetRequest(
 		string $url,
-		string $host,
 		int $port,
 		array $resolvedIps,
 		string $format,
@@ -168,7 +165,7 @@ class ExternalPadExportFetcher {
 			}
 			$attemptTimeout = min($left, self::EXTERNAL_REQUEST_TIMEOUT_SECONDS);
 			$sink = new ExportAttemptSink(self::EXTERNAL_EXPORT_MAX_BYTES);
-			$result = $this->perform($url, self::attemptOptions($host, $port, $ip, $format, $attemptTimeout, $sink));
+			$result = $this->perform($url, self::attemptOptions($port, $ip, $format, $attemptTimeout, $sink));
 			$curlErrors[] = $result['errno'];
 
 			if (!$result['completed']) {
@@ -193,19 +190,19 @@ class ExternalPadExportFetcher {
 	}
 
 	/**
-	 * The options of one attempt, each keeping it to what was checked
-	 * before it: the name resolves to the address that was vetted and no
-	 * other, no redirect is followed, only HTTPS is spoken, the certificate
-	 * and its name are verified, and the body stops at the sink's limit.
-	 * The pin holds only where cURL resolves the name: a proxy it takes
-	 * from the environment (`https_proxy` or `HTTPS_PROXY`, else
-	 * `all_proxy` or `ALL_PROXY`, unless `no_proxy` names the host)
-	 * resolves the name in its place when it is an HTTP, socks4a or
-	 * socks5h one.
+	 * The address is pinned with CONNECT_TO, not RESOLVE: a proxy cURL takes
+	 * from the environment is then asked for the vetted address, where an
+	 * HTTP, socks4a or socks5h proxy asked for the name would resolve it
+	 * again. SNI and the certificate check still use the URL's host. The
+	 * entry leaves host and port empty, so it matches whatever form cURL
+	 * gives the host - punycode, decoded percent signs, a normalised IP
+	 * address - where an entry naming the host would be skipped silently.
+	 * The handle makes one request, so the entry pins only that one. An
+	 * IPv6 address goes in brackets, or cURL reads part of it as the host.
 	 *
 	 * @return array<int, mixed>
 	 */
-	private static function attemptOptions(string $host, int $port, string $ip, string $format, int $timeout, ExportAttemptSink $sink): array {
+	private static function attemptOptions(int $port, string $ip, string $format, int $timeout, ExportAttemptSink $sink): array {
 		return [
 			CURLOPT_RETURNTRANSFER => false,
 			CURLOPT_FOLLOWLOCATION => false,
@@ -218,7 +215,7 @@ class ExternalPadExportFetcher {
 			CURLOPT_HTTPHEADER => [
 				'Accept: ' . self::acceptHeaderFor($format),
 			],
-			CURLOPT_RESOLVE => [$host . ':' . $port . ':' . $ip],
+			CURLOPT_CONNECT_TO => ['::' . (str_contains($ip, ':') ? '[' . $ip . ']' : $ip) . ':' . $port],
 			CURLOPT_PROTOCOLS => CURLPROTO_HTTPS,
 			CURLOPT_REDIR_PROTOCOLS => CURLPROTO_HTTPS,
 			CURLOPT_HEADERFUNCTION => $sink->header(...),
