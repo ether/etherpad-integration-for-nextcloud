@@ -765,12 +765,11 @@ class ExternalPadExportFetcherTest extends TestCase {
 	}
 
 	/**
-	 * The fetcher, with what a name lookup finds given instead of asked of
-	 * the network: a test that resolves a real name is green offline, slow
-	 * behind a dead nameserver and red behind one that answers every name.
-	 * A lookup a test did not give an answer for fails it. So do requests:
-	 * each one takes the next of $answers, which may feed the attempt's
-	 * header and body callbacks as cURL would, and is kept in $performed.
+	 * The fetcher, with name lookups and requests answered by the test, so
+	 * that no test depends on the network: $records stands in for every
+	 * lookup, and each request takes the next of $answers, which may feed
+	 * the attempt's callbacks as cURL would, and is kept in $performed. A
+	 * lookup or request the test gave no answer for fails it.
 	 *
 	 * @param ?list<array<array-key, mixed>> $records
 	 * @param list<\Closure(array<int, mixed>): array{completed: bool, status: int, error: string, errno: int}> $answers

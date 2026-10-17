@@ -21,16 +21,10 @@ class ExternalPadExportFetcher {
 	private const EXTERNAL_REQUEST_TIMEOUT_SECONDS = 15;
 
 	/**
-	 * The whole fetch, not each attempt: a host with four unreachable
-	 * addresses used to hold a request for a minute. An attempt gets what
-	 * is left, and one that no longer fits is not made.
-	 *
-	 * The clock starts before the name is resolved, so a slow lookup costs
-	 * the HTTP attempts their time rather than being added on top. What it
-	 * cannot do is bound the lookup itself: `dns_get_record()` takes no
-	 * timeout and obeys the system resolver, so a dead nameserver can still
-	 * hold a request for its own retry schedule before this budget has
-	 * anything left to give.
+	 * The whole fetch, the name lookup included: an attempt gets what is
+	 * left, and one that no longer fits is not made. The budget cannot
+	 * bound the lookup itself: `dns_get_record()` takes no timeout, so a
+	 * dead nameserver holds a request for the resolver's own retries.
 	 */
 	private const EXTERNAL_TOTAL_BUDGET_SECONDS = 20;
 	private const EXTERNAL_MIN_ATTEMPT_SECONDS = 2;
@@ -157,7 +151,6 @@ class ExternalPadExportFetcher {
 		);
 	}
 
-	/** Started before the name is resolved, so the lookup spends from it too. */
 	private function startBudget(): float {
 		return $this->nowSeconds() + (float)self::EXTERNAL_TOTAL_BUDGET_SECONDS;
 	}
@@ -297,18 +290,15 @@ class ExternalPadExportFetcher {
 	/**
 	 * Why no attempt got an answer: a certificate this instance does not
 	 * trust, which a later try does not mend, or the server not reached.
-	 * 51 and 60 are cURL's codes for a peer certificate that failed
-	 * verification: before libcurl 7.62.0, 51 for a name it does not match
-	 * and 60 for a chain not trusted; since then 60 for both.
+	 * cURL reports a certificate that failed verification as 60, and a
+	 * name it does not match as 51 before libcurl 7.62.0.
 	 *
-	 * One such failure decides it, whatever the other addresses did. A
-	 * host whose certificate is not trusted, asked from an instance
-	 * without an IPv6 route, fails its IPv6 attempt on every try, and cURL
-	 * calls that 7, as it does a connection refused for a moment. So a
-	 * name whose addresses show different certificates, the trusted one
-	 * briefly down, is given up on purpose: it gets the certificate's
-	 * sentence, and opening the file again tries again. The normal host
-	 * shows one certificate on all its addresses.
+	 * One certificate failure decides it, whatever the other addresses did:
+	 * an instance without an IPv6 route fails the IPv6 attempt on every
+	 * try, with the code cURL also gives a connection refused for a moment.
+	 * A name whose addresses show different certificates, the trusted one
+	 * briefly down, gets the certificate's sentence too; opening the file
+	 * again tries again.
 	 *
 	 * @param list<int> $curlErrors
 	 * @return ExternalPadException::UNTRUSTED_CERTIFICATE|ExternalPadException::UNREACHABLE
@@ -320,11 +310,10 @@ class ExternalPadExportFetcher {
 	}
 
 	/**
-	 * Only an answer that says it *is* the export. Redirects are not
-	 * followed, but their bodies used to be taken anyway — a "Please sign
-	 * in" page behind a 302 arrived as pad content, which the text export
-	 * caught on content type and the HTML export cannot. A redirect is
-	 * told apart from other errors: it usually means a pad behind a login.
+	 * Only an answer that says it *is* the export. A redirect's body is
+	 * never taken: behind a 302 there is usually a sign-in page, which the
+	 * HTML export could not tell from a pad. A redirect gets its own
+	 * reason, as it usually means a pad behind a login.
 	 */
 	private function assertSuccessfulExportStatus(int $httpCode): void {
 		if ($httpCode === 404) {
@@ -340,7 +329,6 @@ class ExternalPadExportFetcher {
 		}
 	}
 
-	/** What this app is willing to be sent back, per export format. */
 	private static function acceptHeaderFor(string $format): string {
 		return $format === 'html'
 			? 'text/html, application/xhtml+xml;q=0.9, */*;q=0.1'
@@ -348,10 +336,8 @@ class ExternalPadExportFetcher {
 	}
 
 	/**
-	 * Only what this format asked for. The text export still refuses
-	 * `text/html`, because an error page answered with 200 is the shape
-	 * that rule exists for; allowing the union for both would weaken the
-	 * text path to buy nothing for this one.
+	 * Only what this format asked for. The text export refuses `text/html`:
+	 * that is how an error page answered with 200 looks.
 	 */
 	private function assertAllowedExternalExportContentType(string $contentTypeHeader, string $format = 'txt'): void {
 		$raw = trim($contentTypeHeader);
@@ -549,13 +535,9 @@ class ExternalPadExportFetcher {
 		$host = strtolower($parts['host'] ?? '');
 		$port = isset($parts['port']) ? $parts['port'] : 443;
 		$path = $parts['path'] ?? '';
-		// `+` is literal in URL path segments — only query/form bodies treat
-		// it as a space. Using urldecode here turned `/p/team+pad` into
-		// pad-id `team pad`, then re-encoded to `/p/team%20pad` at fetch
-		// time, hitting a different / non-existent remote pad.
+		// `+` is literal in a URL path; only form bodies read it as a space.
+		// urldecode() would turn `/p/team+pad` into another pad's name.
 		$decodedPath = rawurldecode($path);
-		// No path at all is a link to the server, not to a pad: told as one
-		// that does not end in /p/ and a name.
 		// parse_url() takes anything in brackets as the host; only an IPv6
 		// address belongs there, and cURL refuses the rest.
 		if ($scheme !== 'https' || $host === '' || $port <= 0 || $port > 65535
