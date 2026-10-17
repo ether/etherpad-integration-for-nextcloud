@@ -10,12 +10,14 @@ files naming a version the app does not have.
 
 `--print` gives the version info.xml declares to the release workflow.
 `--set <version>` writes it in all four places without reformatting the
-files: scripts/prepare-release.sh bumps the version through it.
+files: scripts/prepare-release.sh bumps the version through it, after
+`--check <version>` has held the version to the rules `--set` applies.
 """
 
 from __future__ import annotations
 
 import argparse
+import copy
 import json
 import pathlib
 import re
@@ -95,6 +97,23 @@ def replaced_once(text: str, old: str, new: str, where: str, start: int = 0) -> 
     return text[:at] + new + text[at + len(old) :]
 
 
+def check_release_version(root: pathlib.Path, version: str) -> None:
+    """Raise a ValueError unless `version` may follow the one info.xml has."""
+    if version.startswith("v"):
+        raise ValueError(f"{version} starts with a v: name the version as info.xml writes it, without")
+    if RELEASE_VERSION.fullmatch(version) is None:
+        raise ValueError(f"{version} is no release version: semver X.Y.Z or X.Y.Z-prerelease, no leading zeros")
+    if _DEV.search(version.partition("-")[2]):
+        raise ValueError(f"{version} is a development version, not a release")
+
+    current = app_version(root / "appinfo" / "info.xml")
+    # A release follows the one before it, so a lower version is a typo. The
+    # same one again is a release being prepared anew; a dev version in
+    # info.xml says nothing of the last release.
+    if RELEASE_VERSION.fullmatch(current) and not _DEV.search(current.partition("-")[2]) and precedence(version) < precedence(current):
+        raise ValueError(f"{version} is below {current}, the version appinfo/info.xml has")
+
+
 def set_version(root: pathlib.Path, version: str) -> None:
     """Write `version` wherever the app version stands, and change nothing else.
 
@@ -105,19 +124,11 @@ def set_version(root: pathlib.Path, version: str) -> None:
     then written one after another, so a failed write can leave some of them
     changed.
     """
-    if RELEASE_VERSION.fullmatch(version) is None:
-        raise ValueError(f"{version} is no release version: semver X.Y.Z or X.Y.Z-prerelease, no leading zeros")
-    if _DEV.search(version.partition("-")[2]):
-        raise ValueError(f"{version} is a development version, not a release")
+    check_release_version(root, version)
 
     info_xml = root / "appinfo" / "info.xml"
     info_text = info_xml.read_text(encoding="utf-8")
     current = app_version(info_xml)
-    # A release follows the one before it, so a lower version is a typo. The
-    # same one again is a release being prepared anew; a dev version in
-    # info.xml says nothing of the last release.
-    if RELEASE_VERSION.fullmatch(current) and not _DEV.search(current.partition("-")[2]) and precedence(version) < precedence(current):
-        raise ValueError(f"{version} is below {current}, the version appinfo/info.xml has")
     info_new = replaced_once(info_text, f"<version>{current}</version>", f"<version>{version}</version>", "appinfo/info.xml")
 
     package_json = root / "package.json"
@@ -137,7 +148,7 @@ def set_version(root: pathlib.Path, version: str) -> None:
         "package-lock.json",
         lock_new.index('"packages"'),
     )
-    expected_lock = json.loads(lock_text)
+    expected_lock = copy.deepcopy(lock)
     expected_lock["version"] = version
     expected_lock["packages"][""]["version"] = version
 
@@ -164,7 +175,21 @@ def main() -> int:
         dest="new_version",
         help="write VERSION wherever the app version stands, then check",
     )
+    parser.add_argument(
+        "--check",
+        metavar="VERSION",
+        dest="checked_version",
+        help="check that VERSION may follow the one info.xml has, and write nothing",
+    )
     arguments = parser.parse_args()
+
+    if arguments.checked_version is not None:
+        try:
+            check_release_version(arguments.root, arguments.checked_version)
+        except (LookupError, ValueError) as refused:
+            print(refused, file=sys.stderr)
+            return 1
+        return 0
 
     if arguments.new_version is not None:
         try:

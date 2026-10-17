@@ -28,7 +28,17 @@ for cmd in python3 git rsync npm; do
 done
 
 # Refused here, nothing is changed yet.
-echo "[1/3] Changelog, release notes and the working tree"
+echo "[1/3] Version, branch, changelog, release notes and the working tree"
+# The version first: a malformed one would otherwise be reported as a
+# CHANGELOG section that is missing.
+python3 "$ROOT_DIR/scripts/check-version-alignment.py" --check "$VERSION"
+# A release goes into main through a pull request, so it is prepared on a
+# branch of its own.
+branch="$(git -C "$ROOT_DIR" symbolic-ref --quiet --short HEAD || true)"
+if [[ -z "$branch" || "$branch" == main ]]; then
+	echo "Prepare the release on a branch of its own, not on ${branch:-a detached HEAD}: it goes into main through a pull request." >&2
+	exit 1
+fi
 python3 "$ROOT_DIR/scripts/release-notes.py" "$VERSION" >/dev/null
 # js/ is built from what the release pull request commits. The two texts may
 # still be uncommitted; anything else would go into the bundles unreviewed.

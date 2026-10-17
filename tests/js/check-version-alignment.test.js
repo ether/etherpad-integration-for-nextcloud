@@ -13,9 +13,9 @@ const repo = resolve(__dirname, '../..')
 const files = ['appinfo/info.xml', 'package.json', 'package-lock.json']
 
 /** The script's exit status and what it said on stderr, run on the copy. */
-const run = (root, version) => {
+const run = (root, version, flag = '--set') => {
 	try {
-		execFileSync('python3', [join(repo, 'scripts/check-version-alignment.py'), '--root', root, '--set', version], { stdio: 'pipe' })
+		execFileSync('python3', [join(repo, 'scripts/check-version-alignment.py'), '--root', root, flag, version], { stdio: 'pipe' })
 		return { status: 0, stderr: '' }
 	} catch (error) {
 		return { status: error.status, stderr: String(error.stderr) }
@@ -70,6 +70,15 @@ describe('check-version-alignment.py --set', () => {
 		const before = read()
 
 		expect(setVersion(root, version)).toBe(1)
+		expect(read()).toEqual(before)
+	})
+
+	it('checks a version by the same rules, and writes nothing', () => {
+		const before = read()
+
+		expect(run(root, 'v9.8.7', '--check').status).toBe(1)
+		expect(run(root, '0.0.1', '--check').status).toBe(1)
+		expect(run(root, '9.8.7', '--check').status).toBe(0)
 		expect(read()).toEqual(before)
 	})
 
