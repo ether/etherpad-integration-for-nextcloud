@@ -69,6 +69,44 @@ tests/e2e/docker/sync-app.sh
 Skip that and you are testing the code as it was when the stack came up,
 without any sign that you are.
 
+## Upgrade from the last release
+
+```bash
+tests/e2e/docker/test-upgrade.sh
+TO_ARCHIVE=dist/etherpad_nextcloud-<version>.tar.gz tests/e2e/docker/test-upgrade.sh
+```
+
+This installs the last release before `HEAD` (`FROM_VERSION` names
+another) from its published archive, checked against the checksum pinned
+in the script; `FROM_ARCHIVE` takes an archive already downloaded. Each
+release adds its own checksum there once it is out, and without one the
+test stops. On the release it makes pads in the states its users can leave
+them in: public and protected, shared, in the trash, and trashed or deleted
+for good while Etherpad was down. Then it installs the working tree over
+it, or the release archive `TO_ARCHIVE` names, and runs the update as
+Nextcloud runs it.
+
+It checks that the update changed what the migrations that ran are to
+change, and nothing else: their entries in `upgrade-fixtures.mjs` say
+what that is, so a new migration that changes rows, settings, indexes or
+jobs adds one. It then opens, restores and deletes the pads, runs the jobs,
+runs the update once more, which is to change nothing, and fails on any
+warning the app logged meanwhile. Last, it runs the whole suite on the
+upgraded stack.
+
+The stack is a project of its own, `epnc-upgrade`, and is kept for a look.
+It needs port 443 and the hostnames like every stack here, so stop another
+one first; it writes `tests/e2e/docker/.env` and `tests/e2e/.env.e2e.docker`
+as `up.sh` does. Remove it with:
+
+```bash
+docker compose -p epnc-upgrade -f tests/e2e/docker/compose.yml down -v --remove-orphans
+```
+
+On GitHub the `e2e-upgrade` workflow runs it on every supported major, for
+a pull request that changes the version while `lib/Migration` differs from
+the last release, and for one that changes the test.
+
 ## Certificates
 
 `make-certs.sh` mints a local CA and one certificate covering both

@@ -4,6 +4,8 @@
 #
 # Copy the app from the working tree into the running stack. Called by
 # up.sh, and useful on its own after editing PHP or rebuilding js/.
+# APP_SOURCE names another copy of the app to take instead, such as an
+# extracted release (test-beta-upgrade.sh).
 #
 # The file set comes from scripts/app-file-excludes.sh — the same
 # definition the release tarball uses — so the stack exercises the tree
@@ -12,15 +14,21 @@ set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo="$(cd "$here/../../.." && pwd)"
+source_dir="${APP_SOURCE:-$repo}"
 app=/var/www/html/custom_apps/etherpad_nextcloud
 
 source "$repo/scripts/app-file-excludes.sh"
 
 compose() { docker compose -f "$here/compose.yml" "$@"; }
 
+if [[ ! -f "$source_dir/appinfo/info.xml" ]]; then
+	echo "APP_SOURCE is no copy of the app, it has no appinfo/info.xml: $source_dir" >&2
+	exit 1
+fi
+
 staging="$(mktemp -d)"
 trap 'rm -rf "$staging"' EXIT
-rsync -a "${RSYNC_EXCLUDES[@]}" "$repo/" "$staging/app/"
+rsync -a "${RSYNC_EXCLUDES[@]}" "$source_dir/" "$staging/app/"
 
 compose exec -T -u www-data nextcloud sh -c "rm -rf $app && mkdir -p $app"
 compose cp "$staging/app/." "nextcloud:$app/"
