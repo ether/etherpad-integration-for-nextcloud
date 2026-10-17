@@ -11,10 +11,14 @@ declare(strict_types=1);
  *
  * A repair step's warning or error fails it. Nextcloud hands those to
  * whoever listens - occ upgrade and the updater print them - and an update
- * run on its own has no listener, so they would reach no one.
+ * run on its own has no listener: a warning would reach no one, an error
+ * only the log.
  */
 
 require '/var/www/html/lib/base.php';
+// Nextcloud's exception handler would end a throwing update with status 0;
+// PHP's own prints the trace and exits 255.
+restore_exception_handler();
 
 $reported = 0;
 $dispatcher = \OCP\Server::get(\OCP\EventDispatcher\IEventDispatcher::class);
