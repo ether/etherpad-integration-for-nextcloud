@@ -2,11 +2,10 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (c) 2026 Jacob Bühler
 #
-# An installation of the last release upgraded to this app. The release,
-# as published, goes on a stack of its own with pads in the states its
-# users can leave them in; this app is installed over it as an update
-# installs it; what changed is checked against what the migrations that
-# ran are to change; and the suite runs on what the upgrade left.
+# The last release, as published, on a stack of its own, with pads in the
+# states its users can leave them in, upgraded to this app. The upgrade
+# has to change what upgrade-fixtures.mjs says its migrations change, and
+# nothing else; the suite then runs on the upgraded stack.
 #
 #   tests/e2e/docker/test-upgrade.sh
 #
@@ -20,9 +19,9 @@ set -euo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo="$(cd "$here/../../.." && pwd)"
 
-# A project of its own, so the stack someone is working in is never
-# touched. Not taken from the shell: one that names that stack would point
-# this test at it.
+# A project of its own, so no container or volume of the stack someone
+# works in is this test's. Not taken from the shell, where a name of that
+# stack would point the test at it.
 export COMPOSE_PROJECT_NAME=epnc-upgrade
 compose() { docker compose -f "$here/compose.yml" "$@"; }
 occ() { compose exec -T -u www-data nextcloud php occ "$@"; }
@@ -109,10 +108,10 @@ fi
 echo "==> $from_version on Nextcloud $nc_version"
 APP_SOURCE="$from_app" bash "$here/up.sh"
 
-# As the release before the setting's rename kept it: up.sh sets the
-# setting under its new name, and the upgrade is to take the old one over.
-# test_fault is a key a debug instance could set to inject a fault, which
-# the upgrade drops; named no fault here, so the release runs as without.
+# A release from before migration 5 knows the setting by its old name,
+# which the upgrade takes over; up.sh sets the new one. The upgrade drops
+# test_fault, which a debug instance could set; this one names no fault,
+# so the release runs as without.
 if [[ ! -f "$from_app/lib/Migration/Version000005Date20260928120000.php" ]]; then
 	occ config:app:delete etherpad_nextcloud delete_pad_with_file
 	occ config:app:set etherpad_nextcloud delete_on_trash --value=yes
@@ -213,12 +212,12 @@ fixtures verify
 # meet: a kept job's argument is the old release's.
 node -e 'for (const job of JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).jobs) console.log(job.id)' "$work/after.json" > "$work/job-ids"
 while IFS= read -r job_id; do
-	# Its stdin is not docker's: it would read the remaining ids.
+	# Not the loop's stdin: docker would read the remaining ids.
 	occ background-job:execute --force-execute "$job_id" </dev/null
 done < "$work/job-ids"
 
-# The next update runs the repair steps and adds the jobs again, and they
-# are to find nothing left to do.
+# The next update runs the repair steps and adds the jobs again; they have
+# to find nothing to do.
 snapshot > "$work/settled.json"
 update_app
 snapshot > "$work/repeated.json"

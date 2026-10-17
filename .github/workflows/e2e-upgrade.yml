@@ -2,12 +2,11 @@
 # Copyright (c) 2026 Jacob Bühler
 name: e2e-upgrade
 
-# The upgrade from the last release, on every supported Nextcloud major:
-# for a pull request that raises the version while the migrations or
-# repair steps differ from that release's - a release with something new
-# to run on its users' data - and for one that changes the test itself,
-# which would otherwise first run on a release. Any other pull request
-# skips it.
+# The upgrade from the last release, on every supported Nextcloud major.
+# It runs for a pull request that changes the version while lib/Migration
+# differs from that release - a release with something new to run on its
+# users' data - and for one that changes the test itself, which would
+# otherwise run first on a release. Any other pull request skips it.
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
@@ -74,8 +73,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Every major the app supports, as the nightly e2e run has them;
-        # a major the release before does not run on skips itself.
+        # Every major the app supports; one the last release does not run on
+        # skips itself.
         nextcloud: ['32.0.9', '33', '34']
 
     name: ${{ needs.decide.outputs.from }} on Nextcloud ${{ matrix.nextcloud }}

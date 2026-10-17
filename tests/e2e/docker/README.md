@@ -87,12 +87,13 @@ it, or the release archive `TO_ARCHIVE` names, and runs the update as
 Nextcloud runs it.
 
 It checks that the update changed what the migrations that ran are to
-change, and nothing else: their entries in `upgrade-fixtures.mjs` say
-what that is, so a new migration that changes rows, settings, indexes or
-jobs adds one. It then opens, restores and deletes the pads, runs the jobs,
-runs the update once more, which is to change nothing, and fails on any
-warning the app logged meanwhile. Last, it runs the whole suite on the
-upgraded stack.
+change, and nothing else. Their entries in `upgrade-fixtures.mjs` say
+what that is, so a new migration that changes rows, settings or indexes
+adds one. Of the jobs, those whose class is gone have to be gone, and
+those `info.xml` names have to be there. It then opens, restores and
+deletes the pads, runs the jobs, runs the update once more, which has to
+change nothing, and fails on any warning the app logged meanwhile. Last,
+it runs the whole suite on the upgraded stack.
 
 The stack is a project of its own, `epnc-upgrade`, and is kept for a look.
 It needs port 443 and the hostnames like every stack here, so stop another

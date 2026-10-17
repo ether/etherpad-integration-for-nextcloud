@@ -87,7 +87,7 @@ def main():
     want(".github/workflows/e2e.yml", r"\|\|\s*'\[([^\]]*)\]'\)\s*\}\}",
          ", ".join(f'"{v}"' for v in majors),
          "the nightly Nextcloud list")
-    # The upgrade runs on every major, as rarely as it runs.
+    # The upgrade runs rarely, so on every major.
     want(".github/workflows/e2e-upgrade.yml", r"nextcloud:\s*\[([^\]]*)\]",
          ", ".join(f"'{v}'" for v in majors),
          "the upgrade's Nextcloud list")

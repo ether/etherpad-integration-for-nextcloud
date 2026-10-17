@@ -4,7 +4,7 @@
  *
  * The pads of test-upgrade.sh: made through the API of the release it
  * upgrades from, and checked against the app it upgrades to. Each phase
- * reads and writes the files in the script's directory:
+ * reads and writes its files in the directory it is given:
  *
  *   node upgrade-fixtures.mjs seed|offline|migrated|verify <dir>
  */
@@ -103,8 +103,8 @@ const open = async (p, secondary = false) => {
 }
 
 /**
- * Each label a state a user can leave a pad in. "offline" ones are made
- * while Etherpad is down, which is how a release left a deletion waiting.
+ * Each label is a state a user can leave a pad in. The "offline" ones are
+ * made while Etherpad is down, where 1.1.0-beta.1 left a deletion waiting.
  */
 const PADS = [
 	['public', 'public'],
@@ -120,16 +120,16 @@ const PADS = [
 const ANY = Symbol('any')
 
 /**
- * What each migration changes, applied to the snapshot from before it ran.
- * Whatever no entry here changes stays as it was. A migration without an
- * entry is to change nothing the snapshot holds.
+ * What each migration changes in rows, settings and indexes, applied to
+ * the snapshot from before it ran. Anything no entry changes has to stay
+ * as it was.
  */
 const MIGRATIONS = {
 	'000005Date20260928120000': (expected) => {
-		// The trash keeps a pad now: a deletion that waited while its file
-		// is still there - in a trash or in Files - is the file's again. The
-		// other waits the migration dates, a restore that could not finish
-		// and a deletion without a date, no release left.
+		// The trash keeps a pad: a deletion that waited while its file is
+		// still there, in a trash or in Files, is the file's again. The
+		// migration also dates a restore that could not finish and a
+		// deletion without a date; no release left those, so none is here.
 		for (const row of expected.bindings) {
 			if (row.state === 'pending_delete' && row.file_cached) {
 				Object.assign(row, { state: 'active', deleted_at: null, updated_at: ANY })
@@ -248,7 +248,7 @@ if (phase === 'seed') {
 		console.log(`  job added: ${job.class}`)
 	}
 
-	// The key stays, and is shown nowhere: a value `occ config:list` hides.
+	// The key stays, its value hidden from `occ config:list`.
 	const config = readJson('config.json')
 	assert.equal(config.apps.etherpad_nextcloud.etherpad_api_key, '***REMOVED SENSITIVE VALUE***')
 } else if (phase === 'verify') {
