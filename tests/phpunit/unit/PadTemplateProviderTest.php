@@ -228,9 +228,9 @@ class PadTemplateProviderTest extends TestCase {
 	}
 
 	/**
-	 * A user the app is not enabled for gets no tile, and no template id
-	 * resolves for them: the storage is never asked. Nor for a request
-	 * without a user.
+	 * A user the app is not enabled for, or a request without a user, gets
+	 * no tile, and no template id resolves for either: the storage is never
+	 * asked.
 	 *
 	 * @return iterable<string,array{0:?bool}>
 	 */

@@ -15,9 +15,10 @@ use PHPUnit\Framework\TestCase;
 
 class AppAccessTest extends TestCase {
 	/**
-	 * Nextcloud answers true for an app enabled for everyone even without a
-	 * user, so a request without one - a visitor of a link share - must not
-	 * reach the app manager: it would be offered "New pad".
+	 * Asked without a user, Nextcloud answers by the app's setting alone:
+	 * yes where it is enabled for everyone, which would offer a link share's
+	 * visitor "New pad", and no where it is limited to groups, which would
+	 * count a request without a user as excluded.
 	 */
 	public function testAsksNothingWithoutASignedInUser(): void {
 		$userSession = $this->createMock(IUserSession::class);

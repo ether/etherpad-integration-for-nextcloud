@@ -85,23 +85,35 @@ class RestoreFromTrashListenerTest extends TestCase {
 	/**
 	 * The file is back before the listener hears of it, so a check that
 	 * fails stops the pad's step, as the step's own failure would, and goes
-	 * no further.
+	 * no further. It decides nothing either: the event pass asks again, so a
+	 * group backend down for a moment does not cost the pad.
 	 */
 	public function testReportsAFailedAccessCheckAsTheStepsFailure(): void {
 		$file = $this->createMock(File::class);
 		$file->method('getName')->willReturn('Notes.pad');
 		$file->method('getId')->willReturn(42);
 		$restores = $this->createMock(RestoreService::class);
-		$restores->expects($this->never())->method('restore');
+		$restores->expects($this->once())->method('restore')->with($file)->willReturn(['status' => LifecycleResult::RESTORED]);
+		$user = $this->createMock(IUser::class);
+		$user->method('getUID')->willReturn('alice');
 		$userSession = $this->createMock(IUserSession::class);
-		$userSession->method('getUser')->willReturn($this->createMock(IUser::class));
+		$userSession->method('getUser')->willReturn($user);
+		$nodes = $this->createMock(UserNodeResolver::class);
+		$nodes->method('resolveUserFileNodeByPath')->willReturn($file);
+		$asked = 0;
 		$appManager = $this->createMock(IAppManager::class);
-		$appManager->method('isEnabledForUser')->willThrowException(new \RuntimeException('group backend down'));
+		$appManager->method('isEnabledForUser')->willReturnCallback(static function () use (&$asked): bool {
+			if (++$asked === 1) {
+				throw new \RuntimeException('group backend down');
+			}
+			return true;
+		});
 		$logger = $this->createMock(LoggerInterface::class);
 		$logger->expects($this->once())->method('error')
 			->with('Could not restore the pad of a file back from the trash. The file itself is restored.', $this->anything());
-		$listener = new RestoreFromTrashListener($restores, $userSession, $this->createMock(UserNodeResolver::class), $logger, new AppAccess($appManager, $userSession));
+		$listener = new RestoreFromTrashListener($restores, $userSession, $nodes, $logger, new AppAccess($appManager, $userSession));
 
+		$listener->handleLegacyHook(['filePath' => '/Notes.pad']);
 		$listener->handle($this->restoreEventFor($file));
 	}
 
@@ -332,12 +344,13 @@ class RestoreFromTrashListenerTest extends TestCase {
 				}),
 			);
 
+		$session = $uid === null ? $this->noSession() : $this->sessionFor($uid);
 		$listener = new RestoreFromTrashListener(
 			$restores,
-			$uid === null ? $this->noSession() : $this->sessionFor($uid),
+			$session,
 			$resolver($this),
 			$logger,
-			$this->appAccess(true),
+			$this->appAccess(true, $session),
 		);
 
 		// No expectException: nothing may leave this frame.

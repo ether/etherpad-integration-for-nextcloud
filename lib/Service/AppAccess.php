@@ -17,10 +17,10 @@ use OCP\IUserSession;
  * enabled app's listeners and template provider for every user, also where
  * an admin has limited the app to groups, and checks the limit only on the
  * app's own routes, not on the public ones that serve link shares. So what
- * acts for a user outside those routes asks here: the "New pad" entry and
- * its templates, the create Nextcloud's template endpoint reports, and a
- * restore from the trash. The endpoint can be called without the entry, so
- * each of them asks.
+ * acts for a user outside the app's routes asks here: the "New pad" entry
+ * and its templates, the create Nextcloud's template endpoint reports, and
+ * a restore from the trash. The endpoint can be called without the entry,
+ * so each of them asks.
  */
 class AppAccess {
 	public function __construct(

@@ -439,14 +439,15 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 		?ExternalPadSeeder $externalPadSeeder = null,
 		bool $appEnabledForUser = true,
 	): FileCreatedFromTemplateListener {
+		$session = $this->userSession($withUser);
 		return new FileCreatedFromTemplateListener(
 			$creation,
 			$bootstrap,
 			$templateStorage ?? $this->noTypeTemplates(),
 			$externalPadSeeder ?? $this->createMock(ExternalPadSeeder::class),
-			$this->userSession($withUser),
+			$session,
 			$this->createMock(LoggerInterface::class),
-			$this->appAccess($appEnabledForUser),
+			$this->appAccess($appEnabledForUser, $session),
 		);
 	}
 
