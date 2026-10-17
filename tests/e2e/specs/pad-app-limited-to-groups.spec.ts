@@ -1,0 +1,155 @@
+/**
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ * Copyright (c) 2026 Jacob Bühler
+ */
+import { test, expect } from '../fixtures/browser-noise'
+import {
+	addToGroup,
+	createAccount,
+	createGroup,
+	deleteAccount,
+	deleteGroup,
+	enableAppForEveryone,
+	restrictAppToGroups,
+} from '../fixtures/admin-api'
+import { deleteViaDav, getAppConfig, padOfFile, propfindFileId, restoreAppConfig, setAppConfig } from '../fixtures/dav'
+import { E2E } from '../fixtures/env'
+import { uniqueName, uniquePadName } from '../fixtures/nextcloud'
+
+const APP = 'etherpad_nextcloud'
+const PROVIDER = 'OCA\\EtherpadNextcloud\\Template\\PadTemplateProvider'
+
+type Account = { uid: string, password: string }
+
+/**
+ * An app an admin has limited to groups is still asked by Nextcloud's
+ * template API for every user. A user outside the groups gets no "New pad"
+ * entry, and a create sent to the endpoint without it leaves neither a file
+ * nor a pad. The admin, inside the group, gets both: the requests are the
+ * ones the picker sends. Public and external pads are on while it runs, so
+ * that a tile is refused for the user and not for its setting.
+ */
+test.describe('the app limited to groups', () => {
+	const group = uniqueName('pad-users')
+	let outsider: Account | null = null
+	let restricted = false
+	const made: string[] = []
+	const settings = { enable_public_pads: 'yes', allow_external_pads: 'yes' }
+	const before: Record<string, string> = {}
+
+	const admin = (): Account => ({ uid: E2E.user, password: E2E.password })
+
+	const authOf = (account: Account): string =>
+		`Basic ${Buffer.from(`${account.uid}:${account.password}`).toString('base64')}`
+
+	const templateApi = (account: Account, path: string, body?: Record<string, unknown>): Promise<Response> =>
+		fetch(`${E2E.baseURL}/ocs/v2.php/apps/files/api/v1/templates${path}?format=json`, {
+			method: body === undefined ? 'GET' : 'POST',
+			headers: {
+				Authorization: authOf(account),
+				'OCS-APIRequest': 'true',
+				Accept: 'application/json',
+				...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
+			},
+			body: body === undefined ? undefined : JSON.stringify(body),
+		})
+
+	const offersNewPad = async (account: Account): Promise<boolean> => {
+		const res = await templateApi(account, '')
+		expect(res.status, `listing the templates as ${account.uid}`).toBe(200)
+		const creators = ((await res.json()) as { ocs?: { data?: { app?: string }[] } }).ocs?.data ?? []
+		return creators.some((creator) => creator.app === APP)
+	}
+
+	/** Whether a name is in the account's trash: a file that was made and removed again. */
+	const trashedFor = async (account: Account, name: string): Promise<boolean> => {
+		const res = await fetch(`${E2E.baseURL}/remote.php/dav/trashbin/${encodeURIComponent(account.uid)}/trash`, {
+			method: 'PROPFIND',
+			headers: { Authorization: authOf(account), Depth: '1' },
+		})
+		expect(res.status, `listing the trash of ${account.uid}`).toBe(207)
+		return (await res.text()).includes(name)
+	}
+
+	const existsFor = async (account: Account, name: string): Promise<boolean> => {
+		const res = await fetch(`${E2E.baseURL}/remote.php/dav/files/${encodeURIComponent(account.uid)}/${encodeURIComponent(name)}`, {
+			method: 'PROPFIND',
+			headers: { Authorization: authOf(account), Depth: '0' },
+		})
+		return res.status === 207
+	}
+
+	test.beforeAll(async () => {
+		for (const [key, value] of Object.entries(settings)) {
+			before[key] = await getAppConfig(key)
+			await setAppConfig(key, value)
+		}
+		await createGroup(group)
+		await addToGroup(E2E.user, group)
+		outsider = await createAccount(uniqueName('pad-outsider'))
+		await restrictAppToGroups(APP, [group])
+		restricted = true
+	})
+
+	test.afterAll(async () => {
+		try {
+			if (restricted) {
+				await enableAppForEveryone(APP)
+			}
+		} finally {
+			for (const name of made) {
+				await deleteViaDav(name, { pastTrash: true })
+			}
+			if (outsider !== null) {
+				await deleteAccount(outsider.uid)
+			}
+			await deleteGroup(group)
+			for (const [key, value] of Object.entries(before)) {
+				await restoreAppConfig(key, value)
+			}
+		}
+	})
+
+	test('offers "New pad" only inside the group', async () => {
+		expect(await offersNewPad(admin()), 'the admin, inside the group').toBe(true)
+		expect(await offersNewPad(outsider!), 'a user outside the group').toBe(false)
+	})
+
+	for (const [label, templateType, templateId] of [
+		['the blank entry', 'user', ''],
+		['the tile of public pads', PROVIDER, `${APP}:pad-public`],
+	] as const) {
+		test(`creates a pad from ${label} inside the group`, async () => {
+			const name = uniquePadName('limited-inside')
+			const res = await templateApi(admin(), '/create', { filePath: `/${name}`, templateType, templatePath: templateId })
+			made.push(name)
+
+			expect(res.status, 'the create inside the group').toBe(200)
+			expect(await padOfFile(await propfindFileId(name))).not.toBe('')
+		})
+	}
+
+	test('creates nothing from the blank entry for a user outside the group', async () => {
+		const name = uniquePadName('limited-outside')
+		const res = await templateApi(outsider!, '/create', { filePath: `/${name}`, templateType: 'user', templatePath: '' })
+
+		expect(res.status, 'the create outside the group').toBe(403)
+		expect(await existsFor(outsider!, name), 'the file of the refused create').toBe(false)
+	})
+
+	// Nextcloud asks for the tile's template before it creates the file, so
+	// a refused tile leaves nothing, not even in the trash.
+	for (const [label, templateId] of [
+		['the tile of public pads', `${APP}:pad-public`],
+		['the external tile', `${APP}:pad-external`],
+	] as const) {
+		test(`creates no file from ${label} for a user outside the group`, async () => {
+			const name = uniquePadName('limited-outside')
+			const res = await templateApi(outsider!, '/create', { filePath: `/${name}`, templateType: PROVIDER, templatePath: templateId })
+
+			expect(res.status, 'the create outside the group').toBe(403)
+			expect(await existsFor(outsider!, name), 'the file of the refused create').toBe(false)
+			expect(await trashedFor(outsider!, name), 'the file of the refused create, in the trash').toBe(false)
+		})
+	}
+})

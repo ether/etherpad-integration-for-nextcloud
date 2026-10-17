@@ -19,6 +19,12 @@ use OCP\IURLGenerator;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
+use OCA\EtherpadNextcloud\AppInfo\Application;
+use OCA\EtherpadNextcloud\Service\AppAccess;
+use OCP\App\IAppManager;
+use OCP\Files\NotPermittedException;
+use OCP\IUser;
+use OCP\IUserSession;
 
 class PadTemplateProviderTest extends TestCase {
 	private const MIME = 'application/x-etherpad-nextcloud';
@@ -147,6 +153,8 @@ class PadTemplateProviderTest extends TestCase {
 			$this->l10n(),
 			$this->urlGenerator(),
 			$logger,
+			$this->appAccess(true),
+			$this->userSession(),
 		);
 
 		$this->assertSame([], $provider->getCustomTemplates(self::MIME));
@@ -179,7 +187,7 @@ class PadTemplateProviderTest extends TestCase {
 		$logger = $this->createMock(LoggerInterface::class);
 		$logger->expects($this->once())->method('warning');
 
-		$provider = new PadTemplateProvider($storage, $this->policy(true, true), $this->config(false), $this->l10n(), $this->urlGenerator(), $logger);
+		$provider = new PadTemplateProvider($storage, $this->policy(true, true), $this->config(false), $this->l10n(), $this->urlGenerator(), $logger, $this->appAccess(true), $this->userSession());
 
 		$this->assertCount(1, $provider->getCustomTemplates(self::MIME));
 	}
@@ -221,6 +229,36 @@ class PadTemplateProviderTest extends TestCase {
 		$this->providerWith($storage, true, true, true)->getCustomTemplate($templateId);
 	}
 
+	/**
+	 * Nextcloud asks every provider, also for a user outside the groups the
+	 * app is limited to. Such a user gets no tile, and a template id sent to
+	 * Nextcloud's endpoint anyway is refused before the storage is asked:
+	 * Nextcloud resolves the template before it creates the file.
+	 */
+	public function testOffersAndResolvesNothingForAUserTheAppIsNotEnabledFor(): void {
+		$storage = $this->createMock(PadTemplateStorage::class);
+		$storage->expects($this->never())->method($this->anything());
+		$provider = new PadTemplateProvider(
+			$storage,
+			$this->policy(true, true),
+			$this->config(true),
+			$this->l10n(),
+			$this->urlGenerator(),
+			$this->createMock(LoggerInterface::class),
+			$this->appAccess(false),
+			$this->userSession(),
+		);
+
+		$this->assertSame([], $provider->getCustomTemplates(self::MIME));
+		foreach ([PadTemplateProvider::PUBLIC_TEMPLATE_ID, PadTemplateProvider::EXTERNAL_TEMPLATE_ID, Application::APP_ID . ':global:Meeting notes.pad'] as $templateId) {
+			try {
+				$provider->getCustomTemplate($templateId);
+				$this->fail($templateId . ': resolved');
+			} catch (NotPermittedException) {
+			}
+		}
+	}
+
 	private function buildProvider(bool $protected = true, bool $public = true, bool $external = false): PadTemplateProvider {
 		return $this->providerWith($this->storage(), $protected, $public, $external);
 	}
@@ -233,7 +271,23 @@ class PadTemplateProviderTest extends TestCase {
 			$this->l10n(),
 			$this->urlGenerator(),
 			$this->createMock(LoggerInterface::class),
+			$this->appAccess(true),
+			$this->userSession(),
 		);
+	}
+
+	private function appAccess(bool $enabledForUser): AppAccess {
+		$appManager = $this->createMock(IAppManager::class);
+		$appManager->method('isEnabledForUser')->willReturnCallback(
+			static fn (string $appId, ?IUser $user = null): bool => $appId === Application::APP_ID && $user !== null && $enabledForUser
+		);
+		return new AppAccess($appManager);
+	}
+
+	private function userSession(): IUserSession {
+		$userSession = $this->createMock(IUserSession::class);
+		$userSession->method('getUser')->willReturn($this->createMock(IUser::class));
+		return $userSession;
 	}
 
 	private function storage(): PadTemplateStorage {

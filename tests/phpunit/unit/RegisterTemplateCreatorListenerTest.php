@@ -9,12 +9,17 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Tests\Unit;
 
+use OCA\EtherpadNextcloud\AppInfo\Application;
 use OCA\EtherpadNextcloud\Listeners\RegisterTemplateCreatorListener;
+use OCA\EtherpadNextcloud\Service\AppAccess;
 use OCA\EtherpadNextcloud\Service\PadTypePolicy;
+use OCP\App\IAppManager;
 use OCP\EventDispatcher\Event;
 use OCP\Files\Template\RegisterTemplateCreatorEvent;
 use OCP\Files\Template\ITemplateManager;
 use OCP\IL10N;
+use OCP\IUser;
+use OCP\IUserSession;
 use PHPUnit\Framework\TestCase;
 
 class RegisterTemplateCreatorListenerTest extends TestCase {
@@ -45,6 +50,28 @@ class RegisterTemplateCreatorListenerTest extends TestCase {
 		$this->buildListener($protected, $public, $external)->handle($this->buildEvent($templateManager));
 	}
 
+	/**
+	 * Nextcloud asks for the entry for every user, also where an admin has
+	 * limited the app to groups: a user outside them gets none, and nor does
+	 * a request without a user.
+	 *
+	 * @return iterable<string,array{0:?bool,1:bool}>
+	 */
+	public static function users(): iterable {
+		yield 'a user the app is enabled for' => [true, true];
+		yield 'a user the app is not enabled for' => [false, false];
+		yield 'no user' => [null, false];
+	}
+
+	#[\PHPUnit\Framework\Attributes\DataProvider('users')]
+	public function testRegistersOnlyForAUserTheAppIsEnabledFor(?bool $enabledForUser, bool $expected): void {
+		$templateManager = $this->createMock(ITemplateManager::class);
+		$templateManager->expects($expected ? $this->once() : $this->never())
+			->method('registerTemplateFileCreator');
+
+		$this->buildListener(true, true, false, $enabledForUser)->handle($this->buildEvent($templateManager));
+	}
+
 	public function testIgnoresUnrelatedEvents(): void {
 		$this->buildListener(true, true)->handle(new Event());
 
@@ -55,7 +82,8 @@ class RegisterTemplateCreatorListenerTest extends TestCase {
 		return new RegisterTemplateCreatorEvent($templateManager);
 	}
 
-	private function buildListener(bool $protectedEnabled, bool $publicEnabled = true, bool $externalAllowed = false): RegisterTemplateCreatorListener {
+	/** @param ?bool $enabledForUser null for a request without a user */
+	private function buildListener(bool $protectedEnabled, bool $publicEnabled = true, bool $externalAllowed = false, ?bool $enabledForUser = true): RegisterTemplateCreatorListener {
 		$l10n = $this->createMock(IL10N::class);
 		$l10n->method('t')->willReturnArgument(0);
 
@@ -75,6 +103,14 @@ class RegisterTemplateCreatorListenerTest extends TestCase {
 			}
 		);
 
-		return new RegisterTemplateCreatorListener($l10n, new PadTypePolicy($config), $config);
+		$user = $enabledForUser === null ? null : $this->createMock(IUser::class);
+		$userSession = $this->createMock(IUserSession::class);
+		$userSession->method('getUser')->willReturn($user);
+		$appManager = $this->createMock(IAppManager::class);
+		$appManager->method('isEnabledForUser')->willReturnCallback(
+			static fn (string $appId, ?IUser $asked = null): bool => $appId === Application::APP_ID && $asked === $user && $enabledForUser === true
+		);
+
+		return new RegisterTemplateCreatorListener($l10n, new PadTypePolicy($config), $config, new AppAccess($appManager), $userSession);
 	}
 }

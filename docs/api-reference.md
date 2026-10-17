@@ -556,9 +556,9 @@ Registered in `lib/AppInfo/Application.php`.
 - `OCP\Security\CSP\AddContentSecurityPolicyEvent` -> `CSPListener`
 - `OCA\Files\Event\LoadAdditionalScriptsEvent` -> `LoadFilesScriptsListener`
 - `OCA\Files_Sharing\Event\BeforeTemplateRenderedEvent` -> `LoadPublicShareScriptsListener`
-- `OCP\Files\Template\RegisterTemplateCreatorEvent` -> `RegisterTemplateCreatorListener`
+- `OCP\Files\Template\RegisterTemplateCreatorEvent` -> `RegisterTemplateCreatorListener` (for a user the app is enabled for; `docs/templates.md`)
 - `OCP\Files\Template\BeforeGetTemplatesEvent` -> `BeforeGetTemplatesListener` (priority -100)
-- `OCP\Files\Template\FileCreatedFromTemplateEvent` -> `FileCreatedFromTemplateListener`
+- `OCP\Files\Template\FileCreatedFromTemplateEvent` -> `FileCreatedFromTemplateListener` (refuses a user the app is not enabled for; `docs/templates.md`)
 - `OCA\Viewer\Event\LoadViewer` -> `LoadViewerListener`
 - `OCP\User\Events\UserLoggedOutEvent` -> `UserLoggedOutListener`
 - `OCP\User\Events\BeforeUserDeletedEvent` -> `RevokeSessionsOnAccountDeleteListener` (the account's sessions, as on a logout)

@@ -49,6 +49,8 @@ When the user clicks **+ → New pad** in the Files app, Nextcloud's template pi
 
 If the user picks "Blank" instead of a template, the new file is empty and behaves like any normal "+ New pad" creation — frontmatter is initialised on first open. The pad type is then the default one, protected, unless the admin switched protected pads off; in that case a blank pad is created as a public pad, readable by anyone with the link.
 
+Where an admin has limited the app to groups, only their members see **+ → New pad**. Nextcloud asks the app's template hooks for every user, and its template endpoint can be called without the entry, so the hooks check that the app is enabled for the user (`AppAccess`). For anyone else, a tile or an admin template is refused before Nextcloud creates the file; a create from the blank entry or from the user's own template provisions no pad, and the file Nextcloud already created is removed while it still holds what was created.
+
 ## Placeholder syntax
 
 Placeholders in the **body** are resolved when the new pad is created. The template's filename is **not** rewritten — see the next section. Syntax: `{{<resolver>[:<arg>][|<format>]}}`.

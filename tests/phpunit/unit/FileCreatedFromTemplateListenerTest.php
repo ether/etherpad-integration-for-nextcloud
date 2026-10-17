@@ -4,16 +4,20 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Tests\Unit;
 
+use OCA\EtherpadNextcloud\AppInfo\Application;
 use OCA\EtherpadNextcloud\Listeners\FileCreatedFromTemplateListener;
 use OCA\EtherpadNextcloud\Exception\PadFileChangedException;
 use OCA\EtherpadNextcloud\Exception\PadTypeDisabledException;
+use OCA\EtherpadNextcloud\Service\AppAccess;
 use OCA\EtherpadNextcloud\Service\PadBootstrapService;
 use OCA\EtherpadNextcloud\Service\ExternalPadSeeder;
 use OCA\EtherpadNextcloud\Service\CreatedFileClaim;
 use OCA\EtherpadNextcloud\Service\PadCreationService;
 use OCA\EtherpadNextcloud\Service\PadTemplateStorage;
+use OCP\App\IAppManager;
 use OCP\EventDispatcher\Event;
 use OCP\Files\File;
+use OCP\Files\NotPermittedException;
 use OCP\Files\Template\FileCreatedFromTemplateEvent;
 use OCP\IUser;
 use OCP\IUserSession;
@@ -223,6 +227,7 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 			$seeder,
 			$this->userSession(true),
 			$logger,
+			$this->appAccess(true),
 		);
 		$listener->handle(new FileCreatedFromTemplateEvent($marker, $target, [
 			'pad_url' => ['content' => 'https://pad.remote.test/p/RemotePad?token=s3cret#top'],
@@ -316,6 +321,59 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 			->handle(new FileCreatedFromTemplateEvent($marker, $target, []));
 	}
 
+	/**
+	 * Nextcloud's template endpoint creates the file and reports it to every
+	 * app, also for a user outside the groups this one is limited to - with
+	 * or without the "New pad" entry. Such a create provisions nothing, not a
+	 * pad, a binding or a link to another server, whichever template it came
+	 * from, and the file Nextcloud created is removed.
+	 *
+	 * @return iterable<string,array{0:string}>
+	 */
+	public static function createsOfEveryKind(): iterable {
+		yield 'the blank entry' => ['blank'];
+		yield 'the external tile' => ['external'];
+		yield 'the tile of a pad type' => ['type tile'];
+		yield "the user's own template" => ['own template'];
+	}
+
+	#[\PHPUnit\Framework\Attributes\DataProvider('createsOfEveryKind')]
+	public function testProvisionsNothingForAUserTheAppIsNotEnabledFor(string $kind): void {
+		$creation = $this->createMock(PadCreationService::class);
+		$creation->expects($this->never())->method('materializeTemplateInto');
+		$creation->method('claimTemplateTarget')->willReturn(new CreatedFileClaim('alice', 42));
+		$created = $this->file('New pad.pad');
+		$created->expects($this->once())->method('delete');
+		$creation->method('resolveUnchangedClaim')->willReturn($created);
+		$bootstrap = $this->createMock(PadBootstrapService::class);
+		$bootstrap->expects($this->never())->method($this->anything());
+		$seeder = $this->createMock(ExternalPadSeeder::class);
+		$seeder->expects($this->never())->method($this->anything());
+		$storage = $this->createMock(PadTemplateStorage::class);
+		$storage->method('isExternalMarkerFile')->willReturn($kind === 'external');
+		$storage->method('accessModeForTemplateFile')->willReturn($kind === 'type tile' ? 'public' : null);
+		$template = $kind === 'blank' ? null : $this->file('Template.pad');
+
+		$this->expectException(NotPermittedException::class);
+		$this->buildListener($creation, $bootstrap, true, $storage, $seeder, false)
+			->handle(new FileCreatedFromTemplateEvent($template, $this->file('New pad.pad'), [
+				'pad_url' => ['content' => 'https://pad.remote.test/p/RemotePad'],
+			]));
+	}
+
+	/** A file that is no longer the one Nextcloud created is left alone. */
+	public function testLeavesAChangedFileOfARefusedCreate(): void {
+		$creation = $this->createMock(PadCreationService::class);
+		$creation->method('claimTemplateTarget')->willReturn(new CreatedFileClaim('alice', 42));
+		$creation->method('resolveUnchangedClaim')->willReturn(null);
+		$target = $this->file('New pad.pad');
+		$target->expects($this->never())->method('delete');
+
+		$this->expectException(NotPermittedException::class);
+		$this->buildListener($creation, $this->createMock(PadBootstrapService::class), true, null, null, false)
+			->handle(new FileCreatedFromTemplateEvent(null, $target, []));
+	}
+
 	/** A storage that recognises no template as one of ours. */
 	private function noTypeTemplates(): PadTemplateStorage {
 		$storage = $this->createMock(PadTemplateStorage::class);
@@ -395,6 +453,7 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 		bool $withUser = true,
 		?PadTemplateStorage $templateStorage = null,
 		?ExternalPadSeeder $externalPadSeeder = null,
+		bool $appEnabledForUser = true,
 	): FileCreatedFromTemplateListener {
 		return new FileCreatedFromTemplateListener(
 			$creation,
@@ -403,7 +462,16 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 			$externalPadSeeder ?? $this->createMock(ExternalPadSeeder::class),
 			$this->userSession($withUser),
 			$this->createMock(LoggerInterface::class),
+			$this->appAccess($appEnabledForUser),
 		);
+	}
+
+	private function appAccess(bool $enabledForUser): AppAccess {
+		$appManager = $this->createMock(IAppManager::class);
+		$appManager->method('isEnabledForUser')->willReturnCallback(
+			static fn (string $appId, ?IUser $user = null): bool => $appId === Application::APP_ID && $user !== null && $enabledForUser
+		);
+		return new AppAccess($appManager);
 	}
 
 	private function userSession(bool $withUser): IUserSession {

@@ -10,6 +10,7 @@ namespace OCA\EtherpadNextcloud\Listeners;
 
 use OCA\EtherpadNextcloud\Exception\PadFileChangedException;
 use OCA\EtherpadNextcloud\Exception\PadTypeDisabledException;
+use OCA\EtherpadNextcloud\Service\AppAccess;
 use OCA\EtherpadNextcloud\Service\PadBootstrapService;
 use OCA\EtherpadNextcloud\Service\ExternalPadSeeder;
 use OCA\EtherpadNextcloud\Service\PadCreationService;
@@ -20,7 +21,9 @@ use OCA\EtherpadNextcloud\Util\SafeError;
 use OCP\EventDispatcher\Event;
 use OCP\EventDispatcher\IEventListener;
 use OCP\Files\File;
+use OCP\Files\NotPermittedException;
 use OCP\Files\Template\FileCreatedFromTemplateEvent;
+use OCP\IUser;
 use OCP\IUserSession;
 use Psr\Log\LoggerInterface;
 
@@ -42,6 +45,7 @@ class FileCreatedFromTemplateListener implements IEventListener {
 		private ExternalPadSeeder $externalPadSeeder,
 		private IUserSession $userSession,
 		private LoggerInterface $logger,
+		private AppAccess $appAccess,
 	) {
 	}
 
@@ -65,6 +69,10 @@ class FileCreatedFromTemplateListener implements IEventListener {
 			]);
 			$this->resetTargetToEmpty($target);
 			return;
+		}
+		if (!$this->appAccess->isEnabledFor($user)) {
+			$this->removeRefusedTarget($target, $user);
+			throw new NotPermittedException('Pads are not enabled for this user.');
 		}
 
 		$template = $event->getTemplate();
@@ -152,6 +160,27 @@ class FileCreatedFromTemplateListener implements IEventListener {
 			// openable pad even though the template path failed. A disabled
 			// pad type travels on from here as well.
 			$this->initializeBlankPad($user->getUID(), $unchanged);
+		}
+	}
+
+	/**
+	 * Nextcloud created the file before this event: an empty `.pad`, or a
+	 * copy of the user's own template, that no pad backs. It is removed by
+	 * its id, and only while it still holds what was created.
+	 */
+	private function removeRefusedTarget(File $target, IUser $user): void {
+		try {
+			$claim = $this->padCreationService->claimTemplateTarget($target, $user);
+		} catch (\Throwable $e) {
+			$this->logger->warning('Left the .pad file of a refused template create: it could not be identified.', [
+				'app' => 'etherpad_nextcloud',
+				...SafeError::context($e),
+			]);
+			return;
+		}
+		$unchanged = $this->padCreationService->resolveUnchangedClaim($claim);
+		if ($unchanged !== null) {
+			$this->deleteTarget($unchanged, $claim->fileId);
 		}
 	}
 
