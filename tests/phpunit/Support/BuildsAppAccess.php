@@ -20,11 +20,16 @@ use OCP\IUserSession;
  * that user, so a check that asks about another app or user is refused.
  */
 trait BuildsAppAccess {
-	/** @param ?bool $enabledForUser null for a request without a signed-in user */
-	private function appAccess(?bool $enabledForUser): AppAccess {
-		$user = $enabledForUser === null ? null : $this->createMock(IUser::class);
-		$userSession = $this->createMock(IUserSession::class);
-		$userSession->method('getUser')->willReturn($user);
+	/**
+	 * @param ?bool $enabledForUser null for a request without a signed-in user
+	 * @param ?IUserSession $userSession the one the code under test reads, if it reads one
+	 */
+	private function appAccess(?bool $enabledForUser, ?IUserSession $userSession = null): AppAccess {
+		if ($userSession === null) {
+			$userSession = $this->createMock(IUserSession::class);
+			$userSession->method('getUser')->willReturn($enabledForUser === null ? null : $this->createMock(IUser::class));
+		}
+		$user = $userSession->getUser();
 		$appManager = $this->createMock(IAppManager::class);
 		$appManager->method('isEnabledForUser')->willReturnCallback(
 			static fn (string $appId, ?IUser $asked = null): bool => $appId === Application::APP_ID && $asked === $user && $enabledForUser === true

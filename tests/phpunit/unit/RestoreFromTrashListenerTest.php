@@ -47,9 +47,8 @@ class RestoreFromTrashListenerTest extends TestCase {
 	}
 
 	/**
-	 * A restore done as a user the app is not enabled for - through the web,
-	 * WebDAV or occ, which acts as the owner - gives the file back without
-	 * the pad's step; one without a user takes it.
+	 * A restore done as a user the app is not enabled for gives the file
+	 * back without the pad's step; one without a user takes it.
 	 *
 	 * @return iterable<string,array{0:?bool,1:bool}>
 	 */
@@ -69,12 +68,15 @@ class RestoreFromTrashListenerTest extends TestCase {
 			->method('restore')
 			->willReturn(['status' => LifecycleResult::RESTORED]);
 		$userSession = $this->createMock(IUserSession::class);
-		$user = $this->createMock(IUser::class);
-		$user->method('getUID')->willReturn('alice');
+		$user = null;
+		if ($enabledForUser !== null) {
+			$user = $this->createMock(IUser::class);
+			$user->method('getUID')->willReturn('alice');
+		}
 		$userSession->method('getUser')->willReturn($user);
 		$nodes = $this->createMock(UserNodeResolver::class);
 		$nodes->method('resolveUserFileNodeByPath')->willReturn($file);
-		$listener = new RestoreFromTrashListener($restores, $userSession, $nodes, $this->createMock(LoggerInterface::class), $this->appAccess($enabledForUser));
+		$listener = new RestoreFromTrashListener($restores, $userSession, $nodes, $this->createMock(LoggerInterface::class), $this->appAccess($enabledForUser, $userSession));
 
 		$listener->handleLegacyHook(['filePath' => '/Notes.pad']);
 		$listener->handle($this->restoreEventFor($file));

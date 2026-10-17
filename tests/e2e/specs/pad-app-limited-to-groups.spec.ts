@@ -33,6 +33,7 @@ type Account = { uid: string, password: string }
 test.describe('the app limited to groups', () => {
 	const group = uniqueName('pad-users')
 	let outsider: Account | null = null
+	let groupMade = false
 	let restricted = false
 	const made: string[] = []
 	const settings = { enable_public_pads: 'yes', allow_external_pads: 'yes' }
@@ -99,11 +100,12 @@ test.describe('the app limited to groups', () => {
 			await setAppConfig(key, value)
 		}
 		await createGroup(group)
+		groupMade = true
 		await addToGroup(E2E.user, group)
 		outsider = await createAccount(uniqueName('pad-outsider'))
-		// Before the call: Nextcloud 34 installs the app again on the way,
-		// which leaves it off until the limit is set, so a call that breaks
-		// off still needs undoing.
+		// Before the call: Nextcloud installs the app again on the way, which
+		// leaves it off until the limit is set, so a call that breaks off
+		// still needs undoing.
 		restricted = true
 		await restrictAppToGroups(APP, [group])
 	})
@@ -130,7 +132,9 @@ test.describe('the app limited to groups', () => {
 			const uid = outsider.uid
 			await step(() => deleteAccount(uid))
 		}
-		await step(() => deleteGroup(group))
+		if (groupMade) {
+			await step(() => deleteGroup(group))
+		}
 		if (failures.length > 0) {
 			throw failures[0]
 		}

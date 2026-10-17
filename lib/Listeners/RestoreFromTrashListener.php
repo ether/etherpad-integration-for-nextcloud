@@ -123,8 +123,9 @@ class RestoreFromTrashListener implements IEventListener {
 		try {
 			// The pad's half makes a pad where the file names one without a
 			// row, so a restore done as a user the app is not enabled for -
-			// `occ trashbin:restore` acts as the file's owner - gives the file
-			// back without it. A check that fails is reported as the step's.
+			// `occ trashbin:restore` acts as the user whose trash it restores -
+			// gives the file back without a new one. A check that fails is
+			// reported as the step's.
 			if ($this->appAccess->excludesCurrentUser()) {
 				$this->logger->debug('RestoreFromTrash listener left the pad of a file restored as a user the app is not enabled for.', [
 					'app' => 'etherpad_nextcloud',

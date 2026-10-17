@@ -229,9 +229,18 @@ class PadTemplateProviderTest extends TestCase {
 
 	/**
 	 * A user the app is not enabled for gets no tile, and no template id
-	 * resolves for them: the storage is never asked.
+	 * resolves for them: the storage is never asked. Nor for a request
+	 * without a user.
+	 *
+	 * @return iterable<string,array{0:?bool}>
 	 */
-	public function testOffersAndResolvesNothingForAUserTheAppIsNotEnabledFor(): void {
+	public static function usersWithoutTheApp(): iterable {
+		yield 'a user the app is not enabled for' => [false];
+		yield 'no user' => [null];
+	}
+
+	#[DataProvider('usersWithoutTheApp')]
+	public function testOffersAndResolvesNothingForAUserWithoutTheApp(?bool $enabledForUser): void {
 		$storage = $this->createMock(PadTemplateStorage::class);
 		$storage->expects($this->never())->method($this->anything());
 		$provider = new PadTemplateProvider(
@@ -241,7 +250,7 @@ class PadTemplateProviderTest extends TestCase {
 			$this->l10n(),
 			$this->urlGenerator(),
 			$this->createMock(LoggerInterface::class),
-			$this->appAccess(false),
+			$this->appAccess($enabledForUser),
 		);
 
 		$this->assertSame([], $provider->getCustomTemplates(self::MIME));
