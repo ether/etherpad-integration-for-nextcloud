@@ -46,10 +46,10 @@ on every pull request that touches the app, against the oldest and newest
 supported Nextcloud with Etherpad 2 and against the newest with Etherpad 3,
 and nightly against every supported major.
 
-A release whose `lib/Migration` differs from the last one is also upgraded
-from it: the `e2e-upgrade` workflow runs `tests/e2e/docker/test-upgrade.sh` on
-the release pull request, and `TO_ARCHIVE` points it at the built archive
-locally ([tests/e2e/docker/README.md](../tests/e2e/docker/README.md)).
+Each release is also upgraded from the last one: the `e2e-upgrade` workflow
+runs `tests/e2e/docker/test-upgrade.sh` on the release pull request, and
+`TO_ARCHIVE` points it at the built archive locally
+([tests/e2e/docker/README.md](../tests/e2e/docker/README.md)).
 
 Before a release, run the suite once more against the container stack:
 

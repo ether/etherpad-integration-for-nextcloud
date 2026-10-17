@@ -67,12 +67,13 @@ jobs:
           # The merge's first parent is the base it merges onto.
           elif [[ "$AUTHOR" != 'dependabot[bot]' ]] && ! git diff --quiet HEAD^1 HEAD -- "${test_files[@]}"; then
             run=true why="The test or a script it runs changes"
+          # Every release: its update runs the repair steps whether or not a
+          # migration is new, and a migration works through services
+          # outside lib/Migration.
           elif [[ "$version" == "${from#v}" ]]; then
             run=false why="The version is $from's: no release to upgrade to"
-          elif git diff --quiet "$from" HEAD -- lib/Migration; then
-            run=false why="Nothing in lib/Migration differs from $from"
           else
-            run=true why="Version $version, and lib/Migration differs from $from"
+            run=true why="Version $version is a release in the making after $from"
           fi
           echo "$why: run=$run."
           echo "run=$run" >> "$GITHUB_OUTPUT"
