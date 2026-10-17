@@ -112,22 +112,25 @@ class KeepPadsThroughTheTrashMigrationTest extends TestCase {
 	}
 
 	/**
-	 * The rows of files still there go back to active a batch of 500 at a
-	 * time, until a batch comes back short: all of them, past the first.
+	 * The rows of files still there go back to active a batch at a time,
+	 * until a batch comes back short: all of them, past the first batch, and
+	 * past one that comes back full.
 	 */
 	public function testTakesBackEveryRowOfAFileStillTherePastTheFirstBatch(): void {
 		$rows = [];
 		$files = [];
-		for ($fileId = 1; $fileId <= 700; $fileId++) {
+		for ($fileId = 1; $fileId <= 5; $fileId++) {
 			$rows[] = ['file_id' => $fileId, 'pad_id' => 'pad-' . $fileId, 'access_mode' => BindingService::ACCESS_PUBLIC, 'state' => BindingService::STATE_PENDING_DELETE, 'deleted_at' => 90, 'updated_at' => 100];
 			$files[] = ['fileid' => $fileId, 'storage' => 1, 'path' => 'files/' . $fileId . '.pad'];
 		}
 		$table = new InMemoryBindingTable($rows, $files);
 		$clock = new FixedClock(500);
+		$migration = new class(new BindingService($table, $clock), $clock, $this->createMock(AppConfigService::class), $this->createMock(IJobList::class), $table) extends Version000005Date20260928120000 {
+			protected const BATCH = 2;
+		};
 
-		(new Version000005Date20260928120000(new BindingService($table, $clock), $clock, $this->createMock(AppConfigService::class), $this->createMock(IJobList::class), $table))
-			->postSchemaChange($this->createMock(IOutput::class), fn (): ISchemaWrapper => $this->createMock(ISchemaWrapper::class), []);
+		$migration->postSchemaChange($this->createMock(IOutput::class), fn (): ISchemaWrapper => $this->createMock(ISchemaWrapper::class), []);
 
-		$this->assertSame([BindingService::STATE_ACTIVE => 700], array_count_values(array_column($table->rows, 'state')));
+		$this->assertSame([BindingService::STATE_ACTIVE => 5], array_count_values(array_column($table->rows, 'state')));
 	}
 }

@@ -11,6 +11,7 @@ use OCA\EtherpadNextcloud\Controller\EmbedControllerErrorMapper;
 use OCA\EtherpadNextcloud\Service\AppConfigService;
 use OCA\EtherpadNextcloud\Service\EmbedResponseBuilder;
 use OCA\EtherpadNextcloud\Service\UserNodeResolver;
+use OCA\EtherpadNextcloud\Tests\Support\TemplateKeys;
 use OCP\AppFramework\Http\TemplateResponse;
 use OCP\Files\File;
 use OCP\Files\NotFoundException;
@@ -43,20 +44,23 @@ class EmbedControllerTest extends TestCase {
 		$this->assertSame('csrf-token-value', $params['requesttoken']);
 		$this->assertSame(['https://portal.example.test'], $params['trusted_embed_origins']);
 		$this->assertSame(42, $params['file_id']);
-		$this->assertSame(['/open-by-id', '/initialize/__FILE_ID__'], [
+		$this->assertSame(['/open-by-id', '/initialize/__FILE_ID__', '/recover/__FILE_ID__', '/find-original/__FILE_ID__'], [
 			$params['open_by_id_url'],
 			$params['initialize_by_id_url_template'],
+			$params['recover_url_template'],
+			$params['find_original_url_template'],
 		]);
 		// The page's own sentence for a request nothing came back for.
 		$this->assertSame('Nextcloud did not answer. Check your connection and try again.', $params['l10n']['unanswered']);
 	}
 
 	/**
-	 * Each page gets every sentence its template reads, and the open page
-	 * the addresses of recovery: a key the template reads that the
-	 * controller leaves out shows nothing where a sentence belongs.
+	 * Each page gets the sentences its template reads, and no other: one left
+	 * out falls back to an English sentence on the open page, or shows
+	 * nothing - its loading and error titles, its recovery texts, and every
+	 * sentence of the create page - and one no template reads is dead.
 	 */
-	public function testEachPageGetsEverySentenceItsTemplateReads(): void {
+	public function testEachPageGetsTheSentencesItsTemplateReads(): void {
 		$file = $this->createMock(File::class);
 		$file->method('getName')->willReturn('Example.pad');
 		$folder = $this->createMock(\OCP\Files\Folder::class);
@@ -65,21 +69,13 @@ class EmbedControllerTest extends TestCase {
 		$resolver->method('resolveUserFileNodeById')->willReturn($file);
 		$resolver->method('resolveUserFolderNodeById')->willReturn($folder);
 		$controller = $this->buildController($resolver);
-		$read = static function (string $template): array {
-			preg_match_all("/\\['l10n'\\]\\['([a-z_]+)'\\]/", (string)file_get_contents(__DIR__ . '/../../../templates/' . $template . '.php'), $keys);
-			$keys = array_values(array_unique($keys[1]));
-			sort($keys);
-			return $keys;
-		};
 
 		foreach (['embed' => $controller->showById(42), 'embed-create' => $controller->createByParent(99)] as $template => $response) {
 			$this->assertSame($template, $response->getTemplateName());
 			$given = array_keys($response->getParams()['l10n']);
 			sort($given);
-			$this->assertSame($read($template), $given, $template);
+			$this->assertSame(TemplateKeys::read($template)['l10n'], $given, $template);
 		}
-		$params = $controller->showById(42)->getParams();
-		$this->assertSame(['/recover/__FILE_ID__', '/find-original/__FILE_ID__'], [$params['recover_url_template'], $params['find_original_url_template']]);
 	}
 
 	public function testShowByIdReturnsNoviewerOnInvalidFileId(): void {
