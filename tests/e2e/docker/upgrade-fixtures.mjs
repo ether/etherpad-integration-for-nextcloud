@@ -179,8 +179,9 @@ const ANY = Symbol('any')
 /**
  * What each migration changes in the rows, settings and index names the
  * snapshot holds, applied to the snapshot from before it ran. The rest of
- * those has to stay as it was. A migration that runs needs an entry, empty
- * if it changes none of them.
+ * those has to stay as it was, but the installed version, which has to be
+ * the new one. A migration that runs needs an entry, empty if it changes
+ * none of them.
  *
  * @type {Record<string, (expected: Snapshot) => void>}
  */
@@ -212,8 +213,10 @@ const MIGRATIONS = {
 /** @param {string} root */
 const readTarget = (root) => {
 	const info = readFileSync(join(root, 'appinfo/info.xml'), 'utf8')
+	const version = info.match(/<version>([^<]+)<\/version>/)?.[1]
+	assert.ok(version, `${root}/appinfo/info.xml names no version`)
 	return {
-		version: info.match(/<version>([^<]+)<\/version>/)?.[1] ?? '',
+		version,
 		migrations: readdirSync(join(root, 'lib/Migration'))
 			.filter((name) => /^Version\w+\.php$/.test(name))
 			.map((name) => name.slice('Version'.length, -'.php'.length))

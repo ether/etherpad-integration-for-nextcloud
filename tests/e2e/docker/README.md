@@ -89,7 +89,8 @@ Nextcloud runs it.
 It snapshots the rows, settings, migrations, jobs and index names before
 and after the update. The entries in `upgrade-fixtures.mjs` say what the
 migrations that ran change in rows, settings and index names, and the
-rest of what the snapshots hold has to stay as it was. A migration that
+rest of these has to stay as it was, but for `installed_version`, which
+has to be the new version. A migration that
 runs needs an entry, empty if it changes none of these. Of the jobs, those
 whose class is gone have to be gone, and those `info.xml` names have to be
 there. A repair step's warning fails the update. The test then opens,
@@ -103,17 +104,17 @@ one first. `up.sh` writes `tests/e2e/docker/.env` and
 `tests/e2e/.env.e2e.docker` for it; the ones that were there before go
 back when the test ends, and where there were none, the test's stay.
 A failed run leaves its snapshots, pads and the Nextcloud log in a
-directory it names; `UPGRADE_WORK`, a new or empty directory, keeps them
-from every run. Remove the stack with:
+directory it names. `UPGRADE_WORK` sets that directory, which has to be
+new or empty; a passing run leaves its snapshots and pads there too.
+Remove the stack with:
 
 ```bash
 docker compose -p epnc-upgrade -f tests/e2e/docker/compose.yml down -v --remove-orphans
 ```
 
 On GitHub the `e2e-upgrade` workflow runs it on every supported major, for
-the pull requests its first job picks: mainly a release in the making
-whose `lib/Migration` differs from the last release, and a change to the
-test.
+the pull requests its first job picks; that job's log says whether and
+why.
 
 ## Certificates
 

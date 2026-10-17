@@ -3,7 +3,7 @@
 # Copyright (c) 2026 Jacob Bühler
 #
 # appinfo/info.xml declares which Nextcloud versions this app supports.
-# The CI matrices, the composer constraint and lock, the stack defaults and
+# The CI matrices, the composer constraint and lock, the stack default and
 # the docs restate that range; this checks each against it and names the
 # ones that have to follow a change.
 #

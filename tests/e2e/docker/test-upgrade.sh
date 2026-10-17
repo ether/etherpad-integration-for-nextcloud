@@ -71,8 +71,8 @@ fi
 if [[ -n "${UPGRADE_WORK:-}" ]]; then
 	work="$UPGRADE_WORK"
 	mkdir -p "$work"
-	# A run unpacks over what an earlier one left, and its cleanup would
-	# write over that run's log.
+	# An earlier run's from/ or to/ would stop this one at its mkdir, and
+	# its cleanup would write over that run's log.
 	if [[ -n "$(ls -A "$work")" ]]; then
 		echo "UPGRADE_WORK $work is not empty. Name a new or empty directory." >&2
 		exit 1
@@ -282,8 +282,8 @@ occ config:list etherpad_nextcloud --output=json > "$work/config.json"
 fixtures migrated
 
 # On again, for the pads deleted for good to go. The web server keeps the
-# app config for up to 3 s (Nextcloud's LOCAL_CACHE_TTL), where occ cannot
-# clear it.
+# app config for under 4 s (Nextcloud's LOCAL_CACHE_TTL of 3 s, which APCu
+# counts in whole seconds), where occ cannot clear it.
 occ config:app:set etherpad_nextcloud delete_pad_with_file --value=yes
 sleep 4
 echo "==> pads on $to_version"

@@ -3,7 +3,7 @@
 name: e2e-upgrade
 
 # The upgrade from the last release, on every supported Nextcloud major,
-# for the pull requests the first job picks; its log says which and why.
+# for the pull requests the first job picks; its log says whether and why.
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]

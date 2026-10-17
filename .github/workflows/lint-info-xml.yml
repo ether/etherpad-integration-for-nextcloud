@@ -56,7 +56,7 @@ jobs:
         run: python3 scripts/check-version-alignment.py
 
       # The same argument for the supported Nextcloud range: info.xml declares
-      # it and eight other files restate it.
+      # it, and the files the script names restate it.
       - name: Compare info.xml and the Nextcloud range everything else assumes
         run: python3 scripts/check-nextcloud-range.py
 
