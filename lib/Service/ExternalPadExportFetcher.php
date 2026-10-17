@@ -61,8 +61,8 @@ class ExternalPadExportFetcher {
 	 * carry, IPv6 is public only in global unicast, `2000::/3`, and outside
 	 * these blocks IANA's special-purpose registry marks as not globally
 	 * reachable (checked 2026-10-17). The other addresses that are not
-	 * public - loopback, IPv4-mapped and IPv4-compatible, unique-local,
-	 * link-local, site-local, multicast - lie outside `2000::/3`.
+	 * public lie outside `2000::/3`, among them loopback, IPv4-mapped and
+	 * IPv4-compatible, unique-local, link-local, site-local and multicast.
 	 *
 	 * @see https://www.iana.org/assignments/iana-ipv6-special-registry/
 	 */
@@ -294,8 +294,10 @@ class ExternalPadExportFetcher {
 	 * name it does not match as 51 before libcurl 7.62.0.
 	 *
 	 * One certificate failure decides it, whatever the other addresses did:
-	 * an instance without an IPv6 route fails the IPv6 attempt on every
-	 * try, with the code cURL also gives a connection refused for a moment.
+	 * asked from an instance without an IPv6 route, a host whose
+	 * certificate is not trusted fails on it over IPv4, and over IPv6 on
+	 * every try, with the code cURL also gives a connection refused for a
+	 * moment.
 	 * A name whose addresses show different certificates, the trusted one
 	 * briefly down, gets the certificate's sentence too; opening the file
 	 * again tries again.
@@ -312,8 +314,7 @@ class ExternalPadExportFetcher {
 	/**
 	 * Only an answer that says it *is* the export. A redirect's body is
 	 * never taken: behind a 302 there is usually a sign-in page, which the
-	 * HTML export could not tell from a pad. A redirect gets its own
-	 * reason, as it usually means a pad behind a login.
+	 * HTML export could not tell from a pad.
 	 */
 	private function assertSuccessfulExportStatus(int $httpCode): void {
 		if ($httpCode === 404) {
@@ -535,13 +536,16 @@ class ExternalPadExportFetcher {
 		$host = strtolower($parts['host'] ?? '');
 		$port = isset($parts['port']) ? $parts['port'] : 443;
 		$path = $parts['path'] ?? '';
-		// `+` is literal in a URL path; only form bodies read it as a space.
+		// `+` is literal in a URL path; only form encoding reads it as a space.
 		// urldecode() would turn `/p/team+pad` into another pad's name.
 		$decodedPath = rawurldecode($path);
-		// parse_url() takes anything in brackets as the host; only an IPv6
-		// address belongs there, and cURL refuses the rest.
+		// parse_url() takes anything after a bracket as the host, closed or
+		// not. Only an IPv6 address without a zone belongs there: cURL
+		// refuses an IPv4 address, and a zone names an interface of this
+		// server.
 		if ($scheme !== 'https' || $host === '' || $port <= 0 || $port > 65535
-			|| (str_starts_with($host, '[') && filter_var(substr($host, 1, -1), FILTER_VALIDATE_IP, FILTER_FLAG_IPV6) === false)
+			|| (str_starts_with($host, '[') && (!str_ends_with($host, ']')
+				|| filter_var(substr($host, 1, -1), FILTER_VALIDATE_IP, FILTER_FLAG_IPV6) === false))
 			|| preg_match('/[\x00-\x1F\x7F]/', $decodedPath) === 1) {
 			throw new ExternalPadException('Invalid public pad URL.', ExternalPadException::INVALID_URL);
 		}

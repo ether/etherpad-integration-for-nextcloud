@@ -105,19 +105,24 @@ class ExternalPadExportFetcherTest extends TestCase {
 	/**
 	 * Many of the refused addresses pass PHP's filter on some supported
 	 * version or in one way of writing them; the check must depend on
-	 * neither. The addresses just outside a block stay public.
+	 * neither. Where a refused block borders public space, the address
+	 * across the border stays public. Each address is tried behind a name
+	 * and as the URL's host.
 	 */
 	#[DataProvider('addressesAndWhetherTheyArePublic')]
 	public function testRefusesAddressesThatAreNotPublic(string $address, bool $public): void {
 		$records = [[str_contains($address, ':') ? 'ipv6' : 'ip' => $address]];
-		try {
-			$validated = $this->fetcher($this->buildExternalEnabledConfig(), $records)
-				->normalizeAndValidateExternalPublicPadUrl('https://pad.example/p/pad');
-			$this->assertTrue($public, $address . ': not refused');
-			$this->assertSame('https://pad.example/p/pad', $validated['pad_url']);
-		} catch (ExternalPadException $e) {
-			$this->assertFalse($public, $address . ': refused');
-			$this->assertSame(ExternalPadException::LOCAL_ADDRESS, $e->reason());
+		$host = str_contains($address, ':') ? '[' . $address . ']' : $address;
+		foreach (['https://pad.example/p/pad', 'https://' . $host . '/p/pad'] as $url) {
+			try {
+				$validated = $this->fetcher($this->buildExternalEnabledConfig(), $records)->normalizeAndValidateExternalPublicPadUrl($url);
+				$this->assertTrue($public, $url . ': not refused');
+				$this->assertSame($url, $validated['pad_url']);
+			} catch (ExternalPadException $e) {
+				$this->assertFalse($public, $url . ': refused');
+				$this->assertSame(ExternalPadException::LOCAL_ADDRESS, $e->reason(), $url);
+				$this->assertStringEndsWith(': ' . $address, $e->getMessage(), $url);
+			}
 		}
 	}
 
@@ -135,7 +140,7 @@ class ExternalPadExportFetcherTest extends TestCase {
 			'private, the last of 172.16.0.0/12' => ['172.31.255.255', false],
 			'IETF protocol assignments' => ['192.0.0.8', false],
 			'an anycast address inside a block that counts as a whole' => ['192.0.0.9', false],
-			'the last IETF protocol assignment' => ['192.0.0.255', false],
+			'the IETF protocol assignments, its last address' => ['192.0.0.255', false],
 			'the first documentation block, its last address' => ['192.0.2.255', false],
 			'the 6a44 relay' => ['192.88.99.2', false],
 			'private, the last of 192.168.0.0/16' => ['192.168.255.255', false],
@@ -157,7 +162,7 @@ class ExternalPadExportFetcherTest extends TestCase {
 			'NAT64 to shared address space' => ['64:ff9b::6440:1', false],
 			'NAT64 to link-local, dotted' => ['64:ff9b::169.254.169.254', false],
 			'NAT64\'s last address, the limited broadcast address' => ['64:ff9b::ffff:ffff', false],
-			'just past the NAT64 prefix' => ['64:ff9b::1:101:101', false],
+			'past the NAT64 prefix, with a public address a /95 would read' => ['64:ff9b::1:101:101', false],
 			'6to4 for a private address' => ['2002:a00:1::1', false],
 			'6to4 for loopback' => ['2002:7f00:1::1', false],
 			'6to4 for a private address above 128.0.0.0' => ['2002:c0a8:1::1', false],
@@ -201,7 +206,7 @@ class ExternalPadExportFetcherTest extends TestCase {
 			'NAT64 to a public address' => ['64:ff9b::101:101', true],
 			'NAT64 to a public address above 128.0.0.0' => ['64:ff9b::8efa:b54e', true],
 			'6to4 for a public address' => ['2002:101:101::1', true],
-			'just past 6to4' => ['2003:a00:1::1', true],
+			'just past 6to4' => ['2003::', true],
 			'the first global unicast address' => ['2000::', true],
 			'just past the IETF block' => ['2001:200::', true],
 			'just past IPv6 documentation' => ['2001:db9::', true],
@@ -749,6 +754,7 @@ class ExternalPadExportFetcherTest extends TestCase {
 			'a host not on the allowlist' => ['https://pad.example/p/pad', 'other.example', null, ExternalPadException::NOT_ALLOWED],
 			'an IPv4 address in brackets' => ['https://[1.2.3.4]/p/pad', '', null, ExternalPadException::INVALID_URL],
 			'an IPv6 address with a zone' => ['https://[fe80::1%25eth0]/p/pad', '', null, ExternalPadException::INVALID_URL],
+			'an IPv6 address without its closing bracket' => ['https://[2606:4700::1111:8443/p/pad', '', null, ExternalPadException::INVALID_URL],
 		];
 	}
 
