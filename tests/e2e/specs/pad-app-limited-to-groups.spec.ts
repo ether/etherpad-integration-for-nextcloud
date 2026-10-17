@@ -72,6 +72,14 @@ test.describe('the app limited to groups', () => {
 		return (await res.text()).includes(name)
 	}
 
+	const contentFor = async (account: Account, name: string): Promise<string> => {
+		const res = await fetch(`${E2E.baseURL}/remote.php/dav/files/${encodeURIComponent(account.uid)}/${encodeURIComponent(name)}`, {
+			headers: { Authorization: authOf(account) },
+		})
+		expect(res.status, `reading ${name} as ${account.uid}`).toBe(200)
+		return res.text()
+	}
+
 	const existsFor = async (account: Account, name: string): Promise<boolean> => {
 		const res = await fetch(`${E2E.baseURL}/remote.php/dav/files/${encodeURIComponent(account.uid)}/${encodeURIComponent(name)}`, {
 			method: 'PROPFIND',
@@ -100,22 +108,31 @@ test.describe('the app limited to groups', () => {
 		await restrictAppToGroups(APP, [group])
 	})
 
+	// Each step on its own: one that fails must not keep the app limited
+	// or a setting changed.
 	test.afterAll(async () => {
-		try {
-			if (restricted) {
-				await enableAppForEveryone(APP)
-			}
-		} finally {
-			for (const name of made) {
-				await deleteViaDav(name, { pastTrash: true })
-			}
-			if (outsider !== null) {
-				await deleteAccount(outsider.uid)
-			}
-			await deleteGroup(group)
-			for (const [key, value] of Object.entries(before)) {
-				await restoreAppConfig(key, value)
-			}
+		const failures: unknown[] = []
+		const step = async (run: () => Promise<void>): Promise<void> => {
+			await run().catch((error: unknown) => {
+				failures.push(error)
+			})
+		}
+		if (restricted) {
+			await step(() => enableAppForEveryone(APP))
+		}
+		for (const [key, value] of Object.entries(before)) {
+			await step(() => restoreAppConfig(key, value))
+		}
+		for (const name of made) {
+			await step(() => deleteViaDav(name, { pastTrash: true }))
+		}
+		if (outsider !== null) {
+			const uid = outsider.uid
+			await step(() => deleteAccount(uid))
+		}
+		await step(() => deleteGroup(group))
+		if (failures.length > 0) {
+			throw failures[0]
 		}
 	})
 
@@ -138,12 +155,14 @@ test.describe('the app limited to groups', () => {
 		})
 	}
 
-	test('creates nothing from the blank entry for a user outside the group', async () => {
+	// Nextcloud makes the file before the app hears of it; it stays as made,
+	// with no pad written into it.
+	test('provisions no pad from the blank entry for a user outside the group', async () => {
 		const name = uniquePadName('limited-outside')
 		const res = await templateApi(outsider!, '/create', { filePath: `/${name}`, templateType: 'user', templatePath: '' })
 
 		expect(res.status, 'the create outside the group').toBe(403)
-		expect(await existsFor(outsider!, name), 'the file of the refused create').toBe(false)
+		expect(await contentFor(outsider!, name), 'the file of the refused create').toBe('')
 	})
 
 	// A refused tile leaves no file, not even in the trash.

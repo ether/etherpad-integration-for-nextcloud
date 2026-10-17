@@ -11,12 +11,10 @@ namespace OCA\EtherpadNextcloud\Listeners;
 use OCA\EtherpadNextcloud\Exception\PadFileChangedException;
 use OCA\EtherpadNextcloud\Exception\PadTypeDisabledException;
 use OCA\EtherpadNextcloud\Service\AppAccess;
-use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\EtherpadNextcloud\Service\PadBootstrapService;
 use OCA\EtherpadNextcloud\Service\ExternalPadSeeder;
 use OCA\EtherpadNextcloud\Service\PadCreationService;
 use OCA\EtherpadNextcloud\Service\PadTemplateStorage;
-use OCA\EtherpadNextcloud\Service\UserNodeResolver;
 use OCA\EtherpadNextcloud\Template\PadTemplateProvider;
 use OCA\EtherpadNextcloud\Util\PadFileType;
 use OCA\EtherpadNextcloud\Util\SafeError;
@@ -47,8 +45,6 @@ class FileCreatedFromTemplateListener implements IEventListener {
 		private IUserSession $userSession,
 		private LoggerInterface $logger,
 		private AppAccess $appAccess,
-		private BindingService $bindingService,
-		private UserNodeResolver $userNodeResolver,
 	) {
 	}
 
@@ -73,12 +69,15 @@ class FileCreatedFromTemplateListener implements IEventListener {
 			$this->resetTargetToEmpty($target);
 			return;
 		}
-		$template = $event->getTemplate();
+		// The file Nextcloud made stays as it was given, empty or a copy of
+		// the user's own template, and no pad backs it. Removing it again
+		// could not be told apart from a file written meanwhile, which a
+		// delete that skips the trash would take for good.
 		if ($this->appAccess->excludesCurrentUser()) {
-			$this->removeRefusedTarget($target, $user->getUID(), !$template instanceof File);
 			throw new NotPermittedException('Pads are not enabled for this user.');
 		}
 
+		$template = $event->getTemplate();
 		if (!$template instanceof File) {
 			// Blank-template case: initialise frontmatter now so /open
 			// doesn't 4xx on the first call.
@@ -164,46 +163,6 @@ class FileCreatedFromTemplateListener implements IEventListener {
 			// pad type travels on from here as well.
 			$this->initializeBlankPad($user->getUID(), $unchanged);
 		}
-	}
-
-	/**
-	 * Nextcloud created the file before this event: an empty `.pad`, or a
-	 * copy of the user's own template, that no pad backs. It goes to the
-	 * trash, as a delete does. A file that may be someone's stays: one a
-	 * pad's row names, or one with content after the blank entry, which
-	 * Nextcloud hands over when its cache had missed an existing file. The
-	 * file is found again by its id and must show the ETag it was given
-	 * with: its content is not read, which a template can make large. The
-	 * check and the delete are not atomic, as Nextcloud's delete takes the
-	 * file's lock itself; a file written in between goes to the trash, from
-	 * which it can be restored.
-	 */
-	private function removeRefusedTarget(File $target, string $uid, bool $blank): void {
-		$fileId = null;
-		try {
-			$fileId = $target->getId();
-			$size = $target->getSize();
-			$etag = $target->getEtag();
-			$node = $this->userNodeResolver->resolveUserFileNodeById($uid, $fileId);
-			$leave = ($blank && $size > 0)
-				|| $this->bindingService->findByFileId($fileId) !== null
-				|| $node->getEtag() !== $etag;
-		} catch (\Throwable $e) {
-			$this->logger->warning('Left the .pad file of a refused template create: it could not be identified.', [
-				'app' => 'etherpad_nextcloud',
-				'fileId' => $fileId,
-				...SafeError::context($e),
-			]);
-			return;
-		}
-		if ($leave) {
-			$this->logger->warning('Left the .pad file of a refused template create: it may not be the file this create was given.', [
-				'app' => 'etherpad_nextcloud',
-				'fileId' => $fileId,
-			]);
-			return;
-		}
-		$this->deleteTarget($node, $fileId);
 	}
 
 	private function initializeBlankPad(string $uid, File $target, ?string $preferredAccessMode = null): void {

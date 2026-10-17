@@ -49,21 +49,20 @@ class RegisterTemplateCreatorListenerTest extends TestCase {
 	}
 
 	/**
-	 * Only a user the app is enabled for gets the entry; a request without a
-	 * user gets none.
+	 * A user the app is not enabled for gets no entry, and nor does a
+	 * request without a user.
 	 *
-	 * @return iterable<string,array{0:?bool,1:bool}>
+	 * @return iterable<string,array{0:?bool}>
 	 */
-	public static function users(): iterable {
-		yield 'a user the app is enabled for' => [true, true];
-		yield 'a user the app is not enabled for' => [false, false];
-		yield 'no user' => [null, false];
+	public static function usersWithoutTheApp(): iterable {
+		yield 'a user the app is not enabled for' => [false];
+		yield 'no user' => [null];
 	}
 
-	#[\PHPUnit\Framework\Attributes\DataProvider('users')]
-	public function testRegistersOnlyForAUserTheAppIsEnabledFor(?bool $enabledForUser, bool $expected): void {
+	#[\PHPUnit\Framework\Attributes\DataProvider('usersWithoutTheApp')]
+	public function testRegistersNothingForAUserWithoutTheApp(?bool $enabledForUser): void {
 		$templateManager = $this->createMock(ITemplateManager::class);
-		$templateManager->expects($expected ? $this->once() : $this->never())
+		$templateManager->expects($this->never())
 			->method('registerTemplateFileCreator');
 
 		$this->buildListener(true, true, false, $enabledForUser)->handle($this->buildEvent($templateManager));

@@ -10,6 +10,7 @@ use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
 use OCA\EtherpadNextcloud\Listeners\RestoreFromTrashListener;
 use OCA\EtherpadNextcloud\Service\Binding;
 use OCA\EtherpadNextcloud\Service\BindingService;
+use OCA\EtherpadNextcloud\Service\AppAccess;
 use OCA\EtherpadNextcloud\Service\EtherpadClient;
 use OCA\EtherpadNextcloud\Service\LifecycleResult;
 use OCA\EtherpadNextcloud\Service\PadFileService;
@@ -18,6 +19,7 @@ use OCA\EtherpadNextcloud\Service\UserNodeResolver;
 use OCA\EtherpadNextcloud\Tests\Support\BuildsAppAccess;
 use OCA\EtherpadNextcloud\Tests\Support\WatchesTheWholeLogger;
 use OCA\EtherpadNextcloud\Tests\Support\WiresTheLifecycle;
+use OCP\App\IAppManager;
 use OCP\EventDispatcher\Event;
 use OCP\Files\File;
 use OCP\Files\IRootFolder;
@@ -45,10 +47,9 @@ class RestoreFromTrashListenerTest extends TestCase {
 	}
 
 	/**
-	 * The pad's half of a restore makes a pad where the file names one
-	 * without a row, so a signed-in user the app is not enabled for gets the
-	 * file back without it. A restore without a signed-in user - occ, a job -
-	 * is the admin's and goes on.
+	 * A restore done as a user the app is not enabled for - through the web,
+	 * WebDAV or occ, which acts as the owner - gives the file back without
+	 * the pad's step; one without a user takes it.
 	 *
 	 * @return iterable<string,array{0:?bool,1:bool}>
 	 */
@@ -76,6 +77,29 @@ class RestoreFromTrashListenerTest extends TestCase {
 		$listener = new RestoreFromTrashListener($restores, $userSession, $nodes, $this->createMock(LoggerInterface::class), $this->appAccess($enabledForUser));
 
 		$listener->handleLegacyHook(['filePath' => '/Notes.pad']);
+		$listener->handle($this->restoreEventFor($file));
+	}
+
+	/**
+	 * The file is back before the listener hears of it, so a check that
+	 * fails stops the pad's step, as the step's own failure would, and goes
+	 * no further.
+	 */
+	public function testReportsAFailedAccessCheckAsTheStepsFailure(): void {
+		$file = $this->createMock(File::class);
+		$file->method('getName')->willReturn('Notes.pad');
+		$file->method('getId')->willReturn(42);
+		$restores = $this->createMock(RestoreService::class);
+		$restores->expects($this->never())->method('restore');
+		$userSession = $this->createMock(IUserSession::class);
+		$userSession->method('getUser')->willReturn($this->createMock(IUser::class));
+		$appManager = $this->createMock(IAppManager::class);
+		$appManager->method('isEnabledForUser')->willThrowException(new \RuntimeException('group backend down'));
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects($this->once())->method('error')
+			->with('Could not restore the pad of a file back from the trash. The file itself is restored.', $this->anything());
+		$listener = new RestoreFromTrashListener($restores, $userSession, $this->createMock(UserNodeResolver::class), $logger, new AppAccess($appManager, $userSession));
+
 		$listener->handle($this->restoreEventFor($file));
 	}
 

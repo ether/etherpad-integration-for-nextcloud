@@ -36,7 +36,7 @@ class AppAccess {
 
 	/**
 	 * For acting on a file: a signed-in user the app is not enabled for.
-	 * Without one - occ, a background job - the admin acts, and public
+	 * False without one: a background job acts for nobody, and public
 	 * shares decide their access on their own.
 	 */
 	public function excludesCurrentUser(): bool {

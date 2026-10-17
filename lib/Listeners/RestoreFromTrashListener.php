@@ -109,15 +109,6 @@ class RestoreFromTrashListener implements IEventListener {
 	 */
 	private function restoreNode(File $node, string $via): void {
 		$fileId = $this->loggableFileId($node);
-		// The pad's half makes a pad where the file names one without a row,
-		// so a user outside the app's groups gets the file back without it.
-		if ($this->appAccess->excludesCurrentUser()) {
-			$this->logger->debug('RestoreFromTrash listener left the pad of a file restored by a user the app is not enabled for.', [
-				'app' => 'etherpad_nextcloud',
-				'fileId' => $fileId,
-			]);
-			return;
-		}
 		if ($fileId !== null && $via === self::VIA_EVENT && isset($this->decidedByHook[$fileId])) {
 			unset($this->decidedByHook[$fileId]);
 			$this->logger->debug('RestoreFromTrash listener left a restore its hook pass decided.', [
@@ -130,6 +121,17 @@ class RestoreFromTrashListener implements IEventListener {
 			unset($this->decidedByHook[$fileId]);
 		}
 		try {
+			// The pad's half makes a pad where the file names one without a
+			// row, so a restore done as a user the app is not enabled for -
+			// `occ trashbin:restore` acts as the file's owner - gives the file
+			// back without it. A check that fails is reported as the step's.
+			if ($this->appAccess->excludesCurrentUser()) {
+				$this->logger->debug('RestoreFromTrash listener left the pad of a file restored as a user the app is not enabled for.', [
+					'app' => 'etherpad_nextcloud',
+					'fileId' => $fileId,
+				]);
+				return;
+			}
 			$result = $this->restoreService->restore($node);
 			if ($fileId !== null && $via === self::VIA_HOOK && ($result['reason'] ?? '') !== RestoreService::REASON_FILE_UNREADABLE) {
 				$this->decidedByHook[$fileId] = true;
