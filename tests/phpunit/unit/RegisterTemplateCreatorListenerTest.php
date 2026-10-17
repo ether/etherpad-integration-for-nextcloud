@@ -22,12 +22,8 @@ class RegisterTemplateCreatorListenerTest extends TestCase {
 	use BuildsAppAccess;
 
 	/**
-	 * This entry is the only way to create a pad from the Files app, so it has
-	 * to survive as long as anything at all can be created — the blank option
-	 * produces whichever pad type is available, and the external tile follows
-	 * its own setting. Dropping it whenever protected was off left a
-	 * public-only instance with no way to create anything; ignoring external
-	 * pads left an external-only instance with a tile nobody can open.
+	 * The entry stays while anything can be created: a pad of any type, or an
+	 * external one, which follows its own setting.
 	 *
 	 * @return iterable<string,array{0:bool,1:bool,2:bool,3:bool}>
 	 */

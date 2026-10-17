@@ -100,10 +100,7 @@ class PadTemplateProviderTest extends TestCase {
 		}
 	}
 
-	/**
-	 * Nextcloud's picker collects the field and hands it to the create event,
-	 * which is what keeps a file from ever existing without its pad.
-	 */
+	/** The external tile asks for the address the create listener links the file to. */
 	public function testTheExternalTileAsksForThePadAddress(): void {
 		$templates = $this->buildProvider(external: true)->getCustomTemplates(self::MIME);
 		$fields = $templates[1]->jsonSerialize()['fields'] ?? [];
@@ -128,7 +125,6 @@ class PadTemplateProviderTest extends TestCase {
 		$this->assertStringContainsString('etherpad-icon', (string)$templates[1]->jsonSerialize()['previewUrl']);
 	}
 
-	/** Only the type tile carries fields; the public one has nothing to ask. */
 	public function testThePublicTileAsksForNothing(): void {
 		$templates = $this->buildProvider()->getCustomTemplates(self::MIME);
 

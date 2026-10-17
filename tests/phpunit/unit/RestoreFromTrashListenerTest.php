@@ -83,10 +83,9 @@ class RestoreFromTrashListenerTest extends TestCase {
 	}
 
 	/**
-	 * The file is back before the listener hears of it, so a check that
-	 * fails stops the pad's step, as the step's own failure would, and goes
-	 * no further. It decides nothing either: the event pass asks again, so a
-	 * group backend down for a moment does not cost the pad.
+	 * A check that fails ends the pad's step as the step's own failure
+	 * would, and the file stays restored. It decides nothing: the event pass
+	 * asks again.
 	 */
 	public function testReportsAFailedAccessCheckAsTheStepsFailure(): void {
 		$file = $this->createMock(File::class);
@@ -702,11 +701,8 @@ class RestoreFromTrashListenerTest extends TestCase {
 
 	/**
 	 * Nextcloud 31 hands the event a node that is not resolvable yet, so
-	 * reading its id throws. That exception used to escape the listener and
-	 * abort the restore itself — a .pad could not be brought back from the
-	 * trash at all, through the web UI, WebDAV or `occ trashbin:restore`.
-	 * The owner is taken from the path, which says whose file it is,
-	 * rather than from the session, which never has to be asked.
+	 * reading its id throws. The node is found again by its path, whose
+	 * owner says whose file it is, without asking the session.
 	 */
 	public function testUnresolvableEventTargetIsLookedUpByPath(): void {
 		$unresolvable = $this->createMock(File::class);
@@ -751,16 +747,9 @@ class RestoreFromTrashListenerTest extends TestCase {
 	}
 
 	/**
-	 * A node can go stale between being handed over and the lifecycle
-	 * failing, so the error path must survive an id it can no longer read.
-	 * Logging that threw a second time used to replace the exception being
-	 * reported, which is why the Nextcloud 31 failure showed up in the log
-	 * as a bare NotFoundException with nothing about its cause.
-	 *
-	 * Surviving is half of it. Since the flow stopped reporting its own
-	 * failures this listener is the only one left that can, so the entry
-	 * has to be there too - an id that cannot be read leaves it out rather
-	 * than standing in for it.
+	 * A node can go stale before the lifecycle fails, so the report must
+	 * survive an id it can no longer read: this listener is the one that
+	 * logs the failure, and logs it without the id.
 	 */
 	public function testALifecycleErrorIsReportedWhenTheIdCannotBeRead(): void {
 		$reads = 0;

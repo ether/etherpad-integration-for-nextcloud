@@ -36,12 +36,9 @@ class RegisterTemplateCreatorListener implements IEventListener {
 			return;
 		}
 
-		// This entry is the only way to create a pad from the Files app – and
-		// the only way to reach the shared templates and the tiles – so it
-		// stays as long as anything at all can be created, for a user the app
-		// is enabled for. External pads count: they are not a pad type and
-		// follow their own setting, so an instance offering only those would
-		// otherwise have a tile nobody can open.
+		// The entry is also the way to the template picker, so it stays while
+		// anything can be created: external pads too, which follow their own
+		// setting rather than a pad type.
 		if (!$this->anythingCanBeCreated() || !$this->appAccess->isEnabledForCurrentUser()) {
 			return;
 		}
