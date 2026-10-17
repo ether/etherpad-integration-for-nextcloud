@@ -18,7 +18,6 @@ use OCP\Files\Template\RegisterTemplateCreatorEvent;
 use OCP\Files\Template\TemplateFileCreator;
 use OCP\IConfig;
 use OCP\IL10N;
-use OCP\IUserSession;
 
 /**
  * @template-implements IEventListener<Event>
@@ -29,7 +28,6 @@ class RegisterTemplateCreatorListener implements IEventListener {
 		private PadTypePolicy $padTypePolicy,
 		private IConfig $config,
 		private AppAccess $appAccess,
-		private IUserSession $userSession,
 	) {
 	}
 
@@ -44,7 +42,7 @@ class RegisterTemplateCreatorListener implements IEventListener {
 		// is enabled for. External pads count: they are not a pad type and
 		// follow their own setting, so an instance offering only those would
 		// otherwise have a tile nobody can open.
-		if (!$this->anythingCanBeCreated() || !$this->appAccess->isEnabledFor($this->userSession->getUser())) {
+		if (!$this->anythingCanBeCreated() || !$this->appAccess->isEnabledForCurrentUser()) {
 			return;
 		}
 

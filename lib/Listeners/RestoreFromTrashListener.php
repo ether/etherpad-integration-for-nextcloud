@@ -11,6 +11,7 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\Listeners;
 
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
+use OCA\EtherpadNextcloud\Service\AppAccess;
 use OCA\EtherpadNextcloud\Service\LifecycleResult;
 use OCA\EtherpadNextcloud\Service\RestoreService;
 use OCA\EtherpadNextcloud\Service\UserNodeResolver;
@@ -43,6 +44,7 @@ class RestoreFromTrashListener implements IEventListener {
 		private IUserSession $userSession,
 		private UserNodeResolver $userNodeResolver,
 		private LoggerInterface $logger,
+		private AppAccess $appAccess,
 	) {
 	}
 
@@ -107,6 +109,15 @@ class RestoreFromTrashListener implements IEventListener {
 	 */
 	private function restoreNode(File $node, string $via): void {
 		$fileId = $this->loggableFileId($node);
+		// The pad's half makes a pad where the file names one without a row,
+		// so a user outside the app's groups gets the file back without it.
+		if ($this->appAccess->excludesCurrentUser()) {
+			$this->logger->debug('RestoreFromTrash listener left the pad of a file restored by a user the app is not enabled for.', [
+				'app' => 'etherpad_nextcloud',
+				'fileId' => $fileId,
+			]);
+			return;
+		}
 		if ($fileId !== null && $via === self::VIA_EVENT && isset($this->decidedByHook[$fileId])) {
 			unset($this->decidedByHook[$fileId]);
 			$this->logger->debug('RestoreFromTrash listener left a restore its hook pass decided.', [

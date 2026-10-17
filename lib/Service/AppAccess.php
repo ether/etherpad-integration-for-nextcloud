@@ -10,26 +10,37 @@ namespace OCA\EtherpadNextcloud\Service;
 
 use OCA\EtherpadNextcloud\AppInfo\Application;
 use OCP\App\IAppManager;
-use OCP\IUser;
+use OCP\IUserSession;
 
 /**
- * Whether a user may use the app. Nextcloud registers an enabled app's
- * listeners and template provider for every user, also where an admin has
- * limited the app to groups, and guards only the app's own routes. So the
- * "New pad" entry, the templates behind it and the create that Nextcloud's
- * template endpoint reports each ask here: the endpoint can be called
- * without the entry.
- *
- * Public shares and background jobs act without a signed-in user and
- * decide their access on their own.
+ * Whether the signed-in user may use the app. Nextcloud registers an
+ * enabled app's listeners and template provider for every user, also where
+ * an admin has limited the app to groups, and checks the limit only on the
+ * app's own routes. So what acts for a user outside those routes asks here:
+ * the "New pad" entry and its templates, the create Nextcloud's template
+ * endpoint reports, and a restore from the trash. The endpoint can be
+ * called without the entry, so each of them asks.
  */
 class AppAccess {
 	public function __construct(
 		private IAppManager $appManager,
+		private IUserSession $userSession,
 	) {
 	}
 
-	public function isEnabledFor(?IUser $user): bool {
+	/** For offering something: without a signed-in user, the app is not enabled. */
+	public function isEnabledForCurrentUser(): bool {
+		$user = $this->userSession->getUser();
 		return $user !== null && $this->appManager->isEnabledForUser(Application::APP_ID, $user);
+	}
+
+	/**
+	 * For acting on a file: a signed-in user the app is not enabled for.
+	 * Without one - occ, a background job - the admin acts, and public
+	 * shares decide their access on their own.
+	 */
+	public function excludesCurrentUser(): bool {
+		$user = $this->userSession->getUser();
+		return $user !== null && !$this->appManager->isEnabledForUser(Application::APP_ID, $user);
 	}
 }

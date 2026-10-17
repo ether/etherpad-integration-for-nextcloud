@@ -11,10 +11,12 @@ namespace OCA\EtherpadNextcloud\Listeners;
 use OCA\EtherpadNextcloud\Exception\PadFileChangedException;
 use OCA\EtherpadNextcloud\Exception\PadTypeDisabledException;
 use OCA\EtherpadNextcloud\Service\AppAccess;
+use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\EtherpadNextcloud\Service\PadBootstrapService;
 use OCA\EtherpadNextcloud\Service\ExternalPadSeeder;
 use OCA\EtherpadNextcloud\Service\PadCreationService;
 use OCA\EtherpadNextcloud\Service\PadTemplateStorage;
+use OCA\EtherpadNextcloud\Service\UserNodeResolver;
 use OCA\EtherpadNextcloud\Template\PadTemplateProvider;
 use OCA\EtherpadNextcloud\Util\PadFileType;
 use OCA\EtherpadNextcloud\Util\SafeError;
@@ -23,7 +25,6 @@ use OCP\EventDispatcher\IEventListener;
 use OCP\Files\File;
 use OCP\Files\NotPermittedException;
 use OCP\Files\Template\FileCreatedFromTemplateEvent;
-use OCP\IUser;
 use OCP\IUserSession;
 use Psr\Log\LoggerInterface;
 
@@ -46,6 +47,8 @@ class FileCreatedFromTemplateListener implements IEventListener {
 		private IUserSession $userSession,
 		private LoggerInterface $logger,
 		private AppAccess $appAccess,
+		private BindingService $bindingService,
+		private UserNodeResolver $userNodeResolver,
 	) {
 	}
 
@@ -70,12 +73,12 @@ class FileCreatedFromTemplateListener implements IEventListener {
 			$this->resetTargetToEmpty($target);
 			return;
 		}
-		if (!$this->appAccess->isEnabledFor($user)) {
-			$this->removeRefusedTarget($target, $user);
+		$template = $event->getTemplate();
+		if ($this->appAccess->excludesCurrentUser()) {
+			$this->removeRefusedTarget($target, $user->getUID(), !$template instanceof File);
 			throw new NotPermittedException('Pads are not enabled for this user.');
 		}
 
-		$template = $event->getTemplate();
 		if (!$template instanceof File) {
 			// Blank-template case: initialise frontmatter now so /open
 			// doesn't 4xx on the first call.
@@ -165,23 +168,42 @@ class FileCreatedFromTemplateListener implements IEventListener {
 
 	/**
 	 * Nextcloud created the file before this event: an empty `.pad`, or a
-	 * copy of the user's own template, that no pad backs. It is removed by
-	 * its id, and only while it still holds what was created.
+	 * copy of the user's own template, that no pad backs. It goes to the
+	 * trash, as a delete does. A file that may be someone's stays: one a
+	 * pad's row names, or one with content after the blank entry, which
+	 * Nextcloud hands over when its cache had missed an existing file. The
+	 * file is found again by its id and must show the ETag it was given
+	 * with: its content is not read, which a template can make large. The
+	 * check and the delete are not atomic, as Nextcloud's delete takes the
+	 * file's lock itself; a file written in between goes to the trash, from
+	 * which it can be restored.
 	 */
-	private function removeRefusedTarget(File $target, IUser $user): void {
+	private function removeRefusedTarget(File $target, string $uid, bool $blank): void {
+		$fileId = null;
 		try {
-			$claim = $this->padCreationService->claimTemplateTarget($target, $user);
+			$fileId = $target->getId();
+			$size = $target->getSize();
+			$etag = $target->getEtag();
+			$node = $this->userNodeResolver->resolveUserFileNodeById($uid, $fileId);
+			$leave = ($blank && $size > 0)
+				|| $this->bindingService->findByFileId($fileId) !== null
+				|| $node->getEtag() !== $etag;
 		} catch (\Throwable $e) {
 			$this->logger->warning('Left the .pad file of a refused template create: it could not be identified.', [
 				'app' => 'etherpad_nextcloud',
+				'fileId' => $fileId,
 				...SafeError::context($e),
 			]);
 			return;
 		}
-		$unchanged = $this->padCreationService->resolveUnchangedClaim($claim);
-		if ($unchanged !== null) {
-			$this->deleteTarget($unchanged, $claim->fileId);
+		if ($leave) {
+			$this->logger->warning('Left the .pad file of a refused template create: it may not be the file this create was given.', [
+				'app' => 'etherpad_nextcloud',
+				'fileId' => $fileId,
+			]);
+			return;
 		}
+		$this->deleteTarget($node, $fileId);
 	}
 
 	private function initializeBlankPad(string $uid, File $target, ?string $preferredAccessMode = null): void {

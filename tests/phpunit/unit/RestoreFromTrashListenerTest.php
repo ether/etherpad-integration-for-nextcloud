@@ -15,6 +15,7 @@ use OCA\EtherpadNextcloud\Service\LifecycleResult;
 use OCA\EtherpadNextcloud\Service\PadFileService;
 use OCA\EtherpadNextcloud\Service\ParsedPadFile;
 use OCA\EtherpadNextcloud\Service\UserNodeResolver;
+use OCA\EtherpadNextcloud\Tests\Support\BuildsAppAccess;
 use OCA\EtherpadNextcloud\Tests\Support\WatchesTheWholeLogger;
 use OCA\EtherpadNextcloud\Tests\Support\WiresTheLifecycle;
 use OCP\EventDispatcher\Event;
@@ -28,6 +29,7 @@ use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 
 class RestoreFromTrashListenerTest extends TestCase {
+	use BuildsAppAccess;
 	use WatchesTheWholeLogger;
 	use WiresTheLifecycle;
 
@@ -40,6 +42,41 @@ class RestoreFromTrashListenerTest extends TestCase {
 				return $this->file;
 			}
 		};
+	}
+
+	/**
+	 * The pad's half of a restore makes a pad where the file names one
+	 * without a row, so a signed-in user the app is not enabled for gets the
+	 * file back without it. A restore without a signed-in user - occ, a job -
+	 * is the admin's and goes on.
+	 *
+	 * @return iterable<string,array{0:?bool,1:bool}>
+	 */
+	public static function restorers(): iterable {
+		yield 'a user the app is enabled for' => [true, true];
+		yield 'a user the app is not enabled for' => [false, false];
+		yield 'no signed-in user' => [null, true];
+	}
+
+	#[\PHPUnit\Framework\Attributes\DataProvider('restorers')]
+	public function testRestoresThePadOnlyForWhoMayUseTheApp(?bool $enabledForUser, bool $restored): void {
+		$file = $this->createMock(File::class);
+		$file->method('getName')->willReturn('Notes.pad');
+		$file->method('getId')->willReturn(42);
+		$restores = $this->createMock(RestoreService::class);
+		$restores->expects($restored ? $this->once() : $this->never())
+			->method('restore')
+			->willReturn(['status' => LifecycleResult::RESTORED]);
+		$userSession = $this->createMock(IUserSession::class);
+		$user = $this->createMock(IUser::class);
+		$user->method('getUID')->willReturn('alice');
+		$userSession->method('getUser')->willReturn($user);
+		$nodes = $this->createMock(UserNodeResolver::class);
+		$nodes->method('resolveUserFileNodeByPath')->willReturn($file);
+		$listener = new RestoreFromTrashListener($restores, $userSession, $nodes, $this->createMock(LoggerInterface::class), $this->appAccess($enabledForUser));
+
+		$listener->handleLegacyHook(['filePath' => '/Notes.pad']);
+		$listener->handle($this->restoreEventFor($file));
 	}
 
 	public function testTypedRestoreEventRestoresTargetFile(): void {
@@ -58,6 +95,7 @@ class RestoreFromTrashListenerTest extends TestCase {
 			$this->createMock(IUserSession::class),
 			$this->createMock(UserNodeResolver::class),
 			$this->createMock(LoggerInterface::class),
+			$this->appAccess(true),
 		);
 
 		$listener->handle(new class($file) extends Event {
@@ -99,6 +137,7 @@ class RestoreFromTrashListenerTest extends TestCase {
 			$userSession,
 			$resolver,
 			$this->createMock(LoggerInterface::class),
+			$this->appAccess(true),
 		);
 
 		$listener->handleLegacyHook([
@@ -140,6 +179,7 @@ class RestoreFromTrashListenerTest extends TestCase {
 			$userSession,
 			$resolver,
 			$this->createMock(LoggerInterface::class),
+			$this->appAccess(true),
 		);
 
 		$listener->handleLegacyHook(['filePath' => '/files/Notes.pad']);
@@ -180,6 +220,7 @@ class RestoreFromTrashListenerTest extends TestCase {
 			$this->sessionFor('alice'),
 			new UserNodeResolver($rootFolder),
 			$this->createMock(LoggerInterface::class),
+			$this->appAccess(true),
 		);
 
 		$listener->handleLegacyHook(['filePath' => '/files/Notes.pad']);
@@ -206,6 +247,7 @@ class RestoreFromTrashListenerTest extends TestCase {
 			$this->sessionFor('alice'),
 			$resolver,
 			$logger,
+			$this->appAccess(true),
 		);
 
 		$listener->handleLegacyHook(['filePath' => '/Projects']);
@@ -269,6 +311,7 @@ class RestoreFromTrashListenerTest extends TestCase {
 			$uid === null ? $this->noSession() : $this->sessionFor($uid),
 			$resolver($this),
 			$logger,
+			$this->appAccess(true),
 		);
 
 		// No expectException: nothing may leave this frame.
@@ -312,7 +355,7 @@ class RestoreFromTrashListenerTest extends TestCase {
 				}),
 			);
 
-		$listener = new RestoreFromTrashListener($restores, $this->sessionFor('alice'), $resolver, $logger);
+		$listener = new RestoreFromTrashListener($restores, $this->sessionFor('alice'), $resolver, $logger, $this->appAccess(true));
 
 		// No expectException: nothing may leave the listener.
 		if ($entry === 'hook') {
@@ -347,7 +390,7 @@ class RestoreFromTrashListenerTest extends TestCase {
 		$logger = $this->createMock(LoggerInterface::class);
 		$logger->expects($this->never())->method($this->anything());
 
-		$listener = new RestoreFromTrashListener($restores, $this->createMock(IUserSession::class), $resolver, $logger);
+		$listener = new RestoreFromTrashListener($restores, $this->createMock(IUserSession::class), $resolver, $logger, $this->appAccess(true));
 		$listener->handle($this->restoreEventFor($photo));
 		$listener->handle($this->restoreEventFor($nameless));
 	}
@@ -404,6 +447,7 @@ class RestoreFromTrashListenerTest extends TestCase {
 			$this->sessionFor('alice'),
 			$resolver,
 			$logger,
+			$this->appAccess(true),
 		);
 
 		$listener->handleLegacyHook(['filePath' => '/Notes.pad']);
@@ -453,7 +497,7 @@ class RestoreFromTrashListenerTest extends TestCase {
 		});
 		$resolver = $this->createMock(UserNodeResolver::class);
 		$resolver->method('resolveUserFileNodeByPath')->with('alice', '/Notes.pad')->willReturn($hookFile);
-		$listener = new RestoreFromTrashListener($restores, $this->sessionFor('alice'), $resolver, $this->createMock(LoggerInterface::class));
+		$listener = new RestoreFromTrashListener($restores, $this->sessionFor('alice'), $resolver, $this->createMock(LoggerInterface::class), $this->appAccess(true));
 
 		$listener->handleLegacyHook(['filePath' => '/Notes.pad']);
 		$listener->handle($this->restoreEventFor($file));
@@ -485,7 +529,7 @@ class RestoreFromTrashListenerTest extends TestCase {
 		});
 		$resolver = $this->createMock(UserNodeResolver::class);
 		$resolver->method('resolveUserFileNodeByPath')->willReturn($file);
-		$listener = new RestoreFromTrashListener($restores, $this->sessionFor('alice'), $resolver, $this->createMock(LoggerInterface::class));
+		$listener = new RestoreFromTrashListener($restores, $this->sessionFor('alice'), $resolver, $this->createMock(LoggerInterface::class), $this->appAccess(true));
 
 		$listener->handleLegacyHook(['filePath' => '/Notes.pad']);
 		$listener->handleLegacyHook(['filePath' => '/Notes.pad']);
@@ -518,7 +562,7 @@ class RestoreFromTrashListenerTest extends TestCase {
 		});
 		$resolver = $this->createMock(UserNodeResolver::class);
 		$resolver->method('resolveUserFileNodeByPath')->willReturnMap([['alice', '/Notes.pad', $first], ['alice', '/Other.pad', $other]]);
-		$listener = new RestoreFromTrashListener($restores, $this->sessionFor('alice'), $resolver, $this->createMock(LoggerInterface::class));
+		$listener = new RestoreFromTrashListener($restores, $this->sessionFor('alice'), $resolver, $this->createMock(LoggerInterface::class), $this->appAccess(true));
 
 		$listener->handleLegacyHook(['filePath' => '/Notes.pad']);
 		$listener->handleLegacyHook(['filePath' => '/Other.pad']);
@@ -540,7 +584,7 @@ class RestoreFromTrashListenerTest extends TestCase {
 		$restores->expects($this->exactly(2))
 			->method('restore')
 			->willReturn(['status' => LifecycleResult::SKIPPED, 'reason' => RestoreService::REASON_PRESENCE_UNKNOWN]);
-		$listener = new RestoreFromTrashListener($restores, $this->createMock(IUserSession::class), $this->createMock(UserNodeResolver::class), $this->createMock(LoggerInterface::class));
+		$listener = new RestoreFromTrashListener($restores, $this->createMock(IUserSession::class), $this->createMock(UserNodeResolver::class), $this->createMock(LoggerInterface::class), $this->appAccess(true));
 
 		$listener->handle($this->restoreEventFor($file));
 		$listener->handle($this->restoreEventFor($file));
@@ -560,7 +604,7 @@ class RestoreFromTrashListenerTest extends TestCase {
 		});
 		$resolver = $this->createMock(UserNodeResolver::class);
 		$resolver->method('resolveUserFileNodeByPath')->willReturn($hookNode);
-		$listener = new RestoreFromTrashListener($restores, $this->sessionFor('alice'), $resolver, $this->createMock(LoggerInterface::class));
+		$listener = new RestoreFromTrashListener($restores, $this->sessionFor('alice'), $resolver, $this->createMock(LoggerInterface::class), $this->appAccess(true));
 
 		$listener->handleLegacyHook(['filePath' => '/Notes.pad']);
 		$listener->handle($this->restoreEventFor($eventNode));
@@ -604,7 +648,7 @@ class RestoreFromTrashListenerTest extends TestCase {
 				}),
 			);
 
-		$listener = new RestoreFromTrashListener($restores, $this->sessionFor('alice'), $resolver, $logger);
+		$listener = new RestoreFromTrashListener($restores, $this->sessionFor('alice'), $resolver, $logger, $this->appAccess(true));
 
 		if ($entry === 'hook') {
 			$listener->handleLegacyHook(['filePath' => '/Notes.pad']);
@@ -654,6 +698,7 @@ class RestoreFromTrashListenerTest extends TestCase {
 			$userSession,
 			$resolver,
 			$this->createMock(LoggerInterface::class),
+			$this->appAccess(true),
 		);
 
 		$listener->handle(new class($unresolvable) extends Event {
@@ -713,6 +758,7 @@ class RestoreFromTrashListenerTest extends TestCase {
 			$this->createMock(IUserSession::class),
 			$this->createMock(UserNodeResolver::class),
 			$logger,
+			$this->appAccess(true),
 		);
 
 		$listener->handle(new class($file) extends Event {
@@ -757,6 +803,7 @@ class RestoreFromTrashListenerTest extends TestCase {
 			$this->createMock(IUserSession::class),
 			$resolver,
 			$logger,
+			$this->appAccess(true),
 		);
 
 		$listener->handle(new class($node) extends Event {

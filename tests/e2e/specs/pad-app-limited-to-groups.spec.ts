@@ -22,12 +22,13 @@ const PROVIDER = 'OCA\\EtherpadNextcloud\\Template\\PadTemplateProvider'
 type Account = { uid: string, password: string }
 
 /**
- * An app an admin has limited to groups is still asked by Nextcloud's
- * template API for every user. A user outside the groups gets no "New pad"
- * entry, and a create sent to the endpoint without it leaves neither a file
- * nor a pad. The admin, inside the group, gets both: the requests are the
- * ones the picker sends. Public and external pads are on while it runs, so
- * that a tile is refused for the user and not for its setting.
+ * The app limited to a group. A user outside it gets no "New pad" entry,
+ * and a create sent to Nextcloud's template API anyway provisions no pad.
+ * The admin, inside the group, gets both: the requests are the ones the
+ * picker sends. Public and external pads are on while it runs, so that a
+ * tile is refused for the user and not for its setting. On an instance
+ * where the app is already limited, the spec stays out: putting back a
+ * limit it did not set is not its business.
  */
 test.describe('the app limited to groups', () => {
 	const group = uniqueName('pad-users')
@@ -76,10 +77,15 @@ test.describe('the app limited to groups', () => {
 			method: 'PROPFIND',
 			headers: { Authorization: authOf(account), Depth: '0' },
 		})
+		if (res.status !== 207 && res.status !== 404) {
+			throw new Error(`PROPFIND ${name} as ${account.uid} answered HTTP ${res.status}.`)
+		}
 		return res.status === 207
 	}
 
 	test.beforeAll(async () => {
+		const enabled = await getAppConfig('enabled')
+		test.skip(enabled !== 'yes', `The app is enabled as ${enabled}, not for everyone.`)
 		for (const [key, value] of Object.entries(settings)) {
 			before[key] = await getAppConfig(key)
 			await setAppConfig(key, value)
@@ -87,8 +93,11 @@ test.describe('the app limited to groups', () => {
 		await createGroup(group)
 		await addToGroup(E2E.user, group)
 		outsider = await createAccount(uniqueName('pad-outsider'))
-		await restrictAppToGroups(APP, [group])
+		// Before the call: Nextcloud 34 installs the app again on the way,
+		// which leaves it off until the limit is set, so a call that breaks
+		// off still needs undoing.
 		restricted = true
+		await restrictAppToGroups(APP, [group])
 	})
 
 	test.afterAll(async () => {
@@ -137,8 +146,7 @@ test.describe('the app limited to groups', () => {
 		expect(await existsFor(outsider!, name), 'the file of the refused create').toBe(false)
 	})
 
-	// Nextcloud asks for the tile's template before it creates the file, so
-	// a refused tile leaves nothing, not even in the trash.
+	// A refused tile leaves no file, not even in the trash.
 	for (const [label, templateId] of [
 		['the tile of public pads', `${APP}:pad-public`],
 		['the external tile', `${APP}:pad-external`],

@@ -25,7 +25,6 @@ use OCP\Files\Template\Template;
 use OCP\IConfig;
 use OCP\IL10N;
 use OCP\IURLGenerator;
-use OCP\IUserSession;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -56,12 +55,11 @@ class PadTemplateProvider implements ICustomTemplateProvider {
 		private IURLGenerator $urlGenerator,
 		private LoggerInterface $logger,
 		private AppAccess $appAccess,
-		private IUserSession $userSession,
 	) {
 	}
 
 	public function getCustomTemplates(string $mimetype): array {
-		if ($mimetype !== PadFileType::MIME || !$this->appAccess->isEnabledFor($this->userSession->getUser())) {
+		if ($mimetype !== PadFileType::MIME || !$this->appAccess->isEnabledForCurrentUser()) {
 			return [];
 		}
 
@@ -191,7 +189,7 @@ class PadTemplateProvider implements ICustomTemplateProvider {
 	 * refusal here leaves no file behind.
 	 */
 	public function getCustomTemplate(string $template): File {
-		if (!$this->appAccess->isEnabledFor($this->userSession->getUser())) {
+		if (!$this->appAccess->isEnabledForCurrentUser()) {
 			throw new NotPermittedException('Pads are not enabled for this user.');
 		}
 

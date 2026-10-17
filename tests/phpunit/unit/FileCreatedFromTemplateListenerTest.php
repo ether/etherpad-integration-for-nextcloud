@@ -4,17 +4,18 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Tests\Unit;
 
-use OCA\EtherpadNextcloud\AppInfo\Application;
 use OCA\EtherpadNextcloud\Listeners\FileCreatedFromTemplateListener;
 use OCA\EtherpadNextcloud\Exception\PadFileChangedException;
 use OCA\EtherpadNextcloud\Exception\PadTypeDisabledException;
-use OCA\EtherpadNextcloud\Service\AppAccess;
+use OCA\EtherpadNextcloud\Service\Binding;
+use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\EtherpadNextcloud\Service\PadBootstrapService;
 use OCA\EtherpadNextcloud\Service\ExternalPadSeeder;
 use OCA\EtherpadNextcloud\Service\CreatedFileClaim;
 use OCA\EtherpadNextcloud\Service\PadCreationService;
 use OCA\EtherpadNextcloud\Service\PadTemplateStorage;
-use OCP\App\IAppManager;
+use OCA\EtherpadNextcloud\Service\UserNodeResolver;
+use OCA\EtherpadNextcloud\Tests\Support\BuildsAppAccess;
 use OCP\EventDispatcher\Event;
 use OCP\Files\File;
 use OCP\Files\NotPermittedException;
@@ -33,6 +34,8 @@ use Psr\Log\LoggerInterface;
  *  - any other template → PadCreationService::materializeTemplateInto
  */
 class FileCreatedFromTemplateListenerTest extends TestCase {
+	use BuildsAppAccess;
+
 	public function testIgnoresUnrelatedEvent(): void {
 		$creation = $this->createMock(PadCreationService::class);
 		$bootstrap = $this->createMock(PadBootstrapService::class);
@@ -228,6 +231,8 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 			$this->userSession(true),
 			$logger,
 			$this->appAccess(true),
+			$this->createMock(BindingService::class),
+			$this->createMock(UserNodeResolver::class),
 		);
 		$listener->handle(new FileCreatedFromTemplateEvent($marker, $target, [
 			'pad_url' => ['content' => 'https://pad.remote.test/p/RemotePad?token=s3cret#top'],
@@ -322,11 +327,9 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 	}
 
 	/**
-	 * Nextcloud's template endpoint creates the file and reports it to every
-	 * app, also for a user outside the groups this one is limited to - with
-	 * or without the "New pad" entry. Such a create provisions nothing, not a
-	 * pad, a binding or a link to another server, whichever template it came
-	 * from, and the file Nextcloud created is removed.
+	 * A create for a user the app is not enabled for provisions nothing -
+	 * no pad, no binding, no link to another server - whichever template it
+	 * came from, and the file Nextcloud created goes to the trash.
 	 *
 	 * @return iterable<string,array{0:string}>
 	 */
@@ -340,11 +343,7 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 	#[\PHPUnit\Framework\Attributes\DataProvider('createsOfEveryKind')]
 	public function testProvisionsNothingForAUserTheAppIsNotEnabledFor(string $kind): void {
 		$creation = $this->createMock(PadCreationService::class);
-		$creation->expects($this->never())->method('materializeTemplateInto');
-		$creation->method('claimTemplateTarget')->willReturn(new CreatedFileClaim('alice', 42));
-		$created = $this->file('New pad.pad');
-		$created->expects($this->once())->method('delete');
-		$creation->method('resolveUnchangedClaim')->willReturn($created);
+		$creation->expects($this->never())->method($this->anything());
 		$bootstrap = $this->createMock(PadBootstrapService::class);
 		$bootstrap->expects($this->never())->method($this->anything());
 		$seeder = $this->createMock(ExternalPadSeeder::class);
@@ -352,26 +351,88 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 		$storage = $this->createMock(PadTemplateStorage::class);
 		$storage->method('isExternalMarkerFile')->willReturn($kind === 'external');
 		$storage->method('accessModeForTemplateFile')->willReturn($kind === 'type tile' ? 'public' : null);
+		$size = $kind === 'blank' ? 0 : 120;
+		$target = $this->createdFile($size, 'etag-1');
+		$target->expects($this->never())->method('delete');
+		$found = $this->createdFile($size, 'etag-1');
+		$found->expects($this->once())->method('delete');
 		$template = $kind === 'blank' ? null : $this->file('Template.pad');
 
 		$this->expectException(NotPermittedException::class);
-		$this->buildListener($creation, $bootstrap, true, $storage, $seeder, false)
-			->handle(new FileCreatedFromTemplateEvent($template, $this->file('New pad.pad'), [
-				'pad_url' => ['content' => 'https://pad.remote.test/p/RemotePad'],
-			]));
+		$this->buildListener(
+			$creation,
+			$bootstrap,
+			templateStorage: $storage,
+			externalPadSeeder: $seeder,
+			appEnabledForUser: false,
+			bindings: $this->bindingsWith(null),
+			nodes: $this->nodesFinding($found),
+		)->handle(new FileCreatedFromTemplateEvent($template, $target, [
+			'pad_url' => ['content' => 'https://pad.remote.test/p/RemotePad'],
+		]));
 	}
 
-	/** A file that is no longer the one Nextcloud created is left alone. */
-	public function testLeavesAChangedFileOfARefusedCreate(): void {
-		$creation = $this->createMock(PadCreationService::class);
-		$creation->method('claimTemplateTarget')->willReturn(new CreatedFileClaim('alice', 42));
-		$creation->method('resolveUnchangedClaim')->willReturn(null);
-		$target = $this->file('New pad.pad');
-		$target->expects($this->never())->method('delete');
+	/**
+	 * A file of a refused create stays, and is logged, where it may be
+	 * someone's: Nextcloud can hand over an existing file its cache had
+	 * missed, and a file can be replaced before it is found again.
+	 *
+	 * @return iterable<string,array{0:?File,1:int,2:?Binding,3:bool}>
+	 */
+	public static function filesOfARefusedCreateThatStay(): iterable {
+		yield 'one with content after the blank entry' => [null, 5, null, false];
+		yield "one a pad's row names" => [null, 0, new Binding(42, 'pad', 'public', BindingService::STATE_ACTIVE), false];
+		yield 'one replaced since' => [null, 0, null, true];
+	}
 
-		$this->expectException(NotPermittedException::class);
-		$this->buildListener($creation, $this->createMock(PadBootstrapService::class), true, null, null, false)
-			->handle(new FileCreatedFromTemplateEvent(null, $target, []));
+	#[\PHPUnit\Framework\Attributes\DataProvider('filesOfARefusedCreateThatStay')]
+	public function testLeavesAFileOfARefusedCreateThatMayBeSomeones(?File $template, int $size, ?Binding $binding, bool $replaced): void {
+		$target = $this->createdFile($size, 'etag-1');
+		$target->expects($this->never())->method('delete');
+		$found = $this->createdFile($size, $replaced ? 'etag-2' : 'etag-1');
+		$found->expects($this->never())->method('delete');
+		$logged = [];
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->method('warning')->willReturnCallback(
+			static function (string $message, array $context = []) use (&$logged): void {
+				$logged[] = $context;
+			}
+		);
+
+		try {
+			$this->buildListener(
+				$this->createMock(PadCreationService::class),
+				$this->createMock(PadBootstrapService::class),
+				appEnabledForUser: false,
+				bindings: $this->bindingsWith($binding),
+				nodes: $this->nodesFinding($found),
+				logger: $logger,
+			)->handle(new FileCreatedFromTemplateEvent($template, $target, []));
+			$this->fail('The create was not refused.');
+		} catch (NotPermittedException) {
+		}
+
+		$this->assertSame([42], array_column($logged, 'fileId'));
+	}
+
+	private function createdFile(int $size, string $etag): File {
+		$file = $this->file('New pad.pad');
+		$file->method('getSize')->willReturn($size);
+		$file->method('getEtag')->willReturn($etag);
+		return $file;
+	}
+
+	private function bindingsWith(?Binding $binding): BindingService {
+		$bindings = $this->createMock(BindingService::class);
+		$bindings->method('findByFileId')->with(42)->willReturn($binding);
+		return $bindings;
+	}
+
+	/** Finds the created file again by its id, as the user who created it. */
+	private function nodesFinding(File $found): UserNodeResolver {
+		$nodes = $this->createMock(UserNodeResolver::class);
+		$nodes->expects($this->once())->method('resolveUserFileNodeById')->with('alice', 42)->willReturn($found);
+		return $nodes;
 	}
 
 	/** A storage that recognises no template as one of ours. */
@@ -454,6 +515,9 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 		?PadTemplateStorage $templateStorage = null,
 		?ExternalPadSeeder $externalPadSeeder = null,
 		bool $appEnabledForUser = true,
+		?BindingService $bindings = null,
+		?UserNodeResolver $nodes = null,
+		?LoggerInterface $logger = null,
 	): FileCreatedFromTemplateListener {
 		return new FileCreatedFromTemplateListener(
 			$creation,
@@ -461,17 +525,11 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 			$templateStorage ?? $this->noTypeTemplates(),
 			$externalPadSeeder ?? $this->createMock(ExternalPadSeeder::class),
 			$this->userSession($withUser),
-			$this->createMock(LoggerInterface::class),
+			$logger ?? $this->createMock(LoggerInterface::class),
 			$this->appAccess($appEnabledForUser),
+			$bindings ?? $this->createMock(BindingService::class),
+			$nodes ?? $this->createMock(UserNodeResolver::class),
 		);
-	}
-
-	private function appAccess(bool $enabledForUser): AppAccess {
-		$appManager = $this->createMock(IAppManager::class);
-		$appManager->method('isEnabledForUser')->willReturnCallback(
-			static fn (string $appId, ?IUser $user = null): bool => $appId === Application::APP_ID && $user !== null && $enabledForUser
-		);
-		return new AppAccess($appManager);
 	}
 
 	private function userSession(bool $withUser): IUserSession {

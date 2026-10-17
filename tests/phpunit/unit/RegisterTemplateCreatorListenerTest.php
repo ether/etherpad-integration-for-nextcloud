@@ -9,20 +9,18 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Tests\Unit;
 
-use OCA\EtherpadNextcloud\AppInfo\Application;
 use OCA\EtherpadNextcloud\Listeners\RegisterTemplateCreatorListener;
-use OCA\EtherpadNextcloud\Service\AppAccess;
 use OCA\EtherpadNextcloud\Service\PadTypePolicy;
-use OCP\App\IAppManager;
+use OCA\EtherpadNextcloud\Tests\Support\BuildsAppAccess;
 use OCP\EventDispatcher\Event;
 use OCP\Files\Template\RegisterTemplateCreatorEvent;
 use OCP\Files\Template\ITemplateManager;
 use OCP\IL10N;
-use OCP\IUser;
-use OCP\IUserSession;
 use PHPUnit\Framework\TestCase;
 
 class RegisterTemplateCreatorListenerTest extends TestCase {
+	use BuildsAppAccess;
+
 	/**
 	 * This entry is the only way to create a pad from the Files app, so it has
 	 * to survive as long as anything at all can be created — the blank option
@@ -51,9 +49,8 @@ class RegisterTemplateCreatorListenerTest extends TestCase {
 	}
 
 	/**
-	 * Nextcloud asks for the entry for every user, also where an admin has
-	 * limited the app to groups: a user outside them gets none, and nor does
-	 * a request without a user.
+	 * Only a user the app is enabled for gets the entry; a request without a
+	 * user gets none.
 	 *
 	 * @return iterable<string,array{0:?bool,1:bool}>
 	 */
@@ -103,14 +100,6 @@ class RegisterTemplateCreatorListenerTest extends TestCase {
 			}
 		);
 
-		$user = $enabledForUser === null ? null : $this->createMock(IUser::class);
-		$userSession = $this->createMock(IUserSession::class);
-		$userSession->method('getUser')->willReturn($user);
-		$appManager = $this->createMock(IAppManager::class);
-		$appManager->method('isEnabledForUser')->willReturnCallback(
-			static fn (string $appId, ?IUser $asked = null): bool => $appId === Application::APP_ID && $asked === $user && $enabledForUser === true
-		);
-
-		return new RegisterTemplateCreatorListener($l10n, new PadTypePolicy($config), $config, new AppAccess($appManager), $userSession);
+		return new RegisterTemplateCreatorListener($l10n, new PadTypePolicy($config), $config, $this->appAccess($enabledForUser));
 	}
 }
