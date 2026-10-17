@@ -1,0 +1,157 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (c) 2026 Jacob Bühler
+name: e2e-upgrade
+
+# The upgrade from the last release, on every supported Nextcloud major,
+# for the pull requests the first job picks; its log says which and why.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - 'appinfo/info.xml'
+      - 'lib/Migration/**'
+      - 'tests/e2e/docker/**'
+      - '.github/workflows/e2e-upgrade.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e2e-upgrade-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  decide:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    name: Is there an upgrade to test
+    outputs:
+      run: ${{ steps.decide.outputs.run }}
+      from: ${{ steps.decide.outputs.from }}
+    steps:
+      # The whole history, for the tags.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Compare the version and the migrations
+        id: decide
+        env:
+          EVENT: ${{ github.event_name }}
+          AUTHOR: ${{ github.event.pull_request.user.login }}
+        run: |
+          version="$(sed -n 's|.*<version>\([^<]*\)</version>.*|\1|p' appinfo/info.xml | head -n 1)"
+          from="$(git describe --tags --abbrev=0 --match 'v[0-9]*' HEAD)"
+          # As in test-upgrade.sh: a HEAD the release is tagged on upgrades
+          # from the release before it.
+          if git tag --points-at HEAD | grep -qxF "$from"; then
+            from="$(git describe --tags --abbrev=0 --match 'v[0-9]*' "$from^")"
+          fi
+          echo "from=${from#v}" >> "$GITHUB_OUTPUT"
+          # The test's own files, and the two scripts its APP_SOURCE passes
+          # through; the rest of the stack every e2e job brings up as well.
+          test_files=(
+            tests/e2e/docker/test-upgrade.sh
+            tests/e2e/docker/upgrade-fixtures.mjs
+            tests/e2e/docker/update-app.php
+            tests/e2e/docker/sync-app.sh
+            tests/e2e/docker/up.sh
+            .github/workflows/e2e-upgrade.yml
+          )
+          if [[ "$EVENT" != pull_request ]]; then
+            run=true why="Started by hand"
+          # A Dependabot bump of an action says nothing about the test, and
+          # would fail it while a new release has no checksum pinned yet.
+          # The merge's first parent is the base it merges onto.
+          elif [[ "$AUTHOR" != 'dependabot[bot]' ]] && ! git diff --quiet HEAD^1 HEAD -- "${test_files[@]}"; then
+            run=true why="The test or a script it runs changes"
+          elif [[ "$version" == "${from#v}" ]]; then
+            run=false why="The version is $from's: no release to upgrade to"
+          elif git diff --quiet "$from" HEAD -- lib/Migration; then
+            run=false why="Nothing in lib/Migration differs from $from"
+          else
+            run=true why="Version $version, and lib/Migration differs from $from"
+          fi
+          echo "$why: run=$run."
+          echo "run=$run" >> "$GITHUB_OUTPUT"
+
+  upgrade:
+    needs: decide
+    if: needs.decide.outputs.run == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    strategy:
+      fail-fast: false
+      matrix:
+        # Every major the app supports; one the last release does not run on
+        # skips itself.
+        nextcloud: ['32.0.9', '33', '34']
+
+    name: ${{ needs.decide.outputs.from }} on Nextcloud ${{ matrix.nextcloud }}
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Read package.json node and npm engines
+        id: versions
+        uses: skjnldsv/read-package-engines-version-actions@06d6db44aa62f4609ba070f556ec24bc99fb85cb # v4
+
+      # As in e2e.yml: anything but a version range means the action could
+      # not read the engines.
+      - name: Fail if the engines ranges could not be read
+        env:
+          NODE_RANGE: ${{ steps.versions.outputs.nodeVersion }}
+          NPM_RANGE: ${{ steps.versions.outputs.npmVersion }}
+        run: |
+          printf '%s' "$NODE_RANGE" | grep -Eq '^[~^]?[0-9]+(\.[0-9]+){0,2}$' \
+            || { echo "::error::engines.node did not read as a version range: '$NODE_RANGE'"; exit 1; }
+          printf '%s' "$NPM_RANGE" | grep -Eq '^[~^]?[0-9]+(\.[0-9]+){0,2}$' \
+            || { echo "::error::engines.npm did not read as a version range: '$NPM_RANGE'"; exit 1; }
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ steps.versions.outputs.nodeVersion }}
+          cache: npm
+
+      - run: npm ci --engine-strict
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Resolve the stack hostnames
+        run: echo '127.0.0.1 nc.pad.test ep.pad.test' | sudo tee -a /etc/hosts
+
+      - name: Upgrade ${{ needs.decide.outputs.from }} on Nextcloud ${{ matrix.nextcloud }}
+        env:
+          FROM_VERSION: ${{ needs.decide.outputs.from }}
+          NC_VERSION: ${{ matrix.nextcloud }}
+          EP_VERSION: '2'
+          UPGRADE_WORK: ${{ runner.temp }}/upgrade
+        run: bash tests/e2e/docker/test-upgrade.sh
+
+      - name: Collect stack logs on failure
+        if: failure()
+        run: docker compose -p epnc-upgrade -f tests/e2e/docker/compose.yml logs --no-color --tail=400 > stack-logs.txt
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: failure()
+        with:
+          name: e2e-upgrade-nc${{ matrix.nextcloud }}
+          # The snapshots, pads and Nextcloud log the script keeps; not the
+          # release archive and the app extracted from it.
+          path: |
+            playwright-report/
+            test-results/
+            stack-logs.txt
+            ${{ runner.temp }}/upgrade/
+            !${{ runner.temp }}/upgrade/*.tar.gz
+            !${{ runner.temp }}/upgrade/from/
+          retention-days: 7
+
+      - name: Tear the stack down
+        if: always()
+        run: docker compose -p epnc-upgrade -f tests/e2e/docker/compose.yml down -v --remove-orphans
