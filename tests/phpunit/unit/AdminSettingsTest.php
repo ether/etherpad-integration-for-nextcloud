@@ -47,10 +47,9 @@ class AdminSettingsTest extends TestCase {
 	}
 
 	/**
-	 * The template reads its labels and URLs out of this array by name, and a
-	 * missing key renders as an empty string — a section that silently loses
-	 * its heading, its hint and its button labels. Nothing else notices, so
-	 * the two are compared here.
+	 * The template reads its labels, hints and URLs by name, and one the
+	 * controller leaves out renders empty: the section loses its heading, a
+	 * hint or a button label.
 	 */
 	public function testProvidesEveryValueTheTemplateReads(): void {
 		$params = $this->renderWith('https://pad.example.test', true);

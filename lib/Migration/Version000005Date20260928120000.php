@@ -62,8 +62,8 @@ class Version000005Date20260928120000 extends SimpleMigrationStep {
 	private const RESTORE_PENDING = 'restore_pending';
 
 	/**
-	 * Rows of files still there made active per call of clearStaleGone(); a
-	 * test makes it small.
+	 * Rows a batch makes active at most. Protected, so a test with few rows
+	 * can make it small.
 	 *
 	 * @var int
 	 */
@@ -111,9 +111,7 @@ class Version000005Date20260928120000 extends SimpleMigrationStep {
 		}
 		$now = $this->timeFactory->getTime();
 		$this->dateOldWaits($now);
-		// A pending_delete row whose file the file cache still has is the
-		// file's, kept: the same step the sweep takes for a deletion that
-		// did not happen, for every such row at once.
+		// A batch at a time; one that comes back short was the last.
 		while ($this->bindingService->clearStaleGone($now, static::BATCH) === static::BATCH) {
 		}
 	}

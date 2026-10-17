@@ -112,9 +112,8 @@ class KeepPadsThroughTheTrashMigrationTest extends TestCase {
 	}
 
 	/**
-	 * The rows of files still there go back to active a batch at a time,
-	 * until a batch comes back short. Two come back full before it, so
-	 * asking just once more after a full batch leaves the last row behind.
+	 * Two full batches before a short one: a loop that asks only once more
+	 * after a full batch leaves a row behind.
 	 */
 	public function testTakesBackEveryRowOfAFileStillTherePastTheFirstBatch(): void {
 		$rows = [];

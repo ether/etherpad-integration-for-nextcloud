@@ -9,14 +9,15 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\Tests\Support;
 
 /**
- * The snake_case keys a template under templates/ reads from its
- * parameters, in single or double quotes.
+ * The snake_case keys a template under templates/ reads as a literal
+ * `$_['key']` or `$_["key"]`; a key built at run time is not seen.
  */
 final class TemplateKeys {
 	/**
+	 * The keys read off `$_` but `l10n`, and those read under `$_['l10n']`,
+	 * each once and sorted.
+	 *
 	 * @return array{top: list<string>, l10n: list<string>}
-	 *   the keys read off `$_` but `l10n`, and those under `$_['l10n']`,
-	 *   each once, sorted
 	 */
 	public static function read(string $template): array {
 		$source = (string)file_get_contents(__DIR__ . '/../../../templates/' . $template . '.php');
