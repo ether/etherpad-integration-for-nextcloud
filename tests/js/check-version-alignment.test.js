@@ -12,19 +12,23 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 const repo = resolve(__dirname, '../..')
 const files = ['appinfo/info.xml', 'package.json', 'package-lock.json']
 
-/** The script's exit status, run on the copy. */
-const setVersion = (root, version) => {
+/** The script's exit status and what it said on stderr, run on the copy. */
+const run = (root, version) => {
 	try {
 		execFileSync('python3', [join(repo, 'scripts/check-version-alignment.py'), '--root', root, '--set', version], { stdio: 'pipe' })
-		return 0
+		return { status: 0, stderr: '' }
 	} catch (error) {
-		return error.status
+		return { status: error.status, stderr: String(error.stderr) }
 	}
 }
+const setVersion = (root, version) => run(root, version).status
 
-const changedLines = (before, after) => before.split('\n')
-	.map((line, i) => [line, after.split('\n')[i]])
-	.filter(([was, is]) => was !== is)
+const changedLines = (before, after) => {
+	const afterLines = after.split('\n')
+	return before.split('\n')
+		.map((line, i) => [line, afterLines[i]])
+		.filter(([was, is]) => was !== is)
+}
 
 describe('check-version-alignment.py --set', () => {
 	let root
@@ -55,10 +59,29 @@ describe('check-version-alignment.py --set', () => {
 		files.forEach((file) => expect(after[file].replaceAll('9.8.7-rc.1', old)).toBe(before[file]))
 	})
 
-	it('refuses a -dev version, and writes nothing', () => {
+	// build-release-tarball.sh refuses a version ending in -dev; this refuses
+	// a dev marker anywhere in the pre-release, so none it lets through fails
+	// the tarball later.
+	it.each(['9.8.7-dev', '9.8.7-rc-dev', '9.8.7-dev.1', '9.8.7-DEV'])('refuses the development version %s, and writes nothing', (version) => {
 		const before = read()
 
-		expect(setVersion(root, '9.8.7-dev')).toBe(1)
+		expect(setVersion(root, version)).toBe(1)
+		expect(read()).toEqual(before)
+	})
+
+	// npm refuses these in npm ci, after the files were written.
+	it.each(['9.8.7-.', '09.8.7', '9.8.7-01'])('refuses %s, which is no semver, and writes nothing', (version) => {
+		const before = read()
+
+		expect(setVersion(root, version)).toBe(1)
+		expect(read()).toEqual(before)
+	})
+
+	// Nextcloud upgrades to a higher version only.
+	it('refuses a version below the one info.xml has, and writes nothing', () => {
+		const before = read()
+
+		expect(setVersion(root, '0.0.1')).toBe(1)
 		expect(read()).toEqual(before)
 	})
 
@@ -70,7 +93,9 @@ describe('check-version-alignment.py --set', () => {
 		writeFileSync(join(root, 'package-lock.json'), JSON.stringify(lock, null, '\t') + '\n')
 		const before = read()
 
-		expect(setVersion(root, '9.8.7')).toBe(1)
+		const { status, stderr } = run(root, '9.8.7')
+		expect(status).toBe(1)
+		expect(stderr).toContain('package-lock.json has no packages[""].version')
 		expect(read()).toEqual(before)
 	})
 })

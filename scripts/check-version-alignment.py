@@ -4,9 +4,9 @@
 """Check that every file restating the app version agrees with appinfo/info.xml.
 
 `appinfo/info.xml` is the single source of truth. `package.json` and both
-version fields in `package-lock.json` are aligned by hand (#119), and the built
-bundles take their version from `package.json` - so drift there ships
-`js/*.license` files naming a version the app does not have.
+version fields in `package-lock.json` restate it (#119), and the built bundles
+take their version from `package.json` - so drift there ships `js/*.license`
+files naming a version the app does not have.
 
 Printing the version with `--print` makes this the one reader of info.xml, so
 the release workflow and the tarball builder do not each carry their own.
@@ -46,8 +46,35 @@ def restated_versions(root: pathlib.Path) -> dict[str, str]:
     }
 
 
-# Semver as a release takes it: a -dev version is a working tree's, not a release's.
-RELEASE_VERSION = re.compile(r"\d+\.\d+\.\d+(?:-(?!dev$)[0-9A-Za-z.-]+)?")
+# Semver 2.0.0 without build metadata, as npm takes it too.
+_NUMBER = r"(?:0|[1-9]\d*)"
+_IDENTIFIER = r"(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*)"
+RELEASE_VERSION = re.compile(rf"{_NUMBER}\.{_NUMBER}\.{_NUMBER}(?:-{_IDENTIFIER}(?:\.{_IDENTIFIER})*)?")
+# A dev marker anywhere in the pre-release is a working tree's version, not a
+# release's; build-release-tarball.sh refuses the ones ending in -dev.
+_DEV = re.compile(r"(?:^|[.-])dev(?:$|[.-])", re.IGNORECASE)
+
+
+def precedence(version: str) -> tuple:
+    """A key that orders versions as semver does: a pre-release below its
+    release, numeric identifiers below others and by value, a longer set of
+    identifiers above a shorter one it starts with."""
+    core, _, pre = version.partition("-")
+    numbers = tuple(int(part) for part in core.split("."))
+    if pre == "":
+        return (numbers, 1, ())
+    return (numbers, 0, tuple((0, int(part), "") if part.isdigit() else (1, 0, part) for part in pre.split(".")))
+
+
+def field(data: dict, path: tuple[str, ...], where: str) -> str:
+    """The value at `path`, or a LookupError that names the file and the field."""
+    value = data
+    for key in path:
+        if not isinstance(value, dict) or key not in value:
+            name = "".join('[""]' if key == "" else f".{key}" for key in path).lstrip(".")
+            raise LookupError(f"{where} has no {name}; nothing written")
+        value = value[key]
+    return value
 
 
 def replaced_once(text: str, old: str, new: str, start: int = 0) -> str:
@@ -68,25 +95,32 @@ def set_version(root: pathlib.Path, version: str) -> None:
     the old one but for the version, and no file is written before all are.
     """
     if RELEASE_VERSION.fullmatch(version) is None:
-        raise ValueError(f"{version} is no release version (X.Y.Z, or X.Y.Z-suffix other than -dev)")
+        raise ValueError(f"{version} is no release version: semver X.Y.Z or X.Y.Z-prerelease, no leading zeros")
+    if _DEV.search(version.partition("-")[2]):
+        raise ValueError(f"{version} is a development version, not a release")
 
     info_xml = root / "appinfo" / "info.xml"
     info_text = info_xml.read_text(encoding="utf-8")
-    info_new = replaced_once(info_text, f"<version>{app_version(info_xml)}</version>", f"<version>{version}</version>")
+    current = app_version(info_xml)
+    # Nextcloud upgrades to a higher version only. The same one again is a
+    # release being prepared anew.
+    if RELEASE_VERSION.fullmatch(current) and precedence(version) < precedence(current):
+        raise ValueError(f"{version} is below {current}, the version appinfo/info.xml has")
+    info_new = replaced_once(info_text, f"<version>{current}</version>", f"<version>{version}</version>")
 
     package_json = root / "package.json"
     package_text = package_json.read_text(encoding="utf-8")
     package = json.loads(package_text)
-    package_new = replaced_once(package_text, f'"version": {json.dumps(package["version"])}', f'"version": {json.dumps(version)}')
+    package_new = replaced_once(package_text, f'"version": {json.dumps(field(package, ("version",), "package.json"))}', f'"version": {json.dumps(version)}')
     expected_package = dict(package, version=version)
 
     lock_json = root / "package-lock.json"
     lock_text = lock_json.read_text(encoding="utf-8")
     lock = json.loads(lock_text)
-    lock_new = replaced_once(lock_text, f'"version": {json.dumps(lock["version"])}', f'"version": {json.dumps(version)}')
+    lock_new = replaced_once(lock_text, f'"version": {json.dumps(field(lock, ("version",), "package-lock.json"))}', f'"version": {json.dumps(version)}')
     lock_new = replaced_once(
         lock_new,
-        f'"version": {json.dumps(lock["packages"][""]["version"])}',
+        f'"version": {json.dumps(field(lock, ("packages", "", "version"), "package-lock.json"))}',
         f'"version": {json.dumps(version)}',
         lock_new.index('"packages"'),
     )
@@ -122,7 +156,7 @@ def main() -> int:
     if arguments.new_version is not None:
         try:
             set_version(arguments.root, arguments.new_version)
-        except (LookupError, ValueError, KeyError) as refused:
+        except (LookupError, ValueError) as refused:
             print(refused, file=sys.stderr)
             return 1
 
