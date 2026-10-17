@@ -55,6 +55,7 @@ jobs:
           test_files=(
             tests/e2e/docker/test-upgrade.sh
             tests/e2e/docker/upgrade-fixtures.mjs
+            tests/e2e/docker/update-app.php
             tests/e2e/docker/sync-app.sh
             tests/e2e/docker/up.sh
             .github/workflows/e2e-upgrade.yml

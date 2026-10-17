@@ -101,7 +101,7 @@ The stack is a project of its own, `epnc-upgrade`, and is kept for a look.
 It needs port 443 and the hostnames like every stack here, so stop another
 one first. `up.sh` writes `tests/e2e/docker/.env` and
 `tests/e2e/.env.e2e.docker` for it; the ones that were there before go
-back when the test ends, so the suite no longer reaches the kept stack.
+back when the test ends, and where there were none, the test's stay.
 A failed run leaves its snapshots, pads and the Nextcloud log in a
 directory it names; `UPGRADE_WORK`, a new or empty directory, keeps them
 from every run. Remove the stack with:

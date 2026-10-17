@@ -173,7 +173,7 @@ const PADS = [
 	['trash-call-offline', 'protected'],
 ]
 
-/** A value the migration sets to the time it runs: taken as it is found. */
+/** A value the migration sets to the time it runs: taken as it is found, unchecked. */
 const ANY = Symbol('any')
 
 /**
