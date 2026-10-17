@@ -36,38 +36,41 @@ class ExternalPadExportFetcher {
 	private const EXTERNAL_MIN_ATTEMPT_SECONDS = 2;
 
 	/**
-	 * Addresses that are not public but pass PHP's filter on at least one
-	 * supported PHP version: the blocks IANA's special-purpose registries
-	 * mark as not globally reachable, and two deprecated forms -
-	 * IPv4-compatible addresses, which carry an IPv4 address, and
-	 * site-local ones. A block counts as a whole: the reachable addresses
-	 * inside one belong to protocol services such as anycast relays and
-	 * AS112, not to web servers. The filter reads an address as written -
-	 * from PHP 8.3 on it refuses `::127.0.0.1`, but not the same address
-	 * written `::7f00:1` - so these blocks are compared in binary.
-	 *
-	 * The NAT64 prefix `64:ff9b::/96` is left out: IANA marks it globally
-	 * reachable, and an IPv6-only server reaches IPv4-only servers through
-	 * it.
+	 * IPv4 blocks that are not public: those IANA's special-purpose
+	 * registry marks as not globally reachable, and multicast. A block
+	 * counts as a whole, here and for IPv6: the reachable addresses inside
+	 * one belong to protocol services such as anycast relays, not to web
+	 * servers.
 	 */
-	private const NOT_PUBLIC_RANGES = [
+	private const NOT_PUBLIC_IPV4 = [
+		'0.0.0.0/8',
+		'10.0.0.0/8',
 		'100.64.0.0/10', // shared address space: carrier-grade NAT, Tailscale
+		'127.0.0.0/8',
+		'169.254.0.0/16',
+		'172.16.0.0/12',
 		'192.0.0.0/24',
 		'192.0.2.0/24',
 		'192.88.99.2/32',
+		'192.168.0.0/16',
 		'198.18.0.0/15',
 		'198.51.100.0/24',
 		'203.0.113.0/24',
-		'::/96', // IPv4-compatible
-		'::ffff:0:0/96', // IPv4-mapped
-		'64:ff9b:1::/48',
-		'100::/64',
-		'100:0:0:1::/64',
-		'2001::/23',
+		'224.0.0.0/4', // multicast
+		'240.0.0.0/4', // reserved, the limited broadcast address with it
+	];
+
+	/**
+	 * IPv6 is public only in global unicast, `2000::/3`, and outside these
+	 * blocks IANA's special-purpose registry marks as not globally
+	 * reachable. Everything else - loopback, IPv4 written as IPv6,
+	 * unique-local, link-local, site-local, multicast - lies outside
+	 * `2000::/3`.
+	 */
+	private const NOT_PUBLIC_IPV6 = [
+		'2001::/23', // IETF protocol assignments, Teredo among them
 		'2001:db8::/32',
 		'3fff::/20',
-		'5f00::/16',
-		'fec0::/10', // site-local
 	];
 
 	public function __construct(
@@ -385,11 +388,13 @@ class ExternalPadExportFetcher {
 			throw new ExternalPadException('Local hosts are not allowed for external pad sync.', ExternalPadException::LOCAL_ADDRESS);
 		}
 
-		if (filter_var($host, FILTER_VALIDATE_IP) !== false) {
-			if (!$this->isPublicIp($host)) {
+		// A URL writes an IPv6 address in brackets, which parse_url() keeps.
+		$literal = str_starts_with($host, '[') && str_ends_with($host, ']') ? substr($host, 1, -1) : $host;
+		if (filter_var($literal, FILTER_VALIDATE_IP) !== false) {
+			if (!$this->isPublicIp($literal)) {
 				throw new ExternalPadException('Private/reserved IPs are not allowed for external pad sync.', ExternalPadException::LOCAL_ADDRESS);
 			}
-			return [$host];
+			return [$literal];
 		}
 
 		$records = $this->lookUp($host);
@@ -431,23 +436,52 @@ class ExternalPadExportFetcher {
 		return is_array($records) ? $records : [];
 	}
 
+	/**
+	 * Decided on the address itself, as the system parses it, not on how
+	 * it is written: PHP's own filter refuses `::127.0.0.1` from PHP 8.3
+	 * on, but not the same address written `::7f00:1`, and which blocks it
+	 * refuses changes between versions.
+	 */
 	private function isPublicIp(string $ip): bool {
-		if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE) === false) {
-			return false;
+		$address = inet_pton($ip);
+		return $address !== false && self::isPublicAddress($address);
+	}
+
+	/** @param string $address packed, as inet_pton() returns it */
+	private static function isPublicAddress(string $address): bool {
+		if (strlen($address) === 4) {
+			return !self::inAnyBlock($address, self::NOT_PUBLIC_IPV4);
 		}
-		$address = (string)inet_pton($ip);
-		foreach (self::NOT_PUBLIC_RANGES as $range) {
-			[$network, $bits] = explode('/', $range);
-			$prefix = (string)inet_pton($network);
-			$whole = intdiv((int)$bits, 8);
-			$rest = (int)$bits % 8;
-			if (strlen($prefix) === strlen($address)
-				&& strncmp($address, $prefix, $whole) === 0
-				&& ($rest === 0 || (ord($address[$whole]) ^ ord($prefix[$whole])) >> (8 - $rest) === 0)) {
-				return false;
+		// A connection to a NAT64 or a 6to4 address ends at the IPv4
+		// address it carries. RFC 6052 forbids the NAT64 prefix for an
+		// address that is not public, but nothing stops a DNS record.
+		if (self::inBlock($address, '64:ff9b::/96')) {
+			return self::isPublicAddress(substr($address, 12, 4));
+		}
+		if (self::inBlock($address, '2002::/16')) {
+			return self::isPublicAddress(substr($address, 2, 4));
+		}
+		return self::inBlock($address, '2000::/3') && !self::inAnyBlock($address, self::NOT_PUBLIC_IPV6);
+	}
+
+	/** @param list<string> $blocks */
+	private static function inAnyBlock(string $address, array $blocks): bool {
+		foreach ($blocks as $block) {
+			if (self::inBlock($address, $block)) {
+				return true;
 			}
 		}
-		return true;
+		return false;
+	}
+
+	/** @param string $block an address and a prefix length, `10.0.0.0/8` */
+	private static function inBlock(string $address, string $block): bool {
+		[$network, $bits] = explode('/', $block);
+		$prefix = (string)inet_pton($network);
+		$whole = intdiv((int)$bits, 8);
+		$rest = (int)$bits % 8;
+		return strncmp($address, $prefix, $whole) === 0
+			&& ($rest === 0 || (ord($address[$whole]) ^ ord($prefix[$whole])) >> (8 - $rest) === 0);
 	}
 
 	private function isAllowlistedExternalHost(string $host, string $origin): bool {

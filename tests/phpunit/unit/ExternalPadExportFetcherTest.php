@@ -103,9 +103,9 @@ class ExternalPadExportFetcherTest extends TestCase {
 	}
 
 	/**
-	 * The refused addresses pass PHP's filter on at least one supported
-	 * version, some only in one way of writing them. The addresses just
-	 * outside a block stay public.
+	 * Many of the refused addresses pass PHP's filter on some supported
+	 * version or in one way of writing them; the check must depend on
+	 * neither. The addresses just outside a block stay public.
 	 */
 	#[DataProvider('addressesAndWhetherTheyArePublic')]
 	public function testRefusesAddressesThatAreNotPublic(string $address, bool $public): void {
@@ -133,11 +133,26 @@ class ExternalPadExportFetcherTest extends TestCase {
 			'benchmarking, its second half' => ['198.19.255.1', false],
 			'the second documentation block' => ['198.51.100.7', false],
 			'the third documentation block' => ['203.0.113.7', false],
+			'multicast' => ['224.0.0.1', false],
+			'private' => ['10.0.0.7', false],
+			'something the system does not parse as an address' => ['999.1.1.1', false],
 			'loopback, IPv4-compatible and written in hex' => ['::7f00:1', false],
 			'loopback, IPv4-mapped' => ['::ffff:7f00:1', false],
 			'loopback, IPv4-mapped and dotted' => ['::ffff:127.0.0.1', false],
 			'a public address, IPv4-mapped' => ['::ffff:1.1.1.1', false],
+			'a private address, IPv4-translated' => ['::ffff:0:a00:1', false],
+			'NAT64 to a private address' => ['64:ff9b::a00:5', false],
+			'NAT64 to shared address space' => ['64:ff9b::6440:1', false],
+			'NAT64 to link-local, dotted' => ['64:ff9b::169.254.169.254', false],
+			'6to4 for a private address' => ['2002:a00:1::1', false],
+			'6to4 for loopback' => ['2002:7f00:1::1', false],
 			'local-use IPv4/IPv6 translation' => ['64:ff9b:1::a00:1', false],
+			'unique-local with a dotted tail' => ['fd00::10.0.0.1', false],
+			'link-local with a dotted tail' => ['fe80::1.2.3.4', false],
+			'reserved space below global unicast' => ['5f::1', false],
+			'just below global unicast' => ['1fff:ffff::1', false],
+			'just above global unicast' => ['4000::1', false],
+			'IPv6 multicast' => ['ff02::1', false],
 			'discard-only' => ['100::1', false],
 			'the dummy prefix' => ['100:0:0:1::1', false],
 			'Teredo, inside the IETF block' => ['2001::1', false],
@@ -147,14 +162,18 @@ class ExternalPadExportFetcherTest extends TestCase {
 			'the newer IPv6 documentation block' => ['3fff::1', false],
 			'SRv6 segment identifiers' => ['5f00::1', false],
 			'site-local' => ['fec0::1', false],
+			'a public IPv4 address' => ['1.1.1.1', true],
 			'just below shared address space' => ['100.63.255.255', true],
 			'just above shared address space' => ['100.128.0.1', true],
 			'just below benchmarking' => ['198.17.255.255', true],
 			'just above benchmarking' => ['198.20.0.1', true],
+			'just below multicast' => ['223.255.255.254', true],
 			'NAT64 to a public address' => ['64:ff9b::101:101', true],
+			'6to4 for a public address' => ['2002:101:101::1', true],
 			'just past the IETF block' => ['2001:200::1', true],
+			'just past the newer documentation block' => ['3fff:1000::1', true],
+			'global unicast PHP 8.1 and 8.2 refuse' => ['3ff3::1', true],
 			'a public IPv6 address' => ['2606:4700::1111', true],
-			'an IPv4 address whose first bytes match an IPv6 block' => ['32.1.1.1', true],
 		];
 	}
 
@@ -175,6 +194,7 @@ class ExternalPadExportFetcherTest extends TestCase {
 			'a local host' => ['https://pad.localhost/p/pad', '', ExternalPadException::LOCAL_ADDRESS],
 			'a private address' => ['https://10.0.0.7/p/pad', '', ExternalPadException::LOCAL_ADDRESS],
 			'a shared address' => ['https://100.64.0.7/p/pad', '', ExternalPadException::LOCAL_ADDRESS],
+			'loopback written as IPv6' => ['https://[::ffff:127.0.0.1]/p/pad', '', ExternalPadException::LOCAL_ADDRESS],
 			'no pad after /p/' => ['https://1.1.1.1/p/%20', '', ExternalPadException::NOT_A_PAD_URL],
 			'a name without records' => ['https://pad.example/p/pad', '', ExternalPadException::UNRESOLVED, []],
 			'a name without an address' => ['https://pad.example/p/pad', '', ExternalPadException::UNRESOLVED, [['host' => 'pad.example', 'type' => 'A']]],
@@ -523,6 +543,7 @@ class ExternalPadExportFetcherTest extends TestCase {
 			'an international name, which cURL turns into punycode' => ['https://bücher.example/p/pad', [['ip' => '1.1.1.1']], 'CONNECT 1.1.1.1:443 HTTP/1.1'],
 			'a percent-encoded name, which cURL decodes' => ['https://%70ad.example/p/pad', [['ip' => '1.1.1.1']], 'CONNECT 1.1.1.1:443 HTTP/1.1'],
 			'an IPv6 address, on a port of its own' => ['https://pad.example:8443/p/pad', [['ipv6' => '2606:4700::1111']], 'CONNECT [2606:4700::1111]:8443 HTTP/1.1'],
+			'an IPv6 address in the URL' => ['https://[2606:4700::1111]/p/pad', [], 'CONNECT [2606:4700::1111]:443 HTTP/1.1'],
 		];
 	}
 
