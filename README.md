@@ -190,7 +190,16 @@ npm test
 npm run build
 ```
 
-PHP checks and optional E2E checks are described in [docs/release-process.md](docs/release-process.md).
+PHP checks:
+
+```bash
+composer install --no-interaction
+composer test:phpunit
+composer psalm
+```
+
+The end-to-end suite is described in [tests/e2e/README.md](tests/e2e/README.md),
+the release flow in [docs/release-process.md](docs/release-process.md).
 
 ## Usage
 

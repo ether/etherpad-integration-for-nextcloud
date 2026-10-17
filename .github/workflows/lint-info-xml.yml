@@ -48,8 +48,8 @@ jobs:
           persist-credentials: false
 
       # appinfo/info.xml is the single source of truth for the app version.
-      # package.json / package-lock.json are aligned manually, so guard against
-      # drift (#119): fail the build if they disagree. The release workflow
+      # package.json and package-lock.json restate it, so guard against drift
+      # (#119): fail the build if they disagree. The release workflow
       # runs the same check, since a tag can sit on a commit no pull request
       # ever saw.
       - name: Compare info.xml and the versions everything else restates
