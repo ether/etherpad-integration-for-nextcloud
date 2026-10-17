@@ -3,10 +3,11 @@
 name: e2e-upgrade
 
 # The upgrade from the last release, on every supported Nextcloud major.
-# It runs for a pull request that changes the version while lib/Migration
-# differs from that release - a release with something new to run on its
-# users' data - and for one that changes the test itself, which would
-# otherwise run first on a release. Any other pull request skips it.
+# It runs for a pull request while the version is not that release's and
+# lib/Migration differs from it - a release in the making with something
+# new to run on its users' data - and for one that changes the test or a
+# script it runs, which would otherwise run first on a release. Any other
+# pull request skips it.
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
@@ -44,26 +45,40 @@ jobs:
         env:
           EVENT: ${{ github.event_name }}
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          AUTHOR: ${{ github.event.pull_request.user.login }}
         run: |
-          version_at() { git show "$1:appinfo/info.xml" | sed -n 's|.*<version>\([^<]*\)</version>.*|\1|p' | head -n 1; }
+          version="$(sed -n 's|.*<version>\([^<]*\)</version>.*|\1|p' appinfo/info.xml | head -n 1)"
           from="$(git describe --tags --abbrev=0 --match 'v[0-9]*' HEAD)"
-          echo "from=${from#v}" >> "$GITHUB_OUTPUT"
-          if [[ "$EVENT" != pull_request ]]; then
-            echo "Started by hand: the upgrade from $from runs."
-            echo "run=true" >> "$GITHUB_OUTPUT"
-          elif ! git diff --quiet "$BASE_SHA" HEAD -- tests/e2e/docker/test-upgrade.sh tests/e2e/docker/upgrade-fixtures.mjs .github/workflows/e2e-upgrade.yml; then
-            echo "The test itself changes: the upgrade from $from runs."
-            echo "run=true" >> "$GITHUB_OUTPUT"
-          elif [[ "$(version_at "$BASE_SHA")" == "$(version_at HEAD)" ]]; then
-            echo "The version stays $(version_at HEAD): no upgrade."
-            echo "run=false" >> "$GITHUB_OUTPUT"
-          elif git diff --quiet "$from" HEAD -- lib/Migration; then
-            echo "Nothing in lib/Migration differs from $from: the upgrade runs nothing new."
-            echo "run=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "The version changes to $(version_at HEAD), and lib/Migration differs from $from."
-            echo "run=true" >> "$GITHUB_OUTPUT"
+          # As in test-upgrade.sh: a HEAD the release is tagged on upgrades
+          # from the release before it.
+          if git tag --points-at HEAD | grep -qxF "$from"; then
+            from="$(git describe --tags --abbrev=0 --match 'v[0-9]*' "$from^")"
           fi
+          echo "from=${from#v}" >> "$GITHUB_OUTPUT"
+          # The test, and the scripts whose paths only it takes: the rest
+          # of the stack every e2e job brings up.
+          test_files=(
+            tests/e2e/docker/test-upgrade.sh
+            tests/e2e/docker/upgrade-fixtures.mjs
+            tests/e2e/docker/sync-app.sh
+            tests/e2e/docker/up.sh
+            .github/workflows/e2e-upgrade.yml
+          )
+          if [[ "$EVENT" != pull_request ]]; then
+            run=true why="Started by hand"
+          # A Dependabot bump of an action says nothing about the test, and
+          # would fail it while a new release has no checksum pinned yet.
+          elif [[ "$AUTHOR" != 'dependabot[bot]' ]] && ! git diff --quiet "$BASE_SHA" HEAD -- "${test_files[@]}"; then
+            run=true why="The test or a script it runs changes"
+          elif [[ "$version" == "${from#v}" ]]; then
+            run=false why="The version is $from's: no release to upgrade to"
+          elif git diff --quiet "$from" HEAD -- lib/Migration; then
+            run=false why="Nothing in lib/Migration differs from $from"
+          else
+            run=true why="Version $version, and lib/Migration differs from $from"
+          fi
+          echo "$why: run=$run."
+          echo "run=$run" >> "$GITHUB_OUTPUT"
 
   upgrade:
     needs: decide
@@ -118,6 +133,7 @@ jobs:
           FROM_VERSION: ${{ needs.decide.outputs.from }}
           NC_VERSION: ${{ matrix.nextcloud }}
           EP_VERSION: '2'
+          UPGRADE_WORK: ${{ runner.temp }}/upgrade
         run: bash tests/e2e/docker/test-upgrade.sh
 
       - name: Collect stack logs on failure
@@ -128,10 +144,16 @@ jobs:
         if: failure()
         with:
           name: e2e-upgrade-nc${{ matrix.nextcloud }}
+          # The snapshots, pads and Nextcloud log the script keeps; not the
+          # archives and the two copies of the app.
           path: |
             playwright-report/
             test-results/
             stack-logs.txt
+            ${{ runner.temp }}/upgrade/
+            !${{ runner.temp }}/upgrade/*.tar.gz
+            !${{ runner.temp }}/upgrade/from/
+            !${{ runner.temp }}/upgrade/to/
           retention-days: 7
 
       - name: Tear the stack down
