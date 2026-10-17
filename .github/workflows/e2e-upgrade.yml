@@ -1,0 +1,140 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (c) 2026 Jacob Bühler
+name: e2e-upgrade
+
+# The upgrade from the last release, on every supported Nextcloud major:
+# for a pull request that raises the version while the migrations or
+# repair steps differ from that release's - a release with something new
+# to run on its users' data - and for one that changes the test itself,
+# which would otherwise first run on a release. Any other pull request
+# skips it.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - 'appinfo/info.xml'
+      - 'lib/Migration/**'
+      - 'tests/e2e/docker/**'
+      - '.github/workflows/e2e-upgrade.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e2e-upgrade-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  decide:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    name: Is there an upgrade to test
+    outputs:
+      run: ${{ steps.decide.outputs.run }}
+      from: ${{ steps.decide.outputs.from }}
+    steps:
+      # The whole history, for the tags.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Compare the version and the migrations
+        id: decide
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          version_at() { git show "$1:appinfo/info.xml" | sed -n 's|.*<version>\([^<]*\)</version>.*|\1|p' | head -n 1; }
+          from="$(git describe --tags --abbrev=0 --match 'v[0-9]*' HEAD)"
+          echo "from=${from#v}" >> "$GITHUB_OUTPUT"
+          if [[ "$EVENT" != pull_request ]]; then
+            echo "Started by hand: the upgrade from $from runs."
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          elif ! git diff --quiet "$BASE_SHA" HEAD -- tests/e2e/docker/test-upgrade.sh tests/e2e/docker/upgrade-fixtures.mjs .github/workflows/e2e-upgrade.yml; then
+            echo "The test itself changes: the upgrade from $from runs."
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          elif [[ "$(version_at "$BASE_SHA")" == "$(version_at HEAD)" ]]; then
+            echo "The version stays $(version_at HEAD): no upgrade."
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          elif git diff --quiet "$from" HEAD -- lib/Migration; then
+            echo "Nothing in lib/Migration differs from $from: the upgrade runs nothing new."
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "The version changes to $(version_at HEAD), and lib/Migration differs from $from."
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  upgrade:
+    needs: decide
+    if: needs.decide.outputs.run == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    strategy:
+      fail-fast: false
+      matrix:
+        # Every major the app supports, as the nightly e2e run has them;
+        # a major the release before does not run on skips itself.
+        nextcloud: ['32.0.9', '33', '34']
+
+    name: ${{ needs.decide.outputs.from }} on Nextcloud ${{ matrix.nextcloud }}
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Read package.json node and npm engines
+        id: versions
+        uses: skjnldsv/read-package-engines-version-actions@06d6db44aa62f4609ba070f556ec24bc99fb85cb # v4
+
+      # As in e2e.yml: anything but a version range means the action could
+      # not read the engines.
+      - name: Fail if the engines ranges could not be read
+        env:
+          NODE_RANGE: ${{ steps.versions.outputs.nodeVersion }}
+          NPM_RANGE: ${{ steps.versions.outputs.npmVersion }}
+        run: |
+          printf '%s' "$NODE_RANGE" | grep -Eq '^[~^]?[0-9]+(\.[0-9]+){0,2}$' \
+            || { echo "::error::engines.node did not read as a version range: '$NODE_RANGE'"; exit 1; }
+          printf '%s' "$NPM_RANGE" | grep -Eq '^[~^]?[0-9]+(\.[0-9]+){0,2}$' \
+            || { echo "::error::engines.npm did not read as a version range: '$NPM_RANGE'"; exit 1; }
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ steps.versions.outputs.nodeVersion }}
+          cache: npm
+
+      - run: npm ci --engine-strict
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Resolve the stack hostnames
+        run: echo '127.0.0.1 nc.pad.test ep.pad.test' | sudo tee -a /etc/hosts
+
+      - name: Upgrade ${{ needs.decide.outputs.from }} on Nextcloud ${{ matrix.nextcloud }}
+        env:
+          FROM_VERSION: ${{ needs.decide.outputs.from }}
+          NC_VERSION: ${{ matrix.nextcloud }}
+          EP_VERSION: '2'
+        run: bash tests/e2e/docker/test-upgrade.sh
+
+      - name: Collect stack logs on failure
+        if: failure()
+        run: docker compose -p epnc-upgrade -f tests/e2e/docker/compose.yml logs --no-color --tail=400 > stack-logs.txt
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: failure()
+        with:
+          name: e2e-upgrade-nc${{ matrix.nextcloud }}
+          path: |
+            playwright-report/
+            test-results/
+            stack-logs.txt
+          retention-days: 7
+
+      - name: Tear the stack down
+        if: always()
+        run: docker compose -p epnc-upgrade -f tests/e2e/docker/compose.yml down -v --remove-orphans
