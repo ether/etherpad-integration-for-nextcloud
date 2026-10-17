@@ -105,9 +105,9 @@ class ExternalPadExportFetcherTest extends TestCase {
 	/**
 	 * Many of the refused addresses pass PHP's filter on some supported
 	 * version or in one way of writing them; the check must depend on
-	 * neither. Where a refused block borders public space, the address
-	 * across the border stays public. Each address is tried behind a name
-	 * and as the URL's host.
+	 * neither. Next to each refused block that borders public space, an
+	 * address across the border stays public. Each address is tried behind
+	 * a name and as the URL's host.
 	 */
 	#[DataProvider('addressesAndWhetherTheyArePublic')]
 	public function testRefusesAddressesThatAreNotPublic(string $address, bool $public): void {

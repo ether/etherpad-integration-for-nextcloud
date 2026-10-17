@@ -293,11 +293,11 @@ class ExternalPadExportFetcher {
 	 * cURL reports a certificate that failed verification as 60, and a
 	 * name it does not match as 51 before libcurl 7.62.0.
 	 *
-	 * One certificate failure decides it, whatever the other addresses did:
-	 * asked from an instance without an IPv6 route, a host whose
-	 * certificate is not trusted fails on it over IPv4, and over IPv6 on
-	 * every try, with the code cURL also gives a connection refused for a
-	 * moment.
+	 * One certificate failure decides it, whatever the other addresses did.
+	 * Asked from an instance without an IPv6 route, a host whose
+	 * certificate is not trusted fails over IPv4 on the certificate and
+	 * over IPv6 with 7 on every try, the code cURL also gives a connection
+	 * refused for a moment.
 	 * A name whose addresses show different certificates, the trusted one
 	 * briefly down, gets the certificate's sentence too; opening the file
 	 * again tries again.
@@ -539,10 +539,10 @@ class ExternalPadExportFetcher {
 		// `+` is literal in a URL path; only form encoding reads it as a space.
 		// urldecode() would turn `/p/team+pad` into another pad's name.
 		$decodedPath = rawurldecode($path);
-		// parse_url() takes anything after a bracket as the host, closed or
-		// not. Only an IPv6 address without a zone belongs there: cURL
-		// refuses an IPv4 address, and a zone names an interface of this
-		// server.
+		// parse_url() keeps the brackets around a host and checks neither
+		// what is in them nor that they close. Only an IPv6 address without
+		// a zone belongs there: cURL refuses an IPv4 address, and a zone
+		// names an interface of this server.
 		if ($scheme !== 'https' || $host === '' || $port <= 0 || $port > 65535
 			|| (str_starts_with($host, '[') && (!str_ends_with($host, ']')
 				|| filter_var(substr($host, 1, -1), FILTER_VALIDATE_IP, FILTER_FLAG_IPV6) === false))
