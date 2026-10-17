@@ -86,31 +86,34 @@ for good while Etherpad was down. Then it installs the working tree over
 it, or the release archive `TO_ARCHIVE` names, and runs the update as
 Nextcloud runs it.
 
-It checks that the update changed what the migrations that ran are to
-change, and nothing else. Their entries in `upgrade-fixtures.mjs` say what
-that is in rows, settings and indexes, and every migration has one, empty
-if it changes none of these. Of the jobs, those whose class is gone have
-to be gone, and those `info.xml` names have to be there. It then opens,
+It snapshots the rows, settings, migrations, jobs and index names before
+and after the update. The entries in `upgrade-fixtures.mjs` say what the
+migrations that ran change in rows, settings and index names, and the
+rest of what the snapshots hold has to stay as it was. A migration that
+runs needs an entry, empty if it changes none of these. Of the jobs, those
+whose class is gone have to be gone, and those `info.xml` names have to be
+there. A repair step's warning fails the update. The test then opens,
 restores and deletes the pads, runs the jobs, runs the update once more,
-which has to change nothing, and fails on any warning or error about the
+whose snapshot has to match, and fails on any warning or error about the
 app logged meanwhile. Last, it runs the whole suite on the upgraded stack.
 
 The stack is a project of its own, `epnc-upgrade`, and is kept for a look.
 It needs port 443 and the hostnames like every stack here, so stop another
 one first. `up.sh` writes `tests/e2e/docker/.env` and
 `tests/e2e/.env.e2e.docker` for it; the ones that were there before go
-back when the test ends. A failed run leaves its snapshots, pads and the
-Nextcloud log in a directory it names, or in `UPGRADE_WORK`. Remove the
-stack with:
+back when the test ends, so the suite no longer reaches the kept stack.
+A failed run leaves its snapshots, pads and the Nextcloud log in a
+directory it names; `UPGRADE_WORK`, a new or empty directory, keeps them
+from every run. Remove the stack with:
 
 ```bash
 docker compose -p epnc-upgrade -f tests/e2e/docker/compose.yml down -v --remove-orphans
 ```
 
 On GitHub the `e2e-upgrade` workflow runs it on every supported major, for
-a pull request while the version is not the last release's and
-`lib/Migration` differs from it, and for one that changes the test or
-`sync-app.sh` or `up.sh`, whose paths only it takes.
+the pull requests its first job picks: mainly a release in the making
+whose `lib/Migration` differs from the last release, and a change to the
+test.
 
 ## Certificates
 
