@@ -61,7 +61,11 @@ class Version000005Date20260928120000 extends SimpleMigrationStep {
 	/** A restore that could not finish, on a `main` after 1.1.0-beta.1; no release wrote it. */
 	private const RESTORE_PENDING = 'restore_pending';
 
-	/** Rows of files still there made active per query; a test makes it small. */
+	/**
+	 * Rows of files still there made active per query; a test makes it small.
+	 *
+	 * @var int
+	 */
 	protected const BATCH = 500;
 
 	private const OLD_INDEX = 'ep_bind_state_idx';
