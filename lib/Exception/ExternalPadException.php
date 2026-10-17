@@ -37,7 +37,7 @@ class ExternalPadException extends EtherpadClientException {
 	public const DISABLED = 'disabled';
 	/** A server the allowlist does not name. */
 	public const NOT_ALLOWED = 'not_allowed';
-	/** A local host, or an address in a private or reserved range. */
+	/** A local host, or a server whose IP address is not public. */
 	public const LOCAL_ADDRESS = 'local_address';
 	/** A host name that resolves to nothing. */
 	public const UNRESOLVED = 'unresolved';

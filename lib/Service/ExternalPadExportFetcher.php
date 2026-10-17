@@ -21,19 +21,56 @@ class ExternalPadExportFetcher {
 	private const EXTERNAL_REQUEST_TIMEOUT_SECONDS = 15;
 
 	/**
-	 * The whole fetch, not each attempt: a host with four unreachable
-	 * addresses used to hold a request for a minute. An attempt gets what
-	 * is left, and one that no longer fits is not made.
-	 *
-	 * The clock starts before the name is resolved, so a slow lookup costs
-	 * the HTTP attempts their time rather than being added on top. What it
-	 * cannot do is bound the lookup itself: `dns_get_record()` takes no
-	 * timeout and obeys the system resolver, so a dead nameserver can still
-	 * hold a request for its own retry schedule before this budget has
-	 * anything left to give.
+	 * The whole fetch, the name lookup included: an attempt gets what is
+	 * left, and one that no longer fits is not made. The budget cannot
+	 * bound the lookup itself: `dns_get_record()` takes no timeout, so a
+	 * dead nameserver holds a request for the resolver's own retries.
 	 */
 	private const EXTERNAL_TOTAL_BUDGET_SECONDS = 20;
 	private const EXTERNAL_MIN_ATTEMPT_SECONDS = 2;
+
+	/**
+	 * IPv4 blocks that are not public: those IANA's special-purpose
+	 * registry marks as not globally reachable (checked 2026-10-17), and
+	 * multicast. A block counts as a whole, here and for IPv6: the
+	 * reachable addresses inside one belong to protocol services such as
+	 * anycast relays, not to web servers.
+	 *
+	 * @see https://www.iana.org/assignments/iana-ipv4-special-registry/
+	 */
+	private const NOT_PUBLIC_IPV4 = [
+		'0.0.0.0/8',
+		'10.0.0.0/8',
+		'100.64.0.0/10', // shared address space: carrier-grade NAT, Tailscale
+		'127.0.0.0/8',
+		'169.254.0.0/16',
+		'172.16.0.0/12',
+		'192.0.0.0/24',
+		'192.0.2.0/24',
+		'192.88.99.2/32',
+		'192.168.0.0/16',
+		'198.18.0.0/15',
+		'198.51.100.0/24',
+		'203.0.113.0/24',
+		'224.0.0.0/4', // multicast
+		'240.0.0.0/4', // reserved, the limited broadcast address with it
+	];
+
+	/**
+	 * Apart from NAT64 and 6to4, which count as the IPv4 address they
+	 * carry, IPv6 is public only in global unicast, `2000::/3`, and outside
+	 * these blocks IANA's special-purpose registry marks as not globally
+	 * reachable (checked 2026-10-17). The other addresses that are not
+	 * public lie outside `2000::/3`, among them loopback, IPv4-mapped and
+	 * IPv4-compatible, unique-local, link-local, site-local and multicast.
+	 *
+	 * @see https://www.iana.org/assignments/iana-ipv6-special-registry/
+	 */
+	private const NOT_PUBLIC_IPV6 = [
+		'2001::/23', // IETF protocol assignments, Teredo among them
+		'2001:db8::/32',
+		'3fff::/20',
+	];
 
 	public function __construct(
 		private IConfig $config,
@@ -114,7 +151,6 @@ class ExternalPadExportFetcher {
 		);
 	}
 
-	/** Started before the name is resolved, so the lookup spends from it too. */
 	private function startBudget(): float {
 		return $this->nowSeconds() + (float)self::EXTERNAL_TOTAL_BUDGET_SECONDS;
 	}
@@ -254,18 +290,17 @@ class ExternalPadExportFetcher {
 	/**
 	 * Why no attempt got an answer: a certificate this instance does not
 	 * trust, which a later try does not mend, or the server not reached.
-	 * 51 and 60 are cURL's codes for a peer certificate that failed
-	 * verification: before libcurl 7.62.0, 51 for a name it does not match
-	 * and 60 for a chain not trusted; since then 60 for both.
+	 * cURL reports a certificate that failed verification as 60, and a
+	 * name it does not match as 51 before libcurl 7.62.0.
 	 *
-	 * One such failure decides it, whatever the other addresses did. A
-	 * host whose certificate is not trusted, asked from an instance
-	 * without an IPv6 route, fails its IPv6 attempt on every try, and cURL
-	 * calls that 7, as it does a connection refused for a moment. So a
-	 * name whose addresses show different certificates, the trusted one
-	 * briefly down, is given up on purpose: it gets the certificate's
-	 * sentence, and opening the file again tries again. The normal host
-	 * shows one certificate on all its addresses.
+	 * One certificate failure decides it, whatever the other addresses did.
+	 * Asked from an instance without an IPv6 route, a host whose
+	 * certificate is not trusted fails over IPv4 on the certificate and
+	 * over IPv6 with 7 on every try, the code cURL also gives a connection
+	 * refused for a moment.
+	 * A name whose addresses show different certificates, the trusted one
+	 * briefly down, gets the certificate's sentence too; opening the file
+	 * again tries again.
 	 *
 	 * @param list<int> $curlErrors
 	 * @return ExternalPadException::UNTRUSTED_CERTIFICATE|ExternalPadException::UNREACHABLE
@@ -277,11 +312,9 @@ class ExternalPadExportFetcher {
 	}
 
 	/**
-	 * Only an answer that says it *is* the export. Redirects are not
-	 * followed, but their bodies used to be taken anyway — a "Please sign
-	 * in" page behind a 302 arrived as pad content, which the text export
-	 * caught on content type and the HTML export cannot. A redirect is
-	 * told apart from other errors: it usually means a pad behind a login.
+	 * Only an answer that says it *is* the export. A redirect's body is
+	 * never taken: behind a 302 there is usually a sign-in page, which the
+	 * HTML export could not tell from a pad.
 	 */
 	private function assertSuccessfulExportStatus(int $httpCode): void {
 		if ($httpCode === 404) {
@@ -297,7 +330,6 @@ class ExternalPadExportFetcher {
 		}
 	}
 
-	/** What this app is willing to be sent back, per export format. */
 	private static function acceptHeaderFor(string $format): string {
 		return $format === 'html'
 			? 'text/html, application/xhtml+xml;q=0.9, */*;q=0.1'
@@ -305,10 +337,8 @@ class ExternalPadExportFetcher {
 	}
 
 	/**
-	 * Only what this format asked for. The text export still refuses
-	 * `text/html`, because an error page answered with 200 is the shape
-	 * that rule exists for; allowing the union for both would weaken the
-	 * text path to buy nothing for this one.
+	 * Only what this format asked for. The text export refuses `text/html`:
+	 * that is how an error page answered with 200 looks.
 	 */
 	private function assertAllowedExternalExportContentType(string $contentTypeHeader, string $format = 'txt'): void {
 		$raw = trim($contentTypeHeader);
@@ -350,11 +380,13 @@ class ExternalPadExportFetcher {
 			throw new ExternalPadException('Local hosts are not allowed for external pad sync.', ExternalPadException::LOCAL_ADDRESS);
 		}
 
-		if (filter_var($host, FILTER_VALIDATE_IP) !== false) {
-			if (!$this->isPublicIp($host)) {
-				throw new ExternalPadException('Private/reserved IPs are not allowed for external pad sync.', ExternalPadException::LOCAL_ADDRESS);
+		// A URL writes an IPv6 address in brackets, which parse_url() keeps.
+		$literal = str_starts_with($host, '[') ? substr($host, 1, -1) : $host;
+		if (filter_var($literal, FILTER_VALIDATE_IP) !== false) {
+			if (!$this->isPublicIp($literal)) {
+				throw new ExternalPadException('External pad host is an address that is not public: ' . $literal, ExternalPadException::LOCAL_ADDRESS);
 			}
-			return [$host];
+			return [$literal];
 		}
 
 		$records = $this->lookUp($host);
@@ -377,7 +409,7 @@ class ExternalPadExportFetcher {
 
 		foreach ($resolvedIps as $ip) {
 			if (!$this->isPublicIp($ip)) {
-				throw new ExternalPadException('Private/reserved IPs are not allowed for external pad sync.', ExternalPadException::LOCAL_ADDRESS);
+				throw new ExternalPadException('External pad host resolves to an address that is not public: ' . $ip, ExternalPadException::LOCAL_ADDRESS);
 			}
 		}
 
@@ -396,8 +428,51 @@ class ExternalPadExportFetcher {
 		return is_array($records) ? $records : [];
 	}
 
+	/**
+	 * Whether an address is public is decided on the address as the system
+	 * parses it, by the lists above. PHP's filter judges an address by how
+	 * it is written, and its blocks change between PHP versions.
+	 */
 	private function isPublicIp(string $ip): bool {
-		return filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE) !== false;
+		$address = inet_pton($ip);
+		return $address !== false && self::isPublicAddress($address);
+	}
+
+	/** @param string $address packed, as inet_pton() returns it */
+	private static function isPublicAddress(string $address): bool {
+		if (strlen($address) === 4) {
+			return !self::inAnyBlock($address, self::NOT_PUBLIC_IPV4);
+		}
+		// A connection to a NAT64 or a 6to4 address ends at the IPv4
+		// address it carries. RFC 6052 tells translators to drop a NAT64
+		// packet for an address that is not public, but not every one does.
+		if (self::inBlock($address, '64:ff9b::/96')) {
+			return self::isPublicAddress(substr($address, 12, 4));
+		}
+		if (self::inBlock($address, '2002::/16')) {
+			return self::isPublicAddress(substr($address, 2, 4));
+		}
+		return self::inBlock($address, '2000::/3') && !self::inAnyBlock($address, self::NOT_PUBLIC_IPV6);
+	}
+
+	/** @param list<string> $blocks */
+	private static function inAnyBlock(string $address, array $blocks): bool {
+		foreach ($blocks as $block) {
+			if (self::inBlock($address, $block)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/** @param string $block an address and a prefix length, `10.0.0.0/8` */
+	private static function inBlock(string $address, string $block): bool {
+		[$network, $bits] = explode('/', $block);
+		$prefix = (string)inet_pton($network);
+		$whole = intdiv((int)$bits, 8);
+		$rest = (int)$bits % 8;
+		return strncmp($address, $prefix, $whole) === 0
+			&& ($rest === 0 || (ord($address[$whole]) ^ ord($prefix[$whole])) >> (8 - $rest) === 0);
 	}
 
 	private function isAllowlistedExternalHost(string $host, string $origin): bool {
@@ -461,14 +536,16 @@ class ExternalPadExportFetcher {
 		$host = strtolower($parts['host'] ?? '');
 		$port = isset($parts['port']) ? $parts['port'] : 443;
 		$path = $parts['path'] ?? '';
-		// `+` is literal in URL path segments — only query/form bodies treat
-		// it as a space. Using urldecode here turned `/p/team+pad` into
-		// pad-id `team pad`, then re-encoded to `/p/team%20pad` at fetch
-		// time, hitting a different / non-existent remote pad.
+		// `+` is literal in a URL path; only form encoding reads it as a space.
+		// urldecode() would turn `/p/team+pad` into another pad's name.
 		$decodedPath = rawurldecode($path);
-		// No path at all is a link to the server, not to a pad: told as one
-		// that does not end in /p/ and a name.
+		// parse_url() keeps the brackets around a host and checks neither
+		// what is in them nor that they close. Only an IPv6 address without
+		// a zone belongs there: cURL refuses an IPv4 address, and a zone
+		// names an interface of this server.
 		if ($scheme !== 'https' || $host === '' || $port <= 0 || $port > 65535
+			|| (str_starts_with($host, '[') && (!str_ends_with($host, ']')
+				|| filter_var(substr($host, 1, -1), FILTER_VALIDATE_IP, FILTER_FLAG_IPV6) === false))
 			|| preg_match('/[\x00-\x1F\x7F]/', $decodedPath) === 1) {
 			throw new ExternalPadException('Invalid public pad URL.', ExternalPadException::INVALID_URL);
 		}

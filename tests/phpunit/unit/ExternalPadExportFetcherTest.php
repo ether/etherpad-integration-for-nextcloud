@@ -103,6 +103,121 @@ class ExternalPadExportFetcherTest extends TestCase {
 	}
 
 	/**
+	 * Many of the refused addresses pass PHP's filter on some supported
+	 * version or in one way of writing them; the check must depend on
+	 * neither. Next to each refused block that borders public space, an
+	 * address across the border stays public. Each address is tried behind
+	 * a name and as the URL's host.
+	 */
+	#[DataProvider('addressesAndWhetherTheyArePublic')]
+	public function testRefusesAddressesThatAreNotPublic(string $address, bool $public): void {
+		$records = [[str_contains($address, ':') ? 'ipv6' : 'ip' => $address]];
+		$host = str_contains($address, ':') ? '[' . $address . ']' : $address;
+		foreach (['https://pad.example/p/pad', 'https://' . $host . '/p/pad'] as $url) {
+			try {
+				$validated = $this->fetcher($this->buildExternalEnabledConfig(), $records)->normalizeAndValidateExternalPublicPadUrl($url);
+				$this->assertTrue($public, $url . ': not refused');
+				$this->assertSame($url, $validated['pad_url']);
+			} catch (ExternalPadException $e) {
+				$this->assertFalse($public, $url . ': refused');
+				$this->assertSame(ExternalPadException::LOCAL_ADDRESS, $e->reason(), $url);
+				$this->assertStringEndsWith(': ' . $address, $e->getMessage(), $url);
+			}
+		}
+	}
+
+	/** @return array<string, array{string, bool}> */
+	public static function addressesAndWhetherTheyArePublic(): array {
+		return [
+			'"this network"' => ['0.1.2.3', false],
+			'the last of "this network"' => ['0.255.255.255', false],
+			'private' => ['10.0.0.7', false],
+			'private, the last of 10.0.0.0/8' => ['10.255.255.255', false],
+			'shared address space, as carrier-grade NAT and Tailscale use it' => ['100.64.0.1', false],
+			'the last shared address' => ['100.127.255.255', false],
+			'loopback, its last address' => ['127.255.255.255', false],
+			'link-local, its last address' => ['169.254.255.255', false],
+			'private, the last of 172.16.0.0/12' => ['172.31.255.255', false],
+			'IETF protocol assignments' => ['192.0.0.8', false],
+			'an anycast address inside a block that counts as a whole' => ['192.0.0.9', false],
+			'the IETF protocol assignments, its last address' => ['192.0.0.255', false],
+			'the first documentation block, its last address' => ['192.0.2.255', false],
+			'the 6a44 relay' => ['192.88.99.2', false],
+			'private, the last of 192.168.0.0/16' => ['192.168.255.255', false],
+			'benchmarking, its last address' => ['198.19.255.255', false],
+			'the second documentation block, its last address' => ['198.51.100.255', false],
+			'the third documentation block, its last address' => ['203.0.113.255', false],
+			'multicast' => ['224.0.0.1', false],
+			'multicast, its last address' => ['239.255.255.255', false],
+			'reserved' => ['240.0.0.1', false],
+			'the limited broadcast address' => ['255.255.255.255', false],
+			'something the system does not parse as an address' => ['999.1.1.1', false],
+			'loopback' => ['::1', false],
+			'loopback, IPv4-compatible and written in hex' => ['::7f00:1', false],
+			'loopback, IPv4-mapped' => ['::ffff:7f00:1', false],
+			'loopback, IPv4-mapped and dotted' => ['::ffff:127.0.0.1', false],
+			'a public address, IPv4-mapped' => ['::ffff:1.1.1.1', false],
+			'a private address, IPv4-translated' => ['::ffff:0:a00:1', false],
+			'NAT64 to a private address' => ['64:ff9b::a00:5', false],
+			'NAT64 to shared address space' => ['64:ff9b::6440:1', false],
+			'NAT64 to link-local, dotted' => ['64:ff9b::169.254.169.254', false],
+			'NAT64\'s last address, the limited broadcast address' => ['64:ff9b::ffff:ffff', false],
+			'past the NAT64 prefix, with a public address a /95 would read' => ['64:ff9b::1:101:101', false],
+			'6to4 for a private address' => ['2002:a00:1::1', false],
+			'6to4 for loopback' => ['2002:7f00:1::1', false],
+			'6to4 for a private address above 128.0.0.0' => ['2002:c0a8:1::1', false],
+			'6to4 for a private address followed by public-looking bytes' => ['2002:a01:101:101::1', false],
+			'6to4 for the limited broadcast address' => ['2002:ffff:ffff::1', false],
+			'local-use IPv4/IPv6 translation' => ['64:ff9b:1::a00:1', false],
+			'unique-local with a dotted tail' => ['fd00::10.0.0.1', false],
+			'link-local with a dotted tail' => ['fe80::1.2.3.4', false],
+			'reserved space below global unicast' => ['5f::1', false],
+			'just below global unicast' => ['1fff:ffff:ffff:ffff:ffff:ffff:ffff:ffff', false],
+			'just above global unicast' => ['4000::', false],
+			'IPv6 multicast' => ['ff02::1', false],
+			'discard-only' => ['100::1', false],
+			'the dummy prefix' => ['100:0:0:1::1', false],
+			'Teredo, inside the IETF block' => ['2001::1', false],
+			'deprecated ORCHID, inside the IETF block' => ['2001:10::1', false],
+			'IPv6 benchmarking' => ['2001:2::1', false],
+			'the last address of the IETF block' => ['2001:1ff:ffff:ffff:ffff:ffff:ffff:ffff', false],
+			'IPv6 documentation, its last address' => ['2001:db8:ffff:ffff:ffff:ffff:ffff:ffff', false],
+			'the newer IPv6 documentation block, its last address' => ['3fff:fff:ffff:ffff:ffff:ffff:ffff:ffff', false],
+			'SRv6 segment identifiers' => ['5f00::1', false],
+			'site-local' => ['fec0::1', false],
+			'a public IPv4 address' => ['1.1.1.1', true],
+			'just past "this network"' => ['1.0.0.0', true],
+			'just past 10.0.0.0/8' => ['11.0.0.0', true],
+			'just below shared address space' => ['100.63.255.255', true],
+			'just above shared address space' => ['100.128.0.0', true],
+			'just below loopback' => ['126.255.255.255', true],
+			'just past link-local' => ['169.255.0.0', true],
+			'just below 172.16.0.0/12' => ['172.15.255.255', true],
+			'just above 172.16.0.0/12' => ['172.32.0.0', true],
+			'just past the IETF protocol assignments' => ['192.0.1.0', true],
+			'just past the first documentation block' => ['192.0.3.0', true],
+			'next to the 6a44 relay' => ['192.88.99.3', true],
+			'just past 192.168.0.0/16' => ['192.169.0.0', true],
+			'just below benchmarking' => ['198.17.255.255', true],
+			'just above benchmarking' => ['198.20.0.0', true],
+			'just past the second documentation block' => ['198.51.101.0', true],
+			'just below the third documentation block' => ['203.0.112.255', true],
+			'just below multicast' => ['223.255.255.255', true],
+			'NAT64 to a public address' => ['64:ff9b::101:101', true],
+			'NAT64 to a public address above 128.0.0.0' => ['64:ff9b::8efa:b54e', true],
+			'6to4 for a public address' => ['2002:101:101::1', true],
+			'just past 6to4' => ['2003::', true],
+			'the first global unicast address' => ['2000::', true],
+			'just past the IETF block' => ['2001:200::', true],
+			'just past IPv6 documentation' => ['2001:db9::', true],
+			'just past the newer documentation block' => ['3fff:1000::', true],
+			'the last global unicast address' => ['3fff:ffff:ffff:ffff:ffff:ffff:ffff:ffff', true],
+			'global unicast PHP 8.1 and 8.2 refuse' => ['3ff3::1', true],
+			'a public IPv6 address' => ['2606:4700::1111', true],
+		];
+	}
+
+	/**
 	 * Each refusal carries the reason the user is told, whatever its
 	 * message says for the log.
 	 */
@@ -118,6 +233,8 @@ class ExternalPadExportFetcherTest extends TestCase {
 			'not on the allowlist' => ['https://1.1.1.1:9443/p/pad', 'https://1.1.1.1:8443', ExternalPadException::NOT_ALLOWED],
 			'a local host' => ['https://pad.localhost/p/pad', '', ExternalPadException::LOCAL_ADDRESS],
 			'a private address' => ['https://10.0.0.7/p/pad', '', ExternalPadException::LOCAL_ADDRESS],
+			'a shared address' => ['https://100.64.0.7/p/pad', '', ExternalPadException::LOCAL_ADDRESS],
+			'loopback written as IPv6' => ['https://[::ffff:127.0.0.1]/p/pad', '', ExternalPadException::LOCAL_ADDRESS],
 			'no pad after /p/' => ['https://1.1.1.1/p/%20', '', ExternalPadException::NOT_A_PAD_URL],
 			'a name without records' => ['https://pad.example/p/pad', '', ExternalPadException::UNRESOLVED, []],
 			'a name without an address' => ['https://pad.example/p/pad', '', ExternalPadException::UNRESOLVED, [['host' => 'pad.example', 'type' => 'A']]],
@@ -466,6 +583,7 @@ class ExternalPadExportFetcherTest extends TestCase {
 			'an international name, which cURL turns into punycode' => ['https://bücher.example/p/pad', [['ip' => '1.1.1.1']], 'CONNECT 1.1.1.1:443 HTTP/1.1'],
 			'a percent-encoded name, which cURL decodes' => ['https://%70ad.example/p/pad', [['ip' => '1.1.1.1']], 'CONNECT 1.1.1.1:443 HTTP/1.1'],
 			'an IPv6 address, on a port of its own' => ['https://pad.example:8443/p/pad', [['ipv6' => '2606:4700::1111']], 'CONNECT [2606:4700::1111]:8443 HTTP/1.1'],
+			'an IPv6 address in the URL' => ['https://[2606:4700::1111]/p/pad', [], 'CONNECT [2606:4700::1111]:443 HTTP/1.1'],
 		];
 	}
 
@@ -634,6 +752,9 @@ class ExternalPadExportFetcherTest extends TestCase {
 			'more after the pad name' => ['https://1.1.1.1/p/pad/export', '', null, ExternalPadException::NOT_A_PAD_URL],
 			'an origin allowlisted as http' => ['https://1.1.1.1:8443/p/pad', 'http://1.1.1.1:8443', null, ExternalPadException::NOT_ALLOWED],
 			'a host not on the allowlist' => ['https://pad.example/p/pad', 'other.example', null, ExternalPadException::NOT_ALLOWED],
+			'an IPv4 address in brackets' => ['https://[1.2.3.4]/p/pad', '', null, ExternalPadException::INVALID_URL],
+			'an IPv6 address with a zone' => ['https://[fe80::1%25eth0]/p/pad', '', null, ExternalPadException::INVALID_URL],
+			'an IPv6 address without its closing bracket' => ['https://[2606:4700::1111:8443/p/pad', '', null, ExternalPadException::INVALID_URL],
 		];
 	}
 
@@ -650,12 +771,11 @@ class ExternalPadExportFetcherTest extends TestCase {
 	}
 
 	/**
-	 * The fetcher, with what a name lookup finds given instead of asked of
-	 * the network: a test that resolves a real name is green offline, slow
-	 * behind a dead nameserver and red behind one that answers every name.
-	 * A lookup a test did not give an answer for fails it. So do requests:
-	 * each one takes the next of $answers, which may feed the attempt's
-	 * header and body callbacks as cURL would, and is kept in $performed.
+	 * The fetcher, with name lookups and requests answered by the test, so
+	 * that no test depends on the network: $records stands in for every
+	 * lookup, and each request takes the next of $answers, which may feed
+	 * the attempt's callbacks as cURL would, and is kept in $performed. A
+	 * lookup or request the test gave no answer for fails it.
 	 *
 	 * @param ?list<array<array-key, mixed>> $records
 	 * @param list<\Closure(array<int, mixed>): array{completed: bool, status: int, error: string, errno: int}> $answers
