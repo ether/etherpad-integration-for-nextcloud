@@ -2,12 +2,8 @@
 # Copyright (c) 2026 Jacob Bühler
 name: e2e-upgrade
 
-# The upgrade from the last release, on every supported Nextcloud major.
-# It runs for a pull request while the version is not that release's and
-# lib/Migration differs from it - a release in the making with something
-# new to run on its users' data - and for one that changes the test or a
-# script it runs, which would otherwise run first on a release. Any other
-# pull request skips it.
+# The upgrade from the last release, on every supported Nextcloud major,
+# for the pull requests the first job picks; its log says which and why.
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
@@ -44,7 +40,6 @@ jobs:
         id: decide
         env:
           EVENT: ${{ github.event_name }}
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
           AUTHOR: ${{ github.event.pull_request.user.login }}
         run: |
           version="$(sed -n 's|.*<version>\([^<]*\)</version>.*|\1|p' appinfo/info.xml | head -n 1)"
@@ -55,8 +50,8 @@ jobs:
             from="$(git describe --tags --abbrev=0 --match 'v[0-9]*' "$from^")"
           fi
           echo "from=${from#v}" >> "$GITHUB_OUTPUT"
-          # The test, and the scripts whose paths only it takes: the rest
-          # of the stack every e2e job brings up.
+          # The test's own files, and the two scripts its APP_SOURCE passes
+          # through; the rest of the stack every e2e job brings up as well.
           test_files=(
             tests/e2e/docker/test-upgrade.sh
             tests/e2e/docker/upgrade-fixtures.mjs
@@ -68,7 +63,8 @@ jobs:
             run=true why="Started by hand"
           # A Dependabot bump of an action says nothing about the test, and
           # would fail it while a new release has no checksum pinned yet.
-          elif [[ "$AUTHOR" != 'dependabot[bot]' ]] && ! git diff --quiet "$BASE_SHA" HEAD -- "${test_files[@]}"; then
+          # The merge's first parent is the base it merges onto.
+          elif [[ "$AUTHOR" != 'dependabot[bot]' ]] && ! git diff --quiet HEAD^1 HEAD -- "${test_files[@]}"; then
             run=true why="The test or a script it runs changes"
           elif [[ "$version" == "${from#v}" ]]; then
             run=false why="The version is $from's: no release to upgrade to"
@@ -145,7 +141,7 @@ jobs:
         with:
           name: e2e-upgrade-nc${{ matrix.nextcloud }}
           # The snapshots, pads and Nextcloud log the script keeps; not the
-          # archives and the two copies of the app.
+          # release archive and the app extracted from it.
           path: |
             playwright-report/
             test-results/
@@ -153,7 +149,6 @@ jobs:
             ${{ runner.temp }}/upgrade/
             !${{ runner.temp }}/upgrade/*.tar.gz
             !${{ runner.temp }}/upgrade/from/
-            !${{ runner.temp }}/upgrade/to/
           retention-days: 7
 
       - name: Tear the stack down
