@@ -13,7 +13,8 @@
 # before HEAD. Its archive is fetched from the release, or taken from
 # FROM_ARCHIVE, and checked against the checksum pinned below either way.
 # TO_ARCHIVE is a release archive to upgrade to instead of the working
-# tree. NC_VERSION and EP_VERSION are up.sh's.
+# tree. UPGRADE_WORK is a directory for the run's files, which a failed
+# run leaves there. NC_VERSION and EP_VERSION are up.sh's.
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -26,18 +27,12 @@ export COMPOSE_PROJECT_NAME=epnc-upgrade
 compose() { docker compose -f "$here/compose.yml" "$@"; }
 occ() { compose exec -T -u www-data nextcloud php occ "$@"; }
 update_app() { compose exec -T -u www-data nextcloud php -r 'require "lib/base.php"; exit(\OC_App::updateApp("etherpad_nextcloud") ? 0 : 1);'; }
-
-from_version="${FROM_VERSION:-$(git -C "$repo" describe --tags --abbrev=0 --match 'v[0-9]*' HEAD)}"
-from_version="${from_version#v}"
-# The published archive of each release this test upgrades from. Each
-# release adds its own line once it is out; without one the test stops.
-case "$from_version" in
-	1.1.0-beta.1) from_sha256=594bbd43956bfe944439387a61eb2217686e71d7da0cfea7d82532f1517cb7d4 ;;
-	*)
-		echo "No checksum is pinned for $from_version. Add the one of its published archive to $0." >&2
-		exit 1
-		;;
-esac
+# Nextcloud keeps the app config in the web server's local cache, which
+# occ does not clear: what occ sets reaches a request after a restart.
+restart_nextcloud() {
+	compose restart nextcloud >/dev/null
+	compose exec -T nextcloud sh -c 'for _ in $(seq 1 60); do curl -fs -o /dev/null http://localhost/status.php && exit 0; sleep 1; done; exit 1'
+}
 
 if [[ -n "$(compose ps -aq)" ]]; then
 	cat >&2 <<MSG
@@ -55,7 +50,21 @@ if [[ -n "$taken" ]]; then
 	exit 1
 fi
 
-work="$(mktemp -d)"
+if [[ -n "${UPGRADE_WORK:-}" ]]; then
+	work="$UPGRADE_WORK"
+	mkdir -p "$work"
+else
+	work="$(mktemp -d)"
+fi
+# up.sh writes these for the stack it brings up, over those of the stack
+# someone works in, which the port check made them stop: theirs go back.
+env_files=("$here/.env" "$here/../.env.e2e.docker")
+saved_env="$(mktemp -d)"
+for i in "${!env_files[@]}"; do
+	if [[ -f "${env_files[$i]}" ]]; then
+		cp -p "${env_files[$i]}" "$saved_env/$i"
+	fi
+done
 etherpad_stopped=0
 cleanup() {
 	local status=$?
@@ -63,13 +72,49 @@ cleanup() {
 	if [[ "$etherpad_stopped" == 1 ]]; then
 		compose start etherpad >/dev/null || true
 	fi
-	if [[ "$status" == 0 ]]; then
+	if [[ "$status" != 0 ]]; then
+		compose exec -T -u www-data nextcloud cat data/nextcloud.log > "$work/nextcloud.log" 2>/dev/null || true
+		echo "The snapshots, pads and Nextcloud log of this run are kept in $work." >&2
+	elif [[ -z "${UPGRADE_WORK:-}" ]]; then
 		rm -rf "$work"
-	else
-		echo "The snapshots and pads of this run are kept in $work." >&2
 	fi
+	for i in "${!env_files[@]}"; do
+		if [[ -f "$saved_env/$i" ]]; then
+			cp -p "$saved_env/$i" "${env_files[$i]}"
+		fi
+	done
+	rm -rf "$saved_env"
 }
 trap cleanup EXIT
+
+to_app="$repo"
+if [[ -n "${TO_ARCHIVE:-}" ]]; then
+	mkdir "$work/to"
+	tar -xzf "$TO_ARCHIVE" -C "$work/to"
+	to_app="$work/to/etherpad_nextcloud"
+fi
+to_version="$(sed -n 's|.*<version>\([^<]*\)</version>.*|\1|p' "$to_app/appinfo/info.xml" | head -n 1)"
+
+if [[ -n "${FROM_VERSION:-}" ]]; then
+	from_version="$FROM_VERSION"
+else
+	from_tag="$(git -C "$repo" describe --tags --abbrev=0 --match 'v[0-9]*' HEAD)"
+	# A HEAD the release is tagged on upgrades from the release before it.
+	if git -C "$repo" tag --points-at HEAD | grep -qxF "$from_tag"; then
+		from_tag="$(git -C "$repo" describe --tags --abbrev=0 --match 'v[0-9]*' "$from_tag^")"
+	fi
+	from_version="${from_tag#v}"
+fi
+# The published archive of each release this test upgrades from. Each
+# release adds its own line once it is out (docs/release-process.md);
+# without one the test stops.
+case "$from_version" in
+	1.1.0-beta.1) from_sha256=594bbd43956bfe944439387a61eb2217686e71d7da0cfea7d82532f1517cb7d4 ;;
+	*)
+		echo "No checksum is pinned for $from_version. Add the one of its published archive to $0." >&2
+		exit 1
+		;;
+esac
 
 from_archive="${FROM_ARCHIVE:-$work/from.tar.gz}"
 if [[ -z "${FROM_ARCHIVE:-}" ]]; then
@@ -85,17 +130,13 @@ mkdir "$work/from"
 tar -xzf "$from_archive" -C "$work/from"
 from_app="$work/from/etherpad_nextcloud"
 
-to_app="$repo"
-if [[ -n "${TO_ARCHIVE:-}" ]]; then
-	mkdir "$work/to"
-	tar -xzf "$TO_ARCHIVE" -C "$work/to"
-	to_app="$work/to/etherpad_nextcloud"
-fi
-to_version="$(sed -n 's|.*<version>\([^<]*\)</version>.*|\1|p' "$to_app/appinfo/info.xml" | head -n 1)"
-
 # A Nextcloud the release does not run on has no installation of it to
 # upgrade. up.sh's default is compose.yml's.
 nc_version="${NC_VERSION:-$(sed -n 's/.*${NC_VERSION:-\([^}]*\)}.*/\1/p' "$here/compose.yml" | head -n 1)}"
+if [[ ! "$nc_version" =~ ^[0-9]+(\.[0-9]+)*$ ]]; then
+	echo "NC_VERSION is '$nc_version'; the test needs a version number to hold it to the range $from_version runs on." >&2
+	exit 1
+fi
 if ! read -r from_min from_max < <(sed -n 's/.*<nextcloud min-version="\([0-9]*\)[^"]*" max-version="\([0-9]*\)[^"]*".*/\1 \2/p' "$from_app/appinfo/info.xml"); then
 	echo "The info.xml of $from_version names no Nextcloud range." >&2
 	exit 1
@@ -112,7 +153,10 @@ APP_SOURCE="$from_app" bash "$here/up.sh"
 # which the upgrade takes over; up.sh sets the new one. The upgrade drops
 # test_fault, which a debug instance could set; this one names no fault,
 # so the release runs as without.
-if [[ ! -f "$from_app/lib/Migration/Version000005Date20260928120000.php" ]]; then
+from_migration5=0
+if [[ -f "$from_app/lib/Migration/Version000005Date20260928120000.php" ]]; then
+	from_migration5=1
+else
 	occ config:app:delete etherpad_nextcloud delete_pad_with_file
 	occ config:app:set etherpad_nextcloud delete_on_trash --value=yes
 	occ config:app:set etherpad_nextcloud test_fault --value=none
@@ -128,8 +172,15 @@ fixtures seed
 etherpad_stopped=1
 compose stop etherpad
 fixtures offline
-compose start --wait etherpad
+# Not recreated: Etherpad keeps its pads in the container.
+compose up -d --no-recreate --wait etherpad
 etherpad_stopped=0
+
+# Opted out after the pads were made, as an admin can: the new setting
+# has to take the admin's value, and "no" is not its default.
+if [[ "$from_migration5" == 0 ]]; then
+	occ config:app:set etherpad_nextcloud delete_on_trash --value=no
+fi
 
 # What the upgrade may change, read from the database and Nextcloud's own
 # config, not through the app the upgrade replaces. Job ids are strings:
@@ -191,8 +242,9 @@ log_from="$(log_lines)"
 
 echo "==> upgrading to $to_version"
 # sync-app.sh upgrades the app when a migration of it has not run; for a
-# version without one, the update is run here, as Nextcloud runs it.
-APP_SOURCE="$to_app" bash "$here/sync-app.sh"
+# version without one, the update is run here, as Nextcloud runs it. The
+# working tree goes in as sync-app.sh copies it, an archive as it is.
+APP_SOURCE="${TO_ARCHIVE:+$to_app}" bash "$here/sync-app.sh"
 if [[ "$(occ config:app:get etherpad_nextcloud installed_version)" != "$to_version" ]]; then
 	update_app
 fi
@@ -205,6 +257,10 @@ fi
 snapshot > "$work/after.json"
 occ config:list etherpad_nextcloud --output=json > "$work/config.json"
 fixtures migrated
+
+# On again, for the pads deleted for good to go.
+occ config:app:set etherpad_nextcloud delete_pad_with_file --value=yes
+restart_nextcloud
 echo "==> pads on $to_version"
 fixtures verify
 
@@ -227,19 +283,21 @@ if ! cmp -s "$work/settled.json" "$work/repeated.json"; then
 	exit 1
 fi
 
-# The app's warnings and errors since the upgrade began: what went wrong
-# without failing a request. Read before the suite, which logs its own on
-# purpose.
+# The warnings and errors about the app since the upgrade began: what went
+# wrong without failing a request or a command. Nextcloud logs a job that
+# throws under "core" and a repair step that throws under no app, so the
+# line's own mention of the app decides. Read before the suite, which logs
+# its own on purpose.
 compose exec -T -u www-data nextcloud sh -c "tail -n +$((log_from + 1)) data/nextcloud.log 2>/dev/null" > "$work/upgrade.log"
 node -e '
 const lines = require("fs").readFileSync(process.argv[1], "utf8").split("\n").filter(Boolean)
-const logged = lines.map((line) => JSON.parse(line)).filter((entry) => entry.app === "etherpad_nextcloud" && entry.level >= 2)
-for (const entry of logged) console.error(`level ${entry.level}: ${entry.message}`)
+const logged = lines.filter((line) => /etherpad_nextcloud|EtherpadNextcloud/.test(line)).map((line) => JSON.parse(line)).filter((entry) => entry.level >= 2)
+for (const entry of logged) console.error(`level ${entry.level}, ${entry.app}: ${entry.message}`)
 process.exit(logged.length === 0 ? 0 : 1)
 ' "$work/upgrade.log"
 
 echo "==> the suite on the upgraded stack"
-bash "$here/run-suite.sh" --retries=0
+bash "$here/run-suite.sh"
 
 echo
 echo "$from_version -> $to_version passed on Nextcloud $nc_version. The stack is kept for a look; remove it with:"

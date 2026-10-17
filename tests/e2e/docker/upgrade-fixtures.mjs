@@ -122,7 +122,8 @@ const ANY = Symbol('any')
 /**
  * What each migration changes in rows, settings and indexes, applied to
  * the snapshot from before it ran. Anything no entry changes has to stay
- * as it was.
+ * as it was, and a migration that ran without an entry fails the test:
+ * one that changes none of these has an empty entry.
  */
 const MIGRATIONS = {
 	'000005Date20260928120000': (expected) => {
@@ -135,9 +136,13 @@ const MIGRATIONS = {
 				Object.assign(row, { state: 'active', deleted_at: null, updated_at: ANY })
 			}
 		}
+		// As AppConfigService::takeOverDeleteOnTrash() reads them: an empty
+		// value is none.
 		const { settings } = expected
-		if ('delete_on_trash' in settings) {
-			settings.delete_pad_with_file ??= settings.delete_on_trash
+		if ((settings.delete_on_trash ?? '') !== '') {
+			if ((settings.delete_pad_with_file ?? '') === '') {
+				settings.delete_pad_with_file = settings.delete_on_trash
+			}
 			delete settings.delete_on_trash
 		}
 		delete settings.test_fault
@@ -221,7 +226,8 @@ if (phase === 'seed') {
 
 	const expected = structuredClone(before)
 	for (const version of ran) {
-		MIGRATIONS[version]?.(expected)
+		assert.ok(version in MIGRATIONS, `${version} ran, and MIGRATIONS says nothing of what it changes`)
+		MIGRATIONS[version](expected)
 	}
 	expected.settings.installed_version = target.version
 	expected.indexes.sort()
@@ -263,8 +269,12 @@ if (phase === 'seed') {
 		assert.ok((await fileText(p)).includes(p.marker), `${label} lost its text`)
 	}
 	assert.equal(await open(pads.protected, true), pads.protected.padId, 'the share opened another pad')
+	// The link is a read share: its visitor gets the pad's read-only view.
 	const { data: shared } = await request(`/index.php/apps/etherpad_nextcloud/api/v1/public/open/${publicShareToken}`, { anonymous: true })
-	assert.ok(shared.url, JSON.stringify(shared))
+	const sharedPad = shared.is_readonly_view
+		? (await etherpad('getReadOnlyID', { padID: pads.public.padId })).readOnlyID
+		: pads.public.padId
+	assert.equal(padIdOf(shared.url), sharedPad, `the link opened another pad: ${JSON.stringify(shared)}`)
 
 	const call = pads['trash-call-offline']
 	assert.equal(await open(call), call.padId, 'trash-call-offline opened another pad')
