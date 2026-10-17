@@ -59,9 +59,6 @@ describe('check-version-alignment.py --set', () => {
 		files.forEach((file) => expect(after[file].replaceAll('9.8.7-rc.1', old)).toBe(before[file]))
 	})
 
-	// build-release-tarball.sh refuses a version ending in -dev; this refuses
-	// a dev marker anywhere in the pre-release, so none it lets through fails
-	// the tarball later.
 	it.each(['9.8.7-dev', '9.8.7-rc-dev', '9.8.7-dev.1', '9.8.7-DEV'])('refuses the development version %s, and writes nothing', (version) => {
 		const before = read()
 
@@ -69,20 +66,48 @@ describe('check-version-alignment.py --set', () => {
 		expect(read()).toEqual(before)
 	})
 
-	// npm refuses these in npm ci, after the files were written.
-	it.each(['9.8.7-.', '09.8.7', '9.8.7-01'])('refuses %s, which is no semver, and writes nothing', (version) => {
+	it.each(['9.8.7-.', '09.8.7', '9.8.7-01', '9.8.7\u0661'])('refuses %s, which is no semver, and writes nothing', (version) => {
 		const before = read()
 
 		expect(setVersion(root, version)).toBe(1)
 		expect(read()).toEqual(before)
 	})
 
-	// Nextcloud upgrades to a higher version only.
 	it('refuses a version below the one info.xml has, and writes nothing', () => {
 		const before = read()
 
 		expect(setVersion(root, '0.0.1')).toBe(1)
 		expect(read()).toEqual(before)
+	})
+
+	// Numeric identifiers compare by value, and a pre-release ranks below
+	// its release.
+	it.each([
+		['9.8.7-beta.10', '9.8.7-beta.2'],
+		['9.8.7', '9.8.7-rc.1'],
+	])('after %s refuses %s, and writes nothing', (first, second) => {
+		expect(setVersion(root, first)).toBe(0)
+		const before = read()
+
+		expect(setVersion(root, second)).toBe(1)
+		expect(read()).toEqual(before)
+	})
+
+	it.each([
+		['9.8.7-beta.2', '9.8.7-beta.10'],
+		['9.8.7-rc.1', '9.8.7'],
+		['9.8.7', '9.8.7'],
+	])('after %s takes %s', (first, second) => {
+		expect(setVersion(root, first)).toBe(0)
+		expect(setVersion(root, second)).toBe(0)
+		expect(JSON.parse(read()['package.json']).version).toBe(second)
+	})
+
+	it('takes a version below a dev version info.xml has', () => {
+		const infoXml = join(root, 'appinfo/info.xml')
+		writeFileSync(infoXml, readFileSync(infoXml, 'utf8').replace(/<version>[^<]+<\/version>/, '<version>99.0.0-dev</version>'))
+
+		expect(setVersion(root, '9.8.7')).toBe(0)
 	})
 
 	// A lockfile whose root package names no version is not one this edits

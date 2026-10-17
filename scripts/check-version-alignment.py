@@ -8,10 +8,9 @@ version fields in `package-lock.json` restate it (#119), and the built bundles
 take their version from `package.json` - so drift there ships `js/*.license`
 files naming a version the app does not have.
 
-Printing the version with `--print` makes this the one reader of info.xml, so
-the release workflow and the tarball builder do not each carry their own.
-`--set <version>` makes it the one writer: scripts/prepare-release.sh bumps the
-version through it.
+`--print` gives the version info.xml declares to the release workflow.
+`--set <version>` writes it in all four places without reformatting the
+files: scripts/prepare-release.sh bumps the version through it.
 """
 
 from __future__ import annotations
@@ -46,9 +45,11 @@ def restated_versions(root: pathlib.Path) -> dict[str, str]:
     }
 
 
-# Semver 2.0.0 without build metadata, as npm takes it too.
-_NUMBER = r"(?:0|[1-9]\d*)"
-_IDENTIFIER = r"(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*)"
+# Semver 2.0.0, whose leading zeros and empty identifiers npm refuses, without
+# the build metadata Nextcloud's app-info.xsd refuses. ASCII digits only, as
+# Python's \d takes other scripts' digits too.
+_NUMBER = r"(?:0|[1-9][0-9]*)"
+_IDENTIFIER = r"(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)"
 RELEASE_VERSION = re.compile(rf"{_NUMBER}\.{_NUMBER}\.{_NUMBER}(?:-{_IDENTIFIER}(?:\.{_IDENTIFIER})*)?")
 # A dev marker anywhere in the pre-release is a working tree's version, not a
 # release's; build-release-tarball.sh refuses the ones ending in -dev.
@@ -66,6 +67,14 @@ def precedence(version: str) -> tuple:
     return (numbers, 0, tuple((0, int(part), "") if part.isdigit() else (1, 0, part) for part in pre.split(".")))
 
 
+def parsed(text: str, where: str) -> dict:
+    """`text` as JSON, or a ValueError that names the file."""
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError as broken:
+        raise ValueError(f"{where} is no JSON ({broken}); nothing written") from None
+
+
 def field(data: dict, path: tuple[str, ...], where: str) -> str:
     """The value at `path`, or a LookupError that names the file and the field."""
     value = data
@@ -77,11 +86,11 @@ def field(data: dict, path: tuple[str, ...], where: str) -> str:
     return value
 
 
-def replaced_once(text: str, old: str, new: str, start: int = 0) -> str:
+def replaced_once(text: str, old: str, new: str, where: str, start: int = 0) -> str:
     """`text` with the first `old` at or after `start` replaced by `new`."""
     at = text.find(old, start)
     if at < 0:
-        raise LookupError(f"{old} not found")
+        raise LookupError(f"{old} not found in {where}; nothing written")
 
     return text[:at] + new + text[at + len(old) :]
 
@@ -91,8 +100,10 @@ def set_version(root: pathlib.Path, version: str) -> None:
 
     Each file is edited in place, at the one value: a lockfile written back
     through a JSON dump has every line reformatted, which npm then keeps or
-    undoes as it finds it. Each edited JSON file is read back and must equal
-    the old one but for the version, and no file is written before all are.
+    undoes as it finds it. Each edited JSON text is parsed and compared with
+    the old one but for the version before any file is written. The files are
+    then written one after another, so a failed write can leave some of them
+    changed.
     """
     if RELEASE_VERSION.fullmatch(version) is None:
         raise ValueError(f"{version} is no release version: semver X.Y.Z or X.Y.Z-prerelease, no leading zeros")
@@ -102,26 +113,28 @@ def set_version(root: pathlib.Path, version: str) -> None:
     info_xml = root / "appinfo" / "info.xml"
     info_text = info_xml.read_text(encoding="utf-8")
     current = app_version(info_xml)
-    # Nextcloud upgrades to a higher version only. The same one again is a
-    # release being prepared anew.
-    if RELEASE_VERSION.fullmatch(current) and precedence(version) < precedence(current):
+    # A release follows the one before it, so a lower version is a typo. The
+    # same one again is a release being prepared anew; a dev version in
+    # info.xml says nothing of the last release.
+    if RELEASE_VERSION.fullmatch(current) and not _DEV.search(current.partition("-")[2]) and precedence(version) < precedence(current):
         raise ValueError(f"{version} is below {current}, the version appinfo/info.xml has")
-    info_new = replaced_once(info_text, f"<version>{current}</version>", f"<version>{version}</version>")
+    info_new = replaced_once(info_text, f"<version>{current}</version>", f"<version>{version}</version>", "appinfo/info.xml")
 
     package_json = root / "package.json"
     package_text = package_json.read_text(encoding="utf-8")
-    package = json.loads(package_text)
-    package_new = replaced_once(package_text, f'"version": {json.dumps(field(package, ("version",), "package.json"))}', f'"version": {json.dumps(version)}')
+    package = parsed(package_text, "package.json")
+    package_new = replaced_once(package_text, f'"version": {json.dumps(field(package, ("version",), "package.json"))}', f'"version": {json.dumps(version)}', "package.json")
     expected_package = dict(package, version=version)
 
     lock_json = root / "package-lock.json"
     lock_text = lock_json.read_text(encoding="utf-8")
-    lock = json.loads(lock_text)
-    lock_new = replaced_once(lock_text, f'"version": {json.dumps(field(lock, ("version",), "package-lock.json"))}', f'"version": {json.dumps(version)}')
+    lock = parsed(lock_text, "package-lock.json")
+    lock_new = replaced_once(lock_text, f'"version": {json.dumps(field(lock, ("version",), "package-lock.json"))}', f'"version": {json.dumps(version)}', "package-lock.json")
     lock_new = replaced_once(
         lock_new,
         f'"version": {json.dumps(field(lock, ("packages", "", "version"), "package-lock.json"))}',
         f'"version": {json.dumps(version)}',
+        "package-lock.json",
         lock_new.index('"packages"'),
     )
     expected_lock = json.loads(lock_text)
