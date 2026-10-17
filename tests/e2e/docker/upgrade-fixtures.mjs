@@ -13,19 +13,46 @@ import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { parseEnv } from 'node:util'
 
+/**
+ * @typedef {{ label: string, name: string, mode: string, padId: string, id: number, marker: string, content?: string, keptInTrash?: boolean }} Pad
+ * @typedef {{ pads: Record<string, Pad>, publicShareToken: string }} State
+ * @typedef {Record<string, unknown> & { file_id: number | string, state: string, file_cached: boolean }} Row
+ * @typedef {{ id: string, class: string, argument: string }} Job
+ * @typedef {{ bindings: Row[], migrations: string[], jobs: Job[], settings: Record<string, string>, indexes: string[] }} Snapshot
+ * @typedef {{ method?: string, form?: Record<string, string>, body?: string, headers?: Record<string, string>, secondary?: boolean, anonymous?: boolean, status?: number | number[] }} RequestOptions
+ */
+
 const [phase, dir] = process.argv.slice(2)
+/**
+ * @param {string} name
+ * @returns {any}
+ */
 const readJson = (name) => JSON.parse(readFileSync(join(dir, name), 'utf8'))
 
+const envFile = process.env.E2E_ENV_FILE
+assert.ok(envFile, 'E2E_ENV_FILE names the env file of the stack')
 // As in playwright.config.ts: a named env file wins over the shell.
-Object.assign(process.env, parseEnv(readFileSync(process.env.E2E_ENV_FILE, 'utf8')))
+Object.assign(process.env, parseEnv(readFileSync(envFile, 'utf8')))
 const env = process.env
 const base = env.E2E_BASE_URL
 assert.equal(base, 'https://nc.pad.test', 'The throwaway Docker stack is the only target')
+/** @param {string} name */
+const required = (name) => {
+	const value = env[name]
+	assert.ok(value, `${name} is not set`)
+	return value
+}
 
+/** @param {boolean} secondary */
 const auth = (secondary) => 'Basic ' + Buffer.from(secondary
 	? `${env.E2E_USER2}:${env.E2E_USER2_APP_PASSWORD}`
 	: `${env.E2E_USER}:${env.E2E_APP_PASSWORD}`).toString('base64')
 
+/**
+ * @param {string} path
+ * @param {RequestOptions} [options]
+ * @returns {Promise<{ data: any, res: Response }>}
+ */
 async function request(path, { method = 'GET', form, body, headers = {}, secondary = false, anonymous = false, status = 200 } = {}) {
 	const res = await fetch(path.startsWith('https:') ? path : base + path, {
 		method,
@@ -40,6 +67,7 @@ async function request(path, { method = 'GET', form, body, headers = {}, seconda
 	const text = await res.text()
 	const expected = Array.isArray(status) ? status : [status]
 	assert.ok(expected.includes(res.status), `${method} ${path}: HTTP ${res.status}: ${text.slice(0, 500)}`)
+	/** @type {any} */
 	let data
 	try {
 		data = JSON.parse(text)
@@ -49,23 +77,43 @@ async function request(path, { method = 'GET', form, body, headers = {}, seconda
 	return { data, res }
 }
 
+/**
+ * @param {string} path
+ * @param {Record<string, string>} [form]
+ * @param {RequestOptions} [options]
+ */
 const api = (path, form = {}, options = {}) => request(`/index.php/apps/etherpad_nextcloud/api/v1/${path}`, { method: 'POST', form, ...options })
 const settle = async () => (await api('admin/settle-pending')).data
+/** @param {string} name */
 const dav = (name) => `/remote.php/dav/files/${env.E2E_USER}/${encodeURIComponent(name)}`
+/** @param {Pad} p */
 const fileText = async (p) => (await request(dav(p.name))).data
 
+/**
+ * @param {string} method
+ * @param {Record<string, string>} [form]
+ * @returns {Promise<any>}
+ */
 const etherpad = async (method, form = {}) => {
 	const { data } = await request(`${env.E2E_ETHERPAD_URL}/api/1.2.15/${method}`, {
-		method: 'POST', form: { apikey: env.E2E_ETHERPAD_API_KEY, ...form }, anonymous: true,
+		method: 'POST', form: { apikey: required('E2E_ETHERPAD_API_KEY'), ...form }, anonymous: true,
 	})
 	assert.equal(data.code, 0, `${method}: ${JSON.stringify(data)}`)
 	return data.data
 }
+/** @param {string} padId */
 const etherpadHas = async (padId) => (await etherpad('listAllPads')).padIDs.includes(padId)
+/** @param {string} padUrl */
 const padIdOf = (padUrl) => decodeURIComponent(new URL(padUrl).pathname.slice('/p/'.length))
+/** @param {string} text */
 const escapeHtml = (text) => text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+/**
+ * @param {Pad} p
+ * @param {string} text
+ */
 const write = (p, text) => etherpad('setHTML', { padID: p.padId, html: `<html><body><p><strong>${escapeHtml(text)}</strong></p></body></html>` })
 
+/** @param {string} name */
 const fileId = async (name) => {
 	const { data } = await request(dav(name), {
 		method: 'PROPFIND', headers: { Depth: '0' }, status: 207,
@@ -77,23 +125,32 @@ const fileId = async (name) => {
 }
 
 const trashRoot = `/remote.php/dav/trashbin/${env.E2E_USER}/`
+/** @param {string} name */
 const trashEntry = async (name) => {
 	const { data } = await request(trashRoot + 'trash', {
 		method: 'PROPFIND', headers: { Depth: '1' }, status: 207,
 		body: '<d:propfind xmlns:d="DAV:" xmlns:nc="http://nextcloud.org/ns"><d:prop><nc:trashbin-filename/></d:prop></d:propfind>',
 	})
-	const entry = data.split('<d:response>').find((chunk) => chunk.includes(`<nc:trashbin-filename>${name}</nc:trashbin-filename>`))
-	assert.ok(entry, `No trash entry ${name}`)
-	return entry.match(/<d:href>([^<]+)<\/d:href>/)[1]
+	const entry = /** @type {string} */ (data).split('<d:response>').find((chunk) => chunk.includes(`<nc:trashbin-filename>${name}</nc:trashbin-filename>`))
+	const href = entry?.match(/<d:href>([^<]+)<\/d:href>/)?.[1]
+	assert.ok(href, `No trash entry ${name}`)
+	return href
 }
+/** @param {Pad} p */
 const trash = (p) => request(dav(p.name), { method: 'DELETE', status: 204 })
+/** @param {Pad} p */
 const deleteFromTrash = async (p) => request(await trashEntry(p.name), { method: 'DELETE', status: 204 })
+/** @param {Pad} p */
 const restore = async (p) => request(await trashEntry(p.name), {
 	method: 'MOVE', status: [201, 204],
 	headers: { Destination: base + trashRoot + 'restore/' + encodeURIComponent(p.name) },
 })
 
-/** The pad an open of the file gets. */
+/**
+ * @param {Pad} p
+ * @param {boolean} [secondary]
+ * @returns {Promise<string>} the pad the open gets
+ */
 const open = async (p, secondary = false) => {
 	const { data, res } = await api('pads/open-by-id', { fileId: String(p.id) }, { secondary })
 	if (p.mode === 'protected') {
@@ -120,17 +177,19 @@ const PADS = [
 const ANY = Symbol('any')
 
 /**
- * What each migration changes in rows, settings and indexes, applied to
- * the snapshot from before it ran. Anything no entry changes has to stay
- * as it was, and a migration that ran without an entry fails the test:
- * one that changes none of these has an empty entry.
+ * What each migration changes in the rows, settings and index names the
+ * snapshot holds, applied to the snapshot from before it ran. The rest of
+ * those has to stay as it was. A migration that runs needs an entry, empty
+ * if it changes none of them.
+ *
+ * @type {Record<string, (expected: Snapshot) => void>}
  */
 const MIGRATIONS = {
 	'000005Date20260928120000': (expected) => {
 		// The trash keeps a pad: a deletion that waited while its file is
-		// still there, in a trash or in Files, is the file's again. The
-		// migration also dates a restore that could not finish and a
-		// deletion without a date; no release left those, so none is here.
+		// still in the file cache, in a trash or in Files, is active again.
+		// The migration also dates a restore that could not finish and a
+		// deletion without a date; no release left those, so none is made.
 		for (const row of expected.bindings) {
 			if (row.state === 'pending_delete' && row.file_cached) {
 				Object.assign(row, { state: 'active', deleted_at: null, updated_at: ANY })
@@ -150,35 +209,45 @@ const MIGRATIONS = {
 	},
 }
 
-/** The app upgraded to: its version, its migrations and its jobs. */
+/** @param {string} root */
 const readTarget = (root) => {
 	const info = readFileSync(join(root, 'appinfo/info.xml'), 'utf8')
 	return {
-		version: info.match(/<version>([^<]+)<\/version>/)[1],
+		version: info.match(/<version>([^<]+)<\/version>/)?.[1] ?? '',
 		migrations: readdirSync(join(root, 'lib/Migration'))
 			.filter((name) => /^Version\w+\.php$/.test(name))
 			.map((name) => name.slice('Version'.length, -'.php'.length))
 			.sort(),
 		jobs: [...info.matchAll(/<job>([^<]+)<\/job>/g)].map((match) => match[1]),
+		/** @param {string} name */
 		hasClass: (name) => existsSync(join(root, 'lib', ...name.replace(/^OCA\\EtherpadNextcloud\\/, '').split('\\')) + '.php'),
 	}
 }
 
-/** `expected` with each ANY replaced by what `actual` has there. */
-const filledIn = (expected, actual) => expected.map((row, i) => Object.fromEntries(
+/**
+ * `expected` with each ANY replaced by what `actual` has there.
+ *
+ * @param {Row[]} expected
+ * @param {Row[]} actual
+ * @returns {Row[]}
+ */
+const filledIn = (expected, actual) => expected.map((row, i) => /** @type {Row} */ (Object.fromEntries(
 	Object.entries(row).map(([key, value]) => [key, value === ANY ? actual[i]?.[key] : value]),
-))
+)))
 
 if (phase === 'seed') {
+	/** @type {Record<string, Pad>} */
 	const pads = {}
 	for (const [label, mode] of PADS) {
 		const name = `upgrade-${label}.pad`
 		const { data } = await api('pads', { file: '/' + name, accessMode: mode })
+		/** @type {Pad} */
 		const p = { label, name, mode, padId: padIdOf(data.pad_url), id: await fileId(name), marker: `Before the upgrade, ${label}: Zürich ✓ & <saved>` }
 		await write(p, p.marker)
 		await api(`pads/sync/${p.id}`)
-		p.content = await fileText(p)
-		assert.ok(p.content.includes(p.marker), `${label} did not sync`)
+		const content = await fileText(p)
+		assert.ok(content.includes(p.marker), `${label} did not sync`)
+		p.content = content
 		pads[label] = p
 	}
 	// Written after the last sync: a trash with Etherpad down cannot save
@@ -194,12 +263,14 @@ if (phase === 'seed') {
 		// a new one; later releases keep it.
 		pads[label].keptInTrash = await etherpadHas(pads[label].padId)
 	}
+	/** @param {Record<string, string>} form */
 	const share = async (form) => (await request('/ocs/v2.php/apps/files_sharing/api/v1/shares?format=json', { method: 'POST', form })).data.ocs.data
 	const publicShare = await share({ path: '/' + pads.public.name, shareType: '3', permissions: '1' })
-	await share({ path: '/' + pads.protected.name, shareType: '0', shareWith: env.E2E_USER2, permissions: '3' })
+	await share({ path: '/' + pads.protected.name, shareType: '0', shareWith: required('E2E_USER2'), permissions: '3' })
 	assert.equal(await open(pads.protected, true), pads.protected.padId)
 	writeFileSync(join(dir, 'state.json'), JSON.stringify({ pads, publicShareToken: publicShare.token }, null, '\t'))
 } else if (phase === 'offline') {
+	/** @type {State} */
 	const state = readJson('state.json')
 	const { pads } = state
 	await trash(pads['trashed-offline'])
@@ -214,10 +285,14 @@ if (phase === 'seed') {
 	}
 	writeFileSync(join(dir, 'state.json'), JSON.stringify(state, null, '\t'))
 } else if (phase === 'migrated') {
+	/** @type {State} */
 	const { pads } = readJson('state.json')
+	/** @type {Snapshot} */
 	const before = readJson('before.json')
+	/** @type {Snapshot} */
 	const after = readJson('after.json')
-	const target = readTarget(env.UPGRADE_TARGET)
+	const target = readTarget(required('UPGRADE_TARGET'))
+	/** @param {Row} row */
 	const labelOf = (row) => Object.values(pads).find((p) => p.id === Number(row.file_id))?.label ?? `file ${row.file_id}`
 
 	const ran = target.migrations.filter((version) => !before.migrations.includes(version))
@@ -243,8 +318,8 @@ if (phase === 'seed') {
 
 	for (const row of after.bindings) {
 		const was = before.bindings.find((old) => old.file_id === row.file_id)
-		if (was.state !== row.state) {
-			console.log(`  ${labelOf(row)}: ${was.state} -> ${row.state}`)
+		if (was?.state !== row.state) {
+			console.log(`  ${labelOf(row)}: ${was?.state} -> ${row.state}`)
 		}
 	}
 	for (const job of before.jobs.filter((old) => !after.jobs.some((now) => now.id === old.id))) {
@@ -258,6 +333,7 @@ if (phase === 'seed') {
 	const config = readJson('config.json')
 	assert.equal(config.apps.etherpad_nextcloud.etherpad_api_key, '***REMOVED SENSITIVE VALUE***')
 } else if (phase === 'verify') {
+	/** @type {State} */
 	const { pads, publicShareToken } = readJson('state.json')
 
 	for (const label of ['public', 'protected']) {
@@ -271,6 +347,7 @@ if (phase === 'seed') {
 	assert.equal(await open(pads.protected, true), pads.protected.padId, 'the share opened another pad')
 	// A read share: its visitor gets the pad's read-only address in Etherpad.
 	const { data: shared } = await request(`/index.php/apps/etherpad_nextcloud/api/v1/public/open/${publicShareToken}`, { anonymous: true })
+	assert.equal(shared.is_readonly_view, false, `the link opened the app's read-only view, not the pad: ${JSON.stringify(shared)}`)
 	const { readOnlyID } = await etherpad('getReadOnlyID', { padID: pads.public.padId })
 	assert.equal(padIdOf(shared.url), readOnlyID, `the link opened another pad: ${JSON.stringify(shared)}`)
 
