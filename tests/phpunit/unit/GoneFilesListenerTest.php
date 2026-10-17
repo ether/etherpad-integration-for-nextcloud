@@ -214,9 +214,11 @@ class GoneFilesListenerTest extends TestCase {
 	}
 
 	/**
-	 * What `occ files:scan` drops is no deletion, in a trash or under a
-	 * delete whose window a failure left open: the scan says so before
-	 * the entries go. A removal elsewhere counts as ever.
+	 * What `occ files:scan` drops is no deletion, also in a trash or under a
+	 * delete whose window a failure left open. The drop covers the reported
+	 * path and the paths below it on that storage, not a sibling whose name
+	 * starts the same; an empty path covers the whole storage. Removals
+	 * elsewhere count, and do not end the drop.
 	 */
 	public function testWhatAScanDropsDoesNotCount(): void {
 		$listener = $this->listener();
@@ -224,14 +226,20 @@ class GoneFilesListenerTest extends TestCase {
 
 		$listener->handle(new NodeRemovedFromCache($this->storage(self::HOME), 'files_trashbin/files/Old'));
 		$listener->handle($this->removed(7, 'files_trashbin/files/Old/Notes.pad.d1'));
+		$listener->handle($this->removed(10, 'files_trashbin/files/Older/Notes.pad.d1'));
+		$listener->handle($this->removed(11, 'files_trashbin/files/Old', 'home::bob', 3));
+		$listener->handle($this->removed(12, 'files_trashbin/files/Old/Later.pad.d1'));
 		// A delete that failed leaves its window open.
 		$listener->handle(new BeforeNodeDeletedEvent($node));
 		$listener->handle(new NodeRemovedFromCache($this->storage(self::HOME), 'files/Locked.pad'));
 		$listener->handle($this->removed(100, 'files/Locked.pad'));
 		$listener->handle($this->removed(8, 'files_trashbin/files/Other.pad.d1'));
+		$listener->handle(new NodeRemovedFromCache($this->storage(self::HOME), ''));
+		$listener->handle($this->removed(9, 'files_trashbin/files/Any.pad.d1'));
+		$listener->handle($this->removed(13, 'files_trashbin/files/Bob.pad.d1', 'home::bob', 3));
 		$this->endRequest();
 
-		$this->assertSame([['mark', [8]]], $this->calls);
+		$this->assertSame([['mark', [10, 11, 8, 13]]], $this->calls);
 	}
 
 	/**

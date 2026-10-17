@@ -15,6 +15,7 @@ use OCA\EtherpadNextcloud\Service\CookieDomainMessages;
 use OCA\EtherpadNextcloud\Service\CookieDomainPolicy;
 use OCA\EtherpadNextcloud\Service\PadTypePolicy;
 use OCA\EtherpadNextcloud\Settings\AdminSettings;
+use OCA\EtherpadNextcloud\Tests\Support\TemplateKeys;
 use OCP\IConfig;
 use OCP\IL10N;
 use OCP\IURLGenerator;
@@ -46,22 +47,18 @@ class AdminSettingsTest extends TestCase {
 	}
 
 	/**
-	 * The template reads its labels and URLs out of this array by name, and a
-	 * missing key renders as an empty string — a section that silently loses
-	 * its heading, its hint and its button labels. Nothing else notices, so
-	 * the two are compared here.
+	 * The template reads its labels, hints and URLs by name, and one the
+	 * controller leaves out renders empty: the section loses its heading, a
+	 * hint or a button label.
 	 */
 	public function testProvidesEveryValueTheTemplateReads(): void {
 		$params = $this->renderWith('https://pad.example.test', true);
-		$template = (string)file_get_contents(__DIR__ . '/../../../templates/admin-settings.php');
+		$keys = TemplateKeys::read('admin-settings');
 
-		preg_match_all("/\\\$_\\['([a-z0-9_]+)'\\](?!\\[)/", $template, $topLevel);
-		foreach (array_unique($topLevel[1]) as $key) {
+		foreach ($keys['top'] as $key) {
 			$this->assertArrayHasKey($key, $params, 'Template reads $_[' . $key . ']');
 		}
-
-		preg_match_all("/\\\$_\\['l10n'\\]\\['([a-z0-9_]+)'\\]/", $template, $labels);
-		foreach (array_unique($labels[1]) as $key) {
+		foreach ($keys['l10n'] as $key) {
 			$this->assertArrayHasKey($key, $params['l10n'], 'Template reads $_[l10n][' . $key . ']');
 		}
 	}
