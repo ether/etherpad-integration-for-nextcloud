@@ -74,9 +74,8 @@ class KeepPadsThroughTheTrashMigrationTest extends TestCase {
 	}
 
 	/**
-	 * The index on state gives way to one on state and access mode, once:
-	 * a schema that has the new one already is left as it is, and one that
-	 * still has the old one beside it loses the old one.
+	 * A schema with only the new index is left as it is; one with both loses
+	 * the old one.
 	 */
 	public function testTheIndexOnStateGivesWayToOneOnStateAndAccessMode(): void {
 		$table = new class {

@@ -215,10 +215,10 @@ class GoneFilesListenerTest extends TestCase {
 
 	/**
 	 * What `occ files:scan` drops is no deletion, also in a trash or under a
-	 * delete whose window a failure left open. The drop covers the path the
-	 * scan reports and the paths below it, not a sibling whose name starts
-	 * the same, on that storage only; an empty path covers the whole
-	 * storage. Removals elsewhere count, and do not end the drop.
+	 * delete whose window a failure left open. The drop covers the reported
+	 * path and the paths below it on that storage, not a sibling whose name
+	 * starts the same; an empty path covers the whole storage. Removals
+	 * elsewhere count, and do not end the drop.
 	 */
 	public function testWhatAScanDropsDoesNotCount(): void {
 		$listener = $this->listener();
