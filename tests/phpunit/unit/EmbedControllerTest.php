@@ -51,6 +51,37 @@ class EmbedControllerTest extends TestCase {
 		$this->assertSame('Nextcloud did not answer. Check your connection and try again.', $params['l10n']['unanswered']);
 	}
 
+	/**
+	 * Each page gets every sentence its template reads, and the open page
+	 * the addresses of recovery: a key the template reads that the
+	 * controller leaves out shows nothing where a sentence belongs.
+	 */
+	public function testEachPageGetsEverySentenceItsTemplateReads(): void {
+		$file = $this->createMock(File::class);
+		$file->method('getName')->willReturn('Example.pad');
+		$folder = $this->createMock(\OCP\Files\Folder::class);
+		$folder->method('isCreatable')->willReturn(true);
+		$resolver = $this->createMock(UserNodeResolver::class);
+		$resolver->method('resolveUserFileNodeById')->willReturn($file);
+		$resolver->method('resolveUserFolderNodeById')->willReturn($folder);
+		$controller = $this->buildController($resolver);
+		$read = static function (string $template): array {
+			preg_match_all("/\\['l10n'\\]\\['([a-z_]+)'\\]/", (string)file_get_contents(__DIR__ . '/../../../templates/' . $template . '.php'), $keys);
+			$keys = array_values(array_unique($keys[1]));
+			sort($keys);
+			return $keys;
+		};
+
+		foreach (['embed' => $controller->showById(42), 'embed-create' => $controller->createByParent(99)] as $template => $response) {
+			$this->assertSame($template, $response->getTemplateName());
+			$given = array_keys($response->getParams()['l10n']);
+			sort($given);
+			$this->assertSame($read($template), $given, $template);
+		}
+		$params = $controller->showById(42)->getParams();
+		$this->assertSame(['/recover/__FILE_ID__', '/find-original/__FILE_ID__'], [$params['recover_url_template'], $params['find_original_url_template']]);
+	}
+
 	public function testShowByIdReturnsNoviewerOnInvalidFileId(): void {
 		$controller = $this->buildController($this->createMock(UserNodeResolver::class));
 
@@ -188,6 +219,7 @@ class EmbedControllerTest extends TestCase {
 
 		$this->assertSame('embed-create', $response->getTemplateName());
 		$this->assertSame(99, $params['parent_folder_id']);
+		$this->assertSame('/create-by-parent', $params['create_by_parent_url']);
 		$this->assertSame('csrf-token-value', $params['requesttoken']);
 		// No answer to a create leaves its outcome open, and the page says so.
 		$this->assertSame('Nextcloud did not answer. The pad may have been created anyway; look in the folder before you try again.', $params['l10n']['unanswered']);

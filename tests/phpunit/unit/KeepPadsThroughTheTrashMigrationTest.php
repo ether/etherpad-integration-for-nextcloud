@@ -75,7 +75,8 @@ class KeepPadsThroughTheTrashMigrationTest extends TestCase {
 
 	/**
 	 * The index on state gives way to one on state and access mode, once:
-	 * a schema that has the new one already is left as it is.
+	 * a schema that has the new one already is left as it is, and one that
+	 * still has the old one beside it loses the old one.
 	 */
 	public function testTheIndexOnStateGivesWayToOneOnStateAndAccessMode(): void {
 		$table = new class {
@@ -104,5 +105,29 @@ class KeepPadsThroughTheTrashMigrationTest extends TestCase {
 		$this->assertSame($schema, $migration->changeSchema($this->createMock(IOutput::class), static fn (): ISchemaWrapper => $schema, []));
 		$this->assertSame(['ep_bind_file_uniq' => ['file_id'], 'ep_bind_state_mode_idx' => ['state', 'access_mode']], $table->indexes);
 		$this->assertNull($migration->changeSchema($this->createMock(IOutput::class), static fn (): ISchemaWrapper => $schema, []));
+
+		$table->indexes['ep_bind_state_idx'] = ['state'];
+		$this->assertSame($schema, $migration->changeSchema($this->createMock(IOutput::class), static fn (): ISchemaWrapper => $schema, []));
+		$this->assertSame(['ep_bind_file_uniq' => ['file_id'], 'ep_bind_state_mode_idx' => ['state', 'access_mode']], $table->indexes);
+	}
+
+	/**
+	 * The rows of files still there go back to active a batch of 500 at a
+	 * time, until a batch comes back short: all of them, past the first.
+	 */
+	public function testTakesBackEveryRowOfAFileStillTherePastTheFirstBatch(): void {
+		$rows = [];
+		$files = [];
+		for ($fileId = 1; $fileId <= 700; $fileId++) {
+			$rows[] = ['file_id' => $fileId, 'pad_id' => 'pad-' . $fileId, 'access_mode' => BindingService::ACCESS_PUBLIC, 'state' => BindingService::STATE_PENDING_DELETE, 'deleted_at' => 90, 'updated_at' => 100];
+			$files[] = ['fileid' => $fileId, 'storage' => 1, 'path' => 'files/' . $fileId . '.pad'];
+		}
+		$table = new InMemoryBindingTable($rows, $files);
+		$clock = new FixedClock(500);
+
+		(new Version000005Date20260928120000(new BindingService($table, $clock), $clock, $this->createMock(AppConfigService::class), $this->createMock(IJobList::class), $table))
+			->postSchemaChange($this->createMock(IOutput::class), fn (): ISchemaWrapper => $this->createMock(ISchemaWrapper::class), []);
+
+		$this->assertSame([BindingService::STATE_ACTIVE => 700], array_count_values(array_column($table->rows, 'state')));
 	}
 }

@@ -224,8 +224,9 @@ class BackfillTestResult {
 	public function __construct(private int|false $value) {
 	}
 
-	public function fetchOne(): int|false {
-		return $this->value;
+	/** An integer column comes back as a string, as database drivers hand it over. */
+	public function fetchOne(): string|false {
+		return $this->value === false ? false : (string)$this->value;
 	}
 
 	public function closeCursor(): void {

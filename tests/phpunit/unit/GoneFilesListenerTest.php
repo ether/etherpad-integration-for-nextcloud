@@ -235,6 +235,24 @@ class GoneFilesListenerTest extends TestCase {
 	}
 
 	/**
+	 * A scan's drop covers its own folder, and a whole storage where the
+	 * scan drops that: a folder beside it whose name starts the same is no
+	 * part of it.
+	 */
+	public function testAScanDropCoversItsFolderAndNothingBesideIt(): void {
+		$listener = $this->listener();
+
+		$listener->handle(new NodeRemovedFromCache($this->storage(self::HOME), 'files_trashbin/files/Old'));
+		$listener->handle($this->removed(7, 'files_trashbin/files/Old/Notes.pad.d1'));
+		$listener->handle($this->removed(8, 'files_trashbin/files/Older/Notes.pad.d1'));
+		$listener->handle(new NodeRemovedFromCache($this->storage(self::HOME), ''));
+		$listener->handle($this->removed(9, 'files_trashbin/files/Other.pad.d1'));
+		$this->endRequest();
+
+		$this->assertSame([['mark', [8]]], $this->calls);
+	}
+
+	/**
 	 * A scan's drop ends with its own entry, which Nextcloud reports after
 	 * all under it: a removal there later in the process - the trash
 	 * expiring, say - counts again.
