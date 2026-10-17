@@ -82,6 +82,25 @@ class RestoreFromTrashListenerTest extends TestCase {
 		$listener->handle($this->restoreEventFor($file));
 	}
 
+	/** The step left out says so once, naming the file. */
+	public function testSaysWhenItLeavesThePadOutForAUserWithoutTheApp(): void {
+		$file = $this->createMock(File::class);
+		$file->method('getName')->willReturn('Notes.pad');
+		$file->method('getId')->willReturn(42);
+		$restores = $this->createMock(RestoreService::class);
+		$restores->expects($this->never())->method('restore');
+		$session = $this->sessionFor('alice');
+		$logger = $this->createMock(LoggerInterface::class);
+		$this->closeEveryLevelExcept($logger, 'debug');
+		$logger->expects($this->once())->method('debug')->with(
+			'RestoreFromTrash listener left the pad of a file restored as a user the app is not enabled for.',
+			['app' => 'etherpad_nextcloud', 'fileId' => 42],
+		);
+		$listener = new RestoreFromTrashListener($restores, $session, $this->createMock(UserNodeResolver::class), $logger, $this->appAccess(false, $session));
+
+		$listener->handle($this->restoreEventFor($file));
+	}
+
 	/**
 	 * A check that fails ends the pad's step as the step's own failure
 	 * would, and the file stays restored. It decides nothing: the event pass

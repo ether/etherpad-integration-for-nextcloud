@@ -322,6 +322,36 @@ class FileCreatedFromTemplateListenerTest extends TestCase {
 	}
 
 	/**
+	 * A blank file the listener cannot initialise is left to the viewer,
+	 * which initialises it on its first open: the create succeeds, and a
+	 * warning names the file.
+	 */
+	public function testLeavesABlankFileItCannotInitialiseToTheViewer(): void {
+		$bootstrap = $this->createMock(PadBootstrapService::class);
+		$bootstrap->expects($this->once())->method('initializeMissingFrontmatter')->willThrowException(new \RuntimeException('Etherpad down'));
+		$target = $this->file('New pad.pad');
+		$target->expects($this->never())->method('delete');
+		$target->expects($this->never())->method('putContent');
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects($this->once())->method('warning')->with(
+			'Could not initialise frontmatter for blank-template .pad — falling back to viewer init-retry path.',
+			$this->callback(static fn (array $context): bool => $context['app'] === 'etherpad_nextcloud' && $context['fileId'] === 42),
+		);
+		$session = $this->userSession(true);
+		$listener = new FileCreatedFromTemplateListener(
+			$this->createMock(PadCreationService::class),
+			$bootstrap,
+			$this->noTypeTemplates(),
+			$this->createMock(ExternalPadSeeder::class),
+			$session,
+			$logger,
+			$this->appAccess(true, $session),
+		);
+
+		$listener->handle(new FileCreatedFromTemplateEvent(null, $target, []));
+	}
+
+	/**
 	 * A create for a user the app is not enabled for provisions nothing -
 	 * no pad, no binding, no link to another server - whichever template it
 	 * came from, and leaves the file Nextcloud made as it was given.
