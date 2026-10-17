@@ -38,11 +38,13 @@ reaches() {
 	IFS=. read -r -a have <<< "$1"
 	IFS=. read -r -a want <<< "$2"
 	for i in "${!have[@]}"; do
-		if (( have[i] != ${want[i]:-0} )); then
-			(( have[i] > ${want[i]:-0} ))
-			return
+		if (( have[i] > ${want[i]:-0} )); then
+			return 0
+		elif (( have[i] < ${want[i]:-0} )); then
+			return 1
 		fi
 	done
+	return 0
 }
 
 if [[ -n "$(compose ps -aq)" ]]; then
@@ -313,16 +315,29 @@ fi
 # throws under "core", so the line's own mention of the app decides. Read
 # before the suite, which logs its own on purpose.
 compose exec -T -u www-data nextcloud sh -c "tail -n +$((log_from + 1)) data/nextcloud.log 2>/dev/null" > "$work/upgrade.log"
+# A line that is no JSON counts as well, shown as it is.
 node -e '
-const lines = require("fs").readFileSync(process.argv[1], "utf8").split("\n").filter(Boolean)
-const logged = lines.filter((line) => /etherpad_nextcloud|EtherpadNextcloud/.test(line)).map((line) => JSON.parse(line)).filter((entry) => entry.level >= 2)
-for (const entry of logged) console.error(`level ${entry.level}, ${entry.app}: ${entry.message}`)
-process.exit(logged.length === 0 ? 0 : 1)
+const lines = require("fs").readFileSync(process.argv[1], "utf8").split("\n").filter((line) => /etherpad_nextcloud|EtherpadNextcloud/.test(line))
+const found = []
+for (const line of lines) {
+	let entry
+	try {
+		entry = JSON.parse(line)
+	} catch {
+		found.push(`not JSON: ${line.slice(0, 500)}`)
+		continue
+	}
+	if (entry.level >= 2) found.push(`level ${entry.level}, ${entry.app}: ${entry.message}`)
+}
+for (const line of found) console.error(line)
+process.exit(found.length === 0 ? 0 : 1)
 ' "$work/upgrade.log"
 
 echo "==> the suite on the upgraded stack"
 bash "$here/run-suite.sh"
 
 echo
-echo "$from_version -> $to_version passed on Nextcloud $nc_version. The stack is kept for a look; remove it with:"
+echo "$from_version -> $to_version passed on Nextcloud $nc_version. The stack is kept for a look, as the compose"
+echo "project $COMPOSE_PROJECT_NAME: docker compose and the scripts here reach it with COMPOSE_PROJECT_NAME=$COMPOSE_PROJECT_NAME."
+echo "Remove it with:"
 echo "  docker compose -p $COMPOSE_PROJECT_NAME -f tests/e2e/docker/compose.yml down -v --remove-orphans"

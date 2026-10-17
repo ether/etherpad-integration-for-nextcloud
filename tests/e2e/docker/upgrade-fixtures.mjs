@@ -274,8 +274,7 @@ if (phase === 'seed') {
 	writeFileSync(join(dir, 'state.json'), JSON.stringify({ pads, publicShareToken: publicShare.token }, null, '\t'))
 } else if (phase === 'offline') {
 	/** @type {State} */
-	const state = readJson('state.json')
-	const { pads } = state
+	const { pads } = readJson('state.json')
 	await trash(pads['trashed-offline'])
 	await trash(pads['deleted-offline'])
 	await deleteFromTrash(pads['deleted-offline'])
@@ -286,7 +285,6 @@ if (phase === 'seed') {
 	if (res.status === 200) {
 		assert.equal(data.delete_pending, true, JSON.stringify(data))
 	}
-	writeFileSync(join(dir, 'state.json'), JSON.stringify(state, null, '\t'))
 } else if (phase === 'migrated') {
 	/** @type {State} */
 	const { pads } = readJson('state.json')

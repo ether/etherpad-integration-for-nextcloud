@@ -98,7 +98,9 @@ restores and deletes the pads, runs the jobs, runs the update once more,
 whose snapshot has to match, and fails on any warning or error about the
 app logged meanwhile. Last, it runs the whole suite on the upgraded stack.
 
-The stack is a project of its own, `epnc-upgrade`, and is kept for a look.
+The stack is a project of its own, `epnc-upgrade`, and is kept for a look;
+`docker compose` and the scripts here reach it with
+`COMPOSE_PROJECT_NAME=epnc-upgrade`.
 It needs port 443 and the hostnames like every stack here, so stop another
 one first. `up.sh` writes `tests/e2e/docker/.env` and
 `tests/e2e/.env.e2e.docker` for it; the ones that were there before go
