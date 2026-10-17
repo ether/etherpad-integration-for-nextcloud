@@ -35,6 +35,41 @@ class ExternalPadExportFetcher {
 	private const EXTERNAL_TOTAL_BUDGET_SECONDS = 20;
 	private const EXTERNAL_MIN_ATTEMPT_SECONDS = 2;
 
+	/**
+	 * Addresses that are not public but pass PHP's filter on at least one
+	 * supported PHP version: the blocks IANA's special-purpose registries
+	 * mark as not globally reachable, and two deprecated forms -
+	 * IPv4-compatible addresses, which carry an IPv4 address, and
+	 * site-local ones. A block counts as a whole: the reachable addresses
+	 * inside one belong to protocol services such as anycast relays and
+	 * AS112, not to web servers. The filter reads an address as written -
+	 * from PHP 8.3 on it refuses `::127.0.0.1`, but not the same address
+	 * written `::7f00:1` - so these blocks are compared in binary.
+	 *
+	 * The NAT64 prefix `64:ff9b::/96` is left out: IANA marks it globally
+	 * reachable, and an IPv6-only server reaches IPv4-only servers through
+	 * it.
+	 */
+	private const NOT_PUBLIC_RANGES = [
+		'100.64.0.0/10', // shared address space: carrier-grade NAT, Tailscale
+		'192.0.0.0/24',
+		'192.0.2.0/24',
+		'192.88.99.2/32',
+		'198.18.0.0/15',
+		'198.51.100.0/24',
+		'203.0.113.0/24',
+		'::/96', // IPv4-compatible
+		'::ffff:0:0/96', // IPv4-mapped
+		'64:ff9b:1::/48',
+		'100::/64',
+		'100:0:0:1::/64',
+		'2001::/23',
+		'2001:db8::/32',
+		'3fff::/20',
+		'5f00::/16',
+		'fec0::/10', // site-local
+	];
+
 	public function __construct(
 		private IConfig $config,
 		private ITimeFactory $timeFactory,
@@ -397,7 +432,22 @@ class ExternalPadExportFetcher {
 	}
 
 	private function isPublicIp(string $ip): bool {
-		return filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE) !== false;
+		if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE) === false) {
+			return false;
+		}
+		$address = (string)inet_pton($ip);
+		foreach (self::NOT_PUBLIC_RANGES as $range) {
+			[$network, $bits] = explode('/', $range);
+			$prefix = (string)inet_pton($network);
+			$whole = intdiv((int)$bits, 8);
+			$rest = (int)$bits % 8;
+			if (strlen($prefix) === strlen($address)
+				&& strncmp($address, $prefix, $whole) === 0
+				&& ($rest === 0 || (ord($address[$whole]) ^ ord($prefix[$whole])) >> (8 - $rest) === 0)) {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	private function isAllowlistedExternalHost(string $host, string $origin): bool {

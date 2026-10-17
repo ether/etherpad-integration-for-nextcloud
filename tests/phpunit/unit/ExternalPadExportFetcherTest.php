@@ -103,6 +103,62 @@ class ExternalPadExportFetcherTest extends TestCase {
 	}
 
 	/**
+	 * The refused addresses pass PHP's filter on at least one supported
+	 * version, some only in one way of writing them. The addresses just
+	 * outside a block stay public.
+	 */
+	#[DataProvider('addressesAndWhetherTheyArePublic')]
+	public function testRefusesAddressesThatAreNotPublic(string $address, bool $public): void {
+		$records = [[str_contains($address, ':') ? 'ipv6' : 'ip' => $address]];
+		try {
+			$validated = $this->fetcher($this->buildExternalEnabledConfig(), $records)
+				->normalizeAndValidateExternalPublicPadUrl('https://pad.example/p/pad');
+			$this->assertTrue($public, $address . ': not refused');
+			$this->assertSame('https://pad.example/p/pad', $validated['pad_url']);
+		} catch (ExternalPadException $e) {
+			$this->assertFalse($public, $address . ': refused');
+			$this->assertSame(ExternalPadException::LOCAL_ADDRESS, $e->reason());
+		}
+	}
+
+	/** @return array<string, array{string, bool}> */
+	public static function addressesAndWhetherTheyArePublic(): array {
+		return [
+			'shared address space, as carrier-grade NAT and Tailscale use it' => ['100.64.0.1', false],
+			'the last shared address' => ['100.127.255.254', false],
+			'IETF protocol assignments' => ['192.0.0.8', false],
+			'an anycast address inside a block that counts as a whole' => ['192.0.0.9', false],
+			'the first documentation block' => ['192.0.2.1', false],
+			'the 6a44 relay' => ['192.88.99.2', false],
+			'benchmarking, its second half' => ['198.19.255.1', false],
+			'the second documentation block' => ['198.51.100.7', false],
+			'the third documentation block' => ['203.0.113.7', false],
+			'loopback, IPv4-compatible and written in hex' => ['::7f00:1', false],
+			'loopback, IPv4-mapped' => ['::ffff:7f00:1', false],
+			'loopback, IPv4-mapped and dotted' => ['::ffff:127.0.0.1', false],
+			'a public address, IPv4-mapped' => ['::ffff:1.1.1.1', false],
+			'local-use IPv4/IPv6 translation' => ['64:ff9b:1::a00:1', false],
+			'discard-only' => ['100::1', false],
+			'the dummy prefix' => ['100:0:0:1::1', false],
+			'Teredo, inside the IETF block' => ['2001::1', false],
+			'deprecated ORCHID, inside the IETF block' => ['2001:10::1', false],
+			'IPv6 benchmarking' => ['2001:2::1', false],
+			'IPv6 documentation' => ['2001:db8::1', false],
+			'the newer IPv6 documentation block' => ['3fff::1', false],
+			'SRv6 segment identifiers' => ['5f00::1', false],
+			'site-local' => ['fec0::1', false],
+			'just below shared address space' => ['100.63.255.255', true],
+			'just above shared address space' => ['100.128.0.1', true],
+			'just below benchmarking' => ['198.17.255.255', true],
+			'just above benchmarking' => ['198.20.0.1', true],
+			'NAT64 to a public address' => ['64:ff9b::101:101', true],
+			'just past the IETF block' => ['2001:200::1', true],
+			'a public IPv6 address' => ['2606:4700::1111', true],
+			'an IPv4 address whose first bytes match an IPv6 block' => ['32.1.1.1', true],
+		];
+	}
+
+	/**
 	 * Each refusal carries the reason the user is told, whatever its
 	 * message says for the log.
 	 */
@@ -118,6 +174,7 @@ class ExternalPadExportFetcherTest extends TestCase {
 			'not on the allowlist' => ['https://1.1.1.1:9443/p/pad', 'https://1.1.1.1:8443', ExternalPadException::NOT_ALLOWED],
 			'a local host' => ['https://pad.localhost/p/pad', '', ExternalPadException::LOCAL_ADDRESS],
 			'a private address' => ['https://10.0.0.7/p/pad', '', ExternalPadException::LOCAL_ADDRESS],
+			'a shared address' => ['https://100.64.0.7/p/pad', '', ExternalPadException::LOCAL_ADDRESS],
 			'no pad after /p/' => ['https://1.1.1.1/p/%20', '', ExternalPadException::NOT_A_PAD_URL],
 			'a name without records' => ['https://pad.example/p/pad', '', ExternalPadException::UNRESOLVED, []],
 			'a name without an address' => ['https://pad.example/p/pad', '', ExternalPadException::UNRESOLVED, [['host' => 'pad.example', 'type' => 'A']]],

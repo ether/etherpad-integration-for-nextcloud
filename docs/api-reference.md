@@ -167,7 +167,7 @@ solely by the separate external-pad policy, not by these two settings.
   - Security rules:
     - public pad URLs only
     - no GroupPad IDs (`g.<group>$<name>`)
-    - no local/private/reserved target addresses (DNS/IP checks)
+    - no target addresses that are not public (DNS/IP checks): local, private and reserved ones, the blocks IANA's special-purpose registries mark as not globally reachable (shared address space `100.64.0.0/10` among them), and IPv4 addresses written as IPv6 (`::ffff:…`, `::…`), the same on every supported PHP version. The NAT64 prefix `64:ff9b::/96` is allowed: an IPv6-only server reaches IPv4-only pad servers through it.
     - DNS result is pinned for the outbound fetch (rebinding mitigation)
     - the pin holds through a proxy from the server's environment too (`https_proxy`, `all_proxy`; Nextcloud's own `proxy` setting does not apply to this fetch): the proxy is asked for the checked address, never the name. A proxy that opens a tunnel only to a host name refuses the fetch, which the user reads as the pad's server not being reachable.
     - external `/export/txt` responses are size-limited (5 MiB hard limit)
