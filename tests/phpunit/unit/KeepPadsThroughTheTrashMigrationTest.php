@@ -113,8 +113,8 @@ class KeepPadsThroughTheTrashMigrationTest extends TestCase {
 
 	/**
 	 * The rows of files still there go back to active a batch at a time,
-	 * until a batch comes back short: all of them, past the first batch, and
-	 * past one that comes back full.
+	 * until a batch comes back short. Two come back full before it, so
+	 * asking just once more after a full batch leaves the last row behind.
 	 */
 	public function testTakesBackEveryRowOfAFileStillTherePastTheFirstBatch(): void {
 		$rows = [];
@@ -131,6 +131,7 @@ class KeepPadsThroughTheTrashMigrationTest extends TestCase {
 
 		$migration->postSchemaChange($this->createMock(IOutput::class), fn (): ISchemaWrapper => $this->createMock(ISchemaWrapper::class), []);
 
+		$this->assertSame([2, 2, 1], $table->read, 'the batch the test set, three times');
 		$this->assertSame([BindingService::STATE_ACTIVE => 5], array_count_values(array_column($table->rows, 'state')));
 	}
 }

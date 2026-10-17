@@ -8,11 +8,12 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Tests\Support;
 
-/** The keys a template under templates/ reads of its parameters. */
+/** The snake_case keys a template under templates/ reads from its parameters. */
 final class TemplateKeys {
 	/**
-	 * @return array{top: list<string>, l10n: list<string>} the keys of
-	 *                                                        `$_`, and those under `$_['l10n']`, each once, sorted
+	 * @return array{top: list<string>, l10n: list<string>}
+	 *   the keys read straight off `$_`, and those under `$_['l10n']`, each
+	 *   once, sorted
 	 */
 	public static function read(string $template): array {
 		$source = (string)file_get_contents(__DIR__ . '/../../../templates/' . $template . '.php');

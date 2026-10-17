@@ -62,7 +62,8 @@ class Version000005Date20260928120000 extends SimpleMigrationStep {
 	private const RESTORE_PENDING = 'restore_pending';
 
 	/**
-	 * Rows of files still there made active per query; a test makes it small.
+	 * Rows of files still there made active per call of clearStaleGone(); a
+	 * test makes it small.
 	 *
 	 * @var int
 	 */

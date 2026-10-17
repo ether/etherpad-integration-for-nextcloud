@@ -55,10 +55,10 @@ class EmbedControllerTest extends TestCase {
 	}
 
 	/**
-	 * Each page gets the sentences its template reads, and no other: one left
-	 * out falls back to an English sentence on the open page, or shows
-	 * nothing - its loading and error titles, its recovery texts, and every
-	 * sentence of the create page - and one no template reads is dead.
+	 * A sentence the controller leaves out shows nothing for the loading text
+	 * and the error title, on both pages, and for the two recovery bodies of
+	 * the open page. Every other one falls back to English, in the template or
+	 * the page's script. A sentence no template reads is dead.
 	 */
 	public function testEachPageGetsTheSentencesItsTemplateReads(): void {
 		$file = $this->createMock(File::class);
