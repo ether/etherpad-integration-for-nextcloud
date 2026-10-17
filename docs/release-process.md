@@ -7,8 +7,8 @@ This project uses a lightweight release flow:
 3. Merge it, and tag the release.
 4. Deploy, and run the end-to-end suite against the deployed instance.
 
-Pushing the tag is the last manual step: `.github/workflows/release.yml` builds
-the tarball and publishes the release. What has to be true before the tag is
+Pushing the tag publishes the release: `.github/workflows/release.yml` builds
+the tarball and publishes it. What has to be true before the tag is
 pushed is listed under [3) Tagging](#3-tagging).
 
 The workflow refuses a tag that does not match `appinfo/info.xml`, and a tag
@@ -24,16 +24,18 @@ prose readers get, `docs/release-notes/<version>.md`. Then, from repo root:
 scripts/prepare-release.sh X.Y.Z
 ```
 
-Before it changes anything it refuses a version without a `CHANGELOG.md`
-section or without release notes, uncommitted changes other than those two
-texts, a version that is tagged already or below the one `appinfo/info.xml`
-has, and one that is no semver release or a development version. It sets the
-version and builds `js/` in a copy of the tree first - the files git knows,
-with a `node_modules` of its own - and only then in the working tree: in
-`appinfo/info.xml`, `package.json` and both fields of `package-lock.json`,
-only those lines, and `js/` from the copy. Last it checks the versions as the
-tag workflow does. It needs the Node that `package.json` names under `engines`
-and network for `npm ci`. It commits, pushes and tags nothing: commit what it
+Before it changes anything it refuses a version whose `CHANGELOG.md` section
+is missing or empty, or whose release notes file is there but empty - without
+one the CHANGELOG section is published - and uncommitted changes outside
+`CHANGELOG.md` and `docs/release-notes/<version>.md`. It refuses a version
+that is tagged already, locally or on `origin`, or below the one
+`appinfo/info.xml` has, and one that is no semver release or a development
+version. It sets the version and builds `js/` in a copy of the tree first -
+the files git knows, with a `node_modules` of its own - and only then in the
+working tree: in `appinfo/info.xml`, `package.json` and both fields of
+`package-lock.json`, only those lines, checked as the tag workflow checks
+them, and `js/` from the copy. It needs the Node that `package.json` names
+under `engines`, and network for `npm ci` and to ask `origin` for the tag. It commits, pushes and tags nothing: commit what it
 changed, together with the two texts, and open the pull request. Its CI runs
 the PHPUnit, Vitest and Psalm checks and the end-to-end suite.
 
@@ -97,8 +99,10 @@ git tag -a vX.Y.Z "$merge" -m "Etherpad Integration for Nextcloud vX.Y.Z"
 git push origin vX.Y.Z
 ```
 
-`.github/workflows/release.yml` refuses the tag if any of the above is missing,
-before it builds anything. Otherwise it builds the tarball with
+`.github/workflows/release.yml` refuses the tag when a version file disagrees
+or the CHANGELOG section or the release notes say nothing, before it builds
+anything, and when `js/` is not a fresh build of `src/`, after building it.
+Otherwise it builds the tarball with
 `scripts/build-release-tarball.sh` and publishes the release with it attached,
 marking a pre-release suffix as a pre-release. Re-running the workflow after a
 failed upload is safe; it does not try to create a release that already exists.

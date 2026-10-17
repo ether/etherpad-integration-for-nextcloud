@@ -310,7 +310,7 @@ existing name asks for confirmation because the previous file is gone for good.
 - `.pad` format: [docs/pad-format.md](docs/pad-format.md)
 - I18N: [docs/i18n.md](docs/i18n.md)
 - UI icons: [docs/ui-icons.md](docs/ui-icons.md)
-- Testing and release checks: [docs/release-process.md](docs/release-process.md)
+- Release process: [docs/release-process.md](docs/release-process.md)
 
 ## License
 
