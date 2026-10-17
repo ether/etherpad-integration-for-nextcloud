@@ -60,5 +60,5 @@ as_www() { compose exec -T -u www-data nextcloud "$@"; }
 pending="$(as_www php -r 'require "lib/base.php"; $ms = new \OC\DB\MigrationService("etherpad_nextcloud", \OCP\Server::get(\OC\DB\Connection::class)); echo implode(",", array_diff($ms->getAvailableVersions(), $ms->getMigratedVersions()));')"
 if [ "$(as_www php occ config:app:get etherpad_nextcloud enabled 2>/dev/null)" = yes ] && [ -n "$pending" ]; then
 	echo "Running the app's migrations: $pending"
-	as_www php -r 'require "lib/base.php"; exit(\OC_App::updateApp("etherpad_nextcloud") ? 0 : 1);'
+	as_www php < "$here/update-app.php"
 fi

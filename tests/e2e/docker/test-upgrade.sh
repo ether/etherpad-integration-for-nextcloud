@@ -3,9 +3,10 @@
 # Copyright (c) 2026 Jacob Bühler
 #
 # The last release, as published, on a stack of its own, with pads in the
-# states its users can leave them in, upgraded to this app. The upgrade
-# has to change what upgrade-fixtures.mjs says its migrations change, and
-# nothing else; the suite then runs on the upgraded stack.
+# states its users can leave them in, upgraded to this app. The test holds
+# the snapshots it takes to what upgrade-fixtures.mjs expects of the
+# migrations that ran, checks the pads on the new version, and runs the
+# suite on the upgraded stack.
 #
 #   tests/e2e/docker/test-upgrade.sh
 #
@@ -13,8 +14,9 @@
 # before HEAD. Its archive is fetched from the release, or taken from
 # FROM_ARCHIVE, and checked against the checksum pinned below either way.
 # TO_ARCHIVE is a release archive to upgrade to instead of the working
-# tree. UPGRADE_WORK is a directory for the run's files, which a failed
-# run leaves there. NC_VERSION and EP_VERSION are up.sh's.
+# tree. UPGRADE_WORK is a new or empty directory for the run's files, which
+# stay there; without it a temporary one keeps them only when the run
+# fails. NC_VERSION and EP_VERSION are up.sh's.
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -26,12 +28,21 @@ repo="$(cd "$here/../../.." && pwd)"
 export COMPOSE_PROJECT_NAME=epnc-upgrade
 compose() { docker compose -f "$here/compose.yml" "$@"; }
 occ() { compose exec -T -u www-data nextcloud php occ "$@"; }
-update_app() { compose exec -T -u www-data nextcloud php -r 'require "lib/base.php"; exit(\OC_App::updateApp("etherpad_nextcloud") ? 0 : 1);'; }
-# Nextcloud keeps the app config in the web server's local cache, which
-# occ does not clear: what occ sets reaches a request after a restart.
-restart_nextcloud() {
-	compose restart nextcloud >/dev/null
-	compose exec -T nextcloud sh -c 'for _ in $(seq 1 60); do curl -fs -o /dev/null http://localhost/status.php && exit 0; sleep 1; done; exit 1'
+update_app() { compose exec -T -u www-data nextcloud php < "$here/update-app.php"; }
+# Whether version $1 reaches $2, compared at the precision $1 names: a
+# moving major tag stands for the newest release of its major, which
+# reaches a floor within it.
+reaches() {
+	local -a have want
+	local i
+	IFS=. read -r -a have <<< "$1"
+	IFS=. read -r -a want <<< "$2"
+	for i in "${!have[@]}"; do
+		if (( have[i] != ${want[i]:-0} )); then
+			(( have[i] > ${want[i]:-0} ))
+			return
+		fi
+	done
 }
 
 if [[ -n "$(compose ps -aq)" ]]; then
@@ -50,9 +61,22 @@ if [[ -n "$taken" ]]; then
 	exit 1
 fi
 
+# up.sh's default is compose.yml's.
+nc_version="${NC_VERSION:-$(sed -n 's/.*${NC_VERSION:-\([^}]*\)}.*/\1/p' "$here/compose.yml" | head -n 1)}"
+if [[ ! "$nc_version" =~ ^[0-9]+(\.[0-9]+)*$ ]]; then
+	echo "NC_VERSION is '$nc_version'; the test needs a version number to hold it to the range the release runs on." >&2
+	exit 1
+fi
+
 if [[ -n "${UPGRADE_WORK:-}" ]]; then
 	work="$UPGRADE_WORK"
 	mkdir -p "$work"
+	# A run unpacks over what an earlier one left, and its cleanup would
+	# write over that run's log.
+	if [[ -n "$(ls -A "$work")" ]]; then
+		echo "UPGRADE_WORK $work is not empty. Name a new or empty directory." >&2
+		exit 1
+	fi
 else
 	work="$(mktemp -d)"
 fi
@@ -86,6 +110,10 @@ cleanup() {
 	rm -rf "$saved_env"
 }
 trap cleanup EXIT
+# A run cut short is a failed one: its files stay.
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 to_app="$repo"
 if [[ -n "${TO_ARCHIVE:-}" ]]; then
@@ -131,17 +159,12 @@ tar -xzf "$from_archive" -C "$work/from"
 from_app="$work/from/etherpad_nextcloud"
 
 # A Nextcloud the release does not run on has no installation of it to
-# upgrade. up.sh's default is compose.yml's.
-nc_version="${NC_VERSION:-$(sed -n 's/.*${NC_VERSION:-\([^}]*\)}.*/\1/p' "$here/compose.yml" | head -n 1)}"
-if [[ ! "$nc_version" =~ ^[0-9]+(\.[0-9]+)*$ ]]; then
-	echo "NC_VERSION is '$nc_version'; the test needs a version number to hold it to the range $from_version runs on." >&2
-	exit 1
-fi
-if ! read -r from_min from_max < <(sed -n 's/.*<nextcloud min-version="\([0-9]*\)[^"]*" max-version="\([0-9]*\)[^"]*".*/\1 \2/p' "$from_app/appinfo/info.xml"); then
+# upgrade. Its floor may name a patch, its ceiling a major.
+if ! read -r from_min from_max < <(sed -n 's/.*<nextcloud min-version="\([0-9.]*\)" max-version="\([0-9]*\)[^"]*".*/\1 \2/p' "$from_app/appinfo/info.xml"); then
 	echo "The info.xml of $from_version names no Nextcloud range." >&2
 	exit 1
 fi
-if (( ${nc_version%%.*} < from_min || ${nc_version%%.*} > from_max )); then
+if ! reaches "$nc_version" "$from_min" || (( ${nc_version%%.*} > from_max )); then
 	echo "$from_version runs on Nextcloud $from_min to $from_max, not on $nc_version: no upgrade to test there."
 	exit 0
 fi
@@ -258,9 +281,11 @@ snapshot > "$work/after.json"
 occ config:list etherpad_nextcloud --output=json > "$work/config.json"
 fixtures migrated
 
-# On again, for the pads deleted for good to go.
+# On again, for the pads deleted for good to go. The web server keeps the
+# app config for up to 3 s (Nextcloud's LOCAL_CACHE_TTL), where occ cannot
+# clear it.
 occ config:app:set etherpad_nextcloud delete_pad_with_file --value=yes
-restart_nextcloud
+sleep 4
 echo "==> pads on $to_version"
 fixtures verify
 
@@ -285,9 +310,8 @@ fi
 
 # The warnings and errors about the app since the upgrade began: what went
 # wrong without failing a request or a command. Nextcloud logs a job that
-# throws under "core" and a repair step that throws under no app, so the
-# line's own mention of the app decides. Read before the suite, which logs
-# its own on purpose.
+# throws under "core", so the line's own mention of the app decides. Read
+# before the suite, which logs its own on purpose.
 compose exec -T -u www-data nextcloud sh -c "tail -n +$((log_from + 1)) data/nextcloud.log 2>/dev/null" > "$work/upgrade.log"
 node -e '
 const lines = require("fs").readFileSync(process.argv[1], "utf8").split("\n").filter(Boolean)
