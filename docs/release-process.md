@@ -24,20 +24,21 @@ prose readers get, `docs/release-notes/<version>.md`. Then, from repo root:
 scripts/prepare-release.sh X.Y.Z
 ```
 
-Before it changes anything it refuses a version whose `CHANGELOG.md` section
-is missing or empty, or whose release notes file is there but empty - without
-one the CHANGELOG section is published - and uncommitted changes outside
-`CHANGELOG.md` and `docs/release-notes/<version>.md`. It refuses a version
-that is tagged already, locally or on `origin`, or below the one
-`appinfo/info.xml` has, and one that is no semver release or a development
-version. It sets the version and builds `js/` in a copy of the tree first -
-the files git knows, with a `node_modules` of its own - and only then in the
-working tree: in `appinfo/info.xml`, `package.json` and both fields of
-`package-lock.json`, only those lines, checked as the tag workflow checks
-them, and `js/` from the copy. It needs the Node that `package.json` names
-under `engines`, and network for `npm ci` and to ask `origin` for the tag. It commits, pushes and tags nothing: commit what it
-changed, together with the two texts, and open the pull request. Its CI runs
-the PHPUnit, Vitest and Psalm checks and the end-to-end suite.
+Before it changes anything it refuses a version that is no semver release, a
+development version, or one below the one `appinfo/info.xml` has; `main` or a
+detached HEAD; a version whose `CHANGELOG.md` section is missing or empty, or
+whose release notes file is there but empty - without one the CHANGELOG
+section is published; uncommitted changes outside `CHANGELOG.md` and
+`docs/release-notes/<version>.md`; and a version that is tagged already,
+locally or on `origin`. It sets the version and builds `js/` in a copy of the
+tree first - the files git knows, with a `node_modules` of its own - and only
+then in the working tree: in `appinfo/info.xml`, `package.json` and both
+fields of `package-lock.json`, only those lines, checked as the tag workflow
+checks them, and `js/` from the copy. It needs the Node that `package.json`
+names under `engines`, and network for `npm ci` and to ask `origin` for the
+tag. It commits, pushes and tags nothing: commit what it changed, together
+with the two texts, and open the pull request. Its CI runs the PHPUnit,
+Vitest and Psalm checks and the end-to-end suite.
 
 The Vite build writes runtime assets to `js/`; those built files must be present
 in the deployed app.
