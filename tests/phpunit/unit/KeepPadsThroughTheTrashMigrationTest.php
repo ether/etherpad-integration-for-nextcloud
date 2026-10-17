@@ -131,7 +131,8 @@ class KeepPadsThroughTheTrashMigrationTest extends TestCase {
 
 		$migration->postSchemaChange($this->createMock(IOutput::class), fn (): ISchemaWrapper => $this->createMock(ISchemaWrapper::class), []);
 
-		$this->assertSame([2, 2, 1], $table->read, 'the batch the test set, three times');
+		$batches = array_values(array_filter($table->limits, static fn (?int $limit): bool => $limit !== null));
+		$this->assertSame([2, 2, 2], $batches, 'the batch the test set, asked for three times');
 		$this->assertSame([BindingService::STATE_ACTIVE => 5], array_count_values(array_column($table->rows, 'state')));
 	}
 }
