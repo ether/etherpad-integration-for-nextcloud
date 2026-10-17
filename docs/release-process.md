@@ -82,11 +82,12 @@ tagged commit already:
   CHANGELOG section is published instead, and afterwards is too late - the
   notes are read when the tag arrives.
 
-Then:
+Then, once the release pull request is merged, tag its merge on `main`:
 
 ```bash
+git switch main
+git pull --ff-only
 git tag -a vX.Y.Z -m "Etherpad Integration for Nextcloud vX.Y.Z"
-git push origin HEAD
 git push origin vX.Y.Z
 ```
 
