@@ -197,9 +197,8 @@ class PadResponseService {
 			// pad opened read-only is a live Etherpad view rather than a
 			// snapshot, and it must not sync either. Syncing writes the pad
 			// back into the `.pad` file, which is the one thing a read-only
-			// share may not do — the client flushes on a timer and on every
-			// tab switch, and each one would fail on the filesystem and be
-			// logged as an error.
+			// share may not do: the client flushes on a timer and on every
+			// tab switch, and the server would refuse each one.
 			'sync_url' => $target->mayWrite
 				? $this->urlGenerator->linkToRoute('etherpad_nextcloud.padLifecycle.syncById', ['fileId' => $target->fileId])
 				: '',
