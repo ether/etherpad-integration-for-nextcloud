@@ -11,6 +11,7 @@ use OCA\EtherpadNextcloud\Controller\EmbedControllerErrorMapper;
 use OCA\EtherpadNextcloud\Service\AppConfigService;
 use OCA\EtherpadNextcloud\Service\EmbedResponseBuilder;
 use OCA\EtherpadNextcloud\Service\UserNodeResolver;
+use OCA\EtherpadNextcloud\Tests\Support\TemplateKeys;
 use OCP\AppFramework\Http\TemplateResponse;
 use OCP\Files\File;
 use OCP\Files\NotFoundException;
@@ -43,12 +44,37 @@ class EmbedControllerTest extends TestCase {
 		$this->assertSame('csrf-token-value', $params['requesttoken']);
 		$this->assertSame(['https://portal.example.test'], $params['trusted_embed_origins']);
 		$this->assertSame(42, $params['file_id']);
-		$this->assertSame(['/open-by-id', '/initialize/__FILE_ID__'], [
+		$this->assertSame(['/open-by-id', '/initialize/__FILE_ID__', '/recover/__FILE_ID__', '/find-original/__FILE_ID__'], [
 			$params['open_by_id_url'],
 			$params['initialize_by_id_url_template'],
+			$params['recover_url_template'],
+			$params['find_original_url_template'],
 		]);
 		// The page's own sentence for a request nothing came back for.
 		$this->assertSame('Nextcloud did not answer. Check your connection and try again.', $params['l10n']['unanswered']);
+	}
+
+	/**
+	 * A sentence the controller leaves out shows blank or falls back to
+	 * English, and one no template reads is dead: each page gets exactly the
+	 * sentences its template reads.
+	 */
+	public function testEachPageGetsTheSentencesItsTemplateReads(): void {
+		$file = $this->createMock(File::class);
+		$file->method('getName')->willReturn('Example.pad');
+		$folder = $this->createMock(\OCP\Files\Folder::class);
+		$folder->method('isCreatable')->willReturn(true);
+		$resolver = $this->createMock(UserNodeResolver::class);
+		$resolver->method('resolveUserFileNodeById')->willReturn($file);
+		$resolver->method('resolveUserFolderNodeById')->willReturn($folder);
+		$controller = $this->buildController($resolver);
+
+		foreach (['embed' => $controller->showById(42), 'embed-create' => $controller->createByParent(99)] as $template => $response) {
+			$this->assertSame($template, $response->getTemplateName());
+			$given = array_keys($response->getParams()['l10n']);
+			sort($given);
+			$this->assertSame(TemplateKeys::read($template)['l10n'], $given, $template);
+		}
 	}
 
 	public function testShowByIdReturnsNoviewerOnInvalidFileId(): void {
@@ -188,6 +214,7 @@ class EmbedControllerTest extends TestCase {
 
 		$this->assertSame('embed-create', $response->getTemplateName());
 		$this->assertSame(99, $params['parent_folder_id']);
+		$this->assertSame('/create-by-parent', $params['create_by_parent_url']);
 		$this->assertSame('csrf-token-value', $params['requesttoken']);
 		// No answer to a create leaves its outcome open, and the page says so.
 		$this->assertSame('Nextcloud did not answer. The pad may have been created anyway; look in the folder before you try again.', $params['l10n']['unanswered']);

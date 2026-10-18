@@ -36,9 +36,22 @@ class BackfillPadMimeTypeTest extends TestCase {
 		$this->assertFalse($qb->executeStatementCalled);
 	}
 
-	public function testRepairsTheMimePartOnRowsThatAlreadyCarryThePadType(): void {
+	/**
+	 * Drivers hand an integer column over as an integer or as a string of
+	 * digits, depending on the driver and its settings.
+	 *
+	 * @return iterable<string,array{0:list<int|string>}>
+	 */
+	public static function mimeIdsAsDriversHandThem(): iterable {
+		yield 'as integers' => [[7, 1]];
+		yield 'as strings of digits' => [['7', '1']];
+	}
+
+	/** @param list<int|string> $mimeIds */
+	#[\PHPUnit\Framework\Attributes\DataProvider('mimeIdsAsDriversHandThem')]
+	public function testRepairsTheMimePartOnRowsThatAlreadyCarryThePadType(array $mimeIds): void {
 		// pad mime id = 7, application mimepart id = 1, 3 rows updated.
-		$qb = new BackfillTestQueryBuilder([7, 1], 3);
+		$qb = new BackfillTestQueryBuilder($mimeIds, 3);
 		$output = $this->createMock(IOutput::class);
 		$output->expects($this->once())->method('info')
 			->with($this->stringContains('Backfilled MIME part for 3 .pad files.'));
@@ -128,7 +141,7 @@ class BackfillTestQueryBuilder implements IQueryBuilder {
 	private int $counter = 0;
 
 	/**
-	 * @param list<int|false> $fetchOneQueue successive getMimeId() results
+	 * @param list<int|string|false> $fetchOneQueue successive getMimeId() results
 	 */
 	public function __construct(private array $fetchOneQueue, private int $updateResult = 0) {
 	}
@@ -221,10 +234,10 @@ class BackfillTestExpressionBuilder {
 }
 
 class BackfillTestResult {
-	public function __construct(private int|false $value) {
+	public function __construct(private int|string|false $value) {
 	}
 
-	public function fetchOne(): int|false {
+	public function fetchOne(): int|string|false {
 		return $this->value;
 	}
 
