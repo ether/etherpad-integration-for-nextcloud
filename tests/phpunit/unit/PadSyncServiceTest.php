@@ -436,7 +436,7 @@ class PadSyncServiceTest extends TestCase {
 			'no .pad' => ['Notes.txt', NotAPadFileException::class],
 		] as $case => [$name, $expected]) {
 			$file = $this->createMock(File::class);
-			$file->method('isUpdateable')->willReturn(true);
+			$file->method('isUpdateable')->willReturn($case !== 'no .pad');
 			$file->method('getName')->willReturn($name);
 			$file->method('getContent')->willReturn('frontmatter');
 			$userNodeResolver = $this->createMock(UserNodeResolver::class);
