@@ -59,7 +59,7 @@ Second beta release for 1.1.0. Focus: a pad that lives as long as its file, pads
 - PHPUnit runs strictly, Infection mutates the changed lines of every pull request, and targeted runs closed test gaps in the input checks, the pad file parser, the external export request, the Etherpad client and the upgrade and delete paths. (#339, #340, #341, #342, #343, #360)
 - Psalm runs on level 1 against a baseline that can only shrink, every PHP file is linted, and the test stubs are checked against what they stand in for. (#278, #283, #345)
 - An upgrade test installs the last published release with pads in its users' states, upgrades it and runs the suite, on every supported Nextcloud major for every release. (#361)
-- `scripts/prepare-release.sh` sets the version everywhere and builds the bundles for a release. (#268)
+- `scripts/prepare-release.sh` sets the version everywhere and builds the bundles for a release, in a copy of the tree, after checking the version, the branch and the texts. (#362)
 - Playwright, Vitest, happy-dom, jsdom, Vite, Vue and the GitHub Actions updated.
 
 ## 1.1.0-beta.1 — 2026-09-14
