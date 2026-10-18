@@ -60,11 +60,8 @@ class PadResponseServiceTest extends TestCase {
 	}
 
 	/**
-	 * A viewer must not be told where to sync. Syncing writes the pad back
-	 * into the `.pad` file, which is the one thing a read-only share may
-	 * not do — and the client flushes on a timer and on every tab switch,
-	 * so each one would fail on the filesystem and be logged as an error
-	 * for as long as the tab is open.
+	 * A live read-only Etherpad view is not the snapshot mode, so both modes
+	 * are checked: the sync addresses follow the write permission.
 	 */
 	public function testOpenResponseWithholdsTheSyncUrlsFromAViewer(): void {
 		$urlGenerator = $this->createMock(IURLGenerator::class);

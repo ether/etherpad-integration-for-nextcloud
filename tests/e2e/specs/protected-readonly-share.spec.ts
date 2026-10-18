@@ -125,10 +125,11 @@ test.describe('read-only share of a protected pad', () => {
 			await deleteViaDav(padName).catch(() => {})
 		}
 	})
+
 	/**
 	 * The viewer gives a reader no sync address, but the endpoint is there
-	 * all the same. Written after the last sync, the pad has something a
-	 * sync would write into the file - which a reader may not.
+	 * all the same. The pad holds text the file does not, so a sync would
+	 * write into the file - which a reader may not.
 	 */
 	test('refuses a sync to a reader of the share, and leaves the file as it was', async () => {
 		test.skip(!E2E.hasSecondaryAccount(), 'Needs a second account to share with.')
@@ -137,7 +138,7 @@ test.describe('read-only share of a protected pad', () => {
 		try {
 			const pad = await createPadAtPath(`/${padName}`, 'protected')
 			const fileId = await propfindFileId(padName)
-			await etherpadApiPost('setText', { padID: padIdOfPadUrl(pad.padUrl), text: `written after the last sync ${padName}` })
+			await etherpadApiPost('setText', { padID: padIdOfPadUrl(pad.padUrl), text: `not in the file yet ${padName}` })
 			shareId = (await createUserReadShare(padName, E2E.secondaryUser!)).id
 			const before = await getFileViaDav(padName)
 
