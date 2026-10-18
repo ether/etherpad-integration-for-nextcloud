@@ -59,6 +59,18 @@ describe('check-version-alignment.py --set', () => {
 		files.forEach((file) => expect(after[file].replaceAll('9.8.7-rc.1', old)).toBe(before[file]))
 	})
 
+	// A checkout with CRLF line endings, as some git settings give one.
+	it('keeps CRLF line endings, and changes no other byte', () => {
+		files.forEach((file) => writeFileSync(join(root, file), readFileSync(join(root, file), 'utf8').replace(/\n/g, '\r\n')))
+		const before = read()
+
+		expect(setVersion(root, '9.8.7-rc.1')).toBe(0)
+
+		const after = read()
+		const old = JSON.parse(before['package.json']).version
+		files.forEach((file) => expect(after[file].replaceAll('9.8.7-rc.1', old)).toBe(before[file]))
+	})
+
 	it.each(['9.8.7-dev', '9.8.7-rc-dev', '9.8.7-dev.1', '9.8.7-DEV'])('refuses the development version %s, and writes nothing', (version) => {
 		const before = read()
 

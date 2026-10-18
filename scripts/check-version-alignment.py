@@ -126,19 +126,21 @@ def set_version(root: pathlib.Path, version: str) -> None:
     """
     check_release_version(root, version)
 
+    # Read and written as bytes: read_text() would turn CRLF line endings
+    # into LF, and the files would come back with every line changed.
     info_xml = root / "appinfo" / "info.xml"
-    info_text = info_xml.read_text(encoding="utf-8")
+    info_text = info_xml.read_bytes().decode("utf-8")
     current = app_version(info_xml)
     info_new = replaced_once(info_text, f"<version>{current}</version>", f"<version>{version}</version>", "appinfo/info.xml")
 
     package_json = root / "package.json"
-    package_text = package_json.read_text(encoding="utf-8")
+    package_text = package_json.read_bytes().decode("utf-8")
     package = parsed(package_text, "package.json")
     package_new = replaced_once(package_text, f'"version": {json.dumps(field(package, ("version",), "package.json"))}', f'"version": {json.dumps(version)}', "package.json")
     expected_package = dict(package, version=version)
 
     lock_json = root / "package-lock.json"
-    lock_text = lock_json.read_text(encoding="utf-8")
+    lock_text = lock_json.read_bytes().decode("utf-8")
     lock = parsed(lock_text, "package-lock.json")
     lock_new = replaced_once(lock_text, f'"version": {json.dumps(field(lock, ("version",), "package-lock.json"))}', f'"version": {json.dumps(version)}', "package-lock.json")
     lock_new = replaced_once(
@@ -155,9 +157,9 @@ def set_version(root: pathlib.Path, version: str) -> None:
     if json.loads(package_new) != expected_package or json.loads(lock_new) != expected_lock:
         raise LookupError("the version is not where expected in package.json or package-lock.json; nothing written")
 
-    info_xml.write_text(info_new, encoding="utf-8")
-    package_json.write_text(package_new, encoding="utf-8")
-    lock_json.write_text(lock_new, encoding="utf-8")
+    info_xml.write_bytes(info_new.encode("utf-8"))
+    package_json.write_bytes(package_new.encode("utf-8"))
+    lock_json.write_bytes(lock_new.encode("utf-8"))
 
 
 def main() -> int:
