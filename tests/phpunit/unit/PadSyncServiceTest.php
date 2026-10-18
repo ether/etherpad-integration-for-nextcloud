@@ -22,7 +22,6 @@ use OCA\EtherpadNextcloud\Service\UserNodeResolver;
 use OCA\EtherpadNextcloud\Tests\Support\FixedClock;
 use OCA\EtherpadNextcloud\Tests\Support\InMemoryLockingProvider;
 use OCP\Files\File;
-use OCP\Files\NotPermittedException;
 use OCP\Lock\LockedException;
 use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
@@ -405,8 +404,8 @@ class PadSyncServiceTest extends TestCase {
 	}
 
 	/**
-	 * A sync may write the file, so a reader of a read-only share is refused
-	 * before the file is read or Etherpad is asked.
+	 * A sync may write the file, so a reader is refused before the sync
+	 * knows whether it would write - before its lock, the file and Etherpad.
 	 */
 	public function testAReaderWhoMayNotChangeTheFileIsRefusedBeforeAnythingIsAsked(): void {
 		$file = $this->createMock(File::class);
@@ -420,38 +419,11 @@ class PadSyncServiceTest extends TestCase {
 		$etherpadClient->expects($this->never())->method($this->anything());
 		$lockRetryService = $this->writeMockedLockRetry();
 		$lockRetryService->expects($this->never())->method('putContentWithSyncLockRetry');
+		$syncLock = $this->createMock(PadSyncLock::class);
+		$syncLock->expects($this->never())->method('hold');
 
 		$this->expectException(PadFileNotWritableException::class);
-		$this->buildService(new PadFileService(new FixedClock()), $userNodeResolver, null, $etherpadClient, $lockRetryService)->syncById('bob', 138, true);
-	}
-
-	/**
-	 * The right to change the file can go while the sync waits for its lock
-	 * or asks Etherpad - a share made read-only - after the check before it.
-	 * The write's refusal answers as that check does, not as a failure.
-	 */
-	public function testARightLostWhileTheSyncRanAnswersAsAReaderIsRefused(): void {
-		$formatter = new PadFileService(new FixedClock());
-		$content = $formatter->withExportSnapshot(
-			$formatter->readPad($formatter->buildInitialDocument(138, 'pad-a', BindingService::ACCESS_PUBLIC)),
-			new PadSnapshot('old text', '<p>old text</p>', 500),
-		);
-		$file = $this->createMock(File::class);
-		$file->method('isUpdateable')->willReturn(true);
-		$file->method('getName')->willReturn('Notes.pad');
-		$file->method('getContent')->willReturn($content);
-		$userNodeResolver = $this->createMock(UserNodeResolver::class);
-		$userNodeResolver->method('resolveUserFileNodeById')->willReturn($file);
-		$userNodeResolver->method('toUserAbsolutePath')->willReturn('/Notes.pad');
-		$etherpadClient = $this->createMock(EtherpadClient::class);
-		$etherpadClient->method('getRevisionsCount')->willReturn(3);
-		$etherpadClient->method('getText')->willReturn('new edit');
-		$etherpadClient->method('getHTML')->willReturn('<p>new edit</p>');
-		$lockRetryService = $this->writeMockedLockRetry();
-		$lockRetryService->method('putContentWithSyncLockRetry')->willThrowException(new NotPermittedException('Could not write to Notes.pad'));
-
-		$this->expectException(PadFileNotWritableException::class);
-		$this->buildService($formatter, $userNodeResolver, null, $etherpadClient, $lockRetryService)->syncById('bob', 138, true);
+		$this->buildService(new PadFileService(new FixedClock()), $userNodeResolver, null, $etherpadClient, $lockRetryService, null, $syncLock)->syncById('bob', 138, true);
 	}
 
 	/**

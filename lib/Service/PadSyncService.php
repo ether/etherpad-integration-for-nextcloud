@@ -17,7 +17,6 @@ use OCA\EtherpadNextcloud\Util\PadFileType;
 use OCA\EtherpadNextcloud\Util\SafeError;
 use OCP\Files\File;
 use OCP\Files\NotFoundException;
-use OCP\Files\NotPermittedException;
 use Psr\Log\LoggerInterface;
 
 class PadSyncService {
@@ -62,10 +61,7 @@ class PadSyncService {
 		}
 	}
 
-	/**
-	 * @throws PadLostException
-	 * @throws PadFileNotWritableException when the right to change the file went while the sync ran
-	 */
+	/** @throws PadLostException */
 	private function syncHeld(File $node, int $fileId, string $absolutePath, bool $force): PadSyncResult {
 		$padId = '';
 		$accessMode = '';
@@ -87,10 +83,6 @@ class PadSyncService {
 			return $this->syncInternalPad($node, $fileId, $pad, $force);
 		} catch (PadFileLockRetryExhaustedException $e) {
 			return $this->lockedSyncResponse('Pad sync not run: the .pad file stayed locked through every wait', $e, $fileId, $absolutePath, $padId, $accessMode, $isExternal, $force);
-		} catch (NotPermittedException $e) {
-			// The check in syncById() passed, and the share was made
-			// read-only while the sync waited or asked Etherpad.
-			throw new PadFileNotWritableException('The user may not change this .pad file.', 0, $e);
 		}
 		// Anything else reaches the error mapper, which reports it once.
 	}
