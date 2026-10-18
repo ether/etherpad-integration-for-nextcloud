@@ -40,6 +40,9 @@ jobs:
               - 'src/**'
               - 'js/**'
               - 'tests/js/**'
+              # Both are tested in tests/js.
+              - 'scripts/check-version-alignment.py'
+              - 'scripts/release-notes.py'
               # tests/js also holds the noise guard of the e2e suite, its
               # rules and its summary, and that every spec uses it.
               - 'tests/e2e/**'

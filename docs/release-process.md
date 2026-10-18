@@ -2,37 +2,43 @@
 
 This project uses a lightweight release flow:
 
-1. Run the local check.
+1. Prepare the release pull request.
 2. Run the end-to-end suite.
-3. Tag the release.
+3. Merge it, and tag the release.
 4. Deploy, and run the end-to-end suite against the deployed instance.
 
-Pushing the tag is the last manual step: `.github/workflows/release.yml` builds
-the tarball and publishes the release. What has to be true before the tag is
+Pushing the tag publishes the release: `.github/workflows/release.yml` builds
+the tarball and publishes it. What has to be true before the tag is
 pushed is listed under [3) Tagging](#3-tagging).
 
 The workflow refuses a tag that does not match `appinfo/info.xml`, and a tag
 whose `js/` bundles are not a fresh build of `src/`, so the bump has to be
-committed before the tag is placed.
+merged before the tag is placed.
 
-## 1) Reproducible Check (Required)
+## 1) Prepare the Release Pull Request
 
-Run from repo root:
-
-```bash
-./tests/integration/release-check.sh
-```
-
-It refuses a dirty working tree, then runs `vendor/bin/phpunit --testsuite unit`
-(install once with `composer install --no-interaction`).
-
-Frontend checks are separate and should be run before release/deploy whenever
-`src/`, `package.json`, or Vite/Vitest config changed:
+On a release branch, write the version's section in `CHANGELOG.md` and, for the
+prose readers get, `docs/release-notes/<version>.md`. Then, from repo root:
 
 ```bash
-npm test
-npm run build
+scripts/prepare-release.sh X.Y.Z
 ```
+
+Before it changes anything it refuses a version that is no semver release, a
+development version, or one below the one `appinfo/info.xml` has; `main` or a
+detached HEAD; a version whose `CHANGELOG.md` section is missing or empty, or
+whose release notes file is there but empty - without one the CHANGELOG
+section is published; uncommitted changes outside `CHANGELOG.md` and
+`docs/release-notes/<version>.md`; and a version that is tagged already,
+locally or on `origin`. It sets the version and builds `js/` in a copy of the
+tree first - the files git knows, with a `node_modules` of its own - and only
+then in the working tree: in `appinfo/info.xml`, `package.json` and both
+fields of `package-lock.json`, only those lines, checked as the tag workflow
+checks them, and `js/` from the copy. It needs the Node that `package.json`
+names under `engines`, and network for `npm ci` and to ask `origin` for the
+tag. It commits, pushes and tags nothing: commit what it changed, together
+with the two texts, and open the pull request. Its CI runs the PHPUnit,
+Vitest and Psalm checks and the end-to-end suite.
 
 The Vite build writes runtime assets to `js/`; those built files must be present
 in the deployed app.
@@ -80,23 +86,29 @@ tagged commit already:
 
 - `appinfo/info.xml` carries the new version, and `package.json` plus both
   version fields in `package-lock.json` agree with it. The bundles take their
-  version from `package.json`, so `npm run build` has to have run after that
-  bump and `js/` has to be committed.
+  version from `package.json`, so they have to be built after that bump and
+  `js/` committed. `scripts/prepare-release.sh` sets the version and builds
+  `js/` after it; committing both is the pull request's.
 - `CHANGELOG.md` has a section for the version, with entries under it.
 - `docs/release-notes/<version>.md` holds the prose readers get. Without it the
   CHANGELOG section is published instead, and afterwards is too late - the
   notes are read when the tag arrives.
 
-Then:
+Then, once the release pull request is merged, tag its merge commit - by its
+id, not as the tip of `main`, which another merge, an automatic Dependabot one
+say, may already have moved past it:
 
 ```bash
-git tag -a vX.Y.Z -m "Etherpad Integration for Nextcloud vX.Y.Z"
-git push origin HEAD
+git fetch origin
+merge="$(gh pr view <release pull request> --json mergeCommit --jq .mergeCommit.oid)"
+git tag -a vX.Y.Z "$merge" -m "Etherpad Integration for Nextcloud vX.Y.Z"
 git push origin vX.Y.Z
 ```
 
-`.github/workflows/release.yml` refuses the tag if any of the above is missing,
-before it builds anything. Otherwise it builds the tarball with
+`.github/workflows/release.yml` refuses the tag when a version file disagrees
+or the CHANGELOG section or the release notes say nothing, before it builds
+anything, and when `js/` is not a fresh build of `src/`, after building it.
+Otherwise it builds the tarball with
 `scripts/build-release-tarball.sh` and publishes the release with it attached,
 marking a pre-release suffix as a pre-release. Re-running the workflow after a
 failed upload is safe; it does not try to create a release that already exists.
