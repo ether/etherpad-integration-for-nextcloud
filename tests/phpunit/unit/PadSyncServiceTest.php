@@ -6,6 +6,7 @@ namespace OCA\EtherpadNextcloud\Tests\Unit;
 
 use OCA\EtherpadNextcloud\Exception\BindingMismatchException;
 use OCA\EtherpadNextcloud\Exception\NotAPadFileException;
+use OCA\EtherpadNextcloud\Exception\PadFileNotWritableException;
 use OCA\EtherpadNextcloud\Exception\ExternalPadException;
 use OCA\EtherpadNextcloud\Exception\PadLostException;
 use OCA\EtherpadNextcloud\Service\BindingService;
@@ -29,6 +30,7 @@ use Psr\Log\LoggerInterface;
 class PadSyncServiceTest extends TestCase {
 	public function testSyncStatusReturnsUnavailableForExternalPads(): void {
 		$file = $this->createMock(File::class);
+		$file->method('isUpdateable')->willReturn(true);
 		$file->method('getContent')->willReturn('frontmatter');
 
 		$userNodeResolver = $this->createMock(UserNodeResolver::class);
@@ -67,6 +69,7 @@ class PadSyncServiceTest extends TestCase {
 	public function testABindingErrorReachesTheCallerAsItIs(): void {
 		$refused = new PadLostException('Etherpad has lost the pad of this file.');
 		$file = $this->createMock(File::class);
+		$file->method('isUpdateable')->willReturn(true);
 		$file->method('getName')->willReturn('Notes.pad');
 		$file->method('getContent')->willReturn('frontmatter');
 		$userNodeResolver = $this->createMock(UserNodeResolver::class);
@@ -89,6 +92,7 @@ class PadSyncServiceTest extends TestCase {
 
 	public function testSyncStatusReportsOutOfSyncInternalPad(): void {
 		$file = $this->createMock(File::class);
+		$file->method('isUpdateable')->willReturn(true);
 		$file->method('getContent')->willReturn('frontmatter');
 
 		$userNodeResolver = $this->createMock(UserNodeResolver::class);
@@ -138,6 +142,7 @@ class PadSyncServiceTest extends TestCase {
 	 */
 	public function testAnAmbiguousLegacyExternalSnapshotIsRewrittenOnTheNextSync(): void {
 		$file = $this->createMock(File::class);
+		$file->method('isUpdateable')->willReturn(true);
 		$file->method('getName')->willReturn('Remote.pad');
 		$file->method('getContent')->willReturn('frontmatter');
 
@@ -193,6 +198,7 @@ class PadSyncServiceTest extends TestCase {
 	/** The other half of that: a legacy body that reads back whole is left alone. */
 	public function testAnUnambiguousLegacyExternalSnapshotIsLeftAlone(): void {
 		$file = $this->createMock(File::class);
+		$file->method('isUpdateable')->willReturn(true);
 		$file->method('getName')->willReturn('Remote.pad');
 		$file->method('getContent')->willReturn('frontmatter');
 
@@ -240,6 +246,7 @@ class PadSyncServiceTest extends TestCase {
 
 	public function testSyncExternalPadStoresOnlyTextSnapshot(): void {
 		$file = $this->createMock(File::class);
+		$file->method('isUpdateable')->willReturn(true);
 		$file->method('getName')->willReturn('Remote.pad');
 		$file->method('getContent')->willReturn('frontmatter');
 
@@ -318,6 +325,7 @@ class PadSyncServiceTest extends TestCase {
 		$restored = $formatter->withRestoredSnapshot($trashed, 'old text', '', 'r-new-pad', 'https://pad.example.test/p/r-new-pad');
 
 		$file = $this->createMock(File::class);
+		$file->method('isUpdateable')->willReturn(true);
 		$file->method('getName')->willReturn('Notes.pad');
 		$file->method('getContent')->willReturn($restored);
 
@@ -369,6 +377,7 @@ class PadSyncServiceTest extends TestCase {
 				$content = $formatter->withExportSnapshot($formatter->readPad($content), new PadSnapshot($saved, $saved === '' ? '' : '<p>' . $saved . '</p>', $snapshotRev));
 			}
 			$file = $this->createMock(File::class);
+			$file->method('isUpdateable')->willReturn(true);
 			$file->method('getName')->willReturn('Notes.pad');
 			$file->method('getContent')->willReturn($content);
 			$userNodeResolver = $this->createMock(UserNodeResolver::class);
@@ -397,6 +406,28 @@ class PadSyncServiceTest extends TestCase {
 	}
 
 	/**
+	 * A sync writes the file, so a reader of a read-only share is refused
+	 * before the file is read or Etherpad is asked. The client never syncs
+	 * for one; only a direct call reaches this.
+	 */
+	public function testAReaderWhoMayNotChangeTheFileIsRefusedBeforeAnythingIsAsked(): void {
+		$file = $this->createMock(File::class);
+		$file->method('isUpdateable')->willReturn(false);
+		$file->method('getName')->willReturn('Notes.pad');
+		$file->expects($this->never())->method('getContent');
+		$userNodeResolver = $this->createMock(UserNodeResolver::class);
+		$userNodeResolver->method('resolveUserFileNodeById')->willReturn($file);
+		$userNodeResolver->method('toUserAbsolutePath')->willReturn('/Notes.pad');
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->expects($this->never())->method($this->anything());
+		$lockRetryService = $this->writeMockedLockRetry();
+		$lockRetryService->expects($this->never())->method('putContentWithSyncLockRetry');
+
+		$this->expectException(PadFileNotWritableException::class);
+		$this->buildService(new PadFileService(new FixedClock()), $userNodeResolver, null, $etherpadClient, $lockRetryService)->syncById('bob', 138, true);
+	}
+
+	/**
 	 * An external .pad without a link is the link's problem, not Etherpad
 	 * failing; a file that is no .pad is refused as such.
 	 */
@@ -406,6 +437,7 @@ class PadSyncServiceTest extends TestCase {
 			'no .pad' => ['Notes.txt', NotAPadFileException::class],
 		] as $case => [$name, $expected]) {
 			$file = $this->createMock(File::class);
+			$file->method('isUpdateable')->willReturn(true);
 			$file->method('getName')->willReturn($name);
 			$file->method('getContent')->willReturn('frontmatter');
 			$userNodeResolver = $this->createMock(UserNodeResolver::class);
@@ -430,6 +462,7 @@ class PadSyncServiceTest extends TestCase {
 	 */
 	public function testARowMovedWhileTheSyncWaitsStopsItsWrite(): void {
 		$file = $this->createMock(File::class);
+		$file->method('isUpdateable')->willReturn(true);
 		$file->method('getName')->willReturn('Test.pad');
 		$file->method('getContent')->willReturn('frontmatter');
 		$file->expects($this->once())->method('putContent')->willThrowException(new LockedException('locked'));
@@ -481,6 +514,7 @@ class PadSyncServiceTest extends TestCase {
 		);
 		$written = [];
 		$file = $this->createMock(File::class);
+		$file->method('isUpdateable')->willReturn(true);
 		$file->method('getName')->willReturn('Notes.pad');
 		$file->method('getContent')->willReturnCallback(static function () use (&$content): string {
 			return $content;
@@ -534,6 +568,7 @@ class PadSyncServiceTest extends TestCase {
 	/** Locked through every wait of the first read: nothing asked, nothing written. */
 	public function testAFileLockedThroughTheFirstReadAnswersLockedWithItsWaits(): void {
 		$file = $this->createMock(File::class);
+		$file->method('isUpdateable')->willReturn(true);
 		$file->method('getName')->willReturn('Notes.pad');
 		$file->expects($this->exactly(4))->method('getContent')->willThrowException(new LockedException('locked'));
 		$file->expects($this->never())->method('putContent');

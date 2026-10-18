@@ -11,6 +11,7 @@ namespace OCA\EtherpadNextcloud\Service;
 
 use OCA\EtherpadNextcloud\Exception\NotAPadFileException;
 use OCA\EtherpadNextcloud\Exception\PadFileLockRetryExhaustedException;
+use OCA\EtherpadNextcloud\Exception\PadFileNotWritableException;
 use OCA\EtherpadNextcloud\Exception\PadLostException;
 use OCA\EtherpadNextcloud\Util\PadFileType;
 use OCA\EtherpadNextcloud\Util\SafeError;
@@ -40,6 +41,7 @@ class PadSyncService {
 
 	/**
 	 * @throws NotFoundException
+	 * @throws PadFileNotWritableException for a reader who may not change the file, before Etherpad is asked
 	 * @throws PadLostException when Etherpad made the pad anew in place of the file's
 	 */
 	public function syncById(string $uid, int $fileId, bool $force): PadSyncResult {
@@ -48,6 +50,7 @@ class PadSyncService {
 		if (!PadFileType::isPad($node->getName())) {
 			throw new NotAPadFileException('Selected file is not a .pad file.');
 		}
+		PadFileNotWritableException::unlessUpdateable($node);
 
 		// One sync of the file at a time (PadSyncLock); one that waits in
 		// vain answers as for a locked file.

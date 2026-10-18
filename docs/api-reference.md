@@ -242,6 +242,7 @@ solely by the separate external-pad policy, not by these two settings.
   - Controller: `PadLifecycleController::syncById`
   - Optional query: `force=1`
   - Result: snapshot sync Etherpad -> `.pad`, `200` with `status=updated` or `unchanged`; `updated` says how often the write waited for the file's lock (`lock_retries`).
+  - A sync writes the file: a user who may not change it - a reader of a read-only share - gets `403`, as `initialize` answers, before the file is read or Etherpad is asked. The Viewer and the embed page do not sync for one.
   - One sync of a file runs at a time: a second one waits for the first, about three seconds at most, and then reads what the first wrote. With `filelocking.enabled` false syncs overlap.
   - The lock does not come free in time - another sync of the file runs that long, or a request killed hard left its lock behind (how long that stays depends on Nextcloud's locking provider), or a client keeps the file locked while the sync reads or writes it: `200` with `status=locked`, `retryable: true` and `lock_retries`, how often the sync waited for that lock. Nothing is written; a later sync writes it, if one comes.
   - `force=1` requests an immediate upstream re-check, but unchanged snapshots are still not rewritten. A pad behind the snapshot whose content differs is written.
