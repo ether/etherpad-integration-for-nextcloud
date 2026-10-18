@@ -44,8 +44,8 @@ describe('check-version-alignment.py --set', () => {
 		rmSync(root, { recursive: true, force: true })
 	})
 
-	// A lockfile written back through a JSON dump is reformatted on every
-	// line; only the version may change.
+	// A JSON rewrite could reformat what it does not change; only the
+	// version may change.
 	it('writes the version in the four places and changes no other byte', () => {
 		const before = read()
 
@@ -131,8 +131,8 @@ describe('check-version-alignment.py --set', () => {
 		expect(setVersion(root, '9.8.7')).toBe(0)
 	})
 
-	// A lockfile whose root package names no version is not one this edits
-	// right: refused before any file is written, info.xml included.
+	// A lockfile whose root package names no version must not leave info.xml
+	// with the new version: refused before any file is written.
 	it('writes nothing when a version is not where it is expected', () => {
 		const lock = JSON.parse(readFileSync(join(root, 'package-lock.json'), 'utf8'))
 		delete lock.packages[''].version

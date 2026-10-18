@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 #
 # Prepares a release in the working tree: the version wherever it stands and
-# the bundles built for it, once the CHANGELOG section and the release notes
-# are written. It commits, pushes and tags nothing - the release goes through
-# a pull request and a merge (docs/release-process.md).
+# the bundles built for it, once the version's CHANGELOG section is written;
+# release notes of their own are optional. It commits, pushes and tags
+# nothing - the release goes through a pull request and a merge
+# (docs/release-process.md).
 #
 # Usage:
 #   scripts/prepare-release.sh <version>
@@ -60,8 +61,8 @@ if [[ -n "$(git -C "$ROOT_DIR" tag -l "v$VERSION")" ]]; then
 	echo "v$VERSION is tagged already: that release is out." >&2
 	exit 1
 fi
-# --exit-code ends with 2 for a tag origin does not have; anything else is
-# no answer, and no answer is not "not tagged".
+# --exit-code ends with 2 for a tag origin does not have and with 0 for one
+# it has; any other status is a query that failed, which is no "not tagged".
 remote_status=0
 git -C "$ROOT_DIR" ls-remote --exit-code --tags origin "refs/tags/v$VERSION" >/dev/null || remote_status=$?
 case "$remote_status" in
@@ -83,15 +84,15 @@ echo "[2/3] Version $VERSION and bundles, in a copy"
 # The copy holds the tracked files and the untracked ones git does not
 # ignore - not the reports, caches and test credentials beside them, unless
 # git tracks one. The version is set and the bundles are built there first,
-# so that a version refused, a Node release.yml would not build with, or no
-# network for npm ci leaves the working tree as it was. npm ci installs what
-# the lockfile pins, without running packages' install scripts, and
-# --engine-strict refuses that Node.
+# so that a failed install or build leaves the working tree as it was. npm ci
+# installs what the lockfile pins, without running packages' install
+# scripts, and --engine-strict refuses a Node outside package.json's engines.
 BUILD_DIR="$(mktemp -d "${TMPDIR:-/tmp}/epnc-release-build.XXXXXX")"
 trap 'rm -rf "$BUILD_DIR"' EXIT
-# A signal to this script alone would otherwise remove the copy while npm ci
-# still writes into it, and npm takes what it then cannot read for a broken
-# cache entry and deletes it. With these, bash waits for npm to end first.
+# HUP or TERM to this script alone would otherwise remove the copy while npm
+# ci still writes into it, and npm takes what it then cannot read for broken
+# cache entries and deletes them. With these, bash runs the cleanup once the
+# command in the foreground has ended.
 trap 'exit 129' HUP
 trap 'exit 143' TERM
 git -C "$ROOT_DIR" ls-files -z --cached --others --exclude-standard \
