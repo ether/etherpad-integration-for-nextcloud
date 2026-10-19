@@ -30,7 +30,7 @@ Pads live alongside your other files and behave like any other Nextcloud file:
 
 ## Requirements
 
-- Nextcloud `32.0.9` to `34` (see [appinfo/info.xml](appinfo/info.xml))
+- Nextcloud `32.0.9` to `34` and PHP `8.1` to `8.5` (see [appinfo/info.xml](appinfo/info.xml))
 - Etherpad reachable from Nextcloud server
 - Etherpad API key
 - HTTPS for production deployments
@@ -96,12 +96,14 @@ Go to:
 and configure:
 
 - Etherpad Base URL
-- Etherpad API URL (optional; defaults to Base URL)
 - Etherpad API key (OAuth is not required; Etherpad API key auth is used)
-- Copy content to `.pad` file interval
-- Which pad types users may create (see below)
-- Whether a pad is deleted with its file deleted for good
-- External public pad policy
+- Etherpad API URL (optional; defaults to Base URL)
+- Etherpad session cookie domain (see below)
+- Protected pads, Public pads: which pad types users may create (see below)
+- .pad file sync interval (seconds)
+- Delete the Etherpad pad when its .pad file is deleted permanently
+- Allow linking external public pads, and the External Etherpad host allowlist
+- Trusted embed origins (optional)
 
 Two settings control which pad types the app offers, both enabled by default:
 
@@ -170,6 +172,10 @@ Example:
 settings page shows it without running the test.
 
 ## Upgrade
+
+On Nextcloud 31, upgrade Nextcloud to `32.0.9` or later first, with the
+version of the app you have: Nextcloud 31 does not run this one, `app:enable`
+refuses it and `occ upgrade` switches it off.
 
 1. Replace app files in `apps/etherpad_nextcloud`
 2. Run:

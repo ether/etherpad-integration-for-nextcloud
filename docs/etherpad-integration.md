@@ -595,7 +595,7 @@ same way and reach the same two answers.
 The decision is `isUpdateable()` on the file as this user sees it, which
 is the update permission bit – `(permissions & UPDATE)` – and not a lock
 check. The share feeds into it, and so does the mount: a read-only
-external storage or a group folder ACL puts the pad into the snapshot view
+external storage or a group folder ACL puts the pad into the read-only view
 just as a "can view" share does. Not because edits would be lost –
 Etherpad stores the pad itself, and a failed sync leaves a stale copy here
 rather than lost text – but because an open without write permission in
@@ -617,7 +617,7 @@ Both open paths map Nextcloud share permissions the same way –
 `PublicViewerController` for links, `PadOpenService` and
 `PadMetadataService` for authenticated users:
 
-- protected share without update permission -> local `.pad` text snapshot, no Etherpad cookie
+- protected share without update permission -> this app's read-only view, its content fetched on every open, no Etherpad cookie
 - public pad share without update permission -> Etherpad read-only URL
 - share with update permission -> Etherpad editable
 

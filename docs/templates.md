@@ -18,7 +18,7 @@ Read-only shares (a folder shared *to* the user from someone else's account) are
 
 ### Admin templates (instance-wide)
 
-An admin can upload `.pad` templates under **Administration settings → Etherpad**. They are offered to every account on the instance, with no per-user setup — this is the one source a user cannot opt out of or misconfigure.
+An admin can upload `.pad` templates under **Administration settings → Pads**. They are offered to every account on the instance, with no per-user setup — this is the one source a user cannot opt out of or misconfigure.
 
 They are stored in the instance's `appdata` directory, not in anyone's files — in `templates`, next to the `type_templates` folder holding the marker files behind the tiles. The two are kept apart so an uploaded template can never be mistaken for a tile. Practical consequences:
 
@@ -109,7 +109,8 @@ Error responses:
 - **403** — no pad type is enabled in the admin settings, so nothing can be created
 - **404** — template file ID does not resolve in the user's userspace
 - **409** — target filename collides with an existing file (`A file with this name already exists.`)
-- **500** — Etherpad unreachable or other unexpected failure
+- **503** with `retryable: true` — Etherpad cannot be reached, or the file is locked; the same request may work later
+- **500** — any other unexpected failure
 
 ## Caveats
 
