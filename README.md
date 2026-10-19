@@ -32,6 +32,7 @@ Pads live alongside your other files and behave like any other Nextcloud file:
 
 - Nextcloud `32.0.9` to `34` and PHP `8.1` to `8.5` (see [appinfo/info.xml](appinfo/info.xml))
 - On Nextcloud 33, `33.0.3` or later: the Viewer of 33.0.0 to 33.0.2 lacks a fix, and a click on a `.pad` file downloads it instead of opening the pad
+- On Nextcloud 34, until a 34 release has the fix (planned for 34.0.6): the pads of a folder deleted for good, or of a trash emptied as a whole, stay in Etherpad. The consistency check on the admin page lists them for deletion, and a public one stays reachable by its link until then ([docs/deleting-pads.md](docs/deleting-pads.md))
 - Etherpad reachable from Nextcloud server
 - Etherpad API key
 - HTTPS for production deployments
