@@ -42,8 +42,9 @@ $EDITOR tests/e2e/.env.e2e
 Required: `E2E_BASE_URL`, `E2E_USER`, `E2E_PASS`, `E2E_APP_PASSWORD`
 (plus optional `E2E_LOGIN_URL`). The cross-user specs additionally need a
 second account — `E2E_USER2`, `E2E_USER2_PASS`, `E2E_USER2_APP_PASSWORD`;
-they skip cleanly when it isn't configured. See `.env.e2e.example` for
-what each one is for.
+they skip cleanly when it isn't configured. The cases that ask the pad
+server itself need `E2E_ETHERPAD_URL` and `E2E_ETHERPAD_API_KEY`. See
+`.env.e2e.example` for what each one is for.
 
 ## Run
 
@@ -91,9 +92,13 @@ tests/e2e/
 
 Selectors prefer stable hooks (NC `data-cy-*`, our own `data-testid`)
 over localized text so specs survive UI-language changes. Content checks
-usually go through the plugin's own HTTP endpoints + WebDAV rather than
-the Etherpad API or editor typing; the author-display-name spec is the
-one deliberate exception because it verifies the real Etherpad session UI.
+usually go through the plugin's own HTTP endpoints and WebDAV. A case that
+has to ask the pad server itself - setting a pad's text behind the file's
+back, deleting a pad in Etherpad, counting a group's sessions - uses the
+Etherpad API and skips without `E2E_ETHERPAD_URL` and
+`E2E_ETHERPAD_API_KEY`; the container stack sets both, and there their
+absence is an error. The author-display-name spec drives the real Etherpad
+editor, to check the session UI.
 
 ### Browser noise
 
