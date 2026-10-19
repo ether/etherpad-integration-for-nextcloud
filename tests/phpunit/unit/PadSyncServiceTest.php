@@ -405,7 +405,8 @@ class PadSyncServiceTest extends TestCase {
 
 	/**
 	 * A sync may write the file, so a reader is refused before the sync
-	 * knows whether it would write - before its lock, the file and Etherpad.
+	 * knows whether it would write - before its lock, the file and Etherpad,
+	 * whether or not the sync is forced.
 	 */
 	public function testAReaderWhoMayNotChangeTheFileIsRefusedBeforeAnythingIsAsked(): void {
 		$file = $this->createMock(File::class);
@@ -422,8 +423,16 @@ class PadSyncServiceTest extends TestCase {
 		$syncLock = $this->createMock(PadSyncLock::class);
 		$syncLock->expects($this->never())->method('hold');
 
-		$this->expectException(PadFileNotWritableException::class);
-		$this->buildService(new PadFileService(new FixedClock()), $userNodeResolver, null, $etherpadClient, $lockRetryService, null, $syncLock)->syncById('bob', 138, true);
+		$service = $this->buildService(new PadFileService(new FixedClock()), $userNodeResolver, null, $etherpadClient, $lockRetryService, null, $syncLock);
+
+		foreach ([false, true] as $force) {
+			try {
+				$service->syncById('bob', 138, $force);
+				$this->fail('force=' . var_export($force, true) . ': synced.');
+			} catch (PadFileNotWritableException) {
+				$this->addToAssertionCount(1);
+			}
+		}
 	}
 
 	/**
