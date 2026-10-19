@@ -2,7 +2,7 @@
 
 ## 1.1.0-beta.2 — 2026-10-19
 
-Second beta release for 1.1.0. Focus: a pad that lives as long as its file, pads Etherpad lost recovered from their files, safer external pads and public links, and Etherpad sessions that end with the access they came from.
+Second beta release for 1.1.0. Focus: a pad that lives as long as its file, pads Etherpad lost recovered from their files, safer external pads and public links, and Etherpad sessions that end with the access they came from - and a great many smaller bug fixes.
 
 ### Security
 
