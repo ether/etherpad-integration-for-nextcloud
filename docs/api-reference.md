@@ -181,7 +181,7 @@ solely by the separate external-pad policy, not by these two settings.
     - `templateFileId` (required) — id of any `.pad` in the user's userspace; doesn't have to live in the *Templates* folder.
   - Purpose: create-from-template path for custom frontends that need filename templating or want to pick the source file outside `/Templates`. Bypasses NC's `TemplateManager`.
   - Behaviour: resolves `{{...}}` in `file` and template body, provisions a fresh Etherpad pad, writes the new `.pad` content + snapshot, creates the binding. Returns `viewer_url` alongside the regular create response shape.
-  - Errors: 400 (non-pad template / external template / empty), 404 (template id not found in userspace, or the target's folder not there), 403 (the target's folder takes no new file), 409 (filename collision).
+  - Errors: 400 (non-pad, external or empty template, an invalid target name, or Etherpad refused), 403 (the target's folder takes no new file, or no pad type is enabled: `pad_type_disabled`), 404 (template id not found in userspace, or the target's folder not there), 409 (filename collision, or `pad_file_changed`), 503 with `retryable: true` (Etherpad cannot be reached, or the file is locked), 500 (any other unexpected failure).
 
 - `POST /api/v1/pads/open`
   - Controller: `PadSessionController::open`
@@ -479,9 +479,10 @@ solely by the separate external-pad policy, not by these two settings.
 - `pad_id`: Etherpad pad ID.
 - `pad_url`: preferred target URL for public/external pads.
 - `access_mode`: `public` or `protected`.
-- `status` (sync): `updated` or `unchanged`.
-- `snapshot_rev` (sync): Etherpad revision currently persisted in `.pad`.
-- `sync_status_url` (open/open-by-id): endpoint for revision-based sync status in viewer.
+- `status` (sync): `updated`, `unchanged` or `locked`; `POST /api/v1/pads/sync/{fileId}` above says what `updated` and `locked` carry.
+- `status` (sync-status): `synced`, `out_of_sync`, or `unavailable` with `reason: external_no_revision` for a pad on another server. `in_sync` is always there, `null` for `unavailable`.
+- `snapshot_rev` (sync, sync-status): the revision the `.pad` holds – the Etherpad revision for an own pad, the app's own count of written snapshots for a pad on another server. `current_rev` (sync-status, and a sync that answers `unchanged` for an own pad): the pad's revision in Etherpad.
+- `sync_url`, `sync_status_url` (open/open-by-id): the sync and sync-status endpoints, empty for a user who may not change the file; `sync_interval_seconds`: how often the Viewer and the embed page sync.
 - `code` (errors): stable identifier on selected error responses. Branch on this, never on `message` — messages are written for people and are translated, the reason a pad on another server could not be linked or read included. The full set:
   - `missing_binding` (`MissingBindingException`) — the viewer and embed swap the dead-end error for the recovery UI (`POST /api/v1/pads/recover-from-snapshot/{fileId}` + optional `GET /api/v1/pads/find-original/{fileId}` lookup).
   - `pad_missing` (`PadLostException`) — the file's row names a pad Etherpad has lost: it has none under that id (a protected pad, or a public one whose file holds saved content), or one with no revision and other text than the file saved (a public pad Etherpad made anew, with its default text, when someone visited its address). Only an open that may write asks, once per open; a sync answers it too, for a pad made anew, rather than write that pad over the file. The viewer and embed show the recovery UI without the original-file lookup; `POST /api/v1/pads/recover-from-snapshot/{fileId}` makes a new pad from the file's content and moves the row onto it.
