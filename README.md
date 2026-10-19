@@ -31,6 +31,7 @@ Pads live alongside your other files and behave like any other Nextcloud file:
 ## Requirements
 
 - Nextcloud `32.0.9` to `34` and PHP `8.1` to `8.5` (see [appinfo/info.xml](appinfo/info.xml))
+- On Nextcloud 33, `33.0.3` or later: the Viewer of 33.0.0 to 33.0.2 lacks a fix, and a click on a `.pad` file downloads it instead of opening the pad
 - Etherpad reachable from Nextcloud server
 - Etherpad API key
 - HTTPS for production deployments
@@ -174,8 +175,9 @@ settings page shows it without running the test.
 
 ## Upgrade
 
-This version needs Nextcloud `32.0.9` or later. On an older one, upgrade
-Nextcloud first, with the version of the app you have, and the app after it.
+This version needs Nextcloud `32.0.9` or later, and on Nextcloud 33 `33.0.3`
+or later. On an older one, upgrade Nextcloud first, with the version of the
+app you have, and the app after it.
 
 1. Replace app files in `apps/etherpad_nextcloud`
 2. Run:
@@ -261,6 +263,8 @@ existing name asks for confirmation because the previous file is gone for good.
 
 ### `.pad` downloads instead of opening in viewer
 
+- Check the Nextcloud version (`php occ status`): the Viewer of Nextcloud 32
+  before 32.0.9 and 33 before 33.0.3 opens no `.pad` file
 - Ensure app is enabled:
   - `php occ app:list | grep etherpad_nextcloud`
 - Rebuild mimetype caches:
