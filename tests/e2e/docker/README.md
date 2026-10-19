@@ -76,15 +76,16 @@ tests/e2e/docker/test-upgrade.sh
 TO_ARCHIVE=dist/etherpad_nextcloud-<version>.tar.gz tests/e2e/docker/test-upgrade.sh
 ```
 
-This installs the last release before `HEAD` (`FROM_VERSION` names
-another) from its published archive, checked against the checksum pinned
-in the script; `FROM_ARCHIVE` takes an archive already downloaded. Each
-release adds its own checksum there once it is out, and without one the
-test stops. On the release it makes pads in the states its users can leave
-them in: public and protected, shared, in the trash, and trashed or deleted
-for good while Etherpad was down. Then it installs the working tree over
-it, or the release archive `TO_ARCHIVE` names, and runs the update as
-Nextcloud runs it.
+This installs the last release before `HEAD` whose version the tree does
+not have, so the one before it while the tree still has the last release's
+version (`FROM_VERSION` names another), from its published archive,
+checked against the checksum pinned in the script; `FROM_ARCHIVE` takes an
+archive already downloaded. Each release adds its own checksum there once
+it is out, and without one the test stops. On the release it makes pads in
+the states its users can leave them in: public and protected, shared, in
+the trash, and trashed or deleted for good while Etherpad was down. Then
+it installs the working tree over it, or the release archive `TO_ARCHIVE`
+names, and runs the update as Nextcloud runs it.
 
 It snapshots the rows, settings, migrations, jobs and index names before
 and after the update. The entries in `upgrade-fixtures.mjs` say what the
