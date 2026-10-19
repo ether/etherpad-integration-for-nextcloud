@@ -43,8 +43,9 @@ Required: `E2E_BASE_URL`, `E2E_USER`, `E2E_PASS`, `E2E_APP_PASSWORD`
 (plus optional `E2E_LOGIN_URL`). The cross-user specs additionally need a
 second account — `E2E_USER2`, `E2E_USER2_PASS`, `E2E_USER2_APP_PASSWORD`;
 they skip cleanly when it isn't configured. The cases that ask the pad
-server itself need `E2E_ETHERPAD_URL` and `E2E_ETHERPAD_API_KEY`. See
-`.env.e2e.example` for what each one is for.
+server's API need `E2E_ETHERPAD_URL` and `E2E_ETHERPAD_API_KEY`; the URL
+alone already runs the session-cookie case, which asks only `/health`.
+See `.env.e2e.example` for what each one is for.
 
 ## Run
 
@@ -97,8 +98,9 @@ has to ask the pad server itself - setting a pad's text behind the file's
 back, deleting a pad in Etherpad, counting a group's sessions - uses the
 Etherpad API and skips without `E2E_ETHERPAD_URL` and
 `E2E_ETHERPAD_API_KEY`; the container stack sets both, and there their
-absence is an error. The author-display-name spec drives the real Etherpad
-editor, to check the session UI.
+absence is an error. A few cases type into the real Etherpad editor where
+the editor is what they check: the author name it shows, or that it takes
+no more changes after the trash.
 
 ### Browser noise
 
@@ -188,15 +190,15 @@ Each `specs/*.spec.ts` covers one flow:
 - **pad-lost** — a pad Etherpad has lost answers `pad_missing`, and a new
   pad is made from the file's content, in the API and in the viewer; a
   restore makes it at once. The file then counts the new pad's revisions,
-  and a forced sync never writes a pad made anew over it. Container stack
-  only (asks Etherpad).
+  and a forced sync never writes a pad made anew over it. Needs the
+  Etherpad API.
 - **pad-gone-for-good** — a pad goes once its file is deleted for good,
   however that happens, however the file is called by then, and however
   many at once; a file in a trash, a user's or a team folder's, keeps it;
   with `delete_pad_with_file` off the pads wait. The admin's handling of
   vanished files too. What touches the whole instance runs only where
   `E2E_THROWAWAY_STACK=1`, which the container stack's `up.sh` sets.
-  Container stack only; the team folder part needs
+  Needs the Etherpad API; the team folder part needs
   groupfolders; makes and removes throwaway accounts, groups and team
   folders.
 - **pad-user-share** — user-to-user share grants access, revoke removes

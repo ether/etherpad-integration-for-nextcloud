@@ -15,9 +15,9 @@ import { E2E } from './env'
  * POST, not GET: a query string carries the api key into proxy and access
  * logs, and — with `trace: 'retain-on-failure'` — into the report CI
  * uploads as an artifact. EtherpadClient posts for the same reason. Not a
- * secret-safe channel either way, since a trace can hold the body too;
- * what makes it acceptable is the key, which comes from the checked-in
- * APIKEY.txt of a throwaway stack.
+ * secret-safe channel either way, since a trace can hold the body too: the
+ * key belongs to an Etherpad meant for tests - the container stack's
+ * checked-in APIKEY.txt, or one .env.e2e.example warns about.
  */
 export const etherpadApiPost = async <T>(endpoint: string, form: Record<string, string>): Promise<T> => {
 	const api = E2E.etherpadApi

@@ -105,9 +105,9 @@ test.describe('read-only share of a protected pad', () => {
 
 	/**
 	 * The viewer gives a reader no sync address, but the endpoint is there
-	 * all the same, and refuses a reader before it reads the pad. Where the
-	 * suite can write into the pad, the pad holds text the file does not, so
-	 * a sync would have written into the file - which a reader may not.
+	 * all the same, and refuses a reader before it reads the pad. A fresh
+	 * pad's file holds no snapshot yet, so a sync would write one into it -
+	 * which a reader may not.
 	 */
 	test('refuses a sync to a reader of the share, and leaves the file as it was', async () => {
 		test.skip(!E2E.hasSecondaryAccount(), 'Needs a second account to share with.')
@@ -206,9 +206,6 @@ test.describe('read-only share of a protected pad', () => {
 				const pad = await createPadAtPath(`/${padName}`, 'protected')
 				const fileId = await propfindFileId(padName)
 
-				// Write one text and sync it into the `.pad` file, then change
-				// the pad and leave the file behind. Whichever marker appears
-				// says where the viewer read from.
 				const padId = padIdOfPadUrl(pad.padUrl)
 				await etherpadApiPost('setText', { padID: padId, text: syncedMarker })
 				const synced = await padApiPost(`pads/sync/${fileId}`)

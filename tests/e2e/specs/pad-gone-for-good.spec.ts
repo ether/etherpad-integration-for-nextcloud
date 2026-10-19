@@ -40,8 +40,8 @@ import { typeInEtherpadPage, uniqueName, uniquePadName } from '../fixtures/nextc
  * file still in a trash keeps its pad.
  *
  * Whether a pad is gone only Etherpad can say, so these run where the
- * spec knows Etherpad's API: the container stack. What the background
- * jobs do within minutes, the admin's settle runs at once.
+ * suite has Etherpad's API (needsEtherpadApi). What the background jobs
+ * do within minutes, the admin's settle runs at once.
  */
 
 /** What the background jobs do within minutes, run now; its answer. */

@@ -50,11 +50,12 @@ export const E2E = {
 		return value === '1' || value === 'yes' || value === 'true';
 	},
 	/**
-	 * Etherpad's own API, for the assertions that have to ask the pad server
-	 * rather than Nextcloud — whether a group survived a delete, say. A case
-	 * that needs it skips without it (needsEtherpadApi). Not on the container
-	 * stack, whose up.sh writes both: there a missing one would skip those
-	 * cases in silence, so it is an error.
+	 * Etherpad's own API, for the cases that have to ask or prepare the pad
+	 * server rather than Nextcloud — whether a group survived a delete, say.
+	 * Without E2E_ETHERPAD_URL and E2E_ETHERPAD_API_KEY such a case skips
+	 * (needsEtherpadApi), except where E2E_THROWAWAY_STACK=1: the container
+	 * stack writes all three, and a missing one would skip those cases in
+	 * silence, so there it is an error.
 	 */
 	get etherpadApi(): { url: string, key: string } | null {
 		const url = process.env.E2E_ETHERPAD_URL?.trim()
@@ -63,7 +64,7 @@ export const E2E = {
 			return { url: url.replace(/\/+$/, ''), key }
 		}
 		if (this.throwawayStack) {
-			throw new Error('E2E_ETHERPAD_URL or E2E_ETHERPAD_API_KEY is missing on the container stack, whose up.sh writes both.')
+			throw new Error('E2E_THROWAWAY_STACK=1 needs E2E_ETHERPAD_URL and E2E_ETHERPAD_API_KEY as well; the container stack\'s up.sh writes all three.')
 		}
 		return null
 	},

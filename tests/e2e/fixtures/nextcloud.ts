@@ -397,8 +397,9 @@ export const typeInEtherpad = (page: Page, text: string): Promise<void> => typeI
 export const typeInEtherpadPage = (page: Page, text: string): Promise<void> => typeInEditor(page, page, text)
 
 /**
- * The viewer a read-only share is supposed to get: the pad's content,
- * loaded from the pad server, and no Etherpad frame at all.
+ * The viewer a read-only share is supposed to get: this app's view, done
+ * loading, and no Etherpad frame at all - with `expectedText`, also that
+ * the pad's content arrived from the pad server.
  *
  * The absence is the point. Nextcloud's read-only share stops at the file;
  * the pad lives on another host, so anything that hands over a pad URL or
@@ -408,7 +409,7 @@ export const expectReadOnlyPadViewerMounted = async (page: Page, expectedText = 
 	await expect(page.locator('.epnc-pad-doc').first()).toBeVisible({ timeout: 30_000 })
 	// The surface carries no heading any more, so the refresh control is
 	// what identifies it — and it is the one affordance the view has.
-	await expect(page.getByRole('button', { name: /refresh|aktualisieren/i })).toBeVisible()
+	await expect(page.getByRole('button', { name: /^(refresh|aktualisieren)$/i })).toBeVisible()
 	// The document styles live in their own stylesheet, shared with the
 	// embed. If it stops being loaded the view still works and still passes
 	// every other assertion here, so the reading width is checked instead.

@@ -14,8 +14,8 @@ import { expectEtherpadViewerMounted, gotoFiles, openPadFromFileList, uniquePadN
  * open says so (`pad_missing`), and a new pad is made from the content
  * saved in the file, which from then on opens it.
  *
- * Losing a pad takes Etherpad's own API, so these run where the spec knows
- * it: the container stack.
+ * Losing a pad takes Etherpad's own API, so these run where the suite has
+ * it (needsEtherpadApi).
  */
 test.describe('a pad Etherpad has lost', () => {
 	test.skip(E2E.etherpadApi === null, needsEtherpadApi)
