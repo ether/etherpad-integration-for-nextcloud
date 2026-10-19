@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.1.0-beta.2 — 2026-10-18
+## 1.1.0-beta.2 — 2026-10-19
 
 Second beta release for 1.1.0. Focus: a pad that lives as long as its file, pads Etherpad lost recovered from their files, safer external pads and public links, and Etherpad sessions that end with the access they came from.
 
@@ -46,6 +46,7 @@ Second beta release for 1.1.0. Focus: a pad that lives as long as its file, pads
 - **Public links no longer pile up Etherpad sessions.** Every open of a writable public link to a protected pad made a session of its own, faster in a loop than they were collected; a link now hands out the session of the last hour per pad again once Etherpad confirms it, and a visitor can write for at least two hours. Opening a pad through a public link is limited to 300 a minute, per address signed out and per user signed in, and the Viewer says when a limit refused it. A public link's expired sessions are collected per group; a listing is read up to 4 MiB, and a run that reaches that or keeps timing out pauses for a day with a warning. (#321, #322, #333)
 - **Opening a protected pad no longer drops the cookies Nextcloud sets in the same answer**: a public link's visitor whose first request was the open got no Nextcloud session, and a renewed "Stay logged in" did not arrive. (#323)
 - Three API endpoints answered 500 where the docs say otherwise: `recover-from-snapshot` on an Etherpad outage, a locked file or an unreadable `.pad` without a binding (now 503 with `retryable`, or 400); `initialize` and `initialize-by-id` for a reader of a read-only share, after pad, group and binding had been made (now 403 before anything is made); `POST /pads`, `from-url` and `from-template` into a missing or read-only folder (now 404 or 403). (#332)
+- A reader of a read-only share who called the sync of a pad that had changed since its last sync had Etherpad asked, then got 500 and an error in the log. The sync may write the file, so it now answers 403 to whoever may not change it, before the file is read or Etherpad is asked. (#363)
 - A recovery that fails because the file is no longer the case it was offered for - another recovery was faster, the file was written meanwhile, or Etherpad has the pad again - makes the Viewer and the embed page open the file again rather than show an error. (#337)
 - The old address `/apps/etherpad_nextcloud/public/{token}` of a password-protected share answered 404 and now leads to the share page; a signed-out visitor of the Viewer routes gets the login instead of an error page. (#321)
 - In the admin settings, the connection test before the first save failed with 500; a trusted embed origin with `:443` never matched, so every message from the host page was dropped, the sync before closing included; and an Etherpad that did not answer the API version question on save had 1.2.15 written over the version detected before. (#320)
