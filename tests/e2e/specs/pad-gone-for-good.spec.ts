@@ -33,7 +33,7 @@ import {
 } from '../fixtures/admin-api'
 import { typeInEtherpadPage, uniqueName, uniquePadName } from '../fixtures/nextcloud'
 
-/**
+/*
  * A pad goes once its `.pad` file is deleted for good, however that
  * happens: past the trash, from the trash, or with the account that owned
  * it (docs/deleting-pads.md), and whatever the file is called by then. A

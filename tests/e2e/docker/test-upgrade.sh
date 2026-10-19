@@ -130,9 +130,9 @@ if [[ -n "${FROM_VERSION:-}" ]]; then
 	from_version="$FROM_VERSION"
 else
 	from_tag="$(git -C "$repo" describe --tags --abbrev=0 --match 'v[0-9]*' HEAD)"
-	# A tree that still has the last release's version - its tagged commit,
-	# or one after it before the next version is set - upgrades from the
-	# release before it.
+	# Nextcloud updates nothing from a version to the same one, so a target
+	# - the tree, or TO_ARCHIVE - that still has the last release's version
+	# upgrades from the release before it.
 	if [[ "${from_tag#v}" == "$to_version" ]]; then
 		from_tag="$(git -C "$repo" describe --tags --abbrev=0 --match 'v[0-9]*' "$from_tag^")"
 	fi
