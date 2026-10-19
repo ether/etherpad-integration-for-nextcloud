@@ -3,7 +3,7 @@
  * Copyright (c) 2026 Jacob Bühler
  */
 import { test, expect } from '../fixtures/browser-noise'
-import { E2E } from '../fixtures/env'
+import { E2E, needsEtherpadApi } from '../fixtures/env'
 import {
 	createPadAtPath,
 	deleteViaDav,
@@ -43,8 +43,6 @@ import { typeInEtherpadPage, uniqueName, uniquePadName } from '../fixtures/nextc
  * spec knows Etherpad's API: the container stack. What the background
  * jobs do within minutes, the admin's settle runs at once.
  */
-
-const needsEtherpadApi = 'Needs E2E_ETHERPAD_URL and E2E_ETHERPAD_API_KEY; only the container stack has them.'
 
 /** What the background jobs do within minutes, run now; its answer. */
 const settle = async (): Promise<{ checked: number, settled: number, pending_delete_count: number }> => {

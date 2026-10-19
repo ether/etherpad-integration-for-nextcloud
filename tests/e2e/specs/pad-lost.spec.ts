@@ -3,7 +3,7 @@
  * Copyright (c) 2026 Jacob Bühler
  */
 import { test, expect } from '../fixtures/browser-noise'
-import { E2E } from '../fixtures/env'
+import { E2E, needsEtherpadApi } from '../fixtures/env'
 import { createPadAtPath, createUserReadShare, deleteShareById, deleteViaDav, getFileViaDav, padApiPost, padOfFile, propfindFileId, putFileViaDav, restoreFromTrashViaDav } from '../fixtures/dav'
 import { etherpadApiPost, padIdOfPadUrl } from '../fixtures/etherpad'
 import { expectEtherpadViewerMounted, gotoFiles, openPadFromFileList, uniquePadName } from '../fixtures/nextcloud'
@@ -18,7 +18,7 @@ import { expectEtherpadViewerMounted, gotoFiles, openPadFromFileList, uniquePadN
  * it: the container stack.
  */
 test.describe('a pad Etherpad has lost', () => {
-	test.skip(E2E.etherpadApi === null, 'Needs E2E_ETHERPAD_URL and E2E_ETHERPAD_API_KEY; only the container stack has them.')
+	test.skip(E2E.etherpadApi === null, needsEtherpadApi)
 
 	/** A pad whose text is saved in its file: a snapshot with revisions, as any pad someone wrote in has. */
 	const padWithSavedText = async (name: string, accessMode: string): Promise<{ fileId: number, padId: string, padUrl: string, marker: string }> => {

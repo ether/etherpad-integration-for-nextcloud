@@ -17,7 +17,7 @@ import {
 	deleteViaDav,
 } from '../fixtures/dav'
 import { authorIdForUid, groupIdOfPadUrl, liveSessionCount } from '../fixtures/etherpad'
-import { E2E } from '../fixtures/env'
+import { E2E, needsEtherpadApi } from '../fixtures/env'
 import { loginAs, logout } from '../fixtures/auth'
 
 /**
@@ -86,7 +86,7 @@ test.describe('protected pad session revocation', () => {
 	 * does not depend on file order.
 	 */
 	test('logging out of Nextcloud closes the pad the browser still has a cookie for', async ({ browser, browserNoise }) => {
-		test.skip(E2E.etherpadApi === null, 'E2E_ETHERPAD_URL / E2E_ETHERPAD_API_KEY not configured; Etherpad-side spec skipped.')
+		test.skip(E2E.etherpadApi === null, needsEtherpadApi)
 
 		const padName = uniquePadName('revoke-logout')
 		// Explicitly empty, not merely "new": a context created inside a test

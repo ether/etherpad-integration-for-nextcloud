@@ -4,7 +4,7 @@
  */
 import { request as playwrightRequest, type APIRequestContext } from '@playwright/test'
 import { test, expect } from '../fixtures/browser-noise'
-import { E2E } from '../fixtures/env'
+import { E2E, needsEtherpadApi } from '../fixtures/env'
 
 /**
  * The assumption the expired-session collectors rest on: deleting a
@@ -40,7 +40,7 @@ test.describe('Etherpad session index', () => {
 	}
 
 	test('deleting a session takes its id out of the author index and the group\'s', async () => {
-		test.skip(E2E.etherpadApi === null, 'E2E_ETHERPAD_URL / E2E_ETHERPAD_API_KEY not configured.')
+		test.skip(E2E.etherpadApi === null, needsEtherpadApi)
 
 		const ctx = await playwrightRequest.newContext({ storageState: { cookies: [], origins: [] } })
 		let groupId = ''

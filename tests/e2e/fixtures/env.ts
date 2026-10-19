@@ -19,6 +19,9 @@ export const requireEnv = (name: string): string => {
 	return value.trim()
 }
 
+/** Why a case that needs E2E.etherpadApi skips without it. */
+export const needsEtherpadApi = 'Needs E2E_ETHERPAD_URL and E2E_ETHERPAD_API_KEY, which the container stack sets.'
+
 export const E2E = {
 	get baseURL(): string {
 		return requireEnv('E2E_BASE_URL').replace(/\/+$/, '')
@@ -47,15 +50,22 @@ export const E2E = {
 		return value === '1' || value === 'yes' || value === 'true';
 	},
 	/**
-	 * Etherpad's own API, for the few assertions that have to ask the pad
-	 * server rather than Nextcloud — whether a group survived a delete, say.
-	 * Optional: only the throwaway container stack knows its own API key,
-	 * and a spec that needs it skips elsewhere rather than failing.
+	 * Etherpad's own API, for the assertions that have to ask the pad server
+	 * rather than Nextcloud — whether a group survived a delete, say. A case
+	 * that needs it skips without it (needsEtherpadApi). Not on the container
+	 * stack, whose up.sh writes both: there a missing one would skip those
+	 * cases in silence, so it is an error.
 	 */
 	get etherpadApi(): { url: string, key: string } | null {
 		const url = process.env.E2E_ETHERPAD_URL?.trim()
 		const key = process.env.E2E_ETHERPAD_API_KEY?.trim()
-		return (url && key) ? { url: url.replace(/\/+$/, ''), key } : null
+		if (url && key) {
+			return { url: url.replace(/\/+$/, ''), key }
+		}
+		if (this.throwawayStack) {
+			throw new Error('E2E_ETHERPAD_URL or E2E_ETHERPAD_API_KEY is missing on the container stack, whose up.sh writes both.')
+		}
+		return null
 	},
 	/**
 	 * Whether the target says its data is throwaway: `E2E_THROWAWAY_STACK=1`,

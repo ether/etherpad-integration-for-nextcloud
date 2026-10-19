@@ -25,7 +25,7 @@ import {
 	propfindFileId,
 } from '../fixtures/dav'
 import { etherpadApiPost, padIdOfPadUrl } from '../fixtures/etherpad'
-import { E2E } from '../fixtures/env'
+import { E2E, needsEtherpadApi } from '../fixtures/env'
 import { SECONDARY_STATE_FILE } from '../fixtures/auth'
 
 /**
@@ -184,7 +184,7 @@ test.describe('read-only share of a protected pad', () => {
 	// Writing into the pad behind the file's back needs the pad server's
 	// own API.
 	test.describe('on the pad server', () => {
-		test.skip(E2E.etherpadApi === null, 'Needs E2E_ETHERPAD_URL and E2E_ETHERPAD_API_KEY; only the container stack has them.')
+		test.skip(E2E.etherpadApi === null, needsEtherpadApi)
 
 		// Two markers, because the point is which of them shows. The first is
 		// synced into the `.pad` file; the second is only ever on the pad

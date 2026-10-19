@@ -4,7 +4,7 @@
  */
 import { request as playwrightRequest } from '@playwright/test'
 import { test, expect } from '../fixtures/browser-noise'
-import { E2E } from '../fixtures/env'
+import { E2E, needsEtherpadApi } from '../fixtures/env'
 import {
 	createPadAtPath,
 	deleteViaDav,
@@ -60,7 +60,7 @@ test.describe('legacy migration and the group a pad id claims', () => {
 
 	test('migrates a pad that is in its group and refuses one that is not', async () => {
 		const etherpad = E2E.etherpadApi
-		test.skip(etherpad === null, 'E2E_ETHERPAD_URL / E2E_ETHERPAD_API_KEY not configured; Etherpad-side spec skipped.')
+		test.skip(etherpad === null, needsEtherpadApi)
 
 		const api = await playwrightRequest.newContext({ storageState: { cookies: [], origins: [] } })
 		const ep = async (method: string, form: Record<string, string>): Promise<Record<string, unknown>> => {
