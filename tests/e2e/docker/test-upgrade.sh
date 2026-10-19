@@ -11,12 +11,13 @@
 #   tests/e2e/docker/test-upgrade.sh
 #
 # FROM_VERSION is the release to upgrade from, by default the last tag
-# before HEAD. Its archive is fetched from the release, or taken from
-# FROM_ARCHIVE, and checked against the checksum pinned below either way.
-# TO_ARCHIVE is a release archive to upgrade to instead of the working
-# tree. UPGRADE_WORK is a new or empty directory for the run's files, which
-# stay there; without it a temporary one keeps them only when the run
-# fails. NC_VERSION and EP_VERSION are up.sh's.
+# before HEAD whose version the tree does not have. Its archive is fetched
+# from the release, or taken from FROM_ARCHIVE, and checked against the
+# checksum pinned below either way. TO_ARCHIVE is a release archive to
+# upgrade to instead of the working tree. UPGRADE_WORK is a new or empty
+# directory for the run's files, which stay there; without it a temporary
+# one keeps them only when the run fails. NC_VERSION and EP_VERSION are
+# up.sh's.
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -129,11 +130,17 @@ if [[ -n "${FROM_VERSION:-}" ]]; then
 	from_version="$FROM_VERSION"
 else
 	from_tag="$(git -C "$repo" describe --tags --abbrev=0 --match 'v[0-9]*' HEAD)"
-	# A HEAD the release is tagged on upgrades from the release before it.
-	if git -C "$repo" tag --points-at HEAD | grep -qxF "$from_tag"; then
+	# A tree that still has the last release's version - its tagged commit,
+	# or one after it before the next version is set - upgrades from the
+	# release before it.
+	if [[ "${from_tag#v}" == "$to_version" ]]; then
 		from_tag="$(git -C "$repo" describe --tags --abbrev=0 --match 'v[0-9]*' "$from_tag^")"
 	fi
 	from_version="${from_tag#v}"
+fi
+if [[ "$from_version" == "$to_version" ]]; then
+	echo "$to_version is the version to upgrade from and to: Nextcloud finds nothing to update. Name an earlier release in FROM_VERSION." >&2
+	exit 1
 fi
 # The published archive of each release this test upgrades from. Each
 # release adds its own line once it is out (docs/release-process.md);
