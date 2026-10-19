@@ -97,12 +97,13 @@ and configure:
 
 - Etherpad Base URL
 - Etherpad API key (OAuth is not required; Etherpad API key auth is used)
-- Etherpad API URL (optional; defaults to Base URL)
+- Etherpad API URL (optional; saved empty, it is set to the Base URL of that save and does not follow a later change of it)
 - Etherpad session cookie domain (see below)
 - Protected pads, Public pads: which pad types users may create (see below)
+- Allow importing protected pads from legacy Ownpad files (off by default; see [docs/legacy-ownpad-migration.md](docs/legacy-ownpad-migration.md))
 - .pad file sync interval (seconds)
 - Delete the Etherpad pad when its .pad file is deleted permanently
-- Allow linking external public pads, and the External Etherpad host allowlist
+- Allow linking external public pads, and the External Etherpad host allowlist (optional; empty, it trusts every public HTTPS host)
 - Trusted embed origins (optional)
 
 Two settings control which pad types the app offers, both enabled by default:
@@ -173,9 +174,8 @@ settings page shows it without running the test.
 
 ## Upgrade
 
-On Nextcloud 31, upgrade Nextcloud to `32.0.9` or later first, with the
-version of the app you have: Nextcloud 31 does not run this one, `app:enable`
-refuses it and `occ upgrade` switches it off.
+This version needs Nextcloud `32.0.9` or later. On an older one, upgrade
+Nextcloud first, with the version of the app you have, and the app after it.
 
 1. Replace app files in `apps/etherpad_nextcloud`
 2. Run:
@@ -222,10 +222,11 @@ the release flow in [docs/release-process.md](docs/release-process.md).
 
 An administrator can add **shared templates** under
 `Settings -> Administration -> Pads`: upload a `.pad` file and it appears as a
-tile for everyone. Its content becomes the new pad and placeholders such as
-`{{date}}` are resolved on creation. The pad type of the template is used when
-that type is enabled; otherwise the pad is created with the type that is
-available, which can turn a protected template into a public pad.
+tile for everyone the app is enabled for. Its content becomes the new pad and
+placeholders such as `{{date}}` are resolved on creation. The pad type of the
+template is used when that type is enabled; otherwise the pad is created with
+the type that is available, which can turn a protected template into a public
+pad.
 
 Shared templates live in the instance's `appdata` directory, not in any user's
 files. They are covered by a full backup of the data directory, but not by a

@@ -589,14 +589,16 @@ same way and reach the same two answers.
   presentation rather than enforcement: a public pad is editable by anyone
   who has its id, and its id is in the `.pad` file. Nothing can be enforced
   there, so Etherpad's own live view is preferred. When the pad server
-  cannot say what that URL is, the pad falls back to this app's read-only
-  view rather than to the editable address.
+  cannot say what that URL is, a signed-in user gets this app's read-only
+  view rather than the editable address; a public link answers `503`, as
+  when Etherpad is down.
 
 The decision is `isUpdateable()` on the file as this user sees it, which
 is the update permission bit – `(permissions & UPDATE)` – and not a lock
 check. The share feeds into it, and so does the mount: a read-only
-external storage or a group folder ACL puts the pad into the read-only view
-just as a "can view" share does. Not because edits would be lost –
+external storage or a group folder ACL puts the pad into a read-only view –
+this app's for a protected pad, Etherpad's for a public one – just as a
+"can view" share does. Not because edits would be lost –
 Etherpad stores the pad itself, and a failed sync leaves a stale copy here
 rather than lost text – but because an open without write permission in
 Nextcloud may not issue a session that writes on the pad server.
@@ -613,11 +615,12 @@ pad it belongs to.
 
 ## Share Permission Mapping
 
-Both open paths map Nextcloud share permissions the same way –
+Both open paths map Nextcloud share permissions the same way, but for the
+fallback of a public pad above –
 `PublicViewerController` for links, `PadOpenService` and
 `PadMetadataService` for authenticated users:
 
-- protected share without update permission -> this app's read-only view, its content fetched on every open, no Etherpad cookie
+- protected share without update permission -> this app's read-only view, its content fetched on every open and refresh, no Etherpad cookie
 - public pad share without update permission -> Etherpad read-only URL
 - share with update permission -> Etherpad editable
 
