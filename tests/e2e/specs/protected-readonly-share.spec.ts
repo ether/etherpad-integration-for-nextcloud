@@ -53,6 +53,7 @@ test.describe('read-only share of a protected pad', () => {
 			!E2E.hasSecondaryBrowserAccount(),
 			'E2E_USER2 / E2E_USER2_PASS / E2E_USER2_APP_PASSWORD not configured; two-user spec skipped.',
 		)
+		test.skip(E2E.etherpadApi === null, 'Needs E2E_ETHERPAD_URL and E2E_ETHERPAD_API_KEY; only the container stack has them.')
 
 		const padName = uniquePadName('readonly-share')
 		let shareId = ''
@@ -133,6 +134,7 @@ test.describe('read-only share of a protected pad', () => {
 	 */
 	test('refuses a sync to a reader of the share, and leaves the file as it was', async () => {
 		test.skip(!E2E.hasSecondaryAccount(), 'Needs a second account to share with.')
+		test.skip(E2E.etherpadApi === null, 'Needs E2E_ETHERPAD_URL and E2E_ETHERPAD_API_KEY; only the container stack has them.')
 		const padName = uniquePadName('readonly-sync')
 		let shareId = ''
 		try {
