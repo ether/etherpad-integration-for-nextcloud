@@ -48,15 +48,15 @@ jobs:
           persist-credentials: false
 
       # appinfo/info.xml is the single source of truth for the app version.
-      # package.json / package-lock.json are aligned manually, so guard against
-      # drift (#119): fail the build if they disagree. The release workflow
+      # package.json and package-lock.json restate it, so guard against drift
+      # (#119): fail the build if they disagree. The release workflow
       # runs the same check, since a tag can sit on a commit no pull request
       # ever saw.
       - name: Compare info.xml and the versions everything else restates
         run: python3 scripts/check-version-alignment.py
 
       # The same argument for the supported Nextcloud range: info.xml declares
-      # it and eight other files restate it.
+      # it, and the files the script names restate it.
       - name: Compare info.xml and the Nextcloud range everything else assumes
         run: python3 scripts/check-nextcloud-range.py
 

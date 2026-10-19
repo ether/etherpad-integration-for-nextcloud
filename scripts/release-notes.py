@@ -9,7 +9,8 @@ see, and it wins where it exists. Where it does not, that version's
 
 Whichever it is, it has to say something: a file holding only an SPDX header,
 or a section left as `### Fixed` with nothing under it, fails the release
-rather than publishing an empty body.
+rather than publishing an empty body. The `CHANGELOG.md` section has to hold
+entries either way, as the record the repository keeps of the release.
 
     scripts/release-notes.py 1.1.0-beta.1
 """
@@ -62,6 +63,18 @@ def main() -> int:
     parser.add_argument("--root", type=pathlib.Path, default=ROOT)
     arguments = parser.parse_args()
 
+    try:
+        entries = changelog_section(
+            (arguments.root / "CHANGELOG.md").read_text(encoding="utf-8"),
+            arguments.version,
+        )
+    except LookupError as missing:
+        print(missing, file=sys.stderr)
+        return 1
+    if not says_something(entries):
+        print(f"The CHANGELOG.md section for {arguments.version} holds no entries.", file=sys.stderr)
+        return 1
+
     written = arguments.root / "docs" / "release-notes" / f"{arguments.version}.md"
     if written.is_file():
         # Published verbatim, so a licence header the author added out of
@@ -71,14 +84,7 @@ def main() -> int:
         ).strip("\n")
         source = str(written.relative_to(arguments.root))
     else:
-        try:
-            body = changelog_section(
-                (arguments.root / "CHANGELOG.md").read_text(encoding="utf-8"),
-                arguments.version,
-            )
-        except LookupError as missing:
-            print(f"{missing} No docs/release-notes/{arguments.version}.md either.", file=sys.stderr)
-            return 1
+        body = entries
         source = "CHANGELOG.md"
 
     if not says_something(body):

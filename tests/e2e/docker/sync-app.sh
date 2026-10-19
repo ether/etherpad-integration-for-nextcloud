@@ -8,6 +8,9 @@
 # The file set comes from scripts/app-file-excludes.sh — the same
 # definition the release tarball uses — so the stack exercises the tree
 # users actually install.
+#
+# APP_SOURCE names an extracted release to copy instead, as it is: its
+# file set is the one its users have (test-upgrade.sh).
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -20,7 +23,18 @@ compose() { docker compose -f "$here/compose.yml" "$@"; }
 
 staging="$(mktemp -d)"
 trap 'rm -rf "$staging"' EXIT
-rsync -a "${RSYNC_EXCLUDES[@]}" "$repo/" "$staging/app/"
+if [[ -n "${APP_SOURCE:-}" ]]; then
+	if [[ ! -f "$APP_SOURCE/appinfo/info.xml" ]]; then
+		echo "APP_SOURCE is no copy of the app, it has no appinfo/info.xml: $APP_SOURCE" >&2
+		exit 1
+	fi
+	# Said every time: a variable left in a shell would otherwise put an
+	# old copy in the stack, and the suite would test it without a sign.
+	echo "Copying the app from APP_SOURCE, not the working tree: $APP_SOURCE"
+	rsync -a "$APP_SOURCE/" "$staging/app/"
+else
+	rsync -a "${RSYNC_EXCLUDES[@]}" "$repo/" "$staging/app/"
+fi
 
 compose exec -T -u www-data nextcloud sh -c "rm -rf $app && mkdir -p $app"
 compose cp "$staging/app/." "nextcloud:$app/"
@@ -46,5 +60,5 @@ as_www() { compose exec -T -u www-data nextcloud "$@"; }
 pending="$(as_www php -r 'require "lib/base.php"; $ms = new \OC\DB\MigrationService("etherpad_nextcloud", \OCP\Server::get(\OC\DB\Connection::class)); echo implode(",", array_diff($ms->getAvailableVersions(), $ms->getMigratedVersions()));')"
 if [ "$(as_www php occ config:app:get etherpad_nextcloud enabled 2>/dev/null)" = yes ] && [ -n "$pending" ]; then
 	echo "Running the app's migrations: $pending"
-	as_www php -r 'require "lib/base.php"; exit(\OC_App::updateApp("etherpad_nextcloud") ? 0 : 1);'
+	as_www php < "$here/update-app.php"
 fi

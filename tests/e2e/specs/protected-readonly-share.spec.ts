@@ -21,6 +21,7 @@ import {
 	createUserWriteShare,
 	deleteShareById,
 	deleteViaDav,
+	getFileViaDav,
 	mkcolViaDav,
 	padApiPost,
 	propfindFileId,
@@ -124,6 +125,34 @@ test.describe('read-only share of a protected pad', () => {
 			await deleteViaDav(padName).catch(() => {})
 		}
 	})
+
+	/**
+	 * The viewer gives a reader no sync address, but the endpoint is there
+	 * all the same. The pad holds text the file does not, so a sync would
+	 * write into the file - which a reader may not.
+	 */
+	test('refuses a sync to a reader of the share, and leaves the file as it was', async () => {
+		test.skip(!E2E.hasSecondaryAccount(), 'Needs a second account to share with.')
+		const padName = uniquePadName('readonly-sync')
+		let shareId = ''
+		try {
+			const pad = await createPadAtPath(`/${padName}`, 'protected')
+			const fileId = await propfindFileId(padName)
+			await etherpadApiPost('setText', { padID: padIdOfPadUrl(pad.padUrl), text: `not in the file yet ${padName}` })
+			shareId = (await createUserReadShare(padName, E2E.secondaryUser!)).id
+			const before = await getFileViaDav(padName)
+
+			const refused = await padApiPost(`pads/sync/${fileId}`, null, { uid: E2E.secondaryUser!, password: E2E.secondaryAppPassword! })
+			expect(refused.status, JSON.stringify(refused.body)).toBe(403)
+			expect(await getFileViaDav(padName), 'the file kept what it held').toBe(before)
+		} finally {
+			if (shareId !== '') {
+				await deleteShareById(shareId).catch(() => {})
+			}
+			await deleteViaDav(padName).catch(() => {})
+		}
+	})
+
 	/**
 	 * One file, two ways in, different permissions on each.
 	 *

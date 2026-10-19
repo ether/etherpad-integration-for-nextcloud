@@ -104,7 +104,7 @@ Primary flow (native viewer):
    - fallback: `POST /api/v1/pads/open` (`file`, CSRF `requesttoken`) if no stable `fileId` is available
 3. `PadSessionController` validates frontmatter/binding and resolves secure open URL:
    - `protected`: session URL via `PadSessionService`
-   - external: validate the stored external URL and return a read-only snapshot/open target without DB binding lookup
+   - external: validate the stored external URL and return it as the open target, without DB binding lookup; `content_url` is the live read-only view the client falls back to when the other server refuses the frame
    - `public`: direct/read-only URL as appropriate
 4. For protected pads, response includes one Etherpad session `Set-Cookie` header.
 5. Legacy app routes (`/apps/etherpad_nextcloud`, `/by-id/{fileId}`) redirect into the same native files viewer URL.
@@ -186,7 +186,7 @@ Primary flow (native viewer):
 3. `src/viewer-main.js` detects public share context and resolves open data via:
    - `GET /api/v1/public/open/{token}?fileId=...` where the Viewer knows an id, `?file=...` otherwise - one locator, never both. See "Naming the file in a public share" in `docs/api-reference.md`.
 4. Same open-target rules apply:
-   - read-only share: Etherpad read-only URL
+   - read-only share: this app's read-only view for a protected pad, Etherpad's read-only URL for a public one
    - editable share: regular URL/session
 5. For protected share-open flows, session bootstrap uses one explicit `Set-Cookie` header, sent as for a signed-in open (see "Cookie Header Model").
 6. Compatibility route `/apps/etherpad_nextcloud/public/{token}` redirects to native share route `/s/{token}`, which checks the token and asks for a share's password.

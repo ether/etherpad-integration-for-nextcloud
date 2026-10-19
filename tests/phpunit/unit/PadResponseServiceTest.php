@@ -60,11 +60,8 @@ class PadResponseServiceTest extends TestCase {
 	}
 
 	/**
-	 * A viewer must not be told where to sync. Syncing writes the pad back
-	 * into the `.pad` file, which is the one thing a read-only share may
-	 * not do — and the client flushes on a timer and on every tab switch,
-	 * so each one would fail on the filesystem and be logged as an error
-	 * for as long as the tab is open.
+	 * The sync addresses follow the write permission, not the view, so both
+	 * read-only views are checked.
 	 */
 	public function testOpenResponseWithholdsTheSyncUrlsFromAViewer(): void {
 		$urlGenerator = $this->createMock(IURLGenerator::class);
@@ -76,7 +73,7 @@ class PadResponseServiceTest extends TestCase {
 		$ownView = $service->openResponse($this->buildTarget(isReadOnlyView: true), new RecordingCookieHeaders())->getData();
 		// A public pad opened read-only: Etherpad's own read-only page in an
 		// iframe rather than our viewer — and it must not sync either.
-		$liveReadOnly = $service->openResponse($this->buildTarget(isReadOnlyView: false), new RecordingCookieHeaders())->getData();
+		$liveReadOnly = $service->openResponse($this->buildTarget(isReadOnlyView: false, accessMode: 'public'), new RecordingCookieHeaders())->getData();
 		$editable = $service->openResponse($this->buildTarget(isReadOnlyView: false, mayWrite: true), new RecordingCookieHeaders())->getData();
 
 		$this->assertSame('', $ownView['sync_url']);
@@ -106,12 +103,12 @@ class PadResponseServiceTest extends TestCase {
 		$this->assertStringContainsString('private', $response->getHeaders()['Cache-Control']);
 	}
 
-	private function buildTarget(bool $isReadOnlyView, bool $mayWrite = false, string $cookieHeader = ''): \OCA\EtherpadNextcloud\Service\PadOpenTarget {
+	private function buildTarget(bool $isReadOnlyView, bool $mayWrite = false, string $cookieHeader = '', string $accessMode = 'protected'): \OCA\EtherpadNextcloud\Service\PadOpenTarget {
 		return new \OCA\EtherpadNextcloud\Service\PadOpenTarget(
 			file: '/Test.pad',
 			fileId: 42,
 			padId: 'test',
-			accessMode: 'protected',
+			accessMode: $accessMode,
 			padUrl: 'https://pad.example.test/p/test',
 			isExternal: false,
 			originalPadUrl: '',

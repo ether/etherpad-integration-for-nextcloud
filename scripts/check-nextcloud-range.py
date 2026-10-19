@@ -2,13 +2,10 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (c) 2026 Jacob Bühler
 #
-# appinfo/info.xml declares which Nextcloud versions this app supports, and
-# eight other files restate that range: the Psalm matrix analyses its upper
-# bound, the e2e matrix runs stacks across it, the stack default in
-# compose.yml picks the newest, composer.json and composer.lock pin the
-# oldest, the README tells a user what to install, and the e2e stack's
-# README, up.sh and compose header tell a developer what to run. This holds
-# them to it, so moving the range stays a one-file change.
+# appinfo/info.xml declares which Nextcloud versions this app supports.
+# The CI matrices, the composer constraint and lock, the stack default and
+# the docs restate that range; this checks each against it and names the
+# ones that have to follow a change.
 #
 # The floor may name a patch. Nextcloud compares a requirement at whatever
 # precision it is written, so "31.0.9" is refused on 31.0.8 where a bare
@@ -87,6 +84,10 @@ def main():
     want(".github/workflows/e2e.yml", r"\|\|\s*'\[([^\]]*)\]'\)\s*\}\}",
          ", ".join(f'"{v}"' for v in majors),
          "the nightly Nextcloud list")
+    # The upgrade runs rarely, so on every major.
+    want(".github/workflows/e2e-upgrade.yml", r"nextcloud:\s*\[([^\]]*)\]",
+         ", ".join(f"'{v}'" for v in majors),
+         "the upgrade's Nextcloud list")
 
     # The throwaway stack defaults to the newest supported major; up.sh and
     # the Dockerfile take the default from compose.yml.
@@ -121,7 +122,7 @@ def main():
             print(f"::error::{problem}")
         return 1
 
-    print(f"Nextcloud {floor} to {maximum}: info.xml, composer.json, both CI matrices, "
+    print(f"Nextcloud {floor} to {maximum}: info.xml, composer.json, the CI matrices, "
           "the stack default, the README and the e2e stack's own docs agree.")
     return 0
 

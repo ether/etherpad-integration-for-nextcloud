@@ -18,7 +18,7 @@ Read-only shares (a folder shared *to* the user from someone else's account) are
 
 ### Admin templates (instance-wide)
 
-An admin can upload `.pad` templates under **Administration settings → Etherpad**. They are offered to every account on the instance, with no per-user setup — this is the one source a user cannot opt out of or misconfigure.
+An admin can upload `.pad` templates under **Administration settings → Pads**. They are offered to every account the app is enabled for, with no per-user setup — this is the one source a user cannot opt out of or misconfigure.
 
 They are stored in the instance's `appdata` directory, not in anyone's files — in `templates`, next to the `type_templates` folder holding the marker files behind the tiles. The two are kept apart so an uploaded template can never be mistaken for a tile. Practical consequences:
 
@@ -104,17 +104,12 @@ Response shape on success (200):
 }
 ```
 
-Error responses:
-- **400** — template is not a `.pad`, template is external (`ext.*`), template is empty, target path invalid
-- **403** — no pad type is enabled in the admin settings, so nothing can be created
-- **404** — template file ID does not resolve in the user's userspace
-- **409** — target filename collides with an existing file (`A file with this name already exists.`)
-- **500** — Etherpad unreachable or other unexpected failure
+The error responses are listed with the endpoint, `POST /api/v1/pads/from-template`, in [api-reference.md](api-reference.md).
 
 ## Caveats
 
 - **External pads (`ext.*`)** can't be used as templates — they hold only a snapshot, not Etherpad-side content. The new file is reset to empty and the user gets a clean blank pad instead.
 - **Failed template materialisation falls back to a blank pad.** If anything in the listener throws (binding race, Etherpad unreachable, malformed template), the byte-copy NC made is wiped and the new file behaves like a normal empty `.pad` — the regular missing-frontmatter init kicks in on first open.
 - **Placeholder substitution applies to both the plain-text and the HTML snapshot in the body**. If a placeholder ends up inside an HTML attribute (`<a href="{{date}}">`), it gets resolved too — keep placeholders in human-readable locations to avoid surprises.
-- **No "is a template" flag** — every `.pad` in the user's *Templates* folder is a candidate, and every `.pad` an admin uploaded is offered instance-wide. Nothing inside the file marks it as a template.
+- **No "is a template" flag** — every `.pad` in the user's *Templates* folder is a candidate, and every `.pad` an admin uploaded is offered to every account the app is enabled for. Nothing inside the file marks it as a template.
 - **A template keeps its own access mode**, unless the admin switched that pad type off. In that case the pad is created in the enabled mode instead of failing, so the template's content still lands. With no pad type enabled at all, template creation is refused. Be aware this can widen access: a protected template creates a public pad when protected pads are off — on such an instance that is the only option, but the resulting pad is open to anyone with the link.

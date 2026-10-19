@@ -11,7 +11,7 @@ This note describes how icons are wired in the `+ New` menu and in pad sync acti
 - `img/etherpad-icon-color.svg`
   - Template creator, `+ New` entries
 - `img/filetypes/etherpad-nextcloud-pad.svg`
-  - preferred Nextcloud mimetype icon source for MIME alias `etherpad-nextcloud-pad`
+  - the icon of a full-text search result (`FullTextSearchResultListener`), and what `RegisterMimeType` compares a copy in `core/img/filetypes/` with before it removes it
   - kept identical to `img/etherpad-icon-color.svg`
 
 ## `+ New` Menu (Submenu Entries)
@@ -75,4 +75,4 @@ A preview is cached per file and does not change with a new app version, so
 
 - File: `src/viewer-main.js`
 - Registers the native `.pad` viewer component and handles pad open/sync lifecycle.
-- Auto-sync runs every two minutes while the viewer is mounted and on `pagehide`; there is no UI affordance for manual sync.
+- While the viewer is mounted and its tab visible, a sync runs every `sync_interval_seconds`; hiding the tab or leaving the page sends a forced one (`src/lib/pad-sync.js`). A user who may not change the file gets no sync address, and no sync runs. There is no UI affordance for manual sync.

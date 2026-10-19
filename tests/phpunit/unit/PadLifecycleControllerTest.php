@@ -582,6 +582,7 @@ class PadLifecycleControllerTest extends TestCase {
 		$file->method('getName')->willReturn('Test.pad');
 		$file->method('getPath')->willReturn('/alice/files/Test.pad');
 		$file->method('getContent')->willReturn('frontmatter');
+		$file->method('isUpdateable')->willReturn(true);
 		return $file;
 	}
 
