@@ -100,7 +100,7 @@ and configure:
 - Etherpad API URL (optional; saved empty, it is set to the Base URL of that save and does not follow a later change of it)
 - Etherpad session cookie domain (see below)
 - Protected pads, Public pads: which pad types users may create (see below)
-- Allow importing protected pads from legacy Ownpad files (off by default; see [docs/legacy-ownpad-migration.md](docs/legacy-ownpad-migration.md))
+- Import of protected pads from legacy Ownpad files: off by default; leave it off unless this Nextcloud alone creates group pads on your Etherpad server (see [docs/legacy-ownpad-migration.md](docs/legacy-ownpad-migration.md))
 - .pad file sync interval (seconds)
 - Delete the Etherpad pad when its .pad file is deleted permanently
 - Allow linking external public pads, and the External Etherpad host allowlist (optional; empty, it trusts every public HTTPS host)
