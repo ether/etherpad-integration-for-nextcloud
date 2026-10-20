@@ -412,10 +412,13 @@ export const expectReadOnlyPadViewerMounted = async (page: Page, expectedText = 
 	// The refresh control identifies the view. The full label, because
 	// "Refreshing..." means it is still loading.
 	await expect(doc.getByRole('button', { name: /^(refresh|aktualisieren)$/i })).toBeVisible({ timeout: 30_000 })
-	// Done loading is not loaded: a failed fetch keeps the view and its
+	// Done loading is not loaded: a failed first fetch keeps the view and its
 	// button, and puts its error and "Try again" where the content would be.
+	// The note on an empty pad is a status line, not content that happens to
+	// read the same.
 	await expect(
-		doc.locator('.epnc-pad-doc__text--html').or(doc.getByText(/^(This pad is still empty\.|Dieses Pad ist noch leer\.)$/)),
+		doc.locator('.epnc-pad-doc__text--html')
+			.or(doc.locator('.epnc-pad-doc__status').filter({ hasText: /^(This pad is still empty\.|Dieses Pad ist noch leer\.)$/ })),
 		'the pad\'s content, or the note that it is empty, arrived',
 	).toBeVisible({ timeout: 30_000 })
 	// The document styles live in their own stylesheet, shared with the
