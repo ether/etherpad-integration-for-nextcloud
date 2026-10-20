@@ -400,20 +400,20 @@ export const typeInEtherpadPage = (page: Page, text: string): Promise<void> => t
  * The viewer a read-only share is supposed to get: this app's view with the
  * pad's content loaded from the pad server - its text, or the note that it
  * is still empty - and no Etherpad frame at all. With `expectedText`, also
- * that this text is what arrived.
+ * that the view holds this text.
  *
  * The absence is the point. Nextcloud's read-only share stops at the file;
  * the pad lives on another host, so anything that hands over a pad URL or
  * a session hands over the ability to edit, whatever the share said.
  */
 export const expectReadOnlyPadViewerMounted = async (page: Page, expectedText = ''): Promise<void> => {
-	await expect(page.locator('.epnc-pad-doc').first()).toBeVisible({ timeout: 30_000 })
+	const doc = page.locator('.epnc-pad-doc').first()
+	await expect(doc).toBeVisible({ timeout: 30_000 })
 	// The refresh control identifies the view. The full label, because
 	// "Refreshing..." means it is still loading.
-	await expect(page.getByRole('button', { name: /^(refresh|aktualisieren)$/i })).toBeVisible({ timeout: 30_000 })
-	// Done loading is not loaded: a failed fetch keeps the frame and the
+	await expect(doc.getByRole('button', { name: /^(refresh|aktualisieren)$/i })).toBeVisible({ timeout: 30_000 })
+	// Done loading is not loaded: a failed fetch keeps the view and its
 	// button, and puts its error and "Try again" where the content would be.
-	const doc = page.locator('.epnc-pad-doc').first()
 	await expect(
 		doc.locator('.epnc-pad-doc__text--html').or(doc.getByText(/^(This pad is still empty\.|Dieses Pad ist noch leer\.)$/)),
 		'the pad\'s content, or the note that it is empty, arrived',
@@ -422,11 +422,11 @@ export const expectReadOnlyPadViewerMounted = async (page: Page, expectedText = 
 	// embed. If it stops being loaded the view still works and still passes
 	// every other assertion here, so one of its rules, the font size, is
 	// checked instead.
-	await expect(page.locator('.epnc-pad-doc__text').first()).toHaveCSS('font-size', '15px')
+	await expect(doc.locator('.epnc-pad-doc__text').first()).toHaveCSS('font-size', '15px')
 	if (expectedText !== '') {
 		// The content check above takes any text, and the note that the pad
 		// is empty: which text arrived, only the caller's marker can say.
-		await expect(page.locator('.epnc-pad-doc').first()).toContainText(expectedText, { timeout: 30_000 })
+		await expect(doc).toContainText(expectedText, { timeout: 30_000 })
 	}
 	await expect(
 		page.locator('iframe[title="Etherpad"]'),

@@ -76,9 +76,10 @@ tests/e2e/docker/test-upgrade.sh
 TO_ARCHIVE=dist/etherpad_nextcloud-<version>.tar.gz tests/e2e/docker/test-upgrade.sh
 ```
 
-This installs the last release before `HEAD` whose version the tree does
-not have, so the one before it while the tree still has the last release's
-version (`FROM_VERSION` names another), from its published archive,
+This installs the last release before `HEAD` whose version the target -
+the working tree, or `TO_ARCHIVE` - does not have, so the one before it
+while the target still has the last release's version (`FROM_VERSION`
+names another), from its published archive,
 checked against the checksum pinned in the script; `FROM_ARCHIVE` takes an
 archive already downloaded. Each release adds its own checksum there once
 it is out, and without one the test stops. On the release it makes pads in

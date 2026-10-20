@@ -44,7 +44,8 @@ Required: `E2E_BASE_URL`, `E2E_USER`, `E2E_PASS`, `E2E_APP_PASSWORD`
 second account — `E2E_USER2`, `E2E_USER2_PASS`, `E2E_USER2_APP_PASSWORD`;
 they skip cleanly when it isn't configured. The cases that ask the pad
 server's API need `E2E_ETHERPAD_URL` and `E2E_ETHERPAD_API_KEY`; the URL
-alone already runs the session-cookie case, which asks only `/health`.
+alone already runs the session-cookie case, which asks Etherpad only
+`/health` and needs `E2E_USER` to be an admin.
 See `.env.e2e.example` for what each one is for.
 
 ## Run
@@ -98,9 +99,10 @@ has to ask the pad server itself - setting a pad's text behind the file's
 back, deleting a pad in Etherpad, counting a group's sessions - uses the
 Etherpad API and skips without `E2E_ETHERPAD_URL` and
 `E2E_ETHERPAD_API_KEY`; the container stack sets both, and there their
-absence is an error. A few cases type into the real Etherpad editor where
-the editor is what they check: the author name it shows, or that it takes
-no more changes after the trash.
+absence is an error. A few cases drive the real Etherpad editor where the
+editor is what they check: the author name it shows, that it takes no more
+changes after the trash, and that a public pad in the trash still takes
+them through its link.
 
 ### Browser noise
 
@@ -196,8 +198,9 @@ Each `specs/*.spec.ts` covers one flow:
   however that happens, however the file is called by then, and however
   many at once; a file in a trash, a user's or a team folder's, keeps it;
   with `delete_pad_with_file` off the pads wait. The admin's handling of
-  vanished files too. What touches the whole instance runs only where
-  `E2E_THROWAWAY_STACK=1`, which the container stack's `up.sh` sets.
+  vanished files too. Deleting every vanished file's pad, and two exact
+  counts, run only where `E2E_THROWAWAY_STACK=1`, which the container
+  stack's `up.sh` sets.
   Needs the Etherpad API; the team folder part needs
   groupfolders; makes and removes throwaway accounts, groups and team
   folders.

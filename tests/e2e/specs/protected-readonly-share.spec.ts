@@ -114,11 +114,8 @@ test.describe('read-only share of a protected pad', () => {
 		const padName = uniquePadName('readonly-sync')
 		let shareId = ''
 		try {
-			const pad = await createPadAtPath(`/${padName}`, 'protected')
+			await createPadAtPath(`/${padName}`, 'protected')
 			const fileId = await propfindFileId(padName)
-			if (E2E.etherpadApi !== null) {
-				await etherpadApiPost('setText', { padID: padIdOfPadUrl(pad.padUrl), text: `not in the file yet ${padName}` })
-			}
 			shareId = (await createUserReadShare(padName, E2E.secondaryUser!)).id
 			const before = await getFileViaDav(padName)
 
