@@ -11,7 +11,7 @@
 #   tests/e2e/docker/test-upgrade.sh
 #
 # FROM_VERSION is the release to upgrade from, by default the last tag
-# before HEAD whose version the tree does not have. Its archive is fetched
+# before HEAD whose version the target does not have. Its archive is fetched
 # from the release, or taken from FROM_ARCHIVE, and checked against the
 # checksum pinned below either way. TO_ARCHIVE is a release archive to
 # upgrade to instead of the working tree. UPGRADE_WORK is a new or empty
@@ -130,9 +130,9 @@ if [[ -n "${FROM_VERSION:-}" ]]; then
 	from_version="$FROM_VERSION"
 else
 	from_tag="$(git -C "$repo" describe --tags --abbrev=0 --match 'v[0-9]*' HEAD)"
-	# A tree that still has the last release's version - its tagged commit,
-	# or one after it before the next version is set - upgrades from the
-	# release before it.
+	# Nextcloud finds nothing to update from a version to the same one, so
+	# a target - the tree, or TO_ARCHIVE - that still has the last release's
+	# version upgrades from the release before it.
 	if [[ "${from_tag#v}" == "$to_version" ]]; then
 		from_tag="$(git -C "$repo" describe --tags --abbrev=0 --match 'v[0-9]*' "$from_tag^")"
 	fi

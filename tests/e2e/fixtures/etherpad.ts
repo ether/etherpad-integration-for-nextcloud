@@ -13,11 +13,10 @@ import { E2E } from './env'
  * revocation therefore has to ask here.
  *
  * POST, not GET: a query string carries the api key into proxy and access
- * logs, and — with `trace: 'retain-on-failure'` — into the report CI
- * uploads as an artifact. EtherpadClient posts for the same reason. Not a
- * secret-safe channel either way, since a trace can hold the body too;
- * what makes it acceptable is the key, which comes from the checked-in
- * APIKEY.txt of a throwaway stack.
+ * logs. EtherpadClient posts for the same reason. Node's fetch, which this
+ * uses, stays out of Playwright's trace; a spec that asks Etherpad through
+ * request.newContext() puts the body there, key included
+ * (.env.e2e.example warns about that).
  */
 export const etherpadApiPost = async <T>(endpoint: string, form: Record<string, string>): Promise<T> => {
 	const api = E2E.etherpadApi

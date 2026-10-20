@@ -42,8 +42,11 @@ $EDITOR tests/e2e/.env.e2e
 Required: `E2E_BASE_URL`, `E2E_USER`, `E2E_PASS`, `E2E_APP_PASSWORD`
 (plus optional `E2E_LOGIN_URL`). The cross-user specs additionally need a
 second account — `E2E_USER2`, `E2E_USER2_PASS`, `E2E_USER2_APP_PASSWORD`;
-they skip cleanly when it isn't configured. See `.env.e2e.example` for
-what each one is for.
+they skip cleanly when it isn't configured. The cases that ask the pad
+server's API need `E2E_ETHERPAD_URL` and `E2E_ETHERPAD_API_KEY`; the URL
+alone already runs the session-cookie case, which asks Etherpad only
+`/health` and needs `E2E_USER` to be an admin.
+See `.env.e2e.example` for what each one is for.
 
 ## Run
 
@@ -91,9 +94,15 @@ tests/e2e/
 
 Selectors prefer stable hooks (NC `data-cy-*`, our own `data-testid`)
 over localized text so specs survive UI-language changes. Content checks
-usually go through the plugin's own HTTP endpoints + WebDAV rather than
-the Etherpad API or editor typing; the author-display-name spec is the
-one deliberate exception because it verifies the real Etherpad session UI.
+usually go through the plugin's own HTTP endpoints and WebDAV. A case that
+has to ask the pad server itself - setting a pad's text behind the file's
+back, deleting a pad in Etherpad, counting a group's sessions - uses the
+Etherpad API and skips without `E2E_ETHERPAD_URL` and
+`E2E_ETHERPAD_API_KEY`; the container stack sets both, and there their
+absence is an error. A few cases drive the real Etherpad editor where the
+editor is what they check: the author name it shows, that it takes no more
+changes after the trash, and that a public pad in the trash still takes
+them through its link.
 
 ### Browser noise
 
@@ -183,15 +192,16 @@ Each `specs/*.spec.ts` covers one flow:
 - **pad-lost** — a pad Etherpad has lost answers `pad_missing`, and a new
   pad is made from the file's content, in the API and in the viewer; a
   restore makes it at once. The file then counts the new pad's revisions,
-  and a forced sync never writes a pad made anew over it. Container stack
-  only (asks Etherpad).
+  and a forced sync never writes a pad made anew over it. Needs the
+  Etherpad API.
 - **pad-gone-for-good** — a pad goes once its file is deleted for good,
   however that happens, however the file is called by then, and however
   many at once; a file in a trash, a user's or a team folder's, keeps it;
   with `delete_pad_with_file` off the pads wait. The admin's handling of
-  vanished files too. What touches the whole instance runs only where
-  `E2E_THROWAWAY_STACK=1`, which the container stack's `up.sh` sets.
-  Container stack only; the team folder part needs
+  vanished files too. Deleting every vanished file's pad, and two exact
+  counts, run only where `E2E_THROWAWAY_STACK=1`, which the container
+  stack's `up.sh` sets.
+  Needs the Etherpad API; the team folder part needs
   groupfolders; makes and removes throwaway accounts, groups and team
   folders.
 - **pad-user-share** — user-to-user share grants access, revoke removes

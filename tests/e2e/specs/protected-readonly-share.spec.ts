@@ -4,11 +4,9 @@
  */
 import { test, expect } from '../fixtures/browser-noise'
 import {
-	closeViewer,
 	expectEtherpadViewerMounted,
 	expectFileInList,
 	expectReadOnlyPadViewerMounted,
-	gotoFiles,
 	gotoFilesDir,
 	gotoSharedWithMe,
 	openPadFromFileList,
@@ -27,7 +25,7 @@ import {
 	propfindFileId,
 } from '../fixtures/dav'
 import { etherpadApiPost, padIdOfPadUrl } from '../fixtures/etherpad'
-import { E2E } from '../fixtures/env'
+import { E2E, needsEtherpadApi } from '../fixtures/env'
 import { SECONDARY_STATE_FILE } from '../fixtures/auth'
 
 /**
@@ -42,46 +40,25 @@ import { SECONDARY_STATE_FILE } from '../fixtures/auth'
 test.describe('read-only share of a protected pad', () => {
 	test.describe.configure({ timeout: 180_000 })
 
-	// Two markers, because the point is which of them shows. The first is
-	// synced into the `.pad` file; the second is only ever on the pad
-	// server. A viewer reading the stored copy would show the first.
-	const syncedMarker = 'readonly-synced-8f3a1c'
-	const liveMarker = 'readonly-live-2b7e40'
-
-	test('shows what the pad says now, not an editable pad', async ({ page, browser, browserNoise }) => {
+	test('gives a reader this app\'s read-only view, not an editable pad', async ({ browser, browserNoise }) => {
 		test.skip(
 			!E2E.hasSecondaryBrowserAccount(),
 			'E2E_USER2 / E2E_USER2_PASS / E2E_USER2_APP_PASSWORD not configured; two-user spec skipped.',
 		)
 
-		const padName = uniquePadName('readonly-share')
+		const padName = uniquePadName('readonly-view')
 		let shareId = ''
 		const userBCtx = await browser.newContext({ storageState: SECONDARY_STATE_FILE })
 		browserNoise.watch(userBCtx)
 		try {
-			const pad = await createPadAtPath(`/${padName}`, 'protected')
-			const fileId = await propfindFileId(padName)
-
-			// Write one text and sync it into the `.pad` file, then change
-			// the pad and leave the file behind. Whichever marker appears
-			// says where the viewer read from.
-			const padId = padIdOfPadUrl(pad.padUrl)
-			await etherpadApiPost('setText', { padID: padId, text: syncedMarker })
-			const synced = await padApiPost(`pads/sync/${fileId}`)
-			expect(synced.status, JSON.stringify(synced.body)).toBe(200)
-			await etherpadApiPost('setText', { padID: padId, text: liveMarker })
-
+			await createPadAtPath(`/${padName}`, 'protected')
 			shareId = (await createUserReadShare(padName, E2E.secondaryUser!)).id
 
 			const userB = await userBCtx.newPage()
 			await gotoSharedWithMe(userB)
 			await expectFileInList(userB, padName)
 			await openPadFromFileList(userB, padName)
-			await expectReadOnlyPadViewerMounted(userB, liveMarker)
-			await expect(
-				userB.locator('.epnc-pad-doc').first(),
-				'the stored copy is a fallback that no longer exists',
-			).not.toContainText(syncedMarker)
+			await expectReadOnlyPadViewerMounted(userB)
 			await userB.close()
 		} finally {
 			if (shareId !== '') {
@@ -96,7 +73,7 @@ test.describe('read-only share of a protected pad', () => {
 	 * The control. Without it the test above would pass just as well for a
 	 * viewer that never opens a pad for anybody.
 	 */
-	test('still opens the pad when the same share may write', async ({ page, browser, browserNoise }) => {
+	test('still opens the pad when the same share may write', async ({ browser, browserNoise }) => {
 		test.skip(
 			!E2E.hasSecondaryBrowserAccount(),
 			'E2E_USER2 / E2E_USER2_PASS / E2E_USER2_APP_PASSWORD not configured; two-user spec skipped.',
@@ -128,17 +105,17 @@ test.describe('read-only share of a protected pad', () => {
 
 	/**
 	 * The viewer gives a reader no sync address, but the endpoint is there
-	 * all the same. The pad holds text the file does not, so a sync would
-	 * write into the file - which a reader may not.
+	 * all the same, and refuses a reader before it reads the pad. A fresh
+	 * pad's file holds no snapshot yet, so a sync would write one into it -
+	 * which a reader may not.
 	 */
 	test('refuses a sync to a reader of the share, and leaves the file as it was', async () => {
 		test.skip(!E2E.hasSecondaryAccount(), 'Needs a second account to share with.')
 		const padName = uniquePadName('readonly-sync')
 		let shareId = ''
 		try {
-			const pad = await createPadAtPath(`/${padName}`, 'protected')
+			await createPadAtPath(`/${padName}`, 'protected')
 			const fileId = await propfindFileId(padName)
-			await etherpadApiPost('setText', { padID: padIdOfPadUrl(pad.padUrl), text: `not in the file yet ${padName}` })
 			shareId = (await createUserReadShare(padName, E2E.secondaryUser!)).id
 			const before = await getFileViaDav(padName)
 
@@ -199,5 +176,58 @@ test.describe('read-only share of a protected pad', () => {
 			await deleteViaDav(`${folderName}/${padName}`).catch(() => {})
 			await deleteViaDav(folderName).catch(() => {})
 		}
+	})
+
+	// Writing into the pad behind the file's back needs the pad server's
+	// own API.
+	test.describe('on the pad server', () => {
+		test.skip(E2E.etherpadApi === null, needsEtherpadApi)
+
+		// Two markers, because the point is which of them shows. The first is
+		// synced into the `.pad` file; the second is only ever on the pad
+		// server. A viewer reading the stored copy would show the first.
+		const syncedMarker = 'readonly-synced-8f3a1c'
+		const liveMarker = 'readonly-live-2b7e40'
+
+		test('shows what the pad says now, not the copy stored in the file', async ({ browser, browserNoise }) => {
+			test.skip(
+				!E2E.hasSecondaryBrowserAccount(),
+				'E2E_USER2 / E2E_USER2_PASS / E2E_USER2_APP_PASSWORD not configured; two-user spec skipped.',
+			)
+
+			const padName = uniquePadName('readonly-share')
+			let shareId = ''
+			const userBCtx = await browser.newContext({ storageState: SECONDARY_STATE_FILE })
+			browserNoise.watch(userBCtx)
+			try {
+				const pad = await createPadAtPath(`/${padName}`, 'protected')
+				const fileId = await propfindFileId(padName)
+
+				const padId = padIdOfPadUrl(pad.padUrl)
+				await etherpadApiPost('setText', { padID: padId, text: syncedMarker })
+				const synced = await padApiPost(`pads/sync/${fileId}`)
+				expect(synced.status, JSON.stringify(synced.body)).toBe(200)
+				await etherpadApiPost('setText', { padID: padId, text: liveMarker })
+
+				shareId = (await createUserReadShare(padName, E2E.secondaryUser!)).id
+
+				const userB = await userBCtx.newPage()
+				await gotoSharedWithMe(userB)
+				await expectFileInList(userB, padName)
+				await openPadFromFileList(userB, padName)
+				await expectReadOnlyPadViewerMounted(userB, liveMarker)
+				await expect(
+					userB.locator('.epnc-pad-doc').first(),
+					'the stored copy is a fallback that no longer exists',
+				).not.toContainText(syncedMarker)
+				await userB.close()
+			} finally {
+				if (shareId !== '') {
+					await deleteShareById(shareId).catch(() => {})
+				}
+				await userBCtx.close()
+				await deleteViaDav(padName).catch(() => {})
+			}
+		})
 	})
 })

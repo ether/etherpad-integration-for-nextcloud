@@ -7,7 +7,7 @@
 
 import { request as playwrightRequest, type APIRequestContext, type APIResponse, type BrowserContext } from '@playwright/test'
 import { test, expect } from '../fixtures/browser-noise'
-import { E2E } from '../fixtures/env'
+import { E2E, needsEtherpadApi } from '../fixtures/env'
 import { etherpadApiPost, padIdOfPadUrl } from '../fixtures/etherpad'
 import {
 	gotoFiles,
@@ -344,7 +344,7 @@ test.describe('public folder share with confusable file names', () => {
  * session, which would let them edit whatever the share said.
  */
 test.describe('a read-only public link to a protected pad', () => {
-	test.skip(E2E.etherpadApi === null, 'Needs E2E_ETHERPAD_URL and E2E_ETHERPAD_API_KEY; only the container stack has them.')
+	test.skip(E2E.etherpadApi === null, needsEtherpadApi)
 	const name = uniquePadName('public-readonly-protected')
 	let token = ''
 
@@ -403,7 +403,7 @@ test.describe('a read-only public link to a protected pad', () => {
  * out beside the ones Nextcloud sends, not over them.
  */
 test.describe('a writable public link to a protected pad', () => {
-	test.skip(E2E.etherpadApi === null, 'Needs E2E_ETHERPAD_URL and E2E_ETHERPAD_API_KEY; only the container stack has them.')
+	test.skip(E2E.etherpadApi === null, needsEtherpadApi)
 
 	test('hands a visitor one Etherpad session of their own, and a new one when Etherpad drops it', async ({ browser, browserNoise }) => {
 		const name = uniquePadName('public-writable-protected')

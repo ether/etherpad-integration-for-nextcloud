@@ -3,7 +3,7 @@
  * Copyright (c) 2026 Jacob Bühler
  */
 import { test, expect } from '../fixtures/browser-noise'
-import { E2E } from '../fixtures/env'
+import { E2E, needsEtherpadApi } from '../fixtures/env'
 import {
 	closeViewer,
 	gotoFiles,
@@ -73,7 +73,7 @@ test.describe('pad trash + restore', () => {
  * writer is Etherpad's, and Etherpad 2 does not.
  */
 test.describe('an editor open while its file goes to the trash', () => {
-	test.skip(E2E.etherpadApi === null, 'Needs E2E_ETHERPAD_URL and E2E_ETHERPAD_API_KEY; only the container stack has them.')
+	test.skip(E2E.etherpadApi === null, needsEtherpadApi)
 
 	test('a protected pad takes no more changes from it once its file is in the trash', async ({ page }) => {
 		const name = uniquePadName('trash-open-editor')

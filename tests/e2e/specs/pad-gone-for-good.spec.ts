@@ -3,7 +3,7 @@
  * Copyright (c) 2026 Jacob Bühler
  */
 import { test, expect } from '../fixtures/browser-noise'
-import { E2E } from '../fixtures/env'
+import { E2E, needsEtherpadApi } from '../fixtures/env'
 import {
 	createPadAtPath,
 	deleteViaDav,
@@ -33,18 +33,16 @@ import {
 } from '../fixtures/admin-api'
 import { typeInEtherpadPage, uniqueName, uniquePadName } from '../fixtures/nextcloud'
 
-/**
+/*
  * A pad goes once its `.pad` file is deleted for good, however that
  * happens: past the trash, from the trash, or with the account that owned
  * it (docs/deleting-pads.md), and whatever the file is called by then. A
  * file still in a trash keeps its pad.
  *
  * Whether a pad is gone only Etherpad can say, so these run where the
- * spec knows Etherpad's API: the container stack. What the background
- * jobs do within minutes, the admin's settle runs at once.
+ * suite has Etherpad's API (needsEtherpadApi). What the background jobs
+ * do within minutes, the admin's settle runs at once.
  */
-
-const needsEtherpadApi = 'Needs E2E_ETHERPAD_URL and E2E_ETHERPAD_API_KEY; only the container stack has them.'
 
 /** What the background jobs do within minutes, run now; its answer. */
 const settle = async (): Promise<{ checked: number, settled: number, pending_delete_count: number }> => {
