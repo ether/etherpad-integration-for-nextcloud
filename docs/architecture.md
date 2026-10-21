@@ -386,12 +386,14 @@ listing whole.
 - An install, an app update and `occ maintenance:repair` read the whole
   file cache until a repair has once finished with
   `config/mimetypemapping.json` mapping `.pad` to the app's MIME type
-  (`pad_files_typed` in the app config), and again wherever the mapping is
-  missing - another app's, a config directory that lost it. The repair is
+  (`pad_files_mime_version` in the app config, raised when the repair
+  changes), and again wherever the mapping is missing - another app's, a
+  config directory that lost it. The mapping read is that of the server
+  that runs the repair: with several web servers, each needs it. The repair is
   one statement without an index: the MIME type and its part on every
   name ending in `.pad` that lacks either (`LIKE '%.pad'`). Otherwise they
   read none: with the mapping in place, Nextcloud types each `.pad` file it
-  adds. Deleting `pad_files_typed` makes the next repair run again.
+  adds. Deleting `pad_files_mime_version` makes the next repair run again.
 
 ### What grows without a bound
 

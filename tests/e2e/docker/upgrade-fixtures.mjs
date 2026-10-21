@@ -225,8 +225,8 @@ const readTarget = (root) => {
 		jobs: [...info.matchAll(/<job>([^<]+)<\/job>/g)].map((match) => match[1]),
 		/** @param {string} name */
 		hasClass: (name) => existsSync(join(root, 'lib', ...name.replace(/^OCA\\EtherpadNextcloud\\/, '').split('\\')) + '.php'),
-		/** Whether its repair of the .pad files' MIME type marks itself done. */
-		marksPadFilesTyped: readFileSync(join(root, 'lib/Service/AppConfigService.php'), 'utf8').includes("'pad_files_typed'"),
+		/** The version its repair of the .pad files' MIME type records, 0 for none. */
+		padFilesMimeVersion: Number(readFileSync(join(root, 'lib/Migration/RegisterMimeType.php'), 'utf8').match(/REPAIR_VERSION = (\d+);/)?.[1] ?? 0),
 	}
 }
 
@@ -309,10 +309,10 @@ if (phase === 'seed') {
 		MIGRATIONS[version](expected)
 	}
 	expected.settings.installed_version = target.version
-	// Not a migration's: the repair of the .pad files' MIME type sets it on
-	// the first update that runs it, and keeps it.
-	if (target.marksPadFilesTyped) {
-		expected.settings.pad_files_typed = 'yes'
+	// Not a migration's: the repair of the .pad files' MIME type records it
+	// on the first update that runs it, and keeps it.
+	if (target.padFilesMimeVersion > 0) {
+		expected.settings.pad_files_mime_version = String(target.padFilesMimeVersion)
 	}
 	expected.indexes.sort()
 

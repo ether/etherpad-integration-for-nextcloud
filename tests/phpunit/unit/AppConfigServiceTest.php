@@ -66,14 +66,14 @@ class AppConfigServiceTest extends TestCase {
 		}
 	}
 
-	/** Kept lazy: the repair step reads it, no request does. */
-	public function testThePadFilesTypedMarkIsLazyAndReadAsSet(): void {
+	/** Kept lazy and as a number: the repair step reads it, no request does. */
+	public function testThePadFilesMimeVersionIsLazyAndReadAsRecorded(): void {
 		$stored = [];
 		$appConfig = $this->createMock(IAppConfig::class);
-		$appConfig->method('getValueString')->willReturnCallback(static function (string $app, string $key, string $default = '', bool $lazy = false) use (&$stored): string {
+		$appConfig->method('getValueInt')->willReturnCallback(static function (string $app, string $key, int $default = 0, bool $lazy = false) use (&$stored): int {
 			return $stored[$app . '/' . $key . '/' . ($lazy ? 'lazy' : 'eager')] ?? $default;
 		});
-		$appConfig->method('setValueString')->willReturnCallback(static function (string $app, string $key, string $value, bool $lazy = false) use (&$stored): bool {
+		$appConfig->method('setValueInt')->willReturnCallback(static function (string $app, string $key, int $value, bool $lazy = false) use (&$stored): bool {
 			$stored[$app . '/' . $key . '/' . ($lazy ? 'lazy' : 'eager')] = $value;
 			return true;
 		});
@@ -82,12 +82,12 @@ class AppConfigServiceTest extends TestCase {
 		});
 		$service = $this->service($this->createMock(IConfig::class), $appConfig);
 
-		$this->assertFalse($service->arePadFilesTyped());
-		$service->markPadFilesTyped();
-		$this->assertTrue($service->arePadFilesTyped());
-		$this->assertSame(['etherpad_nextcloud/pad_files_typed/lazy' => 'yes'], $stored);
-		$service->unmarkPadFilesTyped();
-		$this->assertFalse($service->arePadFilesTyped());
+		$this->assertSame(0, $service->padFilesMimeVersion());
+		$service->recordPadFilesMimeVersion(1);
+		$this->assertSame(1, $service->padFilesMimeVersion());
+		$this->assertSame(['etherpad_nextcloud/pad_files_mime_version/lazy' => 1], $stored);
+		$service->forgetPadFilesMimeVersion();
+		$this->assertSame(0, $service->padFilesMimeVersion());
 	}
 
 	/** The test fault of 1.1.0-beta.1 goes with its faults. */

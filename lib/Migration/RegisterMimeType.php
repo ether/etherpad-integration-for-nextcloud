@@ -20,9 +20,24 @@ use OCP\Migration\IOutput;
 use OCP\Migration\IRepairStep;
 
 /**
+ * Registers .pad files: their mapping, alias and name in the config
+ * directory, as the admin manual has it for a MIME type of one's own
+ * (https://docs.nextcloud.com/server/stable/admin_manual/configuration_mimetypes/index.html),
+ * and their type on the files the file cache has already.
+ *
+ * It runs on every enable of the app (install) and after every update and
+ * every `occ maintenance:repair` (post-migration; see
+ * https://docs.nextcloud.com/server/stable/developer_manual/digging_deeper/repair.html).
+ * The repair of the file cache reads all of it, so it keeps the version
+ * that last finished and runs again only for a newer one, as Nextcloud's
+ * own RepairMimeTypes does, or where the mapping is missing.
+ *
  * @psalm-api
  */
 class RegisterMimeType implements IRepairStep {
+	/** Raised when the repair of the file cache changes, so that it runs once more. */
+	public const REPAIR_VERSION = 1;
+
 	/**
 	 * A text document, not an office one: aliasing onto x-office/document
 	 * would also file pads under the Files type filter's "Documents", and
@@ -66,13 +81,13 @@ class RegisterMimeType implements IRepairStep {
 		// mapping is missing - a file added without it came in untyped.
 		$mappedBefore = $this->isMapped($mappingFile, $mapping);
 		if (!$mappedBefore) {
-			$this->appConfig->unmarkPadFilesTyped();
+			$this->appConfig->forgetPadFilesMimeVersion();
 		}
 		$repaired = false;
-		if ($this->appConfig->arePadFilesTyped()) {
+		if ($this->appConfig->padFilesMimeVersion() >= self::REPAIR_VERSION) {
 			$output->info(sprintf(
 				'The .pad files were typed already; the file cache was not scanned. To scan it again, delete the app config value %s and run the repair.',
-				AppConfigService::PAD_FILES_TYPED,
+				AppConfigService::PAD_FILES_MIME_VERSION,
 			));
 		} else {
 			try {
@@ -102,7 +117,7 @@ class RegisterMimeType implements IRepairStep {
 		// Only after a repair the mapping was in place for: a file added
 		// while it was missing came in untyped, and the next run scans again.
 		if ($repaired && $mappedBefore) {
-			$this->appConfig->markPadFilesTyped();
+			$this->appConfig->recordPadFilesMimeVersion(self::REPAIR_VERSION);
 		}
 
 		$output->info($complete
