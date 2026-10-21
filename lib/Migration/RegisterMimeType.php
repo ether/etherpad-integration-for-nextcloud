@@ -13,7 +13,9 @@ use OCA\EtherpadNextcloud\Service\AppConfigService;
 use OCA\EtherpadNextcloud\Util\PadFileType;
 use OCP\App\AppPathNotFoundException;
 use OCP\App\IAppManager;
+use OCP\DB\QueryBuilder\IQueryBuilder;
 use OCP\Files\IMimeTypeLoader;
+use OCP\IDBConnection;
 use OCP\Migration\IOutput;
 use OCP\Migration\IRepairStep;
 
@@ -37,7 +39,7 @@ class RegisterMimeType implements IRepairStep {
 	public function __construct(
 		private IMimeTypeLoader $mimeTypeLoader,
 		private IAppManager $appManager,
-		private BackfillPadMimeType $mimePartBackfill,
+		private IDBConnection $db,
 		private AppConfigService $appConfig,
 	) {
 	}
@@ -58,17 +60,27 @@ class RegisterMimeType implements IRepairStep {
 
 		// The file cache is repaired before the mapping is written, so that an
 		// unwritable config directory cannot keep the existing .pad files from
-		// opening. The repair reads the whole file cache: it runs until it has
-		// once finished, and again wherever the mapping is missing - files
-		// added meanwhile came in untyped.
-		$mimeTypeId = $this->mimeTypeLoader->getId(PadFileType::MIME);
-		if ($this->appConfig->arePadFilesTyped() && $this->isMapped($mappingFile, $mapping)) {
-			$output->info('The .pad files were typed already; the file cache was not scanned.');
+		// opening, and a failed repair does not keep the mapping from being
+		// written. The repair reads the whole file cache: it runs until it has
+		// once finished with the mapping in place, and again wherever the
+		// mapping is missing - a file added without it came in untyped.
+		$mappedBefore = $this->isMapped($mappingFile, $mapping);
+		if (!$mappedBefore) {
+			$this->appConfig->unmarkPadFilesTyped();
+		}
+		$repaired = false;
+		if ($this->appConfig->arePadFilesTyped()) {
+			$output->info(sprintf(
+				'The .pad files were typed already; the file cache was not scanned. To scan it again, delete the app config value %s and run the repair.',
+				AppConfigService::PAD_FILES_TYPED,
+			));
 		} else {
-			$this->mimeTypeLoader->updateFilecache(PadFileType::EXTENSION, $mimeTypeId);
-			// updateFilecache() sets the MIME type and leaves the MIME part.
-			$this->mimePartBackfill->run($output);
-			$this->appConfig->markPadFilesTyped();
+			try {
+				$output->info(sprintf('Gave %d .pad files their MIME type.', $this->typePadFiles()));
+				$repaired = true;
+			} catch (\Exception $e) {
+				$output->warning('Could not give the .pad files their MIME type; the next update tries again: ' . $e->getMessage());
+			}
 		}
 
 		$this->appendToJsonFile($mappingFile, $mapping);
@@ -87,9 +99,44 @@ class RegisterMimeType implements IRepairStep {
 		) && $complete;
 		$complete = $this->removeLegacyCoreIcon($output) && $complete;
 
+		// Only after a repair the mapping was in place for: a file added
+		// while it was missing came in untyped, and the next run scans again.
+		if ($repaired && $mappedBefore) {
+			$this->appConfig->markPadFilesTyped();
+		}
+
 		$output->info($complete
 			? 'Registered .pad files.'
 			: 'Registered .pad files, but some of it was skipped - see the warnings above.');
+	}
+
+	/**
+	 * Sets the pad MIME type and its part on every file named *.pad that
+	 * lacks either, in one statement: it reads the whole file cache, as no
+	 * index serves a suffix.
+	 *
+	 * @return int the rows it changed
+	 */
+	private function typePadFiles(): int {
+		$typeId = $this->mimeTypeLoader->getId(PadFileType::MIME);
+		$partId = $this->mimeTypeLoader->getId(explode('/', PadFileType::MIME, 2)[0]);
+		$folderId = $this->mimeTypeLoader->getId('httpd/unix-directory');
+
+		$qb = $this->db->getQueryBuilder();
+		$qb->update('filecache')
+			->set('mimetype', $qb->createNamedParameter($typeId, IQueryBuilder::PARAM_INT))
+			->set('mimepart', $qb->createNamedParameter($partId, IQueryBuilder::PARAM_INT))
+			->where($qb->expr()->like(
+				$qb->func()->lower('name'),
+				$qb->createNamedParameter('%' . $this->db->escapeLikeParameter(PadFileType::SUFFIX)),
+			))
+			->andWhere($qb->expr()->neq('mimetype', $qb->createNamedParameter($folderId, IQueryBuilder::PARAM_INT)))
+			->andWhere($qb->expr()->orX(
+				$qb->expr()->neq('mimetype', $qb->createNamedParameter($typeId, IQueryBuilder::PARAM_INT)),
+				$qb->expr()->neq('mimepart', $qb->createNamedParameter($partId, IQueryBuilder::PARAM_INT)),
+			));
+
+		return $qb->executeStatement();
 	}
 
 	/**

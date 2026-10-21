@@ -114,12 +114,6 @@
       <code><![CDATA[(string)($result['reason'] ?? 'unknown')]]></code>
     </RedundantCastGivenDocblockType>
   </file>
-  <file src="lib/Migration/BackfillPadMimeType.php">
-    <MixedAssignment>
-      <code><![CDATA[$found]]></code>
-      <code><![CDATA[$rawValue]]></code>
-    </MixedAssignment>
-  </file>
   <file src="lib/Migration/RegisterMimeType.php">
     <MixedAssignment>
       <code><![CDATA[$decoded]]></code>

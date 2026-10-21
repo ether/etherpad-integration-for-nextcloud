@@ -384,14 +384,14 @@ listing whole.
   allows the Etherpad host as a frame source.
 - Every delete and restore makes the queries above.
 - An install, an app update and `occ maintenance:repair` read the whole
-  file cache until that repair has once finished (`pad_files_typed` in
-  the app config), and again wherever `config/mimetypemapping.json` does
-  not map `.pad` to the app's MIME type - a mapping another app made, a
-  config directory that lost it. Then three statements without an index
-  set the MIME type on every name ending in `.pad`
-  (`IMimeTypeLoader::updateFilecache()`, `LIKE '%.pad'`), backfill its
-  MIME part, and probe for any pad file. Otherwise they read none: with
-  the mapping in place, Nextcloud types each `.pad` file it adds.
+  file cache until a repair has once finished with
+  `config/mimetypemapping.json` mapping `.pad` to the app's MIME type
+  (`pad_files_typed` in the app config), and again wherever the mapping is
+  missing - another app's, a config directory that lost it. The repair is
+  one statement without an index: the MIME type and its part on every
+  name ending in `.pad` that lacks either (`LIKE '%.pad'`). Otherwise they
+  read none: with the mapping in place, Nextcloud types each `.pad` file it
+  adds. Deleting `pad_files_typed` makes the next repair run again.
 
 ### What grows without a bound
 

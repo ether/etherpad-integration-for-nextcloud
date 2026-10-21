@@ -17,9 +17,9 @@ namespace OCA\EtherpadNextcloud\Util;
  * `.PAD` from a desktop client or a WebDAV upload, and the mount the file
  * arrives on decides how the name is cased.
  *
- * The two answers can disagree: a file uploaded before the mime type was
- * registered is a pad by name and not by type until the backfill repair
- * step runs.
+ * The two answers can disagree: a file that came in while the MIME type
+ * was not mapped is a pad by name and not by type until RegisterMimeType's
+ * repair types it.
  */
 final class PadFileType {
 	/** Without the dot, which is how Nextcloud's mime mapping names it. */

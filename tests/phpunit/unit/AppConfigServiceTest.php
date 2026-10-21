@@ -77,12 +77,17 @@ class AppConfigServiceTest extends TestCase {
 			$stored[$app . '/' . $key . '/' . ($lazy ? 'lazy' : 'eager')] = $value;
 			return true;
 		});
+		$appConfig->method('deleteKey')->willReturnCallback(static function (string $app, string $key) use (&$stored): void {
+			unset($stored[$app . '/' . $key . '/lazy'], $stored[$app . '/' . $key . '/eager']);
+		});
 		$service = $this->service($this->createMock(IConfig::class), $appConfig);
 
 		$this->assertFalse($service->arePadFilesTyped());
 		$service->markPadFilesTyped();
 		$this->assertTrue($service->arePadFilesTyped());
 		$this->assertSame(['etherpad_nextcloud/pad_files_typed/lazy' => 'yes'], $stored);
+		$service->unmarkPadFilesTyped();
+		$this->assertFalse($service->arePadFilesTyped());
 	}
 
 	/** The test fault of 1.1.0-beta.1 goes with its faults. */

@@ -4,13 +4,14 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Tests\Unit;
 
-use OCA\EtherpadNextcloud\Migration\BackfillPadMimeType;
 use OCA\EtherpadNextcloud\Migration\RegisterMimeType;
 use OCA\EtherpadNextcloud\Service\AppConfigService;
 use OCA\EtherpadNextcloud\Util\PadFileType;
 use OCP\App\AppPathNotFoundException;
 use OCP\App\IAppManager;
+use OCP\DB\QueryBuilder\IQueryBuilder;
 use OCP\Files\IMimeTypeLoader;
+use OCP\IDBConnection;
 use OCP\Migration\IOutput;
 use PHPUnit\Framework\TestCase;
 
@@ -20,6 +21,9 @@ class RegisterMimeTypeTest extends TestCase {
 	private string $appDir;
 	private mixed $previousServerRoot;
 	private mixed $previousConfigDir;
+	private RegisterMimeTypeTestDb $db;
+	/** pad_files_typed, as the app config would keep it */
+	private bool $typed = false;
 
 	protected function setUp(): void {
 		parent::setUp();
@@ -40,6 +44,7 @@ class RegisterMimeTypeTest extends TestCase {
 		$this->previousConfigDir = \OC::$configDir;
 		\OC::$SERVERROOT = $this->root;
 		\OC::$configDir = $this->configDir;
+		$this->db = new RegisterMimeTypeTestDb();
 	}
 
 	protected function tearDown(): void {
@@ -51,21 +56,8 @@ class RegisterMimeTypeTest extends TestCase {
 	}
 
 	public function testRegistersTheCompleteMimeConfigurationOnAFirstRun(): void {
-		$mimeTypeLoader = $this->createMock(IMimeTypeLoader::class);
-		$mimeTypeLoader->expects(self::once())
-			->method('getId')
-			->with(PadFileType::MIME)
-			->willReturn(42);
-		$mimeTypeLoader->expects(self::once())
-			->method('updateFilecache')
-			->with(PadFileType::EXTENSION, 42);
-		$backfill = $this->createMock(BackfillPadMimeType::class);
-		$backfill->expects(self::once())->method('run');
-		$appConfig = $this->appConfig(false);
-		$appConfig->expects(self::once())->method('markPadFilesTyped');
-
 		$output = new RegisterMimeTypeTestOutput();
-		$this->step($mimeTypeLoader, null, $backfill, $appConfig)->run($output);
+		$this->step()->run($output);
 
 		$this->assertSame(
 			[PadFileType::MIME],
@@ -81,56 +73,83 @@ class RegisterMimeTypeTest extends TestCase {
 		);
 		// Core is signed; nothing of ours belongs in it.
 		$this->assertFileDoesNotExist($this->root . '/core/img/filetypes/etherpad-nextcloud-pad.svg');
+		$this->assertCount(1, $this->db->statements);
 		$this->assertSame([], $output->warnings);
+		$this->assertContains('Gave 3 .pad files their MIME type.', $output->infos);
 		$this->assertContains('Registered .pad files.', $output->infos);
-		$this->assertNotContains('The .pad files were typed already; the file cache was not scanned.', $output->infos);
+	}
+
+	/** One statement sets the type and its part, on the files that lack either. */
+	public function testTypesThePadFilesInOneStatement(): void {
+		$this->step()->run(new RegisterMimeTypeTestOutput());
+
+		$statement = $this->db->statements[0];
+		$this->assertSame('filecache', $statement->table);
+		$this->assertSame(['mimetype' => 42, 'mimepart' => 7], $statement->sets);
+		$this->assertSame([
+			"LOWER(name) LIKE '%.pad'",
+			'mimetype <> 2',
+			'(mimetype <> 42 OR mimepart <> 7)',
+		], $statement->conditions);
 	}
 
 	/**
-	 * The scan reads the whole file cache, so once it has finished it runs
-	 * again only where the mapping is not in place - another app's, or a
-	 * config directory that lost it.
+	 * The scan reads the whole file cache, so it runs until one has finished
+	 * with the mapping in place: on a first install the mapping comes with
+	 * the scan, and a file added meanwhile came in untyped.
 	 */
-	public function testScansTheFileCacheUntilItHasOnceFinishedAndWhereTheMappingIsMissing(): void {
+	public function testScansUntilAScanWithTheMappingInPlaceFinished(): void {
+		$output = new RegisterMimeTypeTestOutput();
+		$this->step()->run($output);
+		$this->assertSame([1, false], [count($this->db->statements), $this->typed], 'a first install');
+
+		$this->step()->run(new RegisterMimeTypeTestOutput());
+		$this->assertSame([2, true], [count($this->db->statements), $this->typed], 'the first update');
+
+		$output = new RegisterMimeTypeTestOutput();
+		$this->step()->run($output);
+		$this->assertSame([2, true], [count($this->db->statements), $this->typed], 'every update after it');
+		$this->assertContains('The .pad files were typed already; the file cache was not scanned. To scan it again, delete the app config value pad_files_typed and run the repair.', $output->infos);
+	}
+
+	/** Without the mapping, files come in untyped: it is scanned for again. */
+	public function testScansAgainWhereTheMappingIsMissingOrAnotherAppsAndForgetsItWasDone(): void {
 		foreach ([
-			'typed and mapped' => [true, [PadFileType::EXTENSION => [PadFileType::MIME]], 0],
-			'mapped, not typed yet' => [false, [PadFileType::EXTENSION => [PadFileType::MIME]], 1],
-			'typed, mapped to another type' => [true, ['pad' => ['application/x-ownpad']], 1],
-			'typed, mapping file lost' => [true, null, 1],
-		] as $case => [$typed, $mapping, $scans]) {
+			'mapped to another type' => ['pad' => ['application/x-ownpad']],
+			'mapping file lost' => null,
+		] as $case => $mapping) {
 			@unlink($this->configDir . '/mimetypemapping.json');
 			if ($mapping !== null) {
 				$this->writeJson('mimetypemapping.json', $mapping);
 			}
-			$mimeTypeLoader = $this->createMock(IMimeTypeLoader::class);
-			$mimeTypeLoader->method('getId')->willReturn(42);
-			$mimeTypeLoader->expects(self::exactly($scans))->method('updateFilecache');
-			$backfill = $this->createMock(BackfillPadMimeType::class);
-			$backfill->expects(self::exactly($scans))->method('run');
-			$appConfig = $this->appConfig($typed);
-			$appConfig->expects(self::exactly($scans))->method('markPadFilesTyped');
-			$output = new RegisterMimeTypeTestOutput();
+			$this->db = new RegisterMimeTypeTestDb();
+			$this->typed = true;
 
-			$this->step($mimeTypeLoader, null, $backfill, $appConfig)->run($output);
+			$this->step()->run(new RegisterMimeTypeTestOutput());
 
+			$this->assertCount(1, $this->db->statements, $case);
+			$this->assertFalse($this->typed, $case);
 			$this->assertSame([PadFileType::MIME], $this->jsonFile('mimetypemapping.json')[PadFileType::EXTENSION], $case);
-			$this->assertSame($scans === 0, in_array('The .pad files were typed already; the file cache was not scanned.', $output->infos, true), $case);
 		}
 	}
 
-	/** A repair that did not finish is not taken for one that did. */
-	public function testABackfillThatFailsLeavesTheFileCacheToBeScannedAgain(): void {
-		$backfill = $this->createMock(BackfillPadMimeType::class);
-		$backfill->method('run')->willThrowException(new \RuntimeException('the database went away'));
-		$appConfig = $this->appConfig(false);
-		$appConfig->expects(self::never())->method('markPadFilesTyped');
+	/**
+	 * A repair that fails, on a lock timeout say, does not keep the mapping
+	 * from being written, and is not taken for one that finished.
+	 */
+	public function testAFailedRepairStillWritesTheMappingAndIsTriedAgain(): void {
+		$this->writeJson('mimetypemapping.json', [PadFileType::EXTENSION => [PadFileType::MIME]]);
+		$this->db->failure = new \RuntimeException('lock wait timeout');
+		$output = new RegisterMimeTypeTestOutput();
 
-		try {
-			$this->step(null, null, $backfill, $appConfig)->run(new RegisterMimeTypeTestOutput());
-			self::fail('A failed backfill must fail the step.');
-		} catch (\RuntimeException $e) {
-			$this->assertSame('the database went away', $e->getMessage());
-		}
+		$this->step()->run($output);
+
+		$this->assertFalse($this->typed);
+		$this->assertCount(1, $output->warnings);
+		$this->assertStringContainsString('Could not give the .pad files their MIME type', $output->warnings[0]);
+		$this->assertStringContainsString('lock wait timeout', $output->warnings[0]);
+		$this->assertSame('text', $this->jsonFile('mimetypealiases.json')[PadFileType::MIME]);
+		$this->assertSame('Etherpad', $this->jsonFile('mimetypenames.json')[PadFileType::MIME]);
 	}
 
 	public function testPreservesUnrelatedConfigurationAndIsIdempotent(): void {
@@ -165,19 +184,20 @@ class RegisterMimeTypeTest extends TestCase {
 
 	public function testRejectsInvalidRequiredConfigurationWithoutReportingSuccess(): void {
 		file_put_contents($this->configDir . '/mimetypemapping.json', '{invalid');
-		$mimeTypeLoader = $this->createMock(IMimeTypeLoader::class);
-		$mimeTypeLoader->method('getId')->willReturn(42);
-		$mimeTypeLoader->expects(self::once())->method('updateFilecache');
+		$this->typed = true;
 		$output = new RegisterMimeTypeTestOutput();
 
 		try {
-			$this->step($mimeTypeLoader)->run($output);
+			$this->step()->run($output);
 			self::fail('Invalid required MIME configuration must abort registration.');
 		} catch (\RuntimeException $e) {
 			$this->assertStringContainsString('contains invalid JSON', $e->getMessage());
 		}
 
-		$this->assertSame([], $output->infos);
+		// Scanned for, as a file that cannot be read maps nothing.
+		$this->assertCount(1, $this->db->statements);
+		$this->assertFalse($this->typed);
+		$this->assertNotContains('Registered .pad files.', $output->infos);
 	}
 
 	public function testAlreadyCorrectReadOnlyConfigurationSucceeds(): void {
@@ -221,19 +241,19 @@ class RegisterMimeTypeTest extends TestCase {
 
 	public function testARequiredWriteFailureAbortsRegistration(): void {
 		\OC::$configDir = '/dev/null';
-		$mimeTypeLoader = $this->createMock(IMimeTypeLoader::class);
-		$mimeTypeLoader->method('getId')->willReturn(42);
-		$mimeTypeLoader->expects(self::once())->method('updateFilecache');
 		$output = new RegisterMimeTypeTestOutput();
 
 		try {
-			$this->step($mimeTypeLoader)->run($output);
+			$this->step()->run($output);
 			self::fail('A failed required write must abort registration.');
 		} catch (\RuntimeException $e) {
 			$this->assertStringContainsString('Could not write MIME configuration file', $e->getMessage());
 		}
 
-		$this->assertSame([], $output->infos);
+		// The file cache is repaired first, so an unwritable config
+		// directory does not keep existing files from opening.
+		$this->assertCount(1, $this->db->statements);
+		$this->assertNotContains('Registered .pad files.', $output->infos);
 	}
 
 	public function testRejectsAJsonListWhereAMappingObjectIsRequired(): void {
@@ -345,20 +365,19 @@ class RegisterMimeTypeTest extends TestCase {
 		$class = 'OCA\\EtherpadNextcloud\\Migration\\RegisterMimeType';
 		$this->assertStringContainsString($class, $install[1]);
 		$this->assertStringContainsString($class, $postMigration[1]);
-		// RegisterMimeType runs it after its scan; on its own it would read
-		// the whole file cache on every update.
-		$this->assertStringNotContainsString('BackfillPadMimeType', $infoXml);
 	}
 
 	private function step(
 		?IMimeTypeLoader $mimeTypeLoader = null,
 		?IAppManager $appManager = null,
-		?BackfillPadMimeType $backfill = null,
-		?AppConfigService $appConfig = null,
 	): RegisterMimeType {
 		if ($mimeTypeLoader === null) {
 			$mimeTypeLoader = $this->createStub(IMimeTypeLoader::class);
-			$mimeTypeLoader->method('getId')->willReturn(42);
+			$mimeTypeLoader->method('getId')->willReturnCallback(static fn (string $mime): int => [
+				PadFileType::MIME => 42,
+				'application' => 7,
+				'httpd/unix-directory' => 2,
+			][$mime] ?? 99);
 		}
 
 		if ($appManager === null) {
@@ -369,15 +388,21 @@ class RegisterMimeTypeTest extends TestCase {
 		return new RegisterMimeType(
 			$mimeTypeLoader,
 			$appManager,
-			$backfill ?? $this->createStub(BackfillPadMimeType::class),
-			$appConfig ?? $this->appConfig(false),
+			$this->db,
+			$this->appConfig(),
 		);
 	}
 
-	/** @return AppConfigService&\PHPUnit\Framework\MockObject\MockObject */
-	private function appConfig(bool $typed): AppConfigService {
-		$appConfig = $this->createMock(AppConfigService::class);
-		$appConfig->method('arePadFilesTyped')->willReturn($typed);
+	/** The app config's pad_files_typed, kept in $this->typed. */
+	private function appConfig(): AppConfigService {
+		$appConfig = $this->createStub(AppConfigService::class);
+		$appConfig->method('arePadFilesTyped')->willReturnCallback(fn (): bool => $this->typed);
+		$appConfig->method('markPadFilesTyped')->willReturnCallback(function (): void {
+			$this->typed = true;
+		});
+		$appConfig->method('unmarkPadFilesTyped')->willReturnCallback(function (): void {
+			$this->typed = false;
+		});
 
 		return $appConfig;
 	}
@@ -459,5 +484,103 @@ class RegisterMimeTypeTestOutput implements IOutput {
 	}
 
 	public function finishProgress(): void {
+	}
+}
+
+/** The statements a test runs, written out as SQL fragments to compare. */
+class RegisterMimeTypeTestDb implements IDBConnection {
+	/** @var list<RegisterMimeTypeTestQuery> */
+	public array $statements = [];
+	public ?\Exception $failure = null;
+
+	public function getQueryBuilder(): IQueryBuilder {
+		return new RegisterMimeTypeTestQuery($this);
+	}
+
+	public function escapeLikeParameter(string $param): string {
+		return addcslashes($param, '\\_%');
+	}
+}
+
+class RegisterMimeTypeTestQuery implements IQueryBuilder {
+	public ?string $table = null;
+	/** @var array<string,mixed> */
+	public array $sets = [];
+	/** @var list<string> */
+	public array $conditions = [];
+	/** @var array<string,mixed> */
+	private array $params = [];
+
+	public function __construct(private RegisterMimeTypeTestDb $db) {
+	}
+
+	public function update(string $table): self {
+		$this->table = $table;
+		return $this;
+	}
+
+	public function set(string $field, string $parameter): self {
+		$this->sets[$field] = $this->params[$parameter];
+		return $this;
+	}
+
+	public function where(string $condition): self {
+		$this->conditions[] = $condition;
+		return $this;
+	}
+
+	public function andWhere(string $condition): self {
+		$this->conditions[] = $condition;
+		return $this;
+	}
+
+	public function createNamedParameter(mixed $value, ?int $type = null): string {
+		$name = ':p' . count($this->params);
+		$this->params[$name] = $value;
+		return $name;
+	}
+
+	public function value(string $parameter): string {
+		$value = $this->params[$parameter];
+		return is_string($value) ? "'" . $value . "'" : (string)$value;
+	}
+
+	public function expr(): RegisterMimeTypeTestExpr {
+		return new RegisterMimeTypeTestExpr($this);
+	}
+
+	public function func(): RegisterMimeTypeTestFunc {
+		return new RegisterMimeTypeTestFunc();
+	}
+
+	public function executeStatement(): int {
+		if ($this->db->failure !== null) {
+			throw $this->db->failure;
+		}
+		$this->db->statements[] = $this;
+		return 3;
+	}
+}
+
+class RegisterMimeTypeTestExpr {
+	public function __construct(private RegisterMimeTypeTestQuery $query) {
+	}
+
+	public function like(string $field, string $parameter): string {
+		return $field . ' LIKE ' . $this->query->value($parameter);
+	}
+
+	public function neq(string $field, string $parameter): string {
+		return $field . ' <> ' . $this->query->value($parameter);
+	}
+
+	public function orX(string ...$conditions): string {
+		return '(' . implode(' OR ', $conditions) . ')';
+	}
+}
+
+class RegisterMimeTypeTestFunc {
+	public function lower(string $field): string {
+		return 'LOWER(' . $field . ')';
 	}
 }

@@ -94,6 +94,10 @@ class AppConfigService {
 		$this->appConfig->setValueString(Application::APP_ID, self::PAD_FILES_TYPED, 'yes', true);
 	}
 
+	public function unmarkPadFilesTyped(): void {
+		$this->appConfig->deleteKey(Application::APP_ID, self::PAD_FILES_TYPED);
+	}
+
 	/**
 	 * The test fault 1.1.0-beta.1 let a debug instance set, gone with the
 	 * faults themselves.
