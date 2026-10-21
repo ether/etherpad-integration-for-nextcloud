@@ -15,7 +15,10 @@ use OCP\Migration\IRepairStep;
 use OCP\IDBConnection;
 
 /**
- * @psalm-api
+ * The MIME part of the .pad files RegisterMimeType's scan typed, which
+ * IMimeTypeLoader::updateFilecache() leaves as it was. Run by that step
+ * after its scan, not as a step of its own: it reads the whole file cache
+ * too.
  */
 class BackfillPadMimeType implements IRepairStep {
 

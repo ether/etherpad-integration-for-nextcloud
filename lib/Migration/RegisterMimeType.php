@@ -36,6 +36,7 @@ class RegisterMimeType implements IRepairStep {
 	public function __construct(
 		private IMimeTypeLoader $mimeTypeLoader,
 		private IAppManager $appManager,
+		private BackfillPadMimeType $mimePartBackfill,
 	) {
 	}
 
@@ -50,16 +51,24 @@ class RegisterMimeType implements IRepairStep {
 			);
 		}
 		$configDir = rtrim(\OC::$configDir, '/') . '/';
+		$mappingFile = $configDir . 'mimetypemapping.json';
+		$mapping = [PadFileType::EXTENSION => [PadFileType::MIME]];
 
 		// Before any file is touched: this is the half that makes existing
 		// .pad files open, and it must not be lost to an unwritable config
-		// directory.
+		// directory. It reads the whole file cache, so only where the mapping
+		// was not in place: since it is, Nextcloud has typed every .pad file
+		// it added, and earlier versions of this app scanned what came before.
 		$mimeTypeId = $this->mimeTypeLoader->getId(PadFileType::MIME);
-		$this->mimeTypeLoader->updateFilecache(PadFileType::EXTENSION, $mimeTypeId);
+		if ($this->isMapped($mappingFile, $mapping)) {
+			$output->info('The .pad files were mapped already; the file cache was not scanned.');
+		} else {
+			$this->mimeTypeLoader->updateFilecache(PadFileType::EXTENSION, $mimeTypeId);
+			// updateFilecache() sets the MIME type and leaves the MIME part.
+			$this->mimePartBackfill->run($output);
+		}
 
-		$this->appendToJsonFile($configDir . 'mimetypemapping.json', [
-			PadFileType::EXTENSION => [PadFileType::MIME],
-		]);
+		$this->appendToJsonFile($mappingFile, $mapping);
 
 		$complete = $this->appendOptionalMappings(
 			$output,
@@ -76,8 +85,22 @@ class RegisterMimeType implements IRepairStep {
 		$complete = $this->removeLegacyCoreIcon($output) && $complete;
 
 		$output->info($complete
-			? 'Registered .pad files and backfilled their MIME type.'
+			? 'Registered .pad files.'
 			: 'Registered .pad files, but some of it was skipped - see the warnings above.');
+	}
+
+	/**
+	 * Whether $file maps as $mapping says. One that cannot be read maps
+	 * nothing: the write after this reports why.
+	 *
+	 * @param array<string,mixed> $mapping
+	 */
+	private function isMapped(string $file, array $mapping): bool {
+		try {
+			return self::containsMappings($this->readJsonFile($file), $mapping);
+		} catch (\RuntimeException) {
+			return false;
+		}
 	}
 
 	/**

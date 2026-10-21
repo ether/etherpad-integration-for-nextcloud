@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Tests\Unit;
 
+use OCA\EtherpadNextcloud\Migration\BackfillPadMimeType;
 use OCA\EtherpadNextcloud\Migration\RegisterMimeType;
 use OCA\EtherpadNextcloud\Util\PadFileType;
 use OCP\App\AppPathNotFoundException;
@@ -57,9 +58,11 @@ class RegisterMimeTypeTest extends TestCase {
 		$mimeTypeLoader->expects(self::once())
 			->method('updateFilecache')
 			->with(PadFileType::EXTENSION, 42);
+		$backfill = $this->createMock(BackfillPadMimeType::class);
+		$backfill->expects(self::once())->method('run');
 
 		$output = new RegisterMimeTypeTestOutput();
-		$this->step($mimeTypeLoader)->run($output);
+		$this->step($mimeTypeLoader, null, $backfill)->run($output);
 
 		$this->assertSame(
 			[PadFileType::MIME],
@@ -76,7 +79,36 @@ class RegisterMimeTypeTest extends TestCase {
 		// Core is signed; nothing of ours belongs in it.
 		$this->assertFileDoesNotExist($this->root . '/core/img/filetypes/etherpad-nextcloud-pad.svg');
 		$this->assertSame([], $output->warnings);
-		$this->assertContains('Registered .pad files and backfilled their MIME type.', $output->infos);
+		$this->assertContains('Registered .pad files.', $output->infos);
+	}
+
+	/**
+	 * The scan reads the whole file cache, so it runs where the mapping did
+	 * not say .pad yet - a first install, a mapping another app made, a
+	 * config directory that lost it - and not on every update.
+	 */
+	public function testScansTheFileCacheOnlyWhereTheMappingWasNotInPlace(): void {
+		foreach ([
+			'no mapping file' => [null, 1],
+			'mapped to another type' => [['pad' => ['application/x-ownpad']], 1],
+			'mapped already' => [[PadFileType::EXTENSION => [PadFileType::MIME]], 0],
+		] as $case => [$mapping, $scans]) {
+			@unlink($this->configDir . '/mimetypemapping.json');
+			if ($mapping !== null) {
+				$this->writeJson('mimetypemapping.json', $mapping);
+			}
+			$mimeTypeLoader = $this->createMock(IMimeTypeLoader::class);
+			$mimeTypeLoader->method('getId')->willReturn(42);
+			$mimeTypeLoader->expects(self::exactly($scans))->method('updateFilecache');
+			$backfill = $this->createMock(BackfillPadMimeType::class);
+			$backfill->expects(self::exactly($scans))->method('run');
+			$output = new RegisterMimeTypeTestOutput();
+
+			$this->step($mimeTypeLoader, null, $backfill)->run($output);
+
+			$this->assertSame([PadFileType::MIME], $this->jsonFile('mimetypemapping.json')[PadFileType::EXTENSION], $case);
+			$this->assertSame($scans === 0, in_array('The .pad files were mapped already; the file cache was not scanned.', $output->infos, true), $case);
+		}
 	}
 
 	public function testPreservesUnrelatedConfigurationAndIsIdempotent(): void {
@@ -151,7 +183,7 @@ class RegisterMimeTypeTest extends TestCase {
 		// rewritten, because every mapping was already there.
 		$this->assertSame($before, $this->configContents());
 		$this->assertSame([], $output->warnings);
-		$this->assertContains('Registered .pad files and backfilled their MIME type.', $output->infos);
+		$this->assertContains('Registered .pad files.', $output->infos);
 	}
 
 	/** What an interrupted write leaves behind; the step has to heal it, not refuse it. */
@@ -288,16 +320,18 @@ class RegisterMimeTypeTest extends TestCase {
 
 		// Installing runs only the install steps, so everything a fresh
 		// instance needs has to be named there as well as after a migration.
-		foreach (['RegisterMimeType', 'BackfillPadMimeType'] as $step) {
-			$class = 'OCA\\EtherpadNextcloud\\Migration\\' . $step;
-			$this->assertStringContainsString($class, $install[1]);
-			$this->assertStringContainsString($class, $postMigration[1]);
-		}
+		$class = 'OCA\\EtherpadNextcloud\\Migration\\RegisterMimeType';
+		$this->assertStringContainsString($class, $install[1]);
+		$this->assertStringContainsString($class, $postMigration[1]);
+		// RegisterMimeType runs it after its scan; on its own it would read
+		// the whole file cache on every update.
+		$this->assertStringNotContainsString('BackfillPadMimeType', $infoXml);
 	}
 
 	private function step(
 		?IMimeTypeLoader $mimeTypeLoader = null,
 		?IAppManager $appManager = null,
+		?BackfillPadMimeType $backfill = null,
 	): RegisterMimeType {
 		if ($mimeTypeLoader === null) {
 			$mimeTypeLoader = $this->createStub(IMimeTypeLoader::class);
@@ -312,6 +346,7 @@ class RegisterMimeTypeTest extends TestCase {
 		return new RegisterMimeType(
 			$mimeTypeLoader,
 			$appManager,
+			$backfill ?? $this->createStub(BackfillPadMimeType::class),
 		);
 	}
 
