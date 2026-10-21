@@ -80,12 +80,12 @@ class RegisterMimeType implements IRepairStep {
 		$mapping = [PadFileType::EXTENSION => [PadFileType::MIME]];
 
 		// The mapping goes first, so that the run that writes it can record
-		// the repair; a mapping file that cannot be written or read still
-		// lets the repair run, and is reported once it has.
+		// the repair; a mapping that cannot be written still lets the repair
+		// run, and is reported once it has.
 		$mappedBefore = $this->isMapped($mappingFile, $mapping);
 		$mappingError = null;
 		try {
-			$this->appendToJsonFile($mappingFile, $mapping);
+			$this->writeMapping($mappingFile, $mapping, $mappedBefore);
 		} catch (\RuntimeException $e) {
 			$mappingError = $e;
 		}
@@ -115,31 +115,52 @@ class RegisterMimeType implements IRepairStep {
 	}
 
 	/**
+	 * Where the mapping was missing, files came in untyped, so the version
+	 * is forgotten before the mapping is written: the mapping beside a
+	 * version still recorded would read as a finished repair, also after
+	 * this run's had failed.
+	 *
+	 * @param array<string,mixed> $mapping
+	 * @throws \RuntimeException where either fails
+	 */
+	private function writeMapping(string $file, array $mapping, bool $mappedBefore): void {
+		if (!$mappedBefore) {
+			try {
+				$this->appConfig->forgetPadFilesMimeVersion();
+			} catch (\Exception $e) {
+				throw new \RuntimeException(sprintf(
+					'Could not delete the app config value %s, so the .pad mapping was not written; the next run tries again: %s',
+					AppConfigService::PAD_FILES_MIME_VERSION,
+					$e->getMessage(),
+				), 0, $e);
+			}
+		}
+		$this->appendToJsonFile($file, $mapping);
+	}
+
+	/**
 	 * The repair of the file cache, recorded once the mapping was in place
 	 * for it. A failure is a warning and the registration stands. Where the
-	 * app config fails, the file cache is scanned: typing the files matters
-	 * more than sparing a scan.
+	 * version cannot be read, the file cache is scanned: typing the files
+	 * matters more than sparing a scan.
 	 */
 	private function repairFileCache(IOutput $output, bool $mappedBefore, bool $mappedNow): void {
-		try {
-			if (!$mappedBefore) {
-				// Files came in untyped without the mapping. Forgetting the
-				// version keeps the repair owed until one finishes, should
-				// this one fail.
-				$this->appConfig->forgetPadFilesMimeVersion();
-			} elseif ($this->appConfig->padFilesMimeVersion() >= static::REPAIR_VERSION) {
-				$output->info(sprintf(
-					'The .pad files were typed already; the file cache was not scanned. To scan it again, delete the app config value %s and run the repair - for an app limited to groups, enable it for them again.',
+		if ($mappedBefore) {
+			try {
+				if ($this->appConfig->padFilesMimeVersion() >= static::REPAIR_VERSION) {
+					$output->info(sprintf(
+						'The .pad files were typed already; the file cache was not scanned. To scan it again, delete the app config value %s and run the repair - for an app limited to groups, enable it for them again.',
+						AppConfigService::PAD_FILES_MIME_VERSION,
+					));
+					return;
+				}
+			} catch (\Exception $e) {
+				$output->warning(sprintf(
+					'Could not read the app config value %s, so the file cache is scanned; should this repeat, delete the value: %s',
 					AppConfigService::PAD_FILES_MIME_VERSION,
+					$e->getMessage(),
 				));
-				return;
 			}
-		} catch (\Exception $e) {
-			$output->warning(sprintf(
-				'Could not read or reset the app config value %s, so the file cache is scanned; should this repeat, delete the value: %s',
-				AppConfigService::PAD_FILES_MIME_VERSION,
-				$e->getMessage(),
-			));
 		}
 
 		try {
