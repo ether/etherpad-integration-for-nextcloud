@@ -271,22 +271,24 @@ existing name asks for confirmation because the previous file is gone for good.
 - Rebuild mimetype caches:
   - `php occ maintenance:mimetype:update-js`
   - `php occ maintenance:mimetype:update-db --repair-filecache`
-- Give every `.pad` file the app's MIME type again. The app does that once,
-  when it is enabled or updated, and again where the `.pad` mapping in
-  `config/mimetypemapping.json` was missing. A file that came in untyped
-  after that - through a web server without the mapping, or from a
-  long-running process started before it was written - is typed by this,
-  once that process has been restarted or has ended:
+- Give every `.pad` file the app's MIME type again. The app does that when
+  it is enabled or updated, until a run that found the `.pad` mapping in
+  `config/mimetypemapping.json` already in place has done it, and again
+  where the mapping was missing. A file that came in untyped after that -
+  through a web server without the mapping, or from a long-running process
+  started before it was written - is typed by this, once that process has
+  been restarted or has ended:
   - `php occ config:app:delete etherpad_nextcloud pad_files_mime_version`
   - `php occ maintenance:repair`. That command skips an app limited to
     groups; for one, run `php occ app:enable etherpad_nextcloud -g <group>`
     instead, with a `-g` for every group it is enabled for, as the list
     replaces the one before.
 
-  With several web servers, each needs the mapping in its config
-  directory: run the second command on every web server with a config
-  directory of its own, or deploy the mapping to all of them with the rest
-  of the configuration.
+  With several web servers, every one needs the same mapping in its config
+  directory: deploy it with the rest of the configuration, or run the
+  second step on every web server with a config directory of its own. A
+  web server that served files before it had the mapping left them
+  untyped: once it has it, run both steps.
 - Reload browser with hard refresh
 
 ### Wrong `.pad` icon (fallback/red icon)

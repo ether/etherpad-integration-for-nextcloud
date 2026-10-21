@@ -82,7 +82,7 @@ class RegisterMimeTypeTest extends TestCase {
 		$this->assertContains('Registered .pad files.', $output->infos);
 	}
 
-	/** One statement sets the type and its part, on the files that lack either, on every shard. */
+	/** One statement sets the type and its part, on the pad files that lack either, on every shard. */
 	public function testTypesThePadFilesInOneStatement(): void {
 		$this->step()->run(new RegisterMimeTypeTestOutput());
 
@@ -91,24 +91,28 @@ class RegisterMimeTypeTest extends TestCase {
 		$this->assertTrue($statement->acrossAllShards);
 		$this->assertSame(['mimetype' => 42, 'mimepart' => 7], $statement->sets);
 		$this->assertSame([
-			"LOWER(name) LIKE '%.pad'",
+			"(LOWER(name) LIKE '%.pad' OR mimetype = 42)",
 			'mimetype <> 2',
 			'(mimetype <> 42 OR mimepart <> 7)',
 		], $statement->conditions);
 	}
 
 	/**
-	 * The mapping is written before the scan, so the first run records it,
-	 * and no run after it reads the file cache again.
+	 * A run that writes the mapping is not recorded, as processes started
+	 * before may have added files untyped while it ran; the run after it
+	 * is, and none after that reads the file cache again.
 	 */
-	public function testScansOnceAndThenNoMore(): void {
+	public function testScansUntilARunThatFoundTheMappingFinishes(): void {
 		$this->step()->run(new RegisterMimeTypeTestOutput());
-		$this->assertSame([1, RegisterMimeType::REPAIR_VERSION], [count($this->db->statements), $this->version], 'a first install');
+		$this->assertSame([1, 0], [count($this->db->statements), $this->version], 'a first install');
+
+		$this->step()->run(new RegisterMimeTypeTestOutput());
+		$this->assertSame([2, RegisterMimeType::REPAIR_VERSION], [count($this->db->statements), $this->version], 'the run after it');
 
 		$output = new RegisterMimeTypeTestOutput();
 		$this->step()->run($output);
-		$this->assertSame([1, RegisterMimeType::REPAIR_VERSION], [count($this->db->statements), $this->version], 'every run after it');
-		$this->assertContains('The .pad files were typed already; the file cache was not scanned. To scan it again, delete the app config value pad_files_mime_version and run the repair - for an app limited to groups, enable it for them again.', $output->infos);
+		$this->assertSame([2, RegisterMimeType::REPAIR_VERSION], [count($this->db->statements), $this->version], 'every run after that');
+		$this->assertContains('The .pad files were typed already; the file cache was not scanned. The README of the app says how to scan it again (Troubleshooting).', $output->infos);
 	}
 
 	/** A repair that changed runs once more, as Nextcloud's RepairMimeTypes does. */
@@ -122,13 +126,16 @@ class RegisterMimeTypeTest extends TestCase {
 		$this->assertSame(RegisterMimeTypeTestNextVersion::REPAIR_VERSION, $this->version);
 	}
 
-	/** Without the mapping, files came in untyped: it is scanned for again. */
+	/**
+	 * Without the mapping, files came in untyped: they are scanned for
+	 * again, and the version waits for a run that finds the mapping.
+	 */
 	public function testScansAgainWhereTheMappingWasMissingOrAnotherApps(): void {
 		foreach ([
 			'mapped to another type' => ['pad' => ['application/x-ownpad']],
 			'mapping file lost' => null,
 		] as $case => $mapping) {
-			@unlink($this->configDir . '/mimetypemapping.json');
+			$this->freshConfig();
 			if ($mapping !== null) {
 				$this->writeJson('mimetypemapping.json', $mapping);
 			}
@@ -138,6 +145,7 @@ class RegisterMimeTypeTest extends TestCase {
 			$this->step()->run(new RegisterMimeTypeTestOutput());
 
 			$this->assertCount(1, $this->db->statements, $case);
+			$this->assertSame(0, $this->version, $case);
 			$this->assertSame([PadFileType::MIME], $this->jsonFile('mimetypemapping.json')[PadFileType::EXTENSION], $case);
 		}
 	}
@@ -148,7 +156,7 @@ class RegisterMimeTypeTest extends TestCase {
 			'mapped to another type' => ['pad' => ['application/x-ownpad']],
 			'mapping file lost' => null,
 		] as $case => $mapping) {
-			@unlink($this->configDir . '/mimetypemapping.json');
+			$this->freshConfig();
 			if ($mapping !== null) {
 				$this->writeJson('mimetypemapping.json', $mapping);
 			}
@@ -171,7 +179,7 @@ class RegisterMimeTypeTest extends TestCase {
 	 */
 	public function testAFailedRepairIsNotRecordedAndKeepsNothingElseFromBeingRegistered(): void {
 		foreach (['without the mapping' => false, 'with the mapping in place' => true] as $case => $mapped) {
-			@unlink($this->configDir . '/mimetypemapping.json');
+			$this->freshConfig();
 			if ($mapped) {
 				$this->writeJson('mimetypemapping.json', [PadFileType::EXTENSION => [PadFileType::MIME]]);
 			}
@@ -189,7 +197,7 @@ class RegisterMimeTypeTest extends TestCase {
 			$this->assertSame([PadFileType::MIME], $this->jsonFile('mimetypemapping.json')[PadFileType::EXTENSION], $case);
 			$this->assertSame('text', $this->jsonFile('mimetypealiases.json')[PadFileType::MIME], $case);
 			$this->assertSame('Etherpad', $this->jsonFile('mimetypenames.json')[PadFileType::MIME], $case);
-			$this->assertContains('Registered .pad files.', $output->infos, $case);
+			$this->assertContains('Registered .pad files, but some of it was skipped - see the warnings above.', $output->infos, $case);
 		}
 	}
 
@@ -202,7 +210,7 @@ class RegisterMimeTypeTest extends TestCase {
 			'mapped to another type' => ['pad' => ['application/x-ownpad']],
 			'mapping file lost' => null,
 		] as $case => $mapping) {
-			@unlink($this->configDir . '/mimetypemapping.json');
+			$this->freshConfig();
 			if ($mapping !== null) {
 				$this->writeJson('mimetypemapping.json', $mapping);
 			}
@@ -225,8 +233,9 @@ class RegisterMimeTypeTest extends TestCase {
 			$this->forgetFailure = null;
 			$this->db = new RegisterMimeTypeTestDb();
 			$this->step()->run(new RegisterMimeTypeTestOutput());
+			$this->step()->run(new RegisterMimeTypeTestOutput());
 
-			$this->assertCount(1, $this->db->statements, $case);
+			$this->assertCount(2, $this->db->statements, $case);
 			$this->assertSame(RegisterMimeType::REPAIR_VERSION, $this->version, $case);
 		}
 	}
@@ -255,11 +264,11 @@ class RegisterMimeTypeTest extends TestCase {
 
 		$this->assertSame([], $output->warnings);
 		$this->assertCount(1, $this->db->statements);
-		$this->assertSame(RegisterMimeType::REPAIR_VERSION, $this->version);
 	}
 
 	/** Typed but not recorded: the warning says so, and not that typing failed. */
 	public function testAVersionThatCannotBeRecordedIsAWarningOfItsOwn(): void {
+		$this->writeJson('mimetypemapping.json', [PadFileType::EXTENSION => [PadFileType::MIME]]);
 		$this->recordFailure = new \Exception('the value has another type');
 		$output = new RegisterMimeTypeTestOutput();
 
@@ -270,7 +279,7 @@ class RegisterMimeTypeTest extends TestCase {
 		$this->assertContains('Gave 3 .pad files their MIME type.', $output->infos);
 		$this->assertCount(1, $output->warnings);
 		$this->assertStringStartsWith('Typed the .pad files, but could not record that', $output->warnings[0]);
-		$this->assertContains('Registered .pad files.', $output->infos);
+		$this->assertContains('Registered .pad files, but some of it was skipped - see the warnings above.', $output->infos);
 	}
 
 	public function testPreservesUnrelatedConfigurationAndIsIdempotent(): void {
@@ -305,6 +314,7 @@ class RegisterMimeTypeTest extends TestCase {
 
 	public function testRejectsInvalidRequiredConfigurationWithoutReportingSuccess(): void {
 		foreach (['no version' => 0, 'the version recorded' => RegisterMimeType::REPAIR_VERSION] as $case => $version) {
+			$this->freshConfig();
 			file_put_contents($this->configDir . '/mimetypemapping.json', '{invalid');
 			$this->db = new RegisterMimeTypeTestDb();
 			$this->version = $version;
@@ -545,6 +555,13 @@ class RegisterMimeTypeTest extends TestCase {
 		return $appConfig;
 	}
 
+	/** An empty config directory, as before a first install. */
+	private function freshConfig(): void {
+		foreach (glob($this->configDir . '/*.json') ?: [] as $file) {
+			unlink($file);
+		}
+	}
+
 	/** @param array<string,mixed> $content */
 	private function writeJson(string $name, array $content): void {
 		file_put_contents(
@@ -712,6 +729,10 @@ class RegisterMimeTypeTestExpr {
 
 	public function like(string $field, string $parameter): string {
 		return $field . ' LIKE ' . $this->query->value($parameter);
+	}
+
+	public function eq(string $field, string $parameter): string {
+		return $field . ' = ' . $this->query->value($parameter);
 	}
 
 	public function neq(string $field, string $parameter): string {

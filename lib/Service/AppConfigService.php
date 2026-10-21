@@ -15,7 +15,7 @@ use OCP\IConfig;
 class AppConfigService {
 	/** Whether a file deleted for good takes its pad along; `delete_on_trash` before. */
 	public const DELETE_PAD_WITH_FILE = 'delete_pad_with_file';
-	/** The version of RegisterMimeType's repair of the .pad files that last finished with the mapping in place. */
+	/** The version of RegisterMimeType's repair of the .pad files that last finished in a run that found the mapping in place. */
 	public const PAD_FILES_MIME_VERSION = 'pad_files_mime_version';
 
 	public function __construct(

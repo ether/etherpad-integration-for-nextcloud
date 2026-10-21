@@ -14,6 +14,7 @@ use OCA\EtherpadNextcloud\Util\PadFileType;
 use OCP\App\AppPathNotFoundException;
 use OCP\App\IAppManager;
 use OCP\DB\QueryBuilder\IQueryBuilder;
+use OCP\Files\FileInfo;
 use OCP\Files\IMimeTypeLoader;
 use OCP\IDBConnection;
 use OCP\Migration\IOutput;
@@ -30,9 +31,9 @@ use OCP\Migration\IRepairStep;
  * (post-migration; see
  * https://docs.nextcloud.com/server/stable/developer_manual/digging_deeper/repair.html),
  * and the repair of the file cache reads all of it. So the repair runs
- * until it has once finished with the mapping in place, keeping that
- * version as Nextcloud's own RepairMimeTypes does, and again for a newer
- * version or where the mapping was missing.
+ * until it has once finished in a run that found the mapping in place,
+ * keeping that version as Nextcloud's own RepairMimeTypes does, and again
+ * for a newer version or where the mapping was missing.
  *
  * @psalm-api
  */
@@ -79,9 +80,9 @@ class RegisterMimeType implements IRepairStep {
 		$mappingFile = $configDir . 'mimetypemapping.json';
 		$mapping = [PadFileType::EXTENSION => [PadFileType::MIME]];
 
-		// The mapping goes first, so that the run that writes it can record
-		// the repair; a mapping that cannot be written still lets the repair
-		// run, and is reported once it has.
+		// The mapping goes first, so that fewer files come in untyped while
+		// the repair runs; a mapping that cannot be written still lets the
+		// repair run, and is reported once it has.
 		$mappedBefore = $this->isMapped($mappingFile, $mapping);
 		$mappingError = null;
 		try {
@@ -104,7 +105,7 @@ class RegisterMimeType implements IRepairStep {
 		) && $complete;
 		$complete = $this->removeLegacyCoreIcon($output) && $complete;
 
-		$this->repairFileCache($output, $mappedBefore, $mappingError === null);
+		$complete = $this->repairFileCache($output, $mappedBefore) && $complete;
 		if ($mappingError !== null) {
 			throw $mappingError;
 		}
@@ -139,20 +140,18 @@ class RegisterMimeType implements IRepairStep {
 	}
 
 	/**
-	 * The repair of the file cache, recorded once the mapping was in place
-	 * for it. A failure is a warning and the registration stands. Where the
-	 * version cannot be read, the file cache is scanned: typing the files
-	 * matters more than sparing a scan.
+	 * The repair of the file cache. A failure is a warning and the
+	 * registration stands. Where the version cannot be read, the file cache
+	 * is scanned: typing the files matters more than sparing a scan.
+	 *
+	 * @return bool whether the files are typed and, where due, that recorded
 	 */
-	private function repairFileCache(IOutput $output, bool $mappedBefore, bool $mappedNow): void {
+	private function repairFileCache(IOutput $output, bool $mappedBefore): bool {
 		if ($mappedBefore) {
 			try {
 				if ($this->appConfig->padFilesMimeVersion() >= static::REPAIR_VERSION) {
-					$output->info(sprintf(
-						'The .pad files were typed already; the file cache was not scanned. To scan it again, delete the app config value %s and run the repair - for an app limited to groups, enable it for them again.',
-						AppConfigService::PAD_FILES_MIME_VERSION,
-					));
-					return;
+					$output->info('The .pad files were typed already; the file cache was not scanned. The README of the app says how to scan it again (Troubleshooting).');
+					return true;
 				}
 			} catch (\Exception $e) {
 				$output->warning(sprintf(
@@ -167,12 +166,14 @@ class RegisterMimeType implements IRepairStep {
 			$typed = $this->typePadFiles();
 		} catch (\Exception $e) {
 			$output->warning('Could not give the .pad files their MIME type; the next run tries again: ' . $e->getMessage());
-			return;
+			return false;
 		}
 		$output->info(sprintf('Gave %d .pad files their MIME type.', $typed));
 
-		if (!$mappedNow) {
-			return;
+		// Not after a run that wrote the mapping: processes started before
+		// may have added files untyped while it ran.
+		if (!$mappedBefore) {
+			return true;
 		}
 		try {
 			$this->appConfig->recordPadFilesMimeVersion(static::REPAIR_VERSION);
@@ -182,20 +183,23 @@ class RegisterMimeType implements IRepairStep {
 				AppConfigService::PAD_FILES_MIME_VERSION,
 				$e->getMessage(),
 			));
+			return false;
 		}
+		return true;
 	}
 
 	/**
 	 * Sets the pad MIME type and its part on every file named *.pad that
-	 * lacks either, in one statement: it reads the whole file cache, as no
-	 * index serves a suffix.
+	 * lacks either, and the part on every file of the pad type under another
+	 * name - a pad in the trash, say - in one statement: it reads the whole
+	 * file cache, as no index serves a suffix.
 	 *
 	 * @return int the rows it changed
 	 */
 	private function typePadFiles(): int {
 		$typeId = $this->mimeTypeLoader->getId(PadFileType::MIME);
 		$partId = $this->mimeTypeLoader->getId(explode('/', PadFileType::MIME, 2)[0]);
-		$folderId = $this->mimeTypeLoader->getId('httpd/unix-directory');
+		$folderId = $this->mimeTypeLoader->getId(FileInfo::MIMETYPE_FOLDER);
 
 		$qb = $this->db->getQueryBuilder();
 		$qb->update('filecache')
@@ -203,9 +207,12 @@ class RegisterMimeType implements IRepairStep {
 			->runAcrossAllShards()
 			->set('mimetype', $qb->createNamedParameter($typeId, IQueryBuilder::PARAM_INT))
 			->set('mimepart', $qb->createNamedParameter($partId, IQueryBuilder::PARAM_INT))
-			->where($qb->expr()->like(
-				$qb->func()->lower('name'),
-				$qb->createNamedParameter('%' . $this->db->escapeLikeParameter(PadFileType::SUFFIX)),
+			->where($qb->expr()->orX(
+				$qb->expr()->like(
+					$qb->func()->lower('name'),
+					$qb->createNamedParameter('%' . $this->db->escapeLikeParameter(PadFileType::SUFFIX)),
+				),
+				$qb->expr()->eq('mimetype', $qb->createNamedParameter($typeId, IQueryBuilder::PARAM_INT)),
 			))
 			->andWhere($qb->expr()->neq('mimetype', $qb->createNamedParameter($folderId, IQueryBuilder::PARAM_INT)))
 			->andWhere($qb->expr()->orX(
@@ -303,7 +310,12 @@ class RegisterMimeType implements IRepairStep {
 			$file = $resolved;
 		}
 
-		$temporary = $file . '.' . bin2hex(random_bytes(6)) . '.tmp';
+		try {
+			$suffix = bin2hex(random_bytes(6));
+		} catch (\Exception $e) {
+			throw new \RuntimeException(sprintf('Could not name a temporary file for "%s".', $file), 0, $e);
+		}
+		$temporary = $file . '.' . $suffix . '.tmp';
 		if (@file_put_contents($temporary, $contents, LOCK_EX) === false) {
 			return false;
 		}

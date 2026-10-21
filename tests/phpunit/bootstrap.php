@@ -53,6 +53,7 @@ $stubFiles = [
 	__DIR__ . '/stubs/OCA/Files_Trashbin/Events/BeforeNodeRestoredEvent.php',
 	__DIR__ . '/stubs/OCA/Files_Trashbin/Events/NodeRestoredEvent.php',
 	__DIR__ . '/stubs/OCP/Files/Folder.php',
+	__DIR__ . '/stubs/OCP/Files/FileInfo.php',
 	__DIR__ . '/stubs/OCP/Files/IMimeTypeLoader.php',
 	__DIR__ . '/stubs/OCP/Files/Mount/IMountPoint.php',
 	__DIR__ . '/stubs/OCP/Files/IRootFolder.php',
