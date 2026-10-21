@@ -9,6 +9,7 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\Migration;
 
 use OCA\EtherpadNextcloud\AppInfo\Application;
+use OCA\EtherpadNextcloud\Service\AppConfigService;
 use OCA\EtherpadNextcloud\Util\PadFileType;
 use OCP\App\AppPathNotFoundException;
 use OCP\App\IAppManager;
@@ -37,6 +38,7 @@ class RegisterMimeType implements IRepairStep {
 		private IMimeTypeLoader $mimeTypeLoader,
 		private IAppManager $appManager,
 		private BackfillPadMimeType $mimePartBackfill,
+		private AppConfigService $appConfig,
 	) {
 	}
 
@@ -54,18 +56,19 @@ class RegisterMimeType implements IRepairStep {
 		$mappingFile = $configDir . 'mimetypemapping.json';
 		$mapping = [PadFileType::EXTENSION => [PadFileType::MIME]];
 
-		// Before any file is touched: this is the half that makes existing
-		// .pad files open, and it must not be lost to an unwritable config
-		// directory. It reads the whole file cache, so only where the mapping
-		// was not in place: since it is, Nextcloud has typed every .pad file
-		// it added, and earlier versions of this app scanned what came before.
+		// The file cache is repaired before the mapping is written, so that an
+		// unwritable config directory cannot keep the existing .pad files from
+		// opening. The repair reads the whole file cache: it runs until it has
+		// once finished, and again wherever the mapping is missing - files
+		// added meanwhile came in untyped.
 		$mimeTypeId = $this->mimeTypeLoader->getId(PadFileType::MIME);
-		if ($this->isMapped($mappingFile, $mapping)) {
-			$output->info('The .pad files were mapped already; the file cache was not scanned.');
+		if ($this->appConfig->arePadFilesTyped() && $this->isMapped($mappingFile, $mapping)) {
+			$output->info('The .pad files were typed already; the file cache was not scanned.');
 		} else {
 			$this->mimeTypeLoader->updateFilecache(PadFileType::EXTENSION, $mimeTypeId);
 			// updateFilecache() sets the MIME type and leaves the MIME part.
 			$this->mimePartBackfill->run($output);
+			$this->appConfig->markPadFilesTyped();
 		}
 
 		$this->appendToJsonFile($mappingFile, $mapping);
@@ -90,8 +93,9 @@ class RegisterMimeType implements IRepairStep {
 	}
 
 	/**
-	 * Whether $file maps as $mapping says. One that cannot be read maps
-	 * nothing: the write after this reports why.
+	 * Whether $file maps as $mapping says. One that cannot be read does not,
+	 * and appendToJsonFile() reports what is wrong with it - after the file
+	 * cache's repair.
 	 *
 	 * @param array<string,mixed> $mapping
 	 */

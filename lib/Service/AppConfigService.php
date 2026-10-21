@@ -15,6 +15,8 @@ use OCP\IConfig;
 class AppConfigService {
 	/** Whether a file deleted for good takes its pad along; `delete_on_trash` before. */
 	public const DELETE_PAD_WITH_FILE = 'delete_pad_with_file';
+	/** Set once the file cache's .pad files carry the app's MIME type and part (RegisterMimeType). */
+	public const PAD_FILES_TYPED = 'pad_files_typed';
 
 	public function __construct(
 		private IConfig $config,
@@ -80,6 +82,16 @@ class AppConfigService {
 			$this->appConfig->setValueString(Application::APP_ID, self::DELETE_PAD_WITH_FILE, $old);
 		}
 		$this->appConfig->deleteKey(Application::APP_ID, 'delete_on_trash');
+	}
+
+	/** Whether the repair of the file cache's .pad files has once finished. */
+	public function arePadFilesTyped(): bool {
+		return $this->appConfig->getValueString(Application::APP_ID, self::PAD_FILES_TYPED, '', true) === 'yes';
+	}
+
+	/** Lazy: only that repair reads it, not every request. */
+	public function markPadFilesTyped(): void {
+		$this->appConfig->setValueString(Application::APP_ID, self::PAD_FILES_TYPED, 'yes', true);
 	}
 
 	/**

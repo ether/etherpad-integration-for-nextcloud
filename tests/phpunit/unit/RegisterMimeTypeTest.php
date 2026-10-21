@@ -6,6 +6,7 @@ namespace OCA\EtherpadNextcloud\Tests\Unit;
 
 use OCA\EtherpadNextcloud\Migration\BackfillPadMimeType;
 use OCA\EtherpadNextcloud\Migration\RegisterMimeType;
+use OCA\EtherpadNextcloud\Service\AppConfigService;
 use OCA\EtherpadNextcloud\Util\PadFileType;
 use OCP\App\AppPathNotFoundException;
 use OCP\App\IAppManager;
@@ -60,9 +61,11 @@ class RegisterMimeTypeTest extends TestCase {
 			->with(PadFileType::EXTENSION, 42);
 		$backfill = $this->createMock(BackfillPadMimeType::class);
 		$backfill->expects(self::once())->method('run');
+		$appConfig = $this->appConfig(false);
+		$appConfig->expects(self::once())->method('markPadFilesTyped');
 
 		$output = new RegisterMimeTypeTestOutput();
-		$this->step($mimeTypeLoader, null, $backfill)->run($output);
+		$this->step($mimeTypeLoader, null, $backfill, $appConfig)->run($output);
 
 		$this->assertSame(
 			[PadFileType::MIME],
@@ -80,19 +83,21 @@ class RegisterMimeTypeTest extends TestCase {
 		$this->assertFileDoesNotExist($this->root . '/core/img/filetypes/etherpad-nextcloud-pad.svg');
 		$this->assertSame([], $output->warnings);
 		$this->assertContains('Registered .pad files.', $output->infos);
+		$this->assertNotContains('The .pad files were typed already; the file cache was not scanned.', $output->infos);
 	}
 
 	/**
-	 * The scan reads the whole file cache, so it runs where the mapping did
-	 * not say .pad yet - a first install, a mapping another app made, a
-	 * config directory that lost it - and not on every update.
+	 * The scan reads the whole file cache, so once it has finished it runs
+	 * again only where the mapping is not in place - another app's, or a
+	 * config directory that lost it.
 	 */
-	public function testScansTheFileCacheOnlyWhereTheMappingWasNotInPlace(): void {
+	public function testScansTheFileCacheUntilItHasOnceFinishedAndWhereTheMappingIsMissing(): void {
 		foreach ([
-			'no mapping file' => [null, 1],
-			'mapped to another type' => [['pad' => ['application/x-ownpad']], 1],
-			'mapped already' => [[PadFileType::EXTENSION => [PadFileType::MIME]], 0],
-		] as $case => [$mapping, $scans]) {
+			'typed and mapped' => [true, [PadFileType::EXTENSION => [PadFileType::MIME]], 0],
+			'mapped, not typed yet' => [false, [PadFileType::EXTENSION => [PadFileType::MIME]], 1],
+			'typed, mapped to another type' => [true, ['pad' => ['application/x-ownpad']], 1],
+			'typed, mapping file lost' => [true, null, 1],
+		] as $case => [$typed, $mapping, $scans]) {
 			@unlink($this->configDir . '/mimetypemapping.json');
 			if ($mapping !== null) {
 				$this->writeJson('mimetypemapping.json', $mapping);
@@ -102,12 +107,29 @@ class RegisterMimeTypeTest extends TestCase {
 			$mimeTypeLoader->expects(self::exactly($scans))->method('updateFilecache');
 			$backfill = $this->createMock(BackfillPadMimeType::class);
 			$backfill->expects(self::exactly($scans))->method('run');
+			$appConfig = $this->appConfig($typed);
+			$appConfig->expects(self::exactly($scans))->method('markPadFilesTyped');
 			$output = new RegisterMimeTypeTestOutput();
 
-			$this->step($mimeTypeLoader, null, $backfill)->run($output);
+			$this->step($mimeTypeLoader, null, $backfill, $appConfig)->run($output);
 
 			$this->assertSame([PadFileType::MIME], $this->jsonFile('mimetypemapping.json')[PadFileType::EXTENSION], $case);
-			$this->assertSame($scans === 0, in_array('The .pad files were mapped already; the file cache was not scanned.', $output->infos, true), $case);
+			$this->assertSame($scans === 0, in_array('The .pad files were typed already; the file cache was not scanned.', $output->infos, true), $case);
+		}
+	}
+
+	/** A repair that did not finish is not taken for one that did. */
+	public function testABackfillThatFailsLeavesTheFileCacheToBeScannedAgain(): void {
+		$backfill = $this->createMock(BackfillPadMimeType::class);
+		$backfill->method('run')->willThrowException(new \RuntimeException('the database went away'));
+		$appConfig = $this->appConfig(false);
+		$appConfig->expects(self::never())->method('markPadFilesTyped');
+
+		try {
+			$this->step(null, null, $backfill, $appConfig)->run(new RegisterMimeTypeTestOutput());
+			self::fail('A failed backfill must fail the step.');
+		} catch (\RuntimeException $e) {
+			$this->assertSame('the database went away', $e->getMessage());
 		}
 	}
 
@@ -332,6 +354,7 @@ class RegisterMimeTypeTest extends TestCase {
 		?IMimeTypeLoader $mimeTypeLoader = null,
 		?IAppManager $appManager = null,
 		?BackfillPadMimeType $backfill = null,
+		?AppConfigService $appConfig = null,
 	): RegisterMimeType {
 		if ($mimeTypeLoader === null) {
 			$mimeTypeLoader = $this->createStub(IMimeTypeLoader::class);
@@ -347,7 +370,16 @@ class RegisterMimeTypeTest extends TestCase {
 			$mimeTypeLoader,
 			$appManager,
 			$backfill ?? $this->createStub(BackfillPadMimeType::class),
+			$appConfig ?? $this->appConfig(false),
 		);
+	}
+
+	/** @return AppConfigService&\PHPUnit\Framework\MockObject\MockObject */
+	private function appConfig(bool $typed): AppConfigService {
+		$appConfig = $this->createMock(AppConfigService::class);
+		$appConfig->method('arePadFilesTyped')->willReturn($typed);
+
+		return $appConfig;
 	}
 
 	/** @param array<string,mixed> $content */
