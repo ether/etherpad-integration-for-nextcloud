@@ -26,9 +26,9 @@ use OCP\Migration\IRepairStep;
  * (https://docs.nextcloud.com/server/stable/admin_manual/configuration_mimetypes/index.html),
  * and their type on the files the file cache has already.
  *
- * It runs on every enable of the app (install), and after every update and,
- * unless the app is limited to groups, every `occ maintenance:repair`
- * (post-migration; see
+ * It runs on every enable of the app (install), and after every update,
+ * every enable of an app installed already and, unless the app is limited
+ * to groups, every `occ maintenance:repair` (post-migration; see
  * https://docs.nextcloud.com/server/stable/developer_manual/digging_deeper/repair.html),
  * and the repair of the file cache reads all of it. So the repair runs
  * until it has once finished in a run that found the mapping in place,
@@ -170,8 +170,8 @@ class RegisterMimeType implements IRepairStep {
 		}
 		$output->info(sprintf('Gave %d .pad files their MIME type.', $typed));
 
-		// Not after a run that wrote the mapping: processes started before
-		// may have added files untyped while it ran.
+		// Only a run that found the mapping records: where this one wrote it,
+		// processes started before may have added files untyped while it ran.
 		if (!$mappedBefore) {
 			return true;
 		}
@@ -224,8 +224,8 @@ class RegisterMimeType implements IRepairStep {
 	}
 
 	/**
-	 * Whether $file maps as $mapping says. One that cannot be read does not;
-	 * appendToJsonFile() says what is wrong with it.
+	 * Whether $file maps as $mapping says. One that cannot be read maps
+	 * nothing.
 	 *
 	 * @param array<string,mixed> $mapping
 	 */

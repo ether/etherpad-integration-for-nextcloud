@@ -87,6 +87,7 @@ class AppConfigServiceTest extends TestCase {
 		$this->assertSame(1, $service->padFilesMimeVersion());
 		$this->assertSame(['etherpad_nextcloud/pad_files_mime_version/lazy' => 1], $stored);
 		$service->forgetPadFilesMimeVersion();
+		$this->assertSame([], $stored);
 		$this->assertSame(0, $service->padFilesMimeVersion());
 	}
 

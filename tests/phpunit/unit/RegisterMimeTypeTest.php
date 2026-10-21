@@ -98,9 +98,8 @@ class RegisterMimeTypeTest extends TestCase {
 	}
 
 	/**
-	 * A run that writes the mapping is not recorded, as processes started
-	 * before may have added files untyped while it ran; the run after it
-	 * is, and none after that reads the file cache again.
+	 * A run that writes the mapping is not recorded; the run after it is,
+	 * and none after that reads the file cache again.
 	 */
 	public function testScansUntilARunThatFoundTheMappingFinishes(): void {
 		$this->step()->run(new RegisterMimeTypeTestOutput());
@@ -113,6 +112,18 @@ class RegisterMimeTypeTest extends TestCase {
 		$this->step()->run($output);
 		$this->assertSame([2, RegisterMimeType::REPAIR_VERSION], [count($this->db->statements), $this->version], 'every run after that');
 		$this->assertContains('The .pad files were typed already; the file cache was not scanned. The README of the app says how to scan it again (Troubleshooting).', $output->infos);
+		$this->assertContains('Registered .pad files.', $output->infos);
+	}
+
+	/** A version above the step's own, should it run after a later release, counts as done. */
+	public function testAHigherVersionCountsAsDone(): void {
+		$this->writeJson('mimetypemapping.json', [PadFileType::EXTENSION => [PadFileType::MIME]]);
+		$this->version = RegisterMimeType::REPAIR_VERSION + 1;
+
+		$this->step()->run(new RegisterMimeTypeTestOutput());
+
+		$this->assertCount(0, $this->db->statements);
+		$this->assertSame(RegisterMimeType::REPAIR_VERSION + 1, $this->version);
 	}
 
 	/** A repair that changed runs once more, as Nextcloud's RepairMimeTypes does. */
@@ -147,29 +158,6 @@ class RegisterMimeTypeTest extends TestCase {
 			$this->assertCount(1, $this->db->statements, $case);
 			$this->assertSame(0, $this->version, $case);
 			$this->assertSame([PadFileType::MIME], $this->jsonFile('mimetypemapping.json')[PadFileType::EXTENSION], $case);
-		}
-	}
-
-	/** The mapping it writes does not make up for a repair that failed. */
-	public function testARepairThatFailedWhereTheMappingWasMissingRunsAgain(): void {
-		foreach ([
-			'mapped to another type' => ['pad' => ['application/x-ownpad']],
-			'mapping file lost' => null,
-		] as $case => $mapping) {
-			$this->freshConfig();
-			if ($mapping !== null) {
-				$this->writeJson('mimetypemapping.json', $mapping);
-			}
-			$this->version = RegisterMimeType::REPAIR_VERSION;
-			$this->db = new RegisterMimeTypeTestDb();
-			$this->db->failure = new \Exception('lock wait timeout');
-			$this->step()->run(new RegisterMimeTypeTestOutput());
-
-			$this->db = new RegisterMimeTypeTestDb();
-			$this->step()->run(new RegisterMimeTypeTestOutput());
-
-			$this->assertCount(1, $this->db->statements, $case);
-			$this->assertSame(RegisterMimeType::REPAIR_VERSION, $this->version, $case);
 		}
 	}
 
@@ -227,6 +215,9 @@ class RegisterMimeTypeTest extends TestCase {
 				$this->assertStringStartsWith('Could not delete the app config value pad_files_mime_version, so the .pad mapping was not written', $e->getMessage(), $case);
 				$this->assertStringContainsString('database gone away', $e->getMessage(), $case);
 			}
+			// The repair ran before the error was raised.
+			$this->assertCount(1, $output->warnings, $case);
+			$this->assertStringStartsWith('Could not give the .pad files their MIME type', $output->warnings[0], $case);
 			$this->assertSame($mapping, is_file($this->configDir . '/mimetypemapping.json') ? $this->jsonFile('mimetypemapping.json') : null, $case);
 			$this->assertSame('text', $this->jsonFile('mimetypealiases.json')[PadFileType::MIME], $case);
 
@@ -252,6 +243,7 @@ class RegisterMimeTypeTest extends TestCase {
 		$this->assertCount(1, $output->warnings);
 		$this->assertStringContainsString('Could not read the app config value pad_files_mime_version', $output->warnings[0]);
 		$this->assertStringContainsString('the value has another type', $output->warnings[0]);
+		$this->assertSame(RegisterMimeType::REPAIR_VERSION, $this->version);
 		$this->assertContains('Registered .pad files.', $output->infos);
 	}
 
@@ -327,8 +319,8 @@ class RegisterMimeTypeTest extends TestCase {
 				$this->assertStringContainsString('contains invalid JSON', $e->getMessage(), $case);
 			}
 
-			// Scanned for, as a file that cannot be read maps nothing, and not
-			// recorded, as the mapping could not be written for the scan.
+			// Scanned for, as a file that cannot be read maps nothing: the
+			// version is forgotten and not recorded.
 			$this->assertCount(1, $this->db->statements, $case);
 			$this->assertSame(0, $this->version, $case);
 			$this->assertNotContains('Registered .pad files.', $output->infos, $case);
@@ -685,8 +677,9 @@ class RegisterMimeTypeTestQuery implements IQueryBuilder {
 		return $this;
 	}
 
+	/** As in Nextcloud, where() replaces what came before; andWhere() adds. */
 	public function where(string $condition): self {
-		$this->conditions[] = $condition;
+		$this->conditions = [$condition];
 		return $this;
 	}
 

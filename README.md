@@ -282,7 +282,13 @@ existing name asks for confirmation because the previous file is gone for good.
   - `php occ maintenance:repair`. That command skips an app limited to
     groups; for one, run `php occ app:enable etherpad_nextcloud -g <group>`
     instead, with a `-g` for every group it is enabled for, as the list
-    replaces the one before.
+    replaces the one before. It takes group IDs, which
+    `php occ config:app:get etherpad_nextcloud enabled` lists; an ID it
+    does not know is dropped without a word, and with none it knows, the
+    app is enabled for everyone. It shows nothing of the repair: once
+    `php occ config:app:get etherpad_nextcloud pad_files_mime_version`
+    prints a value again, the repair has finished, and where it does not,
+    `nextcloud.log` says why.
 
   With several web servers, every one needs the same mapping in its config
   directory: deploy it with the rest of the configuration, or run the
