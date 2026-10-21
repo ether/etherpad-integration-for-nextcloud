@@ -98,7 +98,6 @@ class AppConfigServiceTest extends TestCase {
 		$this->service($this->createMock(IConfig::class), $appConfig)->dropTestFault();
 	}
 
-	/** Read as the admin API stored it, surrounding blanks aside. */
 	private function service(IConfig $config, ?IAppConfig $appConfig = null): AppConfigService {
 		return new AppConfigService($config, $this->createMock(TrustedEmbedOriginsNormalizer::class), $appConfig ?? $this->createMock(IAppConfig::class));
 	}

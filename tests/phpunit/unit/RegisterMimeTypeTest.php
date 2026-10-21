@@ -149,7 +149,6 @@ class RegisterMimeTypeTest extends TestCase {
 	 * from being written, and is not taken for one that finished.
 	 */
 	public function testAFailedRepairStillWritesTheMappingAndIsTriedAgain(): void {
-		$this->writeJson('mimetypemapping.json', [PadFileType::EXTENSION => [PadFileType::MIME]]);
 		$this->db->failure = new \RuntimeException('lock wait timeout');
 		$output = new RegisterMimeTypeTestOutput();
 
@@ -159,6 +158,7 @@ class RegisterMimeTypeTest extends TestCase {
 		$this->assertCount(1, $output->warnings);
 		$this->assertStringContainsString('Could not give the .pad files their MIME type', $output->warnings[0]);
 		$this->assertStringContainsString('lock wait timeout', $output->warnings[0]);
+		$this->assertSame([PadFileType::MIME], $this->jsonFile('mimetypemapping.json')[PadFileType::EXTENSION]);
 		$this->assertSame('text', $this->jsonFile('mimetypealiases.json')[PadFileType::MIME]);
 		$this->assertSame('Etherpad', $this->jsonFile('mimetypenames.json')[PadFileType::MIME]);
 	}
@@ -436,7 +436,7 @@ class RegisterMimeTypeTest extends TestCase {
 		return $decoded;
 	}
 
-	/** @return array<string,string> */
+	/** @return array<string,array{0:string,1:int|false}> */
 	private function configContents(): array {
 		$contents = [];
 		foreach (['mimetypemapping.json', 'mimetypealiases.json', 'mimetypenames.json'] as $name) {

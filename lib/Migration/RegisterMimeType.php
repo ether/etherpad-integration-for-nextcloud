@@ -27,10 +27,11 @@ use OCP\Migration\IRepairStep;
  *
  * It runs on every enable of the app (install) and after every update and
  * every `occ maintenance:repair` (post-migration; see
- * https://docs.nextcloud.com/server/stable/developer_manual/digging_deeper/repair.html).
- * The repair of the file cache reads all of it, so it keeps the version
- * that last finished and runs again only for a newer one, as Nextcloud's
- * own RepairMimeTypes does, or where the mapping is missing.
+ * https://docs.nextcloud.com/server/stable/developer_manual/digging_deeper/repair.html),
+ * and the repair of the file cache reads all of it. So the repair runs
+ * until it has once finished with the mapping already in place, keeping
+ * that version as Nextcloud's own RepairMimeTypes does, and again for a
+ * newer version or where the mapping is missing.
  *
  * @psalm-api
  */
@@ -76,9 +77,7 @@ class RegisterMimeType implements IRepairStep {
 		// The file cache is repaired before the mapping is written, so that an
 		// unwritable config directory cannot keep the existing .pad files from
 		// opening, and a failed repair does not keep the mapping from being
-		// written. The repair reads the whole file cache: it runs until it has
-		// once finished with the mapping in place, and again wherever the
-		// mapping is missing - a file added without it came in untyped.
+		// written.
 		$mappedBefore = $this->isMapped($mappingFile, $mapping);
 		if (!$mappedBefore) {
 			$this->appConfig->forgetPadFilesMimeVersion();
