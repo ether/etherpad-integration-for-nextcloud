@@ -285,6 +285,122 @@ Primary flow (native viewer):
 5. The admin can delete their pads, from the admin page after a confirmation: one listed file's (`POST /api/v1/admin/delete-vanished`, `ConsistencyCheckService::markVanishedFile()`), or all of them (`POST /api/v1/admin/delete-all-vanished`, `markVanished()`) - as many as the count the admin confirmed, and none if the list no longer has that count. Their rows are marked as files deleted for good (`BindingService::markGone()`, which counts what its update changed), and the sweep takes their pads as any other, asking the file cache once more first; an `info` line says it was the admin's word. For all of them the ids are collected once, up to 500,000 a call - the query reads the whole file cache whatever its limit - and that one query also says whether they are as many as confirmed: counted by another, the list could grow in between, and the limit would take a file the admin was not shown. That holds up to those 500,000: a longer list is counted by a query of its own, as near as that gets. They are marked 500 at a time within a sweep's budget, and what was marked is logged whatever ends the run, a failing chunk too: the queries measured at 0.27 s for the ids and 3.7 s for the marks of 500,000 rows among 2 million files (Postgres 16, warm). Each answer carries the list as it is after the action, at the cost of the check itself. With `delete_pad_with_file` off nothing is marked. A mark cannot be taken back from the page. Deleting such a pad in Etherpad alone leaves its row on the list.
 6. Or the admin forgets one listed public pad (`POST /api/v1/admin/forget-vanished`, `ConsistencyCheckService::forgetVanished()`): its row goes, the pad stays in Etherpad, named in an `info` line. The file cache is asked before the row goes, and not again: an id it no longer has does not come back, since a move or a restore updates the file's entry in place, and a question after the delete could only fail with the row gone and nothing logged. Why only a public pad, why the app does neither on its own, and what a forgotten pad is left as: `docs/deleting-pads.md`.
 
+## Cost at scale
+
+What a request, an open viewer and a background run cost the server and
+Etherpad, read from the code of 1.1.0-beta.2; a figure that was measured
+says so. Nextcloud's own work - mounts, the file cache, file versions - is
+not counted. "Etherpad call" is one request to its API, with a 15 s
+timeout unless named. The app has one table, `ep_pad_bindings`, one row
+per `.pad` file, read by its unique index on `file_id`.
+
+### Per request
+
+| Request | App table | `.pad` file | Etherpad calls |
+|---|---|---|---|
+| Open, writer of a protected pad | 1 row | 1 read | 3-4: `getRevisionsCount` (3 s), `createAuthorIfNotExistsFor`, `createSession`, and `listSessionsOfAuthor` when the browser carries session ids |
+| Open, writer of a public pad | 1 row | 1 read | 0-2: `getRevisionsCount`, and `getText` at revision 0 (3 s each) |
+| Open, reader | 1 row | 1 read | 0 for a protected pad, `getReadOnlyID` for a public one |
+| Public link, writable, protected pad | 1 row | 1 read | 2 for a returning visitor (`getRevisionsCount`, `getSessionInfo`), 3 for a new one (`createAuthorIfNotExistsFor`, `createSession`) |
+| Read-only content | 1 row | 1 read | 1 `getHTML`, at most 5 MiB; a pad on another server: a DNS lookup and its export, at most 5 MiB and 20 s |
+| Sync, nothing changed | 1 row | 1 read | 1 `getRevisionsCount` |
+| Sync, pad changed, or forced | 1 row, 1 per write attempt | 1 read, 1 write | 3: `getRevisionsCount`, `getText`, `getHTML`, neither of the last two capped |
+| Embed page | none | none | none; the open it starts costs as above |
+
+- A protected open makes a new Etherpad session every time, by design:
+  Etherpad checks a session's `validUntil` on every socket message, so a
+  reused one could expire mid-edit. Sessions live six hours and are
+  collected afterwards (below). The open also asks the job list up to five
+  times whether the author's collector is queued.
+- The `.pad` file is read whole, stored HTML included, and its size is
+  not capped. A file lock retries the read or the write up to four times,
+  about a second in all; a sync waits up to 3 s for another sync of the
+  same file (`PadSyncLock`, held across the Etherpad calls).
+- Only the public routes are rate-limited: an open 300 times a minute,
+  the content 60, per address signed out and per user signed in. Behind a
+  proxy missing from `trusted_proxies`, all anonymous visitors share one
+  address.
+- Without a memory cache, every public open makes an Etherpad session and
+  all visitors of a link share one author (`PublicLinkSessions`,
+  `PublicLinkVisitors`); with a local cache alone, each web server keeps
+  its own.
+
+### Open viewers
+
+A writer's viewer or embed page sends a sync every `sync_interval_seconds`
+(default 120, from 5 to 3600) while its tab is visible, and one forced
+sync when the tab is hidden or left; nothing polls the sync status. N
+visible viewers therefore cost N/120 requests a second - 8 for 1,000
+viewers, 83 for 10,000 - each with a row read, a file read and one
+Etherpad call. At the 5 s floor it is N/5.
+
+Every viewer of a pad syncs on its own timer. While someone types, each of
+them finds a new revision and writes: V viewers of one pad write it up to
+V times an interval, and every write is a file version. A forced sync
+fetches the pad's text and HTML even when its revision has not moved.
+
+### Deleting, the trash, restoring
+
+- Every delete, by any user, of any file: one file cache read by primary
+  key, and for a file one row read. For a folder, one look at the table
+  says whether any protected pad is active on the instance; if one is, the
+  folder is walked level by level for the protected pads in it, at most
+  10,000 folders and 100 pads, two queries per 500 folders a level
+  (`ProtectedPadsOfNode`). Those queries filter the folders' children by
+  type, so what they read grows with every entry in the folders walked.
+- A protected pad deleted or put in the trash loses its sessions in the
+  request: `listSessionsOfGroup` and up to 100 deletions within 2 s. The
+  rest goes to a job per group, up to 100 groups a delete.
+- File cache removals cost an in-memory check each; those in a trash or a
+  delete are collected and looked up 500 ids at a time, one indexed query.
+- A pad whose file is deleted for good goes with the sweep, within about
+  ten minutes: one or two Etherpad calls per pad (`deletePad`, or
+  `listPads` and `deleteGroup`).
+- A restore costs a file cache read, a row read, a file read and the
+  lost-pad question (1-2 calls, 3 s each). A pad Etherpad lost is made
+  anew in the restore's request: about nine calls, without a budget over
+  them all.
+- An account's deletion joins the table with the file cache on the
+  account's home storage and marks what it finds, 500 rows at a time.
+
+### Background jobs
+
+| Job | Runs | A run takes at most | With nothing to do |
+|---|---|---|---|
+| `GoneFileSweepJob` | every 4 min, on a 5-minute cron tick | 10 batches of 200 rows, 20 s of Etherpad calls | two queries on the table |
+| `CollectExpiredSessionsJob` | one per author with sessions, at their expiry plus 5 min, or a minute later while a backlog lasts | one listing of at most 4 MiB and 15 s, 250 deletions, 20 s | does not run: it is queued by an open |
+| `CollectExpiredGroupSessionsJob` | one per group opened through a link, at most hourly while sessions live | as above | as above |
+| `RevokeGroupSessionsJob` | one per protected group deleted, at +60 s and +600 s | one listing, 250 deletions, 20 s; a file cache query before each deletion | as above |
+
+A listing past 4 MiB, or one that keeps timing out while Etherpad answers
+otherwise, parks the collector for a day. The revocation job reads its
+listing whole.
+
+### What every user pays
+
+- Every Files, Viewer and public share page loads about 52 KB of
+  JavaScript and 5 KB of CSS, which register the Viewer handler and send
+  no request; also for an account the app is not enabled for. Every page
+  allows the Etherpad host as a frame source.
+- Every delete and restore makes the queries above.
+- Every app update, and `occ maintenance:repair`, runs three statements
+  over the whole file cache: the MIME type set on every name ending in
+  `.pad` (`IMimeTypeLoader::updateFilecache()`, `LIKE '%.pad'`), its MIME
+  part backfilled, and a probe for any pad file. None of them uses an
+  index.
+
+### What grows without a bound
+
+- Etherpad authors: one per user, per public link and per visitor of a
+  writable link (up to 250 a link an hour). Etherpad cannot delete an
+  author.
+- Two user preferences per user who opened a protected pad (author id and
+  name), until the account is deleted.
+- With `delete_pad_with_file` off, the rows of files deleted for good stay,
+  and every sweep run reads them.
+- A file whose pad Etherpad refuses to delete keeps its row, tried again
+  every hour.
+
 ## Main Frontend Modules
 
 - `src/viewer-init.js`
