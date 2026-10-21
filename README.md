@@ -272,12 +272,13 @@ existing name asks for confirmation because the previous file is gone for good.
   - `php occ maintenance:mimetype:update-js`
   - `php occ maintenance:mimetype:update-db --repair-filecache`
 - Give every `.pad` file the app's MIME type again. The app does that once,
-  on an update, and again where the `.pad` mapping in
+  when it is enabled or updated, and again where the `.pad` mapping in
   `config/mimetypemapping.json` was missing. With several web servers,
   each needs that mapping in its config directory: run the repair on every
   web server with a config directory of its own, or deploy the mapping to
-  all of them with the rest of the configuration. A file added through one
-  without it came in untyped, and is typed by this:
+  all of them with the rest of the configuration. A file that came in
+  untyped after that - through a server without the mapping, or from a
+  long-running process started before it was written - is typed by this:
   - `php occ config:app:delete etherpad_nextcloud pad_files_mime_version`
   - `php occ maintenance:repair`
 - Reload browser with hard refresh

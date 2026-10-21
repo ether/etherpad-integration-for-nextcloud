@@ -216,6 +216,7 @@ const readTarget = (root) => {
 	const info = readFileSync(join(root, 'appinfo/info.xml'), 'utf8')
 	const version = info.match(/<version>([^<]+)<\/version>/)?.[1]
 	assert.ok(version, `${root}/appinfo/info.xml names no version`)
+	const registerMimeType = join(root, 'lib/Migration/RegisterMimeType.php')
 	return {
 		version,
 		migrations: readdirSync(join(root, 'lib/Migration'))
@@ -226,7 +227,9 @@ const readTarget = (root) => {
 		/** @param {string} name */
 		hasClass: (name) => existsSync(join(root, 'lib', ...name.replace(/^OCA\\EtherpadNextcloud\\/, '').split('\\')) + '.php'),
 		/** The version its repair of the .pad files' MIME type records, 0 for none. */
-		padFilesMimeVersion: Number(readFileSync(join(root, 'lib/Migration/RegisterMimeType.php'), 'utf8').match(/REPAIR_VERSION = (\d+);/)?.[1] ?? 0),
+		padFilesMimeVersion: existsSync(registerMimeType)
+			? Number(readFileSync(registerMimeType, 'utf8').match(/REPAIR_VERSION = (\d+);/)?.[1] ?? 0)
+			: 0,
 	}
 }
 

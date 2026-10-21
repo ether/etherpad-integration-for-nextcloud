@@ -387,12 +387,13 @@ listing whole.
   file cache until a repair has once finished with
   `config/mimetypemapping.json` mapping `.pad` to the app's MIME type
   (`pad_files_mime_version` in the app config, raised when the repair
-  changes), and again wherever the mapping is missing - another app's, a
-  config directory that lost it. The mapping read is that of the server
-  that runs the repair, and it is written there: with several web servers
-  that keep their own config directory, each needs the repair run on it,
-  or the mapping deployed to all of them. The repair is
-  one statement without an index: the MIME type and its part on every
+  changes), and again wherever the mapping was missing - another app's, a
+  config directory that lost it. The repair writes the mapping before it
+  types the files, so a first install scans once. The mapping read is that
+  of the server that runs the repair, and it is written there: with
+  several web servers that keep their own config directory, each needs
+  the repair run on it, or the mapping deployed to all of them. The repair
+  is one statement without an index: the MIME type and its part on every
   name ending in `.pad` that lacks either (`LIKE '%.pad'`). Otherwise they
   read none: with the mapping in place, Nextcloud types each `.pad` file it
   adds. Deleting `pad_files_mime_version` makes the next repair run again.

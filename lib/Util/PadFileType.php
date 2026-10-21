@@ -19,7 +19,7 @@ namespace OCA\EtherpadNextcloud\Util;
  *
  * The two answers can disagree: a file that came in while the MIME type
  * was not mapped is a pad by name and not by type until RegisterMimeType's
- * repair types it.
+ * repair types it, which it does not on every run (see there).
  */
 final class PadFileType {
 	/** Without the dot, which is how Nextcloud's mime mapping names it. */
