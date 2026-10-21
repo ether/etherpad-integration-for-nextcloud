@@ -677,7 +677,7 @@ class RegisterMimeTypeTestQuery implements IQueryBuilder {
 		return $this;
 	}
 
-	/** As in Nextcloud, where() replaces what came before; andWhere() adds. */
+	/** As IQueryBuilder documents and the unsharded builder does, where() replaces what came before; andWhere() adds. */
 	public function where(string $condition): self {
 		$this->conditions = [$condition];
 		return $this;

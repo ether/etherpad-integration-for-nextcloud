@@ -287,8 +287,10 @@ existing name asks for confirmation because the previous file is gone for good.
     does not know is dropped without a word, and with none it knows, the
     app is enabled for everyone. It shows nothing of the repair: once
     `php occ config:app:get etherpad_nextcloud pad_files_mime_version`
-    prints a value again, the repair has finished, and where it does not,
-    `nextcloud.log` says why.
+    prints a value again, the repair has finished. Where it does not, run
+    it again: `app:enable` shows none of the step's warnings, and
+    `nextcloud.log` has only an error that stopped it, such as a mapping
+    it could not write.
 
   With several web servers, every one needs the same mapping in its config
   directory: deploy it with the rest of the configuration, or run the
