@@ -25,8 +25,9 @@ use OCP\Migration\IRepairStep;
  * (https://docs.nextcloud.com/server/stable/admin_manual/configuration_mimetypes/index.html),
  * and their type on the files the file cache has already.
  *
- * It runs on every enable of the app (install) and after every update and
- * every `occ maintenance:repair` (post-migration; see
+ * It runs on every enable of the app (install), and after every update and,
+ * unless the app is limited to groups, every `occ maintenance:repair`
+ * (post-migration; see
  * https://docs.nextcloud.com/server/stable/developer_manual/digging_deeper/repair.html),
  * and the repair of the file cache reads all of it. So the repair runs
  * until it has once finished with the mapping in place, keeping that
@@ -78,8 +79,8 @@ class RegisterMimeType implements IRepairStep {
 		$mappingFile = $configDir . 'mimetypemapping.json';
 		$mapping = [PadFileType::EXTENSION => [PadFileType::MIME]];
 
-		// The mapping goes first, so that the repair after it leaves no file
-		// added in between untyped; an unwritable config directory still
+		// The mapping goes first, so that the run that writes it can record
+		// the repair; a mapping file that cannot be written or read still
 		// lets the repair run, and is reported once it has.
 		$mappedBefore = $this->isMapped($mappingFile, $mapping);
 		$mappingError = null;
@@ -115,24 +116,51 @@ class RegisterMimeType implements IRepairStep {
 
 	/**
 	 * The repair of the file cache, recorded once the mapping was in place
-	 * for it. A failure is a warning, the registration stands, and the next
-	 * run tries again.
+	 * for it. A failure is a warning and the registration stands. Where the
+	 * app config fails, the file cache is scanned: typing the files matters
+	 * more than sparing a scan.
 	 */
 	private function repairFileCache(IOutput $output, bool $mappedBefore, bool $mappedNow): void {
 		try {
-			if ($mappedBefore && $this->appConfig->padFilesMimeVersion() >= static::REPAIR_VERSION) {
+			if (!$mappedBefore) {
+				// Files came in untyped without the mapping. Forgetting the
+				// version keeps the repair owed until one finishes, should
+				// this one fail.
+				$this->appConfig->forgetPadFilesMimeVersion();
+			} elseif ($this->appConfig->padFilesMimeVersion() >= static::REPAIR_VERSION) {
 				$output->info(sprintf(
-					'The .pad files were typed already; the file cache was not scanned. To scan it again, delete the app config value %s and run the repair.',
+					'The .pad files were typed already; the file cache was not scanned. To scan it again, delete the app config value %s and run the repair - for an app limited to groups, enable it for them again.',
 					AppConfigService::PAD_FILES_MIME_VERSION,
 				));
 				return;
 			}
-			$output->info(sprintf('Gave %d .pad files their MIME type.', $this->typePadFiles()));
-			if ($mappedNow) {
-				$this->appConfig->recordPadFilesMimeVersion(static::REPAIR_VERSION);
-			}
 		} catch (\Exception $e) {
-			$output->warning('Could not give the .pad files their MIME type; the next update tries again: ' . $e->getMessage());
+			$output->warning(sprintf(
+				'Could not read or reset the app config value %s, so the file cache is scanned; should this repeat, delete the value: %s',
+				AppConfigService::PAD_FILES_MIME_VERSION,
+				$e->getMessage(),
+			));
+		}
+
+		try {
+			$typed = $this->typePadFiles();
+		} catch (\Exception $e) {
+			$output->warning('Could not give the .pad files their MIME type; the next run tries again: ' . $e->getMessage());
+			return;
+		}
+		$output->info(sprintf('Gave %d .pad files their MIME type.', $typed));
+
+		if (!$mappedNow) {
+			return;
+		}
+		try {
+			$this->appConfig->recordPadFilesMimeVersion(static::REPAIR_VERSION);
+		} catch (\Exception $e) {
+			$output->warning(sprintf(
+				'Typed the .pad files, but could not record that in the app config value %s; the next run scans the file cache again: %s',
+				AppConfigService::PAD_FILES_MIME_VERSION,
+				$e->getMessage(),
+			));
 		}
 	}
 
@@ -168,9 +196,8 @@ class RegisterMimeType implements IRepairStep {
 	}
 
 	/**
-	 * Whether $file maps as $mapping says. One that cannot be read does not,
-	 * and appendToJsonFile() reports what is wrong with it - after the file
-	 * cache's repair.
+	 * Whether $file maps as $mapping says. One that cannot be read does not;
+	 * appendToJsonFile() says what is wrong with it.
 	 *
 	 * @param array<string,mixed> $mapping
 	 */

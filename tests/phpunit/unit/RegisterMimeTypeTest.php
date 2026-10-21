@@ -24,7 +24,8 @@ class RegisterMimeTypeTest extends TestCase {
 	private RegisterMimeTypeTestDb $db;
 	/** pad_files_mime_version, as the app config would keep it */
 	private int $version = 0;
-	private ?\Exception $versionFailure = null;
+	private ?\Exception $readFailure = null;
+	private ?\Exception $recordFailure = null;
 
 	protected function setUp(): void {
 		parent::setUp();
@@ -106,7 +107,7 @@ class RegisterMimeTypeTest extends TestCase {
 		$output = new RegisterMimeTypeTestOutput();
 		$this->step()->run($output);
 		$this->assertSame([1, RegisterMimeType::REPAIR_VERSION], [count($this->db->statements), $this->version], 'every run after it');
-		$this->assertContains('The .pad files were typed already; the file cache was not scanned. To scan it again, delete the app config value pad_files_mime_version and run the repair.', $output->infos);
+		$this->assertContains('The .pad files were typed already; the file cache was not scanned. To scan it again, delete the app config value pad_files_mime_version and run the repair - for an app limited to groups, enable it for them again.', $output->infos);
 	}
 
 	/** A repair that changed runs once more, as Nextcloud's RepairMimeTypes does. */
@@ -140,6 +141,29 @@ class RegisterMimeTypeTest extends TestCase {
 		}
 	}
 
+	/** The mapping it writes does not make up for a repair that failed. */
+	public function testARepairThatFailedWhereTheMappingWasMissingRunsAgain(): void {
+		foreach ([
+			'mapped to another type' => ['pad' => ['application/x-ownpad']],
+			'mapping file lost' => null,
+		] as $case => $mapping) {
+			@unlink($this->configDir . '/mimetypemapping.json');
+			if ($mapping !== null) {
+				$this->writeJson('mimetypemapping.json', $mapping);
+			}
+			$this->version = RegisterMimeType::REPAIR_VERSION;
+			$this->db = new RegisterMimeTypeTestDb();
+			$this->db->failure = new \Exception('lock wait timeout');
+			$this->step()->run(new RegisterMimeTypeTestOutput());
+
+			$this->db = new RegisterMimeTypeTestDb();
+			$this->step()->run(new RegisterMimeTypeTestOutput());
+
+			$this->assertCount(1, $this->db->statements, $case);
+			$this->assertSame(RegisterMimeType::REPAIR_VERSION, $this->version, $case);
+		}
+	}
+
 	/**
 	 * A repair that fails, on a lock timeout say, is not taken for one that
 	 * finished, and keeps nothing else from being registered.
@@ -151,7 +175,7 @@ class RegisterMimeTypeTest extends TestCase {
 				$this->writeJson('mimetypemapping.json', [PadFileType::EXTENSION => [PadFileType::MIME]]);
 			}
 			$this->db = new RegisterMimeTypeTestDb();
-			$this->db->failure = new \RuntimeException('lock wait timeout');
+			$this->db->failure = new \Exception('lock wait timeout');
 			$this->version = 0;
 			$output = new RegisterMimeTypeTestOutput();
 
@@ -168,17 +192,45 @@ class RegisterMimeTypeTest extends TestCase {
 		}
 	}
 
-	/** The app config is the repair's alone: a value that cannot be read stops no registration. */
-	public function testAnAppConfigThatThrowsStopsNoRegistration(): void {
+	/** A version that cannot be read spares no scan and stops no registration. */
+	public function testAVersionThatCannotBeReadIsScannedPast(): void {
 		$this->writeJson('mimetypemapping.json', [PadFileType::EXTENSION => [PadFileType::MIME]]);
-		$this->versionFailure = new \RuntimeException('the value has another type');
+		$this->readFailure = new \Exception('the value has another type');
 		$output = new RegisterMimeTypeTestOutput();
 
 		$this->step()->run($output);
 
-		$this->assertSame([PadFileType::MIME], $this->jsonFile('mimetypemapping.json')[PadFileType::EXTENSION]);
+		$this->assertCount(1, $this->db->statements);
 		$this->assertCount(1, $output->warnings);
+		$this->assertStringContainsString('Could not read or reset the app config value pad_files_mime_version', $output->warnings[0]);
 		$this->assertStringContainsString('the value has another type', $output->warnings[0]);
+		$this->assertContains('Registered .pad files.', $output->infos);
+	}
+
+	/** Without the mapping the repair runs whatever is recorded, so the version is not read. */
+	public function testWithoutTheMappingTheVersionIsNotRead(): void {
+		$this->readFailure = new \Exception('the value has another type');
+		$output = new RegisterMimeTypeTestOutput();
+
+		$this->step()->run($output);
+
+		$this->assertSame([], $output->warnings);
+		$this->assertCount(1, $this->db->statements);
+		$this->assertSame(RegisterMimeType::REPAIR_VERSION, $this->version);
+	}
+
+	/** Typed but not recorded: the warning says so, and not that typing failed. */
+	public function testAVersionThatCannotBeRecordedIsAWarningOfItsOwn(): void {
+		$this->recordFailure = new \Exception('the value has another type');
+		$output = new RegisterMimeTypeTestOutput();
+
+		$this->step()->run($output);
+
+		$this->assertCount(1, $this->db->statements);
+		$this->assertSame(0, $this->version);
+		$this->assertContains('Gave 3 .pad files their MIME type.', $output->infos);
+		$this->assertCount(1, $output->warnings);
+		$this->assertStringStartsWith('Typed the .pad files, but could not record that', $output->warnings[0]);
 		$this->assertContains('Registered .pad files.', $output->infos);
 	}
 
@@ -213,21 +265,25 @@ class RegisterMimeTypeTest extends TestCase {
 	}
 
 	public function testRejectsInvalidRequiredConfigurationWithoutReportingSuccess(): void {
-		file_put_contents($this->configDir . '/mimetypemapping.json', '{invalid');
-		$output = new RegisterMimeTypeTestOutput();
+		foreach (['no version' => 0, 'the version recorded' => RegisterMimeType::REPAIR_VERSION] as $case => $version) {
+			file_put_contents($this->configDir . '/mimetypemapping.json', '{invalid');
+			$this->db = new RegisterMimeTypeTestDb();
+			$this->version = $version;
+			$output = new RegisterMimeTypeTestOutput();
 
-		try {
-			$this->step()->run($output);
-			self::fail('Invalid required MIME configuration must abort registration.');
-		} catch (\RuntimeException $e) {
-			$this->assertStringContainsString('contains invalid JSON', $e->getMessage());
+			try {
+				$this->step()->run($output);
+				self::fail('Invalid required MIME configuration must abort registration.');
+			} catch (\RuntimeException $e) {
+				$this->assertStringContainsString('contains invalid JSON', $e->getMessage(), $case);
+			}
+
+			// Scanned for, as a file that cannot be read maps nothing, and not
+			// recorded, as the mapping could not be written for the scan.
+			$this->assertCount(1, $this->db->statements, $case);
+			$this->assertSame(0, $this->version, $case);
+			$this->assertNotContains('Registered .pad files.', $output->infos, $case);
 		}
-
-		// Scanned for, as a file that cannot be read maps nothing, and not
-		// recorded, as the mapping could not be written for the scan.
-		$this->assertCount(1, $this->db->statements);
-		$this->assertSame(0, $this->version);
-		$this->assertNotContains('Registered .pad files.', $output->infos);
 	}
 
 	public function testAlreadyCorrectReadOnlyConfigurationSucceeds(): void {
@@ -280,8 +336,8 @@ class RegisterMimeTypeTest extends TestCase {
 			$this->assertStringContainsString('Could not write MIME configuration file', $e->getMessage());
 		}
 
-		// The file cache is repaired first, so an unwritable config
-		// directory does not keep existing files from opening.
+		// The repair runs even so: an unwritable config directory does not
+		// keep existing files from opening.
 		$this->assertCount(1, $this->db->statements);
 		$this->assertNotContains('Registered .pad files.', $output->infos);
 	}
@@ -429,13 +485,19 @@ class RegisterMimeTypeTest extends TestCase {
 	private function appConfig(): AppConfigService {
 		$appConfig = $this->createStub(AppConfigService::class);
 		$appConfig->method('padFilesMimeVersion')->willReturnCallback(function (): int {
-			if ($this->versionFailure !== null) {
-				throw $this->versionFailure;
+			if ($this->readFailure !== null) {
+				throw $this->readFailure;
 			}
 			return $this->version;
 		});
 		$appConfig->method('recordPadFilesMimeVersion')->willReturnCallback(function (int $version): void {
+			if ($this->recordFailure !== null) {
+				throw $this->recordFailure;
+			}
 			$this->version = $version;
+		});
+		$appConfig->method('forgetPadFilesMimeVersion')->willReturnCallback(function (): void {
+			$this->version = 0;
 		});
 
 		return $appConfig;

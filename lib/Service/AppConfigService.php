@@ -94,6 +94,10 @@ class AppConfigService {
 		$this->appConfig->setValueInt(Application::APP_ID, self::PAD_FILES_MIME_VERSION, $version, true);
 	}
 
+	public function forgetPadFilesMimeVersion(): void {
+		$this->appConfig->deleteKey(Application::APP_ID, self::PAD_FILES_MIME_VERSION);
+	}
+
 	/**
 	 * The test fault 1.1.0-beta.1 let a debug instance set, gone with the
 	 * faults themselves.
