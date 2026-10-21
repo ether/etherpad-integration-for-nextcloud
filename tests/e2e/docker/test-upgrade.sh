@@ -274,13 +274,9 @@ snapshot > "$work/before.json"
 log_from="$(log_lines)"
 
 echo "==> upgrading to $to_version"
-# sync-app.sh upgrades the app when a migration of it has not run; for a
-# version without one, the update is run here, as Nextcloud runs it. The
-# working tree goes in as sync-app.sh copies it, an archive as it is.
+# sync-app.sh upgrades the app as Nextcloud would ask for it. The working
+# tree goes in as sync-app.sh copies it, an archive as it is.
 APP_SOURCE="${TO_ARCHIVE:+$to_app}" bash "$here/sync-app.sh"
-if [[ "$(occ config:app:get etherpad_nextcloud installed_version)" != "$to_version" ]]; then
-	update_app
-fi
 installed="$(occ config:app:get etherpad_nextcloud installed_version)"
 if [[ "$installed" != "$to_version" ]]; then
 	echo "The upgrade left version $installed installed, not $to_version." >&2
