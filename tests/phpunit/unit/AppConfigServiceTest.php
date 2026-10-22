@@ -66,6 +66,31 @@ class AppConfigServiceTest extends TestCase {
 		}
 	}
 
+	/** Kept lazy and as a number: the repair step reads it, no request does. */
+	public function testThePadFilesMimeVersionIsLazyAndReadAsRecorded(): void {
+		$stored = [];
+		$appConfig = $this->createMock(IAppConfig::class);
+		$appConfig->method('getValueInt')->willReturnCallback(static function (string $app, string $key, int $default = 0, bool $lazy = false) use (&$stored): int {
+			return $stored[$app . '/' . $key . '/' . ($lazy ? 'lazy' : 'eager')] ?? $default;
+		});
+		$appConfig->method('setValueInt')->willReturnCallback(static function (string $app, string $key, int $value, bool $lazy = false) use (&$stored): bool {
+			$stored[$app . '/' . $key . '/' . ($lazy ? 'lazy' : 'eager')] = $value;
+			return true;
+		});
+		$appConfig->method('deleteKey')->willReturnCallback(static function (string $app, string $key) use (&$stored): void {
+			unset($stored[$app . '/' . $key . '/lazy'], $stored[$app . '/' . $key . '/eager']);
+		});
+		$service = $this->service($this->createMock(IConfig::class), $appConfig);
+
+		$this->assertSame(0, $service->padFilesMimeVersion());
+		$service->recordPadFilesMimeVersion(1);
+		$this->assertSame(1, $service->padFilesMimeVersion());
+		$this->assertSame(['etherpad_nextcloud/pad_files_mime_version/lazy' => 1], $stored);
+		$service->forgetPadFilesMimeVersion();
+		$this->assertSame([], $stored);
+		$this->assertSame(0, $service->padFilesMimeVersion());
+	}
+
 	/** The test fault of 1.1.0-beta.1 goes with its faults. */
 	public function testTheTestFaultOfBeta1IsDropped(): void {
 		$appConfig = $this->createMock(IAppConfig::class);
@@ -74,7 +99,6 @@ class AppConfigServiceTest extends TestCase {
 		$this->service($this->createMock(IConfig::class), $appConfig)->dropTestFault();
 	}
 
-	/** Read as the admin API stored it, surrounding blanks aside. */
 	private function service(IConfig $config, ?IAppConfig $appConfig = null): AppConfigService {
 		return new AppConfigService($config, $this->createMock(TrustedEmbedOriginsNormalizer::class), $appConfig ?? $this->createMock(IAppConfig::class));
 	}

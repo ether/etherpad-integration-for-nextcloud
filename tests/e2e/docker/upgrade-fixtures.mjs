@@ -211,6 +211,21 @@ const MIGRATIONS = {
 	},
 }
 
+/**
+ * A declaration this cannot read fails here, not as a missing setting
+ * further on.
+ * @param {string} file
+ */
+const readRepairVersion = (file) => {
+	const source = existsSync(file) ? readFileSync(file, 'utf8') : ''
+	if (!/\bconst REPAIR_VERSION\b/.test(source)) {
+		return 0
+	}
+	const match = source.match(/\bconst REPAIR_VERSION = (\d+);/)
+	assert.ok(match, `${file} declares REPAIR_VERSION in a form this test cannot read`)
+	return Number(match[1])
+}
+
 /** @param {string} root */
 const readTarget = (root) => {
 	const info = readFileSync(join(root, 'appinfo/info.xml'), 'utf8')
@@ -225,6 +240,8 @@ const readTarget = (root) => {
 		jobs: [...info.matchAll(/<job>([^<]+)<\/job>/g)].map((match) => match[1]),
 		/** @param {string} name */
 		hasClass: (name) => existsSync(join(root, 'lib', ...name.replace(/^OCA\\EtherpadNextcloud\\/, '').split('\\')) + '.php'),
+		/** The version its repair of the .pad files' MIME type records, 0 for none (releases up to 1.1.0-beta.2). */
+		padFilesMimeVersion: readRepairVersion(join(root, 'lib/Migration/RegisterMimeType.php')),
 	}
 }
 
@@ -307,6 +324,11 @@ if (phase === 'seed') {
 		MIGRATIONS[version](expected)
 	}
 	expected.settings.installed_version = target.version
+	// Not a migration's: the repair of the .pad files' MIME type records it
+	// on the first update that runs it, and keeps it.
+	if (target.padFilesMimeVersion > 0) {
+		expected.settings.pad_files_mime_version = String(target.padFilesMimeVersion)
+	}
 	expected.indexes.sort()
 
 	assert.deepEqual(after.bindings, filledIn(expected.bindings, after.bindings), 'rows')

@@ -9,17 +9,43 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\Migration;
 
 use OCA\EtherpadNextcloud\AppInfo\Application;
+use OCA\EtherpadNextcloud\Service\AppConfigService;
 use OCA\EtherpadNextcloud\Util\PadFileType;
 use OCP\App\AppPathNotFoundException;
 use OCP\App\IAppManager;
+use OCP\DB\QueryBuilder\IQueryBuilder;
+use OCP\Files\FileInfo;
 use OCP\Files\IMimeTypeLoader;
+use OCP\IDBConnection;
 use OCP\Migration\IOutput;
 use OCP\Migration\IRepairStep;
 
 /**
+ * Registers .pad files: their mapping, alias and name in the config
+ * directory, as the admin manual has it for a MIME type of one's own
+ * (https://docs.nextcloud.com/server/stable/admin_manual/configuration_mimetypes/index.html),
+ * and their type on the files the file cache has already.
+ *
+ * It runs on every enable of the app (install), and after every update,
+ * every enable of an app installed already and, unless the app is limited
+ * to groups, every `occ maintenance:repair` (post-migration; see
+ * https://docs.nextcloud.com/server/stable/developer_manual/digging_deeper/repair.html#repair-step-types).
+ *
+ * The repair of the file cache reads all of it, so it runs until it has
+ * once finished in a run that found the mapping in place, keeping that
+ * version as Nextcloud's own RepairMimeTypes does, and again for a newer
+ * version or where the mapping was missing.
+ *
  * @psalm-api
  */
 class RegisterMimeType implements IRepairStep {
+	/**
+	 * Raised when the repair of the file cache changes, so that it runs once more.
+	 *
+	 * @var positive-int
+	 */
+	public const REPAIR_VERSION = 1;
+
 	/**
 	 * A text document, not an office one: aliasing onto x-office/document
 	 * would also file pads under the Files type filter's "Documents", and
@@ -36,6 +62,8 @@ class RegisterMimeType implements IRepairStep {
 	public function __construct(
 		private IMimeTypeLoader $mimeTypeLoader,
 		private IAppManager $appManager,
+		private IDBConnection $db,
+		private AppConfigService $appConfig,
 	) {
 	}
 
@@ -50,16 +78,19 @@ class RegisterMimeType implements IRepairStep {
 			);
 		}
 		$configDir = rtrim(\OC::$configDir, '/') . '/';
+		$mappingFile = $configDir . 'mimetypemapping.json';
+		$mapping = [PadFileType::EXTENSION => [PadFileType::MIME]];
 
-		// Before any file is touched: this is the half that makes existing
-		// .pad files open, and it must not be lost to an unwritable config
-		// directory.
-		$mimeTypeId = $this->mimeTypeLoader->getId(PadFileType::MIME);
-		$this->mimeTypeLoader->updateFilecache(PadFileType::EXTENSION, $mimeTypeId);
-
-		$this->appendToJsonFile($configDir . 'mimetypemapping.json', [
-			PadFileType::EXTENSION => [PadFileType::MIME],
-		]);
+		// The mapping goes first, so that fewer files come in untyped while
+		// the repair runs; a mapping that cannot be written still lets the
+		// repair run, and is reported once it has.
+		$mappedBefore = $this->isMapped($mappingFile, $mapping);
+		$mappingError = null;
+		try {
+			$this->writeMapping($mappingFile, $mapping, $mappedBefore);
+		} catch (\RuntimeException $e) {
+			$mappingError = $e;
+		}
 
 		$complete = $this->appendOptionalMappings(
 			$output,
@@ -75,9 +106,137 @@ class RegisterMimeType implements IRepairStep {
 		) && $complete;
 		$complete = $this->removeLegacyCoreIcon($output) && $complete;
 
+		$complete = $this->repairFileCache($output, $mappedBefore) && $complete;
+		if ($mappingError !== null) {
+			throw $mappingError;
+		}
+
 		$output->info($complete
-			? 'Registered .pad files and backfilled their MIME type.'
+			? 'Registered .pad files.'
 			: 'Registered .pad files, but some of it was skipped - see the warnings above.');
+	}
+
+	/**
+	 * Where the mapping was missing, the recorded version is forgotten
+	 * before the mapping is written: should this run's repair fail, the
+	 * mapping in place beside the old version would make later runs skip
+	 * the repair.
+	 *
+	 * @param array<string,mixed> $mapping
+	 * @throws \RuntimeException where forgetting the version or writing the mapping fails
+	 */
+	private function writeMapping(string $file, array $mapping, bool $mappedBefore): void {
+		if (!$mappedBefore) {
+			try {
+				$this->appConfig->forgetPadFilesMimeVersion();
+			} catch (\Exception $e) {
+				throw new \RuntimeException(sprintf(
+					'Could not delete the app config value %s, so the .pad mapping was not written; the next run tries again: %s',
+					AppConfigService::PAD_FILES_MIME_VERSION,
+					$e->getMessage(),
+				), 0, $e);
+			}
+		}
+		$this->appendToJsonFile($file, $mapping);
+	}
+
+	/**
+	 * The repair of the file cache. A failure is a warning and the
+	 * registration stands. Where the version cannot be read, the file cache
+	 * is scanned: typing the files matters more than sparing a scan.
+	 *
+	 * @return bool whether the files are typed and, where due, that recorded
+	 */
+	private function repairFileCache(IOutput $output, bool $mappedBefore): bool {
+		if ($mappedBefore) {
+			try {
+				if ($this->appConfig->padFilesMimeVersion() >= static::REPAIR_VERSION) {
+					$output->info('The .pad files were typed already; the file cache was not scanned. The README of the app says how to scan it again (Troubleshooting).');
+					return true;
+				}
+			} catch (\Exception $e) {
+				$output->warning(sprintf(
+					'Could not read the app config value %s, so the file cache is scanned; should this repeat, delete the value: %s',
+					AppConfigService::PAD_FILES_MIME_VERSION,
+					$e->getMessage(),
+				));
+			}
+		}
+
+		try {
+			$typed = $this->typePadFiles();
+		} catch (\Exception $e) {
+			$output->warning('Could not give the .pad files their MIME type; the next run tries again: ' . $e->getMessage());
+			return false;
+		}
+		$output->info(sprintf('Gave %d .pad files their MIME type.', $typed));
+
+		// Only a run that found the mapping records: where this one wrote it,
+		// processes started before may have added files untyped while it ran.
+		if (!$mappedBefore) {
+			return true;
+		}
+		try {
+			$this->appConfig->recordPadFilesMimeVersion(static::REPAIR_VERSION);
+		} catch (\Exception $e) {
+			$output->warning(sprintf(
+				'Typed the .pad files, but could not record that in the app config value %s; the next run scans the file cache again: %s',
+				AppConfigService::PAD_FILES_MIME_VERSION,
+				$e->getMessage(),
+			));
+			return false;
+		}
+		return true;
+	}
+
+	/**
+	 * Sets the pad MIME type and its part on every file named *.pad that
+	 * lacks either, and the part on every file of the pad type under another
+	 * name - a pad in the trash, say - in one statement: it reads the whole
+	 * file cache, as no index serves a suffix.
+	 *
+	 * @return int the rows it changed
+	 */
+	private function typePadFiles(): int {
+		$typeId = $this->mimeTypeLoader->getId(PadFileType::MIME);
+		$partId = $this->mimeTypeLoader->getId(explode('/', PadFileType::MIME, 2)[0]);
+		$folderId = $this->mimeTypeLoader->getId(FileInfo::MIMETYPE_FOLDER);
+
+		$qb = $this->db->getQueryBuilder();
+		$qb->update('filecache')
+			// The statement has no shard key, so a sharded file cache runs it
+			// only when told to run it on every shard.
+			->runAcrossAllShards()
+			->set('mimetype', $qb->createNamedParameter($typeId, IQueryBuilder::PARAM_INT))
+			->set('mimepart', $qb->createNamedParameter($partId, IQueryBuilder::PARAM_INT))
+			->where($qb->expr()->orX(
+				$qb->expr()->like(
+					$qb->func()->lower('name'),
+					$qb->createNamedParameter('%' . $this->db->escapeLikeParameter(PadFileType::SUFFIX)),
+				),
+				$qb->expr()->eq('mimetype', $qb->createNamedParameter($typeId, IQueryBuilder::PARAM_INT)),
+			))
+			->andWhere($qb->expr()->neq('mimetype', $qb->createNamedParameter($folderId, IQueryBuilder::PARAM_INT)))
+			->andWhere($qb->expr()->orX(
+				$qb->expr()->neq('mimetype', $qb->createNamedParameter($typeId, IQueryBuilder::PARAM_INT)),
+				$qb->expr()->neq('mimepart', $qb->createNamedParameter($partId, IQueryBuilder::PARAM_INT)),
+			));
+
+		return $qb->executeStatement();
+	}
+
+	/**
+	 * Whether $file maps as $mapping says. One that cannot be read maps
+	 * nothing.
+	 *
+	 * @param array<string,mixed> $mapping
+	 */
+	private function isMapped(string $file, array $mapping): bool {
+		try {
+			return self::containsMappings($this->readJsonFile($file), $mapping);
+		} catch (\RuntimeException) {
+			return false;
+		}
 	}
 
 	/**
@@ -153,7 +312,12 @@ class RegisterMimeType implements IRepairStep {
 			$file = $resolved;
 		}
 
-		$temporary = $file . '.' . bin2hex(random_bytes(6)) . '.tmp';
+		try {
+			$suffix = bin2hex(random_bytes(6));
+		} catch (\Exception $e) {
+			throw new \RuntimeException(sprintf('Could not name a temporary file for "%s".', $file), 0, $e);
+		}
+		$temporary = $file . '.' . $suffix . '.tmp';
 		if (@file_put_contents($temporary, $contents, LOCK_EX) === false) {
 			return false;
 		}

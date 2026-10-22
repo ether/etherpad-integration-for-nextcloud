@@ -24,12 +24,10 @@
 	<repair-steps>
 		<post-migration>
 			<step>OCA\EtherpadNextcloud\Migration\RegisterMimeType</step>
-			<step>OCA\EtherpadNextcloud\Migration\BackfillPadMimeType</step>
 			<step>OCA\EtherpadNextcloud\Migration\MarkApiKeySensitive</step>
 		</post-migration>
 		<install>
 			<step>OCA\EtherpadNextcloud\Migration\RegisterMimeType</step>
-			<step>OCA\EtherpadNextcloud\Migration\BackfillPadMimeType</step>
 		</install>
 	</repair-steps>
 	<settings>

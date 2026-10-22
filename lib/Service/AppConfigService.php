@@ -15,6 +15,8 @@ use OCP\IConfig;
 class AppConfigService {
 	/** Whether a file deleted for good takes its pad along; `delete_on_trash` before. */
 	public const DELETE_PAD_WITH_FILE = 'delete_pad_with_file';
+	/** The version of RegisterMimeType's repair of the .pad files that last finished in a run that found the mapping in place. */
+	public const PAD_FILES_MIME_VERSION = 'pad_files_mime_version';
 
 	public function __construct(
 		private IConfig $config,
@@ -80,6 +82,20 @@ class AppConfigService {
 			$this->appConfig->setValueString(Application::APP_ID, self::DELETE_PAD_WITH_FILE, $old);
 		}
 		$this->appConfig->deleteKey(Application::APP_ID, 'delete_on_trash');
+	}
+
+	/** 0 where no version is recorded. */
+	public function padFilesMimeVersion(): int {
+		return $this->appConfig->getValueInt(Application::APP_ID, self::PAD_FILES_MIME_VERSION, 0, true);
+	}
+
+	/** Lazy: only that repair reads it, not every request. */
+	public function recordPadFilesMimeVersion(int $version): void {
+		$this->appConfig->setValueInt(Application::APP_ID, self::PAD_FILES_MIME_VERSION, $version, true);
+	}
+
+	public function forgetPadFilesMimeVersion(): void {
+		$this->appConfig->deleteKey(Application::APP_ID, self::PAD_FILES_MIME_VERSION);
 	}
 
 	/**

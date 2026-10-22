@@ -383,11 +383,23 @@ listing whole.
   no request; also for an account the app is not enabled for. Every page
   allows the Etherpad host as a frame source.
 - Every delete and restore makes the queries above.
-- Every app update, and `occ maintenance:repair`, runs three statements
-  over the whole file cache: the MIME type set on every name ending in
-  `.pad` (`IMimeTypeLoader::updateFilecache()`, `LIKE '%.pad'`), its MIME
-  part backfilled, and a probe for any pad file. None of them uses an
-  index.
+- An install, an app update and `occ maintenance:repair` read the whole
+  file cache until a repair has once finished in a run that found
+  `config/mimetypemapping.json` mapping `.pad` to the app's MIME type
+  (`pad_files_mime_version` in the app config, raised when the repair
+  changes), and again wherever the mapping was missing - another app's, a
+  config directory that lost it. So an install that writes the mapping
+  scans twice: when the app is enabled, and on the next update or repair,
+  as processes started before the mapping was written may have added
+  files untyped during the first. Enabling an app installed already runs
+  the step twice in a row, after the migrations and as the install step:
+  where the mapping was missing, it scans twice at once, and the second
+  records. The repair is one statement without an index: the MIME type
+  and its part on every name ending in `.pad` that lacks either
+  (`LIKE '%.pad'`), and the part on every file of the pad type under
+  another name. Otherwise they read none: with the mapping in place,
+  Nextcloud types each `.pad` file it adds. How to run it again, and what
+  several web servers need, is in the README's Troubleshooting.
 
 ### What grows without a bound
 
