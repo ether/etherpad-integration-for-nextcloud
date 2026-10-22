@@ -225,7 +225,7 @@ final class InMemoryBindingQuery implements IQueryBuilder {
 			usort($rows, fn (array $a, array $b): int => $sign * ((int)$this->value($a, $column) <=> (int)$this->value($b, $column)));
 		}
 		$rows = array_slice($rows, $this->offset, $this->limit);
-		$this->db->read[] = count($rows);
+		$this->db->returned[] = count($rows);
 		$this->db->limits[] = $this->limit;
 		return $this->result(array_map(fn (array $row): array => $this->projected($row), $rows));
 	}

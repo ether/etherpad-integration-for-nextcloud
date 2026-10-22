@@ -92,31 +92,53 @@ class ProtectedPadsOfNodeTest extends TestCase {
 		$pads = (new ProtectedPadsOfNode($table, $mimeTypes, $logger))->of($this->folder(10));
 
 		$this->assertCount(100, $pads);
-		$this->assertLessThanOrEqual(101, max($table->read), 'no query returns past the room');
+		$this->assertLessThanOrEqual(101, max($table->returned), 'no query returns more than one past the room');
 	}
 
 	/**
-	 * The walk's queries ask for no more than it has room for: a folder
-	 * with more folders in it than that yields no more of them.
+	 * MAX_FOLDERS lowered to ten stands in for ten thousand: of fifty
+	 * folders in one, the walk takes ten, the folder deleted among them,
+	 * and asks for one more only to tell that some are left.
 	 */
-	public function testAWideFolderYieldsNoMoreFoldersThanTheWalkHasRoomFor(): void {
-		$rows = [['file_id' => 5, 'pad_id' => 'g.ABCDEFGHIJKLMNOP$elsewhere', 'access_mode' => BindingService::ACCESS_PROTECTED, 'state' => BindingService::STATE_ACTIVE, 'deleted_at' => null, 'updated_at' => 100]];
+	public function testAWalkTakesNoMoreFoldersThanItHasRoomFor(): void {
 		$cached = [['fileid' => 10, 'parent' => 1, 'mimetype' => self::DIRECTORY, 'storage' => 1, 'path' => 'files/10']];
 		for ($fileId = 100; $fileId < 150; $fileId++) {
 			$cached[] = ['fileid' => $fileId, 'parent' => 10, 'mimetype' => self::DIRECTORY, 'storage' => 1, 'path' => 'files/10/' . $fileId];
 		}
-		$table = new InMemoryBindingTable($rows, $cached);
+		$table = new InMemoryBindingTable([$this->protectedRow(5)], $cached);
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects($this->once())->method('info')->with($this->anything(), $this->callback(static fn (array $context): bool => $context['folders'] === 10));
+
+		$this->tenFolderWalk($table, $logger)->of($this->folder(10));
+
+		$this->assertLessThanOrEqual(10, max($table->returned), 'no query returns more than one past the room');
+	}
+
+	/** A tree of exactly as many folders as a walk takes is walked whole, and nothing is said to be left. */
+	public function testATreeThatFitsTheWalkExactlyIsWalkedWhole(): void {
+		$cached = [['fileid' => 10, 'parent' => 1, 'mimetype' => self::DIRECTORY, 'storage' => 1, 'path' => 'files/10']];
+		for ($fileId = 100; $fileId < 109; $fileId++) {
+			$cached[] = ['fileid' => $fileId, 'parent' => 10, 'mimetype' => self::DIRECTORY, 'storage' => 1, 'path' => 'files/10/' . $fileId];
+		}
+		$cached[] = ['fileid' => 200, 'parent' => 108, 'mimetype' => self::TEXT, 'storage' => 1, 'path' => 'files/10/108/200'];
+		$table = new InMemoryBindingTable([$this->protectedRow(200)], $cached);
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects($this->never())->method('info');
+
+		$this->assertSame(['pad-200'], $this->tenFolderWalk($table, $logger)->of($this->folder(10)));
+	}
+
+	/** @return array<string,mixed> */
+	private function protectedRow(int $fileId): array {
+		return ['file_id' => $fileId, 'pad_id' => 'pad-' . $fileId, 'access_mode' => BindingService::ACCESS_PROTECTED, 'state' => BindingService::STATE_ACTIVE, 'deleted_at' => null, 'updated_at' => 100];
+	}
+
+	private function tenFolderWalk(InMemoryBindingTable $table, LoggerInterface $logger): ProtectedPadsOfNode {
 		$mimeTypes = $this->createMock(IMimeTypeLoader::class);
 		$mimeTypes->method('getId')->willReturn(self::DIRECTORY);
-		$logger = $this->createMock(LoggerInterface::class);
-		$logger->expects($this->once())->method('info');
-		$pads = new class($table, $mimeTypes, $logger) extends ProtectedPadsOfNode {
+		return new class($table, $mimeTypes, $logger) extends ProtectedPadsOfNode {
 			protected const MAX_FOLDERS = 10;
 		};
-
-		$pads->of($this->folder(10));
-
-		$this->assertLessThanOrEqual(11, max($table->read), 'no query returns past the room');
 	}
 
 	private function folder(int $id): Folder {

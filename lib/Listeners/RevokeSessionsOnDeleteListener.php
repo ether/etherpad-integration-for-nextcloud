@@ -54,7 +54,12 @@ class RevokeSessionsOnDeleteListener implements IEventListener {
 			if ($event instanceof BeforeNodeDeletedEvent) {
 				$node = $event->getNode();
 				$pads = $this->protectedPads->of($node);
-				if ($pads !== []) {
+				// Replaced, not kept: a delete of the same node that failed
+				// before left its pads here, and this one takes along only
+				// what it finds now.
+				if ($pads === []) {
+					unset($this->pending[$node->getId()]);
+				} else {
 					$this->pending[$node->getId()] = $pads;
 				}
 			} elseif ($event instanceof NodeDeletedEvent) {
