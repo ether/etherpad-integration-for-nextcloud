@@ -29,11 +29,12 @@ use OCP\Migration\IRepairStep;
  * It runs on every enable of the app (install), and after every update,
  * every enable of an app installed already and, unless the app is limited
  * to groups, every `occ maintenance:repair` (post-migration; see
- * https://docs.nextcloud.com/server/stable/developer_manual/digging_deeper/repair.html),
- * and the repair of the file cache reads all of it. So the repair runs
- * until it has once finished in a run that found the mapping in place,
- * keeping that version as Nextcloud's own RepairMimeTypes does, and again
- * for a newer version or where the mapping was missing.
+ * https://docs.nextcloud.com/server/stable/developer_manual/digging_deeper/repair.html#repair-step-types).
+ *
+ * The repair of the file cache reads all of it, so it runs until it has
+ * once finished in a run that found the mapping in place, keeping that
+ * version as Nextcloud's own RepairMimeTypes does, and again for a newer
+ * version or where the mapping was missing.
  *
  * @psalm-api
  */
@@ -116,13 +117,13 @@ class RegisterMimeType implements IRepairStep {
 	}
 
 	/**
-	 * Where the mapping was missing, files came in untyped, so the version
-	 * is forgotten before the mapping is written: the mapping beside a
-	 * version still recorded would read as a finished repair, also after
-	 * this run's had failed.
+	 * Where the mapping was missing, the recorded version is forgotten
+	 * before the mapping is written: should this run's repair fail, the
+	 * mapping in place beside the old version would make later runs skip
+	 * the repair.
 	 *
 	 * @param array<string,mixed> $mapping
-	 * @throws \RuntimeException where either fails
+	 * @throws \RuntimeException where forgetting the version or writing the mapping fails
 	 */
 	private function writeMapping(string $file, array $mapping, bool $mappedBefore): void {
 		if (!$mappedBefore) {
@@ -203,7 +204,8 @@ class RegisterMimeType implements IRepairStep {
 
 		$qb = $this->db->getQueryBuilder();
 		$qb->update('filecache')
-			// Sharded, the file cache takes a statement without a shard key only so.
+			// The statement has no shard key, so a sharded file cache runs it
+			// only when told to run it on every shard.
 			->runAcrossAllShards()
 			->set('mimetype', $qb->createNamedParameter($typeId, IQueryBuilder::PARAM_INT))
 			->set('mimepart', $qb->createNamedParameter($partId, IQueryBuilder::PARAM_INT))

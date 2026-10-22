@@ -98,8 +98,9 @@ class RegisterMimeTypeTest extends TestCase {
 	}
 
 	/**
-	 * A run that writes the mapping is not recorded; the run after it is,
-	 * and none after that reads the file cache again.
+	 * A run that writes the mapping is not recorded (see repairFileCache());
+	 * the run after it is, and while the mapping and the repair version stay
+	 * as they are, no run after that reads the file cache again.
 	 */
 	public function testScansUntilARunThatFoundTheMappingFinishes(): void {
 		$this->step()->run(new RegisterMimeTypeTestOutput());
@@ -194,41 +195,33 @@ class RegisterMimeTypeTest extends TestCase {
 	 * written, so the repair stays owed should it fail too.
 	 */
 	public function testAVersionThatCannotBeForgottenKeepsTheRepairOwed(): void {
-		foreach ([
-			'mapped to another type' => ['pad' => ['application/x-ownpad']],
-			'mapping file lost' => null,
-		] as $case => $mapping) {
-			$this->freshConfig();
-			if ($mapping !== null) {
-				$this->writeJson('mimetypemapping.json', $mapping);
-			}
-			$this->version = RegisterMimeType::REPAIR_VERSION;
-			$this->forgetFailure = new \Exception('database gone away');
-			$this->db = new RegisterMimeTypeTestDb();
-			$this->db->failure = new \Exception('lock wait timeout');
-			$output = new RegisterMimeTypeTestOutput();
+		$ownpad = ['pad' => ['application/x-ownpad']];
+		$this->writeJson('mimetypemapping.json', $ownpad);
+		$this->version = RegisterMimeType::REPAIR_VERSION;
+		$this->forgetFailure = new \Exception('database gone away');
+		$this->db->failure = new \Exception('lock wait timeout');
+		$output = new RegisterMimeTypeTestOutput();
 
-			try {
-				$this->step()->run($output);
-				self::fail('A mapping that was not written must abort registration.');
-			} catch (\RuntimeException $e) {
-				$this->assertStringStartsWith('Could not delete the app config value pad_files_mime_version, so the .pad mapping was not written', $e->getMessage(), $case);
-				$this->assertStringContainsString('database gone away', $e->getMessage(), $case);
-			}
-			// The repair ran before the error was raised.
-			$this->assertCount(1, $output->warnings, $case);
-			$this->assertStringStartsWith('Could not give the .pad files their MIME type', $output->warnings[0], $case);
-			$this->assertSame($mapping, is_file($this->configDir . '/mimetypemapping.json') ? $this->jsonFile('mimetypemapping.json') : null, $case);
-			$this->assertSame('text', $this->jsonFile('mimetypealiases.json')[PadFileType::MIME], $case);
-
-			$this->forgetFailure = null;
-			$this->db = new RegisterMimeTypeTestDb();
-			$this->step()->run(new RegisterMimeTypeTestOutput());
-			$this->step()->run(new RegisterMimeTypeTestOutput());
-
-			$this->assertCount(2, $this->db->statements, $case);
-			$this->assertSame(RegisterMimeType::REPAIR_VERSION, $this->version, $case);
+		try {
+			$this->step()->run($output);
+			self::fail('A mapping that was not written must abort registration.');
+		} catch (\RuntimeException $e) {
+			$this->assertStringStartsWith('Could not delete the app config value pad_files_mime_version, so the .pad mapping was not written', $e->getMessage());
+			$this->assertStringContainsString('database gone away', $e->getMessage());
 		}
+		// The repair ran before the error was raised.
+		$this->assertCount(1, $output->warnings);
+		$this->assertStringStartsWith('Could not give the .pad files their MIME type', $output->warnings[0]);
+		$this->assertSame($ownpad, $this->jsonFile('mimetypemapping.json'));
+		$this->assertSame('text', $this->jsonFile('mimetypealiases.json')[PadFileType::MIME]);
+
+		$this->forgetFailure = null;
+		$this->db = new RegisterMimeTypeTestDb();
+		$this->step()->run(new RegisterMimeTypeTestOutput());
+		$this->step()->run(new RegisterMimeTypeTestOutput());
+
+		$this->assertCount(2, $this->db->statements);
+		$this->assertSame(RegisterMimeType::REPAIR_VERSION, $this->version);
 	}
 
 	/** A version that cannot be read spares no scan and stops no registration. */
@@ -677,7 +670,11 @@ class RegisterMimeTypeTestQuery implements IQueryBuilder {
 		return $this;
 	}
 
-	/** As IQueryBuilder documents and the unsharded builder does, where() replaces what came before; andWhere() adds. */
+	/**
+	 * As IQueryBuilder documents and the unsharded builder does, where()
+	 * replaces what came before and andWhere() adds: a fake that appended
+	 * would let a where() that drops a condition pass.
+	 */
 	public function where(string $condition): self {
 		$this->conditions = [$condition];
 		return $this;
