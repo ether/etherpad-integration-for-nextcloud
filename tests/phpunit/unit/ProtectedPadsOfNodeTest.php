@@ -92,14 +92,14 @@ class ProtectedPadsOfNodeTest extends TestCase {
 		$pads = (new ProtectedPadsOfNode($table, $mimeTypes, $logger))->of($this->folder(10));
 
 		$this->assertCount(100, $pads);
-		$this->assertLessThanOrEqual(101, max($table->read), 'no query reads past the room');
+		$this->assertLessThanOrEqual(101, max($table->read), 'no query returns past the room');
 	}
 
 	/**
-	 * The walk's queries are bounded too: a folder with more folders in it
-	 * than the walk has room for reads no more of them than that.
+	 * The walk's queries ask for no more than it has room for: a folder
+	 * with more folders in it than that yields no more of them.
 	 */
-	public function testAWideFolderIsReadNoFurtherThanTheWalkHasRoomFor(): void {
+	public function testAWideFolderYieldsNoMoreFoldersThanTheWalkHasRoomFor(): void {
 		$rows = [['file_id' => 5, 'pad_id' => 'g.ABCDEFGHIJKLMNOP$elsewhere', 'access_mode' => BindingService::ACCESS_PROTECTED, 'state' => BindingService::STATE_ACTIVE, 'deleted_at' => null, 'updated_at' => 100]];
 		$cached = [['fileid' => 10, 'parent' => 1, 'mimetype' => self::DIRECTORY, 'storage' => 1, 'path' => 'files/10']];
 		for ($fileId = 100; $fileId < 150; $fileId++) {
@@ -116,7 +116,7 @@ class ProtectedPadsOfNodeTest extends TestCase {
 
 		$pads->of($this->folder(10));
 
-		$this->assertLessThanOrEqual(11, max($table->read), 'no query reads past the room');
+		$this->assertLessThanOrEqual(11, max($table->read), 'no query returns past the room');
 	}
 
 	private function folder(int $id): Folder {

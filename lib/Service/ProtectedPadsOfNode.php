@@ -29,15 +29,19 @@ use Psr\Log\LoggerInterface;
  * database, and a team folder from before groupfolders gave each its own
  * storage shares the root storage with all others. The walk is not taken
  * at all on an instance with no active protected pad: one look at the
- * binding table, without a join, says so.
+ * binding table, without a join, says so. A look limited to the folder's
+ * storage would cost more than it saves: it reads the storage's rows or
+ * every active protected row - with many of those, the whole file cache
+ * as measured - on every folder deleted there, where walking a folder of
+ * a few hundred files reads a few hundred rows.
  *
  * It runs in the delete's request, so it is bounded: it stops at MAX_PADS
  * pads, more than a delete can take the sessions of in its budget
  * (PadSessionRevoker), or at MAX_FOLDERS folders. A level takes two
  * queries for every CHUNK folders in it: some forty for a wide tree, two
- * a level for a deep one. The queries are bounded too, so a single folder
- * with a hundred thousand others in it reads no more than the walk has
- * room for.
+ * a level for a deep one. Their limits bound what they return, not what
+ * the database reads, which can be every row under a level's folders,
+ * files too.
  * What it does not reach keeps its sessions until they expire, within six
  * hours, with a line that says so.
  */

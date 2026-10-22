@@ -31,7 +31,7 @@ final class InMemoryBindingTable implements IDBConnection {
 		'mounts' => ['id', 'storage_id', 'root_id', 'user_id', 'mount_point', 'mount_id', 'mount_provider_class', 'mount_point_hash'],
 	];
 
-	/** @var list<int> the rows each query read, in order */
+	/** @var list<int> the rows each query returned, in order */
 	public array $read = [];
 
 	/** @var list<?int> the limit each of those queries asked for, null for none */
