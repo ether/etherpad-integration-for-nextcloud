@@ -7,6 +7,7 @@ namespace OCA\EtherpadNextcloud\Tests\Unit;
 use OCA\EtherpadNextcloud\Service\AppConfigService;
 use OCA\EtherpadNextcloud\Service\RecentSyncs;
 use OCA\EtherpadNextcloud\Tests\Support\BuildsLinkCaches;
+use OCA\EtherpadNextcloud\Tests\Support\FixedClock;
 use OCA\EtherpadNextcloud\Tests\Support\InMemoryCache;
 use OCP\ICache;
 use OCP\ICacheFactory;
@@ -27,21 +28,45 @@ class RecentSyncsTest extends TestCase {
 		$factory = $this->createMock(ICacheFactory::class);
 		$factory->method('isAvailable')->willReturn(true);
 		$factory->expects($this->once())->method('createDistributed')->with('etherpad_nextcloud/recent-syncs/')->willReturn($cache);
-		$syncs = new RecentSyncs($factory, $this->interval(5), $this->createMock(LoggerInterface::class));
+		$clock = new FixedClock();
+		$syncs = new RecentSyncs($factory, $this->interval(5), $clock, $this->createMock(LoggerInterface::class));
 
-		$syncs->note(138, 0);
-		$syncs->note(140, 1);
-		$syncs->note(141, 9);
+		$syncs->note(138, FixedClock::NOW);
+		$syncs->note(140, FixedClock::NOW - 1);
+		$syncs->note(141, FixedClock::NOW - 9);
 
 		$this->assertSame(['138' => 3, '140' => 2, '141' => 1], $cache->ttls);
+		$this->assertSame(FixedClock::NOW, $cache->values['138'], 'when the look began');
 		$this->assertTrue($syncs->has(138));
 		$this->assertFalse($syncs->has(139));
+		$clock->advance(3);
+		$this->assertFalse($syncs->has(138), 'measured, whatever the cache keeps');
+	}
+
+	/** A note kept under an interval of an hour holds no longer than half the interval the admin set since. */
+	public function testAShortenedIntervalHoldsForTheNotesAlreadyKept(): void {
+		$cache = new InMemoryCache();
+		$seconds = 3600;
+		$appConfig = $this->createMock(AppConfigService::class);
+		$appConfig->method('getSyncIntervalSeconds')->willReturnCallback(static function () use (&$seconds): int {
+			return $seconds;
+		});
+		$clock = new FixedClock();
+		$syncs = new RecentSyncs($this->cacheFactoryFor($cache), $appConfig, $clock, $this->createMock(LoggerInterface::class));
+
+		$syncs->note(138, FixedClock::NOW);
+		$this->assertSame(['138' => 1800], $cache->ttls);
+		$seconds = 5;
+		$clock->advance(2);
+		$this->assertTrue($syncs->has(138));
+		$clock->advance(1);
+		$this->assertFalse($syncs->has(138));
 	}
 
 	public function testWithoutAMemoryCacheNothingIsNoted(): void {
-		$syncs = new RecentSyncs($this->noMemoryCache(), $this->interval(120), $this->createMock(LoggerInterface::class));
+		$syncs = new RecentSyncs($this->noMemoryCache(), $this->interval(120), new FixedClock(), $this->createMock(LoggerInterface::class));
 
-		$syncs->note(138, 0);
+		$syncs->note(138, FixedClock::NOW);
 
 		$this->assertFalse($syncs->has(138));
 	}
@@ -56,9 +81,9 @@ class RecentSyncsTest extends TestCase {
 			'The memory cache failed, so the timed syncs of a pad run as if none had looked at it while it fails.',
 			$this->callback(static fn (array $context): bool => $context['app'] === 'etherpad_nextcloud' && $context['error'] === \Error::class),
 		);
-		$syncs = new RecentSyncs($this->cacheFactoryFor($cache), $this->interval(120), $logger);
+		$syncs = new RecentSyncs($this->cacheFactoryFor($cache), $this->interval(120), new FixedClock(), $logger);
 
-		$syncs->note(138, 0);
+		$syncs->note(138, FixedClock::NOW);
 
 		$this->assertFalse($syncs->has(138));
 	}

@@ -683,7 +683,7 @@ class PadSyncServiceTest extends TestCase {
 		$cache = $this->createMock(ICache::class);
 		$cache->method('get')->willReturnCallback(static function () use ($locks, &$heldWhenAsked): ?int {
 			$heldWhenAsked[] = $locks->isLocked('etherpad_nextcloud:sync:138', ILockingProvider::LOCK_EXCLUSIVE);
-			return count($heldWhenAsked) === 1 ? null : 1;
+			return count($heldWhenAsked) === 1 ? null : FixedClock::NOW;
 		});
 		$syncLock = new PadSyncLock($locks, $this->createMock(LoggerInterface::class), static function (int $delay): void {
 		});
@@ -721,7 +721,7 @@ class PadSyncServiceTest extends TestCase {
 		$etherpadClient->method('getText')->willReturn('typed');
 		$etherpadClient->method('getHTML')->willReturn('<p>typed</p>');
 		$cache = new InMemoryCache();
-		$service = $this->buildService($formatter, $userNodeResolver, null, $etherpadClient, null, null, null, $this->recentSyncs($cache), $clock);
+		$service = $this->buildService($formatter, $userNodeResolver, null, $etherpadClient, null, null, null, $this->recentSyncs($cache, $clock), $clock);
 
 		foreach (['off the timer' => [false, false], 'forced' => [true, false], 'timed' => [false, true]] as $case => [$force, $periodic]) {
 			$cache->clear();
@@ -751,7 +751,7 @@ class PadSyncServiceTest extends TestCase {
 				$userNodeResolver->method('resolveUserFileNodeById')->willReturn($file);
 			}
 			$cache = new InMemoryCache();
-			$cache->set('138', 1);
+			$cache->set('138', FixedClock::NOW);
 
 			try {
 				$this->buildService($formatter, $userNodeResolver, null, null, null, null, null, $this->recentSyncs($cache))->syncById('alice', 138, false, true);
@@ -762,8 +762,11 @@ class PadSyncServiceTest extends TestCase {
 		}
 	}
 
-	/** A timed sync that waits for the lock in vain answers locked, retryable, and notes nothing. */
-	public function testATimedSyncThatCannotTakeTheLockAnswersLocked(): void {
+	/**
+	 * A timed sync does not wait for the lock: the sync that holds it notes
+	 * its look. Taken, it answers deferred at once and notes nothing.
+	 */
+	public function testATimedSyncDoesNotWaitForTheLock(): void {
 		$file = $this->createMock(File::class);
 		$file->method('isUpdateable')->willReturn(true);
 		$file->method('getName')->willReturn('Notes.pad');
@@ -772,15 +775,21 @@ class PadSyncServiceTest extends TestCase {
 		$userNodeResolver->method('toUserAbsolutePath')->willReturn('/Notes.pad');
 		$locks = new InMemoryLockingProvider();
 		$locks->acquireLock('etherpad_nextcloud:sync:138', ILockingProvider::LOCK_EXCLUSIVE);
-		$syncLock = new PadSyncLock($locks, $this->createMock(LoggerInterface::class), static function (int $delay): void {
+		$waits = 0;
+		$syncLock = new PadSyncLock($locks, $this->createMock(LoggerInterface::class), static function (int $delay) use (&$waits): void {
+			$waits++;
 		});
 		$cache = new InMemoryCache();
+		$service = $this->buildService(null, $userNodeResolver, null, null, null, null, $syncLock, $this->recentSyncs($cache));
 
-		$result = $this->buildService(null, $userNodeResolver, null, null, null, null, $syncLock, $this->recentSyncs($cache))->syncById('alice', 138, false, true);
+		$timed = $service->syncById('alice', 138, false, true);
 
-		$this->assertSame(PadSyncService::STATUS_LOCKED, $result->status);
-		$this->assertTrue($result->retryable);
+		$this->assertSame(PadSyncService::STATUS_DEFERRED, $timed->status);
+		$this->assertSame(0, $waits);
 		$this->assertSame([], $cache->ttls);
+		$plain = $service->syncById('alice', 138, false);
+		$this->assertSame(PadSyncService::STATUS_LOCKED, $plain->status, 'one off the timer waits, and answers locked');
+		$this->assertGreaterThan(0, $waits);
 	}
 
 	/** A sync notes its look while it still holds the lock, so one waiting for it finds the note. */
@@ -810,10 +819,11 @@ class PadSyncServiceTest extends TestCase {
 		$this->assertTrue($heldWhenNoted);
 	}
 
-	private function recentSyncs(ICache $cache): RecentSyncs {
+	/** Over $cache, an interval of 120 seconds and $clock - the service's own, where a test moves it. */
+	private function recentSyncs(ICache $cache, ?ITimeFactory $clock = null): RecentSyncs {
 		$appConfig = $this->createMock(AppConfigService::class);
 		$appConfig->method('getSyncIntervalSeconds')->willReturn(120);
-		return new RecentSyncs($this->cacheFactoryFor($cache), $appConfig, $this->createMock(LoggerInterface::class));
+		return new RecentSyncs($this->cacheFactoryFor($cache), $appConfig, $clock ?? new FixedClock(), $this->createMock(LoggerInterface::class));
 	}
 
 	private function buildService(
@@ -838,7 +848,7 @@ class PadSyncServiceTest extends TestCase {
 			$etherpadClient ?? $this->createMock(EtherpadClient::class),
 			$externalPadExportFetcher ?? $this->createMock(ExternalPadExportFetcher::class),
 			// Without a memory cache unless a test is about pacing: every sync runs.
-			$recentSyncs ?? new RecentSyncs($this->noMemoryCache(), $this->createMock(AppConfigService::class), $this->createMock(LoggerInterface::class)),
+			$recentSyncs ?? new RecentSyncs($this->noMemoryCache(), $this->createMock(AppConfigService::class), new FixedClock(), $this->createMock(LoggerInterface::class)),
 			$clock ?? new FixedClock(),
 			$this->createMock(LoggerInterface::class),
 		);

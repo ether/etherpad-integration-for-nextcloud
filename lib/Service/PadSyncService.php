@@ -27,7 +27,7 @@ class PadSyncService {
 	public const STATUS_SYNCED = 'synced';
 	public const STATUS_OUT_OF_SYNC = 'out_of_sync';
 	public const STATUS_UNAVAILABLE = 'unavailable';
-	/** Not run: a viewer's timed sync, and a sync looked at the file a moment ago (RecentSyncs). */
+	/** Not run: a viewer's timed sync, and a sync looked at the file a moment ago or is looking at it (RecentSyncs). */
 	public const STATUS_DEFERRED = 'deferred';
 
 	public function __construct(
@@ -64,9 +64,10 @@ class PadSyncService {
 		$startedAt = $this->timeFactory->getTime();
 
 		// One sync of the file at a time (PadSyncLock); one that waits in
-		// vain answers as for a locked file. A timed sync asks again once it
-		// holds the lock, and a sync notes its look before letting go: one
-		// that waited for it finds the note.
+		// vain answers as for a locked file. A timed sync does not wait: the
+		// sync that holds the lock notes its look. It asks again once it
+		// holds the lock, as one may have let go of it between the two
+		// questions, having noted its look.
 		try {
 			return $this->syncLock->hold($fileId, function () use ($node, $fileId, $absolutePath, $force, $paced, $startedAt): PadSyncResult {
 				if ($paced && $this->recentSyncs->has($fileId)) {
@@ -74,11 +75,14 @@ class PadSyncService {
 				}
 				$result = $this->syncHeld($node, $fileId, $absolutePath, $force);
 				if ($result->status === self::STATUS_UPDATED || $result->status === self::STATUS_UNCHANGED) {
-					$this->recentSyncs->note($fileId, $this->timeFactory->getTime() - $startedAt);
+					$this->recentSyncs->note($fileId, $startedAt);
 				}
 				return $result;
-			});
+			}, !$paced);
 		} catch (PadFileLockRetryExhaustedException $e) {
+			if ($paced) {
+				return $this->deferred($fileId);
+			}
 			return $this->lockedSyncResponse('Pad sync not run: the file\'s sync lock stayed taken through every wait', $e, $fileId, $absolutePath, '', '', false, $force);
 		}
 	}

@@ -136,10 +136,10 @@ class PadLifecycleControllerTest extends TestCase {
 			$rootFolder = $this->createMock(IRootFolder::class);
 			$rootFolder->method('getById')->with(138)->willReturn([$this->buildPadFileNode()]);
 			$cache = new InMemoryCache();
-			$cache->set('138', 1);
+			$cache->set('138', FixedClock::NOW);
 			$request = $this->createMock(IRequest::class);
 			$request->method('getParam')->willReturnCallback(static fn (string $name, mixed $default = null): mixed => $params[$name] ?? $default);
-			$recentSyncs = new RecentSyncs($this->cacheFactoryFor($cache), $this->createMock(AppConfigService::class), $this->createMock(LoggerInterface::class));
+			$recentSyncs = new RecentSyncs($this->cacheFactoryFor($cache), $this->createConfiguredMock(AppConfigService::class, ['getSyncIntervalSeconds' => 120]), new FixedClock(), $this->createMock(LoggerInterface::class));
 			$padFileService = $this->createMock(PadFileService::class);
 			$padFileService->method('readPad')->willReturn(new ParsedPadFile(
 				frontmatter: ['pad_id' => 'g.ABCDEFGHIJKLMNOP$pad-1', 'access_mode' => BindingService::ACCESS_PROTECTED],
@@ -594,7 +594,7 @@ class PadLifecycleControllerTest extends TestCase {
 		$lockRetryService = $this->buildNoSleepLockRetryService();
 		$padMetadataService = new PadMetadataService($resolvedPadFileService, $padPaths, $userNodeResolver, $lockRetryService, $resolvedEtherpadClient, $resolvedExternalPadExportFetcher, $resolvedBindingService, $logger);
 		$padSyncService = new PadSyncService($resolvedPadFileService, $userNodeResolver, $lockRetryService, new PadSyncLock(new InMemoryLockingProvider(), $logger, static function (int $delay): void {
-		}), $resolvedBindingService, $resolvedEtherpadClient, $resolvedExternalPadExportFetcher, $recentSyncs ?? new RecentSyncs($this->noMemoryCache(), $this->createMock(AppConfigService::class), $logger), new FixedClock(), $logger);
+		}), $resolvedBindingService, $resolvedEtherpadClient, $resolvedExternalPadExportFetcher, $recentSyncs ?? new RecentSyncs($this->noMemoryCache(), $this->createMock(AppConfigService::class), new FixedClock(), $logger), new FixedClock(), $logger);
 		$urlGenerator = $this->createMock(IURLGenerator::class);
 		$urlGenerator->method('linkToRoute')->willReturnCallback(
 			static function (string $route, array $params = []): string {

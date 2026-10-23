@@ -92,6 +92,31 @@ class PadSyncLockTest extends TestCase {
 		$this->assertTrue($locks->isLocked(self::KEY, ILockingProvider::LOCK_EXCLUSIVE));
 	}
 
+	/** One that would rather not wait takes the lock only if it is free, and runs as usual where it is. */
+	public function testASyncThatWillNotWaitDoesNotRunWhileTheOtherHoldsTheLock(): void {
+		$locks = new InMemoryLockingProvider();
+		$waits = 0;
+		$lock = $this->lock($locks, static function (int $delay) use (&$waits): void {
+			$waits++;
+		});
+		$this->assertSame('ran', $lock->hold(42, static fn (): string => 'ran', false), 'a free lock');
+
+		$locks->acquireLock(self::KEY, ILockingProvider::LOCK_EXCLUSIVE);
+		$ran = false;
+		try {
+			$lock->hold(42, static function () use (&$ran): void {
+				$ran = true;
+			}, false);
+			$this->fail('Nothing thrown.');
+		} catch (PadFileLockRetryExhaustedException $e) {
+			$this->assertSame(0, $e->getRetryAttempts());
+		}
+
+		$this->assertFalse($ran);
+		$this->assertSame(0, $waits);
+		$this->assertTrue($locks->isLocked(self::KEY, ILockingProvider::LOCK_EXCLUSIVE));
+	}
+
 	public function testSyncsOfTwoFilesDoNotWaitForEachOther(): void {
 		$locks = new InMemoryLockingProvider();
 		$lock = $this->lock($locks, function (int $delay): void {

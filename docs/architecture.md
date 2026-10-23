@@ -213,7 +213,7 @@ Primary flow (native viewer):
    - flush on `pagehide`
    - extra flush triggers via trusted host messages
    - A flush on leaving (`keepalive`) goes at once, beside a running sync, and the events of one leaving share it; a forced flush asked for while a sync runs is replayed after it, to the URL it was asked for, unless the request in flight is itself forced to that URL (`src/lib/pad-sync.js`).
-3. `PadLifecycleController::syncById` fetches revision state from Etherpad - except for a timed sync (`periodic=1`) where a sync looked at the file within the last half interval: it answers `status=deferred` and reads nothing (`RecentSyncs`, checked before the sync lock and again once it is held, noted before it is let go).
+3. `PadLifecycleController::syncById` fetches revision state from Etherpad - except for a timed sync (`periodic=1`) where a sync looked at the file within the last half interval: it answers `status=deferred` and reads nothing (`RecentSyncs`, checked before the sync lock and again once it is held, noted before it is let go). A timed sync does not wait for the lock: taken by another sync, which notes its look, it answers `deferred` at once.
    - One sync of a file at a time, from reading the file to writing it (`PadSyncLock`, through Nextcloud's locking provider): two that overlap ask Etherpad and write in no set order, and the slower one can put its older revision over the newer. A second sync waits for the first, about three seconds at most, then reads what it wrote; one that waits in vain answers `status=locked`. With `filelocking.enabled` false syncs overlap; a request killed hard while it holds the lock leaves the file's syncs answering `locked` until the provider drops it (`PadSyncLock` says when).
 4. `.pad` snapshot is updated only when the upstream snapshot actually differs.
    - `force=1` requests an immediate upstream re-check, but unchanged snapshots are still not rewritten.
@@ -302,7 +302,7 @@ per `.pad` file, read by its unique index on `file_id`.
 | Open, reader | 1 row | 1 read | 0 for a protected pad, `getReadOnlyID` for a public one |
 | Public link, writable, protected pad | 1 row | 1 read | 2 for a returning visitor (`getRevisionsCount`, `getSessionInfo`), 3 for a new one (`createAuthorIfNotExistsFor`, `createSession`) |
 | Read-only content | 1 row | 1 read | 1 `getHTML`, at most 5 MiB; a pad on another server: a DNS lookup and its export, at most 5 MiB and 20 s |
-| Timed sync, the file looked at within the last half interval | none | none | none; one memory cache read, two where it waited for the file's sync lock |
+| Timed sync, the file looked at within the last half interval, or being looked at | none | none | none; one memory cache read, two where it took the file's sync lock |
 | Sync, nothing changed | 1 row | 1 read | 1 `getRevisionsCount`; one memory cache write, after two reads for a timed sync |
 | Sync, pad changed, or forced | 1 row, 1 per write attempt | 1 read, 1 write | 3: `getRevisionsCount`, `getText`, `getHTML`, neither of the last two capped; one memory cache write, after two reads for a timed sync |
 | Embed page | none | none | none; the open it starts costs as above |

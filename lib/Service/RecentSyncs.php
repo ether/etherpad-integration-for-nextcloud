@@ -11,6 +11,7 @@ namespace OCA\EtherpadNextcloud\Service;
 
 use OCA\EtherpadNextcloud\AppInfo\Application;
 use OCA\EtherpadNextcloud\Util\SafeError;
+use OCP\AppFramework\Utility\ITimeFactory;
 use OCP\ICache;
 use OCP\ICacheFactory;
 use Psr\Log\LoggerInterface;
@@ -26,7 +27,9 @@ use Psr\Log\LoggerInterface;
  * an interval, however many have it open; any other sync - a viewer
  * leaving, an embedding host asking, a call of the API - always runs.
  * Counted from the start, a sync that took long does not leave its own
- * viewer's next one be.
+ * viewer's next one be. A note keeps when the look began and is measured
+ * against the interval of the moment it is asked about, so an interval the
+ * admin shortens holds for the notes already kept.
  *
  * Kept in the distributed memory cache: where that is each web server's
  * own, only the syncs one server takes are paced, and APCu, counting in
@@ -43,26 +46,37 @@ class RecentSyncs {
 	public function __construct(
 		private ICacheFactory $cacheFactory,
 		private AppConfigService $appConfig,
+		private ITimeFactory $timeFactory,
 		private LoggerInterface $logger,
 	) {
 	}
 
 	public function has(int $fileId): bool {
 		try {
-			return $this->cache()?->get((string)$fileId) !== null;
+			return $this->isRecent($this->cache()?->get((string)$fileId));
 		} catch (\Throwable $e) {
 			$this->cacheFailed($e);
 			return false;
 		}
 	}
 
-	/** A look at the file that took $seconds. */
-	public function note(int $fileId, int $seconds): void {
+	/** A look at the file that began at $since. */
+	public function note(int $fileId, int $since): void {
 		try {
-			$this->cache()?->set((string)$fileId, 1, max(1, intdiv($this->appConfig->getSyncIntervalSeconds() + 1, 2) - $seconds));
+			$this->cache()?->set((string)$fileId, $since, max(1, $this->halfInterval() - ($this->timeFactory->getTime() - $since)));
 		} catch (\Throwable $e) {
 			$this->cacheFailed($e);
 		}
+	}
+
+	/** Whether a note began within the half interval of now; a cache may hand a number back as a string. */
+	private function isRecent(mixed $since): bool {
+		return is_numeric($since) && $this->timeFactory->getTime() - (int)$since < $this->halfInterval();
+	}
+
+	/** Rounded up, so that even at the five second floor a note keeps the looks to under two an interval. */
+	private function halfInterval(): int {
+		return intdiv($this->appConfig->getSyncIntervalSeconds() + 1, 2);
 	}
 
 	private function cache(): ?ICache {
