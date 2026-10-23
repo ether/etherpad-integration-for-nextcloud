@@ -350,10 +350,12 @@ its own, only the syncs one server takes are paced. A claim stands for a
 try: where the timed syncs of one user keep failing for that user alone
 - a lock someone else holds through files_lock, a key that cannot be
 read - that user holds off every other user whose timer comes within
-half an interval after theirs, round after round, and the file's copy,
-and backups of it, stay behind until a forced sync. Any other sync always
-runs; a forced one - a viewer leaving, an embedding host asking - fetches
-the pad's text and HTML even when its revision has not moved.
+half an interval after theirs, round after round, and the file's
+snapshot, and backups of it, stay behind until another user's sync that
+is not timed: a forced one, which a browser closed hard does not send, or
+a call of the API. A sync that is not timed is never deferred; a forced
+one - a viewer leaving, an embedding host asking - fetches the pad's text
+and HTML even when its revision has not moved.
 
 ### Deleting, the trash, restoring
 

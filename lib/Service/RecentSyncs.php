@@ -22,15 +22,16 @@ use Psr\Log\LoggerInterface;
  * each time. A timed sync runs only where it claims the file for half the
  * interval, rounded up (claim()); any other sync that looked at the file -
  * forced, or a call of the API - holds the timed ones off for as long
- * (note()). A claim stands for a try, not for a look that went through,
- * and runs out on its own: one that failed holds the timed syncs off too,
- * which spares an Etherpad, or a server of a pad elsewhere, that does not
- * answer. So a user whose timed syncs keep failing for that user alone -
- * a lock someone else holds through files_lock, a key that cannot be
- * read - can hold every other user's off whose timer comes within half an
- * interval after theirs, round after round. Etherpad keeps the content;
- * the file's copy, and backups of it, stay behind until a forced sync - a
- * tab hidden or left - which a browser closed hard does not send.
+ * (note()). A claim stands for a try and runs out on its own: one that
+ * failed holds the timed syncs off too, which spares an Etherpad, or a
+ * server of a pad elsewhere, that does not answer. So a user whose timed
+ * syncs keep failing for that user alone - a lock someone else holds
+ * through files_lock, a key that cannot be read - can claim the file
+ * first, round after round, and hold off every other user whose timer
+ * comes within half an interval after theirs. Etherpad keeps what is
+ * typed; the file's snapshot, and backups of it, stay behind until
+ * another user's sync that is not timed: a forced one as a tab is hidden
+ * or left - a browser closed hard sends none - or a call of the API.
  *
  * The window bounds the timed syncs that start, not those that run: one
  * that outlasts it, or waits for the sync lock past it, may meet the
@@ -42,9 +43,9 @@ use Psr\Log\LoggerInterface;
  * once. Kept in the distributed memory cache, which counts the time - APCu
  * in whole seconds, up to a second longer. Where each web server keeps
  * its own, only the syncs one server takes are paced; see
- * https://docs.nextcloud.com/server/stable/admin_manual/configuration_server/caching_configuration.html.
+ * https://docs.nextcloud.com/server/stable/admin_manual/configuration_server/caching_configuration.html#organizations-with-clustered-setups.
  * Without a memory cache that can claim a key (IMemcache), or with one
- * that fails, every sync runs.
+ * that fails, no timed sync is deferred.
  */
 class RecentSyncs {
 	private ?IMemcache $cache = null;
@@ -71,9 +72,10 @@ class RecentSyncs {
 			// Read first: with several viewers, most timed syncs find a claim,
 			// at one round trip.
 			// A cache can answer false for a failure too, to add() and get()
-			// alike (Nextcloud's Memcached does), so only a claim read back
-			// keeps the sync off: the number 1, as APCu, Memcached and Redis
-			// all hand it back.
+			// alike, as Nextcloud's Memcached does
+			// (https://github.com/nextcloud/server/blob/stable32/lib/private/Memcache/Memcached.php),
+			// so only a claim read back keeps the sync off: the number 1, as
+			// APCu, Memcached and Redis all hand it back.
 			return $cache->get($key) !== 1
 				&& ($cache->add($key, 1, $seconds) || $cache->get($key) !== 1);
 		} catch (\Throwable $e) {

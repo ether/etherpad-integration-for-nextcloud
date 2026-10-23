@@ -131,9 +131,9 @@ export function createPadSync({ requestToken, fetchImpl } = {}) {
 		}
 		if (active) {
 			if (!force && !periodic && active.periodic) {
-				// The server may defer a timed sync, and its answer would then
-				// say nothing for this one: it goes, to its own pad, once the
-				// timed one is done.
+				// The answer of a timed sync can be `deferred`, which tells
+				// this one nothing: it is sent once the timed one is done, to
+				// the URL it was asked for.
 				return active.answer.catch(() => {}).then(() => syncTo(url, false, false, false))
 			}
 			if (!force || (active.force && active.url === url)) {

@@ -693,9 +693,10 @@ class PadSyncServiceTest extends TestCase {
 
 	/**
 	 * The limit of the claim: a user whose timed syncs keep failing for that
-	 * user alone holds off the timed syncs of another whose timer comes
-	 * within half an interval after theirs, round after round - not once.
-	 * Only a forced sync of the other's gets the file written.
+	 * user alone claims the file first, round after round, and holds off the
+	 * timed syncs of another whose timer comes within half an interval after.
+	 * A sync of the other's that is not timed - forced here, as a tab hidden
+	 * or left sends it - still writes the file.
 	 */
 	public function testAUserWhoseTimedSyncsKeepFailingHoldsAnotherUsersOffRoundAfterRound(): void {
 		$formatter = new PadFileService(new FixedClock());
@@ -733,7 +734,8 @@ class PadSyncServiceTest extends TestCase {
 				$this->assertSame('the key could not be read', $e->getMessage());
 			}
 			$this->assertSame(PadSyncService::STATUS_DEFERRED, $service->syncById('alice', 138, false, true)->status, 'round ' . $round);
-			// The half interval over, before Bob's next tick.
+			// The half interval over, before Bob's next tick: the cache lets
+			// nothing run out on its own.
 			$cache->clear();
 		}
 		$this->assertSame(PadSyncService::STATUS_UPDATED, $service->syncById('alice', 138, true)->status, 'Alice\'s tab hidden or left');
@@ -774,8 +776,8 @@ class PadSyncServiceTest extends TestCase {
 	/**
 	 * A timed sync that claimed the file waits for the sync lock as any
 	 * other does, and answers locked where it stays taken - a lock left by
-	 * a request killed hard, say - with the line that says so. Its claim
-	 * holds the next timed syncs off, so one at a time waits.
+	 * a request killed hard, say. While its claim stands, the next timed
+	 * sync answers deferred without waiting.
 	 */
 	public function testATimedSyncThatClaimedWaitsForTheLockLikeAnyOther(): void {
 		$file = $this->createMock(File::class);
@@ -845,7 +847,7 @@ class PadSyncServiceTest extends TestCase {
 			$bindingService ?? $this->createMock(BindingService::class),
 			$etherpadClient ?? $this->createMock(EtherpadClient::class),
 			$externalPadExportFetcher ?? $this->createMock(ExternalPadExportFetcher::class),
-			// Without a memory cache unless a test is about pacing: every sync runs.
+			// Without a memory cache unless a test is about pacing: no sync is deferred.
 			$recentSyncs ?? new RecentSyncs($this->noMemoryCache(), $this->createMock(AppConfigService::class), $this->createMock(LoggerInterface::class)),
 			$this->createMock(LoggerInterface::class),
 		);
