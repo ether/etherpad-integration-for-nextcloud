@@ -58,6 +58,44 @@ class RevokeSessionsOnDeleteListenerTest extends TestCase {
 		$listener->handle(new NodeDeletedEvent($other));
 	}
 
+	/**
+	 * Two BeforeNodeDeletedEvents with no NodeDeletedEvent between them
+	 * stand for a delete that failed and was tried again: what the first
+	 * found is not revoked, whatever the second finds or whether it throws.
+	 */
+	public function testADeleteTriedAgainTakesOnlyWhatItFindsThen(): void {
+		foreach ([
+			'none found' => [[], []],
+			'another pad found' => [['g.BBBBBBBBBBBBBBBB$two'], [['g.BBBBBBBBBBBBBBBB$two']]],
+			'finding them failed' => [new \RuntimeException('lock wait timeout'), []],
+		] as $case => [$second, $expected]) {
+			$node = $this->createMock(File::class);
+			$node->method('getId')->willReturn(7);
+			$found = [['g.AAAAAAAAAAAAAAAA$one'], $second];
+			$pads = $this->createMock(ProtectedPadsOfNode::class);
+			$pads->method('of')->willReturnCallback(static function () use (&$found): array {
+				$next = array_shift($found);
+				if ($next instanceof \Throwable) {
+					throw $next;
+				}
+				return $next ?? [];
+			});
+			$revoked = [];
+			$revoker = $this->createMock(PadSessionRevoker::class);
+			$revoker->method('revokeForPads')->willReturnCallback(static function (array $padIds) use (&$revoked): int {
+				$revoked[] = $padIds;
+				return 1;
+			});
+
+			$listener = new RevokeSessionsOnDeleteListener($pads, $revoker, $this->createMock(LoggerInterface::class));
+			$listener->handle(new BeforeNodeDeletedEvent($node));
+			$listener->handle(new BeforeNodeDeletedEvent($node));
+			$listener->handle(new NodeDeletedEvent($node));
+
+			$this->assertSame($expected, $revoked, $case);
+		}
+	}
+
 	public function testANodeWithoutProtectedPadsAsksEtherpadNothing(): void {
 		$pads = $this->createMock(ProtectedPadsOfNode::class);
 		$pads->method('of')->willReturn([]);

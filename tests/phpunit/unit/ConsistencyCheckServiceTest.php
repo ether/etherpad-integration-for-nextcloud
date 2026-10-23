@@ -59,7 +59,7 @@ class ConsistencyCheckServiceTest extends TestCase {
 		$service = $this->service($db, $clock, $logger);
 
 		$this->assertSame(501, $service->markVanished(new RunBudget($clock, RunBudget::DEFAULT_SECONDS), 501));
-		$this->assertSame([501], $db->read, 'one query for the ids of both chunks');
+		$this->assertSame([501], $db->returned, 'one query for the ids of both chunks');
 
 		$byFile = array_column($db->rows, null, 'file_id');
 		$this->assertSame([BindingService::STATE_ACTIVE, null], [$byFile[1]['state'], $byFile[1]['deleted_at']], 'its file is there');

@@ -303,7 +303,7 @@ class BindingServiceTest extends TestCase {
 
 		$this->assertFalse($service->anyInFiles($trashed));
 		// '', the trash, its files folder and 1500 files: four batches.
-		$this->assertCount(4, $table->read);
+		$this->assertCount(4, $table->returned);
 		$this->assertTrue($service->anyInFiles($trashed + [7 => [3, 'files/Notes.pad']]));
 		$this->assertFalse($service->anyInFiles([]));
 	}
@@ -344,7 +344,7 @@ class BindingServiceTest extends TestCase {
 		$service = new BindingService($table, new FixedClock(500));
 
 		$this->assertTrue($service->anyInFiles([1 => [5, 'trash/Notes.pad']]));
-		$this->assertCount(3, $table->read);
+		$this->assertCount(3, $table->returned);
 		$this->assertFalse((new BindingService(new InMemoryBindingTable([], $fileCache, $mounts), new FixedClock(500)))->anyInFiles([1 => [5, 'trash/Notes.pad']]));
 	}
 

@@ -29,15 +29,17 @@ use Psr\Log\LoggerInterface;
  * database, and a team folder from before groupfolders gave each its own
  * storage shares the root storage with all others. The walk is not taken
  * at all on an instance with no active protected pad: one look at the
- * binding table, without a join, says so.
+ * binding table, without a join, says so. No look at whether the folder's
+ * storage holds one is taken first: it would be paid on every folder
+ * deleted, small ones too, and pay off at most for a large folder in a
+ * storage that holds none (measured in docs/architecture.md, "Cost at
+ * scale").
  *
- * It runs in the delete's request, so it is bounded: it stops at MAX_PADS
- * pads, more than a delete can take the sessions of in its budget
- * (PadSessionRevoker), or at MAX_FOLDERS folders. A level takes two
- * queries for every CHUNK folders in it: some forty for a wide tree, two
- * a level for a deep one. The queries are bounded too, so a single folder
- * with a hundred thousand others in it reads no more than the walk has
- * room for.
+ * It runs in the delete's request, so what it takes is bounded: at most
+ * MAX_PADS pads, more than a delete can take the sessions of in its
+ * budget (PadSessionRevoker), and MAX_FOLDERS folders. Every CHUNK folders
+ * of a level take up to two queries, whose limits bound what they return,
+ * not what the database reads or how long that takes.
  * What it does not reach keeps its sessions until they expire, within six
  * hours, with a line that says so.
  */
@@ -48,14 +50,14 @@ class ProtectedPadsOfNode {
 	private const CHUNK = 500;
 
 	/**
-	 * Pads a walk finds at most.
+	 * Pads a walk takes at most.
 	 *
 	 * @var int
 	 */
 	protected const MAX_PADS = 100;
 
 	/**
-	 * Folders a walk reads at most.
+	 * Folders a walk takes at most, the folder deleted among them.
 	 *
 	 * @var int
 	 */
@@ -79,32 +81,37 @@ class ProtectedPadsOfNode {
 		$directory = $this->mimeTypes->getId(self::DIRECTORY);
 		$pads = [];
 		$known = 1;
-		$read = 0;
+		$foldersLeft = false;
+		$walked = 0;
 		$level = [$node->getId()];
 		while ($level !== [] && count($pads) <= static::MAX_PADS) {
 			$next = [];
 			foreach (array_chunk($level, self::CHUNK) as $folders) {
-				$read += count($folders);
+				$walked += count($folders);
 				// One more than there is room for, to tell that there is more.
 				array_push($pads, ...$this->padsOf('fc.parent', $folders, max(1, static::MAX_PADS + 1 - count($pads))));
 				if (count($pads) > static::MAX_PADS) {
 					break;
 				}
-				$room = static::MAX_FOLDERS + 1 - $known;
-				if ($room > 0) {
-					$found = $this->foldersIn($folders, $directory, $room);
+				if (!$foldersLeft) {
+					$room = static::MAX_FOLDERS - $known;
+					$found = $this->foldersIn($folders, $directory, max(1, $room + 1));
+					if (count($found) > $room) {
+						$foldersLeft = true;
+						$found = array_slice($found, 0, $room);
+					}
 					$known += count($found);
 					array_push($next, ...$found);
 				}
 			}
 			$level = $next;
 		}
-		if (count($pads) > static::MAX_PADS || $known > static::MAX_FOLDERS) {
+		if (count($pads) > static::MAX_PADS || $foldersLeft) {
 			$this->logger->info('A folder deleted holds more than a delete takes the sessions of; the rest expire on their own.', [
 				'app' => 'etherpad_nextcloud',
 				'fileId' => $node->getId(),
 				'pads' => count($pads),
-				'folders' => $read,
+				'folders' => $walked,
 			]);
 		}
 		return array_slice($pads, 0, static::MAX_PADS);
