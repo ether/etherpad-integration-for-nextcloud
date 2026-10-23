@@ -130,13 +130,16 @@ class PadLifecycleControllerTest extends TestCase {
 			'off the timer' => [[], false],
 			'timed and forced' => [['periodic' => '1', 'force' => '1'], false],
 			'an array, read as off' => [['periodic' => ['1']], false],
+			'timed, a JSON true' => [['periodic' => true], true],
+			'timed and forced, a JSON 1' => [['periodic' => '1', 'force' => 1], false],
+			'timed and forced, a JSON true' => [['periodic' => '1', 'force' => true], false],
 		] as $case => [$params, $deferred]) {
 			$user = $this->createConfiguredMock(IUser::class, ['getUID' => 'alice']);
 			$userSession = $this->createConfiguredMock(IUserSession::class, ['getUser' => $user]);
 			$rootFolder = $this->createMock(IRootFolder::class);
 			$rootFolder->method('getById')->with(138)->willReturn([$this->buildPadFileNode()]);
 			$cache = new InMemoryCache();
-			$cache->set('138/120', '1');
+			$cache->set('138/120', 1);
 			$request = $this->createMock(IRequest::class);
 			$request->method('getParam')->willReturnCallback(static fn (string $name, mixed $default = null): mixed => $params[$name] ?? $default);
 			$recentSyncs = new RecentSyncs($this->cacheFactoryFor($cache), $this->createConfiguredMock(AppConfigService::class, ['getSyncIntervalSeconds' => 120]), $this->createMock(LoggerInterface::class));

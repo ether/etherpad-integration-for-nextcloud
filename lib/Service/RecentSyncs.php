@@ -59,9 +59,11 @@ class RecentSyncs {
 				return true;
 			}
 			[$key, $seconds] = $this->window($fileId);
-			// A cache can answer false for a failure too (Nextcloud's
-			// Memcached does): only a claim it then holds keeps the sync off.
-			return $cache->add($key, '1', $seconds) || $cache->get($key) === null;
+			// A cache can answer false for a failure too, to add() and get()
+			// alike (Nextcloud's Memcached does): only a claim read back
+			// keeps the sync off. A number, as APCu, Memcached and Redis
+			// all hand one back as such.
+			return $cache->add($key, 1, $seconds) || $cache->get($key) !== 1;
 		} catch (\Throwable $e) {
 			$this->cacheFailed($e);
 			return true;
@@ -72,7 +74,7 @@ class RecentSyncs {
 	public function note(int $fileId): void {
 		try {
 			[$key, $seconds] = $this->window($fileId);
-			$this->cache()?->set($key, '1', $seconds);
+			$this->cache()?->set($key, 1, $seconds);
 		} catch (\Throwable $e) {
 			$this->cacheFailed($e);
 		}

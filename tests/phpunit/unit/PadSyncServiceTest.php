@@ -706,7 +706,7 @@ class PadSyncServiceTest extends TestCase {
 				$userNodeResolver->method('resolveUserFileNodeById')->willReturn($file);
 			}
 			$cache = new InMemoryCache();
-			$cache->set('138/120', '1');
+			$cache->set('138/120', 1);
 
 			try {
 				$this->buildService($formatter, $userNodeResolver, null, null, null, null, null, $this->recentSyncs($cache))->syncById('alice', 138, false, true);

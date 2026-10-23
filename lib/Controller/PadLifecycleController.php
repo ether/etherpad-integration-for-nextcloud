@@ -57,13 +57,16 @@ class PadLifecycleController extends AbstractPadController {
 		);
 	}
 
-	/** Whether the query parameter $name is on: `1`, `true` or `yes`. An array, as `name[]=1` gives, is off. */
+	/**
+	 * Whether the parameter $name is on: `1`, `true` or `yes`, a JSON `1` or
+	 * `true` too. An array, as `name[]=1` gives, is off.
+	 */
 	private function flag(string $name): bool {
 		return self::isOn($this->request->getParam($name, '0'));
 	}
 
 	private static function isOn(mixed $value): bool {
-		return is_string($value) && in_array(strtolower($value), ['1', 'true', 'yes'], true);
+		return is_scalar($value) && in_array(strtolower((string)$value), ['1', 'true', 'yes'], true);
 	}
 
 	/**

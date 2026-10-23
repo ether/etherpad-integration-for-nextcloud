@@ -66,14 +66,20 @@ class RecentSyncsTest extends TestCase {
 		$this->assertSame(['138/3600' => 1800, '138/5' => 3], $cache->ttls);
 	}
 
-	/** A cache can answer an add with false for a failure too: only a claim it then holds keeps the sync off. */
-	public function testAnAddThatFailsWithoutAClaimLetsTheSyncRun(): void {
-		$cache = $this->createMock(IMemcache::class);
-		$cache->method('add')->willReturn(false);
-		$cache->method('get')->willReturn(null);
-		$syncs = new RecentSyncs($this->cacheFactoryFor($cache), $this->interval(120), $this->createMock(LoggerInterface::class));
+	/**
+	 * A cache can answer an add with false for a failure too, and a read
+	 * after it with false as well: only a claim read back keeps the sync
+	 * off.
+	 */
+	public function testOnlyAClaimReadBackKeepsTheSyncOff(): void {
+		foreach (['nothing there' => [null, true], 'the read failing' => [false, true], 'a claim' => [1, false]] as $case => [$read, $runs]) {
+			$cache = $this->createMock(IMemcache::class);
+			$cache->method('add')->willReturn(false);
+			$cache->method('get')->willReturn($read);
+			$syncs = new RecentSyncs($this->cacheFactoryFor($cache), $this->interval(120), $this->createMock(LoggerInterface::class));
 
-		$this->assertTrue($syncs->claim(138));
+			$this->assertSame($runs, $syncs->claim(138), $case);
+		}
 	}
 
 	/** Not asked at all: no line of a cache that failed. */
