@@ -206,14 +206,14 @@ Primary flow (native viewer):
 
 ### 4) Sync
 
-1. Frontend (`src/viewer-main.js`) triggers periodic sync while a pad is open in native viewer.
+1. Frontend (`src/viewer-main.js`) triggers periodic sync while a pad is open in native viewer, each marked `periodic=1`.
 2. Trusted embed flow (`src/embed-main.js`) runs the same snapshot sync contract:
-   - interval sync while visible
+   - interval sync while visible, marked `periodic=1`
    - flush on `visibilitychange`
    - flush on `pagehide`
    - extra flush triggers via trusted host messages
    - A flush on leaving (`keepalive`) goes at once, beside a running sync, and the events of one leaving share it; a forced flush asked for while a sync runs is replayed after it, to the URL it was asked for, unless the request in flight is itself forced to that URL (`src/lib/pad-sync.js`).
-3. `PadLifecycleController::syncById` fetches revision state from Etherpad.
+3. `PadLifecycleController::syncById` fetches revision state from Etherpad - except for a timed sync (`periodic=1`) where a sync looked at the file within the last half interval: it answers `status=deferred` and reads nothing (`RecentSyncs`, checked before the sync lock and again once it is held, noted before it is let go).
    - One sync of a file at a time, from reading the file to writing it (`PadSyncLock`, through Nextcloud's locking provider): two that overlap ask Etherpad and write in no set order, and the slower one can put its older revision over the newer. A second sync waits for the first, about three seconds at most, then reads what it wrote; one that waits in vain answers `status=locked`. With `filelocking.enabled` false syncs overlap; a request killed hard while it holds the lock leaves the file's syncs answering `locked` until the provider drops it (`PadSyncLock` says when).
 4. `.pad` snapshot is updated only when the upstream snapshot actually differs.
    - `force=1` requests an immediate upstream re-check, but unchanged snapshots are still not rewritten.
@@ -288,8 +288,7 @@ Primary flow (native viewer):
 ## Cost at scale
 
 What a request, an open viewer and a background run cost the server and
-Etherpad, read from the code of 1.1.0-beta.2; a figure that was measured
-says so. Nextcloud's own work - mounts, the file cache, file versions - is
+Etherpad, read from the code; a figure that was measured says so. Nextcloud's own work - mounts, the file cache, file versions - is
 not counted. "Etherpad call" is one request to its API, with a 15 s
 timeout unless named. The app has one table, `ep_pad_bindings`, one row
 per `.pad` file, read by its unique index on `file_id`.
@@ -303,8 +302,9 @@ per `.pad` file, read by its unique index on `file_id`.
 | Open, reader | 1 row | 1 read | 0 for a protected pad, `getReadOnlyID` for a public one |
 | Public link, writable, protected pad | 1 row | 1 read | 2 for a returning visitor (`getRevisionsCount`, `getSessionInfo`), 3 for a new one (`createAuthorIfNotExistsFor`, `createSession`) |
 | Read-only content | 1 row | 1 read | 1 `getHTML`, at most 5 MiB; a pad on another server: a DNS lookup and its export, at most 5 MiB and 20 s |
-| Sync, nothing changed | 1 row | 1 read | 1 `getRevisionsCount` |
-| Sync, pad changed, or forced | 1 row, 1 per write attempt | 1 read, 1 write | 3: `getRevisionsCount`, `getText`, `getHTML`, neither of the last two capped |
+| Timed sync, the file looked at within the last half interval | none | none | none; one memory cache read, two where it waited for the file's sync lock |
+| Sync, nothing changed | 1 row | 1 read | 1 `getRevisionsCount`; one memory cache write |
+| Sync, pad changed, or forced | 1 row, 1 per write attempt | 1 read, 1 write | 3: `getRevisionsCount`, `getText`, `getHTML`, neither of the last two capped; one memory cache write |
 | Embed page | none | none | none; the open it starts costs as above |
 
 - A protected open makes a new Etherpad session every time, by design:
@@ -331,19 +331,23 @@ A writer's viewer or embed page sends a sync every `sync_interval_seconds`
 (default 120, from 5 to 3600) while its tab is visible, and one forced
 sync when the tab is hidden or left; nothing polls the sync status. N
 visible viewers therefore cost N/120 requests a second - 8 for 1,000
-viewers, 83 for 10,000 - each with a row read, a file read and one
-Etherpad call. At the 5 s floor it is N/5.
+viewers, 83 for 10,000 - at the 5 s floor N/5. Each looks at its file
+with a row read, a file read and one Etherpad call, except where a sync
+looked at it within the last half interval: with a memory cache, the
+viewers of one pad cost about two such looks an interval together.
 
 Every viewer of a pad syncs on its own timer. While someone types, each of
 them would find a new revision and write, a file version each time: a
-timed sync (`periodic=1`) runs only where no sync wrote the file within
-the last half interval (`RecentSyncWrites`), so it is written at most
-about twice an interval however many have it open, and the others ask
-Etherpad nothing. That takes a memory cache; without one, V viewers of
-one pad write it up to V times an interval, and where each web server
-keeps its own, only the syncs one server takes are paced. Any other sync
-always runs; a forced one - a viewer leaving, an embedding host asking -
-fetches the pad's text and HTML even when its revision has not moved.
+timed sync (`periodic=1`) runs only where no sync looked at the file
+within the last half interval (`RecentSyncs`), so it is looked at, and
+written, at most about twice an interval however many have it open, and
+the others ask Etherpad nothing. While it stays open, between two looks
+pass at most about an interval and a half. That takes a memory cache; without one, V viewers
+of one pad write it up to V times an interval, and where each web
+server keeps its own, only the syncs one server takes are paced. Any
+other sync always runs; a forced one - a viewer leaving, an embedding
+host asking - fetches the pad's text and HTML even when its revision has
+not moved.
 
 ### Deleting, the trash, restoring
 

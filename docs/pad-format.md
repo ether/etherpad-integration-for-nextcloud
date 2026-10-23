@@ -139,6 +139,7 @@ Snapshot write flow:
 
 - Sync writes only when the upstream snapshot actually differs.
 - `force=1` requests an immediate upstream re-check, but unchanged snapshots are still not rewritten.
+- A timed sync (`periodic=1`, as the Viewer and the embed page send on their timer) where a sync looked at the file within the last half interval answers `status=deferred` with an empty `pad_id`, and reads and writes nothing.
 - A pad Etherpad made anew in place of the file's - without a single revision, with other text than the file saved - is not written, forced or not: the sync answers `pad_missing`, and the file keeps its content for a new pad.
 - On successful sync:
   - `snapshot_rev` is updated

@@ -19,19 +19,23 @@ use OCA\EtherpadNextcloud\Service\PadSyncLock;
 use OCA\EtherpadNextcloud\Service\PadSyncService;
 use OCA\EtherpadNextcloud\Service\PadSnapshot;
 use OCA\EtherpadNextcloud\Service\ParsedPadFile;
-use OCA\EtherpadNextcloud\Service\RecentSyncWrites;
+use OCA\EtherpadNextcloud\Service\RecentSyncs;
 use OCA\EtherpadNextcloud\Service\UserNodeResolver;
+use OCA\EtherpadNextcloud\Tests\Support\BuildsLinkCaches;
 use OCA\EtherpadNextcloud\Tests\Support\FixedClock;
+use OCA\EtherpadNextcloud\Tests\Support\InMemoryCache;
 use OCA\EtherpadNextcloud\Tests\Support\InMemoryLockingProvider;
 use OCP\Files\File;
 use OCP\ICache;
-use OCP\ICacheFactory;
+use OCP\Lock\ILockingProvider;
 use OCP\Lock\LockedException;
 use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 
 class PadSyncServiceTest extends TestCase {
+	use BuildsLinkCaches;
+
 	public function testSyncStatusReturnsUnavailableForExternalPads(): void {
 		$file = $this->createMock(File::class);
 		$file->method('getContent')->willReturn('frontmatter');
@@ -590,20 +594,22 @@ class PadSyncServiceTest extends TestCase {
 		$etherpadClient = $this->createMock(EtherpadClient::class);
 		$etherpadClient->expects($this->never())->method('getRevisionsCount');
 
-		$result = $this->buildService(null, $userNodeResolver, null, $etherpadClient)->syncById('alice', 138, true);
+		$cache = new InMemoryCache();
+		$result = $this->buildService(null, $userNodeResolver, null, $etherpadClient, null, null, null, $this->recentSyncs($cache))->syncById('alice', 138, true);
 
 		$this->assertSame(PadSyncService::STATUS_LOCKED, $result->status);
 		$this->assertSame(3, $result->lockRetries);
 		$this->assertTrue($result->retryable);
+		$this->assertSame([], $cache->ttls, 'a file it could not read is not counted as looked at');
 	}
 
 	/**
 	 * Viewers sync on timers of their own: a timed sync finds the file a
-	 * sync just wrote and leaves it, asking Etherpad nothing, until half the
-	 * interval has passed. Any other sync runs - one off the timer, as the
-	 * API is called, or a forced one.
+	 * sync just looked at and leaves it, asking Etherpad nothing, until half
+	 * the interval has passed. Any other sync runs - one off the timer, as
+	 * the API is called, or a forced one.
 	 */
-	public function testATimedSyncLeavesAFileASyncJustWroteBe(): void {
+	public function testATimedSyncLeavesAFileASyncJustLookedAtBe(): void {
 		$formatter = new PadFileService(new FixedClock());
 		$file = $this->createMock(File::class);
 		$file->method('isUpdateable')->willReturn(true);
@@ -618,8 +624,8 @@ class PadSyncServiceTest extends TestCase {
 		$etherpadClient->method('getHTML')->willReturn('<p>typed</p>');
 		$lockRetryService = $this->writeMockedLockRetry();
 		$lockRetryService->expects($this->exactly(3))->method('putContentWithSyncLockRetry')->willReturn(0);
-		$cache = new RecentSyncWritesTestCache();
-		$service = $this->buildService($formatter, $userNodeResolver, null, $etherpadClient, $lockRetryService, null, null, $this->recentWrites($cache));
+		$cache = new InMemoryCache();
+		$service = $this->buildService($formatter, $userNodeResolver, null, $etherpadClient, $lockRetryService, null, null, $this->recentSyncs($cache));
 
 		$this->assertSame(PadSyncService::STATUS_UPDATED, $service->syncById('alice', 138, false, true)->status);
 		$this->assertSame(['138' => 60], $cache->ttls, 'half the interval of 120 seconds');
@@ -630,8 +636,8 @@ class PadSyncServiceTest extends TestCase {
 		$this->assertSame(PadSyncService::STATUS_UPDATED, $service->syncById('alice', 138, true, true)->status, 'forced');
 	}
 
-	/** A sync that writes nothing notes nothing: the next one runs. */
-	public function testASyncThatWritesNothingNotesNothing(): void {
+	/** A look that finds nothing new counts too: idle viewers do not each ask Etherpad. */
+	public function testALookThatFindsNothingNewIsNotedToo(): void {
 		$formatter = new PadFileService(new FixedClock());
 		$file = $this->createMock(File::class);
 		$file->method('isUpdateable')->willReturn(true);
@@ -644,22 +650,69 @@ class PadSyncServiceTest extends TestCase {
 		$userNodeResolver->method('resolveUserFileNodeById')->willReturn($file);
 		$userNodeResolver->method('toUserAbsolutePath')->willReturn('/Notes.pad');
 		$etherpadClient = $this->createMock(EtherpadClient::class);
-		$etherpadClient->expects($this->exactly(2))->method('getRevisionsCount')->willReturn(3);
-		$cache = new RecentSyncWritesTestCache();
-		$service = $this->buildService($formatter, $userNodeResolver, null, $etherpadClient, null, null, null, $this->recentWrites($cache));
+		$etherpadClient->expects($this->once())->method('getRevisionsCount')->willReturn(3);
+		$cache = new InMemoryCache();
+		$service = $this->buildService($formatter, $userNodeResolver, null, $etherpadClient, null, null, null, $this->recentSyncs($cache));
 
 		$this->assertSame(PadSyncService::STATUS_UNCHANGED, $service->syncById('alice', 138, false, true)->status);
-		$this->assertSame(PadSyncService::STATUS_UNCHANGED, $service->syncById('alice', 138, false, true)->status);
-		$this->assertSame([], $cache->ttls);
+		$this->assertSame(['138' => 60], $cache->ttls);
+		$this->assertSame(PadSyncService::STATUS_DEFERRED, $service->syncById('alice', 138, false, true)->status);
 	}
 
-	private function recentWrites(ICache $cache): RecentSyncWrites {
-		$factory = $this->createMock(ICacheFactory::class);
-		$factory->method('isAvailable')->willReturn(true);
-		$factory->method('createDistributed')->willReturn($cache);
+	/**
+	 * A timed sync that waited for the file's lock asks again once it holds
+	 * it: the sync it waited for noted its look, here between the two
+	 * questions.
+	 */
+	public function testATimedSyncAsksAgainOnceItHoldsTheLock(): void {
+		$file = $this->createMock(File::class);
+		$file->method('isUpdateable')->willReturn(true);
+		$file->method('getName')->willReturn('Notes.pad');
+		$file->expects($this->never())->method('getContent');
+		$userNodeResolver = $this->createMock(UserNodeResolver::class);
+		$userNodeResolver->method('resolveUserFileNodeById')->willReturn($file);
+		$userNodeResolver->method('toUserAbsolutePath')->willReturn('/Notes.pad');
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->expects($this->never())->method('getRevisionsCount');
+		$cache = $this->createMock(ICache::class);
+		$cache->method('get')->willReturn(null, 1);
+
+		$result = $this->buildService(null, $userNodeResolver, null, $etherpadClient, null, null, null, $this->recentSyncs($cache))->syncById('alice', 138, false, true);
+
+		$this->assertSame(PadSyncService::STATUS_DEFERRED, $result->status);
+	}
+
+	/** A sync notes its look while it still holds the lock, so one waiting for it finds the note. */
+	public function testALookIsNotedBeforeTheLockIsLetGo(): void {
+		$formatter = new PadFileService(new FixedClock());
+		$file = $this->createMock(File::class);
+		$file->method('isUpdateable')->willReturn(true);
+		$file->method('getName')->willReturn('Notes.pad');
+		$file->method('getContent')->willReturn($formatter->buildInitialDocument(138, 'pad-1', BindingService::ACCESS_PROTECTED));
+		$userNodeResolver = $this->createMock(UserNodeResolver::class);
+		$userNodeResolver->method('resolveUserFileNodeById')->willReturn($file);
+		$userNodeResolver->method('toUserAbsolutePath')->willReturn('/Notes.pad');
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->method('getRevisionsCount')->willReturn(0);
+		$locks = new InMemoryLockingProvider();
+		$heldWhenNoted = null;
+		$cache = $this->createMock(ICache::class);
+		$cache->method('set')->willReturnCallback(static function () use ($locks, &$heldWhenNoted): bool {
+			$heldWhenNoted = $locks->isLocked('etherpad_nextcloud:sync:138', ILockingProvider::LOCK_EXCLUSIVE);
+			return true;
+		});
+		$syncLock = new PadSyncLock($locks, $this->createMock(LoggerInterface::class), static function (int $delay): void {
+		});
+
+		$this->buildService($formatter, $userNodeResolver, null, $etherpadClient, null, null, $syncLock, $this->recentSyncs($cache))->syncById('alice', 138, false, true);
+
+		$this->assertTrue($heldWhenNoted);
+	}
+
+	private function recentSyncs(ICache $cache): RecentSyncs {
 		$appConfig = $this->createMock(AppConfigService::class);
 		$appConfig->method('getSyncIntervalSeconds')->willReturn(120);
-		return new RecentSyncWrites($factory, $appConfig);
+		return new RecentSyncs($this->cacheFactoryFor($cache), $appConfig, $this->createMock(LoggerInterface::class));
 	}
 
 	private function buildService(
@@ -670,7 +723,7 @@ class PadSyncServiceTest extends TestCase {
 		?PadFileLockRetryService $lockRetryService = null,
 		?ExternalPadExportFetcher $externalPadExportFetcher = null,
 		?PadSyncLock $syncLock = null,
-		?RecentSyncWrites $recentWrites = null,
+		?RecentSyncs $recentSyncs = null,
 	): PadSyncService {
 		return new PadSyncService(
 			$padFileService ?? $this->createMock(PadFileService::class),
@@ -683,7 +736,7 @@ class PadSyncServiceTest extends TestCase {
 			$etherpadClient ?? $this->createMock(EtherpadClient::class),
 			$externalPadExportFetcher ?? $this->createMock(ExternalPadExportFetcher::class),
 			// Without a memory cache unless a test is about pacing: every sync runs.
-			$recentWrites ?? new RecentSyncWrites($this->createMock(ICacheFactory::class), $this->createMock(AppConfigService::class)),
+			$recentSyncs ?? new RecentSyncs($this->noMemoryCache(), $this->createMock(AppConfigService::class), $this->createMock(LoggerInterface::class)),
 			$this->createMock(LoggerInterface::class),
 		);
 	}
@@ -695,37 +748,5 @@ class PadSyncServiceTest extends TestCase {
 			}])
 			->onlyMethods(['putContentWithSyncLockRetry'])
 			->getMock();
-	}
-}
-
-/** What a memory cache keeps, and for how long each key was set to live. */
-class RecentSyncWritesTestCache implements ICache {
-	/** @var array<string,mixed> */
-	public array $values = [];
-	/** @var array<string,int> */
-	public array $ttls = [];
-
-	public function get(string $key): mixed {
-		return $this->values[$key] ?? null;
-	}
-
-	public function set(string $key, mixed $value, int $ttl = 0): bool {
-		$this->values[$key] = $value;
-		$this->ttls[$key] = $ttl;
-		return true;
-	}
-
-	public function hasKey(string $key): bool {
-		return isset($this->values[$key]);
-	}
-
-	public function remove(string $key): bool {
-		unset($this->values[$key]);
-		return true;
-	}
-
-	public function clear(string $prefix = ''): bool {
-		$this->values = [];
-		return true;
 	}
 }

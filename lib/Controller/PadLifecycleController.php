@@ -57,6 +57,11 @@ class PadLifecycleController extends AbstractPadController {
 		);
 	}
 
+	/** Whether the query parameter $name is on: `1`, `true` or `yes`. */
+	private function flag(string $name): bool {
+		return in_array(strtolower((string)$this->request->getParam($name, '0')), ['1', 'true', 'yes'], true);
+	}
+
 	/**
 	 * A new pad from the file's own content (RestoreService::recoverFromSnapshot()),
 	 * the file named by id.
@@ -70,9 +75,8 @@ class PadLifecycleController extends AbstractPadController {
 
 	#[\OCP\AppFramework\Http\Attribute\NoAdminRequired]
 	public function syncById(mixed $fileId): DataResponse {
-		$forceParam = (string)$this->request->getParam('force', '0');
-		$force = in_array(strtolower($forceParam), ['1', 'true', 'yes'], true);
-		$periodic = in_array(strtolower((string)$this->request->getParam('periodic', '0')), ['1', 'true', 'yes'], true);
+		$force = $this->flag('force');
+		$periodic = $this->flag('periodic');
 
 		return $this->runForUser(
 			fn(IUser $user): PadSyncResult => $this->padSyncService->syncById($user->getUID(), $this->requireFileId($fileId), $force, $periodic),
