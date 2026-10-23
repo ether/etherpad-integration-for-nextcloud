@@ -31,7 +31,7 @@ use Psr\Log\LoggerInterface;
  * at all on an instance with no active protected pad: one look at the
  * binding table, without a join, says so. No look at whether the folder's
  * storage holds one is taken first: it would be paid on every folder
- * deleted, small ones too, and spare only the walk of a large folder in a
+ * deleted, small ones too, and pay off at most for a large folder in a
  * storage that holds none (measured in docs/architecture.md, "Cost at
  * scale").
  *
@@ -39,10 +39,10 @@ use Psr\Log\LoggerInterface;
  * past MAX_PADS pads, more than a delete can take the sessions of in its
  * budget (PadSessionRevoker), or at MAX_FOLDERS folders. A level takes two
  * queries for every CHUNK folders in it: some forty for a wide tree, two
- * a level for a deep one. Their limits bound what they return; the
- * database still reads more: the query for the folders every row under
- * the level's folders, files too, and the one for the pads, as measured,
- * the same (docs/architecture.md, "Cost at scale").
+ * a level for a deep one. Their limits bound what they return, not what
+ * the database reads: the query for a level's folders reads the rows
+ * right under them, files too, until it has its limit of folders, and the
+ * one for their pads did the same in every plan measured.
  * What it does not reach keeps its sessions until they expire, within six
  * hours, with a line that says so.
  */

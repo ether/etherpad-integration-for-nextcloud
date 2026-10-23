@@ -346,23 +346,25 @@ fetches the pad's text and HTML even when its revision has not moved.
   says whether any protected pad is active on the instance; if one is, the
   folder is walked level by level for the protected pads in it, at most
   10,000 folders and 100 pads, two queries per 500 folders a level
-  (`ProtectedPadsOfNode`). The query for the folders reads every child of
-  the folders walked, files too, as the `parent` index does not narrow
-  them by type; the one for the pads, a join with the binding table, did
-  the same in every plan measured, at 2,000 active protected pads also
-  reading each of those. So what they read grows with every entry in the
-  folders walked. Measured once each on Postgres 16 with generated data,
-  statistics taken on it (2.2 million file cache rows in 1,000 storages
-  of about 2,000 rows and one of 200,000; 2,000 and 100,000 active
-  protected pads): under a millisecond for a folder of 200 files, about a
-  millisecond for 10 folders with 2,000 files, about 40 and 95 ms for a
-  level of 100 folders with 200,000 files. Asking first whether the
+  (`ProtectedPadsOfNode`). The query for the folders reads the children
+  of the folders walked, files too, until it has its limit of folders, as
+  the `parent` index does not narrow them by type; the one for the pads,
+  a join with the binding table, read all of them in every plan measured,
+  at 2,000 active protected pads also reading each of those. So what they
+  read grows with every entry in the folders walked. Measured once each
+  on Postgres 16 with generated data, statistics taken on it (2.2 million
+  file cache rows in 1,000 storages of about 2,000 rows and one of
+  200,000; 2,000 and 100,000 active protected pads): both queries under a
+  millisecond for a folder of 200 files; the pads' query 0.6 and 0.8 ms
+  for a level of 10 folders with 2,000 files; both about 40 and 95 ms for
+  a level of 100 folders with 200,000 files. Asking first whether the
   folder's storage holds an active protected pad took about as long as
-  such a walk in a small storage, under a millisecond, and 13 and 215 ms
-  in the large one, which held none, read partly from outside Postgres's
-  buffer cache - on every folder deleted there, small ones too. It would
-  pay off only for a large folder in a storage that holds none, and at
-  100,000 pads not even there.
+  such a walk in a small storage, under a millisecond. In the large one,
+  which held none, it took 13 and 215 ms on every folder deleted there,
+  small ones too, reading the rows of the pads' files in other storages -
+  at 100,000 pads nearly the whole file cache - partly from outside
+  Postgres's buffer cache. It would pay off only for a large folder in a
+  storage that holds none, and at 100,000 pads not even there.
 - A protected pad deleted or put in the trash loses its sessions in the
   request: `listSessionsOfGroup` and up to 100 deletions within 2 s. The
   rest goes to a job per group, up to 100 groups a delete.

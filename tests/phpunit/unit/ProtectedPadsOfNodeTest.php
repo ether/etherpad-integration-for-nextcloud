@@ -80,12 +80,53 @@ class ProtectedPadsOfNodeTest extends TestCase {
 		$table = $this->folderOfPads(150);
 		$logger = $this->createMock(LoggerInterface::class);
 		// The line counts the pads found, one past those taken.
-		$logger->expects($this->once())->method('info')->with('A folder deleted holds more than a delete takes the sessions of; the rest expire on their own.', $this->callback(static fn (array $context): bool => $context['pads'] === 101));
+		$logger->expects($this->once())->method('info')->with('A folder deleted holds more than a delete takes the sessions of; the rest expire on their own.', $this->callback(static fn (array $context): bool => $context['pads'] === 101 && $context['folders'] === 1));
 
 		$pads = $this->walk($table, $logger)->of($this->folder(10));
 
 		$this->assertCount(100, $pads);
 		$this->assertLessThanOrEqual(101, max($table->returned), 'no query returns more than one past the room');
+		$this->assertCount(2, $table->returned, 'no folders asked for once the pads are past the cap');
+	}
+
+	/** The hundred-and-first pad a level down still tells that some are left. */
+	public function testAPadPastTheHundredOnADeeperLevelIsTold(): void {
+		$rows = [$this->protectedRow(2000)];
+		$cached = [
+			['fileid' => 10, 'parent' => 1, 'mimetype' => self::DIRECTORY, 'storage' => 1, 'path' => 'files/10'],
+			['fileid' => 20, 'parent' => 10, 'mimetype' => self::DIRECTORY, 'storage' => 1, 'path' => 'files/10/20'],
+			['fileid' => 2000, 'parent' => 20, 'mimetype' => self::TEXT, 'storage' => 1, 'path' => 'files/10/20/2000'],
+		];
+		for ($fileId = 1000; $fileId < 1100; $fileId++) {
+			$rows[] = $this->protectedRow($fileId);
+			$cached[] = ['fileid' => $fileId, 'parent' => 10, 'mimetype' => self::TEXT, 'storage' => 1, 'path' => 'files/10/' . $fileId];
+		}
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects($this->once())->method('info')->with($this->anything(), $this->callback(static fn (array $context): bool => $context['pads'] === 101 && $context['folders'] === 2));
+
+		$this->assertCount(100, $this->walk(new InMemoryBindingTable($rows, $cached), $logger)->of($this->folder(10)));
+	}
+
+	/**
+	 * A level of more than CHUNK folders is asked about CHUNK at a time:
+	 * the first five hundred of six hundred hold the pads past the cap.
+	 */
+	public function testALevelIsAskedAboutInChunks(): void {
+		$rows = [];
+		$cached = [['fileid' => 10, 'parent' => 1, 'mimetype' => self::DIRECTORY, 'storage' => 1, 'path' => 'files/10']];
+		for ($fileId = 100; $fileId < 700; $fileId++) {
+			$cached[] = ['fileid' => $fileId, 'parent' => 10, 'mimetype' => self::DIRECTORY, 'storage' => 1, 'path' => 'files/10/' . $fileId];
+		}
+		for ($fileId = 1000; $fileId < 1101; $fileId++) {
+			$rows[] = $this->protectedRow($fileId);
+			$cached[] = ['fileid' => $fileId, 'parent' => 100, 'mimetype' => self::TEXT, 'storage' => 1, 'path' => 'files/10/100/' . $fileId];
+		}
+		$table = new InMemoryBindingTable($rows, $cached);
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects($this->once())->method('info')->with($this->anything(), $this->callback(static fn (array $context): bool => $context['pads'] === 101 && $context['folders'] === 501));
+
+		$this->assertCount(100, $this->walk($table, $logger)->of($this->folder(10)));
+		$this->assertCount(4, $table->returned, 'the look at the table, both queries of the first level, the pads of the first chunk');
 	}
 
 	/** A hundred pads, as many as a walk takes, are all taken, and nothing is said to be left. */
