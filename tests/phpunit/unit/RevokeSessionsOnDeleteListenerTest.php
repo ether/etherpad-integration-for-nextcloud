@@ -59,9 +59,9 @@ class RevokeSessionsOnDeleteListenerTest extends TestCase {
 	}
 
 	/**
-	 * A node tried again after a failed delete takes only what that try
-	 * finds: no pad, its pad gone public; another pad; or, where finding
-	 * them fails, none.
+	 * Two BeforeNodeDeletedEvents with no NodeDeletedEvent between them
+	 * stand for a delete that failed and was tried again: what the first
+	 * found is not revoked, whatever the second finds or whether it throws.
 	 */
 	public function testADeleteTriedAgainTakesOnlyWhatItFindsThen(): void {
 		foreach ([

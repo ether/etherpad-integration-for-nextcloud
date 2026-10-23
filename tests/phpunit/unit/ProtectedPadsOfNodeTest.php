@@ -109,7 +109,8 @@ class ProtectedPadsOfNodeTest extends TestCase {
 
 	/**
 	 * A level of more than CHUNK folders is asked about CHUNK at a time:
-	 * the first five hundred of six hundred hold the pads past the cap.
+	 * with the pads past the cap in the first chunk, the second is never
+	 * asked about.
 	 */
 	public function testALevelIsAskedAboutInChunks(): void {
 		$rows = [];
@@ -129,7 +130,6 @@ class ProtectedPadsOfNodeTest extends TestCase {
 		$this->assertCount(4, $table->returned, 'the look at the table, both queries of the first level, the pads of the first chunk');
 	}
 
-	/** A hundred pads, as many as a walk takes, are all taken, and nothing is said to be left. */
 	public function testAHundredPadsAreTakenWhole(): void {
 		$logger = $this->createMock(LoggerInterface::class);
 		$logger->expects($this->never())->method('info');
@@ -193,7 +193,6 @@ class ProtectedPadsOfNodeTest extends TestCase {
 		$this->assertSame([], $this->tenFolderWalk($table, $logger)->of($this->folder(10)));
 	}
 
-	/** A tree of exactly as many folders as a walk takes is walked whole, and nothing is said to be left. */
 	public function testATreeThatFitsTheWalkExactlyIsWalkedWhole(): void {
 		$cached = [['fileid' => 10, 'parent' => 1, 'mimetype' => self::DIRECTORY, 'storage' => 1, 'path' => 'files/10']];
 		for ($fileId = 100; $fileId < 109; $fileId++) {

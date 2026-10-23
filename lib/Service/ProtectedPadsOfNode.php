@@ -35,14 +35,11 @@ use Psr\Log\LoggerInterface;
  * storage that holds none (measured in docs/architecture.md, "Cost at
  * scale").
  *
- * It runs in the delete's request, so what it takes is bounded: it stops
- * past MAX_PADS pads, more than a delete can take the sessions of in its
- * budget (PadSessionRevoker), or at MAX_FOLDERS folders. A level takes two
- * queries for every CHUNK folders in it: some forty for a wide tree, two
- * a level for a deep one. Their limits bound what they return, not what
- * the database reads: the query for a level's folders reads the rows
- * right under them, files too, until it has its limit of folders, and the
- * one for their pads did the same in every plan measured.
+ * It runs in the delete's request, so what it takes is bounded: at most
+ * MAX_PADS pads, more than a delete can take the sessions of in its
+ * budget (PadSessionRevoker), and MAX_FOLDERS folders. Every CHUNK folders
+ * of a level take up to two queries, whose limits bound what they return,
+ * not what the database reads or how long that takes.
  * What it does not reach keeps its sessions until they expire, within six
  * hours, with a line that says so.
  */
