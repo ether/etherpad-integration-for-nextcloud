@@ -70,6 +70,44 @@ describe('pad-sync', () => {
 		await expect(ps.sync(false, false)).rejects.toThrow('boom')
 	})
 
+	it('lets a sync that is not timed ask for itself once a timed one in flight is done', async () => {
+		const gates = []
+		const fetchImpl = vi.fn(() => new Promise((resolve) => {
+			gates.push((data) => resolve(okResponse(data)))
+		}))
+		const ps = createPadSync({ fetchImpl })
+		ps.configure({ syncUrl: '/sync/42' })
+
+		const timed = ps.sync(false, false, true)
+		const plain = ps.sync(false, false)
+		expect(fetchImpl).toHaveBeenCalledTimes(1)
+
+		gates[0]({ status: 'deferred' })
+		expect(await timed).toEqual({ status: 'deferred' })
+		await flushAsyncWork()
+		expect(fetchImpl).toHaveBeenCalledTimes(2)
+		expect(fetchImpl.mock.calls[1][0]).toBe('/sync/42')
+
+		gates[1]({ status: 'updated' })
+		expect(await plain).toEqual({ status: 'updated' })
+	})
+
+	it('lets a timed sync share the answer of a timed one in flight', async () => {
+		const gates = []
+		const fetchImpl = vi.fn(() => new Promise((resolve) => {
+			gates.push(() => resolve(okResponse({ status: 'deferred' })))
+		}))
+		const ps = createPadSync({ fetchImpl })
+		ps.configure({ syncUrl: '/sync/42' })
+
+		const first = ps.sync(false, false, true)
+		const second = ps.sync(false, false, true)
+		gates[0]()
+
+		expect(await Promise.all([first, second])).toEqual([{ status: 'deferred' }, { status: 'deferred' }])
+		expect(fetchImpl).toHaveBeenCalledTimes(1)
+	})
+
 	it('coalesces a forced flush that arrives while a plain sync is in flight (no overlap)', async () => {
 		const gates = []
 		const fetchImpl = vi.fn(() => new Promise((resolve) => {

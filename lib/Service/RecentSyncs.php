@@ -23,8 +23,10 @@ use Psr\Log\LoggerInterface;
  * interval, rounded up (claim()); any other sync that looked at the file -
  * forced, or a call of the API - holds the timed ones off for as long
  * (note()). A claim stands for a try, not for a look that went through:
- * one that fails holds the timed syncs off too, which spares an Etherpad
- * that does not answer.
+ * one that Etherpad did not answer holds the timed syncs off too, which
+ * spares it. One that failed for another reason - for its user alone, a
+ * key it cannot read, say - is let go (release()), so that it holds no
+ * other user's timed syncs off.
  *
  * The window bounds the timed syncs that start, not those that run: one
  * that outlasts it, or waits for the sync lock past it, may meet the
@@ -51,7 +53,10 @@ class RecentSyncs {
 	) {
 	}
 
-	/** Whether a timed sync of the file may run, the file claimed for it if so. */
+	/**
+	 * Whether a timed sync of the file may run: where it claimed the file,
+	 * or where the cache fails to say.
+	 */
 	public function claim(int $fileId): bool {
 		try {
 			$cache = $this->cache();
@@ -59,14 +64,26 @@ class RecentSyncs {
 				return true;
 			}
 			[$key, $seconds] = $this->window($fileId);
+			// Read first: most timed syncs find a claim, at one round trip.
 			// A cache can answer false for a failure too, to add() and get()
-			// alike (Nextcloud's Memcached does): only a claim read back
-			// keeps the sync off. A number, as APCu, Memcached and Redis
-			// all hand one back as such.
-			return $cache->add($key, 1, $seconds) || $cache->get($key) !== 1;
+			// alike (Nextcloud's Memcached does), so only a claim read back
+			// keeps the sync off: the number 1, as APCu, Memcached and Redis
+			// all hand it back.
+			return $cache->get($key) !== 1
+				&& ($cache->add($key, 1, $seconds) || $cache->get($key) !== 1);
 		} catch (\Throwable $e) {
 			$this->cacheFailed($e);
 			return true;
+		}
+	}
+
+	/** Lets go of a timed sync's claim: it failed for a reason other than Etherpad. */
+	public function release(int $fileId): void {
+		try {
+			[$key] = $this->window($fileId);
+			$this->cache()?->remove($key);
+		} catch (\Throwable $e) {
+			$this->cacheFailed($e);
 		}
 	}
 

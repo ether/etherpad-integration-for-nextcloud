@@ -46,12 +46,18 @@ final class InMemoryCache implements IMemcache {
 	}
 
 	public function clear(string $prefix = ''): bool {
-		$this->values = [];
-		$this->ttls = [];
+		foreach (array_keys($this->values) as $key) {
+			if (str_starts_with($key, $prefix)) {
+				$this->remove($key);
+			}
+		}
 		return true;
 	}
 
 	public function inc(string $key, int $step = 1): int|bool {
+		if (!array_key_exists($key, $this->values)) {
+			$this->ttls[$key] = 0;
+		}
 		$this->values[$key] = (int)($this->values[$key] ?? 0) + $step;
 		return $this->values[$key];
 	}

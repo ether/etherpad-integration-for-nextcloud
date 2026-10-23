@@ -20,7 +20,7 @@ use OCP\Security\ICrypto;
  * test's own: what one keeps - values, times to live, counts - is what
  * that test is about.
  */
-trait BuildsLinkCaches {
+trait BuildsMemoryCaches {
 	/** A factory that hands out $cache as the distributed cache. */
 	private function cacheFactoryFor(ICache $cache): ICacheFactory {
 		$factory = $this->createMock(ICacheFactory::class);

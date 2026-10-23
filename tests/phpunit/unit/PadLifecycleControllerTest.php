@@ -24,7 +24,7 @@ use OCA\EtherpadNextcloud\Service\PadSnapshot;
 use OCA\EtherpadNextcloud\Service\ParsedPadFile;
 use OCA\EtherpadNextcloud\Service\RestoreService;
 use OCA\EtherpadNextcloud\Service\UserNodeResolver;
-use OCA\EtherpadNextcloud\Tests\Support\BuildsLinkCaches;
+use OCA\EtherpadNextcloud\Tests\Support\BuildsMemoryCaches;
 use OCA\EtherpadNextcloud\Tests\Support\InMemoryCache;
 use OCA\EtherpadNextcloud\Tests\Support\InMemoryLockingProvider;
 use OCA\EtherpadNextcloud\Util\PathNormalizer;
@@ -41,7 +41,7 @@ use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 
 class PadLifecycleControllerTest extends TestCase {
-	use BuildsLinkCaches;
+	use BuildsMemoryCaches;
 
 	use \OCA\EtherpadNextcloud\Tests\Support\BuildsErrorMappers;
 

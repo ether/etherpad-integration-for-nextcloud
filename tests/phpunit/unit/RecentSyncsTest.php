@@ -6,7 +6,7 @@ namespace OCA\EtherpadNextcloud\Tests\Unit;
 
 use OCA\EtherpadNextcloud\Service\AppConfigService;
 use OCA\EtherpadNextcloud\Service\RecentSyncs;
-use OCA\EtherpadNextcloud\Tests\Support\BuildsLinkCaches;
+use OCA\EtherpadNextcloud\Tests\Support\BuildsMemoryCaches;
 use OCA\EtherpadNextcloud\Tests\Support\InMemoryCache;
 use OCP\ICache;
 use OCP\ICacheFactory;
@@ -20,7 +20,7 @@ use Psr\Log\LoggerInterface;
  * a key, or fails lets every sync run.
  */
 class RecentSyncsTest extends TestCase {
-	use BuildsLinkCaches;
+	use BuildsMemoryCaches;
 
 	/** One claim of a file for half of five seconds, rounded up, under the file and the interval. */
 	public function testATimedSyncClaimsTheFileForHalfTheInterval(): void {
@@ -68,18 +68,34 @@ class RecentSyncsTest extends TestCase {
 
 	/**
 	 * A cache can answer an add with false for a failure too, and a read
-	 * after it with false as well: only a claim read back keeps the sync
-	 * off.
+	 * with false as well: only a claim read back keeps the sync off. One
+	 * read first, so a claim there costs no add.
 	 */
 	public function testOnlyAClaimReadBackKeepsTheSyncOff(): void {
-		foreach (['nothing there' => [null, true], 'the read failing' => [false, true], 'a claim' => [1, false]] as $case => [$read, $runs]) {
+		foreach ([
+			'a claim there' => [[1], false, false],
+			'a claim made in between' => [[null, 1], true, false],
+			'nothing there, add failing' => [[null, null], true, true],
+			'the reads failing too' => [[false, false], true, true],
+		] as $case => [$reads, $adds, $runs]) {
 			$cache = $this->createMock(IMemcache::class);
-			$cache->method('add')->willReturn(false);
-			$cache->method('get')->willReturn($read);
+			$cache->expects($adds ? $this->once() : $this->never())->method('add')->willReturn(false);
+			$cache->method('get')->willReturn(...$reads);
 			$syncs = new RecentSyncs($this->cacheFactoryFor($cache), $this->interval(120), $this->createMock(LoggerInterface::class));
 
 			$this->assertSame($runs, $syncs->claim(138), $case);
 		}
+	}
+
+	/** A claim let go lets the next timed sync claim the file. */
+	public function testAClaimLetGoLetsTheNextOneClaim(): void {
+		$cache = new InMemoryCache();
+		$syncs = new RecentSyncs($this->cacheFactoryFor($cache), $this->interval(120), $this->createMock(LoggerInterface::class));
+
+		$this->assertTrue($syncs->claim(138));
+		$syncs->release(138);
+
+		$this->assertTrue($syncs->claim(138));
 	}
 
 	/** Not asked at all: no line of a cache that failed. */

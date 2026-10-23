@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Service;
 
+use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
 use OCA\EtherpadNextcloud\Exception\NotAPadFileException;
 use OCA\EtherpadNextcloud\Exception\PadFileLockRetryExhaustedException;
 use OCA\EtherpadNextcloud\Exception\PadFileNotWritableException;
@@ -26,7 +27,7 @@ class PadSyncService {
 	public const STATUS_SYNCED = 'synced';
 	public const STATUS_OUT_OF_SYNC = 'out_of_sync';
 	public const STATUS_UNAVAILABLE = 'unavailable';
-	/** Not run: a viewer's timed sync, and another tried or looked at the file within the last half interval (RecentSyncs). */
+	/** Not run: a viewer's timed sync, and another timed sync tried within the last half interval, or another sync looked at the file (RecentSyncs). */
 	public const STATUS_DEFERRED = 'deferred';
 
 	public function __construct(
@@ -66,6 +67,11 @@ class PadSyncService {
 			$result = $this->syncLock->hold($fileId, fn (): PadSyncResult => $this->syncHeld($node, $fileId, $absolutePath, $force));
 		} catch (PadFileLockRetryExhaustedException $e) {
 			return $this->lockedSyncResponse('Pad sync not run: the file\'s sync lock stayed taken through every wait', $e, $fileId, $absolutePath, '', '', false, $force);
+		} catch (\Throwable $e) {
+			if ($paced && !EtherpadClientException::isEtherpadUnreachable($e)) {
+				$this->recentSyncs->release($fileId);
+			}
+			throw $e;
 		}
 		// Not after a timed sync: its claim, from its start, holds the others
 		// off already, and a note from its end could hold off its own

@@ -92,11 +92,11 @@ export function createPadSync({ requestToken, fetchImpl } = {}) {
 
 	/** The request, then the replays asked for while one runs, each answering its own callers. */
 	const run = async (url, force, periodic) => {
-		active = { url, force: Boolean(force), answer: request(url, force, false, periodic) }
+		active = { url, force: Boolean(force), periodic: Boolean(periodic) && !force, answer: request(url, force, false, periodic) }
 		await active.answer.catch(() => {})
 		for (const [again, replay] of replays) {
 			replays.delete(again)
-			active = { url: again, force: true, answer: request(again, true, false) }
+			active = { url: again, force: true, periodic: false, answer: request(again, true, false) }
 			replay.answerWith(active.answer)
 			await active.answer.catch(() => {})
 		}
@@ -128,6 +128,11 @@ export function createPadSync({ requestToken, fetchImpl } = {}) {
 			return keepaliveFlushes.get(key)
 		}
 		if (active) {
+			if (!force && !periodic && active.periodic) {
+				// A timed sync's answer can be deferred, which a sync that is
+				// not timed was not asked to be: it asks once that one is done.
+				return active.answer.catch(() => {}).then(() => sync(false, false))
+			}
 			if (!force || (active.force && active.url === syncUrl)) {
 				return active.answer
 			}

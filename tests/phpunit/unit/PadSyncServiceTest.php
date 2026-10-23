@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\Tests\Unit;
 
 use OCA\EtherpadNextcloud\Exception\BindingMismatchException;
+use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
 use OCA\EtherpadNextcloud\Exception\NotAPadFileException;
 use OCA\EtherpadNextcloud\Exception\PadFileNotWritableException;
 use OCA\EtherpadNextcloud\Exception\ExternalPadException;
@@ -21,7 +22,7 @@ use OCA\EtherpadNextcloud\Service\PadSnapshot;
 use OCA\EtherpadNextcloud\Service\ParsedPadFile;
 use OCA\EtherpadNextcloud\Service\RecentSyncs;
 use OCA\EtherpadNextcloud\Service\UserNodeResolver;
-use OCA\EtherpadNextcloud\Tests\Support\BuildsLinkCaches;
+use OCA\EtherpadNextcloud\Tests\Support\BuildsMemoryCaches;
 use OCA\EtherpadNextcloud\Tests\Support\FixedClock;
 use OCA\EtherpadNextcloud\Tests\Support\InMemoryCache;
 use OCA\EtherpadNextcloud\Tests\Support\InMemoryLockingProvider;
@@ -36,7 +37,7 @@ use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 
 class PadSyncServiceTest extends TestCase {
-	use BuildsLinkCaches;
+	use BuildsMemoryCaches;
 
 	public function testSyncStatusReturnsUnavailableForExternalPads(): void {
 		$file = $this->createMock(File::class);
@@ -658,31 +659,59 @@ class PadSyncServiceTest extends TestCase {
 	}
 
 	/**
-	 * A claim stands for a try: one whose look fails - Etherpad not
-	 * answering, say - holds the timed syncs off for the rest of the half
-	 * interval too, sparing Etherpad. A forced sync still runs.
+	 * A claim stands for a try: one Etherpad did not answer holds the timed
+	 * syncs off for the rest of the half interval too, sparing Etherpad. A
+	 * forced sync still runs. One that failed for another reason - for its
+	 * user alone, say - lets go, so it holds no other user's timed syncs off.
 	 */
-	public function testAFailedTryHoldsTheTimedSyncsOffButNotAForcedOne(): void {
+	public function testAFailedTryHoldsTheTimedSyncsOffOnlyWhereEtherpadDidNotAnswer(): void {
+		foreach ([
+			'Etherpad not answering' => [new EtherpadClientException('Etherpad did not answer'), PadSyncService::STATUS_DEFERRED],
+			'a failure of its own' => [new \RuntimeException('the key could not be read'), PadSyncService::STATUS_UNCHANGED],
+		] as $case => [$failure, $next]) {
+			$answers = 0;
+			$etherpadClient = $this->createMock(EtherpadClient::class);
+			$etherpadClient->method('getRevisionsCount')->willReturnCallback(static function () use (&$answers, $failure): int {
+				if (++$answers === 1) {
+					throw $failure;
+				}
+				return 3;
+			});
+			$etherpadClient->method('getText')->willReturn('typed');
+			$etherpadClient->method('getHTML')->willReturn('<p>typed</p>');
+			$service = $this->pacedService($etherpadClient, new InMemoryCache());
+
+			try {
+				$service->syncById('alice', 138, false, true);
+				self::fail($case . ': the failure should reach the caller.');
+			} catch (\RuntimeException $e) {
+				$this->assertSame($failure, $e, $case);
+			}
+			$this->assertSame($next, $service->syncById('alice', 138, false, true)->status, $case);
+			$this->assertSame(PadSyncService::STATUS_UNCHANGED, $service->syncById('alice', 138, true)->status, $case . ': forced');
+		}
+	}
+
+	/** A forced sync that fails lets go of no claim: it holds none, and the timed one's stands. */
+	public function testAForcedSyncThatFailsLetsNoClaimGo(): void {
 		$answers = 0;
 		$etherpadClient = $this->createMock(EtherpadClient::class);
 		$etherpadClient->method('getRevisionsCount')->willReturnCallback(static function () use (&$answers): int {
-			if (++$answers === 1) {
-				throw new \RuntimeException('Etherpad did not answer');
+			if (++$answers === 2) {
+				throw new \RuntimeException('the key could not be read');
 			}
 			return 3;
 		});
-		$etherpadClient->method('getText')->willReturn('typed');
-		$etherpadClient->method('getHTML')->willReturn('<p>typed</p>');
 		$service = $this->pacedService($etherpadClient, new InMemoryCache());
 
+		$this->assertSame(PadSyncService::STATUS_UNCHANGED, $service->syncById('alice', 138, false, true)->status);
 		try {
-			$service->syncById('alice', 138, false, true);
+			$service->syncById('alice', 138, true);
 			self::fail('The failure should reach the caller.');
 		} catch (\RuntimeException $e) {
-			$this->assertSame('Etherpad did not answer', $e->getMessage());
+			$this->assertSame('the key could not be read', $e->getMessage());
 		}
 		$this->assertSame(PadSyncService::STATUS_DEFERRED, $service->syncById('alice', 138, false, true)->status);
-		$this->assertSame(PadSyncService::STATUS_UNCHANGED, $service->syncById('alice', 138, true)->status);
 	}
 
 	/**
