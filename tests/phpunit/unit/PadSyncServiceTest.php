@@ -659,16 +659,15 @@ class PadSyncServiceTest extends TestCase {
 	}
 
 	/**
-	 * A claim stands for a try: one Etherpad did not answer holds the timed
-	 * syncs off for the rest of the half interval too, sparing Etherpad. A
-	 * forced sync still runs. One that failed for another reason - for its
-	 * user alone, say - lets go, so it holds no other user's timed syncs off.
+	 * A claim stands for a try: one that failed - Etherpad not answering,
+	 * or a failure of its own - holds the timed syncs off for the rest of
+	 * the half interval too, sparing Etherpad. A forced sync still runs.
 	 */
-	public function testAFailedTryHoldsTheTimedSyncsOffOnlyWhereEtherpadDidNotAnswer(): void {
+	public function testAFailedTryHoldsTheTimedSyncsOffButNotAForcedOne(): void {
 		foreach ([
-			'Etherpad not answering' => [new EtherpadClientException('Etherpad did not answer'), PadSyncService::STATUS_DEFERRED],
-			'a failure of its own' => [new \RuntimeException('the key could not be read'), PadSyncService::STATUS_UNCHANGED],
-		] as $case => [$failure, $next]) {
+			'Etherpad not answering' => new EtherpadClientException('Etherpad did not answer'),
+			'a failure of its own' => new \RuntimeException('the key could not be read'),
+		] as $case => $failure) {
 			$answers = 0;
 			$etherpadClient = $this->createMock(EtherpadClient::class);
 			$etherpadClient->method('getRevisionsCount')->willReturnCallback(static function () use (&$answers, $failure): int {
@@ -687,31 +686,57 @@ class PadSyncServiceTest extends TestCase {
 			} catch (\RuntimeException $e) {
 				$this->assertSame($failure, $e, $case);
 			}
-			$this->assertSame($next, $service->syncById('alice', 138, false, true)->status, $case);
+			$this->assertSame(PadSyncService::STATUS_DEFERRED, $service->syncById('alice', 138, false, true)->status, $case);
 			$this->assertSame(PadSyncService::STATUS_UNCHANGED, $service->syncById('alice', 138, true)->status, $case . ': forced');
 		}
 	}
 
-	/** A forced sync that fails lets go of no claim: it holds none, and the timed one's stands. */
-	public function testAForcedSyncThatFailsLetsNoClaimGo(): void {
-		$answers = 0;
-		$etherpadClient = $this->createMock(EtherpadClient::class);
-		$etherpadClient->method('getRevisionsCount')->willReturnCallback(static function () use (&$answers): int {
-			if (++$answers === 2) {
-				throw new \RuntimeException('the key could not be read');
+	/**
+	 * The limit of the claim: a user whose timed syncs keep failing for that
+	 * user alone holds off the timed syncs of another whose timer comes
+	 * within half an interval after theirs, round after round - not once.
+	 * Only a forced sync of the other's gets the file written.
+	 */
+	public function testAUserWhoseTimedSyncsKeepFailingHoldsAnotherUsersOffRoundAfterRound(): void {
+		$formatter = new PadFileService(new FixedClock());
+		$readable = $formatter->withExportSnapshot(
+			$formatter->readPad($formatter->buildInitialDocument(138, 'pad-1', BindingService::ACCESS_PROTECTED)),
+			new PadSnapshot('typed', '<p>typed</p>', 3),
+		);
+		$filesOf = [];
+		foreach (['bob' => false, 'alice' => true] as $uid => $canRead) {
+			$file = $this->createMock(File::class);
+			$file->method('isUpdateable')->willReturn(true);
+			$file->method('getName')->willReturn('Notes.pad');
+			if ($canRead) {
+				$file->method('getContent')->willReturn($readable);
+			} else {
+				$file->method('getContent')->willThrowException(new \Exception('the key could not be read'));
 			}
-			return 3;
-		});
-		$service = $this->pacedService($etherpadClient, new InMemoryCache());
-
-		$this->assertSame(PadSyncService::STATUS_UNCHANGED, $service->syncById('alice', 138, false, true)->status);
-		try {
-			$service->syncById('alice', 138, true);
-			self::fail('The failure should reach the caller.');
-		} catch (\RuntimeException $e) {
-			$this->assertSame('the key could not be read', $e->getMessage());
+			$filesOf[$uid] = $file;
 		}
-		$this->assertSame(PadSyncService::STATUS_DEFERRED, $service->syncById('alice', 138, false, true)->status);
+		$userNodeResolver = $this->createMock(UserNodeResolver::class);
+		$userNodeResolver->method('resolveUserFileNodeById')->willReturnCallback(static fn (string $uid): File => $filesOf[$uid]);
+		$userNodeResolver->method('toUserAbsolutePath')->willReturn('/Notes.pad');
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->method('getRevisionsCount')->willReturn(4);
+		$etherpadClient->method('getText')->willReturn('typed on');
+		$etherpadClient->method('getHTML')->willReturn('<p>typed on</p>');
+		$cache = new InMemoryCache();
+		$service = $this->buildService($formatter, $userNodeResolver, null, $etherpadClient, null, null, null, $this->recentSyncs($cache));
+
+		for ($round = 1; $round <= 3; $round++) {
+			try {
+				$service->syncById('bob', 138, false, true);
+				self::fail('Bob\'s sync should fail.');
+			} catch (\Exception $e) {
+				$this->assertSame('the key could not be read', $e->getMessage());
+			}
+			$this->assertSame(PadSyncService::STATUS_DEFERRED, $service->syncById('alice', 138, false, true)->status, 'round ' . $round);
+			// The half interval over, before Bob's next tick.
+			$cache->clear();
+		}
+		$this->assertSame(PadSyncService::STATUS_UPDATED, $service->syncById('alice', 138, true)->status, 'Alice\'s tab hidden or left');
 	}
 
 	/**

@@ -22,17 +22,21 @@ use Psr\Log\LoggerInterface;
  * each time. A timed sync runs only where it claims the file for half the
  * interval, rounded up (claim()); any other sync that looked at the file -
  * forced, or a call of the API - holds the timed ones off for as long
- * (note()). A claim stands for a try, not for a look that went through:
- * one that Etherpad did not answer holds the timed syncs off too, which
- * spares it. One that failed for another reason - for its user alone, a
- * key it cannot read, say - is let go (release()), so that it holds no
- * other user's timed syncs off.
+ * (note()). A claim stands for a try, not for a look that went through,
+ * and runs out on its own: one that failed holds the timed syncs off too,
+ * which spares an Etherpad, or a server of a pad elsewhere, that does not
+ * answer. So a user whose timed syncs keep failing for that user alone -
+ * a lock someone else holds through files_lock, a key that cannot be
+ * read - can hold every other user's off whose timer comes within half an
+ * interval after theirs, round after round. Etherpad keeps the content;
+ * the file's copy, and backups of it, stay behind until a forced sync - a
+ * tab hidden or left - which a browser closed hard does not send.
  *
  * The window bounds the timed syncs that start, not those that run: one
  * that outlasts it, or waits for the sync lock past it, may meet the
  * next, and with `filelocking.enabled` false they overlap. One that
- * claimed the file while another sync held the lock looks again once it
- * gets it.
+ * claimed the file while another sync held the lock waits for it, and
+ * then looks at what that one may just have looked at.
  *
  * The interval is part of the key, so one the admin changes counts at
  * once. Kept in the distributed memory cache, which counts the time - APCu
@@ -64,7 +68,8 @@ class RecentSyncs {
 				return true;
 			}
 			[$key, $seconds] = $this->window($fileId);
-			// Read first: most timed syncs find a claim, at one round trip.
+			// Read first: with several viewers, most timed syncs find a claim,
+			// at one round trip.
 			// A cache can answer false for a failure too, to add() and get()
 			// alike (Nextcloud's Memcached does), so only a claim read back
 			// keeps the sync off: the number 1, as APCu, Memcached and Redis
@@ -74,16 +79,6 @@ class RecentSyncs {
 		} catch (\Throwable $e) {
 			$this->cacheFailed($e);
 			return true;
-		}
-	}
-
-	/** Lets go of a timed sync's claim: it failed for a reason other than Etherpad. */
-	public function release(int $fileId): void {
-		try {
-			[$key] = $this->window($fileId);
-			$this->cache()?->remove($key);
-		} catch (\Throwable $e) {
-			$this->cacheFailed($e);
 		}
 	}
 

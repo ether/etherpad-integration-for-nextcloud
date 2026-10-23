@@ -9,7 +9,6 @@ declare(strict_types=1);
 
 namespace OCA\EtherpadNextcloud\Service;
 
-use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
 use OCA\EtherpadNextcloud\Exception\NotAPadFileException;
 use OCA\EtherpadNextcloud\Exception\PadFileLockRetryExhaustedException;
 use OCA\EtherpadNextcloud\Exception\PadFileNotWritableException;
@@ -67,11 +66,6 @@ class PadSyncService {
 			$result = $this->syncLock->hold($fileId, fn (): PadSyncResult => $this->syncHeld($node, $fileId, $absolutePath, $force));
 		} catch (PadFileLockRetryExhaustedException $e) {
 			return $this->lockedSyncResponse('Pad sync not run: the file\'s sync lock stayed taken through every wait', $e, $fileId, $absolutePath, '', '', false, $force);
-		} catch (\Throwable $e) {
-			if ($paced && !EtherpadClientException::isEtherpadUnreachable($e)) {
-				$this->recentSyncs->release($fileId);
-			}
-			throw $e;
 		}
 		// Not after a timed sync: its claim, from its start, holds the others
 		// off already, and a note from its end could hold off its own

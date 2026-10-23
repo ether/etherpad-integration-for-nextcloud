@@ -87,15 +87,13 @@ class RecentSyncsTest extends TestCase {
 		}
 	}
 
-	/** A claim let go lets the next timed sync claim the file. */
-	public function testAClaimLetGoLetsTheNextOneClaim(): void {
-		$cache = new InMemoryCache();
-		$syncs = new RecentSyncs($this->cacheFactoryFor($cache), $this->interval(120), $this->createMock(LoggerInterface::class));
+	/** A note is set over whatever is there: it holds the timed syncs off from its own look. */
+	public function testANoteIsSetNotAdded(): void {
+		$cache = $this->createMock(IMemcache::class);
+		$cache->expects($this->never())->method('add');
+		$cache->expects($this->once())->method('set')->with('138/120', 1, 60)->willReturn(true);
 
-		$this->assertTrue($syncs->claim(138));
-		$syncs->release(138);
-
-		$this->assertTrue($syncs->claim(138));
+		(new RecentSyncs($this->cacheFactoryFor($cache), $this->interval(120), $this->createMock(LoggerInterface::class)))->note(138);
 	}
 
 	/** Not asked at all: no line of a cache that failed. */

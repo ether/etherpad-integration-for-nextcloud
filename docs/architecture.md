@@ -302,9 +302,9 @@ per `.pad` file, read by its unique index on `file_id`.
 | Open, reader | 1 row | 1 read | 0 for a protected pad, `getReadOnlyID` for a public one |
 | Public link, writable, protected pad | 1 row | 1 read | 2 for a returning visitor (`getRevisionsCount`, `getSessionInfo`), 3 for a new one (`createAuthorIfNotExistsFor`, `createSession`) |
 | Read-only content | 1 row | 1 read | 1 `getHTML`, at most 5 MiB; a pad on another server: a DNS lookup and its export, at most 5 MiB and 20 s |
-| Timed sync that cannot claim the file | none | none | none; one memory cache claim, and a read where it fails |
-| Sync, nothing changed | 1 row | 1 read | 1 `getRevisionsCount`; one memory cache claim for a timed sync, a write for any other |
-| Sync, pad changed, or forced | 1 row, 1 per write attempt | 1 read, 1 write | 3: `getRevisionsCount`, `getText`, `getHTML`, neither of the last two capped; one memory cache claim for a timed sync, a write for any other |
+| Timed sync that cannot claim the file | none | none | none; one memory cache read, and an add and a second read where a claim comes in between |
+| Sync, nothing changed | 1 row | 1 read | 1 `getRevisionsCount`; a memory cache read and add for a timed sync, a write for any other |
+| Sync, pad changed, or forced | 1 row, 1 per write attempt | 1 read, 1 write | 3: `getRevisionsCount`, `getText`, `getHTML`, neither of the last two capped; a memory cache read and add for a timed sync, a write for any other |
 | Embed page | none | none | none; the open it starts costs as above |
 
 - A protected open makes a new Etherpad session every time, by design:
@@ -343,12 +343,17 @@ timed sync (`periodic=1`) runs only where it claims the file for half the
 interval (`RecentSyncs`), so it is looked at, and written, at most about
 twice an interval however many have it open, and the others ask
 Etherpad nothing. While a viewer shows it, at most about an interval and
-a half passes between two looks. That takes a memory cache; without one,
-V viewers of one pad write it up to V times an interval, and where each
-web server keeps its own, only the syncs one server takes are paced. Any
-other sync always runs; a forced one - a viewer leaving, an embedding
-host asking - fetches the pad's text and HTML even when its revision has
-not moved.
+a half passes between two looks, save where one user's timed syncs keep
+failing (below). That takes a memory cache; without one, V viewers of one
+pad write it up to V times an interval, and where each web server keeps
+its own, only the syncs one server takes are paced. A claim stands for a
+try: where the timed syncs of one user keep failing for that user alone
+- a lock someone else holds through files_lock, a key that cannot be
+read - that user holds off every other user whose timer comes within
+half an interval after theirs, round after round, and the file's copy,
+and backups of it, stay behind until a forced sync. Any other sync always
+runs; a forced one - a viewer leaving, an embedding host asking - fetches
+the pad's text and HTML even when its revision has not moved.
 
 ### Deleting, the trash, restoring
 

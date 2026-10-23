@@ -26,7 +26,7 @@ export function createPadSync({ requestToken, fetchImpl } = {}) {
 
 	let syncUrl = ''
 	let intervalMs = DEFAULT_SYNC_INTERVAL_MS
-	// The request in flight: its URL, whether it is forced, and its answer.
+	// The request in flight: its URL, whether it is forced or timed, and its answer.
 	let active = null
 	// The forced flushes asked for while a request runs, by URL in the order
 	// asked: each one's answer, to come with its replay.
@@ -105,8 +105,10 @@ export function createPadSync({ requestToken, fetchImpl } = {}) {
 		active = null
 	}
 
-	const sync = async (force, keepalive, periodic = false) => {
-		if (!syncUrl) {
+	const sync = (force, keepalive, periodic = false) => syncTo(syncUrl, force, keepalive, periodic)
+
+	const syncTo = async (url, force, keepalive, periodic) => {
+		if (!url) {
 			return { status: 'disabled' }
 		}
 		if (keepalive) {
@@ -116,9 +118,9 @@ export function createPadSync({ requestToken, fetchImpl } = {}) {
 			// once. Leaving fires several events (pagehide, visibilitychange,
 			// the host's): they share one, for the pad they leave - the viewer
 			// keeps this controller when it opens another.
-			const key = (force ? 'forced ' : '') + syncUrl
+			const key = (force ? 'forced ' : '') + url
 			if (!keepaliveFlushes.has(key)) {
-				const flush = request(syncUrl, force, true).finally(() => {
+				const flush = request(url, force, true).finally(() => {
 					if (keepaliveFlushes.get(key) === flush) {
 						keepaliveFlushes.delete(key)
 					}
@@ -129,23 +131,24 @@ export function createPadSync({ requestToken, fetchImpl } = {}) {
 		}
 		if (active) {
 			if (!force && !periodic && active.periodic) {
-				// A timed sync's answer can be deferred, which a sync that is
-				// not timed was not asked to be: it asks once that one is done.
-				return active.answer.catch(() => {}).then(() => sync(false, false))
+				// The server may defer a timed sync, and its answer would then
+				// say nothing for this one: it goes, to its own pad, once the
+				// timed one is done.
+				return active.answer.catch(() => {}).then(() => syncTo(url, false, false, false))
 			}
-			if (!force || (active.force && active.url === syncUrl)) {
+			if (!force || (active.force && active.url === url)) {
 				return active.answer
 			}
-			if (!replays.has(syncUrl)) {
+			if (!replays.has(url)) {
 				let answerWith
 				const answer = new Promise((resolve) => {
 					answerWith = resolve
 				})
-				replays.set(syncUrl, { answer, answerWith })
+				replays.set(url, { answer, answerWith })
 			}
-			return replays.get(syncUrl).answer
+			return replays.get(url).answer
 		}
-		void run(syncUrl, force, periodic)
+		void run(url, force, periodic)
 		return active.answer
 	}
 

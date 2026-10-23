@@ -92,6 +92,43 @@ describe('pad-sync', () => {
 		expect(await plain).toEqual({ status: 'updated' })
 	})
 
+	it('keeps the pad a sync that is not timed was asked for, though another is configured meanwhile', async () => {
+		const gates = []
+		const fetchImpl = vi.fn(() => new Promise((resolve) => {
+			gates.push(() => resolve(okResponse()))
+		}))
+		const ps = createPadSync({ fetchImpl })
+		ps.configure({ syncUrl: '/sync/42' })
+
+		ps.sync(false, false, true)
+		const plain = ps.sync(false, false)
+		ps.configure({ syncUrl: '/sync/99' })
+		gates[0]()
+		await flushAsyncWork()
+
+		expect(fetchImpl.mock.calls[1][0]).toBe('/sync/42')
+		gates[1]()
+		await plain
+	})
+
+	it('sends a forced sync asked for while a timed one runs forced, after it', async () => {
+		const gates = []
+		const fetchImpl = vi.fn(() => new Promise((resolve) => {
+			gates.push(() => resolve(okResponse()))
+		}))
+		const ps = createPadSync({ fetchImpl })
+		ps.configure({ syncUrl: '/sync/42' })
+
+		ps.sync(false, false, true)
+		const forced = ps.sync(true, false)
+		gates[0]()
+		await flushAsyncWork()
+
+		expect(fetchImpl.mock.calls[1][0]).toBe('/sync/42?force=1')
+		gates[1]()
+		await forced
+	})
+
 	it('lets a timed sync share the answer of a timed one in flight', async () => {
 		const gates = []
 		const fetchImpl = vi.fn(() => new Promise((resolve) => {
