@@ -25,7 +25,6 @@ use OCA\EtherpadNextcloud\Service\ParsedPadFile;
 use OCA\EtherpadNextcloud\Service\RestoreService;
 use OCA\EtherpadNextcloud\Service\UserNodeResolver;
 use OCA\EtherpadNextcloud\Tests\Support\BuildsLinkCaches;
-use OCA\EtherpadNextcloud\Tests\Support\FixedClock;
 use OCA\EtherpadNextcloud\Tests\Support\InMemoryCache;
 use OCA\EtherpadNextcloud\Tests\Support\InMemoryLockingProvider;
 use OCA\EtherpadNextcloud\Util\PathNormalizer;
@@ -130,16 +129,17 @@ class PadLifecycleControllerTest extends TestCase {
 			'timed' => [['periodic' => '1'], true],
 			'off the timer' => [[], false],
 			'timed and forced' => [['periodic' => '1', 'force' => '1'], false],
+			'an array, read as off' => [['periodic' => ['1']], false],
 		] as $case => [$params, $deferred]) {
 			$user = $this->createConfiguredMock(IUser::class, ['getUID' => 'alice']);
 			$userSession = $this->createConfiguredMock(IUserSession::class, ['getUser' => $user]);
 			$rootFolder = $this->createMock(IRootFolder::class);
 			$rootFolder->method('getById')->with(138)->willReturn([$this->buildPadFileNode()]);
 			$cache = new InMemoryCache();
-			$cache->set('138', FixedClock::NOW);
+			$cache->set('138/120', '1');
 			$request = $this->createMock(IRequest::class);
 			$request->method('getParam')->willReturnCallback(static fn (string $name, mixed $default = null): mixed => $params[$name] ?? $default);
-			$recentSyncs = new RecentSyncs($this->cacheFactoryFor($cache), $this->createConfiguredMock(AppConfigService::class, ['getSyncIntervalSeconds' => 120]), new FixedClock(), $this->createMock(LoggerInterface::class));
+			$recentSyncs = new RecentSyncs($this->cacheFactoryFor($cache), $this->createConfiguredMock(AppConfigService::class, ['getSyncIntervalSeconds' => 120]), $this->createMock(LoggerInterface::class));
 			$padFileService = $this->createMock(PadFileService::class);
 			$padFileService->method('readPad')->willReturn(new ParsedPadFile(
 				frontmatter: ['pad_id' => 'g.ABCDEFGHIJKLMNOP$pad-1', 'access_mode' => BindingService::ACCESS_PROTECTED],
@@ -594,7 +594,7 @@ class PadLifecycleControllerTest extends TestCase {
 		$lockRetryService = $this->buildNoSleepLockRetryService();
 		$padMetadataService = new PadMetadataService($resolvedPadFileService, $padPaths, $userNodeResolver, $lockRetryService, $resolvedEtherpadClient, $resolvedExternalPadExportFetcher, $resolvedBindingService, $logger);
 		$padSyncService = new PadSyncService($resolvedPadFileService, $userNodeResolver, $lockRetryService, new PadSyncLock(new InMemoryLockingProvider(), $logger, static function (int $delay): void {
-		}), $resolvedBindingService, $resolvedEtherpadClient, $resolvedExternalPadExportFetcher, $recentSyncs ?? new RecentSyncs($this->noMemoryCache(), $this->createMock(AppConfigService::class), new FixedClock(), $logger), new FixedClock(), $logger);
+		}), $resolvedBindingService, $resolvedEtherpadClient, $resolvedExternalPadExportFetcher, $recentSyncs ?? new RecentSyncs($this->noMemoryCache(), $this->createMock(AppConfigService::class), $logger), $logger);
 		$urlGenerator = $this->createMock(IURLGenerator::class);
 		$urlGenerator->method('linkToRoute')->willReturnCallback(
 			static function (string $route, array $params = []): string {

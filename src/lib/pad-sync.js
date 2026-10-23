@@ -8,11 +8,10 @@
  *
  * Owns the periodic background sync, forced/keepalive flushes, and the
  * visibility/pagehide lifecycle wiring. A sync on the timer says so
- * (`periodic=1`): the server leaves the file be where a sync looked at it
- * a moment ago, so the viewers of a pad do not each read it, ask Etherpad
- * and write it. A forced flush asked for while a sync runs is replayed
- * once after it, to the URL it was asked for, unless the request in flight
- * is itself forced to that URL: they then share it.
+ * (`periodic=1`), so that the server can pace the timed syncs of a pad's
+ * viewers (RecentSyncs). A forced flush asked for while a sync runs is
+ * replayed once after it, to the URL it was asked for, unless the request
+ * in flight is itself forced to that URL: they then share it.
  * A keepalive flush goes at once (sync()).
  *
  * The caller supplies the request-token getter (the viewer and embed read it

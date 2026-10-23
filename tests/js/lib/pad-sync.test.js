@@ -287,7 +287,7 @@ describe('pad-sync', () => {
 		ps.start()
 		vi.advanceTimersByTime(1000)
 		expect(fetchImpl).toHaveBeenCalledTimes(1)
-		// Said to be on the timer: the server may leave a file a sync just looked at.
+		// Said to be on the timer, so that the server can pace it.
 		expect(fetchImpl.mock.calls[0][0]).toBe('/sync/42?periodic=1')
 
 		Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true })

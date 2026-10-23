@@ -21,10 +21,7 @@ use Psr\Log\LoggerInterface;
  * Two syncs that overlap ask Etherpad and write in no set order, and the
  * slower one can put the older revision over the newer: Nextcloud's file
  * lock covers one read or one write, not the two together. A second sync
- * waits for the first and reads what it wrote; one that would rather not
- * wait - a viewer's timed sync, which the first one's look makes needless
- * (RecentSyncs) - takes the lock only if it is free, so a busy pad holds
- * no web server worker waiting.
+ * waits for the first and reads what it wrote.
  *
  * Held through Nextcloud's locking provider, as creates are
  * (PadFileCreator). With `filelocking.enabled` false it holds nothing, and
@@ -62,13 +59,12 @@ class PadSyncLock {
 	/**
 	 * @template T
 	 * @param \Closure(): T $sync
-	 * @param bool $wait false to take the lock only if it is free, without a wait
 	 * @return T
-	 * @throws PadFileLockRetryExhaustedException when the file's sync lock stayed taken through every wait, or was taken where there was to be none: by another sync of it, or left by a request killed hard
+	 * @throws PadFileLockRetryExhaustedException when the file's sync lock stayed taken through every wait: by another sync of it, or left by a request killed hard
 	 */
-	public function hold(int $fileId, \Closure $sync, bool $wait = true): mixed {
+	public function hold(int $fileId, \Closure $sync): mixed {
 		$key = Application::APP_ID . ':sync:' . $fileId;
-		$this->acquire($key, $wait);
+		$this->acquire($key);
 		try {
 			return $sync();
 		} finally {
@@ -76,7 +72,7 @@ class PadSyncLock {
 		}
 	}
 
-	private function acquire(string $key, bool $wait): void {
+	private function acquire(string $key): void {
 		$waits = 0;
 		$waited = 0;
 		while (true) {
@@ -85,7 +81,7 @@ class PadSyncLock {
 				return;
 			} catch (LockedException $e) {
 				$delay = self::POLL_US + random_int(0, self::JITTER_US);
-				if (!$wait || $waited + $delay > self::WAIT_US) {
+				if ($waited + $delay > self::WAIT_US) {
 					throw new PadFileLockRetryExhaustedException($waits, $e);
 				}
 				($this->sleeper)($delay);

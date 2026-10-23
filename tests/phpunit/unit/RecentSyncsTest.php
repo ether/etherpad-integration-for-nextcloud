@@ -7,85 +7,104 @@ namespace OCA\EtherpadNextcloud\Tests\Unit;
 use OCA\EtherpadNextcloud\Service\AppConfigService;
 use OCA\EtherpadNextcloud\Service\RecentSyncs;
 use OCA\EtherpadNextcloud\Tests\Support\BuildsLinkCaches;
-use OCA\EtherpadNextcloud\Tests\Support\FixedClock;
 use OCA\EtherpadNextcloud\Tests\Support\InMemoryCache;
 use OCP\ICache;
 use OCP\ICacheFactory;
+use OCP\IMemcache;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 
 /**
- * Which files a sync looked at within the last half interval, rounded up
- * and counted from the sync's start. Without a memory cache, or with one
- * that fails, nothing counts as looked at, and every sync runs.
+ * The claim a timed sync of a file needs, for half the interval, and the
+ * note a sync off the timer leaves. A cache that is missing, cannot claim
+ * a key, or fails lets every sync run.
  */
 class RecentSyncsTest extends TestCase {
 	use BuildsLinkCaches;
 
-	/** Half of five seconds, rounded up, less what the look took - and a second at least. */
-	public function testALookIsNotedForHalfTheIntervalUnderItsFileId(): void {
+	/** One claim of a file for half of five seconds, rounded up, under the file and the interval. */
+	public function testATimedSyncClaimsTheFileForHalfTheInterval(): void {
 		$cache = new InMemoryCache();
 		$factory = $this->createMock(ICacheFactory::class);
 		$factory->method('isAvailable')->willReturn(true);
 		$factory->expects($this->once())->method('createDistributed')->with('etherpad_nextcloud/recent-syncs/')->willReturn($cache);
-		$clock = new FixedClock();
-		$syncs = new RecentSyncs($factory, $this->interval(5), $clock, $this->createMock(LoggerInterface::class));
+		$syncs = new RecentSyncs($factory, $this->interval(5), $this->createMock(LoggerInterface::class));
 
-		$syncs->note(138, FixedClock::NOW);
-		$syncs->note(140, FixedClock::NOW - 1);
-		$syncs->note(141, FixedClock::NOW - 9);
-
-		$this->assertSame(['138' => 3, '140' => 2, '141' => 1], $cache->ttls);
-		$this->assertSame(FixedClock::NOW, $cache->values['138'], 'when the look began');
-		$this->assertTrue($syncs->has(138));
-		$this->assertFalse($syncs->has(139));
-		$clock->advance(3);
-		$this->assertFalse($syncs->has(138), 'measured, whatever the cache keeps');
+		$this->assertTrue($syncs->claim(138));
+		$this->assertFalse($syncs->claim(138), 'claimed already');
+		$this->assertTrue($syncs->claim(139), 'another file');
+		$this->assertSame(['138/5' => 3, '139/5' => 3], $cache->ttls);
+		$cache->remove('138/5');
+		$this->assertTrue($syncs->claim(138), 'the window over');
 	}
 
-	/** A note kept under an interval of an hour holds no longer than half the interval the admin set since. */
-	public function testAShortenedIntervalHoldsForTheNotesAlreadyKept(): void {
+	/** A note holds the timed syncs off as a claim does. */
+	public function testANoteHoldsTheTimedSyncsOff(): void {
+		$cache = new InMemoryCache();
+		$syncs = new RecentSyncs($this->cacheFactoryFor($cache), $this->interval(120), $this->createMock(LoggerInterface::class));
+
+		$syncs->note(138);
+
+		$this->assertSame(['138/120' => 60], $cache->ttls);
+		$this->assertFalse($syncs->claim(138));
+	}
+
+	/** A claim kept under an interval of an hour holds nothing off once the admin set another. */
+	public function testAChangedIntervalCountsAtOnce(): void {
 		$cache = new InMemoryCache();
 		$seconds = 3600;
 		$appConfig = $this->createMock(AppConfigService::class);
 		$appConfig->method('getSyncIntervalSeconds')->willReturnCallback(static function () use (&$seconds): int {
 			return $seconds;
 		});
-		$clock = new FixedClock();
-		$syncs = new RecentSyncs($this->cacheFactoryFor($cache), $appConfig, $clock, $this->createMock(LoggerInterface::class));
+		$syncs = new RecentSyncs($this->cacheFactoryFor($cache), $appConfig, $this->createMock(LoggerInterface::class));
 
-		$syncs->note(138, FixedClock::NOW);
-		$this->assertSame(['138' => 1800], $cache->ttls);
+		$this->assertTrue($syncs->claim(138));
 		$seconds = 5;
-		$clock->advance(2);
-		$this->assertTrue($syncs->has(138));
-		$clock->advance(1);
-		$this->assertFalse($syncs->has(138));
+
+		$this->assertTrue($syncs->claim(138));
+		$this->assertSame(['138/3600' => 1800, '138/5' => 3], $cache->ttls);
 	}
 
-	public function testWithoutAMemoryCacheNothingIsNoted(): void {
-		$syncs = new RecentSyncs($this->noMemoryCache(), $this->interval(120), new FixedClock(), $this->createMock(LoggerInterface::class));
+	/** A cache can answer an add with false for a failure too: only a claim it then holds keeps the sync off. */
+	public function testAnAddThatFailsWithoutAClaimLetsTheSyncRun(): void {
+		$cache = $this->createMock(IMemcache::class);
+		$cache->method('add')->willReturn(false);
+		$cache->method('get')->willReturn(null);
+		$syncs = new RecentSyncs($this->cacheFactoryFor($cache), $this->interval(120), $this->createMock(LoggerInterface::class));
 
-		$syncs->note(138, FixedClock::NOW);
-
-		$this->assertFalse($syncs->has(138));
+		$this->assertTrue($syncs->claim(138));
 	}
 
-	/** An Error too, as a cache misconfigured can throw: the sync it serves goes on, and the log says why. */
-	public function testACacheThatFailsCountsNothingAsLookedAt(): void {
-		$cache = $this->createMock(ICache::class);
+	/** Not asked at all: no line of a cache that failed. */
+	public function testWithoutACacheThatCanClaimEverySyncRuns(): void {
+		foreach (['no memory cache' => $this->noMemoryCache(), 'one without add()' => $this->cacheFactoryFor($this->createMock(ICache::class))] as $case => $factory) {
+			$logger = $this->createMock(LoggerInterface::class);
+			$logger->expects($this->never())->method('debug');
+			$syncs = new RecentSyncs($factory, $this->interval(120), $logger);
+
+			$syncs->note(138);
+
+			$this->assertTrue($syncs->claim(138), $case);
+			$this->assertTrue($syncs->claim(138), $case);
+		}
+	}
+
+	/** An Error too, as a cache misconfigured can throw: it is logged, and the claim lets the sync run. */
+	public function testACacheThatFailsLetsEverySyncRun(): void {
+		$cache = $this->createMock(IMemcache::class);
+		$cache->method('add')->willThrowException(new \Error('Redis went away'));
 		$cache->method('set')->willThrowException(new \Error('Redis went away'));
-		$cache->method('get')->willThrowException(new \Error('Redis went away'));
 		$logger = $this->createMock(LoggerInterface::class);
 		$logger->expects($this->exactly(2))->method('debug')->with(
-			'The memory cache failed, so the timed syncs of a pad run as if none had looked at it while it fails.',
+			'The memory cache failed, so the timed syncs of a pad run unpaced while it fails.',
 			$this->callback(static fn (array $context): bool => $context['app'] === 'etherpad_nextcloud' && $context['error'] === \Error::class),
 		);
-		$syncs = new RecentSyncs($this->cacheFactoryFor($cache), $this->interval(120), new FixedClock(), $logger);
+		$syncs = new RecentSyncs($this->cacheFactoryFor($cache), $this->interval(120), $logger);
 
-		$syncs->note(138, FixedClock::NOW);
+		$syncs->note(138);
 
-		$this->assertFalse($syncs->has(138));
+		$this->assertTrue($syncs->claim(138));
 	}
 
 	private function interval(int $seconds): AppConfigService {

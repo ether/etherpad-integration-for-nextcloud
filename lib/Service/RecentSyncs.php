@@ -11,86 +11,93 @@ namespace OCA\EtherpadNextcloud\Service;
 
 use OCA\EtherpadNextcloud\AppInfo\Application;
 use OCA\EtherpadNextcloud\Util\SafeError;
-use OCP\AppFramework\Utility\ITimeFactory;
-use OCP\ICache;
 use OCP\ICacheFactory;
+use OCP\IMemcache;
 use Psr\Log\LoggerInterface;
 
 /**
- * The files a sync looked at within the last half sync interval, rounded
- * up and counted from the sync's start: compared with Etherpad, and
- * written where the pad had moved on. Every viewer of a pad syncs on its
- * own timer, so V viewers would each ask Etherpad every interval, and
- * while someone types each would write it: V file versions an interval. A
- * viewer's timed sync leaves a file looked at this recently be
- * (PadSyncService), so it is looked at, and written, at most about twice
- * an interval, however many have it open; any other sync - a viewer
- * leaving, an embedding host asking, a call of the API - always runs.
- * Counted from the start, a sync that took long does not leave its own
- * viewer's next one be. A note keeps when the look began and is measured
- * against the interval of the moment it is asked about, so an interval the
- * admin shortens holds for the notes already kept.
+ * Paces the timed syncs of a file. A viewer's timer sends one every
+ * interval, so V viewers of a pad would each read the file and ask
+ * Etherpad, and while someone types each would write it, a file version
+ * each time. A timed sync runs only where it claims the file for half the
+ * interval, rounded up (claim()); any other sync that looked at the file -
+ * forced, or a call of the API - holds the timed ones off for as long
+ * (note()). A claim stands for a try, not for a look that went through:
+ * one that fails holds the timed syncs off too, which spares an Etherpad
+ * that does not answer.
  *
- * Kept in the distributed memory cache: where that is each web server's
- * own, only the syncs one server takes are paced, and APCu, counting in
- * whole seconds, keeps a note up to a second longer. With
- * `filelocking.enabled` false the syncs of a file overlap (PadSyncLock),
- * so the timed syncs that start while a look runs all run. Without a
- * memory cache, or with one that fails, nothing is noted and every sync
- * runs.
+ * The window bounds the timed syncs that start, not those that run: one
+ * that outlasts it, or waits for the sync lock past it, may meet the
+ * next, and with `filelocking.enabled` false they overlap. One that
+ * claimed the file while another sync held the lock looks again once it
+ * gets it.
+ *
+ * The interval is part of the key, so one the admin changes counts at
+ * once. Kept in the distributed memory cache, which counts the time - APCu
+ * in whole seconds, up to a second longer. Where each web server keeps
+ * its own, only the syncs one server takes are paced; see
+ * https://docs.nextcloud.com/server/stable/admin_manual/configuration_server/caching_configuration.html.
+ * Without a memory cache that can claim a key (IMemcache), or with one
+ * that fails, every sync runs.
  */
 class RecentSyncs {
-	private ?ICache $cache = null;
+	private ?IMemcache $cache = null;
 	private bool $opened = false;
 
 	public function __construct(
 		private ICacheFactory $cacheFactory,
 		private AppConfigService $appConfig,
-		private ITimeFactory $timeFactory,
 		private LoggerInterface $logger,
 	) {
 	}
 
-	public function has(int $fileId): bool {
+	/** Whether a timed sync of the file may run, the file claimed for it if so. */
+	public function claim(int $fileId): bool {
 		try {
-			return $this->isRecent($this->cache()?->get((string)$fileId));
+			$cache = $this->cache();
+			if ($cache === null) {
+				return true;
+			}
+			[$key, $seconds] = $this->window($fileId);
+			// A cache can answer false for a failure too (Nextcloud's
+			// Memcached does): only a claim it then holds keeps the sync off.
+			return $cache->add($key, '1', $seconds) || $cache->get($key) === null;
 		} catch (\Throwable $e) {
 			$this->cacheFailed($e);
-			return false;
+			return true;
 		}
 	}
 
-	/** A look at the file that began at $since. */
-	public function note(int $fileId, int $since): void {
+	/** A look at the file by a sync that is not timed. */
+	public function note(int $fileId): void {
 		try {
-			$this->cache()?->set((string)$fileId, $since, max(1, $this->halfInterval() - ($this->timeFactory->getTime() - $since)));
+			[$key, $seconds] = $this->window($fileId);
+			$this->cache()?->set($key, '1', $seconds);
 		} catch (\Throwable $e) {
 			$this->cacheFailed($e);
 		}
 	}
 
-	/** Whether a note began within the half interval of now; a cache may hand a number back as a string. */
-	private function isRecent(mixed $since): bool {
-		return is_numeric($since) && $this->timeFactory->getTime() - (int)$since < $this->halfInterval();
+	/** @return array{string, int} the key, and half the interval, rounded up */
+	private function window(int $fileId): array {
+		$interval = $this->appConfig->getSyncIntervalSeconds();
+		return [$fileId . '/' . $interval, intdiv($interval + 1, 2)];
 	}
 
-	/** Rounded up, so that even at the five second floor a note keeps the looks to under two an interval. */
-	private function halfInterval(): int {
-		return intdiv($this->appConfig->getSyncIntervalSeconds() + 1, 2);
-	}
-
-	private function cache(): ?ICache {
+	private function cache(): ?IMemcache {
 		if (!$this->opened) {
 			$this->opened = true;
-			$this->cache = $this->cacheFactory->isAvailable()
+			$cache = $this->cacheFactory->isAvailable()
 				? $this->cacheFactory->createDistributed(Application::APP_ID . '/recent-syncs/')
 				: null;
+			// add() is IMemcache's; createDistributed() promises only an ICache.
+			$this->cache = $cache instanceof IMemcache ? $cache : null;
 		}
 		return $this->cache;
 	}
 
 	private function cacheFailed(\Throwable $e): void {
-		$this->logger->debug('The memory cache failed, so the timed syncs of a pad run as if none had looked at it while it fails.', [
+		$this->logger->debug('The memory cache failed, so the timed syncs of a pad run unpaced while it fails.', [
 			'app' => Application::APP_ID,
 			...SafeError::context($e),
 		]);
