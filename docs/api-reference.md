@@ -246,6 +246,7 @@ solely by the separate external-pad policy, not by these two settings.
   - One sync of a file runs at a time: a second one waits for the first, about three seconds at most, and then reads what the first wrote. With `filelocking.enabled` false syncs overlap.
   - The lock does not come free in time - another sync of the file runs that long, or a request killed hard left its lock behind (how long that stays depends on Nextcloud's locking provider), or a client keeps the file locked while the sync reads or writes it: `200` with `status=locked`, `retryable: true` and `lock_retries`, how often the sync waited for that lock. Nothing is written; a later sync writes it, if one comes.
   - `force=1` requests an immediate upstream re-check, but unchanged snapshots are still not rewritten. A pad behind the snapshot whose content differs is written.
+  - A sync without `force=1` within half the sync interval after one wrote the file does not run: `200` with `status=deferred`, the file not read and Etherpad not asked, so `pad_id` is empty and `external` false. Every viewer of a pad syncs on its own timer, and this keeps them from each writing the file, a version each time, while someone types; the next sync after that, or one with `force=1`, writes what is new. It takes a memory cache (`memcache.local` or `memcache.distributed`): without one, every sync runs. Where each web server has a cache of its own, only the syncs one server takes are paced.
   - A pad Etherpad made anew in place of the file's - without a single revision, with other text than the file saved - is never written over it: `400` with `code=pad_missing`, as an open answers, and the file keeps its content for `recover-from-snapshot`.
   - External pads:
     - Sync uses public text export only (`/export/txt`) based on `pad_url`.
@@ -479,7 +480,7 @@ solely by the separate external-pad policy, not by these two settings.
 - `pad_id`: Etherpad pad ID.
 - `pad_url`: preferred target URL for public/external pads.
 - `access_mode`: `public` or `protected`.
-- `status` (sync): `updated`, `unchanged` or `locked`; `POST /api/v1/pads/sync/{fileId}` above says what `updated` and `locked` carry.
+- `status` (sync): `updated`, `unchanged`, `locked` or `deferred`; `POST /api/v1/pads/sync/{fileId}` above says what `updated`, `locked` and `deferred` carry.
 - `status` (sync-status): `synced`, `out_of_sync`, or `unavailable` with `reason: external_no_revision` for a pad on another server. `in_sync` is always there, `null` for `unavailable`.
 - `snapshot_rev` (sync, sync-status): the revision the `.pad` holds – the Etherpad revision for an own pad, the app's own count of written snapshots for a pad on another server. `current_rev` (sync-status, and a sync that answers `unchanged` for an own pad): the pad's revision in Etherpad.
 - `sync_url`, `sync_status_url` (open/open-by-id): the sync and sync-status endpoints, empty for a user who may not change the file; `sync_interval_seconds`: how often the Viewer and the embed page sync.

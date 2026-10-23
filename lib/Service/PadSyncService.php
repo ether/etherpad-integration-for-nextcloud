@@ -26,6 +26,8 @@ class PadSyncService {
 	public const STATUS_SYNCED = 'synced';
 	public const STATUS_OUT_OF_SYNC = 'out_of_sync';
 	public const STATUS_UNAVAILABLE = 'unavailable';
+	/** Not run: a sync wrote the file a moment ago (RecentSyncWrites). */
+	public const STATUS_DEFERRED = 'deferred';
 
 	public function __construct(
 		private PadFileService $padFileService,
@@ -35,6 +37,7 @@ class PadSyncService {
 		private BindingService $bindingService,
 		private EtherpadClient $etherpadClient,
 		private ExternalPadExportFetcher $externalPadExportFetcher,
+		private RecentSyncWrites $recentWrites,
 		private LoggerInterface $logger,
 	) {
 	}
@@ -51,14 +54,27 @@ class PadSyncService {
 			throw new NotAPadFileException('Selected file is not a .pad file.');
 		}
 		PadFileNotWritableException::unlessUpdateable($node);
+		if (!$force && $this->recentWrites->has($fileId)) {
+			return new PadSyncResult(
+				status: self::STATUS_DEFERRED,
+				fileId: $fileId,
+				padId: '',
+				external: false,
+				forced: false,
+			);
+		}
 
 		// One sync of the file at a time (PadSyncLock); one that waits in
 		// vain answers as for a locked file.
 		try {
-			return $this->syncLock->hold($fileId, fn (): PadSyncResult => $this->syncHeld($node, $fileId, $absolutePath, $force));
+			$result = $this->syncLock->hold($fileId, fn (): PadSyncResult => $this->syncHeld($node, $fileId, $absolutePath, $force));
 		} catch (PadFileLockRetryExhaustedException $e) {
 			return $this->lockedSyncResponse('Pad sync not run: the file\'s sync lock stayed taken through every wait', $e, $fileId, $absolutePath, '', '', false, $force);
 		}
+		if ($result->status === self::STATUS_UPDATED) {
+			$this->recentWrites->note($fileId);
+		}
+		return $result;
 	}
 
 	/** @throws PadLostException */
