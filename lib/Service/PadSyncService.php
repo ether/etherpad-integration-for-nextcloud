@@ -26,7 +26,7 @@ class PadSyncService {
 	public const STATUS_SYNCED = 'synced';
 	public const STATUS_OUT_OF_SYNC = 'out_of_sync';
 	public const STATUS_UNAVAILABLE = 'unavailable';
-	/** Not run: a sync wrote the file a moment ago (RecentSyncWrites). */
+	/** Not run: a viewer's timed sync, and a sync wrote the file a moment ago (RecentSyncWrites). */
 	public const STATUS_DEFERRED = 'deferred';
 
 	public function __construct(
@@ -43,18 +43,19 @@ class PadSyncService {
 	}
 
 	/**
+	 * @param bool $periodic sent on a viewer's timer, and left be where a sync wrote the file a moment ago
 	 * @throws NotFoundException
 	 * @throws PadFileNotWritableException for a reader who may not change the file, before Etherpad is asked
 	 * @throws PadLostException when Etherpad made the pad anew in place of the file's
 	 */
-	public function syncById(string $uid, int $fileId, bool $force): PadSyncResult {
+	public function syncById(string $uid, int $fileId, bool $force, bool $periodic = false): PadSyncResult {
 		$node = $this->userNodeResolver->resolveUserFileNodeById($uid, $fileId);
 		$absolutePath = $this->userNodeResolver->toUserAbsolutePath($uid, $node);
 		if (!PadFileType::isPad($node->getName())) {
 			throw new NotAPadFileException('Selected file is not a .pad file.');
 		}
 		PadFileNotWritableException::unlessUpdateable($node);
-		if (!$force && $this->recentWrites->has($fileId)) {
+		if ($periodic && !$force && $this->recentWrites->has($fileId)) {
 			return new PadSyncResult(
 				status: self::STATUS_DEFERRED,
 				fileId: $fileId,

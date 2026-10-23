@@ -598,12 +598,12 @@ class PadSyncServiceTest extends TestCase {
 	}
 
 	/**
-	 * Viewers sync on timers of their own: one that is not forced finds the
-	 * file a sync just wrote and leaves it, asking Etherpad nothing, until
-	 * half the interval has passed. A forced one writes. What is noted is a
-	 * write, not a sync that found nothing to write.
+	 * Viewers sync on timers of their own: a timed sync finds the file a
+	 * sync just wrote and leaves it, asking Etherpad nothing, until half the
+	 * interval has passed. Any other sync runs - one off the timer, as the
+	 * API is called, or a forced one.
 	 */
-	public function testASyncThatIsNotForcedLeavesAFileASyncJustWroteBe(): void {
+	public function testATimedSyncLeavesAFileASyncJustWroteBe(): void {
 		$formatter = new PadFileService(new FixedClock());
 		$file = $this->createMock(File::class);
 		$file->method('isUpdateable')->willReturn(true);
@@ -613,20 +613,21 @@ class PadSyncServiceTest extends TestCase {
 		$userNodeResolver->method('resolveUserFileNodeById')->willReturn($file);
 		$userNodeResolver->method('toUserAbsolutePath')->willReturn('/Notes.pad');
 		$etherpadClient = $this->createMock(EtherpadClient::class);
-		$etherpadClient->expects($this->exactly(2))->method('getRevisionsCount')->willReturn(3);
+		$etherpadClient->expects($this->exactly(3))->method('getRevisionsCount')->willReturn(3);
 		$etherpadClient->method('getText')->willReturn('typed');
 		$etherpadClient->method('getHTML')->willReturn('<p>typed</p>');
 		$lockRetryService = $this->writeMockedLockRetry();
-		$lockRetryService->expects($this->exactly(2))->method('putContentWithSyncLockRetry')->willReturn(0);
+		$lockRetryService->expects($this->exactly(3))->method('putContentWithSyncLockRetry')->willReturn(0);
 		$cache = new RecentSyncWritesTestCache();
 		$service = $this->buildService($formatter, $userNodeResolver, null, $etherpadClient, $lockRetryService, null, null, $this->recentWrites($cache));
 
-		$this->assertSame(PadSyncService::STATUS_UPDATED, $service->syncById('alice', 138, false)->status);
+		$this->assertSame(PadSyncService::STATUS_UPDATED, $service->syncById('alice', 138, false, true)->status);
 		$this->assertSame(['138' => 60], $cache->ttls, 'half the interval of 120 seconds');
-		$deferred = $service->syncById('alice', 138, false);
+		$deferred = $service->syncById('alice', 138, false, true);
 		$this->assertSame(PadSyncService::STATUS_DEFERRED, $deferred->status);
 		$this->assertSame([138, ''], [$deferred->fileId, $deferred->padId]);
-		$this->assertSame(PadSyncService::STATUS_UPDATED, $service->syncById('alice', 138, true)->status);
+		$this->assertSame(PadSyncService::STATUS_UPDATED, $service->syncById('alice', 138, false)->status, 'off the timer');
+		$this->assertSame(PadSyncService::STATUS_UPDATED, $service->syncById('alice', 138, true, true)->status, 'forced');
 	}
 
 	/** A sync that writes nothing notes nothing: the next one runs. */
@@ -647,8 +648,8 @@ class PadSyncServiceTest extends TestCase {
 		$cache = new RecentSyncWritesTestCache();
 		$service = $this->buildService($formatter, $userNodeResolver, null, $etherpadClient, null, null, null, $this->recentWrites($cache));
 
-		$this->assertSame(PadSyncService::STATUS_UNCHANGED, $service->syncById('alice', 138, false)->status);
-		$this->assertSame(PadSyncService::STATUS_UNCHANGED, $service->syncById('alice', 138, false)->status);
+		$this->assertSame(PadSyncService::STATUS_UNCHANGED, $service->syncById('alice', 138, false, true)->status);
+		$this->assertSame(PadSyncService::STATUS_UNCHANGED, $service->syncById('alice', 138, false, true)->status);
 		$this->assertSame([], $cache->ttls);
 	}
 

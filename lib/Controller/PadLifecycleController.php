@@ -72,9 +72,10 @@ class PadLifecycleController extends AbstractPadController {
 	public function syncById(mixed $fileId): DataResponse {
 		$forceParam = (string)$this->request->getParam('force', '0');
 		$force = in_array(strtolower($forceParam), ['1', 'true', 'yes'], true);
+		$periodic = in_array(strtolower((string)$this->request->getParam('periodic', '0')), ['1', 'true', 'yes'], true);
 
 		return $this->runForUser(
-			fn(IUser $user): PadSyncResult => $this->padSyncService->syncById($user->getUID(), $this->requireFileId($fileId), $force),
+			fn(IUser $user): PadSyncResult => $this->padSyncService->syncById($user->getUID(), $this->requireFileId($fileId), $force, $periodic),
 			fn(PadSyncResult $result): DataResponse => new DataResponse($this->padResponses->syncResponse($result)),
 			[
 				'generic' => $this->l10n->t('Could not sync pad content.'),

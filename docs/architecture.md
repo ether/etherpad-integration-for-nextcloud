@@ -336,14 +336,14 @@ Etherpad call. At the 5 s floor it is N/5.
 
 Every viewer of a pad syncs on its own timer. While someone types, each of
 them would find a new revision and write, a file version each time: a
-sync that is not forced runs only where no sync wrote the file within the
-last half interval (`RecentSyncWrites`), so it is written at most about
-twice an interval however many have it open, and the others ask Etherpad
-nothing. That takes a memory cache; without one, V viewers of one pad
-write it up to V times an interval, and where each web server keeps its
-own, only the syncs one server takes are paced. A forced sync - a viewer
-leaving, an embedding host asking - always runs, and fetches the pad's
-text and HTML even when its revision has not moved.
+timed sync (`periodic=1`) runs only where no sync wrote the file within
+the last half interval (`RecentSyncWrites`), so it is written at most
+about twice an interval however many have it open, and the others ask
+Etherpad nothing. That takes a memory cache; without one, V viewers of
+one pad write it up to V times an interval, and where each web server
+keeps its own, only the syncs one server takes are paced. Any other sync
+always runs; a forced one - a viewer leaving, an embedding host asking -
+fetches the pad's text and HTML even when its revision has not moved.
 
 ### Deleting, the trash, restoring
 

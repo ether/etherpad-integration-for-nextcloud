@@ -17,10 +17,10 @@ use OCP\ICacheFactory;
  * The files a sync wrote within the last half sync interval. Every viewer
  * of a pad syncs on its own timer, so while someone types, each of V
  * viewers would find a new revision and write it: V writes and V file
- * versions an interval. A sync that is not forced leaves a file written
- * this recently be (PadSyncService), so it is written at most about twice
- * an interval, however many have it open; a forced one, as a viewer sends
- * on leaving, writes as before.
+ * versions an interval. A viewer's timed sync leaves a file written this
+ * recently be (PadSyncService), so it is written at most about twice an
+ * interval, however many have it open; any other sync - a viewer leaving,
+ * an embedding host asking, a call of the API - runs as before.
  *
  * Kept in the distributed memory cache: where that is each web server's
  * own, only the syncs one server takes are paced. Without a memory cache,
