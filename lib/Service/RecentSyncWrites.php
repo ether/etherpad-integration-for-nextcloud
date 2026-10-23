@@ -23,8 +23,9 @@ use OCP\ICacheFactory;
  * an embedding host asking, a call of the API - runs as before.
  *
  * Kept in the distributed memory cache: where that is each web server's
- * own, only the syncs one server takes are paced. Without a memory cache,
- * or with one that fails, nothing is noted and every sync runs.
+ * own, only the syncs one server takes are paced, and APCu, counting in
+ * whole seconds, keeps a note up to a second longer. Without a memory
+ * cache, or with one that fails, nothing is noted and every sync runs.
  */
 class RecentSyncWrites {
 	private ?ICache $cache = null;
