@@ -25,6 +25,7 @@ use OCA\EtherpadNextcloud\Service\ParsedPadFile;
 use OCA\EtherpadNextcloud\Service\RestoreService;
 use OCA\EtherpadNextcloud\Service\UserNodeResolver;
 use OCA\EtherpadNextcloud\Tests\Support\BuildsLinkCaches;
+use OCA\EtherpadNextcloud\Tests\Support\FixedClock;
 use OCA\EtherpadNextcloud\Tests\Support\InMemoryCache;
 use OCA\EtherpadNextcloud\Tests\Support\InMemoryLockingProvider;
 use OCA\EtherpadNextcloud\Util\PathNormalizer;
@@ -139,10 +140,26 @@ class PadLifecycleControllerTest extends TestCase {
 			$request = $this->createMock(IRequest::class);
 			$request->method('getParam')->willReturnCallback(static fn (string $name, mixed $default = null): mixed => $params[$name] ?? $default);
 			$recentSyncs = new RecentSyncs($this->cacheFactoryFor($cache), $this->createMock(AppConfigService::class), $this->createMock(LoggerInterface::class));
+			$padFileService = $this->createMock(PadFileService::class);
+			$padFileService->method('readPad')->willReturn(new ParsedPadFile(
+				frontmatter: ['pad_id' => 'g.ABCDEFGHIJKLMNOP$pad-1', 'access_mode' => BindingService::ACCESS_PROTECTED],
+				body: '',
+				padId: 'g.ABCDEFGHIJKLMNOP$pad-1',
+				accessMode: BindingService::ACCESS_PROTECTED,
+				padUrl: '',
+				isExternal: false,
+				snapshotRev: 5,
+			));
+			$padFileService->method('getSnapshotPartsFromBody')->willReturn(['text' => 'hello', 'html' => '<p>hello</p>']);
+			$etherpadClient = $this->createMock(EtherpadClient::class);
+			$etherpadClient->method('getRevisionsCount')->willReturn(5);
+			$etherpadClient->method('getText')->willReturn('hello');
+			$etherpadClient->method('getHTML')->willReturn('<p>hello</p>');
 
-			$response = $this->buildController($request, $userSession, $rootFolder, null, null, null, null, null, null, $recentSyncs)->syncById(138);
+			$response = $this->buildController($request, $userSession, $rootFolder, $padFileService, null, $etherpadClient, null, null, null, $recentSyncs)->syncById(138);
 
-			$this->assertSame($deferred, ($response->getData()['status'] ?? null) === 'deferred', $case);
+			$this->assertSame(Http::STATUS_OK, $response->getStatus(), $case);
+			$this->assertSame($deferred ? 'deferred' : 'unchanged', $response->getData()['status'], $case);
 		}
 	}
 
@@ -577,7 +594,7 @@ class PadLifecycleControllerTest extends TestCase {
 		$lockRetryService = $this->buildNoSleepLockRetryService();
 		$padMetadataService = new PadMetadataService($resolvedPadFileService, $padPaths, $userNodeResolver, $lockRetryService, $resolvedEtherpadClient, $resolvedExternalPadExportFetcher, $resolvedBindingService, $logger);
 		$padSyncService = new PadSyncService($resolvedPadFileService, $userNodeResolver, $lockRetryService, new PadSyncLock(new InMemoryLockingProvider(), $logger, static function (int $delay): void {
-		}), $resolvedBindingService, $resolvedEtherpadClient, $resolvedExternalPadExportFetcher, $recentSyncs ?? new RecentSyncs($this->noMemoryCache(), $this->createMock(AppConfigService::class), $logger), $logger);
+		}), $resolvedBindingService, $resolvedEtherpadClient, $resolvedExternalPadExportFetcher, $recentSyncs ?? new RecentSyncs($this->noMemoryCache(), $this->createMock(AppConfigService::class), $logger), new FixedClock(), $logger);
 		$urlGenerator = $this->createMock(IURLGenerator::class);
 		$urlGenerator->method('linkToRoute')->willReturnCallback(
 			static function (string $route, array $params = []): string {

@@ -15,6 +15,7 @@ use OCA\EtherpadNextcloud\Exception\PadFileNotWritableException;
 use OCA\EtherpadNextcloud\Exception\PadLostException;
 use OCA\EtherpadNextcloud\Util\PadFileType;
 use OCA\EtherpadNextcloud\Util\SafeError;
+use OCP\AppFramework\Utility\ITimeFactory;
 use OCP\Files\File;
 use OCP\Files\NotFoundException;
 use Psr\Log\LoggerInterface;
@@ -38,12 +39,13 @@ class PadSyncService {
 		private EtherpadClient $etherpadClient,
 		private ExternalPadExportFetcher $externalPadExportFetcher,
 		private RecentSyncs $recentSyncs,
+		private ITimeFactory $timeFactory,
 		private LoggerInterface $logger,
 	) {
 	}
 
 	/**
-	 * @param bool $periodic sent on a viewer's timer, and left be where a sync looked at the file a moment ago
+	 * @param bool $periodic sent on a viewer's timer, and left be where a sync looked at the file a moment ago; $force wins over it
 	 * @throws NotFoundException
 	 * @throws PadFileNotWritableException for a reader who may not change the file, before Etherpad is asked
 	 * @throws PadLostException when Etherpad made the pad anew in place of the file's
@@ -59,19 +61,20 @@ class PadSyncService {
 		if ($paced && $this->recentSyncs->has($fileId)) {
 			return $this->deferred($fileId);
 		}
+		$startedAt = $this->timeFactory->getTime();
 
 		// One sync of the file at a time (PadSyncLock); one that waits in
 		// vain answers as for a locked file. A timed sync asks again once it
 		// holds the lock, and a sync notes its look before letting go: one
 		// that waited for it finds the note.
 		try {
-			return $this->syncLock->hold($fileId, function () use ($node, $fileId, $absolutePath, $force, $paced): PadSyncResult {
+			return $this->syncLock->hold($fileId, function () use ($node, $fileId, $absolutePath, $force, $paced, $startedAt): PadSyncResult {
 				if ($paced && $this->recentSyncs->has($fileId)) {
 					return $this->deferred($fileId);
 				}
 				$result = $this->syncHeld($node, $fileId, $absolutePath, $force);
 				if ($result->status === self::STATUS_UPDATED || $result->status === self::STATUS_UNCHANGED) {
-					$this->recentSyncs->note($fileId);
+					$this->recentSyncs->note($fileId, $this->timeFactory->getTime() - $startedAt);
 				}
 				return $result;
 			});

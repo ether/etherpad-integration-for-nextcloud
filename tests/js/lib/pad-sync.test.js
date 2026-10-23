@@ -40,6 +40,16 @@ describe('pad-sync', () => {
 		expect(init.keepalive).toBe(false)
 	})
 
+	it('sends force=1 alone for a forced sync, even one said to be periodic', async () => {
+		const fetchImpl = vi.fn(async () => okResponse())
+		const ps = createPadSync({ fetchImpl })
+		ps.configure({ syncUrl: '/sync/42' })
+
+		await ps.sync(true, false, true)
+
+		expect(fetchImpl.mock.calls[0][0]).toBe('/sync/42?force=1')
+	})
+
 	it('appends force=1 and honours keepalive for a forced flush', async () => {
 		const fetchImpl = vi.fn(async () => okResponse())
 		const ps = createPadSync({ fetchImpl })
@@ -277,7 +287,7 @@ describe('pad-sync', () => {
 		ps.start()
 		vi.advanceTimersByTime(1000)
 		expect(fetchImpl).toHaveBeenCalledTimes(1)
-		// Said to be on the timer: the server may leave a file a sync just wrote.
+		// Said to be on the timer: the server may leave a file a sync just looked at.
 		expect(fetchImpl.mock.calls[0][0]).toBe('/sync/42?periodic=1')
 
 		Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true })

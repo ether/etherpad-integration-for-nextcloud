@@ -303,8 +303,8 @@ per `.pad` file, read by its unique index on `file_id`.
 | Public link, writable, protected pad | 1 row | 1 read | 2 for a returning visitor (`getRevisionsCount`, `getSessionInfo`), 3 for a new one (`createAuthorIfNotExistsFor`, `createSession`) |
 | Read-only content | 1 row | 1 read | 1 `getHTML`, at most 5 MiB; a pad on another server: a DNS lookup and its export, at most 5 MiB and 20 s |
 | Timed sync, the file looked at within the last half interval | none | none | none; one memory cache read, two where it waited for the file's sync lock |
-| Sync, nothing changed | 1 row | 1 read | 1 `getRevisionsCount`; one memory cache write |
-| Sync, pad changed, or forced | 1 row, 1 per write attempt | 1 read, 1 write | 3: `getRevisionsCount`, `getText`, `getHTML`, neither of the last two capped; one memory cache write |
+| Sync, nothing changed | 1 row | 1 read | 1 `getRevisionsCount`; one memory cache write, after two reads for a timed sync |
+| Sync, pad changed, or forced | 1 row, 1 per write attempt | 1 read, 1 write | 3: `getRevisionsCount`, `getText`, `getHTML`, neither of the last two capped; one memory cache write, after two reads for a timed sync |
 | Embed page | none | none | none; the open it starts costs as above |
 
 - A protected open makes a new Etherpad session every time, by design:
@@ -334,17 +334,20 @@ visible viewers therefore cost N/120 requests a second - 8 for 1,000
 viewers, 83 for 10,000 - at the 5 s floor N/5. Each looks at its file
 with a row read, a file read and one Etherpad call, except where a sync
 looked at it within the last half interval: with a memory cache, the
-viewers of one pad cost about two such looks an interval together.
+viewers of one pad cost at most about two such looks an interval
+together, and no more than there are viewers.
 
 Every viewer of a pad syncs on its own timer. While someone types, each of
 them would find a new revision and write, a file version each time: a
 timed sync (`periodic=1`) runs only where no sync looked at the file
 within the last half interval (`RecentSyncs`), so it is looked at, and
 written, at most about twice an interval however many have it open, and
-the others ask Etherpad nothing. While it stays open, between two looks
-pass at most about an interval and a half. That takes a memory cache; without one, V viewers
-of one pad write it up to V times an interval, and where each web
-server keeps its own, only the syncs one server takes are paced. Any
+the others ask Etherpad nothing. While a viewer shows it, at most about
+an interval and a half passes between two looks. That takes a memory
+cache; without one, V viewers of one pad write it up to V times an
+interval. Where each web server keeps its own, only the syncs one server
+takes are paced, and with `filelocking.enabled` false the timed syncs
+that start while a look runs all run (`PadSyncLock`). Any
 other sync always runs; a forced one - a viewer leaving, an embedding
 host asking - fetches the pad's text and HTML even when its revision has
 not moved.

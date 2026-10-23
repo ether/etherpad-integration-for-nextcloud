@@ -75,4 +75,4 @@ A preview is cached per file and does not change with a new app version, so
 
 - File: `src/viewer-main.js`
 - Registers the native `.pad` viewer component and handles pad open/sync lifecycle.
-- While the viewer is mounted and its tab visible, a sync runs every `sync_interval_seconds`; hiding the tab or leaving the page sends a forced one (`src/lib/pad-sync.js`). A user who may not change the file gets no sync address, and no sync runs. There is no UI affordance for manual sync.
+- While the viewer is mounted and its tab visible, it sends a timed sync every `sync_interval_seconds`, which the server leaves where a sync looked at the file within the last half interval; hiding the tab or leaving the page sends a forced one (`src/lib/pad-sync.js`). A user who may not change the file gets no sync address, and no sync runs. There is no UI affordance for manual sync.
