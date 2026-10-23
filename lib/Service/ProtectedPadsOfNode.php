@@ -39,9 +39,10 @@ use Psr\Log\LoggerInterface;
  * past MAX_PADS pads, more than a delete can take the sessions of in its
  * budget (PadSessionRevoker), or at MAX_FOLDERS folders. A level takes two
  * queries for every CHUNK folders in it: some forty for a wide tree, two
- * a level for a deep one. Each asks for one row past the room left, to
- * tell that there is more; the database still reads every row under the
- * level's folders, files too, to find the pads and folders among them.
+ * a level for a deep one. Their limits bound what they return; the
+ * database still reads more: the query for the folders every row under
+ * the level's folders, files too, and the one for the pads, as measured,
+ * the same (docs/architecture.md, "Cost at scale").
  * What it does not reach keeps its sessions until they expire, within six
  * hours, with a line that says so.
  */
@@ -52,7 +53,7 @@ class ProtectedPadsOfNode {
 	private const CHUNK = 500;
 
 	/**
-	 * Pads a walk finds at most.
+	 * Pads a walk takes at most.
 	 *
 	 * @var int
 	 */

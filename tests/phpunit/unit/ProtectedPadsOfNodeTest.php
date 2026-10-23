@@ -77,28 +77,45 @@ class ProtectedPadsOfNodeTest extends TestCase {
 	 * than a delete can take the sessions of - it stops, with a line.
 	 */
 	public function testAWalkStopsPastAHundredPads(): void {
-		$rows = [];
-		$cached = [['fileid' => 10, 'parent' => 1, 'mimetype' => self::DIRECTORY, 'storage' => 1, 'path' => 'files/10']];
-		for ($fileId = 1000; $fileId < 1150; $fileId++) {
-			$rows[] = ['file_id' => $fileId, 'pad_id' => 'pad-' . $fileId, 'access_mode' => BindingService::ACCESS_PROTECTED, 'state' => BindingService::STATE_ACTIVE, 'deleted_at' => null, 'updated_at' => 100];
-			$cached[] = ['fileid' => $fileId, 'parent' => 10, 'mimetype' => self::TEXT, 'storage' => 1, 'path' => 'files/' . $fileId];
-		}
-		$mimeTypes = $this->createMock(IMimeTypeLoader::class);
-		$mimeTypes->method('getId')->willReturn(self::DIRECTORY);
+		$table = $this->folderOfPads(150);
 		$logger = $this->createMock(LoggerInterface::class);
-		$logger->expects($this->once())->method('info')->with('A folder deleted holds more than a delete takes the sessions of; the rest expire on their own.', $this->anything());
+		// The line counts the pads found, one past those taken.
+		$logger->expects($this->once())->method('info')->with('A folder deleted holds more than a delete takes the sessions of; the rest expire on their own.', $this->callback(static fn (array $context): bool => $context['pads'] === 101));
 
-		$table = new InMemoryBindingTable($rows, $cached);
-		$pads = (new ProtectedPadsOfNode($table, $mimeTypes, $logger))->of($this->folder(10));
+		$pads = $this->walk($table, $logger)->of($this->folder(10));
 
 		$this->assertCount(100, $pads);
 		$this->assertLessThanOrEqual(101, max($table->returned), 'no query returns more than one past the room');
 	}
 
+	/** A hundred pads, as many as a walk takes, are all taken, and nothing is said to be left. */
+	public function testAHundredPadsAreTakenWhole(): void {
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects($this->never())->method('info');
+
+		$this->assertCount(100, $this->walk($this->folderOfPads(100), $logger)->of($this->folder(10)));
+	}
+
+	/** Folder 10 with $count files of protected pads in it. */
+	private function folderOfPads(int $count): InMemoryBindingTable {
+		$rows = [];
+		$cached = [['fileid' => 10, 'parent' => 1, 'mimetype' => self::DIRECTORY, 'storage' => 1, 'path' => 'files/10']];
+		for ($fileId = 1000; $fileId < 1000 + $count; $fileId++) {
+			$rows[] = $this->protectedRow($fileId);
+			$cached[] = ['fileid' => $fileId, 'parent' => 10, 'mimetype' => self::TEXT, 'storage' => 1, 'path' => 'files/' . $fileId];
+		}
+		return new InMemoryBindingTable($rows, $cached);
+	}
+
+	private function walk(InMemoryBindingTable $table, LoggerInterface $logger): ProtectedPadsOfNode {
+		$mimeTypes = $this->createMock(IMimeTypeLoader::class);
+		$mimeTypes->method('getId')->willReturn(self::DIRECTORY);
+		return new ProtectedPadsOfNode($table, $mimeTypes, $logger);
+	}
+
 	/**
-	 * MAX_FOLDERS lowered to ten stands in for ten thousand: of fifty
-	 * folders in one, the walk takes ten, the folder deleted among them,
-	 * and asks for one more only to tell that some are left.
+	 * MAX_FOLDERS lowered to ten stands in for the real cap: of fifty
+	 * folders in one, the walk takes ten, the folder deleted among them.
 	 */
 	public function testAWalkTakesNoMoreFoldersThanItHasRoomFor(): void {
 		$cached = [['fileid' => 10, 'parent' => 1, 'mimetype' => self::DIRECTORY, 'storage' => 1, 'path' => 'files/10']];
@@ -112,6 +129,27 @@ class ProtectedPadsOfNodeTest extends TestCase {
 		$this->tenFolderWalk($table, $logger)->of($this->folder(10));
 
 		$this->assertLessThanOrEqual(10, max($table->returned), 'no query returns more than one past the room');
+		// The look at the table, then pads and folders of the first level, and only pads of the second.
+		$this->assertCount(4, $table->returned, 'no folders asked for once some are left');
+	}
+
+	/**
+	 * The cap reached on a deeper level: the folder deleted, nine in it
+	 * and one in the last of those. The walk takes the first ten and
+	 * leaves the pad in the eleventh.
+	 */
+	public function testAWalkStopsAtTheCapOnADeeperLevel(): void {
+		$cached = [['fileid' => 10, 'parent' => 1, 'mimetype' => self::DIRECTORY, 'storage' => 1, 'path' => 'files/10']];
+		for ($fileId = 100; $fileId < 109; $fileId++) {
+			$cached[] = ['fileid' => $fileId, 'parent' => 10, 'mimetype' => self::DIRECTORY, 'storage' => 1, 'path' => 'files/10/' . $fileId];
+		}
+		$cached[] = ['fileid' => 300, 'parent' => 108, 'mimetype' => self::DIRECTORY, 'storage' => 1, 'path' => 'files/10/108/300'];
+		$cached[] = ['fileid' => 301, 'parent' => 300, 'mimetype' => self::TEXT, 'storage' => 1, 'path' => 'files/10/108/300/301'];
+		$table = new InMemoryBindingTable([$this->protectedRow(301)], $cached);
+		$logger = $this->createMock(LoggerInterface::class);
+		$logger->expects($this->once())->method('info')->with($this->anything(), $this->callback(static fn (array $context): bool => $context['folders'] === 10));
+
+		$this->assertSame([], $this->tenFolderWalk($table, $logger)->of($this->folder(10)));
 	}
 
 	/** A tree of exactly as many folders as a walk takes is walked whole, and nothing is said to be left. */
