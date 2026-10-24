@@ -18,6 +18,7 @@ use OCA\EtherpadNextcloud\Service\PadFileService;
 use OCA\EtherpadNextcloud\Service\PadMetadataService;
 use OCA\EtherpadNextcloud\Service\PadResponseService;
 use OCA\EtherpadNextcloud\Service\PadSyncLock;
+use OCA\EtherpadNextcloud\Service\PadSyncResult;
 use OCA\EtherpadNextcloud\Service\PadSyncService;
 use OCA\EtherpadNextcloud\Service\RecentSyncs;
 use OCA\EtherpadNextcloud\Service\PadSnapshot;
@@ -36,6 +37,7 @@ use OCP\IURLGenerator;
 use OCP\IUser;
 use OCP\IUserSession;
 use OCP\Lock\LockedException;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
@@ -128,11 +130,7 @@ class PadLifecycleControllerTest extends TestCase {
 		foreach ([
 			'timed' => [['periodic' => '1'], true],
 			'off the timer' => [[], false],
-			'timed and forced' => [['periodic' => '1', 'force' => '1'], false],
-			'an array, read as off' => [['periodic' => ['1']], false],
-			'timed, a JSON true' => [['periodic' => true], true],
-			'timed and forced, a JSON 1' => [['periodic' => '1', 'force' => 1], false],
-			'timed and forced, a JSON true' => [['periodic' => '1', 'force' => true], false],
+			'timed and forced' => [['periodic' => '1', 'force' => true], false],
 		] as $case => [$params, $deferred]) {
 			$user = $this->createConfiguredMock(IUser::class, ['getUID' => 'alice']);
 			$userSession = $this->createConfiguredMock(IUserSession::class, ['getUser' => $user]);
@@ -570,6 +568,52 @@ class PadLifecycleControllerTest extends TestCase {
 		return $rootFolder;
 	}
 
+	/**
+	 * Both flags are read alike, and strictly. A value the rule leaves off,
+	 * read as on, would force the sync or pace it, though the caller asked
+	 * for neither; one it takes as on, read as off, would drop what the
+	 * caller asked for.
+	 */
+	#[DataProvider('flagValues')]
+	public function testReadsEachFlagStrictly(string $flag, mixed $sent, bool $on): void {
+		$user = $this->createConfiguredMock(IUser::class, ['getUID' => 'alice']);
+		$userSession = $this->createConfiguredMock(IUserSession::class, ['getUser' => $user]);
+		$request = $this->createMock(IRequest::class);
+		$request->method('getParam')->willReturnCallback(static fn (string $name, mixed $default = null): mixed => $name === $flag ? ($sent ?? $default) : $default);
+		// Compared after the call: an expectation that failed inside the
+		// controller would come out as a 500.
+		$received = null;
+		$padSyncService = $this->createMock(PadSyncService::class);
+		$padSyncService->expects($this->once())->method('syncById')->willReturnCallback(
+			static function (string $uid, int $fileId, bool $force, bool $periodic) use (&$received): PadSyncResult {
+				$received = ['force' => $force, 'periodic' => $periodic];
+				return new PadSyncResult(PadSyncService::STATUS_UNCHANGED, $fileId, 'pad-1', false, $force);
+			},
+		);
+
+		$response = $this->buildController($request, $userSession, null, null, null, null, null, null, null, null, $padSyncService)->syncById(138);
+
+		$this->assertSame(['force' => $flag === 'force' && $on, 'periodic' => $flag === 'periodic' && $on], $received);
+		$this->assertSame(Http::STATUS_OK, $response->getStatus());
+	}
+
+	/** @return iterable<string, array{string, mixed, bool}> */
+	public static function flagValues(): iterable {
+		// 'TRUE' and 'Yes' hold the lowering, 'true' the word itself.
+		$on = ['1', 'true', 'TRUE', 'yes', 'Yes', 1, true];
+		// Values a looser reading would take as on: a cast to bool 'false'
+		// and 'no', filter_var() 'on' and ' yes', a loose in_array() ' 1'.
+		// Then an array, as name[]=1 gives, and null for no parameter.
+		$off = ['0', 'false', 'no', '', ' yes', ' 1', 'on', false, 0, ['1'], null];
+		foreach (['force', 'periodic'] as $flag) {
+			foreach ([[$on, true], [$off, false]] as [$values, $isOn]) {
+				foreach ($values as $sent) {
+					yield $flag . ' ' . ($sent === null ? 'not sent' : json_encode($sent)) => [$flag, $sent, $isOn];
+				}
+			}
+		}
+	}
+
 	private function buildController(
 		IRequest $request,
 		IUserSession $userSession,
@@ -581,6 +625,7 @@ class PadLifecycleControllerTest extends TestCase {
 		?ExternalPadExportFetcher $externalPadExportFetcher = null,
 		?LoggerInterface $logger = null,
 		?RecentSyncs $recentSyncs = null,
+		?PadSyncService $padSyncService = null,
 	): PadLifecycleController {
 		$resolvedRootFolder = $rootFolder ?? $this->createMock(IRootFolder::class);
 		// IRootFolder is a Folder, so the root doubles as the user's own
@@ -596,7 +641,7 @@ class PadLifecycleControllerTest extends TestCase {
 		$userNodeResolver = new UserNodeResolver($resolvedRootFolder, $this->createMock(LoggerInterface::class));
 		$lockRetryService = $this->buildNoSleepLockRetryService();
 		$padMetadataService = new PadMetadataService($resolvedPadFileService, $padPaths, $userNodeResolver, $lockRetryService, $resolvedEtherpadClient, $resolvedExternalPadExportFetcher, $resolvedBindingService, $logger);
-		$padSyncService = new PadSyncService($resolvedPadFileService, $userNodeResolver, $lockRetryService, new PadSyncLock(new InMemoryLockingProvider(), $logger, static function (int $delay): void {
+		$padSyncService ??= new PadSyncService($resolvedPadFileService, $userNodeResolver, $lockRetryService, new PadSyncLock(new InMemoryLockingProvider(), $logger, static function (int $delay): void {
 		}), $resolvedBindingService, $resolvedEtherpadClient, $resolvedExternalPadExportFetcher, $recentSyncs ?? new RecentSyncs($this->noMemoryCache(), $this->createMock(AppConfigService::class), $logger), $logger);
 		$urlGenerator = $this->createMock(IURLGenerator::class);
 		$urlGenerator->method('linkToRoute')->willReturnCallback(
