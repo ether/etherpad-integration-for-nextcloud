@@ -131,6 +131,7 @@ class PadLifecycleControllerTest extends TestCase {
 			'timed and forced' => [['periodic' => '1', 'force' => '1'], false],
 			'an array, read as off' => [['periodic' => ['1']], false],
 			'timed, a JSON true' => [['periodic' => true], true],
+			'timed, a capital Yes' => [['periodic' => 'Yes'], true],
 			'timed and forced, a JSON 1' => [['periodic' => '1', 'force' => 1], false],
 			'timed and forced, a JSON true' => [['periodic' => '1', 'force' => true], false],
 		] as $case => [$params, $deferred]) {

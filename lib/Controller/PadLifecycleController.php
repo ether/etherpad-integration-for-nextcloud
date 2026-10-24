@@ -58,8 +58,9 @@ class PadLifecycleController extends AbstractPadController {
 	}
 
 	/**
-	 * Whether the parameter $name is on: `1`, `true` or `yes`, a JSON `1` or
-	 * `true` too. An array, as `name[]=1` gives, is off.
+	 * Whether the parameter $name is on: `1`, `true` or `yes`,
+	 * case-insensitively, a JSON `1` or `true` too. An array, as `name[]=1`
+	 * gives, is off.
 	 */
 	private function flag(string $name): bool {
 		return self::isOn($this->request->getParam($name, '0'));
