@@ -130,7 +130,7 @@ class PadLifecycleControllerTest extends TestCase {
 		foreach ([
 			'timed' => [['periodic' => '1'], true],
 			'off the timer' => [[], false],
-			'timed and forced' => [['periodic' => '1', 'force' => '1'], false],
+			'timed and forced' => [['periodic' => '1', 'force' => true], false],
 		] as $case => [$params, $deferred]) {
 			$user = $this->createConfiguredMock(IUser::class, ['getUID' => 'alice']);
 			$userSession = $this->createConfiguredMock(IUserSession::class, ['getUser' => $user]);
@@ -569,8 +569,10 @@ class PadLifecycleControllerTest extends TestCase {
 	}
 
 	/**
-	 * Both flags are read alike, and strictly: a value read as on that the
-	 * rule leaves off would force or pace a sync the caller did not ask for.
+	 * Both flags are read alike, and strictly. A value the rule leaves off,
+	 * read as on, would force the sync or pace it, though the caller asked
+	 * for neither; one it takes as on, read as off, would drop what the
+	 * caller asked for.
 	 */
 	#[DataProvider('flagValues')]
 	public function testReadsEachFlagStrictly(string $flag, mixed $sent, bool $on): void {

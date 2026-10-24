@@ -64,9 +64,9 @@ class PadLifecycleController extends AbstractPadController {
 
 	/**
 	 * Whether a flag's value is on. It is on for `1`, `true` and `yes`, in
-	 * upper or lower case, and for a JSON `1` or `true`. Anything else is
-	 * off: `on`, a value with spaces around it, an array as `name[]=1`
-	 * gives.
+	 * any mix of upper and lower case, and for a JSON `1` or `true`.
+	 * Anything else is off: `on`, a value with spaces around it, an array
+	 * as `name[]=1` gives.
 	 */
 	private static function isOn(mixed $value): bool {
 		return is_scalar($value) && in_array(strtolower((string)$value), ['1', 'true', 'yes'], true);
