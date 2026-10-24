@@ -67,9 +67,11 @@ class PadSyncService {
 		} catch (PadFileLockRetryExhaustedException $e) {
 			return $this->lockedSyncResponse('Pad sync not run: the file\'s sync lock stayed taken through every wait', $e, $fileId, $absolutePath, '', '', false, $force);
 		}
-		// Not after a timed sync: its claim, from its start, holds the others
-		// off already, and a note from its end could hold off its own
-		// viewer's next one.
+		// After a look that went through, not after one that failed: that may
+		// have failed for its caller alone, and a timed sync may then try what
+		// it could not. Nor after a timed sync: its claim, from its start,
+		// holds the others off already, and a note from its end could hold
+		// off its own viewer's next one.
 		if (!$paced && ($result->status === self::STATUS_UPDATED || $result->status === self::STATUS_UNCHANGED)) {
 			$this->recentSyncs->note($fileId);
 		}

@@ -647,6 +647,37 @@ class PadSyncServiceTest extends TestCase {
 		}
 	}
 
+	/**
+	 * A sync off the timer that failed notes nothing: its failure may be its
+	 * caller's alone, and the next timed sync tries what it could not.
+	 */
+	public function testAFailedSyncOffTheTimerHoldsNoTimedSyncOff(): void {
+		foreach (['off the timer' => false, 'forced' => true] as $case => $force) {
+			$failure = new EtherpadClientException('Etherpad did not answer');
+			$answers = 0;
+			$etherpadClient = $this->createMock(EtherpadClient::class);
+			$etherpadClient->method('getRevisionsCount')->willReturnCallback(static function () use (&$answers, $failure): int {
+				if (++$answers === 1) {
+					throw $failure;
+				}
+				return 3;
+			});
+			$etherpadClient->method('getText')->willReturn('typed');
+			$etherpadClient->method('getHTML')->willReturn('<p>typed</p>');
+			$cache = new InMemoryCache();
+			$service = $this->pacedService($etherpadClient, $cache);
+
+			try {
+				$service->syncById('alice', 138, $force);
+				self::fail($case . ': the failure should reach the caller.');
+			} catch (\RuntimeException $e) {
+				$this->assertSame($failure, $e, $case);
+			}
+			$this->assertSame([], $cache->ttls, $case);
+			$this->assertSame(PadSyncService::STATUS_UNCHANGED, $service->syncById('alice', 138, false, true)->status, $case);
+		}
+	}
+
 	/** A timed sync notes nothing after its look: its claim, from its start, holds the others off. */
 	public function testATimedSyncOnlyClaims(): void {
 		$etherpadClient = $this->createMock(EtherpadClient::class);

@@ -130,10 +130,10 @@ export function createPadSync({ requestToken, fetchImpl } = {}) {
 			return keepaliveFlushes.get(key)
 		}
 		if (active) {
-			if (!force && !periodic && active.periodic) {
-				// The answer of a timed sync can be `deferred`, which tells
-				// this one nothing: it is sent once the timed one is done, to
-				// the URL it was asked for.
+			if (!force && !periodic && (active.periodic || active.url !== url)) {
+				// A timed sync's answer can be `deferred`, and another pad's
+				// says nothing of this one: once the request in flight is
+				// done, it tries again, for the URL it was asked for.
 				return active.answer.catch(() => {}).then(() => syncTo(url, false, false, false))
 			}
 			if (!force || (active.force && active.url === url)) {

@@ -111,6 +111,33 @@ describe('pad-sync', () => {
 		await plain
 	})
 
+	// The forced replay to B starts as the timed sync to A ends, before the
+	// sync to A that waited for it: that one must not take B's answer.
+	it('sends a sync that is not timed to its own pad after a forced one to another', async () => {
+		const gates = []
+		const fetchImpl = vi.fn((url) => new Promise((resolve) => {
+			gates.push(() => resolve(okResponse({ url })))
+		}))
+		const ps = createPadSync({ fetchImpl })
+		ps.configure({ syncUrl: '/sync/A' })
+
+		ps.sync(false, false, true)
+		ps.configure({ syncUrl: '/sync/B' })
+		const forced = ps.sync(true, false)
+		ps.configure({ syncUrl: '/sync/A' })
+		const plain = ps.sync(false, false)
+		gates[0]()
+		await flushAsyncWork()
+		expect(fetchImpl.mock.calls[1][0]).toBe('/sync/B?force=1')
+		gates[1]()
+		await flushAsyncWork()
+
+		expect(fetchImpl.mock.calls[2]?.[0]).toBe('/sync/A')
+		gates[2]()
+		expect(await forced).toEqual({ url: '/sync/B?force=1' })
+		expect(await plain).toEqual({ url: '/sync/A' })
+	})
+
 	it('sends a forced sync asked for while a timed one runs forced, after it', async () => {
 		const gates = []
 		const fetchImpl = vi.fn(() => new Promise((resolve) => {
