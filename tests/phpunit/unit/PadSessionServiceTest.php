@@ -15,11 +15,11 @@ use OCP\IRequest;
 use OCP\IURLGenerator;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
-use OCA\EtherpadNextcloud\Tests\Support\BuildsLinkCaches;
+use OCA\EtherpadNextcloud\Tests\Support\BuildsMemoryCaches;
 use OCA\EtherpadNextcloud\Tests\Support\FixedClock;
 
 class PadSessionServiceTest extends TestCase {
-	use BuildsLinkCaches;
+	use BuildsMemoryCaches;
 
 	/**
 	 * The cookie domain depends on the Nextcloud host as well, so every

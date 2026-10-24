@@ -10,7 +10,7 @@ namespace OCA\EtherpadNextcloud\Tests\Unit;
 
 use OCA\EtherpadNextcloud\Service\PublicLinkOpener;
 use OCA\EtherpadNextcloud\Service\PublicLinkVisitors;
-use OCA\EtherpadNextcloud\Tests\Support\BuildsLinkCaches;
+use OCA\EtherpadNextcloud\Tests\Support\BuildsMemoryCaches;
 use OCA\EtherpadNextcloud\Tests\Support\FixedClock;
 use OCP\ICache;
 use OCP\ICacheFactory;
@@ -27,7 +27,7 @@ use Psr\Log\LoggerInterface;
  * visitor counted in every hour they open it - as the link itself.
  */
 class PublicLinkVisitorsTest extends TestCase {
-	use BuildsLinkCaches;
+	use BuildsMemoryCaches;
 
 	private const LINK = 'public-share:a-share-token';
 	private const TOKEN = 'a-share-token';

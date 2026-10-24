@@ -18,6 +18,8 @@ namespace OCA\EtherpadNextcloud\Service;
  * - STATUS_UNCHANGED for an internal pad → `$snapshotRev` + `$currentRev`
  * - STATUS_UNCHANGED for an external pad → nothing extra
  * - STATUS_LOCKED → `$lockRetries` + `$retryable = true`
+ * - STATUS_DEFERRED → nothing extra; the file is not read, so `$padId` is
+ *   empty and `$external` false
  */
 class PadSyncResult {
 	public function __construct(

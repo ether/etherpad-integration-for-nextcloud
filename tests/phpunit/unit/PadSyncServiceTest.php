@@ -5,10 +5,12 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\Tests\Unit;
 
 use OCA\EtherpadNextcloud\Exception\BindingMismatchException;
+use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
 use OCA\EtherpadNextcloud\Exception\NotAPadFileException;
 use OCA\EtherpadNextcloud\Exception\PadFileNotWritableException;
 use OCA\EtherpadNextcloud\Exception\ExternalPadException;
 use OCA\EtherpadNextcloud\Exception\PadLostException;
+use OCA\EtherpadNextcloud\Service\AppConfigService;
 use OCA\EtherpadNextcloud\Service\BindingService;
 use OCA\EtherpadNextcloud\Service\EtherpadClient;
 use OCA\EtherpadNextcloud\Service\ExternalPadExportFetcher;
@@ -18,16 +20,25 @@ use OCA\EtherpadNextcloud\Service\PadSyncLock;
 use OCA\EtherpadNextcloud\Service\PadSyncService;
 use OCA\EtherpadNextcloud\Service\PadSnapshot;
 use OCA\EtherpadNextcloud\Service\ParsedPadFile;
+use OCA\EtherpadNextcloud\Service\RecentSyncs;
 use OCA\EtherpadNextcloud\Service\UserNodeResolver;
+use OCA\EtherpadNextcloud\Tests\Support\BuildsMemoryCaches;
 use OCA\EtherpadNextcloud\Tests\Support\FixedClock;
+use OCA\EtherpadNextcloud\Tests\Support\InMemoryCache;
 use OCA\EtherpadNextcloud\Tests\Support\InMemoryLockingProvider;
 use OCP\Files\File;
+use OCP\Files\NotFoundException;
+use OCP\ICache;
+use OCP\IMemcache;
+use OCP\Lock\ILockingProvider;
 use OCP\Lock\LockedException;
 use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 
 class PadSyncServiceTest extends TestCase {
+	use BuildsMemoryCaches;
+
 	public function testSyncStatusReturnsUnavailableForExternalPads(): void {
 		$file = $this->createMock(File::class);
 		$file->method('getContent')->willReturn('frontmatter');
@@ -296,7 +307,8 @@ class PadSyncServiceTest extends TestCase {
 			->with($file, 'updated-frontmatter')
 			->willReturn(1);
 
-		$result = $this->buildService($padFileService, $userNodeResolver, $bindingService, $etherpadClient, $lockRetryService, $externalPadExportFetcher)
+		$cache = new InMemoryCache();
+		$result = $this->buildService($padFileService, $userNodeResolver, $bindingService, $etherpadClient, $lockRetryService, $externalPadExportFetcher, null, $this->recentSyncs($cache))
 			->syncById('alice', 138, true);
 
 		$this->assertSame(PadSyncService::STATUS_UPDATED, $result->status);
@@ -306,6 +318,7 @@ class PadSyncServiceTest extends TestCase {
 		$this->assertTrue($result->forced);
 		$this->assertSame(5, $result->snapshotRev);
 		$this->assertSame(1, $result->lockRetries);
+		$this->assertSame(['138/120' => 60], $cache->ttls, 'a look at a pad on another server counts as one');
 	}
 
 	/**
@@ -586,11 +599,263 @@ class PadSyncServiceTest extends TestCase {
 		$etherpadClient = $this->createMock(EtherpadClient::class);
 		$etherpadClient->expects($this->never())->method('getRevisionsCount');
 
-		$result = $this->buildService(null, $userNodeResolver, null, $etherpadClient)->syncById('alice', 138, true);
+		$cache = new InMemoryCache();
+		$result = $this->buildService(null, $userNodeResolver, null, $etherpadClient, null, null, null, $this->recentSyncs($cache))->syncById('alice', 138, true);
 
 		$this->assertSame(PadSyncService::STATUS_LOCKED, $result->status);
 		$this->assertSame(3, $result->lockRetries);
 		$this->assertTrue($result->retryable);
+		$this->assertSame([], $cache->ttls, 'a file it could not read is not counted as looked at');
+	}
+
+	/**
+	 * Viewers sync on timers of their own: a timed sync runs where it claims
+	 * the file, and one after it within half the interval answers deferred,
+	 * asking Etherpad nothing. Any other sync runs - one off the timer, as
+	 * the API is called, or a forced one.
+	 */
+	public function testATimedSyncRunsOnlyWhereItClaimsTheFile(): void {
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->expects($this->exactly(3))->method('getRevisionsCount')->willReturn(3);
+		$etherpadClient->method('getText')->willReturn('typed');
+		$etherpadClient->method('getHTML')->willReturn('<p>typed</p>');
+		$cache = new InMemoryCache();
+		$service = $this->pacedService($etherpadClient, $cache);
+
+		$this->assertSame(PadSyncService::STATUS_UNCHANGED, $service->syncById('alice', 138, false, true)->status);
+		$this->assertSame(['138/120' => 60], $cache->ttls, 'claimed for half the interval of 120 seconds');
+		$deferred = $service->syncById('alice', 138, false, true);
+		$this->assertSame(PadSyncService::STATUS_DEFERRED, $deferred->status);
+		$this->assertSame([138, '', false, false], [$deferred->fileId, $deferred->padId, $deferred->external, $deferred->forced]);
+		$this->assertSame(PadSyncService::STATUS_UNCHANGED, $service->syncById('alice', 138, false)->status, 'off the timer');
+		$this->assertSame(PadSyncService::STATUS_UNCHANGED, $service->syncById('alice', 138, true, true)->status, 'forced');
+	}
+
+	/** A sync off the timer, or a forced one, that looked at the file holds the timed syncs off as a claim does. */
+	public function testALookOffTheTimerHoldsTheTimedSyncsOff(): void {
+		foreach (['off the timer' => false, 'forced' => true] as $case => $force) {
+			$etherpadClient = $this->createMock(EtherpadClient::class);
+			$etherpadClient->expects($this->once())->method('getRevisionsCount')->willReturn(3);
+			$etherpadClient->method('getText')->willReturn('typed');
+			$etherpadClient->method('getHTML')->willReturn('<p>typed</p>');
+			$cache = new InMemoryCache();
+			$service = $this->pacedService($etherpadClient, $cache);
+
+			$this->assertSame(PadSyncService::STATUS_UNCHANGED, $service->syncById('alice', 138, $force)->status, $case);
+			$this->assertSame(['138/120' => 60], $cache->ttls, $case);
+			$this->assertSame(PadSyncService::STATUS_DEFERRED, $service->syncById('alice', 138, false, true)->status, $case);
+		}
+	}
+
+	/**
+	 * A sync off the timer that failed notes nothing: its failure may be its
+	 * caller's alone, and the next timed sync tries what it could not.
+	 */
+	public function testAFailedSyncOffTheTimerHoldsNoTimedSyncOff(): void {
+		foreach (['off the timer' => false, 'forced' => true] as $case => $force) {
+			$failure = new EtherpadClientException('Etherpad did not answer');
+			$answers = 0;
+			$etherpadClient = $this->createMock(EtherpadClient::class);
+			$etherpadClient->method('getRevisionsCount')->willReturnCallback(static function () use (&$answers, $failure): int {
+				if (++$answers === 1) {
+					throw $failure;
+				}
+				return 3;
+			});
+			$etherpadClient->method('getText')->willReturn('typed');
+			$etherpadClient->method('getHTML')->willReturn('<p>typed</p>');
+			$cache = new InMemoryCache();
+			$service = $this->pacedService($etherpadClient, $cache);
+
+			try {
+				$service->syncById('alice', 138, $force);
+				self::fail($case . ': the failure should reach the caller.');
+			} catch (\RuntimeException $e) {
+				$this->assertSame($failure, $e, $case);
+			}
+			$this->assertSame([], $cache->ttls, $case);
+			$this->assertSame(PadSyncService::STATUS_UNCHANGED, $service->syncById('alice', 138, false, true)->status, $case);
+		}
+	}
+
+	/** A timed sync notes nothing after its look: its claim, from its start, holds the others off. */
+	public function testATimedSyncOnlyClaims(): void {
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->method('getRevisionsCount')->willReturn(3);
+		$cache = $this->createMock(IMemcache::class);
+		$cache->expects($this->once())->method('add')->willReturn(true);
+		$cache->expects($this->never())->method('set');
+
+		$this->assertSame(PadSyncService::STATUS_UNCHANGED, $this->pacedService($etherpadClient, $cache)->syncById('alice', 138, false, true)->status);
+	}
+
+	/**
+	 * A claim stands for a try: one that failed - Etherpad not answering,
+	 * or a failure of its own - holds the timed syncs off for the rest of
+	 * the half interval too, sparing Etherpad. A forced sync still runs.
+	 */
+	public function testAFailedTryHoldsTheTimedSyncsOffButNotAForcedOne(): void {
+		foreach ([
+			'Etherpad not answering' => new EtherpadClientException('Etherpad did not answer'),
+			'a failure of its own' => new \RuntimeException('the key could not be read'),
+		] as $case => $failure) {
+			$answers = 0;
+			$etherpadClient = $this->createMock(EtherpadClient::class);
+			$etherpadClient->method('getRevisionsCount')->willReturnCallback(static function () use (&$answers, $failure): int {
+				if (++$answers === 1) {
+					throw $failure;
+				}
+				return 3;
+			});
+			$etherpadClient->method('getText')->willReturn('typed');
+			$etherpadClient->method('getHTML')->willReturn('<p>typed</p>');
+			$service = $this->pacedService($etherpadClient, new InMemoryCache());
+
+			try {
+				$service->syncById('alice', 138, false, true);
+				self::fail($case . ': the failure should reach the caller.');
+			} catch (\RuntimeException $e) {
+				$this->assertSame($failure, $e, $case);
+			}
+			$this->assertSame(PadSyncService::STATUS_DEFERRED, $service->syncById('alice', 138, false, true)->status, $case);
+			$this->assertSame(PadSyncService::STATUS_UNCHANGED, $service->syncById('alice', 138, true)->status, $case . ': forced');
+		}
+	}
+
+	/**
+	 * The limit of the claim: a user whose timed syncs keep failing for that
+	 * user alone claims the file first, round after round, and holds off the
+	 * timed syncs of another whose timer comes within half an interval after.
+	 * A sync of the other's that is not timed - forced here, as a tab hidden
+	 * or left sends it - still writes the file.
+	 */
+	public function testAUserWhoseTimedSyncsKeepFailingHoldsAnotherUsersOffRoundAfterRound(): void {
+		$formatter = new PadFileService(new FixedClock());
+		$readable = $formatter->withExportSnapshot(
+			$formatter->readPad($formatter->buildInitialDocument(138, 'pad-1', BindingService::ACCESS_PROTECTED)),
+			new PadSnapshot('typed', '<p>typed</p>', 3),
+		);
+		$filesOf = [];
+		foreach (['bob' => false, 'alice' => true] as $uid => $canRead) {
+			$file = $this->createMock(File::class);
+			$file->method('isUpdateable')->willReturn(true);
+			$file->method('getName')->willReturn('Notes.pad');
+			if ($canRead) {
+				$file->method('getContent')->willReturn($readable);
+			} else {
+				$file->method('getContent')->willThrowException(new \Exception('the key could not be read'));
+			}
+			$filesOf[$uid] = $file;
+		}
+		$userNodeResolver = $this->createMock(UserNodeResolver::class);
+		$userNodeResolver->method('resolveUserFileNodeById')->willReturnCallback(static fn (string $uid): File => $filesOf[$uid]);
+		$userNodeResolver->method('toUserAbsolutePath')->willReturn('/Notes.pad');
+		$etherpadClient = $this->createMock(EtherpadClient::class);
+		$etherpadClient->method('getRevisionsCount')->willReturn(4);
+		$etherpadClient->method('getText')->willReturn('typed on');
+		$etherpadClient->method('getHTML')->willReturn('<p>typed on</p>');
+		$cache = new InMemoryCache();
+		$service = $this->buildService($formatter, $userNodeResolver, null, $etherpadClient, null, null, null, $this->recentSyncs($cache));
+
+		for ($round = 1; $round <= 3; $round++) {
+			try {
+				$service->syncById('bob', 138, false, true);
+				self::fail('Bob\'s sync should fail.');
+			} catch (\Exception $e) {
+				$this->assertSame('the key could not be read', $e->getMessage());
+			}
+			$this->assertSame(PadSyncService::STATUS_DEFERRED, $service->syncById('alice', 138, false, true)->status, 'round ' . $round);
+			// The half interval over, before Bob's next tick: the cache lets
+			// nothing run out on its own.
+			$cache->clear();
+		}
+		$this->assertSame(PadSyncService::STATUS_UPDATED, $service->syncById('alice', 138, true)->status, 'Alice\'s tab hidden or left');
+	}
+
+	/**
+	 * What may not be synced is refused before any claim: a timed sync of a
+	 * file id someone else has open tells nothing of it.
+	 */
+	public function testARefusalComesBeforeTheClaim(): void {
+		$formatter = new PadFileService(new FixedClock());
+		foreach ([
+			'no such file' => [null, NotFoundException::class],
+			'no pad' => ['Notes.txt', NotAPadFileException::class],
+			'a reader' => ['Notes.pad', PadFileNotWritableException::class],
+		] as $case => [$name, $refusal]) {
+			$userNodeResolver = $this->createMock(UserNodeResolver::class);
+			if ($name === null) {
+				$userNodeResolver->method('resolveUserFileNodeById')->willThrowException(new NotFoundException('gone'));
+			} else {
+				$file = $this->createMock(File::class);
+				$file->method('isUpdateable')->willReturn($case !== 'a reader');
+				$file->method('getName')->willReturn($name);
+				$userNodeResolver->method('resolveUserFileNodeById')->willReturn($file);
+			}
+			$cache = new InMemoryCache();
+			$cache->set('138/120', 1);
+
+			try {
+				$this->buildService($formatter, $userNodeResolver, null, null, null, null, null, $this->recentSyncs($cache))->syncById('alice', 138, false, true);
+				self::fail($case . ': should be refused');
+			} catch (\Exception $e) {
+				$this->assertInstanceOf($refusal, $e, $case);
+			}
+		}
+	}
+
+	/**
+	 * A timed sync that claimed the file waits for the sync lock as any
+	 * other does, and answers locked where it stays taken - a lock left by
+	 * a request killed hard, say. While its claim stands, the next timed
+	 * sync answers deferred without waiting.
+	 */
+	public function testATimedSyncThatClaimedWaitsForTheLockLikeAnyOther(): void {
+		$file = $this->createMock(File::class);
+		$file->method('isUpdateable')->willReturn(true);
+		$file->method('getName')->willReturn('Notes.pad');
+		$userNodeResolver = $this->createMock(UserNodeResolver::class);
+		$userNodeResolver->method('resolveUserFileNodeById')->willReturn($file);
+		$userNodeResolver->method('toUserAbsolutePath')->willReturn('/Notes.pad');
+		$locks = new InMemoryLockingProvider();
+		$locks->acquireLock('etherpad_nextcloud:sync:138', ILockingProvider::LOCK_EXCLUSIVE);
+		$waits = 0;
+		$syncLock = new PadSyncLock($locks, $this->createMock(LoggerInterface::class), static function (int $delay) use (&$waits): void {
+			$waits++;
+		});
+		$service = $this->buildService(null, $userNodeResolver, null, null, null, null, $syncLock, $this->recentSyncs(new InMemoryCache()));
+
+		$timed = $service->syncById('alice', 138, false, true);
+
+		$this->assertSame(PadSyncService::STATUS_LOCKED, $timed->status);
+		$this->assertTrue($timed->retryable);
+		$this->assertGreaterThan(0, $waits);
+		$waitsOfTheFirst = $waits;
+		$this->assertSame(PadSyncService::STATUS_DEFERRED, $service->syncById('alice', 138, false, true)->status);
+		$this->assertSame($waitsOfTheFirst, $waits, 'the next timed sync waits not at all');
+	}
+
+	/** A service for file 138, a protected pad whose snapshot holds revision 3, paced over $cache. */
+	private function pacedService(EtherpadClient $etherpadClient, ICache $cache): PadSyncService {
+		$formatter = new PadFileService(new FixedClock());
+		$file = $this->createMock(File::class);
+		$file->method('isUpdateable')->willReturn(true);
+		$file->method('getName')->willReturn('Notes.pad');
+		$file->method('getContent')->willReturn($formatter->withExportSnapshot(
+			$formatter->readPad($formatter->buildInitialDocument(138, 'pad-1', BindingService::ACCESS_PROTECTED)),
+			new PadSnapshot('typed', '<p>typed</p>', 3),
+		));
+		$userNodeResolver = $this->createMock(UserNodeResolver::class);
+		$userNodeResolver->method('resolveUserFileNodeById')->willReturn($file);
+		$userNodeResolver->method('toUserAbsolutePath')->willReturn('/Notes.pad');
+		return $this->buildService($formatter, $userNodeResolver, null, $etherpadClient, null, null, null, $this->recentSyncs($cache));
+	}
+
+	/** Over $cache and an interval of 120 seconds. */
+	private function recentSyncs(ICache $cache): RecentSyncs {
+		$appConfig = $this->createMock(AppConfigService::class);
+		$appConfig->method('getSyncIntervalSeconds')->willReturn(120);
+		return new RecentSyncs($this->cacheFactoryFor($cache), $appConfig, $this->createMock(LoggerInterface::class));
 	}
 
 	private function buildService(
@@ -601,6 +866,7 @@ class PadSyncServiceTest extends TestCase {
 		?PadFileLockRetryService $lockRetryService = null,
 		?ExternalPadExportFetcher $externalPadExportFetcher = null,
 		?PadSyncLock $syncLock = null,
+		?RecentSyncs $recentSyncs = null,
 	): PadSyncService {
 		return new PadSyncService(
 			$padFileService ?? $this->createMock(PadFileService::class),
@@ -612,6 +878,8 @@ class PadSyncServiceTest extends TestCase {
 			$bindingService ?? $this->createMock(BindingService::class),
 			$etherpadClient ?? $this->createMock(EtherpadClient::class),
 			$externalPadExportFetcher ?? $this->createMock(ExternalPadExportFetcher::class),
+			// Without a memory cache unless a test is about pacing: no sync is deferred.
+			$recentSyncs ?? new RecentSyncs($this->noMemoryCache(), $this->createMock(AppConfigService::class), $this->createMock(LoggerInterface::class)),
 			$this->createMock(LoggerInterface::class),
 		);
 	}

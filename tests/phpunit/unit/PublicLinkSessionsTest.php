@@ -12,7 +12,7 @@ use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
 use OCA\EtherpadNextcloud\Service\EtherpadClient;
 use OCA\EtherpadNextcloud\Service\PublicLinkCache;
 use OCA\EtherpadNextcloud\Service\PublicLinkSessions;
-use OCA\EtherpadNextcloud\Tests\Support\BuildsLinkCaches;
+use OCA\EtherpadNextcloud\Tests\Support\BuildsMemoryCaches;
 use OCA\EtherpadNextcloud\Tests\Support\FixedClock;
 use OCP\ICache;
 use OCP\ICacheFactory;
@@ -26,7 +26,7 @@ use Psr\Log\LoggerInterface;
  * points, Etherpad decides, and a cache that fails keeps nothing.
  */
 class PublicLinkSessionsTest extends TestCase {
-	use BuildsLinkCaches;
+	use BuildsMemoryCaches;
 
 	private const LINK = 'public-share:a-share-token';
 	private const GROUP = 'g.ABCDEFGHIJKLMNOP';

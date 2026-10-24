@@ -26,6 +26,8 @@ class PadSyncService {
 	public const STATUS_SYNCED = 'synced';
 	public const STATUS_OUT_OF_SYNC = 'out_of_sync';
 	public const STATUS_UNAVAILABLE = 'unavailable';
+	/** Not run: a viewer's timed sync, and another timed sync tried within the last half interval, or another sync looked at the file (RecentSyncs). */
+	public const STATUS_DEFERRED = 'deferred';
 
 	public function __construct(
 		private PadFileService $padFileService,
@@ -35,30 +37,55 @@ class PadSyncService {
 		private BindingService $bindingService,
 		private EtherpadClient $etherpadClient,
 		private ExternalPadExportFetcher $externalPadExportFetcher,
+		private RecentSyncs $recentSyncs,
 		private LoggerInterface $logger,
 	) {
 	}
 
 	/**
+	 * @param bool $periodic sent on a viewer's timer, and paced (RecentSyncs); $force wins over it
 	 * @throws NotFoundException
 	 * @throws PadFileNotWritableException for a reader who may not change the file, before Etherpad is asked
 	 * @throws PadLostException when Etherpad made the pad anew in place of the file's
 	 */
-	public function syncById(string $uid, int $fileId, bool $force): PadSyncResult {
+	public function syncById(string $uid, int $fileId, bool $force, bool $periodic = false): PadSyncResult {
 		$node = $this->userNodeResolver->resolveUserFileNodeById($uid, $fileId);
 		$absolutePath = $this->userNodeResolver->toUserAbsolutePath($uid, $node);
 		if (!PadFileType::isPad($node->getName())) {
 			throw new NotAPadFileException('Selected file is not a .pad file.');
 		}
 		PadFileNotWritableException::unlessUpdateable($node);
+		$paced = $periodic && !$force;
+		if ($paced && !$this->recentSyncs->claim($fileId)) {
+			return $this->deferred($fileId);
+		}
 
 		// One sync of the file at a time (PadSyncLock); one that waits in
 		// vain answers as for a locked file.
 		try {
-			return $this->syncLock->hold($fileId, fn (): PadSyncResult => $this->syncHeld($node, $fileId, $absolutePath, $force));
+			$result = $this->syncLock->hold($fileId, fn (): PadSyncResult => $this->syncHeld($node, $fileId, $absolutePath, $force));
 		} catch (PadFileLockRetryExhaustedException $e) {
 			return $this->lockedSyncResponse('Pad sync not run: the file\'s sync lock stayed taken through every wait', $e, $fileId, $absolutePath, '', '', false, $force);
 		}
+		// After a look that went through, not after one that failed: that may
+		// have failed for its caller alone, and a timed sync may then try what
+		// it could not. Nor after a timed sync: its claim, from its start,
+		// holds the others off already, and a note from its end could hold
+		// off its own viewer's next one.
+		if (!$paced && ($result->status === self::STATUS_UPDATED || $result->status === self::STATUS_UNCHANGED)) {
+			$this->recentSyncs->note($fileId);
+		}
+		return $result;
+	}
+
+	private function deferred(int $fileId): PadSyncResult {
+		return new PadSyncResult(
+			status: self::STATUS_DEFERRED,
+			fileId: $fileId,
+			padId: '',
+			external: false,
+			forced: false,
+		);
 	}
 
 	/** @throws PadLostException */

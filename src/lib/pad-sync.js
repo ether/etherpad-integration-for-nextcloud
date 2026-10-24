@@ -7,9 +7,11 @@
  * Shared pad-sync loop for the viewer and embed entrypoints.
  *
  * Owns the periodic background sync, forced/keepalive flushes, and the
- * visibility/pagehide lifecycle wiring. A forced flush asked for while a
- * sync runs is replayed once after it, to the URL it was asked for, unless
- * the request in flight is itself forced to that URL: they then share it.
+ * visibility/pagehide lifecycle wiring. A sync on the timer says so
+ * (`periodic=1`), so that the server can pace the timed syncs of a pad's
+ * viewers (RecentSyncs). A forced flush asked for while a sync runs is
+ * replayed once after it, to the URL it was asked for, unless the request
+ * in flight is itself forced to that URL: they then share it.
  * A keepalive flush goes at once (sync()).
  *
  * The caller supplies the request-token getter (the viewer and embed read it
@@ -24,7 +26,7 @@ export function createPadSync({ requestToken, fetchImpl } = {}) {
 
 	let syncUrl = ''
 	let intervalMs = DEFAULT_SYNC_INTERVAL_MS
-	// The request in flight: its URL, whether it is forced, and its answer.
+	// The request in flight: its URL, whether it is forced or timed, and its answer.
 	let active = null
 	// The forced flushes asked for while a request runs, by URL in the order
 	// asked: each one's answer, to come with its replay.
@@ -60,17 +62,18 @@ export function createPadSync({ requestToken, fetchImpl } = {}) {
 		}
 		timerId = window.setInterval(() => {
 			if (document.visibilityState === 'visible') {
-				fireAndForget(false, false)
+				fireAndForget(false, false, true)
 			}
 		}, intervalMs)
 	}
 
-	const fireAndForget = (force, keepalive) => {
-		void sync(force, keepalive).catch(() => {})
+	const fireAndForget = (force, keepalive, periodic = false) => {
+		void sync(force, keepalive, periodic).catch(() => {})
 	}
 
-	const request = async (url, force, keepalive) => {
-		const target = force ? (url + (url.includes('?') ? '&' : '?') + 'force=1') : url
+	const request = async (url, force, keepalive, periodic = false) => {
+		const flag = force ? 'force=1' : (periodic ? 'periodic=1' : '')
+		const target = flag ? (url + (url.includes('?') ? '&' : '?') + flag) : url
 		const response = await doFetch(target, {
 			method: 'POST',
 			credentials: 'same-origin',
@@ -88,12 +91,12 @@ export function createPadSync({ requestToken, fetchImpl } = {}) {
 	}
 
 	/** The request, then the replays asked for while one runs, each answering its own callers. */
-	const run = async (url, force) => {
-		active = { url, force: Boolean(force), answer: request(url, force, false) }
+	const run = async (url, force, periodic) => {
+		active = { url, force: Boolean(force), periodic: Boolean(periodic) && !force, answer: request(url, force, false, periodic) }
 		await active.answer.catch(() => {})
 		for (const [again, replay] of replays) {
 			replays.delete(again)
-			active = { url: again, force: true, answer: request(again, true, false) }
+			active = { url: again, force: true, periodic: false, answer: request(again, true, false) }
 			replay.answerWith(active.answer)
 			await active.answer.catch(() => {})
 		}
@@ -102,8 +105,10 @@ export function createPadSync({ requestToken, fetchImpl } = {}) {
 		active = null
 	}
 
-	const sync = async (force, keepalive) => {
-		if (!syncUrl) {
+	const sync = (force, keepalive, periodic = false) => syncTo(syncUrl, force, keepalive, periodic)
+
+	const syncTo = async (url, force, keepalive, periodic) => {
+		if (!url) {
 			return { status: 'disabled' }
 		}
 		if (keepalive) {
@@ -113,9 +118,9 @@ export function createPadSync({ requestToken, fetchImpl } = {}) {
 			// once. Leaving fires several events (pagehide, visibilitychange,
 			// the host's): they share one, for the pad they leave - the viewer
 			// keeps this controller when it opens another.
-			const key = (force ? 'forced ' : '') + syncUrl
+			const key = (force ? 'forced ' : '') + url
 			if (!keepaliveFlushes.has(key)) {
-				const flush = request(syncUrl, force, true).finally(() => {
+				const flush = request(url, force, true).finally(() => {
 					if (keepaliveFlushes.get(key) === flush) {
 						keepaliveFlushes.delete(key)
 					}
@@ -125,19 +130,25 @@ export function createPadSync({ requestToken, fetchImpl } = {}) {
 			return keepaliveFlushes.get(key)
 		}
 		if (active) {
-			if (!force || (active.force && active.url === syncUrl)) {
+			if (!force && !periodic && (active.periodic || active.url !== url)) {
+				// A timed sync's answer can be `deferred`, and another pad's
+				// says nothing of this one: once the request in flight is
+				// done, it tries again, for the URL it was asked for.
+				return active.answer.catch(() => {}).then(() => syncTo(url, false, false, false))
+			}
+			if (!force || (active.force && active.url === url)) {
 				return active.answer
 			}
-			if (!replays.has(syncUrl)) {
+			if (!replays.has(url)) {
 				let answerWith
 				const answer = new Promise((resolve) => {
 					answerWith = resolve
 				})
-				replays.set(syncUrl, { answer, answerWith })
+				replays.set(url, { answer, answerWith })
 			}
-			return replays.get(syncUrl).answer
+			return replays.get(url).answer
 		}
-		void run(syncUrl, force)
+		void run(url, force, periodic)
 		return active.answer
 	}
 

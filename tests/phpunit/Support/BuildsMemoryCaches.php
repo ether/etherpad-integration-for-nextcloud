@@ -15,11 +15,12 @@ use OCP\ICacheFactory;
 use OCP\Security\ICrypto;
 
 /**
- * The cache factories and the PublicLinkCache a public link's tests build
- * on. The caches themselves stay with each test: what one keeps - values,
- * times to live, counts - is what that test is about.
+ * The cache factories the tests of the app's memory caches build on, and
+ * the PublicLinkCache a public link's tests use. The caches are each
+ * test's own: what one keeps - values, times to live, counts - is what
+ * that test is about.
  */
-trait BuildsLinkCaches {
+trait BuildsMemoryCaches {
 	/** A factory that hands out $cache as the distributed cache. */
 	private function cacheFactoryFor(ICache $cache): ICacheFactory {
 		$factory = $this->createMock(ICacheFactory::class);

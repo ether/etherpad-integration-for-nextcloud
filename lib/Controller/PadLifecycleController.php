@@ -58,6 +58,18 @@ class PadLifecycleController extends AbstractPadController {
 	}
 
 	/**
+	 * Whether the parameter $name is on: `1`, `true` or `yes`, a JSON `1` or
+	 * `true` too. An array, as `name[]=1` gives, is off.
+	 */
+	private function flag(string $name): bool {
+		return self::isOn($this->request->getParam($name, '0'));
+	}
+
+	private static function isOn(mixed $value): bool {
+		return is_scalar($value) && in_array(strtolower((string)$value), ['1', 'true', 'yes'], true);
+	}
+
+	/**
 	 * A new pad from the file's own content (RestoreService::recoverFromSnapshot()),
 	 * the file named by id.
 	 *
@@ -70,11 +82,11 @@ class PadLifecycleController extends AbstractPadController {
 
 	#[\OCP\AppFramework\Http\Attribute\NoAdminRequired]
 	public function syncById(mixed $fileId): DataResponse {
-		$forceParam = (string)$this->request->getParam('force', '0');
-		$force = in_array(strtolower($forceParam), ['1', 'true', 'yes'], true);
+		$force = $this->flag('force');
+		$periodic = $this->flag('periodic');
 
 		return $this->runForUser(
-			fn(IUser $user): PadSyncResult => $this->padSyncService->syncById($user->getUID(), $this->requireFileId($fileId), $force),
+			fn(IUser $user): PadSyncResult => $this->padSyncService->syncById($user->getUID(), $this->requireFileId($fileId), $force, $periodic),
 			fn(PadSyncResult $result): DataResponse => new DataResponse($this->padResponses->syncResponse($result)),
 			[
 				'generic' => $this->l10n->t('Could not sync pad content.'),

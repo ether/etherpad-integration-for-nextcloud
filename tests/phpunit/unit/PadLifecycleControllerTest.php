@@ -19,10 +19,13 @@ use OCA\EtherpadNextcloud\Service\PadMetadataService;
 use OCA\EtherpadNextcloud\Service\PadResponseService;
 use OCA\EtherpadNextcloud\Service\PadSyncLock;
 use OCA\EtherpadNextcloud\Service\PadSyncService;
+use OCA\EtherpadNextcloud\Service\RecentSyncs;
 use OCA\EtherpadNextcloud\Service\PadSnapshot;
 use OCA\EtherpadNextcloud\Service\ParsedPadFile;
 use OCA\EtherpadNextcloud\Service\RestoreService;
 use OCA\EtherpadNextcloud\Service\UserNodeResolver;
+use OCA\EtherpadNextcloud\Tests\Support\BuildsMemoryCaches;
+use OCA\EtherpadNextcloud\Tests\Support\InMemoryCache;
 use OCA\EtherpadNextcloud\Tests\Support\InMemoryLockingProvider;
 use OCA\EtherpadNextcloud\Util\PathNormalizer;
 use OCP\AppFramework\Http;
@@ -38,6 +41,8 @@ use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 
 class PadLifecycleControllerTest extends TestCase {
+	use BuildsMemoryCaches;
+
 	use \OCA\EtherpadNextcloud\Tests\Support\BuildsErrorMappers;
 
 	public function testSyncByIdRejectsInvalidFileId(): void {
@@ -113,6 +118,52 @@ class PadLifecycleControllerTest extends TestCase {
 		$this->assertFalse($response->getData()['external']);
 		$this->assertSame(2, $response->getData()['lock_retries']);
 		$this->assertSame(5, $response->getData()['snapshot_rev']);
+	}
+
+	/**
+	 * Only a sync that says it is on a viewer's timer is left for a file a
+	 * sync just looked at; one off the timer, or forced as well, runs.
+	 */
+	public function testOnlyATimedSyncIsDeferred(): void {
+		foreach ([
+			'timed' => [['periodic' => '1'], true],
+			'off the timer' => [[], false],
+			'timed and forced' => [['periodic' => '1', 'force' => '1'], false],
+			'an array, read as off' => [['periodic' => ['1']], false],
+			'timed, a JSON true' => [['periodic' => true], true],
+			'timed and forced, a JSON 1' => [['periodic' => '1', 'force' => 1], false],
+			'timed and forced, a JSON true' => [['periodic' => '1', 'force' => true], false],
+		] as $case => [$params, $deferred]) {
+			$user = $this->createConfiguredMock(IUser::class, ['getUID' => 'alice']);
+			$userSession = $this->createConfiguredMock(IUserSession::class, ['getUser' => $user]);
+			$rootFolder = $this->createMock(IRootFolder::class);
+			$rootFolder->method('getById')->with(138)->willReturn([$this->buildPadFileNode()]);
+			$cache = new InMemoryCache();
+			$cache->set('138/120', 1);
+			$request = $this->createMock(IRequest::class);
+			$request->method('getParam')->willReturnCallback(static fn (string $name, mixed $default = null): mixed => $params[$name] ?? $default);
+			$recentSyncs = new RecentSyncs($this->cacheFactoryFor($cache), $this->createConfiguredMock(AppConfigService::class, ['getSyncIntervalSeconds' => 120]), $this->createMock(LoggerInterface::class));
+			$padFileService = $this->createMock(PadFileService::class);
+			$padFileService->method('readPad')->willReturn(new ParsedPadFile(
+				frontmatter: ['pad_id' => 'g.ABCDEFGHIJKLMNOP$pad-1', 'access_mode' => BindingService::ACCESS_PROTECTED],
+				body: '',
+				padId: 'g.ABCDEFGHIJKLMNOP$pad-1',
+				accessMode: BindingService::ACCESS_PROTECTED,
+				padUrl: '',
+				isExternal: false,
+				snapshotRev: 5,
+			));
+			$padFileService->method('getSnapshotPartsFromBody')->willReturn(['text' => 'hello', 'html' => '<p>hello</p>']);
+			$etherpadClient = $this->createMock(EtherpadClient::class);
+			$etherpadClient->method('getRevisionsCount')->willReturn(5);
+			$etherpadClient->method('getText')->willReturn('hello');
+			$etherpadClient->method('getHTML')->willReturn('<p>hello</p>');
+
+			$response = $this->buildController($request, $userSession, $rootFolder, $padFileService, null, $etherpadClient, null, null, null, $recentSyncs)->syncById(138);
+
+			$this->assertSame(Http::STATUS_OK, $response->getStatus(), $case);
+			$this->assertSame($deferred ? 'deferred' : 'unchanged', $response->getData()['status'], $case);
+		}
 	}
 
 	public function testSyncByIdReturnsLockedWhenWriteRemainsLocked(): void {
@@ -529,6 +580,7 @@ class PadLifecycleControllerTest extends TestCase {
 		?RestoreService $restores = null,
 		?ExternalPadExportFetcher $externalPadExportFetcher = null,
 		?LoggerInterface $logger = null,
+		?RecentSyncs $recentSyncs = null,
 	): PadLifecycleController {
 		$resolvedRootFolder = $rootFolder ?? $this->createMock(IRootFolder::class);
 		// IRootFolder is a Folder, so the root doubles as the user's own
@@ -545,7 +597,7 @@ class PadLifecycleControllerTest extends TestCase {
 		$lockRetryService = $this->buildNoSleepLockRetryService();
 		$padMetadataService = new PadMetadataService($resolvedPadFileService, $padPaths, $userNodeResolver, $lockRetryService, $resolvedEtherpadClient, $resolvedExternalPadExportFetcher, $resolvedBindingService, $logger);
 		$padSyncService = new PadSyncService($resolvedPadFileService, $userNodeResolver, $lockRetryService, new PadSyncLock(new InMemoryLockingProvider(), $logger, static function (int $delay): void {
-		}), $resolvedBindingService, $resolvedEtherpadClient, $resolvedExternalPadExportFetcher, $logger);
+		}), $resolvedBindingService, $resolvedEtherpadClient, $resolvedExternalPadExportFetcher, $recentSyncs ?? new RecentSyncs($this->noMemoryCache(), $this->createMock(AppConfigService::class), $logger), $logger);
 		$urlGenerator = $this->createMock(IURLGenerator::class);
 		$urlGenerator->method('linkToRoute')->willReturnCallback(
 			static function (string $route, array $params = []): string {
