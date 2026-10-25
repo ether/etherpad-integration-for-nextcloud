@@ -357,36 +357,24 @@ a call of the API. A sync that is not timed is never deferred; a forced
 one - a viewer leaving, an embedding host asking - fetches the pad's text
 and HTML even when its revision has not moved.
 
-Measured with `tests/load/` on the container stack - Nextcloud 34.0.4 on
-Apache with PHP 8.5, Postgres 16, APCu, and Redis for locks and the
-distributed cache, on ten cores of an Apple M4 that also ran the load -
-with app passwords, each viewer keeping its cookies as a tab does, and a
-file cache of two million rows with 108,000 pads; each figure from one or
-two runs of a minute:
+Measured with `tests/load/` on the container stack - Nextcloud 34 with
+Redis for locks and the distributed cache, Postgres 16, on ten cores of a
+laptop that also ran the load, each viewer keeping its cookies - so the
+times stand for that machine, the ratios for any:
 
-- At 50 syncs a second a timed sync took 16 to 18 ms deferred, 23 to 26 ms
-  finding nothing new and 65 to 81 ms writing (median). A deferred sync
-  resolves the file and reads the memory cache once, so its time is about
-  that of the request itself. A client that keeps no cookies starts a PHP
-  session with every request: a deferred sync then took 27 ms.
-- 250 viewers, five to a pad, someone typing into a fifth of the pads, an
-  interval of 5 s, so 50 syncs a second: paced, a sync made 0.32 Etherpad
-  calls, a typed pad was written 1.1 times an interval, and a minute's
-  131 writes left 131 file versions. Sent without `periodic=1`, a sync
-  made 1.26 calls, a typed pad was written 3.2 times an interval, and a
-  minute's 384 to 390 writes left 324 to 338 versions.
-- Paced, 100 syncs a second had a 95th percentile of 94 and 119 ms, with
-  Nextcloud on about one and a half cores and Postgres on nearly one
-  (`docker stats` once halfway through); at 150 the stack fell behind,
-  taking 76 a second and answering in seconds. At the default interval,
-  100 a second would be 12,000 visible viewers.
-- Without Redis, and with Postgres at its default of 100 connections,
-  fewer than Apache's 256 workers, syncs that found no connection
-  answered 500: 148 of about 7,100 at 120 a second, in a run whose
-  viewers kept no cookies. In a run at 200 a second without Redis, far
-  past the stack's limit, requests that failed while they held a shared
-  lock in the database left it behind for `filelocking.ttl`, an hour, and
-  syncs that would have written those files answered `locked` until then.
+- Five viewers to a pad, someone typing into some of the pads: paced, a
+  sync made 0.32 Etherpad calls, and a typed pad was written about once
+  an interval. Sent without `periodic=1`, a sync made 1.26 calls, and a
+  typed pad was written three times an interval, most writes leaving a
+  file version.
+- A deferred sync took about two thirds as long as a look and a quarter
+  as long as a write, so what sets the load is the number of requests -
+  visible viewers divided by the interval - whether or not anyone types.
+- That stack took 100 syncs a second with a 95th percentile near 0.1 s,
+  and fell behind at 150. At the default interval, 100 a second would be
+  12,000 visible viewers. Without Redis, and with Postgres at its default
+  of 100 connections, below Apache's 256 workers, syncs answered 500 once
+  the connections ran out.
 
 ### Deleting, the trash, restoring
 
@@ -419,27 +407,22 @@ two runs of a minute:
   rest goes to a job per group, up to 100 groups a delete.
 - File cache removals cost an in-memory check each; those in a trash or a
   delete are collected and looked up 500 ids at a time, one indexed query.
-- Measured on the stack above: a file deleted past the trash took 81 ms
-  (median). A folder of 100 protected pads, each opened twice, went to
-  the trash in 455 ms, with 50 `listSessionsOfGroup` and `listPads` calls
-  and 100 `deleteSession`, the request's budget, and a revocation job for
-  each of the 100 groups; the walk's query for its pads read the folder's
-  children through the `parent` index, in 0.4 ms. With 10,000 file cache
-  rows instead of two million, the same took 78 and 458 ms.
+- Measured on the stack above with two million file cache rows, the
+  queries of a delete, the sweep, a folder's walk and an account's
+  deletion all went through an index, each under a millisecond. A folder
+  of 100 opened protected pads went to the trash in about half a second,
+  a request that made 200 calls to Etherpad for their sessions.
 - A pad whose file is deleted for good goes with the sweep, within about
   ten minutes: one or two Etherpad calls per pad (`deletePad`, or
   `listPads` and `deleteGroup`).
 - A `.pad` file restored on its own costs a file cache read, a row read,
   a file read and the lost-pad question (1-2 calls, 3 s each). A pad
   Etherpad lost is made anew in the restore's request: about nine calls,
-  without a budget over them all. A folder restored is not looked into:
-  one of 100 pads came back in 51 ms without an Etherpad call, and each
-  pad is looked at when it is next opened.
+  without a budget over them all. A restored folder is not looked into:
+  its restore asks Etherpad nothing, and each of its pads is looked at
+  when it is next opened.
 - An account's deletion joins the table with the file cache on the
   account's home storage and marks what it finds, 500 rows at a time.
-  Measured with two million file cache rows, the join went through the
-  storage index in under a millisecond, and deleting an account with ten
-  pads took as long as one with none (`occ user:delete`, 0.29 s).
 
 ### Background jobs
 
@@ -454,20 +437,16 @@ A listing past 4 MiB, or one that keeps timing out while Etherpad answers
 otherwise, parks the collector for a day. The revocation job reads its
 listing whole.
 
-Measured on the stack above, with 10,000 file cache rows: 1,000 rows of
-files deleted past the trash took one run of the sweep, 4.9 s, with
-`listPads` and `deleteGroup` for each pad. With two million, the sweep's
-queries stayed on indexes, under a millisecond each.
+On the stack above, one run of the sweep took 1,000 rows of files deleted
+past the trash in about five seconds, with `listPads` and `deleteGroup`
+for each pad.
 
 ### Admin actions
 
 - The consistency check counts the rows whose file the file cache lost
-  and reads 25 of them, two joins with the file cache that read all of
-  it. With two million file cache rows, 108,000 rows and 1,000 of them
-  vanished, the check took 0.9 s, each of the two queries about 115 ms
-  in a parallel sequential scan; with 10,000 file cache rows it took
-  0.5 s. Its queries grow with the file cache far more than with the
-  pads.
+  and reads 25 of them, in one request, with two joins that read the
+  whole file cache: on the stack above, about 0.1 s each at two million
+  rows. They grow with the file cache far more than with the pads.
 - Checking pending pads runs the sweep at once, as above.
 
 ### What every user pays
