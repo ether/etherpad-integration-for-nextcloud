@@ -247,6 +247,7 @@ existing name asks for confirmation because the previous file is gone for good.
 - No automatic reverse sync from `.pad` file content back into Etherpad.
 - Automatic while viewer is open (interval from admin settings) and on viewer hide / page unload.
 - Backend endpoint `POST /api/v1/pads/sync/{fileId}` remains available for programmatic syncs.
+- Every visible viewer sends a sync each interval, whether or not anyone types, so V viewers make V divided by the interval requests a second; the server paces the syncs of one pad's viewers, not their number. On an instance with thousands of viewers at once, raise the interval with their number, and run Nextcloud as its admin manual recommends under load: Redis for file locking, and a database that takes at least as many connections as PHP has workers. Measured figures: [docs/architecture.md](docs/architecture.md) ("Open viewers").
 
 ### Full-text search
 

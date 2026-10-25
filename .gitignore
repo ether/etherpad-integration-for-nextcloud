@@ -29,3 +29,4 @@ tests/e2e/docker/.env
 # Python bytecode from the scripts/ helpers CI runs
 __pycache__/
 *.pyc
+tests/load/.work

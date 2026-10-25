@@ -586,7 +586,7 @@ Registered in `lib/AppInfo/Application.php`.
 - `enable_protected_pads`, `enable_public_pads` (`yes|no`, default `yes`) — whether new pads of that type are made ("Pad types switched off" above). With one type off, `POST /pads` and `create-by-parent` refuse it, while `from-template` and the `initialize` endpoints make a pad of the other type; with both off, these refuse too. Files' "New" menu leaves out what cannot be made, except with both types off and external pads on: its blank entry and the user's own templates stay, and are refused. A new pad a recovery or a restore from the trash makes has the type of the pad it replaces, whatever these switches say, and existing pads open either way.
 - `etherpad_session_cookie_samesite` (`lax|none`, default `lax`) and `etherpad_http_only_session_cookie` (`auto|yes|no`, default `auto`) — the Etherpad session cookie's attributes: `docs/etherpad-integration.md`, which says when to set them
 - `delete_pad_with_file` (`yes|no`, default `yes`) — whether the pad of a `.pad` file deleted for good is deleted (`docs/deleting-pads.md`); `delete_on_trash` before, taken over on upgrade
-- `sync_interval_seconds` (default `120`, clamp `5..3600`)
+- `sync_interval_seconds` (default `120`, clamp `5..3600`) — how often each visible viewer and embed page sends a timed sync; what that costs, measured: `docs/architecture.md` ("Open viewers")
 - `allow_external_pads` (`yes|no`, default `no`)
 - `allow_legacy_protected_import` (`yes|no`, default `no`) — whether a legacy Ownpad `.pad` naming a group pad may bring that pad in. Turn on only where this Nextcloud is the only thing creating group pads on the Etherpad server; see the legacy migration doc.
 - `external_pad_allowlist` (newline-separated host list, optional)

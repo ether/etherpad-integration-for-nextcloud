@@ -357,6 +357,31 @@ a call of the API. A sync that is not timed is never deferred; a forced
 one - a viewer leaving, an embedding host asking - fetches the pad's text
 and HTML even when its revision has not moved.
 
+Measured with `tests/load/` on the container stack - Nextcloud 34.0.4 on
+Apache with PHP 8.5, Postgres 16, APCu, and Redis for locks and the
+distributed cache, on ten cores of an Apple M4 - with app passwords
+rather than browser sessions:
+
+- At 50 syncs a second a timed sync took 27 ms deferred, 33 ms finding
+  nothing new and 67 ms writing (median), most of it Nextcloud starting
+  up for the request. A deferred sync costs the server nearly what a look
+  costs; what the pacing saves is Etherpad's work and the file's.
+- 500 viewers, five to a pad, someone typing into a fifth of the pads, an
+  interval of 5 s: paced, a sync made 0.35 Etherpad calls, a typed pad
+  was written 1.2 times an interval, and a minute wrote 297 file
+  versions. Sent without `periodic=1`, a sync made 1.27 calls, a typed
+  pad was written three times an interval, and a minute wrote 640.
+- The stack took 50 syncs a second with a 95th percentile of about
+  0.1 s, 75 with 0.7 s and 100 with 3 s; at 100, Nextcloud used six cores
+  and Postgres three, and at 200 the stack fell behind. 50 a second are
+  6,000 visible viewers at the default interval.
+- Without Redis, the locks in the database and Postgres at its default
+  of 100 connections, fewer than Apache's 256 workers, the same stack
+  answered 500 to some syncs at 100 a second: connections refused, and
+  deadlocks on `oc_file_locks`. A request that failed while it held a
+  shared lock left it behind for `filelocking.ttl`, an hour, and syncs
+  that would have written that file answered `locked` until then.
+
 ### Deleting, the trash, restoring
 
 - Every delete, by any user, of any file: one file cache read by primary
