@@ -130,19 +130,17 @@ await Promise.allSettled([...inFlight])
 const done = new Date()
 const versionsAfter = versions()
 
-// Only the syncs sent in the window count. The calls Etherpad logged from
-// its start until the last sync came back are the app's, but for the typing
-// and the container's health check; those of syncs still in flight as the
-// window opened count too, so an overloaded run shows a few more per sync.
+// Only the syncs sent in the window count. The app's calls of Etherpad
+// count from its start until the last sync came back; those of syncs still
+// in flight as the window opened count too, so an overloaded run shows a
+// few more per sync.
 const measured = syncs.filter((s) => s.sent >= measureFrom && s.sent < measureUntil)
 const byStatus = {}
 for (const s of measured) {
 	byStatus[s.status] ??= []
 	byStatus[s.status].push(s.ms)
 }
-const calls = etherpadCalls(new Date(measureFrom), done)
-delete calls.appendText
-delete calls.checkToken
+const calls = await etherpadCalls(new Date(measureFrom), done)
 const callCount = Object.values(calls).reduce((a, b) => a + b, 0)
 const intervals = durationMs / intervalMs
 const looks = (byStatus.unchanged?.length ?? 0) + (byStatus.updated?.length ?? 0)

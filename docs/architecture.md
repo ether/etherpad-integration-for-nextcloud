@@ -359,28 +359,32 @@ and HTML even when its revision has not moved.
 
 Measured with `tests/load/` on the container stack - Nextcloud 34.0.4 on
 Apache with PHP 8.5, Postgres 16, APCu, and Redis for locks and the
-distributed cache, on ten cores of an Apple M4 - with app passwords
-rather than browser sessions:
+distributed cache, on ten cores of an Apple M4 that also ran the load -
+with app passwords rather than browser sessions, and a file cache of two
+million rows with 108,000 pads:
 
-- At 50 syncs a second a timed sync took 27 ms deferred, 33 ms finding
-  nothing new and 67 ms writing (median), most of it Nextcloud starting
-  up for the request. A deferred sync costs the server nearly what a look
-  costs; what the pacing saves is Etherpad's work and the file's.
+- At 50 syncs a second a timed sync took 27 ms deferred, 32 ms finding
+  nothing new and 72 ms writing (median), most of it Nextcloud starting
+  up for the request.
 - 500 viewers, five to a pad, someone typing into a fifth of the pads, an
-  interval of 5 s: paced, a sync made 0.35 Etherpad calls, a typed pad
-  was written 1.2 times an interval, and a minute wrote 297 file
-  versions. Sent without `periodic=1`, a sync made 1.27 calls, a typed
-  pad was written three times an interval, and a minute wrote 640.
-- The stack took 50 syncs a second with a 95th percentile of about
-  0.1 s, 75 with 0.7 s and 100 with 3 s; at 100, Nextcloud used six cores
-  and Postgres three, and at 200 the stack fell behind. 50 a second are
-  6,000 visible viewers at the default interval.
-- Without Redis, the locks in the database and Postgres at its default
-  of 100 connections, fewer than Apache's 256 workers, the same stack
-  answered 500 to some syncs at 100 a second: connections refused, and
-  deadlocks on `oc_file_locks`. A request that failed while it held a
-  shared lock left it behind for `filelocking.ttl`, an hour, and syncs
-  that would have written that file answered `locked` until then.
+  interval of 5 s, so 100 syncs a second: paced, a sync made 0.32
+  Etherpad calls, a typed pad was written 1.1 times an interval, a minute
+  wrote 262 file versions, and the syncs took 36 ms (median) and 81 ms
+  (95th percentile), with Nextcloud on two cores and Postgres on one.
+  Sent without `periodic=1`, a sync made 1.30 calls, a typed pad was
+  written 3.8 times an interval, a minute wrote 812 versions, and the
+  syncs took 101 and 432 ms, with Nextcloud on five cores and Postgres on
+  three.
+- Paced, the 95th percentile was 81 ms at 100 syncs a second, 0.4 s at
+  120 and 2.4 s at 150; at 200 the stack fell behind. 100 a second are
+  12,000 visible viewers at the default interval.
+- Without Redis, and with Postgres at its default of 100 connections,
+  fewer than Apache's 256 workers: 0.26 s at 100 syncs a second, and at
+  120, 148 of about 7,100 syncs answered 500, their database connection
+  refused. In a run far past the stack's limit, requests that failed
+  while they held a shared lock in the database left it behind for
+  `filelocking.ttl`, an hour, and syncs that would have written those
+  files answered `locked` until then.
 
 ### Deleting, the trash, restoring
 
@@ -413,15 +417,27 @@ rather than browser sessions:
   rest goes to a job per group, up to 100 groups a delete.
 - File cache removals cost an in-memory check each; those in a trash or a
   delete are collected and looked up 500 ids at a time, one indexed query.
+- Measured on the stack above: a file deleted past the trash took 81 ms
+  (median). A folder of 100 protected pads, each opened twice, went to
+  the trash in 455 ms, with 50 `listSessionsOfGroup` and `listPads` calls
+  and 100 `deleteSession`, the request's budget, and a revocation job for
+  each of the 100 groups; the walk's query for its pads read the folder's
+  children through the `parent` index, in 0.4 ms. With 10,000 file cache
+  rows instead of two million, the same took 78 and 458 ms.
 - A pad whose file is deleted for good goes with the sweep, within about
   ten minutes: one or two Etherpad calls per pad (`deletePad`, or
   `listPads` and `deleteGroup`).
-- A restore costs a file cache read, a row read, a file read and the
-  lost-pad question (1-2 calls, 3 s each). A pad Etherpad lost is made
-  anew in the restore's request: about nine calls, without a budget over
-  them all.
+- A `.pad` file restored on its own costs a file cache read, a row read,
+  a file read and the lost-pad question (1-2 calls, 3 s each). A pad
+  Etherpad lost is made anew in the restore's request: about nine calls,
+  without a budget over them all. A folder restored is not looked into:
+  one of 100 pads came back in 51 ms without an Etherpad call, and each
+  pad is looked at when it is next opened.
 - An account's deletion joins the table with the file cache on the
   account's home storage and marks what it finds, 500 rows at a time.
+  Measured with two million file cache rows, the join went through the
+  storage index in under a millisecond, and deleting an account with ten
+  pads took as long as one with none (`occ user:delete`, 0.29 s).
 
 ### Background jobs
 
@@ -435,6 +451,21 @@ rather than browser sessions:
 A listing past 4 MiB, or one that keeps timing out while Etherpad answers
 otherwise, parks the collector for a day. The revocation job reads its
 listing whole.
+
+Measured on the stack above, with 10,000 file cache rows: 1,000 rows of
+files deleted past the trash took one run of the sweep, 4.9 s, with
+`listPads` and `deleteGroup` for each pad. With two million, the sweep's
+queries stayed on indexes, under a millisecond each.
+
+### Admin actions
+
+- The consistency check counts the rows whose file the file cache lost
+  and reads 25 of them, two joins with the file cache that read all of
+  it. With two million file cache rows, 108,000 rows and 1,000 of them
+  vanished, the check took 0.9 s, each of the two queries about 115 ms
+  in a parallel sequential scan; with 10,000 file cache rows it took
+  0.5 s. Its queries grow with the file cache, not with the pads.
+- Checking pending pads runs the sweep at once, as above.
 
 ### What every user pays
 

@@ -1,0 +1,18 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (c) 2026 Jacob Bühler
+#
+# The e2e stack's sites, and one more on the stack's network: the app's way
+# to Etherpad's API (etherpad_api_host http://caddy:9002), logging every
+# call. That log is how the load scripts count what the app asks of
+# Etherpad, apart from what they call themselves and from the container's
+# health check, which go to Etherpad directly.
+
+import Caddyfile.e2e
+
+http://:9002 {
+	log {
+		output stdout
+		format json
+	}
+	reverse_proxy etherpad:9001
+}

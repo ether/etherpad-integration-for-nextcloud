@@ -8,8 +8,9 @@
 // database and logs. The scripts measure a stack made for them alone - see
 // README.md - and refuse no target, so point them at no other.
 
-import { execFileSync } from 'node:child_process'
+import { execFileSync, spawn } from 'node:child_process'
 import { readFileSync } from 'node:fs'
+import { createInterface } from 'node:readline'
 import { parseEnv } from 'node:util'
 
 export const repo = new URL('../../', import.meta.url).pathname
@@ -78,18 +79,104 @@ export function sqlValue(sql) {
 	return compose('exec', '-T', 'db', 'psql', '-U', 'nextcloud', '-d', 'nextcloud', '-At', '-c', sql).trim()
 }
 
+/** A script of statements on the stack's database, stopping at the first error; its output. */
+export function sqlScript(sql) {
+	return execFileSync('docker', ['compose', '-p', project, ...composeFiles, 'exec', '-T', 'db', 'psql', '-v', 'ON_ERROR_STOP=1', '-U', 'nextcloud', '-d', 'nextcloud', '-At', '-f', '-'], { input: sql, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 })
+}
+
 /**
- * The API functions Etherpad logged as called between two instants, by
- * name. Etherpad logs each call of its HTTP API, the app's and the
- * scripts' alike, so a caller leaves out the functions it calls itself.
+ * Runs `work` while Postgres explains every statement it finishes, with the
+ * time and buffers of each step (auto_explain), and returns what `work`
+ * returned with the plans of the statements on the app's table. A session
+ * opened meanwhile takes it up, and Nextcloud opens one per request.
+ * Explaining makes each statement slower, so time the work without it.
+ */
+export async function withPlans(work) {
+	// Loaded first: ALTER SYSTEM knows a module's settings only once it is.
+	sqlScript(`load 'auto_explain';
+alter system set session_preload_libraries = 'auto_explain';
+alter system set auto_explain.log_min_duration = 0;
+alter system set auto_explain.log_analyze = on;
+alter system set auto_explain.log_buffers = on;
+select pg_reload_conf();`)
+	await new Promise((resolve) => setTimeout(resolve, 1000))
+	const since = new Date()
+	let result
+	let until
+	try {
+		result = await work()
+		until = new Date(Date.now() + 1000)
+	} finally {
+		sqlScript(`load 'auto_explain';
+alter system reset session_preload_libraries;
+alter system reset auto_explain.log_min_duration;
+alter system reset auto_explain.log_analyze;
+alter system reset auto_explain.log_buffers;
+select pg_reload_conf();`)
+	}
+	return { result, plans: await plansOnBindings(since, until) }
+}
+
+/** The plans Postgres logged between two instants for statements on ep_pad_bindings: each statement once, with its slowest plan. */
+function plansOnBindings(since, until) {
+	const logs = spawn('docker', ['compose', '-p', project, ...composeFiles, 'logs', '--no-color', '--no-log-prefix', '--since', since.toISOString(), '--until', until.toISOString(), 'db'], { stdio: ['ignore', 'pipe', 'inherit'] })
+	const plans = []
+	let current = null
+	createInterface({ input: logs.stdout }).on('line', (line) => {
+		const start = /duration: ([\d.]+) ms\s+plan:/.exec(line)
+		if (start) {
+			current = { ms: Number(start[1]), lines: [] }
+			plans.push(current)
+		} else if (current && /^\s/.test(line)) {
+			current.lines.push(line.trim())
+		} else {
+			current = null
+		}
+	})
+	return new Promise((resolve, reject) => {
+		logs.on('error', reject)
+		logs.on('close', () => {
+			const byQuery = new Map()
+			for (const plan of plans) {
+				const query = plan.lines.find((l) => l.startsWith('Query Text:'))?.slice(12) ?? ''
+				if (!query.includes('ep_pad_bindings')) {
+					continue
+				}
+				const seen = byQuery.get(query)
+				if (seen) {
+					seen.times++
+					if (plan.ms > seen.maxMs) {
+						seen.maxMs = plan.ms
+						seen.plan = plan.lines.filter((l) => !l.startsWith('Query Text:'))
+					}
+				} else {
+					byQuery.set(query, { query, times: 1, maxMs: plan.ms, plan: plan.lines.filter((l) => !l.startsWith('Query Text:')) })
+				}
+			}
+			resolve([...byQuery.values()])
+		})
+	})
+}
+
+/**
+ * The functions of Etherpad's API the app called between two instants, by
+ * name, from the log of the way it reaches them (Caddyfile.load). Read as
+ * it comes: a busy minute logs more than a buffer holds.
  */
 export function etherpadCalls(since, until) {
-	const log = compose('logs', '--no-color', '--no-log-prefix', '--since', since.toISOString(), '--until', until.toISOString(), 'etherpad')
+	const logs = spawn('docker', ['compose', '-p', project, ...composeFiles, 'logs', '--no-color', '--no-log-prefix', '--since', since.toISOString(), '--until', until.toISOString(), 'caddy'], { stdio: ['ignore', 'pipe', 'inherit'] })
 	const calls = {}
-	for (const match of log.matchAll(/REQUEST, v[\d.]+:(\w+)/g)) {
-		calls[match[1]] = (calls[match[1]] ?? 0) + 1
-	}
-	return calls
+	createInterface({ input: logs.stdout }).on('line', (line) => {
+		// Access lines only: Caddy's error lines name the request too.
+		const fn = line.includes('"logger":"http.log.access') ? /"uri":"\/api\/[\d.]+\/(\w+)/.exec(line)?.[1] : undefined
+		if (fn) {
+			calls[fn] = (calls[fn] ?? 0) + 1
+		}
+	})
+	return new Promise((resolve, reject) => {
+		logs.on('error', reject)
+		logs.on('close', (code) => (code === 0 ? resolve(calls) : reject(new Error(`docker compose logs: ${code}`))))
+	})
 }
 
 /** Runs `work` on each item, at most `limit` at a time, in order of the items. */
