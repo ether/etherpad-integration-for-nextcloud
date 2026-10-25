@@ -4,8 +4,9 @@
 # The e2e stack's sites, and one more on the stack's network: the app's way
 # to Etherpad's API (etherpad_api_host http://caddy:9002), logging every
 # call. That log is how the load scripts count what the app asks of
-# Etherpad, apart from what they call themselves and from the container's
-# health check, which go to Etherpad directly.
+# Etherpad. Their own calls go through the e2e site ep.pad.test, and the
+# container's health check to Etherpad itself; the count takes only lines
+# of this site's host, should another site log too.
 
 import Caddyfile.e2e
 

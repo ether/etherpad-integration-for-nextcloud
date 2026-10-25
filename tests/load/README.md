@@ -61,9 +61,11 @@ makes protected pads through the app, 500 to a folder of the e2e user, and
 writes their ids to `tests/load/.work/pads.json`. It reports how long a
 create took.
 
-Give each of the runs below pads of its own with `--skip`: a run that
-overloads the stack can leave locks on its files for up to an hour, and
-deleted pads are gone. Each script writes its JSON to `--out` as well.
+Give each of the runs below pads of its own: a run that overloads the
+stack can leave locks on its files for up to an hour, and deleted pads are
+gone. `viewers.mjs` and `sweep.mjs` take them from `pads.json` with
+`--skip`; for `trash-folder.mjs`, seed a folder anew. The scripts below
+also write their JSON to `--out`.
 
 ## Viewers
 
@@ -88,7 +90,9 @@ one interval it reports, for the syncs sent in `--duration` seconds:
 - looks (`unchanged` or `updated`) per pad and interval, and writes per
   typed pad and interval;
 - the Etherpad calls the app made in that time, all, per sync - deferred
-  ones counted too - and per look;
+  ones counted too - and per look, an `unchanged` or `updated` answer; a
+  `locked` one may have asked Etherpad as well, so near the stack's limit
+  the calls per look come out high;
 - the file versions written;
 - what each container took of the cores halfway through (`cpuHalfway`,
   one sample of `docker stats`).
@@ -107,7 +111,8 @@ through the admin's pending pad check until no row waits.
 it. Both report the time of each request and the Etherpad calls in it.
 A folder put in the trash queues a `RevokeGroupSessionsJob` for each of
 its groups, and only cron runs them, which the stack has none of: they
-stay in `oc_jobs`.
+stay in `oc_jobs`, one for each group, and `trash-folder.mjs` reports how
+many of its folder's groups have one.
 
 ## Large tables
 
@@ -121,8 +126,10 @@ node tests/load/large-tables.mjs clear
 two million file cache rows by default, with the pads spread over the
 whole range of file ids and some rows' files gone. No Etherpad pad stands
 behind them, so `measure` takes only what reads the tables: the
-consistency check, the pending pad check and an account's deletion. Run
-`sweep.mjs` and `trash-folder.mjs` on real pads beside them.
+consistency check, the pending pad check - which it refuses while rows
+wait for the sweep - and an account's deletion, whose pads it sweeps
+afterwards. Run `sweep.mjs` and `trash-folder.mjs` on real pads beside
+them.
 
 `--plans`, for `sweep.mjs` and `trash-folder.mjs`, and `measure` on its
 own, have Postgres explain the statements on the app's table while the

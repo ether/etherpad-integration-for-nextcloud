@@ -10,9 +10,9 @@
 // for each run of the sweep how long it took, the rows it took and the
 // Etherpad calls it made. With --plans, Postgres explains the statements
 // on the app's table meanwhile, which slows them: time a run without it.
-// A folder deleted past the trash would do on Nextcloud 35, but Nextcloud
-// 34 reports a folder's files under the wrong ids until a release has the
-// fix (docs/deleting-pads.md).
+// A folder deleted past the trash would do from Nextcloud 35.0.1, which
+// has the fix for the ids a folder's files are reported under; earlier
+// releases report them wrongly (docs/deleting-pads.md).
 //
 //   node tests/load/sweep.mjs --skip 2000 --pads 1000
 
@@ -52,7 +52,9 @@ async function deleteAndSweep() {
 
 	const runs = []
 	for (let left = waiting; left > 0 && runs.length < 50;) {
-		const since = new Date()
+		// A second on each side, for the Docker VM's clock: nothing else
+		// calls Etherpad meanwhile.
+		const since = new Date(Date.now() - 1000)
 		const res = await appApi(target, 'POST', 'admin/settle-pending')
 		if (res.status !== 200) {
 			throw new Error(`settle-pending: ${res.status} ${JSON.stringify(res.body).slice(0, 200)}`)

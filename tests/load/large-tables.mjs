@@ -41,7 +41,7 @@ function fill() {
 	const started = Date.now()
 	sqlScript(`
 begin;
-insert into oc_mimetypes (mimetype) select 'text/plain' where not exists (select 1 from oc_mimetypes where mimetype = 'text/plain');
+insert into oc_mimetypes (mimetype) select m from (values ('text'), ('text/plain')) v(m) where not exists (select 1 from oc_mimetypes where mimetype = v.m);
 create temp table m as select
 	(select id from oc_mimetypes where mimetype = 'httpd/unix-directory') as dir,
 	(select id from oc_mimetypes where mimetype = 'httpd') as dirpart,
@@ -106,10 +106,12 @@ analyze oc_ep_pad_bindings;
 	return { fileCacheRows: Number(sqlValue('select count(*) from oc_filecache')), bindings: Number(sqlValue('select count(*) from oc_ep_pad_bindings')) }
 }
 
-/** Each request timed once without the plans and once with them. */
-async function timed(name, call) {
+/** Each request timed once without the plans and once with them; `after` tidies up after each, outside both. */
+async function timed(name, call, after = async () => {}) {
 	const plain = await call()
+	await after()
 	const explained = await withPlans(call)
+	await after()
 	return { name, ms: Math.round(plain.ms), status: plain.status, answer: plain.answer, plans: explained.plans }
 }
 
@@ -118,6 +120,12 @@ async function measure() {
 	const post = (endpoint) => async () => {
 		const res = await appApi(target, 'POST', endpoint)
 		return { ms: res.ms, status: res.status, answer: Object.fromEntries(Object.entries(res.body).filter(([key]) => /count|checked|settled|ok/.test(key))) }
+	}
+	const pending = () => Number(sqlValue("select count(*) from oc_ep_pad_bindings where state = 'pending_delete'"))
+	// The pending pad check is timed with nothing to do: a row waiting would
+	// make it a sweep, with Etherpad calls.
+	if (pending() > 0) {
+		throw new Error('Rows wait for the sweep; run the pending pad check, or sweep.mjs, until none does.')
 	}
 	const results = [
 		await timed('consistency check', post('admin/consistency-check')),
@@ -143,8 +151,18 @@ async function measure() {
 		compose('exec', '-T', '-u', 'www-data', 'nextcloud', 'php', 'occ', 'user:delete', uid)
 		return { ms: performance.now() - started, status: 0, answer: { pads } }
 	}
-	results.push(await timed('account without pads deleted (occ user:delete)', deleteAccount(0)))
-	results.push(await timed('account with 10 pads deleted (occ user:delete)', deleteAccount(10)))
+	// The deleted account's pads wait for the sweep; swept here, untimed,
+	// they are gone before the next measure or sweep.mjs.
+	const sweepAccounts = async () => {
+		while (pending() > 0) {
+			const res = await appApi(target, 'POST', 'admin/settle-pending')
+			if (res.status !== 200 || res.body.checked === 0) {
+				throw new Error(`settle-pending: ${res.status}, ${pending()} rows still waiting`)
+			}
+		}
+	}
+	results.push(await timed('account without pads deleted (occ user:delete)', deleteAccount(0), sweepAccounts))
+	results.push(await timed('account with 10 pads deleted (occ user:delete)', deleteAccount(10), sweepAccounts))
 	return results
 }
 

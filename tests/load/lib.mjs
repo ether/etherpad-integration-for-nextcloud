@@ -6,14 +6,18 @@
 // What the load scripts share: the target from the env file up.sh writes,
 // requests to the app and to Etherpad's API, and the container stack's
 // database and logs. The scripts measure a stack made for them alone - see
-// README.md - and refuse no target, so point them at no other.
+// README.md - and send their requests to it alone: they read its database
+// and logs, so a target elsewhere would be loaded, and its pads deleted,
+// while the figures came from here.
 
+import assert from 'node:assert/strict'
 import { execFile, execFileSync, spawn } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { createInterface } from 'node:readline'
+import { fileURLToPath } from 'node:url'
 import { parseEnv, promisify } from 'node:util'
 
-export const repo = new URL('../../', import.meta.url).pathname
+export const repo = fileURLToPath(new URL('../../', import.meta.url))
 const composeFiles = ['-f', `${repo}tests/e2e/docker/compose.yml`, '-f', `${repo}tests/load/compose.load.yml`]
 // The stack's own project, not the e2e suite's: the scripts fill it with
 // pads that suite does not expect.
@@ -21,6 +25,7 @@ export const project = process.env.COMPOSE_PROJECT_NAME || 'epnc-load'
 
 export function loadTarget(envFile = process.env.E2E_ENV_FILE || `${repo}tests/e2e/.env.e2e.docker`) {
 	const env = parseEnv(readFileSync(envFile, 'utf8'))
+	assert.equal(env.E2E_BASE_URL?.replace(/\/+$/, ''), 'https://nc.pad.test', 'The throwaway Docker stack is the only target')
 	return {
 		base: env.E2E_BASE_URL.replace(/\/+$/, ''),
 		user: env.E2E_USER,
@@ -52,9 +57,18 @@ export async function request(target, method, path, { form, headers = {}, cookie
 		body: form ? new URLSearchParams(form) : undefined,
 	})
 	for (const cookie of cookies ? res.headers.getSetCookie() : []) {
-		const [pair] = cookie.split(';')
+		const [pair, ...attributes] = cookie.split(';').map((part) => part.trim())
 		const at = pair.indexOf('=')
-		cookies.set(pair.slice(0, at).trim(), pair.slice(at + 1).trim())
+		const name = pair.slice(0, at)
+		// A cookie Nextcloud clears comes with an expiry in the past, and a
+		// tab drops it rather than send it back.
+		const maxAge = attributes.find((a) => /^max-age=/i.test(a))?.slice(8)
+		const expires = attributes.find((a) => /^expires=/i.test(a))?.slice(8)
+		if ((maxAge !== undefined && Number(maxAge) <= 0) || (expires !== undefined && Date.parse(expires) <= Date.now())) {
+			cookies.delete(name)
+		} else {
+			cookies.set(name, pair.slice(at + 1))
+		}
 	}
 	const text = await res.text()
 	let body = {}
@@ -86,9 +100,19 @@ export function compose(...args) {
 	return execFileSync('docker', ['compose', '-p', project, ...composeFiles, ...args], { encoding: 'utf8', maxBuffer: 256 * 1024 * 1024 })
 }
 
-/** One value from the stack's database. */
+// Marks the scripts' own statements, so the plans of the app's leave them out.
+const ours = '/* tests/load */ '
+const psql = ['exec', '-T', 'db', 'psql', '-U', 'nextcloud', '-d', 'nextcloud', '-At', '-c']
+
+/** One value from the stack's database. Blocks the process meanwhile: not while viewers run. */
 export function sqlValue(sql) {
-	return compose('exec', '-T', 'db', 'psql', '-U', 'nextcloud', '-d', 'nextcloud', '-At', '-c', sql).trim()
+	return compose(...psql, ours + sql).trim()
+}
+
+/** The same, without blocking: for a value read while viewers run. */
+export async function sqlValueAsync(sql) {
+	const { stdout } = await promisify(execFile)('docker', ['compose', '-p', project, ...composeFiles, ...psql, ours + sql])
+	return stdout.trim()
 }
 
 /** A script of statements on the stack's database, stopping at the first error; its output. */
@@ -134,12 +158,14 @@ export async function withPlans(work) {
 	}
 	process.once('SIGINT', onSignal)
 	process.once('SIGTERM', onSignal)
-	sqlScript(explainEverything)
-	await new Promise((resolve) => setTimeout(resolve, 1000))
-	const since = new Date()
+	let since
 	let result
 	let until
 	try {
+		// In the try: a script that stops part-way has written some of it.
+		sqlScript(explainEverything)
+		await new Promise((resolve) => setTimeout(resolve, 1000))
+		since = new Date()
 		result = await work()
 		until = new Date(Date.now() + 1000)
 	} finally {
@@ -183,7 +209,7 @@ function plansOnBindings(since, until) {
 			const byQuery = new Map()
 			for (const plan of plans) {
 				const query = plan.lines.find((l) => l.startsWith('Query Text:'))?.slice(12) ?? ''
-				if (!query.includes('ep_pad_bindings')) {
+				if (!query.includes('ep_pad_bindings') || query.includes(ours.trim())) {
 					continue
 				}
 				const seen = byQuery.get(query)
@@ -205,14 +231,17 @@ function plansOnBindings(since, until) {
 /**
  * The functions of Etherpad's API the app called between two instants, by
  * name, from the log of the way it reaches them (Caddyfile.load). Read as
- * it comes: a busy minute logs more than a buffer holds.
+ * it comes: a busy minute logs more than a buffer holds. The instants are
+ * this machine's, the log's are the Docker VM's clock: a caller pads the
+ * window where nothing else calls Etherpad around it.
  */
 export function etherpadCalls(since, until) {
 	const logs = spawn('docker', ['compose', '-p', project, ...composeFiles, 'logs', '--no-color', '--no-log-prefix', '--since', since.toISOString(), '--until', until.toISOString(), 'caddy'], { stdio: ['ignore', 'pipe', 'inherit'] })
 	const calls = {}
 	createInterface({ input: logs.stdout }).on('line', (line) => {
-		// Access lines only: Caddy's error lines name the request too.
-		const fn = line.includes('"logger":"http.log.access') ? /"uri":"\/api\/[\d.]+\/(\w+)/.exec(line)?.[1] : undefined
+		// Access lines of that site only: Caddy's error lines name the
+		// request too, and another site may log the scripts' own calls.
+		const fn = line.includes('"logger":"http.log.access') && line.includes('"host":"caddy:9002"') ? /"uri":"\/api\/[\d.]+\/(\w+)/.exec(line)?.[1] : undefined
 		if (fn) {
 			calls[fn] = (calls[fn] ?? 0) + 1
 		}

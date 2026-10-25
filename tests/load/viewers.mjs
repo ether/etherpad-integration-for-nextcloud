@@ -17,7 +17,7 @@
 
 import { readFileSync, writeFileSync } from 'node:fs'
 import { parseArgs } from 'node:util'
-import { appApi, cpuOfStack, eachLimited, etherpad, etherpadCalls, loadTarget, repo, request, spread, sqlValue } from './lib.mjs'
+import { appApi, cpuOfStack, eachLimited, etherpad, etherpadCalls, loadTarget, repo, request, spread, sqlValueAsync } from './lib.mjs'
 
 const { values: args } = parseArgs({
 	options: {
@@ -57,11 +57,13 @@ const opens = await eachLimited(viewers, Number(args.concurrency), async (viewer
 })
 const intervalMs = opens[0].interval * 1000
 const fileIds = pads.map((pad) => pad.fileId).join(',')
-// Null where the database takes no more connections, as an overloaded
-// stack's does: the report still comes out.
-const versions = () => {
+// Not blocking: read as the window opens, a count that held the process
+// would hold the viewers' ticks with it and send them in step. Null where
+// the database takes no more connections, as an overloaded stack's does:
+// the report still comes out.
+const versions = async () => {
 	try {
-		return Number(sqlValue(`select count(*) from oc_files_versions where file_id in (${fileIds})`))
+		return Number(await sqlValueAsync(`select count(*) from oc_files_versions where file_id in (${fileIds})`))
 	} catch {
 		return null
 	}
@@ -124,7 +126,7 @@ for (const pad of typed) {
 }
 
 await new Promise((resolve) => setTimeout(resolve, measureFrom - Date.now()))
-versionsAtMeasure = versions()
+versionsAtMeasure = await versions()
 await new Promise((resolve) => setTimeout(resolve, durationMs / 2))
 const cpu = await cpuOfStack()
 await new Promise((resolve) => setTimeout(resolve, measureUntil - Date.now()))
@@ -132,19 +134,19 @@ stopping = true
 timers.forEach((timer) => clearInterval(timer))
 await Promise.allSettled([...inFlight])
 const done = new Date()
-const versionsAfter = versions()
+const versionsAfter = await versions()
 
 // Only the syncs sent in the window count. The app's calls of Etherpad
-// count from its start until the last sync came back; those of syncs still
-// in flight as the window opened count too, so an overloaded run shows a
-// few more per sync.
+// count from its start until a second after the last sync came back, for
+// the Docker VM's clock; those of syncs still in flight as the window
+// opened count too, so an overloaded run shows a few more per sync.
 const measured = syncs.filter((s) => s.sent >= measureFrom && s.sent < measureUntil)
 const byStatus = {}
 for (const s of measured) {
 	byStatus[s.status] ??= []
 	byStatus[s.status].push(s.ms)
 }
-const calls = await etherpadCalls(new Date(measureFrom), done)
+const calls = await etherpadCalls(new Date(measureFrom), new Date(done.getTime() + 1000))
 const callCount = Object.values(calls).reduce((a, b) => a + b, 0)
 const intervals = durationMs / intervalMs
 const looks = (byStatus.unchanged?.length ?? 0) + (byStatus.updated?.length ?? 0)
