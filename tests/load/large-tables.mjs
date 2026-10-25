@@ -7,10 +7,12 @@
 // storages of made-up accounts, each with folders of files, every so many
 // of them a pad with its row. The pads' ids spread over the whole file cache,
 // as an instance's do that has made pads for years; some rows lose their
-// file, as vanished files do. No Etherpad pad stands behind these rows, so
-// measure only what reads the tables: the admin's consistency check and
-// pending pad check, an account's deletion, and the walk of a folder
-// deleted (trash-folder.mjs).
+// file, as vanished files do. No Etherpad pad stands behind these rows, and
+// no account or mount behind their storages, so what resolves a node or
+// asks oc_mounts sees none of them: measure only what reads the tables -
+// the admin's consistency check and pending pad check, an account's
+// deletion, and the walk of a folder deleted (trash-folder.mjs) - and not
+// a trash or a restore on these rows.
 //
 //   node tests/load/large-tables.mjs fill --storages 1000 --files 2000
 //   node tests/load/large-tables.mjs measure

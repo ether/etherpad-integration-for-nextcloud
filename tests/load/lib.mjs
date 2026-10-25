@@ -8,10 +8,10 @@
 // database and logs. The scripts measure a stack made for them alone - see
 // README.md - and refuse no target, so point them at no other.
 
-import { execFileSync, spawn } from 'node:child_process'
+import { execFile, execFileSync, spawn } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { createInterface } from 'node:readline'
-import { parseEnv } from 'node:util'
+import { parseEnv, promisify } from 'node:util'
 
 export const repo = new URL('../../', import.meta.url).pathname
 const composeFiles = ['-f', `${repo}tests/e2e/docker/compose.yml`, '-f', `${repo}tests/load/compose.load.yml`]
@@ -30,8 +30,14 @@ export function loadTarget(envFile = process.env.E2E_ENV_FILE || `${repo}tests/e
 	}
 }
 
-/** A request to Nextcloud as the target's user; `path` is absolute or below the base URL. */
-export async function request(target, method, path, { form, headers = {} } = {}) {
+/**
+ * A request to Nextcloud as the target's user; `path` is absolute or below
+ * the base URL. With `cookies`, a Map, it keeps the cookies Nextcloud sets
+ * and sends them back, as a browser tab does: without, every request
+ * starts a PHP session of its own, and under load the stack spends its
+ * time on those.
+ */
+export async function request(target, method, path, { form, headers = {}, cookies } = {}) {
 	const started = performance.now()
 	const res = await fetch(new URL(path, target.base + '/'), {
 		method,
@@ -40,10 +46,16 @@ export async function request(target, method, path, { form, headers = {} } = {})
 			'OCS-APIRequest': 'true',
 			Accept: 'application/json',
 			...(form ? { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' } : {}),
+			...(cookies?.size ? { Cookie: [...cookies].map(([name, value]) => `${name}=${value}`).join('; ') } : {}),
 			...headers,
 		},
 		body: form ? new URLSearchParams(form) : undefined,
 	})
+	for (const cookie of cookies ? res.headers.getSetCookie() : []) {
+		const [pair] = cookie.split(';')
+		const at = pair.indexOf('=')
+		cookies.set(pair.slice(0, at).trim(), pair.slice(at + 1).trim())
+	}
 	const text = await res.text()
 	let body = {}
 	try {
@@ -54,7 +66,7 @@ export async function request(target, method, path, { form, headers = {} } = {})
 	return { status: res.status, body, ms: performance.now() - started }
 }
 
-export const appApi = (target, method, endpoint, form) => request(target, method, `index.php/apps/etherpad_nextcloud/api/v1/${endpoint}`, { form })
+export const appApi = (target, method, endpoint, form, cookies) => request(target, method, `index.php/apps/etherpad_nextcloud/api/v1/${endpoint}`, { form, cookies })
 
 /** A call of Etherpad's HTTP API; throws where Etherpad answers with an error. */
 export async function etherpad(target, fn, params = {}) {
@@ -84,21 +96,45 @@ export function sqlScript(sql) {
 	return execFileSync('docker', ['compose', '-p', project, ...composeFiles, 'exec', '-T', 'db', 'psql', '-v', 'ON_ERROR_STOP=1', '-U', 'nextcloud', '-d', 'nextcloud', '-At', '-f', '-'], { input: sql, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 })
 }
 
+// Loaded first: ALTER SYSTEM knows a module's settings only once it is.
+const explainEverything = `load 'auto_explain';
+alter system set session_preload_libraries = 'auto_explain';
+alter system set auto_explain.log_min_duration = 0;
+alter system set auto_explain.log_analyze = on;
+alter system set auto_explain.log_buffers = on;
+select pg_reload_conf();`
+export const explainNothing = `load 'auto_explain';
+alter system reset session_preload_libraries;
+alter system reset auto_explain.log_min_duration;
+alter system reset auto_explain.log_analyze;
+alter system reset auto_explain.log_buffers;
+select pg_reload_conf();`
+
 /**
  * Runs `work` while Postgres explains every statement it finishes, with the
  * time and buffers of each step (auto_explain), and returns what `work`
  * returned with the plans of the statements on the app's table. A session
  * opened meanwhile takes it up, and Nextcloud opens one per request.
  * Explaining makes each statement slower, so time the work without it.
+ *
+ * ALTER SYSTEM outlives this process: left set, it has Postgres log every
+ * statement of every request, and the stack crawls. So it is reset on
+ * Ctrl-C and on a kill that lets the process end, and a run refuses to
+ * start over one left set by a process that could not (README.md says how
+ * to reset it by hand).
  */
 export async function withPlans(work) {
-	// Loaded first: ALTER SYSTEM knows a module's settings only once it is.
-	sqlScript(`load 'auto_explain';
-alter system set session_preload_libraries = 'auto_explain';
-alter system set auto_explain.log_min_duration = 0;
-alter system set auto_explain.log_analyze = on;
-alter system set auto_explain.log_buffers = on;
-select pg_reload_conf();`)
+	if (sqlValue('show session_preload_libraries').includes('auto_explain')) {
+		throw new Error('Postgres still explains every statement, left so by a run that ended early; reset it as tests/load/README.md says.')
+	}
+	const reset = () => sqlScript(explainNothing)
+	const onSignal = (signal) => {
+		reset()
+		process.exit(signal === 'SIGINT' ? 130 : 143)
+	}
+	process.once('SIGINT', onSignal)
+	process.once('SIGTERM', onSignal)
+	sqlScript(explainEverything)
 	await new Promise((resolve) => setTimeout(resolve, 1000))
 	const since = new Date()
 	let result
@@ -107,14 +143,22 @@ select pg_reload_conf();`)
 		result = await work()
 		until = new Date(Date.now() + 1000)
 	} finally {
-		sqlScript(`load 'auto_explain';
-alter system reset session_preload_libraries;
-alter system reset auto_explain.log_min_duration;
-alter system reset auto_explain.log_analyze;
-alter system reset auto_explain.log_buffers;
-select pg_reload_conf();`)
+		reset()
+		process.off('SIGINT', onSignal)
+		process.off('SIGTERM', onSignal)
 	}
 	return { result, plans: await plansOnBindings(since, until) }
+}
+
+/**
+ * What each container of the stack takes of a core right now, in percent,
+ * as `docker stats` reports it: one sample of about two seconds. Not
+ * blocking, so the viewers' timers keep running meanwhile.
+ */
+export async function cpuOfStack() {
+	const { stdout } = await promisify(execFile)('docker', ['stats', '--no-stream', '--format', '{{.Name}}\t{{.CPUPerc}}'])
+	return Object.fromEntries(stdout.split('\n').filter((line) => line.startsWith(`${project}-`))
+		.map((line) => line.split('\t')).map(([name, cpu]) => [name.slice(project.length + 1).replace(/-\d+$/, ''), Number.parseFloat(cpu)]))
 }
 
 /** The plans Postgres logged between two instants for statements on ep_pad_bindings: each statement once, with its slowest plan. */

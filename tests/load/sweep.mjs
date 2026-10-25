@@ -10,9 +10,9 @@
 // for each run of the sweep how long it took, the rows it took and the
 // Etherpad calls it made. With --plans, Postgres explains the statements
 // on the app's table meanwhile, which slows them: time a run without it.
-// A folder deleted past the trash would do on
-// Nextcloud 35, but Nextcloud 34 reports a folder's files under the wrong
-// ids until a release has the fix (docs/deleting-pads.md).
+// A folder deleted past the trash would do on Nextcloud 35, but Nextcloud
+// 34 reports a folder's files under the wrong ids until a release has the
+// fix (docs/deleting-pads.md).
 //
 //   node tests/load/sweep.mjs --skip 2000 --pads 1000
 

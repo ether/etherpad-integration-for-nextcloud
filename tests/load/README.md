@@ -74,9 +74,11 @@ node tests/load/viewers.mjs --skip 50 --pads 50 --viewers-per-pad 5 --duration 6
 
 opens each pad once per viewer and sends a timed sync every interval the
 server names, while a fifth of the pads (`--typed`) get a character a
-second through Etherpad's API. `--unpaced` leaves out `periodic=1`, as
-the viewers did before the server paced them. After a warm-up of one
-interval it reports, for the syncs sent in `--duration` seconds:
+second through Etherpad's API. `--unpaced` leaves out `periodic=1`, so
+the server does not pace the syncs. Each viewer keeps its cookies, as a
+tab does: without them every request starts a PHP session of its own,
+which made a deferred sync take 27 ms instead of 17. After a warm-up of
+one interval it reports, for the syncs sent in `--duration` seconds:
 
 - how many went out a second, and what they answered, with the median,
   95th percentile and longest time for each answer;
@@ -85,8 +87,11 @@ interval it reports, for the syncs sent in `--duration` seconds:
   stack;
 - looks (`unchanged` or `updated`) per pad and interval, and writes per
   typed pad and interval;
-- the Etherpad calls the app made in that time, all and per sync;
-- the file versions written.
+- the Etherpad calls the app made in that time, all, per sync - deferred
+  ones counted too - and per look;
+- the file versions written;
+- what each container took of the cores halfway through (`cpuHalfway`,
+  one sample of `docker stats`).
 
 ## Deletes
 
@@ -100,6 +105,9 @@ node tests/load/trash-folder.mjs --state tests/load/.work/trash.json --opens-per
 through the admin's pending pad check until no row waits.
 `trash-folder.mjs` puts a folder of opened pads in the trash and restores
 it. Both report the time of each request and the Etherpad calls in it.
+A folder put in the trash queues a `RevokeGroupSessionsJob` for each of
+its groups, and only cron runs them, which the stack has none of: they
+stay in `oc_jobs`.
 
 ## Large tables
 
@@ -119,4 +127,14 @@ consistency check, the pending pad check and an account's deletion. Run
 `--plans`, for `sweep.mjs` and `trash-folder.mjs`, and `measure` on its
 own, have Postgres explain the statements on the app's table while the
 requests run (`auto_explain`), and add the plans to the report; explained
-statements are slower, so the times come from a run without.
+statements are slower, so the times come from a run without. The setting
+outlives the script: one that ends early without the reset - killed hard,
+say - leaves Postgres explaining every statement of every request, and
+the next run refuses to start until it is reset by hand:
+
+```bash
+load exec -T db psql -U nextcloud -d nextcloud -c "load 'auto_explain'" \
+	-c 'alter system reset session_preload_libraries' -c 'alter system reset auto_explain.log_min_duration' \
+	-c 'alter system reset auto_explain.log_analyze' -c 'alter system reset auto_explain.log_buffers' \
+	-c 'select pg_reload_conf()'
+```

@@ -360,31 +360,33 @@ and HTML even when its revision has not moved.
 Measured with `tests/load/` on the container stack - Nextcloud 34.0.4 on
 Apache with PHP 8.5, Postgres 16, APCu, and Redis for locks and the
 distributed cache, on ten cores of an Apple M4 that also ran the load -
-with app passwords rather than browser sessions, and a file cache of two
-million rows with 108,000 pads:
+with app passwords, each viewer keeping its cookies as a tab does, and a
+file cache of two million rows with 108,000 pads; each figure from one or
+two runs of a minute:
 
-- At 50 syncs a second a timed sync took 27 ms deferred, 32 ms finding
-  nothing new and 72 ms writing (median), most of it Nextcloud starting
-  up for the request.
-- 500 viewers, five to a pad, someone typing into a fifth of the pads, an
-  interval of 5 s, so 100 syncs a second: paced, a sync made 0.32
-  Etherpad calls, a typed pad was written 1.1 times an interval, a minute
-  wrote 262 file versions, and the syncs took 36 ms (median) and 81 ms
-  (95th percentile), with Nextcloud on two cores and Postgres on one.
-  Sent without `periodic=1`, a sync made 1.30 calls, a typed pad was
-  written 3.8 times an interval, a minute wrote 812 versions, and the
-  syncs took 101 and 432 ms, with Nextcloud on five cores and Postgres on
-  three.
-- Paced, the 95th percentile was 81 ms at 100 syncs a second, 0.4 s at
-  120 and 2.4 s at 150; at 200 the stack fell behind. 100 a second are
-  12,000 visible viewers at the default interval.
+- At 50 syncs a second a timed sync took 16 to 18 ms deferred, 23 to 26 ms
+  finding nothing new and 65 to 81 ms writing (median). A deferred sync
+  resolves the file and reads the memory cache once, so its time is about
+  that of the request itself. A client that keeps no cookies starts a PHP
+  session with every request: a deferred sync then took 27 ms.
+- 250 viewers, five to a pad, someone typing into a fifth of the pads, an
+  interval of 5 s, so 50 syncs a second: paced, a sync made 0.32 Etherpad
+  calls, a typed pad was written 1.1 times an interval, and a minute's
+  131 writes left 131 file versions. Sent without `periodic=1`, a sync
+  made 1.26 calls, a typed pad was written 3.2 times an interval, and a
+  minute's 384 to 390 writes left 324 to 338 versions.
+- Paced, 100 syncs a second had a 95th percentile of 94 and 119 ms, with
+  Nextcloud on about one and a half cores and Postgres on nearly one
+  (`docker stats` once halfway through); at 150 the stack fell behind,
+  taking 76 a second and answering in seconds. At the default interval,
+  100 a second would be 12,000 visible viewers.
 - Without Redis, and with Postgres at its default of 100 connections,
-  fewer than Apache's 256 workers: 0.26 s at 100 syncs a second, and at
-  120, 148 of about 7,100 syncs answered 500, their database connection
-  refused. In a run far past the stack's limit, requests that failed
-  while they held a shared lock in the database left it behind for
-  `filelocking.ttl`, an hour, and syncs that would have written those
-  files answered `locked` until then.
+  fewer than Apache's 256 workers, syncs that found no connection
+  answered 500: 148 of about 7,100 at 120 a second, in a run whose
+  viewers kept no cookies. In a run at 200 a second without Redis, far
+  past the stack's limit, requests that failed while they held a shared
+  lock in the database left it behind for `filelocking.ttl`, an hour, and
+  syncs that would have written those files answered `locked` until then.
 
 ### Deleting, the trash, restoring
 
@@ -464,7 +466,8 @@ queries stayed on indexes, under a millisecond each.
   it. With two million file cache rows, 108,000 rows and 1,000 of them
   vanished, the check took 0.9 s, each of the two queries about 115 ms
   in a parallel sequential scan; with 10,000 file cache rows it took
-  0.5 s. Its queries grow with the file cache, not with the pads.
+  0.5 s. Its queries grow with the file cache far more than with the
+  pads.
 - Checking pending pads runs the sweep at once, as above.
 
 ### What every user pays
