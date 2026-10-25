@@ -106,7 +106,8 @@ node tests/load/trash-folder.mjs --state tests/load/.work/trash.json --opens-per
 ```
 
 `sweep.mjs` deletes pads' files past the trash and then runs the sweep
-through the admin's pending pad check until no row waits.
+through the admin's pending pad check until no row waits, a run takes
+none, or 50 runs are done; each run says how many rows are left.
 `trash-folder.mjs` puts a folder of opened pads in the trash and restores
 it. Both report the time of each request and the Etherpad calls in it.
 A folder put in the trash queues a `RevokeGroupSessionsJob` for each of

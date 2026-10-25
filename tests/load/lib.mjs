@@ -142,10 +142,11 @@ select pg_reload_conf();`
  * Explaining makes each statement slower, so time the work without it.
  *
  * ALTER SYSTEM outlives this process: left set, it has Postgres log every
- * statement of every request, and the stack crawls. So it is reset on
- * Ctrl-C and on a kill that lets the process end, and a run refuses to
- * start over one left set by a process that could not (README.md says how
- * to reset it by hand).
+ * statement of every request, and the stack crawls. So it is reset when
+ * the work ends, and on SIGINT and SIGTERM. Any other end - SIGKILL,
+ * SIGHUP, the machine stopping - leaves it set, and a run refuses to start
+ * until it is reset by hand (README.md). Session preloading and what
+ * log_analyze costs: https://www.postgresql.org/docs/16/auto-explain.html
  */
 export async function withPlans(work) {
 	if (sqlValue('show session_preload_libraries').includes('auto_explain')) {
@@ -205,7 +206,12 @@ function plansOnBindings(since, until) {
 	})
 	return new Promise((resolve, reject) => {
 		logs.on('error', reject)
-		logs.on('close', () => {
+		logs.on('close', (code) => {
+			// A log that could not be read would give no plans, as if none ran.
+			if (code !== 0) {
+				reject(new Error(`docker compose logs: ${code}`))
+				return
+			}
 			const byQuery = new Map()
 			for (const plan of plans) {
 				const query = plan.lines.find((l) => l.startsWith('Query Text:'))?.slice(12) ?? ''
@@ -252,7 +258,10 @@ export function etherpadCalls(since, until) {
 	})
 }
 
-/** Runs `work` on each item, at most `limit` at a time, in order of the items. */
+/**
+ * Runs `work` on each item, at most `limit` at once, starting them in the
+ * items' order; the results come in that order too.
+ */
 export async function eachLimited(items, limit, work) {
 	const results = new Array(items.length)
 	let next = 0

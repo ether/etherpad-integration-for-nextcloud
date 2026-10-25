@@ -5,10 +5,11 @@
 
 // Deletes pads' files past the trash, one WebDAV DELETE each, so their rows
 // wait for the sweep, and then runs the sweep through the admin's "Check
-// pending pads" (settle-pending) until no row waits: the job's work, at
-// once rather than after its grace. It reports how long a delete took, and
-// for each run of the sweep how long it took, the rows it took and the
-// Etherpad calls it made. With --plans, Postgres explains the statements
+// pending pads" (settle-pending): the job's work, at once rather than after
+// its grace, until no row waits, a run takes none, or 50 runs are done. It
+// reports how long a delete took, and for each run of the sweep how long
+// it took, the rows it took, the rows left and the Etherpad calls it
+// made. With --plans, Postgres explains the statements
 // on the app's table meanwhile, which slows them: time a run without it.
 // A folder deleted past the trash would do from Nextcloud 35.0.1, which
 // has the fix for the ids a folder's files are reported under; earlier

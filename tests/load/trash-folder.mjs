@@ -90,7 +90,9 @@ async function trashAndRestore() {
 const report = {
 	folder: { pads: pads.length, opens: spread(opens) },
 	...await trashAndRestore(),
-	// Once more, explained: the sessions are gone by now, so it asks Etherpad less.
+	// Once more, explained, without opening the pads again: the first pass
+	// may have left sessions (it deletes 100 at most), or none, so this pass
+	// gives the plans, not times to compare.
 	...(args.plans ? { plans: (await withPlans(trashAndRestore)).plans } : {}),
 }
 console.log(JSON.stringify(report, null, '\t'))

@@ -133,9 +133,10 @@ async function measure() {
 	]
 
 	// An account deleted, with pads of its own or none: its rows are found by
-	// a join of the table with its home storage. occ starts Nextcloud for
-	// itself, so the difference between the two is the app's. Made anew for
-	// each run.
+	// a join of the table with its home storage. Both times hold occ starting
+	// Nextcloud and Nextcloud removing the account's files, so the
+	// difference is what ten pad files cost, the app's work among it, not
+	// the app's alone. Made anew for each run.
 	const deleteAccount = (pads) => async () => {
 		const uid = `load-account-${Date.now().toString(36)}`
 		const password = `load-${Math.random().toString(36).slice(2)}-pw`

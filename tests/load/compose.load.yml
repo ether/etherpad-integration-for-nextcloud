@@ -9,11 +9,13 @@
 #
 # Redis takes Nextcloud's file locks and its distributed cache, as the
 # admin manual recommends for an instance under load; without it the locks
-# sit in the database, and every sync takes and frees them there. Postgres
-# takes more connections than Apache has workers (256, see
+# sit in the database, and every sync takes and frees them there - see
+# https://docs.nextcloud.com/server/stable/admin_manual/configuration_files/files_locking_transactional.html.
+#
+# Postgres takes more connections than Apache has workers (256, see
 # apache-mpm-prefork.conf): with its default of 100, the requests past
 # that fail with a 500 before the app is reached. README.md says how to
-# point Nextcloud at both.
+# point Nextcloud at Redis.
 
 services:
   caddy:
