@@ -26,6 +26,8 @@ export const project = process.env.COMPOSE_PROJECT_NAME || 'epnc-load'
 export function loadTarget(envFile = process.env.E2E_ENV_FILE || `${repo}tests/e2e/.env.e2e.docker`) {
 	const env = parseEnv(readFileSync(envFile, 'utf8'))
 	assert.equal(env.E2E_BASE_URL?.replace(/\/+$/, ''), 'https://nc.pad.test', 'The throwaway Docker stack is the only target')
+	// Its Etherpad too: the viewers type into pads with the API key.
+	assert.equal(env.E2E_ETHERPAD_URL?.replace(/\/+$/, ''), 'https://ep.pad.test', 'The throwaway Docker stack\'s Etherpad is the only one')
 	return {
 		base: env.E2E_BASE_URL.replace(/\/+$/, ''),
 		user: env.E2E_USER,

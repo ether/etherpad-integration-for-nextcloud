@@ -56,15 +56,15 @@ const opens = await eachLimited(pads.flatMap((pad) => Array(Number(args['opens-p
 })
 
 /**
- * One request that has to answer `expected`, with the Etherpad calls the
- * app made while it ran: a second on each side, for the Docker VM's clock,
- * as nothing else calls Etherpad meanwhile.
+ * One request that has to answer one of `expected`, with the Etherpad
+ * calls the app made while it ran: a second on each side, for the Docker
+ * VM's clock, as nothing else calls Etherpad meanwhile.
  */
 async function measured(method, path, headers, expected) {
 	const since = new Date(Date.now() - 1000)
 	const res = await request(target, method, path, { headers })
-	if (res.status !== expected) {
-		throw new Error(`${method} ${path}: ${res.status}, not ${expected}`)
+	if (!expected.includes(res.status)) {
+		throw new Error(`${method} ${path}: ${res.status}, not ${expected.join(' or ')}`)
 	}
 	const calls = await etherpadCalls(since, new Date(Date.now() + 1000))
 	return { status: res.status, ms: Math.round(res.ms), etherpadCalls: calls }
@@ -73,7 +73,7 @@ async function measured(method, path, headers, expected) {
 const name = folder.split('/').pop()
 /** The folder into the trash and back. */
 async function trashAndRestore() {
-	const trash = await measured('DELETE', `${dav}/${folder}`, {}, 204)
+	const trash = await measured('DELETE', `${dav}/${folder}`, {}, [204])
 	const revoking = groupsWithRevocation()
 	// The trash names the folder after its name and when it was deleted.
 	const listing = await request(target, 'PROPFIND', `remote.php/dav/trashbin/${encodeURIComponent(target.user)}/trash`, { headers: { Depth: '1' } })
@@ -83,7 +83,8 @@ async function trashAndRestore() {
 	}
 	const restore = await measured('MOVE', `remote.php/dav/trashbin/${encodeURIComponent(target.user)}/trash/${encodeURIComponent(item)}`, {
 		Destination: `${target.base}/remote.php/dav/trashbin/${encodeURIComponent(target.user)}/restore/${encodeURIComponent(name)}`,
-	}, 201)
+	// WebDAV answers a MOVE with 201, or 204 where the target was there.
+	}, [201, 204])
 	return { trash: { ...trash, groups: groups.length, groupsWithRevocationJob: revoking }, restore }
 }
 
