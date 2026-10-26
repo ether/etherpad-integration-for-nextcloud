@@ -237,7 +237,7 @@ class GoneFileSweepTest extends TestCase {
 	 * at now itself is the hour just begun.
 	 */
 	#[\PHPUnit\Framework\Attributes\DataProvider('lastWarnings')]
-	public function testALastWarningInTheFutureDoesNotSilenceTheSweep(int $last, string $level): void {
+	public function testOnlyALastWarningUpToNowSilencesTheSweep(int $last, string $level): void {
 		$this->table([self::row(1, 11, 'pad-a', seenAt: 100)], []);
 		$this->padErrors = ['pad-a' => new EtherpadClientException('Etherpad API request failed: deletePad')];
 		$this->answering = false;
