@@ -457,10 +457,9 @@ class EtherpadClientTest extends TestCase {
 	}
 
 	public function testApiCallSurfacesHttpErrorStatusAsCause(): void {
-		// e.g. a wrong apikey makes Etherpad answer 401 — the failure mode the
-		// #105 regression produced. apiCall() wraps every sendRequest failure
-		// as "request failed: <method>" and preserves the HTTP error as the
-		// cause (exactly what the server log showed during #105).
+		// A 401 without Etherpad's own answer came from something in front of
+		// it: an HTTP error, wrapped as "request failed: <method>" with the
+		// status in the cause.
 		$client = $this->clientWithResponse($this->response(401, 'Unauthorized'));
 
 		try {
@@ -468,18 +467,19 @@ class EtherpadClientTest extends TestCase {
 			$this->fail('Expected EtherpadClientException.');
 		} catch (EtherpadClientException $e) {
 			$this->assertSame('Etherpad API request failed: createGroup', $e->getMessage());
+			$this->assertNotInstanceOf(EtherpadKeyRejectedException::class, $e);
 			$this->assertInstanceOf(EtherpadClientException::class, $e->getPrevious());
 			$this->assertStringContainsString('Etherpad API HTTP error (401)', $e->getPrevious()->getMessage());
 		}
 	}
 
 	/**
-	 * Etherpad's own code 4 - under HTTP 401 or 403, as Etherpad 2 sends it,
+	 * Etherpad's own code 4 - under HTTP 401 as Etherpad sends it, or 403,
 	 * also where Nextcloud's client throws on the status and hands the
-	 * answer back, or under 200 - is a rejected key, with the messages the
-	 * connection test's hints read. A 401 or 403 without it - a proxy's page
-	 * - is not, nor another status or code. No message holds the key, even
-	 * where the answer quotes it.
+	 * answer back, or under a success status - is a rejected key, with the
+	 * messages the connection test's hints read. A 401 or 403 without it - a
+	 * proxy's page, another JSON - is not, nor another status or code. No
+	 * message holds the key, even where the answer quotes it.
 	 */
 	public function testARejectedKeyIsToldApart(): void {
 		$rejected = '{"code":4,"message":"no or wrong API Key","data":null}';
@@ -496,9 +496,19 @@ class EtherpadClientTest extends TestCase {
 		$http->method('getResponseFromThrowable')->willReturn($this->response(401, $rejected));
 		$this->assertInstanceOf(EtherpadKeyRejectedException::class, $this->failureOf(fn () => $this->clientWith($http)->createGroup()));
 
-		$proxied = $this->failureOf(fn () => $this->clientWithResponse($this->response(403, '<html><body>Forbidden</body></html>'))->createGroup());
-		$this->assertNotInstanceOf(EtherpadKeyRejectedException::class, $proxied);
-		$this->assertSame('Etherpad API HTTP error (403)', $proxied->getPrevious()?->getMessage());
+		// A call with a size cap reads the answer from its sink.
+		$this->assertInstanceOf(EtherpadKeyRejectedException::class, $this->failureOf(fn () => $this->clientWithResponse($this->response(401, $rejected))->getHTMLForPreview('pad-1')));
+
+		foreach ([
+			[401, '<html><body>Sign in</body></html>'],
+			[401, '{"message":"Unauthorized"}'],
+			[403, '<html><body>Forbidden</body></html>'],
+			[403, '{"code":403,"message":"Forbidden"}'],
+		] as [$status, $body]) {
+			$proxied = $this->failureOf(fn () => $this->clientWithResponse($this->response($status, $body))->createGroup());
+			$this->assertNotInstanceOf(EtherpadKeyRejectedException::class, $proxied, $status . ' ' . $body);
+			$this->assertSame('Etherpad API HTTP error (' . $status . ')', $proxied->getPrevious()?->getMessage());
+		}
 
 		$e = $this->failureOf(fn () => $this->clientWithResponse($this->response(200, $rejected))->createGroup());
 		$this->assertInstanceOf(EtherpadKeyRejectedException::class, $e);

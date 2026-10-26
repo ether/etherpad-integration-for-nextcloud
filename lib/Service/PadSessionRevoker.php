@@ -59,6 +59,7 @@ class PadSessionRevoker {
 		private ITimeFactory $timeFactory,
 		private GroupSessionRevoker $groupSessions,
 		private SessionDeletes $deletes,
+		private ApiErrorLog $apiErrorLog,
 	) {
 	}
 
@@ -101,6 +102,7 @@ class PadSessionRevoker {
 		try {
 			$sessions = $this->etherpadClient->listSessionsOfAuthor($authorId, $timeout, $unreadable);
 		} catch (\Throwable $e) {
+			$this->apiErrorLog->reportIfKeyRejected($e);
 			$this->logger->warning('Could not list the Etherpad sessions to revoke; they will expire on their own.', [
 				'app' => 'etherpad_nextcloud',
 				'uid' => $uid,
@@ -246,6 +248,7 @@ class PadSessionRevoker {
 			if (EtherpadClientException::isEtherpadUnreachable($e)) {
 				$budget->noteUnanswered();
 			}
+			$this->apiErrorLog->reportIfKeyRejected($e);
 			$this->logger->warning('Could not tell which Etherpad sessions to revoke; a background job tries again.', [
 				'app' => 'etherpad_nextcloud',
 				'groupId' => $groupId,

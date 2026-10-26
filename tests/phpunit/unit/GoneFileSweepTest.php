@@ -102,7 +102,7 @@ class GoneFileSweepTest extends TestCase {
 		], []);
 		$this->padErrors = [
 			'pad-already-gone' => new EtherpadRefusedException('padID does not exist'),
-			'pad-refused' => new EtherpadRefusedException('apikey is invalid'),
+			'pad-refused' => new EtherpadRefusedException('Etherpad API error (deletePad): pad is busy'),
 		];
 
 		$this->sweep();
@@ -240,7 +240,7 @@ class GoneFileSweepTest extends TestCase {
 	 */
 	public function testARefusalInTheSecondOfTheMarkCountsAsTried(): void {
 		$this->table([self::row(1, 11, 'pad-refused', seenAt: FixedClock::NOW)], []);
-		$this->padErrors = ['pad-refused' => new EtherpadRefusedException('apikey is invalid')];
+		$this->padErrors = ['pad-refused' => new EtherpadRefusedException('Etherpad API error (deletePad): pad is busy')];
 
 		$this->build()->run(atOnce: true);
 		$this->clock->advance(300);
@@ -261,7 +261,7 @@ class GoneFileSweepTest extends TestCase {
 			$rows[] = self::row($i, 1000 + $i, 'pad-' . $i, seenAt: 100);
 		}
 		$this->table($rows, []);
-		$this->padErrors = ['pad-refused' => new EtherpadRefusedException('apikey is invalid')];
+		$this->padErrors = ['pad-refused' => new EtherpadRefusedException('Etherpad API error (deletePad): pad is busy')];
 
 		$this->build()->run(atOnce: true);
 

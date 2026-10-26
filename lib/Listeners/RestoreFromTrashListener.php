@@ -11,6 +11,7 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\Listeners;
 
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
+use OCA\EtherpadNextcloud\Service\ApiErrorLog;
 use OCA\EtherpadNextcloud\Service\AppAccess;
 use OCA\EtherpadNextcloud\Service\LifecycleResult;
 use OCA\EtherpadNextcloud\Service\RestoreService;
@@ -45,6 +46,7 @@ class RestoreFromTrashListener implements IEventListener {
 		private UserNodeResolver $userNodeResolver,
 		private LoggerInterface $logger,
 		private AppAccess $appAccess,
+		private ApiErrorLog $apiErrorLog,
 	) {
 	}
 
@@ -146,6 +148,7 @@ class RestoreFromTrashListener implements IEventListener {
 			if ($fileId !== null && $via === self::VIA_HOOK && self::etherpadFailed($e)) {
 				$this->decidedByHook[$fileId] = true;
 			}
+			$this->apiErrorLog->reportIfKeyRejected($e);
 			$this->logger->error('Could not restore the pad of a file back from the trash. The file itself is restored.', [
 				'app' => 'etherpad_nextcloud',
 				'fileId' => $fileId,

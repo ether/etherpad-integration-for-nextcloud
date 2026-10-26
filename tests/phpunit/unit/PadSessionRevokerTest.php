@@ -9,6 +9,7 @@ declare(strict_types=1);
 namespace OCA\EtherpadNextcloud\Tests\Unit;
 
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
+use OCA\EtherpadNextcloud\Exception\EtherpadKeyRejectedException;
 use OCA\EtherpadNextcloud\Exception\EtherpadRefusedException;
 use OCA\EtherpadNextcloud\Service\EtherpadClient;
 use OCA\EtherpadNextcloud\Service\GroupSessionRevoker;
@@ -16,6 +17,7 @@ use OCA\EtherpadNextcloud\Service\PadSessionRevoker;
 use OCA\EtherpadNextcloud\Service\PadSessionService;
 use OCA\EtherpadNextcloud\Service\ManagedPadLifecycle;
 use OCA\EtherpadNextcloud\Service\SessionDeletes;
+use OCA\EtherpadNextcloud\Tests\Support\BuildsErrorMappers;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 use OCA\EtherpadNextcloud\Tests\Support\FixedClock;
@@ -26,6 +28,8 @@ use OCA\EtherpadNextcloud\Tests\Support\FixedClock;
  * that ever removed one was deleting its whole group.
  */
 class PadSessionRevokerTest extends TestCase {
+	use BuildsErrorMappers;
+
 	private const AUTHOR = 'a.author';
 
 	public function testRemovesEverySessionOfTheUser(): void {
@@ -384,7 +388,7 @@ class PadSessionRevokerTest extends TestCase {
 		$logger = $this->createMock(LoggerInterface::class);
 		$logger->expects(self::once())->method('warning');
 
-		$revoker = new PadSessionRevoker($client, $sessions, $logger, $clock, $this->createMock(GroupSessionRevoker::class), $this->deletes($client, $logger));
+		$revoker = new PadSessionRevoker($client, $sessions, $logger, $clock, $this->createMock(GroupSessionRevoker::class), $this->deletes($client, $logger), $this->apiErrorLog());
 
 		self::assertSame(0, $revoker->revokeAll('alice'));
 	}
@@ -539,7 +543,7 @@ class PadSessionRevokerTest extends TestCase {
 			$lines[] = [$message, $context['groupId'] ?? $context['groupsLeft'] ?? null];
 		});
 		$queued = [];
-		$revoker = new PadSessionRevoker($client, $this->createMock(PadSessionService::class), $logger, $clock, $this->queueRecorder($queued), $this->deletes($client, $logger));
+		$revoker = new PadSessionRevoker($client, $this->createMock(PadSessionService::class), $logger, $clock, $this->queueRecorder($queued), $this->deletes($client, $logger), $this->apiErrorLog());
 
 		$revoker->revokeForPads(['g.AAAAAAAAAAAAAAAA$a', 'g.BBBBBBBBBBBBBBBB$b', 'g.CCCCCCCCCCCCCCCC$c', 'g.DDDDDDDDDDDDDDDD$d']);
 
@@ -549,6 +553,33 @@ class PadSessionRevokerTest extends TestCase {
 			['Not every group could be asked for its Etherpad sessions to revoke; a background job takes them.', 2],
 		], $lines);
 		self::assertSame(['g.AAAAAAAAAAAAAAAA', 'g.BBBBBBBBBBBBBBBB', 'g.CCCCCCCCCCCCCCCC', 'g.DDDDDDDDDDDDDDDD'], $queued);
+	}
+
+	/**
+	 * A key Etherpad rejects is said as that too, beside what could not be
+	 * revoked: an account's sessions, and a deleted pad's group's.
+	 */
+	public function testARejectedKeyIsSaidBesideWhatCouldNotBeRevoked(): void {
+		$rejected = new EtherpadKeyRejectedException('Etherpad API request failed: listSessionsOfAuthor');
+		$client = $this->createMock(EtherpadClient::class);
+		$client->method('listSessionsOfAuthor')->willThrowException($rejected);
+		$client->method('listSessionsOfGroup')->willThrowException($rejected);
+		$lines = [];
+		$logger = $this->createMock(LoggerInterface::class);
+		foreach (['error', 'warning'] as $level) {
+			$logger->method($level)->willReturnCallback(static function (string $message) use (&$lines, $level): void {
+				$lines[] = [$level, $message];
+			});
+		}
+
+		$this->revoker($client, logger: $logger)->revokeAll('alice');
+		$this->revoker($client, logger: $logger)->revokeForPads(['g.AAAAAAAAAAAAAAAA$a']);
+
+		self::assertSame(['error', 'warning', 'error', 'warning'], array_column($lines, 0));
+		self::assertStringStartsWith('Etherpad rejected this Nextcloud\'s API key', $lines[0][1]);
+		self::assertSame('Could not list the Etherpad sessions to revoke; they will expire on their own.', $lines[1][1]);
+		self::assertStringStartsWith('Etherpad rejected this Nextcloud\'s API key', $lines[2][1]);
+		self::assertSame('Could not tell which Etherpad sessions to revoke; a background job tries again.', $lines[3][1]);
 	}
 
 	/**
@@ -585,7 +616,7 @@ class PadSessionRevokerTest extends TestCase {
 			});
 		}
 		$queued = [];
-		$revoker = new PadSessionRevoker($client, $this->createMock(PadSessionService::class), $logger, $clock, $this->queueRecorder($queued), $this->deletes($client, $logger));
+		$revoker = new PadSessionRevoker($client, $this->createMock(PadSessionService::class), $logger, $clock, $this->queueRecorder($queued), $this->deletes($client, $logger), $this->apiErrorLog());
 
 		$count = $revoker->revokeForPads(['g.AAAAAAAAAAAAAAAA$pad', 'g.BBBBBBBBBBBBBBBB$pad', 'g.CCCCCCCCCCCCCCCC$pad']);
 
@@ -1024,7 +1055,7 @@ class PadSessionRevokerTest extends TestCase {
 			$left = $context['leftToTheJob'] ?? $left;
 		});
 		$queued = [];
-		$revoker = new PadSessionRevoker($client, $this->createMock(PadSessionService::class), $logger, $clock, $this->queueRecorder($queued), $this->deletes($client, $logger));
+		$revoker = new PadSessionRevoker($client, $this->createMock(PadSessionService::class), $logger, $clock, $this->queueRecorder($queued), $this->deletes($client, $logger), $this->apiErrorLog());
 
 		self::assertSame(0, $revoker->revokeForPads(['g.AAAAAAAAAAAAAAAA$pad']));
 		self::assertSame(2, $left);
@@ -1224,6 +1255,7 @@ class PadSessionRevokerTest extends TestCase {
 			new FixedClock(),
 			$groupSessions ?? $this->queueRecorder($queued),
 			$this->deletes($client, $logger),
+			$this->apiErrorLog($logger),
 		);
 	}
 

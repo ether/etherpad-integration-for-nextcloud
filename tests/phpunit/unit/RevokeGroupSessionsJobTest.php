@@ -16,6 +16,7 @@ use OCA\EtherpadNextcloud\Service\ManagedPadLifecycle;
 use OCA\EtherpadNextcloud\Service\SessionDeletes;
 use OCA\EtherpadNextcloud\Tests\Support\FixedClock;
 use OCP\BackgroundJob\IJobList;
+use OCA\EtherpadNextcloud\Tests\Support\BuildsErrorMappers;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 
@@ -25,6 +26,8 @@ use Psr\Log\LoggerInterface;
  * pass and what it says of the rest.
  */
 class RevokeGroupSessionsJobTest extends TestCase {
+	use BuildsErrorMappers;
+
 	private const GROUP = 'g.AAAAAAAAAAAAAAAA';
 
 	public function testComesBackForWhatThePassDidNotReach(): void {
@@ -91,7 +94,7 @@ class RevokeGroupSessionsJobTest extends TestCase {
 		$bindings->method('anyInFiles')->willReturn(false);
 		$clock = new FixedClock(1_000_000);
 		$logger = $this->createMock(LoggerInterface::class);
-		$revoker = new GroupSessionRevoker($client, $bindings, new SessionDeletes($client, new ManagedPadLifecycle($client, $logger), $logger), $this->createMock(IJobList::class), $logger, $clock);
+		$revoker = new GroupSessionRevoker($client, $bindings, new SessionDeletes($client, new ManagedPadLifecycle($client, $logger), $logger), $this->createMock(IJobList::class), $logger, $clock, $this->apiErrorLog());
 		$queued = [];
 		$jobList = $this->createMock(IJobList::class);
 		$jobList->method('scheduleAfter')->willReturnCallback(static function (string $job, int $at, array $argument) use (&$queued): void {

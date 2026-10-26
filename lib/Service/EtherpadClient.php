@@ -494,7 +494,8 @@ class EtherpadClient {
 				throw $tooLarge;
 			}
 			// Wrapped like any failure, so the connection test's hints still
-			// read the cause's message; the type is kept for ApiErrorLog.
+			// read the cause's message; the type is kept for those that tell
+			// a rejected key apart.
 			if ($e instanceof EtherpadKeyRejectedException) {
 				throw new EtherpadKeyRejectedException('Etherpad API request failed: ' . $method, 0, $e);
 			}
@@ -511,8 +512,8 @@ class EtherpadClient {
 			// Etherpad's own words, but a server in its place could quote
 			// the key back: taken out before it is part of a message.
 			$message = DiagnosticText::withoutSecret((string)($decoded['message'] ?? 'Unknown Etherpad API error'), $apiKey->reveal());
-			// Code 4 is Etherpad's for a key it does not take; Etherpad 2
-			// sends it with HTTP 401 or 403, which never get this far.
+			// Code 4 is Etherpad's for a key it does not take; under a 401 or
+			// 403 it never gets this far.
 			if ($code === 4) {
 				throw new EtherpadKeyRejectedException(sprintf('Etherpad API error (%s): %s', $method, $message));
 			}

@@ -76,8 +76,9 @@ class ApiErrorLogTest extends TestCase {
 
 	/**
 	 * A rejected key is one error a minute for the instance, whichever file,
-	 * shared with the sweep's, and on a minute apart from an outage's: logged
-	 * meanwhile, an outage does not hide the line that names the key.
+	 * on the same minute where a job meets it, and on a minute apart from an
+	 * outage's, so neither hides the other's line. A job's other failures
+	 * are not this line's.
 	 */
 	public function testOneErrorAMinuteForARejectedKey(): void {
 		$claimed = [];
@@ -93,16 +94,18 @@ class ApiErrorLogTest extends TestCase {
 		$factory->method('createDistributed')->willReturn($cache);
 
 		$log = new ApiErrorLog($factory, $this->logger());
+		$log->report(new EtherpadClientException('Etherpad API request failed: getText'), ['fileId' => 44]);
 		$log->report(new EtherpadKeyRejectedException('Etherpad API request failed: getText'), ['fileId' => 42]);
 		$log->report(new EtherpadKeyRejectedException('Etherpad API request failed: getText'), ['fileId' => 43]);
-		$log->reportRejectedKey(new EtherpadKeyRejectedException('Etherpad API request failed: deletePad'));
-		$log->report(new EtherpadClientException('Etherpad API request failed: getText'), ['fileId' => 44]);
+		$log->reportIfKeyRejected(new EtherpadKeyRejectedException('Etherpad API request failed: deletePad'));
+		$log->reportIfKeyRejected(new EtherpadClientException('Etherpad API request failed: deletePad'));
+		$log->report(new EtherpadClientException('Etherpad API request failed: getText'), ['fileId' => 45]);
 
 		$this->assertSame(
-			[['error', self::KEY_REJECTED, 42], ['debug', self::KEY_REJECTED, 43], ['debug', self::KEY_REJECTED, null], ['warning', self::UNREACHABLE, 44]],
+			[['warning', self::UNREACHABLE, 44], ['error', self::KEY_REJECTED, 42], ['debug', self::KEY_REJECTED, 43], ['debug', self::KEY_REJECTED, null], ['debug', self::UNREACHABLE, 45]],
 			array_map(static fn (array $line): array => [$line[0], $line[1], $line[2]['fileId'] ?? null], $this->logged),
 		);
-		$this->assertSame(EtherpadKeyRejectedException::class, $this->logged[0][2]['error']);
+		$this->assertSame(EtherpadKeyRejectedException::class, $this->logged[1][2]['error']);
 	}
 
 	/**

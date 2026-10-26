@@ -24,9 +24,9 @@ use Psr\Log\LoggerInterface;
 
 /**
  * The one line an error a client is answered for gets, for both error
- * mappers; the services under them leave it to this. The sweep hands it a
- * key Etherpad rejected too, so that line is written whether or not
- * anyone opens a pad. Kept on purpose are
+ * mappers; the services under them leave it to this. Of a key Etherpad
+ * rejected, the jobs and listeners that meet it where no answer is logged
+ * write the same line (reportIfKeyRejected()). Kept on purpose are
  * the lines a service writes to explain a refusal nothing else would: a
  * name another create has locked (PadFileCreator - a stale lock looks like
  * a taken name), a file a create will not write over, and the refusals of
@@ -102,9 +102,17 @@ final class ApiErrorLog {
 		}
 	}
 
-	/** A key Etherpad rejected, met outside a request: by the sweep. */
-	public function reportRejectedKey(EtherpadKeyRejectedException $e): void {
-		$this->rejectedKey(['app' => Application::APP_ID, ...SafeError::context($e)]);
+	/**
+	 * The rejected key's line for $e, if it is one, met where no answer is
+	 * logged for it: the sweep, the session jobs, the listeners that revoke
+	 * sessions or restore a pad. They run whether or not anyone opens a pad,
+	 * at night often alone, and their own lines name what they could not
+	 * do, not why; on the answers' minute, it is still one line a minute.
+	 */
+	public function reportIfKeyRejected(\Throwable $e): void {
+		if ($e instanceof EtherpadKeyRejectedException) {
+			$this->rejectedKey(['app' => Application::APP_ID, ...SafeError::context($e)]);
+		}
 	}
 
 	/** @param array<string,mixed> $context */

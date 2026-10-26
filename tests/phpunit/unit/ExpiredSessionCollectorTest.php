@@ -11,6 +11,7 @@ namespace OCA\EtherpadNextcloud\Tests\Unit;
 use OCA\EtherpadNextcloud\BackgroundJob\CollectExpiredGroupSessionsJob;
 use OCA\EtherpadNextcloud\BackgroundJob\CollectExpiredSessionsJob;
 use OCA\EtherpadNextcloud\Exception\EtherpadClientException;
+use OCA\EtherpadNextcloud\Exception\EtherpadKeyRejectedException;
 use OCA\EtherpadNextcloud\Exception\EtherpadRefusedException;
 use OCA\EtherpadNextcloud\Exception\EtherpadTooLargeException;
 use OCA\EtherpadNextcloud\Service\EtherpadClient;
@@ -19,6 +20,7 @@ use OCA\EtherpadNextcloud\Service\ManagedPadLifecycle;
 use OCA\EtherpadNextcloud\Service\SessionDeletes;
 use OCA\EtherpadNextcloud\Tests\Support\FixedClock;
 use OCP\BackgroundJob\IJobList;
+use OCA\EtherpadNextcloud\Tests\Support\BuildsErrorMappers;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 
@@ -30,6 +32,8 @@ use Psr\Log\LoggerInterface;
  * revokes nothing.
  */
 class ExpiredSessionCollectorTest extends TestCase {
+	use BuildsErrorMappers;
+
 	private const AUTHOR = 'a.author';
 	private const GROUP = 'g.AAAAAAAAAAAAAAAA';
 
@@ -237,6 +241,24 @@ class ExpiredSessionCollectorTest extends TestCase {
 
 			self::assertSame(['deleted' => 0, 'remaining' => 0, 'retry' => false, 'nextDueAt' => null], $collect($this->collector($client, logger: $logger)), $case);
 		}
+	}
+
+	/** A key Etherpad rejects is said as that too, beside the listing that failed; the sweep tries again. */
+	public function testARejectedKeyIsSaidBesideTheListingThatFailed(): void {
+		$client = $this->createMock(EtherpadClient::class);
+		$client->method('listSessionsOfAuthor')->willThrowException(new EtherpadKeyRejectedException('Etherpad API request failed: listSessionsOfAuthor'));
+		$lines = [];
+		$logger = $this->createMock(LoggerInterface::class);
+		foreach (['error', 'warning'] as $level) {
+			$logger->method($level)->willReturnCallback(static function (string $message) use (&$lines, $level): void {
+				$lines[] = [$level, $message];
+			});
+		}
+
+		self::assertSame(['deleted' => 0, 'remaining' => 0, 'retry' => true, 'nextDueAt' => null], $this->collector($client, logger: $logger)->collect(self::AUTHOR));
+		self::assertSame(['error', 'warning'], array_column($lines, 0));
+		self::assertStringStartsWith('Etherpad rejected this Nextcloud\'s API key', $lines[0][1]);
+		self::assertSame('Could not list the Etherpad sessions to collect.', $lines[1][1]);
 	}
 
 	/**
@@ -760,6 +782,7 @@ class ExpiredSessionCollectorTest extends TestCase {
 			new FixedClock(),
 			new SessionDeletes($client, new ManagedPadLifecycle($client, $logger), $logger),
 			new ManagedPadLifecycle($client, $logger),
+			$this->apiErrorLog($logger),
 			...($budgetSeconds === null ? [] : [$budgetSeconds]),
 		);
 	}

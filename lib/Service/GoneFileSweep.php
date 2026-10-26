@@ -110,9 +110,8 @@ class GoneFileSweep {
 		} catch (RunBudgetSpentException) {
 			// The rest waits for the next run.
 		} catch (EtherpadKeyRejectedException $e) {
-			// The run ends as for an outage, with the line that names the
-			// key: the sweep runs whether or not anyone opens a pad.
-			$this->apiErrorLog->reportRejectedKey($e);
+			// The run ends as for an outage, with the line that names the key.
+			$this->apiErrorLog->reportIfKeyRejected($e);
 		} catch (EtherpadClientException $e) {
 			$this->logger->info('Etherpad did not answer the sweep of files gone for good; it tries again next run.', [
 				'app' => 'etherpad_nextcloud',
