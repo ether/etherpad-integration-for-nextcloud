@@ -1,0 +1,35 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (c) 2026 Jacob Bühler
+#
+# Laid over tests/e2e/docker/compose.yml for the load stack. Paths here
+# are relative to that file's directory.
+#
+# Caddy gets a site the app reaches Etherpad's API through, logging each
+# call (Caddyfile.load): that log is how the load scripts count them.
+#
+# Redis takes Nextcloud's file locks and its distributed cache, as the
+# admin manual recommends for an instance under load; without it the locks
+# sit in the database, and every sync takes and frees them there - see
+# https://docs.nextcloud.com/server/stable/admin_manual/configuration_files/files_locking_transactional.html.
+#
+# Postgres takes more connections than Apache has workers (256, see
+# apache-mpm-prefork.conf): with its default of 100, the requests past
+# that fail with a 500 before the app is reached. README.md says how to
+# point Nextcloud at Redis.
+
+services:
+  caddy:
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile.e2e:ro
+      - ../../load/Caddyfile.load:/etc/caddy/Caddyfile:ro
+
+  db:
+    command: ["postgres", "-c", "max_connections=300"]
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
